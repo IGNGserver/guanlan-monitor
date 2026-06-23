@@ -1,0 +1,18 @@
+[Unit]
+Description=Device State Console Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dsc
+AmbientCapabilities=CAP_PERFMON
+CapabilityBoundingSet=CAP_PERFMON
+WorkingDirectory=/opt/device-state-console-agent
+EnvironmentFile=/opt/device-state-console-agent/agent.env
+ExecStart=/usr/bin/node /opt/device-state-console-agent/node-agent.mjs
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

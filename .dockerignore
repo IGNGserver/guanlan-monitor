@@ -1,0 +1,17 @@
+node_modules
+.next
+dist
+.turbo
+.git
+.env
+.env.local
+coverage
+tmp
+logs
+release
+*.log
+*.tsbuildinfo
+.codex
+.run
+android
+agents

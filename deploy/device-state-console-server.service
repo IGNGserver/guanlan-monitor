@@ -1,0 +1,15 @@
+[Unit]
+Description=Device State Console Server
+After=network.target
+
+[Service]
+Type=simple
+User=dsc
+WorkingDirectory=/opt/device-state-console
+EnvironmentFile=/opt/device-state-console/.env
+ExecStart=/usr/bin/env bash -lc 'pnpm --filter @dsc/server start'
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

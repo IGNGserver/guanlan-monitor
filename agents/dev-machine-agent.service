@@ -1,0 +1,18 @@
+[Unit]
+Description=Device State Console Agent (Dev Machine)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/<user>/OneDrive/文档/项目/设备状态控制台
+Environment=DSC_SERVER_URL=http://192.0.2.28:4000
+Environment=DSC_AGENT_SECRET=<redacted-secret>
+Environment=DSC_DEVICE_ID=开发机
+Environment=DSC_HOSTNAME=开发机
+ExecStart=/usr/bin/node /home/<user>/OneDrive/文档/项目/设备状态控制台/agents/node-agent.mjs
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
