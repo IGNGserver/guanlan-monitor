@@ -56,8 +56,16 @@ SESSION_COOKIE_SECURE=true
 
 ### 2. 启动服务
 
+默认方案：
+
 ```bash
 docker compose up -d --build
+```
+
+如果你的网络访问 Docker Hub 不稳定，优先尝试国内镜像方案：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cn.yml up -d --build
 ```
 
 默认端口：
@@ -76,6 +84,29 @@ docker compose up -d --build
 登录密钥：
 
 - `.env` 中的 `ACCESS_KEY`
+
+### 4. 如果首次安装卡在拉取镜像
+
+如果你看到 `mysql:8.4` 或 `redis:7.4-alpine` 拉取超时，通常不是项目配置错误，而是当前网络无法稳定访问 Docker Hub。
+
+可以按这个顺序排查：
+
+1. 先单独测试镜像拉取
+
+```bash
+docker pull mysql:8.4
+docker pull redis:7.4-alpine
+```
+
+2. 如果拉取失败，改用仓库内提供的国内镜像方案
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cn.yml up -d --build
+```
+
+3. 如果仍然失败，再考虑为 Docker 配置镜像加速器或代理
+
+如果你已经成功拉到镜像，后续再次安装通常会顺利很多。
 
 ## Agent 一键部署
 

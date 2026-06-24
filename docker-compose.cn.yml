@@ -1,0 +1,6 @@
+services:
+  redis:
+    image: docker.1ms.run/redis:7.4-alpine
+
+  mysql:
+    image: docker.1ms.run/mysql:8.4
