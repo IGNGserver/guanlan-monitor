@@ -32,6 +32,12 @@ export DSC_UPLOAD_KEY_ALIAS='guanlan-release'
 export DSC_UPLOAD_KEY_PASSWORD='your-key-password'
 ```
 
+If you keep a local credentials file in the project directory, you can load it before building:
+
+```bash
+source android/signing/release-credentials.env
+```
+
 Then build:
 
 ```bash
