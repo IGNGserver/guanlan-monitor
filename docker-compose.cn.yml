@@ -4,3 +4,13 @@ services:
 
   mysql:
     image: docker.1ms.run/mysql:8.4
+
+  server:
+    build:
+      args:
+        NODE_IMAGE: docker.1ms.run/node:22-alpine
+
+  web:
+    build:
+      args:
+        NODE_IMAGE: docker.1ms.run/node:22-alpine
