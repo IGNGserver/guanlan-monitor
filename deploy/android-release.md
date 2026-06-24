@@ -4,6 +4,8 @@
 
 Android release packages must be signed with the same keystore every time. If you lose the keystore, future APK updates cannot replace the installed app.
 
+The current Android client intentionally allows `http://` server addresses in release builds so it can connect to LAN deployments that do not use HTTPS yet.
+
 This repository expects signing material to stay local only:
 
 - keep the keystore under `android/signing/`
