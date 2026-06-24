@@ -59,7 +59,7 @@ Example:
 
 Suggested release asset name:
 
-- `guanlan-android-v0.1.0.apk`
+- `guanlan-android-v0.1.1.apk`
 
 ## Security Notes
 
