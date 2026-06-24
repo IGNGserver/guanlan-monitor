@@ -88,7 +88,52 @@ docker compose up -d --build
 
 - `.env` 中的 `ACCESS_KEY`
 
-## Agent 部署
+## Agent 一键部署
+
+### Linux
+
+在项目目录中执行：
+
+```bash
+sudo bash deploy/install-agent.sh \
+  --server-url http://你的中枢IP:4000 \
+  --secret 你的agent密钥 \
+  --device-id node-001
+```
+
+脚本会自动：
+
+- 复制 agent 到 `/opt/device-state-console-agent`
+- 写入 `agent.env`
+- 创建 `dsc-agent` 系统用户
+- 注册并启动 `device-state-console-agent.service`
+
+查看状态：
+
+```bash
+systemctl status device-state-console-agent.service
+```
+
+### Windows
+
+在 PowerShell 管理员窗口中执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\install-agent.ps1 `
+  -ServerUrl "http://你的中枢IP:4000" `
+  -Secret "你的agent密钥" `
+  -DeviceId "node-001"
+```
+
+脚本会把 agent 安装到 `C:\ProgramData\DeviceStateConsoleAgent`，并注册为开机启动的计划任务。
+
+查看任务：
+
+```powershell
+Get-ScheduledTask -TaskName "Device State Console Agent"
+```
+
+## Agent 手动部署
 
 ### Go Agent
 
@@ -111,11 +156,11 @@ go run .
 
 ### Node Agent
 
-参考 [deploy/agent.env.example](/home/<user>/OneDrive/文档/项目/设备状态控制台/deploy/agent.env.example)。
+参考 [deploy/agent.env.example](deploy/agent.env.example)。
 
 systemd 示例文件位于：
 
-- [deploy/device-state-console-agent.service](/home/<user>/OneDrive/文档/项目/设备状态控制台/deploy/device-state-console-agent.service)
+- [deploy/device-state-console-agent.service](deploy/device-state-console-agent.service)
 
 ## 本地开发
 
