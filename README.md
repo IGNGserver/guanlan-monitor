@@ -19,17 +19,6 @@
 - Agent 5 秒上报
 - 基于访问密钥的 Web 登录
 
-## 开源发布状态
-
-这个仓库已经整理为适合首次公开发布的基础状态：
-
-- 提供了生产可用的 `docker-compose.yml`
-- 增加了 `LICENSE`、`CONTRIBUTING.md`、`SECURITY.md`
-- 增加了 GitHub Actions CI
-- 清理了构建产物忽略规则
-
-如果你要首次发布到 GitHub，建议先在一台干净机器上完整跑完下面的“快速部署”和“本地开发”流程。
-
 ## 环境要求
 
 ### 生产部署
@@ -101,6 +90,14 @@ sudo bash deploy/install-agent.sh \
   --device-id node-001
 ```
 
+参数说明：
+
+- `--server-url`：中枢服务地址，通常是运行 `server` 的机器地址和端口，例如 `http://192.168.1.10:4000`。
+- `--secret`：agent 上报密钥，必须和服务端 `.env` 中的 `AGENT_SHARED_SECRET` 完全一致。
+- `--device-id`：设备唯一 ID，会显示在控制台中。建议使用稳定、可读的名称，例如 `nas-01`、`office-pc`。如果不传，默认使用当前主机名。
+- `--install-dir`：可选，agent 安装目录，默认 `/opt/device-state-console-agent`。
+- `--service-user`：可选，运行 systemd 服务的系统用户，默认 `dsc-agent`。
+
 脚本会自动：
 
 - 复制 agent 到 `/opt/device-state-console-agent`
@@ -124,6 +121,13 @@ powershell -ExecutionPolicy Bypass -File deploy\install-agent.ps1 `
   -Secret "你的agent密钥" `
   -DeviceId "node-001"
 ```
+
+参数说明：
+
+- `-ServerUrl`：中枢服务地址，通常是运行 `server` 的机器地址和端口，例如 `http://192.168.1.10:4000`。
+- `-Secret`：agent 上报密钥，必须和服务端 `.env` 中的 `AGENT_SHARED_SECRET` 完全一致。
+- `-DeviceId`：设备唯一 ID，会显示在控制台中。建议使用稳定、可读的名称，例如 `gaming-pc`、`office-laptop`。如果不传，默认使用当前计算机名。
+- `-InstallDir`：可选，agent 安装目录，默认 `C:\ProgramData\DeviceStateConsoleAgent`。
 
 脚本会把 agent 安装到 `C:\ProgramData\DeviceStateConsoleAgent`，并注册为开机启动的计划任务。
 
@@ -219,21 +223,3 @@ pnpm build
 ### 可以把 Redis / MySQL 换成外部服务吗
 
 可以，修改 `.env` 中的 `REDIS_URL`、`MYSQL_URL`，并按需精简 `docker-compose.yml`。
-
-## 首次发布到 GitHub 的建议流程
-
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git branch -M main
-git remote add origin <你的仓库地址>
-git push -u origin main
-```
-
-发布前至少确认：
-
-- `pnpm typecheck` 通过
-- `pnpm build` 通过
-- `docker compose up -d --build` 可启动
-- README 中的命令可以在干净环境复现
