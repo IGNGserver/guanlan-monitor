@@ -15,6 +15,8 @@ release
 AGENTS.md
 .run
 android/.gradle
+android/.kotlin
 android/app/build
 android/build
 android/local.properties
+android/signing

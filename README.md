@@ -228,6 +228,14 @@ export DSC_UPLOAD_KEY_ALIAS=your-key-alias
 export DSC_UPLOAD_KEY_PASSWORD=your-key-password
 ```
 
+签名文件建议放在项目内但不纳入 Git 的目录：
+
+```text
+android/signing/
+```
+
+详细说明见 [deploy/android-release.md](deploy/android-release.md)。
+
 然后重新构建：
 
 ```bash
