@@ -21,7 +21,7 @@ import retrofit2.HttpException
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
   private val settingsRepository = SettingsRepository(application)
-  private val apiFactory = ApiFactory()
+  private val apiFactory = ApiFactory(application)
 
   private val _state = MutableStateFlow(AppState())
   val state: StateFlow<AppState> = _state.asStateFlow()

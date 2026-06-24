@@ -2,16 +2,23 @@ package com.dsc.android
 
 import android.app.Application
 import android.content.Context
+import android.content.SharedPreferences
+import android.content.pm.ApplicationInfo
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.io.IOException
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -90,47 +97,78 @@ class InMemoryCookieJar : CookieJar {
 
 class SettingsRepository(private val application: Application) {
   private val baseUrlKey = stringPreferencesKey("base_url")
-  private val accessKeyKey = stringPreferencesKey("access_key")
+  private val encryptedPreferences: SharedPreferences by lazy {
+    val masterKey = MasterKey.Builder(application)
+      .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+      .build()
+    EncryptedSharedPreferences.create(
+      application,
+      "dsc_android_secure_settings",
+      masterKey,
+      EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+      EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    )
+  }
+  private val accessKeyKey = "access_key"
 
   fun settings(): Flow<ServerConfig> =
     application.dataStore.data
       .catch { error ->
         if (error is IOException) emit(emptyPreferences()) else throw error
       }
-      .map { preferences ->
+      .map { preferences -> preferences[baseUrlKey].orEmpty() }
+      .combine(accessKeyFlow()) { baseUrl, accessKey ->
         ServerConfig(
-          baseUrl = preferences[baseUrlKey].orEmpty(),
-          accessKey = preferences[accessKeyKey].orEmpty()
+          baseUrl = baseUrl,
+          accessKey = accessKey
         )
       }
 
   suspend fun save(config: ServerConfig) {
     application.dataStore.edit { prefs ->
       prefs[baseUrlKey] = config.baseUrl.trim()
-      prefs[accessKeyKey] = config.accessKey
     }
+    encryptedPreferences.edit().putString(accessKeyKey, config.accessKey).apply()
   }
 
   suspend fun clear() {
     application.dataStore.edit { prefs ->
       prefs.remove(baseUrlKey)
-      prefs.remove(accessKeyKey)
+    }
+    encryptedPreferences.edit().remove(accessKeyKey).apply()
+  }
+
+  private fun accessKeyFlow(): Flow<String> = callbackFlow {
+    val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+      if (key == accessKeyKey) {
+        trySend(encryptedPreferences.getString(accessKeyKey, "").orEmpty())
+      }
+    }
+    trySend(encryptedPreferences.getString(accessKeyKey, "").orEmpty())
+    encryptedPreferences.registerOnSharedPreferenceChangeListener(listener)
+    awaitClose {
+      encryptedPreferences.unregisterOnSharedPreferenceChangeListener(listener)
     }
   }
 }
 
-class ApiFactory {
+class ApiFactory(private val application: Application) {
   private val json = Json {
     ignoreUnknownKeys = true
     explicitNulls = false
   }
 
+  private val isDebuggable: Boolean =
+    (application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
   fun create(baseUrl: String): Triple<DeviceStateApi, InMemoryCookieJar, OkHttpClient> {
     val cookieJar = InMemoryCookieJar()
-    val client = OkHttpClient.Builder()
+    val clientBuilder = OkHttpClient.Builder()
       .cookieJar(cookieJar)
-      .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
-      .build()
+    if (isDebuggable) {
+      clientBuilder.addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
+    }
+    val client = clientBuilder.build()
 
     val retrofit = Retrofit.Builder()
       .baseUrl(resolveApiBaseUrl(baseUrl))

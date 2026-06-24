@@ -203,6 +203,39 @@ pnpm typecheck
 pnpm build
 ```
 
+## Android 发布
+
+安卓客户端当前应用名为 `观澜`。
+
+### 本地构建 release 包
+
+```bash
+./android/gradlew -p android assembleRelease
+```
+
+如果没有提供正式签名材料，输出会是未签名 APK：
+
+- `android/app/build/outputs/apk/release/app-release-unsigned.apk`
+
+### 配置正式签名
+
+在构建前设置这些环境变量，或等价地写入 Gradle 属性：
+
+```bash
+export DSC_UPLOAD_STORE_FILE=/path/to/your-keystore.jks
+export DSC_UPLOAD_STORE_PASSWORD=your-store-password
+export DSC_UPLOAD_KEY_ALIAS=your-key-alias
+export DSC_UPLOAD_KEY_PASSWORD=your-key-password
+```
+
+然后重新构建：
+
+```bash
+./android/gradlew -p android assembleRelease
+```
+
+配置完整后，release 构建会自动使用你的签名配置。
+
 ## 生产部署说明
 
 - `docker-compose.yml` 面向单机部署，包含 Redis 和 MySQL。

@@ -5,6 +5,9 @@ plugins {
   id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+fun Project.stringProperty(name: String): String? =
+  providers.gradleProperty(name).orNull ?: System.getenv(name)
+
 android {
   namespace = "com.dsc.android"
   compileSdk = 35
@@ -20,9 +23,35 @@ android {
     vectorDrawables.useSupportLibrary = true
   }
 
+  val releaseStoreFile = project.stringProperty("DSC_UPLOAD_STORE_FILE")
+  val releaseStorePassword = project.stringProperty("DSC_UPLOAD_STORE_PASSWORD")
+  val releaseKeyAlias = project.stringProperty("DSC_UPLOAD_KEY_ALIAS")
+  val releaseKeyPassword = project.stringProperty("DSC_UPLOAD_KEY_PASSWORD")
+
+  signingConfigs {
+    if (
+      !releaseStoreFile.isNullOrBlank() &&
+      !releaseStorePassword.isNullOrBlank() &&
+      !releaseKeyAlias.isNullOrBlank() &&
+      !releaseKeyPassword.isNullOrBlank()
+    ) {
+      create("release") {
+        storeFile = file(releaseStoreFile)
+        storePassword = releaseStorePassword
+        keyAlias = releaseKeyAlias
+        keyPassword = releaseKeyPassword
+      }
+    }
+  }
+
   buildTypes {
+    debug {
+      manifestPlaceholders["usesCleartextTraffic"] = "true"
+    }
     release {
       isMinifyEnabled = false
+      manifestPlaceholders["usesCleartextTraffic"] = "false"
+      signingConfig = signingConfigs.findByName("release")
       proguardFiles(
         getDefaultProguardFile("proguard-android-optimize.txt"),
         "proguard-rules.pro"
@@ -61,6 +90,7 @@ dependencies {
   implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
   implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
   implementation("androidx.datastore:datastore-preferences:1.1.2")
+  implementation("androidx.security:security-crypto:1.1.0")
   implementation("androidx.navigation:navigation-compose:2.8.5")
   implementation("com.google.android.material:material:1.12.0")
 
