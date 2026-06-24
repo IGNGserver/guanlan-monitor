@@ -163,6 +163,8 @@ docker compose -f docker-compose.yml -f docker-compose.cn.yml up -d --build
 
 ## Agent 一键部署
 
+Agent 所在设备需要先安装 `Node.js 22+`。
+
 ### Linux
 
 在项目目录中执行：
@@ -244,7 +246,28 @@ go run .
 
 ### Node Agent
 
-参考 [deploy/agent.env.example](deploy/agent.env.example)。
+Node Agent 同样需要 `Node.js 22+`。
+
+Linux / macOS 示例：
+
+```bash
+cd agents
+DSC_SERVER_URL=http://你的中枢IP:4000 \
+DSC_AGENT_SECRET=你的agent密钥 \
+DSC_DEVICE_ID=node-001 \
+node node-agent.mjs
+```
+
+Windows PowerShell 示例：
+
+```powershell
+$env:DSC_SERVER_URL="http://你的中枢IP:4000"
+$env:DSC_AGENT_SECRET="你的agent密钥"
+$env:DSC_DEVICE_ID="node-001"
+node .\node-agent.mjs
+```
+
+环境变量示例见 [deploy/agent.env.example](deploy/agent.env.example)。
 
 systemd 示例文件位于：
 
