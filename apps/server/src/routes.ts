@@ -86,7 +86,11 @@ export async function registerRoutes(app: FastifyInstance, repositories: Reposit
   const fanNotes = new LocalFanNoteStore(store);
   const metricConfigs = new LocalDeviceMetricConfigStore(store);
   app.post<{ Body: AuthLoginPayload }>("/api/auth/login", async (request, reply) => {
-    const body = loginSchema.parse(request.body);
+    const parsed = loginSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_login_payload" });
+    }
+    const body = parsed.data;
     if (body.accessKey !== env.ACCESS_KEY) {
       return reply.code(401).send({ error: "invalid_credentials" });
     }

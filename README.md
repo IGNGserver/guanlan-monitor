@@ -75,6 +75,8 @@ docker compose -f docker-compose.yml -f docker-compose.cn.yml up -d --build
 - Redis：`6379`
 - MySQL：`3306`
 
+如果这些端口已被本机其他服务占用，可以直接修改 `.env` 中的 `WEB_PORT`、`SERVER_PORT`、`REDIS_PORT`、`MYSQL_PORT` 后重新执行 `docker compose up -d --build`。
+
 ### 3. 登录
 
 访问：
@@ -84,6 +86,8 @@ docker compose -f docker-compose.yml -f docker-compose.cn.yml up -d --build
 登录密钥：
 
 - `.env` 中的 `ACCESS_KEY`
+
+登录页面只需要输入访问密钥，不需要用户名和密码。
 
 ### 4. 如果首次安装卡在拉取镜像
 
