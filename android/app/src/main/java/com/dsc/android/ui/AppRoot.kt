@@ -12,6 +12,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -383,6 +384,12 @@ private fun DeviceListCard(
   onOpenEditor: () -> Unit
 ) {
   val haptic = LocalHapticFeedback.current
+  val statusIndicatorModifier =
+    if (device.status == "online") {
+      Modifier.background(MaterialTheme.colorScheme.primary, CircleShape)
+    } else {
+      Modifier.border(1.5.dp, MaterialTheme.colorScheme.error, CircleShape)
+    }
   ElevatedCard(
     modifier = Modifier.fillMaxWidth(),
     colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
@@ -392,8 +399,7 @@ private fun DeviceListCard(
         Box(
           modifier = Modifier
             .size(10.dp)
-            .clip(CircleShape)
-            .background(if (device.status == "online") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+            .then(statusIndicatorModifier)
         )
         Column(modifier = Modifier.weight(1f)) {
           Text(device.hostname, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
