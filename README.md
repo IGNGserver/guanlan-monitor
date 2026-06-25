@@ -213,9 +213,13 @@ powershell -ExecutionPolicy Bypass -File deploy\install-agent.ps1 `
 - `-ServerUrl`：中枢服务地址，通常是运行 `server` 的机器地址和端口，例如 `http://192.168.1.10:4000`。
 - `-Secret`：agent 上报密钥，必须和服务端 `.env` 中的 `AGENT_SHARED_SECRET` 完全一致。
 - `-DeviceId`：设备唯一 ID，会显示在控制台中。建议使用稳定、可读的名称，例如 `gaming-pc`、`office-laptop`。如果不传，默认使用当前计算机名。
+- `-HardwareJsonUrl`：可选，LibreHardwareMonitor / OpenHardwareMonitor 的远程 Web JSON 地址，例如 `http://127.0.0.1:8085/data.json`。
+- `-AllowAcpiThermalZone`：可选，允许回退读取 Windows `MSAcpi_ThermalZoneTemperature`。该值通常不是 CPU Package/Core 温度，默认禁用。
 - `-InstallDir`：可选，agent 安装目录，默认 `C:\ProgramData\DeviceStateConsoleAgent`。
 
 脚本会把 agent 安装到 `C:\ProgramData\DeviceStateConsoleAgent`，并注册为开机启动的计划任务。
+
+Windows 的 CPU / GPU 温度需要系统提供真实硬件传感器。建议安装并运行 LibreHardwareMonitor 或 OpenHardwareMonitor；agent 会自动读取它们暴露在 `root\LibreHardwareMonitor` / `root\OpenHardwareMonitor` 的 WMI 传感器。如果没有这些传感器，CPU 温度会显示为空值，而不是使用容易误导的 ACPI 热区温度。
 
 查看任务：
 

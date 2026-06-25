@@ -6,6 +6,8 @@ param(
   [string]$Secret,
 
   [string]$DeviceId = $env:COMPUTERNAME,
+  [string]$HardwareJsonUrl = "",
+  [switch]$AllowAcpiThermalZone,
   [string]$InstallDir = "$env:ProgramData\DeviceStateConsoleAgent"
 )
 
@@ -30,6 +32,8 @@ $envFile = Join-Path $InstallDir "agent.env.ps1"
 `$env:DSC_AGENT_SECRET="$Secret"
 `$env:DSC_DEVICE_ID="$DeviceId"
 `$env:DSC_HOSTNAME="$DeviceId"
+`$env:DSC_HARDWARE_JSON_URL="$HardwareJsonUrl"
+`$env:DSC_ALLOW_ACPI_THERMAL_ZONE="$($AllowAcpiThermalZone.IsPresent.ToString().ToLowerInvariant())"
 node "$InstallDir\node-agent.mjs"
 "@ | Set-Content -Encoding UTF8 $envFile
 

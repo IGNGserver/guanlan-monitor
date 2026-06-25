@@ -10,6 +10,7 @@ const agentSecret = process.env.DSC_AGENT_SECRET ?? "replace-me-agent-secret";
 const deviceId = process.env.DSC_DEVICE_ID ?? "开发机";
 const hostname = process.env.DSC_HOSTNAME ?? deviceId;
 const hardwareJsonUrl = process.env.DSC_HARDWARE_JSON_URL ?? "";
+const allowAcpiThermalZone = process.env.DSC_ALLOW_ACPI_THERMAL_ZONE === "true";
 const pollIntervalMs = 5000;
 
 let previousCpu = os.cpus();
@@ -328,19 +329,10 @@ async function sampleCpuTemperature() {
     if (cpuTemp != null) return cpuTemp;
   }
   if (process.platform === "win32") {
-    try {
-      const { stdout } = await execFile("powershell", [
-        "-NoProfile",
-        "-Command",
-        "Get-CimInstance MSAcpi_ThermalZoneTemperature -Namespace root/wmi | Select-Object -ExpandProperty CurrentTemperature"
-      ]);
-      const raw = String(stdout).trim().split(/\s+/)[0];
-      const value = Number(raw);
-      if (!Number.isFinite(value) || value <= 0) return null;
-      return round(value / 10 - 273.15);
-    } catch {
-      return null;
-    }
+    const hardwareMonitorTemp = await readWindowsHardwareMonitorCpuTemperature();
+    if (hardwareMonitorTemp != null) return hardwareMonitorTemp;
+    if (allowAcpiThermalZone) return await readWindowsAcpiThermalZoneTemperature();
+    return null;
   }
   if (process.platform !== "linux") return null;
   const sensorsTemp = await readCpuTemperatureFromSensors();
@@ -607,17 +599,102 @@ function walkHardwareTree(node, visit) {
 }
 
 function extractHardwareMonitorCpuTemperature(snapshot) {
-  let found = null;
+  const candidates = [];
   walkHardwareTree(snapshot, (node) => {
     const type = String(node.SensorType ?? node.sensorType ?? "").toLowerCase();
     const name = String(node.Name ?? node.name ?? "").toLowerCase();
+    const identifier = String(node.Identifier ?? node.identifier ?? "").toLowerCase();
+    const hardwareType = String(node.HardwareType ?? node.hardwareType ?? "").toLowerCase();
     const value = Number(node.Value ?? node.value);
     if (type !== "temperature" || !Number.isFinite(value)) return;
-    if (name.includes("cpu package") || name.includes("cpu core") || name.includes("package")) {
-      found = round(value);
+    const score = scoreCpuTemperatureSensor({ name, identifier, hardwareType });
+    if (score > 0) {
+      candidates.push({ value, score });
     }
   });
-  return found;
+  return selectBestCpuTemperature(candidates);
+}
+
+async function readWindowsHardwareMonitorCpuTemperature() {
+  const namespaces = ["root\\LibreHardwareMonitor", "root\\OpenHardwareMonitor"];
+  for (const namespace of namespaces) {
+    try {
+      const { stdout } = await execFile("powershell", [
+        "-NoProfile",
+        "-Command",
+        [
+          "$ProgressPreference = 'SilentlyContinue'",
+          "$ErrorActionPreference = 'Stop'",
+          `$namespace = '${namespace}'`,
+          "Get-CimInstance -Namespace $namespace -ClassName Sensor -Filter \"SensorType='Temperature'\" |",
+          "  Select-Object Name,Identifier,Parent,SensorType,Value |",
+          "  ConvertTo-Json -Compress -Depth 4"
+        ].join("; ")
+      ]);
+      const rows = JSON.parse(String(stdout).trim() || "[]");
+      const sensors = Array.isArray(rows) ? rows.filter(Boolean) : rows ? [rows] : [];
+      const candidates = sensors
+        .map((sensor) => {
+          const name = String(sensor.Name ?? "").toLowerCase();
+          const identifier = String(sensor.Identifier ?? sensor.Parent ?? "").toLowerCase();
+          const value = Number(sensor.Value);
+          const score = scoreCpuTemperatureSensor({ name, identifier, hardwareType: "" });
+          return { value, score };
+        })
+        .filter((candidate) => Number.isFinite(candidate.value) && candidate.score > 0);
+      const selected = selectBestCpuTemperature(candidates);
+      if (selected != null) return selected;
+    } catch {}
+  }
+  return null;
+}
+
+async function readWindowsAcpiThermalZoneTemperature() {
+  try {
+    const { stdout } = await execFile("powershell", [
+      "-NoProfile",
+      "-Command",
+      "Get-CimInstance MSAcpi_ThermalZoneTemperature -Namespace root/wmi | Select-Object -ExpandProperty CurrentTemperature"
+    ]);
+    const values = String(stdout)
+      .trim()
+      .split(/\s+/)
+      .map((raw) => Number(raw))
+      .filter((value) => Number.isFinite(value) && value > 0)
+      .map((value) => value / 10 - 273.15)
+      .filter((value) => Number.isFinite(value) && value > 0);
+    return values.length ? round(Math.max(...values)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function scoreCpuTemperatureSensor({ name, identifier, hardwareType }) {
+  const haystack = `${name} ${identifier} ${hardwareType}`;
+  if (/(gpu|graphics|video|nvme|ssd|hdd|drive|disk|memory|dimm|pch|chipset|vrm|ambient|mainboard|motherboard|system|acpi|thermal zone)/i.test(haystack)) {
+    return 0;
+  }
+  let score = 0;
+  if (/(intelcpu|amdcpu|\/cpu|cpu)/i.test(haystack)) score += 4;
+  if (/(package|cpu package|tdie|tctl|die)/i.test(name)) score += 6;
+  if (/(core|ccd|ccx)/i.test(name)) score += 5;
+  if (/(max|hot spot|hotspot)/i.test(name)) score += 3;
+  if (/(temperature|temp)/i.test(name)) score += 1;
+  return score;
+}
+
+function selectBestCpuTemperature(candidates) {
+  const valid = candidates.filter(
+    (candidate) =>
+      Number.isFinite(candidate.value) &&
+      candidate.value > 0 &&
+      candidate.value < 130 &&
+      candidate.score > 0
+  );
+  if (!valid.length) return null;
+  const bestScore = Math.max(...valid.map((candidate) => candidate.score));
+  const bestValues = valid.filter((candidate) => candidate.score === bestScore).map((candidate) => candidate.value);
+  return round(Math.max(...bestValues));
 }
 
 function extractHardwareMonitorGpus(snapshot) {
