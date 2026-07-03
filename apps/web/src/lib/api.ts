@@ -67,7 +67,13 @@ export function getSession() {
 }
 
 export function listDevices() {
-  return apiFetch<DeviceSummary[]>("/api/devices");
+  return apiFetch<DeviceSummary[]>("/api/devices").then((devices) =>
+    devices.map((device) => ({
+      ...device,
+      gpuUsagePercent: device.gpuUsagePercent ?? null,
+      gpuMemoryUsagePercent: device.gpuMemoryUsagePercent ?? null
+    }))
+  );
 }
 
 export function getDevice(deviceId: string) {
@@ -110,6 +116,7 @@ export function getMetrics(deviceId: string, window: MetricWindow) {
         model?: string;
         vendor?: string;
         sourceKey?: string;
+        temperatureC?: number | null;
         totalBytes: number;
         usedBytes: number;
       }[];
@@ -135,16 +142,41 @@ export function getMetrics(deviceId: string, window: MetricWindow) {
         memoryTotalBytes: number;
         temperatureC?: number | null;
       }[];
+      sensorBackends: {
+        id: string;
+        label: string;
+        ok: boolean;
+        detail?: string;
+      }[] | undefined;
       fans: {
         id: string;
         label: string;
         interface: string;
         rpm: number;
         note?: string;
-      }[];
+      }[] | undefined;
     };
     series: MetricSeries;
-  }>(`/api/devices/${deviceId}/metrics?window=${window}`);
+  }>(`/api/devices/${deviceId}/metrics?window=${window}`).then((payload) => ({
+    ...payload,
+    latest: {
+      ...payload.latest,
+      cpuPackages: payload.latest.cpuPackages ?? [],
+      disks: payload.latest.disks ?? [],
+      networkInterfaces: payload.latest.networkInterfaces ?? [],
+      gpus: payload.latest.gpus ?? [],
+      fans: payload.latest.fans ?? [],
+      sensorBackends: payload.latest.sensorBackends ?? []
+    },
+    series: {
+      ...payload.series,
+      cpus: payload.series.cpus ?? [],
+      disks: payload.series.disks ?? [],
+      networks: payload.series.networks ?? [],
+      gpus: payload.series.gpus ?? [],
+      fans: payload.series.fans ?? []
+    }
+  }));
 }
 
 export function saveFanNote(deviceId: string, fanId: string, payload: FanNotePayload) {

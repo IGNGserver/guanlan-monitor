@@ -43,11 +43,13 @@ export interface TimeSeriesRecord {
   disks?: InstanceMetricRecord[];
   networks?: InstanceMetricRecord[];
   gpus?: InstanceMetricRecord[];
+  fans?: InstanceMetricRecord[];
 }
 
 export interface InstanceMetricRecord {
   id: string;
   name: string;
+  interface?: string;
   macAddress?: string;
   ipv4?: string[];
   ipv6?: string[];
@@ -69,6 +71,7 @@ export interface InstanceMetricRecord {
   frequencyMHz?: number;
   memoryUsagePercent?: number;
   temperatureC?: number;
+  rpm?: number;
 }
 
 export interface Repositories {
@@ -82,12 +85,14 @@ export interface RealtimeRepository {
   listDevices(): Promise<DeviceRealtimeState[]>;
   appendSeries(deviceId: string, bucket: MetricWindow, point: TimeSeriesRecord, maxPoints: number): Promise<void>;
   readSeries(deviceId: string, bucket: MetricWindow): Promise<TimeSeriesRecord[]>;
+  clearSeries(deviceId: string): Promise<void>;
 }
 
 export interface HistoryRepository {
   insertMinutePoint(deviceId: string, point: TimeSeriesRecord): Promise<void>;
   insertHourlyPoint(deviceId: string, point: TimeSeriesRecord): Promise<void>;
   getHistoricalSeries(deviceId: string, bucket: MetricWindow): Promise<TimeSeriesRecord[]>;
+  clearDeviceHistory(deviceId: string): Promise<void>;
   getTrafficCalendar(
     deviceId: string,
     mode: TrafficCalendarMode,

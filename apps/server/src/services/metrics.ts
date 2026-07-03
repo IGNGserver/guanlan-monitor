@@ -33,6 +33,10 @@ export class MetricsService {
 
   async ingest(payload: AgentMetricsPayload) {
     const receivedAt = new Date().toISOString();
+    const previousState = await this.repositories.realtime.getDevice(payload.identity.deviceId);
+    if (previousState && hasIdentityBoundaryChanged(previousState.identity, payload.identity)) {
+      await this.resetDeviceSeries(payload.identity.deviceId);
+    }
     const state: DeviceRealtimeState = {
       identity: payload.identity,
       status: "online",
@@ -124,7 +128,7 @@ export class MetricsService {
     const current = this.minuteAccumulators.get(deviceId);
     if (!current || current.bucketStartedAt !== bucketStartedAt) {
       if (current?.samples.length) {
-        const aggregate = averageRecord(current.samples);
+        const aggregate = averageRecord(current.samples, current.bucketStartedAt);
         await this.repositories.history.insertMinutePoint(deviceId, aggregate);
         await this.flushAggregate(deviceId, "15m", current.samples, 15);
       }
@@ -139,7 +143,7 @@ export class MetricsService {
     const current = this.hourlyAccumulators.get(deviceId);
     if (!current || current.bucketStartedAt !== bucketStartedAt) {
       if (current?.samples.length) {
-        const aggregate = averageRecord(current.samples);
+        const aggregate = averageRecord(current.samples, current.bucketStartedAt);
         await this.repositories.history.insertHourlyPoint(deviceId, aggregate);
       }
       this.hourlyAccumulators.set(deviceId, { bucketStartedAt, samples: [point] });
@@ -149,7 +153,11 @@ export class MetricsService {
   }
 
   private async flushAggregate(deviceId: string, bucket: MetricWindow, samples: ReturnType<typeof payloadToTimeSeries>[], maxPoints: number) {
-    const aggregate = averageRecord(samples);
+    const bucketStartedAt =
+      bucket === "15m"
+        ? Math.floor((samples[samples.length - 1]?.timestamp ?? Date.now()) / MINUTE_WINDOW_MS) * MINUTE_WINDOW_MS
+        : Math.floor((samples[samples.length - 1]?.timestamp ?? Date.now()) / HOURLY_WINDOW_MS) * HOURLY_WINDOW_MS;
+    const aggregate = averageRecord(samples, bucketStartedAt);
     await this.repositories.realtime.appendSeries(deviceId, bucket, aggregate, maxPoints);
   }
 
@@ -157,7 +165,7 @@ export class MetricsService {
     const current = this.hourlyAccumulators.get(deviceId);
     if (!current?.samples.length) return history;
 
-    const aggregate = averageRecord(current.samples);
+    const aggregate = averageRecord(current.samples, current.bucketStartedAt);
     const next = history.filter((point) => point.timestamp !== aggregate.timestamp);
     next.push(aggregate);
     next.sort((a, b) => a.timestamp - b.timestamp);
@@ -168,19 +176,35 @@ export class MetricsService {
     const current = this.minuteAccumulators.get(deviceId);
     if (!current?.samples.length) return history;
 
-    const aggregate = averageRecord(current.samples);
+    const aggregate = averageRecord(current.samples, current.bucketStartedAt);
     const next = history.filter((point) => point.timestamp !== aggregate.timestamp);
     next.push(aggregate);
     next.sort((a, b) => a.timestamp - b.timestamp);
     return next;
   }
+
+  private async resetDeviceSeries(deviceId: string) {
+    this.minuteAccumulators.delete(deviceId);
+    this.hourlyAccumulators.delete(deviceId);
+    await this.repositories.realtime.clearSeries(deviceId);
+    await this.repositories.history.clearDeviceHistory(deviceId);
+  }
 }
 
-function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[]) {
+function hasIdentityBoundaryChanged(previous: AgentMetricsPayload["identity"], next: AgentMetricsPayload["identity"]) {
+  return (
+    previous.os !== next.os ||
+    previous.platform !== next.platform ||
+    previous.arch !== next.arch ||
+    previous.hostname !== next.hostname
+  );
+}
+
+function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[], timestamp = samples[samples.length - 1]?.timestamp ?? Date.now()) {
   const lastSample = samples[samples.length - 1];
   const total = samples.reduce(
     (acc, sample) => ({
-      timestamp: sample.timestamp,
+      timestamp,
       cpuUsagePercent: acc.cpuUsagePercent + sample.cpuUsagePercent,
       cpuFrequencyMHz: acc.cpuFrequencyMHz + sample.cpuFrequencyMHz,
       cpuTemperatureC: acc.cpuTemperatureC + sample.cpuTemperatureC,
@@ -202,10 +226,11 @@ function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[]) {
       cpus: acc.cpus,
       disks: acc.disks,
       networks: acc.networks,
-      gpus: acc.gpus
+      gpus: acc.gpus,
+      fans: acc.fans
     }),
     {
-      timestamp: samples[samples.length - 1]?.timestamp ?? Date.now(),
+      timestamp,
       cpuUsagePercent: 0,
       cpuFrequencyMHz: 0,
       cpuTemperatureC: 0,
@@ -227,7 +252,8 @@ function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[]) {
       cpus: [] as InstanceMetricRecord[],
       disks: [] as InstanceMetricRecord[],
       networks: [] as InstanceMetricRecord[],
-      gpus: [] as InstanceMetricRecord[]
+      gpus: [] as InstanceMetricRecord[],
+      fans: [] as InstanceMetricRecord[]
     }
   );
 
@@ -235,6 +261,7 @@ function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[]) {
   const disks = averageInstanceMetrics(samples, "disks");
   const networks = averageInstanceMetrics(samples, "networks");
   const gpus = averageInstanceMetrics(samples, "gpus");
+  const fans = averageInstanceMetrics(samples, "fans");
 
   return {
     timestamp: total.timestamp,
@@ -259,13 +286,14 @@ function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[]) {
     cpus,
     disks,
     networks,
-    gpus
+    gpus,
+    fans
   };
 }
 
 function averageInstanceMetrics(
   samples: ReturnType<typeof payloadToTimeSeries>[],
-  key: "cpus" | "disks" | "networks" | "gpus"
+  key: "cpus" | "disks" | "networks" | "gpus" | "fans"
 ): InstanceMetricRecord[] {
   const grouped = new Map<
     string,
@@ -287,6 +315,7 @@ function averageInstanceMetrics(
           | "frequencyMHz"
           | "memoryUsagePercent"
           | "temperatureC"
+          | "rpm"
         >
       >;
     }
@@ -322,7 +351,8 @@ function averageInstanceMetrics(
             decodePercent: 0,
             frequencyMHz: 0,
             memoryUsagePercent: 0,
-            temperatureC: 0
+            temperatureC: 0,
+            rpm: 0
           }
         });
       }
@@ -340,6 +370,7 @@ function averageInstanceMetrics(
       current.sums.frequencyMHz += item.frequencyMHz ?? 0;
       current.sums.memoryUsagePercent += item.memoryUsagePercent ?? 0;
       current.sums.temperatureC += item.temperatureC ?? 0;
+      current.sums.rpm += item.rpm ?? 0;
     }
   }
 
@@ -356,6 +387,7 @@ function averageInstanceMetrics(
     decodePercent: sums.decodePercent / count,
     frequencyMHz: sums.frequencyMHz / count,
     memoryUsagePercent: sums.memoryUsagePercent / count,
-    temperatureC: sums.temperatureC / count
+    temperatureC: sums.temperatureC / count,
+    rpm: sums.rpm / count
   }));
 }

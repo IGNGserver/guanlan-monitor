@@ -98,6 +98,12 @@ export class LocalRealtimeRepository implements RealtimeRepository {
     const db = await this.store.read();
     return db.series[deviceId]?.[bucket] ?? [];
   }
+
+  async clearSeries(deviceId: string) {
+    await this.store.update((db) => {
+      delete db.series[deviceId];
+    });
+  }
 }
 
 export class LocalHistoryRepository implements HistoryRepository {
@@ -144,6 +150,13 @@ export class LocalHistoryRepository implements HistoryRepository {
     const hours = bucket === "1w" ? 24 * 7 : bucket === "1mo" ? 24 * 31 : 24 * 366;
     const threshold = Date.now() - hours * 60 * 60 * 1000;
     return points.filter((point) => point.timestamp >= threshold);
+  }
+
+  async clearDeviceHistory(deviceId: string) {
+    await this.store.update((db) => {
+      delete db.minuteHistory[deviceId];
+      delete db.history[deviceId];
+    });
   }
 
   async getTrafficCalendar(

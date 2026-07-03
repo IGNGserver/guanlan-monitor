@@ -17,6 +17,8 @@ data class DeviceSummaryDto(
   val status: String,
   val lastSeenAt: String? = null,
   val cpuUsagePercent: Double? = null,
+  val gpuUsagePercent: Double? = null,
+  val gpuMemoryUsagePercent: Double? = null,
   val memoryUsagePercent: Double? = null,
   val diskUsagePercent: Double? = null
 )
@@ -145,6 +147,14 @@ data class GpuMetricSeriesDto(
 )
 
 @Serializable
+data class FanMetricSeriesDto(
+  val id: String,
+  val name: String,
+  @SerialName("interface") val interfaceRaw: String? = null,
+  val rpm: List<SamplePointDto> = emptyList()
+)
+
+@Serializable
 data class DeviceMetricSeriesDto(
   val cpuUsagePercent: List<SamplePointDto> = emptyList(),
   val cpuFrequencyMHz: List<SamplePointDto> = emptyList(),
@@ -167,7 +177,8 @@ data class DeviceMetricSeriesDto(
   val cpus: List<CpuMetricSeriesDto> = emptyList(),
   val disks: List<DiskMetricSeriesDto> = emptyList(),
   val networks: List<NetworkMetricSeriesDto> = emptyList(),
-  val gpus: List<GpuMetricSeriesDto> = emptyList()
+  val gpus: List<GpuMetricSeriesDto> = emptyList(),
+  val fans: List<FanMetricSeriesDto> = emptyList()
 )
 
 @Serializable
@@ -199,7 +210,16 @@ data class DeviceLatestDto(
   val disks: List<DiskDto> = emptyList(),
   val networkInterfaces: List<NetworkInterfaceDto> = emptyList(),
   val gpus: List<GpuDto> = emptyList(),
+  val sensorBackends: List<SensorBackendDto> = emptyList(),
   val fans: List<FanDto> = emptyList()
+)
+
+@Serializable
+data class SensorBackendDto(
+  val id: String,
+  val label: String,
+  val ok: Boolean,
+  val detail: String? = null
 )
 
 @Serializable
@@ -316,8 +336,11 @@ data class AppState(
   val savingConfig: Boolean = false,
   val loggingIn: Boolean = false,
   val refreshing: Boolean = false,
+  val loadingMetrics: Boolean = false,
+  val loadingTraffic: Boolean = false,
   val devices: List<DeviceSummaryDto> = emptyList(),
   val selectedDeviceId: String? = null,
+  val focusedBlock: DeviceBlockKey? = null,
   val selectedWindow: MetricWindow = MetricWindow.OneMinute,
   val metrics: MetricsDto? = null,
   val trafficCalendar: TrafficCalendarDto? = null,

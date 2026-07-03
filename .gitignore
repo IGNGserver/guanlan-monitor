@@ -10,10 +10,13 @@ bin
 .codex
 logs
 release
+.codex-artifacts
 *.log
 *.tsbuildinfo
 AGENTS.md
 .run
+agents/dev-machine-agent.env
+agents/dev-machine-agent-launcher.ps1
 android/.gradle
 android/.kotlin
 android/app/build

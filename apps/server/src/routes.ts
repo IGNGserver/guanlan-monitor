@@ -1,9 +1,11 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type {
   AuthLoginPayload,
+  DeviceMetricOption,
   DeviceMetricConfigPayload,
   DeviceMetricKey,
   FanNotePayload,
+  MetricSeries,
   MetricWindow,
   TrafficCalendarMode
 } from "@dsc/shared";
@@ -12,7 +14,7 @@ import { env } from "./config.js";
 import type { MetricsService } from "./services/metrics.js";
 import { LocalDeviceMetricConfigStore, LocalFanNoteStore, createLocalStore } from "./repositories/local.js";
 import type { Repositories, SessionValue } from "./types.js";
-import { ALL_DEVICE_METRIC_KEYS, getAvailableMetrics, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
+import { ALL_DEVICE_METRIC_KEYS, getAvailableMetrics, resolveCpuFrequencyMHz, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
 
 const loginSchema = z.object({
   accessKey: z.string()
@@ -135,7 +137,14 @@ export async function registerRoutes(app: FastifyInstance, repositories: Reposit
       const config = await metricConfigs.get(request.params.deviceId);
       const enabledMetrics = config?.enabledMetrics ?? ALL_DEVICE_METRIC_KEYS;
 
-      const series = await metricsService.getSeries(request.params.deviceId, query.window);
+      const availableMetrics = getAvailableMetrics(state);
+      const series = sanitizeUnsupportedMetricSeries(
+        alignMetricSeriesToWindow(
+          timeSeriesToMetricSeries(await metricsService.getSeries(request.params.deviceId, query.window)),
+          query.window
+        ),
+        availableMetrics
+      );
       return {
         device: toDetail(state),
         status: state.status,
@@ -143,9 +152,9 @@ export async function registerRoutes(app: FastifyInstance, repositories: Reposit
         enabledMetrics,
         enabledDeviceIds: config?.enabledDeviceIds ?? {},
         instanceMetricConfig: config?.instanceMetricConfig ?? {},
-        availableMetrics: getAvailableMetrics(state),
+        availableMetrics,
         latest: {
-          cpuFrequencyMHz: state.latest.cpuFrequencyMHz ?? null,
+          cpuFrequencyMHz: resolveCpuFrequencyMHz(state.latest),
           cpuTemperatureC: state.latest.cpuTemperatureC ?? null,
           cpuPackages: state.latest.cpuPackages ?? [],
           memoryUsedBytes: state.latest.memory.usedBytes,
@@ -157,12 +166,13 @@ export async function registerRoutes(app: FastifyInstance, repositories: Reposit
           disks: state.latest.disks ?? [],
           networkInterfaces: state.latest.networkInterfaces ?? [],
           gpus: state.latest.gpus,
-          fans: state.latest.fans.map((fan) => ({
+          sensorBackends: state.latest.sensorBackends ?? [],
+          fans: (state.latest.fans ?? []).map((fan) => ({
             ...fan,
             note: notes[fan.id] ?? fan.note ?? ""
           }))
         },
-        series: timeSeriesToMetricSeries(series)
+        series
       };
     }
   );
@@ -227,6 +237,100 @@ export async function registerRoutes(app: FastifyInstance, repositories: Reposit
       };
     }
   );
+}
+
+function sanitizeUnsupportedMetricSeries(series: MetricSeries, availableMetrics: DeviceMetricOption[]) {
+  const available = new Map(availableMetrics.map((item) => [item.key, item.available]));
+  if (available.get("cpuTemperature") === false) {
+    return {
+      ...series,
+      cpuTemperatureC: [],
+      cpus: series.cpus.map((cpu) => ({
+        ...cpu,
+        temperatureC: []
+      }))
+    };
+  }
+  return series;
+}
+
+function alignMetricSeriesToWindow(series: MetricSeries, window: MetricWindow) {
+  const bucketMs =
+    window === "15m" || window === "1d" ? 60_000 :
+    window === "1w" || window === "1mo" || window === "1y" ? 3_600_000 :
+    0;
+  if (!bucketMs) return series;
+
+  return {
+    ...series,
+    cpuUsagePercent: alignSamplePoints(series.cpuUsagePercent, bucketMs),
+    cpuFrequencyMHz: alignSamplePoints(series.cpuFrequencyMHz, bucketMs),
+    cpuTemperatureC: alignSamplePoints(series.cpuTemperatureC, bucketMs),
+    gpuUsagePercent: alignSamplePoints(series.gpuUsagePercent, bucketMs),
+    gpuEncodePercent: alignSamplePoints(series.gpuEncodePercent, bucketMs),
+    gpuDecodePercent: alignSamplePoints(series.gpuDecodePercent, bucketMs),
+    gpuFrequencyMHz: alignSamplePoints(series.gpuFrequencyMHz, bucketMs),
+    gpuMemoryUsagePercent: alignSamplePoints(series.gpuMemoryUsagePercent, bucketMs),
+    gpuTemperatureC: alignSamplePoints(series.gpuTemperatureC, bucketMs),
+    memoryUsagePercent: alignSamplePoints(series.memoryUsagePercent, bucketMs),
+    swapUsagePercent: alignSamplePoints(series.swapUsagePercent, bucketMs),
+    diskUsagePercent: alignSamplePoints(series.diskUsagePercent, bucketMs),
+    diskReadBytesPerSec: alignSamplePoints(series.diskReadBytesPerSec, bucketMs),
+    diskWriteBytesPerSec: alignSamplePoints(series.diskWriteBytesPerSec, bucketMs),
+    networkRxBytesPerSec: alignSamplePoints(series.networkRxBytesPerSec, bucketMs),
+    networkTxBytesPerSec: alignSamplePoints(series.networkTxBytesPerSec, bucketMs),
+    trafficRxBytes: alignSamplePoints(series.trafficRxBytes, bucketMs),
+    trafficTxBytes: alignSamplePoints(series.trafficTxBytes, bucketMs),
+    cpus: series.cpus.map((cpu) => ({
+      ...cpu,
+      usagePercent: alignSamplePoints(cpu.usagePercent, bucketMs),
+      frequencyMHz: alignSamplePoints(cpu.frequencyMHz, bucketMs),
+      temperatureC: alignSamplePoints(cpu.temperatureC, bucketMs)
+    })),
+    disks: series.disks.map((disk) => ({
+      ...disk,
+      usagePercent: alignSamplePoints(disk.usagePercent, bucketMs),
+      readBytesPerSec: alignSamplePoints(disk.readBytesPerSec, bucketMs),
+      writeBytesPerSec: alignSamplePoints(disk.writeBytesPerSec, bucketMs),
+      temperatureC: alignSamplePoints(disk.temperatureC, bucketMs)
+    })),
+    networks: series.networks.map((network) => ({
+      ...network,
+      rxBytesPerSec: alignSamplePoints(network.rxBytesPerSec, bucketMs),
+      txBytesPerSec: alignSamplePoints(network.txBytesPerSec, bucketMs),
+      trafficRxBytes: alignSamplePoints(network.trafficRxBytes, bucketMs),
+      trafficTxBytes: alignSamplePoints(network.trafficTxBytes, bucketMs)
+    })),
+    gpus: series.gpus.map((gpu) => ({
+      ...gpu,
+      usagePercent: alignSamplePoints(gpu.usagePercent, bucketMs),
+      encodePercent: alignSamplePoints(gpu.encodePercent, bucketMs),
+      decodePercent: alignSamplePoints(gpu.decodePercent, bucketMs),
+      frequencyMHz: alignSamplePoints(gpu.frequencyMHz, bucketMs),
+      memoryUsagePercent: alignSamplePoints(gpu.memoryUsagePercent, bucketMs),
+      temperatureC: alignSamplePoints(gpu.temperatureC, bucketMs)
+    })),
+    fans: series.fans.map((fan) => ({
+      ...fan,
+      rpm: alignSamplePoints(fan.rpm, bucketMs)
+    }))
+  };
+}
+
+function alignSamplePoints(points: Array<{ timestamp: string; value: number }>, bucketMs: number) {
+  const deduped = new Map<number, { timestamp: string; value: number }>();
+  for (const point of points) {
+    const time = Date.parse(point.timestamp);
+    if (!Number.isFinite(time)) continue;
+    const alignedTime = Math.floor(time / bucketMs) * bucketMs;
+    deduped.set(alignedTime, {
+      timestamp: new Date(alignedTime).toISOString(),
+      value: point.value
+    });
+  }
+  return [...deduped.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map(([, point]) => point);
 }
 
 function setSession(reply: FastifyReply, session: SessionValue) {

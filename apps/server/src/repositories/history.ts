@@ -311,6 +311,11 @@ export class MysqlHistoryRepository implements HistoryRepository {
     return rows.map(mapHistoryRow) as TimeSeriesRecord[];
   }
 
+  async clearDeviceHistory(deviceId: string) {
+    await this.pool.query(`DELETE FROM device_minute_metrics WHERE device_id = ?`, [deviceId]);
+    await this.pool.query(`DELETE FROM device_hourly_metrics WHERE device_id = ?`, [deviceId]);
+  }
+
   async getTrafficCalendar(
     deviceId: string,
     mode: TrafficCalendarMode,

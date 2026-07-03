@@ -56,6 +56,7 @@ export interface DiskDeviceStats {
   model?: string;
   vendor?: string;
   sourceKey?: string;
+  temperatureC?: number | null;
   totalBytes: number;
   usedBytes: number;
 }
@@ -126,6 +127,13 @@ export interface FanSensorStats {
   note?: string;
 }
 
+export interface SensorBackendStatus {
+  id: string;
+  label: string;
+  ok: boolean;
+  detail?: string;
+}
+
 export interface DeviceMetricOption {
   key: DeviceMetricKey;
   available: boolean;
@@ -161,6 +169,7 @@ export interface AgentMetricsPayload {
   networkInterfaces?: NetworkInterfaceStats[];
   gpus: GpuDeviceStats[];
   fans: FanSensorStats[];
+  sensorBackends?: SensorBackendStatus[];
 }
 
 export interface DeviceSummary {
@@ -170,6 +179,8 @@ export interface DeviceSummary {
   status: DeviceStatus;
   lastSeenAt: string | null;
   cpuUsagePercent: number | null;
+  gpuUsagePercent: number | null;
+  gpuMemoryUsagePercent: number | null;
   memoryUsagePercent: number | null;
   diskUsagePercent: number | null;
 }
@@ -190,6 +201,7 @@ export interface DiskMetricSeries {
   usagePercent: SamplePoint[];
   readBytesPerSec: SamplePoint[];
   writeBytesPerSec: SamplePoint[];
+  temperatureC: SamplePoint[];
 }
 
 export interface GpuMetricSeries {
@@ -201,6 +213,13 @@ export interface GpuMetricSeries {
   frequencyMHz: SamplePoint[];
   memoryUsagePercent: SamplePoint[];
   temperatureC: SamplePoint[];
+}
+
+export interface FanMetricSeries {
+  id: string;
+  name: string;
+  interface: string;
+  rpm: SamplePoint[];
 }
 
 export interface CpuMetricSeries {
@@ -249,6 +268,7 @@ export interface MetricSeries {
   disks: DiskMetricSeries[];
   networks: NetworkMetricSeries[];
   gpus: GpuMetricSeries[];
+  fans: FanMetricSeries[];
 }
 
 export interface AuthLoginPayload {

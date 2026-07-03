@@ -18,9 +18,11 @@ export function TrafficCalendar({ deviceId }: { deviceId: string }) {
   const [anchor, setAnchor] = useState(() => toLocalAnchor(new Date()));
   const [selectedStart, setSelectedStart] = useState<string | undefined>(undefined);
   const [data, setData] = useState<TrafficCalendarResponse | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
     void getTrafficCalendar(deviceId, mode, anchor, selectedStart)
       .then((response) => {
         if (!active) return;
@@ -28,7 +30,10 @@ export function TrafficCalendar({ deviceId }: { deviceId: string }) {
         const selected = response.cells.find((cell) => cell.isSelected);
         setSelectedStart(selected?.rangeStart);
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     return () => {
       active = false;
     };
@@ -75,9 +80,7 @@ export function TrafficCalendar({ deviceId }: { deviceId: string }) {
 
       <div className={styles.trafficCalendarHeader}>
         <strong>{data?.title ?? "--"}</strong>
-        <span>
-          {data ? `${formatDate(data.rangeStart)} - ${formatDateInclusive(data.rangeEnd)}` : "--"}
-        </span>
+        <span>{data ? `${formatDate(data.rangeStart)} - ${formatDateInclusive(data.rangeEnd)}` : "--"}</span>
       </div>
 
       {mode === "day" ? (
@@ -89,6 +92,12 @@ export function TrafficCalendar({ deviceId }: { deviceId: string }) {
       ) : null}
 
       <div className={clsx(styles.trafficCalendarGrid, mode === "month" && styles.trafficCalendarGridMonth)}>
+        {loading && !data ? (
+          <div className={styles.loadingState}>
+            <span className={styles.loadingSpinner} />
+            <strong>加载中</strong>
+          </div>
+        ) : null}
         {(data?.cells ?? []).map((cell) => {
           const ratio = (cell.totalRxBytes + cell.totalTxBytes) / maxCellValue;
           return (
@@ -134,6 +143,12 @@ export function TrafficCalendar({ deviceId }: { deviceId: string }) {
       </div>
 
       <div className={styles.trafficRecords}>
+        {loading && !data ? (
+          <div className={styles.loadingState}>
+            <span className={styles.loadingSpinner} />
+            <strong>加载中</strong>
+          </div>
+        ) : null}
         {(data?.records ?? []).slice(-36).reverse().map((record, index) => (
           <div key={`${record.timestamp}-${index}`} className={styles.trafficRecord}>
             <span>{new Date(record.timestamp).toLocaleString("zh-CN")}</span>

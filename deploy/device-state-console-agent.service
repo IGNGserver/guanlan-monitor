@@ -2,6 +2,8 @@
 Description=Device State Console Agent
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=11
 
 [Service]
 Type=simple
@@ -10,9 +12,9 @@ AmbientCapabilities=CAP_PERFMON
 CapabilityBoundingSet=CAP_PERFMON
 WorkingDirectory=/opt/device-state-console-agent
 EnvironmentFile=/opt/device-state-console-agent/agent.env
-ExecStart=/usr/bin/node /opt/device-state-console-agent/node-agent.mjs
-Restart=always
-RestartSec=3
+ExecStart=/opt/device-state-console-agent/run-agent.sh
+Restart=on-failure
+RestartSec=27
 
 [Install]
 WantedBy=multi-user.target

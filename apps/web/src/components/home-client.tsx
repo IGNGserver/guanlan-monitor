@@ -6,6 +6,7 @@ import type { DeviceSummary } from "@dsc/shared";
 import { getSession, listDevices } from "../lib/api";
 import { Dashboard } from "./dashboard";
 import { LoginForm } from "./login-form";
+import styles from "./monitor.module.css";
 
 export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: string | null }) {
   const [state, setState] = useState<"loading" | "authenticated" | "anonymous">("loading");
@@ -46,7 +47,15 @@ export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: strin
   }, [initialDeviceId, router]);
 
   if (state === "loading") {
-    return null;
+    return (
+      <main className={styles.loginShell}>
+        <section className={styles.loginCard}>
+          <p className={styles.eyebrow}>设备状态控制台</p>
+          <h1>正在加载</h1>
+          <p className={styles.meta}>正在检查登录态与设备列表。</p>
+        </section>
+      </main>
+    );
   }
 
   if (state === "anonymous") {

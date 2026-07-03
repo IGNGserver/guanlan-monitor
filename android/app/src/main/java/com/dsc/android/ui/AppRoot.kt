@@ -57,6 +57,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -118,7 +119,8 @@ fun AppRoot(
   onLogin: () -> Unit,
   onLogout: () -> Unit,
   onSystemBack: () -> Unit,
-  onOpenDevice: (String) -> Unit,
+  onOpenDevice: (String, DeviceBlockKey?) -> Unit,
+  onClearFocusedBlock: () -> Unit,
   onOpenTraffic: (String) -> Unit,
   onOpenDeviceEditor: (String) -> Unit,
   onShowDeviceList: () -> Unit,
@@ -180,7 +182,7 @@ fun AppRoot(
           }
           AppScreen.DeviceList -> DeviceListScreen(state, onOpenDevice, onOpenTraffic, onOpenDeviceEditor, onRequestLogout = { showLogoutConfirm = true }, onRefresh = onRefresh)
           AppScreen.Traffic -> TrafficScreen(state, onShowDeviceList, onSelectTrafficMode, onSelectTrafficCell, onShiftTrafficAnchor, onRefresh)
-          AppScreen.DeviceDetail -> DeviceDetailScreen(state, onShowDeviceList, onSelectWindow, onOpenTraffic, onOpenBlockEditor, onOpenInstanceEditor, onRefresh)
+          AppScreen.DeviceDetail -> DeviceDetailScreen(state, onShowDeviceList, onSelectWindow, onOpenTraffic, onOpenBlockEditor, onOpenInstanceEditor, onRefresh, onClearFocusedBlock)
         }
       }
 
@@ -304,7 +306,7 @@ private fun LoginScreen(
 @Composable
 private fun DeviceListScreen(
   state: AppState,
-  onOpenDevice: (String) -> Unit,
+  onOpenDevice: (String, DeviceBlockKey?) -> Unit,
   onOpenTraffic: (String) -> Unit,
   onOpenDeviceEditor: (String) -> Unit,
   onRequestLogout: () -> Unit,
@@ -367,7 +369,8 @@ private fun DeviceListScreen(
         val device = state.devices[index]
         DeviceListCard(
           device,
-          onOpenDevice = { onOpenDevice(device.deviceId) },
+          onOpenDevice = { onOpenDevice(device.deviceId, null) },
+          onOpenBlock = { blockKey -> onOpenDevice(device.deviceId, blockKey) },
           onOpenTraffic = { onOpenTraffic(device.deviceId) },
           onOpenEditor = { onOpenDeviceEditor(device.deviceId) }
         )
@@ -380,6 +383,7 @@ private fun DeviceListScreen(
 private fun DeviceListCard(
   device: DeviceSummaryDto,
   onOpenDevice: () -> Unit,
+  onOpenBlock: (DeviceBlockKey) -> Unit,
   onOpenTraffic: () -> Unit,
   onOpenEditor: () -> Unit
 ) {
@@ -408,9 +412,11 @@ private fun DeviceListCard(
         Text(device.os.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
       }
       FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        StatChip("CPU", formatPercent(device.cpuUsagePercent))
-        StatChip("内存", formatPercent(device.memoryUsagePercent))
-        StatChip("硬盘", formatPercent(device.diskUsagePercent))
+        StatChip("CPU", formatPercent(device.cpuUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Cpu) })
+        StatChip("GPU", formatPercent(device.gpuUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Gpu) })
+        StatChip("显存", formatPercent(device.gpuMemoryUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Gpu) })
+        StatChip("内存", formatPercent(device.memoryUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Memory) })
+        StatChip("硬盘", formatPercent(device.diskUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Disk) })
       }
       Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Button(onClick = {
@@ -451,10 +457,21 @@ private fun DeviceDetailScreen(
   onOpenTraffic: (String) -> Unit,
   onOpenBlockEditor: (String, DeviceBlockKey) -> Unit,
   onOpenInstanceEditor: (String, DeviceBlockKey, String) -> Unit,
-  onRefresh: () -> Unit
+  onRefresh: () -> Unit,
+  onClearFocusedBlock: () -> Unit
 ) {
   val haptic = LocalHapticFeedback.current
   val metrics = state.metrics ?: return
+  var openBlock by remember(metrics.device.deviceId) { mutableStateOf<DeviceBlockKey?>(null) }
+  var openTabId by remember(metrics.device.deviceId) { mutableStateOf("total") }
+
+  LaunchedEffect(state.focusedBlock, state.loadingMetrics, metrics.device.deviceId) {
+    val blockKey = state.focusedBlock ?: return@LaunchedEffect
+    if (state.loadingMetrics) return@LaunchedEffect
+    openBlock = blockKey
+    openTabId = "total"
+    onClearFocusedBlock()
+  }
 
   Scaffold(
     topBar = {
@@ -495,31 +512,66 @@ private fun DeviceDetailScreen(
       contentPadding = PaddingValues(16.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-      item {
-        OverviewCard(metrics)
+      item(key = "overview") {
+        OverviewCard(
+          metrics = metrics,
+          selectedWindow = state.selectedWindow,
+          onOpenBlock = { blockKey ->
+            openBlock = blockKey
+            openTabId = "total"
+          }
+        )
       }
-      item {
-        WindowStrip(selectedWindow = state.selectedWindow, onSelectWindow = onSelectWindow)
+      item(key = "window-strip") {
+        WindowStrip(
+          selectedWindow = state.selectedWindow,
+          loading = state.loadingMetrics,
+          onSelectWindow = onSelectWindow
+        )
       }
-      item {
-        CpuSection(metrics, onEditBlock = { onOpenBlockEditor(metrics.device.deviceId, DeviceBlockKey.Cpu) }, onEditInstance = { onOpenInstanceEditor(metrics.device.deviceId, DeviceBlockKey.Cpu, it) })
+      if (state.loadingMetrics) {
+        item(key = "metrics-loading") {
+          InlineLoadingCard("正在加载当前粒度数据")
+        }
       }
-      item {
-        MemorySection(metrics, onEditBlock = { onOpenBlockEditor(metrics.device.deviceId, DeviceBlockKey.Memory) })
-      }
-      item {
-        DiskSection(metrics, onEditBlock = { onOpenBlockEditor(metrics.device.deviceId, DeviceBlockKey.Disk) }, onEditInstance = { onOpenInstanceEditor(metrics.device.deviceId, DeviceBlockKey.Disk, it) })
-      }
-      item {
-        NetworkSection(metrics, onEditBlock = { onOpenBlockEditor(metrics.device.deviceId, DeviceBlockKey.Network) }, onEditInstance = { onOpenInstanceEditor(metrics.device.deviceId, DeviceBlockKey.Network, it) })
-      }
-      item {
-        GpuSection(metrics, onEditBlock = { onOpenBlockEditor(metrics.device.deviceId, DeviceBlockKey.Gpu) }, onEditInstance = { onOpenInstanceEditor(metrics.device.deviceId, DeviceBlockKey.Gpu, it) })
-      }
-      item {
-        FanSection(metrics.latest.fans)
+      item(key = "sheet-hint") {
+        Surface(
+          shape = RoundedCornerShape(20.dp),
+          color = MaterialTheme.colorScheme.surfaceContainerLow
+        ) {
+          Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            Text("总览模式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+              "点击上方胶囊查看图表详情。1 分钟显示实时值，其余粒度显示区间平均值。",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          }
+        }
       }
     }
+  }
+
+  openBlock?.let { blockKey ->
+    val tabs = remember(metrics, blockKey) { buildBlockSheetTabs(metrics, blockKey) }
+    val tabIds = tabs.map { it.id }
+    if (openTabId !in tabIds) {
+      openTabId = tabIds.firstOrNull() ?: "total"
+    }
+    BlockSheet(
+      metrics = metrics,
+      blockKey = blockKey,
+      selectedWindow = state.selectedWindow,
+      selectedTabId = openTabId,
+      tabs = tabs,
+      onSelectTab = { openTabId = it },
+      onDismiss = { openBlock = null },
+      onEditBlock = { onOpenBlockEditor(metrics.device.deviceId, blockKey) },
+      onEditInstance = { instanceId -> onOpenInstanceEditor(metrics.device.deviceId, blockKey, instanceId) }
+    )
   }
 }
 
@@ -577,6 +629,7 @@ private fun TrafficScreen(
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 onSelectMode(mode)
               },
+              enabled = !state.loadingTraffic,
               label = { Text(mode.label) }
             )
           }
@@ -594,6 +647,9 @@ private fun TrafficScreen(
           }, modifier = Modifier.weight(1f)) { Text("下一页") }
         }
       }
+      if (state.loadingTraffic && traffic == null) {
+        item { InlineLoadingCard("正在加载流量数据") }
+      }
       traffic?.let {
         item { TrafficHeader(it) }
         item { TrafficCalendarGrid(it, onSelectCell) }
@@ -604,29 +660,412 @@ private fun TrafficScreen(
   }
 }
 
+private data class OverviewCapsuleModel(
+  val blockKey: DeviceBlockKey,
+  val title: String,
+  val subtitle: String,
+  val metrics: List<Pair<String, String>>
+)
+
+private data class BlockSheetTabModel(
+  val id: String,
+  val label: String
+)
+
 @Composable
-private fun OverviewCard(metrics: MetricsDto) {
+private fun OverviewCard(metrics: MetricsDto, selectedWindow: MetricWindow, onOpenBlock: (DeviceBlockKey) -> Unit) {
+  val capsules = remember(metrics, selectedWindow) { buildOverviewCapsules(metrics, selectedWindow) }
   ElevatedCard(
     colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
   ) {
-    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
       Text(metrics.device.hostname, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
       Text(metrics.device.cpuModel ?: "--", color = MaterialTheme.colorScheme.onSurfaceVariant)
       HorizontalDivider()
       Text("上次更新 ${formatTime(metrics.lastSeenAt)}", style = MaterialTheme.typography.bodySmall)
-      FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        StatChip("在线状态", if (metrics.status == "online") "在线" else "离线")
-        StatChip("CPU", formatPercent(metrics.series.cpuUsagePercent.lastOrNull()?.value))
-        StatChip("内存", buildUsage(metrics.latest.memoryUsedBytes, metrics.latest.memoryTotalBytes))
-        StatChip("虚拟内存", buildUsage(metrics.latest.swapUsedBytes, metrics.latest.swapTotalBytes))
+      StatChip("在线状态", if (metrics.status == "online") "在线" else "离线")
+      FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        capsules.forEach { capsule ->
+          SummaryCapsule(capsule = capsule, onClick = { onOpenBlock(capsule.blockKey) })
+        }
+      }
+    }
+  }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BlockSheet(
+  metrics: MetricsDto,
+  blockKey: DeviceBlockKey,
+  selectedWindow: MetricWindow,
+  selectedTabId: String,
+  tabs: List<BlockSheetTabModel>,
+  onSelectTab: (String) -> Unit,
+  onDismiss: () -> Unit,
+  onEditBlock: () -> Unit,
+  onEditInstance: (String) -> Unit
+) {
+  ModalBottomSheet(
+    onDismissRequest = onDismiss
+  ) {
+    LazyColumn(
+      modifier = Modifier.fillMaxWidth(),
+      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
+      verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+      item("header") {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(blockKey.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+              if (selectedWindow == MetricWindow.OneMinute) "当前显示实时值" else "当前显示该粒度区间平均值",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          }
+          IconButton(onClick = onEditBlock) {
+            Icon(Icons.Rounded.Edit, contentDescription = "编辑")
+          }
+        }
+      }
+      item("tabs") {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          tabs.forEach { tab ->
+            FilterChip(
+              selected = selectedTabId == tab.id,
+              onClick = { onSelectTab(tab.id) },
+              label = { Text(tab.label) }
+            )
+          }
+        }
+      }
+      item("content") {
+        val selectedIndex = tabs.indexOfFirst { it.id == selectedTabId }.coerceAtLeast(0)
+        AnimatedContent(
+          targetState = selectedTabId,
+          transitionSpec = {
+            val initialIndex = tabs.indexOfFirst { it.id == initialState }.coerceAtLeast(0)
+            val targetIndex = tabs.indexOfFirst { it.id == targetState }.coerceAtLeast(0)
+            if (targetIndex >= initialIndex) {
+              (slideInHorizontally { it / 3 } + fadeIn()).togetherWith(slideOutHorizontally { -it / 3 } + fadeOut())
+            } else {
+              (slideInHorizontally { -it / 3 } + fadeIn()).togetherWith(slideOutHorizontally { it / 3 } + fadeOut())
+            }
+          },
+          label = "block_sheet_pages"
+        ) { tabId ->
+          BlockSheetTabContent(
+            metrics = metrics,
+            blockKey = blockKey,
+            tabId = tabId,
+            selectedWindow = selectedWindow,
+            selectedTabIndex = selectedIndex,
+            onEditInstance = onEditInstance
+          )
+        }
       }
     }
   }
 }
 
 @Composable
+private fun SummaryCapsule(capsule: OverviewCapsuleModel, onClick: () -> Unit) {
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clickable(onClick = onClick),
+    shape = RoundedCornerShape(24.dp),
+    color = MaterialTheme.colorScheme.surface
+  ) {
+    Column(
+      modifier = Modifier.padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+      Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(capsule.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(capsule.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      }
+      FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        capsule.metrics.forEach { (label, value) ->
+          StatChip(label, value)
+        }
+      }
+    }
+  }
+}
+
+private fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWindow): List<OverviewCapsuleModel> {
+  val totalGpuMemoryUsedBytes = metrics.latest.gpus.sumOf { it.memoryUsedBytes }
+  val totalGpuMemoryBytes = metrics.latest.gpus.sumOf { it.memoryTotalBytes }
+  return buildList {
+    add(
+      OverviewCapsuleModel(
+        blockKey = DeviceBlockKey.Cpu,
+        title = "CPU",
+        subtitle = metrics.device.cpuModel ?: "处理器概览",
+        metrics = listOf(
+          "占用" to metricPoint(metrics.series.cpuUsagePercent, selectedWindow, ::formatPercent),
+          "频率" to metricPoint(metrics.series.cpuFrequencyMHz, selectedWindow, ::formatMHz),
+          "温度" to metricPoint(metrics.series.cpuTemperatureC, selectedWindow, ::formatCelsius, zeroMeansMissing = true)
+        )
+      )
+    )
+    add(
+      OverviewCapsuleModel(
+        blockKey = DeviceBlockKey.Gpu,
+        title = "显卡",
+        subtitle = if (metrics.latest.gpus.isEmpty()) "未读取到显卡" else "${metrics.latest.gpus.size} 张显卡 / 适配器",
+        metrics = listOf(
+          "占用" to metricPoint(metrics.series.gpuUsagePercent, selectedWindow, ::formatPercent),
+          "显存" to buildUsage(totalGpuMemoryUsedBytes, totalGpuMemoryBytes),
+          "温度" to metricPoint(metrics.series.gpuTemperatureC, selectedWindow, ::formatCelsius)
+        )
+      )
+    )
+    add(
+      OverviewCapsuleModel(
+        blockKey = DeviceBlockKey.Memory,
+        title = "内存",
+        subtitle = "物理内存与虚拟内存",
+        metrics = listOf(
+          "物理" to buildUsage(metrics.latest.memoryUsedBytes, metrics.latest.memoryTotalBytes),
+          "占用" to metricPoint(metrics.series.memoryUsagePercent, selectedWindow, ::formatPercent),
+          "虚拟" to buildUsage(metrics.latest.swapUsedBytes, metrics.latest.swapTotalBytes)
+        )
+      )
+    )
+    add(
+      OverviewCapsuleModel(
+        blockKey = DeviceBlockKey.Disk,
+        title = "硬盘",
+        subtitle = "${metrics.latest.disks.size} 个设备 / 分区",
+        metrics = listOf(
+          "总占用" to buildUsage(metrics.latest.diskUsedBytes, metrics.latest.diskTotalBytes),
+          "读取" to metricPoint(metrics.series.diskReadBytesPerSec, selectedWindow, ::formatSpeed),
+          "写入" to metricPoint(metrics.series.diskWriteBytesPerSec, selectedWindow, ::formatSpeed)
+        )
+      )
+    )
+    add(
+      OverviewCapsuleModel(
+        blockKey = DeviceBlockKey.Network,
+        title = "网络",
+        subtitle = "${metrics.latest.networkInterfaces.size} 个网络接口",
+        metrics = listOf(
+          "接收" to metricPoint(metrics.series.networkRxBytesPerSec, selectedWindow, ::formatSpeed),
+          "发送" to metricPoint(metrics.series.networkTxBytesPerSec, selectedWindow, ::formatSpeed),
+          "累计" to formatBytes((metrics.series.trafficRxBytes.lastOrNull()?.value ?: 0.0) + (metrics.series.trafficTxBytes.lastOrNull()?.value ?: 0.0))
+        )
+      )
+    )
+    if (metrics.latest.fans.isNotEmpty()) {
+      add(
+        OverviewCapsuleModel(
+          blockKey = DeviceBlockKey.Fan,
+          title = "风扇",
+          subtitle = "${metrics.latest.fans.size} 个风扇接口",
+          metrics = listOf(
+            "最高" to "${metrics.latest.fans.maxOf { it.rpm }} RPM",
+            "平均" to "${metrics.latest.fans.map { it.rpm }.average().toInt()} RPM",
+            "后端" to if (metrics.latest.sensorBackends.any { it.ok }) "可用" else "不可用"
+          )
+        )
+      )
+    }
+  }
+}
+
+private fun buildBlockSheetTabs(metrics: MetricsDto, blockKey: DeviceBlockKey): List<BlockSheetTabModel> {
+  val tabs = mutableListOf(BlockSheetTabModel("total", "总和"))
+  when (blockKey) {
+    DeviceBlockKey.Cpu -> metrics.series.cpus.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
+    DeviceBlockKey.Gpu -> metrics.latest.gpus.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
+    DeviceBlockKey.Memory -> Unit
+    DeviceBlockKey.Disk -> metrics.latest.disks.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
+    DeviceBlockKey.Network -> metrics.latest.networkInterfaces.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
+    DeviceBlockKey.Fan -> metrics.latest.fans.forEach { tabs += BlockSheetTabModel(it.id, it.label) }
+  }
+  return tabs
+}
+
+@Composable
+private fun BlockSheetTabContent(
+  metrics: MetricsDto,
+  blockKey: DeviceBlockKey,
+  tabId: String,
+  selectedWindow: MetricWindow,
+  selectedTabIndex: Int,
+  onEditInstance: (String) -> Unit
+) {
+  Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    when (blockKey) {
+      DeviceBlockKey.Cpu -> CpuSheetContent(metrics, tabId, selectedWindow, onEditInstance)
+      DeviceBlockKey.Memory -> MemorySheetContent(metrics)
+      DeviceBlockKey.Disk -> DiskSheetContent(metrics, tabId, selectedWindow, onEditInstance)
+      DeviceBlockKey.Network -> NetworkSheetContent(metrics, tabId, selectedWindow, onEditInstance)
+      DeviceBlockKey.Gpu -> GpuSheetContent(metrics, tabId, selectedWindow, onEditInstance)
+      DeviceBlockKey.Fan -> FanSheetContent(metrics, tabId, onEditInstance)
+    }
+  }
+}
+
+@Composable
+private fun CpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, onEditInstance: (String) -> Unit) {
+  if (tabId == "total") {
+    if (!isMetricAvailable(metrics, "cpuTemperature")) {
+      Text("当前设备未提供 CPU 温度传感器，虚拟机环境下较常见。", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+    }
+    MetricCardGrid(
+      cards = listOf(
+        MetricCardModel("CPU 占用", metricPoint(metrics.series.cpuUsagePercent, selectedWindow, ::formatPercent), metrics.series.cpuUsagePercent, ::formatPercent, 100.0),
+        MetricCardModel("CPU 频率", metricPoint(metrics.series.cpuFrequencyMHz, selectedWindow, ::formatMHz), metrics.series.cpuFrequencyMHz, ::formatMHz),
+        MetricCardModel("CPU 温度", metricPoint(metrics.series.cpuTemperatureC, selectedWindow, ::formatCelsius, zeroMeansMissing = true), metrics.series.cpuTemperatureC, ::formatCelsius)
+      )
+    )
+    MetaGrid(listOf("处理器" to (metrics.device.cpuModel ?: "未知"), "包数量" to metrics.latest.cpuPackages.size.toString()))
+    return
+  }
+
+  val cpu = metrics.series.cpus.firstOrNull { it.id == tabId } ?: return
+  InstanceCard(
+    title = cpu.name,
+    subtitle = listOfNotNull(cpu.model, cpu.coreCount?.let { "${it} 核" }, cpu.logicalCount?.let { "${it} 线程" }).joinToString(" · "),
+    onEdit = { onEditInstance(cpu.id) }
+  ) {
+    MetricCardGrid(
+      cards = listOf(
+        MetricCardModel("占用", metricPoint(cpu.usagePercent, selectedWindow, ::formatPercent), cpu.usagePercent, ::formatPercent, 100.0),
+        MetricCardModel("频率", metricPoint(cpu.frequencyMHz, selectedWindow, ::formatMHz), cpu.frequencyMHz, ::formatMHz),
+        MetricCardModel("温度", metricPoint(cpu.temperatureC, selectedWindow, ::formatCelsius, zeroMeansMissing = true), cpu.temperatureC, ::formatCelsius)
+      )
+    )
+    MetaGrid(listOf("型号" to (cpu.model ?: "未知"), "核心 / 线程" to "${cpu.coreCount ?: "--"} / ${cpu.logicalCount ?: "--"}"))
+  }
+}
+
+@Composable
+private fun MemorySheetContent(metrics: MetricsDto) {
+  MetricCardGrid(
+    cards = listOf(
+      MetricCardModel("物理内存", buildUsage(metrics.latest.memoryUsedBytes, metrics.latest.memoryTotalBytes), metrics.series.memoryUsagePercent, ::formatPercent, 100.0),
+      MetricCardModel("虚拟内存", buildUsage(metrics.latest.swapUsedBytes, metrics.latest.swapTotalBytes), metrics.series.swapUsagePercent, ::formatPercent, 100.0)
+    )
+  )
+  MetaGrid(listOf("物理内存" to buildUsage(metrics.latest.memoryUsedBytes, metrics.latest.memoryTotalBytes), "虚拟内存" to buildUsage(metrics.latest.swapUsedBytes, metrics.latest.swapTotalBytes)))
+}
+
+@Composable
+private fun DiskSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, onEditInstance: (String) -> Unit) {
+  if (tabId == "total") {
+    MetricCardGrid(
+      cards = listOf(
+        MetricCardModel("总占用", buildUsage(metrics.latest.diskUsedBytes, metrics.latest.diskTotalBytes), metrics.series.diskUsagePercent, ::formatPercent, 100.0),
+        MetricCardModel("总读取", metricPoint(metrics.series.diskReadBytesPerSec, selectedWindow, ::formatSpeed), metrics.series.diskReadBytesPerSec, ::formatSpeed),
+        MetricCardModel("总写入", metricPoint(metrics.series.diskWriteBytesPerSec, selectedWindow, ::formatSpeed), metrics.series.diskWriteBytesPerSec, ::formatSpeed)
+      )
+    )
+    MetaGrid(listOf("总容量" to buildUsage(metrics.latest.diskUsedBytes, metrics.latest.diskTotalBytes)))
+    return
+  }
+
+  val disk = metrics.latest.disks.firstOrNull { it.id == tabId } ?: return
+  val series = metrics.series.disks.firstOrNull { it.id == tabId }
+  DiskInstanceCard(disk, series, onEdit = { onEditInstance(disk.id) })
+}
+
+@Composable
+private fun NetworkSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, onEditInstance: (String) -> Unit) {
+  if (tabId == "total") {
+    MetricCardGrid(
+      cards = listOf(
+        MetricCardModel("总接收", metricPoint(metrics.series.networkRxBytesPerSec, selectedWindow, ::formatSpeed), metrics.series.networkRxBytesPerSec, ::formatSpeed),
+        MetricCardModel("总发送", metricPoint(metrics.series.networkTxBytesPerSec, selectedWindow, ::formatSpeed), metrics.series.networkTxBytesPerSec, ::formatSpeed),
+        MetricCardModel("累计流量", formatBytes((metrics.series.trafficRxBytes.lastOrNull()?.value ?: 0.0) + (metrics.series.trafficTxBytes.lastOrNull()?.value ?: 0.0)), metrics.series.trafficRxBytes, { value -> formatBytes(value ?: 0.0) })
+      )
+    )
+    return
+  }
+
+  val nic = metrics.latest.networkInterfaces.firstOrNull { it.id == tabId } ?: return
+  val series = metrics.series.networks.firstOrNull { it.id == tabId }
+  NetworkInstanceCard(nic, series, onEdit = { onEditInstance(nic.id) })
+}
+
+@Composable
+private fun GpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, onEditInstance: (String) -> Unit) {
+  val totalGpuMemoryUsedBytes = metrics.latest.gpus.sumOf { it.memoryUsedBytes }
+  val totalGpuMemoryBytes = metrics.latest.gpus.sumOf { it.memoryTotalBytes }
+  if (tabId == "total") {
+    MetricCardGrid(
+      cards = listOf(
+        MetricCardModel("总占用", metricPoint(metrics.series.gpuUsagePercent, selectedWindow, ::formatPercent), metrics.series.gpuUsagePercent, ::formatPercent, 100.0),
+        MetricCardModel("总显存", buildUsage(totalGpuMemoryUsedBytes, totalGpuMemoryBytes), metrics.series.gpuMemoryUsagePercent, ::formatPercent, 100.0),
+        MetricCardModel("总温度", metricPoint(metrics.series.gpuTemperatureC, selectedWindow, ::formatCelsius), metrics.series.gpuTemperatureC, ::formatCelsius)
+      )
+    )
+    MetaGrid(listOf("总显存" to buildUsage(totalGpuMemoryUsedBytes, totalGpuMemoryBytes)))
+    return
+  }
+
+  val gpu = metrics.latest.gpus.firstOrNull { it.id == tabId } ?: return
+  val series = metrics.series.gpus.firstOrNull { it.id == tabId }
+  GpuInstanceCard(gpu, series, onEdit = { onEditInstance(gpu.id) })
+}
+
+@Composable
+private fun FanSheetContent(metrics: MetricsDto, tabId: String, onEditInstance: (String) -> Unit) {
+  if (tabId == "total") {
+    if (metrics.latest.sensorBackends.isNotEmpty()) {
+      MetaGrid(
+        metrics.latest.sensorBackends.map {
+          "后端 · ${it.label}" to "${if (it.ok) "可用" else "不可用"}${it.detail?.let { detail -> " · $detail" } ?: ""}"
+        }
+      )
+    }
+    MetricCardGrid(
+      cards = metrics.latest.fans.mapNotNull { fan ->
+        val series = metrics.series.fans.firstOrNull { it.id == fan.id } ?: return@mapNotNull null
+        MetricCardModel("风扇转速", "${fan.rpm} RPM", series.rpm, valueFormatter = { value ->
+          if (value == null) "--" else "${value.toInt()} RPM"
+        })
+      }
+    )
+    return
+  }
+
+  val fan = metrics.latest.fans.firstOrNull { it.id == tabId } ?: return
+  val series = metrics.series.fans.firstOrNull { it.id == fan.id }
+  InstanceCard(
+    title = fan.label,
+    subtitle = listOfNotNull(fan.interfaceName ?: fan.interfaceRaw, fan.note?.takeIf { it.isNotBlank() }).joinToString(" · "),
+    onEdit = { onEditInstance(fan.id) }
+  ) {
+    MetricCardGrid(
+      cards = listOf(
+        MetricCardModel(
+          title = "风扇转速",
+          value = "${fan.rpm} RPM",
+          points = series?.rpm.orEmpty(),
+          valueFormatter = { value ->
+          if (value == null) "--" else "${value.toInt()} RPM"
+        })
+      )
+    )
+    MetaGrid(listOf("转速" to "${fan.rpm} RPM", "备注" to (fan.note ?: "未备注")))
+  }
+}
+
+@Composable
 private fun CpuSection(metrics: MetricsDto, onEditBlock: () -> Unit, onEditInstance: (String) -> Unit) {
   Section(title = "CPU", onEdit = onEditBlock) {
+    if (!isMetricAvailable(metrics, "cpuTemperature")) {
+      Text("当前设备未提供 CPU 温度传感器，虚拟机环境下较常见。", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+    }
     MetricCardGrid(
       cards = listOf(
         MetricCardModel("总占用", formatPercent(metrics.series.cpuUsagePercent.lastOrNull()?.value), metrics.series.cpuUsagePercent, ::formatPercent, 100.0),
@@ -706,6 +1145,8 @@ private fun NetworkSection(metrics: MetricsDto, onEditBlock: () -> Unit, onEditI
 @Composable
 private fun GpuSection(metrics: MetricsDto, onEditBlock: () -> Unit, onEditInstance: (String) -> Unit) {
   if (metrics.latest.gpus.isEmpty()) return
+  val totalGpuMemoryUsedBytes = metrics.latest.gpus.sumOf { it.memoryUsedBytes }
+  val totalGpuMemoryBytes = metrics.latest.gpus.sumOf { it.memoryTotalBytes }
   Section(title = "显卡", onEdit = onEditBlock) {
     MetricCardGrid(
       cards = listOf(
@@ -713,7 +1154,7 @@ private fun GpuSection(metrics: MetricsDto, onEditBlock: () -> Unit, onEditInsta
         MetricCardModel("编码", formatPercent(metrics.series.gpuEncodePercent.lastOrNull()?.value), metrics.series.gpuEncodePercent, ::formatPercent, 100.0),
         MetricCardModel("解码", formatPercent(metrics.series.gpuDecodePercent.lastOrNull()?.value), metrics.series.gpuDecodePercent, ::formatPercent, 100.0),
         MetricCardModel("频率", formatMHz(metrics.series.gpuFrequencyMHz.lastOrNull()?.value), metrics.series.gpuFrequencyMHz, ::formatMHz),
-        MetricCardModel("显存", formatPercent(metrics.series.gpuMemoryUsagePercent.lastOrNull()?.value), metrics.series.gpuMemoryUsagePercent, ::formatPercent, 100.0),
+        MetricCardModel("显存", buildUsage(totalGpuMemoryUsedBytes, totalGpuMemoryBytes), metrics.series.gpuMemoryUsagePercent, ::formatPercent, 100.0),
         MetricCardModel("温度", formatCelsius(metrics.series.gpuTemperatureC.lastOrNull()?.value), metrics.series.gpuTemperatureC, ::formatCelsius)
       )
     )
@@ -725,10 +1166,22 @@ private fun GpuSection(metrics: MetricsDto, onEditBlock: () -> Unit, onEditInsta
 }
 
 @Composable
-private fun FanSection(fans: List<FanDto>) {
-  if (fans.isEmpty()) return
+private fun FanSection(metrics: MetricsDto) {
+  if (metrics.latest.fans.isEmpty()) return
   Section(title = "风扇") {
-    fans.forEach { fan ->
+    if (metrics.latest.sensorBackends.isNotEmpty()) {
+      Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        metrics.latest.sensorBackends.forEach { backend ->
+          Text(
+            "${backend.label}: ${if (backend.ok) "可用" else "不可用"}${backend.detail?.let { " · $it" } ?: ""}",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+          )
+        }
+      }
+    }
+    metrics.latest.fans.forEach { fan ->
+      val series = metrics.series.fans.find { it.id == fan.id }
       ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
           Text(fan.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -737,6 +1190,18 @@ private fun FanSection(fans: List<FanDto>) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
           Text("${fan.rpm} RPM", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+          if (series != null) {
+            MetricCardGrid(
+              cards = listOf(
+                MetricCardModel(
+                  title = "风扇转速",
+                  value = "${fan.rpm} RPM",
+                  points = series.rpm,
+                  valueFormatter = { value -> if (value == null) "--" else "${value.toInt()} RPM" }
+                )
+              )
+            )
+          }
         }
       }
     }
@@ -843,6 +1308,26 @@ private fun InstanceCard(title: String, subtitle: String, onEdit: (() -> Unit)? 
         Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
       }
       content()
+    }
+  }
+}
+
+@Composable
+private fun MetaGrid(items: List<Pair<String, String>>) {
+  FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    items.forEach { (label, value) ->
+      Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface
+      ) {
+        Column(
+          modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+          verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+          Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        }
+      }
     }
   }
 }
@@ -1026,6 +1511,10 @@ private fun blockInstances(state: AppState, block: DeviceBlockKey): List<Instanc
   }
 }
 
+private fun isMetricAvailable(metrics: MetricsDto, key: String): Boolean {
+  return metrics.availableMetrics.firstOrNull { it.key == key }?.available ?: true
+}
+
 @Composable
 private fun MetricCardGrid(cards: List<MetricCardModel>) {
   BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -1061,25 +1550,35 @@ private fun MetricCardGrid(cards: List<MetricCardModel>) {
 }
 
 @Composable
-private fun WindowStrip(selectedWindow: MetricWindow, onSelectWindow: (MetricWindow) -> Unit) {
+private fun WindowStrip(selectedWindow: MetricWindow, loading: Boolean, onSelectWindow: (MetricWindow) -> Unit) {
   val haptic = LocalHapticFeedback.current
-  FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-    MetricWindow.entries.forEach { window ->
-      FilterChip(
-        selected = selectedWindow == window,
-        onClick = {
-          haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-          onSelectWindow(window)
-        },
-        label = { Text(window.label) }
-      )
+  Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      MetricWindow.entries.forEach { window ->
+        FilterChip(
+          selected = selectedWindow == window,
+          onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onSelectWindow(window)
+          },
+          enabled = !loading,
+          label = { Text(window.label) }
+        )
+      }
+    }
+    if (loading) {
+      InlineLoadingCard("正在切换时间范围")
     }
   }
 }
 
 @Composable
-private fun StatChip(label: String, value: String) {
-  Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+private fun StatChip(label: String, value: String, onClick: (() -> Unit)? = null) {
+  Surface(
+    modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
+    shape = RoundedCornerShape(999.dp),
+    color = MaterialTheme.colorScheme.secondaryContainer
+  ) {
     Row(
       modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
       horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1087,6 +1586,22 @@ private fun StatChip(label: String, value: String) {
     ) {
       Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
       Text(value, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSecondaryContainer)
+    }
+  }
+}
+
+@Composable
+private fun InlineLoadingCard(label: String) {
+  Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp, vertical = 14.dp),
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+      Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
   }
 }
@@ -1257,6 +1772,24 @@ private data class MetricCardModel(
   val valueFormatter: (Double?) -> String,
   val fixedMaxValue: Double? = null
 )
+
+private fun metricPoint(
+  points: List<SamplePointDto>,
+  window: MetricWindow,
+  formatter: (Double?) -> String,
+  zeroMeansMissing: Boolean = false
+): String {
+  if (zeroMeansMissing && points.isNotEmpty() && points.all { it.value == 0.0 }) {
+    return formatter(null)
+  }
+  val value =
+    when {
+      points.isEmpty() -> null
+      window == MetricWindow.OneMinute -> points.lastOrNull()?.value
+      else -> points.map { it.value }.average()
+    }
+  return formatter(value)
+}
 
 private fun formatPercent(value: Double?): String = if (value == null) "--" else "${"%.1f".format(value)}%"
 private fun formatMHz(value: Double?): String = if (value == null) "--" else "${"%.0f".format(value)} MHz"

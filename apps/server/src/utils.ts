@@ -5,6 +5,7 @@ import type {
   DeviceDetail,
   DeviceMetricKey,
   DeviceMetricOption,
+  FanMetricSeries,
   DiskMetricSeries,
   DeviceSummary,
   GpuMetricSeries,
@@ -45,6 +46,14 @@ export function percent(used: number, total: number) {
 export function toSummary(state: DeviceRealtimeState): DeviceSummary {
   const latest = state.latest;
   const displayName = DEVICE_DISPLAY_NAMES[state.identity.deviceId] ?? state.identity.hostname;
+  const gpuUsagePercent =
+    latest.gpus.length > 0
+      ? Number(
+          (latest.gpus.reduce((sum, gpu) => sum + gpu.utilizationPercent, 0) / latest.gpus.length).toFixed(2)
+        )
+      : null;
+  const totalGpuMemoryBytes = latest.gpus.reduce((sum, gpu) => sum + gpu.memoryTotalBytes, 0);
+  const usedGpuMemoryBytes = latest.gpus.reduce((sum, gpu) => sum + gpu.memoryUsedBytes, 0);
   return {
     deviceId: state.identity.deviceId,
     hostname: displayName,
@@ -52,6 +61,8 @@ export function toSummary(state: DeviceRealtimeState): DeviceSummary {
     status: state.status,
     lastSeenAt: state.lastSeenAt,
     cpuUsagePercent: latest.cpuUsagePercent,
+    gpuUsagePercent,
+    gpuMemoryUsagePercent: totalGpuMemoryBytes ? percent(usedGpuMemoryBytes, totalGpuMemoryBytes) : null,
     memoryUsagePercent: percent(latest.memory.usedBytes, latest.memory.totalBytes),
     diskUsagePercent: percent(latest.diskUsage.usedBytes, latest.diskUsage.totalBytes)
   };
@@ -71,6 +82,7 @@ export function payloadToTimeSeries(
   config: DeviceMetricConfigValue = { enabledMetrics: ALL_DEVICE_METRIC_KEYS }
 ): TimeSeriesRecord {
   const enabled = new Set(config.enabledMetrics);
+  const resolvedCpuFrequencyMHz = resolveCpuFrequencyMHz(payload);
   const totalGpuMemory = payload.gpus.reduce((sum, gpu) => sum + gpu.memoryTotalBytes, 0);
   const usedGpuMemory = payload.gpus.reduce((sum, gpu) => sum + gpu.memoryUsedBytes, 0);
   const gpuUsagePercent =
@@ -90,20 +102,21 @@ export function payloadToTimeSeries(
   const disks = (payload.disks ?? [])
     .filter((disk) => isInstanceEnabled(config, "disk", disk.id))
     .map((disk) => {
-    const instanceEnabled = getInstanceEnabledMetrics(config, disk.id);
-    const rate = payload.diskRate.instances?.[disk.sourceKey ?? disk.id];
-    return {
-      id: disk.id,
-      name: disk.name,
-      mountPoint: disk.mountPoint,
-      filesystem: disk.filesystem,
-      model: disk.model,
-      vendor: disk.vendor,
-      usagePercent: enabled.has("diskUsage") && instanceEnabled.has("diskUsage") ? percent(disk.usedBytes, disk.totalBytes) : 0,
-      readBytesPerSec: enabled.has("diskRead") && instanceEnabled.has("diskRead") ? rate?.readBytesPerSec ?? 0 : 0,
-      writeBytesPerSec: enabled.has("diskWrite") && instanceEnabled.has("diskWrite") ? rate?.writeBytesPerSec ?? 0 : 0
-    } satisfies InstanceMetricRecord;
-  });
+      const instanceEnabled = getInstanceEnabledMetrics(config, disk.id);
+      const rate = payload.diskRate.instances?.[disk.sourceKey ?? disk.id];
+      return {
+        id: disk.id,
+        name: disk.name,
+        mountPoint: disk.mountPoint,
+        filesystem: disk.filesystem,
+        model: disk.model,
+        vendor: disk.vendor,
+        temperatureC: disk.temperatureC ?? 0,
+        usagePercent: enabled.has("diskUsage") && instanceEnabled.has("diskUsage") ? percent(disk.usedBytes, disk.totalBytes) : 0,
+        readBytesPerSec: enabled.has("diskRead") && instanceEnabled.has("diskRead") ? rate?.readBytesPerSec ?? 0 : 0,
+        writeBytesPerSec: enabled.has("diskWrite") && instanceEnabled.has("diskWrite") ? rate?.writeBytesPerSec ?? 0 : 0
+      } satisfies InstanceMetricRecord;
+    });
   const cpus = (payload.cpuPackages ?? [])
     .filter((cpu) => isInstanceEnabled(config, "cpu", cpu.id))
     .map((cpu) => {
@@ -115,7 +128,7 @@ export function payloadToTimeSeries(
         coreCount: cpu.coreCount,
         logicalCount: cpu.logicalCount,
         usagePercent: enabled.has("cpuUsage") && instanceEnabled.has("cpuUsage") ? cpu.usagePercent ?? payload.cpuUsagePercent : 0,
-        frequencyMHz: enabled.has("cpuFrequency") && instanceEnabled.has("cpuFrequency") ? cpu.frequencyMHz ?? payload.cpuFrequencyMHz ?? 0 : 0,
+        frequencyMHz: enabled.has("cpuFrequency") && instanceEnabled.has("cpuFrequency") ? cpu.frequencyMHz ?? resolvedCpuFrequencyMHz ?? 0 : 0,
         temperatureC: enabled.has("cpuTemperature") && instanceEnabled.has("cpuTemperature") ? cpu.temperatureC ?? payload.cpuTemperatureC ?? 0 : 0
       } satisfies InstanceMetricRecord;
     });
@@ -138,23 +151,29 @@ export function payloadToTimeSeries(
   const gpus = payload.gpus
     .filter((gpu) => isInstanceEnabled(config, "gpu", gpu.id))
     .map((gpu) => {
-    const instanceEnabled = getInstanceEnabledMetrics(config, gpu.id);
-    return ({
-    id: gpu.id,
-    name: gpu.name,
-    usagePercent: enabled.has("gpuUsage") && instanceEnabled.has("gpuUsage") ? gpu.utilizationPercent : 0,
-    encodePercent: enabled.has("gpuEncode") && instanceEnabled.has("gpuEncode") ? gpu.encodeUtilizationPercent ?? 0 : 0,
-    decodePercent: enabled.has("gpuDecode") && instanceEnabled.has("gpuDecode") ? gpu.decodeUtilizationPercent ?? 0 : 0,
-    frequencyMHz: enabled.has("gpuFrequency") && instanceEnabled.has("gpuFrequency") ? gpu.frequencyMHz ?? 0 : 0,
-    memoryUsagePercent: enabled.has("gpuMemory") && instanceEnabled.has("gpuMemory") ? percent(gpu.memoryUsedBytes, gpu.memoryTotalBytes) : 0,
-    temperatureC: enabled.has("gpuTemperature") && instanceEnabled.has("gpuTemperature") ? gpu.temperatureC ?? 0 : 0
-    } satisfies InstanceMetricRecord);
-  });
+      const instanceEnabled = getInstanceEnabledMetrics(config, gpu.id);
+      return ({
+        id: gpu.id,
+        name: gpu.name,
+        usagePercent: enabled.has("gpuUsage") && instanceEnabled.has("gpuUsage") ? gpu.utilizationPercent : 0,
+        encodePercent: enabled.has("gpuEncode") && instanceEnabled.has("gpuEncode") ? gpu.encodeUtilizationPercent ?? 0 : 0,
+        decodePercent: enabled.has("gpuDecode") && instanceEnabled.has("gpuDecode") ? gpu.decodeUtilizationPercent ?? 0 : 0,
+        frequencyMHz: enabled.has("gpuFrequency") && instanceEnabled.has("gpuFrequency") ? gpu.frequencyMHz ?? 0 : 0,
+        memoryUsagePercent: enabled.has("gpuMemory") && instanceEnabled.has("gpuMemory") ? percent(gpu.memoryUsedBytes, gpu.memoryTotalBytes) : 0,
+        temperatureC: enabled.has("gpuTemperature") && instanceEnabled.has("gpuTemperature") ? gpu.temperatureC ?? 0 : 0
+      } satisfies InstanceMetricRecord);
+    });
+  const fans = (payload.fans ?? []).map((fan) => ({
+    id: fan.id,
+    name: fan.label,
+    interface: fan.interface,
+    rpm: fan.rpm
+  }));
 
   return {
     timestamp: Date.parse(payload.timestamp),
     cpuUsagePercent: enabled.has("cpuUsage") ? payload.cpuUsagePercent : 0,
-    cpuFrequencyMHz: enabled.has("cpuFrequency") ? payload.cpuFrequencyMHz ?? 0 : 0,
+    cpuFrequencyMHz: enabled.has("cpuFrequency") ? resolvedCpuFrequencyMHz ?? 0 : 0,
     cpuTemperatureC: enabled.has("cpuTemperature") ? payload.cpuTemperatureC ?? 0 : 0,
     gpuUsagePercent: enabled.has("gpuUsage") ? gpuUsagePercent : 0,
     gpuEncodePercent:
@@ -186,8 +205,20 @@ export function payloadToTimeSeries(
     cpus,
     disks,
     networks,
-    gpus
+    gpus,
+    fans
   };
+}
+
+export function resolveCpuFrequencyMHz(payload: Pick<AgentMetricsPayload, "cpuFrequencyMHz" | "cpuPackages">) {
+  if (typeof payload.cpuFrequencyMHz === "number" && Number.isFinite(payload.cpuFrequencyMHz) && payload.cpuFrequencyMHz > 0) {
+    return payload.cpuFrequencyMHz;
+  }
+  const packageFrequencies = (payload.cpuPackages ?? [])
+    .map((cpu) => cpu.frequencyMHz)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+  if (packageFrequencies.length === 0) return null;
+  return Number((packageFrequencies.reduce((sum, value) => sum + value, 0) / packageFrequencies.length).toFixed(2));
 }
 
 function isInstanceEnabled(config: DeviceMetricConfigValue, blockKey: DeviceBlockKey, instanceId: string) {
@@ -214,6 +245,7 @@ export function timeSeriesToMetricSeries(points: TimeSeriesRecord[]): MetricSeri
   const disks = buildDiskMetricSeries(points);
   const networks = buildNetworkMetricSeries(points);
   const gpus = buildGpuMetricSeries(points);
+  const fans = buildFanMetricSeries(points);
 
   return {
     cpuUsagePercent: mapPoint("cpuUsagePercent"),
@@ -243,7 +275,8 @@ export function timeSeriesToMetricSeries(points: TimeSeriesRecord[]): MetricSeri
     cpus,
     disks,
     networks,
-    gpus
+    gpus,
+    fans
   };
 }
 
@@ -302,7 +335,8 @@ function buildDiskMetricSeries(points: TimeSeriesRecord[]): DiskMetricSeries[] {
           vendor: disk.vendor,
           usagePercent: [],
           readBytesPerSec: [],
-          writeBytesPerSec: []
+          writeBytesPerSec: [],
+          temperatureC: []
         });
       }
       const target = grouped.get(disk.id)!;
@@ -310,6 +344,7 @@ function buildDiskMetricSeries(points: TimeSeriesRecord[]): DiskMetricSeries[] {
       target.usagePercent.push({ timestamp, value: Number(disk.usagePercent ?? 0) });
       target.readBytesPerSec.push({ timestamp, value: Number(disk.readBytesPerSec ?? 0) });
       target.writeBytesPerSec.push({ timestamp, value: Number(disk.writeBytesPerSec ?? 0) });
+      target.temperatureC.push({ timestamp, value: Number(disk.temperatureC ?? 0) });
     }
   }
   return [...grouped.values()];
@@ -389,6 +424,26 @@ function buildGpuMetricSeries(points: TimeSeriesRecord[]): GpuMetricSeries[] {
   return [...grouped.values()];
 }
 
+function buildFanMetricSeries(points: TimeSeriesRecord[]): FanMetricSeries[] {
+  const grouped = new Map<string, FanMetricSeries>();
+  for (const point of points) {
+    for (const fan of point.fans ?? []) {
+      if (!grouped.has(fan.id)) {
+        grouped.set(fan.id, {
+          id: fan.id,
+          name: fan.name,
+          interface: fan.interface ?? "",
+          rpm: []
+        });
+      }
+      const target = grouped.get(fan.id)!;
+      const timestamp = new Date(point.timestamp).toISOString();
+      target.rpm.push({ timestamp, value: Number(fan.rpm ?? 0) });
+    }
+  }
+  return [...grouped.values()];
+}
+
 export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOption[] {
   const latest = state.latest;
   const hasGpu = latest.gpus.length > 0;
@@ -396,12 +451,18 @@ export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOpt
   const hasGpuEncode = latest.gpus.some((gpu) => gpu.encodeUtilizationPercent != null);
   const hasGpuDecode = latest.gpus.some((gpu) => gpu.decodeUtilizationPercent != null);
   const hasGpuTemperature = latest.gpus.some((gpu) => gpu.temperatureC != null);
-  const hasSwap = latest.memory.swapTotalBytes > 0;
+  const hasSwap = latest.memory.swapTotalBytes > 0 || latest.memory.swapUsedBytes > 0;
+  const hasCpuFrequency =
+    (latest.cpuFrequencyMHz ?? 0) > 0 || (latest.cpuPackages ?? []).some((cpu) => (cpu.frequencyMHz ?? 0) > 0);
+  const hasCpuTemperature =
+    latest.cpuTemperatureC != null || (latest.cpuPackages ?? []).some((cpu) => cpu.temperatureC != null);
+  const hasDisks = latest.diskUsage.totalBytes > 0 || (latest.disks?.length ?? 0) > 0;
+  const hasNetworkInterfaces = (latest.networkInterfaces?.length ?? 0) > 0;
 
   const availability = new Map<DeviceMetricKey, boolean>([
     ["cpuUsage", true],
-    ["cpuFrequency", (latest.cpuFrequencyMHz ?? 0) > 0],
-    ["cpuTemperature", latest.cpuTemperatureC != null],
+    ["cpuFrequency", hasCpuFrequency],
+    ["cpuTemperature", hasCpuTemperature],
     ["gpuUsage", hasGpu],
     ["gpuEncode", hasGpuEncode],
     ["gpuDecode", hasGpuDecode],
@@ -410,12 +471,12 @@ export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOpt
     ["gpuTemperature", hasGpuTemperature],
     ["memoryUsage", latest.memory.totalBytes > 0],
     ["swapUsage", hasSwap],
-    ["diskUsage", latest.diskUsage.totalBytes > 0],
+    ["diskUsage", hasDisks],
     ["diskRead", true],
     ["diskWrite", true],
-    ["networkRxRate", true],
-    ["networkTxRate", true],
-    ["networkTraffic", true]
+    ["networkRxRate", hasNetworkInterfaces],
+    ["networkTxRate", hasNetworkInterfaces],
+    ["networkTraffic", hasNetworkInterfaces]
   ]);
 
   return ALL_DEVICE_METRIC_KEYS.map((key) => ({

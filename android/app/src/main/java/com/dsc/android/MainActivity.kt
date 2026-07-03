@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
           onLogout = appViewModel::logout,
           onSystemBack = appViewModel::handleBack,
           onOpenDevice = appViewModel::openDevice,
+          onClearFocusedBlock = appViewModel::clearFocusedBlock,
           onOpenTraffic = appViewModel::openTraffic,
           onOpenDeviceEditor = appViewModel::openDeviceEditor,
           onShowDeviceList = appViewModel::showDeviceList,

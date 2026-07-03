@@ -88,6 +88,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(savingConfig = false, message = "请输入中枢地址") }
         return@launch
       }
+      val resolvedBaseUrl = runCatching { apiFactory.resolveApiBaseUrl(normalizedBaseUrl) }.getOrNull()
+      if (resolvedBaseUrl == null) {
+        _state.update { it.copy(savingConfig = false, message = "中枢地址格式不正确") }
+        return@launch
+      }
+      if (resolvedBaseUrl.contains(":3101/")) {
+        _state.update {
+          it.copy(
+            savingConfig = false,
+            message = "移动端请填写服务端地址，例如 http://192.0.2.28:4000，不要填写网页端口 3101"
+          )
+        }
+        return@launch
+      }
 
       if (runCatching { settingsRepository.save(ServerConfig(baseUrl = normalizedBaseUrl, accessKey = accessKey)) }.isFailure) {
         _state.update { it.copy(savingConfig = false, message = "保存配置失败") }
@@ -207,11 +221,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
-  fun openDevice(deviceId: String) {
+  fun openDevice(deviceId: String, focusBlock: DeviceBlockKey? = null) {
     pushCurrentScreen()
     _state.update {
       it.copy(
         selectedDeviceId = deviceId,
+        focusedBlock = focusBlock,
         currentScreen = AppScreen.DeviceDetail,
         transitionDirection = ScreenTransitionDirection.Forward,
         message = null
@@ -235,6 +250,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   fun showDeviceList() {
     navigateBackTo(AppScreen.DeviceList)
+  }
+
+  fun clearFocusedBlock() {
+    _state.update { it.copy(focusedBlock = null) }
   }
 
   fun handleBack() {
@@ -405,10 +424,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private fun loadMetrics(deviceId: String, window: MetricWindow, showScreen: Boolean) {
     val currentApi = api ?: return
     viewModelScope.launch {
+      _state.update { it.copy(loadingMetrics = true, message = null) }
       runCatching { currentApi.metrics(deviceId, window.value) }
         .onSuccess { metrics ->
           _state.update {
             it.copy(
+              loadingMetrics = false,
               metrics = metrics,
               currentScreen = if (showScreen) AppScreen.DeviceDetail else it.currentScreen,
               message = null
@@ -416,7 +437,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           }
         }
         .onFailure { error ->
-          _state.update { it.copy(message = error.message ?: "读取指标失败") }
+          _state.update { it.copy(loadingMetrics = false, message = error.message ?: "读取指标失败") }
         }
     }
   }
@@ -424,11 +445,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private fun loadTraffic(deviceId: String, mode: TrafficCalendarMode, showScreen: Boolean) {
     val currentApi = api ?: return
     viewModelScope.launch {
+      _state.update { it.copy(loadingTraffic = true, message = null) }
       runCatching { currentApi.trafficCalendar(deviceId, mode.value, trafficAnchor, trafficSelectedStart) }
         .onSuccess { traffic ->
           trafficSelectedStart = traffic.cells.find { it.isSelected }?.rangeStart
           _state.update {
             it.copy(
+              loadingTraffic = false,
               trafficCalendar = traffic,
               currentScreen = if (showScreen) AppScreen.Traffic else it.currentScreen,
               message = null
@@ -436,7 +459,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           }
         }
         .onFailure { error ->
-          _state.update { it.copy(message = error.message ?: "读取流量失败") }
+          _state.update { it.copy(loadingTraffic = false, message = error.message ?: "读取流量失败") }
         }
     }
   }
