@@ -35,7 +35,7 @@ services:
       retries: 15
 
   server:
-    image: device-state-console-server:0.1.93
+    image: device-state-console-server:0.1.99
     build:
       context: .
       dockerfile: deploy/docker/server.Dockerfile
@@ -44,7 +44,7 @@ services:
       - .env
     environment:
       NODE_ENV: production
-      DSC_VERSION: 0.1.93
+      DSC_VERSION: 0.1.99
       SERVER_PORT: 4000
       REDIS_URL: redis://redis:6379
       MYSQL_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
@@ -55,7 +55,7 @@ services:
         condition: service_healthy
 
   web:
-    image: device-state-console-web:0.1.93
+    image: device-state-console-web:0.1.99
     build:
       context: .
       dockerfile: deploy/docker/web.Dockerfile
@@ -64,7 +64,7 @@ services:
       - .env
     environment:
       NODE_ENV: production
-      DSC_VERSION: 0.1.93
+      DSC_VERSION: 0.1.99
       SERVER_API_URL: http://server:4000
     ports:
       - "${WEB_PORT:-3100}:3000"

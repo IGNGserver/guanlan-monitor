@@ -1,28 +1,31 @@
 <Window
     x:Class="DeviceStateConsoleAgent.WinUI.TrayStatusWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="观澜">
-    <Grid x:Name="RootGrid" RequestedTheme="Default" Background="{ThemeResource LayerFillColorDefaultBrush}">
-        <StackPanel Padding="12" Spacing="8">
-            <TextBlock Text="观澜" FontSize="14" FontWeight="SemiBold" />
-            <Grid ColumnSpacing="8">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                <Ellipse Grid.Column="0" Width="8" Height="8" Fill="{ThemeResource SystemFillColorSuccessBrush}" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1" Text="监测" Style="{StaticResource CaptionTextBlockStyle}" />
-                <TextBlock Grid.Column="2" Text="{Binding TrayMonitorStatusText}" Style="{StaticResource CaptionTextBlockStyle}" />
-            </Grid>
-            <Grid ColumnSpacing="8">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                <Ellipse Grid.Column="0" Width="8" Height="8" Fill="{ThemeResource SystemFillColorSuccessBrush}" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1" Text="提交" Style="{StaticResource CaptionTextBlockStyle}" />
-                <TextBlock Grid.Column="2" Text="{Binding TraySubmitStatusText}" Style="{StaticResource CaptionTextBlockStyle}" />
-            </Grid>
-            <Grid ColumnSpacing="8" Margin="0,2,0,0">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                <Button Grid.Column="0" Content="打开主面板" Click="OpenButton_OnClick" Padding="8,5" />
-                <Button Grid.Column="1" Content="退出" Click="ExitButton_OnClick" Padding="8,5" />
-            </Grid>
-        </StackPanel>
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid x:Name="RootGrid" RequestedTheme="Default" Background="Transparent">
+        <Border x:Name="MenuSurface"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="16"
+                Opacity="0">
+            <Border.RenderTransform>
+                <TranslateTransform x:Name="MenuTransform" Y="10" />
+            </Border.RenderTransform>
+            <StackPanel Spacing="10">
+                <TextBlock Text="观澜" FontSize="16" FontWeight="SemiBold" />
+                <Border Height="1" Background="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding TrayMonitorStatusText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding TraySubmitStatusText}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                </StackPanel>
+                <Border Height="1" Background="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <StackPanel Spacing="4">
+                    <Button Content="打开主面板" Click="OpenButton_OnClick" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" />
+                    <Button Content="退出" Click="ExitButton_OnClick" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

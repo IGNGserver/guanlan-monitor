@@ -64,11 +64,12 @@ Name: "{autoprograms}\卸载 {#MyAppName}"; Filename: "{uninstallexe}"; IconFile
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\start-agent.vbs"; IconFilename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Registry]
-Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#MyAppName}"; ValueData: """{sys}\wscript.exe"" ""{app}\start-agent.vbs"" --minimized"; Flags: uninsdeletevalue; Tasks: autostart; Check: IsNewInstallCheck
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "{#MyAppName}"; Flags: deletevalue
 Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "DeviceStateConsoleAgent"; Flags: deletevalue
 
 [Run]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\install-dotnet-runtime.ps1"""; StatusMsg: "正在校验 .NET Desktop Runtime 8..."; Flags: runhidden waituntilterminated
+Filename: "{sys}\reg.exe"; Parameters: "add ""HKCU\Software\Microsoft\Windows\CurrentVersion\Run"" /v ""{#MyAppName}"" /t REG_SZ /d """"{sys}\wscript.exe"" ""{app}\start-agent.vbs"""" /f"; Flags: runhidden runasoriginaluser; Tasks: autostart
 Filename: "{sys}\wscript.exe"; Parameters: """{app}\start-agent.vbs"""; Description: "启动 {#MyAppName}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [UninstallDelete]
@@ -218,9 +219,19 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   Response: Integer;
+  ResultCode: Integer;
 begin
   if CurUninstallStep = usUninstall then
   begin
+    ExecAsOriginalUser(
+      ExpandConstant('{sys}\reg.exe'),
+      'delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "{#MyAppName}" /f',
+      '',
+      SW_HIDE,
+      ewWaitUntilTerminated,
+      ResultCode
+    );
+
     if DirExists(GetLocalConfigDir()) and (not RemoveLocalConfigDecisionProvided) then
     begin
       if UninstallSilent() then

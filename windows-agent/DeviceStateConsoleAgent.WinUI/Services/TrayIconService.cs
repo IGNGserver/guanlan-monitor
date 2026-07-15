@@ -11,8 +11,8 @@ public sealed class TrayIconService : IDisposable
     private const int WmLButtonDown = 0x0201;
     private const int WmLButtonUp = 0x0202;
     private const int WmLButtonDoubleClick = 0x0203;
-    private const int WmRButtonUp = 0x0205;
-    private const int WmNCRButtonUp = 0x00A5;
+    private const int NinSelect = WmUser;
+    private const int NinKeySelect = WmUser + 1;
     private const uint NifMessage = 0x00000001;
     private const uint NifIcon = 0x00000002;
     private const uint NifTip = 0x00000004;
@@ -28,7 +28,7 @@ public sealed class TrayIconService : IDisposable
     private static readonly Guid TrayGuid = new("1B6D3B6E-8F21-4C87-A36B-6A7ED7A79D5D");
 
     private readonly Action _openWindow;
-    private readonly Action _toggleStatusFlyout;
+    private readonly Action<int, int> _toggleStatusFlyout;
     private readonly Action<string> _log;
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly string _windowClassName = $"GuanLanTray_{Guid.NewGuid():N}";
@@ -40,7 +40,7 @@ public sealed class TrayIconService : IDisposable
     public TrayIconService(
         string iconPath,
         Action openWindow,
-        Action toggleStatusFlyout,
+        Action<int, int> toggleStatusFlyout,
         Action<string> log)
     {
         _openWindow = openWindow;
@@ -141,12 +141,13 @@ public sealed class TrayIconService : IDisposable
             switch (mouseMessage)
             {
                 case WmLButtonUp:
+                case WmLButtonDoubleClick:
+                case NinSelect:
+                case NinKeySelect:
                     Dispatch("Tray left click dispatched", _openWindow);
                     break;
-                case WmRButtonUp:
-                case WmNCRButtonUp:
                 case WmContextMenu:
-                    Dispatch("Tray right click dispatched", _toggleStatusFlyout);
+                    DispatchTrayFlyout(wParam);
                     break;
             }
         }
@@ -160,6 +161,18 @@ public sealed class TrayIconService : IDisposable
         {
             _log(message);
             action();
+        });
+    }
+
+    private void DispatchTrayFlyout(IntPtr packedPosition)
+    {
+        var packed = unchecked((uint)packedPosition.ToInt64());
+        var x = unchecked((short)(packed & 0xFFFF));
+        var y = unchecked((short)(packed >> 16));
+        _dispatcherQueue.TryEnqueue(() =>
+        {
+            _log($"Tray right click dispatched at {x},{y}");
+            _toggleStatusFlyout(x, y);
         });
     }
 

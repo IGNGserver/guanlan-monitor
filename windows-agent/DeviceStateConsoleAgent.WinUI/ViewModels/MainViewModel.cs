@@ -185,6 +185,7 @@ public sealed class MainViewModel : ObservableObject
     private bool _autoRestartCollector = true;
     private bool _autoStartCollector;
     private bool _launchAtStartup;
+    private bool _startMinimizedAtStartup;
     private bool _realtimeModeEnabled;
     private string _realtimeModeExpiresAt = "";
     private string _realtimeModeSource = "";
@@ -802,16 +803,7 @@ public sealed class MainViewModel : ObservableObject
             if (!SetProperty(ref _launchAtStartup, value)) return;
             try
             {
-                using var key = Registry.CurrentUser.CreateSubKey(StartupRegistryPath, true);
-                if (value)
-                {
-                    var launcher = Path.Combine(AppContext.BaseDirectory, "start-agent.vbs");
-                    key?.SetValue(StartupRegistryValue, $"\"{Environment.SystemDirectory}\\wscript.exe\" \"{launcher}\" --minimized");
-                }
-                else
-                {
-                    key?.DeleteValue(StartupRegistryValue, false);
-                }
+                UpdateStartupRegistration(value);
             }
             catch
             {
@@ -819,6 +811,43 @@ public sealed class MainViewModel : ObservableObject
             }
         }
     }
+    public bool StartMinimizedAtStartup
+    {
+        get => _startMinimizedAtStartup;
+        set
+        {
+            if (!SetProperty(ref _startMinimizedAtStartup, value) || !LaunchAtStartup)
+            {
+                return;
+            }
+
+            try
+            {
+                UpdateStartupRegistration(enabled: true);
+            }
+            catch
+            {
+                SetStickyNotice("无法更新静默启动设置。请检查当前用户的注册表权限。");
+            }
+        }
+    }
+
+    private void UpdateStartupRegistration(bool enabled)
+    {
+        using var key = Registry.CurrentUser.CreateSubKey(StartupRegistryPath, true);
+        if (!enabled)
+        {
+            key?.DeleteValue(StartupRegistryValue, false);
+            return;
+        }
+
+        var launcher = Path.Combine(AppContext.BaseDirectory, "start-agent.vbs");
+        var silentArgument = StartMinimizedAtStartup ? " --minimized" : string.Empty;
+        key?.SetValue(
+            StartupRegistryValue,
+            $"\"{Environment.SystemDirectory}\\wscript.exe\" \"{launcher}\"{silentArgument}");
+    }
+
     public bool CpuEnabled
     {
         get => _cpuEnabled;
@@ -879,9 +908,12 @@ public sealed class MainViewModel : ObservableObject
         _initialized = true;
         using (var key = Registry.CurrentUser.OpenSubKey(StartupRegistryPath, false))
         {
-            _launchAtStartup = key?.GetValue(StartupRegistryValue) is not null;
+            var startupCommand = key?.GetValue(StartupRegistryValue) as string;
+            _launchAtStartup = !string.IsNullOrWhiteSpace(startupCommand);
+            _startMinimizedAtStartup = startupCommand?.Contains("--minimized", StringComparison.OrdinalIgnoreCase) == true;
         }
         OnPropertyChanged(nameof(LaunchAtStartup));
+        OnPropertyChanged(nameof(StartMinimizedAtStartup));
         try
         {
             _hostService.EnsureStarted();

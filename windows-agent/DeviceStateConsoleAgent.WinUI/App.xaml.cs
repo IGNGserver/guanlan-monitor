@@ -36,10 +36,16 @@ public partial class App : Application
             LogStartup("OnLaunched: MainViewModel created");
             _mainWindow ??= new MainWindow(_viewModel);
             LogStartup("OnLaunched: MainWindow created");
-            _mainWindow.Activate();
-            LogStartup("OnLaunched: MainWindow activated");
-
             var startMinimized = launchArgs.Contains("--minimized", StringComparison.OrdinalIgnoreCase);
+            if (!startMinimized)
+            {
+                _mainWindow.Activate();
+                LogStartup("OnLaunched: MainWindow activated");
+            }
+            else
+            {
+                LogStartup("OnLaunched: silent tray startup requested");
+            }
             await CompleteLaunchAsync(startMinimized);
             LogStartup("OnLaunched: CompleteLaunchAsync finished");
         }
@@ -103,22 +109,29 @@ public partial class App : Application
         ShowMainWindow();
     }
 
-    private void ToggleTrayStatusWindow()
+    private void ToggleTrayStatusWindow(int x, int y)
     {
-        _trayWindow ??= _viewModel is null ? null : new TrayStatusWindow(_viewModel);
-        if (_trayWindow is null)
+        try
         {
-            return;
-        }
+            _trayWindow ??= _viewModel is null ? null : new TrayStatusWindow(_viewModel);
+            if (_trayWindow is null)
+            {
+                return;
+            }
 
-        if (_trayWindow.IsVisible)
+            if (_trayWindow.IsVisible)
+            {
+                _trayWindow.HideWindow();
+                return;
+            }
+
+            _trayWindow.ShowNearTray(x, y);
+            LogStartup("ToggleTrayStatusWindow: requested");
+        }
+        catch (Exception ex)
         {
-            _trayWindow.HideWindow();
-            return;
+            LogStartup($"ToggleTrayStatusWindow failed: {ex}");
         }
-
-        _trayWindow.ShowNearTray();
-        LogStartup("ToggleTrayStatusWindow: shown");
     }
 
     private string ResolveTrayIconPath()

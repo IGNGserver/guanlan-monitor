@@ -36,7 +36,7 @@
             <Grid x:Name="ContentLayout" Padding="40,30,40,34">
                 <Grid x:Name="MonitorPage" Visibility="Visible">
                     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Spacing="20" MaxWidth="1180" HorizontalAlignment="Stretch">
+                        <StackPanel Spacing="20" MaxWidth="1180" HorizontalAlignment="Left">
                             <StackPanel Spacing="4">
                                 <TextBlock Text="监测" Style="{StaticResource TitleTextBlockStyle}" />
                                 <TextBlock Text="选择设备以查看实时性能和历史趋势。" Style="{StaticResource BodyTextBlockStyle}" />
@@ -381,6 +381,7 @@
                                     <TextBox Header="设备 ID" Text="{Binding DeviceId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding DataRecordingEnabled}" />
                                     <TextBox Header="设备名称" Text="{Binding Hostname, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding DataRecordingEnabled}" />
                                     <ToggleSwitch Header="开机自动启动观澜" IsOn="{Binding LaunchAtStartup, Mode=TwoWay}" />
+                                    <ToggleSwitch Header="开机时静默进入托盘" IsOn="{Binding StartMinimizedAtStartup, Mode=TwoWay}" />
                                     <Grid x:Name="ServerButtonsGrid" ColumnSpacing="12">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                         <Button Grid.Column="0" Command="{Binding CheckConnectionCommand}" Content="验证连接与密钥" />
