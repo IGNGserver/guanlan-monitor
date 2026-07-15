@@ -1,5 +1,5 @@
 [Unit]
-Description=Device State Console Agent
+Description=Device State Console Go Agent
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=300

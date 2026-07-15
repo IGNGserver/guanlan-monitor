@@ -40,6 +40,8 @@ let lastPawnIoStatus = { ok: false, detail: "not probed" };
 let lastRedfishBackendStatus = { ok: false, detail: redfishUrl ? "not probed" : "not configured" };
 let lastWindowsHardwareProbeSummary = null;
 
+validateServerTransport(serverUrl);
+
 setInterval(runOnce, pollIntervalMs);
 await runOnce();
 
@@ -114,6 +116,26 @@ async function runOnce() {
   } catch (error) {
     console.error("[agent] upload error", error);
   }
+}
+
+function validateServerTransport(value) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("invalid_server_url");
+  }
+
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  const isLoopback = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  const privateIpv4 = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
+  if (parsed.username || parsed.password) {
+    throw new Error("server_url_userinfo_not_allowed");
+  }
+  if (parsed.protocol === "https:" || (parsed.protocol === "http:" && (isLoopback || privateIpv4))) {
+    return;
+  }
+  throw new Error("remote_server_requires_https");
 }
 
 function sampleCpuUsage() {

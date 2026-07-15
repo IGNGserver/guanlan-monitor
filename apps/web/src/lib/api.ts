@@ -16,6 +16,10 @@ function getServerUrl() {
     return "";
   }
 
+  if (process.env.SERVER_API_URL) {
+    return process.env.SERVER_API_URL;
+  }
+
   if (process.env.NEXT_PUBLIC_SERVER_URL) {
     return process.env.NEXT_PUBLIC_SERVER_URL;
   }
@@ -198,6 +202,26 @@ export function saveDeviceMetricConfig(deviceId: string, payload: DeviceMetricCo
     method: "PUT",
     body: JSON.stringify(payload)
   });
+}
+
+export function touchViewerPresence(deviceId: string, viewerId: string, ttlSeconds = 20) {
+  return apiFetch<{ ok: true; enabled: boolean; viewerCount: number; durationSeconds: number; expiresAt: string }>(
+    `/api/devices/${deviceId}/viewer-presence`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ viewerId, ttlSeconds })
+    }
+  );
+}
+
+export function clearViewerPresence(deviceId: string, viewerId: string) {
+  return apiFetch<{ ok: true; enabled: boolean; viewerCount: number; durationSeconds: number; expiresAt: string }>(
+    `/api/devices/${deviceId}/viewer-presence`,
+    {
+      method: "DELETE",
+      body: JSON.stringify({ viewerId })
+    }
+  );
 }
 
 export function getTrafficCalendar(

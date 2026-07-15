@@ -14,7 +14,7 @@ import type {
 } from "@dsc/shared";
 import type { DeviceMetricConfigValue, DeviceRealtimeState, InstanceMetricRecord, TimeSeriesRecord } from "./types.js";
 
-export const HEARTBEAT_TIMEOUT_MS = 15_000;
+export const HEARTBEAT_TIMEOUT_MS = 45_000;
 const DEVICE_DISPLAY_NAMES: Record<string, string> = {
   workstation: "工作站"
 };
@@ -195,7 +195,10 @@ export function payloadToTimeSeries(
         : 0,
     memoryUsagePercent: enabled.has("memoryUsage") ? percent(payload.memory.usedBytes, payload.memory.totalBytes) : 0,
     swapUsagePercent: enabled.has("swapUsage") ? percent(payload.memory.swapUsedBytes, payload.memory.swapTotalBytes) : 0,
+    memoryUsedBytes: enabled.has("memoryUsage") ? payload.memory.usedBytes : 0,
+    swapUsedBytes: enabled.has("swapUsage") ? payload.memory.swapUsedBytes : 0,
     diskUsagePercent: enabled.has("diskUsage") ? percent(payload.diskUsage.usedBytes, payload.diskUsage.totalBytes) : 0,
+    diskUsedBytes: enabled.has("diskUsage") ? payload.diskUsage.usedBytes : 0,
     diskReadBytesPerSec: enabled.has("diskRead") ? payload.diskRate.readBytesPerSec : 0,
     diskWriteBytesPerSec: enabled.has("diskWrite") ? payload.diskRate.writeBytesPerSec : 0,
     networkRxBytesPerSec: enabled.has("networkRxRate") ? payload.networkRate.rxBytesPerSec : 0,
@@ -259,7 +262,10 @@ export function timeSeriesToMetricSeries(points: TimeSeriesRecord[]): MetricSeri
     gpuTemperatureC: mapPoint("gpuTemperatureC"),
     memoryUsagePercent: mapPoint("memoryUsagePercent"),
     swapUsagePercent: mapPoint("swapUsagePercent"),
+    memoryUsedBytes: mapPoint("memoryUsedBytes"),
+    swapUsedBytes: mapPoint("swapUsedBytes"),
     diskUsagePercent: mapPoint("diskUsagePercent"),
+    diskUsedBytes: mapPoint("diskUsedBytes"),
     diskReadBytesPerSec: mapPoint("diskReadBytesPerSec"),
     diskWriteBytesPerSec: mapPoint("diskWriteBytesPerSec"),
     networkRxBytesPerSec: mapPoint("networkRxBytesPerSec"),

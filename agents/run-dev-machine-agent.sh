@@ -5,7 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/dev-machine-agent.env"
 OUT_LOG="${SCRIPT_DIR}/dev-machine-agent.out.log"
 ERR_LOG="${SCRIPT_DIR}/dev-machine-agent.err.log"
-NODE_PATH="${NODE_PATH:-/usr/bin/node}"
+GO_PATH="${GO_PATH:-/usr/bin/go}"
+AGENT_BINARY="${SCRIPT_DIR}/dev-machine-agent"
 MAX_RESTART_COUNT="${MAX_RESTART_COUNT:-10}"
 RESTART_WINDOW_SECONDS="${RESTART_WINDOW_SECONDS:-300}"
 RESTART_DELAY_SECONDS="${RESTART_DELAY_SECONDS:-27}"
@@ -15,8 +16,8 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   exit 1
 fi
 
-if [[ ! -x "${NODE_PATH}" ]]; then
-  echo "Node executable not found: ${NODE_PATH}" >&2
+if [[ ! -x "${GO_PATH}" ]]; then
+  echo "Go executable not found: ${GO_PATH}" >&2
   exit 1
 fi
 
@@ -24,6 +25,12 @@ cd "${SCRIPT_DIR}"
 set -a
 source "${ENV_FILE}"
 set +a
+
+"${GO_PATH}" build -C "${SCRIPT_DIR}" -o "${AGENT_BINARY}" .
+if [[ ! -x "${AGENT_BINARY}" ]]; then
+  echo "Go build did not produce ${AGENT_BINARY}" >&2
+  exit 1
+fi
 
 declare -a RECENT_STARTS=()
 
@@ -44,7 +51,7 @@ while true; do
   fi
 
   RECENT_STARTS+=("${NOW}")
-  "${NODE_PATH}" "${SCRIPT_DIR}/node-agent.mjs" >> "${OUT_LOG}" 2>> "${ERR_LOG}"
+  "${AGENT_BINARY}" >> "${OUT_LOG}" 2>> "${ERR_LOG}"
   EXIT_CODE=$?
   printf '[%s] agent exited with code %s\n' "$(date --iso-8601=seconds)" "${EXIT_CODE}" >> "${ERR_LOG}"
   sleep "${RESTART_DELAY_SECONDS}"

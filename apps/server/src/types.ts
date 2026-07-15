@@ -32,7 +32,10 @@ export interface TimeSeriesRecord {
   gpuTemperatureC: number;
   memoryUsagePercent: number;
   swapUsagePercent: number;
+  memoryUsedBytes: number;
+  swapUsedBytes: number;
   diskUsagePercent: number;
+  diskUsedBytes: number;
   diskReadBytesPerSec: number;
   diskWriteBytesPerSec: number;
   networkRxBytesPerSec: number;
@@ -149,4 +152,9 @@ export interface MetricsResponse {
   status: DeviceSummary["status"];
   lastSeenAt: string | null;
   series: MetricSeries;
+}
+
+export interface DeviceViewerPresencePayload {
+  viewerId: string;
+  ttlSeconds?: number;
 }

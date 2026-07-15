@@ -15,6 +15,8 @@ import {
 } from "./repositories/local.js";
 import { MetricsService } from "./services/metrics.js";
 import { registerRoutes } from "./routes.js";
+import { AgentControlService } from "./services/agent-control.js";
+import { ViewerPresenceService } from "./services/viewer-presence.js";
 import type { AgentMetricsPayload, DeviceRealtimeEvent } from "@dsc/shared";
 import type { Repositories } from "./types.js";
 
@@ -49,6 +51,10 @@ if (env.MYSQL_URL) {
 }
 
 let io: SocketIOServer | null = null;
+const agentControl = new AgentControlService();
+const viewerPresence = new ViewerPresenceService((deviceId, snapshot) => {
+  agentControl.publishViewerRealtime(deviceId, snapshot);
+});
 const metricsService = new MetricsService(
   repositories,
   (event: DeviceRealtimeEvent) => {
@@ -57,9 +63,16 @@ const metricsService = new MetricsService(
   deviceMetricConfigs
 );
 
-await registerRoutes(app, repositories, metricsService);
+await registerRoutes(app, repositories, metricsService, viewerPresence, agentControl);
 
 app.post<{ Body: AgentMetricsPayload }>("/api/agent/ingest", async (request, reply) => {
+  if (env.AGENT_REQUIRE_HTTPS) {
+    const forwardedProto = request.headers["x-forwarded-proto"];
+    const protocol = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
+    if (request.protocol !== "https" && protocol?.split(",")[0]?.trim().toLowerCase() !== "https") {
+      return reply.code(400).send({ error: "https_required", message: "Agent endpoint requires HTTPS when AGENT_REQUIRE_HTTPS=true." });
+    }
+  }
   const token = request.headers.authorization?.replace("Bearer ", "");
   if (token !== env.AGENT_SHARED_SECRET) {
     return reply.code(401).send({ error: "unauthorized_agent" });
@@ -69,7 +82,7 @@ app.post<{ Body: AgentMetricsPayload }>("/api/agent/ingest", async (request, rep
   return { ok: true };
 });
 
-const server = await app.listen({ host: "0.0.0.0", port: env.SERVER_PORT });
+const server = await app.listen({ host: env.SERVER_HOST, port: env.SERVER_PORT });
 io = new SocketIOServer(app.server, {
   path: "/socket.io",
   addTrailingSlash: false,

@@ -26,7 +26,10 @@ const schema = z.object({
   SESSION_SECRET: z.string().min(8),
   ACCESS_KEY: z.string().min(1),
   SESSION_COOKIE_SECURE: booleanFromEnv,
+  SERVER_HOST: z.string().default("0.0.0.0"),
   SERVER_PORT: z.coerce.number().default(4000),
+  AGENT_REQUIRE_HTTPS: booleanFromEnv,
+  AGENT_CONTROL_KEEPALIVE_MS: z.coerce.number().int().min(1000).default(15000),
   REDIS_URL: optionalUrl,
   MYSQL_URL: optionalNonEmptyString,
   AGENT_SHARED_SECRET: z.string().min(16)

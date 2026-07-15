@@ -1,27 +1,45 @@
 param(
-  [Parameter(Mandatory = $true)]
+  [ValidateSet("Install", "Uninstall")]
+  [string]$Action = "Install",
+
   [string]$ServerUrl,
 
-  [Parameter(Mandatory = $true)]
   [string]$Secret,
 
   [string]$DeviceId = $env:COMPUTERNAME,
   [string]$Hostname = "",
-  [string]$HardwareJsonUrl = "",
-  [string]$RedfishUrl = "",
-  [string]$RedfishUsername = "",
-  [string]$RedfishPassword = "",
-  [switch]$RedfishInsecure,
-  [switch]$EnablePawnIo,
-  [switch]$AllowAcpiThermalZone,
   [string]$InstallDir = "$env:ProgramData\DeviceStateConsoleAgent",
-  [string]$NodePath = "",
+  [string]$AgentBinary = "",
+  [string]$GoPath = "",
   [int]$RestartCount = 10,
   [int]$RestartIntervalMinutes = 5,
   [switch]$PreferCurrentUserAutostart
 )
 
 $ErrorActionPreference = "Stop"
+
+$taskName = "DeviceStateConsoleAgent"
+$legacyTaskName = "Device State Console Agent"
+$runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+
+if ($Action -eq "Uninstall") {
+  foreach ($name in @($taskName, $legacyTaskName)) {
+    try { Stop-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue } catch {}
+    try { Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue } catch {}
+  }
+  Remove-ItemProperty -Path $runKey -Name $taskName -ErrorAction SilentlyContinue
+  & sc.exe stop $taskName 2>$null | Out-Null
+  & sc.exe delete $taskName 2>$null | Out-Null
+  if (Test-Path $InstallDir) {
+    Remove-Item -LiteralPath $InstallDir -Recurse -Force
+  }
+  Write-Host "Device State Console CLI agent uninstalled."
+  exit 0
+}
+
+if ([string]::IsNullOrWhiteSpace($ServerUrl) -or [string]::IsNullOrWhiteSpace($Secret)) {
+  throw "-ServerUrl and -Secret are required for installation."
+}
 
 if ($RestartCount -lt 0) {
   throw "RestartCount must be greater than or equal to 0."
@@ -31,73 +49,46 @@ if ($RestartIntervalMinutes -lt 1) {
   throw "RestartIntervalMinutes must be at least 1."
 }
 
-$resolvedNodePath = $NodePath
-if ([string]::IsNullOrWhiteSpace($resolvedNodePath)) {
-  $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
-  if (-not $nodeCommand) {
-    throw "Node.js is required. Install Node.js 22+ first or pass -NodePath."
+$resolvedAgentBinary = $AgentBinary
+if ([string]::IsNullOrWhiteSpace($resolvedAgentBinary)) {
+  $bundledBinary = Join-Path $PSScriptRoot "device-state-console-agent.exe"
+  if (Test-Path $bundledBinary) {
+    $resolvedAgentBinary = $bundledBinary
   }
-  $resolvedNodePath = $nodeCommand.Source
 }
 
-if (-not (Test-Path $resolvedNodePath)) {
-  throw "Node executable not found: $resolvedNodePath"
+$resolvedGoPath = $GoPath
+if ([string]::IsNullOrWhiteSpace($resolvedAgentBinary) -and [string]::IsNullOrWhiteSpace($resolvedGoPath)) {
+  $goCommand = Get-Command go -ErrorAction SilentlyContinue
+  if (-not $goCommand) {
+    throw "Go 1.24+ is required. Install Go first or pass -GoPath."
+  }
+  $resolvedGoPath = $goCommand.Source
+}
+
+if ([string]::IsNullOrWhiteSpace($resolvedAgentBinary) -and -not (Test-Path $resolvedGoPath)) {
+  throw "Go executable not found: $resolvedGoPath"
 }
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$agentSource = Join-Path $repoRoot "agents\node-agent.mjs"
-$hardwareSource = Join-Path $repoRoot "agents\windows-hardware"
-if (-not (Test-Path $agentSource)) {
-  throw "Cannot find agents\node-agent.mjs"
-}
+$versionPath = Join-Path $PSScriptRoot "VERSION"
+if (-not (Test-Path $versionPath)) { $versionPath = Join-Path $repoRoot "VERSION" }
+if (-not (Test-Path $versionPath)) { throw "VERSION file not found beside the installer or repository root." }
+$version = (Get-Content -LiteralPath $versionPath -Raw).Trim()
+$agentSourceDir = Join-Path $repoRoot "agents"
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-Copy-Item $agentSource (Join-Path $InstallDir "node-agent.mjs") -Force
-if (Test-Path $hardwareSource) {
-  $hardwareTarget = Join-Path $InstallDir "windows-hardware"
-  Remove-Item $hardwareTarget -Recurse -Force -ErrorAction SilentlyContinue
-  New-Item -ItemType Directory -Force -Path $hardwareTarget | Out-Null
-  Copy-Item (Join-Path $hardwareSource "*") $hardwareTarget -Recurse -Force
+$version | Set-Content -LiteralPath (Join-Path $InstallDir "VERSION") -Encoding ASCII
+$binaryPath = Join-Path $InstallDir "device-state-console-agent.exe"
+if (-not [string]::IsNullOrWhiteSpace($resolvedAgentBinary)) {
+  if (-not (Test-Path $resolvedAgentBinary)) { throw "Agent binary not found: $resolvedAgentBinary" }
+  Copy-Item -LiteralPath $resolvedAgentBinary -Destination $binaryPath -Force
+} else {
+  if (-not (Test-Path (Join-Path $agentSourceDir "main.go"))) { throw "Cannot find agents\main.go" }
+  & $resolvedGoPath build -C $agentSourceDir -o $binaryPath .
 }
-
-function Get-PawnIoStatus {
-  $dllDir = Join-Path $InstallDir "windows-hardware\librehardwaremonitor"
-  $dllPath = Join-Path $dllDir "LibreHardwareMonitorLib.dll"
-  if (-not (Test-Path $dllPath)) {
-    return [pscustomobject]@{ Available = $false; Installed = $false; Loaded = $false; Detail = "dll missing" }
-  }
-  try {
-    [System.IO.Directory]::SetCurrentDirectory($dllDir)
-    Get-ChildItem -Path $dllDir -Filter '*.dll' -File | ForEach-Object {
-      try { [System.Reflection.Assembly]::LoadFrom($_.FullName) | Out-Null } catch {}
-    }
-    Add-Type -Path $dllPath
-    return [pscustomobject]@{
-      Available = $true
-      Installed = [bool][LibreHardwareMonitor.PawnIo.PawnIo]::IsInstalled
-      Loaded = [bool]([LibreHardwareMonitor.PawnIo.PawnIo]::IsLoaded)
-      Detail = [string][LibreHardwareMonitor.PawnIo.PawnIo]::Version
-    }
-  } catch {
-    return [pscustomobject]@{ Available = $true; Installed = $false; Loaded = $false; Detail = $_.Exception.Message }
-  }
-}
-
-$pawnInstaller = Join-Path $InstallDir "windows-hardware\pawnio\PawnIO_setup.exe"
-$pawnStatus = Get-PawnIoStatus
-if ($EnablePawnIo.IsPresent -and $pawnStatus.Available -and -not $pawnStatus.Installed -and (Test-Path $pawnInstaller)) {
-  Write-Host "PawnIO not installed. Installing bundled PawnIO driver..."
-  try {
-    $pawnProcess = Start-Process -FilePath $pawnInstaller -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-" -PassThru -Wait
-    Write-Host "PawnIO installer exit code: $($pawnProcess.ExitCode)"
-    Start-Sleep -Seconds 3
-    $pawnStatus = Get-PawnIoStatus
-  } catch {
-    Write-Warning "PawnIO installation failed: $($_.Exception.Message)"
-  }
-}
-if (-not $EnablePawnIo.IsPresent) {
-  Write-Host "PawnIO installation skipped. Use -EnablePawnIo to attempt low-level hardware driver installation."
+if (-not (Test-Path $binaryPath)) {
+  throw "Go build did not produce $binaryPath"
 }
 
 $resolvedHostname = $Hostname
@@ -109,18 +100,11 @@ $restartWindowSeconds = [Math]::Max(60, $RestartIntervalMinutes * 60)
 $restartDelaySeconds = [Math]::Min(30, [Math]::Max(3, [Math]::Floor($restartWindowSeconds / [Math]::Max(1, $RestartCount + 1))))
 
 $runScript = Join-Path $InstallDir "run-agent.ps1"
-@" 
+@"
 `$env:DSC_SERVER_URL="$ServerUrl"
 `$env:DSC_AGENT_SECRET="$Secret"
 `$env:DSC_DEVICE_ID="$DeviceId"
 `$env:DSC_HOSTNAME="$resolvedHostname"
-`$env:DSC_HARDWARE_JSON_URL="$HardwareJsonUrl"
-`$env:DSC_REDFISH_URL="$RedfishUrl"
-`$env:DSC_REDFISH_USERNAME="$RedfishUsername"
-`$env:DSC_REDFISH_PASSWORD="$RedfishPassword"
-`$env:DSC_REDFISH_INSECURE="$($RedfishInsecure.IsPresent.ToString().ToLowerInvariant())"
-`$env:DSC_ALLOW_ACPI_THERMAL_ZONE="$($AllowAcpiThermalZone.IsPresent.ToString().ToLowerInvariant())"
-`$env:DSC_COMMAND_TIMEOUT_MS="2000"
 `$ProgressPreference="SilentlyContinue"
 Set-Location "$InstallDir"
 `$maxRestartCount = $RestartCount
@@ -133,19 +117,17 @@ while (`$true) {
     [void]`$recentStarts.Dequeue()
   }
   if (`$maxRestartCount -gt 0 -and `$recentStarts.Count -ge `$maxRestartCount) {
-    Write-Error \"Agent exited too frequently (`$(`$recentStarts.Count) times within `$restartWindowSeconds seconds). Stopping automatic restarts.\"
+    Write-Error "Agent exited too frequently (`$(`$recentStarts.Count) times within `$restartWindowSeconds seconds). Stopping automatic restarts."
     exit 1
   }
   `$recentStarts.Enqueue(`$now)
-  & "$resolvedNodePath" "$InstallDir\node-agent.mjs" *>> "$InstallDir\agent.out.log"
+  & "$binaryPath" *>> "$InstallDir\agent.out.log"
   `$exitCode = if (`$LASTEXITCODE -is [int]) { `$LASTEXITCODE } else { 1 }
   Add-Content -Path "$InstallDir\agent.err.log" -Value ("[{0}] agent exited with code {1}" -f (Get-Date -Format o), `$exitCode)
   Start-Sleep -Seconds `$restartDelaySeconds
 }
 "@ | Set-Content -Encoding UTF8 $runScript
 
-$taskName = "DeviceStateConsoleAgent"
-$legacyTaskName = "Device State Console Agent"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$runScript`""
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -RunLevel Highest
@@ -153,13 +135,12 @@ $settings = New-ScheduledTaskSettingsSet -RestartCount $RestartCount -RestartInt
 $startupCommand = "powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$runScript`""
 
 function Enable-CurrentUserAutostart {
-  $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
   New-Item -Path $runKey -Force | Out-Null
   Set-ItemProperty -Path $runKey -Name $taskName -Value $startupCommand
   Start-Process -FilePath "powershell.exe" -ArgumentList "-WindowStyle","Hidden","-NoProfile","-ExecutionPolicy","Bypass","-File",$runScript -WindowStyle Hidden
-  Write-Host "Device State Console agent installed and started."
+  Write-Host "Device State Console Go agent installed and started."
   Write-Host "Autostart: current-user Run registry"
-  Write-Host "PawnIO: installed=$($pawnStatus.Installed) loaded=$($pawnStatus.Loaded) detail=$($pawnStatus.Detail)"
+  Write-Host "Binary: $binaryPath"
 }
 
 try {
@@ -180,6 +161,6 @@ try {
   exit 0
 }
 
-Write-Host "Device State Console agent installed and started."
+Write-Host "Device State Console Go agent installed and started."
 Write-Host "Task name: $taskName"
-Write-Host "PawnIO: installed=$($pawnStatus.Installed) loaded=$($pawnStatus.Loaded) detail=$($pawnStatus.Detail)"
+Write-Host "Binary: $binaryPath"

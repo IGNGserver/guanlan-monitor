@@ -1,6 +1,8 @@
 # 设备状态控制台
 
-面向局域网设备的状态监控系统，包含 Web 控制台、中枢服务，以及可部署在 Linux / Windows 设备上的 agent。
+面向局域网与私有部署环境的设备状态监控系统，包含 Web 控制台、中枢服务、Android 客户端，以及 Linux / Windows agent。
+
+当前发布版本：`v0.1.93`。
 
 ## 项目结构
 
@@ -8,6 +10,8 @@
 - `apps/web`：Next.js Web 控制台
 - `packages/shared`：前后端共享类型
 - `agents`：采集端 agent
+- `windows-agent`：Windows WinUI 3 桌面客户端、托盘程序和本地 Go backend
+- `android`：Android 客户端（应用名：观澜）
 - `deploy`：systemd、Docker 等部署示例
 
 ## 当前能力
@@ -16,8 +20,19 @@
 - 1 分钟、15 分钟、1 天、1 周、1 月、1 年多时间窗口视图
 - CPU、内存、交换分区、磁盘、网络流量等核心指标
 - 历史小时级聚合与保留
-- Agent 5 秒上报
+- Agent 分层采集上报：常态上传默认 15 秒；实时模式上传默认 5 秒；磁盘清单、CPU 包信息、网卡清单等慢指标默认 30 秒
 - 基于访问密钥的 Web 登录
+- Windows 桌面端支持安装、更新、修复、卸载、托盘控制和开机启动
+- Windows agent 支持 CPU 睿频采集、GPU 当前核心时钟采集，以及 CPU、内存、磁盘、网络、显卡、风扇的组件级趋势图
+
+## 发布与隐私
+
+- Git 仓库只包含源码、部署脚本、示例配置与构建所需的第三方硬件依赖。
+- `.env`、本地 agent 配置、Android 签名材料、日志、构建目录、安装包和 Codex 临时文件均被 `.gitignore` 排除。
+- 不要把真实 `SESSION_SECRET`、`ACCESS_KEY`、`AGENT_SHARED_SECRET`、数据库密码、Redfish 凭据或 Android keystore 提交到仓库。
+- Windows setup、更新压缩包和 Android APK 作为 GitHub Release 附件发布，不作为 Git 源码提交。
+
+当前发布资产、发行说明与校验值见 [GitHub Releases](https://github.com/IGNGserver/Device-State-Console/releases)。
 
 ## 环境要求
 
@@ -52,7 +67,10 @@ cp .env.example .env
 
 ```env
 SESSION_COOKIE_SECURE=true
+AGENT_REQUIRE_HTTPS=true
 ```
+
+`AGENT_REQUIRE_HTTPS=true` 会要求 agent 上报、控制和数据查看接口使用 HTTPS；如果服务位于反向代理后面，代理必须传递 `X-Forwarded-Proto: https`。本机回环开发可暂时保持默认的 HTTP。
 
 ### 2. 启动服务
 
@@ -71,7 +89,7 @@ docker compose -f docker-compose.yml -f docker-compose.cn.yml up -d --build
 默认端口：
 
 - Web：`3000`
-- Server API / Socket.IO：`4000`
+- Web / agent 对外入口：`3100`；Server API 的 `4000` 仅作为容器内部端口
 - Redis：`6379`
 - MySQL：`3306`
 
@@ -163,15 +181,15 @@ docker compose -f docker-compose.yml -f docker-compose.cn.yml up -d --build
 
 ## Agent 一键部署
 
-Agent 所在设备需要先安装 `Node.js 22+`。
+Agent 所在设备需要先安装 `Go 1.24+`。
 
 ## 推荐部署模型
 
-默认推荐把 agent 安装到固定目录，并通过“守护脚本 + 系统启动器”运行，而不是直接把 `node node-agent.mjs` 写成一次性启动命令。
+默认推荐把 Go agent 安装到固定目录，先编译为本地二进制，再通过“守护脚本 + 系统启动器”运行，而不是直接在前台执行一次 `go run .`。
 
 - Windows 首选：`C:\ProgramData\DeviceStateConsoleAgent` + `DeviceStateConsoleAgent` 计划任务
 - Linux 首选：`/opt/device-state-console-agent` + `device-state-console-agent.service`
-- 两个平台都会生成单独的守护脚本：
+- 两个平台都会现场构建 Go 二进制，并生成单独的守护脚本：
   - Windows：`run-agent.ps1`
   - Linux：`run-agent.sh`
 - 守护脚本都具备两层保护：
@@ -186,26 +204,26 @@ Agent 所在设备需要先安装 `Node.js 22+`。
 
 ```bash
 sudo bash deploy/install-agent.sh \
-  --server-url http://你的中枢IP:4000 \
+  --server-url https://你的穿透域名 \
   --secret 你的agent密钥 \
   --device-id node-001
 ```
 
 参数说明：
 
-- `--server-url`：中枢服务地址，通常是运行 `server` 的机器地址和端口，例如 `http://192.168.1.10:4000`。
+- `--server-url`：中枢或 Web 的 HTTPS 公共地址；单端口穿透时填写 Web 地址，例如 `https://status.example.com`。
 - `--secret`：agent 上报密钥，必须和服务端 `.env` 中的 `AGENT_SHARED_SECRET` 完全一致。
 - `--device-id`：设备唯一 ID，会显示在控制台中。建议使用稳定、可读的名称，例如 `nas-01`、`office-pc`。如果不传，默认使用当前主机名。
 - `--hostname`：可选，设备展示名。适合 `deviceId` 用英文稳定标识、界面展示名用中文或更友好的场景。
 - `--install-dir`：可选，agent 安装目录，默认 `/opt/device-state-console-agent`。
 - `--service-user`：可选，运行 systemd 服务的系统用户，默认 `dsc-agent`。
-- `--node-path`：可选，显式指定 `node` 路径。适用于系统里有多个 Node，或你要绑定便携版 Node。
+- `--go-path`：可选，显式指定 `go` 路径。适用于 Go 不在 `PATH`，或者你要绑定便携版 Go。
 - `--restart-count`：可选，重启窗口内允许的最大重启次数，默认 `10`。
 - `--restart-window-minutes`：可选，连续崩溃统计窗口，默认 `5` 分钟。
 
 脚本会自动：
 
-- 复制 agent 到 `/opt/device-state-console-agent`
+- 在安装目录构建 `device-state-console-agent` 二进制
 - 写入 `agent.env`
 - 生成 `run-agent.sh`
 - 创建 `dsc-agent` 系统用户
@@ -218,6 +236,8 @@ Linux 默认使用系统级 `systemd` 服务，而不是依赖登录会话的 `s
 - 从 `agent.env` 加载环境变量
 - 异常退出后延时重启
 - 在默认 `5` 分钟内连续崩溃超过 `10` 次时停止重启，并把原因写入 `agent.err.log`
+- Go agent 会在单轮查询和上传完成后再进入下一轮，避免 Windows 侧查询重叠
+- 快指标默认每 `5` 秒刷新一次，慢指标默认每 `30` 秒刷新一次
 
 日志文件默认位于安装目录：
 
@@ -232,33 +252,49 @@ systemctl status device-state-console-agent.service
 
 ### Windows
 
+Windows 端当前主线已经切到 `WinUI 3 + 本地 Go backend + collector` 的桌面应用形态。
+推荐优先使用：
+
+- 便携包：`deploy/build-windows-agent-portable.ps1`
+- setup 安装包：`deploy/build-windows-agent-setup.ps1`
+
+相关说明见：
+
+- [windows-agent/README.md](windows-agent/README.md)
+- [deploy/windows-agent-release.md](deploy/windows-agent-release.md)
+- [deploy/windows-agent-release-runbook.md](deploy/windows-agent-release-runbook.md)
+
+当前这条桌面应用路线的特点是：
+
+- WinUI 前端启动时会自动拉起本地 `windows-agent-backend.exe`
+- 本地 backend 再管理真正的 `device-state-console-agent.exe`
+- 前端关闭时，本地 backend 与采集器会一并退出
+- 连接信息、采样频次、探测方案、类别开关、实例开关都在 agent 软件内直接配置
+- 会影响云端展示配置的本地改动会先进入“待推送”状态，显式点击“推送至云端”后才同步到中枢
+
+如果你暂时不打算分发 WinUI 应用，而只是要在 Windows 上快速部署一个无界面的常驻 Go agent，仍可以使用下面这条旧式守护脚本路线：
+
 在 PowerShell 管理员窗口中执行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File deploy\install-agent.ps1 `
-  -ServerUrl "http://你的中枢IP:4000" `
+  -ServerUrl "https://你的穿透域名" `
   -Secret "你的agent密钥" `
   -DeviceId "node-001"
 ```
 
 参数说明：
 
-- `-ServerUrl`：中枢服务地址，通常是运行 `server` 的机器地址和端口，例如 `http://192.168.1.10:4000`。
+- `-ServerUrl`：中枢或 Web 的 HTTPS 公共地址；单端口穿透时填写 Web 地址，例如 `https://status.example.com`。
 - `-Secret`：agent 上报密钥，必须和服务端 `.env` 中的 `AGENT_SHARED_SECRET` 完全一致。
 - `-DeviceId`：设备唯一 ID，会显示在控制台中。建议使用稳定、可读的名称，例如 `gaming-pc`、`office-laptop`。如果不传，默认使用当前计算机名。
-- `-HardwareJsonUrl`：可选，LibreHardwareMonitor / OpenHardwareMonitor 的远程 Web JSON 地址，例如 `http://127.0.0.1:8085/data.json`。通常不需要，agent 已内置 Windows 硬件库。
-- `-RedfishUrl`：可选，服务器 BMC / Redfish 根地址，例如 `https://192.168.1.100`。配置后 agent 会额外尝试从 Redfish 读取 CPU 温度和风扇。
-- `-RedfishUsername` / `-RedfishPassword`：可选，Redfish 登录凭据。
-- `-RedfishInsecure`：可选，允许忽略 Redfish HTTPS 证书问题。默认关闭。
-- `-EnablePawnIo`：可选，尝试安装 PawnIO 低层硬件访问驱动，用于增强部分机器上的 CPU 温度/风扇探测。默认不安装。
-- `-AllowAcpiThermalZone`：可选，允许回退读取 Windows `MSAcpi_ThermalZoneTemperature`。该值通常不是 CPU Package/Core 温度，默认禁用。
 - `-InstallDir`：可选，agent 安装目录，默认 `C:\ProgramData\DeviceStateConsoleAgent`。
-- `-NodePath`：可选，显式指定 `node.exe` 路径。适用于 Node 不在 `PATH`，或者你使用便携版 Node 的机器。
+- `-GoPath`：可选，显式指定 `go.exe` 路径。适用于 Go 不在 `PATH`，或者你使用便携版 Go 的机器。
 - `-RestartCount`：可选，计划任务在 `-RestartIntervalMinutes` 时间窗口内的最大重启次数，默认 `10`。
 - `-RestartIntervalMinutes`：可选，计划任务的重试时间窗口，默认 `5` 分钟。
 - `-PreferCurrentUserAutostart`：可选，显式使用当前用户自启，而不是优先注册 `SYSTEM` 计划任务。
 
-脚本会把 agent、内置 Windows 硬件库和 `PawnIO` 安装器安装到 `C:\ProgramData\DeviceStateConsoleAgent`，生成守护版 `run-agent.ps1`，并优先注册为开机启动的计划任务。默认不会安装 `PawnIO` 驱动；只有显式传入 `-EnablePawnIo` 时，才会尝试静默安装底层驱动。
+脚本会在 `C:\ProgramData\DeviceStateConsoleAgent` 构建 `device-state-console-agent.exe`，生成守护版 `run-agent.ps1`，并优先注册为开机启动的计划任务。
 
 如果计划任务注册失败，脚本会自动降级到当前用户自启，但不会退回到旧的一次性启动模型。无论计划任务模式还是当前用户自启模式，都会保留：
 
@@ -267,7 +303,7 @@ powershell -ExecutionPolicy Bypass -File deploy\install-agent.ps1 `
 - 连续崩溃阈值退出
 - `agent.out.log` / `agent.err.log` 日志
 
-Windows agent 会优先使用随包分发的 LibreHardwareMonitor 库读取 CPU 温度、风扇、GPU 温度/频率等传感器；如果系统中已经运行 LibreHardwareMonitor / OpenHardwareMonitor，也会自动兼容它们暴露的 WMI / Web 数据源。对服务器设备，还可以额外启用 Redfish / BMC 作为 CPU 温度和风扇的补充来源。如果机器本身或驱动没有提供可读传感器，相关字段仍会显示为空值，而不是退化成误导性的 ACPI 热区温度。
+当前 Go agent 的重点是稳定性和顺序调度。默认会持续上报 CPU、内存、磁盘速率、总网络速率等通用指标；Windows 还会优先通过 LibreHardwareMonitor 读取 CPU 睿频、GPU 当前频率、温度、显存和风扇传感器，NVIDIA 可回退使用 `nvidia-smi`。硬件或驱动未暴露传感器时会保留为空值。
 
 查看任务：
 
@@ -277,11 +313,11 @@ Get-ScheduledTask -TaskName "DeviceStateConsoleAgent"
 
 ## Agent 手动部署
 
-### Go Agent
+### Go Agent（主线）
 
 ```bash
 cd agents
-DSC_SERVER_URL=http://你的中枢IP:4000 \
+DSC_SERVER_URL=https://你的穿透域名 \
 DSC_AGENT_SECRET=你的agent密钥 \
 DSC_DEVICE_ID=node-001 \
 go run .
@@ -290,34 +326,32 @@ go run .
 Windows PowerShell 示例：
 
 ```powershell
-$env:DSC_SERVER_URL="http://你的中枢IP:4000"
+$env:DSC_SERVER_URL="https://你的穿透域名"
 $env:DSC_AGENT_SECRET="你的agent密钥"
 $env:DSC_DEVICE_ID="node-001"
 go run .
 ```
 
-### Node Agent
+Go agent 默认采用“单轮查询完成后再开始下一轮”的调度方式，常态上传间隔默认 `15` 秒，实时上传间隔默认 `5` 秒，慢指标默认每 `30` 秒刷新一次。
 
-Node Agent 同样需要 `Node.js 22+`。
+### CLI Agent（正式交付）
 
-Linux / macOS 示例：
-
-```bash
-cd agents
-DSC_SERVER_URL=http://你的中枢IP:4000 \
-DSC_AGENT_SECRET=你的agent密钥 \
-DSC_DEVICE_ID=node-001 \
-node node-agent.mjs
-```
-
-Windows PowerShell 示例：
+运行 `deploy/build-cli-agent.ps1 -Zip` 后，Windows/Linux 包内均已包含 Go
+二进制，不要求目标机器安装 Go。
 
 ```powershell
-$env:DSC_SERVER_URL="http://你的中枢IP:4000"
-$env:DSC_AGENT_SECRET="你的agent密钥"
-$env:DSC_DEVICE_ID="node-001"
-node .\node-agent.mjs
+# Windows：在 windows-x64 包目录执行
+.\install-agent.ps1 -ServerUrl "http://SERVER:3100" -Secret "AGENT_SECRET" -DeviceId "node-001"
+.\install-agent.ps1 -Action Uninstall
 ```
+
+```bash
+# Linux：在 linux-x64 包目录执行
+sudo bash ./install-agent.sh --server-url http://SERVER:3100 --secret AGENT_SECRET --device-id node-001
+sudo bash ./install-agent.sh --uninstall
+```
+
+旧 Node 实现已归档至 `agents/legacy/node-agent.mjs`，不再作为部署方案。
 
 环境变量示例见 [deploy/agent.env.example](deploy/agent.env.example)。
 
@@ -335,7 +369,7 @@ cp agents/dev-machine-agent.env.example agents/dev-machine-agent.env
 
 然后把 `agents/dev-machine-agent.env` 改成你的真实值。这个文件已被 `.gitignore` 排除，不会进入 Git。
 
-如果你沿用仓库里的 `agents/dev-machine-agent.service` 示例，也建议搭配一个本地私有的 `agents/run-dev-machine-agent.sh` 守护脚本，而不是把 `node-agent.mjs` 直接写进 `ExecStart`。
+如果你沿用仓库里的 `agents/dev-machine-agent.service` 示例，也建议搭配一个本地私有的 `agents/run-dev-machine-agent.sh` 守护脚本。该脚本现在会先本地 `go build`，再启动 Go agent。
 
 ## 本地开发
 
@@ -352,7 +386,7 @@ cd agents && go mod tidy
 ```env
 REDIS_URL=redis://127.0.0.1:6379
 MYSQL_URL=mysql://dsc:你的密码@127.0.0.1:3306/device_state_console
-NEXT_PUBLIC_SERVER_URL=http://127.0.0.1:4000
+NEXT_PUBLIC_SERVER_URL=http://127.0.0.1:3100
 ```
 
 ### 2. 启动依赖
@@ -378,18 +412,7 @@ pnpm build
 
 安卓客户端当前应用名为 `观澜`。
 
-当前准备发布的版本为 `v0.1.2`。
-
 当前版本默认支持连接局域网中的 `http://` 中枢地址，适合未启用 HTTPS 的内网部署环境。
-
-这次版本包含的重点更新：
-
-- 总览页改为按类别展示胶囊指标，点击后进入带分页和滑动动画的半屏详情
-- 显卡显存、磁盘容量等指标支持同时显示当前值与总上限，不再只显示百分比
-- `15m / 1d` 视图中的网速与磁盘速率保持按时间窗口平均值聚合
-- Windows / Linux agent 默认统一为守护脚本 + 自动重启 + 连续崩溃阈值退出
-- Linux 设备新增更完整的 CPU 包级频率、磁盘、网络接口和 `sensorBackends` 回传
-- Windows PowerShell 输出统一为 UTF-8，修复中文网卡名乱码问题
 
 ### 本地构建 release 包
 
@@ -420,13 +443,6 @@ android/signing/
 
 详细说明见 [deploy/android-release.md](deploy/android-release.md)。
 
-如果你本地保留了未提交的签名变量文件，也可以在构建前先加载它，再执行正式打包：
-
-```bash
-source android/signing/release-credentials.env
-./android/gradlew -p android clean assembleRelease
-```
-
 然后重新构建：
 
 ```bash
@@ -435,10 +451,6 @@ source android/signing/release-credentials.env
 
 配置完整后，release 构建会自动使用你的签名配置。
 
-推荐把最终产物命名为：
-
-- `guanlan-android-v0.1.2.apk`
-
 ## 生产部署说明
 
 - `docker-compose.yml` 面向单机部署，包含 Redis 和 MySQL。
@@ -446,26 +458,37 @@ source android/signing/release-credentials.env
 - Redis 与 MySQL 都挂载命名卷，容器重建不会直接丢数据。
 - 如果要公网暴露，建议前面加 Nginx / Caddy，并只开放 Web 入口。
 
+### 内网穿透只映射一个端口
+
+推荐只把 Web 入口映射到一个 HTTPS 公共地址，例如 `https://status.example.com`：
+
+- 浏览器访问 `https://status.example.com`
+- 安卓端的服务器地址填写同一个公共地址
+- agent 的 `ServerUrl` / `DSC_SERVER_URL` 也填写同一个公共地址
+- Web 入口会把 `/api/*` 和 `/socket.io/*` 转发到容器内的 Server API，因此不需要额外暴露 `4000` 端口；对外统一使用 `3100`
+
+Docker Web 容器内部使用运行时变量 `SERVER_API_URL=http://server:4000` 连接 Server；这只是容器网络内的地址，不应作为外部客户端或 agent 地址。生产环境应开启 `AGENT_REQUIRE_HTTPS=true`，并在反向代理中正确传递 `X-Forwarded-Proto: https`。
+
 ## 常见问题
 
 ### Agent 掉线时先查什么
 
 建议按这个顺序排查：
 
-1. `DSC_SERVER_URL` 是否写对，agent 必须上报到 Server API 端口，例如 `http://192.0.2.28:4000`，不能写成 Web 端口。
+1. `DSC_SERVER_URL` 是否写对。单端口穿透时填写 Web 的 HTTPS 公共地址，例如 `https://status.example.com`；Web 会代理 `/api/agent/*`。直接连接 Server API 时也必须使用 HTTPS，不能把远程 HTTP 地址用于 agent。
 2. Windows 是否真的注册并启动了 `DeviceStateConsoleAgent` 计划任务；如果权限不足，是否至少成功落到了当前用户自启分支。
 3. 启动入口是否是守护脚本：
    - Windows：`run-agent.ps1`
    - Linux：`run-agent.sh`
-4. 是否只是某个采集源缺失。正常情况下，单项硬件探测失败不应导致整机掉线，agent 应继续上报其他可用数据。
+4. Go agent 当前默认只把快指标维持在 5 秒、其他慢指标维持在 30 秒；如果你看到某些硬件专项字段为空，先确认是否仍在使用 Node 备份方案。
 
 ### 为什么有些字段为空
 
 这是预期行为，不一定表示 agent 异常。常见原因包括：
 
-- CPU 温度：主板、驱动或虚拟机没有提供可读传感器
-- GPU 频率 / 温度 / 显存：驱动或对应工具链不可用，例如 Linux 上没有可读 sysfs 或没有 `nvidia-smi`
-- 风扇：很多普通台式机和虚拟机不会暴露标准风扇接口
+- CPU 温度：主板、驱动、虚拟机没有提供可读传感器，或 LibreHardwareMonitor 无法访问该传感器
+- GPU 频率 / 温度 / 显存：LibreHardwareMonitor 或 GPU 驱动工具链不可用；NVIDIA 环境会自动尝试 `nvidia-smi`
+- 风扇：很多普通台式机和虚拟机本身不会暴露标准风扇接口，需要启用兼容的硬件探测器
 - 网卡、磁盘分项：系统权限或底层统计接口缺失
 
 当前默认策略是“尽量多采，缺什么就留空”，而不是把不支持的字段硬填成 `0`，也不会因为单项探测失败而阻断 agent 上线。

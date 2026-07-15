@@ -14,6 +14,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -270,7 +271,7 @@ private fun LoginScreen(
       onValueChange = { baseUrl = it },
       modifier = Modifier.fillMaxWidth(),
       label = { Text("中枢地址") },
-      supportingText = { Text("例如 http://192.0.2.28:4000") },
+      supportingText = { Text("例如 http://your-server-host:3100") },
       singleLine = true
     )
     Spacer(Modifier.height(12.dp))
@@ -1613,6 +1614,20 @@ private fun MiniLineChart(title: String, valueFormatter: (Double?) -> String, po
   val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
   val markerOuterColor = MaterialTheme.colorScheme.surface
   var selectedIndex by remember(points) { mutableStateOf(points.lastIndex.coerceAtLeast(0)) }
+  val haptic = LocalHapticFeedback.current
+
+  fun updateSelectedIndex(
+    nextIndex: Int,
+    vibrate: Boolean = true,
+    feedbackType: HapticFeedbackType = HapticFeedbackType.TextHandleMove
+  ) {
+    if (nextIndex != selectedIndex) {
+      selectedIndex = nextIndex
+      if (vibrate) {
+        haptic.performHapticFeedback(feedbackType)
+      }
+    }
+  }
 
   Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
     if (points.isNotEmpty()) {
@@ -1631,11 +1646,29 @@ private fun MiniLineChart(title: String, valueFormatter: (Double?) -> String, po
         .pointerInput(points) {
           detectTapGestures { offset ->
             if (points.isEmpty()) return@detectTapGestures
-            val stepX = if (points.size == 1) size.width else size.width / (points.size - 1)
-            val rawIndex = if (points.size == 1) 0 else (offset.x / stepX).toInt()
-            val nearest = rawIndex.coerceIn(0, points.lastIndex)
-            selectedIndex = nearest
+            updateSelectedIndex(
+              resolveChartIndex(offset.x, size.width.toFloat(), points.size),
+              feedbackType = HapticFeedbackType.TextHandleMove
+            )
           }
+        }
+        .pointerInput(points) {
+          detectDragGestures(
+            onDragStart = { offset ->
+              if (points.isEmpty()) return@detectDragGestures
+              updateSelectedIndex(
+                resolveChartIndex(offset.x, size.width.toFloat(), points.size),
+                feedbackType = HapticFeedbackType.TextHandleMove
+              )
+            },
+            onDrag = { change, _ ->
+              updateSelectedIndex(
+                resolveChartIndex(change.position.x, size.width.toFloat(), points.size),
+                feedbackType = HapticFeedbackType.TextHandleMove
+              )
+              change.consume()
+            }
+          )
         }
     ) {
       if (points.isEmpty()) return@Canvas
@@ -1682,6 +1715,12 @@ private fun MiniLineChart(title: String, valueFormatter: (Double?) -> String, po
       drawCircle(color = lineColor, radius = 6f, center = Offset(selectedX, selectedY))
     }
   }
+}
+
+private fun resolveChartIndex(x: Float, width: Float, count: Int): Int {
+  if (count <= 1 || width <= 0f) return 0
+  val stepX = width / (count - 1)
+  return (x / stepX).toInt().coerceIn(0, count - 1)
 }
 
 @Composable

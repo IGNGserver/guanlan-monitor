@@ -13,11 +13,12 @@ android {
   compileSdk = 35
 
   defaultConfig {
+    val releaseVersion = rootProject.file("../VERSION").readText().trim()
     applicationId = "com.dsc.android"
     minSdk = 29
     targetSdk = 35
-    versionCode = 3
-    versionName = "0.1.2"
+    versionCode = releaseVersion.replace(".", "").toInt()
+    versionName = releaseVersion
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     vectorDrawables.useSupportLibrary = true

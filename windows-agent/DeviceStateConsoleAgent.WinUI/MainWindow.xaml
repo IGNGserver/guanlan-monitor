@@ -1,0 +1,451 @@
+<Window
+    x:Class="DeviceStateConsoleAgent.WinUI.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Microsoft.UI.Xaml.Controls"
+    xmlns:local="using:DeviceStateConsoleAgent.WinUI.Controls"
+    xmlns:shapes="using:Microsoft.UI.Xaml.Shapes"
+    Title="观澜">
+    <Grid x:Name="RootLayout" RequestedTheme="Default" UseLayoutRounding="True" SizeChanged="RootLayout_SizeChanged" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <controls:NavigationView x:Name="AppNavigation"
+                                 Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                                  IsPaneOpen="True"
+                                  IsPaneToggleButtonVisible="True"
+                                 CompactPaneLength="56"
+                                 OpenPaneLength="296"
+                                 CompactModeThresholdWidth="0"
+                                 ExpandedModeThresholdWidth="0"
+                                 IsBackButtonVisible="Collapsed"
+                                 IsSettingsVisible="False"
+                                 PaneTitle="观澜"
+                                 PaneDisplayMode="Left"
+                                  SelectionChanged="NavigationView_SelectionChanged"
+                                  BackRequested="NavigationView_BackRequested">
+            <controls:NavigationView.MenuItems>
+                <controls:NavigationViewItem Content="观澜" Tag="monitor" IsSelected="True">
+                    <controls:NavigationViewItem.Icon><SymbolIcon Symbol="View" /></controls:NavigationViewItem.Icon>
+                </controls:NavigationViewItem>
+                <controls:NavigationViewItem Content="本机" Tag="local">
+                    <controls:NavigationViewItem.Icon><SymbolIcon Symbol="Setting" /></controls:NavigationViewItem.Icon>
+                </controls:NavigationViewItem>
+                <controls:NavigationViewItem Content="配置" Tag="server">
+                    <controls:NavigationViewItem.Icon><SymbolIcon Symbol="Globe" /></controls:NavigationViewItem.Icon>
+                </controls:NavigationViewItem>
+            </controls:NavigationView.MenuItems>
+
+            <Grid x:Name="ContentLayout" Padding="40,30,40,34">
+                <Grid x:Name="MonitorPage" Visibility="Visible">
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="20" MaxWidth="1180" HorizontalAlignment="Stretch">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="监测" Style="{StaticResource TitleTextBlockStyle}" />
+                                <TextBlock Text="选择设备以查看实时性能和历史趋势。" Style="{StaticResource BodyTextBlockStyle}" />
+                            </StackPanel>
+                            <Grid x:Name="MonitorUnavailableState" Visibility="Collapsed" MinHeight="360" HorizontalAlignment="Stretch">
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" MaxWidth="420">
+                                    <FontIcon Glyph="&#xE711;" FontSize="32" HorizontalAlignment="Center" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                                    <TextBlock Text="无法连接中枢系统" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
+                                    <TextBlock Text="{Binding ViewerDataStatusText}" Style="{StaticResource BodyTextBlockStyle}" TextAlignment="Center" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
+                            <Grid x:Name="MonitorWorkspace" ColumnSpacing="20" MinHeight="560">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="240" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Style="{StaticResource DSCPanelStyle}" Padding="0">
+                                    <Grid RowSpacing="8">
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                                        <TextBlock Grid.Row="0" Text="性能" Style="{StaticResource SubtitleTextBlockStyle}" Margin="16,16,16,0" />
+                                        <TextBox Grid.Row="1" Margin="16,0,16,4" PlaceholderText="筛选设备" Text="{Binding ViewerDeviceFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        <ListView Grid.Row="2" ItemsSource="{Binding FilteredViewerDevices}" SelectionChanged="ViewerDeviceList_SelectionChanged" BorderThickness="0" Background="Transparent">
+                                            <ListView.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Padding="14,10" RowSpacing="3">
+                                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                                        <TextBlock Grid.Row="0" Text="{Binding Hostname}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Grid.Row="1" Text="{Binding CpuText}" Style="{StaticResource CaptionTextBlockStyle}" />
+                                                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"><TextBlock Text="{Binding MemoryText}" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding StatusText}" Style="{StaticResource CaptionTextBlockStyle}" /></StackPanel>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ListView.ItemTemplate>
+                                        </ListView>
+                                    </Grid>
+                                </Border>
+                                <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                    <Grid RowSpacing="18" HorizontalAlignment="Stretch">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="{Binding SelectedViewerDeviceName}" Style="{StaticResource TitleTextBlockStyle}" />
+                                            <TextBlock Text="{Binding ViewerDetailStatusText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ComboBox Grid.Row="1" Header="历史窗口" ItemsSource="{Binding MetricWindows}" SelectedItem="{Binding SelectedMetricWindow, Mode=TwoWay}" SelectionChanged="MetricWindow_SelectionChanged" Width="160" />
+                                        <StackPanel x:Name="MetricCategoryList" Grid.Row="2" Spacing="10" HorizontalAlignment="Stretch">
+                                            <controls:Expander Style="{StaticResource DSCMetricExpanderStyle}" HorizontalAlignment="Stretch"><controls:Expander.Header><Grid MinHeight="84" ColumnSpacing="18"><Grid.ColumnDefinitions><ColumnDefinition Width="220" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><Border Grid.Column="0" Style="{StaticResource DSCSparklineFrameStyle}"><Canvas x:Name="CpuOverviewChart" SizeChanged="TrendCanvas_SizeChanged" Tag="cpu" /></Border><StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4"><TextBlock Text="CPU" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="{Binding ViewerDetailCpuText}" Style="{StaticResource BodyTextBlockStyle}" /></StackPanel></Grid></controls:Expander.Header><controls:ItemsRepeater ItemsSource="{Binding ViewerCpuCharts}"><controls:ItemsRepeater.Layout><controls:UniformGridLayout MinItemWidth="320" MinItemHeight="350" MinColumnSpacing="20" MinRowSpacing="12" /></controls:ItemsRepeater.Layout><controls:ItemsRepeater.ItemTemplate><DataTemplate><local:MetricLineChart Chart="{Binding}" /></DataTemplate></controls:ItemsRepeater.ItemTemplate></controls:ItemsRepeater></controls:Expander>
+                                            <controls:Expander Style="{StaticResource DSCMetricExpanderStyle}" HorizontalAlignment="Stretch"><controls:Expander.Header><Grid MinHeight="84" ColumnSpacing="18"><Grid.ColumnDefinitions><ColumnDefinition Width="220" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><Border Grid.Column="0" Style="{StaticResource DSCSparklineFrameStyle}"><Canvas x:Name="MemoryOverviewChart" SizeChanged="TrendCanvas_SizeChanged" Tag="memory" /></Border><StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4"><TextBlock Text="内存" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="{Binding ViewerDetailMemoryText}" Style="{StaticResource BodyTextBlockStyle}" /></StackPanel></Grid></controls:Expander.Header><controls:ItemsRepeater ItemsSource="{Binding ViewerMemoryCharts}"><controls:ItemsRepeater.Layout><controls:UniformGridLayout MinItemWidth="320" MinItemHeight="350" MinColumnSpacing="20" MinRowSpacing="12" /></controls:ItemsRepeater.Layout><controls:ItemsRepeater.ItemTemplate><DataTemplate><local:MetricLineChart Chart="{Binding}" /></DataTemplate></controls:ItemsRepeater.ItemTemplate></controls:ItemsRepeater></controls:Expander>
+                                            <controls:Expander Style="{StaticResource DSCMetricExpanderStyle}" HorizontalAlignment="Stretch"><controls:Expander.Header><Grid MinHeight="84" ColumnSpacing="18"><Grid.ColumnDefinitions><ColumnDefinition Width="220" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><Border Grid.Column="0" Style="{StaticResource DSCSparklineFrameStyle}"><Canvas x:Name="DiskOverviewChart" SizeChanged="TrendCanvas_SizeChanged" Tag="disk" /></Border><StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4"><TextBlock Text="磁盘" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="{Binding ViewerDetailDiskText}" Style="{StaticResource BodyTextBlockStyle}" /></StackPanel></Grid></controls:Expander.Header><controls:ItemsRepeater ItemsSource="{Binding ViewerDiskCharts}"><controls:ItemsRepeater.Layout><controls:UniformGridLayout MinItemWidth="320" MinItemHeight="350" MinColumnSpacing="20" MinRowSpacing="12" /></controls:ItemsRepeater.Layout><controls:ItemsRepeater.ItemTemplate><DataTemplate><local:MetricLineChart Chart="{Binding}" /></DataTemplate></controls:ItemsRepeater.ItemTemplate></controls:ItemsRepeater></controls:Expander>
+                                            <controls:Expander Style="{StaticResource DSCMetricExpanderStyle}" HorizontalAlignment="Stretch"><controls:Expander.Header><Grid MinHeight="84" ColumnSpacing="18"><Grid.ColumnDefinitions><ColumnDefinition Width="220" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><Border Grid.Column="0" Style="{StaticResource DSCSparklineFrameStyle}"><Canvas x:Name="GpuOverviewChart" SizeChanged="TrendCanvas_SizeChanged" Tag="gpu" /></Border><StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4"><TextBlock Text="显卡" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="{Binding ViewerDetailGpuText}" Style="{StaticResource BodyTextBlockStyle}" /></StackPanel></Grid></controls:Expander.Header><controls:ItemsRepeater ItemsSource="{Binding ViewerGpuCharts}"><controls:ItemsRepeater.Layout><controls:UniformGridLayout MinItemWidth="320" MinItemHeight="350" MinColumnSpacing="20" MinRowSpacing="12" /></controls:ItemsRepeater.Layout><controls:ItemsRepeater.ItemTemplate><DataTemplate><local:MetricLineChart Chart="{Binding}" /></DataTemplate></controls:ItemsRepeater.ItemTemplate></controls:ItemsRepeater></controls:Expander>
+                                            <controls:Expander Style="{StaticResource DSCMetricExpanderStyle}" HorizontalAlignment="Stretch"><controls:Expander.Header><Grid MinHeight="84" ColumnSpacing="18"><Grid.ColumnDefinitions><ColumnDefinition Width="220" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><Border Grid.Column="0" Style="{StaticResource DSCSparklineFrameStyle}"><Canvas x:Name="NetworkOverviewChart" SizeChanged="TrendCanvas_SizeChanged" Tag="network" /></Border><StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4"><TextBlock Text="网络" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="{Binding ViewerDetailNetworkText}" Style="{StaticResource BodyTextBlockStyle}" /></StackPanel></Grid></controls:Expander.Header><controls:ItemsRepeater ItemsSource="{Binding ViewerNetworkCharts}"><controls:ItemsRepeater.Layout><controls:UniformGridLayout MinItemWidth="320" MinItemHeight="350" MinColumnSpacing="20" MinRowSpacing="12" /></controls:ItemsRepeater.Layout><controls:ItemsRepeater.ItemTemplate><DataTemplate><local:MetricLineChart Chart="{Binding}" /></DataTemplate></controls:ItemsRepeater.ItemTemplate></controls:ItemsRepeater></controls:Expander>
+                                            <controls:Expander Style="{StaticResource DSCMetricExpanderStyle}" HorizontalAlignment="Stretch"><controls:Expander.Header><Grid MinHeight="84" ColumnSpacing="18"><Grid.ColumnDefinitions><ColumnDefinition Width="220" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><Border Grid.Column="0" Style="{StaticResource DSCSparklineFrameStyle}"><Canvas x:Name="FanOverviewChart" SizeChanged="TrendCanvas_SizeChanged" Tag="fan" /></Border><StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4"><TextBlock Text="风扇" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="{Binding ViewerDetailFanText}" Style="{StaticResource BodyTextBlockStyle}" /></StackPanel></Grid></controls:Expander.Header><controls:ItemsRepeater ItemsSource="{Binding ViewerFanCharts}"><controls:ItemsRepeater.Layout><controls:UniformGridLayout MinItemWidth="320" MinItemHeight="350" MinColumnSpacing="20" MinRowSpacing="12" /></controls:ItemsRepeater.Layout><controls:ItemsRepeater.ItemTemplate><DataTemplate><local:MetricLineChart Chart="{Binding}" /></DataTemplate></controls:ItemsRepeater.ItemTemplate></controls:ItemsRepeater></controls:Expander>
+                                        </StackPanel>
+                                    </Grid>
+                                </ScrollViewer>
+                            </Grid>
+                            <Border Visibility="Collapsed" Style="{StaticResource DSCPanelStyle}">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Text="全部设备" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                    <TextBlock Text="使用中枢网页查看密钥登录后，Windows 端复用网页端会话读取全部设备；agent 密钥不会被用于全设备访问。" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                    <TextBlock Text="查看密钥使用当前 Windows 用户 DPAPI 加密保存，不写入 agent 配置文件。" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <PasswordBox x:Name="ViewerAccessBox" Grid.Column="0" Header="网页查看密钥" PasswordChanged="ViewerAccessBox_OnPasswordChanged" />
+                                        <Button Grid.Column="1" Command="{Binding LoginViewerCommand}" Content="登录并刷新" VerticalAlignment="Bottom" />
+                                    </Grid>
+                                    <TextBox Header="筛选设备" PlaceholderText="输入设备名称或设备 ID" Text="{Binding ViewerDeviceFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBlock Text="{Binding ViewerDataStatusText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                    <ItemsControl ItemsSource="{Binding FilteredViewerDevices}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Margin="0,0,0,8" Padding="14" Background="{ThemeResource ControlFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6">
+                                                    <Grid ColumnSpacing="14">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="{Binding StatusGlyph}" Foreground="{ThemeResource SystemFillColorSuccessBrush}" FontSize="18" VerticalAlignment="Top" />
+                                                        <StackPanel Grid.Column="1" Spacing="3">
+                                                            <TextBlock Text="{Binding Hostname}" FontWeight="SemiBold" />
+                                                            <TextBlock Text="{Binding DeviceId}" Style="{StaticResource CaptionTextBlockStyle}" />
+                                                            <TextBlock Text="{Binding LastSeenText}" Style="{StaticResource CaptionTextBlockStyle}" />
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="2" Spacing="3" HorizontalAlignment="Right">
+                                                            <TextBlock Text="{Binding StatusText}" HorizontalAlignment="Right" />
+                                                            <TextBlock Text="{Binding CpuText}" Style="{StaticResource CaptionTextBlockStyle}" HorizontalAlignment="Right" />
+                                                            <TextBlock Text="{Binding MemoryText}" Style="{StaticResource CaptionTextBlockStyle}" HorizontalAlignment="Right" />
+                                                            <TextBlock Text="{Binding DiskText}" Style="{StaticResource CaptionTextBlockStyle}" HorizontalAlignment="Right" />
+                                                            <TextBlock Text="{Binding GpuText}" Style="{StaticResource CaptionTextBlockStyle}" HorizontalAlignment="Right" />
+                                                            <Button Content="查看详情" Click="ViewerDeviceDetailsButton_OnClick" HorizontalAlignment="Right" />
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <Border Padding="14" Background="{ThemeResource ControlFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6">
+                                        <StackPanel Spacing="6">
+                                            <TextBlock Text="选中设备详情" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                            <TextBlock Text="{Binding ViewerDetailStatusText}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                            <ComboBox Header="历史窗口" ItemsSource="{Binding MetricWindows}" SelectedItem="{Binding SelectedMetricWindow, Mode=TwoWay}" SelectionChanged="MetricWindow_SelectionChanged" Width="160" />
+                                            <Grid x:Name="MonitorDetailMetricsGrid" ColumnSpacing="16">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" Spacing="4"><TextBlock Text="{Binding ViewerDetailCpuText}" Style="{StaticResource BodyTextBlockStyle}" /><TextBlock Text="{Binding ViewerDetailMemoryText}" Style="{StaticResource BodyTextBlockStyle}" /></StackPanel>
+                                                <StackPanel Grid.Column="1" Spacing="4"><TextBlock Text="{Binding ViewerDetailDiskText}" Style="{StaticResource BodyTextBlockStyle}" /><TextBlock Text="{Binding ViewerDetailGpuText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" /><TextBlock Text="{Binding ViewerDetailNetworkText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" /></StackPanel>
+                                            </Grid>
+                                            <TextBlock Text="CPU 趋势" Style="{StaticResource CaptionTextBlockStyle}" />
+                                            <ItemsControl ItemsSource="{Binding ViewerCpuTrendPoints}" Height="58">
+                                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" VerticalAlignment="Bottom" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate><DataTemplate><ProgressBar Width="7" Height="48" Maximum="100" Value="{Binding Value}" VerticalAlignment="Bottom" Margin="1,0" /></DataTemplate></ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <Grid x:Name="MonitorTrendGrid" ColumnSpacing="12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" Spacing="4"><TextBlock Text="内存趋势" Style="{StaticResource CaptionTextBlockStyle}" /><ItemsControl ItemsSource="{Binding ViewerMemoryTrendPoints}" Height="42"><ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" VerticalAlignment="Bottom" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate><ProgressBar Width="5" Height="34" Maximum="100" Value="{Binding Value}" VerticalAlignment="Bottom" Margin="1,0" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel>
+                                                <StackPanel Grid.Column="1" Spacing="4"><TextBlock Text="磁盘趋势" Style="{StaticResource CaptionTextBlockStyle}" /><ItemsControl ItemsSource="{Binding ViewerDiskTrendPoints}" Height="42"><ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" VerticalAlignment="Bottom" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate><ProgressBar Width="5" Height="34" Maximum="100" Value="{Binding Value}" VerticalAlignment="Bottom" Margin="1,0" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel>
+                                                <StackPanel Grid.Column="2" Spacing="4"><TextBlock Text="显卡趋势" Style="{StaticResource CaptionTextBlockStyle}" /><ItemsControl ItemsSource="{Binding ViewerGpuTrendPoints}" Height="42"><ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" VerticalAlignment="Bottom" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate><ProgressBar Width="5" Height="34" Maximum="100" Value="{Binding Value}" VerticalAlignment="Bottom" Margin="1,0" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                            <Grid x:Name="MonitorStatusGrid" Visibility="Collapsed" ColumnSpacing="12" RowSpacing="12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource DSCStatusCardStyle}">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="本地服务" Style="{StaticResource CaptionTextBlockStyle}" />
+                                        <TextBlock Text="{Binding LocalBackendBadgeText}" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                        <TextBlock Text="{Binding LocalBackendStateText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource DSCStatusCardStyle}">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="监测提交" Style="{StaticResource CaptionTextBlockStyle}" />
+                                        <TextBlock Text="{Binding CollectorBadgeText}" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                        <TextBlock Text="{Binding CollectorStateText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource DSCStatusCardStyle}">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="实时控制" Style="{StaticResource CaptionTextBlockStyle}" />
+                                        <TextBlock Text="{Binding ControlStreamStateText}" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                        <TextBlock Text="{Binding ControlStreamTransportText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource DSCStatusCardStyle}">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="最近活动" Style="{StaticResource CaptionTextBlockStyle}" />
+                                        <TextBlock Text="{Binding CurrentOperationText}" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                        <TextBlock Text="{Binding CurrentOperationDetailText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                            <Border Visibility="Collapsed" Style="{StaticResource DSCPanelStyle}">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Text="本机最新数据" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                    <TextBlock Text="{Binding RemoteDataStatusText}" Style="{StaticResource CaptionTextBlockStyle}" />
+                                    <Grid x:Name="MonitorRemoteGrid" ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" Spacing="4"><TextBlock Text="{Binding RemoteCpuText}" Style="{StaticResource BodyTextBlockStyle}" /><TextBlock Text="{Binding RemoteMemoryText}" Style="{StaticResource BodyTextBlockStyle}" /></StackPanel>
+                                        <StackPanel Grid.Column="1" Spacing="4"><TextBlock Text="{Binding RemoteDiskText}" Style="{StaticResource BodyTextBlockStyle}" /><TextBlock Text="{Binding RemoteNetworkText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" /></StackPanel>
+                                        <TextBlock Grid.Column="2" Text="{Binding RemoteGpuText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                            <Border Visibility="Collapsed" Style="{StaticResource DSCPanelStyle}">
+                                <StackPanel Spacing="14">
+                                    <TextBlock Text="运行控制" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                    <TextBlock Text="{Binding StatusText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <Button Grid.Column="0" Command="{Binding CheckConnectionCommand}" Content="检查连接" />
+                                        <Button Grid.Column="1" Command="{Binding StartBackendCommand}" Content="启动监测" />
+                                        <Button Grid.Column="2" Command="{Binding StopBackendCommand}" Content="停止监测" />
+                                        <Button Grid.Column="3" Command="{Binding PushCloudCommand}" Content="推送配置" />
+                                    </Grid>
+                                    <InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Title="连接状态" Message="{Binding ConnectionText}" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+
+                <Grid x:Name="LocalPage" Visibility="Collapsed">
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="20" MaxWidth="980" HorizontalAlignment="Left">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="本机状态" Style="{StaticResource TitleTextBlockStyle}" />
+                                <TextBlock Text="在对应区块中开启采集、选择探测方式，并查看本机最新数字结果。" Style="{StaticResource BodyTextBlockStyle}" />
+                                <TextBlock Text="{Binding LocalSampleTimestampText}" Style="{StaticResource CaptionTextBlockStyle}" />
+                            </StackPanel>
+                            <Grid x:Name="LocalMetricCardsGrid" ColumnSpacing="12" RowSpacing="12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                <Border Style="{StaticResource DSCStatusCardStyle}" Padding="18">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Text="CPU" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                        <ToggleSwitch Header="采集" IsOn="{Binding CpuEnabled, Mode=TwoWay}" />
+                                        <ComboBox Header="探测器" ItemsSource="{Binding CpuProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding CpuProvider, Mode=TwoWay}" />
+                                        <TextBlock Text="{Binding RemoteCpuText}" Style="{StaticResource BodyTextBlockStyle}" />
+                                        <TextBlock Text="{Binding LocalCpuPayloadText}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding CpuInstanceSummary}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource DSCStatusCardStyle}" Padding="18">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Text="内存" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                        <ToggleSwitch Header="采集" IsOn="{Binding MemoryEnabled, Mode=TwoWay}" />
+                                        <ComboBox Header="探测器" ItemsSource="{Binding MemoryProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding MemoryProvider, Mode=TwoWay}" />
+                                        <TextBlock Text="{Binding RemoteMemoryText}" Style="{StaticResource BodyTextBlockStyle}" />
+                                        <TextBlock Text="{Binding LocalMemoryPayloadText}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding MemoryMetricSummary}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource DSCStatusCardStyle}" Padding="18">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Text="磁盘" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                        <ToggleSwitch Header="采集" IsOn="{Binding DiskEnabled, Mode=TwoWay}" />
+                                        <ComboBox Header="探测器" ItemsSource="{Binding DiskProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding DiskProvider, Mode=TwoWay}" />
+                                        <TextBlock Text="{Binding RemoteDiskText}" Style="{StaticResource BodyTextBlockStyle}" />
+                                        <TextBlock Text="{Binding LocalDiskPayloadText}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding DiskInstanceSummary}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource DSCStatusCardStyle}" Padding="18">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Text="网络" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                        <ToggleSwitch Header="采集" IsOn="{Binding NetworkEnabled, Mode=TwoWay}" />
+                                        <ComboBox Header="探测器" ItemsSource="{Binding NetworkProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding NetworkProvider, Mode=TwoWay}" />
+                                        <TextBlock Text="{Binding RemoteNetworkText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding LocalNetworkPayloadText}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding NetworkInstanceSummary}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource DSCStatusCardStyle}" Padding="18">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Text="显卡" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                        <ToggleSwitch Header="采集" IsOn="{Binding GpuEnabled, Mode=TwoWay}" />
+                                        <ComboBox Header="探测器" ItemsSource="{Binding GpuProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding GpuProvider, Mode=TwoWay}" />
+                                        <TextBlock Text="{Binding RemoteGpuText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding GpuInstanceSummary}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource DSCStatusCardStyle}" Padding="18">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Text="风扇" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                        <ToggleSwitch Header="采集" IsOn="{Binding FanEnabled, Mode=TwoWay}" />
+                                        <ComboBox Header="探测器" ItemsSource="{Binding FanProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding FanProvider, Mode=TwoWay}" />
+                                        <TextBlock Text="{Binding DetectStatusText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                            <Grid x:Name="LocalHealthGrid" ColumnSpacing="12" RowSpacing="12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                <Border Style="{StaticResource DSCStatusCardStyle}"><StackPanel Spacing="6"><TextBlock Text="本地服务" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding LocalBackendBadgeText}" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="{Binding LocalBackendStateText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" /></StackPanel></Border>
+                                <Border Style="{StaticResource DSCStatusCardStyle}"><StackPanel Spacing="6"><TextBlock Text="监测提交" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding CollectorBadgeText}" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="{Binding CollectorStateText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" /></StackPanel></Border>
+                                <Border Style="{StaticResource DSCStatusCardStyle}"><StackPanel Spacing="6"><TextBlock Text="实时控制" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding ControlStreamStateText}" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="{Binding ControlStreamTransportText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" /></StackPanel></Border>
+                                <Border Style="{StaticResource DSCStatusCardStyle}"><StackPanel Spacing="6"><TextBlock Text="最近活动" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding CurrentOperationText}" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="{Binding CurrentOperationDetailText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" /></StackPanel></Border>
+                            </Grid>
+                            <Border Style="{StaticResource DSCPanelStyle}">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Text="运行控制" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                    <TextBlock Text="{Binding StatusText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <Button Grid.Column="0" Command="{Binding CheckConnectionCommand}" Content="检查连接" />
+                                        <Button Grid.Column="1" Command="{Binding StartBackendCommand}" Content="启动监测" />
+                                        <Button Grid.Column="2" Command="{Binding StopBackendCommand}" Content="停止监测" />
+                                    </Grid>
+                                    <InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Title="连接状态" Message="{Binding ConnectionText}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Visibility="Collapsed" Style="{StaticResource DSCPanelStyle}">
+                                <StackPanel Spacing="16">
+                                    <TextBlock Text="组件探测" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                    <Grid x:Name="LocalProbeGrid" ColumnSpacing="18" RowSpacing="12">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                        <ToggleSwitch Grid.Row="0" Grid.Column="0" Header="CPU" IsOn="{Binding CpuEnabled, Mode=TwoWay}" />
+                                        <ComboBox Grid.Row="0" Grid.Column="1" Header="探测方式" ItemsSource="{Binding CpuProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding CpuProvider, Mode=TwoWay}" />
+                                        <ToggleSwitch Grid.Row="1" Grid.Column="0" Header="内存" IsOn="{Binding MemoryEnabled, Mode=TwoWay}" />
+                                        <ComboBox Grid.Row="1" Grid.Column="1" Header="探测方式" ItemsSource="{Binding MemoryProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding MemoryProvider, Mode=TwoWay}" />
+                                        <ToggleSwitch Grid.Row="2" Grid.Column="0" Header="磁盘" IsOn="{Binding DiskEnabled, Mode=TwoWay}" />
+                                        <ComboBox Grid.Row="2" Grid.Column="1" Header="探测方式" ItemsSource="{Binding DiskProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding DiskProvider, Mode=TwoWay}" />
+                                        <ToggleSwitch Grid.Row="3" Grid.Column="0" Header="网络" IsOn="{Binding NetworkEnabled, Mode=TwoWay}" />
+                                        <ComboBox Grid.Row="3" Grid.Column="1" Header="探测方式" ItemsSource="{Binding NetworkProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding NetworkProvider, Mode=TwoWay}" />
+                                        <ToggleSwitch Grid.Row="4" Grid.Column="0" Header="显卡" IsOn="{Binding GpuEnabled, Mode=TwoWay}" />
+                                        <ComboBox Grid.Row="4" Grid.Column="1" Header="探测方式" ItemsSource="{Binding GpuProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding GpuProvider, Mode=TwoWay}" />
+                                        <ToggleSwitch Grid.Row="5" Grid.Column="0" Header="风扇" IsOn="{Binding FanEnabled, Mode=TwoWay}" />
+                                        <ComboBox Grid.Row="5" Grid.Column="1" Header="探测方式" ItemsSource="{Binding FanProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding FanProvider, Mode=TwoWay}" />
+                                    </Grid>
+                                    <Button Command="{Binding DetectCommand}" Content="探测本机组件" HorizontalAlignment="Left" />
+                                    <TextBlock Text="{Binding DetectStatusText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                            <Grid x:Name="LocalSummaryGrid" Visibility="Collapsed" ColumnSpacing="12" RowSpacing="12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource DSCStatusCardStyle}"><StackPanel Spacing="6"><TextBlock Text="CPU" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding CpuInstanceSummary}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" /></StackPanel></Border>
+                                <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource DSCStatusCardStyle}"><StackPanel Spacing="6"><TextBlock Text="显卡" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding GpuInstanceSummary}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" /></StackPanel></Border>
+                                <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource DSCStatusCardStyle}"><StackPanel Spacing="6"><TextBlock Text="磁盘" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding DiskInstanceSummary}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" /></StackPanel></Border>
+                                <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource DSCStatusCardStyle}"><StackPanel Spacing="6"><TextBlock Text="网卡" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding NetworkInstanceSummary}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" /></StackPanel></Border>
+                            </Grid>
+                            <Border Style="{StaticResource DSCPanelStyle}">
+                                <StackPanel Spacing="14">
+                                    <TextBlock Text="实例记录" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                    <TextBlock Text="{Binding CpuInstanceSummary}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                    <ItemsControl ItemsSource="{Binding CpuInstances}">
+                                        <ItemsControl.ItemTemplate><DataTemplate><Grid ColumnSpacing="12" Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><ToggleSwitch Grid.Column="0" IsOn="{Binding IsEnabled, Mode=TwoWay}" /><StackPanel Grid.Column="1" Spacing="3"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Subtitle}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" /><TextBlock Text="{Binding ReportedMetrics}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" /></StackPanel><Button Grid.Column="2" Content="指标" Click="InstanceMetricEditorButton_OnClick" IsEnabled="{Binding SupportsMetricEditing}" /></Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Text="{Binding DiskInstanceSummary}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                    <ItemsControl ItemsSource="{Binding DiskInstances}">
+                                        <ItemsControl.ItemTemplate><DataTemplate><Grid Margin="0,0,0,8" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><ToggleSwitch Grid.Column="0" IsOn="{Binding IsEnabled, Mode=TwoWay}" /><StackPanel Grid.Column="1" Spacing="3"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Subtitle}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" /><TextBlock Text="{Binding ReportedMetrics}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" /></StackPanel><Button Grid.Column="2" Content="指标" Click="InstanceMetricEditorButton_OnClick" IsEnabled="{Binding SupportsMetricEditing}" /></Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Text="{Binding NetworkInstanceSummary}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                    <ItemsControl ItemsSource="{Binding NetworkInstances}">
+                                        <ItemsControl.ItemTemplate><DataTemplate><Grid Margin="0,0,0,8" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><ToggleSwitch Grid.Column="0" IsOn="{Binding IsEnabled, Mode=TwoWay}" /><StackPanel Grid.Column="1" Spacing="3"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Subtitle}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" /><TextBlock Text="{Binding ReportedMetrics}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" /></StackPanel><Button Grid.Column="2" Content="指标" Click="InstanceMetricEditorButton_OnClick" IsEnabled="{Binding SupportsMetricEditing}" /></Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Text="{Binding GpuInstanceSummary}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                    <ItemsControl ItemsSource="{Binding GpuInstances}">
+                                        <ItemsControl.ItemTemplate><DataTemplate><Grid Margin="0,0,0,8" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><ToggleSwitch Grid.Column="0" IsOn="{Binding IsEnabled, Mode=TwoWay}" /><StackPanel Grid.Column="1" Spacing="3"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Subtitle}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" /><TextBlock Text="{Binding ReportedMetrics}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" /></StackPanel><Button Grid.Column="2" Content="指标" Click="InstanceMetricEditorButton_OnClick" IsEnabled="{Binding SupportsMetricEditing}" /></Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+
+                <Grid x:Name="ServerPage" Visibility="Collapsed">
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="20" MaxWidth="720" HorizontalAlignment="Left">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="服务器配置" Style="{StaticResource TitleTextBlockStyle}" />
+                                <TextBlock Text="配置中枢地址、身份验证和数据上传策略。网页、安卓端与 Windows agent 共用同一中枢端口。" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Border Style="{StaticResource DSCPanelStyle}">
+                                <StackPanel Spacing="14">
+                                    <TextBox Header="中枢服务器地址" Text="{Binding ServerUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="http://your-server-host:3100" />
+                                    <PasswordBox x:Name="SecretBox" Header="Agent 密钥" PasswordChanged="SecretBox_OnPasswordChanged" />
+                                    <ToggleSwitch Header="启用数据记录" IsOn="{Binding DataRecordingEnabled, Mode=TwoWay}" />
+                                    <TextBlock Text="关闭后，本机不会注册至中枢，也不会上传监测数据。" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                    <TextBox Header="设备 ID" Text="{Binding DeviceId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding DataRecordingEnabled}" />
+                                    <TextBox Header="设备名称" Text="{Binding Hostname, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding DataRecordingEnabled}" />
+                                    <ToggleSwitch Header="开机自动启动观澜" IsOn="{Binding LaunchAtStartup, Mode=TwoWay}" />
+                                    <Grid x:Name="ServerButtonsGrid" ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <Button Grid.Column="0" Command="{Binding CheckConnectionCommand}" Content="验证连接与密钥" />
+                                        <Button Grid.Column="1" Command="{Binding PushCloudCommand}" Content="保存并推送配置" />
+                                    </Grid>
+                                    <InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Title="验证结果" Message="{Binding ConnectionCheckText}" />
+                                    <TextBlock Text="{Binding ConnectionCheckDetailText}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                    <InfoBar IsOpen="True" IsClosable="False" Severity="Warning" Title="传输安全" Message="内网穿透或公网访问必须使用 https://。中枢开启 AGENT_REQUIRE_HTTPS=true 后，会拒绝明文 agent 上传、控制和数据查看请求。" />
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource DSCPanelStyle}">
+                                <StackPanel Spacing="14">
+                                    <TextBlock Text="上传策略" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                    <NumberBox Header="快速采样间隔（秒）" Minimum="1" Value="{Binding FastIntervalValue, Mode=TwoWay}" />
+                                    <NumberBox Header="常规采样间隔（秒）" Minimum="1" Value="{Binding NormalIntervalValue, Mode=TwoWay}" />
+                                    <NumberBox Header="慢速采样间隔（秒）" Minimum="5" Value="{Binding SlowIntervalValue, Mode=TwoWay}" />
+                                    <NumberBox Header="实时查看保持（秒）" Minimum="5" Value="{Binding ViewerRealtimeHoldValue, Mode=TwoWay}" />
+                                    <ToggleSwitch Header="允许网页/客户端请求实时模式" IsOn="{Binding CloudSyncEnabled, Mode=TwoWay}" />
+                                    <ToggleSwitch Header="启动观澜时自动启动探测" IsOn="{Binding AutoStartCollector, Mode=TwoWay}" />
+                                    <ToggleSwitch Header="采集器异常自动重启" IsOn="{Binding AutoRestartCollector, Mode=TwoWay}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Visibility="Collapsed" Style="{StaticResource DSCPanelStyle}">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Text="全部设备" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                    <TextBlock Text="使用网页查看密钥登录后，在这里查看中枢中的全部设备。" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <PasswordBox x:Name="ServerViewerAccessBox" Grid.Column="0" Header="网页查看密钥" PasswordChanged="ViewerAccessBox_OnPasswordChanged" />
+                                        <Button Grid.Column="1" Command="{Binding LoginViewerCommand}" Content="登录并刷新" VerticalAlignment="Bottom" />
+                                    </Grid>
+                                    <TextBox Header="筛选设备" PlaceholderText="输入设备名称或设备 ID" Text="{Binding ViewerDeviceFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBlock Text="{Binding ViewerDataStatusText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                    <ItemsControl ItemsSource="{Binding FilteredViewerDevices}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Margin="0,0,0,8" Padding="14" Background="{ThemeResource ControlFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6">
+                                                    <Grid ColumnSpacing="12">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="{Binding StatusGlyph}" Foreground="{ThemeResource SystemFillColorSuccessBrush}" FontSize="18" />
+                                                        <StackPanel Grid.Column="1" Spacing="3"><TextBlock Text="{Binding Hostname}" FontWeight="SemiBold" /><TextBlock Text="{Binding DeviceId}" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding LastSeenText}" Style="{StaticResource CaptionTextBlockStyle}" /></StackPanel>
+                                                        <StackPanel Grid.Column="2" Spacing="3" HorizontalAlignment="Right"><TextBlock Text="{Binding StatusText}" HorizontalAlignment="Right" /><TextBlock Text="{Binding CpuText}" Style="{StaticResource CaptionTextBlockStyle}" HorizontalAlignment="Right" /><TextBlock Text="{Binding MemoryText}" Style="{StaticResource CaptionTextBlockStyle}" HorizontalAlignment="Right" /><TextBlock Text="{Binding DiskText}" Style="{StaticResource CaptionTextBlockStyle}" HorizontalAlignment="Right" /><TextBlock Text="{Binding GpuText}" Style="{StaticResource CaptionTextBlockStyle}" HorizontalAlignment="Right" /><Button Content="查看详情" Click="ViewerDeviceDetailsButton_OnClick" HorizontalAlignment="Right" /></StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <Border Padding="14" Background="{ThemeResource ControlFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6">
+                                        <StackPanel Spacing="6">
+                                            <TextBlock Text="选中设备详情" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                            <TextBlock Text="{Binding ViewerDetailStatusText}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                            <ComboBox Header="历史窗口" ItemsSource="{Binding MetricWindows}" SelectedItem="{Binding SelectedMetricWindow, Mode=TwoWay}" SelectionChanged="MetricWindow_SelectionChanged" Width="160" />
+                                            <TextBlock Text="{Binding ViewerDetailCpuText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding ViewerDetailMemoryText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding ViewerDetailDiskText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding ViewerDetailGpuText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding ViewerDetailNetworkText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Grid>
+        </controls:NavigationView>
+    </Grid>
+</Window>

@@ -4,6 +4,16 @@ export type DeviceStatus = "online" | "offline";
 
 export type DeviceBlockKey = "cpu" | "gpu" | "memory" | "disk" | "network" | "fan";
 
+export type AgentProbeTarget = DeviceBlockKey | "connection";
+
+export type AgentProbeProvider =
+  | "builtin"
+  | "wmi"
+  | "libreHardwareMonitor"
+  | "openHardwareMonitor"
+  | "redfish"
+  | "disabled";
+
 export type DeviceMetricKey =
   | "cpuUsage"
   | "cpuFrequency"
@@ -145,6 +155,40 @@ export interface DeviceMetricConfigPayload {
   instanceMetricConfig?: Record<string, DeviceMetricKey[]>;
 }
 
+export interface AgentConnectionConfig {
+  serverUrl: string;
+  secret: string;
+  deviceId: string;
+  hostname: string;
+}
+
+export interface AgentSamplingConfig {
+  normalIntervalSeconds: number;
+  fastIntervalSeconds: number;
+  slowIntervalSeconds: number;
+  realtimeModeEnabled?: boolean;
+  realtimeModeExpiresAt?: string;
+  realtimeModeSource?: "manual" | "viewer" | "";
+}
+
+export interface AgentProbeSelection {
+  target: AgentProbeTarget;
+  provider: AgentProbeProvider;
+  enabled: boolean;
+}
+
+export interface AgentLocalConfig extends DeviceMetricConfigPayload {
+  connection: AgentConnectionConfig;
+  sampling: AgentSamplingConfig;
+  probeSelections: AgentProbeSelection[];
+  cloudSyncEnabled?: boolean;
+  autoRestartCollector?: boolean;
+}
+
+export interface AgentCloudConfigSyncPayload extends DeviceMetricConfigPayload {
+  deviceId: string;
+}
+
 export interface DeviceMetricConfigResponse {
   deviceId: string;
   availableMetrics: DeviceMetricOption[];
@@ -257,7 +301,10 @@ export interface MetricSeries {
   gpuTemperatureC: SamplePoint[];
   memoryUsagePercent: SamplePoint[];
   swapUsagePercent: SamplePoint[];
+  memoryUsedBytes: SamplePoint[];
+  swapUsedBytes: SamplePoint[];
   diskUsagePercent: SamplePoint[];
+  diskUsedBytes: SamplePoint[];
   diskReadBytesPerSec: SamplePoint[];
   diskWriteBytesPerSec: SamplePoint[];
   networkRxBytesPerSec: SamplePoint[];

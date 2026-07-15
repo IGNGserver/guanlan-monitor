@@ -1,0 +1,48 @@
+<UserControl
+    x:Class="DeviceStateConsoleAgent.WinUI.Controls.MetricLineChart"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:DeviceStateConsoleAgent.WinUI.ViewModels"
+    x:Name="Root">
+    <Grid MinWidth="260" MinHeight="330" Padding="0,8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="190" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid Grid.Row="0" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="2">
+                <TextBlock Text="{Binding Chart.Title, ElementName=Root}" FontWeight="SemiBold" TextWrapping="WrapWholeWords" />
+                <TextBlock Text="{Binding Chart.Subtitle, ElementName=Root}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="WrapWholeWords" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" HorizontalAlignment="Right" Spacing="2">
+                <TextBlock Text="{Binding Chart.CurrentText, ElementName=Root}" HorizontalAlignment="Right" FontWeight="SemiBold" />
+            </StackPanel>
+        </Grid>
+        <Grid Grid.Row="1" Margin="0,8,0,4" ColumnSpacing="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="54" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid Grid.Column="0" IsHitTestVisible="False">
+                <TextBlock Text="{Binding Chart.YAxisTopText, ElementName=Root}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" VerticalAlignment="Top" />
+                <TextBlock Text="{Binding Chart.YAxisMiddleText, ElementName=Root}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding Chart.YAxisBottomText, ElementName=Root}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" VerticalAlignment="Bottom" />
+            </Grid>
+            <Canvas x:Name="Plot" Grid.Column="1" Background="Transparent" SizeChanged="Plot_SizeChanged" PointerMoved="Plot_PointerMoved" PointerExited="Plot_PointerExited" />
+            <Border x:Name="HoverLabel" Visibility="Collapsed" Background="{ThemeResource ControlFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" Padding="8,5" CornerRadius="4" MaxWidth="160" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False">
+                <Border.RenderTransform><TranslateTransform x:Name="HoverTransform" /></Border.RenderTransform>
+                <TextBlock x:Name="HoverText" Style="{StaticResource CaptionTextBlockStyle}" />
+            </Border>
+        </Grid>
+        <Grid Grid.Row="2" ColumnSpacing="4">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="54" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="1" Text="{Binding Chart.StartTimeText, ElementName=Root}" Style="{StaticResource CaptionTextBlockStyle}" />
+            <TextBlock Grid.Column="2" Text="{Binding Chart.EndTimeText, ElementName=Root}" HorizontalAlignment="Right" Style="{StaticResource CaptionTextBlockStyle}" />
+        </Grid>
+    </Grid>
+</UserControl>

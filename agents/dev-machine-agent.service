@@ -7,9 +7,9 @@ StartLimitBurst=11
 
 [Service]
 Type=simple
-WorkingDirectory=/home/<user>/OneDrive/文档/项目/设备状态控制台
-EnvironmentFile=/home/<user>/OneDrive/文档/项目/设备状态控制台/agents/dev-machine-agent.env
-ExecStart=/home/<user>/OneDrive/文档/项目/设备状态控制台/agents/run-dev-machine-agent.sh
+WorkingDirectory=/opt/device-state-console-agent
+EnvironmentFile=/etc/device-state-console-agent.env
+ExecStart=/opt/device-state-console-agent/run-dev-machine-agent.sh
 Restart=on-failure
 RestartSec=27
 

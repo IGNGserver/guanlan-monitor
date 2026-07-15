@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type {
+  AgentCloudConfigSyncPayload,
   AuthLoginPayload,
   DeviceMetricOption,
   DeviceMetricConfigPayload,
@@ -12,6 +13,8 @@ import type {
 import { z } from "zod";
 import { env } from "./config.js";
 import type { MetricsService } from "./services/metrics.js";
+import type { AgentControlService } from "./services/agent-control.js";
+import type { ViewerPresenceService } from "./services/viewer-presence.js";
 import { LocalDeviceMetricConfigStore, LocalFanNoteStore, createLocalStore } from "./repositories/local.js";
 import type { Repositories, SessionValue } from "./types.js";
 import { ALL_DEVICE_METRIC_KEYS, getAvailableMetrics, resolveCpuFrequencyMHz, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
@@ -83,7 +86,18 @@ const metricConfigSchema = z.object({
   ).optional()
 });
 
-export async function registerRoutes(app: FastifyInstance, repositories: Repositories, metricsService: MetricsService) {
+const viewerPresenceSchema = z.object({
+  viewerId: z.string().min(1),
+  ttlSeconds: z.number().int().min(5).max(120).optional()
+});
+
+export async function registerRoutes(
+  app: FastifyInstance,
+  repositories: Repositories,
+  metricsService: MetricsService,
+  viewerPresence: ViewerPresenceService,
+  agentControl: AgentControlService
+) {
   const store = createLocalStore();
   const fanNotes = new LocalFanNoteStore(store);
   const metricConfigs = new LocalDeviceMetricConfigStore(store);
@@ -93,7 +107,9 @@ export async function registerRoutes(app: FastifyInstance, repositories: Reposit
       return reply.code(400).send({ error: "invalid_login_payload" });
     }
     const body = parsed.data;
-    if (body.accessKey !== env.ACCESS_KEY) {
+    // The agent secret is also the viewer credential. ACCESS_KEY remains
+    // accepted for existing web sessions during the migration.
+    if (body.accessKey !== env.AGENT_SHARED_SECRET && body.accessKey !== env.ACCESS_KEY) {
       return reply.code(401).send({ error: "invalid_credentials" });
     }
     setSession(reply, {
@@ -154,6 +170,7 @@ export async function registerRoutes(app: FastifyInstance, repositories: Reposit
         instanceMetricConfig: config?.instanceMetricConfig ?? {},
         availableMetrics,
         latest: {
+          cpuUsagePercent: state.latest.cpuUsagePercent,
           cpuFrequencyMHz: resolveCpuFrequencyMHz(state.latest),
           cpuTemperatureC: state.latest.cpuTemperatureC ?? null,
           cpuPackages: state.latest.cpuPackages ?? [],
@@ -163,6 +180,8 @@ export async function registerRoutes(app: FastifyInstance, repositories: Reposit
           swapTotalBytes: state.latest.memory.swapTotalBytes,
           diskUsedBytes: state.latest.diskUsage.usedBytes,
           diskTotalBytes: state.latest.diskUsage.totalBytes,
+          networkRxBytesPerSec: state.latest.networkRate.rxBytesPerSec,
+          networkTxBytesPerSec: state.latest.networkRate.txBytesPerSec,
           disks: state.latest.disks ?? [],
           networkInterfaces: state.latest.networkInterfaces ?? [],
           gpus: state.latest.gpus,
@@ -237,6 +256,174 @@ export async function registerRoutes(app: FastifyInstance, repositories: Reposit
       };
     }
   );
+
+  app.put<{ Params: { deviceId: string }; Body: { viewerId: string; ttlSeconds?: number } }>(
+    "/api/devices/:deviceId/viewer-presence",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const state = await repositories.realtime.getDevice(request.params.deviceId);
+      if (!state) return reply.code(404).send({ error: "device_not_found" });
+      const body = viewerPresenceSchema.parse(request.body);
+      viewerPresence.touch(request.params.deviceId, body.viewerId, body.ttlSeconds);
+      return {
+        ok: true,
+        deviceId: request.params.deviceId,
+        ...viewerPresence.snapshot(request.params.deviceId)
+      };
+    }
+  );
+
+  app.delete<{ Params: { deviceId: string }; Body: { viewerId: string } }>(
+    "/api/devices/:deviceId/viewer-presence",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const state = await repositories.realtime.getDevice(request.params.deviceId);
+      if (!state) return reply.code(404).send({ error: "device_not_found" });
+      const body = viewerPresenceSchema.pick({ viewerId: true }).parse(request.body);
+      viewerPresence.clear(request.params.deviceId, body.viewerId);
+      return {
+        ok: true,
+        deviceId: request.params.deviceId,
+        ...viewerPresence.snapshot(request.params.deviceId)
+      };
+    }
+  );
+
+  app.post<{ Body: AgentCloudConfigSyncPayload }>("/api/agent/device-config", async (request, reply) => {
+    if (rejectInsecureAgentTransport(request, reply)) return;
+    const token = request.headers.authorization?.replace("Bearer ", "");
+    if (token !== env.AGENT_SHARED_SECRET) {
+      return reply.code(401).send({ error: "unauthorized_agent" });
+    }
+
+    const body = metricConfigSchema.extend({
+      deviceId: z.string().min(1)
+    }).parse(request.body);
+
+    await metricsService.setEnabledMetrics(body.deviceId, {
+      enabledMetrics: body.enabledMetrics,
+      enabledDeviceIds: body.enabledDeviceIds ?? {},
+      instanceMetricConfig: body.instanceMetricConfig ?? {}
+    });
+
+    const state = await repositories.realtime.getDevice(body.deviceId);
+    return {
+      deviceId: body.deviceId,
+      availableMetrics: state ? getAvailableMetrics(state) : [],
+      enabledMetrics: body.enabledMetrics,
+      enabledDeviceIds: body.enabledDeviceIds ?? {},
+      instanceMetricConfig: body.instanceMetricConfig ?? {}
+    };
+  });
+
+  app.get("/api/agent/ping", async (request, reply) => {
+    if (rejectInsecureAgentTransport(request, reply)) return;
+    const token = request.headers.authorization?.replace("Bearer ", "");
+    if (token !== env.AGENT_SHARED_SECRET) {
+      return reply.code(401).send({ error: "unauthorized_agent" });
+    }
+
+    return {
+      ok: true,
+      serverTime: new Date().toISOString()
+    };
+  });
+
+  app.get<{ Querystring: { deviceId: string } }>("/api/agent/device-state", async (request, reply) => {
+    if (rejectInsecureAgentTransport(request, reply)) return;
+    const token = request.headers.authorization?.replace("Bearer ", "");
+    if (token !== env.AGENT_SHARED_SECRET) {
+      return reply.code(401).send({ error: "unauthorized_agent" });
+    }
+
+    const deviceId = z.string().min(1).parse(request.query.deviceId);
+    const state = await repositories.realtime.getDevice(deviceId);
+    if (!state) {
+      return reply.code(404).send({ error: "device_not_found" });
+    }
+
+    return {
+      deviceId,
+      status: state.status,
+      lastSeenAt: state.lastSeenAt,
+      latest: state.latest
+    };
+  });
+
+  app.get<{ Querystring: { deviceId: string } }>("/api/agent/control-stream", async (request, reply) => {
+    if (rejectInsecureAgentTransport(request, reply)) return;
+    const token = request.headers.authorization?.replace("Bearer ", "");
+    if (token !== env.AGENT_SHARED_SECRET) {
+      return reply.code(401).send({ error: "unauthorized_agent" });
+    }
+
+    const deviceId = request.query.deviceId?.trim();
+    if (!deviceId) {
+      return reply.code(400).send({ error: "missing_device_id" });
+    }
+
+    reply.hijack();
+    reply.raw.statusCode = 200;
+    reply.raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
+    reply.raw.setHeader("Connection", "keep-alive");
+    reply.raw.setHeader("X-Accel-Buffering", "no");
+    reply.raw.flushHeaders?.();
+    agentControl.writeComment(reply.raw, "connected");
+
+    agentControl.connect(deviceId, reply.raw);
+    agentControl.sendViewerRealtime(reply.raw, deviceId, viewerPresence.snapshot(deviceId));
+
+    const keepAliveTimer = setInterval(() => {
+      if (reply.raw.destroyed) {
+        clearInterval(keepAliveTimer);
+        return;
+      }
+      agentControl.sendViewerRealtime(reply.raw, deviceId, viewerPresence.snapshot(deviceId));
+    }, env.AGENT_CONTROL_KEEPALIVE_MS);
+
+    const stopKeepAlive = () => {
+      clearInterval(keepAliveTimer);
+      reply.raw.off("error", stopKeepAlive);
+      reply.raw.socket?.off("close", stopKeepAlive);
+      reply.raw.socket?.off("error", stopKeepAlive);
+    };
+
+    reply.raw.on("error", stopKeepAlive);
+    reply.raw.socket?.on("close", stopKeepAlive);
+    reply.raw.socket?.on("error", stopKeepAlive);
+  });
+
+  app.get<{ Querystring: { deviceId: string } }>("/api/agent/device-realtime", async (request, reply) => {
+    if (rejectInsecureAgentTransport(request, reply)) return;
+    const token = request.headers.authorization?.replace("Bearer ", "");
+    if (token !== env.AGENT_SHARED_SECRET) {
+      return reply.code(401).send({ error: "unauthorized_agent" });
+    }
+
+    const deviceId = z.string().min(1).parse(request.query.deviceId);
+    const state = await repositories.realtime.getDevice(deviceId);
+    if (!state) return reply.code(404).send({ error: "device_not_found" });
+    return {
+      deviceId,
+      ...viewerPresence.snapshot(deviceId)
+    };
+  });
+}
+
+function rejectInsecureAgentTransport(request: FastifyRequest, reply: FastifyReply): boolean {
+  if (!env.AGENT_REQUIRE_HTTPS) {
+    return false;
+  }
+
+  const forwardedProto = request.headers["x-forwarded-proto"];
+  const protocol = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
+  if (request.protocol === "https" || protocol?.split(",")[0]?.trim().toLowerCase() === "https") {
+    return false;
+  }
+
+  reply.code(400).send({ error: "https_required", message: "Agent endpoint requires HTTPS when AGENT_REQUIRE_HTTPS=true." });
+  return true;
 }
 
 function sanitizeUnsupportedMetricSeries(series: MetricSeries, availableMetrics: DeviceMetricOption[]) {
@@ -274,7 +461,10 @@ function alignMetricSeriesToWindow(series: MetricSeries, window: MetricWindow) {
     gpuTemperatureC: alignSamplePoints(series.gpuTemperatureC, bucketMs),
     memoryUsagePercent: alignSamplePoints(series.memoryUsagePercent, bucketMs),
     swapUsagePercent: alignSamplePoints(series.swapUsagePercent, bucketMs),
+    memoryUsedBytes: alignSamplePoints(series.memoryUsedBytes, bucketMs),
+    swapUsedBytes: alignSamplePoints(series.swapUsedBytes, bucketMs),
     diskUsagePercent: alignSamplePoints(series.diskUsagePercent, bucketMs),
+    diskUsedBytes: alignSamplePoints(series.diskUsedBytes, bucketMs),
     diskReadBytesPerSec: alignSamplePoints(series.diskReadBytesPerSec, bucketMs),
     diskWriteBytesPerSec: alignSamplePoints(series.diskWriteBytesPerSec, bucketMs),
     networkRxBytesPerSec: alignSamplePoints(series.networkRxBytesPerSec, bucketMs),

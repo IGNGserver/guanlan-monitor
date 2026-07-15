@@ -4,19 +4,22 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  sudo bash deploy/install-agent.sh --server-url http://SERVER:4000 --secret AGENT_SECRET [--device-id node-001]
+  sudo bash deploy/install-agent.sh --server-url http://SERVER:3100 --secret AGENT_SECRET [--device-id node-001]
+  sudo bash deploy/install-agent.sh --uninstall [--install-dir /opt/device-state-console-agent]
 
 Options:
-  --server-url URL     Device State Console server URL, for example http://192.168.1.10:4000
+  --server-url URL     Device State Console server URL, for example http://192.168.1.10:3100
   --secret SECRET      Agent shared secret, must match AGENT_SHARED_SECRET
   --device-id ID       Device id shown in the console. Defaults to hostname
   --hostname NAME      Device display name shown in the console. Defaults to device id
   --install-dir DIR    Installation directory. Defaults to /opt/device-state-console-agent
   --service-user USER  Service user. Defaults to dsc-agent
-  --node-path PATH     Node.js executable path. Defaults to the current `node`
+  --agent-binary PATH  Prebuilt CLI binary. Defaults to a sibling binary in a release package
+  --go-path PATH       Go executable path. Defaults to the current `go`
   --restart-count N    Max restarts allowed within the restart window. Defaults to 10
   --restart-window-minutes N
                        Restart window in minutes. Defaults to 5
+  --uninstall          Stop and remove the CLI agent service and install directory
 EOF
 }
 
@@ -26,9 +29,11 @@ DEVICE_ID="$(hostname)"
 HOSTNAME_VALUE=""
 INSTALL_DIR="/opt/device-state-console-agent"
 SERVICE_USER="dsc-agent"
-NODE_PATH=""
+GO_PATH=""
+AGENT_BINARY=""
 RESTART_COUNT="10"
 RESTART_WINDOW_MINUTES="5"
+UNINSTALL="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -56,8 +61,12 @@ while [[ $# -gt 0 ]]; do
       SERVICE_USER="${2:-}"
       shift 2
       ;;
-    --node-path)
-      NODE_PATH="${2:-}"
+    --go-path)
+      GO_PATH="${2:-}"
+      shift 2
+      ;;
+    --agent-binary)
+      AGENT_BINARY="${2:-}"
       shift 2
       ;;
     --restart-count)
@@ -67,6 +76,10 @@ while [[ $# -gt 0 ]]; do
     --restart-window-minutes)
       RESTART_WINDOW_MINUTES="${2:-}"
       shift 2
+      ;;
+    --uninstall)
+      UNINSTALL="true"
+      shift
       ;;
     -h|--help)
       usage
@@ -83,6 +96,15 @@ done
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Please run this script with sudo." >&2
   exit 1
+fi
+
+if [[ "${UNINSTALL}" == "true" ]]; then
+  systemctl disable --now device-state-console-agent.service 2>/dev/null || true
+  rm -f /etc/systemd/system/device-state-console-agent.service
+  systemctl daemon-reload
+  rm -rf "${INSTALL_DIR}"
+  echo "Device State Console CLI agent uninstalled."
+  exit 0
 fi
 
 if [[ -z "${SERVER_URL}" || -z "${AGENT_SECRET}" ]]; then
@@ -104,23 +126,48 @@ if ! [[ "${RESTART_WINDOW_MINUTES}" =~ ^[0-9]+$ ]] || [[ "${RESTART_WINDOW_MINUT
   exit 1
 fi
 
-if [[ -z "${NODE_PATH}" ]]; then
-  if ! command -v node >/dev/null 2>&1; then
-    echo "Node.js is required. Install Node.js 22+ first or pass --node-path." >&2
-    exit 1
-  fi
-  NODE_PATH="$(command -v node)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "${AGENT_BINARY}" && -x "${SCRIPT_DIR}/device-state-console-agent" ]]; then
+  AGENT_BINARY="${SCRIPT_DIR}/device-state-console-agent"
 fi
 
-if [[ ! -x "${NODE_PATH}" ]]; then
-  echo "Node executable not found or not executable: ${NODE_PATH}" >&2
+if [[ -z "${AGENT_BINARY}" && -z "${GO_PATH}" ]]; then
+  if ! command -v go >/dev/null 2>&1; then
+    echo "Go 1.24+ is required. Install Go first or pass --go-path." >&2
+    exit 1
+  fi
+  GO_PATH="$(command -v go)"
+fi
+
+if [[ -z "${AGENT_BINARY}" && ! -x "${GO_PATH}" ]]; then
+  echo "Go executable not found or not executable: ${GO_PATH}" >&2
   exit 1
 fi
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+AGENT_SOURCE_DIR="${SOURCE_DIR}/agents"
+VERSION_FILE="${SCRIPT_DIR}/VERSION"
+if [[ ! -f "${VERSION_FILE}" ]]; then
+  VERSION_FILE="${SOURCE_DIR}/VERSION"
+fi
+if [[ ! -f "${VERSION_FILE}" ]]; then
+  echo "VERSION file not found beside the installer or repository root." >&2
+  exit 1
+fi
+VERSION="$(tr -d '[:space:]' < "${VERSION_FILE}")"
 
 install -d -m 0755 "${INSTALL_DIR}"
-install -m 0755 "${SOURCE_DIR}/agents/node-agent.mjs" "${INSTALL_DIR}/node-agent.mjs"
+printf '%s\n' "${VERSION}" > "${INSTALL_DIR}/VERSION"
+if [[ -n "${AGENT_BINARY}" ]]; then
+  if [[ ! -x "${AGENT_BINARY}" ]]; then
+    echo "Agent binary not found or not executable: ${AGENT_BINARY}" >&2
+    exit 1
+  fi
+  install -m 0755 "${AGENT_BINARY}" "${INSTALL_DIR}/device-state-console-agent"
+else
+  "${GO_PATH}" build -C "${AGENT_SOURCE_DIR}" -o "${INSTALL_DIR}/device-state-console-agent" .
+fi
+chmod 0755 "${INSTALL_DIR}/device-state-console-agent"
 
 RESTART_WINDOW_SECONDS=$(( RESTART_WINDOW_MINUTES * 60 ))
 if [[ "${RESTART_WINDOW_SECONDS}" -lt 60 ]]; then
@@ -139,7 +186,6 @@ DSC_SERVER_URL=${SERVER_URL}
 DSC_AGENT_SECRET=${AGENT_SECRET}
 DSC_DEVICE_ID=${DEVICE_ID}
 DSC_HOSTNAME=${HOSTNAME_VALUE}
-DSC_COMMAND_TIMEOUT_MS=2000
 EOF
 chmod 0600 "${INSTALL_DIR}/agent.env"
 
@@ -148,7 +194,6 @@ cat > "${INSTALL_DIR}/run-agent.sh" <<EOF
 set -uo pipefail
 
 INSTALL_DIR="${INSTALL_DIR}"
-NODE_PATH="${NODE_PATH}"
 MAX_RESTART_COUNT=${RESTART_COUNT}
 RESTART_WINDOW_SECONDS=${RESTART_WINDOW_SECONDS}
 RESTART_DELAY_SECONDS=${RESTART_DELAY_SECONDS}
@@ -179,7 +224,7 @@ while true; do
   fi
 
   RECENT_STARTS+=("\${NOW}")
-  "\${NODE_PATH}" "\${INSTALL_DIR}/node-agent.mjs" >> "\${OUT_LOG}" 2>> "\${ERR_LOG}"
+  "\${INSTALL_DIR}/device-state-console-agent" >> "\${OUT_LOG}" 2>> "\${ERR_LOG}"
   EXIT_CODE=\$?
   printf '[%s] agent exited with code %s\n' "\$(date --iso-8601=seconds)" "\${EXIT_CODE}" >> "\${ERR_LOG}"
   sleep "\${RESTART_DELAY_SECONDS}"
@@ -194,7 +239,7 @@ chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}"
 
 cat > /etc/systemd/system/device-state-console-agent.service <<EOF
 [Unit]
-Description=Device State Console Agent
+Description=Device State Console Go Agent
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=${RESTART_WINDOW_SECONDS}
@@ -217,4 +262,4 @@ systemctl daemon-reload
 systemctl enable --now device-state-console-agent.service
 systemctl --no-pager --full status device-state-console-agent.service
 
-echo "Device State Console agent installed."
+echo "Device State Console Go agent installed."

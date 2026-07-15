@@ -14,13 +14,15 @@ import type {
 } from "@dsc/shared";
 import { WINDOW_LABELS } from "@dsc/shared/chart";
 import {
+  clearViewerPresence,
   getDeviceMetricConfig,
   getMetrics,
   getServerUrl,
   listDevices,
   logout,
   saveDeviceMetricConfig,
-  saveFanNote
+  saveFanNote,
+  touchViewerPresence
 } from "../lib/api";
 import { ChartCard } from "./chart-card";
 import { DeviceSidebar } from "./device-sidebar";
@@ -285,6 +287,29 @@ export function Dashboard({
       socket.close();
     };
   }, [selectedDeviceId, selectedWindow]);
+
+  useEffect(() => {
+    if (!selectedDeviceId || typeof window === "undefined") return;
+
+    const storageKey = "dsc-viewer-id";
+    let viewerId = window.sessionStorage.getItem(storageKey);
+    if (!viewerId) {
+      viewerId = globalThis.crypto?.randomUUID?.() ?? `viewer-${Date.now()}`;
+      window.sessionStorage.setItem(storageKey, viewerId);
+    }
+
+    const keepAlive = () => {
+      void touchViewerPresence(selectedDeviceId, viewerId!, 20).catch(() => undefined);
+    };
+
+    keepAlive();
+    const timer = globalThis.setInterval(keepAlive, 10_000);
+
+    return () => {
+      globalThis.clearInterval(timer);
+      void clearViewerPresence(selectedDeviceId, viewerId!).catch(() => undefined);
+    };
+  }, [selectedDeviceId]);
 
   async function refreshDevices() {
     const next = await listDevices();

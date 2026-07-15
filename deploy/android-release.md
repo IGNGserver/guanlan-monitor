@@ -57,7 +57,7 @@ Unsigned output when signing variables are missing:
 Example:
 
 ```bash
-/home/<user>/Android/Sdk/build-tools/36.1.0/apksigner verify --print-certs \
+"$ANDROID_HOME/build-tools/36.1.0/apksigner" verify --print-certs \
   android/app/build/outputs/apk/release/app-release.apk
 ```
 
