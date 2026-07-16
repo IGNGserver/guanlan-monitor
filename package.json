@@ -1,7 +1,7 @@
 {
   "name": "device-state-console",
   "private": true,
-  "version": "0.1.99",
+  "version": "0.1.100",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "build": "pnpm -r build",

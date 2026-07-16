@@ -116,7 +116,7 @@ class SettingsRepository(private val application: Application) {
       .catch { error ->
         if (error is IOException) emit(emptyPreferences()) else throw error
       }
-      .map { preferences -> preferences[baseUrlKey].orEmpty() }
+      .map { preferences -> normalizeServerUrl(preferences[baseUrlKey].orEmpty()) }
       .combine(accessKeyFlow()) { baseUrl, accessKey ->
         ServerConfig(
           baseUrl = baseUrl,
@@ -126,7 +126,7 @@ class SettingsRepository(private val application: Application) {
 
   suspend fun save(config: ServerConfig) {
     application.dataStore.edit { prefs ->
-      prefs[baseUrlKey] = config.baseUrl.trim()
+      prefs[baseUrlKey] = normalizeServerUrl(config.baseUrl)
     }
     encryptedPreferences.edit().putString(accessKeyKey, config.accessKey).apply()
   }
@@ -149,6 +149,20 @@ class SettingsRepository(private val application: Application) {
     awaitClose {
       encryptedPreferences.unregisterOnSharedPreferenceChangeListener(listener)
     }
+  }
+
+  private fun normalizeServerUrl(value: String): String {
+    val trimmed = value.trim()
+    if (trimmed.isBlank()) return ""
+    val withScheme = if (trimmed.contains("://")) trimmed else "http://$trimmed"
+    return runCatching {
+      val parsed = withScheme.toHttpUrl()
+      if (parsed.port in setOf(4000, 3101)) {
+        parsed.newBuilder().port(3100).build().toString().removeSuffix("/")
+      } else {
+        trimmed
+      }
+    }.getOrDefault(trimmed)
   }
 }
 

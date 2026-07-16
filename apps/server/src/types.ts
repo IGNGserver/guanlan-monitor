@@ -63,6 +63,7 @@ export interface InstanceMetricRecord {
   model?: string;
   vendor?: string;
   usagePercent?: number;
+  usedBytes?: number;
   readBytesPerSec?: number;
   writeBytesPerSec?: number;
   rxBytesPerSec?: number;
@@ -73,6 +74,7 @@ export interface InstanceMetricRecord {
   decodePercent?: number;
   frequencyMHz?: number;
   memoryUsagePercent?: number;
+  memoryUsedBytes?: number;
   temperatureC?: number;
   rpm?: number;
 }

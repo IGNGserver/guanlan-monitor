@@ -243,6 +243,7 @@ export interface DiskMetricSeries {
   model?: string;
   vendor?: string;
   usagePercent: SamplePoint[];
+  usedBytes: SamplePoint[];
   readBytesPerSec: SamplePoint[];
   writeBytesPerSec: SamplePoint[];
   temperatureC: SamplePoint[];
@@ -256,6 +257,7 @@ export interface GpuMetricSeries {
   decodePercent: SamplePoint[];
   frequencyMHz: SamplePoint[];
   memoryUsagePercent: SamplePoint[];
+  memoryUsedBytes: SamplePoint[];
   temperatureC: SamplePoint[];
 }
 

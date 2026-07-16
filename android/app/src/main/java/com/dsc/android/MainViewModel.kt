@@ -93,7 +93,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(savingConfig = false, message = "中枢地址格式不正确") }
         return@launch
       }
-      if (resolvedBaseUrl.contains(":3101/")) {
+      if (resolvedBaseUrl.contains(":4000/") || resolvedBaseUrl.contains(":3101/")) {
         _state.update {
           it.copy(
             savingConfig = false,

@@ -1,8 +1,8 @@
 # 观澜
 
-观澜是用于查看电脑、服务器和虚拟机运行状态的私有部署监控工具。它提供 Web 控制台、Windows 桌面端和 Android 客户端，可查看 CPU、内存、磁盘、网络、显卡和风扇等实时数据与历史趋势。
+观澜是用于查看电脑、服务器和虚拟机运行状态的私有部署监控工具。它提供 Web 控制台、Windows 桌面端和 Android 客户端，可查看 CPU、内存、磁盘、网络、显卡和风扇等实时数据与历史趋势。Windows 端按 CPU、硬盘、网卡、显卡和风扇实例分别展示使用率、频率、温度、容量与读写/收发速率。
 
-当前版本：[`v0.1.99`](https://github.com/IGNGserver/Device-State-Console/releases/latest)
+当前版本：[`v0.1.100`](https://github.com/IGNGserver/Device-State-Console/releases/latest)
 
 ## 下载与安装
 

@@ -117,8 +117,10 @@ data class DiskMetricSeriesDto(
   val model: String? = null,
   val vendor: String? = null,
   val usagePercent: List<SamplePointDto> = emptyList(),
+  val usedBytes: List<SamplePointDto> = emptyList(),
   val readBytesPerSec: List<SamplePointDto> = emptyList(),
-  val writeBytesPerSec: List<SamplePointDto> = emptyList()
+  val writeBytesPerSec: List<SamplePointDto> = emptyList(),
+  val temperatureC: List<SamplePointDto> = emptyList()
 )
 
 @Serializable
@@ -143,6 +145,7 @@ data class GpuMetricSeriesDto(
   val decodePercent: List<SamplePointDto> = emptyList(),
   val frequencyMHz: List<SamplePointDto> = emptyList(),
   val memoryUsagePercent: List<SamplePointDto> = emptyList(),
+  val memoryUsedBytes: List<SamplePointDto> = emptyList(),
   val temperatureC: List<SamplePointDto> = emptyList()
 )
 

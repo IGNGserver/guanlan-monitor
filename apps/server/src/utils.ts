@@ -113,6 +113,7 @@ export function payloadToTimeSeries(
         vendor: disk.vendor,
         temperatureC: disk.temperatureC ?? 0,
         usagePercent: enabled.has("diskUsage") && instanceEnabled.has("diskUsage") ? percent(disk.usedBytes, disk.totalBytes) : 0,
+        usedBytes: enabled.has("diskUsage") && instanceEnabled.has("diskUsage") ? disk.usedBytes : 0,
         readBytesPerSec: enabled.has("diskRead") && instanceEnabled.has("diskRead") ? rate?.readBytesPerSec ?? 0 : 0,
         writeBytesPerSec: enabled.has("diskWrite") && instanceEnabled.has("diskWrite") ? rate?.writeBytesPerSec ?? 0 : 0
       } satisfies InstanceMetricRecord;
@@ -160,6 +161,7 @@ export function payloadToTimeSeries(
         decodePercent: enabled.has("gpuDecode") && instanceEnabled.has("gpuDecode") ? gpu.decodeUtilizationPercent ?? 0 : 0,
         frequencyMHz: enabled.has("gpuFrequency") && instanceEnabled.has("gpuFrequency") ? gpu.frequencyMHz ?? 0 : 0,
         memoryUsagePercent: enabled.has("gpuMemory") && instanceEnabled.has("gpuMemory") ? percent(gpu.memoryUsedBytes, gpu.memoryTotalBytes) : 0,
+        memoryUsedBytes: enabled.has("gpuMemory") && instanceEnabled.has("gpuMemory") ? gpu.memoryUsedBytes : 0,
         temperatureC: enabled.has("gpuTemperature") && instanceEnabled.has("gpuTemperature") ? gpu.temperatureC ?? 0 : 0
       } satisfies InstanceMetricRecord);
     });
@@ -340,6 +342,7 @@ function buildDiskMetricSeries(points: TimeSeriesRecord[]): DiskMetricSeries[] {
           model: disk.model,
           vendor: disk.vendor,
           usagePercent: [],
+          usedBytes: [],
           readBytesPerSec: [],
           writeBytesPerSec: [],
           temperatureC: []
@@ -348,6 +351,7 @@ function buildDiskMetricSeries(points: TimeSeriesRecord[]): DiskMetricSeries[] {
       const target = grouped.get(disk.id)!;
       const timestamp = new Date(point.timestamp).toISOString();
       target.usagePercent.push({ timestamp, value: Number(disk.usagePercent ?? 0) });
+      target.usedBytes.push({ timestamp, value: Number(disk.usedBytes ?? 0) });
       target.readBytesPerSec.push({ timestamp, value: Number(disk.readBytesPerSec ?? 0) });
       target.writeBytesPerSec.push({ timestamp, value: Number(disk.writeBytesPerSec ?? 0) });
       target.temperatureC.push({ timestamp, value: Number(disk.temperatureC ?? 0) });
@@ -414,6 +418,7 @@ function buildGpuMetricSeries(points: TimeSeriesRecord[]): GpuMetricSeries[] {
           decodePercent: [],
           frequencyMHz: [],
           memoryUsagePercent: [],
+          memoryUsedBytes: [],
           temperatureC: []
         });
       }
@@ -424,6 +429,7 @@ function buildGpuMetricSeries(points: TimeSeriesRecord[]): GpuMetricSeries[] {
       target.decodePercent.push({ timestamp, value: Number(gpu.decodePercent ?? 0) });
       target.frequencyMHz.push({ timestamp, value: Number(gpu.frequencyMHz ?? 0) });
       target.memoryUsagePercent.push({ timestamp, value: Number(gpu.memoryUsagePercent ?? 0) });
+      target.memoryUsedBytes.push({ timestamp, value: Number(gpu.memoryUsedBytes ?? 0) });
       target.temperatureC.push({ timestamp, value: Number(gpu.temperatureC ?? 0) });
     }
   }

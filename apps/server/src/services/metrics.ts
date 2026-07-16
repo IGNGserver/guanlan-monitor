@@ -313,6 +313,7 @@ function averageInstanceMetrics(
         Pick<
           InstanceMetricRecord,
           | "usagePercent"
+          | "usedBytes"
           | "readBytesPerSec"
           | "writeBytesPerSec"
           | "rxBytesPerSec"
@@ -323,6 +324,7 @@ function averageInstanceMetrics(
           | "decodePercent"
           | "frequencyMHz"
           | "memoryUsagePercent"
+          | "memoryUsedBytes"
           | "temperatureC"
           | "rpm"
         >
@@ -350,6 +352,7 @@ function averageInstanceMetrics(
           },
           sums: {
             usagePercent: 0,
+            usedBytes: 0,
             readBytesPerSec: 0,
             writeBytesPerSec: 0,
             rxBytesPerSec: 0,
@@ -360,6 +363,7 @@ function averageInstanceMetrics(
             decodePercent: 0,
             frequencyMHz: 0,
             memoryUsagePercent: 0,
+            memoryUsedBytes: 0,
             temperatureC: 0,
             rpm: 0
           }
@@ -368,6 +372,7 @@ function averageInstanceMetrics(
       const current = grouped.get(item.id)!;
       current.count += 1;
       current.sums.usagePercent += item.usagePercent ?? 0;
+      current.sums.usedBytes += item.usedBytes ?? 0;
       current.sums.readBytesPerSec += item.readBytesPerSec ?? 0;
       current.sums.writeBytesPerSec += item.writeBytesPerSec ?? 0;
       current.sums.rxBytesPerSec += item.rxBytesPerSec ?? 0;
@@ -378,6 +383,7 @@ function averageInstanceMetrics(
       current.sums.decodePercent += item.decodePercent ?? 0;
       current.sums.frequencyMHz += item.frequencyMHz ?? 0;
       current.sums.memoryUsagePercent += item.memoryUsagePercent ?? 0;
+      current.sums.memoryUsedBytes += item.memoryUsedBytes ?? 0;
       current.sums.temperatureC += item.temperatureC ?? 0;
       current.sums.rpm += item.rpm ?? 0;
     }
@@ -386,6 +392,7 @@ function averageInstanceMetrics(
   return [...grouped.values()].map(({ count, meta, sums }) => ({
     ...meta,
     usagePercent: sums.usagePercent / count,
+    usedBytes: sums.usedBytes / count,
     readBytesPerSec: sums.readBytesPerSec / count,
     writeBytesPerSec: sums.writeBytesPerSec / count,
     rxBytesPerSec: sums.rxBytesPerSec / count,
@@ -396,6 +403,7 @@ function averageInstanceMetrics(
     decodePercent: sums.decodePercent / count,
     frequencyMHz: sums.frequencyMHz / count,
     memoryUsagePercent: sums.memoryUsagePercent / count,
+    memoryUsedBytes: sums.memoryUsedBytes / count,
     temperatureC: sums.temperatureC / count,
     rpm: sums.rpm / count
   }));

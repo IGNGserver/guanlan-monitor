@@ -1464,8 +1464,10 @@ public sealed class MainViewModel : ObservableObject
         }.Concat(series.Disks.SelectMany(disk => new[]
         {
             Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "占用", disk.UsagePercent, ViewerMetricValueKind.Percent),
+            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "已用容量", disk.UsedBytes, ViewerMetricValueKind.Bytes),
             Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "读取", disk.ReadBytesPerSec, ViewerMetricValueKind.Rate),
-            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "写入", disk.WriteBytesPerSec, ViewerMetricValueKind.Rate)
+            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "写入", disk.WriteBytesPerSec, ViewerMetricValueKind.Rate),
+            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "温度", disk.TemperatureC, ViewerMetricValueKind.Celsius)
         })) : Array.Empty<ViewerDetailChartViewModel>());
 
         ReplaceCharts(ViewerGpuCharts, IsViewerCategoryVisible(enabledMetrics, availableMetrics, "gpuUsage", "gpuEncode", "gpuDecode", "gpuFrequency", "gpuMemory", "gpuTemperature") ? new[]
@@ -1483,6 +1485,7 @@ public sealed class MainViewModel : ObservableObject
             Chart(gpuSeries.Name, "解码", gpuSeries.DecodePercent, ViewerMetricValueKind.Percent),
             Chart(gpuSeries.Name, "频率", gpuSeries.FrequencyMHz, ViewerMetricValueKind.Megahertz),
             Chart(gpuSeries.Name, "显存占用", gpuSeries.MemoryUsagePercent, ViewerMetricValueKind.Percent),
+            Chart(gpuSeries.Name, GpuSubtitle(gpuSeries, latest.Gpus.FirstOrDefault(candidate => candidate.Id == gpuSeries.Id)), "显存已用", gpuSeries.MemoryUsedBytes, ViewerMetricValueKind.Bytes),
             Chart(gpuSeries.Name, "温度", gpuSeries.TemperatureC, ViewerMetricValueKind.Celsius)
         })) : Array.Empty<ViewerDetailChartViewModel>());
 
@@ -1556,6 +1559,11 @@ public sealed class MainViewModel : ObservableObject
 
     private static string NetworkSubtitle(ViewerNetworkMetricSeriesDto network)
         => string.Join(" · ", new[] { network.MacAddress, string.Join(", ", network.Ipv4) }.Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value!));
+
+    private static string GpuSubtitle(ViewerGpuMetricSeriesDto gpu, ViewerGpuDto? latest)
+        => latest is not null && latest.MemoryTotalBytes > 0
+            ? $"{FormatBytes(latest.MemoryUsedBytes)} / {FormatBytes(latest.MemoryTotalBytes)}"
+            : "显存容量未提供";
 
     private static void EnsureTrendFallback(ObservableCollection<TrendPointViewModel> target, double value)
     {

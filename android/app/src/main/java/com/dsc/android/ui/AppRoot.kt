@@ -271,7 +271,7 @@ private fun LoginScreen(
       onValueChange = { baseUrl = it },
       modifier = Modifier.fillMaxWidth(),
       label = { Text("中枢地址") },
-      supportingText = { Text("例如 http://your-server-host:3100") },
+      supportingText = { Text("例如 http://服务器IP:3100 或 https://你的域名") },
       singleLine = true
     )
     Spacer(Modifier.height(12.dp))

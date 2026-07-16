@@ -480,6 +480,7 @@ function alignMetricSeriesToWindow(series: MetricSeries, window: MetricWindow) {
     disks: series.disks.map((disk) => ({
       ...disk,
       usagePercent: alignSamplePoints(disk.usagePercent, bucketMs),
+      usedBytes: alignSamplePoints(disk.usedBytes, bucketMs),
       readBytesPerSec: alignSamplePoints(disk.readBytesPerSec, bucketMs),
       writeBytesPerSec: alignSamplePoints(disk.writeBytesPerSec, bucketMs),
       temperatureC: alignSamplePoints(disk.temperatureC, bucketMs)
@@ -498,6 +499,7 @@ function alignMetricSeriesToWindow(series: MetricSeries, window: MetricWindow) {
       decodePercent: alignSamplePoints(gpu.decodePercent, bucketMs),
       frequencyMHz: alignSamplePoints(gpu.frequencyMHz, bucketMs),
       memoryUsagePercent: alignSamplePoints(gpu.memoryUsagePercent, bucketMs),
+      memoryUsedBytes: alignSamplePoints(gpu.memoryUsedBytes, bucketMs),
       temperatureC: alignSamplePoints(gpu.temperatureC, bucketMs)
     })),
     fans: series.fans.map((fan) => ({

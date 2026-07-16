@@ -95,8 +95,10 @@ public sealed class ViewerDiskMetricSeriesDto
     public string? Model { get; set; }
     public string? Vendor { get; set; }
     public List<ViewerSamplePointDto> UsagePercent { get; set; } = new();
+    public List<ViewerSamplePointDto> UsedBytes { get; set; } = new();
     public List<ViewerSamplePointDto> ReadBytesPerSec { get; set; } = new();
     public List<ViewerSamplePointDto> WriteBytesPerSec { get; set; } = new();
+    public List<ViewerSamplePointDto> TemperatureC { get; set; } = new();
 }
 
 public sealed class ViewerNetworkMetricSeriesDto
@@ -121,6 +123,7 @@ public sealed class ViewerGpuMetricSeriesDto
     public List<ViewerSamplePointDto> DecodePercent { get; set; } = new();
     public List<ViewerSamplePointDto> FrequencyMHz { get; set; } = new();
     public List<ViewerSamplePointDto> MemoryUsagePercent { get; set; } = new();
+    public List<ViewerSamplePointDto> MemoryUsedBytes { get; set; } = new();
     public List<ViewerSamplePointDto> TemperatureC { get; set; } = new();
 }
 
@@ -161,6 +164,7 @@ public sealed class ViewerDiskDto
 
 public sealed class ViewerGpuDto
 {
+    public string Id { get; set; } = "";
     public string Name { get; set; } = "显卡";
     public double UtilizationPercent { get; set; }
     public double MemoryUsedBytes { get; set; }
