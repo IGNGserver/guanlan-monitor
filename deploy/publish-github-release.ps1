@@ -42,8 +42,18 @@ $apk = Resolve-ReleasePath -Value $AndroidApk -Fallback "release/android/guanlan
 $gh = Get-Command gh -ErrorAction Stop
 & $gh.Source auth status --hostname github.com | Out-Host
 
-& $gh.Source release view $tag --repo IGNGserver/Device-State-Console 2>$null
-if ($LASTEXITCODE -eq 0) {
+$releaseExists = $false
+try {
+  & $gh.Source release view $tag --repo IGNGserver/Device-State-Console 2>$null
+  $releaseExists = $LASTEXITCODE -eq 0
+} catch {
+  # PowerShell 7 can promote a non-zero native exit code to an exception.
+  if ($LASTEXITCODE -eq 0) {
+    throw
+  }
+}
+
+if ($releaseExists) {
   & $gh.Source release upload $tag $setup $update $apk --clobber --repo IGNGserver/Device-State-Console
   & $gh.Source release edit $tag --title "Device State Console $tag" --notes-file $notes --repo IGNGserver/Device-State-Console
 } else {
