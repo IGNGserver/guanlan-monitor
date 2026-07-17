@@ -100,11 +100,11 @@
                             <Border Visibility="Collapsed" Style="{StaticResource DSCPanelStyle}">
                                 <StackPanel Spacing="12">
                                     <TextBlock Text="全部设备" Style="{StaticResource SubtitleTextBlockStyle}" />
-                                    <TextBlock Text="使用中枢网页查看密钥登录后，Windows 端复用网页端会话读取全部设备；agent 密钥不会被用于全设备访问。" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
-                                    <TextBlock Text="查看密钥使用当前 Windows 用户 DPAPI 加密保存，不写入 agent 配置文件。" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                    <TextBlock Text="使用统一访问密钥登录后，Windows 端复用网页端会话读取全部设备。" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                    <TextBlock Text="访问密钥使用当前 Windows 用户 DPAPI 加密保存，不写入 agent 配置文件。" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
                                     <Grid ColumnSpacing="10">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                        <PasswordBox x:Name="ViewerAccessBox" Grid.Column="0" Header="网页查看密钥" PasswordChanged="ViewerAccessBox_OnPasswordChanged" />
+                                        <PasswordBox x:Name="ViewerAccessBox" Grid.Column="0" Header="访问密钥" PasswordChanged="ViewerAccessBox_OnPasswordChanged" />
                                         <Button Grid.Column="1" Command="{Binding LoginViewerCommand}" Content="登录并刷新" VerticalAlignment="Bottom" />
                                     </Grid>
                                     <TextBox Header="筛选设备" PlaceholderText="输入设备名称或设备 ID" Text="{Binding ViewerDeviceFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
@@ -391,7 +391,7 @@
                             <Border Style="{StaticResource DSCPanelStyle}">
                                 <StackPanel Spacing="14">
                                     <TextBox Header="中枢服务器地址" Text="{Binding ServerUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="http://your-server-host:3100" />
-                                    <PasswordBox x:Name="SecretBox" Header="Agent 密钥" PasswordChanged="SecretBox_OnPasswordChanged" />
+                                    <PasswordBox x:Name="SecretBox" Header="访问密钥" PasswordChanged="SecretBox_OnPasswordChanged" />
                                     <ToggleSwitch Header="启用数据记录" IsOn="{Binding DataRecordingEnabled, Mode=TwoWay}" />
                                     <TextBlock Text="关闭后，本机不会注册至中枢，也不会上传监测数据。" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
                                     <TextBox Header="设备 ID" Text="{Binding DeviceId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding DataRecordingEnabled}" />
@@ -423,10 +423,10 @@
                             <Border Visibility="Collapsed" Style="{StaticResource DSCPanelStyle}">
                                 <StackPanel Spacing="12">
                                     <TextBlock Text="全部设备" Style="{StaticResource SubtitleTextBlockStyle}" />
-                                    <TextBlock Text="使用网页查看密钥登录后，在这里查看中枢中的全部设备。" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                    <TextBlock Text="使用统一访问密钥登录后，在这里查看中枢中的全部设备。" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
                                     <Grid ColumnSpacing="10">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                        <PasswordBox x:Name="ServerViewerAccessBox" Grid.Column="0" Header="网页查看密钥" PasswordChanged="ViewerAccessBox_OnPasswordChanged" />
+                                        <PasswordBox x:Name="ServerViewerAccessBox" Grid.Column="0" Header="访问密钥" PasswordChanged="ViewerAccessBox_OnPasswordChanged" />
                                         <Button Grid.Column="1" Command="{Binding LoginViewerCommand}" Content="登录并刷新" VerticalAlignment="Bottom" />
                                     </Grid>
                                     <TextBox Header="筛选设备" PlaceholderText="输入设备名称或设备 ID" Text="{Binding ViewerDeviceFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />

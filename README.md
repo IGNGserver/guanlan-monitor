@@ -14,7 +14,7 @@
 
 `DeviceStateConsoleAgent-update-<版本>.zip` 仅用于已安装客户端的更新分发，不应作为首次安装方式。
 
-安装后打开“观澜”，在“配置”页填写中枢地址、Agent 密钥和设备名称。应用运行后会显示在系统托盘：左键打开主界面，右键查看状态或退出。
+安装后打开“观澜”，在“配置”页填写中枢地址、访问密钥和设备名称。应用运行后会显示在系统托盘：左键打开主界面，右键查看状态或退出。
 
 ### Android
 
@@ -48,7 +48,7 @@ git checkout v0.1.105
 DSC_VERSION=0.1.105 docker compose up -d --build
 ```
 
-至少修改 `.env` 内的 `SESSION_SECRET`、`ACCESS_KEY`、`MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD` 与 `AGENT_SHARED_SECRET`。启动后通过 `http://服务器IP:3100` 访问控制台。
+至少修改 `.env` 内的 `SESSION_SECRET`、`ACCESS_KEY`、`MYSQL_ROOT_PASSWORD` 与 `MYSQL_PASSWORD`。`ACCESS_KEY` 是网页、Windows/Android 客户端和所有 agent 共用的唯一访问密钥；升级时即使旧 `.env` 仍有 `AGENT_SHARED_SECRET`，也会以 `ACCESS_KEY` 为准。启动后通过 `http://服务器IP:3100` 访问控制台。
 
 Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 的专项说明见下方“开发与维护”。
 

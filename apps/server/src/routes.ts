@@ -107,9 +107,7 @@ export async function registerRoutes(
       return reply.code(400).send({ error: "invalid_login_payload" });
     }
     const body = parsed.data;
-    // The agent secret is also the viewer credential. ACCESS_KEY remains
-    // accepted for existing web sessions during the migration.
-    if (body.accessKey !== env.AGENT_SHARED_SECRET && body.accessKey !== env.ACCESS_KEY) {
+    if (body.accessKey !== env.ACCESS_KEY) {
       return reply.code(401).send({ error: "invalid_credentials" });
     }
     setSession(reply, {
@@ -292,7 +290,7 @@ export async function registerRoutes(
   app.post<{ Body: AgentCloudConfigSyncPayload }>("/api/agent/device-config", async (request, reply) => {
     if (rejectInsecureAgentTransport(request, reply)) return;
     const token = request.headers.authorization?.replace("Bearer ", "");
-    if (token !== env.AGENT_SHARED_SECRET) {
+    if (token !== env.ACCESS_KEY) {
       return reply.code(401).send({ error: "unauthorized_agent" });
     }
 
@@ -319,7 +317,7 @@ export async function registerRoutes(
   app.get("/api/agent/ping", async (request, reply) => {
     if (rejectInsecureAgentTransport(request, reply)) return;
     const token = request.headers.authorization?.replace("Bearer ", "");
-    if (token !== env.AGENT_SHARED_SECRET) {
+    if (token !== env.ACCESS_KEY) {
       return reply.code(401).send({ error: "unauthorized_agent" });
     }
 
@@ -332,7 +330,7 @@ export async function registerRoutes(
   app.get<{ Querystring: { deviceId: string } }>("/api/agent/device-state", async (request, reply) => {
     if (rejectInsecureAgentTransport(request, reply)) return;
     const token = request.headers.authorization?.replace("Bearer ", "");
-    if (token !== env.AGENT_SHARED_SECRET) {
+    if (token !== env.ACCESS_KEY) {
       return reply.code(401).send({ error: "unauthorized_agent" });
     }
 
@@ -353,7 +351,7 @@ export async function registerRoutes(
   app.get<{ Querystring: { deviceId: string } }>("/api/agent/control-stream", async (request, reply) => {
     if (rejectInsecureAgentTransport(request, reply)) return;
     const token = request.headers.authorization?.replace("Bearer ", "");
-    if (token !== env.AGENT_SHARED_SECRET) {
+    if (token !== env.ACCESS_KEY) {
       return reply.code(401).send({ error: "unauthorized_agent" });
     }
 
@@ -397,7 +395,7 @@ export async function registerRoutes(
   app.get<{ Querystring: { deviceId: string } }>("/api/agent/device-realtime", async (request, reply) => {
     if (rejectInsecureAgentTransport(request, reply)) return;
     const token = request.headers.authorization?.replace("Bearer ", "");
-    if (token !== env.AGENT_SHARED_SECRET) {
+    if (token !== env.ACCESS_KEY) {
       return reply.code(401).send({ error: "unauthorized_agent" });
     }
 

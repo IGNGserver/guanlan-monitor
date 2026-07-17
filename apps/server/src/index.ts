@@ -74,7 +74,7 @@ app.post<{ Body: AgentMetricsPayload }>("/api/agent/ingest", async (request, rep
     }
   }
   const token = request.headers.authorization?.replace("Bearer ", "");
-  if (token !== env.AGENT_SHARED_SECRET) {
+  if (token !== env.ACCESS_KEY) {
     return reply.code(401).send({ error: "unauthorized_agent" });
   }
 

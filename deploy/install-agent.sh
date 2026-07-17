@@ -9,7 +9,7 @@ Usage:
 
 Options:
   --server-url URL     Device State Console server URL, for example http://192.168.1.10:3100
-  --secret SECRET      Agent shared secret, must match AGENT_SHARED_SECRET
+  --secret SECRET      Shared access key, must match the hub ACCESS_KEY
   --device-id ID       Device id shown in the console. Defaults to hostname
   --hostname NAME      Device display name shown in the console. Defaults to device id
   --install-dir DIR    Installation directory. Defaults to /opt/device-state-console-agent

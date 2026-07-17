@@ -133,7 +133,7 @@ public sealed class MainViewModel : ObservableObject
     private string _localMemoryPayloadText = "内存上报字段：暂无";
     private string _localDiskPayloadText = "磁盘上报字段：暂无";
     private string _localNetworkPayloadText = "网卡上报字段：暂无";
-    private string _viewerDataStatusText = "无法连接中枢系统。请先在服务器配置中保存地址和 Agent 密钥。";
+    private string _viewerDataStatusText = "无法连接中枢系统。请先在服务器配置中保存地址和访问密钥。";
     private bool _viewerSessionReady;
     private string _selectedViewerDeviceId = "";
     private string _selectedViewerDeviceName = "选择设备";
@@ -477,7 +477,7 @@ public sealed class MainViewModel : ObservableObject
         "已进入运行阶段";
     public string FirstRunGuideText =>
         !HasConnectionConfig
-            ? "先填写 Server URL、Agent Secret 和 Device ID。便携模式会把配置直接写在程序目录；安装模式会写到 LocalAppData。"
+            ? "先填写 Server URL、访问密钥和 Device ID。便携模式会把配置直接写在程序目录；安装模式会写到 LocalAppData。"
             : !_backendReachable
                 ? "本地 Go backend 还没有准备好。WinUI 会继续等待或自动恢复，恢复后就可以继续检查中枢连接。"
             : !_backendRunning
@@ -529,7 +529,7 @@ public sealed class MainViewModel : ObservableObject
         !ServerUrlPolicy.IsAllowed(ServerUrl)
             ? ServerUrlPolicy.ValidationMessage(ServerUrl)
         : !HasConnectionConfig
-            ? "请先填写 Server URL、Agent Secret 和 Device ID，再启动采集器或推送展示配置。"
+            ? "请先填写 Server URL、访问密钥和 Device ID，再启动采集器或推送展示配置。"
             : !CloudSyncEnabled
                 ? "连接信息已完成，可以先检查中枢连接并启动采集器；当前展示同步已关闭，本地改动不会推送到中枢。"
                 : _cloudPushPending
@@ -1306,7 +1306,7 @@ public sealed class MainViewModel : ObservableObject
         if (!HasConnectionConfig || !ServerUrlPolicy.IsAllowed(ServerUrl))
         {
             ViewerSessionReady = false;
-            ViewerDataStatusText = "无法连接中枢系统。请先在服务器配置中保存有效地址和 Agent 密钥。";
+            ViewerDataStatusText = "无法连接中枢系统。请先在服务器配置中保存有效地址和访问密钥。";
             return;
         }
 
@@ -1324,7 +1324,7 @@ public sealed class MainViewModel : ObservableObject
         {
             ViewerSessionReady = false;
             ViewerDevices.Clear();
-            ViewerDataStatusText = "无法连接中枢系统。请检查服务器地址、Agent 密钥和网络连接。";
+            ViewerDataStatusText = "无法连接中枢系统。请检查服务器地址、访问密钥和网络连接。";
         }
     }
 
@@ -3007,7 +3007,7 @@ public sealed class MainViewModel : ObservableObject
     {
         _connectionCheckStatusCode = "idle";
         ConnectionCheckText = "连接信息刚发生变化，建议重新检查中枢连接。";
-        ConnectionCheckDetailText = "你已经修改了 Server URL、Agent Secret 或 Device ID。之前的连接检查结果可能已经过期，请重新执行一次“检查中枢连接”。";
+        ConnectionCheckDetailText = "你已经修改了 Server URL、访问密钥或 Device ID。之前的连接检查结果可能已经过期，请重新执行一次“检查中枢连接”。";
         RaiseStatusSummaryChanged();
     }
 
@@ -3290,7 +3290,7 @@ public sealed class MainViewModel : ObservableObject
         {
             "start" => "WinUI 会先确保当前界面配置已经写入本地 backend，再启动采集器进程。",
             "stop" => "本次操作会请求本地 backend 优雅停止采集器，而不是直接强制结束进程树。",
-            "check-connection" => "本次操作会检查 Server URL、Agent Secret 和设备识别状态，帮助区分不可达、鉴权失败和设备未出现等问题。",
+            "check-connection" => "本次操作会检查 Server URL、访问密钥和设备识别状态，帮助区分不可达、鉴权失败和设备未出现等问题。",
             "toggle-realtime" => "本次操作会把本地上传模式切换到实时或常态，并等待 backend 返回最新状态。",
             "detect" => "本次操作会基于当前本地配置刷新探测方案和实例清单，避免显示过期的 CPU、磁盘或网卡实例。",
             "push-cloud" => "本次操作会显式调用中枢接口同步展示配置，不会影响本地自动保存策略。",
@@ -3357,7 +3357,7 @@ public sealed class MainViewModel : ObservableObject
         var normalized = value.Trim();
         if (string.Equals(normalized, "missing_connection_config", StringComparison.OrdinalIgnoreCase))
         {
-            return ("config", "补全 Server URL、Agent Secret 和 Device ID 后，重新检查中枢连接。");
+            return ("config", "补全 Server URL、访问密钥和 Device ID 后，重新检查中枢连接。");
         }
 
         if (normalized.StartsWith("build_control_stream_url_failed:", StringComparison.OrdinalIgnoreCase) ||
@@ -3381,7 +3381,7 @@ public sealed class MainViewModel : ObservableObject
             var statusCode = normalized["control_stream_status_".Length..].Trim();
             return statusCode switch
             {
-                "401" => ("config", "重新核对 Agent Secret 是否与中枢一致，然后再次检查中枢连接。"),
+                "401" => ("config", "重新核对访问密钥是否与中枢 ACCESS_KEY 一致，然后再次检查中枢连接。"),
                 "403" => ("config", "检查中枢访问策略、反向代理或鉴权配置，确认当前 agent 被允许建立主动推送链路。"),
                 "404" => ("capability", "当前中枢未提供主动推送接口，可先继续使用回退轮询；若需要更实时的控制，请升级或补齐服务端接口。"),
                 "502" => ("server", "检查中枢前置网关或反向代理状态，待网关恢复后主动推送链路会自动重连。"),
@@ -3459,7 +3459,7 @@ public sealed class MainViewModel : ObservableObject
             var statusCode = normalized["control_stream_status_".Length..].Trim();
             return statusCode switch
             {
-                "401" => "中枢拒绝了主动推送连接，请检查 Agent Secret 是否正确",
+                "401" => "中枢拒绝了主动推送连接，请检查访问密钥是否正确",
                 "403" => "中枢禁止了主动推送连接，请检查访问权限或代理策略",
                 "404" => "中枢当前未提供主动推送接口，已自动回退到低频轮询",
                 "502" => "中枢网关暂时不可用，主动推送链路已回退到低频轮询",
@@ -3579,7 +3579,7 @@ public sealed class MainViewModel : ObservableObject
         {
             "authorized_device_known" => $"{summary} 当前设备已经在中枢可见。",
             "authorized_device_unknown" => $"{summary} 这通常意味着连接信息正确，但还需要先启动采集器上报一次。",
-            "unauthorized" => $"{summary} 请重点检查 Agent Secret。",
+            "unauthorized" => $"{summary} 请重点检查访问密钥。",
             "server_unreachable" => $"{summary} 请检查 Server URL、网络连通性或中枢服务是否已启动。",
             _ => summary
         };
@@ -3591,11 +3591,11 @@ public sealed class MainViewModel : ObservableObject
         {
             "authorized_device_known" => "当前这台设备已经被中枢识别，后续可以直接启动采集器或继续调整本地配置。",
             "authorized_device_unknown" => "当前连接与鉴权都正确，但中枢还没有这台设备的实时记录；通常只需要启动采集器并完成首次上报。",
-            "unauthorized" => "中枢地址可达，但 Agent Secret 未通过校验。请确认它与中枢侧 AGENT_SHARED_SECRET 完全一致。",
+            "unauthorized" => "中枢地址可达，但访问密钥未通过校验。请确认它与中枢侧 ACCESS_KEY 完全一致。",
             "server_unreachable" => "本地 backend 未能连到中枢。请优先检查 Server URL、端口、网络路径以及中枢服务是否已启动。",
             "server_error" => "中枢已响应，但返回了异常状态。通常需要结合中枢日志继续排查。",
             "missing_server_url" => "当前还没有可用的 Server URL，先完成连接信息后再执行检查。",
-            "missing_secret" => "当前还没有可用的 Agent Secret，先完成连接信息后再执行检查。",
+            "missing_secret" => "当前还没有可用的访问密钥，先完成连接信息后再执行检查。",
             "missing_device_id" => "当前还没有可用的 Device ID，先完成连接信息后再执行检查。",
             _ => "连接检查会区分中枢不可达、密钥错误、设备尚未出现和设备已被中枢识别。"
         };

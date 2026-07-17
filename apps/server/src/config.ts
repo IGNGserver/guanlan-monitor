@@ -32,7 +32,12 @@ const schema = z.object({
   AGENT_CONTROL_KEEPALIVE_MS: z.coerce.number().int().min(1000).default(15000),
   REDIS_URL: optionalUrl,
   MYSQL_URL: optionalNonEmptyString,
-  AGENT_SHARED_SECRET: z.string().min(16)
+  // Deprecated after v0.1.107. ACCESS_KEY is the single credential for all clients.
+  AGENT_SHARED_SECRET: optionalNonEmptyString
 });
 
 export const env = schema.parse(process.env);
+
+if (env.AGENT_SHARED_SECRET && env.AGENT_SHARED_SECRET !== env.ACCESS_KEY) {
+  console.warn("AGENT_SHARED_SECRET is ignored; ACCESS_KEY is the unified credential for web, clients, and agents.");
+}
