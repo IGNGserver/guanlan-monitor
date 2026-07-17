@@ -44,8 +44,8 @@ docker compose up -d --build
 
 ```bash
 git fetch --tags
-git checkout v0.1.103
-DSC_VERSION=0.1.103 docker compose up -d --build
+git checkout v0.1.105
+DSC_VERSION=0.1.105 docker compose up -d --build
 ```
 
 至少修改 `.env` 内的 `SESSION_SECRET`、`ACCESS_KEY`、`MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD` 与 `AGENT_SHARED_SECRET`。启动后通过 `http://服务器IP:3100` 访问控制台。
@@ -56,6 +56,7 @@ Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 
 
 - Windows：优先安装上方的观澜 setup，在应用内完成探测、采集和中枢连接配置。
 - Linux：使用 [Linux agent 安装脚本](deploy/install-agent.sh)。
+- 脚本式 agent：使用按版本下载的 [Linux 安装入口](deploy/install-agent-from-release.sh) 或 [Windows 安装入口](deploy/install-agent-from-release.ps1)，显式指定 Release 版本。
 - 网页控制台：使用 `.env` 中的 `ACCESS_KEY` 登录，选择设备即可查看实时数据和历史图表。
 
 硬件、驱动或虚拟机未提供的传感器会显示为空，不会阻塞设备上线。
@@ -67,6 +68,8 @@ Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 
 1. Windows setup 安装程序。
 2. Windows update ZIP。
 3. 已签名 Android APK。
+4. Windows x64 CLI agent ZIP。
+5. Linux x64 CLI agent ZIP。
 
 仓库不会提交安装包、APK、密钥、日志或本机配置。发布资产只上传到 GitHub Release。
 

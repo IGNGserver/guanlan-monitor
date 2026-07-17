@@ -3,7 +3,9 @@ param(
   [string]$NotesFile = "",
   [string]$WindowsSetup = "",
   [string]$WindowsUpdate = "",
-  [string]$AndroidApk = ""
+  [string]$AndroidApk = "",
+  [string]$WindowsCliZip = "",
+  [string]$LinuxCliZip = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,6 +40,8 @@ $notes = Resolve-ReleasePath -Value $NotesFile -Fallback "release-notes-v$Versio
 $setup = Resolve-ReleasePath -Value $WindowsSetup -Fallback "release/windows-agent-setup/DeviceStateConsoleAgent-setup-$Version.exe" -RepoRoot $repoRoot
 $update = Resolve-ReleasePath -Value $WindowsUpdate -Fallback "release/windows-agent-setup/DeviceStateConsoleAgent-update-$Version.zip" -RepoRoot $repoRoot
 $apk = Resolve-ReleasePath -Value $AndroidApk -Fallback "release/android/guanlan-android-v$Version.apk" -RepoRoot $repoRoot
+$windowsCli = Resolve-ReleasePath -Value $WindowsCliZip -Fallback "release/cli-agent/windows-x64-$Version.zip" -RepoRoot $repoRoot
+$linuxCli = Resolve-ReleasePath -Value $LinuxCliZip -Fallback "release/cli-agent/linux-x64-$Version.zip" -RepoRoot $repoRoot
 
 $gh = Get-Command gh -ErrorAction Stop
 & $gh.Source auth status --hostname github.com | Out-Host
@@ -54,14 +58,14 @@ try {
 }
 
 if ($releaseExists) {
-  & $gh.Source release upload $tag $setup $update $apk --clobber --repo IGNGserver/Device-State-Console
+  & $gh.Source release upload $tag $setup $update $apk $windowsCli $linuxCli --clobber --repo IGNGserver/Device-State-Console
   & $gh.Source release edit $tag --title "Device State Console $tag" --notes-file $notes --repo IGNGserver/Device-State-Console
 } else {
-  & $gh.Source release create $tag $setup $update $apk --title "Device State Console $tag" --notes-file $notes --repo IGNGserver/Device-State-Console
+  & $gh.Source release create $tag $setup $update $apk $windowsCli $linuxCli --title "Device State Console $tag" --notes-file $notes --repo IGNGserver/Device-State-Console
 }
 
 if ($LASTEXITCODE -ne 0) {
   throw "GitHub Release publication failed for $tag"
 }
 
-Write-Host "Published $tag with Windows setup, Windows update ZIP, and Android APK."
+Write-Host "Published $tag with Windows setup/update, Android APK, and versioned CLI agent packages."
