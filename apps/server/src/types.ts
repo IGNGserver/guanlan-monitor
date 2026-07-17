@@ -104,6 +104,7 @@ export interface HistoryRepository {
     anchorDate: string,
     selectedStart?: string
   ): Promise<TrafficCalendarResponse>;
+  listKnownDevices(): Promise<Array<{ deviceId: string; lastSeenAt: string }>>;
 }
 
 export interface DeviceQueryResult {

@@ -159,6 +159,21 @@ export class LocalHistoryRepository implements HistoryRepository {
     });
   }
 
+  async listKnownDevices() {
+    const db = await this.store.read();
+    const all = new Map<string, TimeSeriesRecord[]>();
+    for (const [deviceId, points] of Object.entries(db.minuteHistory)) all.set(deviceId, [...points]);
+    for (const [deviceId, points] of Object.entries(db.history)) {
+      all.set(deviceId, [...(all.get(deviceId) ?? []), ...points]);
+    }
+    return [...all.entries()]
+      .filter(([, points]) => points.length > 0)
+      .map(([deviceId, points]) => ({
+        deviceId,
+        lastSeenAt: new Date(Math.max(...points.map((point) => point.timestamp))).toISOString()
+      }));
+  }
+
   async getTrafficCalendar(
     deviceId: string,
     mode: TrafficCalendarMode,

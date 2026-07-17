@@ -241,10 +241,15 @@ export function timeSeriesToMetricSeries(points: TimeSeriesRecord[]): MetricSeri
   const trafficSeriesTx = normalizeTrafficSeries(points.map((point) => point.trafficTxBytes));
 
   const mapPoint = (key: keyof TimeSeriesRecord) =>
-    points.map((point) => ({
-      timestamp: new Date(point.timestamp).toISOString(),
-      value: Number(point[key])
-    }));
+    points.map((point) => {
+      const numeric = Number(point[key]);
+      return {
+        timestamp: new Date(point.timestamp).toISOString(),
+        // Older MySQL rows predate some capacity fields. Keep their charts
+        // readable instead of serializing NaN as JSON null for native clients.
+        value: Number.isFinite(numeric) ? numeric : 0
+      };
+    });
 
   const cpus = buildCpuMetricSeries(points);
   const disks = buildDiskMetricSeries(points);

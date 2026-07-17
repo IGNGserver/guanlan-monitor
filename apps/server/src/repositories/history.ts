@@ -1,4 +1,4 @@
-import mysql from "mysql2/promise";
+import mysql, { type RowDataPacket } from "mysql2/promise";
 import type { MetricWindow, TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import type { HistoryRepository, TimeSeriesRecord } from "../types.js";
 import { buildTrafficCalendar } from "../traffic-calendar.js";
@@ -314,6 +314,19 @@ export class MysqlHistoryRepository implements HistoryRepository {
   async clearDeviceHistory(deviceId: string) {
     await this.pool.query(`DELETE FROM device_minute_metrics WHERE device_id = ?`, [deviceId]);
     await this.pool.query(`DELETE FROM device_hourly_metrics WHERE device_id = ?`, [deviceId]);
+  }
+
+  async listKnownDevices() {
+    const [rows] = await this.pool.query<(RowDataPacket & { deviceId: string; lastSeenAt: string })[]>(`
+      SELECT device_id AS deviceId, DATE_FORMAT(MAX(recorded_at), '%Y-%m-%dT%H:%i:%s.000Z') AS lastSeenAt
+      FROM (
+        SELECT device_id, recorded_at FROM device_minute_metrics
+        UNION ALL
+        SELECT device_id, recorded_at FROM device_hourly_metrics
+      ) AS history
+      GROUP BY device_id
+    `);
+    return rows;
   }
 
   async getTrafficCalendar(

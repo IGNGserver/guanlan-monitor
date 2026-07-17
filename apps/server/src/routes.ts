@@ -129,9 +129,27 @@ export async function registerRoutes(
 
   app.get("/api/devices", { preHandler: requireAuth }, async () => {
     const devices = await repositories.realtime.listDevices();
-    return devices
+    const knownDevices = await repositories.history.listKnownDevices();
+    const summaries = devices
       .map((state) => toSummary(state))
       .sort((a, b) => a.deviceId.localeCompare(b.deviceId));
+    const knownIds = new Set(summaries.map((device) => device.deviceId));
+    for (const known of knownDevices) {
+      if (knownIds.has(known.deviceId)) continue;
+      summaries.push({
+        deviceId: known.deviceId,
+        hostname: known.deviceId,
+        os: "windows",
+        status: "offline",
+        lastSeenAt: known.lastSeenAt,
+        cpuUsagePercent: null,
+        gpuUsagePercent: null,
+        gpuMemoryUsagePercent: null,
+        memoryUsagePercent: null,
+        diskUsagePercent: null
+      });
+    }
+    return summaries.sort((a, b) => a.deviceId.localeCompare(b.deviceId));
   });
 
   app.get<{ Params: { deviceId: string } }>("/api/devices/:deviceId", { preHandler: requireAuth }, async (request, reply) => {
