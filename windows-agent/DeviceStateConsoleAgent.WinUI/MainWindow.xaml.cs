@@ -21,6 +21,7 @@ public sealed partial class MainWindow : Window
     private bool _initialized;
     private bool _isCompactLayout;
     private bool _hasAppliedResponsiveLayout;
+    private Expander? _trafficExpander;
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -34,11 +35,14 @@ public sealed partial class MainWindow : Window
         SubscribeTrend(_viewModel.ViewerGpuTrendPoints);
         SubscribeTrend(_viewModel.ViewerNetworkTrendPoints);
         SubscribeTrend(_viewModel.ViewerFanTrendPoints);
+        SubscribeTrend(_viewModel.ViewerTrafficTrendPoints);
+        _viewModel.ViewerTrafficDays.CollectionChanged += (_, _) => DispatcherQueue.TryEnqueue(RenderTrafficSection);
         AppNavigation.Loaded += (_, _) =>
         {
             AppNavigation.PaneDisplayMode = NavigationViewPaneDisplayMode.Left;
             AppNavigation.IsPaneOpen = true;
             AppNavigation.SelectedItem = AppNavigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault();
+            MoveTrafficSectionToEnd();
         };
         RootLayout.ActualThemeChanged += (_, _) => ApplyTitleBarTheme();
         _viewModel.PropertyChanged += (_, args) =>
@@ -56,6 +60,12 @@ public sealed partial class MainWindow : Window
             if (args.PropertyName?.StartsWith("HasViewer", StringComparison.Ordinal) == true)
             {
                 DispatcherQueue.TryEnqueue(UpdateMetricCategoryVisibility);
+            }
+
+            if (args.PropertyName is nameof(MainViewModel.ViewerTrafficStatusText)
+                or nameof(MainViewModel.ViewerTrafficSummaryText))
+            {
+                DispatcherQueue.TryEnqueue(RenderTrafficSection);
             }
         };
         SecretBox.Password = _viewModel.Secret;
@@ -211,7 +221,7 @@ public sealed partial class MainWindow : Window
     {
         foreach (var canvas in new[]
         {
-            CpuOverviewChart, MemoryOverviewChart, DiskOverviewChart, GpuOverviewChart, NetworkOverviewChart, FanOverviewChart
+            CpuOverviewChart, MemoryOverviewChart, DiskOverviewChart, GpuOverviewChart, NetworkOverviewChart, FanOverviewChart, TrafficOverviewChart
         })
         {
             DrawTrend(canvas);
@@ -233,6 +243,7 @@ public sealed partial class MainWindow : Window
             "gpu" => _viewModel.ViewerGpuTrendPoints,
             "network" => _viewModel.ViewerNetworkTrendPoints,
             "fan" => _viewModel.ViewerFanTrendPoints,
+            "traffic" => _viewModel.ViewerTrafficTrendPoints,
             _ => null
         };
 
@@ -247,7 +258,7 @@ public sealed partial class MainWindow : Window
         var height = Math.Max(1, canvas.ActualHeight - padding * 2);
         var line = new Polyline
         {
-            Stroke = new SolidColorBrush(Color.FromArgb(255, 74, 190, 238)),
+            Stroke = new SolidColorBrush((Color)Application.Current.Resources["SystemAccentColor"]),
             StrokeThickness = 2,
             StrokeLineJoin = PenLineJoin.Round
         };
@@ -396,10 +407,85 @@ public sealed partial class MainWindow : Window
         await _viewModel.RefreshSelectedViewerDeviceAsync();
     }
 
+    private void MoveTrafficSectionToEnd()
+    {
+        var traffic = MetricCategoryList.Children.OfType<Expander>().FirstOrDefault();
+        if (traffic is null) return;
+        MetricCategoryList.Children.Remove(traffic);
+        MetricCategoryList.Children.Add(traffic);
+        traffic.Visibility = Visibility.Visible;
+        _trafficExpander = traffic;
+        RenderTrafficSection();
+    }
+
+    private void RenderTrafficSection()
+    {
+        if (_trafficExpander is null) return;
+        var panel = new StackPanel { Spacing = 12, Padding = new Thickness(16), Margin = new Thickness(0) };
+        panel.Children.Add(new TextBlock
+        {
+            Text = _viewModel.ViewerTrafficStatusText,
+            Height = 20,
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = _viewModel.ViewerTrafficSummaryText,
+            Height = 28,
+            FontSize = 18,
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+
+        var calendar = new Grid { Width = 420, MinWidth = 420, MaxWidth = 420, HorizontalAlignment = HorizontalAlignment.Left, ColumnSpacing = 8, RowSpacing = 8 };
+        for (var column = 0; column < 7; column++) calendar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
+        var days = _viewModel.ViewerTrafficDays;
+        for (var row = 0; row < Math.Max(1, (int)Math.Ceiling(days.Count / 7d)); row++) calendar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(54) });
+        for (var index = 0; index < days.Count; index++)
+        {
+            var day = days[index];
+            var border = new Border { Width = 38, Height = 38, CornerRadius = new CornerRadius(19), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, BorderBrush = new SolidColorBrush((Color)Application.Current.Resources["SystemAccentColor"]), BorderThickness = new Thickness(1) };
+            var accent = new SolidColorBrush((Color)Application.Current.Resources["SystemAccentColor"]);
+            if (day.IsToday) border.Background = accent;
+            if (day.IsSelected) border.BorderThickness = new Thickness(2);
+            border.Child = new TextBlock
+            {
+                Text = day.Label,
+                Width = 36,
+                Height = 36,
+                TextAlignment = TextAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            border.Tapped += async (_, _) => await _viewModel.SelectViewerTrafficDateAsync(day.RangeStart);
+            Grid.SetColumn(border, index % 7);
+            Grid.SetRow(border, index / 7);
+            calendar.Children.Add(border);
+        }
+        panel.Children.Add(calendar);
+        foreach (var record in _viewModel.ViewerTrafficRecords)
+        {
+            var row = new Grid { ColumnSpacing = 12, Padding = new Thickness(8, 4, 8, 4) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.Children.Add(new TextBlock { Text = $"{record.TimestampText}  {record.DirectionText}", TextWrapping = TextWrapping.Wrap });
+            var total = new TextBlock { Text = record.TotalText, VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(total, 1);
+            row.Children.Add(total);
+            panel.Children.Add(row);
+        }
+        _trafficExpander.Content = panel;
+    }
+
     private void NavigationView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         var tag = (args.SelectedItem as NavigationViewItem)?.Tag?.ToString() ?? "monitor";
         MonitorPage.Visibility = tag == "monitor" ? Visibility.Visible : Visibility.Collapsed;
+        TrafficPage.Visibility = tag == "traffic" ? Visibility.Visible : Visibility.Collapsed;
         LocalPage.Visibility = tag == "local" ? Visibility.Visible : Visibility.Collapsed;
         ServerPage.Visibility = tag == "server" ? Visibility.Visible : Visibility.Collapsed;
     }

@@ -1,13 +1,14 @@
 {
   "name": "device-state-console",
   "private": true,
-  "version": "0.1.100",
+  "version": "0.1.105",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "build": "pnpm -r build",
     "clean": "rm -rf apps/server/dist apps/web/.next apps/web/tsconfig.tsbuildinfo packages/shared/dist",
     "dev": "pnpm --parallel --filter @dsc/server --filter @dsc/web dev",
     "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "verify:version": "node scripts/verify-version.mjs"
   }
 }

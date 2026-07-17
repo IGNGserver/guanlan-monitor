@@ -12,7 +12,25 @@
 
 - Run `pnpm typecheck`
 - Run `pnpm build`
+- Run `pnpm verify:version`
+- Run `go test ./...` and `go build ./...` from `agents`
 - Update documentation when behavior or deployment steps change
+
+## Development And Release Boundaries
+
+Pushes to `main` are development updates. They may contain changes that have
+passed CI but have not completed manual acceptance, packaging, or production
+verification. A push to `main` must not be treated as a user-installable
+release.
+
+Only a version tag such as `v0.1.103` and its GitHub Release represent a
+stable delivery. Create the tag and publish release assets only after the
+checks in [RELEASE.md](RELEASE.md) pass and the release has been explicitly
+approved.
+
+Production Docker deployments must use a specific release tag or image digest.
+Do not deploy production by pulling `main` and running `docker compose up -d
+--build`.
 
 ## Commit Guidance
 

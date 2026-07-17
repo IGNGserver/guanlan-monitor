@@ -32,6 +32,33 @@ public sealed class ViewerDeviceMetricsDto
     public ViewerSeriesDto Series { get; set; } = new();
 }
 
+public sealed class ViewerTrafficCalendarDto
+{
+    public string Title { get; set; } = "流量记录";
+    public double TotalRxBytes { get; set; }
+    public double TotalTxBytes { get; set; }
+    public List<ViewerTrafficCellDto> Cells { get; set; } = new();
+    public List<ViewerTrafficRecordDto> Records { get; set; } = new();
+}
+
+public sealed class ViewerTrafficCellDto
+{
+    public string Label { get; set; } = "";
+    public string RangeStart { get; set; } = "";
+    public double TotalRxBytes { get; set; }
+    public double TotalTxBytes { get; set; }
+    public bool IsSelected { get; set; }
+    public bool IsCurrentPeriod { get; set; }
+}
+
+public sealed class ViewerTrafficRecordDto
+{
+    public string Timestamp { get; set; } = "";
+    public double RxBytes { get; set; }
+    public double TxBytes { get; set; }
+    public double TotalBytes { get; set; }
+}
+
 public sealed class ViewerMetricAvailabilityDto
 {
     public string Key { get; set; } = "";

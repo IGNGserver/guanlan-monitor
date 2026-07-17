@@ -25,6 +25,7 @@ const redfishTimeoutMs = Number(process.env.DSC_REDFISH_TIMEOUT_MS ?? 5000);
 const pollIntervalMs = 5000;
 const sensorCacheTtlMs = 60_000;
 const agentDir = path.dirname(fileURLToPath(import.meta.url));
+const releaseVersion = readFileSync(path.join(agentDir, "..", "..", "VERSION"), "utf8").trim();
 const bundledHardwareDllPath = path.join(agentDir, "windows-hardware", "librehardwaremonitor", "LibreHardwareMonitorLib.dll");
 
 let previousCpu = os.cpus();
@@ -41,6 +42,7 @@ let lastRedfishBackendStatus = { ok: false, detail: redfishUrl ? "not probed" : 
 let lastWindowsHardwareProbeSummary = null;
 
 validateServerTransport(serverUrl);
+console.log(`[agent] node backup v${releaseVersion} started for ${deviceId} -> ${serverUrl}`);
 
 setInterval(runOnce, pollIntervalMs);
 await runOnce();

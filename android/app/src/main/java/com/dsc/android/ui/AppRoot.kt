@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -123,6 +124,7 @@ fun AppRoot(
   onOpenDevice: (String, DeviceBlockKey?) -> Unit,
   onClearFocusedBlock: () -> Unit,
   onOpenTraffic: (String) -> Unit,
+  onCloseTrafficSheet: () -> Unit,
   onOpenDeviceEditor: (String) -> Unit,
   onShowDeviceList: () -> Unit,
   onSelectWindow: (MetricWindow) -> Unit,
@@ -183,7 +185,7 @@ fun AppRoot(
           }
           AppScreen.DeviceList -> DeviceListScreen(state, onOpenDevice, onOpenTraffic, onOpenDeviceEditor, onRequestLogout = { showLogoutConfirm = true }, onRefresh = onRefresh)
           AppScreen.Traffic -> TrafficScreen(state, onShowDeviceList, onSelectTrafficMode, onSelectTrafficCell, onShiftTrafficAnchor, onRefresh)
-          AppScreen.DeviceDetail -> DeviceDetailScreen(state, onShowDeviceList, onSelectWindow, onOpenTraffic, onOpenBlockEditor, onOpenInstanceEditor, onRefresh, onClearFocusedBlock)
+          AppScreen.DeviceDetail -> DeviceDetailScreen(state, onShowDeviceList, onSelectWindow, onOpenTraffic, onCloseTrafficSheet, onSelectTrafficCell, onOpenBlockEditor, onOpenInstanceEditor, onRefresh, onClearFocusedBlock)
         }
       }
 
@@ -321,6 +323,7 @@ private fun DeviceListScreen(
           Column {
             Text("设备状态控制台")
             Text("设备列表", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("版本 v${com.dsc.android.BuildConfig.RELEASE_VERSION}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
           }
         },
         actions = {
@@ -396,7 +399,10 @@ private fun DeviceListCard(
       Modifier.border(1.5.dp, MaterialTheme.colorScheme.error, CircleShape)
     }
   ElevatedCard(
-    modifier = Modifier.fillMaxWidth(),
+    modifier = Modifier.fillMaxWidth().clickable {
+      haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+      onOpenDevice()
+    },
     colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
   ) {
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -418,24 +424,7 @@ private fun DeviceListCard(
         StatChip("显存", formatPercent(device.gpuMemoryUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Gpu) })
         StatChip("内存", formatPercent(device.memoryUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Memory) })
         StatChip("硬盘", formatPercent(device.diskUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Disk) })
-      }
-      Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Button(onClick = {
-          haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-          onOpenDevice()
-        }, modifier = Modifier.weight(1f)) {
-          Icon(Icons.Rounded.Timeline, contentDescription = null)
-          Spacer(Modifier.width(8.dp))
-          Text("监控")
-        }
-        Button(onClick = {
-          haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-          onOpenTraffic()
-        }, modifier = Modifier.weight(1f)) {
-          Icon(Icons.Rounded.Router, contentDescription = null)
-          Spacer(Modifier.width(8.dp))
-          Text("流量")
-        }
+        StatChip("流量", "查看", onClick = onOpenTraffic)
       }
       OutlinedButton(onClick = {
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -456,6 +445,8 @@ private fun DeviceDetailScreen(
   onBack: () -> Unit,
   onSelectWindow: (MetricWindow) -> Unit,
   onOpenTraffic: (String) -> Unit,
+  onCloseTrafficSheet: () -> Unit,
+  onSelectTrafficCell: (String) -> Unit,
   onOpenBlockEditor: (String, DeviceBlockKey) -> Unit,
   onOpenInstanceEditor: (String, DeviceBlockKey, String) -> Unit,
   onRefresh: () -> Unit,
@@ -518,8 +509,13 @@ private fun DeviceDetailScreen(
           metrics = metrics,
           selectedWindow = state.selectedWindow,
           onOpenBlock = { blockKey ->
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             openBlock = blockKey
             openTabId = "total"
+          },
+          onOpenTraffic = {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onOpenTraffic(metrics.device.deviceId)
           }
         )
       }
@@ -573,6 +569,23 @@ private fun DeviceDetailScreen(
       onEditBlock = { onOpenBlockEditor(metrics.device.deviceId, blockKey) },
       onEditInstance = { instanceId -> onOpenInstanceEditor(metrics.device.deviceId, blockKey, instanceId) }
     )
+  }
+  if (state.trafficSheetRequested) {
+    ModalBottomSheet(onDismissRequest = onCloseTrafficSheet) {
+      LazyColumn(
+        modifier = Modifier.fillMaxWidth().fillMaxHeight(0.72f),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+      ) {
+        item { Text("流量", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
+        state.trafficCalendar?.let { traffic ->
+          item { TrafficSelectedSummary(traffic) }
+          item { TrafficCalendarGrid(traffic, onSelectTrafficCell) }
+          item { TrafficStats(traffic) }
+          item { TrafficRecords(traffic) }
+        } ?: item { InlineLoadingCard("正在读取流量数据") }
+      }
+    }
   }
 }
 
@@ -653,6 +666,7 @@ private fun TrafficScreen(
       }
       traffic?.let {
         item { TrafficHeader(it) }
+        item { TrafficSelectedSummary(it) }
         item { TrafficCalendarGrid(it, onSelectCell) }
         item { TrafficStats(it) }
         item { TrafficRecords(it) }
@@ -674,7 +688,7 @@ private data class BlockSheetTabModel(
 )
 
 @Composable
-private fun OverviewCard(metrics: MetricsDto, selectedWindow: MetricWindow, onOpenBlock: (DeviceBlockKey) -> Unit) {
+private fun OverviewCard(metrics: MetricsDto, selectedWindow: MetricWindow, onOpenBlock: (DeviceBlockKey) -> Unit, onOpenTraffic: () -> Unit) {
   val capsules = remember(metrics, selectedWindow) { buildOverviewCapsules(metrics, selectedWindow) }
   ElevatedCard(
     colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
@@ -689,6 +703,7 @@ private fun OverviewCard(metrics: MetricsDto, selectedWindow: MetricWindow, onOp
         capsules.forEach { capsule ->
           SummaryCapsule(capsule = capsule, onClick = { onOpenBlock(capsule.blockKey) })
         }
+        TrafficCapsule(onOpenTraffic)
       }
     }
   }
@@ -707,6 +722,7 @@ private fun BlockSheet(
   onEditBlock: () -> Unit,
   onEditInstance: (String) -> Unit
 ) {
+  val haptic = LocalHapticFeedback.current
   ModalBottomSheet(
     onDismissRequest = onDismiss
   ) {
@@ -729,7 +745,10 @@ private fun BlockSheet(
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )
           }
-          IconButton(onClick = onEditBlock) {
+          IconButton(onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onEditBlock()
+          }) {
             Icon(Icons.Rounded.Edit, contentDescription = "编辑")
           }
         }
@@ -739,7 +758,10 @@ private fun BlockSheet(
           tabs.forEach { tab ->
             FilterChip(
               selected = selectedTabId == tab.id,
-              onClick = { onSelectTab(tab.id) },
+              onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onSelectTab(tab.id)
+              },
               label = { Text(tab.label) }
             )
           }
@@ -776,10 +798,14 @@ private fun BlockSheet(
 
 @Composable
 private fun SummaryCapsule(capsule: OverviewCapsuleModel, onClick: () -> Unit) {
+  val haptic = LocalHapticFeedback.current
   Surface(
     modifier = Modifier
       .fillMaxWidth()
-      .clickable(onClick = onClick),
+      .clickable {
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        onClick()
+      },
     shape = RoundedCornerShape(24.dp),
     color = MaterialTheme.colorScheme.surface
   ) {
@@ -1236,19 +1262,7 @@ private fun NetworkInstanceCard(network: NetworkInterfaceDto, series: NetworkMet
     MetricCardGrid(
       cards = listOf(
         MetricCardModel("接收速率", formatSpeed(network.rxBytesPerSec), series?.rxBytesPerSec.orEmpty(), ::formatSpeed),
-        MetricCardModel("发送速率", formatSpeed(network.txBytesPerSec), series?.txBytesPerSec.orEmpty(), ::formatSpeed),
-        MetricCardModel(
-          title = "累计接收",
-          value = formatBytes((network.totalRxBytes ?: 0).toDouble()),
-          points = series?.trafficRxBytes.orEmpty(),
-          valueFormatter = { value -> formatBytes(value ?: 0.0) }
-        ),
-        MetricCardModel(
-          title = "累计发送",
-          value = formatBytes((network.totalTxBytes ?: 0).toDouble()),
-          points = series?.trafficTxBytes.orEmpty(),
-          valueFormatter = { value -> formatBytes(value ?: 0.0) }
-        )
+        MetricCardModel("发送速率", formatSpeed(network.txBytesPerSec), series?.txBytesPerSec.orEmpty(), ::formatSpeed)
       )
     )
   }
@@ -1295,12 +1309,16 @@ private object ColumnScopeScope
 
 @Composable
 private fun InstanceCard(title: String, subtitle: String, onEdit: (() -> Unit)? = null, content: @Composable () -> Unit) {
+  val haptic = LocalHapticFeedback.current
   ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         if (onEdit != null) {
-          IconButton(onClick = onEdit) {
+          IconButton(onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onEdit()
+          }) {
             Icon(Icons.Rounded.Edit, contentDescription = "编辑")
           }
         }
@@ -1575,8 +1593,12 @@ private fun WindowStrip(selectedWindow: MetricWindow, loading: Boolean, onSelect
 
 @Composable
 private fun StatChip(label: String, value: String, onClick: (() -> Unit)? = null) {
+  val haptic = LocalHapticFeedback.current
   Surface(
-    modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
+    modifier = if (onClick != null) Modifier.clickable {
+      haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+      onClick()
+    } else Modifier,
     shape = RoundedCornerShape(999.dp),
     color = MaterialTheme.colorScheme.secondaryContainer
   ) {
@@ -1619,7 +1641,7 @@ private fun MiniLineChart(title: String, valueFormatter: (Double?) -> String, po
   fun updateSelectedIndex(
     nextIndex: Int,
     vibrate: Boolean = true,
-    feedbackType: HapticFeedbackType = HapticFeedbackType.TextHandleMove
+    feedbackType: HapticFeedbackType = HapticFeedbackType.LongPress
   ) {
     if (nextIndex != selectedIndex) {
       selectedIndex = nextIndex
@@ -1648,7 +1670,7 @@ private fun MiniLineChart(title: String, valueFormatter: (Double?) -> String, po
             if (points.isEmpty()) return@detectTapGestures
             updateSelectedIndex(
               resolveChartIndex(offset.x, size.width.toFloat(), points.size),
-              feedbackType = HapticFeedbackType.TextHandleMove
+              feedbackType = HapticFeedbackType.LongPress
             )
           }
         }
@@ -1658,13 +1680,13 @@ private fun MiniLineChart(title: String, valueFormatter: (Double?) -> String, po
               if (points.isEmpty()) return@detectDragGestures
               updateSelectedIndex(
                 resolveChartIndex(offset.x, size.width.toFloat(), points.size),
-                feedbackType = HapticFeedbackType.TextHandleMove
+                feedbackType = HapticFeedbackType.LongPress
               )
             },
             onDrag = { change, _ ->
               updateSelectedIndex(
                 resolveChartIndex(change.position.x, size.width.toFloat(), points.size),
-                feedbackType = HapticFeedbackType.TextHandleMove
+                feedbackType = HapticFeedbackType.LongPress
               )
               change.consume()
             }
@@ -1735,43 +1757,77 @@ private fun TrafficHeader(traffic: TrafficCalendarDto) {
 
 @Composable
 private fun TrafficCalendarGrid(traffic: TrafficCalendarDto, onSelectCell: (String) -> Unit) {
+  val haptic = LocalHapticFeedback.current
   val maxCellValue = max(traffic.cells.maxOfOrNull { it.totalRxBytes + it.totalTxBytes } ?: 0.0, 1.0)
-  val columns = when (traffic.mode) {
-    "month" -> 3
-    "week" -> 2
-    else -> 7
-  }
+  val columns = 7
   val rows = ((traffic.cells.size + columns - 1) / columns).coerceAtLeast(2)
 
   LazyVerticalGrid(
     columns = GridCells.Fixed(columns),
-    modifier = Modifier.height(96.dp * rows),
+    modifier = Modifier.height(52.dp * rows),
     userScrollEnabled = false,
     horizontalArrangement = Arrangement.spacedBy(8.dp),
     verticalArrangement = Arrangement.spacedBy(8.dp)
   ) {
     items(traffic.cells, key = { it.key }) { cell ->
       val ratio = (cell.totalRxBytes + cell.totalTxBytes) / maxCellValue
-      val baseColor = if (cell.isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
+      val baseColor = MaterialTheme.colorScheme.surfaceContainerLow
       val overlay = if (cell.isInPrimaryScope) ratio.toFloat() else 0.05f
       Surface(
         modifier = Modifier
-          .height(88.dp)
-          .clickable { onSelectCell(cell.rangeStart) },
+          .height(44.dp)
+          .clickable {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onSelectCell(cell.rangeStart)
+          },
         shape = RoundedCornerShape(18.dp),
         color = baseColor.copy(alpha = 0.65f + overlay * 0.3f)
       ) {
-        Column(
-          modifier = Modifier.padding(12.dp),
-          verticalArrangement = Arrangement.SpaceBetween
+        Box(
+          modifier = Modifier
+            .size(30.dp)
+            .then(if (cell.isCurrentPeriod) Modifier.background(MaterialTheme.colorScheme.primary, CircleShape) else Modifier)
+            .then(if (cell.isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape) else Modifier),
+          contentAlignment = Alignment.Center
         ) {
-          Text(if (cell.isCurrentPeriod) "${cell.label} · 今" else cell.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-          Column {
-            Text(formatBytes(cell.totalRxBytes + cell.totalTxBytes), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-            Text("入 ${formatBytes(cell.totalRxBytes)} / 出 ${formatBytes(cell.totalTxBytes)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-          }
+          Text(
+            trafficDayLabel(cell.rangeStart),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = if (cell.isCurrentPeriod) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+          )
         }
       }
+    }
+  }
+}
+
+@Composable
+private fun TrafficSelectedSummary(traffic: TrafficCalendarDto) {
+  val selected = traffic.cells.firstOrNull { it.isSelected }
+  ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+      Text(selected?.label ?: "所选日期", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+      Text(formatBytes(traffic.totalRxBytes + traffic.totalTxBytes), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+      Text("接收 ${formatBytes(traffic.totalRxBytes)} · 发送 ${formatBytes(traffic.totalTxBytes)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+  }
+}
+
+@Composable
+private fun TrafficCapsule(onClick: () -> Unit) {
+  val haptic = LocalHapticFeedback.current
+  Surface(
+    modifier = Modifier.fillMaxWidth().clickable {
+      haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+      onClick()
+    },
+    shape = RoundedCornerShape(24.dp),
+    color = MaterialTheme.colorScheme.surface
+  ) {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+      Text("流量", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+      Text("按日期查看接收、发送与明细", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
   }
 }
@@ -1839,6 +1895,9 @@ private fun formatDate(value: String): String = runCatching {
 }.getOrDefault(value)
 private fun formatDateInclusive(value: String): String = runCatching {
   java.time.OffsetDateTime.parse(value).minusNanos(1).atZoneSameInstant(java.time.ZoneId.systemDefault()).toLocalDate().toString()
+}.getOrDefault(value)
+private fun trafficDayLabel(value: String): String = runCatching {
+  java.time.OffsetDateTime.parse(value).atZoneSameInstant(java.time.ZoneId.systemDefault()).dayOfMonth.toString()
 }.getOrDefault(value)
 private fun formatTime(value: String?): String = if (value.isNullOrBlank()) "--" else runCatching {
   val dt = java.time.OffsetDateTime.parse(value).atZoneSameInstant(java.time.ZoneId.systemDefault()).toLocalDateTime()

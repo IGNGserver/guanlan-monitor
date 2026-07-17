@@ -230,8 +230,8 @@ if (-not $SkipGoBuild) {
   $resolvedGoPath = Resolve-CommandPath -PreferredPath $GoPath -CommandName "go" -RequiredMessage "Go is required to build windows-agent-backend.exe and device-state-console-agent.exe. Install Go or pass -GoPath."
   Write-Host "Building Go binaries with $resolvedGoPath"
 
-  & $resolvedGoPath build -C $agentSourceDir -o (Join-Path $backendDir "windows-agent-backend.exe") $backendSourcePackage
-  & $resolvedGoPath build -C $agentSourceDir -o (Join-Path $backendDir "device-state-console-agent.exe") .
+  & $resolvedGoPath build -C $agentSourceDir -ldflags "-X main.BuildVersion=$version" -o (Join-Path $backendDir "windows-agent-backend.exe") $backendSourcePackage
+  & $resolvedGoPath build -C $agentSourceDir -ldflags "-X main.BuildVersion=$version" -o (Join-Path $backendDir "device-state-console-agent.exe") .
 } else {
   $prebuiltBackend = Resolve-FirstExistingPath -Candidates @(
     (Join-Path $repoRoot "agents\windows-agent-backend.exe"),

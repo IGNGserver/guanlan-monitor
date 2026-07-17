@@ -165,7 +165,7 @@ if [[ -n "${AGENT_BINARY}" ]]; then
   fi
   install -m 0755 "${AGENT_BINARY}" "${INSTALL_DIR}/device-state-console-agent"
 else
-  "${GO_PATH}" build -C "${AGENT_SOURCE_DIR}" -o "${INSTALL_DIR}/device-state-console-agent" .
+  "${GO_PATH}" build -C "${AGENT_SOURCE_DIR}" -ldflags "-X main.BuildVersion=${VERSION}" -o "${INSTALL_DIR}/device-state-console-agent" .
 fi
 chmod 0755 "${INSTALL_DIR}/device-state-console-agent"
 

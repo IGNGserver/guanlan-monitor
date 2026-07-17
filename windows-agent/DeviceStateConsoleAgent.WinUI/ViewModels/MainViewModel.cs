@@ -157,6 +157,9 @@ public sealed class MainViewModel : ObservableObject
     private double _viewerNetworkUsagePercent;
     private string _selectedMetricWindow = "1m";
     private string _viewerDeviceFilter = "";
+    private string _viewerTrafficStatusText = "选择设备后查看当天流量。";
+    private string _viewerTrafficSummaryText = "当天总流量：--";
+    private string _viewerTrafficSelectedStart = "";
     private readonly List<ViewerDeviceItemViewModel> _viewerDeviceCache = new();
     private string _storageModeText = "正在判断运行模式。";
     private string _noticeText = "请先配置中枢连接信息，然后启动采集器。";
@@ -236,12 +239,15 @@ public sealed class MainViewModel : ObservableObject
         ViewerGpuTrendPoints = new ObservableCollection<TrendPointViewModel>();
         ViewerNetworkTrendPoints = new ObservableCollection<TrendPointViewModel>();
         ViewerFanTrendPoints = new ObservableCollection<TrendPointViewModel>();
+        ViewerTrafficTrendPoints = new ObservableCollection<TrendPointViewModel>();
         ViewerCpuCharts = new ObservableCollection<ViewerDetailChartViewModel>();
         ViewerMemoryCharts = new ObservableCollection<ViewerDetailChartViewModel>();
         ViewerDiskCharts = new ObservableCollection<ViewerDetailChartViewModel>();
         ViewerGpuCharts = new ObservableCollection<ViewerDetailChartViewModel>();
         ViewerNetworkCharts = new ObservableCollection<ViewerDetailChartViewModel>();
         ViewerFanCharts = new ObservableCollection<ViewerDetailChartViewModel>();
+        ViewerTrafficRecords = new ObservableCollection<ViewerTrafficRecordViewModel>();
+        ViewerTrafficDays = new ObservableCollection<ViewerTrafficDayViewModel>();
         _cpuGroup = new ProbeInstanceGroupViewModel("CPU 实例", CpuInstances, () => CpuInstanceSummary);
         _diskGroup = new ProbeInstanceGroupViewModel("磁盘实例", DiskInstances, () => DiskInstanceSummary);
         _networkGroup = new ProbeInstanceGroupViewModel("网卡实例", NetworkInstances, () => NetworkInstanceSummary);
@@ -290,12 +296,17 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<TrendPointViewModel> ViewerGpuTrendPoints { get; }
     public ObservableCollection<TrendPointViewModel> ViewerNetworkTrendPoints { get; }
     public ObservableCollection<TrendPointViewModel> ViewerFanTrendPoints { get; }
+    public ObservableCollection<TrendPointViewModel> ViewerTrafficTrendPoints { get; }
     public ObservableCollection<ViewerDetailChartViewModel> ViewerCpuCharts { get; }
     public ObservableCollection<ViewerDetailChartViewModel> ViewerMemoryCharts { get; }
     public ObservableCollection<ViewerDetailChartViewModel> ViewerDiskCharts { get; }
     public ObservableCollection<ViewerDetailChartViewModel> ViewerGpuCharts { get; }
     public ObservableCollection<ViewerDetailChartViewModel> ViewerNetworkCharts { get; }
     public ObservableCollection<ViewerDetailChartViewModel> ViewerFanCharts { get; }
+    public ObservableCollection<ViewerTrafficRecordViewModel> ViewerTrafficRecords { get; }
+    public ObservableCollection<ViewerTrafficDayViewModel> ViewerTrafficDays { get; }
+    public string ViewerTrafficStatusText { get => _viewerTrafficStatusText; private set => SetProperty(ref _viewerTrafficStatusText, value); }
+    public string ViewerTrafficSummaryText { get => _viewerTrafficSummaryText; private set => SetProperty(ref _viewerTrafficSummaryText, value); }
     public bool HasViewerCpuCharts { get => _hasViewerCpuCharts; private set => SetProperty(ref _hasViewerCpuCharts, value); }
     public bool HasViewerMemoryCharts { get => _hasViewerMemoryCharts; private set => SetProperty(ref _hasViewerMemoryCharts, value); }
     public bool HasViewerDiskCharts { get => _hasViewerDiskCharts; private set => SetProperty(ref _hasViewerDiskCharts, value); }
@@ -316,6 +327,7 @@ public sealed class MainViewModel : ObservableObject
     public bool CanToggleRealtime => !IsBackendActionBusy && _backendReachable && (_backendRunning || RealtimeModeEnabled);
     public bool CanLoginViewer => !IsBackendActionBusy && ServerUrlPolicy.IsAllowed(ServerUrl) && !string.IsNullOrWhiteSpace(Secret);
     public string LocalBackendBadgeText => _backendReachable ? "本地后端在线" : "本地后端离线";
+    public string ReleaseVersion => $"版本 v{typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "dev"}";
     public string CollectorBadgeText =>
         !_backendReachable ? "采集器不可用" :
         _backendRunning ? "采集器运行中" :
@@ -1411,11 +1423,83 @@ public sealed class MainViewModel : ObservableObject
             EnsureTrendFallback(ViewerNetworkTrendPoints, ViewerNetworkUsagePercent);
             ReplaceScaledTrend(ViewerFanTrendPoints, payload.Series.Fans.SelectMany(fan => fan.Rpm));
             BuildViewerDetailCharts(payload.Series, payload.Latest, payload.EnabledMetrics, payload.AvailableMetrics);
+            var trafficPayload = SelectedMetricWindow == "1d"
+                ? payload
+                : await _apiClient.GetViewerDeviceMetricsAsync(ServerUrl, deviceId, "1d");
+            ReplaceTrafficTrend(ViewerTrafficTrendPoints, trafficPayload?.Series);
+            await RefreshViewerTrafficAsync();
         }
         catch (Exception ex)
         {
             ViewerDetailStatusText = $"读取设备详情失败：{ex.Message}";
         }
+    }
+
+    public async Task RefreshViewerTrafficAsync()
+    {
+        var deviceId = string.IsNullOrWhiteSpace(_selectedViewerDeviceId)
+            ? _viewerDeviceCache.FirstOrDefault()?.DeviceId
+            : _selectedViewerDeviceId;
+        if (string.IsNullOrWhiteSpace(deviceId))
+        {
+            ViewerTrafficStatusText = "没有可查看流量的设备。";
+            return;
+        }
+
+        ViewerTrafficStatusText = "正在读取当天流量…";
+        try
+        {
+            var payload = await _apiClient.GetViewerTrafficCalendarAsync(ServerUrl, deviceId, _viewerTrafficSelectedStart);
+            if (payload is null) return;
+            ViewerTrafficSummaryText = $"当天总流量：{FormatBytes(payload.TotalRxBytes + payload.TotalTxBytes)} · 接收 {FormatBytes(payload.TotalRxBytes)} · 发送 {FormatBytes(payload.TotalTxBytes)}";
+            ViewerTrafficStatusText = $"{payload.Title} · {deviceId}";
+            ViewerTrafficRecords.Clear();
+            ViewerTrafficDays.Clear();
+            foreach (var cell in payload.Cells)
+            {
+                ViewerTrafficDays.Add(new ViewerTrafficDayViewModel(cell));
+            }
+            foreach (var record in payload.Records.TakeLast(48).Reverse())
+            {
+                ViewerTrafficRecords.Add(new ViewerTrafficRecordViewModel(record));
+            }
+        }
+        catch (Exception ex)
+        {
+            ViewerTrafficStatusText = $"读取流量失败：{ex.Message}";
+        }
+    }
+
+    private static void ReplaceTrafficTrend(
+        ObservableCollection<TrendPointViewModel> target,
+        ViewerSeriesDto? series)
+    {
+        if (series is null || series.TrafficRxBytes.Count == 0)
+        {
+            target.Clear();
+            return;
+        }
+
+        var rawPoints = series.TrafficRxBytes
+            .Select((point, index) => new ViewerSamplePointDto
+            {
+                Timestamp = point.Timestamp,
+                Value = point.Value + (index < series.TrafficTxBytes.Count ? series.TrafficTxBytes[index].Value : 0)
+            })
+            .TakeLast(32)
+            .ToList();
+        var maximum = Math.Max(1, rawPoints.Max(point => point.Value));
+        target.Clear();
+        foreach (var point in rawPoints)
+        {
+            target.Add(new TrendPointViewModel(point.Value / maximum * 100, point.Timestamp));
+        }
+    }
+
+    public async Task SelectViewerTrafficDateAsync(string rangeStart)
+    {
+        _viewerTrafficSelectedStart = rangeStart;
+        await RefreshViewerTrafficAsync();
     }
 
     private static void ReplaceTrend(
@@ -1449,21 +1533,21 @@ public sealed class MainViewModel : ObservableObject
 
         ReplaceCharts(ViewerMemoryCharts, IsViewerCategoryVisible(enabledMetrics, availableMetrics, "memoryUsage", "swapUsage") ? new[]
         {
-            Chart("内存", $"物理内存 {FormatBytes(latest.MemoryUsedBytes)} / {FormatBytes(latest.MemoryTotalBytes)}", "使用率", series.MemoryUsagePercent, ViewerMetricValueKind.Percent),
+            Chart("内存", $"物理内存 {FormatBytes(latest.MemoryUsedBytes)} / {FormatBytes(latest.MemoryTotalBytes)}", "使用率", series.MemoryUsagePercent, ViewerMetricValueKind.Percent, series.MemoryUsedBytes, "已用"),
             Chart("内存", $"物理内存总计 {FormatBytes(latest.MemoryTotalBytes)}", "已用容量", series.MemoryUsedBytes, ViewerMetricValueKind.Bytes),
-            Chart("内存", $"交换分区 {FormatBytes(latest.SwapUsedBytes)} / {FormatBytes(latest.SwapTotalBytes)}", "使用率", series.SwapUsagePercent, ViewerMetricValueKind.Percent),
+            Chart("内存", $"交换分区 {FormatBytes(latest.SwapUsedBytes)} / {FormatBytes(latest.SwapTotalBytes)}", "使用率", series.SwapUsagePercent, ViewerMetricValueKind.Percent, series.SwapUsedBytes, "已用"),
             Chart("内存", $"交换分区总计 {FormatBytes(latest.SwapTotalBytes)}", "已用容量", series.SwapUsedBytes, ViewerMetricValueKind.Bytes)
         } : Array.Empty<ViewerDetailChartViewModel>());
 
         ReplaceCharts(ViewerDiskCharts, IsViewerCategoryVisible(enabledMetrics, availableMetrics, "diskUsage", "diskRead", "diskWrite") ? new[]
         {
-            Chart("全部磁盘", $"已用 {FormatBytes(latest.DiskUsedBytes)} / {FormatBytes(latest.DiskTotalBytes)}", "总占用", series.DiskUsagePercent, ViewerMetricValueKind.Percent),
+            Chart("全部磁盘", $"已用 {FormatBytes(latest.DiskUsedBytes)} / {FormatBytes(latest.DiskTotalBytes)}", "总占用", series.DiskUsagePercent, ViewerMetricValueKind.Percent, series.DiskUsedBytes, "已用"),
             Chart("全部磁盘", $"总计 {FormatBytes(latest.DiskTotalBytes)}", "已用容量", series.DiskUsedBytes, ViewerMetricValueKind.Bytes),
             Chart("全部磁盘", "读取", series.DiskReadBytesPerSec, ViewerMetricValueKind.Rate),
             Chart("全部磁盘", "写入", series.DiskWriteBytesPerSec, ViewerMetricValueKind.Rate)
         }.Concat(series.Disks.SelectMany(disk => new[]
         {
-            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "占用", disk.UsagePercent, ViewerMetricValueKind.Percent),
+            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "占用", disk.UsagePercent, ViewerMetricValueKind.Percent, disk.UsedBytes, "已用"),
             Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "已用容量", disk.UsedBytes, ViewerMetricValueKind.Bytes),
             Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "读取", disk.ReadBytesPerSec, ViewerMetricValueKind.Rate),
             Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "写入", disk.WriteBytesPerSec, ViewerMetricValueKind.Rate),
@@ -1531,6 +1615,9 @@ public sealed class MainViewModel : ObservableObject
 
     private static ViewerDetailChartViewModel Chart(string title, string subtitle, string metric, IReadOnlyList<ViewerSamplePointDto> points, ViewerMetricValueKind kind)
         => new(title, subtitle, metric, points, kind);
+
+    private static ViewerDetailChartViewModel Chart(string title, string subtitle, string metric, IReadOnlyList<ViewerSamplePointDto> points, ViewerMetricValueKind kind, IReadOnlyList<ViewerSamplePointDto> secondaryPoints, string secondaryLabel)
+        => new(title, subtitle, metric, points, kind, secondaryPoints, secondaryLabel);
 
     private static void ReplaceCharts(ObservableCollection<ViewerDetailChartViewModel> target, IEnumerable<ViewerDetailChartViewModel> charts)
     {
@@ -3789,6 +3876,53 @@ public sealed class TrendPointViewModel
     public string Timestamp { get; }
 }
 
+public sealed class ViewerTrafficDayViewModel
+{
+    public ViewerTrafficDayViewModel(ViewerTrafficCellDto source)
+    {
+        RangeStart = source.RangeStart;
+        Label = DateTimeOffset.TryParse(source.RangeStart, out var date) ? date.LocalDateTime.Day.ToString() : source.Label;
+        Summary = FormatBytes(source.TotalRxBytes + source.TotalTxBytes);
+        IsToday = source.IsCurrentPeriod;
+        IsSelected = source.IsSelected;
+    }
+
+    public string RangeStart { get; }
+    public string Label { get; }
+    public string Summary { get; }
+    public bool IsToday { get; }
+    public bool IsSelected { get; }
+
+    private static string FormatBytes(double value) => value >= 1024 * 1024 * 1024
+        ? $"{value / 1024 / 1024 / 1024:0.0} GB"
+        : $"{value / 1024 / 1024:0.0} MB";
+}
+
+public sealed class ViewerTrafficRecordViewModel
+{
+    public ViewerTrafficRecordViewModel(ViewerTrafficRecordDto source)
+    {
+        TimestampText = DateTimeOffset.TryParse(source.Timestamp, out var timestamp)
+            ? timestamp.LocalDateTime.ToString("HH:mm:ss")
+            : source.Timestamp;
+        DirectionText = $"接收 {FormatBytes(source.RxBytes)} · 发送 {FormatBytes(source.TxBytes)}";
+        TotalText = FormatBytes(source.TotalBytes);
+        TotalBytes = source.TotalBytes;
+    }
+
+    public string TimestampText { get; }
+    public string DirectionText { get; }
+    public string TotalText { get; }
+    public double TotalBytes { get; }
+
+    private static string FormatBytes(double value)
+    {
+        if (value >= 1024 * 1024 * 1024) return $"{value / 1024 / 1024 / 1024:0.00} GB";
+        if (value >= 1024 * 1024) return $"{value / 1024 / 1024:0.0} MB";
+        return $"{value / 1024:0.0} KB";
+    }
+}
+
 public enum ViewerMetricValueKind
 {
     Percent,
@@ -3801,12 +3935,14 @@ public enum ViewerMetricValueKind
 
 public sealed class ViewerDetailChartViewModel
 {
-    public ViewerDetailChartViewModel(string title, string subtitle, string metric, IReadOnlyList<ViewerSamplePointDto> points, ViewerMetricValueKind valueKind)
+    public ViewerDetailChartViewModel(string title, string subtitle, string metric, IReadOnlyList<ViewerSamplePointDto> points, ViewerMetricValueKind valueKind, IReadOnlyList<ViewerSamplePointDto>? secondaryPoints = null, string secondaryLabel = "")
     {
         Title = title;
         Subtitle = string.IsNullOrWhiteSpace(subtitle) ? metric : $"{subtitle} · {metric}";
         ValueKind = valueKind;
         Points = points.Select(point => new ViewerDetailChartPoint(point.Value, point.Timestamp)).ToList();
+        SecondaryPoints = secondaryPoints?.Select(point => new ViewerDetailChartPoint(point.Value, point.Timestamp)).ToList() ?? [];
+        SecondaryLabel = secondaryLabel;
         if (Points.Count == 0)
         {
             Minimum = 0;
@@ -3834,6 +3970,8 @@ public sealed class ViewerDetailChartViewModel
     public string Subtitle { get; }
     public ViewerMetricValueKind ValueKind { get; }
     public IReadOnlyList<ViewerDetailChartPoint> Points { get; }
+    public IReadOnlyList<ViewerDetailChartPoint> SecondaryPoints { get; }
+    public string SecondaryLabel { get; }
     public double Minimum { get; }
     public double Maximum { get; }
     public double PlotMinimum { get; }
@@ -3856,6 +3994,14 @@ public sealed class ViewerDetailChartViewModel
         ViewerMetricValueKind.Rpm => $"{value:0} RPM",
         _ => value.ToString("0.##")
     };
+
+    public string FormatHoverValue(int index)
+    {
+        var primary = FormatValue(Points[index].Value);
+        if (SecondaryPoints.Count == 0) return primary;
+        var secondaryIndex = Math.Clamp(index, 0, SecondaryPoints.Count - 1);
+        return $"{primary} · {SecondaryLabel} {FormatBytes(SecondaryPoints[secondaryIndex].Value)}";
+    }
 
     private static string FormatBytes(double value)
     {

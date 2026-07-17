@@ -333,7 +333,7 @@ func main() {
 	}
 
 	defaultConfig := newDefaultRuntimeConfig(defaultConnection)
-	log.Printf("go agent started for %s -> %s", baseIdentity.DeviceID, defaultConnection.ServerURL)
+	log.Printf("go agent v%s started for %s -> %s", BuildVersion, baseIdentity.DeviceID, defaultConnection.ServerURL)
 
 	for {
 		cycleStartedAt := time.Now()

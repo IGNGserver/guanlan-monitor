@@ -64,9 +64,10 @@ public sealed partial class MetricLineChart : UserControl
             });
         }
 
+        var accent = (Color)Application.Current.Resources["SystemAccentColor"];
         var line = new Polyline
         {
-            Stroke = new SolidColorBrush(Color.FromArgb(255, 74, 190, 238)),
+            Stroke = new SolidColorBrush(accent),
             StrokeThickness = 2,
             StrokeLineJoin = PenLineJoin.Round
         };
@@ -78,6 +79,24 @@ public sealed partial class MetricLineChart : UserControl
             line.Points.Add(new Point(x, Math.Clamp(y, top, top + height)));
         }
         Plot.Children.Add(line);
+
+        if (chart.SecondaryPoints.Count > 0)
+        {
+            var secondaryLine = new Polyline
+            {
+                Stroke = new SolidColorBrush(Color.FromArgb(175, accent.R, accent.G, accent.B)),
+                StrokeThickness = 2,
+                StrokeLineJoin = PenLineJoin.Round
+            };
+            for (var index = 0; index < chart.SecondaryPoints.Count; index++)
+            {
+                var point = chart.SecondaryPoints[index];
+                var x = left + (chart.SecondaryPoints.Count == 1 ? width / 2 : width * index / (chart.SecondaryPoints.Count - 1));
+                var y = top + height * (1 - (point.Value - minimum) / (maximum - minimum));
+                secondaryLine.Points.Add(new Point(x, Math.Clamp(y, top, top + height)));
+            }
+            Plot.Children.Add(secondaryLine);
+        }
     }
 
     private void Plot_PointerMoved(object sender, PointerRoutedEventArgs e)
@@ -91,7 +110,7 @@ public sealed partial class MetricLineChart : UserControl
         var position = e.GetCurrentPoint(Plot).Position;
         var index = (int)Math.Round(Math.Clamp(position.X / Plot.ActualWidth, 0, 1) * (chart.Points.Count - 1));
         var point = chart.Points[index];
-        HoverText.Text = $"{chart.FormatValue(point.Value)}\n{point.TimestampText}";
+        HoverText.Text = $"{chart.FormatHoverValue(index)}\n{point.TimestampText}";
         HoverLabel.Visibility = Visibility.Visible;
         HoverTransform.X = Math.Clamp(position.X + 12, 0, Math.Max(0, Plot.ActualWidth - 155));
         HoverTransform.Y = Math.Clamp(position.Y + 10, 0, Math.Max(0, Plot.ActualHeight - 58));

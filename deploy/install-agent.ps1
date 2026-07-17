@@ -85,7 +85,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedAgentBinary)) {
   Copy-Item -LiteralPath $resolvedAgentBinary -Destination $binaryPath -Force
 } else {
   if (-not (Test-Path (Join-Path $agentSourceDir "main.go"))) { throw "Cannot find agents\main.go" }
-  & $resolvedGoPath build -C $agentSourceDir -o $binaryPath .
+  & $resolvedGoPath build -C $agentSourceDir -ldflags "-X main.BuildVersion=$version" -o $binaryPath .
 }
 if (-not (Test-Path $binaryPath)) {
   throw "Go build did not produce $binaryPath"

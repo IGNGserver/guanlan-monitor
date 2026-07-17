@@ -28,6 +28,8 @@ import (
 	gnet "github.com/shirou/gopsutil/v4/net"
 )
 
+var BuildVersion = "dev"
+
 type agentConnectionConfig struct {
 	ServerURL string `json:"serverUrl"`
 	Secret    string `json:"secret"`
@@ -326,7 +328,7 @@ func main() {
 	}
 	s.httpServer = httpServer
 
-	log.Printf("windows agent backend listening on http://%s", *listenAddr)
+	log.Printf("windows agent backend v%s listening on http://%s", BuildVersion, *listenAddr)
 	go s.realtimeExpiryLoop()
 	go s.cloudRealtimeStreamLoop()
 	go s.cloudRealtimeLoop()

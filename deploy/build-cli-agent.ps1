@@ -36,7 +36,7 @@ function Build-PlatformPackage {
   $env:GOOS = $Goos
   $env:GOARCH = $Goarch
   $env:CGO_ENABLED = "0"
-  & $go -C $agentDir build -trimpath -ldflags "-s -w" -o (Join-Path $directory $BinaryName) .
+  & $go -C $agentDir build -trimpath -ldflags "-s -w -X main.BuildVersion=$version" -o (Join-Path $directory $BinaryName) .
   if ($LASTEXITCODE -ne 0) { throw "Go build failed for $Name" }
   Copy-Item -LiteralPath (Join-Path $repoRoot "VERSION") -Destination (Join-Path $directory "VERSION") -Force
   Copy-Item -LiteralPath (Join-Path $repoRoot "deploy\$InstallerName") -Destination (Join-Path $directory $InstallerName) -Force

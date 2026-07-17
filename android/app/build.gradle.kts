@@ -19,6 +19,7 @@ android {
     targetSdk = 35
     versionCode = releaseVersion.replace(".", "").toInt()
     versionName = releaseVersion
+    buildConfigField("String", "RELEASE_VERSION", "\"$releaseVersion\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     vectorDrawables.useSupportLibrary = true
@@ -71,6 +72,7 @@ android {
 
   buildFeatures {
     compose = true
+    buildConfig = true
   }
 
   packaging {

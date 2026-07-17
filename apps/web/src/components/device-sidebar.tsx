@@ -61,6 +61,7 @@ export function DeviceSidebar({
           );
         })}
       </div>
+      <small className={styles.releaseVersion}>中枢版本 v{process.env.NEXT_PUBLIC_DSC_VERSION ?? "dev"}</small>
     </aside>
   );
 }

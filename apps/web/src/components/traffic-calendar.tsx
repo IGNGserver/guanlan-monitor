@@ -83,6 +83,12 @@ export function TrafficCalendar({ deviceId }: { deviceId: string }) {
         <span>{data ? `${formatDate(data.rangeStart)} - ${formatDateInclusive(data.rangeEnd)}` : "--"}</span>
       </div>
 
+      <div className={styles.trafficSelectedSummary}>
+        <span>{data?.cells.find((cell) => cell.isSelected)?.label ?? "所选日期"}</span>
+        <strong>{formatBytes((data?.totalRxBytes ?? 0) + (data?.totalTxBytes ?? 0))}</strong>
+        <small>接收 {formatBytes(data?.totalRxBytes ?? 0)} · 发送 {formatBytes(data?.totalTxBytes ?? 0)}</small>
+      </div>
+
       {mode === "day" ? (
         <div className={styles.trafficWeekdays}>
           {WEEKDAY_LABELS.map((label) => (
@@ -91,7 +97,7 @@ export function TrafficCalendar({ deviceId }: { deviceId: string }) {
         </div>
       ) : null}
 
-      <div className={clsx(styles.trafficCalendarGrid, mode === "month" && styles.trafficCalendarGridMonth)}>
+      <div className={styles.trafficCalendarGrid}>
         {loading && !data ? (
           <div className={styles.loadingState}>
             <span className={styles.loadingSpinner} />
@@ -113,11 +119,7 @@ export function TrafficCalendar({ deviceId }: { deviceId: string }) {
                 background: `linear-gradient(180deg, rgba(219,91,19,${0.15 + ratio * 0.5}), rgba(40,40,40,0.95))`
               }}
             >
-              <span>{cell.label}{cell.isCurrentPeriod ? " · 今" : ""}</span>
-              <strong>{formatBytes(cell.totalRxBytes + cell.totalTxBytes)}</strong>
-              <small>
-                入 {formatBytes(cell.totalRxBytes)} / 出 {formatBytes(cell.totalTxBytes)}
-              </small>
+              <span>{formatDay(cell.rangeStart)}{cell.isCurrentPeriod ? " · 今" : ""}</span>
             </button>
           );
         })}
@@ -179,6 +181,10 @@ function formatDate(value: string) {
 
 function formatDateInclusive(value: string) {
   return new Date(new Date(value).getTime() - 1).toLocaleDateString("zh-CN");
+}
+
+function formatDay(value: string) {
+  return new Date(value).toLocaleDateString("zh-CN", { day: "numeric" });
 }
 
 function formatBytes(value: number) {

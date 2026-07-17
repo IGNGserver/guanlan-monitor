@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
           onOpenDevice = appViewModel::openDevice,
           onClearFocusedBlock = appViewModel::clearFocusedBlock,
           onOpenTraffic = appViewModel::openTraffic,
+          onCloseTrafficSheet = appViewModel::closeTrafficSheet,
           onOpenDeviceEditor = appViewModel::openDeviceEditor,
           onShowDeviceList = appViewModel::showDeviceList,
           onSelectWindow = appViewModel::selectWindow,

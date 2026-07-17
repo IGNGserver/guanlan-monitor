@@ -149,6 +149,20 @@ public sealed class BackendApiClient
         return await response.Content.ReadFromJsonAsync<ViewerDeviceMetricsDto>(cancellationToken: cancellationToken);
     }
 
+    public async Task<ViewerTrafficCalendarDto?> GetViewerTrafficCalendarAsync(
+        string serverUrl,
+        string deviceId,
+        string? selectedStart = null,
+        CancellationToken cancellationToken = default)
+    {
+        var anchor = Uri.EscapeDataString(DateTimeOffset.Now.ToString("O"));
+        var selection = string.IsNullOrWhiteSpace(selectedStart) ? "" : "&selectedStart=" + Uri.EscapeDataString(selectedStart);
+        var uri = BuildServerUri(serverUrl, "/api/devices/" + Uri.EscapeDataString(deviceId) + "/traffic-calendar?mode=day&anchor=" + anchor + selection);
+        using var response = await _httpClient.GetAsync(uri, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ViewerTrafficCalendarDto>(cancellationToken: cancellationToken);
+    }
+
     public async Task<ProbeDetectResponseDto?> DetectAsync(CancellationToken cancellationToken = default)
     {
         using var response = await _httpClient.PostAsync("api/probes/detect", null, cancellationToken);

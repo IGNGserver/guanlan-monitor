@@ -240,12 +240,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     _state.update {
       it.copy(
         selectedDeviceId = deviceId,
-        currentScreen = AppScreen.Traffic,
+        currentScreen = AppScreen.DeviceDetail,
         transitionDirection = ScreenTransitionDirection.Forward,
+        trafficSheetRequested = true,
         message = null
       )
     }
-    loadTraffic(deviceId, _state.value.trafficMode, showScreen = true)
+    loadMetrics(deviceId, _state.value.selectedWindow, showScreen = true)
+    loadTraffic(deviceId, _state.value.trafficMode, showScreen = false)
   }
 
   fun showDeviceList() {
@@ -259,6 +261,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   fun handleBack() {
     val current = _state.value
     when {
+      current.trafficSheetRequested -> _state.update { it.copy(trafficSheetRequested = false) }
       current.editingDeviceId != null -> closeMetricConfigEditor()
       screenBackStack.isNotEmpty() -> {
         val previous = screenBackStack.removeAt(screenBackStack.lastIndex)
@@ -271,6 +274,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
       }
     }
+  }
+
+  fun closeTrafficSheet() {
+    _state.update { it.copy(trafficSheetRequested = false) }
   }
 
   fun openDeviceEditor(deviceId: String) {
