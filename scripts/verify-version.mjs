@@ -30,6 +30,7 @@ try {
     .split(/\r?\n/)
     .map((tag) => tag.replace(/^v/, "").trim())
     .filter((version) => /^\d+\.\d+\.\d+$/.test(version))
+    .filter((version) => version !== rootVersion)
     .map((version) => version.split(".").map(Number));
 
   if (previousVersions.length > 0) {
