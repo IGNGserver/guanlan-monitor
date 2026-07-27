@@ -170,6 +170,6 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: Device State Console ${{ github.ref_name }} (测试版)
-          body_path: release-notes-v0.1.112.md
+          body_path: ${{ format('release-notes-{0}.md', github.ref_name) }}
           prerelease: true
           files: release-assets/**/*
