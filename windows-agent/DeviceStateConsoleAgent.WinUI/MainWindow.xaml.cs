@@ -69,7 +69,6 @@ public sealed partial class MainWindow : Window
             }
         };
         SecretBox.Password = _viewModel.Secret;
-        ViewerAccessBox.Password = _viewModel.ViewerAccessKey;
         ServerViewerAccessBox.Password = _viewModel.ViewerAccessKey;
         UpdateMonitorAvailability();
     }
@@ -278,11 +277,8 @@ public sealed partial class MainWindow : Window
         AppNavigation.IsPaneOpen = !isCompact;
         ContentLayout.Padding = isCompact ? new Thickness(16, 16, 16, 16) : new Thickness(28, 24, 28, 24);
 
-        SetColumns(MonitorDetailMetricsGrid, isCompact, 2);
-        SetColumns(MonitorTrendGrid, isCompact, 3);
         SetColumns(MonitorStatusGrid, isCompact, 2);
         SetColumns(MonitorRemoteGrid, isCompact, 3);
-        SetColumns(LocalProbeGrid, isCompact, 2);
         SetColumns(LocalSummaryGrid, isCompact, 2);
         SetColumns(LocalMetricCardsGrid, isCompact, 2);
         SetColumns(LocalHealthGrid, isCompact, 2);
