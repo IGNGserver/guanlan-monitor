@@ -111,7 +111,7 @@ jobs:
 
       - name: Build unsigned release APK for testing
         working-directory: android
-        run: ./gradlew :app:assembleRelease --no-daemon
+        run: bash ./gradlew :app:assembleRelease --no-daemon
 
       - name: Name Android asset
         shell: bash
