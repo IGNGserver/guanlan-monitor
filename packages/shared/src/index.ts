@@ -164,11 +164,7 @@ export interface AgentConnectionConfig {
 
 export interface AgentSamplingConfig {
   normalIntervalSeconds: number;
-  fastIntervalSeconds: number;
   slowIntervalSeconds: number;
-  realtimeModeEnabled?: boolean;
-  realtimeModeExpiresAt?: string;
-  realtimeModeSource?: "manual" | "viewer" | "";
 }
 
 export interface AgentProbeSelection {

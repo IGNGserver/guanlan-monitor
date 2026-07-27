@@ -116,22 +116,15 @@ release/windows-agent-setup/windows-agent-setup.generated.iss
 - bundle 验证脚本可检查目录结构并烟测启动 packaged local backend
 - 本地展示配置不会自动上云；只有显式调用 `/api/cloud/push` 才会同步到中枢
 - 本地展示配置变更的“待推送”状态会由 backend 持久化，backend / WinUI 重启后仍可恢复
-- 仅采样频次、实时模式、自动重启这类运行时配置变更不会误触发“待推送”，也不会提前生成同步状态文件
 - 本地配置会直接改变 collector 实际发送的 ingest payload，关闭的类别不会继续按原样上报
 - backend 被异常结束时，collector 会随 backend 一并退出，不残留孤儿进程
 - WinUI 对应的父进程异常退出时，backend 会自行识别并主动退出，不继续残留在后台
-- 网页查看驱动的实时模式会优先通过中枢主动下发控制流触发；控制流断开时，backend 会自动回退到低频轮询判断观看态
-- 中枢的 agent control-stream 会定期重发当前 viewer 控制快照，降低 Windows 端长连接因静默超时而被中间层断开的概率
-- 当 Windows 端 control-stream 长时间静默但底层连接未显式报错时，backend 会主动取消旧连接并自动重建 control-stream，而不是一直停留在“假在线”状态
-- 当 viewer 页面短暂刷新、切换标签页或短时断流时，Windows backend 不会立刻退出 `viewer` 驱动的实时上传，而是按 agent 本地配置的 `viewerRealtimeHoldSeconds` 保持窗口延迟回落，减少 `5s/15s` 频率抖动
 - WinUI 本地状态区会直接显示控制流状态、最近一次推送、最近一次断开时间、断开原因、主动重连次数与最近一次主动重连时间，便于现场区分“尚未建链”“已断开回退”“静默超时后正在主动重连”与“控制流已恢复”
 - WinUI 会把“本地配置即时生效”和“云端展示显式同步”分开表达：本地改动先影响采集与发送，只有显式推送后网页/客户端才更新展示类别
 - WinUI 当前已支持在 agent 端直接决定“发送哪些具体指标”，而不只是关闭整个类别；这些勾选会落到 `enabledMetrics`
 - WinUI 当前已支持在实例级继续细化具体指标，例如可对单个 CPU / 磁盘 / 网卡 / 显卡实例单独关闭某些指标；这些勾选会落到 `instanceMetricConfig`
 - 已有独立 verifier 证明 `instanceMetricConfig` 会真实影响 collector 发出的 ingest payload，而不是只停留在界面配置层
 - WinUI 当前还会把控制流状态进一步区分为 `connected`、`connected-keepalive`、`recovering`、`fallback`、`idle`，帮助现场区分“已收到观看态变更”“当前只是保活”“静默超时后正在主动重连”“已回退轮询”与“首启待建链”
-- 若 control-stream 在 Windows 端反复发生静默超时，WinUI 还会把链路健康度升级为更明显的弱稳定提示，提醒优先检查网络空闲超时、代理保活和休眠恢复后的连接状态
-- 已有独立 verifier 证明 control-stream 在 Windows 端静默超时后会主动取消旧连接、记录重连次数，并重新建链，而不是只依赖 UI 文案或日志人工判断
 
 当前仓库尚未在本机验证：
 
@@ -258,7 +251,7 @@ powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-setup-lif
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-setup-execution.ps1 `
-  -SetupExePath .\release\windows-agent-setup\DeviceStateConsoleAgent-setup.exe `
+  -SetupExePath .\release\windows-agent-setup\DeviceStateConsole-Windows-GUI-Setup.exe `
   -OutputDir .\release\windows-agent-setup-execution
 ```
 
@@ -308,7 +301,6 @@ powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-release-r
 - `installedArtifactStateVerified`
 - `localArtifactStateVerified`
 - `issueDiagnosisVerified`
-- `controlStreamVerified`
 
 其中：
 
@@ -338,11 +330,8 @@ powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-release-r
   - `nextSteps`
   - `recommendedCommands`
 
-其中 `controlStreamVerified` 表示这些控制链路场景都已有自动化证据：
 
-- 控制流可用时，观看态会通过主动下发进入实时模式
 - viewer 短暂离开后，agent 会按保持窗口延迟回落，而不是立刻从实时切回常态
-- 控制流不可用时，backend 会自动回退到低频轮询
 - 首启时控制流默认未连接，且不存在历史事件时间
 - WinUI 会把控制流最近一次断开时间与断开原因展示给用户
 
@@ -418,7 +407,6 @@ powershell -ExecutionPolicy Bypass -File .\deploy\export-windows-agent-objective
 - 便携模式与安装模式的本地落盘位置
 - 连接配置、频次调整、探测方案、实例开关
 - 本地自动保存与显式推送到中枢
-- viewer-driven realtime / control-stream
 
 并直接标出每一项当前是：
 

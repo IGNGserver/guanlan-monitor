@@ -28,8 +28,7 @@ import (
 )
 
 const (
-	defaultNormalIntervalSeconds = 15
-	defaultFastIntervalSeconds   = 5
+	defaultNormalIntervalSeconds = 30
 	defaultSlowIntervalSeconds   = 30
 )
 
@@ -223,11 +222,7 @@ type agentConnectionConfig struct {
 
 type agentSamplingConfig struct {
 	NormalIntervalSeconds int    `json:"normalIntervalSeconds"`
-	FastIntervalSeconds   int    `json:"fastIntervalSeconds"`
 	SlowIntervalSeconds   int    `json:"slowIntervalSeconds"`
-	RealtimeModeEnabled   bool   `json:"realtimeModeEnabled"`
-	RealtimeModeExpiresAt string `json:"realtimeModeExpiresAt,omitempty"`
-	RealtimeModeSource    string `json:"realtimeModeSource,omitempty"`
 }
 
 type agentProbeSelection struct {
@@ -391,10 +386,8 @@ func newDefaultRuntimeConfig(connection agentConnectionConfig) agentRuntimeConfi
 	return agentRuntimeConfig{
 		Connection: connection,
 		Sampling: agentSamplingConfig{
-			NormalIntervalSeconds: defaultNormalIntervalSeconds,
-			FastIntervalSeconds:   defaultFastIntervalSeconds,
+			NormalIntervalSeconds: 30,
 			SlowIntervalSeconds:   defaultSlowIntervalSeconds,
-			RealtimeModeEnabled:   false,
 		},
 		EnabledMetrics:       append([]string{}, allMetricKeys...),
 		EnabledDeviceIDs:     map[string][]string{},
@@ -451,16 +444,12 @@ func mergeConfig(defaults agentRuntimeConfig, fileCfg agentConfigFile) agentRunt
 	if strings.TrimSpace(fileCfg.Connection.Hostname) != "" {
 		cfg.Connection.Hostname = strings.TrimSpace(fileCfg.Connection.Hostname)
 	}
-	if fileCfg.Sampling.FastIntervalSeconds > 0 {
-		cfg.Sampling.FastIntervalSeconds = fileCfg.Sampling.FastIntervalSeconds
-	}
 	if fileCfg.Sampling.NormalIntervalSeconds > 0 {
 		cfg.Sampling.NormalIntervalSeconds = fileCfg.Sampling.NormalIntervalSeconds
 	}
 	if fileCfg.Sampling.SlowIntervalSeconds > 0 {
 		cfg.Sampling.SlowIntervalSeconds = fileCfg.Sampling.SlowIntervalSeconds
 	}
-	cfg.Sampling.RealtimeModeEnabled = fileCfg.Sampling.RealtimeModeEnabled
 	if len(fileCfg.EnabledMetrics) > 0 {
 		cfg.EnabledMetrics = uniqueStrings(fileCfg.EnabledMetrics)
 	}
@@ -480,13 +469,6 @@ func mergeConfig(defaults agentRuntimeConfig, fileCfg agentConfigFile) agentRunt
 	return cfg
 }
 
-func (c agentRuntimeConfig) fastIntervalSeconds() int {
-	if c.Sampling.FastIntervalSeconds > 0 {
-		return c.Sampling.FastIntervalSeconds
-	}
-	return defaultFastIntervalSeconds
-}
-
 func (c agentRuntimeConfig) normalIntervalSeconds() int {
 	if c.Sampling.NormalIntervalSeconds > 0 {
 		return c.Sampling.NormalIntervalSeconds
@@ -502,9 +484,6 @@ func (c agentRuntimeConfig) slowIntervalSeconds() int {
 }
 
 func (c agentRuntimeConfig) currentUploadIntervalSeconds() int {
-	if c.Sampling.RealtimeModeEnabled {
-		return c.fastIntervalSeconds()
-	}
 	return c.normalIntervalSeconds()
 }
 

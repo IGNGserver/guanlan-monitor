@@ -28,7 +28,7 @@ if [[ "${EUID}" -ne 0 ]]; then echo "Please run with sudo." >&2; exit 1; fi
 for command in curl unzip; do command -v "${command}" >/dev/null 2>&1 || { echo "${command} is required." >&2; exit 1; }; done
 TEMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "${TEMP_ROOT}"' EXIT
-ASSET="linux-x64-${VERSION}.zip"
+ASSET="DeviceStateConsole-Linux-CLI-Install-v${VERSION}.zip"
 URL="https://github.com/${REPOSITORY}/releases/download/v${VERSION}/${ASSET}"
 curl -fL --retry 3 "${URL}" -o "${TEMP_ROOT}/${ASSET}"
 unzip -q "${TEMP_ROOT}/${ASSET}" -d "${TEMP_ROOT}/package"

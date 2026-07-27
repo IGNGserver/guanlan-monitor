@@ -5,7 +5,7 @@
 #define MyAppIconName "app-icon.ico"
 #define MyAppSourceDir "C:\build\DeviceStateConsoleAgent"
 #define MyAppOutputDir "C:\build\installer"
-#define MyAppOutputBaseFilename "DeviceStateConsoleAgent-setup-0.1.0"
+#define MyAppOutputBaseFilename "DeviceStateConsole-Windows-GUI-Setup-v0.1.0"
 #define MyAppId "{{E7EC0D43-10D7-4D88-BB80-6F1E901C3E7A}"
 #define MyAppInstallDirName "DeviceStateConsoleAgent"
 #define MyAppConfigDirName "DeviceStateConsoleAgent"
@@ -168,7 +168,7 @@ begin
 
   if Response = IDYES then
   begin
-    RepairSetupPath := ExpandConstant('{app}\repair\DeviceStateConsoleAgent-setup.exe');
+    RepairSetupPath := ExpandConstant('{app}\repair\DeviceStateConsole-Windows-GUI-Setup.exe');
     if not FileExists(RepairSetupPath) then
     begin
       MsgBox('修复安装包不存在，请使用同版本或更新版本的安装包执行更新/修复。', mbError, MB_OK);

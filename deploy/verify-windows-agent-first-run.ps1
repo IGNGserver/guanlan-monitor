@@ -89,8 +89,6 @@ $report = [ordered]@{
   stateConfigFileExistsOnFirstRun = $false
   stateSyncStateFileExistsOnFirstRun = $false
   stateDiagnosticsFileExistsOnFirstRun = $false
-  controlStreamDisconnectedOnFirstRun = $false
-  lastControlStreamEventMissingOnFirstRun = $false
   syncStateCreatedAfterDisplayChange = $false
   stateSyncStateFileExistsAfterDisplayChange = $false
   cloudConfigPendingAfterDisplayChange = $false
@@ -148,16 +146,11 @@ try {
   $report.stateConfigFileExistsOnFirstRun = [bool]$state.configFileExists
   $report.stateSyncStateFileExistsOnFirstRun = [bool]$state.syncStateFileExists
   $report.stateDiagnosticsFileExistsOnFirstRun = [bool]$state.diagnosticsFileExists
-  $report.controlStreamDisconnectedOnFirstRun = (-not [bool]$state.controlStreamConnected)
-  $report.lastControlStreamEventMissingOnFirstRun = [string]::IsNullOrWhiteSpace([string]$state.lastControlStreamEventAt)
   if (-not $report.stateConfigPathMatched -or -not $report.stateSyncStatePathMatched -or -not $report.stateDiagnosticsPathMatched) {
     throw "Backend state paths did not match the empty first-run config root."
   }
   if (-not $report.stateConfigFileExistsOnFirstRun -or $report.stateSyncStateFileExistsOnFirstRun -or -not $report.stateDiagnosticsFileExistsOnFirstRun) {
     throw "Backend state file-existence flags did not match the expected first-run artifact state."
-  }
-  if (-not $report.controlStreamDisconnectedOnFirstRun -or -not $report.lastControlStreamEventMissingOnFirstRun) {
-    throw "Expected first-run control stream state to remain disconnected with no prior events."
   }
 
   $updatedConfig = @{
@@ -168,10 +161,8 @@ try {
       hostname = "First Run Device"
     }
     sampling = @{
-      normalIntervalSeconds = 15
-      fastIntervalSeconds = 5
+      normalIntervalSeconds = 30
       slowIntervalSeconds = 30
-      realtimeModeEnabled = $false
     }
     enabledMetrics = @("cpuUsage", "networkTraffic")
     enabledDeviceIds = @{

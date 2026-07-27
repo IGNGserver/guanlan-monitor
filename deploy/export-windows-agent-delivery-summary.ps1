@@ -178,12 +178,8 @@ Add-Line -Lines $lines -Text ("- Portable artifact state verified: " + [string]$
 Add-Line -Lines $lines -Text ("- Installed artifact state verified: " + [string]$releaseReadinessReport.status.installedArtifactStateVerified)
 Add-Line -Lines $lines -Text ("- Local artifact state verified: " + [string]$releaseReadinessReport.status.localArtifactStateVerified)
 Add-Line -Lines $lines -Text ("- Issue diagnosis verified: " + [string]$releaseReadinessReport.status.issueDiagnosisVerified)
-Add-Line -Lines $lines -Text ("- Control stream verified: " + [string]$releaseReadinessReport.status.controlStreamVerified)
 if ($suiteSummary -and $suiteSummary.checks -and $null -ne $suiteSummary.checks.PSObject.Properties["instanceMetricConfigMatched"]) {
   Add-Line -Lines $lines -Text ("- Instance metric config verified: " + [string]$suiteSummary.checks.instanceMetricConfigMatched)
-}
-if ($suiteSummary -and $suiteSummary.checks -and $null -ne $suiteSummary.checks.PSObject.Properties["viewerRealtimeHoldPassed"]) {
-  Add-Line -Lines $lines -Text ("- Viewer realtime hold-window verified: " + [string]$suiteSummary.checks.viewerRealtimeHoldPassed)
 }
 Add-Line -Lines $lines
 
@@ -233,15 +229,6 @@ if ($releaseReadinessReport.evidence.portableSuite.available) {
   }
   if ($suiteSummary -and $suiteSummary.checks -and $null -ne $suiteSummary.checks.PSObject.Properties["instanceMetricConfigMatched"]) {
     Add-Line -Lines $lines -Text ("- Instance metric config matched in suite: " + [string]$suiteSummary.checks.instanceMetricConfigMatched)
-  }
-  if ($suiteSummary -and $suiteSummary.reports -and $null -ne $suiteSummary.reports.PSObject.Properties["viewerRealtimeHold"]) {
-    Add-Line -Lines $lines -Text ("- Viewer realtime hold-window report: " + [string]$suiteSummary.reports.viewerRealtimeHold)
-  }
-  if ($suiteSummary -and $suiteSummary.checks -and $null -ne $suiteSummary.checks.PSObject.Properties["viewerRealtimePassed"]) {
-    Add-Line -Lines $lines -Text ("- Viewer realtime passed in suite: " + [string]$suiteSummary.checks.viewerRealtimePassed)
-  }
-  if ($suiteSummary -and $suiteSummary.checks -and $null -ne $suiteSummary.checks.PSObject.Properties["viewerRealtimeHoldPassed"]) {
-    Add-Line -Lines $lines -Text ("- Viewer realtime hold-window passed in suite: " + [string]$suiteSummary.checks.viewerRealtimeHoldPassed)
   }
 }
 if ($releaseReadinessReport.evidence.setupLifecycle.available) {

@@ -9,7 +9,6 @@
 - Use Windows processor performance counters for CPU boost frequencies, with
   LibreHardwareMonitor and NVIDIA `nvidia-smi` paths for current hardware clocks.
 - Add real-time viewer presence handling and device-level metric configuration.
-- Expand Windows agent recovery, control-stream, packaging, and installer
   verification tooling.
 - Remove development-machine addresses and fixed credentials from public source
   defaults; strengthen ignore rules for secrets, local configuration, build

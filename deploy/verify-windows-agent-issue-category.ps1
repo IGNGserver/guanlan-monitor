@@ -74,7 +74,6 @@ $configPath = Join-Path $resolvedConfigRoot "agent-ui.config.json"
     hostname = "Issue Category Test"
   }
   sampling = @{
-    fastIntervalSeconds = 1
     slowIntervalSeconds = 5
   }
   enabledMetrics = @("cpuUsage")

@@ -98,7 +98,6 @@ $config = @{
     hostname = "Auto Restart Test"
   }
   sampling = @{
-    fastIntervalSeconds = 5
     slowIntervalSeconds = 30
   }
   enabledMetrics = @("cpuUsage")

@@ -13,8 +13,6 @@ import type {
 import { z } from "zod";
 import { env } from "./config.js";
 import type { MetricsService } from "./services/metrics.js";
-import type { AgentControlService } from "./services/agent-control.js";
-import type { ViewerPresenceService } from "./services/viewer-presence.js";
 import { LocalDeviceMetricConfigStore, LocalFanNoteStore, createLocalStore } from "./repositories/local.js";
 import type { Repositories, SessionValue } from "./types.js";
 import { ALL_DEVICE_METRIC_KEYS, getAvailableMetrics, resolveCpuFrequencyMHz, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
@@ -86,17 +84,10 @@ const metricConfigSchema = z.object({
   ).optional()
 });
 
-const viewerPresenceSchema = z.object({
-  viewerId: z.string().min(1),
-  ttlSeconds: z.number().int().min(5).max(120).optional()
-});
-
 export async function registerRoutes(
   app: FastifyInstance,
   repositories: Repositories,
   metricsService: MetricsService,
-  viewerPresence: ViewerPresenceService,
-  agentControl: AgentControlService
 ) {
   const store = createLocalStore();
   const fanNotes = new LocalFanNoteStore(store);
@@ -273,38 +264,6 @@ export async function registerRoutes(
     }
   );
 
-  app.put<{ Params: { deviceId: string }; Body: { viewerId: string; ttlSeconds?: number } }>(
-    "/api/devices/:deviceId/viewer-presence",
-    { preHandler: requireAuth },
-    async (request, reply) => {
-      const state = await repositories.realtime.getDevice(request.params.deviceId);
-      if (!state) return reply.code(404).send({ error: "device_not_found" });
-      const body = viewerPresenceSchema.parse(request.body);
-      viewerPresence.touch(request.params.deviceId, body.viewerId, body.ttlSeconds);
-      return {
-        ok: true,
-        deviceId: request.params.deviceId,
-        ...viewerPresence.snapshot(request.params.deviceId)
-      };
-    }
-  );
-
-  app.delete<{ Params: { deviceId: string }; Body: { viewerId: string } }>(
-    "/api/devices/:deviceId/viewer-presence",
-    { preHandler: requireAuth },
-    async (request, reply) => {
-      const state = await repositories.realtime.getDevice(request.params.deviceId);
-      if (!state) return reply.code(404).send({ error: "device_not_found" });
-      const body = viewerPresenceSchema.pick({ viewerId: true }).parse(request.body);
-      viewerPresence.clear(request.params.deviceId, body.viewerId);
-      return {
-        ok: true,
-        deviceId: request.params.deviceId,
-        ...viewerPresence.snapshot(request.params.deviceId)
-      };
-    }
-  );
-
   app.post<{ Body: AgentCloudConfigSyncPayload }>("/api/agent/device-config", async (request, reply) => {
     if (rejectInsecureAgentTransport(request, reply)) return;
     const token = request.headers.authorization?.replace("Bearer ", "");
@@ -366,65 +325,6 @@ export async function registerRoutes(
     };
   });
 
-  app.get<{ Querystring: { deviceId: string } }>("/api/agent/control-stream", async (request, reply) => {
-    if (rejectInsecureAgentTransport(request, reply)) return;
-    const token = request.headers.authorization?.replace("Bearer ", "");
-    if (token !== env.ACCESS_KEY) {
-      return reply.code(401).send({ error: "unauthorized_agent" });
-    }
-
-    const deviceId = request.query.deviceId?.trim();
-    if (!deviceId) {
-      return reply.code(400).send({ error: "missing_device_id" });
-    }
-
-    reply.hijack();
-    reply.raw.statusCode = 200;
-    reply.raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-    reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
-    reply.raw.setHeader("Connection", "keep-alive");
-    reply.raw.setHeader("X-Accel-Buffering", "no");
-    reply.raw.flushHeaders?.();
-    agentControl.writeComment(reply.raw, "connected");
-
-    agentControl.connect(deviceId, reply.raw);
-    agentControl.sendViewerRealtime(reply.raw, deviceId, viewerPresence.snapshot(deviceId));
-
-    const keepAliveTimer = setInterval(() => {
-      if (reply.raw.destroyed) {
-        clearInterval(keepAliveTimer);
-        return;
-      }
-      agentControl.sendViewerRealtime(reply.raw, deviceId, viewerPresence.snapshot(deviceId));
-    }, env.AGENT_CONTROL_KEEPALIVE_MS);
-
-    const stopKeepAlive = () => {
-      clearInterval(keepAliveTimer);
-      reply.raw.off("error", stopKeepAlive);
-      reply.raw.socket?.off("close", stopKeepAlive);
-      reply.raw.socket?.off("error", stopKeepAlive);
-    };
-
-    reply.raw.on("error", stopKeepAlive);
-    reply.raw.socket?.on("close", stopKeepAlive);
-    reply.raw.socket?.on("error", stopKeepAlive);
-  });
-
-  app.get<{ Querystring: { deviceId: string } }>("/api/agent/device-realtime", async (request, reply) => {
-    if (rejectInsecureAgentTransport(request, reply)) return;
-    const token = request.headers.authorization?.replace("Bearer ", "");
-    if (token !== env.ACCESS_KEY) {
-      return reply.code(401).send({ error: "unauthorized_agent" });
-    }
-
-    const deviceId = z.string().min(1).parse(request.query.deviceId);
-    const state = await repositories.realtime.getDevice(deviceId);
-    if (!state) return reply.code(404).send({ error: "device_not_found" });
-    return {
-      deviceId,
-      ...viewerPresence.snapshot(deviceId)
-    };
-  });
 }
 
 function rejectInsecureAgentTransport(request: FastifyRequest, reply: FastifyReply): boolean {

@@ -29,7 +29,6 @@ const schema = z.object({
   SERVER_HOST: z.string().default("0.0.0.0"),
   SERVER_PORT: z.coerce.number().default(4000),
   AGENT_REQUIRE_HTTPS: booleanFromEnv,
-  AGENT_CONTROL_KEEPALIVE_MS: z.coerce.number().int().min(1000).default(15000),
   REDIS_URL: optionalUrl,
   MYSQL_URL: optionalNonEmptyString,
   // Deprecated after v0.1.107. ACCESS_KEY is the single credential for all clients.

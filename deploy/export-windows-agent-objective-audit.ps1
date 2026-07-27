@@ -136,7 +136,6 @@ $localArtifactStateVerified = [bool]$releaseReadinessReport.status.localArtifact
 $portableSuiteVerified = [bool]$releaseReadinessReport.status.portableSuiteVerified
 $setupLifecycleVerified = [bool]$releaseReadinessReport.status.setupLifecycleVerified
 $setupLifecycleExecutionVerified = if ($null -ne $releaseReadinessReport.status.PSObject.Properties["setupLifecycleExecutionVerified"]) { [bool]$releaseReadinessReport.status.setupLifecycleExecutionVerified } else { $false }
-$controlStreamVerified = [bool]$releaseReadinessReport.status.controlStreamVerified
 $issueDiagnosisVerified = [bool]$releaseReadinessReport.status.issueDiagnosisVerified
 
 Add-Line -Lines $lines -Text "# Windows Agent Objective Audit"
@@ -166,7 +165,7 @@ if ($toolchainBlocked) {
 Add-Line -Lines $lines
 
 Add-Line -Lines $lines -Text ("3. Go backend with frontend/backend coordinated startup and shutdown: " + (To-StatusLabel -Met $portableSuiteVerified))
-Add-Line -Lines $lines -Text ("Evidence: parent-exit cleanup, backend recovery, collector auto-restart, control-stream diagnostics. issueDiagnosisVerified=" + [string]$issueDiagnosisVerified + ".")
+Add-Line -Lines $lines -Text ("Evidence: parent-exit cleanup, backend recovery, collector auto-restart. issueDiagnosisVerified=" + [string]$issueDiagnosisVerified + ".")
 Add-Line -Lines $lines
 
 Add-Line -Lines $lines -Text ("4. Portable mode writes local config in bundle; installed mode writes to LocalAppData: " + (To-StatusLabel -Met $localArtifactStateVerified))
@@ -178,7 +177,7 @@ Add-Line -Lines $lines -Text "Evidence: WinUI connection section, CheckConnectio
 Add-Line -Lines $lines
 
 Add-Line -Lines $lines -Text ("6. User can modify different upload/sampling frequencies locally: " + (To-StatusLabel -Met $true))
-Add-Line -Lines $lines -Text "Evidence: normal/fast/slow interval controls in WinUI, viewerRealtimeHoldSeconds local control, local save debounce, realtime verifiers."
+Add-Line -Lines $lines -Text "Evidence: normal/slow interval controls in WinUI, local save debounce, upload configuration verifier."
 Add-Line -Lines $lines
 
 Add-Line -Lines $lines -Text ("7. Metric/category selection moved from central side to agent side: " + (To-StatusLabel -Met $true))
@@ -201,9 +200,6 @@ Add-Line -Lines $lines -Text ("11. Push-to-cloud is explicit and changes central
 Add-Line -Lines $lines -Text ("Evidence: explicitCloudPushPassed=" + [string]$suiteSummary.checks.explicitCloudPushPassed + ", cloudPendingPersistencePassed=" + [string]$suiteSummary.checks.cloudPendingPersistencePassed + ".")
 Add-Line -Lines $lines
 
-Add-Line -Lines $lines -Text ("12. Viewer-driven realtime / control-stream behavior for live viewing: " + (To-StatusLabel -Met $controlStreamVerified))
-Add-Line -Lines $lines -Text ("Evidence: controlStreamVerified=" + [string]$controlStreamVerified + ", viewerRealtimePassed=" + [string]$suiteSummary.checks.viewerRealtimePassed + ", viewerRealtimeHoldPassed=" + [string]$suiteSummary.checks.viewerRealtimeHoldPassed + ", controlStreamFallbackPassed=" + [string]$suiteSummary.checks.controlStreamFallbackPassed + ", controlStreamKeepalivePassed=" + [string]$suiteSummary.checks.controlStreamKeepalivePassed + ", controlStreamRecoveringPassed=" + [string]$suiteSummary.checks.controlStreamRecoveringPassed + ".")
-Add-Line -Lines $lines
 
 Add-Line -Lines $lines -Text "## Remaining Gaps"
 Add-Line -Lines $lines

@@ -48,6 +48,14 @@ Signed output:
 
 - `android/app/build/outputs/apk/release/app-release.apk`
 
+Package the signed APK with the release name:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deploy\package-android-release.ps1
+```
+
+Output: `release/android/DeviceStateConsole-Android-vX.Y.Z.apk`
+
 Unsigned output when signing variables are missing:
 
 - `android/app/build/outputs/apk/release/app-release-unsigned.apk`
@@ -65,7 +73,7 @@ Example:
 
 Suggested release asset name:
 
-- `guanlan-android-v0.1.2.apk`
+- `DeviceStateConsole-Android-v0.1.2.apk`
 
 ## Security Notes
 

@@ -35,16 +35,14 @@ services:
       retries: 15
 
   server:
-    image: device-state-console-server:${DSC_VERSION:-dev}
-    build:
-      context: .
-      dockerfile: deploy/docker/server.Dockerfile
+    image: ${DSC_SERVER_IMAGE:-docker.io/igngserver/device-state-console-server}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
+    pull_policy: always
     restart: unless-stopped
     env_file:
       - .env
     environment:
       NODE_ENV: production
-      DSC_VERSION: ${DSC_VERSION:-dev}
+      DSC_VERSION: ${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
       SERVER_PORT: 4000
       REDIS_URL: redis://redis:6379
       MYSQL_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
@@ -55,16 +53,14 @@ services:
         condition: service_healthy
 
   web:
-    image: device-state-console-web:${DSC_VERSION:-dev}
-    build:
-      context: .
-      dockerfile: deploy/docker/web.Dockerfile
+    image: ${DSC_WEB_IMAGE:-docker.io/igngserver/device-state-console-web}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
+    pull_policy: always
     restart: unless-stopped
     env_file:
       - .env
     environment:
       NODE_ENV: production
-      DSC_VERSION: ${DSC_VERSION:-dev}
+      DSC_VERSION: ${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
       SERVER_API_URL: http://server:4000
     ports:
       - "${WEB_PORT:-3100}:3000"

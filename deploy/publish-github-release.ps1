@@ -37,11 +37,11 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') {
 
 $tag = "v$Version"
 $notes = Resolve-ReleasePath -Value $NotesFile -Fallback "release-notes-v$Version.md" -RepoRoot $repoRoot
-$setup = Resolve-ReleasePath -Value $WindowsSetup -Fallback "release/windows-agent-setup/DeviceStateConsoleAgent-setup-$Version.exe" -RepoRoot $repoRoot
-$update = Resolve-ReleasePath -Value $WindowsUpdate -Fallback "release/windows-agent-setup/DeviceStateConsoleAgent-update-$Version.zip" -RepoRoot $repoRoot
-$apk = Resolve-ReleasePath -Value $AndroidApk -Fallback "release/android/guanlan-android-v$Version.apk" -RepoRoot $repoRoot
-$windowsCli = Resolve-ReleasePath -Value $WindowsCliZip -Fallback "release/cli-agent/windows-x64-$Version.zip" -RepoRoot $repoRoot
-$linuxCli = Resolve-ReleasePath -Value $LinuxCliZip -Fallback "release/cli-agent/linux-x64-$Version.zip" -RepoRoot $repoRoot
+$setup = Resolve-ReleasePath -Value $WindowsSetup -Fallback "release/windows-agent-setup/DeviceStateConsole-Windows-GUI-Setup-v$Version.exe" -RepoRoot $repoRoot
+$update = Resolve-ReleasePath -Value $WindowsUpdate -Fallback "release/windows-agent-setup/DeviceStateConsole-Windows-GUI-Update-v$Version.zip" -RepoRoot $repoRoot
+$apk = Resolve-ReleasePath -Value $AndroidApk -Fallback "release/android/DeviceStateConsole-Android-v$Version.apk" -RepoRoot $repoRoot
+$windowsCli = Resolve-ReleasePath -Value $WindowsCliZip -Fallback "release/cli-agent/DeviceStateConsole-Windows-CLI-Install-v$Version.zip" -RepoRoot $repoRoot
+$linuxCli = Resolve-ReleasePath -Value $LinuxCliZip -Fallback "release/cli-agent/DeviceStateConsole-Linux-CLI-Install-v$Version.zip" -RepoRoot $repoRoot
 
 $gh = Get-Command gh -ErrorAction Stop
 & $gh.Source auth status --hostname github.com | Out-Host

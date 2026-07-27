@@ -204,26 +204,6 @@ export function saveDeviceMetricConfig(deviceId: string, payload: DeviceMetricCo
   });
 }
 
-export function touchViewerPresence(deviceId: string, viewerId: string, ttlSeconds = 20) {
-  return apiFetch<{ ok: true; enabled: boolean; viewerCount: number; durationSeconds: number; expiresAt: string }>(
-    `/api/devices/${deviceId}/viewer-presence`,
-    {
-      method: "PUT",
-      body: JSON.stringify({ viewerId, ttlSeconds })
-    }
-  );
-}
-
-export function clearViewerPresence(deviceId: string, viewerId: string) {
-  return apiFetch<{ ok: true; enabled: boolean; viewerCount: number; durationSeconds: number; expiresAt: string }>(
-    `/api/devices/${deviceId}/viewer-presence`,
-    {
-      method: "DELETE",
-      body: JSON.stringify({ viewerId })
-    }
-  );
-}
-
 export function getTrafficCalendar(
   deviceId: string,
   mode: TrafficCalendarMode,

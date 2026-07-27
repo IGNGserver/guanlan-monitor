@@ -212,7 +212,7 @@ $backendDir = Join-Path $stagingDir "backend"
 $runtimeDir = Join-Path $stagingDir "runtime"
 $tempDir = Join-Path $resolvedOutputDir ".tmp"
 $tempWinUiDir = Join-Path $tempDir "winui-publish"
-$zipPath = Join-Path $resolvedOutputDir "DeviceStateConsoleAgent-portable.zip"
+$zipPath = Join-Path $resolvedOutputDir ("DeviceStateConsole-Windows-GUI-Portable-v{0}.zip" -f $version)
 
 New-Item -ItemType Directory -Force -Path $resolvedOutputDir | Out-Null
 if (Test-Path $stagingDir) {

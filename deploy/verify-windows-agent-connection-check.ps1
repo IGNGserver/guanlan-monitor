@@ -85,10 +85,8 @@ $mockServerUrl = "http://127.0.0.1:$MockServerPort"
     hostname = "Connection Check Test"
   }
   sampling = @{
-    normalIntervalSeconds = 15
-    fastIntervalSeconds = 5
+    normalIntervalSeconds = 30
     slowIntervalSeconds = 30
-    realtimeModeEnabled = $false
   }
   enabledMetrics = @("cpuUsage")
   enabledDeviceIds = @{}
@@ -220,31 +218,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (url.pathname === "/api/agent/device-realtime") {
-    if (auth !== "Bearer good-secret") {
-      res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({ error: "unauthorized_agent" }));
-      return;
-    }
-
-    const deviceId = url.searchParams.get("deviceId") || "";
-    if (deviceId === "device-known") {
-      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({
-        deviceId,
-        enabled: false,
-        viewerCount: 0,
-        durationSeconds: 20,
-        expiresAt: ""
-      }));
-      return;
-    }
-
-    res.writeHead(404, { "Content-Type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify({ error: "device_not_found" }));
-    return;
-  }
-
   res.writeHead(404, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify({ error: "not_found" }));
 });
@@ -304,10 +277,8 @@ try {
       hostname = "Connection Check Test"
     }
     sampling = @{
-      normalIntervalSeconds = 15
-      fastIntervalSeconds = 5
+      normalIntervalSeconds = 30
       slowIntervalSeconds = 30
-      realtimeModeEnabled = $false
     }
     enabledMetrics = @("cpuUsage")
     enabledDeviceIds = @{}
@@ -337,10 +308,8 @@ try {
       hostname = "Connection Check Test"
     }
     sampling = @{
-      normalIntervalSeconds = 15
-      fastIntervalSeconds = 5
+      normalIntervalSeconds = 30
       slowIntervalSeconds = 30
-      realtimeModeEnabled = $false
     }
     enabledMetrics = @("cpuUsage")
     enabledDeviceIds = @{}
@@ -370,10 +339,8 @@ try {
       hostname = "Connection Check Test"
     }
     sampling = @{
-      normalIntervalSeconds = 15
-      fastIntervalSeconds = 5
+      normalIntervalSeconds = 30
       slowIntervalSeconds = 30
-      realtimeModeEnabled = $false
     }
     enabledMetrics = @("cpuUsage")
     enabledDeviceIds = @{}

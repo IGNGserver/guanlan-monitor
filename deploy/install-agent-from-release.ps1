@@ -11,7 +11,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "Version must be semantic x.y.z." }
-$asset = "windows-x64-$Version.zip"
+$asset = "DeviceStateConsole-Windows-CLI-Install-v$Version.zip"
 $url = "https://github.com/$Repository/releases/download/v$Version/$asset"
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dsc-agent-$Version-" + [guid]::NewGuid().ToString("N"))
 $zipPath = Join-Path $tempRoot $asset

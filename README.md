@@ -10,15 +10,15 @@
 
 ### Windows
 
-**推荐下载 `DeviceStateConsoleAgent-setup-<版本>.exe`。** 这是常规 Windows 安装程序，支持选择安装目录、开始菜单、桌面快捷方式、开机启动、更新、修复和卸载。
+**推荐下载 `DeviceStateConsole-Windows-GUI-Setup-v<版本>.exe`。** 这是常规 Windows 安装程序，支持选择安装目录、开始菜单、桌面快捷方式、开机启动、更新、修复和卸载。
 
-`DeviceStateConsoleAgent-update-<版本>.zip` 仅用于已安装客户端的更新分发，不应作为首次安装方式。
+`DeviceStateConsole-Windows-GUI-Update-v<版本>.zip` 仅用于已安装客户端的更新分发，不应作为首次安装方式。`DeviceStateConsole-Windows-GUI-Portable-v<版本>.zip` 是无需安装的 Windows GUI 便携版。
 
 安装后打开“观澜”，在“配置”页填写中枢地址、访问密钥和设备名称。应用运行后会显示在系统托盘：左键打开主界面，右键查看状态或退出。
 
 ### Android
 
-下载 `guanlan-android-v<版本>.apk` 并安装。首次打开时填写与 Windows 端相同的中枢地址和查看密钥。
+下载 `DeviceStateConsole-Android-v<版本>.apk` 并安装。首次打开时填写与 Windows 端相同的中枢地址和查看密钥。
 
 Android 安装包使用 `IGNGserver` 发布证书签名。Android 在提示未知来源安装时，需要由用户确认允许该来源安装应用。
 
@@ -33,19 +33,19 @@ Android 安装包使用 `IGNGserver` 发布证书签名。Android 在提示未�
 
 ## 部署中枢
 
-在开发环境中，可以从当前源码启动 Docker Compose：
+Docker Compose 默认只拉取 Docker Hub 中已发布的应用镜像，不会从当前仓库源码构建：
 
 ```bash
 cp .env.example .env
-docker compose up -d --build
+DSC_VERSION=0.1.111 docker compose pull
+DSC_VERSION=0.1.111 docker compose up -d
 ```
 
-生产环境必须先切换到已验收的版本 tag，再显式传入版本号：
+也可以明确选择 Docker Hub 的移动标签：
 
 ```bash
-git fetch --tags
-git checkout v0.1.105
-DSC_VERSION=0.1.105 docker compose up -d --build
+DSC_VERSION=latest docker compose pull
+DSC_VERSION=latest docker compose up -d
 ```
 
 至少修改 `.env` 内的 `SESSION_SECRET`、`ACCESS_KEY`、`MYSQL_ROOT_PASSWORD` 与 `MYSQL_PASSWORD`。`ACCESS_KEY` 是网页、Windows/Android 客户端和所有 agent 共用的唯一访问密钥；升级时即使旧 `.env` 仍有 `AGENT_SHARED_SECRET`，也会以 `ACCESS_KEY` 为准。启动后通过 `http://服务器IP:3100` 访问控制台。
@@ -63,13 +63,13 @@ Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 
 
 ## 发布规则
 
-每个正式 Release 必须同时包含以下三项：
+每个测试版或正式版 Release 都必须使用带平台和交付方式的资产名，并包含：
 
-1. Windows setup 安装程序。
-2. Windows update ZIP。
-3. 已签名 Android APK。
-4. Windows x64 CLI agent ZIP。
-5. Linux x64 CLI agent ZIP。
+1. `DeviceStateConsole-Windows-GUI-Setup-v<版本>.exe`。
+2. `DeviceStateConsole-Windows-GUI-Portable-v<版本>.zip` 或更新包。
+3. `DeviceStateConsole-Android-v<版本>.apk`。
+4. `DeviceStateConsole-Windows-CLI-Install-v<版本>.zip`。
+5. `DeviceStateConsole-Linux-CLI-Install-v<版本>.zip`。
 
 仓库不会提交安装包、APK、密钥、日志或本机配置。发布资产只上传到 GitHub Release。
 
@@ -79,6 +79,7 @@ Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 
 
 - [Windows 客户端发布说明](windows-agent/README.md)
 - [Android 发布说明](deploy/android-release.md)
+- [Android Release 打包脚本](deploy/package-android-release.ps1)
 - [Windows 打包运行手册](deploy/windows-agent-release-runbook.md)
 - [GitHub Release 发布脚本](deploy/publish-github-release.ps1)
 - [版本与发布规范](RELEASE.md)

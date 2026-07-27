@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -39,12 +38,7 @@ type agentConnectionConfig struct {
 
 type agentSamplingConfig struct {
 	NormalIntervalSeconds     int    `json:"normalIntervalSeconds"`
-	FastIntervalSeconds       int    `json:"fastIntervalSeconds"`
 	SlowIntervalSeconds       int    `json:"slowIntervalSeconds"`
-	ViewerRealtimeHoldSeconds int    `json:"viewerRealtimeHoldSeconds"`
-	RealtimeModeEnabled       bool   `json:"realtimeModeEnabled"`
-	RealtimeModeExpiresAt     string `json:"realtimeModeExpiresAt,omitempty"`
-	RealtimeModeSource        string `json:"realtimeModeSource,omitempty"`
 }
 
 type agentProbeSelection struct {
@@ -79,21 +73,6 @@ type backendState struct {
 	FrontendParentPID                 int                `json:"frontendParentPid"`
 	ChildStartedAt                    string             `json:"childStartedAt,omitempty"`
 	ConnectionStatus                  string             `json:"connectionStatus"`
-	ControlStreamConnected            bool               `json:"controlStreamConnected"`
-	ControlStreamReconnectCount       int                `json:"controlStreamReconnectCount"`
-	LastControlStreamEventAt          string             `json:"lastControlStreamEventAt,omitempty"`
-	LastControlStreamSnapshotAt       string             `json:"lastControlStreamSnapshotAt,omitempty"`
-	LastControlStreamChangeAt         string             `json:"lastControlStreamChangeAt,omitempty"`
-	LastControlStreamSnapshotKind     string             `json:"lastControlStreamSnapshotKind,omitempty"`
-	LastControlStreamSnapshotSource   string             `json:"lastControlStreamSnapshotSource,omitempty"`
-	LastControlStreamDisconnectAt     string             `json:"lastControlStreamDisconnectAt,omitempty"`
-	LastControlStreamReconnectAt      string             `json:"lastControlStreamReconnectAt,omitempty"`
-	LastControlStreamError            string             `json:"lastControlStreamError,omitempty"`
-	ViewerRealtimePhase               string             `json:"viewerRealtimePhase,omitempty"`
-	LastViewerRealtimeEnabled         bool               `json:"lastViewerRealtimeEnabled"`
-	LastViewerRealtimeViewerCount     int                `json:"lastViewerRealtimeViewerCount"`
-	LastViewerRealtimeDurationSeconds int                `json:"lastViewerRealtimeDurationSeconds"`
-	LastViewerRealtimeExpiresAt       string             `json:"lastViewerRealtimeExpiresAt,omitempty"`
 	LastChildLog                      string             `json:"lastChildLog,omitempty"`
 	LastUploadAt                      string             `json:"lastUploadAt,omitempty"`
 	LastCloudSyncAt                   string             `json:"lastCloudSyncAt,omitempty"`
@@ -105,9 +84,6 @@ type backendState struct {
 	RestartCount                      int                `json:"restartCount"`
 	LastExitCode                      *int               `json:"lastExitCode,omitempty"`
 	AutoRestartPending                bool               `json:"autoRestartPending"`
-	RealtimeModeEnabled               bool               `json:"realtimeModeEnabled"`
-	RealtimeModeExpiresAt             string             `json:"realtimeModeExpiresAt,omitempty"`
-	RealtimeModeSource                string             `json:"realtimeModeSource,omitempty"`
 	EffectiveUploadIntervalSeconds    int                `json:"effectiveUploadIntervalSeconds"`
 	LastIssueCategory                 string             `json:"lastIssueCategory,omitempty"`
 	LastIssueDetail                   string             `json:"lastIssueDetail,omitempty"`
@@ -162,20 +138,6 @@ type connectionCheckResult struct {
 	ServerTime  string `json:"serverTime,omitempty"`
 }
 
-type viewerRealtimeSnapshot struct {
-	Enabled         bool   `json:"enabled"`
-	ViewerCount     int    `json:"viewerCount"`
-	DurationSeconds int    `json:"durationSeconds"`
-	ExpiresAt       string `json:"expiresAt"`
-}
-
-type agentControlMessage struct {
-	Type      string `json:"type"`
-	DeviceID  string `json:"deviceId"`
-	EmittedAt string `json:"emittedAt"`
-	viewerRealtimeSnapshot
-}
-
 type server struct {
 	mu                         sync.Mutex
 	shutdownOnce               sync.Once
@@ -187,7 +149,6 @@ type server struct {
 	config                     agentLocalConfig
 	cmd                        *exec.Cmd
 	requestClient              *http.Client
-	streamClient               *http.Client
 	httpServer                 *http.Server
 	frontendParentPID          int
 	logBuffer                  string
@@ -211,19 +172,6 @@ type server struct {
 	lastIssueRecoveredAt       time.Time
 	stopRequested              bool
 	autoRestarting             bool
-	controlConnected           bool
-	controlReconnectCount      int
-	lastControlEventAt         time.Time
-	lastControlSnapshotAt      time.Time
-	lastControlChangeAt        time.Time
-	lastControlDisconnectAt    time.Time
-	lastControlReconnectAt     time.Time
-	lastControlError           string
-	lastControlSnapshotKind    string
-	lastControlSnapshotSource  string
-	lastViewerRealtimeSnapshot viewerRealtimeSnapshot
-	hasViewerRealtimeSnapshot  bool
-	controlStreamCancel        context.CancelFunc
 }
 
 type cloudSyncStateFile struct {
@@ -235,8 +183,6 @@ type cloudSyncStateFile struct {
 const (
 	restartBackoffBase      = 2 * time.Second
 	restartBackoffMax       = 20 * time.Second
-	controlStreamHealthTick = 5 * time.Second
-	controlStreamStaleAfter = 45 * time.Second
 )
 
 func main() {
@@ -278,7 +224,6 @@ func main() {
 		diagnosticsPath:  filepath.Join(resolvedConfigRoot, "agent-ui.backend.log"),
 		childBinaryPath:  childBinaryPath,
 		requestClient:    &http.Client{Timeout: 10 * time.Second},
-		streamClient:     &http.Client{},
 		config:           defaultLocalConfig(),
 		connectionState:  "stopped",
 		backendStartedAt: time.Now().UTC(),
@@ -316,7 +261,6 @@ func main() {
 	mux.HandleFunc("/api/control/start", s.handleStart)
 	mux.HandleFunc("/api/control/stop", s.handleStop)
 	mux.HandleFunc("/api/control/attach-frontend", s.handleAttachFrontend)
-	mux.HandleFunc("/api/control/realtime", s.handleRealtimeMode)
 	mux.HandleFunc("/api/control/check-connection", s.handleConnectionCheck)
 	mux.HandleFunc("/api/control/shutdown", s.handleBackendShutdown)
 	mux.HandleFunc("/api/cloud/push", s.handleCloudPush)
@@ -329,10 +273,6 @@ func main() {
 	s.httpServer = httpServer
 
 	log.Printf("windows agent backend v%s listening on http://%s", BuildVersion, *listenAddr)
-	go s.realtimeExpiryLoop()
-	go s.cloudRealtimeStreamLoop()
-	go s.cloudRealtimeLoop()
-	go s.controlStreamHealthLoop()
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
@@ -347,11 +287,8 @@ func defaultLocalConfig() agentLocalConfig {
 			Hostname:  "Windows Agent",
 		},
 		Sampling: agentSamplingConfig{
-			NormalIntervalSeconds:     15,
-			FastIntervalSeconds:       5,
-			SlowIntervalSeconds:       30,
-			ViewerRealtimeHoldSeconds: 20,
-			RealtimeModeEnabled:       false,
+			NormalIntervalSeconds: 30,
+			SlowIntervalSeconds:   30,
 		},
 		EnabledMetrics: []string{
 			"cpuUsage", "cpuFrequency", "cpuTemperature",
@@ -479,21 +416,6 @@ func (s *server) snapshotLocked() backendState {
 		FrontendParentPID:                 s.frontendParentPID,
 		ChildStartedAt:                    formatTime(s.childStartedAt),
 		ConnectionStatus:                  s.connectionState,
-		ControlStreamConnected:            s.controlConnected,
-		ControlStreamReconnectCount:       s.controlReconnectCount,
-		LastControlStreamEventAt:          formatTime(s.lastControlEventAt),
-		LastControlStreamSnapshotAt:       formatTime(s.lastControlSnapshotAt),
-		LastControlStreamChangeAt:         formatTime(s.lastControlChangeAt),
-		LastControlStreamSnapshotKind:     s.lastControlSnapshotKind,
-		LastControlStreamSnapshotSource:   s.lastControlSnapshotSource,
-		LastControlStreamDisconnectAt:     formatTime(s.lastControlDisconnectAt),
-		LastControlStreamReconnectAt:      formatTime(s.lastControlReconnectAt),
-		LastControlStreamError:            s.lastControlError,
-		ViewerRealtimePhase:               resolveViewerRealtimePhase(s),
-		LastViewerRealtimeEnabled:         s.lastViewerRealtimeSnapshot.Enabled,
-		LastViewerRealtimeViewerCount:     s.lastViewerRealtimeSnapshot.ViewerCount,
-		LastViewerRealtimeDurationSeconds: s.lastViewerRealtimeSnapshot.DurationSeconds,
-		LastViewerRealtimeExpiresAt:       s.lastViewerRealtimeSnapshot.ExpiresAt,
 		LastChildLog:                      s.logBuffer,
 		LastUploadAt:                      formatTime(s.lastUploadAt),
 		LastCloudSyncAt:                   formatTime(s.lastCloudSyncAt),
@@ -505,10 +427,7 @@ func (s *server) snapshotLocked() backendState {
 		RestartCount:                      s.restartCount,
 		LastExitCode:                      cloneIntPointer(s.lastExitCode),
 		AutoRestartPending:                s.autoRestarting,
-		RealtimeModeEnabled:               s.config.Sampling.RealtimeModeEnabled,
-		RealtimeModeExpiresAt:             s.config.Sampling.RealtimeModeExpiresAt,
-		RealtimeModeSource:                s.config.Sampling.RealtimeModeSource,
-		EffectiveUploadIntervalSeconds:    effectiveUploadIntervalSeconds(s.config.Sampling),
+		EffectiveUploadIntervalSeconds:    s.config.Sampling.NormalIntervalSeconds,
 		LastIssueCategory:                 s.lastIssueCategory,
 		LastIssueDetail:                   s.lastIssueDetail,
 		LastIssueAt:                       formatTime(s.lastIssueAt),
@@ -630,58 +549,6 @@ func (s *server) handleStop(writer http.ResponseWriter, request *http.Request) {
 	s.stopCollectorLocked("manual stop")
 	snapshot := s.snapshotLocked()
 	s.mu.Unlock()
-	writeJSON(writer, http.StatusOK, snapshot)
-}
-
-func (s *server) handleRealtimeMode(writer http.ResponseWriter, request *http.Request) {
-	if request.Method != http.MethodPost {
-		writer.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	var payload struct {
-		Enabled         bool `json:"enabled"`
-		DurationSeconds int  `json:"durationSeconds"`
-	}
-	if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
-		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
-		return
-	}
-
-	var configRaw []byte
-	s.mu.Lock()
-	s.config.Sampling.RealtimeModeEnabled = payload.Enabled
-	s.config.Sampling.RealtimeModeExpiresAt = ""
-	s.config.Sampling.RealtimeModeSource = ""
-	if payload.Enabled && payload.DurationSeconds > 0 {
-		s.config.Sampling.RealtimeModeExpiresAt = time.Now().UTC().Add(time.Duration(payload.DurationSeconds) * time.Second).Format(time.RFC3339)
-		s.config.Sampling.RealtimeModeSource = "manual"
-	}
-	err := error(nil)
-	configRaw, err = s.marshalConfigLocked()
-	if err == nil {
-		if s.config.Sampling.RealtimeModeExpiresAt != "" {
-			s.appendDiagnosticLocked(
-				"realtime mode changed; enabled=%t effectiveInterval=%ds expiresAt=%s",
-				payload.Enabled,
-				effectiveUploadIntervalSeconds(s.config.Sampling),
-				s.config.Sampling.RealtimeModeExpiresAt,
-			)
-		} else {
-			s.appendDiagnosticLocked("realtime mode changed; enabled=%t effectiveInterval=%ds", payload.Enabled, effectiveUploadIntervalSeconds(s.config.Sampling))
-		}
-	}
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	if err != nil {
-		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	if err := writeStateFile(s.configPath, configRaw); err != nil {
-		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-
 	writeJSON(writer, http.StatusOK, snapshot)
 }
 
@@ -917,38 +784,7 @@ func (s *server) checkConnection(cfg agentLocalConfig) connectionCheckResult {
 		ServerTime: strings.TrimSpace(pingBody.ServerTime),
 	}
 
-	deviceCheckRequest, err := http.NewRequest(
-		http.MethodGet,
-		strings.TrimRight(serverURL, "/")+"/api/agent/device-realtime?deviceId="+url.QueryEscape(deviceID),
-		nil,
-	)
-	if err != nil {
-		return result
-	}
-	deviceCheckRequest.Header.Set("Authorization", "Bearer "+secret)
-
-	deviceCheckResponse, err := s.requestClient.Do(deviceCheckRequest)
-	if err != nil {
-		result.Status = "authorized_device_check_failed"
-		result.Message = fmt.Sprintf("已连接中枢，但设备状态查询失败：%v", err)
-		return result
-	}
-	defer deviceCheckResponse.Body.Close()
-
-	if deviceCheckResponse.StatusCode == http.StatusNotFound {
-		result.Status = "authorized_device_unknown"
-		result.Message = "已连接中枢，Agent Secret 校验通过，但这台设备还没有被中枢看到；启动采集器上报后即可出现。"
-		return result
-	}
-	if deviceCheckResponse.StatusCode >= 300 {
-		result.Status = "authorized_device_check_error"
-		result.Message = fmt.Sprintf("已连接中枢，但设备状态查询返回：%s", deviceCheckResponse.Status)
-		return result
-	}
-
-	result.DeviceKnown = true
-	result.Status = "authorized_device_known"
-	result.Message = "已连接中枢，Agent Secret 校验通过，且这台设备已经被中枢识别。"
+	result.Message = "已成功连接中枢，Agent Secret 校验通过。"
 	return result
 }
 
@@ -1664,34 +1500,12 @@ func normalizeLocalConfig(cfg agentLocalConfig, raw []byte) agentLocalConfig {
 		cfg.Connection.Hostname = defaults.Connection.Hostname
 	}
 
-	if cfg.Sampling.FastIntervalSeconds <= 0 {
-		cfg.Sampling.FastIntervalSeconds = defaults.Sampling.FastIntervalSeconds
-	}
 	if cfg.Sampling.NormalIntervalSeconds <= 0 {
 		cfg.Sampling.NormalIntervalSeconds = defaults.Sampling.NormalIntervalSeconds
 	}
 	if cfg.Sampling.SlowIntervalSeconds <= 0 {
 		cfg.Sampling.SlowIntervalSeconds = defaults.Sampling.SlowIntervalSeconds
 	}
-	if cfg.Sampling.ViewerRealtimeHoldSeconds <= 0 {
-		cfg.Sampling.ViewerRealtimeHoldSeconds = defaults.Sampling.ViewerRealtimeHoldSeconds
-	}
-	if cfg.Sampling.RealtimeModeExpiresAt != "" {
-		expiresAt, err := time.Parse(time.RFC3339, strings.TrimSpace(cfg.Sampling.RealtimeModeExpiresAt))
-		if err != nil {
-			cfg.Sampling.RealtimeModeExpiresAt = ""
-		} else {
-			cfg.Sampling.RealtimeModeExpiresAt = expiresAt.UTC().Format(time.RFC3339)
-			if !expiresAt.After(time.Now().UTC()) {
-				cfg.Sampling.RealtimeModeEnabled = false
-				cfg.Sampling.RealtimeModeExpiresAt = ""
-			}
-		}
-	}
-	if cfg.Sampling.RealtimeModeSource != "manual" && cfg.Sampling.RealtimeModeSource != "viewer" {
-		cfg.Sampling.RealtimeModeSource = ""
-	}
-
 	if len(cfg.EnabledMetrics) == 0 {
 		cfg.EnabledMetrics = append([]string(nil), defaults.EnabledMetrics...)
 	}
@@ -1837,255 +1651,6 @@ func min(left, right int) int {
 	return right
 }
 
-func effectiveUploadIntervalSeconds(sampling agentSamplingConfig) int {
-	if sampling.RealtimeModeEnabled {
-		if sampling.FastIntervalSeconds > 0 {
-			return sampling.FastIntervalSeconds
-		}
-		return 5
-	}
-	if sampling.NormalIntervalSeconds > 0 {
-		return sampling.NormalIntervalSeconds
-	}
-	if sampling.FastIntervalSeconds > 0 {
-		return sampling.FastIntervalSeconds
-	}
-	return 15
-}
-
-func (s *server) realtimeExpiryLoop() {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		s.mu.Lock()
-		expiresAt := strings.TrimSpace(s.config.Sampling.RealtimeModeExpiresAt)
-		if !s.config.Sampling.RealtimeModeEnabled || expiresAt == "" {
-			s.mu.Unlock()
-			continue
-		}
-
-		expiresAtTime, err := time.Parse(time.RFC3339, expiresAt)
-		if err != nil {
-			s.config.Sampling.RealtimeModeExpiresAt = ""
-			_ = s.saveConfigLocked()
-			s.appendDiagnosticLocked("realtime mode expiry cleared because the stored timestamp was invalid")
-			s.mu.Unlock()
-			continue
-		}
-		if time.Now().UTC().Before(expiresAtTime) {
-			s.mu.Unlock()
-			continue
-		}
-
-		s.config.Sampling.RealtimeModeEnabled = false
-		s.config.Sampling.RealtimeModeExpiresAt = ""
-		s.config.Sampling.RealtimeModeSource = ""
-		if err := s.saveConfigLocked(); err != nil {
-			s.appendDiagnosticLocked("realtime mode expiry save failed: %v", err)
-			s.mu.Unlock()
-			continue
-		}
-		s.appendDiagnosticLocked("realtime mode expired and returned to normal upload interval")
-		s.mu.Unlock()
-	}
-}
-
-func (s *server) cloudRealtimeLoop() {
-	s.syncCloudRealtime()
-
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		s.mu.Lock()
-		connected := s.controlConnected
-		s.mu.Unlock()
-		if connected {
-			continue
-		}
-		s.syncCloudRealtime()
-	}
-}
-
-func (s *server) syncCloudRealtime() {
-	s.mu.Lock()
-	cfg := s.config
-	s.mu.Unlock()
-
-	serverURL := strings.TrimSpace(cfg.Connection.ServerURL)
-	secret := strings.TrimSpace(cfg.Connection.Secret)
-	deviceID := strings.TrimSpace(cfg.Connection.DeviceID)
-	if serverURL == "" || secret == "" || deviceID == "" {
-		return
-	}
-
-	request, err := http.NewRequest(
-		http.MethodGet,
-		strings.TrimRight(serverURL, "/")+"/api/agent/device-realtime?deviceId="+url.QueryEscape(deviceID),
-		nil,
-	)
-	if err != nil {
-		return
-	}
-	request.Header.Set("Authorization", "Bearer "+secret)
-
-	response, err := s.requestClient.Do(request)
-	if err != nil {
-		return
-	}
-	defer response.Body.Close()
-	if response.StatusCode >= 300 {
-		return
-	}
-
-	var payload viewerRealtimeSnapshot
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-		return
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.applyViewerRealtimeSnapshotLocked(payload, "poll")
-}
-
-func (s *server) cloudRealtimeStreamLoop() {
-	reconnectDelay := 2 * time.Second
-
-	for {
-		serverURL, secret, deviceID, ok := s.currentAgentControlConfig()
-		if !ok {
-			s.setControlDisconnected("missing_connection_config")
-			time.Sleep(2 * time.Second)
-			continue
-		}
-
-		endpoint, err := buildAgentControlStreamURL(serverURL, deviceID)
-		if err != nil {
-			s.setControlDisconnected(fmt.Sprintf("build_control_stream_url_failed: %v", err))
-			time.Sleep(reconnectDelay)
-			continue
-		}
-
-		requestContext, cancel := context.WithCancel(context.Background())
-		request, err := http.NewRequestWithContext(requestContext, http.MethodGet, endpoint, nil)
-		if err != nil {
-			cancel()
-			s.setControlDisconnected(fmt.Sprintf("build_control_stream_request_failed: %v", err))
-			time.Sleep(reconnectDelay)
-			continue
-		}
-		request.Header.Set("Authorization", "Bearer "+secret)
-		request.Header.Set("Accept", "text/event-stream")
-
-		s.setActiveControlStreamCancel(cancel)
-		response, err := s.streamClient.Do(request)
-		if err != nil {
-			s.clearActiveControlStreamCancel(cancel)
-			s.setControlDisconnected(fmt.Sprintf("connect_control_stream_failed: %v", err))
-			time.Sleep(reconnectDelay)
-			reconnectDelay = nextControlReconnectDelay(reconnectDelay)
-			continue
-		}
-		if response.StatusCode >= 300 {
-			s.clearActiveControlStreamCancel(cancel)
-			_ = response.Body.Close()
-			s.setControlDisconnected(fmt.Sprintf("control_stream_status_%d", response.StatusCode))
-			time.Sleep(reconnectDelay)
-			reconnectDelay = nextControlReconnectDelay(reconnectDelay)
-			continue
-		}
-
-		reconnectDelay = 2 * time.Second
-		s.setControlConnected(true)
-		s.appendDiagnostic("connected to agent control stream %s", endpoint)
-
-		scanner := bufio.NewScanner(response.Body)
-		var payloadLines []string
-		streamClosed := false
-
-		for scanner.Scan() {
-			line := scanner.Text()
-			if line == "" {
-				if len(payloadLines) == 0 {
-					continue
-				}
-
-				payload := agentControlMessage{}
-				if err := json.Unmarshal([]byte(strings.Join(payloadLines, "\n")), &payload); err == nil {
-					if payload.Type == "viewer-realtime" && strings.EqualFold(strings.TrimSpace(payload.DeviceID), deviceID) {
-						s.mu.Lock()
-						s.applyViewerRealtimeSnapshotLocked(payload.viewerRealtimeSnapshot, "stream")
-						s.mu.Unlock()
-					}
-				}
-				payloadLines = payloadLines[:0]
-				continue
-			}
-
-			if strings.HasPrefix(line, ":") {
-				continue
-			}
-			if strings.HasPrefix(line, "data:") {
-				payloadLines = append(payloadLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
-			}
-		}
-
-		if err := scanner.Err(); err != nil {
-			if errors.Is(err, context.Canceled) && s.hasControlDisconnectReasonPrefix("control_stream_stale_for_") {
-				s.appendDiagnostic("agent control stream canceled locally after stale detection: %v", err)
-			} else {
-				s.setControlDisconnected(fmt.Sprintf("control_stream_disconnected: %v", err))
-				s.appendDiagnostic("agent control stream disconnected: %v", err)
-			}
-		} else {
-			streamClosed = true
-			s.setControlDisconnected("control_stream_closed_by_server")
-			s.appendDiagnostic("agent control stream closed by server")
-		}
-		_ = response.Body.Close()
-		s.clearActiveControlStreamCancel(cancel)
-		if streamClosed {
-			time.Sleep(reconnectDelay)
-		}
-	}
-}
-
-func (s *server) currentAgentControlConfig() (string, string, string, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	serverURL := strings.TrimSpace(s.config.Connection.ServerURL)
-	secret := strings.TrimSpace(s.config.Connection.Secret)
-	deviceID := strings.TrimSpace(s.config.Connection.DeviceID)
-	if serverURL == "" || secret == "" || deviceID == "" {
-		return "", "", "", false
-	}
-	return serverURL, secret, deviceID, true
-}
-
-func buildAgentControlStreamURL(serverURL, deviceID string) (string, error) {
-	if err := validateServerTransport(serverURL); err != nil {
-		return "", err
-	}
-	parsed, err := url.Parse(strings.TrimSpace(serverURL))
-	if err != nil {
-		return "", err
-	}
-
-	switch strings.ToLower(parsed.Scheme) {
-	case "http", "https":
-	default:
-		return "", fmt.Errorf("unsupported_server_scheme_%s", parsed.Scheme)
-	}
-
-	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/api/agent/control-stream"
-	query := parsed.Query()
-	query.Set("deviceId", deviceID)
-	parsed.RawQuery = query.Encode()
-	return parsed.String(), nil
-}
-
 func validateServerTransport(raw string) error {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Hostname() == "" {
@@ -2120,248 +1685,4 @@ func isPrivateNetworkHost(host string) bool {
 		return false
 	}
 	return parsed.IsPrivate() || parsed.IsLinkLocalUnicast()
-}
-
-func nextControlReconnectDelay(current time.Duration) time.Duration {
-	if current <= 0 {
-		return 2 * time.Second
-	}
-
-	next := current * 2
-	if next > 20*time.Second {
-		return 20 * time.Second
-	}
-	return next
-}
-
-func (s *server) setControlConnected(connected bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.controlConnected = connected
-	if connected {
-		s.lastControlError = ""
-	}
-}
-
-func (s *server) setControlDisconnected(reason string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.controlConnected = false
-	s.lastControlDisconnectAt = time.Now().UTC()
-	s.lastControlError = strings.TrimSpace(reason)
-}
-
-func (s *server) setActiveControlStreamCancel(cancel context.CancelFunc) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.controlStreamCancel != nil {
-		s.controlStreamCancel()
-	}
-	s.controlStreamCancel = cancel
-}
-
-func (s *server) clearActiveControlStreamCancel(cancel context.CancelFunc) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.controlStreamCancel == nil {
-		return
-	}
-	if fmt.Sprintf("%p", s.controlStreamCancel) == fmt.Sprintf("%p", cancel) {
-		s.controlStreamCancel = nil
-	}
-}
-
-func (s *server) cancelActiveControlStream(reason string) {
-	s.mu.Lock()
-	cancel := s.controlStreamCancel
-	if cancel != nil {
-		s.controlStreamCancel = nil
-		s.controlReconnectCount++
-		s.lastControlReconnectAt = time.Now().UTC()
-	}
-	s.mu.Unlock()
-
-	if cancel != nil {
-		s.appendDiagnostic("canceling stale control stream: %s", reason)
-		cancel()
-	}
-}
-
-func (s *server) hasControlDisconnectReasonPrefix(prefix string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return strings.HasPrefix(strings.TrimSpace(s.lastControlError), prefix)
-}
-
-func (s *server) controlStreamHealthLoop() {
-	ticker := time.NewTicker(controlStreamHealthTick)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		s.mu.Lock()
-		connected := s.controlConnected
-		lastSnapshotAt := s.lastControlSnapshotAt
-		lastSnapshotKind := s.lastControlSnapshotKind
-		s.mu.Unlock()
-
-		if !connected || lastSnapshotAt.IsZero() {
-			continue
-		}
-
-		staleFor := time.Since(lastSnapshotAt)
-		if staleFor <= controlStreamStaleAfter {
-			continue
-		}
-
-		reason := fmt.Sprintf("control_stream_stale_for_%s_lastKind_%s", staleFor.Round(time.Second), lastSnapshotKind)
-		s.setControlDisconnected(reason)
-		s.cancelActiveControlStream(reason)
-	}
-}
-
-func (s *server) applyViewerRealtimeSnapshotLocked(payload viewerRealtimeSnapshot, transport string) {
-	now := time.Now().UTC()
-	s.lastControlSnapshotAt = now
-	s.lastControlSnapshotSource = strings.TrimSpace(transport)
-	if strings.EqualFold(transport, "stream") {
-		s.lastControlEventAt = now
-	}
-	snapshotChanged := !s.hasViewerRealtimeSnapshot || !viewerRealtimeSnapshotEqual(s.lastViewerRealtimeSnapshot, payload)
-	if snapshotChanged {
-		s.lastControlChangeAt = now
-		s.lastControlSnapshotKind = "change"
-	} else {
-		s.lastControlSnapshotKind = "keepalive"
-	}
-	s.lastViewerRealtimeSnapshot = payload
-	s.hasViewerRealtimeSnapshot = true
-
-	if payload.Enabled {
-		changed := false
-		persistConfig := false
-		resolvedViewerExpiry := resolveViewerRealtimeExpiry(payload.ExpiresAt, s.config.Sampling.ViewerRealtimeHoldSeconds, now)
-		if !s.config.Sampling.RealtimeModeEnabled || s.config.Sampling.RealtimeModeSource == "" || s.config.Sampling.RealtimeModeSource == "viewer" {
-			if !s.config.Sampling.RealtimeModeEnabled {
-				s.config.Sampling.RealtimeModeEnabled = true
-				changed = true
-				persistConfig = true
-			}
-			if s.config.Sampling.RealtimeModeSource != "viewer" {
-				s.config.Sampling.RealtimeModeSource = "viewer"
-				changed = true
-				persistConfig = true
-			}
-			if shouldRefreshViewerRealtimeExpiry(s.config.Sampling.RealtimeModeExpiresAt, resolvedViewerExpiry) {
-				if shouldPersistViewerRealtimeExpiry(s.config.Sampling.RealtimeModeExpiresAt, resolvedViewerExpiry) {
-					persistConfig = true
-				}
-				s.config.Sampling.RealtimeModeExpiresAt = resolvedViewerExpiry
-				changed = true
-			}
-		}
-		if changed && (!persistConfig || s.saveConfigLocked() == nil) {
-			s.appendDiagnosticLocked(
-				"viewer-driven realtime enabled via %s; viewers=%d effectiveInterval=%ds hold=%ds expiresAt=%s",
-				transport,
-				payload.ViewerCount,
-				effectiveUploadIntervalSeconds(s.config.Sampling),
-				s.config.Sampling.ViewerRealtimeHoldSeconds,
-				s.config.Sampling.RealtimeModeExpiresAt,
-			)
-		}
-		return
-	}
-
-	if s.config.Sampling.RealtimeModeEnabled && s.config.Sampling.RealtimeModeSource == "viewer" {
-		expiresAt := strings.TrimSpace(s.config.Sampling.RealtimeModeExpiresAt)
-		if expiresAt != "" {
-			expiresAtTime, err := time.Parse(time.RFC3339, expiresAt)
-			if err == nil && expiresAtTime.After(now) {
-				s.appendDiagnosticLocked(
-					"viewer-driven realtime keepalive window retained after %s disable snapshot; viewers=%d effectiveInterval=%ds hold=%ds expiresAt=%s",
-					transport,
-					payload.ViewerCount,
-					effectiveUploadIntervalSeconds(s.config.Sampling),
-					s.config.Sampling.ViewerRealtimeHoldSeconds,
-					s.config.Sampling.RealtimeModeExpiresAt,
-				)
-				return
-			}
-		}
-		s.config.Sampling.RealtimeModeEnabled = false
-		s.config.Sampling.RealtimeModeExpiresAt = ""
-		s.config.Sampling.RealtimeModeSource = ""
-		if s.saveConfigLocked() == nil {
-			s.appendDiagnosticLocked("viewer-driven realtime disabled via %s; returning to normal upload interval", transport)
-		}
-	}
-}
-
-func viewerRealtimeSnapshotEqual(left viewerRealtimeSnapshot, right viewerRealtimeSnapshot) bool {
-	return left.Enabled == right.Enabled &&
-		left.ViewerCount == right.ViewerCount &&
-		left.DurationSeconds == right.DurationSeconds &&
-		strings.TrimSpace(left.ExpiresAt) == strings.TrimSpace(right.ExpiresAt)
-}
-
-func shouldRefreshViewerRealtimeExpiry(current string, next string) bool {
-	currentTime, currentErr := time.Parse(time.RFC3339, strings.TrimSpace(current))
-	nextTime, nextErr := time.Parse(time.RFC3339, strings.TrimSpace(next))
-	if nextErr != nil {
-		return false
-	}
-	if currentErr != nil {
-		return true
-	}
-	return currentTime.Sub(time.Now().UTC()) < 8*time.Second || nextTime.After(currentTime)
-}
-
-func shouldPersistViewerRealtimeExpiry(current string, next string) bool {
-	currentTime, currentErr := time.Parse(time.RFC3339, strings.TrimSpace(current))
-	nextTime, nextErr := time.Parse(time.RFC3339, strings.TrimSpace(next))
-	if nextErr != nil {
-		return false
-	}
-	if currentErr != nil {
-		return true
-	}
-
-	now := time.Now().UTC()
-	remaining := currentTime.Sub(now)
-	if remaining < 8*time.Second {
-		return true
-	}
-
-	return nextTime.Sub(currentTime) >= 5*time.Second
-}
-
-func resolveViewerRealtimePhase(s *server) string {
-	if !s.config.Sampling.RealtimeModeEnabled || !strings.EqualFold(strings.TrimSpace(s.config.Sampling.RealtimeModeSource), "viewer") {
-		return ""
-	}
-	if s.lastViewerRealtimeSnapshot.Enabled && s.lastViewerRealtimeSnapshot.ViewerCount > 0 {
-		return "active"
-	}
-	return "hold"
-}
-
-func resolveViewerRealtimeExpiry(next string, holdSeconds int, now time.Time) string {
-	nextTime, nextErr := time.Parse(time.RFC3339, strings.TrimSpace(next))
-	holdUntil := now
-	if holdSeconds > 0 {
-		holdUntil = now.Add(time.Duration(holdSeconds) * time.Second)
-	}
-
-	switch {
-	case nextErr != nil && holdSeconds > 0:
-		return holdUntil.Format(time.RFC3339)
-	case nextErr != nil:
-		return ""
-	case holdSeconds <= 0:
-		return nextTime.UTC().Format(time.RFC3339)
-	case nextTime.Before(holdUntil):
-		return holdUntil.Format(time.RFC3339)
-	default:
-		return nextTime.UTC().Format(time.RFC3339)
-	}
 }

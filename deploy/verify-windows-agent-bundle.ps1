@@ -220,10 +220,8 @@ try {
       hostname = "Bundle Test"
     }
     sampling = @{
-      normalIntervalSeconds = 15
-      fastIntervalSeconds = 5
+      normalIntervalSeconds = 30
       slowIntervalSeconds = 30
-      realtimeModeEnabled = $false
     }
     enabledMetrics = @("cpuUsage", "networkTraffic")
     enabledDeviceIds = @{

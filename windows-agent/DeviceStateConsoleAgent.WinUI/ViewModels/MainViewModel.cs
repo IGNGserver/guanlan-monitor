@@ -110,18 +110,6 @@ public sealed class MainViewModel : ObservableObject
     private string _syncStatePathText = "同步状态文件：当前不可用。";
     private string _diagnosticsPathText = "诊断日志路径待确认。";
     private string _issueSummaryText = "最近异常分类：暂无。";
-    private string _realtimeStatusText = "当前处于常态上传模式。";
-    private string _realtimeControlText = "中枢实时控制通道状态待确认。";
-    private string _controlStreamStatusCode = "unknown";
-    private string _controlStreamStateText = "实时控制链路状态待确认。";
-    private string _controlStreamLastEventText = "最近推送：暂无。";
-    private string _controlStreamLastDisconnectText = "最近断开：暂无。";
-    private string _controlStreamReconnectText = "主动重连：暂无。";
-    private string _controlStreamHealthText = "链路健康度：当前未发现频繁重连。";
-    private string _controlStreamCategoryText = "问题类别：待确认。";
-    private string _controlStreamErrorText = "断开原因：暂无。";
-    private string _controlStreamActionText = "建议操作：等待建立主动推送链路；若长期未连通，可先检查中枢连接信息。";
-    private string _controlStreamTransportText = "控制方式：优先使用服务端主动推送，异常时回退到低频轮询。";
     private string _remoteDataStatusText = "尚未读取中枢中的本机最新数据。";
     private string _remoteCpuText = "CPU：暂无数据";
     private string _remoteMemoryText = "内存：暂无数据";
@@ -178,20 +166,20 @@ public sealed class MainViewModel : ObservableObject
     private string _secret = "";
     private string _deviceId = "windows-agent";
     private string _hostname = "Windows Agent";
-    private int _fastIntervalSeconds = 5;
-    private int _normalIntervalSeconds = 15;
+
+    private int _normalIntervalSeconds = 30;
     private int _slowIntervalSeconds = 30;
-    private int _viewerRealtimeHoldSeconds = 20;
-    private int _realtimeDurationMinutes = 10;
+
+
     private bool _cloudSyncEnabled = true;
     private bool _dataRecordingEnabled = true;
     private bool _autoRestartCollector = true;
     private bool _autoStartCollector;
     private bool _launchAtStartup;
     private bool _startMinimizedAtStartup;
-    private bool _realtimeModeEnabled;
-    private string _realtimeModeExpiresAt = "";
-    private string _realtimeModeSource = "";
+
+
+
     private string _backendRecoveryStatusCode = "stable";
     private string _connectionCheckStatusCode = "idle";
     private bool _cpuEnabled;
@@ -264,7 +252,6 @@ public sealed class MainViewModel : ObservableObject
         CheckConnectionCommand = new RelayCommand(CheckConnectionAsync, () => CanCheckConnection);
         PushCloudCommand = new RelayCommand(PushCloudAsync, () => CanPushCloud);
         DetectCommand = new RelayCommand(DetectAsync, () => CanRunDetect);
-        ToggleRealtimeModeCommand = new RelayCommand(ToggleRealtimeModeAsync, () => CanToggleRealtime);
         LoginViewerCommand = new RelayCommand(LoginViewerAsync, () => CanLoginViewer);
     }
 
@@ -273,7 +260,6 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand CheckConnectionCommand { get; }
     public RelayCommand PushCloudCommand { get; }
     public RelayCommand DetectCommand { get; }
-    public RelayCommand ToggleRealtimeModeCommand { get; }
     public RelayCommand LoginViewerCommand { get; }
 
     public ObservableCollection<ProbeInstanceItemViewModel> CpuInstances { get; }
@@ -324,7 +310,6 @@ public sealed class MainViewModel : ObservableObject
     public bool CanRunDetect => !IsBackendActionBusy && _backendReachable;
     public bool CanCheckConnection => !IsBackendActionBusy && _backendReachable && HasConnectionConfig;
     public bool CanPushCloud => !IsBackendActionBusy && HasConnectionConfig && _backendReachable && CloudSyncEnabled;
-    public bool CanToggleRealtime => !IsBackendActionBusy && _backendReachable && (_backendRunning || RealtimeModeEnabled);
     public bool CanLoginViewer => !IsBackendActionBusy && ServerUrlPolicy.IsAllowed(ServerUrl) && !string.IsNullOrWhiteSpace(Secret);
     public string LocalBackendBadgeText => _backendReachable ? "本地后端在线" : "本地后端离线";
     public string ReleaseVersion => $"版本 v{typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "dev"}";
@@ -333,7 +318,6 @@ public sealed class MainViewModel : ObservableObject
         _backendRunning ? "采集器运行中" :
         "采集器未运行";
     public string ConnectionBadgeText => ResolveConnectionBadgeText(_connectionStatusCode);
-    public string ControlStreamBadgeText => ResolveControlStreamBadgeText(_controlStreamStatusCode);
     public string RunModeBadgeText => _isPortableMode ? "便携模式" : "安装模式";
     public string BackendRecoveryBadgeText => ResolveBackendRecoveryBadgeText(_backendRecoveryStatusCode);
     public string LocalSaveBadgeText => ResolveLocalSaveBadgeText(_localSaveStatusCode);
@@ -407,22 +391,7 @@ public sealed class MainViewModel : ObservableObject
     public Visibility ConnectionBusyVisibility => ShowConnectionBusy ? Visibility.Visible : Visibility.Collapsed;
     public Visibility ConnectionProblemVisibility => ShowConnectionProblem ? Visibility.Visible : Visibility.Collapsed;
     public string BackendRecoveryAlertTitle => ResolveBackendRecoveryAlertTitle(_backendRecoveryStatusCode);
-    public bool ShowControlStreamWarning =>
-        string.Equals(_controlStreamStatusCode, "fallback", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(_controlStreamStatusCode, "waiting", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(_controlStreamStatusCode, "recovering", StringComparison.OrdinalIgnoreCase);
-    public bool ShowControlStreamKeepalive => string.Equals(_controlStreamStatusCode, "connected-keepalive", StringComparison.OrdinalIgnoreCase);
-    public bool ShowControlStreamSuccess => string.Equals(_controlStreamStatusCode, "connected", StringComparison.OrdinalIgnoreCase);
-    public bool ShowControlStreamInfo => string.Equals(_controlStreamStatusCode, "idle", StringComparison.OrdinalIgnoreCase);
-    public Visibility ControlStreamWarningVisibility => ShowControlStreamWarning ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility ControlStreamKeepaliveVisibility => ShowControlStreamKeepalive ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility ControlStreamSuccessVisibility => ShowControlStreamSuccess ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility ControlStreamInfoVisibility => ShowControlStreamInfo ? Visibility.Visible : Visibility.Collapsed;
     public Visibility SelectedInstanceMetricEditorVisibility => HasSelectedInstanceMetricEditor ? Visibility.Visible : Visibility.Collapsed;
-    public string ControlStreamAlertTitle => ResolveControlStreamAlertTitle(_controlStreamStatusCode);
-    public string ControlStreamAlertDetail => BuildControlStreamAlertDetail(_controlStreamStatusCode, _controlStreamStateText, _controlStreamLastDisconnectText, _controlStreamCategoryText, _controlStreamErrorText, _controlStreamActionText, _controlStreamTransportText);
-    public string ControlStreamSpotlightKicker => ResolveControlStreamSpotlightKicker(_controlStreamStatusCode);
-    public string ControlStreamSpotlightHeadline => ResolveControlStreamSpotlightHeadline(_controlStreamStatusCode);
     public string CloudSyncBadgeText =>
         !CloudSyncEnabled ? "展示同步关闭" :
         _cloudPushPending && !_hasCloudSyncAttempt ? "待首推送" :
@@ -458,10 +427,6 @@ public sealed class MainViewModel : ObservableObject
         "最近一次展示配置推送失败。修正问题后，可以重试推送到中枢。";
     public string CheckConnectionButtonText =>
         _activeOperationCode == "check-connection" ? "正在检查中枢连接..." : "检查中枢连接";
-    public string RealtimeButtonText =>
-        _activeOperationCode == "toggle-realtime" ? "正在切换实时模式..." :
-        RealtimeModeEnabled ? "切回常态模式" :
-        "进入实时模式";
     public string CurrentOperationBadgeText => IsBackendActionBusy ? "操作进行中" : "当前空闲";
     public string CurrentOperationText => BuildCurrentOperationText(_activeOperationCode);
     public string CurrentOperationDetailText => BuildCurrentOperationDetailText(_activeOperationCode);
@@ -564,7 +529,7 @@ public sealed class MainViewModel : ObservableObject
 
             if (!string.IsNullOrWhiteSpace(_lastUploadAtText))
             {
-                return $"最近提交成功 · {FormatRealtimeExpiry(_lastUploadAtText)}";
+                return $"最近提交成功 · {_lastUploadAtText}";
             }
 
             return "等待首次提交";
@@ -602,17 +567,6 @@ public sealed class MainViewModel : ObservableObject
     public string SyncStatePathText { get => _syncStatePathText; set => SetProperty(ref _syncStatePathText, value); }
     public string DiagnosticsPathText { get => _diagnosticsPathText; set => SetProperty(ref _diagnosticsPathText, value); }
     public string IssueSummaryText { get => _issueSummaryText; set => SetProperty(ref _issueSummaryText, value); }
-    public string RealtimeStatusText { get => _realtimeStatusText; set => SetProperty(ref _realtimeStatusText, value); }
-    public string RealtimeControlText { get => _realtimeControlText; set => SetProperty(ref _realtimeControlText, value); }
-    public string ControlStreamStateText { get => _controlStreamStateText; set => SetProperty(ref _controlStreamStateText, value); }
-    public string ControlStreamLastEventText { get => _controlStreamLastEventText; set => SetProperty(ref _controlStreamLastEventText, value); }
-    public string ControlStreamLastDisconnectText { get => _controlStreamLastDisconnectText; set => SetProperty(ref _controlStreamLastDisconnectText, value); }
-    public string ControlStreamReconnectText { get => _controlStreamReconnectText; set => SetProperty(ref _controlStreamReconnectText, value); }
-    public string ControlStreamHealthText { get => _controlStreamHealthText; set => SetProperty(ref _controlStreamHealthText, value); }
-    public string ControlStreamCategoryText { get => _controlStreamCategoryText; set => SetProperty(ref _controlStreamCategoryText, value); }
-    public string ControlStreamErrorText { get => _controlStreamErrorText; set => SetProperty(ref _controlStreamErrorText, value); }
-    public string ControlStreamActionText { get => _controlStreamActionText; set => SetProperty(ref _controlStreamActionText, value); }
-    public string ControlStreamTransportText { get => _controlStreamTransportText; set => SetProperty(ref _controlStreamTransportText, value); }
     public string RemoteDataStatusText { get => _remoteDataStatusText; set => SetProperty(ref _remoteDataStatusText, value); }
     public string RemoteCpuText { get => _remoteCpuText; set => SetProperty(ref _remoteCpuText, value); }
     public string RemoteMemoryText { get => _remoteMemoryText; set => SetProperty(ref _remoteMemoryText, value); }
@@ -696,33 +650,6 @@ public sealed class MainViewModel : ObservableObject
     }
     public string DeviceId { get => _deviceId; set => SetAndQueueSave(ref _deviceId, value); }
     public string Hostname { get => _hostname; set => SetAndQueueSave(ref _hostname, value); }
-    public int FastIntervalSeconds
-    {
-        get => _fastIntervalSeconds;
-        set
-        {
-            if (!SetAndQueueSave(ref _fastIntervalSeconds, value))
-            {
-                return;
-            }
-
-            OnPropertyChanged(nameof(FastIntervalValue));
-        }
-    }
-
-    public int SlowIntervalSeconds
-    {
-        get => _slowIntervalSeconds;
-        set
-        {
-            if (!SetAndQueueSave(ref _slowIntervalSeconds, value))
-            {
-                return;
-            }
-
-            OnPropertyChanged(nameof(SlowIntervalValue));
-        }
-    }
 
     public int NormalIntervalSeconds
     {
@@ -738,60 +665,23 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    public double FastIntervalValue
-    {
-        get => FastIntervalSeconds;
-        set => FastIntervalSeconds = Math.Max(1, (int)Math.Round(value));
-    }
-
     public double NormalIntervalValue
     {
         get => NormalIntervalSeconds;
         set => NormalIntervalSeconds = Math.Max(1, (int)Math.Round(value));
     }
 
+    public int SlowIntervalSeconds
+    {
+        get => _slowIntervalSeconds;
+        set => SetAndQueueSave(ref _slowIntervalSeconds, Math.Max(5, value));
+    }
+
     public double SlowIntervalValue
     {
         get => SlowIntervalSeconds;
-        set => SlowIntervalSeconds = Math.Max(5, (int)Math.Round(value));
+        set => SlowIntervalSeconds = (int)Math.Round(value);
     }
-    public int ViewerRealtimeHoldSeconds
-    {
-        get => _viewerRealtimeHoldSeconds;
-        set
-        {
-            if (!SetAndQueueSave(ref _viewerRealtimeHoldSeconds, value))
-            {
-                return;
-            }
-
-            OnPropertyChanged(nameof(ViewerRealtimeHoldValue));
-        }
-    }
-    public double ViewerRealtimeHoldValue
-    {
-        get => ViewerRealtimeHoldSeconds;
-        set => ViewerRealtimeHoldSeconds = Math.Max(5, (int)Math.Round(value));
-    }
-    public int RealtimeDurationMinutes
-    {
-        get => _realtimeDurationMinutes;
-        set
-        {
-            if (!SetAndQueueSave(ref _realtimeDurationMinutes, value))
-            {
-                return;
-            }
-
-            OnPropertyChanged(nameof(RealtimeDurationValue));
-        }
-    }
-    public double RealtimeDurationValue
-    {
-        get => RealtimeDurationMinutes;
-        set => RealtimeDurationMinutes = Math.Max(1, (int)Math.Round(value));
-    }
-    public bool RealtimeModeEnabled { get => _realtimeModeEnabled; private set => SetProperty(ref _realtimeModeEnabled, value); }
     public bool CloudSyncEnabled { get => _cloudSyncEnabled; set => SetAndQueueSave(ref _cloudSyncEnabled, value); }
     public bool DataRecordingEnabled
     {
@@ -1030,12 +920,7 @@ public sealed class MainViewModel : ObservableObject
             Sampling = new AgentSamplingConfig
             {
                 NormalIntervalSeconds = Math.Max(1, NormalIntervalSeconds),
-                FastIntervalSeconds = Math.Max(1, FastIntervalSeconds),
                 SlowIntervalSeconds = Math.Max(5, SlowIntervalSeconds),
-                ViewerRealtimeHoldSeconds = Math.Max(5, ViewerRealtimeHoldSeconds),
-                RealtimeModeEnabled = RealtimeModeEnabled,
-                RealtimeModeExpiresAt = _realtimeModeExpiresAt,
-                RealtimeModeSource = _realtimeModeSource
             },
             EnabledMetrics = ResolveEnabledMetrics(),
             EnabledDeviceIds = BuildEnabledDeviceIds(),
@@ -1172,26 +1057,6 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    private async Task ToggleRealtimeModeAsync()
-    {
-        BeginBackendAction("toggle-realtime");
-        try
-        {
-            await SaveNowAsync();
-            var durationSeconds = RealtimeModeEnabled ? (int?)null : Math.Max(1, RealtimeDurationMinutes) * 60;
-            await _apiClient.SetRealtimeModeAsync(!RealtimeModeEnabled, durationSeconds);
-            SetStickyNotice(RealtimeModeEnabled ? "已请求切回常态上传模式。" : "已请求切换到实时上传模式。");
-            await RefreshStateAsync();
-        }
-        catch (Exception ex)
-        {
-            SetStickyNotice($"切换实时模式失败：{ex.Message}");
-        }
-        finally
-        {
-            EndBackendAction("toggle-realtime");
-        }
-    }
 
     private async Task DetectAsync()
     {
@@ -1856,17 +1721,6 @@ public sealed class MainViewModel : ObservableObject
         ConnectionText = "正在等待 127.0.0.1:17891 恢复。";
         LocalBackendStateText = $"本地 Go backend 当前不可达。{offlineSinceText} {recoveryText}";
         CollectorStateText = "由于本地 backend 尚未恢复，当前无法确认采集器状态。";
-        RealtimeControlText = "中枢实时控制通道状态暂不可用，等待本地 backend 恢复后重新确认。";
-        _controlStreamStatusCode = "waiting";
-        ControlStreamStateText = "实时控制链路状态暂不可用，正在等待本地 backend 恢复。";
-        ControlStreamLastEventText = "最近推送：等待 backend 恢复后重新确认。";
-        ControlStreamLastDisconnectText = "最近断开：等待 backend 恢复后重新确认。";
-        ControlStreamReconnectText = "主动重连：等待 backend 恢复后重新确认。";
-        ControlStreamHealthText = "链路健康度：等待 backend 恢复后重新确认。";
-        ControlStreamCategoryText = "问题类别：本地控制链路恢复中。";
-        ControlStreamErrorText = "断开原因：等待 backend 恢复后重新确认。";
-        ControlStreamActionText = "建议操作：先等待本地 backend 恢复；恢复后会自动重试主动推送链路。";
-        ControlStreamTransportText = "控制方式：本地 backend 恢复后会重新尝试建立主动推送链路，失败时回退到低频轮询。";
         BackendRecoveryText = _backendRecoveryAttemptCount > 0
             ? $"WinUI 正在自动恢复本地 backend，当前已尝试 {_backendRecoveryAttemptCount} 次。"
             : "WinUI 已进入本地 backend 等待恢复状态。";
@@ -1950,13 +1804,8 @@ public sealed class MainViewModel : ObservableObject
             // waiting for the debounced backend save. It also keeps an open ComboBox stable.
             if (!_localSavePending)
             {
-                NormalIntervalSeconds = state.Config.Sampling.NormalIntervalSeconds;
-                FastIntervalSeconds = state.Config.Sampling.FastIntervalSeconds;
-                SlowIntervalSeconds = state.Config.Sampling.SlowIntervalSeconds;
-                ViewerRealtimeHoldSeconds = state.Config.Sampling.ViewerRealtimeHoldSeconds;
-                RealtimeModeEnabled = state.RealtimeModeEnabled;
-                _realtimeModeExpiresAt = state.RealtimeModeExpiresAt ?? "";
-                _realtimeModeSource = state.RealtimeModeSource ?? "";
+                NormalIntervalSeconds = state.Config.Sampling.NormalIntervalSeconds;;
+                SlowIntervalSeconds = state.Config.Sampling.SlowIntervalSeconds;;;;;
                 CloudSyncEnabled = state.Config.CloudSyncEnabled;
                 DataRecordingEnabled = state.Config.DataRecordingEnabled;
                 AutoRestartCollector = state.Config.AutoRestartCollector;
@@ -1979,19 +1828,6 @@ public sealed class MainViewModel : ObservableObject
                 FanEnabled = IsProbeEnabled(state.Config.ProbeSelections, "fan") && !string.Equals(FanProvider, "disabled", StringComparison.OrdinalIgnoreCase);
                 ApplyDetectedTargets(state.DetectedTargets, state.Config.EnabledDeviceIds);
             }
-            RealtimeStatusText = BuildRealtimeStatusText(state);
-            RealtimeControlText = BuildRealtimeControlText(state);
-            _controlStreamStatusCode = ResolveControlStreamStatusCode(state);
-            ControlStreamStateText = BuildControlStreamStateText(state);
-            ControlStreamLastEventText = BuildControlStreamLastEventText(state);
-            ControlStreamLastDisconnectText = BuildControlStreamLastDisconnectText(state);
-            ControlStreamReconnectText = BuildControlStreamReconnectText(state);
-            ControlStreamHealthText = BuildControlStreamHealthText(state);
-            ControlStreamCategoryText = BuildControlStreamCategoryText(state);
-            ControlStreamErrorText = BuildControlStreamErrorText(state);
-            ControlStreamActionText = BuildControlStreamActionText(state);
-            ControlStreamTransportText = BuildControlStreamTransportText(state);
-            OnPropertyChanged(nameof(RealtimeButtonText));
             DetectStatusText = BuildDetectStatusText(state);
             SyncDetectFreshnessFromState(state);
 
@@ -2444,8 +2280,8 @@ public sealed class MainViewModel : ObservableObject
         var lastSyncText = string.IsNullOrWhiteSpace(_lastCloudSyncAtText)
             ? "云端展示配置尚未推送。"
             : string.IsNullOrWhiteSpace(_lastCloudSyncErrorText)
-                ? $"最近一次云端推送成功：{FormatRealtimeExpiry(_lastCloudSyncAtText)}"
-                : $"最近一次云端推送失败：{FormatRealtimeExpiry(_lastCloudSyncAtText)}，{_lastCloudSyncErrorText}";
+                ? $"最近一次云端推送成功：{_lastCloudSyncAtText}"
+                : $"最近一次云端推送失败：{_lastCloudSyncAtText}，{_lastCloudSyncErrorText}";
 
         if (_cloudPushPending)
         {
@@ -2469,12 +2305,10 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(CanRunDetect));
         OnPropertyChanged(nameof(CanCheckConnection));
         OnPropertyChanged(nameof(CanPushCloud));
-        OnPropertyChanged(nameof(CanToggleRealtime));
         OnPropertyChanged(nameof(CanLoginViewer));
         OnPropertyChanged(nameof(StartButtonText));
         OnPropertyChanged(nameof(StopButtonText));
         OnPropertyChanged(nameof(CheckConnectionButtonText));
-        OnPropertyChanged(nameof(RealtimeButtonText));
         OnPropertyChanged(nameof(DetectButtonText));
         OnPropertyChanged(nameof(PushCloudButtonText));
         OnPropertyChanged(nameof(CloudSyncActionHint));
@@ -2488,7 +2322,6 @@ public sealed class MainViewModel : ObservableObject
         DetectCommand.RaiseCanExecuteChanged();
         CheckConnectionCommand.RaiseCanExecuteChanged();
         PushCloudCommand.RaiseCanExecuteChanged();
-        ToggleRealtimeModeCommand.RaiseCanExecuteChanged();
         LoginViewerCommand.RaiseCanExecuteChanged();
     }
 
@@ -2497,9 +2330,6 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(LocalBackendBadgeText));
         OnPropertyChanged(nameof(CollectorBadgeText));
         OnPropertyChanged(nameof(ConnectionBadgeText));
-        OnPropertyChanged(nameof(ControlStreamBadgeText));
-        OnPropertyChanged(nameof(ControlStreamSpotlightKicker));
-        OnPropertyChanged(nameof(ControlStreamSpotlightHeadline));
         OnPropertyChanged(nameof(RunModeBadgeText));
         OnPropertyChanged(nameof(BackendRecoveryBadgeText));
         OnPropertyChanged(nameof(LocalSaveBadgeText));
@@ -2524,16 +2354,6 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(BackendRecoveryRecoveredVisibility));
         OnPropertyChanged(nameof(BackendRecoveryStableVisibility));
         OnPropertyChanged(nameof(BackendRecoveryAlertTitle));
-        OnPropertyChanged(nameof(ShowControlStreamWarning));
-        OnPropertyChanged(nameof(ShowControlStreamKeepalive));
-        OnPropertyChanged(nameof(ShowControlStreamSuccess));
-        OnPropertyChanged(nameof(ShowControlStreamInfo));
-        OnPropertyChanged(nameof(ControlStreamWarningVisibility));
-        OnPropertyChanged(nameof(ControlStreamKeepaliveVisibility));
-        OnPropertyChanged(nameof(ControlStreamSuccessVisibility));
-        OnPropertyChanged(nameof(ControlStreamInfoVisibility));
-        OnPropertyChanged(nameof(ControlStreamAlertTitle));
-        OnPropertyChanged(nameof(ControlStreamAlertDetail));
         OnPropertyChanged(nameof(CloudSyncBadgeText));
         OnPropertyChanged(nameof(ConnectionSetupHint));
         OnPropertyChanged(nameof(NoticeHeadline));
@@ -2559,11 +2379,9 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(CanRunDetect));
         OnPropertyChanged(nameof(CanCheckConnection));
         OnPropertyChanged(nameof(CanPushCloud));
-        OnPropertyChanged(nameof(CanToggleRealtime));
         OnPropertyChanged(nameof(StartButtonText));
         OnPropertyChanged(nameof(StopButtonText));
         OnPropertyChanged(nameof(CheckConnectionButtonText));
-        OnPropertyChanged(nameof(RealtimeButtonText));
         OnPropertyChanged(nameof(DetectButtonText));
         OnPropertyChanged(nameof(PushCloudButtonText));
         OnPropertyChanged(nameof(CloudSyncActionHint));
@@ -2575,7 +2393,6 @@ public sealed class MainViewModel : ObservableObject
         DetectCommand.RaiseCanExecuteChanged();
         CheckConnectionCommand.RaiseCanExecuteChanged();
         PushCloudCommand.RaiseCanExecuteChanged();
-        ToggleRealtimeModeCommand.RaiseCanExecuteChanged();
     }
 
     private string BuildLocalBackendStateText(BackendStateDto state)
@@ -2609,11 +2426,7 @@ public sealed class MainViewModel : ObservableObject
                     ? $"自动重启已开启，正在等待下一次拉起；累计自动重启 {state.RestartCount} 次。"
                     : $"自动重启已开启；累计自动重启 {state.RestartCount} 次。"
                 : "自动重启已关闭。";
-            var modeText = state.RealtimeModeEnabled
-                ? string.IsNullOrWhiteSpace(state.RealtimeModeExpiresAt)
-                    ? $"当前计划以下一轮使用实时上传间隔 {state.EffectiveUploadIntervalSeconds} 秒。"
-                    : $"当前计划以下一轮使用实时上传间隔 {state.EffectiveUploadIntervalSeconds} 秒，并将在 {FormatRealtimeExpiry(state.RealtimeModeExpiresAt)} 自动回落。"
-                : $"当前计划以下一轮使用常态上传间隔 {state.EffectiveUploadIntervalSeconds} 秒。";
+            var modeText = $"当前计划以下一轮使用 {state.EffectiveUploadIntervalSeconds} 秒上报间隔。";
             return $"采集器未运行。{exitText} {restartText} {modeText}";
         }
 
@@ -2623,24 +2436,13 @@ public sealed class MainViewModel : ObservableObject
         }
 
         return state.RestartCount > 0 && !string.IsNullOrWhiteSpace(state.LastRestartAt)
-            ? $"采集器已启动：{state.ChildStartedAt}，连接状态 {state.ConnectionStatus}，当前生效上传间隔 {state.EffectiveUploadIntervalSeconds} 秒。{BuildRealtimeSuffix(state)}最近一次自动重启：{state.LastRestartAt}，累计 {state.RestartCount} 次。"
-            : $"采集器已启动：{state.ChildStartedAt}，连接状态 {state.ConnectionStatus}，当前生效上传间隔 {state.EffectiveUploadIntervalSeconds} 秒。{BuildRealtimeSuffix(state)}";
+            ? $"采集器已启动：{state.ChildStartedAt}，连接状态 {state.ConnectionStatus}，当前生效上传间隔 {state.EffectiveUploadIntervalSeconds} 秒。最近一次自动重启：{state.LastRestartAt}，累计 {state.RestartCount} 次。"
+            : $"采集器已启动：{state.ChildStartedAt}，连接状态 {state.ConnectionStatus}，当前生效上传间隔 {state.EffectiveUploadIntervalSeconds} 秒。";
     }
 
     private static string BuildConnectionText(BackendStateDto state)
     {
-        var baseText = $"连接状态：{state.ConnectionStatus}";
-        if (state.ControlStreamConnected)
-        {
-            return $"{baseText}；中枢实时控制通道已连通。";
-        }
-
-        if (!string.IsNullOrWhiteSpace(state.LastControlStreamDisconnectAt))
-        {
-            return $"{baseText}；中枢实时控制通道最近一次断开于 {FormatRealtimeExpiry(state.LastControlStreamDisconnectAt)}，当前已回退到低频轮询。";
-        }
-
-        return $"{baseText}；中枢实时控制通道当前未连通，正在使用回退轮询。";
+        return $"连接状态：{state.ConnectionStatus}";
     }
 
     private static string BuildArtifactPathText(string label, string? path, bool exists)
@@ -2721,250 +2523,6 @@ public sealed class MainViewModel : ObservableObject
         return "等待首写入";
     }
 
-    private static string BuildRealtimeStatusText(BackendStateDto state)
-    {
-        if (!state.RealtimeModeEnabled)
-        {
-            return $"当前处于常态上传模式，生效间隔 {state.EffectiveUploadIntervalSeconds} 秒。";
-        }
-
-        if (string.IsNullOrWhiteSpace(state.RealtimeModeExpiresAt))
-        {
-            return $"当前处于{ResolveRealtimeSourceLabel(state.RealtimeModeSource)}实时上传模式，生效间隔 {state.EffectiveUploadIntervalSeconds} 秒。";
-        }
-
-        if (string.Equals(state.RealtimeModeSource, "viewer", StringComparison.OrdinalIgnoreCase))
-        {
-            if (string.Equals(state.ViewerRealtimePhase, "active", StringComparison.OrdinalIgnoreCase))
-            {
-                return $"当前有人正在通过云端查看该设备，实时上传已生效，当前 viewer 数 {state.LastViewerRealtimeViewerCount}，上传间隔 {state.EffectiveUploadIntervalSeconds} 秒；Viewer 实时保持窗口为 {Math.Max(5, state.Config.Sampling.ViewerRealtimeHoldSeconds)} 秒，将在 {FormatRealtimeExpiry(state.RealtimeModeExpiresAt)} 自动回落。";
-            }
-
-            return $"云端 viewer 刚刚离开，agent 仍处于实时上传保持窗口内，当前上传间隔 {state.EffectiveUploadIntervalSeconds} 秒；Viewer 实时保持窗口为 {Math.Max(5, state.Config.Sampling.ViewerRealtimeHoldSeconds)} 秒，将在 {FormatRealtimeExpiry(state.RealtimeModeExpiresAt)} 自动回落。";
-        }
-
-        return $"当前处于{ResolveRealtimeSourceLabel(state.RealtimeModeSource)}实时上传模式，生效间隔 {state.EffectiveUploadIntervalSeconds} 秒，将在 {FormatRealtimeExpiry(state.RealtimeModeExpiresAt)} 自动回落。";
-    }
-
-    private static string BuildRealtimeSuffix(BackendStateDto state)
-    {
-        if (!state.RealtimeModeEnabled || string.IsNullOrWhiteSpace(state.RealtimeModeExpiresAt))
-        {
-            return "";
-        }
-
-        return $"实时模式将于 {FormatRealtimeExpiry(state.RealtimeModeExpiresAt)} 自动回落。";
-    }
-
-    private static string BuildRealtimeControlText(BackendStateDto state)
-    {
-        if (state.ControlStreamConnected)
-        {
-            if (string.Equals(state.LastControlStreamSnapshotKind, "keepalive", StringComparison.OrdinalIgnoreCase) &&
-                !string.IsNullOrWhiteSpace(state.LastControlStreamSnapshotAt))
-            {
-                if (string.Equals(state.ViewerRealtimePhase, "active", StringComparison.OrdinalIgnoreCase))
-                {
-                    return $"中枢实时控制通道已连通，最近一次收到的是保活快照：{FormatRealtimeExpiry(state.LastControlStreamSnapshotAt)}。当前 viewer 数 {state.LastViewerRealtimeViewerCount}，agent 会持续保持实时上传。";
-                }
-
-                return $"中枢实时控制通道已连通，最近一次收到的是保活快照：{FormatRealtimeExpiry(state.LastControlStreamSnapshotAt)}。Viewer 已离开，但 agent 仍会按 {Math.Max(5, state.Config.Sampling.ViewerRealtimeHoldSeconds)} 秒保持窗口延迟回落。";
-            }
-
-            return string.IsNullOrWhiteSpace(state.LastControlStreamEventAt)
-                ? $"中枢实时控制通道已连通，当前会优先接收服务端主动推送的查看状态；Viewer 实时保持窗口为 {Math.Max(5, state.Config.Sampling.ViewerRealtimeHoldSeconds)} 秒。"
-                : $"中枢实时控制通道已连通，最近一次状态推送：{FormatRealtimeExpiry(state.LastControlStreamEventAt)}。Viewer 实时保持窗口为 {Math.Max(5, state.Config.Sampling.ViewerRealtimeHoldSeconds)} 秒。";
-        }
-
-        var disconnectText = string.IsNullOrWhiteSpace(state.LastControlStreamDisconnectAt)
-            ? ""
-            : $" 最近一次断开：{FormatRealtimeExpiry(state.LastControlStreamDisconnectAt)}。";
-        var resolvedError = ResolveControlStreamErrorLabel(state.LastControlStreamError);
-        var errorText = string.IsNullOrWhiteSpace(resolvedError)
-            ? ""
-            : $" 断开原因：{resolvedError}。";
-
-        return string.IsNullOrWhiteSpace(state.LastControlStreamEventAt)
-            ? $"中枢实时控制通道尚未连通，当前会回退到低频轮询以判断是否有人正在查看该设备；若刚刚丢失 Viewer，agent 仍会按 {Math.Max(5, state.Config.Sampling.ViewerRealtimeHoldSeconds)} 秒保持窗口延迟回落。{disconnectText}{errorText}".Trim()
-            : $"中枢实时控制通道当前未连通，最近一次收到推送：{FormatRealtimeExpiry(state.LastControlStreamEventAt)}；当前已回退到低频轮询。若刚刚丢失 Viewer，agent 仍会按 {Math.Max(5, state.Config.Sampling.ViewerRealtimeHoldSeconds)} 秒保持窗口延迟回落。{disconnectText}{errorText}".Trim();
-    }
-
-    private static string ResolveControlStreamStatusCode(BackendStateDto state)
-    {
-        if (state.ControlStreamConnected)
-        {
-            if (string.Equals(state.LastControlStreamSnapshotKind, "keepalive", StringComparison.OrdinalIgnoreCase))
-            {
-                return "connected-keepalive";
-            }
-
-            return "connected";
-        }
-
-        if (IsControlStreamRecovering(state.LastControlStreamError))
-        {
-            return "recovering";
-        }
-
-        if (!string.IsNullOrWhiteSpace(state.LastControlStreamDisconnectAt) || !string.IsNullOrWhiteSpace(state.LastControlStreamError))
-        {
-            return "fallback";
-        }
-
-        return "idle";
-    }
-
-    private static string ResolveControlStreamBadgeText(string statusCode)
-    {
-        return statusCode switch
-        {
-            "connected" => "控制流已连通",
-            "connected-keepalive" => "控制流保活中",
-            "recovering" => "控制流重连中",
-            "fallback" => "控制流已回退",
-            "waiting" => "控制流待恢复",
-            "idle" => "控制流待建立",
-            _ => "控制流待确认"
-        };
-    }
-
-    private static string BuildControlStreamStateText(BackendStateDto state)
-    {
-        if (state.ControlStreamConnected)
-        {
-            if (string.Equals(state.LastControlStreamSnapshotKind, "keepalive", StringComparison.OrdinalIgnoreCase))
-            {
-                return "实时控制链路已连通，最近收到的是周期性保活快照，说明主动推送链路仍然活跃。";
-            }
-
-            return "实时控制链路已连通，当前会优先使用服务端主动推送来切换查看驱动的实时模式。";
-        }
-
-        if (!string.IsNullOrWhiteSpace(state.LastControlStreamDisconnectAt) || !string.IsNullOrWhiteSpace(state.LastControlStreamError))
-        {
-            if (IsControlStreamRecovering(state.LastControlStreamError))
-            {
-                return "实时控制链路长时间没有收到新的 viewer 快照，backend 已主动终止旧连接并开始重连；当前仍使用低频轮询兜底。";
-            }
-
-            return "实时控制链路当前未连通，backend 已回退到低频轮询模式，仍可继续判断是否有人正在查看该设备。";
-        }
-
-        return "实时控制链路尚未建立，backend 会继续尝试连接服务端主动推送通道。";
-    }
-
-    private static string BuildControlStreamLastEventText(BackendStateDto state)
-    {
-        if (string.Equals(state.LastControlStreamSnapshotKind, "keepalive", StringComparison.OrdinalIgnoreCase) &&
-            !string.IsNullOrWhiteSpace(state.LastControlStreamSnapshotAt))
-        {
-            return $"最近保活快照：{FormatRealtimeExpiry(state.LastControlStreamSnapshotAt)}。";
-        }
-
-        return string.IsNullOrWhiteSpace(state.LastControlStreamEventAt)
-            ? "最近状态推送：暂无。"
-            : $"最近状态推送：{FormatRealtimeExpiry(state.LastControlStreamEventAt)}。";
-    }
-
-    private static string BuildControlStreamLastDisconnectText(BackendStateDto state)
-    {
-        return string.IsNullOrWhiteSpace(state.LastControlStreamDisconnectAt)
-            ? "最近断开：暂无。"
-            : $"最近断开：{FormatRealtimeExpiry(state.LastControlStreamDisconnectAt)}。";
-    }
-
-    private static string BuildControlStreamReconnectText(BackendStateDto state)
-    {
-        if (state.ControlStreamReconnectCount <= 0)
-        {
-            return "主动重连：暂无。";
-        }
-
-        if (string.IsNullOrWhiteSpace(state.LastControlStreamReconnectAt))
-        {
-            return $"主动重连：累计 {state.ControlStreamReconnectCount} 次。";
-        }
-
-        return $"主动重连：累计 {state.ControlStreamReconnectCount} 次，最近一次 {FormatRealtimeExpiry(state.LastControlStreamReconnectAt)}。";
-    }
-
-    private static string BuildControlStreamHealthText(BackendStateDto state)
-    {
-        if (state.ControlStreamConnected && state.ControlStreamReconnectCount <= 0)
-        {
-            return "链路健康度：主动推送链路稳定，当前未发现重连。";
-        }
-
-        if (HasFrequentControlStreamReconnects(state))
-        {
-            return "链路健康度：主动推送链路近期已多次主动重连，当前稳定性偏弱，建议优先检查 Windows 网络空闲超时、代理保活和休眠恢复后的连接状态。";
-        }
-
-        if (state.ControlStreamReconnectCount > 0)
-        {
-            return "链路健康度：曾发生主动重连，但目前仍具备自愈能力；若持续增加，建议进一步检查本机网络链路。";
-        }
-
-        return "链路健康度：当前未发现频繁重连。";
-    }
-
-    private static string BuildControlStreamCategoryText(BackendStateDto state)
-    {
-        var classification = ClassifyControlStreamIssue(state.LastControlStreamError);
-        return classification.Category switch
-        {
-            "healthy" when string.Equals(state.LastControlStreamSnapshotKind, "keepalive", StringComparison.OrdinalIgnoreCase) => "问题类别：当前无异常，主动推送链路处于保活稳定状态。",
-            "healthy" => "问题类别：当前无异常，主动推送链路可用。",
-            "none" => "问题类别：暂无异常，正在等待首次建立主动推送链路。",
-            "stale" when HasFrequentControlStreamReconnects(state) => "问题类别：主动推送链路频繁静默超时，backend 正在反复重连。",
-            "stale" => "问题类别：主动推送链路静默超时，backend 正在主动重连。",
-            "config" => "问题类别：本地配置问题。",
-            "capability" => "问题类别：中枢能力或接口问题。",
-            "network" => "问题类别：网络或链路连接问题。",
-            "server" => "问题类别：服务端主动断开或服务端状态异常。",
-            _ => "问题类别：控制流状态待确认。"
-        };
-    }
-
-    private static string BuildControlStreamErrorText(BackendStateDto state)
-    {
-        var resolvedError = ResolveControlStreamErrorLabel(state.LastControlStreamError);
-        return string.IsNullOrWhiteSpace(resolvedError)
-            ? "断开原因：暂无。"
-            : $"断开原因：{resolvedError}。";
-    }
-
-    private static string BuildControlStreamActionText(BackendStateDto state)
-    {
-        var classification = ClassifyControlStreamIssue(state.LastControlStreamError);
-        return classification.Suggestion switch
-        {
-            "" when state.ControlStreamConnected && string.Equals(state.LastControlStreamSnapshotKind, "keepalive", StringComparison.OrdinalIgnoreCase) => "建议操作：无需处理，当前主动推送链路已连通，并且保活快照在持续到达。",
-            "" when state.ControlStreamConnected => "建议操作：无需处理，当前已通过服务端主动推送接收实时控制。",
-            var suggestion when classification.Category == "stale" && HasFrequentControlStreamReconnects(state) => $"建议操作：{suggestion} 如果短时间内继续增长，优先检查 Windows 端网络空闲超时、代理保活和系统休眠策略。",
-            "" => "建议操作：保持当前状态即可；backend 会继续尝试建立或维护主动推送链路。",
-            var suggestion => $"建议操作：{suggestion}"
-        };
-    }
-
-    private static string BuildControlStreamTransportText(BackendStateDto state)
-    {
-        if (!state.ControlStreamConnected && IsControlStreamRecovering(state.LastControlStreamError))
-        {
-            return "控制方式：当前已主动终止静默连接并重新建链，过渡期间由低频轮询兜底。";
-        }
-
-        return state.ControlStreamConnected
-            ? string.Equals(state.LastControlStreamSnapshotKind, "keepalive", StringComparison.OrdinalIgnoreCase)
-                ? "控制方式：当前通过服务端主动推送维持控制链路保活，并持续接收 viewer 快照。"
-                : "控制方式：当前通过服务端主动推送接收 viewer-driven realtime 控制。"
-            : "控制方式：当前通过低频轮询兜底，后台仍会持续重试主动推送链路。";
-    }
-
-    private static string ResolveRealtimeSourceLabel(string? value)
-    {
-        return string.Equals(value, "viewer", StringComparison.OrdinalIgnoreCase) ? "云端观看驱动的" : "";
-    }
 
     private static string ResolveConnectionBadgeText(string? value)
     {
@@ -3277,7 +2835,6 @@ public sealed class MainViewModel : ObservableObject
             "start" => "正在启动采集器。",
             "stop" => "正在停止采集器。",
             "check-connection" => "正在检查中枢连接。",
-            "toggle-realtime" => "正在切换实时模式。",
             "detect" => "正在刷新组件探测结果。",
             "push-cloud" => "正在把展示配置推送到中枢。",
             _ => "当前没有正在执行的本地操作。"
@@ -3291,7 +2848,6 @@ public sealed class MainViewModel : ObservableObject
             "start" => "WinUI 会先确保当前界面配置已经写入本地 backend，再启动采集器进程。",
             "stop" => "本次操作会请求本地 backend 优雅停止采集器，而不是直接强制结束进程树。",
             "check-connection" => "本次操作会检查 Server URL、访问密钥和设备识别状态，帮助区分不可达、鉴权失败和设备未出现等问题。",
-            "toggle-realtime" => "本次操作会把本地上传模式切换到实时或常态，并等待 backend 返回最新状态。",
             "detect" => "本次操作会基于当前本地配置刷新探测方案和实例清单，避免显示过期的 CPU、磁盘或网卡实例。",
             "push-cloud" => "本次操作会显式调用中枢接口同步展示配置，不会影响本地自动保存策略。",
             _ => "你可以继续修改连接信息、频次、探测方案和实例开关；当没有操作进行中时，相关按钮会恢复可用。"
@@ -3309,220 +2865,6 @@ public sealed class MainViewModel : ObservableObject
         };
     }
 
-    private static string ResolveControlStreamAlertTitle(string? value)
-    {
-        return value?.Trim().ToLowerInvariant() switch
-        {
-            "connected" => "中枢实时控制链路已连通",
-            "connected-keepalive" => "中枢实时控制链路保活正常",
-            "recovering" => "中枢实时控制链路正在主动重连",
-            "fallback" => "中枢实时控制链路已回退到轮询",
-            "waiting" => "正在等待本地控制链路恢复",
-            "idle" => "中枢实时控制链路尚未建立",
-            _ => "中枢实时控制链路状态待确认"
-        };
-    }
-
-    private static string ResolveControlStreamSpotlightKicker(string? value)
-    {
-        return value?.Trim().ToLowerInvariant() switch
-        {
-            "connected-keepalive" => "CONTROL STREAM · KEEPALIVE",
-            "recovering" => "CONTROL STREAM · RECOVERING",
-            "fallback" => "CONTROL STREAM · FALLBACK",
-            "idle" => "CONTROL STREAM · CONNECTING",
-            _ => "CONTROL STREAM · STATUS"
-        };
-    }
-
-    private static string ResolveControlStreamSpotlightHeadline(string? value)
-    {
-        return value?.Trim().ToLowerInvariant() switch
-        {
-            "connected-keepalive" => "主动推送链路保活正常",
-            "recovering" => "主动推送链路静默超时，正在主动重连",
-            "fallback" => "主动推送暂不可用，当前已回退轮询",
-            "idle" => "正在等待建立主动推送链路",
-            _ => "主动推送链路状态待确认"
-        };
-    }
-
-    private static (string Category, string Suggestion) ClassifyControlStreamIssue(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return ("none", "");
-        }
-
-        var normalized = value.Trim();
-        if (string.Equals(normalized, "missing_connection_config", StringComparison.OrdinalIgnoreCase))
-        {
-            return ("config", "补全 Server URL、访问密钥和 Device ID 后，重新检查中枢连接。");
-        }
-
-        if (normalized.StartsWith("build_control_stream_url_failed:", StringComparison.OrdinalIgnoreCase) ||
-            normalized.StartsWith("build_control_stream_request_failed:", StringComparison.OrdinalIgnoreCase))
-        {
-            return ("config", "检查 Server URL 格式是否正确，确认协议、端口和路径没有写错。");
-        }
-
-        if (normalized.StartsWith("connect_control_stream_failed:", StringComparison.OrdinalIgnoreCase))
-        {
-            return ("network", "检查当前设备到中枢的网络连通性、防火墙或代理设置；恢复后 backend 会自动重连。");
-        }
-
-        if (normalized.StartsWith("control_stream_stale_for_", StringComparison.OrdinalIgnoreCase))
-        {
-            return ("stale", "当前旧连接已被 backend 主动取消，通常无需手动处理；若频繁出现，可检查 Windows 网络空闲超时、代理保活策略或休眠恢复后的网络状态。");
-        }
-
-        if (normalized.StartsWith("control_stream_status_", StringComparison.OrdinalIgnoreCase))
-        {
-            var statusCode = normalized["control_stream_status_".Length..].Trim();
-            return statusCode switch
-            {
-                "401" => ("config", "重新核对访问密钥是否与中枢 ACCESS_KEY 一致，然后再次检查中枢连接。"),
-                "403" => ("config", "检查中枢访问策略、反向代理或鉴权配置，确认当前 agent 被允许建立主动推送链路。"),
-                "404" => ("capability", "当前中枢未提供主动推送接口，可先继续使用回退轮询；若需要更实时的控制，请升级或补齐服务端接口。"),
-                "502" => ("server", "检查中枢前置网关或反向代理状态，待网关恢复后主动推送链路会自动重连。"),
-                "503" => ("server", "检查中枢服务当前是否可用，待服务恢复后主动推送链路会自动重连。"),
-                "504" => ("network", "检查中枢链路超时、网关超时或网络质量问题；恢复后主动推送链路会自动重连。"),
-                _ => ("server", $"检查中枢接口为什么返回状态 {statusCode}，确认服务端接口和代理配置是否正常。")
-            };
-        }
-
-        if (normalized.StartsWith("control_stream_disconnected:", StringComparison.OrdinalIgnoreCase))
-        {
-            return ("network", "检查网络稳定性、代理空闲超时或休眠恢复后的连接状态；backend 会持续重试主动推送链路。");
-        }
-
-        if (string.Equals(normalized, "control_stream_closed_by_server", StringComparison.OrdinalIgnoreCase))
-        {
-            return ("server", "检查中枢为什么主动关闭了连接，例如服务重启、连接策略或会话回收；backend 会自动重连。");
-        }
-
-        return ("server", "检查中枢日志和本地诊断日志，确认主动推送链路为何断开。");
-    }
-
-    private static string ResolveControlStreamErrorLabel(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "";
-        }
-
-        var normalized = value.Trim();
-        if (string.Equals(normalized, "missing_connection_config", StringComparison.OrdinalIgnoreCase))
-        {
-            return "本地连接信息尚未填写完整，暂时无法建立中枢主动推送链路";
-        }
-
-        if (normalized.StartsWith("build_control_stream_url_failed:", StringComparison.OrdinalIgnoreCase))
-        {
-            var detail = normalized["build_control_stream_url_failed:".Length..].Trim();
-            return string.IsNullOrWhiteSpace(detail)
-                ? "构造中枢主动推送地址失败"
-                : $"构造中枢主动推送地址失败：{detail}";
-        }
-
-        if (normalized.StartsWith("build_control_stream_request_failed:", StringComparison.OrdinalIgnoreCase))
-        {
-            var detail = normalized["build_control_stream_request_failed:".Length..].Trim();
-            return string.IsNullOrWhiteSpace(detail)
-                ? "创建中枢主动推送请求失败"
-                : $"创建中枢主动推送请求失败：{detail}";
-        }
-
-        if (normalized.StartsWith("connect_control_stream_failed:", StringComparison.OrdinalIgnoreCase))
-        {
-            var detail = normalized["connect_control_stream_failed:".Length..].Trim();
-            return string.IsNullOrWhiteSpace(detail)
-                ? "连接中枢主动推送通道失败"
-                : $"连接中枢主动推送通道失败：{detail}";
-        }
-
-        if (normalized.StartsWith("control_stream_stale_for_", StringComparison.OrdinalIgnoreCase))
-        {
-            var detail = normalized["control_stream_stale_for_".Length..].Trim();
-            if (string.IsNullOrWhiteSpace(detail))
-            {
-                return "中枢主动推送链路长时间未收到新快照，backend 已主动取消旧连接并准备重连";
-            }
-
-            var formatted = detail.Replace("_lastKind_", "，最近快照类型=");
-            formatted = formatted.Replace("_", " ");
-            return $"中枢主动推送链路长时间未收到新快照，backend 已主动取消旧连接并准备重连：{formatted}";
-        }
-
-        if (normalized.StartsWith("control_stream_status_", StringComparison.OrdinalIgnoreCase))
-        {
-            var statusCode = normalized["control_stream_status_".Length..].Trim();
-            return statusCode switch
-            {
-                "401" => "中枢拒绝了主动推送连接，请检查访问密钥是否正确",
-                "403" => "中枢禁止了主动推送连接，请检查访问权限或代理策略",
-                "404" => "中枢当前未提供主动推送接口，已自动回退到低频轮询",
-                "502" => "中枢网关暂时不可用，主动推送链路已回退到低频轮询",
-                "503" => "中枢服务暂时不可用，主动推送链路已回退到低频轮询",
-                "504" => "中枢主动推送链路连接超时，已回退到低频轮询",
-                _ => $"中枢主动推送接口返回异常状态 {statusCode}"
-            };
-        }
-
-        if (normalized.StartsWith("control_stream_disconnected:", StringComparison.OrdinalIgnoreCase))
-        {
-            var detail = normalized["control_stream_disconnected:".Length..].Trim();
-            return string.IsNullOrWhiteSpace(detail)
-                ? "中枢主动推送链路在运行中断开"
-                : $"中枢主动推送链路在运行中断开：{detail}";
-        }
-
-        if (string.Equals(normalized, "control_stream_closed_by_server", StringComparison.OrdinalIgnoreCase))
-        {
-            return "中枢主动关闭了推送链路，backend 已自动回退到低频轮询";
-        }
-
-        return normalized;
-    }
-
-    private static bool IsControlStreamRecovering(string? value)
-    {
-        return !string.IsNullOrWhiteSpace(value) &&
-               value.Trim().StartsWith("control_stream_stale_for_", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool HasFrequentControlStreamReconnects(BackendStateDto state)
-    {
-        return state.ControlStreamReconnectCount >= 3;
-    }
-
-    private static string BuildControlStreamAlertDetail(string? statusCode, string stateText, string lastDisconnectText, string categoryText, string errorText, string actionText, string transportText)
-    {
-        return statusCode?.Trim().ToLowerInvariant() switch
-        {
-            "connected" => $"{stateText} {transportText} {actionText}".Trim(),
-            "recovering" => $"{stateText} {lastDisconnectText} {categoryText} {errorText} {actionText} {transportText}".Trim(),
-            "fallback" => $"{stateText} {lastDisconnectText} {categoryText} {errorText} {actionText} {transportText}".Trim(),
-            "waiting" => $"{stateText} {categoryText} {actionText} {transportText}".Trim(),
-            "idle" => $"{stateText} {categoryText} {actionText} {transportText}".Trim(),
-            _ => stateText
-        };
-    }
-
-    private static string FormatRealtimeExpiry(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "稍后";
-        }
-
-        if (!DateTimeOffset.TryParse(value, out var parsed))
-        {
-            return value;
-        }
-
-        return parsed.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
-    }
 
     private string BuildInstanceSummary(string label, IEnumerable<ProbeInstanceItemViewModel> items)
     {
@@ -3572,7 +2914,7 @@ public sealed class MainViewModel : ObservableObject
             : result.Message.Trim();
         if (!string.IsNullOrWhiteSpace(result.ServerTime))
         {
-            summary += $" 中枢时间：{FormatRealtimeExpiry(result.ServerTime)}。";
+            summary += $" 中枢时间：{result.ServerTime}。";
         }
 
         return result.Status switch

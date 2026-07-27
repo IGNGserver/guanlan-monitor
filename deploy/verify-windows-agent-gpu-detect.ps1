@@ -71,10 +71,8 @@ $configPath = Join-Path $resolvedConfigRoot "agent-ui.config.json"
     hostname = "GPU Detect Test"
   }
   sampling = @{
-    normalIntervalSeconds = 15
-    fastIntervalSeconds = 5
+    normalIntervalSeconds = 30
     slowIntervalSeconds = 30
-    realtimeModeEnabled = $false
   }
   enabledMetrics = @(
     "cpuUsage",

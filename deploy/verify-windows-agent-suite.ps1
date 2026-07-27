@@ -73,12 +73,6 @@ function Get-SelectedChecks {
       "localConfigPayload",
       "instanceMetricConfig",
       "parentExit",
-      "realtime",
-      "viewerRealtime",
-      "viewerRealtimeHold",
-      "controlStreamFallback",
-      "controlStreamKeepalive",
-      "controlStreamRecovering",
       "firstRun",
       "connectionCheck",
       "gpuDetect"
@@ -237,53 +231,6 @@ if (-not $SummarizeOnly) {
     "-ReportPath", (Join-Path $resolvedOutputDir "parent-exit-report.json")
   )
   }
-  if (Should-RunCheck "realtime") {
-    Invoke-VerifyScript -ScriptName "verify-windows-agent-realtime-mode.ps1" -ArgumentList @(
-    "-ConfigRoot", (Join-Path $resolvedOutputDir "realtime-config"),
-    "-ListenPort", "18051",
-    "-ReportPath", (Join-Path $resolvedOutputDir "realtime-report.json")
-  )
-  }
-  if (Should-RunCheck "viewerRealtime") {
-    Invoke-VerifyScript -ScriptName "verify-windows-agent-viewer-realtime.ps1" -ArgumentList @(
-    "-ConfigRoot", (Join-Path $resolvedOutputDir "viewer-realtime-config"),
-    "-BackendPort", "18061",
-    "-MockServerPort", "19061",
-    "-ReportPath", (Join-Path $resolvedOutputDir "viewer-realtime-report.json")
-  )
-  }
-  if (Should-RunCheck "viewerRealtimeHold") {
-    Invoke-VerifyScript -ScriptName "verify-windows-agent-viewer-realtime-hold.ps1" -ArgumentList @(
-    "-ConfigRoot", (Join-Path $resolvedOutputDir "viewer-realtime-hold-config"),
-    "-BackendPort", "18065",
-    "-MockServerPort", "19065",
-    "-ReportPath", (Join-Path $resolvedOutputDir "viewer-realtime-hold-report.json")
-  )
-  }
-  if (Should-RunCheck "controlStreamFallback") {
-    Invoke-VerifyScript -ScriptName "verify-windows-agent-control-stream-fallback.ps1" -ArgumentList @(
-    "-ConfigRoot", (Join-Path $resolvedOutputDir "control-stream-fallback-config"),
-    "-BackendPort", "18062",
-    "-MockServerPort", "19062",
-    "-ReportPath", (Join-Path $resolvedOutputDir "control-stream-fallback-report.json")
-  )
-  }
-  if (Should-RunCheck "controlStreamKeepalive") {
-    Invoke-VerifyScript -ScriptName "verify-windows-agent-control-stream-keepalive.ps1" -ArgumentList @(
-    "-ServerPort", "19163",
-    "-KeepAliveMs", "3000",
-    "-ObservationSeconds", "8",
-    "-ReportPath", (Join-Path $resolvedOutputDir "control-stream-keepalive-report.json")
-  )
-  }
-  if (Should-RunCheck "controlStreamRecovering") {
-    Invoke-VerifyScript -ScriptName "verify-windows-agent-control-stream-recovering.ps1" -ArgumentList @(
-    "-ConfigRoot", (Join-Path $resolvedOutputDir "control-stream-recovering-config"),
-    "-BackendPort", "18064",
-    "-MockServerPort", "19064",
-    "-ReportPath", (Join-Path $resolvedOutputDir "control-stream-recovering-report.json")
-  )
-  }
   if (Should-RunCheck "firstRun") {
     Invoke-VerifyScript -ScriptName "verify-windows-agent-first-run.ps1" -ArgumentList @(
     "-ConfigRoot", (Join-Path $resolvedOutputDir "first-run-config"),
@@ -321,12 +268,6 @@ $reportDefaults = [ordered]@{
   localConfigPayload = Join-Path $resolvedOutputDir "local-config-payload-report.json"
   instanceMetricConfig = Join-Path $resolvedOutputDir "instance-metric-config-report.json"
   parentExit = Join-Path $resolvedOutputDir "parent-exit-report.json"
-  realtime = Join-Path $resolvedOutputDir "realtime-report.json"
-  viewerRealtime = Join-Path $resolvedOutputDir "viewer-realtime-report.json"
-  viewerRealtimeHold = Join-Path $resolvedOutputDir "viewer-realtime-hold-report.json"
-  controlStreamFallback = Join-Path $resolvedOutputDir "control-stream-fallback-report.json"
-  controlStreamKeepalive = Join-Path $resolvedOutputDir "control-stream-keepalive-report.json"
-  controlStreamRecovering = Join-Path $resolvedOutputDir "control-stream-recovering-report.json"
   firstRun = Join-Path $resolvedOutputDir "first-run-report.json"
   connectionCheck = Join-Path $resolvedOutputDir "connection-check-report.json"
   gpuDetect = Join-Path $resolvedOutputDir "gpu-detect-report.json"
@@ -398,58 +339,10 @@ if ($reports.Contains("parentExit")) {
   $parentExitReport = $reports["parentExit"]
   $summary.checks.parentExitCleanupPassed = ([bool]$parentExitReport.backendExitedAfterParent -and [bool]$parentExitReport.collectorExitedWithBackend)
 }
-if ($reports.Contains("realtime")) {
-  $realtimeReport = $reports["realtime"]
-  $summary.checks.manualRealtimePassed = ([bool]$realtimeReport.toggleObserved -and [bool]$realtimeReport.autoRevertObserved)
-}
-if ($reports.Contains("viewerRealtime")) {
-  $viewerRealtimeReport = $reports["viewerRealtime"]
-  $summary.checks.viewerRealtimePassed = ([bool]$viewerRealtimeReport.controlStreamConnected -and [bool]$viewerRealtimeReport.controlStreamEventObserved -and [bool]$viewerRealtimeReport.viewerDrivenRealtimeObserved -and [bool]$viewerRealtimeReport.viewerDrivenRealtimeReverted)
-}
-if ($reports.Contains("viewerRealtimeHold")) {
-  $viewerRealtimeHoldReport = $reports["viewerRealtimeHold"]
-  $summary.checks.viewerRealtimeHoldPassed = (
-    [bool]$viewerRealtimeHoldReport.backendReachable -and
-    [bool]$viewerRealtimeHoldReport.viewerDrivenRealtimeObserved -and
-    [string]$viewerRealtimeHoldReport.initialRealtimeSource -eq "viewer" -and
-    ([int]$viewerRealtimeHoldReport.initialEffectiveIntervalSeconds -eq 5) -and
-    [bool]$viewerRealtimeHoldReport.holdStateObserved -and
-    [bool]$viewerRealtimeHoldReport.holdWindowRetainedAfterDisable -and
-    ([int]$viewerRealtimeHoldReport.holdStateEffectiveIntervalSeconds -eq 5) -and
-    [bool]$viewerRealtimeHoldReport.holdExtendedBeyondServerTtl -and
-    [bool]$viewerRealtimeHoldReport.holdExtendedPastDisablePoint -and
-    [bool]$viewerRealtimeHoldReport.viewerDrivenRealtimeReverted -and
-    ([int]$viewerRealtimeHoldReport.revertedEffectiveIntervalSeconds -eq 15)
-  )
-}
-if ($reports.Contains("controlStreamFallback")) {
-  $controlStreamFallbackReport = $reports["controlStreamFallback"]
-  $summary.checks.controlStreamFallbackPassed = ((-not [bool]$controlStreamFallbackReport.controlStreamConnected) -and (-not [bool]$controlStreamFallbackReport.controlStreamEventObserved) -and [bool]$controlStreamFallbackReport.controlStreamDisconnectObserved -and -not [string]::IsNullOrWhiteSpace([string]$controlStreamFallbackReport.controlStreamError) -and [bool]$controlStreamFallbackReport.fallbackPollDrivenRealtimeObserved -and [bool]$controlStreamFallbackReport.fallbackRealtimeReverted)
-}
-if ($reports.Contains("controlStreamKeepalive")) {
-  $controlStreamKeepaliveReport = $reports["controlStreamKeepalive"]
-  $summary.checks.controlStreamKeepalivePassed = ([bool]$controlStreamKeepaliveReport.initialConnectedCommentObserved -and ([int]$controlStreamKeepaliveReport.keepaliveFramesObserved -ge 2))
-}
-if ($reports.Contains("controlStreamRecovering")) {
-  $controlStreamRecoveringReport = $reports["controlStreamRecovering"]
-  $summary.checks.controlStreamRecoveringPassed = (
-    [bool]$controlStreamRecoveringReport.backendReachable -and
-    [bool]$controlStreamRecoveringReport.initialStreamConnected -and
-    [bool]$controlStreamRecoveringReport.initialEventObserved -and
-    [bool]$controlStreamRecoveringReport.recoveringObserved -and
-    ([int]$controlStreamRecoveringReport.reconnectCountObserved -ge 1) -and
-    -not [string]::IsNullOrWhiteSpace([string]$controlStreamRecoveringReport.reconnectAtObserved) -and
-    [bool]$controlStreamRecoveringReport.staleDiagnosticObserved -and
-    [bool]$controlStreamRecoveringReport.secondStreamConnectionObserved -and
-    [bool]$controlStreamRecoveringReport.reconnectedAfterRecovery -and
-    [bool]$controlStreamRecoveringReport.finalControlStreamConnected
-  )
-}
 if ($reports.Contains("firstRun")) {
   $firstRunReport = $reports["firstRun"]
   $summary.checks.firstRunPathsPassed = ([bool]$firstRunReport.stateConfigPathMatched -and [bool]$firstRunReport.stateSyncStatePathMatched -and [bool]$firstRunReport.stateDiagnosticsPathMatched)
   $summary.checks.firstRunArtifactStatePassed = ([bool]$firstRunReport.stateConfigFileExistsOnFirstRun -and (-not [bool]$firstRunReport.stateSyncStateFileExistsOnFirstRun) -and [bool]$firstRunReport.stateDiagnosticsFileExistsOnFirstRun -and [bool]$firstRunReport.stateSyncStateFileExistsAfterDisplayChange)
-  $summary.checks.firstRunControlStreamDefaultsPassed = ([bool]$firstRunReport.controlStreamDisconnectedOnFirstRun -and [bool]$firstRunReport.lastControlStreamEventMissingOnFirstRun)
 }
 if ($reports.Contains("connectionCheck")) {
   $connectionCheckReport = $reports["connectionCheck"]

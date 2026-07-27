@@ -72,8 +72,7 @@ $configPath = Join-Path $resolvedConfigRoot "agent-ui.config.json"
     hostname = "Parent Exit Test"
   }
   sampling = @{
-    normalIntervalSeconds = 15
-    fastIntervalSeconds = 5
+    normalIntervalSeconds = 30
     slowIntervalSeconds = 30
   }
   enabledMetrics = @("cpuUsage")

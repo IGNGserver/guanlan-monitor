@@ -23,14 +23,15 @@ passed CI but have not completed manual acceptance, packaging, or production
 verification. A push to `main` must not be treated as a user-installable
 release.
 
-Only a version tag such as `v0.1.103` and its GitHub Release represent a
-stable delivery. Create the tag and publish release assets only after the
-checks in [RELEASE.md](RELEASE.md) pass and the release has been explicitly
-approved.
+Until the user explicitly requests a formal release, the phrase “publish a
+release” means a tested release. A tested release must not be presented as a
+stable production delivery. Only a version tag such as `v0.1.103` and its
+GitHub Release, after explicit formal-release approval, represent a stable
+delivery.
 
-Production Docker deployments must use a specific release tag or image digest.
-Do not deploy production by pulling `main` and running `docker compose up -d
---build`.
+Production Docker deployments must pull a specific Docker Hub image tag or
+image digest. `latest` is allowed only when explicitly selected. Do not deploy
+production by building from `main` or another untested source checkout.
 
 ## Commit Guidance
 

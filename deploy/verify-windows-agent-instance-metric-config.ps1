@@ -87,9 +87,7 @@ $configPath = Join-Path $resolvedConfigRoot "agent-ui.config.json"
   }
   sampling = @{
     normalIntervalSeconds = 1
-    fastIntervalSeconds = 1
     slowIntervalSeconds = 1
-    realtimeModeEnabled = $false
   }
   enabledMetrics = @("cpuUsage", "cpuFrequency", "cpuTemperature", "diskUsage", "diskRead", "diskWrite")
   enabledDeviceIds = @{}
@@ -239,9 +237,7 @@ try {
     }
     sampling = @{
       normalIntervalSeconds = 1
-      fastIntervalSeconds = 1
       slowIntervalSeconds = 1
-      realtimeModeEnabled = $false
     }
     enabledMetrics = @("cpuUsage", "cpuFrequency", "cpuTemperature", "diskUsage", "diskRead", "diskWrite")
     enabledDeviceIds = @{

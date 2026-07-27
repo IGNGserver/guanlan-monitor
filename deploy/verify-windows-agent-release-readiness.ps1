@@ -163,12 +163,6 @@ if ($suiteSummary -and $suiteSummary.checks) {
     (Test-Truthy $checks.localConfigPayloadMatched) -and
     (Test-Truthy $checks.instanceMetricConfigMatched) -and
     (Test-Truthy $checks.parentExitCleanupPassed) -and
-    (Test-Truthy $checks.manualRealtimePassed) -and
-    (Test-Truthy $checks.viewerRealtimePassed) -and
-    (Test-Truthy $checks.viewerRealtimeHoldPassed) -and
-    (Test-Truthy $checks.controlStreamFallbackPassed) -and
-    (Test-Truthy $checks.controlStreamKeepalivePassed) -and
-    (Test-Truthy $checks.controlStreamRecoveringPassed) -and
     (Test-Truthy $checks.firstRunPathsPassed) -and
     (Test-Truthy $checks.firstRunArtifactStatePassed) -and
     (Test-Truthy $checks.firstRunControlStreamDefaultsPassed) -and
@@ -284,7 +278,6 @@ $report = [ordered]@{
       ($portableArtifactStateVerified -and $installedArtifactStateVerified)
     }
     issueDiagnosisVerified = ($suiteSummary -and (Test-Truthy $suiteSummary.checks.issueCategoryObserved) -and (Test-Truthy $suiteSummary.checks.issueCategoryRecoveryObserved))
-    controlStreamVerified = ($suiteSummary -and (Test-Truthy $suiteSummary.checks.viewerRealtimePassed) -and (Test-Truthy $suiteSummary.checks.viewerRealtimeHoldPassed) -and (Test-Truthy $suiteSummary.checks.controlStreamFallbackPassed) -and (Test-Truthy $suiteSummary.checks.controlStreamKeepalivePassed) -and (Test-Truthy $suiteSummary.checks.controlStreamRecoveringPassed) -and (Test-Truthy $suiteSummary.checks.firstRunControlStreamDefaultsPassed))
   }
   evidence = [ordered]@{
     externalPublishPackage = if ($externalPublishPackageReport) {
@@ -383,7 +376,7 @@ $report = [ordered]@{
 
 if ($setupLifecyclePassed -and (-not $setupLifecycleExecutionVerified)) {
   $setupExecutionNextStep = "Run the real setup.exe execution verifier on an elevated Windows validation machine to produce direct installer lifecycle evidence."
-  $setupExecutionCommand = "powershell -ExecutionPolicy Bypass -File .\\deploy\\verify-windows-agent-setup-execution.ps1 -SetupExePath .\\release\\windows-agent-setup\\DeviceStateConsoleAgent-setup.exe -OutputDir .\\release\\windows-agent-setup-execution"
+  $setupExecutionCommand = "powershell -ExecutionPolicy Bypass -File .\\deploy\\verify-windows-agent-setup-execution.ps1 -SetupExePath .\\release\\windows-agent-setup\\DeviceStateConsole-Windows-GUI-Setup.exe -OutputDir .\\release\\windows-agent-setup-execution"
 
   if ($report.remediation.setupBuildBlockedBy -notcontains "Real setup.exe execution evidence has not been produced yet; current lifecycle proof still comes from packaging/layout verification artifacts") {
     $report.remediation.setupBuildBlockedBy = @($report.remediation.setupBuildBlockedBy) + @(

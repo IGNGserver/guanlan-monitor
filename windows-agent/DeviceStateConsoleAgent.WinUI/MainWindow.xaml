@@ -178,9 +178,6 @@
                                 </Border>
                                 <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource DSCStatusCardStyle}">
                                     <StackPanel Spacing="6">
-                                        <TextBlock Text="实时控制" Style="{StaticResource CaptionTextBlockStyle}" />
-                                        <TextBlock Text="{Binding ControlStreamStateText}" Style="{StaticResource SubtitleTextBlockStyle}" />
-                                        <TextBlock Text="{Binding ControlStreamTransportText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
                                 <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource DSCStatusCardStyle}">
@@ -309,7 +306,6 @@
                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                 <Border Style="{StaticResource DSCStatusCardStyle}"><StackPanel Spacing="6"><TextBlock Text="本地服务" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding LocalBackendBadgeText}" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="{Binding LocalBackendStateText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" /></StackPanel></Border>
                                 <Border Style="{StaticResource DSCStatusCardStyle}"><StackPanel Spacing="6"><TextBlock Text="监测提交" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding CollectorBadgeText}" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="{Binding CollectorStateText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" /></StackPanel></Border>
-                                <Border Style="{StaticResource DSCStatusCardStyle}"><StackPanel Spacing="6"><TextBlock Text="实时控制" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding ControlStreamStateText}" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="{Binding ControlStreamTransportText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" /></StackPanel></Border>
                                 <Border Style="{StaticResource DSCStatusCardStyle}"><StackPanel Spacing="6"><TextBlock Text="最近活动" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding CurrentOperationText}" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="{Binding CurrentOperationDetailText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" /></StackPanel></Border>
                             </Grid>
                             <Border Style="{StaticResource DSCPanelStyle}">
@@ -411,11 +407,8 @@
                             <Border Style="{StaticResource DSCPanelStyle}">
                                 <StackPanel Spacing="14">
                                     <TextBlock Text="上传策略" Style="{StaticResource SubtitleTextBlockStyle}" />
-                                    <NumberBox Header="快速采样间隔（秒）" Minimum="1" Value="{Binding FastIntervalValue, Mode=TwoWay}" />
                                     <NumberBox Header="常规采样间隔（秒）" Minimum="1" Value="{Binding NormalIntervalValue, Mode=TwoWay}" />
                                     <NumberBox Header="慢速采样间隔（秒）" Minimum="5" Value="{Binding SlowIntervalValue, Mode=TwoWay}" />
-                                    <NumberBox Header="实时查看保持（秒）" Minimum="5" Value="{Binding ViewerRealtimeHoldValue, Mode=TwoWay}" />
-                                    <ToggleSwitch Header="允许网页/客户端请求实时模式" IsOn="{Binding CloudSyncEnabled, Mode=TwoWay}" />
                                     <ToggleSwitch Header="启动观澜时自动启动探测" IsOn="{Binding AutoStartCollector, Mode=TwoWay}" />
                                     <ToggleSwitch Header="采集器异常自动重启" IsOn="{Binding AutoRestartCollector, Mode=TwoWay}" />
                                 </StackPanel>

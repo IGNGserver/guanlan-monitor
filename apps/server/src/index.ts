@@ -15,8 +15,6 @@ import {
 } from "./repositories/local.js";
 import { MetricsService } from "./services/metrics.js";
 import { registerRoutes } from "./routes.js";
-import { AgentControlService } from "./services/agent-control.js";
-import { ViewerPresenceService } from "./services/viewer-presence.js";
 import type { AgentMetricsPayload, DeviceRealtimeEvent } from "@dsc/shared";
 import type { Repositories } from "./types.js";
 
@@ -51,10 +49,6 @@ if (env.MYSQL_URL) {
 }
 
 let io: SocketIOServer | null = null;
-const agentControl = new AgentControlService();
-const viewerPresence = new ViewerPresenceService((deviceId, snapshot) => {
-  agentControl.publishViewerRealtime(deviceId, snapshot);
-});
 const metricsService = new MetricsService(
   repositories,
   (event: DeviceRealtimeEvent) => {
@@ -63,7 +57,7 @@ const metricsService = new MetricsService(
   deviceMetricConfigs
 );
 
-await registerRoutes(app, repositories, metricsService, viewerPresence, agentControl);
+await registerRoutes(app, repositories, metricsService);
 
 app.post<{ Body: AgentMetricsPayload }>("/api/agent/ingest", async (request, reply) => {
   if (env.AGENT_REQUIRE_HTTPS) {

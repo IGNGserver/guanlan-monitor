@@ -200,13 +200,8 @@ public sealed class ViewerGpuDto
 
 public sealed class AgentSamplingConfig
 {
-    public int NormalIntervalSeconds { get; set; } = 15;
-    public int FastIntervalSeconds { get; set; } = 5;
+    public int NormalIntervalSeconds { get; set; } = 30;
     public int SlowIntervalSeconds { get; set; } = 30;
-    public int ViewerRealtimeHoldSeconds { get; set; } = 20;
-    public bool RealtimeModeEnabled { get; set; }
-    public string RealtimeModeExpiresAt { get; set; } = "";
-    public string RealtimeModeSource { get; set; } = "";
 }
 
 public sealed class AgentProbeSelection
@@ -244,21 +239,6 @@ public sealed class BackendStateDto
     public int FrontendParentPid { get; set; }
     public string ChildStartedAt { get; set; } = "";
     public string ConnectionStatus { get; set; } = "stopped";
-    public bool ControlStreamConnected { get; set; }
-    public int ControlStreamReconnectCount { get; set; }
-    public string LastControlStreamEventAt { get; set; } = "";
-    public string LastControlStreamSnapshotAt { get; set; } = "";
-    public string LastControlStreamChangeAt { get; set; } = "";
-    public string LastControlStreamSnapshotKind { get; set; } = "";
-    public string LastControlStreamSnapshotSource { get; set; } = "";
-    public string LastControlStreamDisconnectAt { get; set; } = "";
-    public string LastControlStreamReconnectAt { get; set; } = "";
-    public string LastControlStreamError { get; set; } = "";
-    public string ViewerRealtimePhase { get; set; } = "";
-    public bool LastViewerRealtimeEnabled { get; set; }
-    public int LastViewerRealtimeViewerCount { get; set; }
-    public int LastViewerRealtimeDurationSeconds { get; set; }
-    public string LastViewerRealtimeExpiresAt { get; set; } = "";
     public string LastChildLog { get; set; } = "";
     public string LastUploadAt { get; set; } = "";
     public string LastCloudSyncAt { get; set; } = "";
@@ -270,9 +250,6 @@ public sealed class BackendStateDto
     public int RestartCount { get; set; }
     public int? LastExitCode { get; set; }
     public bool AutoRestartPending { get; set; }
-    public bool RealtimeModeEnabled { get; set; }
-    public string RealtimeModeExpiresAt { get; set; } = "";
-    public string RealtimeModeSource { get; set; } = "";
     public int EffectiveUploadIntervalSeconds { get; set; }
     public string LastIssueCategory { get; set; } = "";
     public string LastIssueDetail { get; set; } = "";

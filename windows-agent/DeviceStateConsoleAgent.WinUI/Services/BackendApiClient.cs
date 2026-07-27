@@ -60,12 +60,6 @@ public sealed class BackendApiClient
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
-    public async Task SetRealtimeModeAsync(bool enabled, int? durationSeconds = null, CancellationToken cancellationToken = default)
-    {
-        using var response = await _httpClient.PostAsJsonAsync("api/control/realtime", new { enabled, durationSeconds }, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
-    }
-
     public async Task PushCloudAsync(CancellationToken cancellationToken = default)
     {
         using var response = await _httpClient.PostAsync("api/cloud/push", null, cancellationToken);

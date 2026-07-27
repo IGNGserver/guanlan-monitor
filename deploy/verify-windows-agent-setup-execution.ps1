@@ -222,7 +222,7 @@ function Assert-CleanStartState {
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$resolvedSetupExePath = Resolve-RepoPath -RepoRoot $repoRoot -PathValue $SetupExePath -FallbackPath (Join-Path $repoRoot "release\windows-agent-setup\DeviceStateConsoleAgent-setup.exe")
+$resolvedSetupExePath = Resolve-RepoPath -RepoRoot $repoRoot -PathValue $SetupExePath -FallbackPath (Join-Path $repoRoot "release\windows-agent-setup\DeviceStateConsole-Windows-GUI-Setup.exe")
 $resolvedPortableBundleDir = Resolve-RepoPath -RepoRoot $repoRoot -PathValue $PortableBundleDir -FallbackPath (Join-Path $repoRoot "release\windows-agent-portable\DeviceStateConsoleAgent")
 $resolvedInstallRoot = Resolve-RepoPath -RepoRoot $repoRoot -PathValue $InstallRoot -FallbackPath (Join-Path $env:ProgramFiles "DeviceStateConsoleAgent")
 $resolvedConfigRoot = Resolve-RepoPath -RepoRoot $repoRoot -PathValue $ConfigRoot -FallbackPath (Join-Path $env:LocalAppData "DeviceStateConsoleAgent")

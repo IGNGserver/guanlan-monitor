@@ -87,10 +87,8 @@ $mockServerUrl = "http://127.0.0.1:$MockServerPort"
     hostname = "Cloud Pending Persist Test"
   }
   sampling = @{
-    normalIntervalSeconds = 15
-    fastIntervalSeconds = 5
+    normalIntervalSeconds = 30
     slowIntervalSeconds = 30
-    realtimeModeEnabled = $false
   }
   enabledMetrics = @("cpuUsage", "diskUsage")
   enabledDeviceIds = @{}
@@ -245,10 +243,8 @@ try {
       hostname = "Cloud Pending Persist Test"
     }
     sampling = @{
-      normalIntervalSeconds = 15
-      fastIntervalSeconds = 5
+      normalIntervalSeconds = 30
       slowIntervalSeconds = 30
-      realtimeModeEnabled = $false
     }
     enabledMetrics = @("cpuUsage")
     enabledDeviceIds = @{

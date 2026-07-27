@@ -89,9 +89,9 @@ $portableBundleRoot = if ([string]::IsNullOrWhiteSpace($PortableBundleDir)) {
 $portableBundleRoot = [System.IO.Path]::GetFullPath($portableBundleRoot)
 $generatedIss = Join-Path $resolvedOutputDir "windows-agent-setup.generated.iss"
 $bundleVersionFile = Join-Path $portableBundleRoot "INSTALLER_VERSION.txt"
-$versionedInstallerPath = Join-Path $resolvedOutputDir ("DeviceStateConsoleAgent-setup-{0}.exe" -f $Version)
-$stableInstallerPath = Join-Path $resolvedOutputDir "DeviceStateConsoleAgent-setup.exe"
-$updateZipPath = Join-Path $resolvedOutputDir ("DeviceStateConsoleAgent-update-{0}.zip" -f $Version)
+$versionedInstallerPath = Join-Path $resolvedOutputDir ("DeviceStateConsole-Windows-GUI-Setup-v{0}.exe" -f $Version)
+$stableInstallerPath = Join-Path $resolvedOutputDir "DeviceStateConsole-Windows-GUI-Setup.exe"
+$updateZipPath = Join-Path $resolvedOutputDir ("DeviceStateConsole-Windows-GUI-Update-v{0}.zip" -f $Version)
 
 if (-not (Test-Path $portableBundleRoot)) {
   if (-not $BuildPortableIfMissing) {
@@ -137,9 +137,9 @@ if (-not (Test-Path $versionedInstallerPath)) {
 # Keep a same-version installer beside the app so the uninstaller can offer repair.
 $repairDir = Join-Path $portableBundleRoot "repair"
 New-Item -ItemType Directory -Force -Path $repairDir | Out-Null
-Copy-Item -LiteralPath $versionedInstallerPath -Destination (Join-Path $repairDir "DeviceStateConsoleAgent-setup.exe") -Force
+Copy-Item -LiteralPath $versionedInstallerPath -Destination (Join-Path $repairDir "DeviceStateConsole-Windows-GUI-Setup.exe") -Force
 $issContent = [System.IO.File]::ReadAllText($generatedIss, $utf8NoBom)
-$issContent = $issContent.Replace(';__REPAIR_SETUP_FILE__', 'Source: "' + (Join-Path $portableBundleRoot 'repair\DeviceStateConsoleAgent-setup.exe') + '"; DestDir: "{app}\repair"; Flags: ignoreversion')
+$issContent = $issContent.Replace(';__REPAIR_SETUP_FILE__', 'Source: "' + (Join-Path $portableBundleRoot 'repair\DeviceStateConsole-Windows-GUI-Setup.exe') + '"; DestDir: "{app}\repair"; Flags: ignoreversion')
 [System.IO.File]::WriteAllText($generatedIss, $issContent, $utf8WithBom)
 
 & $resolvedIscc $generatedIss

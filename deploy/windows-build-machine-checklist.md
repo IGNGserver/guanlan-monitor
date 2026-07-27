@@ -93,7 +93,7 @@ powershell -ExecutionPolicy Bypass -File .\deploy\build-windows-agent-portable.p
 默认输出：
 
 - `release\windows-agent-portable\DeviceStateConsoleAgent\`
-- `release\windows-agent-portable\DeviceStateConsoleAgent-portable.zip`
+- `release\windows-agent-portable\DeviceStateConsole-Windows-GUI-Portable-vX.Y.Z.zip`
 
 ### 3.2 验证便携包
 
@@ -237,7 +237,7 @@ powershell -ExecutionPolicy Bypass -File .\deploy\build-windows-agent-setup.ps1 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-setup-execution.ps1 `
-  -SetupExePath .\release\windows-agent-setup\DeviceStateConsoleAgent-setup.exe `
+  -SetupExePath .\release\windows-agent-setup\DeviceStateConsole-Windows-GUI-Setup.exe `
   -OutputDir .\release\windows-agent-setup-execution
 ```
 
@@ -310,7 +310,7 @@ powershell -ExecutionPolicy Bypass -File .\deploy\export-windows-agent-delivery-
 如果这台机器后来能补齐 `.NET SDK 8`，但仍没有 `ISCC.exe`，那么建议额外再带走：
 
 - `release/windows-agent-portable/DeviceStateConsoleAgent/`
-- `release/windows-agent-portable/DeviceStateConsoleAgent-portable.zip`
+- `release/windows-agent-portable/DeviceStateConsole-Windows-GUI-Portable-vX.Y.Z.zip`
 - `release/windows-agent-setup/windows-agent-setup.generated.iss`
 - `release/windows-agent-setup/setup-template-report.json`
 - `release/windows-agent-setup/setup-generated-report.json`

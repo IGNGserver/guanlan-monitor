@@ -55,7 +55,7 @@
 应交付给下一台机器的产物：
 
 - `release/windows-agent-portable/DeviceStateConsoleAgent/`
-- `release/windows-agent-portable/DeviceStateConsoleAgent-portable.zip`
+- `release/windows-agent-portable/DeviceStateConsole-Windows-GUI-Portable-vX.Y.Z.zip`
 - `release/windows-agent-suite/` 下的验证报告
 - `release/windows-agent-setup/windows-agent-setup.generated.iss`
 - 若本机已安装 `ISCC.exe`，还应额外交付 `setup.exe`
@@ -129,12 +129,12 @@ powershell -ExecutionPolicy Bypass -File .\deploy\build-windows-agent-portable.p
 期望输出：
 
 - `release/windows-agent-portable/DeviceStateConsoleAgent/`
-- `release/windows-agent-portable/DeviceStateConsoleAgent-portable.zip`
+- `release/windows-agent-portable/DeviceStateConsole-Windows-GUI-Portable-vX.Y.Z.zip`
 
 如果当前机器本身不负责后续安装验证，建议这一步结束后至少把下面这些内容一起打包给下一台机器：
 
 - `release/windows-agent-portable/DeviceStateConsoleAgent/`
-- `release/windows-agent-portable/DeviceStateConsoleAgent-portable.zip`
+- `release/windows-agent-portable/DeviceStateConsole-Windows-GUI-Portable-vX.Y.Z.zip`
 - `release/windows-build-prereqs-report.json`
 
 ## Step 2: Verify Portable Bundle
@@ -170,8 +170,6 @@ powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-suite.ps1
 - `parent-exit-report.json`
 - `realtime-report.json`
 - `viewer-realtime-report.json`
-- `control-stream-fallback-report.json`
-- `control-stream-keepalive-report.json`
 - `suite-summary.json`
 
 如果你准备把便携包和 setup 工作交给另一台机器，建议在这里额外一并交付：
@@ -293,7 +291,7 @@ powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-installed
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-setup-execution.ps1 `
-  -SetupExePath .\release\windows-agent-setup\DeviceStateConsoleAgent-setup.exe `
+  -SetupExePath .\release\windows-agent-setup\DeviceStateConsole-Windows-GUI-Setup.exe `
   -OutputDir .\release\windows-agent-setup-execution
 ```
 
@@ -425,7 +423,6 @@ powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-realtime-
 
 期望输出：
 
-- 实时模式验证通过
 - `toggleObserved = true`
 - `autoRevertObserved = true`
 - 常态间隔 `15`
@@ -549,7 +546,6 @@ powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-parent-ex
 - `collectorExitedWithBackend = true`
 - `release/windows-agent-portable/parent-exit-report.json`
 
-## Step 6f: Verify Viewer-Driven Realtime
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-viewer-realtime.ps1 `
@@ -561,10 +557,6 @@ powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-viewer-re
 
 期望输出：
 
-- 观看态驱动的实时模式验证通过
-- `controlStreamConnected = true`
-- `controlStreamEventObserved = true`
-- `controlStreamStableBeyondTimeoutWindow = true`
 - `viewerDrivenRealtimeObserved = true`
 - `viewerDrivenRealtimeSource = viewer`
 - `viewerDrivenRealtimeReverted = true`
@@ -589,12 +581,9 @@ powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-viewer-re
 - `viewerDrivenRealtimeReverted = true`
 - `release/windows-agent-portable/viewer-realtime-hold-report.json`
 
-## Step 6h: Verify Control-Stream Fallback
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-control-stream-fallback.ps1 `
   -BundleRoot .\release\windows-agent-portable\DeviceStateConsoleAgent `
-  -ReportPath .\release\windows-agent-portable\control-stream-fallback-report.json
 ```
 
 不传 `-BundleRoot` 时也会自动准备最新的 backend 验证 bundle。
@@ -602,11 +591,8 @@ powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-control-s
 期望输出：
 
 - 控制流回退验证通过
-- `controlStreamConnected = false`
-- `controlStreamEventObserved = false`
 - `fallbackPollDrivenRealtimeObserved = true`
 - `fallbackRealtimeReverted = true`
-- `release/windows-agent-portable/control-stream-fallback-report.json`
 
 ## Step 7: Manual Acceptance
 
@@ -625,10 +611,6 @@ powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-control-s
 - WinUI 关闭时是否优先经由本地 shutdown 接口完成退出
 - 采集器异常退出后本地 backend 是否自动重启
 - 采集器错误时最近异常分类是否正确显示
-- 实时模式切换后状态区与生效上传间隔是否同步变化
-- 中枢实时控制通道在 WinUI 中是否能区分显示“已连通”“保活正常”“回退轮询”“待建链”
-- 临时实时模式到期后是否自动回落到常态上传
-- 网页正在查看设备时，Windows agent 是否自动进入实时模式；关闭查看后是否回落
 - 本地展示配置改动但尚未推送时，WinUI 是否提示“待推送”；重启后是否仍能恢复该状态
 - 推送至云端后网页/客户端展示是否变化
 - setup 卸载时，是否明确询问要不要删除 `%LocalAppData%\DeviceStateConsoleAgent\`
@@ -665,7 +647,6 @@ powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-release-r
 - 报告中 `remediation.*` 会指出当前工具链阻塞项、建议步骤和推荐命令
 - 报告中 `status.setupLifecycleVerified = true`
 - 报告中 `status.issueDiagnosisVerified = true`
-- 报告中 `status.controlStreamVerified = true`
 - 若当前机器缺少 WinUI / Inno Setup 工具链，报告中可能仍会出现 `blockedByToolchain = true`
 
 ## Evidence to Keep
@@ -682,8 +663,6 @@ powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-release-r
 - `release/windows-agent-portable/realtime-report.json`
 - `release/windows-agent-portable/viewer-realtime-report.json`
 - `release/windows-agent-portable/viewer-realtime-hold-report.json`
-- `release/windows-agent-portable/control-stream-fallback-report.json`
-- `release/windows-agent-portable/control-stream-keepalive-report.json`
 - `release/windows-agent-release-readiness-report.json`
 - 便携包 zip
 - setup 安装包

@@ -93,10 +93,8 @@ $syncStatePath = Join-Path $resolvedConfigRoot "agent-ui.sync-state.json"
     hostname = "Cloud Pending Boundary Test"
   }
   sampling = @{
-    normalIntervalSeconds = 15
-    fastIntervalSeconds = 5
+    normalIntervalSeconds = 30
     slowIntervalSeconds = 30
-    realtimeModeEnabled = $false
   }
   enabledMetrics = @("cpuUsage", "diskUsage")
   enabledDeviceIds = @{}
@@ -159,9 +157,7 @@ try {
   },
   "sampling": {
     "normalIntervalSeconds": 11,
-    "fastIntervalSeconds": 3,
     "slowIntervalSeconds": 41,
-    "realtimeModeEnabled": false
   },
   "enabledMetrics": ["cpuUsage", "diskUsage"],
   "enabledDeviceIds": {},

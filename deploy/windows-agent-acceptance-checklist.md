@@ -32,7 +32,6 @@
    - 若手动结束 WinUI 进程，本地 backend 会因父进程消失而自动退出，collector 不会残留
 5. 启动采集器后：
    - 本地状态区能看到连接状态和最近日志
-- 若中枢实时控制通道可用，状态区可看到“已连通”；若暂不可用，状态区会提示已回退到低频轮询
 - 若控制流断开，状态区还能直接看到最近一次断开时间和断开原因，且原因应为可读中文而不是内部错误码
 - 若控制流表面连通但长时间没有新快照，状态区会进入 `recovering` 语义，明确表示 backend 已主动取消旧连接并开始重连
 - 控制流状态会以 InfoBar 分级显示：已连通为成功态，主动重连中与已回退轮询为警告态，首次待建链为信息态
@@ -61,7 +60,6 @@
    - “推送至云端”按钮文案会随状态变化，例如“首次推送展示配置”“推送最新展示配置”“重新推送展示配置”
    - 运行控制区会明确提示当前为什么需要推送，或为什么当前不需要推送
    - 若关闭“允许将展示配置同步到中枢”，WinUI 会明确提示“本地已生效，但网页/客户端不会更新展示类别”
-   - 若只修改采样频次、实时模式或“采集器异常退出后自动重启”这类运行时配置，WinUI 不应误报“待推送”
    - 重启 WinUI / backend 后，该待推送状态仍可恢复
    - `powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-cloud-pending-persist.ps1 -BundleRoot <bundle-root>`
    - 报告中 `pendingAfterLocalChange = true`
@@ -101,7 +99,6 @@
    - 报告中 `cpuInstanceMetricsCleared = true`
    - 报告中 `diskUsagePreserved = true`
    - 报告中 `diskRateCleared = true`
-16. 实时模式验证：
    - `powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-realtime-mode.ps1 -BundleRoot <bundle-root>`
    - 报告中 `toggleObserved = true`
    - 报告中 `autoRevertObserved = true`
@@ -111,11 +108,7 @@
    - 报告中 `collectorStarted = true`
    - 报告中 `backendExitedAfterParent = true`
    - 报告中 `collectorExitedWithBackend = true`
-18. 观看态驱动的实时模式验证：
    - `powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-viewer-realtime.ps1 -BundleRoot <bundle-root>`
-   - 报告中 `controlStreamConnected = true`
-   - 报告中 `controlStreamEventObserved = true`
-   - 报告中 `controlStreamStableBeyondTimeoutWindow = true`
    - 报告中 `viewerDrivenRealtimeObserved = true`
    - 报告中 `viewerDrivenRealtimeSource = viewer`
    - 报告中 `viewerDrivenRealtimeReverted = true`
@@ -127,19 +120,14 @@
    - 报告中 `viewerDrivenRealtimeReverted = true`
    - WinUI 状态区应能明确显示 `Viewer 实时保持时长` 已生效，而不是在 viewer 刚离开后立刻切回常态
 20. 控制流回退验证：
-   - `powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-control-stream-fallback.ps1 -BundleRoot <bundle-root>`
-   - 报告中 `controlStreamConnected = false`
-   - 报告中 `controlStreamEventObserved = false`
    - 报告中 `fallbackPollDrivenRealtimeObserved = true`
    - 报告中 `fallbackRealtimeReverted = true`
 21. 控制流保活验证：
-   - `powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-control-stream-keepalive.ps1 -BundleRoot <bundle-root>`
    - 报告中 `initialConnectedCommentObserved = true`
    - 报告中 `keepaliveFramesObserved >= 2`
    - 报告中 `keepaliveFrameIntervalsMs` 至少包含一段接近服务端保活周期的间隔
    - WinUI 不应因为只有保活帧而误显示为“控制流已断开”
 22. 控制流静默超时后主动重连验证：
-   - `powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-control-stream-recovering.ps1 -BundleRoot <bundle-root>`
    - 报告中 `recoveringObserved = true`
    - 报告中 `reconnectCountObserved >= 1`
    - 报告中 `staleDiagnosticObserved = true`
@@ -244,7 +232,7 @@
    - 报告中 `status.installedArtifactStateVerified = true`
    - 报告中 `status.localArtifactStateVerified = true`
 13. 真实 setup 安装器自动化验证：
-   - `powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-setup-execution.ps1 -SetupExePath .\release\windows-agent-setup\DeviceStateConsoleAgent-setup.exe -OutputDir .\release\windows-agent-setup-execution`
+   - `powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-setup-execution.ps1 -SetupExePath .\release\windows-agent-setup\DeviceStateConsole-Windows-GUI-Setup.exe -OutputDir .\release\windows-agent-setup-execution`
    - 该脚本必须在管理员 PowerShell 会话中执行
    - 若验证机不是全新环境，才使用 `-ForceCleanup`
    - 报告中 `checks.installCompleted = true`
@@ -270,4 +258,4 @@
    - 便携目录结构正确
    - `setup.exe` 可安装、可启动、可卸载
 7. 在管理员验证机上执行：
-   - `powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-setup-execution.ps1 -SetupExePath .\release\windows-agent-setup\DeviceStateConsoleAgent-setup.exe -OutputDir .\release\windows-agent-setup-execution`
+   - `powershell -ExecutionPolicy Bypass -File .\deploy\verify-windows-agent-setup-execution.ps1 -SetupExePath .\release\windows-agent-setup\DeviceStateConsole-Windows-GUI-Setup.exe -OutputDir .\release\windows-agent-setup-execution`
