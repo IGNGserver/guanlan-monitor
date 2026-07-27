@@ -45,6 +45,6 @@ select {
   font: inherit;
 }
 
-main {
-  min-height: 100vh;
-}
+main { min-height: 100dvh; }
+
+::selection { background: #cce8ff; color: #12304a; }

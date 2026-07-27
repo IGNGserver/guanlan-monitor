@@ -932,6 +932,65 @@
   color: var(--muted);
 }
 
+/* New SaaS workspace layer: frosted mica is paired with opaque fallbacks. */
+.homeShell {
+  position: relative;
+  min-height: 100dvh;
+  padding: 28px;
+  background-color: #e7edf2;
+  background-position: center;
+  background-size: cover;
+  isolation: isolate;
+}
+.homeScrim { position: fixed; inset: 0; z-index: -1; background: linear-gradient(135deg, rgba(242,247,250,.92), rgba(224,233,240,.72)); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+.homeFrame { width: min(1240px, 100%); margin: 0 auto; position: relative; }
+.homeHeader, .homeIntro, .sectionHeading { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+.homeHeader { padding: 8px 4px 54px; }
+.brandLockup { display: flex; align-items: center; gap: 12px; color: #182b3a; }
+.brandLockup > div { display: grid; gap: 2px; }
+.brandLockup strong { font-size: .94rem; letter-spacing: .01em; }
+.brandLockup span:not(.brandMark) { color: #71818d; font-size: .72rem; }
+.brandMark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; color: white; font-size: .72rem; font-weight: 800; background: #1677b9; box-shadow: 0 8px 20px rgba(22,119,185,.22); }
+.backgroundButton { cursor: pointer; border: 1px solid rgba(24,43,58,.12); color: #28465b; background: rgba(255,255,255,.48); backdrop-filter: blur(16px); padding: 10px 15px; border-radius: 12px; font-size: .83rem; transition: background .18s ease, transform .18s ease; }
+.backgroundButton:hover { background: rgba(255,255,255,.8); transform: translateY(-1px); }
+.backgroundButton input { display: none; }
+.homeIntro { align-items: end; padding-bottom: 42px; }
+.homeIntro h1 { margin: 0; max-width: 660px; color: #162b3a; font-size: clamp(2.4rem, 5vw, 4.3rem); letter-spacing: -.055em; line-height: .98; }
+.homeLead { max-width: 530px; margin: 18px 0 0; color: #607583; line-height: 1.7; font-size: 1rem; }
+.homePulse { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 10px 13px; border: 1px solid rgba(18,117,86,.15); border-radius: 12px; background: rgba(232,250,241,.62); color: #207357; font-size: .78rem; }
+.pulseDot, .homeDeviceTop i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #1aa26c; box-shadow: 0 0 0 4px rgba(26,162,108,.12); }
+.homeStats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 28px; }
+.homeStats > div, .homeDevices { border: 1px solid rgba(255,255,255,.58); background: rgba(255,255,255,.48); backdrop-filter: blur(22px) saturate(135%); -webkit-backdrop-filter: blur(22px) saturate(135%); box-shadow: 0 18px 50px rgba(48,71,88,.08), inset 0 1px rgba(255,255,255,.85); }
+.homeStats > div { display: grid; gap: 6px; padding: 20px 22px; border-radius: 16px; }
+.homeStats span, .homeStats small { color: #708390; font-size: .76rem; }
+.homeStats strong { color: #183247; font-size: 2rem; letter-spacing: -.04em; }
+.homeDevices { padding: 28px; border-radius: 22px; }
+.sectionHeading { align-items: end; margin-bottom: 22px; }
+.sectionHeading h2 { margin: 0; color: #183247; font-size: 1.45rem; letter-spacing: -.035em; }
+.sectionHeading > span { color: #78909f; font-size: .78rem; }
+.homeDeviceGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+.homeDeviceCard { display: grid; gap: 12px; min-width: 0; text-align: left; cursor: pointer; border: 1px solid rgba(25,57,76,.1); border-radius: 16px; padding: 18px; color: #183247; background: rgba(255,255,255,.6); transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+.homeDeviceCard:hover, .homeDeviceCard:focus-visible { transform: translateY(-3px); border-color: rgba(22,119,185,.36); box-shadow: 0 16px 30px rgba(37,85,113,.12); outline: none; }
+.homeDeviceTop, .homeMetricRow, .openDevice { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.deviceType { color: #668291; font-size: .72rem; }
+.onlineLabel, .offlineLabel { display: inline-flex; align-items: center; gap: 7px; font-size: .72rem; }
+.onlineLabel { color: #188258; }.offlineLabel { color: #a46e44; }.offlineLabel i { background: #c99657; box-shadow: none; }
+.homeDeviceCard h3 { margin: 4px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.15rem; letter-spacing: -.02em; }
+.homeDeviceCard p { margin: -8px 0 3px; color: #91a0aa; font-size: .72rem; overflow: hidden; text-overflow: ellipsis; }
+.homeMetricRow { border-top: 1px solid rgba(28,66,91,.09); padding-top: 13px; color: #82929d; font-size: .72rem; }
+.homeMetricRow b { color: #29485d; font-weight: 700; }
+.openDevice { justify-content: flex-start; color: #1677b9; font-size: .78rem; font-weight: 700; }.openDevice b { font-size: 1rem; }
+.homeShell .emptyState { padding: 48px; color: #758793; }
+
+/* Existing detail components inherit the same light workspace tokens. */
+.shell { grid-template-columns: 276px minmax(0, 1fr); gap: 16px; padding: 20px; background: transparent; }
+.sidebar, .mainPanel { border: 1px solid rgba(255,255,255,.62); background: rgba(246,250,252,.7); backdrop-filter: blur(24px) saturate(140%); -webkit-backdrop-filter: blur(24px) saturate(140%); box-shadow: 0 22px 60px rgba(35,58,74,.1), inset 0 1px rgba(255,255,255,.9); }
+.sidebar { border-radius: 20px; padding: 22px 14px; }.mainPanel { border-radius: 22px; padding: 30px; }
+.sidebarTitle { color: #193548; font-size: 1.1rem; letter-spacing: -.02em; }.deviceItem { background: rgba(255,255,255,.48); color: #244256; border: 1px solid rgba(25,57,76,.08); border-radius: 15px; }.deviceItem:hover { background: rgba(255,255,255,.82); }.deviceItemActive { background: #fff; border-color: rgba(22,119,185,.28); box-shadow: 0 10px 22px rgba(34,77,103,.08); }.deviceItemMeta, .deviceItemHint, .subtle, .meta, .windowHint { color: #78909e; }.deviceMetricPill { background: rgba(228,237,242,.56); border-color: rgba(25,57,76,.07); }.deviceMetricPill strong, .deviceMetricPill span { color: #31536a; }.inlineAction, .ghostButton { color: #34627e; border-color: rgba(30,83,116,.14); background: rgba(255,255,255,.52); }.hero h1 { color: #173348; font-size: clamp(1.9rem, 4vw, 2.8rem); letter-spacing: -.05em; }.eyebrow { color: #1677b9; font-size: .72rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }.tab { background: rgba(220,231,237,.66); color: #607b8a; border-color: transparent; }.tabActive, .primaryButton { background: #1677b9; color: white; }.summaryCapsule, .metricGroup, .chartCard, .trafficPanel, .hardwareBlock { background: rgba(255,255,255,.64); border: 1px solid rgba(25,57,76,.09); box-shadow: 0 12px 32px rgba(48,71,88,.06); }.metricSubBlock, .metricMiniCard, .hardwareItem { background: rgba(231,239,244,.58); }.chartHeader strong, .metricGroup strong, .summaryCapsule strong, .hardwareBlock strong { color: #24465d; }.loginShell { background: linear-gradient(135deg, #eff5f8, #dce8ef); }.loginCard { border: 1px solid rgba(255,255,255,.7); background: rgba(255,255,255,.7); color: #1d3b4e; backdrop-filter: blur(24px); box-shadow: 0 22px 60px rgba(35,58,74,.12); }.field input { color: #1b3b4f; background: rgba(237,244,247,.8); border-color: rgba(30,83,116,.15); }.errorText { color: #ad5c50; }
+
+@media (max-width: 760px) { .homeShell { padding: 14px; }.homeHeader { padding-bottom: 42px; }.homeIntro { display: grid; gap: 22px; }.homeIntro h1 { font-size: 2.65rem; }.homePulse { justify-self: start; }.homeStats { gap: 8px; }.homeStats > div { padding: 15px 13px; }.homeStats strong { font-size: 1.45rem; }.homeStats small { font-size: .68rem; }.homeDevices { padding: 18px 14px; }.shell { padding: 12px; }.mainPanel { padding: 20px 15px; } }
+@media (prefers-reduced-transparency: reduce) { .homeScrim, .homeStats > div, .homeDevices, .sidebar, .mainPanel, .loginCard { backdrop-filter: none; -webkit-backdrop-filter: none; background: #f6fafc; } }
+
 @media (max-width: 1100px) {
   .shell {
     grid-template-columns: 1fr;
