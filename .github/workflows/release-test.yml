@@ -78,6 +78,11 @@ jobs:
             -OutputDir release/windows-agent-setup `
             -Version (Get-Content VERSION -Raw).Trim() `
             -BuildPortableIfMissing
+          $version = (Get-Content VERSION -Raw).Trim()
+          $portableRoot = Join-Path (Get-Location) "release/windows-agent-portable/DeviceStateConsoleAgent"
+          $portableZip = Join-Path (Get-Location) "release/windows-agent-portable/DeviceStateConsole-Windows-GUI-Portable-v$version.zip"
+          if (Test-Path $portableZip) { Remove-Item -LiteralPath $portableZip -Force }
+          Compress-Archive -Path (Join-Path $portableRoot "*") -DestinationPath $portableZip -CompressionLevel Optimal
 
       - name: Build Windows and Linux CLI packages
         shell: powershell
