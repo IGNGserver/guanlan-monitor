@@ -23,6 +23,7 @@ OutputBaseFilename={#MyAppOutputBaseFilename}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
+DisableWelcomePage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
@@ -116,19 +117,32 @@ begin
   if ExistingInstallDetected then
   begin
     WizardForm.Caption := '更新 {#MyAppName}';
-    WizardForm.WelcomeLabel1.Caption := '更新 {#MyAppName}';
-    WizardForm.WelcomeLabel2.Caption :=
-      '检测到本机已安装 {#MyAppName}。继续后将保留现有配置并更新程序文件。';
-    if not WizardSilent() then
-    begin
-      MsgBox(
-        '检测到本机已安装 {#MyAppName}。' + #13#10#13#10 +
-        '本次将执行更新，保留现有配置、快捷方式和开机启动设置。',
-        mbInformation,
-        MB_OK
-      );
-    end;
   end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  Result := '';
+  { Close the WinUI parent and its backend tree before Inno replaces files. }
+  Exec(
+    ExpandConstant('{sys}\taskkill.exe'),
+    '/F /T /IM "DeviceStateConsoleAgent.WinUI.exe"',
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  );
+  Exec(
+    ExpandConstant('{sys}\taskkill.exe'),
+    '/F /T /IM "windows-agent-backend.exe"',
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  );
+  Sleep(500);
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;

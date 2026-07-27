@@ -451,7 +451,7 @@ public sealed class MainViewModel : ObservableObject
                     ? "采集器已经运行，本地配置也会立即生效；但你当前关闭了展示同步，所以网页和客户端暂时不会跟随更新展示类别。"
                 : _cloudPushPending
                     ? "采集器已经运行，本地配置也已生效。若要让网页和客户端更新展示类别，请记得再推送一次展示配置到中枢。"
-                    : "采集器已经运行。你现在可以继续调整采样频次、探测方案和实例记录范围；展示配置有变更时，再按需推送到中枢。";
+                    : "采集器已经运行。你现在可以继续调整采样频次、探测方案和实例范围；展示配置有变更时，再按需推送到中枢。";
     public string ModeGuideTitle =>
         _isPortableMode ? "当前是便携模式" : "当前是安装模式";
     public string ModeGuideText =>
@@ -837,6 +837,10 @@ public sealed class MainViewModel : ObservableObject
         }
 
         await RefreshStateAsync();
+        if (_backendReachable)
+        {
+            await DetectAsync();
+        }
         if (AutoStartCollector && !_backendRunning)
         {
             await StartBackendAsync();
@@ -2484,7 +2488,7 @@ public sealed class MainViewModel : ObservableObject
             return "本地配置文件和同步状态文件都已就绪，当前没有待推送的展示配置。";
         }
 
-        return "本地配置和诊断日志已经就绪，可以继续调整采样频次、探测方案和实例记录范围。";
+        return "本地配置和诊断日志已经就绪，可以继续调整采样频次、探测方案和实例范围。";
     }
 
     private string BuildLocalArtifactDetailText()

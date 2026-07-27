@@ -279,7 +279,6 @@ public sealed partial class MainWindow : Window
 
         SetColumns(MonitorStatusGrid, isCompact, 2);
         SetColumns(MonitorRemoteGrid, isCompact, 3);
-        SetColumns(LocalSummaryGrid, isCompact, 2);
         SetColumns(LocalMetricCardsGrid, isCompact, 2);
         SetColumns(LocalHealthGrid, isCompact, 2);
         SetColumns(ServerButtonsGrid, isCompact, 2);
