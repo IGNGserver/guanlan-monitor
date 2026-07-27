@@ -30,8 +30,7 @@ try {
     .split(/\r?\n/)
     .map((tag) => tag.replace(/^v/, "").trim())
     .filter((version) => /^\d+\.\d+\.\d+$/.test(version))
-    .map((version) => version.split(".").map(Number))
-    .filter(([major, minor, patch]) => major < rootParts[0] || (major === rootParts[0] && (minor < rootParts[1] || (minor === rootParts[1] && patch < rootParts[2]))));
+    .map((version) => version.split(".").map(Number));
 
   if (previousVersions.length > 0) {
     const [major, minor, patch] = previousVersions.sort((a, b) => {
@@ -40,8 +39,16 @@ try {
       }
       return 0;
     })[0];
-    if (rootParts[0] !== major || rootParts[1] !== minor || rootParts[2] <= patch) {
-      throw new Error(`VERSION may only increment the patch number within ${major}.${minor}.x; got ${rootVersion}`);
+    const latestParts = [major, minor, patch];
+    let comparison = 0;
+    for (let index = 0; index < 3; index += 1) {
+      if (rootParts[index] !== latestParts[index]) {
+        comparison = rootParts[index] > latestParts[index] ? 1 : -1;
+        break;
+      }
+    }
+    if (comparison <= 0) {
+      throw new Error(`VERSION must be greater than the latest tag v${major}.${minor}.${patch}; got ${rootVersion}`);
     }
   }
 } catch (error) {
