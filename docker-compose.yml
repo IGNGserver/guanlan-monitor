@@ -35,7 +35,7 @@ services:
       retries: 15
 
   server:
-    image: ${DSC_SERVER_IMAGE:-docker.io/igngserver/device-state-console-server}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
+    image: ${DSC_SERVER_IMAGE:-ghcr.io/igngserver/device-state-console-server}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
     pull_policy: always
     restart: unless-stopped
     env_file:
@@ -53,7 +53,7 @@ services:
         condition: service_healthy
 
   web:
-    image: ${DSC_WEB_IMAGE:-docker.io/igngserver/device-state-console-web}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
+    image: ${DSC_WEB_IMAGE:-ghcr.io/igngserver/device-state-console-web}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
     pull_policy: always
     restart: unless-stopped
     env_file:

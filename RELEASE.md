@@ -60,7 +60,7 @@ as part of a normal development push.
 
 ## Docker Deployment
 
-Production Compose pulls tested images from Docker Hub. It never clones the
+Production Compose pulls tested images from GitHub Container Registry. It never clones the
 repository and it does not build from the current checkout:
 
 ```bash
@@ -76,8 +76,9 @@ DSC_VERSION=latest docker compose up -d
 ```
 
 The default image repositories are
-`docker.io/igngserver/device-state-console-server` and
-`docker.io/igngserver/device-state-console-web`. Override them with
+`ghcr.io/igngserver/device-state-console-server` and
+`ghcr.io/igngserver/device-state-console-web`. Private packages require a
+GitHub token with `read:packages` on the deployment host. Override them with
 `DSC_SERVER_IMAGE` and `DSC_WEB_IMAGE` when using a private or mirrored
 repository. `docker-compose.cn.yml` only changes infrastructure image mirrors.
 Do not run a production deployment from an unreviewed `main` checkout and do

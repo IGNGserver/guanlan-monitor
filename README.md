@@ -33,7 +33,7 @@ Android 安装包使用 `IGNGserver` 发布证书签名。Android 在提示未�
 
 ## 部署中枢
 
-Docker Compose 默认只拉取 Docker Hub 中已发布的应用镜像，不会从当前仓库源码构建：
+Docker Compose 默认只拉取 GitHub Container Registry 中已发布的应用镜像，不会从当前仓库源码构建：
 
 ```bash
 cp .env.example .env
