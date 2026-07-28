@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import clsx from "clsx";
+import React, { useEffect, useMemo, useState } from "react";
 import type { TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import { getTrafficCalendar } from "../lib/api";
 import styles from "./monitor.module.css";
@@ -45,123 +44,182 @@ export function TrafficCalendar({ deviceId }: { deviceId: string }) {
   }, [data]);
 
   return (
-    <section className={styles.trafficPanel}>
-      <div className={styles.hero}>
-        <div>
-          <h1>流量记录</h1>
-          <p className={styles.meta}>按日历查看范围流量，点击单元格查看所选范围明细。</p>
-        </div>
-      </div>
+    <div className={styles.doubleBezelShell} style={{ gridColumn: "1 / -1" }}>
+      <div className={`${styles.doubleBezelInner}`} style={{ padding: "28px" }}>
+        {/* Header & Controls */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px", marginBottom: "20px" }}>
+          <div>
+            <h3 style={{ fontSize: "20px", fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>
+              🌐 网络流量日历
+            </h3>
+            <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: "4px 0 0" }}>
+              选定时间范围内的全网网络数据交互与流量消耗分析
+            </p>
+          </div>
 
-      <div className={styles.toolbarStack}>
-        <div className={styles.toolbar} role="tablist" aria-label="流量视图">
-          {MODES.map((item) => (
+          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+            {/* View Mode Switcher */}
+            <div className={styles.windowBar}>
+              {MODES.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`${styles.windowBtn} ${mode === item.key ? styles.windowBtnActive : ""}`}
+                  onClick={() => {
+                    setMode(item.key);
+                    setSelectedStart(undefined);
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Page Shift Buttons */}
             <button
-              key={item.key}
-              className={`${styles.tab} ${mode === item.key ? styles.tabActive : ""}`}
-              onClick={() => {
-                setMode(item.key);
-                setSelectedStart(undefined);
-              }}
+              type="button"
+              className={styles.footerActionBtn}
+              onClick={() => shiftAnchor(mode, anchor, -1, setAnchor)}
             >
-              {item.label}
+              ← 上一页
             </button>
-          ))}
-        </div>
-        <div className={styles.toolbar}>
-          <button className={styles.ghostButton} onClick={() => shiftAnchor(mode, anchor, -1, setAnchor)}>
-            上一页
-          </button>
-          <button className={styles.ghostButton} onClick={() => shiftAnchor(mode, anchor, 1, setAnchor)}>
-            下一页
-          </button>
-        </div>
-      </div>
-
-      <div className={styles.trafficCalendarHeader}>
-        <strong>{data?.title ?? "--"}</strong>
-        <span>{data ? `${formatDate(data.rangeStart)} - ${formatDateInclusive(data.rangeEnd)}` : "--"}</span>
-      </div>
-
-      <div className={styles.trafficSelectedSummary}>
-        <span>{data?.cells.find((cell) => cell.isSelected)?.label ?? "所选日期"}</span>
-        <strong>{formatBytes((data?.totalRxBytes ?? 0) + (data?.totalTxBytes ?? 0))}</strong>
-        <small>接收 {formatBytes(data?.totalRxBytes ?? 0)} · 发送 {formatBytes(data?.totalTxBytes ?? 0)}</small>
-      </div>
-
-      {mode === "day" ? (
-        <div className={styles.trafficWeekdays}>
-          {WEEKDAY_LABELS.map((label) => (
-            <span key={label}>{label}</span>
-          ))}
-        </div>
-      ) : null}
-
-      <div className={styles.trafficCalendarGrid}>
-        {loading && !data ? (
-          <div className={styles.loadingState}>
-            <span className={styles.loadingSpinner} />
-            <strong>加载中</strong>
-          </div>
-        ) : null}
-        {(data?.cells ?? []).map((cell) => {
-          const ratio = (cell.totalRxBytes + cell.totalTxBytes) / maxCellValue;
-          return (
             <button
-              key={cell.key}
-              className={clsx(
-                styles.trafficCalendarCell,
-                cell.isSelected && styles.trafficCalendarCellActive,
-                !cell.isInPrimaryScope && styles.trafficCalendarCellMuted
-              )}
-              onClick={() => setSelectedStart(cell.rangeStart)}
-              style={{
-                background: `linear-gradient(180deg, rgba(219,91,19,${0.15 + ratio * 0.5}), rgba(40,40,40,0.95))`
-              }}
+              type="button"
+              className={styles.footerActionBtn}
+              onClick={() => shiftAnchor(mode, anchor, 1, setAnchor)}
             >
-              <span>{formatDay(cell.rangeStart)}{cell.isCurrentPeriod ? " · 今" : ""}</span>
+              下一页 →
             </button>
-          );
-        })}
-      </div>
-
-      <div className={styles.trafficStats}>
-        <div>
-          <span>范围接收</span>
-          <strong>{formatBytes(data?.totalRxBytes ?? 0)}</strong>
-        </div>
-        <div>
-          <span>范围发送</span>
-          <strong>{formatBytes(data?.totalTxBytes ?? 0)}</strong>
-        </div>
-        <div>
-          <span>范围总流量</span>
-          <strong>{formatBytes((data?.totalRxBytes ?? 0) + (data?.totalTxBytes ?? 0))}</strong>
-        </div>
-        <div>
-          <span>记录条数</span>
-          <strong>{data?.records.length ?? 0}</strong>
-        </div>
-      </div>
-
-      <div className={styles.trafficRecords}>
-        {loading && !data ? (
-          <div className={styles.loadingState}>
-            <span className={styles.loadingSpinner} />
-            <strong>加载中</strong>
           </div>
-        ) : null}
-        {(data?.records ?? []).slice(-36).reverse().map((record, index) => (
-          <div key={`${record.timestamp}-${index}`} className={styles.trafficRecord}>
-            <span>{new Date(record.timestamp).toLocaleString("zh-CN")}</span>
-            <strong>{formatBytes(record.totalBytes)}</strong>
-            <small>
-              入 {formatBytes(record.rxBytes)} / 出 {formatBytes(record.txBytes)}
-            </small>
+        </div>
+
+        {/* Selected Range Title Banner */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderRadius: "14px", background: "rgba(255, 255, 255, 0.03)", border: "1px solid var(--border-light)", marginBottom: "20px" }}>
+          <div>
+            <span style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-primary)" }}>
+              {data?.title ?? "加载中..."}
+            </span>
+            <span style={{ fontSize: "12px", color: "var(--text-muted)", marginLeft: "12px", fontFamily: "var(--font-mono)" }}>
+              {data ? `${formatDate(data.rangeStart)} ~ ${formatDateInclusive(data.rangeEnd)}` : "--"}
+            </span>
           </div>
-        ))}
+
+          <div style={{ textAlign: "right" }}>
+            <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>选中范围累计: </span>
+            <span style={{ fontSize: "18px", fontWeight: 800, color: "var(--accent-cyan)", fontFamily: "var(--font-mono)", marginLeft: "6px" }}>
+              {formatBytes((data?.totalRxBytes ?? 0) + (data?.totalTxBytes ?? 0))}
+            </span>
+            <span style={{ fontSize: "11px", color: "var(--text-secondary)", marginLeft: "10px" }}>
+              (接收 {formatBytes(data?.totalRxBytes ?? 0)} · 发送 {formatBytes(data?.totalTxBytes ?? 0)})
+            </span>
+          </div>
+        </div>
+
+        {/* Calendar Weekday Row */}
+        {mode === "day" && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "8px", textAlign: "center", marginBottom: "8px", fontSize: "12px", fontWeight: 600, color: "var(--text-muted)" }}>
+            {WEEKDAY_LABELS.map((label) => (
+              <span key={label}>{label}</span>
+            ))}
+          </div>
+        )}
+
+        {/* Calendar Heatmap Grid */}
+        <div style={{ display: "grid", gridTemplateColumns: mode === "day" ? "repeat(7, 1fr)" : "repeat(auto-fill, minmax(80px, 1fr))", gap: "8px", marginBottom: "24px" }}>
+          {(data?.cells ?? []).map((cell) => {
+            const ratio = (cell.totalRxBytes + cell.totalTxBytes) / maxCellValue;
+            const isSelected = cell.isSelected;
+
+            return (
+              <button
+                key={cell.key}
+                type="button"
+                onClick={() => setSelectedStart(cell.rangeStart)}
+                style={{
+                  padding: "12px 8px",
+                  borderRadius: "10px",
+                  border: isSelected ? "1px solid var(--accent-cyan)" : "1px solid var(--border-subtle)",
+                  background: isSelected
+                    ? "rgba(6, 182, 212, 0.25)"
+                    : `rgba(6, 182, 212, ${0.04 + ratio * 0.4})`,
+                  color: isSelected ? "#ffffff" : "var(--text-primary)",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                  fontWeight: isSelected ? 700 : 500,
+                  textAlign: "center",
+                  transition: "all 0.2s ease"
+                }}
+              >
+                <div>{formatDay(cell.rangeStart)}{cell.isCurrentPeriod ? " (今)" : ""}</div>
+                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "2px", fontFamily: "var(--font-mono)" }}>
+                  {formatBytes(cell.totalRxBytes + cell.totalTxBytes)}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Traffic Stats Bar */}
+        <div className={styles.fleetStatsGrid} style={{ marginBottom: "24px" }}>
+          <div className={styles.statCardInner} style={{ background: "rgba(0,0,0,0.3)", borderRadius: "12px" }}>
+            <span className={styles.statLabel}>总接收流量 (RX)</span>
+            <span className={styles.statValue} style={{ color: "var(--accent-cyan)" }}>
+              {formatBytes(data?.totalRxBytes ?? 0)}
+            </span>
+          </div>
+          <div className={styles.statCardInner} style={{ background: "rgba(0,0,0,0.3)", borderRadius: "12px" }}>
+            <span className={styles.statLabel}>总发送流量 (TX)</span>
+            <span className={styles.statValue} style={{ color: "var(--accent-violet)" }}>
+              {formatBytes(data?.totalTxBytes ?? 0)}
+            </span>
+          </div>
+          <div className={styles.statCardInner} style={{ background: "rgba(0,0,0,0.3)", borderRadius: "12px" }}>
+            <span className={styles.statLabel}>全范围交互总量</span>
+            <span className={styles.statValue} style={{ color: "var(--accent-emerald)" }}>
+              {formatBytes((data?.totalRxBytes ?? 0) + (data?.totalTxBytes ?? 0))}
+            </span>
+          </div>
+          <div className={styles.statCardInner} style={{ background: "rgba(0,0,0,0.3)", borderRadius: "12px" }}>
+            <span className={styles.statLabel}>采样记录数</span>
+            <span className={styles.statValue}>{data?.records.length ?? 0}</span>
+          </div>
+        </div>
+
+        {/* Traffic Records List */}
+        <div>
+          <h4 style={{ fontSize: "14px", fontWeight: 700, margin: "0 0 12px", color: "var(--text-secondary)" }}>
+            近段采样明细
+          </h4>
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "280px", overflowY: "auto", paddingRight: "4px" }}>
+            {(data?.records ?? []).slice(-36).reverse().map((record, index) => (
+              <div
+                key={`${record.timestamp}-${index}`}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "8px 14px",
+                  borderRadius: "8px",
+                  background: "rgba(255, 255, 255, 0.02)",
+                  border: "1px solid var(--border-subtle)",
+                  fontSize: "12px"
+                }}
+              >
+                <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                  {new Date(record.timestamp).toLocaleString("zh-CN")}
+                </span>
+                <span style={{ fontWeight: 700, fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>
+                  {formatBytes(record.totalBytes)}
+                </span>
+                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                  入 {formatBytes(record.rxBytes)} / 出 {formatBytes(record.txBytes)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
 
