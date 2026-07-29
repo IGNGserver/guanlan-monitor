@@ -138,7 +138,7 @@ export function DeviceSidebar({
 
       {/* Sidebar Footer */}
       <div className={styles.sidebarFooter}>
-        <span className={styles.versionTag}>v0.2.4</span>
+        <span className={styles.versionTag}>v0.2.5</span>
         <button
           type="button"
           className={styles.footerActionBtn}

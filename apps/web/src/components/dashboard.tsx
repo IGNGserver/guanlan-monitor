@@ -48,6 +48,7 @@ export function Dashboard({
     lastSeenAt: string | null;
     series: MetricSeries;
     enabledMetrics: DeviceMetricKey[];
+    availableMetrics?: { key: DeviceMetricKey; available: boolean }[];
     device: {
       hostname: string;
       os: string;
@@ -160,6 +161,63 @@ export function Dashboard({
 
   const series = metrics?.series;
 
+  // Dynamically compute available metric keys and categories based on Agent's actual reported metrics
+  const availableKeys = new Set(
+    metrics?.availableMetrics?.filter((m) => m.available).map((m) => m.key) ?? []
+  );
+
+  const hasCpu =
+    availableKeys.has("cpuUsage") ||
+    availableKeys.has("cpuFrequency") ||
+    availableKeys.has("cpuTemperature") ||
+    Boolean(metrics?.latest?.cpuPackages?.length);
+
+  const hasGpu =
+    Boolean(metrics?.latest?.gpus?.length) &&
+    (availableKeys.has("gpuUsage") ||
+      availableKeys.has("gpuEncode") ||
+      availableKeys.has("gpuDecode") ||
+      availableKeys.has("gpuFrequency") ||
+      availableKeys.has("gpuMemory") ||
+      availableKeys.has("gpuTemperature"));
+
+  const hasMemory =
+    availableKeys.has("memoryUsage") ||
+    availableKeys.has("swapUsage") ||
+    (metrics?.latest?.memoryTotalBytes ?? 0) > 0;
+
+  const hasDisk =
+    availableKeys.has("diskUsage") ||
+    availableKeys.has("diskRead") ||
+    availableKeys.has("diskWrite") ||
+    Boolean(metrics?.latest?.disks?.length) ||
+    (metrics?.latest?.diskTotalBytes ?? 0) > 0;
+
+  const hasNetwork =
+    availableKeys.has("networkRxRate") ||
+    availableKeys.has("networkTxRate") ||
+    availableKeys.has("networkTraffic") ||
+    Boolean(metrics?.latest?.networkInterfaces?.length);
+
+  const hasFan = Boolean(metrics?.latest?.fans && metrics.latest.fans.length > 0);
+
+  const categories = [
+    { key: "all", label: "全部指标" },
+    ...(hasCpu ? [{ key: "cpu", label: "CPU" }] : []),
+    ...(hasGpu ? [{ key: "gpu", label: "GPU 显卡" }] : []),
+    ...(hasMemory ? [{ key: "memory", label: "系统内存" }] : []),
+    ...(hasDisk ? [{ key: "disk", label: "磁盘存储" }] : []),
+    ...(hasNetwork ? [{ key: "network", label: "网络吞吐" }] : []),
+    ...(hasFan ? [{ key: "fan", label: "风扇散热" }] : []),
+    ...(hasNetwork ? [{ key: "calendar", label: "流量日历" }] : [])
+  ];
+
+  useEffect(() => {
+    if (metrics && !categories.some((c) => c.key === activeCategory)) {
+      setActiveCategory("all");
+    }
+  }, [metrics, activeCategory, categories]);
+
   return (
     <div>
       {/* Device Hero Banner Bar */}
@@ -203,7 +261,7 @@ export function Dashboard({
 
       {/* Category Filter Bar */}
       <div className={styles.filterChipBar}>
-        {CATEGORIES.map((cat) => (
+        {categories.map((cat) => (
           <button
             key={cat.key}
             type="button"
@@ -222,24 +280,28 @@ export function Dashboard({
       ) : (
         <div className={styles.chartGrid}>
           {/* CPU Metric Charts */}
-          {(activeCategory === "all" || activeCategory === "cpu") && series && (
+          {(activeCategory === "all" || activeCategory === "cpu") && hasCpu && series && (
             <>
-              <ChartCard
-                title="CPU 总体占用率"
-                value={`${(series.cpuUsagePercent.at(-1)?.value ?? 0).toFixed(0)}%`}
-                color="var(--accent-cyan)"
-                points={series.cpuUsagePercent}
-                detail="核心综合算力使用"
-              />
-              <ChartCard
-                title="CPU 实时主频"
-                value={`${((series.cpuFrequencyMHz.at(-1)?.value ?? 0) / 1000).toFixed(2)}`}
-                unit="GHz"
-                color="var(--accent-blue)"
-                points={series.cpuFrequencyMHz}
-                detail="硬件时钟频率"
-              />
-              {series.cpuTemperatureC.length > 0 && (
+              {availableKeys.has("cpuUsage") && (
+                <ChartCard
+                  title="CPU 总体占用率"
+                  value={`${(series.cpuUsagePercent.at(-1)?.value ?? 0).toFixed(0)}%`}
+                  color="var(--accent-cyan)"
+                  points={series.cpuUsagePercent}
+                  detail="核心综合算力使用"
+                />
+              )}
+              {availableKeys.has("cpuFrequency") && (
+                <ChartCard
+                  title="CPU 实时主频"
+                  value={`${((series.cpuFrequencyMHz.at(-1)?.value ?? 0) / 1000).toFixed(2)}`}
+                  unit="GHz"
+                  color="var(--accent-blue)"
+                  points={series.cpuFrequencyMHz}
+                  detail="硬件时钟频率"
+                />
+              )}
+              {availableKeys.has("cpuTemperature") && series.cpuTemperatureC.length > 0 && (
                 <ChartCard
                   title="CPU 封装温度"
                   value={`${(series.cpuTemperatureC.at(-1)?.value ?? 0).toFixed(0)}°C`}
@@ -252,23 +314,27 @@ export function Dashboard({
           )}
 
           {/* GPU Metric Charts */}
-          {(activeCategory === "all" || activeCategory === "gpu") && series && series.gpuUsagePercent.length > 0 && (
+          {(activeCategory === "all" || activeCategory === "gpu") && hasGpu && series && (
             <>
-              <ChartCard
-                title="GPU 核心占用"
-                value={`${(series.gpuUsagePercent.at(-1)?.value ?? 0).toFixed(0)}%`}
-                color="var(--accent-violet)"
-                points={series.gpuUsagePercent}
-                detail="图形加速核心"
-              />
-              <ChartCard
-                title="GPU 显存占用率"
-                value={`${(series.gpuMemoryUsagePercent.at(-1)?.value ?? 0).toFixed(0)}%`}
-                color="var(--accent-cyan)"
-                points={series.gpuMemoryUsagePercent}
-                detail="VRAM 渲染存取"
-              />
-              {series.gpuTemperatureC.length > 0 && (
+              {availableKeys.has("gpuUsage") && (
+                <ChartCard
+                  title="GPU 核心占用"
+                  value={`${(series.gpuUsagePercent.at(-1)?.value ?? 0).toFixed(0)}%`}
+                  color="var(--accent-violet)"
+                  points={series.gpuUsagePercent}
+                  detail="图形加速核心"
+                />
+              )}
+              {availableKeys.has("gpuMemory") && (
+                <ChartCard
+                  title="GPU 显存占用率"
+                  value={`${(series.gpuMemoryUsagePercent.at(-1)?.value ?? 0).toFixed(0)}%`}
+                  color="var(--accent-cyan)"
+                  points={series.gpuMemoryUsagePercent}
+                  detail="VRAM 渲染存取"
+                />
+              )}
+              {availableKeys.has("gpuTemperature") && series.gpuTemperatureC.length > 0 && (
                 <ChartCard
                   title="GPU 核心温度"
                   value={`${(series.gpuTemperatureC.at(-1)?.value ?? 0).toFixed(0)}°C`}
@@ -280,18 +346,20 @@ export function Dashboard({
           )}
 
           {/* Memory Metric Charts */}
-          {(activeCategory === "all" || activeCategory === "memory") && series && (
+          {(activeCategory === "all" || activeCategory === "memory") && hasMemory && series && (
             <>
-              <ChartCard
-                title="物理内存占用"
-                value={`${(series.memoryUsagePercent.at(-1)?.value ?? 0).toFixed(0)}%`}
-                color="var(--accent-emerald)"
-                points={series.memoryUsagePercent}
-                detail={`已用 ${formatBytes(metrics?.latest.memoryUsedBytes ?? 0)} / ${formatBytes(
-                  metrics?.latest.memoryTotalBytes ?? 0
-                )}`}
-              />
-              {series.swapUsagePercent.length > 0 && (
+              {availableKeys.has("memoryUsage") && (
+                <ChartCard
+                  title="物理内存占用"
+                  value={`${(series.memoryUsagePercent.at(-1)?.value ?? 0).toFixed(0)}%`}
+                  color="var(--accent-emerald)"
+                  points={series.memoryUsagePercent}
+                  detail={`已用 ${formatBytes(metrics?.latest.memoryUsedBytes ?? 0)} / ${formatBytes(
+                    metrics?.latest.memoryTotalBytes ?? 0
+                  )}`}
+                />
+              )}
+              {availableKeys.has("swapUsage") && (metrics?.latest.swapTotalBytes ?? 0) > 0 && (
                 <ChartCard
                   title="虚拟内存 (Swap) 占用"
                   value={`${(series.swapUsagePercent.at(-1)?.value ?? 0).toFixed(0)}%`}
@@ -306,60 +374,70 @@ export function Dashboard({
           )}
 
           {/* Disk Metric Charts */}
-          {(activeCategory === "all" || activeCategory === "disk") && series && (
+          {(activeCategory === "all" || activeCategory === "disk") && hasDisk && series && (
             <>
-              <ChartCard
-                title="磁盘整体存储占用"
-                value={`${(series.diskUsagePercent.at(-1)?.value ?? 0).toFixed(0)}%`}
-                color="var(--accent-amber)"
-                points={series.diskUsagePercent}
-                detail={`已用 ${formatBytes(metrics?.latest.diskUsedBytes ?? 0)} / ${formatBytes(
-                  metrics?.latest.diskTotalBytes ?? 0
-                )}`}
-              />
-              <ChartCard
-                title="磁盘读取速率"
-                value={formatRate(series.diskReadBytesPerSec.at(-1)?.value ?? 0)}
-                color="var(--accent-cyan)"
-                points={series.diskReadBytesPerSec}
-                detail="存储 IO 读取"
-              />
-              <ChartCard
-                title="磁盘写入速率"
-                value={formatRate(series.diskWriteBytesPerSec.at(-1)?.value ?? 0)}
-                color="var(--accent-violet)"
-                points={series.diskWriteBytesPerSec}
-                detail="存储 IO 写入"
-              />
+              {availableKeys.has("diskUsage") && (
+                <ChartCard
+                  title="磁盘整体存储占用"
+                  value={`${(series.diskUsagePercent.at(-1)?.value ?? 0).toFixed(0)}%`}
+                  color="var(--accent-amber)"
+                  points={series.diskUsagePercent}
+                  detail={`已用 ${formatBytes(metrics?.latest.diskUsedBytes ?? 0)} / ${formatBytes(
+                    metrics?.latest.diskTotalBytes ?? 0
+                  )}`}
+                />
+              )}
+              {availableKeys.has("diskRead") && (
+                <ChartCard
+                  title="磁盘读取速率"
+                  value={formatRate(series.diskReadBytesPerSec.at(-1)?.value ?? 0)}
+                  color="var(--accent-cyan)"
+                  points={series.diskReadBytesPerSec}
+                  detail="存储 IO 读取"
+                />
+              )}
+              {availableKeys.has("diskWrite") && (
+                <ChartCard
+                  title="磁盘写入速率"
+                  value={formatRate(series.diskWriteBytesPerSec.at(-1)?.value ?? 0)}
+                  color="var(--accent-violet)"
+                  points={series.diskWriteBytesPerSec}
+                  detail="存储 IO 写入"
+                />
+              )}
             </>
           )}
 
           {/* Network Metric Charts */}
-          {(activeCategory === "all" || activeCategory === "network") && series && (
+          {(activeCategory === "all" || activeCategory === "network") && hasNetwork && series && (
             <>
-              <ChartCard
-                title="网络接收速率 (Rx)"
-                value={formatRate(series.networkRxBytesPerSec.at(-1)?.value ?? 0)}
-                color="var(--accent-cyan)"
-                points={series.networkRxBytesPerSec}
-                detail="下行实时流量"
-              />
-              <ChartCard
-                title="网络发送速率 (Tx)"
-                value={formatRate(series.networkTxBytesPerSec.at(-1)?.value ?? 0)}
-                color="var(--accent-emerald)"
-                points={series.networkTxBytesPerSec}
-                detail="上行实时流量"
-              />
+              {availableKeys.has("networkRxRate") && (
+                <ChartCard
+                  title="网络接收速率 (Rx)"
+                  value={formatRate(series.networkRxBytesPerSec.at(-1)?.value ?? 0)}
+                  color="var(--accent-cyan)"
+                  points={series.networkRxBytesPerSec}
+                  detail="下行实时流量"
+                />
+              )}
+              {availableKeys.has("networkTxRate") && (
+                <ChartCard
+                  title="网络发送速率 (Tx)"
+                  value={formatRate(series.networkTxBytesPerSec.at(-1)?.value ?? 0)}
+                  color="var(--accent-emerald)"
+                  points={series.networkTxBytesPerSec}
+                  detail="上行实时流量"
+                />
+              )}
             </>
           )}
 
           {/* Fan Speed Cards */}
-          {(activeCategory === "all" || activeCategory === "fan") && metrics?.latest.fans && metrics.latest.fans.length > 0 && (
+          {(activeCategory === "all" || activeCategory === "fan") && hasFan && metrics?.latest.fans && (
             <div className={styles.doubleBezelShell} style={{ gridColumn: "1 / -1" }}>
               <div className={`${styles.doubleBezelInner}`} style={{ padding: "24px" }}>
                 <h3 className={styles.chartTitle} style={{ marginBottom: "16px" }}>
-                  🌀 散热风扇转速
+                  散热风扇转速
                 </h3>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "16px" }}>
                   {metrics.latest.fans.map((fan) => (
@@ -414,7 +492,7 @@ export function Dashboard({
             <div className={styles.doubleBezelShell} style={{ gridColumn: "1 / -1" }}>
               <div className={`${styles.doubleBezelInner}`} style={{ padding: "24px" }}>
                 <h3 className={styles.chartTitle} style={{ marginBottom: "16px" }}>
-                  🛠 传感器后端与驱动健康探针
+                  传感器后端与驱动健康探针
                 </h3>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "12px" }}>
                   {metrics.latest.sensorBackends.map((backend) => (
