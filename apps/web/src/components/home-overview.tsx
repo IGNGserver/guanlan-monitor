@@ -31,18 +31,11 @@ export function HomeOverview({ devices, onOpenDevice }: HomeOverviewProps) {
 
   const onlineCount = devices.filter((d) => d.status === "online").length;
   const onlineRate = devices.length ? Math.round((onlineCount / devices.length) * 100) : 0;
+  const onlineDevices = devices.filter((device) => device.status === "online");
 
-  const avgCpu = devices.length
-    ? Math.round(devices.reduce((sum, d) => sum + (d.cpuUsagePercent ?? 0), 0) / devices.length)
-    : 0;
-
-  const avgMemory = devices.length
-    ? Math.round(devices.reduce((sum, d) => sum + (d.memoryUsagePercent ?? 0), 0) / devices.length)
-    : 0;
-
-  const avgDisk = devices.length
-    ? Math.round(devices.reduce((sum, d) => sum + (d.diskUsagePercent ?? 0), 0) / devices.length)
-    : 0;
+  const avgCpu = averageMetric(onlineDevices.map((device) => device.cpuUsagePercent));
+  const avgMemory = averageMetric(onlineDevices.map((device) => device.memoryUsagePercent));
+  const avgDisk = averageMetric(onlineDevices.map((device) => device.diskUsagePercent));
 
   return (
     <div
@@ -267,4 +260,10 @@ export function HomeOverview({ devices, onOpenDevice }: HomeOverviewProps) {
 
 function formatPercent(value: number | null) {
   return value == null ? "--" : `${Math.round(value)}%`;
+}
+
+function averageMetric(values: Array<number | null>) {
+  const validValues = values.filter((value): value is number => value != null && Number.isFinite(value));
+  if (validValues.length === 0) return 0;
+  return Math.round(validValues.reduce((sum, value) => sum + value, 0) / validValues.length);
 }
