@@ -340,6 +340,7 @@ public sealed class MainViewModel : ObservableObject
             _selectedInstanceMetricItem = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(HasSelectedInstanceMetricEditor));
+            OnPropertyChanged(nameof(SelectedInstanceMetricEditorVisibility));
             OnPropertyChanged(nameof(SelectedInstanceMetricEditorTitle));
             OnPropertyChanged(nameof(SelectedInstanceMetricEditorSubtitle));
             OnPropertyChanged(nameof(SelectedInstanceMetricEditorSummary));
@@ -901,6 +902,7 @@ public sealed class MainViewModel : ObservableObject
         SelectedInstanceMetricItem = null;
         SelectedInstanceMetricToggles.Clear();
         OnPropertyChanged(nameof(HasSelectedInstanceMetricEditor));
+        OnPropertyChanged(nameof(SelectedInstanceMetricEditorVisibility));
         OnPropertyChanged(nameof(SelectedInstanceMetricEditorSummary));
     }
 
@@ -2794,8 +2796,20 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
-        SelectedInstanceMetricItem = selected;
-        RebuildSelectedInstanceMetricEditor();
+        if (!ReferenceEquals(SelectedInstanceMetricItem, selected))
+        {
+            SelectedInstanceMetricItem = selected;
+            RebuildSelectedInstanceMetricEditor();
+        }
+        else
+        {
+            SyncMetricItems(
+                SelectedInstanceMetricToggles,
+                ResolveEditableMetricsForTarget(selected.Target)
+                    .Where(metric => IsMetricEnabledForInstance(selected.Id, selected.Target, metric))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase));
+            OnPropertyChanged(nameof(SelectedInstanceMetricEditorSummary));
+        }
     }
 
     private void RebuildSelectedInstanceMetricEditor()

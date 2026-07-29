@@ -21,6 +21,8 @@ public sealed partial class MainWindow : Window
     private bool _initialized;
     private bool _isCompactLayout;
     private bool _hasAppliedResponsiveLayout;
+    private double _localScrollOffset;
+    private bool _localScrollRestorePending;
     private Expander? _trafficExpander;
 
     public MainWindow(MainViewModel viewModel)
@@ -36,6 +38,10 @@ public sealed partial class MainWindow : Window
         SubscribeTrend(_viewModel.ViewerNetworkTrendPoints);
         SubscribeTrend(_viewModel.ViewerFanTrendPoints);
         SubscribeTrend(_viewModel.ViewerTrafficTrendPoints);
+        _viewModel.CpuInstances.CollectionChanged += (_, _) => QueueLocalScrollRestore();
+        _viewModel.DiskInstances.CollectionChanged += (_, _) => QueueLocalScrollRestore();
+        _viewModel.NetworkInstances.CollectionChanged += (_, _) => QueueLocalScrollRestore();
+        _viewModel.GpuInstances.CollectionChanged += (_, _) => QueueLocalScrollRestore();
         _viewModel.ViewerTrafficDays.CollectionChanged += (_, _) => DispatcherQueue.TryEnqueue(RenderTrafficSection);
         AppNavigation.Loaded += (_, _) =>
         {
@@ -214,6 +220,35 @@ public sealed partial class MainWindow : Window
         {
             DrawTrend(canvas);
         }
+    }
+
+    private void LocalScrollViewer_ViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
+    {
+        if (LocalScrollViewer.VerticalOffset > 0)
+        {
+            _localScrollOffset = LocalScrollViewer.VerticalOffset;
+        }
+    }
+
+    private void QueueLocalScrollRestore()
+    {
+        if (_localScrollOffset <= 0 || _localScrollRestorePending)
+        {
+            return;
+        }
+
+        _localScrollRestorePending = true;
+        DispatcherQueue.TryEnqueue(() => DispatcherQueue.TryEnqueue(() =>
+        {
+            _localScrollRestorePending = false;
+            if (LocalScrollViewer.Visibility != Visibility.Visible || LocalScrollViewer.ScrollableHeight <= 0)
+            {
+                return;
+            }
+
+            var offset = Math.Min(_localScrollOffset, LocalScrollViewer.ScrollableHeight);
+            LocalScrollViewer.ChangeView(null, offset, null, true);
+        }));
     }
 
     private void RedrawAllTrends()

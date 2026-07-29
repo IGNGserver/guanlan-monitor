@@ -171,7 +171,7 @@
                 </Grid>
 
                 <Grid x:Name="LocalPage" Visibility="Collapsed">
-                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer x:Name="LocalScrollViewer" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" ViewChanged="LocalScrollViewer_ViewChanged">
                         <StackPanel Spacing="20" MaxWidth="980" HorizontalAlignment="Left">
                             <StackPanel Spacing="4">
                                 <TextBlock Text="本机状态" Style="{StaticResource TitleTextBlockStyle}" />
