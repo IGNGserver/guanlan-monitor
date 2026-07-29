@@ -1914,23 +1914,55 @@ public sealed class MainViewModel : ObservableObject
         string target,
         IReadOnlyDictionary<string, List<string>> enabledDeviceIds)
     {
-        collection.Clear();
+        // Polling runs every two seconds. Reuse existing rows so WinUI does not
+        // tear down and recreate the controls while the user is editing them.
+        var incoming = (items ?? [])
+            .Where(item => !string.IsNullOrWhiteSpace(item.Id))
+            .ToList();
         var hasExplicitSelection = enabledDeviceIds.ContainsKey(target);
         var enabled = enabledDeviceIds.TryGetValue(target, out var ids)
             ? ids.Where(item => !string.IsNullOrWhiteSpace(item)).ToHashSet(StringComparer.OrdinalIgnoreCase)
             : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var item in items ?? [])
+
+        var incomingIds = incoming
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        for (var index = collection.Count - 1; index >= 0; index--)
         {
+            if (!incomingIds.Contains(collection[index].Id))
+            {
+                collection.RemoveAt(index);
+            }
+        }
+
+        for (var index = 0; index < incoming.Count; index++)
+        {
+            var item = incoming[index];
             var isEnabled = hasExplicitSelection ? enabled.Contains(item.Id) : item.Enabled;
-            collection.Add(new ProbeInstanceItemViewModel(
-                target,
-                item.Id,
-                item.Name,
-                item.Subtitle,
-                string.Join(" · ", item.Metrics ?? []),
-                isEnabled,
-                SupportsInstanceMetricEditing(target),
-                HandleInstanceToggle));
+            var existing = collection.FirstOrDefault(current =>
+                string.Equals(current.Id, item.Id, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+            {
+                collection.Insert(index, new ProbeInstanceItemViewModel(
+                    target,
+                    item.Id,
+                    item.Name,
+                    item.Subtitle,
+                    string.Join(" · ", item.Metrics ?? []),
+                    isEnabled,
+                    SupportsInstanceMetricEditing(target),
+                    HandleInstanceToggle));
+                continue;
+            }
+
+            if (collection.IndexOf(existing) != index)
+            {
+                collection.Move(collection.IndexOf(existing), index);
+            }
+
+            // The backend is authoritative only when no local edit is pending;
+            // this assignment is therefore safe and does not trigger a save here.
+            existing.SetIsEnabledSilently(isEnabled);
         }
     }
 
@@ -3107,6 +3139,11 @@ public sealed class ProbeInstanceItemViewModel : ObservableObject
 
             _onChanged(this);
         }
+    }
+
+    public void SetIsEnabledSilently(bool value)
+    {
+        SetProperty(ref _isEnabled, value);
     }
 }
 
