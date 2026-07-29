@@ -1,0 +1,12 @@
+## 开发要求
+- 普通开发完成后提交并推送到 `main`，由 GitHub Actions 执行检查、构建和打包；代理不得在本机执行项目构建、安装包生成、Docker 镜像构建或部署。
+- 本机只允许执行不产生交付物的静态检查（例如版本一致性、工作流语法检查）以及 Git 操作；需要构建结果时读取对应 GitHub Actions run、artifact、image 或 deployment 状态。
+- 所有构建、测试、打包、镜像发布和部署必须落在 `.github/workflows/` 的 job 中，并使用 Actions runner 或受控的 GitHub environment；`deploy/*.ps1`、Gradle、Go、pnpm、Docker 等脚本只能由 workflow 调用。
+- 如果缺少对应 workflow，先补充 workflow 或明确报告缺口，不得用本地构建或手工部署作为替代。
+- `main` 是开发线，不代表稳定发布；未经用户明确确认，不创建 GitHub Release、不覆盖 `latest`、不上传正式安装包、不部署生产环境。
+- 正式发布必须遵循仓库根目录 `RELEASE.md`，使用版本 tag 和固定版本 Docker 部署。
+- 每次开发后更新版本号；对应构建和部署由 GitHub Actions 生成和执行，根据用户要求决定是否触发发布或部署 workflow。
+- 在我明确要求“发布正式版 release”之前，我说“发布 release”均指测试版 release；测试版不得被当作稳定安装源或生产部署依据。
+- 版本号在我明确允许前只能递增第三位（patch）；第一位和第二位必须保持不变。版本号必须同步更新根目录 `VERSION` 与所有 package manifest。
+- Docker 生产运行必须从 Docker Hub 拉取用户指定的固定版本镜像，或在用户明确选择时拉取 `latest`；不得从未经测试的仓库工作区源码构建生产镜像。
+- Release 资产命名必须明确包含系统、UI/CLI 和安装/便携属性：Windows GUI setup、Windows GUI portable、Windows CLI install、Linux CLI install、Android。

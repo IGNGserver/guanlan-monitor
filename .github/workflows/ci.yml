@@ -34,3 +34,24 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  go:
+    name: Verify Go agents
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Test Go agents
+        working-directory: agents
+        run: go test ./...
+
+      - name: Build Go agents
+        working-directory: agents
+        run: go build ./...

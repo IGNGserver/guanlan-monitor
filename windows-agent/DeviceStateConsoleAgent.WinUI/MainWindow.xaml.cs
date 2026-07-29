@@ -297,14 +297,38 @@ public sealed partial class MainWindow : Window
             StrokeLineJoin = PenLineJoin.Round
         };
 
+        var accentColor = (Color)Application.Current.Resources["SystemAccentColor"];
+        var fillColor = Color.FromArgb(40, accentColor.R, accentColor.G, accentColor.B);
+
+        var polygon = new Microsoft.UI.Xaml.Shapes.Polygon
+        {
+            Fill = new SolidColorBrush(fillColor)
+        };
+        polygon.Points.Add(new Point(padding, padding + height));
+
         for (var index = 0; index < points.Count; index++)
         {
             var x = padding + (points.Count == 1 ? width : width * index / (points.Count - 1));
             var y = padding + height * (1 - Math.Clamp(points[index].Value, 0, 100) / 100);
-            line.Points.Add(new Point(x, y));
+            var pt = new Point(x, y);
+            line.Points.Add(pt);
+            polygon.Points.Add(pt);
         }
+        polygon.Points.Add(new Point(padding + width, padding + height));
 
+        canvas.Children.Add(polygon);
         canvas.Children.Add(line);
+    }
+
+    private void NavigateToServerPage_OnClick(object sender, RoutedEventArgs e)
+    {
+        var serverItem = AppNavigation.MenuItems
+            .OfType<NavigationViewItem>()
+            .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), "server", StringComparison.Ordinal));
+        if (serverItem is not null)
+        {
+            AppNavigation.SelectedItem = serverItem;
+        }
     }
 
     private void ApplyResponsiveLayout(bool isCompact)
@@ -315,20 +339,6 @@ public sealed partial class MainWindow : Window
         SetColumns(MonitorStatusGrid, isCompact, 2);
         SetColumns(MonitorRemoteGrid, isCompact, 3);
         SetColumns(LocalMetricCardsGrid, isCompact, 2);
-        SetColumns(LocalHealthGrid, isCompact, 2);
-        SetColumns(ServerButtonsGrid, isCompact, 2);
-
-        if (MonitorWorkspace is not null)
-        {
-            MonitorWorkspace.ColumnDefinitions[0].Width = isCompact
-                ? new GridLength(1, GridUnitType.Star)
-                : new GridLength(240);
-        }
-    }
-
-    private void UpdateMonitorAvailability()
-    {
-        var isReady = _viewModel.ViewerSessionReady;
         MonitorWorkspace.Visibility = isReady ? Visibility.Visible : Visibility.Collapsed;
         MonitorUnavailableState.Visibility = isReady ? Visibility.Collapsed : Visibility.Visible;
         UpdateMetricCategoryVisibility();

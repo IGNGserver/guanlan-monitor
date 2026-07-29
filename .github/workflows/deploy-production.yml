@@ -1,0 +1,65 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Fixed published image version without the v prefix"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy fixed version
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout requested ref
+        uses: actions/checkout@v4
+
+      - name: Validate requested version
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          [[ "$REQUESTED_VERSION" == "$version" ]] || {
+            echo "Requested version $REQUESTED_VERSION does not match VERSION $version." >&2
+            exit 1
+          }
+          [[ "$REQUESTED_VERSION" != "latest" ]] || {
+            echo "Production deployment requires a fixed version." >&2
+            exit 1
+          }
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Pull and restart published images
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DSC_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && DSC_VERSION='$DSC_VERSION' docker compose pull && DSC_VERSION='$DSC_VERSION' docker compose up -d && DSC_VERSION='$DSC_VERSION' docker compose ps"

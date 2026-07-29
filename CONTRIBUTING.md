@@ -2,18 +2,15 @@
 
 ## Development Setup
 
-1. Copy `.env.example` to `.env`.
-2. Install Node.js 22+, pnpm 10+, and Go 1.24+.
-3. Run `pnpm install`.
-4. Run `cd agents && go mod tidy`.
-5. Start the application with `pnpm dev`.
+Local development may install dependencies and run `pnpm dev` for interactive
+work, but it must not produce release artifacts or perform deployments. All
+verification, builds, packaging, image publication, and deployment must run in
+GitHub Actions.
 
 ## Before Opening a Pull Request
 
-- Run `pnpm typecheck`
-- Run `pnpm build`
-- Run `pnpm verify:version`
-- Run `go test ./...` and `go build ./...` from `agents`
+- Push the branch and inspect the required GitHub Actions checks.
+- Review workflow artifacts, image tags, and deployment environment results in GitHub.
 - Update documentation when behavior or deployment steps change
 
 ## Development And Release Boundaries

@@ -12,7 +12,6 @@ logs
 release
 *.log
 *.tsbuildinfo
-AGENTS.md
 .run
 agents/dev-machine-agent.env
 android/.gradle

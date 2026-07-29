@@ -84,4 +84,6 @@ Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 
 - [GitHub Release 发布脚本](deploy/publish-github-release.ps1)
 - [版本与发布规范](RELEASE.md)
 
-运行 `pnpm typecheck`、`go build ./...` 和 WinUI 构建可验证源码变更。
+源码验证、Go/WinUI 构建、安装包生成、镜像发布和部署均由 GitHub Actions
+执行。提交或推送后请在 GitHub Actions 中查看对应 workflow、artifact、镜像
+和部署结果；本地不作为交付构建机。
