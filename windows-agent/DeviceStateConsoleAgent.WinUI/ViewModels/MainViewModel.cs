@@ -785,6 +785,11 @@ public sealed class MainViewModel : ObservableObject
                     GpuProvider = preferredProvider.Key;
                 }
             }
+
+            if (!_isApplyingState && value)
+            {
+                EnableDefaultMetrics(GpuMetricToggles);
+            }
         }
     }
     public bool FanEnabled

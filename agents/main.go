@@ -753,6 +753,7 @@ func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 type hardwareSensorSnapshot struct {
 	HardwareType string           `json:"hardwareType"`
 	Name         string           `json:"name"`
+	InstanceID   string           `json:"instanceId"`
 	Sensors      []hardwareSensor `json:"sensors"`
 }
 
@@ -782,7 +783,7 @@ func collectHardwareSensors() hardwareSensorMetrics {
 
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
-	commandText := `$ErrorActionPreference='Stop'; Add-Type -Path $env:DSC_LHM_DLL; $computer=New-Object LibreHardwareMonitor.Hardware.Computer; $computer.IsCpuEnabled=$true; $computer.IsGpuEnabled=$true; $computer.IsMotherboardEnabled=$true; $computer.IsControllerEnabled=$true; $computer.Open(); function Read-Hardware($hardware) { $hardware.Update(); $result=@([pscustomobject]@{ hardwareType=[string]$hardware.HardwareType; name=[string]$hardware.Name; sensors=@($hardware.Sensors | ForEach-Object { [pscustomobject]@{ sensorType=[string]$_.SensorType; name=[string]$_.Name; value=$_.Value } }) }); foreach($sub in $hardware.SubHardware) { $result += Read-Hardware $sub }; return $result }; try { @($computer.Hardware | ForEach-Object { Read-Hardware $_ }) | ConvertTo-Json -Depth 5 -Compress } finally { $computer.Close() }`
+	commandText := `$ErrorActionPreference='Stop'; Add-Type -Path $env:DSC_LHM_DLL; $gpuIds=@{}; Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { if($_.Name -and $_.PNPDeviceID){ $gpuIds[[string]$_.Name]=[string]$_.PNPDeviceID } }; $computer=New-Object LibreHardwareMonitor.Hardware.Computer; $computer.IsCpuEnabled=$true; $computer.IsGpuEnabled=$true; $computer.IsMotherboardEnabled=$true; $computer.IsControllerEnabled=$true; $computer.Open(); function Read-Hardware($hardware) { $hardware.Update(); $instanceId=''; if($gpuIds.ContainsKey([string]$hardware.Name)){ $instanceId=$gpuIds[[string]$hardware.Name] }; $result=@([pscustomobject]@{ hardwareType=[string]$hardware.HardwareType; name=[string]$hardware.Name; instanceId=$instanceId; sensors=@($hardware.Sensors | ForEach-Object { [pscustomobject]@{ sensorType=[string]$_.SensorType; name=[string]$_.Name; value=$_.Value } }) }); foreach($sub in $hardware.SubHardware) { $result += Read-Hardware $sub }; return $result }; try { @($computer.Hardware | ForEach-Object { Read-Hardware $_ }) | ConvertTo-Json -Depth 5 -Compress } finally { $computer.Close() }`
 	command := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
 	command.Env = append(os.Environ(), "DSC_LHM_DLL="+dllPath)
 	output, err := command.Output()
@@ -875,8 +876,12 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 			continue
 		}
 
+		gpuID := snapshot.InstanceID
+		if strings.TrimSpace(gpuID) == "" {
+			gpuID = snapshot.Name
+		}
 		gpu := gpuDeviceStats{
-			ID:   "gpu-" + sanitizeKey(snapshot.Name),
+			ID:   "gpu-" + sanitizeKey(gpuID),
 			Name: snapshot.Name,
 		}
 		var clock, load, temperature, memoryUsed, memoryTotal *float64
@@ -889,13 +894,13 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 			switch {
 			case sensorType == "clock" && (strings.Contains(sensorName, "core") || strings.Contains(sensorName, "gpu")):
 				clock = maxSensorValue(clock, sensor.Value)
-			case sensorType == "load" && (strings.Contains(sensorName, "core") || strings.Contains(sensorName, "gpu")):
+			case sensorType == "load" && (strings.Contains(sensorName, "core") || strings.Contains(sensorName, "gpu") || strings.Contains(sensorName, "d3d") || strings.Contains(sensorName, "3d")):
 				load = maxSensorValue(load, sensor.Value)
 			case sensorType == "temperature" && (strings.Contains(sensorName, "core") || strings.Contains(sensorName, "gpu")):
 				temperature = maxSensorValue(temperature, sensor.Value)
-			case (sensorType == "data" || sensorType == "small data") && strings.Contains(sensorName, "memory used"):
+			case (sensorType == "data" || sensorType == "smalldata" || sensorType == "small data") && strings.Contains(sensorName, "memory used"):
 				memoryUsed = sensor.Value
-			case (sensorType == "data" || sensorType == "small data") && strings.Contains(sensorName, "memory total"):
+			case (sensorType == "data" || sensorType == "smalldata" || sensorType == "small data") && strings.Contains(sensorName, "memory total"):
 				memoryTotal = sensor.Value
 			}
 		}

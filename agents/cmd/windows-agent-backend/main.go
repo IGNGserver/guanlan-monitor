@@ -1090,6 +1090,8 @@ func detectGPUAdapters(enabled map[string]struct{}, explicit bool) ([]probeDetec
 			name = fmt.Sprintf("GPU %d", index+1)
 		}
 
+		// The collector joins LHM hardware to WMI by name and uses the PNP ID
+		// when available. Keep detection on the same stable identity.
 		keySource := strings.TrimSpace(row.PNPDeviceID)
 		if keySource == "" {
 			keySource = name
