@@ -338,7 +338,9 @@ func (s *server) loadConfig() error {
 		return err
 	}
 	s.config = normalizeLocalConfig(cfg, raw)
-	return nil
+	// Persist migrations so the collector, which reads the same file directly,
+	// observes the normalized metric set immediately after backend startup.
+	return s.saveConfigLocked()
 }
 
 func (s *server) loadSyncState() error {
@@ -1516,6 +1518,16 @@ func normalizeLocalConfig(cfg agentLocalConfig, raw []byte) agentLocalConfig {
 	if len(cfg.EnabledMetrics) == 0 {
 		cfg.EnabledMetrics = append([]string(nil), defaults.EnabledMetrics...)
 	}
+	if isProbeSelectionEnabled(cfg.ProbeSelections, "gpu") && !containsMetricPrefix(cfg.EnabledMetrics, "gpu") {
+		cfg.EnabledMetrics = append(cfg.EnabledMetrics,
+			"gpuUsage",
+			"gpuEncode",
+			"gpuDecode",
+			"gpuFrequency",
+			"gpuMemory",
+			"gpuTemperature",
+		)
+	}
 	if cfg.EnabledDeviceIDs == nil {
 		cfg.EnabledDeviceIDs = map[string][]string{}
 	}
@@ -1544,6 +1556,24 @@ func normalizeLocalConfig(cfg agentLocalConfig, raw []byte) agentLocalConfig {
 	cfg.InstanceMetricConfig = normalizeStringMap(cfg.InstanceMetricConfig)
 	cfg.ProbeSelections = normalizeProbeSelections(cfg.ProbeSelections, defaults.ProbeSelections)
 	return cfg
+}
+
+func isProbeSelectionEnabled(selections []agentProbeSelection, target string) bool {
+	for _, selection := range selections {
+		if strings.EqualFold(strings.TrimSpace(selection.Target), target) {
+			return selection.Enabled && !strings.EqualFold(strings.TrimSpace(selection.Provider), "disabled")
+		}
+	}
+	return false
+}
+
+func containsMetricPrefix(metrics []string, prefix string) bool {
+	for _, metric := range metrics {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(metric)), strings.ToLower(prefix)) {
+			return true
+		}
+	}
+	return false
 }
 
 func displayConfigChanged(previous agentLocalConfig, next agentLocalConfig) bool {
