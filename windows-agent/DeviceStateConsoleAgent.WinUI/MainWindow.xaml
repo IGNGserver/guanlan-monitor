@@ -247,7 +247,7 @@
                                         <TextBlock Text="风扇" Style="{StaticResource SubtitleTextBlockStyle}" />
                                         <ToggleSwitch Header="采集" IsOn="{Binding FanEnabled, Mode=TwoWay}" />
                                         <ComboBox Header="探测器" ItemsSource="{Binding FanProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding FanProvider, Mode=TwoWay}" />
-                                        <TextBlock Text="{Binding DetectStatusText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding FanDetectStatusText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
                             </Grid>

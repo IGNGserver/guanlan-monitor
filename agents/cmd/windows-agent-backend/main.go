@@ -37,8 +37,8 @@ type agentConnectionConfig struct {
 }
 
 type agentSamplingConfig struct {
-	NormalIntervalSeconds     int    `json:"normalIntervalSeconds"`
-	SlowIntervalSeconds       int    `json:"slowIntervalSeconds"`
+	NormalIntervalSeconds int `json:"normalIntervalSeconds"`
+	SlowIntervalSeconds   int `json:"slowIntervalSeconds"`
 }
 
 type agentProbeSelection struct {
@@ -68,37 +68,37 @@ type agentCloudConfigSyncPayload struct {
 }
 
 type backendState struct {
-	Running                           bool               `json:"running"`
-	BackendStartedAt                  string             `json:"backendStartedAt"`
-	FrontendParentPID                 int                `json:"frontendParentPid"`
-	ChildStartedAt                    string             `json:"childStartedAt,omitempty"`
-	ConnectionStatus                  string             `json:"connectionStatus"`
-	LastChildLog                      string             `json:"lastChildLog,omitempty"`
-	LastUploadAt                      string             `json:"lastUploadAt,omitempty"`
-	LastCloudSyncAt                   string             `json:"lastCloudSyncAt,omitempty"`
-	LastCloudSyncError                string             `json:"lastCloudSyncError,omitempty"`
-	CloudConfigPending                bool               `json:"cloudConfigPending"`
-	LastDetectAt                      string             `json:"lastDetectAt,omitempty"`
-	LastExitAt                        string             `json:"lastExitAt,omitempty"`
-	LastRestartAt                     string             `json:"lastRestartAt,omitempty"`
-	RestartCount                      int                `json:"restartCount"`
-	LastExitCode                      *int               `json:"lastExitCode,omitempty"`
-	AutoRestartPending                bool               `json:"autoRestartPending"`
-	EffectiveUploadIntervalSeconds    int                `json:"effectiveUploadIntervalSeconds"`
-	LastIssueCategory                 string             `json:"lastIssueCategory,omitempty"`
-	LastIssueDetail                   string             `json:"lastIssueDetail,omitempty"`
-	LastIssueAt                       string             `json:"lastIssueAt,omitempty"`
-	LastIssueCount                    int                `json:"lastIssueCount"`
-	LastIssueRecoveredAt              string             `json:"lastIssueRecoveredAt,omitempty"`
-	ConfigPath                        string             `json:"configPath"`
-	ConfigFileExists                  bool               `json:"configFileExists"`
-	SyncStatePath                     string             `json:"syncStatePath"`
-	SyncStateFileExists               bool               `json:"syncStateFileExists"`
-	DiagnosticsPath                   string             `json:"diagnosticsPath"`
-	DiagnosticsFileExists             bool               `json:"diagnosticsFileExists"`
-	Config                            agentLocalConfig   `json:"config"`
-	SupportedProbePlans               []probePlanSupport `json:"supportedProbePlans"`
-	DetectedTargets                   []probeTargetState `json:"detectedTargets"`
+	Running                        bool               `json:"running"`
+	BackendStartedAt               string             `json:"backendStartedAt"`
+	FrontendParentPID              int                `json:"frontendParentPid"`
+	ChildStartedAt                 string             `json:"childStartedAt,omitempty"`
+	ConnectionStatus               string             `json:"connectionStatus"`
+	LastChildLog                   string             `json:"lastChildLog,omitempty"`
+	LastUploadAt                   string             `json:"lastUploadAt,omitempty"`
+	LastCloudSyncAt                string             `json:"lastCloudSyncAt,omitempty"`
+	LastCloudSyncError             string             `json:"lastCloudSyncError,omitempty"`
+	CloudConfigPending             bool               `json:"cloudConfigPending"`
+	LastDetectAt                   string             `json:"lastDetectAt,omitempty"`
+	LastExitAt                     string             `json:"lastExitAt,omitempty"`
+	LastRestartAt                  string             `json:"lastRestartAt,omitempty"`
+	RestartCount                   int                `json:"restartCount"`
+	LastExitCode                   *int               `json:"lastExitCode,omitempty"`
+	AutoRestartPending             bool               `json:"autoRestartPending"`
+	EffectiveUploadIntervalSeconds int                `json:"effectiveUploadIntervalSeconds"`
+	LastIssueCategory              string             `json:"lastIssueCategory,omitempty"`
+	LastIssueDetail                string             `json:"lastIssueDetail,omitempty"`
+	LastIssueAt                    string             `json:"lastIssueAt,omitempty"`
+	LastIssueCount                 int                `json:"lastIssueCount"`
+	LastIssueRecoveredAt           string             `json:"lastIssueRecoveredAt,omitempty"`
+	ConfigPath                     string             `json:"configPath"`
+	ConfigFileExists               bool               `json:"configFileExists"`
+	SyncStatePath                  string             `json:"syncStatePath"`
+	SyncStateFileExists            bool               `json:"syncStateFileExists"`
+	DiagnosticsPath                string             `json:"diagnosticsPath"`
+	DiagnosticsFileExists          bool               `json:"diagnosticsFileExists"`
+	Config                         agentLocalConfig   `json:"config"`
+	SupportedProbePlans            []probePlanSupport `json:"supportedProbePlans"`
+	DetectedTargets                []probeTargetState `json:"detectedTargets"`
 }
 
 type probePlanSupport struct {
@@ -139,39 +139,39 @@ type connectionCheckResult struct {
 }
 
 type server struct {
-	mu                         sync.Mutex
-	shutdownOnce               sync.Once
-	configPath                 string
-	syncStatePath              string
-	diagnosticsPath            string
-	childBinaryPath            string
-	childJob                   jobObject
-	config                     agentLocalConfig
-	cmd                        *exec.Cmd
-	requestClient              *http.Client
-	httpServer                 *http.Server
-	frontendParentPID          int
-	logBuffer                  string
-	connectionState            string
-	childStartedAt             time.Time
-	backendStartedAt           time.Time
-	lastUploadAt               time.Time
-	lastCloudSyncAt            time.Time
-	lastCloudSyncErr           string
-	cloudConfigDirty           bool
-	lastDetectAt               time.Time
-	detectedTargets            []probeTargetState
-	lastExitAt                 time.Time
-	lastRestartAt              time.Time
-	restartCount               int
-	lastExitCode               *int
-	lastIssueCategory          string
-	lastIssueDetail            string
-	lastIssueAt                time.Time
-	lastIssueCount             int
-	lastIssueRecoveredAt       time.Time
-	stopRequested              bool
-	autoRestarting             bool
+	mu                   sync.Mutex
+	shutdownOnce         sync.Once
+	configPath           string
+	syncStatePath        string
+	diagnosticsPath      string
+	childBinaryPath      string
+	childJob             jobObject
+	config               agentLocalConfig
+	cmd                  *exec.Cmd
+	requestClient        *http.Client
+	httpServer           *http.Server
+	frontendParentPID    int
+	logBuffer            string
+	connectionState      string
+	childStartedAt       time.Time
+	backendStartedAt     time.Time
+	lastUploadAt         time.Time
+	lastCloudSyncAt      time.Time
+	lastCloudSyncErr     string
+	cloudConfigDirty     bool
+	lastDetectAt         time.Time
+	detectedTargets      []probeTargetState
+	lastExitAt           time.Time
+	lastRestartAt        time.Time
+	restartCount         int
+	lastExitCode         *int
+	lastIssueCategory    string
+	lastIssueDetail      string
+	lastIssueAt          time.Time
+	lastIssueCount       int
+	lastIssueRecoveredAt time.Time
+	stopRequested        bool
+	autoRestarting       bool
 }
 
 type cloudSyncStateFile struct {
@@ -181,8 +181,8 @@ type cloudSyncStateFile struct {
 }
 
 const (
-	restartBackoffBase      = 2 * time.Second
-	restartBackoffMax       = 20 * time.Second
+	restartBackoffBase = 2 * time.Second
+	restartBackoffMax  = 20 * time.Second
 )
 
 func main() {
@@ -320,7 +320,7 @@ func supportedProbePlans() []probePlanSupport {
 		{Target: "disk", Providers: []string{"disabled", "gopsutil"}, Default: "disabled"},
 		{Target: "network", Providers: []string{"disabled", "gopsutil"}, Default: "disabled"},
 		{Target: "gpu", Providers: []string{"disabled", "wmi"}, Default: "disabled"},
-		{Target: "fan", Providers: []string{"disabled"}, Default: "disabled"},
+		{Target: "fan", Providers: []string{"disabled", "librehardwaremonitor"}, Default: "disabled"},
 	}
 }
 
@@ -411,37 +411,37 @@ func fileExists(path string) bool {
 
 func (s *server) snapshotLocked() backendState {
 	return backendState{
-		Running:                           s.cmd != nil && s.cmd.Process != nil,
-		BackendStartedAt:                  s.backendStartedAt.Format(time.RFC3339),
-		FrontendParentPID:                 s.frontendParentPID,
-		ChildStartedAt:                    formatTime(s.childStartedAt),
-		ConnectionStatus:                  s.connectionState,
-		LastChildLog:                      s.logBuffer,
-		LastUploadAt:                      formatTime(s.lastUploadAt),
-		LastCloudSyncAt:                   formatTime(s.lastCloudSyncAt),
-		LastCloudSyncError:                s.lastCloudSyncErr,
-		CloudConfigPending:                s.cloudConfigDirty,
-		LastDetectAt:                      formatTime(s.lastDetectAt),
-		LastExitAt:                        formatTime(s.lastExitAt),
-		LastRestartAt:                     formatTime(s.lastRestartAt),
-		RestartCount:                      s.restartCount,
-		LastExitCode:                      cloneIntPointer(s.lastExitCode),
-		AutoRestartPending:                s.autoRestarting,
-		EffectiveUploadIntervalSeconds:    s.config.Sampling.NormalIntervalSeconds,
-		LastIssueCategory:                 s.lastIssueCategory,
-		LastIssueDetail:                   s.lastIssueDetail,
-		LastIssueAt:                       formatTime(s.lastIssueAt),
-		LastIssueCount:                    s.lastIssueCount,
-		LastIssueRecoveredAt:              formatTime(s.lastIssueRecoveredAt),
-		ConfigPath:                        s.configPath,
-		ConfigFileExists:                  fileExists(s.configPath),
-		SyncStatePath:                     s.syncStatePath,
-		SyncStateFileExists:               fileExists(s.syncStatePath),
-		DiagnosticsPath:                   s.diagnosticsPath,
-		DiagnosticsFileExists:             fileExists(s.diagnosticsPath),
-		Config:                            s.config,
-		SupportedProbePlans:               supportedProbePlans(),
-		DetectedTargets:                   append([]probeTargetState(nil), s.detectedTargets...),
+		Running:                        s.cmd != nil && s.cmd.Process != nil,
+		BackendStartedAt:               s.backendStartedAt.Format(time.RFC3339),
+		FrontendParentPID:              s.frontendParentPID,
+		ChildStartedAt:                 formatTime(s.childStartedAt),
+		ConnectionStatus:               s.connectionState,
+		LastChildLog:                   s.logBuffer,
+		LastUploadAt:                   formatTime(s.lastUploadAt),
+		LastCloudSyncAt:                formatTime(s.lastCloudSyncAt),
+		LastCloudSyncError:             s.lastCloudSyncErr,
+		CloudConfigPending:             s.cloudConfigDirty,
+		LastDetectAt:                   formatTime(s.lastDetectAt),
+		LastExitAt:                     formatTime(s.lastExitAt),
+		LastRestartAt:                  formatTime(s.lastRestartAt),
+		RestartCount:                   s.restartCount,
+		LastExitCode:                   cloneIntPointer(s.lastExitCode),
+		AutoRestartPending:             s.autoRestarting,
+		EffectiveUploadIntervalSeconds: s.config.Sampling.NormalIntervalSeconds,
+		LastIssueCategory:              s.lastIssueCategory,
+		LastIssueDetail:                s.lastIssueDetail,
+		LastIssueAt:                    formatTime(s.lastIssueAt),
+		LastIssueCount:                 s.lastIssueCount,
+		LastIssueRecoveredAt:           formatTime(s.lastIssueRecoveredAt),
+		ConfigPath:                     s.configPath,
+		ConfigFileExists:               fileExists(s.configPath),
+		SyncStatePath:                  s.syncStatePath,
+		SyncStateFileExists:            fileExists(s.syncStatePath),
+		DiagnosticsPath:                s.diagnosticsPath,
+		DiagnosticsFileExists:          fileExists(s.diagnosticsPath),
+		Config:                         s.config,
+		SupportedProbePlans:            supportedProbePlans(),
+		DetectedTargets:                append([]probeTargetState(nil), s.detectedTargets...),
 	}
 }
 
@@ -939,6 +939,11 @@ func detectTargets(cfg agentLocalConfig) ([]probeTargetState, error) {
 		Target:    "gpu",
 		Label:     "显卡实例",
 		Instances: gpuInstances,
+	})
+	targets = append(targets, probeTargetState{
+		Target:    "fan",
+		Label:     "风扇实例",
+		Instances: []probeDetectedTarget{},
 	})
 
 	return targets, nil

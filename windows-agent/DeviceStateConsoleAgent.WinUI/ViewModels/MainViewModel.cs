@@ -188,6 +188,7 @@ public sealed class MainViewModel : ObservableObject
     private bool _networkEnabled;
     private bool _gpuEnabled;
     private bool _fanEnabled;
+    private string _fanDetectStatusText = "当前还没有可用的风扇探测结果。";
     private string _cpuProvider = "disabled";
     private string _memoryProvider = "disabled";
     private string _diskProvider = "disabled";
@@ -786,7 +787,26 @@ public sealed class MainViewModel : ObservableObject
             }
         }
     }
-    public bool FanEnabled { get => _fanEnabled; set => SetAndQueueSave(ref _fanEnabled, value, markCloudDisplayDirty: true); }
+    public bool FanEnabled
+    {
+        get => _fanEnabled;
+        set
+        {
+            if (!SetAndQueueSave(ref _fanEnabled, value, markCloudDisplayDirty: true))
+            {
+                return;
+            }
+
+            if (!_isApplyingState && value && string.Equals(FanProvider, "disabled", StringComparison.OrdinalIgnoreCase))
+            {
+                var preferredProvider = FanProviderOptions.FirstOrDefault(item => !string.Equals(item.Key, "disabled", StringComparison.OrdinalIgnoreCase));
+                if (preferredProvider is not null)
+                {
+                    FanProvider = preferredProvider.Key;
+                }
+            }
+        }
+    }
     public string CpuProvider { get => _cpuProvider; set => SetProvider(ref _cpuProvider, value, nameof(CpuProvider), enabled => CpuEnabled = enabled); }
     public string MemoryProvider { get => _memoryProvider; set => SetProvider(ref _memoryProvider, value, nameof(MemoryProvider), enabled => MemoryEnabled = enabled); }
     public string DiskProvider { get => _diskProvider; set => SetProvider(ref _diskProvider, value, nameof(DiskProvider), enabled => DiskEnabled = enabled); }
@@ -799,6 +819,7 @@ public sealed class MainViewModel : ObservableObject
     public IReadOnlyList<ProbeProviderOptionViewModel> NetworkProviderOptions { get => _networkProviderOptions; private set => SetProperty(ref _networkProviderOptions, value); }
     public IReadOnlyList<ProbeProviderOptionViewModel> GpuProviderOptions { get => _gpuProviderOptions; private set => SetProperty(ref _gpuProviderOptions, value); }
     public IReadOnlyList<ProbeProviderOptionViewModel> FanProviderOptions { get => _fanProviderOptions; private set => SetProperty(ref _fanProviderOptions, value); }
+    public string FanDetectStatusText { get => _fanDetectStatusText; private set => SetProperty(ref _fanDetectStatusText, value); }
 
     public async Task InitializeAsync()
     {
@@ -1833,6 +1854,7 @@ public sealed class MainViewModel : ObservableObject
                 ApplyDetectedTargets(state.DetectedTargets, state.Config.EnabledDeviceIds);
             }
             DetectStatusText = BuildDetectStatusText(state);
+            FanDetectStatusText = BuildFanDetectStatusText(state.SupportedProbePlans, state.DetectedTargets);
             SyncDetectFreshnessFromState(state);
 
             SetStatusNotice(state.Running
@@ -2936,6 +2958,25 @@ public sealed class MainViewModel : ObservableObject
         return detectedCount > 0
             ? $"{whenText}，已发现 {detectedCount} 个可配置实例。"
             : $"{whenText}，但尚未发现可配置实例。";
+    }
+
+    private static string BuildFanDetectStatusText(
+        IEnumerable<ProbePlanSupport>? plans,
+        IEnumerable<ProbeTargetStateDto>? targets)
+    {
+        var fanPlan = plans?.FirstOrDefault(item => string.Equals(item.Target, "fan", StringComparison.OrdinalIgnoreCase));
+        var hasProvider = fanPlan?.Providers.Any(provider => !string.Equals(provider, "disabled", StringComparison.OrdinalIgnoreCase)) == true;
+        if (!hasProvider)
+        {
+            return "当前没有可用的风扇探测组件。";
+        }
+
+        var fanCount = targets?
+            .FirstOrDefault(item => string.Equals(item.Target, "fan", StringComparison.OrdinalIgnoreCase))?
+            .Instances.Count ?? 0;
+        return fanCount > 0
+            ? $"已发现 {fanCount} 个风扇实例，可启用 LibreHardwareMonitor 采集。"
+            : "风扇探测组件可用，但当前未发现可读的风扇转速传感器。";
     }
 
     private static int CountDetectedInstances(IEnumerable<ProbeTargetStateDto>? targets)

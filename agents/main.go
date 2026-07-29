@@ -221,8 +221,8 @@ type agentConnectionConfig struct {
 }
 
 type agentSamplingConfig struct {
-	NormalIntervalSeconds int    `json:"normalIntervalSeconds"`
-	SlowIntervalSeconds   int    `json:"slowIntervalSeconds"`
+	NormalIntervalSeconds int `json:"normalIntervalSeconds"`
+	SlowIntervalSeconds   int `json:"slowIntervalSeconds"`
 }
 
 type agentProbeSelection struct {
@@ -650,7 +650,7 @@ func collectSlowMetrics() (slowMetrics, error) {
 		disks:             disks,
 		networkInterfaces: networkInterfaces,
 		gpus:              hardware.gpus,
-		fans:              []fanSensorStats{},
+		fans:              hardware.fans,
 		sensorBackends:    []sensorBackendStatus{},
 	}, nil
 }
@@ -766,32 +766,33 @@ type hardwareSensorMetrics struct {
 	cpuFrequencyMHz *float64
 	cpuTemperatureC *float64
 	gpus            []gpuDeviceStats
+	fans            []fanSensorStats
 }
 
 // LibreHardwareMonitor exposes live clocks, including CPU boost clocks, where WMI often reports a nominal value.
 func collectHardwareSensors() hardwareSensorMetrics {
 	if runtime.GOOS != "windows" {
-		return hardwareSensorMetrics{gpus: []gpuDeviceStats{}}
+		return hardwareSensorMetrics{gpus: []gpuDeviceStats{}, fans: []fanSensorStats{}}
 	}
 
 	dllPath := resolveHardwareMonitorPath()
 	if dllPath == "" {
-		return hardwareSensorMetrics{gpus: []gpuDeviceStats{}}
+		return hardwareSensorMetrics{gpus: []gpuDeviceStats{}, fans: []fanSensorStats{}}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
-	commandText := `$ErrorActionPreference='Stop'; Add-Type -Path $env:DSC_LHM_DLL; $computer=New-Object LibreHardwareMonitor.Hardware.Computer; $computer.IsCpuEnabled=$true; $computer.IsGpuEnabled=$true; $computer.Open(); function Read-Hardware($hardware) { $hardware.Update(); $result=@([pscustomobject]@{ hardwareType=[string]$hardware.HardwareType; name=[string]$hardware.Name; sensors=@($hardware.Sensors | ForEach-Object { [pscustomobject]@{ sensorType=[string]$_.SensorType; name=[string]$_.Name; value=$_.Value } }) }); foreach($sub in $hardware.SubHardware) { $result += Read-Hardware $sub }; return $result }; try { @($computer.Hardware | ForEach-Object { Read-Hardware $_ }) | ConvertTo-Json -Depth 5 -Compress } finally { $computer.Close() }`
+	commandText := `$ErrorActionPreference='Stop'; Add-Type -Path $env:DSC_LHM_DLL; $computer=New-Object LibreHardwareMonitor.Hardware.Computer; $computer.IsCpuEnabled=$true; $computer.IsGpuEnabled=$true; $computer.IsMotherboardEnabled=$true; $computer.IsControllerEnabled=$true; $computer.Open(); function Read-Hardware($hardware) { $hardware.Update(); $result=@([pscustomobject]@{ hardwareType=[string]$hardware.HardwareType; name=[string]$hardware.Name; sensors=@($hardware.Sensors | ForEach-Object { [pscustomobject]@{ sensorType=[string]$_.SensorType; name=[string]$_.Name; value=$_.Value } }) }); foreach($sub in $hardware.SubHardware) { $result += Read-Hardware $sub }; return $result }; try { @($computer.Hardware | ForEach-Object { Read-Hardware $_ }) | ConvertTo-Json -Depth 5 -Compress } finally { $computer.Close() }`
 	command := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
 	command.Env = append(os.Environ(), "DSC_LHM_DLL="+dllPath)
 	output, err := command.Output()
 	if err != nil {
-		return hardwareSensorMetrics{gpus: []gpuDeviceStats{}}
+		return hardwareSensorMetrics{gpus: []gpuDeviceStats{}, fans: []fanSensorStats{}}
 	}
 
 	snapshots, err := decodeHardwareSnapshots(output)
 	if err != nil {
-		return hardwareSensorMetrics{gpus: []gpuDeviceStats{}}
+		return hardwareSensorMetrics{gpus: []gpuDeviceStats{}, fans: []fanSensorStats{}}
 	}
 	return mapHardwareSensors(snapshots)
 }
@@ -829,7 +830,7 @@ func resolveHardwareMonitorPath() string {
 }
 
 func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetrics {
-	metrics := hardwareSensorMetrics{gpus: []gpuDeviceStats{}}
+	metrics := hardwareSensorMetrics{gpus: []gpuDeviceStats{}, fans: []fanSensorStats{}}
 	cpuClocks := []float64{}
 	cpuTemperatures := []float64{}
 
@@ -850,6 +851,24 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 				}
 			}
 			continue
+		}
+
+		for _, sensor := range snapshot.Sensors {
+			if sensor.Value == nil || !isFinitePositive(*sensor.Value) || !strings.EqualFold(sensor.SensorType, "fan") {
+				continue
+			}
+
+			label := strings.TrimSpace(sensor.Name)
+			if label == "" {
+				label = "风扇"
+			}
+			interfaceName := strings.TrimSpace(snapshot.Name)
+			metrics.fans = append(metrics.fans, fanSensorStats{
+				ID:        "fan-" + sanitizeKey(interfaceName+"-"+label),
+				Label:     label,
+				Interface: interfaceName,
+				RPM:       int(math.Round(*sensor.Value)),
+			})
 		}
 
 		if !strings.HasPrefix(hardwareType, "gpu") {
@@ -899,6 +918,7 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 
 	metrics.cpuFrequencyMHz = averagePointer(cpuClocks)
 	metrics.cpuTemperatureC = averagePointer(cpuTemperatures)
+	sort.Slice(metrics.fans, func(i, j int) bool { return metrics.fans[i].ID < metrics.fans[j].ID })
 	return metrics
 }
 
