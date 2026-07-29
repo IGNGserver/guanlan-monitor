@@ -80,6 +80,15 @@
   box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
 }
 
+.brandLogoImage {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  object-fit: cover;
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
 .brandTitle {
   font-size: 15px;
   font-weight: 700;

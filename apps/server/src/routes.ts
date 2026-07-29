@@ -157,10 +157,9 @@ export async function registerRoutes(
       const state = await repositories.realtime.getDevice(request.params.deviceId);
       if (!state) return reply.code(404).send({ error: "device_not_found" });
       const notes = await fanNotes.get(request.params.deviceId);
-      const config = await metricConfigs.get(request.params.deviceId);
-      const enabledMetrics = config?.enabledMetrics ?? ALL_DEVICE_METRIC_KEYS;
-
       const availableMetrics = getAvailableMetrics(state);
+      const enabledMetrics = ALL_DEVICE_METRIC_KEYS;
+
       const series = sanitizeUnsupportedMetricSeries(
         alignMetricSeriesToWindow(
           timeSeriesToMetricSeries(await metricsService.getSeries(request.params.deviceId, query.window)),
@@ -173,8 +172,8 @@ export async function registerRoutes(
         status: state.status,
         lastSeenAt: state.lastSeenAt,
         enabledMetrics,
-        enabledDeviceIds: config?.enabledDeviceIds ?? {},
-        instanceMetricConfig: config?.instanceMetricConfig ?? {},
+        enabledDeviceIds: {},
+        instanceMetricConfig: {},
         availableMetrics,
         latest: {
           cpuUsagePercent: state.latest.cpuUsagePercent,

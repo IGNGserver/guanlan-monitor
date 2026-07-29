@@ -33,11 +33,8 @@ export function LoginForm({ onAuthenticated }: { onAuthenticated: () => Promise<
       <div className={`${styles.doubleBezelShell} ${styles.loginCardShell}`}>
         <form className={`${styles.doubleBezelInner} ${styles.loginCardInner}`} onSubmit={handleSubmit}>
           <div className={styles.loginHeader}>
-            <div className={styles.brandLogo} style={{ width: "48px", height: "48px", fontSize: "18px" }}>
-              DSC
-            </div>
+            <img src="/logo.png" alt="DSC Logo" className={styles.brandLogoImage} style={{ width: "48px", height: "48px" }} />
             <div className={styles.eyebrowTag} style={{ marginTop: "12px" }}>
-              <span>🔐</span>
               <span>SaaS 安全中枢控制台</span>
             </div>
             <h1 style={{ fontSize: "24px", fontWeight: 800, margin: "4px 0 0", color: "var(--text-primary)" }}>

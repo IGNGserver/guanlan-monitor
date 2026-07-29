@@ -8,7 +8,6 @@ import { getSession, getServerUrl, listDevices, logout } from "../lib/api";
 import { Dashboard } from "./dashboard";
 import { HomeOverview } from "./home-overview";
 import { LoginForm } from "./login-form";
-import { MetricConfigModal } from "./metric-config-modal";
 import { SaasShell } from "./saas-shell";
 import styles from "./monitor.module.css";
 
@@ -18,7 +17,6 @@ export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: strin
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(initialDeviceId);
   const [selectedWindow, setSelectedWindow] = useState<MetricWindow>("1m");
   const [socketConnected, setSocketConnected] = useState(false);
-  const [editingConfigDeviceId, setEditingConfigDeviceId] = useState<string | null>(null);
 
   const router = useRouter();
 
@@ -106,9 +104,7 @@ export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: strin
       <main className={styles.loginShell}>
         <div className={`${styles.doubleBezelShell} ${styles.loginCardShell}`}>
           <div className={`${styles.doubleBezelInner} ${styles.loginCardInner}`} style={{ textAlign: "center" }}>
-            <div className={styles.brandLogo} style={{ margin: "0 auto 12px" }}>
-              DSC
-            </div>
+            <img src="/logo.png" alt="DSC Logo" className={styles.brandLogoImage} style={{ margin: "0 auto 12px" }} />
             <h2 style={{ fontSize: "18px", fontWeight: 700, margin: 0 }}>正在接入中枢服务</h2>
             <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: "6px 0 0" }}>
               检查登录凭证与节点全域快照...
@@ -130,7 +126,6 @@ export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: strin
       selectedWindow={selectedWindow}
       onSelectDevice={handleSelectDevice}
       onSelectWindow={setSelectedWindow}
-      onOpenMetricConfig={(id) => setEditingConfigDeviceId(id)}
       onLogout={handleLogout}
       socketConnected={socketConnected}
     >
@@ -146,14 +141,6 @@ export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: strin
         <HomeOverview
           devices={devices}
           onOpenDevice={(id) => handleSelectDevice(id)}
-        />
-      )}
-
-      {/* Metric Config Modal Triggered from Sidebar or Page */}
-      {editingConfigDeviceId && (
-        <MetricConfigModal
-          deviceId={editingConfigDeviceId}
-          onClose={() => setEditingConfigDeviceId(null)}
         />
       )}
     </SaasShell>

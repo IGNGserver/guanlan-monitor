@@ -11,7 +11,6 @@ interface SaasShellProps {
   selectedWindow?: MetricWindow;
   onSelectDevice: (deviceId: string | null) => void;
   onSelectWindow?: (window: MetricWindow) => void;
-  onOpenMetricConfig?: (deviceId: string) => void;
   onLogout?: () => void;
   socketConnected?: boolean;
   children: React.ReactNode;
@@ -23,7 +22,6 @@ export function SaasShell({
   selectedWindow = "1m",
   onSelectDevice,
   onSelectWindow,
-  onOpenMetricConfig,
   onLogout,
   socketConnected = true,
   children
@@ -51,7 +49,6 @@ export function SaasShell({
           onSelectDevice(id);
           setMobileOpen(false);
         }}
-        onOpenConfig={onOpenMetricConfig}
         onLogout={onLogout}
         className={mobileOpen ? styles.sidebarOpen : ""}
       />

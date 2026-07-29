@@ -10,7 +10,6 @@ import type {
 } from "@dsc/shared";
 import { getMetrics, saveFanNote } from "../lib/api";
 import { ChartCard } from "./chart-card";
-import { MetricConfigModal } from "./metric-config-modal";
 import { TrafficCalendar } from "./traffic-calendar";
 import styles from "./monitor.module.css";
 
@@ -42,7 +41,6 @@ export function Dashboard({
 }: DashboardProps) {
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [loading, setLoading] = useState(true);
-  const [editingConfigDeviceId, setEditingConfigDeviceId] = useState<string | null>(null);
   const [editingFan, setEditingFan] = useState<{ id: string; label: string; note: string } | null>(null);
 
   const [metrics, setMetrics] = useState<{
@@ -201,15 +199,6 @@ export function Dashboard({
             )}
           </div>
         </div>
-
-        <button
-          type="button"
-          className={styles.pillButton}
-          onClick={() => setEditingConfigDeviceId(deviceId)}
-        >
-          <span>配置监控探针</span>
-          <span className={styles.buttonIconCircle}>⚙</span>
-        </button>
       </div>
 
       {/* Category Filter Bar */}
@@ -497,14 +486,6 @@ export function Dashboard({
             </div>
           </div>
         </div>
-      )}
-
-      {/* Metric Config Modal */}
-      {editingConfigDeviceId && (
-        <MetricConfigModal
-          deviceId={editingConfigDeviceId}
-          onClose={() => setEditingConfigDeviceId(null)}
-        />
       )}
     </div>
   );

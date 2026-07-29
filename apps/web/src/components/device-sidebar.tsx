@@ -8,7 +8,6 @@ interface DeviceSidebarProps {
   devices: DeviceSummary[];
   selectedDeviceId: string | null;
   onSelectDevice: (deviceId: string | null) => void;
-  onOpenConfig?: (deviceId: string) => void;
   onLogout?: () => void;
   className?: string;
 }
@@ -17,7 +16,6 @@ export function DeviceSidebar({
   devices,
   selectedDeviceId,
   onSelectDevice,
-  onOpenConfig,
   className = ""
 }: DeviceSidebarProps) {
   const [filterQuery, setFilterQuery] = useState("");
@@ -35,7 +33,7 @@ export function DeviceSidebar({
       {/* Brand & Hub Status Header */}
       <div className={styles.sidebarHeader}>
         <div className={styles.brandLockup}>
-          <div className={styles.brandLogo}>DSC</div>
+          <img src="/logo.png" alt="DSC Logo" className={styles.brandLogoImage} />
           <div className={styles.brandTitle}>
             DSC Hub
             <span className={styles.brandSubtitle}>设备控制中心</span>
@@ -126,29 +124,6 @@ export function DeviceSidebar({
                     RAM <b>{formatPercent(device.memoryUsagePercent)}</b>
                   </span>
                 </div>
-
-                {/* Config trigger */}
-                {onOpenConfig && (
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "2px" }}>
-                    <button
-                      type="button"
-                      style={{
-                        background: "none",
-                        border: "none",
-                        fontSize: "10px",
-                        color: "var(--text-muted)",
-                        cursor: "pointer",
-                        textDecoration: "underline"
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenConfig(device.deviceId);
-                      }}
-                    >
-                      配置监控项
-                    </button>
-                  </div>
-                )}
               </div>
             );
           })}
@@ -163,7 +138,7 @@ export function DeviceSidebar({
 
       {/* Sidebar Footer */}
       <div className={styles.sidebarFooter}>
-        <span className={styles.versionTag}>v0.2.3</span>
+        <span className={styles.versionTag}>v0.2.4</span>
         <button
           type="button"
           className={styles.footerActionBtn}
