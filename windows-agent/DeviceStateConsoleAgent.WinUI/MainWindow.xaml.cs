@@ -312,6 +312,25 @@ public sealed partial class MainWindow : Window
     private void DrawTrend(Canvas canvas)
     {
         canvas.Children.Clear();
+        var padding = 2.0;
+        var width = Math.Max(1, canvas.ActualWidth - padding * 2);
+        var height = Math.Max(1, canvas.ActualHeight - padding * 2);
+
+        // 1. 绘制任务管理器风格暗灰背景网格
+        var gridBrush = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255));
+        for (int i = 1; i < 4; i++)
+        {
+            var y = padding + (height * i / 4);
+            var hLine = new Microsoft.UI.Xaml.Shapes.Line { X1 = padding, Y1 = y, X2 = padding + width, Y2 = y, Stroke = gridBrush, StrokeThickness = 1 };
+            canvas.Children.Add(hLine);
+        }
+        for (int i = 1; i < 6; i++)
+        {
+            var x = padding + (width * i / 6);
+            var vLine = new Microsoft.UI.Xaml.Shapes.Line { X1 = x, Y1 = padding, X2 = x, Y2 = padding + height, Stroke = gridBrush, StrokeThickness = 1 };
+            canvas.Children.Add(vLine);
+        }
+
         var tag = canvas.Tag as string;
         var points = tag switch
         {
@@ -324,11 +343,23 @@ public sealed partial class MainWindow : Window
             _ => null
         };
 
-        if (points is null || points.Count == 0) return;
+        if (points is null || points.Count == 0)
+        {
+            // 无数据点时，绘制一条淡灰基线
+            var baseLine = new Microsoft.UI.Xaml.Shapes.Line
+            {
+                X1 = padding,
+                Y1 = padding + height,
+                X2 = padding + width,
+                Y2 = padding + height,
+                Stroke = new SolidColorBrush(Color.FromArgb(80, 255, 255, 255)),
+                StrokeThickness = 1.5
+            };
+            canvas.Children.Add(baseLine);
+            return;
+        }
 
-        const double padding = 2;
-        var width = Math.Max(1, canvas.ActualWidth - padding * 2);
-        var height = Math.Max(1, canvas.ActualHeight - padding * 2);
+        // 2. 有点时绘制高级渐变与波形折线
         var line = new Polyline
         {
             Stroke = new SolidColorBrush((Color)Application.Current.Resources["SystemAccentColor"]),

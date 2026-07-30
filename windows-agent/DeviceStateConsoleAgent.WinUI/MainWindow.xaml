@@ -95,7 +95,7 @@
                                                             <TextBlock Text="{Binding StatusText}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource SystemFillColorSuccessBrush}" FontWeight="SemiBold" />
                                                         </Border>
                                                     </Grid>
-                                                    <Grid Grid.Row="1" ColumnSpacing="12" RowSpacing="6" VerticalAlignment="Center">
+                                                    <Grid Grid.Row="1" ColumnSpacing="16" RowSpacing="8" Margin="0,4,0,4">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="*" />
                                                             <ColumnDefinition Width="*" />
@@ -104,10 +104,10 @@
                                                             <RowDefinition Height="Auto" />
                                                             <RowDefinition Height="Auto" />
                                                         </Grid.RowDefinitions>
-                                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding CpuText}" Style="{StaticResource CaptionTextBlockStyle}" />
-                                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding MemoryText}" Style="{StaticResource CaptionTextBlockStyle}" />
-                                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding DiskText}" Style="{StaticResource CaptionTextBlockStyle}" />
-                                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding GpuText}" Style="{StaticResource CaptionTextBlockStyle}" />
+                                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding CpuText}" FontSize="13" Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+                                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding MemoryText}" FontSize="13" Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+                                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding DiskText}" FontSize="13" Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+                                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding GpuText}" FontSize="13" Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
                                                     </Grid>
                                                     <Button Grid.Row="2" Content="进入设备大屏" Click="ViewerDeviceDetailsButton_OnClick" HorizontalAlignment="Right" Style="{StaticResource AccentButtonStyle}" />
                                                 </Grid>
@@ -362,11 +362,9 @@
                             </Pivot>
 
                             <!-- 3.1 本机控制面板 (LocalControlPanel) -->
-                            <StackPanel x:Name="LocalControlPanel" Spacing="20" Visibility="Visible" HorizontalAlignment="Stretch">
+                            <StackPanel x:Name="LocalControlPanel" Spacing="16" Visibility="Visible" HorizontalAlignment="Stretch">
                                 <TextBlock Text="{Binding LocalSampleTimestampText}" Style="{StaticResource CaptionTextBlockStyle}" />
-                                <Grid x:Name="LocalMetricCardsGrid" ColumnSpacing="12" RowSpacing="12">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                <StackPanel x:Name="LocalMetricCardsGrid" Spacing="16" HorizontalAlignment="Stretch">
                                     <Border Style="{StaticResource DSCStatusCardStyle}" Padding="18">
                                         <StackPanel Spacing="10">
                                             <TextBlock Text="CPU" Style="{StaticResource SubtitleTextBlockStyle}" />
@@ -436,7 +434,7 @@
                                             <TextBlock Text="{Binding FanDetectStatusText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
                                     </Border>
-                                </Grid>
+                                </StackPanel>
                             </StackPanel>
 
                             <!-- 3.2 服务配置面板 (ServerConfigPanel) -->

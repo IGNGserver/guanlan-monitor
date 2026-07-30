@@ -350,7 +350,26 @@ public sealed class MainViewModel : ObservableObject
     public string SelectedViewerDeviceId
     {
         get => _selectedViewerDeviceId;
-        set => SetProperty(ref _selectedViewerDeviceId, value);
+        set
+        {
+            if (SetProperty(ref _selectedViewerDeviceId, value))
+            {
+                var dev = FilteredViewerDevices.FirstOrDefault(d => d.DeviceId == value)
+                       ?? ViewerDevices.FirstOrDefault(d => d.DeviceId == value);
+                if (dev is not null)
+                {
+                    SelectedViewerDeviceName = string.IsNullOrWhiteSpace(dev.Hostname) ? dev.DeviceId : dev.Hostname;
+                    SelectedViewerDeviceHardwareName = !string.IsNullOrWhiteSpace(dev.CpuText) && dev.CpuText != "CPU: --"
+                        ? $"{dev.Hostname} / {dev.CpuText}"
+                        : $"{dev.Hostname} / 高性能受控节点";
+                }
+                else
+                {
+                    SelectedViewerDeviceName = "选定设备";
+                    SelectedViewerDeviceHardwareName = "Generic Hardware /受控节点";
+                }
+            }
+        }
     }
 
     private ObservableCollection<ViewerDetailChartViewModel> _currentCategoryCharts = new();
