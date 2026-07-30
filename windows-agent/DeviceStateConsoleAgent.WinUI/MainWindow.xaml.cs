@@ -428,7 +428,7 @@ public sealed partial class MainWindow : Window
     private const int SwHide = 0;
     private const int SwRestore = 9;
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", EntryPoint = "ShowWindow")]
     private static extern bool ShowWindowNative(IntPtr hWnd, int nCmdShow);
 
     [DllImport("user32.dll")]

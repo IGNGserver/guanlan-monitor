@@ -69,13 +69,11 @@
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
                                 <TextBox Header="筛选集群设备" PlaceholderText="输入设备名称或设备 ID 过滤..." Text="{Binding ViewerDeviceFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxWidth="400" HorizontalAlignment="Left" />
-                                <ItemsControl Grid.Row="1" ItemsSource="{Binding FilteredViewerDevices}">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <controls:UniformGridLayout MinItemWidth="340" MinItemHeight="160" MinColumnSpacing="16" MinRowSpacing="16" />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
+                                <controls:ItemsRepeater Grid.Row="1" ItemsSource="{Binding FilteredViewerDevices}">
+                                    <controls:ItemsRepeater.Layout>
+                                        <controls:UniformGridLayout MinItemWidth="340" MinItemHeight="160" MinColumnSpacing="16" MinRowSpacing="16" />
+                                    </controls:ItemsRepeater.Layout>
+                                    <controls:ItemsRepeater.ItemTemplate>
                                         <DataTemplate>
                                             <Border Padding="18" Background="{ThemeResource ControlFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8">
                                                 <Grid RowSpacing="12">
@@ -115,8 +113,8 @@
                                                 </Grid>
                                             </Border>
                                         </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                    </controls:ItemsRepeater.ItemTemplate>
+                                </controls:ItemsRepeater>
                             </Grid>
                         </StackPanel>
                     </ScrollViewer>
