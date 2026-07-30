@@ -44,6 +44,10 @@ public sealed partial class MainWindow : Window
             AppNavigation.IsPaneOpen = true;
             SyncDeviceMenuItems();
             AppNavigation.SelectedItem = AppNavigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault();
+            if (TaskManagerCategoryListView is not null && TaskManagerCategoryListView.SelectedIndex < 0)
+            {
+                TaskManagerCategoryListView.SelectedIndex = 0;
+            }
         };
 
         RootLayout.ActualThemeChanged += (_, _) => ApplyTitleBarTheme();
@@ -156,7 +160,7 @@ public sealed partial class MainWindow : Window
 
     private void TaskManagerCategoryListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (TaskManagerCategoryListView.SelectedItem is ListViewItem selectedItem)
+        if (TaskManagerCategoryListView?.SelectedItem is ListViewItem selectedItem)
         {
             var tag = selectedItem.Tag as string ?? "cpu";
             SwitchCategory(tag);
@@ -165,6 +169,8 @@ public sealed partial class MainWindow : Window
 
     private void SwitchCategory(string categoryTag)
     {
+        if (TaskManagerCategoryTitle is null || _viewModel is null) return;
+
         _currentSelectedCategory = categoryTag;
         switch (categoryTag.ToLowerInvariant())
         {

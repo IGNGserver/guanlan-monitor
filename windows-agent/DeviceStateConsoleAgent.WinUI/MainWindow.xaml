@@ -145,7 +145,7 @@
                                 <!-- 类别选择列表 -->
                                 <ListView x:Name="TaskManagerCategoryListView" Grid.Row="1" SelectionChanged="TaskManagerCategoryListView_SelectionChanged" BorderThickness="0" Background="Transparent">
                                     <!-- CPU Item -->
-                                    <ListViewItem x:Name="CategoryItemCpu" Tag="cpu" IsSelected="True" Padding="8" Margin="0,0,0,6" CornerRadius="6">
+                                    <ListViewItem x:Name="CategoryItemCpu" Tag="cpu" Padding="8" Margin="0,0,0,6" CornerRadius="6">
                                         <Grid ColumnSpacing="12" Height="64">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="100" />
