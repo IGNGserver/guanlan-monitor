@@ -339,6 +339,20 @@ public sealed partial class MainWindow : Window
         SetColumns(MonitorStatusGrid, isCompact, 2);
         SetColumns(MonitorRemoteGrid, isCompact, 3);
         SetColumns(LocalMetricCardsGrid, isCompact, 2);
+        SetColumns(LocalHealthGrid, isCompact, 2);
+        SetColumns(ServerButtonsGrid, isCompact, 2);
+
+        if (MonitorWorkspace is not null)
+        {
+            MonitorWorkspace.ColumnDefinitions[0].Width = isCompact
+                ? new GridLength(1, GridUnitType.Star)
+                : new GridLength(240);
+        }
+    }
+
+    private void UpdateMonitorAvailability()
+    {
+        var isReady = _viewModel.ViewerSessionReady;
         MonitorWorkspace.Visibility = isReady ? Visibility.Visible : Visibility.Collapsed;
         MonitorUnavailableState.Visibility = isReady ? Visibility.Collapsed : Visibility.Visible;
         UpdateMetricCategoryVisibility();

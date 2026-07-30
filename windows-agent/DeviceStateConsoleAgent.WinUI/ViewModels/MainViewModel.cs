@@ -1414,7 +1414,6 @@ public sealed class MainViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(name)) return "";
         var cleaned = name.Trim('\0', ' ', '\t', '\r', '\n');
-        // Clean trailing weird glyphs or corrupt characters if present
         if (cleaned.EndsWith(" Z", StringComparison.OrdinalIgnoreCase))
         {
             cleaned = cleaned[..^2].Trim();
@@ -1470,11 +1469,11 @@ public sealed class MainViewModel : ObservableObject
             Chart("全部磁盘", "写入", series.DiskWriteBytesPerSec, ViewerMetricValueKind.Rate)
         }.Concat(series.Disks.SelectMany(disk => new[]
         {
-            Chart(CleanDeviceName(disk.Name), DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "占用", disk.UsagePercent, ViewerMetricValueKind.Percent, disk.UsedBytes, "已用"),
-            Chart(CleanDeviceName(disk.Name), DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "已用容量", disk.UsedBytes, ViewerMetricValueKind.Bytes),
-            Chart(CleanDeviceName(disk.Name), DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "读取", disk.ReadBytesPerSec, ViewerMetricValueKind.Rate),
-            Chart(CleanDeviceName(disk.Name), DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "写入", disk.WriteBytesPerSec, ViewerMetricValueKind.Rate),
-            Chart(CleanDeviceName(disk.Name), DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "温度", disk.TemperatureC, ViewerMetricValueKind.Celsius)
+            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "占用", disk.UsagePercent, ViewerMetricValueKind.Percent, disk.UsedBytes, "已用"),
+            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "已用容量", disk.UsedBytes, ViewerMetricValueKind.Bytes),
+            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "读取", disk.ReadBytesPerSec, ViewerMetricValueKind.Rate),
+            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "写入", disk.WriteBytesPerSec, ViewerMetricValueKind.Rate),
+            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "温度", disk.TemperatureC, ViewerMetricValueKind.Celsius)
         })) : Array.Empty<ViewerDetailChartViewModel>());
 
         ReplaceCharts(ViewerGpuCharts, IsViewerCategoryVisible(enabledMetrics, availableMetrics, "gpuUsage", "gpuEncode", "gpuDecode", "gpuFrequency", "gpuMemory", "gpuTemperature") ? new[]
@@ -1487,13 +1486,13 @@ public sealed class MainViewModel : ObservableObject
             Chart("全部显卡", "温度", series.GpuTemperatureC, ViewerMetricValueKind.Celsius)
         }.Concat(series.Gpus.SelectMany(gpuSeries => new[]
         {
-            Chart(CleanDeviceName(gpuSeries.Name), "使用率", gpuSeries.UsagePercent, ViewerMetricValueKind.Percent),
-            Chart(CleanDeviceName(gpuSeries.Name), "编码", gpuSeries.EncodePercent, ViewerMetricValueKind.Percent),
-            Chart(CleanDeviceName(gpuSeries.Name), "解码", gpuSeries.DecodePercent, ViewerMetricValueKind.Percent),
-            Chart(CleanDeviceName(gpuSeries.Name), "频率", gpuSeries.FrequencyMHz, ViewerMetricValueKind.Megahertz),
-            Chart(CleanDeviceName(gpuSeries.Name), "显存占用", gpuSeries.MemoryUsagePercent, ViewerMetricValueKind.Percent),
-            Chart(CleanDeviceName(gpuSeries.Name), GpuSubtitle(gpuSeries, latest.Gpus.FirstOrDefault(candidate => candidate.Id == gpuSeries.Id)), "显存已用", gpuSeries.MemoryUsedBytes, ViewerMetricValueKind.Bytes),
-            Chart(CleanDeviceName(gpuSeries.Name), "温度", gpuSeries.TemperatureC, ViewerMetricValueKind.Celsius)
+            Chart(gpuSeries.Name, "使用率", gpuSeries.UsagePercent, ViewerMetricValueKind.Percent),
+            Chart(gpuSeries.Name, "编码", gpuSeries.EncodePercent, ViewerMetricValueKind.Percent),
+            Chart(gpuSeries.Name, "解码", gpuSeries.DecodePercent, ViewerMetricValueKind.Percent),
+            Chart(gpuSeries.Name, "频率", gpuSeries.FrequencyMHz, ViewerMetricValueKind.Megahertz),
+            Chart(gpuSeries.Name, "显存占用", gpuSeries.MemoryUsagePercent, ViewerMetricValueKind.Percent),
+            Chart(gpuSeries.Name, GpuSubtitle(gpuSeries, latest.Gpus.FirstOrDefault(candidate => candidate.Id == gpuSeries.Id)), "显存已用", gpuSeries.MemoryUsedBytes, ViewerMetricValueKind.Bytes),
+            Chart(gpuSeries.Name, "温度", gpuSeries.TemperatureC, ViewerMetricValueKind.Celsius)
         })) : Array.Empty<ViewerDetailChartViewModel>());
 
         ReplaceCharts(ViewerNetworkCharts, IsViewerCategoryVisible(enabledMetrics, availableMetrics, "networkRxRate", "networkTxRate", "networkTraffic") ? new[]
