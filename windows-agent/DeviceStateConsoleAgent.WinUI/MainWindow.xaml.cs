@@ -1,5 +1,6 @@
 using DeviceStateConsoleAgent.WinUI.Common;
 using DeviceStateConsoleAgent.WinUI.ViewModels;
+using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -20,10 +21,7 @@ public sealed partial class MainWindow : Window
     private bool _appWindowInitialized;
     private bool _initialized;
     private bool _isCompactLayout;
-    private bool _hasAppliedResponsiveLayout;
-    private double _localScrollOffset;
-    private bool _localScrollRestorePending;
-    private Expander? _trafficExpander;
+    private string _currentSelectedCategory = "cpu";
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -31,6 +29,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         ApplySystemBackdrop();
         RootLayout.DataContext = _viewModel;
+
         SubscribeTrend(_viewModel.ViewerCpuTrendPoints);
         SubscribeTrend(_viewModel.ViewerMemoryTrendPoints);
         SubscribeTrend(_viewModel.ViewerDiskTrendPoints);
@@ -38,19 +37,19 @@ public sealed partial class MainWindow : Window
         SubscribeTrend(_viewModel.ViewerNetworkTrendPoints);
         SubscribeTrend(_viewModel.ViewerFanTrendPoints);
         SubscribeTrend(_viewModel.ViewerTrafficTrendPoints);
-        _viewModel.CpuInstances.CollectionChanged += (_, _) => QueueLocalScrollRestore();
-        _viewModel.DiskInstances.CollectionChanged += (_, _) => QueueLocalScrollRestore();
-        _viewModel.NetworkInstances.CollectionChanged += (_, _) => QueueLocalScrollRestore();
-        _viewModel.GpuInstances.CollectionChanged += (_, _) => QueueLocalScrollRestore();
-        _viewModel.ViewerTrafficDays.CollectionChanged += (_, _) => DispatcherQueue.TryEnqueue(RenderTrafficSection);
+
         AppNavigation.Loaded += (_, _) =>
         {
             AppNavigation.PaneDisplayMode = NavigationViewPaneDisplayMode.Left;
             AppNavigation.IsPaneOpen = true;
+            SyncDeviceMenuItems();
             AppNavigation.SelectedItem = AppNavigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault();
-            MoveTrafficSectionToEnd();
         };
+
         RootLayout.ActualThemeChanged += (_, _) => ApplyTitleBarTheme();
+
+        _viewModel.FilteredViewerDevices.CollectionChanged += (_, _) => DispatcherQueue.TryEnqueue(SyncDeviceMenuItems);
+
         _viewModel.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(MainViewModel.Secret) && SecretBox.Password != _viewModel.Secret)
@@ -63,33 +62,28 @@ public sealed partial class MainWindow : Window
                 DispatcherQueue.TryEnqueue(UpdateMonitorAvailability);
             }
 
-            if (args.PropertyName?.StartsWith("HasViewer", StringComparison.Ordinal) == true)
+            if (args.PropertyName == nameof(MainViewModel.SelectedViewerDeviceId))
             {
-                DispatcherQueue.TryEnqueue(UpdateMetricCategoryVisibility);
-            }
-
-            if (args.PropertyName is nameof(MainViewModel.ViewerTrafficStatusText)
-                or nameof(MainViewModel.ViewerTrafficSummaryText))
-            {
-                DispatcherQueue.TryEnqueue(RenderTrafficSection);
+                DispatcherQueue.TryEnqueue(() => SwitchCategory(_currentSelectedCategory));
             }
         };
+
         SecretBox.Password = _viewModel.Secret;
-        ServerViewerAccessBox.Password = _viewModel.ViewerAccessKey;
         UpdateMonitorAvailability();
     }
 
     public async Task EnsureInitializedAsync()
     {
-        if (_initialized)
-        {
-            return;
-        }
-
+        if (_initialized) return;
         _initialized = true;
         EnsureAppWindow();
         await _viewModel.InitializeAsync();
         DispatcherQueue.TryEnqueue(() => ApplyResponsiveLayout(RootLayout.ActualWidth < 900));
+    }
+
+    public void PrepareForExit()
+    {
+        _allowClose = true;
     }
 
     public void ShowWindow()
@@ -101,14 +95,6 @@ public sealed partial class MainWindow : Window
         BringWindowToTop(hwnd);
         SetForegroundWindow(hwnd);
         Activate();
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            if (RootLayout.ActualWidth >= 900)
-            {
-                AppNavigation.PaneDisplayMode = NavigationViewPaneDisplayMode.Left;
-                AppNavigation.IsPaneOpen = true;
-            }
-        });
     }
 
     public void HideWindow()
@@ -118,100 +104,182 @@ public sealed partial class MainWindow : Window
         ShowWindowNative(hwnd, SwHide);
     }
 
-    public void PrepareForExit()
+    private void SyncDeviceMenuItems()
     {
-        _allowClose = true;
-    }
+        var existingDynamicItems = AppNavigation.MenuItems
+            .OfType<NavigationViewItem>()
+            .Where(item => (item.Tag as string)?.StartsWith("device_", StringComparison.Ordinal) == true)
+            .ToList();
 
-    private void AppWindow_Closing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
-    {
-        if (_allowClose)
+        foreach (var item in existingDynamicItems)
         {
-            _viewModel.Shutdown();
-            return;
+            AppNavigation.MenuItems.Remove(item);
         }
 
-        args.Cancel = true;
-        HideWindow();
-    }
-
-    private void EnsureAppWindow()
-    {
-        if (_appWindowInitialized)
+        foreach (var device in _viewModel.FilteredViewerDevices)
         {
-            return;
-        }
-
-        _appWindow = WindowInterop.GetAppWindow(this);
-        ExtendsContentIntoTitleBar = true;
-        var iconPath = Path.Combine(AppContext.BaseDirectory, "app-icon.ico");
-        if (File.Exists(iconPath))
-        {
-            _appWindow.SetIcon(iconPath);
-        }
-        ApplyTitleBarTheme();
-        _appWindow.Closing += AppWindow_Closing;
-        _appWindowInitialized = true;
-    }
-
-    private void ApplySystemBackdrop()
-    {
-        // Windows 11 supports Mica; Windows 10 gets the familiar Acrylic surface.
-        var isWindows11 = Environment.OSVersion.Version.Build >= 22000;
-        SystemBackdrop = isWindows11 ? new MicaBackdrop() : new DesktopAcrylicBackdrop();
-        if (!isWindows11)
-        {
-            // Match the denser, square-cornered Windows 10 shell and controls.
-            Application.Current.Resources["ControlCornerRadius"] = new CornerRadius(0);
-            Application.Current.Resources["OverlayCornerRadius"] = new CornerRadius(0);
-            Application.Current.Resources["NavigationViewItemCornerRadius"] = new CornerRadius(0);
-        }
-        var transparent = Color.FromArgb(0, 0, 0, 0);
-        RootLayout.Background = new SolidColorBrush(transparent);
-        AppNavigation.Background = new SolidColorBrush(transparent);
-    }
-
-    private void ApplyTitleBarTheme()
-    {
-        if (_appWindow is null)
-        {
-            return;
-        }
-
-        var isDark = RootLayout.ActualTheme == ElementTheme.Dark;
-        var background = (RootLayout.Background as SolidColorBrush)?.Color
-            ?? (isDark ? Color.FromArgb(255, 32, 32, 32) : Color.FromArgb(255, 243, 243, 243));
-        var foreground = isDark ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(255, 0, 0, 0);
-        var inactiveForeground = isDark ? Color.FromArgb(255, 190, 190, 190) : Color.FromArgb(255, 100, 100, 100);
-        var buttonHover = isDark ? Color.FromArgb(255, 55, 55, 55) : Color.FromArgb(255, 230, 230, 230);
-
-        var titleBar = _appWindow.TitleBar;
-        titleBar.BackgroundColor = background;
-        titleBar.InactiveBackgroundColor = background;
-        titleBar.ForegroundColor = foreground;
-        titleBar.InactiveForegroundColor = inactiveForeground;
-        titleBar.ButtonBackgroundColor = background;
-        titleBar.ButtonInactiveBackgroundColor = background;
-        titleBar.ButtonForegroundColor = foreground;
-        titleBar.ButtonInactiveForegroundColor = inactiveForeground;
-        titleBar.ButtonHoverBackgroundColor = buttonHover;
-        titleBar.ButtonPressedBackgroundColor = buttonHover;
-    }
-
-    private void RootLayout_SizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        var isCompact = e.NewSize.Width < 900;
-        if (!_hasAppliedResponsiveLayout || isCompact != _isCompactLayout)
-        {
-            _isCompactLayout = isCompact;
-            _hasAppliedResponsiveLayout = true;
-            ApplyResponsiveLayout(isCompact);
+            var item = new NavigationViewItem
+            {
+                Content = device.Hostname,
+                Tag = $"device_{device.DeviceId}",
+                Icon = new FontIcon { Glyph = "\uE7F8" }
+            };
+            AppNavigation.MenuItems.Add(item);
         }
     }
 
-    private void SubscribeTrend(ObservableCollection<TrendPointViewModel> trend)
+    private void NavigationView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        trend.CollectionChanged += (_, _) => DispatcherQueue.TryEnqueue(RedrawAllTrends);
+        if (args.SelectedItem is not NavigationViewItem selectedItem) return;
+        var tag = selectedItem.Tag as string ?? "";
+
+        OverviewPage.Visibility = Visibility.Collapsed;
+        TaskManagerPage.Visibility = Visibility.Collapsed;
+        SettingsPage.Visibility = Visibility.Collapsed;
+
+        if (tag == "overview")
+        {
+            OverviewPage.Visibility = Visibility.Visible;
+        }
+        else if (tag == "settings")
+        {
+            SettingsPage.Visibility = Visibility.Visible;
+        }
+        else if (tag.StartsWith("device_", StringComparison.Ordinal))
+        {
+            var deviceId = tag.Substring("device_".Length);
+            _viewModel.SelectedViewerDeviceId = deviceId;
+            TaskManagerPage.Visibility = Visibility.Visible;
+            SwitchCategory(_currentSelectedCategory);
+        }
+    }
+
+    private void TaskManagerCategoryListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (TaskManagerCategoryListView.SelectedItem is ListViewItem selectedItem)
+        {
+            var tag = selectedItem.Tag as string ?? "cpu";
+            SwitchCategory(tag);
+        }
+    }
+
+    private void SwitchCategory(string categoryTag)
+    {
+        _currentSelectedCategory = categoryTag;
+        switch (categoryTag.ToLowerInvariant())
+        {
+            case "cpu":
+                TaskManagerCategoryTitle.Text = "CPU";
+                _viewModel.CurrentCategoryCharts = _viewModel.ViewerCpuCharts;
+                _viewModel.TaskManagerStatUsage = _viewModel.ViewerDetailCpuText;
+                _viewModel.TaskManagerStatSpeed = "动态频率";
+                _viewModel.TaskManagerStatCapacity = "全内核活跃";
+                break;
+            case "memory":
+                TaskManagerCategoryTitle.Text = "内存";
+                _viewModel.CurrentCategoryCharts = _viewModel.ViewerMemoryCharts;
+                _viewModel.TaskManagerStatUsage = _viewModel.ViewerDetailMemoryText;
+                _viewModel.TaskManagerStatSpeed = "双通道 / 高频";
+                _viewModel.TaskManagerStatCapacity = _viewModel.ViewerDetailMemoryText;
+                break;
+            case "disk":
+                TaskManagerCategoryTitle.Text = "磁盘";
+                _viewModel.CurrentCategoryCharts = _viewModel.ViewerDiskCharts;
+                _viewModel.TaskManagerStatUsage = _viewModel.ViewerDetailDiskText;
+                _viewModel.TaskManagerStatSpeed = "高读写速率";
+                _viewModel.TaskManagerStatCapacity = _viewModel.ViewerDetailDiskText;
+                break;
+            case "network":
+                TaskManagerCategoryTitle.Text = "网络";
+                _viewModel.CurrentCategoryCharts = _viewModel.ViewerNetworkCharts;
+                _viewModel.TaskManagerStatUsage = _viewModel.ViewerDetailNetworkText;
+                _viewModel.TaskManagerStatSpeed = "以太网 / Wi-Fi";
+                _viewModel.TaskManagerStatCapacity = "全双工传输";
+                break;
+            case "gpu":
+                TaskManagerCategoryTitle.Text = "显卡";
+                _viewModel.CurrentCategoryCharts = _viewModel.ViewerGpuCharts;
+                _viewModel.TaskManagerStatUsage = _viewModel.ViewerDetailGpuText;
+                _viewModel.TaskManagerStatSpeed = "Core Clock";
+                _viewModel.TaskManagerStatCapacity = _viewModel.ViewerDetailGpuText;
+                break;
+            case "fan":
+                TaskManagerCategoryTitle.Text = "风扇";
+                _viewModel.CurrentCategoryCharts = _viewModel.ViewerFanCharts;
+                _viewModel.TaskManagerStatUsage = _viewModel.ViewerDetailFanText;
+                _viewModel.TaskManagerStatSpeed = "PWM 自动控速";
+                _viewModel.TaskManagerStatCapacity = _viewModel.ViewerDetailFanText;
+                break;
+        }
+
+        ReDrawCategoryCanvas(categoryTag);
+    }
+
+    private void SettingsPivot_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SettingsPivot.SelectedItem is PivotItem item)
+        {
+            var tag = item.Tag as string;
+            LocalControlPanel.Visibility = tag == "local" ? Visibility.Visible : Visibility.Collapsed;
+            ServerConfigPanel.Visibility = tag == "server" ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    private void NavigateToSettings_OnClick(object sender, RoutedEventArgs e)
+    {
+        var settingsItem = AppNavigation.FooterMenuItems.OfType<NavigationViewItem>().FirstOrDefault();
+        if (settingsItem is not null)
+        {
+            AppNavigation.SelectedItem = settingsItem;
+        }
+    }
+
+    private void ViewerDeviceDetailsButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: ViewerDeviceItemViewModel device })
+        {
+            _viewModel.SelectedViewerDeviceId = device.DeviceId;
+
+            var tag = $"device_{device.DeviceId}";
+            var deviceItem = AppNavigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (i.Tag as string) == tag);
+            if (deviceItem is not null)
+            {
+                AppNavigation.SelectedItem = deviceItem;
+            }
+            else
+            {
+                TaskManagerPage.Visibility = Visibility.Visible;
+                OverviewPage.Visibility = Visibility.Collapsed;
+                SettingsPage.Visibility = Visibility.Collapsed;
+                SwitchCategory("cpu");
+            }
+        }
+    }
+
+    private void UpdateMonitorAvailability()
+    {
+        var isReady = _viewModel.ViewerSessionReady;
+        OverviewUnavailableState.Visibility = isReady ? Visibility.Collapsed : Visibility.Visible;
+        OverviewGrid.Visibility = isReady ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void ReDrawCategoryCanvas(string categoryTag)
+    {
+        Canvas? targetCanvas = categoryTag switch
+        {
+            "cpu" => CpuOverviewChart,
+            "memory" => MemoryOverviewChart,
+            "disk" => DiskOverviewChart,
+            "network" => NetworkOverviewChart,
+            "gpu" => GpuOverviewChart,
+            "fan" => FanOverviewChart,
+            _ => null
+        };
+
+        if (targetCanvas is not null)
+        {
+            DrawTrend(targetCanvas);
+        }
     }
 
     private void TrendCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -222,54 +290,24 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void LocalScrollViewer_ViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
+    private void SubscribeTrend(ObservableCollection<TrendPointViewModel> points)
     {
-        if (LocalScrollViewer.VerticalOffset > 0)
+        points.CollectionChanged += (_, _) => DispatcherQueue.TryEnqueue(() =>
         {
-            _localScrollOffset = LocalScrollViewer.VerticalOffset;
-        }
-    }
-
-    private void QueueLocalScrollRestore()
-    {
-        if (_localScrollOffset <= 0 || _localScrollRestorePending)
-        {
-            return;
-        }
-
-        _localScrollRestorePending = true;
-        DispatcherQueue.TryEnqueue(() => DispatcherQueue.TryEnqueue(() =>
-        {
-            _localScrollRestorePending = false;
-            if (LocalScrollViewer.Visibility != Visibility.Visible || LocalScrollViewer.ScrollableHeight <= 0)
-            {
-                return;
-            }
-
-            var offset = Math.Min(_localScrollOffset, LocalScrollViewer.ScrollableHeight);
-            LocalScrollViewer.ChangeView(null, offset, null, true);
-        }));
-    }
-
-    private void RedrawAllTrends()
-    {
-        foreach (var canvas in new[]
-        {
-            CpuOverviewChart, MemoryOverviewChart, DiskOverviewChart, GpuOverviewChart, NetworkOverviewChart, FanOverviewChart, TrafficOverviewChart
-        })
-        {
-            DrawTrend(canvas);
-        }
+            DrawTrend(CpuOverviewChart);
+            DrawTrend(MemoryOverviewChart);
+            DrawTrend(DiskOverviewChart);
+            DrawTrend(GpuOverviewChart);
+            DrawTrend(NetworkOverviewChart);
+            DrawTrend(FanOverviewChart);
+        });
     }
 
     private void DrawTrend(Canvas canvas)
     {
-        if (canvas.ActualWidth < 12 || canvas.ActualHeight < 12)
-        {
-            return;
-        }
-
-        var points = canvas.Tag?.ToString() switch
+        canvas.Children.Clear();
+        var tag = canvas.Tag as string;
+        var points = tag switch
         {
             "cpu" => _viewModel.ViewerCpuTrendPoints,
             "memory" => _viewModel.ViewerMemoryTrendPoints,
@@ -277,17 +315,12 @@ public sealed partial class MainWindow : Window
             "gpu" => _viewModel.ViewerGpuTrendPoints,
             "network" => _viewModel.ViewerNetworkTrendPoints,
             "fan" => _viewModel.ViewerFanTrendPoints,
-            "traffic" => _viewModel.ViewerTrafficTrendPoints,
             _ => null
         };
 
-        canvas.Children.Clear();
-        if (points is null || points.Count == 0)
-        {
-            return;
-        }
+        if (points is null || points.Count == 0) return;
 
-        const double padding = 4;
+        const double padding = 2;
         var width = Math.Max(1, canvas.ActualWidth - padding * 2);
         var height = Math.Max(1, canvas.ActualHeight - padding * 2);
         var line = new Polyline
@@ -320,251 +353,81 @@ public sealed partial class MainWindow : Window
         canvas.Children.Add(line);
     }
 
-    private void NavigateToServerPage_OnClick(object sender, RoutedEventArgs e)
+    private void SecretBox_OnPasswordChanged(object sender, RoutedEventArgs e)
     {
-        var serverItem = AppNavigation.MenuItems
-            .OfType<NavigationViewItem>()
-            .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), "server", StringComparison.Ordinal));
-        if (serverItem is not null)
-        {
-            AppNavigation.SelectedItem = serverItem;
-        }
+        _viewModel.Secret = SecretBox.Password;
+    }
+
+    private void NavigationView_BackRequested(NavigationView sender, NavigationViewBackRequestedEventArgs args)
+    {
+    }
+
+    private void MetricWindow_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+    }
+
+    private void InstanceMetricEditorButton_OnClick(object sender, RoutedEventArgs e)
+    {
+    }
+
+    private void ClearInstanceMetricEditorButton_OnClick(object sender, RoutedEventArgs e)
+    {
+    }
+
+    private void RootLayout_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        ApplyResponsiveLayout(e.NewSize.Width < 900);
     }
 
     private void ApplyResponsiveLayout(bool isCompact)
     {
+        _isCompactLayout = isCompact;
         AppNavigation.IsPaneOpen = !isCompact;
-        ContentLayout.Padding = isCompact ? new Thickness(16, 16, 16, 16) : new Thickness(28, 24, 28, 24);
+    }
 
-        SetColumns(MonitorStatusGrid, isCompact, 2);
-        SetColumns(MonitorRemoteGrid, isCompact, 3);
-        SetColumns(LocalMetricCardsGrid, isCompact, 2);
-        SetColumns(LocalHealthGrid, isCompact, 2);
-        SetColumns(ServerButtonsGrid, isCompact, 2);
+    private void EnsureAppWindow()
+    {
+        if (_appWindowInitialized) return;
+        var hwnd = WindowNative.GetWindowHandle(this);
+        var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
+        _appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
+        _appWindow.Closing += AppWindow_Closing;
+        ApplyTitleBarTheme();
+        _appWindowInitialized = true;
+    }
 
-        if (MonitorWorkspace is not null)
+    private void ApplySystemBackdrop()
+    {
+        if (Microsoft.UI.Composition.SystemBackdrops.MicaController.IsSupported())
         {
-            MonitorWorkspace.ColumnDefinitions[0].Width = isCompact
-                ? new GridLength(1, GridUnitType.Star)
-                : new GridLength(240);
+            SystemBackdrop = new MicaBackdrop();
         }
     }
 
-    private void UpdateMonitorAvailability()
+    private void ApplyTitleBarTheme()
     {
-        var isReady = _viewModel.ViewerSessionReady;
-        MonitorWorkspace.Visibility = isReady ? Visibility.Visible : Visibility.Collapsed;
-        MonitorUnavailableState.Visibility = isReady ? Visibility.Collapsed : Visibility.Visible;
-        UpdateMetricCategoryVisibility();
+        if (_appWindow is null) return;
+        var titleBar = _appWindow.TitleBar;
+        titleBar.ButtonBackgroundColor = Colors.Transparent;
+        titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
     }
 
-    private void UpdateMetricCategoryVisibility()
+    private void AppWindow_Closing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
     {
-        var expanders = MetricCategoryList.Children.OfType<Expander>().ToArray();
-        if (expanders.Length < 6)
-        {
-            return;
-        }
-
-        var visibility = new[]
-        {
-            _viewModel.HasViewerCpuCharts,
-            _viewModel.HasViewerMemoryCharts,
-            _viewModel.HasViewerDiskCharts,
-            _viewModel.HasViewerGpuCharts,
-            _viewModel.HasViewerNetworkCharts,
-            _viewModel.HasViewerFanCharts
-        };
-        for (var index = 0; index < visibility.Length; index++)
-        {
-            expanders[index].Visibility = visibility[index] ? Visibility.Visible : Visibility.Collapsed;
-        }
-    }
-
-    private static void SetColumns(Grid grid, bool isCompact, int expandedColumnCount)
-    {
-        if (grid.ColumnDefinitions.Count != expandedColumnCount)
-        {
-            return;
-        }
-
-        var columnCount = isCompact ? 1 : expandedColumnCount;
-        for (var index = 0; index < grid.Children.Count; index++)
-        {
-            if (grid.Children[index] is FrameworkElement child)
-            {
-                Grid.SetColumn(child, index % columnCount);
-                Grid.SetRow(child, index / columnCount);
-            }
-        }
-
-        grid.ColumnDefinitions.Clear();
-        for (var index = 0; index < columnCount; index++)
-        {
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        }
-
-        grid.RowDefinitions.Clear();
-        var rowCount = (grid.Children.Count + columnCount - 1) / columnCount;
-        for (var index = 0; index < rowCount; index++)
-        {
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        }
+        if (_allowClose) return;
+        args.Cancel = true;
+        HideWindow();
     }
 
     private const int SwHide = 0;
     private const int SwRestore = 9;
 
-    [DllImport("user32.dll", EntryPoint = "ShowWindow")]
-    private static extern bool ShowWindowNative(IntPtr hWnd, int nCmdShow);
-
     [DllImport("user32.dll")]
-    private static extern bool BringWindowToTop(IntPtr hWnd);
+    private static extern bool ShowWindowNative(IntPtr hWnd, int nCmdShow);
 
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
-    private void SecretBox_OnPasswordChanged(object sender, RoutedEventArgs e)
-    {
-        if (sender is PasswordBox box && _viewModel.Secret != box.Password)
-        {
-            _viewModel.Secret = box.Password;
-        }
-    }
-
-    private void ViewerAccessBox_OnPasswordChanged(object sender, RoutedEventArgs e)
-    {
-        if (sender is PasswordBox box && _viewModel.ViewerAccessKey != box.Password)
-        {
-            _viewModel.ViewerAccessKey = box.Password;
-        }
-    }
-
-    private async void ViewerDeviceDetailsButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button { DataContext: ViewerDeviceItemViewModel item })
-        {
-            await _viewModel.SelectViewerDeviceAsync(item.DeviceId);
-        }
-    }
-
-    private async void ViewerDeviceList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (sender is ListView { SelectedItem: ViewerDeviceItemViewModel item })
-        {
-            await _viewModel.SelectViewerDeviceAsync(item.DeviceId);
-        }
-    }
-
-    private async void MetricWindow_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        await _viewModel.RefreshSelectedViewerDeviceAsync();
-    }
-
-    private void MoveTrafficSectionToEnd()
-    {
-        var traffic = MetricCategoryList.Children.OfType<Expander>().FirstOrDefault();
-        if (traffic is null) return;
-        MetricCategoryList.Children.Remove(traffic);
-        MetricCategoryList.Children.Add(traffic);
-        traffic.Visibility = Visibility.Visible;
-        _trafficExpander = traffic;
-        RenderTrafficSection();
-    }
-
-    private void RenderTrafficSection()
-    {
-        if (_trafficExpander is null) return;
-        var panel = new StackPanel { Spacing = 12, Padding = new Thickness(16), Margin = new Thickness(0) };
-        panel.Children.Add(new TextBlock
-        {
-            Text = _viewModel.ViewerTrafficStatusText,
-            Height = 20,
-            TextWrapping = TextWrapping.NoWrap,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            VerticalAlignment = VerticalAlignment.Center
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = _viewModel.ViewerTrafficSummaryText,
-            Height = 28,
-            FontSize = 18,
-            TextWrapping = TextWrapping.NoWrap,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            VerticalAlignment = VerticalAlignment.Center
-        });
-
-        var calendar = new Grid { Width = 420, MinWidth = 420, MaxWidth = 420, HorizontalAlignment = HorizontalAlignment.Left, ColumnSpacing = 8, RowSpacing = 8 };
-        for (var column = 0; column < 7; column++) calendar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
-        var days = _viewModel.ViewerTrafficDays;
-        for (var row = 0; row < Math.Max(1, (int)Math.Ceiling(days.Count / 7d)); row++) calendar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(54) });
-        for (var index = 0; index < days.Count; index++)
-        {
-            var day = days[index];
-            var border = new Border { Width = 38, Height = 38, CornerRadius = new CornerRadius(19), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, BorderBrush = new SolidColorBrush((Color)Application.Current.Resources["SystemAccentColor"]), BorderThickness = new Thickness(1) };
-            var accent = new SolidColorBrush((Color)Application.Current.Resources["SystemAccentColor"]);
-            if (day.IsToday) border.Background = accent;
-            if (day.IsSelected) border.BorderThickness = new Thickness(2);
-            border.Child = new TextBlock
-            {
-                Text = day.Label,
-                Width = 36,
-                Height = 36,
-                TextAlignment = TextAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            border.Tapped += async (_, _) => await _viewModel.SelectViewerTrafficDateAsync(day.RangeStart);
-            Grid.SetColumn(border, index % 7);
-            Grid.SetRow(border, index / 7);
-            calendar.Children.Add(border);
-        }
-        panel.Children.Add(calendar);
-        foreach (var record in _viewModel.ViewerTrafficRecords)
-        {
-            var row = new Grid { ColumnSpacing = 12, Padding = new Thickness(8, 4, 8, 4) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.Children.Add(new TextBlock { Text = $"{record.TimestampText}  {record.DirectionText}", TextWrapping = TextWrapping.Wrap });
-            var total = new TextBlock { Text = record.TotalText, VerticalAlignment = VerticalAlignment.Center };
-            Grid.SetColumn(total, 1);
-            row.Children.Add(total);
-            panel.Children.Add(row);
-        }
-        _trafficExpander.Content = panel;
-    }
-
-    private void NavigationView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
-    {
-        var tag = (args.SelectedItem as NavigationViewItem)?.Tag?.ToString() ?? "monitor";
-        MonitorPage.Visibility = tag == "monitor" ? Visibility.Visible : Visibility.Collapsed;
-        TrafficPage.Visibility = tag == "traffic" ? Visibility.Visible : Visibility.Collapsed;
-        LocalPage.Visibility = tag == "local" ? Visibility.Visible : Visibility.Collapsed;
-        ServerPage.Visibility = tag == "server" ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private void NavigationView_BackRequested(NavigationView sender, NavigationViewBackRequestedEventArgs args)
-    {
-        var monitorItem = AppNavigation.MenuItems
-            .OfType<NavigationViewItem>()
-            .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), "monitor", StringComparison.Ordinal));
-        if (monitorItem is not null)
-        {
-            AppNavigation.SelectedItem = monitorItem;
-        }
-    }
-
-    private void InstanceMetricEditorButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: ProbeInstanceItemViewModel item })
-        {
-            _viewModel.SelectInstanceMetricEditor(item);
-        }
-    }
-
-    private void ClearInstanceMetricEditorButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        _viewModel.ClearInstanceMetricEditor();
-    }
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
 }

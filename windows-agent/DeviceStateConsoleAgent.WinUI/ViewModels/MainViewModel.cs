@@ -347,6 +347,96 @@ public sealed class MainViewModel : ObservableObject
         }
     }
     public bool HasSelectedInstanceMetricEditor => SelectedInstanceMetricItem is not null && SelectedInstanceMetricToggles.Count > 0;
+    public string SelectedViewerDeviceId
+    {
+        get => _selectedViewerDeviceId;
+        set => SetProperty(ref _selectedViewerDeviceId, value);
+    }
+
+    private ObservableCollection<ViewerDetailChartViewModel> _currentCategoryCharts = new();
+    public ObservableCollection<ViewerDetailChartViewModel> CurrentCategoryCharts
+    {
+        get => _currentCategoryCharts;
+        set => SetProperty(ref _currentCategoryCharts, value);
+    }
+
+    private string _selectedViewerDeviceHardwareName = "Intel(R) Core(TM) i9 / Generic Hardware";
+    public string SelectedViewerDeviceHardwareName
+    {
+        get => _selectedViewerDeviceHardwareName;
+        set => SetProperty(ref _selectedViewerDeviceHardwareName, value);
+    }
+
+    private string _taskManagerStatUsage = "4%";
+    public string TaskManagerStatUsage
+    {
+        get => _taskManagerStatUsage;
+        set => SetProperty(ref _taskManagerStatUsage, value);
+    }
+
+    private string _taskManagerStatSpeed = "4.20 GHz";
+    public string TaskManagerStatSpeed
+    {
+        get => _taskManagerStatSpeed;
+        set => SetProperty(ref _taskManagerStatSpeed, value);
+    }
+
+    private string _taskManagerStatCapacity = "16.0 / 32.0 GB (50%)";
+    public string TaskManagerStatCapacity
+    {
+        get => _taskManagerStatCapacity;
+        set => SetProperty(ref _taskManagerStatCapacity, value);
+    }
+
+    private string _taskManagerStatStatus = "在线 (正常运行)";
+    public string TaskManagerStatStatus
+    {
+        get => _taskManagerStatStatus;
+        set => SetProperty(ref _taskManagerStatStatus, value);
+    }
+
+    private string _taskManagerStatWriteSpeed = "0.0 KB/s";
+    public string TaskManagerStatWriteSpeed
+    {
+        get => _taskManagerStatWriteSpeed;
+        set => SetProperty(ref _taskManagerStatWriteSpeed, value);
+    }
+
+    private string _taskManagerStatReadSpeed = "0.0 KB/s";
+    public string TaskManagerStatReadSpeed
+    {
+        get => _taskManagerStatReadSpeed;
+        set => SetProperty(ref _taskManagerStatReadSpeed, value);
+    }
+
+    private string _taskManagerBaseSpeedText = "2.40 GHz";
+    public string TaskManagerBaseSpeedText
+    {
+        get => _taskManagerBaseSpeedText;
+        set => SetProperty(ref _taskManagerBaseSpeedText, value);
+    }
+
+    private string _taskManagerCoresText = "8";
+    public string TaskManagerCoresText
+    {
+        get => _taskManagerCoresText;
+        set => SetProperty(ref _taskManagerCoresText, value);
+    }
+
+    private string _taskManagerLogicalCpusText = "16";
+    public string TaskManagerLogicalCpusText
+    {
+        get => _taskManagerLogicalCpusText;
+        set => SetProperty(ref _taskManagerLogicalCpusText, value);
+    }
+
+    private string _taskManagerLastSeenText = "刚刚";
+    public string TaskManagerLastSeenText
+    {
+        get => _taskManagerLastSeenText;
+        set => SetProperty(ref _taskManagerLastSeenText, value);
+    }
+
     public string SelectedInstanceMetricEditorTitle =>
         SelectedInstanceMetricItem is null
             ? "实例指标细化"
