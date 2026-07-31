@@ -368,6 +368,12 @@ public sealed class MainViewModel : ObservableObject
                     SelectedViewerDeviceName = "选定设备";
                     SelectedViewerDeviceHardwareName = "Generic Hardware /受控节点";
                 }
+
+                // 核心关键修复：切换设备时瞬间调取该设备的底层实时与历史指标！
+                _ = Task.Run(async () =>
+                {
+                    await RefreshSelectedViewerDeviceAsync();
+                });
             }
         }
     }
@@ -1522,12 +1528,34 @@ public sealed class MainViewModel : ObservableObject
                 ? payload
                 : await _apiClient.GetViewerDeviceMetricsAsync(ServerUrl, deviceId, "1d");
             ReplaceTrafficTrend(ViewerTrafficTrendPoints, trafficPayload?.Series);
+            UpdateTaskManagerMetricGridValues(payload);
             await RefreshViewerTrafficAsync();
         }
         catch (Exception ex)
         {
             ViewerDetailStatusText = $"读取设备详情失败：{ex.Message}";
         }
+    }
+
+    private void UpdateTaskManagerMetricGridValues(ViewerDeviceMetricsDto payload)
+    {
+        if (payload?.Latest is not { } latest) return;
+
+        var memoryPercent = latest.MemoryTotalBytes > 0 ? latest.MemoryUsedBytes / latest.MemoryTotalBytes * 100 : 0;
+        var cpuSeries = payload.Series?.Cpus?.FirstOrDefault();
+
+        // 默认全量真实解包
+        TaskManagerStatUsage = $"{latest.CpuUsagePercent:0.0}%";
+        TaskManagerStatSpeed = latest.CpuFrequencyMHz.HasValue ? $"{latest.CpuFrequencyMHz.Value / 1000.0:0.00} GHz" : "--";
+        TaskManagerStatCapacity = cpuSeries?.CoreCount.HasValue == true ? $"{cpuSeries.CoreCount} 核 / {cpuSeries.LogicalCount ?? cpuSeries.CoreCount} 线程" : "--";
+        TaskManagerStatStatus = latest.CpuTemperatureC.HasValue ? $"{latest.CpuTemperatureC.Value:0.0} °C" : "正常";
+        TaskManagerStatWriteSpeed = FormatBytes(latest.MemoryUsedBytes);
+        TaskManagerStatReadSpeed = FormatBytes(latest.MemoryTotalBytes);
+
+        TaskManagerRightLabel1 = "已用内存:"; TaskManagerRightValue1 = FormatBytes(latest.MemoryUsedBytes);
+        TaskManagerRightLabel2 = "总物理内存:"; TaskManagerRightValue2 = FormatBytes(latest.MemoryTotalBytes);
+        TaskManagerRightLabel3 = "交换空间已用:"; TaskManagerRightValue3 = FormatBytes(latest.SwapUsedBytes);
+        TaskManagerRightLabel4 = "最后采集:"; TaskManagerRightValue4 = payload.LastSeenAt ?? "刚刚";
     }
 
     public async Task RefreshViewerTrafficAsync()
