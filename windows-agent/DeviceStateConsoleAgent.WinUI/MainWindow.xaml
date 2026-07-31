@@ -276,7 +276,10 @@
                                         <TextBlock x:Name="TaskManagerCategoryTitle" Text="CPU" Style="{StaticResource TitleTextBlockStyle}" />
                                         <TextBlock x:Name="TaskManagerHardwareSubtitle" Text="{Binding SelectedViewerDeviceHardwareName}" Style="{StaticResource SubtitleTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                     </StackPanel>
-                                    <ComboBox Grid.Column="1" Header="历史窗口" ItemsSource="{Binding MetricWindows}" SelectedItem="{Binding SelectedMetricWindow, Mode=TwoWay}" SelectionChanged="MetricWindow_SelectionChanged" Width="140" VerticalAlignment="Bottom" />
+                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Bottom">
+                                         <ComboBox x:Name="SubDeviceComboBox" Header="特定设备 / 分区" ItemsSource="{Binding CurrentCategoryCharts}" DisplayMemberPath="Title" SelectedItem="{Binding SelectedCategoryChart, Mode=TwoWay}" Width="200" SelectionChanged="SubDeviceComboBox_SelectionChanged" />
+                                         <ComboBox Header="历史窗口" ItemsSource="{Binding MetricWindows}" SelectedItem="{Binding SelectedMetricWindow, Mode=TwoWay}" SelectionChanged="MetricWindow_SelectionChanged" Width="120" />
+                                     </StackPanel>
                                 </Grid>
 
                                 <!-- 走势图面板 -->
