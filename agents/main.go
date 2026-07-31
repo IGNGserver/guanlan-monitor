@@ -323,6 +323,7 @@ type windowsHardwareMetadata struct {
 	MemoryFormFactor string
 	GpuDrivers       map[string]string
 	Networks         map[string]networkHardwareMetadata
+	DiskInterfaces   map[string]string
 }
 
 type slowMetrics struct {
@@ -339,6 +340,7 @@ type slowMetrics struct {
 	gpus              []gpuDeviceStats
 	gpuDrivers        map[string]string
 	networkMetadata   map[string]networkHardwareMetadata
+	diskInterfaces    map[string]string
 	fans              []fanSensorStats
 	sensorBackends    []sensorBackendStatus
 }
@@ -581,6 +583,7 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 			gpus:              []gpuDeviceStats{},
 			gpuDrivers:        map[string]string{},
 			networkMetadata:   map[string]networkHardwareMetadata{},
+			diskInterfaces:    map[string]string{},
 			fans:              []fanSensorStats{},
 			sensorBackends:    []sensorBackendStatus{},
 		}
@@ -589,6 +592,7 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	memory.SlotCount = slow.memorySlotCount
 	memory.FormFactor = slow.memoryFormFactor
 	for index := range slow.disks {
+		slow.disks[index].InterfaceType = slow.diskInterfaces[slow.disks[index].SourceKey]
 		if rate, ok := diskRate.Instances[slow.disks[index].SourceKey]; ok {
 			active := rate.ActivePercent
 			response := rate.AverageResponseMs
@@ -760,6 +764,7 @@ func collectSlowMetrics() (slowMetrics, error) {
 		gpus:              hardware.gpus,
 		gpuDrivers:        windowsMetadata.GpuDrivers,
 		networkMetadata:   windowsMetadata.Networks,
+		diskInterfaces:    windowsMetadata.DiskInterfaces,
 		fans:              hardware.fans,
 		sensorBackends:    []sensorBackendStatus{},
 	}, nil
@@ -1102,6 +1107,10 @@ type windowsHardwareMetadataPayload struct {
 		LinkSpeed      string `json:"linkSpeed"`
 		ConnectionType string `json:"connectionType"`
 	} `json:"adapters"`
+	Disks []struct {
+		Name          string `json:"name"`
+		InterfaceType string `json:"interfaceType"`
+	} `json:"disks"`
 	GPUs []struct {
 		Name          string `json:"name"`
 		DriverVersion string `json:"driverVersion"`
@@ -1110,8 +1119,9 @@ type windowsHardwareMetadataPayload struct {
 
 func collectWindowsHardwareMetadata() windowsHardwareMetadata {
 	result := windowsHardwareMetadata{
-		GpuDrivers: map[string]string{},
-		Networks:   map[string]networkHardwareMetadata{},
+		GpuDrivers:     map[string]string{},
+		Networks:       map[string]networkHardwareMetadata{},
+		DiskInterfaces: map[string]string{},
 	}
 	if runtime.GOOS != "windows" {
 		return result
@@ -1119,7 +1129,7 @@ func collectWindowsHardwareMetadata() windowsHardwareMetadata {
 
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
-	commandText := `$ErrorActionPreference='Stop'; $memory=@(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue | ForEach-Object { $form=switch([int]$_.FormFactor){8{'DIMM'}12{'SODIMM'}default{[string]$_.FormFactor}}; [pscustomobject]@{speedMHz=[double]$_.Speed; configuredClockMHz=[double]$_.ConfiguredClockSpeed; formFactor=$form} }); $adapters=@(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; linkSpeed=[string]$_.LinkSpeed; connectionType=[string]$_.MediaType} }); $gpus=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; driverVersion=[string]$_.DriverVersion} }); [pscustomobject]@{memory=@($memory); adapters=@($adapters); gpus=@($gpus)} | ConvertTo-Json -Depth 4 -Compress`
+	commandText := `$ErrorActionPreference='Stop'; $memory=@(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue | ForEach-Object { $form=switch([int]$_.FormFactor){8{'DIMM'}12{'SODIMM'}default{[string]$_.FormFactor}}; [pscustomobject]@{speedMHz=[double]$_.Speed; configuredClockMHz=[double]$_.ConfiguredClockSpeed; formFactor=$form} }); $adapters=@(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; linkSpeed=[string]$_.LinkSpeed; connectionType=[string]$_.MediaType} }); $disks=@(Get-Partition -ErrorAction SilentlyContinue | ForEach-Object { $disk=Get-Disk -Number $_.DiskNumber -ErrorAction SilentlyContinue; $key=if ($_.DriveLetter) { [string]$_.DriveLetter + ':' } elseif ($_.AccessPaths) { [string]$_.AccessPaths[0] } else { '' }; if ($key -and $disk) { [pscustomobject]@{name=$key; interfaceType=(([string]$disk.BusType) + ' ' + ([string]$disk.MediaType)).Trim()} } }); $gpus=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; driverVersion=[string]$_.DriverVersion} }); [pscustomobject]@{memory=@($memory); adapters=@($adapters); disks=@($disks); gpus=@($gpus)} | ConvertTo-Json -Depth 4 -Compress`
 	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
 	if err != nil {
 		return result
@@ -1165,6 +1175,11 @@ func collectWindowsHardwareMetadata() windowsHardwareMetadata {
 		metadata := result.Networks[name]
 		metadata.SignalStrengthPercent = signal
 		result.Networks[name] = metadata
+	}
+	for _, disk := range payload.Disks {
+		if disk.Name != "" && disk.InterfaceType != "" {
+			result.DiskInterfaces[disk.Name] = disk.InterfaceType
+		}
 	}
 	for _, gpu := range payload.GPUs {
 		if gpu.Name != "" && gpu.DriverVersion != "" {
