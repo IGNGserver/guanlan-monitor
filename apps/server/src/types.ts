@@ -47,6 +47,17 @@ export interface TimeSeriesRecord {
   networks?: InstanceMetricRecord[];
   gpus?: InstanceMetricRecord[];
   fans?: InstanceMetricRecord[];
+  recordedDetails?: {
+    system: AgentMetricsPayload["system"];
+    memory: AgentMetricsPayload["memory"];
+    cpuPackages: AgentMetricsPayload["cpuPackages"];
+    disks: AgentMetricsPayload["disks"];
+    networkInterfaces: AgentMetricsPayload["networkInterfaces"];
+    gpus: AgentMetricsPayload["gpus"];
+    fans: AgentMetricsPayload["fans"];
+    diskRate: AgentMetricsPayload["diskRate"];
+    networkRate: AgentMetricsPayload["networkRate"];
+  };
 }
 
 export interface InstanceMetricRecord {

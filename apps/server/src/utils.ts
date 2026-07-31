@@ -211,7 +211,18 @@ export function payloadToTimeSeries(
     disks,
     networks,
     gpus,
-    fans
+    fans,
+    recordedDetails: {
+      system: payload.system,
+      memory: payload.memory,
+      cpuPackages: payload.cpuPackages ?? [],
+      disks: payload.disks ?? [],
+      networkInterfaces: payload.networkInterfaces ?? [],
+      gpus: payload.gpus,
+      fans: payload.fans ?? [],
+      diskRate: payload.diskRate,
+      networkRate: payload.networkRate
+    }
   };
 }
 

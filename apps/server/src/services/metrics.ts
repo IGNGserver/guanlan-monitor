@@ -296,7 +296,8 @@ function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[], timest
     disks,
     networks,
     gpus,
-    fans
+    fans,
+    recordedDetails: lastSample?.recordedDetails
   };
 }
 

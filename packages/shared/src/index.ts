@@ -67,6 +67,9 @@ export interface DiskDeviceStats {
   vendor?: string;
   sourceKey?: string;
   temperatureC?: number | null;
+  activePercent?: number | null;
+  averageResponseMs?: number | null;
+  interfaceType?: string | null;
   totalBytes: number;
   usedBytes: number;
 }
@@ -74,8 +77,20 @@ export interface DiskDeviceStats {
 export interface MemoryStats {
   totalBytes: number;
   usedBytes: number;
+  availableBytes: number;
+  cachedBytes: number;
+  committedBytes: number;
   swapTotalBytes: number;
   swapUsedBytes: number;
+  speedMHz?: number | null;
+  slotCount?: number | null;
+  formFactor?: string | null;
+}
+
+export interface SystemStats {
+  processCount: number;
+  threadCount: number;
+  handleCount: number;
 }
 
 export interface CpuPackageStats {
@@ -115,6 +130,9 @@ export interface NetworkInterfaceStats {
   txBytesPerSec?: number;
   totalRxBytes?: number;
   totalTxBytes?: number;
+  linkSpeedMbps?: number | null;
+  connectionType?: string | null;
+  signalStrengthPercent?: number | null;
 }
 
 export interface GpuDeviceStats {
@@ -127,6 +145,7 @@ export interface GpuDeviceStats {
   memoryUsedBytes: number;
   memoryTotalBytes: number;
   temperatureC?: number | null;
+  driverVersion?: string | null;
 }
 
 export interface FanSensorStats {
@@ -134,6 +153,11 @@ export interface FanSensorStats {
   label: string;
   interface: string;
   rpm: number;
+  controlMode?: string | null;
+  targetTemperatureC?: number | null;
+  minPwmPercent?: number | null;
+  maxPwmPercent?: number | null;
+  channelState?: string | null;
   note?: string;
 }
 
@@ -197,6 +221,7 @@ export interface AgentMetricsPayload {
   identity: AgentIdentity;
   timestamp: string;
   heartbeatAt: string;
+  system: SystemStats;
   cpuUsagePercent: number;
   cpuFrequencyMHz?: number | null;
   cpuTemperatureC?: number | null;

@@ -25,6 +25,7 @@ import (
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
 	gnet "github.com/shirou/gopsutil/v4/net"
+	gprocess "github.com/shirou/gopsutil/v4/process"
 )
 
 const (
@@ -107,10 +108,22 @@ type agentIdentity struct {
 }
 
 type memoryStats struct {
-	TotalBytes     uint64 `json:"totalBytes"`
-	UsedBytes      uint64 `json:"usedBytes"`
-	SwapTotalBytes uint64 `json:"swapTotalBytes"`
-	SwapUsedBytes  uint64 `json:"swapUsedBytes"`
+	TotalBytes     uint64   `json:"totalBytes"`
+	UsedBytes      uint64   `json:"usedBytes"`
+	AvailableBytes uint64   `json:"availableBytes"`
+	CachedBytes    uint64   `json:"cachedBytes"`
+	CommittedBytes uint64   `json:"committedBytes"`
+	SwapTotalBytes uint64   `json:"swapTotalBytes"`
+	SwapUsedBytes  uint64   `json:"swapUsedBytes"`
+	SpeedMHz       *float64 `json:"speedMHz,omitempty"`
+	SlotCount      *int     `json:"slotCount,omitempty"`
+	FormFactor     string   `json:"formFactor,omitempty"`
+}
+
+type systemStats struct {
+	ProcessCount int    `json:"processCount"`
+	ThreadCount  int    `json:"threadCount"`
+	HandleCount  uint64 `json:"handleCount"`
 }
 
 type storageUsage struct {
@@ -119,16 +132,19 @@ type storageUsage struct {
 }
 
 type diskDeviceStats struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	MountPoint   string   `json:"mountPoint"`
-	FileSystem   string   `json:"filesystem,omitempty"`
-	Model        string   `json:"model,omitempty"`
-	Vendor       string   `json:"vendor,omitempty"`
-	SourceKey    string   `json:"sourceKey,omitempty"`
-	TemperatureC *float64 `json:"temperatureC,omitempty"`
-	TotalBytes   uint64   `json:"totalBytes"`
-	UsedBytes    uint64   `json:"usedBytes"`
+	ID                string   `json:"id"`
+	Name              string   `json:"name"`
+	MountPoint        string   `json:"mountPoint"`
+	FileSystem        string   `json:"filesystem,omitempty"`
+	Model             string   `json:"model,omitempty"`
+	Vendor            string   `json:"vendor,omitempty"`
+	SourceKey         string   `json:"sourceKey,omitempty"`
+	TemperatureC      *float64 `json:"temperatureC,omitempty"`
+	ActivePercent     *float64 `json:"activePercent,omitempty"`
+	AverageResponseMs *float64 `json:"averageResponseMs,omitempty"`
+	InterfaceType     string   `json:"interfaceType,omitempty"`
+	TotalBytes        uint64   `json:"totalBytes"`
+	UsedBytes         uint64   `json:"usedBytes"`
 }
 
 type cpuPackageStats struct {
@@ -143,9 +159,11 @@ type cpuPackageStats struct {
 }
 
 type rateStats struct {
-	ReadBytesPerSec  float64              `json:"readBytesPerSec"`
-	WriteBytesPerSec float64              `json:"writeBytesPerSec"`
-	Instances        map[string]rateStats `json:"instances,omitempty"`
+	ReadBytesPerSec   float64              `json:"readBytesPerSec"`
+	WriteBytesPerSec  float64              `json:"writeBytesPerSec"`
+	ActivePercent     float64              `json:"activePercent,omitempty"`
+	AverageResponseMs float64              `json:"averageResponseMs,omitempty"`
+	Instances         map[string]rateStats `json:"instances,omitempty"`
 }
 
 type networkTrafficStats struct {
@@ -156,15 +174,18 @@ type networkTrafficStats struct {
 }
 
 type networkInterfaceStats struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
-	MacAddress    string   `json:"macAddress,omitempty"`
-	IPv4          []string `json:"ipv4,omitempty"`
-	IPv6          []string `json:"ipv6,omitempty"`
-	RxBytesPerSec float64  `json:"rxBytesPerSec,omitempty"`
-	TxBytesPerSec float64  `json:"txBytesPerSec,omitempty"`
-	TotalRxBytes  uint64   `json:"totalRxBytes,omitempty"`
-	TotalTxBytes  uint64   `json:"totalTxBytes,omitempty"`
+	ID                    string   `json:"id"`
+	Name                  string   `json:"name"`
+	MacAddress            string   `json:"macAddress,omitempty"`
+	IPv4                  []string `json:"ipv4,omitempty"`
+	IPv6                  []string `json:"ipv6,omitempty"`
+	RxBytesPerSec         float64  `json:"rxBytesPerSec,omitempty"`
+	TxBytesPerSec         float64  `json:"txBytesPerSec,omitempty"`
+	TotalRxBytes          uint64   `json:"totalRxBytes,omitempty"`
+	TotalTxBytes          uint64   `json:"totalTxBytes,omitempty"`
+	LinkSpeedMbps         *float64 `json:"linkSpeedMbps,omitempty"`
+	ConnectionType        string   `json:"connectionType,omitempty"`
+	SignalStrengthPercent *float64 `json:"signalStrengthPercent,omitempty"`
 }
 
 type gpuDeviceStats struct {
@@ -177,14 +198,20 @@ type gpuDeviceStats struct {
 	MemoryUsedBytes          uint64   `json:"memoryUsedBytes"`
 	MemoryTotalBytes         uint64   `json:"memoryTotalBytes"`
 	TemperatureC             *float64 `json:"temperatureC,omitempty"`
+	DriverVersion            string   `json:"driverVersion,omitempty"`
 }
 
 type fanSensorStats struct {
-	ID        string `json:"id"`
-	Label     string `json:"label"`
-	Interface string `json:"interface"`
-	RPM       int    `json:"rpm"`
-	Note      string `json:"note,omitempty"`
+	ID                 string   `json:"id"`
+	Label              string   `json:"label"`
+	Interface          string   `json:"interface"`
+	RPM                int      `json:"rpm"`
+	ControlMode        string   `json:"controlMode,omitempty"`
+	TargetTemperatureC *float64 `json:"targetTemperatureC,omitempty"`
+	MinPWMPercent      *float64 `json:"minPwmPercent,omitempty"`
+	MaxPWMPercent      *float64 `json:"maxPwmPercent,omitempty"`
+	ChannelState       string   `json:"channelState,omitempty"`
+	Note               string   `json:"note,omitempty"`
 }
 
 type sensorBackendStatus struct {
@@ -198,6 +225,7 @@ type metricsPayload struct {
 	Identity        agentIdentity           `json:"identity"`
 	Timestamp       string                  `json:"timestamp"`
 	HeartbeatAt     string                  `json:"heartbeatAt"`
+	System          systemStats             `json:"system"`
 	CPUUsagePercent float64                 `json:"cpuUsagePercent"`
 	CPUFrequencyMHz *float64                `json:"cpuFrequencyMHz,omitempty"`
 	CPUTemperatureC *float64                `json:"cpuTemperatureC,omitempty"`
@@ -269,8 +297,13 @@ type ioSnapshot struct {
 }
 
 type rateSnapshot struct {
-	read  uint64
-	write uint64
+	read       uint64
+	write      uint64
+	readTime   uint64
+	writeTime  uint64
+	ioTime     uint64
+	readCount  uint64
+	writeCount uint64
 }
 
 type netSnapshot struct {
@@ -278,15 +311,34 @@ type netSnapshot struct {
 	tx uint64
 }
 
+type networkHardwareMetadata struct {
+	LinkSpeedMbps         *float64
+	ConnectionType        string
+	SignalStrengthPercent *float64
+}
+
+type windowsHardwareMetadata struct {
+	MemorySpeedMHz   *float64
+	MemorySlotCount  *int
+	MemoryFormFactor string
+	GpuDrivers       map[string]string
+	Networks         map[string]networkHardwareMetadata
+}
+
 type slowMetrics struct {
 	collectedAt       time.Time
 	cpuFrequencyMHz   *float64
 	cpuTemperatureC   *float64
+	memorySpeedMHz    *float64
+	memorySlotCount   *int
+	memoryFormFactor  string
 	cpuPackages       []cpuPackageStats
 	diskUsage         storageUsage
 	disks             []diskDeviceStats
 	networkInterfaces []networkInterfaceStats
 	gpus              []gpuDeviceStats
+	gpuDrivers        map[string]string
+	networkMetadata   map[string]networkHardwareMetadata
 	fans              []fanSensorStats
 	sensorBackends    []sensorBackendStatus
 }
@@ -527,8 +579,35 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 			disks:             []diskDeviceStats{},
 			networkInterfaces: []networkInterfaceStats{},
 			gpus:              []gpuDeviceStats{},
+			gpuDrivers:        map[string]string{},
+			networkMetadata:   map[string]networkHardwareMetadata{},
 			fans:              []fanSensorStats{},
 			sensorBackends:    []sensorBackendStatus{},
+		}
+	}
+	memory.SpeedMHz = slow.memorySpeedMHz
+	memory.SlotCount = slow.memorySlotCount
+	memory.FormFactor = slow.memoryFormFactor
+	for index := range slow.disks {
+		if rate, ok := diskRate.Instances[slow.disks[index].SourceKey]; ok {
+			active := rate.ActivePercent
+			response := rate.AverageResponseMs
+			slow.disks[index].ActivePercent = &active
+			slow.disks[index].AverageResponseMs = &response
+		}
+	}
+	for index := range slow.networkInterfaces {
+		if metadata, ok := slow.networkMetadata[slow.networkInterfaces[index].Name]; ok {
+			slow.networkInterfaces[index].LinkSpeedMbps = metadata.LinkSpeedMbps
+			slow.networkInterfaces[index].ConnectionType = metadata.ConnectionType
+			slow.networkInterfaces[index].SignalStrengthPercent = metadata.SignalStrengthPercent
+		}
+	}
+	for index := range slow.gpus {
+		for name, driver := range slow.gpuDrivers {
+			if strings.EqualFold(name, slow.gpus[index].Name) {
+				slow.gpus[index].DriverVersion = driver
+			}
 		}
 	}
 
@@ -536,6 +615,7 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 		Identity:        identity,
 		Timestamp:       now.Format(time.RFC3339),
 		HeartbeatAt:     now.Format(time.RFC3339),
+		System:          collectSystemStats(),
 		CPUUsagePercent: cpuUsagePercent,
 		CPUFrequencyMHz: slow.cpuFrequencyMHz,
 		CPUTemperatureC: slow.cpuTemperatureC,
@@ -590,9 +670,33 @@ func sampleMemory() memoryStats {
 	return memoryStats{
 		TotalBytes:     virtualMemory.Total,
 		UsedBytes:      virtualMemory.Used,
+		AvailableBytes: virtualMemory.Available,
+		CachedBytes:    virtualMemory.Cached,
+		CommittedBytes: virtualMemory.CommittedAS,
 		SwapTotalBytes: swapMemory.Total,
 		SwapUsedBytes:  swapMemory.Used,
 	}
+}
+
+func collectSystemStats() systemStats {
+	items, err := gprocess.Processes()
+	if err != nil {
+		return systemStats{}
+	}
+
+	result := systemStats{ProcessCount: len(items)}
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		if threads, err := item.NumThreads(); err == nil && threads > 0 {
+			result.ThreadCount += int(threads)
+		}
+		if handles, err := item.NumFDs(); err == nil && handles > 0 {
+			result.HandleCount += uint64(handles)
+		}
+	}
+	return result
 }
 
 func (s *agentState) sampleFastRates(now time.Time, fallbackSeconds int) (rateStats, networkTrafficStats) {
@@ -628,6 +732,7 @@ func collectSlowMetrics() (slowMetrics, error) {
 	}
 
 	hardware := collectHardwareSensors()
+	windowsMetadata := collectWindowsHardwareMetadata()
 	if len(hardware.gpus) == 0 {
 		hardware.gpus = collectNvidiaGPUs()
 	}
@@ -645,11 +750,16 @@ func collectSlowMetrics() (slowMetrics, error) {
 		collectedAt:       time.Now().UTC(),
 		cpuFrequencyMHz:   cpuFrequencyMHz,
 		cpuTemperatureC:   hardware.cpuTemperatureC,
+		memorySpeedMHz:    windowsMetadata.MemorySpeedMHz,
+		memorySlotCount:   windowsMetadata.MemorySlotCount,
+		memoryFormFactor:  windowsMetadata.MemoryFormFactor,
 		cpuPackages:       cpuPackages,
 		diskUsage:         diskUsage,
 		disks:             disks,
 		networkInterfaces: networkInterfaces,
 		gpus:              hardware.gpus,
+		gpuDrivers:        windowsMetadata.GpuDrivers,
+		networkMetadata:   windowsMetadata.Networks,
 		fans:              hardware.fans,
 		sensorBackends:    []sensorBackendStatus{},
 	}, nil
@@ -864,12 +974,42 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 				label = "风扇"
 			}
 			interfaceName := strings.TrimSpace(snapshot.Name)
-			metrics.fans = append(metrics.fans, fanSensorStats{
+			fan := fanSensorStats{
 				ID:        "fan-" + sanitizeKey(interfaceName+"-"+label),
 				Label:     label,
 				Interface: interfaceName,
 				RPM:       int(math.Round(*sensor.Value)),
-			})
+			}
+			for _, related := range snapshot.Sensors {
+				relatedName := strings.ToLower(related.Name)
+				if related.Value == nil || !isFinitePositive(*related.Value) {
+					continue
+				}
+				switch {
+				case strings.EqualFold(related.SensorType, "temperature") && strings.Contains(relatedName, "target"):
+					value := *related.Value
+					fan.TargetTemperatureC = &value
+				case strings.EqualFold(related.SensorType, "control") && strings.Contains(relatedName, "min"):
+					value := *related.Value
+					fan.MinPWMPercent = &value
+				case strings.EqualFold(related.SensorType, "control") && strings.Contains(relatedName, "max"):
+					value := *related.Value
+					fan.MaxPWMPercent = &value
+				case strings.EqualFold(related.SensorType, "control") && (strings.Contains(relatedName, "pwm") || strings.Contains(relatedName, "fan")):
+					if fan.MinPWMPercent == nil {
+						value := *related.Value
+						fan.MinPWMPercent = &value
+					}
+				case strings.Contains(relatedName, "manual"):
+					fan.ControlMode = "手动"
+				case strings.Contains(relatedName, "auto"):
+					fan.ControlMode = "自动"
+				}
+			}
+			if fan.ControlMode == "" {
+				fan.ChannelState = "可用"
+			}
+			metrics.fans = append(metrics.fans, fan)
 		}
 
 		if !strings.HasPrefix(hardwareType, "gpu") {
@@ -949,6 +1089,137 @@ func collectWindowsCPUFrequency(nominalMHz *float64) *float64 {
 		return nil
 	}
 	return &frequency
+}
+
+type windowsHardwareMetadataPayload struct {
+	Memory []struct {
+		SpeedMHz           float64 `json:"speedMHz"`
+		ConfiguredClockMHz float64 `json:"configuredClockMHz"`
+		FormFactor         string  `json:"formFactor"`
+	} `json:"memory"`
+	Adapters []struct {
+		Name           string `json:"name"`
+		LinkSpeed      string `json:"linkSpeed"`
+		ConnectionType string `json:"connectionType"`
+	} `json:"adapters"`
+	GPUs []struct {
+		Name          string `json:"name"`
+		DriverVersion string `json:"driverVersion"`
+	} `json:"gpus"`
+}
+
+func collectWindowsHardwareMetadata() windowsHardwareMetadata {
+	result := windowsHardwareMetadata{
+		GpuDrivers: map[string]string{},
+		Networks:   map[string]networkHardwareMetadata{},
+	}
+	if runtime.GOOS != "windows" {
+		return result
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
+	defer cancel()
+	commandText := `$ErrorActionPreference='Stop'; $memory=@(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue | ForEach-Object { $form=switch([int]$_.FormFactor){8{'DIMM'}12{'SODIMM'}default{[string]$_.FormFactor}}; [pscustomobject]@{speedMHz=[double]$_.Speed; configuredClockMHz=[double]$_.ConfiguredClockSpeed; formFactor=$form} }); $adapters=@(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; linkSpeed=[string]$_.LinkSpeed; connectionType=[string]$_.MediaType} }); $gpus=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; driverVersion=[string]$_.DriverVersion} }); [pscustomobject]@{memory=@($memory); adapters=@($adapters); gpus=@($gpus)} | ConvertTo-Json -Depth 4 -Compress`
+	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
+	if err != nil {
+		return result
+	}
+
+	var payload windowsHardwareMetadataPayload
+	if err := json.Unmarshal(output, &payload); err != nil {
+		return result
+	}
+	var speedTotal float64
+	var speedCount int
+	for _, module := range payload.Memory {
+		speed := module.ConfiguredClockMHz
+		if speed <= 0 {
+			speed = module.SpeedMHz
+		}
+		if speed > 0 {
+			speedTotal += speed
+			speedCount++
+		}
+		if result.MemoryFormFactor == "" && module.FormFactor != "" {
+			result.MemoryFormFactor = module.FormFactor
+		}
+	}
+	if speedCount > 0 {
+		speed := speedTotal / float64(speedCount)
+		result.MemorySpeedMHz = &speed
+	}
+	if len(payload.Memory) > 0 {
+		slots := len(payload.Memory)
+		result.MemorySlotCount = &slots
+	}
+	for _, adapter := range payload.Adapters {
+		if adapter.Name == "" {
+			continue
+		}
+		result.Networks[adapter.Name] = networkHardwareMetadata{
+			LinkSpeedMbps:  parseLinkSpeedMbps(adapter.LinkSpeed),
+			ConnectionType: adapter.ConnectionType,
+		}
+	}
+	for name, signal := range collectWindowsWifiSignals() {
+		metadata := result.Networks[name]
+		metadata.SignalStrengthPercent = signal
+		result.Networks[name] = metadata
+	}
+	for _, gpu := range payload.GPUs {
+		if gpu.Name != "" && gpu.DriverVersion != "" {
+			result.GpuDrivers[gpu.Name] = gpu.DriverVersion
+		}
+	}
+	return result
+}
+
+func collectWindowsWifiSignals() map[string]*float64 {
+	result := map[string]*float64{}
+	if runtime.GOOS != "windows" {
+		return result
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, "netsh.exe", "wlan", "show", "interfaces").Output()
+	if err != nil {
+		return result
+	}
+	currentName := ""
+	for _, line := range strings.Split(string(output), "\n") {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lower, "name") || strings.HasPrefix(trimmed, "名称") {
+			if index := strings.IndexAny(trimmed, ":："); index >= 0 {
+				currentName = strings.TrimSpace(trimmed[index+1:])
+			}
+			continue
+		}
+		if (strings.HasPrefix(lower, "signal") || strings.HasPrefix(trimmed, "信号")) && currentName != "" {
+			if index := strings.IndexAny(trimmed, ":："); index >= 0 {
+				value := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(trimmed[index+1:]), "%"))
+				if parsed, parseErr := strconv.ParseFloat(value, 64); parseErr == nil && parsed >= 0 && parsed <= 100 {
+					result[currentName] = &parsed
+				}
+			}
+		}
+	}
+	return result
+}
+
+func parseLinkSpeedMbps(raw string) *float64 {
+	parts := strings.Fields(strings.TrimSpace(raw))
+	if len(parts) == 0 {
+		return nil
+	}
+	value, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil || value <= 0 {
+		return nil
+	}
+	if len(parts) > 1 && strings.EqualFold(parts[1], "Gbps") {
+		value *= 1000
+	}
+	return &value
 }
 
 // NVIDIA's driver reports the actual graphics clock, including boost states, through nvidia-smi.
@@ -1175,7 +1446,15 @@ func snapshotIO(diskCounters map[string]disk.IOCountersStat, netCounters []gnet.
 	for key, counter := range diskCounters {
 		readBytes += counter.ReadBytes
 		writeBytes += counter.WriteBytes
-		diskByKey[key] = rateSnapshot{read: counter.ReadBytes, write: counter.WriteBytes}
+		diskByKey[key] = rateSnapshot{
+			read:       counter.ReadBytes,
+			write:      counter.WriteBytes,
+			readTime:   counter.ReadTime,
+			writeTime:  counter.WriteTime,
+			ioTime:     counter.IoTime,
+			readCount:  counter.ReadCount,
+			writeCount: counter.WriteCount,
+		}
 	}
 
 	var rxBytes uint64
@@ -1217,9 +1496,24 @@ func computeRates(previous, current *ioSnapshot, fallbackSeconds int) (rateStats
 		if !ok {
 			continue
 		}
+		readDelta := max64(0, int64(currentDisk.read)-int64(prevDisk.read))
+		writeDelta := max64(0, int64(currentDisk.write)-int64(prevDisk.write))
+		ioTimeDelta := max64(0, int64(currentDisk.ioTime)-int64(prevDisk.ioTime))
+		operationDelta := max64(0, int64(currentDisk.readCount)-int64(prevDisk.readCount)) + max64(0, int64(currentDisk.writeCount)-int64(prevDisk.writeCount))
+		activePercent := float64(ioTimeDelta) / (seconds * 10)
+		if activePercent > 100 {
+			activePercent = 100
+		}
+		averageResponseMs := 0.0
+		if operationDelta > 0 {
+			serviceTimeMs := max64(0, int64(currentDisk.readTime)-int64(prevDisk.readTime)) + max64(0, int64(currentDisk.writeTime)-int64(prevDisk.writeTime))
+			averageResponseMs = float64(serviceTimeMs) / float64(operationDelta)
+		}
 		diskInstances[key] = rateStats{
-			ReadBytesPerSec:  round(float64(max64(0, int64(currentDisk.read)-int64(prevDisk.read))) / seconds),
-			WriteBytesPerSec: round(float64(max64(0, int64(currentDisk.write)-int64(prevDisk.write))) / seconds),
+			ReadBytesPerSec:   round(float64(readDelta) / seconds),
+			WriteBytesPerSec:  round(float64(writeDelta) / seconds),
+			ActivePercent:     round(activePercent),
+			AverageResponseMs: round(averageResponseMs),
 		}
 	}
 

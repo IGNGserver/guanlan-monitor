@@ -32,6 +32,13 @@ public sealed class ViewerDeviceMetricsDto
     public ViewerSeriesDto Series { get; set; } = new();
 }
 
+public sealed class ViewerSystemStatsDto
+{
+    public int ProcessCount { get; set; }
+    public int ThreadCount { get; set; }
+    public long HandleCount { get; set; }
+}
+
 public sealed class ViewerTrafficCalendarDto
 {
     public string Title { get; set; } = "流量记录";
@@ -164,9 +171,16 @@ public sealed class ViewerFanMetricSeriesDto
 
 public sealed class ViewerLatestMetricsDto
 {
+    public ViewerSystemStatsDto System { get; set; } = new();
     public double CpuUsagePercent { get; set; }
     public double MemoryUsedBytes { get; set; }
     public double MemoryTotalBytes { get; set; }
+    public double MemoryAvailableBytes { get; set; }
+    public double MemoryCachedBytes { get; set; }
+    public double MemoryCommittedBytes { get; set; }
+    public double? MemorySpeedMHz { get; set; }
+    public int? MemorySlotCount { get; set; }
+    public string? MemoryFormFactor { get; set; }
     public double SwapUsedBytes { get; set; }
     public double SwapTotalBytes { get; set; }
     public double DiskUsedBytes { get; set; }
@@ -177,6 +191,48 @@ public sealed class ViewerLatestMetricsDto
     public double? CpuTemperatureC { get; set; }
     public double NetworkRxBytesPerSec { get; set; }
     public double NetworkTxBytesPerSec { get; set; }
+    public List<ViewerCpuPackageDto> CpuPackages { get; set; } = new();
+    public List<ViewerNetworkInterfaceDto> NetworkInterfaces { get; set; } = new();
+    public List<ViewerFanDto> Fans { get; set; } = new();
+}
+
+public sealed class ViewerCpuPackageDto
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "CPU";
+    public string? Model { get; set; }
+    public int? CoreCount { get; set; }
+    public int? LogicalCount { get; set; }
+    public double? FrequencyMHz { get; set; }
+    public double? UsagePercent { get; set; }
+    public double? TemperatureC { get; set; }
+}
+
+public sealed class ViewerNetworkInterfaceDto
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "网卡";
+    public string? MacAddress { get; set; }
+    public List<string> Ipv4 { get; set; } = new();
+    public List<string> Ipv6 { get; set; } = new();
+    public double? LinkSpeedMbps { get; set; }
+    public string? ConnectionType { get; set; }
+    public double? SignalStrengthPercent { get; set; }
+    public double? RxBytesPerSec { get; set; }
+    public double? TxBytesPerSec { get; set; }
+}
+
+public sealed class ViewerFanDto
+{
+    public string Id { get; set; } = "";
+    public string Label { get; set; } = "风扇";
+    public string Interface { get; set; } = "";
+    public int Rpm { get; set; }
+    public string? ControlMode { get; set; }
+    public double? TargetTemperatureC { get; set; }
+    public double? MinPwmPercent { get; set; }
+    public double? MaxPwmPercent { get; set; }
+    public string? ChannelState { get; set; }
 }
 
 public sealed class ViewerDiskDto
@@ -184,9 +240,13 @@ public sealed class ViewerDiskDto
     public string Id { get; set; } = "";
     public string Name { get; set; } = "磁盘";
     public string MountPoint { get; set; } = "";
+    public string? Filesystem { get; set; }
     public string? Model { get; set; }
     public double UsedBytes { get; set; }
     public double TotalBytes { get; set; }
+    public double? ActivePercent { get; set; }
+    public double? AverageResponseMs { get; set; }
+    public string? InterfaceType { get; set; }
 }
 
 public sealed class ViewerGpuDto
@@ -194,8 +254,13 @@ public sealed class ViewerGpuDto
     public string Id { get; set; } = "";
     public string Name { get; set; } = "显卡";
     public double UtilizationPercent { get; set; }
+    public double? EncodeUtilizationPercent { get; set; }
+    public double? DecodeUtilizationPercent { get; set; }
+    public double? FrequencyMHz { get; set; }
     public double MemoryUsedBytes { get; set; }
     public double MemoryTotalBytes { get; set; }
+    public double? TemperatureC { get; set; }
+    public string? DriverVersion { get; set; }
 }
 
 public sealed class AgentSamplingConfig

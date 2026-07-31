@@ -41,6 +41,7 @@ export class MysqlHistoryRepository implements HistoryRepository {
         traffic_tx_bytes DOUBLE NOT NULL,
         disk_instances_json JSON NULL,
         gpu_instances_json JSON NULL,
+        recorded_details_json JSON NULL,
         UNIQUE KEY uniq_device_minute (device_id, recorded_at),
         INDEX idx_device_minute_recorded_at (device_id, recorded_at)
       )
@@ -70,6 +71,7 @@ export class MysqlHistoryRepository implements HistoryRepository {
         traffic_tx_bytes DOUBLE NOT NULL,
         disk_instances_json JSON NULL,
         gpu_instances_json JSON NULL,
+        recorded_details_json JSON NULL,
         UNIQUE KEY uniq_device_hour (device_id, recorded_at),
         INDEX idx_device_recorded_at (device_id, recorded_at)
       )
@@ -94,6 +96,8 @@ export class MysqlHistoryRepository implements HistoryRepository {
     await this.ensureColumn("device_minute_metrics", "gpu_instances_json", "JSON NULL");
     await this.ensureColumn("device_hourly_metrics", "disk_instances_json", "JSON NULL");
     await this.ensureColumn("device_hourly_metrics", "gpu_instances_json", "JSON NULL");
+    await this.ensureColumn("device_minute_metrics", "recorded_details_json", "JSON NULL");
+    await this.ensureColumn("device_hourly_metrics", "recorded_details_json", "JSON NULL");
     await this.runRetentionCleanup();
   }
 
@@ -127,8 +131,8 @@ export class MysqlHistoryRepository implements HistoryRepository {
           device_id, recorded_at, cpu_usage_percent, cpu_frequency_mhz, cpu_temperature_c, gpu_usage_percent, gpu_encode_percent, gpu_decode_percent, gpu_frequency_mhz, gpu_memory_usage_percent, gpu_temperature_c, memory_usage_percent, swap_usage_percent,
           disk_usage_percent, disk_read_bytes_per_sec, disk_write_bytes_per_sec,
           network_rx_bytes_per_sec, network_tx_bytes_per_sec, traffic_rx_bytes, traffic_tx_bytes,
-          disk_instances_json, gpu_instances_json
-        ) VALUES (?, FROM_UNIXTIME(? / 1000), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          disk_instances_json, gpu_instances_json, recorded_details_json
+        ) VALUES (?, FROM_UNIXTIME(? / 1000), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           cpu_usage_percent = VALUES(cpu_usage_percent),
           cpu_frequency_mhz = VALUES(cpu_frequency_mhz),
@@ -149,7 +153,8 @@ export class MysqlHistoryRepository implements HistoryRepository {
           traffic_rx_bytes = VALUES(traffic_rx_bytes),
           traffic_tx_bytes = VALUES(traffic_tx_bytes),
           disk_instances_json = VALUES(disk_instances_json),
-          gpu_instances_json = VALUES(gpu_instances_json)
+          gpu_instances_json = VALUES(gpu_instances_json),
+          recorded_details_json = VALUES(recorded_details_json)
       `,
       [
         deviceId,
@@ -173,7 +178,8 @@ export class MysqlHistoryRepository implements HistoryRepository {
         point.trafficRxBytes,
         point.trafficTxBytes,
         JSON.stringify(point.disks ?? []),
-        JSON.stringify(point.gpus ?? [])
+        JSON.stringify(point.gpus ?? []),
+        JSON.stringify(point.recordedDetails ?? null)
       ]
     );
   }
@@ -185,8 +191,8 @@ export class MysqlHistoryRepository implements HistoryRepository {
           device_id, recorded_at, cpu_usage_percent, cpu_frequency_mhz, cpu_temperature_c, gpu_usage_percent, gpu_encode_percent, gpu_decode_percent, gpu_frequency_mhz, gpu_memory_usage_percent, gpu_temperature_c, memory_usage_percent, swap_usage_percent,
           disk_usage_percent, disk_read_bytes_per_sec, disk_write_bytes_per_sec,
           network_rx_bytes_per_sec, network_tx_bytes_per_sec, traffic_rx_bytes, traffic_tx_bytes,
-          disk_instances_json, gpu_instances_json
-        ) VALUES (?, FROM_UNIXTIME(? / 1000), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          disk_instances_json, gpu_instances_json, recorded_details_json
+        ) VALUES (?, FROM_UNIXTIME(? / 1000), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           cpu_usage_percent = VALUES(cpu_usage_percent),
           cpu_frequency_mhz = VALUES(cpu_frequency_mhz),
@@ -207,7 +213,8 @@ export class MysqlHistoryRepository implements HistoryRepository {
           traffic_rx_bytes = VALUES(traffic_rx_bytes),
           traffic_tx_bytes = VALUES(traffic_tx_bytes),
           disk_instances_json = VALUES(disk_instances_json),
-          gpu_instances_json = VALUES(gpu_instances_json)
+          gpu_instances_json = VALUES(gpu_instances_json),
+          recorded_details_json = VALUES(recorded_details_json)
       `,
       [
         deviceId,
@@ -231,7 +238,8 @@ export class MysqlHistoryRepository implements HistoryRepository {
         point.trafficRxBytes,
         point.trafficTxBytes,
         JSON.stringify(point.disks ?? []),
-        JSON.stringify(point.gpus ?? [])
+        JSON.stringify(point.gpus ?? []),
+        JSON.stringify(point.recordedDetails ?? null)
       ]
     );
   }
@@ -264,7 +272,8 @@ export class MysqlHistoryRepository implements HistoryRepository {
             traffic_rx_bytes AS trafficRxBytes,
             traffic_tx_bytes AS trafficTxBytes,
             disk_instances_json AS diskInstancesJson,
-            gpu_instances_json AS gpuInstancesJson
+            gpu_instances_json AS gpuInstancesJson,
+            recorded_details_json AS recordedDetailsJson
           FROM device_minute_metrics
           WHERE device_id = ?
             AND recorded_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)
@@ -299,7 +308,8 @@ export class MysqlHistoryRepository implements HistoryRepository {
           traffic_rx_bytes AS trafficRxBytes,
           traffic_tx_bytes AS trafficTxBytes,
           disk_instances_json AS diskInstancesJson,
-          gpu_instances_json AS gpuInstancesJson
+          gpu_instances_json AS gpuInstancesJson,
+          recorded_details_json AS recordedDetailsJson
         FROM device_hourly_metrics
         WHERE device_id = ?
           AND recorded_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR)
@@ -358,7 +368,8 @@ export class MysqlHistoryRepository implements HistoryRepository {
           traffic_rx_bytes AS trafficRxBytes,
           traffic_tx_bytes AS trafficTxBytes,
           disk_instances_json AS diskInstancesJson,
-          gpu_instances_json AS gpuInstancesJson
+          gpu_instances_json AS gpuInstancesJson,
+          recorded_details_json AS recordedDetailsJson
         FROM device_minute_metrics
         WHERE device_id = ?
           AND recorded_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)
@@ -390,7 +401,8 @@ export class MysqlHistoryRepository implements HistoryRepository {
           traffic_rx_bytes AS trafficRxBytes,
           traffic_tx_bytes AS trafficTxBytes,
           disk_instances_json AS diskInstancesJson,
-          gpu_instances_json AS gpuInstancesJson
+          gpu_instances_json AS gpuInstancesJson,
+          recorded_details_json AS recordedDetailsJson
         FROM device_hourly_metrics
         WHERE device_id = ?
           AND recorded_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)
@@ -413,7 +425,8 @@ function mapHistoryRow(row: any): TimeSeriesRecord {
   return {
     ...row,
     disks: parseJsonArray(row.diskInstancesJson),
-    gpus: parseJsonArray(row.gpuInstancesJson)
+    gpus: parseJsonArray(row.gpuInstancesJson),
+    recordedDetails: parseJsonObject(row.recordedDetailsJson)
   };
 }
 
@@ -428,4 +441,15 @@ function parseJsonArray(value: unknown) {
     }
   }
   return [];
+}
+
+function parseJsonObject(value: unknown) {
+  if (value == null) return undefined;
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
