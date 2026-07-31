@@ -379,6 +379,50 @@ public sealed class MainViewModel : ObservableObject
         set => SetProperty(ref _currentCategoryCharts, value);
     }
 
+    private ObservableCollection<string> _subDeviceNames = new();
+    public ObservableCollection<string> SubDeviceNames
+    {
+        get => _subDeviceNames;
+        set => SetProperty(ref _subDeviceNames, value);
+    }
+
+    private string _selectedSubDeviceName = "全部";
+    public string SelectedSubDeviceName
+    {
+        get => _selectedSubDeviceName;
+        set
+        {
+            if (SetProperty(ref _selectedSubDeviceName, value))
+            {
+                OnSubDeviceNameChanged(value);
+            }
+        }
+    }
+
+    private void OnSubDeviceNameChanged(string name)
+    {
+        if (CurrentCategoryCharts == null || CurrentCategoryCharts.Count == 0) return;
+        SelectedCategoryChart = CurrentCategoryCharts.FirstOrDefault(c => c.Title.Equals(name, StringComparison.OrdinalIgnoreCase))
+            ?? CurrentCategoryCharts.FirstOrDefault();
+    }
+
+    public void UpdateSubDeviceNamesDeduplicated()
+    {
+        if (CurrentCategoryCharts == null) return;
+        var uniqueNames = CurrentCategoryCharts.Select(c => c.Title).Distinct().ToList();
+        SubDeviceNames.Clear();
+        foreach (var name in uniqueNames)
+        {
+            SubDeviceNames.Add(name);
+        }
+        if (SubDeviceNames.Count > 0 && !SubDeviceNames.Contains(SelectedSubDeviceName))
+        {
+            _selectedSubDeviceName = SubDeviceNames[0];
+            OnPropertyChanged(nameof(SelectedSubDeviceName));
+            OnSubDeviceNameChanged(_selectedSubDeviceName);
+        }
+    }
+
     private ViewerDetailChartViewModel? _selectedCategoryChart;
     public ViewerDetailChartViewModel? SelectedCategoryChart
     {
@@ -1681,6 +1725,8 @@ public sealed class MainViewModel : ObservableObject
                 ?? ViewerDiskCharts.FirstOrDefault()
                 ?? ViewerNetworkCharts.FirstOrDefault();
         }
+
+        UpdateSubDeviceNamesDeduplicated();
     }
 
     private static bool IsViewerCategoryVisible(

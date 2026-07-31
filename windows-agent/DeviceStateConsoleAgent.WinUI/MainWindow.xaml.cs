@@ -327,6 +327,7 @@ public sealed partial class MainWindow : Window
                 break;
         }
 
+        _viewModel.UpdateSubDeviceNamesDeduplicated();
         ReDrawCategoryCanvas(categoryTag);
     }
 
@@ -511,13 +512,9 @@ public sealed partial class MainWindow : Window
     private void SubDeviceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_viewModel is null) return;
-        if (SubDeviceComboBox.SelectedItem is ViewerDetailChartViewModel selectedChart)
+        if (SubDeviceComboBox.SelectedItem is string selectedName)
         {
-            _viewModel.SelectedCategoryChart = selectedChart;
-            if (!string.IsNullOrWhiteSpace(selectedChart.CurrentText))
-            {
-                _viewModel.TaskManagerStatUsage = selectedChart.CurrentText;
-            }
+            _viewModel.SelectedSubDeviceName = selectedName;
         }
     }
 
