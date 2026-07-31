@@ -104,8 +104,11 @@
                                                             <TextBlock Text="{Binding Hostname}" Style="{StaticResource SubtitleTextBlockStyle}" TextTrimming="CharacterEllipsis" />
                                                             <TextBlock Text="{Binding DeviceId}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                                         </StackPanel>
-                                                        <Border Grid.Column="1" Padding="8,4" CornerRadius="4" Background="{ThemeResource SystemFillColorSuccessBackgroundBrush}">
-                                                            <TextBlock Text="{Binding StatusText}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource SystemFillColorSuccessBrush}" FontWeight="SemiBold" />
+                                                        <Border Grid.Column="1" Padding="6,2" VerticalAlignment="Center">
+                                                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                                <TextBlock Text="{Binding StatusGlyph}" FontSize="12" Foreground="{Binding StatusColor}" VerticalAlignment="Center" />
+                                                                <TextBlock Text="{Binding StatusText}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{Binding StatusColor}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                            </StackPanel>
                                                         </Border>
                                                     </Grid>
                                                     <Grid Grid.Row="1" ColumnSpacing="16" RowSpacing="8" Margin="0,4,0,4">
@@ -316,15 +319,15 @@
                                         <!-- 第一栏：主要即时指标 -->
                                         <StackPanel Grid.Column="0" Spacing="12">
                                             <StackPanel Spacing="2">
-                                                <TextBlock Text="利用率" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <TextBlock Text="{Binding TaskManagerStatLabel1}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                                 <TextBlock Text="{Binding TaskManagerStatUsage}" FontSize="28" FontWeight="SemiBold" />
                                             </StackPanel>
                                             <StackPanel Spacing="2">
-                                                <TextBlock Text="速度 / 频率" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <TextBlock Text="{Binding TaskManagerStatLabel2}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                                 <TextBlock Text="{Binding TaskManagerStatSpeed}" FontSize="24" FontWeight="SemiBold" />
                                             </StackPanel>
                                             <StackPanel Spacing="2">
-                                                <TextBlock Text="已用 / 容量" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <TextBlock Text="{Binding TaskManagerStatLabel3}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                                 <TextBlock Text="{Binding TaskManagerStatCapacity}" FontSize="20" FontWeight="SemiBold" />
                                             </StackPanel>
                                         </StackPanel>
@@ -332,15 +335,15 @@
                                         <!-- 第二栏：活动与性能统计 -->
                                         <StackPanel Grid.Column="1" Spacing="12">
                                             <StackPanel Spacing="2">
-                                                <TextBlock Text="状态 / 响应" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <TextBlock Text="{Binding TaskManagerStatLabel4}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                                 <TextBlock Text="{Binding TaskManagerStatStatus}" FontSize="20" FontWeight="SemiBold" />
                                             </StackPanel>
                                             <StackPanel Spacing="2">
-                                                <TextBlock Text="发送 / 写入速率" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <TextBlock Text="{Binding TaskManagerStatLabel5}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                                 <TextBlock Text="{Binding TaskManagerStatWriteSpeed}" FontSize="20" FontWeight="SemiBold" />
                                             </StackPanel>
                                             <StackPanel Spacing="2">
-                                                <TextBlock Text="接收 / 读取速率" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <TextBlock Text="{Binding TaskManagerStatLabel6}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                                 <TextBlock Text="{Binding TaskManagerStatReadSpeed}" FontSize="20" FontWeight="SemiBold" />
                                             </StackPanel>
                                         </StackPanel>

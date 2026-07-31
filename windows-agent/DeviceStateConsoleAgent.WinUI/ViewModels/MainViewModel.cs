@@ -386,6 +386,24 @@ public sealed class MainViewModel : ObservableObject
         set => SetProperty(ref _selectedViewerDeviceHardwareName, value);
     }
 
+    private string _taskManagerStatLabel1 = "利用率";
+    public string TaskManagerStatLabel1 { get => _taskManagerStatLabel1; set => SetProperty(ref _taskManagerStatLabel1, value); }
+
+    private string _taskManagerStatLabel2 = "速度 / 频率";
+    public string TaskManagerStatLabel2 { get => _taskManagerStatLabel2; set => SetProperty(ref _taskManagerStatLabel2, value); }
+
+    private string _taskManagerStatLabel3 = "已用 / 容量";
+    public string TaskManagerStatLabel3 { get => _taskManagerStatLabel3; set => SetProperty(ref _taskManagerStatLabel3, value); }
+
+    private string _taskManagerStatLabel4 = "状态 / 响应";
+    public string TaskManagerStatLabel4 { get => _taskManagerStatLabel4; set => SetProperty(ref _taskManagerStatLabel4, value); }
+
+    private string _taskManagerStatLabel5 = "发送 / 写入速率";
+    public string TaskManagerStatLabel5 { get => _taskManagerStatLabel5; set => SetProperty(ref _taskManagerStatLabel5, value); }
+
+    private string _taskManagerStatLabel6 = "接收 / 读取速率";
+    public string TaskManagerStatLabel6 { get => _taskManagerStatLabel6; set => SetProperty(ref _taskManagerStatLabel6, value); }
+
     private string _taskManagerStatUsage = "4%";
     public string TaskManagerStatUsage
     {
@@ -3418,8 +3436,10 @@ public sealed class ViewerDeviceItemViewModel : ObservableObject
     {
         DeviceId = source.DeviceId;
         Hostname = string.IsNullOrWhiteSpace(source.Hostname) ? source.DeviceId : source.Hostname;
-        StatusText = source.Status.Equals("online", StringComparison.OrdinalIgnoreCase) ? "在线" : "离线";
-        StatusGlyph = source.Status.Equals("online", StringComparison.OrdinalIgnoreCase) ? "●" : "○";
+        IsOnline = source.Status.Equals("online", StringComparison.OrdinalIgnoreCase);
+        StatusText = IsOnline ? "在线" : "离线";
+        StatusGlyph = IsOnline ? "●" : "○";
+        StatusColor = IsOnline ? "#107C41" : "#8A8886";
         CpuText = FormatPercent("CPU", source.CpuUsagePercent);
         MemoryText = FormatPercent("内存", source.MemoryUsagePercent);
         DiskText = FormatPercent("磁盘", source.DiskUsagePercent);
@@ -3429,8 +3449,10 @@ public sealed class ViewerDeviceItemViewModel : ObservableObject
 
     public string DeviceId { get; }
     public string Hostname { get; }
+    public bool IsOnline { get; }
     public string StatusText { get; }
     public string StatusGlyph { get; }
+    public string StatusColor { get; }
     public string CpuText { get; }
     public string MemoryText { get; }
     public string DiskText { get; }

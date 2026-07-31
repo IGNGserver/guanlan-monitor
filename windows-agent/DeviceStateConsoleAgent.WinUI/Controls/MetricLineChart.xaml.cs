@@ -19,6 +19,7 @@ public sealed partial class MetricLineChart : UserControl
     public MetricLineChart()
     {
         InitializeComponent();
+        Loaded += (_, _) => Draw();
     }
 
     public ViewerDetailChartViewModel? Chart
@@ -28,24 +29,57 @@ public sealed partial class MetricLineChart : UserControl
     }
 
     private static void OnChartChanged(DependencyObject target, DependencyPropertyChangedEventArgs args)
-        => ((MetricLineChart)target).Draw();
+    {
+        ((MetricLineChart)target).Draw();
+    }
 
     private void Plot_SizeChanged(object sender, SizeChangedEventArgs e) => Draw();
 
     private void Draw()
     {
         Plot.Children.Clear();
-        var chart = Chart;
-        if (chart is null || Plot.ActualWidth < 12 || Plot.ActualHeight < 12 || chart.Points.Count == 0)
-        {
-            return;
-        }
+        var width = Math.Max(20, Plot.ActualWidth);
+        var height = Math.Max(20, Plot.ActualHeight);
 
         const double left = 2;
         const double top = 8;
         const double bottom = 8;
-        var width = Math.Max(1, Plot.ActualWidth - left * 2);
-        var height = Math.Max(1, Plot.ActualHeight - top - bottom);
+        var plotWidth = Math.Max(1, width - left * 2);
+        var plotHeight = Math.Max(1, height - top - bottom);
+
+        // 1. 100% 绘制标准任务管理器背景暗灰网格 (3 水平线 + 5 垂直线)
+        var gridBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
+        for (var index = 1; index < 4; index++)
+        {
+            var y = top + plotHeight * index / 4;
+            Plot.Children.Add(new Line
+            {
+                X1 = left, X2 = left + plotWidth, Y1 = y, Y2 = y,
+                Stroke = gridBrush, StrokeThickness = 1
+            });
+        }
+        for (var index = 1; index < 6; index++)
+        {
+            var x = left + plotWidth * index / 6;
+            Plot.Children.Add(new Line
+            {
+                X1 = x, X2 = x, Y1 = top, Y2 = top + plotHeight,
+                Stroke = gridBrush, StrokeThickness = 1
+            });
+        }
+
+        var chart = Chart;
+        if (chart is null || chart.Points.Count == 0)
+        {
+            // 无数据点时展示底层灰色基线
+            Plot.Children.Add(new Line
+            {
+                X1 = left, X2 = left + plotWidth, Y1 = top + plotHeight, Y2 = top + plotHeight,
+                Stroke = new SolidColorBrush(Color.FromArgb(80, 255, 255, 255)), StrokeThickness = 1.5
+            });
+            return;
+        }
+
         var minimum = chart.PlotMinimum;
         var maximum = chart.PlotMaximum;
         if (Math.Abs(maximum - minimum) < 0.0001)
@@ -54,16 +88,7 @@ public sealed partial class MetricLineChart : UserControl
             minimum = Math.Max(0, minimum - Math.Max(1, Math.Abs(minimum) * 0.1));
         }
 
-        for (var index = 1; index < 4; index++)
-        {
-            var y = top + height * index / 4;
-            Plot.Children.Add(new Line
-            {
-                X1 = left, X2 = left + width, Y1 = y, Y2 = y,
-                Stroke = new SolidColorBrush(Color.FromArgb(60, 127, 127, 127)), StrokeThickness = 1
-            });
-        }
-
+        // 2. 有点时绘制主折线
         var accent = (Color)Application.Current.Resources["SystemAccentColor"];
         var line = new Polyline
         {
@@ -74,9 +99,9 @@ public sealed partial class MetricLineChart : UserControl
         for (var index = 0; index < chart.Points.Count; index++)
         {
             var point = chart.Points[index];
-            var x = left + (chart.Points.Count == 1 ? width : width * index / (chart.Points.Count - 1));
-            var y = top + height * (1 - (point.Value - minimum) / (maximum - minimum));
-            line.Points.Add(new Point(x, Math.Clamp(y, top, top + height)));
+            var x = left + (chart.Points.Count == 1 ? plotWidth : plotWidth * index / (chart.Points.Count - 1));
+            var y = top + plotHeight * (1 - (point.Value - minimum) / (maximum - minimum));
+            line.Points.Add(new Point(x, Math.Clamp(y, top, top + plotHeight)));
         }
         Plot.Children.Add(line);
 
@@ -91,9 +116,9 @@ public sealed partial class MetricLineChart : UserControl
             for (var index = 0; index < chart.SecondaryPoints.Count; index++)
             {
                 var point = chart.SecondaryPoints[index];
-                var x = left + (chart.SecondaryPoints.Count == 1 ? width / 2 : width * index / (chart.SecondaryPoints.Count - 1));
-                var y = top + height * (1 - (point.Value - minimum) / (maximum - minimum));
-                secondaryLine.Points.Add(new Point(x, Math.Clamp(y, top, top + height)));
+                var x = left + (chart.SecondaryPoints.Count == 1 ? plotWidth / 2 : plotWidth * index / (chart.SecondaryPoints.Count - 1));
+                var y = top + plotHeight * (1 - (point.Value - minimum) / (maximum - minimum));
+                secondaryLine.Points.Add(new Point(x, Math.Clamp(y, top, top + plotHeight)));
             }
             Plot.Children.Add(secondaryLine);
         }

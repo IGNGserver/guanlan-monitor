@@ -181,53 +181,113 @@ public sealed partial class MainWindow : Window
         {
             case "cpu":
                 TaskManagerCategoryTitle.Text = "CPU";
+                _viewModel.TaskManagerStatLabel1 = "利用率";
+                _viewModel.TaskManagerStatLabel2 = "速度 / 频率";
+                _viewModel.TaskManagerStatLabel3 = "内核 / 线程";
+                _viewModel.TaskManagerStatLabel4 = "运行进程";
+                _viewModel.TaskManagerStatLabel5 = "系统线程";
+                _viewModel.TaskManagerStatLabel6 = "句柄数";
+
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerCpuCharts;
                 _viewModel.TaskManagerStatUsage = currentDev is not null && !string.IsNullOrWhiteSpace(currentDev.CpuText) && currentDev.CpuText != "CPU: --"
                     ? currentDev.CpuText.Replace("CPU ", "")
                     : "12.5%";
                 _viewModel.TaskManagerStatSpeed = "3.80 GHz";
-                _viewModel.TaskManagerStatCapacity = "全内核活跃";
+                _viewModel.TaskManagerStatCapacity = "8 / 16";
+                _viewModel.TaskManagerStatStatus = "182";
+                _viewModel.TaskManagerStatWriteSpeed = "2410";
+                _viewModel.TaskManagerStatReadSpeed = "78210";
                 break;
             case "memory":
                 TaskManagerCategoryTitle.Text = "内存";
+                _viewModel.TaskManagerStatLabel1 = "使用率";
+                _viewModel.TaskManagerStatLabel2 = "已使用";
+                _viewModel.TaskManagerStatLabel3 = "可用空间";
+                _viewModel.TaskManagerStatLabel4 = "已提交";
+                _viewModel.TaskManagerStatLabel5 = "已缓存";
+                _viewModel.TaskManagerStatLabel6 = "内存速度";
+
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerMemoryCharts;
                 _viewModel.TaskManagerStatUsage = currentDev is not null && !string.IsNullOrWhiteSpace(currentDev.MemoryText) && currentDev.MemoryText != "内存: --"
                     ? currentDev.MemoryText.Replace("内存 ", "")
                     : "48.2%";
-                _viewModel.TaskManagerStatSpeed = "双通道 / 高频";
-                _viewModel.TaskManagerStatCapacity = currentDev?.MemoryText ?? "16.0 GB";
+                _viewModel.TaskManagerStatSpeed = "7.7 GB";
+                _viewModel.TaskManagerStatCapacity = "8.3 GB";
+                _viewModel.TaskManagerStatStatus = "9.2 / 18.0 GB";
+                _viewModel.TaskManagerStatWriteSpeed = "4.1 GB";
+                _viewModel.TaskManagerStatReadSpeed = "4800 MHz";
                 break;
             case "disk":
                 TaskManagerCategoryTitle.Text = "磁盘";
+                _viewModel.TaskManagerStatLabel1 = "活动时间";
+                _viewModel.TaskManagerStatLabel2 = "读取速度";
+                _viewModel.TaskManagerStatLabel3 = "写入速度";
+                _viewModel.TaskManagerStatLabel4 = "平均响应时间";
+                _viewModel.TaskManagerStatLabel5 = "磁盘类型";
+                _viewModel.TaskManagerStatLabel6 = "接口规格";
+
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerDiskCharts;
                 _viewModel.TaskManagerStatUsage = currentDev is not null && !string.IsNullOrWhiteSpace(currentDev.DiskText)
                     ? currentDev.DiskText.Replace("磁盘 ", "")
-                    : "35.0%";
-                _viewModel.TaskManagerStatSpeed = "高读写速率";
-                _viewModel.TaskManagerStatCapacity = currentDev?.DiskText ?? "1000 GB";
+                    : "12%";
+                _viewModel.TaskManagerStatSpeed = "1.2 MB/s";
+                _viewModel.TaskManagerStatCapacity = "850 KB/s";
+                _viewModel.TaskManagerStatStatus = "1.2 ms";
+                _viewModel.TaskManagerStatWriteSpeed = "NVMe SSD";
+                _viewModel.TaskManagerStatReadSpeed = "PCIe 4.0 x4";
                 break;
             case "network":
                 TaskManagerCategoryTitle.Text = "网络";
+                _viewModel.TaskManagerStatLabel1 = "发送速率";
+                _viewModel.TaskManagerStatLabel2 = "接收速率";
+                _viewModel.TaskManagerStatLabel3 = "链接速度";
+                _viewModel.TaskManagerStatLabel4 = "适配器名称";
+                _viewModel.TaskManagerStatLabel5 = "连接类型";
+                _viewModel.TaskManagerStatLabel6 = "IPv4 地址";
+
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerNetworkCharts;
-                _viewModel.TaskManagerStatUsage = "发送 / 接收活动中";
-                _viewModel.TaskManagerStatSpeed = "以太网 / Wi-Fi";
-                _viewModel.TaskManagerStatCapacity = "全双工传输";
+                _viewModel.TaskManagerStatUsage = "12.4 KB/s";
+                _viewModel.TaskManagerStatSpeed = "158.2 KB/s";
+                _viewModel.TaskManagerStatCapacity = "1.2 Gbps";
+                _viewModel.TaskManagerStatStatus = "Wi-Fi 6E (802.11ax)";
+                _viewModel.TaskManagerStatWriteSpeed = "无线网络 (5 GHz)";
+                _viewModel.TaskManagerStatReadSpeed = "192.168.1.102";
                 break;
             case "gpu":
                 TaskManagerCategoryTitle.Text = "显卡";
+                _viewModel.TaskManagerStatLabel1 = "利用率";
+                _viewModel.TaskManagerStatLabel2 = "显存占用";
+                _viewModel.TaskManagerStatLabel3 = "核心频率";
+                _viewModel.TaskManagerStatLabel4 = "编码利用率";
+                _viewModel.TaskManagerStatLabel5 = "解码利用率";
+                _viewModel.TaskManagerStatLabel6 = "显卡温度";
+
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerGpuCharts;
                 _viewModel.TaskManagerStatUsage = currentDev is not null && !string.IsNullOrWhiteSpace(currentDev.GpuText) && currentDev.GpuText != "GPU: --"
                     ? currentDev.GpuText.Replace("GPU ", "")
                     : "5.0%";
-                _viewModel.TaskManagerStatSpeed = "Core Clock";
-                _viewModel.TaskManagerStatCapacity = currentDev?.GpuText ?? "独立显卡";
+                _viewModel.TaskManagerStatSpeed = "2.1 / 8.0 GB";
+                _viewModel.TaskManagerStatCapacity = "1950 MHz";
+                _viewModel.TaskManagerStatStatus = "0.0%";
+                _viewModel.TaskManagerStatWriteSpeed = "0.0%";
+                _viewModel.TaskManagerStatReadSpeed = "48 °C";
                 break;
             case "fan":
                 TaskManagerCategoryTitle.Text = "风扇";
+                _viewModel.TaskManagerStatLabel1 = "风扇转速";
+                _viewModel.TaskManagerStatLabel2 = "控制模式";
+                _viewModel.TaskManagerStatLabel3 = "目标温度";
+                _viewModel.TaskManagerStatLabel4 = "最小 PWM";
+                _viewModel.TaskManagerStatLabel5 = "最大 PWM";
+                _viewModel.TaskManagerStatLabel6 = "通道状态";
+
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerFanCharts;
-                _viewModel.TaskManagerStatUsage = "自动控速";
-                _viewModel.TaskManagerStatSpeed = "PWM 自动控速";
-                _viewModel.TaskManagerStatCapacity = "正常运转";
+                _viewModel.TaskManagerStatUsage = "1850 RPM";
+                _viewModel.TaskManagerStatSpeed = "PWM 智能调速";
+                _viewModel.TaskManagerStatCapacity = "55 °C";
+                _viewModel.TaskManagerStatStatus = "30%";
+                _viewModel.TaskManagerStatWriteSpeed = "100%";
+                _viewModel.TaskManagerStatReadSpeed = "1 通道全速运转";
                 break;
         }
 
