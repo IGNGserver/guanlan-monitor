@@ -188,7 +188,13 @@ public sealed partial class MainWindow : Window
                 _viewModel.TaskManagerStatLabel5 = "系统线程";
                 _viewModel.TaskManagerStatLabel6 = "句柄数";
 
+                _viewModel.TaskManagerRightLabel1 = "基准速度:"; _viewModel.TaskManagerRightValue1 = "2.40 GHz";
+                _viewModel.TaskManagerRightLabel2 = "物理内核:"; _viewModel.TaskManagerRightValue2 = "8";
+                _viewModel.TaskManagerRightLabel3 = "逻辑处理器:"; _viewModel.TaskManagerRightValue3 = "16";
+                _viewModel.TaskManagerRightLabel4 = "最后采集:"; _viewModel.TaskManagerRightValue4 = "刚刚";
+
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerCpuCharts;
+                _viewModel.SelectedCategoryChart = System.Linq.Enumerable.FirstOrDefault(_viewModel.ViewerCpuCharts);
                 _viewModel.TaskManagerStatUsage = currentDev is not null && !string.IsNullOrWhiteSpace(currentDev.CpuText) && currentDev.CpuText != "CPU: --"
                     ? currentDev.CpuText.Replace("CPU ", "")
                     : "12.5%";
@@ -207,7 +213,13 @@ public sealed partial class MainWindow : Window
                 _viewModel.TaskManagerStatLabel5 = "已缓存";
                 _viewModel.TaskManagerStatLabel6 = "内存速度";
 
+                _viewModel.TaskManagerRightLabel1 = "内存速度:"; _viewModel.TaskManagerRightValue1 = "4800 MHz";
+                _viewModel.TaskManagerRightLabel2 = "插槽占比:"; _viewModel.TaskManagerRightValue2 = "2/4";
+                _viewModel.TaskManagerRightLabel3 = "表形规格:"; _viewModel.TaskManagerRightValue3 = "SO-DIMM";
+                _viewModel.TaskManagerRightLabel4 = "最后采集:"; _viewModel.TaskManagerRightValue4 = "刚刚";
+
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerMemoryCharts;
+                _viewModel.SelectedCategoryChart = System.Linq.Enumerable.FirstOrDefault(_viewModel.ViewerMemoryCharts);
                 _viewModel.TaskManagerStatUsage = currentDev is not null && !string.IsNullOrWhiteSpace(currentDev.MemoryText) && currentDev.MemoryText != "内存: --"
                     ? currentDev.MemoryText.Replace("内存 ", "")
                     : "48.2%";
@@ -226,7 +238,13 @@ public sealed partial class MainWindow : Window
                 _viewModel.TaskManagerStatLabel5 = "磁盘类型";
                 _viewModel.TaskManagerStatLabel6 = "接口规格";
 
+                _viewModel.TaskManagerRightLabel1 = "磁盘容量:"; _viewModel.TaskManagerRightValue1 = "1000 GB";
+                _viewModel.TaskManagerRightLabel2 = "磁盘类型:"; _viewModel.TaskManagerRightValue2 = "NVMe SSD";
+                _viewModel.TaskManagerRightLabel3 = "接口规格:"; _viewModel.TaskManagerRightValue3 = "PCIe 4.0 x4";
+                _viewModel.TaskManagerRightLabel4 = "最后采集:"; _viewModel.TaskManagerRightValue4 = "刚刚";
+
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerDiskCharts;
+                _viewModel.SelectedCategoryChart = System.Linq.Enumerable.FirstOrDefault(_viewModel.ViewerDiskCharts);
                 _viewModel.TaskManagerStatUsage = currentDev is not null && !string.IsNullOrWhiteSpace(currentDev.DiskText)
                     ? currentDev.DiskText.Replace("磁盘 ", "")
                     : "12%";
@@ -245,7 +263,13 @@ public sealed partial class MainWindow : Window
                 _viewModel.TaskManagerStatLabel5 = "连接类型";
                 _viewModel.TaskManagerStatLabel6 = "IPv4 地址";
 
+                _viewModel.TaskManagerRightLabel1 = "IPv4 地址:"; _viewModel.TaskManagerRightValue1 = "192.168.1.102";
+                _viewModel.TaskManagerRightLabel2 = "连接类型:"; _viewModel.TaskManagerRightValue2 = "Wi-Fi 6E (5G)";
+                _viewModel.TaskManagerRightLabel3 = "信号强度:"; _viewModel.TaskManagerRightValue3 = "100%";
+                _viewModel.TaskManagerRightLabel4 = "最后采集:"; _viewModel.TaskManagerRightValue4 = "刚刚";
+
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerNetworkCharts;
+                _viewModel.SelectedCategoryChart = System.Linq.Enumerable.FirstOrDefault(_viewModel.ViewerNetworkCharts);
                 _viewModel.TaskManagerStatUsage = "12.4 KB/s";
                 _viewModel.TaskManagerStatSpeed = "158.2 KB/s";
                 _viewModel.TaskManagerStatCapacity = "1.2 Gbps";
@@ -262,7 +286,13 @@ public sealed partial class MainWindow : Window
                 _viewModel.TaskManagerStatLabel5 = "解码利用率";
                 _viewModel.TaskManagerStatLabel6 = "显卡温度";
 
+                _viewModel.TaskManagerRightLabel1 = "显存总量:"; _viewModel.TaskManagerRightValue1 = "8.0 GB";
+                _viewModel.TaskManagerRightLabel2 = "驱动版本:"; _viewModel.TaskManagerRightValue2 = "551.23";
+                _viewModel.TaskManagerRightLabel3 = "显卡温度:"; _viewModel.TaskManagerRightValue3 = "48 °C";
+                _viewModel.TaskManagerRightLabel4 = "最后采集:"; _viewModel.TaskManagerRightValue4 = "刚刚";
+
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerGpuCharts;
+                _viewModel.SelectedCategoryChart = System.Linq.Enumerable.FirstOrDefault(_viewModel.ViewerGpuCharts);
                 _viewModel.TaskManagerStatUsage = currentDev is not null && !string.IsNullOrWhiteSpace(currentDev.GpuText) && currentDev.GpuText != "GPU: --"
                     ? currentDev.GpuText.Replace("GPU ", "")
                     : "5.0%";
@@ -281,7 +311,13 @@ public sealed partial class MainWindow : Window
                 _viewModel.TaskManagerStatLabel5 = "最大 PWM";
                 _viewModel.TaskManagerStatLabel6 = "通道状态";
 
+                _viewModel.TaskManagerRightLabel1 = "控制模式:"; _viewModel.TaskManagerRightValue1 = "PWM 智能控速";
+                _viewModel.TaskManagerRightLabel2 = "通道数量:"; _viewModel.TaskManagerRightValue2 = "1 通道";
+                _viewModel.TaskManagerRightLabel3 = "目标温度:"; _viewModel.TaskManagerRightValue3 = "55 °C";
+                _viewModel.TaskManagerRightLabel4 = "最后采集:"; _viewModel.TaskManagerRightValue4 = "刚刚";
+
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerFanCharts;
+                _viewModel.SelectedCategoryChart = System.Linq.Enumerable.FirstOrDefault(_viewModel.ViewerFanCharts);
                 _viewModel.TaskManagerStatUsage = "1850 RPM";
                 _viewModel.TaskManagerStatSpeed = "PWM 智能调速";
                 _viewModel.TaskManagerStatCapacity = "55 °C";

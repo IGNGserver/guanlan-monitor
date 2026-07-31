@@ -379,6 +379,13 @@ public sealed class MainViewModel : ObservableObject
         set => SetProperty(ref _currentCategoryCharts, value);
     }
 
+    private ViewerDetailChartViewModel? _selectedCategoryChart;
+    public ViewerDetailChartViewModel? SelectedCategoryChart
+    {
+        get => _selectedCategoryChart;
+        set => SetProperty(ref _selectedCategoryChart, value);
+    }
+
     private string _selectedViewerDeviceHardwareName = "Intel(R) Core(TM) i9 / Generic Hardware";
     public string SelectedViewerDeviceHardwareName
     {
@@ -1666,6 +1673,14 @@ public sealed class MainViewModel : ObservableObject
         HasViewerGpuCharts = ViewerGpuCharts.Count > 0;
         HasViewerNetworkCharts = ViewerNetworkCharts.Count > 0;
         HasViewerFanCharts = ViewerFanCharts.Count > 0;
+
+        if (SelectedCategoryChart == null)
+        {
+            SelectedCategoryChart = ViewerCpuCharts.FirstOrDefault()
+                ?? ViewerMemoryCharts.FirstOrDefault()
+                ?? ViewerDiskCharts.FirstOrDefault()
+                ?? ViewerNetworkCharts.FirstOrDefault();
+        }
     }
 
     private static bool IsViewerCategoryVisible(

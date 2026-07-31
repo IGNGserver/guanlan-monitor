@@ -350,10 +350,10 @@
 
                                         <!-- 第三栏：硬件固定规格参数 -->
                                         <StackPanel Grid.Column="2" Spacing="8" VerticalAlignment="Center">
-                                            <Grid><TextBlock Text="基准速度:" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding TaskManagerBaseSpeedText}" Style="{StaticResource BodyTextBlockStyle}" HorizontalAlignment="Right" FontWeight="SemiBold" /></Grid>
-                                            <Grid><TextBlock Text="物理内核:" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding TaskManagerCoresText}" Style="{StaticResource BodyTextBlockStyle}" HorizontalAlignment="Right" FontWeight="SemiBold" /></Grid>
-                                            <Grid><TextBlock Text="逻辑处理器:" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding TaskManagerLogicalCpusText}" Style="{StaticResource BodyTextBlockStyle}" HorizontalAlignment="Right" FontWeight="SemiBold" /></Grid>
-                                            <Grid><TextBlock Text="最后采集:" Style="{StaticResource CaptionTextBlockStyle}" /><TextBlock Text="{Binding TaskManagerLastSeenText}" Style="{StaticResource BodyTextBlockStyle}" HorizontalAlignment="Right" FontWeight="SemiBold" /></Grid>
+                                             <Grid><TextBlock Text="{Binding TaskManagerRightLabel1}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{Binding TaskManagerRightValue1}" Style="{StaticResource BodyTextBlockStyle}" HorizontalAlignment="Right" FontWeight="SemiBold" /></Grid>
+                                             <Grid><TextBlock Text="{Binding TaskManagerRightLabel2}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{Binding TaskManagerRightValue2}" Style="{StaticResource BodyTextBlockStyle}" HorizontalAlignment="Right" FontWeight="SemiBold" /></Grid>
+                                             <Grid><TextBlock Text="{Binding TaskManagerRightLabel3}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{Binding TaskManagerRightValue3}" Style="{StaticResource BodyTextBlockStyle}" HorizontalAlignment="Right" FontWeight="SemiBold" /></Grid>
+                                             <Grid><TextBlock Text="{Binding TaskManagerRightLabel4}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" /><TextBlock Text="{Binding TaskManagerRightValue4}" Style="{StaticResource BodyTextBlockStyle}" HorizontalAlignment="Right" FontWeight="SemiBold" /></Grid>
                                         </StackPanel>
                                     </Grid>
                                 </Border>
