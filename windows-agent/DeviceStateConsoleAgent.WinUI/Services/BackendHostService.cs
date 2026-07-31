@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Net.Http;
+using System.Net.Http.Json;
+using DeviceStateConsoleAgent.WinUI.Models;
 
 namespace DeviceStateConsoleAgent.WinUI.Services;
 
@@ -84,8 +86,16 @@ public sealed class BackendHostService
             return;
         }
 
-        if (IsBackendReachable())
+        var expectedConfigRoot = ResolveConfigRoot();
+        var existingConfigPath = GetReachableBackendConfigPath();
+        if (existingConfigPath is not null)
         {
+            if (!PathsShareRoot(existingConfigPath, expectedConfigRoot))
+            {
+                throw new InvalidOperationException(
+                    $"检测到 17891 端口已有其他配置目录的 backend：{Path.GetDirectoryName(existingConfigPath)}。请先关闭它后再启动当前客户端。");
+            }
+
             _attachedToExistingBackend = true;
             return;
         }
@@ -100,7 +110,7 @@ public sealed class BackendHostService
         _process = Process.Start(new ProcessStartInfo
         {
             FileName = backendExe,
-            Arguments = $"--bundle-root \"{ResolveBackendBundleRoot()}\" --config-root \"{ResolveConfigRoot()}\" --parent-pid {Environment.ProcessId}",
+            Arguments = $"--bundle-root \"{ResolveBackendBundleRoot()}\" --config-root \"{expectedConfigRoot}\" --parent-pid {Environment.ProcessId}",
             WorkingDirectory = Path.GetDirectoryName(backendExe) ?? AppContext.BaseDirectory,
             UseShellExecute = false,
             CreateNoWindow = true
@@ -164,7 +174,7 @@ public sealed class BackendHostService
         }
     }
 
-    private static bool IsBackendReachable()
+    private static string? GetReachableBackendConfigPath()
     {
         try
         {
@@ -173,7 +183,29 @@ public sealed class BackendHostService
                 Timeout = TimeSpan.FromMilliseconds(800)
             };
             using var response = httpClient.GetAsync(BackendStateUri).GetAwaiter().GetResult();
-            return response.IsSuccessStatusCode;
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var state = response.Content.ReadFromJsonAsync<BackendStateDto>().GetAwaiter().GetResult();
+            return string.IsNullOrWhiteSpace(state?.ConfigPath) ? string.Empty : state.ConfigPath;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool PathsShareRoot(string configPath, string configRoot)
+    {
+        try
+        {
+            var actualRoot = Path.GetFullPath(Path.GetDirectoryName(configPath) ?? string.Empty)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var expectedRoot = Path.GetFullPath(configRoot)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.Equals(actualRoot, expectedRoot, StringComparison.OrdinalIgnoreCase);
         }
         catch
         {

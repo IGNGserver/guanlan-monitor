@@ -149,6 +149,9 @@ public sealed class MainViewModel : ObservableObject
     private string _viewerTrafficSummaryText = "当天总流量：--";
     private string _viewerTrafficSelectedStart = "";
     private readonly List<ViewerDeviceItemViewModel> _viewerDeviceCache = new();
+    private CancellationTokenSource? _viewerDetailCts;
+    private int _viewerDetailRequestVersion;
+    private bool _viewerLoginQueued;
     private string _storageModeText = "正在判断运行模式。";
     private string _noticeText = "请先配置中枢连接信息，然后启动采集器。";
     private string _localSaveStateText = "本地配置已加载，后续改动会自动保存。";
@@ -369,11 +372,7 @@ public sealed class MainViewModel : ObservableObject
                     SelectedViewerDeviceHardwareName = "Generic Hardware /受控节点";
                 }
 
-                // 核心关键修复：切换设备时瞬间调取该设备的底层实时与历史指标！
-                _ = Task.Run(async () =>
-                {
-                    await RefreshSelectedViewerDeviceAsync();
-                });
+                QueueSelectedViewerDeviceRefresh();
             }
         }
     }
@@ -410,6 +409,16 @@ public sealed class MainViewModel : ObservableObject
         if (CurrentCategoryCharts == null || CurrentCategoryCharts.Count == 0) return;
         SelectedCategoryChart = CurrentCategoryCharts.FirstOrDefault(c => c.Title.Equals(name, StringComparison.OrdinalIgnoreCase))
             ?? CurrentCategoryCharts.FirstOrDefault();
+    }
+
+    private void QueueSelectedViewerDeviceRefresh()
+    {
+        if (!ViewerSessionReady || string.IsNullOrWhiteSpace(_selectedViewerDeviceId))
+        {
+            return;
+        }
+
+        _dispatcherQueue.TryEnqueue(() => _ = RefreshSelectedViewerDeviceAsync());
     }
 
     public void UpdateSubDeviceNamesDeduplicated()
@@ -804,7 +813,23 @@ public sealed class MainViewModel : ObservableObject
     public double ViewerDiskUsagePercent { get => _viewerDiskUsagePercent; private set => SetProperty(ref _viewerDiskUsagePercent, value); }
     public double ViewerGpuUsagePercent { get => _viewerGpuUsagePercent; private set => SetProperty(ref _viewerGpuUsagePercent, value); }
     public double ViewerNetworkUsagePercent { get => _viewerNetworkUsagePercent; private set => SetProperty(ref _viewerNetworkUsagePercent, value); }
-    public string SelectedMetricWindow { get => _selectedMetricWindow; set => SetProperty(ref _selectedMetricWindow, value); }
+    public string SelectedMetricWindow
+    {
+        get => _selectedMetricWindow;
+        set
+        {
+            if (SetProperty(ref _selectedMetricWindow, value) && !_isApplyingState)
+            {
+                QueueSelectedViewerDeviceRefresh();
+            }
+        }
+    }
+    private string _selectedViewerCategory = "cpu";
+    public string SelectedViewerCategory
+    {
+        get => _selectedViewerCategory;
+        set => SetProperty(ref _selectedViewerCategory, value);
+    }
     public string ViewerDeviceFilter
     {
         get => _viewerDeviceFilter;
@@ -838,6 +863,7 @@ public sealed class MainViewModel : ObservableObject
             if (SetAndQueueSave(ref _serverUrl, value))
             {
                 ViewerSessionReady = false;
+                CancelViewerDetailRequest();
             }
         }
     }
@@ -849,6 +875,7 @@ public sealed class MainViewModel : ObservableObject
             if (SetAndQueueSave(ref _secret, value))
             {
                 ViewerSessionReady = false;
+                CancelViewerDetailRequest();
                 OnPropertyChanged(nameof(ViewerAccessKey));
                 LoginViewerCommand?.RaiseCanExecuteChanged();
             }
@@ -1086,7 +1113,16 @@ public sealed class MainViewModel : ObservableObject
     {
         _isShuttingDown = true;
         _pollingCts?.Cancel();
+        CancelViewerDetailRequest();
         _hostService.Stop();
+    }
+
+    private void CancelViewerDetailRequest()
+    {
+        _viewerDetailRequestVersion++;
+        _viewerDetailCts?.Cancel();
+        _viewerDetailCts?.Dispose();
+        _viewerDetailCts = null;
     }
 
     public void SelectInstanceMetricEditor(ProbeInstanceItemViewModel item)
@@ -1371,7 +1407,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 if (!ViewerSessionReady)
                 {
-                    await LoginViewerAsync();
+                    QueueViewerLogin();
                 }
                 else
                 {
@@ -1399,6 +1435,30 @@ public sealed class MainViewModel : ObservableObject
             {
                 break;
             }
+        }
+    }
+
+    private void QueueViewerLogin()
+    {
+        if (_viewerLoginQueued)
+        {
+            return;
+        }
+
+        _viewerLoginQueued = true;
+        if (!_dispatcherQueue.TryEnqueue(async () =>
+        {
+            try
+            {
+                await LoginViewerAsync();
+            }
+            finally
+            {
+                _viewerLoginQueued = false;
+            }
+        }))
+        {
+            _viewerLoginQueued = false;
         }
     }
 
@@ -1431,17 +1491,51 @@ public sealed class MainViewModel : ObservableObject
 
     private void ApplyViewerDevices(IReadOnlyList<ViewerDeviceSummaryDto> devices)
     {
-        ViewerDevices.Clear();
-        _viewerDeviceCache.Clear();
-        foreach (var device in devices)
+        var existing = _viewerDeviceCache.ToDictionary(item => item.DeviceId, StringComparer.OrdinalIgnoreCase);
+        var incoming = devices
+            .Where(device => !string.IsNullOrWhiteSpace(device.DeviceId))
+            .GroupBy(device => device.DeviceId, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                if (!existing.TryGetValue(group.Key, out var item))
+                {
+                    item = new ViewerDeviceItemViewModel(group.First());
+                }
+                else
+                {
+                    item.Update(group.First());
+                }
+
+                return item;
+            })
+            .ToList();
+
+        for (var index = 0; index < incoming.Count; index++)
         {
-            _viewerDeviceCache.Add(new ViewerDeviceItemViewModel(device));
+            var desired = incoming[index];
+            if (index < ViewerDevices.Count && ReferenceEquals(ViewerDevices[index], desired))
+            {
+                continue;
+            }
+
+            var existingIndex = ViewerDevices.IndexOf(desired);
+            if (existingIndex >= 0)
+            {
+                ViewerDevices.Move(existingIndex, index);
+            }
+            else
+            {
+                ViewerDevices.Insert(index, desired);
+            }
         }
 
-        foreach (var device in _viewerDeviceCache)
+        while (ViewerDevices.Count > incoming.Count)
         {
-            ViewerDevices.Add(device);
+            ViewerDevices.RemoveAt(ViewerDevices.Count - 1);
         }
+
+        _viewerDeviceCache.Clear();
+        _viewerDeviceCache.AddRange(incoming);
 
         ApplyViewerFilter();
 
@@ -1456,13 +1550,34 @@ public sealed class MainViewModel : ObservableObject
     private void ApplyViewerFilter()
     {
         var filter = ViewerDeviceFilter.Trim();
-        FilteredViewerDevices.Clear();
-        foreach (var device in _viewerDeviceCache.Where(item =>
-                     string.IsNullOrWhiteSpace(filter) ||
-                     item.Hostname.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-                     item.DeviceId.Contains(filter, StringComparison.OrdinalIgnoreCase)))
+        var desired = _viewerDeviceCache.Where(item =>
+                 string.IsNullOrWhiteSpace(filter) ||
+                 item.Hostname.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                 item.DeviceId.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        for (var index = 0; index < desired.Count; index++)
         {
-            FilteredViewerDevices.Add(device);
+            var item = desired[index];
+            if (index < FilteredViewerDevices.Count && ReferenceEquals(FilteredViewerDevices[index], item))
+            {
+                continue;
+            }
+
+            var existingIndex = FilteredViewerDevices.IndexOf(item);
+            if (existingIndex >= 0)
+            {
+                FilteredViewerDevices.Move(existingIndex, index);
+            }
+            else
+            {
+                FilteredViewerDevices.Insert(index, item);
+            }
+        }
+
+        while (FilteredViewerDevices.Count > desired.Count)
+        {
+            FilteredViewerDevices.RemoveAt(FilteredViewerDevices.Count - 1);
         }
     }
 
@@ -1473,9 +1588,13 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
-        _selectedViewerDeviceId = deviceId;
+        var changed = !string.Equals(_selectedViewerDeviceId, deviceId, StringComparison.OrdinalIgnoreCase);
+        SelectedViewerDeviceId = deviceId;
         SelectedViewerDeviceName = _viewerDeviceCache.FirstOrDefault(item => item.DeviceId == deviceId)?.Hostname ?? deviceId;
-        await RefreshSelectedViewerDeviceAsync();
+        if (changed)
+        {
+            await RefreshSelectedViewerDeviceAsync();
+        }
     }
 
     public async Task RefreshSelectedViewerDeviceAsync()
@@ -1485,11 +1604,23 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
+        _viewerDetailCts?.Cancel();
+        _viewerDetailCts?.Dispose();
+        var detailCts = new CancellationTokenSource();
+        _viewerDetailCts = detailCts;
+        var requestVersion = ++_viewerDetailRequestVersion;
+        var cancellationToken = detailCts.Token;
         var deviceId = _selectedViewerDeviceId;
+        var metricWindow = SelectedMetricWindow;
         ViewerDetailStatusText = $"正在读取 {deviceId} 的 {SelectedMetricWindow} 详细数据…";
         try
         {
-            var payload = await _apiClient.GetViewerDeviceMetricsAsync(ServerUrl, deviceId, SelectedMetricWindow);
+            var payload = await _apiClient.GetViewerDeviceMetricsAsync(ServerUrl, deviceId, metricWindow, cancellationToken);
+            if (!IsViewerDetailRequestCurrent(deviceId, requestVersion, cancellationToken))
+            {
+                return;
+            }
+
             if (payload is null)
             {
                 ViewerDetailStatusText = "中枢没有返回该设备的详细数据。";
@@ -1524,38 +1655,118 @@ public sealed class MainViewModel : ObservableObject
             EnsureTrendFallback(ViewerNetworkTrendPoints, ViewerNetworkUsagePercent);
             ReplaceScaledTrend(ViewerFanTrendPoints, payload.Series.Fans.SelectMany(fan => fan.Rpm));
             BuildViewerDetailCharts(payload.Series, payload.Latest, payload.EnabledMetrics, payload.AvailableMetrics);
-            var trafficPayload = SelectedMetricWindow == "1d"
+            var trafficPayload = metricWindow == "1d"
                 ? payload
-                : await _apiClient.GetViewerDeviceMetricsAsync(ServerUrl, deviceId, "1d");
+                : await _apiClient.GetViewerDeviceMetricsAsync(ServerUrl, deviceId, "1d", cancellationToken);
+            if (!IsViewerDetailRequestCurrent(deviceId, requestVersion, cancellationToken))
+            {
+                return;
+            }
             ReplaceTrafficTrend(ViewerTrafficTrendPoints, trafficPayload?.Series);
-            UpdateTaskManagerMetricGridValues(payload);
-            await RefreshViewerTrafficAsync();
+            UpdateTaskManagerMetricGridValues(payload, SelectedViewerCategory);
+            await RefreshViewerTrafficAsync(deviceId, cancellationToken, requestVersion);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         catch (Exception ex)
         {
-            ViewerDetailStatusText = $"读取设备详情失败：{ex.Message}";
+            if (IsViewerDetailRequestCurrent(deviceId, requestVersion, cancellationToken))
+            {
+                ViewerDetailStatusText = $"读取设备详情失败：{ex.Message}";
+            }
         }
     }
 
-    private void UpdateTaskManagerMetricGridValues(ViewerDeviceMetricsDto payload)
+    private bool IsViewerDetailRequestCurrent(string deviceId, int requestVersion, CancellationToken cancellationToken)
+        => !cancellationToken.IsCancellationRequested &&
+           requestVersion == _viewerDetailRequestVersion &&
+           string.Equals(deviceId, _selectedViewerDeviceId, StringComparison.OrdinalIgnoreCase);
+
+    private void UpdateTaskManagerMetricGridValues(ViewerDeviceMetricsDto payload, string category)
     {
         if (payload?.Latest is not { } latest) return;
 
         var memoryPercent = latest.MemoryTotalBytes > 0 ? latest.MemoryUsedBytes / latest.MemoryTotalBytes * 100 : 0;
         var cpuSeries = payload.Series?.Cpus?.FirstOrDefault();
+        var diskSeries = payload.Series?.Disks?.FirstOrDefault();
+        var disk = latest.Disks?.FirstOrDefault();
+        var networkSeries = payload.Series?.Networks?.FirstOrDefault();
+        var gpu = latest.Gpus?.FirstOrDefault();
+        var fanSeries = payload.Series?.Fans?.FirstOrDefault();
 
-        // 默认全量真实解包
-        TaskManagerStatUsage = $"{latest.CpuUsagePercent:0.0}%";
-        TaskManagerStatSpeed = latest.CpuFrequencyMHz.HasValue ? $"{latest.CpuFrequencyMHz.Value / 1000.0:0.00} GHz" : "--";
-        TaskManagerStatCapacity = cpuSeries?.CoreCount.HasValue == true ? $"{cpuSeries.CoreCount} 核 / {cpuSeries.LogicalCount ?? cpuSeries.CoreCount} 线程" : "--";
-        TaskManagerStatStatus = latest.CpuTemperatureC.HasValue ? $"{latest.CpuTemperatureC.Value:0.0} °C" : "正常";
-        TaskManagerStatWriteSpeed = FormatBytes(latest.MemoryUsedBytes);
-        TaskManagerStatReadSpeed = FormatBytes(latest.MemoryTotalBytes);
+        switch (category.ToLowerInvariant())
+        {
+            case "memory":
+                TaskManagerStatUsage = $"{memoryPercent:0.0}%";
+                TaskManagerStatSpeed = FormatBytes(latest.MemoryUsedBytes);
+                TaskManagerStatCapacity = FormatBytes(Math.Max(0, latest.MemoryTotalBytes - latest.MemoryUsedBytes));
+                TaskManagerStatStatus = FormatBytes(latest.SwapUsedBytes);
+                TaskManagerStatWriteSpeed = "--";
+                TaskManagerStatReadSpeed = "--";
+                TaskManagerRightLabel1 = "已用内存:"; TaskManagerRightValue1 = FormatBytes(latest.MemoryUsedBytes);
+                TaskManagerRightLabel2 = "总物理内存:"; TaskManagerRightValue2 = FormatBytes(latest.MemoryTotalBytes);
+                TaskManagerRightLabel3 = "交换空间已用:"; TaskManagerRightValue3 = FormatBytes(latest.SwapUsedBytes);
+                break;
+            case "disk":
+                TaskManagerStatUsage = disk is null ? "--" : $"{(disk.TotalBytes > 0 ? disk.UsedBytes / disk.TotalBytes * 100 : 0):0.0}%";
+                TaskManagerStatSpeed = FormatRate(diskSeries?.ReadBytesPerSec.LastOrDefault()?.Value ?? 0);
+                TaskManagerStatCapacity = FormatRate(diskSeries?.WriteBytesPerSec.LastOrDefault()?.Value ?? 0);
+                TaskManagerStatStatus = "--";
+                TaskManagerStatWriteSpeed = disk?.Name ?? "--";
+                TaskManagerStatReadSpeed = disk?.Model ?? "--";
+                TaskManagerRightLabel1 = "磁盘容量:"; TaskManagerRightValue1 = disk is null ? "--" : FormatBytes(disk.TotalBytes);
+                TaskManagerRightLabel2 = "已用空间:"; TaskManagerRightValue2 = disk is null ? "--" : FormatBytes(disk.UsedBytes);
+                TaskManagerRightLabel3 = "挂载点:"; TaskManagerRightValue3 = disk?.MountPoint ?? "--";
+                break;
+            case "network":
+                TaskManagerStatUsage = FormatRate(latest.NetworkTxBytesPerSec);
+                TaskManagerStatSpeed = FormatRate(latest.NetworkRxBytesPerSec);
+                TaskManagerStatCapacity = "--";
+                TaskManagerStatStatus = networkSeries?.Name ?? "--";
+                TaskManagerStatWriteSpeed = "发送";
+                TaskManagerStatReadSpeed = "接收";
+                TaskManagerRightLabel1 = "发送速率:"; TaskManagerRightValue1 = FormatRate(latest.NetworkTxBytesPerSec);
+                TaskManagerRightLabel2 = "接收速率:"; TaskManagerRightValue2 = FormatRate(latest.NetworkRxBytesPerSec);
+                TaskManagerRightLabel3 = "网卡:"; TaskManagerRightValue3 = networkSeries?.Name ?? "--";
+                break;
+            case "gpu":
+                TaskManagerStatUsage = gpu is null ? "--" : $"{gpu.UtilizationPercent:0.0}%";
+                TaskManagerStatSpeed = "--";
+                TaskManagerStatCapacity = gpu is null ? "--" : FormatBytes(gpu.MemoryTotalBytes);
+                TaskManagerStatStatus = gpu is null ? "--" : FormatBytes(gpu.MemoryUsedBytes);
+                TaskManagerStatWriteSpeed = gpu?.Name ?? "--";
+                TaskManagerStatReadSpeed = "--";
+                TaskManagerRightLabel1 = "显存已用:"; TaskManagerRightValue1 = gpu is null ? "--" : FormatBytes(gpu.MemoryUsedBytes);
+                TaskManagerRightLabel2 = "显存总量:"; TaskManagerRightValue2 = gpu is null ? "--" : FormatBytes(gpu.MemoryTotalBytes);
+                TaskManagerRightLabel3 = "显卡:"; TaskManagerRightValue3 = gpu?.Name ?? "--";
+                break;
+            case "fan":
+                TaskManagerStatUsage = fanSeries?.Rpm.LastOrDefault()?.Value.ToString("0") ?? "--";
+                TaskManagerStatSpeed = "--";
+                TaskManagerStatCapacity = "--";
+                TaskManagerStatStatus = fanSeries?.Name ?? "--";
+                TaskManagerStatWriteSpeed = "--";
+                TaskManagerStatReadSpeed = "--";
+                TaskManagerRightLabel1 = "风扇:"; TaskManagerRightValue1 = fanSeries?.Name ?? "--";
+                TaskManagerRightLabel2 = "接口:"; TaskManagerRightValue2 = fanSeries?.Interface ?? "--";
+                TaskManagerRightLabel3 = "当前转速:"; TaskManagerRightValue3 = fanSeries?.Rpm.LastOrDefault()?.Value.ToString("0") ?? "--";
+                break;
+            default:
+                TaskManagerStatUsage = $"{latest.CpuUsagePercent:0.0}%";
+                TaskManagerStatSpeed = latest.CpuFrequencyMHz.HasValue ? $"{latest.CpuFrequencyMHz.Value / 1000.0:0.00} GHz" : "--";
+                TaskManagerStatCapacity = cpuSeries?.CoreCount.HasValue == true ? $"{cpuSeries.CoreCount} 核 / {cpuSeries.LogicalCount ?? cpuSeries.CoreCount} 线程" : "--";
+                TaskManagerStatStatus = latest.CpuTemperatureC.HasValue ? $"{latest.CpuTemperatureC.Value:0.0} °C" : "正常";
+                TaskManagerStatWriteSpeed = FormatBytes(latest.MemoryUsedBytes);
+                TaskManagerStatReadSpeed = FormatBytes(latest.MemoryTotalBytes);
+                TaskManagerRightLabel1 = "已用内存:"; TaskManagerRightValue1 = FormatBytes(latest.MemoryUsedBytes);
+                TaskManagerRightLabel2 = "总物理内存:"; TaskManagerRightValue2 = FormatBytes(latest.MemoryTotalBytes);
+                TaskManagerRightLabel3 = "交换空间已用:"; TaskManagerRightValue3 = FormatBytes(latest.SwapUsedBytes);
+                break;
+        }
 
-        TaskManagerRightLabel1 = "已用内存:"; TaskManagerRightValue1 = FormatBytes(latest.MemoryUsedBytes);
-        TaskManagerRightLabel2 = "总物理内存:"; TaskManagerRightValue2 = FormatBytes(latest.MemoryTotalBytes);
-        TaskManagerRightLabel3 = "交换空间已用:"; TaskManagerRightValue3 = FormatBytes(latest.SwapUsedBytes);
-        TaskManagerRightLabel4 = "最后采集:"; TaskManagerRightValue4 = payload.LastSeenAt ?? "刚刚";
+        TaskManagerRightLabel4 = "最后采集:";
+        TaskManagerRightValue4 = string.IsNullOrWhiteSpace(payload.LastSeenAt) ? "刚刚" : payload.LastSeenAt;
     }
 
     public async Task RefreshViewerTrafficAsync()
@@ -1569,11 +1780,22 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
+        var cancellationToken = _viewerDetailCts?.Token ?? CancellationToken.None;
+        await RefreshViewerTrafficAsync(deviceId, cancellationToken, _viewerDetailRequestVersion);
+    }
+
+    private async Task RefreshViewerTrafficAsync(string deviceId, CancellationToken cancellationToken, int requestVersion)
+    {
+        if (!IsViewerDetailRequestCurrent(deviceId, requestVersion, cancellationToken))
+        {
+            return;
+        }
+
         ViewerTrafficStatusText = "正在读取当天流量…";
         try
         {
-            var payload = await _apiClient.GetViewerTrafficCalendarAsync(ServerUrl, deviceId, _viewerTrafficSelectedStart);
-            if (payload is null) return;
+            var payload = await _apiClient.GetViewerTrafficCalendarAsync(ServerUrl, deviceId, _viewerTrafficSelectedStart, cancellationToken);
+            if (payload is null || !IsViewerDetailRequestCurrent(deviceId, requestVersion, cancellationToken)) return;
             ViewerTrafficSummaryText = $"当天总流量：{FormatBytes(payload.TotalRxBytes + payload.TotalTxBytes)} · 接收 {FormatBytes(payload.TotalRxBytes)} · 发送 {FormatBytes(payload.TotalTxBytes)}";
             ViewerTrafficStatusText = $"{payload.Title} · {deviceId}";
             ViewerTrafficRecords.Clear();
@@ -1587,9 +1809,15 @@ public sealed class MainViewModel : ObservableObject
                 ViewerTrafficRecords.Add(new ViewerTrafficRecordViewModel(record));
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
         catch (Exception ex)
         {
-            ViewerTrafficStatusText = $"读取流量失败：{ex.Message}";
+            if (IsViewerDetailRequestCurrent(deviceId, requestVersion, cancellationToken))
+            {
+                ViewerTrafficStatusText = $"读取流量失败：{ex.Message}";
+            }
         }
     }
 
@@ -3544,6 +3772,11 @@ public sealed class ViewerDeviceItemViewModel : ObservableObject
     public ViewerDeviceItemViewModel(ViewerDeviceSummaryDto source)
     {
         DeviceId = source.DeviceId;
+        Update(source);
+    }
+
+    public void Update(ViewerDeviceSummaryDto source)
+    {
         Hostname = string.IsNullOrWhiteSpace(source.Hostname) ? source.DeviceId : source.Hostname;
         IsOnline = source.Status.Equals("online", StringComparison.OrdinalIgnoreCase);
         StatusText = IsOnline ? "在线" : "离线";
@@ -3554,19 +3787,29 @@ public sealed class ViewerDeviceItemViewModel : ObservableObject
         DiskText = FormatPercent("磁盘", source.DiskUsagePercent);
         GpuText = FormatPercent("显卡", source.GpuUsagePercent);
         LastSeenText = string.IsNullOrWhiteSpace(source.LastSeenAt) ? "暂无更新时间" : $"更新于 {source.LastSeenAt}";
+        OnPropertyChanged(nameof(Hostname));
+        OnPropertyChanged(nameof(IsOnline));
+        OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(StatusGlyph));
+        OnPropertyChanged(nameof(StatusColor));
+        OnPropertyChanged(nameof(CpuText));
+        OnPropertyChanged(nameof(MemoryText));
+        OnPropertyChanged(nameof(DiskText));
+        OnPropertyChanged(nameof(GpuText));
+        OnPropertyChanged(nameof(LastSeenText));
     }
 
     public string DeviceId { get; }
-    public string Hostname { get; }
-    public bool IsOnline { get; }
-    public string StatusText { get; }
-    public string StatusGlyph { get; }
-    public string StatusColor { get; }
-    public string CpuText { get; }
-    public string MemoryText { get; }
-    public string DiskText { get; }
-    public string GpuText { get; }
-    public string LastSeenText { get; }
+    public string Hostname { get; private set; } = "";
+    public bool IsOnline { get; private set; }
+    public string StatusText { get; private set; } = "";
+    public string StatusGlyph { get; private set; } = "";
+    public string StatusColor { get; private set; } = "";
+    public string CpuText { get; private set; } = "";
+    public string MemoryText { get; private set; } = "";
+    public string DiskText { get; private set; } = "";
+    public string GpuText { get; private set; } = "";
+    public string LastSeenText { get; private set; } = "";
 
     private static string FormatPercent(string label, double? value)
         => value.HasValue ? $"{label} {value.Value:0.0}%" : $"{label} --";

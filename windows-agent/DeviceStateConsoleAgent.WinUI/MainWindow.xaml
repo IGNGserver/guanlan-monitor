@@ -31,9 +31,9 @@
                                   IsBackButtonVisible="Collapsed"
                                   IsSettingsVisible="False"
                                   PaneTitle="观澜"
-                                  PaneDisplayMode="Left"
-                                  SelectionChanged="NavigationView_SelectionChanged"
-                                  BackRequested="NavigationView_BackRequested">
+                                   PaneDisplayMode="Left"
+                                   SelectionChanged="NavigationView_SelectionChanged"
+                                   >
             <controls:NavigationView.MenuItems>
                 <controls:NavigationViewItem Content="集群总览" Tag="overview" IsSelected="True">
                     <controls:NavigationViewItem.Icon><SymbolIcon Symbol="View" /></controls:NavigationViewItem.Icon>
@@ -278,7 +278,7 @@
                                     </StackPanel>
                                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Bottom">
                                           <ComboBox x:Name="SubDeviceComboBox" Header="特定设备 / 分区" ItemsSource="{Binding SubDeviceNames}" SelectedItem="{Binding SelectedSubDeviceName, Mode=TwoWay}" Width="200" SelectionChanged="SubDeviceComboBox_SelectionChanged" />
-                                         <ComboBox Header="历史窗口" ItemsSource="{Binding MetricWindows}" SelectedItem="{Binding SelectedMetricWindow, Mode=TwoWay}" SelectionChanged="MetricWindow_SelectionChanged" Width="120" />
+                                         <ComboBox Header="历史窗口" ItemsSource="{Binding MetricWindows}" SelectedItem="{Binding SelectedMetricWindow, Mode=TwoWay}" Width="120" />
                                      </StackPanel>
                                 </Grid>
 
@@ -454,9 +454,25 @@
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
-                            </StackPanel>
+                             </StackPanel>
 
-                            <!-- 3.2 服务配置面板 (ServerConfigPanel) -->
+                             <Border Style="{StaticResource DSCPanelStyle}" Padding="18" Visibility="{Binding SelectedInstanceMetricEditorVisibility}">
+                                 <StackPanel Spacing="10">
+                                     <TextBlock Text="{Binding SelectedInstanceMetricEditorTitle}" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                     <TextBlock Text="{Binding SelectedInstanceMetricEditorSubtitle}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                     <ItemsControl ItemsSource="{Binding SelectedInstanceMetricToggles}">
+                                         <ItemsControl.ItemTemplate>
+                                             <DataTemplate>
+                                                 <ToggleSwitch Header="{Binding Label}" IsOn="{Binding IsEnabled, Mode=TwoWay}" />
+                                             </DataTemplate>
+                                         </ItemsControl.ItemTemplate>
+                                     </ItemsControl>
+                                     <TextBlock Text="{Binding SelectedInstanceMetricEditorSummary}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                     <Button Content="关闭实例配置" Click="ClearInstanceMetricEditorButton_OnClick" HorizontalAlignment="Left" />
+                                 </StackPanel>
+                             </Border>
+
+                             <!-- 3.2 服务配置面板 (ServerConfigPanel) -->
                             <StackPanel x:Name="ServerConfigPanel" Spacing="20" Visibility="Collapsed" HorizontalAlignment="Stretch">
                                 <Border Style="{StaticResource DSCPanelStyle}">
                                     <StackPanel Spacing="14">

@@ -77,6 +77,7 @@ public partial class App : Application
         _isExiting = true;
         _trayIconService?.Dispose();
         _trayIconService = null;
+        _viewModel?.Shutdown();
         _trayWindow?.PrepareForExit();
         _trayWindow?.Close();
         _mainWindow?.PrepareForExit();

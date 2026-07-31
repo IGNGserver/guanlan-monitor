@@ -84,6 +84,15 @@ jobs:
           if (Test-Path $portableZip) { Remove-Item -LiteralPath $portableZip -Force }
           Compress-Archive -Path (Join-Path $portableRoot "*") -DestinationPath $portableZip -CompressionLevel Optimal
 
+      - name: Smoke test packaged Windows GUI backend
+        shell: powershell
+        run: |
+          ./deploy/verify-windows-agent-bundle.ps1 `
+            -BundleRoot "$(Join-Path (Get-Location) 'release/windows-agent-portable/DeviceStateConsoleAgent')" `
+            -ConfigRoot "$(Join-Path $env:RUNNER_TEMP 'device-state-console-release-config')" `
+            -ListenPort 17931 `
+            -ReportPath "$(Join-Path $env:RUNNER_TEMP 'device-state-console-release-bundle-report.json')"
+
       - name: Build Windows and Linux CLI packages
         shell: powershell
         run: ./deploy/build-cli-agent.ps1 -OutputDir release/cli-agent -Zip

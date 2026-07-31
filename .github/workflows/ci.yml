@@ -55,3 +55,37 @@ jobs:
       - name: Build Go agents
         working-directory: agents
         run: go build ./...
+
+  windows-gui:
+    name: Verify Windows GUI bundle
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.x
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Build Windows GUI portable bundle
+        shell: powershell
+        run: |
+          ./deploy/build-windows-agent-portable.ps1 `
+            -OutputDir "$env:RUNNER_TEMP\device-state-console-windows" `
+            -Zip
+
+      - name: Smoke test Windows GUI bundle backend
+        shell: powershell
+        run: |
+          ./deploy/verify-windows-agent-bundle.ps1 `
+            -BundleRoot "$env:RUNNER_TEMP\device-state-console-windows\DeviceStateConsoleAgent" `
+            -ConfigRoot "$env:RUNNER_TEMP\device-state-console-windows-config" `
+            -ListenPort 17921 `
+            -ReportPath "$env:RUNNER_TEMP\device-state-console-windows-bundle-report.json"

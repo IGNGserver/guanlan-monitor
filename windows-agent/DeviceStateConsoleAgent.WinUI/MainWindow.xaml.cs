@@ -112,6 +112,10 @@ public sealed partial class MainWindow : Window
 
     private void SyncDeviceMenuItems()
     {
+        var desiredDevices = _viewModel.FilteredViewerDevices.ToList();
+        var desiredTags = desiredDevices
+            .Select(device => $"device_{device.DeviceId}")
+            .ToHashSet(StringComparer.Ordinal);
         var existingDynamicItems = AppNavigation.MenuItems
             .OfType<NavigationViewItem>()
             .Where(item => (item.Tag as string)?.StartsWith("device_", StringComparison.Ordinal) == true)
@@ -119,18 +123,52 @@ public sealed partial class MainWindow : Window
 
         foreach (var item in existingDynamicItems)
         {
-            AppNavigation.MenuItems.Remove(item);
+            if (!desiredTags.Contains(item.Tag as string ?? string.Empty))
+            {
+                AppNavigation.MenuItems.Remove(item);
+            }
         }
 
-        foreach (var device in _viewModel.FilteredViewerDevices)
+        var firstDynamicIndex = AppNavigation.MenuItems
+            .Select((item, index) => new { item, index })
+            .Where(entry => entry.item is NavigationViewItem navigationItem &&
+                            (navigationItem.Tag as string)?.StartsWith("device_", StringComparison.Ordinal) == true)
+            .Select(entry => entry.index)
+            .DefaultIfEmpty(AppNavigation.MenuItems.Count)
+            .First();
+
+        for (var index = 0; index < desiredDevices.Count; index++)
         {
-            var item = new NavigationViewItem
+            var device = desiredDevices[index];
+            var tag = $"device_{device.DeviceId}";
+            var item = AppNavigation.MenuItems
+                .OfType<NavigationViewItem>()
+                .FirstOrDefault(candidate => string.Equals(candidate.Tag as string, tag, StringComparison.Ordinal));
+            if (item is null)
             {
-                Content = device.Hostname,
-                Tag = $"device_{device.DeviceId}",
-                Icon = new FontIcon { Glyph = "\uE7F8" }
-            };
-            AppNavigation.MenuItems.Add(item);
+                item = new NavigationViewItem
+                {
+                    Content = device.Hostname,
+                    Tag = tag,
+                    Icon = new FontIcon { Glyph = "\uE7F8" }
+                };
+            }
+            else
+            {
+                item.Content = device.Hostname;
+            }
+
+            var targetIndex = firstDynamicIndex + index;
+            var currentIndex = AppNavigation.MenuItems.ToList().IndexOf(item);
+            if (currentIndex != targetIndex)
+            {
+                if (currentIndex >= 0)
+                {
+                    AppNavigation.MenuItems.Remove(item);
+                }
+
+                AppNavigation.MenuItems.Insert(Math.Min(targetIndex, AppNavigation.MenuItems.Count), item);
+            }
         }
     }
 
@@ -174,6 +212,7 @@ public sealed partial class MainWindow : Window
         if (TaskManagerCategoryTitle is null || _viewModel is null) return;
 
         _currentSelectedCategory = categoryTag;
+        _viewModel.SelectedViewerCategory = categoryTag;
         var currentDev = _viewModel.FilteredViewerDevices.FirstOrDefault(d => d.DeviceId == _viewModel.SelectedViewerDeviceId)
                       ?? _viewModel.ViewerDevices.FirstOrDefault(d => d.DeviceId == _viewModel.SelectedViewerDeviceId);
 
@@ -505,10 +544,6 @@ public sealed partial class MainWindow : Window
         _viewModel.Secret = SecretBox.Password;
     }
 
-    private void NavigationView_BackRequested(NavigationView sender, NavigationViewBackRequestedEventArgs args)
-    {
-    }
-
     private void SubDeviceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_viewModel is null) return;
@@ -518,16 +553,17 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void MetricWindow_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-    }
-
     private void InstanceMetricEditorButton_OnClick(object sender, RoutedEventArgs e)
     {
+        if (sender is Button { DataContext: ProbeInstanceItemViewModel item })
+        {
+            _viewModel.SelectInstanceMetricEditor(item);
+        }
     }
 
     private void ClearInstanceMetricEditorButton_OnClick(object sender, RoutedEventArgs e)
     {
+        _viewModel.ClearInstanceMetricEditor();
     }
 
     private void RootLayout_SizeChanged(object sender, SizeChangedEventArgs e)

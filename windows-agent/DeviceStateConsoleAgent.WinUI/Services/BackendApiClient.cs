@@ -8,6 +8,7 @@ namespace DeviceStateConsoleAgent.WinUI.Services;
 public sealed class BackendApiClient
 {
     private static readonly TimeSpan StateRequestTimeout = TimeSpan.FromSeconds(1.5);
+    private static readonly TimeSpan ViewerRequestTimeout = TimeSpan.FromSeconds(5);
     private readonly HttpClient _httpClient;
 
     public BackendApiClient()
@@ -116,8 +117,9 @@ public sealed class BackendApiClient
     public async Task LoginViewerAsync(string serverUrl, string accessKey, CancellationToken cancellationToken = default)
     {
         var uri = BuildServerUri(serverUrl, "/api/auth/login");
-        using var response = await _httpClient.PostAsJsonAsync(uri, new { accessKey }, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
+        using var timeoutCts = CreateTimeoutToken(cancellationToken, ViewerRequestTimeout);
+        using var response = await _httpClient.PostAsJsonAsync(uri, new { accessKey }, timeoutCts.Token);
+        await EnsureSuccessAsync(response, timeoutCts.Token);
     }
 
     public async Task<IReadOnlyList<ViewerDeviceSummaryDto>> GetViewerDevicesAsync(
@@ -125,9 +127,10 @@ public sealed class BackendApiClient
         CancellationToken cancellationToken = default)
     {
         var uri = BuildServerUri(serverUrl, "/api/devices");
-        using var response = await _httpClient.GetAsync(uri, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<List<ViewerDeviceSummaryDto>>(cancellationToken: cancellationToken)
+        using var timeoutCts = CreateTimeoutToken(cancellationToken, ViewerRequestTimeout);
+        using var response = await _httpClient.GetAsync(uri, timeoutCts.Token);
+        await EnsureSuccessAsync(response, timeoutCts.Token);
+        return await response.Content.ReadFromJsonAsync<List<ViewerDeviceSummaryDto>>(cancellationToken: timeoutCts.Token)
             ?? [];
     }
 
@@ -138,9 +141,10 @@ public sealed class BackendApiClient
         CancellationToken cancellationToken = default)
     {
         var uri = BuildServerUri(serverUrl, "/api/devices/" + Uri.EscapeDataString(deviceId) + "/metrics?window=" + Uri.EscapeDataString(window));
-        using var response = await _httpClient.GetAsync(uri, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<ViewerDeviceMetricsDto>(cancellationToken: cancellationToken);
+        using var timeoutCts = CreateTimeoutToken(cancellationToken, ViewerRequestTimeout);
+        using var response = await _httpClient.GetAsync(uri, timeoutCts.Token);
+        await EnsureSuccessAsync(response, timeoutCts.Token);
+        return await response.Content.ReadFromJsonAsync<ViewerDeviceMetricsDto>(cancellationToken: timeoutCts.Token);
     }
 
     public async Task<ViewerTrafficCalendarDto?> GetViewerTrafficCalendarAsync(
@@ -152,9 +156,10 @@ public sealed class BackendApiClient
         var anchor = Uri.EscapeDataString(DateTimeOffset.Now.ToString("O"));
         var selection = string.IsNullOrWhiteSpace(selectedStart) ? "" : "&selectedStart=" + Uri.EscapeDataString(selectedStart);
         var uri = BuildServerUri(serverUrl, "/api/devices/" + Uri.EscapeDataString(deviceId) + "/traffic-calendar?mode=day&anchor=" + anchor + selection);
-        using var response = await _httpClient.GetAsync(uri, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<ViewerTrafficCalendarDto>(cancellationToken: cancellationToken);
+        using var timeoutCts = CreateTimeoutToken(cancellationToken, ViewerRequestTimeout);
+        using var response = await _httpClient.GetAsync(uri, timeoutCts.Token);
+        await EnsureSuccessAsync(response, timeoutCts.Token);
+        return await response.Content.ReadFromJsonAsync<ViewerTrafficCalendarDto>(cancellationToken: timeoutCts.Token);
     }
 
     public async Task<ProbeDetectResponseDto?> DetectAsync(CancellationToken cancellationToken = default)
@@ -188,5 +193,12 @@ public sealed class BackendApiClient
         }
 
         return new Uri(baseUri, path);
+    }
+
+    private static CancellationTokenSource CreateTimeoutToken(CancellationToken cancellationToken, TimeSpan timeout)
+    {
+        var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(timeout);
+        return timeoutCts;
     }
 }
