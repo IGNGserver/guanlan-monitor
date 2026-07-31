@@ -151,6 +151,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly List<ViewerDeviceItemViewModel> _viewerDeviceCache = new();
     private CancellationTokenSource? _viewerDetailCts;
     private int _viewerDetailRequestVersion;
+    private bool _viewerDetailRefreshQueued;
     private bool _viewerLoginQueued;
     private string _storageModeText = "正在判断运行模式。";
     private string _noticeText = "请先配置中枢连接信息，然后启动采集器。";
@@ -372,6 +373,7 @@ public sealed class MainViewModel : ObservableObject
                     SelectedViewerDeviceHardwareName = "Generic Hardware /受控节点";
                 }
 
+                ResetViewerDetailPresentation();
                 QueueSelectedViewerDeviceRefresh();
             }
         }
@@ -413,12 +415,51 @@ public sealed class MainViewModel : ObservableObject
 
     private void QueueSelectedViewerDeviceRefresh()
     {
-        if (!ViewerSessionReady || string.IsNullOrWhiteSpace(_selectedViewerDeviceId))
+        if (!ViewerSessionReady || string.IsNullOrWhiteSpace(_selectedViewerDeviceId) || _viewerDetailRefreshQueued)
         {
             return;
         }
 
-        _dispatcherQueue.TryEnqueue(() => _ = RefreshSelectedViewerDeviceAsync());
+        _viewerDetailRefreshQueued = true;
+        if (!_dispatcherQueue.TryEnqueue(async () =>
+        {
+            try
+            {
+                await RefreshSelectedViewerDeviceAsync();
+            }
+            finally
+            {
+                _viewerDetailRefreshQueued = false;
+            }
+        }))
+        {
+            _viewerDetailRefreshQueued = false;
+        }
+    }
+
+    private void ResetViewerDetailPresentation()
+    {
+        ViewerDetailStatusText = "正在读取设备详情…";
+        ViewerDetailMemoryText = "内存：--";
+        ViewerDetailDiskText = "磁盘：--";
+        ViewerDetailCpuText = "CPU：--";
+        ViewerDetailGpuText = "显卡：--";
+        ViewerDetailNetworkText = "网络：--";
+        ViewerDetailFanText = "风扇：--";
+        ViewerCpuCharts.Clear();
+        ViewerMemoryCharts.Clear();
+        ViewerDiskCharts.Clear();
+        ViewerGpuCharts.Clear();
+        ViewerNetworkCharts.Clear();
+        ViewerFanCharts.Clear();
+        ViewerTrafficTrendPoints.Clear();
+        ViewerCpuTrendPoints.Clear();
+        ViewerMemoryTrendPoints.Clear();
+        ViewerDiskTrendPoints.Clear();
+        ViewerGpuTrendPoints.Clear();
+        ViewerNetworkTrendPoints.Clear();
+        ViewerFanTrendPoints.Clear();
+        OnPropertyChanged(nameof(CurrentCategoryCharts));
     }
 
     public void UpdateSubDeviceNamesDeduplicated()
@@ -484,11 +525,6 @@ public sealed class MainViewModel : ObservableObject
     public string TaskManagerRightLabel3 { get => _taskManagerRightLabel3; set => SetProperty(ref _taskManagerRightLabel3, value); }
     private string _taskManagerRightValue3 = "16";
     public string TaskManagerRightValue3 { get => _taskManagerRightValue3; set => SetProperty(ref _taskManagerRightValue3, value); }
-
-    private string _taskManagerRightLabel4 = "最后采集:";
-    public string TaskManagerRightLabel4 { get => _taskManagerRightLabel4; set => SetProperty(ref _taskManagerRightLabel4, value); }
-    private string _taskManagerRightValue4 = "刚刚";
-    public string TaskManagerRightValue4 { get => _taskManagerRightValue4; set => SetProperty(ref _taskManagerRightValue4, value); }
 
     private string _taskManagerStatUsage = "4%";
     public string TaskManagerStatUsage
@@ -1425,6 +1461,8 @@ public sealed class MainViewModel : ObservableObject
                         });
                     }
                 }
+
+                QueueSelectedViewerDeviceRefresh();
             }
 
             try
@@ -1476,9 +1514,8 @@ public sealed class MainViewModel : ObservableObject
         {
             await _apiClient.LoginViewerAsync(ServerUrl, Secret);
             var devices = await _apiClient.GetViewerDevicesAsync(ServerUrl);
-            ApplyViewerDevices(devices);
-
             ViewerSessionReady = true;
+            ApplyViewerDevices(devices);
             ViewerDataStatusText = $"中枢已连接，共 {ViewerDevices.Count} 台设备。";
         }
         catch
@@ -1581,20 +1618,16 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    public async Task SelectViewerDeviceAsync(string deviceId)
+    public Task SelectViewerDeviceAsync(string deviceId)
     {
         if (!ViewerSessionReady || string.IsNullOrWhiteSpace(deviceId))
         {
-            return;
+            return Task.CompletedTask;
         }
 
-        var changed = !string.Equals(_selectedViewerDeviceId, deviceId, StringComparison.OrdinalIgnoreCase);
         SelectedViewerDeviceId = deviceId;
         SelectedViewerDeviceName = _viewerDeviceCache.FirstOrDefault(item => item.DeviceId == deviceId)?.Hostname ?? deviceId;
-        if (changed)
-        {
-            await RefreshSelectedViewerDeviceAsync();
-        }
+        return Task.CompletedTask;
     }
 
     public async Task RefreshSelectedViewerDeviceAsync()
@@ -1698,20 +1731,20 @@ public sealed class MainViewModel : ObservableObject
         switch (category.ToLowerInvariant())
         {
             case "memory":
-                TaskManagerStatUsage = $"{memoryPercent:0.0}%";
-                TaskManagerStatSpeed = FormatBytes(latest.MemoryUsedBytes);
-                TaskManagerStatCapacity = FormatBytes(Math.Max(0, latest.MemoryTotalBytes - latest.MemoryUsedBytes));
-                TaskManagerStatStatus = FormatBytes(latest.SwapUsedBytes);
+                TaskManagerStatUsage = IsMetricAvailable(payload, "memoryUsage") ? $"{memoryPercent:0.0}%" : "--";
+                TaskManagerStatSpeed = IsMetricAvailable(payload, "memoryUsage") ? FormatBytesOrDash(latest.MemoryUsedBytes) : "--";
+                TaskManagerStatCapacity = IsMetricAvailable(payload, "memoryUsage") ? FormatBytesOrDash(Math.Max(0, latest.MemoryTotalBytes - latest.MemoryUsedBytes)) : "--";
+                TaskManagerStatStatus = IsMetricAvailable(payload, "swapUsage") ? FormatBytesOrDash(latest.SwapUsedBytes) : "--";
                 TaskManagerStatWriteSpeed = "--";
                 TaskManagerStatReadSpeed = "--";
-                TaskManagerRightLabel1 = "已用内存:"; TaskManagerRightValue1 = FormatBytes(latest.MemoryUsedBytes);
-                TaskManagerRightLabel2 = "总物理内存:"; TaskManagerRightValue2 = FormatBytes(latest.MemoryTotalBytes);
-                TaskManagerRightLabel3 = "交换空间已用:"; TaskManagerRightValue3 = FormatBytes(latest.SwapUsedBytes);
+                TaskManagerRightLabel1 = "已用内存:"; TaskManagerRightValue1 = IsMetricAvailable(payload, "memoryUsage") ? FormatBytesOrDash(latest.MemoryUsedBytes) : "--";
+                TaskManagerRightLabel2 = "总物理内存:"; TaskManagerRightValue2 = IsMetricAvailable(payload, "memoryUsage") ? FormatBytesOrDash(latest.MemoryTotalBytes) : "--";
+                TaskManagerRightLabel3 = "交换空间已用:"; TaskManagerRightValue3 = IsMetricAvailable(payload, "swapUsage") ? FormatBytesOrDash(latest.SwapUsedBytes) : "--";
                 break;
             case "disk":
-                TaskManagerStatUsage = disk is null ? "--" : $"{(disk.TotalBytes > 0 ? disk.UsedBytes / disk.TotalBytes * 100 : 0):0.0}%";
-                TaskManagerStatSpeed = FormatRate(diskSeries?.ReadBytesPerSec.LastOrDefault()?.Value ?? 0);
-                TaskManagerStatCapacity = FormatRate(diskSeries?.WriteBytesPerSec.LastOrDefault()?.Value ?? 0);
+                TaskManagerStatUsage = disk is null || !IsMetricAvailable(payload, "diskUsage") ? "--" : $"{(disk.TotalBytes > 0 ? disk.UsedBytes / disk.TotalBytes * 100 : 0):0.0}%";
+                TaskManagerStatSpeed = IsMetricAvailable(payload, "diskRead") ? FormatRateOrDash(diskSeries?.ReadBytesPerSec.LastOrDefault()?.Value) : "--";
+                TaskManagerStatCapacity = IsMetricAvailable(payload, "diskWrite") ? FormatRateOrDash(diskSeries?.WriteBytesPerSec.LastOrDefault()?.Value) : "--";
                 TaskManagerStatStatus = "--";
                 TaskManagerStatWriteSpeed = disk?.Name ?? "--";
                 TaskManagerStatReadSpeed = disk?.Model ?? "--";
@@ -1720,8 +1753,8 @@ public sealed class MainViewModel : ObservableObject
                 TaskManagerRightLabel3 = "挂载点:"; TaskManagerRightValue3 = disk?.MountPoint ?? "--";
                 break;
             case "network":
-                TaskManagerStatUsage = FormatRate(latest.NetworkTxBytesPerSec);
-                TaskManagerStatSpeed = FormatRate(latest.NetworkRxBytesPerSec);
+                TaskManagerStatUsage = IsMetricAvailable(payload, "networkTxRate") ? FormatRateOrDash(latest.NetworkTxBytesPerSec) : "--";
+                TaskManagerStatSpeed = IsMetricAvailable(payload, "networkRxRate") ? FormatRateOrDash(latest.NetworkRxBytesPerSec) : "--";
                 TaskManagerStatCapacity = "--";
                 TaskManagerStatStatus = networkSeries?.Name ?? "--";
                 TaskManagerStatWriteSpeed = "发送";
@@ -1731,14 +1764,14 @@ public sealed class MainViewModel : ObservableObject
                 TaskManagerRightLabel3 = "网卡:"; TaskManagerRightValue3 = networkSeries?.Name ?? "--";
                 break;
             case "gpu":
-                TaskManagerStatUsage = gpu is null ? "--" : $"{gpu.UtilizationPercent:0.0}%";
+                TaskManagerStatUsage = gpu is null || !IsMetricAvailable(payload, "gpuUsage") ? "--" : $"{gpu.UtilizationPercent:0.0}%";
                 TaskManagerStatSpeed = "--";
-                TaskManagerStatCapacity = gpu is null ? "--" : FormatBytes(gpu.MemoryTotalBytes);
-                TaskManagerStatStatus = gpu is null ? "--" : FormatBytes(gpu.MemoryUsedBytes);
+                TaskManagerStatCapacity = gpu is null || !IsMetricAvailable(payload, "gpuMemory") ? "--" : FormatBytesOrDash(gpu.MemoryTotalBytes);
+                TaskManagerStatStatus = gpu is null || !IsMetricAvailable(payload, "gpuMemory") ? "--" : FormatBytesOrDash(gpu.MemoryUsedBytes);
                 TaskManagerStatWriteSpeed = gpu?.Name ?? "--";
                 TaskManagerStatReadSpeed = "--";
-                TaskManagerRightLabel1 = "显存已用:"; TaskManagerRightValue1 = gpu is null ? "--" : FormatBytes(gpu.MemoryUsedBytes);
-                TaskManagerRightLabel2 = "显存总量:"; TaskManagerRightValue2 = gpu is null ? "--" : FormatBytes(gpu.MemoryTotalBytes);
+                TaskManagerRightLabel1 = "显存已用:"; TaskManagerRightValue1 = gpu is null || !IsMetricAvailable(payload, "gpuMemory") ? "--" : FormatBytesOrDash(gpu.MemoryUsedBytes);
+                TaskManagerRightLabel2 = "显存总量:"; TaskManagerRightValue2 = gpu is null || !IsMetricAvailable(payload, "gpuMemory") ? "--" : FormatBytesOrDash(gpu.MemoryTotalBytes);
                 TaskManagerRightLabel3 = "显卡:"; TaskManagerRightValue3 = gpu?.Name ?? "--";
                 break;
             case "fan":
@@ -1753,21 +1786,48 @@ public sealed class MainViewModel : ObservableObject
                 TaskManagerRightLabel3 = "当前转速:"; TaskManagerRightValue3 = fanSeries?.Rpm.LastOrDefault()?.Value.ToString("0") ?? "--";
                 break;
             default:
-                TaskManagerStatUsage = $"{latest.CpuUsagePercent:0.0}%";
-                TaskManagerStatSpeed = latest.CpuFrequencyMHz.HasValue ? $"{latest.CpuFrequencyMHz.Value / 1000.0:0.00} GHz" : "--";
+                TaskManagerStatUsage = IsMetricAvailable(payload, "cpuUsage") ? $"{latest.CpuUsagePercent:0.0}%" : "--";
+                TaskManagerStatSpeed = IsMetricAvailable(payload, "cpuFrequency") && latest.CpuFrequencyMHz.HasValue ? $"{latest.CpuFrequencyMHz.Value / 1000.0:0.00} GHz" : "--";
                 TaskManagerStatCapacity = cpuSeries?.CoreCount.HasValue == true ? $"{cpuSeries.CoreCount} 核 / {cpuSeries.LogicalCount ?? cpuSeries.CoreCount} 线程" : "--";
-                TaskManagerStatStatus = latest.CpuTemperatureC.HasValue ? $"{latest.CpuTemperatureC.Value:0.0} °C" : "正常";
-                TaskManagerStatWriteSpeed = FormatBytes(latest.MemoryUsedBytes);
-                TaskManagerStatReadSpeed = FormatBytes(latest.MemoryTotalBytes);
-                TaskManagerRightLabel1 = "已用内存:"; TaskManagerRightValue1 = FormatBytes(latest.MemoryUsedBytes);
-                TaskManagerRightLabel2 = "总物理内存:"; TaskManagerRightValue2 = FormatBytes(latest.MemoryTotalBytes);
-                TaskManagerRightLabel3 = "交换空间已用:"; TaskManagerRightValue3 = FormatBytes(latest.SwapUsedBytes);
+                TaskManagerStatStatus = IsMetricAvailable(payload, "cpuTemperature") && latest.CpuTemperatureC.HasValue ? $"{latest.CpuTemperatureC.Value:0.0} °C" : "--";
+                TaskManagerStatWriteSpeed = "--";
+                TaskManagerStatReadSpeed = "--";
+                TaskManagerRightLabel1 = "基准速度:"; TaskManagerRightValue1 = IsMetricAvailable(payload, "cpuFrequency") && latest.CpuFrequencyMHz.HasValue ? $"{latest.CpuFrequencyMHz.Value / 1000.0:0.00} GHz" : "--";
+                TaskManagerRightLabel2 = "物理内核:"; TaskManagerRightValue2 = cpuSeries?.CoreCount?.ToString() ?? "--";
+                TaskManagerRightLabel3 = "逻辑处理器:"; TaskManagerRightValue3 = cpuSeries?.LogicalCount?.ToString() ?? "--";
                 break;
         }
 
-        TaskManagerRightLabel4 = "最后采集:";
-        TaskManagerRightValue4 = string.IsNullOrWhiteSpace(payload.LastSeenAt) ? "刚刚" : payload.LastSeenAt;
+        SetCurrentCategoryChartFromSelection();
+        OnPropertyChanged(nameof(CurrentCategoryCharts));
     }
+
+    private void SetCurrentCategoryChartFromSelection()
+    {
+        var charts = SelectedViewerCategory.ToLowerInvariant() switch
+        {
+            "memory" => ViewerMemoryCharts,
+            "disk" => ViewerDiskCharts,
+            "network" => ViewerNetworkCharts,
+            "gpu" => ViewerGpuCharts,
+            "fan" => ViewerFanCharts,
+            _ => ViewerCpuCharts
+        };
+
+        CurrentCategoryCharts = charts;
+        SelectedCategoryChart = charts.FirstOrDefault();
+        UpdateSubDeviceNamesDeduplicated();
+    }
+
+    private static bool IsMetricAvailable(ViewerDeviceMetricsDto payload, string key)
+        => payload.AvailableMetrics.Count == 0 || payload.AvailableMetrics.Any(metric =>
+            metric.Key.Equals(key, StringComparison.OrdinalIgnoreCase) && metric.Available);
+
+    private static string FormatBytesOrDash(double value)
+        => value > 0 ? FormatBytes(value) : "--";
+
+    private static string FormatRateOrDash(double? value)
+        => value.HasValue && value.Value > 0 ? FormatRate(value.Value) : "--";
 
     public async Task RefreshViewerTrafficAsync()
     {

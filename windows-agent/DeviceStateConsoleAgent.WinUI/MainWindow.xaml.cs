@@ -230,7 +230,6 @@ public sealed partial class MainWindow : Window
                 _viewModel.TaskManagerRightLabel1 = "基准速度:"; _viewModel.TaskManagerRightValue1 = "--";
                 _viewModel.TaskManagerRightLabel2 = "物理内核:"; _viewModel.TaskManagerRightValue2 = "--";
                 _viewModel.TaskManagerRightLabel3 = "逻辑处理器:"; _viewModel.TaskManagerRightValue3 = "--";
-                _viewModel.TaskManagerRightLabel4 = "最后采集:"; _viewModel.TaskManagerRightValue4 = currentDev?.LastSeenText ?? "--";
 
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerCpuCharts;
                 _viewModel.SelectedCategoryChart = System.Linq.Enumerable.FirstOrDefault(_viewModel.ViewerCpuCharts);
@@ -255,7 +254,6 @@ public sealed partial class MainWindow : Window
                 _viewModel.TaskManagerRightLabel1 = "内存速度:"; _viewModel.TaskManagerRightValue1 = "--";
                 _viewModel.TaskManagerRightLabel2 = "插槽占比:"; _viewModel.TaskManagerRightValue2 = "--";
                 _viewModel.TaskManagerRightLabel3 = "表形规格:"; _viewModel.TaskManagerRightValue3 = "--";
-                _viewModel.TaskManagerRightLabel4 = "最后采集:"; _viewModel.TaskManagerRightValue4 = currentDev?.LastSeenText ?? "--";
 
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerMemoryCharts;
                 _viewModel.SelectedCategoryChart = System.Linq.Enumerable.FirstOrDefault(_viewModel.ViewerMemoryCharts);
@@ -280,7 +278,6 @@ public sealed partial class MainWindow : Window
                 _viewModel.TaskManagerRightLabel1 = "磁盘容量:"; _viewModel.TaskManagerRightValue1 = "--";
                 _viewModel.TaskManagerRightLabel2 = "磁盘类型:"; _viewModel.TaskManagerRightValue2 = "--";
                 _viewModel.TaskManagerRightLabel3 = "接口规格:"; _viewModel.TaskManagerRightValue3 = "--";
-                _viewModel.TaskManagerRightLabel4 = "最后采集:"; _viewModel.TaskManagerRightValue4 = currentDev?.LastSeenText ?? "--";
 
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerDiskCharts;
                 _viewModel.SelectedCategoryChart = System.Linq.Enumerable.FirstOrDefault(_viewModel.ViewerDiskCharts);
@@ -305,7 +302,6 @@ public sealed partial class MainWindow : Window
                 _viewModel.TaskManagerRightLabel1 = "IPv4 地址:"; _viewModel.TaskManagerRightValue1 = "--";
                 _viewModel.TaskManagerRightLabel2 = "连接类型:"; _viewModel.TaskManagerRightValue2 = "--";
                 _viewModel.TaskManagerRightLabel3 = "信号强度:"; _viewModel.TaskManagerRightValue3 = "--";
-                _viewModel.TaskManagerRightLabel4 = "最后采集:"; _viewModel.TaskManagerRightValue4 = currentDev?.LastSeenText ?? "--";
 
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerNetworkCharts;
                 _viewModel.SelectedCategoryChart = System.Linq.Enumerable.FirstOrDefault(_viewModel.ViewerNetworkCharts);
@@ -328,7 +324,6 @@ public sealed partial class MainWindow : Window
                 _viewModel.TaskManagerRightLabel1 = "显存总量:"; _viewModel.TaskManagerRightValue1 = "--";
                 _viewModel.TaskManagerRightLabel2 = "驱动版本:"; _viewModel.TaskManagerRightValue2 = "--";
                 _viewModel.TaskManagerRightLabel3 = "显卡温度:"; _viewModel.TaskManagerRightValue3 = "--";
-                _viewModel.TaskManagerRightLabel4 = "最后采集:"; _viewModel.TaskManagerRightValue4 = currentDev?.LastSeenText ?? "--";
 
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerGpuCharts;
                 _viewModel.SelectedCategoryChart = System.Linq.Enumerable.FirstOrDefault(_viewModel.ViewerGpuCharts);
@@ -353,7 +348,6 @@ public sealed partial class MainWindow : Window
                 _viewModel.TaskManagerRightLabel1 = "控制模式:"; _viewModel.TaskManagerRightValue1 = "--";
                 _viewModel.TaskManagerRightLabel2 = "通道数量:"; _viewModel.TaskManagerRightValue2 = "--";
                 _viewModel.TaskManagerRightLabel3 = "目标温度:"; _viewModel.TaskManagerRightValue3 = "--";
-                _viewModel.TaskManagerRightLabel4 = "最后采集:"; _viewModel.TaskManagerRightValue4 = currentDev?.LastSeenText ?? "--";
 
                 _viewModel.CurrentCategoryCharts = _viewModel.ViewerFanCharts;
                 _viewModel.SelectedCategoryChart = System.Linq.Enumerable.FirstOrDefault(_viewModel.ViewerFanCharts);
