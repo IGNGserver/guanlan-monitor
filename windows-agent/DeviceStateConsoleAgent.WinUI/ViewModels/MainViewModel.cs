@@ -404,6 +404,26 @@ public sealed class MainViewModel : ObservableObject
     private string _taskManagerStatLabel6 = "接收 / 读取速率";
     public string TaskManagerStatLabel6 { get => _taskManagerStatLabel6; set => SetProperty(ref _taskManagerStatLabel6, value); }
 
+    private string _taskManagerRightLabel1 = "基准速度:";
+    public string TaskManagerRightLabel1 { get => _taskManagerRightLabel1; set => SetProperty(ref _taskManagerRightLabel1, value); }
+    private string _taskManagerRightValue1 = "2.40 GHz";
+    public string TaskManagerRightValue1 { get => _taskManagerRightValue1; set => SetProperty(ref _taskManagerRightValue1, value); }
+
+    private string _taskManagerRightLabel2 = "物理内核:";
+    public string TaskManagerRightLabel2 { get => _taskManagerRightLabel2; set => SetProperty(ref _taskManagerRightLabel2, value); }
+    private string _taskManagerRightValue2 = "8";
+    public string TaskManagerRightValue2 { get => _taskManagerRightValue2; set => SetProperty(ref _taskManagerRightValue2, value); }
+
+    private string _taskManagerRightLabel3 = "逻辑处理器:";
+    public string TaskManagerRightLabel3 { get => _taskManagerRightLabel3; set => SetProperty(ref _taskManagerRightLabel3, value); }
+    private string _taskManagerRightValue3 = "16";
+    public string TaskManagerRightValue3 { get => _taskManagerRightValue3; set => SetProperty(ref _taskManagerRightValue3, value); }
+
+    private string _taskManagerRightLabel4 = "最后采集:";
+    public string TaskManagerRightLabel4 { get => _taskManagerRightLabel4; set => SetProperty(ref _taskManagerRightLabel4, value); }
+    private string _taskManagerRightValue4 = "刚刚";
+    public string TaskManagerRightValue4 { get => _taskManagerRightValue4; set => SetProperty(ref _taskManagerRightValue4, value); }
+
     private string _taskManagerStatUsage = "4%";
     public string TaskManagerStatUsage
     {

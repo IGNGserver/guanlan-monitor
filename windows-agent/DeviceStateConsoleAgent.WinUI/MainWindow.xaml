@@ -295,7 +295,7 @@
                                         <Grid Grid.Row="1" x:Name="TaskManagerChartContainer">
                                             <controls:ItemsRepeater x:Name="TaskManagerChartsRepeater" ItemsSource="{Binding CurrentCategoryCharts}">
                                                 <controls:ItemsRepeater.Layout>
-                                                    <controls:UniformGridLayout MinItemWidth="300" MinItemHeight="280" MinColumnSpacing="16" MinRowSpacing="12" />
+                                                    <controls:UniformGridLayout MinItemWidth="800" MinItemHeight="260" MinColumnSpacing="0" MinRowSpacing="12" />
                                                 </controls:ItemsRepeater.Layout>
                                                 <controls:ItemsRepeater.ItemTemplate>
                                                     <DataTemplate>
