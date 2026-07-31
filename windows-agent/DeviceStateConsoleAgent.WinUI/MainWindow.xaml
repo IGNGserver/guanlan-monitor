@@ -5,9 +5,22 @@
     xmlns:controls="using:Microsoft.UI.Xaml.Controls"
     xmlns:local="using:DeviceStateConsoleAgent.WinUI.Controls"
     xmlns:shapes="using:Microsoft.UI.Xaml.Shapes"
-    Title="设备状态控制台">
+    Title="观澜">
     <Grid x:Name="RootLayout" RequestedTheme="Default" UseLayoutRounding="True" SizeChanged="RootLayout_SizeChanged" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
-        <controls:NavigationView x:Name="AppNavigation"
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- 系统融合标题栏 (Custom TitleBar Area) -->
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="36" Background="Transparent" VerticalAlignment="Top">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0" Spacing="10">
+                <FontIcon Glyph="&#xE970;" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock Text="观澜" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </Grid>
+
+        <controls:NavigationView x:Name="AppNavigation" Grid.Row="1"
                                   Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
                                   IsPaneOpen="True"
                                   IsPaneToggleButtonVisible="True"
@@ -17,7 +30,7 @@
                                   ExpandedModeThresholdWidth="0"
                                   IsBackButtonVisible="Collapsed"
                                   IsSettingsVisible="False"
-                                  PaneTitle="设备状态控制台"
+                                  PaneTitle="观澜"
                                   PaneDisplayMode="Left"
                                   SelectionChanged="NavigationView_SelectionChanged"
                                   BackRequested="NavigationView_BackRequested">
