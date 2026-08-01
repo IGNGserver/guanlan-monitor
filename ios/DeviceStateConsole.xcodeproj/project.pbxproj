@@ -1,0 +1,262 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		110100012C60000100000001 /* DeviceStateConsoleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110100012C60000100000002 /* DeviceStateConsoleApp.swift */; };
+		110100012C60000100000003 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110100012C60000100000004 /* Models.swift */; };
+		110100012C60000100000005 /* ApiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110100012C60000100000006 /* ApiClient.swift */; };
+		110100012C60000100000007 /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110100012C60000100000008 /* AppViewModel.swift */; };
+		110100012C60000100000009 /* AppRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110100012C6000010000000A /* AppRootView.swift */; };
+		110100012C6000010000000B /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110100012C6000010000000C /* LoginView.swift */; };
+		110100012C6000010000000D /* DeviceListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110100012C6000010000000E /* DeviceListView.swift */; };
+		110100012C6000010000000F /* DeviceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110100012C60000100000010 /* DeviceDetailView.swift */; };
+		110100012C60000100000011 /* BlockSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110100012C60000100000012 /* BlockSheetView.swift */; };
+		110100012C60000100000013 /* TrafficView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110100012C60000100000014 /* TrafficView.swift */; };
+		110100012C60000100000015 /* MiniLineChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110100012C60000100000016 /* MiniLineChartView.swift */; };
+		110100012C60000100000017 /* MetricConfigSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110100012C60000100000018 /* MetricConfigSheet.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		110100012C60000100000000 /* DeviceStateConsole.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DeviceStateConsole.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		110100012C60000100000002 /* DeviceStateConsoleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceStateConsoleApp.swift; sourceTree = "<group>"; };
+		110100012C60000100000004 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		110100012C60000100000006 /* ApiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApiClient.swift; sourceTree = "<group>"; };
+		110100012C60000100000008 /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
+		110100012C6000010000000A /* AppRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/AppRootView.swift; sourceTree = "<group>"; };
+		110100012C6000010000000C /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/LoginView.swift; sourceTree = "<group>"; };
+		110100012C6000010000000E /* DeviceListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/DeviceListView.swift; sourceTree = "<group>"; };
+		110100012C60000100000010 /* DeviceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/DeviceDetailView.swift; sourceTree = "<group>"; };
+		110100012C60000100000012 /* BlockSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/BlockSheetView.swift; sourceTree = "<group>"; };
+		110100012C60000100000014 /* TrafficView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/TrafficView.swift; sourceTree = "<group>"; };
+		110100012C60000100000016 /* MiniLineChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Components/MiniLineChartView.swift; sourceTree = "<group>"; };
+		110100012C60000100000018 /* MetricConfigSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Components/MetricConfigSheet.swift; sourceTree = "<group>"; };
+		110100012C60000100000019 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		110100012C60000000000001 = {
+			isa = PBXGroup;
+			children = (
+				110100012C60000000000002 /* DeviceStateConsole */,
+				110100012C60000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		110100012C60000000000002 /* DeviceStateConsole */ = {
+			isa = PBXGroup;
+			children = (
+				110100012C60000100000002 /* DeviceStateConsoleApp.swift */,
+				110100012C60000100000004 /* Models.swift */,
+				110100012C60000100000006 /* ApiClient.swift */,
+				110100012C60000100000008 /* AppViewModel.swift */,
+				110100012C6000010000000A /* AppRootView.swift */,
+				110100012C6000010000000C /* LoginView.swift */,
+				110100012C6000010000000E /* DeviceListView.swift */,
+				110100012C60000100000010 /* DeviceDetailView.swift */,
+				110100012C60000100000012 /* BlockSheetView.swift */,
+				110100012C60000100000014 /* TrafficView.swift */,
+				110100012C60000100000016 /* MiniLineChartView.swift */,
+				110100012C60000100000018 /* MetricConfigSheet.swift */,
+				110100012C60000100000019 /* Info.plist */,
+			);
+			path = DeviceStateConsole;
+			sourceTree = "<group>";
+		};
+		110100012C60000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				110100012C60000100000000 /* DeviceStateConsole.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		110100012C60000000000010 /* DeviceStateConsole */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 110100012C60000000000020 /* Build configuration list for PBXNativeTarget "DeviceStateConsole" */;
+			buildPhases = (
+				110100012C60000000000030 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DeviceStateConsole;
+			productName = DeviceStateConsole;
+			productReference = 110100012C60000100000000 /* DeviceStateConsole.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		110100012C60000000000100 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1540;
+				LastUpgradeCheck = 1540;
+
+			};
+			buildConfigurationList = 110100012C60000000000200 /* Build configuration list for PBXProject "DeviceStateConsole" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = zh_CN;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				zh_CN,
+			);
+			mainGroup = 110100012C60000000000001;
+			productRefGroup = 110100012C60000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				110100012C60000000000010 /* DeviceStateConsole */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		110100012C60000000000030 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				110100012C60000100000001 /* DeviceStateConsoleApp.swift in Sources */,
+				110100012C60000100000003 /* Models.swift in Sources */,
+				110100012C60000100000005 /* ApiClient.swift in Sources */,
+				110100012C60000100000007 /* AppViewModel.swift in Sources */,
+				110100012C60000100000009 /* AppRootView.swift in Sources */,
+				110100012C6000010000000B /* LoginView.swift in Sources */,
+				110100012C6000010000000D /* DeviceListView.swift in Sources */,
+				110100012C6000010000000F /* DeviceDetailView.swift in Sources */,
+				110100012C60000100000011 /* BlockSheetView.swift in Sources */,
+				110100012C60000100000013 /* TrafficView.swift in Sources */,
+				110100012C60000100000015 /* MiniLineChartView.swift in Sources */,
+				110100012C60000100000017 /* MetricConfigSheet.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		110100012C60000000000210 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = DeviceStateConsole/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.2.30;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dsc.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		110100012C60000000000211 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = DeviceStateConsole/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.2.30;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dsc.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		110100012C60000000000201 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		110100012C60000000000202 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		110100012C60000000000200 /* Build configuration list for PBXProject "DeviceStateConsole" */ = {
+			isa = XCConfigurationList;
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+			buildConfigurations = (
+				110100012C60000000000201 /* Debug */,
+				110100012C60000000000202 /* Release */,
+			);
+		};
+		110100012C60000000000020 /* Build configuration list for PBXNativeTarget "DeviceStateConsole" */ = {
+			isa = XCConfigurationList;
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+			buildConfigurations = (
+				110100012C60000000000210 /* Debug */,
+				110100012C60000000000211 /* Release */,
+			);
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 110100012C60000000000100 /* Project object */;
+}

@@ -143,12 +143,54 @@ jobs:
           path: release/android/DeviceStateConsole-Android-v*.apk
           if-no-files-found: error
 
+  ios:
+    name: Build iOS asset
+    runs-on: macos-latest
+    needs: verify
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build unsigned IPA package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          
+          xcodebuild -project ios/DeviceStateConsole.xcodeproj \
+                     -scheme DeviceStateConsole \
+                     -sdk iphoneos \
+                     -configuration Release \
+                     -derivedDataPath ios/build/DerivedData \
+                     CODE_SIGN_IDENTITY="" \
+                     CODE_SIGNING_REQUIRED=NO \
+                     CODE_SIGNING_ALLOWED=NO \
+                     clean build
+          
+          APP_PATH="$(find ios/build/DerivedData -name "DeviceStateConsole.app" -type d | head -n 1)"
+          test -n "$APP_PATH"
+          
+          mkdir -p ios/build/Payload
+          cp -R "$APP_PATH" ios/build/Payload/
+          
+          mkdir -p release/ios
+          IPA_PATH="release/ios/DeviceStateConsole-iOS-GUI-v${version}-unsigned.ipa"
+          (cd ios/build && zip -r "../../$IPA_PATH" Payload)
+
+      - name: Upload iOS asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release-assets
+          path: release/ios/DeviceStateConsole-iOS-GUI-v*.ipa
+          if-no-files-found: error
+
   publish:
     name: Publish GitHub test release
     runs-on: ubuntu-latest
     needs:
       - windows
       - android
+      - ios
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -173,6 +215,7 @@ jobs:
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-CLI-Install-v*.zip' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-CLI-Install-v*.zip' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Android-v*.apk' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'DeviceStateConsole-iOS-GUI-v*-unsigned.ipa' | wc -l)" -eq 1
 
       - name: Publish prerelease
         uses: softprops/action-gh-release@v2
@@ -182,3 +225,4 @@ jobs:
           body_path: ${{ format('release-notes-{0}.md', github.ref_name) }}
           prerelease: true
           files: release-assets/**/*
+
