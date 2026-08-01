@@ -149,6 +149,7 @@ public sealed class MainViewModel : ObservableObject
     private string _viewerTrafficSelectedStart = "";
     private readonly List<ViewerDeviceItemViewModel> _viewerDeviceCache = new();
     private CancellationTokenSource? _viewerDetailCts;
+    private ViewerDeviceMetricsDto? _currentViewerPayload;
     private int _viewerDetailRequestVersion;
     private bool _viewerDetailRefreshQueued;
     private bool _viewerLoginQueued;
@@ -279,6 +280,7 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<MetricToggleItemViewModel> SelectedInstanceMetricToggles { get; }
     public ObservableCollection<ViewerDeviceItemViewModel> ViewerDevices { get; } = new();
     public ObservableCollection<ViewerDeviceItemViewModel> FilteredViewerDevices { get; } = new();
+    public ObservableCollection<ViewerSidebarItemViewModel> ViewerSidebarItems { get; } = new();
     public ObservableCollection<string> MetricWindows { get; }
     public ObservableCollection<TrendPointViewModel> ViewerCpuTrendPoints { get; }
     public ObservableCollection<TrendPointViewModel> ViewerMemoryTrendPoints { get; }
@@ -412,6 +414,24 @@ public sealed class MainViewModel : ObservableObject
             ?? CurrentCategoryCharts.FirstOrDefault();
     }
 
+    public void SelectViewerSidebarItem(ViewerSidebarItemViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+        SelectedViewerCategory = item.Category;
+        SelectedViewerInstanceId = item.InstanceId;
+        SelectedSubDeviceName = item.DisplayName;
+        CurrentCategoryCharts = new ObservableCollection<ViewerDetailChartViewModel>(item.Charts);
+        SelectedCategoryChart = CurrentCategoryCharts.FirstOrDefault();
+        if (_currentViewerPayload is not null)
+        {
+            UpdateTaskManagerMetricGridValues(_currentViewerPayload, item.Category);
+        }
+        OnPropertyChanged(nameof(CurrentCategoryCharts));
+    }
+
     private void QueueSelectedViewerDeviceRefresh()
     {
         if (!ViewerSessionReady || string.IsNullOrWhiteSpace(_selectedViewerDeviceId) || _viewerDetailRefreshQueued)
@@ -451,6 +471,8 @@ public sealed class MainViewModel : ObservableObject
         ViewerGpuCharts.Clear();
         ViewerNetworkCharts.Clear();
         ViewerFanCharts.Clear();
+        ViewerSidebarItems.Clear();
+        _currentViewerPayload = null;
         ViewerTrafficTrendPoints.Clear();
         ViewerCpuTrendPoints.Clear();
         ViewerMemoryTrendPoints.Clear();
@@ -859,10 +881,17 @@ public sealed class MainViewModel : ObservableObject
         }
     }
     private string _selectedViewerCategory = "cpu";
+    private string _selectedViewerInstanceId = "";
     public string SelectedViewerCategory
     {
         get => _selectedViewerCategory;
         set => SetProperty(ref _selectedViewerCategory, value);
+    }
+
+    public string SelectedViewerInstanceId
+    {
+        get => _selectedViewerInstanceId;
+        private set => SetProperty(ref _selectedViewerInstanceId, value);
     }
     public string ViewerDeviceFilter
     {
@@ -1658,6 +1687,7 @@ public sealed class MainViewModel : ObservableObject
                 return;
             }
 
+            _currentViewerPayload = payload;
             var latest = payload.Latest;
             var memoryPercent = latest.MemoryTotalBytes > 0 ? latest.MemoryUsedBytes / latest.MemoryTotalBytes * 100 : 0;
             var diskPercent = latest.DiskTotalBytes > 0 ? latest.DiskUsedBytes / latest.DiskTotalBytes * 100 : 0;
@@ -1723,14 +1753,23 @@ public sealed class MainViewModel : ObservableObject
         if (payload?.Latest is not { } latest) return;
 
         var memoryPercent = latest.MemoryTotalBytes > 0 ? latest.MemoryUsedBytes / latest.MemoryTotalBytes * 100 : 0;
-        var cpuSeries = payload.Series?.Cpus?.FirstOrDefault();
-        var diskSeries = payload.Series?.Disks?.FirstOrDefault();
-        var disk = latest.Disks?.FirstOrDefault();
-        var networkSeries = payload.Series?.Networks?.FirstOrDefault();
-        var network = latest.NetworkInterfaces?.FirstOrDefault();
-        var gpu = latest.Gpus?.FirstOrDefault();
-        var fanSeries = payload.Series?.Fans?.FirstOrDefault();
-        var fan = latest.Fans?.FirstOrDefault();
+        var instanceId = SelectedViewerInstanceId;
+        var cpuSeries = payload.Series?.Cpus?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
+            ?? payload.Series?.Cpus?.FirstOrDefault();
+        var diskSeries = payload.Series?.Disks?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
+            ?? payload.Series?.Disks?.FirstOrDefault();
+        var disk = latest.Disks?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
+            ?? latest.Disks?.FirstOrDefault();
+        var networkSeries = payload.Series?.Networks?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
+            ?? payload.Series?.Networks?.FirstOrDefault();
+        var network = latest.NetworkInterfaces?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
+            ?? latest.NetworkInterfaces?.FirstOrDefault();
+        var gpu = latest.Gpus?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
+            ?? latest.Gpus?.FirstOrDefault();
+        var fanSeries = payload.Series?.Fans?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
+            ?? payload.Series?.Fans?.FirstOrDefault();
+        var fan = latest.Fans?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
+            ?? latest.Fans?.FirstOrDefault();
 
         switch (category.ToLowerInvariant())
         {
@@ -1967,11 +2006,11 @@ public sealed class MainViewModel : ObservableObject
             Chart("总 CPU", "温度", series.CpuTemperatureC, ViewerMetricValueKind.Celsius)
         });
 
-        ReplaceCharts(ViewerCpuCharts, IsViewerCategoryVisible(enabledMetrics, availableMetrics, "cpuUsage", "cpuFrequency", "cpuTemperature")
+        ReplaceCharts(ViewerCpuCharts, series.Cpus.Count > 0 && IsViewerCategoryVisible(enabledMetrics, availableMetrics, "cpuUsage", "cpuFrequency", "cpuTemperature")
             ? cpuList
             : Array.Empty<ViewerDetailChartViewModel>());
 
-        ReplaceCharts(ViewerMemoryCharts, IsViewerCategoryVisible(enabledMetrics, availableMetrics, "memoryUsage", "swapUsage") ? new[]
+        ReplaceCharts(ViewerMemoryCharts, latest.MemoryTotalBytes > 0 && IsViewerCategoryVisible(enabledMetrics, availableMetrics, "memoryUsage", "swapUsage") ? new[]
         {
             Chart("内存", $"物理内存 {FormatBytes(latest.MemoryUsedBytes)} / {FormatBytes(latest.MemoryTotalBytes)}", "使用率", series.MemoryUsagePercent, ViewerMetricValueKind.Percent, series.MemoryUsedBytes, "已用"),
             Chart("内存", $"物理内存总计 {FormatBytes(latest.MemoryTotalBytes)}", "已用容量", series.MemoryUsedBytes, ViewerMetricValueKind.Bytes),
@@ -1979,7 +2018,7 @@ public sealed class MainViewModel : ObservableObject
             Chart("内存", $"交换分区总计 {FormatBytes(latest.SwapTotalBytes)}", "已用容量", series.SwapUsedBytes, ViewerMetricValueKind.Bytes)
         } : Array.Empty<ViewerDetailChartViewModel>());
 
-        ReplaceCharts(ViewerDiskCharts, IsViewerCategoryVisible(enabledMetrics, availableMetrics, "diskUsage", "diskRead", "diskWrite") ? new[]
+        ReplaceCharts(ViewerDiskCharts, series.Disks.Count > 0 && IsViewerCategoryVisible(enabledMetrics, availableMetrics, "diskUsage", "diskRead", "diskWrite") ? new[]
         {
             Chart("全部磁盘", $"已用 {FormatBytes(latest.DiskUsedBytes)} / {FormatBytes(latest.DiskTotalBytes)}", "总占用", series.DiskUsagePercent, ViewerMetricValueKind.Percent, series.DiskUsedBytes, "已用"),
             Chart("全部磁盘", $"总计 {FormatBytes(latest.DiskTotalBytes)}", "已用容量", series.DiskUsedBytes, ViewerMetricValueKind.Bytes),
@@ -1994,7 +2033,7 @@ public sealed class MainViewModel : ObservableObject
             Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "温度", disk.TemperatureC, ViewerMetricValueKind.Celsius)
         })) : Array.Empty<ViewerDetailChartViewModel>());
 
-        ReplaceCharts(ViewerGpuCharts, IsViewerCategoryVisible(enabledMetrics, availableMetrics, "gpuUsage", "gpuEncode", "gpuDecode", "gpuFrequency", "gpuMemory", "gpuTemperature") ? new[]
+        ReplaceCharts(ViewerGpuCharts, series.Gpus.Count > 0 && IsViewerCategoryVisible(enabledMetrics, availableMetrics, "gpuUsage", "gpuEncode", "gpuDecode", "gpuFrequency", "gpuMemory", "gpuTemperature") ? new[]
         {
             Chart("全部显卡", "总占用", series.GpuUsagePercent, ViewerMetricValueKind.Percent),
             Chart("全部显卡", "编码", series.GpuEncodePercent, ViewerMetricValueKind.Percent),
@@ -2013,7 +2052,7 @@ public sealed class MainViewModel : ObservableObject
             Chart(gpuSeries.Name, "温度", gpuSeries.TemperatureC, ViewerMetricValueKind.Celsius)
         })) : Array.Empty<ViewerDetailChartViewModel>());
 
-        ReplaceCharts(ViewerNetworkCharts, IsViewerCategoryVisible(enabledMetrics, availableMetrics, "networkRxRate", "networkTxRate", "networkTraffic") ? new[]
+        ReplaceCharts(ViewerNetworkCharts, series.Networks.Count > 0 && IsViewerCategoryVisible(enabledMetrics, availableMetrics, "networkRxRate", "networkTxRate", "networkTraffic") ? new[]
         {
             Chart("全部网络", "接收", series.NetworkRxBytesPerSec, ViewerMetricValueKind.Rate),
             Chart("全部网络", "发送", series.NetworkTxBytesPerSec, ViewerMetricValueKind.Rate),
@@ -2038,15 +2077,102 @@ public sealed class MainViewModel : ObservableObject
         HasViewerNetworkCharts = ViewerNetworkCharts.Count > 0;
         HasViewerFanCharts = ViewerFanCharts.Count > 0;
 
-        if (SelectedCategoryChart == null)
+        RebuildViewerSidebarItems(series, latest, enabledMetrics, availableMetrics);
+        var selected = ViewerSidebarItems.FirstOrDefault(item =>
+            item.Category.Equals(SelectedViewerCategory, StringComparison.OrdinalIgnoreCase) &&
+            item.InstanceId.Equals(SelectedViewerInstanceId, StringComparison.OrdinalIgnoreCase));
+        SelectViewerSidebarItem(selected ?? ViewerSidebarItems.FirstOrDefault());
+    }
+
+    private void RebuildViewerSidebarItems(
+        ViewerSeriesDto series,
+        ViewerLatestMetricsDto latest,
+        IReadOnlyCollection<string> enabledMetrics,
+        IReadOnlyCollection<ViewerMetricAvailabilityDto> availableMetrics)
+    {
+        ViewerSidebarItems.Clear();
+        var items = new List<ViewerSidebarItemViewModel>();
+        var categoryVisible = new Func<string[], bool>(keys => IsViewerCategoryVisible(enabledMetrics, availableMetrics, keys));
+
+        if (categoryVisible(["memoryUsage", "swapUsage"]) && series.MemoryUsagePercent.Count > 0)
         {
-            SelectedCategoryChart = ViewerCpuCharts.FirstOrDefault()
-                ?? ViewerMemoryCharts.FirstOrDefault()
-                ?? ViewerDiskCharts.FirstOrDefault()
-                ?? ViewerNetworkCharts.FirstOrDefault();
+            items.Add(new ViewerSidebarItemViewModel(
+                "memory", "memory", "内存", $"使用率 {latest.MemoryUsedBytes / Math.Max(1, latest.MemoryTotalBytes) * 100:0.0}%",
+                new[]
+                {
+                    Chart("内存", $"物理内存 {FormatBytes(latest.MemoryUsedBytes)} / {FormatBytes(latest.MemoryTotalBytes)}", "使用率", series.MemoryUsagePercent, ViewerMetricValueKind.Percent, series.MemoryUsedBytes, "已用"),
+                    Chart("内存", "已用容量", "已用容量", series.MemoryUsedBytes, ViewerMetricValueKind.Bytes),
+                    Chart("内存", "交换分区", "使用率", series.SwapUsagePercent, ViewerMetricValueKind.Percent, series.SwapUsedBytes, "已用")
+                }));
         }
 
-        UpdateSubDeviceNamesDeduplicated();
+        if (categoryVisible(["cpuUsage", "cpuFrequency", "cpuTemperature"]))
+        {
+            foreach (var cpu in series.Cpus)
+            {
+                items.Add(new ViewerSidebarItemViewModel(cpu.Id, "cpu", $"CPU · {CleanDeviceName(cpu.Name)}", CpuSubtitle(cpu), new[]
+                {
+                    Chart(CleanDeviceName(cpu.Name), CpuSubtitle(cpu), "使用率", cpu.UsagePercent, ViewerMetricValueKind.Percent),
+                    Chart(CleanDeviceName(cpu.Name), CpuSubtitle(cpu), "频率", cpu.FrequencyMHz, ViewerMetricValueKind.Megahertz),
+                    Chart(CleanDeviceName(cpu.Name), CpuSubtitle(cpu), "温度", cpu.TemperatureC, ViewerMetricValueKind.Celsius)
+                }));
+            }
+        }
+
+        if (categoryVisible(["diskUsage", "diskRead", "diskWrite"]))
+        {
+            foreach (var disk in series.Disks)
+            {
+                var latestDisk = latest.Disks.FirstOrDefault(item => item.Id == disk.Id);
+                items.Add(new ViewerSidebarItemViewModel(disk.Id, "disk", $"磁盘 · {disk.Name}", DiskSubtitle(disk, latestDisk), new[]
+                {
+                    Chart(disk.Name, DiskSubtitle(disk, latestDisk), "占用", disk.UsagePercent, ViewerMetricValueKind.Percent),
+                    Chart(disk.Name, DiskSubtitle(disk, latestDisk), "读取", disk.ReadBytesPerSec, ViewerMetricValueKind.Rate),
+                    Chart(disk.Name, DiskSubtitle(disk, latestDisk), "写入", disk.WriteBytesPerSec, ViewerMetricValueKind.Rate)
+                }));
+            }
+        }
+
+        if (categoryVisible(["networkRxRate", "networkTxRate", "networkTraffic"]))
+        {
+            foreach (var network in series.Networks)
+            {
+                items.Add(new ViewerSidebarItemViewModel(network.Id, "network", $"网络 · {network.Name}", NetworkSubtitle(network), new[]
+                {
+                    Chart(network.Name, NetworkSubtitle(network), "接收", network.RxBytesPerSec, ViewerMetricValueKind.Rate),
+                    Chart(network.Name, NetworkSubtitle(network), "发送", network.TxBytesPerSec, ViewerMetricValueKind.Rate),
+                    Chart(network.Name, NetworkSubtitle(network), "累计接收", network.TrafficRxBytes, ViewerMetricValueKind.Bytes)
+                }));
+            }
+        }
+
+        if (categoryVisible(["gpuUsage", "gpuEncode", "gpuDecode", "gpuFrequency", "gpuMemory", "gpuTemperature"]))
+        {
+            foreach (var gpu in series.Gpus)
+            {
+                var latestGpu = latest.Gpus.FirstOrDefault(item => item.Id == gpu.Id);
+                items.Add(new ViewerSidebarItemViewModel(gpu.Id, "gpu", $"显卡 · {gpu.Name}", GpuSubtitle(gpu, latestGpu), new[]
+                {
+                    Chart(gpu.Name, "使用率", gpu.UsagePercent, ViewerMetricValueKind.Percent),
+                    Chart(gpu.Name, "显存占用", gpu.MemoryUsagePercent, ViewerMetricValueKind.Percent),
+                    Chart(gpu.Name, "温度", gpu.TemperatureC, ViewerMetricValueKind.Celsius)
+                }));
+            }
+        }
+
+        foreach (var fan in series.Fans)
+        {
+            items.Add(new ViewerSidebarItemViewModel(fan.Id, "fan", $"风扇 · {fan.Name}", fan.Interface ?? "", new[]
+            {
+                Chart(fan.Name, fan.Interface ?? "", "转速", fan.Rpm, ViewerMetricValueKind.Rpm)
+            }));
+        }
+
+        var categoryOrder = new[] { "cpu", "memory", "disk", "network", "gpu", "fan" };
+        foreach (var item in items.OrderBy(item => Array.IndexOf(categoryOrder, item.Category)))
+        {
+            ViewerSidebarItems.Add(item);
+        }
     }
 
     private static bool IsViewerCategoryVisible(
@@ -3874,6 +4000,26 @@ public sealed class ViewerDeviceItemViewModel : ObservableObject
 
     private static string FormatPercent(string label, double? value)
         => value.HasValue ? $"{label} {value.Value:0.0}%" : $"{label} --";
+}
+
+public sealed class ViewerSidebarItemViewModel
+{
+    public ViewerSidebarItemViewModel(string instanceId, string category, string displayName, string summary, IReadOnlyList<ViewerDetailChartViewModel> charts)
+    {
+        InstanceId = instanceId;
+        Category = category;
+        DisplayName = displayName;
+        Summary = summary;
+        Charts = charts;
+        ThumbnailChart = charts.FirstOrDefault() ?? new ViewerDetailChartViewModel(displayName, summary, "", [], ViewerMetricValueKind.Percent);
+    }
+
+    public string InstanceId { get; }
+    public string Category { get; }
+    public string DisplayName { get; }
+    public string Summary { get; }
+    public IReadOnlyList<ViewerDetailChartViewModel> Charts { get; }
+    public ViewerDetailChartViewModel ThumbnailChart { get; }
 }
 
 public sealed class TrendPointViewModel

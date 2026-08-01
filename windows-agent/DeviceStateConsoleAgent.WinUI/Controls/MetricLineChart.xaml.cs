@@ -7,6 +7,7 @@ using Windows.Foundation;
 using Windows.UI;
 using Line = Microsoft.UI.Xaml.Shapes.Line;
 using Polyline = Microsoft.UI.Xaml.Shapes.Polyline;
+using Polygon = Microsoft.UI.Xaml.Shapes.Polygon;
 
 namespace DeviceStateConsoleAgent.WinUI.Controls;
 
@@ -15,6 +16,9 @@ public sealed partial class MetricLineChart : UserControl
     public static readonly DependencyProperty ChartProperty = DependencyProperty.Register(
         nameof(Chart), typeof(ViewerDetailChartViewModel), typeof(MetricLineChart),
         new PropertyMetadata(null, OnChartChanged));
+
+    public static readonly DependencyProperty IsCompactProperty = DependencyProperty.Register(
+        nameof(IsCompact), typeof(bool), typeof(MetricLineChart), new PropertyMetadata(false, OnChartChanged));
 
     public MetricLineChart()
     {
@@ -28,6 +32,24 @@ public sealed partial class MetricLineChart : UserControl
         set => SetValue(ChartProperty, value);
     }
 
+    public bool IsCompact
+    {
+        get => (bool)GetValue(IsCompactProperty);
+        set
+        {
+            SetValue(IsCompactProperty, value);
+            ApplyCompactLayout();
+        }
+    }
+
+    private void ApplyCompactLayout()
+    {
+        if (PlotRow is null) return;
+        PlotRow.Height = IsCompact ? new GridLength(56) : new GridLength(210);
+        ChartHeader.Visibility = IsCompact ? Visibility.Collapsed : Visibility.Visible;
+        ChartFooter.Visibility = IsCompact ? Visibility.Collapsed : Visibility.Visible;
+    }
+
     private static void OnChartChanged(DependencyObject target, DependencyPropertyChangedEventArgs args)
     {
         ((MetricLineChart)target).Draw();
@@ -37,6 +59,7 @@ public sealed partial class MetricLineChart : UserControl
 
     private void Draw()
     {
+        ApplyCompactLayout();
         Plot.Children.Clear();
         var width = Math.Max(20, Plot.ActualWidth);
         var height = Math.Max(20, Plot.ActualHeight);
@@ -77,6 +100,12 @@ public sealed partial class MetricLineChart : UserControl
                 X1 = left, X2 = left + plotWidth, Y1 = top + plotHeight, Y2 = top + plotHeight,
                 Stroke = new SolidColorBrush(Color.FromArgb(80, 255, 255, 255)), StrokeThickness = 1.5
             });
+            return;
+        }
+
+        if (IsCompact)
+        {
+            DrawCompact(chart, width, height);
             return;
         }
 
@@ -122,6 +151,41 @@ public sealed partial class MetricLineChart : UserControl
             }
             Plot.Children.Add(secondaryLine);
         }
+    }
+
+    private void DrawCompact(ViewerDetailChartViewModel chart, double width, double height)
+    {
+        var accent = (Color)Application.Current.Resources["SystemAccentColor"];
+        var left = 2d;
+        var right = Math.Max(left + 1, width - 2);
+        var top = 4d;
+        var bottom = Math.Max(top + 1, height - 4);
+        var range = Math.Max(0.0001, chart.PlotMaximum - chart.PlotMinimum);
+        var line = new Polyline
+        {
+            Stroke = new SolidColorBrush(accent),
+            StrokeThickness = 1.8,
+            StrokeLineJoin = PenLineJoin.Round
+        };
+        foreach (var (point, index) in chart.Points.Select((point, index) => (point, index)))
+        {
+            var x = left + (chart.Points.Count == 1 ? (right - left) : (right - left) * index / (chart.Points.Count - 1));
+            var y = top + (bottom - top) * (1 - (point.Value - chart.PlotMinimum) / range);
+            line.Points.Add(new Point(x, Math.Clamp(y, top, bottom)));
+        }
+        var area = new Polygon
+        {
+            Fill = new SolidColorBrush(Color.FromArgb(72, accent.R, accent.G, accent.B)),
+            Points = new PointCollection()
+        };
+        foreach (var point in line.Points)
+        {
+            area.Points.Add(point);
+        }
+        area.Points.Add(new Point(right, bottom));
+        area.Points.Add(new Point(left, bottom));
+        Plot.Children.Add(area);
+        Plot.Children.Add(line);
     }
 
     private void Plot_PointerMoved(object sender, PointerRoutedEventArgs e)

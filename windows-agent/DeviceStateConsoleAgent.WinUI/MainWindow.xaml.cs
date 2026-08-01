@@ -72,6 +72,20 @@ public sealed partial class MainWindow : Window
             {
                 DispatcherQueue.TryEnqueue(() => SwitchCategory(_currentSelectedCategory));
             }
+
+            if (args.PropertyName == nameof(MainViewModel.SelectedViewerInstanceId))
+            {
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    var selected = _viewModel.ViewerSidebarItems.FirstOrDefault(item =>
+                        item.InstanceId.Equals(_viewModel.SelectedViewerInstanceId, StringComparison.OrdinalIgnoreCase) &&
+                        item.Category.Equals(_viewModel.SelectedViewerCategory, StringComparison.OrdinalIgnoreCase));
+                    if (selected is not null && !ReferenceEquals(TaskManagerCategoryListView.SelectedItem, selected))
+                    {
+                        TaskManagerCategoryListView.SelectedItem = selected;
+                    }
+                });
+            }
         };
 
         SecretBox.Password = _viewModel.Secret;
@@ -200,10 +214,11 @@ public sealed partial class MainWindow : Window
 
     private void TaskManagerCategoryListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (TaskManagerCategoryListView?.SelectedItem is ListViewItem selectedItem)
+        if (TaskManagerCategoryListView?.SelectedItem is ViewerSidebarItemViewModel selectedItem)
         {
-            var tag = selectedItem.Tag as string ?? "cpu";
-            SwitchCategory(tag);
+            _viewModel.SelectViewerSidebarItem(selectedItem);
+            SwitchCategory(selectedItem.Category);
+            _viewModel.SelectViewerSidebarItem(selectedItem);
         }
     }
 
@@ -536,15 +551,6 @@ public sealed partial class MainWindow : Window
     private void SecretBox_OnPasswordChanged(object sender, RoutedEventArgs e)
     {
         _viewModel.Secret = SecretBox.Password;
-    }
-
-    private void SubDeviceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_viewModel is null) return;
-        if (SubDeviceComboBox.SelectedItem is string selectedName)
-        {
-            _viewModel.SelectedSubDeviceName = selectedName;
-        }
     }
 
     private void InstanceMetricEditorButton_OnClick(object sender, RoutedEventArgs e)

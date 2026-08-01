@@ -154,111 +154,33 @@
                                 <StackPanel Grid.Row="0" Spacing="4" Margin="8,4">
                                     <TextBlock Text="{Binding SelectedViewerDeviceName}" Style="{StaticResource SubtitleTextBlockStyle}" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Text="性能与硬件资源" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <Canvas x:Name="CpuOverviewChart" Visibility="Collapsed" />
+                                    <Canvas x:Name="MemoryOverviewChart" Visibility="Collapsed" />
+                                    <Canvas x:Name="DiskOverviewChart" Visibility="Collapsed" />
+                                    <Canvas x:Name="NetworkOverviewChart" Visibility="Collapsed" />
+                                    <Canvas x:Name="GpuOverviewChart" Visibility="Collapsed" />
+                                    <Canvas x:Name="FanOverviewChart" Visibility="Collapsed" />
                                 </StackPanel>
 
-                                <!-- 类别选择列表 -->
-                                <ListView x:Name="TaskManagerCategoryListView" Grid.Row="1" SelectionChanged="TaskManagerCategoryListView_SelectionChanged" BorderThickness="0" Background="Transparent">
-                                    <!-- CPU Item -->
-                                    <ListViewItem x:Name="CategoryItemCpu" Tag="cpu" Padding="8" Margin="0,0,0,6" CornerRadius="6">
-                                        <Grid ColumnSpacing="12" Height="64">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="100" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <Border Grid.Column="0" Style="{StaticResource DSCSparklineFrameStyle}">
-                                                <Canvas x:Name="CpuOverviewChart" SizeChanged="TrendCanvas_SizeChanged" Tag="cpu" />
-                                            </Border>
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                                <TextBlock Text="CPU" FontWeight="SemiBold" FontSize="15" />
-                                                <TextBlock Text="{Binding ViewerDetailCpuText}" Style="{StaticResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis" />
-                                            </StackPanel>
-                                        </Grid>
-                                    </ListViewItem>
-
-                                    <!-- 内存 Item -->
-                                    <ListViewItem x:Name="CategoryItemMemory" Tag="memory" Padding="8" Margin="0,0,0,6" CornerRadius="6">
-                                        <Grid ColumnSpacing="12" Height="64">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="100" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <Border Grid.Column="0" Style="{StaticResource DSCSparklineFrameStyle}">
-                                                <Canvas x:Name="MemoryOverviewChart" SizeChanged="TrendCanvas_SizeChanged" Tag="memory" />
-                                            </Border>
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                                <TextBlock Text="内存" FontWeight="SemiBold" FontSize="15" />
-                                                <TextBlock Text="{Binding ViewerDetailMemoryText}" Style="{StaticResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis" />
-                                            </StackPanel>
-                                        </Grid>
-                                    </ListViewItem>
-
-                                    <!-- 磁盘 Item -->
-                                    <ListViewItem x:Name="CategoryItemDisk" Tag="disk" Padding="8" Margin="0,0,0,6" CornerRadius="6">
-                                        <Grid ColumnSpacing="12" Height="64">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="100" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <Border Grid.Column="0" Style="{StaticResource DSCSparklineFrameStyle}">
-                                                <Canvas x:Name="DiskOverviewChart" SizeChanged="TrendCanvas_SizeChanged" Tag="disk" />
-                                            </Border>
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                                <TextBlock Text="磁盘" FontWeight="SemiBold" FontSize="15" />
-                                                <TextBlock Text="{Binding ViewerDetailDiskText}" Style="{StaticResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis" />
-                                            </StackPanel>
-                                        </Grid>
-                                    </ListViewItem>
-
-                                    <!-- 网络 Item -->
-                                    <ListViewItem x:Name="CategoryItemNetwork" Tag="network" Padding="8" Margin="0,0,0,6" CornerRadius="6">
-                                        <Grid ColumnSpacing="12" Height="64">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="100" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <Border Grid.Column="0" Style="{StaticResource DSCSparklineFrameStyle}">
-                                                <Canvas x:Name="NetworkOverviewChart" SizeChanged="TrendCanvas_SizeChanged" Tag="network" />
-                                            </Border>
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                                <TextBlock Text="网络" FontWeight="SemiBold" FontSize="15" />
-                                                <TextBlock Text="{Binding ViewerDetailNetworkText}" Style="{StaticResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis" />
-                                            </StackPanel>
-                                        </Grid>
-                                    </ListViewItem>
-
-                                    <!-- 显卡 Item -->
-                                    <ListViewItem x:Name="CategoryItemGpu" Tag="gpu" Padding="8" Margin="0,0,0,6" CornerRadius="6">
-                                        <Grid ColumnSpacing="12" Height="64">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="100" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <Border Grid.Column="0" Style="{StaticResource DSCSparklineFrameStyle}">
-                                                <Canvas x:Name="GpuOverviewChart" SizeChanged="TrendCanvas_SizeChanged" Tag="gpu" />
-                                            </Border>
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                                <TextBlock Text="显卡" FontWeight="SemiBold" FontSize="15" />
-                                                <TextBlock Text="{Binding ViewerDetailGpuText}" Style="{StaticResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis" />
-                                            </StackPanel>
-                                        </Grid>
-                                    </ListViewItem>
-
-                                    <!-- 风扇 Item -->
-                                    <ListViewItem x:Name="CategoryItemFan" Tag="fan" Padding="8" Margin="0,0,0,6" CornerRadius="6">
-                                        <Grid ColumnSpacing="12" Height="64">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="100" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <Border Grid.Column="0" Style="{StaticResource DSCSparklineFrameStyle}">
-                                                <Canvas x:Name="FanOverviewChart" SizeChanged="TrendCanvas_SizeChanged" Tag="fan" />
-                                            </Border>
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                                <TextBlock Text="风扇" FontWeight="SemiBold" FontSize="15" />
-                                                <TextBlock Text="{Binding ViewerDetailFanText}" Style="{StaticResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis" />
-                                            </StackPanel>
-                                        </Grid>
-                                    </ListViewItem>
+                                <!-- agent 上报的设备/分区列表：每个实例独立显示 -->
+                                <ListView x:Name="TaskManagerCategoryListView" Grid.Row="1" ItemsSource="{Binding ViewerSidebarItems}" SelectionChanged="TaskManagerCategoryListView_SelectionChanged" BorderThickness="0" Background="Transparent">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnSpacing="10" Height="68" Padding="8" Margin="0,0,0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="100" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Border Grid.Column="0" Style="{StaticResource DSCSparklineFrameStyle}">
+                                                    <local:MetricLineChart Chart="{Binding ThumbnailChart}" IsCompact="True" />
+                                                </Border>
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding Summary}" Style="{StaticResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
                                 </ListView>
                             </Grid>
                         </Border>
@@ -277,7 +199,6 @@
                                         <TextBlock x:Name="TaskManagerHardwareSubtitle" Text="{Binding SelectedViewerDeviceHardwareName}" Style="{StaticResource SubtitleTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                     </StackPanel>
                                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Bottom">
-                                          <ComboBox x:Name="SubDeviceComboBox" Header="特定设备 / 分区" ItemsSource="{Binding SubDeviceNames}" SelectedItem="{Binding SelectedSubDeviceName, Mode=TwoWay}" Width="200" SelectionChanged="SubDeviceComboBox_SelectionChanged" />
                                          <ComboBox Header="历史窗口" ItemsSource="{Binding MetricWindows}" SelectedItem="{Binding SelectedMetricWindow, Mode=TwoWay}" Width="120" />
                                      </StackPanel>
                                 </Grid>

@@ -158,7 +158,8 @@ export async function registerRoutes(
       if (!state) return reply.code(404).send({ error: "device_not_found" });
       const notes = await fanNotes.get(request.params.deviceId);
       const availableMetrics = getAvailableMetrics(state);
-      const enabledMetrics = ALL_DEVICE_METRIC_KEYS;
+      const metricConfig = await metricsService.getMetricConfig(request.params.deviceId);
+      const enabledMetrics = metricConfig.enabledMetrics;
 
       const series = sanitizeUnsupportedMetricSeries(
         alignMetricSeriesToWindow(
@@ -172,8 +173,8 @@ export async function registerRoutes(
         status: state.status,
         lastSeenAt: state.lastSeenAt,
         enabledMetrics,
-        enabledDeviceIds: {},
-        instanceMetricConfig: {},
+        enabledDeviceIds: metricConfig.enabledDeviceIds ?? {},
+        instanceMetricConfig: metricConfig.instanceMetricConfig ?? {},
         availableMetrics,
         latest: {
           system: state.latest.system,

@@ -7,10 +7,10 @@
     <Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Padding="0,4">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="210" />
+            <RowDefinition x:Name="PlotRow" Height="210" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <Grid Grid.Row="0" ColumnSpacing="12" Margin="0,0,0,6">
+        <Grid x:Name="ChartHeader" Grid.Row="0" ColumnSpacing="12" Margin="0,0,0,6">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -30,7 +30,7 @@
                 <TextBlock x:Name="HoverText" Style="{StaticResource CaptionTextBlockStyle}" />
             </Border>
         </Grid>
-        <Grid Grid.Row="2" ColumnSpacing="4" Margin="0,4,0,0">
+        <Grid x:Name="ChartFooter" Grid.Row="2" ColumnSpacing="4" Margin="0,4,0,0">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" Text="{Binding Chart.StartTimeText, ElementName=Root}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock Grid.Column="1" Text="{Binding Chart.EndTimeText, ElementName=Root}" HorizontalAlignment="Right" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
