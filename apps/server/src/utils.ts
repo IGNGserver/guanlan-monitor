@@ -378,8 +378,6 @@ function buildDiskMetricSeries(points: TimeSeriesRecord[]): DiskMetricSeries[] {
 
 function buildNetworkMetricSeries(points: TimeSeriesRecord[]): NetworkMetricSeries[] {
   const grouped = new Map<string, NetworkMetricSeries>();
-  const rawTraffic = new Map<string, { rx: number[]; tx: number[] }>();
-
   for (const point of points) {
     for (const network of point.networks ?? []) {
       if (!grouped.has(network.id)) {
@@ -395,25 +393,26 @@ function buildNetworkMetricSeries(points: TimeSeriesRecord[]): NetworkMetricSeri
           trafficTxBytes: []
         });
       }
-      const target = grouped.get(network.id)!;
-      const timestamp = new Date(point.timestamp).toISOString();
-      target.rxBytesPerSec.push({ timestamp, value: Number(network.rxBytesPerSec ?? 0) });
-      target.txBytesPerSec.push({ timestamp, value: Number(network.txBytesPerSec ?? 0) });
-      target.trafficRxBytes.push({ timestamp, value: Number(network.trafficRxBytes ?? 0) });
-      target.trafficTxBytes.push({ timestamp, value: Number(network.trafficTxBytes ?? 0) });
-
-      rawTraffic.set(network.id, {
-        rx: [...(rawTraffic.get(network.id)?.rx ?? []), Number(network.trafficRxBytes ?? 0)],
-        tx: [...(rawTraffic.get(network.id)?.tx ?? []), Number(network.trafficTxBytes ?? 0)]
-      });
     }
   }
 
-  for (const [networkId, traffic] of rawTraffic.entries()) {
-    const target = grouped.get(networkId);
-    if (!target) continue;
-    const normalizedRx = normalizeTrafficSeries(traffic.rx);
-    const normalizedTx = normalizeTrafficSeries(traffic.tx);
+  // Emit one point for every known interface at every timestamp. Missing
+  // interfaces are idle, not copies of whichever interface had traffic.
+  for (const point of points) {
+    const timestamp = new Date(point.timestamp).toISOString();
+    const networksAtPoint = new Map((point.networks ?? []).map((network) => [network.id, network]));
+    for (const target of grouped.values()) {
+      const network = networksAtPoint.get(target.id);
+      target.rxBytesPerSec.push({ timestamp, value: Number(network?.rxBytesPerSec ?? 0) });
+      target.txBytesPerSec.push({ timestamp, value: Number(network?.txBytesPerSec ?? 0) });
+      target.trafficRxBytes.push({ timestamp, value: Number(network?.trafficRxBytes ?? 0) });
+      target.trafficTxBytes.push({ timestamp, value: Number(network?.trafficTxBytes ?? 0) });
+    }
+  }
+
+  for (const target of grouped.values()) {
+    const normalizedRx = normalizeTrafficSeries(target.trafficRxBytes.map((point) => point.value));
+    const normalizedTx = normalizeTrafficSeries(target.trafficTxBytes.map((point) => point.value));
     target.trafficRxBytes = target.trafficRxBytes.map((point, index) => ({ ...point, value: normalizedRx[index] ?? 0 }));
     target.trafficTxBytes = target.trafficTxBytes.map((point, index) => ({ ...point, value: normalizedTx[index] ?? 0 }));
   }

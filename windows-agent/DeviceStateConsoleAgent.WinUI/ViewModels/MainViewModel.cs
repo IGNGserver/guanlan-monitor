@@ -2012,24 +2012,18 @@ public sealed class MainViewModel : ObservableObject
 
         ReplaceCharts(ViewerMemoryCharts, latest.MemoryTotalBytes > 0 && IsViewerCategoryVisible(enabledMetrics, availableMetrics, "memoryUsage", "swapUsage") ? new[]
         {
-            Chart("内存", $"物理内存 {FormatBytes(latest.MemoryUsedBytes)} / {FormatBytes(latest.MemoryTotalBytes)}", "使用率", series.MemoryUsagePercent, ViewerMetricValueKind.Percent, series.MemoryUsedBytes, "已用"),
+            Chart("内存", $"物理内存 {FormatBytes(latest.MemoryUsedBytes)} / {FormatBytes(latest.MemoryTotalBytes)}", "使用率", series.MemoryUsagePercent, ViewerMetricValueKind.Percent),
             Chart("内存", $"物理内存总计 {FormatBytes(latest.MemoryTotalBytes)}", "已用容量", series.MemoryUsedBytes, ViewerMetricValueKind.Bytes),
-            Chart("内存", $"交换分区 {FormatBytes(latest.SwapUsedBytes)} / {FormatBytes(latest.SwapTotalBytes)}", "使用率", series.SwapUsagePercent, ViewerMetricValueKind.Percent, series.SwapUsedBytes, "已用"),
+            Chart("内存", $"交换分区 {FormatBytes(latest.SwapUsedBytes)} / {FormatBytes(latest.SwapTotalBytes)}", "使用率", series.SwapUsagePercent, ViewerMetricValueKind.Percent),
             Chart("内存", $"交换分区总计 {FormatBytes(latest.SwapTotalBytes)}", "已用容量", series.SwapUsedBytes, ViewerMetricValueKind.Bytes)
         } : Array.Empty<ViewerDetailChartViewModel>());
 
         ReplaceCharts(ViewerDiskCharts, series.Disks.Count > 0 && IsViewerCategoryVisible(enabledMetrics, availableMetrics, "diskUsage", "diskRead", "diskWrite") ? new[]
         {
-            Chart("全部磁盘", $"已用 {FormatBytes(latest.DiskUsedBytes)} / {FormatBytes(latest.DiskTotalBytes)}", "总占用", series.DiskUsagePercent, ViewerMetricValueKind.Percent, series.DiskUsedBytes, "已用"),
-            Chart("全部磁盘", $"总计 {FormatBytes(latest.DiskTotalBytes)}", "已用容量", series.DiskUsedBytes, ViewerMetricValueKind.Bytes),
-            Chart("全部磁盘", "读取", series.DiskReadBytesPerSec, ViewerMetricValueKind.Rate),
-            Chart("全部磁盘", "写入", series.DiskWriteBytesPerSec, ViewerMetricValueKind.Rate)
+            Chart("全部磁盘", "硬盘速度", "读取", series.DiskReadBytesPerSec, ViewerMetricValueKind.Rate, series.DiskWriteBytesPerSec, "写入")
         }.Concat(series.Disks.SelectMany(disk => new[]
         {
-            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "占用", disk.UsagePercent, ViewerMetricValueKind.Percent, disk.UsedBytes, "已用"),
-            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "已用容量", disk.UsedBytes, ViewerMetricValueKind.Bytes),
-            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "读取", disk.ReadBytesPerSec, ViewerMetricValueKind.Rate),
-            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "写入", disk.WriteBytesPerSec, ViewerMetricValueKind.Rate),
+            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "读取", disk.ReadBytesPerSec, ViewerMetricValueKind.Rate, disk.WriteBytesPerSec, "写入"),
             Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "温度", disk.TemperatureC, ViewerMetricValueKind.Celsius)
         })) : Array.Empty<ViewerDetailChartViewModel>());
 
@@ -2054,16 +2048,10 @@ public sealed class MainViewModel : ObservableObject
 
         ReplaceCharts(ViewerNetworkCharts, series.Networks.Count > 0 && IsViewerCategoryVisible(enabledMetrics, availableMetrics, "networkRxRate", "networkTxRate", "networkTraffic") ? new[]
         {
-            Chart("全部网络", "接收", series.NetworkRxBytesPerSec, ViewerMetricValueKind.Rate),
-            Chart("全部网络", "发送", series.NetworkTxBytesPerSec, ViewerMetricValueKind.Rate),
-            Chart("全部网络", "累计接收", series.TrafficRxBytes, ViewerMetricValueKind.Bytes),
-            Chart("全部网络", "累计发送", series.TrafficTxBytes, ViewerMetricValueKind.Bytes)
+            Chart("全部网络", "网络速度", "接收", series.NetworkRxBytesPerSec, ViewerMetricValueKind.Rate, series.NetworkTxBytesPerSec, "发送")
         }.Concat(series.Networks.SelectMany(network => new[]
         {
-            Chart(network.Name, NetworkSubtitle(network), "接收", network.RxBytesPerSec, ViewerMetricValueKind.Rate),
-            Chart(network.Name, NetworkSubtitle(network), "发送", network.TxBytesPerSec, ViewerMetricValueKind.Rate),
-            Chart(network.Name, NetworkSubtitle(network), "累计接收", network.TrafficRxBytes, ViewerMetricValueKind.Bytes),
-            Chart(network.Name, NetworkSubtitle(network), "累计发送", network.TrafficTxBytes, ViewerMetricValueKind.Bytes)
+            Chart(network.Name, NetworkSubtitle(network), "接收", network.RxBytesPerSec, ViewerMetricValueKind.Rate, network.TxBytesPerSec, "发送")
         })) : Array.Empty<ViewerDetailChartViewModel>());
 
         // Fan collection is controlled by the fan probe rather than enabledMetrics.
@@ -2100,9 +2088,9 @@ public sealed class MainViewModel : ObservableObject
                 "memory", "memory", "内存", $"使用率 {latest.MemoryUsedBytes / Math.Max(1, latest.MemoryTotalBytes) * 100:0.0}%",
                 new[]
                 {
-                    Chart("内存", $"物理内存 {FormatBytes(latest.MemoryUsedBytes)} / {FormatBytes(latest.MemoryTotalBytes)}", "使用率", series.MemoryUsagePercent, ViewerMetricValueKind.Percent, series.MemoryUsedBytes, "已用"),
+                    Chart("内存", $"物理内存 {FormatBytes(latest.MemoryUsedBytes)} / {FormatBytes(latest.MemoryTotalBytes)}", "使用率", series.MemoryUsagePercent, ViewerMetricValueKind.Percent),
                     Chart("内存", "已用容量", "已用容量", series.MemoryUsedBytes, ViewerMetricValueKind.Bytes),
-                    Chart("内存", "交换分区", "使用率", series.SwapUsagePercent, ViewerMetricValueKind.Percent, series.SwapUsedBytes, "已用")
+                    Chart("内存", "交换分区", "使用率", series.SwapUsagePercent, ViewerMetricValueKind.Percent)
                 }));
         }
 
@@ -2126,9 +2114,7 @@ public sealed class MainViewModel : ObservableObject
                 var latestDisk = latest.Disks.FirstOrDefault(item => item.Id == disk.Id);
                 items.Add(new ViewerSidebarItemViewModel(disk.Id, "disk", $"磁盘 · {disk.Name}", DiskSubtitle(disk, latestDisk), new[]
                 {
-                    Chart(disk.Name, DiskSubtitle(disk, latestDisk), "占用", disk.UsagePercent, ViewerMetricValueKind.Percent),
-                    Chart(disk.Name, DiskSubtitle(disk, latestDisk), "读取", disk.ReadBytesPerSec, ViewerMetricValueKind.Rate),
-                    Chart(disk.Name, DiskSubtitle(disk, latestDisk), "写入", disk.WriteBytesPerSec, ViewerMetricValueKind.Rate)
+                    Chart(disk.Name, DiskSubtitle(disk, latestDisk), "读取", disk.ReadBytesPerSec, ViewerMetricValueKind.Rate, disk.WriteBytesPerSec, "写入")
                 }));
             }
         }
@@ -2139,9 +2125,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 items.Add(new ViewerSidebarItemViewModel(network.Id, "network", $"网络 · {network.Name}", NetworkSubtitle(network), new[]
                 {
-                    Chart(network.Name, NetworkSubtitle(network), "接收", network.RxBytesPerSec, ViewerMetricValueKind.Rate),
-                    Chart(network.Name, NetworkSubtitle(network), "发送", network.TxBytesPerSec, ViewerMetricValueKind.Rate),
-                    Chart(network.Name, NetworkSubtitle(network), "累计接收", network.TrafficRxBytes, ViewerMetricValueKind.Bytes)
+                    Chart(network.Name, NetworkSubtitle(network), "接收", network.RxBytesPerSec, ViewerMetricValueKind.Rate, network.TxBytesPerSec, "发送")
                 }));
             }
         }
@@ -4114,8 +4098,9 @@ public sealed class ViewerDetailChartViewModel
             return;
         }
 
-        Minimum = Points.Min(point => point.Value);
-        Maximum = Points.Max(point => point.Value);
+        var allValues = Points.Concat(SecondaryPoints).Select(point => point.Value).ToList();
+        Minimum = allValues.Min();
+        Maximum = allValues.Max();
         PlotMinimum = ValueKind == ViewerMetricValueKind.Celsius ? Math.Min(0, Minimum) : 0;
         PlotMaximum = CalculatePlotMaximum(Maximum, ValueKind);
         CurrentText = FormatValue(Points[^1].Value);

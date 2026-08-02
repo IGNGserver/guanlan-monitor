@@ -396,8 +396,11 @@ function averageInstanceMetrics(
     usedBytes: sums.usedBytes / count,
     readBytesPerSec: sums.readBytesPerSec / count,
     writeBytesPerSec: sums.writeBytesPerSec / count,
-    rxBytesPerSec: sums.rxBytesPerSec / count,
-    txBytesPerSec: sums.txBytesPerSec / count,
+    // An instance absent from an aggregated sample contributes zero. Dividing
+    // by the number of samples keeps one active NIC from being copied onto
+    // interfaces that were idle or missing in the same window.
+    rxBytesPerSec: sums.rxBytesPerSec / samples.length,
+    txBytesPerSec: sums.txBytesPerSec / samples.length,
     trafficRxBytes: sums.trafficRxBytes,
     trafficTxBytes: sums.trafficTxBytes,
     encodePercent: sums.encodePercent / count,
