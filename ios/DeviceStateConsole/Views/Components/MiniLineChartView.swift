@@ -85,7 +85,7 @@ public struct MiniLineChartView: View {
                                 path.addLine(to: pt)
                             }
                             path.addLine(to: CGPoint(x: width, y: height))
-                            path.close()
+                            path.closeSubpath()
                         }
                         .fill(
                             LinearGradient(

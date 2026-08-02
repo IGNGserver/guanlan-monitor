@@ -410,7 +410,7 @@ struct FanSectionView: View {
             ForEach(metrics.sensorBackends) { backend in
                 Text("\(backend.label)：\(backend.ok ? "可用" : "不可用")\(backend.detail.map { " · \($0)" } ?? "")")
                     .font(.caption2)
-                    .foregroundStyle(backend.ok ? .secondary : .red)
+                    .foregroundStyle(backend.ok ? Color.secondary : Color.red)
             }
             ForEach(metrics.fans) { fan in
                 HStack {

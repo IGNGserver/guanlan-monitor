@@ -297,6 +297,8 @@ private struct ServerFanSeriesDto: Codable, Equatable, Sendable {
 private struct ServerMetricSeriesDto: Codable, Equatable, Sendable {
     let cpuUsagePercent: [SamplePointDto]
     let memoryUsagePercent: [SamplePointDto]
+    let memoryUsedBytes: [SamplePointDto]
+    let swapUsedBytes: [SamplePointDto]
     let memoryAvailableBytes: [SamplePointDto]
     let memoryCachedBytes: [SamplePointDto]
     let memoryCommittedBytes: [SamplePointDto]
