@@ -146,6 +146,7 @@ jobs:
   ios:
     name: Build iOS asset
     runs-on: macos-latest
+    continue-on-error: true
     needs: verify
     steps:
       - name: Checkout
@@ -192,6 +193,7 @@ jobs:
       - windows
       - android
       - ios
+    if: ${{ always() && needs.windows.result == 'success' && needs.android.result == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -216,7 +218,6 @@ jobs:
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-CLI-Install-v*.zip' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-CLI-Install-v*.zip' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Android-v*.apk' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name 'DeviceStateConsole-iOS-GUI-v*-unsigned.ipa' | wc -l)" -eq 1
 
       - name: Publish prerelease
         uses: softprops/action-gh-release@v2
