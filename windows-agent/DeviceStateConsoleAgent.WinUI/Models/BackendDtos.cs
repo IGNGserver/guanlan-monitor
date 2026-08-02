@@ -129,6 +129,7 @@ public sealed class ViewerDiskMetricSeriesDto
     public string? Model { get; set; }
     public string? Vendor { get; set; }
     public List<ViewerSamplePointDto> UsagePercent { get; set; } = new();
+    public List<ViewerSamplePointDto> ActivePercent { get; set; } = new();
     public List<ViewerSamplePointDto> UsedBytes { get; set; } = new();
     public List<ViewerSamplePointDto> ReadBytesPerSec { get; set; } = new();
     public List<ViewerSamplePointDto> WriteBytesPerSec { get; set; } = new();

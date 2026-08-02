@@ -171,6 +171,7 @@ type networkTrafficStats struct {
 	TxBytesPerSec float64 `json:"txBytesPerSec"`
 	TotalRxBytes  uint64  `json:"totalRxBytes"`
 	TotalTxBytes  uint64  `json:"totalTxBytes"`
+	Instances     map[string]networkTrafficStats `json:"-"`
 }
 
 type networkInterfaceStats struct {
@@ -601,6 +602,12 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 		}
 	}
 	for index := range slow.networkInterfaces {
+		if rate, ok := networkRate.Instances[slow.networkInterfaces[index].Name]; ok {
+			slow.networkInterfaces[index].RxBytesPerSec = rate.RxBytesPerSec
+			slow.networkInterfaces[index].TxBytesPerSec = rate.TxBytesPerSec
+			slow.networkInterfaces[index].TotalRxBytes = rate.TotalRxBytes
+			slow.networkInterfaces[index].TotalTxBytes = rate.TotalTxBytes
+		}
 		if metadata, ok := slow.networkMetadata[slow.networkInterfaces[index].Name]; ok {
 			slow.networkInterfaces[index].LinkSpeedMbps = metadata.LinkSpeedMbps
 			slow.networkInterfaces[index].ConnectionType = metadata.ConnectionType
@@ -1532,16 +1539,31 @@ func computeRates(previous, current *ioSnapshot, fallbackSeconds int) (rateStats
 		}
 	}
 
+	networkInstances := map[string]networkTrafficStats{}
+	for key, currentNetwork := range current.netByKey {
+		previousNetwork, ok := previous.netByKey[key]
+		if !ok {
+			continue
+		}
+		networkInstances[key] = networkTrafficStats{
+			RxBytesPerSec: round(float64(max64(0, int64(currentNetwork.rx)-int64(previousNetwork.rx))) / seconds),
+			TxBytesPerSec: round(float64(max64(0, int64(currentNetwork.tx)-int64(previousNetwork.tx))) / seconds),
+			TotalRxBytes:  currentNetwork.rx,
+			TotalTxBytes:  currentNetwork.tx,
+		}
+	}
+
 	return rateStats{
 			ReadBytesPerSec:  round(float64(max64(0, int64(current.read)-int64(previous.read))) / seconds),
 			WriteBytesPerSec: round(float64(max64(0, int64(current.write)-int64(previous.write))) / seconds),
 			Instances:        diskInstances,
-		}, networkTrafficStats{
-			RxBytesPerSec: round(float64(max64(0, int64(current.rx)-int64(previous.rx))) / seconds),
-			TxBytesPerSec: round(float64(max64(0, int64(current.tx)-int64(previous.tx))) / seconds),
-			TotalRxBytes:  current.rx,
-			TotalTxBytes:  current.tx,
-		}
+	}, networkTrafficStats{
+		RxBytesPerSec: round(float64(max64(0, int64(current.rx)-int64(previous.rx))) / seconds),
+		TxBytesPerSec: round(float64(max64(0, int64(current.tx)-int64(previous.tx))) / seconds),
+		TotalRxBytes:  current.rx,
+		TotalTxBytes:  current.tx,
+		Instances:     networkInstances,
+	}
 }
 
 func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {

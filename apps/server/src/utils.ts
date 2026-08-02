@@ -113,6 +113,7 @@ export function payloadToTimeSeries(
         vendor: disk.vendor,
         temperatureC: disk.temperatureC ?? 0,
         usagePercent: enabled.has("diskUsage") && instanceEnabled.has("diskUsage") ? percent(disk.usedBytes, disk.totalBytes) : 0,
+        activePercent: rate?.activePercent ?? 0,
         usedBytes: enabled.has("diskUsage") && instanceEnabled.has("diskUsage") ? disk.usedBytes : 0,
         readBytesPerSec: enabled.has("diskRead") && instanceEnabled.has("diskRead") ? rate?.readBytesPerSec ?? 0 : 0,
         writeBytesPerSec: enabled.has("diskWrite") && instanceEnabled.has("diskWrite") ? rate?.writeBytesPerSec ?? 0 : 0
@@ -331,6 +332,7 @@ function buildCpuMetricSeries(points: TimeSeriesRecord[]): CpuMetricSeries[] {
           coreCount: cpu.coreCount,
           logicalCount: cpu.logicalCount,
           usagePercent: [],
+          activePercent: [],
           frequencyMHz: [],
           temperatureC: []
         });
@@ -367,6 +369,7 @@ function buildDiskMetricSeries(points: TimeSeriesRecord[]): DiskMetricSeries[] {
       const target = grouped.get(disk.id)!;
       const timestamp = new Date(point.timestamp).toISOString();
       target.usagePercent.push({ timestamp, value: Number(disk.usagePercent ?? 0) });
+      target.activePercent.push({ timestamp, value: Number(disk.activePercent ?? 0) });
       target.usedBytes.push({ timestamp, value: Number(disk.usedBytes ?? 0) });
       target.readBytesPerSec.push({ timestamp, value: Number(disk.readBytesPerSec ?? 0) });
       target.writeBytesPerSec.push({ timestamp, value: Number(disk.writeBytesPerSec ?? 0) });

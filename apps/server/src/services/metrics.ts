@@ -317,6 +317,7 @@ function averageInstanceMetrics(
           | "usedBytes"
           | "readBytesPerSec"
           | "writeBytesPerSec"
+          | "activePercent"
           | "rxBytesPerSec"
           | "txBytesPerSec"
           | "trafficRxBytes"
@@ -356,6 +357,7 @@ function averageInstanceMetrics(
             usedBytes: 0,
             readBytesPerSec: 0,
             writeBytesPerSec: 0,
+            activePercent: 0,
             rxBytesPerSec: 0,
             txBytesPerSec: 0,
             trafficRxBytes: 0,
@@ -376,6 +378,7 @@ function averageInstanceMetrics(
       current.sums.usedBytes += item.usedBytes ?? 0;
       current.sums.readBytesPerSec += item.readBytesPerSec ?? 0;
       current.sums.writeBytesPerSec += item.writeBytesPerSec ?? 0;
+      current.sums.activePercent += item.activePercent ?? 0;
       current.sums.rxBytesPerSec += item.rxBytesPerSec ?? 0;
       current.sums.txBytesPerSec += item.txBytesPerSec ?? 0;
       current.sums.trafficRxBytes = item.trafficRxBytes ?? current.sums.trafficRxBytes;
@@ -396,6 +399,7 @@ function averageInstanceMetrics(
     usedBytes: sums.usedBytes / count,
     readBytesPerSec: sums.readBytesPerSec / count,
     writeBytesPerSec: sums.writeBytesPerSec / count,
+    activePercent: sums.activePercent / samples.length,
     // An instance absent from an aggregated sample contributes zero. Dividing
     // by the number of samples keeps one active NIC from being copied onto
     // interfaces that were idle or missing in the same window.

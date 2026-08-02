@@ -141,6 +141,15 @@ public sealed partial class MetricLineChart : UserControl
             var y = top + plotHeight * (1 - (point.Value - minimum) / (maximum - minimum));
             line.Points.Add(new Point(x, Math.Clamp(y, top, top + plotHeight)));
         }
+        var primaryArea = new Polygon
+        {
+            Fill = new SolidColorBrush(Color.FromArgb(44, accent.R, accent.G, accent.B)),
+            Points = new PointCollection()
+        };
+        foreach (var point in line.Points) primaryArea.Points.Add(point);
+        primaryArea.Points.Add(new Point(left + plotWidth, top + plotHeight));
+        primaryArea.Points.Add(new Point(left, top + plotHeight));
+        Plot.Children.Add(primaryArea);
         Plot.Children.Add(line);
 
         if (chart.SecondaryPoints.Count > 0)
@@ -158,6 +167,15 @@ public sealed partial class MetricLineChart : UserControl
                 var y = top + plotHeight * (1 - (point.Value - minimum) / (maximum - minimum));
                 secondaryLine.Points.Add(new Point(x, Math.Clamp(y, top, top + plotHeight)));
             }
+            var secondaryArea = new Polygon
+            {
+                Fill = new SolidColorBrush(Color.FromArgb(24, GetSecondarySeriesColor(chart.ValueKind).R, GetSecondarySeriesColor(chart.ValueKind).G, GetSecondarySeriesColor(chart.ValueKind).B)),
+                Points = new PointCollection()
+            };
+            foreach (var point in secondaryLine.Points) secondaryArea.Points.Add(point);
+            secondaryArea.Points.Add(new Point(left + plotWidth, top + plotHeight));
+            secondaryArea.Points.Add(new Point(left, top + plotHeight));
+            Plot.Children.Add(secondaryArea);
             Plot.Children.Add(secondaryLine);
         }
     }
@@ -195,6 +213,22 @@ public sealed partial class MetricLineChart : UserControl
         area.Points.Add(new Point(left, bottom));
         Plot.Children.Add(area);
         Plot.Children.Add(line);
+        if (chart.SecondaryPoints.Count > 0)
+        {
+            var secondaryLine = new Polyline
+            {
+                Stroke = new SolidColorBrush(GetSecondarySeriesColor(chart.ValueKind)),
+                StrokeThickness = 1.4,
+                StrokeLineJoin = PenLineJoin.Round
+            };
+            foreach (var (point, index) in chart.SecondaryPoints.Select((point, index) => (point, index)))
+            {
+                var x = left + (chart.SecondaryPoints.Count == 1 ? (right - left) / 2 : (right - left) * index / (chart.SecondaryPoints.Count - 1));
+                var y = top + (bottom - top) * (1 - (point.Value - chart.PlotMinimum) / range);
+                secondaryLine.Points.Add(new Point(x, Math.Clamp(y, top, bottom)));
+            }
+            Plot.Children.Add(secondaryLine);
+        }
     }
 
     private static Color GetSeriesColor(ViewerMetricValueKind valueKind) => valueKind switch

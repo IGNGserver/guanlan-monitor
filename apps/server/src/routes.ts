@@ -403,6 +403,7 @@ function alignMetricSeriesToWindow(series: MetricSeries, window: MetricWindow) {
     disks: series.disks.map((disk) => ({
       ...disk,
       usagePercent: alignSamplePoints(disk.usagePercent, bucketMs),
+      activePercent: alignSamplePoints(disk.activePercent, bucketMs),
       usedBytes: alignSamplePoints(disk.usedBytes, bucketMs),
       readBytesPerSec: alignSamplePoints(disk.readBytesPerSec, bucketMs),
       writeBytesPerSec: alignSamplePoints(disk.writeBytesPerSec, bucketMs),

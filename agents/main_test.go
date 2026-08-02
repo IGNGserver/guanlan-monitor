@@ -1,6 +1,40 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+func TestComputeRatesKeepsPerInterfaceNetworkActivity(t *testing.T) {
+	previousAt := time.Unix(100, 0)
+	currentAt := previousAt.Add(2 * time.Second)
+	previous := &ioSnapshot{
+		netByKey: map[string]netSnapshot{
+			"Ethernet": {rx: 100, tx: 200},
+			"Wi-Fi":    {rx: 500, tx: 700},
+		},
+		at: previousAt,
+	}
+	current := &ioSnapshot{
+		netByKey: map[string]netSnapshot{
+			"Ethernet": {rx: 1100, tx: 2200},
+			"Wi-Fi":    {rx: 500, tx: 700},
+		},
+		rx: 1600,
+		tx: 2900,
+		at: currentAt,
+	}
+
+	_, network := computeRates(previous, current, 2)
+	ethernet := network.Instances["Ethernet"]
+	wifi := network.Instances["Wi-Fi"]
+	if ethernet.RxBytesPerSec != 500 || ethernet.TxBytesPerSec != 1000 {
+		t.Fatalf("unexpected Ethernet rates: %#v", ethernet)
+	}
+	if wifi.RxBytesPerSec != 0 || wifi.TxBytesPerSec != 0 {
+		t.Fatalf("inactive Wi-Fi must remain zero: %#v", wifi)
+	}
+}
 
 func TestMapHardwareSensorsIntelGPU(t *testing.T) {
 	used := 1990.164

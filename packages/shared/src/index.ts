@@ -264,6 +264,7 @@ export interface DiskMetricSeries {
   model?: string;
   vendor?: string;
   usagePercent: SamplePoint[];
+  activePercent: SamplePoint[];
   usedBytes: SamplePoint[];
   readBytesPerSec: SamplePoint[];
   writeBytesPerSec: SamplePoint[];

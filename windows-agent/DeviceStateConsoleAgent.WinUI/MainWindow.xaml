@@ -204,22 +204,25 @@
                                 </Grid>
 
                                 <!-- 走势图面板 -->
-                                <Border Style="{StaticResource DSCPanelStyle}" Padding="20">
+                                <Border Style="{StaticResource DSCPanelStyle}" Padding="20" Shadow="{StaticResource DSCTaskManagerShadow}" Translation="0,0,8">
                                     <Grid RowSpacing="12">
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="320" />
+                                            <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
                                         <Grid Grid.Row="0">
-                                            <TextBlock Text="60 秒内的利用率 %" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                            <TextBlock Text="100%" Style="{StaticResource CaptionTextBlockStyle}" HorizontalAlignment="Right" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock Text="{Binding PrimaryCategoryChart.Subtitle}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock Text="{Binding PrimaryCategoryChart.YAxisTopText}" Style="{StaticResource CaptionTextBlockStyle}" HorizontalAlignment="Right" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         </Grid>
                                         
                                         <!-- 图表或走势明细 -->
-                                        <Grid Grid.Row="1" x:Name="TaskManagerChartContainer">
-                                            <controls:ItemsRepeater x:Name="TaskManagerChartsRepeater" ItemsSource="{Binding CurrentCategoryCharts}">
+                                        <StackPanel Grid.Row="1" x:Name="TaskManagerChartContainer" Spacing="12">
+                                            <Border Style="{StaticResource DSCPanelStyle}" Padding="10" Shadow="{StaticResource DSCTaskManagerShadow}" Translation="0,0,5">
+                                                <local:MetricLineChart Chart="{Binding PrimaryCategoryChart}" />
+                                            </Border>
+                                            <controls:ItemsRepeater x:Name="TaskManagerChartsRepeater" ItemsSource="{Binding SecondaryCategoryCharts}">
                                                 <controls:ItemsRepeater.Layout>
-                                                    <controls:UniformGridLayout MinItemWidth="800" MinItemHeight="260" MinColumnSpacing="0" MinRowSpacing="12" />
+                                                    <controls:UniformGridLayout MinItemWidth="360" MinItemHeight="170" MinColumnSpacing="12" MinRowSpacing="12" />
                                                 </controls:ItemsRepeater.Layout>
                                                 <controls:ItemsRepeater.ItemTemplate>
                                                     <DataTemplate>
@@ -227,7 +230,7 @@
                                                     </DataTemplate>
                                                 </controls:ItemsRepeater.ItemTemplate>
                                             </controls:ItemsRepeater>
-                                        </Grid>
+                                        </StackPanel>
                                     </Grid>
                                 </Border>
 

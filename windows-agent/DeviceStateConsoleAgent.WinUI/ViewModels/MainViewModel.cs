@@ -384,7 +384,26 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<ViewerDetailChartViewModel> CurrentCategoryCharts
     {
         get => _currentCategoryCharts;
-        set => SetProperty(ref _currentCategoryCharts, value);
+        set
+        {
+            if (!SetProperty(ref _currentCategoryCharts, value)) return;
+            PrimaryCategoryChart = value.FirstOrDefault();
+            SecondaryCategoryCharts = new ObservableCollection<ViewerDetailChartViewModel>(value.Skip(1));
+        }
+    }
+
+    private ViewerDetailChartViewModel? _primaryCategoryChart;
+    public ViewerDetailChartViewModel? PrimaryCategoryChart
+    {
+        get => _primaryCategoryChart;
+        private set => SetProperty(ref _primaryCategoryChart, value);
+    }
+
+    private ObservableCollection<ViewerDetailChartViewModel> _secondaryCategoryCharts = new();
+    public ObservableCollection<ViewerDetailChartViewModel> SecondaryCategoryCharts
+    {
+        get => _secondaryCategoryCharts;
+        private set => SetProperty(ref _secondaryCategoryCharts, value);
     }
 
     private ObservableCollection<string> _subDeviceNames = new();
@@ -2018,7 +2037,8 @@ public sealed class MainViewModel : ObservableObject
             Chart("全部磁盘", "硬盘速度", "读取", series.DiskReadBytesPerSec, ViewerMetricValueKind.Rate, series.DiskWriteBytesPerSec, "写入")
         }.Concat(series.Disks.SelectMany(disk => new[]
         {
-            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "读取", disk.ReadBytesPerSec, ViewerMetricValueKind.Rate, disk.WriteBytesPerSec, "写入"),
+            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "活动时间", disk.ActivePercent, ViewerMetricValueKind.Percent),
+            Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "传输速率", disk.ReadBytesPerSec, ViewerMetricValueKind.Rate, disk.WriteBytesPerSec, "写入"),
             Chart(disk.Name, DiskSubtitle(disk, latest.Disks.FirstOrDefault(candidate => candidate.Id == disk.Id)), "温度", disk.TemperatureC, ViewerMetricValueKind.Celsius)
         })) : Array.Empty<ViewerDetailChartViewModel>());
 
@@ -2109,7 +2129,8 @@ public sealed class MainViewModel : ObservableObject
                 var latestDisk = latest.Disks.FirstOrDefault(item => item.Id == disk.Id);
                 items.Add(new ViewerSidebarItemViewModel(disk.Id, "disk", $"磁盘 · {disk.Name}", DiskSubtitle(disk, latestDisk), new[]
                 {
-                    Chart(disk.Name, DiskSubtitle(disk, latestDisk), "读取", disk.ReadBytesPerSec, ViewerMetricValueKind.Rate, disk.WriteBytesPerSec, "写入")
+                    Chart(disk.Name, DiskSubtitle(disk, latestDisk), "活动时间", disk.ActivePercent, ViewerMetricValueKind.Percent),
+                    Chart(disk.Name, DiskSubtitle(disk, latestDisk), "传输速率", disk.ReadBytesPerSec, ViewerMetricValueKind.Rate, disk.WriteBytesPerSec, "写入")
                 }));
             }
         }

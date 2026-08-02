@@ -77,6 +77,7 @@ export interface InstanceMetricRecord {
   usedBytes?: number;
   readBytesPerSec?: number;
   writeBytesPerSec?: number;
+  activePercent?: number;
   rxBytesPerSec?: number;
   txBytesPerSec?: number;
   trafficRxBytes?: number;
