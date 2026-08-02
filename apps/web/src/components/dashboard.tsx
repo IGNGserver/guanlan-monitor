@@ -459,7 +459,7 @@ export function Dashboard({
             </>
           )}
 
-          {(activeCategory === "all" || activeCategory === "cpu") && series?.cpus.length > 0 && (
+          {(activeCategory === "all" || activeCategory === "cpu") && series && series.cpus.length > 0 && (
             <div className={styles.doubleBezelShell} style={{ gridColumn: "1 / -1" }}>
               <div className={styles.doubleBezelInner} style={{ padding: "24px" }}>
                 <h3 className={styles.chartTitle}>CPU 实例详情</h3>
@@ -505,7 +505,7 @@ export function Dashboard({
             </div>
           )}
 
-          {(activeCategory === "all" || activeCategory === "disk") && series?.disks.length > 0 && latest && (
+          {(activeCategory === "all" || activeCategory === "disk") && series && series.disks.length > 0 && latest && (
             <div className={styles.doubleBezelShell} style={{ gridColumn: "1 / -1" }}>
               <div className={styles.doubleBezelInner} style={{ padding: "24px" }}>
                 <h3 className={styles.chartTitle}>磁盘实例详情</h3>
@@ -534,7 +534,7 @@ export function Dashboard({
             </div>
           )}
 
-          {(activeCategory === "all" || activeCategory === "network") && series?.networks.length > 0 && latest && (
+          {(activeCategory === "all" || activeCategory === "network") && series && series.networks.length > 0 && latest && (
             <div className={styles.doubleBezelShell} style={{ gridColumn: "1 / -1" }}>
               <div className={styles.doubleBezelInner} style={{ padding: "24px" }}>
                 <h3 className={styles.chartTitle}>网卡实例详情</h3>
@@ -564,7 +564,7 @@ export function Dashboard({
             </div>
           )}
 
-          {(activeCategory === "all" || activeCategory === "gpu") && series?.gpus.length > 0 && latest && (
+          {(activeCategory === "all" || activeCategory === "gpu") && series && series.gpus.length > 0 && latest && (
             <div className={styles.doubleBezelShell} style={{ gridColumn: "1 / -1" }}>
               <div className={styles.doubleBezelInner} style={{ padding: "24px" }}>
                 <h3 className={styles.chartTitle}>GPU 实例详情</h3>
