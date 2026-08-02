@@ -419,8 +419,11 @@ public sealed partial class MainWindow : Window
                 "DeviceStateConsole",
                 "WebView2");
             Directory.CreateDirectory(webViewDataFolder);
-            var webViewEnvironment = await CoreWebView2Environment.CreateAsync(null, webViewDataFolder);
-            await HubWebView.EnsureCoreWebView2Async(webViewEnvironment);
+            Environment.SetEnvironmentVariable(
+                "WEBVIEW2_USER_DATA_FOLDER",
+                webViewDataFolder,
+                EnvironmentVariableTarget.Process);
+            await HubWebView.EnsureCoreWebView2Async();
             if (HubWebView.CoreWebView2 is null)
             {
                 throw new InvalidOperationException("WebView2 初始化失败，CoreWebView2 为空。请确认 WebView2 Runtime 可用且用户数据目录可写。");
