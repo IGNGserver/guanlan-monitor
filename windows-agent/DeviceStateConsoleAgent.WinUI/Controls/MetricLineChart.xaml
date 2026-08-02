@@ -24,7 +24,9 @@
             </StackPanel>
         </Grid>
         <Grid Grid.Row="1" Margin="0,4,0,4">
-            <Canvas x:Name="Plot" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="Transparent" SizeChanged="Plot_SizeChanged" PointerMoved="Plot_PointerMoved" PointerExited="Plot_PointerExited" />
+            <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <Canvas x:Name="Plot" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="Transparent" SizeChanged="Plot_SizeChanged" PointerMoved="Plot_PointerMoved" PointerExited="Plot_PointerExited" />
+            </Border>
             <Border x:Name="HoverLabel" Visibility="Collapsed" Background="{ThemeResource ControlFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" Padding="8,5" CornerRadius="4" MaxWidth="160" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False">
                 <Border.RenderTransform><TranslateTransform x:Name="HoverTransform" /></Border.RenderTransform>
                 <TextBlock x:Name="HoverText" Style="{StaticResource CaptionTextBlockStyle}" />

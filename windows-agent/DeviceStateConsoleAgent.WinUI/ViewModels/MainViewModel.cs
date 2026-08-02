@@ -1702,10 +1702,10 @@ public sealed class MainViewModel : ObservableObject
             ViewerGpuUsagePercent = Math.Clamp(gpu?.UtilizationPercent ?? 0, 0, 100);
             ViewerNetworkUsagePercent = Math.Clamp((latest.NetworkRxBytesPerSec + latest.NetworkTxBytesPerSec) / (1024 * 1024) * 10, 0, 100);
             ViewerDetailGpuText = gpu is null ? "显卡：暂无数据" : $"显卡：{gpu.Name} {gpu.UtilizationPercent:0.0}% · 显存 {FormatBytesOrDash(gpu.MemoryUsedBytes)} / {FormatBytesOrDash(gpu.MemoryTotalBytes)}";
-            var primaryNetwork = latest.NetworkInterfaces.FirstOrDefault();
+            var primaryNetwork = latest.NetworkInterfaces.FirstOrDefault(item => item.Id.Equals(SelectedViewerInstanceId, StringComparison.OrdinalIgnoreCase));
             ViewerDetailNetworkText = primaryNetwork is null
-                ? "网络：暂无网卡数据"
-                : $"网络：{primaryNetwork.Name} · ↑ {FormatRate(latest.NetworkTxBytesPerSec)} · ↓ {FormatRate(latest.NetworkRxBytesPerSec)}";
+                ? "网络：暂无所选网卡数据"
+                : $"网络：{primaryNetwork.Name} · ↑ {FormatRate(primaryNetwork.TxBytesPerSec ?? 0)} · ↓ {FormatRate(primaryNetwork.RxBytesPerSec ?? 0)}";
             var primaryFan = latest.Fans.FirstOrDefault();
             ViewerDetailFanText = primaryFan is null ? "风扇：暂无数据" : $"风扇：{primaryFan.Label} {primaryFan.Rpm:0} RPM";
             ReplaceTrend(ViewerCpuTrendPoints, payload.Series.CpuUsagePercent);
@@ -1754,22 +1754,14 @@ public sealed class MainViewModel : ObservableObject
 
         var memoryPercent = latest.MemoryTotalBytes > 0 ? latest.MemoryUsedBytes / latest.MemoryTotalBytes * 100 : 0;
         var instanceId = SelectedViewerInstanceId;
-        var cpuSeries = payload.Series?.Cpus?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
-            ?? payload.Series?.Cpus?.FirstOrDefault();
-        var diskSeries = payload.Series?.Disks?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
-            ?? payload.Series?.Disks?.FirstOrDefault();
-        var disk = latest.Disks?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
-            ?? latest.Disks?.FirstOrDefault();
-        var networkSeries = payload.Series?.Networks?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
-            ?? payload.Series?.Networks?.FirstOrDefault();
-        var network = latest.NetworkInterfaces?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
-            ?? latest.NetworkInterfaces?.FirstOrDefault();
-        var gpu = latest.Gpus?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
-            ?? latest.Gpus?.FirstOrDefault();
-        var fanSeries = payload.Series?.Fans?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
-            ?? payload.Series?.Fans?.FirstOrDefault();
-        var fan = latest.Fans?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase))
-            ?? latest.Fans?.FirstOrDefault();
+        var cpuSeries = payload.Series?.Cpus?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase));
+        var diskSeries = payload.Series?.Disks?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase));
+        var disk = latest.Disks?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase));
+        var networkSeries = payload.Series?.Networks?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase));
+        var network = latest.NetworkInterfaces?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase));
+        var gpu = latest.Gpus?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase));
+        var fanSeries = payload.Series?.Fans?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase));
+        var fan = latest.Fans?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase));
 
         switch (category.ToLowerInvariant())
         {
@@ -1796,8 +1788,8 @@ public sealed class MainViewModel : ObservableObject
                 TaskManagerRightLabel3 = "挂载点:"; TaskManagerRightValue3 = disk?.MountPoint ?? "--";
                 break;
             case "network":
-                TaskManagerStatUsage = IsMetricAvailable(payload, "networkTxRate") ? FormatRateOrDash(latest.NetworkTxBytesPerSec) : "--";
-                TaskManagerStatSpeed = IsMetricAvailable(payload, "networkRxRate") ? FormatRateOrDash(latest.NetworkRxBytesPerSec) : "--";
+                TaskManagerStatUsage = network?.TxBytesPerSec is { } tx && IsMetricAvailable(payload, "networkTxRate") ? FormatRateOrDash(tx) : "--";
+                TaskManagerStatSpeed = network?.RxBytesPerSec is { } rx && IsMetricAvailable(payload, "networkRxRate") ? FormatRateOrDash(rx) : "--";
                 TaskManagerStatCapacity = network?.LinkSpeedMbps.HasValue == true ? $"{network.LinkSpeedMbps:0.#} Mbps" : "--";
                 TaskManagerStatStatus = network?.Name ?? networkSeries?.Name ?? "--";
                 TaskManagerStatWriteSpeed = network?.ConnectionType ?? "--";
@@ -1809,10 +1801,10 @@ public sealed class MainViewModel : ObservableObject
             case "gpu":
                 TaskManagerStatUsage = gpu is null || !IsMetricAvailable(payload, "gpuUsage") ? "--" : $"{gpu.UtilizationPercent:0.0}%";
                 TaskManagerStatSpeed = gpu?.MemoryUsedBytes > 0 || gpu?.MemoryTotalBytes > 0 ? $"{FormatBytesOrDash(gpu.MemoryUsedBytes)} / {FormatBytesOrDash(gpu.MemoryTotalBytes)}" : "--";
-                TaskManagerStatCapacity = gpu is null || !IsMetricAvailable(payload, "gpuMemory") ? "--" : FormatBytesOrDash(gpu.MemoryTotalBytes);
-                TaskManagerStatStatus = gpu?.FrequencyMHz.HasValue == true ? $"{gpu.FrequencyMHz:0} MHz" : "--";
-                TaskManagerStatWriteSpeed = gpu?.EncodeUtilizationPercent.HasValue == true ? $"{gpu.EncodeUtilizationPercent:0.0}%" : "--";
-                TaskManagerStatReadSpeed = gpu?.DecodeUtilizationPercent.HasValue == true ? $"{gpu.DecodeUtilizationPercent:0.0}%" : "--";
+                TaskManagerStatCapacity = gpu?.FrequencyMHz.HasValue == true && IsMetricAvailable(payload, "gpuFrequency") ? $"{gpu.FrequencyMHz:0} MHz" : "--";
+                TaskManagerStatStatus = gpu?.EncodeUtilizationPercent.HasValue == true && IsMetricAvailable(payload, "gpuEncode") ? $"{gpu.EncodeUtilizationPercent:0.0}%" : "--";
+                TaskManagerStatWriteSpeed = gpu?.DecodeUtilizationPercent.HasValue == true && IsMetricAvailable(payload, "gpuDecode") ? $"{gpu.DecodeUtilizationPercent:0.0}%" : "--";
+                TaskManagerStatReadSpeed = gpu?.TemperatureC.HasValue == true && IsMetricAvailable(payload, "gpuTemperature") ? $"{gpu.TemperatureC:0.0} °C" : "--";
                 TaskManagerRightLabel1 = "显存已用:"; TaskManagerRightValue1 = gpu is null || !IsMetricAvailable(payload, "gpuMemory") ? "--" : FormatBytesOrDash(gpu.MemoryUsedBytes);
                 TaskManagerRightLabel2 = "驱动版本:"; TaskManagerRightValue2 = gpu?.DriverVersion ?? "--";
                 TaskManagerRightLabel3 = "温度:"; TaskManagerRightValue3 = gpu?.TemperatureC.HasValue == true ? $"{gpu.TemperatureC:0.0} °C" : "--";
@@ -1847,7 +1839,10 @@ public sealed class MainViewModel : ObservableObject
 
     private void SetCurrentCategoryChartFromSelection()
     {
-        var charts = SelectedViewerCategory.ToLowerInvariant() switch
+        var selectedItem = ViewerSidebarItems.FirstOrDefault(item =>
+            item.Category.Equals(SelectedViewerCategory, StringComparison.OrdinalIgnoreCase) &&
+            item.InstanceId.Equals(SelectedViewerInstanceId, StringComparison.OrdinalIgnoreCase));
+        var charts = selectedItem?.Charts ?? (SelectedViewerCategory.ToLowerInvariant() switch
         {
             "memory" => ViewerMemoryCharts,
             "disk" => ViewerDiskCharts,
@@ -1855,9 +1850,9 @@ public sealed class MainViewModel : ObservableObject
             "gpu" => ViewerGpuCharts,
             "fan" => ViewerFanCharts,
             _ => ViewerCpuCharts
-        };
+        });
 
-        CurrentCategoryCharts = charts;
+        CurrentCategoryCharts = new ObservableCollection<ViewerDetailChartViewModel>(charts);
         SelectedCategoryChart = charts.FirstOrDefault();
         UpdateSubDeviceNamesDeduplicated();
     }
@@ -2138,6 +2133,9 @@ public sealed class MainViewModel : ObservableObject
                 items.Add(new ViewerSidebarItemViewModel(gpu.Id, "gpu", $"显卡 · {gpu.Name}", GpuSubtitle(gpu, latestGpu), new[]
                 {
                     Chart(gpu.Name, "使用率", gpu.UsagePercent, ViewerMetricValueKind.Percent),
+                    Chart(gpu.Name, "编码", gpu.EncodePercent, ViewerMetricValueKind.Percent),
+                    Chart(gpu.Name, "解码", gpu.DecodePercent, ViewerMetricValueKind.Percent),
+                    Chart(gpu.Name, "频率", gpu.FrequencyMHz, ViewerMetricValueKind.Megahertz),
                     Chart(gpu.Name, "显存占用", gpu.MemoryUsagePercent, ViewerMetricValueKind.Percent),
                     Chart(gpu.Name, "温度", gpu.TemperatureC, ViewerMetricValueKind.Celsius)
                 }));
@@ -4143,7 +4141,10 @@ public sealed class ViewerDetailChartViewModel
         var primary = FormatValue(Points[index].Value);
         if (SecondaryPoints.Count == 0) return primary;
         var secondaryIndex = Math.Clamp(index, 0, SecondaryPoints.Count - 1);
-        return $"{primary} · {SecondaryLabel} {FormatBytes(SecondaryPoints[secondaryIndex].Value)}";
+        var secondary = ValueKind == ViewerMetricValueKind.Rate
+            ? FormatRate(SecondaryPoints[secondaryIndex].Value)
+            : FormatValue(SecondaryPoints[secondaryIndex].Value);
+        return $"{primary} · {SecondaryLabel} {secondary}";
     }
 
     private static string FormatBytes(double value)

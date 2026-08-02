@@ -71,25 +71,34 @@ public sealed partial class MetricLineChart : UserControl
         var plotHeight = Math.Max(1, height - top - bottom);
 
         // 1. 100% 绘制标准任务管理器背景暗灰网格 (3 水平线 + 5 垂直线)
-        var gridBrush = new SolidColorBrush(Color.FromArgb(35, 255, 255, 255));
-        for (var index = 1; index < 4; index++)
+        var gridBrush = new SolidColorBrush(Color.FromArgb(42, 255, 255, 255));
+        for (var index = 1; index < 5; index++)
         {
-            var y = top + plotHeight * index / 4;
+            var y = top + plotHeight * index / 5;
             Plot.Children.Add(new Line
             {
                 X1 = left, X2 = left + plotWidth, Y1 = y, Y2 = y,
-                Stroke = gridBrush, StrokeThickness = 1
+                Stroke = gridBrush, StrokeThickness = 0.75
             });
         }
-        for (var index = 1; index < 6; index++)
+        for (var index = 1; index < 7; index++)
         {
-            var x = left + plotWidth * index / 6;
+            var x = left + plotWidth * index / 7;
             Plot.Children.Add(new Line
             {
                 X1 = x, X2 = x, Y1 = top, Y2 = top + plotHeight,
-                Stroke = gridBrush, StrokeThickness = 1
+                Stroke = gridBrush, StrokeThickness = 0.75
             });
         }
+
+        Plot.Children.Add(new Microsoft.UI.Xaml.Shapes.Rectangle
+        {
+            Width = plotWidth,
+            Height = plotHeight,
+            Stroke = new SolidColorBrush(Color.FromArgb(92, 255, 255, 255)),
+            StrokeThickness = 1,
+            Fill = new SolidColorBrush(Colors.Transparent)
+        });
 
         var chart = Chart;
         if (chart is null || chart.Points.Count == 0)
@@ -118,7 +127,7 @@ public sealed partial class MetricLineChart : UserControl
         }
 
         // 2. 有点时绘制主折线
-        var accent = (Color)Application.Current.Resources["SystemAccentColor"];
+        var accent = GetSeriesColor(chart.ValueKind);
         var line = new Polyline
         {
             Stroke = new SolidColorBrush(accent),
@@ -138,7 +147,7 @@ public sealed partial class MetricLineChart : UserControl
         {
             var secondaryLine = new Polyline
             {
-                Stroke = new SolidColorBrush(Color.FromArgb(175, accent.R, accent.G, accent.B)),
+                Stroke = new SolidColorBrush(GetSecondarySeriesColor(chart.ValueKind)),
                 StrokeThickness = 2,
                 StrokeLineJoin = PenLineJoin.Round
             };
@@ -155,7 +164,7 @@ public sealed partial class MetricLineChart : UserControl
 
     private void DrawCompact(ViewerDetailChartViewModel chart, double width, double height)
     {
-        var accent = (Color)Application.Current.Resources["SystemAccentColor"];
+        var accent = GetSeriesColor(chart.ValueKind);
         var left = 2d;
         var right = Math.Max(left + 1, width - 2);
         var top = 4d;
@@ -187,6 +196,24 @@ public sealed partial class MetricLineChart : UserControl
         Plot.Children.Add(area);
         Plot.Children.Add(line);
     }
+
+    private static Color GetSeriesColor(ViewerMetricValueKind valueKind) => valueKind switch
+    {
+        ViewerMetricValueKind.Percent => Color.FromArgb(255, 55, 190, 112),
+        ViewerMetricValueKind.Rate => Color.FromArgb(255, 45, 157, 232),
+        ViewerMetricValueKind.Megahertz => Color.FromArgb(255, 177, 105, 220),
+        ViewerMetricValueKind.Bytes => Color.FromArgb(255, 237, 166, 61),
+        ViewerMetricValueKind.Celsius => Color.FromArgb(255, 235, 102, 92),
+        ViewerMetricValueKind.Rpm => Color.FromArgb(255, 67, 180, 173),
+        _ => (Color)Application.Current.Resources["SystemAccentColor"]
+    };
+
+    private static Color GetSecondarySeriesColor(ViewerMetricValueKind valueKind) => valueKind switch
+    {
+        ViewerMetricValueKind.Rate => Color.FromArgb(255, 244, 176, 64),
+        ViewerMetricValueKind.Percent => Color.FromArgb(255, 113, 157, 235),
+        _ => Color.FromArgb(255, 235, 176, 75)
+    };
 
     private void Plot_PointerMoved(object sender, PointerRoutedEventArgs e)
     {
