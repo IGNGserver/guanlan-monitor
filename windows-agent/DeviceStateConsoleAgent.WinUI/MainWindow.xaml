@@ -46,15 +46,18 @@
             <Grid x:Name="ContentLayout" Padding="24,20,24,20" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
                 <!-- 1. 集群总览页 (OverviewPage) -->
                 <Grid x:Name="OverviewPage" Visibility="Visible">
-                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Spacing="20" HorizontalAlignment="Stretch">
-                            <StackPanel Spacing="4">
+                    <Grid RowSpacing="20" HorizontalAlignment="Stretch">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0" Spacing="4">
                                 <TextBlock Text="观澜" Style="{StaticResource TitleTextBlockStyle}" />
                                 <TextBlock Text="{Binding ReleaseVersion}" Style="{StaticResource CaptionTextBlockStyle}" />
                                 <TextBlock Text="完成设置后，这里将打开观澜网页并显示设备状态。" Style="{StaticResource BodyTextBlockStyle}" />
                             </StackPanel>
 
-                            <Grid x:Name="OverviewUnavailableState" Visibility="Collapsed" MinHeight="360" HorizontalAlignment="Stretch">
+                            <Grid Grid.Row="1" x:Name="OverviewUnavailableState" Visibility="Collapsed" HorizontalAlignment="Stretch">
                                 <Border Style="{StaticResource DSCPanelStyle}" MaxWidth="480" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="32,28">
                                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
                                         <FontIcon Glyph="&#xE711;" FontSize="40" HorizontalAlignment="Center" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
@@ -71,7 +74,7 @@
                                 </Border>
                             </Grid>
 
-                            <Grid x:Name="HubWebViewErrorState" Visibility="Collapsed" MinHeight="360" HorizontalAlignment="Stretch">
+                            <Grid Grid.Row="1" x:Name="HubWebViewErrorState" Visibility="Collapsed" HorizontalAlignment="Stretch">
                                 <Border Style="{StaticResource DSCPanelStyle}" MaxWidth="520" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="32,28">
                                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
                                         <FontIcon Glyph="&#xE783;" FontSize="40" HorizontalAlignment="Center" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
@@ -87,14 +90,14 @@
                                 </Border>
                             </Grid>
 
-                            <Grid x:Name="HubWebViewHost" Visibility="Collapsed" MinHeight="620" HorizontalAlignment="Stretch">
+                            <Grid Grid.Row="1" x:Name="HubWebViewHost" Visibility="Collapsed" HorizontalAlignment="Stretch">
                                 <Border Style="{StaticResource DSCPanelStyle}" Padding="0" CornerRadius="12">
-                                    <controls:WebView2 x:Name="HubWebView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MinHeight="620" />
+                                    <controls:WebView2 x:Name="HubWebView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
                                 </Border>
                             </Grid>
 
                             <!-- 集群全景卡片列表 -->
-                            <Grid x:Name="OverviewGrid" Visibility="Collapsed" RowSpacing="16" HorizontalAlignment="Stretch">
+                            <Grid Grid.Row="1" x:Name="OverviewGrid" Visibility="Collapsed" RowSpacing="16" HorizontalAlignment="Stretch">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
@@ -150,8 +153,7 @@
                                     </controls:ItemsRepeater.ItemTemplate>
                                 </controls:ItemsRepeater>
                             </Grid>
-                        </StackPanel>
-                    </ScrollViewer>
+                    </Grid>
                 </Grid>
 
                 <!-- 2. 任务管理器风格设备大屏页 (TaskManagerPage) -->
@@ -313,7 +315,7 @@
                             <StackPanel Spacing="4">
                                 <TextBlock Text="设置" Style="{StaticResource TitleTextBlockStyle}" />
                                 <TextBlock Text="管理本机数据采集、传感器控制与中枢通信服务配置。" Style="{StaticResource BodyTextBlockStyle}" />
-                                <Button Content="完成配置并打开中枢" Click="FinishSettings_OnClick" HorizontalAlignment="Left" Margin="0,8,0,0" Style="{StaticResource AccentButtonStyle}" />
+                                <Button Content="完成配置并打开观澜" Click="FinishSettings_OnClick" HorizontalAlignment="Left" Margin="0,8,0,0" Style="{StaticResource AccentButtonStyle}" />
                             </StackPanel>
 
                             <!-- 设置选项分栏导航 -->
