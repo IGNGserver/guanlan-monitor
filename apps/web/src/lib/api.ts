@@ -7,6 +7,7 @@ import type {
   FanNotePayload,
   MetricSeries,
   MetricWindow,
+  MetricsResponse,
   TrafficCalendarMode,
   TrafficCalendarResponse
 } from "@dsc/shared";
@@ -85,83 +86,7 @@ export function getDevice(deviceId: string) {
 }
 
 export function getMetrics(deviceId: string, window: MetricWindow) {
-  return apiFetch<{
-    device: DeviceDetail;
-    status: DeviceSummary["status"];
-    lastSeenAt: string | null;
-    enabledMetrics: DeviceMetricConfigResponse["enabledMetrics"];
-    enabledDeviceIds?: DeviceMetricConfigResponse["enabledDeviceIds"];
-    instanceMetricConfig?: DeviceMetricConfigResponse["instanceMetricConfig"];
-    availableMetrics: DeviceMetricConfigResponse["availableMetrics"];
-    latest: {
-      cpuFrequencyMHz: number | null;
-      cpuTemperatureC: number | null;
-      cpuPackages: {
-        id: string;
-        name: string;
-        model?: string;
-        coreCount?: number;
-        logicalCount?: number;
-        frequencyMHz?: number | null;
-        usagePercent?: number | null;
-        temperatureC?: number | null;
-      }[];
-      memoryUsedBytes: number;
-      memoryTotalBytes: number;
-      swapUsedBytes: number;
-      swapTotalBytes: number;
-      diskUsedBytes: number;
-      diskTotalBytes: number;
-      disks: {
-        id: string;
-        name: string;
-        mountPoint: string;
-        filesystem?: string;
-        model?: string;
-        vendor?: string;
-        sourceKey?: string;
-        temperatureC?: number | null;
-        totalBytes: number;
-        usedBytes: number;
-      }[];
-      networkInterfaces: {
-        id: string;
-        name: string;
-        macAddress?: string;
-        ipv4?: string[];
-        ipv6?: string[];
-        rxBytesPerSec?: number;
-        txBytesPerSec?: number;
-        totalRxBytes?: number;
-        totalTxBytes?: number;
-      }[];
-      gpus: {
-        id: string;
-        name: string;
-        utilizationPercent: number;
-        encodeUtilizationPercent?: number | null;
-        decodeUtilizationPercent?: number | null;
-        frequencyMHz?: number | null;
-        memoryUsedBytes: number;
-        memoryTotalBytes: number;
-        temperatureC?: number | null;
-      }[];
-      sensorBackends: {
-        id: string;
-        label: string;
-        ok: boolean;
-        detail?: string;
-      }[] | undefined;
-      fans: {
-        id: string;
-        label: string;
-        interface: string;
-        rpm: number;
-        note?: string;
-      }[] | undefined;
-    };
-    series: MetricSeries;
-  }>(`/api/devices/${deviceId}/metrics?window=${window}`).then((payload) => ({
+  return apiFetch<MetricsResponse>(`/api/devices/${deviceId}/metrics?window=${window}`).then((payload) => ({
     ...payload,
     latest: {
       ...payload.latest,

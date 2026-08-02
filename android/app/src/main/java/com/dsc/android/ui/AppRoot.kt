@@ -954,7 +954,16 @@ private fun CpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: 
         MetricCardModel("CPU 温度", metricPoint(metrics.series.cpuTemperatureC, selectedWindow, ::formatCelsius, zeroMeansMissing = true), metrics.series.cpuTemperatureC, ::formatCelsius)
       )
     )
-    MetaGrid(listOf("处理器" to (metrics.device.cpuModel ?: "未知"), "包数量" to metrics.latest.cpuPackages.size.toString()))
+    MetaGrid(
+      listOf(
+        "处理器" to (metrics.device.cpuModel ?: "未知"),
+        "包数量" to metrics.latest.cpuPackages.size.toString(),
+        "进程" to metrics.latest.system.processCount.toString(),
+        "线程" to metrics.latest.system.threadCount.toString(),
+        "句柄" to metrics.latest.system.handleCount.toString(),
+        "平台" to "${metrics.device.platform} / ${metrics.device.arch}"
+      )
+    )
     return
   }
 
@@ -980,10 +989,26 @@ private fun MemorySheetContent(metrics: MetricsDto) {
   MetricCardGrid(
     cards = listOf(
       MetricCardModel("物理内存", buildUsage(metrics.latest.memoryUsedBytes, metrics.latest.memoryTotalBytes), metrics.series.memoryUsagePercent, ::formatPercent, 100.0),
-      MetricCardModel("虚拟内存", buildUsage(metrics.latest.swapUsedBytes, metrics.latest.swapTotalBytes), metrics.series.swapUsagePercent, ::formatPercent, 100.0)
+      MetricCardModel("虚拟内存", buildUsage(metrics.latest.swapUsedBytes, metrics.latest.swapTotalBytes), metrics.series.swapUsagePercent, ::formatPercent, 100.0),
+      MetricCardModel("可用内存", formatBytes(metrics.latest.memoryAvailableBytes.toDouble()), metrics.series.memoryAvailableBytes, { value -> formatBytes(value ?: 0.0) }),
+      MetricCardModel("缓存内存", formatBytes(metrics.latest.memoryCachedBytes.toDouble()), metrics.series.memoryCachedBytes, { value -> formatBytes(value ?: 0.0) }),
+      MetricCardModel("已提交", formatBytes(metrics.latest.memoryCommittedBytes.toDouble()), metrics.series.memoryCommittedBytes, { value -> formatBytes(value ?: 0.0) }),
+      MetricCardModel("已用字节", formatBytes(metrics.latest.memoryUsedBytes.toDouble()), metrics.series.memoryUsedBytes, { value -> formatBytes(value ?: 0.0) }),
+      MetricCardModel("Swap 已用", formatBytes(metrics.latest.swapUsedBytes.toDouble()), metrics.series.swapUsedBytes, { value -> formatBytes(value ?: 0.0) }),
+      MetricCardModel("进程数", metrics.latest.system.processCount.toString(), metrics.series.systemProcessCount, { value -> value?.toInt()?.toString() ?: "--" }),
+      MetricCardModel("线程数", metrics.latest.system.threadCount.toString(), metrics.series.systemThreadCount, { value -> value?.toInt()?.toString() ?: "--" }),
+      MetricCardModel("句柄数", metrics.latest.system.handleCount.toString(), metrics.series.systemHandleCount, { value -> value?.toInt()?.toString() ?: "--" })
     )
   )
-  MetaGrid(listOf("物理内存" to buildUsage(metrics.latest.memoryUsedBytes, metrics.latest.memoryTotalBytes), "虚拟内存" to buildUsage(metrics.latest.swapUsedBytes, metrics.latest.swapTotalBytes)))
+  MetaGrid(
+    listOf(
+      "物理内存" to buildUsage(metrics.latest.memoryUsedBytes, metrics.latest.memoryTotalBytes),
+      "虚拟内存" to buildUsage(metrics.latest.swapUsedBytes, metrics.latest.swapTotalBytes),
+      "频率" to (metrics.latest.memorySpeedMHz?.let { formatMHz(it) } ?: "未知"),
+      "插槽" to (metrics.latest.memorySlotCount?.toString() ?: "未知"),
+      "形态" to (metrics.latest.memoryFormFactor ?: "未知")
+    )
+  )
 }
 
 @Composable
@@ -1003,6 +1028,14 @@ private fun DiskSheetContent(metrics: MetricsDto, tabId: String, selectedWindow:
   val disk = metrics.latest.disks.firstOrNull { it.id == tabId } ?: return
   val series = metrics.series.disks.firstOrNull { it.id == tabId }
   DiskInstanceCard(disk, series, onEdit = { onEditInstance(disk.id) })
+  MetaGrid(
+    listOfNotNull(
+      "接口" to (disk.interfaceType ?: "未知"),
+      "温度" to (disk.temperatureC?.let { formatCelsius(it) } ?: "未知"),
+      "活动" to (disk.activePercent?.let { formatPercent(it) } ?: "未知"),
+      "响应" to (disk.averageResponseMs?.let { "%.1f ms".format(it) } ?: "未知")
+    )
+  )
 }
 
 @Composable
@@ -1012,7 +1045,8 @@ private fun NetworkSheetContent(metrics: MetricsDto, tabId: String, selectedWind
       cards = listOf(
         MetricCardModel("总接收", metricPoint(metrics.series.networkRxBytesPerSec, selectedWindow, ::formatSpeed), metrics.series.networkRxBytesPerSec, ::formatSpeed),
         MetricCardModel("总发送", metricPoint(metrics.series.networkTxBytesPerSec, selectedWindow, ::formatSpeed), metrics.series.networkTxBytesPerSec, ::formatSpeed),
-        MetricCardModel("累计流量", formatBytes((metrics.series.trafficRxBytes.lastOrNull()?.value ?: 0.0) + (metrics.series.trafficTxBytes.lastOrNull()?.value ?: 0.0)), metrics.series.trafficRxBytes, { value -> formatBytes(value ?: 0.0) })
+        MetricCardModel("累计接收", formatBytes(metrics.series.trafficRxBytes.lastOrNull()?.value ?: 0.0), metrics.series.trafficRxBytes, { value -> formatBytes(value ?: 0.0) }),
+        MetricCardModel("累计发送", formatBytes(metrics.series.trafficTxBytes.lastOrNull()?.value ?: 0.0), metrics.series.trafficTxBytes, { value -> formatBytes(value ?: 0.0) })
       )
     )
     return
@@ -1021,6 +1055,17 @@ private fun NetworkSheetContent(metrics: MetricsDto, tabId: String, selectedWind
   val nic = metrics.latest.networkInterfaces.firstOrNull { it.id == tabId } ?: return
   val series = metrics.series.networks.firstOrNull { it.id == tabId }
   NetworkInstanceCard(nic, series, onEdit = { onEditInstance(nic.id) })
+  MetaGrid(
+    listOfNotNull(
+      "IPv4" to nic.ipv4.joinToString(", ").ifBlank { "未知" },
+      "IPv6" to nic.ipv6.joinToString(", ").ifBlank { "未知" },
+      "链路" to (nic.linkSpeedMbps?.let { "%.0f Mbps".format(it) } ?: "未知"),
+      "连接" to (nic.connectionType ?: "未知"),
+      "信号" to (nic.signalStrengthPercent?.let { formatPercent(it) } ?: "未知"),
+      "累计接收" to formatBytes((nic.totalRxBytes ?: 0L).toDouble()),
+      "累计发送" to formatBytes((nic.totalTxBytes ?: 0L).toDouble())
+    )
+  )
 }
 
 @Composable
@@ -1042,6 +1087,7 @@ private fun GpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: 
   val gpu = metrics.latest.gpus.firstOrNull { it.id == tabId } ?: return
   val series = metrics.series.gpus.firstOrNull { it.id == tabId }
   GpuInstanceCard(gpu, series, onEdit = { onEditInstance(gpu.id) })
+  MetaGrid(listOfNotNull("驱动" to (gpu.driverVersion ?: "未知"), "显存" to buildUsage(gpu.memoryUsedBytes, gpu.memoryTotalBytes)))
 }
 
 @Composable
@@ -1084,6 +1130,14 @@ private fun FanSheetContent(metrics: MetricsDto, tabId: String, onEditInstance: 
       )
     )
     MetaGrid(listOf("转速" to "${fan.rpm} RPM", "备注" to (fan.note ?: "未备注")))
+    MetaGrid(
+      listOfNotNull(
+        "控制" to (fan.controlMode ?: "未知"),
+        "目标温度" to (fan.targetTemperatureC?.let { formatCelsius(it) } ?: "未知"),
+        "PWM" to if (fan.minPwmPercent != null || fan.maxPwmPercent != null) "${fan.minPwmPercent ?: "--"}-${fan.maxPwmPercent ?: "--"}%" else "未知",
+        "通道" to (fan.channelState ?: "未知")
+      )
+    )
   }
 }
 
@@ -1262,7 +1316,9 @@ private fun NetworkInstanceCard(network: NetworkInterfaceDto, series: NetworkMet
     MetricCardGrid(
       cards = listOf(
         MetricCardModel("接收速率", formatSpeed(network.rxBytesPerSec), series?.rxBytesPerSec.orEmpty(), ::formatSpeed),
-        MetricCardModel("发送速率", formatSpeed(network.txBytesPerSec), series?.txBytesPerSec.orEmpty(), ::formatSpeed)
+        MetricCardModel("发送速率", formatSpeed(network.txBytesPerSec), series?.txBytesPerSec.orEmpty(), ::formatSpeed),
+        MetricCardModel("累计接收", formatBytes(network.totalRxBytes?.toDouble() ?: 0.0), series?.trafficRxBytes.orEmpty(), { value -> formatBytes(value ?: 0.0) }),
+        MetricCardModel("累计发送", formatBytes(network.totalTxBytes?.toDouble() ?: 0.0), series?.trafficTxBytes.orEmpty(), { value -> formatBytes(value ?: 0.0) })
       )
     )
   }
@@ -1282,6 +1338,7 @@ private fun GpuInstanceCard(gpu: GpuDto, series: GpuMetricSeriesDto?, onEdit: ()
         MetricCardModel("解码", formatPercent(gpu.decodeUtilizationPercent), series?.decodePercent.orEmpty(), ::formatPercent, 100.0),
         MetricCardModel("频率", formatMHz(gpu.frequencyMHz), series?.frequencyMHz.orEmpty(), ::formatMHz),
         MetricCardModel("显存", buildUsage(gpu.memoryUsedBytes, gpu.memoryTotalBytes), series?.memoryUsagePercent.orEmpty(), ::formatPercent, 100.0),
+        MetricCardModel("显存已用", formatBytes(gpu.memoryUsedBytes.toDouble()), series?.memoryUsedBytes.orEmpty(), { value -> formatBytes(value ?: 0.0) }),
         MetricCardModel("温度", formatCelsius(gpu.temperatureC), series?.temperatureC.orEmpty(), ::formatCelsius)
       )
     )

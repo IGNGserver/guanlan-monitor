@@ -6,7 +6,8 @@ import type {
   DeviceMetricKey,
   DeviceSummary,
   MetricSeries,
-  MetricWindow
+  MetricWindow,
+  MetricsResponse
 } from "@dsc/shared";
 import { getMetrics, saveFanNote } from "../lib/api";
 import { ChartCard } from "./chart-card";
@@ -160,6 +161,8 @@ export function Dashboard({
   }
 
   const series = metrics?.series;
+  const latest = metrics?.latest as MetricsResponse["latest"] | undefined;
+  const device = metrics?.device as MetricsResponse["device"] | undefined;
 
   // Dynamically compute available metric keys and categories based on Agent's actual reported metrics
   const availableKeys = new Set(
@@ -279,6 +282,22 @@ export function Dashboard({
         </div>
       ) : (
         <div className={styles.chartGrid}>
+          {activeCategory === "all" && latest && device && (
+            <div className={styles.doubleBezelShell} style={{ gridColumn: "1 / -1" }}>
+              <div className={styles.doubleBezelInner} style={{ padding: "20px 24px" }}>
+                <h3 className={styles.chartTitle}>设备与上报状态</h3>
+                <div className={styles.deviceDetailMeta} style={{ marginTop: "12px" }}>
+                  <span className={styles.metaBadge}>平台：{device.platform}</span>
+                  <span className={styles.metaBadge}>架构：{device.arch}</span>
+                  <span className={styles.metaBadge}>最近上报：{metrics?.lastSeenAt ? new Date(metrics.lastSeenAt).toLocaleString("zh-CN") : "--"}</span>
+                  <span className={styles.metaBadge}>进程：{latest.system.processCount}</span>
+                  <span className={styles.metaBadge}>线程：{latest.system.threadCount}</span>
+                  <span className={styles.metaBadge}>句柄：{latest.system.handleCount}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* CPU Metric Charts */}
           {(activeCategory === "all" || activeCategory === "cpu") && hasCpu && series && (
             <>
@@ -359,6 +378,8 @@ export function Dashboard({
                   )}`}
                 />
               )}
+              <ChartCard title="已用内存字节" value={formatBytes(series.memoryUsedBytes.at(-1)?.value ?? 0)} color="var(--accent-violet)" points={series.memoryUsedBytes} />
+              <ChartCard title="Swap 已用字节" value={formatBytes(series.swapUsedBytes.at(-1)?.value ?? 0)} color="var(--accent-amber)" points={series.swapUsedBytes} />
               {availableKeys.has("swapUsage") && (metrics?.latest.swapTotalBytes ?? 0) > 0 && (
                 <ChartCard
                   title="虚拟内存 (Swap) 占用"
@@ -429,18 +450,158 @@ export function Dashboard({
                   detail="上行实时流量"
                 />
               )}
+              {availableKeys.has("networkTraffic") && (
+                <>
+                  <ChartCard title="累计接收流量" value={formatBytes(series.trafficRxBytes.at(-1)?.value ?? 0)} color="var(--accent-blue)" points={series.trafficRxBytes} />
+                  <ChartCard title="累计发送流量" value={formatBytes(series.trafficTxBytes.at(-1)?.value ?? 0)} color="var(--accent-violet)" points={series.trafficTxBytes} />
+                </>
+              )}
             </>
           )}
 
+          {(activeCategory === "all" || activeCategory === "cpu") && series?.cpus.length > 0 && (
+            <div className={styles.doubleBezelShell} style={{ gridColumn: "1 / -1" }}>
+              <div className={styles.doubleBezelInner} style={{ padding: "24px" }}>
+                <h3 className={styles.chartTitle}>CPU 实例详情</h3>
+                {series.cpus.map((cpu) => (
+                  <div key={cpu.id} style={{ marginTop: "18px", borderTop: "1px solid var(--border-subtle)", paddingTop: "18px" }}>
+                    <div className={styles.deviceDetailMeta} style={{ marginBottom: "10px" }}>
+                      <span className={styles.metaBadge}>{cpu.name}</span>
+                      {cpu.model && <span className={styles.metaBadge}>{cpu.model}</span>}
+                      <span className={styles.metaBadge}>核心/线程：{cpu.coreCount ?? "--"}/{cpu.logicalCount ?? "--"}</span>
+                    </div>
+                    <div className={styles.chartGrid}>
+                      <ChartCard title={`${cpu.name} 使用率`} chartId={`${cpu.id}-usage`} value={`${(cpu.usagePercent.at(-1)?.value ?? 0).toFixed(0)}%`} color="var(--accent-cyan)" points={cpu.usagePercent} />
+                      <ChartCard title={`${cpu.name} 频率`} chartId={`${cpu.id}-frequency`} value={formatMHz(cpu.frequencyMHz.at(-1)?.value ?? 0)} color="var(--accent-blue)" points={cpu.frequencyMHz} detail="MHz" />
+                      <ChartCard title={`${cpu.name} 温度`} chartId={`${cpu.id}-temperature`} value={`${(cpu.temperatureC.at(-1)?.value ?? 0).toFixed(0)}°C`} color="var(--accent-rose)" points={cpu.temperatureC} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(activeCategory === "all" || activeCategory === "memory") && series && latest && (
+            <div className={styles.doubleBezelShell} style={{ gridColumn: "1 / -1" }}>
+              <div className={styles.doubleBezelInner} style={{ padding: "24px" }}>
+                <h3 className={styles.chartTitle}>内存与系统详情</h3>
+                <div className={styles.deviceDetailMeta} style={{ margin: "12px 0" }}>
+                  <span className={styles.metaBadge}>可用：{formatBytes(latest.memoryAvailableBytes)}</span>
+                  <span className={styles.metaBadge}>缓存：{formatBytes(latest.memoryCachedBytes)}</span>
+                  <span className={styles.metaBadge}>已提交：{formatBytes(latest.memoryCommittedBytes)}</span>
+                  <span className={styles.metaBadge}>频率：{latest.memorySpeedMHz ? `${latest.memorySpeedMHz.toFixed(0)} MHz` : "--"}</span>
+                  <span className={styles.metaBadge}>插槽：{latest.memorySlotCount ?? "--"}</span>
+                  <span className={styles.metaBadge}>形态：{latest.memoryFormFactor || "--"}</span>
+                </div>
+                <div className={styles.chartGrid}>
+                  <ChartCard title="可用内存" value={formatBytes(series.memoryAvailableBytes.at(-1)?.value ?? 0)} color="var(--accent-emerald)" points={series.memoryAvailableBytes} />
+                  <ChartCard title="缓存内存" value={formatBytes(series.memoryCachedBytes.at(-1)?.value ?? 0)} color="var(--accent-blue)" points={series.memoryCachedBytes} />
+                  <ChartCard title="已提交内存" value={formatBytes(series.memoryCommittedBytes.at(-1)?.value ?? 0)} color="var(--accent-violet)" points={series.memoryCommittedBytes} />
+                  <ChartCard title="进程数" value={`${(series.systemProcessCount.at(-1)?.value ?? latest.system.processCount).toFixed(0)}`} color="var(--accent-cyan)" points={series.systemProcessCount} />
+                  <ChartCard title="线程数" value={`${(series.systemThreadCount.at(-1)?.value ?? latest.system.threadCount).toFixed(0)}`} color="var(--accent-cyan)" points={series.systemThreadCount} />
+                  <ChartCard title="句柄数" value={`${(series.systemHandleCount.at(-1)?.value ?? latest.system.handleCount).toFixed(0)}`} color="var(--accent-amber)" points={series.systemHandleCount} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {(activeCategory === "all" || activeCategory === "disk") && series?.disks.length > 0 && latest && (
+            <div className={styles.doubleBezelShell} style={{ gridColumn: "1 / -1" }}>
+              <div className={styles.doubleBezelInner} style={{ padding: "24px" }}>
+                <h3 className={styles.chartTitle}>磁盘实例详情</h3>
+                {series.disks.map((diskSeries) => {
+                  const disk = latest.disks.find((item) => item.id === diskSeries.id);
+                  return (
+                    <div key={diskSeries.id} style={{ marginTop: "18px", borderTop: "1px solid var(--border-subtle)", paddingTop: "18px" }}>
+                      <div className={styles.deviceDetailMeta} style={{ marginBottom: "10px" }}>
+                        <span className={styles.metaBadge}>{disk?.mountPoint || diskSeries.name}</span>
+                        {disk?.filesystem && <span className={styles.metaBadge}>{disk.filesystem}</span>}
+                        {disk?.model && <span className={styles.metaBadge}>{disk.model}</span>}
+                        {disk?.interfaceType && <span className={styles.metaBadge}>{disk.interfaceType}</span>}
+                        <span className={styles.metaBadge}>容量：{formatBytes(disk?.usedBytes ?? 0)} / {formatBytes(disk?.totalBytes ?? 0)}</span>
+                        {disk?.averageResponseMs != null && <span className={styles.metaBadge}>响应：{disk.averageResponseMs.toFixed(1)} ms</span>}
+                      </div>
+                      <div className={styles.chartGrid}>
+                        <ChartCard title={`${diskSeries.name} 读取`} chartId={`${diskSeries.id}-read`} value={formatRate(diskSeries.readBytesPerSec.at(-1)?.value ?? 0)} color="var(--accent-cyan)" points={diskSeries.readBytesPerSec} />
+                        <ChartCard title={`${diskSeries.name} 写入`} chartId={`${diskSeries.id}-write`} value={formatRate(diskSeries.writeBytesPerSec.at(-1)?.value ?? 0)} color="var(--accent-violet)" points={diskSeries.writeBytesPerSec} />
+                        <ChartCard title={`${diskSeries.name} 活动时间`} chartId={`${diskSeries.id}-active`} value={`${(diskSeries.activePercent.at(-1)?.value ?? 0).toFixed(0)}%`} color="var(--accent-amber)" points={diskSeries.activePercent} />
+                        <ChartCard title={`${diskSeries.name} 温度`} chartId={`${diskSeries.id}-temperature`} value={`${(diskSeries.temperatureC.at(-1)?.value ?? 0).toFixed(0)}°C`} color="var(--accent-rose)" points={diskSeries.temperatureC} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {(activeCategory === "all" || activeCategory === "network") && series?.networks.length > 0 && latest && (
+            <div className={styles.doubleBezelShell} style={{ gridColumn: "1 / -1" }}>
+              <div className={styles.doubleBezelInner} style={{ padding: "24px" }}>
+                <h3 className={styles.chartTitle}>网卡实例详情</h3>
+                {series.networks.map((networkSeries) => {
+                  const network = latest.networkInterfaces.find((item) => item.id === networkSeries.id);
+                  return (
+                    <div key={networkSeries.id} style={{ marginTop: "18px", borderTop: "1px solid var(--border-subtle)", paddingTop: "18px" }}>
+                      <div className={styles.deviceDetailMeta} style={{ marginBottom: "10px" }}>
+                        <span className={styles.metaBadge}>{network?.name || networkSeries.name}</span>
+                        {network?.macAddress && <span className={styles.metaBadge}>MAC：{network.macAddress}</span>}
+                        {network?.ipv4?.length ? <span className={styles.metaBadge}>IPv4：{network.ipv4.join(", ")}</span> : null}
+                        {network?.ipv6?.length ? <span className={styles.metaBadge}>IPv6：{network.ipv6.join(", ")}</span> : null}
+                        {network?.linkSpeedMbps != null && <span className={styles.metaBadge}>链路：{network.linkSpeedMbps.toFixed(0)} Mbps</span>}
+                        {network?.connectionType && <span className={styles.metaBadge}>{network.connectionType}</span>}
+                        {network?.signalStrengthPercent != null && <span className={styles.metaBadge}>信号：{network.signalStrengthPercent.toFixed(0)}%</span>}
+                      </div>
+                      <div className={styles.chartGrid}>
+                        <ChartCard title={`${networkSeries.name} 接收`} chartId={`${networkSeries.id}-rx`} value={formatRate(networkSeries.rxBytesPerSec.at(-1)?.value ?? 0)} color="var(--accent-cyan)" points={networkSeries.rxBytesPerSec} />
+                        <ChartCard title={`${networkSeries.name} 发送`} chartId={`${networkSeries.id}-tx`} value={formatRate(networkSeries.txBytesPerSec.at(-1)?.value ?? 0)} color="var(--accent-emerald)" points={networkSeries.txBytesPerSec} />
+                        <ChartCard title={`${networkSeries.name} 累计接收`} chartId={`${networkSeries.id}-traffic-rx`} value={formatBytes(networkSeries.trafficRxBytes.at(-1)?.value ?? 0)} color="var(--accent-blue)" points={networkSeries.trafficRxBytes} />
+                        <ChartCard title={`${networkSeries.name} 累计发送`} chartId={`${networkSeries.id}-traffic-tx`} value={formatBytes(networkSeries.trafficTxBytes.at(-1)?.value ?? 0)} color="var(--accent-violet)" points={networkSeries.trafficTxBytes} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {(activeCategory === "all" || activeCategory === "gpu") && series?.gpus.length > 0 && latest && (
+            <div className={styles.doubleBezelShell} style={{ gridColumn: "1 / -1" }}>
+              <div className={styles.doubleBezelInner} style={{ padding: "24px" }}>
+                <h3 className={styles.chartTitle}>GPU 实例详情</h3>
+                {series.gpus.map((gpuSeries) => {
+                  const gpu = latest.gpus.find((item) => item.id === gpuSeries.id);
+                  return (
+                    <div key={gpuSeries.id} style={{ marginTop: "18px", borderTop: "1px solid var(--border-subtle)", paddingTop: "18px" }}>
+                      <div className={styles.deviceDetailMeta} style={{ marginBottom: "10px" }}>
+                        <span className={styles.metaBadge}>{gpu?.name || gpuSeries.name}</span>
+                        {gpu?.driverVersion && <span className={styles.metaBadge}>驱动：{gpu.driverVersion}</span>}
+                        <span className={styles.metaBadge}>显存：{formatBytes(gpu?.memoryUsedBytes ?? 0)} / {formatBytes(gpu?.memoryTotalBytes ?? 0)}</span>
+                      </div>
+                      <div className={styles.chartGrid}>
+                        <ChartCard title={`${gpuSeries.name} 使用率`} chartId={`${gpuSeries.id}-usage`} value={`${(gpuSeries.usagePercent.at(-1)?.value ?? 0).toFixed(0)}%`} color="var(--accent-violet)" points={gpuSeries.usagePercent} />
+                        <ChartCard title={`${gpuSeries.name} 编码`} chartId={`${gpuSeries.id}-encode`} value={`${(gpuSeries.encodePercent.at(-1)?.value ?? 0).toFixed(0)}%`} color="var(--accent-blue)" points={gpuSeries.encodePercent} />
+                        <ChartCard title={`${gpuSeries.name} 解码`} chartId={`${gpuSeries.id}-decode`} value={`${(gpuSeries.decodePercent.at(-1)?.value ?? 0).toFixed(0)}%`} color="var(--accent-cyan)" points={gpuSeries.decodePercent} />
+                        <ChartCard title={`${gpuSeries.name} 频率`} chartId={`${gpuSeries.id}-frequency`} value={formatMHz(gpuSeries.frequencyMHz.at(-1)?.value ?? 0)} color="var(--accent-amber)" points={gpuSeries.frequencyMHz} detail="MHz" />
+                        <ChartCard title={`${gpuSeries.name} 显存`} chartId={`${gpuSeries.id}-memory`} value={`${(gpuSeries.memoryUsagePercent.at(-1)?.value ?? 0).toFixed(0)}%`} color="var(--accent-emerald)" points={gpuSeries.memoryUsagePercent} />
+                        <ChartCard title={`${gpuSeries.name} 显存已用`} chartId={`${gpuSeries.id}-memory-bytes`} value={formatBytes(gpuSeries.memoryUsedBytes.at(-1)?.value ?? 0)} color="var(--accent-emerald)" points={gpuSeries.memoryUsedBytes} />
+                        <ChartCard title={`${gpuSeries.name} 温度`} chartId={`${gpuSeries.id}-temperature`} value={`${(gpuSeries.temperatureC.at(-1)?.value ?? 0).toFixed(0)}°C`} color="var(--accent-rose)" points={gpuSeries.temperatureC} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Fan Speed Cards */}
-          {(activeCategory === "all" || activeCategory === "fan") && hasFan && metrics?.latest.fans && (
+          {(activeCategory === "all" || activeCategory === "fan") && hasFan && latest?.fans && (
             <div className={styles.doubleBezelShell} style={{ gridColumn: "1 / -1" }}>
               <div className={`${styles.doubleBezelInner}`} style={{ padding: "24px" }}>
                 <h3 className={styles.chartTitle} style={{ marginBottom: "16px" }}>
                   散热风扇转速
                 </h3>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "16px" }}>
-                  {metrics.latest.fans.map((fan) => (
+                  {latest.fans.map((fan) => (
                     <div
                       key={fan.id}
                       style={{
@@ -469,6 +630,23 @@ export function Dashboard({
                       <div style={{ fontSize: "22px", fontWeight: 800, fontFamily: "var(--font-mono)", color: "var(--accent-cyan)" }}>
                         {fan.rpm} <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>RPM</span>
                       </div>
+
+                      <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                        接口：{fan.interface || "--"} · 控制：{fan.controlMode || "--"} · 通道：{fan.channelState || "--"}
+                      </div>
+                      <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                        目标温度：{fan.targetTemperatureC != null ? `${fan.targetTemperatureC.toFixed(0)}°C` : "--"} · PWM：{fan.minPwmPercent != null || fan.maxPwmPercent != null ? `${fan.minPwmPercent ?? "--"}-${fan.maxPwmPercent ?? "--"}%` : "--"}
+                      </div>
+
+                      {series?.fans.find((item) => item.id === fan.id) && (
+                        <ChartCard
+                          title={`${fan.label} 转速`}
+                          chartId={`${fan.id}-rpm`}
+                          value={`${fan.rpm} RPM`}
+                          color="var(--accent-cyan)"
+                          points={series.fans.find((item) => item.id === fan.id)?.rpm ?? []}
+                        />
+                      )}
 
                       {fan.note && (
                         <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
@@ -590,4 +768,9 @@ function formatRate(bytesPerSec: number) {
     return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
   }
   return `${(bytesPerSec / 1024).toFixed(0)} KB/s`;
+}
+
+function formatMHz(value: number) {
+  if (value <= 0) return "0";
+  return value >= 1000 ? `${(value / 1000).toFixed(2)} GHz` : `${value.toFixed(0)} MHz`;
 }

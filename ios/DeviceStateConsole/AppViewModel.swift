@@ -213,18 +213,18 @@ public final class AppViewModel {
     
     public func toggleMetricConfig(metricKey: String) {
         guard let config = metricConfig else { return }
-        var disabled = config.disabledMetrics
-        if disabled.contains(metricKey) {
-            disabled.removeAll { $0 == metricKey }
+        var enabled = config.enabledMetrics
+        if enabled.contains(metricKey) {
+            enabled.removeAll { $0 == metricKey }
         } else {
-            disabled.append(metricKey)
+            enabled.append(metricKey)
         }
         self.metricConfig = DeviceMetricConfigDto(
             deviceId: config.deviceId,
-            disabledMetrics: disabled,
-            disabledBlocks: config.disabledBlocks,
-            disabledDeviceInstances: config.disabledDeviceInstances,
-            disabledInstanceMetrics: config.disabledInstanceMetrics
+            availableMetrics: config.availableMetrics,
+            enabledMetrics: enabled,
+            enabledDeviceIds: config.enabledDeviceIds,
+            instanceMetricConfig: config.instanceMetricConfig
         )
     }
     
@@ -232,10 +232,9 @@ public final class AppViewModel {
         guard let deviceId = selectedDeviceId, let config = metricConfig else { return }
         do {
             let payload = DeviceMetricConfigPayloadDto(
-                disabledMetrics: config.disabledMetrics,
-                disabledBlocks: config.disabledBlocks,
-                disabledDeviceInstances: config.disabledDeviceInstances,
-                disabledInstanceMetrics: config.disabledInstanceMetrics
+                enabledMetrics: config.enabledMetrics,
+                enabledDeviceIds: config.enabledDeviceIds,
+                instanceMetricConfig: config.instanceMetricConfig
             )
             _ = try await apiClient.saveMetricConfig(baseUrl: serverConfig.baseUrl, deviceId: deviceId, payload: payload)
             closeMetricConfigEditor()

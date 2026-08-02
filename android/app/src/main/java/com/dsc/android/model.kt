@@ -56,6 +56,10 @@ data class DiskDto(
   val model: String? = null,
   val vendor: String? = null,
   val sourceKey: String? = null,
+  val temperatureC: Double? = null,
+  val activePercent: Double? = null,
+  val averageResponseMs: Double? = null,
+  val interfaceType: String? = null,
   val totalBytes: Long,
   val usedBytes: Long
 )
@@ -70,7 +74,10 @@ data class NetworkInterfaceDto(
   val rxBytesPerSec: Double? = null,
   val txBytesPerSec: Double? = null,
   val totalRxBytes: Long? = null,
-  val totalTxBytes: Long? = null
+  val totalTxBytes: Long? = null,
+  val linkSpeedMbps: Double? = null,
+  val connectionType: String? = null,
+  val signalStrengthPercent: Double? = null
 )
 
 @Serializable
@@ -83,7 +90,8 @@ data class GpuDto(
   val frequencyMHz: Double? = null,
   val memoryUsedBytes: Long,
   val memoryTotalBytes: Long,
-  val temperatureC: Double? = null
+  val temperatureC: Double? = null,
+  val driverVersion: String? = null
 )
 
 @Serializable
@@ -93,7 +101,12 @@ data class FanDto(
   val interfaceName: String? = null,
   @SerialName("interface") val interfaceRaw: String? = null,
   val rpm: Int,
-  val note: String? = null
+  val note: String? = null,
+  val controlMode: String? = null,
+  val targetTemperatureC: Double? = null,
+  val minPwmPercent: Double? = null,
+  val maxPwmPercent: Double? = null,
+  val channelState: String? = null
 )
 
 @Serializable
@@ -117,6 +130,7 @@ data class DiskMetricSeriesDto(
   val model: String? = null,
   val vendor: String? = null,
   val usagePercent: List<SamplePointDto> = emptyList(),
+  val activePercent: List<SamplePointDto> = emptyList(),
   val usedBytes: List<SamplePointDto> = emptyList(),
   val readBytesPerSec: List<SamplePointDto> = emptyList(),
   val writeBytesPerSec: List<SamplePointDto> = emptyList(),
@@ -170,6 +184,14 @@ data class DeviceMetricSeriesDto(
   val gpuTemperatureC: List<SamplePointDto> = emptyList(),
   val memoryUsagePercent: List<SamplePointDto> = emptyList(),
   val swapUsagePercent: List<SamplePointDto> = emptyList(),
+  val memoryUsedBytes: List<SamplePointDto> = emptyList(),
+  val swapUsedBytes: List<SamplePointDto> = emptyList(),
+  val memoryAvailableBytes: List<SamplePointDto> = emptyList(),
+  val memoryCachedBytes: List<SamplePointDto> = emptyList(),
+  val memoryCommittedBytes: List<SamplePointDto> = emptyList(),
+  val systemProcessCount: List<SamplePointDto> = emptyList(),
+  val systemThreadCount: List<SamplePointDto> = emptyList(),
+  val systemHandleCount: List<SamplePointDto> = emptyList(),
   val diskUsagePercent: List<SamplePointDto> = emptyList(),
   val diskReadBytesPerSec: List<SamplePointDto> = emptyList(),
   val diskWriteBytesPerSec: List<SamplePointDto> = emptyList(),
@@ -201,20 +223,37 @@ data class DeviceDetailDto(
 
 @Serializable
 data class DeviceLatestDto(
+  val system: SystemStatsDto = SystemStatsDto(),
+  val cpuUsagePercent: Double = 0.0,
   val cpuFrequencyMHz: Double? = null,
   val cpuTemperatureC: Double? = null,
   val memoryUsedBytes: Long = 0,
   val memoryTotalBytes: Long = 0,
+  val memoryAvailableBytes: Long = 0,
+  val memoryCachedBytes: Long = 0,
+  val memoryCommittedBytes: Long = 0,
+  val memorySpeedMHz: Double? = null,
+  val memorySlotCount: Int? = null,
+  val memoryFormFactor: String? = null,
   val swapUsedBytes: Long = 0,
   val swapTotalBytes: Long = 0,
   val diskUsedBytes: Long = 0,
   val diskTotalBytes: Long = 0,
+  val networkRxBytesPerSec: Double = 0.0,
+  val networkTxBytesPerSec: Double = 0.0,
   val cpuPackages: List<CpuPackageDto> = emptyList(),
   val disks: List<DiskDto> = emptyList(),
   val networkInterfaces: List<NetworkInterfaceDto> = emptyList(),
   val gpus: List<GpuDto> = emptyList(),
   val sensorBackends: List<SensorBackendDto> = emptyList(),
   val fans: List<FanDto> = emptyList()
+)
+
+@Serializable
+data class SystemStatsDto(
+  val processCount: Int = 0,
+  val threadCount: Int = 0,
+  val handleCount: Long = 0
 )
 
 @Serializable

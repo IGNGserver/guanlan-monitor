@@ -126,6 +126,14 @@ struct CpuTabContent: View {
                                 lineColor: .red
                             )
                         }
+                        if let frequency = series.frequencies[pkg.id] {
+                            MiniLineChartView(
+                                title: "核心频率 (MHz)",
+                                points: frequency,
+                                valueFormatter: { String(format: "%.0f MHz", $0) },
+                                lineColor: .orange
+                            )
+                        }
                     }
                 }
             }
@@ -144,6 +152,11 @@ struct MemoryTabContent: View {
             fixedMaxValue: 100,
             lineColor: .purple
         )
+        MiniLineChartView(title: "已用内存", points: metrics.memoryUsedBytesSeries, valueFormatter: { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }, lineColor: .purple)
+        MiniLineChartView(title: "Swap 已用", points: metrics.swapUsedBytesSeries, valueFormatter: { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }, lineColor: .orange)
+        MiniLineChartView(title: "可用内存", points: metrics.memoryAvailableSeries, valueFormatter: { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }, lineColor: .blue)
+        MiniLineChartView(title: "缓存内存", points: metrics.memoryCachedSeries, valueFormatter: { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }, lineColor: .green)
+        MiniLineChartView(title: "已提交内存", points: metrics.memoryCommittedSeries, valueFormatter: { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }, lineColor: .orange)
     }
 }
 
@@ -173,6 +186,8 @@ struct DiskTabContent: View {
                 valueFormatter: { String(format: "%.2f MB/s", $0 / 1024 / 1024) },
                 lineColor: .green
             )
+            MiniLineChartView(title: "活动时间 (%)", points: seriesMap.activePercent, valueFormatter: { String(format: "%.1f%%", $0) }, fixedMaxValue: 100, lineColor: .orange)
+            MiniLineChartView(title: "温度 (°C)", points: seriesMap.temperatureC, valueFormatter: { String(format: "%.1f°C", $0) }, lineColor: .red)
         } else {
             Text("无磁盘历史序列")
         }
@@ -198,6 +213,8 @@ struct NetworkTabContent: View {
                 valueFormatter: { String(format: "%.1f KB/s", $0 / 1024) },
                 lineColor: .blue
             )
+            MiniLineChartView(title: "累计接收", points: netSeries.trafficRxBytes, valueFormatter: { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }, lineColor: .green)
+            MiniLineChartView(title: "累计发送", points: netSeries.trafficTxBytes, valueFormatter: { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }, lineColor: .blue)
         }
     }
 }
@@ -223,6 +240,10 @@ struct GpuTabContent: View {
                 fixedMaxValue: 100,
                 lineColor: .purple
             )
+            MiniLineChartView(title: "显存已用", points: series.memoryUsedBytes, valueFormatter: { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }, lineColor: .purple)
+            MiniLineChartView(title: "编码 (%)", points: series.encode, valueFormatter: { String(format: "%.1f%%", $0) }, fixedMaxValue: 100, lineColor: .blue)
+            MiniLineChartView(title: "解码 (%)", points: series.decode, valueFormatter: { String(format: "%.1f%%", $0) }, fixedMaxValue: 100, lineColor: .green)
+            MiniLineChartView(title: "频率 (MHz)", points: series.frequencyMHz, valueFormatter: { String(format: "%.0f MHz", $0) }, lineColor: .orange)
         }
     }
 }

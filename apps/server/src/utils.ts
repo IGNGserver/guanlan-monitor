@@ -283,6 +283,12 @@ export function timeSeriesToMetricSeries(points: TimeSeriesRecord[]): MetricSeri
     swapUsagePercent: mapPoint("swapUsagePercent"),
     memoryUsedBytes: mapPoint("memoryUsedBytes"),
     swapUsedBytes: mapPoint("swapUsedBytes"),
+    memoryAvailableBytes: detailSeries(points, (point) => point.recordedDetails?.memory.availableBytes),
+    memoryCachedBytes: detailSeries(points, (point) => point.recordedDetails?.memory.cachedBytes),
+    memoryCommittedBytes: detailSeries(points, (point) => point.recordedDetails?.memory.committedBytes),
+    systemProcessCount: detailSeries(points, (point) => point.recordedDetails?.system.processCount),
+    systemThreadCount: detailSeries(points, (point) => point.recordedDetails?.system.threadCount),
+    systemHandleCount: detailSeries(points, (point) => point.recordedDetails?.system.handleCount),
     diskUsagePercent: mapPoint("diskUsagePercent"),
     diskUsedBytes: mapPoint("diskUsedBytes"),
     diskReadBytesPerSec: mapPoint("diskReadBytesPerSec"),
@@ -303,6 +309,13 @@ export function timeSeriesToMetricSeries(points: TimeSeriesRecord[]): MetricSeri
     gpus,
     fans
   };
+}
+
+function detailSeries(points: TimeSeriesRecord[], selector: (point: TimeSeriesRecord) => number | undefined) {
+  return points.map((point) => ({
+    timestamp: new Date(point.timestamp).toISOString(),
+    value: Number(selector(point) ?? 0)
+  }));
 }
 
 function normalizeTrafficSeries(values: number[]) {

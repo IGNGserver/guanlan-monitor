@@ -328,6 +328,12 @@ export interface MetricSeries {
   swapUsagePercent: SamplePoint[];
   memoryUsedBytes: SamplePoint[];
   swapUsedBytes: SamplePoint[];
+  memoryAvailableBytes: SamplePoint[];
+  memoryCachedBytes: SamplePoint[];
+  memoryCommittedBytes: SamplePoint[];
+  systemProcessCount: SamplePoint[];
+  systemThreadCount: SamplePoint[];
+  systemHandleCount: SamplePoint[];
   diskUsagePercent: SamplePoint[];
   diskUsedBytes: SamplePoint[];
   diskReadBytesPerSec: SamplePoint[];
@@ -341,6 +347,45 @@ export interface MetricSeries {
   networks: NetworkMetricSeries[];
   gpus: GpuMetricSeries[];
   fans: FanMetricSeries[];
+}
+
+export interface MetricsLatest {
+  system: SystemStats;
+  cpuUsagePercent: number;
+  cpuFrequencyMHz: number | null;
+  cpuTemperatureC: number | null;
+  cpuPackages: CpuPackageStats[];
+  memoryUsedBytes: number;
+  memoryTotalBytes: number;
+  memoryAvailableBytes: number;
+  memoryCachedBytes: number;
+  memoryCommittedBytes: number;
+  memorySpeedMHz: number | null;
+  memorySlotCount: number | null;
+  memoryFormFactor: string | null;
+  swapUsedBytes: number;
+  swapTotalBytes: number;
+  diskUsedBytes: number;
+  diskTotalBytes: number;
+  networkRxBytesPerSec: number;
+  networkTxBytesPerSec: number;
+  disks: DiskDeviceStats[];
+  networkInterfaces: NetworkInterfaceStats[];
+  gpus: GpuDeviceStats[];
+  sensorBackends: SensorBackendStatus[];
+  fans: FanSensorStats[];
+}
+
+export interface MetricsResponse {
+  device: DeviceDetail;
+  status: DeviceStatus;
+  lastSeenAt: string | null;
+  enabledMetrics: DeviceMetricKey[];
+  enabledDeviceIds: Partial<Record<DeviceBlockKey, string[]>>;
+  instanceMetricConfig: Record<string, DeviceMetricKey[]>;
+  availableMetrics: DeviceMetricOption[];
+  latest: MetricsLatest;
+  series: MetricSeries;
 }
 
 export interface AuthLoginPayload {

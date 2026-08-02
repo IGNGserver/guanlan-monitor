@@ -21,6 +21,8 @@ public struct DeviceDetailView: View {
                             } onOpenTraffic: {
                                 Task { await viewModel.openTrafficSheet() }
                             }
+
+                            DeviceInfoSection(metrics: metrics)
                             
                             // Hardware Sections
                             CpuSectionView(metrics: metrics) {
@@ -258,6 +260,9 @@ struct CpuSectionView: View {
     var body: some View {
         SectionContainer(title: "CPU 处理器", onOpenBlock: onOpenBlock, onEdit: onEdit) {
             if let series = metrics.cpuSeries {
+                Text("频率 \(formatMHz(metrics.cpus.first?.frequencyMHz)) · 温度 \(formatCelsius(metrics.cpus.first?.temperatureC))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 MiniLineChartView(
                     title: "CPU 总体使用率",
                     points: series.totalUsage,
@@ -276,6 +281,12 @@ struct MemorySectionView: View {
     
     var body: some View {
         SectionContainer(title: "内存 Memory", onOpenBlock: onOpenBlock, onEdit: onEdit) {
+            Text("可用 \(formatBytes(metrics.memoryAvailableBytes)) · 缓存 \(formatBytes(metrics.memoryCachedBytes)) · 已提交 \(formatBytes(metrics.memoryCommittedBytes))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("频率 \(formatMHz(metrics.memorySpeedMHz)) · 插槽 \(metrics.memorySlotCount.map { String($0) } ?? "未知") · 形态 \(metrics.memoryFormFactor ?? "未知")")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
             MiniLineChartView(
                 title: "内存使用率",
                 points: metrics.memorySeries,
@@ -283,6 +294,11 @@ struct MemorySectionView: View {
                 fixedMaxValue: 100,
                 lineColor: .purple
             )
+            MiniLineChartView(title: "已用内存", points: metrics.memoryUsedBytesSeries, valueFormatter: { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }, lineColor: .purple)
+            MiniLineChartView(title: "Swap 已用", points: metrics.swapUsedBytesSeries, valueFormatter: { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }, lineColor: .orange)
+            MiniLineChartView(title: "可用内存", points: metrics.memoryAvailableSeries, valueFormatter: { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }, lineColor: .blue)
+            MiniLineChartView(title: "缓存内存", points: metrics.memoryCachedSeries, valueFormatter: { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }, lineColor: .green)
+            MiniLineChartView(title: "已提交内存", points: metrics.memoryCommittedSeries, valueFormatter: { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }, lineColor: .orange)
         }
     }
 }
@@ -300,7 +316,7 @@ struct DiskSectionView: View {
                         Text(disk.mountPoint.isEmpty ? disk.name : disk.mountPoint)
                             .font(.subheadline)
                             .fontWeight(.medium)
-                        Text("\(disk.usedBytes / 1024 / 1024 / 1024) GB / \(disk.totalBytes / 1024 / 1024 / 1024) GB")
+                Text("\(disk.usedBytes / 1024 / 1024 / 1024) GB / \(disk.totalBytes / 1024 / 1024 / 1024) GB")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -311,6 +327,9 @@ struct DiskSectionView: View {
                         .fontWeight(.bold)
                         .foregroundStyle(.orange)
                 }
+                Text("接口 \(disk.interfaceType ?? "未知") · 温度 \(formatCelsius(disk.temperatureC)) · 活动 \(formatPercent(disk.activePercent)) · 响应 \(disk.averageResponseMs.map { String(format: "%.1f ms", $0) } ?? "未知")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 .padding(8)
                 .background(Color(uiColor: .tertiarySystemGroupedBackground))
                 .cornerRadius(8)
@@ -337,6 +356,9 @@ struct NetworkSectionView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    Text("\(net.ipv4.joined(separator: ", ")) · \(net.connectionType ?? "未知") · 链路 \(net.linkSpeedMbps.map { String(format: "%.0f Mbps", $0) } ?? "未知")")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(8)
                 .background(Color(uiColor: .tertiarySystemGroupedBackground))
@@ -364,6 +386,12 @@ struct GpuSectionView: View {
                         .fontWeight(.bold)
                         .foregroundStyle(.indigo)
                 }
+                Text("编码 \(formatPercent(gpu.encodeUtilizationPercent)) · 解码 \(formatPercent(gpu.decodeUtilizationPercent)) · 频率 \(formatMHz(gpu.frequencyMHz)) · 温度 \(formatCelsius(gpu.temperatureC))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("驱动 \(gpu.driverVersion ?? "未知") · 显存 \(ByteCountFormatter.string(fromByteCount: gpu.memoryUsedBytes, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: gpu.memoryTotalBytes, countStyle: .file))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 .padding(8)
                 .background(Color(uiColor: .tertiarySystemGroupedBackground))
                 .cornerRadius(8)
@@ -379,6 +407,11 @@ struct FanSectionView: View {
     
     var body: some View {
         SectionContainer(title: "散热风扇 (\(metrics.fans.count))", onOpenBlock: onOpenBlock, onEdit: onEdit) {
+            ForEach(metrics.sensorBackends) { backend in
+                Text("\(backend.label)：\(backend.ok ? "可用" : "不可用")\(backend.detail.map { " · \($0)" } ?? "")")
+                    .font(.caption2)
+                    .foregroundStyle(backend.ok ? .secondary : .red)
+            }
             ForEach(metrics.fans) { fan in
                 HStack {
                     Text(fan.label)
@@ -389,6 +422,9 @@ struct FanSectionView: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(.teal)
                 }
+                Text("控制 \(fan.controlMode ?? "未知") · 目标温度 \(formatCelsius(fan.targetTemperatureC)) · PWM \(fan.minPwmPercent.map { String(format: "%.0f", $0) } ?? "--")-\(fan.maxPwmPercent.map { String(format: "%.0f", $0) } ?? "--")% · 通道 \(fan.channelState ?? "未知")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 .padding(8)
                 .background(Color(uiColor: .tertiarySystemGroupedBackground))
                 .cornerRadius(8)
@@ -399,4 +435,43 @@ struct FanSectionView: View {
 
 extension DeviceBlockKey: Identifiable {
     public var id: String { rawValue }
+}
+
+struct DeviceInfoSection: View {
+    let metrics: MetricsDto
+
+    var body: some View {
+        SectionContainer(title: "设备与上报状态", onOpenBlock: {}, onEdit: {}) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("ID：\(metrics.deviceId)")
+                Text("系统：\(metrics.platform) / \(metrics.arch) · 状态：\(metrics.status)")
+                Text("最近上报：\(metrics.lastSeenAt ?? "未知")")
+                Text("进程：\(metrics.processCount) · 线程：\(metrics.threadCount) · 句柄：\(metrics.handleCount)")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            MiniLineChartView(title: "进程数", points: metrics.processSeries, valueFormatter: { String(format: "%.0f", $0) }, lineColor: .blue)
+            MiniLineChartView(title: "线程数", points: metrics.threadSeries, valueFormatter: { String(format: "%.0f", $0) }, lineColor: .cyan)
+            MiniLineChartView(title: "句柄数", points: metrics.handleSeries, valueFormatter: { String(format: "%.0f", $0) }, lineColor: .orange)
+        }
+    }
+}
+
+private func formatBytes(_ value: Int64) -> String {
+    ByteCountFormatter.string(fromByteCount: value, countStyle: .file)
+}
+
+private func formatMHz(_ value: Double?) -> String {
+    guard let value else { return "未知" }
+    return String(format: "%.0f MHz", value)
+}
+
+private func formatCelsius(_ value: Double?) -> String {
+    guard let value else { return "未知" }
+    return String(format: "%.1f°C", value)
+}
+
+private func formatPercent(_ value: Double?) -> String {
+    guard let value else { return "未知" }
+    return String(format: "%.1f%%", value)
 }
