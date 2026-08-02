@@ -24,6 +24,7 @@ public sealed partial class MainWindow : Window
     private bool _initialized;
     private bool _isCompactLayout;
     private bool _hubLoginStarted;
+    private string _hubPageStatus = "网页状态：等待打开观澜";
     private string _currentSelectedCategory = "cpu";
 
     public MainWindow(MainViewModel viewModel)
@@ -60,11 +61,17 @@ public sealed partial class MainWindow : Window
             {
                 SecretBox.Password = _viewModel.Secret;
             }
-
+            if (args.PropertyName is nameof(MainViewModel.ConnectionText)
+                or nameof(MainViewModel.TraySubmitStatusText)
+                or nameof(MainViewModel.TraySubmitDetailText)
+                or nameof(MainViewModel.StatusText))
+            {
+                DispatcherQueue.TryEnqueue(UpdateHubStatusText);
+            }
         };
 
         SecretBox.Password = _viewModel.Secret;
-        ShowBackendUnavailable();
+        UpdateHubStatusText();
     }
 
     public async Task EnsureInitializedAsync()
@@ -73,6 +80,15 @@ public sealed partial class MainWindow : Window
         _initialized = true;
         EnsureAppWindow();
         await _viewModel.InitializeAsync();
+        UpdateHubStatusText();
+        if (!string.IsNullOrWhiteSpace(_viewModel.ServerUrl) && !string.IsNullOrWhiteSpace(_viewModel.Secret))
+        {
+            await OpenHubAsync();
+        }
+        else
+        {
+            ShowBackendUnavailable();
+        }
         DispatcherQueue.TryEnqueue(() => ApplyResponsiveLayout(RootLayout.ActualWidth < 900));
     }
 
@@ -381,19 +397,39 @@ public sealed partial class MainWindow : Window
 
     private void ShowBackendUnavailable()
     {
-        OverviewUnavailableState.Visibility = Visibility.Visible;
         OverviewGrid.Visibility = Visibility.Collapsed;
         HubWebViewErrorState.Visibility = Visibility.Collapsed;
         HubWebViewHost.Visibility = Visibility.Collapsed;
+        SetHubPageStatus("网页状态：等待中枢配置");
     }
 
     private void ShowHubPageError(string message)
     {
-        OverviewUnavailableState.Visibility = Visibility.Collapsed;
         OverviewGrid.Visibility = Visibility.Collapsed;
         HubWebViewHost.Visibility = Visibility.Collapsed;
         HubWebViewErrorState.Visibility = Visibility.Visible;
         HubPageErrorText.Text = message;
+        SetHubPageStatus($"网页状态：无法加载（{message}）");
+    }
+
+    private void SetHubPageStatus(string status)
+    {
+        _hubPageStatus = status;
+        if (HubPageStatusText is not null)
+        {
+            HubPageStatusText.Text = status;
+        }
+    }
+
+    private void UpdateHubStatusText()
+    {
+        if (HubBackendStatusText is null)
+        {
+            return;
+        }
+
+        HubBackendStatusText.Text = $"中枢连接状态：{_viewModel.ConnectionText} · {_viewModel.TraySubmitStatusText}";
+        HubPageStatusText.Text = _hubPageStatus;
     }
 
     private async Task OpenHubAsync()
@@ -403,6 +439,8 @@ public sealed partial class MainWindow : Window
             ShowBackendUnavailable();
             return;
         }
+
+        SetHubPageStatus("网页状态：正在打开观澜…");
 
         if (!Uri.TryCreate(_viewModel.ServerUrl.TrimEnd('/'), UriKind.Absolute, out var serverUri) ||
             (serverUri.Scheme != Uri.UriSchemeHttp && serverUri.Scheme != Uri.UriSchemeHttps))
@@ -439,9 +477,9 @@ public sealed partial class MainWindow : Window
                 throw new InvalidOperationException("WebView2 初始化失败，CoreWebView2 为空。请确认 WebView2 Runtime 可用且用户数据目录可写。");
             }
             HubWebViewHost.Visibility = Visibility.Visible;
-            OverviewUnavailableState.Visibility = Visibility.Collapsed;
             HubWebViewErrorState.Visibility = Visibility.Collapsed;
             _hubLoginStarted = false;
+            SetHubPageStatus("网页状态：正在加载观澜…");
             // Navigate through the XAML control so the control owns initialization
             // and navigation consistently across Windows App SDK runtime versions.
             HubWebView.Source = serverUri;
@@ -462,10 +500,12 @@ public sealed partial class MainWindow : Window
 
         if (_hubLoginStarted || string.IsNullOrWhiteSpace(_viewModel.Secret))
         {
+            SetHubPageStatus("网页状态：已加载");
             return;
         }
 
         _hubLoginStarted = true;
+        SetHubPageStatus("网页状态：已打开，正在验证访问密钥…");
         var accessKey = JsonSerializer.Serialize(_viewModel.Secret);
         var script = $"(async()=>{{const response=await fetch('/api/auth/login', {{method:'POST', credentials:'include', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{accessKey:{accessKey}}})}}); if(!response.ok) throw new Error('login:'+response.status); location.reload();}})().catch(()=>{{document.body.innerText='观澜网页登录失败，请返回设置检查访问密钥。';}});";
         try

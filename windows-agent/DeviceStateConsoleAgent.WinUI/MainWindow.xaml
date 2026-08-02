@@ -49,6 +49,7 @@
                     <Grid RowSpacing="20" HorizontalAlignment="Stretch">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
                             <StackPanel Grid.Row="0" Spacing="4">
@@ -57,24 +58,22 @@
                                 <TextBlock Text="完成设置后，这里将打开观澜网页并显示设备状态。" Style="{StaticResource BodyTextBlockStyle}" />
                             </StackPanel>
 
-                            <Grid Grid.Row="1" x:Name="OverviewUnavailableState" Visibility="Collapsed" HorizontalAlignment="Stretch">
-                                <Border Style="{StaticResource DSCPanelStyle}" MaxWidth="480" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="32,28">
-                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
-                                        <FontIcon Glyph="&#xE711;" FontSize="40" HorizontalAlignment="Center" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
-                                        <StackPanel Spacing="6" HorizontalAlignment="Center">
-                                            <TextBlock Text="中枢未连接" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
-                                            <TextBlock Text="{Binding ConnectionText}" Style="{StaticResource BodyTextBlockStyle}" TextAlignment="Center" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                            <TextBlock Text="{Binding TraySubmitDetailText}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Center" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                        </StackPanel>
-                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12" Margin="0,8,0,0">
-                                            <Button Content="重新检查连接" Command="{Binding CheckConnectionCommand}" Style="{StaticResource AccentButtonStyle}" />
-                                            <Button Content="前往设置配置" Click="NavigateToSettings_OnClick" />
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Border>
+                            <Grid Grid.Row="1" x:Name="HubStatusPanel" Margin="0,4,0,0" HorizontalAlignment="Stretch">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+                                    <TextBlock x:Name="HubBackendStatusText" Text="中枢连接状态：检查中…" Style="{StaticResource BodyTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock x:Name="HubPageStatusText" Text="网页状态：等待打开观澜" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                    <Button Content="重新检查连接" Command="{Binding CheckConnectionCommand}" Style="{StaticResource AccentButtonStyle}" />
+                                    <Button Content="前往设置配置" Click="NavigateToSettings_OnClick" />
+                                </StackPanel>
                             </Grid>
 
-                            <Grid Grid.Row="1" x:Name="HubWebViewErrorState" Visibility="Collapsed" HorizontalAlignment="Stretch">
+                            <Grid Grid.Row="2" x:Name="HubWebViewErrorState" Visibility="Collapsed" HorizontalAlignment="Stretch">
                                 <Border Style="{StaticResource DSCPanelStyle}" MaxWidth="520" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="32,28">
                                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
                                         <FontIcon Glyph="&#xE783;" FontSize="40" HorizontalAlignment="Center" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
@@ -82,22 +81,18 @@
                                             <TextBlock Text="网页无法加载" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
                                             <TextBlock x:Name="HubPageErrorText" Style="{StaticResource BodyTextBlockStyle}" TextAlignment="Center" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
-                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12" Margin="0,8,0,0">
-                                            <Button Content="重新加载网页" Click="RetryHubPage_OnClick" Style="{StaticResource AccentButtonStyle}" />
-                                            <Button Content="前往设置配置" Click="NavigateToSettings_OnClick" />
-                                        </StackPanel>
                                     </StackPanel>
                                 </Border>
                             </Grid>
 
-                            <Grid Grid.Row="1" x:Name="HubWebViewHost" Visibility="Collapsed" HorizontalAlignment="Stretch">
+                            <Grid Grid.Row="2" x:Name="HubWebViewHost" Visibility="Collapsed" HorizontalAlignment="Stretch">
                                 <Border Style="{StaticResource DSCPanelStyle}" Padding="0" CornerRadius="12">
                                     <controls:WebView2 x:Name="HubWebView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
                                 </Border>
                             </Grid>
 
                             <!-- 集群全景卡片列表 -->
-                            <Grid Grid.Row="1" x:Name="OverviewGrid" Visibility="Collapsed" RowSpacing="16" HorizontalAlignment="Stretch">
+                            <Grid Grid.Row="2" x:Name="OverviewGrid" Visibility="Collapsed" RowSpacing="16" HorizontalAlignment="Stretch">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
