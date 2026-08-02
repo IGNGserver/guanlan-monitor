@@ -107,6 +107,7 @@ export interface CpuPackageStats {
 export interface RateStats {
   readBytesPerSec: number;
   writeBytesPerSec: number;
+  activePercent?: number;
 }
 
 export interface DiskRateStats extends RateStats {

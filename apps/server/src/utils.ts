@@ -332,7 +332,6 @@ function buildCpuMetricSeries(points: TimeSeriesRecord[]): CpuMetricSeries[] {
           coreCount: cpu.coreCount,
           logicalCount: cpu.logicalCount,
           usagePercent: [],
-          activePercent: [],
           frequencyMHz: [],
           temperatureC: []
         });
@@ -360,6 +359,7 @@ function buildDiskMetricSeries(points: TimeSeriesRecord[]): DiskMetricSeries[] {
           model: disk.model,
           vendor: disk.vendor,
           usagePercent: [],
+          activePercent: [],
           usedBytes: [],
           readBytesPerSec: [],
           writeBytesPerSec: [],
