@@ -167,10 +167,10 @@ type rateStats struct {
 }
 
 type networkTrafficStats struct {
-	RxBytesPerSec float64 `json:"rxBytesPerSec"`
-	TxBytesPerSec float64 `json:"txBytesPerSec"`
-	TotalRxBytes  uint64  `json:"totalRxBytes"`
-	TotalTxBytes  uint64  `json:"totalTxBytes"`
+	RxBytesPerSec float64                        `json:"rxBytesPerSec"`
+	TxBytesPerSec float64                        `json:"txBytesPerSec"`
+	TotalRxBytes  uint64                         `json:"totalRxBytes"`
+	TotalTxBytes  uint64                         `json:"totalTxBytes"`
 	Instances     map[string]networkTrafficStats `json:"-"`
 }
 
@@ -318,6 +318,13 @@ type networkHardwareMetadata struct {
 	SignalStrengthPercent *float64
 }
 
+type diskHardwareMetadata struct {
+	Model         string
+	Vendor        string
+	InterfaceType string
+	TemperatureC  *float64
+}
+
 type windowsHardwareMetadata struct {
 	MemorySpeedMHz   *float64
 	MemorySlotCount  *int
@@ -325,6 +332,7 @@ type windowsHardwareMetadata struct {
 	GpuDrivers       map[string]string
 	Networks         map[string]networkHardwareMetadata
 	DiskInterfaces   map[string]string
+	DiskMetadata     map[string]diskHardwareMetadata
 }
 
 type slowMetrics struct {
@@ -342,6 +350,7 @@ type slowMetrics struct {
 	gpuDrivers        map[string]string
 	networkMetadata   map[string]networkHardwareMetadata
 	diskInterfaces    map[string]string
+	diskMetadata      map[string]diskHardwareMetadata
 	fans              []fanSensorStats
 	sensorBackends    []sensorBackendStatus
 }
@@ -585,6 +594,7 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 			gpuDrivers:        map[string]string{},
 			networkMetadata:   map[string]networkHardwareMetadata{},
 			diskInterfaces:    map[string]string{},
+			diskMetadata:      map[string]diskHardwareMetadata{},
 			fans:              []fanSensorStats{},
 			sensorBackends:    []sensorBackendStatus{},
 		}
@@ -593,12 +603,30 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	memory.SlotCount = slow.memorySlotCount
 	memory.FormFactor = slow.memoryFormFactor
 	for index := range slow.disks {
-		slow.disks[index].InterfaceType = slow.diskInterfaces[slow.disks[index].SourceKey]
-		if rate, ok := diskRate.Instances[slow.disks[index].SourceKey]; ok {
+		if metadata, ok := slow.diskMetadata[slow.disks[index].SourceKey]; ok {
+			if slow.disks[index].InterfaceType == "" {
+				slow.disks[index].InterfaceType = metadata.InterfaceType
+			}
+			if slow.disks[index].Model == "" {
+				slow.disks[index].Model = metadata.Model
+			}
+			if slow.disks[index].Vendor == "" {
+				slow.disks[index].Vendor = metadata.Vendor
+			}
+		}
+		if rate, ok := lookupDiskRate(diskRate.Instances, slow.disks[index].SourceKey, slow.disks[index].Name, slow.disks[index].MountPoint); ok {
 			active := rate.ActivePercent
 			response := rate.AverageResponseMs
 			slow.disks[index].ActivePercent = &active
 			slow.disks[index].AverageResponseMs = &response
+			if diskRate.Instances == nil {
+				diskRate.Instances = map[string]rateStats{}
+			}
+			// A mounted Linux partition is usually named /dev/sda2 while
+			// gopsutil exposes the IO counter as sda. Preserve aliases so the
+			// backend can attach the rate to both the partition and instance.
+			diskRate.Instances[slow.disks[index].SourceKey] = rate
+			diskRate.Instances[slow.disks[index].ID] = rate
 		}
 	}
 	for index := range slow.networkInterfaces {
@@ -744,8 +772,26 @@ func collectSlowMetrics() (slowMetrics, error) {
 
 	hardware := collectHardwareSensors()
 	windowsMetadata := collectWindowsHardwareMetadata()
+	memorySpeedMHz := windowsMetadata.MemorySpeedMHz
+	memorySlotCount := windowsMetadata.MemorySlotCount
+	memoryFormFactor := windowsMetadata.MemoryFormFactor
+	if runtime.GOOS == "linux" {
+		linuxSpeed, linuxSlots, linuxFormFactor := collectLinuxMemoryMetadata()
+		if linuxSpeed != nil {
+			memorySpeedMHz = linuxSpeed
+		}
+		if linuxSlots != nil {
+			memorySlotCount = linuxSlots
+		}
+		if linuxFormFactor != "" {
+			memoryFormFactor = linuxFormFactor
+		}
+	}
 	if len(hardware.gpus) == 0 {
 		hardware.gpus = collectNvidiaGPUs()
+	}
+	if len(hardware.gpus) == 0 {
+		hardware.gpus = collectWindowsGPUPerformance()
 	}
 	if hardware.cpuFrequencyMHz == nil {
 		hardware.cpuFrequencyMHz = collectWindowsCPUFrequency(cpuFrequencyMHz)
@@ -756,14 +802,16 @@ func collectSlowMetrics() (slowMetrics, error) {
 			cpuPackages[index].FrequencyMHz = hardware.cpuFrequencyMHz
 		}
 	}
+	sensorBackends := append([]sensorBackendStatus{}, hardware.sensorBackends...)
+	sensorBackends = append(sensorBackends, collectPlatformSensorBackends()...)
 
 	return slowMetrics{
 		collectedAt:       time.Now().UTC(),
 		cpuFrequencyMHz:   cpuFrequencyMHz,
 		cpuTemperatureC:   hardware.cpuTemperatureC,
-		memorySpeedMHz:    windowsMetadata.MemorySpeedMHz,
-		memorySlotCount:   windowsMetadata.MemorySlotCount,
-		memoryFormFactor:  windowsMetadata.MemoryFormFactor,
+		memorySpeedMHz:    memorySpeedMHz,
+		memorySlotCount:   memorySlotCount,
+		memoryFormFactor:  memoryFormFactor,
 		cpuPackages:       cpuPackages,
 		diskUsage:         diskUsage,
 		disks:             disks,
@@ -772,9 +820,116 @@ func collectSlowMetrics() (slowMetrics, error) {
 		gpuDrivers:        windowsMetadata.GpuDrivers,
 		networkMetadata:   windowsMetadata.Networks,
 		diskInterfaces:    windowsMetadata.DiskInterfaces,
+		diskMetadata:      windowsMetadata.DiskMetadata,
 		fans:              hardware.fans,
-		sensorBackends:    []sensorBackendStatus{},
+		sensorBackends:    sensorBackends,
 	}, nil
+}
+
+func collectLinuxMemoryMetadata() (*float64, *int, string) {
+	if runtime.GOOS != "linux" {
+		return nil, nil, ""
+	}
+	if _, err := exec.LookPath("dmidecode"); err != nil {
+		return nil, nil, ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, "dmidecode", "--type", "memory").Output()
+	if err != nil {
+		return nil, nil, ""
+	}
+
+	type module struct {
+		populated          bool
+		speedMHz           float64
+		configuredSpeedMHz float64
+		formFactor         string
+	}
+	modules := []module{}
+	current := module{}
+	flush := func() {
+		if current.populated {
+			modules = append(modules, current)
+		}
+		current = module{}
+	}
+	for _, rawLine := range strings.Split(string(output), "\n") {
+		line := strings.TrimSpace(rawLine)
+		switch {
+		case strings.HasPrefix(line, "Memory Device"):
+			flush()
+		case strings.HasPrefix(line, "Size:"):
+			current.populated = !strings.Contains(strings.ToLower(line), "no module installed") && !strings.Contains(strings.ToLower(line), "unknown")
+		case strings.HasPrefix(line, "Speed:"):
+			current.speedMHz = parseMemorySpeedMHz(line)
+		case strings.HasPrefix(line, "Configured Memory Speed:"):
+			current.configuredSpeedMHz = parseMemorySpeedMHz(line)
+		case strings.HasPrefix(line, "Form Factor:"):
+			current.formFactor = strings.TrimSpace(strings.TrimPrefix(line, "Form Factor:"))
+		}
+	}
+	flush()
+	if len(modules) == 0 {
+		return nil, nil, ""
+	}
+	speeds := []float64{}
+	formFactor := ""
+	for _, item := range modules {
+		speed := item.configuredSpeedMHz
+		if speed <= 0 {
+			speed = item.speedMHz
+		}
+		if speed > 0 {
+			speeds = append(speeds, speed)
+		}
+		if formFactor == "" {
+			formFactor = item.formFactor
+		}
+	}
+	return averagePointer(speeds), intPointer(len(modules)), formFactor
+}
+
+func parseMemorySpeedMHz(line string) float64 {
+	colon := strings.Index(line, ":")
+	if colon < 0 {
+		return 0
+	}
+	for _, field := range strings.Fields(line[colon+1:]) {
+		value, err := strconv.ParseFloat(strings.TrimSpace(field), 64)
+		if err == nil && value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func intPointer(value int) *int {
+	return &value
+}
+
+func collectPlatformSensorBackends() []sensorBackendStatus {
+	if runtime.GOOS == "linux" {
+		return []sensorBackendStatus{
+			{ID: "linux-procfs-gopsutil", Label: "Linux procfs / gopsutil", OK: true, Detail: "CPU、内存、进程、磁盘 IO 和网络计数可用"},
+			{ID: "linux-sysfs", Label: "Linux sysfs", OK: true, Detail: "网卡链路速度和磁盘型号按系统暴露情况读取"},
+			optionalCommandBackend("lm-sensors", "lm-sensors", "sensors", "CPU 温度和风扇传感器"),
+			optionalCommandBackend("smartmontools", "smartctl", "smartctl", "磁盘温度和健康信息"),
+			optionalCommandBackend("nvidia-smi", "NVIDIA SMI", "nvidia-smi", "NVIDIA GPU 指标"),
+		}
+	}
+	return []sensorBackendStatus{
+		{ID: "windows-wmi", Label: "Windows WMI", OK: true, Detail: "系统、内存、网卡和磁盘元数据可用；温度/风扇数值需硬件驱动暴露"},
+		{ID: "windows-performance-counters", Label: "Windows 性能计数器", OK: true, Detail: "CPU、磁盘、网络和 GPU Engine/Adapter Memory 计数器可用"},
+		optionalCommandBackend("nvidia-smi", "NVIDIA SMI", "nvidia-smi.exe", "NVIDIA GPU 指标"),
+	}
+}
+
+func optionalCommandBackend(id, label, command, capability string) sensorBackendStatus {
+	if _, err := exec.LookPath(command); err == nil {
+		return sensorBackendStatus{ID: id, Label: label, OK: true, Detail: capability + "组件可执行"}
+	}
+	return sensorBackendStatus{ID: id, Label: label, OK: false, Detail: "未安装或不可执行；" + capability + "不可用"}
 }
 
 func collectCPUPackages() (*float64, []cpuPackageStats, error) {
@@ -890,17 +1045,30 @@ type hardwareSensorMetrics struct {
 	cpuTemperatureC *float64
 	gpus            []gpuDeviceStats
 	fans            []fanSensorStats
+	sensorBackends  []sensorBackendStatus
 }
 
 // LibreHardwareMonitor exposes live clocks, including CPU boost clocks, where WMI often reports a nominal value.
 func collectHardwareSensors() hardwareSensorMetrics {
+	if runtime.GOOS == "linux" {
+		return collectLinuxHardwareSensors()
+	}
 	if runtime.GOOS != "windows" {
-		return hardwareSensorMetrics{gpus: []gpuDeviceStats{}, fans: []fanSensorStats{}}
+		return hardwareSensorMetrics{gpus: []gpuDeviceStats{}, fans: []fanSensorStats{}, sensorBackends: []sensorBackendStatus{}}
 	}
 
 	dllPath := resolveHardwareMonitorPath()
 	if dllPath == "" {
-		return hardwareSensorMetrics{gpus: []gpuDeviceStats{}, fans: []fanSensorStats{}}
+		return hardwareSensorMetrics{
+			gpus: []gpuDeviceStats{},
+			fans: []fanSensorStats{},
+			sensorBackends: []sensorBackendStatus{{
+				ID:     "librehardwaremonitor",
+				Label:  "LibreHardwareMonitor",
+				OK:     false,
+				Detail: "未找到 LibreHardwareMonitorLib.dll；将尝试使用 Windows 标准 GPU 性能计数器",
+			}},
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
@@ -910,14 +1078,149 @@ func collectHardwareSensors() hardwareSensorMetrics {
 	command.Env = append(os.Environ(), "DSC_LHM_DLL="+dllPath)
 	output, err := command.Output()
 	if err != nil {
-		return hardwareSensorMetrics{gpus: []gpuDeviceStats{}, fans: []fanSensorStats{}}
+		return hardwareSensorMetrics{
+			gpus: []gpuDeviceStats{},
+			fans: []fanSensorStats{},
+			sensorBackends: []sensorBackendStatus{{
+				ID:     "librehardwaremonitor",
+				Label:  "LibreHardwareMonitor",
+				OK:     false,
+				Detail: "读取失败：" + err.Error(),
+			}},
+		}
 	}
 
 	snapshots, err := decodeHardwareSnapshots(output)
 	if err != nil {
-		return hardwareSensorMetrics{gpus: []gpuDeviceStats{}, fans: []fanSensorStats{}}
+		return hardwareSensorMetrics{
+			gpus: []gpuDeviceStats{},
+			fans: []fanSensorStats{},
+			sensorBackends: []sensorBackendStatus{{
+				ID:     "librehardwaremonitor",
+				Label:  "LibreHardwareMonitor",
+				OK:     false,
+				Detail: "传感器输出解析失败：" + err.Error(),
+			}},
+		}
 	}
-	return mapHardwareSensors(snapshots)
+	metrics := mapHardwareSensors(snapshots)
+	metrics.sensorBackends = []sensorBackendStatus{{
+		ID:     "librehardwaremonitor",
+		Label:  "LibreHardwareMonitor",
+		OK:     true,
+		Detail: "已加载并读取硬件传感器",
+	}}
+	return metrics
+}
+
+func collectLinuxHardwareSensors() hardwareSensorMetrics {
+	metrics := hardwareSensorMetrics{
+		gpus: []gpuDeviceStats{},
+		fans: []fanSensorStats{},
+	}
+	if runtime.GOOS != "linux" {
+		return metrics
+	}
+
+	cpuTemperatures := []float64{}
+	hwmonPaths, _ := filepath.Glob("/sys/class/hwmon/hwmon*")
+	hwmonSensorCount := 0
+	for _, hwmonPath := range hwmonPaths {
+		hwmonName := readTrimmedFile(filepath.Join(hwmonPath, "name"))
+		lowerName := strings.ToLower(hwmonName)
+		isCPU := strings.Contains(lowerName, "coretemp") || strings.Contains(lowerName, "k10temp") || strings.Contains(lowerName, "zenpower") || strings.Contains(lowerName, "cpu")
+		for _, temperaturePath := range globFiles(filepath.Join(hwmonPath, "temp*_input")) {
+			value, ok := readLinuxSensorValue(temperaturePath, 1000)
+			if !ok || value <= 0 || value > 150 {
+				continue
+			}
+			hwmonSensorCount++
+			if isCPU {
+				cpuTemperatures = append(cpuTemperatures, value)
+			}
+		}
+		for _, fanPath := range globFiles(filepath.Join(hwmonPath, "fan*_input")) {
+			value, ok := readLinuxSensorValue(fanPath, 1)
+			if !ok || value < 0 {
+				continue
+			}
+			hwmonSensorCount++
+			baseName := strings.TrimSuffix(filepath.Base(fanPath), "_input")
+			label := readTrimmedFile(filepath.Join(hwmonPath, baseName+"_label"))
+			if label == "" {
+				label = baseName
+			}
+			fan := fanSensorStats{
+				ID:        "fan-linux-" + sanitizeKey(hwmonName+"-"+baseName),
+				Label:     label,
+				Interface: hwmonName,
+				RPM:       int(math.Round(value)),
+			}
+			pwmPath := filepath.Join(hwmonPath, strings.Replace(baseName, "fan", "pwm", 1))
+			if pwmValue := readTrimmedFile(pwmPath + "_enable"); pwmValue != "" {
+				switch pwmValue {
+				case "1":
+					fan.ControlMode = "手动"
+				case "2":
+					fan.ControlMode = "自动"
+				default:
+					fan.ChannelState = pwmValue
+				}
+			}
+			if fan.ChannelState == "" {
+				fan.ChannelState = "可用"
+			}
+			metrics.fans = append(metrics.fans, fan)
+		}
+	}
+
+	if len(cpuTemperatures) == 0 {
+		thermalPaths, _ := filepath.Glob("/sys/class/thermal/thermal_zone*/temp")
+		for _, thermalPath := range thermalPaths {
+			zonePath := filepath.Dir(thermalPath)
+			zoneType := strings.ToLower(readTrimmedFile(filepath.Join(zonePath, "type")))
+			if !strings.Contains(zoneType, "cpu") && !strings.Contains(zoneType, "x86_pkg") && !strings.Contains(zoneType, "processor") {
+				continue
+			}
+			if value, ok := readLinuxSensorValue(thermalPath, 1000); ok && value > 0 && value <= 150 {
+				cpuTemperatures = append(cpuTemperatures, value)
+			}
+		}
+	}
+	metrics.cpuTemperatureC = averagePointer(cpuTemperatures)
+	if hwmonSensorCount > 0 || len(cpuTemperatures) > 0 {
+		metrics.sensorBackends = []sensorBackendStatus{{
+			ID:     "linux-hwmon-thermal",
+			Label:  "Linux hwmon / thermal",
+			OK:     true,
+			Detail: "已读取温度或风扇传感器",
+		}}
+	} else {
+		metrics.sensorBackends = []sensorBackendStatus{{
+			ID:     "linux-hwmon-thermal",
+			Label:  "Linux hwmon / thermal",
+			OK:     false,
+			Detail: "系统未暴露温度或风扇传感器节点",
+		}}
+	}
+	return metrics
+}
+
+func globFiles(pattern string) []string {
+	files, _ := filepath.Glob(pattern)
+	return files
+}
+
+func readLinuxSensorValue(path string, divisor float64) (float64, bool) {
+	if divisor <= 0 {
+		return 0, false
+	}
+	raw := readTrimmedFile(path)
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil || !isFiniteNonNegative(value) {
+		return 0, false
+	}
+	return value / divisor, true
 }
 
 func decodeHardwareSnapshots(raw []byte) ([]hardwareSensorSnapshot, error) {
@@ -1117,6 +1420,8 @@ type windowsHardwareMetadataPayload struct {
 	Disks []struct {
 		Name          string `json:"name"`
 		InterfaceType string `json:"interfaceType"`
+		Model         string `json:"model"`
+		Vendor        string `json:"vendor"`
 	} `json:"disks"`
 	GPUs []struct {
 		Name          string `json:"name"`
@@ -1129,6 +1434,7 @@ func collectWindowsHardwareMetadata() windowsHardwareMetadata {
 		GpuDrivers:     map[string]string{},
 		Networks:       map[string]networkHardwareMetadata{},
 		DiskInterfaces: map[string]string{},
+		DiskMetadata:   map[string]diskHardwareMetadata{},
 	}
 	if runtime.GOOS != "windows" {
 		return result
@@ -1136,7 +1442,7 @@ func collectWindowsHardwareMetadata() windowsHardwareMetadata {
 
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
-	commandText := `$ErrorActionPreference='Stop'; $memory=@(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue | ForEach-Object { $form=switch([int]$_.FormFactor){8{'DIMM'}12{'SODIMM'}default{[string]$_.FormFactor}}; [pscustomobject]@{speedMHz=[double]$_.Speed; configuredClockMHz=[double]$_.ConfiguredClockSpeed; formFactor=$form} }); $adapters=@(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; linkSpeed=[string]$_.LinkSpeed; connectionType=[string]$_.MediaType} }); $disks=@(Get-Partition -ErrorAction SilentlyContinue | ForEach-Object { $disk=Get-Disk -Number $_.DiskNumber -ErrorAction SilentlyContinue; $key=if ($_.DriveLetter) { [string]$_.DriveLetter + ':' } elseif ($_.AccessPaths) { [string]$_.AccessPaths[0] } else { '' }; if ($key -and $disk) { [pscustomobject]@{name=$key; interfaceType=(([string]$disk.BusType) + ' ' + ([string]$disk.MediaType)).Trim()} } }); $gpus=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; driverVersion=[string]$_.DriverVersion} }); [pscustomobject]@{memory=@($memory); adapters=@($adapters); disks=@($disks); gpus=@($gpus)} | ConvertTo-Json -Depth 4 -Compress`
+	commandText := `$ErrorActionPreference='Stop'; $memory=@(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue | ForEach-Object { $form=switch([int]$_.FormFactor){8{'DIMM'}12{'SODIMM'}default{[string]$_.FormFactor}}; [pscustomobject]@{speedMHz=[double]$_.Speed; configuredClockMHz=[double]$_.ConfiguredClockSpeed; formFactor=$form} }); $adapters=@(Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; linkSpeed=[string]$_.LinkSpeed; connectionType=[string]$_.MediaType} }); $disks=@(Get-Partition -ErrorAction SilentlyContinue | ForEach-Object { $disk=Get-Disk -Number $_.DiskNumber -ErrorAction SilentlyContinue; $key=if ($_.DriveLetter) { [string]$_.DriveLetter + ':' } elseif ($_.AccessPaths) { [string]$_.AccessPaths[0] } else { '' }; if ($key -and $disk) { [pscustomobject]@{name=$key; interfaceType=(([string]$disk.BusType) + ' ' + ([string]$disk.MediaType)).Trim(); model=[string]$disk.FriendlyName; vendor=[string]$disk.Manufacturer} } }); $gpus=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; driverVersion=[string]$_.DriverVersion} }); [pscustomobject]@{memory=@($memory); adapters=@($adapters); disks=@($disks); gpus=@($gpus)} | ConvertTo-Json -Depth 4 -Compress`
 	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
 	if err != nil {
 		return result
@@ -1186,6 +1492,13 @@ func collectWindowsHardwareMetadata() windowsHardwareMetadata {
 	for _, disk := range payload.Disks {
 		if disk.Name != "" && disk.InterfaceType != "" {
 			result.DiskInterfaces[disk.Name] = disk.InterfaceType
+		}
+		if disk.Name != "" {
+			result.DiskMetadata[disk.Name] = diskHardwareMetadata{
+				Model:         disk.Model,
+				Vendor:        disk.Vendor,
+				InterfaceType: disk.InterfaceType,
+			}
 		}
 	}
 	for _, gpu := range payload.GPUs {
@@ -1246,15 +1559,19 @@ func parseLinkSpeedMbps(raw string) *float64 {
 
 // NVIDIA's driver reports the actual graphics clock, including boost states, through nvidia-smi.
 func collectNvidiaGPUs() []gpuDeviceStats {
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS != "windows" && runtime.GOOS != "linux" {
 		return []gpuDeviceStats{}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
+	command := "nvidia-smi"
+	if runtime.GOOS == "windows" {
+		command = "nvidia-smi.exe"
+	}
 	output, err := exec.CommandContext(
 		ctx,
-		"nvidia-smi.exe",
+		command,
 		"--query-gpu=name,utilization.gpu,clocks.current.graphics,temperature.gpu,memory.used,memory.total",
 		"--format=csv,noheader,nounits",
 	).Output()
@@ -1295,12 +1612,418 @@ func collectNvidiaGPUs() []gpuDeviceStats {
 	return result
 }
 
+type windowsGPUAdapterRecord struct {
+	Name          string `json:"name"`
+	DriverVersion string `json:"driverVersion"`
+	AdapterRAM    uint64 `json:"adapterRAM"`
+}
+
+type windowsGPUAdapterMemoryRecord struct {
+	Name           string `json:"name"`
+	DedicatedUsage uint64 `json:"dedicatedUsage"`
+	SharedUsage    uint64 `json:"sharedUsage"`
+	TotalCommitted uint64 `json:"totalCommitted"`
+}
+
+type windowsGPUEngineRecord struct {
+	Name               string  `json:"name"`
+	UtilizationPercent float64 `json:"utilizationPercent"`
+}
+
+type windowsGPUPerformancePayload struct {
+	Adapters json.RawMessage `json:"adapters"`
+	Memory   json.RawMessage `json:"memory"`
+	Engines  json.RawMessage `json:"engines"`
+}
+
+type windowsGPUPerformanceAggregate struct {
+	Key            string
+	Utilization    float64
+	Encode         float64
+	Decode         float64
+	MemoryUsed     uint64
+	MemoryTotal    uint64
+	TotalCommitted uint64
+}
+
+// Windows exposes GPU utilization and adapter memory through the standard
+// GPUPerformanceCounters provider even when LibreHardwareMonitor or
+// nvidia-smi is unavailable. The counter names contain a LUID, so the
+// fallback keeps that identifier unless it can safely associate it with a
+// non-virtual Win32_VideoController adapter.
+func collectWindowsGPUPerformance() []gpuDeviceStats {
+	if runtime.GOOS != "windows" {
+		return []gpuDeviceStats{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
+	defer cancel()
+	commandText := `$ErrorActionPreference='Stop'; $adapters=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; driverVersion=[string]$_.DriverVersion; adapterRAM=[UInt64]([Math]::Max(0,[Int64]$_.AdapterRAM))} }); $memory=@(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; dedicatedUsage=[UInt64]$_.DedicatedUsage; sharedUsage=[UInt64]$_.SharedUsage; totalCommitted=[UInt64]$_.TotalCommitted} }); $engines=@(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; utilizationPercent=[double]$_.UtilizationPercentage} }); ConvertTo-Json -InputObject ([pscustomobject]@{adapters=[array]$adapters; memory=[array]$memory; engines=[array]$engines}) -Depth 5 -Compress`
+	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
+	if err != nil {
+		return []gpuDeviceStats{}
+	}
+	var payload windowsGPUPerformancePayload
+	if err := json.Unmarshal(bytes.TrimSpace(output), &payload); err != nil {
+		return []gpuDeviceStats{}
+	}
+	adapters, err := decodeJSONList[windowsGPUAdapterRecord](payload.Adapters)
+	if err != nil {
+		return []gpuDeviceStats{}
+	}
+	memory, err := decodeJSONList[windowsGPUAdapterMemoryRecord](payload.Memory)
+	if err != nil {
+		return []gpuDeviceStats{}
+	}
+	engines, err := decodeJSONList[windowsGPUEngineRecord](payload.Engines)
+	if err != nil {
+		return []gpuDeviceStats{}
+	}
+
+	aggregates := map[string]*windowsGPUPerformanceAggregate{}
+	for _, item := range memory {
+		key := gpuCounterLUID(item.Name)
+		if key == "" {
+			continue
+		}
+		aggregate := getGPUPerformanceAggregate(aggregates, key)
+		aggregate.MemoryUsed += item.DedicatedUsage + item.SharedUsage
+		aggregate.TotalCommitted = maxUint64(aggregate.TotalCommitted, item.TotalCommitted)
+	}
+	for _, item := range engines {
+		key := gpuCounterLUID(item.Name)
+		if key == "" || !isFiniteNonNegative(item.UtilizationPercent) {
+			continue
+		}
+		aggregate := getGPUPerformanceAggregate(aggregates, key)
+		engineType := strings.ToLower(item.Name)
+		value := math.Min(100, math.Max(0, item.UtilizationPercent))
+		switch {
+		case strings.Contains(engineType, "videoencode") || strings.Contains(engineType, "encode"):
+			aggregate.Encode = math.Max(aggregate.Encode, value)
+		case strings.Contains(engineType, "videodecode") || strings.Contains(engineType, "decode"):
+			aggregate.Decode = math.Max(aggregate.Decode, value)
+		default:
+			aggregate.Utilization = math.Max(aggregate.Utilization, value)
+		}
+	}
+
+	physicalAdapters := make([]windowsGPUAdapterRecord, 0, len(adapters))
+	for _, adapter := range adapters {
+		if adapter.Name != "" && adapter.AdapterRAM > 0 {
+			physicalAdapters = append(physicalAdapters, adapter)
+		}
+	}
+	keys := make([]string, 0, len(aggregates))
+	for key := range aggregates {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		left := aggregates[keys[i]]
+		right := aggregates[keys[j]]
+		leftScore := left.Utilization + float64(left.MemoryUsed)/float64(maxUint64(1, left.TotalCommitted))
+		rightScore := right.Utilization + float64(right.MemoryUsed)/float64(maxUint64(1, right.TotalCommitted))
+		if leftScore == rightScore {
+			return keys[i] < keys[j]
+		}
+		return leftScore > rightScore
+	})
+	if len(physicalAdapters) > 0 && len(keys) > len(physicalAdapters) {
+		// Virtual display adapters can create their own LUID with only a few
+		// bytes of shared memory. Do not expose those as extra physical GPUs
+		// when WMI has already identified the real adapter count.
+		keys = keys[:len(physicalAdapters)]
+	}
+
+	result := make([]gpuDeviceStats, 0, len(keys))
+	for index, key := range keys {
+		aggregate := aggregates[key]
+		name := "Windows GPU " + key
+		driver := ""
+		if index < len(physicalAdapters) {
+			name = physicalAdapters[index].Name
+			driver = physicalAdapters[index].DriverVersion
+		}
+		gpu := gpuDeviceStats{
+			ID:                 "gpu-windows-" + sanitizeKey(key),
+			Name:               name,
+			UtilizationPercent: round(aggregate.Utilization),
+			MemoryUsedBytes:    aggregate.MemoryUsed,
+			DriverVersion:      driver,
+		}
+		if aggregate.Encode > 0 {
+			value := round(aggregate.Encode)
+			gpu.EncodeUtilizationPercent = &value
+		}
+		if aggregate.Decode > 0 {
+			value := round(aggregate.Decode)
+			gpu.DecodeUtilizationPercent = &value
+		}
+		if index < len(physicalAdapters) && physicalAdapters[index].AdapterRAM > 0 && aggregate.MemoryUsed <= physicalAdapters[index].AdapterRAM {
+			gpu.MemoryTotalBytes = physicalAdapters[index].AdapterRAM
+		}
+		result = append(result, gpu)
+	}
+	return result
+}
+
+func decodeJSONList[T any](raw json.RawMessage) ([]T, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return []T{}, nil
+	}
+	var list []T
+	if trimmed[0] == '[' {
+		if err := json.Unmarshal(trimmed, &list); err != nil {
+			return nil, err
+		}
+		return list, nil
+	}
+	var single T
+	if err := json.Unmarshal(trimmed, &single); err != nil {
+		return nil, err
+	}
+	return []T{single}, nil
+}
+
+func gpuCounterLUID(name string) string {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	start := strings.Index(lower, "luid_")
+	if start < 0 {
+		return ""
+	}
+	end := strings.Index(lower[start:], "_phys_")
+	if end < 0 {
+		return lower[start:]
+	}
+	return lower[start : start+end]
+}
+
+func getGPUPerformanceAggregate(aggregates map[string]*windowsGPUPerformanceAggregate, key string) *windowsGPUPerformanceAggregate {
+	if value, ok := aggregates[key]; ok {
+		return value
+	}
+	value := &windowsGPUPerformanceAggregate{Key: key}
+	aggregates[key] = value
+	return value
+}
+
+func maxUint64(left, right uint64) uint64 {
+	if left > right {
+		return left
+	}
+	return right
+}
+
+func isFiniteNonNegative(value float64) bool {
+	return value >= 0 && !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+
 func parsePositiveFloat(raw string) (float64, bool) {
 	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	if err != nil || !isFinitePositive(value) {
 		return 0, false
 	}
 	return value, true
+}
+
+func collectDiskHardwareMetadata(deviceName string) diskHardwareMetadata {
+	if runtime.GOOS != "linux" {
+		return diskHardwareMetadata{}
+	}
+
+	blockName := linuxBlockDeviceName(deviceName)
+	if blockName == "" {
+		return diskHardwareMetadata{}
+	}
+	basePath := filepath.Join("/sys/class/block", blockName)
+	model := readTrimmedFile(filepath.Join(basePath, "device", "model"))
+	vendor := readTrimmedFile(filepath.Join(basePath, "device", "vendor"))
+	interfaceType := linuxDiskInterfaceType(basePath, model)
+	return diskHardwareMetadata{
+		Model:         model,
+		Vendor:        vendor,
+		InterfaceType: interfaceType,
+	}
+}
+
+// smartctl is an optional Linux fallback for disks that do not expose a
+// temperature through hwmon. The command is intentionally limited to the
+// physical block devices referenced by mounted partitions and uses standby
+// mode so a passive monitoring cycle does not wake a sleeping disk.
+func collectLinuxDiskTemperatures(partitions []disk.PartitionStat) map[string]*float64 {
+	result := map[string]*float64{}
+	if runtime.GOOS != "linux" {
+		return result
+	}
+	smartctlPath, err := exec.LookPath("smartctl")
+	if err != nil {
+		return result
+	}
+
+	devices := []string{}
+	seen := map[string]struct{}{}
+	for _, partition := range partitions {
+		device := linuxBlockDeviceName(partition.Device)
+		if device == "" || !isSmartctlBlockDevice(device) {
+			continue
+		}
+		if _, exists := seen[device]; exists {
+			continue
+		}
+		seen[device] = struct{}{}
+		devices = append(devices, device)
+	}
+	if len(devices) == 0 {
+		return result
+	}
+
+	deadline := time.Now().Add(hardwareSensorsTimeout)
+	for _, device := range devices {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			break
+		}
+		if remaining > 3*time.Second {
+			remaining = 3 * time.Second
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), remaining)
+		output, commandErr := exec.CommandContext(ctx, smartctlPath, "-A", "-n", "standby", "/dev/"+device).CombinedOutput()
+		cancel()
+		if commandErr != nil && len(output) == 0 {
+			continue
+		}
+		if temperature := parseSmartctlTemperature(output); temperature != nil {
+			result[device] = temperature
+		}
+	}
+	return result
+}
+
+func isSmartctlBlockDevice(device string) bool {
+	lower := strings.ToLower(device)
+	for _, prefix := range []string{"sd", "hd", "vd", "xvd", "nvme", "mmcblk"} {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func parseSmartctlTemperature(output []byte) *float64 {
+	for _, rawLine := range strings.Split(string(output), "\n") {
+		line := strings.TrimSpace(rawLine)
+		lower := strings.ToLower(line)
+		if !strings.Contains(lower, "temperature") {
+			continue
+		}
+
+		valueFields := line
+		if colon := strings.IndexAny(line, ":："); colon >= 0 {
+			valueFields = line[colon+1:]
+		}
+		fields := strings.Fields(valueFields)
+		values := []float64{}
+		for _, field := range fields {
+			clean := strings.Trim(field, "()[],;")
+			if strings.Contains(clean, "/") {
+				continue
+			}
+			value, err := strconv.ParseFloat(clean, 64)
+			if err == nil && value > 0 && value <= 150 {
+				values = append(values, value)
+			}
+		}
+		if len(values) == 0 {
+			continue
+		}
+		if strings.Contains(line, ":") || strings.Contains(line, "：") {
+			value := values[0]
+			return &value
+		}
+		value := values[len(values)-1]
+		return &value
+	}
+	return nil
+}
+
+func linuxBlockDeviceName(deviceName string) string {
+	name := strings.TrimSpace(deviceName)
+	if name == "" {
+		return ""
+	}
+	name = filepath.Base(strings.TrimPrefix(name, "/dev/"))
+	for _, prefix := range []string{"nvme", "mmcblk"} {
+		if strings.HasPrefix(name, prefix) {
+			if partitionIndex := strings.LastIndex(name, "p"); partitionIndex > len(prefix) && allDigits(name[partitionIndex+1:]) {
+				return name[:partitionIndex]
+			}
+			return name
+		}
+	}
+	for _, prefix := range []string{"sd", "hd", "vd", "xvd"} {
+		if strings.HasPrefix(name, prefix) {
+			return trimTrailingDigits(name)
+		}
+	}
+	return name
+}
+
+func linuxDiskInterfaceType(basePath, model string) string {
+	if strings.Contains(strings.ToLower(model), "virtual") {
+		return "Virtual"
+	}
+	subsystem, err := filepath.EvalSymlinks(filepath.Join(basePath, "device", "subsystem"))
+	if err != nil {
+		subsystem, _ = filepath.EvalSymlinks(filepath.Join(basePath, "device"))
+	}
+	lower := strings.ToLower(subsystem)
+	switch {
+	case strings.Contains(lower, "nvme"):
+		return "NVMe"
+	case strings.Contains(lower, "ata"):
+		return "SATA"
+	case strings.Contains(lower, "virtio"):
+		return "VirtIO"
+	case strings.Contains(lower, "usb"):
+		return "USB"
+	case strings.Contains(lower, "scsi"):
+		return "SCSI"
+	case strings.Contains(lower, "mmc"):
+		return "MMC"
+	}
+	return ""
+}
+
+func readTrimmedFile(path string) string {
+	value, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(value))
+}
+
+func allDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func trimTrailingDigits(value string) string {
+	index := len(value)
+	for index > 0 && value[index-1] >= '0' && value[index-1] <= '9' {
+		index--
+	}
+	if index == 0 {
+		return value
+	}
+	return value[:index]
 }
 
 func isFinitePositive(value float64) bool {
@@ -1326,6 +2049,7 @@ func collectDisks() ([]diskDeviceStats, storageUsage, error) {
 
 	disks := make([]diskDeviceStats, 0, len(partitions))
 	seen := map[string]struct{}{}
+	diskTemperatures := collectLinuxDiskTemperatures(partitions)
 	var totalBytes uint64
 	var usedBytes uint64
 
@@ -1354,14 +2078,22 @@ func collectDisks() ([]diskDeviceStats, storageUsage, error) {
 		if deviceName == "" {
 			deviceName = mountPoint
 		}
+		metadata := collectDiskHardwareMetadata(deviceName)
+		if metadata.TemperatureC == nil {
+			metadata.TemperatureC = diskTemperatures[linuxBlockDeviceName(deviceName)]
+		}
 		disks = append(disks, diskDeviceStats{
-			ID:         fmt.Sprintf("%s:%s", deviceName, mountPoint),
-			Name:       deviceName,
-			MountPoint: mountPoint,
-			FileSystem: partition.Fstype,
-			SourceKey:  deviceName,
-			TotalBytes: usage.Total,
-			UsedBytes:  usage.Used,
+			ID:            fmt.Sprintf("%s:%s", deviceName, mountPoint),
+			Name:          deviceName,
+			MountPoint:    mountPoint,
+			FileSystem:    partition.Fstype,
+			Model:         metadata.Model,
+			Vendor:        metadata.Vendor,
+			SourceKey:     deviceName,
+			TemperatureC:  metadata.TemperatureC,
+			InterfaceType: metadata.InterfaceType,
+			TotalBytes:    usage.Total,
+			UsedBytes:     usage.Used,
 		})
 		totalBytes += usage.Total
 		usedBytes += usage.Used
@@ -1438,19 +2170,23 @@ func collectNetworkInterfaces() ([]networkInterfaceStats, error) {
 				ipv4 = append(ipv4, ip)
 			}
 		}
-		if len(ipv4) == 0 && len(ipv6) == 0 {
+		counter := counters[iface.Name]
+		if len(ipv4) == 0 && len(ipv6) == 0 && counter.BytesRecv == 0 && counter.BytesSent == 0 && !hasInterfaceFlag(iface.Flags, "up") {
 			continue
 		}
 
-		counter := counters[iface.Name]
+		metadata := collectNetworkHardwareMetadata(iface.Name)
 		results = append(results, networkInterfaceStats{
-			ID:           fmt.Sprintf("nic-%s", sanitizeKey(iface.Name)),
-			Name:         iface.Name,
-			MacAddress:   iface.HardwareAddr,
-			IPv4:         ipv4,
-			IPv6:         ipv6,
-			TotalRxBytes: counter.BytesRecv,
-			TotalTxBytes: counter.BytesSent,
+			ID:                    fmt.Sprintf("nic-%s", sanitizeKey(iface.Name)),
+			Name:                  iface.Name,
+			MacAddress:            iface.HardwareAddr,
+			IPv4:                  ipv4,
+			IPv6:                  ipv6,
+			TotalRxBytes:          counter.BytesRecv,
+			TotalTxBytes:          counter.BytesSent,
+			LinkSpeedMbps:         metadata.LinkSpeedMbps,
+			ConnectionType:        metadata.ConnectionType,
+			SignalStrengthPercent: metadata.SignalStrengthPercent,
 		})
 	}
 
@@ -1459,6 +2195,86 @@ func collectNetworkInterfaces() ([]networkInterfaceStats, error) {
 	})
 
 	return results, nil
+}
+
+func hasInterfaceFlag(flags []string, expected string) bool {
+	for _, flag := range flags {
+		if strings.EqualFold(flag, expected) {
+			return true
+		}
+	}
+	return false
+}
+
+func collectNetworkHardwareMetadata(name string) networkHardwareMetadata {
+	if runtime.GOOS != "linux" {
+		return networkHardwareMetadata{}
+	}
+
+	metadata := networkHardwareMetadata{
+		ConnectionType: linuxNetworkConnectionType(name),
+	}
+	if rawSpeed := readTrimmedFile(filepath.Join("/sys/class/net", name, "speed")); rawSpeed != "" {
+		if speed, err := strconv.ParseFloat(rawSpeed, 64); err == nil && speed > 0 {
+			metadata.LinkSpeedMbps = &speed
+		}
+	}
+	metadata.SignalStrengthPercent = readLinuxWifiSignal(name)
+	return metadata
+}
+
+func linuxNetworkConnectionType(name string) string {
+	if name == "lo" {
+		return "Loopback"
+	}
+	basePath := filepath.Join("/sys/class/net", name)
+	if _, err := os.Stat(filepath.Join(basePath, "wireless")); err == nil {
+		return "Wi-Fi"
+	}
+	link, _ := filepath.EvalSymlinks(basePath)
+	lower := strings.ToLower(link)
+	switch {
+	case strings.Contains(lower, "/bridge/") || strings.HasPrefix(strings.ToLower(name), "br-") || name == "docker0":
+		return "Bridge"
+	case strings.HasPrefix(strings.ToLower(name), "veth"):
+		return "Virtual"
+	case strings.Contains(lower, "/virtual/"):
+		return "Virtual"
+	}
+	if rawType := readTrimmedFile(filepath.Join(basePath, "type")); rawType == "1" {
+		return "Ethernet"
+	}
+	return ""
+}
+
+func readLinuxWifiSignal(name string) *float64 {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	contents, err := os.ReadFile("/proc/net/wireless")
+	if err != nil {
+		return nil
+	}
+	for _, line := range strings.Split(string(contents), "\n") {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) != name {
+			continue
+		}
+		fields := strings.Fields(parts[1])
+		if len(fields) == 0 {
+			return nil
+		}
+		quality, err := strconv.ParseFloat(strings.TrimSuffix(fields[0], "."), 64)
+		if err != nil || quality < 0 {
+			return nil
+		}
+		if quality <= 70 {
+			quality = quality / 70 * 100
+		}
+		quality = math.Min(100, math.Max(0, quality))
+		return &quality
+	}
+	return nil
 }
 
 func snapshotIO(diskCounters map[string]disk.IOCountersStat, netCounters []gnet.IOCountersStat, now time.Time) *ioSnapshot {
@@ -1497,6 +2313,47 @@ func snapshotIO(diskCounters map[string]disk.IOCountersStat, netCounters []gnet.
 		netByKey:  netByKey,
 		at:        now,
 	}
+}
+
+func lookupDiskRate(instances map[string]rateStats, names ...string) (rateStats, bool) {
+	if len(instances) == 0 {
+		return rateStats{}, false
+	}
+	seen := map[string]struct{}{}
+	for _, name := range names {
+		for _, candidate := range diskRateCandidates(name) {
+			if candidate == "" {
+				continue
+			}
+			if _, exists := seen[candidate]; exists {
+				continue
+			}
+			seen[candidate] = struct{}{}
+			if value, ok := instances[candidate]; ok {
+				return value, true
+			}
+		}
+	}
+	return rateStats{}, false
+}
+
+func diskRateCandidates(name string) []string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return nil
+	}
+	base := filepath.Base(strings.TrimSuffix(trimmed, string(filepath.Separator)))
+	candidates := []string{trimmed, base}
+	if strings.HasPrefix(trimmed, "/dev/") {
+		candidates = append(candidates, strings.TrimPrefix(trimmed, "/dev/"))
+	}
+	if runtime.GOOS == "linux" {
+		candidates = append(candidates, linuxBlockDeviceName(trimmed))
+	}
+	if strings.HasSuffix(trimmed, ":") {
+		candidates = append(candidates, strings.TrimSuffix(trimmed, ":"))
+	}
+	return uniqueStrings(candidates)
 }
 
 func computeRates(previous, current *ioSnapshot, fallbackSeconds int) (rateStats, networkTrafficStats) {
@@ -1557,13 +2414,13 @@ func computeRates(previous, current *ioSnapshot, fallbackSeconds int) (rateStats
 			ReadBytesPerSec:  round(float64(max64(0, int64(current.read)-int64(previous.read))) / seconds),
 			WriteBytesPerSec: round(float64(max64(0, int64(current.write)-int64(previous.write))) / seconds),
 			Instances:        diskInstances,
-	}, networkTrafficStats{
-		RxBytesPerSec: round(float64(max64(0, int64(current.rx)-int64(previous.rx))) / seconds),
-		TxBytesPerSec: round(float64(max64(0, int64(current.tx)-int64(previous.tx))) / seconds),
-		TotalRxBytes:  current.rx,
-		TotalTxBytes:  current.tx,
-		Instances:     networkInstances,
-	}
+		}, networkTrafficStats{
+			RxBytesPerSec: round(float64(max64(0, int64(current.rx)-int64(previous.rx))) / seconds),
+			TxBytesPerSec: round(float64(max64(0, int64(current.tx)-int64(previous.tx))) / seconds),
+			TotalRxBytes:  current.rx,
+			TotalTxBytes:  current.tx,
+			Instances:     networkInstances,
+		}
 }
 
 func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
@@ -1651,12 +2508,13 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 				payload.Disks[index].UsedBytes = 0
 			}
 
-			rate := payload.DiskRate.Instances[payload.Disks[index].ID]
-			if payload.Disks[index].SourceKey != "" {
-				if sourceRate, ok := payload.DiskRate.Instances[payload.Disks[index].SourceKey]; ok {
-					rate = sourceRate
-				}
-			}
+			rate, _ := lookupDiskRate(
+				payload.DiskRate.Instances,
+				payload.Disks[index].ID,
+				payload.Disks[index].SourceKey,
+				payload.Disks[index].Name,
+				payload.Disks[index].MountPoint,
+			)
 
 			if metricEnabled(enabledMetricSet, instanceEnabled, hasOverride, "diskRead") {
 				diskReadEnabled = true

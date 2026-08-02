@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -69,5 +70,57 @@ func TestMapHardwareSensorsIntelGPU(t *testing.T) {
 	}
 	if gpu.MemoryUsedBytes == 0 || gpu.MemoryTotalBytes == 0 {
 		t.Fatalf("expected shared memory values, got used=%d total=%d", gpu.MemoryUsedBytes, gpu.MemoryTotalBytes)
+	}
+}
+
+func TestDiskRateLookupNormalizesLinuxPartitionNames(t *testing.T) {
+	rate := rateStats{ReadBytesPerSec: 123, WriteBytesPerSec: 456}
+	got, ok := lookupDiskRate(map[string]rateStats{"sda": rate}, "/dev/sda2", "/")
+	if !ok || got.ReadBytesPerSec != rate.ReadBytesPerSec || got.WriteBytesPerSec != rate.WriteBytesPerSec {
+		t.Fatalf("expected /dev/sda2 to resolve to sda, got %#v, ok=%v", got, ok)
+	}
+}
+
+func TestLinuxBlockDeviceName(t *testing.T) {
+	tests := map[string]string{
+		"/dev/sda2":      "sda",
+		"/dev/nvme0n1p2": "nvme0n1",
+		"/dev/mmcblk0p1": "mmcblk0",
+		"/dev/dm-0":      "dm-0",
+	}
+	for input, expected := range tests {
+		if got := linuxBlockDeviceName(input); got != expected {
+			t.Fatalf("linuxBlockDeviceName(%q) = %q, want %q", input, got, expected)
+		}
+	}
+}
+
+func TestGPUCounterLUID(t *testing.T) {
+	input := "pid_1664_luid_0x00000000_0x0000EE48_phys_0_eng_0_engtype_3D"
+	if got := gpuCounterLUID(input); got != "luid_0x00000000_0x0000ee48" {
+		t.Fatalf("unexpected LUID: %q", got)
+	}
+}
+
+func TestDecodeJSONListAcceptsObjectOrArray(t *testing.T) {
+	for _, raw := range []string{`{"name":"one"}`, `[{"name":"one"}]`} {
+		items, err := decodeJSONList[struct {
+			Name string `json:"name"`
+		}](json.RawMessage(raw))
+		if err != nil || len(items) != 1 || items[0].Name != "one" {
+			t.Fatalf("decodeJSONList(%s) = %#v, err=%v", raw, items, err)
+		}
+	}
+}
+
+func TestParseSmartctlTemperature(t *testing.T) {
+	ata := []byte("194 Temperature_Celsius     0x0022   117   117   000    Old_age   Always       -       33")
+	if value := parseSmartctlTemperature(ata); value == nil || *value != 33 {
+		t.Fatalf("unexpected ATA temperature: %v", value)
+	}
+
+	nvme := []byte("Temperature:                        41 Celsius")
+	if value := parseSmartctlTemperature(nvme); value == nil || *value != 41 {
+		t.Fatalf("unexpected NVMe temperature: %v", value)
 	}
 }
