@@ -23,7 +23,7 @@
         <controls:NavigationView x:Name="AppNavigation" Grid.Row="1"
                                   Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
                                   IsPaneOpen="True"
-                                  IsPaneToggleButtonVisible="True"
+                                  IsPaneToggleButtonVisible="False"
                                   CompactPaneLength="56"
                                   OpenPaneLength="260"
                                   CompactModeThresholdWidth="0"
@@ -35,11 +35,6 @@
                                    SelectionChanged="NavigationView_SelectionChanged"
                                    >
             <controls:NavigationView.MenuItems>
-                <controls:NavigationViewItem Content="集群总览" Tag="overview" IsSelected="True">
-                    <controls:NavigationViewItem.Icon><SymbolIcon Symbol="View" /></controls:NavigationViewItem.Icon>
-                </controls:NavigationViewItem>
-                <controls:NavigationViewItemSeparator />
-                <controls:NavigationViewItemHeader Content="集群设备" />
             </controls:NavigationView.MenuItems>
 
             <controls:NavigationView.FooterMenuItems>
@@ -54,9 +49,9 @@
                     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                         <StackPanel Spacing="20" HorizontalAlignment="Stretch">
                             <StackPanel Spacing="4">
-                                <TextBlock Text="集群总览" Style="{StaticResource TitleTextBlockStyle}" />
+                                <TextBlock Text="中枢未连接" Style="{StaticResource TitleTextBlockStyle}" />
                                 <TextBlock Text="{Binding ReleaseVersion}" Style="{StaticResource CaptionTextBlockStyle}" />
-                                <TextBlock Text="全景展示受控集群设备的健康状态、硬件利用率与网络连接指标。" Style="{StaticResource BodyTextBlockStyle}" />
+                                <TextBlock Text="完成中枢配置后，这里将打开中枢网页并显示设备状态。" Style="{StaticResource BodyTextBlockStyle}" />
                             </StackPanel>
 
                             <Grid x:Name="OverviewUnavailableState" Visibility="Collapsed" MinHeight="360" HorizontalAlignment="Stretch">
@@ -64,7 +59,7 @@
                                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
                                         <FontIcon Glyph="&#xE711;" FontSize="40" HorizontalAlignment="Center" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
                                         <StackPanel Spacing="6" HorizontalAlignment="Center">
-                                            <TextBlock Text="无法连接中枢系统" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
+                                            <TextBlock Text="中枢未连接" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
                                             <TextBlock Text="{Binding ViewerDataStatusText}" Style="{StaticResource BodyTextBlockStyle}" TextAlignment="Center" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12" Margin="0,8,0,0">
@@ -301,6 +296,7 @@
                             <StackPanel Spacing="4">
                                 <TextBlock Text="设置" Style="{StaticResource TitleTextBlockStyle}" />
                                 <TextBlock Text="管理本机数据采集、传感器控制与中枢通信服务配置。" Style="{StaticResource BodyTextBlockStyle}" />
+                                <Button Content="完成配置并打开中枢" Click="FinishSettings_OnClick" HorizontalAlignment="Left" Margin="0,8,0,0" Style="{StaticResource AccentButtonStyle}" />
                             </StackPanel>
 
                             <!-- 设置选项分栏导航 -->

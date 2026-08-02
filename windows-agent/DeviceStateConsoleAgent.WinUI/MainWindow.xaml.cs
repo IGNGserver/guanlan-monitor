@@ -48,7 +48,6 @@ public sealed partial class MainWindow : Window
         {
             AppNavigation.PaneDisplayMode = NavigationViewPaneDisplayMode.Left;
             AppNavigation.IsPaneOpen = true;
-            AppNavigation.SelectedItem = AppNavigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault();
         };
 
         RootLayout.ActualThemeChanged += (_, _) => ApplyTitleBarTheme();
@@ -173,21 +172,11 @@ public sealed partial class MainWindow : Window
         var tag = selectedItem.Tag as string ?? "";
 
         OverviewPage.Visibility = Visibility.Collapsed;
-        TaskManagerPage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Collapsed;
 
-        if (tag == "overview")
-        {
-            OverviewPage.Visibility = Visibility.Visible;
-            _ = OpenHubAsync();
-        }
-        else if (tag == "settings")
+        if (tag == "settings")
         {
             SettingsPage.Visibility = Visibility.Visible;
-        }
-        else if (tag.StartsWith("device_", StringComparison.Ordinal))
-        {
-            AppNavigation.SelectedItem = AppNavigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault();
         }
     }
 
@@ -377,6 +366,14 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private void FinishSettings_OnClick(object sender, RoutedEventArgs e)
+    {
+        AppNavigation.SelectedItem = null;
+        SettingsPage.Visibility = Visibility.Collapsed;
+        OverviewPage.Visibility = Visibility.Visible;
+        _ = OpenHubAsync();
+    }
+
     private void ViewerDeviceDetailsButton_OnClick(object sender, RoutedEventArgs e)
     {
         AppNavigation.SelectedItem = AppNavigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault();
@@ -432,14 +429,21 @@ public sealed partial class MainWindow : Window
 
     private async void HubWebView_NavigationCompleted(WebView2 sender, CoreWebView2NavigationCompletedEventArgs args)
     {
-        if (!args.IsSuccess || _hubLoginStarted || string.IsNullOrWhiteSpace(_viewModel.Secret))
+        if (!args.IsSuccess)
+        {
+            _viewModel.ViewerDataStatusText = $"中枢网页加载失败（错误码 {args.WebErrorStatus}）。请检查地址和 WebView2 运行环境。";
+            UpdateMonitorAvailability();
+            return;
+        }
+
+        if (_hubLoginStarted || string.IsNullOrWhiteSpace(_viewModel.Secret))
         {
             return;
         }
 
         _hubLoginStarted = true;
         var accessKey = JsonSerializer.Serialize(_viewModel.Secret);
-        var script = $"fetch('/api/auth/login', {{method:'POST', credentials:'include', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{accessKey:{accessKey}}})}}).then(r=>{{if(!r.ok) throw new Error('login:'+r.status); location.reload();}}).catch(()=>{{}});";
+        var script = $"(async()=>{{const response=await fetch('/api/auth/login', {{method:'POST', credentials:'include', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{accessKey:{accessKey}}})}}); if(!response.ok) throw new Error('login:'+response.status); location.reload();}})().catch(()=>{{document.body.innerText='中枢登录失败，请返回设置检查访问密钥。';}});";
         try
         {
             await HubWebView.ExecuteScriptAsync(script);

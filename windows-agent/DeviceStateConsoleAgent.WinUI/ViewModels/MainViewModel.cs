@@ -120,7 +120,7 @@ public sealed class MainViewModel : ObservableObject
     private string _localMemoryPayloadText = "内存上报字段：暂无";
     private string _localDiskPayloadText = "磁盘上报字段：暂无";
     private string _localNetworkPayloadText = "网卡上报字段：暂无";
-    private string _viewerDataStatusText = "无法连接中枢系统。请先在服务器配置中保存地址和访问密钥。";
+    private string _viewerDataStatusText = "请先在设置中配置中枢地址和访问密钥。";
     private bool _viewerSessionReady;
     private string _selectedViewerDeviceId = "";
     private string _selectedViewerDeviceName = "选择设备";
@@ -1185,7 +1185,6 @@ public sealed class MainViewModel : ObservableObject
         {
             await StartBackendAsync();
         }
-        await LoginViewerAsync();
         await TryAttachFrontendOwnershipAsync();
         _pollingCts = new CancellationTokenSource();
         _ = Task.Run(() => PollStateLoopAsync(_pollingCts.Token));
@@ -1451,7 +1450,6 @@ public sealed class MainViewModel : ObservableObject
 
     private async Task PollStateLoopAsync(CancellationToken cancellationToken)
     {
-        var viewerPollCounter = 0;
         while (!cancellationToken.IsCancellationRequested)
         {
             try
@@ -1482,33 +1480,6 @@ public sealed class MainViewModel : ObservableObject
             catch
             {
                 _dispatcherQueue.TryEnqueue(() => RemoteDataStatusText = "中枢暂未返回本机最新数据。请先验证连接或启动监测。");
-            }
-
-            viewerPollCounter++;
-            if (viewerPollCounter % 5 == 0)
-            {
-                if (!ViewerSessionReady)
-                {
-                    QueueViewerLogin();
-                }
-                else
-                {
-                    try
-                    {
-                        var devices = await _apiClient.GetViewerDevicesAsync(ServerUrl, cancellationToken);
-                        _dispatcherQueue.TryEnqueue(() => ApplyViewerDevices(devices));
-                    }
-                    catch
-                    {
-                        _dispatcherQueue.TryEnqueue(() =>
-                        {
-                            ViewerSessionReady = false;
-                            ViewerDataStatusText = "无法连接中枢系统。请检查服务器配置和网络连接。";
-                        });
-                    }
-                }
-
-                QueueSelectedViewerDeviceRefresh();
             }
 
             try
@@ -1553,24 +1524,24 @@ public sealed class MainViewModel : ObservableObject
         if (!HasConnectionConfig || !ServerUrlPolicy.IsAllowed(ServerUrl))
         {
             ViewerSessionReady = false;
-            ViewerDataStatusText = "无法连接中枢系统。请先在服务器配置中保存有效地址和访问密钥。";
+            ViewerDataStatusText = "请先在设置中配置有效的中枢地址和访问密钥。";
             return;
         }
 
-        ViewerDataStatusText = "正在连接中枢系统…";
+        ViewerDataStatusText = "正在验证中枢配置…";
         try
         {
             await _apiClient.LoginViewerAsync(ServerUrl, Secret);
             var devices = await _apiClient.GetViewerDevicesAsync(ServerUrl);
             ViewerSessionReady = true;
             ApplyViewerDevices(devices);
-            ViewerDataStatusText = $"中枢已连接，共 {ViewerDevices.Count} 台设备。";
+            ViewerDataStatusText = "中枢配置验证成功，请返回主界面打开网页。";
         }
         catch
         {
             ViewerSessionReady = false;
             ViewerDevices.Clear();
-            ViewerDataStatusText = "无法连接中枢系统。请检查服务器地址、访问密钥和网络连接。";
+            ViewerDataStatusText = "中枢配置验证失败，请检查服务器地址、访问密钥和网络连接。";
         }
     }
 
@@ -1629,7 +1600,7 @@ public sealed class MainViewModel : ObservableObject
             _ = SelectViewerDeviceAsync(ViewerDevices[0].DeviceId);
         }
 
-        ViewerDataStatusText = $"已登录，共 {ViewerDevices.Count} 台设备。列表每 10 秒刷新。";
+        ViewerDataStatusText = "中枢网页尚未打开。完成设置后返回主界面即可打开。";
     }
 
     private void ApplyViewerFilter()
@@ -3274,7 +3245,7 @@ public sealed class MainViewModel : ObservableObject
     {
         return value?.Trim().ToLowerInvariant() switch
         {
-            "connected" => "已连接中枢",
+            "connected" => "配置有效",
             "starting" => "正在启动",
             "stopping" => "正在停止",
             "restart-wait" => "等待重启",
