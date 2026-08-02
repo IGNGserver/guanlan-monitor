@@ -4,8 +4,10 @@ using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.Web.WebView2.Core;
 using System.Runtime.InteropServices;
 using System.Collections.ObjectModel;
+using System.Text.Json;
 using WinRT.Interop;
 using Windows.UI;
 using Windows.Foundation;
@@ -21,12 +23,14 @@ public sealed partial class MainWindow : Window
     private bool _appWindowInitialized;
     private bool _initialized;
     private bool _isCompactLayout;
+    private bool _hubLoginStarted;
     private string _currentSelectedCategory = "cpu";
 
     public MainWindow(MainViewModel viewModel)
     {
         _viewModel = viewModel;
         InitializeComponent();
+        HubWebView.NavigationCompleted += HubWebView_NavigationCompleted;
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         ApplySystemBackdrop();
@@ -44,12 +48,7 @@ public sealed partial class MainWindow : Window
         {
             AppNavigation.PaneDisplayMode = NavigationViewPaneDisplayMode.Left;
             AppNavigation.IsPaneOpen = true;
-            SyncDeviceMenuItems();
             AppNavigation.SelectedItem = AppNavigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault();
-            if (TaskManagerCategoryListView is not null && TaskManagerCategoryListView.SelectedIndex < 0)
-            {
-                TaskManagerCategoryListView.SelectedIndex = 0;
-            }
         };
 
         RootLayout.ActualThemeChanged += (_, _) => ApplyTitleBarTheme();
@@ -63,29 +62,6 @@ public sealed partial class MainWindow : Window
                 SecretBox.Password = _viewModel.Secret;
             }
 
-            if (args.PropertyName == nameof(MainViewModel.ViewerSessionReady))
-            {
-                DispatcherQueue.TryEnqueue(UpdateMonitorAvailability);
-            }
-
-            if (args.PropertyName == nameof(MainViewModel.SelectedViewerDeviceId))
-            {
-                DispatcherQueue.TryEnqueue(() => SwitchCategory(_currentSelectedCategory));
-            }
-
-            if (args.PropertyName == nameof(MainViewModel.SelectedViewerInstanceId))
-            {
-                DispatcherQueue.TryEnqueue(() =>
-                {
-                    var selected = _viewModel.ViewerSidebarItems.FirstOrDefault(item =>
-                        item.InstanceId.Equals(_viewModel.SelectedViewerInstanceId, StringComparison.OrdinalIgnoreCase) &&
-                        item.Category.Equals(_viewModel.SelectedViewerCategory, StringComparison.OrdinalIgnoreCase));
-                    if (selected is not null && !ReferenceEquals(TaskManagerCategoryListView.SelectedItem, selected))
-                    {
-                        TaskManagerCategoryListView.SelectedItem = selected;
-                    }
-                });
-            }
         };
 
         SecretBox.Password = _viewModel.Secret;
@@ -126,7 +102,10 @@ public sealed partial class MainWindow : Window
 
     private void SyncDeviceMenuItems()
     {
-        var desiredDevices = _viewModel.FilteredViewerDevices.ToList();
+        // Device status is now provided by the hub web application inside WebView2.
+        // Keep this method as a no-op for compatibility with existing collection hooks.
+        return;
+        /*var desiredDevices = _viewModel.FilteredViewerDevices.ToList();
         var desiredTags = desiredDevices
             .Select(device => $"device_{device.DeviceId}")
             .ToHashSet(StringComparer.Ordinal);
@@ -141,7 +120,8 @@ public sealed partial class MainWindow : Window
             {
                 AppNavigation.MenuItems.Remove(item);
             }
-        }
+        }*/
+        /*
 
         var firstDynamicIndex = AppNavigation.MenuItems
             .Select((item, index) => new { item, index })
@@ -184,6 +164,7 @@ public sealed partial class MainWindow : Window
                 AppNavigation.MenuItems.Insert(Math.Min(targetIndex, AppNavigation.MenuItems.Count), item);
             }
         }
+        */
     }
 
     private void NavigationView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
@@ -198,6 +179,7 @@ public sealed partial class MainWindow : Window
         if (tag == "overview")
         {
             OverviewPage.Visibility = Visibility.Visible;
+            _ = OpenHubAsync();
         }
         else if (tag == "settings")
         {
@@ -205,10 +187,7 @@ public sealed partial class MainWindow : Window
         }
         else if (tag.StartsWith("device_", StringComparison.Ordinal))
         {
-            var deviceId = tag.Substring("device_".Length);
-            _viewModel.SelectedViewerDeviceId = deviceId;
-            TaskManagerPage.Visibility = Visibility.Visible;
-            SwitchCategory(_currentSelectedCategory);
+            AppNavigation.SelectedItem = AppNavigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault();
         }
     }
 
@@ -400,31 +379,75 @@ public sealed partial class MainWindow : Window
 
     private void ViewerDeviceDetailsButton_OnClick(object sender, RoutedEventArgs e)
     {
-        if (sender is Button { DataContext: ViewerDeviceItemViewModel device })
-        {
-            _viewModel.SelectedViewerDeviceId = device.DeviceId;
-
-            var tag = $"device_{device.DeviceId}";
-            var deviceItem = AppNavigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (i.Tag as string) == tag);
-            if (deviceItem is not null)
-            {
-                AppNavigation.SelectedItem = deviceItem;
-            }
-            else
-            {
-                TaskManagerPage.Visibility = Visibility.Visible;
-                OverviewPage.Visibility = Visibility.Collapsed;
-                SettingsPage.Visibility = Visibility.Collapsed;
-                SwitchCategory("cpu");
-            }
-        }
+        AppNavigation.SelectedItem = AppNavigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault();
     }
 
     private void UpdateMonitorAvailability()
     {
-        var isReady = _viewModel.ViewerSessionReady;
-        OverviewUnavailableState.Visibility = isReady ? Visibility.Collapsed : Visibility.Visible;
-        OverviewGrid.Visibility = isReady ? Visibility.Visible : Visibility.Collapsed;
+        OverviewUnavailableState.Visibility = Visibility.Visible;
+        OverviewGrid.Visibility = Visibility.Collapsed;
+        HubWebViewHost.Visibility = Visibility.Collapsed;
+    }
+
+    private async Task OpenHubAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_viewModel.ServerUrl) || string.IsNullOrWhiteSpace(_viewModel.Secret))
+        {
+            UpdateMonitorAvailability();
+            return;
+        }
+
+        if (!Uri.TryCreate(_viewModel.ServerUrl.TrimEnd('/'), UriKind.Absolute, out var serverUri) ||
+            (serverUri.Scheme != Uri.UriSchemeHttp && serverUri.Scheme != Uri.UriSchemeHttps))
+        {
+            _viewModel.ViewerDataStatusText = "中枢地址无效，请在设置中填写 http:// 或 https:// 地址。";
+            UpdateMonitorAvailability();
+            return;
+        }
+
+        try
+        {
+            // The hub page must remain usable even when the local collector backend
+            // is stopped; the debounced settings writer will persist the same values.
+            try
+            {
+                await _viewModel.SaveConfigurationAsync();
+            }
+            catch
+            {
+                // Opening the configured hub is independent from local telemetry.
+            }
+            await HubWebView.EnsureCoreWebView2Async();
+            HubWebViewHost.Visibility = Visibility.Visible;
+            OverviewUnavailableState.Visibility = Visibility.Collapsed;
+            _hubLoginStarted = false;
+            HubWebView.CoreWebView2.Navigate(serverUri.ToString());
+        }
+        catch (Exception ex)
+        {
+            _viewModel.ViewerDataStatusText = $"无法打开中枢网页：{ex.Message}";
+            UpdateMonitorAvailability();
+        }
+    }
+
+    private async void HubWebView_NavigationCompleted(WebView2 sender, CoreWebView2NavigationCompletedEventArgs args)
+    {
+        if (!args.IsSuccess || _hubLoginStarted || string.IsNullOrWhiteSpace(_viewModel.Secret))
+        {
+            return;
+        }
+
+        _hubLoginStarted = true;
+        var accessKey = JsonSerializer.Serialize(_viewModel.Secret);
+        var script = $"fetch('/api/auth/login', {{method:'POST', credentials:'include', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{accessKey:{accessKey}}})}}).then(r=>{{if(!r.ok) throw new Error('login:'+r.status); location.reload();}}).catch(()=>{{}});";
+        try
+        {
+            await HubWebView.ExecuteScriptAsync(script);
+        }
+        catch
+        {
+            _hubLoginStarted = false;
+        }
     }
 
     private void ReDrawCategoryCanvas(string categoryTag)

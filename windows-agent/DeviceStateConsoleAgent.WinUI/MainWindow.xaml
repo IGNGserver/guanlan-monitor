@@ -75,8 +75,14 @@
                                 </Border>
                             </Grid>
 
+                            <Grid x:Name="HubWebViewHost" Visibility="Collapsed" MinHeight="620" HorizontalAlignment="Stretch">
+                                <Border Style="{StaticResource DSCPanelStyle}" Padding="0" CornerRadius="12">
+                                    <controls:WebView2 x:Name="HubWebView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MinHeight="620" />
+                                </Border>
+                            </Grid>
+
                             <!-- 集群全景卡片列表 -->
-                            <Grid x:Name="OverviewGrid" RowSpacing="16" HorizontalAlignment="Stretch">
+                            <Grid x:Name="OverviewGrid" Visibility="Collapsed" RowSpacing="16" HorizontalAlignment="Stretch">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />

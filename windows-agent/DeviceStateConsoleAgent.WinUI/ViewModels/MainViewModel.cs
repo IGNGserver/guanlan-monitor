@@ -1522,6 +1522,8 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    public Task SaveConfigurationAsync() => SaveNowAsync();
+
     private void QueueViewerLogin()
     {
         if (_viewerLoginQueued)
