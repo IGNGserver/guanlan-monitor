@@ -160,6 +160,7 @@ jobs:
           xcodebuild -project ios/DeviceStateConsole.xcodeproj \
                      -scheme DeviceStateConsole \
                      -sdk iphoneos \
+                     -destination 'generic/platform=iOS' \
                      -configuration Release \
                      -derivedDataPath ios/build/DerivedData \
                      CODE_SIGN_IDENTITY="" \
@@ -225,4 +226,3 @@ jobs:
           body_path: ${{ format('release-notes-{0}.md', github.ref_name) }}
           prerelease: true
           files: release-assets/**/*
-
