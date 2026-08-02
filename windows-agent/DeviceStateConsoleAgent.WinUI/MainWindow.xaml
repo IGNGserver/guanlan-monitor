@@ -49,9 +49,9 @@
                     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                         <StackPanel Spacing="20" HorizontalAlignment="Stretch">
                             <StackPanel Spacing="4">
-                                <TextBlock Text="中枢未连接" Style="{StaticResource TitleTextBlockStyle}" />
+                                <TextBlock Text="观澜" Style="{StaticResource TitleTextBlockStyle}" />
                                 <TextBlock Text="{Binding ReleaseVersion}" Style="{StaticResource CaptionTextBlockStyle}" />
-                                <TextBlock Text="完成中枢配置后，这里将打开中枢网页并显示设备状态。" Style="{StaticResource BodyTextBlockStyle}" />
+                                <TextBlock Text="完成设置后，这里将打开观澜网页并显示设备状态。" Style="{StaticResource BodyTextBlockStyle}" />
                             </StackPanel>
 
                             <Grid x:Name="OverviewUnavailableState" Visibility="Collapsed" MinHeight="360" HorizontalAlignment="Stretch">
@@ -60,10 +60,27 @@
                                         <FontIcon Glyph="&#xE711;" FontSize="40" HorizontalAlignment="Center" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
                                         <StackPanel Spacing="6" HorizontalAlignment="Center">
                                             <TextBlock Text="中枢未连接" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
-                                            <TextBlock Text="{Binding ViewerDataStatusText}" Style="{StaticResource BodyTextBlockStyle}" TextAlignment="Center" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock Text="{Binding ConnectionText}" Style="{StaticResource BodyTextBlockStyle}" TextAlignment="Center" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock Text="{Binding TraySubmitDetailText}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Center" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12" Margin="0,8,0,0">
                                             <Button Content="重新检查连接" Command="{Binding CheckConnectionCommand}" Style="{StaticResource AccentButtonStyle}" />
+                                            <Button Content="前往设置配置" Click="NavigateToSettings_OnClick" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+
+                            <Grid x:Name="HubWebViewErrorState" Visibility="Collapsed" MinHeight="360" HorizontalAlignment="Stretch">
+                                <Border Style="{StaticResource DSCPanelStyle}" MaxWidth="520" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="32,28">
+                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
+                                        <FontIcon Glyph="&#xE783;" FontSize="40" HorizontalAlignment="Center" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                                        <StackPanel Spacing="6" HorizontalAlignment="Center">
+                                            <TextBlock Text="网页无法加载" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
+                                            <TextBlock x:Name="HubPageErrorText" Style="{StaticResource BodyTextBlockStyle}" TextAlignment="Center" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12" Margin="0,8,0,0">
+                                            <Button Content="重新加载网页" Click="RetryHubPage_OnClick" Style="{StaticResource AccentButtonStyle}" />
                                             <Button Content="前往设置配置" Click="NavigateToSettings_OnClick" />
                                         </StackPanel>
                                     </StackPanel>

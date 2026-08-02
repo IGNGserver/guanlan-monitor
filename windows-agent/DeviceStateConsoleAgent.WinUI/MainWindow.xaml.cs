@@ -64,7 +64,7 @@ public sealed partial class MainWindow : Window
         };
 
         SecretBox.Password = _viewModel.Secret;
-        UpdateMonitorAvailability();
+        ShowBackendUnavailable();
     }
 
     public async Task EnsureInitializedAsync()
@@ -379,18 +379,28 @@ public sealed partial class MainWindow : Window
         AppNavigation.SelectedItem = AppNavigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault();
     }
 
-    private void UpdateMonitorAvailability()
+    private void ShowBackendUnavailable()
     {
         OverviewUnavailableState.Visibility = Visibility.Visible;
         OverviewGrid.Visibility = Visibility.Collapsed;
+        HubWebViewErrorState.Visibility = Visibility.Collapsed;
         HubWebViewHost.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowHubPageError(string message)
+    {
+        OverviewUnavailableState.Visibility = Visibility.Collapsed;
+        OverviewGrid.Visibility = Visibility.Collapsed;
+        HubWebViewHost.Visibility = Visibility.Collapsed;
+        HubWebViewErrorState.Visibility = Visibility.Visible;
+        HubPageErrorText.Text = message;
     }
 
     private async Task OpenHubAsync()
     {
         if (string.IsNullOrWhiteSpace(_viewModel.ServerUrl) || string.IsNullOrWhiteSpace(_viewModel.Secret))
         {
-            UpdateMonitorAvailability();
+            ShowBackendUnavailable();
             return;
         }
 
@@ -398,7 +408,7 @@ public sealed partial class MainWindow : Window
             (serverUri.Scheme != Uri.UriSchemeHttp && serverUri.Scheme != Uri.UriSchemeHttps))
         {
             _viewModel.ViewerDataStatusText = "中枢地址无效，请在设置中填写 http:// 或 https:// 地址。";
-            UpdateMonitorAvailability();
+            ShowBackendUnavailable();
             return;
         }
 
@@ -430,6 +440,7 @@ public sealed partial class MainWindow : Window
             }
             HubWebViewHost.Visibility = Visibility.Visible;
             OverviewUnavailableState.Visibility = Visibility.Collapsed;
+            HubWebViewErrorState.Visibility = Visibility.Collapsed;
             _hubLoginStarted = false;
             // Navigate through the XAML control so the control owns initialization
             // and navigation consistently across Windows App SDK runtime versions.
@@ -437,8 +448,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            _viewModel.ViewerDataStatusText = $"无法打开中枢网页：{ex.Message}";
-            UpdateMonitorAvailability();
+            ShowHubPageError($"无法打开观澜网页：{ex.Message}");
         }
     }
 
@@ -446,8 +456,7 @@ public sealed partial class MainWindow : Window
     {
         if (!args.IsSuccess)
         {
-            _viewModel.ViewerDataStatusText = $"中枢网页加载失败（错误码 {args.WebErrorStatus}）。请检查地址和 WebView2 运行环境。";
-            UpdateMonitorAvailability();
+            ShowHubPageError($"观澜网页加载失败（错误码 {args.WebErrorStatus}）。请检查网页地址和网络连接。");
             return;
         }
 
@@ -458,7 +467,7 @@ public sealed partial class MainWindow : Window
 
         _hubLoginStarted = true;
         var accessKey = JsonSerializer.Serialize(_viewModel.Secret);
-        var script = $"(async()=>{{const response=await fetch('/api/auth/login', {{method:'POST', credentials:'include', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{accessKey:{accessKey}}})}}); if(!response.ok) throw new Error('login:'+response.status); location.reload();}})().catch(()=>{{document.body.innerText='中枢登录失败，请返回设置检查访问密钥。';}});";
+        var script = $"(async()=>{{const response=await fetch('/api/auth/login', {{method:'POST', credentials:'include', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{accessKey:{accessKey}}})}}); if(!response.ok) throw new Error('login:'+response.status); location.reload();}})().catch(()=>{{document.body.innerText='观澜网页登录失败，请返回设置检查访问密钥。';}});";
         try
         {
             await HubWebView.ExecuteScriptAsync(script);
@@ -467,6 +476,11 @@ public sealed partial class MainWindow : Window
         {
             _hubLoginStarted = false;
         }
+    }
+
+    private void RetryHubPage_OnClick(object sender, RoutedEventArgs e)
+    {
+        _ = OpenHubAsync();
     }
 
     private void ReDrawCategoryCanvas(string categoryTag)
