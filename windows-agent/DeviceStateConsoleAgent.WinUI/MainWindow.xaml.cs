@@ -414,10 +414,16 @@ public sealed partial class MainWindow : Window
             {
                 // Opening the configured hub is independent from local telemetry.
             }
-            await HubWebView.EnsureCoreWebView2Async();
+            var webViewDataFolder = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "DeviceStateConsole",
+                "WebView2");
+            Directory.CreateDirectory(webViewDataFolder);
+            var webViewEnvironment = await CoreWebView2Environment.CreateAsync(null, webViewDataFolder);
+            await HubWebView.EnsureCoreWebView2Async(webViewEnvironment);
             if (HubWebView.CoreWebView2 is null)
             {
-                throw new InvalidOperationException("WebView2 运行时初始化失败，CoreWebView2 为空。请确认系统已安装 Microsoft Edge WebView2 Runtime。");
+                throw new InvalidOperationException("WebView2 初始化失败，CoreWebView2 为空。请确认 WebView2 Runtime 可用且用户数据目录可写。");
             }
             HubWebViewHost.Visibility = Visibility.Visible;
             OverviewUnavailableState.Visibility = Visibility.Collapsed;
