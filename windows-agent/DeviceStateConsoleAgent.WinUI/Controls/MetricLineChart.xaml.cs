@@ -97,7 +97,7 @@ public sealed partial class MetricLineChart : UserControl
             Height = plotHeight,
             Stroke = new SolidColorBrush(Color.FromArgb(92, 255, 255, 255)),
             StrokeThickness = 1,
-            Fill = new SolidColorBrush(Colors.Transparent)
+            Fill = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0))
         });
 
         var chart = Chart;
