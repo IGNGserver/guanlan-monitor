@@ -415,10 +415,16 @@ public sealed partial class MainWindow : Window
                 // Opening the configured hub is independent from local telemetry.
             }
             await HubWebView.EnsureCoreWebView2Async();
+            if (HubWebView.CoreWebView2 is null)
+            {
+                throw new InvalidOperationException("WebView2 运行时初始化失败，CoreWebView2 为空。请确认系统已安装 Microsoft Edge WebView2 Runtime。");
+            }
             HubWebViewHost.Visibility = Visibility.Visible;
             OverviewUnavailableState.Visibility = Visibility.Collapsed;
             _hubLoginStarted = false;
-            HubWebView.CoreWebView2.Navigate(serverUri.ToString());
+            // Navigate through the XAML control so the control owns initialization
+            // and navigation consistently across Windows App SDK runtime versions.
+            HubWebView.Source = serverUri;
         }
         catch (Exception ex)
         {
