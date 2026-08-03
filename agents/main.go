@@ -132,19 +132,30 @@ type storageUsage struct {
 }
 
 type diskDeviceStats struct {
-	ID                string   `json:"id"`
-	Name              string   `json:"name"`
-	MountPoint        string   `json:"mountPoint"`
-	FileSystem        string   `json:"filesystem,omitempty"`
-	Model             string   `json:"model,omitempty"`
-	Vendor            string   `json:"vendor,omitempty"`
-	SourceKey         string   `json:"sourceKey,omitempty"`
-	TemperatureC      *float64 `json:"temperatureC,omitempty"`
-	ActivePercent     *float64 `json:"activePercent,omitempty"`
-	AverageResponseMs *float64 `json:"averageResponseMs,omitempty"`
-	InterfaceType     string   `json:"interfaceType,omitempty"`
-	TotalBytes        uint64   `json:"totalBytes"`
-	UsedBytes         uint64   `json:"usedBytes"`
+	ID                string               `json:"id"`
+	Name              string               `json:"name"`
+	MountPoint        string               `json:"mountPoint"`
+	FileSystem        string               `json:"filesystem,omitempty"`
+	Model             string               `json:"model,omitempty"`
+	Vendor            string               `json:"vendor,omitempty"`
+	SourceKey         string               `json:"sourceKey,omitempty"`
+	TemperatureC      *float64             `json:"temperatureC,omitempty"`
+	HealthStatus      string               `json:"healthStatus,omitempty"`
+	HealthReason      string               `json:"healthReason,omitempty"`
+	HealthPercent     *float64             `json:"healthPercent,omitempty"`
+	SmartAttributes   []diskSmartAttribute `json:"smartAttributes,omitempty"`
+	ActivePercent     *float64             `json:"activePercent,omitempty"`
+	AverageResponseMs *float64             `json:"averageResponseMs,omitempty"`
+	InterfaceType     string               `json:"interfaceType,omitempty"`
+	TotalBytes        uint64               `json:"totalBytes"`
+	UsedBytes         uint64               `json:"usedBytes"`
+}
+
+type diskSmartAttribute struct {
+	ID        int     `json:"id"`
+	Name      string  `json:"name"`
+	Value     float64 `json:"value"`
+	Threshold float64 `json:"threshold"`
 }
 
 type cpuPackageStats struct {
@@ -319,10 +330,20 @@ type networkHardwareMetadata struct {
 }
 
 type diskHardwareMetadata struct {
-	Model         string
-	Vendor        string
-	InterfaceType string
-	TemperatureC  *float64
+	Model          string
+	Vendor         string
+	InterfaceType  string
+	TemperatureC   *float64
+	PhysicalDevice string
+	DiskNumber     int
+}
+
+type diskSensorMetadata struct {
+	TemperatureC    *float64
+	HealthStatus    string
+	HealthReason    string
+	HealthPercent   *float64
+	SmartAttributes []diskSmartAttribute
 }
 
 type windowsHardwareMetadata struct {
@@ -336,23 +357,24 @@ type windowsHardwareMetadata struct {
 }
 
 type slowMetrics struct {
-	collectedAt       time.Time
-	cpuFrequencyMHz   *float64
-	cpuTemperatureC   *float64
-	memorySpeedMHz    *float64
-	memorySlotCount   *int
-	memoryFormFactor  string
-	cpuPackages       []cpuPackageStats
-	diskUsage         storageUsage
-	disks             []diskDeviceStats
-	networkInterfaces []networkInterfaceStats
-	gpus              []gpuDeviceStats
-	gpuDrivers        map[string]string
-	networkMetadata   map[string]networkHardwareMetadata
-	diskInterfaces    map[string]string
-	diskMetadata      map[string]diskHardwareMetadata
-	fans              []fanSensorStats
-	sensorBackends    []sensorBackendStatus
+	collectedAt        time.Time
+	cpuFrequencyMHz    *float64
+	cpuTemperatureC    *float64
+	memorySpeedMHz     *float64
+	memorySlotCount    *int
+	memoryFormFactor   string
+	cpuPackages        []cpuPackageStats
+	diskUsage          storageUsage
+	disks              []diskDeviceStats
+	networkInterfaces  []networkInterfaceStats
+	gpus               []gpuDeviceStats
+	gpuDrivers         map[string]string
+	networkMetadata    map[string]networkHardwareMetadata
+	diskInterfaces     map[string]string
+	diskMetadata       map[string]diskHardwareMetadata
+	diskSensorMetadata map[string]diskSensorMetadata
+	fans               []fanSensorStats
+	sensorBackends     []sensorBackendStatus
 }
 
 type agentState struct {
@@ -587,16 +609,17 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	slow := s.lastSlow
 	if !s.hasSlow {
 		slow = slowMetrics{
-			cpuPackages:       []cpuPackageStats{},
-			disks:             []diskDeviceStats{},
-			networkInterfaces: []networkInterfaceStats{},
-			gpus:              []gpuDeviceStats{},
-			gpuDrivers:        map[string]string{},
-			networkMetadata:   map[string]networkHardwareMetadata{},
-			diskInterfaces:    map[string]string{},
-			diskMetadata:      map[string]diskHardwareMetadata{},
-			fans:              []fanSensorStats{},
-			sensorBackends:    []sensorBackendStatus{},
+			cpuPackages:        []cpuPackageStats{},
+			disks:              []diskDeviceStats{},
+			networkInterfaces:  []networkInterfaceStats{},
+			gpus:               []gpuDeviceStats{},
+			gpuDrivers:         map[string]string{},
+			networkMetadata:    map[string]networkHardwareMetadata{},
+			diskInterfaces:     map[string]string{},
+			diskMetadata:       map[string]diskHardwareMetadata{},
+			diskSensorMetadata: map[string]diskSensorMetadata{},
+			fans:               []fanSensorStats{},
+			sensorBackends:     []sensorBackendStatus{},
 		}
 	}
 	memory.SpeedMHz = slow.memorySpeedMHz
@@ -612,6 +635,23 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 			}
 			if slow.disks[index].Vendor == "" {
 				slow.disks[index].Vendor = metadata.Vendor
+			}
+		}
+		if metadata, ok := lookupDiskSensorMetadata(slow.diskSensorMetadata, slow.disks[index].SourceKey, slow.disks[index].Name, slow.disks[index].Model, slow.disks[index].MountPoint); ok {
+			if slow.disks[index].TemperatureC == nil {
+				slow.disks[index].TemperatureC = metadata.TemperatureC
+			}
+			if slow.disks[index].HealthStatus == "" {
+				slow.disks[index].HealthStatus = metadata.HealthStatus
+			}
+			if slow.disks[index].HealthReason == "" {
+				slow.disks[index].HealthReason = metadata.HealthReason
+			}
+			if slow.disks[index].HealthPercent == nil {
+				slow.disks[index].HealthPercent = metadata.HealthPercent
+			}
+			if len(slow.disks[index].SmartAttributes) == 0 {
+				slow.disks[index].SmartAttributes = metadata.SmartAttributes
 			}
 		}
 		if rate, ok := lookupDiskRate(diskRate.Instances, slow.disks[index].SourceKey, slow.disks[index].Name, slow.disks[index].MountPoint); ok {
@@ -787,6 +827,24 @@ func collectSlowMetrics() (slowMetrics, error) {
 			memoryFormFactor = linuxFormFactor
 		}
 	}
+	if runtime.GOOS == "windows" {
+		windowsDiskSensors := collectWindowsDiskSensorMetadata(windowsMetadata.DiskMetadata)
+		for index := range disks {
+			disk := &disks[index]
+			metadata := windowsMetadata.DiskMetadata[disk.SourceKey]
+			if sensor, ok := windowsDiskSensors[metadata.PhysicalDevice]; ok {
+				applyDiskSensorMetadata(disk, sensor)
+			}
+		}
+	}
+	if runtime.GOOS == "linux" {
+		linuxDiskSensors := collectLinuxDiskSensorMetadata(disks)
+		for index := range disks {
+			if sensor, ok := lookupDiskSensorMetadata(linuxDiskSensors, disks[index].SourceKey, disks[index].Name, disks[index].Model, disks[index].MountPoint); ok {
+				applyDiskSensorMetadata(&disks[index], sensor)
+			}
+		}
+	}
 	if len(hardware.gpus) == 0 {
 		hardware.gpus = collectNvidiaGPUs()
 	}
@@ -806,23 +864,24 @@ func collectSlowMetrics() (slowMetrics, error) {
 	sensorBackends = append(sensorBackends, collectPlatformSensorBackends()...)
 
 	return slowMetrics{
-		collectedAt:       time.Now().UTC(),
-		cpuFrequencyMHz:   cpuFrequencyMHz,
-		cpuTemperatureC:   hardware.cpuTemperatureC,
-		memorySpeedMHz:    memorySpeedMHz,
-		memorySlotCount:   memorySlotCount,
-		memoryFormFactor:  memoryFormFactor,
-		cpuPackages:       cpuPackages,
-		diskUsage:         diskUsage,
-		disks:             disks,
-		networkInterfaces: networkInterfaces,
-		gpus:              hardware.gpus,
-		gpuDrivers:        windowsMetadata.GpuDrivers,
-		networkMetadata:   windowsMetadata.Networks,
-		diskInterfaces:    windowsMetadata.DiskInterfaces,
-		diskMetadata:      windowsMetadata.DiskMetadata,
-		fans:              hardware.fans,
-		sensorBackends:    sensorBackends,
+		collectedAt:        time.Now().UTC(),
+		cpuFrequencyMHz:    cpuFrequencyMHz,
+		cpuTemperatureC:    hardware.cpuTemperatureC,
+		memorySpeedMHz:     memorySpeedMHz,
+		memorySlotCount:    memorySlotCount,
+		memoryFormFactor:   memoryFormFactor,
+		cpuPackages:        cpuPackages,
+		diskUsage:          diskUsage,
+		disks:              disks,
+		networkInterfaces:  networkInterfaces,
+		gpus:               hardware.gpus,
+		gpuDrivers:         windowsMetadata.GpuDrivers,
+		networkMetadata:    windowsMetadata.Networks,
+		diskInterfaces:     windowsMetadata.DiskInterfaces,
+		diskMetadata:       windowsMetadata.DiskMetadata,
+		diskSensorMetadata: hardware.diskSensorMetadata,
+		fans:               hardware.fans,
+		sensorBackends:     sensorBackends,
 	}, nil
 }
 
@@ -921,6 +980,7 @@ func collectPlatformSensorBackends() []sensorBackendStatus {
 	return []sensorBackendStatus{
 		{ID: "windows-wmi", Label: "Windows WMI", OK: true, Detail: "系统、内存、网卡和磁盘元数据可用；温度/风扇数值需硬件驱动暴露"},
 		{ID: "windows-performance-counters", Label: "Windows 性能计数器", OK: true, Detail: "CPU、磁盘、网络和 GPU Engine/Adapter Memory 计数器可用"},
+		optionalCommandBackend("smartmontools", "smartctl", "smartctl.exe", "磁盘温度和健康信息"),
 		optionalCommandBackend("nvidia-smi", "NVIDIA SMI", "nvidia-smi.exe", "NVIDIA GPU 指标"),
 	}
 }
@@ -1028,10 +1088,15 @@ func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 }
 
 type hardwareSensorSnapshot struct {
-	HardwareType string           `json:"hardwareType"`
-	Name         string           `json:"name"`
-	InstanceID   string           `json:"instanceId"`
-	Sensors      []hardwareSensor `json:"sensors"`
+	HardwareType    string                   `json:"hardwareType"`
+	Name            string                   `json:"name"`
+	InstanceID      string                   `json:"instanceId"`
+	TemperatureC    *float64                 `json:"temperatureC"`
+	HealthPercent   *float64                 `json:"healthPercent"`
+	HealthStatus    string                   `json:"healthStatus"`
+	HealthReason    string                   `json:"healthReason"`
+	SmartAttributes []hardwareSmartAttribute `json:"smartAttributes"`
+	Sensors         []hardwareSensor         `json:"sensors"`
 }
 
 type hardwareSensor struct {
@@ -1040,12 +1105,20 @@ type hardwareSensor struct {
 	Value      *float64 `json:"value"`
 }
 
+type hardwareSmartAttribute struct {
+	ID        int     `json:"id"`
+	Name      string  `json:"name"`
+	Value     float64 `json:"value"`
+	Threshold float64 `json:"threshold"`
+}
+
 type hardwareSensorMetrics struct {
-	cpuFrequencyMHz *float64
-	cpuTemperatureC *float64
-	gpus            []gpuDeviceStats
-	fans            []fanSensorStats
-	sensorBackends  []sensorBackendStatus
+	cpuFrequencyMHz    *float64
+	cpuTemperatureC    *float64
+	gpus               []gpuDeviceStats
+	fans               []fanSensorStats
+	diskSensorMetadata map[string]diskSensorMetadata
+	sensorBackends     []sensorBackendStatus
 }
 
 // LibreHardwareMonitor exposes live clocks, including CPU boost clocks, where WMI often reports a nominal value.
@@ -1054,14 +1127,20 @@ func collectHardwareSensors() hardwareSensorMetrics {
 		return collectLinuxHardwareSensors()
 	}
 	if runtime.GOOS != "windows" {
-		return hardwareSensorMetrics{gpus: []gpuDeviceStats{}, fans: []fanSensorStats{}, sensorBackends: []sensorBackendStatus{}}
+		return hardwareSensorMetrics{
+			gpus:               []gpuDeviceStats{},
+			fans:               []fanSensorStats{},
+			diskSensorMetadata: map[string]diskSensorMetadata{},
+			sensorBackends:     []sensorBackendStatus{},
+		}
 	}
 
 	dllPath := resolveHardwareMonitorPath()
 	if dllPath == "" {
 		return hardwareSensorMetrics{
-			gpus: []gpuDeviceStats{},
-			fans: []fanSensorStats{},
+			gpus:               []gpuDeviceStats{},
+			fans:               []fanSensorStats{},
+			diskSensorMetadata: map[string]diskSensorMetadata{},
 			sensorBackends: []sensorBackendStatus{{
 				ID:     "librehardwaremonitor",
 				Label:  "LibreHardwareMonitor",
@@ -1073,14 +1152,15 @@ func collectHardwareSensors() hardwareSensorMetrics {
 
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
-	commandText := `$ErrorActionPreference='Stop'; Add-Type -Path $env:DSC_LHM_DLL; $gpuIds=@{}; Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { if($_.Name -and $_.PNPDeviceID){ $gpuIds[[string]$_.Name]=[string]$_.PNPDeviceID } }; $computer=New-Object LibreHardwareMonitor.Hardware.Computer; $computer.IsCpuEnabled=$true; $computer.IsGpuEnabled=$true; $computer.IsMotherboardEnabled=$true; $computer.IsControllerEnabled=$true; $computer.Open(); function Read-Hardware($hardware) { $hardware.Update(); $instanceId=''; if($gpuIds.ContainsKey([string]$hardware.Name)){ $instanceId=$gpuIds[[string]$hardware.Name] }; $result=@([pscustomobject]@{ hardwareType=[string]$hardware.HardwareType; name=[string]$hardware.Name; instanceId=$instanceId; sensors=@($hardware.Sensors | ForEach-Object { [pscustomobject]@{ sensorType=[string]$_.SensorType; name=[string]$_.Name; value=$_.Value } }) }); foreach($sub in $hardware.SubHardware) { $result += Read-Hardware $sub }; return $result }; try { @($computer.Hardware | ForEach-Object { Read-Hardware $_ }) | ConvertTo-Json -Depth 5 -Compress } finally { $computer.Close() }`
+	commandText := `$ErrorActionPreference='Stop'; Add-Type -Path $env:DSC_LHM_DLL; $gpuIds=@{}; Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { if($_.Name -and $_.PNPDeviceID){ $gpuIds[[string]$_.Name]=[string]$_.PNPDeviceID } }; $computer=New-Object LibreHardwareMonitor.Hardware.Computer; $computer.IsCpuEnabled=$true; $computer.IsGpuEnabled=$true; $computer.IsMotherboardEnabled=$true; $computer.IsControllerEnabled=$true; $computer.IsStorageEnabled=$true; $computer.Open(); function Read-Hardware($hardware) { $hardware.Update(); $instanceId=''; $temperatureC=$null; $healthPercent=$null; $healthStatus=''; $healthReason=''; $smartAttributes=@(); if($gpuIds.ContainsKey([string]$hardware.Name)){ $instanceId=$gpuIds[[string]$hardware.Name] }; if([string]$hardware.HardwareType -eq 'Storage') { $storage=$hardware.Storage; $smart=$null; if($storage){ $smart=$storage.Smart }; if($smart){ if($smart.Temperature -ne $null){ $temperatureC=[double]$smart.Temperature }; if($smart.Life -ne $null){ $healthPercent=[double]$smart.Life }; $healthStatus=[string]$smart.DiskStatus; if($healthStatus -and $healthStatus -ne 'Unknown'){ $healthReason='SMART status from LibreHardwareMonitor' } }; $smartAttributes=@($hardware.Attributes | ForEach-Object { [pscustomobject]@{ id=[int]$_.Id; name=[string]$_.Name; value=[double]$_.Value; threshold=[double]$_.Threshold } }) }; $result=@([pscustomobject]@{ hardwareType=[string]$hardware.HardwareType; name=[string]$hardware.Name; instanceId=$instanceId; temperatureC=$temperatureC; healthPercent=$healthPercent; healthStatus=$healthStatus; healthReason=$healthReason; smartAttributes=$smartAttributes; sensors=@($hardware.Sensors | ForEach-Object { [pscustomobject]@{ sensorType=[string]$_.SensorType; name=[string]$_.Name; value=$_.Value } }) }); foreach($sub in $hardware.SubHardware) { $result += Read-Hardware $sub }; return $result }; try { @($computer.Hardware | ForEach-Object { Read-Hardware $_ }) | ConvertTo-Json -Depth 7 -Compress } finally { $computer.Close() }`
 	command := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
 	command.Env = append(os.Environ(), "DSC_LHM_DLL="+dllPath)
 	output, err := command.Output()
 	if err != nil {
 		return hardwareSensorMetrics{
-			gpus: []gpuDeviceStats{},
-			fans: []fanSensorStats{},
+			gpus:               []gpuDeviceStats{},
+			fans:               []fanSensorStats{},
+			diskSensorMetadata: map[string]diskSensorMetadata{},
 			sensorBackends: []sensorBackendStatus{{
 				ID:     "librehardwaremonitor",
 				Label:  "LibreHardwareMonitor",
@@ -1093,8 +1173,9 @@ func collectHardwareSensors() hardwareSensorMetrics {
 	snapshots, err := decodeHardwareSnapshots(output)
 	if err != nil {
 		return hardwareSensorMetrics{
-			gpus: []gpuDeviceStats{},
-			fans: []fanSensorStats{},
+			gpus:               []gpuDeviceStats{},
+			fans:               []fanSensorStats{},
+			diskSensorMetadata: map[string]diskSensorMetadata{},
 			sensorBackends: []sensorBackendStatus{{
 				ID:     "librehardwaremonitor",
 				Label:  "LibreHardwareMonitor",
@@ -1104,19 +1185,24 @@ func collectHardwareSensors() hardwareSensorMetrics {
 		}
 	}
 	metrics := mapHardwareSensors(snapshots)
+	detail := fmt.Sprintf("已加载并读取硬件传感器；风扇 %d 个，磁盘 SMART %d 个", len(metrics.fans), len(metrics.diskSensorMetadata))
+	if len(metrics.fans) == 0 {
+		detail += "；主板/EC 未暴露可用风扇转速传感器"
+	}
 	metrics.sensorBackends = []sensorBackendStatus{{
 		ID:     "librehardwaremonitor",
 		Label:  "LibreHardwareMonitor",
 		OK:     true,
-		Detail: "已加载并读取硬件传感器",
+		Detail: detail,
 	}}
 	return metrics
 }
 
 func collectLinuxHardwareSensors() hardwareSensorMetrics {
 	metrics := hardwareSensorMetrics{
-		gpus: []gpuDeviceStats{},
-		fans: []fanSensorStats{},
+		gpus:               []gpuDeviceStats{},
+		fans:               []fanSensorStats{},
+		diskSensorMetadata: map[string]diskSensorMetadata{},
 	}
 	if runtime.GOOS != "linux" {
 		return metrics
@@ -1256,12 +1342,54 @@ func resolveHardwareMonitorPath() string {
 }
 
 func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetrics {
-	metrics := hardwareSensorMetrics{gpus: []gpuDeviceStats{}, fans: []fanSensorStats{}}
+	metrics := hardwareSensorMetrics{
+		gpus:               []gpuDeviceStats{},
+		fans:               []fanSensorStats{},
+		diskSensorMetadata: map[string]diskSensorMetadata{},
+	}
 	cpuClocks := []float64{}
 	cpuTemperatures := []float64{}
 
 	for _, snapshot := range snapshots {
 		hardwareType := strings.ToLower(snapshot.HardwareType)
+		if hardwareType == "storage" {
+			metadata := diskSensorMetadata{
+				TemperatureC:  snapshot.TemperatureC,
+				HealthPercent: snapshot.HealthPercent,
+				HealthStatus:  normalizeDiskHealthStatus(snapshot.HealthStatus),
+				HealthReason:  strings.TrimSpace(snapshot.HealthReason),
+			}
+			if len(snapshot.SmartAttributes) > 0 {
+				metadata.SmartAttributes = make([]diskSmartAttribute, 0, len(snapshot.SmartAttributes))
+				for _, attribute := range snapshot.SmartAttributes {
+					metadata.SmartAttributes = append(metadata.SmartAttributes, diskSmartAttribute{
+						ID:        attribute.ID,
+						Name:      attribute.Name,
+						Value:     attribute.Value,
+						Threshold: attribute.Threshold,
+					})
+				}
+			}
+			for _, sensor := range snapshot.Sensors {
+				if sensor.Value == nil || !isFiniteNonNegative(*sensor.Value) {
+					continue
+				}
+				sensorType := strings.ToLower(strings.TrimSpace(sensor.SensorType))
+				sensorName := strings.ToLower(strings.TrimSpace(sensor.Name))
+				switch {
+				case sensorType == "temperature" && *sensor.Value > 0 && *sensor.Value <= 150 && (metadata.TemperatureC == nil || sensorName == "temperature"):
+					value := *sensor.Value
+					metadata.TemperatureC = &value
+				case sensorType == "level" && (strings.Contains(sensorName, "life") || strings.Contains(sensorName, "health")):
+					value := *sensor.Value
+					metadata.HealthPercent = &value
+				}
+			}
+			if metadata.TemperatureC != nil || metadata.HealthStatus != "" || metadata.HealthReason != "" || metadata.HealthPercent != nil || len(metadata.SmartAttributes) > 0 {
+				metrics.diskSensorMetadata[sanitizeKey(snapshot.Name)] = metadata
+			}
+			continue
+		}
 		if hardwareType == "cpu" {
 			for _, sensor := range snapshot.Sensors {
 				if sensor.Value == nil || !isFinitePositive(*sensor.Value) {
@@ -1382,6 +1510,23 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 	return metrics
 }
 
+func normalizeDiskHealthStatus(value string) string {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	if lower == "" {
+		return ""
+	}
+	switch {
+	case strings.Contains(lower, "good") || strings.Contains(lower, "ok") || strings.Contains(lower, "正常"):
+		return "good"
+	case strings.Contains(lower, "caution") || strings.Contains(lower, "warn") || strings.Contains(lower, "注意") || strings.Contains(lower, "警告"):
+		return "caution"
+	case strings.Contains(lower, "bad") || strings.Contains(lower, "fail") || strings.Contains(lower, "critical") || strings.Contains(lower, "失败"):
+		return "bad"
+	default:
+		return lower
+	}
+}
+
 // Processor Performance is a percentage of the nominal clock and can exceed 100 while Intel Turbo Boost is active.
 func collectWindowsCPUFrequency(nominalMHz *float64) *float64 {
 	if runtime.GOOS != "windows" || nominalMHz == nil || !isFinitePositive(*nominalMHz) {
@@ -1418,10 +1563,12 @@ type windowsHardwareMetadataPayload struct {
 		ConnectionType string `json:"connectionType"`
 	} `json:"adapters"`
 	Disks []struct {
-		Name          string `json:"name"`
-		InterfaceType string `json:"interfaceType"`
-		Model         string `json:"model"`
-		Vendor        string `json:"vendor"`
+		Name           string `json:"name"`
+		InterfaceType  string `json:"interfaceType"`
+		Model          string `json:"model"`
+		Vendor         string `json:"vendor"`
+		PhysicalDevice string `json:"physicalDevice"`
+		DiskNumber     int    `json:"diskNumber"`
 	} `json:"disks"`
 	GPUs []struct {
 		Name          string `json:"name"`
@@ -1442,7 +1589,7 @@ func collectWindowsHardwareMetadata() windowsHardwareMetadata {
 
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
-	commandText := `$ErrorActionPreference='Stop'; $memory=@(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue | ForEach-Object { $form=switch([int]$_.FormFactor){8{'DIMM'}12{'SODIMM'}default{[string]$_.FormFactor}}; [pscustomobject]@{speedMHz=[double]$_.Speed; configuredClockMHz=[double]$_.ConfiguredClockSpeed; formFactor=$form} }); $adapters=@(Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; linkSpeed=[string]$_.LinkSpeed; connectionType=[string]$_.MediaType} }); $disks=@(Get-Partition -ErrorAction SilentlyContinue | ForEach-Object { $disk=Get-Disk -Number $_.DiskNumber -ErrorAction SilentlyContinue; $key=if ($_.DriveLetter) { [string]$_.DriveLetter + ':' } elseif ($_.AccessPaths) { [string]$_.AccessPaths[0] } else { '' }; if ($key -and $disk) { [pscustomobject]@{name=$key; interfaceType=(([string]$disk.BusType) + ' ' + ([string]$disk.MediaType)).Trim(); model=[string]$disk.FriendlyName; vendor=[string]$disk.Manufacturer} } }); $gpus=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; driverVersion=[string]$_.DriverVersion} }); [pscustomobject]@{memory=@($memory); adapters=@($adapters); disks=@($disks); gpus=@($gpus)} | ConvertTo-Json -Depth 4 -Compress`
+	commandText := `$ErrorActionPreference='Stop'; $memory=@(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue | ForEach-Object { $form=switch([int]$_.FormFactor){8{'DIMM'}12{'SODIMM'}default{[string]$_.FormFactor}}; [pscustomobject]@{speedMHz=[double]$_.Speed; configuredClockMHz=[double]$_.ConfiguredClockSpeed; formFactor=$form} }); $adapters=@(Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; linkSpeed=[string]$_.LinkSpeed; connectionType=[string]$_.MediaType} }); $disks=@(Get-Partition -ErrorAction SilentlyContinue | ForEach-Object { $disk=Get-Disk -Number $_.DiskNumber -ErrorAction SilentlyContinue; $key=if ($_.DriveLetter) { [string]$_.DriveLetter + ':' } elseif ($_.AccessPaths) { [string]$_.AccessPaths[0] } else { '' }; if ($key -and $disk) { [pscustomobject]@{name=$key; interfaceType=(([string]$disk.BusType) + ' ' + ([string]$disk.MediaType)).Trim(); model=[string]$disk.FriendlyName; vendor=[string]$disk.Manufacturer; physicalDevice=('\\.\PhysicalDrive' + [string]$disk.Number); diskNumber=[int]$disk.Number} } }); $gpus=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; driverVersion=[string]$_.DriverVersion} }); [pscustomobject]@{memory=@($memory); adapters=@($adapters); disks=@($disks); gpus=@($gpus)} | ConvertTo-Json -Depth 4 -Compress`
 	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
 	if err != nil {
 		return result
@@ -1495,9 +1642,11 @@ func collectWindowsHardwareMetadata() windowsHardwareMetadata {
 		}
 		if disk.Name != "" {
 			result.DiskMetadata[disk.Name] = diskHardwareMetadata{
-				Model:         disk.Model,
-				Vendor:        disk.Vendor,
-				InterfaceType: disk.InterfaceType,
+				Model:          disk.Model,
+				Vendor:         disk.Vendor,
+				InterfaceType:  disk.InterfaceType,
+				PhysicalDevice: disk.PhysicalDevice,
+				DiskNumber:     disk.DiskNumber,
 			}
 		}
 	}
@@ -1537,6 +1686,361 @@ func collectWindowsWifiSignals() map[string]*float64 {
 					result[currentName] = &parsed
 				}
 			}
+		}
+	}
+	return result
+}
+
+func collectWindowsDiskSensorMetadata(metadata map[string]diskHardwareMetadata) map[string]diskSensorMetadata {
+	result := map[string]diskSensorMetadata{}
+	if runtime.GOOS != "windows" || len(metadata) == 0 {
+		return result
+	}
+
+	physicalDevices := map[string]struct{}{}
+	for _, disk := range metadata {
+		if disk.PhysicalDevice != "" {
+			physicalDevices[disk.PhysicalDevice] = struct{}{}
+		}
+	}
+	if smartctlPath := resolveSmartctlPath(); smartctlPath != "" {
+		for devicePath := range physicalDevices {
+			if sensor, ok := collectSmartctlDiskSensor(smartctlPath, devicePath); ok {
+				result[devicePath] = sensor
+			}
+		}
+	}
+
+	reliability := collectWindowsStorageReliabilityMetadata()
+	for _, disk := range metadata {
+		if disk.PhysicalDevice == "" {
+			continue
+		}
+		if sensor, ok := reliability[disk.DiskNumber]; ok {
+			merged := result[disk.PhysicalDevice]
+			mergeDiskSensorMetadata(&merged, sensor)
+			result[disk.PhysicalDevice] = merged
+		}
+	}
+	return result
+}
+
+func resolveSmartctlPath() string {
+	if runtime.GOOS == "windows" {
+		for _, command := range []string{"smartctl.exe", "smartctl"} {
+			if path, err := exec.LookPath(command); err == nil {
+				return path
+			}
+		}
+		return ""
+	}
+	path, _ := exec.LookPath("smartctl")
+	return path
+}
+
+func collectSmartctlDiskSensor(smartctlPath, devicePath string) (diskSensorMetadata, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
+	defer cancel()
+	var output bytes.Buffer
+	args := []string{"-a", "-j", "--device=auto"}
+	if runtime.GOOS == "linux" {
+		args = append(args, "-n", "standby")
+	}
+	args = append(args, devicePath)
+	command := exec.CommandContext(ctx, smartctlPath, args...)
+	command.Stdout = &output
+	command.Stderr = &bytes.Buffer{}
+	_ = command.Run()
+	if output.Len() == 0 {
+		return diskSensorMetadata{}, false
+	}
+	metadata, ok := parseSmartctlJSON(output.Bytes())
+	return metadata, ok
+}
+
+func parseSmartctlJSON(raw []byte) (diskSensorMetadata, bool) {
+	trimmed := bytes.TrimSpace(raw)
+	start := bytes.IndexByte(trimmed, '{')
+	end := bytes.LastIndexByte(trimmed, '}')
+	if start < 0 || end < start {
+		return diskSensorMetadata{}, false
+	}
+	var root map[string]any
+	if err := json.Unmarshal(trimmed[start:end+1], &root); err != nil {
+		return diskSensorMetadata{}, false
+	}
+	metadata := diskSensorMetadata{}
+	if passed, ok := jsonBoolAt(root, "smart_status", "passed"); ok {
+		if passed {
+			metadata.HealthStatus = "good"
+			metadata.HealthReason = "SMART status passed"
+		} else {
+			metadata.HealthStatus = "bad"
+			metadata.HealthReason = "SMART status failed"
+		}
+	}
+	for _, path := range [][]string{
+		{"temperature", "current"},
+		{"nvme_smart_health_information_log", "temperature"},
+		{"nvme_smart_health_information_log", "temperature_sensor_1"},
+	} {
+		if value, ok := jsonNumberAt(root, path...); ok && value > 0 && value <= 150 {
+			metadata.TemperatureC = &value
+			break
+		}
+	}
+	if used, ok := jsonNumberAt(root, "nvme_smart_health_information_log", "percentage_used"); ok && used >= 0 && used <= 100 {
+		value := 100 - used
+		metadata.HealthPercent = &value
+	}
+	for _, item := range jsonObjectArrayAt(root, "ata_smart_data", "table") {
+		id, _ := jsonNumberAt(item, "id")
+		name, _ := jsonStringAt(item, "name")
+		rawValue, _ := jsonNumberAt(item, "raw", "value")
+		threshold, _ := jsonNumberAt(item, "thresh")
+		if id > 0 || name != "" {
+			metadata.SmartAttributes = append(metadata.SmartAttributes, diskSmartAttribute{
+				ID:        int(id),
+				Name:      name,
+				Value:     rawValue,
+				Threshold: threshold,
+			})
+		}
+		lowerName := strings.ToLower(name)
+		if metadata.TemperatureC == nil && strings.Contains(lowerName, "temperature") && rawValue > 0 && rawValue <= 150 {
+			value := rawValue
+			metadata.TemperatureC = &value
+		}
+		if metadata.HealthPercent == nil && (strings.Contains(lowerName, "percent used") || strings.Contains(lowerName, "percentage used")) && rawValue >= 0 && rawValue <= 100 {
+			value := 100 - rawValue
+			metadata.HealthPercent = &value
+		}
+		if metadata.HealthPercent == nil && (strings.Contains(lowerName, "life") || strings.Contains(lowerName, "remaining")) && rawValue >= 0 && rawValue <= 100 {
+			value := rawValue
+			metadata.HealthPercent = &value
+		}
+	}
+	return metadata, metadata.TemperatureC != nil || metadata.HealthStatus != "" || metadata.HealthPercent != nil || len(metadata.SmartAttributes) > 0
+}
+
+func collectWindowsStorageReliabilityMetadata() map[int]diskSensorMetadata {
+	result := map[int]diskSensorMetadata{}
+	if runtime.GOOS != "windows" {
+		return result
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
+	defer cancel()
+	commandText := `$ErrorActionPreference='SilentlyContinue'; $rows=@(Get-Disk -ErrorAction SilentlyContinue | ForEach-Object { $disk=$_; $counter=Get-StorageReliabilityCounter -PhysicalDisk $disk -ErrorAction SilentlyContinue; if($counter){ [pscustomobject]@{diskNumber=[int]$disk.Number; temperature=[double]$counter.Temperature; wear=[double]$counter.Wear} } }); @($rows) | ConvertTo-Json -Depth 4 -Compress`
+	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
+	if err != nil || len(bytes.TrimSpace(output)) == 0 {
+		return result
+	}
+	var raw json.RawMessage = bytes.TrimSpace(output)
+	records, err := decodeJSONList[windowsStorageReliabilityRecord](raw)
+	if err != nil {
+		return result
+	}
+	for _, record := range records {
+		metadata := diskSensorMetadata{}
+		if record.Temperature > 0 && record.Temperature <= 150 {
+			value := record.Temperature
+			metadata.TemperatureC = &value
+		}
+		if record.Wear >= 0 && record.Wear <= 100 {
+			value := 100 - record.Wear
+			metadata.HealthPercent = &value
+		}
+		if metadata.TemperatureC != nil || metadata.HealthPercent != nil {
+			metadata.HealthReason = "Windows Storage Reliability Counter"
+			result[record.DiskNumber] = metadata
+		}
+	}
+	return result
+}
+
+type windowsStorageReliabilityRecord struct {
+	DiskNumber  int     `json:"diskNumber"`
+	Temperature float64 `json:"temperature"`
+	Wear        float64 `json:"wear"`
+}
+
+func collectLinuxDiskSensorMetadata(disks []diskDeviceStats) map[string]diskSensorMetadata {
+	result := map[string]diskSensorMetadata{}
+	if runtime.GOOS != "linux" {
+		return result
+	}
+	smartctlPath := resolveSmartctlPath()
+	if smartctlPath == "" {
+		return result
+	}
+	seen := map[string]struct{}{}
+	for _, disk := range disks {
+		device := linuxBlockDeviceName(disk.SourceKey)
+		if device == "" || !isSmartctlBlockDevice(device) {
+			continue
+		}
+		if _, exists := seen[device]; exists {
+			continue
+		}
+		seen[device] = struct{}{}
+		devicePath := "/dev/" + device
+		if sensor, ok := collectSmartctlDiskSensor(smartctlPath, devicePath); ok {
+			result[sanitizeKey(device)] = sensor
+		}
+	}
+	return result
+}
+
+func mergeDiskSensorMetadata(target *diskSensorMetadata, source diskSensorMetadata) {
+	if target.TemperatureC == nil {
+		target.TemperatureC = source.TemperatureC
+	}
+	if target.HealthStatus == "" {
+		target.HealthStatus = source.HealthStatus
+	}
+	if target.HealthReason == "" {
+		target.HealthReason = source.HealthReason
+	}
+	if target.HealthPercent == nil {
+		target.HealthPercent = source.HealthPercent
+	}
+	if len(target.SmartAttributes) == 0 {
+		target.SmartAttributes = source.SmartAttributes
+	}
+}
+
+func applyDiskSensorMetadata(target *diskDeviceStats, source diskSensorMetadata) {
+	if target == nil {
+		return
+	}
+	if target.TemperatureC == nil {
+		target.TemperatureC = source.TemperatureC
+	}
+	if target.HealthStatus == "" {
+		target.HealthStatus = source.HealthStatus
+	}
+	if target.HealthReason == "" {
+		target.HealthReason = source.HealthReason
+	}
+	if target.HealthPercent == nil {
+		target.HealthPercent = source.HealthPercent
+	}
+	if len(target.SmartAttributes) == 0 {
+		target.SmartAttributes = source.SmartAttributes
+	}
+}
+
+func jsonNumberAt(value any, path ...string) (float64, bool) {
+	current := value
+	for _, key := range path {
+		object, ok := current.(map[string]any)
+		if !ok {
+			return 0, false
+		}
+		var next any
+		found := false
+		for actualKey, candidate := range object {
+			if strings.EqualFold(actualKey, key) {
+				next = candidate
+				found = true
+				break
+			}
+		}
+		if !found {
+			return 0, false
+		}
+		current = next
+	}
+	switch number := current.(type) {
+	case float64:
+		return number, true
+	case json.Number:
+		parsed, err := number.Float64()
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func jsonStringAt(value any, path ...string) (string, bool) {
+	current := value
+	for _, key := range path {
+		object, ok := current.(map[string]any)
+		if !ok {
+			return "", false
+		}
+		var next any
+		found := false
+		for actualKey, candidate := range object {
+			if strings.EqualFold(actualKey, key) {
+				next = candidate
+				found = true
+				break
+			}
+		}
+		if !found {
+			return "", false
+		}
+		current = next
+	}
+	stringValue, ok := current.(string)
+	return stringValue, ok
+}
+
+func jsonBoolAt(value any, path ...string) (bool, bool) {
+	current := value
+	for _, key := range path {
+		object, ok := current.(map[string]any)
+		if !ok {
+			return false, false
+		}
+		var next any
+		found := false
+		for actualKey, candidate := range object {
+			if strings.EqualFold(actualKey, key) {
+				next = candidate
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false, false
+		}
+		current = next
+	}
+	boolean, ok := current.(bool)
+	return boolean, ok
+}
+
+func jsonObjectArrayAt(value any, path ...string) []map[string]any {
+	current := value
+	for _, key := range path {
+		object, ok := current.(map[string]any)
+		if !ok {
+			return nil
+		}
+		var next any
+		found := false
+		for actualKey, candidate := range object {
+			if strings.EqualFold(actualKey, key) {
+				next = candidate
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil
+		}
+		current = next
+	}
+	array, ok := current.([]any)
+	if !ok {
+		return nil
+	}
+	result := make([]map[string]any, 0, len(array))
+	for _, item := range array {
+		if object, ok := item.(map[string]any); ok {
+			result = append(result, object)
 		}
 	}
 	return result
@@ -2335,6 +2839,41 @@ func lookupDiskRate(instances map[string]rateStats, names ...string) (rateStats,
 		}
 	}
 	return rateStats{}, false
+}
+
+func lookupDiskSensorMetadata(instances map[string]diskSensorMetadata, names ...string) (diskSensorMetadata, bool) {
+	if len(instances) == 0 {
+		return diskSensorMetadata{}, false
+	}
+	candidates := []string{}
+	for _, name := range names {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		candidates = append(candidates, sanitizeKey(trimmed))
+		if strings.HasPrefix(trimmed, "/dev/") {
+			candidates = append(candidates, sanitizeKey(strings.TrimPrefix(trimmed, "/dev/")))
+			candidates = append(candidates, sanitizeKey(linuxBlockDeviceName(trimmed)))
+		}
+	}
+	candidates = uniqueStrings(candidates)
+	for _, candidate := range candidates {
+		if value, ok := instances[candidate]; ok {
+			return value, true
+		}
+	}
+	// LHM uses the physical product name while Windows can expose a longer
+	// FriendlyName. A one-way containment match handles that safely when only
+	// one storage sensor matches the disk identity.
+	for key, value := range instances {
+		for _, candidate := range candidates {
+			if candidate != "" && (strings.Contains(key, candidate) || strings.Contains(candidate, key)) {
+				return value, true
+			}
+		}
+	}
+	return diskSensorMetadata{}, false
 }
 
 func diskRateCandidates(name string) []string {

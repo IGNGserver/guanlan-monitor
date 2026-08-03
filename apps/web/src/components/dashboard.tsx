@@ -85,6 +85,13 @@ export function Dashboard({
         vendor?: string;
         sourceKey?: string;
         temperatureC?: number | null;
+        healthStatus?: string | null;
+        healthReason?: string | null;
+        healthPercent?: number | null;
+        smartAttributes?: { id: number; name: string; value: number; threshold: number }[];
+        activePercent?: number | null;
+        averageResponseMs?: number | null;
+        interfaceType?: string | null;
         totalBytes: number;
         usedBytes: number;
       }[];
@@ -520,6 +527,14 @@ export function Dashboard({
                         {disk?.interfaceType && <span className={styles.metaBadge}>{disk.interfaceType}</span>}
                         <span className={styles.metaBadge}>容量：{formatBytes(disk?.usedBytes ?? 0)} / {formatBytes(disk?.totalBytes ?? 0)}</span>
                         {disk?.averageResponseMs != null && <span className={styles.metaBadge}>响应：{disk.averageResponseMs.toFixed(1)} ms</span>}
+                        {disk?.healthStatus && <span className={styles.metaBadge}>健康：{formatDiskHealth(disk.healthStatus)}</span>}
+                        {disk?.healthPercent != null && <span className={styles.metaBadge}>寿命：{disk.healthPercent.toFixed(0)}%</span>}
+                        {disk?.healthReason && <span className={styles.metaBadge}>健康来源：{disk.healthReason}</span>}
+                        {disk?.smartAttributes?.map((attribute) => (
+                          <span className={styles.metaBadge} key={`${diskSeries.id}-smart-${attribute.id}`}>
+                            SMART {attribute.id} {attribute.name}：{attribute.value.toFixed(0)} / 阈值 {attribute.threshold.toFixed(0)}
+                          </span>
+                        ))}
                       </div>
                       <div className={styles.chartGrid}>
                         <ChartCard title={`${diskSeries.name} 读取`} chartId={`${diskSeries.id}-read`} value={formatRate(diskSeries.readBytesPerSec.at(-1)?.value ?? 0)} color="var(--accent-cyan)" points={diskSeries.readBytesPerSec} />
@@ -773,4 +788,17 @@ function formatRate(bytesPerSec: number) {
 function formatMHz(value: number) {
   if (value <= 0) return "0";
   return value >= 1000 ? `${(value / 1000).toFixed(2)} GHz` : `${value.toFixed(0)} MHz`;
+}
+
+function formatDiskHealth(value: string) {
+  switch (value.toLowerCase()) {
+    case "good":
+      return "正常";
+    case "caution":
+      return "注意";
+    case "bad":
+      return "异常";
+    default:
+      return value;
+  }
 }

@@ -48,6 +48,14 @@ data class CpuPackageDto(
 )
 
 @Serializable
+data class DiskSmartAttributeDto(
+  val id: Int,
+  val name: String,
+  val value: Double,
+  val threshold: Double
+)
+
+@Serializable
 data class DiskDto(
   val id: String,
   val name: String,
@@ -57,6 +65,10 @@ data class DiskDto(
   val vendor: String? = null,
   val sourceKey: String? = null,
   val temperatureC: Double? = null,
+  val healthStatus: String? = null,
+  val healthReason: String? = null,
+  val healthPercent: Double? = null,
+  val smartAttributes: List<DiskSmartAttributeDto> = emptyList(),
   val activePercent: Double? = null,
   val averageResponseMs: Double? = null,
   val interfaceType: String? = null,

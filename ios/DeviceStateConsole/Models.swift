@@ -84,6 +84,13 @@ public struct CpuPackageDto: Codable, Identifiable, Equatable, Sendable {
     public let temperatureC: Double?
 }
 
+public struct DiskSmartAttributeDto: Codable, Identifiable, Equatable, Sendable {
+    public var id: Int
+    public let name: String
+    public let value: Double
+    public let threshold: Double
+}
+
 public struct DiskDto: Codable, Identifiable, Equatable, Sendable {
     public let id: String
     public let name: String
@@ -93,6 +100,10 @@ public struct DiskDto: Codable, Identifiable, Equatable, Sendable {
     public let vendor: String?
     public let sourceKey: String?
     public let temperatureC: Double?
+    public let healthStatus: String?
+    public let healthReason: String?
+    public let healthPercent: Double?
+    public let smartAttributes: [DiskSmartAttributeDto]?
     public let activePercent: Double?
     public let averageResponseMs: Double?
     public let interfaceType: String?

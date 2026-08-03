@@ -1029,12 +1029,18 @@ private fun DiskSheetContent(metrics: MetricsDto, tabId: String, selectedWindow:
   val series = metrics.series.disks.firstOrNull { it.id == tabId }
   DiskInstanceCard(disk, series, onEdit = { onEditInstance(disk.id) })
   MetaGrid(
-    listOfNotNull(
-      "接口" to (disk.interfaceType ?: "未知"),
-      "温度" to (disk.temperatureC?.let { formatCelsius(it) } ?: "未知"),
-      "活动" to (disk.activePercent?.let { formatPercent(it) } ?: "未知"),
-      "响应" to (disk.averageResponseMs?.let { "%.1f ms".format(it) } ?: "未知")
-    )
+    buildList {
+      add("接口" to (disk.interfaceType ?: "未知"))
+      add("温度" to (disk.temperatureC?.let { formatCelsius(it) } ?: "未知"))
+      add("活动" to (disk.activePercent?.let { formatPercent(it) } ?: "未知"))
+      add("响应" to (disk.averageResponseMs?.let { "%.1f ms".format(it) } ?: "未知"))
+      disk.healthStatus?.let { add("健康" to formatDiskHealth(it)) }
+      disk.healthPercent?.let { add("寿命" to formatPercent(it)) }
+      disk.healthReason?.let { add("健康来源" to it) }
+      disk.smartAttributes.forEach { attribute ->
+        add("SMART ${attribute.id}" to "${attribute.name}: ${attribute.value.toInt()} / 阈值 ${attribute.threshold.toInt()}")
+      }
+    }
   )
 }
 
@@ -1297,11 +1303,12 @@ private fun DiskInstanceCard(disk: DiskDto, series: DiskMetricSeriesDto?, onEdit
     onEdit = onEdit
   ) {
     MetricCardGrid(
-      cards = listOf(
-        MetricCardModel("容量", buildUsage(disk.usedBytes, disk.totalBytes), series?.usagePercent.orEmpty(), ::formatPercent, 100.0),
-        MetricCardModel("读取", formatSpeed(series?.readBytesPerSec?.lastOrNull()?.value), series?.readBytesPerSec.orEmpty(), ::formatSpeed),
-        MetricCardModel("写入", formatSpeed(series?.writeBytesPerSec?.lastOrNull()?.value), series?.writeBytesPerSec.orEmpty(), ::formatSpeed)
-      )
+      cards = buildList {
+        add(MetricCardModel("容量", buildUsage(disk.usedBytes, disk.totalBytes), series?.usagePercent.orEmpty(), ::formatPercent, 100.0))
+        add(MetricCardModel("读取", formatSpeed(series?.readBytesPerSec?.lastOrNull()?.value), series?.readBytesPerSec.orEmpty(), ::formatSpeed))
+        add(MetricCardModel("写入", formatSpeed(series?.writeBytesPerSec?.lastOrNull()?.value), series?.writeBytesPerSec.orEmpty(), ::formatSpeed))
+        add(MetricCardModel("温度", formatCelsius(disk.temperatureC), series?.temperatureC.orEmpty(), ::formatCelsius))
+      }
     )
   }
 }
@@ -1947,6 +1954,12 @@ private fun formatPercent(value: Double?): String = if (value == null) "--" else
 private fun formatMHz(value: Double?): String = if (value == null) "--" else "${"%.0f".format(value)} MHz"
 private fun formatCelsius(value: Double?): String = if (value == null) "--" else "${"%.1f".format(value)} °C"
 private fun formatSpeed(value: Double?): String = formatBytes(value ?: 0.0) + "/s"
+private fun formatDiskHealth(value: String): String = when (value.lowercase()) {
+  "good" -> "正常"
+  "caution" -> "注意"
+  "bad" -> "异常"
+  else -> value
+}
 private fun formatDate(value: String): String = runCatching {
   java.time.OffsetDateTime.parse(value).atZoneSameInstant(java.time.ZoneId.systemDefault()).toLocalDate().toString()
 }.getOrDefault(value)

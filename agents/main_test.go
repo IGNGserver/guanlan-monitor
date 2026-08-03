@@ -73,11 +73,55 @@ func TestMapHardwareSensorsIntelGPU(t *testing.T) {
 	}
 }
 
+func TestMapHardwareSensorsStorage(t *testing.T) {
+	temperature := 42.0
+	life := 97.0
+	metrics := mapHardwareSensors([]hardwareSensorSnapshot{{
+		HardwareType: "Storage",
+		Name:         "KINGSTON SNV2S1000G",
+		HealthStatus: "Good",
+		HealthReason: "SMART status is healthy",
+		SmartAttributes: []hardwareSmartAttribute{{
+			ID:        194,
+			Name:      "Temperature",
+			Value:     42,
+			Threshold: 0,
+		}},
+		Sensors: []hardwareSensor{
+			{SensorType: "Temperature", Name: "Temperature", Value: &temperature},
+			{SensorType: "Level", Name: "Life", Value: &life},
+		},
+	}})
+
+	metadata, ok := metrics.diskSensorMetadata[sanitizeKey("KINGSTON SNV2S1000G")]
+	if !ok {
+		t.Fatalf("expected storage metadata, got %#v", metrics.diskSensorMetadata)
+	}
+	if metadata.TemperatureC == nil || *metadata.TemperatureC != temperature {
+		t.Fatalf("unexpected storage temperature: %#v", metadata.TemperatureC)
+	}
+	if metadata.HealthStatus != "good" || metadata.HealthPercent == nil || *metadata.HealthPercent != life {
+		t.Fatalf("unexpected storage health: %#v", metadata)
+	}
+	if len(metadata.SmartAttributes) != 1 || metadata.SmartAttributes[0].ID != 194 {
+		t.Fatalf("unexpected SMART attributes: %#v", metadata.SmartAttributes)
+	}
+}
+
 func TestDiskRateLookupNormalizesLinuxPartitionNames(t *testing.T) {
 	rate := rateStats{ReadBytesPerSec: 123, WriteBytesPerSec: 456}
 	got, ok := lookupDiskRate(map[string]rateStats{"sda": rate}, "/dev/sda2", "/")
 	if !ok || got.ReadBytesPerSec != rate.ReadBytesPerSec || got.WriteBytesPerSec != rate.WriteBytesPerSec {
 		t.Fatalf("expected /dev/sda2 to resolve to sda, got %#v, ok=%v", got, ok)
+	}
+}
+
+func TestDiskSensorLookupNormalizesLinuxPartitionNames(t *testing.T) {
+	temperature := 41.0
+	sensor := diskSensorMetadata{TemperatureC: &temperature, HealthStatus: "good"}
+	got, ok := lookupDiskSensorMetadata(map[string]diskSensorMetadata{"sda": sensor}, "/dev/sda2")
+	if !ok || got.TemperatureC == nil || *got.TemperatureC != temperature || got.HealthStatus != "good" {
+		t.Fatalf("expected /dev/sda2 to resolve to sda sensor, got %#v, ok=%v", got, ok)
 	}
 }
 
@@ -122,5 +166,28 @@ func TestParseSmartctlTemperature(t *testing.T) {
 	nvme := []byte("Temperature:                        41 Celsius")
 	if value := parseSmartctlTemperature(nvme); value == nil || *value != 41 {
 		t.Fatalf("unexpected NVMe temperature: %v", value)
+	}
+}
+
+func TestParseSmartctlJSON(t *testing.T) {
+	raw := []byte(`{
+  "smart_status": {"passed": true},
+  "temperature": {"current": 38},
+  "nvme_smart_health_information_log": {"percentage_used": 7},
+  "ata_smart_data": {"table": [{"id": 194, "name": "Temperature_Celsius", "raw": {"value": 38}, "thresh": 0}]}
+}`)
+
+	metadata, ok := parseSmartctlJSON(raw)
+	if !ok {
+		t.Fatal("expected smartctl JSON to produce metadata")
+	}
+	if metadata.HealthStatus != "good" || metadata.HealthPercent == nil || *metadata.HealthPercent != 93 {
+		t.Fatalf("unexpected SMART health: %#v", metadata)
+	}
+	if metadata.TemperatureC == nil || *metadata.TemperatureC != 38 {
+		t.Fatalf("unexpected SMART temperature: %#v", metadata.TemperatureC)
+	}
+	if len(metadata.SmartAttributes) != 1 || metadata.SmartAttributes[0].ID != 194 {
+		t.Fatalf("unexpected SMART attributes: %#v", metadata.SmartAttributes)
 	}
 }

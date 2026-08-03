@@ -67,11 +67,22 @@ export interface DiskDeviceStats {
   vendor?: string;
   sourceKey?: string;
   temperatureC?: number | null;
+  healthStatus?: string | null;
+  healthReason?: string | null;
+  healthPercent?: number | null;
+  smartAttributes?: DiskSmartAttribute[];
   activePercent?: number | null;
   averageResponseMs?: number | null;
   interfaceType?: string | null;
   totalBytes: number;
   usedBytes: number;
+}
+
+export interface DiskSmartAttribute {
+  id: number;
+  name: string;
+  value: number;
+  threshold: number;
 }
 
 export interface MemoryStats {

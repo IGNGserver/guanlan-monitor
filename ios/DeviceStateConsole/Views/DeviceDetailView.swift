@@ -311,25 +311,37 @@ struct DiskSectionView: View {
     var body: some View {
         SectionContainer(title: "磁盘存储 (\(metrics.disks.count))", onOpenBlock: onOpenBlock, onEdit: onEdit) {
             ForEach(metrics.disks) { disk in
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text(disk.mountPoint.isEmpty ? disk.name : disk.mountPoint)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(disk.mountPoint.isEmpty ? disk.name : disk.mountPoint)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("\(disk.usedBytes / 1024 / 1024 / 1024) GB / \(disk.totalBytes / 1024 / 1024 / 1024) GB")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        let percent = Double(disk.usedBytes) / Double(max(1, disk.totalBytes)) * 100
+                        Text(String(format: "%.0f%%", percent))
                             .font(.subheadline)
-                            .fontWeight(.medium)
-                Text("\(disk.usedBytes / 1024 / 1024 / 1024) GB / \(disk.totalBytes / 1024 / 1024 / 1024) GB")
+                            .fontWeight(.bold)
+                            .foregroundStyle(.orange)
+                    }
+                    Text("接口 \(disk.interfaceType ?? "未知") · 温度 \(formatCelsius(disk.temperatureC)) · 活动 \(formatPercent(disk.activePercent)) · 响应 \(disk.averageResponseMs.map { String(format: "%.1f ms", $0) } ?? "未知") · 健康 \(disk.healthStatus.map(formatDiskHealth) ?? "未知") · 寿命 \(disk.healthPercent.map { String(format: "%.0f%%", $0) } ?? "未知")")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    if let reason = disk.healthReason, !reason.isEmpty {
+                        Text("健康来源：\(reason)")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
-                    Spacer()
-                    let percent = Double(disk.usedBytes) / Double(max(1, disk.totalBytes)) * 100
-                    Text(String(format: "%.0f%%", percent))
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                        .foregroundStyle(.orange)
+                    if let smartAttributes = disk.smartAttributes, !smartAttributes.isEmpty {
+                        Text(smartAttributes.map { "SMART \($0.id) \($0.name)：\(String(format: "%.0f", $0.value)) / 阈值 \(String(format: "%.0f", $0.threshold))" }.joined(separator: " · "))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                Text("接口 \(disk.interfaceType ?? "未知") · 温度 \(formatCelsius(disk.temperatureC)) · 活动 \(formatPercent(disk.activePercent)) · 响应 \(disk.averageResponseMs.map { String(format: "%.1f ms", $0) } ?? "未知")")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
                 .padding(8)
                 .background(Color(uiColor: .tertiarySystemGroupedBackground))
                 .cornerRadius(8)
@@ -469,6 +481,15 @@ private func formatMHz(_ value: Double?) -> String {
 private func formatCelsius(_ value: Double?) -> String {
     guard let value else { return "未知" }
     return String(format: "%.1f°C", value)
+}
+
+func formatDiskHealth(_ value: String) -> String {
+    switch value.lowercased() {
+    case "good": return "正常"
+    case "caution": return "注意"
+    case "bad": return "异常"
+    default: return value
+    }
 }
 
 private func formatPercent(_ value: Double?) -> String {

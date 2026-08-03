@@ -167,6 +167,22 @@ struct DiskTabContent: View {
     
     var body: some View {
         if let seriesMap = metrics.diskSeries[tabId] {
+            if let disk = metrics.disks.first(where: { $0.id == tabId }) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("健康 \(disk.healthStatus.map(formatDiskHealth) ?? "未知") · 寿命 \(disk.healthPercent.map { String(format: "%.0f%%", $0) } ?? "未知") · 温度 \(formatCelsius(disk.temperatureC))")
+                        .font(.subheadline)
+                    if let reason = disk.healthReason, !reason.isEmpty {
+                        Text("健康来源：\(reason)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let smartAttributes = disk.smartAttributes, !smartAttributes.isEmpty {
+                        Text(smartAttributes.map { "SMART \($0.id) \($0.name)：\(String(format: "%.0f", $0.value)) / 阈值 \(String(format: "%.0f", $0.threshold))" }.joined(separator: " · "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
             MiniLineChartView(
                 title: "使用率 (%)",
                 points: seriesMap.usedPercent,
