@@ -1,6 +1,6 @@
 # 观澜
 
-观澜是用于查看电脑、服务器和虚拟机运行状态的私有部署监控工具。它提供 Web 控制台、Windows 桌面端和 Android 客户端，可查看 CPU、内存、磁盘、网络、显卡和风扇等实时数据与历史趋势。Windows 端按 CPU、硬盘、网卡、显卡和风扇实例分别展示使用率、频率、温度、容量与读写/收发速率。
+观澜是用于查看电脑、服务器和虚拟机运行状态的私有部署监控工具。它提供 Web 控制台、Windows 桌面端、GNOME Linux 桌面端和 Android 客户端，可查看 CPU、内存、磁盘、网络、显卡和风扇等实时数据与历史趋势。桌面端按 CPU、硬盘、网卡、显卡和风扇实例分别展示使用率、频率、温度、容量与读写/收发速率。
 
 开发版本号以仓库根目录的 `VERSION` 为准。用户安装请以 [GitHub Releases](https://github.com/IGNGserver/Device-State-Console/releases/latest) 中的稳定版本为准；`main` 分支不是稳定安装源。
 
@@ -15,6 +15,18 @@
 `DeviceStateConsole-Windows-GUI-Update-v<版本>.zip` 仅用于已安装客户端的更新分发，不应作为首次安装方式。`DeviceStateConsole-Windows-GUI-Portable-v<版本>.zip` 是无需安装的 Windows GUI 便携版。
 
 安装后打开“观澜”，在“配置”页填写中枢地址、访问密钥和设备名称。应用运行后会显示在系统托盘：左键打开主界面，右键查看状态或退出。
+
+### Linux（GNOME）
+
+下载 `DeviceStateConsole-Linux-GUI-Install-v<版本>.deb`，适用于 Ubuntu/Debian
+`amd64`。它使用 GTK4/libadwaita 提供原生 Agent 配置页，并在同一个窗口内嵌
+中枢网页查看实例和历史数据；界面会跟随 GNOME 的浅色、深色和高对比度设置。
+首次打开后可在“本机 Agent”页填写中枢地址和访问密钥；后台采集服务由 systemd
+user service 管理，没有 systemd user session 时会自动使用前台回退模式。
+
+该首个 Linux GUI 安装包以 Ubuntu 24.04 构建，目标为 Debian 系 `amd64`。
+Fedora/RPM、Arch 等发行版暂时继续使用 Linux CLI 安装包，后续可在不改变 GUI
+架构的情况下增加对应的原生包格式。
 
 ### Android
 
@@ -55,7 +67,7 @@ Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 
 ## 设备采集
 
 - Windows：优先安装上方的观澜 setup，在应用内完成探测、采集和中枢连接配置。
-- Linux：使用 [Linux agent 安装脚本](deploy/install-agent.sh)。
+- Linux 桌面：优先安装上方的 GNOME `.deb`，在“本机 Agent”页完成配置；无桌面环境时使用 [Linux agent 安装脚本](deploy/install-agent.sh)。
 - 脚本式 agent：使用按版本下载的 [Linux 安装入口](deploy/install-agent-from-release.sh) 或 [Windows 安装入口](deploy/install-agent-from-release.ps1)，显式指定 Release 版本。
 - 网页控制台：使用 `.env` 中的 `ACCESS_KEY` 登录，选择设备即可查看实时数据和历史图表。
 
@@ -67,9 +79,10 @@ Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 
 
 1. `DeviceStateConsole-Windows-GUI-Setup-v<版本>.exe`。
 2. `DeviceStateConsole-Windows-GUI-Portable-v<版本>.zip` 或更新包。
-3. `DeviceStateConsole-Android-v<版本>.apk`。
-4. `DeviceStateConsole-Windows-CLI-Install-v<版本>.zip`。
-5. `DeviceStateConsole-Linux-CLI-Install-v<版本>.zip`。
+3. `DeviceStateConsole-Linux-GUI-Install-v<版本>.deb`。
+4. `DeviceStateConsole-Android-v<版本>.apk`。
+5. `DeviceStateConsole-Windows-CLI-Install-v<版本>.zip`。
+6. `DeviceStateConsole-Linux-CLI-Install-v<版本>.zip`。
 
 仓库不会提交安装包、APK、密钥、日志或本机配置。发布资产只上传到 GitHub Release。
 

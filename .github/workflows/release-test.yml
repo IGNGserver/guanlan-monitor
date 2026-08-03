@@ -109,6 +109,65 @@ jobs:
             release/cli-agent/DeviceStateConsole-Linux-CLI-Install-v*.zip
           if-no-files-found: error
 
+  linux-gui:
+    name: Build Linux GUI asset
+    runs-on: ubuntu-24.04
+    needs: verify
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Install GTK4/libadwaita build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            dpkg-dev \
+            libadwaita-1-dev \
+            libgtk-4-dev \
+            libjson-glib-dev \
+            libsoup-3.0-dev \
+            libwebkitgtk-6.0-dev \
+            pkg-config
+
+      - name: Build Linux GUI install package
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ./deploy/build-linux-agent-gui.sh --output-dir release/linux-agent-gui
+
+      - name: Install and smoke-check Linux GUI package
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="$(find release/linux-agent-gui -maxdepth 1 -type f -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb' -print -quit)"
+          test -n "$package"
+          sudo apt-get install -y "$package"
+          version="$(tr -d '[:space:]' < VERSION)"
+          dpkg-query -W -f='${Status}\n' device-state-console | grep -F 'install ok installed'
+          test -x /usr/bin/device-state-console
+          test -x /usr/lib/device-state-console/device-state-console-linux-gui
+          test -x /usr/lib/device-state-console/device-state-console-agent-backend
+          test -x /usr/lib/device-state-console/device-state-console-agent
+          test -f /usr/lib/systemd/user/device-state-console-agent-backend.service
+          test -f "/usr/share/applications/org.igng.DeviceStateConsole.desktop"
+          test "$(dpkg-query -W -f='${Version}' device-state-console)" = "$version"
+
+      - name: Upload Linux GUI asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-gui-release-assets
+          path: |
+            release/linux-agent-gui/DeviceStateConsole-Linux-GUI-Install-v*.deb
+            release/linux-agent-gui/DeviceStateConsole-Linux-GUI-Install-v*.deb.sha256
+          if-no-files-found: error
+
   android:
     name: Build Android asset
     runs-on: ubuntu-latest
@@ -123,16 +182,65 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Build unsigned release APK for testing
+      - name: Prepare Android signing key
+        shell: bash
+        env:
+          DSC_ANDROID_KEYSTORE_BASE64: ${{ secrets.DSC_ANDROID_KEYSTORE_BASE64 }}
+          DSC_ANDROID_STORE_PASSWORD: ${{ secrets.DSC_ANDROID_STORE_PASSWORD }}
+          DSC_ANDROID_KEY_ALIAS: ${{ secrets.DSC_ANDROID_KEY_ALIAS }}
+          DSC_ANDROID_KEY_PASSWORD: ${{ secrets.DSC_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keystore="$RUNNER_TEMP/device-state-console-release.jks"
+
+          if [[ -n "$DSC_ANDROID_KEYSTORE_BASE64" && -n "$DSC_ANDROID_STORE_PASSWORD" && -n "$DSC_ANDROID_KEY_ALIAS" && -n "$DSC_ANDROID_KEY_PASSWORD" ]]; then
+            printf '%s' "$DSC_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+            keytool -list -keystore "$keystore" \
+              -storepass "$DSC_ANDROID_STORE_PASSWORD" \
+              -alias "$DSC_ANDROID_KEY_ALIAS" >/dev/null
+          else
+            echo "Android signing secrets are not configured; generating an ephemeral key for this test release."
+            store_password="device-state-console-test-store"
+            key_password="device-state-console-test-key"
+            keytool -genkeypair \
+              -keystore "$keystore" \
+              -storepass "$store_password" \
+              -keypass "$key_password" \
+              -alias device-state-console-test \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Device State Console Test, OU=CI, O=IGNGserver, L=CI, ST=CI, C=CN" \
+              >/dev/null
+            DSC_ANDROID_STORE_PASSWORD="$store_password"
+            DSC_ANDROID_KEY_ALIAS="device-state-console-test"
+            DSC_ANDROID_KEY_PASSWORD="$key_password"
+          fi
+
+          {
+            echo "DSC_UPLOAD_STORE_FILE=$keystore"
+            echo "DSC_UPLOAD_STORE_PASSWORD=$DSC_ANDROID_STORE_PASSWORD"
+            echo "DSC_UPLOAD_KEY_ALIAS=$DSC_ANDROID_KEY_ALIAS"
+            echo "DSC_UPLOAD_KEY_PASSWORD=$DSC_ANDROID_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build signed release APK for testing
         working-directory: android
         run: bash ./gradlew :app:assembleRelease --no-daemon
 
       - name: Name Android asset
         shell: bash
         run: |
+          set -euo pipefail
           version="$(tr -d '[:space:]' < VERSION)"
-          apk="$(find android/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
-          test -n "$apk"
+          apk="android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$apk"
+          test ! -e "android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -n "$sdk_root"
+          apksigner="$(find "$sdk_root/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$apksigner"
+          "$apksigner" verify --verbose "$apk"
           mkdir -p release/android
           cp "$apk" "release/android/DeviceStateConsole-Android-v${version}.apk"
 
@@ -191,9 +299,10 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - windows
+      - linux-gui
       - android
       - ios
-    if: ${{ always() && needs.windows.result == 'success' && needs.android.result == 'success' }}
+    if: ${{ always() && needs.windows.result == 'success' && needs['linux-gui'].result == 'success' && needs.android.result == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -217,6 +326,8 @@ jobs:
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Update-v*.zip' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-CLI-Install-v*.zip' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-CLI-Install-v*.zip' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb.sha256' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Android-v*.apk' | wc -l)" -eq 1
 
       - name: Publish prerelease

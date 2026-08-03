@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=观澜
+Comment=设备状态采集与中枢查看
+Exec=device-state-console
+Icon=org.igng.DeviceStateConsole
+Terminal=false
+Categories=System;Monitor;
+StartupNotify=true
+StartupWMClass=org.igng.DeviceStateConsole

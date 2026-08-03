@@ -109,5 +109,6 @@ Every release asset must identify its platform and delivery mode:
 - `DeviceStateConsole-Windows-GUI-Portable-vX.Y.Z.zip`
 - `DeviceStateConsole-Windows-GUI-Update-vX.Y.Z.zip`
 - `DeviceStateConsole-Windows-CLI-Install-vX.Y.Z.zip`
+- `DeviceStateConsole-Linux-GUI-Install-vX.Y.Z.deb`
 - `DeviceStateConsole-Linux-CLI-Install-vX.Y.Z.zip`
 - `DeviceStateConsole-Android-vX.Y.Z.apk`

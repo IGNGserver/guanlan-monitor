@@ -14,6 +14,7 @@ server, web application, and shared package.
 | CLI agent | Windows | `deploy/install-agent.ps1` | Install/upgrade/uninstall through a scheduled task or current-user startup fallback. |
 | CLI agent | Linux | `deploy/install-agent.sh` | Install/upgrade/uninstall through `device-state-console-agent.service`. |
 | Desktop agent | Windows | `deploy/build-windows-agent-portable.ps1` and `deploy/build-windows-agent-setup.ps1` | Portable bundle includes frontend, backend, collector, runtime, and hardware assets; setup supports install, update, repair, and uninstall. |
+| Desktop agent | Linux (GNOME) | `deploy/build-linux-agent-gui.sh` | GTK4/libadwaita native configuration UI, WebKitGTK Hub view, Go backend/collector, and Debian `amd64` install package. |
 
 Android release APKs use `deploy/package-android-release.ps1` and are named
 `DeviceStateConsole-Android-vX.Y.Z.apk`.
@@ -23,6 +24,11 @@ Run `deploy/build-cli-agent.ps1 -Zip` to create
 `DeviceStateConsole-Windows-CLI-Install-vX.Y.Z.zip` and
 `DeviceStateConsole-Linux-CLI-Install-vX.Y.Z.zip`. Their installers use the bundled binary and do
 not require Go on the target host.
+
+The Linux GUI package is named
+`DeviceStateConsole-Linux-GUI-Install-vX.Y.Z.deb`; it is built and installed by
+GitHub Actions on Ubuntu 24.04. The GUI package is the recommended Linux desktop
+delivery for GNOME, while the CLI package remains the portable/headless option.
 `node-agent.mjs` and `dev-machine-agent-launcher.ps1` are retained only for
 historical development-machine compatibility and are not part of release
 packages or recommended deployment paths.

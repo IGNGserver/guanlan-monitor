@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -189,6 +190,7 @@ func main() {
 	listenAddr := flag.String("listen", "127.0.0.1:17891", "local listen address")
 	bundleRoot := flag.String("bundle-root", "", "directory containing packaged backend/agent binaries")
 	configRoot := flag.String("config-root", "", "directory for local config files")
+	childBinary := flag.String("child-binary", "", "path to the collector binary")
 	parentPID := flag.Int("parent-pid", 0, "frontend process id to watch; backend exits when this process exits")
 	flag.Parse()
 
@@ -216,13 +218,26 @@ func main() {
 	}
 
 	configPath := filepath.Join(resolvedConfigRoot, "agent-ui.config.json")
-	childBinaryPath := filepath.Join(resolvedBundleRoot, "device-state-console-agent.exe")
+	collectorName := "device-state-console-agent"
+	if runtime.GOOS == "windows" {
+		collectorName += ".exe"
+	}
+	resolvedChildBinary := strings.TrimSpace(*childBinary)
+	if resolvedChildBinary == "" {
+		resolvedChildBinary = filepath.Join(resolvedBundleRoot, collectorName)
+	} else if !filepath.IsAbs(resolvedChildBinary) {
+		resolvedChildBinary = filepath.Join(resolvedBundleRoot, resolvedChildBinary)
+	}
+	resolvedChildBinary, err = filepath.Abs(resolvedChildBinary)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	s := &server{
 		configPath:       configPath,
 		syncStatePath:    filepath.Join(resolvedConfigRoot, "agent-ui.sync-state.json"),
 		diagnosticsPath:  filepath.Join(resolvedConfigRoot, "agent-ui.backend.log"),
-		childBinaryPath:  childBinaryPath,
+		childBinaryPath:  resolvedChildBinary,
 		requestClient:    &http.Client{Timeout: 10 * time.Second},
 		config:           defaultLocalConfig(),
 		connectionState:  "stopped",
@@ -233,6 +248,14 @@ func main() {
 	}
 	if err := s.loadSyncState(); err != nil {
 		log.Printf("load cloud sync state failed: %v", err)
+	}
+	if runtime.GOOS == "linux" && s.config.AutoStartCollector && s.config.DataRecordingEnabled {
+		s.mu.Lock()
+		if err := s.startChildLocked(false); err != nil {
+			s.connectionState = "error"
+			s.appendDiagnosticLocked("linux auto-start collector failed: %v", err)
+		}
+		s.mu.Unlock()
 	}
 	if childJob, err := newJobObject(); err != nil {
 		log.Printf("create child job object failed: %v", err)
@@ -272,19 +295,46 @@ func main() {
 	}
 	s.httpServer = httpServer
 
-	log.Printf("windows agent backend v%s listening on http://%s", BuildVersion, *listenAddr)
+	log.Printf("device state console agent backend v%s listening on http://%s", BuildVersion, *listenAddr)
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
 }
 
 func defaultLocalConfig() agentLocalConfig {
+	deviceID := "windows-agent"
+	hostname := "Windows Agent"
+	probeSelections := []agentProbeSelection{
+		{Target: "cpu", Provider: "disabled", Enabled: false},
+		{Target: "memory", Provider: "disabled", Enabled: false},
+		{Target: "disk", Provider: "disabled", Enabled: false},
+		{Target: "network", Provider: "disabled", Enabled: false},
+		{Target: "gpu", Provider: "disabled", Enabled: false},
+		{Target: "fan", Provider: "disabled", Enabled: false},
+	}
+	if runtime.GOOS == "linux" {
+		deviceID = "linux-agent"
+		hostname = "Linux Agent"
+		if detectedHostname, err := os.Hostname(); err == nil && strings.TrimSpace(detectedHostname) != "" {
+			deviceID = strings.TrimSpace(detectedHostname)
+			hostname = strings.TrimSpace(detectedHostname)
+		}
+		probeSelections = []agentProbeSelection{
+			{Target: "cpu", Provider: "gopsutil", Enabled: true},
+			{Target: "memory", Provider: "gopsutil", Enabled: true},
+			{Target: "disk", Provider: "gopsutil", Enabled: true},
+			{Target: "network", Provider: "gopsutil", Enabled: true},
+			{Target: "gpu", Provider: "disabled", Enabled: false},
+			{Target: "fan", Provider: "disabled", Enabled: false},
+		}
+	}
+
 	return agentLocalConfig{
 		Connection: agentConnectionConfig{
 			ServerURL: "http://127.0.0.1:3100",
 			Secret:    "",
-			DeviceID:  "windows-agent",
-			Hostname:  "Windows Agent",
+			DeviceID:  deviceID,
+			Hostname:  hostname,
 		},
 		Sampling: agentSamplingConfig{
 			NormalIntervalSeconds: 30,
@@ -298,21 +348,26 @@ func defaultLocalConfig() agentLocalConfig {
 		},
 		EnabledDeviceIDs:     map[string][]string{},
 		InstanceMetricConfig: map[string][]string{},
-		ProbeSelections: []agentProbeSelection{
-			{Target: "cpu", Provider: "disabled", Enabled: false},
-			{Target: "memory", Provider: "disabled", Enabled: false},
-			{Target: "disk", Provider: "disabled", Enabled: false},
-			{Target: "network", Provider: "disabled", Enabled: false},
-			{Target: "gpu", Provider: "disabled", Enabled: false},
-			{Target: "fan", Provider: "disabled", Enabled: false},
-		},
+		ProbeSelections:      probeSelections,
 		CloudSyncEnabled:     true,
 		DataRecordingEnabled: true,
 		AutoRestartCollector: true,
+		AutoStartCollector:   false,
 	}
 }
 
 func supportedProbePlans() []probePlanSupport {
+	if runtime.GOOS == "linux" {
+		return []probePlanSupport{
+			{Target: "connection", Providers: []string{"gopsutil"}, Default: "gopsutil"},
+			{Target: "cpu", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
+			{Target: "memory", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
+			{Target: "disk", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
+			{Target: "network", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
+			{Target: "gpu", Providers: []string{"disabled"}, Default: "disabled"},
+			{Target: "fan", Providers: []string{"disabled", "hwmon"}, Default: "disabled"},
+		}
+	}
 	return []probePlanSupport{
 		{Target: "connection", Providers: []string{"gopsutil"}, Default: "gopsutil"},
 		{Target: "cpu", Providers: []string{"disabled", "gopsutil"}, Default: "disabled"},
@@ -396,7 +451,7 @@ func writeStateFile(path string, raw []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, raw, 0o644)
+	return os.WriteFile(path, raw, 0o600)
 }
 
 func fileExists(path string) bool {
@@ -1072,6 +1127,10 @@ func detectSanitizeKey(value string) string {
 }
 
 func detectGPUAdapters(enabled map[string]struct{}, explicit bool) ([]probeDetectedTarget, error) {
+	if runtime.GOOS != "windows" {
+		return []probeDetectedTarget{}, nil
+	}
+
 	commandText := `$ErrorActionPreference='Stop'; Get-CimInstance Win32_VideoController | Select-Object Name,PNPDeviceID,AdapterCompatibility,VideoProcessor | ConvertTo-Json -Depth 3 -Compress`
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
 	output, err := cmd.Output()

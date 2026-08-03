@@ -56,6 +56,48 @@ jobs:
         working-directory: agents
         run: go build ./...
 
+  linux-gui:
+    name: Verify Linux GUI package
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Install GTK4/libadwaita build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            dpkg-dev \
+            libadwaita-1-dev \
+            libgtk-4-dev \
+            libjson-glib-dev \
+            libsoup-3.0-dev \
+            libwebkitgtk-6.0-dev \
+            pkg-config
+
+      - name: Build and inspect Linux GUI Debian package
+        shell: bash
+        run: |
+          set -euo pipefail
+          output_dir="$RUNNER_TEMP/device-state-console-linux-gui"
+          bash ./deploy/build-linux-agent-gui.sh --output-dir "$output_dir"
+          package="$(find "$output_dir" -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          test -n "$package"
+          dpkg-deb --info "$package"
+          dpkg-deb --contents "$package"
+          test "$(dpkg-deb --field "$package" Package)" = "device-state-console"
+          test "$(dpkg-deb --field "$package" Architecture)" = "amd64"
+          dpkg-deb --contents "$package" | grep -F '/usr/bin/device-state-console'
+          dpkg-deb --contents "$package" | grep -F '/usr/lib/systemd/user/device-state-console-agent-backend.service'
+
   windows-gui:
     name: Verify Windows GUI bundle
     runs-on: windows-latest
