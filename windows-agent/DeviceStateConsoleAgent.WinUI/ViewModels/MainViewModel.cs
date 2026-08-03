@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Reflection;
 using DeviceStateConsoleAgent.WinUI.Common;
 using DeviceStateConsoleAgent.WinUI.Models;
 using DeviceStateConsoleAgent.WinUI.Services;
@@ -337,7 +338,11 @@ public sealed class MainViewModel : ObservableObject
     {
         get
         {
-            var candidate = typeof(MainViewModel).Assembly.GetName().InformationalVersion?.Split('+').LastOrDefault();
+            var candidate = typeof(MainViewModel).Assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+                .InformationalVersion
+                ?.Split('+')
+                .LastOrDefault();
             return candidate is "stable" or "test" ? candidate : "test";
         }
     }
