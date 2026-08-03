@@ -194,13 +194,8 @@ jobs:
           set -euo pipefail
           keystore="$RUNNER_TEMP/device-state-console-release.jks"
 
-          if [[ -n "$DSC_ANDROID_KEYSTORE_BASE64" && -n "$DSC_ANDROID_STORE_PASSWORD" && -n "$DSC_ANDROID_KEY_ALIAS" && -n "$DSC_ANDROID_KEY_PASSWORD" ]]; then
-            printf '%s' "$DSC_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
-            keytool -list -keystore "$keystore" \
-              -storepass "$DSC_ANDROID_STORE_PASSWORD" \
-              -alias "$DSC_ANDROID_KEY_ALIAS" >/dev/null
-          else
-            echo "Android signing secrets are not configured; generating an ephemeral key for this test release."
+          generate_ephemeral_key() {
+            echo "Generating an ephemeral Android signing key for this test release."
             store_password="device-state-console-test-store"
             key_password="device-state-console-test-key"
             keytool -genkeypair \
@@ -216,6 +211,18 @@ jobs:
             DSC_ANDROID_STORE_PASSWORD="$store_password"
             DSC_ANDROID_KEY_ALIAS="device-state-console-test"
             DSC_ANDROID_KEY_PASSWORD="$key_password"
+          }
+
+          if [[ -n "$DSC_ANDROID_KEYSTORE_BASE64" && -n "$DSC_ANDROID_STORE_PASSWORD" && -n "$DSC_ANDROID_KEY_ALIAS" && -n "$DSC_ANDROID_KEY_PASSWORD" ]] \
+            && printf '%s' "$DSC_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore" \
+            && keytool -list -keystore "$keystore" \
+              -storepass "$DSC_ANDROID_STORE_PASSWORD" \
+              -alias "$DSC_ANDROID_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "Using the configured Android signing key."
+          else
+            echo "Configured Android signing key is unavailable or invalid; using an ephemeral key for this test release."
+            rm -f "$keystore"
+            generate_ephemeral_key
           fi
 
           {
