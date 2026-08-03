@@ -16,9 +16,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
     <DscVersion>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\..\VERSION').Trim())</DscVersion>
+    <DscReleaseChannel Condition="'$(DSC_RELEASE_CHANNEL)' == 'stable'">stable</DscReleaseChannel>
+    <DscReleaseChannel Condition="'$(DscReleaseChannel)' == ''">test</DscReleaseChannel>
     <Version>$(DscVersion)</Version>
     <AssemblyVersion>$(DscVersion).0</AssemblyVersion>
     <FileVersion>$(DscVersion).0</FileVersion>
+    <InformationalVersion>$(DscVersion)+$(DscReleaseChannel)</InformationalVersion>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
   </PropertyGroup>
 

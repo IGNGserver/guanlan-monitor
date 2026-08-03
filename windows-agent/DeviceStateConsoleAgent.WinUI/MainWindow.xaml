@@ -69,6 +69,11 @@
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                                     <Button Content="重新检查连接" Command="{Binding CheckConnectionCommand}" Style="{StaticResource AccentButtonStyle}" />
+                                    <StackPanel Visibility="{Binding UpdateNoticeVisibility}" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                        <ProgressBar Width="100" Height="6" Minimum="0" Maximum="1" Value="{Binding UpdateProgressValue}" />
+                                        <TextBlock Text="{Binding UpdateStatusText}" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
+                                        <Button Content="{Binding UpdateButtonText}" Command="{Binding UpdateCommand}" Style="{StaticResource AccentButtonStyle}" />
+                                    </StackPanel>
                                     <Button Content="前往设置配置" Click="NavigateToSettings_OnClick" />
                                 </StackPanel>
                             </Grid>

@@ -14,6 +14,10 @@
 #define DSC_VERSION "dev"
 #endif
 
+#ifndef DSC_RELEASE_CHANNEL
+#define DSC_RELEASE_CHANNEL "test"
+#endif
+
 #define APP_ID "org.igng.DeviceStateConsole"
 #define SERVICE_NAME "device-state-console-agent-backend.service"
 #define BACKEND_PORT "17891"
@@ -29,6 +33,8 @@ typedef enum {
     REQUEST_STOP,
     REQUEST_DETECT,
     REQUEST_PUSH,
+    REQUEST_UPDATE_CHECK,
+    REQUEST_UPDATE_DOWNLOAD,
 } RequestKind;
 
 typedef struct {
@@ -62,6 +68,9 @@ struct _DscApp {
     GtkLabel *pending_value;
     GtkLabel *detect_value;
     GtkLabel *notice_label;
+    GtkLabel *update_label;
+    GtkProgressBar *update_progress;
+    GtkWidget *update_button;
 
     SoupSession *session;
     JsonObject *config;
@@ -75,11 +84,21 @@ struct _DscApp {
     gchar *config_root;
     gchar *backend_path;
     gchar *collector_path;
+    gchar *update_asset_url;
+    gchar *update_sha256;
+    gchar *update_version;
+    gchar *update_package_path;
+    GSubprocess *update_installer;
+    guint update_pulse_source;
+    gboolean update_check_started;
 };
 
 static void refresh_state(DscApp *app);
 static void start_backend_fallback(DscApp *app);
 static void on_save_clicked(GtkButton *button, gpointer data);
+static void check_for_update(DscApp *app);
+static void api_request_finished(GObject *source, GAsyncResult *result, gpointer user_data);
+static void run_systemctl(DscApp *app, const gchar *action);
 
 static void set_label(GtkLabel *label, const gchar *text)
 {
@@ -104,6 +123,10 @@ static void set_notice(DscApp *app, const gchar *text, gboolean error)
 static const gchar *object_string(JsonObject *object, const gchar *member, const gchar *fallback)
 {
     if (object == NULL || !json_object_has_member(object, member)) {
+        return fallback;
+    }
+    JsonNode *node = json_object_get_member(object, member);
+    if (node == NULL || JSON_NODE_HOLDS_NULL(node)) {
         return fallback;
     }
     const gchar *value = json_object_get_string_member(object, member);
@@ -331,6 +354,10 @@ static void apply_state(DscApp *app, JsonObject *state)
         g_clear_pointer(&app->config, json_object_unref);
         app->config = json_object_ref(stateConfig);
         apply_config_to_form(app);
+        if (!app->update_check_started) {
+            app->update_check_started = TRUE;
+            check_for_update(app);
+        }
     }
 }
 
@@ -362,6 +389,229 @@ static void handle_detect_response(DscApp *app, JsonObject *body)
     g_string_free(summary, TRUE);
 }
 
+static gboolean pulse_update_progress(gpointer data)
+{
+    DscApp *app = data;
+    if (app->update_progress != NULL) {
+        gtk_progress_bar_pulse(app->update_progress);
+    }
+    return G_SOURCE_CONTINUE;
+}
+
+static void stop_update_progress(DscApp *app)
+{
+    if (app->update_pulse_source != 0) {
+        g_source_remove(app->update_pulse_source);
+        app->update_pulse_source = 0;
+    }
+    if (app->update_progress != NULL) {
+        gtk_progress_bar_set_fraction(app->update_progress, 0.0);
+        gtk_progress_bar_set_text(app->update_progress, "");
+    }
+}
+
+static void handle_update_check_response(DscApp *app, JsonObject *body)
+{
+    const gboolean available = object_boolean(body, "available", FALSE);
+    const gchar *version = object_string(body, "latestVersion", NULL);
+    const gchar *asset = object_string(body, "assetUrl", NULL);
+    const gchar *sha256 = object_string(body, "sha256", NULL);
+
+    g_clear_pointer(&app->update_asset_url, g_free);
+    g_clear_pointer(&app->update_sha256, g_free);
+    g_clear_pointer(&app->update_version, g_free);
+    app->update_asset_url = asset != NULL ? g_strdup(asset) : NULL;
+    app->update_sha256 = sha256 != NULL ? g_strdup(sha256) : NULL;
+    app->update_version = version != NULL ? g_strdup(version) : NULL;
+
+    if (!available || app->update_asset_url == NULL || app->update_version == NULL) {
+        set_label(app->update_label, "当前已是最新版本。\nLinux GUI 通过系统软件包授权完成安装。\n");
+        gtk_button_set_label(GTK_BUTTON(app->update_button), "检查更新");
+        gtk_widget_set_sensitive(app->update_button, TRUE);
+        return;
+    }
+
+    gchar *text = g_strdup_printf("发现 v%s，可下载并使用系统安装器更新。", app->update_version);
+    set_label(app->update_label, text);
+    g_free(text);
+    gtk_button_set_label(GTK_BUTTON(app->update_button), "下载并安装");
+    gtk_widget_set_sensitive(app->update_button, TRUE);
+}
+
+static void update_install_finished(GObject *source, GAsyncResult *result, gpointer user_data)
+{
+    DscApp *app = user_data;
+    GSubprocess *process = G_SUBPROCESS(source);
+    GError *error = NULL;
+    const gboolean completed = g_subprocess_wait_finish(process, result, &error);
+    const gboolean successful = completed && g_subprocess_get_successful(process);
+    stop_update_progress(app);
+    gtk_widget_set_sensitive(app->update_button, TRUE);
+    if (successful) {
+        run_systemctl(app, "restart");
+        set_label(app->update_label, "安装程序已完成。请重新启动 Linux GUI 以载入新版本。\n");
+        set_notice(app, "Linux GUI 更新完成。", FALSE);
+        gtk_button_set_label(GTK_BUTTON(app->update_button), "重新检查");
+    } else {
+        set_notice(app, error != NULL ? error->message : "系统安装器执行失败。", TRUE);
+        gtk_button_set_label(GTK_BUTTON(app->update_button), "重试安装");
+    }
+    g_clear_error(&error);
+    if (app->update_installer == process) {
+        app->update_installer = NULL;
+    }
+    g_object_unref(process);
+}
+
+static void launch_update_installer(DscApp *app)
+{
+    gchar *pkexec = g_find_program_in_path("pkexec");
+    if (pkexec == NULL) {
+        gchar *gio = g_find_program_in_path("gio");
+        if (gio == NULL) {
+            set_notice(app, "系统中没有 pkexec 或 gio，无法打开 Linux 安装包。", TRUE);
+            return;
+        }
+        GError *error = NULL;
+        app->update_installer = g_subprocess_new(
+            G_SUBPROCESS_FLAGS_NONE,
+            &error,
+            gio,
+            "open",
+            app->update_package_path,
+            NULL);
+        g_free(gio);
+        if (app->update_installer == NULL) {
+            set_notice(app, error != NULL ? error->message : "无法打开 Linux 安装包。", TRUE);
+            g_clear_error(&error);
+            return;
+        }
+        set_notice(app, "已打开系统软件安装器，请完成授权。", FALSE);
+        g_subprocess_wait_async(app->update_installer, NULL, update_install_finished, app);
+        return;
+    }
+
+    GError *error = NULL;
+    app->update_installer = g_subprocess_new(
+        G_SUBPROCESS_FLAGS_NONE,
+        &error,
+        pkexec,
+        "dpkg",
+        "--install",
+        app->update_package_path,
+        NULL);
+    g_free(pkexec);
+    if (app->update_installer == NULL) {
+        set_notice(app, error != NULL ? error->message : "无法启动系统安装器。", TRUE);
+        g_clear_error(&error);
+        return;
+    }
+    set_notice(app, "正在等待系统安装器授权…", FALSE);
+    g_subprocess_wait_async(app->update_installer, NULL, update_install_finished, app);
+}
+
+static void handle_update_download(DscApp *app, GBytes *bytes)
+{
+    stop_update_progress(app);
+    if (bytes == NULL || app->update_version == NULL) {
+        set_notice(app, "更新安装包下载为空。", TRUE);
+        gtk_widget_set_sensitive(app->update_button, TRUE);
+        return;
+    }
+
+    gsize length = 0;
+    const guint8 *data = g_bytes_get_data(bytes, &length);
+    gchar *digest = g_compute_checksum_for_data(G_CHECKSUM_SHA256, data, length);
+    if (app->update_sha256 == NULL || g_ascii_strcasecmp(digest, app->update_sha256) != 0) {
+        set_notice(app, "更新安装包校验失败，已阻止安装。", TRUE);
+        g_free(digest);
+        gtk_widget_set_sensitive(app->update_button, TRUE);
+        return;
+    }
+    g_free(digest);
+
+    gchar *cache_dir = g_build_filename(g_get_user_cache_dir(), "device-state-console", NULL);
+    g_mkdir_with_parents(cache_dir, 0700);
+    g_clear_pointer(&app->update_package_path, g_free);
+    app->update_package_path = g_build_filename(cache_dir, "device-state-console-update.deb", NULL);
+    g_free(cache_dir);
+    GError *error = NULL;
+    if (!g_file_set_contents(app->update_package_path, (const gchar *)data, (gssize)length, &error)) {
+        set_notice(app, error != NULL ? error->message : "无法保存更新安装包。", TRUE);
+        g_clear_error(&error);
+        gtk_widget_set_sensitive(app->update_button, TRUE);
+        return;
+    }
+
+    set_label(app->update_label, "下载完成，正在启动系统安装器…");
+    launch_update_installer(app);
+}
+
+static void on_update_button_clicked(GtkButton *button, gpointer data)
+{
+    (void)button;
+    DscApp *app = data;
+    if (app->update_asset_url == NULL) {
+        check_for_update(app);
+        return;
+    }
+
+    gtk_widget_set_sensitive(app->update_button, FALSE);
+    set_label(app->update_label, "正在下载更新安装包…");
+    gtk_progress_bar_set_pulse_step(app->update_progress, 0.08);
+    gtk_progress_bar_set_show_text(app->update_progress, FALSE);
+    app->update_pulse_source = g_timeout_add(120, pulse_update_progress, app);
+
+    SoupMessage *message = soup_message_new("GET", app->update_asset_url);
+    if (message == NULL) {
+        stop_update_progress(app);
+        gtk_widget_set_sensitive(app->update_button, TRUE);
+        set_notice(app, "无法创建更新下载请求。", TRUE);
+        return;
+    }
+    ApiRequest *request = g_new0(ApiRequest, 1);
+    request->app = app;
+    request->message = g_object_ref(message);
+    request->kind = REQUEST_UPDATE_DOWNLOAD;
+    soup_session_send_and_read_async(app->session, message, G_PRIORITY_DEFAULT, NULL, api_request_finished, request);
+    g_object_unref(message);
+}
+
+static void check_for_update(DscApp *app)
+{
+    const gchar *server = entry_text(app->server_row);
+    if (server == NULL || *server == '\0') {
+        set_label(app->update_label, "请先填写中枢地址。\n");
+        return;
+    }
+    gchar *base = g_strdup(server);
+    while (g_str_has_suffix(base, "/")) {
+        base[strlen(base) - 1] = '\0';
+    }
+    gchar *encoded_version = g_uri_escape_string(DSC_VERSION, NULL, FALSE);
+    gchar *url = g_strdup_printf(
+        "%s/api/updates?platform=linux-gui&currentVersion=%s&currentChannel=%s&arch=amd64",
+        base,
+        encoded_version,
+        DSC_RELEASE_CHANNEL);
+    g_free(base);
+    g_free(encoded_version);
+    SoupMessage *message = soup_message_new("GET", url);
+    g_free(url);
+    if (message == NULL) {
+        set_notice(app, "无法创建更新检查请求。", TRUE);
+        return;
+    }
+    gtk_widget_set_sensitive(app->update_button, FALSE);
+    set_label(app->update_label, "正在检查更新…");
+    ApiRequest *request = g_new0(ApiRequest, 1);
+    request->app = app;
+    request->message = g_object_ref(message);
+    request->kind = REQUEST_UPDATE_CHECK;
+    soup_session_send_and_read_async(app->session, message, G_PRIORITY_DEFAULT, NULL, api_request_finished, request);
+    g_object_unref(message);
+}
+
 static void api_request_finished(GObject *source, GAsyncResult *result, gpointer user_data)
 {
     ApiRequest *request = user_data;
@@ -375,6 +625,28 @@ static void api_request_finished(GObject *source, GAsyncResult *result, gpointer
         g_clear_error(&error);
         if (request->kind == REQUEST_STATE) {
             set_label(app->backend_value, "不可达");
+        }
+        if (request->kind == REQUEST_UPDATE_CHECK) {
+            gtk_widget_set_sensitive(app->update_button, TRUE);
+            set_label(app->update_label, "更新检查失败，请稍后重试。\n");
+        } else if (request->kind == REQUEST_UPDATE_DOWNLOAD) {
+            stop_update_progress(app);
+            gtk_widget_set_sensitive(app->update_button, TRUE);
+        }
+        if (bytes != NULL) {
+            g_bytes_unref(bytes);
+        }
+        api_request_free(request);
+        return;
+    }
+
+    if (request->kind == REQUEST_UPDATE_DOWNLOAD) {
+        if (status >= 400) {
+            set_notice(app, "更新安装包下载失败。", TRUE);
+            stop_update_progress(app);
+            gtk_widget_set_sensitive(app->update_button, TRUE);
+        } else {
+            handle_update_download(app, bytes);
         }
         if (bytes != NULL) {
             g_bytes_unref(bytes);
@@ -401,6 +673,10 @@ static void api_request_finished(GObject *source, GAsyncResult *result, gpointer
         const gchar *message = body != NULL ? object_string(body, "message", NULL) : NULL;
         const gchar *apiError = body != NULL ? object_string(body, "error", NULL) : NULL;
         set_notice(app, message != NULL ? message : (apiError != NULL ? apiError : "本地操作失败。"), TRUE);
+        if (request->kind == REQUEST_UPDATE_CHECK) {
+            gtk_widget_set_sensitive(app->update_button, TRUE);
+            set_label(app->update_label, "更新检查失败，请稍后重试。\n");
+        }
     } else if (request->kind == REQUEST_STATE && body != NULL) {
         apply_state(app, body);
     } else if (request->kind == REQUEST_DETECT && body != NULL) {
@@ -408,6 +684,8 @@ static void api_request_finished(GObject *source, GAsyncResult *result, gpointer
         set_notice(app, "硬件探测完成。", FALSE);
     } else if (request->kind == REQUEST_CHECK_CONNECTION && body != NULL) {
         set_notice(app, object_string(body, "message", "连接检查完成。"), !object_boolean(body, "ok", FALSE));
+    } else if (request->kind == REQUEST_UPDATE_CHECK && body != NULL) {
+        handle_update_check_response(app, body);
     } else if (request->kind == REQUEST_SAVE_CONFIG) {
         set_notice(app, "配置已保存。", FALSE);
     } else {
@@ -745,6 +1023,23 @@ static GtkWidget *build_agent_page(DscApp *app)
     gtk_box_append(buttons, create_button("打开中枢网页", G_CALLBACK(on_open_hub_clicked), app, FALSE));
     gtk_box_append(page, GTK_WIDGET(buttons));
 
+    AdwPreferencesGroup *updates = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
+    adw_preferences_group_set_title(updates, "软件更新");
+    adw_preferences_group_set_description(updates, "只接受严格高于当前版本的发布；下载后由系统安装器请求授权。\n");
+    GtkBox *update_box = GTK_BOX(gtk_box_new(GTK_ORIENTATION_VERTICAL, 8));
+    app->update_label = GTK_LABEL(gtk_label_new("尚未检查更新。\n"));
+    gtk_label_set_wrap(app->update_label, TRUE);
+    gtk_widget_set_halign(GTK_WIDGET(app->update_label), GTK_ALIGN_START);
+    gtk_box_append(update_box, GTK_WIDGET(app->update_label));
+    app->update_progress = GTK_PROGRESS_BAR(gtk_progress_bar_new());
+    gtk_widget_set_hexpand(GTK_WIDGET(app->update_progress), TRUE);
+    gtk_box_append(update_box, GTK_WIDGET(app->update_progress));
+    app->update_button = create_button("检查更新", G_CALLBACK(on_update_button_clicked), app, FALSE);
+    gtk_widget_set_halign(app->update_button, GTK_ALIGN_START);
+    gtk_box_append(update_box, app->update_button);
+    adw_preferences_group_add(updates, GTK_WIDGET(update_box));
+    gtk_box_append(page, GTK_WIDGET(updates));
+
     AdwPreferencesGroup *status = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
     adw_preferences_group_set_title(status, "运行状态");
     app->backend_value = create_status_row(status, "本地 backend", "管理配置、探测和 collector 生命周期");
@@ -842,6 +1137,13 @@ static void free_app(DscApp *app)
     if (app->poll_source != 0) {
         g_source_remove(app->poll_source);
     }
+    if (app->update_pulse_source != 0) {
+        g_source_remove(app->update_pulse_source);
+    }
+    if (app->update_installer != NULL && !g_subprocess_get_if_exited(app->update_installer)) {
+        g_subprocess_force_exit(app->update_installer);
+    }
+    g_clear_object(&app->update_installer);
     if (app->fallback_backend != NULL) {
         if (!g_subprocess_get_if_exited(app->fallback_backend)) {
             g_subprocess_force_exit(app->fallback_backend);
@@ -854,6 +1156,10 @@ static void free_app(DscApp *app)
     g_free(app->config_root);
     g_free(app->backend_path);
     g_free(app->collector_path);
+    g_free(app->update_asset_url);
+    g_free(app->update_sha256);
+    g_free(app->update_version);
+    g_free(app->update_package_path);
     g_free(app);
 }
 

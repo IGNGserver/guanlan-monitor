@@ -32,6 +32,27 @@ public sealed class ViewerDeviceMetricsDto
     public ViewerSeriesDto Series { get; set; } = new();
 }
 
+public sealed class UpdateInfoDto
+{
+    public string CurrentVersion { get; set; } = "dev";
+    public string CurrentChannel { get; set; } = "test";
+    public string Platform { get; set; } = "windows-gui";
+    public string? Arch { get; set; }
+    public bool Available { get; set; }
+    public string? LatestVersion { get; set; }
+    public string? LatestChannel { get; set; }
+    public string? ReleaseTag { get; set; }
+    public string? ReleaseUrl { get; set; }
+    public string? NotesUrl { get; set; }
+    public string? PublishedAt { get; set; }
+    public string? AssetName { get; set; }
+    public string? AssetUrl { get; set; }
+    public long? AssetSize { get; set; }
+    public string? Sha256 { get; set; }
+    public string InstallMode { get; set; } = "installer";
+    public string? Message { get; set; }
+}
+
 public sealed class ViewerSystemStatsDto
 {
     public int ProcessCount { get; set; }

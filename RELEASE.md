@@ -112,3 +112,21 @@ Every release asset must identify its platform and delivery mode:
 - `DeviceStateConsole-Linux-GUI-Install-vX.Y.Z.deb`
 - `DeviceStateConsole-Linux-CLI-Install-vX.Y.Z.zip`
 - `DeviceStateConsole-Android-vX.Y.Z.apk`
+- `DeviceStateConsole-iOS-GUI-vX.Y.Z-unsigned.ipa` (仅测试构建；iOS 客户端更新应跳转 App Store/TestFlight)
+
+## Update Channel Rules
+
+Clients send their current version and channel to `/api/updates`. A client may
+only move to a strictly greater semantic version. A `test` client can move to
+the highest newer test or stable release; a `stable` client only considers
+newer stable releases. Every downloadable update must have a matching
+`.sha256` release asset before a native client will install it.
+
+Hub self-update is disabled by default. Enabling it requires
+`DSC_HUB_UPDATE_ENABLED=true`, a narrowly scoped `DSC_GITHUB_TOKEN`, and the
+protected deployment environment. A test-channel Hub dispatches the isolated
+`deploy-test.yml` workflow and a stable-channel Hub dispatches the protected
+`deploy-production.yml` workflow. The web page only dispatches a fixed-version
+workflow; it never receives Docker access. Configure separate `test` and
+`production` GitHub environments and their corresponding `TEST_DEPLOY_*` and
+`DEPLOY_*` secrets before enabling this feature.

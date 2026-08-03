@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 VERSION="$(tr -d '[:space:]' < "${REPO_ROOT}/VERSION")"
+RELEASE_CHANNEL="${DSC_RELEASE_CHANNEL:-test}"
 OUTPUT_DIR="${REPO_ROOT}/release/linux-agent-gui"
 
 usage() {
@@ -38,6 +39,10 @@ if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "Invalid version: ${VERSION}" >&2
   exit 1
 fi
+if [[ "${RELEASE_CHANNEL}" != "stable" && "${RELEASE_CHANNEL}" != "test" ]]; then
+  echo "Invalid DSC_RELEASE_CHANNEL: ${RELEASE_CHANNEL}" >&2
+  exit 1
+fi
 
 for command in gcc go pkg-config dpkg-deb; do
   command -v "${command}" >/dev/null 2>&1 || {
@@ -65,16 +70,17 @@ mkdir -p "${APP_ROOT}" \
   "${STAGING_DIR}/DEBIAN"
 
 go build -C "${REPO_ROOT}/agents/cmd/windows-agent-backend" \
-  -trimpath -ldflags "-s -w -X main.BuildVersion=${VERSION}" \
+  -trimpath -ldflags "-s -w -X main.BuildVersion=${VERSION} -X main.BuildChannel=${RELEASE_CHANNEL}" \
   -o "${APP_ROOT}/device-state-console-agent-backend"
 go build -C "${REPO_ROOT}/agents" \
-  -trimpath -ldflags "-s -w -X main.BuildVersion=${VERSION}" \
+  -trimpath -ldflags "-s -w -X main.BuildVersion=${VERSION} -X main.BuildChannel=${RELEASE_CHANNEL}" \
   -o "${APP_ROOT}/device-state-console-agent"
 
 read -r -a GTK_CFLAGS <<< "$(pkg-config --cflags gtk4 libadwaita-1 webkitgtk-6.0 libsoup-3.0 json-glib-1.0)"
 read -r -a GTK_LIBS <<< "$(pkg-config --libs gtk4 libadwaita-1 webkitgtk-6.0 libsoup-3.0 json-glib-1.0)"
 gcc -std=c17 -O2 -Wall -Wextra -Wno-unused-parameter \
   -DDSC_VERSION="\"${VERSION}\"" \
+  -DDSC_RELEASE_CHANNEL="\"${RELEASE_CHANNEL}\"" \
   "${GTK_CFLAGS[@]}" \
   "${REPO_ROOT}/linux-agent-gui/src/main.c" \
   -o "${APP_ROOT}/device-state-console-linux-gui" \

@@ -75,6 +75,8 @@ $versionPath = Join-Path $PSScriptRoot "VERSION"
 if (-not (Test-Path $versionPath)) { $versionPath = Join-Path $repoRoot "VERSION" }
 if (-not (Test-Path $versionPath)) { throw "VERSION file not found beside the installer or repository root." }
 $version = (Get-Content -LiteralPath $versionPath -Raw).Trim()
+$buildChannel = if ([string]::IsNullOrWhiteSpace($env:DSC_RELEASE_CHANNEL)) { "test" } else { $env:DSC_RELEASE_CHANNEL.Trim() }
+if ($buildChannel -notin @("stable", "test")) { throw "Invalid DSC_RELEASE_CHANNEL: $buildChannel" }
 $agentSourceDir = Join-Path $repoRoot "agents"
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
@@ -85,7 +87,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedAgentBinary)) {
   Copy-Item -LiteralPath $resolvedAgentBinary -Destination $binaryPath -Force
 } else {
   if (-not (Test-Path (Join-Path $agentSourceDir "main.go"))) { throw "Cannot find agents\main.go" }
-  & $resolvedGoPath build -C $agentSourceDir -ldflags "-X main.BuildVersion=$version" -o $binaryPath .
+  & $resolvedGoPath build -C $agentSourceDir -ldflags "-X main.BuildVersion=$version -X main.BuildChannel=$buildChannel" -o $binaryPath .
 }
 if (-not (Test-Path $binaryPath)) {
   throw "Go build did not produce $binaryPath"
@@ -95,6 +97,13 @@ $resolvedHostname = $Hostname
 if ([string]::IsNullOrWhiteSpace($resolvedHostname)) {
   $resolvedHostname = $DeviceId
 }
+
+@"
+DSC_SERVER_URL=$ServerUrl
+DSC_AGENT_SECRET=$Secret
+DSC_DEVICE_ID=$DeviceId
+DSC_HOSTNAME=$resolvedHostname
+"@ | Set-Content -LiteralPath (Join-Path $InstallDir "agent.env") -Encoding UTF8
 
 $restartWindowSeconds = [Math]::Max(60, $RestartIntervalMinutes * 60)
 $restartDelaySeconds = [Math]::Min(30, [Math]::Max(3, [Math]::Floor($restartWindowSeconds / [Math]::Max(1, $RestartCount + 1))))
@@ -164,3 +173,4 @@ try {
 Write-Host "Device State Console Go agent installed and started."
 Write-Host "Task name: $taskName"
 Write-Host "Binary: $binaryPath"
+Write-Host "Update: run '$binaryPath update' from an elevated terminal."

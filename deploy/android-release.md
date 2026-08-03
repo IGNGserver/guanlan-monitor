@@ -60,6 +60,22 @@ Unsigned output when signing variables are missing:
 
 - `android/app/build/outputs/apk/release/app-release-unsigned.apk`
 
+## GitHub Actions Test Release
+
+The tag-triggered test-release workflow never uploads an unsigned APK. Configure
+these repository secrets with the base64-encoded keystore and its credentials to
+keep the same signing certificate across releases:
+
+- `DSC_ANDROID_KEYSTORE_BASE64`
+- `DSC_ANDROID_STORE_PASSWORD`
+- `DSC_ANDROID_KEY_ALIAS`
+- `DSC_ANDROID_KEY_PASSWORD`
+
+When these secrets are not available, the workflow creates a temporary signing
+key so the test APK remains installable. That fallback key is intentionally not
+stable, so configure the secrets before distributing updates to an existing
+installation.
+
 ## Verify the Signature
 
 Example:

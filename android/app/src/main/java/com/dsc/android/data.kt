@@ -52,6 +52,14 @@ interface DeviceStateApi {
   @GET("/api/auth/session")
   suspend fun session(): LoginResponseDto
 
+  @GET("/api/updates")
+  suspend fun updateInfo(
+    @Query("platform") platform: String,
+    @Query("currentVersion") currentVersion: String,
+    @Query("currentChannel") currentChannel: String,
+    @Query("arch") arch: String
+  ): UpdateInfoDto
+
   @GET("/api/devices")
   suspend fun devices(): List<DeviceSummaryDto>
 

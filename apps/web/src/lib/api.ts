@@ -8,8 +8,11 @@ import type {
   MetricSeries,
   MetricWindow,
   MetricsResponse,
+  ReleaseChannel,
   TrafficCalendarMode,
-  TrafficCalendarResponse
+  TrafficCalendarResponse,
+  UpdateInfo,
+  HubUpdateStatus
 } from "@dsc/shared";
 
 function getServerUrl() {
@@ -69,6 +72,26 @@ export function logout() {
 
 export function getSession() {
   return apiFetch<{ ok: true; issuedAt: string }>("/api/auth/session");
+}
+
+export function getUpdateInfo(platform: "hub" | "web" = "web") {
+  const params = new URLSearchParams({
+    platform,
+    currentVersion: process.env.NEXT_PUBLIC_DSC_VERSION ?? "dev",
+    currentChannel: (process.env.NEXT_PUBLIC_DSC_RELEASE_CHANNEL as ReleaseChannel | undefined) ?? "test"
+  });
+  return apiFetch<UpdateInfo>(`/api/updates?${params.toString()}`);
+}
+
+export function requestHubUpdate(version: string) {
+  return apiFetch<HubUpdateStatus>("/api/admin/hub-update", {
+    method: "POST",
+    body: JSON.stringify({ version })
+  });
+}
+
+export function getHubUpdateStatus() {
+  return apiFetch<HubUpdateStatus>("/api/admin/hub-update-status");
 }
 
 export function listDevices() {

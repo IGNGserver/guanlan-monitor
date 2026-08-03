@@ -1,8 +1,11 @@
 package com.dsc.android
 
 import android.app.ActivityManager
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -48,10 +51,23 @@ class MainActivity : ComponentActivity() {
           onToggleDeviceInstance = appViewModel::toggleDeviceInstance,
           onToggleInstanceMetric = appViewModel::toggleInstanceMetric,
           onSaveMetricConfig = appViewModel::saveMetricConfig,
-          onRefresh = appViewModel::refresh
+          onRefresh = appViewModel::refresh,
+          onDownloadUpdate = appViewModel::downloadUpdate,
+          onLaunchUpdateInstaller = ::launchUpdateInstaller,
+          onUpdateInstallerLaunched = appViewModel::clearUpdateInstallerUri
         )
       }
     }
+  }
+
+  private fun launchUpdateInstaller(uriString: String) {
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+      setDataAndType(Uri.parse(uriString), "application/vnd.android.package-archive")
+      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching { startActivity(intent) }
+      .onFailure { Toast.makeText(this, "无法打开系统安装器：${it.message}", Toast.LENGTH_LONG).show() }
   }
 
   /**

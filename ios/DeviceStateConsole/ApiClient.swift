@@ -84,6 +84,18 @@ public actor ApiClient {
         let (data, _) = try await session.data(for: request)
         return try JSONDecoder().decode(LoginResponseDto.self, from: data)
     }
+
+    public func fetchUpdateInfo(baseUrl: String, currentVersion: String) async throws -> UpdateInfoDto {
+        let queryItems = [
+            URLQueryItem(name: "platform", value: "ios"),
+            URLQueryItem(name: "currentVersion", value: currentVersion),
+            URLQueryItem(name: "currentChannel", value: Bundle.main.object(forInfoDictionaryKey: "DSCReleaseChannel") as? String ?? "test"),
+            URLQueryItem(name: "arch", value: "universal")
+        ]
+        let request = try buildRequest(baseUrl: baseUrl, path: "/api/updates", queryItems: queryItems)
+        let (data, _) = try await session.data(for: request)
+        return try JSONDecoder().decode(UpdateInfoDto.self, from: data)
+    }
     
     public func fetchDevices(baseUrl: String) async throws -> [DeviceSummaryDto] {
         let request = try buildRequest(baseUrl: baseUrl, path: "/api/devices")

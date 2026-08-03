@@ -123,6 +123,11 @@ export function DeviceSidebar({
                   <span className={styles.miniMetricPill}>
                     RAM <b>{formatPercent(device.memoryUsagePercent)}</b>
                   </span>
+                  {device.agentVersion && (
+                    <span className={styles.miniMetricPill}>
+                      Agent <b>v{device.agentVersion}</b>
+                    </span>
+                  )}
                 </div>
               </div>
             );
@@ -138,7 +143,7 @@ export function DeviceSidebar({
 
       {/* Sidebar Footer */}
       <div className={styles.sidebarFooter}>
-        <span className={styles.versionTag}>v0.2.5</span>
+        <span className={styles.versionTag}>v{process.env.NEXT_PUBLIC_DSC_VERSION ?? "dev"}</span>
         <button
           type="button"
           className={styles.footerActionBtn}

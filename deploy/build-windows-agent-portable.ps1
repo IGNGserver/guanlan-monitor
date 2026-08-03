@@ -194,6 +194,9 @@ function Stop-ProcessesForPath {
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$version = (Get-Content -LiteralPath (Join-Path $repoRoot "VERSION") -Raw).Trim()
+$channel = if ([string]::IsNullOrWhiteSpace($env:DSC_RELEASE_CHANNEL)) { "test" } else { $env:DSC_RELEASE_CHANNEL.Trim() }
+if ($channel -notin @("stable", "test")) { throw "Invalid DSC_RELEASE_CHANNEL: $channel" }
 $winUiProject = Join-Path $repoRoot "windows-agent\DeviceStateConsoleAgent.WinUI\DeviceStateConsoleAgent.WinUI.csproj"
 $agentSourceDir = Join-Path $repoRoot "agents"
 $backendSourcePackage = "./cmd/windows-agent-backend"
@@ -230,8 +233,8 @@ if (-not $SkipGoBuild) {
   $resolvedGoPath = Resolve-CommandPath -PreferredPath $GoPath -CommandName "go" -RequiredMessage "Go is required to build windows-agent-backend.exe and device-state-console-agent.exe. Install Go or pass -GoPath."
   Write-Host "Building Go binaries with $resolvedGoPath"
 
-  & $resolvedGoPath build -C $agentSourceDir -ldflags "-X main.BuildVersion=$version" -o (Join-Path $backendDir "windows-agent-backend.exe") $backendSourcePackage
-  & $resolvedGoPath build -C $agentSourceDir -ldflags "-X main.BuildVersion=$version" -o (Join-Path $backendDir "device-state-console-agent.exe") .
+  & $resolvedGoPath build -C $agentSourceDir -ldflags "-X main.BuildVersion=$version -X main.BuildChannel=$channel" -o (Join-Path $backendDir "windows-agent-backend.exe") $backendSourcePackage
+  & $resolvedGoPath build -C $agentSourceDir -ldflags "-X main.BuildVersion=$version -X main.BuildChannel=$channel" -o (Join-Path $backendDir "device-state-console-agent.exe") .
 } else {
   $prebuiltBackend = Resolve-FirstExistingPath -Candidates @(
     (Join-Path $repoRoot "agents\windows-agent-backend.exe"),
@@ -279,6 +282,7 @@ if (-not [string]::IsNullOrWhiteSpace($WinUIPublishDir)) {
         -c $Configuration `
         -p:Platform=x64 `
         -p:RuntimeIdentifier=win-x64 `
+        -p:DSC_RELEASE_CHANNEL=$channel `
         -o $tempWinUiDir
       if ($LASTEXITCODE -ne 0) {
         throw "dotnet publish failed with exit code $LASTEXITCODE"

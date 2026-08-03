@@ -329,6 +329,16 @@ jobs:
           set -euo pipefail
           version="$(tr -d '[:space:]' < VERSION)"
           test "${GITHUB_REF_NAME}" = "v${version}"
+          while IFS= read -r asset; do
+            case "$asset" in
+              *.exe|*.zip|*.deb|*.apk|*.ipa)
+                checksum="${asset}.sha256"
+                if [[ ! -f "$checksum" ]]; then
+                  sha256sum "$asset" > "$checksum"
+                fi
+                ;;
+            esac
+          done < <(find release-assets -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.deb' -o -name '*.apk' -o -name '*.ipa' \) -print)
           find release-assets -type f -print
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Setup-v*.exe' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Portable-v*.zip' | wc -l)" -eq 1
@@ -338,6 +348,10 @@ jobs:
           test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb.sha256' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Android-v*.apk' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Setup-v*.exe.sha256' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-CLI-Install-v*.zip.sha256' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-CLI-Install-v*.zip.sha256' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'DeviceStateConsole-Android-v*.apk.sha256' | wc -l)" -eq 1
 
       - name: Publish prerelease
         uses: softprops/action-gh-release@v2

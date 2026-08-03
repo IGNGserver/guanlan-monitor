@@ -18,6 +18,13 @@ on:
         required: true
         type: boolean
         default: false
+      channel:
+        description: "Release channel embedded in the web image"
+        required: true
+        type: choice
+        options:
+          - stable
+          - test
 
 permissions:
   contents: read
@@ -25,6 +32,7 @@ permissions:
 
 env:
   IMAGE_NAMESPACE: ghcr.io/igngserver
+  DSC_RELEASE_CHANNEL: ${{ inputs.channel || 'test' }}
 
 jobs:
   publish:
@@ -97,5 +105,7 @@ jobs:
           file: deploy/docker/web.Dockerfile
           push: true
           tags: ${{ steps.metadata.outputs.web_tags }}
+          build-args: |
+            DSC_RELEASE_CHANNEL=${{ env.DSC_RELEASE_CHANNEL }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web

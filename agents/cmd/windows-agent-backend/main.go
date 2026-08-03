@@ -29,6 +29,7 @@ import (
 )
 
 var BuildVersion = "dev"
+var BuildChannel = "test"
 
 type agentConnectionConfig struct {
 	ServerURL string `json:"serverUrl"`

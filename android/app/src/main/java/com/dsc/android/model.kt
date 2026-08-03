@@ -24,6 +24,27 @@ data class DeviceSummaryDto(
 )
 
 @Serializable
+data class UpdateInfoDto(
+  val currentVersion: String = "dev",
+  val currentChannel: String = "test",
+  val platform: String = "android",
+  val arch: String? = null,
+  val available: Boolean = false,
+  val latestVersion: String? = null,
+  val latestChannel: String? = null,
+  val releaseTag: String? = null,
+  val releaseUrl: String? = null,
+  val notesUrl: String? = null,
+  val publishedAt: String? = null,
+  val assetName: String? = null,
+  val assetUrl: String? = null,
+  val assetSize: Long? = null,
+  val sha256: String? = null,
+  val installMode: String = "apk",
+  val message: String? = null
+)
+
+@Serializable
 data class SamplePointDto(
   val timestamp: String,
   val value: Double
@@ -408,6 +429,10 @@ data class AppState(
   val editingBlockKey: DeviceBlockKey? = null,
   val editingInstanceId: String? = null,
   val savingMetricConfig: Boolean = false,
+  val updateInfo: UpdateInfoDto? = null,
+  val updateDownloading: Boolean = false,
+  val updateProgress: Float = 0f,
+  val updateInstallerUri: String? = null,
   val currentScreen: AppScreen = AppScreen.Login,
   val transitionDirection: ScreenTransitionDirection = ScreenTransitionDirection.None,
   val message: String? = null

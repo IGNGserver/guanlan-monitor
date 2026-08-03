@@ -60,6 +60,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -139,7 +140,10 @@ fun AppRoot(
   onToggleDeviceInstance: (DeviceBlockKey, String) -> Unit,
   onToggleInstanceMetric: (String, String) -> Unit,
   onSaveMetricConfig: () -> Unit,
-  onRefresh: () -> Unit
+  onRefresh: () -> Unit,
+  onDownloadUpdate: () -> Unit,
+  onLaunchUpdateInstaller: (String) -> Unit,
+  onUpdateInstallerLaunched: () -> Unit
 ) {
   val snackbarHostState = remember { SnackbarHostState() }
   var showLogoutConfirm by remember { mutableStateOf(false) }
@@ -150,6 +154,13 @@ fun AppRoot(
 
   LaunchedEffect(state.message) {
     state.message?.let { snackbarHostState.showSnackbar(it) }
+  }
+
+  LaunchedEffect(state.updateInstallerUri) {
+    state.updateInstallerUri?.let { uri ->
+      onLaunchUpdateInstaller(uri)
+      onUpdateInstallerLaunched()
+    }
   }
 
   BackHandler(enabled = canHandleBack) {
@@ -183,7 +194,7 @@ fun AppRoot(
           AppScreen.Login -> {
             if (state.loading) LoadingScreen() else LoginScreen(state, onSaveServerConfig)
           }
-          AppScreen.DeviceList -> DeviceListScreen(state, onOpenDevice, onOpenTraffic, onOpenDeviceEditor, onRequestLogout = { showLogoutConfirm = true }, onRefresh = onRefresh)
+          AppScreen.DeviceList -> DeviceListScreen(state, onOpenDevice, onOpenTraffic, onOpenDeviceEditor, onRequestLogout = { showLogoutConfirm = true }, onRefresh = onRefresh, onDownloadUpdate = onDownloadUpdate)
           AppScreen.Traffic -> TrafficScreen(state, onShowDeviceList, onSelectTrafficMode, onSelectTrafficCell, onShiftTrafficAnchor, onRefresh)
           AppScreen.DeviceDetail -> DeviceDetailScreen(state, onShowDeviceList, onSelectWindow, onOpenTraffic, onCloseTrafficSheet, onSelectTrafficCell, onOpenBlockEditor, onOpenInstanceEditor, onRefresh, onClearFocusedBlock)
         }
@@ -313,7 +324,8 @@ private fun DeviceListScreen(
   onOpenTraffic: (String) -> Unit,
   onOpenDeviceEditor: (String) -> Unit,
   onRequestLogout: () -> Unit,
-  onRefresh: () -> Unit
+  onRefresh: () -> Unit,
+  onDownloadUpdate: () -> Unit
 ) {
   val haptic = LocalHapticFeedback.current
   Scaffold(
@@ -364,6 +376,28 @@ private fun DeviceListScreen(
                   style = MaterialTheme.typography.bodySmall,
                   color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
+              }
+            }
+          }
+        }
+      }
+      state.updateInfo?.let { update ->
+        item {
+          ElevatedCard(
+            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+          ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+              Text("发现 Android 更新 v${update.latestVersion ?: ""}", fontWeight = FontWeight.SemiBold)
+              Text("点击后下载 APK，并交给系统安装器完成授权。", style = MaterialTheme.typography.bodySmall)
+              if (state.updateDownloading) {
+                LinearProgressIndicator(
+                  progress = { state.updateProgress },
+                  modifier = Modifier.fillMaxWidth()
+                )
+                Text("下载进度 ${(state.updateProgress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)
+              }
+              Button(onClick = onDownloadUpdate, enabled = !state.updateDownloading) {
+                Text(if (state.updateDownloading) "下载中…" else "下载并安装")
               }
             }
           }

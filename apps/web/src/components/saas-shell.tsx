@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import type { DeviceSummary, MetricWindow } from "@dsc/shared";
 import { DeviceSidebar } from "./device-sidebar";
+import { UpdateNotice } from "./update-notice";
 import styles from "./monitor.module.css";
 
 interface SaasShellProps {
@@ -121,7 +122,10 @@ export function SaasShell({
         </header>
 
         {/* Dynamic Page View */}
-        <main className={styles.contentArea}>{children}</main>
+        <main className={styles.contentArea}>
+          <UpdateNotice />
+          {children}
+        </main>
       </div>
     </div>
   );

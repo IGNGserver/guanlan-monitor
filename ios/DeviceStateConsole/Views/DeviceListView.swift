@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct DeviceListView: View {
     @Bindable var viewModel: AppViewModel
+    @Environment(\.openURL) private var openURL
     
     public var body: some View {
         NavigationStack {
@@ -22,6 +23,25 @@ public struct DeviceListView: View {
                     }
                 } else {
                     List {
+                        if let update = viewModel.updateInfo, update.available {
+                            Section {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text("发现 iOS 更新 (update.latestVersion ?? "")")
+                                        .font(.headline)
+                                    Text("iOS 不能在应用内侧载安装包，请通过 App Store 或 TestFlight 完成更新。")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                    if let urlString = update.assetUrl ?? update.releaseUrl,
+                                       let url = URL(string: urlString) {
+                                        Button("打开更新页面") {
+                                            openURL(url)
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                    }
+                                }
+                                .padding(.vertical, 6)
+                            }
+                        }
                         ForEach(viewModel.devices) { device in
                             Button {
                                 Task {

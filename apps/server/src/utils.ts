@@ -58,6 +58,8 @@ export function toSummary(state: DeviceRealtimeState): DeviceSummary {
     deviceId: state.identity.deviceId,
     hostname: displayName,
     os: state.identity.os,
+    agentVersion: state.identity.version ?? null,
+    agentChannel: state.identity.channel ?? null,
     status: state.status,
     lastSeenAt: state.lastSeenAt,
     cpuUsagePercent: latest.cpuUsagePercent,

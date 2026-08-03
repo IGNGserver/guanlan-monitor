@@ -8,6 +8,7 @@ import type {
   FanNotePayload,
   MetricSeries,
   MetricWindow,
+  ReleaseChannel,
   TrafficCalendarMode
 } from "@dsc/shared";
 import { z } from "zod";
@@ -16,6 +17,8 @@ import type { MetricsService } from "./services/metrics.js";
 import { LocalDeviceMetricConfigStore, LocalFanNoteStore, createLocalStore } from "./repositories/local.js";
 import type { Repositories, SessionValue } from "./types.js";
 import { ALL_DEVICE_METRIC_KEYS, getAvailableMetrics, resolveCpuFrequencyMHz, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
+import { getSystemVersionInfo, getUpdateInfo } from "./updates.js";
+import { getHubUpdateStatus, HubUpdateError, requestHubUpdate } from "./hub-update.js";
 
 const loginSchema = z.object({
   accessKey: z.string()
@@ -84,6 +87,26 @@ const metricConfigSchema = z.object({
   ).optional()
 });
 
+const updateQuerySchema = z.object({
+  platform: z.enum([
+    "hub",
+    "web",
+    "windows-gui",
+    "linux-gui",
+    "android",
+    "ios",
+    "windows-cli",
+    "linux-cli"
+  ]),
+  currentVersion: z.string().trim().min(1).optional(),
+  currentChannel: z.enum(["stable", "test"]).optional(),
+  arch: z.string().trim().min(1).optional()
+});
+
+const hubUpdateRequestSchema = z.object({
+  version: z.string().regex(/^\d+\.\d+\.\d+$/)
+});
+
 export async function registerRoutes(
   app: FastifyInstance,
   repositories: Repositories,
@@ -92,6 +115,41 @@ export async function registerRoutes(
   const store = createLocalStore();
   const fanNotes = new LocalFanNoteStore(store);
   const metricConfigs = new LocalDeviceMetricConfigStore(store);
+
+  app.get("/api/system/version", async () => getSystemVersionInfo());
+
+  app.get<{ Querystring: { platform: string; currentVersion?: string; currentChannel?: ReleaseChannel; arch?: string } }>(
+    "/api/updates",
+    async (request, reply) => {
+      const parsed = updateQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "invalid_update_query" });
+      }
+      try {
+        return await getUpdateInfo(parsed.data);
+      } catch (error) {
+        request.log.error({ error }, "update check failed");
+        return reply.code(502).send({ error: "update_check_failed" });
+      }
+    }
+  );
+
+  app.get("/api/admin/hub-update-status", { preHandler: requireAuth }, async () => getHubUpdateStatus());
+
+  app.post("/api/admin/hub-update", { preHandler: requireAuth }, async (request, reply) => {
+    const parsed = hubUpdateRequestSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_hub_update_request" });
+    try {
+      return await requestHubUpdate(parsed.data.version);
+    } catch (error) {
+      if (error instanceof HubUpdateError) {
+        return reply.code(error.statusCode).send({ error: error.message });
+      }
+      request.log.error({ error }, "hub update request failed");
+      return reply.code(502).send({ error: "hub_update_request_failed" });
+    }
+  });
+
   app.post<{ Body: AuthLoginPayload }>("/api/auth/login", async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -131,6 +189,8 @@ export async function registerRoutes(
         deviceId: known.deviceId,
         hostname: known.deviceId,
         os: "windows",
+        agentVersion: null,
+        agentChannel: null,
         status: "offline",
         lastSeenAt: known.lastSeenAt,
         cpuUsagePercent: null,

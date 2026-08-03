@@ -1,4 +1,4 @@
-name: Deploy production
+name: Deploy test Hub
 
 on:
   workflow_dispatch:
@@ -8,35 +8,35 @@ on:
         required: true
         type: string
       channel:
-        description: "Release channel to use for update selection"
+        description: "The isolated test deployment channel"
         required: true
         type: choice
         options:
-          - stable
           - test
 
 permissions:
   contents: read
 
 concurrency:
-  group: production-deployment
+  group: test-hub-deployment
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy fixed version
+    name: Deploy fixed test version
     runs-on: ubuntu-latest
-    environment: production
+    environment: test
     steps:
       - name: Checkout requested ref
         uses: actions/checkout@v4
         with:
           ref: v${{ inputs.version }}
 
-      - name: Validate requested version
+      - name: Validate requested version and channel
         shell: bash
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
           version="$(tr -d '[:space:]' < VERSION)"
@@ -45,19 +45,19 @@ jobs:
             exit 1
           }
           [[ "$REQUESTED_VERSION" != "latest" ]] || {
-            echo "Production deployment requires a fixed version." >&2
+            echo "Test deployment requires a fixed version." >&2
             exit 1
           }
-          [[ "${{ inputs.channel }}" == "stable" || "${{ inputs.channel }}" == "test" ]] || {
-            echo "Invalid release channel." >&2
+          [[ "$REQUESTED_CHANNEL" == "test" ]] || {
+            echo "Test deployment accepts only the test channel." >&2
             exit 1
           }
 
       - name: Configure SSH
         shell: bash
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
-          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+          SSH_PRIVATE_KEY: ${{ secrets.TEST_DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.TEST_DEPLOY_SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
           install -d -m 700 "$HOME/.ssh"
@@ -65,12 +65,12 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
 
-      - name: Pull and restart published images
+      - name: Pull and restart fixed test images
         shell: bash
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_HOST: ${{ secrets.TEST_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.TEST_DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.TEST_DEPLOY_PATH }}
           DSC_VERSION: ${{ inputs.version }}
           DSC_RELEASE_CHANNEL: ${{ inputs.channel }}
         run: |
@@ -85,8 +85,8 @@ jobs:
                sleep 5; \
              done; \
              if [ \"\$healthy\" -ne 1 ]; then \
-               echo 'Deployment health check failed; attempting rollback.' >&2; \
-               if [ -n \"\$previous\" ]; then DSC_VERSION=\"\$previous\" DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' docker compose up -d; fi; \
+               echo 'Test deployment health check failed; attempting rollback.' >&2; \
+               if [ -n \"\$previous\" ]; then DSC_VERSION=\"\$previous\" DSC_RELEASE_CHANNEL='test' docker compose up -d; fi; \
                exit 1; \
              fi; \
              DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' docker compose ps"

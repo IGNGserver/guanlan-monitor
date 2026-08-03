@@ -8,6 +8,8 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $version = (Get-Content -LiteralPath (Join-Path $repoRoot "VERSION") -Raw).Trim()
+$channel = if ([string]::IsNullOrWhiteSpace($env:DSC_RELEASE_CHANNEL)) { "test" } else { $env:DSC_RELEASE_CHANNEL.Trim() }
+if ($channel -notin @("stable", "test")) { throw "Invalid DSC_RELEASE_CHANNEL: $channel" }
 $agentDir = Join-Path $repoRoot "agents"
 $outputRoot = if ([string]::IsNullOrWhiteSpace($OutputDir)) {
   Join-Path $repoRoot "release\cli-agent"
@@ -36,7 +38,7 @@ function Build-PlatformPackage {
   $env:GOOS = $Goos
   $env:GOARCH = $Goarch
   $env:CGO_ENABLED = "0"
-  & $go -C $agentDir build -trimpath -ldflags "-s -w -X main.BuildVersion=$version" -o (Join-Path $directory $BinaryName) .
+  & $go -C $agentDir build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=$channel" -o (Join-Path $directory $BinaryName) .
   if ($LASTEXITCODE -ne 0) { throw "Go build failed for $Name" }
   Copy-Item -LiteralPath (Join-Path $repoRoot "VERSION") -Destination (Join-Path $directory "VERSION") -Force
   Copy-Item -LiteralPath (Join-Path $repoRoot "deploy\$InstallerName") -Destination (Join-Path $directory $InstallerName) -Force

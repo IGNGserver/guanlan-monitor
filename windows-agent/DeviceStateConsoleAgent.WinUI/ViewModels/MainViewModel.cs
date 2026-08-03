@@ -61,6 +61,7 @@ public sealed class MainViewModel : ObservableObject
 
     private readonly BackendHostService _hostService = new();
     private readonly BackendApiClient _apiClient = new();
+    private readonly UpdateService _updateService = new();
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly Dictionary<string, List<string>> _enabledDeviceIdsDraft = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<string>> _instanceMetricConfigDraft = new(StringComparer.OrdinalIgnoreCase);
@@ -170,6 +171,11 @@ public sealed class MainViewModel : ObservableObject
     private string _secret = "";
     private string _deviceId = "windows-agent";
     private string _hostname = "Windows Agent";
+    private bool _updateAvailable;
+    private bool _updateBusy;
+    private double _updateProgressValue;
+    private string _updateStatusText = "正在检查更新…";
+    private UpdateInfoDto? _pendingUpdate;
 
     private int _normalIntervalSeconds = 30;
     private int _slowIntervalSeconds = 30;
@@ -258,6 +264,7 @@ public sealed class MainViewModel : ObservableObject
         PushCloudCommand = new RelayCommand(PushCloudAsync, () => CanPushCloud);
         DetectCommand = new RelayCommand(DetectAsync, () => CanRunDetect);
         LoginViewerCommand = new RelayCommand(LoginViewerAsync, () => CanLoginViewer);
+        UpdateCommand = new RelayCommand(UpdateAsync, () => UpdateAvailable && !IsUpdateBusy);
     }
 
     public RelayCommand StartBackendCommand { get; }
@@ -266,6 +273,7 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand PushCloudCommand { get; }
     public RelayCommand DetectCommand { get; }
     public RelayCommand LoginViewerCommand { get; }
+    public RelayCommand UpdateCommand { get; }
 
     public ObservableCollection<ProbeInstanceItemViewModel> CpuInstances { get; }
     public ObservableCollection<ProbeInstanceItemViewModel> DiskInstances { get; }
@@ -317,8 +325,23 @@ public sealed class MainViewModel : ObservableObject
     public bool CanCheckConnection => !IsBackendActionBusy && _backendReachable && HasConnectionConfig;
     public bool CanPushCloud => !IsBackendActionBusy && HasConnectionConfig && _backendReachable && CloudSyncEnabled;
     public bool CanLoginViewer => !IsBackendActionBusy && ServerUrlPolicy.IsAllowed(ServerUrl) && !string.IsNullOrWhiteSpace(Secret);
+    public bool UpdateAvailable { get => _updateAvailable; private set { if (SetProperty(ref _updateAvailable, value)) { OnPropertyChanged(nameof(UpdateNoticeVisibility)); UpdateCommand.RaiseCanExecuteChanged(); } } }
+    public bool IsUpdateBusy { get => _updateBusy; private set { if (SetProperty(ref _updateBusy, value)) { OnPropertyChanged(nameof(UpdateButtonText)); UpdateCommand.RaiseCanExecuteChanged(); } } }
+    public double UpdateProgressValue { get => _updateProgressValue; private set => SetProperty(ref _updateProgressValue, value); }
+    public string UpdateStatusText { get => _updateStatusText; private set => SetProperty(ref _updateStatusText, value); }
+    public string UpdateButtonText => IsUpdateBusy ? "下载中…" : "安装更新";
+    public Visibility UpdateNoticeVisibility => UpdateAvailable ? Visibility.Visible : Visibility.Collapsed;
     public string LocalBackendBadgeText => _backendReachable ? "本地后端在线" : "本地后端离线";
-    public string ReleaseVersion => $"版本 v{typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "dev"}";
+    public string CurrentReleaseVersion => typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "dev";
+    public string CurrentReleaseChannel
+    {
+        get
+        {
+            var candidate = typeof(MainViewModel).Assembly.GetName().InformationalVersion?.Split('+').LastOrDefault();
+            return candidate is "stable" or "test" ? candidate : "test";
+        }
+    }
+    public string ReleaseVersion => $"版本 v{CurrentReleaseVersion}";
     public string CollectorBadgeText =>
         !_backendReachable ? "采集器不可用" :
         _backendRunning ? "采集器运行中" :
@@ -1177,6 +1200,7 @@ public sealed class MainViewModel : ObservableObject
         }
 
         await RefreshStateAsync();
+        _ = CheckForUpdateAsync();
         if (_backendReachable)
         {
             await DetectAsync();
@@ -1237,6 +1261,51 @@ public sealed class MainViewModel : ObservableObject
         }
 
         ApplyState(state);
+    }
+
+    private async Task CheckForUpdateAsync()
+    {
+        if (!ServerUrlPolicy.IsAllowed(ServerUrl))
+        {
+            UpdateAvailable = false;
+            return;
+        }
+
+        var update = await _updateService.CheckAsync(ServerUrl, CurrentReleaseVersion, CurrentReleaseChannel);
+        if (update?.Available == true && !string.IsNullOrWhiteSpace(update.AssetUrl))
+        {
+            _pendingUpdate = update;
+            UpdateAvailable = true;
+            UpdateStatusText = $"发现 v{update.LatestVersion}，可下载并启动安装程序。";
+        }
+        else
+        {
+            UpdateAvailable = false;
+            UpdateStatusText = "当前已是最新版本。";
+        }
+    }
+
+    private async Task UpdateAsync()
+    {
+        if (_pendingUpdate is null || string.IsNullOrWhiteSpace(_pendingUpdate.AssetUrl)) return;
+        IsUpdateBusy = true;
+        UpdateProgressValue = 0;
+        UpdateStatusText = $"正在下载 v{_pendingUpdate.LatestVersion}…";
+        try
+        {
+            var progress = new Progress<double>(value => UpdateProgressValue = Math.Clamp(value, 0, 1));
+            var installerPath = await _updateService.DownloadInstallerAsync(_pendingUpdate, progress);
+            UpdateStatusText = "下载完成，正在启动安装程序…";
+            UpdateService.LaunchInstaller(installerPath);
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusText = $"更新失败：{ex.Message}";
+        }
+        finally
+        {
+            IsUpdateBusy = false;
+        }
     }
 
     private async Task SaveNowAsync()

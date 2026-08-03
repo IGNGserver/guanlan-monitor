@@ -105,6 +105,8 @@ type agentIdentity struct {
 	Platform string `json:"platform"`
 	Arch     string `json:"arch"`
 	CPUModel string `json:"cpuModel,omitempty"`
+	Version  string `json:"version,omitempty"`
+	Channel  string `json:"channel,omitempty"`
 }
 
 type memoryStats struct {
@@ -391,6 +393,19 @@ type agentState struct {
 }
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "version":
+			fmt.Printf("%s (%s)\n", BuildVersion, BuildChannel)
+			return
+		case "update":
+			if err := runUpdateCommand(os.Args[2:]); err != nil {
+				log.Printf("update failed: %v", err)
+				os.Exit(1)
+			}
+			return
+		}
+	}
 	defaultConnection := agentConnectionConfig{
 		ServerURL: env("DSC_SERVER_URL", "http://127.0.0.1:3100"),
 		Secret:    env("DSC_AGENT_SECRET", "replace-me-agent-secret"),
@@ -461,6 +476,8 @@ func buildIdentity(deviceID, hostnameOverride string) (agentIdentity, error) {
 		OS:       normalizeOS(runtime.GOOS),
 		Platform: info.Platform,
 		Arch:     runtime.GOARCH,
+		Version:  BuildVersion,
+		Channel:  BuildChannel,
 	}
 	if len(cpuInfo) > 0 {
 		identity.CPUModel = cpuInfo[0].ModelName

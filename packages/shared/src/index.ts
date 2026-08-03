@@ -2,6 +2,18 @@ export type MetricWindow = "1m" | "15m" | "1d" | "1w" | "1mo" | "1y";
 
 export type DeviceStatus = "online" | "offline";
 
+export type ReleaseChannel = "stable" | "test";
+
+export type UpdatePlatform =
+  | "hub"
+  | "web"
+  | "windows-gui"
+  | "linux-gui"
+  | "android"
+  | "ios"
+  | "windows-cli"
+  | "linux-cli";
+
 export type DeviceBlockKey = "cpu" | "gpu" | "memory" | "disk" | "network" | "fan";
 
 export type AgentProbeTarget = DeviceBlockKey | "connection";
@@ -40,6 +52,8 @@ export interface AgentIdentity {
   platform: string;
   arch: string;
   cpuModel?: string;
+  version?: string;
+  channel?: ReleaseChannel;
 }
 
 export interface SamplePoint {
@@ -253,6 +267,8 @@ export interface DeviceSummary {
   deviceId: string;
   hostname: string;
   os: "windows" | "linux";
+  agentVersion: string | null;
+  agentChannel: ReleaseChannel | null;
   status: DeviceStatus;
   lastSeenAt: string | null;
   cpuUsagePercent: number | null;
@@ -358,6 +374,43 @@ export interface MetricSeries {
   networks: NetworkMetricSeries[];
   gpus: GpuMetricSeries[];
   fans: FanMetricSeries[];
+}
+
+export interface UpdateInfo {
+  currentVersion: string;
+  currentChannel: ReleaseChannel;
+  platform: UpdatePlatform;
+  arch?: string;
+  available: boolean;
+  latestVersion: string | null;
+  latestChannel: ReleaseChannel | null;
+  releaseTag: string | null;
+  releaseUrl: string | null;
+  notesUrl: string | null;
+  publishedAt: string | null;
+  assetName: string | null;
+  assetUrl: string | null;
+  assetSize: number | null;
+  sha256: string | null;
+  installMode: "installer" | "package" | "apk" | "cli" | "hub" | "store" | "none";
+  message?: string;
+}
+
+export interface SystemVersionInfo {
+  version: string;
+  channel: ReleaseChannel;
+  repository: string;
+}
+
+export interface HubUpdateRequest {
+  version: string;
+}
+
+export interface HubUpdateStatus {
+  state: "idle" | "requested" | "failed";
+  requestedVersion: string | null;
+  requestedAt: string | null;
+  message: string | null;
 }
 
 export interface MetricsLatest {

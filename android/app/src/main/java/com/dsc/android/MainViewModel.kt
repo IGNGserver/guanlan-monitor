@@ -1,6 +1,7 @@
 package com.dsc.android
 
 import android.app.Application
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -8,6 +9,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import java.time.Instant
 import java.time.ZonedDateTime
+import java.io.File
+import java.io.FileOutputStream
+import java.security.MessageDigest
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import retrofit2.HttpException
 
@@ -201,6 +207,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             message = null
           )
         }
+        checkForUpdate()
         selectedDeviceId?.let {
           loadMetrics(it, current.selectedWindow, showScreen = false)
           loadTraffic(it, _state.value.trafficMode, showScreen = false)
@@ -218,6 +225,80 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           )
         }
       }
+    }
+  }
+
+  fun downloadUpdate() {
+    val update = _state.value.updateInfo ?: return
+    val assetUrl = update.assetUrl
+    val expectedSha256 = update.sha256
+    if (!update.available || assetUrl.isNullOrBlank() || expectedSha256.isNullOrBlank()) {
+      _state.update { it.copy(message = "更新包校验信息不完整，已阻止安装") }
+      return
+    }
+    val client = httpClient ?: return
+    viewModelScope.launch {
+      _state.update { it.copy(updateDownloading = true, updateProgress = 0f, message = null) }
+      runCatching {
+        withContext(Dispatchers.IO) {
+          val request = okhttp3.Request.Builder().url(assetUrl).get().build()
+          client.newCall(request).execute().use { response ->
+            check(response.isSuccessful) { "下载更新失败：HTTP ${response.code}" }
+            val body = response.body ?: error("更新响应为空")
+            val total = body.contentLength()
+            val target = File(getApplication<Application>().cacheDir, "device-state-console-update.apk")
+            FileOutputStream(target).use { output ->
+              body.byteStream().use { input ->
+                val buffer = ByteArray(128 * 1024)
+                var copied = 0L
+                while (true) {
+                  val count = input.read(buffer)
+                  if (count <= 0) break
+                  output.write(buffer, 0, count)
+                  copied += count
+                  if (total > 0) {
+                    _state.update { it.copy(updateProgress = copied.toFloat() / total.toFloat()) }
+                  }
+                }
+              }
+            }
+            val digest = MessageDigest.getInstance("SHA-256").digest(target.readBytes())
+              .joinToString("") { byte -> "%02x".format(byte) }
+            check(digest.equals(expectedSha256, ignoreCase = true)) { "更新包校验失败" }
+            val uri = FileProvider.getUriForFile(
+              getApplication<Application>(),
+              "${getApplication<Application>().packageName}.fileprovider",
+              target
+            )
+            uri.toString()
+          }
+        }
+      }.onSuccess { uri ->
+        _state.update { it.copy(updateDownloading = false, updateProgress = 1f, updateInstallerUri = uri, message = "更新包已下载，正在打开系统安装器") }
+      }.onFailure { error ->
+        _state.update { it.copy(updateDownloading = false, updateProgress = 0f, message = error.message ?: "更新失败") }
+      }
+    }
+  }
+
+  fun clearUpdateInstallerUri() {
+    _state.update { it.copy(updateInstallerUri = null) }
+  }
+
+  private fun checkForUpdate() {
+    val currentApi = api ?: return
+    val config = _state.value.serverConfig
+    if (config.baseUrl.isBlank()) return
+    viewModelScope.launch {
+      val update = runCatching {
+        currentApi.updateInfo(
+          platform = "android",
+          currentVersion = BuildConfig.RELEASE_VERSION,
+          currentChannel = BuildConfig.RELEASE_CHANNEL,
+          arch = "universal"
+        )
+      }.getOrNull()
+      _state.update { it.copy(updateInfo = update?.takeIf { item -> item.available && !item.assetUrl.isNullOrBlank() }) }
     }
   }
 

@@ -31,6 +31,16 @@ const schema = z.object({
   AGENT_REQUIRE_HTTPS: booleanFromEnv,
   REDIS_URL: optionalUrl,
   MYSQL_URL: optionalNonEmptyString,
+  DSC_VERSION: optionalNonEmptyString.default("dev"),
+  DSC_RELEASE_CHANNEL: z.enum(["stable", "test"]).default("test"),
+  DSC_RELEASE_REPOSITORY: z.string().min(1).default("IGNGserver/Device-State-Console"),
+  DSC_RELEASE_API_URL: optionalUrl,
+  DSC_IOS_UPDATE_URL: optionalUrl,
+  DSC_UPDATE_CACHE_SECONDS: z.coerce.number().int().min(30).default(300),
+  DSC_HUB_UPDATE_ENABLED: booleanFromEnv,
+  DSC_GITHUB_TOKEN: optionalNonEmptyString,
+  DSC_HUB_TEST_UPDATE_WORKFLOW: z.string().min(1).default("deploy-test.yml"),
+  DSC_HUB_STABLE_UPDATE_WORKFLOW: z.string().min(1).default("deploy-production.yml"),
   // Deprecated after v0.1.107. ACCESS_KEY is the single credential for all clients.
   AGENT_SHARED_SECRET: optionalNonEmptyString
 });

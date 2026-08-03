@@ -9,6 +9,7 @@ public final class AppViewModel {
     public var activeScreen: ActiveScreen = .login
     public var isLoading: Bool = false
     public var errorMessage: String? = nil
+    public var updateInfo: UpdateInfoDto? = nil
     
     public var devices: [DeviceSummaryDto] = []
     public var selectedDeviceId: String? = nil
@@ -84,6 +85,7 @@ public final class AppViewModel {
         devices = []
         metrics = nil
         trafficCalendar = nil
+        updateInfo = nil
         selectedDeviceId = nil
         activeScreen = .login
         stopPolling()
@@ -93,6 +95,13 @@ public final class AppViewModel {
     public func refreshDevicesAndNavigate() async {
         do {
             devices = try await apiClient.fetchDevices(baseUrl: serverConfig.baseUrl)
+            updateInfo = try? await apiClient.fetchUpdateInfo(
+                baseUrl: serverConfig.baseUrl,
+                currentVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+            )
+            if updateInfo?.available != true {
+                updateInfo = nil
+            }
             if let currentId = selectedDeviceId, devices.contains(where: { $0.deviceId == currentId }) {
                 activeScreen = .deviceDetail(deviceId: currentId)
                 await refreshMetrics()

@@ -25,6 +25,20 @@ Run `deploy/build-cli-agent.ps1 -Zip` to create
 `DeviceStateConsole-Linux-CLI-Install-vX.Y.Z.zip`. Their installers use the bundled binary and do
 not require Go on the target host.
 
+After installation, run the bundled binary's update command from an elevated
+terminal. It checks `/api/updates`, accepts only a strictly newer release,
+verifies the release SHA-256, stops the service/task, replaces only the
+executable, preserves configuration, and rolls back if the Linux service does
+not become active:
+
+```text
+device-state-console-agent update
+```
+
+The command reads `DSC_SERVER_URL` and `DSC_AGENT_SECRET` (or the installed
+Linux/Windows `agent.env`). Use `--server-url`, `--secret`, or `--install-dir`
+when the installed environment is not available.
+
 The Linux GUI package is named
 `DeviceStateConsole-Linux-GUI-Install-vX.Y.Z.deb`; it is built and installed by
 GitHub Actions on Ubuntu 24.04. The GUI package is the recommended Linux desktop

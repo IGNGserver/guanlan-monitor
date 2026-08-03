@@ -14,12 +14,14 @@ android {
 
   defaultConfig {
     val releaseVersion = rootProject.file("../VERSION").readText().trim()
+    val releaseChannel = System.getenv("DSC_RELEASE_CHANNEL")?.takeIf { it == "stable" || it == "test" } ?: "test"
     applicationId = "com.dsc.android"
     minSdk = 29
     targetSdk = 35
     versionCode = releaseVersion.replace(".", "").toInt()
     versionName = releaseVersion
     buildConfigField("String", "RELEASE_VERSION", "\"$releaseVersion\"")
+    buildConfigField("String", "RELEASE_CHANNEL", "\"$releaseChannel\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     vectorDrawables.useSupportLibrary = true

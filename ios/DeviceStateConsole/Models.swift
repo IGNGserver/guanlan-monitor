@@ -43,6 +43,26 @@ public struct DeviceSummaryDto: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+public struct UpdateInfoDto: Codable, Equatable, Sendable {
+    public let currentVersion: String
+    public let currentChannel: String
+    public let platform: String
+    public let arch: String?
+    public let available: Bool
+    public let latestVersion: String?
+    public let latestChannel: String?
+    public let releaseTag: String?
+    public let releaseUrl: String?
+    public let notesUrl: String?
+    public let publishedAt: String?
+    public let assetName: String?
+    public let assetUrl: String?
+    public let assetSize: Int64?
+    public let sha256: String?
+    public let installMode: String
+    public let message: String?
+}
+
 public struct DeviceDetailDto: Codable, Equatable, Sendable {
     public let deviceId: String
     public let hostname: String

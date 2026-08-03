@@ -1,6 +1,8 @@
 ARG NODE_IMAGE=node:22-alpine
 FROM ${NODE_IMAGE}
 
+ARG DSC_RELEASE_CHANNEL=test
+
 WORKDIR /app
 
 RUN corepack enable
@@ -16,6 +18,7 @@ COPY apps ./apps
 COPY packages ./packages
 
 ENV NODE_ENV=production
+ENV DSC_RELEASE_CHANNEL=${DSC_RELEASE_CHANNEL}
 
 RUN pnpm --filter @dsc/shared build && pnpm --filter @dsc/web build
 
