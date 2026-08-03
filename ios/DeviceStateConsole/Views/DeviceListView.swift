@@ -26,7 +26,7 @@ public struct DeviceListView: View {
                         if let update = viewModel.updateInfo, update.available {
                             Section {
                                 VStack(alignment: .leading, spacing: 10) {
-                                    Text("发现 iOS 更新 (update.latestVersion ?? "")")
+                                    Text("发现 iOS 更新 \(update.latestVersion ?? "")")
                                         .font(.headline)
                                     Text("iOS 不能在应用内侧载安装包，请通过 App Store 或 TestFlight 完成更新。")
                                         .font(.subheadline)

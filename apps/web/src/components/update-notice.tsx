@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import type { UpdateInfo } from "@dsc/shared";
-import { getHubUpdateStatus, getUpdateInfo, requestHubUpdate } from "../lib/api";
+import { getHubUpdateStatus, getSystemVersionInfo, getUpdateInfo, requestHubUpdate } from "../lib/api";
 import styles from "./monitor.module.css";
 
-type UpdatePhase = "checking" | "ready" | "requesting" | "requested" | "failed";
+type UpdatePhase = "checking" | "ready" | "requesting" | "requested" | "completed" | "failed";
 
 export function UpdateNotice() {
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
@@ -45,17 +45,23 @@ export function UpdateNotice() {
   useEffect(() => {
     if (phase !== "requested") return;
     const timer = window.setInterval(() => {
-      void getHubUpdateStatus()
-        .then((result) => {
+      void Promise.all([getHubUpdateStatus(), getSystemVersionInfo()])
+        .then(([result, system]) => {
           if (result.state === "failed") {
             setPhase("failed");
             setMessage(result.message ?? "Hub 更新失败");
+            return;
+          }
+          if (update?.latestVersion && system.version === update.latestVersion) {
+            setPhase("completed");
+            setMessage("Hub 已更新完成，正在刷新页面。");
+            window.setTimeout(() => window.location.reload(), 1500);
           }
         })
         .catch(() => undefined);
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [phase]);
+  }, [phase, update?.latestVersion]);
 
   if (!update?.available || !update.latestVersion) return null;
 
@@ -66,16 +72,18 @@ export function UpdateNotice() {
         <span>
           {phase === "requested"
             ? " 已提交部署任务，页面会在服务重启后自动恢复。"
-            : phase === "failed"
+            : phase === "completed"
               ? ` ${message}`
-              : " 点击后由受保护的部署工作流完成更新。"}
+              : phase === "failed"
+                ? ` ${message}`
+                : " 点击后由受保护的部署工作流完成更新。"}
         </span>
       </div>
       <div className={styles.updateNoticeActions}>
         {(phase === "requesting" || phase === "requested") && (
           <progress className={styles.updateProgress} />
         )}
-        {phase !== "requested" && (
+        {phase !== "requested" && phase !== "completed" && (
           <button
             type="button"
             className={styles.footerActionBtn}

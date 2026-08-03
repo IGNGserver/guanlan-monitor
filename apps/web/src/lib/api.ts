@@ -12,7 +12,8 @@ import type {
   TrafficCalendarMode,
   TrafficCalendarResponse,
   UpdateInfo,
-  HubUpdateStatus
+  HubUpdateStatus,
+  SystemVersionInfo
 } from "@dsc/shared";
 
 function getServerUrl() {
@@ -81,6 +82,10 @@ export function getUpdateInfo(platform: "hub" | "web" = "web") {
     currentChannel: (process.env.NEXT_PUBLIC_DSC_RELEASE_CHANNEL as ReleaseChannel | undefined) ?? "test"
   });
   return apiFetch<UpdateInfo>(`/api/updates?${params.toString()}`);
+}
+
+export function getSystemVersionInfo() {
+  return apiFetch<SystemVersionInfo>("/api/system/version");
 }
 
 export function requestHubUpdate(version: string) {
