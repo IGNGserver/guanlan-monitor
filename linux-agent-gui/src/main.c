@@ -163,7 +163,7 @@ static AdwEntryRow *create_entry_row(AdwPreferencesGroup *group, const gchar *ti
     AdwEntryRow *row = ADW_ENTRY_ROW(adw_entry_row_new());
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), title);
     if (subtitle != NULL) {
-        adw_preferences_row_set_subtitle(ADW_PREFERENCES_ROW(row), subtitle);
+        gtk_widget_set_tooltip_text(GTK_WIDGET(row), subtitle);
     }
     adw_preferences_group_add(group, GTK_WIDGET(row));
     return row;
@@ -174,7 +174,7 @@ static AdwPasswordEntryRow *create_password_row(AdwPreferencesGroup *group, cons
     AdwPasswordEntryRow *row = ADW_PASSWORD_ENTRY_ROW(adw_password_entry_row_new());
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), title);
     if (subtitle != NULL) {
-        adw_preferences_row_set_subtitle(ADW_PREFERENCES_ROW(row), subtitle);
+        gtk_widget_set_tooltip_text(GTK_WIDGET(row), subtitle);
     }
     adw_preferences_group_add(group, GTK_WIDGET(row));
     return row;
@@ -185,7 +185,7 @@ static GtkSpinButton *create_spin_row(AdwPreferencesGroup *group, const gchar *t
     AdwActionRow *row = ADW_ACTION_ROW(adw_action_row_new());
     GtkSpinButton *spin = GTK_SPIN_BUTTON(gtk_spin_button_new_with_range(5, 3600, 5));
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), title);
-    adw_preferences_row_set_subtitle(ADW_PREFERENCES_ROW(row), subtitle);
+    adw_action_row_set_subtitle(row, subtitle);
     gtk_widget_set_valign(GTK_WIDGET(spin), GTK_ALIGN_CENTER);
     gtk_spin_button_set_numeric(spin, TRUE);
     adw_action_row_add_suffix(row, GTK_WIDGET(spin));
@@ -197,7 +197,7 @@ static AdwSwitchRow *create_switch_row(AdwPreferencesGroup *group, const gchar *
 {
     AdwSwitchRow *row = ADW_SWITCH_ROW(adw_switch_row_new());
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), title);
-    adw_preferences_row_set_subtitle(ADW_PREFERENCES_ROW(row), subtitle);
+    adw_action_row_set_subtitle(ADW_ACTION_ROW(row), subtitle);
     adw_preferences_group_add(group, GTK_WIDGET(row));
     return row;
 }
@@ -207,7 +207,7 @@ static GtkLabel *create_status_row(AdwPreferencesGroup *group, const gchar *titl
     AdwActionRow *row = ADW_ACTION_ROW(adw_action_row_new());
     GtkLabel *value = GTK_LABEL(gtk_label_new("等待中"));
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), title);
-    adw_preferences_row_set_subtitle(ADW_PREFERENCES_ROW(row), subtitle);
+    adw_action_row_set_subtitle(row, subtitle);
     gtk_widget_add_css_class(GTK_WIDGET(value), "dim-label");
     gtk_widget_set_halign(GTK_WIDGET(value), GTK_ALIGN_END);
     adw_action_row_add_suffix(row, GTK_WIDGET(value));
@@ -550,7 +550,7 @@ static void start_backend_fallback(DscApp *app)
         G_SUBPROCESS_FLAGS_STDOUT_SILENCE | G_SUBPROCESS_FLAGS_STDERR_SILENCE);
     g_subprocess_launcher_set_cwd(launcher, app->bundle_root);
     GError *error = NULL;
-    app->fallback_backend = g_subprocess_launcher_spawnv(launcher, &error, argv);
+    app->fallback_backend = g_subprocess_launcher_spawnv(launcher, argv, &error);
     g_object_unref(launcher);
     g_free(pid);
     if (app->fallback_backend == NULL) {
@@ -673,7 +673,7 @@ static void on_web_load_changed(WebKitWebView *web_view, WebKitLoadEvent event, 
         "(async()=>{const r=await fetch('/api/auth/login',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({accessKey:%s})});if(!r.ok)throw new Error(String(r.status));location.reload();})().catch(()=>{});",
         quoted);
     app->web_login_started = TRUE;
-    webkit_web_view_run_javascript(app->web_view, script, NULL, NULL, NULL);
+    webkit_web_view_evaluate_javascript(app->web_view, script, -1, NULL, NULL, NULL, NULL, NULL);
     g_free(script);
     g_free(quoted);
 }
@@ -877,7 +877,7 @@ static void activate(GApplication *application, gpointer user_data)
     app->backend_path = g_build_filename(app->bundle_root, "device-state-console-agent-backend", NULL);
     app->collector_path = g_build_filename(app->bundle_root, "device-state-console-agent", NULL);
 
-    app->window = ADW_APPLICATION_WINDOW(adw_application_window_new(app->application));
+    app->window = ADW_APPLICATION_WINDOW(adw_application_window_new(GTK_APPLICATION(application)));
     gtk_window_set_title(GTK_WINDOW(app->window), "观澜");
     gtk_window_set_default_size(GTK_WINDOW(app->window), 1120, 760);
     gtk_window_set_resizable(GTK_WINDOW(app->window), TRUE);
