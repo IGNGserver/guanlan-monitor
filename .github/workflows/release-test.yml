@@ -200,6 +200,7 @@ jobs:
             key_password="device-state-console-test-key"
             keytool -genkeypair \
               -keystore "$keystore" \
+              -storetype JKS \
               -storepass "$store_password" \
               -keypass "$key_password" \
               -alias device-state-console-test \
