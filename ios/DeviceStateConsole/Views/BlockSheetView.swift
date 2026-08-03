@@ -169,7 +169,7 @@ struct DiskTabContent: View {
         if let seriesMap = metrics.diskSeries[tabId] {
             if let disk = metrics.disks.first(where: { $0.id == tabId }) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("健康 \(disk.healthStatus.map(formatDiskHealth) ?? "未知") · 寿命 \(disk.healthPercent.map { String(format: "%.0f%%", $0) } ?? "未知") · 温度 \(formatCelsius(disk.temperatureC))")
+                    Text("健康 \(disk.healthStatus.map(formatDiskHealth) ?? "未知") · 寿命 \(disk.healthPercent.map { String(format: "%.0f%%", $0) } ?? "未知") · 温度 \(disk.temperatureC.map { String(format: "%.1f°C", $0) } ?? "未知")")
                         .font(.subheadline)
                     if let reason = disk.healthReason, !reason.isEmpty {
                         Text("健康来源：\(reason)")
