@@ -1,6 +1,6 @@
 {
   "name": "@dsc/desktop",
-  "version": "0.2.68",
+  "version": "0.2.69",
   "private": true,
   "type": "module",
   "description": "Unified Windows and Linux Electron desktop client for Device State Console.",
@@ -37,7 +37,7 @@
   },
   "build": {
     "appId": "org.igng.devicestateconsole",
-    "productName": "Device State Console",
+    "productName": "观澜",
     "asar": true,
     "files": [
       "dist/**/*",
@@ -60,10 +60,15 @@
     },
     "nsis": {
       "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": false,
+      "runAfterFinish": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "shortcutName": "观澜",
+      "uninstallDisplayName": "观澜 version ${version}",
+      "guid": "E7EC0D43-10D7-4D88-BB80-6F1E901C3E7A",
+      "include": "build/installer.nsh"
     },
     "portable": {
       "artifactName": "DeviceStateConsole-Windows-GUI-Portable-v${version}.${ext}"

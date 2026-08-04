@@ -38,6 +38,7 @@ export class DesktopController {
   constructor() {
     const userDataPath = app.getPath("userData");
     const legacyPaths = [
+      path.join(app.getPath("localAppData"), "DeviceStateConsoleAgent", "agent-ui.config.json"),
       `${app.getPath("appData")}\\DeviceStateConsole\\agent-ui.config.json`,
       `${app.getPath("appData")}\\device-state-console\\agent-ui.config.json`,
       `${process.cwd()}\\agent-ui.config.json`

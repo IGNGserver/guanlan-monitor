@@ -38,6 +38,9 @@ jobs:
       - name: Verify version
         run: pnpm verify:version
 
+      - name: Verify Windows installer compatibility
+        run: pnpm verify:windows-installer
+
       - name: Typecheck and build web packages
         run: |
           pnpm typecheck

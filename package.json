@@ -1,7 +1,7 @@
 {
   "name": "device-state-console",
   "private": true,
-  "version": "0.2.68",
+  "version": "0.2.69",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "build": "pnpm -r build",
@@ -9,6 +9,7 @@
     "dev": "pnpm --parallel --filter @dsc/server --filter @dsc/web dev",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "verify:version": "node scripts/verify-version.mjs"
+    "verify:version": "node scripts/verify-version.mjs",
+    "verify:windows-installer": "node scripts/verify-windows-installer-config.mjs"
   }
 }
