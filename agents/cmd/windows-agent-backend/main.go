@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -98,6 +99,12 @@ type backendState struct {
 	SyncStateFileExists            bool               `json:"syncStateFileExists"`
 	DiagnosticsPath                string             `json:"diagnosticsPath"`
 	DiagnosticsFileExists          bool               `json:"diagnosticsFileExists"`
+	PendingStatePath               string             `json:"pendingStatePath"`
+	PendingStateFileExists         bool               `json:"pendingStateFileExists"`
+	PendingSampleCount             int                `json:"pendingSampleCount"`
+	PendingBytes                   int64              `json:"pendingBytes"`
+	OldestPendingAt                string             `json:"oldestPendingAt,omitempty"`
+	LastUploadError                string             `json:"lastUploadError,omitempty"`
 	Config                         agentLocalConfig   `json:"config"`
 	SupportedProbePlans            []probePlanSupport `json:"supportedProbePlans"`
 	DetectedTargets                []probeTargetState `json:"detectedTargets"`
@@ -146,7 +153,9 @@ type server struct {
 	configPath           string
 	syncStatePath        string
 	diagnosticsPath      string
+	pendingStatePath     string
 	childBinaryPath      string
+	localToken           string
 	childJob             jobObject
 	config               agentLocalConfig
 	cmd                  *exec.Cmd
@@ -182,6 +191,13 @@ type cloudSyncStateFile struct {
 	LastCloudSyncErr string `json:"lastCloudSyncError,omitempty"`
 }
 
+type collectorPendingStateFile struct {
+	PendingCount    int    `json:"pendingCount"`
+	PendingBytes    int64  `json:"pendingBytes"`
+	OldestSampledAt string `json:"oldestSampledAt,omitempty"`
+	LastUploadError string `json:"lastUploadError,omitempty"`
+}
+
 const (
 	restartBackoffBase = 2 * time.Second
 	restartBackoffMax  = 20 * time.Second
@@ -193,6 +209,7 @@ func main() {
 	configRoot := flag.String("config-root", "", "directory for local config files")
 	childBinary := flag.String("child-binary", "", "path to the collector binary")
 	parentPID := flag.Int("parent-pid", 0, "frontend process id to watch; backend exits when this process exits")
+	localToken := flag.String("local-token", "", "optional bearer token required for loopback control API calls")
 	flag.Parse()
 
 	exePath, err := os.Executable()
@@ -238,7 +255,9 @@ func main() {
 		configPath:       configPath,
 		syncStatePath:    filepath.Join(resolvedConfigRoot, "agent-ui.sync-state.json"),
 		diagnosticsPath:  filepath.Join(resolvedConfigRoot, "agent-ui.backend.log"),
+		pendingStatePath: resolvePendingStatePath(resolvedConfigRoot, configPath),
 		childBinaryPath:  resolvedChildBinary,
+		localToken:       strings.TrimSpace(*localToken),
 		requestClient:    &http.Client{Timeout: 10 * time.Second},
 		config:           defaultLocalConfig(),
 		connectionState:  "stopped",
@@ -250,7 +269,7 @@ func main() {
 	if err := s.loadSyncState(); err != nil {
 		log.Printf("load cloud sync state failed: %v", err)
 	}
-	if runtime.GOOS == "linux" && s.config.AutoStartCollector && s.config.DataRecordingEnabled {
+	if s.config.AutoStartCollector && s.config.DataRecordingEnabled {
 		s.mu.Lock()
 		if err := s.startChildLocked(false); err != nil {
 			s.connectionState = "error"
@@ -468,6 +487,7 @@ func fileExists(path string) bool {
 }
 
 func (s *server) snapshotLocked() backendState {
+	pending := readCollectorPendingState(s.pendingStatePath)
 	return backendState{
 		Running:                        s.cmd != nil && s.cmd.Process != nil,
 		BackendStartedAt:               s.backendStartedAt.Format(time.RFC3339),
@@ -497,13 +517,57 @@ func (s *server) snapshotLocked() backendState {
 		SyncStateFileExists:            fileExists(s.syncStatePath),
 		DiagnosticsPath:                s.diagnosticsPath,
 		DiagnosticsFileExists:          fileExists(s.diagnosticsPath),
+		PendingStatePath:               s.pendingStatePath,
+		PendingStateFileExists:         fileExists(s.pendingStatePath),
+		PendingSampleCount:             pending.PendingCount,
+		PendingBytes:                   pending.PendingBytes,
+		OldestPendingAt:                pending.OldestSampledAt,
+		LastUploadError:                pending.LastUploadError,
 		Config:                         s.config,
 		SupportedProbePlans:            supportedProbePlans(),
 		DetectedTargets:                append([]probeTargetState(nil), s.detectedTargets...),
 	}
 }
 
-func (s *server) handleState(writer http.ResponseWriter, _ *http.Request) {
+func resolvePendingStatePath(configRoot, configPath string) string {
+	pendingPath := strings.TrimSpace(os.Getenv("DSC_AGENT_PENDING_FILE"))
+	if pendingPath == "" {
+		pendingPath = configPath + ".pending.jsonl"
+	}
+	if !filepath.IsAbs(pendingPath) {
+		pendingPath = filepath.Join(configRoot, pendingPath)
+	}
+	return pendingPath + ".state.json"
+}
+
+func readCollectorPendingState(path string) collectorPendingStateFile {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return collectorPendingStateFile{}
+	}
+	var state collectorPendingStateFile
+	if err := json.Unmarshal(raw, &state); err != nil {
+		return collectorPendingStateFile{}
+	}
+	return state
+}
+
+func (s *server) authorizeLocalRequest(writer http.ResponseWriter, request *http.Request) bool {
+	if s.localToken == "" {
+		return true
+	}
+	provided := strings.TrimSpace(request.Header.Get("X-DSC-Local-Token"))
+	if provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(s.localToken)) != 1 {
+		writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "unauthorized_local_client"})
+		return false
+	}
+	return true
+}
+
+func (s *server) handleState(writer http.ResponseWriter, request *http.Request) {
+	if !s.authorizeLocalRequest(writer, request) {
+		return
+	}
 	s.mu.Lock()
 	snapshot := s.snapshotLocked()
 	s.mu.Unlock()
@@ -511,6 +575,9 @@ func (s *server) handleState(writer http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *server) handleConfig(writer http.ResponseWriter, request *http.Request) {
+	if !s.authorizeLocalRequest(writer, request) {
+		return
+	}
 	switch request.Method {
 	case http.MethodGet:
 		s.mu.Lock()
@@ -569,6 +636,9 @@ func (s *server) handleConfig(writer http.ResponseWriter, request *http.Request)
 }
 
 func (s *server) handleStart(writer http.ResponseWriter, request *http.Request) {
+	if !s.authorizeLocalRequest(writer, request) {
+		return
+	}
 	if request.Method != http.MethodPost {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -599,6 +669,9 @@ func (s *server) handleStart(writer http.ResponseWriter, request *http.Request) 
 }
 
 func (s *server) handleStop(writer http.ResponseWriter, request *http.Request) {
+	if !s.authorizeLocalRequest(writer, request) {
+		return
+	}
 	if request.Method != http.MethodPost {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -611,6 +684,9 @@ func (s *server) handleStop(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *server) handleAttachFrontend(writer http.ResponseWriter, request *http.Request) {
+	if !s.authorizeLocalRequest(writer, request) {
+		return
+	}
 	if request.Method != http.MethodPost {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -636,6 +712,9 @@ func (s *server) handleAttachFrontend(writer http.ResponseWriter, request *http.
 }
 
 func (s *server) handleConnectionCheck(writer http.ResponseWriter, request *http.Request) {
+	if !s.authorizeLocalRequest(writer, request) {
+		return
+	}
 	if request.Method != http.MethodPost {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -659,6 +738,9 @@ func (s *server) handleConnectionCheck(writer http.ResponseWriter, request *http
 }
 
 func (s *server) handleBackendShutdown(writer http.ResponseWriter, request *http.Request) {
+	if !s.authorizeLocalRequest(writer, request) {
+		return
+	}
 	if request.Method != http.MethodPost {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -677,6 +759,9 @@ func (s *server) handleBackendShutdown(writer http.ResponseWriter, request *http
 }
 
 func (s *server) handleCloudPush(writer http.ResponseWriter, request *http.Request) {
+	if !s.authorizeLocalRequest(writer, request) {
+		return
+	}
 	if request.Method != http.MethodPost {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -847,6 +932,9 @@ func (s *server) checkConnection(cfg agentLocalConfig) connectionCheckResult {
 }
 
 func (s *server) handleProbeDetect(writer http.ResponseWriter, request *http.Request) {
+	if !s.authorizeLocalRequest(writer, request) {
+		return
+	}
 	if request.Method != http.MethodPost {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -1334,8 +1422,13 @@ func (s *server) stopCollectorLocked(reason string) {
 
 	s.mu.Unlock()
 	_ = cmd.Process.Signal(os.Interrupt)
-	time.Sleep(500 * time.Millisecond)
-	_ = cmd.Process.Kill()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && cmd.ProcessState == nil {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if cmd.ProcessState == nil {
+		_ = cmd.Process.Kill()
+	}
 	s.mu.Lock()
 
 	if s.cmd == cmd {

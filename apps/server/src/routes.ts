@@ -25,7 +25,7 @@ const loginSchema = z.object({
 });
 
 const metricsQuerySchema = z.object({
-  window: z.enum(["1m", "15m", "1d", "1w", "1mo", "1y"]).default("1m")
+  window: z.enum(["1m", "5m", "15m", "1h", "6h", "24h", "1d", "7d", "1w", "30d", "1mo", "90d", "1y"]).default("1m")
 });
 
 const trafficCalendarSchema = z.object({
@@ -463,8 +463,8 @@ function sanitizeUnsupportedMetricSeries(series: MetricSeries, availableMetrics:
 
 function alignMetricSeriesToWindow(series: MetricSeries, window: MetricWindow) {
   const bucketMs =
-    window === "15m" || window === "1d" ? 60_000 :
-    window === "1w" || window === "1mo" || window === "1y" ? 3_600_000 :
+    window === "15m" || window === "1h" || window === "6h" || window === "24h" || window === "1d" ? 60_000 :
+    window === "7d" || window === "1w" || window === "30d" || window === "1mo" || window === "90d" || window === "1y" ? 3_600_000 :
     0;
   if (!bucketMs) return series;
 

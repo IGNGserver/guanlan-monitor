@@ -1,0 +1,117 @@
+import { app, BrowserWindow, Menu, nativeImage, Tray } from "electron";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { DesktopController } from "./controller.js";
+import { registerIpc } from "./ipc.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  let mainWindow: BrowserWindow | null = null;
+  let tray: Tray | null = null;
+  let controller: DesktopController | null = null;
+  let quitting = false;
+  let shutdownPromise: Promise<void> | null = null;
+
+  const showWindow = () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  };
+
+  const shutdown = async () => {
+    if (!controller) return;
+    shutdownPromise ??= controller.shutdown();
+    await shutdownPromise;
+  };
+
+  const createWindow = () => {
+    const preloadPath = path.join(__dirname, "../preload/index.js");
+    mainWindow = new BrowserWindow({
+      width: 1440,
+      height: 920,
+      minWidth: 980,
+      minHeight: 680,
+      show: false,
+      backgroundColor: "#0c1117",
+      title: "Device State Console",
+      webPreferences: {
+        preload: preloadPath,
+        contextIsolation: true,
+        nodeIntegration: false,
+        // The preload is compiled as an ESM module. Keep Node integration disabled
+        // and context isolation enabled; the unsandboxed preload is required for
+        // Electron to load its typed ESM bridge on both supported platforms.
+        sandbox: false,
+        spellcheck: false
+      }
+    });
+    mainWindow.on("close", (event) => {
+      if (quitting) return;
+      event.preventDefault();
+      mainWindow?.hide();
+    });
+    mainWindow.once("ready-to-show", () => {
+      if (!controller?.startupSettings.startMinimized) showWindow();
+    });
+
+    const devServerUrl = process.env.DSC_DEV_SERVER_URL ?? process.env.VITE_DEV_SERVER_URL;
+    if (devServerUrl) {
+      void mainWindow.loadURL(devServerUrl);
+    } else {
+      void mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
+    }
+  };
+
+  const createTray = () => {
+    const iconPath = path.join(process.resourcesPath, "app-icon.ico");
+    const icon = nativeImage.createFromPath(iconPath);
+    tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
+    tray.setToolTip("Device State Console");
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: "Open Device State Console", click: showWindow },
+      { type: "separator" },
+      {
+        label: "Exit",
+        click: () => {
+          quitting = true;
+          void shutdown().finally(() => app.quit());
+        }
+      }
+    ]));
+    tray.on("double-click", showWindow);
+  };
+
+  app.on("second-instance", () => showWindow());
+  app.on("before-quit", (event) => {
+    if (quitting) return;
+    event.preventDefault();
+    quitting = true;
+    void shutdown().finally(() => app.quit());
+  });
+
+  app.whenReady().then(async () => {
+    app.setAppUserModelId("org.igng.devicestateconsole");
+    controller = new DesktopController();
+    await controller.initialize();
+    registerIpc(controller, () => mainWindow, () => { quitting = true; });
+    createWindow();
+    createTray();
+    if (mainWindow) {
+      mainWindow.webContents.once("did-finish-load", () => {
+        void controller?.refresh();
+      });
+    }
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      else showWindow();
+    });
+  }).catch((error) => {
+    console.error("Device State Console startup failed", error);
+    app.quit();
+  });
+}

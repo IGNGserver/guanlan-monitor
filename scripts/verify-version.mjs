@@ -10,6 +10,7 @@ const packagePaths = [
   "../package.json",
   "../apps/server/package.json",
   "../apps/web/package.json",
+  "../apps/desktop/package.json",
   "../packages/shared/package.json",
 ];
 

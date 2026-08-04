@@ -24,7 +24,19 @@ export class RedisRealtimeRepository implements RealtimeRepository {
 
   async appendSeries(deviceId: string, bucket: MetricWindow, point: TimeSeriesRecord, maxPoints: number) {
     const key = `${SERIES_KEY}:${deviceId}:${bucket}`;
-    await this.redis.rpush(key, JSON.stringify(point));
+    const raw = await this.redis.lrange(key, 0, -1);
+    const existingIndex = raw.findIndex((item) => {
+      try {
+        return (JSON.parse(item) as TimeSeriesRecord).timestamp === point.timestamp;
+      } catch {
+        return false;
+      }
+    });
+    if (existingIndex >= 0) {
+      await this.redis.lset(key, existingIndex, JSON.stringify(point));
+    } else {
+      await this.redis.rpush(key, JSON.stringify(point));
+    }
     await this.redis.ltrim(key, -maxPoints, -1);
   }
 

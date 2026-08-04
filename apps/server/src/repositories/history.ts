@@ -3,10 +3,13 @@ import type { MetricWindow, TrafficCalendarMode, TrafficCalendarResponse } from 
 import type { HistoryRepository, TimeSeriesRecord } from "../types.js";
 import { buildTrafficCalendar } from "../traffic-calendar.js";
 
-const WINDOW_RANGES: Record<Extract<MetricWindow, "1d" | "1w" | "1mo" | "1y">, number> = {
+const WINDOW_RANGES: Record<Extract<MetricWindow, "1d" | "7d" | "1w" | "30d" | "1mo" | "90d" | "1y">, number> = {
+  "7d": 24 * 7,
   "1d": 24,
   "1w": 24 * 7,
+  "30d": 24 * 31,
   "1mo": 24 * 31,
+  "90d": 24 * 90,
   "1y": 24 * 366
 };
 const MINUTE_RETENTION_DAYS = 90;
@@ -245,10 +248,11 @@ export class MysqlHistoryRepository implements HistoryRepository {
   }
 
   async getHistoricalSeries(deviceId: string, bucket: MetricWindow) {
-    if (bucket === "1m" || bucket === "15m") {
+    if (bucket === "1m" || bucket === "5m" || bucket === "15m" || bucket === "1h") {
       return [];
     }
-    if (bucket === "1d") {
+    if (bucket === "6h" || bucket === "24h" || bucket === "1d") {
+      const hours = bucket === "6h" ? 6 : 24;
       const [rows] = await this.pool.query<any[]>(
         `
           SELECT
@@ -276,15 +280,15 @@ export class MysqlHistoryRepository implements HistoryRepository {
             recorded_details_json AS recordedDetailsJson
           FROM device_minute_metrics
           WHERE device_id = ?
-            AND recorded_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)
+            AND recorded_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR)
           ORDER BY recorded_at ASC
         `,
-        [deviceId]
+        [deviceId, hours]
       );
 
       return rows.map(mapHistoryRow) as TimeSeriesRecord[];
     }
-    const hours = WINDOW_RANGES[bucket];
+    const hours = WINDOW_RANGES[bucket as keyof typeof WINDOW_RANGES] ?? WINDOW_RANGES["1y"];
     const [rows] = await this.pool.query<any[]>(
       `
         SELECT

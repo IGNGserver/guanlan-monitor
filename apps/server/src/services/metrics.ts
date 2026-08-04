@@ -80,11 +80,14 @@ export class MetricsService {
   }
 
   async getSeries(deviceId: string, window: MetricWindow) {
-    if (window === "1m" || window === "15m") {
-      return this.repositories.realtime.readSeries(deviceId, window);
+    if (window === "1m" || window === "5m") {
+      return this.repositories.realtime.readSeries(deviceId, "1m");
+    }
+    if (window === "15m" || window === "1h") {
+      return this.repositories.realtime.readSeries(deviceId, "15m");
     }
     const history = await this.repositories.history.getHistoricalSeries(deviceId, window);
-    if (window === "1d") {
+    if (window === "6h" || window === "24h" || window === "1d") {
       return this.withCurrentMinuteAggregate(deviceId, history);
     }
     return this.withCurrentHourlyAggregate(deviceId, history);
@@ -135,7 +138,12 @@ export class MetricsService {
       this.minuteAccumulators.set(deviceId, { bucketStartedAt, samples: [point] });
       return;
     }
-    current.samples.push(point);
+    const existingIndex = current.samples.findIndex((sample) => sample.timestamp === point.timestamp);
+    if (existingIndex >= 0) {
+      current.samples[existingIndex] = point;
+    } else {
+      current.samples.push(point);
+    }
   }
 
   private async addHourlyAggregate(deviceId: string, point: ReturnType<typeof payloadToTimeSeries>) {
@@ -149,7 +157,12 @@ export class MetricsService {
       this.hourlyAccumulators.set(deviceId, { bucketStartedAt, samples: [point] });
       return;
     }
-    current.samples.push(point);
+    const existingIndex = current.samples.findIndex((sample) => sample.timestamp === point.timestamp);
+    if (existingIndex >= 0) {
+      current.samples[existingIndex] = point;
+    } else {
+      current.samples.push(point);
+    }
   }
 
   private async flushAggregate(deviceId: string, bucket: MetricWindow, samples: ReturnType<typeof payloadToTimeSeries>[], maxPoints: number) {

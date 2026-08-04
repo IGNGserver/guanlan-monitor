@@ -2,9 +2,91 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestPendingStoreEvictsOldestSamplesWithinByteLimit(t *testing.T) {
+	root := t.TempDir()
+	store := &pendingStore{
+		path:      filepath.Join(root, "pending.jsonl"),
+		statePath: filepath.Join(root, "pending.state.json"),
+		maxBytes:  1200,
+		maxAge:    24 * time.Hour,
+	}
+	for index := 0; index < 4; index++ {
+		timestamp := time.Date(2026, 8, 4, 12, index, 0, 0, time.UTC).Format(time.RFC3339)
+		payload := metricsPayload{
+			Identity:  agentIdentity{DeviceID: "test-device"},
+			Timestamp: timestamp,
+		}
+		payload.SampleID = sampleID(payload)
+		if err := store.enqueue(pendingSample{ID: payload.SampleID, ServerURL: "https://hub.example", SampledAt: timestamp, Payload: payload}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	entries, err := store.readEntries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) == 0 || len(entries) >= 4 {
+		t.Fatalf("expected oldest entries to be evicted, got %d entries", len(entries))
+	}
+	if entries[0].SampledAt == "2026-08-04T12:00:00Z" {
+		t.Fatalf("oldest sample was not evicted: %#v", entries)
+	}
+}
+
+func TestPendingStorePrunesExpiredAndDuplicateSamples(t *testing.T) {
+	root := t.TempDir()
+	store := &pendingStore{
+		path:      filepath.Join(root, "pending.jsonl"),
+		statePath: filepath.Join(root, "pending.state.json"),
+		maxBytes:  1024 * 1024,
+		maxAge:    time.Hour,
+	}
+	old := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	current := time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339)
+	payload := metricsPayload{Identity: agentIdentity{DeviceID: "test-device"}, Timestamp: current}
+	payload.SampleID = sampleID(payload)
+	if err := store.writeEntries([]pendingSample{
+		{ID: "old", ServerURL: "https://hub.example", SampledAt: old, Payload: metricsPayload{Timestamp: old}},
+		{ID: payload.SampleID, ServerURL: "https://hub.example", SampledAt: current, Payload: payload},
+		{ID: payload.SampleID, ServerURL: "https://hub.example", SampledAt: current, Payload: payload},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := store.readEntries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries = store.prune(entries, time.Now().UTC())
+	if len(entries) != 1 || entries[0].ID != payload.SampleID {
+		t.Fatalf("unexpected pruned entries: %#v", entries)
+	}
+}
+
+func TestPendingStateIsWrittenWithoutPayloadData(t *testing.T) {
+	root := t.TempDir()
+	store := &pendingStore{
+		path:          filepath.Join(root, "pending.jsonl"),
+		statePath:     filepath.Join(root, "pending.state.json"),
+		maxBytes:      1024,
+		maxAge:        time.Hour,
+		lastUploadErr: "redacted upload failure",
+	}
+	store.writeState()
+	raw, err := os.ReadFile(store.statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) == "" || string(raw) == "null" {
+		t.Fatalf("expected pending state file, got %q", string(raw))
+	}
+}
 
 func TestComputeRatesKeepsPerInterfaceNetworkActivity(t *testing.T) {
 	previousAt := time.Unix(100, 0)

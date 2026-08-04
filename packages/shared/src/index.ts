@@ -1,4 +1,17 @@
-export type MetricWindow = "1m" | "15m" | "1d" | "1w" | "1mo" | "1y";
+export type MetricWindow =
+  | "1m"
+  | "5m"
+  | "15m"
+  | "1h"
+  | "6h"
+  | "24h"
+  | "1d"
+  | "7d"
+  | "1w"
+  | "30d"
+  | "1mo"
+  | "90d"
+  | "1y";
 
 export type DeviceStatus = "online" | "offline";
 
@@ -261,6 +274,7 @@ export interface DeviceMetricConfigResponse {
 }
 
 export interface AgentMetricsPayload {
+  sampleId?: string;
   identity: AgentIdentity;
   timestamp: string;
   heartbeatAt: string;
@@ -467,6 +481,153 @@ export interface MetricsResponse {
   availableMetrics: DeviceMetricOption[];
   latest: MetricsLatest;
   series: MetricSeries;
+}
+
+/** The local Agent backend contract after the main process removes secrets. */
+export interface DesktopAgentConfig {
+  connection: Omit<AgentConnectionConfig, "secret"> & {
+    secretConfigured: boolean;
+  };
+  sampling: AgentSamplingConfig;
+  enabledMetrics: DeviceMetricKey[];
+  enabledDeviceIds: Partial<Record<DeviceBlockKey, string[]>>;
+  instanceMetricConfig: Record<string, DeviceMetricKey[]>;
+  probeSelections: AgentProbeSelection[];
+  cloudSyncEnabled: boolean;
+  dataRecordingEnabled: boolean;
+  autoRestartCollector: boolean;
+  autoStartCollector: boolean;
+}
+
+export interface DesktopProbePlan {
+  target: AgentProbeTarget;
+  providers: string[];
+  default: string;
+}
+
+export interface DesktopDetectedTarget {
+  id: string;
+  name: string;
+  subtitle?: string;
+  enabled: boolean;
+  metrics: string[];
+}
+
+export interface DesktopDetectedTargetGroup {
+  target: AgentProbeTarget;
+  label: string;
+  instances: DesktopDetectedTarget[];
+}
+
+export interface DesktopAgentBackendState {
+  running: boolean;
+  backendStartedAt: string;
+  frontendParentPid: number;
+  childStartedAt?: string;
+  connectionStatus: string;
+  lastChildLog?: string;
+  lastUploadAt?: string;
+  lastCloudSyncAt?: string;
+  lastCloudSyncError?: string;
+  cloudConfigPending: boolean;
+  lastDetectAt?: string;
+  lastExitAt?: string;
+  lastRestartAt?: string;
+  restartCount: number;
+  lastExitCode?: number | null;
+  autoRestartPending: boolean;
+  effectiveUploadIntervalSeconds: number;
+  lastIssueCategory?: string;
+  lastIssueDetail?: string;
+  lastIssueAt?: string;
+  lastIssueCount: number;
+  lastIssueRecoveredAt?: string;
+  configPath: string;
+  configFileExists: boolean;
+  syncStatePath: string;
+  syncStateFileExists: boolean;
+  diagnosticsPath: string;
+  diagnosticsFileExists: boolean;
+  pendingStatePath: string;
+  pendingStateFileExists: boolean;
+  pendingSampleCount: number;
+  pendingBytes: number;
+  oldestPendingAt?: string;
+  lastUploadError?: string;
+  config: DesktopAgentConfig;
+  supportedProbePlans: DesktopProbePlan[];
+  detectedTargets: DesktopDetectedTargetGroup[];
+}
+
+export type DesktopSnapshotSource = "live" | "cache" | "empty";
+
+export interface DesktopCacheState {
+  available: boolean;
+  savedAt: string | null;
+  ageSeconds: number | null;
+}
+
+export interface DesktopSessionState {
+  authenticated: boolean;
+  accessKeyConfigured: boolean;
+}
+
+export interface DesktopSnapshot {
+  generatedAt: string;
+  source: DesktopSnapshotSource;
+  cache: DesktopCacheState;
+  session: DesktopSessionState;
+  localBackend: DesktopAgentBackendState | null;
+  devices: DeviceSummary[];
+  selectedDeviceId: string | null;
+  metrics: MetricsResponse | null;
+  trafficCalendar: TrafficCalendarResponse | null;
+  update: UpdateInfo | null;
+  startup: DesktopStartupSettings;
+}
+
+export interface DesktopStartupSettings {
+  openAtLogin: boolean;
+  startMinimized: boolean;
+}
+
+export interface DesktopSnapshotRequest {
+  metricWindow?: MetricWindow;
+  selectedDeviceId?: string | null;
+  trafficMode?: TrafficCalendarMode;
+  trafficAnchor?: string;
+  preferCache?: boolean;
+}
+
+export type DesktopAgentControlAction = "start" | "stop" | "check-connection" | "detect-probes";
+
+export interface DesktopConfigPatch {
+  connection?: Partial<Omit<AgentConnectionConfig, "secret">>;
+  sampling?: Partial<AgentSamplingConfig>;
+  enabledMetrics?: DeviceMetricKey[];
+  enabledDeviceIds?: Partial<Record<DeviceBlockKey, string[]>>;
+  instanceMetricConfig?: Record<string, DeviceMetricKey[]>;
+  probeSelections?: AgentProbeSelection[];
+  cloudSyncEnabled?: boolean;
+  dataRecordingEnabled?: boolean;
+  autoRestartCollector?: boolean;
+  autoStartCollector?: boolean;
+}
+
+export interface DesktopRendererBridge {
+  getSnapshot(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot>;
+  refresh(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot>;
+  updateLocalConfig(patch: DesktopConfigPatch): Promise<DesktopSnapshot>;
+  controlAgent(action: DesktopAgentControlAction): Promise<DesktopSnapshot>;
+  setAgentSecret(secret: string): Promise<DesktopSnapshot>;
+  login(accessKey: string): Promise<DesktopSnapshot>;
+  logout(): Promise<DesktopSnapshot>;
+  cloudPush(): Promise<DesktopSnapshot>;
+  saveFanNote(deviceId: string, fanId: string, note: string): Promise<DesktopSnapshot>;
+  updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot>;
+  openExternal(url: string): Promise<void>;
+  exit(): Promise<void>;
+  subscribe(listener: (snapshot: DesktopSnapshot) => void): () => void;
 }
 
 export interface AuthLoginPayload {

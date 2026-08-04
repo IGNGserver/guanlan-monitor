@@ -89,7 +89,12 @@ export class LocalRealtimeRepository implements RealtimeRepository {
     await this.store.update((db) => {
       db.series[deviceId] ??= {};
       db.series[deviceId][bucket] ??= [];
-      db.series[deviceId][bucket].push(point);
+      const existingIndex = db.series[deviceId][bucket].findIndex((item) => item.timestamp === point.timestamp);
+      if (existingIndex >= 0) {
+        db.series[deviceId][bucket][existingIndex] = point;
+      } else {
+        db.series[deviceId][bucket].push(point);
+      }
       db.series[deviceId][bucket] = db.series[deviceId][bucket].slice(-maxPoints);
     });
   }
@@ -138,16 +143,19 @@ export class LocalHistoryRepository implements HistoryRepository {
 
   async getHistoricalSeries(deviceId: string, bucket: MetricWindow) {
     const db = await this.store.read();
-    if (bucket === "1m" || bucket === "15m") {
+    if (bucket === "1m" || bucket === "5m" || bucket === "15m" || bucket === "1h") {
       return [];
     }
-    if (bucket === "1d") {
+    if (bucket === "6h" || bucket === "24h" || bucket === "1d") {
       const points = db.minuteHistory[deviceId] ?? [];
-      const threshold = Date.now() - 24 * 60 * 60 * 1000;
+      const hours = bucket === "6h" ? 6 : 24;
+      const threshold = Date.now() - hours * 60 * 60 * 1000;
       return points.filter((point) => point.timestamp >= threshold);
     }
     const points = db.history[deviceId] ?? [];
-    const hours = bucket === "1w" ? 24 * 7 : bucket === "1mo" ? 24 * 31 : 24 * 366;
+    const hours = bucket === "7d" || bucket === "1w" ? 24 * 7 :
+      bucket === "30d" || bucket === "1mo" ? 24 * 31 :
+      bucket === "90d" ? 24 * 90 : 24 * 366;
     const threshold = Date.now() - hours * 60 * 60 * 1000;
     return points.filter((point) => point.timestamp >= threshold);
   }

@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -54,6 +57,11 @@ const (
 	logCategoryDiskFast    = "disk_fast"
 	logCategoryNetworkSlow = "network_slow"
 	logCategoryNetworkFast = "network_fast"
+)
+
+const (
+	defaultPendingMaxBytes    int64 = 64 * 1024 * 1024
+	defaultPendingMaxAgeHours       = 24 * 7
 )
 
 type collectorIssueError struct {
@@ -256,6 +264,7 @@ type sensorBackendStatus struct {
 }
 
 type metricsPayload struct {
+	SampleID        string                  `json:"sampleId,omitempty"`
 	Identity        agentIdentity           `json:"identity"`
 	Timestamp       string                  `json:"timestamp"`
 	HeartbeatAt     string                  `json:"heartbeatAt"`
@@ -412,6 +421,29 @@ type agentState struct {
 	hasConfig    bool
 }
 
+type pendingSample struct {
+	ID        string         `json:"id"`
+	ServerURL string         `json:"serverUrl"`
+	SampledAt string         `json:"sampledAt"`
+	Payload   metricsPayload `json:"payload"`
+}
+
+type pendingStateFile struct {
+	PendingCount    int    `json:"pendingCount"`
+	PendingBytes    int64  `json:"pendingBytes"`
+	OldestSampledAt string `json:"oldestSampledAt,omitempty"`
+	UpdatedAt       string `json:"updatedAt"`
+	LastUploadError string `json:"lastUploadError,omitempty"`
+}
+
+type pendingStore struct {
+	path          string
+	statePath     string
+	maxBytes      int64
+	maxAge        time.Duration
+	lastUploadErr string
+}
+
 func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -447,6 +479,9 @@ func main() {
 		configPath:   env("DSC_AGENT_CONFIG_FILE", ""),
 		client:       &http.Client{Timeout: 10 * time.Second},
 	}
+	pending := newPendingStore(state.configPath)
+	runContext, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 
 	defaultConfig := newDefaultRuntimeConfig(defaultConnection)
 	log.Printf("go agent v%s started for %s -> %s", BuildVersion, baseIdentity.DeviceID, defaultConnection.ServerURL)
@@ -456,21 +491,295 @@ func main() {
 		cfg := state.loadRuntimeConfig(defaultConfig)
 		if !cfg.DataRecordingEnabled {
 			log.Printf("data recording is disabled; collector remains unregistered")
-			time.Sleep(time.Duration(cfg.currentUploadIntervalSeconds()) * time.Second)
+			if !waitForNextCycle(runContext.Done(), time.Duration(cfg.currentUploadIntervalSeconds())*time.Second) {
+				pending.close()
+				return
+			}
 			continue
 		}
 		payload := state.collectPayload(cfg)
-		if err := postMetrics(state.client, cfg.Connection.ServerURL, cfg.Connection.Secret, payload); err != nil {
-			logCategoryf(logCategoryUpload, "upload failed: %v", err)
+		if err := pending.drain(runContext, state.client, cfg.Connection.Secret); err != nil {
+			logCategoryf(logCategoryUpload, "pending upload drain stopped: %v", err)
+		}
+		if err := postMetricsContext(runContext, state.client, cfg.Connection.ServerURL, cfg.Connection.Secret, payload); err != nil {
+			pending.lastUploadErr = err.Error()
+			if enqueueErr := pending.enqueue(pendingSample{
+				ID:        payload.SampleID,
+				ServerURL: cfg.Connection.ServerURL,
+				SampledAt: payload.Timestamp,
+				Payload:   payload,
+			}); enqueueErr != nil {
+				logCategoryf(logCategoryUpload, "upload failed and pending spool write failed: %v", enqueueErr)
+			} else {
+				logCategoryf(logCategoryUpload, "upload failed; sample persisted for replay: %v", err)
+			}
 		} else {
+			pending.lastUploadErr = ""
+			pending.writeState()
 			log.Printf("uploaded metrics at %s", payload.Timestamp)
 		}
 
 		nextCycleAt := cycleStartedAt.Add(time.Duration(cfg.currentUploadIntervalSeconds()) * time.Second)
-		if sleepDuration := time.Until(nextCycleAt); sleepDuration > 0 {
-			time.Sleep(sleepDuration)
+		if sleepDuration := time.Until(nextCycleAt); sleepDuration > 0 && !waitForNextCycle(runContext.Done(), sleepDuration) {
+			pending.close()
+			return
 		}
 	}
+}
+
+func waitForNextCycle(stop <-chan struct{}, duration time.Duration) bool {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-stop:
+		log.Printf("shutdown requested; stopping new samples")
+		return false
+	}
+}
+
+func newPendingStore(configPath string) *pendingStore {
+	pendingPath := strings.TrimSpace(env("DSC_AGENT_PENDING_FILE", ""))
+	if pendingPath == "" && strings.TrimSpace(configPath) != "" {
+		pendingPath = configPath + ".pending.jsonl"
+	}
+	if pendingPath == "" {
+		dataRoot, err := os.UserConfigDir()
+		if err != nil || strings.TrimSpace(dataRoot) == "" {
+			dataRoot = "."
+		}
+		pendingPath = filepath.Join(dataRoot, "device-state-console", "agent-pending.jsonl")
+	}
+	if !filepath.IsAbs(pendingPath) && strings.TrimSpace(configPath) != "" {
+		pendingPath = filepath.Join(filepath.Dir(configPath), pendingPath)
+	}
+	maxBytes := parsePositiveInt64Env("DSC_AGENT_PENDING_MAX_BYTES", defaultPendingMaxBytes)
+	maxAgeHours := parsePositiveInt64Env("DSC_AGENT_PENDING_MAX_AGE_HOURS", defaultPendingMaxAgeHours)
+	store := &pendingStore{
+		path:      pendingPath,
+		statePath: pendingPath + ".state.json",
+		maxBytes:  maxBytes,
+		maxAge:    time.Duration(maxAgeHours) * time.Hour,
+	}
+	store.writeState()
+	return store
+}
+
+func parsePositiveInt64Env(key string, fallback int64) int64 {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
+}
+
+func (s *pendingStore) close() {
+	s.writeState()
+}
+
+func (s *pendingStore) enqueue(sample pendingSample) error {
+	if sample.ID == "" {
+		sample.ID = sampleID(sample.Payload)
+	}
+	if sample.SampledAt == "" {
+		sample.SampledAt = sample.Payload.Timestamp
+	}
+	entries, err := s.readEntries()
+	if err != nil {
+		return err
+	}
+	entries = s.prune(entries, time.Now().UTC())
+	for _, existing := range entries {
+		if existing.ID == sample.ID {
+			s.writeEntries(entries)
+			return nil
+		}
+	}
+	entries = append(entries, sample)
+	s.sortEntries(entries)
+	entries = s.fit(entries)
+	if err := s.writeEntries(entries); err != nil {
+		return err
+	}
+	s.writeState()
+	return nil
+}
+
+func (s *pendingStore) drain(ctx context.Context, client *http.Client, secret string) error {
+	entries, err := s.readEntries()
+	if err != nil {
+		return err
+	}
+	entries = s.prune(entries, time.Now().UTC())
+	s.sortEntries(entries)
+	for index, entry := range entries {
+		serverURL := strings.TrimSpace(entry.ServerURL)
+		if serverURL == "" {
+			return fmt.Errorf("pending sample %s has no server URL", entry.ID)
+		}
+		if err := postMetricsContext(ctx, client, serverURL, secret, entry.Payload); err != nil {
+			s.lastUploadErr = err.Error()
+			remaining := append([]pendingSample(nil), entries[index:]...)
+			if writeErr := s.writeEntries(remaining); writeErr != nil {
+				return fmt.Errorf("replay failed: %w; spool rewrite failed: %v", err, writeErr)
+			}
+			s.writeState()
+			return err
+		}
+	}
+	s.lastUploadErr = ""
+	if err := s.writeEntries(nil); err != nil {
+		return err
+	}
+	s.writeState()
+	return nil
+}
+
+func (s *pendingStore) readEntries() ([]pendingSample, error) {
+	raw, err := os.ReadFile(s.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	entries := make([]pendingSample, 0)
+	for _, line := range bytes.Split(raw, []byte{'\n'}) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		var entry pendingSample
+		if err := json.Unmarshal(line, &entry); err != nil {
+			logCategoryf(logCategoryUpload, "ignoring malformed pending sample: %v", err)
+			continue
+		}
+		if entry.Payload.SampleID == "" {
+			entry.Payload.SampleID = entry.ID
+		}
+		if entry.ID == "" {
+			entry.ID = sampleID(entry.Payload)
+		}
+		if entry.SampledAt == "" {
+			entry.SampledAt = entry.Payload.Timestamp
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
+}
+
+func (s *pendingStore) prune(entries []pendingSample, now time.Time) []pendingSample {
+	seen := map[string]struct{}{}
+	result := make([]pendingSample, 0, len(entries))
+	for _, entry := range entries {
+		if entry.ID == "" {
+			entry.ID = sampleID(entry.Payload)
+		}
+		if _, exists := seen[entry.ID]; exists {
+			continue
+		}
+		seen[entry.ID] = struct{}{}
+		if sampledAt, err := time.Parse(time.RFC3339, entry.SampledAt); err == nil && now.Sub(sampledAt) > s.maxAge {
+			continue
+		}
+		result = append(result, entry)
+	}
+	return result
+}
+
+func (s *pendingStore) fit(entries []pendingSample) []pendingSample {
+	if s.maxBytes <= 0 {
+		return entries
+	}
+	for len(entries) > 0 {
+		raw, err := json.Marshal(entries)
+		if err == nil && int64(len(raw)) <= s.maxBytes {
+			return entries
+		}
+		entries = entries[1:]
+	}
+	return nil
+}
+
+func (s *pendingStore) sortEntries(entries []pendingSample) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		left, leftErr := time.Parse(time.RFC3339, entries[i].SampledAt)
+		right, rightErr := time.Parse(time.RFC3339, entries[j].SampledAt)
+		if leftErr != nil || rightErr != nil {
+			return entries[i].SampledAt < entries[j].SampledAt
+		}
+		return left.Before(right)
+	})
+}
+
+func (s *pendingStore) writeEntries(entries []pendingSample) error {
+	if len(entries) == 0 {
+		if err := os.Remove(s.path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+		return err
+	}
+	temporary := s.path + ".tmp"
+	file, err := os.OpenFile(temporary, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	encoder := json.NewEncoder(file)
+	for _, entry := range entries {
+		if err := encoder.Encode(entry); err != nil {
+			_ = file.Close()
+			return err
+		}
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporary, s.path)
+}
+
+func (s *pendingStore) writeState() {
+	entries, err := s.readEntries()
+	if err != nil {
+		return
+	}
+	entries = s.prune(entries, time.Now().UTC())
+	s.sortEntries(entries)
+	bytesUsed, _ := json.Marshal(entries)
+	state := pendingStateFile{
+		PendingCount:    len(entries),
+		PendingBytes:    int64(len(bytesUsed)),
+		UpdatedAt:       time.Now().UTC().Format(time.RFC3339),
+		LastUploadError: s.lastUploadErr,
+	}
+	if len(entries) > 0 {
+		state.OldestSampledAt = entries[0].SampledAt
+	}
+	raw, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(s.statePath), 0o700); err != nil {
+		return
+	}
+	_ = os.WriteFile(s.statePath, raw, 0o600)
+}
+
+func sampleID(payload metricsPayload) string {
+	payload.SampleID = ""
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return payload.Timestamp
+	}
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
 }
 
 func buildIdentity(deviceID, hostnameOverride string) (agentIdentity, error) {
@@ -748,6 +1057,7 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	}
 
 	applyRuntimeConfig(&payload, cfg)
+	payload.SampleID = sampleID(payload)
 	return payload
 }
 
@@ -3541,6 +3851,10 @@ func makeStringSet(items []string) map[string]bool {
 }
 
 func postMetrics(client *http.Client, serverURL, secret string, payload metricsPayload) error {
+	return postMetricsContext(context.Background(), client, serverURL, secret, payload)
+}
+
+func postMetricsContext(ctx context.Context, client *http.Client, serverURL, secret string, payload metricsPayload) error {
 	if err := validateServerTransport(serverURL); err != nil {
 		return err
 	}
@@ -3549,7 +3863,7 @@ func postMetrics(client *http.Client, serverURL, secret string, payload metricsP
 		return err
 	}
 
-	request, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/agent/ingest", serverURL), bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/api/agent/ingest", serverURL), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}

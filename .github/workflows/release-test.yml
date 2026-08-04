@@ -33,7 +33,7 @@ jobs:
           go-version: "1.24.x"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Verify version
         run: pnpm verify:version
@@ -57,41 +57,72 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.x
-
-      - name: Install Inno Setup
+      - name: Install desktop dependencies
         shell: powershell
-        run: choco install innosetup --no-progress --yes
+        run: pnpm install --no-frozen-lockfile
 
-      - name: Build Windows GUI setup, update, and portable package
+      - name: Build bundled Windows Agent binaries
         shell: powershell
         run: |
-          ./deploy/build-windows-agent-setup.ps1 `
-            -OutputDir release/windows-agent-setup `
-            -Version (Get-Content VERSION -Raw).Trim() `
-            -BuildPortableIfMissing
           $version = (Get-Content VERSION -Raw).Trim()
-          $portableRoot = Join-Path (Get-Location) "release/windows-agent-portable/DeviceStateConsoleAgent"
-          $portableZip = Join-Path (Get-Location) "release/windows-agent-portable/DeviceStateConsole-Windows-GUI-Portable-v$version.zip"
-          if (Test-Path $portableZip) { Remove-Item -LiteralPath $portableZip -Force }
-          Compress-Archive -Path (Join-Path $portableRoot "*") -DestinationPath $portableZip -CompressionLevel Optimal
+          New-Item -ItemType Directory -Force -Path release/desktop-agent | Out-Null
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ..\release\desktop-agent\device-state-console-agent.exe .
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ..\release\desktop-agent\device-state-console-agent-backend.exe ./cmd/windows-agent-backend
 
-      - name: Smoke test packaged Windows GUI backend
+      - name: Build Windows Electron setup and portable assets
         shell: powershell
         run: |
-          ./deploy/verify-windows-agent-bundle.ps1 `
-            -BundleRoot "$(Join-Path (Get-Location) 'release/windows-agent-portable/DeviceStateConsoleAgent')" `
-            -ConfigRoot "$(Join-Path $env:RUNNER_TEMP 'device-state-console-release-config')" `
-            -ListenPort 17931 `
-            -ReportPath "$(Join-Path $env:RUNNER_TEMP 'device-state-console-release-bundle-report.json')"
+          $version = (Get-Content VERSION -Raw).Trim()
+          $outputDir = Join-Path $env:GITHUB_WORKSPACE "release/windows-desktop"
+          pnpm --filter @dsc/shared build
+          pnpm --filter @dsc/desktop build
+          pnpm --filter @dsc/desktop exec electron-builder --win nsis dir --publish never "--config.directories.output=$outputDir"
+          $unpacked = Join-Path $outputDir "win-unpacked"
+          if (-not (Test-Path $unpacked)) { throw "Electron unpacked directory missing: $unpacked" }
+          $portable = Join-Path $outputDir "DeviceStateConsole-Windows-GUI-Portable-v$version.zip"
+          Compress-Archive -Path (Join-Path $unpacked "*") -DestinationPath $portable -CompressionLevel Optimal -Force
+          $update = Join-Path $outputDir "DeviceStateConsole-Windows-GUI-Update-v$version.zip"
+          Compress-Archive -Path (Join-Path $unpacked "*") -DestinationPath $update -CompressionLevel Optimal -Force
+          Get-ChildItem $outputDir -File | Select-Object Name,Length
+
+      - name: Smoke test bundled Windows Agent backend
+        shell: powershell
+        run: |
+          $backend = Join-Path (Get-Location) "release/desktop-agent/device-state-console-agent-backend.exe"
+          $configRoot = Join-Path $env:RUNNER_TEMP "device-state-console-release-config"
+          New-Item -ItemType Directory -Force -Path $configRoot | Out-Null
+          $process = Start-Process -FilePath $backend -ArgumentList @("--listen", "127.0.0.1:17931", "--bundle-root", (Split-Path $backend), "--config-root", $configRoot, "--local-token", "release-smoke-token") -WindowStyle Hidden -PassThru
+          try {
+            $state = $null
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              Start-Sleep -Milliseconds 500
+              try {
+                $state = Invoke-RestMethod -Uri "http://127.0.0.1:17931/api/state" -Headers @{ "X-DSC-Local-Token" = "release-smoke-token" } -TimeoutSec 2
+                break
+              } catch { }
+            }
+            if (-not $state) { throw "Bundled Agent backend did not become reachable." }
+            if (-not $state.configFileExists) { throw "Bundled Agent backend did not create config." }
+            Invoke-RestMethod -Uri "http://127.0.0.1:17931/api/control/shutdown" -Method Post -Headers @{ "X-DSC-Local-Token" = "release-smoke-token" } -TimeoutSec 3 | Out-Null
+          } finally {
+            if ($process -and -not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+          }
 
       - name: Build Windows and Linux CLI packages
         shell: powershell
@@ -102,71 +133,73 @@ jobs:
         with:
           name: windows-release-assets
           path: |
-            release/windows-agent-setup/DeviceStateConsole-Windows-GUI-Setup-v*.exe
-            release/windows-agent-setup/DeviceStateConsole-Windows-GUI-Update-v*.zip
-            release/windows-agent-portable/DeviceStateConsole-Windows-GUI-Portable-v*.zip
+            release/windows-desktop/DeviceStateConsole-Windows-GUI-Setup-v*.exe
+            release/windows-desktop/DeviceStateConsole-Windows-GUI-Update-v*.zip
+            release/windows-desktop/DeviceStateConsole-Windows-GUI-Portable-v*.zip
             release/cli-agent/DeviceStateConsole-Windows-CLI-Install-v*.zip
             release/cli-agent/DeviceStateConsole-Linux-CLI-Install-v*.zip
           if-no-files-found: error
 
   linux-gui:
-    name: Build Linux GUI asset
+    name: Build unified Linux Electron GUI asset
     runs-on: ubuntu-24.04
     needs: verify
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
 
-      - name: Install GTK4/libadwaita build dependencies
+      - name: Install desktop dependencies
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            dpkg-dev \
-            libadwaita-1-dev \
-            libgtk-4-dev \
-            libjson-glib-dev \
-            libsoup-3.0-dev \
-            libwebkitgtk-6.0-dev \
-            pkg-config
+          pnpm install --no-frozen-lockfile
 
-      - name: Build Linux GUI install package
+      - name: Build bundled Linux Agent binaries
         shell: bash
         run: |
           set -euo pipefail
-          bash ./deploy/build-linux-agent-gui.sh --output-dir release/linux-agent-gui
-
-      - name: Install and smoke-check Linux GUI package
-        shell: bash
-        run: |
-          set -euo pipefail
-          package="$(find release/linux-agent-gui -maxdepth 1 -type f -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb' -print -quit)"
-          test -n "$package"
-          package="$(realpath "$package")"
-          sudo apt-get install -y "$package"
           version="$(tr -d '[:space:]' < VERSION)"
-          dpkg-query -W -f='${Status}\n' device-state-console | grep -F 'install ok installed'
-          test -x /usr/bin/device-state-console
-          test -x /usr/lib/device-state-console/device-state-console-linux-gui
-          test -x /usr/lib/device-state-console/device-state-console-agent-backend
-          test -x /usr/lib/device-state-console/device-state-console-agent
-          test -f /usr/lib/systemd/user/device-state-console-agent-backend.service
-          test -f "/usr/share/applications/org.igng.DeviceStateConsole.desktop"
-          test "$(dpkg-query -W -f='${Version}' device-state-console)" = "$version"
+          mkdir -p release/desktop-agent
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=${version} -X main.BuildChannel=test" -o ../release/desktop-agent/device-state-console-agent .
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=${version} -X main.BuildChannel=test" -o ../release/desktop-agent/device-state-console-agent-backend ./cmd/windows-agent-backend
+
+      - name: Build Linux Electron GUI install package
+        shell: bash
+        run: |
+          set -euo pipefail
+          output_dir="$GITHUB_WORKSPACE/release/linux-desktop"
+          pnpm --filter @dsc/shared build
+          pnpm --filter @dsc/desktop build
+          pnpm --filter @dsc/desktop exec electron-builder --linux deb --publish never "--config.directories.output=$output_dir"
+          package="$(find "$output_dir" -maxdepth 1 -type f -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb' -print -quit)"
+          test -n "$package"
+          dpkg-deb --info "$package"
+          dpkg-deb --contents "$package" | grep -F 'resources/agent/device-state-console-agent'
+          dpkg-deb --contents "$package" | grep -F 'resources/agent/device-state-console-agent-backend'
+          sha256sum "$package" > "$package.sha256"
 
       - name: Upload Linux GUI asset
         uses: actions/upload-artifact@v4
         with:
           name: linux-gui-release-assets
           path: |
-            release/linux-agent-gui/DeviceStateConsole-Linux-GUI-Install-v*.deb
-            release/linux-agent-gui/DeviceStateConsole-Linux-GUI-Install-v*.deb.sha256
+            release/linux-desktop/DeviceStateConsole-Linux-GUI-Install-v*.deb
+            release/linux-desktop/DeviceStateConsole-Linux-GUI-Install-v*.deb.sha256
           if-no-files-found: error
 
   android:

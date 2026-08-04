@@ -27,7 +27,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Typecheck
         run: pnpm typecheck
@@ -131,3 +131,82 @@ jobs:
             -ConfigRoot "$env:RUNNER_TEMP\device-state-console-windows-config" `
             -ListenPort 17921 `
             -ReportPath "$env:RUNNER_TEMP\device-state-console-windows-bundle-report.json"
+
+  desktop:
+    name: Verify unified Electron desktop (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: linux
+          - os: windows-latest
+            target: windows
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build Linux desktop Agent bundle
+        if: matrix.target == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          mkdir -p release/desktop-agent
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=${version} -X main.BuildChannel=test" -o ../release/desktop-agent/device-state-console-agent .
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=${version} -X main.BuildChannel=test" -o ../release/desktop-agent/device-state-console-agent-backend ./cmd/windows-agent-backend
+
+      - name: Build Windows desktop Agent bundle
+        if: matrix.target == 'windows'
+        shell: powershell
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          New-Item -ItemType Directory -Force -Path release/desktop-agent | Out-Null
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ..\release\desktop-agent\device-state-console-agent.exe .
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ..\release\desktop-agent\device-state-console-agent-backend.exe ./cmd/windows-agent-backend
+
+      - name: Typecheck and bundle renderer/main process
+        run: |
+          pnpm --filter @dsc/shared build
+          pnpm --filter @dsc/desktop typecheck
+          pnpm --filter @dsc/desktop build
+
+      - name: Electron package smoke test (Linux)
+        if: matrix.target == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          output_dir="$RUNNER_TEMP/device-state-console-linux"
+          pnpm --filter @dsc/desktop exec electron-builder --linux dir --publish never "--config.directories.output=$output_dir"
+          test -x "$output_dir/linux-unpacked/resources/agent/device-state-console-agent"
+          test -x "$output_dir/linux-unpacked/resources/agent/device-state-console-agent-backend"
+
+      - name: Electron package smoke test (Windows)
+        if: matrix.target == 'windows'
+        shell: powershell
+        run: |
+          $outputDir = Join-Path $env:RUNNER_TEMP "device-state-console-windows"
+          pnpm --filter @dsc/desktop exec electron-builder --win dir --publish never "--config.directories.output=$outputDir"
+          if (-not (Test-Path (Join-Path $outputDir "win-unpacked/resources/agent/device-state-console-agent.exe"))) { throw "Packaged Windows Agent binary missing." }
+          if (-not (Test-Path (Join-Path $outputDir "win-unpacked/resources/agent/device-state-console-agent-backend.exe"))) { throw "Packaged Windows backend binary missing." }

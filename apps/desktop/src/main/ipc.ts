@@ -1,0 +1,96 @@
+import { app, BrowserWindow, ipcMain } from "electron";
+import type {
+  DesktopAgentControlAction,
+  DesktopConfigPatch,
+  MetricWindow,
+  DesktopSnapshotRequest,
+  DesktopStartupSettings,
+  TrafficCalendarMode
+} from "@dsc/shared";
+import { DesktopController } from "./controller.js";
+import { IPC_CHANNELS } from "../ipc-contract.js";
+
+export function registerIpc(controller: DesktopController, getWindow: () => BrowserWindow | null, markQuitting: () => void): void {
+  ipcMain.handle(IPC_CHANNELS.getSnapshot, (_event, request?: DesktopSnapshotRequest) => controller.getSnapshot(asSnapshotRequest(request)));
+  ipcMain.handle(IPC_CHANNELS.refresh, (_event, request?: DesktopSnapshotRequest) => controller.refresh(asSnapshotRequest(request)));
+  ipcMain.handle(IPC_CHANNELS.updateLocalConfig, (_event, patch: DesktopConfigPatch) => controller.updateLocalConfig(asConfigPatch(patch)));
+  ipcMain.handle(IPC_CHANNELS.controlAgent, (_event, action: DesktopAgentControlAction) => controller.controlAgent(asControlAction(action)));
+  ipcMain.handle(IPC_CHANNELS.setAgentSecret, (_event, secret: string) => controller.setAgentSecret(asString(secret, "agent_secret")));
+  ipcMain.handle(IPC_CHANNELS.login, (_event, accessKey: string) => controller.login(asString(accessKey, "access_key")));
+  ipcMain.handle(IPC_CHANNELS.logout, () => controller.logout());
+  ipcMain.handle(IPC_CHANNELS.cloudPush, () => controller.cloudPush());
+  ipcMain.handle(IPC_CHANNELS.saveFanNote, (_event, deviceId: string, fanId: string, note: string) => controller.saveFanNote(asString(deviceId, "device_id"), asString(fanId, "fan_id"), asString(note, "fan_note")));
+  ipcMain.handle(IPC_CHANNELS.updateStartupSettings, (_event, settings) => controller.updateStartupSettings(asStartupSettings(settings)));
+  ipcMain.handle(IPC_CHANNELS.openExternal, (_event, url: string) => controller.openExternal(asString(url, "external_url")));
+  ipcMain.handle(IPC_CHANNELS.exit, async () => {
+    markQuitting();
+    await controller.shutdown();
+    app.quit();
+  });
+
+  controller.subscribe((snapshot) => {
+    getWindow()?.webContents.send(IPC_CHANNELS.snapshot, snapshot);
+  });
+}
+
+function asString(value: unknown, field: string): string {
+  if (typeof value !== "string") throw new Error(`invalid_${field}`);
+  return value;
+}
+
+function asRecord<T extends object = Record<string, unknown>>(value: unknown): T {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as T;
+}
+
+function asSnapshotRequest(value: unknown): DesktopSnapshotRequest {
+  const record = asRecord(value);
+  const request: DesktopSnapshotRequest = {};
+  if (record.metricWindow !== undefined) request.metricWindow = asMetricWindow(record.metricWindow);
+  if (record.selectedDeviceId !== undefined) {
+    if (record.selectedDeviceId !== null) request.selectedDeviceId = asString(record.selectedDeviceId, "selected_device_id");
+    else request.selectedDeviceId = null;
+  }
+  if (record.trafficMode !== undefined) request.trafficMode = asTrafficMode(record.trafficMode);
+  if (record.trafficAnchor !== undefined) request.trafficAnchor = asString(record.trafficAnchor, "traffic_anchor");
+  if (record.preferCache !== undefined) {
+    if (typeof record.preferCache !== "boolean") throw new Error("invalid_prefer_cache");
+    request.preferCache = record.preferCache;
+  }
+  return request;
+}
+
+function asConfigPatch(value: unknown): DesktopConfigPatch {
+  const patch = asRecord<DesktopConfigPatch>(value);
+  const connection = asRecord(patch.connection);
+  if ("secret" in connection) throw new Error("secret_must_use_dedicated_channel");
+  return patch;
+}
+
+function asStartupSettings(value: unknown): Partial<DesktopStartupSettings> {
+  const record = asRecord(value);
+  const settings: Partial<DesktopStartupSettings> = {};
+  for (const key of ["openAtLogin", "startMinimized"] as const) {
+    const settingValue = record[key];
+    if (settingValue === undefined) continue;
+    if (typeof settingValue !== "boolean") throw new Error(`invalid_${key}`);
+    settings[key] = settingValue;
+  }
+  return settings;
+}
+
+function asMetricWindow(value: unknown): MetricWindow {
+  const allowed: MetricWindow[] = ["1m", "5m", "15m", "1h", "6h", "24h", "1d", "7d", "1w", "30d", "1mo", "90d", "1y"];
+  if (typeof value === "string" && allowed.includes(value as MetricWindow)) return value as MetricWindow;
+  throw new Error("invalid_metric_window");
+}
+
+function asTrafficMode(value: unknown): TrafficCalendarMode {
+  if (value === "day" || value === "week" || value === "month") return value;
+  throw new Error("invalid_traffic_mode");
+}
+
+function asControlAction(value: unknown): DesktopAgentControlAction {
+  if (value === "start" || value === "stop" || value === "check-connection" || value === "detect-probes") return value;
+  throw new Error("invalid_agent_control_action");
+}
