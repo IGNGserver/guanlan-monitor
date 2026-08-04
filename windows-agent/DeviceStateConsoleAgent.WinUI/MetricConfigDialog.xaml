@@ -35,8 +35,7 @@
                     <ItemsPanelTemplate>
                         <ItemsWrapGrid Orientation="Horizontal"
                                        MaximumRowsOrColumns="2"
-                                       HorizontalAlignment="Stretch"
-                                       HorizontalChildrenAlignment="Stretch" />
+                                       HorizontalAlignment="Stretch" />
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
