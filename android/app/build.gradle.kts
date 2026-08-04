@@ -8,6 +8,24 @@ plugins {
 fun Project.stringProperty(name: String): String? =
   providers.gradleProperty(name).orNull ?: System.getenv(name)
 
+fun releaseVersionCode(version: String): Int {
+  val parts = version.split(".")
+  require(parts.size == 3) { "VERSION must contain major, minor, and patch components: $version" }
+
+  val numbers = parts.map { component ->
+    component.toIntOrNull()
+      ?: error("VERSION components must be numeric: $version")
+  }
+  val (major, minor, patch) = numbers
+  require(major in 0..2_099 && minor in 0..99 && patch in 0..9_999) {
+    "VERSION components exceed Android versionCode layout: $version"
+  }
+
+  // Keep versionCode monotonic across semantic-version boundaries. Removing
+  // dots would make 0.2.x lower than an installed 0.1.10x release.
+  return major * 1_000_000 + minor * 10_000 + patch
+}
+
 android {
   namespace = "com.dsc.android"
   compileSdk = 35
@@ -18,7 +36,7 @@ android {
     applicationId = "com.dsc.android"
     minSdk = 29
     targetSdk = 35
-    versionCode = releaseVersion.replace(".", "").toInt()
+    versionCode = releaseVersionCode(releaseVersion)
     versionName = releaseVersion
     buildConfigField("String", "RELEASE_VERSION", "\"$releaseVersion\"")
     buildConfigField("String", "RELEASE_CHANNEL", "\"$releaseChannel\"")

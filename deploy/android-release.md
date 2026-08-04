@@ -6,6 +6,11 @@ Android release packages must be signed with the same keystore every time. If yo
 
 The current Android client intentionally allows `http://` server addresses in release builds so it can connect to LAN deployments that do not use HTTPS yet.
 
+Android `versionCode` is encoded from the semantic version as
+`major * 1,000,000 + minor * 10,000 + patch`. Keep this mapping when changing
+the version: removing the dots would make a `0.2.x` APK look older than an
+installed `0.1.10x` APK and Android would reject the upgrade as a downgrade.
+
 This repository expects signing material to stay local only:
 
 - keep the keystore under `android/signing/`
