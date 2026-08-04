@@ -1602,9 +1602,6 @@ func normalizeLocalConfig(cfg agentLocalConfig, raw []byte) agentLocalConfig {
 	if isProbeSelectionEnabled(cfg.ProbeSelections, "network") && containsMetricPrefix(cfg.EnabledMetrics, "network") {
 		cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"networkIdentity"})
 	}
-	if isProbeSelectionEnabled(cfg.ProbeSelections, "gpu") && containsMetricPrefix(cfg.EnabledMetrics, "gpu") {
-		cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"gpuDriverInfo"})
-	}
 	if isProbeSelectionEnabled(cfg.ProbeSelections, "fan") {
 		cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"fanRpm", "fanControl", "fanTargetTemperature", "fanPwm", "fanChannelState", "fanNote"})
 	}
