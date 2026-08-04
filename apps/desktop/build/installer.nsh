@@ -2,16 +2,8 @@
 !define DSC_LEGACY_ELECTRON_APP_KEY "Software\26118358-b500-54e1-881b-7e549a465667"
 !define DSC_LEGACY_ELECTRON_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\26118358-b500-54e1-881b-7e549a465667"
 
-Var DscLegacyElectronInstallDir
-
 !macro customInit
   SetRegView 64
-  StrCpy $DscLegacyElectronInstallDir ""
-  ReadRegStr $0 HKLM "${DSC_LEGACY_ELECTRON_APP_KEY}" "InstallLocation"
-  ${If} $0 != ""
-    StrCpy $DscLegacyElectronInstallDir $0
-  ${EndIf}
-
   StrCpy $INSTDIR "$PROGRAMFILES64\DeviceStateConsoleAgent"
 
   ExecWait '"$SYSDIR\taskkill.exe" /F /T /IM "DeviceStateConsoleAgent.WinUI.exe"' $0
@@ -33,9 +25,10 @@ Var DscLegacyElectronInstallDir
   Delete "$SMPROGRAMS\Device State Console.lnk"
   Delete "$SMPROGRAMS\卸载 Device State Console.lnk"
   Delete "$DESKTOP\Device State Console.lnk"
-  ${If} $DscLegacyElectronInstallDir == "$PROGRAMFILES64\Device State Console"
-    ${If} $DscLegacyElectronInstallDir != $INSTDIR
-      RMDir /r "$DscLegacyElectronInstallDir"
+  ReadRegStr $0 HKLM "${DSC_LEGACY_ELECTRON_APP_KEY}" "InstallLocation"
+  ${If} $0 == "$PROGRAMFILES64\Device State Console"
+    ${If} $0 != $INSTDIR
+      RMDir /r "$0"
     ${EndIf}
   ${EndIf}
   DeleteRegKey HKLM "${DSC_LEGACY_ELECTRON_UNINSTALL_KEY}"
