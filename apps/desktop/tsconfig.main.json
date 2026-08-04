@@ -4,6 +4,11 @@
     "lib": ["ES2022"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "baseUrl": "../..",
+    "paths": {
+      "@dsc/shared": ["packages/shared/dist/index.d.ts"],
+      "@dsc/shared/*": ["packages/shared/dist/*"]
+    },
     "outDir": "dist",
     "rootDir": "src",
     "noEmit": false,

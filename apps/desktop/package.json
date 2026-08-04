@@ -1,6 +1,6 @@
 {
   "name": "@dsc/desktop",
-  "version": "0.2.65",
+  "version": "0.2.66",
   "private": true,
   "type": "module",
   "main": "dist/main/main.js",

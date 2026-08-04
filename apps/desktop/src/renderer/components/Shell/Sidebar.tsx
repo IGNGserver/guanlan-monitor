@@ -70,7 +70,7 @@ export const Sidebar: React.FC = () => {
               DEVICE CONSOLE
             </div>
             <div style={{ fontSize: "10px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-              v{snapshot?.update?.currentVersion || "0.2.65"} ({snapshot?.update?.currentChannel || "test"})
+              v{snapshot?.update?.currentVersion || "0.2.66"} ({snapshot?.update?.currentChannel || "test"})
             </div>
           </div>
         </div>
