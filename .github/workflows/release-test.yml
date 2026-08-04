@@ -41,6 +41,9 @@ jobs:
       - name: Verify Windows installer compatibility
         run: pnpm verify:windows-installer
 
+      - name: Verify Hub public port
+        run: pnpm verify:hub-port
+
       - name: Typecheck and build web packages
         run: |
           pnpm typecheck
