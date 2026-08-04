@@ -215,6 +215,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+          cache: gradle
 
       - name: Prepare Android signing key
         shell: bash
@@ -268,7 +269,21 @@ jobs:
 
       - name: Build signed release APK for testing
         working-directory: android
-        run: bash ./gradlew :app:assembleRelease --no-daemon
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4; do
+            echo "Gradle Android release attempt ${attempt}/4"
+            if bash ./gradlew :app:assembleRelease --no-daemon; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq 4 ]]; then
+              exit 1
+            fi
+            delay=$((attempt * 30))
+            echo "Gradle dependency resolution failed; retrying in ${delay}s."
+            sleep "$delay"
+          done
 
       - name: Name Android asset
         shell: bash
