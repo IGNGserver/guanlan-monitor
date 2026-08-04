@@ -1,8 +1,14 @@
 {
   "name": "@dsc/desktop",
-  "version": "0.2.66",
+  "version": "0.2.67",
   "private": true,
   "type": "module",
+  "description": "Unified Windows and Linux Electron desktop client for Device State Console.",
+  "author": {
+    "name": "Device State Console contributors",
+    "email": "github-actions@github.com"
+  },
+  "homepage": "https://github.com/IGNGserver/Device-State-Console",
   "main": "dist/main/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.main.json && vite build",
@@ -65,6 +71,7 @@
     "linux": {
       "target": ["deb"],
       "category": "Utility",
+      "maintainer": "Device State Console contributors <github-actions@github.com>",
       "artifactName": "DeviceStateConsole-Linux-GUI-Install-v${version}.${ext}"
     }
   }
