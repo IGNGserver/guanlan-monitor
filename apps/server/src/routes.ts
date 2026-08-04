@@ -44,20 +44,37 @@ const metricConfigSchema = z.object({
       "cpuUsage",
       "cpuFrequency",
       "cpuTemperature",
+      "cpuTopology",
+      "systemOverview",
       "gpuUsage",
       "gpuEncode",
       "gpuDecode",
       "gpuFrequency",
       "gpuMemory",
       "gpuTemperature",
+      "gpuDriverInfo",
       "memoryUsage",
       "swapUsage",
+      "memoryAvailable",
+      "memoryCached",
+      "memoryCommitted",
+      "memoryHardware",
       "diskUsage",
       "diskRead",
       "diskWrite",
+      "diskMetadata",
+      "diskActivity",
+      "diskHealth",
       "networkRxRate",
       "networkTxRate",
-      "networkTraffic"
+      "networkTraffic",
+      "networkIdentity",
+      "fanRpm",
+      "fanControl",
+      "fanTargetTemperature",
+      "fanPwm",
+      "fanChannelState",
+      "fanNote"
     ] satisfies [DeviceMetricKey, ...DeviceMetricKey[]])
   ),
   enabledDeviceIds: z.record(z.string(), z.array(z.string())).optional(),
@@ -68,20 +85,37 @@ const metricConfigSchema = z.object({
         "cpuUsage",
         "cpuFrequency",
         "cpuTemperature",
+        "cpuTopology",
+        "systemOverview",
         "gpuUsage",
         "gpuEncode",
         "gpuDecode",
         "gpuFrequency",
         "gpuMemory",
         "gpuTemperature",
+        "gpuDriverInfo",
         "memoryUsage",
         "swapUsage",
+        "memoryAvailable",
+        "memoryCached",
+        "memoryCommitted",
+        "memoryHardware",
         "diskUsage",
         "diskRead",
         "diskWrite",
+        "diskMetadata",
+        "diskActivity",
+        "diskHealth",
         "networkRxRate",
         "networkTxRate",
-        "networkTraffic"
+        "networkTraffic",
+        "networkIdentity",
+        "fanRpm",
+        "fanControl",
+        "fanTargetTemperature",
+        "fanPwm",
+        "fanChannelState",
+        "fanNote"
       ] satisfies [DeviceMetricKey, ...DeviceMetricKey[]])
     )
   ).optional()
@@ -223,7 +257,10 @@ export async function registerRoutes(
 
       const series = sanitizeUnsupportedMetricSeries(
         alignMetricSeriesToWindow(
-          timeSeriesToMetricSeries(await metricsService.getSeries(request.params.deviceId, query.window)),
+          timeSeriesToMetricSeries(
+            await metricsService.getSeries(request.params.deviceId, query.window),
+            metricConfig
+          ),
           query.window
         ),
         availableMetrics

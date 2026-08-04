@@ -19,32 +19,86 @@ public sealed class MainViewModel : ObservableObject
     private static readonly TimeSpan BackendRecoveryCooldown = TimeSpan.FromSeconds(6);
     private static readonly Dictionary<string, string[]> BlockMetrics = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["cpu"] = ["cpuUsage", "cpuFrequency", "cpuTemperature"],
-        ["memory"] = ["memoryUsage", "swapUsage"],
-        ["disk"] = ["diskUsage", "diskRead", "diskWrite"],
-        ["network"] = ["networkRxRate", "networkTxRate", "networkTraffic"],
-        ["gpu"] = ["gpuUsage", "gpuEncode", "gpuDecode", "gpuFrequency", "gpuMemory", "gpuTemperature"],
-        ["fan"] = []
+        ["cpu"] = ["cpuUsage", "cpuFrequency", "cpuTemperature", "cpuTopology", "systemOverview"],
+        ["memory"] = ["memoryUsage", "swapUsage", "memoryAvailable", "memoryCached", "memoryCommitted", "memoryHardware"],
+        ["disk"] = ["diskUsage", "diskRead", "diskWrite", "diskMetadata", "diskActivity", "diskHealth"],
+        ["network"] = ["networkRxRate", "networkTxRate", "networkTraffic", "networkIdentity"],
+        ["gpu"] = ["gpuUsage", "gpuEncode", "gpuDecode", "gpuFrequency", "gpuMemory", "gpuTemperature", "gpuDriverInfo"],
+        ["fan"] = ["fanRpm", "fanControl", "fanTargetTemperature", "fanPwm", "fanChannelState", "fanNote"]
     };
     private static readonly Dictionary<string, string> MetricLabels = new(StringComparer.OrdinalIgnoreCase)
     {
         ["cpuUsage"] = "CPU 使用率",
         ["cpuFrequency"] = "CPU 频率",
         ["cpuTemperature"] = "CPU 温度",
+        ["cpuTopology"] = "物理核心 / 逻辑线程",
+        ["systemOverview"] = "进程 / 线程 / 句柄",
         ["memoryUsage"] = "内存使用率",
         ["swapUsage"] = "交换分区使用率",
+        ["memoryAvailable"] = "可用内存",
+        ["memoryCached"] = "缓存内存",
+        ["memoryCommitted"] = "已提交内存",
+        ["memoryHardware"] = "内存速度 / 插槽 / 规格",
         ["diskUsage"] = "磁盘占用",
         ["diskRead"] = "磁盘读取速率",
         ["diskWrite"] = "磁盘写入速率",
+        ["diskMetadata"] = "型号 / 厂商 / 文件系统 / 挂载点",
+        ["diskActivity"] = "活动时间 / 平均响应",
+        ["diskHealth"] = "温度 / 健康状态 / SMART",
         ["networkRxRate"] = "网络接收速率",
         ["networkTxRate"] = "网络发送速率",
         ["networkTraffic"] = "网络累计流量",
+        ["networkIdentity"] = "MAC / IP / 链路与连接信息",
         ["gpuUsage"] = "显卡使用率",
         ["gpuEncode"] = "显卡编码利用率",
         ["gpuDecode"] = "显卡解码利用率",
         ["gpuFrequency"] = "显卡频率",
         ["gpuMemory"] = "显卡显存占用",
-        ["gpuTemperature"] = "显卡温度"
+        ["gpuTemperature"] = "显卡温度",
+        ["gpuDriverInfo"] = "驱动与适配器信息",
+        ["fanRpm"] = "风扇转速",
+        ["fanControl"] = "控制模式",
+        ["fanTargetTemperature"] = "目标温度",
+        ["fanPwm"] = "最小 / 最大 PWM",
+        ["fanChannelState"] = "通道状态",
+        ["fanNote"] = "传感器备注"
+    };
+    private static readonly Dictionary<string, string> MetricDescriptions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["cpuUsage"] = "CPU 包和总览中的实时利用率。",
+        ["cpuFrequency"] = "CPU 包频率与总览频率。",
+        ["cpuTemperature"] = "CPU 温度传感器读数。",
+        ["cpuTopology"] = "CPU 的物理核心数与逻辑线程数。",
+        ["systemOverview"] = "系统进程数、线程数与句柄数。",
+        ["memoryUsage"] = "物理内存已用量与总容量。",
+        ["swapUsage"] = "交换空间/虚拟内存已用量与总容量。",
+        ["memoryAvailable"] = "操作系统报告的可用内存。",
+        ["memoryCached"] = "操作系统报告的缓存内存。",
+        ["memoryCommitted"] = "操作系统报告的已提交内存。",
+        ["memoryHardware"] = "内存速度、插槽数与规格信息。",
+        ["diskUsage"] = "磁盘已用空间、总空间与使用率。",
+        ["diskRead"] = "磁盘读取吞吐量。",
+        ["diskWrite"] = "磁盘写入吞吐量。",
+        ["diskMetadata"] = "磁盘型号、厂商、文件系统、挂载点与接口类型。",
+        ["diskActivity"] = "磁盘活动百分比与平均响应时间。",
+        ["diskHealth"] = "磁盘温度、健康状态与 SMART 属性。",
+        ["networkRxRate"] = "网卡接收吞吐量。",
+        ["networkTxRate"] = "网卡发送吞吐量。",
+        ["networkTraffic"] = "网卡累计接收与发送流量。",
+        ["networkIdentity"] = "网卡 MAC、IP、链路速度、连接类型与信号强度。",
+        ["gpuUsage"] = "显卡核心利用率。",
+        ["gpuEncode"] = "显卡视频编码利用率。",
+        ["gpuDecode"] = "显卡视频解码利用率。",
+        ["gpuFrequency"] = "显卡核心频率。",
+        ["gpuMemory"] = "显存已用、总量与使用率。",
+        ["gpuTemperature"] = "显卡温度。",
+        ["gpuDriverInfo"] = "显卡驱动版本与适配器信息。",
+        ["fanRpm"] = "风扇当前转速。",
+        ["fanControl"] = "风扇控制模式。",
+        ["fanTargetTemperature"] = "风扇目标温度。",
+        ["fanPwm"] = "风扇最小与最大 PWM。",
+        ["fanChannelState"] = "风扇通道状态。",
+        ["fanNote"] = "传感器备注信息。"
     };
     private static readonly Dictionary<string, string> IssueCategoryLabels = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -231,6 +285,7 @@ public sealed class MainViewModel : ObservableObject
         DiskMetricToggles = BuildMetricItems("disk");
         NetworkMetricToggles = BuildMetricItems("network");
         GpuMetricToggles = BuildMetricItems("gpu");
+        FanMetricToggles = BuildMetricItems("fan");
         SelectedInstanceMetricToggles = new ObservableCollection<MetricToggleItemViewModel>();
         MetricWindows = new ObservableCollection<string> { "1m", "15m", "1d" };
         ViewerCpuTrendPoints = new ObservableCollection<TrendPointViewModel>();
@@ -286,6 +341,7 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<MetricToggleItemViewModel> DiskMetricToggles { get; }
     public ObservableCollection<MetricToggleItemViewModel> NetworkMetricToggles { get; }
     public ObservableCollection<MetricToggleItemViewModel> GpuMetricToggles { get; }
+    public ObservableCollection<MetricToggleItemViewModel> FanMetricToggles { get; }
     public ObservableCollection<MetricToggleItemViewModel> SelectedInstanceMetricToggles { get; }
     public ObservableCollection<ViewerDeviceItemViewModel> ViewerDevices { get; } = new();
     public ObservableCollection<ViewerDeviceItemViewModel> FilteredViewerDevices { get; } = new();
@@ -696,6 +752,7 @@ public sealed class MainViewModel : ObservableObject
     public string DiskMetricSummary => BuildMetricSummary("磁盘", DiskMetricToggles, DiskEnabled);
     public string NetworkMetricSummary => BuildMetricSummary("网络", NetworkMetricToggles, NetworkEnabled);
     public string GpuMetricSummary => BuildMetricSummary("显卡", GpuMetricToggles, GpuEnabled);
+    public string FanMetricSummary => BuildMetricSummary("风扇", FanMetricToggles, FanEnabled);
     public string ConnectionCheckAlertTitle => ResolveConnectionCheckAlertTitle(_connectionCheckStatusCode);
     public bool ShowBackendRecoveryWarning => string.Equals(_backendRecoveryStatusCode, "waiting", StringComparison.OrdinalIgnoreCase) || string.Equals(_backendRecoveryStatusCode, "recovering", StringComparison.OrdinalIgnoreCase);
     public bool ShowBackendRecoveryRecovered => string.Equals(_backendRecoveryStatusCode, "recovered", StringComparison.OrdinalIgnoreCase);
@@ -1152,6 +1209,11 @@ public sealed class MainViewModel : ObservableObject
                     FanProvider = preferredProvider.Key;
                 }
             }
+
+            if (!_isApplyingState && value)
+            {
+                EnableDefaultMetrics(FanMetricToggles);
+            }
         }
     }
     public string CpuProvider { get => _cpuProvider; set => SetProvider(ref _cpuProvider, value, nameof(CpuProvider), enabled => CpuEnabled = enabled); }
@@ -1233,6 +1295,73 @@ public sealed class MainViewModel : ObservableObject
         _viewerDetailCts?.Cancel();
         _viewerDetailCts?.Dispose();
         _viewerDetailCts = null;
+    }
+
+    public MetricConfigDialogViewModel CreateMetricConfigDialog(string target, ProbeInstanceItemViewModel? instance)
+    {
+        var normalizedTarget = target.Trim().ToLowerInvariant();
+        var targetLabel = ResolveTargetLabel(normalizedTarget);
+        var instanceScope = instance is null ? "" : $" · {instance.Name}";
+        var subtitle = instance is null
+            ? $"调整 {targetLabel} 类别的上报字段。"
+            : $"只调整这个 {targetLabel} 实例的上报字段。实例 ID：{instance.Id}";
+        if (instance is not null && !string.IsNullOrWhiteSpace(instance.ReportedMetrics))
+        {
+            subtitle += $" 探测器报告字段：{instance.ReportedMetrics}。";
+        }
+
+        var options = ResolveEditableMetricsForTarget(normalizedTarget)
+            .Select(key => new MetricConfigOptionViewModel(
+                key,
+                ResolveMetricLabel(key),
+                ResolveMetricDescription(key),
+                instance is null
+                    ? IsGlobalMetricEnabled(normalizedTarget, key)
+                    : IsMetricEnabledForInstance(instance.Id, normalizedTarget, key)))
+            .ToList();
+
+        return new MetricConfigDialogViewModel(
+            $"{targetLabel}{instanceScope} · 配置",
+            subtitle,
+            "这里的修改只保存在弹窗草稿中。点击“保存并退出”后才会写入本地 backend；点击“不保存并退出”将放弃本次修改。",
+            options);
+    }
+
+    public void ApplyMetricConfigDialog(string target, string? instanceId, IEnumerable<string> enabledKeys)
+    {
+        var normalizedTarget = target.Trim().ToLowerInvariant();
+        var defaults = ResolveEditableMetricsForTarget(normalizedTarget);
+        var selected = enabledKeys
+            .Where(key => defaults.Contains(key, StringComparer.OrdinalIgnoreCase))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(instanceId))
+        {
+            if (selected.SetEquals(defaults))
+            {
+                _instanceMetricConfigDraft.Remove(instanceId);
+            }
+            else
+            {
+                _instanceMetricConfigDraft[instanceId] = defaults
+                    .Where(selected.Contains)
+                    .ToList();
+            }
+
+            SyncSelectedInstanceMetricEditor();
+        }
+        else
+        {
+            foreach (var item in ResolveMetricToggleCollection(normalizedTarget))
+            {
+                item.SetIsEnabledSilently(selected.Contains(item.Key));
+            }
+
+            NotifyMetricSummaryChanged(normalizedTarget);
+        }
+
+        UpdateCloudSyncPending(true);
+        QueueSave();
     }
 
     public void SelectInstanceMetricEditor(ProbeInstanceItemViewModel item)
@@ -2729,6 +2858,7 @@ public sealed class MainViewModel : ObservableObject
         AppendSelectedMetrics(metrics, DiskMetricToggles, DiskEnabled);
         AppendSelectedMetrics(metrics, NetworkMetricToggles, NetworkEnabled);
         AppendSelectedMetrics(metrics, GpuMetricToggles, GpuEnabled);
+        AppendSelectedMetrics(metrics, FanMetricToggles, FanEnabled);
         return metrics;
     }
 
@@ -2805,6 +2935,7 @@ public sealed class MainViewModel : ObservableObject
         SyncMetricItems(DiskMetricToggles, selected);
         SyncMetricItems(NetworkMetricToggles, selected);
         SyncMetricItems(GpuMetricToggles, selected);
+        SyncMetricItems(FanMetricToggles, selected);
         NotifyMetricSummaryChanged();
     }
 
@@ -2867,6 +2998,20 @@ public sealed class MainViewModel : ObservableObject
             "disk" => DiskInstances,
             "network" => NetworkInstances,
             "gpu" => GpuInstances,
+            _ => []
+        };
+    }
+
+    private IEnumerable<MetricToggleItemViewModel> ResolveMetricToggleCollection(string target)
+    {
+        return target switch
+        {
+            "cpu" => CpuMetricToggles,
+            "memory" => MemoryMetricToggles,
+            "disk" => DiskMetricToggles,
+            "network" => NetworkMetricToggles,
+            "gpu" => GpuMetricToggles,
+            "fan" => FanMetricToggles,
             _ => []
         };
     }
@@ -3456,7 +3601,8 @@ public sealed class MainViewModel : ObservableObject
                string.Equals(propertyName, nameof(MemoryEnabled), StringComparison.Ordinal) ||
                string.Equals(propertyName, nameof(DiskEnabled), StringComparison.Ordinal) ||
                string.Equals(propertyName, nameof(NetworkEnabled), StringComparison.Ordinal) ||
-               string.Equals(propertyName, nameof(GpuEnabled), StringComparison.Ordinal);
+               string.Equals(propertyName, nameof(GpuEnabled), StringComparison.Ordinal) ||
+               string.Equals(propertyName, nameof(FanEnabled), StringComparison.Ordinal);
     }
 
     private static string ResolveDetectFreshnessBadgeText(string? value)
@@ -3571,7 +3717,13 @@ public sealed class MainViewModel : ObservableObject
             return configured.Contains(metricKey, StringComparer.OrdinalIgnoreCase);
         }
 
-        return ResolveEditableMetricsForTarget(target).Contains(metricKey, StringComparer.OrdinalIgnoreCase);
+        return IsGlobalMetricEnabled(target, metricKey);
+    }
+
+    private bool IsGlobalMetricEnabled(string target, string metricKey)
+    {
+        return ResolveMetricToggleCollection(target)
+            .FirstOrDefault(item => string.Equals(item.Key, metricKey, StringComparison.OrdinalIgnoreCase))?.IsEnabled == true;
     }
 
     private static void SyncMetricItems(IEnumerable<MetricToggleItemViewModel> items, ISet<string> selected)
@@ -3608,6 +3760,11 @@ public sealed class MainViewModel : ObservableObject
         {
             OnPropertyChanged(nameof(GpuMetricSummary));
         }
+
+        if (string.IsNullOrWhiteSpace(propertyName) || string.Equals(propertyName, nameof(FanEnabled), StringComparison.Ordinal) || string.Equals(propertyName, "fan", StringComparison.OrdinalIgnoreCase))
+        {
+            OnPropertyChanged(nameof(FanMetricSummary));
+        }
     }
 
     private static string BuildMetricSummary(string blockLabel, IEnumerable<MetricToggleItemViewModel> items, bool blockEnabled)
@@ -3629,6 +3786,13 @@ public sealed class MainViewModel : ObservableObject
         return MetricLabels.TryGetValue(key, out var label)
             ? label
             : key;
+    }
+
+    private static string ResolveMetricDescription(string key)
+    {
+        return MetricDescriptions.TryGetValue(key, out var description)
+            ? description
+            : "该字段会跟随对应类别或实例的上报配置生效。";
     }
 
     private static string BuildCurrentOperationText(string? operationCode)

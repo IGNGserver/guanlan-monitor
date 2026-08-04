@@ -24,6 +24,7 @@ public sealed partial class MainWindow : Window
     private bool _initialized;
     private bool _isCompactLayout;
     private bool _hubLoginStarted;
+    private bool _metricConfigDialogOpen;
     private string _hubPageStatus = "网页状态：等待打开观澜";
     private string _currentSelectedCategory = "cpu";
 
@@ -649,17 +650,50 @@ public sealed partial class MainWindow : Window
         _viewModel.Secret = SecretBox.Password;
     }
 
-    private void InstanceMetricEditorButton_OnClick(object sender, RoutedEventArgs e)
+    private async void CategoryMetricConfigButton_OnClick(object sender, RoutedEventArgs e)
     {
-        if (sender is Button { DataContext: ProbeInstanceItemViewModel item })
+        if (sender is Button { Tag: string target })
         {
-            _viewModel.SelectInstanceMetricEditor(item);
+            await ShowMetricConfigDialogAsync(target, null);
         }
     }
 
-    private void ClearInstanceMetricEditorButton_OnClick(object sender, RoutedEventArgs e)
+    private async void InstanceMetricEditorButton_OnClick(object sender, RoutedEventArgs e)
     {
-        _viewModel.ClearInstanceMetricEditor();
+        if (sender is Button { DataContext: ProbeInstanceItemViewModel item })
+        {
+            await ShowMetricConfigDialogAsync(item.Target, item);
+        }
+    }
+
+    private async Task ShowMetricConfigDialogAsync(string target, ProbeInstanceItemViewModel? instance)
+    {
+        if (_metricConfigDialogOpen || RootLayout.XamlRoot is null)
+        {
+            return;
+        }
+
+        _metricConfigDialogOpen = true;
+        try
+        {
+            var model = _viewModel.CreateMetricConfigDialog(target, instance);
+            var dialog = new MetricConfigDialog(model)
+            {
+                XamlRoot = RootLayout.XamlRoot
+            };
+            var result = await dialog.ShowAsync();
+            if (result == ContentDialogResult.Primary)
+            {
+                _viewModel.ApplyMetricConfigDialog(
+                    target,
+                    instance?.Id,
+                    model.Options.Where(option => option.IsEnabled).Select(option => option.Key));
+            }
+        }
+        finally
+        {
+            _metricConfigDialogOpen = false;
+        }
     }
 
     private void RootLayout_SizeChanged(object sender, SizeChangedEventArgs e)

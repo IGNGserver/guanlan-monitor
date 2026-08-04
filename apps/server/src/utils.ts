@@ -22,20 +22,37 @@ export const ALL_DEVICE_METRIC_KEYS: DeviceMetricKey[] = [
   "cpuUsage",
   "cpuFrequency",
   "cpuTemperature",
+  "cpuTopology",
+  "systemOverview",
   "gpuUsage",
   "gpuEncode",
   "gpuDecode",
   "gpuFrequency",
   "gpuMemory",
   "gpuTemperature",
+  "gpuDriverInfo",
   "memoryUsage",
   "swapUsage",
+  "memoryAvailable",
+  "memoryCached",
+  "memoryCommitted",
+  "memoryHardware",
   "diskUsage",
   "diskRead",
   "diskWrite",
+  "diskMetadata",
+  "diskActivity",
+  "diskHealth",
   "networkRxRate",
   "networkTxRate",
-  "networkTraffic"
+  "networkTraffic",
+  "networkIdentity",
+  "fanRpm",
+  "fanControl",
+  "fanTargetTemperature",
+  "fanPwm",
+  "fanChannelState",
+  "fanNote"
 ];
 
 export function percent(used: number, total: number) {
@@ -109,13 +126,13 @@ export function payloadToTimeSeries(
       return {
         id: disk.id,
         name: disk.name,
-        mountPoint: disk.mountPoint,
-        filesystem: disk.filesystem,
-        model: disk.model,
-        vendor: disk.vendor,
-        temperatureC: disk.temperatureC ?? 0,
+        mountPoint: enabled.has("diskMetadata") && instanceEnabled.has("diskMetadata") ? disk.mountPoint : "",
+        filesystem: enabled.has("diskMetadata") && instanceEnabled.has("diskMetadata") ? disk.filesystem : undefined,
+        model: enabled.has("diskMetadata") && instanceEnabled.has("diskMetadata") ? disk.model : undefined,
+        vendor: enabled.has("diskMetadata") && instanceEnabled.has("diskMetadata") ? disk.vendor : undefined,
+        temperatureC: enabled.has("diskHealth") && instanceEnabled.has("diskHealth") ? disk.temperatureC ?? 0 : 0,
         usagePercent: enabled.has("diskUsage") && instanceEnabled.has("diskUsage") ? percent(disk.usedBytes, disk.totalBytes) : 0,
-        activePercent: rate?.activePercent ?? 0,
+        activePercent: enabled.has("diskActivity") && instanceEnabled.has("diskActivity") ? rate?.activePercent ?? 0 : 0,
         usedBytes: enabled.has("diskUsage") && instanceEnabled.has("diskUsage") ? disk.usedBytes : 0,
         readBytesPerSec: enabled.has("diskRead") && instanceEnabled.has("diskRead") ? rate?.readBytesPerSec ?? 0 : 0,
         writeBytesPerSec: enabled.has("diskWrite") && instanceEnabled.has("diskWrite") ? rate?.writeBytesPerSec ?? 0 : 0
@@ -129,8 +146,8 @@ export function payloadToTimeSeries(
         id: cpu.id,
         name: cpu.name,
         model: cpu.model,
-        coreCount: cpu.coreCount,
-        logicalCount: cpu.logicalCount,
+        coreCount: enabled.has("cpuTopology") && instanceEnabled.has("cpuTopology") ? cpu.coreCount : undefined,
+        logicalCount: enabled.has("cpuTopology") && instanceEnabled.has("cpuTopology") ? cpu.logicalCount : undefined,
         usagePercent: enabled.has("cpuUsage") && instanceEnabled.has("cpuUsage") ? cpu.usagePercent ?? payload.cpuUsagePercent : 0,
         frequencyMHz: enabled.has("cpuFrequency") && instanceEnabled.has("cpuFrequency") ? cpu.frequencyMHz ?? resolvedCpuFrequencyMHz ?? 0 : 0,
         temperatureC: enabled.has("cpuTemperature") && instanceEnabled.has("cpuTemperature") ? cpu.temperatureC ?? payload.cpuTemperatureC ?? 0 : 0
@@ -143,9 +160,9 @@ export function payloadToTimeSeries(
       return {
         id: network.id,
         name: network.name,
-        macAddress: network.macAddress,
-        ipv4: network.ipv4,
-        ipv6: network.ipv6,
+        macAddress: enabled.has("networkIdentity") && instanceEnabled.has("networkIdentity") ? network.macAddress : undefined,
+        ipv4: enabled.has("networkIdentity") && instanceEnabled.has("networkIdentity") ? network.ipv4 : undefined,
+        ipv6: enabled.has("networkIdentity") && instanceEnabled.has("networkIdentity") ? network.ipv6 : undefined,
         rxBytesPerSec: enabled.has("networkRxRate") && instanceEnabled.has("networkRxRate") ? network.rxBytesPerSec ?? 0 : 0,
         txBytesPerSec: enabled.has("networkTxRate") && instanceEnabled.has("networkTxRate") ? network.txBytesPerSec ?? 0 : 0,
         trafficRxBytes: enabled.has("networkTraffic") && instanceEnabled.has("networkTraffic") ? network.totalRxBytes ?? 0 : 0,
@@ -168,12 +185,15 @@ export function payloadToTimeSeries(
         temperatureC: enabled.has("gpuTemperature") && instanceEnabled.has("gpuTemperature") ? gpu.temperatureC ?? 0 : 0
       } satisfies InstanceMetricRecord);
     });
-  const fans = (payload.fans ?? []).map((fan) => ({
-    id: fan.id,
-    name: fan.label,
-    interface: fan.interface,
-    rpm: fan.rpm
-  }));
+  const fans = (payload.fans ?? []).map((fan) => {
+    const instanceEnabled = getInstanceEnabledMetrics(config, fan.id);
+    return {
+      id: fan.id,
+      name: fan.label,
+      interface: fan.interface,
+      rpm: enabled.has("fanRpm") && instanceEnabled.has("fanRpm") ? fan.rpm : 0
+    };
+  });
 
   return {
     timestamp: Date.parse(payload.timestamp),
@@ -250,7 +270,11 @@ function getInstanceEnabledMetrics(config: DeviceMetricConfigValue, instanceId: 
   return new Set(config.instanceMetricConfig?.[instanceId] ?? ALL_DEVICE_METRIC_KEYS);
 }
 
-export function timeSeriesToMetricSeries(points: TimeSeriesRecord[]): MetricSeries {
+export function timeSeriesToMetricSeries(
+  points: TimeSeriesRecord[],
+  config: DeviceMetricConfigValue = { enabledMetrics: ALL_DEVICE_METRIC_KEYS }
+): MetricSeries {
+  const enabled = new Set(config.enabledMetrics);
   const trafficSeriesRx = normalizeTrafficSeries(points.map((point) => point.trafficRxBytes));
   const trafficSeriesTx = normalizeTrafficSeries(points.map((point) => point.trafficTxBytes));
 
@@ -285,12 +309,12 @@ export function timeSeriesToMetricSeries(points: TimeSeriesRecord[]): MetricSeri
     swapUsagePercent: mapPoint("swapUsagePercent"),
     memoryUsedBytes: mapPoint("memoryUsedBytes"),
     swapUsedBytes: mapPoint("swapUsedBytes"),
-    memoryAvailableBytes: detailSeries(points, (point) => point.recordedDetails?.memory.availableBytes),
-    memoryCachedBytes: detailSeries(points, (point) => point.recordedDetails?.memory.cachedBytes),
-    memoryCommittedBytes: detailSeries(points, (point) => point.recordedDetails?.memory.committedBytes),
-    systemProcessCount: detailSeries(points, (point) => point.recordedDetails?.system.processCount),
-    systemThreadCount: detailSeries(points, (point) => point.recordedDetails?.system.threadCount),
-    systemHandleCount: detailSeries(points, (point) => point.recordedDetails?.system.handleCount),
+    memoryAvailableBytes: detailSeries(points, (point) => enabled.has("memoryAvailable") ? point.recordedDetails?.memory.availableBytes : 0),
+    memoryCachedBytes: detailSeries(points, (point) => enabled.has("memoryCached") ? point.recordedDetails?.memory.cachedBytes : 0),
+    memoryCommittedBytes: detailSeries(points, (point) => enabled.has("memoryCommitted") ? point.recordedDetails?.memory.committedBytes : 0),
+    systemProcessCount: detailSeries(points, (point) => enabled.has("systemOverview") ? point.recordedDetails?.system.processCount : 0),
+    systemThreadCount: detailSeries(points, (point) => enabled.has("systemOverview") ? point.recordedDetails?.system.threadCount : 0),
+    systemHandleCount: detailSeries(points, (point) => enabled.has("systemOverview") ? point.recordedDetails?.system.handleCount : 0),
     diskUsagePercent: mapPoint("diskUsagePercent"),
     diskUsedBytes: mapPoint("diskUsedBytes"),
     diskReadBytesPerSec: mapPoint("diskReadBytesPerSec"),
@@ -501,27 +525,62 @@ export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOpt
     (latest.cpuFrequencyMHz ?? 0) > 0 || (latest.cpuPackages ?? []).some((cpu) => (cpu.frequencyMHz ?? 0) > 0);
   const hasCpuTemperature =
     latest.cpuTemperatureC != null || (latest.cpuPackages ?? []).some((cpu) => cpu.temperatureC != null);
+  const hasCpuTopology = (latest.cpuPackages ?? []).some((cpu) => cpu.coreCount != null || cpu.logicalCount != null);
+  const hasSystemOverview = latest.system.processCount > 0 || latest.system.threadCount > 0 || latest.system.handleCount > 0;
   const hasDisks = latest.diskUsage.totalBytes > 0 || (latest.disks?.length ?? 0) > 0;
+  const hasDiskMetadata = (latest.disks ?? []).some((disk) =>
+    Boolean(disk.mountPoint || disk.filesystem || disk.model || disk.vendor || disk.interfaceType)
+  );
+  const hasDiskActivity = (latest.disks ?? []).some((disk) => disk.activePercent != null || disk.averageResponseMs != null);
+  const hasDiskHealth = (latest.disks ?? []).some((disk) =>
+    disk.temperatureC != null || disk.healthStatus != null || disk.healthPercent != null || (disk.smartAttributes?.length ?? 0) > 0
+  );
   const hasNetworkInterfaces = (latest.networkInterfaces?.length ?? 0) > 0;
+  const hasNetworkIdentity = (latest.networkInterfaces ?? []).some((network) =>
+    Boolean(network.macAddress || network.ipv4?.length || network.ipv6?.length || network.linkSpeedMbps != null || network.connectionType)
+  );
+  const hasFan = (latest.fans?.length ?? 0) > 0;
+  const hasFanControl = (latest.fans ?? []).some((fan) => fan.controlMode != null);
+  const hasFanTargetTemperature = (latest.fans ?? []).some((fan) => fan.targetTemperatureC != null);
+  const hasFanPwm = (latest.fans ?? []).some((fan) => fan.minPwmPercent != null || fan.maxPwmPercent != null);
+  const hasFanChannelState = (latest.fans ?? []).some((fan) => fan.channelState != null);
+  const hasFanNote = (latest.fans ?? []).some((fan) => fan.note != null);
 
   const availability = new Map<DeviceMetricKey, boolean>([
     ["cpuUsage", true],
     ["cpuFrequency", hasCpuFrequency],
     ["cpuTemperature", hasCpuTemperature],
+    ["cpuTopology", hasCpuTopology],
+    ["systemOverview", hasSystemOverview],
     ["gpuUsage", hasGpu],
     ["gpuEncode", hasGpuEncode],
     ["gpuDecode", hasGpuDecode],
     ["gpuFrequency", hasGpuFrequency],
     ["gpuMemory", hasGpu],
     ["gpuTemperature", hasGpuTemperature],
+    ["gpuDriverInfo", latest.gpus.some((gpu) => gpu.driverVersion != null)],
     ["memoryUsage", latest.memory.totalBytes > 0],
     ["swapUsage", hasSwap],
+    ["memoryAvailable", latest.memory.availableBytes > 0],
+    ["memoryCached", latest.memory.cachedBytes > 0],
+    ["memoryCommitted", latest.memory.committedBytes > 0],
+    ["memoryHardware", latest.memory.speedMHz != null || latest.memory.slotCount != null || latest.memory.formFactor != null],
     ["diskUsage", hasDisks],
     ["diskRead", true],
     ["diskWrite", true],
+    ["diskMetadata", hasDiskMetadata],
+    ["diskActivity", hasDiskActivity],
+    ["diskHealth", hasDiskHealth],
     ["networkRxRate", hasNetworkInterfaces],
     ["networkTxRate", hasNetworkInterfaces],
-    ["networkTraffic", hasNetworkInterfaces]
+    ["networkTraffic", hasNetworkInterfaces],
+    ["networkIdentity", hasNetworkIdentity],
+    ["fanRpm", hasFan],
+    ["fanControl", hasFanControl],
+    ["fanTargetTemperature", hasFanTargetTemperature],
+    ["fanPwm", hasFanPwm],
+    ["fanChannelState", hasFanChannelState],
+    ["fanNote", hasFanNote]
   ]);
 
   return ALL_DEVICE_METRIC_KEYS.map((key) => ({

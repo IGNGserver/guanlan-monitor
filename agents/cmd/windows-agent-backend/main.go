@@ -342,10 +342,10 @@ func defaultLocalConfig() agentLocalConfig {
 			SlowIntervalSeconds:   30,
 		},
 		EnabledMetrics: []string{
-			"cpuUsage", "cpuFrequency", "cpuTemperature",
-			"memoryUsage", "swapUsage",
-			"diskUsage", "diskRead", "diskWrite",
-			"networkRxRate", "networkTxRate", "networkTraffic",
+			"cpuUsage", "cpuFrequency", "cpuTemperature", "cpuTopology", "systemOverview",
+			"memoryUsage", "swapUsage", "memoryAvailable", "memoryCached", "memoryCommitted", "memoryHardware",
+			"diskUsage", "diskRead", "diskWrite", "diskMetadata", "diskActivity", "diskHealth",
+			"networkRxRate", "networkTxRate", "networkTraffic", "networkIdentity",
 		},
 		EnabledDeviceIDs:     map[string][]string{},
 		InstanceMetricConfig: map[string][]string{},
@@ -887,13 +887,15 @@ func decorateDetectedMetrics(targets []probeTargetState) {
 func metricsForProbeTarget(target string) []string {
 	switch target {
 	case "cpu":
-		return []string{"使用率", "频率", "温度", "逻辑核心数", "物理核心数"}
+		return []string{"使用率", "频率", "温度", "逻辑核心数", "物理核心数", "进程数", "线程数", "句柄数"}
 	case "disk":
-		return []string{"已用空间", "总空间", "可用空间", "使用率", "读取速率", "写入速率", "文件系统", "挂载点"}
+		return []string{"已用空间", "总空间", "可用空间", "使用率", "读取速率", "写入速率", "活动时间", "平均响应", "文件系统", "挂载点", "型号", "厂商", "接口类型", "温度", "健康状态", "SMART"}
 	case "network":
-		return []string{"接收速率", "发送速率", "累计接收", "累计发送", "MAC 地址", "IP 地址"}
+		return []string{"接收速率", "发送速率", "累计接收", "累计发送", "MAC 地址", "IP 地址", "链路速度", "连接类型", "信号强度"}
 	case "gpu":
-		return []string{"使用率", "显存已用", "显存总量", "显存使用率", "驱动与适配器信息"}
+		return []string{"使用率", "编码利用率", "解码利用率", "核心频率", "显存已用", "显存总量", "显存使用率", "温度", "驱动与适配器信息"}
+	case "fan":
+		return []string{"转速", "控制模式", "目标温度", "最小 PWM", "最大 PWM", "通道状态", "传感器备注"}
 	default:
 		return []string{"状态"}
 	}
@@ -1588,6 +1590,24 @@ func normalizeLocalConfig(cfg agentLocalConfig, raw []byte) agentLocalConfig {
 			"gpuTemperature",
 		)
 	}
+	if isProbeSelectionEnabled(cfg.ProbeSelections, "cpu") && containsMetricPrefix(cfg.EnabledMetrics, "cpu") {
+		cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"cpuTopology", "systemOverview"})
+	}
+	if isProbeSelectionEnabled(cfg.ProbeSelections, "memory") && containsMetricPrefix(cfg.EnabledMetrics, "memory") {
+		cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"memoryAvailable", "memoryCached", "memoryCommitted", "memoryHardware"})
+	}
+	if isProbeSelectionEnabled(cfg.ProbeSelections, "disk") && containsMetricPrefix(cfg.EnabledMetrics, "disk") {
+		cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"diskMetadata", "diskActivity", "diskHealth"})
+	}
+	if isProbeSelectionEnabled(cfg.ProbeSelections, "network") && containsMetricPrefix(cfg.EnabledMetrics, "network") {
+		cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"networkIdentity"})
+	}
+	if isProbeSelectionEnabled(cfg.ProbeSelections, "gpu") && containsMetricPrefix(cfg.EnabledMetrics, "gpu") {
+		cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"gpuDriverInfo"})
+	}
+	if isProbeSelectionEnabled(cfg.ProbeSelections, "fan") {
+		cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"fanRpm", "fanControl", "fanTargetTemperature", "fanPwm", "fanChannelState", "fanNote"})
+	}
 	if cfg.EnabledDeviceIDs == nil {
 		cfg.EnabledDeviceIDs = map[string][]string{}
 	}
@@ -1634,6 +1654,21 @@ func containsMetricPrefix(metrics []string, prefix string) bool {
 		}
 	}
 	return false
+}
+
+func appendMissingMetricKeys(metrics []string, keys []string) []string {
+	existing := make(map[string]struct{}, len(metrics)+len(keys))
+	for _, metric := range metrics {
+		existing[strings.TrimSpace(metric)] = struct{}{}
+	}
+	for _, key := range keys {
+		if _, found := existing[key]; found {
+			continue
+		}
+		metrics = append(metrics, key)
+		existing[key] = struct{}{}
+	}
+	return metrics
 }
 
 func displayConfigChanged(previous agentLocalConfig, next agentLocalConfig) bool {

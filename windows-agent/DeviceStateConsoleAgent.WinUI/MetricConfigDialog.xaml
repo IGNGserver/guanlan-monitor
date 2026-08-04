@@ -1,0 +1,75 @@
+<controls:ContentDialog
+    x:Class="DeviceStateConsoleAgent.WinUI.MetricConfigDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Microsoft.UI.Xaml.Controls"
+    Title="{Binding Title}"
+    PrimaryButtonText="保存并退出"
+    SecondaryButtonText="不保存并退出"
+    DefaultButton="Primary">
+    <Grid MinWidth="520" MaxWidth="680">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Spacing="6" Margin="0,0,0,16">
+            <TextBlock Text="{Binding Subtitle}"
+                       Style="{StaticResource BodyTextBlockStyle}"
+                       TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Instruction}"
+                       Style="{StaticResource CaptionTextBlockStyle}"
+                       TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Summary}"
+                       Style="{StaticResource CaptionTextBlockStyle}"
+                       Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                       Margin="0,4,0,0" />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1"
+                      MaxHeight="500"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Options}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <ItemsWrapGrid Orientation="Horizontal"
+                                       MaximumRowsOrColumns="2"
+                                       HorizontalAlignment="Stretch"
+                                       HorizontalChildrenAlignment="Stretch" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Width="300"
+                                Margin="0,0,10,10"
+                                Padding="12"
+                                Background="{ThemeResource ControlFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6">
+                            <Grid ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <ToggleSwitch Grid.Column="0"
+                                              IsOn="{Binding IsEnabled, Mode=TwoWay}"
+                                              VerticalAlignment="Top"
+                                              AutomationProperties.Name="{Binding Label}" />
+                                <StackPanel Grid.Column="1" Spacing="3">
+                                    <TextBlock Text="{Binding Label}"
+                                               FontWeight="SemiBold"
+                                               TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding Description}"
+                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
+</controls:ContentDialog>

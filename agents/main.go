@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -82,20 +85,37 @@ var allMetricKeys = []string{
 	"cpuUsage",
 	"cpuFrequency",
 	"cpuTemperature",
+	"cpuTopology",
+	"systemOverview",
 	"gpuUsage",
 	"gpuEncode",
 	"gpuDecode",
 	"gpuFrequency",
 	"gpuMemory",
 	"gpuTemperature",
+	"gpuDriverInfo",
 	"memoryUsage",
 	"swapUsage",
+	"memoryAvailable",
+	"memoryCached",
+	"memoryCommitted",
+	"memoryHardware",
 	"diskUsage",
 	"diskRead",
 	"diskWrite",
+	"diskMetadata",
+	"diskActivity",
+	"diskHealth",
 	"networkRxRate",
 	"networkTxRate",
 	"networkTraffic",
+	"networkIdentity",
+	"fanRpm",
+	"fanControl",
+	"fanTargetTemperature",
+	"fanPwm",
+	"fanChannelState",
+	"fanNote",
 }
 
 type agentIdentity struct {
@@ -775,6 +795,12 @@ func sampleMemory() memoryStats {
 }
 
 func collectSystemStats() systemStats {
+	if runtime.GOOS == "windows" {
+		if result, ok := collectWindowsSystemStats(); ok {
+			return result
+		}
+	}
+
 	items, err := gprocess.Processes()
 	if err != nil {
 		return systemStats{}
@@ -1009,11 +1035,40 @@ func optionalCommandBackend(id, label, command, capability string) sensorBackend
 	return sensorBackendStatus{ID: id, Label: label, OK: false, Detail: "未安装或不可执行；" + capability + "不可用"}
 }
 
+func encodePowerShellCommand(script string) string {
+	encoded := utf16.Encode([]rune(script))
+	bytesValue := make([]byte, len(encoded)*2)
+	for index, value := range encoded {
+		binary.LittleEndian.PutUint16(bytesValue[index*2:], value)
+	}
+	return base64.StdEncoding.EncodeToString(bytesValue)
+}
+
+func runWindowsPowerShell(ctx context.Context, script string, environment ...string) ([]byte, error) {
+	normalizedScript := strings.Join([]string{
+		"[Console]::InputEncoding = [System.Text.Encoding]::UTF8",
+		"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
+		"$OutputEncoding = [System.Text.Encoding]::UTF8",
+		"$ProgressPreference = 'SilentlyContinue'",
+		script,
+	}, "; ")
+	command := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShellCommand(normalizedScript))
+	if len(environment) > 0 {
+		command.Env = append(os.Environ(), environment...)
+	}
+	return command.Output()
+}
+
 func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 	infoCtx, infoCancel := context.WithTimeout(context.Background(), cpuPackagesTimeout)
 	defer infoCancel()
 	info, err := cpu.InfoWithContext(infoCtx)
 	if err != nil {
+		if runtime.GOOS == "windows" {
+			if frequency, packages, fallbackErr := collectWindowsCPUPackagesFallback(); fallbackErr == nil {
+				return frequency, packages, nil
+			}
+		}
 		return nil, nil, newCollectorIssueError(logCategoryCPUSlow, err)
 	}
 	countsCtx, countsCancel := context.WithTimeout(context.Background(), cpuPackagesTimeout)
@@ -1071,7 +1126,26 @@ func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 	}
 
 	if len(packages) == 0 {
+		if runtime.GOOS == "windows" {
+			if frequency, fallbackPackages, fallbackErr := collectWindowsCPUPackagesFallback(); fallbackErr == nil {
+				return frequency, fallbackPackages, nil
+			}
+		}
 		return nil, []cpuPackageStats{}, nil
+	}
+
+	// gopsutil maps Win32_Processor.NumberOfLogicalProcessors to InfoStat.Cores.
+	// Use the separate topology query for a single Windows socket so the UI does
+	// not report logical processors as physical cores.
+	if runtime.GOOS == "windows" && len(packages) == 1 {
+		for _, entry := range packages {
+			if physicalCount > 0 {
+				entry.coreCount = physicalCount
+			}
+			if logicalCount > 0 {
+				entry.logicalCount = logicalCount
+			}
+		}
 	}
 
 	fallbackLogical := 0
@@ -1102,6 +1176,69 @@ func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 	})
 
 	return averagePointer(allFrequencies), result, nil
+}
+
+type windowsCPUPackageRecord struct {
+	ID              string  `json:"id"`
+	Name            string  `json:"name"`
+	Model           string  `json:"model"`
+	CoreCount       int     `json:"coreCount"`
+	LogicalCount    int     `json:"logicalCount"`
+	FrequencyMHz    float64 `json:"frequencyMHz"`
+	MaxFrequencyMHz float64 `json:"maxFrequencyMHz"`
+}
+
+func collectWindowsCPUPackagesFallback() (*float64, []cpuPackageStats, error) {
+	if runtime.GOOS != "windows" {
+		return nil, nil, errors.New("Windows CPU package fallback is only available on Windows")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), cpuPackagesTimeout)
+	defer cancel()
+	commandText := `$ErrorActionPreference='Stop'; $rows=@(Get-CimInstance Win32_Processor | ForEach-Object { [pscustomobject]@{ id=[string]$_.DeviceID; name=[string]$_.Name; model=[string]$_.Name; coreCount=[int]$_.NumberOfCores; logicalCount=[int]$_.NumberOfLogicalProcessors; frequencyMHz=[double]$_.CurrentClockSpeed; maxFrequencyMHz=[double]$_.MaxClockSpeed } }); @($rows) | ConvertTo-Json -Depth 4 -Compress`
+	output, err := runWindowsPowerShell(ctx, commandText)
+	if err != nil {
+		return nil, nil, err
+	}
+	records, err := decodeJSONList[windowsCPUPackageRecord](bytes.TrimSpace(output))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	packages := make([]cpuPackageStats, 0, len(records))
+	frequencies := make([]float64, 0, len(records))
+	for index, record := range records {
+		id := strings.TrimSpace(record.ID)
+		if id == "" {
+			id = fmt.Sprintf("CPU%d", index)
+		}
+		name := strings.TrimSpace(record.Name)
+		if name == "" {
+			name = fmt.Sprintf("CPU %d", index+1)
+		}
+		model := strings.TrimSpace(record.Model)
+		frequency := record.FrequencyMHz
+		if frequency <= 0 {
+			frequency = record.MaxFrequencyMHz
+		}
+		if frequency > 0 {
+			frequencies = append(frequencies, frequency)
+		}
+		var frequencyPointer *float64
+		if frequency > 0 {
+			value := frequency
+			frequencyPointer = &value
+		}
+		packages = append(packages, cpuPackageStats{
+			ID:           "cpu-" + sanitizeKey(id),
+			Name:         name,
+			Model:        model,
+			CoreCount:    record.CoreCount,
+			LogicalCount: record.LogicalCount,
+			FrequencyMHz: frequencyPointer,
+		})
+	}
+	return averagePointer(frequencies), packages, nil
 }
 
 type hardwareSensorSnapshot struct {
@@ -1169,10 +1306,8 @@ func collectHardwareSensors() hardwareSensorMetrics {
 
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
-	commandText := `$ErrorActionPreference='Stop'; Add-Type -Path $env:DSC_LHM_DLL; $gpuIds=@{}; Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { if($_.Name -and $_.PNPDeviceID){ $gpuIds[[string]$_.Name]=[string]$_.PNPDeviceID } }; $computer=New-Object LibreHardwareMonitor.Hardware.Computer; $computer.IsCpuEnabled=$true; $computer.IsGpuEnabled=$true; $computer.IsMotherboardEnabled=$true; $computer.IsControllerEnabled=$true; $computer.IsStorageEnabled=$true; $computer.Open(); function Read-Hardware($hardware) { $hardware.Update(); $instanceId=''; $temperatureC=$null; $healthPercent=$null; $healthStatus=''; $healthReason=''; $smartAttributes=@(); if($gpuIds.ContainsKey([string]$hardware.Name)){ $instanceId=$gpuIds[[string]$hardware.Name] }; if([string]$hardware.HardwareType -eq 'Storage') { $storage=$hardware.Storage; $smart=$null; if($storage){ $smart=$storage.Smart }; if($smart){ if($smart.Temperature -ne $null){ $temperatureC=[double]$smart.Temperature }; if($smart.Life -ne $null){ $healthPercent=[double]$smart.Life }; $healthStatus=[string]$smart.DiskStatus; if($healthStatus -and $healthStatus -ne 'Unknown'){ $healthReason='SMART status from LibreHardwareMonitor' } }; $smartAttributes=@($hardware.Attributes | ForEach-Object { [pscustomobject]@{ id=[int]$_.Id; name=[string]$_.Name; value=[double]$_.Value; threshold=[double]$_.Threshold } }) }; $result=@([pscustomobject]@{ hardwareType=[string]$hardware.HardwareType; name=[string]$hardware.Name; instanceId=$instanceId; temperatureC=$temperatureC; healthPercent=$healthPercent; healthStatus=$healthStatus; healthReason=$healthReason; smartAttributes=$smartAttributes; sensors=@($hardware.Sensors | ForEach-Object { [pscustomobject]@{ sensorType=[string]$_.SensorType; name=[string]$_.Name; value=$_.Value } }) }); foreach($sub in $hardware.SubHardware) { $result += Read-Hardware $sub }; return $result }; try { @($computer.Hardware | ForEach-Object { Read-Hardware $_ }) | ConvertTo-Json -Depth 7 -Compress } finally { $computer.Close() }`
-	command := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
-	command.Env = append(os.Environ(), "DSC_LHM_DLL="+dllPath)
-	output, err := command.Output()
+	commandText := `$ErrorActionPreference='Stop'; $dllDir=Split-Path -Parent $env:DSC_LHM_DLL; [System.IO.Directory]::SetCurrentDirectory($dllDir); Set-Location -LiteralPath $dllDir; Get-ChildItem -LiteralPath $dllDir -Filter '*.dll' -File | ForEach-Object { try { [System.Reflection.Assembly]::LoadFrom($_.FullName) | Out-Null } catch {} }; Add-Type -Path $env:DSC_LHM_DLL; $gpuIds=@{}; Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { if($_.Name -and $_.PNPDeviceID){ $gpuIds[[string]$_.Name]=[string]$_.PNPDeviceID } }; $computer=New-Object LibreHardwareMonitor.Hardware.Computer; $computer.IsCpuEnabled=$true; $computer.IsGpuEnabled=$true; $computer.IsMotherboardEnabled=$true; $computer.IsControllerEnabled=$true; $computer.IsStorageEnabled=$true; $computer.Open(); function Read-Hardware($hardware) { $hardware.Update(); $instanceId=''; $temperatureC=$null; $healthPercent=$null; $healthStatus=''; $healthReason=''; $smartAttributes=@(); if($gpuIds.ContainsKey([string]$hardware.Name)){ $instanceId=$gpuIds[[string]$hardware.Name] }; if([string]$hardware.HardwareType -eq 'Storage') { $storage=$hardware.Storage; $smart=$null; if($storage){ $smart=$storage.Smart }; if($smart){ if($smart.Temperature -ne $null){ $temperatureC=[double]$smart.Temperature }; if($smart.Life -ne $null){ $healthPercent=[double]$smart.Life }; $healthStatus=[string]$smart.DiskStatus; if($healthStatus -and $healthStatus -ne 'Unknown'){ $healthReason='SMART status from LibreHardwareMonitor' } }; $smartAttributes=@($hardware.Attributes | ForEach-Object { [pscustomobject]@{ id=[int]$_.Id; name=[string]$_.Name; value=[double]$_.Value; threshold=[double]$_.Threshold } }) }; $result=@([pscustomobject]@{ hardwareType=[string]$hardware.HardwareType; name=[string]$hardware.Name; instanceId=$instanceId; temperatureC=$temperatureC; healthPercent=$healthPercent; healthStatus=$healthStatus; healthReason=$healthReason; smartAttributes=$smartAttributes; sensors=@($hardware.Sensors | ForEach-Object { [pscustomobject]@{ sensorType=[string]$_.SensorType; name=[string]$_.Name; value=$_.Value } }) }); foreach($sub in $hardware.SubHardware) { $result += Read-Hardware $sub }; return $result }; try { @($computer.Hardware | ForEach-Object { Read-Hardware $_ }) | ConvertTo-Json -Depth 7 -Compress } finally { $computer.Close() }`
+	output, err := runWindowsPowerShell(ctx, commandText, "DSC_LHM_DLL="+dllPath)
 	if err != nil {
 		return hardwareSensorMetrics{
 			gpus:               []gpuDeviceStats{},
@@ -2995,6 +3130,10 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 		cpuTemperatureEnabled := false
 		for index := range payload.CPUPackages {
 			instanceEnabled, hasOverride := resolveInstanceMetricSet(cfg, payload.CPUPackages[index].ID)
+			if !metricEnabled(enabledMetricSet, instanceEnabled, hasOverride, "cpuTopology") {
+				payload.CPUPackages[index].CoreCount = 0
+				payload.CPUPackages[index].LogicalCount = 0
+			}
 			if metricEnabled(enabledMetricSet, instanceEnabled, hasOverride, "cpuUsage") {
 				cpuUsageEnabled = true
 			} else {
@@ -3027,10 +3166,15 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 			payload.CPUTemperatureC = nil
 		}
 	}
+	if !enabledMetricSet["systemOverview"] {
+		payload.System = systemStats{}
+	}
 
 	if !enabledBlocks["memory"] {
 		payload.Memory = memoryStats{}
-	} else if !enabledMetricSet["memoryUsage"] && !enabledMetricSet["swapUsage"] {
+	} else if !enabledMetricSet["memoryUsage"] && !enabledMetricSet["swapUsage"] &&
+		!enabledMetricSet["memoryAvailable"] && !enabledMetricSet["memoryCached"] &&
+		!enabledMetricSet["memoryCommitted"] && !enabledMetricSet["memoryHardware"] {
 		payload.Memory = memoryStats{}
 	} else {
 		if !enabledMetricSet["memoryUsage"] {
@@ -3040,6 +3184,20 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 		if !enabledMetricSet["swapUsage"] {
 			payload.Memory.SwapTotalBytes = 0
 			payload.Memory.SwapUsedBytes = 0
+		}
+		if !enabledMetricSet["memoryAvailable"] {
+			payload.Memory.AvailableBytes = 0
+		}
+		if !enabledMetricSet["memoryCached"] {
+			payload.Memory.CachedBytes = 0
+		}
+		if !enabledMetricSet["memoryCommitted"] {
+			payload.Memory.CommittedBytes = 0
+		}
+		if !enabledMetricSet["memoryHardware"] {
+			payload.Memory.SpeedMHz = nil
+			payload.Memory.SlotCount = nil
+			payload.Memory.FormFactor = ""
 		}
 	}
 
@@ -3052,6 +3210,7 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 		diskUsageEnabled := false
 		diskReadEnabled := false
 		diskWriteEnabled := false
+		diskActivityEnabled := false
 		if payload.DiskRate.Instances == nil {
 			payload.DiskRate.Instances = map[string]rateStats{}
 		}
@@ -3082,6 +3241,27 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 			} else {
 				rate.WriteBytesPerSec = 0
 			}
+			if metricEnabled(enabledMetricSet, instanceEnabled, hasOverride, "diskActivity") {
+				diskActivityEnabled = true
+			} else {
+				rate.ActivePercent = 0
+				rate.AverageResponseMs = 0
+			}
+			if !metricEnabled(enabledMetricSet, instanceEnabled, hasOverride, "diskMetadata") {
+				payload.Disks[index].MountPoint = ""
+				payload.Disks[index].FileSystem = ""
+				payload.Disks[index].Model = ""
+				payload.Disks[index].Vendor = ""
+				payload.Disks[index].SourceKey = ""
+				payload.Disks[index].InterfaceType = ""
+			}
+			if !metricEnabled(enabledMetricSet, instanceEnabled, hasOverride, "diskHealth") {
+				payload.Disks[index].TemperatureC = nil
+				payload.Disks[index].HealthStatus = ""
+				payload.Disks[index].HealthReason = ""
+				payload.Disks[index].HealthPercent = nil
+				payload.Disks[index].SmartAttributes = nil
+			}
 			payload.DiskRate.Instances[payload.Disks[index].ID] = rate
 			if payload.Disks[index].SourceKey != "" {
 				payload.DiskRate.Instances[payload.Disks[index].SourceKey] = rate
@@ -3092,7 +3272,7 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 		} else if !diskUsageEnabled {
 			payload.DiskUsage = storageUsage{}
 		}
-		if !enabledMetricSet["diskRead"] && !enabledMetricSet["diskWrite"] {
+		if !enabledMetricSet["diskRead"] && !enabledMetricSet["diskWrite"] && !enabledMetricSet["diskActivity"] {
 			payload.DiskRate = rateStats{}
 		} else {
 			if !enabledMetricSet["diskRead"] {
@@ -3112,6 +3292,18 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 				}
 			} else if !diskWriteEnabled {
 				payload.DiskRate.WriteBytesPerSec = 0
+			}
+			if !enabledMetricSet["diskActivity"] {
+				payload.DiskRate.ActivePercent = 0
+				payload.DiskRate.AverageResponseMs = 0
+				for key, rate := range payload.DiskRate.Instances {
+					rate.ActivePercent = 0
+					rate.AverageResponseMs = 0
+					payload.DiskRate.Instances[key] = rate
+				}
+			} else if !diskActivityEnabled {
+				payload.DiskRate.ActivePercent = 0
+				payload.DiskRate.AverageResponseMs = 0
 			}
 		}
 	}
@@ -3141,6 +3333,14 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 			} else {
 				payload.NetworkIfaces[index].TotalRxBytes = 0
 				payload.NetworkIfaces[index].TotalTxBytes = 0
+			}
+			if !metricEnabled(enabledMetricSet, instanceEnabled, hasOverride, "networkIdentity") {
+				payload.NetworkIfaces[index].MacAddress = ""
+				payload.NetworkIfaces[index].IPv4 = nil
+				payload.NetworkIfaces[index].IPv6 = nil
+				payload.NetworkIfaces[index].LinkSpeedMbps = nil
+				payload.NetworkIfaces[index].ConnectionType = ""
+				payload.NetworkIfaces[index].SignalStrengthPercent = nil
 			}
 		}
 		if !enabledMetricSet["networkRxRate"] {
@@ -3187,12 +3387,37 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 			if !metricEnabled(enabledMetricSet, instanceEnabled, hasOverride, "gpuTemperature") {
 				payload.GPUs[index].TemperatureC = nil
 			}
+			if !metricEnabled(enabledMetricSet, instanceEnabled, hasOverride, "gpuDriverInfo") {
+				payload.GPUs[index].DriverVersion = ""
+			}
 		}
 	}
 
 	if !enabledBlocks["fan"] {
 		payload.Fans = []fanSensorStats{}
 		payload.SensorBackends = []sensorBackendStatus{}
+	} else {
+		for index := range payload.Fans {
+			if !enabledMetricSet["fanRpm"] {
+				payload.Fans[index].RPM = 0
+			}
+			if !enabledMetricSet["fanControl"] {
+				payload.Fans[index].ControlMode = ""
+			}
+			if !enabledMetricSet["fanTargetTemperature"] {
+				payload.Fans[index].TargetTemperatureC = nil
+			}
+			if !enabledMetricSet["fanPwm"] {
+				payload.Fans[index].MinPWMPercent = nil
+				payload.Fans[index].MaxPWMPercent = nil
+			}
+			if !enabledMetricSet["fanChannelState"] {
+				payload.Fans[index].ChannelState = ""
+			}
+			if !enabledMetricSet["fanNote"] {
+				payload.Fans[index].Note = ""
+			}
+		}
 	}
 }
 

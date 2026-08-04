@@ -329,7 +329,11 @@
                                 <StackPanel x:Name="LocalMetricCardsGrid" Spacing="16" HorizontalAlignment="Stretch">
                                     <Border Style="{StaticResource DSCStatusCardStyle}" Padding="18">
                                         <StackPanel Spacing="10">
-                                            <TextBlock Text="CPU" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                            <Grid ColumnSpacing="12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="CPU" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                                <Button Grid.Column="1" Content="配置" Tag="cpu" Click="CategoryMetricConfigButton_OnClick" VerticalAlignment="Center" />
+                                            </Grid>
                                             <ToggleSwitch Header="采集" IsOn="{Binding CpuEnabled, Mode=TwoWay}" />
                                             <ComboBox Header="探测器" ItemsSource="{Binding CpuProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding CpuProvider, Mode=TwoWay}" />
                                             <TextBlock Text="{Binding RemoteCpuText}" Style="{StaticResource BodyTextBlockStyle}" />
@@ -342,7 +346,11 @@
                                     </Border>
                                     <Border Style="{StaticResource DSCStatusCardStyle}" Padding="18">
                                         <StackPanel Spacing="10">
-                                            <TextBlock Text="内存" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                            <Grid ColumnSpacing="12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="内存" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                                <Button Grid.Column="1" Content="配置" Tag="memory" Click="CategoryMetricConfigButton_OnClick" VerticalAlignment="Center" />
+                                            </Grid>
                                             <ToggleSwitch Header="采集" IsOn="{Binding MemoryEnabled, Mode=TwoWay}" />
                                             <ComboBox Header="探测器" ItemsSource="{Binding MemoryProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding MemoryProvider, Mode=TwoWay}" />
                                             <TextBlock Text="{Binding RemoteMemoryText}" Style="{StaticResource BodyTextBlockStyle}" />
@@ -352,7 +360,11 @@
                                     </Border>
                                     <Border Style="{StaticResource DSCStatusCardStyle}" Padding="18">
                                         <StackPanel Spacing="10">
-                                            <TextBlock Text="磁盘" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                            <Grid ColumnSpacing="12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="磁盘" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                                <Button Grid.Column="1" Content="配置" Tag="disk" Click="CategoryMetricConfigButton_OnClick" VerticalAlignment="Center" />
+                                            </Grid>
                                             <ToggleSwitch Header="采集" IsOn="{Binding DiskEnabled, Mode=TwoWay}" />
                                             <ComboBox Header="探测器" ItemsSource="{Binding DiskProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding DiskProvider, Mode=TwoWay}" />
                                             <TextBlock Text="{Binding RemoteDiskText}" Style="{StaticResource BodyTextBlockStyle}" />
@@ -365,7 +377,11 @@
                                     </Border>
                                     <Border Style="{StaticResource DSCStatusCardStyle}" Padding="18">
                                         <StackPanel Spacing="10">
-                                            <TextBlock Text="网络" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                            <Grid ColumnSpacing="12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="网络" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                                <Button Grid.Column="1" Content="配置" Tag="network" Click="CategoryMetricConfigButton_OnClick" VerticalAlignment="Center" />
+                                            </Grid>
                                             <ToggleSwitch Header="采集" IsOn="{Binding NetworkEnabled, Mode=TwoWay}" />
                                             <ComboBox Header="探测器" ItemsSource="{Binding NetworkProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding NetworkProvider, Mode=TwoWay}" />
                                             <TextBlock Text="{Binding RemoteNetworkText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
@@ -378,7 +394,11 @@
                                     </Border>
                                     <Border Style="{StaticResource DSCStatusCardStyle}" Padding="18">
                                         <StackPanel Spacing="10">
-                                            <TextBlock Text="显卡" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                            <Grid ColumnSpacing="12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="显卡" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                                <Button Grid.Column="1" Content="配置" Tag="gpu" Click="CategoryMetricConfigButton_OnClick" VerticalAlignment="Center" />
+                                            </Grid>
                                             <ToggleSwitch Header="采集" IsOn="{Binding GpuEnabled, Mode=TwoWay}" />
                                             <ComboBox Header="探测器" ItemsSource="{Binding GpuProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding GpuProvider, Mode=TwoWay}" />
                                             <TextBlock Text="{Binding RemoteGpuText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
@@ -390,30 +410,19 @@
                                     </Border>
                                     <Border Style="{StaticResource DSCStatusCardStyle}" Padding="18">
                                         <StackPanel Spacing="10">
-                                            <TextBlock Text="风扇" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                            <Grid ColumnSpacing="12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="风扇" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                                <Button Grid.Column="1" Content="配置" Tag="fan" Click="CategoryMetricConfigButton_OnClick" VerticalAlignment="Center" />
+                                            </Grid>
                                             <ToggleSwitch Header="采集" IsOn="{Binding FanEnabled, Mode=TwoWay}" />
                                             <ComboBox Header="探测器" ItemsSource="{Binding FanProviderOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding FanProvider, Mode=TwoWay}" />
                                             <TextBlock Text="{Binding FanDetectStatusText}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding FanMetricSummary}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
                              </StackPanel>
-
-                             <Border Style="{StaticResource DSCPanelStyle}" Padding="18" Visibility="{Binding SelectedInstanceMetricEditorVisibility}">
-                                 <StackPanel Spacing="10">
-                                     <TextBlock Text="{Binding SelectedInstanceMetricEditorTitle}" Style="{StaticResource SubtitleTextBlockStyle}" />
-                                     <TextBlock Text="{Binding SelectedInstanceMetricEditorSubtitle}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
-                                     <ItemsControl ItemsSource="{Binding SelectedInstanceMetricToggles}">
-                                         <ItemsControl.ItemTemplate>
-                                             <DataTemplate>
-                                                 <ToggleSwitch Header="{Binding Label}" IsOn="{Binding IsEnabled, Mode=TwoWay}" />
-                                             </DataTemplate>
-                                         </ItemsControl.ItemTemplate>
-                                     </ItemsControl>
-                                     <TextBlock Text="{Binding SelectedInstanceMetricEditorSummary}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
-                                     <Button Content="关闭实例配置" Click="ClearInstanceMetricEditorButton_OnClick" HorizontalAlignment="Left" />
-                                 </StackPanel>
-                             </Border>
 
                              <!-- 3.2 服务配置面板 (ServerConfigPanel) -->
                             <StackPanel x:Name="ServerConfigPanel" Spacing="20" Visibility="Collapsed" HorizontalAlignment="Stretch">
