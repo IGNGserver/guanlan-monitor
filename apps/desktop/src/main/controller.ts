@@ -235,7 +235,7 @@ export class DesktopController {
     }
 
     try {
-      update = await this.hub.getUpdateInfo(process.env.DSC_VERSION ?? "0.2.63");
+      update = await this.hub.getUpdateInfo(process.env.DSC_VERSION ?? "0.2.64");
     } catch {
       update = null;
     }
@@ -302,7 +302,7 @@ export class DesktopController {
       selectedDeviceId: null,
       metrics: null,
       trafficCalendar: null,
-      update: { currentVersion: process.env.DSC_VERSION ?? "0.2.63", currentChannel: "test", platform: process.platform === "win32" ? "windows-gui" : "linux-gui", arch: process.arch, available: false, latestVersion: null, latestChannel: null, releaseTag: null, releaseUrl: null, notesUrl: null, publishedAt: null, assetName: null, assetUrl: null, assetSize: null, sha256: null, installMode: "none", message: "local_backend_unavailable" },
+      update: { currentVersion: process.env.DSC_VERSION ?? "0.2.64", currentChannel: "test", platform: process.platform === "win32" ? "windows-gui" : "linux-gui", arch: process.arch, available: false, latestVersion: null, latestChannel: null, releaseTag: null, releaseUrl: null, notesUrl: null, publishedAt: null, assetName: null, assetUrl: null, assetSize: null, sha256: null, installMode: "none", message: "local_backend_unavailable" },
       startup: this.startup
     };
   }

@@ -40,7 +40,7 @@ export const InstanceDetailView: React.FC = () => {
               { id: "cpu", label: "CPU Packages", count: latest.cpuPackages?.length },
               { id: "backends", label: "Sensor Backends", count: latest.sensorBackends?.length },
               { id: "system", label: "System Handles" }
-            ] as const
+            ] satisfies Array<{ id: DetailTab; label: string; count?: number }>
           ).map((t) => (
             <button
               key={t.id}

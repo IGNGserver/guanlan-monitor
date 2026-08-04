@@ -7,6 +7,11 @@
     "strict": true,
     "jsx": "react-jsx",
     "esModuleInterop": true,
+    "baseUrl": "../..",
+    "paths": {
+      "@dsc/shared": ["packages/shared/src/index.ts"],
+      "@dsc/shared/*": ["packages/shared/src/*"]
+    },
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "noEmit": true,

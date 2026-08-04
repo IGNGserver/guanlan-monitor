@@ -34,7 +34,7 @@ export const Sidebar: React.FC = () => {
         borderRight: "1px solid var(--border-subtle)",
         display: "flex",
         flexDirection: "column",
-        justify: "space-between",
+        justifyContent: "space-between",
         flexShrink: 0
       }}
     >
@@ -70,7 +70,7 @@ export const Sidebar: React.FC = () => {
               DEVICE CONSOLE
             </div>
             <div style={{ fontSize: "10px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-              v{snapshot?.update?.currentVersion || "0.2.63"} ({snapshot?.update?.currentChannel || "test"})
+              v{snapshot?.update?.currentVersion || "0.2.64"} ({snapshot?.update?.currentChannel || "test"})
             </div>
           </div>
         </div>

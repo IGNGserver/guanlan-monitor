@@ -96,7 +96,7 @@ export const DeviceSelector: React.FC = () => {
                   background: isSelected ? "var(--bg-card-active)" : undefined,
                   display: "flex",
                   flexDirection: "column",
-                  justify: "space-between",
+                  justifyContent: "space-between",
                   gap: "12px",
                   position: "relative"
                 }}

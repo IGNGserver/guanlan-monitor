@@ -21,7 +21,7 @@ export const DiagnosticsView: React.FC = () => {
     // Generate redacted support export (never include secret text!)
     const report = {
       generatedAt: new Date().toISOString(),
-      appVersion: snapshot?.update?.currentVersion || "0.2.63",
+      appVersion: snapshot?.update?.currentVersion || "0.2.64",
       platform: snapshot?.update?.platform || "windows-gui",
       backend: {
         running: localBackend.running,

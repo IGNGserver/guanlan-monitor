@@ -39,7 +39,7 @@ function asString(value: unknown, field: string): string {
 }
 
 function asRecord<T extends object = Record<string, unknown>>(value: unknown): T {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {} as T;
   return value as T;
 }
 
