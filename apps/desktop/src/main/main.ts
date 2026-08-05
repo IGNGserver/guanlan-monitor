@@ -31,6 +31,8 @@ if (!hasSingleInstanceLock) {
 
   const createWindow = () => {
     const preloadPath = path.join(__dirname, "../preload/index.js");
+    const iconPath = path.join(process.resourcesPath, "app-icon.ico");
+    const appIcon = nativeImage.createFromPath(iconPath);
     const workArea = screen.getPrimaryDisplay().workAreaSize;
     const minWidth = Math.min(760, Math.max(640, workArea.width - 32));
     const minHeight = Math.min(560, Math.max(480, workArea.height - 32));
@@ -41,6 +43,7 @@ if (!hasSingleInstanceLock) {
       minHeight,
       show: false,
       frame: false,
+      icon: appIcon.isEmpty() ? undefined : appIcon,
       backgroundColor: "#f5f7fa",
       title: "观澜 · 设备状态控制台",
       autoHideMenuBar: true,

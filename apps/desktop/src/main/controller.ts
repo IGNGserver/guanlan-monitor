@@ -385,7 +385,22 @@ function redactBackendState(state: RawAgentBackendState): DesktopAgentBackendSta
         ...connection,
         secretConfigured: Boolean(secret)
       }
-    }
+    },
+    // Older bundled Agent builds may omit these collections or return null
+    // while hardware detection has not run yet. Keep the renderer contract
+    // stable so settings never fail during the first paint.
+    supportedProbePlans: Array.isArray(state.supportedProbePlans)
+      ? state.supportedProbePlans.map((plan) => ({
+        ...plan,
+        providers: Array.isArray(plan.providers) ? plan.providers : []
+      }))
+      : [],
+    detectedTargets: Array.isArray(state.detectedTargets)
+      ? state.detectedTargets.map((group) => ({
+        ...group,
+        instances: Array.isArray(group.instances) ? group.instances : []
+      }))
+      : []
   };
 }
 

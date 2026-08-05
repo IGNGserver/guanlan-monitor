@@ -1,6 +1,6 @@
 {
   "name": "@dsc/desktop",
-  "version": "0.2.82",
+  "version": "0.2.83",
   "private": true,
   "type": "module",
   "description": "Unified Windows and Linux Electron desktop client for Device State Console.",
@@ -57,6 +57,7 @@
       }
     ],
     "win": {
+      "icon": "../../windows-agent/DeviceStateConsoleAgent.WinUI/Assets/app-icon.ico",
       "target": ["nsis", "portable"],
       "artifactName": "DeviceStateConsole-Windows-GUI-Setup-v${version}.${ext}"
     },

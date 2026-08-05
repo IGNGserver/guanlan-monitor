@@ -33,6 +33,7 @@ export type AgentProbeTarget = DeviceBlockKey | "connection";
 
 export type AgentProbeProvider =
   | "builtin"
+  | "gopsutil"
   | "wmi"
   | "libreHardwareMonitor"
   | "openHardwareMonitor"
