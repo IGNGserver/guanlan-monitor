@@ -12,6 +12,8 @@ import { TrafficCalendarView } from "./components/Traffic/TrafficCalendarView";
 import { DiagnosticsView } from "./components/Diagnostics/DiagnosticsView";
 import { LoadingState } from "./components/Common/LoadingState";
 import { AuthModal } from "./components/Modals/AuthModal";
+import { GuanlanApp } from "../renderer-guanlan";
+
 
 const ConsoleViewport: React.FC = () => {
   const { loading, activeTab } = useConsole();
@@ -57,7 +59,15 @@ const ConsoleViewport: React.FC = () => {
   );
 };
 
-export const App: React.FC = () => {
+const LegacyApp: React.FC = () => {
+  React.useEffect(() => {
+    document.documentElement.classList.add("legacy-active");
+    document.documentElement.classList.remove("guanlan-active");
+    return () => {
+      document.documentElement.classList.remove("legacy-active");
+    };
+  }, []);
+
   return (
     <ConsoleProvider>
       <div className="app-container">
@@ -71,6 +81,43 @@ export const App: React.FC = () => {
       </div>
     </ConsoleProvider>
   );
+};
+
+function isLegacyModeRequested(): boolean {
+  if (typeof window === "undefined") return false;
+  const urlParams = new URLSearchParams(window.location.search);
+  const uiParam = urlParams.get("ui");
+  const legacyParam = urlParams.get("dsc_legacy_ui");
+
+  if (uiParam === "legacy" || legacyParam === "true" || legacyParam === "1") {
+    return true;
+  }
+  if (uiParam === "guanlan" || urlParams.get("guanlan") === "1") {
+    return false;
+  }
+  return localStorage.getItem("dsc_legacy_ui") === "true";
+}
+
+const GuanlanAppWrapper: React.FC = () => {
+  React.useEffect(() => {
+    document.documentElement.classList.add("guanlan-active");
+    document.documentElement.classList.remove("legacy-active");
+    return () => {
+      document.documentElement.classList.remove("guanlan-active");
+    };
+  }, []);
+
+  return <GuanlanApp />;
+};
+
+export const App: React.FC = () => {
+  const [isLegacy] = React.useState<boolean>(isLegacyModeRequested);
+
+  if (isLegacy) {
+    return <LegacyApp />;
+  }
+
+  return <GuanlanAppWrapper />;
 };
 
 export default App;

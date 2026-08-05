@@ -1,7 +1,7 @@
 {
   "name": "device-state-console",
   "private": true,
-  "version": "0.2.72",
+  "version": "0.2.73",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "build": "pnpm -r build",
@@ -9,6 +9,8 @@
     "dev": "pnpm --parallel --filter @dsc/server --filter @dsc/web dev",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
+    "check:desktop-ui-boundaries": "node scripts/check-desktop-ui-boundaries.mjs",
+    "test:ui-helpers": "node --test apps/desktop/src/renderer-guanlan/helpers/layout.test.ts",
     "verify:version": "node scripts/verify-version.mjs",
     "verify:windows-installer": "node scripts/verify-windows-installer-config.mjs",
     "verify:hub-port": "node scripts/verify-hub-port.mjs"

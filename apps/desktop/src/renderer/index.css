@@ -55,7 +55,9 @@
   padding: 0;
 }
 
-html, body, #root {
+html.legacy-active,
+html:not(.guanlan-active) body,
+html:not(.guanlan-active) #root {
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -70,18 +72,22 @@ html, body, #root {
 }
 
 /* Scrollbar styling */
-::-webkit-scrollbar {
+html.legacy-active ::-webkit-scrollbar,
+html:not(.guanlan-active) ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
-::-webkit-scrollbar-track {
+html.legacy-active ::-webkit-scrollbar-track,
+html:not(.guanlan-active) ::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.2);
 }
-::-webkit-scrollbar-thumb {
+html.legacy-active ::-webkit-scrollbar-thumb,
+html:not(.guanlan-active) ::-webkit-scrollbar-thumb {
   background: #1e2d3e;
   border-radius: 3px;
 }
-::-webkit-scrollbar-thumb:hover {
+html.legacy-active ::-webkit-scrollbar-thumb:hover,
+html:not(.guanlan-active) ::-webkit-scrollbar-thumb:hover {
   background: #334155;
 }
 

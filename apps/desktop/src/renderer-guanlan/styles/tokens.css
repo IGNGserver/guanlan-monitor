@@ -1,0 +1,171 @@
+/**
+ * Guanlan Spectrum Adaptive - Design System Token Layer
+ * Visual basis: Adobe Spectrum 2 quiet surfaces, restrained slate/neutral tones, semantic status states.
+ * Replaces legacy dashboard token vocabulary with structured semantic tokens.
+ */
+
+:root {
+  /* Common System Geometry & Animation Tokens */
+  --gl-radius-xs: 3px;
+  --gl-radius-sm: 6px;
+  --gl-radius-md: 8px;
+  --gl-radius-lg: 12px;
+  --gl-radius-full: 9999px;
+
+  --gl-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --gl-font-mono: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --gl-transition-fast: 120ms cubic-bezier(0.2, 0, 0, 1);
+  --gl-transition-normal: 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Light Theme Spectrum Tokens */
+[data-theme="light"] {
+  --gl-surface-base: #f4f5f7;
+  --gl-surface-layer-1: #ffffff;
+  --gl-surface-layer-2: #eaecef;
+  --gl-surface-quiet: #f0f2f5;
+  --gl-surface-hover: #e4e7eb;
+  --gl-surface-active: #dadfe5;
+  --gl-surface-overlay: rgba(15, 23, 42, 0.4);
+
+  --gl-border-subtle: #e2e8f0;
+  --gl-border-muted: #cbd5e1;
+  --gl-border-strong: #94a3b8;
+
+  --gl-text-primary: #0f172a;
+  --gl-text-secondary: #475569;
+  --gl-text-muted: #64748b;
+  --gl-text-inverse: #ffffff;
+
+  --gl-accent-base: #0284c7;
+  --gl-accent-hover: #0369a1;
+  --gl-accent-quiet: #e0f2fe;
+  --gl-accent-text: #0369a1;
+
+  --gl-status-online: #059669;
+  --gl-status-online-bg: #ecfdf5;
+  --gl-status-offline: #64748b;
+  --gl-status-offline-bg: #f1f5f9;
+  --gl-status-warning: #d97706;
+  --gl-status-warning-bg: #fffbeb;
+  --gl-status-error: #dc2626;
+  --gl-status-error-bg: #fef2f2;
+  --gl-status-cached: #7c3aed;
+  --gl-status-cached-bg: #f5f3ff;
+
+  --gl-focus-ring: #0284c7;
+
+  --gl-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --gl-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+}
+
+/* Dark Theme Spectrum Tokens */
+[data-theme="dark"] {
+  --gl-surface-base: #0f172a;
+  --gl-surface-layer-1: #1e293b;
+  --gl-surface-layer-2: #334155;
+  --gl-surface-quiet: #182234;
+  --gl-surface-hover: #2d3b52;
+  --gl-surface-active: #3b4c68;
+  --gl-surface-overlay: rgba(0, 0, 0, 0.65);
+
+  --gl-border-subtle: #1e293b;
+  --gl-border-muted: #334155;
+  --gl-border-strong: #475569;
+
+  --gl-text-primary: #f8fafc;
+  --gl-text-secondary: #cbd5e1;
+  --gl-text-muted: #94a3b8;
+  --gl-text-inverse: #0f172a;
+
+  --gl-accent-base: #38bdf8;
+  --gl-accent-hover: #7dd3fc;
+  --gl-accent-quiet: rgba(56, 189, 248, 0.12);
+  --gl-accent-text: #38bdf8;
+
+  --gl-status-online: #34d399;
+  --gl-status-online-bg: rgba(52, 211, 153, 0.12);
+  --gl-status-offline: #94a3b8;
+  --gl-status-offline-bg: rgba(148, 163, 184, 0.12);
+  --gl-status-warning: #fbbf24;
+  --gl-status-warning-bg: rgba(251, 191, 36, 0.12);
+  --gl-status-error: #f87171;
+  --gl-status-error-bg: rgba(248, 113, 113, 0.12);
+  --gl-status-cached: #a78bfa;
+  --gl-status-cached-bg: rgba(167, 139, 250, 0.12);
+
+  --gl-focus-ring: #38bdf8;
+
+  --gl-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --gl-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+}
+
+/* Low-contrast adjustment */
+[data-contrast="low"][data-theme="light"] {
+  --gl-surface-base: #f8fafc;
+  --gl-surface-layer-1: #ffffff;
+  --gl-border-subtle: #f1f5f9;
+  --gl-text-primary: #334155;
+  --gl-text-secondary: #64748b;
+}
+[data-contrast="low"][data-theme="dark"] {
+  --gl-surface-base: #141c2e;
+  --gl-surface-layer-1: #1b263b;
+  --gl-border-subtle: #24324a;
+  --gl-text-primary: #e2e8f0;
+  --gl-text-secondary: #94a3b8;
+}
+
+/* Reduced motion adjustment */
+[data-motion="reduced"] *,
+[data-motion="reduced"] *::before,
+[data-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Explicit Guanlan Base Reset when Guanlan is active */
+html.guanlan-active,
+body.guanlan-active,
+#root.guanlan-active,
+.guanlan-app-root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: var(--gl-surface-base);
+  color: var(--gl-text-primary);
+  font-family: var(--gl-font-sans);
+  font-size: var(--gl-font-body, 13px);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+
+html.guanlan-active ::selection {
+  background-color: var(--gl-accent-quiet);
+  color: var(--gl-accent-text);
+}
+
+html.guanlan-active ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+html.guanlan-active ::-webkit-scrollbar-track {
+  background: var(--gl-surface-layer-1);
+}
+
+html.guanlan-active ::-webkit-scrollbar-thumb {
+  background: var(--gl-border-strong);
+  border-radius: 3px;
+}
+
+html.guanlan-active ::-webkit-scrollbar-thumb:hover {
+  background: var(--gl-accent-base);
+}

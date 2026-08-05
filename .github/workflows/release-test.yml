@@ -46,6 +46,8 @@ jobs:
 
       - name: Typecheck and build web packages
         run: |
+          pnpm check:desktop-ui-boundaries
+          pnpm test:ui-helpers
           pnpm typecheck
           pnpm build
 

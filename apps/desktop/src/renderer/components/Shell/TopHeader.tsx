@@ -153,6 +153,19 @@ export const TopHeader: React.FC = () => {
           <span>{refreshing ? "Refreshing..." : "Refresh"}</span>
         </button>
 
+        {/* Restore Guanlan UI switch button */}
+        <button
+          className="btn btn-secondary btn-sm"
+          onClick={() => {
+            localStorage.removeItem("dsc_legacy_ui");
+            window.location.href = window.location.pathname;
+          }}
+          title="切换回 观澜 (Guanlan Spectrum Adaptive) 新界面"
+          style={{ background: "#0284c7", color: "#ffffff", borderColor: "#0284c7" }}
+        >
+          ✨ 切换至观澜 UI
+        </button>
+
         {/* Last generated timestamp */}
         <span style={{ fontSize: "10px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
           {formatTimeOnly(snapshot?.generatedAt)}
