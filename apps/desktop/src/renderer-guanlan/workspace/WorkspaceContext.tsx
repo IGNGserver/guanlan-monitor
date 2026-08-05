@@ -72,7 +72,7 @@ interface WorkspaceContextValue {
   refresh: () => Promise<void>;
   updateLocalConfig: (patch: DesktopConfigPatch) => Promise<boolean>;
   controlAgent: (action: DesktopAgentControlAction | "restart") => Promise<boolean>;
-  setAgentSecret: (secret: string) => Promise<boolean>;
+  saveHubConnection: (serverUrl: string, accessKey: string) => Promise<boolean>;
   updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => Promise<boolean>;
   cloudPush: () => Promise<boolean>;
   login: (accessKey: string) => Promise<void>;
@@ -338,8 +338,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     },
     [adapter, runMutation]
   );
-  const setAgentSecret = useCallback(
-    (secret: string) => runMutation(() => adapter.setAgentSecret(secret), "通信密钥已更新", "密钥更新失败"),
+  const saveHubConnection = useCallback(
+    (serverUrl: string, accessKey: string) => runMutation(() => adapter.saveHubConnection(serverUrl, accessKey), "中枢连接已保存", "连接保存失败"),
     [adapter, runMutation]
   );
   const updateStartupSettings = useCallback(
@@ -421,7 +421,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     refresh,
     updateLocalConfig,
     controlAgent,
-    setAgentSecret,
+    saveHubConnection,
     updateStartupSettings,
     cloudPush,
     login,

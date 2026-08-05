@@ -620,6 +620,7 @@ export interface DesktopRendererBridge {
   updateLocalConfig(patch: DesktopConfigPatch): Promise<DesktopSnapshot>;
   controlAgent(action: DesktopAgentControlAction): Promise<DesktopSnapshot>;
   setAgentSecret(secret: string): Promise<DesktopSnapshot>;
+  saveHubConnection(serverUrl: string, accessKey: string): Promise<DesktopSnapshot>;
   login(accessKey: string): Promise<DesktopSnapshot>;
   logout(): Promise<DesktopSnapshot>;
   cloudPush(): Promise<DesktopSnapshot>;

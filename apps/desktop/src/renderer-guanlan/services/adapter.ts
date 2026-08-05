@@ -24,7 +24,7 @@ export interface IGuanlanDataAdapter {
   refresh(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot>;
   updateLocalConfig(patch: DesktopConfigPatch): Promise<DesktopSnapshot>;
   controlAgent(action: DesktopAgentControlAction): Promise<DesktopSnapshot>;
-  setAgentSecret(secret: string): Promise<DesktopSnapshot>;
+  saveHubConnection(serverUrl: string, accessKey: string): Promise<DesktopSnapshot>;
   saveFanNote(deviceId: string, fanId: string, note: string): Promise<DesktopSnapshot>;
   updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot>;
   cloudPush(): Promise<DesktopSnapshot>;

@@ -58,6 +58,7 @@ export class DesktopController {
       updateLocalConfig: (patch: DesktopConfigPatch) => this.updateLocalConfig(patch),
       controlAgent: (action: DesktopAgentControlAction) => this.controlAgent(action),
       setAgentSecret: (secret: string) => this.setAgentSecret(secret),
+      saveHubConnection: (serverUrl: string, accessKey: string) => this.saveHubConnection(serverUrl, accessKey),
       login: (accessKey: string) => this.login(accessKey),
       logout: () => this.logout(),
       cloudPush: () => this.cloudPush(),
@@ -164,10 +165,33 @@ export class DesktopController {
     return this.refresh();
   }
 
+  async saveHubConnection(serverUrl: string, accessKey: string): Promise<DesktopSnapshot> {
+    const normalizedUrl = serverUrl.trim();
+    const normalizedAccessKey = accessKey.trim();
+    if (!normalizedUrl) throw new Error("hub_server_url_required");
+    if (!this.hub.setServerUrl(normalizedUrl)) throw new Error("hub_server_url_invalid");
+    const unifiedCredential = normalizedAccessKey || this.hub.credentialForAgent;
+    if (!unifiedCredential) throw new Error("hub_access_key_required");
+
+    const rawState = await this.agent.start();
+    // The Hub ACCESS_KEY is the single credential for web, desktop and Agent uploads.
+    // Keep the Agent's internal runtime config in sync without exposing a second secret field.
+    await this.hub.login(unifiedCredential);
+
+    const nextConfig = mergeAgentConfig(rawState.config, { connection: { serverUrl: normalizedUrl } });
+    nextConfig.connection.secret = unifiedCredential;
+    await this.agent.updateConfig(nextConfig);
+    return this.refresh();
+  }
+
   async login(accessKey: string): Promise<DesktopSnapshot> {
     const rawState = await this.agent.start();
-    this.hub.setServerUrl(rawState.config.connection.serverUrl);
-    await this.hub.login(accessKey);
+    if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
+    const normalizedAccessKey = accessKey.trim();
+    await this.hub.login(normalizedAccessKey);
+    const nextConfig = mergeAgentConfig(rawState.config, {});
+    nextConfig.connection.secret = normalizedAccessKey;
+    await this.agent.updateConfig(nextConfig);
     return this.refresh();
   }
 
@@ -353,8 +377,10 @@ function redactBackendState(state: RawAgentBackendState): DesktopAgentBackendSta
       dataRecordingEnabled: state.config.dataRecordingEnabled ?? true,
       autoRestartCollector: state.config.autoRestartCollector ?? true,
       autoStartCollector: state.config.autoStartCollector ?? false,
+      enabledMetrics: state.config.enabledMetrics ?? [],
       enabledDeviceIds: state.config.enabledDeviceIds ?? {},
       instanceMetricConfig: state.config.instanceMetricConfig ?? {},
+      probeSelections: state.config.probeSelections ?? [],
       connection: {
         ...connection,
         secretConfigured: Boolean(secret)
@@ -367,9 +393,8 @@ function mergeAgentConfig(current: AgentBackendConfig, patch: DesktopConfigPatch
   const connectionPatch = patch.connection ?? {};
   return {
     ...current,
-    // Keep the secret on the dedicated setAgentSecret path. This explicit
-    // allowlist also protects the main-process boundary if a renderer sends
-    // an object with an unexpected `secret` field at runtime.
+    // Renderer patches never carry the Agent credential. The combined Hub
+    // connection action is the only user-facing path that synchronizes it.
     connection: {
       ...current.connection,
       serverUrl: connectionPatch.serverUrl ?? current.connection.serverUrl,

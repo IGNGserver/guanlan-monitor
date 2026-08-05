@@ -117,6 +117,18 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
         this.config.sampling.slowIntervalSeconds = patch.sampling.slowIntervalSeconds;
       }
     }
+    if (patch.enabledMetrics !== undefined) {
+      this.config.enabledMetrics = [...patch.enabledMetrics];
+    }
+    if (patch.enabledDeviceIds !== undefined) {
+      this.config.enabledDeviceIds = { ...patch.enabledDeviceIds };
+    }
+    if (patch.instanceMetricConfig !== undefined) {
+      this.config.instanceMetricConfig = { ...patch.instanceMetricConfig };
+    }
+    if (patch.probeSelections !== undefined) {
+      this.config.probeSelections = patch.probeSelections.map((selection) => ({ ...selection }));
+    }
     if (patch.autoStartCollector !== undefined) {
       this.config.autoStartCollector = patch.autoStartCollector;
     }
@@ -148,8 +160,8 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
     return this.buildSnapshot();
   }
 
-  async setAgentSecret(_secret: string): Promise<DesktopSnapshot> {
-    this.config.connection.secretConfigured = true;
+  async saveHubConnection(serverUrl: string, _accessKey: string): Promise<DesktopSnapshot> {
+    this.config.connection.serverUrl = serverUrl.trim();
     this.notify();
     return this.buildSnapshot();
   }

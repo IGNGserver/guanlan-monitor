@@ -30,8 +30,8 @@ export class BridgeGuanlanDataAdapter implements IGuanlanDataAdapter {
     return dscBridge.controlAgent(action);
   }
 
-  async setAgentSecret(secret: string): Promise<DesktopSnapshot> {
-    return dscBridge.setAgentSecret(secret);
+  async saveHubConnection(serverUrl: string, accessKey: string): Promise<DesktopSnapshot> {
+    return dscBridge.saveHubConnection(serverUrl, accessKey);
   }
 
   async saveFanNote(deviceId: string, fanId: string, note: string): Promise<DesktopSnapshot> {

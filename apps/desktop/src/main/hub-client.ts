@@ -37,23 +37,30 @@ export class HubClient {
     }
   }
 
-  setServerUrl(value: string): void {
+  setServerUrl(value: string): boolean {
     const normalized = value.trim().replace(/\/$/, "");
     try {
       const parsed = new URL(normalized);
       const localHost = ["127.0.0.1", "localhost", "::1"].includes(parsed.hostname);
       if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && localHost)) {
         this.serverUrl = "";
-        return;
+        return false;
       }
       this.serverUrl = normalized;
+      return true;
     } catch {
       this.serverUrl = "";
+      return false;
     }
   }
 
   get isConfigured(): boolean {
     return Boolean(this.accessKey);
+  }
+
+  /** The unified Hub credential is also the Agent upload credential. */
+  get credentialForAgent(): string | null {
+    return this.accessKey;
   }
 
   async login(accessKey: string): Promise<void> {

@@ -16,6 +16,7 @@ export function registerIpc(controller: DesktopController, getWindow: () => Brow
   ipcMain.handle(IPC_CHANNELS.updateLocalConfig, (_event, patch: DesktopConfigPatch) => controller.updateLocalConfig(asConfigPatch(patch)));
   ipcMain.handle(IPC_CHANNELS.controlAgent, (_event, action: DesktopAgentControlAction) => controller.controlAgent(asControlAction(action)));
   ipcMain.handle(IPC_CHANNELS.setAgentSecret, (_event, secret: string) => controller.setAgentSecret(asString(secret, "agent_secret")));
+  ipcMain.handle(IPC_CHANNELS.saveHubConnection, (_event, serverUrl: string, accessKey: string) => controller.saveHubConnection(asString(serverUrl, "server_url"), asString(accessKey, "access_key")));
   ipcMain.handle(IPC_CHANNELS.login, (_event, accessKey: string) => controller.login(asString(accessKey, "access_key")));
   ipcMain.handle(IPC_CHANNELS.logout, () => controller.logout());
   ipcMain.handle(IPC_CHANNELS.cloudPush, () => controller.cloudPush());

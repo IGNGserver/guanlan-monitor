@@ -45,6 +45,10 @@ class SafeDscBridge implements DesktopRendererBridge {
     return this.requireBridge().setAgentSecret(secret);
   }
 
+  async saveHubConnection(serverUrl: string, accessKey: string): Promise<DesktopSnapshot> {
+    return this.requireBridge().saveHubConnection(serverUrl, accessKey);
+  }
+
   async login(accessKey: string): Promise<DesktopSnapshot> {
     return this.requireBridge().login(accessKey);
   }

@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import type { DeviceSummary } from "@dsc/shared";
+import type { AgentProbeProvider, AgentProbeTarget, DeviceMetricKey, DeviceSummary, SamplePoint } from "@dsc/shared";
 import clsx from "clsx";
 import {
   SettingsSection,
@@ -127,23 +127,159 @@ function MetricValue({ value, suffix = "%" }: { value: number | null | undefined
   return <span className="workspace-metric-value">{value == null ? "—" : `${value}${suffix}`}</span>;
 }
 
-function MiniTrend({ values, label }: { values: number[]; label: string }) {
-  if (values.length < 2) {
-    return <div className="workspace-trend-empty">等待足够的遥测样本</div>;
+function formatAxisTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "暂无时间";
+  return new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
+}
+
+function MiniTrend({
+  points,
+  label,
+  valueFormatter = (value) => `${Math.round(value)}%`,
+  fixedMaxValue = 100,
+  compact = false
+}: {
+  points: SamplePoint[];
+  label: string;
+  valueFormatter?: (value: number) => string;
+  fixedMaxValue?: number;
+  compact?: boolean;
+}) {
+  const [selectedIndex, setSelectedIndex] = useState(Math.max(points.length - 1, 0));
+  useEffect(() => {
+    setSelectedIndex(Math.max(points.length - 1, 0));
+  }, [points]);
+
+  if (!points.length) {
+    return <div className={`workspace-trend workspace-trend--empty ${compact ? "workspace-trend--compact" : ""}`} aria-label={label} role="img"><div className="workspace-trend-empty">等待足够的遥测样本</div></div>;
   }
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = Math.max(max - min, 1);
-  const points = values.map((value, index) => `${(index / (values.length - 1)) * 100},${100 - ((value - min) / span) * 78 - 10}`).join(" ");
+
+  const maxValue = Math.max(fixedMaxValue, Math.max(...points.map((point) => point.value), 1));
+  const xFor = (index: number) => points.length === 1 ? 50 : (index / (points.length - 1)) * 100;
+  const yFor = (value: number) => 100 - Math.min(Math.max(value / maxValue, 0), 1) * 100;
+  const linePath = points.map((point, index) => `${index === 0 ? "M" : "L"} ${xFor(index).toFixed(2)} ${yFor(point.value).toFixed(2)}`).join(" ");
+  const fillPath = `${linePath} L 100 100 L 0 100 Z`;
+  const selected = points[Math.min(selectedIndex, points.length - 1)] ?? points[points.length - 1];
+  const selectedX = xFor(Math.min(selectedIndex, points.length - 1));
+  const selectedY = yFor(selected.value);
+
+  const resolveIndex = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (points.length < 2) return 0;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const ratio = bounds.width > 0 ? (event.clientX - bounds.left) / bounds.width : 1;
+    return Math.round(Math.min(Math.max(ratio, 0), 1) * (points.length - 1));
+  };
+  const selectPoint = (event: React.PointerEvent<HTMLDivElement>) => {
+    setSelectedIndex(resolveIndex(event));
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
   return (
     <div className="workspace-trend" aria-label={label} role="img">
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-        <polyline points={points} />
-      </svg>
-      <div className="workspace-trend-axis"><span>{Math.round(max)}%</span><span>{Math.round(min)}%</span></div>
+      {!compact && <div className="workspace-trend__readout"><span>{formatAxisTime(selected.timestamp)}</span><strong>{label} {valueFormatter(selected.value)}</strong></div>}
+      <div className={`workspace-trend__chart ${compact ? "workspace-trend__chart--compact" : ""}`} onPointerDown={selectPoint} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture?.(event.pointerId)) selectPoint(event); }}>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <defs><linearGradient id="workspace-chart-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="var(--workspace-accent)" stopOpacity="0.22" /><stop offset="100%" stopColor="var(--workspace-accent)" stopOpacity="0" /></linearGradient></defs>
+          {[0, 1, 2, 3].map((index) => <line key={index} x1="0" x2="100" y1={(index / 3) * 100} y2={(index / 3) * 100} className="workspace-trend__grid" />)}
+          <path d={fillPath} className="workspace-trend__fill" />
+          <path d={linePath} className="workspace-trend__line" />
+          <line x1={selectedX} x2={selectedX} y1="0" y2="100" className="workspace-trend__selection" />
+          <circle cx={selectedX} cy={selectedY} r="4.8" className="workspace-trend__marker-outer" />
+          <circle cx={selectedX} cy={selectedY} r="2.8" className="workspace-trend__marker" />
+        </svg>
+        <div className="workspace-trend-axis"><span>{valueFormatter(maxValue)}</span><span>{valueFormatter(0)}</span></div>
+      </div>
+      {!compact && points.length > 1 && <div className="workspace-trend__range"><span>{formatAxisTime(points[0].timestamp)}</span><span>{formatAxisTime(points[points.length - 1].timestamp)}</span></div>}
     </div>
   );
 }
+
+const metricGroups: Array<{ label: string; items: Array<{ key: DeviceMetricKey; label: string }> }> = [
+  {
+    label: "处理器",
+    items: [
+      { key: "cpuUsage", label: "CPU 使用率" },
+      { key: "cpuFrequency", label: "CPU 频率" },
+      { key: "cpuTemperature", label: "CPU 温度" },
+      { key: "cpuTopology", label: "核心与线程" },
+      { key: "systemOverview", label: "系统概览" }
+    ]
+  },
+  {
+    label: "显卡",
+    items: [
+      { key: "gpuUsage", label: "GPU 使用率" },
+      { key: "gpuEncode", label: "编码负载" },
+      { key: "gpuDecode", label: "解码负载" },
+      { key: "gpuFrequency", label: "GPU 频率" },
+      { key: "gpuMemory", label: "显存使用" },
+      { key: "gpuTemperature", label: "GPU 温度" },
+      { key: "gpuDriverInfo", label: "驱动信息" }
+    ]
+  },
+  {
+    label: "内存",
+    items: [
+      { key: "memoryUsage", label: "内存使用率" },
+      { key: "swapUsage", label: "交换分区" },
+      { key: "memoryAvailable", label: "可用内存" },
+      { key: "memoryCached", label: "缓存内存" },
+      { key: "memoryCommitted", label: "已提交内存" },
+      { key: "memoryHardware", label: "内存硬件信息" }
+    ]
+  },
+  {
+    label: "磁盘",
+    items: [
+      { key: "diskUsage", label: "磁盘使用率" },
+      { key: "diskRead", label: "读取速率" },
+      { key: "diskWrite", label: "写入速率" },
+      { key: "diskMetadata", label: "磁盘信息" },
+      { key: "diskActivity", label: "活动状态" },
+      { key: "diskHealth", label: "健康状态" }
+    ]
+  },
+  {
+    label: "网络",
+    items: [
+      { key: "networkRxRate", label: "接收速率" },
+      { key: "networkTxRate", label: "发送速率" },
+      { key: "networkTraffic", label: "流量统计" },
+      { key: "networkIdentity", label: "网卡信息" }
+    ]
+  },
+  {
+    label: "风扇",
+    items: [
+      { key: "fanRpm", label: "转速" },
+      { key: "fanControl", label: "控制状态" },
+      { key: "fanTargetTemperature", label: "目标温度" },
+      { key: "fanPwm", label: "PWM 占空比" },
+      { key: "fanChannelState", label: "通道状态" },
+      { key: "fanNote", label: "风扇备注" }
+    ]
+  }
+];
+
+const probeTargetLabels: Record<AgentProbeTarget, string> = {
+  cpu: "CPU 处理器",
+  gpu: "GPU 显卡",
+  memory: "内存",
+  disk: "磁盘",
+  network: "网络",
+  fan: "风扇",
+  connection: "连接"
+};
+
+const probeProviderLabels: Record<AgentProbeProvider, string> = {
+  builtin: "内置采集",
+  wmi: "Windows WMI",
+  libreHardwareMonitor: "LibreHardwareMonitor",
+  openHardwareMonitor: "OpenHardwareMonitor",
+  redfish: "Redfish",
+  disabled: "禁用"
+};
 
 function WorkspaceSidebar() {
   const {
@@ -346,12 +482,14 @@ function OverviewPage() {
   const cached = snapshot.source === "cache";
   const noData = snapshot.source === "empty" || devices.length === 0;
   const issueCount = offline + (cached ? 1 : 0) + (noData ? 1 : 0) + (snapshot.localBackend?.lastIssueCount ?? 0);
+  const overviewLatest = snapshot.metrics?.latest;
   return <div className="workspace-page workspace-page--overview">
     <PageIntro eyebrow="系统状态" title={issueCount ? `${issueCount} 项事项需要留意` : "所有中枢运行正常"} description={`最后同步于 ${formatDate(snapshot.generatedAt)}。${cached ? "当前显示的是离线缓存。" : "数据来自实时连接。"}`} actions={<><Button variant="quiet" onClick={() => openSettings("connections")}><Icon name="connection" size={16} />连接设置</Button><Button variant="primary" onClick={() => void refresh()} disabled={loading}><Icon name="refresh" size={16} />刷新状态</Button></>} />
     {issueCount > 0 && <div className="workspace-attention"><div className="workspace-attention__icon"><Icon name="warning" /></div><div><strong>{cached ? "中枢连接需要确认" : noData ? "还没有可用设备" : "设备状态存在异常"}</strong><p>{cached ? "无法取得最新数据，页面中的设备信息可能已经过期。" : noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : `${offline} 台设备离线，${snapshot.localBackend?.lastIssueCount ?? 0} 条本机采集问题待处理。`}</p></div><Button variant="quiet" onClick={() => openSettings(cached || noData ? "connections" : "agent")}>查看详情<Icon name="arrow" size={15} /></Button></div>}
-    <div className="workspace-overview-grid">
+     {snapshot.metrics && <div className="workspace-metric-grid workspace-overview-metric-grid"><MetricTile label="CPU 使用率" value={overviewLatest?.cpuUsagePercent} detail={overviewLatest?.cpuTemperatureC == null ? "温度未采集" : `${overviewLatest.cpuTemperatureC}°C`} tone="blue" points={snapshot.metrics.series.cpuUsagePercent} /><MetricTile label="内存使用率" value={overviewLatest ? Math.round((overviewLatest.memoryUsedBytes / Math.max(overviewLatest.memoryTotalBytes, 1)) * 100) : null} detail={overviewLatest ? formatBytes(overviewLatest.memoryUsedBytes) : undefined} tone="green" points={snapshot.metrics.series.memoryUsagePercent} /><MetricTile label="GPU 使用率" value={overviewLatest?.gpus[0]?.utilizationPercent} detail={overviewLatest?.gpus[0]?.name ?? "未检测到 GPU"} tone="amber" points={snapshot.metrics.series.gpuUsagePercent} /><MetricTile label="磁盘使用率" value={overviewLatest ? Math.round((overviewLatest.diskUsedBytes / Math.max(overviewLatest.diskTotalBytes, 1)) * 100) : null} detail={overviewLatest ? formatBytes(overviewLatest.diskUsedBytes) : undefined} points={snapshot.metrics.series.diskUsagePercent} /></div>}
+     <div className="workspace-overview-grid">
       <Surface className="workspace-overview-devices"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">设备概览</span><h3>{devices.length} 台设备</h3></div><Button variant="quiet" onClick={() => navigate({ kind: "hub", hubId: hubs[0]?.id ?? "primary" })}>查看中枢<Icon name="arrow" size={15} /></Button></div><div className="workspace-device-rows">{devices.length ? devices.map((device) => <DeviceRow key={device.deviceId} device={device} />) : <EmptyState title="还没有设备" detail="连接一个中枢后，设备会出现在这里。" action={<Button variant="primary" onClick={() => openSettings("connections")}>添加中枢</Button>} />}</div></Surface>
-      <div className="workspace-overview-column"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">运行摘要</span><h3>当前连接</h3></div><StatusLabel state={cached ? "cached" : snapshot.session.authenticated ? "online" : "unknown"} /></div><div className="workspace-summary-list"><SummaryRow label="在线设备" value={`${online} / ${devices.length}`} /><SummaryRow label="离线设备" value={String(offline)} tone={offline ? "warning" : undefined} /><SummaryRow label="本机 Agent" value={localRunning ? "运行中" : "未运行"} tone={localRunning ? "success" : "warning"} /><SummaryRow label="数据源" value={cached ? "离线缓存" : snapshot.source === "empty" ? "暂无数据" : "实时同步"} /></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">资源趋势</span><h3>当前设备 CPU 使用率</h3></div><span className="workspace-caption">最近 1 小时</span></div><MiniTrend label="当前设备 CPU 使用率趋势" values={(snapshot.metrics?.series.cpuUsagePercent ?? []).map((point) => point.value)} /><div className="workspace-trend-footer"><span>数据样本</span><strong>{snapshot.metrics?.series.cpuUsagePercent.length ?? 0}</strong></div></Surface></div>
+      <div className="workspace-overview-column"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">运行摘要</span><h3>当前连接</h3></div><StatusLabel state={cached ? "cached" : snapshot.session.authenticated ? "online" : "unknown"} /></div><div className="workspace-summary-list"><SummaryRow label="在线设备" value={`${online} / ${devices.length}`} /><SummaryRow label="离线设备" value={String(offline)} tone={offline ? "warning" : undefined} /><SummaryRow label="本机 Agent" value={localRunning ? "运行中" : "未运行"} tone={localRunning ? "success" : "warning"} /><SummaryRow label="数据源" value={cached ? "离线缓存" : snapshot.source === "empty" ? "暂无数据" : "实时同步"} /></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">资源趋势</span><h3>当前设备 CPU 使用率</h3></div><span className="workspace-caption">最近 1 小时</span></div><MiniTrend label="当前设备 CPU 使用率趋势" points={snapshot.metrics?.series.cpuUsagePercent ?? []} /><div className="workspace-trend-footer"><span>数据样本</span><strong>{snapshot.metrics?.series.cpuUsagePercent.length ?? 0}</strong></div></Surface></div>
     </div>
     <Surface className="workspace-hub-summary"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">接入中枢</span><h3>连接概览</h3></div><Button variant="quiet" onClick={() => openSettings("connections")}>管理中枢</Button></div><div className="workspace-hub-summary__grid">{hubs.map((hub) => <button className="workspace-hub-summary__item" type="button" key={hub.id} onClick={() => navigate({ kind: "hub", hubId: hub.id })}><div><StatusLabel state={hub.state === "online" ? "online" : hub.state === "cached" ? "cached" : hub.state === "offline" ? "warning" : "unknown"} /><strong>{hub.name}</strong></div><span>{hub.endpoint}</span><small>{hub.devices.length} 台设备 <Icon name="arrow" size={14} /></small></button>)}</div></Surface>
   </div>;
@@ -361,8 +499,8 @@ function SummaryRow({ label, value, tone }: { label: string; value: string; tone
   return <div className="workspace-summary-row"><span>{label}</span><strong className={tone ? `is-${tone}` : ""}>{value}</strong></div>;
 }
 
-function MetricTile({ label, value, detail, tone }: { label: string; value: number | null | undefined; detail?: string; tone?: "blue" | "green" | "amber" }) {
-  return <div className={`workspace-metric-tile ${tone ? `workspace-metric-tile--${tone}` : ""}`}><span>{label}</span><MetricValue value={value} /><small>{detail ?? "未采集"}</small></div>;
+function MetricTile({ label, value, detail, tone, points }: { label: string; value: number | null | undefined; detail?: string; tone?: "blue" | "green" | "amber"; points?: SamplePoint[] }) {
+  return <div className={`workspace-metric-tile ${tone ? `workspace-metric-tile--${tone}` : ""}`}><div className="workspace-metric-tile__header"><span>{label}</span><MetricValue value={value} /></div>{points && <MiniTrend compact label={label} points={points} />}{!points && <div className="workspace-metric-tile__empty">暂无趋势数据</div>}<small>{detail ?? "未采集"}</small></div>;
 }
 
 function DevicePage() {
@@ -375,8 +513,8 @@ function DevicePage() {
   return <div className="workspace-page workspace-page--device">
     <PageIntro eyebrow={localDevice ? "本机设备" : "远端设备"} title={selectedDevice.hostname} description={`${selectedDevice.os} · ${selectedDevice.deviceId} · 最后心跳 ${formatDate(selectedDevice.lastSeenAt)}`} actions={<><Button variant="quiet" onClick={() => navigate({ kind: "overview" })}><Icon name="back" size={16} />返回总览</Button>{localDevice && <Button variant="primary" onClick={() => openSettings("agent")}><Icon name="agent" size={16} />本机设置</Button>}</>} />
     <div className="workspace-device-statusline"><StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} /><span>Agent {selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</span><span>通道 {selectedDevice.agentChannel ?? "未知"}</span><span>数据更新时间 {formatDate(snapshot?.generatedAt)}</span></div>
-    <div className="workspace-metric-grid"><MetricTile label="CPU 使用率" value={selectedDevice.cpuUsagePercent} detail={latest?.cpuTemperatureC == null ? "温度未采集" : `${latest.cpuTemperatureC}°C`} tone="blue" /><MetricTile label="内存使用率" value={selectedDevice.memoryUsagePercent} detail={latest ? formatBytes(latest.memoryUsedBytes) : undefined} tone="green" /><MetricTile label="GPU 使用率" value={selectedDevice.gpuUsagePercent} detail={latest?.gpus[0]?.name ?? "未检测到 GPU"} tone="amber" /><MetricTile label="磁盘使用率" value={selectedDevice.diskUsagePercent} detail={latest ? formatBytes(latest.diskUsedBytes) : undefined} /></div>
-    <div className="workspace-device-grid"><Surface className="workspace-device-chart"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">遥测趋势</span><h3>CPU 使用率</h3></div><select className="workspace-select workspace-select--small" value={metricsWindow} onChange={(event) => setMetricsWindow(event.target.value as typeof metricsWindow)} aria-label="遥测时间范围"><option value="5m">5 分钟</option><option value="1h">1 小时</option><option value="6h">6 小时</option><option value="24h">24 小时</option><option value="7d">7 天</option></select></div><MiniTrend label="设备 CPU 使用率趋势" values={series.map((point) => point.value)} /><div className="workspace-trend-footer"><span>样本数</span><strong>{series.length}</strong><span>最后采样</span><strong>{formatDate(metrics?.lastSeenAt)}</strong></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">设备信息</span><h3>硬件与系统</h3></div><button className="workspace-icon-button" type="button" onClick={() => void navigator.clipboard?.writeText(selectedDevice.deviceId)} title="复制设备 ID"><Icon name="copy" /></button></div><div className="workspace-detail-list"><SummaryRow label="操作系统" value={selectedDevice.os} /><SummaryRow label="设备 ID" value={selectedDevice.deviceId} /><SummaryRow label="Agent 版本" value={selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "未知"} /><SummaryRow label="CPU 型号" value={latest?.cpuPackages[0]?.name ?? "未采集"} /><SummaryRow label="网络接收" value={latest ? formatBytes(latest.networkRxBytesPerSec) + "/s" : "未采集"} /><SummaryRow label="网络发送" value={latest ? formatBytes(latest.networkTxBytesPerSec) + "/s" : "未采集"} /></div></Surface></div>
+     <div className="workspace-metric-grid"><MetricTile label="CPU 使用率" value={selectedDevice.cpuUsagePercent} detail={latest?.cpuTemperatureC == null ? "温度未采集" : `${latest.cpuTemperatureC}°C`} tone="blue" points={metrics?.series.cpuUsagePercent} /><MetricTile label="内存使用率" value={selectedDevice.memoryUsagePercent} detail={latest ? formatBytes(latest.memoryUsedBytes) : undefined} tone="green" points={metrics?.series.memoryUsagePercent} /><MetricTile label="GPU 使用率" value={selectedDevice.gpuUsagePercent} detail={latest?.gpus[0]?.name ?? "未检测到 GPU"} tone="amber" points={metrics?.series.gpuUsagePercent} /><MetricTile label="磁盘使用率" value={selectedDevice.diskUsagePercent} detail={latest ? formatBytes(latest.diskUsedBytes) : undefined} points={metrics?.series.diskUsagePercent} /></div>
+    <div className="workspace-device-grid"><Surface className="workspace-device-chart"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">遥测趋势</span><h3>CPU 使用率</h3></div><select className="workspace-select workspace-select--small" value={metricsWindow} onChange={(event) => setMetricsWindow(event.target.value as typeof metricsWindow)} aria-label="遥测时间范围"><option value="5m">5 分钟</option><option value="1h">1 小时</option><option value="6h">6 小时</option><option value="24h">24 小时</option><option value="7d">7 天</option></select></div><MiniTrend label="设备 CPU 使用率趋势" points={series} /><div className="workspace-trend-footer"><span>样本数</span><strong>{series.length}</strong><span>最后采样</span><strong>{formatDate(metrics?.lastSeenAt)}</strong></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">设备信息</span><h3>硬件与系统</h3></div><button className="workspace-icon-button" type="button" onClick={() => void navigator.clipboard?.writeText(selectedDevice.deviceId)} title="复制设备 ID"><Icon name="copy" /></button></div><div className="workspace-detail-list"><SummaryRow label="操作系统" value={selectedDevice.os} /><SummaryRow label="设备 ID" value={selectedDevice.deviceId} /><SummaryRow label="Agent 版本" value={selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "未知"} /><SummaryRow label="CPU 型号" value={latest?.cpuPackages[0]?.name ?? "未采集"} /><SummaryRow label="网络接收" value={latest ? formatBytes(latest.networkRxBytesPerSec) + "/s" : "未采集"} /><SummaryRow label="网络发送" value={latest ? formatBytes(latest.networkTxBytesPerSec) + "/s" : "未采集"} /></div></Surface></div>
     <div className="workspace-device-grid"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">硬件实例</span><h3>GPU、磁盘与风扇</h3></div></div>{latest ? <div className="workspace-instance-list">{latest.gpus.map((gpu) => <InstanceRow key={gpu.id} label="GPU" name={gpu.name} value={`${gpu.utilizationPercent}%`} />)}{latest.disks.map((disk) => <InstanceRow key={disk.id} label="磁盘" name={`${disk.name} · ${disk.mountPoint}`} value={`${Math.round((disk.usedBytes / Math.max(disk.totalBytes, 1)) * 100)}%`} />)}{latest.fans.map((fan) => <InstanceRow key={fan.id} label="风扇" name={fan.label} value={`${fan.rpm} RPM`} />)}{!latest.gpus.length && !latest.disks.length && !latest.fans.length && <div className="workspace-muted-block">没有可展示的硬件实例。</div>}</div> : <div className="workspace-muted-block">这台设备暂时没有详细遥测数据。</div>}</Surface><Surface className="workspace-agent-surface"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">操作</span><h3>{localDevice ? "本机 Agent" : "远端设备"}</h3></div><StatusLabel state={localDevice && snapshot?.localBackend?.running ? "online" : selectedDevice.status === "online" ? "online" : "offline"} /></div>{localDevice && snapshot?.localBackend ? <><p className="workspace-surface__description">本机采集服务负责向中枢上传设备状态和遥测数据。</p><div className="workspace-action-row"><Button variant="primary" onClick={() => void controlAgent("restart")} disabled={refreshing}>重启服务</Button><Button variant="quiet" onClick={() => void controlAgent(snapshot.localBackend?.running ? "stop" : "start")} disabled={refreshing}>{snapshot.localBackend.running ? "停止服务" : "启动服务"}</Button></div><div className="workspace-detail-list"><SummaryRow label="连接状态" value={snapshot.localBackend.connectionStatus} /><SummaryRow label="待上传样本" value={String(snapshot.localBackend.pendingSampleCount)} /><SummaryRow label="采集间隔" value={`${snapshot.localBackend.effectiveUploadIntervalSeconds}s`} /></div></> : <><p className="workspace-surface__description">远端设备只提供状态与遥测查看，不在此处修改采集配置。</p><Button variant="quiet" onClick={() => openSettings("connections")}>查看中枢连接</Button></>}</Surface></div>
   </div>;
 }
@@ -429,23 +567,57 @@ function AppearanceSettings() {
 }
 
 function ConnectionSettings() {
-  const { snapshot, updateLocalConfig, login, logout, isPreview } = useWorkspace();
+  const { snapshot, saveHubConnection, logout } = useWorkspace();
   const [serverUrl, setServerUrl] = useState(snapshot?.localBackend?.config.connection.serverUrl ?? "");
   const [accessKey, setAccessKey] = useState("");
   const [saving, setSaving] = useState(false);
   const authenticated = snapshot?.session.authenticated ?? false;
-  const saveUrl = async (event: FormEvent) => { event.preventDefault(); setSaving(true); try { await updateLocalConfig({ connection: { serverUrl: serverUrl.trim() } }); } finally { setSaving(false); } };
-  const signIn = async (event: FormEvent) => { event.preventDefault(); if (!accessKey.trim()) return; setSaving(true); try { await login(accessKey); setAccessKey(""); } finally { setSaving(false); } };
-  return <div className="workspace-settings-stack"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">当前中枢</span><h3>{authenticated ? "已连接" : "需要认证"}</h3></div><StatusLabel state={authenticated ? "online" : "warning"} /></div><form className="workspace-form" onSubmit={saveUrl}><label>中枢地址<input className="workspace-input" value={serverUrl} onChange={(event) => setServerUrl(event.target.value)} placeholder="https://hub.example.com" /></label><div className="workspace-form__actions"><Button variant="primary" type="submit" disabled={saving}>保存地址</Button>{authenticated && <Button variant="quiet" onClick={() => void logout()}>断开连接</Button>}</div></form></Surface>{!authenticated && <Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">认证</span><h3>连接当前中枢</h3></div></div><form className="workspace-form" onSubmit={signIn}><label>访问密钥<input className="workspace-input" type="password" value={accessKey} onChange={(event) => setAccessKey(event.target.value)} placeholder="输入访问密钥" autoComplete="off" /></label><p className="workspace-form__hint">密钥只会发送到桌面主进程，不会进入页面状态或日志。</p><Button variant="primary" type="submit" disabled={saving || isPreview}>连接中枢</Button></form></Surface>}</div>;
+  useEffect(() => {
+    setServerUrl(snapshot?.localBackend?.config.connection.serverUrl ?? "");
+  }, [snapshot?.localBackend?.config.connection.serverUrl]);
+  const saveConnection = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!serverUrl.trim() || (!accessKey.trim() && !snapshot?.session.accessKeyConfigured)) return;
+    setSaving(true);
+    try {
+      const saved = await saveHubConnection(serverUrl, accessKey);
+      if (saved) setAccessKey("");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <div className="workspace-settings-stack"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">当前中枢</span><h3>{authenticated ? "已连接" : "需要认证"}</h3></div><StatusLabel state={authenticated ? "online" : "warning"} /></div><form className="workspace-form workspace-connection-form" onSubmit={saveConnection}><label>中枢地址<input className="workspace-input" value={serverUrl} onChange={(event) => setServerUrl(event.target.value)} placeholder="https://hub.example.com" autoComplete="url" required /></label><label>访问密钥<input className="workspace-input" type="password" value={accessKey} onChange={(event) => setAccessKey(event.target.value)} placeholder={snapshot?.session.accessKeyConfigured ? "已保存，留空保留当前认证" : "输入中枢访问密钥"} autoComplete="current-password" required={!snapshot?.session.accessKeyConfigured} /></label><p className="workspace-form__hint">地址和访问密钥会在同一次保存中提交。访问密钥只会发送到桌面主进程，不会进入页面状态或日志。</p><div className="workspace-form__actions"><Button variant="primary" type="submit" disabled={saving}>{saving ? "正在保存…" : authenticated ? "保存连接" : "保存并连接"}</Button>{authenticated && <Button variant="quiet" onClick={() => void logout()} disabled={saving}>断开连接</Button>}</div></form></Surface><Surface className="workspace-connection-note"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">连接诊断</span><h3>如果连接失败</h3></div></div><p className="workspace-surface__description">请确认地址包含协议（例如 https://），中枢服务已启动，并使用中枢访问密钥。保存按钮会先写入地址，再用同一地址完成认证，避免出现 server url is missing。</p></Surface></div>;
 }
 
 function AgentSettings() {
-  const { snapshot, controlAgent, updateLocalConfig, setAgentSecret, cloudPush, refreshing } = useWorkspace();
+  const { snapshot, controlAgent, updateLocalConfig, cloudPush, refreshing } = useWorkspace();
   const backend = snapshot?.localBackend;
   const config = backend?.config;
-  const [secret, setSecret] = useState("");
+  const enabledMetrics = config?.enabledMetrics ?? [];
+  const configuredProbes = config?.probeSelections ?? [];
+  const [selectedMetrics, setSelectedMetrics] = useState<DeviceMetricKey[]>(enabledMetrics);
+  const [probeSelections, setProbeSelections] = useState(configuredProbes);
+  const metricDraftKey = enabledMetrics.join("|");
+  const probeDraftKey = configuredProbes.map((selection) => `${selection.target}:${selection.provider}:${selection.enabled}`).join("|");
+  useEffect(() => {
+    setSelectedMetrics(enabledMetrics);
+  }, [metricDraftKey]);
+  useEffect(() => {
+    setProbeSelections(configuredProbes);
+  }, [probeDraftKey]);
   if (!backend || !config) return <EmptyState title="本机 Agent 尚未启动" detail="启动本机服务后才能查看和修改采集设置。" action={<Button variant="primary" onClick={() => void controlAgent("start")}>启动服务</Button>} />;
-  return <div className="workspace-settings-stack"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">服务状态</span><h3>本机 Agent</h3></div><StatusLabel state={backend.running ? "online" : "offline"} /></div><div className="workspace-agent-actions"><Button variant="primary" onClick={() => void controlAgent(backend.running ? "stop" : "start")} disabled={refreshing}>{backend.running ? "停止服务" : "启动服务"}</Button><Button variant="quiet" onClick={() => void controlAgent("restart")} disabled={refreshing}>重启服务</Button><Button variant="quiet" onClick={() => void controlAgent("check-connection")} disabled={refreshing}>检查连接</Button><Button variant="quiet" onClick={() => void controlAgent("detect-probes")} disabled={refreshing}>重新检测硬件</Button></div><div className="workspace-detail-list"><SummaryRow label="连接状态" value={backend.connectionStatus} /><SummaryRow label="上传间隔" value={`${backend.effectiveUploadIntervalSeconds} 秒`} /><SummaryRow label="待上传样本" value={`${backend.pendingSampleCount} 条`} /><SummaryRow label="配置文件" value={backend.configFileExists ? "已找到" : "未找到"} /></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">采集策略</span><h3>本机行为</h3></div></div><div className="workspace-settings-list"><SettingRow label="自动启动采集" description="Agent 启动后自动开始采集硬件数据。"><Toggle checked={config.autoStartCollector} onChange={(checked) => void updateLocalConfig({ autoStartCollector: checked })} label="自动启动采集" /></SettingRow><SettingRow label="异常时自动重启" description="采集器异常退出后自动尝试恢复。"><Toggle checked={config.autoRestartCollector} onChange={(checked) => void updateLocalConfig({ autoRestartCollector: checked })} label="异常时自动重启" /></SettingRow><SettingRow label="上传到中枢" description="允许本机 Agent 将采样数据上传到当前中枢。"><Toggle checked={config.cloudSyncEnabled} onChange={(checked) => void updateLocalConfig({ cloudSyncEnabled: checked })} label="上传到中枢" /></SettingRow></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">安全</span><h3>通信密钥</h3></div></div><form className="workspace-form" onSubmit={(event) => { event.preventDefault(); if (secret.trim()) { void setAgentSecret(secret).then((saved) => { if (saved) setSecret(""); }); } }}><label>新密钥<input className="workspace-input" type="password" value={secret} onChange={(event) => setSecret(event.target.value)} placeholder={config.connection.secretConfigured ? "已配置，输入新密钥可替换" : "尚未配置"} autoComplete="new-password" /></label><div className="workspace-form__actions"><Button variant="primary" type="submit">保存密钥</Button><Button variant="quiet" onClick={() => void cloudPush()}>同步配置</Button></div></form></Surface></div>;
+  const saveCollectionConfig = () => void updateLocalConfig({ enabledMetrics: selectedMetrics, probeSelections });
+  const toggleMetric = (key: DeviceMetricKey) => {
+    setSelectedMetrics((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
+  };
+  const updateProbe = (target: AgentProbeTarget, patch: { provider?: AgentProbeProvider; enabled?: boolean }) => {
+    setProbeSelections((current) => {
+      const existing = current.find((selection) => selection.target === target);
+      if (existing) return current.map((selection) => selection.target === target ? { ...selection, ...patch } : selection);
+      return [...current, { target, provider: patch.provider ?? "builtin", enabled: patch.enabled ?? true }];
+    });
+  };
+  return <div className="workspace-settings-stack"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">服务状态</span><h3>本机 Agent</h3></div><StatusLabel state={backend.running ? "online" : "offline"} /></div><div className="workspace-agent-actions"><Button variant="primary" onClick={() => void controlAgent(backend.running ? "stop" : "start")} disabled={refreshing}>{backend.running ? "停止服务" : "启动服务"}</Button><Button variant="quiet" onClick={() => void controlAgent("restart")} disabled={refreshing}>重启服务</Button><Button variant="quiet" onClick={() => void controlAgent("check-connection")} disabled={refreshing}>检查连接</Button><Button variant="quiet" onClick={() => void controlAgent("detect-probes")} disabled={refreshing}>重新检测硬件</Button></div><div className="workspace-detail-list"><SummaryRow label="连接状态" value={backend.connectionStatus} /><SummaryRow label="上传间隔" value={`${backend.effectiveUploadIntervalSeconds} 秒`} /><SummaryRow label="待上传样本" value={`${backend.pendingSampleCount} 条`} /><SummaryRow label="配置文件" value={backend.configFileExists ? "已找到" : "未找到"} /></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">采集策略</span><h3>本机行为</h3></div></div><div className="workspace-settings-list"><SettingRow label="自动启动采集" description="Agent 启动后自动开始采集硬件数据。"><Toggle checked={config.autoStartCollector} onChange={(checked) => void updateLocalConfig({ autoStartCollector: checked })} label="自动启动采集" /></SettingRow><SettingRow label="异常时自动重启" description="采集器异常退出后自动尝试恢复。"><Toggle checked={config.autoRestartCollector} onChange={(checked) => void updateLocalConfig({ autoRestartCollector: checked })} label="异常时自动重启" /></SettingRow><SettingRow label="上传到中枢" description="允许本机 Agent 将采样数据上传到当前中枢。"><Toggle checked={config.cloudSyncEnabled} onChange={(checked) => void updateLocalConfig({ cloudSyncEnabled: checked })} label="上传到中枢" /></SettingRow></div></Surface><Surface className="workspace-collection-surface"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">上报数据</span><h3>选择 Agent 采集内容</h3></div><span className="workspace-caption">已选 {selectedMetrics.length} 项</span></div><p className="workspace-surface__description">只采集并上报你勾选的指标；未选择的指标不会进入本机采集队列。完成选择后点击一次保存。</p><div className="workspace-metric-option-grid">{metricGroups.map((group) => <div className="workspace-metric-option-group" key={group.label}><strong>{group.label}</strong>{group.items.map((item) => <label className="workspace-check-row" key={item.key}><input type="checkbox" checked={selectedMetrics.includes(item.key)} onChange={() => toggleMetric(item.key)} /><span>{item.label}</span></label>)}</div>)}</div><div className="workspace-probe-config"><div className="workspace-probe-config__header"><div><strong>硬件探针</strong><span>选择每类硬件使用的采集来源。</span></div></div>{backend.supportedProbePlans.map((plan) => { const selection = probeSelections.find((item) => item.target === plan.target); const providers = plan.providers.filter((provider): provider is AgentProbeProvider => provider in probeProviderLabels); return <div className="workspace-probe-row" key={plan.target}><div><strong>{probeTargetLabels[plan.target]}</strong><small>{selection?.enabled === false ? "已停用" : "已启用"}</small></div><select className="workspace-select workspace-select--small" value={selection?.provider ?? plan.default} onChange={(event) => updateProbe(plan.target, { provider: event.target.value as AgentProbeProvider })}>{providers.map((provider) => <option value={provider} key={provider}>{probeProviderLabels[provider]}</option>)}</select><Toggle checked={selection?.enabled ?? true} onChange={(enabled) => updateProbe(plan.target, { enabled })} label={`${probeTargetLabels[plan.target]} 探针`} /></div>; })}</div><div className="workspace-form__actions"><Button variant="primary" onClick={saveCollectionConfig} disabled={refreshing}>保存采集配置</Button><Button variant="quiet" onClick={() => void cloudPush()} disabled={refreshing}>同步到中枢</Button></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">检测结果</span><h3>已发现硬件</h3></div><span className="workspace-caption">{backend.detectedTargets.reduce((count, group) => count + group.instances.length, 0)} 个实例</span></div>{backend.detectedTargets.length ? <div className="workspace-detected-list">{backend.detectedTargets.map((group) => <div className="workspace-detected-group" key={group.target}><strong>{group.label}</strong>{group.instances.map((instance) => <div className="workspace-detected-row" key={instance.id}><span>{instance.name}</span><small>{instance.enabled ? "可用" : "已停用"}</small></div>)}</div>)}</div> : <div className="workspace-muted-block">尚未检测到硬件探针，请点击“重新检测硬件”。</div>}</Surface></div>;
 }
 
 function DataSettings() {
