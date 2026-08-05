@@ -62,10 +62,10 @@
 
 ---
 
-## 3. Round-3 预 CI 正确性与默认渲染器切换 (Round-3 Pre-CI Pass)
+## 3. 当前生产入口与 CI 正确性 (Current Production Pass)
 
-- **生产默认**: 观澜 (`GuanlanApp`) 正式提升为 Electron 客户端默认渲染器。
-- **可逆回退**: 传统 UI 仅在 URL 包含 `?ui=legacy` 或 `localStorage.dsc_legacy_ui="true"` 时激活，并在设置视图中提供回退/恢复按钮。
-- **真实 Bridge 优先**: 在 Electron 运行环境下默认使用 `BridgeGuanlanDataAdapter` 配合 `window.dsc` IPC 桥，同时保留 `?mock=1` 独立 Mock 测试通道。
+- **生产默认**: `apps/desktop/src/renderer/App.tsx` 只渲染 `WorkspaceApp`；旧 Renderer 不再作为回退入口存在。
+- **真实 Bridge 优先**: 在 Electron 运行环境下默认使用 `BridgeGuanlanDataAdapter` 配合 `window.dsc` IPC 桥；Mock 仅由 `VITE_DSC_UI_PREVIEW=true` 开发开关启用。
+- **设置工作区**: 设置侧边栏与设备侧边栏是两种互斥模式，关闭设置后恢复进入设置前的 route。
 - **与 CI 工作流强关联**: `ci.yml` 中的 `desktop` 与 `verify` 任务均已集成 `pnpm check:desktop-ui-boundaries` 与 `pnpm test:ui-helpers` 静态检查。
-- **详细契约与测试映射**: 详见 [contract-mapping.md](file:///C:/项目/设备状态控制台/docs/ui-rebuild/contract-mapping.md)。
+- **详细契约与测试映射**: 详见 [contract-mapping.md](./contract-mapping.md) 与 [refactor-task-v3.md](./refactor-task-v3.md)。

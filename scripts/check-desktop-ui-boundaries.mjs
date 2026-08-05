@@ -6,11 +6,18 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const targetDir = path.resolve(__dirname, "../apps/desktop/src/renderer-guanlan");
+const rendererEntry = path.resolve(__dirname, "../apps/desktop/src/renderer/App.tsx");
+const workspaceDir = path.resolve(targetDir, "workspace");
 
 console.log(`[check:desktop-ui-boundaries] Scanning isolated renderer at: ${targetDir}`);
 
 if (!fs.existsSync(targetDir)) {
   console.error(`[check:desktop-ui-boundaries] Error: Target directory does not exist: ${targetDir}`);
+  process.exit(1);
+}
+
+if (!fs.existsSync(workspaceDir)) {
+  console.error(`[check:desktop-ui-boundaries] Error: Workspace directory does not exist: ${workspaceDir}`);
   process.exit(1);
 }
 
@@ -28,12 +35,19 @@ const forbiddenPatterns = [
   { pattern: /<\s*LocalConfigView\b/, reason: "Reference to old LocalConfigView component" },
   { pattern: /<\s*StatusBanner\b/, reason: "Reference to old StatusBanner component" },
 
-  // Old dashboard CSS token names (must use --gl-* Guanlan Spectrum Adaptive tokens instead)
+  // Old dashboard CSS token names (the workspace uses --workspace-* semantic tokens)
   { pattern: /--bg-dark\b/, reason: "Reference to old CSS token --bg-dark" },
   { pattern: /--accent-cyan\b/, reason: "Reference to old CSS token --accent-cyan" },
   { pattern: /--accent-purple\b/, reason: "Reference to old CSS token --accent-purple" },
   { pattern: /--bg-card\b/, reason: "Reference to old CSS token --bg-card" },
   { pattern: /--bg-sidebar\b/, reason: "Reference to old CSS token --bg-sidebar" }
+];
+
+const activeRendererPatterns = [
+  { pattern: /LegacyApp|isLegacyModeRequested|dsc_legacy_ui|legacy-active/, reason: "Legacy renderer switch remains reachable" },
+  { pattern: /ConsoleProvider|useConsole|OverviewCards|TrafficCalendarView|InstanceDetailView|LocalConfigView/, reason: "Old renderer surface remains reachable" },
+  // Emoji belong in content, not in the desktop control surface. Icons are inline SVG paths.
+  { pattern: /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, reason: "Emoji found in active desktop UI" }
 ];
 
 let scannedCount = 0;
@@ -50,6 +64,7 @@ function scanDirectory(dir) {
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      if (fullPath === workspaceDir) continue;
       scanDirectory(fullPath);
     } else if (entry.isFile() && /\.(ts|tsx|css|js|mjs|json)$/.test(entry.name)) {
       scannedCount++;
@@ -68,6 +83,42 @@ function scanDirectory(dir) {
 }
 
 scanDirectory(targetDir);
+
+if (fs.existsSync(rendererEntry)) {
+  const rawContent = fs.readFileSync(rendererEntry, "utf-8");
+  const codeOnly = stripComments(rawContent);
+  for (const { pattern, reason } of activeRendererPatterns) {
+    if (pattern.test(codeOnly)) {
+      violationCount++;
+      console.error(`❌ Boundary Violation in [renderer/App.tsx]: ${reason}`);
+    }
+  }
+  scannedCount++;
+} else {
+  violationCount++;
+  console.error("❌ Boundary Violation: renderer/App.tsx is missing");
+}
+
+function scanActiveWorkspace(dir) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      scanActiveWorkspace(fullPath);
+    } else if (entry.isFile() && /\.(ts|tsx|css|js|mjs|json)$/.test(entry.name)) {
+      scannedCount++;
+      const codeOnly = stripComments(fs.readFileSync(fullPath, "utf-8"));
+      for (const { pattern, reason } of activeRendererPatterns) {
+        if (pattern.test(codeOnly)) {
+          violationCount++;
+          console.error(`❌ Boundary Violation in [${path.relative(targetDir, fullPath)}]: ${reason}`);
+        }
+      }
+    }
+  }
+}
+
+scanActiveWorkspace(workspaceDir);
 
 console.log(`[check:desktop-ui-boundaries] Scanned ${scannedCount} files.`);
 

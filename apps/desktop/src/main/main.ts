@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, nativeImage, Tray } from "electron";
+import { app, BrowserWindow, Menu, nativeImage, screen, Tray } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DesktopController } from "./controller.js";
@@ -31,14 +31,18 @@ if (!hasSingleInstanceLock) {
 
   const createWindow = () => {
     const preloadPath = path.join(__dirname, "../preload/index.js");
+    const workArea = screen.getPrimaryDisplay().workAreaSize;
+    const minWidth = Math.min(760, Math.max(640, workArea.width - 32));
+    const minHeight = Math.min(560, Math.max(480, workArea.height - 32));
     mainWindow = new BrowserWindow({
-      width: 1440,
-      height: 920,
-      minWidth: 980,
-      minHeight: 680,
+      width: Math.min(1440, Math.max(minWidth, workArea.width - 48)),
+      height: Math.min(920, Math.max(minHeight, workArea.height - 48)),
+      minWidth,
+      minHeight,
       show: false,
-      backgroundColor: "#0c1117",
-      title: "Device State Console",
+      backgroundColor: "#f5f7fa",
+      title: "观澜 · 设备状态控制台",
+      autoHideMenuBar: true,
       webPreferences: {
         preload: preloadPath,
         contextIsolation: true,
@@ -50,6 +54,7 @@ if (!hasSingleInstanceLock) {
         spellcheck: false
       }
     });
+    mainWindow.setMenuBarVisibility(false);
     mainWindow.on("close", (event) => {
       if (quitting) return;
       event.preventDefault();
@@ -71,12 +76,12 @@ if (!hasSingleInstanceLock) {
     const iconPath = path.join(process.resourcesPath, "app-icon.ico");
     const icon = nativeImage.createFromPath(iconPath);
     tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
-    tray.setToolTip("Device State Console");
+    tray.setToolTip("观澜 · 设备状态控制台");
     tray.setContextMenu(Menu.buildFromTemplate([
-      { label: "Open Device State Console", click: showWindow },
+      { label: "打开观澜", click: showWindow },
       { type: "separator" },
       {
-        label: "Exit",
+        label: "退出",
         click: () => {
           quitting = true;
           void shutdown().finally(() => app.quit());

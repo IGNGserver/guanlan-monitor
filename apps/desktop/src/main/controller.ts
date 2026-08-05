@@ -237,7 +237,7 @@ export class DesktopController {
     }
 
     try {
-      update = await this.hub.getUpdateInfo(process.env.DSC_VERSION ?? "0.2.68");
+      update = await this.hub.getUpdateInfo(currentDesktopVersion());
     } catch {
       update = null;
     }
@@ -304,7 +304,7 @@ export class DesktopController {
       selectedDeviceId: null,
       metrics: null,
       trafficCalendar: null,
-      update: { currentVersion: process.env.DSC_VERSION ?? "0.2.68", currentChannel: "test", platform: process.platform === "win32" ? "windows-gui" : "linux-gui", arch: process.arch, available: false, latestVersion: null, latestChannel: null, releaseTag: null, releaseUrl: null, notesUrl: null, publishedAt: null, assetName: null, assetUrl: null, assetSize: null, sha256: null, installMode: "none", message: "local_backend_unavailable" },
+      update: { currentVersion: currentDesktopVersion(), currentChannel: "test", platform: process.platform === "win32" ? "windows-gui" : "linux-gui", arch: process.arch, available: false, latestVersion: null, latestChannel: null, releaseTag: null, releaseUrl: null, notesUrl: null, publishedAt: null, assetName: null, assetUrl: null, assetSize: null, sha256: null, installMode: "none", message: "local_backend_unavailable" },
       startup: this.startup
     };
   }
@@ -397,4 +397,8 @@ function cacheState(snapshot: DesktopSnapshot | null): DesktopSnapshot["cache"] 
     savedAt,
     ageSeconds: Number.isFinite(timestamp) ? Math.max(0, Math.floor((Date.now() - timestamp) / 1000)) : null
   };
+}
+
+function currentDesktopVersion(): string {
+  return process.env.DSC_VERSION?.trim() || app.getVersion();
 }

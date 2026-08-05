@@ -1,5 +1,7 @@
 # Guanlan Spectrum Adaptive replacement plan
 
+> 本文是早期迁移记录。`refactor-task-v3.md` 是当前生产入口、信息架构和防复发规则的准则；当两者冲突时，以 v3 为准。
+
 ## Scope
 
 只替换 Electron Renderer 视图层；main/preload/IPC、Agent lifecycle、Hub API/cache/config、tray、installer、Hub Web、Android、iOS 和 Agent core 不在范围内。
@@ -10,7 +12,7 @@
 
 ## New Renderer boundary
 
-建立与旧 `renderer` 并列的隔离目录（建议 `apps/desktop/src/renderer-guanlan/`），先实现 mock adapter，再接入 `dscBridge`；禁止引用 `apps/web` 或旧 Hub UI/CSS。完成 boundary check 后才将入口切到新 Renderer。
+建立与旧 `renderer` 并列的隔离目录（`apps/desktop/src/renderer-guanlan/workspace/`），先实现 mock adapter，再接入 `dscBridge`；禁止引用 `apps/web` 或旧 Hub UI/CSS。完成 boundary check 后将入口收敛为单一生产 Renderer。
 
 ## Visual system
 

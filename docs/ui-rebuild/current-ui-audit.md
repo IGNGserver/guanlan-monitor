@@ -4,6 +4,8 @@
 
 ## 结论
 
+> 这是 v0.2.79 的历史审计。当前实现已按 [refactor-task-v3.md](./refactor-task-v3.md) 收敛为单一 Workspace 入口；本文件保留作 before 证据，不应再作为现行 UI 结构说明。
+
 当前 Renderer 在物理目录上是 Electron 独立 React 应用，但信息架构、视觉语言和组件命名仍然是 Hub 管理后台式的高密度控制台：固定 Sidebar + TopHeader + 状态横幅 + 卡片网格，深色优先、霓虹色强调、英文导航、强边框和高信息密度。它不是 Hub Web 的源码复用，却产生了与 Hub 相同的产品心智，因此需要 clean-room 替换 Renderer，而不是继续覆盖旧 CSS。
 
 ## 当前入口与页面
