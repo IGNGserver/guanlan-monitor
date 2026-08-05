@@ -51,54 +51,68 @@ export const GuanlanNav: React.FC = () => {
         })}
 
         {/* More Tab with Accessible Popover */}
-        <div style={{ position: "relative", flex: 1, display: "flex" }}>
+        <div style={{ position: "relative", flex: 1, display: "flex", height: "100%", minWidth: 0, width: "100%" }}>
           <button
             type="button"
             className={`gl-bottom-nav-item ${isSecondaryActive ? "active" : ""}`}
             onClick={() => setMoreOpen(!moreOpen)}
             aria-expanded={moreOpen}
             aria-label="更多导航选项"
+            style={{ width: "100%", height: "100%" }}
           >
             <span style={{ fontSize: 16 }} aria-hidden="true">⋯</span>
             <span>更多</span>
           </button>
 
           {moreOpen && (
-            <div
-              style={{
-                position: "absolute",
-                bottom: 60,
-                right: 4,
-                backgroundColor: "var(--gl-surface-layer-1)",
-                border: "1px solid var(--gl-border-strong)",
-                borderRadius: "var(--gl-radius-md)",
-                boxShadow: "var(--gl-shadow-md)",
-                display: "flex",
-                flexDirection: "column",
-                padding: 6,
-                minWidth: 130,
-                zIndex: 100
-              }}
-            >
-              {secondaryNav.map((item) => {
-                const active = activeTab === item.key;
-                return (
-                  <button
-                    type="button"
-                    key={item.key}
-                    className={`gl-nav-item ${active ? "active" : ""}`}
-                    onClick={() => {
-                      setActiveTab(item.key);
-                      setMoreOpen(false);
-                    }}
-                    style={{ justifyContent: "flex-start", margin: 0, padding: "8px 12px", height: "auto" }}
-                  >
-                    <span style={{ fontSize: 16 }} aria-hidden="true">{item.icon}</span>
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <>
+              <div
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  zIndex: 99
+                }}
+                onClick={() => setMoreOpen(false)}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 60,
+                  right: 4,
+                  backgroundColor: "var(--gl-surface-layer-1)",
+                  border: "1px solid var(--gl-border-strong)",
+                  borderRadius: "var(--gl-radius-md)",
+                  boxShadow: "var(--gl-shadow-md)",
+                  display: "flex",
+                  flexDirection: "column",
+                  padding: 6,
+                  minWidth: 130,
+                  zIndex: 100
+                }}
+              >
+                {secondaryNav.map((item) => {
+                  const active = activeTab === item.key;
+                  return (
+                    <button
+                      type="button"
+                      key={item.key}
+                      className={`gl-nav-item ${active ? "active" : ""}`}
+                      onClick={() => {
+                        setActiveTab(item.key);
+                        setMoreOpen(false);
+                      }}
+                      style={{ justifyContent: "flex-start", margin: 0, padding: "8px 12px", height: "auto" }}
+                    >
+                      <span style={{ fontSize: 16 }} aria-hidden="true">{item.icon}</span>
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       </nav>

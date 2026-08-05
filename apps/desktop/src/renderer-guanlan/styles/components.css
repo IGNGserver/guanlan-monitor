@@ -37,6 +37,11 @@
   padding: 0 var(--gl-spacing-md);
   gap: var(--gl-spacing-md);
   flex-shrink: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .gl-header-brand {
@@ -47,6 +52,9 @@
   font-size: var(--gl-font-title);
   color: var(--gl-text-primary);
   white-space: nowrap;
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
 }
 
 .gl-brand-icon {
@@ -60,6 +68,7 @@
   justify-content: center;
   font-weight: 700;
   font-size: 13px;
+  flex-shrink: 0;
 }
 
 .gl-header-title {
@@ -70,12 +79,17 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gl-header-actions {
   display: flex;
   align-items: center;
   gap: var(--gl-spacing-xs);
+  flex-shrink: 0;
 }
 
 /* Adaptive Navigation Bar / Rail / Sidebar */
@@ -145,6 +159,10 @@
   align-items: center;
   justify-content: space-around;
   flex-shrink: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
   z-index: 10;
 }
 
@@ -156,12 +174,14 @@
   gap: 2px;
   flex: 1;
   height: 100%;
+  min-width: 0;
   border: none;
   background: transparent;
   color: var(--gl-text-secondary);
   font-size: 11px;
   cursor: pointer;
-  padding: 4px;
+  padding: 4px 2px;
+  white-space: nowrap;
 }
 
 .gl-bottom-nav-item.active {
@@ -179,6 +199,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--gl-spacing-sm);
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .gl-card-header {
@@ -188,6 +211,9 @@
   padding-bottom: var(--gl-spacing-xs);
   border-bottom: 1px solid var(--gl-border-subtle);
   margin-bottom: var(--gl-spacing-xs);
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .gl-card-title {
@@ -197,6 +223,15 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* De-emphasized value utility class for high-contrast light & dark values */
+.gl-value-deemphasized,
+.gl-text-value-muted {
+  color: var(--gl-text-value-muted);
 }
 
 /* Status Badges */
@@ -336,6 +371,14 @@
   gap: 8px;
   cursor: pointer;
   user-select: none;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.gl-toggle-container > span {
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .gl-toggle-checkbox {

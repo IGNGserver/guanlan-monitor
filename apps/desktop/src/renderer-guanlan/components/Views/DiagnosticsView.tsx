@@ -61,19 +61,19 @@ export const DiagnosticsView: React.FC = () => {
           <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--gl-border-subtle)", paddingBottom: 6 }}>
               <span style={{ color: "var(--gl-text-secondary)" }}>Spool 待发缓存数量</span>
-              <span style={{ fontFamily: "var(--gl-font-mono)", fontWeight: 600 }}>
+              <span className="gl-value-deemphasized" style={{ fontFamily: "var(--gl-font-mono)", fontWeight: 600, color: "var(--gl-text-value-muted)" }}>
                 {backend?.pendingSampleCount ?? 0} 项 ({formatBytes(backend?.pendingBytes ?? 0)})
               </span>
             </div>
 
             <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--gl-border-subtle)", paddingBottom: 6 }}>
               <span style={{ color: "var(--gl-text-secondary)" }}>配置文件路径 (configPath)</span>
-              <span style={{ fontFamily: "var(--gl-font-mono)", fontSize: 11 }}>{backend?.configPath || "未确定"}</span>
+              <span className="gl-value-deemphasized" style={{ fontFamily: "var(--gl-font-mono)", fontSize: 11, color: "var(--gl-text-value-muted)" }}>{backend?.configPath || "未确定"}</span>
             </div>
 
             <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--gl-border-subtle)", paddingBottom: 6 }}>
               <span style={{ color: "var(--gl-text-secondary)" }}>诊断日志文件 (diagnosticsPath)</span>
-              <span style={{ fontFamily: "var(--gl-font-mono)", fontSize: 11 }}>{backend?.diagnosticsPath || "未确定"}</span>
+              <span className="gl-value-deemphasized" style={{ fontFamily: "var(--gl-font-mono)", fontSize: 11, color: "var(--gl-text-value-muted)" }}>{backend?.diagnosticsPath || "未确定"}</span>
             </div>
 
             {/* Probe plans summary */}
@@ -82,8 +82,8 @@ export const DiagnosticsView: React.FC = () => {
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {probePlans.map((plan) => (
                   <div key={plan.target} style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
-                    <span style={{ color: "var(--gl-text-muted)", textTransform: "uppercase" }}>{plan.target}</span>
-                    <span style={{ fontFamily: "var(--gl-font-mono)" }}>
+                    <span style={{ color: "var(--gl-text-secondary)", textTransform: "uppercase" }}>{plan.target}</span>
+                    <span className="gl-value-deemphasized" style={{ fontFamily: "var(--gl-font-mono)", color: "var(--gl-text-value-muted)" }}>
                       默认: {plan.default} (可选: {plan.providers.join(", ")})
                     </span>
                   </div>

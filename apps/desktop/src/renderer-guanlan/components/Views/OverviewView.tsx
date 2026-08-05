@@ -157,19 +157,21 @@ export const OverviewView: React.FC = () => {
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, borderBottom: "1px solid var(--gl-border-subtle)", paddingBottom: 8 }}>
               <span style={{ color: "var(--gl-text-secondary)" }}>已连接 Hub 地址</span>
-              <span style={{ fontFamily: "var(--gl-font-mono)" }}>
+              <span className="gl-value-deemphasized" style={{ fontFamily: "var(--gl-font-mono)", color: "var(--gl-text-value-muted)", fontWeight: 500 }}>
                 {backend?.config?.connection?.serverUrl || "未配置"}
               </span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, borderBottom: "1px solid var(--gl-border-subtle)", paddingBottom: 8 }}>
               <span style={{ color: "var(--gl-text-secondary)" }}>采样间隔 (Normal / Slow)</span>
-              <span style={{ fontFamily: "var(--gl-font-mono)" }}>
+              <span className="gl-value-deemphasized" style={{ fontFamily: "var(--gl-font-mono)", color: "var(--gl-text-value-muted)", fontWeight: 500 }}>
                 {backend?.config?.sampling?.normalIntervalSeconds ?? 5}s / {backend?.config?.sampling?.slowIntervalSeconds ?? 15}s
               </span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
               <span style={{ color: "var(--gl-text-secondary)" }}>开机自运行状态</span>
-              <span>{snapshot.startup.openAtLogin ? "已启用" : "未启用"}</span>
+              <span className="gl-value-deemphasized" style={{ color: "var(--gl-text-value-muted)", fontWeight: 500 }}>
+                {snapshot.startup.openAtLogin ? "已启用" : "未启用"}
+              </span>
             </div>
           </div>
         </SpectrumCard>

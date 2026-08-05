@@ -75,16 +75,23 @@
 /* COMPACT (<600px): Bottom Navigation + Stacked Single Column View */
 .gl-layout-compact .guanlan-shell-body {
   flex-direction: column-reverse; /* Bottom nav on bottom, content on top */
+  overflow: hidden;
+  width: 100%;
+  min-width: 0;
 }
 
 .gl-layout-compact .guanlan-content-viewport {
   flex: 1;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   padding: var(--gl-spacing-sm);
   display: flex;
   flex-direction: column;
   gap: var(--gl-spacing-sm);
+  box-sizing: border-box;
 }
 
 .gl-layout-compact .gl-grid-adaptive-2,
@@ -93,6 +100,37 @@
   display: flex;
   flex-direction: column;
   gap: var(--gl-spacing-sm);
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.gl-layout-compact .gl-header {
+  padding: 0 var(--gl-spacing-sm);
+}
+
+.gl-layout-compact .gl-header-title {
+  display: none;
+}
+
+.gl-layout-compact .gl-header-btn-text {
+  display: none;
+}
+
+.gl-layout-compact .gl-header-actions {
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.gl-layout-compact .gl-header-actions .gl-select {
+  max-width: 86px;
+  padding: 0 2px;
+  font-size: 11px;
+}
+
+.gl-layout-compact .gl-card {
+  padding: var(--gl-spacing-sm);
+  min-width: 0;
 }
 
 /* MEDIUM (600px - 839px): Icon-only Left Rail */

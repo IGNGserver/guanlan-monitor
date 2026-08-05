@@ -171,19 +171,19 @@ export const LocalDeviceView: React.FC = () => {
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={{ fontSize: 13, color: "var(--gl-text-secondary)" }}>连接状态 (connectionStatus)</span>
-              <span style={{ fontFamily: "var(--gl-font-mono)", fontWeight: 600 }}>
+              <span className="gl-value-deemphasized" style={{ fontFamily: "var(--gl-font-mono)", fontWeight: 600, color: "var(--gl-text-value-muted)" }}>
                 {backend?.connectionStatus || "未连接"}
               </span>
             </div>
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={{ fontSize: 13, color: "var(--gl-text-secondary)" }}>累计重启次数 (restartCount)</span>
-              <span style={{ fontFamily: "var(--gl-font-mono)" }}>{backend?.restartCount ?? 0} 次</span>
+              <span className="gl-value-deemphasized" style={{ fontFamily: "var(--gl-font-mono)", color: "var(--gl-text-value-muted)" }}>{backend?.restartCount ?? 0} 次</span>
             </div>
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={{ fontSize: 13, color: "var(--gl-text-secondary)" }}>待发缓冲队列 (spool)</span>
-              <span style={{ fontFamily: "var(--gl-font-mono)" }}>
+              <span className="gl-value-deemphasized" style={{ fontFamily: "var(--gl-font-mono)", color: "var(--gl-text-value-muted)" }}>
                 {backend?.pendingSampleCount ?? 0} 项 ({formatBytes(backend?.pendingBytes ?? 0)})
               </span>
             </div>

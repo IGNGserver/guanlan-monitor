@@ -48,8 +48,9 @@
   --gl-border-strong: #94a3b8;
 
   --gl-text-primary: #0f172a;
-  --gl-text-secondary: #475569;
-  --gl-text-muted: #64748b;
+  --gl-text-secondary: #334155;
+  --gl-text-muted: #475569;
+  --gl-text-value-muted: #334155;
   --gl-text-inverse: #ffffff;
 
   --gl-accent-base: #0284c7;
@@ -92,6 +93,7 @@
   --gl-text-primary: #f8fafc;
   --gl-text-secondary: #cbd5e1;
   --gl-text-muted: #94a3b8;
+  --gl-text-value-muted: #cbd5e1;
   --gl-text-inverse: #0f172a;
 
   --gl-accent-base: #38bdf8;
@@ -123,7 +125,9 @@
   --gl-surface-elevated: #ffffff;
   --gl-border-subtle: #f1f5f9;
   --gl-text-primary: #334155;
-  --gl-text-secondary: #64748b;
+  --gl-text-secondary: #475569;
+  --gl-text-muted: #64748b;
+  --gl-text-value-muted: #475569;
 }
 [data-contrast="low"][data-theme="dark"] {
   --gl-surface-base: #141c2e;
@@ -132,6 +136,8 @@
   --gl-border-subtle: #24324a;
   --gl-text-primary: #e2e8f0;
   --gl-text-secondary: #94a3b8;
+  --gl-text-muted: #94a3b8;
+  --gl-text-value-muted: #94a3b8;
 }
 
 /* Reduced motion adjustment */

@@ -215,31 +215,31 @@ export const DeviceListView: React.FC = () => {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 12 }}>
                 <div>
-                  <div style={{ color: "var(--gl-text-muted)" }}>设备 ID (deviceId)</div>
-                  <div style={{ fontFamily: "var(--gl-font-mono)", fontWeight: 500 }}>{selectedDevice.deviceId}</div>
+                  <div style={{ color: "var(--gl-text-secondary)" }}>设备 ID (deviceId)</div>
+                  <div className="gl-value-deemphasized" style={{ fontFamily: "var(--gl-font-mono)", fontWeight: 500, color: "var(--gl-text-value-muted)" }}>{selectedDevice.deviceId}</div>
                 </div>
                 <div>
-                  <div style={{ color: "var(--gl-text-muted)" }}>操作系统 / Agent</div>
-                  <div style={{ fontWeight: 500, textTransform: "capitalize" }}>
+                  <div style={{ color: "var(--gl-text-secondary)" }}>操作系统 / Agent</div>
+                  <div className="gl-value-deemphasized" style={{ fontWeight: 500, textTransform: "capitalize", color: "var(--gl-text-value-muted)" }}>
                     {selectedDevice.os} {selectedDevice.agentVersion ? `(v${selectedDevice.agentVersion})` : ""}
                   </div>
                 </div>
                 <div>
-                  <div style={{ color: "var(--gl-text-muted)" }}>最后心跳 (lastSeenAt)</div>
-                  <div style={{ fontSize: 11 }}>
+                  <div style={{ color: "var(--gl-text-secondary)" }}>最后心跳 (lastSeenAt)</div>
+                  <div className="gl-value-deemphasized" style={{ fontSize: 11, color: "var(--gl-text-value-muted)" }}>
                     {selectedDevice.lastSeenAt ? new Date(selectedDevice.lastSeenAt).toLocaleString() : "未记录"}
                   </div>
                 </div>
                 <div>
-                  <div style={{ color: "var(--gl-text-muted)" }}>GPU / 显存使用率</div>
-                  <div>
+                  <div style={{ color: "var(--gl-text-secondary)" }}>GPU / 显存使用率</div>
+                  <div className="gl-value-deemphasized" style={{ color: "var(--gl-text-value-muted)" }}>
                     {selectedDevice.gpuUsagePercent != null ? `${selectedDevice.gpuUsagePercent}%` : "未检测到"}
                     {selectedDevice.gpuMemoryUsagePercent != null ? ` (显存 ${selectedDevice.gpuMemoryUsagePercent}%)` : ""}
                   </div>
                 </div>
                 <div>
-                  <div style={{ color: "var(--gl-text-muted)" }}>磁盘占用率</div>
-                  <div>{selectedDevice.diskUsagePercent != null ? `${selectedDevice.diskUsagePercent}%` : "未检测到"}</div>
+                  <div style={{ color: "var(--gl-text-secondary)" }}>磁盘占用率</div>
+                  <div className="gl-value-deemphasized" style={{ color: "var(--gl-text-value-muted)" }}>{selectedDevice.diskUsagePercent != null ? `${selectedDevice.diskUsagePercent}%` : "未检测到"}</div>
                 </div>
               </div>
 

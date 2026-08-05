@@ -48,7 +48,8 @@ export const GuanlanHeader: React.FC = () => {
           title="按 '/' 键快速搜索"
           aria-label="搜索指令或设备"
         >
-          🔍 搜索 [/]
+          <span aria-hidden="true">🔍</span>
+          <span className="gl-header-btn-text"> 搜索 [/]</span>
         </SpectrumButton>
 
         {/* Theme Quick Selector */}
