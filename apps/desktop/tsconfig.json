@@ -15,6 +15,7 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "types": ["node", "vite/client"]
   },
   "include": ["src", "vite.config.ts", "index.html"]

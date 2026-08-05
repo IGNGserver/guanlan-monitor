@@ -4,6 +4,7 @@ import { useTheme } from "../../context/ThemeContext";
 import { useLayout } from "../../context/LayoutContext";
 import { SpectrumCard } from "../Common/SpectrumCard";
 import { SpectrumBadge } from "../Common/SpectrumBadge";
+import { SpectrumButton } from "../Common/SpectrumButton";
 import { SpectrumToggle } from "../Common/SpectrumInput";
 
 export const SettingsView: React.FC = () => {
@@ -202,7 +203,7 @@ export const SettingsView: React.FC = () => {
       <SpectrumCard>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
           <div>
-            <strong>观澜 设备状态控制台</strong> (Guanlan Spectrum Adaptive Clean-Room UI v0.2.74)
+            <strong>观澜 设备状态控制台</strong> (Guanlan Spectrum Adaptive Clean-Room UI v0.2.75)
           </div>
           <div style={{ color: "var(--gl-text-muted)", fontFamily: "var(--gl-font-mono)" }}>
             Electron 37.2.6 | React 19.1.1 | Node 24.3.0

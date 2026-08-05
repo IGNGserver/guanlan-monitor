@@ -211,7 +211,7 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
         deviceId: "dev-win-01",
         hostname: "GUANLAN-WIN11-PRO",
         os: "windows",
-        agentVersion: "0.2.74",
+        agentVersion: "0.2.75",
         agentChannel: "stable",
         status: stopped ? "offline" : "online",
         lastSeenAt: new Date().toISOString(),
@@ -274,6 +274,7 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
       pendingStateFileExists: true,
       pendingSampleCount: this.flags.simulateError ? 18 : 0,
       pendingBytes: this.flags.simulateError ? 14280 : 0,
+      lastIssueCount: this.flags.simulateError ? 1 : 0,
       lastUploadError: this.flags.simulateError
         ? "Failed to connect to Hub at http://127.0.0.1:3100: ECONNREFUSED"
         : undefined,
