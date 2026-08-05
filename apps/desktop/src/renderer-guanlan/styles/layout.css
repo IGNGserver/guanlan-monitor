@@ -107,6 +107,19 @@
 
 .gl-layout-compact .gl-header {
   padding: 0 var(--gl-spacing-sm);
+  gap: var(--gl-spacing-xs);
+}
+
+.gl-layout-compact .gl-header-brand {
+  flex-shrink: 0;
+  min-width: max-content;
+  gap: 6px;
+}
+
+.gl-layout-compact .gl-brand-name {
+  display: inline-block;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .gl-layout-compact .gl-header-title {
@@ -118,14 +131,106 @@
 }
 
 .gl-layout-compact .gl-header-actions {
-  gap: 4px;
+  gap: 3px;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: calc(100% - 72px);
+  overflow: hidden;
+  justify-content: flex-end;
+}
+
+.gl-layout-compact .gl-header-actions .gl-badge {
+  padding: 2px 5px;
+  flex-shrink: 0;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.gl-layout-compact .gl-header-actions .gl-badge-label {
+  display: none;
+}
+
+.gl-layout-compact .gl-header-actions .gl-button {
+  padding: 0 5px;
+  height: 26px;
+  min-width: 26px;
   flex-shrink: 0;
 }
 
 .gl-layout-compact .gl-header-actions .gl-select {
-  max-width: 86px;
+  max-width: 64px;
+  min-width: 0;
+  flex-shrink: 1;
   padding: 0 2px;
   font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .gl-header {
+    padding: 0 var(--gl-spacing-sm);
+    gap: var(--gl-spacing-xs);
+  }
+
+  .gl-header-brand {
+    flex-shrink: 0;
+    min-width: max-content;
+    gap: 6px;
+  }
+
+  .gl-brand-name {
+    display: inline-block;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .gl-header-title {
+    display: none;
+  }
+
+  .gl-header-btn-text {
+    display: none;
+  }
+
+  .gl-header-actions {
+    gap: 3px;
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: calc(100% - 72px);
+    overflow: hidden;
+    justify-content: flex-end;
+  }
+
+  .gl-header-actions .gl-badge {
+    padding: 2px 5px;
+    flex-shrink: 0;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .gl-header-actions .gl-badge-label {
+    display: none;
+  }
+
+  .gl-header-actions .gl-button {
+    padding: 0 5px;
+    height: 26px;
+    min-width: 26px;
+    flex-shrink: 0;
+  }
+
+  .gl-header-actions .gl-select {
+    max-width: 64px;
+    min-width: 0;
+    flex-shrink: 1;
+    padding: 0 2px;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .gl-layout-compact .gl-card {

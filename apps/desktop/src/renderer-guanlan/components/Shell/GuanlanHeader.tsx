@@ -24,7 +24,7 @@ export const GuanlanHeader: React.FC = () => {
     <header className="gl-header">
       <div className="gl-header-brand">
         <div className="gl-brand-icon">澜</div>
-        <span>观澜</span>
+        <span className="gl-brand-name">观澜</span>
         <div className="gl-header-title">
           <span>{tabTitles[activeTab]}</span>
         </div>
@@ -54,11 +54,12 @@ export const GuanlanHeader: React.FC = () => {
 
         {/* Theme Quick Selector */}
         <select
-          className="gl-select"
+          className="gl-select gl-header-select"
           style={{ height: 26, fontSize: 11 }}
           value={themeMode}
           onChange={(e) => setThemeMode(e.target.value as any)}
           aria-label="主题模式"
+          title={`主题模式: ${themeMode === "system" ? "系统跟随" : themeMode === "light" ? "浅色" : "深色"}`}
         >
           <option value="system">🌓 系统跟随</option>
           <option value="light">☀️ 浅色主题</option>
@@ -67,11 +68,12 @@ export const GuanlanHeader: React.FC = () => {
 
         {/* Density Quick Selector */}
         <select
-          className="gl-select"
+          className="gl-select gl-header-select"
           style={{ height: 26, fontSize: 11 }}
           value={densitySetting}
           onChange={(e) => setDensitySetting(e.target.value as any)}
           aria-label="交互密度"
+          title={`交互密度: ${densitySetting === "auto" ? "自动密度" : densitySetting === "compact" ? "紧凑" : densitySetting === "comfortable" ? "标准" : "触控"}`}
         >
           <option value="auto">📐 自动密度</option>
           <option value="compact">紧凑 (28px)</option>
@@ -80,7 +82,13 @@ export const GuanlanHeader: React.FC = () => {
         </select>
 
         {/* Refresh Button */}
-        <SpectrumButton variant="secondary" size="sm" onClick={refresh} title="按 F5 或 Ctrl+R 刷新">
+        <SpectrumButton
+          variant="secondary"
+          size="sm"
+          onClick={refresh}
+          title="按 F5 或 Ctrl+R 刷新"
+          aria-label="刷新数据"
+        >
           🔄
         </SpectrumButton>
       </div>

@@ -10,9 +10,9 @@ interface SpectrumBadgeProps {
 
 export const SpectrumBadge: React.FC<SpectrumBadgeProps> = ({ status, label, className = "" }) => {
   return (
-    <span className={`gl-badge gl-badge-${status} ${className}`}>
+    <span className={`gl-badge gl-badge-${status} ${className}`} title={label} aria-label={label}>
       <span className={`gl-status-dot ${status}`} />
-      {label}
+      <span className="gl-badge-label">{label}</span>
     </span>
   );
 };

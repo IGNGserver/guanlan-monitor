@@ -211,7 +211,7 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
         deviceId: "dev-win-01",
         hostname: "GUANLAN-WIN11-PRO",
         os: "windows",
-        agentVersion: "0.2.78",
+        agentVersion: "0.2.79",
         agentChannel: "stable",
         status: stopped ? "offline" : "online",
         lastSeenAt: new Date().toISOString(),
