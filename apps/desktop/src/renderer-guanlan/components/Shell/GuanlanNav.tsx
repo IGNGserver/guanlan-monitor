@@ -51,7 +51,7 @@ export const GuanlanNav: React.FC = () => {
         })}
 
         {/* More Tab with Accessible Popover */}
-        <div style={{ position: "relative", flex: 1, display: "flex", height: "100%", minWidth: 0, width: "100%" }}>
+        <div style={{ position: "relative", display: "flex", height: "100%", minWidth: 0, width: "100%" }}>
           <button
             type="button"
             className={`gl-bottom-nav-item ${isSecondaryActive ? "active" : ""}`}

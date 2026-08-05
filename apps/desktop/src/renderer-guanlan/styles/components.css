@@ -155,9 +155,9 @@
   height: 56px;
   background-color: var(--gl-surface-layer-1);
   border-top: 1px solid var(--gl-border-subtle);
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   align-items: center;
-  justify-content: space-around;
   flex-shrink: 0;
   width: 100%;
   max-width: 100%;
@@ -172,7 +172,7 @@
   align-items: center;
   justify-content: center;
   gap: 2px;
-  flex: 1;
+  width: 100%;
   height: 100%;
   min-width: 0;
   border: none;
@@ -182,6 +182,7 @@
   cursor: pointer;
   padding: 4px 2px;
   white-space: nowrap;
+  box-sizing: border-box;
 }
 
 .gl-bottom-nav-item.active {
