@@ -23,6 +23,19 @@ export function registerIpc(controller: DesktopController, getWindow: () => Brow
   ipcMain.handle(IPC_CHANNELS.saveFanNote, (_event, deviceId: string, fanId: string, note: string) => controller.saveFanNote(asString(deviceId, "device_id"), asString(fanId, "fan_id"), asString(note, "fan_note")));
   ipcMain.handle(IPC_CHANNELS.updateStartupSettings, (_event, settings) => controller.updateStartupSettings(asStartupSettings(settings)));
   ipcMain.handle(IPC_CHANNELS.openExternal, (_event, url: string) => controller.openExternal(asString(url, "external_url")));
+  ipcMain.handle(IPC_CHANNELS.windowMinimize, () => {
+    getWindow()?.minimize();
+  });
+  ipcMain.handle(IPC_CHANNELS.windowToggleMaximize, () => {
+    const window = getWindow();
+    if (!window || window.isDestroyed()) return false;
+    if (window.isMaximized()) window.unmaximize();
+    else window.maximize();
+    return window.isMaximized();
+  });
+  ipcMain.handle(IPC_CHANNELS.windowClose, () => {
+    getWindow()?.close();
+  });
   ipcMain.handle(IPC_CHANNELS.exit, async () => {
     markQuitting();
     await controller.shutdown();

@@ -40,6 +40,7 @@ if (!hasSingleInstanceLock) {
       minWidth,
       minHeight,
       show: false,
+      frame: false,
       backgroundColor: "#f5f7fa",
       title: "观澜 · 设备状态控制台",
       autoHideMenuBar: true,

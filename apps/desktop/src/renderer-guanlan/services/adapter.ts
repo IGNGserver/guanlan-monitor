@@ -29,6 +29,9 @@ export interface IGuanlanDataAdapter {
   updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot>;
   cloudPush(): Promise<DesktopSnapshot>;
   openExternal(url: string): Promise<void>;
+  windowMinimize(): Promise<void>;
+  windowToggleMaximize(): Promise<boolean>;
+  windowClose(): Promise<void>;
   subscribe(listener: (snapshot: DesktopSnapshot) => void): () => void;
 
   // Mock-only simulation toggles (ignored in real bridge mode)

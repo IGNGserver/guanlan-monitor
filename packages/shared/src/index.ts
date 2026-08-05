@@ -627,6 +627,9 @@ export interface DesktopRendererBridge {
   saveFanNote(deviceId: string, fanId: string, note: string): Promise<DesktopSnapshot>;
   updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot>;
   openExternal(url: string): Promise<void>;
+  windowMinimize(): Promise<void>;
+  windowToggleMaximize(): Promise<boolean>;
+  windowClose(): Promise<void>;
   exit(): Promise<void>;
   subscribe(listener: (snapshot: DesktopSnapshot) => void): () => void;
 }

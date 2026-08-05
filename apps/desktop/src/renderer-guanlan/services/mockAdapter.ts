@@ -186,6 +186,18 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
     console.log(`[MockGuanlanAdapter] Opening external URL: ${url}`);
   }
 
+  async windowMinimize(): Promise<void> {
+    // Browser preview has no native window chrome.
+  }
+
+  async windowToggleMaximize(): Promise<boolean> {
+    return false;
+  }
+
+  async windowClose(): Promise<void> {
+    // Browser preview has no native window chrome.
+  }
+
   subscribe(listener: (snapshot: DesktopSnapshot) => void): () => void {
     this.listeners.add(listener);
     return () => {

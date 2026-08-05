@@ -73,6 +73,18 @@ class SafeDscBridge implements DesktopRendererBridge {
     return this.requireBridge().openExternal(url);
   }
 
+  async windowMinimize(): Promise<void> {
+    return this.requireBridge().windowMinimize();
+  }
+
+  async windowToggleMaximize(): Promise<boolean> {
+    return this.requireBridge().windowToggleMaximize();
+  }
+
+  async windowClose(): Promise<void> {
+    return this.requireBridge().windowClose();
+  }
+
   async exit(): Promise<void> {
     return this.requireBridge().exit();
   }

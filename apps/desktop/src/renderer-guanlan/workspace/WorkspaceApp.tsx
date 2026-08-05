@@ -30,7 +30,11 @@ type IconName =
   | "data"
   | "keyboard"
   | "about"
-  | "arrow";
+  | "arrow"
+  | "windowMinimize"
+  | "windowMaximize"
+  | "windowRestore"
+  | "windowClose";
 
 const iconPaths: Record<IconName, string[]> = {
   overview: ["M4 4h6v6H4z", "M14 4h6v6h-6z", "M4 14h6v6H4z", "M14 14h6v6h-6z"],
@@ -53,7 +57,11 @@ const iconPaths: Record<IconName, string[]> = {
   data: ["M4 5h16v14H4z", "M8 9h8", "M8 13h5", "M8 16h3"],
   keyboard: ["M4 6h16v12H4z", "M7 10h.01", "M10 10h.01", "M13 10h.01", "M16 10h.01", "M7 14h10"],
   about: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M12 10v6", "M12 7h.01"],
-  arrow: ["M5 12h14", "m13 6 6 6-6 6"]
+  arrow: ["M5 12h14", "m13 6 6 6-6 6"],
+  windowMinimize: ["M5 19h14"],
+  windowMaximize: ["M5 5h14v14H5z"],
+  windowRestore: ["M8 8h11v11H8z", "M5 16V5h11"],
+  windowClose: ["m6 6 12 12", "m18 6L6 18"]
 };
 
 function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
@@ -281,7 +289,7 @@ const probeProviderLabels: Record<AgentProbeProvider, string> = {
   disabled: "禁用"
 };
 
-function WorkspaceSidebar() {
+function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolean; onSidebarLeave: () => void }) {
   const {
     route,
     sidebarCollapsed,
@@ -301,7 +309,7 @@ function WorkspaceSidebar() {
   const localDeviceAvailable = Boolean(localDeviceId && devices.some((device) => device.deviceId === localDeviceId));
 
   return (
-    <aside className={`workspace-sidebar ${sidebarCollapsed ? "is-collapsed" : ""} ${inSettings ? "is-settings" : ""}`}>
+    <aside className={`workspace-sidebar ${sidebarCollapsed ? "is-collapsed" : ""} ${inSettings ? "is-settings" : ""}`} onMouseLeave={() => { if (sidebarCollapsed && sidebarPeek) onSidebarLeave(); }}>
       <div className="workspace-sidebar__topline">
         <button className="workspace-brand" type="button" onClick={() => (inSettings ? closeSettings() : navigate({ kind: "overview" }))} aria-label="返回总览">
           <span className="workspace-brand__mark">澜</span>
@@ -393,6 +401,30 @@ function SettingsSidebar() {
         </button>
       ))}
     </nav>
+  );
+}
+
+function WindowTitleBar() {
+  const { minimizeWindow, toggleMaximizeWindow, closeWindow } = useWorkspace();
+  const [isMaximized, setIsMaximized] = useState(false);
+  const toggleMaximize = async () => {
+    const next = await toggleMaximizeWindow();
+    setIsMaximized(next);
+  };
+  return (
+    <header className="workspace-windowbar">
+      <div className="workspace-windowbar__drag" onDoubleClick={() => void toggleMaximize()}>
+        <span className="workspace-windowbar__mark">澜</span>
+        <strong>观澜</strong>
+        <span className="workspace-windowbar__separator" aria-hidden="true" />
+        <span className="workspace-windowbar__subtitle">设备状态控制台</span>
+      </div>
+      <div className="workspace-windowbar__controls" role="group" aria-label="窗口控制">
+        <button className="workspace-window-control" type="button" onClick={() => void minimizeWindow()} aria-label="最小化" title="最小化"><Icon name="windowMinimize" size={15} /></button>
+        <button className="workspace-window-control" type="button" onClick={() => void toggleMaximize()} aria-label={isMaximized ? "还原窗口" : "最大化"} title={isMaximized ? "还原窗口" : "最大化"}><Icon name={isMaximized ? "windowRestore" : "windowMaximize"} size={14} /></button>
+        <button className="workspace-window-control workspace-window-control--close" type="button" onClick={() => void closeWindow()} aria-label="关闭窗口" title="关闭窗口"><Icon name="windowClose" size={15} /></button>
+      </div>
+    </header>
   );
 }
 
@@ -660,7 +692,11 @@ function RouteView() {
 
 function WorkspaceFrame() {
   const { sidebarCollapsed } = useWorkspace();
-  return <div className={clsx("workspace-root", sidebarCollapsed && "is-sidebar-collapsed")}><WorkspaceSidebar /><div className="workspace-main"><TopBar /><main className="workspace-content" id="workspace-main-content"><RouteView /></main></div><CommandPalette /><ShellNotice /></div>;
+  const [sidebarPeek, setSidebarPeek] = useState(false);
+  useEffect(() => {
+    if (!sidebarCollapsed) setSidebarPeek(false);
+  }, [sidebarCollapsed]);
+  return <div className={clsx("workspace-root", sidebarCollapsed && "is-sidebar-collapsed", sidebarPeek && "is-sidebar-peek")}><WindowTitleBar /><WorkspaceSidebar sidebarPeek={sidebarPeek} onSidebarLeave={() => setSidebarPeek(false)} /><div className="workspace-main"><TopBar /><main className="workspace-content" id="workspace-main-content"><RouteView /></main></div>{sidebarCollapsed && <button className="workspace-sidebar-edge-trigger" type="button" aria-label="展开侧边栏" onMouseEnter={() => setSidebarPeek(true)} onPointerEnter={() => setSidebarPeek(true)} />}<CommandPalette /><ShellNotice /></div>;
 }
 
 export function WorkspaceApp() {

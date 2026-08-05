@@ -75,6 +75,9 @@ interface WorkspaceContextValue {
   saveHubConnection: (serverUrl: string, accessKey: string) => Promise<boolean>;
   updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => Promise<boolean>;
   cloudPush: () => Promise<boolean>;
+  minimizeWindow: () => Promise<void>;
+  toggleMaximizeWindow: () => Promise<boolean>;
+  closeWindow: () => Promise<void>;
   login: (accessKey: string) => Promise<void>;
   logout: () => Promise<void>;
   openExternal: (url: string) => Promise<void>;
@@ -135,7 +138,15 @@ function getStoredRefreshInterval(): 5 | 10 | 30 {
 }
 
 function formatError(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) return error.message;
+  if (error instanceof Error && error.message) {
+    const messages: Record<string, string> = {
+      hub_server_url_invalid: "中枢地址无效：公网地址必须使用 HTTPS，局域网 HTTP 仅支持私有地址。",
+      hub_server_url_missing: "还没有配置中枢地址。",
+      hub_server_url_required: "请输入中枢地址。",
+      hub_access_key_required: "请输入中枢访问密钥。"
+    };
+    return messages[error.message] ?? error.message;
+  }
   return fallback;
 }
 
@@ -347,6 +358,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     [adapter, runMutation]
   );
   const cloudPush = useCallback(() => runMutation(() => adapter.cloudPush(), "配置已同步到中枢", "同步失败"), [adapter, runMutation]);
+  const minimizeWindow = useCallback(() => adapter.windowMinimize(), [adapter]);
+  const toggleMaximizeWindow = useCallback(() => adapter.windowToggleMaximize(), [adapter]);
+  const closeWindow = useCallback(() => adapter.windowClose(), [adapter]);
   const login = useCallback(async (accessKey: string) => {
     if (isPreview) return;
     try {
@@ -424,6 +438,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     saveHubConnection,
     updateStartupSettings,
     cloudPush,
+    minimizeWindow,
+    toggleMaximizeWindow,
+    closeWindow,
     login,
     logout,
     openExternal: (url: string) => adapter.openExternal(url),

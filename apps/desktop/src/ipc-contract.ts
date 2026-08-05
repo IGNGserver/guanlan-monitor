@@ -11,6 +11,9 @@ export const IPC_CHANNELS = {
   saveFanNote: "dsc:save-fan-note",
   updateStartupSettings: "dsc:update-startup-settings",
   openExternal: "dsc:open-external",
+  windowMinimize: "dsc:window-minimize",
+  windowToggleMaximize: "dsc:window-toggle-maximize",
+  windowClose: "dsc:window-close",
   exit: "dsc:exit",
   snapshot: "dsc:snapshot"
 } as const;

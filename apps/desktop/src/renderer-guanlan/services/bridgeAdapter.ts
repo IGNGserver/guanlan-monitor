@@ -50,6 +50,18 @@ export class BridgeGuanlanDataAdapter implements IGuanlanDataAdapter {
     return dscBridge.openExternal(url);
   }
 
+  async windowMinimize(): Promise<void> {
+    return dscBridge.windowMinimize();
+  }
+
+  async windowToggleMaximize(): Promise<boolean> {
+    return dscBridge.windowToggleMaximize();
+  }
+
+  async windowClose(): Promise<void> {
+    return dscBridge.windowClose();
+  }
+
   subscribe(listener: (snapshot: DesktopSnapshot) => void): () => void {
     return dscBridge.subscribe(listener);
   }

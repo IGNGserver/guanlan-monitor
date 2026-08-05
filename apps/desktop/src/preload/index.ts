@@ -22,6 +22,9 @@ const bridge: DesktopRendererBridge = {
   saveFanNote: (deviceId: string, fanId: string, note: string) => ipcRenderer.invoke(IPC_CHANNELS.saveFanNote, deviceId, fanId, note),
   updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => ipcRenderer.invoke(IPC_CHANNELS.updateStartupSettings, settings),
   openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.openExternal, url),
+  windowMinimize: () => ipcRenderer.invoke(IPC_CHANNELS.windowMinimize),
+  windowToggleMaximize: () => ipcRenderer.invoke(IPC_CHANNELS.windowToggleMaximize),
+  windowClose: () => ipcRenderer.invoke(IPC_CHANNELS.windowClose),
   exit: () => ipcRenderer.invoke(IPC_CHANNELS.exit),
   subscribe: (listener: (snapshot: DesktopSnapshot) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, snapshot: DesktopSnapshot) => listener(snapshot);
