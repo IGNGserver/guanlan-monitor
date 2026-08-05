@@ -12,13 +12,19 @@ export const LocalDeviceView: React.FC = () => {
     snapshot,
     loading,
     error,
+    setSelectedDeviceId,
     updateLocalConfig,
     controlAgent,
     setAgentSecret,
+    saveFanNote,
     updateStartupSettings,
     cloudPush,
     refresh
   } = useGuanlan();
+
+  const localDeviceId = snapshot?.localBackend?.config?.connection?.deviceId;
+  const metricsDeviceId = snapshot?.metrics?.device?.deviceId;
+  const isLocalMetrics = Boolean(localDeviceId && metricsDeviceId && metricsDeviceId === localDeviceId);
 
   const [serverUrlInput, setServerUrlInput] = useState("");
   const [normalInterval, setNormalInterval] = useState(5);
@@ -28,6 +34,9 @@ export const LocalDeviceView: React.FC = () => {
 
   const [secretInput, setSecretInput] = useState("");
   const [secretModalOpen, setSecretModalOpen] = useState(false);
+
+  const [fanNoteDrafts, setFanNoteDrafts] = useState<Record<string, string>>({});
+  const [savingFanId, setSavingFanId] = useState<string | null>(null);
 
   // Sync form inputs whenever snapshot arrives, preventing frozen initial defaults
   useEffect(() => {
@@ -39,7 +48,19 @@ export const LocalDeviceView: React.FC = () => {
       setAutoStartCollector(cfg.autoStartCollector ?? true);
       setAutoRestartCollector(cfg.autoRestartCollector ?? true);
     }
-  }, [snapshot]);
+
+    if (isLocalMetrics && snapshot?.metrics?.latest?.fans) {
+      setFanNoteDrafts((prev) => {
+        const updated = { ...prev };
+        snapshot.metrics!.latest!.fans.forEach((fan) => {
+          if (updated[fan.id] === undefined) {
+            updated[fan.id] = fan.note || "";
+          }
+        });
+        return updated;
+      });
+    }
+  }, [snapshot, isLocalMetrics]);
 
   useEffect(() => {
     if (!secretModalOpen) return;
@@ -70,6 +91,7 @@ export const LocalDeviceView: React.FC = () => {
 
   const backend = snapshot.localBackend;
   const isAgentRunning = backend?.running === true;
+  const fans = isLocalMetrics ? (snapshot.metrics?.latest?.fans || []) : [];
 
   const handleSaveConfig = async () => {
     await updateLocalConfig({
@@ -90,6 +112,19 @@ export const LocalDeviceView: React.FC = () => {
     await setAgentSecret(secretInput);
     setSecretInput("");
     setSecretModalOpen(false);
+  };
+
+  const handleSaveFanNote = async (fanId: string) => {
+    if (!localDeviceId) return;
+    const note = fanNoteDrafts[fanId] ?? "";
+    try {
+      setSavingFanId(fanId);
+      await saveFanNote(localDeviceId, fanId, note);
+    } catch (err) {
+      console.error("保存风扇备注异常:", err);
+    } finally {
+      setSavingFanId(null);
+    }
   };
 
   return (
@@ -267,6 +302,168 @@ export const LocalDeviceView: React.FC = () => {
           </div>
         </SpectrumCard>
       </div>
+
+      {/* Fan Sensor Telemetry & Custom Notes Section (Local Scope) */}
+      <SpectrumCard title="🌀 风扇传感器与自定义备注 (Fan Sensor Notes)">
+        {!localDeviceId ? (
+          <div style={{ fontSize: 12, color: "var(--gl-text-muted)", padding: "4px 0" }}>
+            未检测到有效的本机设备 ID 配置 (localBackend.config.connection.deviceId 未获取)。
+          </div>
+        ) : !isLocalMetrics ? (
+          <div
+            style={{
+              padding: "12px 14px",
+              backgroundColor: "var(--gl-surface-quiet)",
+              border: "1px solid var(--gl-border-muted)",
+              borderRadius: "var(--gl-radius-md)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+              fontSize: 12
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+              <div style={{ color: "var(--gl-text-primary)", fontWeight: 500 }}>
+                🔒 传感器数据为只读/未匹配状态：当前遥测指标来源于节点 <code style={{ fontFamily: "var(--gl-font-mono)" }}>{metricsDeviceId || "未选择"}</code>，非本机 (<code style={{ fontFamily: "var(--gl-font-mono)" }}>{localDeviceId}</code>)
+              </div>
+              <SpectrumButton
+                variant="secondary"
+                size="sm"
+                onClick={() => setSelectedDeviceId(localDeviceId)}
+              >
+                📡 切换至本机指标
+              </SpectrumButton>
+            </div>
+            <div style={{ color: "var(--gl-text-secondary)", fontSize: 11, lineHeight: 1.5 }}>
+              风扇传感器与自定义备注仅在本机指标匹配时允许查看与编辑保存。点击上方按钮可请求并显示本机实时遥测数据。
+            </div>
+          </div>
+        ) : fans.length === 0 ? (
+          <div style={{ fontSize: 12, color: "var(--gl-text-muted)", padding: "4px 0" }}>
+            未检测到本机风扇传感器指标 (或风扇采集探针未启用)。
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {fans.map((fan) => {
+              const fanInputId = `fan-note-input-${fan.id}`;
+              const draftValue = fanNoteDrafts[fan.id] ?? fan.note ?? "";
+              const isSaving = savingFanId === fan.id;
+
+              return (
+                <div
+                  key={fan.id}
+                  style={{
+                    padding: 12,
+                    border: "1px solid var(--gl-border-subtle)",
+                    borderRadius: "var(--gl-radius-md)",
+                    backgroundColor: "var(--gl-surface-quiet)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8
+                  }}
+                >
+                  {/* Read-Only Telemetry Header */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      flexWrap: "wrap",
+                      gap: 8
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 600, fontSize: 13, color: "var(--gl-text-primary)" }}>
+                        🌀 {fan.label || fan.id}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          fontFamily: "var(--gl-font-mono)",
+                          color: "var(--gl-text-muted)",
+                          backgroundColor: "var(--gl-surface-elevated)",
+                          padding: "2px 6px",
+                          borderRadius: 4
+                        }}
+                      >
+                        ID: {fan.id}
+                      </span>
+                      <span style={{ fontSize: 12, color: "var(--gl-text-secondary)" }}>
+                        接口: {fan.interface || "通用通道"}
+                      </span>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span
+                        style={{
+                          fontFamily: "var(--gl-font-mono)",
+                          fontWeight: 600,
+                          fontSize: 13,
+                          color: "var(--gl-accent-text)"
+                        }}
+                      >
+                        ⚡ {fan.rpm != null ? `${fan.rpm} RPM` : "未定转速"}
+                      </span>
+
+                      {fan.controlMode && (
+                        <SpectrumBadge status="online" label={`模式: ${fan.controlMode}`} />
+                      )}
+
+                      {fan.targetTemperatureC != null && (
+                        <span style={{ fontSize: 11, color: "var(--gl-text-secondary)" }}>
+                          目标: {fan.targetTemperatureC}°C
+                        </span>
+                      )}
+
+                      {(fan.minPwmPercent != null || fan.maxPwmPercent != null) && (
+                        <span style={{ fontSize: 11, color: "var(--gl-text-secondary)" }}>
+                          PWM: {fan.minPwmPercent ?? 0}% - {fan.maxPwmPercent ?? 100}%
+                        </span>
+                      )}
+
+                      {fan.channelState && (
+                        <SpectrumBadge status="cached" label={`状态: ${fan.channelState}`} />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Labeled Edit Custom Note Form */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-end",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      marginTop: 4
+                    }}
+                  >
+                    <div style={{ flex: "1 1 240px" }}>
+                      <SpectrumInput
+                        id={fanInputId}
+                        label={`风扇 ${fan.label || fan.id} 备注说明`}
+                        placeholder="输入风扇位置或用途备注..."
+                        value={draftValue}
+                        onChange={(e) =>
+                          setFanNoteDrafts((prev) => ({ ...prev, [fan.id]: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <SpectrumButton
+                      variant="primary"
+                      size="sm"
+                      disabled={isSaving}
+                      onClick={() => handleSaveFanNote(fan.id)}
+                      aria-label={`保存 ${fan.label || fan.id} 风扇备注`}
+                    >
+                      {isSaving ? "保存中..." : "💾 保存备注"}
+                    </SpectrumButton>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </SpectrumCard>
 
       {/* Startup & Operating System Integration Card */}
       <SpectrumCard title="系统集成与启动项设置 (Startup Settings)">

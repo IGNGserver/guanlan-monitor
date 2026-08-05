@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { useGuanlan } from "../../context/GuanlanContext";
 import { SpectrumCard } from "../Common/SpectrumCard";
 import { SpectrumBadge } from "../Common/SpectrumBadge";
@@ -17,11 +17,8 @@ export const DeviceListView: React.FC = () => {
     setSearchQuery,
     statusFilter,
     setStatusFilter,
-    saveFanNote,
     refresh
   } = useGuanlan();
-
-  const [fanNoteInput, setFanNoteInput] = useState("主板 CPU 散热风扇");
 
   if (loading && !snapshot) return <EmptyState variant="loading" title="加载设备节点列表..." />;
 
@@ -82,7 +79,7 @@ export const DeviceListView: React.FC = () => {
       {/* Filter and Search Controls */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1, minWidth: 260 }}>
-          <label htmlFor="device-search-input" className="sr-only" style={{ display: "none" }}>
+          <label htmlFor="device-search-input" className="sr-only">
             搜索设备
           </label>
           <SpectrumInput
@@ -123,6 +120,7 @@ export const DeviceListView: React.FC = () => {
               <table className="gl-table">
                 <thead>
                   <tr>
+                    <th style={{ width: 44, textAlign: "center" }}>选择</th>
                     <th>主机名 / ID</th>
                     <th>系统</th>
                     <th>状态</th>
@@ -136,26 +134,46 @@ export const DeviceListView: React.FC = () => {
                     return (
                       <tr
                         key={dev.deviceId}
-                        onClick={() => setSelectedDeviceId(dev.deviceId)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            setSelectedDeviceId(dev.deviceId);
-                          }
-                        }}
-                        tabIndex={0}
-                        role="button"
                         aria-selected={isSelected}
                         style={{
-                          cursor: "pointer",
                           backgroundColor: isSelected ? "var(--gl-accent-quiet)" : undefined
                         }}
                       >
-                        <td style={{ fontWeight: isSelected ? 600 : 400 }}>
-                          <div>{dev.hostname}</div>
-                          <div style={{ fontSize: 10, color: "var(--gl-text-muted)", fontFamily: "var(--gl-font-mono)" }}>
-                            {dev.deviceId}
-                          </div>
+                        <td style={{ textAlign: "center" }}>
+                          <input
+                            type="radio"
+                            id={`select-device-${dev.deviceId}`}
+                            name="device-selection"
+                            checked={isSelected}
+                            onChange={() => setSelectedDeviceId(dev.deviceId)}
+                            aria-label={`选择设备 ${dev.hostname} (${dev.deviceId})`}
+                            style={{ cursor: "pointer", accentColor: "var(--gl-accent-base)", margin: 0 }}
+                          />
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDeviceId(dev.deviceId)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              padding: 0,
+                              font: "inherit",
+                              color: "inherit",
+                              cursor: "pointer",
+                              textAlign: "left",
+                              width: "100%",
+                              display: "block"
+                            }}
+                            aria-label={`查看设备 ${dev.hostname} 详情`}
+                          >
+                            <div style={{ fontWeight: isSelected ? 600 : 400, color: "var(--gl-text-primary)" }}>
+                              {dev.hostname}
+                            </div>
+                            <div style={{ fontSize: 10, color: "var(--gl-text-muted)", fontFamily: "var(--gl-font-mono)" }}>
+                              {dev.deviceId}
+                            </div>
+                          </button>
                         </td>
                         <td style={{ textTransform: "capitalize" }}>
                           {dev.os} {dev.agentVersion ? `v${dev.agentVersion}` : ""}
@@ -225,27 +243,13 @@ export const DeviceListView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Fan Notes Read/Write Safe Section */}
-              <div style={{ borderTop: "1px solid var(--gl-border-subtle)", paddingTop: 10, marginTop: 4 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
-                  风扇硬件自定义局部备注 (saveFanNote)
+              {/* Read-Only Device Policy Presentation */}
+              <div style={{ borderTop: "1px solid var(--gl-border-subtle)", paddingTop: 12, marginTop: 4 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--gl-text-primary)", marginBottom: 4 }}>
+                  🔒 远端节点只读策略
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <SpectrumInput
-                    id="fan-note-input"
-                    aria-label="风扇硬件自定义备注"
-                    placeholder="如: 机箱顶置 140mm 散热排"
-                    value={fanNoteInput}
-                    onChange={(e) => setFanNoteInput(e.target.value)}
-                    style={{ flex: 1 }}
-                  />
-                  <SpectrumButton
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => saveFanNote(selectedDevice.deviceId, "fan-0", fanNoteInput)}
-                  >
-                    保存备注
-                  </SpectrumButton>
+                <div style={{ fontSize: 11, color: "var(--gl-text-muted)", lineHeight: 1.5 }}>
+                  该节点为远端采集节点，仅支持只读遥测与运行状态监控。修改本机 Agent 参数与参数配置请转至「此设备」页面。
                 </div>
               </div>
             </div>

@@ -48,6 +48,7 @@
 ### 1.8 适配器模式与 Mock 预览安全
 - **默认机制**: 运行于 Electron 环境时自动优先使用 `BridgeGuanlanDataAdapter` (`window.dsc`)。
 - **Mock 试看开关**: 通过 `?mock=1` URL 参数或 `localStorage.dsc_mock_preview` 显示切换，Mock 地址统一采用安全的 `http://127.0.0.1:3100`（单 Hub 端口），避免试看模式侵入生产环境。
+- **远端节点权限边界**: 远端设备仅提供遥测与运行状态只读视图；`saveFanNote` 等风扇备注写操作仅在「此设备」页且本机设备 ID 与遥测设备 ID 匹配时开放。
 
 ---
 
