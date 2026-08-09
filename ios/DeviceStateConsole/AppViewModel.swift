@@ -113,6 +113,27 @@ public final class AppViewModel {
                 activeScreen = .deviceList
             }
             startPolling()
+
+    public func deleteDevice(deviceId: String) async {
+        do {
+            try await apiClient.deleteDevice(baseUrl: serverConfig.baseUrl, deviceId: deviceId)
+            devices.removeAll(where: { $0.deviceId == deviceId })
+            if selectedDeviceId == deviceId {
+                selectedDeviceId = devices.first?.deviceId
+            }
+        } catch {
+            self.errorText = error.localizedDescription
+        }
+    }
+
+    public func reorderDevices(deviceIds: [String]) async {
+        do {
+            try await apiClient.reorderDevices(baseUrl: serverConfig.baseUrl, deviceIds: deviceIds)
+            devices = (try? await apiClient.fetchDevices(baseUrl: serverConfig.baseUrl)) ?? devices
+        } catch {
+            self.errorText = error.localizedDescription
+        }
+    }
         } catch {
             errorMessage = "获取设备列表失败: \(error.localizedDescription)"
             activeScreen = .deviceList
