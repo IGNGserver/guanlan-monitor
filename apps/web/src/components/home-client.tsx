@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
 import type { DeviceRealtimeEvent, DeviceSummary, MetricWindow } from "@dsc/shared";
-import { getSession, getServerUrl, listDevices, logout } from "../lib/api";
+import { deleteDevice, getSession, getServerUrl, listDevices, logout, reorderDevices } from "../lib/api";
 import { Dashboard } from "./dashboard";
 import { HomeOverview } from "./home-overview";
 import { LoginForm } from "./login-form";
@@ -25,6 +25,20 @@ export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: strin
     const nextDevices = await listDevices();
     setDevices(nextDevices);
     setState("authenticated");
+  }
+
+  async function handleDeleteDevice(deviceId: string) {
+    await deleteDevice(deviceId);
+    setDevices((current) => current.filter((d) => d.deviceId !== deviceId));
+    if (selectedDeviceId === deviceId) {
+      handleSelectDevice(null);
+    }
+  }
+
+  async function handleReorderDevices(deviceIds: string[]) {
+    await reorderDevices(deviceIds);
+    const updatedDevices = await listDevices();
+    setDevices(updatedDevices);
   }
 
   useEffect(() => {
@@ -141,6 +155,8 @@ export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: strin
         <HomeOverview
           devices={devices}
           onOpenDevice={(id) => handleSelectDevice(id)}
+          onDeleteDevice={handleDeleteDevice}
+          onReorderDevices={handleReorderDevices}
         />
       )}
     </SaasShell>

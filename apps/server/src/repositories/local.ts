@@ -249,9 +249,9 @@ export class LocalDeviceRepository implements DeviceRepository {
   async registerOrUpdateDevice(deviceId: string, name?: string): Promise<DeviceRecord> {
     let resultRecord!: DeviceRecord;
     await this.store.update((db) => {
-      db.deviceRegistry ??= {};
+      const registry = (db.deviceRegistry ??= {});
       const now = new Date().toISOString();
-      const existing = db.deviceRegistry[deviceId];
+      const existing = registry[deviceId];
 
       if (existing) {
         existing.status = "open";
@@ -259,7 +259,7 @@ export class LocalDeviceRepository implements DeviceRepository {
         if (name) existing.name = name;
         resultRecord = { ...existing };
       } else {
-        const allDevices = Object.values(db.deviceRegistry);
+        const allDevices = Object.values(registry);
         const maxSortOrder = allDevices.reduce((max, d) => Math.max(max, d.sortOrder ?? 0), -1);
         const newRecord: DeviceRecord = {
           deviceId,
@@ -269,7 +269,7 @@ export class LocalDeviceRepository implements DeviceRepository {
           registeredAt: now,
           updatedAt: now
         };
-        db.deviceRegistry[deviceId] = newRecord;
+        registry[deviceId] = newRecord;
         resultRecord = { ...newRecord };
       }
     });
@@ -286,12 +286,12 @@ export class LocalDeviceRepository implements DeviceRepository {
 
   async deleteDevice(deviceId: string): Promise<void> {
     await this.store.update((db) => {
-      db.deviceRegistry ??= {};
-      if (db.deviceRegistry[deviceId]) {
-        db.deviceRegistry[deviceId].status = "closed";
-        db.deviceRegistry[deviceId].updatedAt = new Date().toISOString();
+      const registry = (db.deviceRegistry ??= {});
+      if (registry[deviceId]) {
+        registry[deviceId].status = "closed";
+        registry[deviceId].updatedAt = new Date().toISOString();
       } else {
-        db.deviceRegistry[deviceId] = {
+        registry[deviceId] = {
           deviceId,
           name: deviceId,
           status: "closed",
@@ -306,12 +306,13 @@ export class LocalDeviceRepository implements DeviceRepository {
 
   async reorderDevices(deviceIds: string[]): Promise<void> {
     await this.store.update((db) => {
-      db.deviceRegistry ??= {};
+      const registry = (db.deviceRegistry ??= {});
       const now = new Date().toISOString();
       deviceIds.forEach((id, index) => {
-        if (db.deviceRegistry[id]) {
-          db.deviceRegistry[id].sortOrder = index;
-          db.deviceRegistry[id].updatedAt = now;
+        const item = registry[id];
+        if (item) {
+          item.sortOrder = index;
+          item.updatedAt = now;
         }
       });
     });
