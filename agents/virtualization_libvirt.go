@@ -305,7 +305,10 @@ type qemuImageInfo struct {
 }
 
 func collectQEMUImageInfo(ctx context.Context, path string) (qemuImageInfo, error) {
-	qemuImg := firstNonEmptyEnv("DSC_VIRTUALIZATION_QEMU_IMG", "DSC_QEMU_IMG", "qemu-img")
+	qemuImg := firstNonEmptyEnv("DSC_VIRTUALIZATION_QEMU_IMG", "DSC_QEMU_IMG")
+	if qemuImg == "" {
+		qemuImg = "qemu-img"
+	}
 	output, err := runVirtualizationCommand(ctx, qemuImg, "info", "--output=json", path)
 	if err != nil {
 		output, err = runVirtualizationCommand(ctx, qemuImg, "info", "--force-share", "--output=json", path)

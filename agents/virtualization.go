@@ -433,6 +433,7 @@ func collectProxmoxSnapshot(ctx context.Context, cfg agentVirtualizationConfig) 
 			Memory: &virtualizationMemoryStats{
 				ConfiguredBytes: uintPointer(resource.MaxMem),
 				UsedBytes:       uintPointer(resource.Mem),
+				AvailableBytes:  uintPointer(resource.MaxMem - minUint64(resource.MaxMem, resource.Mem)),
 			},
 			Disk: &virtualizationDiskStats{
 				ProvisionedBytes: uintPointer(resource.MaxDisk),

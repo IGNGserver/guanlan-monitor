@@ -57,6 +57,18 @@ the JSON config file. The adapters use the following host-side interfaces:
 | VMware vSphere | vCenter REST API | ESXi host, datastore and VM inventory/configuration |
 | VMware Workstation / Fusion | `vmrun` plus local `.vmx` files | Registered/running VMs and VMX CPU/memory/disk/NIC configuration |
 
+数据覆盖边界：
+
+| Platform | Host/platform data | VM data | Guest Agent/Tools dependency |
+| --- | --- | --- | --- |
+| Proxmox VE | Node CPU、CPU 使用率、内存已用/可用、存储容量/已用/可用、节点及 VM 磁盘和网络累计计数 | VM 状态、vCPU、内存、磁盘配置、NIC/MAC/桥接/VLAN | 平台级数据不需要 QEMU Guest Agent；guest IP/文件系统等 guest 级数据另需 agent（当前适配层不强制） |
+| KVM + libvirt | Node CPU/CPU 使用率、内存容量、存储池容量/已用 | Domain 状态、CPU/内存、磁盘/NIC、libvirt domain stats | guest hostname/IP 依赖 libvirt guest agent；平台配置采集不依赖它 |
+| QEMU process | 当前仅能从本机普通采集器获得完整宿主机指标，虚拟化节点快照补充宿主机逻辑 CPU 数 | 运行中 QEMU 进程、vCPU、内存、命令行磁盘/NIC，镜像容量/实际占用由 `qemu-img` 补充 | 不需要 guest agent；进程模式不提供 guest IP/文件系统 |
+| Hyper-V | Windows 主机 CPU、内存、逻辑磁盘、网络累计计数 | VM 状态、vCPU/CPU 使用率、启动/已分配/需求内存、VHD 容量/文件大小、虚拟交换机和 MAC | 不需要 guest agent；guest 内部指标不属于当前平台适配层 |
+| VirtualBox | 当前虚拟化快照补充宿主机逻辑 CPU 数，完整宿主机指标仍来自普通 agent 采集器 | VM 状态、vCPU、内存、虚拟磁盘容量/占用、NIC/MAC/网络模式、Guest Properties | Guest Additions 只影响 Guest Properties；VM 配置和设备数据不依赖它 |
+| VMware Workstation / Fusion | 当前虚拟化快照补充宿主机逻辑 CPU 数，完整宿主机指标仍来自普通 agent 采集器 | `vmrun` 运行/注册清单、VMX vCPU/内存、VMDK/磁盘配置、NIC/MAC/网络配置 | VMware Tools 只影响 `getGuestIPAddress`；VMX 配置采集不依赖它 |
+| VMware vSphere | ESXi host CPU/内存清单、vCenter host 状态、datastore 容量/可用空间 | VM 状态、vCPU、内存、虚拟磁盘容量、NIC/MAC/端口组 | vCenter REST 配置数据不依赖 guest agent；guest 内部 IP/文件系统需另接 vCenter guest API 或 guest agent |
+
 Direct QEMU processes do not expose the same storage/network counters as
 libvirt; those fields remain absent unless the process command line or an image
 tool exposes them. vSphere and macOS/Fusion require their vendor host and

@@ -154,7 +154,7 @@ func parseVirtualBoxMachineReadable(output string) map[string]string {
 		if separator <= 0 {
 			continue
 		}
-		key := strings.TrimSpace(line[:separator])
+		key := strings.Trim(strings.TrimSpace(line[:separator]), `"`)
 		value := strings.TrimSpace(line[separator+1:])
 		if key != "" {
 			result[key] = value
@@ -164,25 +164,24 @@ func parseVirtualBoxMachineReadable(output string) map[string]string {
 }
 
 func isVirtualBoxDiskKey(key string) bool {
-	parts := strings.Split(key, "-")
-	if len(parts) != 3 || !containsVirtualBoxController(parts[0]) {
-		return false
-	}
-	for _, part := range parts[1:] {
-		if _, err := strconv.Atoi(part); err != nil {
+	key = strings.ToUpper(strings.TrimSpace(key))
+	for _, controller := range []string{"IDE", "SATA", "SCSI", "SAS", "NVME", "VIRTIO-SCSI"} {
+		prefix := controller + "-"
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		parts := strings.Split(strings.TrimPrefix(key, prefix), "-")
+		if len(parts) != 2 {
 			return false
 		}
-	}
-	return true
-}
-
-func containsVirtualBoxController(value string) bool {
-	switch strings.ToUpper(value) {
-	case "IDE", "SATA", "SCSI", "SAS", "NVME", "VIRTIO-SCSI":
+		for _, part := range parts {
+			if _, err := strconv.Atoi(part); err != nil {
+				return false
+			}
+		}
 		return true
-	default:
-		return false
 	}
+	return false
 }
 
 func parseVirtualBoxMediumInfo(output string) (*uint64, *uint64) {

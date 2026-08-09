@@ -142,11 +142,11 @@ func TestParseVirtualBoxMachineData(t *testing.T) {
 	if len(entries) != 1 || entries[0].name != "nested" || entries[0].id != "11111111-2222-3333-4444-555555555555" {
 		t.Fatalf("unexpected VirtualBox VM list: %#v", entries)
 	}
-	fields := parseVirtualBoxMachineReadable("name=\"nested\"\nVMState=\"running\"\ncpus=\"2\"\nmemory=\"4096\"\nSATA-0-0=\"/tmp/nested.vdi\"\nSATA-0-0-type=\"hdd\"\nnic1=\"bridged\"\nmacaddress1=\"001122334455\"\nbridgeadapter1=\"vmbr0\"")
+	fields := parseVirtualBoxMachineReadable("name=\"nested\"\nVMState=\"running\"\ncpus=\"2\"\nmemory=\"4096\"\n\"SATA-0-0\"=\"/tmp/nested.vdi\"\n\"SATA-0-0-type\"=\"hdd\"\nnic1=\"bridged\"\nmacaddress1=\"001122334455\"\nbridgeadapter1=\"vmbr0\"")
 	if fields["VMState"] != `"running"` || fields["SATA-0-0"] != `"/tmp/nested.vdi"` {
 		t.Fatalf("unexpected VirtualBox machine-readable values: %#v", fields)
 	}
-	if !isVirtualBoxDiskKey("SATA-0-0") || isVirtualBoxDiskKey("SATA-0-0-type") {
+	if !isVirtualBoxDiskKey("SATA-0-0") || !isVirtualBoxDiskKey("VIRTIO-SCSI-0-0") || isVirtualBoxDiskKey("SATA-0-0-type") {
 		t.Fatalf("unexpected VirtualBox disk key detection")
 	}
 }

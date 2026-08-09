@@ -43,6 +43,13 @@ func collectQEMUProcessSnapshot(ctx context.Context, cfg agentVirtualizationConf
 			if info, infoErr := collectQEMUImageInfo(ctx, vm.Disks[index].Path); infoErr == nil {
 				vm.Disks[index].CapacityBytes = uintPointer(info.VirtualSize)
 				vm.Disks[index].AllocatedBytes = uintPointer(info.ActualSize)
+			} else {
+				snapshot.Issues = append(snapshot.Issues, virtualizationIssue{
+					Code:      "qemu_image_info_failed",
+					Message:   fmt.Sprintf("qemu image metadata for %s: %v", firstNonEmpty(vm.Disks[index].ID, vm.Disks[index].Path), infoErr),
+					Scope:     vm.ID,
+					Retryable: true,
+				})
 			}
 		}
 		snapshot.VMs = append(snapshot.VMs, vm)
