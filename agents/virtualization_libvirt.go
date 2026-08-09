@@ -305,9 +305,13 @@ type qemuImageInfo struct {
 }
 
 func collectQEMUImageInfo(ctx context.Context, path string) (qemuImageInfo, error) {
-	output, err := runVirtualizationCommand(ctx, firstNonEmptyEnv("DSC_VIRTUALIZATION_QEMU_IMG", "DSC_QEMU_IMG", "qemu-img"), "info", "--output=json", path)
+	qemuImg := firstNonEmptyEnv("DSC_VIRTUALIZATION_QEMU_IMG", "DSC_QEMU_IMG", "qemu-img")
+	output, err := runVirtualizationCommand(ctx, qemuImg, "info", "--output=json", path)
 	if err != nil {
-		return qemuImageInfo{}, err
+		output, err = runVirtualizationCommand(ctx, qemuImg, "info", "--force-share", "--output=json", path)
+		if err != nil {
+			return qemuImageInfo{}, err
+		}
 	}
 	var info qemuImageInfo
 	if err := json.Unmarshal([]byte(output), &info); err != nil {
