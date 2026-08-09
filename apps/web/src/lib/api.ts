@@ -113,6 +113,19 @@ export function getDevice(deviceId: string) {
   return apiFetch<DeviceDetail>(`/api/devices/${deviceId}`);
 }
 
+export function deleteDevice(deviceId: string) {
+  return apiFetch<{ ok: true }>(`/api/devices/${encodeURIComponent(deviceId)}`, {
+    method: "DELETE"
+  });
+}
+
+export function reorderDevices(deviceIds: string[]) {
+  return apiFetch<{ ok: true }>("/api/devices/reorder", {
+    method: "PUT",
+    body: JSON.stringify({ deviceIds })
+  });
+}
+
 export function getMetrics(deviceId: string, window: MetricWindow) {
   return apiFetch<MetricsResponse>(`/api/devices/${deviceId}/metrics?window=${window}`).then((payload) => ({
     ...payload,

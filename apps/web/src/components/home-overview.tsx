@@ -7,6 +7,8 @@ import styles from "./monitor.module.css";
 interface HomeOverviewProps {
   devices: DeviceSummary[];
   onOpenDevice: (deviceId: string) => void;
+  onDeleteDevice?: (deviceId: string) => Promise<void>;
+  onReorderDevices?: (deviceIds: string[]) => Promise<void>;
 }
 
 export function HomeOverview({ devices, onOpenDevice }: HomeOverviewProps) {
