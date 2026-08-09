@@ -11,8 +11,14 @@ interface HomeOverviewProps {
   onReorderDevices?: (deviceIds: string[]) => Promise<void>;
 }
 
-export function HomeOverview({ devices, onOpenDevice }: HomeOverviewProps) {
+export function HomeOverview({
+  devices,
+  onOpenDevice,
+  onDeleteDevice,
+  onReorderDevices
+}: HomeOverviewProps) {
   const [background, setBackground] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     setBackground(window.localStorage.getItem("dsc-background"));
@@ -29,6 +35,34 @@ export function HomeOverview({ devices, onOpenDevice }: HomeOverviewProps) {
       window.localStorage.setItem("dsc-background", result);
     };
     reader.readAsDataURL(file);
+  }
+
+  async function handleMove(index: number, direction: -1 | 1, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!onReorderDevices) return;
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= devices.length) return;
+
+    const newDevices = [...devices];
+    const temp = newDevices[index];
+    newDevices[index] = newDevices[targetIndex];
+    newDevices[targetIndex] = temp;
+
+    await onReorderDevices(newDevices.map((d) => d.deviceId));
+  }
+
+  async function handleDelete(deviceId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!onDeleteDevice) return;
+    if (!window.confirm(`确定要删除设备 "${deviceId}" 吗？如果该 Agent 仍在线上报数据，其状态会在下次心跳时重新上线。`)) {
+      return;
+    }
+    setDeletingId(deviceId);
+    try {
+      await onDeleteDevice(deviceId);
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   const onlineCount = devices.filter((d) => d.status === "online").length;
@@ -131,7 +165,7 @@ export function HomeOverview({ devices, onOpenDevice }: HomeOverviewProps) {
 
         {/* Device Cards Grid */}
         <div className={styles.deviceGrid}>
-          {devices.map((device) => {
+          {devices.map((device, index) => {
             const isOnline = device.status === "online";
             const cpuVal = device.cpuUsagePercent ?? 0;
             const gpuVal = device.gpuUsagePercent ?? 0;
@@ -159,18 +193,81 @@ export function HomeOverview({ devices, onOpenDevice }: HomeOverviewProps) {
                       <span className={styles.deviceIdTag}>{device.deviceId}</span>
                     </div>
 
-                    <span
-                      className={`${styles.statusPill} ${
-                        isOnline ? styles.statusOnlinePill : styles.statusOfflinePill
-                      }`}
-                    >
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      {onReorderDevices && (
+                        <div style={{ display: "flex", gap: "2px" }}>
+                          <button
+                            type="button"
+                            title="前移/上移排序"
+                            disabled={index === 0}
+                            style={{
+                              padding: "2px 6px",
+                              fontSize: "11px",
+                              borderRadius: "4px",
+                              border: "1px solid var(--border-subtle)",
+                              background: "var(--bg-card)",
+                              color: "var(--text-main)",
+                              cursor: index === 0 ? "not-allowed" : "pointer",
+                              opacity: index === 0 ? 0.3 : 1
+                            }}
+                            onClick={(e) => handleMove(index, -1, e)}
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            title="后移/下移排序"
+                            disabled={index === devices.length - 1}
+                            style={{
+                              padding: "2px 6px",
+                              fontSize: "11px",
+                              borderRadius: "4px",
+                              border: "1px solid var(--border-subtle)",
+                              background: "var(--bg-card)",
+                              color: "var(--text-main)",
+                              cursor: index === devices.length - 1 ? "not-allowed" : "pointer",
+                              opacity: index === devices.length - 1 ? 0.3 : 1
+                            }}
+                            onClick={(e) => handleMove(index, 1, e)}
+                          >
+                            ▼
+                          </button>
+                        </div>
+                      )}
+
+                      {onDeleteDevice && (
+                        <button
+                          type="button"
+                          title="删除设备"
+                          disabled={deletingId === device.deviceId}
+                          style={{
+                            padding: "2px 6px",
+                            fontSize: "11px",
+                            borderRadius: "4px",
+                            border: "1px solid var(--border-subtle)",
+                            background: "var(--bg-card)",
+                            color: "var(--accent-rose, #ef4444)",
+                            cursor: "pointer"
+                          }}
+                          onClick={(e) => handleDelete(device.deviceId, e)}
+                        >
+                          🗑️
+                        </button>
+                      )}
+
                       <span
-                        className={`${styles.statusIndicatorDot} ${
-                          isOnline ? styles.statusDotOnline : styles.statusDotOffline
+                        className={`${styles.statusPill} ${
+                          isOnline ? styles.statusOnlinePill : styles.statusOfflinePill
                         }`}
-                      />
-                      {isOnline ? "在线" : "离线"}
-                    </span>
+                      >
+                        <span
+                          className={`${styles.statusIndicatorDot} ${
+                            isOnline ? styles.statusDotOnline : styles.statusDotOffline
+                          }`}
+                        />
+                        {isOnline ? "在线" : "离线"}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Resource Progress Bars (Android-like Summary) */}
