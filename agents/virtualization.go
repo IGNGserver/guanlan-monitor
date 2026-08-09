@@ -626,10 +626,6 @@ func firstNonEmptyEnv(keys ...string) string {
 	return ""
 }
 
-func intPointer(value int) *int {
-	return &value
-}
-
 func uintPointer(value uint64) *uint64 {
 	if value == 0 {
 		return nil
