@@ -183,4 +183,54 @@ export class HubClient {
       ...(requestInit.headers ? Object.fromEntries(new Headers(requestInit.headers).entries()) : {})
     };
     if (includeSession && this.sessionCookie) headers.Cookie = this.sessionCookie;
- 
+    const response = await fetch(`${this.serverUrl}${endpoint}`, {
+      ...requestInit,
+      headers,
+      signal: requestInit.signal ?? AbortSignal.timeout(12_000)
+    });
+    this.captureSessionCookie(response);
+    const text = await response.text();
+    let payload: unknown = null;
+    if (text.trim()) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = { error: text };
+      }
+    }
+    if (!response.ok) {
+      const detail = typeof payload === "object" && payload && "error" in payload ? String(payload.error) : response.statusText;
+      throw new Error(`hub_${response.status}:${detail}`);
+    }
+    if (loginKey && response.status === 200) this.accessKey = loginKey;
+    return payload as T;
+  }
+
+  private captureSessionCookie(response: Response): void {
+    const headers = response.headers as Headers & { getSetCookie?: () => string[] };
+    const values = headers.getSetCookie?.() ?? (headers.get("set-cookie") ? [headers.get("set-cookie") as string] : []);
+    const session = values.map((value) => value.split(";", 1)[0]).find((value) => value.startsWith("dsc_session="));
+    if (session) this.sessionCookie = session;
+  }
+}
+
+function isPrivateNetworkHost(rawHost: string): boolean {
+  const host = rawHost.replace(/^\[/, "").replace(/\]$/, "").toLowerCase();
+  if (host === "localhost" || host === "::1") return true;
+  const family = isIP(host);
+  if (family === 4) {
+    const octets = host.split(".").map(Number);
+    const [first, second] = octets;
+    return first === 127
+      || first === 10
+      || (first === 172 && second >= 16 && second <= 31)
+      || (first === 192 && second === 168)
+      || (first === 169 && second === 254);
+  }
+  if (family === 6) return host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd");
+  return false;
+}
+
+export function credentialFilePath(userDataPath: string): string {
+  return path.join(userDataPath, "hub-credential.json");
+}
