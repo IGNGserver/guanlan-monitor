@@ -199,3 +199,19 @@ func TestParseQEMUProcess(t *testing.T) {
 		t.Fatalf("unexpected QEMU process devices: disks=%#v networks=%#v", vm.Disks, vm.Networks)
 	}
 }
+
+func TestParseQEMUBlockdevMemory(t *testing.T) {
+	if actual := parseQEMUMemory("size=1048576k"); actual != 1024*1024*1024 {
+		t.Fatalf("QEMU blockdev memory = %d, want 1 GiB", actual)
+	}
+	vm := parseQEMUProcess(qemuProcessRecord{
+		PID:         43,
+		CommandLine: `qemu-system-x86_64 -name guest=nested -m size=1048576k -smp 1 -blockdev {"driver":"file","filename":"/var/lib/libvirt/images/nested.qcow2","node-name":"libvirt-2-storage"} -blockdev {"driver":"file","filename":"/var/lib/libvirt/images/nested-seed.iso","node-name":"libvirt-1-storage"}`,
+	})
+	if vm.Memory.ConfiguredBytes == nil || *vm.Memory.ConfiguredBytes != 1024*1024*1024 {
+		t.Fatalf("unexpected QEMU blockdev memory: %#v", vm.Memory)
+	}
+	if len(vm.Disks) != 1 || vm.Disks[0].Path != "/var/lib/libvirt/images/nested.qcow2" {
+		t.Fatalf("unexpected QEMU blockdev disks: %#v", vm.Disks)
+	}
+}

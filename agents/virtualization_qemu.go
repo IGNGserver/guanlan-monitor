@@ -139,6 +139,14 @@ func parseQEMUProcess(process qemuProcessRecord) virtualMachineTelemetry {
 			if disk, ok := parseQEMUDrive(tokens[index+1], "drive"); ok {
 				vm.Disks = append(vm.Disks, disk)
 			}
+		} else if strings.HasPrefix(token, "-blockdev=") {
+			if disk, ok := parseQEMUBlockdev(strings.TrimPrefix(token, "-blockdev="), fmt.Sprintf("blockdev-%d", index)); ok {
+				vm.Disks = append(vm.Disks, disk)
+			}
+		} else if token == "-blockdev" && index+1 < len(tokens) {
+			if disk, ok := parseQEMUBlockdev(tokens[index+1], fmt.Sprintf("blockdev-%d", index)); ok {
+				vm.Disks = append(vm.Disks, disk)
+			}
 		} else if strings.HasPrefix(token, "-hda=") || strings.HasPrefix(token, "-hdb=") || strings.HasPrefix(token, "-hdc=") || strings.HasPrefix(token, "-hdd=") {
 			path := strings.SplitN(token, "=", 2)[1]
 			vm.Disks = append(vm.Disks, virtualizationDiskDevice{ID: token[:4], Name: token[:4], Storage: "qemu", Path: path})
@@ -202,13 +210,34 @@ func parseQEMUMemory(value string) uint64 {
 	if separator := strings.Index(value, ","); separator >= 0 {
 		value = value[:separator]
 	}
-	if strings.HasSuffix(value, "G") {
-		return parsePVESizeBytes(value)
+	if separator := strings.Index(value, "="); separator >= 0 {
+		key := strings.TrimSpace(value[:separator])
+		if key == "SIZE" || key == "MEMORY" {
+			value = strings.TrimSpace(value[separator+1:])
+		}
 	}
-	if strings.HasSuffix(value, "M") {
+	if strings.HasSuffix(value, "K") || strings.HasSuffix(value, "M") || strings.HasSuffix(value, "G") || strings.HasSuffix(value, "T") || strings.HasSuffix(value, "P") {
 		return parsePVESizeBytes(value)
 	}
 	return parsePVESizeBytes(value + "M")
+}
+
+func parseQEMUBlockdev(value, id string) (virtualizationDiskDevice, bool) {
+	var spec struct {
+		Driver   string `json:"driver"`
+		Filename string `json:"filename"`
+		NodeName string `json:"node-name"`
+	}
+	if err := json.Unmarshal([]byte(value), &spec); err != nil || strings.TrimSpace(spec.Filename) == "" || !strings.EqualFold(spec.Driver, "file") {
+		return virtualizationDiskDevice{}, false
+	}
+	path := strings.TrimSpace(spec.Filename)
+	lowerPath := strings.ToLower(path)
+	lowerNode := strings.ToLower(spec.NodeName)
+	if strings.HasSuffix(lowerPath, ".iso") || strings.HasSuffix(lowerPath, ".fd") || strings.Contains(lowerNode, "pflash") || strings.Contains(lowerNode, "cdrom") || strings.Contains(lowerNode, "seed") {
+		return virtualizationDiskDevice{}, false
+	}
+	return virtualizationDiskDevice{ID: firstNonEmpty(spec.NodeName, id), Name: firstNonEmpty(spec.NodeName, id), Storage: "qemu", Path: path}, true
 }
 
 func parseQEMUDrive(value, id string) (virtualizationDiskDevice, bool) {
