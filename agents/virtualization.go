@@ -324,7 +324,7 @@ func detectAutoVirtualizationPlatform(ctx context.Context) string {
 			return "qemu"
 		}
 	case "windows":
-		if output, err := runWindowsPowerShell(ctx, "if (Get-Command Get-VM -ErrorAction SilentlyContinue) { 'hyperv' }"); err == nil && strings.TrimSpace(output) != "" {
+		if output, err := runWindowsPowerShell(ctx, "if (Get-Command Get-VM -ErrorAction SilentlyContinue) { 'hyperv' }"); err == nil && strings.TrimSpace(string(output)) != "" {
 			return "hyperv"
 		}
 		if firstNonEmptyEnv("DSC_VIRTUALIZATION_VBOXMANAGE") != "" || virtualizationExecutableAvailable("VBoxManage.exe", "VBoxManage") {
