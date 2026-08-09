@@ -385,7 +385,7 @@ func collectLibvirtGuestInfo(ctx context.Context, virsh string, baseArgs []strin
 	return guest
 }
 
-func parseLibvirtPowerState(state string) string {
+func normalizeLibvirtPowerState(state string) string {
 	state = strings.ToLower(strings.TrimSpace(state))
 	switch {
 	case strings.Contains(state, "running"):
