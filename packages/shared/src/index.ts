@@ -225,6 +225,168 @@ export interface SensorBackendStatus {
   detail?: string;
 }
 
+export type AgentVirtualizationPlatform =
+  | "auto"
+  | "proxmox"
+  | "hyperv"
+  | "vsphere"
+  | "libvirt"
+  | "qemu"
+  | "virtualbox"
+  | "vmware-workstation"
+  | "vmware-fusion";
+
+export interface AgentVirtualizationConfig {
+  enabled: boolean;
+  platform: AgentVirtualizationPlatform;
+  endpoint?: string;
+  node?: string;
+  insecureSkipTlsVerify?: boolean;
+  pollIntervalSeconds?: number;
+}
+
+export interface VirtualizationCpuStats {
+  configuredCores?: number | null;
+  usagePercent?: number | null;
+  usageMHz?: number | null;
+  demandMHz?: number | null;
+  readinessPercent?: number | null;
+}
+
+export interface VirtualizationMemoryStats {
+  configuredBytes?: number | null;
+  usedBytes?: number | null;
+  availableBytes?: number | null;
+  activeBytes?: number | null;
+  balloonedBytes?: number | null;
+  swappedBytes?: number | null;
+  pressurePercent?: number | null;
+}
+
+export interface VirtualizationDiskStats {
+  provisionedBytes?: number | null;
+  allocatedBytes?: number | null;
+  usedBytes?: number | null;
+  readBytesPerSec?: number | null;
+  writeBytesPerSec?: number | null;
+  totalReadBytes?: number | null;
+  totalWriteBytes?: number | null;
+  readOpsPerSec?: number | null;
+  writeOpsPerSec?: number | null;
+  latencyMs?: number | null;
+}
+
+export interface VirtualizationNetworkStats {
+  rxBytesPerSec?: number | null;
+  txBytesPerSec?: number | null;
+  totalRxBytes?: number | null;
+  totalTxBytes?: number | null;
+}
+
+export interface VirtualizationDiskDevice {
+  id: string;
+  name: string;
+  storage?: string | null;
+  path?: string | null;
+  capacityBytes?: number | null;
+  allocatedBytes?: number | null;
+  usedBytes?: number | null;
+  readBytesPerSec?: number | null;
+  writeBytesPerSec?: number | null;
+  totalReadBytes?: number | null;
+  totalWriteBytes?: number | null;
+  latencyMs?: number | null;
+}
+
+export interface VirtualizationNetworkDevice {
+  id: string;
+  name: string;
+  macAddress?: string | null;
+  bridge?: string | null;
+  switchName?: string | null;
+  network?: string | null;
+  vlan?: number | null;
+  rxBytesPerSec?: number | null;
+  txBytesPerSec?: number | null;
+  totalRxBytes?: number | null;
+  totalTxBytes?: number | null;
+}
+
+export interface VirtualizationFilesystemDevice {
+  mountPoint: string;
+  filesystem?: string | null;
+  totalBytes?: number | null;
+  usedBytes?: number | null;
+  availableBytes?: number | null;
+}
+
+export interface VirtualizationGuestInfo {
+  hostname?: string | null;
+  ipv4?: string[];
+  ipv6?: string[];
+  agentAvailable?: boolean;
+  source?: string | null;
+  filesystems?: VirtualizationFilesystemDevice[];
+}
+
+export interface VirtualizationStorageTelemetry {
+  id: string;
+  name: string;
+  type?: string | null;
+  active?: boolean | null;
+  shared?: boolean | null;
+  totalBytes?: number | null;
+  usedBytes?: number | null;
+  availableBytes?: number | null;
+}
+
+export interface VirtualizationNodeTelemetry {
+  id: string;
+  name: string;
+  platform: AgentVirtualizationPlatform;
+  status: string;
+  version?: string | null;
+  cpu?: VirtualizationCpuStats;
+  memory?: VirtualizationMemoryStats;
+  disk?: VirtualizationDiskStats;
+  network?: VirtualizationNetworkStats;
+  storages?: VirtualizationStorageTelemetry[];
+}
+
+export interface VirtualMachineTelemetry {
+  id: string;
+  name: string;
+  platform: AgentVirtualizationPlatform;
+  node?: string | null;
+  type?: string | null;
+  powerState: string;
+  cpu?: VirtualizationCpuStats;
+  memory?: VirtualizationMemoryStats;
+  disk?: VirtualizationDiskStats;
+  network?: VirtualizationNetworkStats;
+  disks?: VirtualizationDiskDevice[];
+  networks?: VirtualizationNetworkDevice[];
+  guest?: VirtualizationGuestInfo;
+}
+
+export interface VirtualizationIssue {
+  code: string;
+  message: string;
+  scope?: string | null;
+  retryable?: boolean;
+}
+
+export interface VirtualizationSnapshot {
+  platform: AgentVirtualizationPlatform;
+  source: string;
+  collectedAt: string;
+  nodes: VirtualizationNodeTelemetry[];
+  vms: VirtualMachineTelemetry[];
+  storages?: VirtualizationStorageTelemetry[];
+  capabilities: string[];
+  issues?: VirtualizationIssue[];
+}
+
 export interface DeviceMetricOption {
   key: DeviceMetricKey;
   available: boolean;
@@ -258,6 +420,7 @@ export interface AgentLocalConfig extends DeviceMetricConfigPayload {
   connection: AgentConnectionConfig;
   sampling: AgentSamplingConfig;
   probeSelections: AgentProbeSelection[];
+  virtualization?: AgentVirtualizationConfig;
   cloudSyncEnabled?: boolean;
   autoRestartCollector?: boolean;
 }
@@ -293,6 +456,7 @@ export interface AgentMetricsPayload {
   gpus: GpuDeviceStats[];
   fans: FanSensorStats[];
   sensorBackends?: SensorBackendStatus[];
+  virtualization?: VirtualizationSnapshot | null;
 }
 
 export interface DeviceSummary {
@@ -475,6 +639,7 @@ export interface MetricsLatest {
   gpus: GpuDeviceStats[];
   sensorBackends: SensorBackendStatus[];
   fans: FanSensorStats[];
+  virtualization?: VirtualizationSnapshot | null;
 }
 
 export interface MetricsResponse {
@@ -614,6 +779,7 @@ export interface DesktopConfigPatch {
   enabledDeviceIds?: Partial<Record<DeviceBlockKey, string[]>>;
   instanceMetricConfig?: Record<string, DeviceMetricKey[]>;
   probeSelections?: AgentProbeSelection[];
+  virtualization?: AgentVirtualizationConfig;
   cloudSyncEnabled?: boolean;
   dataRecordingEnabled?: boolean;
   autoRestartCollector?: boolean;

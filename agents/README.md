@@ -39,6 +39,31 @@ The command reads `DSC_SERVER_URL` and `DSC_AGENT_SECRET` (or the installed
 Linux/Windows `agent.env`). Use `--server-url`, `--secret`, or `--install-dir`
 when the installed environment is not available.
 
+## Hypervisor adapters
+
+The collector can optionally append platform-level virtualization telemetry to
+the normal host payload. The adapter is disabled unless
+`DSC_VIRTUALIZATION_ENABLED=true` or a platform/endpoint is configured. Keep
+platform credentials in the service environment rather than the repository or
+the JSON config file. The initial Proxmox adapter uses:
+
+```text
+DSC_VIRTUALIZATION_ENABLED=true
+DSC_VIRTUALIZATION_PLATFORM=proxmox
+DSC_VIRTUALIZATION_ENDPOINT=https://pve.example:8006/api2/json
+DSC_VIRTUALIZATION_NODE=pve1
+DSC_VIRTUALIZATION_INSECURE_TLS=false
+DSC_VIRTUALIZATION_POLL_SECONDS=30
+DSC_VIRTUALIZATION_TOKEN_ID=root@pam!readonly
+DSC_VIRTUALIZATION_TOKEN_SECRET=replace-with-a-short-lived-token-secret
+```
+
+The same non-secret settings may be placed in the Agent JSON configuration
+under `virtualization`. The token ID and secret remain environment-only. A
+platform adapter reports an explicit capability/error record when a provider
+does not expose a requested VM or guest-level metric; it does not require a
+vendor Guest Agent for the host/platform metrics.
+
 The Linux GUI package is named
 `DeviceStateConsole-Linux-GUI-Install-vX.Y.Z.deb`; it is built and installed by
 GitHub Actions on Ubuntu 24.04. The GUI package is the recommended Linux desktop

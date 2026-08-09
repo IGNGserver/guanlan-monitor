@@ -244,7 +244,8 @@ export function payloadToTimeSeries(
       gpus: payload.gpus,
       fans: payload.fans ?? [],
       diskRate: payload.diskRate,
-      networkRate: payload.networkRate
+      networkRate: payload.networkRate,
+      virtualization: payload.virtualization ?? null
     }
   };
 }

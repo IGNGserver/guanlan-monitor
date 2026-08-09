@@ -57,6 +57,7 @@ export interface TimeSeriesRecord {
     fans: AgentMetricsPayload["fans"];
     diskRate: AgentMetricsPayload["diskRate"];
     networkRate: AgentMetricsPayload["networkRate"];
+    virtualization: AgentMetricsPayload["virtualization"];
   };
 }
 

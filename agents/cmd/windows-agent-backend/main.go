@@ -50,6 +50,15 @@ type agentProbeSelection struct {
 	Enabled  bool   `json:"enabled"`
 }
 
+type agentVirtualizationConfig struct {
+	Enabled               bool   `json:"enabled"`
+	Platform              string `json:"platform"`
+	Endpoint              string `json:"endpoint"`
+	Node                  string `json:"node"`
+	InsecureSkipTLSVerify bool   `json:"insecureSkipTlsVerify"`
+	PollIntervalSeconds   int    `json:"pollIntervalSeconds"`
+}
+
 type agentLocalConfig struct {
 	Connection           agentConnectionConfig `json:"connection"`
 	Sampling             agentSamplingConfig   `json:"sampling"`
@@ -57,6 +66,7 @@ type agentLocalConfig struct {
 	EnabledDeviceIDs     map[string][]string   `json:"enabledDeviceIds"`
 	InstanceMetricConfig map[string][]string   `json:"instanceMetricConfig"`
 	ProbeSelections      []agentProbeSelection `json:"probeSelections"`
+	Virtualization       *agentVirtualizationConfig `json:"virtualization,omitempty"`
 	CloudSyncEnabled     bool                  `json:"cloudSyncEnabled"`
 	DataRecordingEnabled bool                  `json:"dataRecordingEnabled"`
 	AutoRestartCollector bool                  `json:"autoRestartCollector"`

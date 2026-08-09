@@ -421,6 +421,7 @@ function mergeAgentConfig(current: AgentBackendConfig, patch: DesktopConfigPatch
     enabledDeviceIds: patch.enabledDeviceIds ?? current.enabledDeviceIds,
     instanceMetricConfig: patch.instanceMetricConfig ?? current.instanceMetricConfig,
     probeSelections: patch.probeSelections ?? current.probeSelections,
+    virtualization: patch.virtualization ?? current.virtualization,
     cloudSyncEnabled: patch.cloudSyncEnabled ?? current.cloudSyncEnabled,
     dataRecordingEnabled: patch.dataRecordingEnabled ?? current.dataRecordingEnabled,
     autoRestartCollector: patch.autoRestartCollector ?? current.autoRestartCollector,

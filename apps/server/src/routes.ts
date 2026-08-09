@@ -346,6 +346,7 @@ export async function registerRoutes(
           networkInterfaces: state.latest.networkInterfaces ?? [],
           gpus: state.latest.gpus,
           sensorBackends: state.latest.sensorBackends ?? [],
+          virtualization: state.latest.virtualization ?? null,
           fans: (state.latest.fans ?? []).map((fan) => ({
             ...fan,
             note: notes[fan.id] ?? fan.note ?? ""
