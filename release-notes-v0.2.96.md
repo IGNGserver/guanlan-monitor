@@ -1,4 +1,4 @@
-# Release v0.2.95
+# Release v0.2.96
 
 ## 新增功能
 - **中枢设备注册与状态流转**：新增 `devices` 设备数据表（支持 MySQL 及 Local JSON），实现 Agent 自动注册、用户标记关闭（软删除）及在线 Agent 动态重激活机制。
