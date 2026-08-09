@@ -507,6 +507,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           _state.update { it.copy(refreshing = false, message = error.message ?: "刷新失败") }
         }
     }
+  }
+
   fun deleteDevice(deviceId: String) {
     val currentApi = api ?: return
     viewModelScope.launch {
