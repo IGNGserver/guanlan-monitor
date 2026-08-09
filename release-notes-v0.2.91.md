@@ -1,6 +1,11 @@
-# Release v0.2.91
+# v0.2.91 测试版
 
-## 新增功能
-- **中枢设备注册与状态流转**：新增 `devices` 设备数据表（支持 MySQL 及 Local JSON），实现 Agent 自动注册、用户标记关闭（软删除）及在线 Agent 动态重激活机制。
-- **设备排序持久化**：全网设备支持顺序重排，中枢持久化存储排序索引 `sort_order`，保证多端统一展现逻辑。
-- **多端接口与 UI 接入**：在 Web 网页端、Desktop 桌面客户端、Windows WinUI 3 客户端、Android 客户端及 iOS 客户端全面集成设备删除与排序操作。
+## 修复与 Windows 端“观澜”图标全量统一
+
+- 修复 `apps/desktop/src/main/hub-client.ts` 语法与依赖，保证 TypeScript 校验严格通过。
+- 将 Windows 端的桌面快捷方式、任务栏图标、系统托盘图标全量替换为与安卓端一致的“观澜” master 图标（多分辨率 ICO）。
+- 替换 Windows GUI 软件内部（顶栏、侧边栏 Logo、关于观澜页面、错误兜底界面）的图标显示，由原本显示的文本标记统一替换为“观澜”标准图标。
+
+## 验证说明
+
+这是测试版，不代表稳定发布。构建、打包和 Windows 安装验收由 GitHub Actions 完成。
