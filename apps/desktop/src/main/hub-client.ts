@@ -179,14 +179,21 @@ export class HubClient {
     const { includeSession = true, ...requestInit } = init;
     const headers: Record<string, string> = {
       Accept: "application/json",
-      "Content-Type": "application/json",
-      ...(requestInit.headers ? Object.fromEntries(new Headers(requestInit.headers).entries()) : {})
+      "Content-Type": "application/json"
     };
-    if (includeSession && this.sessionCookie) headers.Cookie = this.sessionCookie;
+    if (requestInit.headers) {
+      if (typeof requestInit.headers === "object" && !(requestInit.headers instanceof Headers)) {
+        Object.assign(headers, requestInit.headers);
+      }
+    }
+    if (includeSession && this.sessionCookie) {
+      headers["Cookie"] = this.sessionCookie;
+    }
+    const timeoutSignal = AbortSignal.timeout(12000);
     const response = await fetch(`${this.serverUrl}${endpoint}`, {
       ...requestInit,
       headers,
-      signal: requestInit.signal ?? AbortSignal.timeout(12_000)
+      signal: requestInit.signal ?? timeoutSignal
     });
     this.captureSessionCookie(response);
     const text = await response.text();
