@@ -7,9 +7,11 @@ import mysql from "mysql2/promise";
 import { env } from "./config.js";
 import { RedisRealtimeRepository } from "./repositories/realtime.js";
 import { MysqlHistoryRepository } from "./repositories/history.js";
+import { MysqlDeviceRepository } from "./repositories/devices.js";
 import {
   createLocalStore,
   LocalDeviceMetricConfigStore,
+  LocalDeviceRepository,
   LocalHistoryRepository,
   LocalRealtimeRepository
 } from "./repositories/local.js";
@@ -37,13 +39,16 @@ const realtime = env.REDIS_URL
 if (env.MYSQL_URL) {
   const mysqlPool = mysql.createPool(env.MYSQL_URL);
   const history = new MysqlHistoryRepository(mysqlPool);
+  const devicesRepo = new MysqlDeviceRepository(mysqlPool);
   await history.init();
-  repositories = { realtime, history };
+  await devicesRepo.init();
+  repositories = { realtime, history, devices: devicesRepo };
   app.log.info(env.REDIS_URL ? "using redis + mysql repositories" : "using local realtime + mysql history repositories");
 } else {
   repositories = {
     realtime,
-    history: new LocalHistoryRepository(store)
+    history: new LocalHistoryRepository(store),
+    devices: new LocalDeviceRepository(store)
   };
   app.log.warn("MYSQL_URL missing, falling back to local JSON history storage");
 }

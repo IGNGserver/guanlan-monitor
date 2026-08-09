@@ -3,6 +3,8 @@ import { dirname, resolve } from "node:path";
 import type { DeviceBlockKey, DeviceMetricKey, MetricWindow } from "@dsc/shared";
 import type { TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import type {
+  DeviceRecord,
+  DeviceRepository,
   DeviceMetricConfigValue,
   DeviceMetricConfigStore,
   DeviceRealtimeState,
@@ -15,6 +17,7 @@ import { buildTrafficCalendar } from "../traffic-calendar.js";
 
 interface LocalDbShape {
   devices: Record<string, DeviceRealtimeState>;
+  deviceRegistry?: Record<string, DeviceRecord>;
   series: Record<string, Record<string, TimeSeriesRecord[]>>;
   minuteHistory: Record<string, TimeSeriesRecord[]>;
   history: Record<string, TimeSeriesRecord[]>;
@@ -31,6 +34,7 @@ interface LocalDbShape {
 
 const EMPTY_DB: LocalDbShape = {
   devices: {},
+  deviceRegistry: {},
   series: {},
   minuteHistory: {},
   history: {},
@@ -235,6 +239,81 @@ export class LocalDeviceMetricConfigStore implements DeviceMetricConfigStore {
           ])
         )
       };
+    });
+  }
+}
+
+export class LocalDeviceRepository implements DeviceRepository {
+  constructor(private readonly store: LocalJsonStore) {}
+
+  async registerOrUpdateDevice(deviceId: string, name?: string): Promise<DeviceRecord> {
+    let resultRecord!: DeviceRecord;
+    await this.store.update((db) => {
+      db.deviceRegistry ??= {};
+      const now = new Date().toISOString();
+      const existing = db.deviceRegistry[deviceId];
+
+      if (existing) {
+        existing.status = "open";
+        existing.updatedAt = now;
+        if (name) existing.name = name;
+        resultRecord = { ...existing };
+      } else {
+        const allDevices = Object.values(db.deviceRegistry);
+        const maxSortOrder = allDevices.reduce((max, d) => Math.max(max, d.sortOrder ?? 0), -1);
+        const newRecord: DeviceRecord = {
+          deviceId,
+          name: name || deviceId,
+          status: "open",
+          sortOrder: maxSortOrder + 1,
+          registeredAt: now,
+          updatedAt: now
+        };
+        db.deviceRegistry[deviceId] = newRecord;
+        resultRecord = { ...newRecord };
+      }
+    });
+    return resultRecord;
+  }
+
+  async listOpenDevices(): Promise<DeviceRecord[]> {
+    const db = await this.store.read();
+    const registry = db.deviceRegistry ?? {};
+    return Object.values(registry)
+      .filter((d) => d.status === "open")
+      .sort((a, b) => (a.sortOrder - b.sortOrder) || a.deviceId.localeCompare(b.deviceId));
+  }
+
+  async deleteDevice(deviceId: string): Promise<void> {
+    await this.store.update((db) => {
+      db.deviceRegistry ??= {};
+      if (db.deviceRegistry[deviceId]) {
+        db.deviceRegistry[deviceId].status = "closed";
+        db.deviceRegistry[deviceId].updatedAt = new Date().toISOString();
+      } else {
+        db.deviceRegistry[deviceId] = {
+          deviceId,
+          name: deviceId,
+          status: "closed",
+          sortOrder: 0,
+          registeredAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+      }
+      delete db.devices[deviceId];
+    });
+  }
+
+  async reorderDevices(deviceIds: string[]): Promise<void> {
+    await this.store.update((db) => {
+      db.deviceRegistry ??= {};
+      const now = new Date().toISOString();
+      deviceIds.forEach((id, index) => {
+        if (db.deviceRegistry[id]) {
+          db.deviceRegistry[id].sortOrder = index;
+          db.deviceRegistry[id].updatedAt = now;
+        }
+      });
     });
   }
 }

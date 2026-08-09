@@ -33,6 +33,7 @@ export class MetricsService {
 
   async ingest(payload: AgentMetricsPayload) {
     const receivedAt = new Date().toISOString();
+    await this.repositories.devices.registerOrUpdateDevice(payload.identity.deviceId, payload.identity.hostname);
     const previousState = await this.repositories.realtime.getDevice(payload.identity.deviceId);
     if (previousState && hasIdentityBoundaryChanged(previousState.identity, payload.identity)) {
       await this.resetDeviceSeries(payload.identity.deviceId);

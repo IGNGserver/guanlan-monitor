@@ -1,10 +1,19 @@
 import { app, BrowserWindow, Menu, nativeImage, screen, Tray } from "electron";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DesktopController } from "./controller.js";
 import { registerIpc } from "./ipc.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function resolveAppIconPath(): string {
+  const resourceIcon = path.join(process.resourcesPath, "app-icon.ico");
+  if (fs.existsSync(resourceIcon)) return resourceIcon;
+  const devIcon = path.join(__dirname, "../../../windows-agent/DeviceStateConsoleAgent.WinUI/Assets/app-icon.ico");
+  if (fs.existsSync(devIcon)) return devIcon;
+  return resourceIcon;
+}
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
@@ -31,7 +40,7 @@ if (!hasSingleInstanceLock) {
 
   const createWindow = () => {
     const preloadPath = path.join(__dirname, "../preload/index.js");
-    const iconPath = path.join(process.resourcesPath, "app-icon.ico");
+    const iconPath = resolveAppIconPath();
     const appIcon = nativeImage.createFromPath(iconPath);
     const workArea = screen.getPrimaryDisplay().workAreaSize;
     const minWidth = Math.min(760, Math.max(640, workArea.width - 32));
@@ -77,7 +86,7 @@ if (!hasSingleInstanceLock) {
   };
 
   const createTray = () => {
-    const iconPath = path.join(process.resourcesPath, "app-icon.ico");
+    const iconPath = resolveAppIconPath();
     const icon = nativeImage.createFromPath(iconPath);
     tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
     tray.setToolTip("观澜 · 设备状态控制台");

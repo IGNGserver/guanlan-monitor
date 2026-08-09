@@ -91,9 +91,27 @@ export interface InstanceMetricRecord {
   rpm?: number;
 }
 
+export interface DeviceRecord {
+  deviceId: string;
+  name: string;
+  status: "open" | "closed";
+  sortOrder: number;
+  registeredAt: string;
+  updatedAt: string;
+}
+
+export interface DeviceRepository {
+  init?(): Promise<void>;
+  registerOrUpdateDevice(deviceId: string, name?: string): Promise<DeviceRecord>;
+  listOpenDevices(): Promise<DeviceRecord[]>;
+  deleteDevice(deviceId: string): Promise<void>;
+  reorderDevices(deviceIds: string[]): Promise<void>;
+}
+
 export interface Repositories {
   realtime: RealtimeRepository;
   history: HistoryRepository;
+  devices: DeviceRepository;
 }
 
 export interface RealtimeRepository {

@@ -308,6 +308,11 @@ export interface DeviceSummary {
   gpuMemoryUsagePercent: number | null;
   memoryUsagePercent: number | null;
   diskUsagePercent: number | null;
+  sortOrder?: number;
+}
+
+export interface DeviceReorderPayload {
+  deviceIds: string[];
 }
 
 export interface DeviceDetail extends DeviceSummary {

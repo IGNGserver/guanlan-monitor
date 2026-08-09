@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import type { AgentProbeProvider, AgentProbeTarget, DeviceMetricKey, DeviceSummary, SamplePoint } from "@dsc/shared";
 import clsx from "clsx";
+import appIcon from "../assets/app-icon.png";
 import {
   SettingsSection,
   WorkspaceProvider,
@@ -139,6 +140,162 @@ function formatAxisTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "暂无时间";
   return new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
+}
+
+function TelemetryChartCard({
+  title,
+  subtitle,
+  series,
+  valueFormatter = (val) => `${Math.round(val)}%`,
+  fixedMaxValue,
+  controls
+}: {
+  title: string;
+  subtitle?: string;
+  series: Array<{ label: string; points: SamplePoint[]; colorClass?: string }>;
+  valueFormatter?: (value: number) => string;
+  fixedMaxValue?: number;
+  controls?: React.ReactNode;
+}) {
+  const activeSeries = series.filter((item) => item.points && item.points.length > 0);
+  const primaryPoints = activeSeries[0]?.points ?? [];
+  const [selectedIndex, setSelectedIndex] = useState(Math.max(primaryPoints.length - 1, 0));
+
+  useEffect(() => {
+    setSelectedIndex(Math.max(primaryPoints.length - 1, 0));
+  }, [primaryPoints]);
+
+  if (!activeSeries.length || !primaryPoints.length) {
+    return (
+      <Surface className="telemetry-chart-card">
+        <div className="telemetry-chart-header">
+          <div className="telemetry-chart-title">
+            <h3>{title}</h3>
+            {subtitle && <span>{subtitle}</span>}
+          </div>
+          {controls && <div className="telemetry-chart-controls">{controls}</div>}
+        </div>
+        <div className="workspace-trend workspace-trend--empty">
+          <div className="workspace-trend-empty">等待足够的遥测样本</div>
+        </div>
+      </Surface>
+    );
+  }
+
+  const allValues = activeSeries.flatMap((s) => s.points.map((p) => p.value));
+  const rawMax = Math.max(...allValues, 1);
+  const maxValue = fixedMaxValue != null ? Math.max(fixedMaxValue, rawMax) : rawMax * 1.1;
+
+  const pointsCount = primaryPoints.length;
+  const xFor = (index: number) => (pointsCount <= 1 ? 50 : (index / (pointsCount - 1)) * 100);
+  const yFor = (val: number) => 100 - Math.min(Math.max(val / maxValue, 0), 1) * 100;
+
+  const curIndex = Math.min(selectedIndex, pointsCount - 1);
+  const selectedTimestamp = primaryPoints[curIndex]?.timestamp;
+
+  const resolveIndex = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (pointsCount < 2) return 0;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const ratio = bounds.width > 0 ? (event.clientX - bounds.left) / bounds.width : 1;
+    return Math.round(Math.min(Math.max(ratio, 0), 1) * (pointsCount - 1));
+  };
+
+  const selectPoint = (event: React.PointerEvent<HTMLDivElement>) => {
+    setSelectedIndex(resolveIndex(event));
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  // 统计每个 series 的 Cur / Avg / Max / Min
+  const statsList = activeSeries.map((s) => {
+    const vals = s.points.map((p) => p.value);
+    const curVal = s.points[curIndex]?.value ?? vals[vals.length - 1] ?? 0;
+    const maxVal = Math.max(...vals, 0);
+    const minVal = Math.min(...vals, 0);
+    const avgVal = vals.reduce((a, b) => a + b, 0) / Math.max(vals.length, 1);
+    return { label: s.label, cur: curVal, avg: avgVal, max: maxVal, min: minVal };
+  });
+
+  return (
+    <Surface className="telemetry-chart-card">
+      <div className="telemetry-chart-header">
+        <div className="telemetry-chart-title">
+          <h3>{title}</h3>
+          {subtitle ? <span>{subtitle}</span> : selectedTimestamp ? <span>采样于 {formatAxisTime(selectedTimestamp)}</span> : null}
+        </div>
+        {controls && <div className="telemetry-chart-controls">{controls}</div>}
+      </div>
+
+      <div className="telemetry-chart-box" onPointerDown={selectPoint} onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture?.(e.pointerId)) selectPoint(e); }}>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="chart-fill-grad-1" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="var(--workspace-accent)" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="var(--workspace-accent)" stopOpacity="0" />
+            </linearGradient>
+            <linearGradient id="chart-fill-grad-2" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="var(--workspace-green)" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="var(--workspace-green)" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+
+          {/* 背景刻度网格线 */}
+          {[0, 25, 50, 75, 100].map((pos) => (
+            <line key={pos} x1="0" x2="100" y1={pos} y2={pos} className="telemetry-chart-grid" />
+          ))}
+
+          {/* 多系列渲染 */}
+          {activeSeries.map((s, idx) => {
+            const lPath = s.points.map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(i).toFixed(2)} ${yFor(p.value).toFixed(2)}`).join(" ");
+            const fPath = `${lPath} L 100 100 L 0 100 Z`;
+            const lineClass = idx === 0 ? "telemetry-chart-line-1" : idx === 1 ? "telemetry-chart-line-2" : "telemetry-chart-line-3";
+            const fillClass = idx === 0 ? "telemetry-chart-fill-1" : idx === 1 ? "telemetry-chart-fill-2" : "";
+
+            return (
+              <g key={s.label}>
+                {fillClass && <path d={fPath} className={fillClass} />}
+                <path d={lPath} className={lineClass} />
+                {s.points[curIndex] && (
+                  <circle cx={xFor(curIndex)} cy={yFor(s.points[curIndex].value)} r="3" fill={idx === 0 ? "var(--workspace-accent)" : idx === 1 ? "var(--workspace-green)" : "var(--workspace-amber)"} />
+                )}
+              </g>
+            );
+          })}
+
+          {/* 交互指示 Crosshair */}
+          <line x1={xFor(curIndex)} x2={xFor(curIndex)} y1="0" y2="100" className="telemetry-chart-crosshair" />
+        </svg>
+
+        <div className="workspace-trend-axis">
+          <span>{valueFormatter(maxValue)}</span>
+          <span>{valueFormatter(0)}</span>
+        </div>
+      </div>
+
+      {/* 统计标盘 (Cur / Avg / Max / Min) */}
+      <div className="telemetry-chart-stats">
+        {statsList.map((st, idx) => (
+          <React.Fragment key={st.label}>
+            <div className={`telemetry-stat-item ${idx === 0 ? "stat-primary" : idx === 1 ? "stat-green" : "stat-amber"}`}>
+              <label>{st.label} (当前)</label>
+              <strong>{valueFormatter(st.cur)}</strong>
+            </div>
+            <div className="telemetry-stat-item">
+              <label>平均 (Avg)</label>
+              <strong>{valueFormatter(st.avg)}</strong>
+            </div>
+            <div className="telemetry-stat-item">
+              <label>峰值 (Max)</label>
+              <strong>{valueFormatter(st.max)}</strong>
+            </div>
+            <div className="telemetry-stat-item">
+              <label>谷值 (Min)</label>
+              <strong>{valueFormatter(st.min)}</strong>
+            </div>
+          </React.Fragment>
+        ))}
+      </div>
+    </Surface>
+  );
 }
 
 function MiniTrend({
@@ -313,7 +470,7 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
     <aside className={`workspace-sidebar ${sidebarCollapsed ? "is-collapsed" : ""} ${inSettings ? "is-settings" : ""}`} onMouseLeave={() => { if (sidebarCollapsed && sidebarPeek) onSidebarLeave(); }}>
       <div className="workspace-sidebar__topline">
         <button className="workspace-brand" type="button" onClick={() => (inSettings ? closeSettings() : navigate({ kind: "overview" }))} aria-label="返回总览">
-          <span className="workspace-brand__mark">澜</span>
+          <img className="workspace-brand__mark-img" src={appIcon} alt="观澜" />
           <span className="workspace-brand__name">观澜</span>
         </button>
         <button className="workspace-icon-button workspace-sidebar__collapse" type="button" onClick={() => setSidebarCollapsed(!sidebarCollapsed)} aria-label={sidebarCollapsed ? "展开侧边栏" : "折叠侧边栏"} title={sidebarCollapsed ? "展开侧边栏" : "折叠侧边栏"}>
@@ -415,7 +572,7 @@ function WindowTitleBar() {
   return (
     <header className="workspace-windowbar">
       <div className="workspace-windowbar__drag" onDoubleClick={() => void toggleMaximize()}>
-        <span className="workspace-windowbar__mark">澜</span>
+        <img className="workspace-windowbar__mark-img" src={appIcon} alt="观澜" />
         <strong>观澜</strong>
         <span className="workspace-windowbar__separator" aria-hidden="true" />
         <span className="workspace-windowbar__subtitle">设备状态控制台</span>
@@ -516,16 +673,152 @@ function OverviewPage() {
   const noData = snapshot.source === "empty" || devices.length === 0;
   const issueCount = offline + (cached ? 1 : 0) + (noData ? 1 : 0) + (snapshot.localBackend?.lastIssueCount ?? 0);
   const overviewLatest = snapshot.metrics?.latest;
-  return <div className="workspace-page workspace-page--overview">
-    <PageIntro eyebrow="系统状态" title={issueCount ? `${issueCount} 项事项需要留意` : "所有中枢运行正常"} description={`最后同步于 ${formatDate(snapshot.generatedAt)}。${cached ? "当前显示的是离线缓存。" : "数据来自实时连接。"}`} actions={<><Button variant="quiet" onClick={() => openSettings("connections")}><Icon name="connection" size={16} />连接设置</Button><Button variant="primary" onClick={() => void refresh()} disabled={loading}><Icon name="refresh" size={16} />刷新状态</Button></>} />
-    {issueCount > 0 && <div className="workspace-attention"><div className="workspace-attention__icon"><Icon name="warning" /></div><div><strong>{cached ? "中枢连接需要确认" : noData ? "还没有可用设备" : "设备状态存在异常"}</strong><p>{cached ? "无法取得最新数据，页面中的设备信息可能已经过期。" : noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : `${offline} 台设备离线，${snapshot.localBackend?.lastIssueCount ?? 0} 条本机采集问题待处理。`}</p></div><Button variant="quiet" onClick={() => openSettings(cached || noData ? "connections" : "agent")}>查看详情<Icon name="arrow" size={15} /></Button></div>}
-     {snapshot.metrics && <div className="workspace-metric-grid workspace-overview-metric-grid"><MetricTile label="CPU 使用率" value={overviewLatest?.cpuUsagePercent} detail={overviewLatest?.cpuTemperatureC == null ? "温度未采集" : `${overviewLatest.cpuTemperatureC}°C`} tone="blue" points={snapshot.metrics.series.cpuUsagePercent} /><MetricTile label="内存使用率" value={overviewLatest ? Math.round((overviewLatest.memoryUsedBytes / Math.max(overviewLatest.memoryTotalBytes, 1)) * 100) : null} detail={overviewLatest ? formatBytes(overviewLatest.memoryUsedBytes) : undefined} tone="green" points={snapshot.metrics.series.memoryUsagePercent} /><MetricTile label="GPU 使用率" value={overviewLatest?.gpus[0]?.utilizationPercent} detail={overviewLatest?.gpus[0]?.name ?? "未检测到 GPU"} tone="amber" points={snapshot.metrics.series.gpuUsagePercent} /><MetricTile label="磁盘使用率" value={overviewLatest ? Math.round((overviewLatest.diskUsedBytes / Math.max(overviewLatest.diskTotalBytes, 1)) * 100) : null} detail={overviewLatest ? formatBytes(overviewLatest.diskUsedBytes) : undefined} points={snapshot.metrics.series.diskUsagePercent} /></div>}
-     <div className="workspace-overview-grid">
-      <Surface className="workspace-overview-devices"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">设备概览</span><h3>{devices.length} 台设备</h3></div><Button variant="quiet" onClick={() => navigate({ kind: "hub", hubId: hubs[0]?.id ?? "primary" })}>查看中枢<Icon name="arrow" size={15} /></Button></div><div className="workspace-device-rows">{devices.length ? devices.map((device) => <DeviceRow key={device.deviceId} device={device} />) : <EmptyState title="还没有设备" detail="连接一个中枢后，设备会出现在这里。" action={<Button variant="primary" onClick={() => openSettings("connections")}>添加中枢</Button>} />}</div></Surface>
-      <div className="workspace-overview-column"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">运行摘要</span><h3>当前连接</h3></div><StatusLabel state={cached ? "cached" : snapshot.session.authenticated ? "online" : "unknown"} /></div><div className="workspace-summary-list"><SummaryRow label="在线设备" value={`${online} / ${devices.length}`} /><SummaryRow label="离线设备" value={String(offline)} tone={offline ? "warning" : undefined} /><SummaryRow label="本机 Agent" value={localRunning ? "运行中" : "未运行"} tone={localRunning ? "success" : "warning"} /><SummaryRow label="数据源" value={cached ? "离线缓存" : snapshot.source === "empty" ? "暂无数据" : "实时同步"} /></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">资源趋势</span><h3>当前设备 CPU 使用率</h3></div><span className="workspace-caption">最近 1 小时</span></div><MiniTrend label="当前设备 CPU 使用率趋势" points={snapshot.metrics?.series.cpuUsagePercent ?? []} /><div className="workspace-trend-footer"><span>数据样本</span><strong>{snapshot.metrics?.series.cpuUsagePercent.length ?? 0}</strong></div></Surface></div>
+  const series = snapshot.metrics?.series;
+
+  // 计算 TOP 5 资源消耗榜
+  const topCpuDevices = [...devices].sort((a, b) => (b.cpuUsagePercent ?? 0) - (a.cpuUsagePercent ?? 0)).slice(0, 5);
+  const topMemoryDevices = [...devices].sort((a, b) => (b.memoryUsagePercent ?? 0) - (a.memoryUsagePercent ?? 0)).slice(0, 5);
+
+  return (
+    <div className="workspace-page workspace-page--overview">
+      <PageIntro
+        eyebrow="系统状态"
+        title={issueCount ? `${issueCount} 项事项需要留意` : "所有中枢运行正常"}
+        description={`最后同步于 ${formatDate(snapshot.generatedAt)}。${cached ? "当前显示的是离线缓存。" : "数据来自实时连接。"}`}
+        actions={
+          <>
+            <Button variant="quiet" onClick={() => openSettings("connections")}>
+              <Icon name="connection" size={16} />连接设置
+            </Button>
+            <Button variant="primary" onClick={() => void refresh()} disabled={loading}>
+              <Icon name="refresh" size={16} />刷新状态
+            </Button>
+          </>
+        }
+      />
+
+      {issueCount > 0 && (
+        <div className="workspace-attention">
+          <div className="workspace-attention__icon"><Icon name="warning" /></div>
+          <div>
+            <strong>{cached ? "中枢连接需要确认" : noData ? "还没有可用设备" : "设备状态存在异常"}</strong>
+            <p>{cached ? "无法取得最新数据，页面中的设备信息可能已经过期。" : noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : `${offline} 台设备离线，${snapshot.localBackend?.lastIssueCount ?? 0} 条本机采集问题待处理。`}</p>
+          </div>
+          <Button variant="quiet" onClick={() => openSettings(cached || noData ? "connections" : "agent")}>
+            查看详情<Icon name="arrow" size={15} />
+          </Button>
+        </div>
+      )}
+
+      {/* 4 项核心指标摘要 */}
+      {snapshot.metrics && (
+        <div className="workspace-metric-grid workspace-overview-metric-grid">
+          <MetricTile label="CPU 使用率" value={overviewLatest?.cpuUsagePercent} detail={overviewLatest?.cpuTemperatureC == null ? "温度未采集" : `${overviewLatest.cpuTemperatureC}°C`} tone="blue" points={series?.cpuUsagePercent} />
+          <MetricTile label="内存使用率" value={overviewLatest ? Math.round((overviewLatest.memoryUsedBytes / Math.max(overviewLatest.memoryTotalBytes, 1)) * 100) : null} detail={overviewLatest ? formatBytes(overviewLatest.memoryUsedBytes) : undefined} tone="green" points={series?.memoryUsagePercent} />
+          <MetricTile label="GPU 使用率" value={overviewLatest?.gpus[0]?.utilizationPercent} detail={overviewLatest?.gpus[0]?.name ?? "未检测到 GPU"} tone="amber" points={series?.gpuUsagePercent} />
+          <MetricTile label="磁盘使用率" value={overviewLatest ? Math.round((overviewLatest.diskUsedBytes / Math.max(overviewLatest.diskTotalBytes, 1)) * 100) : null} detail={overviewLatest ? formatBytes(overviewLatest.diskUsedBytes) : undefined} points={series?.diskUsagePercent} />
+        </div>
+      )}
+
+      {/* 设备列表 + 运维统计分析 */}
+      <div className="workspace-overview-grid">
+        <Surface className="workspace-overview-devices">
+          <div className="workspace-surface__header">
+            <div>
+              <span className="workspace-section-kicker">设备概览</span>
+              <h3>{devices.length} 台设备</h3>
+            </div>
+            <Button variant="quiet" onClick={() => navigate({ kind: "hub", hubId: hubs[0]?.id ?? "primary" })}>
+              查看中枢<Icon name="arrow" size={15} />
+            </Button>
+          </div>
+          <div className="workspace-device-rows">
+            {devices.length ? (
+              devices.map((device) => <DeviceRow key={device.deviceId} device={device} />)
+            ) : (
+              <EmptyState title="还没有设备" detail="连接一个中枢后，设备会出现在这里。" action={<Button variant="primary" onClick={() => openSettings("connections")}>添加中枢</Button>} />
+            )}
+          </div>
+        </Surface>
+
+        {/* 侧栏 Top 5 排行与摘要 */}
+        <div className="workspace-overview-column">
+          <Surface className="workspace-top-ranking">
+            <div className="workspace-surface__header">
+              <div>
+                <span className="workspace-section-kicker">负载排行</span>
+                <h3>CPU 使用率 TOP 5</h3>
+              </div>
+            </div>
+            <div className="workspace-ranking-list">
+              {topCpuDevices.map((dev, idx) => (
+                <div key={dev.deviceId} className="workspace-ranking-item">
+                  <span className="workspace-ranking-badge">{idx + 1}</span>
+                  <span className="workspace-ranking-name">{dev.hostname}</span>
+                  <span className="workspace-ranking-val">{dev.cpuUsagePercent ?? 0}%</span>
+                </div>
+              ))}
+            </div>
+          </Surface>
+
+          <Surface className="workspace-top-ranking">
+            <div className="workspace-surface__header">
+              <div>
+                <span className="workspace-section-kicker">负载排行</span>
+                <h3>内存占用 TOP 5</h3>
+              </div>
+            </div>
+            <div className="workspace-ranking-list">
+              {topMemoryDevices.map((dev, idx) => (
+                <div key={dev.deviceId} className="workspace-ranking-item">
+                  <span className="workspace-ranking-badge">{idx + 1}</span>
+                  <span className="workspace-ranking-name">{dev.hostname}</span>
+                  <span className="workspace-ranking-val">{dev.memoryUsagePercent ?? 0}%</span>
+                </div>
+              ))}
+            </div>
+          </Surface>
+        </div>
+      </div>
+
+      {/* 核心网络与吞吐大图 */}
+      {series && (
+        <div className="workspace-overview-grid" style={{ gridTemplateColumns: "1fr" }}>
+          <TelemetryChartCard
+            title="实时网络吞吐"
+            subtitle="当前设备网络接收(Rx)与发送(Tx)吞吐速率"
+            series={[
+              { label: "下行 (Rx)", points: series.networkRxBytesPerSec ?? [] },
+              { label: "上行 (Tx)", points: series.networkTxBytesPerSec ?? [] }
+            ]}
+            valueFormatter={(v) => `${formatBytes(v)}/s`}
+          />
+        </div>
+      )}
+
+      <Surface className="workspace-hub-summary">
+        <div className="workspace-surface__header">
+          <div>
+            <span className="workspace-section-kicker">接入中枢</span>
+            <h3>连接概览</h3>
+          </div>
+          <Button variant="quiet" onClick={() => openSettings("connections")}>管理中枢</Button>
+        </div>
+        <div className="workspace-hub-summary__grid">
+          {hubs.map((hub) => (
+            <button className="workspace-hub-summary__item" type="button" key={hub.id} onClick={() => navigate({ kind: "hub", hubId: hub.id })}>
+              <div>
+                <StatusLabel state={hub.state === "online" ? "online" : hub.state === "cached" ? "cached" : hub.state === "offline" ? "warning" : "unknown"} />
+                <strong>{hub.name}</strong>
+              </div>
+              <span>{hub.endpoint}</span>
+              <small>{hub.devices.length} 台设备 <Icon name="arrow" size={14} /></small>
+            </button>
+          ))}
+        </div>
+      </Surface>
     </div>
-    <Surface className="workspace-hub-summary"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">接入中枢</span><h3>连接概览</h3></div><Button variant="quiet" onClick={() => openSettings("connections")}>管理中枢</Button></div><div className="workspace-hub-summary__grid">{hubs.map((hub) => <button className="workspace-hub-summary__item" type="button" key={hub.id} onClick={() => navigate({ kind: "hub", hubId: hub.id })}><div><StatusLabel state={hub.state === "online" ? "online" : hub.state === "cached" ? "cached" : hub.state === "offline" ? "warning" : "unknown"} /><strong>{hub.name}</strong></div><span>{hub.endpoint}</span><small>{hub.devices.length} 台设备 <Icon name="arrow" size={14} /></small></button>)}</div></Surface>
-  </div>;
+  );
 }
 
 function SummaryRow({ label, value, tone }: { label: string; value: string; tone?: "success" | "warning" }) {
@@ -536,20 +829,360 @@ function MetricTile({ label, value, detail, tone, points }: { label: string; val
   return <div className={`workspace-metric-tile ${tone ? `workspace-metric-tile--${tone}` : ""}`}><div className="workspace-metric-tile__header"><span>{label}</span><MetricValue value={value} /></div>{points && <MiniTrend compact label={label} points={points} />}{!points && <div className="workspace-metric-tile__empty">暂无趋势数据</div>}<small>{detail ?? "未采集"}</small></div>;
 }
 
+type DeviceTabKey = "overview" | "compute" | "storage_net" | "gpu_thermal" | "all";
+
 function DevicePage() {
   const { selectedDevice, snapshot, navigate, openSettings, metricsWindow, setMetricsWindow, controlAgent, refreshing } = useWorkspace();
+  const [activeTab, setActiveTab] = useState<DeviceTabKey>("overview");
+
+  // 多实例单选中状态
+  const [selectedNetId, setSelectedNetId] = useState<string>("all");
+  const [selectedDiskId, setSelectedDiskId] = useState<string>("all");
+  const [selectedGpuId, setSelectedGpuId] = useState<string>("all");
+
   if (!selectedDevice) return <EmptyState title="没有找到这台设备" detail="设备可能已被移除，或者中枢还没有返回它。" action={<Button variant="primary" onClick={() => navigate({ kind: "overview" })}>返回总览</Button>} />;
+
   const metrics = snapshot?.metrics?.device.deviceId === selectedDevice.deviceId ? snapshot.metrics : null;
   const localDevice = snapshot?.localBackend?.config.connection.deviceId === selectedDevice.deviceId;
   const latest = metrics?.latest;
-  const series = metrics?.series.cpuUsagePercent ?? [];
-  return <div className="workspace-page workspace-page--device">
-    <PageIntro eyebrow={localDevice ? "本机设备" : "远端设备"} title={selectedDevice.hostname} description={`${selectedDevice.os} · ${selectedDevice.deviceId} · 最后心跳 ${formatDate(selectedDevice.lastSeenAt)}`} actions={<><Button variant="quiet" onClick={() => navigate({ kind: "overview" })}><Icon name="back" size={16} />返回总览</Button>{localDevice && <Button variant="primary" onClick={() => openSettings("agent")}><Icon name="agent" size={16} />本机设置</Button>}</>} />
-    <div className="workspace-device-statusline"><StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} /><span>Agent {selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</span><span>通道 {selectedDevice.agentChannel ?? "未知"}</span><span>数据更新时间 {formatDate(snapshot?.generatedAt)}</span></div>
-     <div className="workspace-metric-grid"><MetricTile label="CPU 使用率" value={selectedDevice.cpuUsagePercent} detail={latest?.cpuTemperatureC == null ? "温度未采集" : `${latest.cpuTemperatureC}°C`} tone="blue" points={metrics?.series.cpuUsagePercent} /><MetricTile label="内存使用率" value={selectedDevice.memoryUsagePercent} detail={latest ? formatBytes(latest.memoryUsedBytes) : undefined} tone="green" points={metrics?.series.memoryUsagePercent} /><MetricTile label="GPU 使用率" value={selectedDevice.gpuUsagePercent} detail={latest?.gpus[0]?.name ?? "未检测到 GPU"} tone="amber" points={metrics?.series.gpuUsagePercent} /><MetricTile label="磁盘使用率" value={selectedDevice.diskUsagePercent} detail={latest ? formatBytes(latest.diskUsedBytes) : undefined} points={metrics?.series.diskUsagePercent} /></div>
-    <div className="workspace-device-grid"><Surface className="workspace-device-chart"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">遥测趋势</span><h3>CPU 使用率</h3></div><select className="workspace-select workspace-select--small" value={metricsWindow} onChange={(event) => setMetricsWindow(event.target.value as typeof metricsWindow)} aria-label="遥测时间范围"><option value="5m">5 分钟</option><option value="1h">1 小时</option><option value="6h">6 小时</option><option value="24h">24 小时</option><option value="7d">7 天</option></select></div><MiniTrend label="设备 CPU 使用率趋势" points={series} /><div className="workspace-trend-footer"><span>样本数</span><strong>{series.length}</strong><span>最后采样</span><strong>{formatDate(metrics?.lastSeenAt)}</strong></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">设备信息</span><h3>硬件与系统</h3></div><button className="workspace-icon-button" type="button" onClick={() => void navigator.clipboard?.writeText(selectedDevice.deviceId)} title="复制设备 ID"><Icon name="copy" /></button></div><div className="workspace-detail-list"><SummaryRow label="操作系统" value={selectedDevice.os} /><SummaryRow label="设备 ID" value={selectedDevice.deviceId} /><SummaryRow label="Agent 版本" value={selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "未知"} /><SummaryRow label="CPU 型号" value={latest?.cpuPackages[0]?.name ?? "未采集"} /><SummaryRow label="网络接收" value={latest ? formatBytes(latest.networkRxBytesPerSec) + "/s" : "未采集"} /><SummaryRow label="网络发送" value={latest ? formatBytes(latest.networkTxBytesPerSec) + "/s" : "未采集"} /></div></Surface></div>
-    <div className="workspace-device-grid"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">硬件实例</span><h3>GPU、磁盘与风扇</h3></div></div>{latest ? <div className="workspace-instance-list">{latest.gpus.map((gpu) => <InstanceRow key={gpu.id} label="GPU" name={gpu.name} value={`${gpu.utilizationPercent}%`} />)}{latest.disks.map((disk) => <InstanceRow key={disk.id} label="磁盘" name={`${disk.name} · ${disk.mountPoint}`} value={`${Math.round((disk.usedBytes / Math.max(disk.totalBytes, 1)) * 100)}%`} />)}{latest.fans.map((fan) => <InstanceRow key={fan.id} label="风扇" name={fan.label} value={`${fan.rpm} RPM`} />)}{!latest.gpus.length && !latest.disks.length && !latest.fans.length && <div className="workspace-muted-block">没有可展示的硬件实例。</div>}</div> : <div className="workspace-muted-block">这台设备暂时没有详细遥测数据。</div>}</Surface><Surface className="workspace-agent-surface"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">操作</span><h3>{localDevice ? "本机 Agent" : "远端设备"}</h3></div><StatusLabel state={localDevice && snapshot?.localBackend?.running ? "online" : selectedDevice.status === "online" ? "online" : "offline"} /></div>{localDevice && snapshot?.localBackend ? <><p className="workspace-surface__description">本机采集服务负责向中枢上传设备状态和遥测数据。</p><div className="workspace-action-row"><Button variant="primary" onClick={() => void controlAgent("restart")} disabled={refreshing}>重启服务</Button><Button variant="quiet" onClick={() => void controlAgent(snapshot.localBackend?.running ? "stop" : "start")} disabled={refreshing}>{snapshot.localBackend.running ? "停止服务" : "启动服务"}</Button></div><div className="workspace-detail-list"><SummaryRow label="连接状态" value={snapshot.localBackend.connectionStatus} /><SummaryRow label="待上传样本" value={String(snapshot.localBackend.pendingSampleCount)} /><SummaryRow label="采集间隔" value={`${snapshot.localBackend.effectiveUploadIntervalSeconds}s`} /></div></> : <><p className="workspace-surface__description">远端设备只提供状态与遥测查看，不在此处修改采集配置。</p><Button variant="quiet" onClick={() => openSettings("connections")}>查看中枢连接</Button></>}</Surface></div>
-  </div>;
+  const series = metrics?.series;
+
+  // 网络多实例
+  const networkInstances = series?.networks ?? [];
+  const currentNetSeries = selectedNetId === "all" || !networkInstances.length
+    ? { rx: series?.networkRxBytesPerSec ?? [], tx: series?.networkTxBytesPerSec ?? [] }
+    : {
+        rx: networkInstances.find((n) => n.id === selectedNetId)?.rxBytesPerSec ?? [],
+        tx: networkInstances.find((n) => n.id === selectedNetId)?.txBytesPerSec ?? []
+      };
+
+  // 磁盘多实例
+  const diskInstances = series?.disks ?? [];
+  const currentDiskSeries = selectedDiskId === "all" || !diskInstances.length
+    ? {
+        read: series?.diskReadBytesPerSec ?? [],
+        write: series?.diskWriteBytesPerSec ?? [],
+        usage: series?.diskUsagePercent ?? []
+      }
+    : {
+        read: diskInstances.find((d) => d.id === selectedDiskId)?.readBytesPerSec ?? [],
+        write: diskInstances.find((d) => d.id === selectedDiskId)?.writeBytesPerSec ?? [],
+        usage: diskInstances.find((d) => d.id === selectedDiskId)?.usagePercent ?? []
+      };
+
+  // GPU 多实例
+  const gpuInstances = series?.gpus ?? [];
+  const currentGpuSeries = selectedGpuId === "all" || !gpuInstances.length
+    ? {
+        usage: series?.gpuUsagePercent ?? [],
+        encode: series?.gpuEncodePercent ?? [],
+        decode: series?.gpuDecodePercent ?? [],
+        vram: series?.gpuMemoryUsagePercent ?? [],
+        temp: series?.gpuTemperatureC ?? []
+      }
+    : {
+        usage: gpuInstances.find((g) => g.id === selectedGpuId)?.usagePercent ?? [],
+        encode: gpuInstances.find((g) => g.id === selectedGpuId)?.encodePercent ?? [],
+        decode: gpuInstances.find((g) => g.id === selectedGpuId)?.decodePercent ?? [],
+        vram: gpuInstances.find((g) => g.id === selectedGpuId)?.memoryUsagePercent ?? [],
+        temp: gpuInstances.find((g) => g.id === selectedGpuId)?.temperatureC ?? []
+      };
+
+  return (
+    <div className="workspace-page workspace-page--device">
+      <PageIntro
+        eyebrow={localDevice ? "本机设备" : "远端设备"}
+        title={selectedDevice.hostname}
+        description={`${selectedDevice.os} · ${selectedDevice.deviceId} · 最后心跳 ${formatDate(selectedDevice.lastSeenAt)}`}
+        actions={
+          <>
+            <Button variant="quiet" onClick={() => navigate({ kind: "overview" })}><Icon name="back" size={16} />返回总览</Button>
+            {localDevice && <Button variant="primary" onClick={() => openSettings("agent")}><Icon name="agent" size={16} />本机设置</Button>}
+          </>
+        }
+      />
+
+      <div className="workspace-device-statusline">
+        <StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} />
+        <span>Agent {selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</span>
+        <span>通道 {selectedDevice.agentChannel ?? "未知"}</span>
+        <span>数据更新时间 {formatDate(snapshot?.generatedAt)}</span>
+      </div>
+
+      {/* 4 项核心速览 Tile */}
+      <div className="workspace-metric-grid">
+        <MetricTile label="CPU 使用率" value={selectedDevice.cpuUsagePercent} detail={latest?.cpuTemperatureC == null ? "温度未采集" : `${latest.cpuTemperatureC}°C`} tone="blue" points={series?.cpuUsagePercent} />
+        <MetricTile label="内存使用率" value={selectedDevice.memoryUsagePercent} detail={latest ? formatBytes(latest.memoryUsedBytes) : undefined} tone="green" points={series?.memoryUsagePercent} />
+        <MetricTile label="GPU 使用率" value={selectedDevice.gpuUsagePercent} detail={latest?.gpus[0]?.name ?? "未检测到 GPU"} tone="amber" points={series?.gpuUsagePercent} />
+        <MetricTile label="磁盘使用率" value={selectedDevice.diskUsagePercent} detail={latest ? formatBytes(latest.diskUsedBytes) : undefined} points={series?.diskUsagePercent} />
+      </div>
+
+      {/* 视图 Tab 切换与时间范围控制器 */}
+      <div className="telemetry-chart-header" style={{ marginTop: 10 }}>
+        <div className="workspace-tabs">
+          <button className={`workspace-tab ${activeTab === "overview" ? "is-active" : ""}`} type="button" onClick={() => setActiveTab("overview")}>
+            <Icon name="overview" size={15} /> 综合面板
+          </button>
+          <button className={`workspace-tab ${activeTab === "compute" ? "is-active" : ""}`} type="button" onClick={() => setActiveTab("compute")}>
+            <Icon name="device" size={15} /> 算力与内存
+          </button>
+          <button className={`workspace-tab ${activeTab === "storage_net" ? "is-active" : ""}`} type="button" onClick={() => setActiveTab("storage_net")}>
+            <Icon name="data" size={15} /> 存储与网络
+          </button>
+          <button className={`workspace-tab ${activeTab === "gpu_thermal" ? "is-active" : ""}`} type="button" onClick={() => setActiveTab("gpu_thermal")}>
+            <Icon name="hub" size={15} /> 显卡与散热
+          </button>
+          <button className={`workspace-tab ${activeTab === "all" ? "is-active" : ""}`} type="button" onClick={() => setActiveTab("all")}>
+            全景视图
+          </button>
+        </div>
+
+        <div className="telemetry-chart-controls">
+          <select className="workspace-select workspace-select--small" value={metricsWindow} onChange={(event) => setMetricsWindow(event.target.value as typeof metricsWindow)} aria-label="遥测时间范围">
+            <option value="5m">5 分钟</option>
+            <option value="1h">1 小时</option>
+            <option value="6h">6 小时</option>
+            <option value="24h">24 小时</option>
+            <option value="7d">7 天</option>
+          </select>
+        </div>
+      </div>
+
+      {/* ================= Tab 1: 综合面板 (Overview) ================= */}
+      {(activeTab === "overview" || activeTab === "all") && series && (
+        <div className="workspace-device-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
+          <TelemetryChartCard
+            title="CPU 处理器使用率"
+            subtitle="系统整体 CPU 逻辑核占用百分比"
+            series={[{ label: "CPU 使用率", points: series.cpuUsagePercent ?? [] }]}
+            valueFormatter={(v) => `${Math.round(v)}%`}
+            fixedMaxValue={100}
+          />
+          <TelemetryChartCard
+            title="内存与 Swap 占用率"
+            subtitle="物理内存与交换空间使用趋势"
+            series={[
+              { label: "物理内存", points: series.memoryUsagePercent ?? [] },
+              { label: "Swap 交换", points: series.swapUsagePercent ?? [] }
+            ]}
+            valueFormatter={(v) => `${Math.round(v)}%`}
+            fixedMaxValue={100}
+          />
+          <TelemetryChartCard
+            title="网络实时吞吐 (Rx / Tx)"
+            subtitle="下行接收速率与上行发送速率"
+            series={[
+              { label: "接收 (Rx)", points: series.networkRxBytesPerSec ?? [] },
+              { label: "发送 (Tx)", points: series.networkTxBytesPerSec ?? [] }
+            ]}
+            valueFormatter={(v) => `${formatBytes(v)}/s`}
+          />
+          <TelemetryChartCard
+            title="磁盘读写吞吐速率"
+            subtitle="磁盘 Read 与 Write 实时 I/O 速度"
+            series={[
+              { label: "读取 (Read)", points: series.diskReadBytesPerSec ?? [] },
+              { label: "写入 (Write)", points: series.diskWriteBytesPerSec ?? [] }
+            ]}
+            valueFormatter={(v) => `${formatBytes(v)}/s`}
+          />
+        </div>
+      )}
+
+      {/* ================= Tab 2: 算力与内存 (Compute & Memory) ================= */}
+      {(activeTab === "compute" || activeTab === "all") && series && (
+        <div className="workspace-device-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
+          <TelemetryChartCard
+            title="CPU 使用率"
+            series={[{ label: "CPU 占用", points: series.cpuUsagePercent ?? [] }]}
+            valueFormatter={(v) => `${Math.round(v)}%`}
+            fixedMaxValue={100}
+          />
+          <TelemetryChartCard
+            title="CPU 主频与温度"
+            subtitle="处理器工作频率 (MHz) 及核心温度 (°C)"
+            series={[
+              { label: "CPU 频率", points: series.cpuFrequencyMHz ?? [] },
+              { label: "CPU 温度", points: series.cpuTemperatureC ?? [] }
+            ]}
+            valueFormatter={(v) => (v > 200 ? `${Math.round(v)} MHz` : `${Math.round(v)} °C`)}
+          />
+          <TelemetryChartCard
+            title="内存已用 / 缓存 / 已提交容量"
+            subtitle="系统物理内存分层详细占用"
+            series={[
+              { label: "已用 (Used)", points: series.memoryUsedBytes ?? [] },
+              { label: "缓存 (Cached)", points: series.memoryCachedBytes ?? [] },
+              { label: "提交 (Committed)", points: series.memoryCommittedBytes ?? [] }
+            ]}
+            valueFormatter={(v) => formatBytes(v)}
+          />
+          <TelemetryChartCard
+            title="系统进程与线程计数"
+            subtitle="当前系统正在运行的进程数与线程数"
+            series={[
+              { label: "线程数 (Threads)", points: series.systemThreadCount ?? [] },
+              { label: "进程数 (Processes)", points: series.systemProcessCount ?? [] }
+            ]}
+            valueFormatter={(v) => `${Math.round(v)}`}
+          />
+        </div>
+      )}
+
+      {/* ================= Tab 3: 存储与网络 (Storage & Network) ================= */}
+      {(activeTab === "storage_net" || activeTab === "all") && series && (
+        <div className="workspace-device-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
+          <TelemetryChartCard
+            title="网卡网络吞吐 (Rx / Tx)"
+            subtitle="实时上下行网络带宽占用"
+            series={[
+              { label: "接收 (Rx)", points: currentNetSeries.rx },
+              { label: "发送 (Tx)", points: currentNetSeries.tx }
+            ]}
+            valueFormatter={(v) => `${formatBytes(v)}/s`}
+            controls={
+              networkInstances.length > 0 && (
+                <select className="workspace-select--inline" value={selectedNetId} onChange={(e) => setSelectedNetId(e.target.value)}>
+                  <option value="all">全部网卡汇总</option>
+                  {networkInstances.map((net) => (
+                    <option key={net.id} value={net.id}>{net.name || net.id}</option>
+                  ))}
+                </select>
+              )
+            }
+          />
+
+          <TelemetryChartCard
+            title="磁盘读写 I/O 速率"
+            subtitle="磁盘 Read 与 Write 实时速度"
+            series={[
+              { label: "读取 (Read)", points: currentDiskSeries.read },
+              { label: "写入 (Write)", points: currentDiskSeries.write }
+            ]}
+            valueFormatter={(v) => `${formatBytes(v)}/s`}
+            controls={
+              diskInstances.length > 0 && (
+                <select className="workspace-select--inline" value={selectedDiskId} onChange={(e) => setSelectedDiskId(e.target.value)}>
+                  <option value="all">全部磁盘汇总</option>
+                  {diskInstances.map((disk) => (
+                    <option key={disk.id} value={disk.id}>{disk.name} ({disk.mountPoint})</option>
+                  ))}
+                </select>
+              )
+            }
+          />
+
+          <TelemetryChartCard
+            title="磁盘使用率与占用"
+            subtitle="磁盘容量占用百分比"
+            series={[{ label: "使用率", points: currentDiskSeries.usage }]}
+            valueFormatter={(v) => `${Math.round(v)}%`}
+            fixedMaxValue={100}
+          />
+        </div>
+      )}
+
+      {/* ================= Tab 4: 显卡与散热 (GPU & Thermal) ================= */}
+      {(activeTab === "gpu_thermal" || activeTab === "all") && series && (
+        <div className="workspace-device-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
+          <TelemetryChartCard
+            title="GPU 核心与编解码负载"
+            subtitle="显卡 3D 渲染核心、编码与解码引擎使用率"
+            series={[
+              { label: "GPU 核心", points: currentGpuSeries.usage },
+              { label: "编码 (Encode)", points: currentGpuSeries.encode },
+              { label: "解码 (Decode)", points: currentGpuSeries.decode }
+            ]}
+            valueFormatter={(v) => `${Math.round(v)}%`}
+            fixedMaxValue={100}
+            controls={
+              gpuInstances.length > 0 && (
+                <select className="workspace-select--inline" value={selectedGpuId} onChange={(e) => setSelectedGpuId(e.target.value)}>
+                  <option value="all">全部 GPU 汇总</option>
+                  {gpuInstances.map((gpu) => (
+                    <option key={gpu.id} value={gpu.id}>{gpu.name}</option>
+                  ))}
+                </select>
+              )
+            }
+          />
+
+          <TelemetryChartCard
+            title="GPU VRAM 显存占用率"
+            subtitle="独立/共享显存已用百分比"
+            series={[{ label: "显存占用", points: currentGpuSeries.vram }]}
+            valueFormatter={(v) => `${Math.round(v)}%`}
+            fixedMaxValue={100}
+          />
+
+          <TelemetryChartCard
+            title="硬件温度与风扇转速"
+            subtitle="CPU/GPU 温度 (°C) 与风扇 (RPM) 联动"
+            series={[
+              { label: "CPU 温度", points: series.cpuTemperatureC ?? [] },
+              { label: "GPU 温度", points: currentGpuSeries.temp },
+              { label: "风扇转速", points: series.fans?.[0]?.rpm ?? [] }
+            ]}
+            valueFormatter={(v) => (v > 200 ? `${Math.round(v)} RPM` : `${Math.round(v)} °C`)}
+          />
+        </div>
+      )}
+
+      {/* 底部设备属性与 Agent 控制 */}
+      <div className="workspace-device-grid" style={{ marginTop: 20 }}>
+        <Surface>
+          <div className="workspace-surface__header">
+            <div>
+              <span className="workspace-section-kicker">设备信息</span>
+              <h3>硬件与系统</h3>
+            </div>
+            <button className="workspace-icon-button" type="button" onClick={() => void navigator.clipboard?.writeText(selectedDevice.deviceId)} title="复制设备 ID">
+              <Icon name="copy" />
+            </button>
+          </div>
+          <div className="workspace-detail-list">
+            <SummaryRow label="操作系统" value={selectedDevice.os} />
+            <SummaryRow label="设备 ID" value={selectedDevice.deviceId} />
+            <SummaryRow label="Agent 版本" value={selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "未知"} />
+            <SummaryRow label="CPU 型号" value={latest?.cpuPackages[0]?.name ?? "未采集"} />
+            <SummaryRow label="网络接收" value={latest ? formatBytes(latest.networkRxBytesPerSec) + "/s" : "未采集"} />
+            <SummaryRow label="网络发送" value={latest ? formatBytes(latest.networkTxBytesPerSec) + "/s" : "未采集"} />
+          </div>
+        </Surface>
+
+        <Surface className="workspace-agent-surface">
+          <div className="workspace-surface__header">
+            <div>
+              <span className="workspace-section-kicker">操作</span>
+              <h3>{localDevice ? "本机 Agent" : "远端设备"}</h3>
+            </div>
+            <StatusLabel state={localDevice && snapshot?.localBackend?.running ? "online" : selectedDevice.status === "online" ? "online" : "offline"} />
+          </div>
+          {localDevice && snapshot?.localBackend ? (
+            <>
+              <p className="workspace-surface__description">本机采集服务负责向中枢上传设备状态和遥测数据。</p>
+              <div className="workspace-action-row">
+                <Button variant="primary" onClick={() => void controlAgent("restart")} disabled={refreshing}>重启服务</Button>
+                <Button variant="quiet" onClick={() => void controlAgent(snapshot.localBackend?.running ? "stop" : "start")} disabled={refreshing}>
+                  {snapshot.localBackend.running ? "停止服务" : "启动服务"}
+                </Button>
+              </div>
+              <div className="workspace-detail-list">
+                <SummaryRow label="连接状态" value={snapshot.localBackend.connectionStatus} />
+                <SummaryRow label="待上传样本" value={String(snapshot.localBackend.pendingSampleCount)} />
+                <SummaryRow label="采集间隔" value={`${snapshot.localBackend.effectiveUploadIntervalSeconds}s`} />
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="workspace-surface__description">远端设备只提供状态与遥测查看，不在此处修改采集配置。</p>
+              <Button variant="quiet" onClick={() => openSettings("connections")}>查看中枢连接</Button>
+            </>
+          )}
+        </Surface>
+      </div>
+    </div>
+  );
 }
 
 function InstanceRow({ label, name, value }: { label: string; name: string; value: string }) {
@@ -668,7 +1301,7 @@ function ShortcutSettings() {
 
 function AboutSettings() {
   const { snapshot, openExternal } = useWorkspace();
-  return <Surface><div className="workspace-about"><div className="workspace-about__mark">澜</div><h3>观澜设备状态控制台</h3><p>面向本机 Agent 和接入中枢的状态工作区。</p><div className="workspace-detail-list"><SummaryRow label="版本" value={snapshot?.update?.currentVersion ?? "开发版本"} /><SummaryRow label="发布通道" value={snapshot?.update?.currentChannel ?? "测试"} /></div><div className="workspace-form__actions"><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/Device-State-Console")}><Icon name="external" size={15} />项目主页</Button><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/Device-State-Console/issues")}><Icon name="external" size={15} />报告问题</Button></div></div></Surface>;
+  return <Surface><div className="workspace-about"><div className="workspace-about__mark-wrap"><img className="workspace-about__mark-img" src={appIcon} alt="观澜" /></div><h3>观澜设备状态控制台</h3><p>面向本机 Agent 和接入中枢的状态工作区。</p><div className="workspace-detail-list"><SummaryRow label="版本" value={snapshot?.update?.currentVersion ?? "开发版本"} /><SummaryRow label="发布通道" value={snapshot?.update?.currentChannel ?? "测试"} /></div><div className="workspace-form__actions"><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/Device-State-Console")}><Icon name="external" size={15} />项目主页</Button><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/Device-State-Console/issues")}><Icon name="external" size={15} />报告问题</Button></div></div></Surface>;
 }
 
 function LoadingSurface() {

@@ -210,31 +210,80 @@ export async function registerRoutes(
     return { ok: true, issuedAt: session.issuedAt };
   });
 
+  const deviceReorderSchema = z.object({
+    deviceIds: z.array(z.string())
+  });
+
   app.get("/api/devices", { preHandler: requireAuth }, async () => {
-    const devices = await repositories.realtime.listDevices();
+    const openDevices = await repositories.devices.listOpenDevices();
+    const realtimeDevices = await repositories.realtime.listDevices();
+    const realtimeMap = new Map(realtimeDevices.map((d) => [d.identity.deviceId, d]));
+
     const knownDevices = await repositories.history.listKnownDevices();
-    const summaries = devices
-      .map((state) => toSummary(state))
-      .sort((a, b) => a.deviceId.localeCompare(b.deviceId));
-    const knownIds = new Set(summaries.map((device) => device.deviceId));
+    const registeredIds = new Set(openDevices.map((d) => d.deviceId));
+
+    for (const realtimeState of realtimeDevices) {
+      if (!registeredIds.has(realtimeState.identity.deviceId)) {
+        const record = await repositories.devices.registerOrUpdateDevice(
+          realtimeState.identity.deviceId,
+          realtimeState.identity.hostname
+        );
+        if (record.status === "open") {
+          openDevices.push(record);
+          registeredIds.add(record.deviceId);
+        }
+      }
+    }
+
     for (const known of knownDevices) {
-      if (knownIds.has(known.deviceId)) continue;
-      summaries.push({
-        deviceId: known.deviceId,
-        hostname: known.deviceId,
-        os: "windows",
+      if (!registeredIds.has(known.deviceId)) {
+        const record = await repositories.devices.registerOrUpdateDevice(known.deviceId, known.deviceId);
+        if (record.status === "open") {
+          openDevices.push(record);
+          registeredIds.add(record.deviceId);
+        }
+      }
+    }
+
+    const summaries = openDevices.map((record) => {
+      const realtimeState = realtimeMap.get(record.deviceId);
+      if (realtimeState) {
+        const summary = toSummary(realtimeState);
+        return { ...summary, sortOrder: record.sortOrder };
+      }
+      return {
+        deviceId: record.deviceId,
+        hostname: record.name || record.deviceId,
+        os: "windows" as const,
         agentVersion: null,
         agentChannel: null,
-        status: "offline",
-        lastSeenAt: known.lastSeenAt,
+        status: "offline" as const,
+        lastSeenAt: record.updatedAt,
         cpuUsagePercent: null,
         gpuUsagePercent: null,
         gpuMemoryUsagePercent: null,
         memoryUsagePercent: null,
-        diskUsagePercent: null
-      });
+        diskUsagePercent: null,
+        sortOrder: record.sortOrder
+      };
+    });
+
+    return summaries.sort((a, b) => ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.deviceId.localeCompare(b.deviceId));
+  });
+
+  app.delete<{ Params: { deviceId: string } }>("/api/devices/:deviceId", { preHandler: requireAuth }, async (request, reply) => {
+    const { deviceId } = request.params;
+    await repositories.devices.deleteDevice(deviceId);
+    return { ok: true };
+  });
+
+  app.put("/api/devices/reorder", { preHandler: requireAuth }, async (request, reply) => {
+    const parsed = deviceReorderSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_reorder_payload" });
     }
-    return summaries.sort((a, b) => a.deviceId.localeCompare(b.deviceId));
+    await repositories.devices.reorderDevices(parsed.data.deviceIds);
+    return { ok: true };
   });
 
   app.get<{ Params: { deviceId: string } }>("/api/devices/:deviceId", { preHandler: requireAuth }, async (request, reply) => {

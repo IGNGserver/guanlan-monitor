@@ -52,6 +52,14 @@ body {
   font-weight: 700;
 }
 
+.workspace-error-boundary__mark-img {
+  display: block;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border-radius: 12px;
+}
+
 .workspace-error-boundary h1 {
   margin: 0;
   font-size: 20px;
