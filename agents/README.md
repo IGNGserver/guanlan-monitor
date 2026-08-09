@@ -45,7 +45,24 @@ The collector can optionally append platform-level virtualization telemetry to
 the normal host payload. The adapter is disabled unless
 `DSC_VIRTUALIZATION_ENABLED=true` or a platform/endpoint is configured. Keep
 platform credentials in the service environment rather than the repository or
-the JSON config file. The initial Proxmox adapter uses:
+the JSON config file. The adapters use the following host-side interfaces:
+
+| Platform | Host interface | Collection path |
+| --- | --- | --- |
+| Proxmox VE | Proxmox REST API | Cluster/node/VM/storage inventory and VM config |
+| KVM + libvirt | `virsh` and libvirt | Node stats, pools, domains, disks, NICs and guest-agent addresses |
+| QEMU | `qemu-system-*` process command line | Running process inventory and declared CPU/memory/disk/network configuration |
+| Hyper-V | Windows PowerShell Hyper-V cmdlets | Host and VM CPU/memory/VHD/NIC inventory |
+| Oracle VirtualBox | `VBoxManage` | VM configuration, medium sizes, NICs and guest properties |
+| VMware vSphere | vCenter REST API | ESXi host, datastore and VM inventory/configuration |
+| VMware Workstation / Fusion | `vmrun` plus local `.vmx` files | Registered/running VMs and VMX CPU/memory/disk/NIC configuration |
+
+Direct QEMU processes do not expose the same storage/network counters as
+libvirt; those fields remain absent unless the process command line or an image
+tool exposes them. vSphere and macOS/Fusion require their vendor host and
+credentials outside the PVE test cluster.
+
+The Proxmox adapter uses:
 
 ```text
 DSC_VIRTUALIZATION_ENABLED=true
@@ -63,6 +80,20 @@ under `virtualization`. The token ID and secret remain environment-only. A
 platform adapter reports an explicit capability/error record when a provider
 does not expose a requested VM or guest-level metric; it does not require a
 vendor Guest Agent for the host/platform metrics.
+
+Local adapter executable and vSphere credential settings are environment-only:
+
+```text
+DSC_VIRTUALIZATION_VIRSH=virsh
+DSC_VIRTUALIZATION_LIBVIRT_URI=qemu:///system
+DSC_VIRTUALIZATION_QEMU_IMG=qemu-img
+DSC_VIRTUALIZATION_VBOXMANAGE=VBoxManage
+DSC_VIRTUALIZATION_VMRUN=vmrun
+DSC_VIRTUALIZATION_VM_PATHS=/path/to/one.vmx;/path/to/two.vmx
+DSC_VSPHERE_USERNAME=
+DSC_VSPHERE_PASSWORD=
+DSC_VSPHERE_TOKEN=
+```
 
 The Linux GUI package is named
 `DeviceStateConsole-Linux-GUI-Install-vX.Y.Z.deb`; it is built and installed by

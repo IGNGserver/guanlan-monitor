@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
@@ -284,19 +285,81 @@ func (s *agentState) collectVirtualization(cfg agentRuntimeConfig, now time.Time
 
 func collectVirtualizationProvider(ctx context.Context, cfg agentVirtualizationConfig) (*virtualizationSnapshot, error) {
 	platform := strings.ToLower(strings.TrimSpace(cfg.Platform))
-	if platform == "auto" && runtime.GOOS == "linux" {
-		if _, err := os.Stat("/etc/pve"); err == nil {
-			platform = "proxmox"
-		}
+	if platform == "auto" {
+		platform = detectAutoVirtualizationPlatform(ctx)
 	}
 	switch platform {
 	case "proxmox", "pve":
 		return collectProxmoxSnapshot(ctx, cfg)
-	case "hyperv", "hyper-v", "vsphere", "libvirt", "qemu", "virtualbox", "vmware-workstation", "vmware-fusion":
-		return unsupportedVirtualizationSnapshot(platform, time.Now().UTC(), "adapter_not_implemented"), nil
+	case "libvirt":
+		return collectLibvirtSnapshot(ctx, cfg, platform)
+	case "qemu":
+		return collectQEMUProcessSnapshot(ctx, cfg)
+	case "hyperv", "hyper-v":
+		return collectHyperVSnapshot(ctx, cfg)
+	case "virtualbox":
+		return collectVirtualBoxSnapshot(ctx, cfg)
+	case "vsphere":
+		return collectVSphereSnapshot(ctx, cfg)
+	case "vmware-workstation", "vmware-fusion":
+		return collectVMwareSnapshot(ctx, cfg, platform)
 	default:
 		return nil, fmt.Errorf("unsupported virtualization platform %q", cfg.Platform)
 	}
+}
+
+func detectAutoVirtualizationPlatform(ctx context.Context) string {
+	switch runtime.GOOS {
+	case "linux":
+		if _, err := os.Stat("/etc/pve"); err == nil {
+			return "proxmox"
+		}
+		if _, err := os.Stat("/var/run/libvirt/libvirt-sock"); err == nil {
+			return "libvirt"
+		}
+		if firstNonEmptyEnv("DSC_VIRTUALIZATION_VIRSH", "DSC_VIRTUALIZATION_LIBVIRT_URI") != "" {
+			return "libvirt"
+		}
+		if virtualizationExecutableAvailable("qemu-system-x86_64", "qemu-kvm", "qemu-system-aarch64") {
+			return "qemu"
+		}
+	case "windows":
+		if output, err := runWindowsPowerShell(ctx, "if (Get-Command Get-VM -ErrorAction SilentlyContinue) { 'hyperv' }"); err == nil && strings.TrimSpace(output) != "" {
+			return "hyperv"
+		}
+		if firstNonEmptyEnv("DSC_VIRTUALIZATION_VBOXMANAGE") != "" || virtualizationExecutableAvailable("VBoxManage.exe", "VBoxManage") {
+			return "virtualbox"
+		}
+		if firstNonEmptyEnv("DSC_VIRTUALIZATION_VMRUN", "DSC_VMRUN") != "" || virtualizationExecutableAvailable("vmrun.exe", "vmrun") {
+			return "vmware-workstation"
+		}
+		if virtualizationExecutableAvailable("qemu-system-x86_64.exe", "qemu-system-x86_64") {
+			return "qemu"
+		}
+	case "darwin":
+		if firstNonEmptyEnv("DSC_VIRTUALIZATION_VMRUN", "DSC_VMRUN") != "" || virtualizationExecutableAvailable("vmrun") {
+			return "vmware-fusion"
+		}
+		if firstNonEmptyEnv("DSC_VIRTUALIZATION_VBOXMANAGE") != "" || virtualizationExecutableAvailable("VBoxManage") {
+			return "virtualbox"
+		}
+		if virtualizationExecutableAvailable("qemu-system-x86_64", "qemu-system-aarch64") {
+			return "qemu"
+		}
+	}
+	return "auto"
+}
+
+func virtualizationExecutableAvailable(names ...string) bool {
+	for _, name := range names {
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+		if _, err := exec.LookPath(name); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func unsupportedVirtualizationSnapshot(platform string, now time.Time, message string) *virtualizationSnapshot {
@@ -374,6 +437,10 @@ func collectProxmoxSnapshot(ctx context.Context, cfg agentVirtualizationConfig) 
 			Disk: &virtualizationDiskStats{
 				ProvisionedBytes: uintPointer(resource.MaxDisk),
 				UsedBytes:        uintPointer(resource.Disk),
+			},
+			Network: &virtualizationNetworkStats{
+				TotalRxBytes: uintPointer(resource.NetIn),
+				TotalTxBytes: uintPointer(resource.NetOut),
 			},
 		}
 		storages, storageErr := collectProxmoxStorages(ctx, apiClient, resource.Node)
