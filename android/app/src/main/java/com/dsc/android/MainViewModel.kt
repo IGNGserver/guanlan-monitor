@@ -507,6 +507,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           _state.update { it.copy(refreshing = false, message = error.message ?: "刷新失败") }
         }
     }
+  fun deleteDevice(deviceId: String) {
+    val currentApi = api ?: return
+    viewModelScope.launch {
+      runCatching { currentApi.deleteDevice(deviceId) }
+        .onSuccess {
+          refresh()
+        }
+        .onFailure { error ->
+          _state.update { it.copy(message = error.message ?: "删除失败") }
+        }
+    }
+  }
+
+  fun reorderDevices(deviceIds: List<String>) {
+    val currentApi = api ?: return
+    viewModelScope.launch {
+      runCatching { currentApi.reorderDevices(mapOf("deviceIds" to deviceIds)) }
+        .onSuccess {
+          refresh()
+        }
+        .onFailure { error ->
+          _state.update { it.copy(message = error.message ?: "重排序失败") }
+        }
+    }
   }
 
   private fun loadMetrics(deviceId: String, window: MetricWindow, showScreen: Boolean) {

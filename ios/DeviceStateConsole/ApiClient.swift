@@ -102,6 +102,17 @@ public actor ApiClient {
         let (data, _) = try await session.data(for: request)
         return try JSONDecoder().decode([DeviceSummaryDto].self, from: data)
     }
+
+    public func deleteDevice(baseUrl: String, deviceId: String) async throws {
+        let request = try buildRequest(baseUrl: baseUrl, path: "/api/devices/\(deviceId)", method: "DELETE")
+        _ = try await session.data(for: request)
+    }
+
+    public func reorderDevices(baseUrl: String, deviceIds: [String]) async throws {
+        let bodyData = try JSONSerialization.data(withJSONObject: ["deviceIds": deviceIds])
+        let request = try buildRequest(baseUrl: baseUrl, path: "/api/devices/reorder", method: "PUT", body: bodyData)
+        _ = try await session.data(for: request)
+    }
     
     public func fetchMetrics(baseUrl: String, deviceId: String, window: String) async throws -> MetricsDto {
         let queryItems = [URLQueryItem(name: "window", value: window)]

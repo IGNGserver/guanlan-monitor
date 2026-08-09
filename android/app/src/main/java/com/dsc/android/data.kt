@@ -63,6 +63,12 @@ interface DeviceStateApi {
   @GET("/api/devices")
   suspend fun devices(): List<DeviceSummaryDto>
 
+  @retrofit2.http.DELETE("/api/devices/{deviceId}")
+  suspend fun deleteDevice(@Path("deviceId") deviceId: String): Map<String, Boolean>
+
+  @retrofit2.http.PUT("/api/devices/reorder")
+  suspend fun reorderDevices(@retrofit2.http.Body payload: Map<String, List<String>>): Map<String, Boolean>
+
   @GET("/api/devices/{deviceId}/metrics")
   suspend fun metrics(
     @Path("deviceId") deviceId: String,
