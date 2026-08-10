@@ -65,6 +65,19 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
 
+      - name: Sync fixed-version Compose definition
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          remote_compose="$DEPLOY_PATH/.docker-compose.yml.codex.tmp"
+          scp -i "$HOME/.ssh/id_ed25519" docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:$remote_compose"
+          ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "mv '$remote_compose' '$DEPLOY_PATH/docker-compose.yml'"
+
       - name: Pull and restart published images
         shell: bash
         env:
