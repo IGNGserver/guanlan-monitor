@@ -29,30 +29,37 @@ jobs:
     runs-on: [self-hosted, linux, x64, nas]
     environment: production
     steps:
-      - name: Checkout requested ref
-        uses: actions/checkout@v4
-        with:
-          ref: v${{ inputs.version }}
-
-      - name: Validate requested version
+      - name: Validate and download requested Compose definition
         shell: bash
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          version="$(tr -d '[:space:]' < VERSION)"
-          [[ "$REQUESTED_VERSION" == "$version" ]] || {
-            echo "Requested version $REQUESTED_VERSION does not match VERSION $version." >&2
-            exit 1
-          }
           [[ "$REQUESTED_VERSION" != "latest" ]] || {
             echo "Production deployment requires a fixed version." >&2
+            exit 1
+          }
+          release_json="$(curl -fsSL --connect-timeout 10 --max-time 30 \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/IGNGserver/Device-State-Console/releases/tags/v$REQUESTED_VERSION")"
+          release_tag="$(printf '%s' "$release_json" | jq -r '.tag_name')"
+          release_draft="$(printf '%s' "$release_json" | jq -r '.draft')"
+          [[ "$release_tag" == "v$REQUESTED_VERSION" && "$release_draft" == "false" ]] || {
+            echo "Requested version $REQUESTED_VERSION is not a published release." >&2
             exit 1
           }
           [[ "${{ inputs.channel }}" == "stable" || "${{ inputs.channel }}" == "test" ]] || {
             echo "Invalid release channel." >&2
             exit 1
           }
+          curl -fsSL --connect-timeout 10 --max-time 30 \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H 'Accept: application/vnd.github.raw' \
+            "https://api.github.com/repos/IGNGserver/Device-State-Console/contents/docker-compose.yml?ref=v$REQUESTED_VERSION" \
+            -o "$GITHUB_WORKSPACE/docker-compose.yml"
+          grep -q 'ghcr.io/igngserver/device-state-console-server' "$GITHUB_WORKSPACE/docker-compose.yml"
 
       - name: Configure SSH
         shell: bash
