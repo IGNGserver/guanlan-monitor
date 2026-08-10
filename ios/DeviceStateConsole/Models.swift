@@ -25,6 +25,17 @@ public struct LoginResponseDto: Codable, Sendable {
     public let error: String?
 }
 
+public struct VirtualMachineIdentityDto: Codable, Equatable, Sendable {
+    public let vmId: String
+    public let platform: String
+    public let externalId: String?
+    public let node: String?
+    public let type: String?
+    public let powerState: String?
+    public let hostDeviceId: String?
+    public let hostName: String?
+}
+
 public struct DeviceSummaryDto: Codable, Identifiable, Equatable, Sendable {
     public var id: String { deviceId }
     public let deviceId: String
@@ -37,6 +48,10 @@ public struct DeviceSummaryDto: Codable, Identifiable, Equatable, Sendable {
     public let gpuMemoryUsagePercent: Double?
     public let memoryUsagePercent: Double?
     public let diskUsagePercent: Double?
+    public let sortOrder: Int?
+    public let instanceType: String?
+    public let hostName: String?
+    public let virtualMachine: VirtualMachineIdentityDto?
     
     public var isOnline: Bool {
         status.lowercased() == "online"
@@ -72,6 +87,10 @@ public struct DeviceDetailDto: Codable, Equatable, Sendable {
     public let cpuModel: String?
     public let status: String
     public let lastSeenAt: String?
+    public let sortOrder: Int?
+    public let instanceType: String?
+    public let hostName: String?
+    public let virtualMachine: VirtualMachineIdentityDto?
 }
 
 public struct SensorBackendDto: Codable, Identifiable, Equatable, Sendable {
@@ -377,6 +396,8 @@ public struct MetricsDto: Decodable, Equatable, Sendable {
     public let platform: String
     public let arch: String
     public let cpuModel: String?
+    public let instanceType: String?
+    public let hostName: String?
     public let processCount: Int
     public let threadCount: Int
     public let handleCount: Int64
@@ -412,6 +433,8 @@ public struct MetricsDto: Decodable, Equatable, Sendable {
         platform = device.platform
         arch = device.arch
         cpuModel = device.cpuModel
+        instanceType = device.instanceType
+        hostName = device.hostName
         cpus = latest.cpuPackages
         disks = latest.disks
         networkInterfaces = latest.networkInterfaces

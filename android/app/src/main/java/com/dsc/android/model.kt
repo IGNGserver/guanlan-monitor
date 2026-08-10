@@ -20,7 +20,23 @@ data class DeviceSummaryDto(
   val gpuUsagePercent: Double? = null,
   val gpuMemoryUsagePercent: Double? = null,
   val memoryUsagePercent: Double? = null,
-  val diskUsagePercent: Double? = null
+  val diskUsagePercent: Double? = null,
+  val sortOrder: Int? = null,
+  val instanceType: String = "device",
+  val hostName: String? = null,
+  val virtualMachine: VirtualMachineIdentityDto? = null
+)
+
+@Serializable
+data class VirtualMachineIdentityDto(
+  val vmId: String,
+  val platform: String,
+  val externalId: String? = null,
+  val node: String? = null,
+  val type: String? = null,
+  val powerState: String? = null,
+  val hostDeviceId: String? = null,
+  val hostName: String? = null
 )
 
 @Serializable
@@ -251,7 +267,11 @@ data class DeviceDetailDto(
   val lastSeenAt: String? = null,
   val cpuUsagePercent: Double? = null,
   val memoryUsagePercent: Double? = null,
-  val diskUsagePercent: Double? = null
+  val diskUsagePercent: Double? = null,
+  val sortOrder: Int? = null,
+  val instanceType: String = "device",
+  val hostName: String? = null,
+  val virtualMachine: VirtualMachineIdentityDto? = null
 )
 
 @Serializable
@@ -414,6 +434,7 @@ data class AppState(
   val loadingMetrics: Boolean = false,
   val loadingTraffic: Boolean = false,
   val devices: List<DeviceSummaryDto> = emptyList(),
+  val instanceType: String = "device",
   val selectedDeviceId: String? = null,
   val focusedBlock: DeviceBlockKey? = null,
   val selectedWindow: MetricWindow = MetricWindow.OneMinute,

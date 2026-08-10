@@ -5,6 +5,7 @@ import type {
   DeviceBlockKey,
   DeviceMetricKey,
   DeviceSummary,
+  InstanceType,
   MetricSeries,
   MetricWindow,
   MetricsResponse
@@ -56,6 +57,8 @@ export function Dashboard({
       platform: string;
       arch?: string;
       cpuModel?: string;
+      instanceType?: InstanceType;
+      hostName?: string | null;
     };
     latest: {
       cpuFrequencyMHz: number | null;
@@ -264,6 +267,9 @@ export function Dashboard({
             </span>
             {metrics?.device.cpuModel && (
               <span className={styles.metaBadge}>CPU: {metrics.device.cpuModel}</span>
+            )}
+            {metrics?.device.instanceType === "virtual_machine" && (
+              <span className={styles.metaBadge}>宿主机：{metrics.device.hostName ?? "未知"}</span>
             )}
           </div>
         </div>

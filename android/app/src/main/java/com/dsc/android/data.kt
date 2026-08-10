@@ -60,7 +60,7 @@ interface DeviceStateApi {
     @Query("arch") arch: String
   ): UpdateInfoDto
 
-  @GET("/api/devices")
+  @GET("/api/instances")
   suspend fun devices(): List<DeviceSummaryDto>
 
   @retrofit2.http.DELETE("/api/devices/{deviceId}")

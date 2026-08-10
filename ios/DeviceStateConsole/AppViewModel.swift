@@ -13,6 +13,19 @@ public final class AppViewModel {
     
     public var devices: [DeviceSummaryDto] = []
     public var selectedDeviceId: String? = nil
+    public var instanceType: String = "device"
+
+    public var visibleDevices: [DeviceSummaryDto] {
+        devices
+            .filter { ($0.instanceType ?? "device") == instanceType }
+            .sorted {
+                let left = $0.sortOrder ?? Int.max
+                let right = $1.sortOrder ?? Int.max
+                return left == right
+                    ? $0.hostname.localizedCaseInsensitiveCompare($1.hostname) == .orderedAscending
+                    : left < right
+            }
+    }
     
     // Metrics
     public var metrics: MetricsDto? = nil
@@ -87,6 +100,7 @@ public final class AppViewModel {
         trafficCalendar = nil
         updateInfo = nil
         selectedDeviceId = nil
+        instanceType = "device"
         activeScreen = .login
         stopPolling()
         isLoading = false
@@ -102,11 +116,13 @@ public final class AppViewModel {
             if updateInfo?.available != true {
                 updateInfo = nil
             }
-            if let currentId = selectedDeviceId, devices.contains(where: { $0.deviceId == currentId }) {
+            if let currentId = selectedDeviceId, let current = devices.first(where: { $0.deviceId == currentId }) {
+                instanceType = current.instanceType ?? "device"
                 activeScreen = .deviceDetail(deviceId: currentId)
                 await refreshMetrics()
-            } else if let first = devices.first {
+            } else if let first = visibleDevices.first ?? devices.first {
                 selectedDeviceId = first.deviceId
+                instanceType = first.instanceType ?? "device"
                 activeScreen = .deviceDetail(deviceId: first.deviceId)
                 await refreshMetrics()
             } else {
@@ -114,26 +130,6 @@ public final class AppViewModel {
             }
             startPolling()
 
-    public func deleteDevice(deviceId: String) async {
-        do {
-            try await apiClient.deleteDevice(baseUrl: serverConfig.baseUrl, deviceId: deviceId)
-            devices.removeAll(where: { $0.deviceId == deviceId })
-            if selectedDeviceId == deviceId {
-                selectedDeviceId = devices.first?.deviceId
-            }
-        } catch {
-            self.errorText = error.localizedDescription
-        }
-    }
-
-    public func reorderDevices(deviceIds: [String]) async {
-        do {
-            try await apiClient.reorderDevices(baseUrl: serverConfig.baseUrl, deviceIds: deviceIds)
-            devices = (try? await apiClient.fetchDevices(baseUrl: serverConfig.baseUrl)) ?? devices
-        } catch {
-            self.errorText = error.localizedDescription
-        }
-    }
         } catch {
             errorMessage = "获取设备列表失败: \(error.localizedDescription)"
             activeScreen = .deviceList
@@ -161,6 +157,44 @@ public final class AppViewModel {
             metrics = try await apiClient.fetchMetrics(baseUrl: serverConfig.baseUrl, deviceId: deviceId, window: selectedWindow.rawValue)
         } catch {
             print("刷新指标失败: \(error)")
+        }
+    }
+
+    public func selectInstanceType(_ type: String) {
+        instanceType = type == "virtual_machine" ? "virtual_machine" : "device"
+        if let selectedDeviceId,
+           let selected = devices.first(where: { $0.deviceId == selectedDeviceId }),
+           (selected.instanceType ?? "device") != instanceType {
+            selectedDeviceId = visibleDevices.first?.deviceId
+            metrics = nil
+        }
+    }
+
+    public func deleteDevice(deviceId: String) async {
+        do {
+            try await apiClient.deleteDevice(baseUrl: serverConfig.baseUrl, deviceId: deviceId)
+            devices.removeAll(where: { $0.deviceId == deviceId })
+            if selectedDeviceId == deviceId {
+                selectedDeviceId = visibleDevices.first?.deviceId
+                if let nextId = selectedDeviceId {
+                    activeScreen = .deviceDetail(deviceId: nextId)
+                    await refreshMetrics()
+                } else {
+                    activeScreen = .deviceList
+                    metrics = nil
+                }
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    public func reorderDevices(deviceIds: [String]) async {
+        do {
+            try await apiClient.reorderDevices(baseUrl: serverConfig.baseUrl, deviceIds: deviceIds)
+            devices = (try? await apiClient.fetchDevices(baseUrl: serverConfig.baseUrl)) ?? devices
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
     

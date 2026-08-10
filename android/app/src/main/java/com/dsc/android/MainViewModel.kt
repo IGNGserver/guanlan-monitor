@@ -193,8 +193,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         currentApi.login(LoginRequestDto(current.serverConfig.accessKey))
         currentApi.devices()
       }.onSuccess { devices ->
-        val selectedDeviceId = current.selectedDeviceId?.takeIf { id -> devices.any { it.deviceId == id } }
-          ?: devices.firstOrNull()?.deviceId
+        val visibleDevices = devices
+          .filter { it.instanceType == current.instanceType }
+          .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
+        val selectedDeviceId = current.selectedDeviceId?.takeIf { id -> visibleDevices.any { it.deviceId == id } }
+          ?: visibleDevices.firstOrNull()?.deviceId
         screenBackStack.clear()
         _state.update {
           it.copy(
@@ -333,6 +336,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   fun showDeviceList() {
     navigateBackTo(AppScreen.DeviceList)
+  }
+
+  fun selectInstanceType(instanceType: String) {
+    val normalized = if (instanceType == "virtual_machine") "virtual_machine" else "device"
+    _state.update { current ->
+      val selected = current.selectedDeviceId?.let { id -> current.devices.firstOrNull { it.deviceId == id } }
+      val nextSelectedId = if (selected?.instanceType == normalized) {
+        selected.deviceId
+      } else {
+        current.devices
+          .filter { it.instanceType == normalized }
+          .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
+          .firstOrNull()
+          ?.deviceId
+      }
+      current.copy(instanceType = normalized, selectedDeviceId = nextSelectedId)
+    }
   }
 
   fun clearFocusedBlock() {
@@ -494,8 +514,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       _state.update { it.copy(refreshing = true, message = null) }
       runCatching { currentApi.devices() }
         .onSuccess { devices ->
-          val selectedDeviceId = _state.value.selectedDeviceId?.takeIf { id -> devices.any { it.deviceId == id } }
-            ?: devices.firstOrNull()?.deviceId
+          val visibleDevices = devices
+            .filter { it.instanceType == _state.value.instanceType }
+            .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
+          val selectedDeviceId = _state.value.selectedDeviceId?.takeIf { id -> visibleDevices.any { it.deviceId == id } }
+            ?: visibleDevices.firstOrNull()?.deviceId
           _state.update { it.copy(devices = devices, selectedDeviceId = selectedDeviceId, refreshing = false) }
           val screen = _state.value.currentScreen
           if (selectedDeviceId != null) {
@@ -623,8 +646,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           onUpdate = { event ->
             _state.update { current ->
               current.copy(
-                devices = current.devices.map { device ->
-                  if (device.deviceId == event.deviceId) event.summary else device
+                devices = if (current.devices.any { it.deviceId == event.deviceId }) {
+                  current.devices.map { device ->
+                    if (device.deviceId == event.deviceId) {
+                      event.summary.copy(sortOrder = event.summary.sortOrder ?: device.sortOrder)
+                    } else {
+                      device
+                    }
+                  }
+                } else {
+                  current.devices + event.summary
                 }
               )
             }

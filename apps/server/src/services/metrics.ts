@@ -12,6 +12,12 @@ import type {
 } from "../types.js";
 import { buildTrafficCalendar } from "../traffic-calendar.js";
 import { ALL_DEVICE_METRIC_KEYS, HEARTBEAT_TIMEOUT_MS, payloadToTimeSeries, toSummary } from "../utils.js";
+import {
+  buildVirtualMachinePayload,
+  virtualMachineExternalId,
+  virtualMachineId,
+  virtualMachineScopeKey
+} from "./virtual-machines.js";
 
 const LIVE_WINDOWS: AggregatedWindowConfig[] = [
   { bucket: "1m", maxPoints: 12 },
@@ -34,6 +40,15 @@ export class MetricsService {
   async ingest(payload: AgentMetricsPayload) {
     const receivedAt = new Date().toISOString();
     await this.repositories.devices.registerOrUpdateDevice(payload.identity.deviceId, payload.identity.hostname);
+    await this.persistPayload(payload, receivedAt);
+    await this.ingestVirtualMachines(payload);
+  }
+
+  private async persistPayload(
+    payload: AgentMetricsPayload,
+    receivedAt = new Date().toISOString(),
+    sortOrder?: number
+  ) {
     const previousState = await this.repositories.realtime.getDevice(payload.identity.deviceId);
     if (previousState && hasIdentityBoundaryChanged(previousState.identity, payload.identity)) {
       await this.resetDeviceSeries(payload.identity.deviceId);
@@ -55,19 +70,50 @@ export class MetricsService {
 
     const event: DeviceRealtimeEvent = {
       deviceId: payload.identity.deviceId,
-      summary: toSummary(state),
+      summary: {
+        ...toSummary(state),
+        ...(sortOrder === undefined ? {} : { sortOrder })
+      },
       latest: payload
     };
     this.emitDeviceEvent(event);
   }
 
+  private async ingestVirtualMachines(hostPayload: AgentMetricsPayload) {
+    const snapshot = hostPayload.virtualization;
+    if (!snapshot?.vms?.length) return;
+
+    const scopeKey = virtualMachineScopeKey(snapshot, hostPayload.identity.deviceId);
+    for (const vm of snapshot.vms) {
+      const externalId = virtualMachineExternalId(vm);
+      if (!externalId) continue;
+      const proposedId = virtualMachineId(scopeKey, externalId);
+      const record = await this.repositories.virtualMachines.registerOrUpdate({
+        virtualMachineId: proposedId,
+        scopeKey,
+        externalId,
+        platform: vm.platform || snapshot.platform,
+        name: vm.name || externalId,
+        hostDeviceId: hostPayload.identity.deviceId,
+        hostName: hostPayload.identity.hostname,
+        node: vm.node ?? null,
+        type: vm.type ?? null,
+        powerState: vm.powerState || "unknown",
+        observedAt: new Date().toISOString()
+      });
+      await this.persistPayload(buildVirtualMachinePayload(hostPayload, record, vm), undefined, record.sortOrder);
+    }
+  }
+
   async markOfflineDevices() {
     const devices = await this.repositories.realtime.listDevices();
     const now = Date.now();
+    const openVirtualMachineIds = new Set((await this.repositories.virtualMachines.listOpen()).map((item) => item.virtualMachineId));
 
     await Promise.all(
       devices.map(async (device) => {
         if (device.status === "offline") return;
+        if (device.identity.instanceType === "virtual_machine" && !openVirtualMachineIds.has(device.identity.deviceId)) return;
         if (now - Date.parse(device.lastSeenAt) < HEARTBEAT_TIMEOUT_MS) return;
         const offlineState = { ...device, status: "offline" as const };
         await this.repositories.realtime.upsert(offlineState);

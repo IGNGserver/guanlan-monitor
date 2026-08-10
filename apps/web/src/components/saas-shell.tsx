@@ -1,13 +1,15 @@
 "use client";
 
 import React, { useState } from "react";
-import type { DeviceSummary, MetricWindow } from "@dsc/shared";
+import type { DeviceSummary, InstanceType, MetricWindow } from "@dsc/shared";
 import { DeviceSidebar } from "./device-sidebar";
 import { UpdateNotice } from "./update-notice";
 import styles from "./monitor.module.css";
 
 interface SaasShellProps {
   devices: DeviceSummary[];
+  instanceType: InstanceType;
+  onSelectInstanceType: (instanceType: InstanceType) => void;
   selectedDeviceId: string | null;
   selectedWindow?: MetricWindow;
   onSelectDevice: (deviceId: string | null) => void;
@@ -19,6 +21,8 @@ interface SaasShellProps {
 
 export function SaasShell({
   devices,
+  instanceType,
+  onSelectInstanceType,
   selectedDeviceId,
   selectedWindow = "1m",
   onSelectDevice,
@@ -45,6 +49,8 @@ export function SaasShell({
       {/* Persistent Left Sidebar */}
       <DeviceSidebar
         devices={devices}
+        instanceType={instanceType}
+        onSelectInstanceType={onSelectInstanceType}
         selectedDeviceId={selectedDeviceId}
         onSelectDevice={(id) => {
           onSelectDevice(id);

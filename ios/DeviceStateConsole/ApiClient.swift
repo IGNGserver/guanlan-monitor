@@ -98,7 +98,7 @@ public actor ApiClient {
     }
     
     public func fetchDevices(baseUrl: String) async throws -> [DeviceSummaryDto] {
-        let request = try buildRequest(baseUrl: baseUrl, path: "/api/devices")
+        let request = try buildRequest(baseUrl: baseUrl, path: "/api/instances")
         let (data, _) = try await session.data(for: request)
         return try JSONDecoder().decode([DeviceSummaryDto].self, from: data)
     }

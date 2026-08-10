@@ -456,7 +456,11 @@ struct DeviceInfoSection: View {
         SectionContainer(title: "设备与上报状态", onOpenBlock: {}, onEdit: {}) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("ID：\(metrics.deviceId)")
-                Text("系统：\(metrics.platform) / \(metrics.arch) · 状态：\(metrics.status)")
+                if metrics.instanceType == "virtual_machine" {
+                    Text("虚拟机 · 宿主机：\(metrics.hostName ?? "未知") · 状态：\(metrics.status)")
+                } else {
+                    Text("系统：\(metrics.platform) / \(metrics.arch) · 状态：\(metrics.status)")
+                }
                 Text("最近上报：\(metrics.lastSeenAt ?? "未知")")
                 Text("进程：\(metrics.processCount) · 线程：\(metrics.threadCount) · 句柄：\(metrics.handleCount)")
             }

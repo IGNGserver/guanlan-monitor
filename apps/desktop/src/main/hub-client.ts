@@ -100,7 +100,7 @@ export class HubClient {
 
   async listDevices(): Promise<DeviceSummary[]> {
     await this.ensureSession();
-    return this.request<DeviceSummary[]>("/api/devices");
+    return this.request<DeviceSummary[]>("/api/instances");
   }
 
   async deleteDevice(deviceId: string): Promise<void> {

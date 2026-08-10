@@ -215,65 +215,28 @@ export async function registerRoutes(
   });
 
   app.get("/api/devices", { preHandler: requireAuth }, async () => {
-    const openDevices = await repositories.devices.listOpenDevices();
-    const realtimeDevices = await repositories.realtime.listDevices();
-    const realtimeMap = new Map(realtimeDevices.map((d) => [d.identity.deviceId, d]));
+    return buildDeviceSummaries(repositories);
+  });
 
-    const knownDevices = await repositories.history.listKnownDevices();
-    const registeredIds = new Set(openDevices.map((d) => d.deviceId));
+  app.get("/api/virtual-machines", { preHandler: requireAuth }, async () => {
+    return buildVirtualMachineSummaries(repositories);
+  });
 
-    for (const realtimeState of realtimeDevices) {
-      if (!registeredIds.has(realtimeState.identity.deviceId)) {
-        const record = await repositories.devices.registerOrUpdateDevice(
-          realtimeState.identity.deviceId,
-          realtimeState.identity.hostname
-        );
-        if (record.status === "open") {
-          openDevices.push(record);
-          registeredIds.add(record.deviceId);
-        }
-      }
-    }
-
-    for (const known of knownDevices) {
-      if (!registeredIds.has(known.deviceId)) {
-        const record = await repositories.devices.registerOrUpdateDevice(known.deviceId, known.deviceId);
-        if (record.status === "open") {
-          openDevices.push(record);
-          registeredIds.add(record.deviceId);
-        }
-      }
-    }
-
-    const summaries = openDevices.map((record) => {
-      const realtimeState = realtimeMap.get(record.deviceId);
-      if (realtimeState) {
-        const summary = toSummary(realtimeState);
-        return { ...summary, sortOrder: record.sortOrder };
-      }
-      return {
-        deviceId: record.deviceId,
-        hostname: record.name || record.deviceId,
-        os: "windows" as const,
-        agentVersion: null,
-        agentChannel: null,
-        status: "offline" as const,
-        lastSeenAt: record.updatedAt,
-        cpuUsagePercent: null,
-        gpuUsagePercent: null,
-        gpuMemoryUsagePercent: null,
-        memoryUsagePercent: null,
-        diskUsagePercent: null,
-        sortOrder: record.sortOrder
-      };
-    });
-
-    return summaries.sort((a, b) => ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.deviceId.localeCompare(b.deviceId));
+  app.get("/api/instances", { preHandler: requireAuth }, async () => {
+    const [devices, virtualMachines] = await Promise.all([
+      buildDeviceSummaries(repositories),
+      buildVirtualMachineSummaries(repositories)
+    ]);
+    return [...devices, ...virtualMachines];
   });
 
   app.delete<{ Params: { deviceId: string } }>("/api/devices/:deviceId", { preHandler: requireAuth }, async (request, reply) => {
     const { deviceId } = request.params;
-    await repositories.devices.deleteDevice(deviceId);
+    if (isVirtualMachineId(deviceId)) {
+      await repositories.virtualMachines.delete(deviceId);
+    } else {
+      await repositories.devices.deleteDevice(deviceId);
+    }
     return { ok: true };
   });
 
@@ -282,7 +245,12 @@ export async function registerRoutes(
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_reorder_payload" });
     }
-    await repositories.devices.reorderDevices(parsed.data.deviceIds);
+    const virtualMachineIds = parsed.data.deviceIds.filter(isVirtualMachineId);
+    const deviceIds = parsed.data.deviceIds.filter((id) => !isVirtualMachineId(id));
+    await Promise.all([
+      repositories.devices.reorderDevices(deviceIds),
+      repositories.virtualMachines.reorder(virtualMachineIds)
+    ]);
     return { ok: true };
   });
 
@@ -479,6 +447,110 @@ export async function registerRoutes(
     };
   });
 
+}
+
+function isVirtualMachineId(deviceId: string): boolean {
+  return deviceId.startsWith("vm:");
+}
+
+async function buildDeviceSummaries(repositories: Repositories) {
+  const openDevices = await repositories.devices.listOpenDevices();
+  const realtimeDevices = (await repositories.realtime.listDevices()).filter(
+    (state) => state.identity.instanceType !== "virtual_machine"
+  );
+  const realtimeMap = new Map(realtimeDevices.map((state) => [state.identity.deviceId, state]));
+  const knownDevices = (await repositories.history.listKnownDevices()).filter((known) => !isVirtualMachineId(known.deviceId));
+  const registeredIds = new Set(openDevices.map((device) => device.deviceId));
+
+  for (const realtimeState of realtimeDevices) {
+    if (!registeredIds.has(realtimeState.identity.deviceId)) {
+      const record = await repositories.devices.registerOrUpdateDevice(
+        realtimeState.identity.deviceId,
+        realtimeState.identity.hostname
+      );
+      if (record.status === "open") {
+        openDevices.push(record);
+        registeredIds.add(record.deviceId);
+      }
+    }
+  }
+
+  for (const known of knownDevices) {
+    if (!registeredIds.has(known.deviceId)) {
+      const record = await repositories.devices.registerOrUpdateDevice(known.deviceId, known.deviceId);
+      if (record.status === "open") {
+        openDevices.push(record);
+        registeredIds.add(record.deviceId);
+      }
+    }
+  }
+
+  return openDevices.map((record) => {
+    const realtimeState = realtimeMap.get(record.deviceId);
+    if (realtimeState) {
+      return { ...toSummary(realtimeState), sortOrder: record.sortOrder };
+    }
+    return {
+      deviceId: record.deviceId,
+      hostname: record.name || record.deviceId,
+      os: "unknown" as const,
+      agentVersion: null,
+      agentChannel: null,
+      status: "offline" as const,
+      lastSeenAt: record.updatedAt,
+      cpuUsagePercent: null,
+      gpuUsagePercent: null,
+      gpuMemoryUsagePercent: null,
+      memoryUsagePercent: null,
+      diskUsagePercent: null,
+      sortOrder: record.sortOrder,
+      instanceType: "device" as const,
+      hostName: null,
+      virtualMachine: null
+    };
+  }).sort((a, b) => ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.deviceId.localeCompare(b.deviceId));
+}
+
+async function buildVirtualMachineSummaries(repositories: Repositories) {
+  const records = await repositories.virtualMachines.listOpen();
+  const realtimeStates = (await repositories.realtime.listDevices()).filter(
+    (state) => state.identity.instanceType === "virtual_machine"
+  );
+  const realtimeMap = new Map(realtimeStates.map((state) => [state.identity.deviceId, state]));
+
+  return records.map((record) => {
+    const realtimeState = realtimeMap.get(record.virtualMachineId);
+    if (realtimeState) {
+      return { ...toSummary(realtimeState), sortOrder: record.sortOrder };
+    }
+    return {
+      deviceId: record.virtualMachineId,
+      hostname: record.name,
+      os: "unknown" as const,
+      agentVersion: null,
+      agentChannel: null,
+      status: "offline" as const,
+      lastSeenAt: record.lastSeenAt,
+      cpuUsagePercent: null,
+      gpuUsagePercent: null,
+      gpuMemoryUsagePercent: null,
+      memoryUsagePercent: null,
+      diskUsagePercent: null,
+      sortOrder: record.sortOrder,
+      instanceType: "virtual_machine" as const,
+      hostName: record.hostName,
+      virtualMachine: {
+        vmId: record.virtualMachineId,
+        externalId: record.externalId,
+        platform: record.platform,
+        node: record.node,
+        type: record.type,
+        powerState: record.powerState,
+        hostDeviceId: record.hostDeviceId,
+        hostName: record.hostName
+      }
+    };
+  }).sort((a, b) => ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.deviceId.localeCompare(b.deviceId));
 }
 
 function rejectInsecureAgentTransport(request: FastifyRequest, reply: FastifyReply): boolean {

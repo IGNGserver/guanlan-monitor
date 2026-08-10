@@ -100,7 +100,7 @@ export function getHubUpdateStatus() {
 }
 
 export function listDevices() {
-  return apiFetch<DeviceSummary[]>("/api/devices").then((devices) =>
+  return apiFetch<DeviceSummary[]>("/api/instances").then((devices) =>
     devices.map((device) => ({
       ...device,
       gpuUsagePercent: device.gpuUsagePercent ?? null,

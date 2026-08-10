@@ -11,6 +11,7 @@ import type {
   TrafficCalendarMode,
   TrafficCalendarResponse
 } from "@dsc/shared";
+import type { VirtualMachineRepository } from "./repositories/virtual-machines.js";
 
 export interface DeviceRealtimeState {
   identity: AgentIdentity;
@@ -113,6 +114,7 @@ export interface Repositories {
   realtime: RealtimeRepository;
   history: HistoryRepository;
   devices: DeviceRepository;
+  virtualMachines: VirtualMachineRepository;
 }
 
 export interface RealtimeRepository {

@@ -38,6 +38,14 @@ export class BridgeGuanlanDataAdapter implements IGuanlanDataAdapter {
     return dscBridge.saveFanNote(deviceId, fanId, note);
   }
 
+  async deleteInstance(deviceId: string): Promise<DesktopSnapshot> {
+    return dscBridge.deleteInstance(deviceId);
+  }
+
+  async reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot> {
+    return dscBridge.reorderInstances(deviceIds);
+  }
+
   async updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot> {
     return dscBridge.updateStartupSettings(settings);
   }

@@ -123,6 +123,9 @@ fun AppRoot(
   onLogout: () -> Unit,
   onSystemBack: () -> Unit,
   onOpenDevice: (String, DeviceBlockKey?) -> Unit,
+  onSelectInstanceType: (String) -> Unit,
+  onDeleteDevice: (String) -> Unit,
+  onReorderDevices: (List<String>) -> Unit,
   onClearFocusedBlock: () -> Unit,
   onOpenTraffic: (String) -> Unit,
   onCloseTrafficSheet: () -> Unit,
@@ -194,7 +197,7 @@ fun AppRoot(
           AppScreen.Login -> {
             if (state.loading) LoadingScreen() else LoginScreen(state, onSaveServerConfig)
           }
-          AppScreen.DeviceList -> DeviceListScreen(state, onOpenDevice, onOpenTraffic, onOpenDeviceEditor, onRequestLogout = { showLogoutConfirm = true }, onRefresh = onRefresh, onDownloadUpdate = onDownloadUpdate)
+          AppScreen.DeviceList -> DeviceListScreen(state, onOpenDevice, onOpenTraffic, onOpenDeviceEditor, onSelectInstanceType, onDeleteDevice, onReorderDevices, onRequestLogout = { showLogoutConfirm = true }, onRefresh = onRefresh, onDownloadUpdate = onDownloadUpdate)
           AppScreen.Traffic -> TrafficScreen(state, onShowDeviceList, onSelectTrafficMode, onSelectTrafficCell, onShiftTrafficAnchor, onRefresh)
           AppScreen.DeviceDetail -> DeviceDetailScreen(state, onShowDeviceList, onSelectWindow, onOpenTraffic, onCloseTrafficSheet, onSelectTrafficCell, onOpenBlockEditor, onOpenInstanceEditor, onRefresh, onClearFocusedBlock)
         }
@@ -323,11 +326,18 @@ private fun DeviceListScreen(
   onOpenDevice: (String, DeviceBlockKey?) -> Unit,
   onOpenTraffic: (String) -> Unit,
   onOpenDeviceEditor: (String) -> Unit,
+  onSelectInstanceType: (String) -> Unit,
+  onDeleteDevice: (String) -> Unit,
+  onReorderDevices: (List<String>) -> Unit,
   onRequestLogout: () -> Unit,
   onRefresh: () -> Unit,
   onDownloadUpdate: () -> Unit
 ) {
   val haptic = LocalHapticFeedback.current
+  var pendingDeleteDevice by remember { mutableStateOf<DeviceSummaryDto?>(null) }
+  val visibleDevices = state.devices
+    .filter { it.instanceType == state.instanceType }
+    .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
   Scaffold(
     topBar = {
       TopAppBar(
@@ -403,17 +413,62 @@ private fun DeviceListScreen(
           }
         }
       }
-      items(state.devices.size) { index ->
-        val device = state.devices[index]
+      item(key = "instance-tabs") {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          listOf("device" to "普通设备", "virtual_machine" to "虚拟机").forEach { (type, label) ->
+            FilterChip(
+              selected = state.instanceType == type,
+              onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onSelectInstanceType(type)
+              },
+              label = { Text(label) }
+            )
+          }
+        }
+      }
+      if (visibleDevices.isEmpty()) {
+        item(key = "empty-instance-list") {
+          InlineLoadingCard(if (state.instanceType == "virtual_machine") "暂未发现虚拟机" else "暂未发现普通设备")
+        }
+      }
+      items(visibleDevices.size, key = { index -> visibleDevices[index].deviceId }) { index ->
+        val device = visibleDevices[index]
         DeviceListCard(
           device,
           onOpenDevice = { onOpenDevice(device.deviceId, null) },
           onOpenBlock = { blockKey -> onOpenDevice(device.deviceId, blockKey) },
           onOpenTraffic = { onOpenTraffic(device.deviceId) },
-          onOpenEditor = { onOpenDeviceEditor(device.deviceId) }
+          onOpenEditor = { onOpenDeviceEditor(device.deviceId) },
+          onMove = { direction ->
+            val targetIndex = index + direction
+            if (targetIndex in visibleDevices.indices) {
+              val reordered = visibleDevices.toMutableList()
+              val moved = reordered.removeAt(index)
+              reordered.add(targetIndex, moved)
+              onReorderDevices(reordered.map { it.deviceId })
+            }
+          },
+          canMoveUp = index > 0,
+          canMoveDown = index < visibleDevices.lastIndex,
+          onRequestDelete = { pendingDeleteDevice = device }
         )
       }
     }
+  }
+  pendingDeleteDevice?.let { device ->
+    AlertDialog(
+      onDismissRequest = { pendingDeleteDevice = null },
+      title = { Text("删除${if (device.instanceType == "virtual_machine") "虚拟机" else "设备"}实例？") },
+      text = { Text("删除后它会从当前列表隐藏；宿主机/Agent下次上报时会自动重新显示。") },
+      confirmButton = {
+        Button(onClick = {
+          pendingDeleteDevice = null
+          onDeleteDevice(device.deviceId)
+        }) { Text("删除") }
+      },
+      dismissButton = { OutlinedButton(onClick = { pendingDeleteDevice = null }) { Text("取消") } }
+    )
   }
 }
 
@@ -423,7 +478,11 @@ private fun DeviceListCard(
   onOpenDevice: () -> Unit,
   onOpenBlock: (DeviceBlockKey) -> Unit,
   onOpenTraffic: () -> Unit,
-  onOpenEditor: () -> Unit
+  onOpenEditor: () -> Unit,
+  onMove: (Int) -> Unit,
+  canMoveUp: Boolean,
+  canMoveDown: Boolean,
+  onRequestDelete: () -> Unit
 ) {
   val haptic = LocalHapticFeedback.current
   val statusIndicatorModifier =
@@ -449,8 +508,14 @@ private fun DeviceListCard(
         Column(modifier = Modifier.weight(1f)) {
           Text(device.hostname, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
           Text(device.deviceId, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          if (device.instanceType == "virtual_machine") {
+            Text("宿主机：${device.hostName ?: "未知"}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+          }
         }
-        Text(device.os.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(if (device.instanceType == "virtual_machine") "VM" else device.os.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        IconButton(onClick = { onMove(-1) }, enabled = canMoveUp) { Text("↑") }
+        IconButton(onClick = { onMove(1) }, enabled = canMoveDown) { Text("↓") }
+        IconButton(onClick = onRequestDelete) { Text("×", color = MaterialTheme.colorScheme.error) }
       }
       FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         StatChip("CPU", formatPercent(device.cpuUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Cpu) })
@@ -512,7 +577,11 @@ private fun DeviceDetailScreen(
           Column {
             Text(metrics.device.hostname)
             Text(
-              "${metrics.device.os} · ${metrics.device.platform} · ${metrics.status}",
+              if (metrics.device.instanceType == "virtual_machine") {
+                "虚拟机 · 宿主机：${metrics.device.hostName ?: "未知"} · ${metrics.status}"
+              } else {
+                "${metrics.device.os} · ${metrics.device.platform} · ${metrics.status}"
+              },
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -729,7 +798,11 @@ private fun OverviewCard(metrics: MetricsDto, selectedWindow: MetricWindow, onOp
   ) {
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
       Text(metrics.device.hostname, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-      Text(metrics.device.cpuModel ?: "--", color = MaterialTheme.colorScheme.onSurfaceVariant)
+      Text(
+        if (metrics.device.instanceType == "virtual_machine") "宿主机：${metrics.device.hostName ?: "未知"} · ${metrics.device.cpuModel ?: "虚拟 CPU"}"
+        else metrics.device.cpuModel ?: "--",
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+      )
       HorizontalDivider()
       Text("上次更新 ${formatTime(metrics.lastSeenAt)}", style = MaterialTheme.typography.bodySmall)
       StatChip("在线状态", if (metrics.status == "online") "在线" else "离线")

@@ -83,7 +83,10 @@ export function toSummary(state: DeviceRealtimeState): DeviceSummary {
     gpuUsagePercent,
     gpuMemoryUsagePercent: totalGpuMemoryBytes ? percent(usedGpuMemoryBytes, totalGpuMemoryBytes) : null,
     memoryUsagePercent: percent(latest.memory.usedBytes, latest.memory.totalBytes),
-    diskUsagePercent: percent(latest.diskUsage.usedBytes, latest.diskUsage.totalBytes)
+    diskUsagePercent: percent(latest.diskUsage.usedBytes, latest.diskUsage.totalBytes),
+    instanceType: state.identity.instanceType ?? "device",
+    hostName: state.identity.hostName ?? null,
+    virtualMachine: state.identity.virtualMachine ?? null
   };
 }
 

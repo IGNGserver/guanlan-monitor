@@ -63,6 +63,8 @@ export class DesktopController {
       logout: () => this.logout(),
       cloudPush: () => this.cloudPush(),
       saveFanNote: (deviceId: string, fanId: string, note: string) => this.saveFanNote(deviceId, fanId, note),
+      deleteInstance: (deviceId: string) => this.deleteInstance(deviceId),
+      reorderInstances: (deviceIds: string[]) => this.reorderInstances(deviceIds),
       updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => this.updateStartupSettings(settings),
       openExternal: (url: string) => this.openExternal(url),
       exit: () => this.shutdown()
@@ -210,6 +212,20 @@ export class DesktopController {
     this.hub.setServerUrl(rawState.config.connection.serverUrl);
     await this.hub.saveFanNote(deviceId, fanId, note);
     return this.refresh({ selectedDeviceId: deviceId });
+  }
+
+  async deleteInstance(deviceId: string): Promise<DesktopSnapshot> {
+    const rawState = await this.agent.start();
+    if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
+    await this.hub.deleteDevice(deviceId);
+    return this.refresh({ selectedDeviceId: this.selectedDeviceId === deviceId ? null : this.selectedDeviceId });
+  }
+
+  async reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot> {
+    const rawState = await this.agent.start();
+    if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
+    await this.hub.reorderDevices(deviceIds);
+    return this.refresh({ selectedDeviceId: this.selectedDeviceId });
   }
 
   async updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot> {

@@ -23,6 +23,16 @@ public struct DeviceListView: View {
                     }
                 } else {
                     List {
+                        Section {
+                            Picker("实例类型", selection: $viewModel.instanceType) {
+                                Text("普通设备").tag("device")
+                                Text("虚拟机").tag("virtual_machine")
+                            }
+                            .pickerStyle(.segmented)
+                            .onChange(of: viewModel.instanceType) { _, value in
+                                viewModel.selectInstanceType(value)
+                            }
+                        }
                         if let update = viewModel.updateInfo, update.available {
                             Section {
                                 VStack(alignment: .leading, spacing: 10) {
@@ -42,7 +52,15 @@ public struct DeviceListView: View {
                                 .padding(.vertical, 6)
                             }
                         }
-                        ForEach(viewModel.devices) { device in
+                        if viewModel.visibleDevices.isEmpty {
+                            Section {
+                                ContentUnavailableView(
+                                    viewModel.instanceType == "virtual_machine" ? "未发现虚拟机" : "未发现普通设备",
+                                    systemImage: viewModel.instanceType == "virtual_machine" ? "shippingbox" : "desktopcomputer"
+                                )
+                            }
+                        }
+                        ForEach(viewModel.visibleDevices) { device in
                             Button {
                                 Task {
                                     await viewModel.selectDevice(deviceId: device.deviceId)
@@ -51,6 +69,17 @@ public struct DeviceListView: View {
                                 DeviceCardRow(device: device)
                             }
                             .buttonStyle(.plain)
+                        }
+                        .onDelete { offsets in
+                            let ids = offsets.map { viewModel.visibleDevices[$0].deviceId }
+                            for id in ids {
+                                Task { await viewModel.deleteDevice(deviceId: id) }
+                            }
+                        }
+                        .onMove { offsets, destination in
+                            var reordered = viewModel.visibleDevices
+                            reordered.move(fromOffsets: offsets, toOffset: destination)
+                            Task { await viewModel.reorderDevices(deviceIds: reordered.map(\.deviceId)) }
                         }
                     }
                     .refreshable {
@@ -68,10 +97,13 @@ public struct DeviceListView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { await viewModel.refreshDevicesAndNavigate() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
+                    HStack(spacing: 12) {
+                        EditButton()
+                        Button {
+                            Task { await viewModel.refreshDevicesAndNavigate() }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
                     }
                 }
             }
@@ -108,6 +140,12 @@ struct DeviceCardRow: View {
             Text("OS: \(device.os) • ID: \(device.deviceId)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            if (device.instanceType ?? "device") == "virtual_machine" {
+                Label("宿主机：\(device.hostName ?? "未知")", systemImage: "server.rack")
+                    .font(.caption)
+                    .foregroundStyle(.tint)
+            }
             
             // Usage Pill Grid
             HStack(spacing: 8) {

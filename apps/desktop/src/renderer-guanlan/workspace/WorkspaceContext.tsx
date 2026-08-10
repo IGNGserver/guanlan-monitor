@@ -5,6 +5,7 @@ import type {
   DesktopSnapshot,
   DesktopStartupSettings,
   DeviceSummary,
+  InstanceType,
   MetricWindow,
   TrafficCalendarMode
 } from "@dsc/shared";
@@ -50,7 +51,10 @@ interface WorkspaceContextValue {
   error: string | null;
   notice: { tone: "success" | "error" | "info"; text: string } | null;
   hubs: HubViewModel[];
+  allDevices: DeviceSummary[];
   devices: DeviceSummary[];
+  instanceType: InstanceType;
+  setInstanceType: (instanceType: InstanceType) => void;
   filteredDevices: DeviceSummary[];
   selectedDevice: DeviceSummary | null;
   metricsWindow: MetricWindow;
@@ -75,6 +79,8 @@ interface WorkspaceContextValue {
   saveHubConnection: (serverUrl: string, accessKey: string) => Promise<boolean>;
   updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => Promise<boolean>;
   cloudPush: () => Promise<boolean>;
+  deleteInstance: (deviceId: string) => Promise<boolean>;
+  reorderInstances: (deviceIds: string[]) => Promise<boolean>;
   minimizeWindow: () => Promise<void>;
   toggleMaximizeWindow: () => Promise<boolean>;
   closeWindow: () => Promise<void>;
@@ -174,6 +180,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [theme, setThemeState] = useState<"system" | "light" | "dark">(getStoredTheme);
   const [density, setDensityState] = useState<"comfortable" | "compact">(getStoredDensity);
   const [refreshInterval, setRefreshIntervalState] = useState<5 | 10 | 30>(getStoredRefreshInterval);
+  const [instanceType, setInstanceType] = useState<InstanceType>("device");
 
   const selectedDeviceId = route.kind === "device" ? route.deviceId : snapshot?.selectedDeviceId ?? null;
 
@@ -358,6 +365,14 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     [adapter, runMutation]
   );
   const cloudPush = useCallback(() => runMutation(() => adapter.cloudPush(), "配置已同步到中枢", "同步失败"), [adapter, runMutation]);
+  const deleteInstance = useCallback(
+    (deviceId: string) => runMutation(() => adapter.deleteInstance(deviceId), "实例已删除；下次上报后会重新显示", "删除实例失败"),
+    [adapter, runMutation]
+  );
+  const reorderInstances = useCallback(
+    (deviceIds: string[]) => runMutation(() => adapter.reorderInstances(deviceIds), "实例顺序已保存", "保存排序失败"),
+    [adapter, runMutation]
+  );
   const minimizeWindow = useCallback(() => adapter.windowMinimize(), [adapter]);
   const toggleMaximizeWindow = useCallback(() => adapter.windowToggleMaximize(), [adapter]);
   const closeWindow = useCallback(() => adapter.windowClose(), [adapter]);
@@ -382,7 +397,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [isPreview]);
 
-  const devices = snapshot?.devices ?? [];
+  const allDevices = snapshot?.devices ?? [];
+  const devices = useMemo(
+    () => allDevices.filter((device) => (device.instanceType ?? "device") === instanceType),
+    [allDevices, instanceType]
+  );
   const filteredDevices = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return devices;
@@ -397,7 +416,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         ? "unknown"
         : "offline";
   const hubs = useMemo<HubViewModel[]>(() => [{ id: "primary", name: "当前中枢", endpoint, devices, state: hubState }], [devices, endpoint, hubState]);
-  const selectedDevice = devices.find((device) => device.deviceId === selectedDeviceId) ?? null;
+  const selectedDevice = allDevices.find((device) => device.deviceId === selectedDeviceId) ?? null;
+
+  useEffect(() => {
+    if (route.kind === "device" && selectedDevice) setInstanceType(selectedDevice.instanceType ?? "device");
+  }, [route.kind, selectedDevice]);
 
   const value: WorkspaceContextValue = {
     route,
@@ -414,6 +437,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     notice,
     hubs,
     devices,
+    allDevices,
+    instanceType,
+    setInstanceType,
     filteredDevices,
     selectedDevice,
     metricsWindow,
@@ -438,6 +464,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     saveHubConnection,
     updateStartupSettings,
     cloudPush,
+    deleteInstance,
+    reorderInstances,
     minimizeWindow,
     toggleMaximizeWindow,
     closeWindow,

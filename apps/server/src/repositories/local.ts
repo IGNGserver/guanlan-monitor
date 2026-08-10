@@ -13,11 +13,13 @@ import type {
   RealtimeRepository,
   TimeSeriesRecord
 } from "../types.js";
+import type { VirtualMachineRecord, VirtualMachineRegistration, VirtualMachineRepository } from "./virtual-machines.js";
 import { buildTrafficCalendar } from "../traffic-calendar.js";
 
 interface LocalDbShape {
   devices: Record<string, DeviceRealtimeState>;
   deviceRegistry?: Record<string, DeviceRecord>;
+  virtualMachines: Record<string, VirtualMachineRecord>;
   series: Record<string, Record<string, TimeSeriesRecord[]>>;
   minuteHistory: Record<string, TimeSeriesRecord[]>;
   history: Record<string, TimeSeriesRecord[]>;
@@ -35,6 +37,7 @@ interface LocalDbShape {
 const EMPTY_DB: LocalDbShape = {
   devices: {},
   deviceRegistry: {},
+  virtualMachines: {},
   series: {},
   minuteHistory: {},
   history: {},
@@ -313,6 +316,92 @@ export class LocalDeviceRepository implements DeviceRepository {
         if (item) {
           item.sortOrder = index;
           item.updatedAt = now;
+        }
+      });
+    });
+  }
+}
+
+export class LocalVirtualMachineRepository implements VirtualMachineRepository {
+  constructor(private readonly store: LocalJsonStore) {}
+
+  async registerOrUpdate(input: VirtualMachineRegistration): Promise<VirtualMachineRecord> {
+    let result!: VirtualMachineRecord;
+    await this.store.update((db) => {
+      const registry = (db.virtualMachines ??= {});
+      const existing = Object.values(registry).find(
+        (item) => item.virtualMachineId === input.virtualMachineId ||
+          (item.scopeKey === input.scopeKey && item.externalId === input.externalId)
+      );
+      const now = input.observedAt;
+      if (existing) {
+        existing.scopeKey = input.scopeKey;
+        existing.externalId = input.externalId;
+        existing.platform = input.platform;
+        existing.name = input.name;
+        existing.hostDeviceId = input.hostDeviceId;
+        existing.hostName = input.hostName;
+        existing.node = input.node ?? null;
+        existing.type = input.type ?? null;
+        existing.powerState = input.powerState;
+        existing.status = "open";
+        existing.updatedAt = now;
+        existing.lastSeenAt = now;
+        result = { ...existing };
+        return;
+      }
+
+      const maxSortOrder = Object.values(registry).reduce((max, item) => Math.max(max, item.sortOrder ?? 0), -1);
+      const record: VirtualMachineRecord = {
+        virtualMachineId: input.virtualMachineId,
+        scopeKey: input.scopeKey,
+        externalId: input.externalId,
+        platform: input.platform,
+        name: input.name,
+        hostDeviceId: input.hostDeviceId,
+        hostName: input.hostName,
+        node: input.node ?? null,
+        type: input.type ?? null,
+        powerState: input.powerState,
+        status: "open",
+        sortOrder: maxSortOrder + 1,
+        registeredAt: now,
+        updatedAt: now,
+        lastSeenAt: now
+      };
+      registry[record.virtualMachineId] = record;
+      result = { ...record };
+    });
+    return result;
+  }
+
+  async listOpen(): Promise<VirtualMachineRecord[]> {
+    const db = await this.store.read();
+    return Object.values(db.virtualMachines ?? {})
+      .filter((item) => item.status === "open")
+      .sort((a, b) => (a.sortOrder - b.sortOrder) || a.virtualMachineId.localeCompare(b.virtualMachineId));
+  }
+
+  async delete(virtualMachineId: string): Promise<void> {
+    await this.store.update((db) => {
+      const registry = (db.virtualMachines ??= {});
+      const record = registry[virtualMachineId];
+      if (record) {
+        record.status = "closed";
+        record.updatedAt = new Date().toISOString();
+      }
+    });
+  }
+
+  async reorder(virtualMachineIds: string[]): Promise<void> {
+    await this.store.update((db) => {
+      const registry = (db.virtualMachines ??= {});
+      const now = new Date().toISOString();
+      virtualMachineIds.forEach((id, index) => {
+        const record = registry[id];
+        if (record) {
+          record.sortOrder = index;
+          record.updatedAt = now;
         }
       });
     });

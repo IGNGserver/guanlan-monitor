@@ -8,12 +8,14 @@ import { env } from "./config.js";
 import { RedisRealtimeRepository } from "./repositories/realtime.js";
 import { MysqlHistoryRepository } from "./repositories/history.js";
 import { MysqlDeviceRepository } from "./repositories/devices.js";
+import { MysqlVirtualMachineRepository } from "./repositories/virtual-machines.js";
 import {
   createLocalStore,
   LocalDeviceMetricConfigStore,
   LocalDeviceRepository,
   LocalHistoryRepository,
-  LocalRealtimeRepository
+  LocalRealtimeRepository,
+  LocalVirtualMachineRepository
 } from "./repositories/local.js";
 import { MetricsService } from "./services/metrics.js";
 import { registerRoutes } from "./routes.js";
@@ -40,15 +42,18 @@ if (env.MYSQL_URL) {
   const mysqlPool = mysql.createPool(env.MYSQL_URL);
   const history = new MysqlHistoryRepository(mysqlPool);
   const devicesRepo = new MysqlDeviceRepository(mysqlPool);
+  const virtualMachinesRepo = new MysqlVirtualMachineRepository(mysqlPool);
   await history.init();
   await devicesRepo.init();
-  repositories = { realtime, history, devices: devicesRepo };
+  await virtualMachinesRepo.init();
+  repositories = { realtime, history, devices: devicesRepo, virtualMachines: virtualMachinesRepo };
   app.log.info(env.REDIS_URL ? "using redis + mysql repositories" : "using local realtime + mysql history repositories");
 } else {
   repositories = {
     realtime,
     history: new LocalHistoryRepository(store),
-    devices: new LocalDeviceRepository(store)
+    devices: new LocalDeviceRepository(store),
+    virtualMachines: new LocalVirtualMachineRepository(store)
   };
   app.log.warn("MYSQL_URL missing, falling back to local JSON history storage");
 }

@@ -65,6 +65,14 @@ class SafeDscBridge implements DesktopRendererBridge {
     return this.requireBridge().saveFanNote(deviceId, fanId, note);
   }
 
+  async deleteInstance(deviceId: string): Promise<DesktopSnapshot> {
+    return this.requireBridge().deleteInstance(deviceId);
+  }
+
+  async reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot> {
+    return this.requireBridge().reorderInstances(deviceIds);
+  }
+
   async updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot> {
     return this.requireBridge().updateStartupSettings(settings);
   }

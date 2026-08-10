@@ -460,7 +460,10 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
     closeSettings,
     openExternal,
     snapshot,
-    devices
+    devices,
+    allDevices,
+    instanceType,
+    setInstanceType
   } = useWorkspace();
   const inSettings = route.kind === "settings";
   const localDeviceId = snapshot?.localBackend?.config.connection.deviceId;
@@ -486,6 +489,24 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
             <Icon name="overview" /> <span>总览</span>
           </button>
           <div className="workspace-sidebar__label"><span>接入中枢</span><span className="workspace-sidebar__count">{hubs.length}</span></div>
+          <div className="workspace-instance-tabs" role="tablist" aria-label="实例类型">
+            {(["device", "virtual_machine"] as const).map((type) => (
+              <button
+                key={type}
+                className={`workspace-instance-tab ${instanceType === type ? "is-active" : ""}`}
+                type="button"
+                role="tab"
+                aria-selected={instanceType === type}
+                onClick={() => {
+                  const current = route.kind === "device" ? allDevices.find((device) => device.deviceId === route.deviceId) : null;
+                  if (current && (current.instanceType ?? "device") !== type) navigate({ kind: "overview" });
+                  setInstanceType(type);
+                }}
+              >
+                {type === "device" ? "普通设备" : "虚拟机"}
+              </button>
+            ))}
+          </div>
           {hubs.map((hub) => {
             const collapsed = Boolean(collapsedHubs[hub.id]);
             const hubActive = route.kind === "hub" && route.hubId === hub.id;
@@ -506,7 +527,7 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
                     {hub.devices.length ? hub.devices.map((device) => (
                       <button className={`workspace-device-item ${route.kind === "device" && route.deviceId === device.deviceId ? "is-active" : ""}`} type="button" key={device.deviceId} onClick={() => navigate({ kind: "device", deviceId: device.deviceId })} title={device.hostname}>
                         <StatusDot state={device.status === "online" ? "online" : "offline"} />
-                        <span className="workspace-device-item__copy"><strong>{device.hostname}</strong><small>{device.os} · <MetricValue value={device.cpuUsagePercent} /></small></span>
+                        <span className="workspace-device-item__copy"><strong>{device.hostname}</strong><small>{(device.instanceType ?? "device") === "virtual_machine" ? `宿主机：${device.hostName ?? "未知"}` : device.os} · <MetricValue value={device.cpuUsagePercent} /></small></span>
                       </button>
                     )) : <div className="workspace-sidebar__empty">尚未发现设备</div>}
                   </div>
@@ -657,13 +678,45 @@ function Surface({ children, className = "" }: { children: React.ReactNode; clas
   return <section className={`workspace-surface ${className}`}>{children}</section>;
 }
 
-function DeviceRow({ device }: { device: DeviceSummary }) {
+function DeviceRow({
+  device,
+  index,
+  total,
+  onMove,
+  onDelete
+}: {
+  device: DeviceSummary;
+  index?: number;
+  total?: number;
+  onMove?: (direction: -1 | 1) => void;
+  onDelete?: () => void;
+}) {
   const { navigate } = useWorkspace();
-  return <button className="workspace-device-row" type="button" onClick={() => navigate({ kind: "device", deviceId: device.deviceId })}><span className="workspace-device-row__status"><StatusDot state={device.status === "online" ? "online" : "offline"} /></span><span className="workspace-device-row__identity"><strong>{device.hostname}</strong><small>{device.os} · {device.deviceId}</small></span><span className="workspace-device-row__metric"><small>CPU</small><MetricValue value={device.cpuUsagePercent} /></span><span className="workspace-device-row__metric"><small>内存</small><MetricValue value={device.memoryUsagePercent} /></span><Icon name="arrow" size={15} /></button>;
+  const open = () => navigate({ kind: "device", deviceId: device.deviceId });
+  const isVm = device.instanceType === "virtual_machine";
+  return <div
+    className="workspace-device-row"
+    role="button"
+    tabIndex={0}
+    onClick={open}
+    onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}
+  >
+    <span className="workspace-device-row__status"><StatusDot state={device.status === "online" ? "online" : "offline"} /></span>
+    <span className="workspace-device-row__identity"><strong>{device.hostname}</strong><small>{isVm ? `宿主机：${device.hostName ?? "未知"}` : device.os} · {device.deviceId}</small></span>
+    <span className="workspace-device-row__metric"><small>CPU</small><MetricValue value={device.cpuUsagePercent} /></span>
+    <span className="workspace-device-row__metric"><small>内存</small><MetricValue value={device.memoryUsagePercent} /></span>
+    {onMove || onDelete ? <span className="workspace-device-row__actions" onClick={(event) => event.stopPropagation()}>
+      {onMove && <>
+        <button type="button" className="workspace-row-action" disabled={index === 0} onClick={() => onMove(-1)} aria-label="上移" title="上移">↑</button>
+        <button type="button" className="workspace-row-action" disabled={index === (total ?? 0) - 1} onClick={() => onMove(1)} aria-label="下移" title="下移">↓</button>
+      </>}
+      {onDelete && <button type="button" className="workspace-row-action workspace-row-action--danger" onClick={onDelete} aria-label="删除实例" title="删除实例">×</button>}
+    </span> : <Icon name="arrow" size={15} />}
+  </div>;
 }
 
 function OverviewPage() {
-  const { snapshot, hubs, devices, loading, error, refresh, navigate, openSettings } = useWorkspace();
+  const { snapshot, hubs, devices, loading, error, refresh, navigate, openSettings, deleteInstance, reorderInstances } = useWorkspace();
   if (loading && !snapshot) return <LoadingSurface />;
   if (!snapshot) return <ErrorSurface title="无法读取设备状态" detail={error ?? "桌面桥接尚未准备好"} onRetry={() => void refresh()} />;
   const online = devices.filter((device) => device.status === "online").length;
@@ -678,6 +731,22 @@ function OverviewPage() {
   // 计算 TOP 5 资源消耗榜
   const topCpuDevices = [...devices].sort((a, b) => (b.cpuUsagePercent ?? 0) - (a.cpuUsagePercent ?? 0)).slice(0, 5);
   const topMemoryDevices = [...devices].sort((a, b) => (b.memoryUsagePercent ?? 0) - (a.memoryUsagePercent ?? 0)).slice(0, 5);
+
+  const moveInstance = (deviceId: string, direction: -1 | 1) => {
+    const currentIndex = devices.findIndex((device) => device.deviceId === deviceId);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= devices.length) return;
+    const next = [...devices];
+    [next[currentIndex], next[nextIndex]] = [next[nextIndex], next[currentIndex]];
+    void reorderInstances(next.map((device) => device.deviceId));
+  };
+
+  const removeInstance = (device: DeviceSummary) => {
+    const label = device.instanceType === "virtual_machine" ? "虚拟机实例" : "设备实例";
+    if (window.confirm(`确定删除“${device.hostname}”这个${label}吗？删除后它不会显示在列表中；下次宿主机/Agent上报时会自动重新显示。`)) {
+      void deleteInstance(device.deviceId);
+    }
+  };
 
   return (
     <div className="workspace-page workspace-page--overview">
@@ -726,7 +795,14 @@ function OverviewPage() {
           </div>
           <div className="workspace-device-rows">
             {devices.length ? (
-              devices.map((device) => <DeviceRow key={device.deviceId} device={device} />)
+              devices.map((device, index) => <DeviceRow
+                key={device.deviceId}
+                device={device}
+                index={index}
+                total={devices.length}
+                onMove={(direction) => moveInstance(device.deviceId, direction)}
+                onDelete={() => removeInstance(device)}
+              />)
             ) : (
               <EmptyState title="还没有设备" detail="连接一个中枢后，设备会出现在这里。" action={<Button variant="primary" onClick={() => openSettings("connections")}>添加中枢</Button>} />
             )}
@@ -885,7 +961,7 @@ function DevicePage() {
       <PageIntro
         eyebrow={localDevice ? "本机设备" : "远端设备"}
         title={selectedDevice.hostname}
-        description={`${selectedDevice.os} · ${selectedDevice.deviceId} · 最后心跳 ${formatDate(selectedDevice.lastSeenAt)}`}
+        description={`${selectedDevice.instanceType === "virtual_machine" ? "虚拟机" : selectedDevice.os} · ${selectedDevice.deviceId} · 最后心跳 ${formatDate(selectedDevice.lastSeenAt)}`}
         actions={
           <>
             <Button variant="quiet" onClick={() => navigate({ kind: "overview" })}><Icon name="back" size={16} />返回总览</Button>
@@ -898,6 +974,7 @@ function DevicePage() {
         <StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} />
         <span>Agent {selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</span>
         <span>通道 {selectedDevice.agentChannel ?? "未知"}</span>
+        {selectedDevice.instanceType === "virtual_machine" && <span>宿主机 {selectedDevice.hostName ?? "未知"}</span>}
         <span>数据更新时间 {formatDate(snapshot?.generatedAt)}</span>
       </div>
 

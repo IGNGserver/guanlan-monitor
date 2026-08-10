@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import type { DeviceSummary } from "@dsc/shared";
+import type { DeviceSummary, InstanceType } from "@dsc/shared";
 import styles from "./monitor.module.css";
 
 interface HomeOverviewProps {
   devices: DeviceSummary[];
+  instanceType: InstanceType;
+  onSelectInstanceType: (instanceType: InstanceType) => void;
   onOpenDevice: (deviceId: string) => void;
   onDeleteDevice?: (deviceId: string) => Promise<void>;
   onReorderDevices?: (deviceIds: string[]) => Promise<void>;
@@ -13,6 +15,8 @@ interface HomeOverviewProps {
 
 export function HomeOverview({
   devices,
+  instanceType,
+  onSelectInstanceType,
   onOpenDevice,
   onDeleteDevice,
   onReorderDevices
@@ -54,7 +58,9 @@ export function HomeOverview({
   async function handleDelete(deviceId: string, e: React.MouseEvent) {
     e.stopPropagation();
     if (!onDeleteDevice) return;
-    if (!window.confirm(`确定要删除设备 "${deviceId}" 吗？如果该 Agent 仍在线上报数据，其状态会在下次心跳时重新上线。`)) {
+    const device = devices.find((item) => item.deviceId === deviceId);
+    const label = device?.instanceType === "virtual_machine" ? "虚拟机实例" : "设备实例";
+    if (!window.confirm(`确定要删除${label} "${deviceId}" 吗？下次宿主机/Agent上报时它会自动重新显示。`)) {
       return;
     }
     setDeletingId(deviceId);
@@ -151,16 +157,28 @@ export function HomeOverview({
       <section>
         <div className={styles.sectionHeader}>
           <div>
-            <h2 className={styles.sectionTitle}>受控节点概览</h2>
+            <h2 className={styles.sectionTitle}>{instanceType === "virtual_machine" ? "虚拟机概览" : "受控节点概览"}</h2>
             <span style={{ fontSize: "13px", color: "var(--text-muted)" }}>
-              实时资源状态摘要与硬件指示
+              {instanceType === "virtual_machine" ? "宿主机发现的虚拟机实时资源状态" : "实时资源状态摘要与硬件指示"}
             </span>
           </div>
-
-          <label className={styles.footerActionBtn} style={{ cursor: "pointer" }}>
-            🎨 自定义背景
-            <input type="file" accept="image/*" onChange={handleBackground} style={{ display: "none" }} />
-          </label>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            {(["device", "virtual_machine"] as InstanceType[]).map((type) => (
+              <button
+                key={type}
+                type="button"
+                className={styles.footerActionBtn}
+                style={{ opacity: instanceType === type ? 1 : 0.58 }}
+                onClick={() => onSelectInstanceType(type)}
+              >
+                {type === "device" ? "普通设备" : "虚拟机"}
+              </button>
+            ))}
+            <label className={styles.footerActionBtn} style={{ cursor: "pointer" }}>
+              🎨 自定义背景
+              <input type="file" accept="image/*" onChange={handleBackground} style={{ display: "none" }} />
+            </label>
+          </div>
         </div>
 
         {/* Device Cards Grid */}
@@ -191,6 +209,9 @@ export function HomeOverview({
                     <div className={styles.deviceTitleGroup}>
                       <h3 className={styles.deviceHostname}>{device.hostname}</h3>
                       <span className={styles.deviceIdTag}>{device.deviceId}</span>
+                      {(device.instanceType ?? "device") === "virtual_machine" && device.hostName && (
+                        <span className={styles.deviceIdTag}>宿主机：{device.hostName}</span>
+                      )}
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -334,7 +355,7 @@ export function HomeOverview({
                   {/* Card Action Footer with Button-in-Button Arrow */}
                   <div className={styles.cardActionFooter}>
                     <span className={styles.osBadge}>
-                      {device.os === "windows" ? "Windows" : "Linux"}
+                      {(device.instanceType ?? "device") === "virtual_machine" ? "虚拟机" : device.os === "windows" ? "Windows" : "Linux"}
                     </span>
                     <span className={styles.viewDetailsText}>
                       进入详细图表

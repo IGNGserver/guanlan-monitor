@@ -21,6 +21,8 @@ export function registerIpc(controller: DesktopController, getWindow: () => Brow
   ipcMain.handle(IPC_CHANNELS.logout, () => controller.logout());
   ipcMain.handle(IPC_CHANNELS.cloudPush, () => controller.cloudPush());
   ipcMain.handle(IPC_CHANNELS.saveFanNote, (_event, deviceId: string, fanId: string, note: string) => controller.saveFanNote(asString(deviceId, "device_id"), asString(fanId, "fan_id"), asString(note, "fan_note")));
+  ipcMain.handle(IPC_CHANNELS.deleteInstance, (_event, deviceId: string) => controller.deleteInstance(asString(deviceId, "device_id")));
+  ipcMain.handle(IPC_CHANNELS.reorderInstances, (_event, deviceIds: unknown) => controller.reorderInstances(asStringArray(deviceIds, "device_ids")));
   ipcMain.handle(IPC_CHANNELS.updateStartupSettings, (_event, settings) => controller.updateStartupSettings(asStartupSettings(settings)));
   ipcMain.handle(IPC_CHANNELS.openExternal, (_event, url: string) => controller.openExternal(asString(url, "external_url")));
   ipcMain.handle(IPC_CHANNELS.windowMinimize, () => {
@@ -50,6 +52,11 @@ export function registerIpc(controller: DesktopController, getWindow: () => Brow
 function asString(value: unknown, field: string): string {
   if (typeof value !== "string") throw new Error(`invalid_${field}`);
   return value;
+}
+
+function asStringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new Error(`invalid_${field}`);
+  return value as string[];
 }
 
 function asRecord<T extends object = Record<string, unknown>>(value: unknown): T {

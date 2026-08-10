@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import type { DeviceSummary } from "@dsc/shared";
+import type { DeviceSummary, InstanceType } from "@dsc/shared";
 import styles from "./monitor.module.css";
 
 interface DeviceSidebarProps {
   devices: DeviceSummary[];
+  instanceType: InstanceType;
+  onSelectInstanceType: (instanceType: InstanceType) => void;
   selectedDeviceId: string | null;
   onSelectDevice: (deviceId: string | null) => void;
   onLogout?: () => void;
@@ -14,19 +16,22 @@ interface DeviceSidebarProps {
 
 export function DeviceSidebar({
   devices,
+  instanceType,
+  onSelectInstanceType,
   selectedDeviceId,
   onSelectDevice,
   className = ""
 }: DeviceSidebarProps) {
   const [filterQuery, setFilterQuery] = useState("");
 
-  const filteredDevices = devices.filter(
+  const visibleDevices = devices.filter((device) => (device.instanceType ?? "device") === instanceType);
+  const filteredDevices = visibleDevices.filter(
     (d) =>
       d.hostname.toLowerCase().includes(filterQuery.toLowerCase()) ||
       d.deviceId.toLowerCase().includes(filterQuery.toLowerCase())
   );
 
-  const onlineCount = devices.filter((d) => d.status === "online").length;
+  const onlineCount = visibleDevices.filter((d) => d.status === "online").length;
 
   return (
     <aside className={`${styles.sidebar} ${className}`}>
@@ -41,7 +46,7 @@ export function DeviceSidebar({
         </div>
         <div className={styles.sidebarStatus}>
           <span className={styles.statusDotPulse} />
-          <span>服务正常 ({onlineCount}/{devices.length} 在线)</span>
+          <span>服务正常 ({onlineCount}/{visibleDevices.length} 在线)</span>
         </div>
       </div>
 
@@ -59,13 +64,29 @@ export function DeviceSidebar({
               <span>📊</span>
               <span>控制中心 (首页)</span>
             </div>
-            <span className={styles.navBadge}>{devices.length}</span>
+            <span className={styles.navBadge}>{visibleDevices.length}</span>
           </button>
         </div>
 
         {/* Fleet Devices Group */}
         <div className={styles.navGroup}>
-          <div className={styles.navLabel}>接入节点 ({devices.length})</div>
+          <div className={styles.navLabel}>实例列表 ({visibleDevices.length})</div>
+
+          <div style={{ display: "flex", gap: "6px", marginBottom: "10px" }} role="tablist" aria-label="实例类型">
+            {(["device", "virtual_machine"] as InstanceType[]).map((type) => (
+              <button
+                key={type}
+                type="button"
+                className={styles.navItem}
+                style={{ flex: 1, justifyContent: "center", background: instanceType === type ? "var(--bg-card-hover)" : undefined }}
+                onClick={() => onSelectInstanceType(type)}
+                role="tab"
+                aria-selected={instanceType === type}
+              >
+                {type === "device" ? "普通设备" : "虚拟机"}
+              </button>
+            ))}
+          </div>
           
           {/* Search Device Input */}
           <div className={styles.sidebarSearch}>
@@ -106,9 +127,13 @@ export function DeviceSidebar({
                     <span>{device.hostname}</span>
                   </div>
                   <span className={styles.osBadge}>
-                    {device.os === "windows" ? "Win" : "Linux"}
+                    {(device.instanceType ?? "device") === "virtual_machine" ? "VM" : device.os === "windows" ? "Win" : "Linux"}
                   </span>
                 </div>
+
+                {(device.instanceType ?? "device") === "virtual_machine" && device.hostName && (
+                  <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>宿主机：{device.hostName}</div>
+                )}
 
                 {/* Quick Resource Usage Pills */}
                 <div className={styles.devicePillsRow}>

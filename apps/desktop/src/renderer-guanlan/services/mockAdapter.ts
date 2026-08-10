@@ -32,6 +32,8 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
   };
 
   private listeners: Set<(snapshot: DesktopSnapshot) => void> = new Set();
+  private closedInstances = new Set<string>();
+  private instanceOrder: string[] = [];
 
   private isRunning = true;
   private backendStartedAt = new Date(Date.now() - 3600000 * 24).toISOString();
@@ -166,6 +168,18 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
     return this.buildSnapshot();
   }
 
+  async deleteInstance(deviceId: string): Promise<DesktopSnapshot> {
+    this.closedInstances.add(deviceId);
+    this.notify();
+    return this.buildSnapshot({ selectedDeviceId: null });
+  }
+
+  async reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot> {
+    this.instanceOrder = [...deviceIds];
+    this.notify();
+    return this.buildSnapshot();
+  }
+
   async saveFanNote(deviceId: string, fanId: string, note: string): Promise<DesktopSnapshot> {
     this.fanNotes[`${deviceId}:${fanId}`] = note;
     this.notify();
@@ -272,10 +286,46 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
         gpuMemoryUsagePercent: null,
         memoryUsagePercent: null,
         diskUsagePercent: null
+      },
+      {
+        deviceId: "vm:preview-pve-ubuntu",
+        hostname: "pve-ubuntu-lab",
+        os: "unknown",
+        agentVersion: "0.2.103",
+        agentChannel: "test",
+        status: stopped ? "offline" : "online",
+        lastSeenAt: new Date().toISOString(),
+        cpuUsagePercent: 18.4,
+        gpuUsagePercent: null,
+        gpuMemoryUsagePercent: null,
+        memoryUsagePercent: 36.5,
+        diskUsagePercent: 42.1,
+        instanceType: "virtual_machine",
+        hostName: "pve1",
+        virtualMachine: {
+          vmId: "vm:preview-pve-ubuntu",
+          externalId: "101",
+          platform: "proxmox",
+          node: "pve1",
+          type: "qemu",
+          powerState: "running",
+          hostDeviceId: "dev-lin-02",
+          hostName: "pve1"
+        }
       }
     ];
 
-    const selectedDeviceId = request?.selectedDeviceId ?? "dev-win-01";
+    const visibleDevices = devices
+      .filter((device) => !this.closedInstances.has(device.deviceId))
+      .sort((left, right) => {
+        const leftOrder = this.instanceOrder.indexOf(left.deviceId);
+        const rightOrder = this.instanceOrder.indexOf(right.deviceId);
+        if (leftOrder >= 0 && rightOrder >= 0) return leftOrder - rightOrder;
+        if (leftOrder >= 0) return -1;
+        if (rightOrder >= 0) return 1;
+        return 0;
+      });
+    const selectedDeviceId = request?.selectedDeviceId ?? visibleDevices[0]?.deviceId ?? null;
 
     const localBackend: DesktopAgentBackendState = {
       running: !stopped,
@@ -409,16 +459,17 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
       fans: []
     };
 
+    const selectedDevice = visibleDevices.find((device) => device.deviceId === selectedDeviceId) ?? visibleDevices[0] ?? devices[0]!;
     const deviceDetail: DeviceDetail = {
-      ...devices[0],
-      platform: "win32",
+      ...selectedDevice,
+      platform: selectedDevice.instanceType === "virtual_machine" ? "proxmox" : "win32",
       arch: "x64",
       cpuModel: "13th Gen Intel(R) Core(TM) i7-13700K"
     };
 
     const metrics: MetricsResponse = {
       device: deviceDetail,
-      status: stopped ? "offline" : "online",
+      status: selectedDevice.status,
       lastSeenAt: new Date().toISOString(),
       enabledMetrics: this.config.enabledMetrics,
       enabledDeviceIds: this.config.enabledDeviceIds || {},
@@ -480,7 +531,7 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
       },
       session: { authenticated: true, accessKeyConfigured: true },
       localBackend,
-      devices,
+      devices: visibleDevices,
       selectedDeviceId,
       metrics,
       trafficCalendar,

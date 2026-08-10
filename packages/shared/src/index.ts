@@ -15,6 +15,8 @@ export type MetricWindow =
 
 export type DeviceStatus = "online" | "offline";
 
+export type InstanceType = "device" | "virtual_machine";
+
 export type ReleaseChannel = "stable" | "test";
 
 export type UpdatePlatform =
@@ -79,12 +81,27 @@ export type DeviceMetricKey =
 export interface AgentIdentity {
   deviceId: string;
   hostname: string;
-  os: "windows" | "linux";
+  os: "windows" | "linux" | "unknown";
   platform: string;
   arch: string;
   cpuModel?: string;
   version?: string;
   channel?: ReleaseChannel;
+  instanceType?: InstanceType;
+  hostDeviceId?: string;
+  hostName?: string;
+  virtualMachine?: VirtualMachineIdentity;
+}
+
+export interface VirtualMachineIdentity {
+  vmId: string;
+  platform: AgentVirtualizationPlatform | string;
+  externalId?: string;
+  node?: string | null;
+  type?: string | null;
+  powerState?: string | null;
+  hostDeviceId?: string;
+  hostName?: string;
 }
 
 export interface SamplePoint {
@@ -462,7 +479,7 @@ export interface AgentMetricsPayload {
 export interface DeviceSummary {
   deviceId: string;
   hostname: string;
-  os: "windows" | "linux";
+  os: "windows" | "linux" | "unknown";
   agentVersion: string | null;
   agentChannel: ReleaseChannel | null;
   status: DeviceStatus;
@@ -473,6 +490,9 @@ export interface DeviceSummary {
   memoryUsagePercent: number | null;
   diskUsagePercent: number | null;
   sortOrder?: number;
+  instanceType?: InstanceType;
+  hostName?: string | null;
+  virtualMachine?: VirtualMachineIdentity | null;
 }
 
 export interface DeviceReorderPayload {
@@ -797,6 +817,8 @@ export interface DesktopRendererBridge {
   logout(): Promise<DesktopSnapshot>;
   cloudPush(): Promise<DesktopSnapshot>;
   saveFanNote(deviceId: string, fanId: string, note: string): Promise<DesktopSnapshot>;
+  deleteInstance(deviceId: string): Promise<DesktopSnapshot>;
+  reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot>;
   updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot>;
   openExternal(url: string): Promise<void>;
   windowMinimize(): Promise<void>;
