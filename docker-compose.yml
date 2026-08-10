@@ -44,6 +44,7 @@ services:
       NODE_ENV: production
       DSC_VERSION: ${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
       DSC_RELEASE_CHANNEL: ${DSC_RELEASE_CHANNEL:-test}
+      SERVER_HOST: 0.0.0.0
       SERVER_PORT: 4000
       REDIS_URL: redis://redis:6379
       MYSQL_URL: "${MYSQL_URL:-mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}}"
