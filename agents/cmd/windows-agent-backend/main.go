@@ -1000,52 +1000,56 @@ func metricsForProbeTarget(target string) []string {
 }
 
 func detectTargets(cfg agentLocalConfig) ([]probeTargetState, error) {
-	targets := make([]probeTargetState, 0, 4)
+	targets := make([]probeTargetState, 0, 5)
 
-	cpuInfo, err := cpu.InfoWithContext(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	logicalCount, _ := cpu.CountsWithContext(context.Background(), true)
-	physicalCount, _ := cpu.CountsWithContext(context.Background(), false)
 	cpuEnabled, cpuExplicit := enabledIDs(cfg.EnabledDeviceIDs, "cpu")
-	cpuInstances := detectCPUPackages(cpuInfo, logicalCount, physicalCount, cpuEnabled, cpuExplicit)
+	var cpuInstances []probeDetectedTarget
+	cpuInfo, err := cpu.InfoWithContext(context.Background())
+	if err == nil && len(cpuInfo) > 0 {
+		logicalCount, _ := cpu.CountsWithContext(context.Background(), true)
+		physicalCount, _ := cpu.CountsWithContext(context.Background(), false)
+		cpuInstances = detectCPUPackages(cpuInfo, logicalCount, physicalCount, cpuEnabled, cpuExplicit)
+	}
+	if len(cpuInstances) == 0 {
+		cpuInstances = detectCPUPackagesFallback(cpuEnabled, cpuExplicit)
+	}
 	targets = append(targets, probeTargetState{
 		Target:    "cpu",
 		Label:     "CPU 实例",
 		Instances: cpuInstances,
 	})
 
-	partitions, err := disk.Partitions(false)
-	if err != nil {
-		return nil, err
-	}
 	diskEnabled, diskExplicit := enabledIDs(cfg.EnabledDeviceIDs, "disk")
-	diskInstances := make([]probeDetectedTarget, 0, len(partitions))
-	for _, partition := range partitions {
-		mountPoint := strings.TrimSpace(partition.Mountpoint)
-		deviceName := strings.TrimSpace(partition.Device)
-		if deviceName == "" {
-			deviceName = mountPoint
-		}
-		if deviceName == "" || mountPoint == "" {
-			continue
-		}
-		id := fmt.Sprintf("%s:%s", deviceName, mountPoint)
-		name := deviceName
-		subtitle := mountPoint
-		if partition.Fstype != "" {
-			if subtitle != "" {
-				subtitle += " · "
+	var diskInstances []probeDetectedTarget
+	if partitions, err := disk.Partitions(false); err == nil {
+		diskInstances = make([]probeDetectedTarget, 0, len(partitions))
+		for _, partition := range partitions {
+			mountPoint := strings.TrimSpace(partition.Mountpoint)
+			deviceName := strings.TrimSpace(partition.Device)
+			if deviceName == "" {
+				deviceName = mountPoint
 			}
-			subtitle += partition.Fstype
+			if deviceName == "" || mountPoint == "" {
+				continue
+			}
+			id := fmt.Sprintf("%s:%s", deviceName, mountPoint)
+			name := deviceName
+			subtitle := mountPoint
+			if partition.Fstype != "" {
+				if subtitle != "" {
+					subtitle += " · "
+				}
+				subtitle += partition.Fstype
+			}
+			diskInstances = append(diskInstances, probeDetectedTarget{
+				ID:       id,
+				Name:     name,
+				Subtitle: subtitle,
+				Enabled:  isIDEnabled(diskEnabled, diskExplicit, id),
+			})
 		}
-		diskInstances = append(diskInstances, probeDetectedTarget{
-			ID:       id,
-			Name:     name,
-			Subtitle: subtitle,
-			Enabled:  isIDEnabled(diskEnabled, diskExplicit, id),
-		})
+	} else {
+		diskInstances = []probeDetectedTarget{}
 	}
 	targets = append(targets, probeTargetState{
 		Target:    "disk",
@@ -1053,34 +1057,35 @@ func detectTargets(cfg agentLocalConfig) ([]probeTargetState, error) {
 		Instances: diskInstances,
 	})
 
-	interfaces, err := gnet.Interfaces()
-	if err != nil {
-		return nil, err
-	}
 	networkEnabled, networkExplicit := enabledIDs(cfg.EnabledDeviceIDs, "network")
-	networkInstances := make([]probeDetectedTarget, 0, len(interfaces))
-	for _, iface := range interfaces {
-		name := strings.TrimSpace(iface.Name)
-		if name == "" {
-			continue
-		}
-		id := fmt.Sprintf("nic-%s", detectSanitizeKey(name))
-		addresses := make([]string, 0, len(iface.Addrs))
-		for _, addr := range iface.Addrs {
-			if strings.TrimSpace(addr.Addr) != "" {
-				addresses = append(addresses, strings.TrimSpace(addr.Addr))
+	var networkInstances []probeDetectedTarget
+	if interfaces, err := gnet.Interfaces(); err == nil {
+		networkInstances = make([]probeDetectedTarget, 0, len(interfaces))
+		for _, iface := range interfaces {
+			name := strings.TrimSpace(iface.Name)
+			if name == "" {
+				continue
 			}
+			id := fmt.Sprintf("nic-%s", detectSanitizeKey(name))
+			addresses := make([]string, 0, len(iface.Addrs))
+			for _, addr := range iface.Addrs {
+				if strings.TrimSpace(addr.Addr) != "" {
+					addresses = append(addresses, strings.TrimSpace(addr.Addr))
+				}
+			}
+			subtitle := strings.Join(addresses, " | ")
+			if subtitle == "" {
+				subtitle = strings.TrimSpace(iface.HardwareAddr)
+			}
+			networkInstances = append(networkInstances, probeDetectedTarget{
+				ID:       id,
+				Name:     name,
+				Subtitle: subtitle,
+				Enabled:  isIDEnabled(networkEnabled, networkExplicit, id),
+			})
 		}
-		subtitle := strings.Join(addresses, " | ")
-		if subtitle == "" {
-			subtitle = strings.TrimSpace(iface.HardwareAddr)
-		}
-		networkInstances = append(networkInstances, probeDetectedTarget{
-			ID:       id,
-			Name:     name,
-			Subtitle: subtitle,
-			Enabled:  isIDEnabled(networkEnabled, networkExplicit, id),
-		})
+	} else {
+		networkInstances = []probeDetectedTarget{}
 	}
 	targets = append(targets, probeTargetState{
 		Target:    "network",
