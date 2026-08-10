@@ -162,8 +162,8 @@ public final class AppViewModel {
 
     public func selectInstanceType(_ type: String) {
         instanceType = type == "virtual_machine" ? "virtual_machine" : "device"
-        if let selectedDeviceId,
-           let selected = devices.first(where: { $0.deviceId == selectedDeviceId }),
+        if let currentSelectedId = selectedDeviceId,
+           let selected = devices.first(where: { $0.deviceId == currentSelectedId }),
            (selected.instanceType ?? "device") != instanceType {
             selectedDeviceId = visibleDevices.first?.deviceId
             metrics = nil
