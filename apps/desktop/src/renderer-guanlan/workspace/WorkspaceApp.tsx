@@ -710,15 +710,7 @@ function OverviewPage() {
         </div>
       )}
 
-      {/* 4 项核心指标摘要 */}
-      {snapshot.metrics && (
-        <div className="workspace-metric-grid workspace-overview-metric-grid">
-          <MetricTile label="CPU 使用率" value={overviewLatest?.cpuUsagePercent} detail={overviewLatest?.cpuTemperatureC == null ? "温度未采集" : `${overviewLatest.cpuTemperatureC}°C`} tone="blue" points={series?.cpuUsagePercent} />
-          <MetricTile label="内存使用率" value={overviewLatest ? Math.round((overviewLatest.memoryUsedBytes / Math.max(overviewLatest.memoryTotalBytes, 1)) * 100) : null} detail={overviewLatest ? formatBytes(overviewLatest.memoryUsedBytes) : undefined} tone="green" points={series?.memoryUsagePercent} />
-          <MetricTile label="GPU 使用率" value={overviewLatest?.gpus[0]?.utilizationPercent} detail={overviewLatest?.gpus[0]?.name ?? "未检测到 GPU"} tone="amber" points={series?.gpuUsagePercent} />
-          <MetricTile label="磁盘使用率" value={overviewLatest ? Math.round((overviewLatest.diskUsedBytes / Math.max(overviewLatest.diskTotalBytes, 1)) * 100) : null} detail={overviewLatest ? formatBytes(overviewLatest.diskUsedBytes) : undefined} points={series?.diskUsagePercent} />
-        </div>
-      )}
+
 
       {/* 设备列表 + 运维统计分析 */}
       <div className="workspace-overview-grid">
@@ -909,16 +901,10 @@ function DevicePage() {
         <span>数据更新时间 {formatDate(snapshot?.generatedAt)}</span>
       </div>
 
-      {/* 4 项核心速览 Tile */}
-      <div className="workspace-metric-grid">
-        <MetricTile label="CPU 使用率" value={selectedDevice.cpuUsagePercent} detail={latest?.cpuTemperatureC == null ? "温度未采集" : `${latest.cpuTemperatureC}°C`} tone="blue" points={series?.cpuUsagePercent} />
-        <MetricTile label="内存使用率" value={selectedDevice.memoryUsagePercent} detail={latest ? formatBytes(latest.memoryUsedBytes) : undefined} tone="green" points={series?.memoryUsagePercent} />
-        <MetricTile label="GPU 使用率" value={selectedDevice.gpuUsagePercent} detail={latest?.gpus[0]?.name ?? "未检测到 GPU"} tone="amber" points={series?.gpuUsagePercent} />
-        <MetricTile label="磁盘使用率" value={selectedDevice.diskUsagePercent} detail={latest ? formatBytes(latest.diskUsedBytes) : undefined} points={series?.diskUsagePercent} />
-      </div>
+
 
       {/* 视图 Tab 切换与时间范围控制器 */}
-      <div className="telemetry-chart-header" style={{ marginTop: 10 }}>
+      <div className="telemetry-chart-header">
         <div className="workspace-tabs">
           <button className={`workspace-tab ${activeTab === "overview" ? "is-active" : ""}`} type="button" onClick={() => setActiveTab("overview")}>
             <Icon name="overview" size={15} /> 综合面板
