@@ -968,6 +968,18 @@ kbd {
 .workspace-trend__selection { stroke: var(--workspace-accent); stroke-opacity: 0.35; stroke-width: 1.4; vector-effect: non-scaling-stroke; }
 .workspace-trend__marker-outer { fill: var(--workspace-surface); stroke: var(--workspace-surface); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .workspace-trend__marker { fill: var(--workspace-accent); }
+.workspace-trend__marker-dot {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--workspace-accent);
+  border: 2px solid var(--workspace-surface);
+  box-shadow: 0 0 0 1.5px var(--workspace-accent);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 2;
+}
 .workspace-trend-axis { position: absolute; top: 8px; right: 8px; bottom: 8px; display: flex; flex-direction: column; justify-content: space-between; color: var(--workspace-text-muted); font-size: 9px; pointer-events: none; }
 .workspace-trend__range { display: flex; justify-content: space-between; color: var(--workspace-text-muted); font-size: 10px; }
 .workspace-trend--empty { min-height: 150px; }
@@ -1299,6 +1311,18 @@ kbd {
   stroke: var(--workspace-text-muted);
   stroke-width: 1;
   stroke-dasharray: 3 3;
+}
+
+.telemetry-chart-marker {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--workspace-surface, #ffffff);
+  box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 80%, transparent);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 2;
 }
 
 .telemetry-chart-stats {

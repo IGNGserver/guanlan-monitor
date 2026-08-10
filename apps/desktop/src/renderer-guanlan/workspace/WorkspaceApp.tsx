@@ -254,9 +254,6 @@ function TelemetryChartCard({
               <g key={s.label}>
                 {fillClass && <path d={fPath} className={fillClass} />}
                 <path d={lPath} className={lineClass} />
-                {s.points[curIndex] && (
-                  <circle cx={xFor(curIndex)} cy={yFor(s.points[curIndex].value)} r="3" fill={idx === 0 ? "var(--workspace-accent)" : idx === 1 ? "var(--workspace-green)" : "var(--workspace-amber)"} />
-                )}
               </g>
             );
           })}
@@ -264,6 +261,22 @@ function TelemetryChartCard({
           {/* 交互指示 Crosshair */}
           <line x1={xFor(curIndex)} x2={xFor(curIndex)} y1="0" y2="100" className="telemetry-chart-crosshair" />
         </svg>
+
+        {/* 选中时间点 HTML 正圆 Highlight Markers */}
+        {activeSeries.map((s, idx) => (
+          s.points[curIndex] ? (
+            <div
+              key={`marker-${s.label}`}
+              className="telemetry-chart-marker"
+              style={{
+                left: `${xFor(curIndex)}%`,
+                top: `${yFor(s.points[curIndex].value)}%`,
+                borderColor: idx === 0 ? "var(--workspace-accent)" : idx === 1 ? "var(--workspace-green)" : "var(--workspace-amber)",
+                backgroundColor: idx === 0 ? "var(--workspace-accent)" : idx === 1 ? "var(--workspace-green)" : "var(--workspace-amber)"
+              }}
+            />
+          ) : null
+        ))}
 
         <div className="workspace-trend-axis">
           <span>{valueFormatter(maxValue)}</span>
@@ -350,9 +363,14 @@ function MiniTrend({
           <path d={fillPath} className="workspace-trend__fill" />
           <path d={linePath} className="workspace-trend__line" />
           <line x1={selectedX} x2={selectedX} y1="0" y2="100" className="workspace-trend__selection" />
-          <circle cx={selectedX} cy={selectedY} r="4.8" className="workspace-trend__marker-outer" />
-          <circle cx={selectedX} cy={selectedY} r="2.8" className="workspace-trend__marker" />
         </svg>
+        <div
+          className="workspace-trend__marker-dot"
+          style={{
+            left: `${selectedX}%`,
+            top: `${selectedY}%`,
+          }}
+        />
         <div className="workspace-trend-axis"><span>{valueFormatter(maxValue)}</span><span>{valueFormatter(0)}</span></div>
       </div>
       {!compact && points.length > 1 && <div className="workspace-trend__range"><span>{formatAxisTime(points[0].timestamp)}</span><span>{formatAxisTime(points[points.length - 1].timestamp)}</span></div>}
