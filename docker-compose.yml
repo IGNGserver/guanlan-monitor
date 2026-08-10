@@ -46,7 +46,7 @@ services:
       DSC_RELEASE_CHANNEL: ${DSC_RELEASE_CHANNEL:-test}
       SERVER_PORT: 4000
       REDIS_URL: redis://redis:6379
-      MYSQL_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      MYSQL_URL: "${MYSQL_URL:-mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}}"
     depends_on:
       redis:
         condition: service_healthy
