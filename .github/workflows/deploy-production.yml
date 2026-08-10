@@ -91,16 +91,21 @@ jobs:
           set -euo pipefail
           ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
             "cd '$DEPLOY_PATH' && \
+             export WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' && \
              previous=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\\1/' || true) && \
-             WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' docker compose pull && \
-             WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' docker compose up -d && \
+             docker compose pull server web && \
+             if ! docker compose up -d --no-build --no-deps server web; then \
+               echo 'Deployment restart failed; attempting rollback.' >&2; \
+               if [ -n \"\$previous\" ]; then DSC_VERSION=\"\$previous\" docker compose up -d --no-build --no-deps server web; fi; \
+               exit 1; \
+             fi; \
              healthy=0; for attempt in \$(seq 1 30); do \
-               if WEB_PORT='$WEB_PORT' docker compose exec -T server node -e \"fetch('http://127.0.0.1:4000/api/system/version').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"; then healthy=1; break; fi; \
+               if docker compose exec -T server node -e \"fetch('http://127.0.0.1:4000/api/system/version').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"; then healthy=1; break; fi; \
                sleep 5; \
              done; \
              if [ \"\$healthy\" -ne 1 ]; then \
                echo 'Deployment health check failed; attempting rollback.' >&2; \
-               if [ -n \"\$previous\" ]; then WEB_PORT='$WEB_PORT' DSC_VERSION=\"\$previous\" DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' docker compose up -d; fi; \
+               if [ -n \"\$previous\" ]; then DSC_VERSION=\"\$previous\" docker compose up -d --no-build --no-deps server web; fi; \
                exit 1; \
              fi; \
-             WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' docker compose ps"
+             docker compose ps"
