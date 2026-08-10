@@ -114,6 +114,14 @@ jobs:
              export WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' \
                DSC_SERVER_IMAGE='ghcr.nju.edu.cn/igngserver/device-state-console-server' \
                DSC_WEB_IMAGE='ghcr.nju.edu.cn/igngserver/device-state-console-web' && \
+             if [ -f .env ]; then \
+               legacy_mysql_url=\$(sed -n 's/^MYSQL_URL=//p' .env | head -n 1 | tr -d '\r'); \
+               if [ -n \"\$legacy_mysql_url\" ]; then \
+                 legacy_mysql_url=\${legacy_mysql_url/@127.0.0.1:/@mysql:}; \
+                 legacy_mysql_url=\${legacy_mysql_url/@localhost:/@mysql:}; \
+                 export MYSQL_URL=\"\$legacy_mysql_url\"; \
+               fi; \
+             fi && \
              previous=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\\1/' || true) && \
              docker compose pull server web && \
              if ! docker compose up -d --no-build --no-deps server web; then \
