@@ -44,6 +44,21 @@ export function buildVirtualMachinePayload(
   const availableMemory = unsigned(vm.memory?.availableBytes) || Math.max(configuredMemory - usedMemory, 0);
   const cpuUsagePercent = numeric(vm.cpu?.usagePercent);
   const vmName = record.name || vm.name || record.virtualMachineId;
+  const diskRateInstances = Object.fromEntries(
+    (vm.disks ?? []).map((disk) => [
+      disk.id,
+      {
+        readBytesPerSec: numeric(disk.readBytesPerSec),
+        writeBytesPerSec: numeric(disk.writeBytesPerSec)
+      }
+    ])
+  );
+  if (Object.keys(diskRateInstances).length === 0 && vm.disk) {
+    diskRateInstances["vm-disk"] = {
+      readBytesPerSec: numeric(vm.disk.readBytesPerSec),
+      writeBytesPerSec: numeric(vm.disk.writeBytesPerSec)
+    };
+  }
 
   return {
     sampleId: `${hostPayload.sampleId ?? hostPayload.timestamp}:${record.virtualMachineId}`,
@@ -103,15 +118,7 @@ export function buildVirtualMachinePayload(
     diskRate: {
       readBytesPerSec: numeric(vm.disk?.readBytesPerSec),
       writeBytesPerSec: numeric(vm.disk?.writeBytesPerSec),
-      instances: Object.fromEntries(
-        diskDevices.map((disk) => [
-          disk.id,
-          {
-            readBytesPerSec: numeric(disk.readBytesPerSec),
-            writeBytesPerSec: numeric(disk.writeBytesPerSec)
-          }
-        ])
-      )
+      instances: diskRateInstances
     },
     networkRate: { rxBytesPerSec: networkRxBytesPerSec, txBytesPerSec: networkTxBytesPerSec, totalRxBytes, totalTxBytes },
     networkInterfaces,
