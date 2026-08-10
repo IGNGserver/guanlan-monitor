@@ -1200,6 +1200,63 @@ func detectCPUPackages(info []cpu.InfoStat, logicalCount int, physicalCount int,
 	return instances
 }
 
+func detectCPUPackagesFallback(enabled map[string]struct{}, explicit bool) []probeDetectedTarget {
+	if runtime.GOOS != "windows" {
+		return []probeDetectedTarget{}
+	}
+	commandText := `$ErrorActionPreference='Stop'; $rows=@(Get-CimInstance Win32_Processor | ForEach-Object { [pscustomobject]@{ id=[string]$_.DeviceID; name=[string]$_.Name; model=[string]$_.Name; coreCount=[int]$_.NumberOfCores; logicalCount=[int]$_.NumberOfLogicalProcessors } }); @($rows) | ConvertTo-Json -Depth 4 -Compress`
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
+	output, err := cmd.Output()
+	if err != nil {
+		return []probeDetectedTarget{}
+	}
+	type cpuFallbackRow struct {
+		ID           string `json:"id"`
+		Name         string `json:"name"`
+		Model        string `json:"model"`
+		CoreCount    int    `json:"coreCount"`
+		LogicalCount int    `json:"logicalCount"`
+	}
+	var rows []cpuFallbackRow
+	trimmed := bytes.TrimSpace(output)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return []probeDetectedTarget{}
+	}
+	if json.Unmarshal(trimmed, &rows) != nil {
+		var single cpuFallbackRow
+		if json.Unmarshal(trimmed, &single) == nil {
+			rows = []cpuFallbackRow{single}
+		}
+	}
+	instances := make([]probeDetectedTarget, 0, len(rows))
+	for index, row := range rows {
+		key := strings.TrimSpace(row.ID)
+		if key == "" {
+			key = fmt.Sprintf("cpu-%d", index)
+		} else {
+			key = fmt.Sprintf("cpu-%s", detectSanitizeKey(key))
+		}
+		name := strings.TrimSpace(row.Name)
+		if name == "" {
+			name = fmt.Sprintf("CPU %d", index+1)
+		}
+		details := make([]string, 0, 2)
+		if row.CoreCount > 0 {
+			details = append(details, fmt.Sprintf("%d 核", row.CoreCount))
+		}
+		if row.LogicalCount > 0 {
+			details = append(details, fmt.Sprintf("%d 线程", row.LogicalCount))
+		}
+		instances = append(instances, probeDetectedTarget{
+			ID:       key,
+			Name:     name,
+			Subtitle: strings.Join(details, " · "),
+			Enabled:  isIDEnabled(enabled, explicit, key),
+		})
+	}
+	return instances
+}
+
 func enabledIDs(all map[string][]string, key string) (map[string]struct{}, bool) {
 	ids := map[string]struct{}{}
 	values, ok := all[key]
