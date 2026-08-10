@@ -25,7 +25,7 @@ concurrency:
 jobs:
   deploy:
     name: Deploy fixed version
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, nas]
     environment: production
     steps:
       - name: Checkout requested ref
