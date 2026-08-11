@@ -1295,7 +1295,7 @@ function DevicePage() {
       )
     : "容量暂无";
   const virtualMemorySummary = filteredLatest
-    ? formatCapacitySummary(filteredLatest.memory.swapUsedBytes, filteredLatest.memory.swapTotalBytes)
+     ? formatCapacitySummary(filteredLatest.swapUsedBytes, filteredLatest.swapTotalBytes)
     : "容量暂无";
   const cpuModelItems = cpuInstances.map((cpu) => ({
     id: cpu.id,
