@@ -257,7 +257,11 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
         gpuUsagePercent: 12.0,
         gpuMemoryUsagePercent: 35.0,
         memoryUsagePercent: 48.2,
-        diskUsagePercent: 52.8
+        memoryUsedBytes: 15485760000,
+        memoryTotalBytes: 34359738368,
+        diskUsagePercent: 52.8,
+        diskUsedBytes: 566935683072,
+        diskTotalBytes: 1073741824000
       },
       {
         deviceId: "dev-lin-02",
@@ -271,7 +275,11 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
         gpuUsagePercent: null,
         gpuMemoryUsagePercent: null,
         memoryUsagePercent: 71.8,
-        diskUsagePercent: 81.4
+        memoryUsedBytes: 30198988800,
+        memoryTotalBytes: 34359738368,
+        diskUsagePercent: 81.4,
+        diskUsedBytes: 872572427264,
+        diskTotalBytes: 1073741824000
       },
       {
         deviceId: "dev-win-03",
@@ -285,7 +293,11 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
         gpuUsagePercent: null,
         gpuMemoryUsagePercent: null,
         memoryUsagePercent: null,
-        diskUsagePercent: null
+        memoryUsedBytes: null,
+        memoryTotalBytes: null,
+        diskUsagePercent: null,
+        diskUsedBytes: null,
+        diskTotalBytes: null
       },
       {
         deviceId: "vm:preview-pve-ubuntu",
@@ -300,6 +312,10 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
         gpuMemoryUsagePercent: null,
         memoryUsagePercent: 36.5,
         diskUsagePercent: 42.1,
+        memoryUsedBytes: 1250000000,
+        memoryTotalBytes: 3435973836,
+        diskUsedBytes: 22500000000,
+        diskTotalBytes: 53687091200,
         instanceType: "virtual_machine",
         hostName: "pve1",
         virtualMachine: {
@@ -468,7 +484,7 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
       systemThreadCount: samplePoints.map((p) => ({ ...p, value: 2980 + p.value * 5 })),
       systemHandleCount: samplePoints.map((p) => ({ ...p, value: 91000 + p.value * 40 })),
       diskUsagePercent: samplePoints.map((p) => ({ ...p, value: 52.8 })),
-      diskUsedBytes: [],
+      diskUsedBytes: samplePoints.map((p) => ({ ...p, value: 566935683072 + p.value * 1000000 })),
       diskReadBytesPerSec: samplePoints.map((p) => ({ ...p, value: p.value * 90000 })),
       diskWriteBytesPerSec: samplePoints.map((p) => ({ ...p, value: p.value * 42000 })),
       networkRxBytesPerSec: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 50000) })),
@@ -476,7 +492,7 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
       trafficRxBytes: samplePoints.map((p) => ({ ...p, value: 2800000000 + p.value * 5000000 })),
       trafficTxBytes: samplePoints.map((p) => ({ ...p, value: 1100000000 + p.value * 3000000 })),
       cpus: [{ id: "cpu-0", name: "13th Gen Intel(R) Core(TM) i7-13700K", model: "Intel i7-13700K", coreCount: 16, logicalCount: 24, usagePercent: samplePoints, frequencyMHz: samplePoints.map((p) => ({ ...p, value: p.value * 40 + 3200 })), temperatureC: samplePoints.map((p) => ({ ...p, value: Math.round(40 + p.value * 0.3) })) }],
-      disks: [{ id: "disk-0", name: "Samsung SSD 980 PRO 1TB", mountPoint: "C:", filesystem: "NTFS", usagePercent: samplePoints.map((p) => ({ ...p, value: 52.8 })), activePercent: samplePoints.map((p) => ({ ...p, value: Math.round(4 + p.value * 0.15) })), usedBytes: samplePoints.map((p) => ({ ...p, value: 566935683072 + p.value * 1000000 })), readBytesPerSec: samplePoints.map((p) => ({ ...p, value: p.value * 90000 })), writeBytesPerSec: samplePoints.map((p) => ({ ...p, value: p.value * 42000 })), temperatureC: samplePoints.map((p) => ({ ...p, value: 41 })) }],
+      disks: [{ id: "disk-0", name: "Samsung SSD 980 PRO 1TB", mountPoint: "C:", filesystem: "NTFS", totalBytes: samplePoints.map((p) => ({ ...p, value: 1073741824000 })), usagePercent: samplePoints.map((p) => ({ ...p, value: 52.8 })), activePercent: samplePoints.map((p) => ({ ...p, value: Math.round(4 + p.value * 0.15) })), usedBytes: samplePoints.map((p) => ({ ...p, value: 566935683072 + p.value * 1000000 })), readBytesPerSec: samplePoints.map((p) => ({ ...p, value: p.value * 90000 })), writeBytesPerSec: samplePoints.map((p) => ({ ...p, value: p.value * 42000 })), temperatureC: samplePoints.map((p) => ({ ...p, value: 41 })) }],
       networks: [{ id: "net-0", name: "Intel Ethernet Controller I225-V", macAddress: "00:1A:2B:3C:4D:5E", ipv4: ["192.168.1.100"], rxBytesPerSec: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 50000) })), txBytesPerSec: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 25000) })), trafficRxBytes: samplePoints.map((p) => ({ ...p, value: 2800000000 + p.value * 5000000 })), trafficTxBytes: samplePoints.map((p) => ({ ...p, value: 1100000000 + p.value * 3000000 })) }],
       gpus: [{ id: "gpu-0", name: "NVIDIA GeForce RTX 4080", usagePercent: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 0.6) })), encodePercent: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 0.25) })), decodePercent: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 0.18) })), frequencyMHz: samplePoints.map((p) => ({ ...p, value: p.value * 55 + 1350 })), memoryUsagePercent: samplePoints.map((p) => ({ ...p, value: Math.round(20 + p.value * 0.4) })), memoryUsedBytes: samplePoints.map((p) => ({ ...p, value: 5798205849 + p.value * 1000000 })), temperatureC: samplePoints.map((p) => ({ ...p, value: Math.round(38 + p.value * 0.22) })) }],
       fans: [{ id: "fan-0", name: "CPU Fan", interface: "Motherboard PWM", rpm: samplePoints.map((p) => ({ ...p, value: 1120 + p.value * 5 })) }, { id: "fan-1", name: "System Fan 1", interface: "Front Intake", rpm: samplePoints.map((p) => ({ ...p, value: 860 + p.value * 4 })) }]

@@ -83,7 +83,11 @@ export function toSummary(state: DeviceRealtimeState): DeviceSummary {
     gpuUsagePercent,
     gpuMemoryUsagePercent: totalGpuMemoryBytes ? percent(usedGpuMemoryBytes, totalGpuMemoryBytes) : null,
     memoryUsagePercent: percent(latest.memory.usedBytes, latest.memory.totalBytes),
+    memoryUsedBytes: latest.memory.usedBytes,
+    memoryTotalBytes: latest.memory.totalBytes,
     diskUsagePercent: percent(latest.diskUsage.usedBytes, latest.diskUsage.totalBytes),
+    diskUsedBytes: latest.diskUsage.usedBytes,
+    diskTotalBytes: latest.diskUsage.totalBytes,
     instanceType: state.identity.instanceType ?? "device",
     hostName: state.identity.hostName ?? null,
     virtualMachine: state.identity.virtualMachine ?? null
@@ -133,6 +137,7 @@ export function payloadToTimeSeries(
         filesystem: enabled.has("diskMetadata") && instanceEnabled.has("diskMetadata") ? disk.filesystem : undefined,
         model: enabled.has("diskMetadata") && instanceEnabled.has("diskMetadata") ? disk.model : undefined,
         vendor: enabled.has("diskMetadata") && instanceEnabled.has("diskMetadata") ? disk.vendor : undefined,
+        totalBytes: enabled.has("diskUsage") && instanceEnabled.has("diskUsage") ? disk.totalBytes : 0,
         temperatureC: enabled.has("diskHealth") && instanceEnabled.has("diskHealth") ? disk.temperatureC ?? 0 : 0,
         usagePercent: enabled.has("diskUsage") && instanceEnabled.has("diskUsage") ? percent(disk.usedBytes, disk.totalBytes) : 0,
         activePercent: enabled.has("diskActivity") && instanceEnabled.has("diskActivity") ? rate?.activePercent ?? 0 : 0,
@@ -314,7 +319,10 @@ export function timeSeriesToMetricSeries(
     gpuTemperatureC: mapPoint("gpuTemperatureC"),
     memoryUsagePercent: mapPoint("memoryUsagePercent"),
     swapUsagePercent: mapPoint("swapUsagePercent"),
-    memoryUsedBytes: mapPoint("memoryUsedBytes"),
+    memoryUsedBytes: detailSeries(points, (point) => {
+      if (Number(point.memoryUsedBytes) > 0) return point.memoryUsedBytes;
+      return point.recordedDetails?.memory.usedBytes;
+    }),
     swapUsedBytes: mapPoint("swapUsedBytes"),
     memoryAvailableBytes: detailSeries(points, (point) => enabled.has("memoryAvailable") ? point.recordedDetails?.memory.availableBytes : 0),
     memoryCachedBytes: detailSeries(points, (point) => enabled.has("memoryCached") ? point.recordedDetails?.memory.cachedBytes : 0),
@@ -323,7 +331,11 @@ export function timeSeriesToMetricSeries(
     systemThreadCount: detailSeries(points, (point) => enabled.has("systemOverview") ? point.recordedDetails?.system.threadCount : 0),
     systemHandleCount: detailSeries(points, (point) => enabled.has("systemOverview") ? point.recordedDetails?.system.handleCount : 0),
     diskUsagePercent: mapPoint("diskUsagePercent"),
-    diskUsedBytes: mapPoint("diskUsedBytes"),
+    diskUsedBytes: detailSeries(points, (point) => {
+      if (Number(point.diskUsedBytes) > 0) return point.diskUsedBytes;
+      const disks = point.disks?.length ? point.disks : point.recordedDetails?.disks ?? [];
+      return disks.reduce((total, disk) => total + Number(disk.usedBytes ?? 0), 0);
+    }),
     diskReadBytesPerSec: mapPoint("diskReadBytesPerSec"),
     diskWriteBytesPerSec: mapPoint("diskWriteBytesPerSec"),
     networkRxBytesPerSec: mapPoint("networkRxBytesPerSec"),
@@ -381,9 +393,20 @@ function cpuInstancesAtPoint(point: TimeSeriesRecord): InstanceMetricRecord[] {
 }
 
 function diskInstancesAtPoint(point: TimeSeriesRecord): InstanceMetricRecord[] {
-  if (point.disks?.length) return point.disks;
-  const details = point.recordedDetails;
-  return (details?.disks ?? []).map((disk) => {
+	const details = point.recordedDetails;
+	if (point.disks?.length) {
+		return point.disks.map((disk) => {
+			if (Number(disk.totalBytes ?? 0) > 0) return disk;
+			const detail = (details?.disks ?? []).find((item) => item.id === disk.id);
+			if (!detail || Number(detail.totalBytes ?? 0) <= 0) return disk;
+			return {
+				...disk,
+				totalBytes: detail.totalBytes,
+				usagePercent: percent(Number(disk.usedBytes ?? detail.usedBytes ?? 0), detail.totalBytes)
+			};
+		});
+	}
+	return (details?.disks ?? []).map((disk) => {
     const rate = details?.diskRate?.instances?.[disk.sourceKey ?? disk.id] ?? details?.diskRate?.instances?.[disk.id];
     return {
       id: disk.id,
@@ -392,6 +415,7 @@ function diskInstancesAtPoint(point: TimeSeriesRecord): InstanceMetricRecord[] {
       filesystem: disk.filesystem,
       model: disk.model,
       vendor: disk.vendor,
+      totalBytes: disk.totalBytes,
       usagePercent: percent(disk.usedBytes, disk.totalBytes),
       activePercent: rate?.activePercent ?? disk.activePercent ?? 0,
       usedBytes: disk.usedBytes,
@@ -481,6 +505,7 @@ function buildDiskMetricSeries(points: TimeSeriesRecord[]): DiskMetricSeries[] {
           filesystem: disk.filesystem,
           model: disk.model,
           vendor: disk.vendor,
+          totalBytes: [],
           usagePercent: [],
           activePercent: [],
           usedBytes: [],
@@ -491,6 +516,7 @@ function buildDiskMetricSeries(points: TimeSeriesRecord[]): DiskMetricSeries[] {
       }
       const target = grouped.get(disk.id)!;
       const timestamp = new Date(point.timestamp).toISOString();
+      target.totalBytes.push({ timestamp, value: Number(disk.totalBytes ?? 0) });
       target.usagePercent.push({ timestamp, value: Number(disk.usagePercent ?? 0) });
       target.activePercent.push({ timestamp, value: Number(disk.activePercent ?? 0) });
       target.usedBytes.push({ timestamp, value: Number(disk.usedBytes ?? 0) });

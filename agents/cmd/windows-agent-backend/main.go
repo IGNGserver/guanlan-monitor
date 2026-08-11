@@ -551,13 +551,45 @@ func resolvePendingStatePath(configRoot, configPath string) string {
 }
 
 func readCollectorPendingState(path string) collectorPendingStateFile {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return collectorPendingStateFile{}
-	}
 	var state collectorPendingStateFile
-	if err := json.Unmarshal(raw, &state); err != nil {
-		return collectorPendingStateFile{}
+	if raw, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(raw, &state)
+	} else if !os.IsNotExist(err) {
+		return state
+	}
+
+	// The state file is only a cache. Reconcile the displayed count with the
+	// JSONL spool so an interrupted collector cannot leave the desktop showing
+	// an old queue such as 7711 after the spool has already been drained.
+	pendingPath := strings.TrimSuffix(path, ".state.json")
+	spool, spoolErr := os.ReadFile(pendingPath)
+	if spoolErr != nil {
+		if os.IsNotExist(spoolErr) {
+			state.PendingCount = 0
+			state.PendingBytes = 0
+			state.OldestSampledAt = ""
+		}
+		return state
+	}
+
+	state.PendingCount = 0
+	state.PendingBytes = int64(len(spool))
+	state.OldestSampledAt = ""
+	for _, line := range bytes.Split(spool, []byte{'\n'}) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		var entry struct {
+			SampledAt string `json:"sampledAt"`
+		}
+		if err := json.Unmarshal(line, &entry); err != nil {
+			continue
+		}
+		state.PendingCount++
+		if state.OldestSampledAt == "" || (entry.SampledAt != "" && entry.SampledAt < state.OldestSampledAt) {
+			state.OldestSampledAt = entry.SampledAt
+		}
 	}
 	return state
 }
@@ -1067,7 +1099,11 @@ func detectTargets(cfg agentLocalConfig) ([]probeTargetState, error) {
 	gpuEnabled, gpuExplicit := enabledIDs(cfg.EnabledDeviceIDs, "gpu")
 	gpuInstances, err := detectGPUAdapters(gpuEnabled, gpuExplicit)
 	if err != nil {
-		return nil, err
+		// A WMI/PowerShell GPU probe can fail independently of the built-in
+		// CPU, disk, and network probes. Keep the successful groups instead of
+		// discarding the whole detection result (which used to hide disks too).
+		log.Printf("gpu probe detection skipped: %v", err)
+		gpuInstances = []probeDetectedTarget{}
 	}
 	targets = append(targets, probeTargetState{
 		Target:    "gpu",

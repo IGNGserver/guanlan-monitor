@@ -75,6 +75,7 @@ export interface InstanceMetricRecord {
   filesystem?: string;
   model?: string;
   vendor?: string;
+  totalBytes?: number;
   usagePercent?: number;
   usedBytes?: number;
   readBytesPerSec?: number;

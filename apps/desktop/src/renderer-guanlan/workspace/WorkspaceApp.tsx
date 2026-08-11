@@ -136,6 +136,30 @@ function MetricValue({ value, suffix = "%" }: { value: number | null | undefined
   return <span className="workspace-metric-value">{value == null ? "—" : `${value}${suffix}`}</span>;
 }
 
+function CapacityMetricValue({
+  usedBytes,
+  totalBytes,
+  percentValue
+}: {
+  usedBytes?: number | null;
+  totalBytes?: number | null;
+  percentValue?: number | null;
+}) {
+  const hasCapacity = Number.isFinite(usedBytes) && Number.isFinite(totalBytes) && (totalBytes ?? 0) > 0;
+  if (!hasCapacity) return <MetricValue value={percentValue} />;
+  return (
+    <span className="workspace-metric-value workspace-metric-value--capacity">
+      <strong>{formatBytes(usedBytes)} / {formatBytes(totalBytes)}</strong>
+      {percentValue != null && <small>{percentValue}%</small>}
+    </span>
+  );
+}
+
+function formatCapacitySummary(usedBytes: number | null | undefined, totalBytes: number | null | undefined): string {
+  if (!Number.isFinite(usedBytes) || !Number.isFinite(totalBytes) || (totalBytes ?? 0) <= 0) return "容量暂无";
+  return `已用 ${formatBytes(usedBytes)} / ${formatBytes(totalBytes)}`;
+}
+
 function formatAxisTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "暂无时间";
@@ -278,9 +302,14 @@ function TelemetryChartCard({
   const statsList = activeSeries.map((s) => {
     const vals = s.points.map((p) => p.value);
     const curVal = s.points[curIndex]?.value ?? vals[vals.length - 1] ?? 0;
-    const maxVal = Math.max(...vals, 0);
-    const minVal = Math.min(...vals);
-    const avgVal = vals.reduce((a, b) => a + b, 0) / Math.max(vals.length, 1);
+    // The first CPU/I/O sample can legitimately be a zero while its
+    // counter baseline is being established. Do not let that placeholder
+    // become the displayed minimum or pull down the average.
+    const firstMeaningfulIndex = vals.findIndex((value) => Number.isFinite(value) && value !== 0);
+    const statsValues = firstMeaningfulIndex > 0 ? vals.slice(firstMeaningfulIndex) : vals;
+    const maxVal = Math.max(...statsValues, 0);
+    const minVal = Math.min(...statsValues);
+    const avgVal = statsValues.reduce((a, b) => a + b, 0) / Math.max(statsValues.length, 1);
     return { label: s.label, formatter: (value: number) => formatValue(s, value), cur: curVal, avg: avgVal, max: maxVal, min: minVal };
   });
 
@@ -824,7 +853,8 @@ function DeviceRow({
     <span className="workspace-device-row__status"><StatusDot state={device.status === "online" ? "online" : "offline"} /></span>
     <span className="workspace-device-row__identity"><strong>{device.hostname}</strong><small>{isVm ? `宿主机：${device.hostName ?? "未知"}` : device.os} · {device.deviceId}</small></span>
     <span className="workspace-device-row__metric"><small>CPU</small><MetricValue value={device.cpuUsagePercent} /></span>
-    <span className="workspace-device-row__metric"><small>内存</small><MetricValue value={device.memoryUsagePercent} /></span>
+    <span className="workspace-device-row__metric"><small>内存</small><CapacityMetricValue usedBytes={device.memoryUsedBytes} totalBytes={device.memoryTotalBytes} percentValue={device.memoryUsagePercent} /></span>
+    <span className="workspace-device-row__metric"><small>磁盘</small><CapacityMetricValue usedBytes={device.diskUsedBytes} totalBytes={device.diskTotalBytes} percentValue={device.diskUsagePercent} /></span>
     {onMove || onDelete ? <span className="workspace-device-row__actions" onClick={(event) => event.stopPropagation()}>
       {onMove && <>
         <button type="button" className="workspace-row-action" disabled={index === 0} onClick={() => onMove(-1)} aria-label="上移" title="上移">↑</button>
@@ -961,7 +991,7 @@ function OverviewPage() {
                 <div key={dev.deviceId} className="workspace-ranking-item">
                   <span className="workspace-ranking-badge">{idx + 1}</span>
                   <span className="workspace-ranking-name">{dev.hostname}</span>
-                  <span className="workspace-ranking-val">{dev.memoryUsagePercent ?? 0}%</span>
+                  <span className="workspace-ranking-val"><CapacityMetricValue usedBytes={dev.memoryUsedBytes} totalBytes={dev.memoryTotalBytes} percentValue={dev.memoryUsagePercent} /></span>
                 </div>
               ))}
             </div>
@@ -1232,8 +1262,10 @@ function DevicePage() {
       {(activeTab === "overview" || activeTab === "all") && series && (
         <TelemetrySection eyebrow="综合遥测" title="硬件平均趋势" description="综合面板按类别平均所有已采集实例；各硬件型号显示在对应图表底部，单独图表请切换到明细选项卡。">
           <TelemetryChartCard title="CPU 平均使用率" subtitle={`全部 ${cpuInstances.length} 个 CPU 实例的平均值`} series={[{ label: "全部 CPU 平均", points: cpuAverageUsage }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集 CPU 型号" items={cpuModelItems} />} />
-          <TelemetryChartCard title="物理内存使用率" subtitle="设备汇总" series={[{ label: "内存使用率", points: series.memoryUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
-          <TelemetryChartCard title="磁盘平均使用率" subtitle={`全部 ${diskInstances.length} 个硬盘实例的平均值`} series={[{ label: "全部硬盘平均", points: diskAverageUsage }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集硬盘型号" items={diskModelItems} />} />
+          <TelemetryChartCard title="物理内存使用率" subtitle={formatCapacitySummary(overviewLatest?.memoryUsedBytes, overviewLatest?.memoryTotalBytes)} series={[{ label: "内存使用率", points: series.memoryUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+          <TelemetryChartCard title="物理内存已用容量" subtitle={formatCapacitySummary(overviewLatest?.memoryUsedBytes, overviewLatest?.memoryTotalBytes)} series={[{ label: "已用内存", points: series.memoryUsedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
+          <TelemetryChartCard title="磁盘平均使用率" subtitle={`全部 ${diskInstances.length} 个硬盘实例的平均值 · ${formatCapacitySummary(overviewLatest?.diskUsedBytes, overviewLatest?.diskTotalBytes)}`} series={[{ label: "全部硬盘平均", points: diskAverageUsage }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集硬盘型号" items={diskModelItems} />} />
+          <TelemetryChartCard title="磁盘已用容量" subtitle={formatCapacitySummary(overviewLatest?.diskUsedBytes, overviewLatest?.diskTotalBytes)} series={[{ label: "已用磁盘", points: series.diskUsedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集硬盘型号" items={diskModelItems} />} />
           <TelemetryChartCard title="网卡平均吞吐" subtitle={`全部 ${networkInstances.length} 个网卡实例的平均值`} series={[{ label: "平均接收 (Rx)", points: networkAverageRx, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "平均发送 (Tx)", points: networkAverageTx, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} footer={<TelemetryModelList label="已采集网卡型号" items={networkModelItems} />} />
           <TelemetryChartCard title="GPU 平均使用率" subtitle={`全部 ${gpuInstances.length} 个显卡实例的平均值`} series={[{ label: "平均核心", points: gpuAverageUsage }, { label: "平均编码", points: gpuAverageEncode }, { label: "平均解码", points: gpuAverageDecode }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
           {fanInstances.length ? fanInstances.map((fan) => <TelemetryChartCard key={`overview-fan-${fan.id}`} title={`${fan.name} · 风扇转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : <div className="workspace-telemetry-empty">当前时间范围没有可用的风扇实例序列</div>}
@@ -1248,7 +1280,7 @@ function DevicePage() {
             <TelemetryChartCard key={`compute-cpu-frequency-${cpu.id}`} title={`${displayModelName(cpu.model, cpu.name, "CPU")} · 主频`} subtitle="独立 CPU 实例" series={[{ label: "频率", points: cpu.frequencyMHz, valueFormatter: (v) => `${Math.round(v)} MHz` }]} valueFormatter={(v) => `${Math.round(v)} MHz`} />,
             <TelemetryChartCard key={`compute-cpu-temperature-${cpu.id}`} title={`${displayModelName(cpu.model, cpu.name, "CPU")} · 温度`} subtitle="独立 CPU 实例" series={[{ label: "温度", points: cpu.temperatureC, valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
           ]) : <TelemetryChartCard title="CPU 使用率" series={[{ label: "CPU 占用", points: series.cpuUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />}
-          <TelemetryChartCard title="内存使用率" series={[{ label: "物理内存", points: series.memoryUsagePercent ?? [] }, { label: "Swap", points: series.swapUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+          <TelemetryChartCard title="内存使用率" subtitle={formatCapacitySummary(latest?.memoryUsedBytes, latest?.memoryTotalBytes)} series={[{ label: "物理内存", points: series.memoryUsagePercent ?? [] }, { label: "Swap", points: series.swapUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
           <TelemetryChartCard title="内存容量明细" subtitle="已用、缓存与已提交容量" series={[{ label: "已用", points: series.memoryUsedBytes ?? [], valueFormatter: formatBytes }, { label: "缓存", points: series.memoryCachedBytes ?? [], valueFormatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
           <TelemetryChartCard title="系统进程与线程" series={[{ label: "线程数", points: series.systemThreadCount ?? [] }, { label: "进程数", points: series.systemProcessCount ?? [] }]} valueFormatter={(v) => `${Math.round(v)}`} />
         </TelemetrySection>
@@ -1259,9 +1291,10 @@ function DevicePage() {
         <TelemetrySection eyebrow="存储与网络" title="I/O 实例明细" description="按网卡和磁盘实例拆分，选择全部时会同时展示每个实例，而不是只看设备总量。" controls={<><InstanceFilter label="网卡" value={selectedNetId} onChange={setSelectedNetId} options={networkOptions} /><InstanceFilter label="磁盘" value={selectedDiskId} onChange={setSelectedDiskId} options={diskOptions} /></>}>
           {networkInstances.length ? visibleNetworkInstances.map((network) => <TelemetryChartCard key={`network-${network.id}`} title={`${displayModelName(network.model, network.name, "网卡")} · 吞吐`} subtitle={[network.name, network.macAddress, network.ipv4?.[0] || network.ipv6?.[0]].filter(Boolean).join(" · ") || "独立网卡实例"} series={[{ label: "接收 (Rx)", points: network.rxBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: network.txBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />) : <TelemetryChartCard title="网络实时吞吐" subtitle="设备汇总" series={[{ label: "接收 (Rx)", points: series.networkRxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: series.networkTxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />}
           {diskInstances.length ? visibleDiskInstances.flatMap((disk) => [
-            <TelemetryChartCard key={`disk-usage-${disk.id}`} title={`${displayModelName(disk.model, disk.name, "磁盘")} · 使用率`} subtitle={[disk.mountPoint, disk.filesystem].filter(Boolean).join(" · ") || "独立硬盘实例"} series={[{ label: "使用率", points: disk.usagePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />,
+            <TelemetryChartCard key={`disk-usage-${disk.id}`} title={`${displayModelName(disk.model, disk.name, "磁盘")} · 使用率`} subtitle={[disk.mountPoint, disk.filesystem, formatCapacitySummary(latest?.disks?.find((item) => item.id === disk.id)?.usedBytes, latest?.disks?.find((item) => item.id === disk.id)?.totalBytes)].filter(Boolean).join(" · ") || "独立硬盘实例"} series={[{ label: "使用率", points: disk.usagePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />,
+            <TelemetryChartCard key={`disk-capacity-${disk.id}`} title={`${displayModelName(disk.model, disk.name, "磁盘")} · 已用容量`} subtitle={formatCapacitySummary(latest?.disks?.find((item) => item.id === disk.id)?.usedBytes, latest?.disks?.find((item) => item.id === disk.id)?.totalBytes)} series={[{ label: "已用容量", points: disk.usedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} />,
             <TelemetryChartCard key={`disk-io-${disk.id}`} title={`${displayModelName(disk.model, disk.name, "磁盘")} · 读写速率`} subtitle={[disk.mountPoint, disk.filesystem].filter(Boolean).join(" · ") || "独立硬盘实例"} series={[{ label: "读取", points: disk.readBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "写入", points: disk.writeBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />
-          ]) : <><TelemetryChartCard title="磁盘使用率" subtitle="设备汇总" series={[{ label: "使用率", points: series.diskUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} /><TelemetryChartCard title="磁盘读写速率" subtitle="设备汇总" series={[{ label: "读取", points: series.diskReadBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "写入", points: series.diskWriteBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} /></>}
+          ]) : <><TelemetryChartCard title="磁盘使用率" subtitle={formatCapacitySummary(latest?.diskUsedBytes, latest?.diskTotalBytes)} series={[{ label: "使用率", points: series.diskUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} /><TelemetryChartCard title="磁盘已用容量" subtitle={formatCapacitySummary(latest?.diskUsedBytes, latest?.diskTotalBytes)} series={[{ label: "已用容量", points: series.diskUsedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} /><TelemetryChartCard title="磁盘读写速率" subtitle="设备汇总" series={[{ label: "读取", points: series.diskReadBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "写入", points: series.diskWriteBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} /></>}
         </TelemetrySection>
       )}
 
@@ -1295,6 +1328,8 @@ function DevicePage() {
             <SummaryRow label="设备 ID" value={selectedDevice.deviceId} />
             <SummaryRow label="Agent 版本" value={selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "未知"} />
             <SummaryRow label="CPU 型号" value={latest?.cpuPackages[0]?.name ?? "未采集"} />
+            <SummaryRow label="内存容量" value={latest ? formatCapacitySummary(latest.memoryUsedBytes, latest.memoryTotalBytes) : "未采集"} />
+            <SummaryRow label="磁盘容量" value={latest ? formatCapacitySummary(latest.diskUsedBytes, latest.diskTotalBytes) : "未采集"} />
             <SummaryRow label="网络接收" value={latest ? formatBytes(latest.networkRxBytesPerSec) + "/s" : "未采集"} />
             <SummaryRow label="网络发送" value={latest ? formatBytes(latest.networkTxBytesPerSec) + "/s" : "未采集"} />
           </div>
@@ -1455,13 +1490,15 @@ function AgentSettings() {
 
   const toggleDetectedInstance = (target: AgentProbeTarget, id: string, enabled: boolean) => {
     if (target === "connection") return;
-    setEnabledDeviceIds((current) => {
-      const group = detectedGroups.find((item) => item.target === target);
-      const fallbackIds = group?.instances.filter((instance) => instance.enabled).map((instance) => instance.id) ?? [];
-      const currentIds = current[target] ?? fallbackIds;
-      const nextIds = enabled ? Array.from(new Set([...currentIds, id])) : currentIds.filter((item) => item !== id);
-      return { ...current, [target]: nextIds };
-    });
+    const group = detectedGroups.find((item) => item.target === target);
+    const fallbackIds = group?.instances.filter((instance) => instance.enabled).map((instance) => instance.id) ?? [];
+    const currentIds = enabledDeviceIds[target] ?? fallbackIds;
+    const nextIds = enabled ? Array.from(new Set([...currentIds, id])) : currentIds.filter((item) => item !== id);
+    const nextEnabledDeviceIds = { ...enabledDeviceIds, [target]: nextIds };
+    setEnabledDeviceIds(nextEnabledDeviceIds);
+    // Instance switches are actions in their own right. Persist immediately so
+    // leaving and re-entering settings cannot restore the previous selection.
+    void updateLocalConfig({ enabledDeviceIds: nextEnabledDeviceIds });
   };
 
   const saveCollectionConfig = () => void updateLocalConfig({ enabledMetrics: selectedMetrics, enabledDeviceIds, probeSelections });
@@ -1480,7 +1517,7 @@ function AgentSettings() {
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">服务状态</span><h3>本机 Agent</h3></div><StatusLabel state={backend.running ? "online" : "offline"} /></div>
         <div className="workspace-agent-actions"><Button variant="primary" onClick={() => void controlAgent(backend.running ? "stop" : "start")} disabled={refreshing}>{backend.running ? "停止服务" : "启动服务"}</Button><Button variant="quiet" onClick={() => void controlAgent("restart")} disabled={refreshing}>重启服务</Button><Button variant="quiet" onClick={() => void controlAgent("check-connection")} disabled={refreshing}>检查连接</Button><Button variant="quiet" onClick={() => void controlAgent("detect-probes")} disabled={refreshing}>重新检测硬件</Button></div>
-        <div className="workspace-detail-list"><SummaryRow label="连接状态" value={backend.connectionStatus} /><SummaryRow label="上传间隔" value={`${backend.effectiveUploadIntervalSeconds} 秒`} /><SummaryRow label="待上传样本" value={`${backend.pendingSampleCount} 条`} /><SummaryRow label="配置文件" value={backend.configFileExists ? "已找到" : "未找到"} /></div>
+        <div className="workspace-detail-list"><SummaryRow label="连接状态" value={backend.connectionStatus} /><SummaryRow label="上传间隔" value={`${backend.effectiveUploadIntervalSeconds} 秒`} /><SummaryRow label="待上传样本" value={backend.pendingSampleCount ? `${backend.pendingSampleCount} 条 · ${formatBytes(backend.pendingBytes)}` : "0 条"} /><SummaryRow label="配置文件" value={backend.configFileExists ? "已找到" : "未找到"} />{backend.lastUploadError && <SummaryRow label="最近上传错误" value={backend.lastUploadError} />}</div>
       </Surface>
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">采集策略</span><h3>本机行为</h3></div></div>
@@ -1494,7 +1531,7 @@ function AgentSettings() {
         <div className="workspace-form__actions"><Button variant="primary" onClick={saveCollectionConfig} disabled={refreshing}>保存采集配置</Button><Button variant="quiet" onClick={() => void cloudPush()} disabled={refreshing}>同步到中枢</Button></div>
       </Surface>
       <Surface>
-        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">检测结果</span><h3>已发现硬件</h3><p className="workspace-surface__description">关闭某个实例后，它不会进入采集队列。修改后点击“保存采集配置”生效。</p></div><span className="workspace-caption">{detectedGroups.reduce((count, group) => count + group.instances.length, 0)} 个实例</span></div>
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">检测结果</span><h3>已发现硬件</h3><p className="workspace-surface__description">关闭某个实例后立即停止上报并写入本机配置；指标和探针来源仍需点击“保存采集配置”。</p></div><span className="workspace-caption">{detectedGroups.reduce((count, group) => count + group.instances.length, 0)} 个实例</span></div>
         {detectedGroups.length ? <div className="workspace-detected-list">{detectedGroups.map((group) => <div className="workspace-detected-group" key={group.target}><strong>{group.label}</strong>{group.instances.map((instance) => { const enabled = isInstanceEnabled(group.target, instance.id, instance.enabled); return <div className="workspace-detected-row" key={instance.id}><div className="workspace-detected-row__identity"><strong>{instance.name}</strong>{instance.subtitle && <small>{instance.subtitle}</small>}</div><div className="workspace-detected-row__control"><small className={enabled ? "is-enabled" : "is-disabled"}>{enabled ? "上报中" : "不上传"}</small><Toggle checked={enabled} onChange={(checked) => toggleDetectedInstance(group.target, instance.id, checked)} label={`${instance.name} 上报`} /></div></div>; })}</div>)}</div> : <div className="workspace-muted-block">尚未检测到硬件探针，请点击“重新检测硬件”。</div>}
       </Surface>
     </div>

@@ -374,6 +374,7 @@ function averageInstanceMetrics(
         Pick<
           InstanceMetricRecord,
           | "usagePercent"
+          | "totalBytes"
           | "usedBytes"
           | "readBytesPerSec"
           | "writeBytesPerSec"
@@ -410,10 +411,12 @@ function averageInstanceMetrics(
             mountPoint: item.mountPoint,
             filesystem: item.filesystem,
             model: item.model,
-            vendor: item.vendor
+            vendor: item.vendor,
+            totalBytes: item.totalBytes
           },
           sums: {
             usagePercent: 0,
+            totalBytes: 0,
             usedBytes: 0,
             readBytesPerSec: 0,
             writeBytesPerSec: 0,
@@ -435,6 +438,7 @@ function averageInstanceMetrics(
       const current = grouped.get(item.id)!;
       current.count += 1;
       current.sums.usagePercent += item.usagePercent ?? 0;
+      current.sums.totalBytes += item.totalBytes ?? 0;
       current.sums.usedBytes += item.usedBytes ?? 0;
       current.sums.readBytesPerSec += item.readBytesPerSec ?? 0;
       current.sums.writeBytesPerSec += item.writeBytesPerSec ?? 0;
@@ -456,6 +460,7 @@ function averageInstanceMetrics(
   return [...grouped.values()].map(({ count, meta, sums }) => ({
     ...meta,
     usagePercent: sums.usagePercent / count,
+    totalBytes: sums.totalBytes / count,
     usedBytes: sums.usedBytes / count,
     readBytesPerSec: sums.readBytesPerSec / count,
     writeBytesPerSec: sums.writeBytesPerSec / count,

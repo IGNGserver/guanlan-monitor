@@ -489,7 +489,11 @@ export interface DeviceSummary {
   gpuUsagePercent: number | null;
   gpuMemoryUsagePercent: number | null;
   memoryUsagePercent: number | null;
+  memoryUsedBytes?: number | null;
+  memoryTotalBytes?: number | null;
   diskUsagePercent: number | null;
+  diskUsedBytes?: number | null;
+  diskTotalBytes?: number | null;
   sortOrder?: number;
   instanceType?: InstanceType;
   hostName?: string | null;
@@ -513,6 +517,7 @@ export interface DiskMetricSeries {
   filesystem?: string;
   model?: string;
   vendor?: string;
+  totalBytes: SamplePoint[];
   usagePercent: SamplePoint[];
   activePercent: SamplePoint[];
   usedBytes: SamplePoint[];

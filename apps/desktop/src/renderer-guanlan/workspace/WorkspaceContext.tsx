@@ -202,7 +202,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const closeSettings = useCallback(() => navigate(returnRoute), [navigate, returnRoute]);
 
   const fetchSnapshot = useCallback(
-    async (forceRefresh: boolean) => {
+    async (forceRefresh: boolean, announce = forceRefresh) => {
       const request = {
         selectedDeviceId: selectedDeviceId ?? undefined,
         metricWindow: metricsWindow,
@@ -216,12 +216,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           ? await adapter.refresh(request)
           : await adapter.getSnapshot(request);
         setSnapshot(nextSnapshot);
-        if (forceRefresh) {
+        if (announce) {
           setNotice({ tone: "success", text: "状态已更新" });
         }
       } catch (nextError) {
         setError(formatError(nextError, "无法读取设备状态"));
-        if (forceRefresh) setNotice({ tone: "error", text: "刷新失败，请检查连接" });
+        if (announce) setNotice({ tone: "error", text: "刷新失败，请检查连接" });
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -243,7 +243,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, []);
 
   useEffect(() => {
-    const timer = window.setInterval(() => void fetchSnapshot(false), refreshInterval * 1000);
+    const timer = window.setInterval(() => void fetchSnapshot(true, false), refreshInterval * 1000);
     return () => window.clearInterval(timer);
   }, [fetchSnapshot, refreshInterval]);
 

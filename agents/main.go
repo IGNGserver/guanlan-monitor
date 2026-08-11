@@ -51,7 +51,6 @@ const (
 	logCategoryConfigParse = "config_parse"
 	logCategoryConfigRead  = "config_read"
 	logCategoryUpload      = "upload"
-	logCategorySlowMetrics = "slow_metrics"
 	logCategoryCPUSlow     = "cpu_slow"
 	logCategoryDiskSlow    = "disk_slow"
 	logCategoryDiskFast    = "disk_fast"
@@ -394,6 +393,10 @@ type windowsHardwareMetadata struct {
 
 type slowMetrics struct {
 	collectedAt        time.Time
+	cpuCollected       bool
+	diskCollected      bool
+	networkCollected   bool
+	hardwareCollected  bool
 	cpuFrequencyMHz    *float64
 	cpuTemperatureC    *float64
 	memorySpeedMHz     *float64
@@ -505,7 +508,7 @@ func main() {
 			continue
 		}
 		payload := state.collectPayload(cfg)
-		if err := pending.drain(runContext, state.client, cfg.Connection.Secret); err != nil {
+		if err := pending.drain(runContext, state.client, cfg.Connection.ServerURL, cfg.Connection.Secret); err != nil {
 			logCategoryf(logCategoryUpload, "pending upload drain stopped: %v", err)
 		}
 		if err := postMetricsContext(runContext, state.client, cfg.Connection.ServerURL, cfg.Connection.Secret, payload); err != nil {
@@ -603,7 +606,10 @@ func (s *pendingStore) enqueue(sample pendingSample) error {
 	entries = s.prune(entries, time.Now().UTC())
 	for _, existing := range entries {
 		if existing.ID == sample.ID {
-			s.writeEntries(entries)
+			if err := s.writeEntries(entries); err != nil {
+				return err
+			}
+			s.writeState()
 			return nil
 		}
 	}
@@ -617,18 +623,26 @@ func (s *pendingStore) enqueue(sample pendingSample) error {
 	return nil
 }
 
-func (s *pendingStore) drain(ctx context.Context, client *http.Client, secret string) error {
+func (s *pendingStore) drain(ctx context.Context, client *http.Client, currentServerURL, secret string) error {
 	entries, err := s.readEntries()
 	if err != nil {
 		return err
 	}
 	entries = s.prune(entries, time.Now().UTC())
 	s.sortEntries(entries)
+	replayURL := strings.TrimSpace(currentServerURL)
 	for index, entry := range entries {
-		serverURL := strings.TrimSpace(entry.ServerURL)
+		serverURL := replayURL
+		if serverURL == "" {
+			serverURL = strings.TrimSpace(entry.ServerURL)
+		}
 		if serverURL == "" {
 			return fmt.Errorf("pending sample %s has no server URL", entry.ID)
 		}
+		// A queued sample may have been created before the user changed the
+		// Hub address. Replay it against the current endpoint instead of
+		// permanently blocking the queue on the retired endpoint.
+		entries[index].ServerURL = serverURL
 		if err := postMetricsContext(ctx, client, serverURL, secret, entry.Payload); err != nil {
 			s.lastUploadErr = err.Error()
 			remaining := append([]pendingSample(nil), entries[index:]...)
@@ -949,35 +963,18 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	diskRate, networkRate := s.sampleFastRates(now, cfg.currentUploadIntervalSeconds())
 
 	if !s.hasSlow || now.Sub(s.lastSlow.collectedAt) >= time.Duration(cfg.slowIntervalSeconds())*time.Second {
-		slow, err := collectSlowMetrics()
-		if err != nil {
-			var issueErr *collectorIssueError
-			if errors.As(err, &issueErr) {
-				logCategoryf(issueErr.category, "slow metrics refresh failed: %v", issueErr.err)
-			} else {
-				logCategoryf(logCategorySlowMetrics, "slow metrics refresh failed: %v", err)
-			}
-		} else {
+		slow := collectSlowMetrics()
+		if !s.hasSlow {
 			s.lastSlow = slow
 			s.hasSlow = true
+		} else {
+			s.lastSlow = mergeSlowMetrics(s.lastSlow, slow)
 		}
 	}
 
 	slow := s.lastSlow
 	if !s.hasSlow {
-		slow = slowMetrics{
-			cpuPackages:        []cpuPackageStats{},
-			disks:              []diskDeviceStats{},
-			networkInterfaces:  []networkInterfaceStats{},
-			gpus:               []gpuDeviceStats{},
-			gpuDrivers:         map[string]string{},
-			networkMetadata:    map[string]networkHardwareMetadata{},
-			diskInterfaces:     map[string]string{},
-			diskMetadata:       map[string]diskHardwareMetadata{},
-			diskSensorMetadata: map[string]diskSensorMetadata{},
-			fans:               []fanSensorStats{},
-			sensorBackends:     []sensorBackendStatus{},
-		}
+		slow = emptySlowMetrics()
 	}
 	memory.SpeedMHz = slow.memorySpeedMHz
 	memory.SlotCount = slow.memorySlotCount
@@ -1162,20 +1159,104 @@ func (s *agentState) sampleFastRates(now time.Time, fallbackSeconds int) (rateSt
 	return diskRate, networkRate
 }
 
-func collectSlowMetrics() (slowMetrics, error) {
+func emptySlowMetrics() slowMetrics {
+	return slowMetrics{
+		cpuPackages:        []cpuPackageStats{},
+		disks:              []diskDeviceStats{},
+		networkInterfaces:  []networkInterfaceStats{},
+		gpus:               []gpuDeviceStats{},
+		gpuDrivers:         map[string]string{},
+		networkMetadata:    map[string]networkHardwareMetadata{},
+		diskInterfaces:     map[string]string{},
+		diskMetadata:       map[string]diskHardwareMetadata{},
+		diskSensorMetadata: map[string]diskSensorMetadata{},
+		fans:               []fanSensorStats{},
+		sensorBackends:     []sensorBackendStatus{},
+	}
+}
+
+func logSlowMetricsError(defaultCategory string, err error) {
+	if err == nil {
+		return
+	}
+	var issueErr *collectorIssueError
+	if errors.As(err, &issueErr) {
+		logCategoryf(issueErr.category, "slow metrics collector failed: %v", issueErr.err)
+		return
+	}
+	logCategoryf(defaultCategory, "slow metrics collector failed: %v", err)
+}
+
+func mergeSlowMetrics(previous slowMetrics, next slowMetrics) slowMetrics {
+	merged := previous
+	if !next.collectedAt.IsZero() {
+		merged.collectedAt = next.collectedAt
+	}
+	if next.cpuCollected {
+		merged.cpuCollected = true
+		merged.cpuPackages = next.cpuPackages
+		if next.cpuFrequencyMHz != nil {
+			merged.cpuFrequencyMHz = next.cpuFrequencyMHz
+		}
+	}
+	if next.diskCollected {
+		merged.diskCollected = true
+		merged.diskUsage = next.diskUsage
+		merged.disks = next.disks
+	}
+	if next.networkCollected {
+		merged.networkCollected = true
+		merged.networkInterfaces = next.networkInterfaces
+	}
+	if next.hardwareCollected {
+		merged.hardwareCollected = true
+		merged.cpuTemperatureC = next.cpuTemperatureC
+		merged.memorySpeedMHz = next.memorySpeedMHz
+		merged.memorySlotCount = next.memorySlotCount
+		merged.memoryFormFactor = next.memoryFormFactor
+		merged.gpus = next.gpus
+		merged.gpuDrivers = next.gpuDrivers
+		merged.networkMetadata = next.networkMetadata
+		merged.diskInterfaces = next.diskInterfaces
+		merged.diskMetadata = next.diskMetadata
+		merged.diskSensorMetadata = next.diskSensorMetadata
+		merged.fans = next.fans
+		merged.sensorBackends = next.sensorBackends
+		if next.cpuFrequencyMHz != nil {
+			merged.cpuFrequencyMHz = next.cpuFrequencyMHz
+		}
+	}
+	return merged
+}
+
+func collectSlowMetrics() slowMetrics {
+	result := emptySlowMetrics()
+	result.collectedAt = time.Now().UTC()
+
 	cpuFrequencyMHz, cpuPackages, cpuErr := collectCPUPackages()
 	if cpuErr != nil {
-		return slowMetrics{}, cpuErr
+		logSlowMetricsError(logCategoryCPUSlow, cpuErr)
+	} else {
+		result.cpuCollected = true
+		result.cpuFrequencyMHz = cpuFrequencyMHz
+		result.cpuPackages = cpuPackages
 	}
 
 	disks, diskUsage, diskErr := collectDisks()
 	if diskErr != nil {
-		return slowMetrics{}, diskErr
+		logSlowMetricsError(logCategoryDiskSlow, diskErr)
+	} else {
+		result.diskCollected = true
+		result.diskUsage = diskUsage
+		result.disks = disks
 	}
 
 	networkInterfaces, networkErr := collectNetworkInterfaces()
 	if networkErr != nil {
-		return slowMetrics{}, networkErr
+		logSlowMetricsError(logCategoryNetworkSlow, networkErr)
+	} else {
+		result.networkCollected = true
+		result.networkInterfaces = networkInterfaces
 	}
 
 	hardware := collectHardwareSensors()
@@ -1197,8 +1278,8 @@ func collectSlowMetrics() (slowMetrics, error) {
 	}
 	if runtime.GOOS == "windows" {
 		windowsDiskSensors := collectWindowsDiskSensorMetadata(windowsMetadata.DiskMetadata)
-		for index := range disks {
-			disk := &disks[index]
+		for index := range result.disks {
+			disk := &result.disks[index]
 			metadata := windowsMetadata.DiskMetadata[disk.SourceKey]
 			if sensor, ok := windowsDiskSensors[metadata.PhysicalDevice]; ok {
 				applyDiskSensorMetadata(disk, sensor)
@@ -1206,10 +1287,10 @@ func collectSlowMetrics() (slowMetrics, error) {
 		}
 	}
 	if runtime.GOOS == "linux" {
-		linuxDiskSensors := collectLinuxDiskSensorMetadata(disks)
-		for index := range disks {
-			if sensor, ok := lookupDiskSensorMetadata(linuxDiskSensors, disks[index].SourceKey, disks[index].Name, disks[index].Model, disks[index].MountPoint); ok {
-				applyDiskSensorMetadata(&disks[index], sensor)
+		linuxDiskSensors := collectLinuxDiskSensorMetadata(result.disks)
+		for index := range result.disks {
+			if sensor, ok := lookupDiskSensorMetadata(linuxDiskSensors, result.disks[index].SourceKey, result.disks[index].Name, result.disks[index].Model, result.disks[index].MountPoint); ok {
+				applyDiskSensorMetadata(&result.disks[index], sensor)
 			}
 		}
 	}
@@ -1223,34 +1304,28 @@ func collectSlowMetrics() (slowMetrics, error) {
 		hardware.cpuFrequencyMHz = collectWindowsCPUFrequency(cpuFrequencyMHz)
 	}
 	if hardware.cpuFrequencyMHz != nil {
-		cpuFrequencyMHz = hardware.cpuFrequencyMHz
-		for index := range cpuPackages {
-			cpuPackages[index].FrequencyMHz = hardware.cpuFrequencyMHz
+		result.cpuFrequencyMHz = hardware.cpuFrequencyMHz
+		for index := range result.cpuPackages {
+			result.cpuPackages[index].FrequencyMHz = hardware.cpuFrequencyMHz
 		}
 	}
 	sensorBackends := append([]sensorBackendStatus{}, hardware.sensorBackends...)
 	sensorBackends = append(sensorBackends, collectPlatformSensorBackends()...)
 
-	return slowMetrics{
-		collectedAt:        time.Now().UTC(),
-		cpuFrequencyMHz:    cpuFrequencyMHz,
-		cpuTemperatureC:    hardware.cpuTemperatureC,
-		memorySpeedMHz:     memorySpeedMHz,
-		memorySlotCount:    memorySlotCount,
-		memoryFormFactor:   memoryFormFactor,
-		cpuPackages:        cpuPackages,
-		diskUsage:          diskUsage,
-		disks:              disks,
-		networkInterfaces:  networkInterfaces,
-		gpus:               hardware.gpus,
-		gpuDrivers:         windowsMetadata.GpuDrivers,
-		networkMetadata:    windowsMetadata.Networks,
-		diskInterfaces:     windowsMetadata.DiskInterfaces,
-		diskMetadata:       windowsMetadata.DiskMetadata,
-		diskSensorMetadata: hardware.diskSensorMetadata,
-		fans:               hardware.fans,
-		sensorBackends:     sensorBackends,
-	}, nil
+	result.hardwareCollected = true
+	result.cpuTemperatureC = hardware.cpuTemperatureC
+	result.memorySpeedMHz = memorySpeedMHz
+	result.memorySlotCount = memorySlotCount
+	result.memoryFormFactor = memoryFormFactor
+	result.gpus = hardware.gpus
+	result.gpuDrivers = windowsMetadata.GpuDrivers
+	result.networkMetadata = windowsMetadata.Networks
+	result.diskInterfaces = windowsMetadata.DiskInterfaces
+	result.diskMetadata = windowsMetadata.DiskMetadata
+	result.diskSensorMetadata = hardware.diskSensorMetadata
+	result.fans = hardware.fans
+	result.sensorBackends = sensorBackends
+	return result
 }
 
 func collectLinuxMemoryMetadata() (*float64, *int, string) {
@@ -4018,7 +4093,8 @@ func postMetrics(client *http.Client, serverURL, secret string, payload metricsP
 }
 
 func postMetricsContext(ctx context.Context, client *http.Client, serverURL, secret string, payload metricsPayload) error {
-	if err := validateServerTransport(serverURL); err != nil {
+	normalizedServerURL := strings.TrimRight(strings.TrimSpace(serverURL), "/")
+	if err := validateServerTransport(normalizedServerURL); err != nil {
 		return err
 	}
 	body, err := json.Marshal(payload)
@@ -4026,7 +4102,7 @@ func postMetricsContext(ctx context.Context, client *http.Client, serverURL, sec
 		return err
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/api/agent/ingest", serverURL), bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/api/agent/ingest", normalizedServerURL), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
