@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import type { FormEvent } from "react";
-import type { AgentProbeProvider, AgentProbeTarget, DeviceMetricKey, DeviceSummary, SamplePoint } from "@dsc/shared";
+import type { AgentProbeProvider, AgentProbeTarget, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, SamplePoint } from "@dsc/shared";
 import clsx from "clsx";
 import appIcon from "../assets/app-icon.png";
 import {
@@ -139,8 +139,29 @@ function MetricValue({ value, suffix = "%" }: { value: number | null | undefined
 function formatAxisTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "暂无时间";
-  return new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
+  return new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
 }
+
+function formatPreciseDateTime(value: string | null | undefined): string {
+  if (!value) return "暂无时间";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "暂无时间";
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  }).format(date);
+}
+
+type TelemetrySeries = {
+  label: string;
+  points: SamplePoint[];
+  valueFormatter?: (value: number) => string;
+};
 
 function TelemetryChartCard({
   title,
@@ -152,7 +173,7 @@ function TelemetryChartCard({
 }: {
   title: string;
   subtitle?: string;
-  series: Array<{ label: string; points: SamplePoint[]; colorClass?: string }>;
+  series: TelemetrySeries[];
   valueFormatter?: (value: number) => string;
   fixedMaxValue?: number;
   controls?: React.ReactNode;
@@ -160,10 +181,13 @@ function TelemetryChartCard({
   const activeSeries = series.filter((item) => item.points && item.points.length > 0);
   const primaryPoints = activeSeries[0]?.points ?? [];
   const [selectedIndex, setSelectedIndex] = useState(Math.max(primaryPoints.length - 1, 0));
+  const [isHovering, setIsHovering] = useState(false);
+  const chartId = useId().replace(/:/g, "");
 
   useEffect(() => {
     setSelectedIndex(Math.max(primaryPoints.length - 1, 0));
-  }, [primaryPoints]);
+    setIsHovering(false);
+  }, [primaryPoints.length, primaryPoints.at(-1)?.timestamp]);
 
   if (!activeSeries.length || !primaryPoints.length) {
     return (
@@ -202,8 +226,15 @@ function TelemetryChartCard({
 
   const selectPoint = (event: React.PointerEvent<HTMLDivElement>) => {
     setSelectedIndex(resolveIndex(event));
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setIsHovering(true);
+    if (event.type === "pointerdown") event.currentTarget.setPointerCapture?.(event.pointerId);
   };
+
+  const stopHover = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) setIsHovering(false);
+  };
+
+  const formatValue = (item: TelemetrySeries, value: number) => item.valueFormatter?.(value) ?? valueFormatter(value);
 
   // 统计每个 series 的 Cur / Avg / Max / Min
   const statsList = activeSeries.map((s) => {
@@ -212,8 +243,17 @@ function TelemetryChartCard({
     const maxVal = Math.max(...vals, 0);
     const minVal = Math.min(...vals, 0);
     const avgVal = vals.reduce((a, b) => a + b, 0) / Math.max(vals.length, 1);
-    return { label: s.label, cur: curVal, avg: avgVal, max: maxVal, min: minVal };
+    return { label: s.label, formatter: (value: number) => formatValue(s, value), cur: curVal, avg: avgVal, max: maxVal, min: minVal };
   });
+
+  const xPosition = xFor(curIndex);
+  const tooltipAlignment = curIndex <= Math.max(1, Math.floor(pointsCount * 0.18))
+    ? "is-start"
+    : curIndex >= Math.min(pointsCount - 2, Math.ceil(pointsCount * 0.82))
+      ? "is-end"
+      : "";
+  const gradientOneId = `chart-fill-grad-1-${chartId}`;
+  const gradientTwoId = `chart-fill-grad-2-${chartId}`;
 
   return (
     <Surface className="telemetry-chart-card">
@@ -225,14 +265,15 @@ function TelemetryChartCard({
         {controls && <div className="telemetry-chart-controls">{controls}</div>}
       </div>
 
-      <div className="telemetry-chart-box" onPointerDown={selectPoint} onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture?.(e.pointerId)) selectPoint(e); }}>
+      <div className="telemetry-chart-box">
+        <div className="telemetry-chart-plot" onPointerDown={selectPoint} onPointerMove={selectPoint} onPointerEnter={selectPoint} onPointerLeave={stopHover}>
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
           <defs>
-            <linearGradient id="chart-fill-grad-1" x1="0" x2="0" y1="0" y2="1">
+            <linearGradient id={gradientOneId} x1="0" x2="0" y1="0" y2="1">
               <stop offset="0%" stopColor="var(--workspace-accent)" stopOpacity="0.28" />
               <stop offset="100%" stopColor="var(--workspace-accent)" stopOpacity="0" />
             </linearGradient>
-            <linearGradient id="chart-fill-grad-2" x1="0" x2="0" y1="0" y2="1">
+            <linearGradient id={gradientTwoId} x1="0" x2="0" y1="0" y2="1">
               <stop offset="0%" stopColor="var(--workspace-green)" stopOpacity="0.22" />
               <stop offset="100%" stopColor="var(--workspace-green)" stopOpacity="0" />
             </linearGradient>
@@ -252,35 +293,51 @@ function TelemetryChartCard({
 
             return (
               <g key={s.label}>
-                {fillClass && <path d={fPath} className={fillClass} />}
+                {fillClass && <path d={fPath} className={fillClass} style={{ fill: idx === 0 ? `url(#${gradientOneId})` : `url(#${gradientTwoId})` }} />}
                 <path d={lPath} className={lineClass} />
               </g>
             );
           })}
 
-          {/* 交互指示 Crosshair */}
-          <line x1={xFor(curIndex)} x2={xFor(curIndex)} y1="0" y2="100" className="telemetry-chart-crosshair" />
+          {/* 悬浮选中态：用实线和细微选中带替代突兀的虚线 */}
+          {isHovering && <rect x={Math.max(0, xPosition - 1.25)} y="0" width="2.5" height="100" className="telemetry-chart-selection-band" />}
+          {isHovering && <line x1={xPosition} x2={xPosition} y1="0" y2="100" className="telemetry-chart-crosshair" />}
         </svg>
 
-        {/* 选中时间点 HTML 正圆 Highlight Markers */}
-        {activeSeries.map((s, idx) => (
+        {isHovering && activeSeries.map((s, idx) => (
           s.points[curIndex] ? (
             <div
               key={`marker-${s.label}`}
-              className="telemetry-chart-marker"
+              className={`telemetry-chart-marker telemetry-chart-marker--${idx % 3}`}
               style={{
-                left: `${xFor(curIndex)}%`,
-                top: `${yFor(s.points[curIndex].value)}%`,
-                borderColor: idx === 0 ? "var(--workspace-accent)" : idx === 1 ? "var(--workspace-green)" : "var(--workspace-amber)",
-                backgroundColor: idx === 0 ? "var(--workspace-accent)" : idx === 1 ? "var(--workspace-green)" : "var(--workspace-amber)"
+                left: `${xPosition}%`,
+                top: `${yFor(s.points[curIndex].value)}%`
               }}
             />
           ) : null
         ))}
 
-        <div className="workspace-trend-axis">
+        <div className="telemetry-chart-axis-y">
           <span>{valueFormatter(maxValue)}</span>
           <span>{valueFormatter(0)}</span>
+        </div>
+        <div className="telemetry-chart-axis-x" aria-hidden="true">
+          <span>{formatAxisTime(primaryPoints[0]?.timestamp ?? "")}</span>
+          <span>{formatAxisTime(primaryPoints[Math.floor((pointsCount - 1) / 2)]?.timestamp ?? "")}</span>
+          <span>{formatAxisTime(primaryPoints[pointsCount - 1]?.timestamp ?? "")}</span>
+        </div>
+        {isHovering && selectedTimestamp && (
+          <div className={`telemetry-chart-tooltip ${tooltipAlignment}`} style={{ left: `${xPosition}%` }} role="status">
+            <time>{formatPreciseDateTime(selectedTimestamp)}</time>
+            <div className="telemetry-chart-tooltip__values">
+              {activeSeries.map((item, idx) => {
+                const point = item.points[curIndex];
+                if (!point) return null;
+                return <div className="telemetry-chart-tooltip__row" key={item.label}><i className={`telemetry-chart-tooltip__dot telemetry-chart-tooltip__dot--${idx % 3}`} /><span>{item.label}</span><strong>{formatValue(item, point.value)}</strong></div>;
+              })}
+            </div>
+          </div>
+        )}
         </div>
       </div>
 
@@ -290,19 +347,19 @@ function TelemetryChartCard({
           <React.Fragment key={st.label}>
             <div className={`telemetry-stat-item ${idx === 0 ? "stat-primary" : idx === 1 ? "stat-green" : "stat-amber"}`}>
               <label>{st.label} (当前)</label>
-              <strong>{valueFormatter(st.cur)}</strong>
+              <strong>{st.formatter(st.cur)}</strong>
             </div>
             <div className="telemetry-stat-item">
               <label>平均 (Avg)</label>
-              <strong>{valueFormatter(st.avg)}</strong>
+              <strong>{st.formatter(st.avg)}</strong>
             </div>
             <div className="telemetry-stat-item">
               <label>峰值 (Max)</label>
-              <strong>{valueFormatter(st.max)}</strong>
+              <strong>{st.formatter(st.max)}</strong>
             </div>
             <div className="telemetry-stat-item">
               <label>谷值 (Min)</label>
-              <strong>{valueFormatter(st.min)}</strong>
+              <strong>{st.formatter(st.min)}</strong>
             </div>
           </React.Fragment>
         ))}
@@ -325,9 +382,11 @@ function MiniTrend({
   compact?: boolean;
 }) {
   const [selectedIndex, setSelectedIndex] = useState(Math.max(points.length - 1, 0));
+  const [isHovering, setIsHovering] = useState(false);
   useEffect(() => {
     setSelectedIndex(Math.max(points.length - 1, 0));
-  }, [points]);
+    setIsHovering(false);
+  }, [points.length, points.at(-1)?.timestamp]);
 
   if (!points.length) {
     return <div className={`workspace-trend workspace-trend--empty ${compact ? "workspace-trend--compact" : ""}`} aria-label={label} role="img"><div className="workspace-trend-empty">等待足够的遥测样本</div></div>;
@@ -350,19 +409,23 @@ function MiniTrend({
   };
   const selectPoint = (event: React.PointerEvent<HTMLDivElement>) => {
     setSelectedIndex(resolveIndex(event));
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setIsHovering(true);
+    if (event.type === "pointerdown") event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+  const stopHover = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) setIsHovering(false);
   };
 
   return (
     <div className="workspace-trend" aria-label={label} role="img">
       {!compact && <div className="workspace-trend__readout"><span>{formatAxisTime(selected.timestamp)}</span><strong>{label} {valueFormatter(selected.value)}</strong></div>}
-      <div className={`workspace-trend__chart ${compact ? "workspace-trend__chart--compact" : ""}`} onPointerDown={selectPoint} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture?.(event.pointerId)) selectPoint(event); }}>
+      <div className={`workspace-trend__chart ${compact ? "workspace-trend__chart--compact" : ""}`} onPointerDown={selectPoint} onPointerMove={selectPoint} onPointerEnter={selectPoint} onPointerLeave={stopHover}>
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
           <defs><linearGradient id="workspace-chart-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="var(--workspace-accent)" stopOpacity="0.22" /><stop offset="100%" stopColor="var(--workspace-accent)" stopOpacity="0" /></linearGradient></defs>
           {[0, 1, 2, 3].map((index) => <line key={index} x1="0" x2="100" y1={(index / 3) * 100} y2={(index / 3) * 100} className="workspace-trend__grid" />)}
           <path d={fillPath} className="workspace-trend__fill" />
           <path d={linePath} className="workspace-trend__line" />
-          <line x1={selectedX} x2={selectedX} y1="0" y2="100" className="workspace-trend__selection" />
+          {isHovering && <line x1={selectedX} x2={selectedX} y1="0" y2="100" className="workspace-trend__selection" />}
         </svg>
         <div
           className="workspace-trend__marker-dot"
@@ -915,6 +978,88 @@ function MetricTile({ label, value, detail, tone, points }: { label: string; val
   return <div className={`workspace-metric-tile ${tone ? `workspace-metric-tile--${tone}` : ""}`}><div className="workspace-metric-tile__header"><span>{label}</span><MetricValue value={value} /></div>{points && <MiniTrend compact label={label} points={points} />}{!points && <div className="workspace-metric-tile__empty">暂无趋势数据</div>}<small>{detail ?? "未采集"}</small></div>;
 }
 
+function TelemetrySection({
+  eyebrow,
+  title,
+  description,
+  controls,
+  children
+}: {
+  eyebrow: string;
+  title: string;
+  description?: string;
+  controls?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="workspace-telemetry-section">
+      <div className="workspace-telemetry-section__header">
+        <div>
+          <span className="workspace-section-kicker">{eyebrow}</span>
+          <h3>{title}</h3>
+          {description && <p>{description}</p>}
+        </div>
+        {controls && <div className="workspace-telemetry-section__controls">{controls}</div>}
+      </div>
+      <div className="workspace-device-chart-grid">{children}</div>
+    </section>
+  );
+}
+
+function InstanceFilter({
+  label,
+  value,
+  onChange,
+  options
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ id: string; name: string; detail?: string }>;
+}) {
+  if (!options.length) return null;
+  return (
+    <label className="workspace-instance-filter">
+      <span>{label}</span>
+      <select className="workspace-select workspace-select--small" value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="all">全部实例</option>
+        {options.map((option) => <option value={option.id} key={option.id}>{option.name}{option.detail ? ` · ${option.detail}` : ""}</option>)}
+      </select>
+    </label>
+  );
+}
+
+type DesktopMetricWindowValue = "5m" | "1h" | "6h" | "24h" | "7d";
+
+const metricWindowOptions: Array<{ value: DesktopMetricWindowValue; label: string }> = [
+  { value: "5m", label: "5 分钟" },
+  { value: "1h", label: "1 小时" },
+  { value: "6h", label: "6 小时" },
+  { value: "24h", label: "24 小时" },
+  { value: "7d", label: "7 天" }
+];
+
+function MetricWindowControl({ value, onChange }: { value: DesktopMetricWindowValue; onChange: (value: DesktopMetricWindowValue) => void }) {
+  return (
+    <div className="workspace-range-control" role="group" aria-label="遥测时间范围">
+      <span className="workspace-range-control__label"><Icon name="clock" size={14} />时间范围</span>
+      <div className="workspace-range-control__options">
+        {metricWindowOptions.map((option) => (
+          <button
+            type="button"
+            key={option.value}
+            className={`workspace-range-option ${value === option.value ? "is-active" : ""}`}
+            aria-pressed={value === option.value}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 type DeviceTabKey = "overview" | "compute" | "storage_net" | "gpu_thermal" | "all";
 
 function DevicePage() {
@@ -933,46 +1078,17 @@ function DevicePage() {
   const latest = metrics?.latest;
   const series = metrics?.series;
 
-  // 网络多实例
-  const networkInstances = series?.networks ?? [];
-  const currentNetSeries = selectedNetId === "all" || !networkInstances.length
-    ? { rx: series?.networkRxBytesPerSec ?? [], tx: series?.networkTxBytesPerSec ?? [] }
-    : {
-        rx: networkInstances.find((n) => n.id === selectedNetId)?.rxBytesPerSec ?? [],
-        tx: networkInstances.find((n) => n.id === selectedNetId)?.txBytesPerSec ?? []
-      };
-
-  // 磁盘多实例
+  const cpuInstances = series?.cpus ?? [];
   const diskInstances = series?.disks ?? [];
-  const currentDiskSeries = selectedDiskId === "all" || !diskInstances.length
-    ? {
-        read: series?.diskReadBytesPerSec ?? [],
-        write: series?.diskWriteBytesPerSec ?? [],
-        usage: series?.diskUsagePercent ?? []
-      }
-    : {
-        read: diskInstances.find((d) => d.id === selectedDiskId)?.readBytesPerSec ?? [],
-        write: diskInstances.find((d) => d.id === selectedDiskId)?.writeBytesPerSec ?? [],
-        usage: diskInstances.find((d) => d.id === selectedDiskId)?.usagePercent ?? []
-      };
-
-  // GPU 多实例
+  const networkInstances = series?.networks ?? [];
   const gpuInstances = series?.gpus ?? [];
-  const currentGpuSeries = selectedGpuId === "all" || !gpuInstances.length
-    ? {
-        usage: series?.gpuUsagePercent ?? [],
-        encode: series?.gpuEncodePercent ?? [],
-        decode: series?.gpuDecodePercent ?? [],
-        vram: series?.gpuMemoryUsagePercent ?? [],
-        temp: series?.gpuTemperatureC ?? []
-      }
-    : {
-        usage: gpuInstances.find((g) => g.id === selectedGpuId)?.usagePercent ?? [],
-        encode: gpuInstances.find((g) => g.id === selectedGpuId)?.encodePercent ?? [],
-        decode: gpuInstances.find((g) => g.id === selectedGpuId)?.decodePercent ?? [],
-        vram: gpuInstances.find((g) => g.id === selectedGpuId)?.memoryUsagePercent ?? [],
-        temp: gpuInstances.find((g) => g.id === selectedGpuId)?.temperatureC ?? []
-      };
+  const fanInstances = series?.fans ?? [];
+  const visibleDiskInstances = selectedDiskId === "all" ? diskInstances : diskInstances.filter((disk) => disk.id === selectedDiskId);
+  const visibleNetworkInstances = selectedNetId === "all" ? networkInstances : networkInstances.filter((network) => network.id === selectedNetId);
+  const visibleGpuInstances = selectedGpuId === "all" ? gpuInstances : gpuInstances.filter((gpu) => gpu.id === selectedGpuId);
+  const diskOptions = diskInstances.map((disk) => ({ id: disk.id, name: disk.name, detail: disk.mountPoint }));
+  const networkOptions = networkInstances.map((network) => ({ id: network.id, name: network.name }));
+  const gpuOptions = gpuInstances.map((gpu) => ({ id: gpu.id, name: gpu.name }));
 
   return (
     <div className="workspace-page workspace-page--device">
@@ -1018,195 +1134,57 @@ function DevicePage() {
           </button>
         </div>
 
-        <div className="telemetry-chart-controls">
-          <select className="workspace-select workspace-select--small" value={metricsWindow} onChange={(event) => setMetricsWindow(event.target.value as typeof metricsWindow)} aria-label="遥测时间范围">
-            <option value="5m">5 分钟</option>
-            <option value="1h">1 小时</option>
-            <option value="6h">6 小时</option>
-            <option value="24h">24 小时</option>
-            <option value="7d">7 天</option>
-          </select>
-        </div>
+        <MetricWindowControl value={metricsWindow as DesktopMetricWindowValue} onChange={(value) => setMetricsWindow(value)} />
       </div>
 
       {/* ================= Tab 1: 综合面板 (Overview) ================= */}
       {(activeTab === "overview" || activeTab === "all") && series && (
-        <div className="workspace-device-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
-          <TelemetryChartCard
-            title="CPU 处理器使用率"
-            subtitle="系统整体 CPU 逻辑核占用百分比"
-            series={[{ label: "CPU 使用率", points: series.cpuUsagePercent ?? [] }]}
-            valueFormatter={(v) => `${Math.round(v)}%`}
-            fixedMaxValue={100}
-          />
-          <TelemetryChartCard
-            title="内存与 Swap 占用率"
-            subtitle="物理内存与交换空间使用趋势"
-            series={[
-              { label: "物理内存", points: series.memoryUsagePercent ?? [] },
-              { label: "Swap 交换", points: series.swapUsagePercent ?? [] }
-            ]}
-            valueFormatter={(v) => `${Math.round(v)}%`}
-            fixedMaxValue={100}
-          />
-          <TelemetryChartCard
-            title="网络实时吞吐 (Rx / Tx)"
-            subtitle="下行接收速率与上行发送速率"
-            series={[
-              { label: "接收 (Rx)", points: series.networkRxBytesPerSec ?? [] },
-              { label: "发送 (Tx)", points: series.networkTxBytesPerSec ?? [] }
-            ]}
-            valueFormatter={(v) => `${formatBytes(v)}/s`}
-          />
-          <TelemetryChartCard
-            title="磁盘读写吞吐速率"
-            subtitle="磁盘 Read 与 Write 实时 I/O 速度"
-            series={[
-              { label: "读取 (Read)", points: series.diskReadBytesPerSec ?? [] },
-              { label: "写入 (Write)", points: series.diskWriteBytesPerSec ?? [] }
-            ]}
-            valueFormatter={(v) => `${formatBytes(v)}/s`}
-          />
-        </div>
+        <TelemetrySection eyebrow="实例遥测" title="按硬件实例查看" description="每张图表对应一个实际采集到的硬件实例；没有实例序列时才回退到设备汇总数据。">
+          {cpuInstances.length ? cpuInstances.map((cpu) => <TelemetryChartCard key={`overview-cpu-${cpu.id}`} title={`${cpu.name} · CPU 使用率`} subtitle="CPU 实例" series={[{ label: "使用率", points: cpu.usagePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />) : <TelemetryChartCard title="CPU 处理器使用率" subtitle="设备汇总" series={[{ label: "CPU 使用率", points: series.cpuUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />}
+          <TelemetryChartCard title="物理内存使用率" subtitle="设备汇总" series={[{ label: "内存使用率", points: series.memoryUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+          {diskInstances.length ? diskInstances.map((disk) => <TelemetryChartCard key={`overview-disk-${disk.id}`} title={`${disk.name} · 磁盘使用率`} subtitle={disk.mountPoint || "磁盘实例"} series={[{ label: "使用率", points: disk.usagePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />) : <TelemetryChartCard title="磁盘使用率" subtitle="设备汇总" series={[{ label: "磁盘使用率", points: series.diskUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />}
+          {networkInstances.length ? networkInstances.map((network) => <TelemetryChartCard key={`overview-network-${network.id}`} title={`${network.name} · 网络吞吐`} subtitle="网卡实例" series={[{ label: "接收 (Rx)", points: network.rxBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: network.txBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />) : <TelemetryChartCard title="网络实时吞吐" subtitle="设备汇总" series={[{ label: "接收 (Rx)", points: series.networkRxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: series.networkTxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />}
+          {gpuInstances.length ? gpuInstances.map((gpu) => <TelemetryChartCard key={`overview-gpu-${gpu.id}`} title={`${gpu.name} · GPU 使用率`} subtitle="GPU 实例" series={[{ label: "核心使用率", points: gpu.usagePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />) : <TelemetryChartCard title="GPU 使用率" subtitle="设备汇总" series={[{ label: "GPU 使用率", points: series.gpuUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />}
+          {fanInstances.length ? fanInstances.map((fan) => <TelemetryChartCard key={`overview-fan-${fan.id}`} title={`${fan.name} · 风扇转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : <div className="workspace-telemetry-empty">当前时间范围没有可用的风扇实例序列</div>}
+        </TelemetrySection>
       )}
 
       {/* ================= Tab 2: 算力与内存 (Compute & Memory) ================= */}
       {(activeTab === "compute" || activeTab === "all") && series && (
-        <div className="workspace-device-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
-          <TelemetryChartCard
-            title="CPU 使用率"
-            series={[{ label: "CPU 占用", points: series.cpuUsagePercent ?? [] }]}
-            valueFormatter={(v) => `${Math.round(v)}%`}
-            fixedMaxValue={100}
-          />
-          <TelemetryChartCard
-            title="CPU 主频与温度"
-            subtitle="处理器工作频率 (MHz) 及核心温度 (°C)"
-            series={[
-              { label: "CPU 频率", points: series.cpuFrequencyMHz ?? [] },
-              { label: "CPU 温度", points: series.cpuTemperatureC ?? [] }
-            ]}
-            valueFormatter={(v) => (v > 200 ? `${Math.round(v)} MHz` : `${Math.round(v)} °C`)}
-          />
-          <TelemetryChartCard
-            title="内存已用 / 缓存 / 已提交容量"
-            subtitle="系统物理内存分层详细占用"
-            series={[
-              { label: "已用 (Used)", points: series.memoryUsedBytes ?? [] },
-              { label: "缓存 (Cached)", points: series.memoryCachedBytes ?? [] },
-              { label: "提交 (Committed)", points: series.memoryCommittedBytes ?? [] }
-            ]}
-            valueFormatter={(v) => formatBytes(v)}
-          />
-          <TelemetryChartCard
-            title="系统进程与线程计数"
-            subtitle="当前系统正在运行的进程数与线程数"
-            series={[
-              { label: "线程数 (Threads)", points: series.systemThreadCount ?? [] },
-              { label: "进程数 (Processes)", points: series.systemProcessCount ?? [] }
-            ]}
-            valueFormatter={(v) => `${Math.round(v)}`}
-          />
-        </div>
+        <TelemetrySection eyebrow="处理器与内存" title="算力与内存明细" description="CPU 实例、频率、温度和内存层级数据分开呈现，避免不同单位被压缩成一条汇总线。">
+          {cpuInstances.length ? cpuInstances.flatMap((cpu) => [
+            <TelemetryChartCard key={`compute-cpu-usage-${cpu.id}`} title={`${cpu.name} · 使用率`} series={[{ label: "使用率", points: cpu.usagePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />,
+            <TelemetryChartCard key={`compute-cpu-frequency-${cpu.id}`} title={`${cpu.name} · 主频`} series={[{ label: "频率", points: cpu.frequencyMHz, valueFormatter: (v) => `${Math.round(v)} MHz` }]} valueFormatter={(v) => `${Math.round(v)} MHz`} />,
+            <TelemetryChartCard key={`compute-cpu-temperature-${cpu.id}`} title={`${cpu.name} · 温度`} series={[{ label: "温度", points: cpu.temperatureC, valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
+          ]) : <TelemetryChartCard title="CPU 使用率" series={[{ label: "CPU 占用", points: series.cpuUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />}
+          <TelemetryChartCard title="内存使用率" series={[{ label: "物理内存", points: series.memoryUsagePercent ?? [] }, { label: "Swap", points: series.swapUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+          <TelemetryChartCard title="内存容量明细" subtitle="已用、缓存与已提交容量" series={[{ label: "已用", points: series.memoryUsedBytes ?? [], valueFormatter: formatBytes }, { label: "缓存", points: series.memoryCachedBytes ?? [], valueFormatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
+          <TelemetryChartCard title="系统进程与线程" series={[{ label: "线程数", points: series.systemThreadCount ?? [] }, { label: "进程数", points: series.systemProcessCount ?? [] }]} valueFormatter={(v) => `${Math.round(v)}`} />
+        </TelemetrySection>
       )}
 
       {/* ================= Tab 3: 存储与网络 (Storage & Network) ================= */}
       {(activeTab === "storage_net" || activeTab === "all") && series && (
-        <div className="workspace-device-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
-          <TelemetryChartCard
-            title="网卡网络吞吐 (Rx / Tx)"
-            subtitle="实时上下行网络带宽占用"
-            series={[
-              { label: "接收 (Rx)", points: currentNetSeries.rx },
-              { label: "发送 (Tx)", points: currentNetSeries.tx }
-            ]}
-            valueFormatter={(v) => `${formatBytes(v)}/s`}
-            controls={
-              networkInstances.length > 0 && (
-                <select className="workspace-select--inline" value={selectedNetId} onChange={(e) => setSelectedNetId(e.target.value)}>
-                  <option value="all">全部网卡汇总</option>
-                  {networkInstances.map((net) => (
-                    <option key={net.id} value={net.id}>{net.name || net.id}</option>
-                  ))}
-                </select>
-              )
-            }
-          />
-
-          <TelemetryChartCard
-            title="磁盘读写 I/O 速率"
-            subtitle="磁盘 Read 与 Write 实时速度"
-            series={[
-              { label: "读取 (Read)", points: currentDiskSeries.read },
-              { label: "写入 (Write)", points: currentDiskSeries.write }
-            ]}
-            valueFormatter={(v) => `${formatBytes(v)}/s`}
-            controls={
-              diskInstances.length > 0 && (
-                <select className="workspace-select--inline" value={selectedDiskId} onChange={(e) => setSelectedDiskId(e.target.value)}>
-                  <option value="all">全部磁盘汇总</option>
-                  {diskInstances.map((disk) => (
-                    <option key={disk.id} value={disk.id}>{disk.name} ({disk.mountPoint})</option>
-                  ))}
-                </select>
-              )
-            }
-          />
-
-          <TelemetryChartCard
-            title="磁盘使用率与占用"
-            subtitle="磁盘容量占用百分比"
-            series={[{ label: "使用率", points: currentDiskSeries.usage }]}
-            valueFormatter={(v) => `${Math.round(v)}%`}
-            fixedMaxValue={100}
-          />
-        </div>
+        <TelemetrySection eyebrow="存储与网络" title="I/O 实例明细" description="按网卡和磁盘实例拆分，选择全部时会同时展示每个实例，而不是只看设备总量。" controls={<><InstanceFilter label="网卡" value={selectedNetId} onChange={setSelectedNetId} options={networkOptions} /><InstanceFilter label="磁盘" value={selectedDiskId} onChange={setSelectedDiskId} options={diskOptions} /></>}>
+          {networkInstances.length ? visibleNetworkInstances.map((network) => <TelemetryChartCard key={`network-${network.id}`} title={`${network.name} · 吞吐`} subtitle="网卡实例" series={[{ label: "接收 (Rx)", points: network.rxBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: network.txBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />) : <TelemetryChartCard title="网络实时吞吐" subtitle="设备汇总" series={[{ label: "接收 (Rx)", points: series.networkRxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: series.networkTxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />}
+          {diskInstances.length ? visibleDiskInstances.flatMap((disk) => [
+            <TelemetryChartCard key={`disk-usage-${disk.id}`} title={`${disk.name} · 使用率`} subtitle={disk.mountPoint || "磁盘实例"} series={[{ label: "使用率", points: disk.usagePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />,
+            <TelemetryChartCard key={`disk-io-${disk.id}`} title={`${disk.name} · 读写速率`} subtitle={disk.mountPoint || "磁盘实例"} series={[{ label: "读取", points: disk.readBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "写入", points: disk.writeBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />
+          ]) : <><TelemetryChartCard title="磁盘使用率" subtitle="设备汇总" series={[{ label: "使用率", points: series.diskUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} /><TelemetryChartCard title="磁盘读写速率" subtitle="设备汇总" series={[{ label: "读取", points: series.diskReadBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "写入", points: series.diskWriteBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} /></>}
+        </TelemetrySection>
       )}
 
       {/* ================= Tab 4: 显卡与散热 (GPU & Thermal) ================= */}
       {(activeTab === "gpu_thermal" || activeTab === "all") && series && (
-        <div className="workspace-device-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
-          <TelemetryChartCard
-            title="GPU 核心与编解码负载"
-            subtitle="显卡 3D 渲染核心、编码与解码引擎使用率"
-            series={[
-              { label: "GPU 核心", points: currentGpuSeries.usage },
-              { label: "编码 (Encode)", points: currentGpuSeries.encode },
-              { label: "解码 (Decode)", points: currentGpuSeries.decode }
-            ]}
-            valueFormatter={(v) => `${Math.round(v)}%`}
-            fixedMaxValue={100}
-            controls={
-              gpuInstances.length > 0 && (
-                <select className="workspace-select--inline" value={selectedGpuId} onChange={(e) => setSelectedGpuId(e.target.value)}>
-                  <option value="all">全部 GPU 汇总</option>
-                  {gpuInstances.map((gpu) => (
-                    <option key={gpu.id} value={gpu.id}>{gpu.name}</option>
-                  ))}
-                </select>
-              )
-            }
-          />
-
-          <TelemetryChartCard
-            title="GPU VRAM 显存占用率"
-            subtitle="独立/共享显存已用百分比"
-            series={[{ label: "显存占用", points: currentGpuSeries.vram }]}
-            valueFormatter={(v) => `${Math.round(v)}%`}
-            fixedMaxValue={100}
-          />
-
-          <TelemetryChartCard
-            title="硬件温度与风扇转速"
-            subtitle="CPU/GPU 温度 (°C) 与风扇 (RPM) 联动"
-            series={[
-              { label: "CPU 温度", points: series.cpuTemperatureC ?? [] },
-              { label: "GPU 温度", points: currentGpuSeries.temp },
-              { label: "风扇转速", points: series.fans?.[0]?.rpm ?? [] }
-            ]}
-            valueFormatter={(v) => (v > 200 ? `${Math.round(v)} RPM` : `${Math.round(v)} °C`)}
-          />
-        </div>
+        <TelemetrySection eyebrow="显卡与散热" title="GPU、温度与风扇明细" description="每个 GPU 和每个风扇都有独立时间序列，悬停图表即可查看同一采样时刻的具体值。" controls={<InstanceFilter label="GPU" value={selectedGpuId} onChange={setSelectedGpuId} options={gpuOptions} />}>
+          {gpuInstances.length ? visibleGpuInstances.flatMap((gpu) => [
+            <TelemetryChartCard key={`gpu-load-${gpu.id}`} title={`${gpu.name} · 核心负载`} series={[{ label: "核心", points: gpu.usagePercent }, { label: "编码", points: gpu.encodePercent }, { label: "解码", points: gpu.decodePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />,
+            <TelemetryChartCard key={`gpu-memory-${gpu.id}`} title={`${gpu.name} · 显存使用率`} series={[{ label: "显存", points: gpu.memoryUsagePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />,
+            <TelemetryChartCard key={`gpu-temperature-${gpu.id}`} title={`${gpu.name} · 温度`} series={[{ label: "温度", points: gpu.temperatureC, valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
+          ]) : <><TelemetryChartCard title="GPU 使用率" subtitle="设备汇总" series={[{ label: "GPU 核心", points: series.gpuUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} /><TelemetryChartCard title="GPU 温度" subtitle="设备汇总" series={[{ label: "温度", points: series.gpuTemperatureC ?? [], valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} /></>}
+          {cpuInstances.length ? cpuInstances.map((cpu) => <TelemetryChartCard key={`thermal-cpu-${cpu.id}`} title={`${cpu.name} · 温度`} subtitle="CPU 实例" series={[{ label: "温度", points: cpu.temperatureC, valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />) : null}
+          {fanInstances.length ? fanInstances.map((fan) => <TelemetryChartCard key={`thermal-fan-${fan.id}`} title={`${fan.name} · 转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm, valueFormatter: (v) => `${Math.round(v)} RPM` }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : <div className="workspace-telemetry-empty">当前时间范围没有可用的风扇实例序列</div>}
+        </TelemetrySection>
       )}
 
       {/* 底部设备属性与 Agent 控制 */}
@@ -1346,16 +1324,56 @@ function AgentSettings() {
   const detectedTargets = Array.isArray(backend?.detectedTargets) ? backend.detectedTargets : [];
   const [selectedMetrics, setSelectedMetrics] = useState<DeviceMetricKey[]>(enabledMetrics);
   const [probeSelections, setProbeSelections] = useState(configuredProbes);
+  const [enabledDeviceIds, setEnabledDeviceIds] = useState<Partial<Record<DeviceBlockKey, string[]>>>(config?.enabledDeviceIds ?? {});
+  const fanSeries = snapshot?.metrics?.series?.fans ?? [];
   const metricDraftKey = enabledMetrics.join("|");
   const probeDraftKey = configuredProbes.map((selection) => `${selection.target}:${selection.provider}:${selection.enabled}`).join("|");
+  const deviceDraftKey = JSON.stringify(config?.enabledDeviceIds ?? {});
   useEffect(() => {
     setSelectedMetrics(enabledMetrics);
   }, [metricDraftKey]);
   useEffect(() => {
     setProbeSelections(configuredProbes);
   }, [probeDraftKey]);
+  useEffect(() => {
+    setEnabledDeviceIds(config?.enabledDeviceIds ?? {});
+  }, [deviceDraftKey]);
   if (!backend || !config) return <EmptyState title="本机 Agent 尚未启动" detail="启动本机服务后才能查看和修改采集设置。" action={<Button variant="primary" onClick={() => void controlAgent("start")}>启动服务</Button>} />;
-  const saveCollectionConfig = () => void updateLocalConfig({ enabledMetrics: selectedMetrics, probeSelections });
+
+  const detectedGroups: DesktopDetectedTargetGroup[] = (() => {
+    if (!fanSeries.length) return detectedTargets;
+    const fanGroup = detectedTargets.find((group) => group.target === "fan");
+    if (fanGroup?.instances.length) return detectedTargets;
+    const configuredFanIds = enabledDeviceIds.fan;
+    const fanInstances = fanSeries.map((fan) => ({
+      id: fan.id,
+      name: fan.name,
+      subtitle: fan.interface,
+      enabled: configuredFanIds ? configuredFanIds.includes(fan.id) : true,
+      metrics: ["转速"]
+    }));
+    if (fanGroup) return detectedTargets.map((group) => group.target === "fan" ? { ...group, instances: fanInstances } : group);
+    return [...detectedTargets, { target: "fan", label: "风扇实例", instances: fanInstances }];
+  })();
+
+  const isInstanceEnabled = (target: AgentProbeTarget, id: string, fallback: boolean) => {
+    if (target === "connection") return fallback;
+    const configuredIds = enabledDeviceIds[target];
+    return configuredIds ? configuredIds.includes(id) : fallback;
+  };
+
+  const toggleDetectedInstance = (target: AgentProbeTarget, id: string, enabled: boolean) => {
+    if (target === "connection") return;
+    setEnabledDeviceIds((current) => {
+      const group = detectedGroups.find((item) => item.target === target);
+      const fallbackIds = group?.instances.filter((instance) => instance.enabled).map((instance) => instance.id) ?? [];
+      const currentIds = current[target] ?? fallbackIds;
+      const nextIds = enabled ? Array.from(new Set([...currentIds, id])) : currentIds.filter((item) => item !== id);
+      return { ...current, [target]: nextIds };
+    });
+  };
+
+  const saveCollectionConfig = () => void updateLocalConfig({ enabledMetrics: selectedMetrics, enabledDeviceIds, probeSelections });
   const toggleMetric = (key: DeviceMetricKey) => {
     setSelectedMetrics((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
   };
@@ -1366,7 +1384,30 @@ function AgentSettings() {
       return [...current, { target, provider: patch.provider ?? "builtin", enabled: patch.enabled ?? true }];
     });
   };
-  return <div className="workspace-settings-stack"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">服务状态</span><h3>本机 Agent</h3></div><StatusLabel state={backend.running ? "online" : "offline"} /></div><div className="workspace-agent-actions"><Button variant="primary" onClick={() => void controlAgent(backend.running ? "stop" : "start")} disabled={refreshing}>{backend.running ? "停止服务" : "启动服务"}</Button><Button variant="quiet" onClick={() => void controlAgent("restart")} disabled={refreshing}>重启服务</Button><Button variant="quiet" onClick={() => void controlAgent("check-connection")} disabled={refreshing}>检查连接</Button><Button variant="quiet" onClick={() => void controlAgent("detect-probes")} disabled={refreshing}>重新检测硬件</Button></div><div className="workspace-detail-list"><SummaryRow label="连接状态" value={backend.connectionStatus} /><SummaryRow label="上传间隔" value={`${backend.effectiveUploadIntervalSeconds} 秒`} /><SummaryRow label="待上传样本" value={`${backend.pendingSampleCount} 条`} /><SummaryRow label="配置文件" value={backend.configFileExists ? "已找到" : "未找到"} /></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">采集策略</span><h3>本机行为</h3></div></div><div className="workspace-settings-list"><SettingRow label="自动启动采集" description="Agent 启动后自动开始采集硬件数据。"><Toggle checked={config.autoStartCollector} onChange={(checked) => void updateLocalConfig({ autoStartCollector: checked })} label="自动启动采集" /></SettingRow><SettingRow label="异常时自动重启" description="采集器异常退出后自动尝试恢复。"><Toggle checked={config.autoRestartCollector} onChange={(checked) => void updateLocalConfig({ autoRestartCollector: checked })} label="异常时自动重启" /></SettingRow><SettingRow label="上传到中枢" description="允许本机 Agent 将采样数据上传到当前中枢。"><Toggle checked={config.cloudSyncEnabled} onChange={(checked) => void updateLocalConfig({ cloudSyncEnabled: checked })} label="上传到中枢" /></SettingRow></div></Surface><Surface className="workspace-collection-surface"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">上报数据</span><h3>选择 Agent 采集内容</h3></div><span className="workspace-caption">已选 {selectedMetrics.length} 项</span></div><p className="workspace-surface__description">只采集并上报你勾选的指标；未选择的指标不会进入本机采集队列。完成选择后点击一次保存。</p><div className="workspace-metric-option-grid">{metricGroups.map((group) => <div className="workspace-metric-option-group" key={group.label}><strong>{group.label}</strong>{group.items.map((item) => <label className="workspace-check-row" key={item.key}><input type="checkbox" checked={selectedMetrics.includes(item.key)} onChange={() => toggleMetric(item.key)} /><span>{item.label}</span></label>)}</div>)}</div><div className="workspace-probe-config"><div className="workspace-probe-config__header"><div><strong>硬件探针</strong><span>选择每类硬件使用的采集来源。</span></div></div>{supportedProbePlans.map((plan) => { const selection = probeSelections.find((item) => item.target === plan.target); const providers = plan.providers.filter((provider): provider is AgentProbeProvider => provider in probeProviderLabels); return <div className="workspace-probe-row" key={plan.target}><div><strong>{probeTargetLabels[plan.target]}</strong><small>{selection?.enabled === false ? "已停用" : "已启用"}</small></div><select className="workspace-select workspace-select--small" value={selection?.provider ?? plan.default} onChange={(event) => updateProbe(plan.target, { provider: event.target.value as AgentProbeProvider })}>{providers.map((provider) => <option value={provider} key={provider}>{probeProviderLabels[provider]}</option>)}</select><Toggle checked={selection?.enabled ?? true} onChange={(enabled) => updateProbe(plan.target, { enabled })} label={`${probeTargetLabels[plan.target]} 探针`} /></div>; })}</div><div className="workspace-form__actions"><Button variant="primary" onClick={saveCollectionConfig} disabled={refreshing}>保存采集配置</Button><Button variant="quiet" onClick={() => void cloudPush()} disabled={refreshing}>同步到中枢</Button></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">检测结果</span><h3>已发现硬件</h3></div><span className="workspace-caption">{detectedTargets.reduce((count, group) => count + group.instances.length, 0)} 个实例</span></div>{detectedTargets.length ? <div className="workspace-detected-list">{detectedTargets.map((group) => <div className="workspace-detected-group" key={group.target}><strong>{group.label}</strong>{group.instances.map((instance) => <div className="workspace-detected-row" key={instance.id}><span>{instance.name}</span><small>{instance.enabled ? "可用" : "已停用"}</small></div>)}</div>)}</div> : <div className="workspace-muted-block">尚未检测到硬件探针，请点击“重新检测硬件”。</div>}</Surface></div>;
+  return (
+    <div className="workspace-settings-stack">
+      <Surface>
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">服务状态</span><h3>本机 Agent</h3></div><StatusLabel state={backend.running ? "online" : "offline"} /></div>
+        <div className="workspace-agent-actions"><Button variant="primary" onClick={() => void controlAgent(backend.running ? "stop" : "start")} disabled={refreshing}>{backend.running ? "停止服务" : "启动服务"}</Button><Button variant="quiet" onClick={() => void controlAgent("restart")} disabled={refreshing}>重启服务</Button><Button variant="quiet" onClick={() => void controlAgent("check-connection")} disabled={refreshing}>检查连接</Button><Button variant="quiet" onClick={() => void controlAgent("detect-probes")} disabled={refreshing}>重新检测硬件</Button></div>
+        <div className="workspace-detail-list"><SummaryRow label="连接状态" value={backend.connectionStatus} /><SummaryRow label="上传间隔" value={`${backend.effectiveUploadIntervalSeconds} 秒`} /><SummaryRow label="待上传样本" value={`${backend.pendingSampleCount} 条`} /><SummaryRow label="配置文件" value={backend.configFileExists ? "已找到" : "未找到"} /></div>
+      </Surface>
+      <Surface>
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">采集策略</span><h3>本机行为</h3></div></div>
+        <div className="workspace-settings-list"><SettingRow label="自动启动采集" description="Agent 启动后自动开始采集硬件数据。"><Toggle checked={config.autoStartCollector} onChange={(checked) => void updateLocalConfig({ autoStartCollector: checked })} label="自动启动采集" /></SettingRow><SettingRow label="异常时自动重启" description="采集器异常退出后自动尝试恢复。"><Toggle checked={config.autoRestartCollector} onChange={(checked) => void updateLocalConfig({ autoRestartCollector: checked })} label="异常时自动重启" /></SettingRow><SettingRow label="上传到中枢" description="允许本机 Agent 将采样数据上传到当前中枢。"><Toggle checked={config.cloudSyncEnabled} onChange={(checked) => void updateLocalConfig({ cloudSyncEnabled: checked })} label="上传到中枢" /></SettingRow></div>
+      </Surface>
+      <Surface className="workspace-collection-surface">
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">上报数据</span><h3>选择 Agent 采集内容</h3></div><span className="workspace-caption">已选 {selectedMetrics.length} 项</span></div>
+        <p className="workspace-surface__description">只采集并上报你勾选的指标；未选择的指标不会进入本机采集队列。完成选择后点击一次保存。</p>
+        <div className="workspace-metric-option-grid">{metricGroups.map((group) => <div className="workspace-metric-option-group" key={group.label}><strong>{group.label}</strong>{group.items.map((item) => <label className="workspace-check-row" key={item.key}><input type="checkbox" checked={selectedMetrics.includes(item.key)} onChange={() => toggleMetric(item.key)} /><span>{item.label}</span></label>)}</div>)}</div>
+        <div className="workspace-probe-config"><div className="workspace-probe-config__header"><div><strong>硬件探针</strong><span>先启用探针来源，再在下方决定每个实例是否上报。</span></div></div>{supportedProbePlans.map((plan) => { const selection = probeSelections.find((item) => item.target === plan.target); const providers = plan.providers.filter((provider): provider is AgentProbeProvider => provider in probeProviderLabels); return <div className="workspace-probe-row" key={plan.target}><div><strong>{probeTargetLabels[plan.target]}</strong><small>{selection?.enabled === false ? "已停用" : "已启用"}</small></div><select className="workspace-select workspace-select--small" value={selection?.provider ?? plan.default} onChange={(event) => updateProbe(plan.target, { provider: event.target.value as AgentProbeProvider })}>{providers.map((provider) => <option value={provider} key={provider}>{probeProviderLabels[provider]}</option>)}</select><Toggle checked={selection?.enabled ?? true} onChange={(enabled) => updateProbe(plan.target, { enabled })} label={`${probeTargetLabels[plan.target]} 探针`} /></div>; })}</div>
+        <div className="workspace-form__actions"><Button variant="primary" onClick={saveCollectionConfig} disabled={refreshing}>保存采集配置</Button><Button variant="quiet" onClick={() => void cloudPush()} disabled={refreshing}>同步到中枢</Button></div>
+      </Surface>
+      <Surface>
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">检测结果</span><h3>已发现硬件</h3><p className="workspace-surface__description">关闭某个实例后，它不会进入采集队列。修改后点击“保存采集配置”生效。</p></div><span className="workspace-caption">{detectedGroups.reduce((count, group) => count + group.instances.length, 0)} 个实例</span></div>
+        {detectedGroups.length ? <div className="workspace-detected-list">{detectedGroups.map((group) => <div className="workspace-detected-group" key={group.target}><strong>{group.label}</strong>{group.instances.map((instance) => { const enabled = isInstanceEnabled(group.target, instance.id, instance.enabled); return <div className="workspace-detected-row" key={instance.id}><div className="workspace-detected-row__identity"><strong>{instance.name}</strong>{instance.subtitle && <small>{instance.subtitle}</small>}</div><div className="workspace-detected-row__control"><small className={enabled ? "is-enabled" : "is-disabled"}>{enabled ? "上报中" : "不上传"}</small><Toggle checked={enabled} onChange={(checked) => toggleDetectedInstance(group.target, instance.id, checked)} label={`${instance.name} 上报`} /></div></div>; })}</div>)}</div> : <div className="workspace-muted-block">尚未检测到硬件探针，请点击“重新检测硬件”。</div>}
+      </Surface>
+    </div>
+  );
 }
 
 function DataSettings() {

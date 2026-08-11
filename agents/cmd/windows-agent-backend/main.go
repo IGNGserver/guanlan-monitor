@@ -335,12 +335,12 @@ func defaultLocalConfig() agentLocalConfig {
 	deviceID := "windows-agent"
 	hostname := "Windows Agent"
 	probeSelections := []agentProbeSelection{
-		{Target: "cpu", Provider: "disabled", Enabled: false},
-		{Target: "memory", Provider: "disabled", Enabled: false},
-		{Target: "disk", Provider: "disabled", Enabled: false},
-		{Target: "network", Provider: "disabled", Enabled: false},
-		{Target: "gpu", Provider: "disabled", Enabled: false},
-		{Target: "fan", Provider: "disabled", Enabled: false},
+		{Target: "cpu", Provider: "gopsutil", Enabled: true},
+		{Target: "memory", Provider: "gopsutil", Enabled: true},
+		{Target: "disk", Provider: "gopsutil", Enabled: true},
+		{Target: "network", Provider: "gopsutil", Enabled: true},
+		{Target: "gpu", Provider: "wmi", Enabled: true},
+		{Target: "fan", Provider: "librehardwaremonitor", Enabled: true},
 	}
 	if runtime.GOOS == "linux" {
 		deviceID = "linux-agent"
@@ -400,12 +400,12 @@ func supportedProbePlans() []probePlanSupport {
 	}
 	return []probePlanSupport{
 		{Target: "connection", Providers: []string{"gopsutil"}, Default: "gopsutil"},
-		{Target: "cpu", Providers: []string{"disabled", "gopsutil"}, Default: "disabled"},
-		{Target: "memory", Providers: []string{"disabled", "gopsutil"}, Default: "disabled"},
-		{Target: "disk", Providers: []string{"disabled", "gopsutil"}, Default: "disabled"},
-		{Target: "network", Providers: []string{"disabled", "gopsutil"}, Default: "disabled"},
-		{Target: "gpu", Providers: []string{"disabled", "wmi"}, Default: "disabled"},
-		{Target: "fan", Providers: []string{"disabled", "librehardwaremonitor"}, Default: "disabled"},
+		{Target: "cpu", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
+		{Target: "memory", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
+		{Target: "disk", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
+		{Target: "network", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
+		{Target: "gpu", Providers: []string{"disabled", "wmi"}, Default: "wmi"},
+		{Target: "fan", Providers: []string{"disabled", "librehardwaremonitor"}, Default: "librehardwaremonitor"},
 	}
 }
 
@@ -616,6 +616,7 @@ func (s *server) handleConfig(writer http.ResponseWriter, request *http.Request)
 		s.mu.Lock()
 		displayChanged := displayConfigChanged(s.config, payload)
 		s.config = normalizeLocalConfig(payload, raw)
+		s.detectedTargets = applyDetectedTargetConfig(s.detectedTargets, s.config.EnabledDeviceIDs)
 		if !s.config.DataRecordingEnabled {
 			s.stopCollectorLocked("data recording disabled")
 		}
@@ -1270,6 +1271,25 @@ func enabledIDs(all map[string][]string, key string) (map[string]struct{}, bool)
 		}
 	}
 	return ids, true
+}
+
+func applyDetectedTargetConfig(targets []probeTargetState, configured map[string][]string) []probeTargetState {
+	if len(targets) == 0 {
+		return targets
+	}
+
+	updated := make([]probeTargetState, len(targets))
+	copy(updated, targets)
+	for targetIndex := range updated {
+		enabled, explicit := enabledIDs(configured, updated[targetIndex].Target)
+		instances := make([]probeDetectedTarget, len(updated[targetIndex].Instances))
+		copy(instances, updated[targetIndex].Instances)
+		for instanceIndex := range instances {
+			instances[instanceIndex].Enabled = isIDEnabled(enabled, explicit, instances[instanceIndex].ID)
+		}
+		updated[targetIndex].Instances = instances
+	}
+	return updated
 }
 
 func isIDEnabled(enabled map[string]struct{}, explicit bool, id string) bool {

@@ -188,15 +188,17 @@ export function payloadToTimeSeries(
         temperatureC: enabled.has("gpuTemperature") && instanceEnabled.has("gpuTemperature") ? gpu.temperatureC ?? 0 : 0
       } satisfies InstanceMetricRecord);
     });
-  const fans = (payload.fans ?? []).map((fan) => {
-    const instanceEnabled = getInstanceEnabledMetrics(config, fan.id);
-    return {
-      id: fan.id,
-      name: fan.label,
-      interface: fan.interface,
-      rpm: enabled.has("fanRpm") && instanceEnabled.has("fanRpm") ? fan.rpm : 0
-    };
-  });
+  const fans = (payload.fans ?? [])
+    .filter((fan) => isInstanceEnabled(config, "fan", fan.id))
+    .map((fan) => {
+      const instanceEnabled = getInstanceEnabledMetrics(config, fan.id);
+      return {
+        id: fan.id,
+        name: fan.label,
+        interface: fan.interface,
+        rpm: enabled.has("fanRpm") && instanceEnabled.has("fanRpm") ? fan.rpm : 0
+      };
+    });
 
   return {
     timestamp: Date.parse(payload.timestamp),
@@ -266,7 +268,7 @@ export function resolveCpuFrequencyMHz(payload: Pick<AgentMetricsPayload, "cpuFr
 
 function isInstanceEnabled(config: DeviceMetricConfigValue, blockKey: DeviceBlockKey, instanceId: string) {
   const enabledIds = config.enabledDeviceIds?.[blockKey];
-  if (!enabledIds || enabledIds.length === 0) return true;
+  if (!enabledIds) return true;
   return enabledIds.includes(instanceId);
 }
 

@@ -25,7 +25,7 @@ const loginSchema = z.object({
 });
 
 const metricsQuerySchema = z.object({
-  window: z.enum(["1m", "5m", "15m", "1h", "6h", "24h", "1d", "7d", "1w", "30d", "1mo", "90d", "1y"]).default("1m")
+  window: z.enum(["1m", "5m", "15m", "1h", "6h", "24h", "1d", "7d", "1w", "30d", "1mo", "90d", "1y"]).default("5m")
 });
 
 const trafficCalendarSchema = z.object({

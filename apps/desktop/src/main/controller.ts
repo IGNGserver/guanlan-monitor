@@ -18,7 +18,7 @@ import { credentialFilePath, HubClient } from "./hub-client.js";
 import { LocalConfigStore } from "./local-config.js";
 import type { AgentBackendConfig, RawAgentBackendState } from "./types.js";
 
-const DEFAULT_METRIC_WINDOW: MetricWindow = "1m";
+const DEFAULT_METRIC_WINDOW: MetricWindow = "5m";
 const DEFAULT_TRAFFIC_MODE: TrafficCalendarMode = "day";
 
 export class DesktopController {

@@ -3717,6 +3717,7 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 		payload.Fans = []fanSensorStats{}
 		payload.SensorBackends = []sensorBackendStatus{}
 	} else {
+		payload.Fans = filterFans(payload.Fans, cfg)
 		for index := range payload.Fans {
 			if !enabledMetricSet["fanRpm"] {
 				payload.Fans[index].RPM = 0
@@ -3742,8 +3743,8 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 }
 
 func filterCPUPackages(items []cpuPackageStats, cfg agentRuntimeConfig) []cpuPackageStats {
-	allowed := cfg.EnabledDeviceIDs["cpu"]
-	if len(allowed) == 0 {
+	allowed, configured := cfg.EnabledDeviceIDs["cpu"]
+	if !configured {
 		return items
 	}
 	allowedSet := makeStringSet(allowed)
@@ -3757,8 +3758,8 @@ func filterCPUPackages(items []cpuPackageStats, cfg agentRuntimeConfig) []cpuPac
 }
 
 func filterDisks(items []diskDeviceStats, cfg agentRuntimeConfig) []diskDeviceStats {
-	allowed := cfg.EnabledDeviceIDs["disk"]
-	if len(allowed) == 0 {
+	allowed, configured := cfg.EnabledDeviceIDs["disk"]
+	if !configured {
 		return items
 	}
 	allowedSet := makeStringSet(allowed)
@@ -3772,8 +3773,8 @@ func filterDisks(items []diskDeviceStats, cfg agentRuntimeConfig) []diskDeviceSt
 }
 
 func filterNetworkInterfaces(items []networkInterfaceStats, cfg agentRuntimeConfig) []networkInterfaceStats {
-	allowed := cfg.EnabledDeviceIDs["network"]
-	if len(allowed) == 0 {
+	allowed, configured := cfg.EnabledDeviceIDs["network"]
+	if !configured {
 		return items
 	}
 	allowedSet := makeStringSet(allowed)
@@ -3787,12 +3788,27 @@ func filterNetworkInterfaces(items []networkInterfaceStats, cfg agentRuntimeConf
 }
 
 func filterGPUs(items []gpuDeviceStats, cfg agentRuntimeConfig) []gpuDeviceStats {
-	allowed := cfg.EnabledDeviceIDs["gpu"]
-	if len(allowed) == 0 {
+	allowed, configured := cfg.EnabledDeviceIDs["gpu"]
+	if !configured {
 		return items
 	}
 	allowedSet := makeStringSet(allowed)
 	filtered := make([]gpuDeviceStats, 0, len(items))
+	for _, item := range items {
+		if allowedSet[item.ID] {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func filterFans(items []fanSensorStats, cfg agentRuntimeConfig) []fanSensorStats {
+	allowed, configured := cfg.EnabledDeviceIDs["fan"]
+	if !configured {
+		return items
+	}
+	allowedSet := makeStringSet(allowed)
+	filtered := make([]fanSensorStats, 0, len(items))
 	for _, item := range items {
 		if allowedSet[item.ID] {
 			filtered = append(filtered, item)

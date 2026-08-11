@@ -327,6 +327,11 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
       });
     const selectedDeviceId = request?.selectedDeviceId ?? visibleDevices[0]?.deviceId ?? null;
 
+    const isInstanceEnabled = (target: string, id: string) => {
+      const configured = (this.config.enabledDeviceIds as Record<string, string[]> | undefined)?.[target];
+      return configured ? configured.includes(id) : true;
+    };
+
     const localBackend: DesktopAgentBackendState = {
       running: !stopped,
       backendStartedAt: this.backendStartedAt,
@@ -365,12 +370,30 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
         {
           target: "cpu",
           label: "CPU 处理器探针",
-          instances: [{ id: "cpu-0", name: "13th Gen Intel(R) Core(TM) i7-13700K", enabled: true, metrics: ["usage", "freq", "temp"] }]
+          instances: [{ id: "cpu-0", name: "13th Gen Intel(R) Core(TM) i7-13700K", enabled: isInstanceEnabled("cpu", "cpu-0"), metrics: ["usage", "freq", "temp"] }]
+        },
+        {
+          target: "disk",
+          label: "磁盘实例",
+          instances: [{ id: "disk-0", name: "Samsung SSD 980 PRO 1TB", subtitle: "C: · NTFS", enabled: isInstanceEnabled("disk", "disk-0"), metrics: ["usage", "read", "write", "temp"] }]
+        },
+        {
+          target: "network",
+          label: "网卡实例",
+          instances: [{ id: "net-0", name: "Intel Ethernet Controller I225-V", subtitle: "192.168.1.100", enabled: isInstanceEnabled("network", "net-0"), metrics: ["rx", "tx", "traffic"] }]
         },
         {
           target: "gpu",
           label: "GPU 独立显卡探针",
-          instances: [{ id: "gpu-0", name: "NVIDIA GeForce RTX 4080", enabled: true, metrics: ["usage", "memory", "temp"] }]
+          instances: [{ id: "gpu-0", name: "NVIDIA GeForce RTX 4080", enabled: isInstanceEnabled("gpu", "gpu-0"), metrics: ["usage", "memory", "temp"] }]
+        },
+        {
+          target: "fan",
+          label: "风扇实例",
+          instances: [
+            { id: "fan-0", name: "CPU Fan", subtitle: "Motherboard PWM", enabled: isInstanceEnabled("fan", "fan-0"), metrics: ["rpm"] },
+            { id: "fan-1", name: "System Fan 1", subtitle: "Front Intake", enabled: isInstanceEnabled("fan", "fan-1"), metrics: ["rpm"] }
+          ]
         }
       ]
     };
@@ -414,7 +437,7 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
       ]
     };
 
-    const metricWindow = request?.metricWindow ?? "1h";
+    const metricWindow = request?.metricWindow ?? "5m";
     const sampleCount = 12;
     const now = Date.now();
     const intervalMs = metricWindow === "5m" ? 25000 : metricWindow === "1h" ? 300000 : 7200000;
@@ -429,34 +452,34 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
       cpuFrequencyMHz: samplePoints.map((p) => ({ ...p, value: p.value * 40 + 3200 })),
       cpuTemperatureC: samplePoints.map((p) => ({ ...p, value: Math.round(40 + p.value * 0.3) })),
       gpuUsagePercent: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 0.6) })),
-      gpuEncodePercent: [],
-      gpuDecodePercent: [],
-      gpuFrequencyMHz: [],
+      gpuEncodePercent: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 0.25) })),
+      gpuDecodePercent: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 0.18) })),
+      gpuFrequencyMHz: samplePoints.map((p) => ({ ...p, value: p.value * 55 + 1350 })),
       gpuMemoryUsagePercent: samplePoints.map((p) => ({ ...p, value: Math.round(20 + p.value * 0.4) })),
-      gpuTemperatureC: [],
+      gpuTemperatureC: samplePoints.map((p) => ({ ...p, value: Math.round(38 + p.value * 0.22) })),
       memoryUsagePercent: samplePoints.map((p) => ({ ...p, value: Math.round(40 + (p.value % 5)) })),
-      swapUsagePercent: [],
-      memoryUsedBytes: [],
-      swapUsedBytes: [],
-      memoryAvailableBytes: [],
-      memoryCachedBytes: [],
-      memoryCommittedBytes: [],
-      systemProcessCount: [],
-      systemThreadCount: [],
-      systemHandleCount: [],
+      swapUsagePercent: samplePoints.map((p) => ({ ...p, value: Math.round(8 + (p.value % 3)) })),
+      memoryUsedBytes: samplePoints.map((p) => ({ ...p, value: 14500000000 + p.value * 12000000 })),
+      swapUsedBytes: samplePoints.map((p) => ({ ...p, value: 820000000 + p.value * 2000000 })),
+      memoryAvailableBytes: samplePoints.map((p) => ({ ...p, value: 19800000000 - p.value * 9000000 })),
+      memoryCachedBytes: samplePoints.map((p) => ({ ...p, value: 4100000000 + p.value * 5000000 })),
+      memoryCommittedBytes: samplePoints.map((p) => ({ ...p, value: 20500000000 + p.value * 9000000 })),
+      systemProcessCount: samplePoints.map((p) => ({ ...p, value: 235 + p.value })),
+      systemThreadCount: samplePoints.map((p) => ({ ...p, value: 2980 + p.value * 5 })),
+      systemHandleCount: samplePoints.map((p) => ({ ...p, value: 91000 + p.value * 40 })),
       diskUsagePercent: samplePoints.map((p) => ({ ...p, value: 52.8 })),
       diskUsedBytes: [],
-      diskReadBytesPerSec: [],
-      diskWriteBytesPerSec: [],
+      diskReadBytesPerSec: samplePoints.map((p) => ({ ...p, value: p.value * 90000 })),
+      diskWriteBytesPerSec: samplePoints.map((p) => ({ ...p, value: p.value * 42000 })),
       networkRxBytesPerSec: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 50000) })),
       networkTxBytesPerSec: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 25000) })),
-      trafficRxBytes: [],
-      trafficTxBytes: [],
-      cpus: [],
-      disks: [],
-      networks: [],
-      gpus: [],
-      fans: []
+      trafficRxBytes: samplePoints.map((p) => ({ ...p, value: 2800000000 + p.value * 5000000 })),
+      trafficTxBytes: samplePoints.map((p) => ({ ...p, value: 1100000000 + p.value * 3000000 })),
+      cpus: [{ id: "cpu-0", name: "13th Gen Intel(R) Core(TM) i7-13700K", model: "Intel i7-13700K", coreCount: 16, logicalCount: 24, usagePercent: samplePoints, frequencyMHz: samplePoints.map((p) => ({ ...p, value: p.value * 40 + 3200 })), temperatureC: samplePoints.map((p) => ({ ...p, value: Math.round(40 + p.value * 0.3) })) }],
+      disks: [{ id: "disk-0", name: "Samsung SSD 980 PRO 1TB", mountPoint: "C:", filesystem: "NTFS", usagePercent: samplePoints.map((p) => ({ ...p, value: 52.8 })), activePercent: samplePoints.map((p) => ({ ...p, value: Math.round(4 + p.value * 0.15) })), usedBytes: samplePoints.map((p) => ({ ...p, value: 566935683072 + p.value * 1000000 })), readBytesPerSec: samplePoints.map((p) => ({ ...p, value: p.value * 90000 })), writeBytesPerSec: samplePoints.map((p) => ({ ...p, value: p.value * 42000 })), temperatureC: samplePoints.map((p) => ({ ...p, value: 41 })) }],
+      networks: [{ id: "net-0", name: "Intel Ethernet Controller I225-V", macAddress: "00:1A:2B:3C:4D:5E", ipv4: ["192.168.1.100"], rxBytesPerSec: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 50000) })), txBytesPerSec: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 25000) })), trafficRxBytes: samplePoints.map((p) => ({ ...p, value: 2800000000 + p.value * 5000000 })), trafficTxBytes: samplePoints.map((p) => ({ ...p, value: 1100000000 + p.value * 3000000 })) }],
+      gpus: [{ id: "gpu-0", name: "NVIDIA GeForce RTX 4080", usagePercent: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 0.6) })), encodePercent: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 0.25) })), decodePercent: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 0.18) })), frequencyMHz: samplePoints.map((p) => ({ ...p, value: p.value * 55 + 1350 })), memoryUsagePercent: samplePoints.map((p) => ({ ...p, value: Math.round(20 + p.value * 0.4) })), memoryUsedBytes: samplePoints.map((p) => ({ ...p, value: 5798205849 + p.value * 1000000 })), temperatureC: samplePoints.map((p) => ({ ...p, value: Math.round(38 + p.value * 0.22) })) }],
+      fans: [{ id: "fan-0", name: "CPU Fan", interface: "Motherboard PWM", rpm: samplePoints.map((p) => ({ ...p, value: 1120 + p.value * 5 })) }, { id: "fan-1", name: "System Fan 1", interface: "Front Intake", rpm: samplePoints.map((p) => ({ ...p, value: 860 + p.value * 4 })) }]
     };
 
     const selectedDevice = visibleDevices.find((device) => device.deviceId === selectedDeviceId) ?? visibleDevices[0] ?? devices[0]!;
