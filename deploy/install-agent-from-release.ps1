@@ -6,7 +6,7 @@ param(
   [string]$Hostname = "",
   [string]$InstallDir = "$env:ProgramData\DeviceStateConsoleAgent",
   [switch]$PreferCurrentUserAutostart,
-  [string]$Repository = "IGNGserver/Device-State-Console"
+  [string]$Repository = "IGNGserver/guanlan-monitor"
 )
 
 $ErrorActionPreference = "Stop"

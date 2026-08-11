@@ -43,7 +43,7 @@ jobs:
           release_json="$(curl -fsSL --connect-timeout 10 --max-time 30 \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/IGNGserver/Device-State-Console/releases/tags/v$REQUESTED_VERSION")"
+            "https://api.github.com/repos/IGNGserver/guanlan-monitor/releases/tags/v$REQUESTED_VERSION")"
           release_tag="$(printf '%s' "$release_json" | jq -r '.tag_name')"
           release_draft="$(printf '%s' "$release_json" | jq -r '.draft')"
           [[ "$release_tag" == "v$REQUESTED_VERSION" && "$release_draft" == "false" ]] || {
@@ -57,7 +57,7 @@ jobs:
           curl -fsSL --connect-timeout 10 --max-time 30 \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H 'Accept: application/vnd.github.raw' \
-            "https://api.github.com/repos/IGNGserver/Device-State-Console/contents/docker-compose.yml?ref=v$REQUESTED_VERSION" \
+            "https://api.github.com/repos/IGNGserver/guanlan-monitor/contents/docker-compose.yml?ref=v$REQUESTED_VERSION" \
             -o "$GITHUB_WORKSPACE/docker-compose.yml"
           grep -q 'ghcr.io/igngserver/device-state-console-server' "$GITHUB_WORKSPACE/docker-compose.yml"
 

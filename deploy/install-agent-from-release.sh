@@ -7,7 +7,7 @@ SECRET=""
 DEVICE_ID="$(hostname)"
 HOSTNAME_VALUE=""
 INSTALL_DIR="/opt/device-state-console-agent"
-REPOSITORY="IGNGserver/Device-State-Console"
+REPOSITORY="IGNGserver/guanlan-monitor"
 
 usage() { echo "Usage: sudo bash install-agent-from-release.sh --version X.Y.Z --server-url URL --secret SECRET [options]"; }
 while [[ $# -gt 0 ]]; do

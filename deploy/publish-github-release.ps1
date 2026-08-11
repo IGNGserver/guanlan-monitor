@@ -48,7 +48,7 @@ $gh = Get-Command gh -ErrorAction Stop
 
 $releaseExists = $false
 try {
-  & $gh.Source release view $tag --repo IGNGserver/Device-State-Console 2>$null
+  & $gh.Source release view $tag --repo IGNGserver/guanlan-monitor 2>$null
   $releaseExists = $LASTEXITCODE -eq 0
 } catch {
   # PowerShell 7 can promote a non-zero native exit code to an exception.
@@ -58,10 +58,10 @@ try {
 }
 
 if ($releaseExists) {
-  & $gh.Source release upload $tag $setup $update $apk $windowsCli $linuxCli --clobber --repo IGNGserver/Device-State-Console
-  & $gh.Source release edit $tag --title "Device State Console $tag" --notes-file $notes --repo IGNGserver/Device-State-Console
+  & $gh.Source release upload $tag $setup $update $apk $windowsCli $linuxCli --clobber --repo IGNGserver/guanlan-monitor
+  & $gh.Source release edit $tag --title "Device State Console $tag" --notes-file $notes --repo IGNGserver/guanlan-monitor
 } else {
-  & $gh.Source release create $tag $setup $update $apk $windowsCli $linuxCli --title "Device State Console $tag" --notes-file $notes --repo IGNGserver/Device-State-Console
+  & $gh.Source release create $tag $setup $update $apk $windowsCli $linuxCli --title "Device State Console $tag" --notes-file $notes --repo IGNGserver/guanlan-monitor
 }
 
 if ($LASTEXITCODE -ne 0) {

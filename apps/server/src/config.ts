@@ -33,7 +33,7 @@ const schema = z.object({
   MYSQL_URL: optionalNonEmptyString,
   DSC_VERSION: optionalNonEmptyString.default("dev"),
   DSC_RELEASE_CHANNEL: z.enum(["stable", "test"]).default("test"),
-  DSC_RELEASE_REPOSITORY: z.string().min(1).default("IGNGserver/Device-State-Console"),
+  DSC_RELEASE_REPOSITORY: z.string().min(1).default("IGNGserver/guanlan-monitor"),
   DSC_RELEASE_API_URL: optionalUrl,
   DSC_IOS_UPDATE_URL: optionalUrl,
   DSC_UPDATE_CACHE_SECONDS: z.coerce.number().int().min(30).default(300),

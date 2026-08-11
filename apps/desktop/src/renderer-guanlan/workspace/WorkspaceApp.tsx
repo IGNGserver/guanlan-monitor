@@ -632,7 +632,7 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
         ) : (
           <button className="workspace-nav-item" type="button" onClick={() => openSettings("general")} title="设置"><Icon name="settings" /><span>设置</span></button>
         )}
-        <button className="workspace-sidebar__support" type="button" onClick={() => void openExternal("https://github.com/IGNGserver/Device-State-Console/issues")} title="打开帮助与反馈">
+        <button className="workspace-sidebar__support" type="button" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor/issues")} title="打开帮助与反馈">
           <span>帮助与反馈</span><Icon name="external" size={14} />
         </button>
       </div>
@@ -1423,7 +1423,7 @@ function ShortcutSettings() {
 
 function AboutSettings() {
   const { snapshot, openExternal } = useWorkspace();
-  return <Surface><div className="workspace-about"><div className="workspace-about__mark-wrap"><img className="workspace-about__mark-img" src={appIcon} alt="观澜" /></div><h3>观澜设备状态控制台</h3><p>面向本机 Agent 和接入中枢的状态工作区。</p><div className="workspace-detail-list"><SummaryRow label="版本" value={snapshot?.update?.currentVersion ?? "开发版本"} /><SummaryRow label="发布通道" value={snapshot?.update?.currentChannel ?? "测试"} /></div><div className="workspace-form__actions"><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/Device-State-Console")}><Icon name="external" size={15} />项目主页</Button><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/Device-State-Console/issues")}><Icon name="external" size={15} />报告问题</Button></div></div></Surface>;
+  return <Surface><div className="workspace-about"><div className="workspace-about__mark-wrap"><img className="workspace-about__mark-img" src={appIcon} alt="观澜" /></div><h3>观澜设备状态控制台</h3><p>面向本机 Agent 和接入中枢的状态工作区。</p><div className="workspace-detail-list"><SummaryRow label="版本" value={snapshot?.update?.currentVersion ?? "开发版本"} /><SummaryRow label="发布通道" value={snapshot?.update?.currentChannel ?? "测试"} /></div><div className="workspace-form__actions"><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor")}><Icon name="external" size={15} />项目主页</Button><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor/issues")}><Icon name="external" size={15} />报告问题</Button></div></div></Surface>;
 }
 
 function LoadingSurface() {
