@@ -222,6 +222,7 @@ export interface GpuDeviceStats {
   memoryUsedBytes: number;
   memoryTotalBytes: number;
   temperatureC?: number | null;
+  temperatureSource?: string | null;
   driverVersion?: string | null;
 }
 
@@ -538,6 +539,7 @@ export interface GpuMetricSeries {
   memoryUsagePercent: SamplePoint[];
   memoryUsedBytes: SamplePoint[];
   temperatureC: SamplePoint[];
+  temperatureSource?: string | null;
 }
 
 export interface FanMetricSeries {

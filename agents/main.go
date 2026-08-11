@@ -242,6 +242,7 @@ type gpuDeviceStats struct {
 	MemoryUsedBytes          uint64   `json:"memoryUsedBytes"`
 	MemoryTotalBytes         uint64   `json:"memoryTotalBytes"`
 	TemperatureC             *float64 `json:"temperatureC,omitempty"`
+	TemperatureSource        string   `json:"temperatureSource,omitempty"`
 	DriverVersion            string   `json:"driverVersion,omitempty"`
 }
 
@@ -1310,6 +1311,9 @@ func collectSlowMetrics() slowMetrics {
 	if len(hardware.gpus) == 0 {
 		hardware.gpus = collectWindowsGPUAdapters()
 	}
+	if hardware.cpuTemperatureC != nil {
+		applyIntegratedGPUTemperature(hardware.gpus, *hardware.cpuTemperatureC)
+	}
 	if hardware.cpuFrequencyMHz == nil {
 		hardware.cpuFrequencyMHz = collectWindowsCPUFrequency(cpuFrequencyMHz)
 	}
@@ -1387,6 +1391,12 @@ func mergeWindowsGPUFallback(primary, fallback []gpuDeviceStats) []gpuDeviceStat
 		if result[index].DriverVersion == "" {
 			result[index].DriverVersion = candidate.DriverVersion
 		}
+		if result[index].TemperatureC == nil && candidate.TemperatureC != nil {
+			result[index].TemperatureC = candidate.TemperatureC
+		}
+		if result[index].TemperatureSource == "" {
+			result[index].TemperatureSource = candidate.TemperatureSource
+		}
 	}
 	for index, candidate := range fallback {
 		if !matched[index] {
@@ -1394,6 +1404,29 @@ func mergeWindowsGPUFallback(primary, fallback []gpuDeviceStats) []gpuDeviceStat
 		}
 	}
 	return result
+}
+
+func applyIntegratedGPUTemperature(gpus []gpuDeviceStats, cpuTemperature float64) {
+	if !isValidHardwareTemperature(cpuTemperature) {
+		return
+	}
+	for index := range gpus {
+		if gpus[index].TemperatureC != nil || !isIntegratedGPUName(gpus[index].Name) {
+			continue
+		}
+		value := cpuTemperature
+		gpus[index].TemperatureC = &value
+		gpus[index].TemperatureSource = "cpuPackageShared"
+	}
+}
+
+func isIntegratedGPUName(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	if lower == "" {
+		return false
+	}
+	return (strings.Contains(lower, "intel") && (strings.Contains(lower, "uhd") || strings.Contains(lower, "iris") || strings.Contains(lower, "graphics"))) ||
+		strings.Contains(lower, "integrated") || strings.Contains(lower, "apu")
 }
 
 func collectLinuxMemoryMetadata() (*float64, *int, string) {
@@ -2160,21 +2193,33 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 			}
 			continue
 		}
-		if hardwareType == "cpu" {
+		if hardwareType == "cpu" || strings.HasPrefix(hardwareType, "cpu") {
 			for _, sensor := range snapshot.Sensors {
-				if sensor.Value == nil || !isFinitePositive(*sensor.Value) {
+				if sensor.Value == nil {
+					continue
+				}
+				if strings.EqualFold(sensor.SensorType, "temperature") && !isValidHardwareTemperature(*sensor.Value) {
+					continue
+				}
+				if !isFinitePositive(*sensor.Value) {
 					continue
 				}
 				sensorType := strings.ToLower(sensor.SensorType)
-				sensorName := strings.ToLower(sensor.Name)
+				sensorName := strings.ToLower(strings.TrimSpace(sensor.Name))
 				if sensorType == "clock" && !strings.Contains(sensorName, "bus") && !strings.Contains(sensorName, "base") {
 					cpuClocks = append(cpuClocks, *sensor.Value)
 				}
 				if sensorType == "temperature" {
 					switch {
-					case strings.Contains(sensorName, "package") || strings.Contains(sensorName, "die"):
+					case strings.Contains(sensorName, "package") || strings.Contains(sensorName, "die") || strings.Contains(sensorName, "tctl") || strings.Contains(sensorName, "tdie") || strings.Contains(sensorName, "ccd"):
 						cpuPackageTemperatures = append(cpuPackageTemperatures, *sensor.Value)
-					case strings.Contains(sensorName, "core") || strings.Contains(sensorName, "cpu"):
+					case strings.Contains(sensorName, "core") || strings.Contains(sensorName, "cpu") || strings.Contains(sensorName, "thermal"):
+						cpuTemperatures = append(cpuTemperatures, *sensor.Value)
+					case !strings.Contains(sensorName, "ambient") && !strings.Contains(sensorName, "motherboard") && !strings.Contains(sensorName, "vrm") && !strings.Contains(sensorName, "chipset"):
+						// Some LibreHardwareMonitor versions expose the CPU sensor as
+						// a generic name such as "Temperature #1". It is still safer
+						// to use a temperature belonging to the CPU hardware node
+						// than to fall back to an ACPI platform thermal zone.
 						cpuTemperatures = append(cpuTemperatures, *sensor.Value)
 					}
 				}
@@ -2254,7 +2299,7 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 				clock = maxSensorValue(clock, sensor.Value)
 			case sensorType == "load" && (strings.Contains(sensorName, "core") || strings.Contains(sensorName, "gpu") || strings.Contains(sensorName, "d3d") || strings.Contains(sensorName, "3d")):
 				load = maxSensorValue(load, sensor.Value)
-			case sensorType == "temperature" && (strings.Contains(sensorName, "core") || strings.Contains(sensorName, "gpu")):
+			case sensorType == "temperature" && isValidHardwareTemperature(*sensor.Value) && isGPUTemperatureName(sensorName):
 				temperature = maxSensorValue(temperature, sensor.Value)
 			case (sensorType == "data" || sensorType == "smalldata" || sensorType == "small data") && strings.Contains(sensorName, "memory used"):
 				memoryUsed = sensor.Value
@@ -2267,6 +2312,9 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 		}
 		gpu.FrequencyMHz = clock
 		gpu.TemperatureC = temperature
+		if temperature != nil {
+			gpu.TemperatureSource = "device"
+		}
 		if load != nil {
 			gpu.UtilizationPercent = *load
 		}
@@ -2328,6 +2376,18 @@ func collectWindowsCPUFrequency(nominalMHz *float64) *float64 {
 		return nil
 	}
 	return &frequency
+}
+
+func isValidHardwareTemperature(value float64) bool {
+	return isFinitePositive(value) && value <= 150
+}
+
+func isGPUTemperatureName(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	if lower == "" || strings.Contains(lower, "memory") || strings.Contains(lower, "ambient") {
+		return false
+	}
+	return strings.Contains(lower, "core") || strings.Contains(lower, "gpu") || strings.Contains(lower, "die") || strings.Contains(lower, "junction") || strings.Contains(lower, "hot spot")
 }
 
 type windowsHardwareMetadataPayload struct {

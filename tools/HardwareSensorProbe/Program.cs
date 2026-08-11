@@ -57,7 +57,17 @@ internal static class Program
         Invoke(computer, "Open");
         try
         {
-            Thread.Sleep(450);
+            // A freshly opened LHM instance may need more than one update
+            // cycle before CPU package and GPU temperature sensors publish a
+            // value. Warm the tree briefly, then take the actual snapshot.
+            for (var pass = 0; pass < 2; pass++)
+            {
+                foreach (var hardware in Enumerate(GetPropertyValue(computer, "Hardware")))
+                {
+                    UpdateHardwareTree(hardware);
+                }
+                Thread.Sleep(250);
+            }
             var snapshots = new List<HardwareSnapshot>();
             foreach (var hardware in Enumerate(GetPropertyValue(computer, "Hardware")))
             {
@@ -68,6 +78,15 @@ internal static class Program
         finally
         {
             Invoke(computer, "Close");
+        }
+    }
+
+    private static void UpdateHardwareTree(object hardware)
+    {
+        Invoke(hardware, "Update");
+        foreach (var child in Enumerate(GetPropertyValue(hardware, "SubHardware")))
+        {
+            UpdateHardwareTree(child);
         }
     }
 

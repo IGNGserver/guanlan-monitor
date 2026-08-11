@@ -138,7 +138,7 @@ export function payloadToTimeSeries(
         model: enabled.has("diskMetadata") && instanceEnabled.has("diskMetadata") ? disk.model : undefined,
         vendor: enabled.has("diskMetadata") && instanceEnabled.has("diskMetadata") ? disk.vendor : undefined,
         totalBytes: enabled.has("diskUsage") && instanceEnabled.has("diskUsage") ? disk.totalBytes : 0,
-        temperatureC: enabled.has("diskHealth") && instanceEnabled.has("diskHealth") ? disk.temperatureC ?? 0 : 0,
+        temperatureC: enabled.has("diskHealth") && instanceEnabled.has("diskHealth") ? disk.temperatureC : undefined,
         usagePercent: enabled.has("diskUsage") && instanceEnabled.has("diskUsage") ? percent(disk.usedBytes, disk.totalBytes) : 0,
         activePercent: enabled.has("diskActivity") && instanceEnabled.has("diskActivity") ? rate?.activePercent ?? 0 : 0,
         usedBytes: enabled.has("diskUsage") && instanceEnabled.has("diskUsage") ? disk.usedBytes : 0,
@@ -159,7 +159,7 @@ export function payloadToTimeSeries(
         l3CacheBytes: enabled.has("cpuTopology") && instanceEnabled.has("cpuTopology") ? cpu.l3CacheBytes ?? undefined : undefined,
         usagePercent: enabled.has("cpuUsage") && instanceEnabled.has("cpuUsage") ? cpu.usagePercent ?? payload.cpuUsagePercent : 0,
         frequencyMHz: enabled.has("cpuFrequency") && instanceEnabled.has("cpuFrequency") ? cpu.frequencyMHz ?? resolvedCpuFrequencyMHz ?? 0 : 0,
-        temperatureC: enabled.has("cpuTemperature") && instanceEnabled.has("cpuTemperature") ? cpu.temperatureC ?? payload.cpuTemperatureC ?? 0 : 0
+        temperatureC: enabled.has("cpuTemperature") && instanceEnabled.has("cpuTemperature") ? cpu.temperatureC ?? payload.cpuTemperatureC : undefined
       } satisfies InstanceMetricRecord;
     });
   const networks = (payload.networkInterfaces ?? [])
@@ -192,7 +192,8 @@ export function payloadToTimeSeries(
         frequencyMHz: enabled.has("gpuFrequency") && instanceEnabled.has("gpuFrequency") ? gpu.frequencyMHz ?? 0 : 0,
         memoryUsagePercent: enabled.has("gpuMemory") && instanceEnabled.has("gpuMemory") ? percent(gpu.memoryUsedBytes, gpu.memoryTotalBytes) : 0,
         memoryUsedBytes: enabled.has("gpuMemory") && instanceEnabled.has("gpuMemory") ? gpu.memoryUsedBytes : 0,
-        temperatureC: enabled.has("gpuTemperature") && instanceEnabled.has("gpuTemperature") ? gpu.temperatureC ?? 0 : 0
+        temperatureC: enabled.has("gpuTemperature") && instanceEnabled.has("gpuTemperature") ? gpu.temperatureC : undefined,
+        temperatureSource: enabled.has("gpuTemperature") && instanceEnabled.has("gpuTemperature") ? gpu.temperatureSource ?? undefined : undefined
       } satisfies InstanceMetricRecord);
     });
   const fans = (payload.fans ?? [])
@@ -305,8 +306,8 @@ export function timeSeriesToMetricSeries(
   const trafficSeriesRx = normalizeTrafficSeries(points.map((point) => point.trafficRxBytes));
   const trafficSeriesTx = normalizeTrafficSeries(points.map((point) => point.trafficTxBytes));
 
-  const mapPoint = (key: keyof TimeSeriesRecord) =>
-    points.map((point) => {
+  const mapPoint = (key: keyof TimeSeriesRecord) => {
+    const mapped = points.map((point) => {
       const numeric = Number(point[key]);
       return {
         timestamp: new Date(point.timestamp).toISOString(),
@@ -315,6 +316,11 @@ export function timeSeriesToMetricSeries(
         value: Number.isFinite(numeric) ? numeric : 0
       };
     });
+    if (key === "cpuTemperatureC" || key === "gpuTemperatureC") {
+      return mapped.filter((point) => point.value > 0);
+    }
+    return mapped;
+  };
 
   const cpus = buildCpuMetricSeries(points, config);
   const disks = buildDiskMetricSeries(points, config);
@@ -430,7 +436,7 @@ function diskInstancesAtPoint(point: TimeSeriesRecord, config: DeviceMetricConfi
 			usedBytes: disk.usedBytes,
 			readBytesPerSec: rate?.readBytesPerSec ?? 0,
 			writeBytesPerSec: rate?.writeBytesPerSec ?? 0,
-			temperatureC: disk.temperatureC ?? 0
+			temperatureC: disk.temperatureC
 		};
 	});
 	return instances
@@ -473,7 +479,8 @@ function gpuInstancesAtPoint(point: TimeSeriesRecord, config: DeviceMetricConfig
     frequencyMHz: gpu.frequencyMHz ?? 0,
     memoryUsagePercent: percent(gpu.memoryUsedBytes, gpu.memoryTotalBytes),
     memoryUsedBytes: gpu.memoryUsedBytes,
-    temperatureC: gpu.temperatureC ?? 0
+    temperatureC: gpu.temperatureC,
+    temperatureSource: gpu.temperatureSource
   }));
   return instances.filter((gpu) => isInstanceEnabled(config, "gpu", gpu.id));
 }
@@ -490,6 +497,7 @@ function fanInstancesAtPoint(point: TimeSeriesRecord, config: DeviceMetricConfig
 
 function buildCpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricConfigValue): CpuMetricSeries[] {
   const grouped = new Map<string, CpuMetricSeries>();
+  const lastTemperature = new Map<string, number>();
   for (const point of points) {
     for (const cpu of cpuInstancesAtPoint(point, config)) {
       if (!grouped.has(cpu.id)) {
@@ -509,7 +517,14 @@ function buildCpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricCo
       const timestamp = new Date(point.timestamp).toISOString();
       target.usagePercent.push({ timestamp, value: Number(cpu.usagePercent ?? 0) });
       target.frequencyMHz.push({ timestamp, value: Number(cpu.frequencyMHz ?? 0) });
-      target.temperatureC.push({ timestamp, value: Number(cpu.temperatureC ?? 0) });
+      const temperature = Number(cpu.temperatureC);
+      if (Number.isFinite(temperature) && temperature > 0) {
+        lastTemperature.set(cpu.id, temperature);
+      }
+      const usableTemperature = lastTemperature.get(cpu.id);
+      if (usableTemperature != null) {
+        target.temperatureC.push({ timestamp, value: usableTemperature });
+      }
     }
   }
   return [...grouped.values()];
@@ -597,6 +612,7 @@ function buildNetworkMetricSeries(points: TimeSeriesRecord[], config: DeviceMetr
 
 function buildGpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricConfigValue): GpuMetricSeries[] {
   const grouped = new Map<string, GpuMetricSeries>();
+  const lastTemperature = new Map<string, number>();
   for (const point of points) {
     for (const gpu of gpuInstancesAtPoint(point, config)) {
       if (!grouped.has(gpu.id)) {
@@ -620,7 +636,17 @@ function buildGpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricCo
       target.frequencyMHz.push({ timestamp, value: Number(gpu.frequencyMHz ?? 0) });
       target.memoryUsagePercent.push({ timestamp, value: Number(gpu.memoryUsagePercent ?? 0) });
       target.memoryUsedBytes.push({ timestamp, value: Number(gpu.memoryUsedBytes ?? 0) });
-      target.temperatureC.push({ timestamp, value: Number(gpu.temperatureC ?? 0) });
+      if (!target.temperatureSource && gpu.temperatureSource) {
+        target.temperatureSource = gpu.temperatureSource;
+      }
+      const temperature = Number(gpu.temperatureC);
+      if (Number.isFinite(temperature) && temperature > 0) {
+        lastTemperature.set(gpu.id, temperature);
+      }
+      const usableTemperature = lastTemperature.get(gpu.id);
+      if (usableTemperature != null) {
+        target.temperatureC.push({ timestamp, value: usableTemperature });
+      }
     }
   }
   return [...grouped.values()];
