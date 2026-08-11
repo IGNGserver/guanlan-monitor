@@ -1,6 +1,7 @@
 param(
   [string]$OutputDir = "",
   [string]$WinUIPublishDir = "",
+  [string]$HardwareProbeDir = "",
   [string]$DotnetPath = "",
   [string]$GoPath = "",
   [string]$Configuration = "Release",
@@ -250,6 +251,12 @@ if (-not $SkipGoBuild) {
 }
 
 Copy-DirectoryContent -Source $hardwareAssetDir -Destination (Join-Path $backendDir "windows-hardware")
+if (-not [string]::IsNullOrWhiteSpace($HardwareProbeDir)) {
+  if (-not (Test-Path $HardwareProbeDir)) {
+    throw "Hardware sensor probe directory not found: $HardwareProbeDir"
+  }
+  Copy-DirectoryContent -Source $HardwareProbeDir -Destination (Join-Path $backendDir "hardware-sensor-probe")
+}
 
 $resolvedWinUiPublishDir = $null
 if (-not [string]::IsNullOrWhiteSpace($WinUIPublishDir)) {

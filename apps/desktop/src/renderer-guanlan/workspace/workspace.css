@@ -1024,6 +1024,13 @@ kbd {
 .workspace-telemetry-section__header p { max-width: 68ch; margin: 4px 0 0; color: var(--workspace-text-secondary); font-size: 11px; line-height: 1.55; }
 .workspace-telemetry-section__controls { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .workspace-device-chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+.workspace-cpu-facts { grid-column: 1 / -1; }
+.workspace-cpu-facts__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.workspace-cpu-facts__header h3 { margin-top: 3px; color: var(--workspace-text); font-size: 15px; font-weight: 680; letter-spacing: -0.02em; }
+.workspace-cpu-facts__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.workspace-cpu-fact { min-width: 0; padding: 11px 12px; border: 1px solid var(--workspace-border); border-radius: 12px; background: var(--workspace-surface-subtle); }
+.workspace-cpu-fact span { display: block; overflow: hidden; color: var(--workspace-text-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-cpu-fact strong { display: block; overflow: hidden; margin-top: 5px; color: var(--workspace-text); font-size: 14px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-telemetry-empty { display: grid; min-height: 228px; place-items: center; padding: 20px; border: 1px dashed var(--workspace-border-strong); border-radius: var(--workspace-radius-md); color: var(--workspace-text-muted); background: var(--workspace-surface-subtle); font-size: 12px; text-align: center; }
 .workspace-instance-list { display: flex; flex-direction: column; }
 .workspace-instance-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 42px; border-top: 1px solid var(--workspace-border); }
@@ -1154,6 +1161,7 @@ kbd {
   .workspace-overview-grid,
   .workspace-device-grid { grid-template-columns: minmax(0, 1fr); }
   .workspace-device-chart-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspace-cpu-facts__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .workspace-overview-column { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-metric-option-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1191,6 +1199,7 @@ kbd {
   .workspace-hub-hero { grid-template-columns: minmax(0, 1fr) 90px; }
   .workspace-hub-hero > div:first-child { grid-row: span 2; }
   .workspace-device-chart-grid { grid-template-columns: minmax(0, 1fr); }
+  .workspace-cpu-facts__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-metric-option-grid { grid-template-columns: 1fr; }
   .workspace-probe-row { grid-template-columns: minmax(0, 1fr) 150px 38px; }

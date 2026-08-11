@@ -156,6 +156,7 @@ export function payloadToTimeSeries(
         model: cpu.model,
         coreCount: enabled.has("cpuTopology") && instanceEnabled.has("cpuTopology") ? cpu.coreCount : undefined,
         logicalCount: enabled.has("cpuTopology") && instanceEnabled.has("cpuTopology") ? cpu.logicalCount : undefined,
+        l3CacheBytes: enabled.has("cpuTopology") && instanceEnabled.has("cpuTopology") ? cpu.l3CacheBytes ?? undefined : undefined,
         usagePercent: enabled.has("cpuUsage") && instanceEnabled.has("cpuUsage") ? cpu.usagePercent ?? payload.cpuUsagePercent : 0,
         frequencyMHz: enabled.has("cpuFrequency") && instanceEnabled.has("cpuFrequency") ? cpu.frequencyMHz ?? resolvedCpuFrequencyMHz ?? 0 : 0,
         temperatureC: enabled.has("cpuTemperature") && instanceEnabled.has("cpuTemperature") ? cpu.temperatureC ?? payload.cpuTemperatureC ?? 0 : 0
@@ -330,6 +331,11 @@ export function timeSeriesToMetricSeries(
     gpuDecodePercent: mapPoint("gpuDecodePercent"),
     gpuFrequencyMHz: mapPoint("gpuFrequencyMHz"),
     gpuMemoryUsagePercent: mapPoint("gpuMemoryUsagePercent"),
+    gpuMemoryUsedBytes: detailSeries(points, (point) => {
+      if (!enabled.has("gpuMemory")) return 0;
+      const gpus = point.gpus?.length ? point.gpus : point.recordedDetails?.gpus ?? [];
+      return gpus.reduce((total, gpu) => total + Number(gpu.memoryUsedBytes ?? 0), 0);
+    }),
     gpuTemperatureC: mapPoint("gpuTemperatureC"),
     memoryUsagePercent: mapPoint("memoryUsagePercent"),
     swapUsagePercent: mapPoint("swapUsagePercent"),
@@ -399,6 +405,7 @@ function cpuInstancesAtPoint(point: TimeSeriesRecord, config: DeviceMetricConfig
     model: cpu.model,
     coreCount: cpu.coreCount,
     logicalCount: cpu.logicalCount,
+    l3CacheBytes: cpu.l3CacheBytes ?? undefined,
     usagePercent: cpu.usagePercent ?? point.cpuUsagePercent,
     frequencyMHz: cpu.frequencyMHz ?? point.cpuFrequencyMHz,
     temperatureC: cpu.temperatureC ?? point.cpuTemperatureC
@@ -492,6 +499,7 @@ function buildCpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricCo
           model: cpu.model,
           coreCount: cpu.coreCount,
           logicalCount: cpu.logicalCount,
+          l3CacheBytes: cpu.l3CacheBytes ?? undefined,
           usagePercent: [],
           frequencyMHz: [],
           temperatureC: []

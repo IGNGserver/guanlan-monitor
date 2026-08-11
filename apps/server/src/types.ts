@@ -71,6 +71,7 @@ export interface InstanceMetricRecord {
   ipv6?: string[];
   coreCount?: number;
   logicalCount?: number;
+  l3CacheBytes?: number;
   mountPoint?: string;
   filesystem?: string;
   model?: string;

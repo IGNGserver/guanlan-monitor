@@ -153,6 +153,7 @@ type systemStats struct {
 	ProcessCount int    `json:"processCount"`
 	ThreadCount  int    `json:"threadCount"`
 	HandleCount  uint64 `json:"handleCount"`
+	UptimeSeconds uint64 `json:"uptimeSeconds,omitempty"`
 }
 
 type storageUsage struct {
@@ -193,6 +194,7 @@ type cpuPackageStats struct {
 	Model        string   `json:"model,omitempty"`
 	CoreCount    int      `json:"coreCount,omitempty"`
 	LogicalCount int      `json:"logicalCount,omitempty"`
+	L3CacheBytes uint64   `json:"l3CacheBytes,omitempty"`
 	FrequencyMHz *float64 `json:"frequencyMHz,omitempty"`
 	UsagePercent *float64 `json:"usagePercent,omitempty"`
 	TemperatureC *float64 `json:"temperatureC,omitempty"`
@@ -1117,18 +1119,20 @@ func sampleMemory() memoryStats {
 }
 
 func collectSystemStats() systemStats {
+	uptimeSeconds, _ := host.Uptime()
 	if runtime.GOOS == "windows" {
 		if result, ok := collectWindowsSystemStats(); ok {
+			result.UptimeSeconds = uptimeSeconds
 			return result
 		}
 	}
 
 	items, err := gprocess.Processes()
 	if err != nil {
-		return systemStats{}
+		return systemStats{UptimeSeconds: uptimeSeconds}
 	}
 
-	result := systemStats{ProcessCount: len(items)}
+	result := systemStats{ProcessCount: len(items), UptimeSeconds: uptimeSeconds}
 	for _, item := range items {
 		if item == nil {
 			continue
@@ -1276,6 +1280,9 @@ func collectSlowMetrics() slowMetrics {
 			memoryFormFactor = linuxFormFactor
 		}
 	}
+	if runtime.GOOS == "windows" && (len(hardware.gpus) == 0 || windowsGPUNeedsMemoryFallback(hardware.gpus)) {
+		hardware.gpus = mergeWindowsGPUFallback(hardware.gpus, collectWindowsGPUPerformance())
+	}
 	if runtime.GOOS == "windows" {
 		windowsDiskSensors := collectWindowsDiskSensorMetadata(windowsMetadata.DiskMetadata)
 		for index := range result.disks {
@@ -1328,6 +1335,64 @@ func collectSlowMetrics() slowMetrics {
 	result.diskSensorMetadata = hardware.diskSensorMetadata
 	result.fans = hardware.fans
 	result.sensorBackends = sensorBackends
+	return result
+}
+
+func windowsGPUNeedsMemoryFallback(gpus []gpuDeviceStats) bool {
+	for _, gpu := range gpus {
+		if gpu.MemoryTotalBytes == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func mergeWindowsGPUFallback(primary, fallback []gpuDeviceStats) []gpuDeviceStats {
+	if len(primary) == 0 {
+		return fallback
+	}
+	if len(fallback) == 0 {
+		return primary
+	}
+	result := append([]gpuDeviceStats{}, primary...)
+	matched := make([]bool, len(fallback))
+	for index := range result {
+		matchIndex := -1
+		for fallbackIndex, candidate := range fallback {
+			if matched[fallbackIndex] {
+				continue
+			}
+			if strings.EqualFold(result[index].ID, candidate.ID) || strings.EqualFold(strings.TrimSpace(result[index].Name), strings.TrimSpace(candidate.Name)) {
+				matchIndex = fallbackIndex
+				break
+			}
+		}
+		if matchIndex < 0 && index < len(fallback) && !matched[index] {
+			matchIndex = index
+		}
+		if matchIndex < 0 {
+			continue
+		}
+		matched[matchIndex] = true
+		candidate := fallback[matchIndex]
+		if result[index].MemoryUsedBytes == 0 {
+			result[index].MemoryUsedBytes = candidate.MemoryUsedBytes
+		}
+		if result[index].MemoryTotalBytes == 0 {
+			result[index].MemoryTotalBytes = candidate.MemoryTotalBytes
+		}
+		if result[index].UtilizationPercent == 0 {
+			result[index].UtilizationPercent = candidate.UtilizationPercent
+		}
+		if result[index].DriverVersion == "" {
+			result[index].DriverVersion = candidate.DriverVersion
+		}
+	}
+	for index, candidate := range fallback {
+		if !matched[index] {
+			result = append(result, candidate)
+		}
+	}
 	return result
 }
 
@@ -1485,6 +1550,7 @@ func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 		model        string
 		coreCount    int
 		logicalCount int
+		l3CacheBytes uint64
 		frequencies  []float64
 	}
 
@@ -1516,6 +1582,12 @@ func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 		if entry.Mhz > 0 {
 			current.frequencies = append(current.frequencies, entry.Mhz)
 			allFrequencies = append(allFrequencies, entry.Mhz)
+		}
+		if entry.CacheSize > 0 {
+			cacheBytes := uint64(entry.CacheSize) * 1024
+			if cacheBytes > current.l3CacheBytes {
+				current.l3CacheBytes = cacheBytes
+			}
 		}
 		if strings.TrimSpace(entry.PhysicalID) == "" && len(info) == 1 {
 			current.logicalCount = logicalCount
@@ -1570,8 +1642,19 @@ func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 			Model:        entry.model,
 			CoreCount:    entry.coreCount,
 			LogicalCount: logical,
+			L3CacheBytes: entry.l3CacheBytes,
 			FrequencyMHz: freq,
 		})
+	}
+
+	if runtime.GOOS == "windows" {
+		if _, fallbackPackages, fallbackErr := collectWindowsCPUPackagesFallback(); fallbackErr == nil {
+			for index := range result {
+				if result[index].L3CacheBytes == 0 && index < len(fallbackPackages) {
+					result[index].L3CacheBytes = fallbackPackages[index].L3CacheBytes
+				}
+			}
+		}
 	}
 
 	sort.Slice(result, func(i, j int) bool {
@@ -1589,6 +1672,7 @@ type windowsCPUPackageRecord struct {
 	LogicalCount    int     `json:"logicalCount"`
 	FrequencyMHz    float64 `json:"frequencyMHz"`
 	MaxFrequencyMHz float64 `json:"maxFrequencyMHz"`
+	L3CacheKB       uint64  `json:"l3CacheKB"`
 }
 
 func collectWindowsCPUPackagesFallback() (*float64, []cpuPackageStats, error) {
@@ -1598,7 +1682,7 @@ func collectWindowsCPUPackagesFallback() (*float64, []cpuPackageStats, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), cpuPackagesTimeout)
 	defer cancel()
-	commandText := `$ErrorActionPreference='Stop'; $rows=@(Get-CimInstance Win32_Processor | ForEach-Object { [pscustomobject]@{ id=[string]$_.DeviceID; name=[string]$_.Name; model=[string]$_.Name; coreCount=[int]$_.NumberOfCores; logicalCount=[int]$_.NumberOfLogicalProcessors; frequencyMHz=[double]$_.CurrentClockSpeed; maxFrequencyMHz=[double]$_.MaxClockSpeed } }); @($rows) | ConvertTo-Json -Depth 4 -Compress`
+	commandText := `$ErrorActionPreference='Stop'; $rows=@(Get-CimInstance Win32_Processor | ForEach-Object { [pscustomobject]@{ id=[string]$_.DeviceID; name=[string]$_.Name; model=[string]$_.Name; coreCount=[int]$_.NumberOfCores; logicalCount=[int]$_.NumberOfLogicalProcessors; frequencyMHz=[double]$_.CurrentClockSpeed; maxFrequencyMHz=[double]$_.MaxClockSpeed; l3CacheKB=[UInt64]$_.L3CacheSize } }); @($rows) | ConvertTo-Json -Depth 4 -Compress`
 	output, err := runWindowsPowerShell(ctx, commandText)
 	if err != nil {
 		return nil, nil, err
@@ -1638,6 +1722,7 @@ func collectWindowsCPUPackagesFallback() (*float64, []cpuPackageStats, error) {
 			Model:        model,
 			CoreCount:    record.CoreCount,
 			LogicalCount: record.LogicalCount,
+			L3CacheBytes: record.L3CacheKB * 1024,
 			FrequencyMHz: frequencyPointer,
 		})
 	}
@@ -1692,11 +1777,9 @@ func collectHardwareSensors() hardwareSensorMetrics {
 		}
 	}
 
-	fallbackTemperature := collectWindowsThermalTemperature()
 	dllPath := resolveHardwareMonitorPath()
 	if dllPath == "" {
 		return hardwareSensorMetrics{
-			cpuTemperatureC:    fallbackTemperature,
 			gpus:               []gpuDeviceStats{},
 			fans:               []fanSensorStats{},
 			diskSensorMetadata: map[string]diskSensorMetadata{},
@@ -1709,13 +1792,29 @@ func collectHardwareSensors() hardwareSensorMetrics {
 		}
 	}
 
+	probeDetail := ""
+	if probePath := resolveHardwareMonitorProbePath(); probePath != "" {
+		if snapshots, probeErr := collectWindowsHardwareSnapshotsWithDotnetProbe(probePath, dllPath); probeErr == nil {
+			snapshots = alignWindowsHardwareGPUIdentifiers(snapshots)
+			metrics := mapHardwareSensors(snapshots)
+			metrics.sensorBackends = []sensorBackendStatus{{
+				ID:     "librehardwaremonitor",
+				Label:  "LibreHardwareMonitor",
+				OK:     true,
+				Detail: hardwareSensorDetail(metrics, ".NET 传感器探针"),
+			}}
+			return metrics
+		} else {
+			probeDetail = "；.NET 传感器探针读取失败：" + probeErr.Error()
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
 	commandText := `$ErrorActionPreference='Stop'; $dllDir=Split-Path -Parent $env:DSC_LHM_DLL; [System.IO.Directory]::SetCurrentDirectory($dllDir); Set-Location -LiteralPath $dllDir; Get-ChildItem -LiteralPath $dllDir -Filter '*.dll' -File | ForEach-Object { try { [System.Reflection.Assembly]::LoadFrom($_.FullName) | Out-Null } catch {} }; Add-Type -Path $env:DSC_LHM_DLL; $gpuIds=@{}; Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { if($_.Name -and $_.PNPDeviceID){ $gpuIds[[string]$_.Name]=[string]$_.PNPDeviceID } }; $computer=New-Object LibreHardwareMonitor.Hardware.Computer; $computer.IsCpuEnabled=$true; $computer.IsGpuEnabled=$true; $computer.IsMotherboardEnabled=$true; $computer.IsControllerEnabled=$true; $computer.IsStorageEnabled=$true; $computer.Open(); function Read-Hardware($hardware) { $hardware.Update(); $instanceId=''; $temperatureC=$null; $healthPercent=$null; $healthStatus=''; $healthReason=''; $smartAttributes=@(); if($gpuIds.ContainsKey([string]$hardware.Name)){ $instanceId=$gpuIds[[string]$hardware.Name] }; if([string]$hardware.HardwareType -eq 'Storage') { $storage=$hardware.Storage; $smart=$null; if($storage){ $smart=$storage.Smart }; if($smart){ if($smart.Temperature -ne $null){ $temperatureC=[double]$smart.Temperature }; if($smart.Life -ne $null){ $healthPercent=[double]$smart.Life }; $healthStatus=[string]$smart.DiskStatus; if($healthStatus -and $healthStatus -ne 'Unknown'){ $healthReason='SMART status from LibreHardwareMonitor' } }; $smartAttributes=@($hardware.Attributes | ForEach-Object { [pscustomobject]@{ id=[int]$_.Id; name=[string]$_.Name; value=[double]$_.Value; threshold=[double]$_.Threshold } }) }; $result=@([pscustomobject]@{ hardwareType=[string]$hardware.HardwareType; name=[string]$hardware.Name; instanceId=$instanceId; temperatureC=$temperatureC; healthPercent=$healthPercent; healthStatus=$healthStatus; healthReason=$healthReason; smartAttributes=$smartAttributes; sensors=@($hardware.Sensors | ForEach-Object { [pscustomobject]@{ sensorType=[string]$_.SensorType; name=[string]$_.Name; value=$_.Value } }) }); foreach($sub in $hardware.SubHardware) { $result += Read-Hardware $sub }; return $result }; try { @($computer.Hardware | ForEach-Object { Read-Hardware $_ }) | ConvertTo-Json -Depth 7 -Compress } finally { $computer.Close() }`
 	output, err := runWindowsPowerShell(ctx, commandText, "DSC_LHM_DLL="+dllPath)
 	if err != nil {
 		return hardwareSensorMetrics{
-			cpuTemperatureC:    fallbackTemperature,
 			gpus:               []gpuDeviceStats{},
 			fans:               []fanSensorStats{},
 			diskSensorMetadata: map[string]diskSensorMetadata{},
@@ -1723,7 +1822,7 @@ func collectHardwareSensors() hardwareSensorMetrics {
 				ID:     "librehardwaremonitor",
 				Label:  "LibreHardwareMonitor",
 				OK:     false,
-				Detail: "读取失败：" + err.Error(),
+				Detail: "读取失败：" + err.Error() + probeDetail,
 			}},
 		}
 	}
@@ -1731,7 +1830,6 @@ func collectHardwareSensors() hardwareSensorMetrics {
 	snapshots, err := decodeHardwareSnapshots(output)
 	if err != nil {
 		return hardwareSensorMetrics{
-			cpuTemperatureC:    fallbackTemperature,
 			gpus:               []gpuDeviceStats{},
 			fans:               []fanSensorStats{},
 			diskSensorMetadata: map[string]diskSensorMetadata{},
@@ -1739,21 +1837,13 @@ func collectHardwareSensors() hardwareSensorMetrics {
 				ID:     "librehardwaremonitor",
 				Label:  "LibreHardwareMonitor",
 				OK:     false,
-				Detail: "传感器输出解析失败：" + err.Error(),
+				Detail: "传感器输出解析失败：" + err.Error() + probeDetail,
 			}},
 		}
 	}
+	snapshots = alignWindowsHardwareGPUIdentifiers(snapshots)
 	metrics := mapHardwareSensors(snapshots)
-	if metrics.cpuTemperatureC == nil {
-		metrics.cpuTemperatureC = fallbackTemperature
-	}
-	detail := fmt.Sprintf("已加载并读取硬件传感器；风扇 %d 个，磁盘 SMART %d 个", len(metrics.fans), len(metrics.diskSensorMetadata))
-	if metrics.cpuTemperatureC != nil {
-		detail += "；CPU 温度包含 Windows ACPI 热区回退值"
-	}
-	if len(metrics.fans) == 0 {
-		detail += "；主板/EC 未暴露可用风扇转速传感器"
-	}
+	detail := hardwareSensorDetail(metrics, "PowerShell 传感器探针") + probeDetail
 	metrics.sensorBackends = []sensorBackendStatus{{
 		ID:     "librehardwaremonitor",
 		Label:  "LibreHardwareMonitor",
@@ -1874,6 +1964,114 @@ func readLinuxSensorValue(path string, divisor float64) (float64, bool) {
 	return value / divisor, true
 }
 
+func hardwareSensorDetail(metrics hardwareSensorMetrics, source string) string {
+	detail := fmt.Sprintf("已通过 %s 读取硬件传感器；风扇 %d 个，磁盘 SMART %d 个", source, len(metrics.fans), len(metrics.diskSensorMetadata))
+	if metrics.cpuTemperatureC == nil {
+		detail += "；未发现 CPU Package/Core 温度传感器，不使用 ACPI 热区值"
+	}
+	if len(metrics.fans) == 0 {
+		detail += "；主板/EC 未暴露可用风扇转速传感器"
+	}
+	return detail
+}
+
+func resolveHardwareMonitorProbePath() string {
+	candidates := []string{}
+	if executable, err := os.Executable(); err == nil {
+		base := filepath.Dir(executable)
+		candidates = append(candidates,
+			filepath.Join(base, "hardware-sensor-probe", "HardwareSensorProbe.dll"),
+			filepath.Join(base, "windows-hardware", "hardware-sensor-probe", "HardwareSensorProbe.dll"),
+		)
+	}
+	if workingDirectory, err := os.Getwd(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(workingDirectory, "hardware-sensor-probe", "HardwareSensorProbe.dll"),
+			filepath.Join(workingDirectory, "windows-hardware", "hardware-sensor-probe", "HardwareSensorProbe.dll"),
+		)
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func resolveDotnetPath() string {
+	for _, command := range []string{"dotnet.exe", "dotnet"} {
+		if path, err := exec.LookPath(command); err == nil {
+			return path
+		}
+	}
+	candidates := []string{`C:\Program Files\dotnet\dotnet.exe`, `C:\Program Files (x86)\dotnet\dotnet.exe`}
+	for _, programFiles := range []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)")} {
+		if strings.TrimSpace(programFiles) != "" {
+			candidates = append(candidates, filepath.Join(programFiles, "dotnet", "dotnet.exe"))
+		}
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func collectWindowsHardwareSnapshotsWithDotnetProbe(probePath, dllPath string) ([]hardwareSensorSnapshot, error) {
+	if runtime.GOOS != "windows" {
+		return nil, errors.New(".NET hardware sensor probe is only available on Windows")
+	}
+	dotnetPath := resolveDotnetPath()
+	if dotnetPath == "" {
+		return nil, errors.New("未找到可运行 .NET 传感器探针的 dotnet.exe")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
+	defer cancel()
+	command := exec.CommandContext(ctx, dotnetPath, probePath, "--dll", dllPath)
+	command.Dir = filepath.Dir(probePath)
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
+	if err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail != "" {
+			return nil, fmt.Errorf("%w: %s", err, detail)
+		}
+		return nil, err
+	}
+	return decodeHardwareSnapshots(output)
+}
+
+func alignWindowsHardwareGPUIdentifiers(snapshots []hardwareSensorSnapshot) []hardwareSensorSnapshot {
+	if runtime.GOOS != "windows" || len(snapshots) == 0 {
+		return snapshots
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
+	defer cancel()
+	commandText := `$ErrorActionPreference='Stop'; $rows=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ name=[string]$_.Name; pnpDeviceId=[string]$_.PNPDeviceID } }); @($rows) | ConvertTo-Json -Depth 3 -Compress`
+	output, err := runWindowsPowerShell(ctx, commandText)
+	if err != nil {
+		return snapshots
+	}
+	rows, err := decodeJSONList[windowsGPUAdapterRecord](bytes.TrimSpace(output))
+	if err != nil {
+		return snapshots
+	}
+	for index := range snapshots {
+		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(snapshots[index].HardwareType)), "gpu") {
+			continue
+		}
+		for _, row := range rows {
+			if strings.TrimSpace(row.PNPDeviceID) != "" && strings.EqualFold(strings.TrimSpace(row.Name), strings.TrimSpace(snapshots[index].Name)) {
+				snapshots[index].InstanceID = row.PNPDeviceID
+				break
+			}
+		}
+	}
+	return snapshots
+}
+
 func decodeHardwareSnapshots(raw []byte) ([]hardwareSensorSnapshot, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
@@ -1892,6 +2090,12 @@ func decodeHardwareSnapshots(raw []byte) ([]hardwareSensorSnapshot, error) {
 
 func resolveHardwareMonitorPath() string {
 	candidates := []string{}
+	for _, programFiles := range []string{os.Getenv("ProgramFiles(x86)"), os.Getenv("ProgramFiles")} {
+		if strings.TrimSpace(programFiles) == "" {
+			continue
+		}
+		candidates = append(candidates, filepath.Join(programFiles, "FanControl", "LibreHardwareMonitorLib.dll"))
+	}
 	if executable, err := os.Executable(); err == nil {
 		candidates = append(candidates, filepath.Join(filepath.Dir(executable), "windows-hardware", "librehardwaremonitor", "LibreHardwareMonitorLib.dll"))
 	}
@@ -1914,6 +2118,7 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 	}
 	cpuClocks := []float64{}
 	cpuTemperatures := []float64{}
+	cpuPackageTemperatures := []float64{}
 
 	for _, snapshot := range snapshots {
 		hardwareType := strings.ToLower(snapshot.HardwareType)
@@ -1965,8 +2170,13 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 				if sensorType == "clock" && !strings.Contains(sensorName, "bus") && !strings.Contains(sensorName, "base") {
 					cpuClocks = append(cpuClocks, *sensor.Value)
 				}
-				if sensorType == "temperature" && (strings.Contains(sensorName, "package") || strings.Contains(sensorName, "core")) {
-					cpuTemperatures = append(cpuTemperatures, *sensor.Value)
+				if sensorType == "temperature" {
+					switch {
+					case strings.Contains(sensorName, "package") || strings.Contains(sensorName, "die"):
+						cpuPackageTemperatures = append(cpuPackageTemperatures, *sensor.Value)
+					case strings.Contains(sensorName, "core") || strings.Contains(sensorName, "cpu"):
+						cpuTemperatures = append(cpuTemperatures, *sensor.Value)
+					}
 				}
 			}
 			continue
@@ -2070,7 +2280,11 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 	}
 
 	metrics.cpuFrequencyMHz = averagePointer(cpuClocks)
-	metrics.cpuTemperatureC = averagePointer(cpuTemperatures)
+	if len(cpuPackageTemperatures) > 0 {
+		metrics.cpuTemperatureC = averagePointer(cpuPackageTemperatures)
+	} else {
+		metrics.cpuTemperatureC = averagePointer(cpuTemperatures)
+	}
 	sort.Slice(metrics.fans, func(i, j int) bool { return metrics.fans[i].ID < metrics.fans[j].ID })
 	return metrics
 }
@@ -2114,29 +2328,6 @@ func collectWindowsCPUFrequency(nominalMHz *float64) *float64 {
 		return nil
 	}
 	return &frequency
-}
-
-// Windows does not expose package/core temperatures through gopsutil. The
-// standard ACPI thermal-zone provider is a safe fallback when the optional
-// LibreHardwareMonitor library is not bundled or cannot read this machine.
-// Its value represents a platform thermal zone, not a per-core sensor.
-func collectWindowsThermalTemperature() *float64 {
-	if runtime.GOOS != "windows" {
-		return nil
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
-	defer cancel()
-	commandText := `$ErrorActionPreference='SilentlyContinue'; $values=@(Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction SilentlyContinue | ForEach-Object { $raw=[double]$_.CurrentTemperature; if($raw -gt 0){ $c=($raw / 10) - 273.15; if($c -ge -40 -and $c -le 150){ [double]$c } } }); if($values.Count -eq 0){exit 1}; [Math]::Round((($values | Measure-Object -Average).Average),2)`
-	output, err := runWindowsPowerShell(ctx, commandText)
-	if err != nil {
-		return nil
-	}
-	temperature, err := strconv.ParseFloat(strings.TrimSpace(string(output)), 64)
-	if err != nil || math.IsNaN(temperature) || math.IsInf(temperature, 0) || temperature < -40 || temperature > 150 {
-		return nil
-	}
-	return &temperature
 }
 
 type windowsHardwareMetadataPayload struct {
@@ -3753,6 +3944,7 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 			if !metricEnabled(enabledMetricSet, instanceEnabled, hasOverride, "cpuTopology") {
 				payload.CPUPackages[index].CoreCount = 0
 				payload.CPUPackages[index].LogicalCount = 0
+				payload.CPUPackages[index].L3CacheBytes = 0
 			}
 			if metricEnabled(enabledMetricSet, instanceEnabled, hasOverride, "cpuUsage") {
 				cpuUsageEnabled = true

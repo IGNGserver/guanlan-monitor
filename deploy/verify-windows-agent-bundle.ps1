@@ -58,6 +58,8 @@ $backendExe = Join-Path $backendDir "windows-agent-backend.exe"
 $collectorExe = Join-Path $backendDir "device-state-console-agent.exe"
 $hardwareDir = Join-Path $backendDir "windows-hardware"
 $lhmDll = Join-Path $hardwareDir "librehardwaremonitor\LibreHardwareMonitorLib.dll"
+$hardwareProbeDir = Join-Path $resolvedBundleRoot "backend\hardware-sensor-probe"
+$hardwareProbeDll = Join-Path $hardwareProbeDir "HardwareSensorProbe.dll"
 $pawnInstaller = Join-Path $hardwareDir "pawnio\PawnIO_setup.exe"
 $dotnetRuntimeInstaller = Join-Path $resolvedBundleRoot "runtime\windowsdesktop-runtime-win-x64.exe"
 $launcherScript = Join-Path $resolvedBundleRoot "start-agent.ps1"
@@ -70,6 +72,8 @@ $requiredPaths = @(
   $collectorExe,
   $hardwareDir,
   $lhmDll,
+  $hardwareProbeDir,
+  $hardwareProbeDll,
   $pawnInstaller,
   $dotnetRuntimeInstaller,
   $launcherScript
@@ -110,7 +114,7 @@ foreach ($path in $requiredPaths) {
   }
 }
 
-foreach ($path in @($frontendExe, $backendExe, $collectorExe, $lhmDll, $pawnInstaller)) {
+foreach ($path in @($frontendExe, $backendExe, $collectorExe, $lhmDll, $hardwareProbeDll, $pawnInstaller)) {
   if (Test-Path $path) {
     $hash = Get-FileHash -LiteralPath $path -Algorithm SHA256
     $report.files[$path].sha256 = $hash.Hash

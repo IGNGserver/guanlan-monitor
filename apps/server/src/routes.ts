@@ -601,6 +601,7 @@ function alignMetricSeriesToWindow(series: MetricSeries, window: MetricWindow) {
     gpuDecodePercent: alignSamplePoints(series.gpuDecodePercent, bucketMs),
     gpuFrequencyMHz: alignSamplePoints(series.gpuFrequencyMHz, bucketMs),
     gpuMemoryUsagePercent: alignSamplePoints(series.gpuMemoryUsagePercent, bucketMs),
+    gpuMemoryUsedBytes: alignSamplePoints(series.gpuMemoryUsedBytes, bucketMs),
     gpuTemperatureC: alignSamplePoints(series.gpuTemperatureC, bucketMs),
     memoryUsagePercent: alignSamplePoints(series.memoryUsagePercent, bucketMs),
     swapUsagePercent: alignSamplePoints(series.swapUsagePercent, bucketMs),

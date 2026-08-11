@@ -114,18 +114,31 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.x
+          dotnet-version: |
+            8.x
+            10.x
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
 
+      - name: Build Windows hardware sensor probe
+        shell: powershell
+        run: |
+          $probeDir = Join-Path $env:RUNNER_TEMP "device-state-console-hardware-probe"
+          dotnet publish tools/HardwareSensorProbe/HardwareSensorProbe.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained false `
+            -o $probeDir
+
       - name: Build Windows GUI portable bundle
         shell: powershell
         run: |
           ./deploy/build-windows-agent-portable.ps1 `
             -OutputDir "$env:RUNNER_TEMP\device-state-console-windows" `
+            -HardwareProbeDir "$env:RUNNER_TEMP\device-state-console-hardware-probe" `
             -Zip
 
       - name: Smoke test Windows GUI bundle backend
@@ -169,6 +182,12 @@ jobs:
         with:
           go-version: "1.24.x"
 
+      - name: Setup .NET for Windows desktop bundle
+        if: matrix.target == 'windows'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.x
+
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
@@ -190,6 +209,20 @@ jobs:
           New-Item -ItemType Directory -Force -Path release/desktop-agent | Out-Null
           go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ..\release\desktop-agent\device-state-console-agent.exe .
           go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ..\release\desktop-agent\device-state-console-agent-backend.exe ./cmd/windows-agent-backend
+
+      - name: Add Windows hardware sensor probe and monitor assets
+        if: matrix.target == 'windows'
+        shell: powershell
+        run: |
+          $probeDir = Join-Path $env:RUNNER_TEMP "device-state-console-hardware-probe"
+          dotnet publish tools/HardwareSensorProbe/HardwareSensorProbe.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained false `
+            -o $probeDir
+          New-Item -ItemType Directory -Force -Path "release/desktop-agent/hardware-sensor-probe" | Out-Null
+          Copy-Item -Path (Join-Path $probeDir "*") -Destination "release/desktop-agent/hardware-sensor-probe" -Recurse -Force
+          Copy-Item -Path "agents/windows-hardware" -Destination "release/desktop-agent/windows-hardware" -Recurse -Force
 
       - name: Typecheck and bundle renderer/main process
         run: |

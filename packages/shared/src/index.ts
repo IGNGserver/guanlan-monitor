@@ -164,6 +164,7 @@ export interface SystemStats {
   processCount: number;
   threadCount: number;
   handleCount: number;
+  uptimeSeconds?: number | null;
 }
 
 export interface CpuPackageStats {
@@ -172,6 +173,7 @@ export interface CpuPackageStats {
   model?: string;
   coreCount?: number;
   logicalCount?: number;
+  l3CacheBytes?: number | null;
   frequencyMHz?: number | null;
   usagePercent?: number | null;
   temperatureC?: number | null;
@@ -551,6 +553,7 @@ export interface CpuMetricSeries {
   model?: string;
   coreCount?: number;
   logicalCount?: number;
+  l3CacheBytes?: number | null;
   usagePercent: SamplePoint[];
   frequencyMHz: SamplePoint[];
   temperatureC: SamplePoint[];
@@ -578,6 +581,7 @@ export interface MetricSeries {
   gpuDecodePercent: SamplePoint[];
   gpuFrequencyMHz: SamplePoint[];
   gpuMemoryUsagePercent: SamplePoint[];
+  gpuMemoryUsedBytes: SamplePoint[];
   gpuTemperatureC: SamplePoint[];
   memoryUsagePercent: SamplePoint[];
   swapUsagePercent: SamplePoint[];

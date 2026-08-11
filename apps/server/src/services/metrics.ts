@@ -408,6 +408,7 @@ function averageInstanceMetrics(
             ipv6: item.ipv6,
             coreCount: item.coreCount,
             logicalCount: item.logicalCount,
+            l3CacheBytes: item.l3CacheBytes,
             mountPoint: item.mountPoint,
             filesystem: item.filesystem,
             model: item.model,

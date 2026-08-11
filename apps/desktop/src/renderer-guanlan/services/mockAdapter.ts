@@ -415,11 +415,11 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
     };
 
     const latest: MetricsLatest = {
-      system: { processCount: 248, threadCount: 3120, handleCount: 94200 },
+      system: { processCount: 248, threadCount: 3120, handleCount: 94200, uptimeSeconds: 4 * 24 * 3600 + 7 * 3600 + 18 * 60 },
       cpuUsagePercent: 24.5,
       cpuFrequencyMHz: 4200,
       cpuTemperatureC: 48,
-      cpuPackages: [{ id: "cpu-0", name: "Intel i7-13700K", coreCount: 16, logicalCount: 24, frequencyMHz: 4200, usagePercent: 24.5, temperatureC: 48 }],
+      cpuPackages: [{ id: "cpu-0", name: "Intel i7-13700K", coreCount: 16, logicalCount: 24, l3CacheBytes: 30 * 1024 * 1024, frequencyMHz: 4200, usagePercent: 24.5, temperatureC: 48 }],
       memoryUsedBytes: 15485760000,
       memoryTotalBytes: 34359738368,
       memoryAvailableBytes: 18873978368,
@@ -472,6 +472,7 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
       gpuDecodePercent: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 0.18) })),
       gpuFrequencyMHz: samplePoints.map((p) => ({ ...p, value: p.value * 55 + 1350 })),
       gpuMemoryUsagePercent: samplePoints.map((p) => ({ ...p, value: Math.round(20 + p.value * 0.4) })),
+      gpuMemoryUsedBytes: samplePoints.map((p) => ({ ...p, value: 5798205849 + p.value * 1000000 })),
       gpuTemperatureC: samplePoints.map((p) => ({ ...p, value: Math.round(38 + p.value * 0.22) })),
       memoryUsagePercent: samplePoints.map((p) => ({ ...p, value: Math.round(40 + (p.value % 5)) })),
       swapUsagePercent: samplePoints.map((p) => ({ ...p, value: Math.round(8 + (p.value % 3)) })),
@@ -491,7 +492,7 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
       networkTxBytesPerSec: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 25000) })),
       trafficRxBytes: samplePoints.map((p) => ({ ...p, value: 2800000000 + p.value * 5000000 })),
       trafficTxBytes: samplePoints.map((p) => ({ ...p, value: 1100000000 + p.value * 3000000 })),
-      cpus: [{ id: "cpu-0", name: "13th Gen Intel(R) Core(TM) i7-13700K", model: "Intel i7-13700K", coreCount: 16, logicalCount: 24, usagePercent: samplePoints, frequencyMHz: samplePoints.map((p) => ({ ...p, value: p.value * 40 + 3200 })), temperatureC: samplePoints.map((p) => ({ ...p, value: Math.round(40 + p.value * 0.3) })) }],
+      cpus: [{ id: "cpu-0", name: "13th Gen Intel(R) Core(TM) i7-13700K", model: "Intel i7-13700K", coreCount: 16, logicalCount: 24, l3CacheBytes: 30 * 1024 * 1024, usagePercent: samplePoints, frequencyMHz: samplePoints.map((p) => ({ ...p, value: p.value * 40 + 3200 })), temperatureC: samplePoints.map((p) => ({ ...p, value: Math.round(40 + p.value * 0.3) })) }],
       disks: [{ id: "disk-0", name: "Samsung SSD 980 PRO 1TB", mountPoint: "C:", filesystem: "NTFS", totalBytes: samplePoints.map((p) => ({ ...p, value: 1073741824000 })), usagePercent: samplePoints.map((p) => ({ ...p, value: 52.8 })), activePercent: samplePoints.map((p) => ({ ...p, value: Math.round(4 + p.value * 0.15) })), usedBytes: samplePoints.map((p) => ({ ...p, value: 566935683072 + p.value * 1000000 })), readBytesPerSec: samplePoints.map((p) => ({ ...p, value: p.value * 90000 })), writeBytesPerSec: samplePoints.map((p) => ({ ...p, value: p.value * 42000 })), temperatureC: samplePoints.map((p) => ({ ...p, value: 41 })) }],
       networks: [{ id: "net-0", name: "Intel Ethernet Controller I225-V", macAddress: "00:1A:2B:3C:4D:5E", ipv4: ["192.168.1.100"], rxBytesPerSec: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 50000) })), txBytesPerSec: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 25000) })), trafficRxBytes: samplePoints.map((p) => ({ ...p, value: 2800000000 + p.value * 5000000 })), trafficTxBytes: samplePoints.map((p) => ({ ...p, value: 1100000000 + p.value * 3000000 })) }],
       gpus: [{ id: "gpu-0", name: "NVIDIA GeForce RTX 4080", usagePercent: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 0.6) })), encodePercent: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 0.25) })), decodePercent: samplePoints.map((p) => ({ ...p, value: Math.round(p.value * 0.18) })), frequencyMHz: samplePoints.map((p) => ({ ...p, value: p.value * 55 + 1350 })), memoryUsagePercent: samplePoints.map((p) => ({ ...p, value: Math.round(20 + p.value * 0.4) })), memoryUsedBytes: samplePoints.map((p) => ({ ...p, value: 5798205849 + p.value * 1000000 })), temperatureC: samplePoints.map((p) => ({ ...p, value: Math.round(38 + p.value * 0.22) })) }],

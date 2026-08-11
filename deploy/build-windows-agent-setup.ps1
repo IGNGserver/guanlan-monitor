@@ -2,6 +2,7 @@ param(
   [string]$PortableBundleDir = "",
   [string]$OutputDir = "",
   [string]$Version = "",
+  [string]$HardwareProbeDir = "",
   [string]$IsccPath = "",
   [switch]$BuildPortableIfMissing
 )
@@ -98,7 +99,13 @@ if (-not (Test-Path $portableBundleRoot)) {
     throw "Portable bundle not found: $portableBundleRoot. Build it first or pass -BuildPortableIfMissing."
   }
 
-  & powershell -ExecutionPolicy Bypass -File $portableScript -OutputDir (Split-Path $portableBundleRoot -Parent)
+  $portableArguments = @{
+    OutputDir = (Split-Path $portableBundleRoot -Parent)
+  }
+  if (-not [string]::IsNullOrWhiteSpace($HardwareProbeDir)) {
+    $portableArguments.HardwareProbeDir = $HardwareProbeDir
+  }
+  & powershell -ExecutionPolicy Bypass -File $portableScript @portableArguments
   if (-not (Test-Path $portableBundleRoot)) {
     throw "Portable bundle still missing after running build-windows-agent-portable.ps1"
   }

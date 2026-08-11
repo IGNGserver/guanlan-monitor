@@ -81,6 +81,11 @@ jobs:
         with:
           go-version: "1.24.x"
 
+      - name: Setup .NET for hardware sensor probe
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.x
+
       - name: Install desktop dependencies
         shell: powershell
         run: pnpm install --no-frozen-lockfile
@@ -93,6 +98,19 @@ jobs:
           go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ..\release\desktop-agent\device-state-console-agent.exe .
           go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ..\release\desktop-agent\device-state-console-agent-backend.exe ./cmd/windows-agent-backend
 
+      - name: Add Windows hardware sensor probe and monitor assets
+        shell: powershell
+        run: |
+          $probeDir = Join-Path $env:RUNNER_TEMP "device-state-console-hardware-probe"
+          dotnet publish tools/HardwareSensorProbe/HardwareSensorProbe.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained false `
+            -o $probeDir
+          New-Item -ItemType Directory -Force -Path "release/desktop-agent/hardware-sensor-probe" | Out-Null
+          Copy-Item -Path (Join-Path $probeDir "*") -Destination "release/desktop-agent/hardware-sensor-probe" -Recurse -Force
+          Copy-Item -Path "agents/windows-hardware" -Destination "release/desktop-agent/windows-hardware" -Recurse -Force
+
       - name: Build Windows Electron setup and portable assets
         shell: powershell
         run: |
@@ -103,6 +121,8 @@ jobs:
           pnpm --filter @dsc/desktop exec electron-builder --win nsis dir --publish never "--config.directories.output=$outputDir"
           $unpacked = Join-Path $outputDir "win-unpacked"
           if (-not (Test-Path $unpacked)) { throw "Electron unpacked directory missing: $unpacked" }
+          if (-not (Test-Path (Join-Path $unpacked "resources/agent/hardware-sensor-probe/HardwareSensorProbe.dll"))) { throw "Packaged hardware sensor probe missing." }
+          if (-not (Test-Path (Join-Path $unpacked "resources/agent/windows-hardware/librehardwaremonitor/LibreHardwareMonitorLib.dll"))) { throw "Packaged hardware monitor library missing." }
           $portable = Join-Path $outputDir "DeviceStateConsole-Windows-GUI-Portable-v$version.zip"
           Compress-Archive -Path (Join-Path $unpacked "*") -DestinationPath $portable -CompressionLevel Optimal -Force
           $update = Join-Path $outputDir "DeviceStateConsole-Windows-GUI-Update-v$version.zip"

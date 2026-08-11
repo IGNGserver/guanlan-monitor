@@ -55,6 +55,7 @@ test("normalizeMetricsResponse extracts stable chart model from MetricsResponse 
       gpuDecodePercent: [],
       gpuFrequencyMHz: [],
       gpuMemoryUsagePercent: [],
+      gpuMemoryUsedBytes: [],
       gpuTemperatureC: [],
       swapUsagePercent: [],
       memoryUsedBytes: [],
