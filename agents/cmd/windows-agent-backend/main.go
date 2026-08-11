@@ -1021,37 +1021,7 @@ func detectTargets(cfg agentLocalConfig) ([]probeTargetState, error) {
 	})
 
 	diskEnabled, diskExplicit := enabledIDs(cfg.EnabledDeviceIDs, "disk")
-	var diskInstances []probeDetectedTarget
-	if partitions, err := disk.Partitions(false); err == nil {
-		diskInstances = make([]probeDetectedTarget, 0, len(partitions))
-		for _, partition := range partitions {
-			mountPoint := strings.TrimSpace(partition.Mountpoint)
-			deviceName := strings.TrimSpace(partition.Device)
-			if deviceName == "" {
-				deviceName = mountPoint
-			}
-			if deviceName == "" || mountPoint == "" {
-				continue
-			}
-			id := fmt.Sprintf("%s:%s", deviceName, mountPoint)
-			name := deviceName
-			subtitle := mountPoint
-			if partition.Fstype != "" {
-				if subtitle != "" {
-					subtitle += " · "
-				}
-				subtitle += partition.Fstype
-			}
-			diskInstances = append(diskInstances, probeDetectedTarget{
-				ID:       id,
-				Name:     name,
-				Subtitle: subtitle,
-				Enabled:  isIDEnabled(diskEnabled, diskExplicit, id),
-			})
-		}
-	} else {
-		diskInstances = []probeDetectedTarget{}
-	}
+	diskInstances := detectDiskInstances(diskEnabled, diskExplicit)
 	targets = append(targets, probeTargetState{
 		Target:    "disk",
 		Label:     "磁盘实例",
@@ -1111,6 +1081,97 @@ func detectTargets(cfg agentLocalConfig) ([]probeTargetState, error) {
 	})
 
 	return targets, nil
+}
+
+type windowsDiskPartitionRow struct {
+	Device     string `json:"device"`
+	MountPoint string `json:"mountPoint"`
+	FileSystem string `json:"filesystem"`
+}
+
+func detectDiskInstances(enabled map[string]struct{}, explicit bool) []probeDetectedTarget {
+	partitions, err := disk.Partitions(false)
+	if err != nil || !hasUsableDiskPartitions(partitions) {
+		if fallback, fallbackErr := disk.Partitions(true); fallbackErr == nil && hasUsableDiskPartitions(fallback) {
+			partitions = fallback
+		}
+	}
+
+	instances := make([]probeDetectedTarget, 0, len(partitions))
+	seen := map[string]struct{}{}
+	appendPartition := func(deviceName, mountPoint, filesystem string) {
+		deviceName = strings.TrimSpace(deviceName)
+		mountPoint = strings.TrimSpace(mountPoint)
+		filesystem = strings.TrimSpace(filesystem)
+		if deviceName == "" {
+			deviceName = mountPoint
+		}
+		if deviceName == "" || mountPoint == "" {
+			return
+		}
+		id := fmt.Sprintf("%s:%s", deviceName, mountPoint)
+		if _, exists := seen[id]; exists {
+			return
+		}
+		seen[id] = struct{}{}
+		subtitle := mountPoint
+		if filesystem != "" {
+			subtitle += " · " + filesystem
+		}
+		instances = append(instances, probeDetectedTarget{
+			ID:       id,
+			Name:     deviceName,
+			Subtitle: subtitle,
+			Enabled:  isIDEnabled(enabled, explicit, id),
+		})
+	}
+	for _, partition := range partitions {
+		appendPartition(partition.Device, partition.Mountpoint, partition.Fstype)
+	}
+
+	if len(instances) == 0 && runtime.GOOS == "windows" {
+		if rows, powershellErr := detectWindowsDiskPartitionRows(); powershellErr == nil {
+			for _, row := range rows {
+				appendPartition(row.Device, row.MountPoint, row.FileSystem)
+			}
+		}
+	}
+	return instances
+}
+
+func hasUsableDiskPartitions(partitions []disk.PartitionStat) bool {
+	for _, partition := range partitions {
+		if strings.TrimSpace(partition.Mountpoint) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func detectWindowsDiskPartitionRows() ([]windowsDiskPartitionRow, error) {
+	if runtime.GOOS != "windows" {
+		return []windowsDiskPartitionRow{}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	commandText := `$ErrorActionPreference='Stop'; $rows=@(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | ForEach-Object { $device=[string]$_.DeviceID; [pscustomobject]@{ device=$device; mountPoint=($device + '\'); filesystem=[string]$_.FileSystem } }); @($rows) | ConvertTo-Json -Depth 3 -Compress`
+	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
+	if err != nil {
+		return nil, err
+	}
+	trimmed := bytes.TrimSpace(output)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return []windowsDiskPartitionRow{}, nil
+	}
+	var rows []windowsDiskPartitionRow
+	if err := json.Unmarshal(trimmed, &rows); err == nil {
+		return rows, nil
+	}
+	var single windowsDiskPartitionRow
+	if err := json.Unmarshal(trimmed, &single); err != nil {
+		return nil, err
+	}
+	return []windowsDiskPartitionRow{single}, nil
 }
 
 func detectCPUPackages(info []cpu.InfoStat, logicalCount int, physicalCount int, enabled map[string]struct{}, explicit bool) []probeDetectedTarget {

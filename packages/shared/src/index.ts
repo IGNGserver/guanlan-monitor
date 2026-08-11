@@ -197,6 +197,7 @@ export interface NetworkTrafficStats {
 export interface NetworkInterfaceStats {
   id: string;
   name: string;
+  model?: string;
   macAddress?: string;
   ipv4?: string[];
   ipv6?: string[];
@@ -553,6 +554,7 @@ export interface CpuMetricSeries {
 export interface NetworkMetricSeries {
   id: string;
   name: string;
+  model?: string;
   macAddress?: string;
   ipv4?: string[];
   ipv6?: string[];

@@ -1443,6 +1443,66 @@ kbd {
   color: var(--workspace-amber);
 }
 
+.telemetry-chart-card__footer {
+  margin-top: -2px;
+  padding-top: 12px;
+  border-top: 1px solid var(--workspace-border);
+}
+
+.workspace-telemetry-models {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workspace-telemetry-models__label {
+  color: var(--workspace-text-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.workspace-telemetry-models__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.workspace-telemetry-model-chip {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 7px;
+  background: var(--workspace-surface-subtle);
+}
+
+.workspace-telemetry-model-chip strong,
+.workspace-telemetry-model-chip small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-telemetry-model-chip strong {
+  color: var(--workspace-text-secondary);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.workspace-telemetry-model-chip small {
+  color: var(--workspace-text-muted);
+  font-size: 9px;
+}
+
+.workspace-telemetry-models__empty {
+  color: var(--workspace-text-muted);
+  font-size: 10px;
+}
+
 .workspace-top-ranking {
   display: flex;
   flex-direction: column;

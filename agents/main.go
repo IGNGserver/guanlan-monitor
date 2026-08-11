@@ -218,6 +218,7 @@ type networkTrafficStats struct {
 type networkInterfaceStats struct {
 	ID                    string   `json:"id"`
 	Name                  string   `json:"name"`
+	Model                 string   `json:"model,omitempty"`
 	MacAddress            string   `json:"macAddress,omitempty"`
 	IPv4                  []string `json:"ipv4,omitempty"`
 	IPv6                  []string `json:"ipv6,omitempty"`
@@ -358,6 +359,7 @@ type netSnapshot struct {
 }
 
 type networkHardwareMetadata struct {
+	Model                 string
 	LinkSpeedMbps         *float64
 	ConnectionType        string
 	SignalStrengthPercent *float64
@@ -1032,6 +1034,9 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 			slow.networkInterfaces[index].TotalTxBytes = rate.TotalTxBytes
 		}
 		if metadata, ok := slow.networkMetadata[slow.networkInterfaces[index].Name]; ok {
+			if slow.networkInterfaces[index].Model == "" {
+				slow.networkInterfaces[index].Model = metadata.Model
+			}
 			slow.networkInterfaces[index].LinkSpeedMbps = metadata.LinkSpeedMbps
 			slow.networkInterfaces[index].ConnectionType = metadata.ConnectionType
 			slow.networkInterfaces[index].SignalStrengthPercent = metadata.SignalStrengthPercent
@@ -2031,6 +2036,7 @@ type windowsHardwareMetadataPayload struct {
 	} `json:"memory"`
 	Adapters []struct {
 		Name           string `json:"name"`
+		Model          string `json:"model"`
 		LinkSpeed      string `json:"linkSpeed"`
 		ConnectionType string `json:"connectionType"`
 	} `json:"adapters"`
@@ -2099,9 +2105,15 @@ func collectWindowsHardwareMetadata() windowsHardwareMetadata {
 			continue
 		}
 		result.Networks[adapter.Name] = networkHardwareMetadata{
+			Model:          adapter.Model,
 			LinkSpeedMbps:  parseLinkSpeedMbps(adapter.LinkSpeed),
 			ConnectionType: adapter.ConnectionType,
 		}
+	}
+	for name, model := range collectWindowsNetworkModels() {
+		metadata := result.Networks[name]
+		metadata.Model = model
+		result.Networks[name] = metadata
 	}
 	for name, signal := range collectWindowsWifiSignals() {
 		metadata := result.Networks[name]
@@ -2125,6 +2137,44 @@ func collectWindowsHardwareMetadata() windowsHardwareMetadata {
 	for _, gpu := range payload.GPUs {
 		if gpu.Name != "" && gpu.DriverVersion != "" {
 			result.GpuDrivers[gpu.Name] = gpu.DriverVersion
+		}
+	}
+	return result
+}
+
+func collectWindowsNetworkModels() map[string]string {
+	result := map[string]string{}
+	if runtime.GOOS != "windows" {
+		return result
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
+	defer cancel()
+	commandText := `$ErrorActionPreference='SilentlyContinue'; $rows=@(Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ name=[string]$_.Name; model=[string]$_.InterfaceDescription } }); @($rows) | ConvertTo-Json -Depth 3 -Compress`
+	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
+	if err != nil {
+		return result
+	}
+	type networkModelRow struct {
+		Name  string `json:"name"`
+		Model string `json:"model"`
+	}
+	trimmed := bytes.TrimSpace(output)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return result
+	}
+	var rows []networkModelRow
+	if err := json.Unmarshal(trimmed, &rows); err != nil {
+		var single networkModelRow
+		if json.Unmarshal(trimmed, &single) != nil {
+			return result
+		}
+		rows = []networkModelRow{single}
+	}
+	for _, row := range rows {
+		name := strings.TrimSpace(row.Name)
+		model := strings.TrimSpace(row.Model)
+		if name != "" && model != "" {
+			result[name] = model
 		}
 	}
 	return result
@@ -3018,7 +3068,7 @@ func maxSensorValue(current, candidate *float64) *float64 {
 }
 
 func collectDisks() ([]diskDeviceStats, storageUsage, error) {
-	partitions, err := disk.Partitions(false)
+	partitions, err := collectDiskPartitions()
 	if err != nil {
 		return nil, storageUsage{}, err
 	}
@@ -3083,6 +3133,93 @@ func collectDisks() ([]diskDeviceStats, storageUsage, error) {
 		TotalBytes: totalBytes,
 		UsedBytes:  usedBytes,
 	}, nil
+}
+
+type windowsDiskPartitionRow struct {
+	Device     string `json:"device"`
+	MountPoint string `json:"mountPoint"`
+	FileSystem string `json:"filesystem"`
+}
+
+func collectDiskPartitions() ([]disk.PartitionStat, error) {
+	partitions, firstErr := disk.Partitions(false)
+	if firstErr == nil && hasUsableDiskPartitions(partitions) {
+		return partitions, nil
+	}
+
+	if fallback, fallbackErr := disk.Partitions(true); fallbackErr == nil && hasUsableDiskPartitions(fallback) {
+		return fallback, nil
+	}
+
+	if runtime.GOOS != "windows" {
+		if firstErr != nil {
+			return nil, firstErr
+		}
+		return partitions, nil
+	}
+
+	rows, powershellErr := collectWindowsDiskPartitionRows()
+	if powershellErr == nil && len(rows) > 0 {
+		result := make([]disk.PartitionStat, 0, len(rows))
+		for _, row := range rows {
+			device := strings.TrimSpace(row.Device)
+			mountPoint := strings.TrimSpace(row.MountPoint)
+			if device == "" || mountPoint == "" {
+				continue
+			}
+			result = append(result, disk.PartitionStat{
+				Device:     device,
+				Mountpoint: mountPoint,
+				Fstype:     strings.TrimSpace(row.FileSystem),
+			})
+		}
+		if len(result) > 0 {
+			return result, nil
+		}
+	}
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	if powershellErr != nil {
+		return nil, powershellErr
+	}
+	return partitions, nil
+}
+
+func hasUsableDiskPartitions(partitions []disk.PartitionStat) bool {
+	for _, partition := range partitions {
+		if strings.TrimSpace(partition.Mountpoint) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func collectWindowsDiskPartitionRows() ([]windowsDiskPartitionRow, error) {
+	if runtime.GOOS != "windows" {
+		return []windowsDiskPartitionRow{}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
+	defer cancel()
+	commandText := `$ErrorActionPreference='Stop'; $rows=@(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | ForEach-Object { $device=[string]$_.DeviceID; [pscustomobject]@{ device=$device; mountPoint=($device + '\'); filesystem=[string]$_.FileSystem } }); @($rows) | ConvertTo-Json -Depth 3 -Compress`
+	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
+	if err != nil {
+		return nil, err
+	}
+	trimmed := bytes.TrimSpace(output)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return []windowsDiskPartitionRow{}, nil
+	}
+	var rows []windowsDiskPartitionRow
+	if err := json.Unmarshal(trimmed, &rows); err == nil {
+		return rows, nil
+	}
+	var single windowsDiskPartitionRow
+	if err := json.Unmarshal(trimmed, &single); err != nil {
+		return nil, err
+	}
+	return []windowsDiskPartitionRow{single}, nil
 }
 
 func diskUsageWithTimeout(path string, timeout time.Duration) (*disk.UsageStat, error) {

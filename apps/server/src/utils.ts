@@ -163,6 +163,7 @@ export function payloadToTimeSeries(
       return {
         id: network.id,
         name: network.name,
+        model: network.model,
         macAddress: enabled.has("networkIdentity") && instanceEnabled.has("networkIdentity") ? network.macAddress : undefined,
         ipv4: enabled.has("networkIdentity") && instanceEnabled.has("networkIdentity") ? network.ipv4 : undefined,
         ipv6: enabled.has("networkIdentity") && instanceEnabled.has("networkIdentity") ? network.ipv6 : undefined,
@@ -365,10 +366,87 @@ function normalizeTrafficSeries(values: number[]) {
   });
 }
 
+function cpuInstancesAtPoint(point: TimeSeriesRecord): InstanceMetricRecord[] {
+  if (point.cpus?.length) return point.cpus;
+  return (point.recordedDetails?.cpuPackages ?? []).map((cpu) => ({
+    id: cpu.id,
+    name: cpu.name,
+    model: cpu.model,
+    coreCount: cpu.coreCount,
+    logicalCount: cpu.logicalCount,
+    usagePercent: cpu.usagePercent ?? point.cpuUsagePercent,
+    frequencyMHz: cpu.frequencyMHz ?? point.cpuFrequencyMHz,
+    temperatureC: cpu.temperatureC ?? point.cpuTemperatureC
+  }));
+}
+
+function diskInstancesAtPoint(point: TimeSeriesRecord): InstanceMetricRecord[] {
+  if (point.disks?.length) return point.disks;
+  const details = point.recordedDetails;
+  return (details?.disks ?? []).map((disk) => {
+    const rate = details?.diskRate?.instances?.[disk.sourceKey ?? disk.id] ?? details?.diskRate?.instances?.[disk.id];
+    return {
+      id: disk.id,
+      name: disk.name,
+      mountPoint: disk.mountPoint,
+      filesystem: disk.filesystem,
+      model: disk.model,
+      vendor: disk.vendor,
+      usagePercent: percent(disk.usedBytes, disk.totalBytes),
+      activePercent: rate?.activePercent ?? disk.activePercent ?? 0,
+      usedBytes: disk.usedBytes,
+      readBytesPerSec: rate?.readBytesPerSec ?? 0,
+      writeBytesPerSec: rate?.writeBytesPerSec ?? 0,
+      temperatureC: disk.temperatureC ?? 0
+    };
+  });
+}
+
+function networkInstancesAtPoint(point: TimeSeriesRecord): InstanceMetricRecord[] {
+  if (point.networks?.length) return point.networks;
+  return (point.recordedDetails?.networkInterfaces ?? []).map((network) => ({
+    id: network.id,
+    name: network.name,
+    model: network.model,
+    macAddress: network.macAddress,
+    ipv4: network.ipv4,
+    ipv6: network.ipv6,
+    rxBytesPerSec: network.rxBytesPerSec ?? 0,
+    txBytesPerSec: network.txBytesPerSec ?? 0,
+    trafficRxBytes: network.totalRxBytes ?? 0,
+    trafficTxBytes: network.totalTxBytes ?? 0
+  }));
+}
+
+function gpuInstancesAtPoint(point: TimeSeriesRecord): InstanceMetricRecord[] {
+  if (point.gpus?.length) return point.gpus;
+  return (point.recordedDetails?.gpus ?? []).map((gpu) => ({
+    id: gpu.id,
+    name: gpu.name,
+    usagePercent: gpu.utilizationPercent,
+    encodePercent: gpu.encodeUtilizationPercent ?? 0,
+    decodePercent: gpu.decodeUtilizationPercent ?? 0,
+    frequencyMHz: gpu.frequencyMHz ?? 0,
+    memoryUsagePercent: percent(gpu.memoryUsedBytes, gpu.memoryTotalBytes),
+    memoryUsedBytes: gpu.memoryUsedBytes,
+    temperatureC: gpu.temperatureC ?? 0
+  }));
+}
+
+function fanInstancesAtPoint(point: TimeSeriesRecord): InstanceMetricRecord[] {
+  if (point.fans?.length) return point.fans;
+  return (point.recordedDetails?.fans ?? []).map((fan) => ({
+    id: fan.id,
+    name: fan.label,
+    interface: fan.interface,
+    rpm: fan.rpm
+  }));
+}
+
 function buildCpuMetricSeries(points: TimeSeriesRecord[]): CpuMetricSeries[] {
   const grouped = new Map<string, CpuMetricSeries>();
   for (const point of points) {
-    for (const cpu of point.cpus ?? []) {
+    for (const cpu of cpuInstancesAtPoint(point)) {
       if (!grouped.has(cpu.id)) {
         grouped.set(cpu.id, {
           id: cpu.id,
@@ -394,7 +472,7 @@ function buildCpuMetricSeries(points: TimeSeriesRecord[]): CpuMetricSeries[] {
 function buildDiskMetricSeries(points: TimeSeriesRecord[]): DiskMetricSeries[] {
   const grouped = new Map<string, DiskMetricSeries>();
   for (const point of points) {
-    for (const disk of point.disks ?? []) {
+    for (const disk of diskInstancesAtPoint(point)) {
       if (!grouped.has(disk.id)) {
         grouped.set(disk.id, {
           id: disk.id,
@@ -427,11 +505,12 @@ function buildDiskMetricSeries(points: TimeSeriesRecord[]): DiskMetricSeries[] {
 function buildNetworkMetricSeries(points: TimeSeriesRecord[]): NetworkMetricSeries[] {
   const grouped = new Map<string, NetworkMetricSeries>();
   for (const point of points) {
-    for (const network of point.networks ?? []) {
+    for (const network of networkInstancesAtPoint(point)) {
       if (!grouped.has(network.id)) {
         grouped.set(network.id, {
           id: network.id,
           name: network.name,
+          model: network.model,
           macAddress: network.macAddress,
           ipv4: network.ipv4,
           ipv6: network.ipv6,
@@ -448,7 +527,7 @@ function buildNetworkMetricSeries(points: TimeSeriesRecord[]): NetworkMetricSeri
   // interfaces are idle, not copies of whichever interface had traffic.
   for (const point of points) {
     const timestamp = new Date(point.timestamp).toISOString();
-    const networksAtPoint = new Map((point.networks ?? []).map((network) => [network.id, network]));
+    const networksAtPoint = new Map(networkInstancesAtPoint(point).map((network) => [network.id, network]));
     for (const target of grouped.values()) {
       const network = networksAtPoint.get(target.id);
       target.rxBytesPerSec.push({ timestamp, value: Number(network?.rxBytesPerSec ?? 0) });
@@ -471,7 +550,7 @@ function buildNetworkMetricSeries(points: TimeSeriesRecord[]): NetworkMetricSeri
 function buildGpuMetricSeries(points: TimeSeriesRecord[]): GpuMetricSeries[] {
   const grouped = new Map<string, GpuMetricSeries>();
   for (const point of points) {
-    for (const gpu of point.gpus ?? []) {
+    for (const gpu of gpuInstancesAtPoint(point)) {
       if (!grouped.has(gpu.id)) {
         grouped.set(gpu.id, {
           id: gpu.id,
@@ -502,7 +581,7 @@ function buildGpuMetricSeries(points: TimeSeriesRecord[]): GpuMetricSeries[] {
 function buildFanMetricSeries(points: TimeSeriesRecord[]): FanMetricSeries[] {
   const grouped = new Map<string, FanMetricSeries>();
   for (const point of points) {
-    for (const fan of point.fans ?? []) {
+    for (const fan of fanInstancesAtPoint(point)) {
       if (!grouped.has(fan.id)) {
         grouped.set(fan.id, {
           id: fan.id,
