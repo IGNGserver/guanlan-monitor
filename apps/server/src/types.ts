@@ -91,8 +91,8 @@ export interface InstanceMetricRecord {
   frequencyMHz?: number;
   memoryUsagePercent?: number;
   memoryUsedBytes?: number;
-  temperatureC?: number;
-  temperatureSource?: string;
+  temperatureC?: number | null;
+  temperatureSource?: string | null;
   rpm?: number;
 }
 
