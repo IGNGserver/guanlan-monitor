@@ -16,7 +16,7 @@ import { env } from "./config.js";
 import type { MetricsService } from "./services/metrics.js";
 import { LocalDeviceMetricConfigStore, LocalFanNoteStore, createLocalStore } from "./repositories/local.js";
 import type { Repositories, SessionValue } from "./types.js";
-import { ALL_DEVICE_METRIC_KEYS, getAvailableMetrics, resolveCpuFrequencyMHz, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
+import { ALL_DEVICE_METRIC_KEYS, filterAgentPayloadInstances, getAvailableMetrics, resolveCpuFrequencyMHz, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
 import { getSystemVersionInfo, getUpdateInfo } from "./updates.js";
 import { getHubUpdateStatus, HubUpdateError, requestHubUpdate } from "./hub-update.js";
 
@@ -271,6 +271,7 @@ export async function registerRoutes(
       const availableMetrics = getAvailableMetrics(state);
       const metricConfig = await metricsService.getMetricConfig(request.params.deviceId);
       const enabledMetrics = metricConfig.enabledMetrics;
+      const latest = filterAgentPayloadInstances(state.latest, metricConfig);
 
       const series = sanitizeUnsupportedMetricSeries(
         alignMetricSeriesToWindow(
@@ -293,29 +294,29 @@ export async function registerRoutes(
         latest: {
           system: state.latest.system,
           cpuUsagePercent: state.latest.cpuUsagePercent,
-          cpuFrequencyMHz: resolveCpuFrequencyMHz(state.latest),
-          cpuTemperatureC: state.latest.cpuTemperatureC ?? null,
-          cpuPackages: state.latest.cpuPackages ?? [],
-          memoryUsedBytes: state.latest.memory.usedBytes,
-          memoryTotalBytes: state.latest.memory.totalBytes,
-          memoryAvailableBytes: state.latest.memory.availableBytes,
-          memoryCachedBytes: state.latest.memory.cachedBytes,
-          memoryCommittedBytes: state.latest.memory.committedBytes,
-          memorySpeedMHz: state.latest.memory.speedMHz ?? null,
-          memorySlotCount: state.latest.memory.slotCount ?? null,
-          memoryFormFactor: state.latest.memory.formFactor ?? null,
-          swapUsedBytes: state.latest.memory.swapUsedBytes,
-          swapTotalBytes: state.latest.memory.swapTotalBytes,
-          diskUsedBytes: state.latest.diskUsage.usedBytes,
-          diskTotalBytes: state.latest.diskUsage.totalBytes,
-          networkRxBytesPerSec: state.latest.networkRate.rxBytesPerSec,
-          networkTxBytesPerSec: state.latest.networkRate.txBytesPerSec,
-          disks: state.latest.disks ?? [],
-          networkInterfaces: state.latest.networkInterfaces ?? [],
-          gpus: state.latest.gpus,
-          sensorBackends: state.latest.sensorBackends ?? [],
-          virtualization: state.latest.virtualization ?? null,
-          fans: (state.latest.fans ?? []).map((fan) => ({
+          cpuFrequencyMHz: resolveCpuFrequencyMHz(latest),
+          cpuTemperatureC: latest.cpuTemperatureC ?? null,
+          cpuPackages: latest.cpuPackages ?? [],
+          memoryUsedBytes: latest.memory.usedBytes,
+          memoryTotalBytes: latest.memory.totalBytes,
+          memoryAvailableBytes: latest.memory.availableBytes,
+          memoryCachedBytes: latest.memory.cachedBytes,
+          memoryCommittedBytes: latest.memory.committedBytes,
+          memorySpeedMHz: latest.memory.speedMHz ?? null,
+          memorySlotCount: latest.memory.slotCount ?? null,
+          memoryFormFactor: latest.memory.formFactor ?? null,
+          swapUsedBytes: latest.memory.swapUsedBytes,
+          swapTotalBytes: latest.memory.swapTotalBytes,
+          diskUsedBytes: latest.diskUsage.usedBytes,
+          diskTotalBytes: latest.diskUsage.totalBytes,
+          networkRxBytesPerSec: latest.networkRate.rxBytesPerSec,
+          networkTxBytesPerSec: latest.networkRate.txBytesPerSec,
+          disks: latest.disks ?? [],
+          networkInterfaces: latest.networkInterfaces ?? [],
+          gpus: latest.gpus,
+          sensorBackends: latest.sensorBackends ?? [],
+          virtualization: latest.virtualization ?? null,
+          fans: (latest.fans ?? []).map((fan) => ({
             ...fan,
             note: notes[fan.id] ?? fan.note ?? ""
           }))

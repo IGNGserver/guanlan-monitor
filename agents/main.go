@@ -1300,6 +1300,9 @@ func collectSlowMetrics() slowMetrics {
 	if len(hardware.gpus) == 0 {
 		hardware.gpus = collectWindowsGPUPerformance()
 	}
+	if len(hardware.gpus) == 0 {
+		hardware.gpus = collectWindowsGPUAdapters()
+	}
 	if hardware.cpuFrequencyMHz == nil {
 		hardware.cpuFrequencyMHz = collectWindowsCPUFrequency(cpuFrequencyMHz)
 	}
@@ -1689,9 +1692,11 @@ func collectHardwareSensors() hardwareSensorMetrics {
 		}
 	}
 
+	fallbackTemperature := collectWindowsThermalTemperature()
 	dllPath := resolveHardwareMonitorPath()
 	if dllPath == "" {
 		return hardwareSensorMetrics{
+			cpuTemperatureC:    fallbackTemperature,
 			gpus:               []gpuDeviceStats{},
 			fans:               []fanSensorStats{},
 			diskSensorMetadata: map[string]diskSensorMetadata{},
@@ -1710,6 +1715,7 @@ func collectHardwareSensors() hardwareSensorMetrics {
 	output, err := runWindowsPowerShell(ctx, commandText, "DSC_LHM_DLL="+dllPath)
 	if err != nil {
 		return hardwareSensorMetrics{
+			cpuTemperatureC:    fallbackTemperature,
 			gpus:               []gpuDeviceStats{},
 			fans:               []fanSensorStats{},
 			diskSensorMetadata: map[string]diskSensorMetadata{},
@@ -1725,6 +1731,7 @@ func collectHardwareSensors() hardwareSensorMetrics {
 	snapshots, err := decodeHardwareSnapshots(output)
 	if err != nil {
 		return hardwareSensorMetrics{
+			cpuTemperatureC:    fallbackTemperature,
 			gpus:               []gpuDeviceStats{},
 			fans:               []fanSensorStats{},
 			diskSensorMetadata: map[string]diskSensorMetadata{},
@@ -1737,7 +1744,13 @@ func collectHardwareSensors() hardwareSensorMetrics {
 		}
 	}
 	metrics := mapHardwareSensors(snapshots)
+	if metrics.cpuTemperatureC == nil {
+		metrics.cpuTemperatureC = fallbackTemperature
+	}
 	detail := fmt.Sprintf("已加载并读取硬件传感器；风扇 %d 个，磁盘 SMART %d 个", len(metrics.fans), len(metrics.diskSensorMetadata))
+	if metrics.cpuTemperatureC != nil {
+		detail += "；CPU 温度包含 Windows ACPI 热区回退值"
+	}
 	if len(metrics.fans) == 0 {
 		detail += "；主板/EC 未暴露可用风扇转速传感器"
 	}
@@ -2101,6 +2114,29 @@ func collectWindowsCPUFrequency(nominalMHz *float64) *float64 {
 		return nil
 	}
 	return &frequency
+}
+
+// Windows does not expose package/core temperatures through gopsutil. The
+// standard ACPI thermal-zone provider is a safe fallback when the optional
+// LibreHardwareMonitor library is not bundled or cannot read this machine.
+// Its value represents a platform thermal zone, not a per-core sensor.
+func collectWindowsThermalTemperature() *float64 {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
+	defer cancel()
+	commandText := `$ErrorActionPreference='SilentlyContinue'; $values=@(Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction SilentlyContinue | ForEach-Object { $raw=[double]$_.CurrentTemperature; if($raw -gt 0){ $c=($raw / 10) - 273.15; if($c -ge -40 -and $c -le 150){ [double]$c } } }); if($values.Count -eq 0){exit 1}; [Math]::Round((($values | Measure-Object -Average).Average),2)`
+	output, err := runWindowsPowerShell(ctx, commandText)
+	if err != nil {
+		return nil
+	}
+	temperature, err := strconv.ParseFloat(strings.TrimSpace(string(output)), 64)
+	if err != nil || math.IsNaN(temperature) || math.IsInf(temperature, 0) || temperature < -40 || temperature > 150 {
+		return nil
+	}
+	return &temperature
 }
 
 type windowsHardwareMetadataPayload struct {
@@ -2715,6 +2751,7 @@ func collectNvidiaGPUs() []gpuDeviceStats {
 
 type windowsGPUAdapterRecord struct {
 	Name          string `json:"name"`
+	PNPDeviceID   string `json:"pnpDeviceId"`
 	DriverVersion string `json:"driverVersion"`
 	AdapterRAM    uint64 `json:"adapterRAM"`
 }
@@ -2759,7 +2796,7 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
-	commandText := `$ErrorActionPreference='Stop'; $adapters=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; driverVersion=[string]$_.DriverVersion; adapterRAM=[UInt64]([Math]::Max(0,[Int64]$_.AdapterRAM))} }); $memory=@(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; dedicatedUsage=[UInt64]$_.DedicatedUsage; sharedUsage=[UInt64]$_.SharedUsage; totalCommitted=[UInt64]$_.TotalCommitted} }); $engines=@(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; utilizationPercent=[double]$_.UtilizationPercentage} }); ConvertTo-Json -InputObject ([pscustomobject]@{adapters=[array]$adapters; memory=[array]$memory; engines=[array]$engines}) -Depth 5 -Compress`
+	commandText := `$ErrorActionPreference='Stop'; $adapters=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; pnpDeviceId=[string]$_.PNPDeviceID; driverVersion=[string]$_.DriverVersion; adapterRAM=[UInt64]([Math]::Max(0,[Int64]$_.AdapterRAM))} }); $memory=@(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; dedicatedUsage=[UInt64]$_.DedicatedUsage; sharedUsage=[UInt64]$_.SharedUsage; totalCommitted=[UInt64]$_.TotalCommitted} }); $engines=@(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; utilizationPercent=[double]$_.UtilizationPercentage} }); ConvertTo-Json -InputObject ([pscustomobject]@{adapters=[array]$adapters; memory=[array]$memory; engines=[array]$engines}) -Depth 5 -Compress`
 	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
 	if err != nil {
 		return []gpuDeviceStats{}
@@ -2852,6 +2889,9 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 			MemoryUsedBytes:    aggregate.MemoryUsed,
 			DriverVersion:      driver,
 		}
+		if index < len(physicalAdapters) && strings.TrimSpace(physicalAdapters[index].PNPDeviceID) != "" {
+			gpu.ID = "gpu-" + sanitizeKey(physicalAdapters[index].PNPDeviceID)
+		}
 		if aggregate.Encode > 0 {
 			value := round(aggregate.Encode)
 			gpu.EncodeUtilizationPercent = &value
@@ -2860,10 +2900,58 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 			value := round(aggregate.Decode)
 			gpu.DecodeUtilizationPercent = &value
 		}
-		if index < len(physicalAdapters) && physicalAdapters[index].AdapterRAM > 0 && aggregate.MemoryUsed <= physicalAdapters[index].AdapterRAM {
-			gpu.MemoryTotalBytes = physicalAdapters[index].AdapterRAM
+		if index < len(physicalAdapters) && physicalAdapters[index].AdapterRAM > 0 {
+			gpu.MemoryTotalBytes = maxUint64(physicalAdapters[index].AdapterRAM, aggregate.TotalCommitted)
+			if gpu.MemoryTotalBytes < aggregate.MemoryUsed {
+				gpu.MemoryTotalBytes = aggregate.MemoryUsed
+			}
 		}
 		result = append(result, gpu)
+	}
+	return result
+}
+
+// Keep a physical adapter visible even when Windows exposes no GPU performance
+// counter samples for the current session. This still provides the stable
+// model, driver, and adapter-memory metadata needed by the device dashboard.
+func collectWindowsGPUAdapters() []gpuDeviceStats {
+	if runtime.GOOS != "windows" {
+		return []gpuDeviceStats{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
+	defer cancel()
+	commandText := `$ErrorActionPreference='Stop'; $rows=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { $ram=[UInt64]([Math]::Max(0,[Int64]$_.AdapterRAM)); if($ram -gt 0){ [pscustomobject]@{name=[string]$_.Name; pnpDeviceId=[string]$_.PNPDeviceID; driverVersion=[string]$_.DriverVersion; adapterRAM=$ram} } }); @($rows) | ConvertTo-Json -Depth 4 -Compress`
+	output, err := runWindowsPowerShell(ctx, commandText)
+	if err != nil {
+		return []gpuDeviceStats{}
+	}
+	records, err := decodeJSONList[windowsGPUAdapterRecord](bytes.TrimSpace(output))
+	if err != nil {
+		return []gpuDeviceStats{}
+	}
+	result := make([]gpuDeviceStats, 0, len(records))
+	seen := map[string]struct{}{}
+	for index, record := range records {
+		name := strings.TrimSpace(record.Name)
+		if name == "" {
+			name = fmt.Sprintf("GPU %d", index+1)
+		}
+		id := "gpu-windows-adapter-" + strconv.Itoa(index)
+		if strings.TrimSpace(record.PNPDeviceID) != "" {
+			id = "gpu-" + sanitizeKey(record.PNPDeviceID)
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, gpuDeviceStats{
+			ID:                 id,
+			Name:               name,
+			MemoryTotalBytes:   record.AdapterRAM,
+			DriverVersion:      strings.TrimSpace(record.DriverVersion),
+			UtilizationPercent: 0,
+		})
 	}
 	return result
 }

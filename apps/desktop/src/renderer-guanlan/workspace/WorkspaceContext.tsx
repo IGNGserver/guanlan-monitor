@@ -256,13 +256,21 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   useEffect(() => {
     const root = document.documentElement;
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      const resolvedTheme = theme === "system" ? (mediaQuery.matches ? "dark" : "light") : theme;
+      root.dataset.dscTheme = theme;
+      root.dataset.dscResolvedTheme = resolvedTheme;
+      root.style.colorScheme = resolvedTheme;
+    };
+
     root.dataset.dscTheme = theme;
     root.dataset.dscDensity = density;
-    if (theme === "system") {
-      root.dataset.dscResolvedTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    } else {
-      root.dataset.dscResolvedTheme = theme;
-    }
+    applyTheme();
+    if (theme !== "system") return;
+
+    mediaQuery.addEventListener("change", applyTheme);
+    return () => mediaQuery.removeEventListener("change", applyTheme);
   }, [density, theme]);
 
   useEffect(() => {
