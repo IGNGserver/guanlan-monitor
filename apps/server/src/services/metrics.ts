@@ -388,10 +388,11 @@ function averageInstanceMetrics(
           | "frequencyMHz"
           | "memoryUsagePercent"
           | "memoryUsedBytes"
-          | "temperatureC"
           | "rpm"
         >
       >;
+      temperatureSum: number;
+      temperatureCount: number;
     }
   >();
 
@@ -431,9 +432,10 @@ function averageInstanceMetrics(
             frequencyMHz: 0,
             memoryUsagePercent: 0,
             memoryUsedBytes: 0,
-            temperatureC: 0,
             rpm: 0
-          }
+          },
+          temperatureSum: 0,
+          temperatureCount: 0
         });
       }
       const current = grouped.get(item.id)!;
@@ -453,12 +455,15 @@ function averageInstanceMetrics(
       current.sums.frequencyMHz += item.frequencyMHz ?? 0;
       current.sums.memoryUsagePercent += item.memoryUsagePercent ?? 0;
       current.sums.memoryUsedBytes += item.memoryUsedBytes ?? 0;
-      current.sums.temperatureC += item.temperatureC ?? 0;
+      if (typeof item.temperatureC === "number" && Number.isFinite(item.temperatureC)) {
+        current.temperatureSum += item.temperatureC;
+        current.temperatureCount += 1;
+      }
       current.sums.rpm += item.rpm ?? 0;
     }
   }
 
-  return [...grouped.values()].map(({ count, meta, sums }) => ({
+  return [...grouped.values()].map(({ count, meta, sums, temperatureSum, temperatureCount }) => ({
     ...meta,
     usagePercent: sums.usagePercent / count,
     totalBytes: sums.totalBytes / count,
@@ -478,7 +483,7 @@ function averageInstanceMetrics(
     frequencyMHz: sums.frequencyMHz / count,
     memoryUsagePercent: sums.memoryUsagePercent / count,
     memoryUsedBytes: sums.memoryUsedBytes / count,
-    temperatureC: sums.temperatureC / count,
+    temperatureC: temperatureCount > 0 ? temperatureSum / temperatureCount : undefined,
     rpm: sums.rpm / count
   }));
 }
