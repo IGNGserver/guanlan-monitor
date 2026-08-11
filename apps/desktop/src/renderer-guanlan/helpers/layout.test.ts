@@ -63,6 +63,7 @@ test("normalizeMetricsResponse extracts stable chart model from MetricsResponse 
       memoryAvailableBytes: [],
       memoryCachedBytes: [],
       memoryCommittedBytes: [],
+      memoryCommitLimitBytes: [],
       systemProcessCount: [],
       systemThreadCount: [],
       systemHandleCount: [],
