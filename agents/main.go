@@ -142,6 +142,7 @@ type memoryStats struct {
 	AvailableBytes uint64   `json:"availableBytes"`
 	CachedBytes    uint64   `json:"cachedBytes"`
 	CommittedBytes uint64   `json:"committedBytes"`
+	CommitLimitBytes uint64 `json:"commitLimitBytes"`
 	SwapTotalBytes uint64   `json:"swapTotalBytes"`
 	SwapUsedBytes  uint64   `json:"swapUsedBytes"`
 	SpeedMHz       *float64 `json:"speedMHz,omitempty"`
@@ -1108,12 +1109,24 @@ func sampleMemory() memoryStats {
 		return memoryStats{}
 	}
 	swapMemory, _ := mem.SwapMemory()
+	committedBytes := virtualMemory.CommittedAS
+	commitLimitBytes := uint64(0)
+	if runtime.GOOS == "windows" {
+		if current, limit, ok := collectWindowsCommitMemory(); ok {
+			committedBytes = current
+			commitLimitBytes = limit
+		}
+	}
+	if commitLimitBytes == 0 {
+		commitLimitBytes = virtualMemory.Total + swapMemory.Total
+	}
 	return memoryStats{
 		TotalBytes:     virtualMemory.Total,
 		UsedBytes:      virtualMemory.Used,
 		AvailableBytes: virtualMemory.Available,
 		CachedBytes:    virtualMemory.Cached,
-		CommittedBytes: virtualMemory.CommittedAS,
+		CommittedBytes: committedBytes,
+		CommitLimitBytes: commitLimitBytes,
 		SwapTotalBytes: swapMemory.Total,
 		SwapUsedBytes:  swapMemory.Used,
 	}
@@ -1219,7 +1232,7 @@ func mergeSlowMetrics(previous slowMetrics, next slowMetrics) slowMetrics {
 		merged.memorySpeedMHz = next.memorySpeedMHz
 		merged.memorySlotCount = next.memorySlotCount
 		merged.memoryFormFactor = next.memoryFormFactor
-		merged.gpus = next.gpus
+		merged.gpus = mergeMissingGPUMemory(previous.gpus, next.gpus)
 		merged.gpuDrivers = next.gpuDrivers
 		merged.networkMetadata = next.networkMetadata
 		merged.diskInterfaces = next.diskInterfaces
@@ -1344,11 +1357,33 @@ func collectSlowMetrics() slowMetrics {
 
 func windowsGPUNeedsMemoryFallback(gpus []gpuDeviceStats) bool {
 	for _, gpu := range gpus {
-		if gpu.MemoryTotalBytes == 0 {
+		if gpu.MemoryTotalBytes == 0 || gpu.MemoryUsedBytes == 0 {
 			return true
 		}
 	}
 	return false
+}
+
+func mergeMissingGPUMemory(previous, next []gpuDeviceStats) []gpuDeviceStats {
+	if len(next) == 0 || len(previous) == 0 {
+		return next
+	}
+	result := append([]gpuDeviceStats{}, next...)
+	for index := range result {
+		if result[index].MemoryTotalBytes == 0 || result[index].MemoryUsedBytes != 0 {
+			continue
+		}
+		for _, prior := range previous {
+			if !strings.EqualFold(result[index].ID, prior.ID) && !strings.EqualFold(strings.TrimSpace(result[index].Name), strings.TrimSpace(prior.Name)) {
+				continue
+			}
+			if prior.MemoryUsedBytes > 0 {
+				result[index].MemoryUsedBytes = prior.MemoryUsedBytes
+			}
+			break
+		}
+	}
+	return result
 }
 
 func mergeWindowsGPUFallback(primary, fallback []gpuDeviceStats) []gpuDeviceStats {
@@ -4065,6 +4100,7 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 		}
 		if !enabledMetricSet["memoryCommitted"] {
 			payload.Memory.CommittedBytes = 0
+			payload.Memory.CommitLimitBytes = 0
 		}
 		if !enabledMetricSet["memoryHardware"] {
 			payload.Memory.SpeedMHz = nil

@@ -337,10 +337,11 @@ export function timeSeriesToMetricSeries(
     gpuDecodePercent: mapPoint("gpuDecodePercent"),
     gpuFrequencyMHz: mapPoint("gpuFrequencyMHz"),
     gpuMemoryUsagePercent: mapPoint("gpuMemoryUsagePercent"),
-    gpuMemoryUsedBytes: detailSeries(points, (point) => {
-      if (!enabled.has("gpuMemory")) return 0;
+    gpuMemoryUsedBytes: detailSeriesWithCarryForward(points, (point) => {
+      if (!enabled.has("gpuMemory")) return undefined;
       const gpus = point.gpus?.length ? point.gpus : point.recordedDetails?.gpus ?? [];
-      return gpus.reduce((total, gpu) => total + Number(gpu.memoryUsedBytes ?? 0), 0);
+      const values = gpus.map((gpu) => Number(gpu.memoryUsedBytes ?? 0)).filter((value) => Number.isFinite(value) && value > 0);
+      return values.length ? values.reduce((total, value) => total + value, 0) : undefined;
     }),
     gpuTemperatureC: mapPoint("gpuTemperatureC"),
     memoryUsagePercent: mapPoint("memoryUsagePercent"),
@@ -353,6 +354,7 @@ export function timeSeriesToMetricSeries(
     memoryAvailableBytes: detailSeries(points, (point) => enabled.has("memoryAvailable") ? point.recordedDetails?.memory.availableBytes : 0),
     memoryCachedBytes: detailSeries(points, (point) => enabled.has("memoryCached") ? point.recordedDetails?.memory.cachedBytes : 0),
     memoryCommittedBytes: detailSeries(points, (point) => enabled.has("memoryCommitted") ? point.recordedDetails?.memory.committedBytes : 0),
+    memoryCommitLimitBytes: detailSeries(points, (point) => enabled.has("memoryCommitted") ? point.recordedDetails?.memory.commitLimitBytes : 0),
     systemProcessCount: detailSeries(points, (point) => enabled.has("systemOverview") ? point.recordedDetails?.system.processCount : 0),
     systemThreadCount: detailSeries(points, (point) => enabled.has("systemOverview") ? point.recordedDetails?.system.threadCount : 0),
     systemHandleCount: detailSeries(points, (point) => enabled.has("systemOverview") ? point.recordedDetails?.system.handleCount : 0),
@@ -387,6 +389,20 @@ function detailSeries(points: TimeSeriesRecord[], selector: (point: TimeSeriesRe
     timestamp: new Date(point.timestamp).toISOString(),
     value: Number(selector(point) ?? 0)
   }));
+}
+
+function detailSeriesWithCarryForward(points: TimeSeriesRecord[], selector: (point: TimeSeriesRecord) => number | undefined) {
+  let previous = 0;
+  return points.map((point) => {
+    const selected = Number(selector(point));
+    if (Number.isFinite(selected) && selected > 0) {
+      previous = selected;
+    }
+    return {
+      timestamp: new Date(point.timestamp).toISOString(),
+      value: previous
+    };
+  });
 }
 
 function normalizeTrafficSeries(values: number[]) {
@@ -613,6 +629,7 @@ function buildNetworkMetricSeries(points: TimeSeriesRecord[], config: DeviceMetr
 function buildGpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricConfigValue): GpuMetricSeries[] {
   const grouped = new Map<string, GpuMetricSeries>();
   const lastTemperature = new Map<string, number>();
+  const lastMemoryUsed = new Map<string, number>();
   for (const point of points) {
     for (const gpu of gpuInstancesAtPoint(point, config)) {
       if (!grouped.has(gpu.id)) {
@@ -635,7 +652,11 @@ function buildGpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricCo
       target.decodePercent.push({ timestamp, value: Number(gpu.decodePercent ?? 0) });
       target.frequencyMHz.push({ timestamp, value: Number(gpu.frequencyMHz ?? 0) });
       target.memoryUsagePercent.push({ timestamp, value: Number(gpu.memoryUsagePercent ?? 0) });
-      target.memoryUsedBytes.push({ timestamp, value: Number(gpu.memoryUsedBytes ?? 0) });
+      const memoryUsed = Number(gpu.memoryUsedBytes ?? 0);
+      if (Number.isFinite(memoryUsed) && memoryUsed > 0) {
+        lastMemoryUsed.set(gpu.id, memoryUsed);
+      }
+      target.memoryUsedBytes.push({ timestamp, value: lastMemoryUsed.get(gpu.id) ?? 0 });
       if (!target.temperatureSource && gpu.temperatureSource) {
         target.temperatureSource = gpu.temperatureSource;
       }

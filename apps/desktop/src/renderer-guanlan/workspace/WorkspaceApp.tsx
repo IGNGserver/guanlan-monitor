@@ -8,6 +8,13 @@ import {
   WorkspaceProvider,
   useWorkspace
 } from "./WorkspaceContext";
+import {
+  DesktopWidget,
+  WidgetLayoutProvider,
+  WidgetLayoutToolbar,
+  type WidgetKind,
+  type WidgetSize
+} from "./WidgetLayout";
 import "./workspace.css";
 
 type IconName =
@@ -249,7 +256,10 @@ function TelemetryChartCard({
   fixedMaxValue,
   controls,
   footer,
-  emptyMessage = "等待足够的遥测样本"
+  emptyMessage = "等待足够的遥测样本",
+  widgetId,
+  widgetKind = "content",
+  widgetDefaultSize = "medium"
 }: {
   title: string;
   subtitle?: string;
@@ -259,6 +269,9 @@ function TelemetryChartCard({
   controls?: React.ReactNode;
   footer?: React.ReactNode;
   emptyMessage?: string;
+  widgetId?: string;
+  widgetKind?: WidgetKind;
+  widgetDefaultSize?: WidgetSize;
 }) {
   const activeSeries = series.filter((item) => item.points && item.points.length > 0);
   const primaryPoints = activeSeries[0]?.points ?? [];
@@ -272,7 +285,7 @@ function TelemetryChartCard({
   }, [primaryPoints.length, primaryPoints.at(-1)?.timestamp]);
 
   if (!activeSeries.length || !primaryPoints.length) {
-    return (
+    const emptyCard = (
       <Surface className="telemetry-chart-card">
         <div className="telemetry-chart-header">
           <div className="telemetry-chart-title">
@@ -287,6 +300,7 @@ function TelemetryChartCard({
         {footer && <div className="telemetry-chart-card__footer">{footer}</div>}
       </Surface>
     );
+    return widgetId ? <DesktopWidget id={widgetId} title={title} kind={widgetKind} defaultSize={widgetDefaultSize}>{emptyCard}</DesktopWidget> : emptyCard;
   }
 
   const allValues = activeSeries.flatMap((s) => s.points.map((p) => p.value));
@@ -343,7 +357,7 @@ function TelemetryChartCard({
   const gradientOneId = `chart-fill-grad-1-${chartId}`;
   const gradientTwoId = `chart-fill-grad-2-${chartId}`;
 
-  return (
+  const chartCard = (
     <Surface className="telemetry-chart-card">
       <div className="telemetry-chart-header">
         <div className="telemetry-chart-title">
@@ -455,6 +469,7 @@ function TelemetryChartCard({
       {footer && <div className="telemetry-chart-card__footer">{footer}</div>}
     </Surface>
   );
+  return widgetId ? <DesktopWidget id={widgetId} title={title} kind={widgetKind} defaultSize={widgetDefaultSize}>{chartCard}</DesktopWidget> : chartCard;
 }
 
 function MiniTrend({
@@ -1098,15 +1113,19 @@ function TelemetryDeviceBlock({
   eyebrow,
   title,
   subtitle,
-  children
+  children,
+  widgetId,
+  widgetDefaultSize = "large"
 }: {
   kind: "cpu" | "disk" | "gpu" | "network" | "fan";
   eyebrow: string;
   title: string;
   subtitle?: string;
   children: React.ReactNode;
+  widgetId?: string;
+  widgetDefaultSize?: WidgetSize;
 }) {
-  return (
+  const deviceBlock = (
     <article className={`workspace-device-block workspace-device-block--${kind}`}>
       <header className="workspace-device-block__header">
         <div className="workspace-device-block__identity">
@@ -1119,6 +1138,7 @@ function TelemetryDeviceBlock({
       <div className="workspace-device-block__charts">{children}</div>
     </article>
   );
+  return widgetId ? <DesktopWidget id={widgetId} title={title} kind="group" defaultSize={widgetDefaultSize}>{deviceBlock}</DesktopWidget> : deviceBlock;
 }
 
 type TelemetryInstanceSummary = {
@@ -1294,8 +1314,14 @@ function DevicePage() {
         filteredLatest.gpus.reduce((total, gpu) => total + gpu.memoryTotalBytes, 0)
       )
     : "容量暂无";
-  const virtualMemorySummary = filteredLatest
-     ? formatCapacitySummary(filteredLatest.swapUsedBytes, filteredLatest.swapTotalBytes)
+  const commitLimitBytes = filteredLatest
+    ? filteredLatest.memoryCommitLimitBytes || filteredLatest.memoryTotalBytes + filteredLatest.swapTotalBytes
+    : 0;
+  const committedMemorySummary = filteredLatest
+    ? formatCapacitySummary(filteredLatest.memoryCommittedBytes, commitLimitBytes)
+    : "容量暂无";
+  const pagefileMemorySummary = filteredLatest
+    ? formatCapacitySummary(filteredLatest.swapUsedBytes, filteredLatest.swapTotalBytes)
     : "容量暂无";
   const cpuModelItems = cpuInstances.map((cpu) => ({
     id: cpu.id,
@@ -1341,6 +1367,7 @@ function DevicePage() {
 
 
 
+      <WidgetLayoutProvider scopeKey={`device:${selectedDevice.deviceId}:${activeTab}`} editable={activeTab !== "all"}>
       {/* 视图 Tab 切换与时间范围控制器 */}
       <div className="telemetry-chart-header">
         <div className="workspace-tabs">
@@ -1361,73 +1388,78 @@ function DevicePage() {
           </button>
         </div>
 
-        <MetricWindowControl value={metricsWindow as DesktopMetricWindowValue} onChange={(value) => setMetricsWindow(value)} />
+        <div className="workspace-device-toolbar">
+          <MetricWindowControl value={metricsWindow as DesktopMetricWindowValue} onChange={(value) => setMetricsWindow(value)} />
+          <WidgetLayoutToolbar />
+        </div>
       </div>
 
       {/* ================= Tab 1: 综合面板 (Overview) ================= */}
       {(activeTab === "overview" || activeTab === "all") && series && (
         <TelemetrySection eyebrow="综合遥测" title="硬件平均趋势" description="综合面板按类别平均所有已采集实例；各硬件型号显示在对应图表底部，单独图表请切换到明细选项卡。">
-          <TelemetryChartCard title="CPU 平均使用率" subtitle={`全部 ${cpuInstances.length} 个 CPU 实例的平均值`} series={[{ label: "全部 CPU 平均", points: cpuAverageUsage }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集 CPU 型号" items={cpuModelItems} />} />
-           <TelemetryChartCard title="物理与虚拟内存" subtitle={`物理 ${formatCapacitySummary(filteredLatest?.memoryUsedBytes, filteredLatest?.memoryTotalBytes)} · 虚拟 ${virtualMemorySummary}`} series={[{ label: "已用物理内存", points: series.memoryUsedBytes ?? [], valueFormatter: formatBytes }, { label: "已用虚拟内存", points: series.swapUsedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
-           <TelemetryChartCard title="磁盘平均已用容量" subtitle={`全部 ${diskInstances.length} 个硬盘实例的平均值 · ${formatCapacitySummary(filteredLatest?.diskUsedBytes, filteredLatest?.diskTotalBytes)}`} series={[{ label: "全部硬盘平均已用", points: diskAverageUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集硬盘型号" items={diskModelItems} />} />
-           <TelemetryChartCard title="网卡平均吞吐" subtitle={`全部 ${networkInstances.length} 个网卡实例的平均值`} series={[{ label: "平均接收 (Rx)", points: networkAverageRx, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "平均发送 (Tx)", points: networkAverageTx, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} footer={<TelemetryModelList label="已采集网卡型号" items={networkModelItems} />} />
-           <TelemetryChartCard title="GPU 平均使用率" subtitle={`全部 ${gpuInstances.length} 个显卡实例的平均值`} series={[{ label: "平均核心", points: gpuAverageUsage }, { label: "平均编码", points: gpuAverageEncode }, { label: "平均解码", points: gpuAverageDecode }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
-           <TelemetryChartCard title="GPU 平均显存已用容量" subtitle={`${gpuMemorySummary} · 按显卡实例平均`} series={[{ label: "平均显存已用", points: gpuAverageMemoryUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
-          {fanInstances.length ? fanInstances.map((fan) => <TelemetryChartCard key={`overview-fan-${fan.id}`} title={`${fan.name} · 风扇转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : <div className="workspace-telemetry-empty">当前时间范围没有可用的风扇实例序列</div>}
+          <TelemetryChartCard widgetId="overview-cpu-average" title="CPU 平均使用率" subtitle={`全部 ${cpuInstances.length} 个 CPU 实例的平均值`} series={[{ label: "全部 CPU 平均", points: cpuAverageUsage }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集 CPU 型号" items={cpuModelItems} />} />
+          <TelemetryChartCard widgetId="overview-memory" title="物理与已提交内存" subtitle={`物理 ${formatCapacitySummary(filteredLatest?.memoryUsedBytes, filteredLatest?.memoryTotalBytes)} · 已提交 ${committedMemorySummary} · 页面文件 ${pagefileMemorySummary}`} series={[{ label: "已用物理内存", points: series.memoryUsedBytes ?? [], valueFormatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
+          <TelemetryChartCard widgetId="overview-disk-average" title="磁盘平均已用容量" subtitle={`全部 ${diskInstances.length} 个硬盘实例的平均值 · ${formatCapacitySummary(filteredLatest?.diskUsedBytes, filteredLatest?.diskTotalBytes)}`} series={[{ label: "全部硬盘平均已用", points: diskAverageUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集硬盘型号" items={diskModelItems} />} />
+          <TelemetryChartCard widgetId="overview-network-average" title="网卡平均吞吐" subtitle={`全部 ${networkInstances.length} 个网卡实例的平均值`} series={[{ label: "平均接收 (Rx)", points: networkAverageRx, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "平均发送 (Tx)", points: networkAverageTx, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} footer={<TelemetryModelList label="已采集网卡型号" items={networkModelItems} />} />
+          <TelemetryChartCard widgetId="overview-gpu-average" title="GPU 平均使用率" subtitle={`全部 ${gpuInstances.length} 个显卡实例的平均值`} series={[{ label: "平均核心", points: gpuAverageUsage }, { label: "平均编码", points: gpuAverageEncode }, { label: "平均解码", points: gpuAverageDecode }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
+          <TelemetryChartCard widgetId="overview-gpu-memory" title="GPU 平均显存已用容量" subtitle={`${gpuMemorySummary} · 按显卡实例平均`} series={[{ label: "平均显存已用", points: gpuAverageMemoryUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
+          {fanInstances.length ? fanInstances.map((fan) => <TelemetryChartCard key={`overview-fan-${fan.id}`} widgetId={`overview-fan-${fan.id}`} title={`${fan.name} · 风扇转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : <div className="workspace-telemetry-empty">当前时间范围没有可用的风扇实例序列</div>}
         </TelemetrySection>
       )}
 
       {/* ================= Tab 2: 算力与内存 (Compute & Memory) ================= */}
       {(activeTab === "compute" || activeTab === "all") && series && (
         <TelemetrySection eyebrow="处理器与内存" title="算力与内存明细" description="CPU 实例、频率、温度和内存层级数据分开呈现，避免不同单位被压缩成一条汇总线。">
-           <CpuFactsCard cpus={filteredLatest?.cpuPackages ?? []} system={filteredLatest?.system} />
+           <DesktopWidget id="compute-cpu-facts" title="处理器与系统统计" defaultSize="large"><CpuFactsCard cpus={filteredLatest?.cpuPackages ?? []} system={filteredLatest?.system} /></DesktopWidget>
            {cpuInstances.length ? cpuInstances.map((cpu) => {
              const cpuTemperaturePoints = cpu.temperatureC.length ? cpu.temperatureC : series.cpuTemperatureC ?? [];
              return (
                <TelemetryDeviceBlock
                  key={`compute-cpu-${cpu.id}`}
                  kind="cpu"
+                 widgetId={`compute-cpu-${cpu.id}`}
                  eyebrow="CPU 实例"
                  title={displayModelName(cpu.model, cpu.name, "CPU")}
                  subtitle={`${cpu.coreCount ?? "未知"} 核 · ${cpu.logicalCount ?? "未知"} 线程${cpu.l3CacheBytes ? ` · L3 ${formatBytes(cpu.l3CacheBytes)}` : ""}`}
                >
-                 <TelemetryChartCard title="使用率" subtitle="处理器负载" series={[{ label: "使用率", points: cpu.usagePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
-                 <TelemetryChartCard title="主频" subtitle="实时有效频率" series={[{ label: "频率", points: cpu.frequencyMHz, valueFormatter: (v) => `${Math.round(v)} MHz` }]} valueFormatter={(v) => `${Math.round(v)} MHz`} />
-                 <TelemetryChartCard title="温度" subtitle="CPU Package / Core" emptyMessage="等待 CPU Package/Core 温度传感器" series={[{ label: "温度", points: cpuTemperaturePoints, valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
+                 <TelemetryChartCard widgetId={`compute-cpu-${cpu.id}-usage`} title="使用率" subtitle="处理器负载" series={[{ label: "使用率", points: cpu.usagePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+                 <TelemetryChartCard widgetId={`compute-cpu-${cpu.id}-frequency`} title="主频" subtitle="实时有效频率" series={[{ label: "频率", points: cpu.frequencyMHz, valueFormatter: (v) => `${Math.round(v)} MHz` }]} valueFormatter={(v) => `${Math.round(v)} MHz`} />
+                 <TelemetryChartCard widgetId={`compute-cpu-${cpu.id}-temperature`} title="温度" subtitle="CPU Package / Core" emptyMessage="等待 CPU Package/Core 温度传感器" series={[{ label: "温度", points: cpuTemperaturePoints, valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
                </TelemetryDeviceBlock>
              );
            }) : hasInstanceConfiguration("cpu") ? <div className="workspace-telemetry-empty">当前已关闭所有 CPU 实例</div> : (
-             <TelemetryDeviceBlock kind="cpu" eyebrow="CPU 汇总" title="处理器总览" subtitle="未拆分出独立 CPU 实例">
-               <TelemetryChartCard title="使用率" series={[{ label: "CPU 占用", points: series.cpuUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+             <TelemetryDeviceBlock widgetId="compute-cpu-summary" kind="cpu" eyebrow="CPU 汇总" title="处理器总览" subtitle="未拆分出独立 CPU 实例">
+               <TelemetryChartCard widgetId="compute-cpu-summary-usage" title="使用率" series={[{ label: "CPU 占用", points: series.cpuUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
              </TelemetryDeviceBlock>
            )}
-           <TelemetryChartCard title="内存容量明细" subtitle={`物理 ${formatCapacitySummary(filteredLatest?.memoryUsedBytes, filteredLatest?.memoryTotalBytes)} · 虚拟 ${virtualMemorySummary}`} series={[{ label: "已用物理内存", points: series.memoryUsedBytes ?? [], valueFormatter: formatBytes }, { label: "已用虚拟内存", points: series.swapUsedBytes ?? [], valueFormatter: formatBytes }, { label: "缓存", points: series.memoryCachedBytes ?? [], valueFormatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
-           <TelemetryChartCard title="系统进程、线程与句柄" series={[{ label: "线程数", points: series.systemThreadCount ?? [] }, { label: "进程数", points: series.systemProcessCount ?? [] }, { label: "句柄数", points: series.systemHandleCount ?? [] }]} valueFormatter={(v) => `${Math.round(v)}`} />
+           <TelemetryChartCard widgetId="compute-memory" title="内存容量明细" subtitle={`物理 ${formatCapacitySummary(filteredLatest?.memoryUsedBytes, filteredLatest?.memoryTotalBytes)} · 已提交 ${committedMemorySummary} · 页面文件 ${pagefileMemorySummary}`} series={[{ label: "已用物理内存", points: series.memoryUsedBytes ?? [], valueFormatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes ?? [], valueFormatter: formatBytes }, { label: "缓存", points: series.memoryCachedBytes ?? [], valueFormatter: formatBytes }, { label: "页面文件实际使用", points: series.swapUsedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
+           <TelemetryChartCard widgetId="compute-system" title="系统进程、线程与句柄" series={[{ label: "线程数", points: series.systemThreadCount ?? [] }, { label: "进程数", points: series.systemProcessCount ?? [] }, { label: "句柄数", points: series.systemHandleCount ?? [] }]} valueFormatter={(v) => `${Math.round(v)}`} />
         </TelemetrySection>
       )}
 
       {/* ================= Tab 3: 存储与网络 (Storage & Network) ================= */}
       {(activeTab === "storage_net" || activeTab === "all") && series && (
         <TelemetrySection eyebrow="存储与网络" title="I/O 实例明细" description="按网卡和磁盘实例拆分，选择全部时会同时展示每个实例，而不是只看设备总量。" controls={<><InstanceFilter label="网卡" value={selectedNetId} onChange={setSelectedNetId} options={networkOptions} /><InstanceFilter label="磁盘" value={selectedDiskId} onChange={setSelectedDiskId} options={diskOptions} /></>}>
-          {networkInstances.length ? visibleNetworkInstances.map((network) => <TelemetryChartCard key={`network-${network.id}`} title={`${displayModelName(network.model, network.name, "网卡")} · 吞吐`} subtitle={[network.name, network.macAddress, network.ipv4?.[0] || network.ipv6?.[0]].filter(Boolean).join(" · ") || "独立网卡实例"} series={[{ label: "接收 (Rx)", points: network.rxBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: network.txBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />) : hasInstanceConfiguration("network") ? <div className="workspace-telemetry-empty">当前已关闭所有网卡实例</div> : <TelemetryChartCard title="网络实时吞吐" subtitle="设备汇总" series={[{ label: "接收 (Rx)", points: series.networkRxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: series.networkTxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />}
+          {networkInstances.length ? visibleNetworkInstances.map((network) => <TelemetryChartCard key={`network-${network.id}`} widgetId={`storage-network-${network.id}`} title={`${displayModelName(network.model, network.name, "网卡")} · 吞吐`} subtitle={[network.name, network.macAddress, network.ipv4?.[0] || network.ipv6?.[0]].filter(Boolean).join(" · ") || "独立网卡实例"} series={[{ label: "接收 (Rx)", points: network.rxBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: network.txBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />) : hasInstanceConfiguration("network") ? <div className="workspace-telemetry-empty">当前已关闭所有网卡实例</div> : <TelemetryChartCard widgetId="storage-network-summary" title="网络实时吞吐" subtitle="设备汇总" series={[{ label: "接收 (Rx)", points: series.networkRxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: series.networkTxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />}
           {diskInstances.length ? visibleDiskInstances.map((disk) => {
             const diskLatest = filteredLatest?.disks?.find((item) => item.id === disk.id);
             return (
               <TelemetryDeviceBlock
                 key={`disk-${disk.id}`}
                 kind="disk"
+                widgetId={`storage-disk-${disk.id}`}
                 eyebrow="硬盘实例"
                 title={displayModelName(disk.model, disk.name, "磁盘")}
                 subtitle={[disk.mountPoint, disk.filesystem].filter(Boolean).join(" · ") || "独立硬盘实例"}
               >
-                <TelemetryChartCard title="已用容量" subtitle={formatCapacitySummary(diskLatest?.usedBytes, diskLatest?.totalBytes)} series={[{ label: "已用容量", points: disk.usedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
-                <TelemetryChartCard title="读写速率" subtitle="当前硬盘 I/O" series={[{ label: "读取", points: disk.readBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "写入", points: disk.writeBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />
+                <TelemetryChartCard widgetId={`storage-disk-${disk.id}-capacity`} title="已用容量" subtitle={formatCapacitySummary(diskLatest?.usedBytes, diskLatest?.totalBytes)} series={[{ label: "已用容量", points: disk.usedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
+                <TelemetryChartCard widgetId={`storage-disk-${disk.id}-io`} title="读写速率" subtitle="当前硬盘 I/O" series={[{ label: "读取", points: disk.readBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "写入", points: disk.writeBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />
               </TelemetryDeviceBlock>
             );
           }) : hasInstanceConfiguration("disk") ? <div className="workspace-telemetry-empty">当前已关闭所有硬盘实例</div> : (
-            <TelemetryDeviceBlock kind="disk" eyebrow="硬盘汇总" title="存储总览" subtitle={formatCapacitySummary(filteredLatest?.diskUsedBytes, filteredLatest?.diskTotalBytes)}>
-              <TelemetryChartCard title="已用容量" series={[{ label: "已用容量", points: series.diskUsedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
-              <TelemetryChartCard title="读写速率" subtitle="设备汇总" series={[{ label: "读取", points: series.diskReadBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "写入", points: series.diskWriteBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />
+            <TelemetryDeviceBlock widgetId="storage-disk-summary" kind="disk" eyebrow="硬盘汇总" title="存储总览" subtitle={formatCapacitySummary(filteredLatest?.diskUsedBytes, filteredLatest?.diskTotalBytes)}>
+              <TelemetryChartCard widgetId="storage-disk-summary-capacity" title="已用容量" series={[{ label: "已用容量", points: series.diskUsedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
+              <TelemetryChartCard widgetId="storage-disk-summary-io" title="读写速率" subtitle="设备汇总" series={[{ label: "读取", points: series.diskReadBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "写入", points: series.diskWriteBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />
             </TelemetryDeviceBlock>
           )}
         </TelemetrySection>
@@ -1446,25 +1478,28 @@ function DevicePage() {
               <TelemetryDeviceBlock
                 key={`gpu-${gpu.id}`}
                 kind="gpu"
+                widgetId={`gpu-${gpu.id}`}
                 eyebrow="显卡实例"
                 title={displayInstanceName(gpu.name, "GPU")}
                 subtitle={gpuLatest ? `${formatCapacitySummary(gpuLatest.memoryUsedBytes, gpuLatest.memoryTotalBytes)} · ${temperatureSubtitle}` : temperatureSubtitle}
               >
-                <TelemetryChartCard title="核心负载" subtitle="核心、编码与解码" series={[{ label: "核心", points: gpu.usagePercent }, { label: "编码", points: gpu.encodePercent }, { label: "解码", points: gpu.decodePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
-                <TelemetryChartCard title="显存已用容量" subtitle={formatCapacitySummary(gpuLatest?.memoryUsedBytes, gpuLatest?.memoryTotalBytes)} series={[{ label: "显存已用", points: gpu.memoryUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
-                <TelemetryChartCard title="温度" subtitle={temperatureSubtitle} emptyMessage="等待 GPU 温度传感器" series={[{ label: "温度", points: gpuTemperaturePoints, valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
+                <TelemetryChartCard widgetId={`gpu-${gpu.id}-load`} title="核心负载" subtitle="核心、编码与解码" series={[{ label: "核心", points: gpu.usagePercent }, { label: "编码", points: gpu.encodePercent }, { label: "解码", points: gpu.decodePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+                <TelemetryChartCard widgetId={`gpu-${gpu.id}-memory`} title="显存已用容量" subtitle={formatCapacitySummary(gpuLatest?.memoryUsedBytes, gpuLatest?.memoryTotalBytes)} series={[{ label: "显存已用", points: gpu.memoryUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
+                <TelemetryChartCard widgetId={`gpu-${gpu.id}-temperature`} title="温度" subtitle={temperatureSubtitle} emptyMessage="等待 GPU 温度传感器" series={[{ label: "温度", points: gpuTemperaturePoints, valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
               </TelemetryDeviceBlock>
             );
           }) : hasInstanceConfiguration("gpu") ? <div className="workspace-telemetry-empty">当前已关闭所有显卡实例</div> : (
-            <TelemetryDeviceBlock kind="gpu" eyebrow="显卡汇总" title="GPU 总览" subtitle={`${gpuMemorySummary} · 设备汇总`}>
-              <TelemetryChartCard title="核心负载" series={[{ label: "GPU 核心", points: series.gpuUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
-              <TelemetryChartCard title="显存已用容量" subtitle={gpuMemorySummary} series={[{ label: "显存已用", points: series.gpuMemoryUsedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
-              <TelemetryChartCard title="温度" subtitle="GPU 设备汇总" emptyMessage="等待 GPU 温度传感器" series={[{ label: "温度", points: series.gpuTemperatureC ?? [], valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
+            <TelemetryDeviceBlock widgetId="gpu-summary" kind="gpu" eyebrow="显卡汇总" title="GPU 总览" subtitle={`${gpuMemorySummary} · 设备汇总`}>
+              <TelemetryChartCard widgetId="gpu-summary-load" title="核心负载" series={[{ label: "GPU 核心", points: series.gpuUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+              <TelemetryChartCard widgetId="gpu-summary-memory" title="显存已用容量" subtitle={gpuMemorySummary} series={[{ label: "显存已用", points: series.gpuMemoryUsedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
+              <TelemetryChartCard widgetId="gpu-summary-temperature" title="温度" subtitle="GPU 设备汇总" emptyMessage="等待 GPU 温度传感器" series={[{ label: "温度", points: series.gpuTemperatureC ?? [], valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
             </TelemetryDeviceBlock>
           )}
-          {fanInstances.length ? fanInstances.map((fan) => <TelemetryChartCard key={`thermal-fan-${fan.id}`} title={`${fan.name} · 转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm, valueFormatter: (v) => `${Math.round(v)} RPM` }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : <div className="workspace-telemetry-empty">当前时间范围没有可用的风扇实例序列</div>}
+          {fanInstances.length ? fanInstances.map((fan) => <TelemetryChartCard key={`thermal-fan-${fan.id}`} widgetId={`thermal-fan-${fan.id}`} title={`${fan.name} · 转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm, valueFormatter: (v) => `${Math.round(v)} RPM` }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : <div className="workspace-telemetry-empty">当前时间范围没有可用的风扇实例序列</div>}
         </TelemetrySection>
       )}
+
+      </WidgetLayoutProvider>
 
       {/* 底部设备属性与 Agent 控制 */}
       <div className="workspace-device-grid" style={{ marginTop: 20 }}>
@@ -1488,7 +1523,8 @@ function DevicePage() {
              <SummaryRow label="L3 缓存" value={formatBytes(filteredLatest?.cpuPackages.reduce((total, cpu) => total + (cpu.l3CacheBytes ?? 0), 0))} />
             <SummaryRow label="进程 / 系统线程 / 句柄" value={`${formatCount(filteredLatest?.system.processCount)} / ${formatCount(filteredLatest?.system.threadCount)} / ${formatCount(filteredLatest?.system.handleCount)}`} />
             <SummaryRow label="内存容量" value={filteredLatest ? formatCapacitySummary(filteredLatest.memoryUsedBytes, filteredLatest.memoryTotalBytes) : "未采集"} />
-            <SummaryRow label="虚拟内存" value={filteredLatest ? virtualMemorySummary : "未采集"} />
+            <SummaryRow label="已提交 / 提交限制" value={filteredLatest ? committedMemorySummary : "未采集"} />
+            <SummaryRow label="页面文件实际使用" value={filteredLatest ? pagefileMemorySummary : "未采集"} />
             <SummaryRow label="磁盘容量" value={filteredLatest ? formatCapacitySummary(filteredLatest.diskUsedBytes, filteredLatest.diskTotalBytes) : "未采集"} />
             <SummaryRow label="网络接收" value={filteredLatest ? formatBytes(filteredLatest.networkRxBytesPerSec) + "/s" : "未采集"} />
             <SummaryRow label="网络发送" value={filteredLatest ? formatBytes(filteredLatest.networkTxBytesPerSec) + "/s" : "未采集"} />

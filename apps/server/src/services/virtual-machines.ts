@@ -107,6 +107,7 @@ export function buildVirtualMachinePayload(
       availableBytes: availableMemory,
       cachedBytes: 0,
       committedBytes: usedMemory,
+      commitLimitBytes: configuredMemory,
       swapTotalBytes: 0,
       swapUsedBytes: 0,
       speedMHz: null,

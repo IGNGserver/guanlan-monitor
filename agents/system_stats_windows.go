@@ -28,14 +28,8 @@ type windowsPerformanceInformation struct {
 }
 
 func collectWindowsSystemStats() (systemStats, bool) {
-	performanceInfo := windowsPerformanceInformation{
-		cb: uint32(unsafe.Sizeof(windowsPerformanceInformation{})),
-	}
-	result, _, _ := procGetPerformanceInfo.Call(
-		uintptr(unsafe.Pointer(&performanceInfo)),
-		uintptr(performanceInfo.cb),
-	)
-	if result == 0 {
+	performanceInfo, ok := readWindowsPerformanceInformation()
+	if !ok {
 		return systemStats{}, false
 	}
 	return systemStats{
@@ -43,4 +37,25 @@ func collectWindowsSystemStats() (systemStats, bool) {
 		ThreadCount:  int(performanceInfo.threadCount),
 		HandleCount:  uint64(performanceInfo.handleCount),
 	}, true
+}
+
+func collectWindowsCommitMemory() (uint64, uint64, bool) {
+	performanceInfo, ok := readWindowsPerformanceInformation()
+	if !ok || performanceInfo.pageSize == 0 {
+		return 0, 0, false
+	}
+	return performanceInfo.commitTotal * performanceInfo.pageSize,
+		performanceInfo.commitLimit * performanceInfo.pageSize,
+		true
+}
+
+func readWindowsPerformanceInformation() (windowsPerformanceInformation, bool) {
+	performanceInfo := windowsPerformanceInformation{
+		cb: uint32(unsafe.Sizeof(windowsPerformanceInformation{})),
+	}
+	result, _, _ := procGetPerformanceInfo.Call(
+		uintptr(unsafe.Pointer(&performanceInfo)),
+		uintptr(performanceInfo.cb),
+	)
+	return performanceInfo, result != 0
 }

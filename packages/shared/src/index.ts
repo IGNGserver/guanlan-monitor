@@ -153,6 +153,7 @@ export interface MemoryStats {
   availableBytes: number;
   cachedBytes: number;
   committedBytes: number;
+  commitLimitBytes: number;
   swapTotalBytes: number;
   swapUsedBytes: number;
   speedMHz?: number | null;
@@ -592,6 +593,7 @@ export interface MetricSeries {
   memoryAvailableBytes: SamplePoint[];
   memoryCachedBytes: SamplePoint[];
   memoryCommittedBytes: SamplePoint[];
+  memoryCommitLimitBytes: SamplePoint[];
   systemProcessCount: SamplePoint[];
   systemThreadCount: SamplePoint[];
   systemHandleCount: SamplePoint[];
@@ -658,6 +660,7 @@ export interface MetricsLatest {
   memoryAvailableBytes: number;
   memoryCachedBytes: number;
   memoryCommittedBytes: number;
+  memoryCommitLimitBytes: number;
   memorySpeedMHz: number | null;
   memorySlotCount: number | null;
   memoryFormFactor: string | null;
