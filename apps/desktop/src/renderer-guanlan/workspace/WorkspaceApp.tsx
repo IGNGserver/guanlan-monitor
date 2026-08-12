@@ -10,6 +10,7 @@ import {
 } from "./WorkspaceContext";
 import {
   DesktopWidget,
+  WidgetLayoutRegion,
   WidgetLayoutProvider,
   WidgetLayoutToolbar,
   type WidgetKind,
@@ -258,6 +259,7 @@ function TelemetryChartCard({
   footer,
   emptyMessage = "等待足够的遥测样本",
   widgetId,
+  widgetTemplateId,
   widgetKind = "content",
   widgetDefaultSize = "medium"
 }: {
@@ -270,6 +272,7 @@ function TelemetryChartCard({
   footer?: React.ReactNode;
   emptyMessage?: string;
   widgetId?: string;
+  widgetTemplateId?: string;
   widgetKind?: WidgetKind;
   widgetDefaultSize?: WidgetSize;
 }) {
@@ -300,7 +303,7 @@ function TelemetryChartCard({
         {footer && <div className="telemetry-chart-card__footer">{footer}</div>}
       </Surface>
     );
-    return widgetId ? <DesktopWidget id={widgetId} title={title} kind={widgetKind} defaultSize={widgetDefaultSize}>{emptyCard}</DesktopWidget> : emptyCard;
+    return widgetId ? <DesktopWidget id={widgetId} templateId={widgetTemplateId} title={title} kind={widgetKind} defaultSize={widgetDefaultSize}>{emptyCard}</DesktopWidget> : emptyCard;
   }
 
   const allValues = activeSeries.flatMap((s) => s.points.map((p) => p.value));
@@ -469,7 +472,7 @@ function TelemetryChartCard({
       {footer && <div className="telemetry-chart-card__footer">{footer}</div>}
     </Surface>
   );
-  return widgetId ? <DesktopWidget id={widgetId} title={title} kind={widgetKind} defaultSize={widgetDefaultSize}>{chartCard}</DesktopWidget> : chartCard;
+  return widgetId ? <DesktopWidget id={widgetId} templateId={widgetTemplateId} title={title} kind={widgetKind} defaultSize={widgetDefaultSize}>{chartCard}</DesktopWidget> : chartCard;
 }
 
 function MiniTrend({
@@ -1115,6 +1118,7 @@ function TelemetryDeviceBlock({
   subtitle,
   children,
   widgetId,
+  widgetTemplateId,
   widgetDefaultSize = "large"
 }: {
   kind: "cpu" | "disk" | "gpu" | "network" | "fan";
@@ -1123,8 +1127,14 @@ function TelemetryDeviceBlock({
   subtitle?: string;
   children: React.ReactNode;
   widgetId?: string;
+  widgetTemplateId?: string;
   widgetDefaultSize?: WidgetSize;
 }) {
+  const chartContent = widgetId ? (
+    <WidgetLayoutRegion regionKey={widgetId} templateRegionKey={kind}>
+      {children}
+    </WidgetLayoutRegion>
+  ) : children;
   const deviceBlock = (
     <article className={`workspace-device-block workspace-device-block--${kind}`}>
       <header className="workspace-device-block__header">
@@ -1135,10 +1145,10 @@ function TelemetryDeviceBlock({
         </div>
         <span className="workspace-device-block__marker" aria-hidden="true" />
       </header>
-      <div className="workspace-device-block__charts">{children}</div>
+      <div className="workspace-device-block__charts">{chartContent}</div>
     </article>
   );
-  return widgetId ? <DesktopWidget id={widgetId} title={title} kind="group" defaultSize={widgetDefaultSize}>{deviceBlock}</DesktopWidget> : deviceBlock;
+  return widgetId ? <DesktopWidget id={widgetId} templateId={widgetTemplateId} title={title} kind="group" defaultSize={widgetDefaultSize}>{deviceBlock}</DesktopWidget> : deviceBlock;
 }
 
 type TelemetryInstanceSummary = {
@@ -1367,7 +1377,13 @@ function DevicePage() {
 
 
 
-      <WidgetLayoutProvider scopeKey={`device:${selectedDevice.deviceId}:${activeTab}`} editable={activeTab !== "all"}>
+      <WidgetLayoutProvider
+        scopeKey={`device:${selectedDevice.deviceId}:${activeTab}`}
+        templateKey={`device-type:${selectedDevice.instanceType ?? "device"}:tab:${activeTab}`}
+        editable={activeTab !== "all"}
+        locked={activeTab === "all"}
+        includeNestedHidden
+      >
       {/* 视图 Tab 切换与时间范围控制器 */}
       <div className="telemetry-chart-header">
         <div className="workspace-tabs">
@@ -1403,7 +1419,7 @@ function DevicePage() {
           <TelemetryChartCard widgetId="overview-network-average" title="网卡平均吞吐" subtitle={`全部 ${networkInstances.length} 个网卡实例的平均值`} series={[{ label: "平均接收 (Rx)", points: networkAverageRx, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "平均发送 (Tx)", points: networkAverageTx, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} footer={<TelemetryModelList label="已采集网卡型号" items={networkModelItems} />} />
           <TelemetryChartCard widgetId="overview-gpu-average" title="GPU 平均使用率" subtitle={`全部 ${gpuInstances.length} 个显卡实例的平均值`} series={[{ label: "平均核心", points: gpuAverageUsage }, { label: "平均编码", points: gpuAverageEncode }, { label: "平均解码", points: gpuAverageDecode }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
           <TelemetryChartCard widgetId="overview-gpu-memory" title="GPU 平均显存已用容量" subtitle={`${gpuMemorySummary} · 按显卡实例平均`} series={[{ label: "平均显存已用", points: gpuAverageMemoryUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
-          {fanInstances.length ? fanInstances.map((fan) => <TelemetryChartCard key={`overview-fan-${fan.id}`} widgetId={`overview-fan-${fan.id}`} title={`${fan.name} · 风扇转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : <div className="workspace-telemetry-empty">当前时间范围没有可用的风扇实例序列</div>}
+          {fanInstances.length ? fanInstances.map((fan, index) => <TelemetryChartCard key={`overview-fan-${fan.id}`} widgetId={`overview-fan-${fan.id}`} widgetTemplateId={`overview-fan-${index}`} title={`${fan.name} · 风扇转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : <div className="workspace-telemetry-empty">当前时间范围没有可用的风扇实例序列</div>}
         </TelemetrySection>
       )}
 
@@ -1411,13 +1427,14 @@ function DevicePage() {
       {(activeTab === "compute" || activeTab === "all") && series && (
         <TelemetrySection eyebrow="处理器与内存" title="算力与内存明细" description="CPU 实例、频率、温度和内存层级数据分开呈现，避免不同单位被压缩成一条汇总线。">
            <DesktopWidget id="compute-cpu-facts" title="处理器与系统统计" defaultSize="large"><CpuFactsCard cpus={filteredLatest?.cpuPackages ?? []} system={filteredLatest?.system} /></DesktopWidget>
-           {cpuInstances.length ? cpuInstances.map((cpu) => {
+           {cpuInstances.length ? cpuInstances.map((cpu, index) => {
              const cpuTemperaturePoints = cpu.temperatureC.length ? cpu.temperatureC : series.cpuTemperatureC ?? [];
              return (
                <TelemetryDeviceBlock
                  key={`compute-cpu-${cpu.id}`}
                  kind="cpu"
                  widgetId={`compute-cpu-${cpu.id}`}
+                 widgetTemplateId={`cpu-${index}`}
                  eyebrow="CPU 实例"
                  title={displayModelName(cpu.model, cpu.name, "CPU")}
                  subtitle={`${cpu.coreCount ?? "未知"} 核 · ${cpu.logicalCount ?? "未知"} 线程${cpu.l3CacheBytes ? ` · L3 ${formatBytes(cpu.l3CacheBytes)}` : ""}`}
@@ -1440,14 +1457,15 @@ function DevicePage() {
       {/* ================= Tab 3: 存储与网络 (Storage & Network) ================= */}
       {(activeTab === "storage_net" || activeTab === "all") && series && (
         <TelemetrySection eyebrow="存储与网络" title="I/O 实例明细" description="按网卡和磁盘实例拆分，选择全部时会同时展示每个实例，而不是只看设备总量。" controls={<><InstanceFilter label="网卡" value={selectedNetId} onChange={setSelectedNetId} options={networkOptions} /><InstanceFilter label="磁盘" value={selectedDiskId} onChange={setSelectedDiskId} options={diskOptions} /></>}>
-          {networkInstances.length ? visibleNetworkInstances.map((network) => <TelemetryChartCard key={`network-${network.id}`} widgetId={`storage-network-${network.id}`} title={`${displayModelName(network.model, network.name, "网卡")} · 吞吐`} subtitle={[network.name, network.macAddress, network.ipv4?.[0] || network.ipv6?.[0]].filter(Boolean).join(" · ") || "独立网卡实例"} series={[{ label: "接收 (Rx)", points: network.rxBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: network.txBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />) : hasInstanceConfiguration("network") ? <div className="workspace-telemetry-empty">当前已关闭所有网卡实例</div> : <TelemetryChartCard widgetId="storage-network-summary" title="网络实时吞吐" subtitle="设备汇总" series={[{ label: "接收 (Rx)", points: series.networkRxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: series.networkTxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />}
-          {diskInstances.length ? visibleDiskInstances.map((disk) => {
+          {networkInstances.length ? visibleNetworkInstances.map((network, index) => <TelemetryChartCard key={`network-${network.id}`} widgetId={`storage-network-${network.id}`} widgetTemplateId={`network-${index}`} title={`${displayModelName(network.model, network.name, "网卡")} · 吞吐`} subtitle={[network.name, network.macAddress, network.ipv4?.[0] || network.ipv6?.[0]].filter(Boolean).join(" · ") || "独立网卡实例"} series={[{ label: "接收 (Rx)", points: network.rxBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: network.txBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />) : hasInstanceConfiguration("network") ? <div className="workspace-telemetry-empty">当前已关闭所有网卡实例</div> : <TelemetryChartCard widgetId="storage-network-summary" title="网络实时吞吐" subtitle="设备汇总" series={[{ label: "接收 (Rx)", points: series.networkRxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: series.networkTxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />}
+          {diskInstances.length ? visibleDiskInstances.map((disk, index) => {
             const diskLatest = filteredLatest?.disks?.find((item) => item.id === disk.id);
             return (
               <TelemetryDeviceBlock
                 key={`disk-${disk.id}`}
                 kind="disk"
                 widgetId={`storage-disk-${disk.id}`}
+                widgetTemplateId={`disk-${index}`}
                 eyebrow="硬盘实例"
                 title={displayModelName(disk.model, disk.name, "磁盘")}
                 subtitle={[disk.mountPoint, disk.filesystem].filter(Boolean).join(" · ") || "独立硬盘实例"}
@@ -1468,7 +1486,7 @@ function DevicePage() {
       {/* ================= Tab 4: 显卡与散热 (GPU & Thermal) ================= */}
       {(activeTab === "gpu_thermal" || activeTab === "all") && series && (
         <TelemetrySection eyebrow="显卡与散热" title="GPU、温度与风扇明细" description="每个 GPU 和每个风扇都有独立时间序列，悬停图表即可查看同一采样时刻的具体值。" controls={<InstanceFilter label="GPU" value={selectedGpuId} onChange={setSelectedGpuId} options={gpuOptions} />}>
-          {gpuInstances.length ? visibleGpuInstances.map((gpu) => {
+          {gpuInstances.length ? visibleGpuInstances.map((gpu, index) => {
             const gpuLatest = filteredLatest?.gpus?.find((item) => item.id === gpu.id);
             const gpuTemperaturePoints = gpu.temperatureC.length ? gpu.temperatureC : series.gpuTemperatureC ?? [];
             const temperatureSubtitle = gpu.temperatureSource === "cpuPackageShared"
@@ -1479,6 +1497,7 @@ function DevicePage() {
                 key={`gpu-${gpu.id}`}
                 kind="gpu"
                 widgetId={`gpu-${gpu.id}`}
+                widgetTemplateId={`gpu-${index}`}
                 eyebrow="显卡实例"
                 title={displayInstanceName(gpu.name, "GPU")}
                 subtitle={gpuLatest ? `${formatCapacitySummary(gpuLatest.memoryUsedBytes, gpuLatest.memoryTotalBytes)} · ${temperatureSubtitle}` : temperatureSubtitle}
@@ -1495,7 +1514,7 @@ function DevicePage() {
               <TelemetryChartCard widgetId="gpu-summary-temperature" title="温度" subtitle="GPU 设备汇总" emptyMessage="等待 GPU 温度传感器" series={[{ label: "温度", points: series.gpuTemperatureC ?? [], valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
             </TelemetryDeviceBlock>
           )}
-          {fanInstances.length ? fanInstances.map((fan) => <TelemetryChartCard key={`thermal-fan-${fan.id}`} widgetId={`thermal-fan-${fan.id}`} title={`${fan.name} · 转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm, valueFormatter: (v) => `${Math.round(v)} RPM` }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : <div className="workspace-telemetry-empty">当前时间范围没有可用的风扇实例序列</div>}
+          {fanInstances.length ? fanInstances.map((fan, index) => <TelemetryChartCard key={`thermal-fan-${fan.id}`} widgetId={`thermal-fan-${fan.id}`} widgetTemplateId={`thermal-fan-${index}`} title={`${fan.name} · 转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm, valueFormatter: (v) => `${Math.round(v)} RPM` }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : <div className="workspace-telemetry-empty">当前时间范围没有可用的风扇实例序列</div>}
         </TelemetrySection>
       )}
 

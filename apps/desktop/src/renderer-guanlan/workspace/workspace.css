@@ -1025,11 +1025,11 @@ kbd {
 .workspace-telemetry-section__controls { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .workspace-device-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .workspace-device-chart-grid,
-.workspace-widget-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(170px, auto); gap: 14px; align-items: stretch; }
-.workspace-widget { position: relative; min-width: 0; min-height: 0; grid-column: span 2; grid-row: span 2; }
-.workspace-widget--large { grid-column: span 4; grid-row: span 2; }
-.workspace-widget--medium { grid-column: span 2; grid-row: span 2; }
-.workspace-widget--small { grid-column: span 1; grid-row: span 1; }
+.workspace-widget-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: minmax(42px, auto); grid-auto-flow: dense; gap: 14px; align-items: stretch; }
+.workspace-widget { position: relative; min-width: 0; min-height: 0; grid-column: var(--widget-x, auto) / span var(--widget-w, 6); grid-row: var(--widget-y, auto) / span var(--widget-h, 6); }
+.workspace-widget--large { --widget-w: 12; --widget-h: 6; --widget-w-md: 6; --widget-h-md: 3; }
+.workspace-widget--medium { --widget-w: 6; --widget-h: 6; --widget-w-md: 3; --widget-h-md: 3; }
+.workspace-widget--small { --widget-w: 3; --widget-h: 3; --widget-w-md: 2; --widget-h-md: 2; }
 .workspace-widget__content { min-width: 0; height: 100%; }
 .workspace-widget__content > .telemetry-chart-card,
 .workspace-widget__content > .workspace-cpu-facts,
@@ -1051,6 +1051,20 @@ kbd {
 .workspace-widget__hide { flex: 0 0 auto; padding: 4px 6px; border-radius: 6px; color: var(--workspace-text-muted); }
 .workspace-widget__hide:hover { color: var(--workspace-red); background: color-mix(in srgb, var(--workspace-red) 10%, transparent); }
 .workspace-layout-toolbar { display: inline-flex; position: relative; align-items: center; gap: 7px; }
+.workspace-layout-source { display: inline-flex; height: 24px; align-items: center; padding: 0 7px; border: 1px solid var(--workspace-border); border-radius: 7px; color: var(--workspace-text-muted); background: var(--workspace-surface-subtle); font-size: 9px; font-weight: 650; white-space: nowrap; }
+.workspace-layout-history,
+.workspace-layout-actions { display: inline-flex; align-items: center; gap: 3px; }
+.workspace-layout-history { padding: 2px; border: 1px solid var(--workspace-border); border-radius: 8px; background: var(--workspace-surface-subtle); }
+.workspace-layout-history button,
+.workspace-layout-actions button { min-height: 27px; border: 1px solid transparent; border-radius: 7px; color: var(--workspace-text-muted); background: transparent; font: inherit; font-size: 10px; cursor: pointer; transition: color var(--workspace-transition), border-color var(--workspace-transition), background var(--workspace-transition), opacity var(--workspace-transition); }
+.workspace-layout-history button { width: 27px; padding: 0; font-size: 16px; line-height: 1; }
+.workspace-layout-actions { padding-left: 3px; }
+.workspace-layout-actions button { padding: 0 7px; }
+.workspace-layout-history button:hover:not(:disabled),
+.workspace-layout-actions button:hover { border-color: var(--workspace-border-strong); color: var(--workspace-text); background: var(--workspace-surface-hover); }
+.workspace-layout-history button:disabled { cursor: not-allowed; opacity: 0.35; }
+.workspace-layout-actions input { display: none; }
+.workspace-layout-notice { color: var(--workspace-green); font-size: 10px; white-space: nowrap; }
 .workspace-layout-toggle { display: inline-flex; height: 32px; align-items: center; gap: 7px; padding: 0 11px; border: 1px solid var(--workspace-border-strong); border-radius: 9px; color: var(--workspace-text-secondary); background: var(--workspace-surface); font-size: 11px; font-weight: 650; transition: color var(--workspace-transition), border-color var(--workspace-transition), background var(--workspace-transition); }
 .workspace-layout-toggle:hover,
 .workspace-layout-toggle.is-active { border-color: color-mix(in srgb, var(--workspace-accent) 55%, var(--workspace-border-strong)); color: var(--workspace-accent); background: var(--workspace-accent-soft); }
@@ -1220,15 +1234,10 @@ kbd {
   .workspace-overview-grid,
   .workspace-device-grid { grid-template-columns: minmax(0, 1fr); }
   .workspace-device-chart-grid,
-  .workspace-widget-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .workspace-widget--large,
-  .workspace-widget--medium { grid-column: span 2; }
-  .workspace-widget--small { grid-column: span 1; }
+  .workspace-widget-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .workspace-widget { grid-column: span var(--widget-w-md, 3); grid-row: span var(--widget-h-md, 3); }
   .workspace-cpu-facts__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .workspace-device-block__charts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .workspace-device-block__charts .workspace-widget--large,
-  .workspace-device-block__charts .workspace-widget--medium { grid-column: span 2; }
-  .workspace-device-block__charts .workspace-widget--small { grid-column: span 1; }
+  .workspace-device-block__charts { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .workspace-overview-column { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-metric-option-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1267,14 +1276,9 @@ kbd {
   .workspace-hub-hero > div:first-child { grid-row: span 2; }
   .workspace-device-chart-grid,
   .workspace-widget-grid { grid-template-columns: minmax(0, 1fr); }
-  .workspace-widget--large,
-  .workspace-widget--medium,
-  .workspace-widget--small { grid-column: span 1; grid-row: span 1; }
+  .workspace-widget { grid-column: span 1; grid-row: span 1; }
   .workspace-cpu-facts__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-device-block__charts { grid-template-columns: minmax(0, 1fr); }
-  .workspace-device-block__charts .workspace-widget--large,
-  .workspace-device-block__charts .workspace-widget--medium,
-  .workspace-device-block__charts .workspace-widget--small { grid-column: span 1; grid-row: span 1; }
   .workspace-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-metric-option-grid { grid-template-columns: 1fr; }
   .workspace-probe-row { grid-template-columns: minmax(0, 1fr) 150px 38px; }
