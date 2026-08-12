@@ -270,6 +270,7 @@ export class LocalWidgetLayoutStore {
   }
 
   async save(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> {
+    const templateRequest = request.template;
     await this.store.update((db) => {
       const layouts = (db.widgetLayouts ??= { instances: {}, templates: {} });
       if (Object.prototype.hasOwnProperty.call(request, "instanceLayout")) {
@@ -281,18 +282,18 @@ export class LocalWidgetLayoutStore {
         };
       }
 
-      if (request.template) {
+      if (templateRequest) {
         const templates = (layouts.templates[request.templateKey] ??= {});
         const now = new Date().toISOString();
-        const id = request.template.id?.trim() || randomUUID();
+        const id = templateRequest.id?.trim() || randomUUID();
         const existing = templates[id];
         templates[id] = {
           id,
-          name: request.template.name.trim(),
+          name: templateRequest.name.trim(),
           templateKey: request.templateKey,
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,
-          layout: structuredClone(request.template.layout)
+          layout: structuredClone(templateRequest.layout)
         };
       }
 
