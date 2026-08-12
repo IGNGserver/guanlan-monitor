@@ -5,7 +5,9 @@ import type {
   DesktopRendererBridge,
   DesktopSnapshot,
   DesktopSnapshotRequest,
-  DesktopStartupSettings
+  DesktopStartupSettings,
+  WidgetLayoutRequest,
+  WidgetLayoutSaveRequest
 } from "@dsc/shared";
 import { IPC_CHANNELS } from "../ipc-contract.js";
 
@@ -19,6 +21,8 @@ const bridge: DesktopRendererBridge = {
   login: (accessKey: string) => ipcRenderer.invoke(IPC_CHANNELS.login, accessKey),
   logout: () => ipcRenderer.invoke(IPC_CHANNELS.logout),
   cloudPush: () => ipcRenderer.invoke(IPC_CHANNELS.cloudPush),
+  getWidgetLayout: (request: WidgetLayoutRequest) => ipcRenderer.invoke(IPC_CHANNELS.getWidgetLayout, request),
+  saveWidgetLayout: (request: WidgetLayoutSaveRequest) => ipcRenderer.invoke(IPC_CHANNELS.saveWidgetLayout, request),
   saveFanNote: (deviceId: string, fanId: string, note: string) => ipcRenderer.invoke(IPC_CHANNELS.saveFanNote, deviceId, fanId, note),
   deleteInstance: (deviceId: string) => ipcRenderer.invoke(IPC_CHANNELS.deleteInstance, deviceId),
   reorderInstances: (deviceIds: string[]) => ipcRenderer.invoke(IPC_CHANNELS.reorderInstances, deviceIds),

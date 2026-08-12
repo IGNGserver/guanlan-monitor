@@ -4,7 +4,10 @@ import type {
   DesktopSnapshotRequest,
   DesktopConfigPatch,
   DesktopAgentControlAction,
-  DesktopStartupSettings
+  DesktopStartupSettings,
+  WidgetLayoutRequest,
+  WidgetLayoutSaveRequest,
+  WidgetLayoutSync
 } from "@dsc/shared";
 
 class SafeDscBridge implements DesktopRendererBridge {
@@ -59,6 +62,14 @@ class SafeDscBridge implements DesktopRendererBridge {
 
   async cloudPush(): Promise<DesktopSnapshot> {
     return this.requireBridge().cloudPush();
+  }
+
+  async getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync> {
+    return this.requireBridge().getWidgetLayout(request);
+  }
+
+  async saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> {
+    return this.requireBridge().saveWidgetLayout(request);
   }
 
   async saveFanNote(deviceId: string, fanId: string, note: string): Promise<DesktopSnapshot> {

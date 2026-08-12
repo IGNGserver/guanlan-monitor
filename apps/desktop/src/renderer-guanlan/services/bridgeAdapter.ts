@@ -8,7 +8,10 @@ import type {
   DesktopSnapshotRequest,
   DesktopConfigPatch,
   DesktopAgentControlAction,
-  DesktopStartupSettings
+  DesktopStartupSettings,
+  WidgetLayoutRequest,
+  WidgetLayoutSaveRequest,
+  WidgetLayoutSync
 } from "@dsc/shared";
 import type { IGuanlanDataAdapter } from "./adapter";
 import { dscBridge } from "../../renderer/services/dscBridge";
@@ -52,6 +55,14 @@ export class BridgeGuanlanDataAdapter implements IGuanlanDataAdapter {
 
   async cloudPush(): Promise<DesktopSnapshot> {
     return dscBridge.cloudPush();
+  }
+
+  async getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync> {
+    return dscBridge.getWidgetLayout(request);
+  }
+
+  async saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> {
+    return dscBridge.saveWidgetLayout(request);
   }
 
   async openExternal(url: string): Promise<void> {

@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
-import type { DeviceBlockKey, DeviceMetricKey, MetricWindow } from "@dsc/shared";
+import type { DeviceBlockKey, DeviceMetricKey, MetricWindow, WidgetLayoutDocument, WidgetLayoutSaveRequest, WidgetLayoutSync, WidgetLayoutTemplate } from "@dsc/shared";
 import type { TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import type {
   DeviceRecord,
@@ -32,6 +33,10 @@ interface LocalDbShape {
       instanceMetricConfig?: Record<string, DeviceMetricKey[]>;
     }
   >;
+  widgetLayouts?: {
+    instances: Record<string, { templateKey: string; updatedAt: string; layout: WidgetLayoutDocument }>;
+    templates: Record<string, Record<string, WidgetLayoutTemplate>>;
+  };
 }
 
 const EMPTY_DB: LocalDbShape = {
@@ -42,7 +47,8 @@ const EMPTY_DB: LocalDbShape = {
   minuteHistory: {},
   history: {},
   fanNotes: {},
-  deviceMetricConfigs: {}
+  deviceMetricConfigs: {},
+  widgetLayouts: { instances: {}, templates: {} }
 };
 
 class LocalJsonStore {
@@ -243,6 +249,56 @@ export class LocalDeviceMetricConfigStore implements DeviceMetricConfigStore {
         )
       };
     });
+  }
+}
+
+export class LocalWidgetLayoutStore {
+  constructor(private readonly store: LocalJsonStore) {}
+
+  async get(scopeKey: string, templateKey: string): Promise<WidgetLayoutSync> {
+    const db = await this.store.read();
+    const layouts = db.widgetLayouts ?? { instances: {}, templates: {} };
+    const instance = layouts.instances[scopeKey];
+    return {
+      scopeKey,
+      templateKey,
+      instanceLayout: instance?.templateKey === templateKey ? instance.layout : null,
+      templates: Object.values(layouts.templates[templateKey] ?? {})
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+        .map((template) => structuredClone(template))
+    };
+  }
+
+  async save(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> {
+    await this.store.update((db) => {
+      const layouts = (db.widgetLayouts ??= { instances: {}, templates: {} });
+      if (Object.prototype.hasOwnProperty.call(request, "instanceLayout")) {
+        if (request.instanceLayout === null) delete layouts.instances[request.scopeKey];
+        else layouts.instances[request.scopeKey] = {
+          templateKey: request.templateKey,
+          updatedAt: new Date().toISOString(),
+          layout: structuredClone(request.instanceLayout)
+        };
+      }
+
+      if (request.template) {
+        const templates = (layouts.templates[request.templateKey] ??= {});
+        const now = new Date().toISOString();
+        const id = request.template.id?.trim() || randomUUID();
+        const existing = templates[id];
+        templates[id] = {
+          id,
+          name: request.template.name.trim(),
+          templateKey: request.templateKey,
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+          layout: structuredClone(request.template.layout)
+        };
+      }
+
+      if (request.deleteTemplateId) delete layouts.templates[request.templateKey]?.[request.deleteTemplateId];
+    });
+    return this.get(request.scopeKey, request.templateKey);
   }
 }
 

@@ -7,7 +7,10 @@ import type {
   DeviceSummary,
   InstanceType,
   MetricWindow,
-  TrafficCalendarMode
+  TrafficCalendarMode,
+  WidgetLayoutRequest,
+  WidgetLayoutSaveRequest,
+  WidgetLayoutSync
 } from "@dsc/shared";
 import { dscBridge } from "../../renderer/services/dscBridge";
 import { BridgeGuanlanDataAdapter } from "../services/bridgeAdapter";
@@ -79,6 +82,8 @@ interface WorkspaceContextValue {
   saveHubConnection: (serverUrl: string, accessKey: string) => Promise<boolean>;
   updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => Promise<boolean>;
   cloudPush: () => Promise<boolean>;
+  getWidgetLayout: (request: WidgetLayoutRequest) => Promise<WidgetLayoutSync>;
+  saveWidgetLayout: (request: WidgetLayoutSaveRequest) => Promise<WidgetLayoutSync>;
   deleteInstance: (deviceId: string) => Promise<boolean>;
   reorderInstances: (deviceIds: string[]) => Promise<boolean>;
   minimizeWindow: () => Promise<void>;
@@ -373,6 +378,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     [adapter, runMutation]
   );
   const cloudPush = useCallback(() => runMutation(() => adapter.cloudPush(), "配置已同步到中枢", "同步失败"), [adapter, runMutation]);
+  const getWidgetLayout = useCallback((request: WidgetLayoutRequest) => adapter.getWidgetLayout(request), [adapter]);
+  const saveWidgetLayout = useCallback((request: WidgetLayoutSaveRequest) => adapter.saveWidgetLayout(request), [adapter]);
   const deleteInstance = useCallback(
     (deviceId: string) => runMutation(() => adapter.deleteInstance(deviceId), "实例已删除；下次上报后会重新显示", "删除实例失败"),
     [adapter, runMutation]
@@ -472,6 +479,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     saveHubConnection,
     updateStartupSettings,
     cloudPush,
+    getWidgetLayout,
+    saveWidgetLayout,
     deleteInstance,
     reorderInstances,
     minimizeWindow,

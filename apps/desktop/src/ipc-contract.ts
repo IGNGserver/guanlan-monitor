@@ -8,6 +8,8 @@ export const IPC_CHANNELS = {
   login: "dsc:login",
   logout: "dsc:logout",
   cloudPush: "dsc:cloud-push",
+  getWidgetLayout: "dsc:get-widget-layout",
+  saveWidgetLayout: "dsc:save-widget-layout",
   saveFanNote: "dsc:save-fan-note",
   deleteInstance: "dsc:delete-instance",
   reorderInstances: "dsc:reorder-instances",

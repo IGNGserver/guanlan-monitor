@@ -9,7 +9,10 @@ import type {
   DesktopSnapshotRequest,
   DesktopStartupSettings,
   MetricWindow,
-  TrafficCalendarMode
+  TrafficCalendarMode,
+  WidgetLayoutRequest,
+  WidgetLayoutSaveRequest,
+  WidgetLayoutSync
 } from "@dsc/shared";
 import { AgentManager } from "./agent-manager.js";
 import { readJsonFile, writeJsonAtomically } from "./atomic-json.js";
@@ -62,6 +65,8 @@ export class DesktopController {
       login: (accessKey: string) => this.login(accessKey),
       logout: () => this.logout(),
       cloudPush: () => this.cloudPush(),
+      getWidgetLayout: (request: WidgetLayoutRequest) => this.getWidgetLayout(request),
+      saveWidgetLayout: (request: WidgetLayoutSaveRequest) => this.saveWidgetLayout(request),
       saveFanNote: (deviceId: string, fanId: string, note: string) => this.saveFanNote(deviceId, fanId, note),
       deleteInstance: (deviceId: string) => this.deleteInstance(deviceId),
       reorderInstances: (deviceIds: string[]) => this.reorderInstances(deviceIds),
@@ -214,6 +219,18 @@ export class DesktopController {
     return this.refresh({ selectedDeviceId: deviceId });
   }
 
+  async getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync> {
+    const rawState = await this.agent.start();
+    if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
+    return this.hub.getWidgetLayout(request);
+  }
+
+  async saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> {
+    const rawState = await this.agent.start();
+    if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
+    return this.hub.saveWidgetLayout(request);
+  }
+
   async deleteInstance(deviceId: string): Promise<DesktopSnapshot> {
     const rawState = await this.agent.start();
     if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
@@ -250,9 +267,10 @@ export class DesktopController {
 
   private async readLiveData(rawState: RawAgentBackendState) {
     const localBackend = redactBackendState(rawState);
-    const localDeviceId = rawState.config.connection.deviceId.trim() || null;
     let devices = [] as DesktopSnapshot["devices"];
-    let selectedDeviceId = this.selectedDeviceId ?? localDeviceId;
+    // Device pages are hub-backed. Never synthesize a local device entry when
+    // the hub is unavailable or the agent has not uploaded its latest data.
+    let selectedDeviceId = this.selectedDeviceId;
     let metrics: DesktopSnapshot["metrics"] = null;
     let trafficCalendar: DesktopSnapshot["trafficCalendar"] = null;
     let update: DesktopSnapshot["update"] = null;
@@ -263,7 +281,8 @@ export class DesktopController {
       authenticated = true;
       if (!selectedDeviceId && devices.length > 0) selectedDeviceId = devices[0].deviceId;
     } catch {
-      // Local telemetry and cached Hub data remain useful while signed out/offline.
+      // The caller may fall back to the same cached hub snapshot used for any
+      // other device, but local agent telemetry must never become a device page.
     }
 
     if (selectedDeviceId && this.hub.isConfigured) {

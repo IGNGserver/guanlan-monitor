@@ -9,12 +9,13 @@ import type {
   MetricSeries,
   MetricWindow,
   ReleaseChannel,
-  TrafficCalendarMode
+  TrafficCalendarMode,
+  WidgetLayoutSaveRequest
 } from "@dsc/shared";
 import { z } from "zod";
 import { env } from "./config.js";
 import type { MetricsService } from "./services/metrics.js";
-import { LocalDeviceMetricConfigStore, LocalFanNoteStore, createLocalStore } from "./repositories/local.js";
+import { LocalDeviceMetricConfigStore, LocalFanNoteStore, LocalWidgetLayoutStore, createLocalStore } from "./repositories/local.js";
 import type { Repositories, SessionValue } from "./types.js";
 import { ALL_DEVICE_METRIC_KEYS, filterAgentPayloadInstances, getAvailableMetrics, resolveCpuFrequencyMHz, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
 import { getSystemVersionInfo, getUpdateInfo } from "./updates.js";
@@ -121,6 +122,43 @@ const metricConfigSchema = z.object({
   ).optional()
 });
 
+const widgetLayoutPlacementSchema = z.object({
+  x: z.number().int().min(1).max(12),
+  y: z.number().int().min(1),
+  w: z.number().int().min(1).max(12),
+  h: z.number().int().min(1),
+  size: z.enum(["large", "medium", "small"]),
+  hidden: z.boolean()
+});
+
+const widgetLayoutDocumentSchema = z.object({
+  placements: z.record(z.string().min(1).max(160), widgetLayoutPlacementSchema),
+  catalog: z.record(z.string().min(1).max(160), z.object({
+    title: z.string().min(1).max(200),
+    kind: z.enum(["group", "content"]),
+    defaultSize: z.enum(["large", "medium", "small"]),
+    templateId: z.string().min(1).max(160).optional()
+  })),
+  snapToGrid: z.boolean()
+});
+
+const widgetLayoutQuerySchema = z.object({
+  scopeKey: z.string().trim().min(1).max(240),
+  templateKey: z.string().trim().min(1).max(240)
+});
+
+const widgetLayoutSaveSchema = z.object({
+  scopeKey: z.string().trim().min(1).max(240),
+  templateKey: z.string().trim().min(1).max(240),
+  instanceLayout: widgetLayoutDocumentSchema.nullable().optional(),
+  template: z.object({
+    id: z.string().trim().min(1).max(160).optional(),
+    name: z.string().trim().min(1).max(80),
+    layout: widgetLayoutDocumentSchema
+  }).optional(),
+  deleteTemplateId: z.string().trim().min(1).max(160).optional()
+});
+
 const updateQuerySchema = z.object({
   platform: z.enum([
     "hub",
@@ -149,6 +187,7 @@ export async function registerRoutes(
   const store = createLocalStore();
   const fanNotes = new LocalFanNoteStore(store);
   const metricConfigs = new LocalDeviceMetricConfigStore(store);
+  const widgetLayouts = new LocalWidgetLayoutStore(store);
 
   app.get("/api/system/version", async () => getSystemVersionInfo());
 
@@ -208,6 +247,18 @@ export async function registerRoutes(
     const session = getSession(request);
     if (!session) return reply.code(401).send({ error: "unauthorized" });
     return { ok: true, issuedAt: session.issuedAt };
+  });
+
+  app.get<{ Querystring: { scopeKey: string; templateKey: string } }>("/api/widget-layouts", { preHandler: requireAuth }, async (request, reply) => {
+    const parsed = widgetLayoutQuerySchema.safeParse(request.query);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_widget_layout_query" });
+    return widgetLayouts.get(parsed.data.scopeKey, parsed.data.templateKey);
+  });
+
+  app.put<{ Body: WidgetLayoutSaveRequest }>("/api/widget-layouts", { preHandler: requireAuth }, async (request, reply) => {
+    const parsed = widgetLayoutSaveSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_widget_layout_payload" });
+    return widgetLayouts.save(parsed.data as WidgetLayoutSaveRequest);
   });
 
   const deviceReorderSchema = z.object({

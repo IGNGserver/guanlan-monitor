@@ -1,38 +1,29 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  WidgetLayoutCatalogEntry as SharedWidgetLayoutCatalogEntry,
+  WidgetLayoutDocument,
+  WidgetLayoutKind,
+  WidgetLayoutPlacement as SharedWidgetLayoutPlacement,
+  WidgetLayoutRequest,
+  WidgetLayoutSaveRequest,
+  WidgetLayoutSize,
+  WidgetLayoutSync,
+  WidgetLayoutTemplate
+} from "@dsc/shared";
 
-export type WidgetSize = "large" | "medium" | "small";
-export type WidgetKind = "group" | "content";
-
-export type WidgetPlacement = {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  size: WidgetSize;
-  hidden: boolean;
-};
+export type WidgetSize = WidgetLayoutSize;
+export type WidgetKind = WidgetLayoutKind;
+export type WidgetPlacement = SharedWidgetLayoutPlacement;
 
 type WidgetDefinition = {
   id: string;
+  templateId?: string;
   title: string;
   kind: WidgetKind;
   defaultSize: WidgetSize;
-  templateId?: string;
 };
 
-type WidgetCatalogEntry = Omit<WidgetDefinition, "id">;
-
-type WidgetScope = {
-  templateKey?: string;
-  placements: Record<string, WidgetPlacement>;
-  catalog: Record<string, WidgetCatalogEntry>;
-};
-
-type WidgetStore = {
-  version: 2;
-  scopes: Record<string, WidgetScope>;
-  templates: Record<string, WidgetScope>;
-};
+type WidgetCatalogEntry = SharedWidgetLayoutCatalogEntry;
 
 type ResolvedWidget = {
   size: WidgetSize;
@@ -40,24 +31,11 @@ type ResolvedWidget = {
   placement?: WidgetPlacement;
 };
 
-export type HiddenWidget = WidgetDefinition & {
-  scopeKey: string;
-  scopeLabel?: string;
-};
+export type HiddenWidget = WidgetDefinition;
 
-type WidgetLayoutExport = {
-  kind: "dsc-widget-layout";
-  version: 2;
-  exportedAt: string;
-  templateKey: string;
-  scope: WidgetScope;
-  template: WidgetScope;
-  regions: Array<{
-    suffix: string;
-    templateKey: string;
-    scope: WidgetScope;
-    template: WidgetScope;
-  }>;
+export type WidgetLayoutSyncClient = {
+  getWidgetLayout: (request: WidgetLayoutRequest) => Promise<WidgetLayoutSync>;
+  saveWidgetLayout: (request: WidgetLayoutSaveRequest) => Promise<WidgetLayoutSync>;
 };
 
 type WidgetLayoutContextValue = {
@@ -67,28 +45,36 @@ type WidgetLayoutContextValue = {
   locked: boolean;
   editMode: boolean;
   setEditMode: (value: React.SetStateAction<boolean>) => void;
+  loading: boolean;
+  saving: boolean;
+  dirty: boolean;
+  syncMessage: string;
+  snapToGrid: boolean;
+  templates: WidgetLayoutTemplate[];
   resolveWidget: (definition: WidgetDefinition) => ResolvedWidget;
+  getWidgetSize: (id: string, defaultSize: WidgetSize, templateId?: string) => WidgetSize;
   registerWidget: (definition: WidgetDefinition) => void;
   updateSize: (id: string, size: WidgetSize) => void;
   hideWidget: (id: string) => void;
-  restoreWidget: (id: string, targetScopeKey?: string) => void;
+  restoreWidget: (id: string) => void;
   reorderWidgets: (draggedId: string, targetId: string) => void;
+  toggleSnapToGrid: () => void;
   resetDeviceLayout: () => void;
-  saveAsTemplate: () => void;
+  applyTemplate: (templateId: string) => void;
+  saveLayout: () => Promise<boolean>;
+  saveAsTemplate: (name: string, templateId?: string) => Promise<boolean>;
+  deleteTemplate: (templateId: string) => Promise<boolean>;
   exportLayout: () => void;
   importLayout: (json: string) => boolean;
   canUndo: boolean;
   canRedo: boolean;
   undo: () => void;
   redo: () => void;
-  hasLocalOverride: boolean;
-  hasTemplate: boolean;
+  hasInstanceLayout: boolean;
   hiddenWidgets: HiddenWidget[];
 };
 
-const STORAGE_KEY = "dsc-desktop-widget-layout-v2";
-const LEGACY_STORAGE_KEY = "dsc-desktop-widget-layout-v1";
-const STORAGE_EVENT = "dsc-widget-layout-changed";
+const WidgetLayoutContext = createContext<WidgetLayoutContextValue | null>(null);
 const GRID_COLUMNS = 12;
 const HISTORY_LIMIT = 30;
 const DEFAULT_SIZE: WidgetSize = "medium";
@@ -99,77 +85,30 @@ const SIZE_PRESETS: Record<WidgetSize, Pick<WidgetPlacement, "w" | "h">> = {
   small: { w: 3, h: 3 }
 };
 
-const WidgetLayoutContext = createContext<WidgetLayoutContextValue | null>(null);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+function emptyLayout(snapToGrid = true): WidgetLayoutDocument {
+  return { placements: {}, catalog: {}, snapToGrid };
 }
 
-function isWidgetSize(value: unknown): value is WidgetSize {
-  return value === "large" || value === "medium" || value === "small";
-}
-
-function isWidgetKind(value: unknown): value is WidgetKind {
-  return value === "group" || value === "content";
-}
-
-function createScope(templateKey?: string): WidgetScope {
-  return { templateKey, placements: {}, catalog: {} };
-}
-
-function createStore(): WidgetStore {
-  return { version: 2, scopes: {}, templates: {} };
-}
-
-function createPlacement(size: WidgetSize, x = 1, y = 1, hidden = false): WidgetPlacement {
-  const preset = SIZE_PRESETS[size];
+function cloneLayout(layout: WidgetLayoutDocument): WidgetLayoutDocument {
   return {
-    x: Math.max(1, Math.min(Math.round(x), GRID_COLUMNS - preset.w + 1)),
-    y: Math.max(1, Math.round(y)),
-    w: preset.w,
-    h: preset.h,
-    size,
-    hidden
+    placements: Object.fromEntries(Object.entries(layout.placements).map(([id, placement]) => [id, { ...placement }])),
+    catalog: Object.fromEntries(Object.entries(layout.catalog).map(([id, entry]) => [id, { ...entry }])),
+    snapToGrid: layout.snapToGrid
   };
 }
 
-function normalizePlacement(value: unknown): WidgetPlacement | null {
-  if (!isRecord(value)) return null;
-  const size = isWidgetSize(value.size) ? value.size : DEFAULT_SIZE;
+function normalizePlacement(value: Partial<WidgetPlacement> | undefined, sizeFallback: WidgetSize = DEFAULT_SIZE): WidgetPlacement {
+  const size = value?.size === "large" || value?.size === "medium" || value?.size === "small" ? value.size : sizeFallback;
   const preset = SIZE_PRESETS[size];
-  const x = Number.isFinite(value.x) ? Number(value.x) : 1;
-  const y = Number.isFinite(value.y) ? Number(value.y) : 1;
+  const x = Number.isFinite(value?.x) ? Math.round(value?.x as number) : 1;
+  const y = Number.isFinite(value?.y) ? Math.round(value?.y as number) : 1;
   return {
-    x: Math.max(1, Math.min(Math.round(x), GRID_COLUMNS - preset.w + 1)),
-    y: Math.max(1, Math.round(y)),
+    x: Math.max(1, Math.min(x, GRID_COLUMNS - preset.w + 1)),
+    y: Math.max(1, y),
     w: preset.w,
     h: preset.h,
     size,
-    hidden: value.hidden === true
-  };
-}
-
-function normalizeCatalog(value: unknown): Record<string, WidgetCatalogEntry> {
-  if (!isRecord(value)) return {};
-  const catalog: Record<string, WidgetCatalogEntry> = {};
-  for (const [id, rawEntry] of Object.entries(value)) {
-    if (!isRecord(rawEntry) || typeof rawEntry.title !== "string") continue;
-    const entry: WidgetCatalogEntry = {
-      title: rawEntry.title,
-      kind: isWidgetKind(rawEntry.kind) ? rawEntry.kind : "content",
-      defaultSize: isWidgetSize(rawEntry.defaultSize) ? rawEntry.defaultSize : DEFAULT_SIZE
-    };
-    if (typeof rawEntry.templateId === "string" && rawEntry.templateId) entry.templateId = rawEntry.templateId;
-    catalog[id] = entry;
-  }
-  return catalog;
-}
-
-function cloneScope(scope: WidgetScope): WidgetScope {
-  return {
-    templateKey: scope.templateKey,
-    placements: Object.fromEntries(Object.entries(scope.placements).map(([id, placement]) => [id, { ...placement }])),
-    catalog: { ...scope.catalog }
+    hidden: value?.hidden === true
   };
 }
 
@@ -184,14 +123,14 @@ function findNextFreePlacement(
   preferredY = 1
 ): Pick<WidgetPlacement, "x" | "y"> {
   const preset = SIZE_PRESETS[size];
+  const existing = Object.values(placements).filter((placement) => !placement.hidden);
   const startY = Math.max(1, Math.round(preferredY));
   const startX = Math.max(1, Math.min(Math.round(preferredX), GRID_COLUMNS - preset.w + 1));
-  const existing = Object.values(placements);
 
   for (let y = startY; y < startY + 1000; y += 1) {
     const firstX = y === startY ? startX : 1;
     for (let x = firstX; x <= GRID_COLUMNS - preset.w + 1; x += 1) {
-      const candidate = createPlacement(size, x, y);
+      const candidate = normalizePlacement({ x, y, size });
       if (existing.every((placement) => !intersects(candidate, placement))) return { x, y };
     }
   }
@@ -200,509 +139,422 @@ function findNextFreePlacement(
   return { x: 1, y: lastRow };
 }
 
-function normalizePlacements(placements: Record<string, WidgetPlacement>): Record<string, WidgetPlacement> {
-  const result: Record<string, WidgetPlacement> = {};
-  const entries = Object.entries(placements).sort(([, left], [, right]) => left.y - right.y || left.x - right.x);
-  for (const [id, placement] of entries) {
-    const nextPosition = findNextFreePlacement(result, placement.size, placement.x, placement.y);
-    result[id] = { ...placement, ...nextPosition };
+function normalizePlacements(placements: Record<string, WidgetPlacement>, snapToGrid: boolean): Record<string, WidgetPlacement> {
+  const normalized = Object.fromEntries(
+    Object.entries(placements).map(([id, placement]) => [id, normalizePlacement(placement)])
+  ) as Record<string, WidgetPlacement>;
+  if (!snapToGrid) return normalized;
+
+  const visible = Object.entries(normalized)
+    .filter(([, placement]) => !placement.hidden)
+    .sort(([, left], [, right]) => left.y - right.y || left.x - right.x);
+  const hidden = Object.entries(normalized).filter(([, placement]) => placement.hidden);
+  const compacted: Record<string, WidgetPlacement> = {};
+  for (const [id, placement] of visible) {
+    const position = findNextFreePlacement(compacted, placement.size);
+    compacted[id] = { ...placement, ...position };
   }
-  return result;
+  for (const [id, placement] of hidden) compacted[id] = placement;
+  return compacted;
 }
 
-function migrateLegacyScope(value: unknown): WidgetScope {
-  const raw = isRecord(value) ? value : {};
-  const catalog = normalizeCatalog(raw.catalog);
-  const placements: Record<string, WidgetPlacement> = {};
-  const legacyOrder = Array.isArray(raw.order) ? raw.order.filter((id): id is string => typeof id === "string") : Object.keys(catalog);
-  const legacyPreferences = isRecord(raw.preferences) ? raw.preferences : {};
-  const ids = [...new Set([...legacyOrder, ...Object.keys(catalog)])];
-
-  for (const id of ids) {
-    const entry = catalog[id];
-    const preference = isRecord(legacyPreferences[id]) ? legacyPreferences[id] : {};
-    const size = isWidgetSize(preference.size) ? preference.size : entry?.defaultSize ?? DEFAULT_SIZE;
-    const position = findNextFreePlacement(placements, size);
-    placements[id] = createPlacement(size, position.x, position.y, preference.hidden === true);
+function normalizeLayout(layout: WidgetLayoutDocument | null | undefined): WidgetLayoutDocument {
+  if (!layout) return emptyLayout();
+  const catalog: Record<string, WidgetCatalogEntry> = {};
+  for (const [id, entry] of Object.entries(layout.catalog ?? {})) {
+    if (!entry || typeof entry.title !== "string") continue;
+    catalog[id] = {
+      title: entry.title,
+      kind: entry.kind === "group" ? "group" : "content",
+      defaultSize: entry.defaultSize === "large" || entry.defaultSize === "small" ? entry.defaultSize : "medium",
+      ...(entry.templateId ? { templateId: entry.templateId } : {})
+    };
   }
-
-  return { placements, catalog };
-}
-
-function normalizeScope(value: unknown): WidgetScope {
-  const raw = isRecord(value) ? value : {};
-  const catalog = normalizeCatalog(raw.catalog);
   const placements: Record<string, WidgetPlacement> = {};
-  if (isRecord(raw.placements)) {
-    for (const [id, rawPlacement] of Object.entries(raw.placements)) {
-      const placement = normalizePlacement(rawPlacement);
-      if (placement) placements[id] = placement;
-    }
+  for (const [id, placement] of Object.entries(layout.placements ?? {})) {
+    placements[id] = normalizePlacement(placement, catalog[id]?.defaultSize ?? DEFAULT_SIZE);
   }
-
-  if (Array.isArray(raw.order) || isRecord(raw.preferences)) return migrateLegacyScope(value);
   return {
-    templateKey: typeof raw.templateKey === "string" ? raw.templateKey : undefined,
-    placements: normalizePlacements(placements),
-    catalog
+    catalog,
+    placements: normalizePlacements(placements, layout.snapToGrid !== false),
+    snapToGrid: layout.snapToGrid !== false
   };
 }
 
-function parseStore(value: unknown): WidgetStore | null {
-  if (!isRecord(value)) return null;
-  if (value.version === 2) {
-    const scopes: Record<string, WidgetScope> = {};
-    const templates: Record<string, WidgetScope> = {};
-    if (isRecord(value.scopes)) {
-      for (const [key, scope] of Object.entries(value.scopes)) scopes[key] = normalizeScope(scope);
-    }
-    if (isRecord(value.templates)) {
-      for (const [key, scope] of Object.entries(value.templates)) templates[key] = normalizeScope(scope);
-    }
-    return { version: 2, scopes, templates };
-  }
-  if (value.version === 1 && isRecord(value.scopes)) {
-    const scopes: Record<string, WidgetScope> = {};
-    for (const [key, scope] of Object.entries(value.scopes)) scopes[key] = migrateLegacyScope(scope);
-    return { version: 2, scopes, templates: {} };
-  }
-  return null;
-}
-
-function readStore(): WidgetStore {
-  if (typeof window === "undefined") return createStore();
-  for (const key of [STORAGE_KEY, LEGACY_STORAGE_KEY]) {
-    try {
-      const parsed = parseStore(JSON.parse(window.localStorage.getItem(key) ?? "null"));
-      if (parsed) return parsed;
-    } catch {
-      // Ignore malformed local layout data and continue with a clean store.
+function mergeDefinitions(layout: WidgetLayoutDocument, definitions: Record<string, WidgetDefinition>): WidgetLayoutDocument {
+  const next = cloneLayout(layout);
+  for (const definition of Object.values(definitions)) {
+    next.catalog[definition.id] = {
+      title: definition.title,
+      kind: definition.kind,
+      defaultSize: definition.defaultSize,
+      ...(definition.templateId ? { templateId: definition.templateId } : {})
+    };
+    if (!next.placements[definition.id]) {
+      const position = findNextFreePlacement(next.placements, definition.defaultSize);
+      next.placements[definition.id] = normalizePlacement({ ...position, size: definition.defaultSize });
     }
   }
-  return createStore();
+  next.placements = normalizePlacements(next.placements, next.snapToGrid);
+  return next;
 }
 
-function writeStore(store: WidgetStore) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-  } catch {
-    // A locked-down desktop profile may disable localStorage. The page remains usable for this session.
+function createInitialLayout(definitions: Record<string, WidgetDefinition>): WidgetLayoutDocument {
+  return mergeDefinitions(emptyLayout(true), definitions);
+}
+
+function templateIdForDefinition(definition: WidgetDefinition): string {
+  return definition.templateId ?? definition.id;
+}
+
+function buildTemplateLayout(layout: WidgetLayoutDocument): WidgetLayoutDocument {
+  const next = emptyLayout(layout.snapToGrid);
+  const positions: Record<string, WidgetPlacement> = {};
+  for (const [id, entry] of Object.entries(layout.catalog)) {
+    const templateId = entry.templateId ?? id;
+    const placement = layout.placements[id] ?? normalizePlacement(undefined, entry.defaultSize);
+    const position = placement.hidden ? { x: placement.x, y: placement.y } : findNextFreePlacement(positions, placement.size, placement.x, placement.y);
+    positions[templateId] = { ...placement, ...position };
+    next.catalog[templateId] = {
+      title: entry.title,
+      kind: entry.kind,
+      defaultSize: entry.defaultSize
+    };
   }
+  next.placements = normalizePlacements(positions, next.snapToGrid);
+  return next;
 }
 
-function scopeFor(store: WidgetStore, scopeKey: string): WidgetScope {
-  return store.scopes[scopeKey] ?? createScope();
-}
-
-function templateFor(store: WidgetStore, templateKey: string): WidgetScope {
-  return store.templates[templateKey] ?? createScope(templateKey);
-}
-
-function mapRegionTemplateId(scopeKey: string, templateKey: string, id: string): string {
-  const scopeRegion = scopeKey.split(":region:")[1];
-  const templateRegion = templateKey.split(":region:")[1];
-  if (!scopeRegion || !templateRegion || scopeRegion === templateRegion || !id.startsWith(scopeRegion)) return id;
-  return `${templateRegion}${id.slice(scopeRegion.length)}`;
-}
-
-function effectivePlacements(
-  scope: WidgetScope,
-  template: WidgetScope,
-  templateIdFor: (id: string, entry: WidgetCatalogEntry) => string
-): Record<string, WidgetPlacement> {
-  const placements: Record<string, WidgetPlacement> = { ...scope.placements };
-  for (const [id, catalogEntry] of Object.entries(scope.catalog)) {
-    if (placements[id]) continue;
-    const templateId = templateIdFor(id, catalogEntry);
-    const templatePlacement = template.placements[templateId] ?? template.placements[id];
-    if (templatePlacement) placements[id] = { ...templatePlacement };
+function applyTemplateToLayout(template: WidgetLayoutDocument, definitions: Record<string, WidgetDefinition>): WidgetLayoutDocument {
+  const source = normalizeLayout(template);
+  const next = emptyLayout(source.snapToGrid);
+  for (const definition of Object.values(definitions)) {
+    next.catalog[definition.id] = {
+      title: definition.title,
+      kind: definition.kind,
+      defaultSize: definition.defaultSize,
+      ...(definition.templateId ? { templateId: definition.templateId } : {})
+    };
+    const sourceId = templateIdForDefinition(definition);
+    const sourcePlacement = source.placements[sourceId] ?? source.placements[definition.id];
+    if (sourcePlacement) next.placements[definition.id] = { ...sourcePlacement };
   }
-  return placements;
-}
-
-function materializePlacements(
-  scope: WidgetScope,
-  template: WidgetScope,
-  templateIdFor: (id: string, entry: WidgetCatalogEntry) => string
-): Record<string, WidgetPlacement> {
-  const placements = effectivePlacements(scope, template, templateIdFor);
-  for (const [id, catalogEntry] of Object.entries(scope.catalog)) {
-    if (placements[id]) continue;
-    const position = findNextFreePlacement(placements, catalogEntry.defaultSize);
-    placements[id] = createPlacement(catalogEntry.defaultSize, position.x, position.y);
-  }
-  return placements;
-}
-
-function relevantScopeKeys(store: WidgetStore, rootScopeKey: string, includeNested: boolean): string[] {
-  if (!includeNested) return [rootScopeKey];
-  const prefix = `${rootScopeKey}:region:`;
-  return Object.keys(store.scopes).filter((key) => key === rootScopeKey || key.startsWith(prefix));
-}
-
-function scopeLabel(scopeKey: string, rootScopeKey: string): string | undefined {
-  if (scopeKey === rootScopeKey) return undefined;
-  return "设备区块内";
+  return mergeDefinitions(next, definitions);
 }
 
 export function WidgetLayoutProvider({
   scopeKey,
-  templateKey = scopeKey,
+  templateKey,
   editable,
   locked = false,
-  includeNestedHidden = false,
-  editModeOverride,
+  getWidgetLayout,
+  saveWidgetLayout,
   children
 }: {
   scopeKey: string;
-  templateKey?: string;
+  templateKey: string;
   editable: boolean;
   locked?: boolean;
-  includeNestedHidden?: boolean;
-  editModeOverride?: boolean;
+  getWidgetLayout: WidgetLayoutSyncClient["getWidgetLayout"];
+  saveWidgetLayout: WidgetLayoutSyncClient["saveWidgetLayout"];
   children: React.ReactNode;
 }) {
-  const [store, setStore] = useState<WidgetStore>(() => readStore());
-  const storeRef = useRef(store);
-  const instanceRef = useRef({});
-  const pastRef = useRef<WidgetStore[]>([]);
-  const futureRef = useRef<WidgetStore[]>([]);
-  const [internalEditMode, setInternalEditMode] = useState(false);
+  const [draft, setDraft] = useState<WidgetLayoutDocument>(() => emptyLayout());
+  const draftRef = useRef(draft);
+  const definitionsRef = useRef<Record<string, WidgetDefinition>>({});
+  const [definitionVersion, setDefinitionVersion] = useState(0);
+  const [remote, setRemote] = useState<WidgetLayoutSync>({ scopeKey, templateKey, instanceLayout: null, templates: [] });
+  const remoteRef = useRef(remote);
+  const [editMode, setEditMode] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const dirtyRef = useRef(false);
+  const [syncMessage, setSyncMessage] = useState("");
   const [historyVersion, setHistoryVersion] = useState(0);
-  const editMode = editModeOverride ?? internalEditMode;
-  const templateIdFor = useCallback((id: string, entry?: WidgetCatalogEntry) => (
-    entry?.templateId ?? mapRegionTemplateId(scopeKey, templateKey, id)
-  ), [scopeKey, templateKey]);
+  const pastRef = useRef<WidgetLayoutDocument[]>([]);
+  const futureRef = useRef<WidgetLayoutDocument[]>([]);
 
-  const applyStore = useCallback((next: WidgetStore, trackHistory = true) => {
-    const current = storeRef.current;
-    if (next === current) return;
-    if (trackHistory) {
-      pastRef.current = [...pastRef.current, current].slice(-HISTORY_LIMIT);
-      futureRef.current = [];
-    }
-    storeRef.current = next;
-    setStore(next);
-    writeStore(next);
+  const replaceDraft = useCallback((next: WidgetLayoutDocument, markDirty: boolean) => {
+    const normalized = normalizeLayout(next);
+    draftRef.current = normalized;
+    setDraft(normalized);
+    dirtyRef.current = markDirty;
+    setDirty(markDirty);
     setHistoryVersion((value) => value + 1);
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent(STORAGE_EVENT, {
-        detail: { source: instanceRef.current, trackHistory, previous: current }
-      }));
-    }
   }, []);
 
-  const mutateStore = useCallback((mutator: (current: WidgetStore) => WidgetStore, trackHistory = true) => {
-    applyStore(mutator(storeRef.current), trackHistory);
-  }, [applyStore]);
-
-  useEffect(() => {
-    writeStore(store);
-  }, [store]);
-
-  useEffect(() => {
-    const handleExternalStoreChange = (event: Event) => {
-      const detail = event instanceof CustomEvent ? event.detail as { source?: object; trackHistory?: boolean; previous?: WidgetStore } : undefined;
-      if (detail?.source === instanceRef.current) return;
-      if (detail?.trackHistory && detail.previous) {
-        pastRef.current = [...pastRef.current, detail.previous].slice(-HISTORY_LIMIT);
-        futureRef.current = [];
-      }
-      const next = readStore();
-      storeRef.current = next;
-      setStore(next);
-      setHistoryVersion((value) => value + 1);
-    };
-    window.addEventListener(STORAGE_EVENT, handleExternalStoreChange);
-    window.addEventListener("storage", handleExternalStoreChange);
-    return () => {
-      window.removeEventListener(STORAGE_EVENT, handleExternalStoreChange);
-      window.removeEventListener("storage", handleExternalStoreChange);
-    };
-  }, []);
-
-  useEffect(() => {
+  const resetHistory = useCallback(() => {
     pastRef.current = [];
     futureRef.current = [];
-    setInternalEditMode(false);
     setHistoryVersion((value) => value + 1);
-  }, [scopeKey, templateKey]);
+  }, []);
+
+  const loadRemote = useCallback(async () => {
+    setLoading(true);
+    try {
+      const nextRemote = await getWidgetLayout({ scopeKey, templateKey });
+      remoteRef.current = nextRemote;
+      setRemote(nextRemote);
+      if (!dirtyRef.current) {
+        const base = nextRemote.instanceLayout
+          ? normalizeLayout(nextRemote.instanceLayout)
+          : createInitialLayout(definitionsRef.current);
+        replaceDraft(mergeDefinitions(base, definitionsRef.current), false);
+        resetHistory();
+      }
+      setSyncMessage("");
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? `中枢布局读取失败：${error.message}` : "中枢布局读取失败");
+    } finally {
+      setLoading(false);
+    }
+  }, [getWidgetLayout, replaceDraft, resetHistory, scopeKey, templateKey]);
 
   useEffect(() => {
-    if (!editable || locked) setInternalEditMode(false);
+    dirtyRef.current = false;
+    setDirty(false);
+    setEditMode(false);
+    definitionsRef.current = {};
+    replaceDraft(emptyLayout(), false);
+    resetHistory();
+    void loadRemote();
+  }, [loadRemote, resetHistory, replaceDraft, scopeKey, templateKey]);
+
+  useEffect(() => {
+    const refreshOnFocus = () => { void loadRemote(); };
+    window.addEventListener("focus", refreshOnFocus);
+    const timer = window.setInterval(refreshOnFocus, 30_000);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      window.clearInterval(timer);
+    };
+  }, [loadRemote]);
+
+  useEffect(() => {
+    if (!editable || locked) setEditMode(false);
   }, [editable, locked]);
 
-  const setEditMode = useCallback((value: React.SetStateAction<boolean>) => {
-    if (editModeOverride !== undefined || !editable || locked) return;
-    setInternalEditMode(value);
-  }, [editable, editModeOverride, locked]);
-
   const registerWidget = useCallback((definition: WidgetDefinition) => {
-    if (locked) return;
-    mutateStore((current) => {
-      const scope = scopeFor(current, scopeKey);
-      const template = templateFor(current, templateKey);
-      const nextScope = cloneScope(scope);
-      nextScope.templateKey = templateKey;
-      let changed = scope.templateKey !== templateKey;
-      const nextCatalogEntry: WidgetCatalogEntry = {
-        title: definition.title,
-        kind: definition.kind,
-        defaultSize: definition.defaultSize
-      };
-      if (definition.templateId) nextCatalogEntry.templateId = definition.templateId;
-      const previousCatalogEntry = scope.catalog[definition.id];
-      if (!previousCatalogEntry || JSON.stringify(previousCatalogEntry) !== JSON.stringify(nextCatalogEntry)) {
-        nextScope.catalog[definition.id] = nextCatalogEntry;
-        changed = true;
-      }
-      const hasSavedLayout = Object.keys(scope.placements).length > 0 || Object.keys(template.placements).length > 0;
-      const templatePlacement = template.placements[definition.templateId ?? mapRegionTemplateId(scopeKey, templateKey, definition.id)] ?? template.placements[definition.id];
-      if (hasSavedLayout && !nextScope.placements[definition.id] && !templatePlacement) {
-        const effectivePlacements = { ...template.placements, ...nextScope.placements };
-        const position = findNextFreePlacement(effectivePlacements, definition.defaultSize ?? DEFAULT_SIZE);
-        nextScope.placements[definition.id] = createPlacement(definition.defaultSize ?? DEFAULT_SIZE, position.x, position.y);
-        changed = true;
-      }
-      if (!changed) return current;
-      return { ...current, scopes: { ...current.scopes, [scopeKey]: nextScope } };
-    }, false);
-  }, [locked, mutateStore, scopeKey, templateKey]);
+    const previous = definitionsRef.current[definition.id];
+    definitionsRef.current[definition.id] = definition;
+    if (!previous || JSON.stringify(previous) !== JSON.stringify(definition)) setDefinitionVersion((value) => value + 1);
+    setDraft((current) => {
+      const next = mergeDefinitions(current, { [definition.id]: definition });
+      draftRef.current = next;
+      return next;
+    });
+  }, []);
 
   const resolveWidget = useCallback((definition: WidgetDefinition): ResolvedWidget => {
-    if (locked) return { size: definition.defaultSize ?? DEFAULT_SIZE, hidden: false };
-    const scope = scopeFor(store, scopeKey);
-    const template = templateFor(store, templateKey);
-    const templateId = definition.templateId ?? mapRegionTemplateId(scopeKey, templateKey, definition.id);
-    const placement = scope.placements[definition.id] ?? template.placements[templateId] ?? template.placements[definition.id];
+    if (locked) return { size: definition.defaultSize, hidden: false };
+    const placement = draft.placements[definition.id];
     return {
-      size: placement?.size ?? definition.defaultSize ?? DEFAULT_SIZE,
+      size: placement?.size ?? definition.defaultSize,
       hidden: editable && placement?.hidden === true,
       placement
     };
-  }, [editable, locked, scopeKey, store, templateKey]);
+  }, [draft.placements, editable, locked]);
 
-  const updatePlacement = useCallback((id: string, update: (placement: WidgetPlacement) => WidgetPlacement) => {
+  const getWidgetSize = useCallback((id: string, defaultSize: WidgetSize): WidgetSize => {
+    if (locked) return defaultSize;
+    return draft.placements[id]?.size ?? defaultSize;
+  }, [draft.placements, locked]);
+
+  const mutateDraft = useCallback((mutator: (current: WidgetLayoutDocument) => WidgetLayoutDocument) => {
     if (!editable || locked) return;
-    mutateStore((current) => {
-      const scope = scopeFor(current, scopeKey);
-      const template = templateFor(current, templateKey);
-      const placements = materializePlacements(scope, template, templateIdFor);
-      const currentPlacement = placements[id] ?? createPlacement(DEFAULT_SIZE);
-      const nextPlacement = update({ ...currentPlacement });
-      const nextScope = cloneScope(scope);
-      nextScope.templateKey = templateKey;
-      nextScope.placements = normalizePlacements({ ...placements, [id]: nextPlacement });
-      return { ...current, scopes: { ...current.scopes, [scopeKey]: nextScope } };
-    });
-  }, [editable, locked, mutateStore, scopeKey, templateIdFor, templateKey]);
+    const current = draftRef.current;
+    const next = normalizeLayout(mutator(cloneLayout(current)));
+    pastRef.current = [...pastRef.current, current].slice(-HISTORY_LIMIT);
+    futureRef.current = [];
+    draftRef.current = next;
+    setDraft(next);
+    dirtyRef.current = true;
+    setDirty(true);
+    setHistoryVersion((value) => value + 1);
+  }, [editable, locked]);
 
   const updateSize = useCallback((id: string, size: WidgetSize) => {
-    updatePlacement(id, (placement) => ({ ...placement, ...SIZE_PRESETS[size], size }));
-  }, [updatePlacement]);
+    mutateDraft((current) => {
+      const existing = current.placements[id] ?? normalizePlacement({ size });
+      current.placements[id] = normalizePlacement({ ...existing, size });
+      current.placements = normalizePlacements(current.placements, current.snapToGrid);
+      return current;
+    });
+  }, [mutateDraft]);
 
   const hideWidget = useCallback((id: string) => {
-    updatePlacement(id, (placement) => ({ ...placement, hidden: true }));
-  }, [updatePlacement]);
-
-  const restoreWidget = useCallback((id: string, targetScopeKey = scopeKey) => {
-    if (!editable || locked) return;
-    mutateStore((current) => {
-      const scope = scopeFor(current, targetScopeKey);
-      const targetTemplateKey = scope.templateKey ?? (targetScopeKey === scopeKey ? templateKey : "");
-      const template = targetTemplateKey ? templateFor(current, targetTemplateKey) : createScope();
-      const catalogEntry = scope.catalog[id];
-      const targetTemplateId = catalogEntry?.templateId ?? mapRegionTemplateId(targetScopeKey, targetTemplateKey, id);
-      const currentPlacement = scope.placements[id] ?? template.placements[targetTemplateId] ?? template.placements[id] ?? createPlacement(DEFAULT_SIZE);
-      const nextScope = cloneScope(scope);
-      nextScope.placements[id] = { ...currentPlacement, hidden: false };
-      return { ...current, scopes: { ...current.scopes, [targetScopeKey]: nextScope } };
+    mutateDraft((current) => {
+      const placement = current.placements[id];
+      if (placement) placement.hidden = true;
+      current.placements = normalizePlacements(current.placements, current.snapToGrid);
+      return current;
     });
-  }, [editable, locked, mutateStore, scopeKey, templateKey]);
+  }, [mutateDraft]);
+
+  const restoreWidget = useCallback((id: string) => {
+    mutateDraft((current) => {
+      const entry = current.catalog[id];
+      const placement = current.placements[id] ?? normalizePlacement(undefined, entry?.defaultSize ?? DEFAULT_SIZE);
+      placement.hidden = false;
+      if (current.snapToGrid) {
+        const visible = { ...current.placements };
+        delete visible[id];
+        const position = findNextFreePlacement(visible, placement.size);
+        placement.x = position.x;
+        placement.y = position.y;
+      }
+      current.placements[id] = placement;
+      return current;
+    });
+  }, [mutateDraft]);
 
   const reorderWidgets = useCallback((draggedId: string, targetId: string) => {
-    if (!editable || locked || draggedId === targetId) return;
-    mutateStore((current) => {
-      const scope = scopeFor(current, scopeKey);
-      const template = templateFor(current, templateKey);
-      const placements = materializePlacements(scope, template, templateIdFor);
-      const dragged = placements[draggedId];
-      const target = placements[targetId];
+    if (draggedId === targetId) return;
+    mutateDraft((current) => {
+      const dragged = current.placements[draggedId];
+      const target = current.placements[targetId];
       if (!dragged || !target) return current;
-      const nextScope = cloneScope(scope);
-      nextScope.templateKey = templateKey;
-      nextScope.placements = normalizePlacements({
-        ...placements,
-        [draggedId]: { ...dragged, x: target.x, y: target.y },
-        [targetId]: { ...target, x: dragged.x, y: dragged.y }
-      });
-      return { ...current, scopes: { ...current.scopes, [scopeKey]: nextScope } };
+      const draggedPosition = { x: dragged.x, y: dragged.y };
+      dragged.x = target.x;
+      dragged.y = target.y;
+      target.x = draggedPosition.x;
+      target.y = draggedPosition.y;
+      current.placements = normalizePlacements(current.placements, current.snapToGrid);
+      return current;
     });
-  }, [editable, locked, mutateStore, scopeKey, templateIdFor, templateKey]);
+  }, [mutateDraft]);
+
+  const toggleSnapToGrid = useCallback(() => {
+    mutateDraft((current) => {
+      current.snapToGrid = !current.snapToGrid;
+      current.placements = normalizePlacements(current.placements, current.snapToGrid);
+      return current;
+    });
+  }, [mutateDraft]);
 
   const resetDeviceLayout = useCallback(() => {
-    if (!editable || locked) return;
-    mutateStore((current) => {
-      const keys = relevantScopeKeys(current, scopeKey, true);
-      const scopes = { ...current.scopes };
-      let changed = false;
-      for (const key of keys) {
-        const scope = scopeFor(current, key);
-        if (!Object.keys(scope.placements).length) continue;
-        scopes[key] = { ...cloneScope(scope), placements: {} };
-        changed = true;
-      }
-      return changed ? { ...current, scopes } : current;
-    });
-  }, [editable, locked, mutateStore, scopeKey]);
+    replaceDraft(createInitialLayout(definitionsRef.current), true);
+    resetHistory();
+  }, [replaceDraft, resetHistory, definitionVersion]);
 
-  const saveAsTemplate = useCallback(() => {
-    if (!editable || locked) return;
-    mutateStore((current) => {
-      const templates = { ...current.templates };
-      for (const key of relevantScopeKeys(current, scopeKey, true)) {
-        const scope = scopeFor(current, key);
-        const targetTemplateKey = scope.templateKey ?? (key === scopeKey ? templateKey : undefined);
-        if (!targetTemplateKey) continue;
-        const existingTemplate = templateFor(current, targetTemplateKey);
-        const placements: Record<string, WidgetPlacement> = {};
-        const catalog: Record<string, WidgetCatalogEntry> = {};
-        for (const [id, catalogEntry] of Object.entries(scope.catalog)) {
-          const templateId = catalogEntry.templateId ?? mapRegionTemplateId(key, targetTemplateKey, id);
-          const sourcePlacement = scope.placements[id] ?? existingTemplate.placements[templateId] ?? existingTemplate.placements[id];
-          const position = sourcePlacement
-            ? { x: sourcePlacement.x, y: sourcePlacement.y }
-            : findNextFreePlacement(placements, catalogEntry.defaultSize);
-          placements[templateId] = sourcePlacement
-            ? { ...sourcePlacement }
-            : createPlacement(catalogEntry.defaultSize, position.x, position.y);
-          catalog[templateId] = { ...catalogEntry, templateId: undefined };
-        }
-        templates[targetTemplateKey] = { templateKey: targetTemplateKey, placements, catalog };
-      }
-      return { ...current, templates };
-    });
-  }, [editable, locked, mutateStore, scopeKey, templateKey]);
+  const applyTemplate = useCallback((templateId: string) => {
+    const template = remoteRef.current.templates.find((item) => item.id === templateId);
+    if (!template) return;
+    replaceDraft(applyTemplateToLayout(template.layout, definitionsRef.current), true);
+    resetHistory();
+    setEditMode(true);
+    setSyncMessage(`已应用“${template.name}”，点击“保存布局”后才会替换当前布局`);
+  }, [replaceDraft, resetHistory]);
+
+  const saveLayout = useCallback(async (): Promise<boolean> => {
+    if (!editable || locked || saving) return false;
+    setSaving(true);
+    try {
+      const nextRemote = await saveWidgetLayout({ scopeKey, templateKey, instanceLayout: cloneLayout(draftRef.current) });
+      remoteRef.current = nextRemote;
+      setRemote(nextRemote);
+      replaceDraft(mergeDefinitions(normalizeLayout(nextRemote.instanceLayout), definitionsRef.current), false);
+      resetHistory();
+      setSyncMessage("当前布局已保存到中枢");
+      return true;
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? `布局保存失败：${error.message}` : "布局保存失败");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, [editable, locked, resetHistory, replaceDraft, saveWidgetLayout, saving, scopeKey, templateKey]);
+
+  const saveAsTemplate = useCallback(async (name: string, templateId?: string): Promise<boolean> => {
+    const normalizedName = name.trim();
+    if (!normalizedName || !editable || locked || saving) return false;
+    setSaving(true);
+    try {
+      const nextRemote = await saveWidgetLayout({
+        scopeKey,
+        templateKey,
+        template: { id: templateId, name: normalizedName, layout: buildTemplateLayout(draftRef.current) }
+      });
+      remoteRef.current = nextRemote;
+      setRemote(nextRemote);
+      setSyncMessage(`通用模板“${normalizedName}”已保存到中枢`);
+      return true;
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? `通用模板保存失败：${error.message}` : "通用模板保存失败");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, [editable, locked, saveWidgetLayout, saving, scopeKey, templateKey]);
+
+  const deleteTemplate = useCallback(async (templateId: string): Promise<boolean> => {
+    if (!editable || locked || saving) return false;
+    setSaving(true);
+    try {
+      const nextRemote = await saveWidgetLayout({ scopeKey, templateKey, deleteTemplateId: templateId });
+      remoteRef.current = nextRemote;
+      setRemote(nextRemote);
+      setSyncMessage("通用模板已删除");
+      return true;
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? `通用模板删除失败：${error.message}` : "通用模板删除失败");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, [editable, locked, saveWidgetLayout, saving, scopeKey, templateKey]);
 
   const exportLayout = useCallback(() => {
     if (typeof window === "undefined") return;
-    const current = storeRef.current;
-    const rootScope = scopeFor(current, scopeKey);
-    const rootTemplate = templateFor(current, templateKey);
-    const regions = relevantScopeKeys(current, scopeKey, true)
-      .filter((key) => key !== scopeKey)
-      .map((key) => {
-        const scope = scopeFor(current, key);
-        const regionTemplateKey = scope.templateKey ?? "";
-        return {
-          suffix: key.slice(scopeKey.length),
-          templateKey: regionTemplateKey,
-          scope: cloneScope(scope),
-          template: regionTemplateKey ? cloneScope(templateFor(current, regionTemplateKey)) : createScope()
-        };
-      });
-    const payload: WidgetLayoutExport = {
-      kind: "dsc-widget-layout",
-      version: 2,
-      exportedAt: new Date().toISOString(),
-      templateKey,
-      scope: cloneScope(rootScope),
-      template: cloneScope(rootTemplate),
-      regions
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify({ kind: "dsc-widget-layout", version: 3, templateKey, layout: draftRef.current }, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = `guanlan-layout-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
-  }, [scopeKey, templateKey]);
+  }, [templateKey]);
 
   const importLayout = useCallback((json: string): boolean => {
     if (!editable || locked) return false;
     try {
-      const parsed = JSON.parse(json) as Partial<WidgetLayoutExport>;
-      if (parsed.kind !== "dsc-widget-layout" || parsed.version !== 2 || !parsed.scope || !parsed.template) return false;
-      const current = storeRef.current;
-      const importedScope = normalizeScope(parsed.scope);
-      importedScope.templateKey = templateKey;
-      const importedTemplate = normalizeScope(parsed.template);
-      importedTemplate.templateKey = templateKey;
-      const scopes = { ...current.scopes, [scopeKey]: importedScope };
-      const templates = { ...current.templates, [templateKey]: importedTemplate };
-      const sourceTemplateKey = typeof parsed.templateKey === "string" ? parsed.templateKey : templateKey;
-      const oldRegionKeys = Object.keys(scopes).filter((key) => key.startsWith(`${scopeKey}:region:`));
-      for (const key of oldRegionKeys) delete scopes[key];
-      for (const region of Array.isArray(parsed.regions) ? parsed.regions : []) {
-        if (!region || typeof region.suffix !== "string" || !region.scope || !region.template) continue;
-        const nextScopeKey = `${scopeKey}${region.suffix}`;
-        const nextTemplateKey = region.templateKey?.startsWith(sourceTemplateKey)
-          ? `${templateKey}${region.templateKey.slice(sourceTemplateKey.length)}`
-          : region.templateKey || `${templateKey}${region.suffix}`;
-        const regionScope = normalizeScope(region.scope);
-        regionScope.templateKey = nextTemplateKey;
-        const regionTemplate = normalizeScope(region.template);
-        regionTemplate.templateKey = nextTemplateKey;
-        scopes[nextScopeKey] = regionScope;
-        templates[nextTemplateKey] = regionTemplate;
-      }
-      applyStore({ ...current, scopes, templates });
+      const parsed = JSON.parse(json) as { layout?: WidgetLayoutDocument; placements?: WidgetLayoutDocument["placements"]; catalog?: WidgetLayoutDocument["catalog"]; snapToGrid?: boolean };
+      const candidate = parsed.layout ?? parsed;
+      if (!candidate.placements || !candidate.catalog) return false;
+      replaceDraft(mergeDefinitions(normalizeLayout({
+        placements: candidate.placements,
+        catalog: candidate.catalog,
+        snapToGrid: candidate.snapToGrid !== false
+      }), definitionsRef.current), true);
+      resetHistory();
+      setSyncMessage("布局已导入，点击“保存布局”后才会同步到中枢");
       return true;
     } catch {
       return false;
     }
-  }, [applyStore, editable, locked, scopeKey, templateKey]);
+  }, [editable, locked, replaceDraft, resetHistory]);
 
   const undo = useCallback(() => {
+    if (!editable || locked) return;
     const previous = pastRef.current.pop();
     if (!previous) return;
-    futureRef.current.push(storeRef.current);
-    storeRef.current = previous;
-    setStore(previous);
-    writeStore(previous);
-    setHistoryVersion((value) => value + 1);
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent(STORAGE_EVENT, {
-        detail: { source: instanceRef.current, trackHistory: false }
-      }));
-    }
-  }, []);
+    futureRef.current.push(cloneLayout(draftRef.current));
+    replaceDraft(previous, true);
+  }, [editable, locked, replaceDraft]);
 
   const redo = useCallback(() => {
+    if (!editable || locked) return;
     const next = futureRef.current.pop();
     if (!next) return;
-    pastRef.current.push(storeRef.current);
-    storeRef.current = next;
-    setStore(next);
-    writeStore(next);
-    setHistoryVersion((value) => value + 1);
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent(STORAGE_EVENT, {
-        detail: { source: instanceRef.current, trackHistory: false }
-      }));
-    }
-  }, []);
+    pastRef.current.push(cloneLayout(draftRef.current));
+    replaceDraft(next, true);
+  }, [editable, locked, replaceDraft]);
 
-  const hiddenWidgets = useMemo(() => {
-    if (!editable) return [];
-    const hidden: HiddenWidget[] = [];
-    for (const sourceScopeKey of relevantScopeKeys(store, scopeKey, includeNestedHidden)) {
-      const sourceScope = scopeFor(store, sourceScopeKey);
-      const sourceTemplateKey = sourceScope.templateKey ?? (sourceScopeKey === scopeKey ? templateKey : "");
-      const sourceTemplate = sourceTemplateKey ? templateFor(store, sourceTemplateKey) : createScope();
-      for (const [id, catalogEntry] of Object.entries(sourceScope.catalog)) {
-        const templateId = catalogEntry.templateId ?? mapRegionTemplateId(sourceScopeKey, sourceTemplateKey, id);
-        const placement = sourceScope.placements[id] ?? sourceTemplate.placements[templateId] ?? sourceTemplate.placements[id];
-        if (!placement?.hidden) continue;
-        hidden.push({ id, ...catalogEntry, scopeKey: sourceScopeKey, scopeLabel: scopeLabel(sourceScopeKey, scopeKey) });
-      }
-    }
-    return hidden;
-  }, [editable, includeNestedHidden, scopeKey, store, templateKey]);
+  const hiddenWidgets = useMemo(() => Object.entries(draft.catalog)
+    .filter(([id]) => draft.placements[id]?.hidden)
+    .map(([id, entry]) => ({ id, ...entry })), [draft.catalog, draft.placements]);
 
-  const template = templateFor(store, templateKey);
   const contextValue = useMemo<WidgetLayoutContextValue>(() => ({
     scopeKey,
     templateKey,
@@ -710,24 +562,34 @@ export function WidgetLayoutProvider({
     locked,
     editMode,
     setEditMode,
+    loading,
+    saving,
+    dirty,
+    syncMessage,
+    snapToGrid: draft.snapToGrid,
+    templates: remote.templates,
     resolveWidget,
+    getWidgetSize,
     registerWidget,
     updateSize,
     hideWidget,
     restoreWidget,
     reorderWidgets,
+    toggleSnapToGrid,
     resetDeviceLayout,
+    applyTemplate,
+    saveLayout,
     saveAsTemplate,
+    deleteTemplate,
     exportLayout,
     importLayout,
     canUndo: pastRef.current.length > 0,
     canRedo: futureRef.current.length > 0,
     undo,
     redo,
-    hasLocalOverride: relevantScopeKeys(store, scopeKey, includeNestedHidden).some((key) => Object.keys(scopeFor(store, key).placements).length > 0),
-    hasTemplate: Object.keys(template.placements).length > 0,
+    hasInstanceLayout: Boolean(remote.instanceLayout),
     hiddenWidgets
-  }), [editMode, editable, exportLayout, hideWidget, hiddenWidgets, importLayout, includeNestedHidden, locked, registerWidget, redo, reorderWidgets, resetDeviceLayout, resolveWidget, restoreWidget, saveAsTemplate, scopeKey, template.placements, templateKey, undo, updateSize, historyVersion, store]);
+  }), [applyTemplate, deleteTemplate, dirty, draft.snapToGrid, editable, editMode, exportLayout, getWidgetSize, hideWidget, hiddenWidgets, historyVersion, importLayout, loading, locked, redo, registerWidget, remote.instanceLayout, remote.templates, reorderWidgets, resetDeviceLayout, resolveWidget, restoreWidget, saveAsTemplate, saveLayout, saving, scopeKey, syncMessage, templateKey, toggleSnapToGrid, undo, updateSize]);
 
   return <WidgetLayoutContext.Provider value={contextValue}>{children}</WidgetLayoutContext.Provider>;
 }
@@ -738,27 +600,8 @@ export function useWidgetLayout() {
   return context;
 }
 
-export function WidgetLayoutRegion({
-  regionKey,
-  templateRegionKey = regionKey,
-  children
-}: {
-  regionKey: string;
-  templateRegionKey?: string;
-  children: React.ReactNode;
-}) {
-  const parent = useWidgetLayout();
-  return (
-    <WidgetLayoutProvider
-      scopeKey={`${parent.scopeKey}:region:${regionKey}`}
-      templateKey={`${parent.templateKey}:region:${templateRegionKey}`}
-      editable={parent.editable}
-      locked={parent.locked}
-      editModeOverride={parent.editMode}
-    >
-      {children}
-    </WidgetLayoutProvider>
-  );
+export function useOptionalWidgetLayout() {
+  return useContext(WidgetLayoutContext);
 }
 
 function placementStyle(placement: WidgetPlacement | undefined): React.CSSProperties | undefined {
@@ -791,6 +634,7 @@ export function DesktopWidget({
   const layout = useWidgetLayout();
   const definition = useMemo(() => ({ id, templateId, title, kind, defaultSize }), [defaultSize, id, kind, templateId, title]);
   const resolved = layout.resolveWidget(definition);
+  const editing = layout.editable && layout.editMode;
 
   useEffect(() => {
     layout.registerWidget(definition);
@@ -798,7 +642,6 @@ export function DesktopWidget({
 
   if (resolved.hidden) return null;
 
-  const editing = layout.editable && layout.editMode;
   const handleDragStart = (event: React.DragEvent<HTMLElement>) => {
     if (!editing) return;
     event.dataTransfer.effectAllowed = "move";
@@ -825,13 +668,7 @@ export function DesktopWidget({
           <span className="workspace-widget__tool-title" title={title}>{title}</span>
           <div className="workspace-widget__size-control" role="group" aria-label={`${title}尺寸`}>
             {(["large", "medium", "small"] as WidgetSize[]).map((size) => (
-              <button
-                key={size}
-                className={resolved.size === size ? "is-active" : ""}
-                type="button"
-                aria-pressed={resolved.size === size}
-                onClick={() => layout.updateSize(id, size)}
-              >
+              <button key={size} className={resolved.size === size ? "is-active" : ""} type="button" aria-pressed={resolved.size === size} onClick={() => layout.updateSize(id, size)}>
                 {size === "large" ? "大" : size === "medium" ? "中" : "小"}
               </button>
             ))}
@@ -847,73 +684,78 @@ export function DesktopWidget({
 export function WidgetLayoutToolbar() {
   const layout = useWidgetLayout();
   const [hiddenOpen, setHiddenOpen] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [templateName, setTemplateName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!layout.editMode) setHiddenOpen(false);
+    if (!layout.editMode) {
+      setHiddenOpen(false);
+      setTemplatesOpen(false);
+    }
   }, [layout.editMode]);
 
   const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    const ok = layout.importLayout(await file.text());
-    setNotice(ok ? "布局已导入" : "布局文件格式无效");
-    window.setTimeout(() => setNotice(""), 2200);
+    layout.importLayout(await file.text());
   };
 
-  if (!layout.editable) {
-    return <span className="workspace-layout-lock">全景视图 · 布局锁定</span>;
-  }
+  if (!layout.editable) return <span className="workspace-layout-lock">全景视图 · 布局锁定</span>;
 
   return (
     <div className="workspace-layout-toolbar">
-      <span className="workspace-layout-source" title="没有本设备覆盖时，会使用同类设备通用布局">
-        {layout.hasLocalOverride ? "本设备覆盖" : layout.hasTemplate ? "通用布局" : "内置默认"}
+      <span className={`workspace-layout-source${layout.dirty ? " is-dirty" : ""}`} title="布局由中枢保存和分发">
+        {layout.loading ? "读取中枢布局" : layout.dirty ? "未保存到中枢" : layout.hasInstanceLayout ? "本设备布局" : "初始模板"}
       </span>
-      <button
-        className={`workspace-layout-toggle${layout.editMode ? " is-active" : ""}`}
-        type="button"
-        aria-pressed={layout.editMode}
-        onClick={() => layout.setEditMode((value) => !value)}
-      >
-        <span className="workspace-layout-toggle__mark">⌘</span>
-        {layout.editMode ? "完成排布" : "编辑排布"}
+      <button className={`workspace-layout-toggle${layout.editMode ? " is-active" : ""}`} type="button" aria-pressed={layout.editMode} onClick={() => layout.setEditMode((value) => !value)}>
+        <span className="workspace-layout-toggle__mark">⌘</span>{layout.editMode ? "完成排布" : "编辑排布"}
       </button>
       {layout.editMode && (
         <>
+          <button className={`workspace-layout-snap${layout.snapToGrid ? " is-active" : ""}`} type="button" aria-pressed={layout.snapToGrid} onClick={layout.toggleSnapToGrid} title="打开后会按从左到右、从上到下自动填补空位">
+            自动吸附 {layout.snapToGrid ? "开" : "关"}
+          </button>
           <div className="workspace-layout-history" role="group" aria-label="布局历史">
             <button type="button" disabled={!layout.canUndo} onClick={layout.undo} title="撤销">↶</button>
             <button type="button" disabled={!layout.canRedo} onClick={layout.redo} title="重做">↷</button>
           </div>
-          <div className="workspace-layout-actions" role="group" aria-label="布局操作">
-            <button type="button" onClick={layout.resetDeviceLayout}>恢复通用</button>
-            <button type="button" onClick={layout.saveAsTemplate}>设为通用</button>
-            <button type="button" onClick={layout.exportLayout}>导出</button>
-            <button type="button" onClick={() => fileInputRef.current?.click()}>导入</button>
+          <button className="workspace-layout-save" type="button" onClick={() => void layout.saveLayout()} disabled={!layout.dirty || layout.saving}>
+            {layout.saving ? "保存中" : "保存布局"}
+          </button>
+          <button className="workspace-layout-actions__button" type="button" onClick={layout.resetDeviceLayout}>恢复初始</button>
+          <div className="workspace-layout-template-menu">
+            <button className="workspace-layout-actions__button" type="button" onClick={() => setTemplatesOpen((value) => !value)} aria-expanded={templatesOpen}>通用模板{layout.templates.length ? ` ${layout.templates.length}` : ""}</button>
+            {templatesOpen && (
+              <div className="workspace-layout-template-tray">
+                {layout.templates.length ? layout.templates.map((template) => (
+                  <div className="workspace-layout-template-item" key={template.id}>
+                    <span><strong>{template.name}</strong><small>更新于 {new Date(template.updatedAt).toLocaleString()}</small></span>
+                    <div><button type="button" onClick={() => { layout.applyTemplate(template.id); setTemplatesOpen(false); }}>应用</button><button type="button" onClick={() => void layout.deleteTemplate(template.id)}>删除</button></div>
+                  </div>
+                )) : <p className="workspace-layout-template-empty">当前类型和面板还没有通用模板。</p>}
+              </div>
+            )}
+          </div>
+          <div className="workspace-layout-template-save">
+            <input value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="模板名称" aria-label="通用模板名称" />
+            <button className="workspace-layout-actions__button" type="button" disabled={!templateName.trim() || layout.saving} onClick={() => { void layout.saveAsTemplate(templateName).then((saved) => { if (saved) setTemplateName(""); }); }}>保存为通用</button>
+          </div>
+          <div className="workspace-layout-actions" role="group" aria-label="布局文件操作">
+            <button className="workspace-layout-actions__button" type="button" onClick={layout.exportLayout}>导出</button>
+            <button className="workspace-layout-actions__button" type="button" onClick={() => fileInputRef.current?.click()}>导入</button>
             <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={(event) => void handleImport(event)} />
           </div>
         </>
       )}
       {layout.editMode && layout.hiddenWidgets.length > 0 && (
         <div className="workspace-layout-hidden">
-          <button className="workspace-layout-hidden__toggle" type="button" onClick={() => setHiddenOpen((value) => !value)} aria-expanded={hiddenOpen}>
-            已隐藏 {layout.hiddenWidgets.length} 项 <span aria-hidden="true">{hiddenOpen ? "⌃" : "⌄"}</span>
-          </button>
-          {hiddenOpen && (
-            <div className="workspace-layout-hidden__tray">
-              {layout.hiddenWidgets.map((widget) => (
-                <div className="workspace-layout-hidden__item" key={`${widget.scopeKey}:${widget.id}`}>
-                  <span><strong>{widget.title}</strong><small>{widget.kind === "group" ? "设备区块" : "内容区块"}{widget.scopeLabel ? ` · ${widget.scopeLabel}` : ""}</small></span>
-                  <button type="button" onClick={() => layout.restoreWidget(widget.id, widget.scopeKey)}>恢复</button>
-                </div>
-              ))}
-            </div>
-          )}
+          <button className="workspace-layout-hidden__toggle" type="button" onClick={() => setHiddenOpen((value) => !value)} aria-expanded={hiddenOpen}>已隐藏 {layout.hiddenWidgets.length} 项 <span aria-hidden="true">{hiddenOpen ? "⌃" : "⌄"}</span></button>
+          {hiddenOpen && <div className="workspace-layout-hidden__tray">{layout.hiddenWidgets.map((widget) => <div className="workspace-layout-hidden__item" key={widget.id}><span><strong>{widget.title}</strong><small>{widget.kind === "group" ? "设备区块" : "内容区块"}</small></span><button type="button" onClick={() => layout.restoreWidget(widget.id)}>恢复</button></div>)}</div>}
         </div>
       )}
-      {notice && <span className="workspace-layout-notice" role="status">{notice}</span>}
+      {layout.syncMessage && <span className="workspace-layout-notice" role="status">{layout.syncMessage}</span>}
     </div>
   );
 }

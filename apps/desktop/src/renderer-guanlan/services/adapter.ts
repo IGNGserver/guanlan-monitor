@@ -9,7 +9,10 @@ import type {
   DesktopSnapshotRequest,
   DesktopConfigPatch,
   DesktopAgentControlAction,
-  DesktopStartupSettings
+  DesktopStartupSettings,
+  WidgetLayoutRequest,
+  WidgetLayoutSaveRequest,
+  WidgetLayoutSync
 } from "@dsc/shared";
 
 export interface MockStateFlags {
@@ -30,6 +33,8 @@ export interface IGuanlanDataAdapter {
   reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot>;
   updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot>;
   cloudPush(): Promise<DesktopSnapshot>;
+  getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync>;
+  saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync>;
   openExternal(url: string): Promise<void>;
   windowMinimize(): Promise<void>;
   windowToggleMaximize(): Promise<boolean>;

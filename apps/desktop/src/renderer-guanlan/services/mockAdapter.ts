@@ -19,7 +19,11 @@ import type {
   DesktopAgentBackendState,
   DesktopAgentConfig,
   TrafficCalendarResponse,
-  TrafficCalendarCell
+  TrafficCalendarCell,
+  WidgetLayoutDocument,
+  WidgetLayoutSaveRequest,
+  WidgetLayoutSync,
+  WidgetLayoutTemplate
 } from "@dsc/shared";
 import type { IGuanlanDataAdapter, MockStateFlags } from "./adapter";
 
@@ -34,6 +38,7 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
   private listeners: Set<(snapshot: DesktopSnapshot) => void> = new Set();
   private closedInstances = new Set<string>();
   private instanceOrder: string[] = [];
+  private widgetLayouts = new Map<string, WidgetLayoutSync>();
 
   private isRunning = true;
   private backendStartedAt = new Date(Date.now() - 3600000 * 24).toISOString();
@@ -194,6 +199,42 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
 
   async cloudPush(): Promise<DesktopSnapshot> {
     return this.buildSnapshot();
+  }
+
+  async getWidgetLayout(request: { scopeKey: string; templateKey: string }): Promise<WidgetLayoutSync> {
+    const key = `${request.scopeKey}|${request.templateKey}`;
+    return this.widgetLayouts.get(key) ?? {
+      scopeKey: request.scopeKey,
+      templateKey: request.templateKey,
+      instanceLayout: null,
+      templates: []
+    };
+  }
+
+  async saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> {
+    const key = `${request.scopeKey}|${request.templateKey}`;
+    const current = await this.getWidgetLayout(request);
+    if (Object.prototype.hasOwnProperty.call(request, "instanceLayout")) {
+      current.instanceLayout = request.instanceLayout ? structuredClone(request.instanceLayout) : null;
+    }
+    if (request.template) {
+      const now = new Date().toISOString();
+      const existing = current.templates.find((template) => template.id === request.template?.id);
+      const nextTemplate: WidgetLayoutTemplate = {
+        id: request.template.id ?? `mock-template-${Date.now()}`,
+        name: request.template.name,
+        templateKey: request.templateKey,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        layout: structuredClone(request.template.layout) as WidgetLayoutDocument
+      };
+      current.templates = [nextTemplate, ...current.templates.filter((template) => template.id !== nextTemplate.id)];
+    }
+    if (request.deleteTemplateId) {
+      current.templates = current.templates.filter((template) => template.id !== request.deleteTemplateId);
+    }
+    this.widgetLayouts.set(key, current);
+    return current;
   }
 
   async openExternal(url: string): Promise<void> {
