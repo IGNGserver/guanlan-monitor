@@ -270,15 +270,16 @@ export class LocalWidgetLayoutStore {
   }
 
   async save(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> {
+    const instanceLayout = request.instanceLayout;
     const templateRequest = request.template;
     await this.store.update((db) => {
       const layouts = (db.widgetLayouts ??= { instances: {}, templates: {} });
       if (Object.prototype.hasOwnProperty.call(request, "instanceLayout")) {
-        if (request.instanceLayout === null) delete layouts.instances[request.scopeKey];
-        else layouts.instances[request.scopeKey] = {
+        if (instanceLayout === null) delete layouts.instances[request.scopeKey];
+        else if (instanceLayout) layouts.instances[request.scopeKey] = {
           templateKey: request.templateKey,
           updatedAt: new Date().toISOString(),
-          layout: structuredClone(request.instanceLayout)
+          layout: structuredClone(instanceLayout)
         };
       }
 
