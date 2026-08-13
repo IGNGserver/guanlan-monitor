@@ -1,0 +1,498 @@
+import React, { useMemo } from "react";
+import type {
+  DeviceMetricKey,
+  DeviceSummary,
+  DiskDeviceStats,
+  MetricsLatest,
+  MetricsResponse,
+  SamplePoint,
+  WidgetLayoutCatalogEntry,
+  WidgetVisualization
+} from "@dsc/shared";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from "recharts";
+import { DesktopWidget, useWidgetLayout, type WidgetKind, type WidgetSize } from "./WidgetLayout";
+
+type WidgetCatalogDefinition = {
+  widgetType: string;
+  title: string;
+  description: string;
+  category: string;
+  kind: WidgetKind;
+  defaultSize: WidgetSize;
+  visualization: WidgetVisualization;
+  visualizations: WidgetVisualization[];
+  requires?: DeviceMetricKey[];
+};
+
+type WidgetCatalogContext = {
+  device: DeviceSummary;
+  metrics: MetricsResponse | null;
+};
+
+const visualizationLabels: Record<WidgetVisualization, string> = {
+  line: "折线图",
+  area: "面积图",
+  bar: "条形图",
+  donut: "环形图",
+  number: "纯数据显示",
+  table: "数据表格"
+};
+
+const chartColors = ["#3b82f6", "#14b8a6", "#f59e0b", "#a78bfa", "#f97316"];
+
+export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
+  {
+    widgetType: "hardware-system",
+    title: "硬件与系统",
+    description: "设备身份、操作系统、运行时间和硬件摘要。",
+    category: "设备摘要",
+    kind: "group",
+    defaultSize: "large",
+    visualization: "table",
+    visualizations: ["table"]
+  },
+  {
+    widgetType: "cpu-usage",
+    title: "CPU 使用率",
+    description: "处理器负载趋势，可切换折线、面积、条形或数值视图。",
+    category: "处理器",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "line",
+    visualizations: ["line", "area", "bar", "number"],
+    requires: ["cpuUsage"]
+  },
+  {
+    widgetType: "memory-usage",
+    title: "内存使用",
+    description: "物理内存和提交内存的使用趋势与当前占用。",
+    category: "内存",
+    kind: "content",
+    defaultSize: "large",
+    visualization: "area",
+    visualizations: ["line", "area", "bar", "donut", "number"],
+    requires: ["memoryUsage"]
+  },
+  {
+    widgetType: "disk-capacity",
+    title: "磁盘容量",
+    description: "磁盘已用容量趋势，环形图展示当前已用与剩余空间。",
+    category: "存储",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "area",
+    visualizations: ["line", "area", "bar", "donut", "number"],
+    requires: ["diskUsage"]
+  },
+  {
+    widgetType: "disk-health",
+    title: "磁盘健康与 SMART",
+    description: "显示磁盘健康状态、温度、寿命与已采集的 SMART 属性。",
+    category: "存储",
+    kind: "group",
+    defaultSize: "large",
+    visualization: "table",
+    visualizations: ["table", "donut", "number"],
+    requires: ["diskHealth"]
+  },
+  {
+    widgetType: "network-throughput",
+    title: "网络吞吐",
+    description: "网卡接收与发送速率，支持多种图表形式。",
+    category: "网络",
+    kind: "content",
+    defaultSize: "large",
+    visualization: "line",
+    visualizations: ["line", "area", "bar", "number"],
+    requires: ["networkRxRate", "networkTxRate"]
+  },
+  {
+    widgetType: "gpu-load",
+    title: "GPU 负载",
+    description: "显卡核心、编码与解码负载趋势。",
+    category: "显卡与散热",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "line",
+    visualizations: ["line", "area", "bar", "number"],
+    requires: ["gpuUsage"]
+  },
+  {
+    widgetType: "fan-speed",
+    title: "风扇转速",
+    description: "风扇 RPM 趋势与当前转速。",
+    category: "显卡与散热",
+    kind: "content",
+    defaultSize: "small",
+    visualization: "line",
+    visualizations: ["line", "area", "bar", "number"],
+    requires: ["fanRpm"]
+  },
+  {
+    widgetType: "system-processes",
+    title: "系统进程与句柄",
+    description: "进程、线程、句柄等系统级计数趋势。",
+    category: "系统",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "line",
+    visualizations: ["line", "area", "bar", "number"],
+    requires: ["systemOverview"]
+  }
+];
+
+const widgetDefinitionByType = new Map(WIDGET_CATALOG.map((definition) => [definition.widgetType, definition]));
+
+function formatBytes(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let amount = value;
+  let index = 0;
+  while (amount >= 1024 && index < units.length - 1) {
+    amount /= 1024;
+    index += 1;
+  }
+  return `${amount.toFixed(amount >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function formatNumber(value: number | null | undefined, suffix = ""): string {
+  return value == null || !Number.isFinite(value) ? "—" : `${Math.round(value).toLocaleString("zh-CN")}${suffix}`;
+}
+
+function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return "未采集";
+  const minutes = Math.max(0, Math.round(seconds / 60));
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const rest = minutes % 60;
+  return `${days ? `${days} 天 ` : ""}${hours ? `${hours} 小时 ` : ""}${rest} 分钟`;
+}
+
+function latestValue(points: SamplePoint[] | undefined): number | null {
+  const point = points?.[points.length - 1];
+  return point && Number.isFinite(point.value) ? point.value : null;
+}
+
+function sumSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
+  const buckets = new Map<number, { timestamp: string; total: number }>();
+  for (const points of groups) {
+    for (const point of points) {
+      const timestamp = Date.parse(point.timestamp);
+      if (!Number.isFinite(timestamp) || !Number.isFinite(point.value)) continue;
+      const current = buckets.get(timestamp) ?? { timestamp: new Date(timestamp).toISOString(), total: 0 };
+      current.total += point.value;
+      buckets.set(timestamp, current);
+    }
+  }
+  return [...buckets.values()].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp)).map((point) => ({ timestamp: point.timestamp, value: point.total }));
+}
+
+function averageSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
+  const buckets = new Map<number, { timestamp: string; total: number; count: number }>();
+  for (const points of groups) {
+    for (const point of points) {
+      const timestamp = Date.parse(point.timestamp);
+      if (!Number.isFinite(timestamp) || !Number.isFinite(point.value)) continue;
+      const current = buckets.get(timestamp) ?? { timestamp: new Date(timestamp).toISOString(), total: 0, count: 0 };
+      current.total += point.value;
+      current.count += 1;
+      buckets.set(timestamp, current);
+    }
+  }
+  return [...buckets.values()].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp)).map((point) => ({ timestamp: point.timestamp, value: point.count ? point.total / point.count : 0 }));
+}
+
+function metricAvailable(definition: WidgetCatalogDefinition, metrics: MetricsResponse | null): boolean {
+  if (!definition.requires?.length || !metrics) return true;
+  return definition.requires.some((key) => metrics.enabledMetrics.includes(key) || metrics.availableMetrics.some((option) => option.key === key && option.available));
+}
+
+function visualizationFor(entry: WidgetLayoutCatalogEntry, definition: WidgetCatalogDefinition): WidgetVisualization {
+  const candidate = entry.config?.visualization ?? entry.visualization;
+  return candidate && definition.visualizations.includes(candidate) ? candidate : definition.visualization;
+}
+
+type WidgetLine = {
+  label: string;
+  points: SamplePoint[];
+  formatter?: (value: number) => string;
+};
+
+function buildChartData(lines: WidgetLine[]): Array<Record<string, string | number>> {
+  const rows = new Map<string, Record<string, string | number>>();
+  lines.forEach((line, lineIndex) => {
+    line.points.forEach((point) => {
+      const row = rows.get(point.timestamp) ?? { timestamp: point.timestamp };
+      row[`value${lineIndex}`] = point.value;
+      rows.set(point.timestamp, row);
+    });
+  });
+  return [...rows.values()].sort((left, right) => Date.parse(String(left.timestamp)) - Date.parse(String(right.timestamp)));
+}
+
+function formatTimeTick(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+}
+
+function chartTooltipFormatter(value: unknown, name: unknown, lines: WidgetLine[]): [string, string] {
+  const numeric = typeof value === "number" ? value : Number(value);
+  const index = typeof name === "string" ? Number(name.replace("value", "")) : 0;
+  const line = lines[index];
+  return [line?.formatter ? line.formatter(numeric) : formatNumber(numeric), line?.label ?? "数值"];
+}
+
+function TrendChart({ lines, visualization, valueFormatter }: { lines: WidgetLine[]; visualization: WidgetVisualization; valueFormatter?: (value: number) => string }) {
+  const data = useMemo(() => buildChartData(lines), [lines]);
+  if (!data.length) return <div className="workspace-dynamic-empty__inline">当前时间范围没有可用数据</div>;
+  if (visualization === "number") {
+    return (
+      <div className="workspace-dynamic-number-grid">
+        {lines.map((line, index) => {
+          const value = latestValue(line.points);
+          return <div className="workspace-dynamic-number" key={line.label}><span>{line.label}</span><strong>{value == null ? "—" : valueFormatter?.(value) ?? line.formatter?.(value) ?? formatNumber(value)}</strong></div>;
+        })}
+      </div>
+    );
+  }
+  const common = { data, margin: { top: 8, right: 10, bottom: 0, left: -16 } };
+  return (
+    <div className="workspace-dynamic-chart">
+      <ResponsiveContainer width="100%" height="100%">
+        {visualization === "bar" ? (
+          <BarChart {...common}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148, 163, 184, .22)" />
+            <XAxis dataKey="timestamp" tickFormatter={formatTimeTick} minTickGap={28} />
+            <YAxis tickFormatter={(value) => valueFormatter?.(Number(value)) ?? formatNumber(Number(value))} width={48} />
+            <Tooltip formatter={(value, name) => chartTooltipFormatter(value, name, lines)} labelFormatter={(value) => formatTimeTick(String(value))} />
+            {lines.map((line, index) => <Bar key={line.label} dataKey={`value${index}`} name={`value${index}`} fill={chartColors[index % chartColors.length]} radius={[3, 3, 0, 0]} />)}
+          </BarChart>
+        ) : visualization === "area" ? (
+          <AreaChart {...common}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148, 163, 184, .22)" />
+            <XAxis dataKey="timestamp" tickFormatter={formatTimeTick} minTickGap={28} />
+            <YAxis tickFormatter={(value) => valueFormatter?.(Number(value)) ?? formatNumber(Number(value))} width={48} />
+            <Tooltip formatter={(value, name) => chartTooltipFormatter(value, name, lines)} labelFormatter={(value) => formatTimeTick(String(value))} />
+            {lines.map((line, index) => <Area key={line.label} type="monotone" dataKey={`value${index}`} name={`value${index}`} stroke={chartColors[index % chartColors.length]} fill={chartColors[index % chartColors.length]} fillOpacity={0.16} strokeWidth={2} />)}
+          </AreaChart>
+        ) : (
+          <LineChart {...common}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148, 163, 184, .22)" />
+            <XAxis dataKey="timestamp" tickFormatter={formatTimeTick} minTickGap={28} />
+            <YAxis tickFormatter={(value) => valueFormatter?.(Number(value)) ?? formatNumber(Number(value))} width={48} />
+            <Tooltip formatter={(value, name) => chartTooltipFormatter(value, name, lines)} labelFormatter={(value) => formatTimeTick(String(value))} />
+            {lines.map((line, index) => <Line key={line.label} type="monotone" dataKey={`value${index}`} name={`value${index}`} stroke={chartColors[index % chartColors.length]} dot={false} strokeWidth={2} />)}
+          </LineChart>
+        )}
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function DonutChart({ data, centerLabel }: { data: Array<{ name: string; value: number; color: string }>; centerLabel?: string }) {
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+  if (!total) return <div className="workspace-dynamic-empty__inline">暂无可用于构成图的数据</div>;
+  return (
+    <div className="workspace-dynamic-donut-wrap">
+      <div className="workspace-dynamic-donut">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={data} dataKey="value" nameKey="name" innerRadius="62%" outerRadius="88%" paddingAngle={3} stroke="none">
+              {data.map((item) => <Cell key={item.name} fill={item.color} />)}
+            </Pie>
+            <Tooltip formatter={(value, name) => [`${formatNumber(Number(value))}`, String(name)]} />
+          </PieChart>
+        </ResponsiveContainer>
+        <span>{centerLabel ?? `${Math.round(total)}`}</span>
+      </div>
+      <div className="workspace-dynamic-legend">{data.map((item) => <span key={item.name}><i style={{ background: item.color }} />{item.name} {Math.round(item.value)}</span>)}</div>
+    </div>
+  );
+}
+
+function DataTable({ rows }: { rows: Array<{ label: string; value: string; detail?: string; tone?: "good" | "warn" | "muted" }> }) {
+  if (!rows.length) return <div className="workspace-dynamic-empty__inline">暂无数据</div>;
+  return <div className="workspace-dynamic-table">{rows.map((row) => <div className="workspace-dynamic-table__row" key={`${row.label}-${row.value}`}><span>{row.label}</span><strong className={row.tone ? `is-${row.tone}` : ""}>{row.value}</strong>{row.detail && <small>{row.detail}</small>}</div>)}</div>;
+}
+
+function diskHealthTone(status: string | null | undefined): "good" | "warn" | "muted" {
+  const normalized = (status ?? "").toLowerCase();
+  if (normalized.includes("good") || normalized.includes("pass") || normalized.includes("healthy") || normalized.includes("正常")) return "good";
+  if (normalized.includes("bad") || normalized.includes("fail") || normalized.includes("warn") || normalized.includes("异常")) return "warn";
+  return "muted";
+}
+
+function getTargetId(entry: WidgetLayoutCatalogEntry): string | undefined {
+  const target = entry.config?.targetId;
+  return typeof target === "string" ? target : undefined;
+}
+
+function getWidgetLines(widgetType: string, metrics: MetricsResponse | null, targetId?: string): { lines: WidgetLine[]; valueFormatter?: (value: number) => string } {
+  const series = metrics?.series;
+  if (!series) return { lines: [] };
+  if (widgetType === "cpu-usage") {
+    const lines = series.cpus?.length && targetId ? series.cpus.filter((item) => item.id === targetId).map((item) => ({ label: item.name, points: item.usagePercent, formatter: (value: number) => `${Math.round(value)}%` })) : [{ label: "CPU 使用率", points: series.cpuUsagePercent, formatter: (value: number) => `${Math.round(value)}%` }];
+    return { lines, valueFormatter: (value) => `${Math.round(value)}%` };
+  }
+  if (widgetType === "memory-usage") return { lines: [{ label: "物理内存", points: series.memoryUsedBytes, formatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes, formatter: formatBytes }], valueFormatter: formatBytes };
+  if (widgetType === "disk-capacity") {
+    const points = targetId ? series.disks?.find((item) => item.id === targetId)?.usedBytes ?? [] : series.diskUsedBytes;
+    return { lines: [{ label: "磁盘已用", points, formatter: formatBytes }], valueFormatter: formatBytes };
+  }
+  if (widgetType === "network-throughput") return { lines: [{ label: "接收 Rx", points: series.networkRxBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` }, { label: "发送 Tx", points: series.networkTxBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` }], valueFormatter: (value) => `${formatBytes(value)}/s` };
+  if (widgetType === "gpu-load") {
+    const gpuLines = series.gpus?.length && targetId ? series.gpus.filter((item) => item.id === targetId) : series.gpus ?? [];
+    return { lines: gpuLines.length ? [{ label: "核心", points: averageSamplePoints(gpuLines.map((item) => item.usagePercent)), formatter: (value: number) => `${Math.round(value)}%` }, { label: "编码", points: averageSamplePoints(gpuLines.map((item) => item.encodePercent)), formatter: (value: number) => `${Math.round(value)}%` }, { label: "解码", points: averageSamplePoints(gpuLines.map((item) => item.decodePercent)), formatter: (value: number) => `${Math.round(value)}%` }] : [{ label: "GPU 使用率", points: series.gpuUsagePercent, formatter: (value: number) => `${Math.round(value)}%` }], valueFormatter: (value) => `${Math.round(value)}%` };
+  }
+  if (widgetType === "fan-speed") {
+    const fanLines = series.fans?.length && targetId ? series.fans.filter((item) => item.id === targetId) : series.fans ?? [];
+    return { lines: fanLines.length ? fanLines.map((item) => ({ label: item.name, points: item.rpm, formatter: (value: number) => `${Math.round(value)} RPM` })) : [], valueFormatter: (value) => `${Math.round(value)} RPM` };
+  }
+  if (widgetType === "system-processes") return { lines: [{ label: "进程", points: series.systemProcessCount, formatter: (value: number) => formatNumber(value) }, { label: "线程", points: series.systemThreadCount, formatter: (value: number) => formatNumber(value) }, { label: "句柄", points: series.systemHandleCount, formatter: (value: number) => formatNumber(value) }] };
+  return { lines: [] };
+}
+
+function hardwareRows(device: DeviceSummary, latest: MetricsLatest | undefined): Array<{ label: string; value: string; detail?: string }> {
+  const cpu = latest?.cpuPackages?.[0];
+  return [
+    { label: "操作系统", value: device.os },
+    { label: "设备 ID", value: device.deviceId },
+    { label: "Agent", value: device.agentVersion ? `v${device.agentVersion}` : "未知" },
+    { label: "CPU", value: cpu?.model || cpu?.name || "未采集", detail: cpu ? `${cpu.coreCount ?? "?"} 核 · ${cpu.logicalCount ?? "?"} 线程` : undefined },
+    { label: "运行时间", value: formatDuration(latest?.system.uptimeSeconds) },
+    { label: "内存", value: latest ? `${formatBytes(latest.memoryUsedBytes)} / ${formatBytes(latest.memoryTotalBytes)}` : "未采集" },
+    { label: "磁盘", value: latest ? `${formatBytes(latest.diskUsedBytes)} / ${formatBytes(latest.diskTotalBytes)}` : "未采集" }
+  ];
+}
+
+function diskRows(disks: DiskDeviceStats[]): Array<{ label: string; value: string; detail?: string; tone?: "good" | "warn" | "muted" }> {
+  return disks.flatMap((disk) => {
+    const status = disk.healthStatus || "未报告";
+    const attributes = disk.smartAttributes?.length ? `SMART ${disk.smartAttributes.length} 项` : "暂无 SMART 属性";
+    return [{ label: disk.model || disk.name || disk.id, value: status, detail: [disk.mountPoint, disk.temperatureC != null ? `${Math.round(disk.temperatureC)} °C` : "温度—", disk.healthPercent != null ? `寿命 ${Math.round(disk.healthPercent)}%` : "寿命—", attributes].filter(Boolean).join(" · "), tone: diskHealthTone(disk.healthStatus) }];
+  });
+}
+
+function healthDonutData(disks: DiskDeviceStats[]) {
+  const good = disks.filter((disk) => diskHealthTone(disk.healthStatus) === "good").length;
+  const warn = disks.filter((disk) => diskHealthTone(disk.healthStatus) === "warn").length;
+  const unknown = Math.max(0, disks.length - good - warn);
+  return [{ name: "正常", value: good, color: "#14b8a6" }, { name: "需要注意", value: warn, color: "#f59e0b" }, { name: "未报告", value: unknown, color: "#94a3b8" }].filter((item) => item.value > 0);
+}
+
+function WidgetContent({ definition, entry, context }: { definition: WidgetCatalogDefinition; entry: WidgetLayoutCatalogEntry; context: WidgetCatalogContext }) {
+  const { device, metrics } = context;
+  const latest = metrics?.latest;
+  const visualization = visualizationFor(entry, definition);
+  if (definition.widgetType === "hardware-system") return <DataTable rows={hardwareRows(device, latest)} />;
+  if (definition.widgetType === "disk-health") {
+    const disks = latest?.disks ?? [];
+    if (visualization === "donut") return <DonutChart data={healthDonutData(disks)} centerLabel={`${disks.length} 盘`} />;
+    if (visualization === "number") {
+      const healthy = disks.filter((disk) => diskHealthTone(disk.healthStatus) === "good").length;
+      return <div className="workspace-dynamic-number-grid"><div className="workspace-dynamic-number"><span>健康磁盘</span><strong>{healthy} / {disks.length}</strong></div><div className="workspace-dynamic-number"><span>SMART 属性</span><strong>{disks.reduce((sum, disk) => sum + (disk.smartAttributes?.length ?? 0), 0)}</strong></div></div>;
+    }
+    return <DataTable rows={diskRows(disks)} />;
+  }
+  if (definition.widgetType === "disk-capacity" && visualization === "donut") {
+    const used = latest?.diskUsedBytes ?? 0;
+    const total = latest?.diskTotalBytes ?? 0;
+    return <DonutChart data={[{ name: "已用", value: Math.max(0, used), color: "#3b82f6" }, { name: "剩余", value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />;
+  }
+  const { lines, valueFormatter } = getWidgetLines(definition.widgetType, metrics, getTargetId(entry));
+  return <TrendChart lines={lines} visualization={visualization} valueFormatter={valueFormatter} />;
+}
+
+function targetOptions(widgetType: string, metrics: MetricsResponse | null): Array<{ id: string; name: string }> {
+  if (!metrics) return [];
+  if (widgetType === "cpu-usage") return metrics.series.cpus?.map((item) => ({ id: item.id, name: item.name })) ?? [];
+  if (widgetType === "disk-capacity") return metrics.series.disks?.map((item) => ({ id: item.id, name: item.model || item.name })) ?? [];
+  if (widgetType === "gpu-load") return metrics.series.gpus?.map((item) => ({ id: item.id, name: item.name })) ?? [];
+  if (widgetType === "fan-speed") return metrics.series.fans?.map((item) => ({ id: item.id, name: item.name })) ?? [];
+  return [];
+}
+
+function DynamicWidgetCard({ entry, context }: { entry: WidgetLayoutCatalogEntry & { id: string }; context: WidgetCatalogContext }) {
+  const layout = useWidgetLayout();
+  const definition = widgetDefinitionByType.get(entry.widgetType ?? "");
+  if (!definition) return null;
+  const visualization = visualizationFor(entry, definition);
+  const targets = targetOptions(definition.widgetType, context.metrics);
+  const targetId = getTargetId(entry) ?? "all";
+  return (
+    <DesktopWidget
+      id={entry.id}
+      title={entry.title}
+      kind={entry.kind}
+      defaultSize={entry.defaultSize}
+      widgetType={definition.widgetType}
+      category={definition.category}
+      visualization={visualization}
+      config={entry.config}
+    >
+      <div className="workspace-dynamic-card">
+        <div className="workspace-dynamic-card__header">
+          <div><span className="workspace-section-kicker">{definition.category}</span><h3>{entry.title}</h3><p>{definition.description}</p></div>
+          <div className="workspace-dynamic-card__controls">
+            {layout.editMode && <select className="workspace-select workspace-select--small" value={visualization} onChange={(event) => layout.updateWidgetConfig(entry.id, { visualization: event.target.value as WidgetVisualization })} aria-label={`${entry.title}图表形式`}>
+              {definition.visualizations.map((item) => <option key={item} value={item}>{visualizationLabels[item]}</option>)}
+            </select>}
+            {layout.editMode && targets.length > 0 && <select className="workspace-select workspace-select--small" value={targetId} onChange={(event) => layout.updateWidgetConfig(entry.id, { targetId: event.target.value === "all" ? null : event.target.value })} aria-label={`${entry.title}实例`}>
+              <option value="all">全部实例</option>
+              {targets.map((target) => <option value={target.id} key={target.id}>{target.name}</option>)}
+            </select>}
+          </div>
+        </div>
+        <WidgetContent definition={definition} entry={entry} context={context} />
+      </div>
+    </DesktopWidget>
+  );
+}
+
+export function DynamicWidgetCanvas({ device, metrics, showEmptyState = false, onOpenDrawer }: WidgetCatalogContext & { showEmptyState?: boolean; onOpenDrawer?: () => void }) {
+  const layout = useWidgetLayout();
+  const entries = layout.widgetEntries.filter((entry) => Boolean(entry.widgetType));
+  if (!entries.length) {
+    return showEmptyState ? <div className="workspace-dynamic-empty"><strong>这个面板还没有自定义小组件</strong><span>打开小组件抽屉，从处理器、存储、网络和 SMART 数据中选择内容。</span>{onOpenDrawer && <button type="button" onClick={onOpenDrawer}>打开小组件抽屉</button>}</div> : null;
+  }
+  return <div className="workspace-widget-grid">{entries.map((entry) => <DynamicWidgetCard key={entry.id} entry={entry} context={{ device, metrics }} />)}</div>;
+}
+
+export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogContext & { open: boolean; onClose: () => void }) {
+  const layout = useWidgetLayout();
+  if (!open) return null;
+  const grouped = WIDGET_CATALOG.reduce<Record<string, WidgetCatalogDefinition[]>>((groups, definition) => {
+    (groups[definition.category] ??= []).push(definition);
+    return groups;
+  }, {});
+  return (
+    <div className="workspace-widget-drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <aside className="workspace-widget-drawer" role="dialog" aria-modal="true" aria-label="小组件抽屉">
+        <div className="workspace-widget-drawer__header"><div><span className="workspace-section-kicker">组件目录</span><h2>添加小组件</h2><p>可以重复添加同一种小组件，再为每个实例选择不同的目标和图表形式。</p></div><button type="button" onClick={onClose} aria-label="关闭小组件抽屉">×</button></div>
+        <div className="workspace-widget-drawer__body">
+          {Object.entries(grouped).map(([category, definitions]) => <section className="workspace-widget-drawer__group" key={category}><h3>{category}</h3>{definitions.map((definition) => {
+            const available = metricAvailable(definition, metrics);
+            const count = layout.widgetEntries.filter((entry) => entry.widgetType === definition.widgetType).length;
+            return <div className={`workspace-widget-drawer__item${available ? "" : " is-unavailable"}`} key={definition.widgetType}><div><strong>{definition.title}</strong><p>{definition.description}</p><small>{count ? `已添加 ${count} 个` : definition.requires?.length ? "需要对应采集指标" : "可直接使用"}</small></div><button type="button" disabled={!available} onClick={() => { layout.setEditMode(true); layout.addWidget({ title: definition.title, kind: definition.kind, defaultSize: definition.defaultSize, widgetType: definition.widgetType, category: definition.category, visualization: definition.visualization, config: { visualization: definition.visualization } }); }}>添加</button></div>;
+          })}</section>)}
+        </div>
+        <div className="workspace-widget-drawer__footer"><span>{device.hostname} · 当前面板</span><button type="button" onClick={onClose}>完成</button></div>
+      </aside>
+    </div>
+  );
+}

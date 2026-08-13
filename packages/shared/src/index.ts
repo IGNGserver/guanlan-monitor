@@ -827,6 +827,24 @@ export interface DesktopSnapshotRequest {
 
 export type WidgetLayoutSize = "large" | "medium" | "small";
 export type WidgetLayoutKind = "group" | "content";
+export type WidgetVisualization = "line" | "area" | "bar" | "donut" | "number" | "table";
+export type WidgetPanelKind = "system" | "custom";
+
+export interface WidgetPanelMetadata {
+  id: string;
+  name: string;
+  kind: WidgetPanelKind;
+  order: number;
+}
+
+export type WidgetConfigValue = string | number | boolean | null;
+
+export interface WidgetInstanceConfig {
+  visualization?: WidgetVisualization;
+  metric?: string;
+  targetId?: string | null;
+  [key: string]: WidgetConfigValue | undefined;
+}
 
 export interface WidgetLayoutPlacement {
   x: number;
@@ -842,12 +860,18 @@ export interface WidgetLayoutCatalogEntry {
   kind: WidgetLayoutKind;
   defaultSize: WidgetLayoutSize;
   templateId?: string;
+  widgetType?: string;
+  category?: string;
+  visualization?: WidgetVisualization;
+  config?: WidgetInstanceConfig;
 }
 
 export interface WidgetLayoutDocument {
+  version?: number;
   placements: Record<string, WidgetLayoutPlacement>;
   catalog: Record<string, WidgetLayoutCatalogEntry>;
   snapToGrid: boolean;
+  panels?: WidgetPanelMetadata[];
 }
 
 export interface WidgetLayoutTemplate {

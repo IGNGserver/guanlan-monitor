@@ -8,7 +8,9 @@ import type {
   WidgetLayoutSaveRequest,
   WidgetLayoutSize,
   WidgetLayoutSync,
-  WidgetLayoutTemplate
+  WidgetLayoutTemplate,
+  WidgetInstanceConfig,
+  WidgetVisualization
 } from "@dsc/shared";
 
 export type WidgetSize = WidgetLayoutSize;
@@ -21,6 +23,10 @@ type WidgetDefinition = {
   title: string;
   kind: WidgetKind;
   defaultSize: WidgetSize;
+  widgetType?: string;
+  category?: string;
+  visualization?: WidgetVisualization;
+  config?: WidgetInstanceConfig;
 };
 
 type WidgetCatalogEntry = SharedWidgetLayoutCatalogEntry;
@@ -72,6 +78,11 @@ type WidgetLayoutContextValue = {
   redo: () => void;
   hasInstanceLayout: boolean;
   hiddenWidgets: HiddenWidget[];
+  widgetEntries: Array<{ id: string } & WidgetCatalogEntry>;
+  addWidget: (definition: Omit<WidgetDefinition, "id"> & { id?: string }) => string | null;
+  removeWidget: (id: string) => void;
+  updateWidgetConfig: (id: string, patch: WidgetInstanceConfig) => void;
+  getLayoutSnapshot: () => WidgetLayoutDocument;
 };
 
 const WidgetLayoutContext = createContext<WidgetLayoutContextValue | null>(null);
@@ -86,7 +97,7 @@ const SIZE_PRESETS: Record<WidgetSize, Pick<WidgetPlacement, "w" | "h">> = {
 };
 
 function emptyLayout(snapToGrid = true): WidgetLayoutDocument {
-  return { placements: {}, catalog: {}, snapToGrid };
+  return { version: 4, placements: {}, catalog: {}, snapToGrid };
 }
 
 type WidgetLayoutDraftGuard = () => boolean;
@@ -108,9 +119,14 @@ export function confirmDiscardWidgetLayoutDraft(): boolean {
 
 function cloneLayout(layout: WidgetLayoutDocument): WidgetLayoutDocument {
   return {
+    ...(layout.version ? { version: layout.version } : {}),
     placements: Object.fromEntries(Object.entries(layout.placements).map(([id, placement]) => [id, { ...placement }])),
-    catalog: Object.fromEntries(Object.entries(layout.catalog).map(([id, entry]) => [id, { ...entry }])),
-    snapToGrid: layout.snapToGrid
+    catalog: Object.fromEntries(Object.entries(layout.catalog).map(([id, entry]) => [id, {
+      ...entry,
+      ...(entry.config ? { config: { ...entry.config } } : {})
+    }])),
+    snapToGrid: layout.snapToGrid,
+    ...(layout.panels ? { panels: layout.panels.map((panel) => ({ ...panel })) } : {})
   };
 }
 
@@ -178,23 +194,39 @@ function normalizePlacements(placements: Record<string, WidgetPlacement>, snapTo
 function normalizeLayout(layout: WidgetLayoutDocument | null | undefined): WidgetLayoutDocument {
   if (!layout) return emptyLayout();
   const catalog: Record<string, WidgetCatalogEntry> = {};
+  const visualizations: WidgetVisualization[] = ["line", "area", "bar", "donut", "number", "table"];
   for (const [id, entry] of Object.entries(layout.catalog ?? {})) {
     if (!entry || typeof entry.title !== "string") continue;
     catalog[id] = {
       title: entry.title,
       kind: entry.kind === "group" ? "group" : "content",
       defaultSize: entry.defaultSize === "large" || entry.defaultSize === "small" ? entry.defaultSize : "medium",
-      ...(entry.templateId ? { templateId: entry.templateId } : {})
+      ...(entry.templateId ? { templateId: entry.templateId } : {}),
+      ...(entry.widgetType ? { widgetType: entry.widgetType } : {}),
+      ...(entry.category ? { category: entry.category } : {}),
+      ...(entry.visualization && visualizations.includes(entry.visualization) ? { visualization: entry.visualization } : {}),
+      ...(entry.config ? { config: { ...entry.config } } : {})
     };
   }
   const placements: Record<string, WidgetPlacement> = {};
   for (const [id, placement] of Object.entries(layout.placements ?? {})) {
     placements[id] = normalizePlacement(placement, catalog[id]?.defaultSize ?? DEFAULT_SIZE);
   }
+  const panels = (layout.panels ?? [])
+    .filter((panel) => panel && typeof panel.id === "string" && typeof panel.name === "string")
+    .map((panel, index) => ({
+      id: panel.id,
+      name: panel.name.trim().slice(0, 80) || `面板 ${index + 1}`,
+      kind: panel.kind === "custom" ? "custom" : "system",
+      order: Number.isFinite(panel.order) ? Math.max(0, Math.round(panel.order)) : index
+    }))
+    .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
   return {
+    version: 4,
     catalog,
     placements: normalizePlacements(placements, layout.snapToGrid !== false),
-    snapToGrid: layout.snapToGrid !== false
+    snapToGrid: layout.snapToGrid !== false,
+    ...(panels.length ? { panels } : {})
   };
 }
 
@@ -202,10 +234,15 @@ function mergeDefinitions(layout: WidgetLayoutDocument, definitions: Record<stri
   const next = cloneLayout(layout);
   for (const definition of Object.values(definitions)) {
     next.catalog[definition.id] = {
+      ...next.catalog[definition.id],
       title: definition.title,
       kind: definition.kind,
       defaultSize: definition.defaultSize,
-      ...(definition.templateId ? { templateId: definition.templateId } : {})
+      ...(definition.templateId ? { templateId: definition.templateId } : {}),
+      ...(definition.widgetType ? { widgetType: definition.widgetType } : {}),
+      ...(definition.category ? { category: definition.category } : {}),
+      ...(definition.visualization ? { visualization: definition.visualization } : {}),
+      ...(definition.config ? { config: { ...definition.config } } : {})
     };
     if (!next.placements[definition.id]) {
       const position = findNextFreePlacement(next.placements, definition.defaultSize);
@@ -235,7 +272,11 @@ function buildTemplateLayout(layout: WidgetLayoutDocument): WidgetLayoutDocument
     next.catalog[templateId] = {
       title: entry.title,
       kind: entry.kind,
-      defaultSize: entry.defaultSize
+      defaultSize: entry.defaultSize,
+      ...(entry.widgetType ? { widgetType: entry.widgetType } : {}),
+      ...(entry.category ? { category: entry.category } : {}),
+      ...(entry.visualization ? { visualization: entry.visualization } : {}),
+      ...(entry.config ? { config: { ...entry.config } } : {})
     };
   }
   next.placements = normalizePlacements(positions, next.snapToGrid);
@@ -247,10 +288,15 @@ function applyTemplateToLayout(template: WidgetLayoutDocument, definitions: Reco
   const next = emptyLayout(source.snapToGrid);
   for (const definition of Object.values(definitions)) {
     next.catalog[definition.id] = {
+      ...source.catalog[templateIdForDefinition(definition)],
       title: definition.title,
       kind: definition.kind,
       defaultSize: definition.defaultSize,
-      ...(definition.templateId ? { templateId: definition.templateId } : {})
+      ...(definition.templateId ? { templateId: definition.templateId } : {}),
+      ...(definition.widgetType ? { widgetType: definition.widgetType } : {}),
+      ...(definition.category ? { category: definition.category } : {}),
+      ...(definition.visualization ? { visualization: definition.visualization } : {}),
+      ...(definition.config ? { config: { ...definition.config } } : {})
     };
     const sourceId = templateIdForDefinition(definition);
     const sourcePlacement = source.placements[sourceId] ?? source.placements[definition.id];
@@ -408,6 +454,59 @@ export function WidgetLayoutProvider({
     setHistoryVersion((value) => value + 1);
   }, [editable, locked]);
 
+  const addWidget = useCallback((definition: Omit<WidgetDefinition, "id"> & { id?: string }): string | null => {
+    if (!editable || locked) return null;
+    const requestedId = definition.id?.trim();
+    let id = requestedId || `${definition.widgetType ?? "widget"}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    while (draftRef.current.catalog[id]) {
+      id = `${definition.widgetType ?? "widget"}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    }
+    mutateDraft((current) => {
+      current.catalog[id] = {
+        title: definition.title,
+        kind: definition.kind,
+        defaultSize: definition.defaultSize,
+        ...(definition.templateId ? { templateId: definition.templateId } : {}),
+        ...(definition.widgetType ? { widgetType: definition.widgetType } : {}),
+        ...(definition.category ? { category: definition.category } : {}),
+        ...(definition.visualization ? { visualization: definition.visualization } : {}),
+        ...(definition.config ? { config: { ...definition.config } } : {})
+      };
+      const position = findNextFreePlacement(current.placements, definition.defaultSize);
+      current.placements[id] = normalizePlacement({ ...position, size: definition.defaultSize });
+      return current;
+    });
+    return id;
+  }, [editable, locked, mutateDraft]);
+
+  const removeWidget = useCallback((id: string) => {
+    if (definitionsRef.current[id]) {
+      mutateDraft((current) => {
+        const placement = current.placements[id];
+        if (placement) placement.hidden = true;
+        return current;
+      });
+      return;
+    }
+    mutateDraft((current) => {
+      delete current.catalog[id];
+      delete current.placements[id];
+      return current;
+    });
+  }, [mutateDraft]);
+
+  const updateWidgetConfig = useCallback((id: string, patch: WidgetInstanceConfig) => {
+    mutateDraft((current) => {
+      const entry = current.catalog[id];
+      if (!entry) return current;
+      entry.config = { ...(entry.config ?? {}), ...patch };
+      if (patch.visualization) entry.visualization = patch.visualization;
+      return current;
+    });
+  }, [mutateDraft]);
+
+  const getLayoutSnapshot = useCallback(() => cloneLayout(draftRef.current), []);
+
   const updateSize = useCallback((id: string, size: WidgetSize) => {
     mutateDraft((current) => {
       const existing = current.placements[id] ?? normalizePlacement({ size });
@@ -541,7 +640,7 @@ export function WidgetLayoutProvider({
 
   const exportLayout = useCallback(() => {
     if (typeof window === "undefined") return;
-    const blob = new Blob([JSON.stringify({ kind: "dsc-widget-layout", version: 3, templateKey, layout: draftRef.current }, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify({ kind: "dsc-widget-layout", version: 4, templateKey, layout: draftRef.current }, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -553,13 +652,15 @@ export function WidgetLayoutProvider({
   const importLayout = useCallback((json: string): boolean => {
     if (!editable || locked) return false;
     try {
-      const parsed = JSON.parse(json) as { layout?: WidgetLayoutDocument; placements?: WidgetLayoutDocument["placements"]; catalog?: WidgetLayoutDocument["catalog"]; snapToGrid?: boolean };
+      const parsed = JSON.parse(json) as { layout?: WidgetLayoutDocument; version?: number; placements?: WidgetLayoutDocument["placements"]; catalog?: WidgetLayoutDocument["catalog"]; snapToGrid?: boolean; panels?: WidgetLayoutDocument["panels"] };
       const candidate = parsed.layout ?? parsed;
       if (!candidate.placements || !candidate.catalog) return false;
       replaceDraft(mergeDefinitions(normalizeLayout({
+        version: candidate.version,
         placements: candidate.placements,
         catalog: candidate.catalog,
-        snapToGrid: candidate.snapToGrid !== false
+        snapToGrid: candidate.snapToGrid !== false,
+        panels: candidate.panels
       }), definitionsRef.current), true);
       resetHistory();
       setSyncMessage("布局已导入，点击“保存布局”后才会同步到中枢");
@@ -588,6 +689,8 @@ export function WidgetLayoutProvider({
   const hiddenWidgets = useMemo(() => Object.entries(draft.catalog)
     .filter(([id]) => draft.placements[id]?.hidden)
     .map(([id, entry]) => ({ id, ...entry })), [draft.catalog, draft.placements]);
+
+  const widgetEntries = useMemo(() => Object.entries(draft.catalog).map(([id, entry]) => ({ id, ...entry })), [draft.catalog]);
 
   const contextValue = useMemo<WidgetLayoutContextValue>(() => ({
     scopeKey,
@@ -622,8 +725,13 @@ export function WidgetLayoutProvider({
     undo,
     redo,
     hasInstanceLayout: Boolean(remote.instanceLayout),
-    hiddenWidgets
-  }), [applyTemplate, deleteTemplate, dirty, draft.snapToGrid, editable, editMode, exportLayout, getWidgetSize, hideWidget, hiddenWidgets, historyVersion, importLayout, loading, locked, redo, registerWidget, remote.instanceLayout, remote.templates, reorderWidgets, resetDeviceLayout, resolveWidget, restoreWidget, saveAsTemplate, saveLayout, saving, scopeKey, syncMessage, templateKey, toggleSnapToGrid, undo, updateSize]);
+    hiddenWidgets,
+    widgetEntries,
+    addWidget,
+    removeWidget,
+    updateWidgetConfig,
+    getLayoutSnapshot
+  }), [addWidget, applyTemplate, deleteTemplate, dirty, draft.snapToGrid, editable, editMode, exportLayout, getLayoutSnapshot, getWidgetSize, hideWidget, hiddenWidgets, historyVersion, importLayout, loading, locked, redo, registerWidget, remote.instanceLayout, remote.templates, removeWidget, reorderWidgets, resetDeviceLayout, resolveWidget, restoreWidget, saveAsTemplate, saveLayout, saving, scopeKey, syncMessage, templateKey, toggleSnapToGrid, undo, updateSize, updateWidgetConfig, widgetEntries]);
 
   return <WidgetLayoutContext.Provider value={contextValue}>{children}</WidgetLayoutContext.Provider>;
 }
@@ -656,6 +764,10 @@ export function DesktopWidget({
   title,
   kind = "content",
   defaultSize = DEFAULT_SIZE,
+  widgetType,
+  category,
+  visualization,
+  config,
   children
 }: {
   id: string;
@@ -663,10 +775,14 @@ export function DesktopWidget({
   title: string;
   kind?: WidgetKind;
   defaultSize?: WidgetSize;
+  widgetType?: string;
+  category?: string;
+  visualization?: WidgetVisualization;
+  config?: WidgetInstanceConfig;
   children: React.ReactNode;
 }) {
   const layout = useWidgetLayout();
-  const definition = useMemo(() => ({ id, templateId, title, kind, defaultSize }), [defaultSize, id, kind, templateId, title]);
+  const definition = useMemo(() => ({ id, templateId, title, kind, defaultSize, widgetType, category, visualization, config }), [category, config, defaultSize, id, kind, templateId, title, visualization, widgetType]);
   const resolved = layout.resolveWidget(definition);
   const editing = layout.editable && layout.editMode;
 
@@ -708,6 +824,7 @@ export function DesktopWidget({
             ))}
           </div>
           <button className="workspace-widget__hide" type="button" onClick={() => layout.hideWidget(id)}>隐藏</button>
+          {widgetType && <button className="workspace-widget__remove" type="button" onClick={() => layout.removeWidget(id)}>移除</button>}
         </div>
       )}
       <div className="workspace-widget__content">{children}</div>
@@ -715,7 +832,7 @@ export function DesktopWidget({
   );
 }
 
-export function WidgetLayoutToolbar() {
+export function WidgetLayoutToolbar({ onOpenWidgetDrawer }: { onOpenWidgetDrawer?: () => void } = {}) {
   const layout = useWidgetLayout();
   const [hiddenOpen, setHiddenOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -759,6 +876,7 @@ export function WidgetLayoutToolbar() {
       <button className={`workspace-layout-toggle${layout.editMode ? " is-active" : ""}`} type="button" aria-pressed={layout.editMode} disabled={layout.saving && layout.dirty} onClick={() => void handleToggleEditMode()}>
         <span className="workspace-layout-toggle__mark">⌘</span>{layout.editMode ? "完成排布" : "编辑排布"}
       </button>
+      {onOpenWidgetDrawer && <button className="workspace-layout-actions__button workspace-layout-actions__button--accent" type="button" onClick={onOpenWidgetDrawer}>添加小组件</button>}
       {layout.editMode && (
         <>
           <button className={`workspace-layout-snap${layout.snapToGrid ? " is-active" : ""}`} type="button" aria-pressed={layout.snapToGrid} onClick={layout.toggleSnapToGrid} title="打开后会按从左到右、从上到下自动填补空位">

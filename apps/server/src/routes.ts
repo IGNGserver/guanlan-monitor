@@ -131,15 +131,35 @@ const widgetLayoutPlacementSchema = z.object({
   hidden: z.boolean()
 });
 
+const widgetInstanceConfigSchema = z.record(z.string().max(80), z.union([
+  z.string().max(240),
+  z.number().finite(),
+  z.boolean(),
+  z.null()
+])).optional();
+
+const widgetPanelMetadataSchema = z.object({
+  id: z.string().min(1).max(160),
+  name: z.string().min(1).max(80),
+  kind: z.enum(["system", "custom"]),
+  order: z.number().int().min(0).max(1000)
+});
+
 const widgetLayoutDocumentSchema = z.object({
+  version: z.number().int().min(1).max(10).optional(),
   placements: z.record(z.string().min(1).max(160), widgetLayoutPlacementSchema),
   catalog: z.record(z.string().min(1).max(160), z.object({
     title: z.string().min(1).max(200),
     kind: z.enum(["group", "content"]),
     defaultSize: z.enum(["large", "medium", "small"]),
-    templateId: z.string().min(1).max(160).optional()
+    templateId: z.string().min(1).max(160).optional(),
+    widgetType: z.string().min(1).max(120).optional(),
+    category: z.string().min(1).max(80).optional(),
+    visualization: z.enum(["line", "area", "bar", "donut", "number", "table"]).optional(),
+    config: widgetInstanceConfigSchema
   })),
-  snapToGrid: z.boolean()
+  snapToGrid: z.boolean(),
+  panels: z.array(widgetPanelMetadataSchema).max(32).optional()
 });
 
 const widgetLayoutQuerySchema = z.object({

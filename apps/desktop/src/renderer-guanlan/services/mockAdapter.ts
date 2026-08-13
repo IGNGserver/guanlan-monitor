@@ -479,7 +479,7 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
       networkRxBytesPerSec: 1048576,
       networkTxBytesPerSec: 524288,
       disks: [
-        { id: "disk-0", name: "Samsung SSD 980 PRO 1TB", mountPoint: "C:", filesystem: "NTFS", totalBytes: 1073741824000, usedBytes: 566935683072, temperatureC: 41, healthStatus: "Good", healthPercent: 99 }
+        { id: "disk-0", name: "Samsung SSD 980 PRO 1TB", mountPoint: "C:", filesystem: "NTFS", model: "Samsung SSD 980 PRO 1TB", totalBytes: 1073741824000, usedBytes: 566935683072, temperatureC: 41, healthStatus: "Good", healthReason: "SMART status passed", healthPercent: 99, smartAttributes: [{ id: 194, name: "Temperature_Celsius", value: 41, threshold: 0 }, { id: 5, name: "Reallocated_Sector_Ct", value: 100, threshold: 10 }] }
       ],
       networkInterfaces: [
         { id: "net-0", name: "Intel Ethernet Controller I225-V", macAddress: "00:1A:2B:3C:4D:5E", ipv4: ["192.168.1.100"], rxBytesPerSec: 1048576, txBytesPerSec: 524288 }
@@ -562,8 +562,13 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
       availableMetrics: [
         { key: "cpuUsage", available: true },
         { key: "memoryUsage", available: true },
-        { key: "gpuUsage", available: true },
-        { key: "diskUsage", available: true }
+         { key: "gpuUsage", available: true },
+         { key: "diskUsage", available: true },
+         { key: "diskHealth", available: true },
+         { key: "networkRxRate", available: true },
+         { key: "networkTxRate", available: true },
+         { key: "fanRpm", available: true },
+         { key: "systemOverview", available: true }
       ],
       latest,
       series

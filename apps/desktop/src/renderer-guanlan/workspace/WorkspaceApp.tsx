@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useState } from "react";
 import type { FormEvent } from "react";
-import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, SamplePoint, SystemStats } from "@dsc/shared";
+import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, SamplePoint, SystemStats, WidgetLayoutDocument, WidgetPanelMetadata } from "@dsc/shared";
 import clsx from "clsx";
 import appIcon from "../assets/app-icon.png";
 import {
@@ -17,6 +17,7 @@ import {
   type WidgetKind,
   type WidgetSize
 } from "./WidgetLayout";
+import { DynamicWidgetCanvas, WIDGET_CATALOG, WidgetDrawer } from "./widgetCatalog";
 import "./workspace.css";
 
 type IconName =
@@ -1256,11 +1257,146 @@ function MetricWindowControl({ value, onChange }: { value: DesktopMetricWindowVa
 
 type DeviceTabKey = "overview" | "compute" | "storage_net" | "gpu_thermal" | "all";
 
+const DEFAULT_DEVICE_PANELS: WidgetPanelMetadata[] = [
+  { id: "overview", name: "综合面板", kind: "system", order: 0 },
+  { id: "compute", name: "算力与内存", kind: "system", order: 1 },
+  { id: "storage_net", name: "存储与网络", kind: "system", order: 2 },
+  { id: "gpu_thermal", name: "显卡与散热", kind: "system", order: 3 },
+  { id: "all", name: "全景视图", kind: "system", order: 4 }
+];
+
+function cloneDevicePanels(panels: WidgetPanelMetadata[]): WidgetPanelMetadata[] {
+  return panels.map((panel) => ({ ...panel }));
+}
+
+function normalizeDevicePanels(panels: WidgetPanelMetadata[] | undefined): WidgetPanelMetadata[] {
+  const systemIds = new Set(DEFAULT_DEVICE_PANELS.map((panel) => panel.id));
+  const customPanels = (panels ?? [])
+    .filter((panel) => panel.kind === "custom" && !systemIds.has(panel.id))
+    .map((panel, index) => ({
+      id: panel.id,
+      name: panel.name.trim().slice(0, 80) || `自定义面板 ${index + 1}`,
+      kind: "custom" as const,
+      order: DEFAULT_DEVICE_PANELS.length + index
+    }));
+  return [...cloneDevicePanels(DEFAULT_DEVICE_PANELS), ...customPanels];
+}
+
+function createDynamicLayout(source: WidgetLayoutDocument | undefined): WidgetLayoutDocument {
+  if (!source) return { version: 4, placements: {}, catalog: {}, snapToGrid: true };
+  const catalog = Object.fromEntries(Object.entries(source.catalog).filter(([, entry]) => Boolean(entry.widgetType)).map(([id, entry]) => [id, { ...entry, ...(entry.config ? { config: { ...entry.config } } : {}) }]));
+  const placements = Object.fromEntries(Object.entries(source.placements).filter(([id]) => Boolean(catalog[id])).map(([id, placement]) => [id, { ...placement }]));
+  return { version: 4, placements, catalog, snapToGrid: source.snapToGrid };
+}
+
+function createStarterDynamicLayout(): WidgetLayoutDocument {
+  const starter = WIDGET_CATALOG.slice(0, 4);
+  const catalog: WidgetLayoutDocument["catalog"] = {};
+  const placements: WidgetLayoutDocument["placements"] = {};
+  starter.forEach((definition, index) => {
+    const id = `starter-${definition.widgetType}`;
+    const size = definition.defaultSize;
+    const width = size === "large" ? 12 : size === "small" ? 3 : 6;
+    catalog[id] = {
+      title: definition.title,
+      kind: definition.kind,
+      defaultSize: size,
+      widgetType: definition.widgetType,
+      category: definition.category,
+      visualization: definition.visualization,
+      config: { visualization: definition.visualization }
+    };
+    placements[id] = { x: width === 12 ? 1 : index % 2 ? 7 : 1, y: 1 + Math.floor(index / 2) * 3, w: width, h: 2, size, hidden: false };
+  });
+  return { version: 4, placements, catalog, snapToGrid: true };
+}
+
+function WidgetPanelBar({
+  panels,
+  activePanelId,
+  onSelect,
+  onCreate,
+  onRename,
+  onDuplicate,
+  onDelete
+}: {
+  panels: WidgetPanelMetadata[];
+  activePanelId: string;
+  onSelect: (panelId: string) => void;
+  onCreate: (name: string) => void;
+  onRename: (panelId: string, name: string) => void;
+  onDuplicate: (panelId: string, layout?: WidgetLayoutDocument) => void;
+  onDelete: (panelId: string) => void;
+}) {
+  const layout = useOptionalWidgetLayout();
+  const [manageOpen, setManageOpen] = useState(false);
+  const [newPanelName, setNewPanelName] = useState("");
+
+  const submitNewPanel = (event: FormEvent) => {
+    event.preventDefault();
+    const name = newPanelName.trim();
+    if (!name) return;
+    onCreate(name);
+    setNewPanelName("");
+  };
+
+  return (
+    <div className="workspace-panel-bar">
+      <div className="workspace-tabs" role="tablist" aria-label="设备面板">
+        {panels.map((panel) => (
+          <button className={`workspace-tab ${activePanelId === panel.id ? "is-active" : ""}`} type="button" role="tab" aria-selected={activePanelId === panel.id} onClick={() => onSelect(panel.id)} key={panel.id}>
+            {panel.id === "overview" && <Icon name="overview" size={15} />}
+            {panel.id === "compute" && <Icon name="device" size={15} />}
+            {panel.id === "storage_net" && <Icon name="data" size={15} />}
+            {panel.id === "gpu_thermal" && <Icon name="hub" size={15} />}
+            {panel.name}
+          </button>
+        ))}
+      </div>
+      <div className="workspace-panel-manager">
+        <button className={`workspace-layout-actions__button${manageOpen ? " is-active" : ""}`} type="button" onClick={() => setManageOpen((value) => !value)} aria-expanded={manageOpen}>面板管理</button>
+        {manageOpen && (
+          <div className="workspace-panel-manager__tray">
+            <div className="workspace-panel-manager__heading"><strong>我的面板</strong><span>系统面板保留兼容；自定义面板可以重复、重命名或删除。</span></div>
+            <form className="workspace-panel-manager__create" onSubmit={submitNewPanel}><input value={newPanelName} onChange={(event) => setNewPanelName(event.target.value)} placeholder="新面板名称" aria-label="新面板名称" maxLength={80} /><button type="submit" disabled={!newPanelName.trim()}>新建</button></form>
+            <div className="workspace-panel-manager__list">{panels.map((panel) => <div className="workspace-panel-manager__item" key={panel.id}><span><strong>{panel.name}</strong><small>{panel.kind === "custom" ? "自定义面板" : "系统面板"}</small></span><div>{panel.kind === "custom" && <><button type="button" onClick={() => { const name = window.prompt("重命名面板", panel.name); if (name?.trim()) onRename(panel.id, name.trim()); }}>重命名</button><button type="button" onClick={() => onDuplicate(panel.id, activePanelId === panel.id ? layout?.getLayoutSnapshot() : undefined)}>复制</button><button type="button" className="is-danger" onClick={() => { if (window.confirm(`确定删除“${panel.name}”吗？`)) onDelete(panel.id); }}>删除</button></>}{panel.kind === "system" && <button type="button" onClick={() => onDuplicate(panel.id, activePanelId === panel.id ? layout?.getLayoutSnapshot() : undefined)}>复制为自定义</button>}</div></div>)}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DevicePage() {
   const { selectedDevice, snapshot, navigate, openSettings, metricsWindow, setMetricsWindow, getWidgetLayout, saveWidgetLayout } = useWorkspace();
-  const [activeTab, setActiveTab] = useState<DeviceTabKey>("overview");
+  const [activeTab, setActiveTab] = useState<string>("overview");
+  const [panels, setPanels] = useState<WidgetPanelMetadata[]>(cloneDevicePanels(DEFAULT_DEVICE_PANELS));
+  const [panelIndexLoading, setPanelIndexLoading] = useState(false);
+  const [widgetDrawerOpen, setWidgetDrawerOpen] = useState(false);
 
-  const changeTab = (tab: DeviceTabKey) => {
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedDevice) {
+      setPanels(cloneDevicePanels(DEFAULT_DEVICE_PANELS));
+      setActiveTab("overview");
+      return () => { cancelled = true; };
+    }
+    const deviceId = selectedDevice.deviceId;
+    const instanceType = selectedDevice.instanceType ?? "device";
+    setPanelIndexLoading(true);
+    setActiveTab("overview");
+    void getWidgetLayout({ scopeKey: `device:${deviceId}:panel-index`, templateKey: `device-type:${instanceType}:panel-index` }).then((remote) => {
+      if (cancelled) return;
+      setPanels(normalizeDevicePanels(remote.instanceLayout?.panels));
+    }).catch(() => {
+      if (!cancelled) setPanels(cloneDevicePanels(DEFAULT_DEVICE_PANELS));
+    }).finally(() => {
+      if (!cancelled) setPanelIndexLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [getWidgetLayout, selectedDevice?.deviceId, selectedDevice?.instanceType]);
+
+  const changeTab = (tab: string) => {
     if (tab === activeTab) return;
     if (!confirmDiscardWidgetLayoutDraft()) return;
     setActiveTab(tab);
@@ -1272,6 +1408,52 @@ function DevicePage() {
   const [selectedGpuId, setSelectedGpuId] = useState<string>("all");
 
   if (!selectedDevice) return <EmptyState title="没有找到这台设备" detail="设备可能已被移除，或者中枢还没有返回它。" action={<Button variant="primary" onClick={() => navigate({ kind: "overview" })}>返回总览</Button>} />;
+
+  const activePanel = panels.find((panel) => panel.id === activeTab) ?? DEFAULT_DEVICE_PANELS[0];
+  const isCustomPanel = activePanel.kind === "custom";
+  const panelIndexScope = `device:${selectedDevice.deviceId}:panel-index`;
+  const panelIndexTemplate = `device-type:${selectedDevice.instanceType ?? "device"}:panel-index`;
+  const customPanelScope = (panelId: string) => `device:${selectedDevice.deviceId}:panel:${panelId}`;
+  const customPanelTemplate = `device-type:${selectedDevice.instanceType ?? "device"}:panel`;
+  const savePanelIndex = (nextPanels: WidgetPanelMetadata[]) => {
+    setPanels(nextPanels);
+    void saveWidgetLayout({ scopeKey: panelIndexScope, templateKey: panelIndexTemplate, instanceLayout: { version: 4, placements: {}, catalog: {}, snapToGrid: true, panels: nextPanels } });
+  };
+  const createPanel = (name: string) => {
+    if (!confirmDiscardWidgetLayoutDraft()) return;
+    const id = `panel-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const nextPanels = [...panels, { id, name: name.trim().slice(0, 80), kind: "custom" as const, order: panels.length }];
+    savePanelIndex(nextPanels);
+    void saveWidgetLayout({ scopeKey: customPanelScope(id), templateKey: customPanelTemplate, instanceLayout: createStarterDynamicLayout() }).then(() => setActiveTab(id));
+  };
+  const renamePanel = (panelId: string, name: string) => {
+    const nextPanels = panels.map((panel) => panel.id === panelId && panel.kind === "custom" ? { ...panel, name: name.trim().slice(0, 80) } : panel);
+    savePanelIndex(nextPanels);
+  };
+  const duplicatePanel = (sourceId: string, sourceLayout?: WidgetLayoutDocument) => {
+    if (!confirmDiscardWidgetLayoutDraft()) return;
+    const source = panels.find((panel) => panel.id === sourceId);
+    if (!source) return;
+    const id = `panel-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const nextPanels = [...panels, { id, name: `${source.name} 副本`.slice(0, 80), kind: "custom" as const, order: panels.length }];
+    savePanelIndex(nextPanels);
+    const sourceScope = source.kind === "custom" ? customPanelScope(source.id) : `device:${selectedDevice.deviceId}:${source.id}`;
+    const sourceTemplate = source.kind === "custom" ? customPanelTemplate : `device-type:${selectedDevice.instanceType ?? "device"}:tab:${source.id}`;
+    void (async () => {
+      const sourceRemote = sourceLayout ? null : await getWidgetLayout({ scopeKey: sourceScope, templateKey: sourceTemplate });
+      const layout = sourceLayout ?? sourceRemote?.instanceLayout ?? undefined;
+      await saveWidgetLayout({ scopeKey: customPanelScope(id), templateKey: customPanelTemplate, instanceLayout: createDynamicLayout(layout) });
+      setActiveTab(id);
+    })();
+  };
+  const deletePanel = (panelId: string) => {
+    const panel = panels.find((item) => item.id === panelId);
+    if (!panel || panel.kind !== "custom") return;
+    const nextPanels = panels.filter((item) => item.id !== panelId);
+    savePanelIndex(nextPanels);
+    void saveWidgetLayout({ scopeKey: customPanelScope(panelId), templateKey: customPanelTemplate, instanceLayout: null });
+    if (activeTab === panelId) setActiveTab("overview");
+  };
 
   const metrics = snapshot?.metrics?.device.deviceId === selectedDevice.deviceId ? snapshot.metrics : null;
   const latest = metrics?.latest;
@@ -1375,8 +1557,9 @@ function DevicePage() {
 
 
       <WidgetLayoutProvider
-        scopeKey={`device:${selectedDevice.deviceId}:${activeTab}`}
-        templateKey={`device-type:${selectedDevice.instanceType ?? "device"}:tab:${activeTab}`}
+        key={activeTab}
+        scopeKey={isCustomPanel ? customPanelScope(activeTab) : `device:${selectedDevice.deviceId}:${activeTab}`}
+        templateKey={isCustomPanel ? customPanelTemplate : `device-type:${selectedDevice.instanceType ?? "device"}:tab:${activeTab}`}
         editable={activeTab !== "all"}
         locked={activeTab === "all"}
         getWidgetLayout={getWidgetLayout}
@@ -1384,27 +1567,12 @@ function DevicePage() {
       >
       {/* 视图 Tab 切换与时间范围控制器 */}
       <div className="telemetry-chart-header">
-        <div className="workspace-tabs">
-          <button className={`workspace-tab ${activeTab === "overview" ? "is-active" : ""}`} type="button" onClick={() => changeTab("overview")}>
-            <Icon name="overview" size={15} /> 综合面板
-          </button>
-          <button className={`workspace-tab ${activeTab === "compute" ? "is-active" : ""}`} type="button" onClick={() => changeTab("compute")}>
-            <Icon name="device" size={15} /> 算力与内存
-          </button>
-          <button className={`workspace-tab ${activeTab === "storage_net" ? "is-active" : ""}`} type="button" onClick={() => changeTab("storage_net")}>
-            <Icon name="data" size={15} /> 存储与网络
-          </button>
-          <button className={`workspace-tab ${activeTab === "gpu_thermal" ? "is-active" : ""}`} type="button" onClick={() => changeTab("gpu_thermal")}>
-            <Icon name="hub" size={15} /> 显卡与散热
-          </button>
-          <button className={`workspace-tab ${activeTab === "all" ? "is-active" : ""}`} type="button" onClick={() => changeTab("all")}>
-            全景视图
-          </button>
-        </div>
+        <WidgetPanelBar panels={panels} activePanelId={activeTab} onSelect={changeTab} onCreate={createPanel} onRename={renamePanel} onDuplicate={duplicatePanel} onDelete={deletePanel} />
 
         <div className="workspace-device-toolbar">
+          {panelIndexLoading && <span className="workspace-layout-notice">读取面板</span>}
           <MetricWindowControl value={metricsWindow as DesktopMetricWindowValue} onChange={(value) => setMetricsWindow(value)} />
-          <WidgetLayoutToolbar />
+          <WidgetLayoutToolbar onOpenWidgetDrawer={activeTab !== "all" ? () => setWidgetDrawerOpen(true) : undefined} />
         </div>
       </div>
 
@@ -1515,53 +1683,58 @@ function DevicePage() {
             </TelemetryDeviceBlock>
           )}
           {fanInstances.length ? fanInstances.map((fan, index) => <TelemetryChartCard key={`thermal-fan-${fan.id}`} widgetId={`thermal-fan-${fan.id}`} widgetTemplateId={`thermal-fan-${index}`} title={`${fan.name} · 转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm, valueFormatter: (v) => `${Math.round(v)} RPM` }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : <div className="workspace-telemetry-empty">当前时间范围没有可用的风扇实例序列</div>}
-        </TelemetrySection>
+          </TelemetrySection>
       )}
 
+      {activeTab !== "all" && <DynamicWidgetCanvas device={selectedDevice} metrics={metrics} showEmptyState={isCustomPanel} onOpenDrawer={() => setWidgetDrawerOpen(true)} />}
+
+      {(activeTab === "overview" || activeTab === "all") && (
+        <div className="workspace-widget-grid workspace-device-info-widgets">
+          <DesktopWidget id="device-hardware-system" title="硬件与系统" kind="group" defaultSize="medium">
+            <Surface>
+              <div className="workspace-surface__header">
+                <div>
+                  <span className="workspace-section-kicker">设备信息</span>
+                  <h3>硬件与系统</h3>
+                </div>
+                <button className="workspace-icon-button" type="button" onClick={() => void navigator.clipboard?.writeText(selectedDevice.deviceId)} title="复制设备 ID">
+                  <Icon name="copy" />
+                </button>
+              </div>
+              <div className="workspace-detail-list">
+                <SummaryRow label="操作系统" value={selectedDevice.os} />
+                <SummaryRow label="设备 ID" value={selectedDevice.deviceId} />
+                <SummaryRow label="Agent 版本" value={selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "未知"} />
+                <SummaryRow label="CPU 型号" value={filteredLatest?.cpuPackages.map((cpu) => cpu.model || cpu.name).join("、") || "未采集"} />
+                <SummaryRow label="运行时间" value={formatDuration(filteredLatest?.system.uptimeSeconds)} />
+                <SummaryRow label="CPU 核心 / 线程" value={`${formatCount(filteredLatest?.cpuPackages.reduce((total, cpu) => total + (cpu.coreCount ?? 0), 0))} / ${formatCount(filteredLatest?.cpuPackages.reduce((total, cpu) => total + (cpu.logicalCount ?? 0), 0))}`} />
+                <SummaryRow label="L3 缓存" value={formatBytes(filteredLatest?.cpuPackages.reduce((total, cpu) => total + (cpu.l3CacheBytes ?? 0), 0))} />
+                <SummaryRow label="进程 / 系统线程 / 句柄" value={`${formatCount(filteredLatest?.system.processCount)} / ${formatCount(filteredLatest?.system.threadCount)} / ${formatCount(filteredLatest?.system.handleCount)}`} />
+                <SummaryRow label="内存容量" value={filteredLatest ? formatCapacitySummary(filteredLatest.memoryUsedBytes, filteredLatest.memoryTotalBytes) : "未采集"} />
+                <SummaryRow label="磁盘容量" value={filteredLatest ? formatCapacitySummary(filteredLatest.diskUsedBytes, filteredLatest.diskTotalBytes) : "未采集"} />
+              </div>
+            </Surface>
+          </DesktopWidget>
+
+          <DesktopWidget id="device-agent-status" title="设备 Agent" kind="group" defaultSize="medium">
+            <Surface className="workspace-agent-surface">
+              <div className="workspace-surface__header">
+                <div>
+                  <span className="workspace-section-kicker">操作</span>
+                  <h3>设备 Agent</h3>
+                </div>
+                <StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} />
+              </div>
+              <p className="workspace-surface__description">设备状态和遥测均由中枢提供，本页面不直接读取本机采集状态；未上传或中枢离线时，数据会与其他设备一样不完整。</p>
+              <Button variant="quiet" onClick={() => openSettings("connections")}>查看中枢连接</Button>
+            </Surface>
+          </DesktopWidget>
+        </div>
+      )}
+
+      <WidgetDrawer open={widgetDrawerOpen} onClose={() => setWidgetDrawerOpen(false)} device={selectedDevice} metrics={metrics} />
+
       </WidgetLayoutProvider>
-
-      {/* 底部设备属性与 Agent 控制 */}
-      <div className="workspace-device-grid" style={{ marginTop: 20 }}>
-        <Surface>
-          <div className="workspace-surface__header">
-            <div>
-              <span className="workspace-section-kicker">设备信息</span>
-              <h3>硬件与系统</h3>
-            </div>
-            <button className="workspace-icon-button" type="button" onClick={() => void navigator.clipboard?.writeText(selectedDevice.deviceId)} title="复制设备 ID">
-              <Icon name="copy" />
-            </button>
-          </div>
-          <div className="workspace-detail-list">
-            <SummaryRow label="操作系统" value={selectedDevice.os} />
-            <SummaryRow label="设备 ID" value={selectedDevice.deviceId} />
-            <SummaryRow label="Agent 版本" value={selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "未知"} />
-             <SummaryRow label="CPU 型号" value={filteredLatest?.cpuPackages.map((cpu) => cpu.model || cpu.name).join("、") || "未采集"} />
-             <SummaryRow label="运行时间" value={formatDuration(filteredLatest?.system.uptimeSeconds)} />
-             <SummaryRow label="CPU 核心 / 线程" value={`${formatCount(filteredLatest?.cpuPackages.reduce((total, cpu) => total + (cpu.coreCount ?? 0), 0))} / ${formatCount(filteredLatest?.cpuPackages.reduce((total, cpu) => total + (cpu.logicalCount ?? 0), 0))}`} />
-             <SummaryRow label="L3 缓存" value={formatBytes(filteredLatest?.cpuPackages.reduce((total, cpu) => total + (cpu.l3CacheBytes ?? 0), 0))} />
-            <SummaryRow label="进程 / 系统线程 / 句柄" value={`${formatCount(filteredLatest?.system.processCount)} / ${formatCount(filteredLatest?.system.threadCount)} / ${formatCount(filteredLatest?.system.handleCount)}`} />
-            <SummaryRow label="内存容量" value={filteredLatest ? formatCapacitySummary(filteredLatest.memoryUsedBytes, filteredLatest.memoryTotalBytes) : "未采集"} />
-            <SummaryRow label="已提交 / 提交限制" value={filteredLatest ? committedMemorySummary : "未采集"} />
-            <SummaryRow label="页面文件实际使用" value={filteredLatest ? pagefileMemorySummary : "未采集"} />
-            <SummaryRow label="磁盘容量" value={filteredLatest ? formatCapacitySummary(filteredLatest.diskUsedBytes, filteredLatest.diskTotalBytes) : "未采集"} />
-            <SummaryRow label="网络接收" value={filteredLatest ? formatBytes(filteredLatest.networkRxBytesPerSec) + "/s" : "未采集"} />
-            <SummaryRow label="网络发送" value={filteredLatest ? formatBytes(filteredLatest.networkTxBytesPerSec) + "/s" : "未采集"} />
-          </div>
-        </Surface>
-
-        <Surface className="workspace-agent-surface">
-          <div className="workspace-surface__header">
-            <div>
-              <span className="workspace-section-kicker">操作</span>
-              <h3>设备 Agent</h3>
-            </div>
-            <StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} />
-          </div>
-          <p className="workspace-surface__description">设备状态和遥测均由中枢提供，本页面不直接读取本机采集状态；未上传或中枢离线时，数据会与其他设备一样不完整。</p>
-          <Button variant="quiet" onClick={() => openSettings("connections")}>查看中枢连接</Button>
-        </Surface>
-      </div>
     </div>
   );
 }

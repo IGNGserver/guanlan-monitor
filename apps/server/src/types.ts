@@ -6,6 +6,7 @@ import type {
   DeviceDetail,
   DeviceRealtimeEvent,
   DeviceSummary,
+  DiskDeviceStats,
   MetricSeries,
   MetricWindow,
   TrafficCalendarMode,
@@ -76,6 +77,7 @@ export interface InstanceMetricRecord {
   filesystem?: string;
   model?: string;
   vendor?: string;
+  interfaceType?: string | null;
   totalBytes?: number;
   usagePercent?: number;
   usedBytes?: number;
@@ -92,6 +94,10 @@ export interface InstanceMetricRecord {
   memoryUsagePercent?: number;
   memoryUsedBytes?: number;
   temperatureC?: number | null;
+  healthStatus?: string | null;
+  healthReason?: string | null;
+  healthPercent?: number | null;
+  smartAttributes?: DiskDeviceStats["smartAttributes"];
   temperatureSource?: string | null;
   rpm?: number;
 }
