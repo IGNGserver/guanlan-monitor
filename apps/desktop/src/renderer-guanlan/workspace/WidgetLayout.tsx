@@ -217,7 +217,7 @@ function normalizeLayout(layout: WidgetLayoutDocument | null | undefined): Widge
     .map((panel, index) => ({
       id: panel.id,
       name: panel.name.trim().slice(0, 80) || `面板 ${index + 1}`,
-      kind: panel.kind === "custom" ? "custom" : "system",
+      kind: panel.kind === "custom" ? ("custom" as const) : ("system" as const),
       order: Number.isFinite(panel.order) ? Math.max(0, Math.round(panel.order)) : index
     }))
     .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
