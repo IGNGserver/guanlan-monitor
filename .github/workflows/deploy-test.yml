@@ -77,17 +77,19 @@ jobs:
         run: |
           set -euo pipefail
           ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "cd '$DEPLOY_PATH' && \
-             previous=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\\1/' || true) && \
-             WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' docker compose pull && \
-             WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' docker compose up -d && \
+            "set -euo pipefail; \
+             cd '$DEPLOY_PATH'; \
+             export WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL'; \
+             previous=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\\1/' || true); \
+             docker compose pull server web; \
+             docker compose up -d server web; \
              healthy=0; for attempt in \$(seq 1 30); do \
-               if WEB_PORT='$WEB_PORT' docker compose exec -T server node -e \"fetch('http://127.0.0.1:4000/api/system/version').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"; then healthy=1; break; fi; \
+               if docker compose exec -T server node -e \"fetch('http://127.0.0.1:4000/api/system/version').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"; then healthy=1; break; fi; \
                sleep 5; \
              done; \
              if [ \"\$healthy\" -ne 1 ]; then \
                echo 'Test deployment health check failed; attempting rollback.' >&2; \
-               if [ -n \"\$previous\" ]; then WEB_PORT='$WEB_PORT' DSC_VERSION=\"\$previous\" DSC_RELEASE_CHANNEL='test' docker compose up -d; fi; \
+               if [ -n \"\$previous\" ]; then DSC_VERSION=\"\$previous\" DSC_RELEASE_CHANNEL='test' docker compose up -d server web; fi; \
                exit 1; \
              fi; \
-             WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' docker compose ps"
+             docker compose ps"
