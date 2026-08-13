@@ -24,7 +24,7 @@ concurrency:
 jobs:
   deploy:
     name: Deploy fixed test version
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, nas]
     environment: test
     steps:
       - name: Checkout requested ref
