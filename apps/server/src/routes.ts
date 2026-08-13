@@ -281,6 +281,40 @@ export async function registerRoutes(
     return [...devices, ...virtualMachines];
   });
 
+  app.get<{ Querystring: { window: MetricWindow } }>(
+    "/api/overview/metrics",
+    { preHandler: requireAuth },
+    async (request) => {
+      const query = metricsQuerySchema.parse(request.query);
+      const states = await repositories.realtime.listDevices();
+      const instances = await Promise.all(
+        states.map(async (state) => {
+          const series = sanitizeUnsupportedMetricSeries(
+            alignMetricSeriesToWindow(
+              timeSeriesToMetricSeries(
+                await metricsService.getSeries(state.identity.deviceId, query.window),
+                await metricsService.getMetricConfig(state.identity.deviceId)
+              ),
+              query.window
+            ),
+            getAvailableMetrics(state)
+          );
+          return {
+            deviceId: state.identity.deviceId,
+            hostname: toSummary(state).hostname,
+            instanceType: state.identity.instanceType ?? "device",
+            cpuUsagePercent: series.cpuUsagePercent,
+            memoryUsedBytes: series.memoryUsedBytes,
+            diskUsedBytes: series.diskUsedBytes,
+            networkRxBytesPerSec: series.networkRxBytesPerSec,
+            networkTxBytesPerSec: series.networkTxBytesPerSec
+          };
+        })
+      );
+      return { window: query.window, instances };
+    }
+  );
+
   app.delete<{ Params: { deviceId: string } }>("/api/devices/:deviceId", { preHandler: requireAuth }, async (request, reply) => {
     const { deviceId } = request.params;
     if (isVirtualMachineId(deviceId)) {

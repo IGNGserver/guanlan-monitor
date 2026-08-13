@@ -16,6 +16,7 @@ import { dscBridge } from "../../renderer/services/dscBridge";
 import { BridgeGuanlanDataAdapter } from "../services/bridgeAdapter";
 import { MockGuanlanDataAdapter } from "../services/mockAdapter";
 import type { IGuanlanDataAdapter } from "../services/adapter";
+import { confirmDiscardWidgetLayoutDraft } from "./WidgetLayout";
 
 export type SettingsSection =
   | "general"
@@ -68,8 +69,6 @@ interface WorkspaceContextValue {
   setSearchQuery: (query: string) => void;
   commandOpen: boolean;
   setCommandOpen: (open: boolean) => void;
-  collapsedHubs: Record<string, boolean>;
-  toggleHub: (hubId: string) => void;
   theme: "system" | "light" | "dark";
   setTheme: (theme: "system" | "light" | "dark") => void;
   density: "comfortable" | "compact";
@@ -172,7 +171,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [sidebarCollapsed, setSidebarCollapsedState] = useState<boolean>(() => {
     return typeof window !== "undefined" && localStorage.getItem("dsc-sidebar-collapsed") === "true";
   });
-  const [collapsedHubs, setCollapsedHubs] = useState<Record<string, boolean>>({});
   const [snapshot, setSnapshot] = useState<DesktopSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -190,6 +188,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const selectedDeviceId = route.kind === "device" ? route.deviceId : snapshot?.selectedDeviceId ?? null;
 
   const navigate = useCallback((nextRoute: WorkspaceRoute) => {
+    if (!confirmDiscardWidgetLayoutDraft()) return;
     setRoute(nextRoute);
     if (typeof window !== "undefined" && window.location.hash !== hashForRoute(nextRoute)) {
       window.history.pushState({ route: nextRoute }, "", hashForRoute(nextRoute));
@@ -334,10 +333,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     localStorage.setItem("dsc-refresh-interval", String(nextInterval));
   }, []);
 
-  const toggleHub = useCallback((hubId: string) => {
-    setCollapsedHubs((current) => ({ ...current, [hubId]: !current[hubId] }));
-  }, []);
-
   const runMutation = useCallback(
     async (action: () => Promise<DesktopSnapshot>, successText: string, errorText: string): Promise<boolean> => {
       try {
@@ -430,7 +425,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       : snapshot?.source === "empty"
         ? "unknown"
         : "offline";
-  const hubs = useMemo<HubViewModel[]>(() => [{ id: "primary", name: "当前中枢", endpoint, devices, state: hubState }], [devices, endpoint, hubState]);
+  const hubs = useMemo<HubViewModel[]>(() => [{ id: "primary", name: "中枢", endpoint, devices, state: hubState }], [devices, endpoint, hubState]);
   const selectedDevice = allDevices.find((device) => device.deviceId === selectedDeviceId) ?? null;
 
   useEffect(() => {
@@ -465,8 +460,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setSearchQuery,
     commandOpen,
     setCommandOpen,
-    collapsedHubs,
-    toggleHub,
     theme,
     setTheme,
     density,

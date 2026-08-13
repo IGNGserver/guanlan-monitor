@@ -16,6 +16,7 @@ import type {
   MetricsResponse,
   MetricsLatest,
   MetricSeries,
+  OverviewMetricsResponse,
   DesktopAgentBackendState,
   DesktopAgentConfig,
   TrafficCalendarResponse,
@@ -276,6 +277,7 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
         devices: [],
         selectedDeviceId: null,
         metrics: null,
+        overviewMetrics: null,
         trafficCalendar: null,
         update: null,
         startup: this.startupSettings
@@ -567,6 +569,27 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
       series
     };
 
+    const overviewMetrics: OverviewMetricsResponse = {
+      window: "15m",
+      instances: visibleDevices.map((device, deviceIndex) => {
+        const offset = (deviceIndex + 1) * 8;
+        const points = Array.from({ length: 15 }, (_, i) => ({
+          timestamp: new Date(now - (14 - i) * 60000).toISOString(),
+          value: Math.round(12 + offset * 0.7 + Math.sin(i + deviceIndex) * 9 + (i % 3) * 3)
+        }));
+        return {
+          deviceId: device.deviceId,
+          hostname: device.hostname,
+          instanceType: device.instanceType ?? "device",
+          cpuUsagePercent: points,
+          memoryUsedBytes: points.map((p) => ({ ...p, value: 6000000000 + p.value * 240000000 })),
+          diskUsedBytes: points.map((p) => ({ ...p, value: 300000000000 + p.value * 9000000000 })),
+          networkRxBytesPerSec: points.map((p) => ({ ...p, value: Math.round(p.value * 85000) })),
+          networkTxBytesPerSec: points.map((p) => ({ ...p, value: Math.round(p.value * 32000) }))
+        };
+      })
+    };
+
     const trafficMode = request?.trafficMode ?? "day";
     const cells: TrafficCalendarCell[] = Array.from({ length: 14 }, (_, i) => {
       const d = new Date();
@@ -617,6 +640,7 @@ export class MockGuanlanDataAdapter implements IGuanlanDataAdapter {
       devices: visibleDevices,
       selectedDeviceId,
       metrics,
+      overviewMetrics,
       trafficCalendar,
       update: null,
       startup: this.startupSettings

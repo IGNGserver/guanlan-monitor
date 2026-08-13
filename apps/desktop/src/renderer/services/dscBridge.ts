@@ -134,6 +134,7 @@ function createEmptySnapshot(request?: DesktopSnapshotRequest): DesktopSnapshot 
     devices: [],
     selectedDeviceId: request?.selectedDeviceId ?? null,
     metrics: null,
+    overviewMetrics: null,
     trafficCalendar: null,
     update: null,
     startup: { openAtLogin: false, startMinimized: false }

@@ -690,6 +690,24 @@ export interface MetricsResponse {
   series: MetricSeries;
 }
 
+/** One instance's overview chart series: each overview line is one instance. */
+export interface OverviewInstanceSeries {
+  deviceId: string;
+  hostname: string;
+  instanceType: InstanceType;
+  cpuUsagePercent: SamplePoint[];
+  memoryUsedBytes: SamplePoint[];
+  diskUsedBytes: SamplePoint[];
+  networkRxBytesPerSec: SamplePoint[];
+  networkTxBytesPerSec: SamplePoint[];
+}
+
+/** All-instance metrics for the overview page charts. */
+export interface OverviewMetricsResponse {
+  window: MetricWindow;
+  instances: OverviewInstanceSeries[];
+}
+
 /** The local Agent backend contract after the main process removes secrets. */
 export interface DesktopAgentConfig {
   connection: Omit<AgentConnectionConfig, "secret"> & {
@@ -788,6 +806,7 @@ export interface DesktopSnapshot {
   devices: DeviceSummary[];
   selectedDeviceId: string | null;
   metrics: MetricsResponse | null;
+  overviewMetrics: OverviewMetricsResponse | null;
   trafficCalendar: TrafficCalendarResponse | null;
   update: UpdateInfo | null;
   startup: DesktopStartupSettings;

@@ -551,6 +551,30 @@ select:focus-visible {
   font-size: 11px;
 }
 
+.workspace-sidebar-hub-alert {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  margin: 2px 0 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--workspace-amber);
+  border-radius: var(--workspace-radius-sm);
+  color: var(--workspace-amber);
+  background: var(--workspace-amber-soft);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 620;
+  text-align: left;
+  transition: color var(--workspace-transition), background var(--workspace-transition);
+}
+
+.workspace-sidebar-hub-alert:hover {
+  color: var(--workspace-text);
+  background: var(--workspace-surface-hover);
+}
+
 .workspace-sidebar__spacer {
   min-height: 12px;
   flex: 1;
@@ -1025,12 +1049,12 @@ kbd {
 .workspace-telemetry-section__controls { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .workspace-device-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .workspace-device-chart-grid,
-.workspace-widget-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: minmax(42px, auto); grid-auto-flow: dense; gap: 14px; align-items: stretch; }
-.workspace-widget { position: relative; min-width: 0; min-height: 0; grid-column: var(--widget-x, auto) / span var(--widget-w, 6); grid-row: var(--widget-y, auto) / span var(--widget-h, 6); }
-.workspace-widget--large { --widget-w: 12; --widget-h: 6; --widget-w-md: 6; --widget-h-md: 3; }
-.workspace-widget--medium { --widget-w: 6; --widget-h: 6; --widget-w-md: 3; --widget-h-md: 3; }
-.workspace-widget--small { --widget-w: 3; --widget-h: 3; --widget-w-md: 2; --widget-h-md: 2; }
-.workspace-widget__content { min-width: 0; height: 100%; }
+.workspace-widget-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: 42px; grid-auto-flow: dense; gap: 14px; align-items: stretch; }
+.workspace-widget { position: relative; display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; grid-column: var(--widget-x, auto) / span var(--widget-w, 6); grid-row: var(--widget-y, auto) / span var(--widget-h, 6); }
+.workspace-widget--large { --widget-w: 12; --widget-h: 2; --widget-w-md: 6; --widget-h-md: 2; }
+.workspace-widget--medium { --widget-w: 6; --widget-h: 2; --widget-w-md: 3; --widget-h-md: 2; }
+.workspace-widget--small { --widget-w: 3; --widget-h: 2; --widget-w-md: 2; --widget-h-md: 2; }
+.workspace-widget__content { min-width: 0; min-height: 0; flex: 1; overflow-x: hidden; overflow-y: auto; }
 .workspace-widget__content > .telemetry-chart-card,
 .workspace-widget__content > .workspace-cpu-facts,
 .workspace-widget__content > .workspace-device-block { height: 100%; }

@@ -80,13 +80,30 @@ const HISTORY_LIMIT = 30;
 const DEFAULT_SIZE: WidgetSize = "medium";
 
 const SIZE_PRESETS: Record<WidgetSize, Pick<WidgetPlacement, "w" | "h">> = {
-  large: { w: 12, h: 6 },
-  medium: { w: 6, h: 6 },
-  small: { w: 3, h: 3 }
+  large: { w: 12, h: 2 },
+  medium: { w: 6, h: 2 },
+  small: { w: 3, h: 2 }
 };
 
 function emptyLayout(snapToGrid = true): WidgetLayoutDocument {
   return { placements: {}, catalog: {}, snapToGrid };
+}
+
+type WidgetLayoutDraftGuard = () => boolean;
+
+const draftGuards = new Set<WidgetLayoutDraftGuard>();
+
+export function registerWidgetLayoutDraftGuard(guard: WidgetLayoutDraftGuard): () => void {
+  draftGuards.add(guard);
+  return () => {
+    draftGuards.delete(guard);
+  };
+}
+
+export function confirmDiscardWidgetLayoutDraft(): boolean {
+  const hasDraft = [...draftGuards].some((guard) => guard());
+  if (!hasDraft) return true;
+  return window.confirm("当前布局修改尚未保存，退出后修改将丢失。是否继续？");
 }
 
 function cloneLayout(layout: WidgetLayoutDocument): WidgetLayoutDocument {
@@ -334,6 +351,23 @@ export function WidgetLayoutProvider({
   useEffect(() => {
     if (!editable || locked) setEditMode(false);
   }, [editable, locked]);
+
+  useEffect(() => {
+    const unregisterGuard = registerWidgetLayoutDraftGuard(() => dirtyRef.current);
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!dirtyRef.current) return;
+      const proceed = window.confirm("当前布局修改尚未保存，退出后修改将丢失。是否继续退出？");
+      if (!proceed) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      unregisterGuard();
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
 
   const registerWidget = useCallback((definition: WidgetDefinition) => {
     const previous = definitionsRef.current[definition.id];
@@ -612,7 +646,7 @@ function placementStyle(placement: WidgetPlacement | undefined): React.CSSProper
     "--widget-w": placement.w,
     "--widget-h": placement.h,
     "--widget-w-md": placement.size === "large" ? 6 : placement.size === "medium" ? 3 : 2,
-    "--widget-h-md": placement.size === "large" ? 3 : placement.size === "medium" ? 3 : 2
+    "--widget-h-md": 2
   } as React.CSSProperties;
 }
 
@@ -702,14 +736,27 @@ export function WidgetLayoutToolbar() {
     layout.importLayout(await file.text());
   };
 
+  const handleToggleEditMode = async () => {
+    if (!layout.editMode) {
+      layout.setEditMode(true);
+      return;
+    }
+    if (layout.dirty) {
+      if (layout.saving) return;
+      const saved = await layout.saveLayout();
+      if (!saved) return;
+    }
+    layout.setEditMode(false);
+  };
+
   if (!layout.editable) return <span className="workspace-layout-lock">全景视图 · 布局锁定</span>;
 
   return (
     <div className="workspace-layout-toolbar">
       <span className={`workspace-layout-source${layout.dirty ? " is-dirty" : ""}`} title="布局由中枢保存和分发">
-        {layout.loading ? "读取中枢布局" : layout.dirty ? "未保存到中枢" : layout.hasInstanceLayout ? "本设备布局" : "初始模板"}
+        {layout.loading ? "读取中枢布局" : layout.dirty ? "草稿布局" : layout.hasInstanceLayout ? "中枢布局" : "初始模板"}
       </span>
-      <button className={`workspace-layout-toggle${layout.editMode ? " is-active" : ""}`} type="button" aria-pressed={layout.editMode} onClick={() => layout.setEditMode((value) => !value)}>
+      <button className={`workspace-layout-toggle${layout.editMode ? " is-active" : ""}`} type="button" aria-pressed={layout.editMode} disabled={layout.saving && layout.dirty} onClick={() => void handleToggleEditMode()}>
         <span className="workspace-layout-toggle__mark">⌘</span>{layout.editMode ? "完成排布" : "编辑排布"}
       </button>
       {layout.editMode && (

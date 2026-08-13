@@ -12,6 +12,7 @@ import {
   DesktopWidget,
   WidgetLayoutProvider,
   WidgetLayoutToolbar,
+  confirmDiscardWidgetLayoutDraft,
   useOptionalWidgetLayout,
   type WidgetKind,
   type WidgetSize
@@ -232,6 +233,25 @@ function averageSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
 function averageSamplePointsOrFallback(groups: SamplePoint[][], fallback: SamplePoint[]): SamplePoint[] {
   const average = averageSamplePoints(groups);
   return average.length ? average : fallback;
+}
+
+function sumSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
+  const buckets = new Map<number, { timestamp: string; total: number }>();
+  for (const points of groups) {
+    for (const point of points) {
+      const timestamp = Date.parse(point.timestamp);
+      if (!Number.isFinite(timestamp) || !Number.isFinite(point.value)) continue;
+      const current = buckets.get(timestamp) ?? {
+        timestamp: new Date(timestamp).toISOString(),
+        total: 0
+      };
+      current.total += point.value;
+      buckets.set(timestamp, current);
+    }
+  }
+  return [...buckets.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([, bucket]) => ({ timestamp: bucket.timestamp, value: bucket.total }));
 }
 
 function displayInstanceName(name: string | undefined, fallback: string): string {
@@ -648,18 +668,19 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
     sidebarCollapsed,
     setSidebarCollapsed,
     hubs,
-    collapsedHubs,
-    toggleHub,
     navigate,
     openSettings,
     closeSettings,
     openExternal,
     snapshot,
     allDevices,
+    devices,
     instanceType,
     setInstanceType
   } = useWorkspace();
   const inSettings = route.kind === "settings";
+  const hubOnline = hubs[0]?.state === "online";
+  const hubAbnormal = !hubOnline && !snapshot?.session.authenticated;
 
   return (
     <aside className={`workspace-sidebar ${sidebarCollapsed ? "is-collapsed" : ""} ${inSettings ? "is-settings" : ""}`} onMouseLeave={() => { if (sidebarCollapsed && sidebarPeek) onSidebarLeave(); }}>
@@ -680,7 +701,7 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
           <button className={`workspace-nav-item ${route.kind === "overview" ? "is-active" : ""}`} type="button" onClick={() => navigate({ kind: "overview" })} title="总览">
             <Icon name="overview" /> <span>总览</span>
           </button>
-          <div className="workspace-sidebar__label"><span>接入中枢</span><span className="workspace-sidebar__count">{hubs.length}</span></div>
+          <div className="workspace-sidebar__label"><span>接入中枢</span><span className="workspace-sidebar__count">{devices.length}</span></div>
           <div className="workspace-instance-tabs" role="tablist" aria-label="实例类型">
             {(["device", "virtual_machine"] as const).map((type) => (
               <button
@@ -699,34 +720,20 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
               </button>
             ))}
           </div>
-          {hubs.map((hub) => {
-            const collapsed = Boolean(collapsedHubs[hub.id]);
-            const hubActive = route.kind === "hub" && route.hubId === hub.id;
-            return (
-              <div className="workspace-hub-group" key={hub.id}>
-                <div className={`workspace-hub-heading ${hubActive ? "is-active" : ""}`}>
-                  <button className="workspace-hub-heading__main" type="button" onClick={() => navigate({ kind: "hub", hubId: hub.id })} title={hub.name}>
-                    <StatusDot state={hub.state === "online" ? "online" : hub.state === "cached" ? "cached" : hub.state === "offline" ? "warning" : "unknown"} />
-                    <span className="workspace-hub-heading__name">{hub.name}</span>
-                    <span className="workspace-hub-heading__count">{hub.devices.length}</span>
-                  </button>
-                  <button className="workspace-hub-heading__toggle" type="button" onClick={() => toggleHub(hub.id)} aria-label={collapsed ? `展开${hub.name}` : `折叠${hub.name}`}>
-                    <Icon name="chevron" size={15} />
-                  </button>
-                </div>
-                {!collapsed && (
-                  <div className="workspace-device-list">
-                    {hub.devices.length ? hub.devices.map((device) => (
-                      <button className={`workspace-device-item ${route.kind === "device" && route.deviceId === device.deviceId ? "is-active" : ""}`} type="button" key={device.deviceId} onClick={() => navigate({ kind: "device", deviceId: device.deviceId })} title={device.hostname}>
-                        <StatusDot state={device.status === "online" ? "online" : "offline"} />
-                        <span className="workspace-device-item__copy"><strong>{device.hostname}</strong><small>{(device.instanceType ?? "device") === "virtual_machine" ? `宿主机：${device.hostName ?? "未知"}` : device.os} · <MetricValue value={device.cpuUsagePercent} /></small></span>
-                      </button>
-                    )) : <div className="workspace-sidebar__empty">尚未发现设备</div>}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {hubAbnormal ? (
+            <button className="workspace-sidebar-hub-alert" type="button" onClick={() => openSettings("connections")} title="中枢连接异常，点击检查连接设置">
+              <StatusDot state="warning" />
+              <span>中枢连接异常</span>
+            </button>
+          ) : null}
+          <div className="workspace-device-list">
+            {devices.length ? devices.map((device) => (
+              <button className={`workspace-device-item ${route.kind === "device" && route.deviceId === device.deviceId ? "is-active" : ""}`} type="button" key={device.deviceId} onClick={() => navigate({ kind: "device", deviceId: device.deviceId })} title={device.hostname}>
+                <StatusDot state={device.status === "online" ? "online" : "offline"} />
+                <span className="workspace-device-item__copy"><strong>{device.hostname}</strong><small>{(device.instanceType ?? "device") === "virtual_machine" ? `宿主机：${device.hostName ?? "未知"}` : device.os} · <MetricValue value={device.cpuUsagePercent} /></small></span>
+              </button>
+            )) : <div className="workspace-sidebar__empty">尚未发现设备</div>}
+          </div>
           <div className="workspace-sidebar__spacer" />
           <button className="workspace-nav-item" type="button" onClick={() => openSettings("agent")} title="本机 Agent">
             <Icon name="agent" /> <span>本机 Agent</span>
@@ -835,7 +842,7 @@ function CommandPalette() {
   const [activeIndex, setActiveIndex] = useState(0);
   if (!commandOpen) return null;
   const commands: Array<{ label: string; detail: string; action: () => void }> = [
-    { label: "打开总览", detail: "查看所有中枢和设备状态", action: () => navigate({ kind: "overview" }) },
+    { label: "打开总览", detail: "查看所有设备状态", action: () => navigate({ kind: "overview" }) },
     { label: "打开连接设置", detail: "添加或重新认证中枢", action: () => openSettings("connections") },
     { label: "打开本机 Agent", detail: "控制本机采集服务", action: () => openSettings("agent") },
     ...filteredDevices.slice(0, 8).map((device) => ({ label: device.hostname, detail: `${device.os} · ${device.deviceId}`, action: () => navigate({ kind: "device", deviceId: device.deviceId }) }))
@@ -909,17 +916,16 @@ function DeviceRow({
 }
 
 function OverviewPage() {
-  const { snapshot, hubs, devices, loading, error, refresh, navigate, openSettings, deleteInstance, reorderInstances } = useWorkspace();
+  const { snapshot, devices, loading, error, refresh, openSettings, deleteInstance, reorderInstances } = useWorkspace();
   if (loading && !snapshot) return <LoadingSurface />;
   if (!snapshot) return <ErrorSurface title="无法读取设备状态" detail={error ?? "桌面桥接尚未准备好"} onRetry={() => void refresh()} />;
   const online = devices.filter((device) => device.status === "online").length;
   const offline = devices.length - online;
-  const localRunning = snapshot.localBackend?.running;
   const cached = snapshot.source === "cache";
   const noData = snapshot.source === "empty" || devices.length === 0;
-  const issueCount = offline + (cached ? 1 : 0) + (noData ? 1 : 0) + (snapshot.localBackend?.lastIssueCount ?? 0);
-  const overviewLatest = snapshot.metrics?.latest;
-  const series = snapshot.metrics?.series;
+  const hubAbnormal = !snapshot.session.authenticated || cached;
+  const issueCount = hubAbnormal ? 0 : offline + (noData ? 1 : 0) + (snapshot.localBackend?.lastIssueCount ?? 0);
+  const overviewInstances = snapshot.overviewMetrics?.instances ?? [];
 
   // 计算 TOP 5 资源消耗榜
   const topCpuDevices = [...devices].sort((a, b) => (b.cpuUsagePercent ?? 0) - (a.cpuUsagePercent ?? 0)).slice(0, 5);
@@ -945,8 +951,10 @@ function OverviewPage() {
     <div className="workspace-page workspace-page--overview">
       <PageIntro
         eyebrow="系统状态"
-        title={issueCount ? `${issueCount} 项事项需要留意` : "所有中枢运行正常"}
-        description={`最后同步于 ${formatDate(snapshot.generatedAt)}。${cached ? "当前显示的是离线缓存。" : "数据来自实时连接。"}`}
+        title={hubAbnormal ? "中枢连接异常" : issueCount ? `${issueCount} 项事项需要留意` : "所有设备运行正常"}
+        description={hubAbnormal
+          ? `无法连接到中枢，请检查中枢地址与访问密钥。${cached ? "当前显示的是离线缓存。" : ""}`
+          : `最后同步于 ${formatDate(snapshot.generatedAt)}。${cached ? "当前显示的是离线缓存。" : "数据来自实时连接。"}`}
         actions={
           <>
             <Button variant="quiet" onClick={() => openSettings("connections")}>
@@ -959,20 +967,29 @@ function OverviewPage() {
         }
       />
 
-      {issueCount > 0 && (
+      {hubAbnormal ? (
         <div className="workspace-attention">
           <div className="workspace-attention__icon"><Icon name="warning" /></div>
           <div>
-            <strong>{cached ? "中枢连接需要确认" : noData ? "还没有可用设备" : "设备状态存在异常"}</strong>
-            <p>{cached ? "无法取得最新数据，页面中的设备信息可能已经过期。" : noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : `${offline} 台设备离线，${snapshot.localBackend?.lastIssueCount ?? 0} 条本机采集问题待处理。`}</p>
+            <strong>中枢连接异常</strong>
+            <p>{cached ? "无法取得最新数据，页面中的设备信息可能已经过期。" : "无法连接到中枢，请检查中枢地址与访问密钥后重试。"}</p>
           </div>
-          <Button variant="quiet" onClick={() => openSettings(cached || noData ? "connections" : "agent")}>
+          <Button variant="quiet" onClick={() => openSettings("connections")}>
+            检查连接设置<Icon name="arrow" size={15} />
+          </Button>
+        </div>
+      ) : issueCount > 0 && (
+        <div className="workspace-attention">
+          <div className="workspace-attention__icon"><Icon name="warning" /></div>
+          <div>
+            <strong>{noData ? "还没有可用设备" : "设备状态存在异常"}</strong>
+            <p>{noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : `${offline} 台设备离线，${snapshot.localBackend?.lastIssueCount ?? 0} 条本机采集问题待处理。`}</p>
+          </div>
+          <Button variant="quiet" onClick={() => openSettings(noData ? "connections" : "agent")}>
             查看详情<Icon name="arrow" size={15} />
           </Button>
         </div>
       )}
-
-
 
       {/* 设备列表 + 运维统计分析 */}
       <div className="workspace-overview-grid">
@@ -982,9 +999,6 @@ function OverviewPage() {
               <span className="workspace-section-kicker">设备概览</span>
               <h3>{devices.length} 台设备</h3>
             </div>
-            <Button variant="quiet" onClick={() => navigate({ kind: "hub", hubId: hubs[0]?.id ?? "primary" })}>
-              查看中枢<Icon name="arrow" size={15} />
-            </Button>
           </div>
           <div className="workspace-device-rows">
             {devices.length ? (
@@ -997,7 +1011,7 @@ function OverviewPage() {
                 onDelete={() => removeInstance(device)}
               />)
             ) : (
-              <EmptyState title="还没有设备" detail="连接一个中枢后，设备会出现在这里。" action={<Button variant="primary" onClick={() => openSettings("connections")}>添加中枢</Button>} />
+              <EmptyState title="还没有设备" detail="连接一个中枢后，设备会出现在这里。" action={<Button variant="primary" onClick={() => openSettings("connections")}>连接设置</Button>} />
             )}
           </div>
         </Surface>
@@ -1042,42 +1056,39 @@ function OverviewPage() {
         </div>
       </div>
 
-      {/* 核心网络与吞吐大图 */}
-      {series && (
+      {/* 总览图表：CPU / 内存 / 总存储 / 总网络吞吐，时间范围固定最近 15 分钟，不支持小组件调整 */}
+      {snapshot.overviewMetrics && (
         <div className="workspace-overview-grid" style={{ gridTemplateColumns: "1fr" }}>
           <TelemetryChartCard
-            title="实时网络吞吐"
-            subtitle="当前设备网络接收(Rx)与发送(Tx)吞吐速率"
+            title="CPU 图表"
+            subtitle="每个实例一条数据线 · 最近 15 分钟"
+            series={overviewInstances.map((instance) => ({ label: instance.hostname, points: instance.cpuUsagePercent }))}
+            valueFormatter={(v) => `${Math.round(v)}%`}
+            fixedMaxValue={100}
+          />
+          <TelemetryChartCard
+            title="内存图表"
+            subtitle="每个实例一条数据线 · 最近 15 分钟"
+            series={overviewInstances.map((instance) => ({ label: instance.hostname, points: instance.memoryUsedBytes, valueFormatter: formatBytes }))}
+            valueFormatter={formatBytes}
+          />
+          <TelemetryChartCard
+            title="总存储图表"
+            subtitle="每个实例一条数据线 · 最近 15 分钟"
+            series={overviewInstances.map((instance) => ({ label: instance.hostname, points: instance.diskUsedBytes, valueFormatter: formatBytes }))}
+            valueFormatter={formatBytes}
+          />
+          <TelemetryChartCard
+            title="总网络吞吐"
+            subtitle="所有实例上行与下行叠加 · 最近 15 分钟"
             series={[
-              { label: "下行 (Rx)", points: series.networkRxBytesPerSec ?? [] },
-              { label: "上行 (Tx)", points: series.networkTxBytesPerSec ?? [] }
+              { label: "下行 (Rx)", points: sumSamplePoints(overviewInstances.map((instance) => instance.networkRxBytesPerSec)), valueFormatter: (v) => `${formatBytes(v)}/s` },
+              { label: "上行 (Tx)", points: sumSamplePoints(overviewInstances.map((instance) => instance.networkTxBytesPerSec)), valueFormatter: (v) => `${formatBytes(v)}/s` }
             ]}
             valueFormatter={(v) => `${formatBytes(v)}/s`}
           />
         </div>
       )}
-
-      <Surface className="workspace-hub-summary">
-        <div className="workspace-surface__header">
-          <div>
-            <span className="workspace-section-kicker">接入中枢</span>
-            <h3>连接概览</h3>
-          </div>
-          <Button variant="quiet" onClick={() => openSettings("connections")}>管理中枢</Button>
-        </div>
-        <div className="workspace-hub-summary__grid">
-          {hubs.map((hub) => (
-            <button className="workspace-hub-summary__item" type="button" key={hub.id} onClick={() => navigate({ kind: "hub", hubId: hub.id })}>
-              <div>
-                <StatusLabel state={hub.state === "online" ? "online" : hub.state === "cached" ? "cached" : hub.state === "offline" ? "warning" : "unknown"} />
-                <strong>{hub.name}</strong>
-              </div>
-              <span>{hub.endpoint}</span>
-              <small>{hub.devices.length} 台设备 <Icon name="arrow" size={14} /></small>
-            </button>
-          ))}
-        </div>
-      </Surface>
     </div>
   );
 }
@@ -1249,6 +1260,12 @@ function DevicePage() {
   const { selectedDevice, snapshot, navigate, openSettings, metricsWindow, setMetricsWindow, getWidgetLayout, saveWidgetLayout } = useWorkspace();
   const [activeTab, setActiveTab] = useState<DeviceTabKey>("overview");
 
+  const changeTab = (tab: DeviceTabKey) => {
+    if (tab === activeTab) return;
+    if (!confirmDiscardWidgetLayoutDraft()) return;
+    setActiveTab(tab);
+  };
+
   // 多实例单选中状态
   const [selectedNetId, setSelectedNetId] = useState<string>("all");
   const [selectedDiskId, setSelectedDiskId] = useState<string>("all");
@@ -1368,19 +1385,19 @@ function DevicePage() {
       {/* 视图 Tab 切换与时间范围控制器 */}
       <div className="telemetry-chart-header">
         <div className="workspace-tabs">
-          <button className={`workspace-tab ${activeTab === "overview" ? "is-active" : ""}`} type="button" onClick={() => setActiveTab("overview")}>
+          <button className={`workspace-tab ${activeTab === "overview" ? "is-active" : ""}`} type="button" onClick={() => changeTab("overview")}>
             <Icon name="overview" size={15} /> 综合面板
           </button>
-          <button className={`workspace-tab ${activeTab === "compute" ? "is-active" : ""}`} type="button" onClick={() => setActiveTab("compute")}>
+          <button className={`workspace-tab ${activeTab === "compute" ? "is-active" : ""}`} type="button" onClick={() => changeTab("compute")}>
             <Icon name="device" size={15} /> 算力与内存
           </button>
-          <button className={`workspace-tab ${activeTab === "storage_net" ? "is-active" : ""}`} type="button" onClick={() => setActiveTab("storage_net")}>
+          <button className={`workspace-tab ${activeTab === "storage_net" ? "is-active" : ""}`} type="button" onClick={() => changeTab("storage_net")}>
             <Icon name="data" size={15} /> 存储与网络
           </button>
-          <button className={`workspace-tab ${activeTab === "gpu_thermal" ? "is-active" : ""}`} type="button" onClick={() => setActiveTab("gpu_thermal")}>
+          <button className={`workspace-tab ${activeTab === "gpu_thermal" ? "is-active" : ""}`} type="button" onClick={() => changeTab("gpu_thermal")}>
             <Icon name="hub" size={15} /> 显卡与散热
           </button>
-          <button className={`workspace-tab ${activeTab === "all" ? "is-active" : ""}`} type="button" onClick={() => setActiveTab("all")}>
+          <button className={`workspace-tab ${activeTab === "all" ? "is-active" : ""}`} type="button" onClick={() => changeTab("all")}>
             全景视图
           </button>
         </div>
@@ -1558,7 +1575,7 @@ function HubPage() {
   const hub = hubs.find((item) => item.id === (route.kind === "hub" ? route.hubId : "")) ?? hubs[0];
   if (!hub) return <EmptyState title="没有配置中枢" detail="添加一个中枢后，设备会显示在侧边栏。" action={<Button variant="primary" onClick={() => openSettings("connections")}>添加中枢</Button>} />;
   const online = hub.devices.filter((device) => device.status === "online").length;
-  return <div className="workspace-page"><PageIntro eyebrow="接入中枢" title={hub.name} description={hub.endpoint} actions={<><Button variant="quiet" onClick={() => navigate({ kind: "overview" })}><Icon name="back" size={16} />返回总览</Button><Button variant="primary" onClick={() => openSettings("connections")}><Icon name="settings" size={16} />管理连接</Button></>} /><div className="workspace-hub-hero"><div><StatusLabel state={hub.state === "online" ? "online" : hub.state === "cached" ? "cached" : hub.state === "offline" ? "warning" : "unknown"} /><strong>{hub.state === "online" ? "连接正常" : hub.state === "cached" ? "正在显示缓存" : "需要检查连接"}</strong><p>{online} 台设备在线，共 {hub.devices.length} 台设备。</p></div><div className="workspace-hub-hero__stat"><span>设备</span><strong>{hub.devices.length}</strong></div><div className="workspace-hub-hero__stat"><span>在线</span><strong>{online}</strong></div></div><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">设备列表</span><h3>{hub.devices.length} 台设备</h3></div><Button variant="quiet" onClick={() => openSettings("connections")}>连接设置</Button></div><div className="workspace-device-rows">{hub.devices.map((device) => <DeviceRow key={device.deviceId} device={device} />)}</div></Surface></div>;
+  return <div className="workspace-page"><PageIntro eyebrow="中枢" title={hub.name} description={hub.endpoint} actions={<><Button variant="quiet" onClick={() => navigate({ kind: "overview" })}><Icon name="back" size={16} />返回总览</Button><Button variant="primary" onClick={() => openSettings("connections")}><Icon name="settings" size={16} />管理连接</Button></>} /><div className="workspace-hub-hero"><div><StatusLabel state={hub.state === "online" ? "online" : hub.state === "cached" ? "cached" : hub.state === "offline" ? "warning" : "unknown"} /><strong>{hub.state === "online" ? "连接正常" : hub.state === "cached" ? "正在显示缓存" : "需要检查连接"}</strong><p>{online} 台设备在线，共 {hub.devices.length} 台设备。</p></div><div className="workspace-hub-hero__stat"><span>设备</span><strong>{hub.devices.length}</strong></div><div className="workspace-hub-hero__stat"><span>在线</span><strong>{online}</strong></div></div><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">设备列表</span><h3>{hub.devices.length} 台设备</h3></div><Button variant="quiet" onClick={() => openSettings("connections")}>连接设置</Button></div><div className="workspace-device-rows">{hub.devices.map((device) => <DeviceRow key={device.deviceId} device={device} />)}</div></Surface></div>;
 }
 
 function SettingsPage() {
@@ -1616,7 +1633,7 @@ function ConnectionSettings() {
       setSaving(false);
     }
   };
-  return <div className="workspace-settings-stack"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">当前中枢</span><h3>{authenticated ? "已连接" : "需要认证"}</h3></div><StatusLabel state={authenticated ? "online" : "warning"} /></div><form className="workspace-form workspace-connection-form" onSubmit={saveConnection}><label>中枢地址<input className="workspace-input" value={serverUrl} onChange={(event) => setServerUrl(event.target.value)} placeholder="https://hub.example.com" autoComplete="url" required /></label><label>访问密钥<input className="workspace-input" type="password" value={accessKey} onChange={(event) => setAccessKey(event.target.value)} placeholder={snapshot?.session.accessKeyConfigured ? "已保存，留空保留当前认证" : "输入中枢访问密钥"} autoComplete="current-password" required={!snapshot?.session.accessKeyConfigured} /></label><p className="workspace-form__hint">地址和访问密钥会在同一次保存中提交。访问密钥只会发送到桌面主进程，不会进入页面状态或日志。</p><div className="workspace-form__actions"><Button variant="primary" type="submit" disabled={saving}>{saving ? "正在保存…" : authenticated ? "保存连接" : "保存并连接"}</Button>{authenticated && <Button variant="quiet" onClick={() => void logout()} disabled={saving}>断开连接</Button>}</div></form></Surface><Surface className="workspace-connection-note"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">连接诊断</span><h3>如果连接失败</h3></div></div><p className="workspace-surface__description">请确认地址包含协议（例如 https://），中枢服务已启动，并使用中枢访问密钥。保存按钮会先写入地址，再用同一地址完成认证，避免出现 server url is missing。</p></Surface></div>;
+  return <div className="workspace-settings-stack"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">中枢连接</span><h3>{authenticated ? "已连接" : "需要认证"}</h3></div><StatusLabel state={authenticated ? "online" : "warning"} /></div><form className="workspace-form workspace-connection-form" onSubmit={saveConnection}><label>中枢地址<input className="workspace-input" value={serverUrl} onChange={(event) => setServerUrl(event.target.value)} placeholder="https://hub.example.com" autoComplete="url" required /></label><label>访问密钥<input className="workspace-input" type="password" value={accessKey} onChange={(event) => setAccessKey(event.target.value)} placeholder={snapshot?.session.accessKeyConfigured ? "已保存，留空保留当前认证" : "输入中枢访问密钥"} autoComplete="current-password" required={!snapshot?.session.accessKeyConfigured} /></label><p className="workspace-form__hint">地址和访问密钥会在同一次保存中提交。访问密钥只会发送到桌面主进程，不会进入页面状态或日志。</p><div className="workspace-form__actions"><Button variant="primary" type="submit" disabled={saving}>{saving ? "正在保存…" : authenticated ? "保存连接" : "保存并连接"}</Button>{authenticated && <Button variant="quiet" onClick={() => void logout()} disabled={saving}>断开连接</Button>}</div></form></Surface><Surface className="workspace-connection-note"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">连接诊断</span><h3>如果连接失败</h3></div></div><p className="workspace-surface__description">请确认地址包含协议（例如 https://），中枢服务已启动，并使用中枢访问密钥。保存按钮会先写入地址，再用同一地址完成认证，避免出现 server url is missing。</p></Surface></div>;
 }
 
 function AgentSettings() {

@@ -7,6 +7,7 @@ import type {
   DeviceSummary,
   MetricsResponse,
   MetricWindow,
+  OverviewMetricsResponse,
   TrafficCalendarMode,
   TrafficCalendarResponse,
   UpdateInfo,
@@ -124,6 +125,11 @@ export class HubClient {
   async getMetrics(deviceId: string, metricWindow: MetricWindow): Promise<MetricsResponse> {
     await this.ensureSession();
     return this.request<MetricsResponse>(`/api/devices/${encodeURIComponent(deviceId)}/metrics?window=${encodeURIComponent(metricWindow)}`);
+  }
+
+  async getOverviewMetrics(metricWindow: MetricWindow): Promise<OverviewMetricsResponse> {
+    await this.ensureSession();
+    return this.request<OverviewMetricsResponse>(`/api/overview/metrics?window=${encodeURIComponent(metricWindow)}`);
   }
 
   async getTrafficCalendar(

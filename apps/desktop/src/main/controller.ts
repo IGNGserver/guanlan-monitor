@@ -272,6 +272,7 @@ export class DesktopController {
     // the hub is unavailable or the agent has not uploaded its latest data.
     let selectedDeviceId = this.selectedDeviceId;
     let metrics: DesktopSnapshot["metrics"] = null;
+    let overviewMetrics: DesktopSnapshot["overviewMetrics"] = null;
     let trafficCalendar: DesktopSnapshot["trafficCalendar"] = null;
     let update: DesktopSnapshot["update"] = null;
     let authenticated = false;
@@ -295,6 +296,15 @@ export class DesktopController {
       }
     }
 
+    if (this.hub.isConfigured) {
+      try {
+        // The overview page charts always use the last 15 minutes.
+        overviewMetrics = await this.hub.getOverviewMetrics("15m");
+      } catch {
+        overviewMetrics = null;
+      }
+    }
+
     try {
       update = await this.hub.getUpdateInfo(currentDesktopVersion());
     } catch {
@@ -307,6 +317,7 @@ export class DesktopController {
       devices,
       selectedDeviceId,
       metrics,
+      overviewMetrics,
       trafficCalendar,
       update,
       authenticated
@@ -329,6 +340,7 @@ export class DesktopController {
       devices: usingCachedRemote ? cachedRemote?.devices ?? [] : live.devices,
       selectedDeviceId: usingCachedRemote ? cachedRemote?.selectedDeviceId ?? live.selectedDeviceId : live.selectedDeviceId,
       metrics: usingCachedRemote ? cachedRemote?.metrics ?? null : live.metrics,
+      overviewMetrics: usingCachedRemote ? cachedRemote?.overviewMetrics ?? null : live.overviewMetrics,
       trafficCalendar: usingCachedRemote ? cachedRemote?.trafficCalendar ?? null : live.trafficCalendar,
       update: usingCachedRemote ? cachedRemote?.update ?? null : live.update,
       startup: this.startup
@@ -362,6 +374,7 @@ export class DesktopController {
       devices: [],
       selectedDeviceId: null,
       metrics: null,
+      overviewMetrics: null,
       trafficCalendar: null,
       update: { currentVersion: currentDesktopVersion(), currentChannel: "test", platform: process.platform === "win32" ? "windows-gui" : "linux-gui", arch: process.arch, available: false, latestVersion: null, latestChannel: null, releaseTag: null, releaseUrl: null, notesUrl: null, publishedAt: null, assetName: null, assetUrl: null, assetSize: null, sha256: null, installMode: "none", message: "local_backend_unavailable" },
       startup: this.startup
