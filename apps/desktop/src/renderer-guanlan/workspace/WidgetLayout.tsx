@@ -65,7 +65,7 @@ type WidgetLayoutContextValue = {
   restoreWidget: (id: string) => void;
   reorderWidgets: (draggedId: string, targetId: string) => void;
   toggleSnapToGrid: () => void;
-  resetDeviceLayout: () => void;
+  resetDeviceLayout: () => Promise<boolean>;
   applyTemplate: (templateId: string) => void;
   saveLayout: () => Promise<boolean>;
   saveAsTemplate: (name: string, templateId?: string) => Promise<boolean>;
@@ -86,14 +86,14 @@ type WidgetLayoutContextValue = {
 };
 
 const WidgetLayoutContext = createContext<WidgetLayoutContextValue | null>(null);
-const GRID_COLUMNS = 12;
+const GRID_COLUMNS = 4;
 const HISTORY_LIMIT = 30;
 const DEFAULT_SIZE: WidgetSize = "medium";
 
 const SIZE_PRESETS: Record<WidgetSize, Pick<WidgetPlacement, "w" | "h">> = {
-  large: { w: 12, h: 2 },
-  medium: { w: 6, h: 2 },
-  small: { w: 3, h: 2 }
+  large: { w: 4, h: 2 },
+  medium: { w: 2, h: 2 },
+  small: { w: 1, h: 2 }
 };
 
 function emptyLayout(snapToGrid = true): WidgetLayoutDocument {
@@ -325,7 +325,7 @@ export function WidgetLayoutProvider({
   const [draft, setDraft] = useState<WidgetLayoutDocument>(() => emptyLayout());
   const draftRef = useRef(draft);
   const definitionsRef = useRef<Record<string, WidgetDefinition>>({});
-  const [definitionVersion, setDefinitionVersion] = useState(0);
+  const [, setDefinitionVersion] = useState(0);
   const [remote, setRemote] = useState<WidgetLayoutSync>({ scopeKey, templateKey, instanceLayout: null, templates: [] });
   const remoteRef = useRef(remote);
   const [editMode, setEditMode] = useState(false);
@@ -566,10 +566,24 @@ export function WidgetLayoutProvider({
     });
   }, [mutateDraft]);
 
-  const resetDeviceLayout = useCallback(() => {
-    replaceDraft(createInitialLayout(definitionsRef.current), true);
-    resetHistory();
-  }, [replaceDraft, resetHistory, definitionVersion]);
+  const resetDeviceLayout = useCallback(async (): Promise<boolean> => {
+    if (!editable || locked || saving) return false;
+    setSaving(true);
+    try {
+      const nextRemote = await saveWidgetLayout({ scopeKey, templateKey, instanceLayout: null });
+      remoteRef.current = nextRemote;
+      setRemote(nextRemote);
+      replaceDraft(createInitialLayout(definitionsRef.current), false);
+      resetHistory();
+      setSyncMessage("已恢复初始布局");
+      return true;
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? `恢复初始布局失败：${error.message}` : "恢复初始布局失败");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, [editable, locked, resetHistory, replaceDraft, saveWidgetLayout, saving, scopeKey, templateKey]);
 
   const applyTemplate = useCallback((templateId: string) => {
     const template = remoteRef.current.templates.find((item) => item.id === templateId);
@@ -753,7 +767,7 @@ function placementStyle(placement: WidgetPlacement | undefined): React.CSSProper
     "--widget-y": placement.y,
     "--widget-w": placement.w,
     "--widget-h": placement.h,
-    "--widget-w-md": placement.size === "large" ? 6 : placement.size === "medium" ? 3 : 2,
+    "--widget-w-md": placement.size === "large" ? 2 : 1,
     "--widget-h-md": 2
   } as React.CSSProperties;
 }
@@ -889,7 +903,9 @@ export function WidgetLayoutToolbar({ onOpenWidgetDrawer }: { onOpenWidgetDrawer
           <button className="workspace-layout-save" type="button" onClick={() => void layout.saveLayout()} disabled={!layout.dirty || layout.saving}>
             {layout.saving ? "保存中" : "保存布局"}
           </button>
-          <button className="workspace-layout-actions__button" type="button" onClick={layout.resetDeviceLayout}>恢复初始</button>
+          <button className="workspace-layout-actions__button" type="button" onClick={() => void layout.resetDeviceLayout()} disabled={layout.saving}>
+            {layout.saving ? "处理中" : "恢复初始"}
+          </button>
           <div className="workspace-layout-template-menu">
             <button className="workspace-layout-actions__button" type="button" onClick={() => setTemplatesOpen((value) => !value)} aria-expanded={templatesOpen}>通用模板{layout.templates.length ? ` ${layout.templates.length}` : ""}</button>
             {templatesOpen && (
