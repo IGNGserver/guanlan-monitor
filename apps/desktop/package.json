@@ -1,6 +1,6 @@
 {
   "name": "@dsc/desktop",
-  "version": "0.2.150",
+  "version": "0.2.151",
   "private": true,
   "type": "module",
   "description": "Unified Windows and Linux Electron desktop client for Device State Console.",

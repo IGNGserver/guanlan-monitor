@@ -297,11 +297,6 @@ function TelemetryChartCard({
   widgetKind?: WidgetKind;
   widgetDefaultSize?: WidgetSize;
 }) {
-  const widgetLayout = useOptionalWidgetLayout();
-  const resolvedWidgetSize = widgetId && widgetLayout
-    ? widgetLayout.getWidgetSize(widgetId, widgetDefaultSize, widgetTemplateId)
-    : widgetDefaultSize;
-  const compactWidget = resolvedWidgetSize === "small";
   const activeSeries = series.filter((item) => item.points && item.points.length > 0);
   const primaryPoints = activeSeries[0]?.points ?? [];
   const [selectedIndex, setSelectedIndex] = useState(Math.max(primaryPoints.length - 1, 0));
@@ -326,7 +321,7 @@ function TelemetryChartCard({
         <div className="workspace-trend workspace-trend--empty">
           <div className="workspace-trend-empty">{emptyMessage}</div>
         </div>
-        {!compactWidget && footer && <div className="telemetry-chart-card__footer">{footer}</div>}
+        {footer && <div className="telemetry-chart-card__details"><div className="telemetry-chart-card__footer">{footer}</div></div>}
       </Surface>
     );
     return widgetId ? <DesktopWidget id={widgetId} templateId={widgetTemplateId} title={title} kind={widgetKind} defaultSize={widgetDefaultSize}>{emptyCard}</DesktopWidget> : emptyCard;
@@ -472,8 +467,8 @@ function TelemetryChartCard({
         </div>
       </div>
 
-      {/* 统计标盘 (Cur / Avg / Max / Min) */}
-      {!compactWidget && (
+      <div className="telemetry-chart-card__details">
+        {/* 统计标盘 (Cur / Avg / Max / Min) */}
         <div className="telemetry-chart-stats">
           {statsList.map((st, idx) => (
             <React.Fragment key={st.label}>
@@ -496,8 +491,8 @@ function TelemetryChartCard({
             </React.Fragment>
           ))}
         </div>
-      )}
-      {!compactWidget && footer && <div className="telemetry-chart-card__footer">{footer}</div>}
+        {footer && <div className="telemetry-chart-card__footer">{footer}</div>}
+      </div>
     </Surface>
   );
   return widgetId ? <DesktopWidget id={widgetId} templateId={widgetTemplateId} title={title} kind={widgetKind} defaultSize={widgetDefaultSize}>{chartCard}</DesktopWidget> : chartCard;

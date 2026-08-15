@@ -1058,6 +1058,14 @@ kbd {
 .workspace-widget__content > .telemetry-chart-card,
 .workspace-widget__content > .workspace-cpu-facts,
 .workspace-widget__content > .workspace-device-block { height: 100%; }
+.workspace-widget__content > .telemetry-chart-card { min-height: 100%; overflow: hidden; }
+.workspace-widget__content > .telemetry-chart-card .telemetry-chart-box { height: auto; min-height: 180px; flex: 1 0 228px; }
+.workspace-widget__content > .telemetry-chart-card > .workspace-trend { min-height: 150px; flex: 1 0 150px; }
+.workspace-widget__content > .telemetry-chart-card .telemetry-chart-card__details { min-height: 0; flex: 0 1 auto; overflow-y: auto; overscroll-behavior: contain; padding-right: 3px; }
+.workspace-widget__content > .workspace-dynamic-card { height: 100%; overflow: hidden; }
+.workspace-widget__content > .workspace-dynamic-card > .workspace-dynamic-chart { height: auto; min-height: 180px; flex: 1 0 180px; }
+.workspace-widget__content > .workspace-dynamic-card > .workspace-dynamic-number-grid { min-height: 0; flex: 1 1 120px; overflow-y: auto; }
+.workspace-widget__content > .workspace-dynamic-card > .workspace-dynamic-table { min-height: 0; flex: 1 1 auto; }
 .workspace-widget.is-editing { outline: 1px dashed color-mix(in srgb, var(--workspace-accent) 55%, var(--workspace-border)); outline-offset: 4px; }
 .workspace-widget.is-editing > .workspace-widget__content { cursor: default; }
 .workspace-widget__tools { position: relative; z-index: 2; display: flex; min-width: 0; align-items: center; gap: 6px; margin-bottom: 7px; padding: 5px 7px; border: 1px solid var(--workspace-border-strong); border-radius: 10px; color: var(--workspace-text-secondary); background: var(--workspace-surface-subtle); font-size: 10px; }
@@ -1431,7 +1439,7 @@ kbd {
 .workspace-dynamic-card__header h3 { overflow: hidden; margin: 3px 0 0; color: var(--workspace-text); font-size: 15px; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-dynamic-card__header p { overflow: hidden; margin: 4px 0 0; color: var(--workspace-text-muted); font-size: 10px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-dynamic-card__controls { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
-.workspace-dynamic-chart { min-height: 180px; height: 100%; }
+.workspace-dynamic-chart { min-height: 180px; height: auto; flex: 1 0 180px; }
 .workspace-dynamic-chart .recharts-wrapper { font-size: 9px; }
 .workspace-dynamic-chart .recharts-text { fill: var(--workspace-text-muted); }
 .workspace-dynamic-number-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; align-items: stretch; min-height: 120px; }
@@ -1688,6 +1696,14 @@ kbd {
   margin-top: -2px;
   padding-top: 12px;
   border-top: 1px solid var(--workspace-border);
+}
+
+.telemetry-chart-card__details {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .workspace-telemetry-models {
