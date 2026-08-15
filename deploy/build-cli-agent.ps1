@@ -67,8 +67,9 @@ $generatedInstallCliSh = Join-Path $outputRoot "install-cli.sh"
 $generatedInstallCliPs1 = Join-Path $outputRoot "install-cli.ps1"
 $installCliSh = (Get-Content -LiteralPath (Join-Path $repoRoot "deploy\install-cli.sh") -Raw).Replace("__DSC_VERSION__", $version)
 $installCliPs1 = (Get-Content -LiteralPath (Join-Path $repoRoot "deploy\install-cli.ps1") -Raw).Replace("__DSC_VERSION__", $version)
-$installCliSh | Set-Content -LiteralPath $generatedInstallCliSh -Encoding utf8
-$installCliPs1 | Set-Content -LiteralPath $generatedInstallCliPs1 -Encoding utf8
+$utf8NoBom = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
+[System.IO.File]::WriteAllText($generatedInstallCliSh, $installCliSh.Replace("`r`n", "`n").Replace("`r", ""), $utf8NoBom)
+[System.IO.File]::WriteAllText($generatedInstallCliPs1, $installCliPs1.Replace("`r`n", "`n").Replace("`r", ""), $utf8NoBom)
 
 Build-PlatformPackage -Name "windows-x64" -Goos "windows" -Goarch "amd64" -BinaryName "device-state-console-agent.exe" -DscBinaryName "dsc.exe" -BackendBinaryName "device-state-console-agent-backend.exe" -InstallerName "install-agent.ps1" -CliInstallerPath $generatedInstallCliPs1 -ReleaseAssetName $windowsAssetName
 Build-PlatformPackage -Name "linux-x64" -Goos "linux" -Goarch "amd64" -BinaryName "device-state-console-agent" -DscBinaryName "dsc" -BackendBinaryName "device-state-console-agent-backend" -InstallerName "install-agent.sh" -CliInstallerPath $generatedInstallCliSh -ReleaseAssetName $linuxAssetName
