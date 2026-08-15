@@ -1049,8 +1049,12 @@ kbd {
 .workspace-telemetry-section__controls { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .workspace-device-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .workspace-device-chart-grid,
-.workspace-widget-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: 170px; grid-auto-flow: dense; gap: 14px; align-items: stretch; }
+.workspace-widget-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: stretch; }
+.workspace-device-chart-grid { grid-auto-rows: minmax(0, auto); grid-auto-flow: row; }
+.workspace-widget-grid { grid-auto-rows: 170px; grid-auto-flow: dense; }
 .workspace-widget { position: relative; display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; grid-column: var(--widget-x, auto) / span var(--widget-w, 2); grid-row: var(--widget-y, auto) / span var(--widget-h, 2); }
+.workspace-device-chart-grid > .workspace-widget { grid-column: span var(--widget-w, 2); grid-row: auto; height: 320px; min-height: 0; }
+.workspace-device-chart-grid > .workspace-telemetry-empty { grid-column: 1 / -1; }
 .workspace-widget--large { --widget-w: 4; --widget-h: 2; --widget-w-md: 2; --widget-h-md: 2; }
 .workspace-widget--medium { --widget-w: 2; --widget-h: 2; --widget-w-md: 1; --widget-h-md: 2; }
 .workspace-widget--small { --widget-w: 1; --widget-h: 2; --widget-w-md: 1; --widget-h-md: 2; }
@@ -1163,12 +1167,12 @@ kbd {
 .workspace-device-block__marker { width: 8px; height: 8px; flex: 0 0 auto; margin-top: 5px; border-radius: 50%; background: var(--workspace-accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--workspace-accent) 13%, transparent); }
 .workspace-device-block--disk .workspace-device-block__marker { background: var(--workspace-green); box-shadow: 0 0 0 4px color-mix(in srgb, var(--workspace-green) 13%, transparent); }
 .workspace-device-block--gpu .workspace-device-block__marker { background: var(--workspace-amber); box-shadow: 0 0 0 4px color-mix(in srgb, var(--workspace-amber) 13%, transparent); }
-.workspace-device-block__charts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(320px, auto); gap: 12px; align-items: stretch; }
-.workspace-device-block__charts > .workspace-widget { min-width: 0; min-height: 0; height: 100%; grid-row: auto; grid-column: span var(--widget-w, 2); }
+.workspace-device-block__charts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(0, auto); gap: 12px; align-items: stretch; }
+.workspace-device-block__charts > .workspace-widget { min-width: 0; min-height: 0; height: 320px; grid-row: auto; grid-column: span var(--widget-w, 2); }
 .workspace-device-block__charts > .workspace-widget--large { grid-column: 1 / -1; }
 .workspace-device-block__charts > .workspace-widget > .workspace-widget__content { min-height: 0; overflow: hidden; }
 .workspace-device-block__charts > .workspace-widget .telemetry-chart-card { min-width: 0; padding: 14px 15px; box-shadow: none; }
-.workspace-widget[data-widget-id="compute-cpu-facts"] { align-self: start; grid-column: 1 / -1; min-height: 0; }
+.workspace-device-chart-grid > .workspace-widget[data-widget-id="compute-cpu-facts"] { align-self: start; height: auto; min-height: 0; }
 .workspace-widget[data-widget-id="compute-cpu-facts"] > .workspace-widget__content { flex: 0 0 auto; overflow: visible; }
 .workspace-telemetry-empty { display: grid; min-height: 228px; place-items: center; padding: 20px; border: 1px dashed var(--workspace-border-strong); border-radius: var(--workspace-radius-md); color: var(--workspace-text-muted); background: var(--workspace-surface-subtle); font-size: 12px; text-align: center; }
 .workspace-instance-list { display: flex; flex-direction: column; }
@@ -1301,6 +1305,8 @@ kbd {
   .workspace-device-grid { grid-template-columns: minmax(0, 1fr); }
   .workspace-device-chart-grid,
   .workspace-widget-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspace-device-chart-grid > .workspace-widget,
+  .workspace-device-block__charts > .workspace-widget { grid-column: span var(--widget-w-md, 1); }
   .workspace-widget { grid-column: span var(--widget-w-md, 1); grid-row: span var(--widget-h-md, 2); }
   .workspace-cpu-facts__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .workspace-device-block__charts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1342,6 +1348,8 @@ kbd {
   .workspace-hub-hero > div:first-child { grid-row: span 2; }
   .workspace-device-chart-grid,
   .workspace-widget-grid { grid-template-columns: minmax(0, 1fr); }
+  .workspace-device-chart-grid > .workspace-widget,
+  .workspace-device-block__charts > .workspace-widget { grid-column: span 1; }
   .workspace-widget { grid-column: span 1; grid-row: span 1; }
   .workspace-cpu-facts__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-device-block__charts { grid-template-columns: minmax(0, 1fr); }
