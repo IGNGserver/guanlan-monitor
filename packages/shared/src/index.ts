@@ -860,6 +860,7 @@ export interface WidgetLayoutCatalogEntry {
   kind: WidgetLayoutKind;
   defaultSize: WidgetLayoutSize;
   templateId?: string;
+  groupId?: string;
   widgetType?: string;
   category?: string;
   visualization?: WidgetVisualization;

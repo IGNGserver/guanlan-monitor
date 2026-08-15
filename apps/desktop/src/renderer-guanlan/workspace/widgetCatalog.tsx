@@ -26,7 +26,7 @@ import {
   XAxis,
   YAxis
 } from "recharts";
-import { DesktopWidget, useWidgetLayout, type WidgetKind, type WidgetSize } from "./WidgetLayout";
+import { DesktopWidget, useWidgetLayout, type WidgetGroupChildDefinition, type WidgetKind, type WidgetSize } from "./WidgetLayout";
 
 type WidgetCatalogDefinition = {
   widgetType: string;
@@ -39,6 +39,7 @@ type WidgetCatalogDefinition = {
   visualizations: WidgetVisualization[];
   requires?: DeviceMetricKey[];
   targetKind?: WidgetTargetKind;
+  deviceGroup?: boolean;
 };
 
 type WidgetTargetKind = "cpu" | "disk" | "gpu" | "fan" | "network";
@@ -61,6 +62,66 @@ const chartColors = ["#3b82f6", "#14b8a6", "#f59e0b", "#a78bfa", "#f97316"];
 
 export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
   {
+    widgetType: "cpu-device-group",
+    title: "处理器设备组",
+    description: "一次添加指定处理器的使用率、主频和温度图表；组内图表仍可单独移除。",
+    category: "设备组",
+    kind: "group",
+    defaultSize: "large",
+    visualization: "table",
+    visualizations: ["table"],
+    targetKind: "cpu",
+    deviceGroup: true
+  },
+  {
+    widgetType: "disk-device-group",
+    title: "磁盘设备组",
+    description: "一次添加指定磁盘的容量、读写和 SMART 图表；组内图表仍可单独移除。",
+    category: "设备组",
+    kind: "group",
+    defaultSize: "large",
+    visualization: "table",
+    visualizations: ["table"],
+    targetKind: "disk",
+    deviceGroup: true
+  },
+  {
+    widgetType: "gpu-device-group",
+    title: "显卡设备组",
+    description: "一次添加指定显卡的负载、显存和温度图表；组内图表仍可单独移除。",
+    category: "设备组",
+    kind: "group",
+    defaultSize: "large",
+    visualization: "table",
+    visualizations: ["table"],
+    targetKind: "gpu",
+    deviceGroup: true
+  },
+  {
+    widgetType: "network-device-group",
+    title: "网卡设备组",
+    description: "一次添加指定网卡的收发吞吐图表；组内图表仍可单独移除。",
+    category: "设备组",
+    kind: "group",
+    defaultSize: "large",
+    visualization: "table",
+    visualizations: ["table"],
+    targetKind: "network",
+    deviceGroup: true
+  },
+  {
+    widgetType: "fan-device-group",
+    title: "风扇设备组",
+    description: "一次添加指定风扇的转速图表；组内图表仍可单独移除。",
+    category: "设备组",
+    kind: "group",
+    defaultSize: "small",
+    visualization: "table",
+    visualizations: ["table"],
+    targetKind: "fan",
+    deviceGroup: true
+  },
+  {
     widgetType: "hardware-system",
     title: "硬件与系统",
     description: "设备身份、操作系统、运行时间和硬件摘要。",
@@ -80,6 +141,30 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
     visualization: "line",
     visualizations: ["line", "area", "bar", "number"],
     requires: ["cpuUsage"],
+    targetKind: "cpu"
+  },
+  {
+    widgetType: "cpu-frequency",
+    title: "CPU 主频",
+    description: "指定处理器的实时有效频率趋势。",
+    category: "处理器",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "line",
+    visualizations: ["line", "area", "bar", "number"],
+    requires: ["cpuFrequency"],
+    targetKind: "cpu"
+  },
+  {
+    widgetType: "cpu-temperature",
+    title: "CPU 温度",
+    description: "指定处理器的 Package/Core 温度趋势。",
+    category: "处理器",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "line",
+    visualizations: ["line", "area", "bar", "number"],
+    requires: ["cpuTemperature"],
     targetKind: "cpu"
   },
   {
@@ -106,11 +191,23 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
     targetKind: "disk"
   },
   {
+    widgetType: "disk-io",
+    title: "磁盘读写速率",
+    description: "指定磁盘的读取与写入速率趋势。",
+    category: "存储",
+    kind: "content",
+    defaultSize: "large",
+    visualization: "line",
+    visualizations: ["line", "area", "bar", "number"],
+    requires: ["diskRead", "diskWrite"],
+    targetKind: "disk"
+  },
+  {
     widgetType: "disk-health",
     title: "磁盘健康与 SMART",
     description: "显示磁盘健康状态、温度、寿命与已采集的 SMART 属性。",
     category: "存储",
-    kind: "group",
+    kind: "content",
     defaultSize: "large",
     visualization: "table",
     visualizations: ["table", "donut", "number"],
@@ -139,6 +236,30 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
     visualization: "line",
     visualizations: ["line", "area", "bar", "number"],
     requires: ["gpuUsage"],
+    targetKind: "gpu"
+  },
+  {
+    widgetType: "gpu-memory",
+    title: "GPU 显存使用",
+    description: "指定显卡的显存已用容量趋势。",
+    category: "显卡",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "area",
+    visualizations: ["line", "area", "bar", "donut", "number"],
+    requires: ["gpuMemory"],
+    targetKind: "gpu"
+  },
+  {
+    widgetType: "gpu-temperature",
+    title: "GPU 温度",
+    description: "指定显卡的传感器温度趋势。",
+    category: "显卡",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "line",
+    visualizations: ["line", "area", "bar", "number"],
+    requires: ["gpuTemperature"],
     targetKind: "gpu"
   },
   {
@@ -246,7 +367,7 @@ type WidgetLine = {
 function buildChartData(lines: WidgetLine[]): Array<Record<string, string | number>> {
   const rows = new Map<string, Record<string, string | number>>();
   lines.forEach((line, lineIndex) => {
-    line.points.forEach((point) => {
+    (Array.isArray(line.points) ? line.points : []).forEach((point) => {
       const row = rows.get(point.timestamp) ?? { timestamp: point.timestamp };
       row[`value${lineIndex}`] = point.value;
       rows.set(point.timestamp, row);
@@ -359,10 +480,28 @@ function getWidgetLines(widgetType: string, metrics: MetricsResponse | null, tar
     const lines = series.cpus?.length && targetId ? series.cpus.filter((item) => item.id === targetId).map((item) => ({ label: item.name, points: item.usagePercent, formatter: (value: number) => `${Math.round(value)}%` })) : [{ label: "CPU 使用率", points: series.cpuUsagePercent, formatter: (value: number) => `${Math.round(value)}%` }];
     return { lines, valueFormatter: (value) => `${Math.round(value)}%` };
   }
+  if (widgetType === "cpu-frequency") {
+    const cpu = targetId ? series.cpus?.find((item) => item.id === targetId) : undefined;
+    return { lines: [{ label: "主频", points: cpu?.frequencyMHz ?? series.cpuFrequencyMHz, formatter: (value: number) => `${Math.round(value)} MHz` }], valueFormatter: (value) => `${Math.round(value)} MHz` };
+  }
+  if (widgetType === "cpu-temperature") {
+    const cpu = targetId ? series.cpus?.find((item) => item.id === targetId) : undefined;
+    return { lines: [{ label: "温度", points: cpu?.temperatureC ?? series.cpuTemperatureC, formatter: (value: number) => `${Math.round(value)} °C` }], valueFormatter: (value) => `${Math.round(value)} °C` };
+  }
   if (widgetType === "memory-usage") return { lines: [{ label: "物理内存", points: series.memoryUsedBytes, formatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes, formatter: formatBytes }], valueFormatter: formatBytes };
   if (widgetType === "disk-capacity") {
     const points = targetId ? series.disks?.find((item) => item.id === targetId)?.usedBytes ?? [] : series.diskUsedBytes;
     return { lines: [{ label: "磁盘已用", points, formatter: formatBytes }], valueFormatter: formatBytes };
+  }
+  if (widgetType === "disk-io") {
+    const disk = targetId ? series.disks?.find((item) => item.id === targetId) : undefined;
+    return {
+      lines: [
+        { label: "读取", points: disk?.readBytesPerSec ?? series.diskReadBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` },
+        { label: "写入", points: disk?.writeBytesPerSec ?? series.diskWriteBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` }
+      ],
+      valueFormatter: (value) => `${formatBytes(value)}/s`
+    };
   }
   if (widgetType === "network-throughput") {
     const targetNetwork = targetId ? series.networks?.find((item) => item.id === targetId) : undefined;
@@ -378,6 +517,14 @@ function getWidgetLines(widgetType: string, metrics: MetricsResponse | null, tar
   if (widgetType === "gpu-load") {
     const gpuLines = series.gpus?.length && targetId ? series.gpus.filter((item) => item.id === targetId) : series.gpus ?? [];
     return { lines: gpuLines.length ? [{ label: "核心", points: averageSamplePoints(gpuLines.map((item) => item.usagePercent)), formatter: (value: number) => `${Math.round(value)}%` }, { label: "编码", points: averageSamplePoints(gpuLines.map((item) => item.encodePercent)), formatter: (value: number) => `${Math.round(value)}%` }, { label: "解码", points: averageSamplePoints(gpuLines.map((item) => item.decodePercent)), formatter: (value: number) => `${Math.round(value)}%` }] : [{ label: "GPU 使用率", points: series.gpuUsagePercent, formatter: (value: number) => `${Math.round(value)}%` }], valueFormatter: (value) => `${Math.round(value)}%` };
+  }
+  if (widgetType === "gpu-memory") {
+    const gpu = targetId ? series.gpus?.find((item) => item.id === targetId) : undefined;
+    return { lines: [{ label: "显存已用", points: gpu?.memoryUsedBytes ?? series.gpuMemoryUsedBytes, formatter: formatBytes }], valueFormatter: formatBytes };
+  }
+  if (widgetType === "gpu-temperature") {
+    const gpu = targetId ? series.gpus?.find((item) => item.id === targetId) : undefined;
+    return { lines: [{ label: "温度", points: gpu?.temperatureC ?? series.gpuTemperatureC, formatter: (value: number) => `${Math.round(value)} °C` }], valueFormatter: (value) => `${Math.round(value)} °C` };
   }
   if (widgetType === "fan-speed") {
     const fanLines = series.fans?.length && targetId ? series.fans.filter((item) => item.id === targetId) : series.fans ?? [];
@@ -432,8 +579,10 @@ function WidgetContent({ definition, entry, context }: { definition: WidgetCatal
     return <DataTable rows={diskRows(disks)} />;
   }
   if (definition.widgetType === "disk-capacity" && visualization === "donut") {
-    const used = latest?.diskUsedBytes ?? 0;
-    const total = latest?.diskTotalBytes ?? 0;
+    const targetId = getTargetId(entry);
+    const disk = targetId ? latest?.disks?.find((item) => item.id === targetId) : undefined;
+    const used = disk?.usedBytes ?? latest?.diskUsedBytes ?? 0;
+    const total = disk?.totalBytes ?? latest?.diskTotalBytes ?? 0;
     return <DonutChart data={[{ name: "已用", value: Math.max(0, used), color: "#3b82f6" }, { name: "剩余", value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />;
   }
   const { lines, valueFormatter } = getWidgetLines(definition.widgetType, metrics, getTargetId(entry));
@@ -452,6 +601,68 @@ function targetOptions(definition: WidgetCatalogDefinition, metrics: MetricsResp
   if (definition.targetKind === "fan") return filterEnabled(metrics.series.fans ?? []).map((item) => ({ id: item.id, name: item.name, detail: item.interface }));
   if (definition.targetKind === "network") return filterEnabled(metrics.series.networks ?? []).map((item) => ({ id: item.id, name: item.model || item.name, detail: item.macAddress }));
   return [];
+}
+
+const DEVICE_GROUP_CHILD_TYPES: Record<WidgetTargetKind, string[]> = {
+  cpu: ["cpu-usage", "cpu-frequency", "cpu-temperature"],
+  disk: ["disk-capacity", "disk-io", "disk-health"],
+  gpu: ["gpu-load", "gpu-memory", "gpu-temperature"],
+  network: ["network-throughput"],
+  fan: ["fan-speed"]
+};
+
+function groupChildrenForTarget(targetKind: WidgetTargetKind, target: { id: string; name: string }): WidgetGroupChildDefinition[] {
+  return DEVICE_GROUP_CHILD_TYPES[targetKind]
+    .map((widgetType) => widgetDefinitionByType.get(widgetType))
+    .filter((definition): definition is WidgetCatalogDefinition => Boolean(definition))
+    .map((definition) => ({
+      title: `${definition.title} · ${target.name}`,
+      kind: definition.kind,
+      defaultSize: definition.defaultSize,
+      widgetType: definition.widgetType,
+      category: definition.category,
+      visualization: definition.visualization,
+      config: { visualization: definition.visualization, targetId: target.id }
+    }));
+}
+
+function isDeviceGroupDefinition(definition: WidgetCatalogDefinition | undefined): boolean {
+  return Boolean(definition?.deviceGroup);
+}
+
+function DynamicWidgetGroupCard({ entry, children, context }: { entry: WidgetLayoutCatalogEntry & { id: string }; children: Array<WidgetLayoutCatalogEntry & { id: string }>; context: WidgetCatalogContext }) {
+  const definition = widgetDefinitionByType.get(entry.widgetType ?? "");
+  if (!definition) return null;
+  return (
+    <DesktopWidget
+      id={entry.id}
+      title={entry.title}
+      kind="group"
+      defaultSize={entry.defaultSize}
+      widgetType={definition.widgetType}
+      category={definition.category}
+      visualization={entry.visualization}
+      config={entry.config}
+    >
+      <div className="workspace-dynamic-group">
+        <div className="workspace-dynamic-group__header">
+          <div>
+            <span className="workspace-section-kicker">{definition.category}</span>
+            <h3>{entry.title}</h3>
+            <p>{definition.description}</p>
+          </div>
+          <span className="workspace-dynamic-group__count">{children.length} 个图表</span>
+        </div>
+        {children.length ? (
+          <div className="workspace-dynamic-group__grid">
+            {children.map((child) => <DynamicWidgetCard key={child.id} entry={child} context={context} />)}
+          </div>
+        ) : (
+          <div className="workspace-dynamic-empty__inline">组内暂无图表，可继续添加独立组件。</div>
+        )}
+      </div>
+    </DesktopWidget>
+  );
 }
 
 function DynamicWidgetCard({ entry, context }: { entry: WidgetLayoutCatalogEntry & { id: string }; context: WidgetCatalogContext }) {
@@ -479,7 +690,7 @@ function DynamicWidgetCard({ entry, context }: { entry: WidgetLayoutCatalogEntry
             {layout.editMode && <select className="workspace-select workspace-select--small" value={visualization} onChange={(event) => layout.updateWidgetConfig(entry.id, { visualization: event.target.value as WidgetVisualization })} aria-label={`${entry.title}图表形式`}>
               {definition.visualizations.map((item) => <option key={item} value={item}>{visualizationLabels[item]}</option>)}
             </select>}
-            {layout.editMode && targets.length > 0 && <select className="workspace-select workspace-select--small" value={targetId} onChange={(event) => layout.updateWidgetConfig(entry.id, { targetId: event.target.value === "all" ? null : event.target.value })} aria-label={`${entry.title}实例`}>
+            {layout.editMode && !entry.groupId && targets.length > 0 && <select className="workspace-select workspace-select--small" value={targetId} onChange={(event) => layout.updateWidgetConfig(entry.id, { targetId: event.target.value === "all" ? null : event.target.value })} aria-label={`${entry.title}实例`}>
               <option value="all">全部实例</option>
               {targets.map((target) => <option value={target.id} key={target.id}>{target.name}</option>)}
             </select>}
@@ -499,7 +710,7 @@ export function DynamicWidgetCanvas({ device, metrics, showEmptyState = false, o
     if (!metrics || !layout.editable || layout.locked) return;
     entries.forEach((entry) => {
       const definition = widgetDefinitionByType.get(entry.widgetType ?? "");
-      if (!definition?.targetKind || getTargetId(entry)) return;
+      if (!definition?.targetKind || definition.deviceGroup || entry.groupId || getTargetId(entry)) return;
       const targets = targetOptions(definition, metrics);
       if (!targets.length) return;
       layout.updateWidgetConfig(entry.id, { targetId: targets[0].id });
@@ -520,7 +731,22 @@ export function DynamicWidgetCanvas({ device, metrics, showEmptyState = false, o
   if (!entries.length) {
     return showEmptyState ? <div className="workspace-dynamic-empty"><strong>这个面板还没有自定义小组件</strong><span>打开小组件抽屉，从处理器、存储、网络和 SMART 数据中选择内容。</span>{onOpenDrawer && <button type="button" onClick={onOpenDrawer}>打开小组件抽屉</button>}</div> : null;
   }
-  return <div className="workspace-widget-grid">{entries.map((entry) => <DynamicWidgetCard key={entry.id} entry={entry} context={{ device, metrics }} />)}</div>;
+  const definitions = new Map(entries.map((entry) => [entry.id, widgetDefinitionByType.get(entry.widgetType ?? "")]));
+  const groupEntries = entries.filter((entry) => isDeviceGroupDefinition(definitions.get(entry.id)));
+  const groupIds = new Set(groupEntries.map((entry) => entry.id));
+  const childrenByGroup = new Map<string, Array<WidgetLayoutCatalogEntry & { id: string }>>();
+  entries.filter((entry): entry is WidgetLayoutCatalogEntry & { id: string } => Boolean(entry.groupId && groupIds.has(entry.groupId))).forEach((entry) => {
+    const children = childrenByGroup.get(entry.groupId!) ?? [];
+    children.push(entry);
+    childrenByGroup.set(entry.groupId!, children);
+  });
+  const standaloneEntries = entries.filter((entry) => !groupIds.has(entry.id) && !entry.groupId);
+  return (
+    <div className="workspace-widget-grid">
+      {groupEntries.map((entry) => <DynamicWidgetGroupCard key={entry.id} entry={entry} children={childrenByGroup.get(entry.id) ?? []} context={{ device, metrics }} />)}
+      {standaloneEntries.map((entry) => <DynamicWidgetCard key={entry.id} entry={entry} context={{ device, metrics }} />)}
+    </div>
+  );
 }
 
 export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogContext & { open: boolean; onClose: () => void }) {
@@ -539,15 +765,28 @@ export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogCo
     const config: WidgetInstanceConfig = { visualization: definition.visualization };
     if (target) config.targetId = target.id;
     layout.setEditMode(true);
-    const id = layout.addWidget({
-      title: target ? `${definition.title} · ${target.name}` : definition.title,
-      kind: definition.kind,
-      defaultSize: definition.defaultSize,
-      widgetType: definition.widgetType,
-      category: definition.category,
-      visualization: definition.visualization,
-      config
-    });
+    const id = definition.deviceGroup && target && definition.targetKind
+      ? layout.addWidgetGroup(
+          {
+            title: `${definition.title} · ${target.name}`,
+            kind: definition.kind,
+            defaultSize: definition.defaultSize,
+            widgetType: definition.widgetType,
+            category: definition.category,
+            visualization: definition.visualization,
+            config
+          },
+          groupChildrenForTarget(definition.targetKind, target)
+        )
+      : layout.addWidget({
+          title: target ? `${definition.title} · ${target.name}` : definition.title,
+          kind: definition.kind,
+          defaultSize: definition.defaultSize,
+          widgetType: definition.widgetType,
+          category: definition.category,
+          visualization: definition.visualization,
+          config
+        });
     if (id) setTargetDefinition(null);
   };
   const chooseDefinition = (definition: WidgetCatalogDefinition) => {

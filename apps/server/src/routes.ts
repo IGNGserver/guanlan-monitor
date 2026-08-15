@@ -153,6 +153,7 @@ const widgetLayoutDocumentSchema = z.object({
     kind: z.enum(["group", "content"]),
     defaultSize: z.enum(["large", "medium", "small"]),
     templateId: z.string().min(1).max(160).optional(),
+    groupId: z.string().min(1).max(160).optional(),
     widgetType: z.string().min(1).max(120).optional(),
     category: z.string().min(1).max(80).optional(),
     visualization: z.enum(["line", "area", "bar", "donut", "number", "table"]).optional(),

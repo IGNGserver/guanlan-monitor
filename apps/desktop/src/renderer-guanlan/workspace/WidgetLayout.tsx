@@ -17,9 +17,10 @@ export type WidgetSize = WidgetLayoutSize;
 export type WidgetKind = WidgetLayoutKind;
 export type WidgetPlacement = SharedWidgetLayoutPlacement;
 
-type WidgetDefinition = {
+export type WidgetDefinition = {
   id: string;
   templateId?: string;
+  groupId?: string;
   title: string;
   kind: WidgetKind;
   defaultSize: WidgetSize;
@@ -28,6 +29,8 @@ type WidgetDefinition = {
   visualization?: WidgetVisualization;
   config?: WidgetInstanceConfig;
 };
+
+export type WidgetGroupChildDefinition = Omit<WidgetDefinition, "id" | "groupId">;
 
 type WidgetCatalogEntry = SharedWidgetLayoutCatalogEntry;
 
@@ -80,6 +83,7 @@ type WidgetLayoutContextValue = {
   hiddenWidgets: HiddenWidget[];
   widgetEntries: Array<{ id: string } & WidgetCatalogEntry>;
   addWidget: (definition: Omit<WidgetDefinition, "id"> & { id?: string }) => string | null;
+  addWidgetGroup: (group: Omit<WidgetDefinition, "id" | "groupId">, children: WidgetGroupChildDefinition[]) => string | null;
   removeWidget: (id: string) => void;
   updateWidgetConfig: (id: string, patch: WidgetInstanceConfig) => void;
   getLayoutSnapshot: () => WidgetLayoutDocument;
@@ -123,6 +127,7 @@ function cloneLayout(layout: WidgetLayoutDocument): WidgetLayoutDocument {
     placements: Object.fromEntries(Object.entries(layout.placements).map(([id, placement]) => [id, { ...placement }])),
     catalog: Object.fromEntries(Object.entries(layout.catalog).map(([id, entry]) => [id, {
       ...entry,
+      ...(entry.groupId ? { groupId: entry.groupId } : {}),
       ...(entry.config ? { config: { ...entry.config } } : {})
     }])),
     snapToGrid: layout.snapToGrid,
@@ -172,22 +177,83 @@ function findNextFreePlacement(
   return { x: 1, y: lastRow };
 }
 
-function normalizePlacements(placements: Record<string, WidgetPlacement>, snapToGrid: boolean): Record<string, WidgetPlacement> {
+function sizeForGroupWidth(width: number, fallback: WidgetSize): WidgetSize {
+  if (width >= SIZE_PRESETS.large.w) return "large";
+  if (width >= SIZE_PRESETS.medium.w) return "medium";
+  if (width >= SIZE_PRESETS.small.w) return "small";
+  return fallback;
+}
+
+function isGroupedEntry(id: string, catalog: Record<string, WidgetCatalogEntry>): boolean {
+  const groupId = catalog[id]?.groupId;
+  const parent = groupId ? catalog[groupId] : undefined;
+  return Boolean(groupId && parent?.kind === "group" && parent.widgetType);
+}
+
+function topLevelPlacements(
+  placements: Record<string, WidgetPlacement>,
+  catalog: Record<string, WidgetCatalogEntry>
+): Record<string, WidgetPlacement> {
+  return Object.fromEntries(Object.entries(placements).filter(([id]) => !isGroupedEntry(id, catalog)));
+}
+
+function normalizePlacements(
+  placements: Record<string, WidgetPlacement>,
+  snapToGrid: boolean,
+  catalog: Record<string, WidgetCatalogEntry> = {}
+): Record<string, WidgetPlacement> {
   const normalized = Object.fromEntries(
-    Object.entries(placements).map(([id, placement]) => [id, normalizePlacement(placement)])
+    Object.entries(placements).map(([id, placement]) => [id, normalizePlacement(placement, catalog[id]?.defaultSize ?? DEFAULT_SIZE)])
   ) as Record<string, WidgetPlacement>;
+
+  // Group children have their own four-column coordinate system. Pack them
+  // inside the group first, then derive the group's outer width from the
+  // occupied child columns so a one-card group can shrink to 2x2 or 1x2.
+  const groupIds = new Set(
+    Object.values(catalog)
+      .map((entry) => entry.groupId)
+      .filter((groupId): groupId is string => Boolean(groupId && catalog[groupId]?.kind === "group" && catalog[groupId]?.widgetType))
+  );
+  for (const groupId of groupIds) {
+    const children = Object.entries(catalog)
+      .filter(([, entry]) => entry.groupId === groupId)
+      .map(([id]) => id)
+      .filter((id) => Boolean(normalized[id]))
+      .sort((left, right) => {
+        const leftPlacement = normalized[left];
+        const rightPlacement = normalized[right];
+        return leftPlacement.y - rightPlacement.y || leftPlacement.x - rightPlacement.x || left.localeCompare(right);
+      });
+    const packed: Record<string, WidgetPlacement> = {};
+    for (const childId of children) {
+      const child = normalized[childId];
+      if (!child.hidden && snapToGrid) {
+        const position = findNextFreePlacement(packed, child.size, child.x, child.y);
+        normalized[childId] = { ...child, ...position };
+      }
+      if (!normalized[childId].hidden) packed[childId] = normalized[childId];
+    }
+    const group = normalized[groupId];
+    if (!group) continue;
+    const visibleChildren = Object.values(packed);
+    const occupiedWidth = visibleChildren.reduce((max, child) => Math.max(max, child.x + child.w - 1), 0);
+    const groupSize = visibleChildren.length ? sizeForGroupWidth(occupiedWidth, group.size) : "small";
+    normalized[groupId] = normalizePlacement({ ...group, size: groupSize }, group.size);
+  }
+
   if (!snapToGrid) return normalized;
 
   const visible = Object.entries(normalized)
-    .filter(([, placement]) => !placement.hidden)
+    .filter(([id, placement]) => !placement.hidden && !isGroupedEntry(id, catalog))
     .sort(([, left], [, right]) => left.y - right.y || left.x - right.x);
-  const hidden = Object.entries(normalized).filter(([, placement]) => placement.hidden);
   const compacted: Record<string, WidgetPlacement> = {};
   for (const [id, placement] of visible) {
     const position = findNextFreePlacement(compacted, placement.size);
     compacted[id] = { ...placement, ...position };
   }
-  for (const [id, placement] of hidden) compacted[id] = placement;
+  for (const [id, placement] of Object.entries(normalized)) {
+    if (placement.hidden || isGroupedEntry(id, catalog)) compacted[id] = placement;
+  }
   return compacted;
 }
 
@@ -202,6 +268,7 @@ function normalizeLayout(layout: WidgetLayoutDocument | null | undefined): Widge
       kind: entry.kind === "group" ? "group" : "content",
       defaultSize: entry.defaultSize === "large" || entry.defaultSize === "small" ? entry.defaultSize : "medium",
       ...(entry.templateId ? { templateId: entry.templateId } : {}),
+      ...(entry.groupId && typeof entry.groupId === "string" ? { groupId: entry.groupId } : {}),
       ...(entry.widgetType ? { widgetType: entry.widgetType } : {}),
       ...(entry.category ? { category: entry.category } : {}),
       ...(entry.visualization && visualizations.includes(entry.visualization) ? { visualization: entry.visualization } : {}),
@@ -211,6 +278,11 @@ function normalizeLayout(layout: WidgetLayoutDocument | null | undefined): Widge
   const placements: Record<string, WidgetPlacement> = {};
   for (const [id, placement] of Object.entries(layout.placements ?? {})) {
     placements[id] = normalizePlacement(placement, catalog[id]?.defaultSize ?? DEFAULT_SIZE);
+  }
+  for (const [id, entry] of Object.entries(catalog)) {
+    if (entry.groupId && (!catalog[entry.groupId] || entry.groupId === id || !isGroupedEntry(id, catalog))) {
+      delete entry.groupId;
+    }
   }
   const panels = (layout.panels ?? [])
     .filter((panel) => panel && typeof panel.id === "string" && typeof panel.name === "string")
@@ -224,7 +296,7 @@ function normalizeLayout(layout: WidgetLayoutDocument | null | undefined): Widge
   return {
     version: 4,
     catalog,
-    placements: normalizePlacements(placements, layout.snapToGrid !== false),
+    placements: normalizePlacements(placements, layout.snapToGrid !== false, catalog),
     snapToGrid: layout.snapToGrid !== false,
     ...(panels.length ? { panels } : {})
   };
@@ -239,17 +311,18 @@ function mergeDefinitions(layout: WidgetLayoutDocument, definitions: Record<stri
       kind: definition.kind,
       defaultSize: definition.defaultSize,
       ...(definition.templateId ? { templateId: definition.templateId } : {}),
+      ...(definition.groupId ? { groupId: definition.groupId } : {}),
       ...(definition.widgetType ? { widgetType: definition.widgetType } : {}),
       ...(definition.category ? { category: definition.category } : {}),
       ...(definition.visualization ? { visualization: definition.visualization } : {}),
       ...(definition.config ? { config: { ...definition.config } } : {})
     };
     if (!next.placements[definition.id]) {
-      const position = findNextFreePlacement(next.placements, definition.defaultSize);
+      const position = findNextFreePlacement(topLevelPlacements(next.placements, next.catalog), definition.defaultSize);
       next.placements[definition.id] = normalizePlacement({ ...position, size: definition.defaultSize });
     }
   }
-  next.placements = normalizePlacements(next.placements, next.snapToGrid);
+  next.placements = normalizePlacements(next.placements, next.snapToGrid, next.catalog);
   return next;
 }
 
@@ -273,13 +346,14 @@ function buildTemplateLayout(layout: WidgetLayoutDocument): WidgetLayoutDocument
       title: entry.title,
       kind: entry.kind,
       defaultSize: entry.defaultSize,
+      ...(entry.groupId ? { groupId: entry.groupId } : {}),
       ...(entry.widgetType ? { widgetType: entry.widgetType } : {}),
       ...(entry.category ? { category: entry.category } : {}),
       ...(entry.visualization ? { visualization: entry.visualization } : {}),
       ...(entry.config ? { config: { ...entry.config } } : {})
     };
   }
-  next.placements = normalizePlacements(positions, next.snapToGrid);
+  next.placements = normalizePlacements(positions, next.snapToGrid, next.catalog);
   return next;
 }
 
@@ -293,6 +367,7 @@ function applyTemplateToLayout(template: WidgetLayoutDocument, definitions: Reco
       kind: definition.kind,
       defaultSize: definition.defaultSize,
       ...(definition.templateId ? { templateId: definition.templateId } : {}),
+      ...(definition.groupId ? { groupId: definition.groupId } : {}),
       ...(definition.widgetType ? { widgetType: definition.widgetType } : {}),
       ...(definition.category ? { category: definition.category } : {}),
       ...(definition.visualization ? { visualization: definition.visualization } : {}),
@@ -420,6 +495,20 @@ export function WidgetLayoutProvider({
     definitionsRef.current[definition.id] = definition;
     if (!previous || JSON.stringify(previous) !== JSON.stringify(definition)) setDefinitionVersion((value) => value + 1);
     setDraft((current) => {
+      const currentEntry = current.catalog[definition.id];
+      const nextEntry: WidgetCatalogEntry = {
+        ...currentEntry,
+        title: definition.title,
+        kind: definition.kind,
+        defaultSize: definition.defaultSize,
+        ...(definition.templateId ? { templateId: definition.templateId } : {}),
+        ...(definition.groupId ? { groupId: definition.groupId } : {}),
+        ...(definition.widgetType ? { widgetType: definition.widgetType } : {}),
+        ...(definition.category ? { category: definition.category } : {}),
+        ...(definition.visualization ? { visualization: definition.visualization } : {}),
+        ...(definition.config ? { config: { ...definition.config } } : {})
+      };
+      if (currentEntry && current.placements[definition.id] && JSON.stringify(currentEntry) === JSON.stringify(nextEntry)) return current;
       const next = mergeDefinitions(current, { [definition.id]: definition });
       draftRef.current = next;
       return next;
@@ -467,28 +556,73 @@ export function WidgetLayoutProvider({
         kind: definition.kind,
         defaultSize: definition.defaultSize,
         ...(definition.templateId ? { templateId: definition.templateId } : {}),
+        ...(definition.groupId ? { groupId: definition.groupId } : {}),
         ...(definition.widgetType ? { widgetType: definition.widgetType } : {}),
         ...(definition.category ? { category: definition.category } : {}),
         ...(definition.visualization ? { visualization: definition.visualization } : {}),
         ...(definition.config ? { config: { ...definition.config } } : {})
       };
-      const position = findNextFreePlacement(current.placements, definition.defaultSize);
+      const position = findNextFreePlacement(topLevelPlacements(current.placements, current.catalog), definition.defaultSize);
       current.placements[id] = normalizePlacement({ ...position, size: definition.defaultSize });
       return current;
     });
     return id;
   }, [editable, locked, mutateDraft]);
 
+  const addWidgetGroup = useCallback((group: Omit<WidgetDefinition, "id" | "groupId">, children: WidgetGroupChildDefinition[]): string | null => {
+    if (!editable || locked) return null;
+    const groupId = `${group.widgetType ?? "device-group"}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    mutateDraft((current) => {
+      current.catalog[groupId] = {
+        title: group.title,
+        kind: group.kind,
+        defaultSize: group.defaultSize,
+        ...(group.templateId ? { templateId: group.templateId } : {}),
+        ...(group.widgetType ? { widgetType: group.widgetType } : {}),
+        ...(group.category ? { category: group.category } : {}),
+        ...(group.visualization ? { visualization: group.visualization } : {}),
+        ...(group.config ? { config: { ...group.config } } : {})
+      };
+      const groupPosition = findNextFreePlacement(topLevelPlacements(current.placements, current.catalog), group.defaultSize);
+      current.placements[groupId] = normalizePlacement({ ...groupPosition, size: group.defaultSize });
+      children.forEach((child, index) => {
+        const childId = `${groupId}-${child.widgetType ?? "chart"}-${index}`;
+        current.catalog[childId] = {
+          title: child.title,
+          kind: child.kind,
+          defaultSize: child.defaultSize,
+          groupId,
+          ...(child.templateId ? { templateId: child.templateId } : {}),
+          ...(child.widgetType ? { widgetType: child.widgetType } : {}),
+          ...(child.category ? { category: child.category } : {}),
+          ...(child.visualization ? { visualization: child.visualization } : {}),
+          ...(child.config ? { config: { ...child.config } } : {})
+        };
+        current.placements[childId] = normalizePlacement({ x: 1, y: index + 1, size: child.defaultSize });
+      });
+      return current;
+    });
+    return groupId;
+  }, [editable, locked, mutateDraft]);
+
   const removeWidget = useCallback((id: string) => {
-    if (definitionsRef.current[id]) {
-      mutateDraft((current) => {
+    mutateDraft((current) => {
+      const entry = current.catalog[id];
+      // Dynamic catalog widgets are user-created records. Removing a group
+      // removes its children; removing a child removes that record. Static
+      // system widgets have no widgetType and keep hide/restore behavior.
+      if (!entry?.widgetType) {
         const placement = current.placements[id];
         if (placement) placement.hidden = true;
         return current;
+      }
+      const childIds = Object.entries(current.catalog)
+        .filter(([, entry]) => entry.groupId === id)
+        .map(([childId]) => childId);
+      childIds.forEach((childId) => {
+        delete current.catalog[childId];
+        delete current.placements[childId];
       });
-      return;
-    }
-    mutateDraft((current) => {
       delete current.catalog[id];
       delete current.placements[id];
       return current;
@@ -511,7 +645,7 @@ export function WidgetLayoutProvider({
     mutateDraft((current) => {
       const existing = current.placements[id] ?? normalizePlacement({ size });
       current.placements[id] = normalizePlacement({ ...existing, size });
-      current.placements = normalizePlacements(current.placements, current.snapToGrid);
+      current.placements = normalizePlacements(current.placements, current.snapToGrid, current.catalog);
       return current;
     });
   }, [mutateDraft]);
@@ -520,7 +654,7 @@ export function WidgetLayoutProvider({
     mutateDraft((current) => {
       const placement = current.placements[id];
       if (placement) placement.hidden = true;
-      current.placements = normalizePlacements(current.placements, current.snapToGrid);
+      current.placements = normalizePlacements(current.placements, current.snapToGrid, current.catalog);
       return current;
     });
   }, [mutateDraft]);
@@ -553,7 +687,7 @@ export function WidgetLayoutProvider({
       dragged.y = target.y;
       target.x = draggedPosition.x;
       target.y = draggedPosition.y;
-      current.placements = normalizePlacements(current.placements, current.snapToGrid);
+      current.placements = normalizePlacements(current.placements, current.snapToGrid, current.catalog);
       return current;
     });
   }, [mutateDraft]);
@@ -561,7 +695,7 @@ export function WidgetLayoutProvider({
   const toggleSnapToGrid = useCallback(() => {
     mutateDraft((current) => {
       current.snapToGrid = !current.snapToGrid;
-      current.placements = normalizePlacements(current.placements, current.snapToGrid);
+      current.placements = normalizePlacements(current.placements, current.snapToGrid, current.catalog);
       return current;
     });
   }, [mutateDraft]);
@@ -742,10 +876,11 @@ export function WidgetLayoutProvider({
     hiddenWidgets,
     widgetEntries,
     addWidget,
+    addWidgetGroup,
     removeWidget,
     updateWidgetConfig,
     getLayoutSnapshot
-  }), [addWidget, applyTemplate, deleteTemplate, dirty, draft.snapToGrid, editable, editMode, exportLayout, getLayoutSnapshot, getWidgetSize, hideWidget, hiddenWidgets, historyVersion, importLayout, loading, locked, redo, registerWidget, remote.instanceLayout, remote.templates, removeWidget, reorderWidgets, resetDeviceLayout, resolveWidget, restoreWidget, saveAsTemplate, saveLayout, saving, scopeKey, syncMessage, templateKey, toggleSnapToGrid, undo, updateSize, updateWidgetConfig, widgetEntries]);
+  }), [addWidget, addWidgetGroup, applyTemplate, deleteTemplate, dirty, draft.snapToGrid, editable, editMode, exportLayout, getLayoutSnapshot, getWidgetSize, hideWidget, hiddenWidgets, historyVersion, importLayout, loading, locked, redo, registerWidget, remote.instanceLayout, remote.templates, removeWidget, reorderWidgets, resetDeviceLayout, resolveWidget, restoreWidget, saveAsTemplate, saveLayout, saving, scopeKey, syncMessage, templateKey, toggleSnapToGrid, undo, updateSize, updateWidgetConfig, widgetEntries]);
 
   return <WidgetLayoutContext.Provider value={contextValue}>{children}</WidgetLayoutContext.Provider>;
 }
