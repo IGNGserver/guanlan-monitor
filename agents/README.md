@@ -13,6 +13,8 @@ server, web application, and shared package.
 | --- | --- | --- | --- |
 | CLI agent | Windows | `deploy/install-agent.ps1` | Install/upgrade/uninstall through a scheduled task or current-user startup fallback. |
 | CLI agent | Linux | `deploy/install-agent.sh` | Install/upgrade/uninstall through `device-state-console-agent.service`. |
+| CLI UI | Windows x64 | `deploy/install-cli.ps1` | User-local install; run `dsc` for the terminal UI and `dsc shutdown` to stop its local backend. |
+| CLI UI | Linux x64 | `deploy/install-cli.sh` | User-local install; run `dsc` for the terminal UI and `dsc shutdown` to stop its local backend. |
 | Desktop agent | Windows | `deploy/build-windows-agent-portable.ps1` and `deploy/build-windows-agent-setup.ps1` | Portable bundle includes frontend, backend, collector, runtime, and hardware assets; setup supports install, update, repair, and uninstall. |
 | Desktop agent | Linux (GNOME) | `deploy/build-linux-agent-gui.sh` | GTK4/libadwaita native configuration UI, WebKitGTK Hub view, Go backend/collector, and Debian `amd64` install package. |
 
@@ -23,7 +25,12 @@ Android release APKs use `deploy/package-android-release.ps1` and are named
 Run `deploy/build-cli-agent.ps1 -Zip` to create
 `DeviceStateConsole-Windows-CLI-Install-vX.Y.Z.zip` and
 `DeviceStateConsole-Linux-CLI-Install-vX.Y.Z.zip`. Their installers use the bundled binary and do
-not require Go on the target host.
+not require Go on the target host. Each package now also contains `dsc`, the
+`device-state-console-agent-backend` process, and a generated fixed-version
+`install-cli.ps1` or `install-cli.sh` entry point. The `dsc` process starts the
+local backend on demand, stores its per-user runtime/configuration files outside
+the install directory, and provides both an interactive UI and scriptable
+`status`, `doctor`, `start`, `stop`, `restart`, `shutdown`, and `config` commands.
 
 After installation, run the bundled binary's update command from an elevated
 terminal. It checks `/api/updates`, accepts only a strictly newer release,

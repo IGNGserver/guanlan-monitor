@@ -156,6 +156,23 @@ jobs:
         shell: powershell
         run: ./deploy/build-cli-agent.ps1 -OutputDir release/cli-agent -Zip
 
+      - name: Verify CLI package layout
+        shell: powershell
+        run: |
+          $required = @{
+            "windows-x64" = @("dsc.exe", "device-state-console-agent.exe", "device-state-console-agent-backend.exe", "install-cli.ps1")
+            "linux-x64" = @("dsc", "device-state-console-agent", "device-state-console-agent-backend", "install-cli.sh")
+          }
+          foreach ($platform in $required.Keys) {
+            $directory = Join-Path "release/cli-agent" $platform
+            foreach ($file in $required[$platform]) {
+              $path = Join-Path $directory $file
+              if (-not (Test-Path -LiteralPath $path)) { throw "CLI package is missing $path" }
+            }
+          }
+          if ((Get-Content -LiteralPath "release/cli-agent/install-cli.ps1" -Raw) -match "__DSC_VERSION__") { throw "Windows CLI installer still has an unresolved version placeholder." }
+          if ((Get-Content -LiteralPath "release/cli-agent/install-cli.sh" -Raw) -match "__DSC_VERSION__") { throw "Linux CLI installer still has an unresolved version placeholder." }
+
       - name: Upload Windows assets
         uses: actions/upload-artifact@v4
         with:
@@ -166,6 +183,8 @@ jobs:
             release/windows-desktop/DeviceStateConsole-Windows-GUI-Portable-v*.zip
             release/cli-agent/DeviceStateConsole-Windows-CLI-Install-v*.zip
             release/cli-agent/DeviceStateConsole-Linux-CLI-Install-v*.zip
+            release/cli-agent/install-cli.ps1
+            release/cli-agent/install-cli.sh
           if-no-files-found: error
 
   linux-gui:
@@ -407,14 +426,16 @@ jobs:
           test "${GITHUB_REF_NAME}" = "v${version}"
           while IFS= read -r asset; do
             case "$asset" in
-              *.exe|*.zip|*.deb|*.apk|*.ipa)
+              *.exe|*.zip|*.deb|*.apk|*.ipa|*.ps1|*.sh)
                 checksum="${asset}.sha256"
                 if [[ ! -f "$checksum" ]]; then
-                  sha256sum "$asset" > "$checksum"
+                  asset_dir="$(dirname "$asset")"
+                  asset_name="$(basename "$asset")"
+                  (cd "$asset_dir" && sha256sum "$asset_name") > "$checksum"
                 fi
                 ;;
             esac
-          done < <(find release-assets -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.deb' -o -name '*.apk' -o -name '*.ipa' \) -print)
+          done < <(find release-assets -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.deb' -o -name '*.apk' -o -name '*.ipa' -o -name '*.ps1' -o -name '*.sh' \) -print)
           find release-assets -type f -print
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Setup-v*.exe' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Portable-v*.zip' | wc -l)" -eq 1
@@ -427,6 +448,10 @@ jobs:
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Setup-v*.exe.sha256' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-CLI-Install-v*.zip.sha256' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-CLI-Install-v*.zip.sha256' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'install-cli.ps1' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'install-cli.sh' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'install-cli.ps1.sha256' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'install-cli.sh.sha256' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Android-v*.apk.sha256' | wc -l)" -eq 1
 
       - name: Publish prerelease

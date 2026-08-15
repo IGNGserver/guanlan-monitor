@@ -8,6 +8,28 @@
 
 请从 [GitHub Releases](https://github.com/IGNGserver/guanlan-monitor/releases/latest) 下载与当前版本对应的客户端。
 
+### CLI UI（Windows/Linux）
+
+CLI Release 包现在包含 `dsc` 终端配置界面、采集器和本地 backend。安装脚本固定指向
+指定的 GitHub Release tag，不从 `main` 分支拉取源码；脚本下载后的 ZIP 还会校验
+SHA-256。将命令中的 `X.Y.Z` 替换为目标版本即可：
+
+```bash
+curl -fsSL https://github.com/IGNGserver/guanlan-monitor/releases/download/vX.Y.Z/install-cli.sh | bash -s -- --run
+```
+
+上面的 Linux 命令会安装到当前用户的 `~/.local/bin`，并立即进入 CLI UI；不使用
+`--run` 时，打开新终端后执行 `dsc`。Windows PowerShell 可执行：
+
+```powershell
+$script = Invoke-WebRequest 'https://github.com/IGNGserver/guanlan-monitor/releases/download/vX.Y.Z/install-cli.ps1'
+& ([scriptblock]::Create($script.Content)) -Run
+```
+
+进入页面后可以修改中枢连接、采样间隔、指标、硬件探针、云同步和采集器运行状态。
+常用无界面命令包括 `dsc status`、`dsc doctor`、`dsc config get`、`dsc config set`，
+退出 UI 不会停止后台 Agent；需要停止本地 CLI backend 时执行 `dsc shutdown`。
+
 ### Windows
 
 **推荐下载 `DeviceStateConsole-Windows-GUI-Setup-v<版本>.exe`。** 这是常规 Windows 安装程序，支持选择安装目录、开始菜单、桌面快捷方式、开机启动、更新、修复和卸载。
@@ -69,6 +91,7 @@ Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 
 - Windows：优先安装上方的观澜 setup，在应用内完成探测、采集和中枢连接配置。
 - Linux 桌面：优先安装上方的 GNOME `.deb`，在“本机 Agent”页完成配置；无桌面环境时使用 [Linux agent 安装脚本](deploy/install-agent.sh)。
 - 脚本式 agent：使用按版本下载的 [Linux 安装入口](deploy/install-agent-from-release.sh) 或 [Windows 安装入口](deploy/install-agent-from-release.ps1)，显式指定 Release 版本。
+- CLI UI：使用上面的按版本 `install-cli.sh`/`install-cli.ps1` 一键安装入口，安装后用 `dsc` 打开终端配置页面；它适合无桌面环境或偏好终端操作的 Windows/Linux 主机。
 - 安装后的 Windows/Linux CLI 可运行 `device-state-console-agent update`（Linux 使用 `sudo`），自动检查更高版本、校验 SHA-256 并完成服务重启；配置文件不会被覆盖。
 - 网页控制台：使用 `.env` 中的 `ACCESS_KEY` 登录，选择设备即可查看实时数据和历史图表。
 
@@ -84,6 +107,7 @@ Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 
 4. `DeviceStateConsole-Android-v<版本>.apk`。
 5. `DeviceStateConsole-Windows-CLI-Install-v<版本>.zip`。
 6. `DeviceStateConsole-Linux-CLI-Install-v<版本>.zip`。
+7. `install-cli.sh` 与 `install-cli.ps1`（固定版本 CLI UI 引导脚本）。
 
 仓库不会提交安装包、APK、密钥、日志或本机配置。发布资产只上传到 GitHub Release。
 
