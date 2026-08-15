@@ -25,7 +25,7 @@ const DEFAULT_METRIC_WINDOW: MetricWindow = "5m";
 const DEFAULT_TRAFFIC_MODE: TrafficCalendarMode = "day";
 
 export class DesktopController {
-  readonly bridge: Omit<DesktopRendererBridge, "subscribe" | "windowMinimize" | "windowToggleMaximize" | "windowClose">;
+  readonly bridge: Omit<DesktopRendererBridge, "subscribe" | "windowMinimize" | "windowToggleMaximize" | "windowDragStart" | "windowDragMove" | "windowDragEnd" | "windowClose">;
   private readonly agent: AgentManager;
   private readonly hub: HubClient;
   private readonly cache: DesktopCacheStore;
