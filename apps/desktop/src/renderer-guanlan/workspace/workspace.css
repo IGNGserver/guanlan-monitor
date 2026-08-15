@@ -1164,8 +1164,11 @@ kbd {
 .workspace-device-block--disk .workspace-device-block__marker { background: var(--workspace-green); box-shadow: 0 0 0 4px color-mix(in srgb, var(--workspace-green) 13%, transparent); }
 .workspace-device-block--gpu .workspace-device-block__marker { background: var(--workspace-amber); box-shadow: 0 0 0 4px color-mix(in srgb, var(--workspace-amber) 13%, transparent); }
 .workspace-device-block__charts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(150px, auto); gap: 12px; align-items: stretch; }
-.workspace-device-block__charts > .workspace-widget { min-width: 0; }
+.workspace-device-block__charts { grid-auto-rows: minmax(250px, auto); }
+.workspace-device-block__charts > .workspace-widget { min-width: 0; grid-row: auto; grid-column: span var(--widget-w, 2); }
+.workspace-device-block__charts > .workspace-widget--large { grid-column: 1 / -1; }
 .workspace-device-block__charts > .workspace-widget .telemetry-chart-card { min-width: 0; padding: 14px 15px; box-shadow: none; }
+.workspace-widget[data-widget-id="compute-cpu-facts"] { grid-column: 1 / -1; min-height: 420px; }
 .workspace-telemetry-empty { display: grid; min-height: 228px; place-items: center; padding: 20px; border: 1px dashed var(--workspace-border-strong); border-radius: var(--workspace-radius-md); color: var(--workspace-text-muted); background: var(--workspace-surface-subtle); font-size: 12px; text-align: center; }
 .workspace-instance-list { display: flex; flex-direction: column; }
 .workspace-instance-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 42px; border-top: 1px solid var(--workspace-border); }
@@ -1482,6 +1485,14 @@ kbd {
 .workspace-widget-drawer__item > button { flex: 0 0 auto; min-width: 48px; border: 1px solid var(--workspace-accent); border-radius: 7px; padding: 6px 8px; color: var(--workspace-accent); background: var(--workspace-accent-soft); font: inherit; font-size: 10px; cursor: pointer; }
 .workspace-widget-drawer__item > button:disabled { border-color: var(--workspace-border); color: var(--workspace-text-muted); background: transparent; cursor: not-allowed; opacity: .55; }
 .workspace-widget-drawer__item.is-unavailable { opacity: .68; }
+.workspace-widget-drawer__target-list { display: flex; flex-direction: column; gap: 8px; }
+.workspace-widget-drawer__target { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 14px; width: 100%; padding: 13px 14px; border: 1px solid var(--workspace-border); border-radius: 12px; color: var(--workspace-text); background: var(--workspace-surface-subtle); text-align: left; cursor: pointer; }
+.workspace-widget-drawer__target:hover { border-color: var(--workspace-accent); background: var(--workspace-accent-soft); }
+.workspace-widget-drawer__target > span { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.workspace-widget-drawer__target strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-widget-drawer__target small { overflow: hidden; color: var(--workspace-text-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-widget-drawer__target b { flex: 0 0 auto; color: var(--workspace-accent); font-size: 10px; font-weight: 650; }
+.workspace-widget-drawer__empty { display: grid; min-height: 180px; place-items: center; padding: 22px; border: 1px dashed var(--workspace-border-strong); border-radius: 12px; color: var(--workspace-text-muted); background: var(--workspace-surface-subtle); font-size: 11px; text-align: center; }
 .workspace-widget-drawer__footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 24px; border-top: 1px solid var(--workspace-border); color: var(--workspace-text-muted); font-size: 10px; }
 .workspace-widget-drawer__footer button { border: 1px solid var(--workspace-accent); border-radius: 7px; padding: 6px 12px; color: var(--workspace-accent); background: var(--workspace-accent-soft); font: inherit; font-size: 10px; cursor: pointer; }
 
@@ -1704,6 +1715,73 @@ kbd {
   min-height: 0;
   flex-direction: column;
   gap: 14px;
+}
+
+/* A telemetry widget is two deliberate pages: chart first, details second. */
+.telemetry-chart-card {
+  min-height: 0;
+}
+
+.telemetry-chart-card__pages {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  touch-action: pan-y;
+}
+
+.telemetry-chart-card__pages::-webkit-scrollbar {
+  display: none;
+}
+
+.telemetry-chart-card__page {
+  display: flex;
+  min-width: 0;
+  min-height: 100%;
+  flex: 0 0 100%;
+  flex-direction: column;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.telemetry-chart-card__page--chart {
+  min-height: 0;
+}
+
+.telemetry-chart-card__page--details {
+  min-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding-bottom: 2px;
+  touch-action: pan-y;
+}
+
+.telemetry-chart-card__page--details .telemetry-chart-card__details {
+  flex: 0 0 auto;
+  overflow: visible;
+  padding-right: 3px;
+}
+
+.workspace-widget__content > .telemetry-chart-card .telemetry-chart-card__pages--single {
+  overflow: hidden;
+}
+
+.workspace-widget__content > .telemetry-chart-card .telemetry-chart-card__page--chart .telemetry-chart-box {
+  height: auto;
+  min-height: 180px;
+  flex: 1 1 auto;
+}
+
+.workspace-widget__content > .telemetry-chart-card .telemetry-chart-card__details {
+  min-height: 0;
+  flex: 0 0 auto;
+  overflow: visible;
+  padding-right: 3px;
 }
 
 .workspace-telemetry-models {

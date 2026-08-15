@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type {
   DeviceMetricKey,
   DeviceSummary,
@@ -7,6 +7,7 @@ import type {
   MetricsResponse,
   SamplePoint,
   WidgetLayoutCatalogEntry,
+  WidgetInstanceConfig,
   WidgetVisualization
 } from "@dsc/shared";
 import {
@@ -37,7 +38,10 @@ type WidgetCatalogDefinition = {
   visualization: WidgetVisualization;
   visualizations: WidgetVisualization[];
   requires?: DeviceMetricKey[];
+  targetKind?: WidgetTargetKind;
 };
+
+type WidgetTargetKind = "cpu" | "disk" | "gpu" | "fan" | "network";
 
 type WidgetCatalogContext = {
   device: DeviceSummary;
@@ -60,7 +64,7 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
     widgetType: "hardware-system",
     title: "硬件与系统",
     description: "设备身份、操作系统、运行时间和硬件摘要。",
-    category: "设备摘要",
+    category: "系统",
     kind: "group",
     defaultSize: "large",
     visualization: "table",
@@ -75,7 +79,8 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
     defaultSize: "medium",
     visualization: "line",
     visualizations: ["line", "area", "bar", "number"],
-    requires: ["cpuUsage"]
+    requires: ["cpuUsage"],
+    targetKind: "cpu"
   },
   {
     widgetType: "memory-usage",
@@ -97,7 +102,8 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
     defaultSize: "medium",
     visualization: "area",
     visualizations: ["line", "area", "bar", "donut", "number"],
-    requires: ["diskUsage"]
+    requires: ["diskUsage"],
+    targetKind: "disk"
   },
   {
     widgetType: "disk-health",
@@ -108,7 +114,8 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
     defaultSize: "large",
     visualization: "table",
     visualizations: ["table", "donut", "number"],
-    requires: ["diskHealth"]
+    requires: ["diskHealth"],
+    targetKind: "disk"
   },
   {
     widgetType: "network-throughput",
@@ -119,29 +126,32 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
     defaultSize: "large",
     visualization: "line",
     visualizations: ["line", "area", "bar", "number"],
-    requires: ["networkRxRate", "networkTxRate"]
+    requires: ["networkRxRate", "networkTxRate"],
+    targetKind: "network"
   },
   {
     widgetType: "gpu-load",
     title: "GPU 负载",
     description: "显卡核心、编码与解码负载趋势。",
-    category: "显卡与散热",
+    category: "显卡",
     kind: "content",
     defaultSize: "medium",
     visualization: "line",
     visualizations: ["line", "area", "bar", "number"],
-    requires: ["gpuUsage"]
+    requires: ["gpuUsage"],
+    targetKind: "gpu"
   },
   {
     widgetType: "fan-speed",
     title: "风扇转速",
     description: "风扇 RPM 趋势与当前转速。",
-    category: "显卡与散热",
+    category: "散热",
     kind: "content",
     defaultSize: "small",
     visualization: "line",
     visualizations: ["line", "area", "bar", "number"],
-    requires: ["fanRpm"]
+    requires: ["fanRpm"],
+    targetKind: "fan"
   },
   {
     widgetType: "system-processes",
@@ -354,7 +364,17 @@ function getWidgetLines(widgetType: string, metrics: MetricsResponse | null, tar
     const points = targetId ? series.disks?.find((item) => item.id === targetId)?.usedBytes ?? [] : series.diskUsedBytes;
     return { lines: [{ label: "磁盘已用", points, formatter: formatBytes }], valueFormatter: formatBytes };
   }
-  if (widgetType === "network-throughput") return { lines: [{ label: "接收 Rx", points: series.networkRxBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` }, { label: "发送 Tx", points: series.networkTxBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` }], valueFormatter: (value) => `${formatBytes(value)}/s` };
+  if (widgetType === "network-throughput") {
+    const targetNetwork = targetId ? series.networks?.find((item) => item.id === targetId) : undefined;
+    const networkLines = targetNetwork ? [
+      { label: "接收 Rx", points: targetNetwork.rxBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` },
+      { label: "发送 Tx", points: targetNetwork.txBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` }
+    ] : [];
+    return {
+      lines: networkLines.length ? networkLines : [{ label: "接收 Rx", points: series.networkRxBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` }, { label: "发送 Tx", points: series.networkTxBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` }],
+      valueFormatter: (value) => `${formatBytes(value)}/s`
+    };
+  }
   if (widgetType === "gpu-load") {
     const gpuLines = series.gpus?.length && targetId ? series.gpus.filter((item) => item.id === targetId) : series.gpus ?? [];
     return { lines: gpuLines.length ? [{ label: "核心", points: averageSamplePoints(gpuLines.map((item) => item.usagePercent)), formatter: (value: number) => `${Math.round(value)}%` }, { label: "编码", points: averageSamplePoints(gpuLines.map((item) => item.encodePercent)), formatter: (value: number) => `${Math.round(value)}%` }, { label: "解码", points: averageSamplePoints(gpuLines.map((item) => item.decodePercent)), formatter: (value: number) => `${Math.round(value)}%` }] : [{ label: "GPU 使用率", points: series.gpuUsagePercent, formatter: (value: number) => `${Math.round(value)}%` }], valueFormatter: (value) => `${Math.round(value)}%` };
@@ -401,7 +421,9 @@ function WidgetContent({ definition, entry, context }: { definition: WidgetCatal
   const visualization = visualizationFor(entry, definition);
   if (definition.widgetType === "hardware-system") return <DataTable rows={hardwareRows(device, latest)} />;
   if (definition.widgetType === "disk-health") {
-    const disks = latest?.disks ?? [];
+    const targetId = getTargetId(entry);
+    const allDisks = latest?.disks ?? [];
+    const disks = targetId ? allDisks.filter((disk) => disk.id === targetId) : allDisks;
     if (visualization === "donut") return <DonutChart data={healthDonutData(disks)} centerLabel={`${disks.length} 盘`} />;
     if (visualization === "number") {
       const healthy = disks.filter((disk) => diskHealthTone(disk.healthStatus) === "good").length;
@@ -418,12 +440,17 @@ function WidgetContent({ definition, entry, context }: { definition: WidgetCatal
   return <TrendChart lines={lines} visualization={visualization} valueFormatter={valueFormatter} />;
 }
 
-function targetOptions(widgetType: string, metrics: MetricsResponse | null): Array<{ id: string; name: string }> {
-  if (!metrics) return [];
-  if (widgetType === "cpu-usage") return metrics.series.cpus?.map((item) => ({ id: item.id, name: item.name })) ?? [];
-  if (widgetType === "disk-capacity") return metrics.series.disks?.map((item) => ({ id: item.id, name: item.model || item.name })) ?? [];
-  if (widgetType === "gpu-load") return metrics.series.gpus?.map((item) => ({ id: item.id, name: item.name })) ?? [];
-  if (widgetType === "fan-speed") return metrics.series.fans?.map((item) => ({ id: item.id, name: item.name })) ?? [];
+function targetOptions(definition: WidgetCatalogDefinition, metrics: MetricsResponse | null): Array<{ id: string; name: string; detail?: string }> {
+  if (!metrics || !definition.targetKind) return [];
+  const filterEnabled = <T extends { id: string }>(items: T[]) => {
+    const enabledIds = metrics.enabledDeviceIds?.[definition.targetKind!];
+    return Array.isArray(enabledIds) ? items.filter((item) => enabledIds.includes(item.id)) : items;
+  };
+  if (definition.targetKind === "cpu") return filterEnabled(metrics.series.cpus ?? []).map((item) => ({ id: item.id, name: item.name, detail: item.model }));
+  if (definition.targetKind === "disk") return filterEnabled(metrics.series.disks ?? []).map((item) => ({ id: item.id, name: item.model || item.name, detail: item.mountPoint }));
+  if (definition.targetKind === "gpu") return filterEnabled(metrics.series.gpus ?? []).map((item) => ({ id: item.id, name: item.name }));
+  if (definition.targetKind === "fan") return filterEnabled(metrics.series.fans ?? []).map((item) => ({ id: item.id, name: item.name, detail: item.interface }));
+  if (definition.targetKind === "network") return filterEnabled(metrics.series.networks ?? []).map((item) => ({ id: item.id, name: item.model || item.name, detail: item.macAddress }));
   return [];
 }
 
@@ -432,7 +459,7 @@ function DynamicWidgetCard({ entry, context }: { entry: WidgetLayoutCatalogEntry
   const definition = widgetDefinitionByType.get(entry.widgetType ?? "");
   if (!definition) return null;
   const visualization = visualizationFor(entry, definition);
-  const targets = targetOptions(definition.widgetType, context.metrics);
+  const targets = targetOptions(definition, context.metrics);
   const targetId = getTargetId(entry) ?? "all";
   return (
     <DesktopWidget
@@ -458,7 +485,7 @@ function DynamicWidgetCard({ entry, context }: { entry: WidgetLayoutCatalogEntry
             </select>}
           </div>
         </div>
-        <WidgetContent definition={definition} entry={entry} context={context} />
+        <WidgetContent key={`${entry.id}-${visualization}-${targetId}`} definition={definition} entry={entry} context={context} />
       </div>
     </DesktopWidget>
   );
@@ -467,6 +494,29 @@ function DynamicWidgetCard({ entry, context }: { entry: WidgetLayoutCatalogEntry
 export function DynamicWidgetCanvas({ device, metrics, showEmptyState = false, onOpenDrawer }: WidgetCatalogContext & { showEmptyState?: boolean; onOpenDrawer?: () => void }) {
   const layout = useWidgetLayout();
   const entries = layout.widgetEntries.filter((entry) => Boolean(entry.widgetType));
+
+  useEffect(() => {
+    if (!metrics || !layout.editable || layout.locked) return;
+    entries.forEach((entry) => {
+      const definition = widgetDefinitionByType.get(entry.widgetType ?? "");
+      if (!definition?.targetKind || getTargetId(entry)) return;
+      const targets = targetOptions(definition, metrics);
+      if (!targets.length) return;
+      layout.updateWidgetConfig(entry.id, { targetId: targets[0].id });
+      targets.slice(1).forEach((target) => {
+        layout.addWidget({
+          title: `${definition.title} · ${target.name}`,
+          kind: definition.kind,
+          defaultSize: definition.defaultSize,
+          widgetType: definition.widgetType,
+          category: definition.category,
+          visualization: visualizationFor(entry, definition),
+          config: { visualization: visualizationFor(entry, definition), targetId: target.id }
+        });
+      });
+    });
+  }, [entries, layout.addWidget, layout.editable, layout.locked, layout.updateWidgetConfig, metrics]);
+
   if (!entries.length) {
     return showEmptyState ? <div className="workspace-dynamic-empty"><strong>这个面板还没有自定义小组件</strong><span>打开小组件抽屉，从处理器、存储、网络和 SMART 数据中选择内容。</span>{onOpenDrawer && <button type="button" onClick={onOpenDrawer}>打开小组件抽屉</button>}</div> : null;
   }
@@ -475,23 +525,70 @@ export function DynamicWidgetCanvas({ device, metrics, showEmptyState = false, o
 
 export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogContext & { open: boolean; onClose: () => void }) {
   const layout = useWidgetLayout();
+  const [targetDefinition, setTargetDefinition] = useState<WidgetCatalogDefinition | null>(null);
   if (!open) return null;
   const grouped = WIDGET_CATALOG.reduce<Record<string, WidgetCatalogDefinition[]>>((groups, definition) => {
     (groups[definition.category] ??= []).push(definition);
     return groups;
   }, {});
+  const closeDrawer = () => {
+    setTargetDefinition(null);
+    onClose();
+  };
+  const addWidget = (definition: WidgetCatalogDefinition, target?: { id: string; name: string }) => {
+    const config: WidgetInstanceConfig = { visualization: definition.visualization };
+    if (target) config.targetId = target.id;
+    layout.setEditMode(true);
+    const id = layout.addWidget({
+      title: target ? `${definition.title} · ${target.name}` : definition.title,
+      kind: definition.kind,
+      defaultSize: definition.defaultSize,
+      widgetType: definition.widgetType,
+      category: definition.category,
+      visualization: definition.visualization,
+      config
+    });
+    if (id) setTargetDefinition(null);
+  };
+  const chooseDefinition = (definition: WidgetCatalogDefinition) => {
+    if (definition.targetKind) {
+      setTargetDefinition(definition);
+      return;
+    }
+    addWidget(definition);
+  };
+  const targetChoices = targetDefinition ? targetOptions(targetDefinition, metrics) : [];
+  const targetLabels: Record<WidgetTargetKind, string> = { cpu: "处理器", disk: "硬盘", gpu: "显卡", fan: "风扇", network: "网卡" };
   return (
-    <div className="workspace-widget-drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="workspace-widget-drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDrawer(); }}>
       <aside className="workspace-widget-drawer" role="dialog" aria-modal="true" aria-label="小组件抽屉">
-        <div className="workspace-widget-drawer__header"><div><span className="workspace-section-kicker">组件目录</span><h2>添加小组件</h2><p>可以重复添加同一种小组件，再为每个实例选择不同的目标和图表形式。</p></div><button type="button" onClick={onClose} aria-label="关闭小组件抽屉">×</button></div>
+        <div className="workspace-widget-drawer__header">
+          <div>
+            <span className="workspace-section-kicker">{targetDefinition ? "选择目标设备" : "组件目录"}</span>
+            <h2>{targetDefinition ? `选择${targetLabels[targetDefinition.targetKind ?? "cpu"]}实例` : "添加小组件"}</h2>
+            <p>{targetDefinition ? `“${targetDefinition.title}”会绑定到一个具体实例，避免跨设备或跨磁盘读取错误。` : "可以重复添加同一种小组件；需要实例数据的组件会先选择具体设备。"}</p>
+          </div>
+          <button type="button" onClick={closeDrawer} aria-label="关闭小组件抽屉">×</button>
+        </div>
         <div className="workspace-widget-drawer__body">
-          {Object.entries(grouped).map(([category, definitions]) => <section className="workspace-widget-drawer__group" key={category}><h3>{category}</h3>{definitions.map((definition) => {
-            const available = metricAvailable(definition, metrics);
+          {targetDefinition ? (
+            <section className="workspace-widget-drawer__target-list">
+              {targetChoices.length ? targetChoices.map((target) => (
+                <button className="workspace-widget-drawer__target" type="button" key={target.id} onClick={() => addWidget(targetDefinition, target)}>
+                  <span><strong>{target.name}</strong>{target.detail && <small>{target.detail}</small>}</span>
+                  <b>添加</b>
+                </button>
+              )) : <div className="workspace-widget-drawer__empty">当前时间范围没有可用的{targetLabels[targetDefinition.targetKind ?? "cpu"]}实例。</div>}
+            </section>
+          ) : Object.entries(grouped).map(([category, definitions]) => <section className="workspace-widget-drawer__group" key={category}><h3>{category}</h3>{definitions.map((definition) => {
+            const targets = targetOptions(definition, metrics);
+            const available = metricAvailable(definition, metrics) && (!definition.targetKind || targets.length > 0);
             const count = layout.widgetEntries.filter((entry) => entry.widgetType === definition.widgetType).length;
-            return <div className={`workspace-widget-drawer__item${available ? "" : " is-unavailable"}`} key={definition.widgetType}><div><strong>{definition.title}</strong><p>{definition.description}</p><small>{count ? `已添加 ${count} 个` : definition.requires?.length ? "需要对应采集指标" : "可直接使用"}</small></div><button type="button" disabled={!available} onClick={() => { layout.setEditMode(true); layout.addWidget({ title: definition.title, kind: definition.kind, defaultSize: definition.defaultSize, widgetType: definition.widgetType, category: definition.category, visualization: definition.visualization, config: { visualization: definition.visualization } }); }}>添加</button></div>;
+            const availability = definition.targetKind ? (targets.length ? "添加时选择具体实例" : "当前没有可用实例") : definition.requires?.length ? "需要对应采集指标" : "可直接使用";
+            return <div className={`workspace-widget-drawer__item${available ? "" : " is-unavailable"}`} key={definition.widgetType}><div><strong>{definition.title}</strong><p>{definition.description}</p><small>{count ? `已添加 ${count} 个 · ${availability}` : availability}</small></div><button type="button" disabled={!available} onClick={() => chooseDefinition(definition)}>{definition.targetKind ? "选择" : "添加"}</button></div>;
           })}</section>)}
         </div>
-        <div className="workspace-widget-drawer__footer"><span>{device.hostname} · 当前面板</span><button type="button" onClick={onClose}>完成</button></div>
+        <div className="workspace-widget-drawer__footer"><span>{targetDefinition ? "选择后会绑定到当前设备" : `${device.hostname} · 当前面板`}</span>{targetDefinition ? <button type="button" onClick={() => setTargetDefinition(null)}>返回目录</button> : <button type="button" onClick={closeDrawer}>完成</button>}</div>
       </aside>
     </div>
   );

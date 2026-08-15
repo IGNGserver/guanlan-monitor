@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, SamplePoint, SystemStats, WidgetLayoutDocument, WidgetPanelMetadata } from "@dsc/shared";
 import clsx from "clsx";
@@ -17,7 +17,7 @@ import {
   type WidgetKind,
   type WidgetSize
 } from "./WidgetLayout";
-import { DynamicWidgetCanvas, WIDGET_CATALOG, WidgetDrawer } from "./widgetCatalog";
+import { DynamicWidgetCanvas, WidgetDrawer } from "./widgetCatalog";
 import "./workspace.css";
 
 type IconName =
@@ -301,12 +301,54 @@ function TelemetryChartCard({
   const primaryPoints = activeSeries[0]?.points ?? [];
   const [selectedIndex, setSelectedIndex] = useState(Math.max(primaryPoints.length - 1, 0));
   const [isHovering, setIsHovering] = useState(false);
+  const [detailPage, setDetailPage] = useState<0 | 1>(0);
+  const pagesRef = useRef<HTMLDivElement>(null);
+  const detailsRef = useRef<HTMLDivElement>(null);
+  const pointerStartYRef = useRef<number | null>(null);
   const chartId = useId().replace(/:/g, "");
 
   useEffect(() => {
     setSelectedIndex(Math.max(primaryPoints.length - 1, 0));
     setIsHovering(false);
+    setDetailPage(0);
+    pagesRef.current?.scrollTo?.({ top: 0, behavior: "auto" });
   }, [primaryPoints.length, primaryPoints.at(-1)?.timestamp]);
+
+  const goToPage = (page: 0 | 1) => {
+    setDetailPage(page);
+    const pages = pagesRef.current;
+    pages?.scrollTo?.({ top: page * pages.clientHeight, behavior: "smooth" });
+  };
+
+  const handlePageWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    if (Math.abs(event.deltaY) < 4) return;
+    if (event.deltaY > 0 && detailPage === 0) {
+      event.preventDefault();
+      goToPage(1);
+      return;
+    }
+    if (event.deltaY < 0 && detailPage === 1 && (detailsRef.current?.scrollTop ?? 0) <= 1) {
+      event.preventDefault();
+      goToPage(0);
+    }
+  };
+
+  const handlePagePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    pointerStartYRef.current = event.clientY;
+  };
+
+  const handlePagePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const startY = pointerStartYRef.current;
+    pointerStartYRef.current = null;
+    if (startY == null || Math.abs(event.clientY - startY) < 24) return;
+    const deltaY = event.clientY - startY;
+    if (deltaY < 0 && detailPage === 0) {
+      goToPage(1);
+      return;
+    }
+    if (deltaY < 0 && detailPage === 1 && (detailsRef.current?.scrollTop ?? 0) <= 1) goToPage(0);
+  };
 
   if (!activeSeries.length || !primaryPoints.length) {
     const emptyCard = (
@@ -318,10 +360,14 @@ function TelemetryChartCard({
           </div>
           {controls && <div className="telemetry-chart-controls">{controls}</div>}
         </div>
-        <div className="workspace-trend workspace-trend--empty">
-          <div className="workspace-trend-empty">{emptyMessage}</div>
+        <div className="telemetry-chart-card__pages telemetry-chart-card__pages--single">
+          <div className="telemetry-chart-card__page telemetry-chart-card__page--chart">
+            <div className="workspace-trend workspace-trend--empty">
+              <div className="workspace-trend-empty">{emptyMessage}</div>
+            </div>
+            {footer && <div className="telemetry-chart-card__details"><div className="telemetry-chart-card__footer">{footer}</div></div>}
+          </div>
         </div>
-        {footer && <div className="telemetry-chart-card__details"><div className="telemetry-chart-card__footer">{footer}</div></div>}
       </Surface>
     );
     return widgetId ? <DesktopWidget id={widgetId} templateId={widgetTemplateId} title={title} kind={widgetKind} defaultSize={widgetDefaultSize}>{emptyCard}</DesktopWidget> : emptyCard;
@@ -391,8 +437,10 @@ function TelemetryChartCard({
         {controls && <div className="telemetry-chart-controls">{controls}</div>}
       </div>
 
-      <div className="telemetry-chart-box">
-        <div className="telemetry-chart-plot" onPointerDown={selectPoint} onPointerMove={selectPoint} onPointerEnter={selectPoint} onPointerLeave={stopHover}>
+      <div className="telemetry-chart-card__pages" ref={pagesRef} onWheel={handlePageWheel} onPointerDown={handlePagePointerDown} onPointerUp={handlePagePointerUp} onPointerCancel={() => { pointerStartYRef.current = null; }}>
+        <div className="telemetry-chart-card__page telemetry-chart-card__page--chart">
+          <div className="telemetry-chart-box">
+            <div className="telemetry-chart-plot" onPointerDown={selectPoint} onPointerMove={selectPoint} onPointerEnter={selectPoint} onPointerLeave={stopHover}>
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
           <defs>
             <linearGradient id={gradientOneId} x1="0" x2="0" y1="0" y2="1">
@@ -464,34 +512,38 @@ function TelemetryChartCard({
             </div>
           </div>
         )}
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div className="telemetry-chart-card__details">
-        {/* 统计标盘 (Cur / Avg / Max / Min) */}
-        <div className="telemetry-chart-stats">
-          {statsList.map((st, idx) => (
-            <React.Fragment key={st.label}>
-              <div className={`telemetry-stat-item ${idx === 0 ? "stat-primary" : idx === 1 ? "stat-green" : "stat-amber"}`}>
-                <label>{st.label} (当前)</label>
-                <strong>{st.formatter(st.cur)}</strong>
-              </div>
-              <div className="telemetry-stat-item">
-                <label>平均 (Avg)</label>
-                <strong>{st.formatter(st.avg)}</strong>
-              </div>
-              <div className="telemetry-stat-item">
-                <label>峰值 (Max)</label>
-                <strong>{st.formatter(st.max)}</strong>
-              </div>
-              <div className="telemetry-stat-item">
-                <label>谷值 (Min)</label>
-                <strong>{st.formatter(st.min)}</strong>
-              </div>
-            </React.Fragment>
-          ))}
+        <div className="telemetry-chart-card__page telemetry-chart-card__page--details" ref={detailsRef}>
+          <div className="telemetry-chart-card__details">
+            {/* 统计标盘 (Cur / Avg / Max / Min) */}
+            <div className="telemetry-chart-stats">
+              {statsList.map((st, idx) => (
+                <React.Fragment key={st.label}>
+                  <div className={`telemetry-stat-item ${idx === 0 ? "stat-primary" : idx === 1 ? "stat-green" : "stat-amber"}`}>
+                    <label>{st.label} (当前)</label>
+                    <strong>{st.formatter(st.cur)}</strong>
+                  </div>
+                  <div className="telemetry-stat-item">
+                    <label>平均 (Avg)</label>
+                    <strong>{st.formatter(st.avg)}</strong>
+                  </div>
+                  <div className="telemetry-stat-item">
+                    <label>峰值 (Max)</label>
+                    <strong>{st.formatter(st.max)}</strong>
+                  </div>
+                  <div className="telemetry-stat-item">
+                    <label>谷值 (Min)</label>
+                    <strong>{st.formatter(st.min)}</strong>
+                  </div>
+                </React.Fragment>
+              ))}
+            </div>
+            {footer && <div className="telemetry-chart-card__footer">{footer}</div>}
+          </div>
         </div>
-        {footer && <div className="telemetry-chart-card__footer">{footer}</div>}
       </div>
     </Surface>
   );
@@ -1126,6 +1178,10 @@ function TelemetrySection({
 }
 
 function TelemetryDeviceBlock({
+  kind = "cpu",
+  eyebrow = "设备实例",
+  title = "设备详情",
+  subtitle,
   children
 }: {
   kind?: "cpu" | "disk" | "gpu" | "network" | "fan";
@@ -1137,7 +1193,19 @@ function TelemetryDeviceBlock({
   widgetTemplateId?: string;
   widgetDefaultSize?: WidgetSize;
 }) {
-  return <>{children}</>;
+  return (
+    <article className={`workspace-device-block workspace-device-block--${kind}`}>
+      <header className="workspace-device-block__header">
+        <div className="workspace-device-block__identity">
+          <span className="workspace-device-block__eyebrow">{eyebrow}</span>
+          <h4>{title}</h4>
+          {subtitle && <p>{subtitle}</p>}
+        </div>
+        <span className="workspace-device-block__marker" aria-hidden="true" />
+      </header>
+      <div className="workspace-device-block__charts">{children}</div>
+    </article>
+  );
 }
 
 type TelemetryInstanceSummary = {
@@ -1285,25 +1353,9 @@ function createDynamicLayout(source: WidgetLayoutDocument | undefined): WidgetLa
 }
 
 function createStarterDynamicLayout(): WidgetLayoutDocument {
-  const starter = WIDGET_CATALOG.slice(0, 4);
-  const catalog: WidgetLayoutDocument["catalog"] = {};
-  const placements: WidgetLayoutDocument["placements"] = {};
-  starter.forEach((definition, index) => {
-    const id = `starter-${definition.widgetType}`;
-    const size = definition.defaultSize;
-    const width = size === "large" ? 12 : size === "small" ? 3 : 6;
-    catalog[id] = {
-      title: definition.title,
-      kind: definition.kind,
-      defaultSize: size,
-      widgetType: definition.widgetType,
-      category: definition.category,
-      visualization: definition.visualization,
-      config: { visualization: definition.visualization }
-    };
-    placements[id] = { x: width === 12 ? 1 : index % 2 ? 7 : 1, y: 1 + Math.floor(index / 2) * 3, w: width, h: 2, size, hidden: false };
-  });
-  return { version: 4, placements, catalog, snapToGrid: true };
+  // Instance-backed widgets must be added through the drawer so the user can
+  // bind each one to an exact CPU, disk, GPU, fan or network device.
+  return { version: 4, placements: {}, catalog: {}, snapToGrid: true };
 }
 
 function WidgetPanelBar({
@@ -1580,7 +1632,7 @@ function DevicePage() {
           <TelemetryChartCard widgetId="overview-network-average" title="网卡平均吞吐" subtitle={`全部 ${networkInstances.length} 个网卡实例的平均值`} series={[{ label: "平均接收 (Rx)", points: networkAverageRx, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "平均发送 (Tx)", points: networkAverageTx, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} footer={<TelemetryModelList label="已采集网卡型号" items={networkModelItems} />} />
           <TelemetryChartCard widgetId="overview-gpu-average" title="GPU 平均使用率" subtitle={`全部 ${gpuInstances.length} 个显卡实例的平均值`} series={[{ label: "平均核心", points: gpuAverageUsage }, { label: "平均编码", points: gpuAverageEncode }, { label: "平均解码", points: gpuAverageDecode }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
           <TelemetryChartCard widgetId="overview-gpu-memory" title="GPU 平均显存已用容量" subtitle={`${gpuMemorySummary} · 按显卡实例平均`} series={[{ label: "平均显存已用", points: gpuAverageMemoryUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
-          {fanInstances.length ? fanInstances.map((fan, index) => <TelemetryChartCard key={`overview-fan-${fan.id}`} widgetId={`overview-fan-${fan.id}`} widgetTemplateId={`overview-fan-${index}`} title={`${fan.name} · 风扇转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : <div className="workspace-telemetry-empty">当前时间范围没有可用的风扇实例序列</div>}
+          {fanInstances.length ? fanInstances.map((fan, index) => <TelemetryChartCard key={`overview-fan-${fan.id}`} widgetId={`overview-fan-${fan.id}`} widgetTemplateId={`overview-fan-${index}`} title={`${fan.name} · 风扇转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : null}
         </TelemetrySection>
       )}
 
@@ -1677,7 +1729,7 @@ function DevicePage() {
               <TelemetryChartCard widgetId="gpu-summary-temperature" title="温度" subtitle="GPU 设备汇总" emptyMessage="等待 GPU 温度传感器" series={[{ label: "温度", points: series.gpuTemperatureC ?? [], valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
             </TelemetryDeviceBlock>
           )}
-          {fanInstances.length ? fanInstances.map((fan, index) => <TelemetryChartCard key={`thermal-fan-${fan.id}`} widgetId={`thermal-fan-${fan.id}`} widgetTemplateId={`thermal-fan-${index}`} title={`${fan.name} · 转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm, valueFormatter: (v) => `${Math.round(v)} RPM` }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : <div className="workspace-telemetry-empty">当前时间范围没有可用的风扇实例序列</div>}
+          {fanInstances.length ? fanInstances.map((fan, index) => <TelemetryChartCard key={`thermal-fan-${fan.id}`} widgetId={`thermal-fan-${fan.id}`} widgetTemplateId={`thermal-fan-${index}`} title={`${fan.name} · 转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm, valueFormatter: (v) => `${Math.round(v)} RPM` }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : null}
           </TelemetrySection>
       )}
 
