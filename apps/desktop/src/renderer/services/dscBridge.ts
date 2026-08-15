@@ -100,6 +100,18 @@ class SafeDscBridge implements DesktopRendererBridge {
     return this.requireBridge().windowToggleMaximize();
   }
 
+  windowDragStart(screenX: number, screenY: number): void {
+    this.bridge?.windowDragStart(screenX, screenY);
+  }
+
+  windowDragMove(screenX: number, screenY: number): void {
+    this.bridge?.windowDragMove(screenX, screenY);
+  }
+
+  windowDragEnd(): void {
+    this.bridge?.windowDragEnd();
+  }
+
   async windowClose(): Promise<void> {
     return this.requireBridge().windowClose();
   }

@@ -942,6 +942,9 @@ export interface DesktopRendererBridge {
   openExternal(url: string): Promise<void>;
   windowMinimize(): Promise<void>;
   windowToggleMaximize(): Promise<boolean>;
+  windowDragStart(screenX: number, screenY: number): void;
+  windowDragMove(screenX: number, screenY: number): void;
+  windowDragEnd(): void;
   windowClose(): Promise<void>;
   exit(): Promise<void>;
   subscribe(listener: (snapshot: DesktopSnapshot) => void): () => void;

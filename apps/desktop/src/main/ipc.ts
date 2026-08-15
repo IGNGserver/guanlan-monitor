@@ -13,6 +13,8 @@ import { DesktopController } from "./controller.js";
 import { IPC_CHANNELS } from "../ipc-contract.js";
 
 export function registerIpc(controller: DesktopController, getWindow: () => BrowserWindow | null, markQuitting: () => void): void {
+  const windowDragOffsets = new Map<number, { x: number; y: number }>();
+
   ipcMain.handle(IPC_CHANNELS.getSnapshot, (_event, request?: DesktopSnapshotRequest) => controller.getSnapshot(asSnapshotRequest(request)));
   ipcMain.handle(IPC_CHANNELS.refresh, (_event, request?: DesktopSnapshotRequest) => controller.refresh(asSnapshotRequest(request)));
   ipcMain.handle(IPC_CHANNELS.updateLocalConfig, (_event, patch: DesktopConfigPatch) => controller.updateLocalConfig(asConfigPatch(patch)));
@@ -39,6 +41,24 @@ export function registerIpc(controller: DesktopController, getWindow: () => Brow
     else window.maximize();
     return window.isMaximized();
   });
+  ipcMain.on(IPC_CHANNELS.windowDragStart, (event, screenX: unknown, screenY: unknown) => {
+    windowDragOffsets.delete(event.sender.id);
+    if (!isFiniteScreenCoordinate(screenX) || !isFiniteScreenCoordinate(screenY)) return;
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window || window.isDestroyed() || window.isMaximized()) return;
+    const [windowX, windowY] = window.getPosition();
+    windowDragOffsets.set(event.sender.id, { x: screenX - windowX, y: screenY - windowY });
+  });
+  ipcMain.on(IPC_CHANNELS.windowDragMove, (event, screenX: unknown, screenY: unknown) => {
+    if (!isFiniteScreenCoordinate(screenX) || !isFiniteScreenCoordinate(screenY)) return;
+    const offset = windowDragOffsets.get(event.sender.id);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!offset || !window || window.isDestroyed() || window.isMaximized()) return;
+    window.setPosition(Math.round(screenX - offset.x), Math.round(screenY - offset.y));
+  });
+  ipcMain.on(IPC_CHANNELS.windowDragEnd, (event) => {
+    windowDragOffsets.delete(event.sender.id);
+  });
   ipcMain.handle(IPC_CHANNELS.windowClose, () => {
     getWindow()?.close();
   });
@@ -51,6 +71,10 @@ export function registerIpc(controller: DesktopController, getWindow: () => Brow
   controller.subscribe((snapshot) => {
     getWindow()?.webContents.send(IPC_CHANNELS.snapshot, snapshot);
   });
+}
+
+function isFiniteScreenCoordinate(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function asString(value: unknown, field: string): string {

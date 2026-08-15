@@ -129,12 +129,14 @@ select:focus-visible {
 
 .workspace-windowbar__drag {
   display: flex;
+  flex: 1;
   min-width: 0;
   height: 100%;
   align-items: center;
   gap: 8px;
   padding: 0 14px;
-  -webkit-app-region: drag;
+  cursor: default;
+  touch-action: none;
 }
 
 .workspace-windowbar__drag > strong { color: var(--workspace-text); font-size: 12px; font-weight: 680; letter-spacing: -0.01em; }

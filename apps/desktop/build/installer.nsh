@@ -6,11 +6,17 @@
   SetRegView 64
   StrCpy $INSTDIR "$PROGRAMFILES64\DeviceStateConsoleAgent"
 
-  ExecWait '"$SYSDIR\taskkill.exe" /F /T /IM "DeviceStateConsoleAgent.WinUI.exe"' $0
-  ExecWait '"$SYSDIR\taskkill.exe" /F /T /IM "windows-agent-backend.exe"' $0
-  ExecWait '"$SYSDIR\taskkill.exe" /F /T /IM "device-state-console-agent.exe"' $0
-  ExecWait '"$SYSDIR\taskkill.exe" /F /T /IM "Device State Console.exe"' $0
-  ExecWait '"$SYSDIR\taskkill.exe" /F /T /IM "观澜.exe"' $0
+  ; nsExec runs the console utility without opening a visible taskkill window.
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /F /T /IM "DeviceStateConsoleAgent.WinUI.exe"'
+  Pop $0
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /F /T /IM "windows-agent-backend.exe"'
+  Pop $0
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /F /T /IM "device-state-console-agent.exe"'
+  Pop $0
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /F /T /IM "Device State Console.exe"'
+  Pop $0
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /F /T /IM "观澜.exe"'
+  Pop $0
   Sleep 500
 !macroend
 

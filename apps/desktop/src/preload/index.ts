@@ -30,6 +30,9 @@ const bridge: DesktopRendererBridge = {
   openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.openExternal, url),
   windowMinimize: () => ipcRenderer.invoke(IPC_CHANNELS.windowMinimize),
   windowToggleMaximize: () => ipcRenderer.invoke(IPC_CHANNELS.windowToggleMaximize),
+  windowDragStart: (screenX: number, screenY: number) => { ipcRenderer.send(IPC_CHANNELS.windowDragStart, screenX, screenY); },
+  windowDragMove: (screenX: number, screenY: number) => { ipcRenderer.send(IPC_CHANNELS.windowDragMove, screenX, screenY); },
+  windowDragEnd: () => { ipcRenderer.send(IPC_CHANNELS.windowDragEnd); },
   windowClose: () => ipcRenderer.invoke(IPC_CHANNELS.windowClose),
   exit: () => ipcRenderer.invoke(IPC_CHANNELS.exit),
   subscribe: (listener: (snapshot: DesktopSnapshot) => void) => {

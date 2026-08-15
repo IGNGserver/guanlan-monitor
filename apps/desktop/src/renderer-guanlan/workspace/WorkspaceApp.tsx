@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, SamplePoint, SystemStats, WidgetLayoutDocument, WidgetPanelMetadata } from "@dsc/shared";
 import clsx from "clsx";
 import appIcon from "../assets/app-icon.png";
+import { dscBridge } from "../../renderer/services/dscBridge";
 import {
   SettingsSection,
   WorkspaceProvider,
@@ -833,13 +834,43 @@ function SettingsSidebar() {
 function WindowTitleBar() {
   const { minimizeWindow, toggleMaximizeWindow, closeWindow } = useWorkspace();
   const [isMaximized, setIsMaximized] = useState(false);
+  const dragPointerId = useRef<number | null>(null);
+
   const toggleMaximize = async () => {
     const next = await toggleMaximizeWindow();
     setIsMaximized(next);
   };
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    dragPointerId.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dscBridge.windowDragStart(event.screenX, event.screenY);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragPointerId.current !== event.pointerId) return;
+    dscBridge.windowDragMove(event.screenX, event.screenY);
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragPointerId.current !== event.pointerId) return;
+    dragPointerId.current = null;
+    dscBridge.windowDragEnd();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
   return (
     <header className="workspace-windowbar">
-      <div className="workspace-windowbar__drag" onDoubleClick={() => void toggleMaximize()}>
+      <div
+        className="workspace-windowbar__drag"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onLostPointerCapture={handlePointerUp}
+        onDoubleClick={() => void toggleMaximize()}
+      >
         <img className="workspace-windowbar__mark-img" src={appIcon} alt="观澜" />
         <strong>观澜</strong>
         <span className="workspace-windowbar__separator" aria-hidden="true" />

@@ -17,6 +17,9 @@ export const IPC_CHANNELS = {
   openExternal: "dsc:open-external",
   windowMinimize: "dsc:window-minimize",
   windowToggleMaximize: "dsc:window-toggle-maximize",
+  windowDragStart: "dsc:window-drag-start",
+  windowDragMove: "dsc:window-drag-move",
+  windowDragEnd: "dsc:window-drag-end",
   windowClose: "dsc:window-close",
   exit: "dsc:exit",
   snapshot: "dsc:snapshot"

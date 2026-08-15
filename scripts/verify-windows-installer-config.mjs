@@ -25,6 +25,8 @@ const checks = [
   [installer.includes("$PROGRAMFILES64\\DeviceStateConsoleAgent"), "The previous fixed Program Files path must be enforced."],
   [installer.includes("$PROGRAMFILES64\\Device State Console"), "The current incorrect Electron path must be migrated."],
   [installer.includes("!macro customInit"), "The installer initialization hook must be present."],
+  [installer.includes("nsExec::Exec"), "Process cleanup must use the hidden nsExec runner."],
+  [!/(?<!:)\b(?:ExecWait|Exec)\s+['"][^'\n]*taskkill\\.exe/i.test(installer), "taskkill must not be launched through a visible Exec/ExecWait command."],
   [installer.includes("!macro customInstall"), "The installer migration hook must be present."],
   [installer.includes("!macro customUnInstall"), "The uninstall cleanup hook must be present."],
   [installer.includes("DeleteRegKey"), "The obsolete installer registrations must be cleaned."],
