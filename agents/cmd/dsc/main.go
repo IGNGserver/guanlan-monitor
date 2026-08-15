@@ -265,7 +265,7 @@ func runControl(action string) error {
 	if err != nil {
 		return err
 	}
-	printStateSummary(state)
+	printStateSummary(&state)
 	return nil
 }
 
@@ -647,7 +647,7 @@ func controlUI(client *backendClient, reader *bufio.Reader) error {
 		return err
 	}
 	if state.ConfigPath != "" {
-		printStateSummary(state)
+		printStateSummary(&state)
 	}
 	return nil
 }
