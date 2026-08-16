@@ -32,6 +32,7 @@ const checks = [
   [!/(?<!:)\b(?:ExecWait|Exec)\s+['"][^'\n]*taskkill\\.exe/i.test(installer), "taskkill must not be launched through a visible Exec/ExecWait command."],
   [installer.includes("!macro customInstall"), "The installer migration hook must be present."],
   [installer.includes("!macro customFinishPage\n!ifndef BUILD_UNINSTALLER"), "The installer finish page customization must be scoped at macro expansion time."],
+  [installer.includes("!undef MUI_FINISHPAGE_RUN\n  !endif\n!endif\n!macroend"), "The installer finish page conditional must be closed before the macro ends."],
   [installer.includes("--dsc-installer-restore=window"), "The installer must restore a previously visible window."],
   [installer.includes("--dsc-installer-restore=tray"), "The installer must restore a previously tray-only instance."],
   [installer.includes("!macro customUnInstall"), "The uninstall cleanup hook must be present."],

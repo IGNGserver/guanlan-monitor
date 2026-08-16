@@ -71,6 +71,7 @@
   !ifdef MUI_FINISHPAGE_RUN
     !undef MUI_FINISHPAGE_RUN
   !endif
+!endif
 !macroend
 
 !macro customInit
