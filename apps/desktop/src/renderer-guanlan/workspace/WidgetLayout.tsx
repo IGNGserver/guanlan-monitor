@@ -520,10 +520,10 @@ export function WidgetLayoutProvider({
     const placement = draft.placements[definition.id];
     return {
       size: placement?.size ?? definition.defaultSize,
-      hidden: editable && placement?.hidden === true,
+      hidden: placement?.hidden === true,
       placement
     };
-  }, [draft.placements, editable, locked]);
+  }, [draft.placements, locked]);
 
   const getWidgetSize = useCallback((id: string, defaultSize: WidgetSize): WidgetSize => {
     if (locked) return defaultSize;

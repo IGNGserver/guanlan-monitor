@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, SamplePoint, SystemStats, WidgetLayoutDocument, WidgetPanelMetadata } from "@dsc/shared";
 import clsx from "clsx";
@@ -1209,23 +1209,49 @@ function TelemetrySection({
 }
 
 function TelemetryDeviceBlock({
+  widgetId,
+  widgetTemplateId,
+  widgetDefaultSize = "large",
   kind = "cpu",
   eyebrow = "设备实例",
   title = "设备详情",
   subtitle,
   children
 }: {
+  widgetId?: string;
+  widgetTemplateId?: string;
+  widgetDefaultSize?: WidgetSize;
   kind?: "cpu" | "disk" | "gpu" | "network" | "fan";
   eyebrow?: string;
   title?: string;
   subtitle?: string;
   children: React.ReactNode;
-  widgetId?: string;
-  widgetTemplateId?: string;
-  widgetDefaultSize?: WidgetSize;
 }) {
+  const layout = useOptionalWidgetLayout();
+  const definition = useMemo(() => widgetId ? ({
+    id: widgetId,
+    templateId: widgetTemplateId,
+    title,
+    kind: "group" as WidgetKind,
+    defaultSize: widgetDefaultSize
+  }) : null, [title, widgetDefaultSize, widgetId, widgetTemplateId]);
+  const resolved = definition && layout ? layout.resolveWidget(definition) : undefined;
+  const editing = Boolean(definition && layout?.editable && layout.editMode);
+
+  useEffect(() => {
+    if (definition && layout?.registerWidget) layout.registerWidget(definition);
+  }, [definition, layout?.registerWidget]);
+
+  if (resolved?.hidden) return null;
+
   return (
-    <article className={`workspace-device-block workspace-device-block--${kind}`}>
+    <article className={`workspace-device-block workspace-device-block--${kind}${editing ? " workspace-device-block--editing" : ""}`}>
+      {editing && layout && definition && (
+        <div className="workspace-widget__tools workspace-device-block__tools" onPointerDown={(event) => event.stopPropagation()}>
+          <span className="workspace-widget__tool-title" title={title}>{title}</span>
+          <button className="workspace-widget__hide" type="button" onClick={() => layout.hideWidget(definition.id)}>隐藏</button>
+        </div>
+      )}
       <header className="workspace-device-block__header">
         <div className="workspace-device-block__identity">
           <span className="workspace-device-block__eyebrow">{eyebrow}</span>
@@ -1678,6 +1704,8 @@ function DevicePage() {
                <TelemetryDeviceBlock
                  key={`compute-cpu-${cpu.id}`}
                  kind="cpu"
+                 widgetId={`compute-cpu-device-${cpu.id}`}
+                 widgetTemplateId={`compute-cpu-device-${cpu.id}`}
                  eyebrow="CPU 实例"
                  title={cpuLabel}
                  subtitle={`${cpu.coreCount ?? "未知"} 核 · ${cpu.logicalCount ?? "未知"} 线程${cpu.l3CacheBytes ? ` · L3 ${formatBytes(cpu.l3CacheBytes)}` : ""}`}
@@ -1712,6 +1740,8 @@ function DevicePage() {
               <TelemetryDeviceBlock
                 key={`disk-${disk.id}`}
                 kind="disk"
+                widgetId={`storage-disk-device-${disk.id}`}
+                widgetTemplateId={`storage-disk-device-${disk.id}`}
                 eyebrow="硬盘实例"
                 title={diskLabel}
                 subtitle={[disk.mountPoint, disk.filesystem].filter(Boolean).join(" · ") || "独立硬盘实例"}
@@ -1744,6 +1774,8 @@ function DevicePage() {
               <TelemetryDeviceBlock
                 key={`gpu-${gpu.id}`}
                 kind="gpu"
+                widgetId={`gpu-device-${gpu.id}`}
+                widgetTemplateId={`gpu-device-${gpu.id}`}
                 eyebrow="显卡实例"
                 title={gpuLabel}
                 subtitle={gpuLatest ? `${formatCapacitySummary(gpuLatest.memoryUsedBytes, gpuLatest.memoryTotalBytes)} · ${temperatureSubtitle}` : temperatureSubtitle}

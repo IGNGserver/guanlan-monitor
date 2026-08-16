@@ -1158,6 +1158,7 @@ kbd {
 .workspace-cpu-fact strong { display: block; overflow: hidden; margin-top: 5px; color: var(--workspace-text); font-size: clamp(11px, 7.5cqw, 15px); font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-cpu-fact--duration strong { overflow-wrap: anywhere; text-wrap: balance; white-space: normal; line-height: 1.25; }
 .workspace-device-block { grid-column: 1 / -1; min-width: 0; padding: 16px; border: 1px solid var(--workspace-border); border-radius: 18px; background: color-mix(in srgb, var(--workspace-surface) 92%, var(--workspace-accent-soft)); box-shadow: var(--workspace-shadow-soft); }
+.workspace-device-block--editing { outline: 1px dashed color-mix(in srgb, var(--workspace-accent) 55%, var(--workspace-border)); outline-offset: 4px; }
 .workspace-device-block--cpu { border-top: 2px solid color-mix(in srgb, var(--workspace-accent) 70%, var(--workspace-border)); }
 .workspace-device-block--disk { border-top: 2px solid color-mix(in srgb, var(--workspace-green) 70%, var(--workspace-border)); }
 .workspace-device-block--gpu { border-top: 2px solid color-mix(in srgb, var(--workspace-amber) 70%, var(--workspace-border)); }
