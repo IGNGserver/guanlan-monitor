@@ -48,7 +48,7 @@
     ${If} $DSC_PREINSTALL_STATE == "window"
     ${OrIf} $DSC_PREINSTALL_STATE == "tray"
       ; Running/tray launches are automatic; do not ask the user again.
-      GetDlgItem $0 $MUI_HWND 1203
+      GetDlgItem $0 $HWNDPARENT 1203
       ShowWindow $0 ${SW_HIDE}
       Call DSC_StartApp
     ${EndIf}

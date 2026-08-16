@@ -27,6 +27,7 @@ const checks = [
   [installer.includes("!macro customInit"), "The installer initialization hook must be present."],
   [installer.includes("!define DSC_WINDOW_TITLE") && installer.includes("FindWindow $0 \"\" \"${DSC_WINDOW_TITLE}\""), "The installer must detect the existing Guanlan window."],
   [installer.includes("IsWindowVisible"), "The installer must distinguish a visible window from a tray-only instance."],
+  [installer.includes("GetDlgItem $0 $HWNDPARENT 1203"), "The installer must hide the finish-page launch checkbox through the NSIS dialog handle."],
   [installer.includes("nsExec::Exec"), "Process cleanup must use the hidden nsExec runner."],
   [!/(?<!:)\b(?:ExecWait|Exec)\s+['"][^'\n]*taskkill\\.exe/i.test(installer), "taskkill must not be launched through a visible Exec/ExecWait command."],
   [installer.includes("!macro customInstall"), "The installer migration hook must be present."],
