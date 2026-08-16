@@ -91,6 +91,7 @@ type WidgetLayoutContextValue = {
   addWidgetGroup: (group: Omit<WidgetDefinition, "id" | "groupId">, children: WidgetGroupChildDefinition[]) => string | null;
   removeWidget: (id: string) => void;
   updateWidgetConfig: (id: string, patch: WidgetInstanceConfig) => void;
+  compactLayout: () => void;
   getLayoutSnapshot: () => WidgetLayoutDocument;
 };
 
@@ -200,6 +201,10 @@ function sizeForGroupWidth(width: number, fallback: WidgetSize): WidgetSize {
   return fallback;
 }
 
+function isWidgetSize(value: unknown): value is WidgetSize {
+  return value === "large" || value === "medium" || value === "small";
+}
+
 function isGroupedEntry(id: string, catalog: Record<string, WidgetCatalogEntry>): boolean {
   const groupId = catalog[id]?.groupId;
   const parent = groupId ? catalog[groupId] : undefined;
@@ -243,8 +248,14 @@ function normalizePlacements(
     const packed: Record<string, WidgetPlacement> = {};
     for (const childId of children) {
       const child = normalized[childId];
-      if (!child.hidden && snapToGrid) {
-        const position = findNextFreePlacement(packed, child.size, child.x, child.y);
+      if (!child.hidden) {
+        // A device group is a scrollable, self-contained layout. Its charts
+        // must always pack inside that frame, even when the outer canvas is in
+        // free-positioning mode. Otherwise a newly-created group keeps the
+        // registration y-coordinates and its width is calculated incorrectly.
+        const preferredX = snapToGrid ? child.x : 1;
+        const preferredY = snapToGrid ? child.y : 1;
+        const position = findNextFreePlacement(packed, child.size, preferredX, preferredY);
         normalized[childId] = { ...child, ...position };
       }
       if (!normalized[childId].hidden) packed[childId] = normalized[childId];
@@ -253,7 +264,10 @@ function normalizePlacements(
     if (!group) continue;
     const visibleChildren = Object.values(packed);
     const occupiedWidth = visibleChildren.reduce((max, child) => Math.max(max, child.x + child.w - 1), 0);
-    const groupSize = visibleChildren.length ? sizeForGroupWidth(occupiedWidth, group.size) : "small";
+    const configuredSize = catalog[groupId]?.config?.sizeOverride;
+    const groupSize = isWidgetSize(configuredSize)
+      ? configuredSize
+      : visibleChildren.length ? sizeForGroupWidth(occupiedWidth, group.size) : "small";
     normalized[groupId] = normalizePlacement({ ...group, size: groupSize }, group.size);
   }
 
@@ -303,7 +317,11 @@ function moveWidgetWithAvoidance(layout: WidgetLayoutDocument, draggedId: string
   return { ...layout, placements };
 }
 
-function normalizeLayout(layout: WidgetLayoutDocument | null | undefined): WidgetLayoutDocument {
+type WidgetMutationOptions = {
+  compact?: boolean;
+};
+
+function normalizeLayout(layout: WidgetLayoutDocument | null | undefined, options: WidgetMutationOptions = {}): WidgetLayoutDocument {
   if (!layout) return emptyLayout();
   const catalog: Record<string, WidgetCatalogEntry> = {};
   const visualizations: WidgetVisualization[] = ["line", "area", "bar", "donut", "number", "table"];
@@ -345,10 +363,11 @@ function normalizeLayout(layout: WidgetLayoutDocument | null | undefined): Widge
       order: Number.isFinite(panel.order) ? Math.max(0, Math.round(panel.order)) : index
     }))
     .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
+  const compact = options.compact === true || layout.snapToGrid !== false;
   return {
     version: 4,
     catalog,
-    placements: normalizePlacements(placements, layout.snapToGrid !== false, catalog),
+    placements: normalizePlacements(placements, compact, catalog),
     snapToGrid: layout.snapToGrid !== false,
     ...(panels.length ? { panels } : {})
   };
@@ -602,10 +621,24 @@ export function WidgetLayoutProvider({
     return draft.placements[id]?.size ?? defaultSize;
   }, [draft.placements, locked]);
 
-  const mutateDraft = useCallback((mutator: (current: WidgetLayoutDocument) => WidgetLayoutDocument) => {
+  const mutateDraft = useCallback((mutator: (current: WidgetLayoutDocument) => WidgetLayoutDocument, options: WidgetMutationOptions = {}) => {
     if (!editable || locked) return;
     const current = draftRef.current;
-    const next = normalizeLayout(mutator(cloneLayout(current)));
+    const next = normalizeLayout(mutator(cloneLayout(current)), options);
+    pastRef.current = [...pastRef.current, current].slice(-HISTORY_LIMIT);
+    futureRef.current = [];
+    draftRef.current = next;
+    setDraft(next);
+    dirtyRef.current = true;
+    setDirty(true);
+    setHistoryVersion((value) => value + 1);
+  }, [editable, locked]);
+
+  const compactLayout = useCallback(() => {
+    if (!editable || locked) return;
+    const current = draftRef.current;
+    const next = normalizeLayout(current, { compact: true });
+    if (JSON.stringify(next.placements) === JSON.stringify(current.placements)) return;
     pastRef.current = [...pastRef.current, current].slice(-HISTORY_LIMIT);
     futureRef.current = [];
     draftRef.current = next;
@@ -635,6 +668,9 @@ export function WidgetLayoutProvider({
   const finishWidgetDrag = useCallback(() => {
     const session = dragSessionRef.current;
     if (session?.moved) {
+      const normalized = normalizeLayout(draftRef.current);
+      draftRef.current = normalized;
+      setDraft(normalized);
       pastRef.current = [...pastRef.current, session.base].slice(-HISTORY_LIMIT);
       futureRef.current = [];
       dirtyRef.current = true;
@@ -677,7 +713,7 @@ export function WidgetLayoutProvider({
       const position = findNextFreePlacement(topLevelPlacements(current.placements, current.catalog), definition.defaultSize);
       current.placements[id] = normalizePlacement({ ...position, size: definition.defaultSize });
       return current;
-    });
+    }, { compact: true });
     return id;
   }, [editable, locked, mutateDraft]);
 
@@ -713,7 +749,7 @@ export function WidgetLayoutProvider({
         current.placements[childId] = normalizePlacement({ x: 1, y: index + 1, size: child.defaultSize });
       });
       return current;
-    });
+    }, { compact: true });
     return groupId;
   }, [editable, locked, mutateDraft]);
 
@@ -751,7 +787,7 @@ export function WidgetLayoutProvider({
       delete current.catalog[id];
       delete current.placements[id];
       return current;
-    });
+    }, { compact: true });
   }, [mutateDraft]);
 
   const updateWidgetConfig = useCallback((id: string, patch: WidgetInstanceConfig) => {
@@ -770,9 +806,12 @@ export function WidgetLayoutProvider({
     mutateDraft((current) => {
       const existing = current.placements[id] ?? normalizePlacement({ size });
       current.placements[id] = normalizePlacement({ ...existing, size });
-      current.placements = normalizePlacements(current.placements, current.snapToGrid, current.catalog);
+      const entry = current.catalog[id];
+      if (entry?.kind === "group") {
+        entry.config = { ...(entry.config ?? {}), sizeOverride: size };
+      }
       return current;
-    });
+    }, { compact: true });
   }, [mutateDraft]);
 
   const hideWidget = useCallback((id: string) => {
@@ -782,7 +821,7 @@ export function WidgetLayoutProvider({
       current.placements[id] = placement;
       current.placements = normalizePlacements(current.placements, current.snapToGrid, current.catalog);
       return current;
-    });
+    }, { compact: true });
   }, [mutateDraft]);
 
   const restoreWidget = useCallback((id: string) => {
@@ -804,7 +843,7 @@ export function WidgetLayoutProvider({
       }
       current.placements[id] = placement;
       return current;
-    });
+    }, { compact: true });
   }, [mutateDraft]);
 
   const reorderWidgets = useCallback((draggedId: string, targetId: string) => {
@@ -1004,8 +1043,9 @@ export function WidgetLayoutProvider({
     addWidgetGroup,
     removeWidget,
     updateWidgetConfig,
+    compactLayout,
     getLayoutSnapshot
-  }), [addWidget, addWidgetGroup, applyTemplate, beginWidgetDrag, cancelWidgetDrag, deleteTemplate, dirty, draft.snapToGrid, draggingWidgetId, editable, editMode, exportLayout, finishWidgetDrag, getLayoutSnapshot, getWidgetSize, hideWidget, hiddenWidgets, historyVersion, importLayout, loading, locked, previewWidgetDrop, redo, registerWidget, remote.instanceLayout, remote.templates, removeWidget, reorderWidgets, resetDeviceLayout, resolveWidget, restoreWidget, saveAsTemplate, saveLayout, saving, scopeKey, syncMessage, templateKey, toggleSnapToGrid, undo, updateSize, updateWidgetConfig, widgetEntries]);
+  }), [addWidget, addWidgetGroup, applyTemplate, beginWidgetDrag, cancelWidgetDrag, compactLayout, deleteTemplate, dirty, draft.snapToGrid, draggingWidgetId, editable, editMode, exportLayout, finishWidgetDrag, getLayoutSnapshot, getWidgetSize, hideWidget, hiddenWidgets, historyVersion, importLayout, loading, locked, previewWidgetDrop, redo, registerWidget, remote.instanceLayout, remote.templates, removeWidget, reorderWidgets, resetDeviceLayout, resolveWidget, restoreWidget, saveAsTemplate, saveLayout, saving, scopeKey, syncMessage, templateKey, toggleSnapToGrid, undo, updateSize, updateWidgetConfig, widgetEntries]);
 
   return <WidgetLayoutContext.Provider value={contextValue}>{children}</WidgetLayoutContext.Provider>;
 }
@@ -1222,6 +1262,7 @@ export function WidgetLayoutToolbar({ onOpenWidgetDrawer }: { onOpenWidgetDrawer
 
   const handleToggleEditMode = async () => {
     if (!layout.editMode) {
+      layout.compactLayout();
       layout.setEditMode(true);
       return;
     }
