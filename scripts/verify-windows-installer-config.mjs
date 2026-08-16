@@ -30,7 +30,7 @@ const checks = [
   [installer.includes("nsExec::Exec"), "Process cleanup must use the hidden nsExec runner."],
   [!/(?<!:)\b(?:ExecWait|Exec)\s+['"][^'\n]*taskkill\\.exe/i.test(installer), "taskkill must not be launched through a visible Exec/ExecWait command."],
   [installer.includes("!macro customInstall"), "The installer migration hook must be present."],
-  [installer.includes("!macro customFinishPage"), "The installer finish page customization must be present."],
+  [installer.includes("!macro customFinishPage\n!ifndef BUILD_UNINSTALLER"), "The installer finish page customization must be scoped at macro expansion time."],
   [installer.includes("--dsc-installer-restore=window"), "The installer must restore a previously visible window."],
   [installer.includes("--dsc-installer-restore=tray"), "The installer must restore a previously tray-only instance."],
   [installer.includes("!macro customUnInstall"), "The uninstall cleanup hook must be present."],
