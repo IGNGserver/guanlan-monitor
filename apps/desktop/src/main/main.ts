@@ -53,7 +53,11 @@ if (!hasSingleInstanceLock) {
       show: false,
       frame: false,
       icon: appIcon.isEmpty() ? undefined : appIcon,
-      backgroundColor: "#f5f7fa",
+      // Native Windows materials need the web contents to leave the window
+      // background visible. Guanlan still paints an opaque surface through
+      // its renderer theme, while Mica/Acrylic can reveal the DWM backdrop.
+      backgroundColor: process.platform === "win32" ? "#00000000" : "#f5f7fa",
+      backgroundMaterial: process.platform === "win32" ? "none" : undefined,
       title: "观澜 · 设备状态控制台",
       autoHideMenuBar: true,
       webPreferences: {
