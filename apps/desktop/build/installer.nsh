@@ -56,6 +56,7 @@
 !endif
 !macroend
 
+!ifndef BUILD_UNINSTALLER
 !macro customFinishPage
   !define MUI_FINISHPAGE_RUN
   !define MUI_FINISHPAGE_RUN_FUNCTION "DSC_StartApp"
@@ -65,6 +66,7 @@
   !undef MUI_FINISHPAGE_RUN_FUNCTION
   !undef MUI_FINISHPAGE_RUN
 !macroend
+!endif
 
 !macro customInit
   SetRegView 64
