@@ -14,6 +14,17 @@ function resolveAppIconPath(): string {
   if (fs.existsSync(devIcon)) return devIcon;
   return resourceIcon;
 }
+
+type InstallerRestoreState = "window" | "tray";
+
+function getInstallerRestoreState(commandLine: string[]): InstallerRestoreState | null {
+  const argument = commandLine.find((value) => value === "--dsc-installer-restore=window" || value === "--dsc-installer-restore=tray");
+  if (argument === "--dsc-installer-restore=window") return "window";
+  if (argument === "--dsc-installer-restore=tray") return "tray";
+  return null;
+}
+
+const installerRestoreState = getInstallerRestoreState(process.argv);
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
@@ -78,7 +89,8 @@ if (!hasSingleInstanceLock) {
       mainWindow?.hide();
     });
     mainWindow.once("ready-to-show", () => {
-      if (!controller?.startupSettings.startMinimized) showWindow();
+      if (installerRestoreState === "tray") return;
+      if (installerRestoreState === "window" || !controller?.startupSettings.startMinimized) showWindow();
     });
 
     const devServerUrl = process.env.DSC_DEV_SERVER_URL ?? process.env.VITE_DEV_SERVER_URL;
@@ -108,7 +120,10 @@ if (!hasSingleInstanceLock) {
     tray.on("double-click", showWindow);
   };
 
-  app.on("second-instance", () => showWindow());
+  app.on("second-instance", (_event, commandLine) => {
+    if (getInstallerRestoreState(commandLine) === "tray") mainWindow?.hide();
+    else showWindow();
+  });
   app.on("before-quit", (event) => {
     if (quitting) return;
     event.preventDefault();

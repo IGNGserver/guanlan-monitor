@@ -8,41 +8,43 @@ html[data-dsc-material="acrylic"] #root {
 }
 
 html[data-dsc-material="mica"] {
-  --workspace-bg: rgb(245 247 250 / 78%);
-  --workspace-sidebar: rgb(238 242 246 / 72%);
-  --workspace-surface: rgb(255 255 255 / 80%);
-  --workspace-surface-subtle: rgb(248 250 252 / 70%);
-  --workspace-surface-hover: rgb(238 245 251 / 74%);
+  /* Let Windows provide the full native Mica backdrop; only controls and
+     cards add a light tint on top of it. */
+  --workspace-bg: transparent;
+  --workspace-sidebar: rgb(238 242 246 / 7%);
+  --workspace-surface: rgb(255 255 255 / 12%);
+  --workspace-surface-subtle: rgb(248 250 252 / 8%);
+  --workspace-surface-hover: rgb(238 245 251 / 14%);
   --workspace-shadow: 0 9px 28px rgba(30, 48, 67, 0.045);
   --workspace-shadow-soft: 0 2px 10px rgba(30, 48, 67, 0.035);
 }
 
 html[data-dsc-resolved-theme="dark"][data-dsc-material="mica"] {
-  --workspace-bg: rgb(20 24 29 / 82%);
-  --workspace-sidebar: rgb(25 30 36 / 78%);
-  --workspace-surface: rgb(28 34 41 / 82%);
-  --workspace-surface-subtle: rgb(32 39 47 / 76%);
-  --workspace-surface-hover: rgb(37 49 59 / 78%);
+  --workspace-bg: transparent;
+  --workspace-sidebar: rgb(25 30 36 / 10%);
+  --workspace-surface: rgb(28 34 41 / 14%);
+  --workspace-surface-subtle: rgb(32 39 47 / 10%);
+  --workspace-surface-hover: rgb(37 49 59 / 18%);
   --workspace-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
   --workspace-shadow-soft: 0 2px 12px rgba(0, 0, 0, 0.15);
 }
 
 html[data-dsc-material="acrylic"] {
-  --workspace-bg: rgb(245 247 250 / 62%);
-  --workspace-sidebar: rgb(238 242 246 / 58%);
-  --workspace-surface: rgb(255 255 255 / 70%);
-  --workspace-surface-subtle: rgb(248 250 252 / 58%);
-  --workspace-surface-hover: rgb(238 245 251 / 64%);
+  --workspace-bg: transparent;
+  --workspace-sidebar: rgb(238 242 246 / 4%);
+  --workspace-surface: rgb(255 255 255 / 8%);
+  --workspace-surface-subtle: rgb(248 250 252 / 5%);
+  --workspace-surface-hover: rgb(238 245 251 / 10%);
   --workspace-shadow: 0 9px 28px rgba(30, 48, 67, 0.055);
   --workspace-shadow-soft: 0 2px 10px rgba(30, 48, 67, 0.045);
 }
 
 html[data-dsc-resolved-theme="dark"][data-dsc-material="acrylic"] {
-  --workspace-bg: rgb(20 24 29 / 66%);
-  --workspace-sidebar: rgb(25 30 36 / 62%);
-  --workspace-surface: rgb(28 34 41 / 70%);
-  --workspace-surface-subtle: rgb(32 39 47 / 64%);
-  --workspace-surface-hover: rgb(37 49 59 / 68%);
+  --workspace-bg: transparent;
+  --workspace-sidebar: rgb(25 30 36 / 6%);
+  --workspace-surface: rgb(28 34 41 / 10%);
+  --workspace-surface-subtle: rgb(32 39 47 / 7%);
+  --workspace-surface-hover: rgb(37 49 59 / 13%);
   --workspace-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
   --workspace-shadow-soft: 0 2px 12px rgba(0, 0, 0, 0.19);
 }

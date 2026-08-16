@@ -1,10 +1,75 @@
 !define DSC_LEGACY_INNO_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\{E7EC0D43-10D7-4D88-BB80-6F1E901C3E7A}_is1"
 !define DSC_LEGACY_ELECTRON_APP_KEY "Software\26118358-b500-54e1-881b-7e549a465667"
 !define DSC_LEGACY_ELECTRON_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\26118358-b500-54e1-881b-7e549a465667"
+!define DSC_WINDOW_TITLE "观澜 · 设备状态控制台"
+
+!macro customHeader
+  Var DSC_PREINSTALL_STATE
+  Var DSC_RESTORE_LAUNCHED
+
+  Function DSC_CapturePreInstallState
+    StrCpy $DSC_PREINSTALL_STATE "not_started"
+    StrCpy $DSC_RESTORE_LAUNCHED "0"
+
+    ; A hidden BrowserWindow still has a native handle, so visibility
+    ; distinguishes a visible window from an app that is sitting in the tray.
+    FindWindow $0 "" "${DSC_WINDOW_TITLE}"
+    ${If} $0 != 0
+      System::Call 'user32::IsWindowVisible(i r0)i.r1'
+      ${If} $1 <> 0
+        StrCpy $DSC_PREINSTALL_STATE "window"
+      ${Else}
+        StrCpy $DSC_PREINSTALL_STATE "tray"
+      ${EndIf}
+    ${EndIf}
+  FunctionEnd
+
+  Function DSC_StartApp
+    ${If} $DSC_RESTORE_LAUNCHED == "1"
+      Return
+    ${EndIf}
+
+    ${If} $DSC_PREINSTALL_STATE == "window"
+      StrCpy $0 "--dsc-installer-restore=window"
+    ${ElseIf} $DSC_PREINSTALL_STATE == "tray"
+      StrCpy $0 "--dsc-installer-restore=tray"
+    ${ElseIf} ${isUpdated}
+      StrCpy $0 "--updated"
+    ${Else}
+      StrCpy $0 ""
+    ${EndIf}
+
+    ${StdUtils.ExecShellAsUser} $1 "$launchLink" "open" "$0"
+    StrCpy $DSC_RESTORE_LAUNCHED "1"
+  FunctionEnd
+
+  Function DSC_ShowFinishPage
+    ${If} $DSC_PREINSTALL_STATE == "window"
+    ${OrIf} $DSC_PREINSTALL_STATE == "tray"
+      ; Running/tray launches are automatic; do not ask the user again.
+      GetDlgItem $0 $MUI_HWND 1203
+      ShowWindow $0 ${SW_HIDE}
+      Call DSC_StartApp
+    ${EndIf}
+  FunctionEnd
+!macroend
+
+!macro customFinishPage
+  !define MUI_FINISHPAGE_RUN
+  !define MUI_FINISHPAGE_RUN_FUNCTION "DSC_StartApp"
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW "DSC_ShowFinishPage"
+  !insertmacro MUI_PAGE_FINISH
+  !undef MUI_PAGE_CUSTOMFUNCTION_SHOW
+  !undef MUI_FINISHPAGE_RUN_FUNCTION
+  !undef MUI_FINISHPAGE_RUN
+!macroend
 
 !macro customInit
   SetRegView 64
   StrCpy $INSTDIR "$PROGRAMFILES64\DeviceStateConsoleAgent"
+
+  ; Capture the app state before the cleanup commands terminate its process.
+  Call DSC_CapturePreInstallState
 
   ; nsExec runs the console utility without opening a visible taskkill window.
   nsExec::Exec '"$SYSDIR\taskkill.exe" /F /T /IM "DeviceStateConsoleAgent.WinUI.exe"'
