@@ -631,13 +631,33 @@ function isDeviceGroupDefinition(definition: WidgetCatalogDefinition | undefined
   return Boolean(definition?.deviceGroup);
 }
 
+function isSystemRenderedEntry(entry: WidgetLayoutCatalogEntry): boolean {
+  return entry.config?.systemRendered === true;
+}
+
+const deviceGroupEyebrows: Record<WidgetTargetKind, string> = {
+  cpu: "CPU 实例",
+  disk: "硬盘实例",
+  gpu: "显卡实例",
+  fan: "风扇实例",
+  network: "网卡实例"
+};
+
 function DynamicWidgetGroupCard({ entry, children, context }: { entry: WidgetLayoutCatalogEntry & { id: string }; children: Array<WidgetLayoutCatalogEntry & { id: string }>; context: WidgetCatalogContext }) {
   const definition = widgetDefinitionByType.get(entry.widgetType ?? "");
   if (!definition) return null;
+  const target = definition.targetKind
+    ? targetOptions(definition, context.metrics).find((item) => item.id === getTargetId(entry))
+    : undefined;
+  const frameTitle = target
+    ? definition.targetKind === "cpu" ? target.detail || target.name : target.name
+    : entry.title;
+  const frameSubtitle = target && definition.targetKind !== "cpu" ? target.detail || definition.description : definition.description;
   return (
     <DesktopWidget
       id={entry.id}
-      title={entry.title}
+      groupId={entry.groupId}
+      title={frameTitle}
       kind="group"
       defaultSize={entry.defaultSize}
       widgetType={definition.widgetType}
@@ -648,9 +668,9 @@ function DynamicWidgetGroupCard({ entry, children, context }: { entry: WidgetLay
     >
       <DeviceWidgetFrame
         kind={definition.targetKind ?? "generic"}
-        eyebrow="设备组"
-        title={entry.title}
-        subtitle={definition.description}
+        eyebrow={definition.targetKind ? deviceGroupEyebrows[definition.targetKind] : "设备组"}
+        title={frameTitle}
+        subtitle={frameSubtitle}
         count={`${children.length} 个图表`}
         contentClassName="workspace-device-block__charts--dynamic"
       >
@@ -674,6 +694,7 @@ function DynamicWidgetCard({ entry, context }: { entry: WidgetLayoutCatalogEntry
   return (
     <DesktopWidget
       id={entry.id}
+      groupId={entry.groupId}
       title={entry.title}
       kind={entry.kind}
       defaultSize={entry.defaultSize}
@@ -703,7 +724,7 @@ function DynamicWidgetCard({ entry, context }: { entry: WidgetLayoutCatalogEntry
 
 export function DynamicWidgetCanvas({ device, metrics, showEmptyState = false, onOpenDrawer }: WidgetCatalogContext & { showEmptyState?: boolean; onOpenDrawer?: () => void }) {
   const layout = useWidgetLayout();
-  const entries = layout.widgetEntries.filter((entry) => Boolean(entry.widgetType));
+  const entries = layout.widgetEntries.filter((entry) => Boolean(entry.widgetType) && !isSystemRenderedEntry(entry));
 
   useEffect(() => {
     if (!metrics || !layout.editable || layout.locked) return;
@@ -821,7 +842,7 @@ export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogCo
           ) : Object.entries(grouped).map(([category, definitions]) => <section className="workspace-widget-drawer__group" key={category}><h3>{category}</h3>{definitions.map((definition) => {
             const targets = targetOptions(definition, metrics);
             const available = metricAvailable(definition, metrics) && (!definition.targetKind || targets.length > 0);
-            const count = layout.widgetEntries.filter((entry) => entry.widgetType === definition.widgetType).length;
+            const count = layout.widgetEntries.filter((entry) => entry.widgetType === definition.widgetType && !isSystemRenderedEntry(entry)).length;
             const availability = definition.targetKind ? (targets.length ? "添加时选择具体实例" : "当前没有可用实例") : definition.requires?.length ? "需要对应采集指标" : "可直接使用";
             return <div className={`workspace-widget-drawer__item${available ? "" : " is-unavailable"}`} key={definition.widgetType}><div><strong>{definition.title}</strong><p>{definition.description}</p><small>{count ? `已添加 ${count} 个 · ${availability}` : availability}</small></div><button type="button" disabled={!available} onClick={() => chooseDefinition(definition)}>{definition.targetKind ? "选择" : "添加"}</button></div>;
           })}</section>)}

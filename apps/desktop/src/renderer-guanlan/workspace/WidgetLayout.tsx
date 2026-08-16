@@ -146,6 +146,11 @@ function cloneLayout(layout: WidgetLayoutDocument): WidgetLayoutDocument {
   };
 }
 
+function mergeWidgetConfig(existing: WidgetInstanceConfig | undefined, incoming: WidgetInstanceConfig | undefined): WidgetInstanceConfig | undefined {
+  if (!existing && !incoming) return undefined;
+  return { ...(existing ?? {}), ...(incoming ?? {}) };
+}
+
 function normalizePlacement(value: Partial<WidgetPlacement> | undefined, sizeFallback: WidgetSize = DEFAULT_SIZE): WidgetPlacement {
   const size = value?.size === "large" || value?.size === "medium" || value?.size === "small" ? value.size : sizeFallback;
   const preset = SIZE_PRESETS[size];
@@ -321,9 +326,15 @@ function normalizeLayout(layout: WidgetLayoutDocument | null | undefined): Widge
     placements[id] = normalizePlacement(placement, catalog[id]?.defaultSize ?? DEFAULT_SIZE);
   }
   for (const [id, entry] of Object.entries(catalog)) {
-    if (entry.groupId && (!catalog[entry.groupId] || entry.groupId === id || !isGroupedEntry(id, catalog))) {
+    if (entry.groupId && entry.groupId === id) {
       delete entry.groupId;
+      continue;
     }
+    // React can register a group child before the group definition. Keep the
+    // relationship until the parent arrives instead of persisting the child
+    // as a broken top-level item.
+    const parent = entry.groupId ? catalog[entry.groupId] : undefined;
+    if (entry.groupId && parent && parent.kind !== "group") delete entry.groupId;
   }
   const panels = (layout.panels ?? [])
     .filter((panel) => panel && typeof panel.id === "string" && typeof panel.name === "string")
@@ -345,9 +356,17 @@ function normalizeLayout(layout: WidgetLayoutDocument | null | undefined): Widge
 
 function mergeDefinitions(layout: WidgetLayoutDocument, definitions: Record<string, WidgetDefinition>): WidgetLayoutDocument {
   const next = cloneLayout(layout);
+  const deletedGroupIds = new Set(Object.entries(next.catalog).filter(([, entry]) => entry.config?.deleted === true).map(([id]) => id));
   for (const definition of Object.values(definitions)) {
+    if (definition.groupId && deletedGroupIds.has(definition.groupId)) {
+      delete next.catalog[definition.id];
+      delete next.placements[definition.id];
+      continue;
+    }
+    const existing = next.catalog[definition.id];
+    const config = mergeWidgetConfig(existing?.config, definition.config);
     next.catalog[definition.id] = {
-      ...next.catalog[definition.id],
+      ...existing,
       title: definition.title,
       kind: definition.kind,
       defaultSize: definition.defaultSize,
@@ -356,7 +375,7 @@ function mergeDefinitions(layout: WidgetLayoutDocument, definitions: Record<stri
       ...(definition.widgetType ? { widgetType: definition.widgetType } : {}),
       ...(definition.category ? { category: definition.category } : {}),
       ...(definition.visualization ? { visualization: definition.visualization } : {}),
-      ...(definition.config ? { config: { ...definition.config } } : {})
+      ...(config ? { config } : {})
     };
     if (!next.placements[definition.id]) {
       const position = findNextFreePlacement(topLevelPlacements(next.placements, next.catalog), definition.defaultSize);
@@ -541,6 +560,7 @@ export function WidgetLayoutProvider({
     if (!previous || JSON.stringify(previous) !== JSON.stringify(definition)) setDefinitionVersion((value) => value + 1);
     setDraft((current) => {
       const currentEntry = current.catalog[definition.id];
+      const config = mergeWidgetConfig(currentEntry?.config, definition.config);
       const nextEntry: WidgetCatalogEntry = {
         ...currentEntry,
         title: definition.title,
@@ -551,7 +571,7 @@ export function WidgetLayoutProvider({
         ...(definition.widgetType ? { widgetType: definition.widgetType } : {}),
         ...(definition.category ? { category: definition.category } : {}),
         ...(definition.visualization ? { visualization: definition.visualization } : {}),
-        ...(definition.config ? { config: { ...definition.config } } : {})
+        ...(config ? { config } : {})
       };
       if (currentEntry && current.placements[definition.id] && JSON.stringify(currentEntry) === JSON.stringify(nextEntry)) return current;
       const next = mergeDefinitions(current, { [definition.id]: definition });
@@ -562,13 +582,20 @@ export function WidgetLayoutProvider({
 
   const resolveWidget = useCallback((definition: WidgetDefinition): ResolvedWidget => {
     if (locked) return { size: definition.defaultSize, hidden: false };
+    const entry = draft.catalog[definition.id];
+    // A system-rendered widget stays declared by the page after removal. The
+    // tombstone prevents a later data refresh from silently recreating it, and
+    // the missing-entry branch avoids a one-frame flash before registration.
+    if (definition.widgetType && (!entry || entry.config?.deleted === true)) {
+      return { size: draft.placements[definition.id]?.size ?? definition.defaultSize, hidden: true, placement: draft.placements[definition.id] };
+    }
     const placement = draft.placements[definition.id];
     return {
       size: placement?.size ?? definition.defaultSize,
       hidden: placement?.hidden === true,
       placement
     };
-  }, [draft.placements, locked]);
+  }, [draft.catalog, draft.placements, locked]);
 
   const getWidgetSize = useCallback((id: string, defaultSize: WidgetSize): WidgetSize => {
     if (locked) return defaultSize;
@@ -693,9 +720,22 @@ export function WidgetLayoutProvider({
   const removeWidget = useCallback((id: string) => {
     mutateDraft((current) => {
       const entry = current.catalog[id];
+      if (entry?.config?.systemRendered === true) {
+        const placement = current.placements[id] ?? normalizePlacement(undefined, entry.defaultSize);
+        placement.hidden = true;
+        current.placements[id] = placement;
+        entry.config = { ...(entry.config ?? {}), deleted: true };
+        Object.entries(current.catalog)
+          .filter(([, child]) => child.groupId === id)
+          .forEach(([childId]) => {
+            delete current.catalog[childId];
+            delete current.placements[childId];
+          });
+        return current;
+      }
       // Dynamic catalog widgets are user-created records. Removing a group
       // removes its children; removing a child removes that record. Static
-      // system widgets have no widgetType and keep hide/restore behavior.
+      // legacy widgets without widgetType keep hide/restore behavior.
       if (!entry?.widgetType) {
         const placement = current.placements[id];
         if (placement) placement.hidden = true;
@@ -750,6 +790,11 @@ export function WidgetLayoutProvider({
       const entry = current.catalog[id];
       const placement = current.placements[id] ?? normalizePlacement(undefined, entry?.defaultSize ?? DEFAULT_SIZE);
       placement.hidden = false;
+      if (entry?.config?.deleted === true) {
+        const config = { ...entry.config };
+        delete config.deleted;
+        entry.config = Object.keys(config).length ? config : undefined;
+      }
       if (current.snapToGrid) {
         const visible = { ...current.placements };
         delete visible[id];
@@ -991,6 +1036,7 @@ function placementStyle(placement: WidgetPlacement | undefined): React.CSSProper
 export function DesktopWidget({
   id,
   templateId,
+  groupId,
   title,
   kind = "content",
   defaultSize = DEFAULT_SIZE,
@@ -1003,6 +1049,7 @@ export function DesktopWidget({
 }: {
   id: string;
   templateId?: string;
+  groupId?: string;
   title: string;
   kind?: WidgetKind;
   defaultSize?: WidgetSize;
@@ -1014,7 +1061,7 @@ export function DesktopWidget({
   children: React.ReactNode;
 }) {
   const layout = useWidgetLayout();
-  const definition = useMemo(() => ({ id, templateId, title, kind, defaultSize, widgetType, category, visualization, config }), [category, config, defaultSize, id, kind, templateId, title, visualization, widgetType]);
+  const definition = useMemo(() => ({ id, templateId, groupId, title, kind, defaultSize, widgetType, category, visualization, config }), [category, config, defaultSize, groupId, id, kind, templateId, title, visualization, widgetType]);
   const resolved = layout.resolveWidget(definition);
   const editing = layout.editable && layout.editMode;
   const widgetRef = useRef<HTMLDivElement>(null);
@@ -1054,8 +1101,15 @@ export function DesktopWidget({
     const node = widgetRef.current;
     const parent = node?.parentElement;
     if (!node || !parent) return null;
+    const widgetForContainer = (element: Element): HTMLElement | null => {
+      let candidate = element.closest<HTMLElement>("[data-widget-id]");
+      while (candidate && candidate.parentElement !== parent) {
+        candidate = candidate.parentElement?.closest<HTMLElement>("[data-widget-id]") ?? null;
+      }
+      return candidate;
+    };
     const candidate = document.elementsFromPoint(clientX, clientY)
-      .map((element) => element.closest<HTMLElement>("[data-widget-id]"))
+      .map(widgetForContainer)
       .find((element) => Boolean(element && element !== node && element.parentElement === parent));
     return candidate?.dataset.widgetId ?? null;
   };
