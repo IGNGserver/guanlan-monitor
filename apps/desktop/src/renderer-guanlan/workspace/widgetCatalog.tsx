@@ -27,6 +27,7 @@ import {
   YAxis
 } from "recharts";
 import { DesktopWidget, useWidgetLayout, type WidgetGroupChildDefinition, type WidgetKind, type WidgetSize } from "./WidgetLayout";
+import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
 
 type WidgetCatalogDefinition = {
   widgetType: string;
@@ -643,24 +644,22 @@ function DynamicWidgetGroupCard({ entry, children, context }: { entry: WidgetLay
       category={definition.category}
       visualization={entry.visualization}
       config={entry.config}
+      className="workspace-widget--device-frame"
     >
-      <div className="workspace-dynamic-group">
-        <div className="workspace-dynamic-group__header">
-          <div>
-            <span className="workspace-section-kicker">{definition.category}</span>
-            <h3>{entry.title}</h3>
-            <p>{definition.description}</p>
-          </div>
-          <span className="workspace-dynamic-group__count">{children.length} 个图表</span>
-        </div>
+      <DeviceWidgetFrame
+        kind={definition.targetKind ?? "generic"}
+        eyebrow="设备组"
+        title={entry.title}
+        subtitle={definition.description}
+        count={`${children.length} 个图表`}
+        contentClassName="workspace-device-block__charts--dynamic"
+      >
         {children.length ? (
-          <div className="workspace-dynamic-group__grid">
-            {children.map((child) => <DynamicWidgetCard key={child.id} entry={child} context={context} />)}
-          </div>
+          children.map((child) => <DynamicWidgetCard key={child.id} entry={child} context={context} />)
         ) : (
           <div className="workspace-dynamic-empty__inline">组内暂无图表，可继续添加独立组件。</div>
         )}
-      </div>
+      </DeviceWidgetFrame>
     </DesktopWidget>
   );
 }

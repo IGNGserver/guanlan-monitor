@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, SamplePoint, SystemStats, WidgetLayoutDocument, WidgetPanelMetadata } from "@dsc/shared";
 import clsx from "clsx";
@@ -18,6 +18,7 @@ import {
   type WidgetKind,
   type WidgetSize
 } from "./WidgetLayout";
+import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
 import { DynamicWidgetCanvas, WidgetDrawer } from "./widgetCatalog";
 import "./workspace.css";
 import "./window-material.css";
@@ -1228,41 +1229,23 @@ function TelemetryDeviceBlock({
   subtitle?: string;
   children: React.ReactNode;
 }) {
-  const layout = useOptionalWidgetLayout();
-  const definition = useMemo(() => widgetId ? ({
-    id: widgetId,
-    templateId: widgetTemplateId,
-    title,
-    kind: "group" as WidgetKind,
-    defaultSize: widgetDefaultSize
-  }) : null, [title, widgetDefaultSize, widgetId, widgetTemplateId]);
-  const resolved = definition && layout ? layout.resolveWidget(definition) : undefined;
-  const editing = Boolean(definition && layout?.editable && layout.editMode);
-
-  useEffect(() => {
-    if (definition && layout?.registerWidget) layout.registerWidget(definition);
-  }, [definition, layout?.registerWidget]);
-
-  if (resolved?.hidden) return null;
-
+  const frame = (
+    <DeviceWidgetFrame kind={kind} eyebrow={eyebrow} title={title} subtitle={subtitle}>
+      {children}
+    </DeviceWidgetFrame>
+  );
+  if (!widgetId) return frame;
   return (
-    <article className={`workspace-device-block workspace-device-block--${kind}${editing ? " workspace-device-block--editing" : ""}`}>
-      {editing && layout && definition && (
-        <div className="workspace-widget__tools workspace-device-block__tools" onPointerDown={(event) => event.stopPropagation()}>
-          <span className="workspace-widget__tool-title" title={title}>{title}</span>
-          <button className="workspace-widget__hide" type="button" onClick={() => layout.hideWidget(definition.id)}>隐藏</button>
-        </div>
-      )}
-      <header className="workspace-device-block__header">
-        <div className="workspace-device-block__identity">
-          <span className="workspace-device-block__eyebrow">{eyebrow}</span>
-          <h4>{title}</h4>
-          {subtitle && <p>{subtitle}</p>}
-        </div>
-        <span className="workspace-device-block__marker" aria-hidden="true" />
-      </header>
-      <div className="workspace-device-block__charts">{children}</div>
-    </article>
+    <DesktopWidget
+      id={widgetId}
+      templateId={widgetTemplateId}
+      title={title}
+      kind="group"
+      defaultSize={widgetDefaultSize}
+      className="workspace-widget--device-frame"
+    >
+      {frame}
+    </DesktopWidget>
   );
 }
 

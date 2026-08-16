@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   WidgetLayoutCatalogEntry as SharedWidgetLayoutCatalogEntry,
   WidgetLayoutDocument,
@@ -67,6 +67,11 @@ type WidgetLayoutContextValue = {
   hideWidget: (id: string) => void;
   restoreWidget: (id: string) => void;
   reorderWidgets: (draggedId: string, targetId: string) => void;
+  draggingWidgetId: string | null;
+  beginWidgetDrag: (id: string) => void;
+  previewWidgetDrop: (draggedId: string, targetId: string) => void;
+  finishWidgetDrag: () => void;
+  cancelWidgetDrag: () => void;
   toggleSnapToGrid: () => void;
   resetDeviceLayout: () => Promise<boolean>;
   applyTemplate: (templateId: string) => void;
@@ -105,6 +110,12 @@ function emptyLayout(snapToGrid = true): WidgetLayoutDocument {
 }
 
 type WidgetLayoutDraftGuard = () => boolean;
+
+type WidgetDragSession = {
+  id: string;
+  base: WidgetLayoutDocument;
+  moved: boolean;
+};
 
 const draftGuards = new Set<WidgetLayoutDraftGuard>();
 
@@ -255,6 +266,36 @@ function normalizePlacements(
     if (placement.hidden || isGroupedEntry(id, catalog)) compacted[id] = placement;
   }
   return compacted;
+}
+
+function layoutContainerForWidget(id: string, catalog: Record<string, WidgetCatalogEntry>): string | null {
+  return catalog[id]?.groupId ?? null;
+}
+
+function moveWidgetWithAvoidance(layout: WidgetLayoutDocument, draggedId: string, targetId: string): WidgetLayoutDocument {
+  if (draggedId === targetId) return layout;
+  const dragged = layout.placements[draggedId];
+  const target = layout.placements[targetId];
+  if (!dragged || !target || dragged.hidden || target.hidden) return layout;
+  if (layoutContainerForWidget(draggedId, layout.catalog) !== layoutContainerForWidget(targetId, layout.catalog)) return layout;
+
+  const moving = normalizePlacement({ ...dragged, x: target.x, y: target.y }, dragged.size);
+  const placements = { ...layout.placements, [draggedId]: moving };
+  const placed: Record<string, WidgetPlacement> = { [draggedId]: moving };
+  const siblings = Object.entries(placements)
+    .filter(([id, placement]) => id !== draggedId && !placement.hidden && layoutContainerForWidget(id, layout.catalog) === layoutContainerForWidget(draggedId, layout.catalog))
+    .sort(([leftId, left], [rightId, right]) => left.y - right.y || left.x - right.x || leftId.localeCompare(rightId));
+
+  for (const [id, placement] of siblings) {
+    const collides = Object.values(placed).some((occupied) => intersects(placement, occupied));
+    if (collides) {
+      const position = findNextFreePlacement(placed, placement.size, placement.x, placement.y);
+      placements[id] = { ...placement, ...position };
+    }
+    placed[id] = placements[id];
+  }
+
+  return { ...layout, placements };
 }
 
 function normalizeLayout(layout: WidgetLayoutDocument | null | undefined): WidgetLayoutDocument {
@@ -412,6 +453,8 @@ export function WidgetLayoutProvider({
   const [historyVersion, setHistoryVersion] = useState(0);
   const pastRef = useRef<WidgetLayoutDocument[]>([]);
   const futureRef = useRef<WidgetLayoutDocument[]>([]);
+  const dragSessionRef = useRef<WidgetDragSession | null>(null);
+  const [draggingWidgetId, setDraggingWidgetId] = useState<string | null>(null);
 
   const replaceDraft = useCallback((next: WidgetLayoutDocument, markDirty: boolean) => {
     const normalized = normalizeLayout(next);
@@ -453,6 +496,8 @@ export function WidgetLayoutProvider({
     dirtyRef.current = false;
     setDirty(false);
     setEditMode(false);
+    dragSessionRef.current = null;
+    setDraggingWidgetId(null);
     definitionsRef.current = {};
     replaceDraft(emptyLayout(), false);
     resetHistory();
@@ -542,6 +587,46 @@ export function WidgetLayoutProvider({
     setDirty(true);
     setHistoryVersion((value) => value + 1);
   }, [editable, locked]);
+
+  const beginWidgetDrag = useCallback((id: string) => {
+    if (!editable || locked || dragSessionRef.current || !draftRef.current.placements[id]) return;
+    dragSessionRef.current = { id, base: cloneLayout(draftRef.current), moved: false };
+    setDraggingWidgetId(id);
+  }, [editable, locked]);
+
+  const previewWidgetDrop = useCallback((draggedId: string, targetId: string) => {
+    const session = dragSessionRef.current;
+    if (!session || session.id !== draggedId || draggedId === targetId) return;
+    const current = draftRef.current;
+    const next = moveWidgetWithAvoidance(current, draggedId, targetId);
+    if (JSON.stringify(next.placements) === JSON.stringify(current.placements)) return;
+    draftRef.current = next;
+    setDraft(next);
+    session.moved = true;
+  }, []);
+
+  const finishWidgetDrag = useCallback(() => {
+    const session = dragSessionRef.current;
+    if (session?.moved) {
+      pastRef.current = [...pastRef.current, session.base].slice(-HISTORY_LIMIT);
+      futureRef.current = [];
+      dirtyRef.current = true;
+      setDirty(true);
+      setHistoryVersion((value) => value + 1);
+    }
+    dragSessionRef.current = null;
+    setDraggingWidgetId(null);
+  }, []);
+
+  const cancelWidgetDrag = useCallback(() => {
+    const session = dragSessionRef.current;
+    if (session?.moved) {
+      draftRef.current = session.base;
+      setDraft(session.base);
+    }
+    dragSessionRef.current = null;
+    setDraggingWidgetId(null);
+  }, []);
 
   const addWidget = useCallback((definition: Omit<WidgetDefinition, "id"> & { id?: string }): string | null => {
     if (!editable || locked) return null;
@@ -652,8 +737,9 @@ export function WidgetLayoutProvider({
 
   const hideWidget = useCallback((id: string) => {
     mutateDraft((current) => {
-      const placement = current.placements[id];
-      if (placement) placement.hidden = true;
+      const placement = current.placements[id] ?? normalizePlacement(undefined, current.catalog[id]?.defaultSize ?? DEFAULT_SIZE);
+      placement.hidden = true;
+      current.placements[id] = placement;
       current.placements = normalizePlacements(current.placements, current.snapToGrid, current.catalog);
       return current;
     });
@@ -678,18 +764,7 @@ export function WidgetLayoutProvider({
 
   const reorderWidgets = useCallback((draggedId: string, targetId: string) => {
     if (draggedId === targetId) return;
-    mutateDraft((current) => {
-      const dragged = current.placements[draggedId];
-      const target = current.placements[targetId];
-      if (!dragged || !target) return current;
-      const draggedPosition = { x: dragged.x, y: dragged.y };
-      dragged.x = target.x;
-      dragged.y = target.y;
-      target.x = draggedPosition.x;
-      target.y = draggedPosition.y;
-      current.placements = normalizePlacements(current.placements, current.snapToGrid, current.catalog);
-      return current;
-    });
+    mutateDraft((current) => moveWidgetWithAvoidance(current, draggedId, targetId));
   }, [mutateDraft]);
 
   const toggleSnapToGrid = useCallback(() => {
@@ -860,6 +935,11 @@ export function WidgetLayoutProvider({
     hideWidget,
     restoreWidget,
     reorderWidgets,
+    draggingWidgetId,
+    beginWidgetDrag,
+    previewWidgetDrop,
+    finishWidgetDrag,
+    cancelWidgetDrag,
     toggleSnapToGrid,
     resetDeviceLayout,
     applyTemplate,
@@ -880,7 +960,7 @@ export function WidgetLayoutProvider({
     removeWidget,
     updateWidgetConfig,
     getLayoutSnapshot
-  }), [addWidget, addWidgetGroup, applyTemplate, deleteTemplate, dirty, draft.snapToGrid, editable, editMode, exportLayout, getLayoutSnapshot, getWidgetSize, hideWidget, hiddenWidgets, historyVersion, importLayout, loading, locked, redo, registerWidget, remote.instanceLayout, remote.templates, removeWidget, reorderWidgets, resetDeviceLayout, resolveWidget, restoreWidget, saveAsTemplate, saveLayout, saving, scopeKey, syncMessage, templateKey, toggleSnapToGrid, undo, updateSize, updateWidgetConfig, widgetEntries]);
+  }), [addWidget, addWidgetGroup, applyTemplate, beginWidgetDrag, cancelWidgetDrag, deleteTemplate, dirty, draft.snapToGrid, draggingWidgetId, editable, editMode, exportLayout, finishWidgetDrag, getLayoutSnapshot, getWidgetSize, hideWidget, hiddenWidgets, historyVersion, importLayout, loading, locked, previewWidgetDrop, redo, registerWidget, remote.instanceLayout, remote.templates, removeWidget, reorderWidgets, resetDeviceLayout, resolveWidget, restoreWidget, saveAsTemplate, saveLayout, saving, scopeKey, syncMessage, templateKey, toggleSnapToGrid, undo, updateSize, updateWidgetConfig, widgetEntries]);
 
   return <WidgetLayoutContext.Provider value={contextValue}>{children}</WidgetLayoutContext.Provider>;
 }
@@ -903,7 +983,8 @@ function placementStyle(placement: WidgetPlacement | undefined): React.CSSProper
     "--widget-w": placement.w,
     "--widget-h": placement.h,
     "--widget-w-md": placement.size === "large" ? 2 : 1,
-    "--widget-h-md": 2
+    "--widget-h-md": 2,
+    order: placement.y * 100 + placement.x
   } as React.CSSProperties;
 }
 
@@ -917,6 +998,7 @@ export function DesktopWidget({
   category,
   visualization,
   config,
+  className,
   children
 }: {
   id: string;
@@ -928,42 +1010,124 @@ export function DesktopWidget({
   category?: string;
   visualization?: WidgetVisualization;
   config?: WidgetInstanceConfig;
+  className?: string;
   children: React.ReactNode;
 }) {
   const layout = useWidgetLayout();
   const definition = useMemo(() => ({ id, templateId, title, kind, defaultSize, widgetType, category, visualization, config }), [category, config, defaultSize, id, kind, templateId, title, visualization, widgetType]);
   const resolved = layout.resolveWidget(definition);
   const editing = layout.editable && layout.editMode;
+  const widgetRef = useRef<HTMLDivElement>(null);
+  const pointerDragRef = useRef<{ pointerId: number; startX: number; startY: number; lastTargetId: string | null; handle: HTMLElement } | null>(null);
+  const previousRectRef = useRef<DOMRect | null>(null);
+  const flipAnimationRef = useRef<Animation | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     layout.registerWidget(definition);
   }, [definition, layout.registerWidget]);
 
+  useLayoutEffect(() => {
+    const node = widgetRef.current;
+    if (!node) return;
+    const nextRect = node.getBoundingClientRect();
+    const previousRect = previousRectRef.current;
+    previousRectRef.current = nextRect;
+    if (dragging || !previousRect) return;
+    const deltaX = previousRect.left - nextRect.left;
+    const deltaY = previousRect.top - nextRect.top;
+    if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
+    flipAnimationRef.current?.cancel();
+    flipAnimationRef.current = node.animate(
+      [
+        { transform: `translate3d(${deltaX}px, ${deltaY}px, 0)` },
+        { transform: "translate3d(0, 0, 0)" }
+      ],
+      { duration: 220, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }
+    );
+  }, [dragging, layout.draggingWidgetId, resolved.placement?.h, resolved.placement?.size, resolved.placement?.w, resolved.placement?.x, resolved.placement?.y]);
+
   if (resolved.hidden) return null;
 
-  const handleDragStart = (event: React.DragEvent<HTMLElement>) => {
-    if (!editing) return;
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", id);
+  const findDropTarget = (clientX: number, clientY: number): string | null => {
+    const node = widgetRef.current;
+    const parent = node?.parentElement;
+    if (!node || !parent) return null;
+    const candidate = document.elementsFromPoint(clientX, clientY)
+      .map((element) => element.closest<HTMLElement>("[data-widget-id]"))
+      .find((element) => Boolean(element && element !== node && element.parentElement === parent));
+    return candidate?.dataset.widgetId ?? null;
   };
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    if (!editing) return;
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLSpanElement>) => {
+    if (!editing || event.button !== 0 || !resolved.placement) return;
     event.preventDefault();
-    const draggedId = event.dataTransfer.getData("text/plain");
-    if (draggedId) layout.reorderWidgets(draggedId, id);
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pointerDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastTargetId: null,
+      handle: event.currentTarget
+    };
+    setDragOffset({ x: 0, y: 0 });
+    setDragging(true);
+    layout.beginWidgetDrag(id);
   };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLSpanElement>) => {
+    const session = pointerDragRef.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const offsetX = event.clientX - session.startX;
+    const offsetY = event.clientY - session.startY;
+    if (Math.abs(offsetX) < 3 && Math.abs(offsetY) < 3) return;
+    setDragOffset({ x: offsetX, y: offsetY });
+    const targetId = findDropTarget(event.clientX, event.clientY);
+    if (targetId && targetId !== session.lastTargetId) {
+      session.lastTargetId = targetId;
+      layout.previewWidgetDrop(id, targetId);
+    }
+  };
+
+  const finishPointerDrag = (event: React.PointerEvent<HTMLSpanElement>, cancelled = false) => {
+    const session = pointerDragRef.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    if (session.handle.hasPointerCapture(session.pointerId)) session.handle.releasePointerCapture(session.pointerId);
+    pointerDragRef.current = null;
+    setDragOffset({ x: 0, y: 0 });
+    setDragging(false);
+    if (cancelled) layout.cancelWidgetDrag();
+    else layout.finishWidgetDrag();
+  };
+
+  const widgetStyle = {
+    ...(placementStyle(resolved.placement) ?? {}),
+    ...(dragging ? { transform: `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`, zIndex: 30 } : {})
+  } as React.CSSProperties;
 
   return (
     <div
-      className={`workspace-widget workspace-widget--${resolved.size} workspace-widget--${kind}${editing ? " is-editing" : ""}`}
-      style={placementStyle(resolved.placement)}
+      ref={widgetRef}
+      className={`workspace-widget workspace-widget--${resolved.size} workspace-widget--${kind}${editing ? " is-editing" : ""}${dragging ? " is-dragging" : ""}${className ? ` ${className}` : ""}`}
+      style={widgetStyle}
       data-widget-id={id}
-      onDragOver={(event) => { if (editing) event.preventDefault(); }}
-      onDrop={handleDrop}
     >
       {editing && (
         <div className="workspace-widget__tools" onPointerDown={(event) => event.stopPropagation()}>
-          <span className="workspace-widget__drag-hint" title="拖动以调整位置" draggable={editing} onDragStart={handleDragStart}>⠿ <span>拖动</span></span>
+          <span
+            className="workspace-widget__drag-hint"
+            title="拖动以调整位置"
+            role="button"
+            tabIndex={0}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={(event) => finishPointerDrag(event)}
+            onPointerCancel={(event) => finishPointerDrag(event, true)}
+          >⠿ <span>拖动</span></span>
           <span className="workspace-widget__tool-title" title={title}>{title}</span>
           <div className="workspace-widget__size-control" role="group" aria-label={`${title}尺寸`}>
             {(["large", "medium", "small"] as WidgetSize[]).map((size) => (
@@ -972,8 +1136,8 @@ export function DesktopWidget({
               </button>
             ))}
           </div>
-          <button className="workspace-widget__hide" type="button" onClick={() => layout.hideWidget(id)}>隐藏</button>
-          {widgetType && <button className="workspace-widget__remove" type="button" onClick={() => layout.removeWidget(id)}>移除</button>}
+          <button className="workspace-widget__hide" type="button" onClick={(event) => { event.stopPropagation(); layout.hideWidget(id); }}>隐藏</button>
+          {widgetType && <button className="workspace-widget__remove" type="button" onClick={(event) => { event.stopPropagation(); layout.removeWidget(id); }}>移除</button>}
         </div>
       )}
       <div className="workspace-widget__content">{children}</div>
