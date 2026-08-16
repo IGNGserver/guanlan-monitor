@@ -62,9 +62,15 @@
   !define MUI_FINISHPAGE_RUN_FUNCTION "DSC_StartApp"
   !define MUI_PAGE_CUSTOMFUNCTION_SHOW "DSC_ShowFinishPage"
   !insertmacro MUI_PAGE_FINISH
-  !undef MUI_PAGE_CUSTOMFUNCTION_SHOW
-  !undef MUI_FINISHPAGE_RUN_FUNCTION
-  !undef MUI_FINISHPAGE_RUN
+  !ifdef MUI_PAGE_CUSTOMFUNCTION_SHOW
+    !undef MUI_PAGE_CUSTOMFUNCTION_SHOW
+  !endif
+  !ifdef MUI_FINISHPAGE_RUN_FUNCTION
+    !undef MUI_FINISHPAGE_RUN_FUNCTION
+  !endif
+  !ifdef MUI_FINISHPAGE_RUN
+    !undef MUI_FINISHPAGE_RUN
+  !endif
 !macroend
 
 !macro customInit
