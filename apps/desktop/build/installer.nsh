@@ -4,6 +4,7 @@
 !define DSC_WINDOW_TITLE "观澜 · 设备状态控制台"
 
 !macro customHeader
+!ifndef BUILD_UNINSTALLER
   Var DSC_PREINSTALL_STATE
   Var DSC_RESTORE_LAUNCHED
 
@@ -52,6 +53,7 @@
       Call DSC_StartApp
     ${EndIf}
   FunctionEnd
+!endif
 !macroend
 
 !macro customFinishPage
