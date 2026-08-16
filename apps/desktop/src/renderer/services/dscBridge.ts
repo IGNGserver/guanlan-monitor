@@ -9,11 +9,17 @@ import type {
   WidgetLayoutSaveRequest,
   WidgetLayoutSync
 } from "@dsc/shared";
+import {
+  createFallbackWindowMaterialCapabilities,
+  type WindowMaterial,
+  type WindowMaterialBridge,
+  type WindowMaterialCapabilities
+} from "../../window-material";
 
-class SafeDscBridge implements DesktopRendererBridge {
+class SafeDscBridge implements DesktopRendererBridge, WindowMaterialBridge {
   private fallbackSnapshot: DesktopSnapshot = createEmptySnapshot();
 
-  private get bridge(): DesktopRendererBridge | null {
+  private get bridge(): (DesktopRendererBridge & WindowMaterialBridge) | null {
     if (typeof window !== "undefined" && window.dsc) {
       return window.dsc;
     }
@@ -90,6 +96,16 @@ class SafeDscBridge implements DesktopRendererBridge {
 
   async openExternal(url: string): Promise<void> {
     return this.requireBridge().openExternal(url);
+  }
+
+  async getWindowMaterialCapabilities(): Promise<WindowMaterialCapabilities> {
+    const bridge = this.bridge;
+    return bridge ? await bridge.getWindowMaterialCapabilities() : createFallbackWindowMaterialCapabilities();
+  }
+
+  async setWindowMaterial(material: WindowMaterial): Promise<WindowMaterialCapabilities> {
+    const bridge = this.bridge;
+    return bridge ? await bridge.setWindowMaterial(material) : createFallbackWindowMaterialCapabilities();
   }
 
   async windowMinimize(): Promise<void> {

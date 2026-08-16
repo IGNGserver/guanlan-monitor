@@ -1,0 +1,59 @@
+html[data-dsc-material="mica"] {
+  --workspace-bg: color-mix(in srgb, #f5f7fa 78%, transparent);
+  --workspace-sidebar: color-mix(in srgb, #eef2f6 72%, transparent);
+  --workspace-surface: color-mix(in srgb, #ffffff 80%, transparent);
+  --workspace-surface-subtle: color-mix(in srgb, #f8fafc 70%, transparent);
+  --workspace-surface-hover: color-mix(in srgb, #eef5fb 74%, transparent);
+  --workspace-shadow: 0 9px 28px rgba(30, 48, 67, 0.045);
+  --workspace-shadow-soft: 0 2px 10px rgba(30, 48, 67, 0.035);
+}
+
+html[data-dsc-resolved-theme="dark"][data-dsc-material="mica"] {
+  --workspace-bg: color-mix(in srgb, #14181d 82%, transparent);
+  --workspace-sidebar: color-mix(in srgb, #191e24 78%, transparent);
+  --workspace-surface: color-mix(in srgb, #1c2229 82%, transparent);
+  --workspace-surface-subtle: color-mix(in srgb, #20272f 76%, transparent);
+  --workspace-surface-hover: color-mix(in srgb, #25313b 78%, transparent);
+  --workspace-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
+  --workspace-shadow-soft: 0 2px 12px rgba(0, 0, 0, 0.15);
+}
+
+html[data-dsc-material="acrylic"] {
+  --workspace-bg: color-mix(in srgb, #f5f7fa 62%, transparent);
+  --workspace-sidebar: color-mix(in srgb, #eef2f6 58%, transparent);
+  --workspace-surface: color-mix(in srgb, #ffffff 70%, transparent);
+  --workspace-surface-subtle: color-mix(in srgb, #f8fafc 58%, transparent);
+  --workspace-surface-hover: color-mix(in srgb, #eef5fb 64%, transparent);
+  --workspace-shadow: 0 9px 28px rgba(30, 48, 67, 0.055);
+  --workspace-shadow-soft: 0 2px 10px rgba(30, 48, 67, 0.045);
+}
+
+html[data-dsc-resolved-theme="dark"][data-dsc-material="acrylic"] {
+  --workspace-bg: color-mix(in srgb, #14181d 66%, transparent);
+  --workspace-sidebar: color-mix(in srgb, #191e24 62%, transparent);
+  --workspace-surface: color-mix(in srgb, #1c2229 70%, transparent);
+  --workspace-surface-subtle: color-mix(in srgb, #20272f 64%, transparent);
+  --workspace-surface-hover: color-mix(in srgb, #25313b 68%, transparent);
+  --workspace-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
+  --workspace-shadow-soft: 0 2px 12px rgba(0, 0, 0, 0.19);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-dsc-material="mica"],
+  html[data-dsc-material="acrylic"] {
+    --workspace-bg: #f5f7fa;
+    --workspace-sidebar: #eef2f6;
+    --workspace-surface: #ffffff;
+    --workspace-surface-subtle: #f8fafc;
+    --workspace-surface-hover: #eef5fb;
+  }
+
+  html[data-dsc-resolved-theme="dark"][data-dsc-material="mica"],
+  html[data-dsc-resolved-theme="dark"][data-dsc-material="acrylic"] {
+    --workspace-bg: #14181d;
+    --workspace-sidebar: #191e24;
+    --workspace-surface: #1c2229;
+    --workspace-surface-subtle: #20272f;
+    --workspace-surface-hover: #25313b;
+  }
+}

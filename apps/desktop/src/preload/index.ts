@@ -10,8 +10,9 @@ import type {
   WidgetLayoutSaveRequest
 } from "@dsc/shared";
 import { IPC_CHANNELS } from "../ipc-contract.js";
+import type { WindowMaterialBridge } from "../window-material.js";
 
-const bridge: DesktopRendererBridge = {
+const bridge: DesktopRendererBridge & WindowMaterialBridge = {
   getSnapshot: (request?: DesktopSnapshotRequest) => ipcRenderer.invoke(IPC_CHANNELS.getSnapshot, request),
   refresh: (request?: DesktopSnapshotRequest) => ipcRenderer.invoke(IPC_CHANNELS.refresh, request),
   updateLocalConfig: (patch: DesktopConfigPatch) => ipcRenderer.invoke(IPC_CHANNELS.updateLocalConfig, patch),
@@ -28,6 +29,8 @@ const bridge: DesktopRendererBridge = {
   reorderInstances: (deviceIds: string[]) => ipcRenderer.invoke(IPC_CHANNELS.reorderInstances, deviceIds),
   updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => ipcRenderer.invoke(IPC_CHANNELS.updateStartupSettings, settings),
   openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.openExternal, url),
+  getWindowMaterialCapabilities: () => ipcRenderer.invoke(IPC_CHANNELS.getWindowMaterialCapabilities),
+  setWindowMaterial: (material) => ipcRenderer.invoke(IPC_CHANNELS.setWindowMaterial, material),
   windowMinimize: () => ipcRenderer.invoke(IPC_CHANNELS.windowMinimize),
   windowToggleMaximize: () => ipcRenderer.invoke(IPC_CHANNELS.windowToggleMaximize),
   windowDragStart: (screenX: number, screenY: number) => { ipcRenderer.send(IPC_CHANNELS.windowDragStart, screenX, screenY); },

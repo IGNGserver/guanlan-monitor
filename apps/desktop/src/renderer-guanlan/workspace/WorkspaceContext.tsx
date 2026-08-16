@@ -17,6 +17,11 @@ import { BridgeGuanlanDataAdapter } from "../services/bridgeAdapter";
 import { MockGuanlanDataAdapter } from "../services/mockAdapter";
 import type { IGuanlanDataAdapter } from "../services/adapter";
 import { confirmDiscardWidgetLayoutDraft } from "./WidgetLayout";
+import {
+  createFallbackWindowMaterialCapabilities,
+  type WindowMaterial,
+  type WindowMaterialCapabilities
+} from "../../window-material";
 
 export type SettingsSection =
   | "general"
@@ -71,6 +76,9 @@ interface WorkspaceContextValue {
   setCommandOpen: (open: boolean) => void;
   theme: "system" | "light" | "dark";
   setTheme: (theme: "system" | "light" | "dark") => void;
+  windowMaterial: WindowMaterial;
+  setWindowMaterial: (material: WindowMaterial) => void;
+  windowMaterialCapabilities: WindowMaterialCapabilities | null;
   density: "comfortable" | "compact";
   setDensity: (density: "comfortable" | "compact") => void;
   refreshInterval: 5 | 10 | 30;
@@ -137,6 +145,11 @@ function getStoredTheme(): "system" | "light" | "dark" {
   return value === "light" || value === "dark" ? value : "system";
 }
 
+function getStoredWindowMaterial(): WindowMaterial {
+  const value = typeof window === "undefined" ? "guanlan" : localStorage.getItem("dsc-window-material");
+  return value === "mica" || value === "acrylic" ? value : "guanlan";
+}
+
 function getStoredDensity(): "comfortable" | "compact" {
   const value = typeof window === "undefined" ? "comfortable" : localStorage.getItem("dsc-density");
   return value === "compact" ? "compact" : "comfortable";
@@ -181,6 +194,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [searchQuery, setSearchQuery] = useState("");
   const [commandOpen, setCommandOpen] = useState(false);
   const [theme, setThemeState] = useState<"system" | "light" | "dark">(getStoredTheme);
+  const [windowMaterial, setWindowMaterialState] = useState<WindowMaterial>(getStoredWindowMaterial);
+  const [windowMaterialCapabilities, setWindowMaterialCapabilities] = useState<WindowMaterialCapabilities | null>(null);
+  const [windowMaterialReady, setWindowMaterialReady] = useState(false);
   const [density, setDensityState] = useState<"comfortable" | "compact">(getStoredDensity);
   const [refreshInterval, setRefreshIntervalState] = useState<5 | 10 | 30>(getStoredRefreshInterval);
   const [instanceType, setInstanceType] = useState<InstanceType>("device");
@@ -270,12 +286,40 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     root.dataset.dscTheme = theme;
     root.dataset.dscDensity = density;
+    root.dataset.dscMaterial = windowMaterialReady ? windowMaterial : "guanlan";
     applyTheme();
     if (theme !== "system") return;
 
     mediaQuery.addEventListener("change", applyTheme);
     return () => mediaQuery.removeEventListener("change", applyTheme);
-  }, [density, theme]);
+  }, [density, theme, windowMaterial, windowMaterialReady]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const syncWindowMaterial = async () => {
+      try {
+        const capabilities = await dscBridge.getWindowMaterialCapabilities();
+        if (cancelled) return;
+        setWindowMaterialCapabilities(capabilities);
+        const applied = await dscBridge.setWindowMaterial(windowMaterial);
+        if (cancelled) return;
+        setWindowMaterialCapabilities(applied);
+        if (applied.activeMaterial !== windowMaterial) {
+          setWindowMaterialState(applied.activeMaterial);
+          localStorage.setItem("dsc-window-material", applied.activeMaterial);
+        }
+        setWindowMaterialReady(true);
+      } catch {
+        if (cancelled) return;
+        setWindowMaterialCapabilities(createFallbackWindowMaterialCapabilities());
+        setWindowMaterialState("guanlan");
+        localStorage.setItem("dsc-window-material", "guanlan");
+        setWindowMaterialReady(true);
+      }
+    };
+    void syncWindowMaterial();
+    return () => { cancelled = true; };
+  }, [windowMaterial]);
 
   useEffect(() => {
     if (!notice) return;
@@ -321,6 +365,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const setTheme = useCallback((nextTheme: "system" | "light" | "dark") => {
     setThemeState(nextTheme);
     localStorage.setItem("dsc-theme", nextTheme);
+  }, []);
+
+  const setWindowMaterial = useCallback((nextMaterial: WindowMaterial) => {
+    setWindowMaterialState(nextMaterial);
+    setWindowMaterialReady(false);
+    localStorage.setItem("dsc-window-material", nextMaterial);
   }, []);
 
   const setDensity = useCallback((nextDensity: "comfortable" | "compact") => {
@@ -462,6 +512,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setCommandOpen,
     theme,
     setTheme,
+    windowMaterial,
+    setWindowMaterial,
+    windowMaterialCapabilities,
     density,
     setDensity,
     refreshInterval,
