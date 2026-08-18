@@ -1189,14 +1189,16 @@ kbd {
 .workspace-device-block__charts--dynamic > .workspace-widget:only-child { grid-column: 1 / -1; }
 .workspace-device-block__charts > .workspace-widget > .workspace-widget__content { min-height: 0; overflow: hidden; }
 .workspace-device-block__charts > .workspace-widget .telemetry-chart-card { min-width: 0; padding: 14px 15px; box-shadow: none; }
-.workspace-device-block__charts--dynamic { min-height: 0; overflow: auto; grid-auto-rows: 320px; align-items: start; align-content: start; }
+.workspace-device-block__charts--dynamic { min-height: 0; overflow: visible; grid-auto-rows: 320px; align-items: start; align-content: start; }
 .workspace-widget--device-frame .workspace-device-block { display: flex; width: 100%; height: 100%; min-height: 0; flex-direction: column; }
 .workspace-widget--device-frame .workspace-device-block__charts--dynamic { min-height: 0; flex: 1 1 auto; }
 .workspace-widget--device-frame.workspace-widget--medium .workspace-device-block__charts--dynamic { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .workspace-widget--device-frame.workspace-widget--small .workspace-device-block__charts--dynamic { grid-template-columns: minmax(0, 1fr); }
 .workspace-widget--device-frame.workspace-widget--small .workspace-device-block__charts--dynamic > .workspace-widget { grid-column: 1 / -1; }
-.workspace-device-chart-grid > .workspace-widget[data-widget-id="compute-cpu-facts"] { align-self: start; height: auto; min-height: 0; }
-.workspace-widget[data-widget-id="compute-cpu-facts"] > .workspace-widget__content { flex: 0 0 auto; overflow: visible; }
+.workspace-device-chart-grid > .workspace-widget[data-widget-id="compute-cpu-facts"],
+.workspace-widget[data-widget-id="compute-cpu-facts"] { --widget-w: 4; --widget-h: 1; align-self: stretch; height: 100%; min-height: 0; }
+.workspace-widget[data-widget-id="compute-cpu-facts"] > .workspace-widget__content { flex: 1 1 auto; overflow: visible; }
+.workspace-widget[data-widget-id="compute-cpu-facts"] .workspace-cpu-facts { height: 100%; display: flex; flex-direction: column; justify-content: center; }
 .workspace-telemetry-empty { display: grid; min-height: 228px; place-items: center; padding: 20px; border: 1px dashed var(--workspace-border-strong); border-radius: var(--workspace-radius-md); color: var(--workspace-text-muted); background: var(--workspace-surface-subtle); font-size: 12px; text-align: center; }
 .workspace-instance-list { display: flex; flex-direction: column; }
 .workspace-instance-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 42px; border-top: 1px solid var(--workspace-border); }
@@ -1386,16 +1388,17 @@ kbd {
   .workspace-setting-row__control { align-self: flex-start; }
 }
 
-/* Device frames use the same placement grid as every other widget. Their
-   inner charts own the scroll region when the fixed frame is smaller than
-   the complete device detail set. */
-.workspace-device-chart-grid > .workspace-widget--device-frame {
+/* Device frames dynamically size with their child charts. */
+.workspace-device-chart-grid > .workspace-widget--device-frame,
+.workspace-widget-grid > .workspace-widget--device-frame {
   height: 100%;
-  overflow: hidden;
-}
-.workspace-device-chart-grid > .workspace-widget--device-frame > .workspace-widget__content {
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
+}
+.workspace-device-chart-grid > .workspace-widget--device-frame > .workspace-widget__content,
+.workspace-widget-grid > .workspace-widget--device-frame > .workspace-widget__content {
+  min-height: 0;
+  overflow: visible;
 }
 
 @media (prefers-reduced-motion: reduce) {

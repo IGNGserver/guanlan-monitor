@@ -152,16 +152,26 @@ function mergeWidgetConfig(existing: WidgetInstanceConfig | undefined, incoming:
   return { ...(existing ?? {}), ...(incoming ?? {}) };
 }
 
-function normalizePlacement(value: Partial<WidgetPlacement> | undefined, sizeFallback: WidgetSize = DEFAULT_SIZE): WidgetPlacement {
+function normalizePlacement(
+  value: Partial<WidgetPlacement> | undefined,
+  sizeFallback: WidgetSize = DEFAULT_SIZE,
+  options?: { customH?: number; customW?: number }
+): WidgetPlacement {
   const size = value?.size === "large" || value?.size === "medium" || value?.size === "small" ? value.size : sizeFallback;
   const preset = SIZE_PRESETS[size];
+  const w = Number.isFinite(value?.w) && (value!.w as number) >= 1 && (value!.w as number) <= GRID_COLUMNS
+    ? Math.round(value!.w as number)
+    : (options?.customW ?? preset.w);
+  const h = Number.isFinite(value?.h) && (value!.h as number) >= 1
+    ? Math.round(value!.h as number)
+    : (options?.customH ?? preset.h);
   const x = Number.isFinite(value?.x) ? Math.round(value?.x as number) : 1;
   const y = Number.isFinite(value?.y) ? Math.round(value?.y as number) : 1;
   return {
-    x: Math.max(1, Math.min(x, GRID_COLUMNS - preset.w + 1)),
+    x: Math.max(1, Math.min(x, GRID_COLUMNS - w + 1)),
     y: Math.max(1, y),
-    w: preset.w,
-    h: preset.h,
+    w,
+    h,
     size,
     hidden: value?.hidden === true
   };
@@ -175,17 +185,47 @@ function findNextFreePlacement(
   placements: Record<string, WidgetPlacement>,
   size: WidgetSize,
   preferredX = 1,
-  preferredY = 1
+  preferredY = 1,
+  customDimensions?: { w?: number; h?: number }
 ): Pick<WidgetPlacement, "x" | "y"> {
   const preset = SIZE_PRESETS[size];
+  const w = customDimensions?.w && customDimensions.w >= 1 ? Math.min(GRID_COLUMNS, Math.round(customDimensions.w)) : preset.w;
+  const h = customDimensions?.h && customDimensions.h >= 1 ? Math.round(customDimensions.h) : preset.h;
   const existing = Object.values(placements).filter((placement) => !placement.hidden);
   const startY = Math.max(1, Math.round(preferredY));
-  const startX = Math.max(1, Math.min(Math.round(preferredX), GRID_COLUMNS - preset.w + 1));
+  const startX = Math.max(1, Math.min(Math.round(preferredX), GRID_COLUMNS - w + 1));
 
   for (let y = startY; y < startY + 1000; y += 1) {
     const firstX = y === startY ? startX : 1;
-    for (let x = firstX; x <= GRID_COLUMNS - preset.w + 1; x += 1) {
-      const candidate = normalizePlacement({ x, y, size });
+    for (let x = firstX; x <= GRID_COLUMNS - w + 1; x += 1) {
+      const candidate: WidgetPlacement = { x, y, w, h, size, hidden: false };
+      if (existing.every((placement) => !intersects(candidate, placement))) return { x, y };
+    }
+  }
+
+  const lastRow = existing.reduce((max, placement) => Math.max(max, placement.y + placement.h), 1);
+  return { x: 1, y: lastRow };
+}
+
+function findNextFreePlacementInContainer(
+  placements: Record<string, WidgetPlacement>,
+  size: WidgetSize,
+  maxColumns: number,
+  preferredX = 1,
+  preferredY = 1,
+  customDimensions?: { w?: number; h?: number }
+): Pick<WidgetPlacement, "x" | "y"> {
+  const preset = SIZE_PRESETS[size];
+  const w = Math.min(customDimensions?.w && customDimensions.w >= 1 ? Math.round(customDimensions.w) : preset.w, maxColumns);
+  const h = customDimensions?.h && customDimensions.h >= 1 ? Math.round(customDimensions.h) : preset.h;
+  const existing = Object.values(placements).filter((placement) => !placement.hidden);
+  const startY = Math.max(1, Math.round(preferredY));
+  const startX = Math.max(1, Math.min(Math.round(preferredX), maxColumns - w + 1));
+
+  for (let y = startY; y < startY + 1000; y += 1) {
+    const firstX = y === startY ? startX : 1;
+    for (let x = firstX; x <= maxColumns - w + 1; x += 1) {
+      const candidate: WidgetPlacement = { x, y, w, h, size, hidden: false };
       if (existing.every((placement) => !intersects(candidate, placement))) return { x, y };
     }
   }
@@ -224,18 +264,37 @@ function normalizePlacements(
   catalog: Record<string, WidgetCatalogEntry> = {}
 ): Record<string, WidgetPlacement> {
   const normalized = Object.fromEntries(
-    Object.entries(placements).map(([id, placement]) => [id, normalizePlacement(placement, catalog[id]?.defaultSize ?? DEFAULT_SIZE)])
+    Object.entries(placements).map(([id, placement]) => [
+      id,
+      normalizePlacement(placement, catalog[id]?.defaultSize ?? DEFAULT_SIZE, {
+        customH: id === "compute-cpu-facts" ? 1 : undefined
+      })
+    ])
   ) as Record<string, WidgetPlacement>;
 
-  // Group children have their own four-column coordinate system. Pack them
-  // inside the group first, then derive the group's outer width from the
-  // occupied child columns so a one-card group can shrink to 2x2 or 1x2.
-  const groupIds = new Set(
-    Object.values(catalog)
-      .map((entry) => entry.groupId)
-      .filter((groupId): groupId is string => Boolean(groupId && catalog[groupId]?.kind === "group" && catalog[groupId]?.widgetType))
-  );
+  if (catalog["compute-cpu-facts"] && normalized["compute-cpu-facts"]) {
+    normalized["compute-cpu-facts"].w = 4;
+    normalized["compute-cpu-facts"].h = 1;
+  }
+
+  // Group children have their own coordinate system. Pack them inside the group
+  // first, then derive the group's outer dimensions so multi-row groups dynamically
+  // grow in height without requiring inner scrolling.
+  const groupIds = new Set<string>();
+  for (const [id, entry] of Object.entries(catalog)) {
+    if (entry.kind === "group" && entry.widgetType) {
+      groupIds.add(id);
+    }
+    if (entry.groupId && catalog[entry.groupId]?.kind === "group" && catalog[entry.groupId]?.widgetType) {
+      groupIds.add(entry.groupId);
+    }
+  }
+
   for (const groupId of groupIds) {
+    const groupEntry = catalog[groupId];
+    const group = normalized[groupId];
+    if (!group) continue;
+
     const children = Object.entries(catalog)
       .filter(([, entry]) => entry.groupId === groupId)
       .map(([id]) => id)
@@ -245,30 +304,46 @@ function normalizePlacements(
         const rightPlacement = normalized[right];
         return leftPlacement.y - rightPlacement.y || leftPlacement.x - rightPlacement.x || left.localeCompare(right);
       });
+
+    const visibleChildren = children.filter((childId) => !normalized[childId].hidden);
+
+    const configuredSize = groupEntry?.config?.sizeOverride;
+    let groupSize: WidgetSize;
+    if (isWidgetSize(configuredSize)) {
+      groupSize = configuredSize;
+    } else if (visibleChildren.length >= 2) {
+      groupSize = "large";
+    } else if (visibleChildren.length === 1) {
+      groupSize = groupEntry?.defaultSize === "small" ? "small" : (groupEntry?.defaultSize === "large" ? "large" : "medium");
+    } else {
+      groupSize = groupEntry?.defaultSize ?? "small";
+    }
+
+    const groupColumns = SIZE_PRESETS[groupSize].w;
+
     const packed: Record<string, WidgetPlacement> = {};
     for (const childId of children) {
       const child = normalized[childId];
       if (!child.hidden) {
-        // A device group is a scrollable, self-contained layout. Its charts
-        // must always pack inside that frame, even when the outer canvas is in
-        // free-positioning mode. Otherwise a newly-created group keeps the
-        // registration y-coordinates and its width is calculated incorrectly.
-        const preferredX = snapToGrid ? child.x : 1;
-        const preferredY = snapToGrid ? child.y : 1;
-        const position = findNextFreePlacement(packed, child.size, preferredX, preferredY);
-        normalized[childId] = { ...child, ...position };
+        const childPreset = SIZE_PRESETS[child.size] ?? SIZE_PRESETS.medium;
+        const childW = Math.min(child.w && child.w >= 1 ? child.w : childPreset.w, groupColumns);
+        const childH = child.h && child.h >= 1 ? child.h : childPreset.h;
+        const position = findNextFreePlacementInContainer(packed, child.size, groupColumns, snapToGrid ? child.x : 1, snapToGrid ? child.y : 1, { w: childW, h: childH });
+        normalized[childId] = { ...child, ...position, w: childW, h: childH };
+        packed[childId] = normalized[childId];
       }
-      if (!normalized[childId].hidden) packed[childId] = normalized[childId];
     }
-    const group = normalized[groupId];
-    if (!group) continue;
-    const visibleChildren = Object.values(packed);
-    const occupiedWidth = visibleChildren.reduce((max, child) => Math.max(max, child.x + child.w - 1), 0);
-    const configuredSize = catalog[groupId]?.config?.sizeOverride;
-    const groupSize = isWidgetSize(configuredSize)
-      ? configuredSize
-      : visibleChildren.length ? sizeForGroupWidth(occupiedWidth, group.size) : "small";
-    normalized[groupId] = normalizePlacement({ ...group, size: groupSize }, group.size);
+
+    const occupiedHeight = Object.values(packed).reduce((max, child) => Math.max(max, child.y + child.h - 1), 0);
+    const groupH = visibleChildren.length ? Math.max(2, occupiedHeight) : 2;
+    const groupW = groupColumns;
+
+    normalized[groupId] = normalizePlacement({
+      ...group,
+      size: groupSize,
+      w: groupW,
+      h: groupH
+    }, groupSize);
   }
 
   if (!snapToGrid) return normalized;
@@ -278,7 +353,7 @@ function normalizePlacements(
     .sort(([, left], [, right]) => left.y - right.y || left.x - right.x);
   const compacted: Record<string, WidgetPlacement> = {};
   for (const [id, placement] of visible) {
-    const position = findNextFreePlacement(compacted, placement.size);
+    const position = findNextFreePlacement(compacted, placement.size, 1, 1, { w: placement.w, h: placement.h });
     compacted[id] = { ...placement, ...position };
   }
   for (const [id, placement] of Object.entries(normalized)) {
@@ -298,7 +373,7 @@ function moveWidgetWithAvoidance(layout: WidgetLayoutDocument, draggedId: string
   if (!dragged || !target || dragged.hidden || target.hidden) return layout;
   if (layoutContainerForWidget(draggedId, layout.catalog) !== layoutContainerForWidget(targetId, layout.catalog)) return layout;
 
-  const moving = normalizePlacement({ ...dragged, x: target.x, y: target.y }, dragged.size);
+  const moving = normalizePlacement({ ...dragged, x: target.x, y: target.y, w: dragged.w, h: dragged.h }, dragged.size);
   const placements = { ...layout.placements, [draggedId]: moving };
   const placed: Record<string, WidgetPlacement> = { [draggedId]: moving };
   const siblings = Object.entries(placements)
@@ -308,7 +383,7 @@ function moveWidgetWithAvoidance(layout: WidgetLayoutDocument, draggedId: string
   for (const [id, placement] of siblings) {
     const collides = Object.values(placed).some((occupied) => intersects(placement, occupied));
     if (collides) {
-      const position = findNextFreePlacement(placed, placement.size, placement.x, placement.y);
+      const position = findNextFreePlacement(placed, placement.size, placement.x, placement.y, { w: placement.w, h: placement.h });
       placements[id] = { ...placement, ...position };
     }
     placed[id] = placements[id];
@@ -397,8 +472,10 @@ function mergeDefinitions(layout: WidgetLayoutDocument, definitions: Record<stri
       ...(config ? { config } : {})
     };
     if (!next.placements[definition.id]) {
-      const position = findNextFreePlacement(topLevelPlacements(next.placements, next.catalog), definition.defaultSize);
-      next.placements[definition.id] = normalizePlacement({ ...position, size: definition.defaultSize });
+      const customH = definition.id === "compute-cpu-facts" ? 1 : undefined;
+      const initialPreset = SIZE_PRESETS[definition.defaultSize];
+      const position = findNextFreePlacement(topLevelPlacements(next.placements, next.catalog), definition.defaultSize, 1, 1, { w: initialPreset.w, h: customH ?? initialPreset.h });
+      next.placements[definition.id] = normalizePlacement({ ...position, size: definition.defaultSize, h: customH });
     }
   }
   next.placements = normalizePlacements(next.placements, next.snapToGrid, next.catalog);
@@ -710,8 +787,10 @@ export function WidgetLayoutProvider({
         ...(definition.visualization ? { visualization: definition.visualization } : {}),
         ...(definition.config ? { config: { ...definition.config } } : {})
       };
-      const position = findNextFreePlacement(topLevelPlacements(current.placements, current.catalog), definition.defaultSize);
-      current.placements[id] = normalizePlacement({ ...position, size: definition.defaultSize });
+      const customH = id === "compute-cpu-facts" ? 1 : undefined;
+      const initialPreset = SIZE_PRESETS[definition.defaultSize];
+      const position = findNextFreePlacement(topLevelPlacements(current.placements, current.catalog), definition.defaultSize, 1, 1, { w: initialPreset.w, h: customH ?? initialPreset.h });
+      current.placements[id] = normalizePlacement({ ...position, size: definition.defaultSize, h: customH });
       return current;
     }, { compact: true });
     return id;
@@ -1067,8 +1146,8 @@ function placementStyle(placement: WidgetPlacement | undefined): React.CSSProper
     "--widget-y": placement.y,
     "--widget-w": placement.w,
     "--widget-h": placement.h,
-    "--widget-w-md": placement.size === "large" ? 2 : 1,
-    "--widget-h-md": 2,
+    "--widget-w-md": placement.w >= 3 ? 2 : 1,
+    "--widget-h-md": placement.h,
     order: placement.y * 100 + placement.x
   } as React.CSSProperties;
 }

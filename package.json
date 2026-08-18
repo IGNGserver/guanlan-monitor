@@ -1,7 +1,7 @@
 {
-  "name": "device-state-console",
+  "name": "dsc-monorepo",
   "private": true,
-  "version": "0.2.174",
+  "version": "0.2.175",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "build": "pnpm -r build",
