@@ -1201,9 +1201,9 @@ kbd {
 .workspace-widget--device-frame.workspace-widget--small .workspace-device-block__charts--dynamic { grid-template-columns: minmax(0, 1fr); }
 .workspace-widget--device-frame.workspace-widget--small .workspace-device-block__charts--dynamic > .workspace-widget { grid-column: 1 / -1; }
 .workspace-device-chart-grid > .workspace-widget[data-widget-id="compute-cpu-facts"],
-.workspace-widget[data-widget-id="compute-cpu-facts"] { --widget-w: 4; --widget-h: 1; align-self: stretch; height: 100%; min-height: 0; }
-.workspace-widget[data-widget-id="compute-cpu-facts"] > .workspace-widget__content { flex: 1 1 auto; overflow: visible; }
-.workspace-widget[data-widget-id="compute-cpu-facts"] .workspace-cpu-facts { height: 100%; display: flex; flex-direction: column; justify-content: center; }
+.workspace-widget[data-widget-id="compute-cpu-facts"] { --widget-w: 4; --widget-h: 2; align-self: stretch; height: 100%; min-height: 0; }
+.workspace-widget[data-widget-id="compute-cpu-facts"] > .workspace-widget__content { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: visible; }
+.workspace-widget[data-widget-id="compute-cpu-facts"] .workspace-cpu-facts { height: 100%; min-height: 0; display: flex; flex-direction: column; justify-content: flex-start; padding: 16px 20px; }
 .workspace-telemetry-empty { display: grid; min-height: 228px; place-items: center; padding: 20px; border: 1px dashed var(--workspace-border-strong); border-radius: var(--workspace-radius-md); color: var(--workspace-text-muted); background: var(--workspace-surface-subtle); font-size: 12px; text-align: center; }
 .workspace-instance-list { display: flex; flex-direction: column; }
 .workspace-instance-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 42px; border-top: 1px solid var(--workspace-border); }

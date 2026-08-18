@@ -51,6 +51,7 @@
       GetDlgItem $0 $HWNDPARENT 1203
       ShowWindow $0 ${SW_HIDE}
       Call DSC_StartApp
+      Quit
     ${EndIf}
   FunctionEnd
 !endif
