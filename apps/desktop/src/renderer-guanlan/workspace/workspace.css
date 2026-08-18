@@ -1064,7 +1064,7 @@ kbd {
 .workspace-widget-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: stretch; }
 .workspace-device-chart-grid { grid-auto-rows: 170px; grid-auto-flow: dense; }
 .workspace-widget-grid { grid-auto-rows: 170px; grid-auto-flow: dense; }
-.workspace-widget { position: relative; display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; grid-column: var(--widget-x, auto) / span var(--widget-w, 2); grid-row: var(--widget-y, auto) / span var(--widget-h, 2); transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms ease, opacity 180ms ease; }
+.workspace-widget { position: relative; display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; grid-column: span var(--widget-w, 2); grid-row: span var(--widget-h, 2); transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms ease, opacity 180ms ease; }
 .workspace-device-chart-grid > .workspace-telemetry-empty { grid-column: 1 / -1; }
 .workspace-widget--large { --widget-w: 4; --widget-h: 2; --widget-w-md: 2; --widget-h-md: 2; }
 .workspace-widget--medium { --widget-w: 2; --widget-h: 2; --widget-w-md: 1; --widget-h-md: 2; }

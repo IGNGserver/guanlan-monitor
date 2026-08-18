@@ -1159,16 +1159,20 @@ export function useOptionalWidgetLayout() {
   return useContext(WidgetLayoutContext);
 }
 
-function placementStyle(placement: WidgetPlacement | undefined): React.CSSProperties | undefined {
-  if (!placement) return undefined;
+function placementStyle(
+  placement: WidgetPlacement | undefined,
+  fallbackSize: WidgetSize = DEFAULT_SIZE,
+  customH?: number
+): React.CSSProperties {
+  const size = placement?.size ?? fallbackSize;
+  const preset = SIZE_PRESETS[size] ?? SIZE_PRESETS.medium;
+  const w = placement?.w && placement.w >= 1 ? placement.w : preset.w;
+  const h = placement?.h && placement.h >= 1 ? placement.h : (customH ?? preset.h);
   return {
-    "--widget-x": placement.x,
-    "--widget-y": placement.y,
-    "--widget-w": placement.w,
-    "--widget-h": placement.h,
-    "--widget-w-md": placement.w >= 3 ? 2 : 1,
-    "--widget-h-md": placement.h,
-    order: placement.y * 100 + placement.x
+    "--widget-w": w,
+    "--widget-h": h,
+    "--widget-w-md": w >= 3 ? 2 : 1,
+    "--widget-h-md": h
   } as React.CSSProperties;
 }
 
@@ -1297,12 +1301,9 @@ export function DesktopWidget({
     else layout.finishWidgetDrag();
   };
 
-  const fallbackPlacement = useMemo(() => normalizePlacement(undefined, defaultSize, {
-    customH: id === "compute-cpu-facts" ? 1 : undefined
-  }), [defaultSize, id]);
-
+  const customH = id === "compute-cpu-facts" ? 1 : undefined;
   const widgetStyle = {
-    ...(placementStyle(resolved.placement ?? fallbackPlacement) ?? {}),
+    ...placementStyle(resolved.placement, resolved.size ?? defaultSize, customH),
     ...(dragging ? { transform: `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`, zIndex: 30 } : {})
   } as React.CSSProperties;
 
