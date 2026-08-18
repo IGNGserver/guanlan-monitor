@@ -1164,11 +1164,12 @@ export function useOptionalWidgetLayout() {
 function placementStyle(
   placement: WidgetPlacement | undefined,
   fallbackSize: WidgetSize = DEFAULT_SIZE,
-  customH?: number
+  customH?: number,
+  customW?: number
 ): React.CSSProperties {
   const size = placement?.size ?? fallbackSize;
   const preset = SIZE_PRESETS[size] ?? SIZE_PRESETS.medium;
-  const w = placement?.w && placement.w >= 1 ? placement.w : preset.w;
+  const w = placement?.w && placement.w >= 1 ? placement.w : (customW ?? preset.w);
   const h = placement?.h && placement.h >= 1 ? placement.h : (customH ?? preset.h);
   return {
     "--widget-w": w,
