@@ -1393,12 +1393,13 @@ kbd {
 .workspace-widget-grid > .workspace-widget--device-frame {
   height: 100%;
   min-height: 0;
-  overflow: visible;
+  overflow: hidden;
 }
 .workspace-device-chart-grid > .workspace-widget--device-frame > .workspace-widget__content,
 .workspace-widget-grid > .workspace-widget--device-frame > .workspace-widget__content {
   min-height: 0;
-  overflow: visible;
+  height: 100%;
+  overflow: hidden;
 }
 
 @media (prefers-reduced-motion: reduce) {

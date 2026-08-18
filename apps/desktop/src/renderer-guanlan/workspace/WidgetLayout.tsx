@@ -246,9 +246,7 @@ function isWidgetSize(value: unknown): value is WidgetSize {
 }
 
 function isGroupedEntry(id: string, catalog: Record<string, WidgetCatalogEntry>): boolean {
-  const groupId = catalog[id]?.groupId;
-  const parent = groupId ? catalog[groupId] : undefined;
-  return Boolean(groupId && parent?.kind === "group" && parent.widgetType);
+  return Boolean(catalog[id]?.groupId);
 }
 
 function topLevelPlacements(
@@ -277,16 +275,12 @@ function normalizePlacements(
     normalized["compute-cpu-facts"].h = 1;
   }
 
-  // Group children have their own coordinate system. Pack them inside the group
-  // first, then derive the group's outer dimensions so multi-row groups dynamically
-  // grow in height without requiring inner scrolling.
+  // Find all groups in catalog
   const groupIds = new Set<string>();
   for (const [id, entry] of Object.entries(catalog)) {
-    if (entry.kind === "group" && entry.widgetType) {
-      groupIds.add(id);
-    }
-    if (entry.groupId && catalog[entry.groupId]?.kind === "group" && catalog[entry.groupId]?.widgetType) {
-      groupIds.add(entry.groupId);
+    if (entry.kind === "group" || (entry.groupId && catalog[entry.groupId])) {
+      if (entry.kind === "group") groupIds.add(id);
+      if (entry.groupId && catalog[entry.groupId]?.kind === "group") groupIds.add(entry.groupId);
     }
   }
 
@@ -320,23 +314,27 @@ function normalizePlacements(
     }
 
     const groupColumns = SIZE_PRESETS[groupSize].w;
-
-    const packed: Record<string, WidgetPlacement> = {};
-    for (const childId of children) {
-      const child = normalized[childId];
-      if (!child.hidden) {
-        const childPreset = SIZE_PRESETS[child.size] ?? SIZE_PRESETS.medium;
-        const childW = Math.min(child.w && child.w >= 1 ? child.w : childPreset.w, groupColumns);
-        const childH = child.h && child.h >= 1 ? child.h : childPreset.h;
-        const position = findNextFreePlacementInContainer(packed, child.size, groupColumns, snapToGrid ? child.x : 1, snapToGrid ? child.y : 1, { w: childW, h: childH });
-        normalized[childId] = { ...child, ...position, w: childW, h: childH };
-        packed[childId] = normalized[childId];
-      }
-    }
-
-    const occupiedHeight = Object.values(packed).reduce((max, child) => Math.max(max, child.y + child.h - 1), 0);
-    const groupH = visibleChildren.length ? Math.max(2, occupiedHeight) : 2;
+    const chartsPerRow = groupColumns >= 4 ? 2 : 1;
+    const rowCount = visibleChildren.length ? Math.max(1, Math.ceil(visibleChildren.length / chartsPerRow)) : 1;
+    const groupH = visibleChildren.length ? rowCount * 2 : 2;
     const groupW = groupColumns;
+
+    visibleChildren.forEach((childId, index) => {
+      const child = normalized[childId];
+      const row = Math.floor(index / chartsPerRow);
+      const col = index % chartsPerRow;
+      const childW = groupColumns >= 4 ? 2 : groupColumns;
+      const childH = 2;
+      const childX = groupColumns >= 4 ? col * 2 + 1 : 1;
+      const childY = row * 2 + 1;
+      normalized[childId] = {
+        ...child,
+        x: childX,
+        y: childY,
+        w: childW,
+        h: childH
+      };
+    });
 
     normalized[groupId] = normalizePlacement({
       ...group,
@@ -346,20 +344,39 @@ function normalizePlacements(
     }, groupSize);
   }
 
-  if (!snapToGrid) return normalized;
-
-  const visible = Object.entries(normalized)
+  const visibleTopLevel = Object.entries(normalized)
     .filter(([id, placement]) => !placement.hidden && !isGroupedEntry(id, catalog))
-    .sort(([, left], [, right]) => left.y - right.y || left.x - right.x);
-  const compacted: Record<string, WidgetPlacement> = {};
-  for (const [id, placement] of visible) {
-    const position = findNextFreePlacement(compacted, placement.size, 1, 1, { w: placement.w, h: placement.h });
-    compacted[id] = { ...placement, ...position };
+    .sort(([leftId, left], [rightId, right]) => {
+      if (left.y !== right.y) return left.y - right.y;
+      if (left.x !== right.x) return left.x - right.x;
+      return leftId.localeCompare(rightId);
+    });
+
+  const finalPlacements: Record<string, WidgetPlacement> = {};
+  if (snapToGrid) {
+    for (const [id, placement] of visibleTopLevel) {
+      const position = findNextFreePlacement(finalPlacements, placement.size, 1, 1, { w: placement.w, h: placement.h });
+      finalPlacements[id] = { ...placement, ...position };
+    }
+  } else {
+    for (const [id, placement] of visibleTopLevel) {
+      const collides = Object.values(finalPlacements).some((occupied) => intersects(placement, occupied));
+      if (collides) {
+        const position = findNextFreePlacement(finalPlacements, placement.size, placement.x, placement.y, { w: placement.w, h: placement.h });
+        finalPlacements[id] = { ...placement, ...position };
+      } else {
+        finalPlacements[id] = placement;
+      }
+    }
   }
+
   for (const [id, placement] of Object.entries(normalized)) {
-    if (placement.hidden || isGroupedEntry(id, catalog)) compacted[id] = placement;
+    if (placement.hidden || isGroupedEntry(id, catalog)) {
+      finalPlacements[id] = placement;
+    }
   }
-  return compacted;
+
+  return finalPlacements;
 }
 
 function layoutContainerForWidget(id: string, catalog: Record<string, WidgetCatalogEntry>): string | null {
@@ -472,10 +489,14 @@ function mergeDefinitions(layout: WidgetLayoutDocument, definitions: Record<stri
       ...(config ? { config } : {})
     };
     if (!next.placements[definition.id]) {
-      const customH = definition.id === "compute-cpu-facts" ? 1 : undefined;
-      const initialPreset = SIZE_PRESETS[definition.defaultSize];
-      const position = findNextFreePlacement(topLevelPlacements(next.placements, next.catalog), definition.defaultSize, 1, 1, { w: initialPreset.w, h: customH ?? initialPreset.h });
-      next.placements[definition.id] = normalizePlacement({ ...position, size: definition.defaultSize, h: customH });
+      if (definition.groupId) {
+        next.placements[definition.id] = normalizePlacement({ x: 1, y: 1, size: definition.defaultSize });
+      } else {
+        const customH = definition.id === "compute-cpu-facts" ? 1 : undefined;
+        const initialPreset = SIZE_PRESETS[definition.defaultSize];
+        const position = findNextFreePlacement(topLevelPlacements(next.placements, next.catalog), definition.defaultSize, 1, 1, { w: initialPreset.w, h: customH ?? initialPreset.h });
+        next.placements[definition.id] = normalizePlacement({ ...position, size: definition.defaultSize, h: customH });
+      }
     }
   }
   next.placements = normalizePlacements(next.placements, next.snapToGrid, next.catalog);
@@ -680,9 +701,8 @@ export function WidgetLayoutProvider({
     if (locked) return { size: definition.defaultSize, hidden: false };
     const entry = draft.catalog[definition.id];
     // A system-rendered widget stays declared by the page after removal. The
-    // tombstone prevents a later data refresh from silently recreating it, and
-    // the missing-entry branch avoids a one-frame flash before registration.
-    if (definition.widgetType && (!entry || entry.config?.deleted === true)) {
+    // tombstone prevents a later data refresh from silently recreating it.
+    if (entry?.config?.deleted === true) {
       return { size: draft.placements[definition.id]?.size ?? definition.defaultSize, hidden: true, placement: draft.placements[definition.id] };
     }
     const placement = draft.placements[definition.id];
@@ -1277,8 +1297,12 @@ export function DesktopWidget({
     else layout.finishWidgetDrag();
   };
 
+  const fallbackPlacement = useMemo(() => normalizePlacement(undefined, defaultSize, {
+    customH: id === "compute-cpu-facts" ? 1 : undefined
+  }), [defaultSize, id]);
+
   const widgetStyle = {
-    ...(placementStyle(resolved.placement) ?? {}),
+    ...(placementStyle(resolved.placement ?? fallbackPlacement) ?? {}),
     ...(dragging ? { transform: `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`, zIndex: 30 } : {})
   } as React.CSSProperties;
 
