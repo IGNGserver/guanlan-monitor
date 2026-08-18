@@ -24,6 +24,8 @@ export type WidgetDefinition = {
   title: string;
   kind: WidgetKind;
   defaultSize: WidgetSize;
+  defaultH?: number;
+  defaultW?: number;
   widgetType?: string;
   category?: string;
   visualization?: WidgetVisualization;
@@ -1183,6 +1185,8 @@ export function DesktopWidget({
   title,
   kind = "content",
   defaultSize = DEFAULT_SIZE,
+  defaultH,
+  defaultW,
   widgetType,
   category,
   visualization,
@@ -1196,6 +1200,8 @@ export function DesktopWidget({
   title: string;
   kind?: WidgetKind;
   defaultSize?: WidgetSize;
+  defaultH?: number;
+  defaultW?: number;
   widgetType?: string;
   category?: string;
   visualization?: WidgetVisualization;
@@ -1204,7 +1210,20 @@ export function DesktopWidget({
   children: React.ReactNode;
 }) {
   const layout = useWidgetLayout();
-  const definition = useMemo(() => ({ id, templateId, groupId, title, kind, defaultSize, widgetType, category, visualization, config }), [category, config, defaultSize, groupId, id, kind, templateId, title, visualization, widgetType]);
+  const definition = useMemo(() => ({
+    id,
+    templateId,
+    groupId,
+    title,
+    kind,
+    defaultSize,
+    defaultH,
+    defaultW,
+    widgetType,
+    category,
+    visualization,
+    config
+  }), [category, config, defaultH, defaultSize, defaultW, groupId, id, kind, templateId, title, visualization, widgetType]);
   const resolved = layout.resolveWidget(definition);
   const editing = layout.editable && layout.editMode;
   const widgetRef = useRef<HTMLDivElement>(null);
@@ -1301,9 +1320,10 @@ export function DesktopWidget({
     else layout.finishWidgetDrag();
   };
 
-  const customH = id === "compute-cpu-facts" ? 1 : undefined;
+  const customH = id === "compute-cpu-facts" ? 1 : (defaultH ?? resolved.placement?.h);
+  const customW = defaultW ?? resolved.placement?.w;
   const widgetStyle = {
-    ...placementStyle(resolved.placement, resolved.size ?? defaultSize, customH),
+    ...placementStyle(resolved.placement, resolved.size ?? defaultSize, customH, customW),
     ...(dragging ? { transform: `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`, zIndex: 30 } : {})
   } as React.CSSProperties;
 

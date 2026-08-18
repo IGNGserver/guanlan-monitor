@@ -1261,8 +1261,10 @@ function TelemetryDeviceBlock({
   const widgetConfig: WidgetInstanceConfig | undefined = widgetId
     ? { systemRendered: true, ...(targetId ? { targetId } : {}) }
     : undefined;
+  const childCount = React.Children.count(children);
+  const defaultH = childCount >= 3 ? 4 : 2;
   const frame = (
-    <DeviceWidgetFrame kind={kind} eyebrow={eyebrow} title={title} subtitle={subtitle} count={`${React.Children.count(children)} 个图表`} contentClassName="workspace-device-block__charts--dynamic">
+    <DeviceWidgetFrame kind={kind} eyebrow={eyebrow} title={title} subtitle={subtitle} count={`${childCount} 个图表`} contentClassName="workspace-device-block__charts--dynamic">
       {children}
     </DeviceWidgetFrame>
   );
@@ -1278,6 +1280,7 @@ function TelemetryDeviceBlock({
       config={widgetConfig}
       kind="group"
       defaultSize={widgetDefaultSize}
+      defaultH={defaultH}
       className="workspace-widget--device-frame"
     >
       {frame}
