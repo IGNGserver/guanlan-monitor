@@ -134,13 +134,25 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
   },
   {
     widgetType: "cpu-usage",
-    title: "CPU 使用率",
-    description: "处理器负载趋势，可选择折线图或实时饼图形式。",
+    title: "CPU 使用率 (折线图)",
+    description: "处理器核心负载实时变化与历史趋势。",
     category: "处理器",
     kind: "content",
     defaultSize: "medium",
     visualization: "line",
-    visualizations: ["line", "donut", "area", "bar", "number"],
+    visualizations: ["line", "area", "bar", "number"],
+    requires: ["cpuUsage"],
+    targetKind: "cpu"
+  },
+  {
+    widgetType: "cpu-usage-pie",
+    title: "CPU 使用率 (饼图)",
+    description: "当前处理器核心负载占用环形饼图。",
+    category: "处理器",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "donut",
+    visualizations: ["donut", "number"],
     requires: ["cpuUsage"],
     targetKind: "cpu"
   },
@@ -170,24 +182,47 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
   },
   {
     widgetType: "memory-usage",
-    title: "内存使用",
-    description: "物理内存和提交内存的使用趋势，可选择折线图或实时饼图形式。",
+    title: "内存使用 (折线图)",
+    description: "物理内存和提交内存的使用趋势与当前占用。",
     category: "内存",
     kind: "content",
     defaultSize: "large",
     visualization: "area",
-    visualizations: ["line", "donut", "area", "bar", "number"],
+    visualizations: ["area", "line", "bar", "number"],
+    requires: ["memoryUsage"]
+  },
+  {
+    widgetType: "memory-usage-pie",
+    title: "内存使用 (饼图)",
+    description: "当前物理内存已用与剩余空间环形饼图。",
+    category: "内存",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "donut",
+    visualizations: ["donut", "number"],
     requires: ["memoryUsage"]
   },
   {
     widgetType: "disk-capacity",
-    title: "磁盘容量",
-    description: "磁盘已用容量趋势，可选择折线图或实时饼图展示已用与剩余空间。",
+    title: "磁盘容量 (折线图)",
+    description: "磁盘已用容量历史变化趋势。",
     category: "存储",
     kind: "content",
     defaultSize: "medium",
     visualization: "area",
-    visualizations: ["line", "donut", "area", "bar", "number"],
+    visualizations: ["area", "line", "bar", "number"],
+    requires: ["diskUsage"],
+    targetKind: "disk"
+  },
+  {
+    widgetType: "disk-capacity-pie",
+    title: "磁盘容量 (饼图)",
+    description: "指定磁盘当前已用与剩余空间环形饼图。",
+    category: "存储",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "donut",
+    visualizations: ["donut", "number"],
     requires: ["diskUsage"],
     targetKind: "disk"
   },
@@ -229,25 +264,49 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
   },
   {
     widgetType: "gpu-load",
-    title: "GPU 负载",
-    description: "显卡核心负载趋势，可选择折线图或实时饼图形式。",
+    title: "GPU 负载 (折线图)",
+    description: "显卡核心负载历史变化趋势。",
     category: "显卡",
     kind: "content",
     defaultSize: "medium",
     visualization: "line",
-    visualizations: ["line", "donut", "area", "bar", "number"],
+    visualizations: ["line", "area", "bar", "number"],
+    requires: ["gpuUsage"],
+    targetKind: "gpu"
+  },
+  {
+    widgetType: "gpu-load-pie",
+    title: "GPU 负载 (饼图)",
+    description: "当前显卡核心负载占用环形饼图。",
+    category: "显卡",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "donut",
+    visualizations: ["donut", "number"],
     requires: ["gpuUsage"],
     targetKind: "gpu"
   },
   {
     widgetType: "gpu-memory",
-    title: "GPU 显存使用",
-    description: "指定显卡的显存已用容量趋势，可选择折线图或实时饼图形式。",
+    title: "GPU 显存使用 (折线图)",
+    description: "指定显卡的显存已用容量历史趋势。",
     category: "显卡",
     kind: "content",
     defaultSize: "medium",
     visualization: "area",
-    visualizations: ["line", "donut", "area", "bar", "number"],
+    visualizations: ["area", "line", "bar", "number"],
+    requires: ["gpuMemory"],
+    targetKind: "gpu"
+  },
+  {
+    widgetType: "gpu-memory-pie",
+    title: "GPU 显存使用 (饼图)",
+    description: "当前显存已用与剩余容量环形饼图。",
+    category: "显卡",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "donut",
+    visualizations: ["donut", "number"],
     requires: ["gpuMemory"],
     targetKind: "gpu"
   },
@@ -477,7 +536,7 @@ function getTargetId(entry: WidgetLayoutCatalogEntry): string | undefined {
 function getWidgetLines(widgetType: string, metrics: MetricsResponse | null, targetId?: string): { lines: WidgetLine[]; valueFormatter?: (value: number) => string } {
   const series = metrics?.series;
   if (!series) return { lines: [] };
-  if (widgetType === "cpu-usage") {
+  if (widgetType === "cpu-usage" || widgetType === "cpu-usage-pie") {
     const lines = series.cpus?.length && targetId ? series.cpus.filter((item) => item.id === targetId).map((item) => ({ label: item.name, points: item.usagePercent, formatter: (value: number) => `${Math.round(value)}%` })) : [{ label: "CPU 使用率", points: series.cpuUsagePercent, formatter: (value: number) => `${Math.round(value)}%` }];
     return { lines, valueFormatter: (value) => `${Math.round(value)}%` };
   }
@@ -489,8 +548,8 @@ function getWidgetLines(widgetType: string, metrics: MetricsResponse | null, tar
     const cpu = targetId ? series.cpus?.find((item) => item.id === targetId) : undefined;
     return { lines: [{ label: "温度", points: cpu?.temperatureC ?? series.cpuTemperatureC, formatter: (value: number) => `${Math.round(value)} °C` }], valueFormatter: (value) => `${Math.round(value)} °C` };
   }
-  if (widgetType === "memory-usage") return { lines: [{ label: "物理内存", points: series.memoryUsedBytes, formatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes, formatter: formatBytes }], valueFormatter: formatBytes };
-  if (widgetType === "disk-capacity") {
+  if (widgetType === "memory-usage" || widgetType === "memory-usage-pie") return { lines: [{ label: "物理内存", points: series.memoryUsedBytes, formatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes, formatter: formatBytes }], valueFormatter: formatBytes };
+  if (widgetType === "disk-capacity" || widgetType === "disk-capacity-pie") {
     const points = targetId ? series.disks?.find((item) => item.id === targetId)?.usedBytes ?? [] : series.diskUsedBytes;
     return { lines: [{ label: "磁盘已用", points, formatter: formatBytes }], valueFormatter: formatBytes };
   }
@@ -515,11 +574,11 @@ function getWidgetLines(widgetType: string, metrics: MetricsResponse | null, tar
       valueFormatter: (value) => `${formatBytes(value)}/s`
     };
   }
-  if (widgetType === "gpu-load") {
+  if (widgetType === "gpu-load" || widgetType === "gpu-load-pie") {
     const gpuLines = series.gpus?.length && targetId ? series.gpus.filter((item) => item.id === targetId) : series.gpus ?? [];
     return { lines: gpuLines.length ? [{ label: "核心", points: averageSamplePoints(gpuLines.map((item) => item.usagePercent)), formatter: (value: number) => `${Math.round(value)}%` }, { label: "编码", points: averageSamplePoints(gpuLines.map((item) => item.encodePercent)), formatter: (value: number) => `${Math.round(value)}%` }, { label: "解码", points: averageSamplePoints(gpuLines.map((item) => item.decodePercent)), formatter: (value: number) => `${Math.round(value)}%` }] : [{ label: "GPU 使用率", points: series.gpuUsagePercent, formatter: (value: number) => `${Math.round(value)}%` }], valueFormatter: (value) => `${Math.round(value)}%` };
   }
-  if (widgetType === "gpu-memory") {
+  if (widgetType === "gpu-memory" || widgetType === "gpu-memory-pie") {
     const gpu = targetId ? series.gpus?.find((item) => item.id === targetId) : undefined;
     return { lines: [{ label: "显存已用", points: gpu?.memoryUsedBytes ?? series.gpuMemoryUsedBytes, formatter: formatBytes }], valueFormatter: formatBytes };
   }
@@ -579,31 +638,31 @@ function WidgetContent({ definition, entry, context }: { definition: WidgetCatal
     }
     return <DataTable rows={diskRows(disks)} />;
   }
-  if (definition.widgetType === "cpu-usage" && visualization === "donut") {
+  if ((definition.widgetType === "cpu-usage" || definition.widgetType === "cpu-usage-pie") && visualization === "donut") {
     const targetId = getTargetId(entry);
     const cpu = targetId ? latest?.cpuPackages?.find((item) => item.id === targetId) : latest?.cpuPackages?.[0];
     const used = cpu?.usagePercent ?? latestValue(metrics?.series.cpuUsagePercent) ?? 0;
     return <DonutChart data={[{ name: "已用", value: Math.min(100, Math.max(0, used)), color: "#3b82f6" }, { name: "空闲", value: Math.max(0, 100 - used), color: "#cbd5e1" }]} centerLabel={`${Math.round(used)}%`} />;
   }
-  if (definition.widgetType === "memory-usage" && visualization === "donut") {
+  if ((definition.widgetType === "memory-usage" || definition.widgetType === "memory-usage-pie") && visualization === "donut") {
     const used = latest?.memoryUsedBytes ?? 0;
     const total = latest?.memoryTotalBytes ?? 0;
     return <DonutChart data={[{ name: "已用", value: Math.max(0, used), color: "#14b8a6" }, { name: "空闲", value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />;
   }
-  if (definition.widgetType === "disk-capacity" && visualization === "donut") {
+  if ((definition.widgetType === "disk-capacity" || definition.widgetType === "disk-capacity-pie") && visualization === "donut") {
     const targetId = getTargetId(entry);
     const disk = targetId ? latest?.disks?.find((item) => item.id === targetId) : undefined;
     const used = disk?.usedBytes ?? latest?.diskUsedBytes ?? 0;
     const total = disk?.totalBytes ?? latest?.diskTotalBytes ?? 0;
     return <DonutChart data={[{ name: "已用", value: Math.max(0, used), color: "#3b82f6" }, { name: "剩余", value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />;
   }
-  if (definition.widgetType === "gpu-load" && visualization === "donut") {
+  if ((definition.widgetType === "gpu-load" || definition.widgetType === "gpu-load-pie") && visualization === "donut") {
     const targetId = getTargetId(entry);
     const gpu = targetId ? latest?.gpus?.find((item) => item.id === targetId) : latest?.gpus?.[0];
     const used = gpu?.utilizationPercent ?? latestValue(metrics?.series.gpuUsagePercent) ?? 0;
     return <DonutChart data={[{ name: "负载", value: Math.min(100, Math.max(0, used)), color: "#f59e0b" }, { name: "空闲", value: Math.max(0, 100 - used), color: "#cbd5e1" }]} centerLabel={`${Math.round(used)}%`} />;
   }
-  if (definition.widgetType === "gpu-memory" && visualization === "donut") {
+  if ((definition.widgetType === "gpu-memory" || definition.widgetType === "gpu-memory-pie") && visualization === "donut") {
     const targetId = getTargetId(entry);
     const gpu = targetId ? latest?.gpus?.find((item) => item.id === targetId) : latest?.gpus?.[0];
     const used = gpu?.memoryUsedBytes ?? 0;
@@ -850,38 +909,27 @@ export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogCo
           <div>
             <span className="workspace-section-kicker">{targetDefinition ? "选择目标设备" : "组件目录"}</span>
             <h2>{targetDefinition ? `选择${targetLabels[targetDefinition.targetKind ?? "cpu"]}实例` : "添加小组件"}</h2>
-            <p>{targetDefinition ? `“${targetDefinition.title}”会绑定到一个具体实例，可选择折线图或实时饼图形式。` : "支持折线趋势图与实时饼图，可以重复添加同一种小组件。"}</p>
+            <p>{targetDefinition ? `“${targetDefinition.title}”会绑定到一个具体实例。` : "可以在面板中自由添加和排布小组件。"}</p>
           </div>
           <button type="button" onClick={closeDrawer} aria-label="关闭小组件抽屉">×</button>
         </div>
         <div className="workspace-widget-drawer__body">
           {targetDefinition ? (
             <section className="workspace-widget-drawer__target-list">
-              {targetChoices.length ? targetChoices.map((target) => {
-                const supportsDonut = targetDefinition.visualizations.includes("donut") && !targetDefinition.deviceGroup;
-                return (
-                  <div className="workspace-widget-drawer__target" key={target.id}>
-                    <span><strong>{target.name}</strong>{target.detail && <small>{target.detail}</small>}</span>
-                    <div className="workspace-widget-drawer__target-actions">
-                      {supportsDonut ? (
-                        <>
-                          <button type="button" onClick={() => addWidget(targetDefinition, target, "line")}>折线图</button>
-                          <button type="button" onClick={() => addWidget(targetDefinition, target, "donut")}>饼图</button>
-                        </>
-                      ) : (
-                        <button type="button" onClick={() => addWidget(targetDefinition, target)}>添加</button>
-                      )}
-                    </div>
+              {targetChoices.length ? targetChoices.map((target) => (
+                <div className="workspace-widget-drawer__target" key={target.id}>
+                  <span><strong>{target.name}</strong>{target.detail && <small>{target.detail}</small>}</span>
+                  <div className="workspace-widget-drawer__target-actions">
+                    <button type="button" onClick={() => addWidget(targetDefinition, target)}>添加</button>
                   </div>
-                );
-              }) : <div className="workspace-widget-drawer__empty">当前时间范围没有可用的{targetLabels[targetDefinition.targetKind ?? "cpu"]}实例。</div>}
+                </div>
+              )) : <div className="workspace-widget-drawer__empty">当前时间范围没有可用的{targetLabels[targetDefinition.targetKind ?? "cpu"]}实例。</div>}
             </section>
           ) : Object.entries(grouped).map(([category, definitions]) => <section className="workspace-widget-drawer__group" key={category}><h3>{category}</h3>{definitions.map((definition) => {
             const targets = targetOptions(definition, metrics);
             const available = metricAvailable(definition, metrics) && (!definition.targetKind || targets.length > 0);
             const count = layout.widgetEntries.filter((entry) => entry.widgetType === definition.widgetType && !isSystemRenderedEntry(entry)).length;
             const availability = definition.targetKind ? (targets.length ? "添加时选择具体实例" : "当前没有可用实例") : definition.requires?.length ? "需要对应采集指标" : "可直接使用";
-            const supportsDonut = !definition.targetKind && definition.visualizations.includes("donut");
             return (
               <div className={`workspace-widget-drawer__item${available ? "" : " is-unavailable"}`} key={definition.widgetType}>
                 <div>
@@ -890,16 +938,7 @@ export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogCo
                   <small>{count ? `已添加 ${count} 个 · ${availability}` : availability}</small>
                 </div>
                 <div className="workspace-widget-drawer__actions">
-                  {definition.targetKind ? (
-                    <button type="button" disabled={!available} onClick={() => chooseDefinition(definition)}>选择</button>
-                  ) : supportsDonut ? (
-                    <>
-                      <button type="button" disabled={!available} className="workspace-widget-drawer__add-btn" onClick={() => chooseDefinition(definition, "line")}>折线图</button>
-                      <button type="button" disabled={!available} className="workspace-widget-drawer__add-btn" onClick={() => chooseDefinition(definition, "donut")}>饼图</button>
-                    </>
-                  ) : (
-                    <button type="button" disabled={!available} onClick={() => chooseDefinition(definition)}>添加</button>
-                  )}
+                  <button type="button" disabled={!available} onClick={() => chooseDefinition(definition)}>{definition.targetKind ? "选择" : "添加"}</button>
                 </div>
               </div>
             );

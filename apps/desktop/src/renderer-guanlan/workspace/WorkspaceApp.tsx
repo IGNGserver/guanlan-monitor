@@ -275,14 +275,24 @@ const WINDOW_DURATION_MAP: Record<string, number> = {
   "7d": 7 * 86400 * 1000
 };
 
-function splitPointsIntoSegments(points: SamplePoint[], maxGapMs: number): SamplePoint[][] {
-  if (!points.length) return [];
+function splitPointsIntoSegments(points: SamplePoint[], windowDurationMs: number): SamplePoint[][] {
+  if (points.length <= 1) return [points];
+
+  const deltas: number[] = [];
+  for (let i = 1; i < points.length; i++) {
+    const d = Date.parse(points[i].timestamp) - Date.parse(points[i - 1].timestamp);
+    if (d > 0) deltas.push(d);
+  }
+  deltas.sort((a, b) => a - b);
+  const medianDelta = deltas.length > 0 ? deltas[Math.floor(deltas.length / 2)] : 5000;
+  const gapThreshold = Math.max(medianDelta * 4, 45000, windowDurationMs * 0.15);
+
   const segments: SamplePoint[][] = [];
   let currentSegment: SamplePoint[] = [points[0]];
   for (let i = 1; i < points.length; i++) {
     const prevT = Date.parse(points[i - 1].timestamp);
     const currT = Date.parse(points[i].timestamp);
-    if (currT - prevT > maxGapMs) {
+    if (currT - prevT > gapThreshold) {
       segments.push(currentSegment);
       currentSegment = [points[i]];
     } else {
@@ -337,94 +347,35 @@ function TelemetryChartCard({
   widgetDefaultSize?: WidgetSize;
 }) {
   const { metricsWindow } = useWorkspace();
-  const [visType, setVisType] = useState<WidgetVisualization>(() => {
-    return widgetConfig?.visualization ?? widgetVisualization ?? "line";
-  });
+  const visType: WidgetVisualization = widgetConfig?.visualization ?? widgetVisualization ?? "line";
 
   const activeSeries = series.filter((item) => item.points && item.points.length > 0);
   const primaryPoints = activeSeries[0]?.points ?? [];
   const [selectedIndex, setSelectedIndex] = useState(Math.max(primaryPoints.length - 1, 0));
   const [isHovering, setIsHovering] = useState(false);
-  const [detailPage, setDetailPage] = useState<0 | 1>(0);
-  const pagesRef = useRef<HTMLDivElement>(null);
-  const detailsRef = useRef<HTMLDivElement>(null);
-  const pointerStartYRef = useRef<number | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
   const chartId = useId().replace(/:/g, "");
 
   useEffect(() => {
     setSelectedIndex(Math.max(primaryPoints.length - 1, 0));
     setIsHovering(false);
-    setDetailPage(0);
-    pagesRef.current?.scrollTo?.({ top: 0, behavior: "auto" });
   }, [primaryPoints.length, primaryPoints.at(-1)?.timestamp]);
-
-  const goToPage = (page: 0 | 1) => {
-    setDetailPage(page);
-    const pages = pagesRef.current;
-    pages?.scrollTo?.({ top: page * pages.clientHeight, behavior: "smooth" });
-  };
-
-  const handlePageWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    if (Math.abs(event.deltaY) < 4) return;
-    if (event.deltaY > 0 && detailPage === 0) {
-      event.preventDefault();
-      goToPage(1);
-      return;
-    }
-    if (event.deltaY < 0 && detailPage === 1 && (detailsRef.current?.scrollTop ?? 0) <= 1) {
-      event.preventDefault();
-      goToPage(0);
-    }
-  };
-
-  const handlePagePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    pointerStartYRef.current = event.clientY;
-  };
-
-  const handlePagePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
-    const startY = pointerStartYRef.current;
-    pointerStartYRef.current = null;
-    if (startY == null || Math.abs(event.clientY - startY) < 24) return;
-    const deltaY = event.clientY - startY;
-    if (deltaY < 0 && detailPage === 0) {
-      goToPage(1);
-      return;
-    }
-    if (deltaY < 0 && detailPage === 1 && (detailsRef.current?.scrollTop ?? 0) <= 1) goToPage(0);
-  };
 
   const formatValue = (item: TelemetrySeries, value: number) => item.valueFormatter?.(value) ?? valueFormatter(value);
 
-  const isBoundedMetric = fixedMaxValue != null || widgetCategory === "存储" || widgetCategory === "显卡" || widgetCategory === "处理器" || (activeSeries.length > 0 && (activeSeries[0].label.includes("容量") || activeSeries[0].label.includes("负载") || activeSeries[0].label.includes("使用率")));
-
-  const toggleControls = isBoundedMetric ? (
-    <div className="telemetry-chart-vis-toggle" role="group" aria-label="图表类型">
-      <button
-        type="button"
-        className={`telemetry-chart-vis-btn ${visType !== "donut" ? "is-active" : ""}`}
-        onClick={() => setVisType("line")}
-        title="折线趋势图"
-      >
-        折线图
-      </button>
-      <button
-        type="button"
-        className={`telemetry-chart-vis-btn ${visType === "donut" ? "is-active" : ""}`}
-        onClick={() => setVisType("donut")}
-        title="实时饼图"
-      >
-        饼图
-      </button>
-    </div>
-  ) : null;
-
-  const headerControls = (controls || toggleControls) ? (
+  const headerControls = (
     <div className="telemetry-chart-controls">
       {controls}
-      {toggleControls}
+      <button
+        type="button"
+        className="workspace-btn workspace-btn--subtle telemetry-chart-details-btn"
+        onClick={() => setShowDetails(!showDetails)}
+        aria-label={showDetails ? "返回图表" : "查看详细信息"}
+      >
+        {showDetails ? "返回图表" : "详细信息"}
+      </button>
     </div>
-  ) : null;
+  );
 
   if (!activeSeries.length || !primaryPoints.length) {
     const emptyCard = (
@@ -434,16 +385,12 @@ function TelemetryChartCard({
             <h3>{title}</h3>
             {subtitle && <span>{subtitle}</span>}
           </div>
-          {headerControls}
+          {controls && <div className="telemetry-chart-controls">{controls}</div>}
         </div>
-        <div className="telemetry-chart-card__pages telemetry-chart-card__pages--single">
-          <div className="telemetry-chart-card__page telemetry-chart-card__page--chart">
-            <div className="workspace-trend workspace-trend--empty">
-              <div className="workspace-trend-empty">{emptyMessage}</div>
-            </div>
-            {footer && <div className="telemetry-chart-card__details"><div className="telemetry-chart-card__footer">{footer}</div></div>}
-          </div>
+        <div className="workspace-trend workspace-trend--empty">
+          <div className="workspace-trend-empty">{emptyMessage}</div>
         </div>
+        {footer && <div className="telemetry-chart-card__details"><div className="telemetry-chart-card__footer">{footer}</div></div>}
       </Surface>
     );
     return widgetId ? (
@@ -464,6 +411,7 @@ function TelemetryChartCard({
     ) : emptyCard;
   }
 
+  // 1. Time window boundaries
   const windowDurationMs = WINDOW_DURATION_MAP[metricsWindow] ?? 300000;
   const allTimestamps = primaryPoints.map((p) => Date.parse(p.timestamp)).filter((t) => Number.isFinite(t));
   const latestSampleTime = allTimestamps.length ? Math.max(...allTimestamps) : Date.now();
@@ -515,8 +463,7 @@ function TelemetryChartCard({
     if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) setIsHovering(false);
   };
 
-  const maxGapMs = Math.max(12000, windowDurationMs / 30);
-
+  // Statistics
   const statsList = activeSeries.map((s) => {
     const vals = s.points.map((p) => p.value);
     const curVal = s.points[curIndex]?.value ?? vals[vals.length - 1] ?? 0;
@@ -533,6 +480,7 @@ function TelemetryChartCard({
   const gradientOneId = `chart-fill-grad-1-${chartId}`;
   const gradientTwoId = `chart-fill-grad-2-${chartId}`;
 
+  // Donut/Pie calculations
   const primaryVal = primaryPoints[curIndex]?.value ?? primaryPoints.at(-1)?.value ?? 0;
   const boundMax = fixedMaxValue != null ? fixedMaxValue : (allValues.length ? Math.max(...allValues, 1) : 100);
   const usedAmount = Math.min(boundMax, Math.max(0, primaryVal));
@@ -551,174 +499,171 @@ function TelemetryChartCard({
         {headerControls}
       </div>
 
-      <div className="telemetry-chart-card__pages" ref={pagesRef} onWheel={handlePageWheel} onPointerDown={handlePagePointerDown} onPointerUp={handlePagePointerUp} onPointerCancel={() => { pointerStartYRef.current = null; }}>
-        <div className="telemetry-chart-card__page telemetry-chart-card__page--chart">
-          {visType === "donut" ? (
-            <div className="telemetry-donut-card">
-              <div className="telemetry-donut-visual">
-                <svg viewBox="0 0 100 100" className="telemetry-donut-svg" aria-hidden="true">
-                  <circle cx="50" cy="50" r="38" className="telemetry-donut-track" />
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="38"
-                    className="telemetry-donut-arc"
-                    style={{
-                      strokeDasharray: donutDasharray,
-                      strokeDashoffset: 0
-                    }}
-                  />
-                </svg>
-                <div className="telemetry-donut-center">
-                  <span className="telemetry-donut-center__val">
-                    {fixedMaxValue === 100 ? `${Math.round(usedAmount)}%` : formatValue(activeSeries[0], usedAmount)}
-                  </span>
-                  <span className="telemetry-donut-center__label">{usagePercentage.toFixed(1)}% 占用</span>
+      {showDetails ? (
+        <div className="telemetry-chart-card__details">
+          <div className="telemetry-chart-stats">
+            {statsList.map((st, idx) => (
+              <React.Fragment key={st.label}>
+                <div className={`telemetry-stat-item ${idx === 0 ? "stat-primary" : idx === 1 ? "stat-green" : "stat-amber"}`}>
+                  <label>{st.label} (当前)</label>
+                  <strong>{st.formatter(st.cur)}</strong>
                 </div>
-              </div>
-              <div className="telemetry-donut-legend">
-                <div className="telemetry-donut-legend__item">
-                  <span className="telemetry-donut-dot is-used" />
-                  <div className="telemetry-donut-legend__text">
-                    <label>当前占用 / 负载</label>
-                    <strong>{formatValue(activeSeries[0], usedAmount)}</strong>
-                  </div>
+                <div className="telemetry-stat-item">
+                  <label>平均 (Avg)</label>
+                  <strong>{st.formatter(st.avg)}</strong>
                 </div>
-                <div className="telemetry-donut-legend__item">
-                  <span className="telemetry-donut-dot is-free" />
-                  <div className="telemetry-donut-legend__text">
-                    <label>空闲 / 剩余空间</label>
-                    <strong>{formatValue(activeSeries[0], freeAmount)}</strong>
-                  </div>
+                <div className="telemetry-stat-item">
+                  <label>峰值 (Max)</label>
+                  <strong>{st.formatter(st.max)}</strong>
                 </div>
-                <div className="telemetry-donut-legend__item">
-                  <span className="telemetry-donut-dot is-total" />
-                  <div className="telemetry-donut-legend__text">
-                    <label>总量上限</label>
-                    <strong>{formatValue(activeSeries[0], boundMax)}</strong>
-                  </div>
+                <div className="telemetry-stat-item">
+                  <label>谷值 (Min)</label>
+                  <strong>{st.formatter(st.min)}</strong>
                 </div>
-              </div>
-            </div>
-          ) : (
-            <div className="telemetry-chart-box">
-              <div className="telemetry-chart-plot" onPointerDown={selectPoint} onPointerMove={selectPoint} onPointerEnter={selectPoint} onPointerLeave={stopHover}>
-                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                  <defs>
-                    <linearGradient id={gradientOneId} x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="0%" stopColor="var(--workspace-accent)" stopOpacity="0.28" />
-                      <stop offset="100%" stopColor="var(--workspace-accent)" stopOpacity="0" />
-                    </linearGradient>
-                    <linearGradient id={gradientTwoId} x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="0%" stopColor="var(--workspace-green)" stopOpacity="0.22" />
-                      <stop offset="100%" stopColor="var(--workspace-green)" stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
-
-                  {[0, 25, 50, 75, 100].map((pos) => (
-                    <line key={pos} x1="0" x2="100" y1={pos} y2={pos} className="telemetry-chart-grid" />
-                  ))}
-
-                  {activeSeries.map((s, idx) => {
-                    const segments = splitPointsIntoSegments(s.points, maxGapMs);
-                    const lPath = segments.map((seg) => {
-                      if (seg.length === 1) {
-                        const x = timeToX(seg[0].timestamp).toFixed(2);
-                        const y = yFor(seg[0].value).toFixed(2);
-                        return `M ${x} ${y} L ${x} ${y}`;
-                      }
-                      return seg.map((p, i) => `${i === 0 ? "M" : "L"} ${timeToX(p.timestamp).toFixed(2)} ${yFor(p.value).toFixed(2)}`).join(" ");
-                    }).join(" ");
-
-                    const fPath = segments.filter((seg) => seg.length > 1).map((seg) => {
-                      const segLine = seg.map((p, i) => `${i === 0 ? "M" : "L"} ${timeToX(p.timestamp).toFixed(2)} ${yFor(p.value).toFixed(2)}`).join(" ");
-                      const firstX = timeToX(seg[0].timestamp).toFixed(2);
-                      const lastX = timeToX(seg[seg.length - 1].timestamp).toFixed(2);
-                      return `${segLine} L ${lastX} 100 L ${firstX} 100 Z`;
-                    }).join(" ");
-
-                    const lineClass = idx === 0 ? "telemetry-chart-line-1" : idx === 1 ? "telemetry-chart-line-2" : idx === 2 ? "telemetry-chart-line-3" : "telemetry-chart-line-4";
-                    const fillClass = idx === 0 ? "telemetry-chart-fill-1" : idx === 1 ? "telemetry-chart-fill-2" : "";
-
-                    return (
-                      <g key={s.label}>
-                        {fillClass && fPath && <path d={fPath} className={fillClass} style={{ fill: idx === 0 ? `url(#${gradientOneId})` : `url(#${gradientTwoId})` }} />}
-                        {lPath && <path d={lPath} className={lineClass} />}
-                      </g>
-                    );
-                  })}
-
-                  {isHovering && <rect x={Math.max(0, xPosition - 1.25)} y="0" width="2.5" height="100" className="telemetry-chart-selection-band" />}
-                  {isHovering && <line x1={xPosition} x2={xPosition} y1="0" y2="100" className="telemetry-chart-crosshair" />}
-                </svg>
-
-                {isHovering && activeSeries.map((s, idx) => (
-                  s.points[curIndex] ? (
-                    <div
-                      key={`marker-${s.label}`}
-                      className={`telemetry-chart-marker telemetry-chart-marker--${idx % 4}`}
-                      style={{
-                        left: `${xPosition}%`,
-                        top: `${yFor(s.points[curIndex].value)}%`
-                      }}
-                    />
-                  ) : null
-                ))}
-
-                <div className="telemetry-chart-axis-y">
-                  <span>{valueFormatter(maxValue)}</span>
-                  <span>{valueFormatter(0)}</span>
-                </div>
-                <div className="telemetry-chart-axis-x" aria-hidden="true">
-                  <span>{formatAxisTime(new Date(windowStartTime).toISOString())}</span>
-                  <span>{formatAxisTime(new Date(windowStartTime + totalSpan / 2).toISOString())}</span>
-                  <span>{formatAxisTime(new Date(windowEndTime).toISOString())}</span>
-                </div>
-                {isHovering && selectedTimestamp && (
-                  <div className={`telemetry-chart-tooltip ${tooltipAlignment}`} style={{ left: `${xPosition}%` }} role="status">
-                    <time>{formatPreciseDateTime(selectedTimestamp)}</time>
-                    <div className="telemetry-chart-tooltip__values">
-                      {activeSeries.map((item, idx) => {
-                        const point = item.points[curIndex];
-                        if (!point) return null;
-                        return <div className="telemetry-chart-tooltip__row" key={item.label}><i className={`telemetry-chart-tooltip__dot telemetry-chart-tooltip__dot--${idx % 4}`} /><span>{item.label}</span><strong>{formatValue(item, point.value)}</strong></div>;
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+              </React.Fragment>
+            ))}
+          </div>
+          {footer && <div className="telemetry-chart-card__footer">{footer}</div>}
         </div>
-
-        <div className="telemetry-chart-card__page telemetry-chart-card__page--details" ref={detailsRef}>
-          <div className="telemetry-chart-card__details">
-            <div className="telemetry-chart-stats">
-              {statsList.map((st, idx) => (
-                <React.Fragment key={st.label}>
-                  <div className={`telemetry-stat-item ${idx === 0 ? "stat-primary" : idx === 1 ? "stat-green" : "stat-amber"}`}>
-                    <label>{st.label} (当前)</label>
-                    <strong>{st.formatter(st.cur)}</strong>
-                  </div>
-                  <div className="telemetry-stat-item">
-                    <label>平均 (Avg)</label>
-                    <strong>{st.formatter(st.avg)}</strong>
-                  </div>
-                  <div className="telemetry-stat-item">
-                    <label>峰值 (Max)</label>
-                    <strong>{st.formatter(st.max)}</strong>
-                  </div>
-                  <div className="telemetry-stat-item">
-                    <label>谷值 (Min)</label>
-                    <strong>{st.formatter(st.min)}</strong>
-                  </div>
-                </React.Fragment>
-              ))}
+      ) : visType === "donut" ? (
+        <div className="telemetry-donut-card">
+          <div className="telemetry-donut-visual">
+            <svg viewBox="0 0 100 100" className="telemetry-donut-svg" aria-hidden="true">
+              <circle cx="50" cy="50" r="38" className="telemetry-donut-track" />
+              <circle
+                cx="50"
+                cy="50"
+                r="38"
+                className="telemetry-donut-arc"
+                style={{
+                  strokeDasharray: donutDasharray,
+                  strokeDashoffset: 0
+                }}
+              />
+            </svg>
+            <div className="telemetry-donut-center">
+              <span className="telemetry-donut-center__val">
+                {fixedMaxValue === 100 ? `${Math.round(usedAmount)}%` : formatValue(activeSeries[0], usedAmount)}
+              </span>
+              <span className="telemetry-donut-center__label">{usagePercentage.toFixed(1)}% 占用</span>
             </div>
-            {footer && <div className="telemetry-chart-card__footer">{footer}</div>}
+          </div>
+          <div className="telemetry-donut-legend">
+            <div className="telemetry-donut-legend__item">
+              <span className="telemetry-donut-dot is-used" />
+              <div className="telemetry-donut-legend__text">
+                <label>当前占用 / 负载</label>
+                <strong>{formatValue(activeSeries[0], usedAmount)}</strong>
+              </div>
+            </div>
+            <div className="telemetry-donut-legend__item">
+              <span className="telemetry-donut-dot is-free" />
+              <div className="telemetry-donut-legend__text">
+                <label>空闲 / 剩余空间</label>
+                <strong>{formatValue(activeSeries[0], freeAmount)}</strong>
+              </div>
+            </div>
+            <div className="telemetry-donut-legend__item">
+              <span className="telemetry-donut-dot is-total" />
+              <div className="telemetry-donut-legend__text">
+                <label>总量上限</label>
+                <strong>{formatValue(activeSeries[0], boundMax)}</strong>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="telemetry-chart-box">
+          <div className="telemetry-chart-plot" onPointerDown={selectPoint} onPointerMove={selectPoint} onPointerEnter={selectPoint} onPointerLeave={stopHover}>
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <linearGradient id={gradientOneId} x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stopColor="var(--workspace-accent)" stopOpacity="0.28" />
+                  <stop offset="100%" stopColor="var(--workspace-accent)" stopOpacity="0" />
+                </linearGradient>
+                <linearGradient id={gradientTwoId} x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stopColor="var(--workspace-green)" stopOpacity="0.22" />
+                  <stop offset="100%" stopColor="var(--workspace-green)" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+
+              {/* 背景刻度网格线 */}
+              {[0, 25, 50, 75, 100].map((pos) => (
+                <line key={pos} x1="0" x2="100" y1={pos} y2={pos} className="telemetry-chart-grid" />
+              ))}
+
+              {/* 多系列按连续段绘制 */}
+              {activeSeries.map((s, idx) => {
+                const segments = splitPointsIntoSegments(s.points, windowDurationMs);
+                const lPath = segments.map((seg) => {
+                  if (seg.length === 1) {
+                    const x = timeToX(seg[0].timestamp).toFixed(2);
+                    const y = yFor(seg[0].value).toFixed(2);
+                    return `M ${x} ${y} L ${x} ${y}`;
+                  }
+                  return seg.map((p, i) => `${i === 0 ? "M" : "L"} ${timeToX(p.timestamp).toFixed(2)} ${yFor(p.value).toFixed(2)}`).join(" ");
+                }).join(" ");
+
+                const fPath = segments.filter((seg) => seg.length > 1).map((seg) => {
+                  const segLine = seg.map((p, i) => `${i === 0 ? "M" : "L"} ${timeToX(p.timestamp).toFixed(2)} ${yFor(p.value).toFixed(2)}`).join(" ");
+                  const firstX = timeToX(seg[0].timestamp).toFixed(2);
+                  const lastX = timeToX(seg[seg.length - 1].timestamp).toFixed(2);
+                  return `${segLine} L ${lastX} 100 L ${firstX} 100 Z`;
+                }).join(" ");
+
+                const lineClass = idx === 0 ? "telemetry-chart-line-1" : idx === 1 ? "telemetry-chart-line-2" : idx === 2 ? "telemetry-chart-line-3" : "telemetry-chart-line-4";
+                const fillClass = idx === 0 ? "telemetry-chart-fill-1" : idx === 1 ? "telemetry-chart-fill-2" : "";
+
+                return (
+                  <g key={s.label}>
+                    {fillClass && fPath && <path d={fPath} className={fillClass} style={{ fill: idx === 0 ? `url(#${gradientOneId})` : `url(#${gradientTwoId})` }} />}
+                    {lPath && <path d={lPath} className={lineClass} />}
+                  </g>
+                );
+              })}
+
+              {/* 悬浮选中态 */}
+              {isHovering && <rect x={Math.max(0, xPosition - 1.25)} y="0" width="2.5" height="100" className="telemetry-chart-selection-band" />}
+              {isHovering && <line x1={xPosition} x2={xPosition} y1="0" y2="100" className="telemetry-chart-crosshair" />}
+            </svg>
+
+            {isHovering && activeSeries.map((s, idx) => (
+              s.points[curIndex] ? (
+                <div
+                  key={`marker-${s.label}`}
+                  className={`telemetry-chart-marker telemetry-chart-marker--${idx % 4}`}
+                  style={{
+                    left: `${xPosition}%`,
+                    top: `${yFor(s.points[curIndex].value)}%`
+                  }}
+                />
+              ) : null
+            ))}
+
+            <div className="telemetry-chart-axis-y">
+              <span>{valueFormatter(maxValue)}</span>
+              <span>{valueFormatter(0)}</span>
+            </div>
+            <div className="telemetry-chart-axis-x" aria-hidden="true">
+              <span>{formatAxisTime(new Date(windowStartTime).toISOString())}</span>
+              <span>{formatAxisTime(new Date(windowStartTime + totalSpan / 2).toISOString())}</span>
+              <span>{formatAxisTime(new Date(windowEndTime).toISOString())}</span>
+            </div>
+            {isHovering && selectedTimestamp && (
+              <div className={`telemetry-chart-tooltip ${tooltipAlignment}`} style={{ left: `${xPosition}%` }} role="status">
+                <time>{formatPreciseDateTime(selectedTimestamp)}</time>
+                <div className="telemetry-chart-tooltip__values">
+                  {activeSeries.map((item, idx) => {
+                    const point = item.points[curIndex];
+                    if (!point) return null;
+                    return <div className="telemetry-chart-tooltip__row" key={item.label}><i className={`telemetry-chart-tooltip__dot telemetry-chart-tooltip__dot--${idx % 4}`} /><span>{item.label}</span><strong>{formatValue(item, point.value)}</strong></div>;
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </Surface>
   );
 
@@ -798,8 +743,7 @@ function WorkspaceTrend({
   const maxValue = Math.max(fixedMaxValue, Math.max(...points.map((point) => point.value), 1));
   const yFor = (value: number) => 100 - Math.min(Math.max(value / maxValue, 0), 1) * 100;
 
-  const maxGapMs = Math.max(12000, windowDurationMs / 30);
-  const segments = splitPointsIntoSegments(points, maxGapMs);
+  const segments = splitPointsIntoSegments(points, windowDurationMs);
 
   const linePath = segments.map((seg) => {
     if (seg.length === 1) {

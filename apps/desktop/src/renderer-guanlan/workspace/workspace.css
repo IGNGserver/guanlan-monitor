@@ -1612,6 +1612,26 @@ kbd {
   gap: 8px;
 }
 
+.telemetry-chart-details-btn {
+  border: 1px solid var(--workspace-border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  color: var(--workspace-text-secondary);
+  background: var(--workspace-surface-subtle);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 140ms ease;
+}
+
+.telemetry-chart-details-btn:hover {
+  color: var(--workspace-text);
+  border-color: var(--workspace-accent);
+  background: var(--workspace-surface-hover);
+}
+
 .telemetry-chart-vis-toggle {
   display: inline-flex;
   align-items: center;
