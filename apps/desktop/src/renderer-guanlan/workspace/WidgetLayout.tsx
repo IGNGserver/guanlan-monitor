@@ -267,14 +267,14 @@ function normalizePlacements(
     Object.entries(placements).map(([id, placement]) => [
       id,
       normalizePlacement(placement, catalog[id]?.defaultSize ?? DEFAULT_SIZE, {
-        customH: id === "compute-cpu-facts" ? 1 : undefined
+        customH: id === "compute-cpu-facts" ? 2 : undefined
       })
     ])
   ) as Record<string, WidgetPlacement>;
 
   if (catalog["compute-cpu-facts"] && normalized["compute-cpu-facts"]) {
     normalized["compute-cpu-facts"].w = 4;
-    normalized["compute-cpu-facts"].h = 1;
+    normalized["compute-cpu-facts"].h = 2;
   }
 
   // Find all groups in catalog
@@ -494,7 +494,7 @@ function mergeDefinitions(layout: WidgetLayoutDocument, definitions: Record<stri
       if (definition.groupId) {
         next.placements[definition.id] = normalizePlacement({ x: 1, y: 1, size: definition.defaultSize });
       } else {
-        const customH = definition.id === "compute-cpu-facts" ? 1 : undefined;
+        const customH = definition.id === "compute-cpu-facts" ? 2 : undefined;
         const initialPreset = SIZE_PRESETS[definition.defaultSize];
         const position = findNextFreePlacement(topLevelPlacements(next.placements, next.catalog), definition.defaultSize, 1, 1, { w: initialPreset.w, h: customH ?? initialPreset.h });
         next.placements[definition.id] = normalizePlacement({ ...position, size: definition.defaultSize, h: customH });
@@ -809,7 +809,7 @@ export function WidgetLayoutProvider({
         ...(definition.visualization ? { visualization: definition.visualization } : {}),
         ...(definition.config ? { config: { ...definition.config } } : {})
       };
-      const customH = id === "compute-cpu-facts" ? 1 : undefined;
+      const customH = id === "compute-cpu-facts" ? 2 : undefined;
       const initialPreset = SIZE_PRESETS[definition.defaultSize];
       const position = findNextFreePlacement(topLevelPlacements(current.placements, current.catalog), definition.defaultSize, 1, 1, { w: initialPreset.w, h: customH ?? initialPreset.h });
       current.placements[id] = normalizePlacement({ ...position, size: definition.defaultSize, h: customH });
@@ -1321,7 +1321,7 @@ export function DesktopWidget({
     else layout.finishWidgetDrag();
   };
 
-  const customH = id === "compute-cpu-facts" ? 1 : (defaultH ?? resolved.placement?.h);
+  const customH = id === "compute-cpu-facts" ? 2 : (defaultH ?? resolved.placement?.h);
   const customW = defaultW ?? resolved.placement?.w;
   const widgetStyle = {
     ...placementStyle(resolved.placement, resolved.size ?? defaultSize, customH, customW),
