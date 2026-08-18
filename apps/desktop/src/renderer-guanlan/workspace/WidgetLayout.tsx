@@ -1244,7 +1244,7 @@ export function DesktopWidget({
     const nextRect = node.getBoundingClientRect();
     const previousRect = previousRectRef.current;
     previousRectRef.current = nextRect;
-    if (dragging || !previousRect) return;
+    if (!layout.draggingWidgetId || dragging || !previousRect) return;
     const deltaX = previousRect.left - nextRect.left;
     const deltaY = previousRect.top - nextRect.top;
     if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
