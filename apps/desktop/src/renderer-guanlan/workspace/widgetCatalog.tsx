@@ -582,7 +582,7 @@ function WidgetContent({ definition, entry, context }: { definition: WidgetCatal
   if (definition.widgetType === "cpu-usage" && visualization === "donut") {
     const targetId = getTargetId(entry);
     const cpu = targetId ? latest?.cpuPackages?.find((item) => item.id === targetId) : latest?.cpuPackages?.[0];
-    const used = cpu?.usagePercent ?? latest?.system.cpuUsagePercent ?? latestValue(metrics?.series.cpuUsagePercent) ?? 0;
+    const used = cpu?.usagePercent ?? latestValue(metrics?.series.cpuUsagePercent) ?? 0;
     return <DonutChart data={[{ name: "已用", value: Math.min(100, Math.max(0, used)), color: "#3b82f6" }, { name: "空闲", value: Math.max(0, 100 - used), color: "#cbd5e1" }]} centerLabel={`${Math.round(used)}%`} />;
   }
   if (definition.widgetType === "memory-usage" && visualization === "donut") {
@@ -600,7 +600,7 @@ function WidgetContent({ definition, entry, context }: { definition: WidgetCatal
   if (definition.widgetType === "gpu-load" && visualization === "donut") {
     const targetId = getTargetId(entry);
     const gpu = targetId ? latest?.gpus?.find((item) => item.id === targetId) : latest?.gpus?.[0];
-    const used = gpu?.usagePercent ?? latestValue(metrics?.series.gpuUsagePercent) ?? 0;
+    const used = gpu?.utilizationPercent ?? latestValue(metrics?.series.gpuUsagePercent) ?? 0;
     return <DonutChart data={[{ name: "负载", value: Math.min(100, Math.max(0, used)), color: "#f59e0b" }, { name: "空闲", value: Math.max(0, 100 - used), color: "#cbd5e1" }]} centerLabel={`${Math.round(used)}%`} />;
   }
   if (definition.widgetType === "gpu-memory" && visualization === "donut") {
