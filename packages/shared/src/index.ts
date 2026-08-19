@@ -852,7 +852,7 @@ export interface WidgetLayoutPlacement {
   w: number;
   h: number;
   size: WidgetLayoutSize;
-  hidden: boolean;
+  hidden?: boolean;
 }
 
 export interface WidgetLayoutCatalogEntry {

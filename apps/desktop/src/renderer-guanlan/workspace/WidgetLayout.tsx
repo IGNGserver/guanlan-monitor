@@ -864,10 +864,6 @@ export function WidgetLayoutProvider({
     replaceDraft(next, true);
   }, [editable, locked, replaceDraft]);
 
-  const hiddenWidgets = useMemo(() => Object.entries(draft.catalog)
-    .filter(([id]) => draft.placements[id]?.hidden)
-    .map(([id, entry]) => ({ id, ...entry })), [draft.catalog, draft.placements]);
-
   const widgetEntries = useMemo(() => Object.entries(draft.catalog).map(([id, entry]) => ({ id, ...entry })), [draft.catalog]);
 
   const contextValue = useMemo<WidgetLayoutContextValue>(() => ({
@@ -887,8 +883,6 @@ export function WidgetLayoutProvider({
     getWidgetSize,
     registerWidget,
     updateSize,
-    hideWidget,
-    restoreWidget,
     reorderWidgets,
     draggingWidgetId,
     beginWidgetDrag,
@@ -908,7 +902,6 @@ export function WidgetLayoutProvider({
     undo,
     redo,
     hasInstanceLayout: Boolean(remote.instanceLayout),
-    hiddenWidgets,
     widgetEntries,
     addWidget,
     addWidgetGroup,
@@ -916,7 +909,7 @@ export function WidgetLayoutProvider({
     updateWidgetConfig,
     compactLayout,
     getLayoutSnapshot
-  }), [addWidget, addWidgetGroup, applyTemplate, beginWidgetDrag, cancelWidgetDrag, compactLayout, deleteTemplate, dirty, draft.snapToGrid, draggingWidgetId, editable, editMode, exportLayout, finishWidgetDrag, getLayoutSnapshot, getWidgetSize, hideWidget, hiddenWidgets, historyVersion, importLayout, loading, locked, previewWidgetDrop, redo, registerWidget, remote.instanceLayout, remote.templates, removeWidget, reorderWidgets, resetDeviceLayout, resolveWidget, restoreWidget, saveAsTemplate, saveLayout, saving, scopeKey, syncMessage, templateKey, toggleSnapToGrid, undo, updateSize, updateWidgetConfig, widgetEntries]);
+  }), [addWidget, addWidgetGroup, applyTemplate, beginWidgetDrag, cancelWidgetDrag, compactLayout, deleteTemplate, dirty, draft.snapToGrid, draggingWidgetId, editable, editMode, exportLayout, finishWidgetDrag, getLayoutSnapshot, getWidgetSize, historyVersion, importLayout, loading, locked, previewWidgetDrop, redo, registerWidget, remote.instanceLayout, remote.templates, removeWidget, reorderWidgets, resetDeviceLayout, resolveWidget, saveAsTemplate, saveLayout, saving, scopeKey, syncMessage, templateKey, toggleSnapToGrid, undo, updateSize, updateWidgetConfig, widgetEntries]);
 
   return <WidgetLayoutContext.Provider value={contextValue}>{children}</WidgetLayoutContext.Provider>;
 }
@@ -1011,7 +1004,7 @@ export function DesktopWidget({
     );
   }, [dragging, layout.draggingWidgetId, resolved.placement?.h, resolved.placement?.size, resolved.placement?.w, resolved.placement?.x, resolved.placement?.y]);
 
-  if (resolved.hidden) return null;
+  if (!resolved.visible || resolved.hidden) return null;
 
   const findDropTarget = (clientX: number, clientY: number): string | null => {
     const node = widgetRef.current;
@@ -1124,8 +1117,7 @@ export function DesktopWidget({
               </button>
             ))}
           </div>
-          <button className="workspace-widget__hide" type="button" onClick={(event) => { event.stopPropagation(); layout.hideWidget(id); }}>隐藏</button>
-          {widgetType && <button className="workspace-widget__remove" type="button" onClick={(event) => { event.stopPropagation(); layout.removeWidget(id); }}>移除</button>}
+          <button className="workspace-widget__remove" type="button" onClick={(event) => { event.stopPropagation(); layout.removeWidget(id); }}>删除</button>
         </div>
       )}
       <div className="workspace-widget__content">{children}</div>
@@ -1135,14 +1127,12 @@ export function DesktopWidget({
 
 export function WidgetLayoutToolbar({ onOpenWidgetDrawer }: { onOpenWidgetDrawer?: () => void } = {}) {
   const layout = useWidgetLayout();
-  const [hiddenOpen, setHiddenOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!layout.editMode) {
-      setHiddenOpen(false);
       setTemplatesOpen(false);
     }
   }, [layout.editMode]);
@@ -1217,12 +1207,6 @@ export function WidgetLayoutToolbar({ onOpenWidgetDrawer }: { onOpenWidgetDrawer
             <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={(event) => void handleImport(event)} />
           </div>
         </>
-      )}
-      {layout.editMode && layout.hiddenWidgets.length > 0 && (
-        <div className="workspace-layout-hidden">
-          <button className="workspace-layout-hidden__toggle" type="button" onClick={() => setHiddenOpen((value) => !value)} aria-expanded={hiddenOpen}>已隐藏 {layout.hiddenWidgets.length} 项 <span aria-hidden="true">{hiddenOpen ? "⌃" : "⌄"}</span></button>
-          {hiddenOpen && <div className="workspace-layout-hidden__tray">{layout.hiddenWidgets.map((widget) => <div className="workspace-layout-hidden__item" key={widget.id}><span><strong>{widget.title}</strong><small>{widget.kind === "group" ? "设备区块" : "内容区块"}</small></span><button type="button" onClick={() => layout.restoreWidget(widget.id)}>恢复</button></div>)}</div>}
-        </div>
       )}
       {layout.syncMessage && <span className="workspace-layout-notice" role="status">{layout.syncMessage}</span>}
     </div>

@@ -128,7 +128,7 @@ const widgetLayoutPlacementSchema = z.object({
   w: z.number().int().min(1).max(12),
   h: z.number().int().min(1),
   size: z.enum(["large", "medium", "small"]),
-  hidden: z.boolean()
+  hidden: z.boolean().optional()
 });
 
 const widgetInstanceConfigSchema = z.record(z.string().max(80), z.union([
