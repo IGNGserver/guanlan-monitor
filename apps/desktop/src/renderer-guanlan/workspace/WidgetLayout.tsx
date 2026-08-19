@@ -645,6 +645,30 @@ export function WidgetLayoutProvider({
     }, { compact: true });
   }, [mutateDraft]);
 
+  const updateWidgetConfig = useCallback((id: string, patch: WidgetInstanceConfig) => {
+    mutateDraft((current) => {
+      const entry = current.catalog[id];
+      if (!entry) return current;
+      entry.config = { ...(entry.config ?? {}), ...patch };
+      if (patch.visualization) entry.visualization = patch.visualization;
+      return current;
+    });
+  }, [mutateDraft]);
+
+  const getLayoutSnapshot = useCallback(() => cloneLayout(draftRef.current), []);
+
+  const updateSize = useCallback((id: string, size: WidgetSize) => {
+    mutateDraft((current) => {
+      const existing = current.placements[id] ?? normalizePlacement({ size });
+      current.placements[id] = normalizePlacement({ ...existing, size });
+      const entry = current.catalog[id];
+      if (entry?.kind === "group") {
+        entry.config = { ...(entry.config ?? {}), sizeOverride: size };
+      }
+      return current;
+    }, { compact: true });
+  }, [mutateDraft]);
+
   const reorderWidgets = useCallback((draggedId: string, targetId: string) => {
     if (draggedId === targetId) return;
     mutateDraft((current) => moveWidgetWithAvoidance(current, draggedId, targetId));
