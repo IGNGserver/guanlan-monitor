@@ -248,11 +248,11 @@ export class MysqlHistoryRepository implements HistoryRepository {
   }
 
   async getHistoricalSeries(deviceId: string, bucket: MetricWindow) {
-    if (bucket === "1m" || bucket === "5m" || bucket === "15m" || bucket === "1h") {
+    if (bucket === "1m" || bucket === "5m") {
       return [];
     }
-    if (bucket === "6h" || bucket === "24h" || bucket === "1d") {
-      const hours = bucket === "6h" ? 6 : 24;
+    if (bucket === "15m" || bucket === "1h" || bucket === "6h" || bucket === "24h" || bucket === "1d") {
+      const minutes = bucket === "15m" ? 15 : bucket === "1h" ? 60 : bucket === "6h" ? 360 : 1440;
       const [rows] = await this.pool.query<any[]>(
         `
           SELECT
@@ -280,10 +280,10 @@ export class MysqlHistoryRepository implements HistoryRepository {
             recorded_details_json AS recordedDetailsJson
           FROM device_minute_metrics
           WHERE device_id = ?
-            AND recorded_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR)
+            AND recorded_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? MINUTE)
           ORDER BY recorded_at ASC
         `,
-        [deviceId, hours]
+        [deviceId, minutes]
       );
 
       return rows.map(mapHistoryRow) as TimeSeriesRecord[];

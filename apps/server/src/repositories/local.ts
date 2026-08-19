@@ -156,13 +156,17 @@ export class LocalHistoryRepository implements HistoryRepository {
 
   async getHistoricalSeries(deviceId: string, bucket: MetricWindow) {
     const db = await this.store.read();
-    if (bucket === "1m" || bucket === "5m" || bucket === "15m" || bucket === "1h") {
+    if (bucket === "1m" || bucket === "5m") {
       return [];
     }
-    if (bucket === "6h" || bucket === "24h" || bucket === "1d") {
+    if (bucket === "15m" || bucket === "1h" || bucket === "6h" || bucket === "24h" || bucket === "1d") {
       const points = db.minuteHistory[deviceId] ?? [];
-      const hours = bucket === "6h" ? 6 : 24;
-      const threshold = Date.now() - hours * 60 * 60 * 1000;
+      const durationMs =
+        bucket === "15m" ? 15 * 60 * 1000 :
+        bucket === "1h" ? 60 * 60 * 1000 :
+        bucket === "6h" ? 6 * 60 * 60 * 1000 :
+        24 * 60 * 60 * 1000;
+      const threshold = Date.now() - durationMs;
       return points.filter((point) => point.timestamp >= threshold);
     }
     const points = db.history[deviceId] ?? [];

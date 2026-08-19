@@ -20,7 +20,8 @@ import {
 } from "./virtual-machines.js";
 
 const LIVE_WINDOWS: AggregatedWindowConfig[] = [
-  { bucket: "1m", maxPoints: 12 },
+  { bucket: "1m", maxPoints: 30 },
+  { bucket: "5m", maxPoints: 150 },
   { bucket: "15m", maxPoints: 15 }
 ];
 
@@ -64,7 +65,8 @@ export class MetricsService {
 
     const config = await this.getMetricConfig(payload.identity.deviceId);
     const point = payloadToTimeSeries(payload, config);
-    await this.repositories.realtime.appendSeries(payload.identity.deviceId, "1m", point, 12);
+    await this.repositories.realtime.appendSeries(payload.identity.deviceId, "1m", point, 30);
+    await this.repositories.realtime.appendSeries(payload.identity.deviceId, "5m", point, 150);
     await this.addMinuteAggregate(payload.identity.deviceId, point);
     await this.addHourlyAggregate(payload.identity.deviceId, point);
 
@@ -127,16 +129,17 @@ export class MetricsService {
   }
 
   async getSeries(deviceId: string, window: MetricWindow) {
-    if (window === "1m" || window === "5m") {
+    if (window === "1m") {
       return this.repositories.realtime.readSeries(deviceId, "1m");
     }
-    if (window === "15m" || window === "1h") {
-      return this.repositories.realtime.readSeries(deviceId, "15m");
+    if (window === "5m") {
+      return this.repositories.realtime.readSeries(deviceId, "5m");
     }
-    const history = await this.repositories.history.getHistoricalSeries(deviceId, window);
-    if (window === "6h" || window === "24h" || window === "1d") {
+    if (window === "15m" || window === "1h" || window === "6h" || window === "24h" || window === "1d") {
+      const history = await this.repositories.history.getHistoricalSeries(deviceId, window);
       return this.withCurrentMinuteAggregate(deviceId, history);
     }
+    const history = await this.repositories.history.getHistoricalSeries(deviceId, window);
     return this.withCurrentHourlyAggregate(deviceId, history);
   }
 

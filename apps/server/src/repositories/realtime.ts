@@ -47,6 +47,6 @@ export class RedisRealtimeRepository implements RealtimeRepository {
   }
 
   async clearSeries(deviceId: string) {
-    await this.redis.del(`${SERIES_KEY}:${deviceId}:1m`, `${SERIES_KEY}:${deviceId}:15m`);
+    await this.redis.del(`${SERIES_KEY}:${deviceId}:1m`, `${SERIES_KEY}:${deviceId}:5m`, `${SERIES_KEY}:${deviceId}:15m`);
   }
 }
