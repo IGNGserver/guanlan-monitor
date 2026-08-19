@@ -405,11 +405,6 @@ function visualizationFor(entry: WidgetLayoutCatalogEntry, definition: WidgetCat
   return candidate && definition.visualizations.includes(candidate) ? candidate : definition.visualization;
 }
 
-type WidgetLine = {
-  label: string;
-  points: SamplePoint[];
-  formatter?: (value: number) => string;
-};
 
 function buildChartData(lines: WidgetLine[]): Array<Record<string, string | number>> {
   const rows = new Map<string, Record<string, string | number>>();
