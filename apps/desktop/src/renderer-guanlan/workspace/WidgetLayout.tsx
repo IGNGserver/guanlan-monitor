@@ -283,9 +283,10 @@ function buildTemplateLayout(layout: WidgetLayoutDocument): WidgetLayoutDocument
   const next = emptyLayout(layout.snapToGrid);
   const positions: Record<string, WidgetPlacement> = {};
   for (const [id, entry] of Object.entries(layout.catalog)) {
+    if (entry.config?.deleted === true) continue;
     const templateId = entry.templateId ?? id;
     const placement = layout.placements[id] ?? normalizePlacement(undefined, entry.defaultSize);
-    const position = placement.hidden ? { x: placement.x, y: placement.y } : findNextFreePlacement(positions, placement.size, placement.x, placement.y);
+    const position = findNextFreePlacement(positions, placement.size, placement.x, placement.y);
     positions[templateId] = { ...placement, ...position };
     next.catalog[templateId] = {
       title: entry.title,
@@ -466,17 +467,19 @@ export function WidgetLayoutProvider({
   }, []);
 
   const resolveWidget = useCallback((definition: WidgetDefinition): ResolvedWidget => {
-    if (locked) return { size: definition.defaultSize, hidden: false };
+    if (locked) return { size: definition.defaultSize, visible: true, hidden: false };
     const entry = draft.catalog[definition.id];
     // A system-rendered widget stays declared by the page after removal. The
     // tombstone prevents a later data refresh from silently recreating it.
     if (entry?.config?.deleted === true) {
-      return { size: draft.placements[definition.id]?.size ?? definition.defaultSize, hidden: true, placement: draft.placements[definition.id] };
+      return { size: draft.placements[definition.id]?.size ?? definition.defaultSize, visible: false, hidden: true, placement: draft.placements[definition.id] };
     }
     const placement = draft.placements[definition.id];
+    const isPresent = Boolean(placement);
     return {
       size: placement?.size ?? definition.defaultSize,
-      hidden: placement?.hidden === true,
+      visible: isPresent,
+      hidden: !isPresent,
       placement
     };
   }, [draft.catalog, draft.placements, locked]);
@@ -623,92 +626,21 @@ export function WidgetLayoutProvider({
   const removeWidget = useCallback((id: string) => {
     mutateDraft((current) => {
       const entry = current.catalog[id];
-      if (entry?.config?.systemRendered === true) {
-        const placement = current.placements[id] ?? normalizePlacement(undefined, entry.defaultSize);
-        placement.hidden = true;
-        current.placements[id] = placement;
-        entry.config = { ...(entry.config ?? {}), deleted: true };
-        Object.entries(current.catalog)
-          .filter(([, child]) => child.groupId === id)
-          .forEach(([childId]) => {
-            delete current.catalog[childId];
-            delete current.placements[childId];
-          });
-        return current;
-      }
-      // Dynamic catalog widgets are user-created records. Removing a group
-      // removes its children; removing a child removes that record. Static
-      // legacy widgets without widgetType keep hide/restore behavior.
-      if (!entry?.widgetType) {
-        const placement = current.placements[id];
-        if (placement) placement.hidden = true;
-        return current;
+      delete current.placements[id];
+      if (entry?.config?.systemRendered === true || !entry?.widgetType) {
+        if (entry) {
+          entry.config = { ...(entry.config ?? {}), deleted: true };
+        }
+      } else {
+        delete current.catalog[id];
       }
       const childIds = Object.entries(current.catalog)
-        .filter(([, entry]) => entry.groupId === id)
+        .filter(([, child]) => child.groupId === id)
         .map(([childId]) => childId);
       childIds.forEach((childId) => {
         delete current.catalog[childId];
         delete current.placements[childId];
       });
-      delete current.catalog[id];
-      delete current.placements[id];
-      return current;
-    }, { compact: true });
-  }, [mutateDraft]);
-
-  const updateWidgetConfig = useCallback((id: string, patch: WidgetInstanceConfig) => {
-    mutateDraft((current) => {
-      const entry = current.catalog[id];
-      if (!entry) return current;
-      entry.config = { ...(entry.config ?? {}), ...patch };
-      if (patch.visualization) entry.visualization = patch.visualization;
-      return current;
-    });
-  }, [mutateDraft]);
-
-  const getLayoutSnapshot = useCallback(() => cloneLayout(draftRef.current), []);
-
-  const updateSize = useCallback((id: string, size: WidgetSize) => {
-    mutateDraft((current) => {
-      const existing = current.placements[id] ?? normalizePlacement({ size });
-      current.placements[id] = normalizePlacement({ ...existing, size });
-      const entry = current.catalog[id];
-      if (entry?.kind === "group") {
-        entry.config = { ...(entry.config ?? {}), sizeOverride: size };
-      }
-      return current;
-    }, { compact: true });
-  }, [mutateDraft]);
-
-  const hideWidget = useCallback((id: string) => {
-    mutateDraft((current) => {
-      const placement = current.placements[id] ?? normalizePlacement(undefined, current.catalog[id]?.defaultSize ?? DEFAULT_SIZE);
-      placement.hidden = true;
-      current.placements[id] = placement;
-      current.placements = normalizePlacements(current.placements, current.snapToGrid, current.catalog);
-      return current;
-    }, { compact: true });
-  }, [mutateDraft]);
-
-  const restoreWidget = useCallback((id: string) => {
-    mutateDraft((current) => {
-      const entry = current.catalog[id];
-      const placement = current.placements[id] ?? normalizePlacement(undefined, entry?.defaultSize ?? DEFAULT_SIZE);
-      placement.hidden = false;
-      if (entry?.config?.deleted === true) {
-        const config = { ...entry.config };
-        delete config.deleted;
-        entry.config = Object.keys(config).length ? config : undefined;
-      }
-      if (current.snapToGrid) {
-        const visible = { ...current.placements };
-        delete visible[id];
-        const position = findNextFreePlacement(visible, placement.size);
-        placement.x = position.x;
-        placement.y = position.y;
-      }
-      current.placements[id] = placement;
       return current;
     }, { compact: true });
   }, [mutateDraft]);
