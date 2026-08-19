@@ -151,6 +151,13 @@ export class DesktopController {
     const rawState = await this.agent.start();
     const nextConfig = mergeAgentConfig(rawState.config, patch);
     await this.agent.updateConfig(nextConfig);
+    if (nextConfig.cloudSyncEnabled && (patch.enabledDeviceIds || patch.enabledMetrics || patch.probeSelections || patch.instanceMetricConfig)) {
+      try {
+        await this.agent.cloudPush();
+      } catch {
+        // Cloud push is best-effort when offline or disconnected
+      }
+    }
     return this.refresh();
   }
 

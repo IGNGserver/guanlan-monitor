@@ -1294,9 +1294,6 @@ func collectSlowMetrics() slowMetrics {
 			memoryFormFactor = linuxFormFactor
 		}
 	}
-	if runtime.GOOS == "windows" && (len(hardware.gpus) == 0 || windowsGPUNeedsMemoryFallback(hardware.gpus)) {
-		hardware.gpus = mergeWindowsGPUFallback(hardware.gpus, collectWindowsGPUPerformance())
-	}
 	if runtime.GOOS == "windows" {
 		windowsDiskSensors := collectWindowsDiskSensorMetadata(windowsMetadata.DiskMetadata)
 		for index := range result.disks {
@@ -1315,18 +1312,25 @@ func collectSlowMetrics() slowMetrics {
 			}
 		}
 	}
-	if len(hardware.gpus) == 0 {
-		hardware.gpus = collectNvidiaGPUs()
-	}
-	if len(hardware.gpus) == 0 {
-		hardware.gpus = collectWindowsGPUPerformance()
-	}
-	if len(hardware.gpus) == 0 {
-		hardware.gpus = collectWindowsGPUAdapters()
+
+	var gpus []gpuDeviceStats
+	if runtime.GOOS == "windows" {
+		baseAdapters := collectWindowsGPUAdapters()
+		lhmGpus := hardware.gpus
+		nvidiaGpus := collectNvidiaGPUs()
+		perfGpus := collectWindowsGPUPerformance()
+		gpus = mergeGPUStats(baseAdapters, lhmGpus, nvidiaGpus, perfGpus)
+		if len(gpus) == 0 {
+			gpus = mergeGPUStats(lhmGpus, nvidiaGpus, perfGpus)
+		}
+	} else {
+		nvidiaGpus := collectNvidiaGPUs()
+		gpus = mergeGPUStats(hardware.gpus, nvidiaGpus)
 	}
 	if hardware.cpuTemperatureC != nil {
-		applyIntegratedGPUTemperature(hardware.gpus, *hardware.cpuTemperatureC)
+		applyIntegratedGPUTemperature(gpus, *hardware.cpuTemperatureC)
 	}
+	hardware.gpus = gpus
 	if hardware.cpuFrequencyMHz == nil {
 		hardware.cpuFrequencyMHz = collectWindowsCPUFrequency(cpuFrequencyMHz)
 	}
@@ -1355,96 +1359,141 @@ func collectSlowMetrics() slowMetrics {
 	return result
 }
 
-func windowsGPUNeedsMemoryFallback(gpus []gpuDeviceStats) bool {
-	for _, gpu := range gpus {
-		if gpu.MemoryTotalBytes == 0 || gpu.MemoryUsedBytes == 0 || gpu.MemoryUsedBytes > gpu.MemoryTotalBytes || gpu.MemoryTotalBytes <= 512*1024*1024 {
+func normalizeGPUName(name string) string {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	if lower == "" {
+		return ""
+	}
+	replacements := []string{
+		"(r)", "",
+		"(tm)", "",
+		"corporation", "",
+		"with max-q design", "",
+		"with max-q", "",
+		"with max-p", "",
+		"laptop gpu", "",
+		"mobile", "",
+		"graphics", "",
+		"series", "",
+		"family", "",
+	}
+	replacer := strings.NewReplacer(replacements...)
+	cleaned := replacer.Replace(lower)
+	var b strings.Builder
+	for _, r := range cleaned {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune(' ')
+		}
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+func matchGPUName(a, b string) bool {
+	aTrim := strings.TrimSpace(a)
+	bTrim := strings.TrimSpace(b)
+	if aTrim == "" || bTrim == "" {
+		return false
+	}
+	if strings.EqualFold(aTrim, bTrim) {
+		return true
+	}
+	normA := normalizeGPUName(aTrim)
+	normB := normalizeGPUName(bTrim)
+	if normA == "" || normB == "" {
+		return false
+	}
+	if normA == normB {
+		return true
+	}
+	if len(normA) >= 4 && len(normB) >= 4 {
+		if strings.Contains(normA, normB) || strings.Contains(normB, normA) {
 			return true
 		}
 	}
 	return false
 }
 
-func mergeMissingGPUMemory(previous, next []gpuDeviceStats) []gpuDeviceStats {
-	if len(next) == 0 || len(previous) == 0 {
-		return next
+func mergeGPUStats(base []gpuDeviceStats, overlays ...[]gpuDeviceStats) []gpuDeviceStats {
+	result := make([]gpuDeviceStats, 0, len(base))
+	for _, item := range base {
+		result = append(result, item)
 	}
-	result := append([]gpuDeviceStats{}, next...)
-	for index := range result {
-		if result[index].MemoryTotalBytes == 0 || result[index].MemoryUsedBytes != 0 {
+
+	for _, overlay := range overlays {
+		if len(overlay) == 0 {
 			continue
 		}
-		for _, prior := range previous {
-			if !strings.EqualFold(result[index].ID, prior.ID) && !strings.EqualFold(strings.TrimSpace(result[index].Name), strings.TrimSpace(prior.Name)) {
+		matchedOverlay := make([]bool, len(overlay))
+		for index := range result {
+			matchIndex := -1
+			for overlayIndex, candidate := range overlay {
+				if matchedOverlay[overlayIndex] {
+					continue
+				}
+				if (candidate.ID != "" && strings.EqualFold(result[index].ID, candidate.ID)) ||
+					matchGPUName(result[index].Name, candidate.Name) {
+					matchIndex = overlayIndex
+					break
+				}
+			}
+			if matchIndex < 0 {
 				continue
 			}
-			if prior.MemoryUsedBytes > 0 {
-				result[index].MemoryUsedBytes = prior.MemoryUsedBytes
+			matchedOverlay[matchIndex] = true
+			candidate := overlay[matchIndex]
+			if candidate.UtilizationPercent > 0 || result[index].UtilizationPercent == 0 {
+				result[index].UtilizationPercent = candidate.UtilizationPercent
 			}
-			if result[index].MemoryTotalBytes == 0 && prior.MemoryTotalBytes > 0 {
-				result[index].MemoryTotalBytes = prior.MemoryTotalBytes
+			if candidate.EncodeUtilizationPercent != nil {
+				result[index].EncodeUtilizationPercent = candidate.EncodeUtilizationPercent
 			}
-			break
+			if candidate.DecodeUtilizationPercent != nil {
+				result[index].DecodeUtilizationPercent = candidate.DecodeUtilizationPercent
+			}
+			if candidate.FrequencyMHz != nil {
+				result[index].FrequencyMHz = candidate.FrequencyMHz
+			}
+			if candidate.TemperatureC != nil {
+				result[index].TemperatureC = candidate.TemperatureC
+				result[index].TemperatureSource = candidate.TemperatureSource
+			}
+			if candidate.MemoryUsedBytes > 0 && (result[index].MemoryUsedBytes == 0 || candidate.MemoryUsedBytes > result[index].MemoryUsedBytes) {
+				result[index].MemoryUsedBytes = candidate.MemoryUsedBytes
+			}
+			if candidate.MemoryTotalBytes > 0 && (result[index].MemoryTotalBytes == 0 || candidate.MemoryTotalBytes > result[index].MemoryTotalBytes) {
+				result[index].MemoryTotalBytes = candidate.MemoryTotalBytes
+			}
+			if result[index].MemoryTotalBytes < result[index].MemoryUsedBytes {
+				result[index].MemoryTotalBytes = result[index].MemoryUsedBytes
+			}
+			if result[index].DriverVersion == "" && candidate.DriverVersion != "" {
+				result[index].DriverVersion = candidate.DriverVersion
+			}
+		}
+
+		for overlayIndex, candidate := range overlay {
+			if !matchedOverlay[overlayIndex] {
+				result = append(result, candidate)
+			}
 		}
 	}
 	return result
 }
 
+func mergeMissingGPUMemory(previous, next []gpuDeviceStats) []gpuDeviceStats {
+	if len(next) == 0 {
+		return previous
+	}
+	if len(previous) == 0 {
+		return next
+	}
+	return mergeGPUStats(next, previous)
+}
+
 func mergeWindowsGPUFallback(primary, fallback []gpuDeviceStats) []gpuDeviceStats {
-	if len(primary) == 0 {
-		return fallback
-	}
-	if len(fallback) == 0 {
-		return primary
-	}
-	result := append([]gpuDeviceStats{}, primary...)
-	matched := make([]bool, len(fallback))
-	for index := range result {
-		matchIndex := -1
-		for fallbackIndex, candidate := range fallback {
-			if matched[fallbackIndex] {
-				continue
-			}
-			if strings.EqualFold(result[index].ID, candidate.ID) || strings.EqualFold(strings.TrimSpace(result[index].Name), strings.TrimSpace(candidate.Name)) {
-				matchIndex = fallbackIndex
-				break
-			}
-		}
-		if matchIndex < 0 && index < len(fallback) && !matched[index] {
-			matchIndex = index
-		}
-		if matchIndex < 0 {
-			continue
-		}
-		matched[matchIndex] = true
-		candidate := fallback[matchIndex]
-		if result[index].MemoryUsedBytes == 0 || (candidate.MemoryUsedBytes > 0 && result[index].MemoryUsedBytes < candidate.MemoryUsedBytes) {
-			result[index].MemoryUsedBytes = candidate.MemoryUsedBytes
-		}
-		if result[index].MemoryTotalBytes == 0 || (candidate.MemoryTotalBytes > 0 && result[index].MemoryTotalBytes < candidate.MemoryTotalBytes) {
-			result[index].MemoryTotalBytes = candidate.MemoryTotalBytes
-		}
-		if result[index].MemoryTotalBytes < result[index].MemoryUsedBytes {
-			result[index].MemoryTotalBytes = result[index].MemoryUsedBytes
-		}
-		if result[index].UtilizationPercent == 0 {
-			result[index].UtilizationPercent = candidate.UtilizationPercent
-		}
-		if result[index].DriverVersion == "" {
-			result[index].DriverVersion = candidate.DriverVersion
-		}
-		if result[index].TemperatureC == nil && candidate.TemperatureC != nil {
-			result[index].TemperatureC = candidate.TemperatureC
-		}
-		if result[index].TemperatureSource == "" {
-			result[index].TemperatureSource = candidate.TemperatureSource
-		}
-	}
-	for index, candidate := range fallback {
-		if !matched[index] {
-			result = append(result, candidate)
-		}
-	}
-	return result
+	return mergeGPUStats(primary, fallback)
 }
 
 func applyIntegratedGPUTemperature(gpus []gpuDeviceStats, cpuTemperature float64) {
@@ -2137,7 +2186,7 @@ func alignWindowsHardwareGPUIdentifiers(snapshots []hardwareSensorSnapshot) []ha
 			continue
 		}
 		for _, row := range rows {
-			if strings.TrimSpace(row.PNPDeviceID) != "" && strings.EqualFold(strings.TrimSpace(row.Name), strings.TrimSpace(snapshots[index].Name)) {
+			if strings.TrimSpace(row.PNPDeviceID) != "" && matchGPUName(row.Name, snapshots[index].Name) {
 				snapshots[index].InstanceID = row.PNPDeviceID
 				break
 			}
@@ -3184,7 +3233,7 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 
 	physicalAdapters := make([]windowsGPUAdapterRecord, 0, len(adapters))
 	for _, adapter := range adapters {
-		if adapter.Name != "" && adapter.AdapterRAM > 0 {
+		if strings.TrimSpace(adapter.Name) != "" {
 			physicalAdapters = append(physicalAdapters, adapter)
 		}
 	}
@@ -3225,8 +3274,12 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 			MemoryUsedBytes:    aggregate.MemoryUsed,
 			DriverVersion:      driver,
 		}
-		if index < len(physicalAdapters) && strings.TrimSpace(physicalAdapters[index].PNPDeviceID) != "" {
-			gpu.ID = "gpu-" + sanitizeKey(physicalAdapters[index].PNPDeviceID)
+		if index < len(physicalAdapters) {
+			keySource := strings.TrimSpace(physicalAdapters[index].PNPDeviceID)
+			if keySource == "" {
+				keySource = physicalAdapters[index].Name
+			}
+			gpu.ID = "gpu-" + sanitizeKey(keySource)
 		}
 		if aggregate.Encode > 0 {
 			value := round(aggregate.Encode)
@@ -3257,7 +3310,7 @@ func collectWindowsGPUAdapters() []gpuDeviceStats {
 
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
-	commandText := `$ErrorActionPreference='Stop'; $rows=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { $ram=[UInt64]([Math]::Max(0,[Int64]$_.AdapterRAM)); if($ram -gt 0){ [pscustomobject]@{name=[string]$_.Name; pnpDeviceId=[string]$_.PNPDeviceID; driverVersion=[string]$_.DriverVersion; adapterRAM=$ram} } }); @($rows) | ConvertTo-Json -Depth 4 -Compress`
+	commandText := `$ErrorActionPreference='Stop'; $rows=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { $ram=[UInt64]([Math]::Max(0,[Int64]$_.AdapterRAM)); [pscustomobject]@{name=[string]$_.Name; pnpDeviceId=[string]$_.PNPDeviceID; driverVersion=[string]$_.DriverVersion; adapterRAM=$ram} }); @($rows) | ConvertTo-Json -Depth 4 -Compress`
 	output, err := runWindowsPowerShell(ctx, commandText)
 	if err != nil {
 		return []gpuDeviceStats{}
@@ -3273,10 +3326,11 @@ func collectWindowsGPUAdapters() []gpuDeviceStats {
 		if name == "" {
 			name = fmt.Sprintf("GPU %d", index+1)
 		}
-		id := "gpu-windows-adapter-" + strconv.Itoa(index)
-		if strings.TrimSpace(record.PNPDeviceID) != "" {
-			id = "gpu-" + sanitizeKey(record.PNPDeviceID)
+		keySource := strings.TrimSpace(record.PNPDeviceID)
+		if keySource == "" {
+			keySource = name
 		}
+		id := "gpu-" + sanitizeKey(keySource)
 		if _, exists := seen[id]; exists {
 			continue
 		}

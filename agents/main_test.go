@@ -279,3 +279,89 @@ func TestParseSmartctlJSON(t *testing.T) {
 		t.Fatalf("unexpected SMART attributes: %#v", metadata.SmartAttributes)
 	}
 }
+
+func TestNormalizeGPUNameAndMatch(t *testing.T) {
+	tests := []struct {
+		a        string
+		b        string
+		expected bool
+	}{
+		{"NVIDIA GeForce RTX 4060 Laptop GPU", "NVIDIA GeForce RTX 4060", true},
+		{"Intel(R) UHD Graphics 630", "Intel UHD Graphics", true},
+		{"AMD Radeon(TM) Graphics", "AMD Radeon Graphics", true},
+		{"NVIDIA GeForce RTX 3080 with Max-Q Design", "GeForce RTX 3080", true},
+		{"Intel(R) UHD Graphics", "NVIDIA GeForce RTX 4060", false},
+	}
+	for _, tc := range tests {
+		got := matchGPUName(tc.a, tc.b)
+		if got != tc.expected {
+			t.Errorf("matchGPUName(%q, %q) = %v; want %v", tc.a, tc.b, got, tc.expected)
+		}
+	}
+}
+
+func TestMergeGPUStatsPreservesAllPhysicalGPUs(t *testing.T) {
+	base := []gpuDeviceStats{
+		{
+			ID:               "gpu-pci-ven-8086&dev-a788",
+			Name:             "Intel(R) UHD Graphics",
+			MemoryTotalBytes: 1024 * 1024 * 1024,
+		},
+		{
+			ID:               "gpu-pci-ven-10de&dev-28e0",
+			Name:             "NVIDIA GeForce RTX 4060 Laptop GPU",
+			MemoryTotalBytes: 8 * 1024 * 1024 * 1024,
+		},
+	}
+	lhmOverlay := []gpuDeviceStats{
+		{
+			ID:                 "gpu-intel-uhd-graphics",
+			Name:               "Intel(R) UHD Graphics",
+			UtilizationPercent: 15,
+			MemoryUsedBytes:    512 * 1024 * 1024,
+		},
+	}
+	nvidiaTemp := 48.0
+	nvidiaOverlay := []gpuDeviceStats{
+		{
+			ID:                 "gpu-nvidia-geforce-rtx-4060-0",
+			Name:               "NVIDIA GeForce RTX 4060 Laptop GPU",
+			UtilizationPercent: 42,
+			TemperatureC:       &nvidiaTemp,
+			TemperatureSource:  "device",
+			MemoryUsedBytes:    2048 * 1024 * 1024,
+			MemoryTotalBytes:   8 * 1024 * 1024 * 1024,
+		},
+	}
+
+	merged := mergeGPUStats(base, lhmOverlay, nvidiaOverlay)
+	if len(merged) != 2 {
+		t.Fatalf("expected 2 merged GPUs, got %d", len(merged))
+	}
+
+	// First GPU: Intel iGPU
+	if merged[0].ID != "gpu-pci-ven-8086&dev-a788" {
+		t.Errorf("expected Intel GPU ID to be preserved, got %q", merged[0].ID)
+	}
+	if merged[0].UtilizationPercent != 15 {
+		t.Errorf("expected Intel GPU utilization to be 15, got %v", merged[0].UtilizationPercent)
+	}
+	if merged[0].MemoryUsedBytes != 512*1024*1024 {
+		t.Errorf("expected Intel GPU memory used to be 512MB, got %d", merged[0].MemoryUsedBytes)
+	}
+
+	// Second GPU: NVIDIA dGPU
+	if merged[1].ID != "gpu-pci-ven-10de&dev-28e0" {
+		t.Errorf("expected NVIDIA GPU ID to be preserved, got %q", merged[1].ID)
+	}
+	if merged[1].UtilizationPercent != 42 {
+		t.Errorf("expected NVIDIA GPU utilization to be 42, got %v", merged[1].UtilizationPercent)
+	}
+	if merged[1].TemperatureC == nil || *merged[1].TemperatureC != 48.0 {
+		t.Errorf("expected NVIDIA GPU temp to be 48.0, got %v", merged[1].TemperatureC)
+	}
+	if merged[1].MemoryUsedBytes != 2048*1024*1024 {
+		t.Errorf("expected NVIDIA GPU memory used to be 2048MB, got %d", merged[1].MemoryUsedBytes)
+	}
+}
+
