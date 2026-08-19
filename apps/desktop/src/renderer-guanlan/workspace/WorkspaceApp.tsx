@@ -142,7 +142,7 @@ function formatBytes(value: number | null | undefined): string {
     amount /= 1024;
     index += 1;
   }
-  return `${amount.toFixed(amount >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+  return `${amount.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
 function MetricValue({ value, suffix = "%" }: { value: number | null | undefined; suffix?: string }) {

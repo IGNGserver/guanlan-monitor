@@ -96,6 +96,8 @@ test("formatBytes correctly formats byte values", () => {
   assert.strictEqual(formatBytes(1024), "1.0 KB");
   assert.strictEqual(formatBytes(1048576), "1.0 MB");
   assert.strictEqual(formatBytes(1073741824), "1.0 GB");
+  assert.strictEqual(formatBytes(16 * 1073741824), "16.0 GB");
+  assert.strictEqual(formatBytes(32 * 1073741824), "32.0 GB");
 });
 
 test("placementStyle computes dimensions and CSS order based on placement coordinates", async () => {

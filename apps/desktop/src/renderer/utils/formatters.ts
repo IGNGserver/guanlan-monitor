@@ -7,8 +7,8 @@ export function formatBytes(bytes: number | null | undefined, decimals = 1): str
   const dm = decimals < 0 ? 0 : decimals;
   const sizes = ["B", "KB", "MB", "GB", "TB", "PB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  const idx = Math.min(i, sizes.length - 1);
-  return `${parseFloat((bytes / Math.pow(k, idx)).toFixed(dm))} ${sizes[idx]}`;
+  const idx = Math.min(Math.max(i, 0), sizes.length - 1);
+  return `${(bytes / Math.pow(k, idx)).toFixed(idx === 0 ? 0 : dm)} ${sizes[idx]}`;
 }
 
 export function formatThroughput(bytesPerSec: number | null | undefined): string {
