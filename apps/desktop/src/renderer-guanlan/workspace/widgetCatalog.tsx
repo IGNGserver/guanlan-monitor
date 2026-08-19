@@ -28,6 +28,7 @@ import {
 } from "recharts";
 import { DesktopWidget, useWidgetLayout, type WidgetGroupChildDefinition, type WidgetKind, type WidgetSize } from "./WidgetLayout";
 import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
+import { getWidgetLines, averageSamplePoints, type WidgetLine } from "../helpers/widgetLines.ts";
 
 type WidgetCatalogDefinition = {
   widgetType: string;
@@ -393,20 +394,6 @@ function sumSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
   return [...buckets.values()].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp)).map((point) => ({ timestamp: point.timestamp, value: point.total }));
 }
 
-function averageSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
-  const buckets = new Map<number, { timestamp: string; total: number; count: number }>();
-  for (const points of groups) {
-    for (const point of points) {
-      const timestamp = Date.parse(point.timestamp);
-      if (!Number.isFinite(timestamp) || !Number.isFinite(point.value)) continue;
-      const current = buckets.get(timestamp) ?? { timestamp: new Date(timestamp).toISOString(), total: 0, count: 0 };
-      current.total += point.value;
-      current.count += 1;
-      buckets.set(timestamp, current);
-    }
-  }
-  return [...buckets.values()].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp)).map((point) => ({ timestamp: point.timestamp, value: point.count ? point.total / point.count : 0 }));
-}
 
 function metricAvailable(definition: WidgetCatalogDefinition, metrics: MetricsResponse | null): boolean {
   if (!definition.requires?.length || !metrics) return true;
@@ -533,66 +520,6 @@ function getTargetId(entry: WidgetLayoutCatalogEntry): string | undefined {
   return typeof target === "string" ? target : undefined;
 }
 
-function getWidgetLines(widgetType: string, metrics: MetricsResponse | null, targetId?: string): { lines: WidgetLine[]; valueFormatter?: (value: number) => string } {
-  const series = metrics?.series;
-  if (!series) return { lines: [] };
-  if (widgetType === "cpu-usage" || widgetType === "cpu-usage-pie") {
-    const lines = series.cpus?.length && targetId ? series.cpus.filter((item) => item.id === targetId).map((item) => ({ label: item.name, points: item.usagePercent, formatter: (value: number) => `${Math.round(value)}%` })) : [{ label: "CPU 使用率", points: series.cpuUsagePercent, formatter: (value: number) => `${Math.round(value)}%` }];
-    return { lines, valueFormatter: (value) => `${Math.round(value)}%` };
-  }
-  if (widgetType === "cpu-frequency") {
-    const cpu = targetId ? series.cpus?.find((item) => item.id === targetId) : undefined;
-    return { lines: [{ label: "主频", points: cpu?.frequencyMHz ?? series.cpuFrequencyMHz, formatter: (value: number) => `${Math.round(value)} MHz` }], valueFormatter: (value) => `${Math.round(value)} MHz` };
-  }
-  if (widgetType === "cpu-temperature") {
-    const cpu = targetId ? series.cpus?.find((item) => item.id === targetId) : undefined;
-    return { lines: [{ label: "温度", points: cpu?.temperatureC ?? series.cpuTemperatureC, formatter: (value: number) => `${Math.round(value)} °C` }], valueFormatter: (value) => `${Math.round(value)} °C` };
-  }
-  if (widgetType === "memory-usage" || widgetType === "memory-usage-pie") return { lines: [{ label: "物理内存", points: series.memoryUsedBytes, formatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes, formatter: formatBytes }], valueFormatter: formatBytes };
-  if (widgetType === "disk-capacity" || widgetType === "disk-capacity-pie") {
-    const points = targetId ? series.disks?.find((item) => item.id === targetId)?.usedBytes ?? [] : series.diskUsedBytes;
-    return { lines: [{ label: "磁盘已用", points, formatter: formatBytes }], valueFormatter: formatBytes };
-  }
-  if (widgetType === "disk-io") {
-    const disk = targetId ? series.disks?.find((item) => item.id === targetId) : undefined;
-    return {
-      lines: [
-        { label: "读取", points: disk?.readBytesPerSec ?? series.diskReadBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` },
-        { label: "写入", points: disk?.writeBytesPerSec ?? series.diskWriteBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` }
-      ],
-      valueFormatter: (value) => `${formatBytes(value)}/s`
-    };
-  }
-  if (widgetType === "network-throughput") {
-    const targetNetwork = targetId ? series.networks?.find((item) => item.id === targetId) : undefined;
-    const networkLines = targetNetwork ? [
-      { label: "接收 Rx", points: targetNetwork.rxBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` },
-      { label: "发送 Tx", points: targetNetwork.txBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` }
-    ] : [];
-    return {
-      lines: networkLines.length ? networkLines : [{ label: "接收 Rx", points: series.networkRxBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` }, { label: "发送 Tx", points: series.networkTxBytesPerSec, formatter: (value: number) => `${formatBytes(value)}/s` }],
-      valueFormatter: (value) => `${formatBytes(value)}/s`
-    };
-  }
-  if (widgetType === "gpu-load" || widgetType === "gpu-load-pie") {
-    const gpuLines = series.gpus?.length && targetId ? series.gpus.filter((item) => item.id === targetId) : series.gpus ?? [];
-    return { lines: gpuLines.length ? [{ label: "核心", points: averageSamplePoints(gpuLines.map((item) => item.usagePercent)), formatter: (value: number) => `${Math.round(value)}%` }, { label: "编码", points: averageSamplePoints(gpuLines.map((item) => item.encodePercent)), formatter: (value: number) => `${Math.round(value)}%` }, { label: "解码", points: averageSamplePoints(gpuLines.map((item) => item.decodePercent)), formatter: (value: number) => `${Math.round(value)}%` }] : [{ label: "GPU 使用率", points: series.gpuUsagePercent, formatter: (value: number) => `${Math.round(value)}%` }], valueFormatter: (value) => `${Math.round(value)}%` };
-  }
-  if (widgetType === "gpu-memory" || widgetType === "gpu-memory-pie") {
-    const gpu = targetId ? series.gpus?.find((item) => item.id === targetId) : undefined;
-    return { lines: [{ label: "显存已用", points: gpu?.memoryUsedBytes ?? series.gpuMemoryUsedBytes, formatter: formatBytes }], valueFormatter: formatBytes };
-  }
-  if (widgetType === "gpu-temperature") {
-    const gpu = targetId ? series.gpus?.find((item) => item.id === targetId) : undefined;
-    return { lines: [{ label: "温度", points: gpu?.temperatureC ?? series.gpuTemperatureC, formatter: (value: number) => `${Math.round(value)} °C` }], valueFormatter: (value) => `${Math.round(value)} °C` };
-  }
-  if (widgetType === "fan-speed") {
-    const fanLines = series.fans?.length && targetId ? series.fans.filter((item) => item.id === targetId) : series.fans ?? [];
-    return { lines: fanLines.length ? fanLines.map((item) => ({ label: item.name, points: item.rpm, formatter: (value: number) => `${Math.round(value)} RPM` })) : [], valueFormatter: (value) => `${Math.round(value)} RPM` };
-  }
-  if (widgetType === "system-processes") return { lines: [{ label: "进程", points: series.systemProcessCount, formatter: (value: number) => formatNumber(value) }, { label: "线程", points: series.systemThreadCount, formatter: (value: number) => formatNumber(value) }, { label: "句柄", points: series.systemHandleCount, formatter: (value: number) => formatNumber(value) }] };
-  return { lines: [] };
-}
 
 function hardwareRows(device: DeviceSummary, latest: MetricsLatest | undefined): Array<{ label: string; value: string; detail?: string }> {
   const cpu = latest?.cpuPackages?.[0];

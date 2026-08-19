@@ -1982,12 +1982,14 @@ function DevicePage() {
         <TelemetrySection eyebrow="显卡与散热" title="GPU、温度与风扇明细" description="每个 GPU 和每个风扇都有独立时间序列，悬停图表即可查看同一采样时刻的具体值。" controls={<InstanceFilter label="GPU" value={selectedGpuId} onChange={setSelectedGpuId} options={gpuOptions} />}>
           {gpuInstances.length ? visibleGpuInstances.map((gpu) => {
             const gpuLatest = filteredLatest?.gpus?.find((item) => item.id === gpu.id);
-            const gpuTemperaturePoints = gpu.temperatureC.length ? gpu.temperatureC : series.gpuTemperatureC ?? [];
+            const gpuTemperaturePoints = gpu.temperatureC ?? [];
             const gpuLabel = displayInstanceName(gpu.name, "GPU");
             const gpuIndex = gpuInstances.findIndex((item) => item.id === gpu.id);
-            const temperatureSubtitle = gpu.temperatureSource === "cpuPackageShared"
-              ? "集成显卡未暴露独立温度 · 使用 CPU 封装温度"
-              : "GPU 传感器温度";
+            const temperatureSubtitle = gpuTemperaturePoints.length > 0
+              ? (gpu.temperatureSource === "cpuPackageShared"
+                ? "集成显卡未暴露独立温度 · 使用 CPU 封装温度"
+                : "GPU 传感器温度")
+              : "未检测到独立温度传感器";
             return (
               <TelemetryDeviceBlock
                 key={`gpu-${gpu.id}`}
@@ -2001,7 +2003,7 @@ function DevicePage() {
               >
                 <TelemetryChartCard widgetId={`gpu-${gpu.id}-load`} widgetTemplateId={`gpu-${gpuIndex}-load`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-load" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "line" }} title={`${gpuLabel} · 核心负载`} subtitle="核心、编码与解码" series={[{ label: "核心", points: gpu.usagePercent }, { label: "编码", points: gpu.encodePercent }, { label: "解码", points: gpu.decodePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
                 <TelemetryChartCard widgetId={`gpu-${gpu.id}-memory`} widgetTemplateId={`gpu-${gpuIndex}-memory`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-memory" widgetCategory="显卡" widgetVisualization="area" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "area" }} title={`${gpuLabel} · 显存已用容量`} subtitle={formatCapacitySummary(gpuLatest?.memoryUsedBytes, gpuLatest?.memoryTotalBytes)} series={[{ label: "显存已用", points: gpu.memoryUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
-                <TelemetryChartCard widgetId={`gpu-${gpu.id}-temperature`} widgetTemplateId={`gpu-${gpuIndex}-temperature`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-temperature" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "line" }} title={`${gpuLabel} · 温度`} subtitle={temperatureSubtitle} emptyMessage="等待 GPU 温度传感器" series={[{ label: "温度", points: gpuTemperaturePoints, valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
+                <TelemetryChartCard widgetId={`gpu-${gpu.id}-temperature`} widgetTemplateId={`gpu-${gpuIndex}-temperature`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-temperature" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "line" }} title={`${gpuLabel} · 温度`} subtitle={temperatureSubtitle} emptyMessage="未检测到独立温度传感器" series={[{ label: "温度", points: gpuTemperaturePoints, valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
               </TelemetryDeviceBlock>
             );
           }) : hasInstanceConfiguration("gpu") ? <div className="workspace-telemetry-empty">当前已关闭所有显卡实例</div> : (

@@ -153,3 +153,53 @@ test("moveWidgetWithAvoidance reorders widgets and packs them compactly without 
   assert.deepStrictEqual(afterDragW1ToW2.placements.w1, { x: 3, y: 1, w: 2, h: 2, size: "medium" });
   assert.deepStrictEqual(afterDragW1ToW2.placements.w3, { x: 1, y: 3, w: 4, h: 2, size: "large" });
 });
+
+test("getWidgetLines strictly isolates GPU temperature by targetId and does not leak dGPU temperature to iGPU", async () => {
+  const { getWidgetLines } = await import("./widgetLines.ts");
+  const sampleMetrics = {
+    series: {
+      gpuTemperatureC: [{ timestamp: "2026-08-05T08:00:00.000Z", value: 49 }],
+      gpuMemoryUsedBytes: [{ timestamp: "2026-08-05T08:00:00.000Z", value: 1024 * 1024 * 1024 }],
+      gpus: [
+        {
+          id: "gpu-nvidia",
+          name: "NVIDIA GeForce RTX 2060 SUPER",
+          usagePercent: [],
+          encodePercent: [],
+          decodePercent: [],
+          frequencyMHz: [],
+          memoryUsagePercent: [],
+          memoryUsedBytes: [{ timestamp: "2026-08-05T08:00:00.000Z", value: 1024 * 1024 * 1024 }],
+          temperatureC: [{ timestamp: "2026-08-05T08:00:00.000Z", value: 49 }]
+        },
+        {
+          id: "gpu-intel",
+          name: "Intel(R) UHD Graphics",
+          usagePercent: [],
+          encodePercent: [],
+          decodePercent: [],
+          frequencyMHz: [],
+          memoryUsagePercent: [],
+          memoryUsedBytes: [],
+          temperatureC: [] // No independent temperature sensor
+        }
+      ]
+    }
+  } as unknown as MetricsResponse;
+
+  // NVIDIA dGPU has temperature 49
+  const nvidiaTemp = getWidgetLines("gpu-temperature", sampleMetrics, "gpu-nvidia");
+  assert.strictEqual(nvidiaTemp.lines.length, 1);
+  assert.deepStrictEqual(nvidiaTemp.lines[0].points, [{ timestamp: "2026-08-05T08:00:00.000Z", value: 49 }]);
+
+  // Intel iGPU has no temperature sensor -> must be empty array, NOT fallback to 49
+  const intelTemp = getWidgetLines("gpu-temperature", sampleMetrics, "gpu-intel");
+  assert.strictEqual(intelTemp.lines.length, 1);
+  assert.deepStrictEqual(intelTemp.lines[0].points, []);
+
+  // Summary (no targetId) -> returns global summary
+  const summaryTemp = getWidgetLines("gpu-temperature", sampleMetrics);
+  assert.strictEqual(summaryTemp.lines.length, 1);
+  assert.deepStrictEqual(summaryTemp.lines[0].points, [{ timestamp: "2026-08-05T08:00:00.000Z", value: 49 }]);
+});
+
