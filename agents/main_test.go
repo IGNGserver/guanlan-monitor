@@ -365,3 +365,109 @@ func TestMergeGPUStatsPreservesAllPhysicalGPUs(t *testing.T) {
 	}
 }
 
+func TestMergeGPUStatsWithAliasedNvidiaGPU(t *testing.T) {
+	base := []gpuDeviceStats{
+		{
+			ID:               "gpu-pci-ven-10de-dev-1f0b-subsys-88041043",
+			Name:             "NVIDIA GeForce RTX 2060 SUPER",
+			MemoryTotalBytes: 4293918720,
+		},
+		{
+			ID:               "gpu-pci-ven-8086-dev-a788",
+			Name:             "Intel(R) UHD Graphics",
+			MemoryTotalBytes: 2147479552,
+		},
+	}
+	nvidiaFreq := 1860.0
+	nvidiaTemp := 49.0
+	nvidiaOverlay := []gpuDeviceStats{
+		{
+			ID:                 "gpu-nvidia-cmp-40hx-0",
+			Name:               "NVIDIA CMP 40HX",
+			UtilizationPercent: 0,
+			FrequencyMHz:       &nvidiaFreq,
+			TemperatureC:       &nvidiaTemp,
+			MemoryUsedBytes:    0,
+			MemoryTotalBytes:   8 * 1024 * 1024 * 1024,
+		},
+	}
+
+	merged := mergeGPUStats(base, nvidiaOverlay)
+	if len(merged) != 2 {
+		t.Fatalf("expected 2 merged GPUs, got %d", len(merged))
+	}
+
+	// First GPU: NVIDIA dGPU (RTX 2060 SUPER matched with CMP 40HX via vendor matching)
+	if merged[0].ID != "gpu-pci-ven-10de-dev-1f0b-subsys-88041043" {
+		t.Errorf("expected NVIDIA GPU ID to be preserved, got %q", merged[0].ID)
+	}
+	if merged[0].UtilizationPercent != 0 {
+		t.Errorf("expected NVIDIA GPU utilization to be 0, got %v", merged[0].UtilizationPercent)
+	}
+	if merged[0].FrequencyMHz == nil || *merged[0].FrequencyMHz != 1860.0 {
+		t.Errorf("expected NVIDIA GPU freq to be 1860.0, got %v", merged[0].FrequencyMHz)
+	}
+	if merged[0].TemperatureC == nil || *merged[0].TemperatureC != 49.0 {
+		t.Errorf("expected NVIDIA GPU temp to be 49.0, got %v", merged[0].TemperatureC)
+	}
+	if merged[0].MemoryTotalBytes != 8*1024*1024*1024 {
+		t.Errorf("expected NVIDIA GPU total memory to be 8GB (8589934592), got %d", merged[0].MemoryTotalBytes)
+	}
+	if merged[0].MemoryUsedBytes != 0 {
+		t.Errorf("expected NVIDIA GPU used memory to be 0, got %d", merged[0].MemoryUsedBytes)
+	}
+}
+
+func TestVirtualGPUAdapterFiltering(t *testing.T) {
+	virtualAdapters := []struct {
+		name string
+		pnp  string
+	}{
+		{"GameViewer Virtual Display Adapter", "ROOT\\DISPLAY\\0000"},
+		{"Parsec Virtual Display Adapter", "ROOT\\DISPLAY\\0001"},
+		{"Microsoft Remote Display Adapter", "SWD\\REMOTEDISPLAYENUM\\RDPIDD_INDIRECTDISPLAY&SESSIONID_0002"},
+		{"Spacedesk Virtual Display", "ROOT\\SPACEDESK"},
+	}
+	for _, va := range virtualAdapters {
+		if !isVirtualGPUAdapter(va.name, va.pnp) {
+			t.Errorf("expected isVirtualGPUAdapter(%q, %q) to be true", va.name, va.pnp)
+		}
+	}
+
+	physicalAdapters := []struct {
+		name string
+		pnp  string
+	}{
+		{"NVIDIA GeForce RTX 2060 SUPER", "PCI\\VEN_10DE&DEV_1F0B&SUBSYS_88041043&REV_A1\\4&323F4879&0&0008"},
+		{"Intel(R) UHD Graphics", "PCI\\VEN_8086&DEV_A788&SUBSYS_22128086&REV_04\\3&11583659&0&10"},
+		{"AMD Radeon RX 7900 XTX", "PCI\\VEN_1002&DEV_744C&SUBSYS_00001002"},
+	}
+	for _, pa := range physicalAdapters {
+		if isVirtualGPUAdapter(pa.name, pa.pnp) {
+			t.Errorf("expected isVirtualGPUAdapter(%q, %q) to be false", pa.name, pa.pnp)
+		}
+	}
+}
+
+func TestParseNonNegativeFloat(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected float64
+		ok       bool
+	}{
+		{"0", 0, true},
+		{"0.0", 0, true},
+		{"49", 49, true},
+		{"1860.5", 1860.5, true},
+		{"-1", 0, false},
+		{"", 0, false},
+		{"abc", 0, false},
+	}
+	for _, tc := range cases {
+		val, ok := parseNonNegativeFloat(tc.input)
+		if ok != tc.ok || (ok && val != tc.expected) {
+			t.Errorf("parseNonNegativeFloat(%q) = (%v, %v); want (%v, %v)", tc.input, val, ok, tc.expected, tc.ok)
+		}
+	}
+}
+

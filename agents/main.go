@@ -1415,6 +1415,76 @@ func matchGPUName(a, b string) bool {
 	return false
 }
 
+func isVirtualGPUAdapter(name, pnpDeviceID string) bool {
+	lowerName := strings.ToLower(strings.TrimSpace(name))
+	upperPNP := strings.ToUpper(strings.TrimSpace(pnpDeviceID))
+	if strings.Contains(lowerName, "virtual display") ||
+		strings.Contains(lowerName, "remote display") ||
+		strings.Contains(lowerName, "indirect display") ||
+		strings.Contains(lowerName, "parsec") ||
+		strings.Contains(lowerName, "gameviewer") ||
+		strings.Contains(lowerName, "spacedesk") ||
+		strings.Contains(lowerName, "sunshine") ||
+		strings.Contains(lowerName, "virtual desktop") ||
+		strings.Contains(lowerName, "rdpidd") ||
+		strings.Contains(lowerName, "citrix") ||
+		strings.Contains(lowerName, "idesk") {
+		return true
+	}
+	if strings.HasPrefix(upperPNP, "ROOT\\") ||
+		strings.HasPrefix(upperPNP, "SWD\\REMOTEDISPLAY") ||
+		strings.Contains(upperPNP, "INDIRECTDISPLAY") {
+		return true
+	}
+	return false
+}
+
+func isNvidiaGPUNameOrID(name, id string) bool {
+	combined := strings.ToLower(name + " " + id)
+	return strings.Contains(combined, "nvidia") ||
+		strings.Contains(combined, "geforce") ||
+		strings.Contains(combined, "quadro") ||
+		strings.Contains(combined, "tesla") ||
+		strings.Contains(combined, "rtx") ||
+		strings.Contains(combined, "gtx") ||
+		strings.Contains(combined, "cmp") ||
+		strings.Contains(combined, "ven_10de") ||
+		strings.Contains(combined, "ven-10de")
+}
+
+func isAmdGPUNameOrID(name, id string) bool {
+	combined := strings.ToLower(name + " " + id)
+	return strings.Contains(combined, "amd") ||
+		strings.Contains(combined, "radeon") ||
+		strings.Contains(combined, "advanced micro devices") ||
+		strings.Contains(combined, "ven_1002") ||
+		strings.Contains(combined, "ven-1002")
+}
+
+func isIntelGPUNameOrID(name, id string) bool {
+	combined := strings.ToLower(name + " " + id)
+	return strings.Contains(combined, "intel") ||
+		strings.Contains(combined, "arc") ||
+		strings.Contains(combined, "iris") ||
+		strings.Contains(combined, "uhd") ||
+		strings.Contains(combined, "hd graphics") ||
+		strings.Contains(combined, "ven_8086") ||
+		strings.Contains(combined, "ven-8086")
+}
+
+func gpuVendorFamily(name, id string) string {
+	if isNvidiaGPUNameOrID(name, id) {
+		return "nvidia"
+	}
+	if isAmdGPUNameOrID(name, id) {
+		return "amd"
+	}
+	if isIntelGPUNameOrID(name, id) {
+		return "intel"
+	}
+	return ""
+}
+
 func mergeGPUStats(base []gpuDeviceStats, overlays ...[]gpuDeviceStats) []gpuDeviceStats {
 	result := make([]gpuDeviceStats, 0, len(base))
 	for _, item := range base {
@@ -1428,6 +1498,7 @@ func mergeGPUStats(base []gpuDeviceStats, overlays ...[]gpuDeviceStats) []gpuDev
 		matchedOverlay := make([]bool, len(overlay))
 		for index := range result {
 			matchIndex := -1
+			// 1. Direct ID or Name match
 			for overlayIndex, candidate := range overlay {
 				if matchedOverlay[overlayIndex] {
 					continue
@@ -1438,6 +1509,33 @@ func mergeGPUStats(base []gpuDeviceStats, overlays ...[]gpuDeviceStats) []gpuDev
 					break
 				}
 			}
+
+			// 2. Vendor-based ordinal fallback matching
+			if matchIndex < 0 {
+				targetVendor := gpuVendorFamily(result[index].Name, result[index].ID)
+				if targetVendor != "" {
+					targetOrdinal := 0
+					for i := 0; i < index; i++ {
+						if gpuVendorFamily(result[i].Name, result[i].ID) == targetVendor {
+							targetOrdinal++
+						}
+					}
+					candidateOrdinal := 0
+					for overlayIndex, candidate := range overlay {
+						if matchedOverlay[overlayIndex] {
+							continue
+						}
+						if gpuVendorFamily(candidate.Name, candidate.ID) == targetVendor {
+							if candidateOrdinal == targetOrdinal {
+								matchIndex = overlayIndex
+								break
+							}
+							candidateOrdinal++
+						}
+					}
+				}
+			}
+
 			if matchIndex < 0 {
 				continue
 			}
@@ -1459,11 +1557,11 @@ func mergeGPUStats(base []gpuDeviceStats, overlays ...[]gpuDeviceStats) []gpuDev
 				result[index].TemperatureC = candidate.TemperatureC
 				result[index].TemperatureSource = candidate.TemperatureSource
 			}
-			if candidate.MemoryUsedBytes > 0 && (result[index].MemoryUsedBytes == 0 || candidate.MemoryUsedBytes > result[index].MemoryUsedBytes) {
-				result[index].MemoryUsedBytes = candidate.MemoryUsedBytes
-			}
-			if candidate.MemoryTotalBytes > 0 && (result[index].MemoryTotalBytes == 0 || candidate.MemoryTotalBytes > result[index].MemoryTotalBytes) {
+			if candidate.MemoryTotalBytes > 0 {
 				result[index].MemoryTotalBytes = candidate.MemoryTotalBytes
+				result[index].MemoryUsedBytes = candidate.MemoryUsedBytes
+			} else if candidate.MemoryUsedBytes > 0 && (result[index].MemoryUsedBytes == 0 || candidate.MemoryUsedBytes > result[index].MemoryUsedBytes) {
+				result[index].MemoryUsedBytes = candidate.MemoryUsedBytes
 			}
 			if result[index].MemoryTotalBytes < result[index].MemoryUsedBytes {
 				result[index].MemoryTotalBytes = result[index].MemoryUsedBytes
@@ -3108,7 +3206,7 @@ func collectNvidiaGPUs() []gpuDeviceStats {
 			continue
 		}
 		name := strings.TrimSpace(parts[0])
-		frequency, ok := parsePositiveFloat(parts[2])
+		frequency, ok := parseNonNegativeFloat(parts[2])
 		if !ok {
 			continue
 		}
@@ -3117,16 +3215,16 @@ func collectNvidiaGPUs() []gpuDeviceStats {
 			Name:         name,
 			FrequencyMHz: &frequency,
 		}
-		if value, ok := parsePositiveFloat(parts[1]); ok {
+		if value, ok := parseNonNegativeFloat(parts[1]); ok {
 			gpu.UtilizationPercent = value
 		}
-		if value, ok := parsePositiveFloat(parts[3]); ok {
+		if value, ok := parseNonNegativeFloat(parts[3]); ok {
 			gpu.TemperatureC = &value
 		}
-		if value, ok := parsePositiveFloat(parts[4]); ok {
+		if value, ok := parseNonNegativeFloat(parts[4]); ok {
 			gpu.MemoryUsedBytes = uint64(value * 1024 * 1024)
 		}
-		if value, ok := parsePositiveFloat(parts[5]); ok {
+		if value, ok := parseNonNegativeFloat(parts[5]); ok {
 			gpu.MemoryTotalBytes = uint64(value * 1024 * 1024)
 		}
 		result = append(result, gpu)
@@ -3209,6 +3307,9 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 		if key == "" {
 			continue
 		}
+		if item.DedicatedUsage == 0 && item.SharedUsage <= 65536 {
+			continue
+		}
 		aggregate := getGPUPerformanceAggregate(aggregates, key)
 		aggregate.MemoryUsed += item.DedicatedUsage + item.SharedUsage
 		aggregate.TotalCommitted = maxUint64(aggregate.TotalCommitted, item.TotalCommitted)
@@ -3233,8 +3334,15 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 
 	physicalAdapters := make([]windowsGPUAdapterRecord, 0, len(adapters))
 	for _, adapter := range adapters {
-		if strings.TrimSpace(adapter.Name) != "" {
+		if strings.TrimSpace(adapter.Name) != "" && !isVirtualGPUAdapter(adapter.Name, adapter.PNPDeviceID) {
 			physicalAdapters = append(physicalAdapters, adapter)
+		}
+	}
+	if len(physicalAdapters) == 0 {
+		for _, adapter := range adapters {
+			if strings.TrimSpace(adapter.Name) != "" {
+				physicalAdapters = append(physicalAdapters, adapter)
+			}
 		}
 	}
 	keys := make([]string, 0, len(aggregates))
@@ -3319,6 +3427,15 @@ func collectWindowsGPUAdapters() []gpuDeviceStats {
 	if err != nil {
 		return []gpuDeviceStats{}
 	}
+	filteredRecords := make([]windowsGPUAdapterRecord, 0, len(records))
+	for _, record := range records {
+		if !isVirtualGPUAdapter(record.Name, record.PNPDeviceID) {
+			filteredRecords = append(filteredRecords, record)
+		}
+	}
+	if len(filteredRecords) > 0 {
+		records = filteredRecords
+	}
 	result := make([]gpuDeviceStats, 0, len(records))
 	seen := map[string]struct{}{}
 	for index, record := range records {
@@ -3401,6 +3518,14 @@ func isFiniteNonNegative(value float64) bool {
 func parsePositiveFloat(raw string) (float64, bool) {
 	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	if err != nil || !isFinitePositive(value) {
+		return 0, false
+	}
+	return value, true
+}
+
+func parseNonNegativeFloat(raw string) (float64, bool) {
+	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || !isFiniteNonNegative(value) {
 		return 0, false
 	}
 	return value, true
