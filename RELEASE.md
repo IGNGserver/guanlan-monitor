@@ -116,7 +116,6 @@ Every release asset must identify its platform and delivery mode:
 - `DeviceStateConsole-Linux-GUI-Install-vX.Y.Z.deb`
 - `DeviceStateConsole-Linux-CLI-Install-vX.Y.Z.zip`
 - `DeviceStateConsole-Android-vX.Y.Z.apk`
-- `DeviceStateConsole-iOS-GUI-vX.Y.Z-unsigned.ipa` (仅测试构建；iOS 客户端更新应跳转 App Store/TestFlight)
 
 The CLI bootstrap helpers are published alongside the versioned packages as
 `install-cli.sh` and `install-cli.ps1`. They are short, fixed-tag entry points

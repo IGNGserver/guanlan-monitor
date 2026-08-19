@@ -358,49 +358,6 @@ jobs:
           path: release/android/DeviceStateConsole-Android-v*.apk
           if-no-files-found: error
 
-  ios:
-    name: Build iOS asset
-    runs-on: macos-latest
-    continue-on-error: true
-    needs: verify
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build unsigned IPA package
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="$(tr -d '[:space:]' < VERSION)"
-          
-          xcodebuild -project ios/DeviceStateConsole.xcodeproj \
-                     -scheme DeviceStateConsole \
-                     -sdk iphoneos \
-                     -destination 'generic/platform=iOS' \
-                     -configuration Release \
-                     -derivedDataPath ios/build/DerivedData \
-                     CODE_SIGN_IDENTITY="" \
-                     CODE_SIGNING_REQUIRED=NO \
-                     CODE_SIGNING_ALLOWED=NO \
-                     clean build
-          
-          APP_PATH="$(find ios/build/DerivedData -name "DeviceStateConsole.app" -type d | head -n 1)"
-          test -n "$APP_PATH"
-          
-          mkdir -p ios/build/Payload
-          cp -R "$APP_PATH" ios/build/Payload/
-          
-          mkdir -p release/ios
-          IPA_PATH="release/ios/DeviceStateConsole-iOS-GUI-v${version}-unsigned.ipa"
-          (cd ios/build && zip -r "../../$IPA_PATH" Payload)
-
-      - name: Upload iOS asset
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-release-assets
-          path: release/ios/DeviceStateConsole-iOS-GUI-v*.ipa
-          if-no-files-found: error
-
   publish:
     name: Publish GitHub test release
     runs-on: ubuntu-latest
@@ -408,7 +365,6 @@ jobs:
       - windows
       - linux-gui
       - android
-      - ios
     if: ${{ always() && needs.windows.result == 'success' && needs['linux-gui'].result == 'success' && needs.android.result == 'success' }}
     steps:
       - name: Checkout
@@ -429,7 +385,7 @@ jobs:
           test "${GITHUB_REF_NAME}" = "v${version}"
           while IFS= read -r asset; do
             case "$asset" in
-              *.exe|*.zip|*.deb|*.apk|*.ipa|*.ps1|*.sh)
+              *.exe|*.zip|*.deb|*.apk|*.ps1|*.sh)
                 checksum="${asset}.sha256"
                 if [[ ! -f "$checksum" ]]; then
                   asset_dir="$(dirname "$asset")"
@@ -438,7 +394,7 @@ jobs:
                 fi
                 ;;
             esac
-          done < <(find release-assets -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.deb' -o -name '*.apk' -o -name '*.ipa' -o -name '*.ps1' -o -name '*.sh' \) -print)
+          done < <(find release-assets -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.deb' -o -name '*.apk' -o -name '*.ps1' -o -name '*.sh' \) -print)
           find release-assets -type f -print
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Setup-v*.exe' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Portable-v*.zip' | wc -l)" -eq 1

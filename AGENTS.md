@@ -10,4 +10,4 @@
 - 在我明确要求“发布正式版 release”之前，我说“发布 release”均指测试版 release；测试版不得被当作稳定安装源或生产部署依据。
 - 版本号在我明确允许前只能递增第三位（patch）；第一位和第二位必须保持不变。版本号必须同步更新根目录 `VERSION` 与所有 package manifest。
 - Docker 生产运行必须从 Docker Hub 拉取用户指定的固定版本镜像，或在用户明确选择时拉取 `latest`；不得从未经测试的仓库工作区源码构建生产镜像。
-- Release 资产命名必须明确包含系统、UI/CLI 和安装/便携属性：Windows GUI setup、Windows GUI portable、Windows CLI install、Linux CLI install、Android、iOS GUI。
+- Release 资产命名必须明确包含系统、UI/CLI 和安装/便携属性：Windows GUI setup、Windows GUI portable、Linux GUI install、Windows CLI install、Linux CLI install、Android。
