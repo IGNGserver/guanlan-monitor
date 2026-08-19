@@ -73,11 +73,10 @@ type WidgetCatalogEntry = SharedWidgetLayoutCatalogEntry;
 
 type ResolvedWidget = {
   size: WidgetSize;
-  hidden: boolean;
+  visible: boolean;
+  hidden?: boolean;
   placement?: WidgetPlacement;
 };
-
-export type HiddenWidget = WidgetDefinition;
 
 export type WidgetLayoutSyncClient = {
   getWidgetLayout: (request: WidgetLayoutRequest) => Promise<WidgetLayoutSync>;
@@ -101,8 +100,6 @@ type WidgetLayoutContextValue = {
   getWidgetSize: (id: string, defaultSize: WidgetSize, templateId?: string) => WidgetSize;
   registerWidget: (definition: WidgetDefinition) => void;
   updateSize: (id: string, size: WidgetSize) => void;
-  hideWidget: (id: string) => void;
-  restoreWidget: (id: string) => void;
   reorderWidgets: (draggedId: string, targetId: string) => void;
   draggingWidgetId: string | null;
   beginWidgetDrag: (id: string) => void;
@@ -122,7 +119,6 @@ type WidgetLayoutContextValue = {
   undo: () => void;
   redo: () => void;
   hasInstanceLayout: boolean;
-  hiddenWidgets: HiddenWidget[];
   widgetEntries: Array<{ id: string } & WidgetCatalogEntry>;
   addWidget: (definition: Omit<WidgetDefinition, "id"> & { id?: string }) => string | null;
   addWidgetGroup: (group: Omit<WidgetDefinition, "id" | "groupId">, children: WidgetGroupChildDefinition[]) => string | null;
