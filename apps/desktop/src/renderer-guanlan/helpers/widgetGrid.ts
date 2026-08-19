@@ -315,7 +315,7 @@ export function moveWidgetWithAvoidance(layout: WidgetLayoutDocument, draggedId:
 }
 
 export function placementStyle(
-  placement: WidgetPlacement | undefined,
+  placement: Partial<WidgetPlacement> | undefined,
   fallbackSize: WidgetSize = DEFAULT_SIZE,
   customH?: number,
   customW?: number

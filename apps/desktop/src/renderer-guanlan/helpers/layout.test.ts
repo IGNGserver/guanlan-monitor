@@ -100,15 +100,15 @@ test("formatBytes correctly formats byte values", () => {
 
 test("placementStyle computes dimensions and CSS order based on placement coordinates", async () => {
   const { placementStyle } = await import("./widgetGrid.ts");
-  const style1 = placementStyle({ x: 1, y: 1, w: 2, h: 2, size: "medium" });
+  const style1 = placementStyle({ x: 1, y: 1, w: 2, h: 2, size: "medium", hidden: false });
   assert.strictEqual(style1.order, 1);
   assert.strictEqual(style1["--widget-w"], 2);
   assert.strictEqual(style1["--widget-h"], 2);
 
-  const style2 = placementStyle({ x: 3, y: 1, w: 2, h: 2, size: "medium" });
+  const style2 = placementStyle({ x: 3, y: 1, w: 2, h: 2, size: "medium", hidden: false });
   assert.strictEqual(style2.order, 3);
 
-  const style3 = placementStyle({ x: 1, y: 3, w: 4, h: 2, size: "large" });
+  const style3 = placementStyle({ x: 1, y: 3, w: 4, h: 2, size: "large", hidden: false });
   assert.strictEqual(style3.order, 201);
 });
 
