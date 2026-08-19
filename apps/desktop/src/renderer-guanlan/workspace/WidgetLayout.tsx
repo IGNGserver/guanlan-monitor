@@ -12,10 +12,45 @@ import type {
   WidgetInstanceConfig,
   WidgetVisualization
 } from "@dsc/shared";
+import {
+  DEFAULT_SIZE,
+  GRID_COLUMNS,
+  SIZE_PRESETS,
+  findNextFreePlacement,
+  findNextFreePlacementInContainer,
+  intersects,
+  isGroupedEntry,
+  isWidgetSize,
+  layoutContainerForWidget,
+  moveWidgetWithAvoidance,
+  normalizePlacement,
+  normalizePlacements,
+  placementStyle,
+  topLevelPlacements,
+  type WidgetKind,
+  type WidgetPlacement,
+  type WidgetSize
+} from "../helpers/widgetGrid.ts";
 
-export type WidgetSize = WidgetLayoutSize;
-export type WidgetKind = WidgetLayoutKind;
-export type WidgetPlacement = SharedWidgetLayoutPlacement;
+export {
+  DEFAULT_SIZE,
+  GRID_COLUMNS,
+  SIZE_PRESETS,
+  findNextFreePlacement,
+  findNextFreePlacementInContainer,
+  intersects,
+  isGroupedEntry,
+  isWidgetSize,
+  layoutContainerForWidget,
+  moveWidgetWithAvoidance,
+  normalizePlacement,
+  normalizePlacements,
+  placementStyle,
+  topLevelPlacements,
+  type WidgetKind,
+  type WidgetPlacement,
+  type WidgetSize
+};
 
 export type WidgetDefinition = {
   id: string;
@@ -98,15 +133,7 @@ type WidgetLayoutContextValue = {
 };
 
 const WidgetLayoutContext = createContext<WidgetLayoutContextValue | null>(null);
-const GRID_COLUMNS = 4;
 const HISTORY_LIMIT = 30;
-const DEFAULT_SIZE: WidgetSize = "medium";
-
-const SIZE_PRESETS: Record<WidgetSize, Pick<WidgetPlacement, "w" | "h">> = {
-  large: { w: 4, h: 2 },
-  medium: { w: 2, h: 2 },
-  small: { w: 1, h: 2 }
-};
 
 function emptyLayout(snapToGrid = true): WidgetLayoutDocument {
   return { version: 4, placements: {}, catalog: {}, snapToGrid };
@@ -152,263 +179,6 @@ function cloneLayout(layout: WidgetLayoutDocument): WidgetLayoutDocument {
 function mergeWidgetConfig(existing: WidgetInstanceConfig | undefined, incoming: WidgetInstanceConfig | undefined): WidgetInstanceConfig | undefined {
   if (!existing && !incoming) return undefined;
   return { ...(existing ?? {}), ...(incoming ?? {}) };
-}
-
-function normalizePlacement(
-  value: Partial<WidgetPlacement> | undefined,
-  sizeFallback: WidgetSize = DEFAULT_SIZE,
-  options?: { customH?: number; customW?: number }
-): WidgetPlacement {
-  const size = value?.size === "large" || value?.size === "medium" || value?.size === "small" ? value.size : sizeFallback;
-  const preset = SIZE_PRESETS[size];
-  const w = Number.isFinite(value?.w) && (value!.w as number) >= 1 && (value!.w as number) <= GRID_COLUMNS
-    ? Math.round(value!.w as number)
-    : (options?.customW ?? preset.w);
-  const h = Number.isFinite(value?.h) && (value!.h as number) >= 1
-    ? Math.round(value!.h as number)
-    : (options?.customH ?? preset.h);
-  const x = Number.isFinite(value?.x) ? Math.round(value?.x as number) : 1;
-  const y = Number.isFinite(value?.y) ? Math.round(value?.y as number) : 1;
-  return {
-    x: Math.max(1, Math.min(x, GRID_COLUMNS - w + 1)),
-    y: Math.max(1, y),
-    w,
-    h,
-    size,
-    hidden: value?.hidden === true
-  };
-}
-
-function intersects(left: WidgetPlacement, right: WidgetPlacement): boolean {
-  return left.x < right.x + right.w && left.x + left.w > right.x && left.y < right.y + right.h && left.y + left.h > right.y;
-}
-
-function findNextFreePlacement(
-  placements: Record<string, WidgetPlacement>,
-  size: WidgetSize,
-  preferredX = 1,
-  preferredY = 1,
-  customDimensions?: { w?: number; h?: number }
-): Pick<WidgetPlacement, "x" | "y"> {
-  const preset = SIZE_PRESETS[size];
-  const w = customDimensions?.w && customDimensions.w >= 1 ? Math.min(GRID_COLUMNS, Math.round(customDimensions.w)) : preset.w;
-  const h = customDimensions?.h && customDimensions.h >= 1 ? Math.round(customDimensions.h) : preset.h;
-  const existing = Object.values(placements).filter((placement) => !placement.hidden);
-  const startY = Math.max(1, Math.round(preferredY));
-  const startX = Math.max(1, Math.min(Math.round(preferredX), GRID_COLUMNS - w + 1));
-
-  for (let y = startY; y < startY + 1000; y += 1) {
-    const firstX = y === startY ? startX : 1;
-    for (let x = firstX; x <= GRID_COLUMNS - w + 1; x += 1) {
-      const candidate: WidgetPlacement = { x, y, w, h, size, hidden: false };
-      if (existing.every((placement) => !intersects(candidate, placement))) return { x, y };
-    }
-  }
-
-  const lastRow = existing.reduce((max, placement) => Math.max(max, placement.y + placement.h), 1);
-  return { x: 1, y: lastRow };
-}
-
-function findNextFreePlacementInContainer(
-  placements: Record<string, WidgetPlacement>,
-  size: WidgetSize,
-  maxColumns: number,
-  preferredX = 1,
-  preferredY = 1,
-  customDimensions?: { w?: number; h?: number }
-): Pick<WidgetPlacement, "x" | "y"> {
-  const preset = SIZE_PRESETS[size];
-  const w = Math.min(customDimensions?.w && customDimensions.w >= 1 ? Math.round(customDimensions.w) : preset.w, maxColumns);
-  const h = customDimensions?.h && customDimensions.h >= 1 ? Math.round(customDimensions.h) : preset.h;
-  const existing = Object.values(placements).filter((placement) => !placement.hidden);
-  const startY = Math.max(1, Math.round(preferredY));
-  const startX = Math.max(1, Math.min(Math.round(preferredX), maxColumns - w + 1));
-
-  for (let y = startY; y < startY + 1000; y += 1) {
-    const firstX = y === startY ? startX : 1;
-    for (let x = firstX; x <= maxColumns - w + 1; x += 1) {
-      const candidate: WidgetPlacement = { x, y, w, h, size, hidden: false };
-      if (existing.every((placement) => !intersects(candidate, placement))) return { x, y };
-    }
-  }
-
-  const lastRow = existing.reduce((max, placement) => Math.max(max, placement.y + placement.h), 1);
-  return { x: 1, y: lastRow };
-}
-
-function sizeForGroupWidth(width: number, fallback: WidgetSize): WidgetSize {
-  if (width >= SIZE_PRESETS.large.w) return "large";
-  if (width >= SIZE_PRESETS.medium.w) return "medium";
-  if (width >= SIZE_PRESETS.small.w) return "small";
-  return fallback;
-}
-
-function isWidgetSize(value: unknown): value is WidgetSize {
-  return value === "large" || value === "medium" || value === "small";
-}
-
-function isGroupedEntry(id: string, catalog: Record<string, WidgetCatalogEntry>): boolean {
-  return Boolean(catalog[id]?.groupId);
-}
-
-function topLevelPlacements(
-  placements: Record<string, WidgetPlacement>,
-  catalog: Record<string, WidgetCatalogEntry>
-): Record<string, WidgetPlacement> {
-  return Object.fromEntries(Object.entries(placements).filter(([id]) => !isGroupedEntry(id, catalog)));
-}
-
-function normalizePlacements(
-  placements: Record<string, WidgetPlacement>,
-  snapToGrid: boolean,
-  catalog: Record<string, WidgetCatalogEntry> = {}
-): Record<string, WidgetPlacement> {
-  const normalized = Object.fromEntries(
-    Object.entries(placements).map(([id, placement]) => [
-      id,
-      normalizePlacement(placement, catalog[id]?.defaultSize ?? DEFAULT_SIZE, {
-        customH: id === "compute-cpu-facts" ? 2 : undefined
-      })
-    ])
-  ) as Record<string, WidgetPlacement>;
-
-  if (catalog["compute-cpu-facts"] && normalized["compute-cpu-facts"]) {
-    normalized["compute-cpu-facts"].w = 4;
-    normalized["compute-cpu-facts"].h = 2;
-  }
-
-  // Find all groups in catalog
-  const groupIds = new Set<string>();
-  for (const [id, entry] of Object.entries(catalog)) {
-    if (entry.kind === "group" || (entry.groupId && catalog[entry.groupId])) {
-      if (entry.kind === "group") groupIds.add(id);
-      if (entry.groupId && catalog[entry.groupId]?.kind === "group") groupIds.add(entry.groupId);
-    }
-  }
-
-  for (const groupId of groupIds) {
-    const groupEntry = catalog[groupId];
-    const group = normalized[groupId];
-    if (!group) continue;
-
-    const children = Object.entries(catalog)
-      .filter(([, entry]) => entry.groupId === groupId)
-      .map(([id]) => id)
-      .filter((id) => Boolean(normalized[id]))
-      .sort((left, right) => {
-        const leftPlacement = normalized[left];
-        const rightPlacement = normalized[right];
-        return leftPlacement.y - rightPlacement.y || leftPlacement.x - rightPlacement.x || left.localeCompare(right);
-      });
-
-    const visibleChildren = children.filter((childId) => !normalized[childId].hidden);
-
-    const configuredSize = groupEntry?.config?.sizeOverride;
-    let groupSize: WidgetSize;
-    if (isWidgetSize(configuredSize)) {
-      groupSize = configuredSize;
-    } else if (visibleChildren.length >= 2) {
-      groupSize = "large";
-    } else if (visibleChildren.length === 1) {
-      groupSize = groupEntry?.defaultSize === "small" ? "small" : (groupEntry?.defaultSize === "large" ? "large" : "medium");
-    } else {
-      groupSize = groupEntry?.defaultSize ?? "small";
-    }
-
-    const groupColumns = SIZE_PRESETS[groupSize].w;
-    const chartsPerRow = groupColumns >= 4 ? 2 : 1;
-    const rowCount = visibleChildren.length ? Math.max(1, Math.ceil(visibleChildren.length / chartsPerRow)) : 1;
-    const groupH = visibleChildren.length ? rowCount * 2 : 2;
-    const groupW = groupColumns;
-
-    visibleChildren.forEach((childId, index) => {
-      const child = normalized[childId];
-      const row = Math.floor(index / chartsPerRow);
-      const col = index % chartsPerRow;
-      const childW = groupColumns >= 4 ? 2 : groupColumns;
-      const childH = 2;
-      const childX = groupColumns >= 4 ? col * 2 + 1 : 1;
-      const childY = row * 2 + 1;
-      normalized[childId] = {
-        ...child,
-        x: childX,
-        y: childY,
-        w: childW,
-        h: childH
-      };
-    });
-
-    normalized[groupId] = normalizePlacement({
-      ...group,
-      size: groupSize,
-      w: groupW,
-      h: groupH
-    }, groupSize);
-  }
-
-  const visibleTopLevel = Object.entries(normalized)
-    .filter(([id, placement]) => !placement.hidden && !isGroupedEntry(id, catalog))
-    .sort(([leftId, left], [rightId, right]) => {
-      if (left.y !== right.y) return left.y - right.y;
-      if (left.x !== right.x) return left.x - right.x;
-      return leftId.localeCompare(rightId);
-    });
-
-  const finalPlacements: Record<string, WidgetPlacement> = {};
-  if (snapToGrid) {
-    for (const [id, placement] of visibleTopLevel) {
-      const position = findNextFreePlacement(finalPlacements, placement.size, 1, 1, { w: placement.w, h: placement.h });
-      finalPlacements[id] = { ...placement, ...position };
-    }
-  } else {
-    for (const [id, placement] of visibleTopLevel) {
-      const collides = Object.values(finalPlacements).some((occupied) => intersects(placement, occupied));
-      if (collides) {
-        const position = findNextFreePlacement(finalPlacements, placement.size, placement.x, placement.y, { w: placement.w, h: placement.h });
-        finalPlacements[id] = { ...placement, ...position };
-      } else {
-        finalPlacements[id] = placement;
-      }
-    }
-  }
-
-  for (const [id, placement] of Object.entries(normalized)) {
-    if (placement.hidden || isGroupedEntry(id, catalog)) {
-      finalPlacements[id] = placement;
-    }
-  }
-
-  return finalPlacements;
-}
-
-function layoutContainerForWidget(id: string, catalog: Record<string, WidgetCatalogEntry>): string | null {
-  return catalog[id]?.groupId ?? null;
-}
-
-function moveWidgetWithAvoidance(layout: WidgetLayoutDocument, draggedId: string, targetId: string): WidgetLayoutDocument {
-  if (draggedId === targetId) return layout;
-  const dragged = layout.placements[draggedId];
-  const target = layout.placements[targetId];
-  if (!dragged || !target || dragged.hidden || target.hidden) return layout;
-  if (layoutContainerForWidget(draggedId, layout.catalog) !== layoutContainerForWidget(targetId, layout.catalog)) return layout;
-
-  const moving = normalizePlacement({ ...dragged, x: target.x, y: target.y, w: dragged.w, h: dragged.h }, dragged.size);
-  const placements = { ...layout.placements, [draggedId]: moving };
-  const placed: Record<string, WidgetPlacement> = { [draggedId]: moving };
-  const siblings = Object.entries(placements)
-    .filter(([id, placement]) => id !== draggedId && !placement.hidden && layoutContainerForWidget(id, layout.catalog) === layoutContainerForWidget(draggedId, layout.catalog))
-    .sort(([leftId, left], [rightId, right]) => left.y - right.y || left.x - right.x || leftId.localeCompare(rightId));
-
-  for (const [id, placement] of siblings) {
-    const collides = Object.values(placed).some((occupied) => intersects(placement, occupied));
-    if (collides) {
-      const position = findNextFreePlacement(placed, placement.size, placement.x, placement.y, { w: placement.w, h: placement.h });
-      placements[id] = { ...placement, ...position };
-    }
-    placed[id] = placements[id];
-  }
-
-  return { ...layout, placements };
 }
 
 type WidgetMutationOptions = {
@@ -1161,23 +931,6 @@ export function useOptionalWidgetLayout() {
   return useContext(WidgetLayoutContext);
 }
 
-function placementStyle(
-  placement: WidgetPlacement | undefined,
-  fallbackSize: WidgetSize = DEFAULT_SIZE,
-  customH?: number,
-  customW?: number
-): React.CSSProperties {
-  const size = placement?.size ?? fallbackSize;
-  const preset = SIZE_PRESETS[size] ?? SIZE_PRESETS.medium;
-  const w = placement?.w && placement.w >= 1 ? placement.w : (customW ?? preset.w);
-  const h = placement?.h && placement.h >= 1 ? placement.h : (customH ?? preset.h);
-  return {
-    "--widget-w": w,
-    "--widget-h": h,
-    "--widget-w-md": w >= 3 ? 2 : 1,
-    "--widget-h-md": h
-  } as React.CSSProperties;
-}
 
 export function DesktopWidget({
   id,
@@ -1274,7 +1027,23 @@ export function DesktopWidget({
     const candidate = document.elementsFromPoint(clientX, clientY)
       .map(widgetForContainer)
       .find((element) => Boolean(element && element !== node && element.parentElement === parent));
-    return candidate?.dataset.widgetId ?? null;
+    if (candidate?.dataset.widgetId) return candidate.dataset.widgetId;
+
+    const siblings = Array.from(parent.children).filter(
+      (el): el is HTMLElement => el instanceof HTMLElement && el !== node && Boolean(el.dataset.widgetId)
+    );
+    for (const sibling of siblings) {
+      const rect = sibling.getBoundingClientRect();
+      if (
+        clientX >= rect.left &&
+        clientX <= rect.right &&
+        clientY >= rect.top &&
+        clientY <= rect.bottom
+      ) {
+        return sibling.dataset.widgetId ?? null;
+      }
+    }
+    return null;
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLSpanElement>) => {

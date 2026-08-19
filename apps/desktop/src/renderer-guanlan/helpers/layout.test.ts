@@ -97,3 +97,57 @@ test("formatBytes correctly formats byte values", () => {
   assert.strictEqual(formatBytes(1048576), "1.0 MB");
   assert.strictEqual(formatBytes(1073741824), "1.0 GB");
 });
+
+test("placementStyle computes dimensions and CSS order based on placement coordinates", async () => {
+  const { placementStyle } = await import("./widgetGrid.ts");
+  const style1 = placementStyle({ x: 1, y: 1, w: 2, h: 2, size: "medium" });
+  assert.strictEqual(style1.order, 1);
+  assert.strictEqual(style1["--widget-w"], 2);
+  assert.strictEqual(style1["--widget-h"], 2);
+
+  const style2 = placementStyle({ x: 3, y: 1, w: 2, h: 2, size: "medium" });
+  assert.strictEqual(style2.order, 3);
+
+  const style3 = placementStyle({ x: 1, y: 3, w: 4, h: 2, size: "large" });
+  assert.strictEqual(style3.order, 201);
+});
+
+test("findNextFreePlacement correctly reuses freed column space on the first row", async () => {
+  const { findNextFreePlacement } = await import("./widgetGrid.ts");
+  const placements = {
+    widgetB: { x: 3, y: 1, w: 2, h: 2, size: "medium" as const, hidden: false }
+  };
+  // Slot at (1, 1) is free. Even if preferredX is 3, searching for a free placement must find (1, 1) rather than (1, 2)
+  const pos = findNextFreePlacement(placements, "medium", 3, 1);
+  assert.deepStrictEqual(pos, { x: 1, y: 1 });
+});
+
+test("moveWidgetWithAvoidance reorders widgets and packs them compactly without overlap", async () => {
+  const { moveWidgetWithAvoidance } = await import("./widgetGrid.ts");
+  const layout = {
+    version: 4,
+    snapToGrid: true,
+    catalog: {
+      w1: { title: "W1", kind: "content" as const, defaultSize: "medium" as const },
+      w2: { title: "W2", kind: "content" as const, defaultSize: "medium" as const },
+      w3: { title: "W3", kind: "content" as const, defaultSize: "large" as const }
+    },
+    placements: {
+      w1: { x: 1, y: 1, w: 2, h: 2, size: "medium" as const, hidden: false },
+      w2: { x: 3, y: 1, w: 2, h: 2, size: "medium" as const, hidden: false },
+      w3: { x: 1, y: 3, w: 4, h: 2, size: "large" as const, hidden: false }
+    }
+  };
+
+  // Drag w3 to w1
+  const afterDragW3ToW1 = moveWidgetWithAvoidance(layout, "w3", "w1");
+  assert.deepStrictEqual(afterDragW3ToW1.placements.w3, { x: 1, y: 1, w: 4, h: 2, size: "large", hidden: false });
+  assert.deepStrictEqual(afterDragW3ToW1.placements.w1, { x: 1, y: 3, w: 2, h: 2, size: "medium", hidden: false });
+  assert.deepStrictEqual(afterDragW3ToW1.placements.w2, { x: 3, y: 3, w: 2, h: 2, size: "medium", hidden: false });
+
+  // Drag w1 to w2 (swapping on row 1)
+  const afterDragW1ToW2 = moveWidgetWithAvoidance(layout, "w1", "w2");
+  assert.deepStrictEqual(afterDragW1ToW2.placements.w2, { x: 1, y: 1, w: 2, h: 2, size: "medium", hidden: false });
+  assert.deepStrictEqual(afterDragW1ToW2.placements.w1, { x: 3, y: 1, w: 2, h: 2, size: "medium", hidden: false });
+  assert.deepStrictEqual(afterDragW1ToW2.placements.w3, { x: 1, y: 3, w: 4, h: 2, size: "large", hidden: false });
+});
