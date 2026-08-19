@@ -120,8 +120,10 @@ func TestComputeRatesKeepsPerInterfaceNetworkActivity(t *testing.T) {
 }
 
 func TestMapHardwareSensorsIntelGPU(t *testing.T) {
-	used := 1990.164
-	total := 16281.93
+	dedicatedUsed := 4.5
+	dedicatedTotal := 128.0
+	sharedUsed := 1990.164
+	sharedTotal := 16281.93
 	load := 1.100329
 	clock := 550.0
 
@@ -132,8 +134,10 @@ func TestMapHardwareSensorsIntelGPU(t *testing.T) {
 		Sensors: []hardwareSensor{
 			{SensorType: "Clock", Name: "GPU Core", Value: &clock},
 			{SensorType: "Load", Name: "D3D 3D", Value: &load},
-			{SensorType: "SmallData", Name: "D3D Shared Memory Used", Value: &used},
-			{SensorType: "SmallData", Name: "D3D Shared Memory Total", Value: &total},
+			{SensorType: "SmallData", Name: "D3D Shared Memory Used", Value: &sharedUsed},
+			{SensorType: "SmallData", Name: "D3D Shared Memory Total", Value: &sharedTotal},
+			{SensorType: "SmallData", Name: "D3D Dedicated Memory Used", Value: &dedicatedUsed},
+			{SensorType: "SmallData", Name: "D3D Dedicated Memory Total", Value: &dedicatedTotal},
 		},
 	}})
 
@@ -150,8 +154,10 @@ func TestMapHardwareSensorsIntelGPU(t *testing.T) {
 	if gpu.FrequencyMHz == nil || *gpu.FrequencyMHz != clock {
 		t.Fatalf("unexpected GPU clock: %v", gpu.FrequencyMHz)
 	}
-	if gpu.MemoryUsedBytes == 0 || gpu.MemoryTotalBytes == 0 {
-		t.Fatalf("expected shared memory values, got used=%d total=%d", gpu.MemoryUsedBytes, gpu.MemoryTotalBytes)
+	expectedUsedBytes := uint64((dedicatedUsed + sharedUsed) * 1024 * 1024)
+	expectedTotalBytes := uint64((dedicatedTotal + sharedTotal) * 1024 * 1024)
+	if gpu.MemoryUsedBytes != expectedUsedBytes || gpu.MemoryTotalBytes != expectedTotalBytes {
+		t.Fatalf("expected dedicated+shared sum used=%d total=%d, got used=%d total=%d", expectedUsedBytes, expectedTotalBytes, gpu.MemoryUsedBytes, gpu.MemoryTotalBytes)
 	}
 }
 

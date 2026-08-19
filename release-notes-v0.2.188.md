@@ -1,7 +1,7 @@
 # v0.2.188
 
-### 工作流与发布规范优化
-1. **调整 Release 发布流程，停止发布 iOS 资产**：
-   - 从 GitHub Actions 测试版发布工作流（`release-test.yml`）中移除 `ios` 打包 job 与 `.ipa` 资产发布依赖，不再消耗 macOS 构建资源。
-   - 保留仓库内的 iOS 源码实现（`ios/` 目录），便于后续开发维护。
-   - 更新发布文档与资产规范（`RELEASE.md`、`AGENTS.md`），明确当前发布资产范围（Windows GUI/CLI、Linux GUI/CLI、Android）。
+### 修复与优化
+1. **修复核显及混合显存 GPU 显存采集与容量计算异常**：
+   - 区分识别硬件传感器中的 Dedicated（专用）与 Shared（共享）显存指标，并在存在多组显存数据时进行正确加总，避免 Dedicated 显存（如 4.5 MB / 128 MB）单方面覆盖 Shared 显存（4.2 GB / 16 GB）。
+   - 优化 Windows Agent 降级回退与数据融合逻辑，确保当检测到显存容量异常偏小（如核显仅上报 128 MB 占位显存）或显存使用大于总量时，自动触发并融合标准 Windows GPU 性能计数器指标。
+   - 消除核显显存时序图表在 Dedicated 与 Shared 显存之间频繁上下跳变、产生梳状震荡波形的问题，并解决显存卡片中“已用大于总量”的副标题显示异常。

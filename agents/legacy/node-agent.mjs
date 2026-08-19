@@ -1479,6 +1479,12 @@ async function readWindowsHardwareMonitorGpusFromDll() {
         frequencyMHz: null,
         memoryUsedBytes: 0,
         memoryTotalBytes: 0,
+        dedicatedMemoryUsed: 0,
+        dedicatedMemoryTotal: 0,
+        sharedMemoryUsed: 0,
+        sharedMemoryTotal: 0,
+        genericMemoryUsed: 0,
+        genericMemoryTotal: 0,
         temperatureC: null
       });
     }
@@ -1497,13 +1503,32 @@ async function readWindowsHardwareMonitorGpusFromDll() {
     if (sensorType === "clock" && (sensorName.includes("gpu core") || sensorName.includes("graphics") || sensorName.includes("core"))) {
       current.frequencyMHz = round(value);
     }
-    if (isDataSensorType(sensorType) && sensorName.includes("memory used")) current.memoryUsedBytes = Math.round(value * 1024 * 1024);
-    if (isDataSensorType(sensorType) && sensorName.includes("memory total")) current.memoryTotalBytes = Math.round(value * 1024 * 1024);
+    if (isDataSensorType(sensorType)) {
+      const isDedicated = sensorName.includes("dedicated");
+      const isShared = sensorName.includes("shared");
+      const isUsed = sensorName.includes("used");
+      const isTotal = sensorName.includes("total");
+      if (isDedicated && isUsed) current.dedicatedMemoryUsed = Math.max(current.dedicatedMemoryUsed, value);
+      else if (isDedicated && isTotal) current.dedicatedMemoryTotal = Math.max(current.dedicatedMemoryTotal, value);
+      else if (isShared && isUsed) current.sharedMemoryUsed = Math.max(current.sharedMemoryUsed, value);
+      else if (isShared && isTotal) current.sharedMemoryTotal = Math.max(current.sharedMemoryTotal, value);
+      else if (isUsed && sensorName.includes("memory")) current.genericMemoryUsed = Math.max(current.genericMemoryUsed, value);
+      else if (isTotal && sensorName.includes("memory")) current.genericMemoryTotal = Math.max(current.genericMemoryTotal, value);
+
+      const totalUsedMb = (current.dedicatedMemoryUsed || current.sharedMemoryUsed)
+        ? (current.dedicatedMemoryUsed + current.sharedMemoryUsed)
+        : current.genericMemoryUsed;
+      const totalCapacityMb = (current.dedicatedMemoryTotal || current.sharedMemoryTotal)
+        ? (current.dedicatedMemoryTotal + current.sharedMemoryTotal)
+        : current.genericMemoryTotal;
+      current.memoryUsedBytes = Math.round(totalUsedMb * 1024 * 1024);
+      current.memoryTotalBytes = Math.max(Math.round(totalCapacityMb * 1024 * 1024), current.memoryUsedBytes);
+    }
     if (sensorType === "temperature" && (sensorName.includes("core") || sensorName.includes("hot spot") || sensorName.includes("hotspot"))) {
       current.temperatureC = current.temperatureC == null ? round(value) : Math.max(current.temperatureC, round(value));
     }
   }
-  return [...grouped.values()];
+  return [...grouped.values()].map(({ dedicatedMemoryUsed, dedicatedMemoryTotal, sharedMemoryUsed, sharedMemoryTotal, genericMemoryUsed, genericMemoryTotal, ...rest }) => rest);
 }
 
 function mergeWindowsGpuTelemetry(sampledGpus, dllGpus) {

@@ -1357,7 +1357,7 @@ func collectSlowMetrics() slowMetrics {
 
 func windowsGPUNeedsMemoryFallback(gpus []gpuDeviceStats) bool {
 	for _, gpu := range gpus {
-		if gpu.MemoryTotalBytes == 0 || gpu.MemoryUsedBytes == 0 {
+		if gpu.MemoryTotalBytes == 0 || gpu.MemoryUsedBytes == 0 || gpu.MemoryUsedBytes > gpu.MemoryTotalBytes || gpu.MemoryTotalBytes <= 512*1024*1024 {
 			return true
 		}
 	}
@@ -1379,6 +1379,9 @@ func mergeMissingGPUMemory(previous, next []gpuDeviceStats) []gpuDeviceStats {
 			}
 			if prior.MemoryUsedBytes > 0 {
 				result[index].MemoryUsedBytes = prior.MemoryUsedBytes
+			}
+			if result[index].MemoryTotalBytes == 0 && prior.MemoryTotalBytes > 0 {
+				result[index].MemoryTotalBytes = prior.MemoryTotalBytes
 			}
 			break
 		}
@@ -1414,11 +1417,14 @@ func mergeWindowsGPUFallback(primary, fallback []gpuDeviceStats) []gpuDeviceStat
 		}
 		matched[matchIndex] = true
 		candidate := fallback[matchIndex]
-		if result[index].MemoryUsedBytes == 0 {
+		if result[index].MemoryUsedBytes == 0 || (candidate.MemoryUsedBytes > 0 && result[index].MemoryUsedBytes < candidate.MemoryUsedBytes) {
 			result[index].MemoryUsedBytes = candidate.MemoryUsedBytes
 		}
-		if result[index].MemoryTotalBytes == 0 {
+		if result[index].MemoryTotalBytes == 0 || (candidate.MemoryTotalBytes > 0 && result[index].MemoryTotalBytes < candidate.MemoryTotalBytes) {
 			result[index].MemoryTotalBytes = candidate.MemoryTotalBytes
+		}
+		if result[index].MemoryTotalBytes < result[index].MemoryUsedBytes {
+			result[index].MemoryTotalBytes = result[index].MemoryUsedBytes
 		}
 		if result[index].UtilizationPercent == 0 {
 			result[index].UtilizationPercent = candidate.UtilizationPercent
@@ -2322,7 +2328,10 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 			ID:   "gpu-" + sanitizeKey(gpuID),
 			Name: snapshot.Name,
 		}
-		var clock, load, temperature, memoryUsed, memoryTotal *float64
+		var clock, load, temperature *float64
+		var dedicatedMemoryUsed, dedicatedMemoryTotal *float64
+		var sharedMemoryUsed, sharedMemoryTotal *float64
+		var genericMemoryUsed, genericMemoryTotal *float64
 		for _, sensor := range snapshot.Sensors {
 			if sensor.Value == nil || !isFinitePositive(*sensor.Value) {
 				continue
@@ -2336,13 +2345,28 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 				load = maxSensorValue(load, sensor.Value)
 			case sensorType == "temperature" && isValidHardwareTemperature(*sensor.Value) && isGPUTemperatureName(sensorName):
 				temperature = maxSensorValue(temperature, sensor.Value)
-			case (sensorType == "data" || sensorType == "smalldata" || sensorType == "small data") && strings.Contains(sensorName, "memory used"):
-				memoryUsed = sensor.Value
-			case (sensorType == "data" || sensorType == "smalldata" || sensorType == "small data") && strings.Contains(sensorName, "memory total"):
-				memoryTotal = sensor.Value
+			case sensorType == "data" || sensorType == "smalldata" || sensorType == "small data":
+				isDedicated := strings.Contains(sensorName, "dedicated")
+				isShared := strings.Contains(sensorName, "shared")
+				isUsed := strings.Contains(sensorName, "used")
+				isTotal := strings.Contains(sensorName, "total")
+
+				if isDedicated && isUsed {
+					dedicatedMemoryUsed = maxSensorValue(dedicatedMemoryUsed, sensor.Value)
+				} else if isDedicated && isTotal {
+					dedicatedMemoryTotal = maxSensorValue(dedicatedMemoryTotal, sensor.Value)
+				} else if isShared && isUsed {
+					sharedMemoryUsed = maxSensorValue(sharedMemoryUsed, sensor.Value)
+				} else if isShared && isTotal {
+					sharedMemoryTotal = maxSensorValue(sharedMemoryTotal, sensor.Value)
+				} else if isUsed && strings.Contains(sensorName, "memory") {
+					genericMemoryUsed = maxSensorValue(genericMemoryUsed, sensor.Value)
+				} else if isTotal && strings.Contains(sensorName, "memory") {
+					genericMemoryTotal = maxSensorValue(genericMemoryTotal, sensor.Value)
+				}
 			}
 		}
-		if clock == nil && load == nil && temperature == nil {
+		if clock == nil && load == nil && temperature == nil && dedicatedMemoryUsed == nil && sharedMemoryUsed == nil && genericMemoryUsed == nil {
 			continue
 		}
 		gpu.FrequencyMHz = clock
@@ -2353,11 +2377,37 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 		if load != nil {
 			gpu.UtilizationPercent = *load
 		}
-		if memoryUsed != nil {
-			gpu.MemoryUsedBytes = uint64(*memoryUsed * 1024 * 1024)
+		var finalUsedMB, finalTotalMB float64
+		if dedicatedMemoryUsed != nil || sharedMemoryUsed != nil {
+			if dedicatedMemoryUsed != nil {
+				finalUsedMB += *dedicatedMemoryUsed
+			}
+			if sharedMemoryUsed != nil {
+				finalUsedMB += *sharedMemoryUsed
+			}
+		} else if genericMemoryUsed != nil {
+			finalUsedMB = *genericMemoryUsed
 		}
-		if memoryTotal != nil {
-			gpu.MemoryTotalBytes = uint64(*memoryTotal * 1024 * 1024)
+
+		if dedicatedMemoryTotal != nil || sharedMemoryTotal != nil {
+			if dedicatedMemoryTotal != nil {
+				finalTotalMB += *dedicatedMemoryTotal
+			}
+			if sharedMemoryTotal != nil {
+				finalTotalMB += *sharedMemoryTotal
+			}
+		} else if genericMemoryTotal != nil {
+			finalTotalMB = *genericMemoryTotal
+		}
+
+		if finalUsedMB > 0 {
+			gpu.MemoryUsedBytes = uint64(finalUsedMB * 1024 * 1024)
+		}
+		if finalTotalMB > 0 {
+			gpu.MemoryTotalBytes = uint64(finalTotalMB * 1024 * 1024)
+		}
+		if gpu.MemoryTotalBytes < gpu.MemoryUsedBytes {
+			gpu.MemoryTotalBytes = gpu.MemoryUsedBytes
 		}
 		metrics.gpus = append(metrics.gpus, gpu)
 	}
