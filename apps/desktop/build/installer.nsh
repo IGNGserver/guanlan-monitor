@@ -2,6 +2,7 @@
 !define DSC_LEGACY_ELECTRON_APP_KEY "Software\26118358-b500-54e1-881b-7e549a465667"
 !define DSC_LEGACY_ELECTRON_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\26118358-b500-54e1-881b-7e549a465667"
 !define DSC_WINDOW_TITLE "观澜 · 设备状态控制台"
+!define DSC_HARDWARE_SENSOR_TASK "DeviceStateConsoleHardwareSensors"
 
 !macro customHeader
 !ifndef BUILD_UNINSTALLER
@@ -82,6 +83,11 @@
   ; Capture the app state before the cleanup commands terminate its process.
   Call DSC_CapturePreInstallState
 
+  ; Stop the elevated hardware sensor helper before replacing the bundled
+  ; collector executable during an upgrade.
+  nsExec::Exec '"$SYSDIR\schtasks.exe" /End /TN "${DSC_HARDWARE_SENSOR_TASK}"'
+  Pop $0
+
   ; nsExec runs the console utility without opening a visible taskkill window.
   nsExec::Exec '"$SYSDIR\taskkill.exe" /F /T /IM "DeviceStateConsoleAgent.WinUI.exe"'
   Pop $0
@@ -108,6 +114,14 @@
   nsExec::Exec '"$INSTDIR\resources\agent\windows-hardware\pawnio\PawnIO_setup.exe" -install -silent'
   Pop $0
 dsc_skip_pawnio_install:
+
+  ; CPU package sensors require the bundled LHM probe to run with the SYSTEM
+  ; token. The helper only writes a short-lived sensor cache; the normal
+  ; desktop Agent remains responsible for config, upload, and UI control.
+  IfFileExists "$INSTDIR\resources\agent\device-state-console-agent.exe" 0 dsc_skip_hardware_sensor_helper
+  nsExec::Exec '"$INSTDIR\resources\agent\device-state-console-agent.exe" install-hardware-helper'
+  Pop $0
+dsc_skip_hardware_sensor_helper:
 
   ; Remove the old Inno Setup registration after the new installer owns this path.
   DeleteRegKey HKLM "${DSC_LEGACY_INNO_UNINSTALL_KEY}"
@@ -149,6 +163,10 @@ dsc_skip_pawnio_install:
 !macroend
 
 !macro customUnInstall
+  IfFileExists "$INSTDIR\resources\agent\device-state-console-agent.exe" 0 dsc_skip_hardware_sensor_helper_uninstall
+  nsExec::Exec '"$INSTDIR\resources\agent\device-state-console-agent.exe" uninstall-hardware-helper'
+  Pop $0
+dsc_skip_hardware_sensor_helper_uninstall:
   Delete "$SMPROGRAMS\卸载 观澜.lnk"
   Delete "$SMPROGRAMS\DeviceStateConsoleAgent.lnk"
   Delete "$SMPROGRAMS\卸载 DeviceStateConsoleAgent.lnk"

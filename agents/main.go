@@ -38,6 +38,13 @@ const (
 	defaultNormalIntervalSeconds = 30
 	defaultSlowIntervalSeconds   = 30
 	maxSamplingIntervalSeconds   = 86400
+	hardwareSensorHelperInterval = 10 * time.Second
+	hardwareSensorCacheMaxAge    = 45 * time.Second
+)
+
+const (
+	hardwareSensorHelperTaskName   = "DeviceStateConsoleHardwareSensors"
+	defaultHardwareSensorCachePath = `C:\ProgramData\DeviceStateConsole\hardware-sensors.json`
 )
 
 const (
@@ -471,6 +478,24 @@ func main() {
 		case "update":
 			if err := runUpdateCommand(os.Args[2:]); err != nil {
 				log.Printf("update failed: %v", err)
+				os.Exit(1)
+			}
+			return
+		case "hardware-sensor-helper":
+			if err := runHardwareSensorHelper(os.Args[2:]); err != nil {
+				log.Printf("hardware sensor helper failed: %v", err)
+				os.Exit(1)
+			}
+			return
+		case "install-hardware-helper":
+			if err := installHardwareSensorHelper(); err != nil {
+				log.Printf("install hardware sensor helper failed: %v", err)
+				os.Exit(1)
+			}
+			return
+		case "uninstall-hardware-helper":
+			if err := uninstallHardwareSensorHelper(); err != nil {
+				log.Printf("uninstall hardware sensor helper failed: %v", err)
 				os.Exit(1)
 			}
 			return
@@ -2117,6 +2142,11 @@ type hardwareSensorSnapshot struct {
 	Sensors         []hardwareSensor         `json:"sensors"`
 }
 
+type hardwareSensorCache struct {
+	UpdatedAt string                   `json:"updatedAt"`
+	Snapshots []hardwareSensorSnapshot `json:"snapshots"`
+}
+
 type hardwarePawnIOStatus struct {
 	Available bool   `json:"available"`
 	Installed *bool  `json:"installed"`
@@ -2144,12 +2174,13 @@ type hardwareSmartAttribute struct {
 }
 
 type hardwareSensorMetrics struct {
-	cpuFrequencyMHz    *float64
-	cpuTemperatureC    *float64
-	gpus               []gpuDeviceStats
-	fans               []fanSensorStats
-	diskSensorMetadata map[string]diskSensorMetadata
-	sensorBackends     []sensorBackendStatus
+	cpuFrequencyMHz      *float64
+	cpuTemperatureC      *float64
+	cpuTemperatureSource string
+	gpus                 []gpuDeviceStats
+	fans                 []fanSensorStats
+	diskSensorMetadata   map[string]diskSensorMetadata
+	sensorBackends       []sensorBackendStatus
 }
 
 // LibreHardwareMonitor exposes live clocks, including CPU boost clocks, where WMI often reports a nominal value.
@@ -2190,7 +2221,7 @@ func collectHardwareSensors() hardwareSensorMetrics {
 	powerShellSnapshots, powerShellErr := collectWindowsHardwareSnapshotsWithPowerShell(dllPath)
 	if powerShellErr == nil {
 		powerShellSnapshots = alignWindowsHardwareGPUIdentifiers(powerShellSnapshots)
-		metrics := mapHardwareSensors(powerShellSnapshots)
+		metrics := applyPrivilegedHardwareTemperature(mapHardwareSensors(powerShellSnapshots))
 		metrics.sensorBackends = []sensorBackendStatus{{
 			ID:     "librehardwaremonitor",
 			Label:  "LibreHardwareMonitor",
@@ -2204,7 +2235,7 @@ func collectHardwareSensors() hardwareSensorMetrics {
 	if probePath := resolveHardwareMonitorProbePath(); probePath != "" {
 		if snapshots, pawnIO, probeErr := collectWindowsHardwareSnapshotsWithDotnetProbe(probePath, dllPath); probeErr == nil {
 			snapshots = alignWindowsHardwareGPUIdentifiers(snapshots)
-			metrics := mapHardwareSensors(snapshots)
+			metrics := applyPrivilegedHardwareTemperature(mapHardwareSensors(snapshots))
 			metrics.sensorBackends = []sensorBackendStatus{{
 				ID:     "librehardwaremonitor",
 				Label:  "LibreHardwareMonitor",
@@ -2217,7 +2248,7 @@ func collectHardwareSensors() hardwareSensorMetrics {
 		}
 	}
 
-	return hardwareSensorMetrics{
+	metrics := applyPrivilegedHardwareTemperature(hardwareSensorMetrics{
 		gpus:               []gpuDeviceStats{},
 		fans:               []fanSensorStats{},
 		diskSensorMetadata: map[string]diskSensorMetadata{},
@@ -2227,7 +2258,171 @@ func collectHardwareSensors() hardwareSensorMetrics {
 			OK:     false,
 			Detail: "读取失败：" + probeDetail,
 		}},
+	})
+	if metrics.cpuTemperatureC != nil {
+		metrics.sensorBackends = []sensorBackendStatus{{
+			ID:     "librehardwaremonitor",
+			Label:  "LibreHardwareMonitor",
+			OK:     true,
+			Detail: "已使用 SYSTEM 硬件传感器缓存；" + hardwareSensorDetail(metrics, "特权传感器缓存", dllPath),
+		}}
 	}
+	return metrics
+}
+
+func hardwareSensorCachePath() string {
+	if configured := strings.TrimSpace(os.Getenv("DSC_HARDWARE_SENSOR_CACHE")); configured != "" {
+		return configured
+	}
+	return defaultHardwareSensorCachePath
+}
+
+func applyPrivilegedHardwareTemperature(metrics hardwareSensorMetrics) hardwareSensorMetrics {
+	if runtime.GOOS != "windows" || metrics.cpuTemperatureC != nil {
+		return metrics
+	}
+
+	cache, err := readHardwareSensorCache(hardwareSensorCachePath())
+	if err != nil {
+		return metrics
+	}
+	cachedMetrics := mapHardwareSensors(cache.Snapshots)
+	if cachedMetrics.cpuTemperatureC == nil {
+		return metrics
+	}
+	metrics.cpuTemperatureC = cachedMetrics.cpuTemperatureC
+	metrics.cpuTemperatureSource = "SYSTEM 硬件传感器缓存"
+	return metrics
+}
+
+func readHardwareSensorCache(path string) (hardwareSensorCache, error) {
+	var cache hardwareSensorCache
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return cache, err
+	}
+	if err := json.Unmarshal(raw, &cache); err != nil {
+		return cache, err
+	}
+	updatedAt, err := time.Parse(time.RFC3339, strings.TrimSpace(cache.UpdatedAt))
+	if err != nil || time.Since(updatedAt) > hardwareSensorCacheMaxAge {
+		return hardwareSensorCache{}, fmt.Errorf("hardware sensor cache is stale")
+	}
+	return cache, nil
+}
+
+func writeHardwareSensorCache(path string, snapshots []hardwareSensorSnapshot) error {
+	cache := hardwareSensorCache{
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+		Snapshots: snapshots,
+	}
+	raw, err := json.Marshal(cache)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	temporary := path + ".tmp"
+	if err := os.WriteFile(temporary, raw, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(temporary, path); err != nil {
+		_ = os.Remove(path)
+		if retryErr := os.Rename(temporary, path); retryErr != nil {
+			_ = os.Remove(temporary)
+			return err
+		}
+	}
+	return nil
+}
+
+func runHardwareSensorHelper(args []string) error {
+	if runtime.GOOS != "windows" {
+		return errors.New("hardware sensor helper is only available on Windows")
+	}
+	outputPath := commandArgument(args, "--output")
+	if outputPath == "" {
+		outputPath = hardwareSensorCachePath()
+	}
+	stopContext, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	for {
+		dllPath := resolveHardwareMonitorPath()
+		if dllPath == "" {
+			log.Printf("hardware sensor helper: LibreHardwareMonitorLib.dll not found")
+		} else if snapshots, err := collectWindowsHardwareSnapshotsWithPowerShell(dllPath); err != nil {
+			log.Printf("hardware sensor helper probe failed: %v", err)
+		} else if err := writeHardwareSensorCache(outputPath, snapshots); err != nil {
+			log.Printf("hardware sensor helper cache write failed: %v", err)
+		}
+		if !waitForNextCycle(stopContext.Done(), hardwareSensorHelperInterval) {
+			return nil
+		}
+	}
+}
+
+func commandArgument(args []string, name string) string {
+	for index := 0; index+1 < len(args); index++ {
+		if args[index] == name {
+			return strings.TrimSpace(args[index+1])
+		}
+	}
+	return ""
+}
+
+func installHardwareSensorHelper() error {
+	if runtime.GOOS != "windows" {
+		return errors.New("hardware sensor helper is only available on Windows")
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	outputPath := hardwareSensorCachePath()
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		return err
+	}
+	_ = runScheduledTaskCommand("/End", "/TN", hardwareSensorHelperTaskName)
+	_ = runScheduledTaskCommand("/Delete", "/TN", hardwareSensorHelperTaskName, "/F")
+	taskRun := fmt.Sprintf(`"%s" hardware-sensor-helper --output "%s"`, executable, outputPath)
+	if err := runScheduledTaskCommand(
+		"/Create",
+		"/TN", hardwareSensorHelperTaskName,
+		"/TR", taskRun,
+		"/SC", "ONSTART",
+		"/RU", "SYSTEM",
+		"/RL", "HIGHEST",
+		"/F",
+	); err != nil {
+		return err
+	}
+	return runScheduledTaskCommand("/Run", "/TN", hardwareSensorHelperTaskName)
+}
+
+func uninstallHardwareSensorHelper() error {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	_ = runScheduledTaskCommand("/End", "/TN", hardwareSensorHelperTaskName)
+	if err := runScheduledTaskCommand("/Delete", "/TN", hardwareSensorHelperTaskName, "/F"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func runScheduledTaskCommand(args ...string) error {
+	command := exec.Command("schtasks.exe", args...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		detail := strings.TrimSpace(string(output))
+		if detail != "" {
+			return fmt.Errorf("schtasks %v failed: %w: %s", args, err, detail)
+		}
+		return fmt.Errorf("schtasks %v failed: %w", args, err)
+	}
+	return nil
 }
 
 func collectWindowsHardwareSnapshotsWithPowerShell(dllPath string) ([]hardwareSensorSnapshot, error) {
@@ -2358,6 +2553,9 @@ func readLinuxSensorValue(path string, divisor float64) (float64, bool) {
 
 func hardwareSensorDetail(metrics hardwareSensorMetrics, source, dllPath string) string {
 	detail := fmt.Sprintf("已通过 %s 读取硬件传感器；风扇 %d 个，磁盘 SMART %d 个%s", source, len(metrics.fans), len(metrics.diskSensorMetadata), hardwareMonitorLibraryDetail(dllPath))
+	if strings.TrimSpace(metrics.cpuTemperatureSource) != "" {
+		detail += "；CPU 温度来源=" + metrics.cpuTemperatureSource
+	}
 	if metrics.cpuTemperatureC == nil {
 		detail += "；未发现 CPU Package/Core 温度传感器，不使用 ACPI 热区值"
 	}

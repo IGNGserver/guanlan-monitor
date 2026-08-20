@@ -203,6 +203,48 @@ func TestApplyCPUPackageTemperatureDoesNotMislabelMultiplePackages(t *testing.T)
 	}
 }
 
+func TestHardwareSensorCacheRoundTrip(t *testing.T) {
+	root := t.TempDir()
+	temperature := 68.0
+	path := filepath.Join(root, "hardware-sensors.json")
+	if err := writeHardwareSensorCache(path, []hardwareSensorSnapshot{{
+		HardwareType: "Cpu",
+		Name:         "Intel CPU",
+		Sensors:      []hardwareSensor{{SensorType: "Temperature", Name: "CPU Package", Value: &temperature}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := readHardwareSensorCache(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics := mapHardwareSensors(cache.Snapshots)
+	if metrics.cpuTemperatureC == nil || *metrics.cpuTemperatureC != temperature {
+		t.Fatalf("unexpected cached CPU temperature: %#v", metrics.cpuTemperatureC)
+	}
+}
+
+func TestHardwareSensorCacheRejectsStaleData(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "hardware-sensors.json")
+	raw := []byte(`{"updatedAt":"2020-01-01T00:00:00Z","snapshots":[]}`)
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readHardwareSensorCache(path); err == nil {
+		t.Fatal("expected stale hardware sensor cache to be rejected")
+	}
+}
+
+func TestCommandArgument(t *testing.T) {
+	if got := commandArgument([]string{"--output", `C:\ProgramData\sensor.json`}, "--output"); got != `C:\ProgramData\sensor.json` {
+		t.Fatalf("unexpected command argument: %q", got)
+	}
+	if got := commandArgument([]string{"--other", "value"}, "--output"); got != "" {
+		t.Fatalf("missing command argument should be empty, got %q", got)
+	}
+}
+
 func TestHardwareMonitorPathCandidatesPreferBundledLibrary(t *testing.T) {
 	candidates := hardwareMonitorPathCandidates(
 		filepath.Join("/opt", "DeviceStateConsoleAgent", "backend.exe"),
