@@ -1272,6 +1272,13 @@ func mergeSlowMetrics(previous slowMetrics, next slowMetrics) slowMetrics {
 		merged.memorySlotCount = next.memorySlotCount
 		merged.memoryFormFactor = next.memoryFormFactor
 		merged.gpus = mergeMissingGPUMemory(previous.gpus, next.gpus)
+		if merged.cpuTemperatureC != nil {
+			// The historical-memory merge may bring back a previous GPU
+			// temperature. Integrated GPUs have no independent sensor, so
+			// restore the invariant after merging: their temperature always
+			// follows the current CPU Package value.
+			applyIntegratedGPUTemperature(merged.gpus, *merged.cpuTemperatureC)
+		}
 		merged.gpuDrivers = next.gpuDrivers
 		merged.networkMetadata = next.networkMetadata
 		merged.diskInterfaces = next.diskInterfaces
