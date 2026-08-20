@@ -10,6 +10,19 @@
 
 export type InteractionScale = "compact" | "comfortable" | "touch";
 export type InteractionScaleSetting = InteractionScale | "auto";
+export type PointerType = "touch" | "mouse" | "pen";
+
+export function detectTouchSupport(): boolean {
+  if (typeof window === "undefined") return false;
+  const coarsePointer = typeof window.matchMedia === "function"
+    ? window.matchMedia("(pointer: coarse)").matches
+    : false;
+  return (
+    ("ontouchstart" in window) ||
+    (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0) ||
+    coarsePointer
+  );
+}
 
 export function detectDefaultInteractionScale(hasTouchSupport: boolean): InteractionScale {
   return hasTouchSupport ? "touch" : "comfortable";

@@ -54,8 +54,8 @@ if (!hasSingleInstanceLock) {
     const iconPath = resolveAppIconPath();
     const appIcon = nativeImage.createFromPath(iconPath);
     const workArea = screen.getPrimaryDisplay().workAreaSize;
-    const minWidth = Math.min(760, Math.max(640, workArea.width - 32));
-    const minHeight = Math.min(560, Math.max(480, workArea.height - 32));
+    const minWidth = Math.min(360, Math.max(320, workArea.width - 32));
+    const minHeight = Math.min(360, Math.max(320, workArea.height - 32));
     mainWindow = new BrowserWindow({
       width: Math.min(1440, Math.max(minWidth, workArea.width - 48)),
       height: Math.min(920, Math.max(minHeight, workArea.height - 48)),

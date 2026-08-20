@@ -5,11 +5,11 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const targetDir = path.resolve(__dirname, "../apps/desktop/src/renderer-guanlan");
+const targetDir = path.resolve(__dirname, "../packages/console-ui/src");
 const rendererEntry = path.resolve(__dirname, "../apps/desktop/src/renderer/App.tsx");
 const workspaceDir = path.resolve(targetDir, "workspace");
 
-console.log(`[check:desktop-ui-boundaries] Scanning isolated renderer at: ${targetDir}`);
+console.log(`[check:desktop-ui-boundaries] Scanning shared console UI at: ${targetDir}`);
 
 if (!fs.existsSync(targetDir)) {
   console.error(`[check:desktop-ui-boundaries] Error: Target directory does not exist: ${targetDir}`);

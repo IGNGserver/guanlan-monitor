@@ -1,6 +1,6 @@
 {
   "name": "@dsc/desktop",
-  "version": "0.2.192",
+  "version": "0.2.194",
   "private": true,
   "type": "module",
   "description": "Unified Windows and Linux Electron desktop client for Device State Console.",
@@ -16,12 +16,13 @@
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check:desktop-ui-boundaries": "node ../../scripts/check-desktop-ui-boundaries.mjs",
-    "test:ui-helpers": "node --test src/renderer-guanlan/helpers/layout.test.ts",
+    "test:ui-helpers": "node --test ../../packages/console-ui/src/helpers/layout.test.ts",
     "package:windows": "pnpm build && electron-builder --win nsis portable",
     "package:linux": "pnpm build && electron-builder --linux deb"
   },
   "dependencies": {
     "@dsc/shared": "workspace:*",
+    "@dsc/console-ui": "workspace:*",
     "clsx": "^2.1.1",
     "react": "19.1.1",
     "react-dom": "19.1.1",

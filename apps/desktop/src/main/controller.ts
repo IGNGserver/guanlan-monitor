@@ -64,6 +64,7 @@ export class DesktopController {
       saveHubConnection: (serverUrl: string, accessKey: string) => this.saveHubConnection(serverUrl, accessKey),
       login: (accessKey: string) => this.login(accessKey),
       logout: () => this.logout(),
+      disconnectAgent: () => this.disconnectAgent(),
       cloudPush: () => this.cloudPush(),
       getWidgetLayout: (request: WidgetLayoutRequest) => this.getWidgetLayout(request),
       saveWidgetLayout: (request: WidgetLayoutSaveRequest) => this.saveWidgetLayout(request),
@@ -214,6 +215,18 @@ export class DesktopController {
     return this.refresh();
   }
 
+  async disconnectAgent(): Promise<DesktopSnapshot> {
+    const rawState = await this.agent.start();
+    await this.agent.control("stop");
+    const nextConfig = mergeAgentConfig(rawState.config, {
+      cloudSyncEnabled: false
+    });
+    nextConfig.connection.secret = "";
+    await this.agent.updateConfig(nextConfig);
+    await this.hub.logout();
+    return this.refresh();
+  }
+
   async cloudPush(): Promise<DesktopSnapshot> {
     await this.agent.cloudPush();
     return this.refresh();
@@ -305,8 +318,10 @@ export class DesktopController {
 
     if (this.hub.isConfigured) {
       try {
-        // The overview page charts always use the last 15 minutes.
-        overviewMetrics = await this.hub.getOverviewMetrics("15m");
+        // Keep overview lines on the same time window as the device page;
+        // otherwise the shared toolbar would claim to change a range that
+        // only affected the detail charts.
+        overviewMetrics = await this.hub.getOverviewMetrics(this.metricWindow);
       } catch {
         overviewMetrics = null;
       }
@@ -356,10 +371,12 @@ export class DesktopController {
   }
 
   private asCachedSnapshot(cached: DesktopSnapshot, error?: unknown): DesktopSnapshot {
-    const now = new Date().toISOString();
     return {
       ...cached,
-      generatedAt: now,
+      // Keep the timestamp of the last successful live snapshot. The renderer
+      // uses cache.savedAt for the cache age and must not confuse the moment
+      // this fallback was rendered with the moment telemetry was collected.
+      generatedAt: cached.generatedAt,
       source: "cache",
       cache: cacheState(cached),
       session: {

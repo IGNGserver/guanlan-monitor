@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type {
   DeviceMetricKey,
   DeviceSummary,
@@ -28,7 +28,7 @@ import {
 } from "recharts";
 import { DesktopWidget, useWidgetLayout, type WidgetGroupChildDefinition, type WidgetKind, type WidgetSize } from "./WidgetLayout";
 import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
-import { getWidgetLines, averageSamplePoints, type WidgetLine } from "../helpers/widgetLines.ts";
+import { getWidgetLines, averageSamplePoints, type WidgetLine } from "../helpers/widgetLines";
 
 type WidgetCatalogDefinition = {
   widgetType: string;
@@ -386,9 +386,10 @@ function sumSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
     for (const point of points) {
       const timestamp = Date.parse(point.timestamp);
       if (!Number.isFinite(timestamp) || !Number.isFinite(point.value)) continue;
-      const current = buckets.get(timestamp) ?? { timestamp: new Date(timestamp).toISOString(), total: 0 };
+      const bucketTimestamp = Math.round(timestamp / 1000) * 1000;
+      const current = buckets.get(bucketTimestamp) ?? { timestamp: new Date(bucketTimestamp).toISOString(), total: 0 };
       current.total += point.value;
-      buckets.set(timestamp, current);
+      buckets.set(bucketTimestamp, current);
     }
   }
   return [...buckets.values()].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp)).map((point) => ({ timestamp: point.timestamp, value: point.total }));
@@ -410,9 +411,13 @@ function buildChartData(lines: WidgetLine[]): Array<Record<string, string | numb
   const rows = new Map<string, Record<string, string | number>>();
   lines.forEach((line, lineIndex) => {
     (Array.isArray(line.points) ? line.points : []).forEach((point) => {
-      const row = rows.get(point.timestamp) ?? { timestamp: point.timestamp };
+      const timestamp = Date.parse(point.timestamp);
+      if (!Number.isFinite(timestamp) || !Number.isFinite(point.value)) return;
+      const bucketTimestamp = Math.round(timestamp / 1000) * 1000;
+      const normalizedTimestamp = new Date(bucketTimestamp).toISOString();
+      const row = rows.get(normalizedTimestamp) ?? { timestamp: normalizedTimestamp };
       row[`value${lineIndex}`] = point.value;
-      rows.set(point.timestamp, row);
+      rows.set(normalizedTimestamp, row);
     });
   });
   return [...rows.values()].sort((left, right) => Date.parse(String(left.timestamp)) - Date.parse(String(right.timestamp)));
@@ -754,7 +759,7 @@ export function DynamicWidgetCanvas({ device, metrics, showEmptyState = false, o
   }, [entries, layout.addWidget, layout.editable, layout.locked, layout.updateWidgetConfig, metrics]);
 
   if (!entries.length) {
-    return showEmptyState ? <div className="workspace-dynamic-empty"><strong>这个面板还没有自定义小组件</strong><span>打开小组件抽屉，从处理器、存储、网络和 SMART 数据中选择内容。</span>{onOpenDrawer && <button type="button" onClick={onOpenDrawer}>打开小组件抽屉</button>}</div> : null;
+    return showEmptyState ? <div className="workspace-dynamic-empty"><strong>这个面板还没有自定义小组件</strong><span>{onOpenDrawer ? "打开小组件抽屉，从处理器、存储、网络和 SMART 数据中选择内容。" : "当前为离线缓存，只能查看，暂不能添加小组件。"}</span>{onOpenDrawer && <button type="button" onClick={onOpenDrawer}>打开小组件抽屉</button>}</div> : null;
   }
   const definitions = new Map(entries.map((entry) => [entry.id, widgetDefinitionByType.get(entry.widgetType ?? "")]));
   const groupEntries = entries.filter((entry) => isDeviceGroupDefinition(definitions.get(entry.id)));
@@ -777,6 +782,56 @@ export function DynamicWidgetCanvas({ device, metrics, showEmptyState = false, o
 export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogContext & { open: boolean; onClose: () => void }) {
   const layout = useWidgetLayout();
   const [targetDefinition, setTargetDefinition] = useState<WidgetCatalogDefinition | null>(null);
+  const drawerRef = useRef<HTMLElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  const drawerGestureRef = useRef<{ pointerId: number; startY: number; offsetY: number } | null>(null);
+  const [dragOffset, setDragOffset] = useState(0);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!open) return;
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setDragOffset(0);
+    const focusFrame = window.requestAnimationFrame(() => {
+      const firstControl = drawerRef.current?.querySelector<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled)");
+      firstControl?.focus();
+    });
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(drawerRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex='-1'])") ?? []);
+      if (!focusable.length) return;
+      const currentIndex = focusable.indexOf(document.activeElement as HTMLElement);
+      const nextIndex = event.shiftKey
+        ? (currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1)
+        : (currentIndex + 1) % focusable.length;
+      event.preventDefault();
+      focusable[nextIndex]?.focus();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocusRef.current?.focus();
+      previousFocusRef.current = null;
+      drawerGestureRef.current = null;
+    };
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setTargetDefinition(null);
+      onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose]);
   if (!open) return null;
   const grouped = WIDGET_CATALOG.reduce<Record<string, WidgetCatalogDefinition[]>>((groups, definition) => {
     (groups[definition.category] ??= []).push(definition);
@@ -784,7 +839,29 @@ export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogCo
   }, {});
   const closeDrawer = () => {
     setTargetDefinition(null);
+    setDragOffset(0);
     onClose();
+  };
+  const handleDrawerHandlePointerDown = (event: React.PointerEvent<HTMLSpanElement>) => {
+    if (event.button !== 0) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drawerGestureRef.current = { pointerId: event.pointerId, startY: event.clientY, offsetY: 0 };
+  };
+  const handleDrawerHandlePointerMove = (event: React.PointerEvent<HTMLSpanElement>) => {
+    const gesture = drawerGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const offsetY = Math.max(0, event.clientY - gesture.startY);
+    gesture.offsetY = offsetY;
+    event.preventDefault();
+    setDragOffset(offsetY);
+  };
+  const finishDrawerHandlePointer = (event: React.PointerEvent<HTMLSpanElement>) => {
+    const gesture = drawerGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    drawerGestureRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (gesture.offsetY > 96) closeDrawer();
+    else setDragOffset(0);
   };
   const addWidget = (definition: WidgetCatalogDefinition, target?: { id: string; name: string }, customVis?: WidgetVisualization) => {
     const selectedVis = customVis ?? definition.visualization;
@@ -825,9 +902,10 @@ export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogCo
   const targetChoices = targetDefinition ? targetOptions(targetDefinition, metrics) : [];
   const targetLabels: Record<WidgetTargetKind, string> = { cpu: "处理器", disk: "硬盘", gpu: "显卡", fan: "风扇", network: "网卡" };
   return (
-    <div className="workspace-widget-drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDrawer(); }}>
-      <aside className="workspace-widget-drawer" role="dialog" aria-modal="true" aria-label="小组件抽屉">
+    <div className="workspace-widget-drawer-backdrop" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) closeDrawer(); }}>
+      <aside ref={drawerRef} className="workspace-widget-drawer" role="dialog" aria-modal="true" aria-label="小组件抽屉" tabIndex={-1} style={{ "--workspace-drawer-drag-offset": `${dragOffset}px` } as React.CSSProperties}>
         <div className="workspace-widget-drawer__header">
+          <span className="workspace-widget-drawer__handle" aria-hidden="true" onPointerDown={handleDrawerHandlePointerDown} onPointerMove={handleDrawerHandlePointerMove} onPointerUp={finishDrawerHandlePointer} onPointerCancel={finishDrawerHandlePointer} onLostPointerCapture={finishDrawerHandlePointer} />
           <div>
             <span className="workspace-section-kicker">{targetDefinition ? "选择目标设备" : "组件目录"}</span>
             <h2>{targetDefinition ? `选择${targetLabels[targetDefinition.targetKind ?? "cpu"]}实例` : "添加小组件"}</h2>

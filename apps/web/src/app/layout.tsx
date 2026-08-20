@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "@dsc/console-ui/styles.css";
 
 export const metadata: Metadata = {
   title: "DSC Hub - 设备状态集中控制台",

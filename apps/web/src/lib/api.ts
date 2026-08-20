@@ -159,6 +159,22 @@ export function saveFanNote(deviceId: string, fanId: string, payload: FanNotePay
   );
 }
 
+export function getOverviewMetrics(window: MetricWindow) {
+  return apiFetch<{ window: MetricWindow; instances: import("@dsc/shared").OverviewInstanceSeries[] }>(`/api/overview/metrics?window=${encodeURIComponent(window)}`);
+}
+
+export function getWidgetLayout(request: import("@dsc/shared").WidgetLayoutRequest) {
+  const params = new URLSearchParams({ scopeKey: request.scopeKey, templateKey: request.templateKey });
+  return apiFetch<import("@dsc/shared").WidgetLayoutSync>(`/api/widget-layouts?${params.toString()}`);
+}
+
+export function saveWidgetLayout(request: import("@dsc/shared").WidgetLayoutSaveRequest) {
+  return apiFetch<import("@dsc/shared").WidgetLayoutSync>("/api/widget-layouts", {
+    method: "PUT",
+    body: JSON.stringify(request)
+  });
+}
+
 export function getDeviceMetricConfig(deviceId: string) {
   return apiFetch<DeviceMetricConfigResponse>(`/api/devices/${deviceId}/metric-config`);
 }

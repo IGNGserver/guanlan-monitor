@@ -30,7 +30,7 @@ import {
   type WidgetKind,
   type WidgetPlacement,
   type WidgetSize
-} from "../helpers/widgetGrid.ts";
+} from "../helpers/widgetGrid";
 
 export {
   DEFAULT_SIZE,
@@ -926,7 +926,7 @@ export function DesktopWidget({
   const resolved = layout.resolveWidget(definition);
   const editing = layout.editable && layout.editMode;
   const widgetRef = useRef<HTMLDivElement>(null);
-  const pointerDragRef = useRef<{ pointerId: number; startX: number; startY: number; lastTargetId: string | null; handle: HTMLElement } | null>(null);
+  const pointerDragRef = useRef<{ pointerId: number; startX: number; startY: number; lastTargetId: string | null; handle: HTMLElement; activated: boolean; timer: number | null } | null>(null);
   const previousRectRef = useRef<DOMRect | null>(null);
   const flipAnimationRef = useRef<Animation | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -935,6 +935,11 @@ export function DesktopWidget({
   useEffect(() => {
     layout.registerWidget(definition);
   }, [definition, layout.registerWidget]);
+
+  useEffect(() => () => {
+    const session = pointerDragRef.current;
+    if (session?.timer != null) window.clearTimeout(session.timer);
+  }, []);
 
   useLayoutEffect(() => {
     const node = widgetRef.current;
@@ -991,29 +996,52 @@ export function DesktopWidget({
     return null;
   };
 
-  const handlePointerDown = (event: React.PointerEvent<HTMLSpanElement>) => {
-    if (!editing || event.button !== 0 || !resolved.placement) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    pointerDragRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      lastTargetId: null,
-      handle: event.currentTarget
-    };
+  const activatePointerDrag = (session: NonNullable<typeof pointerDragRef.current>) => {
+    if (pointerDragRef.current !== session || session.activated) return;
+    session.activated = true;
+    session.timer = null;
     setDragOffset({ x: 0, y: 0 });
     setDragging(true);
     layout.beginWidgetDrag(id);
   };
 
+  const handlePointerDown = (event: React.PointerEvent<HTMLSpanElement>) => {
+    if (!editing || event.button !== 0 || !resolved.placement) return;
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const session: NonNullable<typeof pointerDragRef.current> = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastTargetId: null,
+      handle: event.currentTarget,
+      activated: false,
+      timer: null
+    };
+    pointerDragRef.current = session;
+    if (event.pointerType === "touch" || event.pointerType === "pen") {
+      session.timer = window.setTimeout(() => activatePointerDrag(session), 260);
+    } else {
+      event.preventDefault();
+      activatePointerDrag(session);
+    }
+  };
+
   const handlePointerMove = (event: React.PointerEvent<HTMLSpanElement>) => {
     const session = pointerDragRef.current;
     if (!session || session.pointerId !== event.pointerId) return;
-    event.preventDefault();
     const offsetX = event.clientX - session.startX;
     const offsetY = event.clientY - session.startY;
+    if (!session.activated) {
+      if (Math.hypot(offsetX, offsetY) > 10) {
+        if (session.timer != null) window.clearTimeout(session.timer);
+        session.timer = null;
+        pointerDragRef.current = null;
+        if (session.handle.hasPointerCapture(session.pointerId)) session.handle.releasePointerCapture(session.pointerId);
+      }
+      return;
+    }
+    event.preventDefault();
     if (Math.abs(offsetX) < 3 && Math.abs(offsetY) < 3) return;
     setDragOffset({ x: offsetX, y: offsetY });
     const targetId = findDropTarget(event.clientX, event.clientY);
@@ -1026,9 +1054,12 @@ export function DesktopWidget({
   const finishPointerDrag = (event: React.PointerEvent<HTMLSpanElement>, cancelled = false) => {
     const session = pointerDragRef.current;
     if (!session || session.pointerId !== event.pointerId) return;
-    event.preventDefault();
+    if (session.timer != null) window.clearTimeout(session.timer);
+    session.timer = null;
     if (session.handle.hasPointerCapture(session.pointerId)) session.handle.releasePointerCapture(session.pointerId);
     pointerDragRef.current = null;
+    if (!session.activated) return;
+    event.preventDefault();
     setDragOffset({ x: 0, y: 0 });
     setDragging(false);
     if (cancelled) layout.cancelWidgetDrag();
@@ -1060,6 +1091,7 @@ export function DesktopWidget({
             onPointerMove={handlePointerMove}
             onPointerUp={(event) => finishPointerDrag(event)}
             onPointerCancel={(event) => finishPointerDrag(event, true)}
+            onLostPointerCapture={(event) => finishPointerDrag(event, true)}
           >⠿ <span>拖动</span></span>
           <span className="workspace-widget__tool-title" title={title}>{title}</span>
           <div className="workspace-widget__size-control" role="group" aria-label={`${title}尺寸`}>
@@ -1080,14 +1112,39 @@ export function DesktopWidget({
 export function WidgetLayoutToolbar({ onOpenWidgetDrawer }: { onOpenWidgetDrawer?: () => void } = {}) {
   const layout = useWidgetLayout();
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!layout.editMode) {
       setTemplatesOpen(false);
+      setMoreMenuOpen(false);
     }
   }, [layout.editMode]);
+
+  useEffect(() => {
+    if (!moreMenuOpen && !templatesOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !toolbarRef.current?.contains(event.target)) {
+        setMoreMenuOpen(false);
+        setTemplatesOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMoreMenuOpen(false);
+        setTemplatesOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [moreMenuOpen, templatesOpen]);
 
   const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1110,10 +1167,10 @@ export function WidgetLayoutToolbar({ onOpenWidgetDrawer }: { onOpenWidgetDrawer
     layout.setEditMode(false);
   };
 
-  if (!layout.editable) return <span className="workspace-layout-lock">全景视图 · 布局锁定</span>;
+  if (!layout.editable) return <span className="workspace-layout-lock">{layout.locked ? "全景视图 · 布局锁定" : "离线缓存 · 布局只读"}</span>;
 
   return (
-    <div className="workspace-layout-toolbar">
+    <div ref={toolbarRef} className="workspace-layout-toolbar">
       <span className={`workspace-layout-source${layout.dirty ? " is-dirty" : ""}`} title="布局由中枢保存和分发">
         {layout.loading ? "读取中枢布局" : layout.dirty ? "草稿布局" : layout.hasInstanceLayout ? "中枢布局" : "初始模板"}
       </span>
@@ -1123,9 +1180,6 @@ export function WidgetLayoutToolbar({ onOpenWidgetDrawer }: { onOpenWidgetDrawer
       {onOpenWidgetDrawer && <button className="workspace-layout-actions__button workspace-layout-actions__button--accent" type="button" onClick={onOpenWidgetDrawer}>添加小组件</button>}
       {layout.editMode && (
         <>
-          <button className={`workspace-layout-snap${layout.snapToGrid ? " is-active" : ""}`} type="button" aria-pressed={layout.snapToGrid} onClick={layout.toggleSnapToGrid} title="打开后会按从左到右、从上到下自动填补空位">
-            自动吸附 {layout.snapToGrid ? "开" : "关"}
-          </button>
           <div className="workspace-layout-history" role="group" aria-label="布局历史">
             <button type="button" disabled={!layout.canUndo} onClick={layout.undo} title="撤销">↶</button>
             <button type="button" disabled={!layout.canRedo} onClick={layout.redo} title="重做">↷</button>
@@ -1133,30 +1187,46 @@ export function WidgetLayoutToolbar({ onOpenWidgetDrawer }: { onOpenWidgetDrawer
           <button className="workspace-layout-save" type="button" onClick={() => void layout.saveLayout()} disabled={!layout.dirty || layout.saving}>
             {layout.saving ? "保存中" : "保存布局"}
           </button>
-          <button className="workspace-layout-actions__button" type="button" onClick={() => void layout.resetDeviceLayout()} disabled={layout.saving}>
-            {layout.saving ? "处理中" : "恢复初始"}
-          </button>
-          <div className="workspace-layout-template-menu">
-            <button className="workspace-layout-actions__button" type="button" onClick={() => setTemplatesOpen((value) => !value)} aria-expanded={templatesOpen}>通用模板{layout.templates.length ? ` ${layout.templates.length}` : ""}</button>
-            {templatesOpen && (
-              <div className="workspace-layout-template-tray">
-                {layout.templates.length ? layout.templates.map((template) => (
-                  <div className="workspace-layout-template-item" key={template.id}>
-                    <span><strong>{template.name}</strong><small>更新于 {new Date(template.updatedAt).toLocaleString()}</small></span>
-                    <div><button type="button" onClick={() => { layout.applyTemplate(template.id); setTemplatesOpen(false); }}>应用</button><button type="button" onClick={() => void layout.deleteTemplate(template.id)}>删除</button></div>
+          <div className="workspace-layout-more-menu">
+            <button className={`workspace-layout-actions__button${moreMenuOpen ? " is-active" : ""}`} type="button" onClick={() => setMoreMenuOpen((v) => !v)} aria-expanded={moreMenuOpen} title="更多操作">
+              更多选项 ▾
+            </button>
+            {moreMenuOpen && (
+              <div className="workspace-layout-more-tray" onPointerDown={(e) => e.stopPropagation()}>
+                <div className="workspace-layout-more-tray__row">
+                  <button className={`workspace-layout-snap${layout.snapToGrid ? " is-active" : ""}`} type="button" aria-pressed={layout.snapToGrid} onClick={layout.toggleSnapToGrid} title="打开后会按从左到右、从上到下自动填补空位">
+                    自动吸附 {layout.snapToGrid ? "开" : "关"}
+                  </button>
+                  <button className="workspace-layout-actions__button" type="button" onClick={() => void layout.resetDeviceLayout()} disabled={layout.saving}>
+                    {layout.saving ? "处理中" : "恢复初始"}
+                  </button>
+                </div>
+                <div className="workspace-layout-more-tray__row">
+                  <div className="workspace-layout-template-menu">
+                    <button className="workspace-layout-actions__button" type="button" onClick={() => setTemplatesOpen((value) => !value)} aria-expanded={templatesOpen}>通用模板{layout.templates.length ? ` ${layout.templates.length}` : ""}</button>
+                    {templatesOpen && (
+                      <div className="workspace-layout-template-tray">
+                        {layout.templates.length ? layout.templates.map((template) => (
+                          <div className="workspace-layout-template-item" key={template.id}>
+                            <span><strong>{template.name}</strong><small>更新于 {new Date(template.updatedAt).toLocaleString()}</small></span>
+                            <div><button type="button" onClick={() => { layout.applyTemplate(template.id); setTemplatesOpen(false); }}>应用</button><button type="button" onClick={() => void layout.deleteTemplate(template.id)}>删除</button></div>
+                          </div>
+                        )) : <p className="workspace-layout-template-empty">当前类型和面板还没有通用模板。</p>}
+                      </div>
+                    )}
                   </div>
-                )) : <p className="workspace-layout-template-empty">当前类型和面板还没有通用模板。</p>}
+                  <div className="workspace-layout-actions" role="group" aria-label="布局文件操作">
+                    <button className="workspace-layout-actions__button" type="button" onClick={layout.exportLayout}>导出</button>
+                    <button className="workspace-layout-actions__button" type="button" onClick={() => fileInputRef.current?.click()}>导入</button>
+                    <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={(event) => void handleImport(event)} />
+                  </div>
+                </div>
+                <div className="workspace-layout-template-save">
+                  <input value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="新模板名称" aria-label="通用模板名称" />
+                  <button className="workspace-layout-actions__button" type="button" disabled={!templateName.trim() || layout.saving} onClick={() => { void layout.saveAsTemplate(templateName).then((saved) => { if (saved) setTemplateName(""); }); }}>保存为通用</button>
+                </div>
               </div>
             )}
-          </div>
-          <div className="workspace-layout-template-save">
-            <input value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="模板名称" aria-label="通用模板名称" />
-            <button className="workspace-layout-actions__button" type="button" disabled={!templateName.trim() || layout.saving} onClick={() => { void layout.saveAsTemplate(templateName).then((saved) => { if (saved) setTemplateName(""); }); }}>保存为通用</button>
-          </div>
-          <div className="workspace-layout-actions" role="group" aria-label="布局文件操作">
-            <button className="workspace-layout-actions__button" type="button" onClick={layout.exportLayout}>导出</button>
-            <button className="workspace-layout-actions__button" type="button" onClick={() => fileInputRef.current?.click()}>导入</button>
-            <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={(event) => void handleImport(event)} />
           </div>
         </>
       )}

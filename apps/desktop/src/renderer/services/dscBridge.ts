@@ -66,6 +66,10 @@ class SafeDscBridge implements DesktopRendererBridge, WindowMaterialBridge {
     return this.requireBridge().logout();
   }
 
+  async disconnectAgent(): Promise<DesktopSnapshot> {
+    return this.requireBridge().disconnectAgent();
+  }
+
   async cloudPush(): Promise<DesktopSnapshot> {
     return this.requireBridge().cloudPush();
   }

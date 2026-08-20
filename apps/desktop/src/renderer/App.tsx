@@ -1,6 +1,8 @@
 import React from "react";
-import WorkspaceApp from "../renderer-guanlan/workspace/WorkspaceApp";
-import appIcon from "../renderer-guanlan/assets/app-icon.png";
+import WorkspaceApp from "@dsc/console-ui";
+import "@dsc/console-ui/styles.css";
+import appIcon from "@dsc/console-ui/assets/app-icon.png";
+import { desktopConsoleAdapter } from "./services/consoleAdapter";
 
 interface AppErrorBoundaryState {
   error: Error | null;
@@ -26,6 +28,6 @@ class AppErrorBoundary extends React.Component<React.PropsWithChildren, AppError
   }
 }
 
-export const App: React.FC = () => <AppErrorBoundary><WorkspaceApp /></AppErrorBoundary>;
+export const App: React.FC = () => <AppErrorBoundary><WorkspaceApp adapter={desktopConsoleAdapter} /></AppErrorBoundary>;
 
 export default App;

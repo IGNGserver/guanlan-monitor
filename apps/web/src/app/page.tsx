@@ -1,5 +1,5 @@
-import { HomeClient } from "../components/home-client";
+import { UnifiedConsole } from "../components/unified-console";
 
 export default function HomePage() {
-  return <HomeClient />;
+  return <UnifiedConsole />;
 }

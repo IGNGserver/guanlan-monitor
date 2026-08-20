@@ -1,5 +1,5 @@
 import type { MetricsResponse, SamplePoint } from "@dsc/shared";
-import { formatBytes } from "./metricsNormalizer.ts";
+import { formatBytes } from "./metricsNormalizer";
 
 export interface WidgetLine {
   label: string;
@@ -19,10 +19,14 @@ export function averageSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
     for (const point of points) {
       const timestamp = Date.parse(point.timestamp);
       if (!Number.isFinite(timestamp) || !Number.isFinite(point.value)) continue;
-      const current = buckets.get(timestamp) ?? { timestamp: new Date(timestamp).toISOString(), total: 0, count: 0 };
+      // Separate probes can record one collection cycle a few milliseconds
+      // apart. Merge within one-second buckets so aggregate lines do not
+      // alternate between partial samples.
+      const bucketTimestamp = Math.round(timestamp / 1000) * 1000;
+      const current = buckets.get(bucketTimestamp) ?? { timestamp: new Date(bucketTimestamp).toISOString(), total: 0, count: 0 };
       current.total += point.value;
       current.count += 1;
-      buckets.set(timestamp, current);
+      buckets.set(bucketTimestamp, current);
     }
   }
   return [...buckets.values()]

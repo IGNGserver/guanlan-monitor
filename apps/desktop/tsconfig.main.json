@@ -7,7 +7,9 @@
     "baseUrl": "../..",
     "paths": {
       "@dsc/shared": ["packages/shared/dist/index.d.ts"],
-      "@dsc/shared/*": ["packages/shared/dist/*"]
+      "@dsc/shared/*": ["packages/shared/dist/*"],
+      "@dsc/console-ui": ["packages/console-ui/src/index.ts"],
+      "@dsc/console-ui/*": ["packages/console-ui/src/*"]
     },
     "outDir": "dist",
     "rootDir": "src",

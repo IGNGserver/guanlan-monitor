@@ -7,6 +7,7 @@ const releaseChannel = process.env.DSC_RELEASE_CHANNEL === "stable" ? "stable" :
 
 const nextConfig: NextConfig = {
   typedRoutes: true,
+  transpilePackages: ["@dsc/console-ui", "@dsc/shared"],
   env: {
     NEXT_PUBLIC_DSC_VERSION: releaseVersion,
     NEXT_PUBLIC_DSC_RELEASE_CHANNEL: releaseChannel

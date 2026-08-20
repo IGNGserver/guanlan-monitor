@@ -36,7 +36,9 @@ export type AgentProbeTarget = DeviceBlockKey | "connection";
 export type AgentProbeProvider =
   | "builtin"
   | "gopsutil"
+  | "hwmon"
   | "wmi"
+  | "librehardwaremonitor"
   | "libreHardwareMonitor"
   | "openHardwareMonitor"
   | "redfish"
@@ -908,7 +910,7 @@ export interface WidgetLayoutSaveRequest {
   deleteTemplateId?: string;
 }
 
-export type DesktopAgentControlAction = "start" | "stop" | "check-connection" | "detect-probes";
+export type DesktopAgentControlAction = "start" | "stop" | "restart" | "check-connection" | "detect-probes";
 
 export interface DesktopConfigPatch {
   connection?: Partial<Omit<AgentConnectionConfig, "secret">>;
@@ -933,6 +935,7 @@ export interface DesktopRendererBridge {
   saveHubConnection(serverUrl: string, accessKey: string): Promise<DesktopSnapshot>;
   login(accessKey: string): Promise<DesktopSnapshot>;
   logout(): Promise<DesktopSnapshot>;
+  disconnectAgent(): Promise<DesktopSnapshot>;
   cloudPush(): Promise<DesktopSnapshot>;
   getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync>;
   saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync>;

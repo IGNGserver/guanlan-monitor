@@ -27,6 +27,7 @@ export function registerIpc(controller: DesktopController, getWindow: () => Brow
   ipcMain.handle(IPC_CHANNELS.saveHubConnection, (_event, serverUrl: string, accessKey: string) => controller.saveHubConnection(asString(serverUrl, "server_url"), asString(accessKey, "access_key")));
   ipcMain.handle(IPC_CHANNELS.login, (_event, accessKey: string) => controller.login(asString(accessKey, "access_key")));
   ipcMain.handle(IPC_CHANNELS.logout, () => controller.logout());
+  ipcMain.handle(IPC_CHANNELS.disconnectAgent, () => controller.disconnectAgent());
   ipcMain.handle(IPC_CHANNELS.cloudPush, () => controller.cloudPush());
   ipcMain.handle(IPC_CHANNELS.getWidgetLayout, (_event, request: WidgetLayoutRequest) => controller.getWidgetLayout(asWidgetLayoutRequest(request)));
   ipcMain.handle(IPC_CHANNELS.saveWidgetLayout, (_event, request: WidgetLayoutSaveRequest) => controller.saveWidgetLayout(asWidgetLayoutSaveRequest(request)));
@@ -230,6 +231,6 @@ function asWidgetLayoutSaveRequest(value: unknown): WidgetLayoutSaveRequest {
 }
 
 function asControlAction(value: unknown): DesktopAgentControlAction {
-  if (value === "start" || value === "stop" || value === "check-connection" || value === "detect-probes") return value;
+  if (value === "start" || value === "stop" || value === "restart" || value === "check-connection" || value === "detect-probes") return value;
   throw new Error("invalid_agent_control_action");
 }

@@ -1,9 +1,9 @@
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, SamplePoint, SystemStats, WidgetInstanceConfig, WidgetLayoutDocument, WidgetPanelMetadata, WidgetVisualization } from "@dsc/shared";
+import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, SamplePoint, SystemStats, TrafficCalendarMode, TrafficCalendarResponse, WidgetInstanceConfig, WidgetLayoutDocument, WidgetPanelMetadata, WidgetVisualization } from "@dsc/shared";
 import clsx from "clsx";
 import appIcon from "../assets/app-icon.png";
-import { dscBridge } from "../../renderer/services/dscBridge";
+import type { ConsoleAdapter } from "../services/adapter";
 import {
   SettingsSection,
   WorkspaceProvider,
@@ -20,8 +20,8 @@ import {
 } from "./WidgetLayout";
 import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
 import { DynamicWidgetCanvas, WidgetDrawer } from "./widgetCatalog";
-import "./workspace.css";
-import "./window-material.css";
+
+const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: string }).src;
 
 type IconName =
   | "overview"
@@ -48,7 +48,8 @@ type IconName =
   | "windowMinimize"
   | "windowMaximize"
   | "windowRestore"
-  | "windowClose";
+  | "windowClose"
+  | "chevronUp";
 
 const iconPaths: Record<IconName, string[]> = {
   overview: ["M4 4h6v6H4z", "M14 4h6v6h-6z", "M4 14h6v6H4z", "M14 14h6v6h-6z"],
@@ -60,6 +61,7 @@ const iconPaths: Record<IconName, string[]> = {
   refresh: ["M20 11a8.1 8.1 0 0 0-14.7-3L3 11", "M3 5v6h6", "M4 13a8.1 8.1 0 0 0 14.7 3L21 13", "M21 19v-6h-6"],
   collapse: ["M9 6 3 12l6 6", "M15 6l6 6-6 6"],
   chevron: ["m6 9 6 6 6-6"],
+  chevronUp: ["m18 15-6-6-6 6"],
   external: ["M14 4h6v6", "M20 4l-9 9", "M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5"],
   copy: ["M8 8h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z", "M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h0"],
   warning: ["M12 4 21 20H3L12 4z", "M12 10v4", "M12 17h.01"],
@@ -95,7 +97,8 @@ function Button({
   className = "",
   disabled = false,
   type = "button",
-  title
+  title,
+  autoFocus = false
 }: {
   children: React.ReactNode;
   onClick?: () => void;
@@ -104,9 +107,10 @@ function Button({
   disabled?: boolean;
   type?: "button" | "submit";
   title?: string;
+  autoFocus?: boolean;
 }) {
   return (
-    <button className={`workspace-button workspace-button--${variant} ${className}`} disabled={disabled} onClick={onClick} type={type} title={title}>
+    <button className={`workspace-button workspace-button--${variant} ${className}`} autoFocus={autoFocus} disabled={disabled} onClick={onClick} type={type} title={title}>
       {children}
     </button>
   );
@@ -219,14 +223,19 @@ function averageSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
     for (const point of points) {
       const timestamp = Date.parse(point.timestamp);
       if (!Number.isFinite(timestamp) || !Number.isFinite(point.value)) continue;
-      const current = buckets.get(timestamp) ?? {
-        timestamp: new Date(timestamp).toISOString(),
+      // Different probes can stamp the same collection cycle a few
+      // milliseconds apart. Normalize to one-second buckets before merging;
+      // exact-string matching would make the aggregate line flicker between
+      // multiple partial samples.
+      const bucketTimestamp = Math.round(timestamp / 1000) * 1000;
+      const current = buckets.get(bucketTimestamp) ?? {
+        timestamp: new Date(bucketTimestamp).toISOString(),
         total: 0,
         count: 0
       };
       current.total += point.value;
       current.count += 1;
-      buckets.set(timestamp, current);
+      buckets.set(bucketTimestamp, current);
     }
   }
   return [...buckets.entries()]
@@ -245,12 +254,13 @@ function sumSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
     for (const point of points) {
       const timestamp = Date.parse(point.timestamp);
       if (!Number.isFinite(timestamp) || !Number.isFinite(point.value)) continue;
-      const current = buckets.get(timestamp) ?? {
-        timestamp: new Date(timestamp).toISOString(),
+      const bucketTimestamp = Math.round(timestamp / 1000) * 1000;
+      const current = buckets.get(bucketTimestamp) ?? {
+        timestamp: new Date(bucketTimestamp).toISOString(),
         total: 0
       };
       current.total += point.value;
-      buckets.set(timestamp, current);
+      buckets.set(bucketTimestamp, current);
     }
   }
   return [...buckets.entries()]
@@ -309,6 +319,23 @@ type TelemetrySeries = {
   valueFormatter?: (value: number) => string;
 };
 
+function nearestSamplePoint(points: SamplePoint[], timestamp: string | undefined): SamplePoint | undefined {
+  const validPoints = points.filter((point) => Number.isFinite(Date.parse(point.timestamp)) && Number.isFinite(point.value));
+  if (!validPoints.length) return undefined;
+  const target = timestamp ? Date.parse(timestamp) : Number.NaN;
+  if (!Number.isFinite(target)) return validPoints.at(-1);
+  let nearest = validPoints[0];
+  let nearestDistance = Math.abs(Date.parse(nearest.timestamp) - target);
+  for (const point of validPoints.slice(1)) {
+    const distance = Math.abs(Date.parse(point.timestamp) - target);
+    if (distance < nearestDistance) {
+      nearest = point;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
+}
+
 function TelemetryChartCard({
   title,
   subtitle,
@@ -354,12 +381,32 @@ function TelemetryChartCard({
   const [selectedIndex, setSelectedIndex] = useState(Math.max(primaryPoints.length - 1, 0));
   const [isHovering, setIsHovering] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [isPinned, setIsPinned] = useState(false);
+  const plotRef = useRef<HTMLDivElement>(null);
+  const pointerGestureRef = useRef<{ pointerId: number; index: number; startX: number; startY: number; moved: boolean } | null>(null);
   const chartId = useId().replace(/:/g, "");
 
   useEffect(() => {
     setSelectedIndex(Math.max(primaryPoints.length - 1, 0));
     setIsHovering(false);
+    setIsPinned(false);
+    pointerGestureRef.current = null;
   }, [primaryPoints.length, primaryPoints.at(-1)?.timestamp]);
+
+  // This effect must stay before the empty-state return. A chart can move from
+  // "no samples" to "samples available" after the first refresh, and hooks
+  // must be called in the same order on both renders.
+  useEffect(() => {
+    if (!isPinned) return;
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !plotRef.current?.contains(event.target)) {
+        setIsPinned(false);
+        setIsHovering(false);
+      }
+    };
+    document.addEventListener("pointerdown", handleOutsidePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handleOutsidePointerDown, true);
+  }, [isPinned]);
 
   const formatValue = (item: TelemetrySeries, value: number) => item.valueFormatter?.(value) ?? valueFormatter(value);
 
@@ -413,7 +460,7 @@ function TelemetryChartCard({
 
   // 1. Time window boundaries
   const windowDurationMs = WINDOW_DURATION_MAP[metricsWindow] ?? 300000;
-  const allTimestamps = primaryPoints.map((p) => Date.parse(p.timestamp)).filter((t) => Number.isFinite(t));
+  const allTimestamps = activeSeries.flatMap((s) => s.points.map((p) => Date.parse(p.timestamp))).filter((t) => Number.isFinite(t));
   const latestSampleTime = allTimestamps.length ? Math.max(...allTimestamps) : Date.now();
   const earliestSampleTime = allTimestamps.length ? Math.min(...allTimestamps) : latestSampleTime - windowDurationMs;
   const windowEndTime = latestSampleTime;
@@ -426,7 +473,7 @@ function TelemetryChartCard({
     return Math.min(100, Math.max(0, ((t - windowStartTime) / totalSpan) * 100));
   };
 
-  const allValues = activeSeries.flatMap((s) => s.points.map((p) => p.value));
+  const allValues = activeSeries.flatMap((s) => s.points.map((p) => p.value)).filter((value) => Number.isFinite(value));
   const rawMax = Math.max(...allValues, 1);
   const maxValue = fixedMaxValue != null ? Math.max(fixedMaxValue, rawMax) : rawMax * 1.1;
   const yFor = (val: number) => 100 - Math.min(Math.max(val / maxValue, 0), 1) * 100;
@@ -453,24 +500,94 @@ function TelemetryChartCard({
     return bestIndex;
   };
 
-  const selectPoint = (event: React.PointerEvent<HTMLDivElement>) => {
-    setSelectedIndex(resolveIndex(event));
-    setIsHovering(true);
-    if (event.type === "pointerdown") event.currentTarget.setPointerCapture?.(event.pointerId);
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const isTouch = event.pointerType === "touch" || event.pointerType === "pen";
+    const newIndex = resolveIndex(event);
+    setSelectedIndex(newIndex);
+    if (isTouch) {
+      pointerGestureRef.current = { pointerId: event.pointerId, index: newIndex, startX: event.clientX, startY: event.clientY, moved: false };
+    } else {
+      setIsHovering(true);
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
   };
 
-  const stopHover = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) setIsHovering(false);
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const isTouch = event.pointerType === "touch" || event.pointerType === "pen";
+    if (isTouch) {
+      const gesture = pointerGestureRef.current;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 10) {
+        gesture.moved = true;
+        if (isPinned) {
+          setIsPinned(false);
+          setIsHovering(false);
+        }
+        return;
+      }
+      if (isPinned) {
+        setSelectedIndex(resolveIndex(event));
+        setIsHovering(true);
+      }
+      return;
+    }
+    if (isPinned || event.pointerType !== "touch") {
+      setSelectedIndex(resolveIndex(event));
+      setIsHovering(true);
+    }
+  };
+
+  const handlePointerEnter = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== "touch" && event.pointerType !== "pen") {
+      setSelectedIndex(resolveIndex(event));
+      setIsHovering(true);
+    }
+  };
+
+  const handlePointerLeave = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isPinned && event.pointerType !== "touch" && event.pointerType !== "pen" && !event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      setIsHovering(false);
+    }
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const isTouch = event.pointerType === "touch" || event.pointerType === "pen";
+    if (isTouch) {
+      const gesture = pointerGestureRef.current;
+      pointerGestureRef.current = null;
+      if (gesture?.pointerId === event.pointerId && !gesture.moved) {
+        const shouldPin = !(isPinned && selectedIndex === gesture.index);
+        setSelectedIndex(gesture.index);
+        setIsPinned(shouldPin);
+        setIsHovering(shouldPin);
+      }
+      return;
+    }
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const handlePointerCancel = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch" || event.pointerType === "pen") {
+      pointerGestureRef.current = null;
+      setIsPinned(false);
+      setIsHovering(false);
+    }
+  };
+
+  const unpinTooltip = (e?: React.SyntheticEvent) => {
+    e?.stopPropagation();
+    setIsPinned(false);
+    setIsHovering(false);
   };
 
   // Statistics
   const statsList = activeSeries.map((s) => {
-    const vals = s.points.map((p) => p.value);
-    const curVal = s.points[curIndex]?.value ?? vals[vals.length - 1] ?? 0;
+    const vals = s.points.map((p) => p.value).filter((value) => Number.isFinite(value));
+    const curVal = nearestSamplePoint(s.points, selectedTimestamp)?.value ?? vals[vals.length - 1] ?? 0;
     const firstMeaningfulIndex = vals.findIndex((value) => Number.isFinite(value) && value !== 0);
     const statsValues = firstMeaningfulIndex > 0 ? vals.slice(firstMeaningfulIndex) : vals;
     const maxVal = Math.max(...statsValues, 0);
-    const minVal = Math.min(...statsValues);
+    const minVal = statsValues.length ? Math.min(...statsValues) : 0;
     const avgVal = statsValues.reduce((a, b) => a + b, 0) / Math.max(statsValues.length, 1);
     return { label: s.label, formatter: (value: number) => formatValue(s, value), cur: curVal, avg: avgVal, max: maxVal, min: minVal };
   });
@@ -574,7 +691,7 @@ function TelemetryChartCard({
         </div>
       ) : (
         <div className="telemetry-chart-box">
-          <div className="telemetry-chart-plot" onPointerDown={selectPoint} onPointerMove={selectPoint} onPointerEnter={selectPoint} onPointerLeave={stopHover}>
+          <div ref={plotRef} className={`telemetry-chart-plot${isPinned ? " is-pinned" : ""}`} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave} onPointerUp={handlePointerUp} onPointerCancel={handlePointerCancel}>
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
               <defs>
                 <linearGradient id={gradientOneId} x1="0" x2="0" y1="0" y2="1">
@@ -628,13 +745,13 @@ function TelemetryChartCard({
             </svg>
 
             {isHovering && activeSeries.map((s, idx) => (
-              s.points[curIndex] ? (
+              nearestSamplePoint(s.points, selectedTimestamp) ? (
                 <div
                   key={`marker-${s.label}`}
                   className={`telemetry-chart-marker telemetry-chart-marker--${idx % 4}`}
                   style={{
-                    left: `${xPosition}%`,
-                    top: `${yFor(s.points[curIndex].value)}%`
+                    left: `${timeToX(nearestSamplePoint(s.points, selectedTimestamp)?.timestamp ?? "")}%`,
+                    top: `${yFor(nearestSamplePoint(s.points, selectedTimestamp)?.value ?? 0)}%`
                   }}
                 />
               ) : null
@@ -650,11 +767,14 @@ function TelemetryChartCard({
               <span>{formatAxisTime(new Date(windowEndTime).toISOString())}</span>
             </div>
             {isHovering && selectedTimestamp && (
-              <div className={`telemetry-chart-tooltip ${tooltipAlignment}`} style={{ left: `${xPosition}%` }} role="status">
-                <time>{formatPreciseDateTime(selectedTimestamp)}</time>
+              <div className={`telemetry-chart-tooltip ${tooltipAlignment}${isPinned ? " is-pinned" : ""}`} style={{ left: `${xPosition}%` }} role="status">
+                <div className="telemetry-chart-tooltip__header">
+                  <time>{formatPreciseDateTime(selectedTimestamp)}</time>
+                  {isPinned && <button type="button" className="telemetry-chart-tooltip__close" onPointerDown={(event) => event.stopPropagation()} onClick={unpinTooltip} title="取消固定" aria-label="取消固定">×</button>}
+                </div>
                 <div className="telemetry-chart-tooltip__values">
                   {activeSeries.map((item, idx) => {
-                    const point = item.points[curIndex];
+                    const point = nearestSamplePoint(item.points, selectedTimestamp);
                     if (!point) return null;
                     return <div className="telemetry-chart-tooltip__row" key={item.label}><i className={`telemetry-chart-tooltip__dot telemetry-chart-tooltip__dot--${idx % 4}`} /><span>{item.label}</span><strong>{formatValue(item, point.value)}</strong></div>;
                   })}
@@ -717,10 +837,26 @@ function WorkspaceTrend({
   const { metricsWindow } = useWorkspace();
   const [selectedIndex, setSelectedIndex] = useState(Math.max(points.length - 1, 0));
   const [isHovering, setIsHovering] = useState(false);
+  const [isPinned, setIsPinned] = useState(false);
+  const plotRef = useRef<HTMLDivElement>(null);
+  const pointerGestureRef = useRef<{ pointerId: number; index: number; startX: number; startY: number; moved: boolean } | null>(null);
   useEffect(() => {
     setSelectedIndex(Math.max(points.length - 1, 0));
     setIsHovering(false);
+    setIsPinned(false);
+    pointerGestureRef.current = null;
   }, [points.length, points.at(-1)?.timestamp]);
+  useEffect(() => {
+    if (!isPinned) return;
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !plotRef.current?.contains(event.target)) {
+        setIsPinned(false);
+        setIsHovering(false);
+      }
+    };
+    document.addEventListener("pointerdown", handleOutsidePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handleOutsidePointerDown, true);
+  }, [isPinned]);
 
   if (!points.length) {
     return <div className={`workspace-trend workspace-trend--empty ${compact ? "workspace-trend--compact" : ""}`} aria-label={label} role="img"><div className="workspace-trend-empty">等待足够的遥测样本</div></div>;
@@ -784,20 +920,91 @@ function WorkspaceTrend({
     return bestIndex;
   };
 
-  const selectPoint = (event: React.PointerEvent<HTMLDivElement>) => {
-    setSelectedIndex(resolveIndex(event));
-    setIsHovering(true);
-    if (event.type === "pointerdown") event.currentTarget.setPointerCapture?.(event.pointerId);
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const isTouch = event.pointerType === "touch" || event.pointerType === "pen";
+    const newIndex = resolveIndex(event);
+    setSelectedIndex(newIndex);
+    if (isTouch) {
+      pointerGestureRef.current = { pointerId: event.pointerId, index: newIndex, startX: event.clientX, startY: event.clientY, moved: false };
+    } else {
+      setIsHovering(true);
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
   };
 
-  const stopHover = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) setIsHovering(false);
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const isTouch = event.pointerType === "touch" || event.pointerType === "pen";
+    if (isTouch) {
+      const gesture = pointerGestureRef.current;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 10) {
+        gesture.moved = true;
+        if (isPinned) {
+          setIsPinned(false);
+          setIsHovering(false);
+        }
+        return;
+      }
+      if (isPinned) {
+        setSelectedIndex(resolveIndex(event));
+        setIsHovering(true);
+      }
+      return;
+    }
+    if (isPinned || event.pointerType !== "touch") {
+      setSelectedIndex(resolveIndex(event));
+      setIsHovering(true);
+    }
+  };
+
+  const handlePointerEnter = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== "touch" && event.pointerType !== "pen") {
+      setSelectedIndex(resolveIndex(event));
+      setIsHovering(true);
+    }
+  };
+
+  const handlePointerLeave = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isPinned && event.pointerType !== "touch" && event.pointerType !== "pen" && !event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      setIsHovering(false);
+    }
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const isTouch = event.pointerType === "touch" || event.pointerType === "pen";
+    if (isTouch) {
+      const gesture = pointerGestureRef.current;
+      pointerGestureRef.current = null;
+      if (gesture?.pointerId === event.pointerId && !gesture.moved) {
+        const shouldPin = !(isPinned && selectedIndex === gesture.index);
+        setSelectedIndex(gesture.index);
+        setIsPinned(shouldPin);
+        setIsHovering(shouldPin);
+      }
+      return;
+    }
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const handlePointerCancel = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch" || event.pointerType === "pen") {
+      pointerGestureRef.current = null;
+      setIsPinned(false);
+      setIsHovering(false);
+    }
+  };
+
+  const unpinTrend = (event?: React.SyntheticEvent) => {
+    event?.stopPropagation();
+    setIsPinned(false);
+    setIsHovering(false);
   };
 
   return (
     <div className="workspace-trend" aria-label={label} role="img">
       {!compact && <div className="workspace-trend__readout"><span>{formatAxisTime(selected.timestamp)}</span><strong>{label} {valueFormatter(selected.value)}</strong></div>}
-      <div className={`workspace-trend__chart ${compact ? "workspace-trend__chart--compact" : ""}`} onPointerDown={selectPoint} onPointerMove={selectPoint} onPointerEnter={selectPoint} onPointerLeave={stopHover}>
+      <div ref={plotRef} className={`workspace-trend__chart ${compact ? "workspace-trend__chart--compact" : ""}${isPinned ? " is-pinned" : ""}`} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave} onPointerUp={handlePointerUp} onPointerCancel={handlePointerCancel}>
+        {isPinned && <div className="workspace-trend__pin" role="status"><span>{formatAxisTime(selected.timestamp)}</span><strong>{label} {valueFormatter(selected.value)}</strong><button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={unpinTrend} aria-label="取消固定" title="取消固定">×</button></div>}
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
           <defs><linearGradient id="workspace-chart-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="var(--workspace-accent)" stopOpacity="0.22" /><stop offset="100%" stopColor="var(--workspace-accent)" stopOpacity="0" /></linearGradient></defs>
           {[0, 1, 2, 3].map((index) => <line key={index} x1="0" x2="100" y1={(index / 3) * 100} y2={(index / 3) * 100} className="workspace-trend__grid" />)}
@@ -886,6 +1093,13 @@ const metricGroups: Array<{ label: string; items: Array<{ key: DeviceMetricKey; 
   }
 ];
 
+const instanceMetricOptions: Partial<Record<AgentProbeTarget, Array<{ key: DeviceMetricKey; label: string }>>> = {
+  cpu: metricGroups[0].items,
+  gpu: metricGroups[1].items,
+  disk: metricGroups[3].items,
+  network: metricGroups[4].items
+};
+
 const probeTargetLabels: Record<AgentProbeTarget, string> = {
   cpu: "CPU 处理器",
   gpu: "GPU 显卡",
@@ -899,7 +1113,9 @@ const probeTargetLabels: Record<AgentProbeTarget, string> = {
 const probeProviderLabels: Record<AgentProbeProvider, string> = {
   builtin: "内置采集",
   gopsutil: "系统采集（gopsutil）",
+  hwmon: "Linux hwmon",
   wmi: "Windows WMI",
+  librehardwaremonitor: "LibreHardwareMonitor",
   libreHardwareMonitor: "LibreHardwareMonitor",
   openHardwareMonitor: "OpenHardwareMonitor",
   redfish: "Redfish",
@@ -908,6 +1124,7 @@ const probeProviderLabels: Record<AgentProbeProvider, string> = {
 
 function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolean; onSidebarLeave: () => void }) {
   const {
+    capabilities,
     route,
     sidebarCollapsed,
     setSidebarCollapsed,
@@ -922,15 +1139,17 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
     instanceType,
     setInstanceType
   } = useWorkspace();
+  const deviceCount = allDevices.filter((device) => (device.instanceType ?? "device") === "device").length;
+  const virtualMachineCount = allDevices.filter((device) => device.instanceType === "virtual_machine").length;
   const inSettings = route.kind === "settings";
   const hubOnline = hubs[0]?.state === "online";
-  const hubAbnormal = !hubOnline && !snapshot?.session.authenticated;
+  const hubAbnormal = !hubOnline && !snapshot?.session.authenticated && snapshot?.source !== "empty";
 
   return (
     <aside className={`workspace-sidebar ${sidebarCollapsed ? "is-collapsed" : ""} ${inSettings ? "is-settings" : ""}`} onMouseLeave={() => { if (sidebarCollapsed && sidebarPeek) onSidebarLeave(); }}>
       <div className="workspace-sidebar__topline">
         <button className="workspace-brand" type="button" onClick={() => (inSettings ? closeSettings() : navigate({ kind: "overview" }))} aria-label="返回总览">
-          <img className="workspace-brand__mark-img" src={appIcon} alt="观澜" />
+          <img className="workspace-brand__mark-img" src={appIconSrc} alt="观澜" />
           <span className="workspace-brand__name">观澜</span>
         </button>
         <button className="workspace-icon-button workspace-sidebar__collapse" type="button" onClick={() => setSidebarCollapsed(!sidebarCollapsed)} aria-label={sidebarCollapsed ? "展开侧边栏" : "折叠侧边栏"} title={sidebarCollapsed ? "展开侧边栏" : "折叠侧边栏"}>
@@ -945,7 +1164,7 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
           <button className={`workspace-nav-item ${route.kind === "overview" ? "is-active" : ""}`} type="button" onClick={() => navigate({ kind: "overview" })} title="总览">
             <Icon name="overview" /> <span>总览</span>
           </button>
-          <div className="workspace-sidebar__label"><span>接入中枢</span><span className="workspace-sidebar__count">{devices.length}</span></div>
+          <div className="workspace-sidebar__label"><button className="workspace-sidebar__hub-link" type="button" onClick={() => navigate({ kind: "hub", hubId: "primary" })}>接入中枢</button><span className="workspace-sidebar__count">{allDevices.length}</span></div>
           <div className="workspace-instance-tabs" role="tablist" aria-label="实例类型">
             {(["device", "virtual_machine"] as const).map((type) => (
               <button
@@ -960,7 +1179,7 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
                   setInstanceType(type);
                 }}
               >
-                {type === "device" ? "普通设备" : "虚拟机"}
+                {type === "device" ? `普通设备（${deviceCount}）` : `虚拟机（${virtualMachineCount}）`}
               </button>
             ))}
           </div>
@@ -979,12 +1198,12 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
             )) : <div className="workspace-sidebar__empty">尚未发现设备</div>}
           </div>
           <div className="workspace-sidebar__spacer" />
-          <button className="workspace-nav-item" type="button" onClick={() => openSettings("agent")} title="本机 Agent">
+          {capabilities.canManageLocalAgent && <button className="workspace-nav-item" type="button" onClick={() => openSettings("agent")} title="本机 Agent">
             <Icon name="agent" /> <span>本机 Agent</span>
-          </button>
-          <button className="workspace-nav-item" type="button" onClick={() => openSettings("connections")} title="连接设置">
+          </button>}
+          {capabilities.canConfigureConnection && <button className="workspace-nav-item" type="button" onClick={() => openSettings("connections")} title="连接设置">
             <Icon name="connection" /> <span>连接设置</span>
-          </button>
+          </button>}
         </nav>
       )}
 
@@ -1013,11 +1232,16 @@ const settingsNav: Array<{ id: SettingsSection; label: string; icon: IconName }>
 ];
 
 function SettingsSidebar() {
-  const { route, navigate } = useWorkspace();
+  const { route, navigate, capabilities } = useWorkspace();
+  const visibleSettings = settingsNav.filter((item) => {
+    if (item.id === "agent") return capabilities.canManageLocalAgent;
+    if (item.id === "connections") return capabilities.canConfigureConnection;
+    return true;
+  });
   return (
     <nav className="workspace-sidebar__nav" aria-label="设置导航">
       <div className="workspace-sidebar__section-title">设置</div>
-      {settingsNav.map((item) => (
+      {visibleSettings.map((item) => (
         <button className={`workspace-nav-item ${route.kind === "settings" && route.section === item.id ? "is-active" : ""}`} type="button" key={item.id} onClick={() => navigate({ kind: "settings", section: item.id })} title={item.label}>
           <Icon name={item.icon} /><span>{item.label}</span>
         </button>
@@ -1027,7 +1251,7 @@ function SettingsSidebar() {
 }
 
 function WindowTitleBar() {
-  const { minimizeWindow, toggleMaximizeWindow, closeWindow } = useWorkspace();
+  const { minimizeWindow, toggleMaximizeWindow, closeWindow, capabilities, adapterDragStart, adapterDragMove, adapterDragEnd } = useWorkspace();
   const [isMaximized, setIsMaximized] = useState(false);
   const dragPointerId = useRef<number | null>(null);
 
@@ -1040,18 +1264,18 @@ function WindowTitleBar() {
     if (event.button !== 0) return;
     dragPointerId.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
-    dscBridge.windowDragStart(event.screenX, event.screenY);
+    if (capabilities.canControlNativeWindow) adapterDragStart(event.screenX, event.screenY);
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     if (dragPointerId.current !== event.pointerId) return;
-    dscBridge.windowDragMove(event.screenX, event.screenY);
+    if (capabilities.canControlNativeWindow) adapterDragMove(event.screenX, event.screenY);
   };
 
   const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     if (dragPointerId.current !== event.pointerId) return;
     dragPointerId.current = null;
-    dscBridge.windowDragEnd();
+    if (capabilities.canControlNativeWindow) adapterDragEnd();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
@@ -1066,7 +1290,7 @@ function WindowTitleBar() {
         onLostPointerCapture={handlePointerUp}
         onDoubleClick={() => void toggleMaximize()}
       >
-        <img className="workspace-windowbar__mark-img" src={appIcon} alt="观澜" />
+        <img className="workspace-windowbar__mark-img" src={appIconSrc} alt="观澜" />
         <strong>观澜</strong>
         <span className="workspace-windowbar__separator" aria-hidden="true" />
         <span className="workspace-windowbar__subtitle">设备状态控制台</span>
@@ -1074,14 +1298,14 @@ function WindowTitleBar() {
       <div className="workspace-windowbar__controls" role="group" aria-label="窗口控制">
         <button className="workspace-window-control" type="button" onClick={() => void minimizeWindow()} aria-label="最小化" title="最小化"><Icon name="windowMinimize" size={15} /></button>
         <button className="workspace-window-control" type="button" onClick={() => void toggleMaximize()} aria-label={isMaximized ? "还原窗口" : "最大化"} title={isMaximized ? "还原窗口" : "最大化"}><Icon name={isMaximized ? "windowRestore" : "windowMaximize"} size={14} /></button>
-        <button className="workspace-window-control workspace-window-control--close" type="button" onClick={() => void closeWindow()} aria-label="关闭窗口" title="关闭窗口"><Icon name="windowClose" size={15} /></button>
+        <button className="workspace-window-control workspace-window-control--close" type="button" onClick={() => void closeWindow()} aria-label="隐藏到托盘" title="隐藏到托盘"><Icon name="windowClose" size={15} /></button>
       </div>
     </header>
   );
 }
 
 function TopBar() {
-  const { route, snapshot, refreshing, refresh, setCommandOpen, sidebarCollapsed, setSidebarCollapsed, openSettings } = useWorkspace();
+  const { route, snapshot, refreshing, mutationPending, refresh, setCommandOpen, sidebarCollapsed, setSidebarCollapsed, openSettings } = useWorkspace();
   const title = route.kind === "overview" ? "总览" : route.kind === "device" ? "设备详情" : route.kind === "hub" ? "中枢详情" : settingsNav.find((item) => item.id === route.section)?.label ?? "设置";
   const sourceState = snapshot?.source === "cache" ? "cached" : snapshot?.session.authenticated ? "online" : snapshot?.source === "empty" ? "unknown" : "offline";
   return (
@@ -1098,7 +1322,7 @@ function TopBar() {
       <div className="workspace-topbar__actions">
         <StatusLabel state={sourceState} />
         <button className="workspace-search-trigger" type="button" onClick={() => setCommandOpen(true)}><Icon name="search" /><span>搜索设备</span><kbd>/</kbd></button>
-        <Button variant="quiet" onClick={() => void refresh()} disabled={refreshing} title="刷新状态"><Icon name="refresh" size={16} />{!refreshing && <span>刷新</span>}</Button>
+        <Button variant="quiet" onClick={() => void refresh()} disabled={refreshing || mutationPending} title={mutationPending ? "正在保存更改" : "刷新状态"}><Icon name="refresh" size={16} />{!refreshing && <span>{mutationPending ? "保存中" : "刷新"}</span>}</Button>
         {route.kind !== "settings" && <Button variant="quiet" onClick={() => openSettings("appearance")} title="外观设置"><Icon name="appearance" size={16} /></Button>}
       </div>
     </header>
@@ -1114,6 +1338,49 @@ function ShellNotice() {
 function CommandPalette() {
   const { commandOpen, setCommandOpen, searchQuery, setSearchQuery, filteredDevices, navigate, openSettings } = useWorkspace();
   const [activeIndex, setActiveIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const [viewport, setViewport] = useState({ top: 0, height: 0 });
+
+  useLayoutEffect(() => {
+    if (!commandOpen || typeof window === "undefined") return;
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const visualViewport = window.visualViewport;
+    const syncViewport = () => setViewport({ top: visualViewport?.offsetTop ?? 0, height: visualViewport?.height ?? window.innerHeight });
+    syncViewport();
+    const focusFrame = window.requestAnimationFrame(() => inputRef.current?.focus());
+    visualViewport?.addEventListener("resize", syncViewport);
+    visualViewport?.addEventListener("scroll", syncViewport);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      visualViewport?.removeEventListener("resize", syncViewport);
+      visualViewport?.removeEventListener("scroll", syncViewport);
+    };
+  }, [commandOpen]);
+
+  useEffect(() => {
+    if (commandOpen) setActiveIndex(0);
+  }, [commandOpen]);
+
+  useEffect(() => {
+    if (commandOpen) return;
+    previousFocusRef.current?.focus();
+    previousFocusRef.current = null;
+  }, [commandOpen]);
+
+  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex='-1'])") ?? []);
+    if (!focusable.length) return;
+    const currentIndex = focusable.indexOf(document.activeElement as HTMLElement);
+    const nextIndex = event.shiftKey
+      ? (currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1)
+      : (currentIndex + 1) % focusable.length;
+    event.preventDefault();
+    focusable[nextIndex]?.focus();
+  };
+
   if (!commandOpen) return null;
   const commands: Array<{ label: string; detail: string; action: () => void }> = [
     { label: "打开总览", detail: "查看所有设备状态", action: () => navigate({ kind: "overview" }) },
@@ -1130,12 +1397,16 @@ function CommandPalette() {
     setCommandOpen(false);
     setSearchQuery("");
   };
+  const overlayStyle = {
+    "--workspace-viewport-top": `${viewport.top}px`,
+    "--workspace-viewport-height": `${viewport.height || (typeof window === "undefined" ? 0 : window.innerHeight)}px`
+  } as React.CSSProperties;
   return (
-    <div className="workspace-overlay" role="presentation" onMouseDown={() => setCommandOpen(false)}>
-      <section className="workspace-command" role="dialog" aria-modal="true" aria-label="搜索设备和命令" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="workspace-command__input"><Icon name="search" /><input autoFocus value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setActiveIndex(0); }} onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); setActiveIndex((index) => Math.min(index + 1, filtered.length - 1)); } else if (event.key === "ArrowUp") { event.preventDefault(); setActiveIndex((index) => Math.max(index - 1, 0)); } else if (event.key === "Enter") { event.preventDefault(); select(activeIndex); } }} placeholder="搜索设备、页面或命令" /></div>
+    <div className="workspace-overlay" style={overlayStyle} role="presentation" onPointerDown={() => setCommandOpen(false)}>
+      <section ref={dialogRef} className="workspace-command" role="dialog" aria-modal="true" aria-label="搜索设备和命令" onPointerDown={(event) => event.stopPropagation()} onKeyDown={handleDialogKeyDown}>
+        <div className="workspace-command__input"><Icon name="search" /><input ref={inputRef} autoFocus value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setActiveIndex(0); }} onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); setActiveIndex((index) => Math.min(index + 1, filtered.length - 1)); } else if (event.key === "ArrowUp") { event.preventDefault(); setActiveIndex((index) => Math.max(index - 1, 0)); } else if (event.key === "Enter") { event.preventDefault(); select(activeIndex); } }} placeholder="搜索设备、页面或命令" /></div>
         <div className="workspace-command__list">
-          {filtered.length ? filtered.map((command, index) => <button className={`workspace-command__item ${index === activeIndex ? "is-active" : ""}`} type="button" key={`${command.label}-${index}`} onMouseEnter={() => setActiveIndex(index)} onClick={() => select(index)}><span><strong>{command.label}</strong><small>{command.detail}</small></span><Icon name="arrow" size={15} /></button>) : <div className="workspace-command__empty">没有匹配结果</div>}
+          {filtered.length ? filtered.map((command, index) => <button className={`workspace-command__item ${index === activeIndex ? "is-active" : ""}`} type="button" key={`${command.label}-${index}`} onPointerEnter={() => setActiveIndex(index)} onClick={() => select(index)}><span><strong>{command.label}</strong><small>{command.detail}</small></span><Icon name="arrow" size={15} /></button>) : <div className="workspace-command__empty">没有匹配结果</div>}
         </div>
         <div className="workspace-command__footer"><span><kbd>↑</kbd><kbd>↓</kbd>选择</span><span><kbd>Enter</kbd>打开</span><span><kbd>Esc</kbd>关闭</span></div>
       </section>
@@ -1149,6 +1420,100 @@ function PageIntro({ eyebrow, title, description, actions }: { eyebrow?: string;
 
 function Surface({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <section className={`workspace-surface ${className}`}>{children}</section>;
+}
+
+function useModalFocusTrap() {
+  const dialogRef = useRef<HTMLElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusFrame = window.requestAnimationFrame(() => {
+      const firstControl = dialogRef.current?.querySelector<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])");
+      firstControl?.focus();
+    });
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])") ?? []);
+      if (!focusable.length) return;
+      const currentIndex = focusable.indexOf(document.activeElement as HTMLElement);
+      const nextIndex = event.shiftKey
+        ? (currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1)
+        : (currentIndex + 1) % focusable.length;
+      event.preventDefault();
+      focusable[nextIndex]?.focus();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocusRef.current?.focus();
+      previousFocusRef.current = null;
+    };
+  }, []);
+
+  return dialogRef;
+}
+
+function ConfirmDialog({
+  title,
+  detail,
+  confirmLabel = "确认",
+  onConfirm,
+  onCancel,
+  disabled = false
+}: {
+  title: string;
+  detail: string;
+  confirmLabel?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  disabled?: boolean;
+}) {
+  const dialogRef = useModalFocusTrap();
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !disabled) onCancel();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [disabled, onCancel]);
+  return <div className="workspace-confirm-overlay" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget && !disabled) onCancel(); }}><section ref={dialogRef} className="workspace-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-confirm-title" onPointerDown={(event) => event.stopPropagation()}><span className="workspace-section-kicker">请确认操作</span><h2 id="workspace-confirm-title">{title}</h2><p>{detail}</p><div className="workspace-form__actions"><Button variant="danger" autoFocus onClick={onConfirm} disabled={disabled}>{disabled ? "处理中…" : confirmLabel}</Button><Button variant="quiet" onClick={onCancel} disabled={disabled}>取消</Button></div></section></div>;
+}
+
+function PromptDialog({
+  title,
+  detail,
+  initialValue,
+  confirmLabel = "保存",
+  onConfirm,
+  onCancel,
+  disabled = false
+}: {
+  title: string;
+  detail: string;
+  initialValue: string;
+  confirmLabel?: string;
+  onConfirm: (value: string) => void;
+  onCancel: () => void;
+  disabled?: boolean;
+}) {
+  const [value, setValue] = useState(initialValue);
+  const dialogRef = useModalFocusTrap();
+  useEffect(() => setValue(initialValue), [initialValue]);
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !disabled) onCancel();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [disabled, onCancel]);
+  const submit = () => {
+    const nextValue = value.trim();
+    if (!nextValue || disabled) return;
+    onConfirm(nextValue);
+  };
+  return <div className="workspace-confirm-overlay" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget && !disabled) onCancel(); }}><section ref={dialogRef} className="workspace-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-prompt-title" onPointerDown={(event) => event.stopPropagation()}><span className="workspace-section-kicker">编辑名称</span><h2 id="workspace-prompt-title">{title}</h2><p>{detail}</p><input className="workspace-input" autoFocus value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submit(); } }} maxLength={80} /><div className="workspace-form__actions"><Button variant="primary" onClick={submit} disabled={disabled || !value.trim()}>{disabled ? "处理中…" : confirmLabel}</Button><Button variant="quiet" onClick={onCancel} disabled={disabled}>取消</Button></div></section></div>;
 }
 
 function DeviceRow({
@@ -1190,20 +1555,27 @@ function DeviceRow({
 }
 
 function OverviewPage() {
-  const { snapshot, devices, loading, error, refresh, openSettings, deleteInstance, reorderInstances } = useWorkspace();
+  const { snapshot, devices, instanceType, metricsWindow, loading, mutationPending, error, refresh, openSettings, deleteInstance, reorderInstances } = useWorkspace();
+  const [deleteTarget, setDeleteTarget] = useState<DeviceSummary | null>(null);
   if (loading && !snapshot) return <LoadingSurface />;
   if (!snapshot) return <ErrorSurface title="无法读取设备状态" detail={error ?? "桌面桥接尚未准备好"} onRetry={() => void refresh()} />;
   const online = devices.filter((device) => device.status === "online").length;
   const offline = devices.length - online;
   const cached = snapshot.source === "cache";
+  const emptySource = snapshot.source === "empty";
+  const canManageRemote = snapshot.source === "live" && snapshot.session.authenticated;
   const noData = snapshot.source === "empty" || devices.length === 0;
-  const hubAbnormal = !snapshot.session.authenticated || cached;
+  const hubAbnormal = cached || (!snapshot.session.authenticated && snapshot.source !== "empty");
   const issueCount = hubAbnormal ? 0 : offline + (noData ? 1 : 0) + (snapshot.localBackend?.lastIssueCount ?? 0);
-  const overviewInstances = snapshot.overviewMetrics?.instances ?? [];
+  const overviewInstances = (snapshot.overviewMetrics?.instances ?? []).filter((instance) => (instance.instanceType ?? "device") === instanceType);
+  const liveDevices = devices.filter((device) => device.status === "online");
+  const instanceLabel = instanceType === "virtual_machine" ? "虚拟机" : "普通设备";
+  const noDataSettingsSection = snapshot.localBackend ? "agent" : "connections";
+  const metricWindowLabel = ({ "1m": "1 分钟", "5m": "5 分钟", "15m": "15 分钟", "1h": "1 小时", "6h": "6 小时", "24h": "24 小时", "1d": "1 天", "7d": "7 天", "1w": "1 周", "30d": "30 天", "1mo": "1 个月", "90d": "90 天", "1y": "1 年" } as Record<string, string>)[metricsWindow] ?? metricsWindow;
 
   // 计算 TOP 5 资源消耗榜
-  const topCpuDevices = [...devices].sort((a, b) => (b.cpuUsagePercent ?? 0) - (a.cpuUsagePercent ?? 0)).slice(0, 5);
-  const topMemoryDevices = [...devices].sort((a, b) => (b.memoryUsagePercent ?? 0) - (a.memoryUsagePercent ?? 0)).slice(0, 5);
+  const topCpuDevices = [...liveDevices].filter((device) => Number.isFinite(device.cpuUsagePercent)).sort((a, b) => (b.cpuUsagePercent ?? 0) - (a.cpuUsagePercent ?? 0)).slice(0, 5);
+  const topMemoryDevices = [...liveDevices].filter((device) => Number.isFinite(device.memoryUsagePercent)).sort((a, b) => (b.memoryUsagePercent ?? 0) - (a.memoryUsagePercent ?? 0)).slice(0, 5);
 
   const moveInstance = (deviceId: string, direction: -1 | 1) => {
     const currentIndex = devices.findIndex((device) => device.deviceId === deviceId);
@@ -1215,10 +1587,7 @@ function OverviewPage() {
   };
 
   const removeInstance = (device: DeviceSummary) => {
-    const label = device.instanceType === "virtual_machine" ? "虚拟机实例" : "设备实例";
-    if (window.confirm(`确定删除“${device.hostname}”这个${label}吗？删除后它不会显示在列表中；下次宿主机/Agent上报时会自动重新显示。`)) {
-      void deleteInstance(device.deviceId);
-    }
+    setDeleteTarget(device);
   };
 
   return (
@@ -1226,15 +1595,19 @@ function OverviewPage() {
       <PageIntro
         eyebrow="系统状态"
         title={hubAbnormal ? "中枢连接异常" : issueCount ? `${issueCount} 项事项需要留意` : "所有设备运行正常"}
-        description={hubAbnormal
-          ? `无法连接到中枢，请检查中枢地址与访问密钥。${cached ? "当前显示的是离线缓存。" : ""}`
-          : `最后同步于 ${formatDate(snapshot.generatedAt)}。${cached ? "当前显示的是离线缓存。" : "数据来自实时连接。"}`}
+        description={emptySource
+          ? "尚未取得实时设备状态，请先启动本机 Agent 或配置中枢。"
+          : hubAbnormal
+          ? cached
+            ? `当前显示的是离线缓存，缓存于 ${formatDate(snapshot.cache.savedAt)}；无法确认中枢当前状态。`
+            : "无法连接到中枢，请检查中枢地址与访问密钥。"
+          : `最后同步于 ${formatDate(snapshot.generatedAt)}。数据来自实时连接。`}
         actions={
           <>
             <Button variant="quiet" onClick={() => openSettings("connections")}>
               <Icon name="connection" size={16} />连接设置
             </Button>
-            <Button variant="primary" onClick={() => void refresh()} disabled={loading}>
+            <Button variant="primary" onClick={() => void refresh()} disabled={loading || mutationPending}>
               <Icon name="refresh" size={16} />刷新状态
             </Button>
           </>
@@ -1259,7 +1632,7 @@ function OverviewPage() {
             <strong>{noData ? "还没有可用设备" : "设备状态存在异常"}</strong>
             <p>{noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : `${offline} 台设备离线，${snapshot.localBackend?.lastIssueCount ?? 0} 条本机采集问题待处理。`}</p>
           </div>
-          <Button variant="quiet" onClick={() => openSettings(noData ? "connections" : "agent")}>
+          <Button variant="quiet" onClick={() => openSettings(noData ? noDataSettingsSection : "agent")}>
             查看详情<Icon name="arrow" size={15} />
           </Button>
         </div>
@@ -1270,9 +1643,10 @@ function OverviewPage() {
         <Surface className="workspace-overview-devices">
           <div className="workspace-surface__header">
             <div>
-              <span className="workspace-section-kicker">设备概览</span>
-              <h3>{devices.length} 台设备</h3>
+              <span className="workspace-section-kicker">实例概览</span>
+              <h3>{devices.length} 个{instanceLabel}</h3>
             </div>
+            {cached && <span className="workspace-caption">缓存只读</span>}
           </div>
           <div className="workspace-device-rows">
             {devices.length ? (
@@ -1281,8 +1655,8 @@ function OverviewPage() {
                 device={device}
                 index={index}
                 total={devices.length}
-                onMove={(direction) => moveInstance(device.deviceId, direction)}
-                onDelete={() => removeInstance(device)}
+                onMove={canManageRemote && !mutationPending ? (direction) => moveInstance(device.deviceId, direction) : undefined}
+                onDelete={canManageRemote && !mutationPending ? () => removeInstance(device) : undefined}
               />)
             ) : (
               <EmptyState title="还没有设备" detail="连接一个中枢后，设备会出现在这里。" action={<Button variant="primary" onClick={() => openSettings("connections")}>连接设置</Button>} />
@@ -1300,13 +1674,13 @@ function OverviewPage() {
               </div>
             </div>
             <div className="workspace-ranking-list">
-              {topCpuDevices.map((dev, idx) => (
+              {topCpuDevices.length ? topCpuDevices.map((dev, idx) => (
                 <div key={dev.deviceId} className="workspace-ranking-item">
                   <span className="workspace-ranking-badge">{idx + 1}</span>
                   <span className="workspace-ranking-name">{dev.hostname}</span>
                   <span className="workspace-ranking-val">{dev.cpuUsagePercent ?? 0}%</span>
                 </div>
-              ))}
+              )) : <div className="workspace-muted-block">暂无在线实例数据</div>}
             </div>
           </Surface>
 
@@ -1318,43 +1692,43 @@ function OverviewPage() {
               </div>
             </div>
             <div className="workspace-ranking-list">
-              {topMemoryDevices.map((dev, idx) => (
+              {topMemoryDevices.length ? topMemoryDevices.map((dev, idx) => (
                 <div key={dev.deviceId} className="workspace-ranking-item">
                   <span className="workspace-ranking-badge">{idx + 1}</span>
                   <span className="workspace-ranking-name">{dev.hostname}</span>
                   <span className="workspace-ranking-val"><CapacityMetricValue usedBytes={dev.memoryUsedBytes} totalBytes={dev.memoryTotalBytes} percentValue={dev.memoryUsagePercent} /></span>
                 </div>
-              ))}
+              )) : <div className="workspace-muted-block">暂无在线实例数据</div>}
             </div>
           </Surface>
         </div>
       </div>
 
-      {/* 总览图表：CPU / 内存 / 总存储 / 总网络吞吐，时间范围固定最近 15 分钟，不支持小组件调整 */}
+      {/* 总览图表：CPU / 内存 / 总存储 / 总网络吞吐，共用设备详情的时间范围 */}
       {snapshot.overviewMetrics && (
         <div className="workspace-overview-grid" style={{ gridTemplateColumns: "1fr" }}>
           <TelemetryChartCard
             title="CPU 图表"
-            subtitle="每个实例一条数据线 · 最近 15 分钟"
+            subtitle={`每个实例一条数据线 · 最近 ${metricWindowLabel}`}
             series={overviewInstances.map((instance) => ({ label: instance.hostname, points: instance.cpuUsagePercent }))}
             valueFormatter={(v) => `${Math.round(v)}%`}
             fixedMaxValue={100}
           />
           <TelemetryChartCard
             title="内存图表"
-            subtitle="每个实例一条数据线 · 最近 15 分钟"
+            subtitle={`每个实例一条数据线 · 最近 ${metricWindowLabel}`}
             series={overviewInstances.map((instance) => ({ label: instance.hostname, points: instance.memoryUsedBytes, valueFormatter: formatBytes }))}
             valueFormatter={formatBytes}
           />
           <TelemetryChartCard
             title="总存储图表"
-            subtitle="每个实例一条数据线 · 最近 15 分钟"
+            subtitle={`每个实例一条数据线 · 最近 ${metricWindowLabel}`}
             series={overviewInstances.map((instance) => ({ label: instance.hostname, points: instance.diskUsedBytes, valueFormatter: formatBytes }))}
             valueFormatter={formatBytes}
           />
           <TelemetryChartCard
             title="总网络吞吐"
-            subtitle="所有实例上行与下行叠加 · 最近 15 分钟"
+            subtitle={`所有实例上行与下行叠加 · 最近 ${metricWindowLabel}`}
             series={[
               { label: "下行 (Rx)", points: sumSamplePoints(overviewInstances.map((instance) => instance.networkRxBytesPerSec)), valueFormatter: (v) => `${formatBytes(v)}/s` },
               { label: "上行 (Tx)", points: sumSamplePoints(overviewInstances.map((instance) => instance.networkTxBytesPerSec)), valueFormatter: (v) => `${formatBytes(v)}/s` }
@@ -1363,6 +1737,7 @@ function OverviewPage() {
           />
         </div>
       )}
+      {deleteTarget && <ConfirmDialog title={`删除“${deleteTarget.hostname}”？`} detail="删除后该实例不会继续出现在中枢列表中；下次宿主机或 Agent 再次上报时，它会重新显示。" confirmLabel="删除实例" disabled={mutationPending} onConfirm={() => { const deviceId = deleteTarget.deviceId; setDeleteTarget(null); void deleteInstance(deviceId); }} onCancel={() => setDeleteTarget(null)} />}
     </div>
   );
 }
@@ -1376,12 +1751,14 @@ function MetricTile({ label, value, detail, tone, points }: { label: string; val
 }
 
 function TelemetrySection({
+  id,
   eyebrow,
   title,
   description,
   controls,
   children
 }: {
+  id?: string;
   eyebrow: string;
   title: string;
   description?: string;
@@ -1389,7 +1766,7 @@ function TelemetrySection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="workspace-telemetry-section">
+    <section id={id} className="workspace-telemetry-section">
       <div className="workspace-telemetry-section__header">
         <div>
           <span className="workspace-section-kicker">{eyebrow}</span>
@@ -1497,6 +1874,24 @@ function TelemetryModelList({ label, items }: { label: string; items: TelemetryI
   );
 }
 
+function FanNoteEditor({
+  deviceId,
+  fanId,
+  initialNote,
+  editable
+}: {
+  deviceId: string;
+  fanId: string;
+  initialNote?: string;
+  editable: boolean;
+}) {
+  const { saveFanNote, mutationPending } = useWorkspace();
+  const [note, setNote] = useState(initialNote ?? "");
+  useEffect(() => setNote(initialNote ?? ""), [initialNote]);
+  if (!editable) return <div className="workspace-fan-note"><span>风扇备注</span><strong>{initialNote?.trim() || "暂无备注"}</strong></div>;
+  return <div className="workspace-fan-note"><label><span>风扇备注</span><input className="workspace-input" value={note} onChange={(event) => setNote(event.target.value)} maxLength={160} placeholder="例如：前置进风风扇" /></label><Button variant="quiet" onClick={() => void saveFanNote(deviceId, fanId, note.trim())} disabled={mutationPending}>保存备注</Button></div>;
+}
+
 function CpuFactsCard({ cpus, system }: { cpus: CpuPackageStats[]; system?: SystemStats }) {
   const sum = (values: Array<number | null | undefined>) => {
     const valid = values.filter((value): value is number => Number.isFinite(value));
@@ -1547,6 +1942,91 @@ function InstanceFilter({
         {options.map((option) => <option value={option.id} key={option.id}>{option.name}{option.detail ? ` · ${option.detail}` : ""}</option>)}
       </select>
     </label>
+  );
+}
+
+function InstanceMetricOverride({
+  target,
+  instanceId,
+  globalMetrics,
+  override,
+  onChange,
+  disabled
+}: {
+  target: AgentProbeTarget;
+  instanceId: string;
+  globalMetrics: DeviceMetricKey[];
+  override?: DeviceMetricKey[];
+  onChange: (value: DeviceMetricKey[] | undefined) => void;
+  disabled: boolean;
+}) {
+  const options = instanceMetricOptions[target];
+  if (!options?.length) return null;
+  const isOverridden = Array.isArray(override);
+  const enabledSet = new Set(override ?? globalMetrics);
+  return (
+    <details className="workspace-detected-metrics" open={isOverridden}>
+      <summary>{isOverridden ? "已单独配置指标" : "跟随全局指标"}</summary>
+      <div className="workspace-detected-metrics__body">
+        <div className="workspace-detected-metrics__options">
+          {options.map((option) => {
+            const globallyEnabled = globalMetrics.includes(option.key);
+            return <label key={option.key} className={!globallyEnabled ? "is-unavailable" : undefined} title={!globallyEnabled ? "请先在上方启用全局指标" : undefined}>
+              <input
+                type="checkbox"
+                checked={globallyEnabled && enabledSet.has(option.key)}
+                disabled={disabled || !globallyEnabled}
+                onChange={(event) => {
+                  const next = new Set(enabledSet);
+                  if (event.target.checked) next.add(option.key);
+                  else next.delete(option.key);
+                  onChange([...next]);
+                }}
+              />
+              <span>{option.label}</span>
+            </label>;
+          })}
+        </div>
+        {isOverridden && <button type="button" className="workspace-detected-metrics__inherit" onClick={() => onChange(undefined)} disabled={disabled}>恢复跟随全局</button>}
+      </div>
+    </details>
+  );
+}
+
+function TrafficCalendarCard({
+  data,
+  mode,
+  onModeChange
+}: {
+  data: TrafficCalendarResponse | null;
+  mode: TrafficCalendarMode;
+  onModeChange: (mode: TrafficCalendarMode) => void;
+}) {
+  const modes: Array<{ value: TrafficCalendarMode; label: string }> = [
+    { value: "day", label: "日" },
+    { value: "week", label: "周" },
+    { value: "month", label: "月" }
+  ];
+  const maxTraffic = Math.max(...(data?.cells ?? []).map((cell) => cell.totalRxBytes + cell.totalTxBytes), 1);
+  return (
+    <Surface className="workspace-traffic-calendar">
+      <div className="workspace-surface__header">
+        <div><span className="workspace-section-kicker">流量日历</span><h3>网络流量消耗</h3></div>
+        <div className="workspace-range-control__options" role="group" aria-label="流量日历范围">
+          {modes.map((item) => <button key={item.value} type="button" className={`workspace-range-option ${mode === item.value ? "is-active" : ""}`} aria-pressed={mode === item.value} onClick={() => onModeChange(item.value)}>{item.label}</button>)}
+        </div>
+      </div>
+      {data ? <>
+        <p className="workspace-surface__description">{data.title} · {formatDate(data.rangeStart)} 至 {formatDate(data.rangeEnd)}</p>
+        <div className="workspace-traffic-calendar__cells">
+          {data.cells.map((cell) => {
+            const total = cell.totalRxBytes + cell.totalTxBytes;
+            return <div className={`workspace-traffic-calendar__cell${cell.isSelected ? " is-selected" : ""}`} key={cell.key} style={{ opacity: 0.45 + (total / maxTraffic) * 0.55 }}><strong>{cell.label}</strong><small>{formatBytes(total)}</small></div>;
+          })}
+        </div>
+        <div className="workspace-detail-list"><SummaryRow label="接收" value={formatBytes(data.totalRxBytes)} /><SummaryRow label="发送" value={formatBytes(data.totalTxBytes)} /><SummaryRow label="采样记录" value={`${data.records.length} 条`} /></div>
+      </> : <div className="workspace-muted-block">暂无流量日历数据；请确认设备已上报网络流量统计。</div>}
+    </Surface>
   );
 }
 
@@ -1634,6 +2114,7 @@ function createStarterDynamicLayout(): WidgetLayoutDocument {
 function WidgetPanelBar({
   panels,
   activePanelId,
+  editable,
   onSelect,
   onCreate,
   onRename,
@@ -1642,6 +2123,7 @@ function WidgetPanelBar({
 }: {
   panels: WidgetPanelMetadata[];
   activePanelId: string;
+  editable: boolean;
   onSelect: (panelId: string) => void;
   onCreate: (name: string) => void;
   onRename: (panelId: string, name: string) => void;
@@ -1651,6 +2133,25 @@ function WidgetPanelBar({
   const layout = useOptionalWidgetLayout();
   const [manageOpen, setManageOpen] = useState(false);
   const [newPanelName, setNewPanelName] = useState("");
+  const managerRef = useRef<HTMLDivElement>(null);
+  const [renameTarget, setRenameTarget] = useState<WidgetPanelMetadata | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<WidgetPanelMetadata | null>(null);
+
+  useEffect(() => {
+    if (!manageOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !managerRef.current?.contains(event.target)) setManageOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setManageOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [manageOpen]);
 
   const submitNewPanel = (event: FormEvent) => {
     event.preventDefault();
@@ -1661,6 +2162,7 @@ function WidgetPanelBar({
   };
 
   return (
+    <>
     <div className="workspace-panel-bar">
       <div className="workspace-tabs" role="tablist" aria-label="设备面板">
         {panels.map((panel) => (
@@ -1673,26 +2175,67 @@ function WidgetPanelBar({
           </button>
         ))}
       </div>
-      <div className="workspace-panel-manager">
-        <button className={`workspace-layout-actions__button${manageOpen ? " is-active" : ""}`} type="button" onClick={() => setManageOpen((value) => !value)} aria-expanded={manageOpen}>面板管理</button>
+      <div ref={managerRef} className="workspace-panel-manager">
+        <button className={`workspace-layout-actions__button${manageOpen ? " is-active" : ""}`} type="button" onClick={() => setManageOpen((value) => !value)} aria-expanded={manageOpen} disabled={!editable} title={editable ? "管理自定义面板" : "离线缓存下不能修改面板"}>面板管理</button>
         {manageOpen && (
           <div className="workspace-panel-manager__tray">
             <div className="workspace-panel-manager__heading"><strong>我的面板</strong><span>系统面板保留兼容；自定义面板可以重复、重命名或删除。</span></div>
             <form className="workspace-panel-manager__create" onSubmit={submitNewPanel}><input value={newPanelName} onChange={(event) => setNewPanelName(event.target.value)} placeholder="新面板名称" aria-label="新面板名称" maxLength={80} /><button type="submit" disabled={!newPanelName.trim()}>新建</button></form>
-            <div className="workspace-panel-manager__list">{panels.map((panel) => <div className="workspace-panel-manager__item" key={panel.id}><span><strong>{panel.name}</strong><small>{panel.kind === "custom" ? "自定义面板" : "系统面板"}</small></span><div>{panel.kind === "custom" && <><button type="button" onClick={() => { const name = window.prompt("重命名面板", panel.name); if (name?.trim()) onRename(panel.id, name.trim()); }}>重命名</button><button type="button" onClick={() => onDuplicate(panel.id, activePanelId === panel.id ? layout?.getLayoutSnapshot() : undefined)}>复制</button><button type="button" className="is-danger" onClick={() => { if (window.confirm(`确定删除“${panel.name}”吗？`)) onDelete(panel.id); }}>删除</button></>}{panel.kind === "system" && <button type="button" onClick={() => onDuplicate(panel.id, activePanelId === panel.id ? layout?.getLayoutSnapshot() : undefined)}>复制为自定义</button>}</div></div>)}</div>
+            <div className="workspace-panel-manager__list">{panels.map((panel) => <div className="workspace-panel-manager__item" key={panel.id}><span><strong>{panel.name}</strong><small>{panel.kind === "custom" ? "自定义面板" : "系统面板"}</small></span><div>{panel.kind === "custom" && <><button type="button" onClick={() => setRenameTarget(panel)}>重命名</button><button type="button" onClick={() => onDuplicate(panel.id, activePanelId === panel.id ? layout?.getLayoutSnapshot() : undefined)}>复制</button><button type="button" className="is-danger" onClick={() => setDeleteTarget(panel)}>删除</button></>}{panel.kind === "system" && <button type="button" onClick={() => onDuplicate(panel.id, activePanelId === panel.id ? layout?.getLayoutSnapshot() : undefined)}>复制为自定义</button>}</div></div>)}</div>
           </div>
         )}
       </div>
     </div>
+    {renameTarget && <PromptDialog title={`重命名“${renameTarget.name}”`} detail="名称只用于当前设备的面板列表，最多 80 个字符。" initialValue={renameTarget.name} onConfirm={(name) => { onRename(renameTarget.id, name); setRenameTarget(null); }} onCancel={() => setRenameTarget(null)} />}
+    {deleteTarget && <ConfirmDialog title={`删除“${deleteTarget.name}”？`} detail="删除自定义面板后，其中的小组件布局也会从当前设备的面板列表中移除。" confirmLabel="删除面板" onConfirm={() => { onDelete(deleteTarget.id); setDeleteTarget(null); }} onCancel={() => setDeleteTarget(null)} />}
+    </>
   );
 }
 
 function DevicePage() {
-  const { selectedDevice, snapshot, navigate, openSettings, metricsWindow, setMetricsWindow, getWidgetLayout, saveWidgetLayout } = useWorkspace();
+  const { selectedDevice, snapshot, navigate, openSettings, metricsWindow, setMetricsWindow, trafficMode, setTrafficMode, getWidgetLayout, saveWidgetLayout, orientation } = useWorkspace();
+  const canEditRemote = snapshot?.source === "live" && Boolean(snapshot.session.authenticated);
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [panels, setPanels] = useState<WidgetPanelMetadata[]>(cloneDevicePanels(DEFAULT_DEVICE_PANELS));
   const [panelIndexLoading, setPanelIndexLoading] = useState(false);
   const [widgetDrawerOpen, setWidgetDrawerOpen] = useState(false);
+  const [activeAnchor, setActiveAnchor] = useState("section-overview");
+  const anchorDefinitions = useMemo(() => [
+    { id: "section-overview", label: "综合概览", tabs: ["overview", "all"] },
+    { id: "section-compute", label: "算力与内存", tabs: ["compute", "all"] },
+    { id: "section-storage", label: "存储与网络", tabs: ["storage_net", "all"] },
+    { id: "section-gpu", label: "显卡与散热", tabs: ["gpu_thermal", "all"] },
+    { id: "section-info", label: "硬件信息", tabs: ["overview", "all"] }
+  ], []);
+  const availableAnchors = useMemo(
+    () => anchorDefinitions.filter((anchor) => anchor.tabs.includes(activeTab)),
+    [activeTab, anchorDefinitions]
+  );
+
+  const scrollToAnchor = (anchorId: string) => {
+    const target = document.getElementById(anchorId);
+    if (target) {
+      setActiveAnchor(anchorId);
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  useEffect(() => {
+    setActiveAnchor(availableAnchors[0]?.id ?? "");
+    const root = document.getElementById("workspace-main-content");
+    const targets = availableAnchors
+      .map((anchor) => document.getElementById(anchor.id))
+      .filter((target): target is HTMLElement => Boolean(target));
+    if (!root || !targets.length || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top)[0];
+      if (visible?.target instanceof HTMLElement) setActiveAnchor(visible.target.id);
+    }, { root, rootMargin: "-72px 0px -55% 0px", threshold: [0, 0.12] });
+    targets.forEach((target) => observer.observe(target));
+    return () => observer.disconnect();
+  }, [availableAnchors]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1727,6 +2270,12 @@ function DevicePage() {
   const [selectedDiskId, setSelectedDiskId] = useState<string>("all");
   const [selectedGpuId, setSelectedGpuId] = useState<string>("all");
 
+  useEffect(() => {
+    setSelectedNetId("all");
+    setSelectedDiskId("all");
+    setSelectedGpuId("all");
+  }, [selectedDevice?.deviceId]);
+
   if (!selectedDevice) return <EmptyState title="没有找到这台设备" detail="设备可能已被移除，或者中枢还没有返回它。" action={<Button variant="primary" onClick={() => navigate({ kind: "overview" })}>返回总览</Button>} />;
 
   const activePanel = panels.find((panel) => panel.id === activeTab) ?? DEFAULT_DEVICE_PANELS[0];
@@ -1736,10 +2285,12 @@ function DevicePage() {
   const customPanelScope = (panelId: string) => `device:${selectedDevice.deviceId}:panel:${panelId}`;
   const customPanelTemplate = `device-type:${selectedDevice.instanceType ?? "device"}:panel`;
   const savePanelIndex = (nextPanels: WidgetPanelMetadata[]) => {
+    if (!canEditRemote) return;
     setPanels(nextPanels);
     void saveWidgetLayout({ scopeKey: panelIndexScope, templateKey: panelIndexTemplate, instanceLayout: { version: 4, placements: {}, catalog: {}, snapToGrid: true, panels: nextPanels } });
   };
   const createPanel = (name: string) => {
+    if (!canEditRemote) return;
     if (!confirmDiscardWidgetLayoutDraft()) return;
     const id = `panel-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const nextPanels = [...panels, { id, name: name.trim().slice(0, 80), kind: "custom" as const, order: panels.length }];
@@ -1747,10 +2298,12 @@ function DevicePage() {
     void saveWidgetLayout({ scopeKey: customPanelScope(id), templateKey: customPanelTemplate, instanceLayout: createStarterDynamicLayout() }).then(() => setActiveTab(id));
   };
   const renamePanel = (panelId: string, name: string) => {
+    if (!canEditRemote) return;
     const nextPanels = panels.map((panel) => panel.id === panelId && panel.kind === "custom" ? { ...panel, name: name.trim().slice(0, 80) } : panel);
     savePanelIndex(nextPanels);
   };
   const duplicatePanel = (sourceId: string, sourceLayout?: WidgetLayoutDocument) => {
+    if (!canEditRemote) return;
     if (!confirmDiscardWidgetLayoutDraft()) return;
     const source = panels.find((panel) => panel.id === sourceId);
     if (!source) return;
@@ -1767,6 +2320,7 @@ function DevicePage() {
     })();
   };
   const deletePanel = (panelId: string) => {
+    if (!canEditRemote) return;
     const panel = panels.find((item) => item.id === panelId);
     if (!panel || panel.kind !== "custom") return;
     const nextPanels = panels.filter((item) => item.id !== panelId);
@@ -1811,7 +2365,9 @@ function DevicePage() {
   const networkOptions = networkInstances.map((network) => ({ id: network.id, name: displayModelName(network.model, network.name, "网卡") }));
   const gpuOptions = gpuInstances.map((gpu) => ({ id: gpu.id, name: gpu.name }));
   const cpuAverageUsage = averageSamplePointsOrFallback(cpuInstances.map((cpu) => cpu.usagePercent), hasInstanceConfiguration("cpu") ? [] : series?.cpuUsagePercent ?? []);
-  const diskAverageUsedBytes = averageSamplePointsOrFallback(diskInstances.map((disk) => disk.usedBytes), hasInstanceConfiguration("disk") ? [] : series?.diskUsedBytes ?? []);
+  const diskTotalUsedBytes = diskInstances.length
+    ? sumSamplePoints(diskInstances.map((disk) => disk.usedBytes))
+    : hasInstanceConfiguration("disk") ? [] : series?.diskUsedBytes ?? [];
   const networkAverageRx = averageSamplePointsOrFallback(networkInstances.map((network) => network.rxBytesPerSec), hasInstanceConfiguration("network") ? [] : series?.networkRxBytesPerSec ?? []);
   const networkAverageTx = averageSamplePointsOrFallback(networkInstances.map((network) => network.txBytesPerSec), hasInstanceConfiguration("network") ? [] : series?.networkTxBytesPerSec ?? []);
   const gpuAverageUsage = averageSamplePointsOrFallback(gpuInstances.map((gpu) => gpu.usagePercent), hasInstanceConfiguration("gpu") ? [] : series?.gpuUsagePercent ?? []);
@@ -1871,7 +2427,7 @@ function DevicePage() {
         <span>Agent {selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</span>
         <span>通道 {selectedDevice.agentChannel ?? "未知"}</span>
         {selectedDevice.instanceType === "virtual_machine" && <span>宿主机 {selectedDevice.hostName ?? "未知"}</span>}
-        <span>数据更新时间 {formatDate(snapshot?.generatedAt)}</span>
+        <span>{snapshot?.source === "cache" ? `缓存于 ${formatDate(snapshot.cache.savedAt)}` : `数据更新时间 ${formatDate(snapshot?.generatedAt)}`}</span>
       </div>
 
 
@@ -1880,28 +2436,36 @@ function DevicePage() {
         key={activeTab}
         scopeKey={isCustomPanel ? customPanelScope(activeTab) : `device:${selectedDevice.deviceId}:${activeTab}`}
         templateKey={isCustomPanel ? customPanelTemplate : `device-type:${selectedDevice.instanceType ?? "device"}:tab:${activeTab}`}
-        editable={activeTab !== "all"}
+        editable={activeTab !== "all" && snapshot?.source === "live" && Boolean(snapshot.session.authenticated)}
         locked={activeTab === "all"}
         getWidgetLayout={getWidgetLayout}
         saveWidgetLayout={saveWidgetLayout}
       >
       {/* 视图 Tab 切换与时间范围控制器 */}
       <div className="telemetry-chart-header">
-        <WidgetPanelBar panels={panels} activePanelId={activeTab} onSelect={changeTab} onCreate={createPanel} onRename={renamePanel} onDuplicate={duplicatePanel} onDelete={deletePanel} />
+        <WidgetPanelBar panels={panels} activePanelId={activeTab} editable={canEditRemote} onSelect={changeTab} onCreate={createPanel} onRename={renamePanel} onDuplicate={duplicatePanel} onDelete={deletePanel} />
 
         <div className="workspace-device-toolbar">
           {panelIndexLoading && <span className="workspace-layout-notice">读取面板</span>}
           <MetricWindowControl value={metricsWindow as DesktopMetricWindowValue} onChange={(value) => setMetricsWindow(value)} />
-          <WidgetLayoutToolbar onOpenWidgetDrawer={activeTab !== "all" ? () => setWidgetDrawerOpen(true) : undefined} />
+          <WidgetLayoutToolbar onOpenWidgetDrawer={activeTab !== "all" && canEditRemote ? () => setWidgetDrawerOpen(true) : undefined} />
         </div>
       </div>
 
+      {availableAnchors.length > 1 && (activeTab === "all" || orientation === "portrait") && (
+        <div className="workspace-anchor-bar" role="navigation" aria-label="硬件模块跳转">
+          {availableAnchors.map((anchor) => (
+            <button key={anchor.id} type="button" className={`workspace-anchor-btn${activeAnchor === anchor.id ? " is-active" : ""}`} aria-current={activeAnchor === anchor.id ? "page" : undefined} onClick={() => scrollToAnchor(anchor.id)}>{anchor.label}</button>
+          ))}
+        </div>
+      )}
+
       {/* ================= Tab 1: 综合面板 (Overview) ================= */}
       {(activeTab === "overview" || activeTab === "all") && series && (
-        <TelemetrySection eyebrow="综合遥测" title="硬件平均趋势" description="综合面板按类别平均所有已采集实例；各硬件型号显示在对应图表底部，单独图表请切换到明细选项卡。">
+        <TelemetrySection id="section-overview" eyebrow="综合遥测" title="硬件平均趋势" description="综合面板按类别平均所有已采集实例；各硬件型号显示在对应图表底部，单独图表请切换到明细选项卡。">
           <TelemetryChartCard widgetId="overview-cpu-average" title="CPU 平均使用率" subtitle={`全部 ${cpuInstances.length} 个 CPU 实例的平均值`} series={[{ label: "全部 CPU 平均", points: cpuAverageUsage }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集 CPU 型号" items={cpuModelItems} />} />
           <TelemetryChartCard widgetId="overview-memory" title="物理与已提交内存" subtitle={`物理 ${formatCapacitySummary(filteredLatest?.memoryUsedBytes, filteredLatest?.memoryTotalBytes)} · 已提交 ${committedMemorySummary} · 页面文件 ${pagefileMemorySummary}`} series={[{ label: "已用物理内存", points: series.memoryUsedBytes ?? [], valueFormatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
-          <TelemetryChartCard widgetId="overview-disk-average" title="磁盘平均已用容量" subtitle={`全部 ${diskInstances.length} 个硬盘实例的平均值 · ${formatCapacitySummary(filteredLatest?.diskUsedBytes, filteredLatest?.diskTotalBytes)}`} series={[{ label: "全部硬盘平均已用", points: diskAverageUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集硬盘型号" items={diskModelItems} />} />
+          <TelemetryChartCard widgetId="overview-disk-total" title="磁盘总已用容量" subtitle={`全部 ${diskInstances.length} 个硬盘实例的总量 · ${formatCapacitySummary(filteredLatest?.diskUsedBytes, filteredLatest?.diskTotalBytes)}`} series={[{ label: "全部硬盘总已用", points: diskTotalUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集硬盘型号" items={diskModelItems} />} />
           <TelemetryChartCard widgetId="overview-network-average" title="网卡平均吞吐" subtitle={`全部 ${networkInstances.length} 个网卡实例的平均值`} series={[{ label: "平均接收 (Rx)", points: networkAverageRx, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "平均发送 (Tx)", points: networkAverageTx, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} footer={<TelemetryModelList label="已采集网卡型号" items={networkModelItems} />} />
           <TelemetryChartCard widgetId="overview-gpu-average" title="GPU 平均使用率" subtitle={`全部 ${gpuInstances.length} 个显卡实例的平均值`} series={[{ label: "平均核心", points: gpuAverageUsage }, { label: "平均编码", points: gpuAverageEncode }, { label: "平均解码", points: gpuAverageDecode }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
           <TelemetryChartCard widgetId="overview-gpu-memory" title="GPU 平均显存已用容量" subtitle={`${gpuMemorySummary} · 按显卡实例平均`} series={[{ label: "平均显存已用", points: gpuAverageMemoryUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
@@ -1911,7 +2475,7 @@ function DevicePage() {
 
       {/* ================= Tab 2: 算力与内存 (Compute & Memory) ================= */}
       {(activeTab === "compute" || activeTab === "all") && series && (
-        <TelemetrySection eyebrow="处理器与内存" title="算力与内存明细" description="CPU 实例、频率、温度和内存层级数据分开呈现，避免不同单位被压缩成一条汇总线。">
+        <TelemetrySection id="section-compute" eyebrow="处理器与内存" title="算力与内存明细" description="CPU 实例、频率、温度和内存层级数据分开呈现，避免不同单位被压缩成一条汇总线。">
            <DesktopWidget id="compute-cpu-facts" title="处理器与系统统计" defaultSize="large"><CpuFactsCard cpus={filteredLatest?.cpuPackages ?? []} system={filteredLatest?.system} /></DesktopWidget>
            {cpuInstances.length ? cpuInstances.map((cpu) => {
              const cpuTemperaturePoints = cpu.temperatureC.length ? cpu.temperatureC : series.cpuTemperatureC ?? [];
@@ -1944,7 +2508,8 @@ function DevicePage() {
 
       {/* ================= Tab 3: 存储与网络 (Storage & Network) ================= */}
       {(activeTab === "storage_net" || activeTab === "all") && series && (
-        <TelemetrySection eyebrow="存储与网络" title="I/O 实例明细" description="按网卡和磁盘实例拆分，选择全部时会同时展示每个实例，而不是只看设备总量。" controls={<><InstanceFilter label="网卡" value={selectedNetId} onChange={setSelectedNetId} options={networkOptions} /><InstanceFilter label="磁盘" value={selectedDiskId} onChange={setSelectedDiskId} options={diskOptions} /></>}>
+        <TelemetrySection id="section-storage" eyebrow="存储与网络" title="I/O 实例明细" description="按网卡和磁盘实例拆分，选择全部时会同时展示每个实例，而不是只看设备总量。" controls={<><InstanceFilter label="网卡" value={selectedNetId} onChange={setSelectedNetId} options={networkOptions} /><InstanceFilter label="磁盘" value={selectedDiskId} onChange={setSelectedDiskId} options={diskOptions} /></>}>
+          <TrafficCalendarCard data={snapshot?.trafficCalendar ?? null} mode={trafficMode} onModeChange={setTrafficMode} />
           {networkInstances.length ? visibleNetworkInstances.map((network) => {
             const networkIndex = networkInstances.findIndex((item) => item.id === network.id);
             return <TelemetryChartCard key={`network-${network.id}`} widgetId={`storage-network-${network.id}`} widgetTemplateId={`network-${networkIndex}`} title={`${displayModelName(network.model, network.name, "网卡")} · 吞吐`} subtitle={[network.name, network.macAddress, network.ipv4?.[0] || network.ipv6?.[0]].filter(Boolean).join(" · ") || "独立网卡实例"} series={[{ label: "接收 (Rx)", points: network.rxBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: network.txBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />;
@@ -1979,7 +2544,7 @@ function DevicePage() {
 
       {/* ================= Tab 4: 显卡与散热 (GPU & Thermal) ================= */}
       {(activeTab === "gpu_thermal" || activeTab === "all") && series && (
-        <TelemetrySection eyebrow="显卡与散热" title="GPU、温度与风扇明细" description="每个 GPU 和每个风扇都有独立时间序列，悬停图表即可查看同一采样时刻的具体值。" controls={<InstanceFilter label="GPU" value={selectedGpuId} onChange={setSelectedGpuId} options={gpuOptions} />}>
+        <TelemetrySection id="section-gpu" eyebrow="显卡与散热" title="GPU、温度与风扇明细" description="每个 GPU 和每个风扇都有独立时间序列，悬停图表即可查看选中时间附近各系列的具体值。" controls={<InstanceFilter label="GPU" value={selectedGpuId} onChange={setSelectedGpuId} options={gpuOptions} />}>
           {gpuInstances.length ? visibleGpuInstances.map((gpu) => {
             const gpuLatest = filteredLatest?.gpus?.find((item) => item.id === gpu.id);
             const gpuTemperaturePoints = gpu.temperatureC ?? [];
@@ -2013,14 +2578,14 @@ function DevicePage() {
               <TelemetryChartCard widgetId="gpu-summary-temperature" widgetGroupId="gpu-summary" widgetType="gpu-temperature" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, visualization: "line" }} title="温度" subtitle="GPU 设备汇总" emptyMessage="等待 GPU 温度传感器" series={[{ label: "温度", points: series.gpuTemperatureC ?? [], valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
             </TelemetryDeviceBlock>
           )}
-          {fanInstances.length ? fanInstances.map((fan, index) => <TelemetryChartCard key={`thermal-fan-${fan.id}`} widgetId={`thermal-fan-${fan.id}`} widgetTemplateId={`thermal-fan-${index}`} title={`${fan.name} · 转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm, valueFormatter: (v) => `${Math.round(v)} RPM` }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : null}
+          {fanInstances.length ? fanInstances.map((fan, index) => { const fanLatest = filteredLatest?.fans.find((item) => item.id === fan.id); return <React.Fragment key={`thermal-fan-${fan.id}`}><TelemetryChartCard widgetId={`thermal-fan-${fan.id}`} widgetTemplateId={`thermal-fan-${index}`} title={`${fan.name} · 转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm, valueFormatter: (v) => `${Math.round(v)} RPM` }]} valueFormatter={(v) => `${Math.round(v)} RPM`} /><FanNoteEditor deviceId={selectedDevice.deviceId} fanId={fan.id} initialNote={fanLatest?.note} editable={canEditRemote} /></React.Fragment>; }) : null}
           </TelemetrySection>
       )}
 
-      {activeTab !== "all" && <DynamicWidgetCanvas device={selectedDevice} metrics={metrics} showEmptyState={isCustomPanel} onOpenDrawer={() => setWidgetDrawerOpen(true)} />}
+      {activeTab !== "all" && <DynamicWidgetCanvas device={selectedDevice} metrics={metrics} showEmptyState={isCustomPanel} onOpenDrawer={canEditRemote ? () => setWidgetDrawerOpen(true) : undefined} />}
 
       {(activeTab === "overview" || activeTab === "all") && (
-        <div className="workspace-widget-grid workspace-device-info-widgets">
+        <div id="section-info" className="workspace-widget-grid workspace-device-info-widgets">
           <DesktopWidget id="device-hardware-system" title="硬件与系统" kind="group" defaultSize="medium">
             <Surface>
               <div className="workspace-surface__header">
@@ -2079,17 +2644,18 @@ function HubPage() {
   const hub = hubs.find((item) => item.id === (route.kind === "hub" ? route.hubId : "")) ?? hubs[0];
   if (!hub) return <EmptyState title="没有配置中枢" detail="添加一个中枢后，设备会显示在侧边栏。" action={<Button variant="primary" onClick={() => openSettings("connections")}>添加中枢</Button>} />;
   const online = hub.devices.filter((device) => device.status === "online").length;
-  return <div className="workspace-page"><PageIntro eyebrow="中枢" title={hub.name} description={hub.endpoint} actions={<><Button variant="quiet" onClick={() => navigate({ kind: "overview" })}><Icon name="back" size={16} />返回总览</Button><Button variant="primary" onClick={() => openSettings("connections")}><Icon name="settings" size={16} />管理连接</Button></>} /><div className="workspace-hub-hero"><div><StatusLabel state={hub.state === "online" ? "online" : hub.state === "cached" ? "cached" : hub.state === "offline" ? "warning" : "unknown"} /><strong>{hub.state === "online" ? "连接正常" : hub.state === "cached" ? "正在显示缓存" : "需要检查连接"}</strong><p>{online} 台设备在线，共 {hub.devices.length} 台设备。</p></div><div className="workspace-hub-hero__stat"><span>设备</span><strong>{hub.devices.length}</strong></div><div className="workspace-hub-hero__stat"><span>在线</span><strong>{online}</strong></div></div><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">设备列表</span><h3>{hub.devices.length} 台设备</h3></div><Button variant="quiet" onClick={() => openSettings("connections")}>连接设置</Button></div><div className="workspace-device-rows">{hub.devices.map((device) => <DeviceRow key={device.deviceId} device={device} />)}</div></Surface></div>;
+  return <div className="workspace-page"><PageIntro eyebrow="中枢" title={hub.name} description={hub.endpoint} actions={<><Button variant="quiet" onClick={() => navigate({ kind: "overview" })}><Icon name="back" size={16} />返回总览</Button><Button variant="primary" onClick={() => openSettings("connections")}><Icon name="settings" size={16} />管理连接</Button></>} /><div className="workspace-hub-hero"><div><StatusLabel state={hub.state === "online" ? "online" : hub.state === "cached" ? "cached" : hub.state === "offline" ? "warning" : "unknown"} /><strong>{hub.state === "online" ? "连接正常" : hub.state === "cached" ? "正在显示缓存" : "需要检查连接"}</strong><p>{online} 个实例在线，共 {hub.devices.length} 个实例。</p></div><div className="workspace-hub-hero__stat"><span>实例</span><strong>{hub.devices.length}</strong></div><div className="workspace-hub-hero__stat"><span>在线</span><strong>{online}</strong></div></div><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">实例列表</span><h3>{hub.devices.length} 个实例</h3></div><Button variant="quiet" onClick={() => openSettings("connections")}>连接设置</Button></div><div className="workspace-device-rows">{hub.devices.map((device) => <DeviceRow key={device.deviceId} device={device} />)}</div></Surface></div>;
 }
 
 function SettingsPage() {
   const { route } = useWorkspace();
   const section = route.kind === "settings" ? route.section : "general";
+  const { capabilities } = useWorkspace();
   const pages: Record<SettingsSection, React.ReactNode> = {
     general: <GeneralSettings />,
     appearance: <AppearanceSettings />,
-    connections: <ConnectionSettings />,
-    agent: <AgentSettings />,
+    connections: capabilities.canConfigureConnection ? <ConnectionSettings /> : <EmptyState title="连接由当前平台管理" detail="浏览器端使用当前站点的登录会话，不需要配置桌面连接。" />,
+    agent: capabilities.canManageLocalAgent ? <AgentSettings /> : <EmptyState title="本机 Agent 仅支持桌面端" detail="浏览器端可以查看已接入的设备，但不能管理当前机器上的采集服务。" />,
     data: <DataSettings />,
     shortcuts: <ShortcutSettings />,
     about: <AboutSettings />
@@ -2102,18 +2668,18 @@ function SettingRow({ label, description, children }: { label: string; descripti
   return <div className="workspace-setting-row"><div><strong>{label}</strong>{description && <p>{description}</p>}</div><div className="workspace-setting-row__control">{children}</div></div>;
 }
 
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (checked: boolean) => void; label: string }) {
-  return <label className="workspace-toggle"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} aria-label={label} /><span className="workspace-toggle__track"><span /></span></label>;
+function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (checked: boolean) => void; label: string; disabled?: boolean }) {
+  return <label className={`workspace-toggle${disabled ? " is-disabled" : ""}`}><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} aria-label={label} disabled={disabled} /><span className="workspace-toggle__track"><span /></span></label>;
 }
 
 function GeneralSettings() {
-  const { snapshot, updateStartupSettings, refreshInterval, setRefreshInterval } = useWorkspace();
+  const { snapshot, updateStartupSettings, mutationPending, refreshInterval, setRefreshInterval } = useWorkspace();
   const startup = snapshot?.startup ?? { openAtLogin: false, startMinimized: false };
-  return <Surface><div className="workspace-settings-list"><SettingRow label="开机启动" description="登录系统后自动启动观澜。"><Toggle checked={startup.openAtLogin} onChange={(checked) => void updateStartupSettings({ openAtLogin: checked })} label="开机启动" /></SettingRow><SettingRow label="启动时最小化" description="启动后保持在系统托盘，不打断当前工作。"><Toggle checked={startup.startMinimized} onChange={(checked) => void updateStartupSettings({ startMinimized: checked })} label="启动时最小化" /></SettingRow><SettingRow label="数据刷新频率" description="实时连接下，桌面端自动刷新状态的间隔。"><select className="workspace-select" value={refreshInterval} onChange={(event) => setRefreshInterval(Number(event.target.value) as typeof refreshInterval)}><option value="5">5 秒</option><option value="10">10 秒</option><option value="30">30 秒</option></select></SettingRow></div></Surface>;
+  return <Surface><div className="workspace-settings-list"><SettingRow label="开机启动" description="登录系统后自动启动观澜。"><Toggle checked={startup.openAtLogin} onChange={(checked) => void updateStartupSettings({ openAtLogin: checked })} label="开机启动" disabled={mutationPending} /></SettingRow><SettingRow label="启动时最小化" description="启动后保持在系统托盘，不打断当前工作。"><Toggle checked={startup.startMinimized} onChange={(checked) => void updateStartupSettings({ startMinimized: checked })} label="启动时最小化" disabled={mutationPending} /></SettingRow><SettingRow label="数据刷新频率" description="实时连接下，桌面端自动刷新状态的间隔；不改变 Agent 的采样频率。"><select className="workspace-select" value={refreshInterval} onChange={(event) => setRefreshInterval(Number(event.target.value) as typeof refreshInterval)} disabled={mutationPending}><option value="5">5 秒</option><option value="10">10 秒</option><option value="30">30 秒</option></select></SettingRow></div></Surface>;
 }
 
 function AppearanceSettings() {
-  const { theme, setTheme, windowMaterial, setWindowMaterial, windowMaterialCapabilities, density, setDensity } = useWorkspace();
+  const { theme, setTheme, windowMaterial, setWindowMaterial, windowMaterialCapabilities, density, setDensity, capabilities } = useWorkspace();
   const materialSupported = Boolean(windowMaterialCapabilities?.supportsMica || windowMaterialCapabilities?.supportsAcrylic);
   const materialDescription = !windowMaterialCapabilities
     ? "选择窗口背景材质。"
@@ -2122,15 +2688,18 @@ function AppearanceSettings() {
       : windowMaterialCapabilities.prefersReducedTransparency
         ? "系统已关闭透明效果，材质选项会自动回退到观澜。"
         : "当前系统不支持 Windows 原生材质，已使用观澜。";
-  return <Surface><div className="workspace-settings-list"><SettingRow label="主题" description="跟随系统，或固定使用浅色/深色主题。"><select className="workspace-select" value={theme} onChange={(event) => setTheme(event.target.value as typeof theme)}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></SettingRow><SettingRow label="窗口材质" description={materialDescription}><select className="workspace-select" value={windowMaterial} onChange={(event) => setWindowMaterial(event.target.value as typeof windowMaterial)}><option value="guanlan">观澜（标准）</option><option value="mica" disabled={!windowMaterialCapabilities?.supportsMica}>云母（Windows 11）</option><option value="acrylic" disabled={!windowMaterialCapabilities?.supportsAcrylic}>亚克力（实验性）</option></select></SettingRow><SettingRow label="界面密度" description="紧凑适合大屏监控，舒适适合日常操作。"><select className="workspace-select" value={density} onChange={(event) => setDensity(event.target.value as typeof density)}><option value="comfortable">舒适</option><option value="compact">紧凑</option></select></SettingRow><SettingRow label="动画" description="尊重系统的减少动态效果设置。"><span className="workspace-setting-note"><Icon name="check" size={15} />已启用可访问性适配</span></SettingRow></div></Surface>;
+  return <Surface><div className="workspace-settings-list"><SettingRow label="主题" description="跟随系统，或固定使用浅色/深色主题。"><select className="workspace-select" value={theme} onChange={(event) => setTheme(event.target.value as typeof theme)}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></SettingRow>{capabilities.canUseWindowMaterial && <SettingRow label="窗口材质" description={materialDescription}><select className="workspace-select" value={windowMaterial} onChange={(event) => setWindowMaterial(event.target.value as typeof windowMaterial)}><option value="guanlan">观澜（标准）</option><option value="mica" disabled={!windowMaterialCapabilities?.supportsMica}>云母（Windows 11）</option><option value="acrylic" disabled={!windowMaterialCapabilities?.supportsAcrylic}>亚克力（实验性）</option></select></SettingRow>}<SettingRow label="界面密度" description="自动会根据触摸输入和窗口尺寸放大操作目标；远控手机时可手动选择触摸。"><select className="workspace-select" value={density} onChange={(event) => setDensity(event.target.value as typeof density)}><option value="auto">自动</option><option value="comfortable">舒适</option><option value="compact">紧凑</option><option value="touch">触摸</option></select></SettingRow><SettingRow label="动画" description="尊重系统的减少动态效果设置。"><span className="workspace-setting-note"><Icon name="check" size={15} />已启用可访问性适配</span></SettingRow></div></Surface>;
 }
 
 function ConnectionSettings() {
-  const { snapshot, saveHubConnection, logout } = useWorkspace();
+  const { snapshot, saveHubConnection, logout, disconnectAgent, mutationPending } = useWorkspace();
   const [serverUrl, setServerUrl] = useState(snapshot?.localBackend?.config.connection.serverUrl ?? "");
   const [accessKey, setAccessKey] = useState("");
   const [saving, setSaving] = useState(false);
+  const [disconnectConfirmOpen, setDisconnectConfirmOpen] = useState(false);
   const authenticated = snapshot?.session.authenticated ?? false;
+  const agentConfigured = Boolean(snapshot?.localBackend && (snapshot.localBackend.config.connection.secretConfigured || snapshot.localBackend.config.cloudSyncEnabled));
+  const agentRunning = snapshot?.localBackend?.running ?? false;
   useEffect(() => {
     setServerUrl(snapshot?.localBackend?.config.connection.serverUrl ?? "");
   }, [snapshot?.localBackend?.config.connection.serverUrl]);
@@ -2145,11 +2714,15 @@ function ConnectionSettings() {
       setSaving(false);
     }
   };
-  return <div className="workspace-settings-stack"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">中枢连接</span><h3>{authenticated ? "已连接" : "需要认证"}</h3></div><StatusLabel state={authenticated ? "online" : "warning"} /></div><form className="workspace-form workspace-connection-form" onSubmit={saveConnection}><label>中枢地址<input className="workspace-input" value={serverUrl} onChange={(event) => setServerUrl(event.target.value)} placeholder="https://hub.example.com" autoComplete="url" required /></label><label>访问密钥<input className="workspace-input" type="password" value={accessKey} onChange={(event) => setAccessKey(event.target.value)} placeholder={snapshot?.session.accessKeyConfigured ? "已保存，留空保留当前认证" : "输入中枢访问密钥"} autoComplete="current-password" required={!snapshot?.session.accessKeyConfigured} /></label><p className="workspace-form__hint">地址和访问密钥会在同一次保存中提交。访问密钥只会发送到桌面主进程，不会进入页面状态或日志。</p><div className="workspace-form__actions"><Button variant="primary" type="submit" disabled={saving}>{saving ? "正在保存…" : authenticated ? "保存连接" : "保存并连接"}</Button>{authenticated && <Button variant="quiet" onClick={() => void logout()} disabled={saving}>断开连接</Button>}</div></form></Surface><Surface className="workspace-connection-note"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">连接诊断</span><h3>如果连接失败</h3></div></div><p className="workspace-surface__description">请确认地址包含协议（例如 https://），中枢服务已启动，并使用中枢访问密钥。保存按钮会先写入地址，再用同一地址完成认证，避免出现 server url is missing。</p></Surface></div>;
+  const disconnect = async () => {
+    const stopped = await disconnectAgent();
+    if (stopped) setDisconnectConfirmOpen(false);
+  };
+  return <div className="workspace-settings-stack"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">中枢连接</span><h3>{authenticated ? "已连接" : "需要认证"}</h3></div><StatusLabel state={authenticated ? "online" : "warning"} /></div><form className="workspace-form workspace-connection-form" onSubmit={saveConnection}><label>中枢地址<input className="workspace-input" value={serverUrl} onChange={(event) => setServerUrl(event.target.value)} placeholder="https://hub.example.com" autoComplete="url" required /></label><label>访问密钥<input className="workspace-input" type="password" value={accessKey} onChange={(event) => setAccessKey(event.target.value)} placeholder={snapshot?.session.accessKeyConfigured ? "已保存，留空保留当前认证" : "输入中枢访问密钥"} autoComplete="current-password" required={!snapshot?.session.accessKeyConfigured} /></label><p className="workspace-form__hint">地址和访问密钥会在同一次保存中提交。访问密钥只会发送到桌面主进程，不会进入页面状态或日志。</p><div className="workspace-form__actions"><Button variant="primary" type="submit" disabled={saving || mutationPending}>{saving ? "正在保存…" : authenticated ? "保存连接" : "保存并连接"}</Button>{authenticated && <Button variant="quiet" onClick={() => void logout()} disabled={saving || mutationPending}>退出桌面查看</Button>}</div></form></Surface><Surface className="workspace-connection-note"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">本机上报</span><h3>{agentRunning ? "Agent 正在采集" : agentConfigured ? "Agent 已配置但未运行" : "Agent 未配置"}</h3></div><StatusLabel state={agentRunning ? "online" : agentConfigured ? "warning" : "unknown"} /></div><p className="workspace-surface__description">退出桌面查看只会结束当前界面的中枢认证，本机 Agent 仍可能继续采集和上报。如果要停止本机上报，会停止采集、关闭云同步并清除本机保存的上报凭据。</p>{agentConfigured && <div className="workspace-form__actions"><Button variant="danger" onClick={() => setDisconnectConfirmOpen(true)} disabled={mutationPending}>停止本机上报</Button></div>}{disconnectConfirmOpen && <div className="workspace-danger-note" role="alert"><strong>确认停止本机上报？</strong><p>这会停止 Agent、关闭云同步并清除上报凭据；之后需要重新配置连接才能恢复。</p><div className="workspace-form__actions"><Button variant="danger" onClick={() => void disconnect()} disabled={mutationPending}>{mutationPending ? "正在停止…" : "停止并清除凭据"}</Button><Button variant="quiet" onClick={() => setDisconnectConfirmOpen(false)} disabled={mutationPending}>取消</Button></div></div>}</Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">连接诊断</span><h3>如果连接失败</h3></div></div><p className="workspace-surface__description">请确认地址包含协议（例如 https://），中枢服务已启动，并使用中枢访问密钥。保存按钮会先写入地址，再用同一地址完成认证，避免出现 server url is missing。</p></Surface></div>;
 }
 
 function AgentSettings() {
-  const { snapshot, controlAgent, updateLocalConfig, cloudPush, refreshing } = useWorkspace();
+  const { snapshot, controlAgent, updateLocalConfig, cloudPush, refreshing, mutationPending } = useWorkspace();
   const backend = snapshot?.localBackend;
   const config = backend?.config;
   const enabledMetrics = config?.enabledMetrics ?? [];
@@ -2159,10 +2732,16 @@ function AgentSettings() {
   const [selectedMetrics, setSelectedMetrics] = useState<DeviceMetricKey[]>(enabledMetrics);
   const [probeSelections, setProbeSelections] = useState(configuredProbes);
   const [enabledDeviceIds, setEnabledDeviceIds] = useState<Partial<Record<DeviceBlockKey, string[]>>>(config?.enabledDeviceIds ?? {});
+  const [instanceMetricConfig, setInstanceMetricConfig] = useState<Record<string, DeviceMetricKey[]>>(config?.instanceMetricConfig ?? {});
+  const [agentHostname, setAgentHostname] = useState(config?.connection.hostname ?? "");
+  const [normalSamplingSeconds, setNormalSamplingSeconds] = useState(String(config?.sampling.normalIntervalSeconds ?? 30));
+  const [slowSamplingSeconds, setSlowSamplingSeconds] = useState(String(config?.sampling.slowIntervalSeconds ?? 30));
   const fanSeries = snapshot?.metrics?.series?.fans ?? [];
   const metricDraftKey = enabledMetrics.join("|");
   const probeDraftKey = configuredProbes.map((selection) => `${selection.target}:${selection.provider}:${selection.enabled}`).join("|");
   const deviceDraftKey = JSON.stringify(config?.enabledDeviceIds ?? {});
+  const instanceMetricDraftKey = JSON.stringify(config?.instanceMetricConfig ?? {});
+  const runtimeDraftKey = `${config?.connection.hostname ?? ""}|${config?.sampling.normalIntervalSeconds ?? 30}|${config?.sampling.slowIntervalSeconds ?? 30}`;
   useEffect(() => {
     setSelectedMetrics(enabledMetrics);
   }, [metricDraftKey]);
@@ -2172,6 +2751,14 @@ function AgentSettings() {
   useEffect(() => {
     setEnabledDeviceIds(config?.enabledDeviceIds ?? {});
   }, [deviceDraftKey]);
+  useEffect(() => {
+    setInstanceMetricConfig(config?.instanceMetricConfig ?? {});
+  }, [instanceMetricDraftKey]);
+  useEffect(() => {
+    setAgentHostname(config?.connection.hostname ?? "");
+    setNormalSamplingSeconds(String(config?.sampling.normalIntervalSeconds ?? 30));
+    setSlowSamplingSeconds(String(config?.sampling.slowIntervalSeconds ?? 30));
+  }, [runtimeDraftKey]);
   if (!backend || !config) return <EmptyState title="本机 Agent 尚未启动" detail="启动本机服务后才能查看和修改采集设置。" action={<Button variant="primary" onClick={() => void controlAgent("start")}>启动服务</Button>} />;
 
   const detectedGroups: DesktopDetectedTargetGroup[] = (() => {
@@ -2209,7 +2796,25 @@ function AgentSettings() {
     void updateLocalConfig({ enabledDeviceIds: nextEnabledDeviceIds });
   };
 
-  const saveCollectionConfig = () => void updateLocalConfig({ enabledMetrics: selectedMetrics, enabledDeviceIds, probeSelections });
+  const saveCollectionConfig = () => void updateLocalConfig({ enabledMetrics: selectedMetrics, enabledDeviceIds, instanceMetricConfig, probeSelections });
+  const updateInstanceMetricConfig = (instanceId: string, value: DeviceMetricKey[] | undefined) => {
+    setInstanceMetricConfig((current) => {
+      const next = { ...current };
+      if (value === undefined) delete next[instanceId];
+      else next[instanceId] = value;
+      return next;
+    });
+  };
+  const saveRuntimeConfig = () => {
+    const normalIntervalSeconds = Math.max(1, Number.parseInt(normalSamplingSeconds, 10) || 30);
+    const slowIntervalSeconds = Math.max(1, Number.parseInt(slowSamplingSeconds, 10) || normalIntervalSeconds);
+    setNormalSamplingSeconds(String(normalIntervalSeconds));
+    setSlowSamplingSeconds(String(slowIntervalSeconds));
+    void updateLocalConfig({
+      connection: { hostname: agentHostname.trim() },
+      sampling: { normalIntervalSeconds, slowIntervalSeconds }
+    });
+  };
   const toggleMetric = (key: DeviceMetricKey) => {
     setSelectedMetrics((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
   };
@@ -2224,23 +2829,32 @@ function AgentSettings() {
     <div className="workspace-settings-stack">
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">服务状态</span><h3>本机 Agent</h3></div><StatusLabel state={backend.running ? "online" : "offline"} /></div>
-        <div className="workspace-agent-actions"><Button variant="primary" onClick={() => void controlAgent(backend.running ? "stop" : "start")} disabled={refreshing}>{backend.running ? "停止服务" : "启动服务"}</Button><Button variant="quiet" onClick={() => void controlAgent("restart")} disabled={refreshing}>重启服务</Button><Button variant="quiet" onClick={() => void controlAgent("check-connection")} disabled={refreshing}>检查连接</Button><Button variant="quiet" onClick={() => void controlAgent("detect-probes")} disabled={refreshing}>重新检测硬件</Button></div>
+        <div className="workspace-agent-actions"><Button variant="primary" onClick={() => void controlAgent(backend.running ? "stop" : "start")} disabled={refreshing || mutationPending}>{backend.running ? "停止服务" : "启动服务"}</Button><Button variant="quiet" onClick={() => void controlAgent("restart")} disabled={refreshing || mutationPending}>重启服务</Button><Button variant="quiet" onClick={() => void controlAgent("check-connection")} disabled={refreshing || mutationPending}>检查连接</Button><Button variant="quiet" onClick={() => void controlAgent("detect-probes")} disabled={refreshing || mutationPending}>重新检测硬件</Button></div>
         <div className="workspace-detail-list"><SummaryRow label="连接状态" value={backend.connectionStatus} /><SummaryRow label="上传间隔" value={`${backend.effectiveUploadIntervalSeconds} 秒`} /><SummaryRow label="待上传样本" value={backend.pendingSampleCount ? `${backend.pendingSampleCount} 条 · ${formatBytes(backend.pendingBytes)}` : "0 条"} /><SummaryRow label="配置文件" value={backend.configFileExists ? "已找到" : "未找到"} />{backend.lastUploadError && <SummaryRow label="最近上传错误" value={backend.lastUploadError} />}</div>
       </Surface>
       <Surface>
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">Agent 身份与节奏</span><h3>设备显示名与采样间隔</h3></div></div>
+        <div className="workspace-form workspace-agent-runtime-form">
+          <label>设备显示名<input className="workspace-input" value={agentHostname} onChange={(event) => setAgentHostname(event.target.value)} placeholder="例如：办公室主机" maxLength={120} /></label>
+          <div className="workspace-form__grid"><label>正常采样间隔（秒）<input className="workspace-input" type="number" min="1" max="86400" value={normalSamplingSeconds} onChange={(event) => setNormalSamplingSeconds(event.target.value)} /></label><label>降级采样间隔（秒）<input className="workspace-input" type="number" min="1" max="86400" value={slowSamplingSeconds} onChange={(event) => setSlowSamplingSeconds(event.target.value)} /></label></div>
+          <p className="workspace-form__hint">采样间隔决定 Agent 多久采集一次数据；桌面端“数据刷新频率”只决定界面多久读取一次状态，两者互不替代。</p>
+          <div className="workspace-form__actions"><Button variant="primary" onClick={saveRuntimeConfig} disabled={refreshing || mutationPending}>保存 Agent 设置</Button></div>
+        </div>
+      </Surface>
+      <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">采集策略</span><h3>本机行为</h3></div></div>
-        <div className="workspace-settings-list"><SettingRow label="自动启动采集" description="Agent 启动后自动开始采集硬件数据。"><Toggle checked={config.autoStartCollector} onChange={(checked) => void updateLocalConfig({ autoStartCollector: checked })} label="自动启动采集" /></SettingRow><SettingRow label="异常时自动重启" description="采集器异常退出后自动尝试恢复。"><Toggle checked={config.autoRestartCollector} onChange={(checked) => void updateLocalConfig({ autoRestartCollector: checked })} label="异常时自动重启" /></SettingRow><SettingRow label="上传到中枢" description="允许本机 Agent 将采样数据上传到当前中枢。"><Toggle checked={config.cloudSyncEnabled} onChange={(checked) => void updateLocalConfig({ cloudSyncEnabled: checked })} label="上传到中枢" /></SettingRow></div>
+        <div className="workspace-settings-list"><SettingRow label="自动启动采集" description="Agent 启动后自动开始采集硬件数据。"><Toggle checked={config.autoStartCollector} onChange={(checked) => void updateLocalConfig({ autoStartCollector: checked })} label="自动启动采集" disabled={mutationPending} /></SettingRow><SettingRow label="异常时自动重启" description="采集器异常退出后自动尝试恢复。"><Toggle checked={config.autoRestartCollector} onChange={(checked) => void updateLocalConfig({ autoRestartCollector: checked })} label="异常时自动重启" disabled={mutationPending} /></SettingRow><SettingRow label="采集与本地记录" description="关闭后停止采集器，不再生成新的本机样本。"><Toggle checked={config.dataRecordingEnabled} onChange={(checked) => void updateLocalConfig({ dataRecordingEnabled: checked })} label="采集与本地记录" disabled={mutationPending} /></SettingRow><SettingRow label="上传到中枢" description="允许本机 Agent 将采样数据上传到当前中枢；关闭后仍可保留本地配置。"><Toggle checked={config.cloudSyncEnabled} onChange={(checked) => void updateLocalConfig({ cloudSyncEnabled: checked })} label="上传到中枢" disabled={mutationPending} /></SettingRow></div>
       </Surface>
       <Surface className="workspace-collection-surface">
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">上报数据</span><h3>选择 Agent 采集内容</h3></div><span className="workspace-caption">已选 {selectedMetrics.length} 项</span></div>
-        <p className="workspace-surface__description">只采集并上报你勾选的指标；未选择的指标不会进入本机采集队列。完成选择后点击一次保存。</p>
+        <p className="workspace-surface__description">按勾选项采集并上报指标；启用某个硬件探针时，Agent 可能自动补齐该探针运行所需的依赖指标。完成选择后点击一次保存。</p>
         <div className="workspace-metric-option-grid">{metricGroups.map((group) => <div className="workspace-metric-option-group" key={group.label}><strong>{group.label}</strong>{group.items.map((item) => <label className="workspace-check-row" key={item.key}><input type="checkbox" checked={selectedMetrics.includes(item.key)} onChange={() => toggleMetric(item.key)} /><span>{item.label}</span></label>)}</div>)}</div>
-        <div className="workspace-probe-config"><div className="workspace-probe-config__header"><div><strong>硬件探针</strong><span>先启用探针来源，再在下方决定每个实例是否上报。</span></div></div>{supportedProbePlans.map((plan) => { const selection = probeSelections.find((item) => item.target === plan.target); const providers = plan.providers.filter((provider): provider is AgentProbeProvider => provider in probeProviderLabels); return <div className="workspace-probe-row" key={plan.target}><div><strong>{probeTargetLabels[plan.target]}</strong><small>{selection?.enabled === false ? "已停用" : "已启用"}</small></div><select className="workspace-select workspace-select--small" value={selection?.provider ?? plan.default} onChange={(event) => updateProbe(plan.target, { provider: event.target.value as AgentProbeProvider })}>{providers.map((provider) => <option value={provider} key={provider}>{probeProviderLabels[provider]}</option>)}</select><Toggle checked={selection?.enabled ?? true} onChange={(enabled) => updateProbe(plan.target, { enabled })} label={`${probeTargetLabels[plan.target]} 探针`} /></div>; })}</div>
-        <div className="workspace-form__actions"><Button variant="primary" onClick={saveCollectionConfig} disabled={refreshing}>保存采集配置</Button><Button variant="quiet" onClick={() => void cloudPush()} disabled={refreshing}>同步到中枢</Button></div>
+        <div className="workspace-probe-config"><div className="workspace-probe-config__header"><div><strong>硬件探针</strong><span>先启用探针来源，再在下方决定每个实例是否上报。</span></div></div>{supportedProbePlans.map((plan) => { const selection = probeSelections.find((item) => item.target === plan.target); const providers = plan.providers.filter((provider): provider is AgentProbeProvider => provider in probeProviderLabels); const selectedProvider = selection?.provider && providers.includes(selection.provider) ? selection.provider : providers.includes(plan.default as AgentProbeProvider) ? plan.default as AgentProbeProvider : providers[0]; return <div className="workspace-probe-row" key={plan.target}><div><strong>{probeTargetLabels[plan.target]}</strong><small>{selection?.enabled === false ? "已停用" : "已启用"}</small></div><select className="workspace-select workspace-select--small" value={selectedProvider ?? "disabled"} onChange={(event) => updateProbe(plan.target, { provider: event.target.value as AgentProbeProvider })} disabled={!providers.length || mutationPending}>{providers.map((provider) => <option value={provider} key={provider}>{probeProviderLabels[provider]}</option>)}</select><Toggle checked={selection?.enabled ?? true} onChange={(enabled) => updateProbe(plan.target, { enabled })} label={`${probeTargetLabels[plan.target]} 探针`} disabled={mutationPending} /></div>; })}</div>
+        <div className="workspace-form__actions"><Button variant="primary" onClick={saveCollectionConfig} disabled={refreshing || mutationPending}>保存采集配置</Button><Button variant="quiet" onClick={() => void cloudPush()} disabled={refreshing || mutationPending}>同步到中枢</Button></div>
       </Surface>
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">检测结果</span><h3>已发现硬件</h3><p className="workspace-surface__description">关闭某个实例后立即停止上报并写入本机配置；指标和探针来源仍需点击“保存采集配置”。</p></div><span className="workspace-caption">{detectedGroups.reduce((count, group) => count + group.instances.length, 0)} 个实例</span></div>
-        {detectedGroups.length ? <div className="workspace-detected-list">{detectedGroups.map((group) => <div className="workspace-detected-group" key={group.target}><strong>{group.label}</strong>{group.instances.map((instance) => { const enabled = isInstanceEnabled(group.target, instance.id, instance.enabled); return <div className="workspace-detected-row" key={instance.id}><div className="workspace-detected-row__identity"><strong>{instance.name}</strong>{instance.subtitle && <small>{instance.subtitle}</small>}</div><div className="workspace-detected-row__control"><small className={enabled ? "is-enabled" : "is-disabled"}>{enabled ? "上报中" : "不上传"}</small><Toggle checked={enabled} onChange={(checked) => toggleDetectedInstance(group.target, instance.id, checked)} label={`${instance.name} 上报`} /></div></div>; })}</div>)}</div> : <div className="workspace-muted-block">尚未检测到硬件探针，请点击“重新检测硬件”。</div>}
+        {detectedGroups.length ? <div className="workspace-detected-list">{detectedGroups.map((group) => <div className="workspace-detected-group" key={group.target}><strong>{group.label}</strong>{group.instances.map((instance) => { const enabled = isInstanceEnabled(group.target, instance.id, instance.enabled); return <div className="workspace-detected-row" key={instance.id}><div className="workspace-detected-row__identity"><strong>{instance.name}</strong>{instance.subtitle && <small>{instance.subtitle}</small>}<InstanceMetricOverride target={group.target} instanceId={instance.id} globalMetrics={selectedMetrics} override={instanceMetricConfig[instance.id]} onChange={(value) => updateInstanceMetricConfig(instance.id, value)} disabled={mutationPending} /></div><div className="workspace-detected-row__control"><small className={enabled ? "is-enabled" : "is-disabled"}>{enabled ? "上报中" : "不上传"}</small><Toggle checked={enabled} onChange={(checked) => toggleDetectedInstance(group.target, instance.id, checked)} label={`${instance.name} 上报`} disabled={mutationPending} /></div></div>; })}</div>)}</div> : <div className="workspace-muted-block">尚未检测到硬件探针，请点击“重新检测硬件”。</div>}
       </Surface>
     </div>
   );
@@ -2259,7 +2873,7 @@ function ShortcutSettings() {
 
 function AboutSettings() {
   const { snapshot, openExternal } = useWorkspace();
-  return <Surface><div className="workspace-about"><div className="workspace-about__mark-wrap"><img className="workspace-about__mark-img" src={appIcon} alt="观澜" /></div><h3>观澜设备状态控制台</h3><p>面向本机 Agent 和接入中枢的状态工作区。</p><div className="workspace-detail-list"><SummaryRow label="版本" value={snapshot?.update?.currentVersion ?? "开发版本"} /><SummaryRow label="发布通道" value={snapshot?.update?.currentChannel ?? "测试"} /></div><div className="workspace-form__actions"><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor")}><Icon name="external" size={15} />项目主页</Button><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor/issues")}><Icon name="external" size={15} />报告问题</Button></div></div></Surface>;
+  return <Surface><div className="workspace-about"><div className="workspace-about__mark-wrap"><img className="workspace-about__mark-img" src={appIconSrc} alt="观澜" /></div><h3>观澜设备状态控制台</h3><p>面向本机 Agent 和接入中枢的状态工作区。</p><div className="workspace-detail-list"><SummaryRow label="版本" value={snapshot?.update?.currentVersion ?? "开发版本"} /><SummaryRow label="发布通道" value={snapshot?.update?.currentChannel ?? "测试"} /></div><div className="workspace-form__actions"><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor")}><Icon name="external" size={15} />项目主页</Button><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor/issues")}><Icon name="external" size={15} />报告问题</Button></div></div></Surface>;
 }
 
 function LoadingSurface() {
@@ -2284,17 +2898,134 @@ function RouteView() {
   return <OverviewPage />;
 }
 
+function WorkspaceBottomNav() {
+  const { route, navigate, refresh, refreshing, mutationPending, setCommandOpen, setSidebarCollapsed, sidebarCollapsed } = useWorkspace();
+
+  const scrollToTop = () => {
+    const mainContent = document.getElementById("workspace-main-content");
+    if (mainContent) {
+      mainContent.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  return (
+    <nav className="workspace-bottom-nav" aria-label="快捷操作栏">
+      <button
+        type="button"
+        className={`workspace-bottom-nav__item${route.kind === "overview" ? " is-active" : ""}`}
+        onClick={() => navigate({ kind: "overview" })}
+        title="返回总览"
+      >
+        <Icon name="overview" size={18} />
+        <span>总览</span>
+      </button>
+
+      <button
+        type="button"
+        className={`workspace-bottom-nav__item${!sidebarCollapsed ? " is-active" : ""}`}
+        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+        title="切换设备列表"
+      >
+        <Icon name="device" size={18} />
+        <span>设备</span>
+      </button>
+
+      <button
+        type="button"
+        className="workspace-bottom-nav__item"
+        onClick={() => void refresh()}
+        disabled={refreshing || mutationPending}
+        title="刷新状态"
+      >
+        <span className={`workspace-refresh-icon${refreshing ? " is-spinning" : ""}`}>
+          <Icon name="refresh" size={18} />
+        </span>
+        <span>{refreshing ? "更新中" : mutationPending ? "保存中" : "刷新"}</span>
+      </button>
+
+      <button
+        type="button"
+        className="workspace-bottom-nav__item"
+        onClick={() => setCommandOpen(true)}
+        title="搜索设备与命令"
+      >
+        <Icon name="search" size={18} />
+        <span>搜索</span>
+      </button>
+
+      <button
+        type="button"
+        className="workspace-bottom-nav__item"
+        onClick={scrollToTop}
+        title="返回顶部"
+      >
+        <Icon name="chevronUp" size={18} />
+        <span>置顶</span>
+      </button>
+    </nav>
+  );
+}
+
 function WorkspaceFrame() {
-  const { sidebarCollapsed } = useWorkspace();
+  const { sidebarCollapsed, setSidebarCollapsed, capabilities } = useWorkspace();
   const [sidebarPeek, setSidebarPeek] = useState(false);
+  const edgeSwipeRef = useRef<{ pointerId: number; startX: number } | null>(null);
   useEffect(() => {
     if (!sidebarCollapsed) setSidebarPeek(false);
   }, [sidebarCollapsed]);
-  return <div className={clsx("workspace-root", sidebarCollapsed && "is-sidebar-collapsed", sidebarPeek && "is-sidebar-peek")}><WindowTitleBar /><WorkspaceSidebar sidebarPeek={sidebarPeek} onSidebarLeave={() => setSidebarPeek(false)} /><div className="workspace-main"><TopBar /><main className="workspace-content" id="workspace-main-content"><RouteView /></main></div>{sidebarCollapsed && <button className="workspace-sidebar-edge-trigger" type="button" aria-label="展开侧边栏" onMouseEnter={() => setSidebarPeek(true)} onPointerEnter={() => setSidebarPeek(true)} />}<CommandPalette /><ShellNotice /></div>;
+  const handleEdgePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    edgeSwipeRef.current = { pointerId: event.pointerId, startX: event.clientX };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const handleEdgePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const gesture = edgeSwipeRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (event.clientX - gesture.startX > 24) {
+      event.preventDefault();
+      edgeSwipeRef.current = null;
+      setSidebarCollapsed(false);
+    }
+  };
+  const handleEdgePointerEnd = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (edgeSwipeRef.current?.pointerId === event.pointerId) edgeSwipeRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+  return (
+    <div className={clsx("workspace-root", !capabilities.canControlNativeWindow && "is-web", sidebarCollapsed && "is-sidebar-collapsed", sidebarPeek && "is-sidebar-peek")}>
+      {capabilities.canControlNativeWindow && <WindowTitleBar />}
+      <WorkspaceSidebar sidebarPeek={sidebarPeek} onSidebarLeave={() => setSidebarPeek(false)} />
+      {!sidebarCollapsed && <div className="workspace-sidebar-backdrop" onPointerDown={() => setSidebarCollapsed(true)} aria-hidden="true" />}
+      <div className="workspace-main">
+        <TopBar />
+        <main className="workspace-content" id="workspace-main-content">
+          <RouteView />
+        </main>
+      </div>
+      {sidebarCollapsed && (
+        <button
+          className="workspace-sidebar-edge-trigger"
+          type="button"
+          aria-label="展开侧边栏"
+          onClick={() => setSidebarCollapsed(false)}
+          onMouseEnter={() => setSidebarPeek(true)}
+          onPointerEnter={() => setSidebarPeek(true)}
+          onPointerDown={handleEdgePointerDown}
+          onPointerMove={handleEdgePointerMove}
+          onPointerUp={handleEdgePointerEnd}
+          onPointerCancel={handleEdgePointerEnd}
+          onLostPointerCapture={handleEdgePointerEnd}
+        />
+      )}
+      <WorkspaceBottomNav />
+      <CommandPalette />
+      <ShellNotice />
+    </div>
+  );
 }
 
-export function WorkspaceApp() {
-  return <WorkspaceProvider><WorkspaceFrame /></WorkspaceProvider>;
+export function WorkspaceApp({ adapter, initialRoute }: { adapter: ConsoleAdapter; initialRoute?: import("./WorkspaceContext").WorkspaceRoute }) {
+  return <WorkspaceProvider adapter={adapter} initialRoute={initialRoute}><WorkspaceFrame /></WorkspaceProvider>;
 }
 
 export default WorkspaceApp;

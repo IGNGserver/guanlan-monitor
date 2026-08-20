@@ -100,6 +100,7 @@ export class AgentManager {
     const endpoint: Record<DesktopAgentControlAction, string> = {
       start: "/api/control/start",
       stop: "/api/control/stop",
+      restart: "/api/control/restart",
       "check-connection": "/api/control/check-connection",
       "detect-probes": "/api/probes/detect"
     };

@@ -1,6 +1,6 @@
 {
   "name": "@dsc/web",
-  "version": "0.2.192",
+  "version": "0.2.194",
   "private": true,
   "scripts": {
     "build": "next build",
@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@dsc/shared": "workspace:*",
+    "@dsc/console-ui": "workspace:*",
     "clsx": "^2.1.1",
     "next": "15.5.2",
     "react": "19.1.1",

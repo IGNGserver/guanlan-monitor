@@ -1,6 +1,6 @@
-import { HomeClient } from "../../../components/home-client";
+import { UnifiedConsole } from "../../../components/unified-console";
 
 export default async function DevicePage({ params }: { params: Promise<{ deviceId: string }> }) {
   const { deviceId } = await params;
-  return <HomeClient initialDeviceId={decodeURIComponent(deviceId)} />;
+  return <UnifiedConsole initialDeviceId={decodeURIComponent(deviceId)} />;
 }

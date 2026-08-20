@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DesktopAgentControlAction,
   DesktopConfigPatch,
@@ -12,16 +12,11 @@ import type {
   WidgetLayoutSaveRequest,
   WidgetLayoutSync
 } from "@dsc/shared";
-import { dscBridge } from "../../renderer/services/dscBridge";
-import { BridgeGuanlanDataAdapter } from "../services/bridgeAdapter";
-import { MockGuanlanDataAdapter } from "../services/mockAdapter";
-import type { IGuanlanDataAdapter } from "../services/adapter";
+import type { ConsoleAdapter, WindowMaterial, WindowMaterialCapabilities } from "../services/adapter";
+import { fallbackWindowMaterialCapabilities } from "../services/adapter";
 import { confirmDiscardWidgetLayoutDraft } from "./WidgetLayout";
-import {
-  createFallbackWindowMaterialCapabilities,
-  type WindowMaterial,
-  type WindowMaterialCapabilities
-} from "../../window-material";
+import { getResponsiveTier, getScreenOrientation, type ResponsiveTier, type ScreenOrientation } from "../helpers/layout";
+import { detectTouchSupport, resolveInteractionScale, type InteractionScaleSetting, type PointerType } from "../helpers/density";
 
 export type SettingsSection =
   | "general"
@@ -57,6 +52,7 @@ interface WorkspaceContextValue {
   snapshot: DesktopSnapshot | null;
   loading: boolean;
   refreshing: boolean;
+  mutationPending: boolean;
   error: string | null;
   notice: { tone: "success" | "error" | "info"; text: string } | null;
   hubs: HubViewModel[];
@@ -79,27 +75,37 @@ interface WorkspaceContextValue {
   windowMaterial: WindowMaterial;
   setWindowMaterial: (material: WindowMaterial) => void;
   windowMaterialCapabilities: WindowMaterialCapabilities | null;
-  density: "comfortable" | "compact";
-  setDensity: (density: "comfortable" | "compact") => void;
+  density: InteractionScaleSetting;
+  setDensity: (density: InteractionScaleSetting) => void;
   refreshInterval: 5 | 10 | 30;
   setRefreshInterval: (interval: 5 | 10 | 30) => void;
   refresh: () => Promise<void>;
   updateLocalConfig: (patch: DesktopConfigPatch) => Promise<boolean>;
-  controlAgent: (action: DesktopAgentControlAction | "restart") => Promise<boolean>;
+  controlAgent: (action: DesktopAgentControlAction) => Promise<boolean>;
   saveHubConnection: (serverUrl: string, accessKey: string) => Promise<boolean>;
   updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => Promise<boolean>;
   cloudPush: () => Promise<boolean>;
   getWidgetLayout: (request: WidgetLayoutRequest) => Promise<WidgetLayoutSync>;
   saveWidgetLayout: (request: WidgetLayoutSaveRequest) => Promise<WidgetLayoutSync>;
+  saveFanNote: (deviceId: string, fanId: string, note: string) => Promise<boolean>;
   deleteInstance: (deviceId: string) => Promise<boolean>;
   reorderInstances: (deviceIds: string[]) => Promise<boolean>;
   minimizeWindow: () => Promise<void>;
   toggleMaximizeWindow: () => Promise<boolean>;
   closeWindow: () => Promise<void>;
+  adapterDragStart: (screenX: number, screenY: number) => void;
+  adapterDragMove: (screenX: number, screenY: number) => void;
+  adapterDragEnd: () => void;
   login: (accessKey: string) => Promise<void>;
   logout: () => Promise<void>;
+  disconnectAgent: () => Promise<boolean>;
   openExternal: (url: string) => Promise<void>;
   isPreview: boolean;
+  capabilities: ConsoleAdapter["capabilities"];
+  orientation: "portrait" | "landscape";
+  isTouch: boolean;
+  inputMode: PointerType;
+  layoutTier: "xs" | "sm" | "md" | "lg" | "xl";
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -150,9 +156,9 @@ function getStoredWindowMaterial(): WindowMaterial {
   return value === "mica" || value === "acrylic" ? value : "guanlan";
 }
 
-function getStoredDensity(): "comfortable" | "compact" {
-  const value = typeof window === "undefined" ? "comfortable" : localStorage.getItem("dsc-density");
-  return value === "compact" ? "compact" : "comfortable";
+function getStoredDensity(): InteractionScaleSetting {
+  const value = typeof window === "undefined" ? "auto" : localStorage.getItem("dsc-density");
+  return value === "compact" || value === "touch" || value === "comfortable" ? value : "auto";
 }
 
 function getStoredRefreshInterval(): 5 | 10 | 30 {
@@ -173,20 +179,20 @@ function formatError(error: unknown, fallback: string): string {
   return fallback;
 }
 
-export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const isPreview = import.meta.env.DEV && import.meta.env.VITE_DSC_UI_PREVIEW === "true";
-  const adapter = useMemo<IGuanlanDataAdapter>(
-    () => (isPreview ? new MockGuanlanDataAdapter() : new BridgeGuanlanDataAdapter()),
-    [isPreview]
-  );
-  const [route, setRoute] = useState<WorkspaceRoute>(routeFromHash);
+export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute?: WorkspaceRoute; children: React.ReactNode }> = ({ adapter, initialRoute, children }) => {
+  const isPreview = false;
+  const [route, setRoute] = useState<WorkspaceRoute>(() => initialRoute ?? routeFromHash());
   const [returnRoute, setReturnRoute] = useState<WorkspaceRoute>(defaultRoute);
   const [sidebarCollapsed, setSidebarCollapsedState] = useState<boolean>(() => {
-    return typeof window !== "undefined" && localStorage.getItem("dsc-sidebar-collapsed") === "true";
+    if (typeof window === "undefined") return false;
+    const stored = localStorage.getItem("dsc-sidebar-collapsed");
+    return stored === "true";
   });
   const [snapshot, setSnapshot] = useState<DesktopSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [mutationPending, setMutationPending] = useState(false);
+  const pendingMutationsRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<WorkspaceContextValue["notice"]>(null);
   const [metricsWindow, setMetricsWindow] = useState<MetricWindow>("5m");
@@ -197,9 +203,53 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [windowMaterial, setWindowMaterialState] = useState<WindowMaterial>(getStoredWindowMaterial);
   const [windowMaterialCapabilities, setWindowMaterialCapabilities] = useState<WindowMaterialCapabilities | null>(null);
   const [windowMaterialReady, setWindowMaterialReady] = useState(false);
-  const [density, setDensityState] = useState<"comfortable" | "compact">(getStoredDensity);
+  const [density, setDensityState] = useState<InteractionScaleSetting>(getStoredDensity);
   const [refreshInterval, setRefreshIntervalState] = useState<5 | 10 | 30>(getStoredRefreshInterval);
   const [instanceType, setInstanceType] = useState<InstanceType>("device");
+  // Keep the first render deterministic for the remote Web app. The actual
+  // viewport and input device are applied immediately after mount, which also
+  // avoids rendering a different tree during hydration on portrait phones.
+  const [orientation, setOrientation] = useState<ScreenOrientation>("landscape");
+  const [isTouch, setIsTouch] = useState(false);
+  const [inputMode, setInputMode] = useState<PointerType>("mouse");
+  const [layoutTier, setLayoutTier] = useState<ResponsiveTier>("lg");
+  const pointerSeenRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleResize = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const nextOrientation = getScreenOrientation(w, h);
+      const nextTier = getResponsiveTier(w);
+      const nextTouch = detectTouchSupport();
+      setOrientation(nextOrientation);
+      setLayoutTier(nextTier);
+      setIsTouch(nextTouch);
+      if (!pointerSeenRef.current) setInputMode(nextTouch ? "touch" : "mouse");
+      if (localStorage.getItem("dsc-sidebar-collapsed") == null && w <= 820) {
+        setSidebarCollapsedState(true);
+      }
+      document.documentElement.dataset.dscOrientation = nextOrientation;
+      document.documentElement.dataset.dscTier = nextTier;
+      document.documentElement.dataset.dscTouchSupport = nextTouch ? "true" : "false";
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("orientationchange", handleResize);
+    const handlePointerDown = (event: PointerEvent) => {
+      pointerSeenRef.current = true;
+      const nextPointer: PointerType = event.pointerType === "touch" || event.pointerType === "pen" ? event.pointerType : "mouse";
+      setInputMode(nextPointer);
+      document.documentElement.dataset.dscPointer = nextPointer;
+    };
+    document.addEventListener("pointerdown", handlePointerDown, { passive: true });
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("orientationchange", handleResize);
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, []);
 
   const selectedDeviceId = route.kind === "device" ? route.deviceId : snapshot?.selectedDeviceId ?? null;
 
@@ -223,6 +273,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const fetchSnapshot = useCallback(
     async (forceRefresh: boolean, announce = forceRefresh) => {
+      // Guard with the ref as well as the rendered flag. A mutation can start
+      // and a timer can fire before React commits the next render; the ref
+      // closes that small window and prevents a stale refresh from overwriting
+      // the mutation result.
+      if (pendingMutationsRef.current > 0) return;
       const request = {
         selectedDeviceId: selectedDeviceId ?? undefined,
         metricWindow: metricsWindow,
@@ -285,23 +340,31 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
 
     root.dataset.dscTheme = theme;
-    root.dataset.dscDensity = density;
+    root.dataset.dscDensity = resolveInteractionScale(density, inputMode !== "mouse");
+    root.dataset.dscDensitySetting = density;
+    root.dataset.dscPointer = inputMode;
+    root.dataset.dscTouchSupport = isTouch ? "true" : "false";
     root.dataset.dscMaterial = windowMaterialReady ? windowMaterial : "guanlan";
     applyTheme();
     if (theme !== "system") return;
 
     mediaQuery.addEventListener("change", applyTheme);
     return () => mediaQuery.removeEventListener("change", applyTheme);
-  }, [density, theme, windowMaterial, windowMaterialReady]);
+  }, [density, inputMode, isTouch, theme, windowMaterial, windowMaterialReady]);
 
   useEffect(() => {
     let cancelled = false;
     const syncWindowMaterial = async () => {
       try {
-        const capabilities = await dscBridge.getWindowMaterialCapabilities();
+        if (!adapter.getWindowMaterialCapabilities || !adapter.setWindowMaterial) {
+          setWindowMaterialCapabilities(fallbackWindowMaterialCapabilities());
+          setWindowMaterialReady(true);
+          return;
+        }
+        const capabilities = await adapter.getWindowMaterialCapabilities();
         if (cancelled) return;
         setWindowMaterialCapabilities(capabilities);
-        const applied = await dscBridge.setWindowMaterial(windowMaterial);
+        const applied = await adapter.setWindowMaterial(windowMaterial);
         if (cancelled) return;
         setWindowMaterialCapabilities(applied);
         if (applied.activeMaterial !== windowMaterial) {
@@ -311,7 +374,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setWindowMaterialReady(true);
       } catch {
         if (cancelled) return;
-        setWindowMaterialCapabilities(createFallbackWindowMaterialCapabilities());
+        setWindowMaterialCapabilities(fallbackWindowMaterialCapabilities());
         setWindowMaterialState("guanlan");
         localStorage.setItem("dsc-window-material", "guanlan");
         setWindowMaterialReady(true);
@@ -319,7 +382,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
     void syncWindowMaterial();
     return () => { cancelled = true; };
-  }, [windowMaterial]);
+  }, [adapter, windowMaterial]);
 
   useEffect(() => {
     if (!notice) return;
@@ -373,7 +436,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     localStorage.setItem("dsc-window-material", nextMaterial);
   }, []);
 
-  const setDensity = useCallback((nextDensity: "comfortable" | "compact") => {
+  const setDensity = useCallback((nextDensity: InteractionScaleSetting) => {
     setDensityState(nextDensity);
     localStorage.setItem("dsc-density", nextDensity);
   }, []);
@@ -385,6 +448,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const runMutation = useCallback(
     async (action: () => Promise<DesktopSnapshot>, successText: string, errorText: string): Promise<boolean> => {
+      pendingMutationsRef.current += 1;
+      setMutationPending(true);
       try {
         const nextSnapshot = await action();
         setSnapshot(nextSnapshot);
@@ -393,6 +458,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       } catch (mutationError) {
         setNotice({ tone: "error", text: `${errorText}: ${formatError(mutationError, "未知错误")}` });
         return false;
+      } finally {
+        pendingMutationsRef.current = Math.max(0, pendingMutationsRef.current - 1);
+        if (pendingMutationsRef.current === 0) setMutationPending(false);
       }
     },
     []
@@ -400,18 +468,19 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const refresh = useCallback(() => fetchSnapshot(true), [fetchSnapshot]);
   const updateLocalConfig = useCallback(
-    (patch: DesktopConfigPatch) => runMutation(() => adapter.updateLocalConfig(patch), "本机配置已保存", "保存失败"),
+    (patch: DesktopConfigPatch) => runMutation(
+      () => adapter.updateLocalConfig ? adapter.updateLocalConfig(patch) : Promise.reject(new Error("local_agent_unavailable")),
+      "本机配置已保存",
+      "保存失败"
+    ),
     [adapter, runMutation]
   );
   const controlAgent = useCallback(
-    async (action: DesktopAgentControlAction | "restart") => {
-      if (action === "restart") {
-        const stopped = await runMutation(() => adapter.controlAgent("stop"), "Agent 已停止", "停止失败");
-        if (!stopped) return false;
-        return runMutation(() => adapter.controlAgent("start"), "Agent 已重启", "启动失败");
-      }
-      return runMutation(() => adapter.controlAgent(action), "Agent 操作已完成", "Agent 操作失败");
-    },
+    (action: DesktopAgentControlAction) => runMutation(
+        () => adapter.controlAgent ? adapter.controlAgent(action) : Promise.reject(new Error("local_agent_unavailable")),
+        action === "restart" ? "Agent 已重启" : "Agent 操作已完成",
+        action === "restart" ? "Agent 重启失败" : "Agent 操作失败"
+      ),
     [adapter, runMutation]
   );
   const saveHubConnection = useCallback(
@@ -419,12 +488,31 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     [adapter, runMutation]
   );
   const updateStartupSettings = useCallback(
-    (settings: Partial<DesktopStartupSettings>) => runMutation(() => adapter.updateStartupSettings(settings), "启动设置已保存", "启动设置保存失败"),
+    (settings: Partial<DesktopStartupSettings>) => runMutation(
+      () => adapter.updateStartupSettings ? adapter.updateStartupSettings(settings) : Promise.reject(new Error("startup_settings_unavailable")),
+      "启动设置已保存",
+      "启动设置保存失败"
+    ),
     [adapter, runMutation]
   );
-  const cloudPush = useCallback(() => runMutation(() => adapter.cloudPush(), "配置已同步到中枢", "同步失败"), [adapter, runMutation]);
+  const cloudPush = useCallback(
+    () => runMutation(
+      () => adapter.cloudPush ? adapter.cloudPush() : Promise.reject(new Error("cloud_push_unavailable")),
+      "配置已同步到中枢",
+      "同步失败"
+    ),
+    [adapter, runMutation]
+  );
   const getWidgetLayout = useCallback((request: WidgetLayoutRequest) => adapter.getWidgetLayout(request), [adapter]);
   const saveWidgetLayout = useCallback((request: WidgetLayoutSaveRequest) => adapter.saveWidgetLayout(request), [adapter]);
+  const saveFanNote = useCallback(
+    (deviceId: string, fanId: string, note: string) => runMutation(
+      () => adapter.saveFanNote(deviceId, fanId, note),
+      "风扇备注已保存",
+      "保存风扇备注失败"
+    ),
+    [adapter, runMutation]
+  );
   const deleteInstance = useCallback(
     (deviceId: string) => runMutation(() => adapter.deleteInstance(deviceId), "实例已删除；下次上报后会重新显示", "删除实例失败"),
     [adapter, runMutation]
@@ -433,29 +521,37 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     (deviceIds: string[]) => runMutation(() => adapter.reorderInstances(deviceIds), "实例顺序已保存", "保存排序失败"),
     [adapter, runMutation]
   );
-  const minimizeWindow = useCallback(() => adapter.windowMinimize(), [adapter]);
-  const toggleMaximizeWindow = useCallback(() => adapter.windowToggleMaximize(), [adapter]);
-  const closeWindow = useCallback(() => adapter.windowClose(), [adapter]);
+  const minimizeWindow = useCallback(() => adapter.windowMinimize?.() ?? Promise.resolve(), [adapter]);
+  const toggleMaximizeWindow = useCallback(() => adapter.windowToggleMaximize?.() ?? Promise.resolve(false), [adapter]);
+  const closeWindow = useCallback(() => adapter.windowClose?.() ?? Promise.resolve(), [adapter]);
+  const adapterDragStart = useCallback((screenX: number, screenY: number) => adapter.windowDragStart?.(screenX, screenY), [adapter]);
+  const adapterDragMove = useCallback((screenX: number, screenY: number) => adapter.windowDragMove?.(screenX, screenY), [adapter]);
+  const adapterDragEnd = useCallback(() => adapter.windowDragEnd?.(), [adapter]);
   const login = useCallback(async (accessKey: string) => {
-    if (isPreview) return;
     try {
-      const nextSnapshot = await dscBridge.login(accessKey);
+      const nextSnapshot = await adapter.login(accessKey);
       setSnapshot(nextSnapshot);
       setNotice({ tone: "success", text: "已连接中枢" });
     } catch (loginError) {
       setNotice({ tone: "error", text: `连接失败：${formatError(loginError, "认证失败")}` });
     }
-  }, [isPreview]);
-  const logout = useCallback(async () => {
-    if (isPreview) return;
-    try {
-      const nextSnapshot = await dscBridge.logout();
-      setSnapshot(nextSnapshot);
-      setNotice({ tone: "info", text: "已断开中枢" });
-    } catch (logoutError) {
-      setNotice({ tone: "error", text: `断开失败：${formatError(logoutError, "未知错误")}` });
-    }
-  }, [isPreview]);
+  }, [adapter]);
+  const logout = useCallback(
+    () => runMutation(
+      () => adapter.logout(),
+      "已退出桌面查看；本机 Agent 仍可继续上报",
+      "退出查看失败"
+    ).then(() => undefined),
+    [adapter, runMutation]
+  );
+  const disconnectAgent = useCallback(
+    () => runMutation(
+      () => adapter.disconnectAgent(),
+      "已停止本机上报并清除凭据",
+      "停止上报失败"
+    ),
+    [adapter, runMutation]
+  );
 
   const allDevices = snapshot?.devices ?? [];
   const devices = useMemo(
@@ -475,7 +571,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       : snapshot?.source === "empty"
         ? "unknown"
         : "offline";
-  const hubs = useMemo<HubViewModel[]>(() => [{ id: "primary", name: "中枢", endpoint, devices, state: hubState }], [devices, endpoint, hubState]);
+  const hubs = useMemo<HubViewModel[]>(() => [{ id: "primary", name: "中枢", endpoint, devices: allDevices, state: hubState }], [allDevices, endpoint, hubState]);
   const selectedDevice = allDevices.find((device) => device.deviceId === selectedDeviceId) ?? null;
 
   useEffect(() => {
@@ -493,6 +589,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     snapshot,
     loading,
     refreshing,
+    mutationPending,
     error,
     notice,
     hubs,
@@ -527,15 +624,25 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     cloudPush,
     getWidgetLayout,
     saveWidgetLayout,
+    saveFanNote,
     deleteInstance,
     reorderInstances,
     minimizeWindow,
     toggleMaximizeWindow,
     closeWindow,
+    adapterDragStart,
+    adapterDragMove,
+    adapterDragEnd,
     login,
     logout,
+    disconnectAgent,
     openExternal: (url: string) => adapter.openExternal(url),
-    isPreview
+    isPreview,
+    capabilities: adapter.capabilities,
+    orientation,
+    isTouch,
+    inputMode,
+    layoutTier
   };
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

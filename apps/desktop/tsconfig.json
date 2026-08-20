@@ -10,7 +10,9 @@
     "baseUrl": "../..",
     "paths": {
       "@dsc/shared": ["packages/shared/src/index.ts"],
-      "@dsc/shared/*": ["packages/shared/src/*"]
+      "@dsc/shared/*": ["packages/shared/src/*"],
+      "@dsc/console-ui": ["packages/console-ui/src/index.ts"],
+      "@dsc/console-ui/*": ["packages/console-ui/src/*"]
     },
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,

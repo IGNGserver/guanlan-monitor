@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import test from "node:test";
-import { getLayoutClass } from "./layout.ts";
-import { resolveInteractionScale, detectDefaultInteractionScale } from "./density.ts";
+import { getLayoutClass, getScreenOrientation, getResponsiveTier } from "./layout.ts";
+import { resolveInteractionScale, detectDefaultInteractionScale, detectTouchSupport } from "./density.ts";
 import { resolveEffectiveTheme } from "./theme.ts";
 import { normalizeMetricsResponse, formatBytes } from "./metricsNormalizer.ts";
 import type { MetricsResponse } from "@dsc/shared";
@@ -18,6 +18,27 @@ test("getLayoutClass correctly categorizes window widths at key breakpoints", ()
   assert.strictEqual(getLayoutClass(1200), "large");
   assert.strictEqual(getLayoutClass(1440), "large");
   assert.strictEqual(getLayoutClass(1920), "large");
+});
+
+test("getScreenOrientation and getResponsiveTier handle portrait and extreme breakpoints", () => {
+  assert.strictEqual(getScreenOrientation(1920, 1080), "landscape");
+  assert.strictEqual(getScreenOrientation(1080, 1920), "portrait");
+  assert.strictEqual(getScreenOrientation(360, 800), "portrait");
+  assert.strictEqual(getScreenOrientation(800, 360), "landscape");
+
+  assert.strictEqual(getResponsiveTier(360), "xs");
+  assert.strictEqual(getResponsiveTier(479), "xs");
+  assert.strictEqual(getResponsiveTier(480), "sm");
+  assert.strictEqual(getResponsiveTier(767), "sm");
+  assert.strictEqual(getResponsiveTier(768), "md");
+  assert.strictEqual(getResponsiveTier(1023), "md");
+  assert.strictEqual(getResponsiveTier(1024), "lg");
+  assert.strictEqual(getResponsiveTier(1439), "lg");
+  assert.strictEqual(getResponsiveTier(1440), "xl");
+});
+
+test("detectTouchSupport runs safely without window environment", () => {
+  assert.strictEqual(typeof detectTouchSupport(), "boolean");
 });
 
 test("density helpers resolve correctly and respect overrides", () => {

@@ -21,6 +21,7 @@ const bridge: DesktopRendererBridge & WindowMaterialBridge = {
   saveHubConnection: (serverUrl: string, accessKey: string) => ipcRenderer.invoke(IPC_CHANNELS.saveHubConnection, serverUrl, accessKey),
   login: (accessKey: string) => ipcRenderer.invoke(IPC_CHANNELS.login, accessKey),
   logout: () => ipcRenderer.invoke(IPC_CHANNELS.logout),
+  disconnectAgent: () => ipcRenderer.invoke(IPC_CHANNELS.disconnectAgent),
   cloudPush: () => ipcRenderer.invoke(IPC_CHANNELS.cloudPush),
   getWidgetLayout: (request: WidgetLayoutRequest) => ipcRenderer.invoke(IPC_CHANNELS.getWidgetLayout, request),
   saveWidgetLayout: (request: WidgetLayoutSaveRequest) => ipcRenderer.invoke(IPC_CHANNELS.saveWidgetLayout, request),

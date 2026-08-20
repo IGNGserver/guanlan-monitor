@@ -313,6 +313,7 @@ func main() {
 	mux.HandleFunc("/api/config", s.handleConfig)
 	mux.HandleFunc("/api/control/start", s.handleStart)
 	mux.HandleFunc("/api/control/stop", s.handleStop)
+	mux.HandleFunc("/api/control/restart", s.handleRestart)
 	mux.HandleFunc("/api/control/attach-frontend", s.handleAttachFrontend)
 	mux.HandleFunc("/api/control/check-connection", s.handleConnectionCheck)
 	mux.HandleFunc("/api/control/shutdown", s.handleBackendShutdown)
@@ -721,6 +722,28 @@ func (s *server) handleStop(writer http.ResponseWriter, request *http.Request) {
 	}
 	s.mu.Lock()
 	s.stopCollectorLocked("manual stop")
+	snapshot := s.snapshotLocked()
+	s.mu.Unlock()
+	writeJSON(writer, http.StatusOK, snapshot)
+}
+
+func (s *server) handleRestart(writer http.ResponseWriter, request *http.Request) {
+	if !s.authorizeLocalRequest(writer, request) {
+		return
+	}
+	if request.Method != http.MethodPost {
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.mu.Lock()
+	s.stopCollectorLocked("manual restart")
+	if err := s.startChildLocked(true); err != nil {
+		snapshot := s.snapshotLocked()
+		s.mu.Unlock()
+		writeJSON(writer, http.StatusConflict, map[string]any{"error": err.Error(), "state": snapshot})
+		return
+	}
 	snapshot := s.snapshotLocked()
 	s.mu.Unlock()
 	writeJSON(writer, http.StatusOK, snapshot)
