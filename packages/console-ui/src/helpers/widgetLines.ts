@@ -1,5 +1,5 @@
 import type { MetricsResponse, SamplePoint } from "@dsc/shared";
-import { formatBytes } from "./metricsNormalizer";
+import { formatBytes } from "./metricsNormalizer.ts";
 
 export interface WidgetLine {
   label: string;
