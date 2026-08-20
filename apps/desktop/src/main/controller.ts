@@ -442,9 +442,11 @@ function redactBackendState(state: RawAgentBackendState): DesktopAgentBackendSta
     ...state,
     lastChildLog: scrub(state.lastChildLog),
     lastUploadError: scrub(state.lastUploadError),
+    lastCloudSyncError: scrub(state.lastCloudSyncError),
     lastIssueDetail: scrub(state.lastIssueDetail),
     config: {
       ...state.config,
+      configVersion: state.config.configVersion ?? 1,
       cloudSyncEnabled: state.config.cloudSyncEnabled ?? true,
       dataRecordingEnabled: state.config.dataRecordingEnabled ?? true,
       autoRestartCollector: state.config.autoRestartCollector ?? true,
@@ -453,6 +455,7 @@ function redactBackendState(state: RawAgentBackendState): DesktopAgentBackendSta
       enabledDeviceIds: state.config.enabledDeviceIds ?? {},
       instanceMetricConfig: state.config.instanceMetricConfig ?? {},
       probeSelections: state.config.probeSelections ?? [],
+      virtualization: state.config.virtualization,
       connection: {
         ...connection,
         secretConfigured: Boolean(secret)
@@ -480,6 +483,7 @@ function mergeAgentConfig(current: AgentBackendConfig, patch: DesktopConfigPatch
   const connectionPatch = patch.connection ?? {};
   return {
     ...current,
+    configVersion: patch.configVersion ?? current.configVersion ?? 1,
     // Renderer patches never carry the Agent credential. The combined Hub
     // connection action is the only user-facing path that synchronizes it.
     connection: {

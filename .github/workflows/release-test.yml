@@ -135,7 +135,9 @@ jobs:
           $backend = Join-Path (Get-Location) "release/desktop-agent/device-state-console-agent-backend.exe"
           $configRoot = Join-Path $env:RUNNER_TEMP "device-state-console-release-config"
           New-Item -ItemType Directory -Force -Path $configRoot | Out-Null
-          $process = Start-Process -FilePath $backend -ArgumentList @("--listen", "127.0.0.1:17931", "--bundle-root", (Split-Path $backend), "--config-root", $configRoot, "--local-token", "release-smoke-token") -WindowStyle Hidden -PassThru
+          $tokenFile = Join-Path $configRoot "smoke-token"
+          Set-Content -LiteralPath $tokenFile -Value "release-smoke-token" -NoNewline -Encoding ascii
+          $process = Start-Process -FilePath $backend -ArgumentList @("--listen", "127.0.0.1:17931", "--bundle-root", (Split-Path $backend), "--config-root", $configRoot, "--local-token-file", $tokenFile) -WindowStyle Hidden -PassThru
           try {
             $state = $null
             for ($attempt = 0; $attempt -lt 30; $attempt++) {

@@ -30,6 +30,24 @@ $script = Invoke-WebRequest 'https://github.com/IGNGserver/guanlan-monitor/relea
 常用无界面命令包括 `dsc status`、`dsc doctor`、`dsc config get`、`dsc config set`，
 退出 UI 不会停止后台 Agent；需要停止本地 CLI backend 时执行 `dsc shutdown`。
 
+CLI 与桌面端共用 Agent 配置契约。默认配置文件位于
+`%AppData%/device-state-console/agent-ui.config.json`（Windows）或
+`$XDG_CONFIG_HOME/device-state-console/agent-ui.config.json`（Linux）；可用
+`DSC_CLI_CONFIG_ROOT` 指定目录。TUI 和 `dsc config set` 都支持中枢连接、采样间隔、
+本地记录、云同步、自动启动/重启、全局指标、探针 provider、设备实例开关和实例指标覆盖。
+
+```text
+dsc config validate [--file path]
+dsc config export [--file path]       # 只导出脱敏配置
+dsc config import --file path         # 脱敏 secret 为空时保留当前 secret
+dsc config set --metrics all|none|key1,key2
+dsc config push                       # 重试展示配置同步
+```
+
+`enabledMetrics` 缺省表示兼容旧配置的“全部指标”；显式写成 `[]` 才表示禁用全部指标。
+远程中枢使用 HTTPS；仅 loopback、局域网或 link-local 地址允许 HTTP。访问密钥不会放在
+CLI/backend 的进程参数中，诊断输出、状态接口和导出文件都会脱敏。
+
 ### Windows
 
 **推荐下载 `DeviceStateConsole-Windows-GUI-Setup-v<版本>.exe`。** 这是常规 Windows 安装程序，支持选择安装目录、开始菜单、桌面快捷方式、开机启动、更新、修复和卸载。

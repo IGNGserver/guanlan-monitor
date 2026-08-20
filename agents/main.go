@@ -37,6 +37,7 @@ import (
 const (
 	defaultNormalIntervalSeconds = 30
 	defaultSlowIntervalSeconds   = 30
+	maxSamplingIntervalSeconds   = 86400
 )
 
 const (
@@ -137,23 +138,23 @@ type agentIdentity struct {
 }
 
 type memoryStats struct {
-	TotalBytes     uint64   `json:"totalBytes"`
-	UsedBytes      uint64   `json:"usedBytes"`
-	AvailableBytes uint64   `json:"availableBytes"`
-	CachedBytes    uint64   `json:"cachedBytes"`
-	CommittedBytes uint64   `json:"committedBytes"`
-	CommitLimitBytes uint64 `json:"commitLimitBytes"`
-	SwapTotalBytes uint64   `json:"swapTotalBytes"`
-	SwapUsedBytes  uint64   `json:"swapUsedBytes"`
-	SpeedMHz       *float64 `json:"speedMHz,omitempty"`
-	SlotCount      *int     `json:"slotCount,omitempty"`
-	FormFactor     string   `json:"formFactor,omitempty"`
+	TotalBytes       uint64   `json:"totalBytes"`
+	UsedBytes        uint64   `json:"usedBytes"`
+	AvailableBytes   uint64   `json:"availableBytes"`
+	CachedBytes      uint64   `json:"cachedBytes"`
+	CommittedBytes   uint64   `json:"committedBytes"`
+	CommitLimitBytes uint64   `json:"commitLimitBytes"`
+	SwapTotalBytes   uint64   `json:"swapTotalBytes"`
+	SwapUsedBytes    uint64   `json:"swapUsedBytes"`
+	SpeedMHz         *float64 `json:"speedMHz,omitempty"`
+	SlotCount        *int     `json:"slotCount,omitempty"`
+	FormFactor       string   `json:"formFactor,omitempty"`
 }
 
 type systemStats struct {
-	ProcessCount int    `json:"processCount"`
-	ThreadCount  int    `json:"threadCount"`
-	HandleCount  uint64 `json:"handleCount"`
+	ProcessCount  int    `json:"processCount"`
+	ThreadCount   int    `json:"threadCount"`
+	HandleCount   uint64 `json:"handleCount"`
 	UptimeSeconds uint64 `json:"uptimeSeconds,omitempty"`
 }
 
@@ -311,15 +312,15 @@ type agentProbeSelection struct {
 }
 
 type agentConfigFile struct {
-	Connection           agentConnectionConfig `json:"connection"`
-	Sampling             agentSamplingConfig   `json:"sampling"`
-	EnabledMetrics       []string              `json:"enabledMetrics"`
-	EnabledDeviceIDs     map[string][]string   `json:"enabledDeviceIds"`
-	InstanceMetricConfig map[string][]string   `json:"instanceMetricConfig"`
-	ProbeSelections      []agentProbeSelection `json:"probeSelections"`
+	Connection           agentConnectionConfig      `json:"connection"`
+	Sampling             agentSamplingConfig        `json:"sampling"`
+	EnabledMetrics       *[]string                  `json:"enabledMetrics"`
+	EnabledDeviceIDs     map[string][]string        `json:"enabledDeviceIds"`
+	InstanceMetricConfig map[string][]string        `json:"instanceMetricConfig"`
+	ProbeSelections      []agentProbeSelection      `json:"probeSelections"`
 	Virtualization       *agentVirtualizationConfig `json:"virtualization"`
-	CloudSyncEnabled     bool                  `json:"cloudSyncEnabled"`
-	DataRecordingEnabled *bool                 `json:"dataRecordingEnabled"`
+	CloudSyncEnabled     *bool                      `json:"cloudSyncEnabled"`
+	DataRecordingEnabled *bool                      `json:"dataRecordingEnabled"`
 }
 
 type agentRuntimeConfig struct {
@@ -424,16 +425,16 @@ type slowMetrics struct {
 }
 
 type agentState struct {
-	baseIdentity agentIdentity
-	configPath   string
-	client       *http.Client
-	lastCPU      cpuSnapshot
-	hasLastCPU   bool
-	lastIO       *ioSnapshot
-	lastSlow     slowMetrics
-	hasSlow      bool
-	currentCfg   agentRuntimeConfig
-	hasConfig    bool
+	baseIdentity         agentIdentity
+	configPath           string
+	client               *http.Client
+	lastCPU              cpuSnapshot
+	hasLastCPU           bool
+	lastIO               *ioSnapshot
+	lastSlow             slowMetrics
+	hasSlow              bool
+	currentCfg           agentRuntimeConfig
+	hasConfig            bool
 	lastVirtualizationAt time.Time
 	lastVirtualization   *virtualizationSnapshot
 }
@@ -508,6 +509,14 @@ func main() {
 		cfg := state.loadRuntimeConfig(defaultConfig)
 		if !cfg.DataRecordingEnabled {
 			log.Printf("data recording is disabled; collector remains unregistered")
+			if !waitForNextCycle(runContext.Done(), time.Duration(cfg.currentUploadIntervalSeconds())*time.Second) {
+				pending.close()
+				return
+			}
+			continue
+		}
+		if !cfg.CloudSyncEnabled {
+			log.Printf("cloud sync is disabled; collector upload loop is paused")
 			if !waitForNextCycle(runContext.Done(), time.Duration(cfg.currentUploadIntervalSeconds())*time.Second) {
 				pending.close()
 				return
@@ -905,14 +914,14 @@ func mergeConfig(defaults agentRuntimeConfig, fileCfg agentConfigFile) agentRunt
 	if strings.TrimSpace(fileCfg.Connection.Hostname) != "" {
 		cfg.Connection.Hostname = strings.TrimSpace(fileCfg.Connection.Hostname)
 	}
-	if fileCfg.Sampling.NormalIntervalSeconds > 0 {
+	if fileCfg.Sampling.NormalIntervalSeconds > 0 && fileCfg.Sampling.NormalIntervalSeconds <= maxSamplingIntervalSeconds {
 		cfg.Sampling.NormalIntervalSeconds = fileCfg.Sampling.NormalIntervalSeconds
 	}
-	if fileCfg.Sampling.SlowIntervalSeconds > 0 {
+	if fileCfg.Sampling.SlowIntervalSeconds > 0 && fileCfg.Sampling.SlowIntervalSeconds <= maxSamplingIntervalSeconds {
 		cfg.Sampling.SlowIntervalSeconds = fileCfg.Sampling.SlowIntervalSeconds
 	}
-	if len(fileCfg.EnabledMetrics) > 0 {
-		cfg.EnabledMetrics = uniqueStrings(fileCfg.EnabledMetrics)
+	if fileCfg.EnabledMetrics != nil {
+		cfg.EnabledMetrics = normalizeMetricKeys(*fileCfg.EnabledMetrics)
 	}
 	if fileCfg.EnabledDeviceIDs != nil {
 		cfg.EnabledDeviceIDs = sanitizeStringMap(fileCfg.EnabledDeviceIDs)
@@ -926,7 +935,9 @@ func mergeConfig(defaults agentRuntimeConfig, fileCfg agentConfigFile) agentRunt
 	if fileCfg.Virtualization != nil {
 		cfg.Virtualization = normalizeVirtualizationConfig(*fileCfg.Virtualization)
 	}
-	cfg.CloudSyncEnabled = fileCfg.CloudSyncEnabled
+	if fileCfg.CloudSyncEnabled != nil {
+		cfg.CloudSyncEnabled = *fileCfg.CloudSyncEnabled
+	}
 	if fileCfg.DataRecordingEnabled != nil {
 		cfg.DataRecordingEnabled = *fileCfg.DataRecordingEnabled
 	}
@@ -1124,14 +1135,14 @@ func sampleMemory() memoryStats {
 		commitLimitBytes = virtualMemory.Total + swapMemory.Total
 	}
 	return memoryStats{
-		TotalBytes:     virtualMemory.Total,
-		UsedBytes:      virtualMemory.Used,
-		AvailableBytes: virtualMemory.Available,
-		CachedBytes:    virtualMemory.Cached,
-		CommittedBytes: committedBytes,
+		TotalBytes:       virtualMemory.Total,
+		UsedBytes:        virtualMemory.Used,
+		AvailableBytes:   virtualMemory.Available,
+		CachedBytes:      virtualMemory.Cached,
+		CommittedBytes:   committedBytes,
 		CommitLimitBytes: commitLimitBytes,
-		SwapTotalBytes: swapMemory.Total,
-		SwapUsedBytes:  swapMemory.Used,
+		SwapTotalBytes:   swapMemory.Total,
+		SwapUsedBytes:    swapMemory.Used,
 	}
 }
 
@@ -2082,11 +2093,11 @@ type hardwareSensorSnapshot struct {
 }
 
 type hardwarePawnIOStatus struct {
-	Available bool    `json:"available"`
-	Installed *bool   `json:"installed"`
-	Loaded    *bool   `json:"loaded"`
-	Version   string  `json:"version"`
-	Error     string  `json:"error"`
+	Available bool   `json:"available"`
+	Installed *bool  `json:"installed"`
+	Loaded    *bool  `json:"loaded"`
+	Version   string `json:"version"`
+	Error     string `json:"error"`
 }
 
 type hardwareSensorProbeResult struct {
@@ -4880,14 +4891,37 @@ func resolveInstanceMetricSet(cfg agentRuntimeConfig, instanceID string) (map[st
 }
 
 func makeEnabledMetricSet(metrics []string) map[string]bool {
-	if len(metrics) == 0 {
-		metrics = allMetricKeys
-	}
 	result := map[string]bool{}
 	for _, key := range metrics {
-		result[strings.TrimSpace(key)] = true
+		trimmed := strings.TrimSpace(key)
+		if isKnownMetricKey(trimmed) {
+			result[trimmed] = true
+		}
 	}
 	return result
+}
+
+func normalizeMetricKeys(metrics []string) []string {
+	result := make([]string, 0, len(metrics))
+	seen := map[string]bool{}
+	for _, metric := range metrics {
+		key := strings.TrimSpace(metric)
+		if key == "" || !isKnownMetricKey(key) || seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, key)
+	}
+	return result
+}
+
+func isKnownMetricKey(key string) bool {
+	for _, known := range allMetricKeys {
+		if known == key {
+			return true
+		}
+	}
+	return false
 }
 
 func makeEnabledBlockSet(selections []agentProbeSelection) map[string]bool {

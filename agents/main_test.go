@@ -602,3 +602,26 @@ func TestParseNonNegativeFloat(t *testing.T) {
 		}
 	}
 }
+
+func TestMergeConfigPreservesExplicitEmptyMetrics(t *testing.T) {
+	defaults := newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "https://hub.example", Secret: "secret"})
+	empty := []string{}
+	merged := mergeConfig(defaults, agentConfigFile{EnabledMetrics: &empty})
+	if merged.EnabledMetrics == nil || len(merged.EnabledMetrics) != 0 {
+		t.Fatalf("explicit empty metrics must remain disabled: %#v", merged.EnabledMetrics)
+	}
+	if len(makeEnabledMetricSet(merged.EnabledMetrics)) != 0 {
+		t.Fatalf("explicit empty metrics must not be expanded by the collector: %#v", merged.EnabledMetrics)
+	}
+}
+
+func TestMergeConfigDefaultsOmittedCloudSyncAndAcceptsExplicitDisable(t *testing.T) {
+	defaults := newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "https://hub.example", Secret: "secret"})
+	if !mergeConfig(defaults, agentConfigFile{}).CloudSyncEnabled {
+		t.Fatal("omitted cloudSyncEnabled must preserve the default")
+	}
+	disabled := false
+	if mergeConfig(defaults, agentConfigFile{CloudSyncEnabled: &disabled}).CloudSyncEnabled {
+		t.Fatal("explicit cloudSyncEnabled=false must disable uploads")
+	}
+}

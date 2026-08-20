@@ -13,7 +13,7 @@ The repository already has the required device-owned display mechanism; no secon
 - `instanceMetricConfig: Record<instanceId, string[]>`
 - `probeSelections: { target, provider, enabled }[]`
 
-The Go collector reads this same file through `DSC_AGENT_CONFIG_FILE`. Its `applyRuntimeConfig` function removes disabled blocks, filters selected instances, and removes disabled metric fields before upload. Empty `enabledMetrics` is treated as the backwards-compatible default of all known metric keys.
+The Go collector reads this same file through `DSC_AGENT_CONFIG_FILE`. Its `applyRuntimeConfig` function removes disabled blocks, filters selected instances, and removes disabled metric fields before upload. If `enabledMetrics` is omitted, the legacy default is all known metric keys; an explicit empty array disables all metrics.
 
 ### Hub persistence and reads
 

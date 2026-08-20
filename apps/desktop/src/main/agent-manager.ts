@@ -1,5 +1,5 @@
 import { createServer } from "node:net";
-import { access } from "node:fs/promises";
+import { access, chmod, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -43,6 +43,9 @@ export class AgentManager {
 
     const port = await reserveLoopbackPort();
     const bundleRoot = path.dirname(backendBinary);
+    const localTokenFile = path.join(this.options.userDataPath, "agent-ui.local-token");
+    await writeFile(localTokenFile, `${this.localToken}\n`, { encoding: "utf8", mode: 0o600 });
+    await chmod(localTokenFile, 0o600).catch(() => undefined);
     this.baseUrl = `http://127.0.0.1:${port}`;
     this.lastOutput = "";
     const child = spawn(
@@ -56,8 +59,8 @@ export class AgentManager {
         this.options.userDataPath,
         "--parent-pid",
         String(process.pid),
-        "--local-token",
-        this.localToken
+        "--local-token-file",
+        localTokenFile
       ],
       {
         cwd: bundleRoot,
@@ -73,6 +76,7 @@ export class AgentManager {
       if (this.child === child) {
         this.child = null;
         this.baseUrl = null;
+        void unlink(localTokenFile).catch(() => undefined);
       }
     });
 
@@ -81,6 +85,7 @@ export class AgentManager {
       return await this.getState();
     } catch (error) {
       await this.forceStop(child);
+      await unlink(localTokenFile).catch(() => undefined);
       throw new Error(`${error instanceof Error ? error.message : String(error)}${this.lastOutput ? `\n${this.lastOutput}` : ""}`);
     }
   }
@@ -119,7 +124,11 @@ export class AgentManager {
 
   async stop(): Promise<void> {
     const child = this.child;
-    if (!child) return;
+    const localTokenFile = path.join(this.options.userDataPath, "agent-ui.local-token");
+    if (!child) {
+      await unlink(localTokenFile).catch(() => undefined);
+      return;
+    }
     try {
       await this.request("/api/control/shutdown", { method: "POST" });
     } catch {
@@ -129,6 +138,7 @@ export class AgentManager {
     if (this.isProcessRunning(child)) await this.forceStop(child);
     this.child = null;
     this.baseUrl = null;
+    await unlink(localTokenFile).catch(() => undefined);
   }
 
   get diagnosticOutput(): string {

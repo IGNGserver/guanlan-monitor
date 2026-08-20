@@ -421,6 +421,7 @@ export interface DeviceMetricOption {
 }
 
 export interface DeviceMetricConfigPayload {
+  /** Omit the field for the legacy default of all metrics; [] explicitly disables all metrics. */
   enabledMetrics: DeviceMetricKey[];
   enabledDeviceIds?: Partial<Record<DeviceBlockKey, string[]>>;
   instanceMetricConfig?: Record<string, DeviceMetricKey[]>;
@@ -445,12 +446,15 @@ export interface AgentProbeSelection {
 }
 
 export interface AgentLocalConfig extends DeviceMetricConfigPayload {
+  configVersion?: number;
   connection: AgentConnectionConfig;
   sampling: AgentSamplingConfig;
   probeSelections: AgentProbeSelection[];
   virtualization?: AgentVirtualizationConfig;
   cloudSyncEnabled?: boolean;
+  dataRecordingEnabled?: boolean;
   autoRestartCollector?: boolean;
+  autoStartCollector?: boolean;
 }
 
 export interface AgentCloudConfigSyncPayload extends DeviceMetricConfigPayload {
@@ -718,6 +722,7 @@ export interface OverviewMetricsResponse {
 
 /** The local Agent backend contract after the main process removes secrets. */
 export interface DesktopAgentConfig {
+  configVersion: number;
   connection: Omit<AgentConnectionConfig, "secret"> & {
     secretConfigured: boolean;
   };
@@ -726,6 +731,7 @@ export interface DesktopAgentConfig {
   enabledDeviceIds: Partial<Record<DeviceBlockKey, string[]>>;
   instanceMetricConfig: Record<string, DeviceMetricKey[]>;
   probeSelections: AgentProbeSelection[];
+  virtualization?: AgentVirtualizationConfig;
   cloudSyncEnabled: boolean;
   dataRecordingEnabled: boolean;
   autoRestartCollector: boolean;
@@ -919,6 +925,7 @@ export interface WidgetLayoutSaveRequest {
 export type DesktopAgentControlAction = "start" | "stop" | "restart" | "check-connection" | "detect-probes";
 
 export interface DesktopConfigPatch {
+  configVersion?: number;
   connection?: Partial<Omit<AgentConnectionConfig, "secret">>;
   sampling?: Partial<AgentSamplingConfig>;
   enabledMetrics?: DeviceMetricKey[];

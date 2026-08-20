@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,10 +26,15 @@ var BuildVersion = "dev"
 var BuildChannel = "test"
 
 const (
-	runtimeFileName   = "agent-ui.runtime.json"
-	processLogName    = "agent-ui.process.log"
-	backendWait       = 8 * time.Second
-	backendRequestTTL = 5 * time.Second
+	currentConfigVersion       = 1
+	runtimeFileName            = "agent-ui.runtime.json"
+	processLogName             = "agent-ui.process.log"
+	localTokenFileName         = "agent-ui.local-token"
+	backendWait                = 8 * time.Second
+	backendRequestTTL          = 5 * time.Second
+	maxConfigFileBytes         = 256 * 1024
+	maxBackendResponseBytes    = 2 * 1024 * 1024
+	maxSamplingIntervalSeconds = 86400
 )
 
 var allMetricKeys = []string{
@@ -68,6 +74,7 @@ type agentVirtualizationConfig struct {
 }
 
 type agentLocalConfig struct {
+	ConfigVersion        int                        `json:"configVersion"`
 	Connection           agentConnectionConfig      `json:"connection"`
 	Sampling             agentSamplingConfig        `json:"sampling"`
 	EnabledMetrics       []string                   `json:"enabledMetrics"`
@@ -211,6 +218,10 @@ func printUsage() {
 	fmt.Println("  dsc doctor                  检查连接和探针")
 	fmt.Println("  dsc config get [--json]     输出本地配置（密钥会脱敏）")
 	fmt.Println("  dsc config set [options]    无界面修改配置")
+	fmt.Println("  dsc config validate [file]  校验 JSON 配置")
+	fmt.Println("  dsc config import --file    导入 JSON 配置")
+	fmt.Println("  dsc config export [--file]  导出脱敏 JSON 配置")
+	fmt.Println("  dsc config push             推送展示配置到中枢")
 	fmt.Println("  dsc version                 显示版本")
 }
 
@@ -289,6 +300,7 @@ func shutdownBackend() error {
 		return err
 	}
 	_ = os.Remove(runtimePath(root))
+	_ = os.Remove(localTokenPath(root))
 	fmt.Println("本地 CLI backend 已停止。")
 	return nil
 }
@@ -323,12 +335,24 @@ func runDoctor() error {
 	} else {
 		fmt.Printf("探针检测完成: %d 个目标类别\n", len(detected.DetectedTargets))
 	}
+	if checkErr != nil {
+		return fmt.Errorf("connection check failed: %w", checkErr)
+	}
+	if !result.OK {
+		return fmt.Errorf("connection check failed: %s", valueOr(result.Status, "not_ok"))
+	}
+	if detectErr != nil {
+		return fmt.Errorf("probe detection failed: %w", detectErr)
+	}
 	return nil
 }
 
 func runConfig(args []string) error {
 	if len(args) == 0 || args[0] == "ui" {
 		return runUI()
+	}
+	if args[0] == "validate" {
+		return runConfigValidate(args[1:])
 	}
 	client, err := ensureClient()
 	if err != nil {
@@ -347,6 +371,12 @@ func runConfig(args []string) error {
 		return nil
 	case "set":
 		return runConfigSet(client, args[1:])
+	case "import":
+		return runConfigImport(client, args[1:])
+	case "export":
+		return runConfigExport(client, args[1:])
+	case "push":
+		return runConfigPush(client)
 	default:
 		return fmt.Errorf("unknown config command %q", args[0])
 	}
@@ -361,6 +391,10 @@ func runConfigSet(client *backendClient, args []string) error {
 	normalInterval := flags.Int("normal-interval", 0, "普通采样间隔（秒）")
 	slowInterval := flags.Int("slow-interval", 0, "慢速采样间隔（秒）")
 	metrics := flags.String("metrics", "", "all、none 或逗号分隔的指标 key")
+	enabledDeviceIDsJSON := flags.String("enabled-device-ids-json", "", "设备实例启用映射 JSON")
+	instanceMetricConfigJSON := flags.String("instance-metric-config-json", "", "实例指标覆盖 JSON")
+	probeSelectionsJSON := flags.String("probe-selections-json", "", "探针选择 JSON")
+	virtualizationJSON := flags.String("virtualization-json", "", "虚拟化非敏感配置 JSON")
 	dataRecording := flags.String("data-recording", "", "on 或 off")
 	cloudSync := flags.String("cloud-sync", "", "on 或 off")
 	autoRestart := flags.String("auto-restart", "", "on 或 off")
@@ -374,7 +408,12 @@ func runConfigSet(client *backendClient, args []string) error {
 	if err != nil {
 		return err
 	}
+	state, err := client.getState()
+	if err != nil {
+		return err
+	}
 	changed := false
+	displayChanged := false
 	if strings.TrimSpace(*serverURL) != "" {
 		cfg.Connection.ServerURL = strings.TrimSpace(*serverURL)
 		changed = true
@@ -382,6 +421,7 @@ func runConfigSet(client *backendClient, args []string) error {
 	if strings.TrimSpace(*deviceID) != "" {
 		cfg.Connection.DeviceID = strings.TrimSpace(*deviceID)
 		changed = true
+		displayChanged = true
 	}
 	if strings.TrimSpace(*hostname) != "" {
 		cfg.Connection.Hostname = strings.TrimSpace(*hostname)
@@ -402,11 +442,42 @@ func runConfigSet(client *backendClient, args []string) error {
 		}
 		cfg.EnabledMetrics = parsed
 		changed = true
+		displayChanged = true
+	}
+	if strings.TrimSpace(*enabledDeviceIDsJSON) != "" {
+		if err := decodeJSON(*enabledDeviceIDsJSON, &cfg.EnabledDeviceIDs); err != nil {
+			return fmt.Errorf("--enabled-device-ids-json: %w", err)
+		}
+		changed = true
+		displayChanged = true
+	}
+	if strings.TrimSpace(*instanceMetricConfigJSON) != "" {
+		if err := decodeJSON(*instanceMetricConfigJSON, &cfg.InstanceMetricConfig); err != nil {
+			return fmt.Errorf("--instance-metric-config-json: %w", err)
+		}
+		changed = true
+		displayChanged = true
+	}
+	if strings.TrimSpace(*probeSelectionsJSON) != "" {
+		if err := decodeJSON(*probeSelectionsJSON, &cfg.ProbeSelections); err != nil {
+			return fmt.Errorf("--probe-selections-json: %w", err)
+		}
+		changed = true
+		displayChanged = true
+	}
+	if strings.TrimSpace(*virtualizationJSON) != "" {
+		if err := decodeJSON(*virtualizationJSON, &cfg.Virtualization); err != nil {
+			return fmt.Errorf("--virtualization-json: %w", err)
+		}
+		changed = true
 	}
 	if *secretStdin {
-		secret, err := io.ReadAll(os.Stdin)
+		secret, err := io.ReadAll(io.LimitReader(os.Stdin, 4097))
 		if err != nil {
 			return fmt.Errorf("read secret from stdin: %w", err)
+		}
+		if len(secret) > 4096 {
+			return errors.New("secret is too large")
 		}
 		cfg.Connection.Secret = strings.TrimSpace(string(secret))
 		changed = true
@@ -434,11 +505,277 @@ func runConfigSet(client *backendClient, args []string) error {
 	if !changed {
 		return errors.New("no configuration changes; use dsc config or dsc config set --server-url ...")
 	}
-	if err := client.putConfig(cfg); err != nil {
+	if err := validateAgentConfig(cfg, state.SupportedProbePlans); err != nil {
+		return err
+	}
+	if err := saveConfig(client, cfg, displayChanged); err != nil {
 		return err
 	}
 	fmt.Printf("配置已保存到 %s\n", cfgPathFromClient(client))
 	return nil
+}
+
+func runConfigValidate(args []string) error {
+	flags := flag.NewFlagSet("dsc config validate", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	file := flags.String("file", "", "JSON 配置文件路径")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	path := strings.TrimSpace(*file)
+	if path == "" && flags.NArg() > 0 {
+		path = flags.Arg(0)
+	}
+	if path == "" {
+		root, err := configRoot()
+		if err != nil {
+			return err
+		}
+		path = filepath.Join(root, "agent-ui.config.json")
+	}
+	cfg, err := readConfigJSON(path)
+	if err != nil {
+		return err
+	}
+	if err := validateAgentConfig(cfg, nil); err != nil {
+		return err
+	}
+	fmt.Printf("配置校验通过: %s\n", path)
+	return nil
+}
+
+func runConfigImport(client *backendClient, args []string) error {
+	flags := flag.NewFlagSet("dsc config import", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	file := flags.String("file", "", "JSON 配置文件路径")
+	secretStdin := flags.Bool("secret-stdin", false, "从 stdin 读取访问密钥")
+	clearSecret := flags.Bool("clear-secret", false, "清空当前访问密钥")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*file) == "" {
+		return errors.New("config import requires --file")
+	}
+	cfg, err := readConfigJSON(*file)
+	if err != nil {
+		return err
+	}
+	current, err := client.getConfig()
+	if err != nil {
+		return err
+	}
+	if *clearSecret {
+		cfg.Connection.Secret = ""
+	} else if strings.TrimSpace(cfg.Connection.Secret) == "" {
+		cfg.Connection.Secret = current.Connection.Secret
+	}
+	if *secretStdin {
+		secret, readErr := io.ReadAll(io.LimitReader(os.Stdin, 4097))
+		if readErr != nil {
+			return fmt.Errorf("read secret from stdin: %w", readErr)
+		}
+		if len(secret) > 4096 {
+			return errors.New("secret is too large")
+		}
+		cfg.Connection.Secret = strings.TrimSpace(string(secret))
+	}
+	state, err := client.getState()
+	if err != nil {
+		return err
+	}
+	if err := validateAgentConfig(cfg, state.SupportedProbePlans); err != nil {
+		return err
+	}
+	if err := client.putConfig(cfg); err != nil {
+		return err
+	}
+	fmt.Printf("配置已导入: %s\n", *file)
+	return nil
+}
+
+func runConfigExport(client *backendClient, args []string) error {
+	flags := flag.NewFlagSet("dsc config export", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	file := flags.String("file", "", "输出 JSON 配置文件路径")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	cfg, err := client.getConfig()
+	if err != nil {
+		return err
+	}
+	redacted := redactConfig(cfg)
+	if strings.TrimSpace(*file) == "" {
+		return writeOutputJSON(redacted)
+	}
+	if err := writeJSONFile(*file, redacted); err != nil {
+		return err
+	}
+	fmt.Printf("已导出脱敏配置: %s\n", *file)
+	return nil
+}
+
+func runConfigPush(client *backendClient) error {
+	if err := pushCloudConfig(client); err != nil {
+		return err
+	}
+	fmt.Println("展示配置已成功同步到中枢。")
+	return nil
+}
+
+func saveConfig(client *backendClient, cfg agentLocalConfig, pushDisplayConfig bool) error {
+	if err := client.putConfig(cfg); err != nil {
+		return err
+	}
+	if !pushDisplayConfig {
+		return nil
+	}
+	if !cfg.CloudSyncEnabled {
+		fmt.Println("本地配置已保存；云同步已关闭，展示配置暂不推送。")
+		return nil
+	}
+	if err := pushCloudConfig(client); err != nil {
+		fmt.Printf("本地配置已保存，但展示配置推送失败，稍后可运行 dsc config push 重试: %v\n", err)
+		return nil
+	}
+	fmt.Println("展示配置已同步到中枢。")
+	return nil
+}
+
+func pushCloudConfig(client *backendClient) error {
+	var result struct {
+		OK bool `json:"ok"`
+	}
+	if err := client.request(http.MethodPost, "/api/cloud/push", nil, &result); err != nil {
+		return err
+	}
+	if !result.OK {
+		return errors.New("cloud push did not succeed")
+	}
+	return nil
+}
+
+func readConfigJSON(path string) (agentLocalConfig, error) {
+	var cfg agentLocalConfig
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return cfg, fmt.Errorf("read config %s: %w", path, err)
+	}
+	if len(raw) > maxConfigFileBytes {
+		return cfg, fmt.Errorf("config %s is too large", path)
+	}
+	if err := json.Unmarshal(bytes.TrimPrefix(raw, []byte{0xEF, 0xBB, 0xBF}), &cfg); err != nil {
+		return cfg, fmt.Errorf("decode config %s: %w", path, err)
+	}
+	return cfg, nil
+}
+
+func writeJSONFile(path string, value any) error {
+	raw, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		return err
+	}
+	_ = os.Chmod(path, 0o600)
+	return nil
+}
+
+func decodeJSON(value string, target any) error {
+	return json.Unmarshal([]byte(strings.TrimSpace(value)), target)
+}
+
+func validateAgentConfig(cfg agentLocalConfig, plans []probePlanSupport) error {
+	if cfg.ConfigVersion > currentConfigVersion {
+		return fmt.Errorf("unsupported configVersion %d", cfg.ConfigVersion)
+	}
+	if err := validateServerURL(cfg.Connection.ServerURL); err != nil {
+		return fmt.Errorf("serverUrl: %w", err)
+	}
+	if cfg.Sampling.NormalIntervalSeconds < 1 || cfg.Sampling.NormalIntervalSeconds > maxSamplingIntervalSeconds {
+		return fmt.Errorf("normalIntervalSeconds must be between 1 and %d", maxSamplingIntervalSeconds)
+	}
+	if cfg.Sampling.SlowIntervalSeconds < 1 || cfg.Sampling.SlowIntervalSeconds > maxSamplingIntervalSeconds {
+		return fmt.Errorf("slowIntervalSeconds must be between 1 and %d", maxSamplingIntervalSeconds)
+	}
+	for _, key := range cfg.EnabledMetrics {
+		if !contains(allMetricKeys, key) {
+			return fmt.Errorf("unknown metric key %q", key)
+		}
+	}
+	for instanceID, metrics := range cfg.InstanceMetricConfig {
+		if strings.TrimSpace(instanceID) == "" {
+			return errors.New("instanceMetricConfig contains an empty instance id")
+		}
+		for _, key := range metrics {
+			if !contains(allMetricKeys, key) {
+				return fmt.Errorf("unknown instance metric key %q for %s", key, instanceID)
+			}
+		}
+	}
+	allowed := make(map[string]map[string]bool)
+	if len(plans) == 0 {
+		allowed = map[string]map[string]bool{
+			"connection": map[string]bool{"gopsutil": true},
+			"cpu":        map[string]bool{"disabled": true, "gopsutil": true},
+			"memory":     map[string]bool{"disabled": true, "gopsutil": true},
+			"disk":       map[string]bool{"disabled": true, "gopsutil": true},
+			"network":    map[string]bool{"disabled": true, "gopsutil": true},
+			"gpu":        map[string]bool{"disabled": true, "wmi": true},
+			"fan":        map[string]bool{"disabled": true, "hwmon": true, "librehardwaremonitor": true},
+		}
+	} else {
+		for _, plan := range plans {
+			providers := map[string]bool{}
+			for _, provider := range plan.Providers {
+				providers[provider] = true
+			}
+			allowed[plan.Target] = providers
+		}
+	}
+	for _, selection := range cfg.ProbeSelections {
+		target := strings.ToLower(strings.TrimSpace(selection.Target))
+		providers, ok := allowed[target]
+		if !ok {
+			return fmt.Errorf("unsupported probe target %q", selection.Target)
+		}
+		if !providers[strings.TrimSpace(selection.Provider)] {
+			return fmt.Errorf("unsupported provider %q for probe target %q", selection.Provider, target)
+		}
+	}
+	if cfg.Virtualization != nil && (cfg.Virtualization.PollIntervalSeconds < 0 || cfg.Virtualization.PollIntervalSeconds > maxSamplingIntervalSeconds) {
+		return fmt.Errorf("virtualization pollIntervalSeconds must be between 0 and %d", maxSamplingIntervalSeconds)
+	}
+	return nil
+}
+
+func validateServerURL(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Hostname() == "" {
+		return errors.New("invalid_server_url")
+	}
+	if parsed.User != nil {
+		return errors.New("server_url_userinfo_not_allowed")
+	}
+	if strings.EqualFold(parsed.Scheme, "https") {
+		return nil
+	}
+	if strings.EqualFold(parsed.Scheme, "http") && isPrivateNetworkHost(parsed.Hostname()) {
+		return nil
+	}
+	return errors.New("remote_server_requires_https")
+}
+
+func isPrivateNetworkHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	parsed := net.ParseIP(host)
+	return parsed != nil && (parsed.IsLoopback() || parsed.IsPrivate() || parsed.IsLinkLocalUnicast())
 }
 
 func runUI() error {
@@ -461,8 +798,9 @@ func runUI() error {
 		clearScreen()
 		printDashboard(state)
 		fmt.Println()
-		fmt.Println("[1] 中枢连接   [2] 采样设置   [3] 指标选择")
-		fmt.Println("[4] 硬件探针   [5] 运行控制   [6] 诊断")
+		fmt.Println("[1] 中枢连接   [2] 采样与记录 [3] 全局指标")
+		fmt.Println("[4] 硬件探针   [5] 实例上报   [6] 实例指标")
+		fmt.Println("[7] 运行控制   [8] 诊断")
 		fmt.Println("[q] 退出（后台继续运行）")
 		choice, err := readLine(reader, "\n请选择: ", "")
 		if err != nil {
@@ -479,8 +817,12 @@ func runUI() error {
 		case "4":
 			actionErr = editProbes(client, reader)
 		case "5":
-			actionErr = controlUI(client, reader)
+			actionErr = editInstances(client, reader)
 		case "6":
+			actionErr = editInstanceMetrics(client, reader)
+		case "7":
+			actionErr = controlUI(client, reader)
+		case "8":
 			actionErr = doctorUI(client)
 		case "q", "quit", "exit":
 			fmt.Println("已退出 UI；后台 Agent 仍继续运行。")
@@ -506,6 +848,9 @@ func editConnection(client *backendClient, reader *bufio.Reader) error {
 	if cfg.Connection.ServerURL, err = promptValue(reader, "中枢地址", cfg.Connection.ServerURL); err != nil {
 		return err
 	}
+	if err := validateServerURL(cfg.Connection.ServerURL); err != nil {
+		return fmt.Errorf("中枢地址无效: %w", err)
+	}
 	secret, err := promptSecret(reader, "访问密钥（回车保留，输入 - 清空）: ")
 	if err != nil {
 		return err
@@ -523,7 +868,7 @@ func editConnection(client *backendClient, reader *bufio.Reader) error {
 	if cfg.Connection.Hostname, err = promptValue(reader, "设备名称", cfg.Connection.Hostname); err != nil {
 		return err
 	}
-	if err := client.putConfig(cfg); err != nil {
+	if err := saveConfig(client, cfg, true); err != nil {
 		return err
 	}
 	fmt.Println("连接配置已保存。")
@@ -536,13 +881,13 @@ func editSampling(client *backendClient, reader *bufio.Reader) error {
 		return err
 	}
 	fmt.Println("\n采样配置（秒，直接回车保留当前值）")
-	if cfg.Sampling.NormalIntervalSeconds, err = promptInt(reader, "普通采样间隔", cfg.Sampling.NormalIntervalSeconds, 1); err != nil {
+	if cfg.Sampling.NormalIntervalSeconds, err = promptInt(reader, "普通采样间隔", cfg.Sampling.NormalIntervalSeconds, 1, maxSamplingIntervalSeconds); err != nil {
 		return err
 	}
-	if cfg.Sampling.SlowIntervalSeconds, err = promptInt(reader, "慢速采样间隔", cfg.Sampling.SlowIntervalSeconds, 1); err != nil {
+	if cfg.Sampling.SlowIntervalSeconds, err = promptInt(reader, "慢速采样间隔", cfg.Sampling.SlowIntervalSeconds, 1, maxSamplingIntervalSeconds); err != nil {
 		return err
 	}
-	if cfg.DataRecordingEnabled, err = promptBool(reader, "是否记录并上传数据", cfg.DataRecordingEnabled); err != nil {
+	if cfg.DataRecordingEnabled, err = promptBool(reader, "是否启用采集与本地记录", cfg.DataRecordingEnabled); err != nil {
 		return err
 	}
 	if cfg.AutoStartCollector, err = promptBool(reader, "backend 启动时自动启动采集器", cfg.AutoStartCollector); err != nil {
@@ -551,10 +896,10 @@ func editSampling(client *backendClient, reader *bufio.Reader) error {
 	if cfg.AutoRestartCollector, err = promptBool(reader, "采集器异常时自动重启", cfg.AutoRestartCollector); err != nil {
 		return err
 	}
-	if cfg.CloudSyncEnabled, err = promptBool(reader, "是否允许同步展示配置", cfg.CloudSyncEnabled); err != nil {
+	if cfg.CloudSyncEnabled, err = promptBool(reader, "是否允许上传到中枢", cfg.CloudSyncEnabled); err != nil {
 		return err
 	}
-	if err := client.putConfig(cfg); err != nil {
+	if err := saveConfig(client, cfg, false); err != nil {
 		return err
 	}
 	fmt.Println("采样和运行配置已保存。")
@@ -581,7 +926,7 @@ func editMetrics(client *backendClient, reader *bufio.Reader) error {
 		return err
 	}
 	cfg.EnabledMetrics = metrics
-	if err := client.putConfig(cfg); err != nil {
+	if err := saveConfig(client, cfg, true); err != nil {
 		return err
 	}
 	fmt.Println("指标配置已保存。")
@@ -593,22 +938,244 @@ func editProbes(client *backendClient, reader *bufio.Reader) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("\n硬件探针配置（回车保留当前值）")
-	for index := range cfg.ProbeSelections {
-		selection := &cfg.ProbeSelections[index]
-		fmt.Printf("\n目标: %s\n", selection.Target)
-		if selection.Provider, err = promptValue(reader, "提供者", selection.Provider); err != nil {
+	state, err := client.getState()
+	if err != nil {
+		return err
+	}
+	if len(state.SupportedProbePlans) == 0 {
+		return errors.New("backend did not provide supported probe plans")
+	}
+	current := make(map[string]agentProbeSelection, len(cfg.ProbeSelections))
+	for _, selection := range cfg.ProbeSelections {
+		current[strings.ToLower(strings.TrimSpace(selection.Target))] = selection
+	}
+	selections := make([]agentProbeSelection, 0, len(state.SupportedProbePlans))
+	fmt.Println("\n硬件探针配置（输入编号或 provider，回车保留当前值）")
+	for _, plan := range state.SupportedProbePlans {
+		target := strings.ToLower(strings.TrimSpace(plan.Target))
+		selection, exists := current[target]
+		if !exists {
+			selection = agentProbeSelection{Target: target, Provider: plan.Default, Enabled: plan.Default != "disabled"}
+		}
+		selection.Target = target
+		if !contains(plan.Providers, selection.Provider) {
+			selection.Provider = plan.Default
+			if !contains(plan.Providers, selection.Provider) && len(plan.Providers) > 0 {
+				selection.Provider = plan.Providers[0]
+			}
+		}
+		fmt.Printf("\n目标: %s\n", target)
+		if selection.Provider, err = promptChoice(reader, "提供者", selection.Provider, plan.Providers); err != nil {
 			return err
 		}
 		if selection.Enabled, err = promptBool(reader, "是否启用", selection.Enabled); err != nil {
 			return err
 		}
+		selections = append(selections, selection)
 	}
-	if err := client.putConfig(cfg); err != nil {
+	cfg.ProbeSelections = selections
+	if err := validateAgentConfig(cfg, state.SupportedProbePlans); err != nil {
+		return err
+	}
+	if err := saveConfig(client, cfg, true); err != nil {
 		return err
 	}
 	fmt.Println("探针配置已保存。")
 	return nil
+}
+
+var instanceMetricKeys = map[string][]string{
+	"cpu":     []string{"cpuUsage", "cpuFrequency", "cpuTemperature", "cpuTopology", "systemOverview"},
+	"gpu":     []string{"gpuUsage", "gpuEncode", "gpuDecode", "gpuFrequency", "gpuMemory", "gpuTemperature", "gpuDriverInfo"},
+	"disk":    []string{"diskUsage", "diskRead", "diskWrite", "diskMetadata", "diskActivity", "diskHealth"},
+	"network": []string{"networkRxRate", "networkTxRate", "networkTraffic", "networkIdentity"},
+}
+
+func loadDetectedState(client *backendClient) (*backendState, error) {
+	state, err := client.getState()
+	if err != nil {
+		return nil, err
+	}
+	if len(state.DetectedTargets) == 0 {
+		detected, detectErr := client.control("/api/probes/detect", nil)
+		if detectErr != nil {
+			return nil, detectErr
+		}
+		state = &detected
+	}
+	return state, nil
+}
+
+func editInstances(client *backendClient, reader *bufio.Reader) error {
+	state, err := loadDetectedState(client)
+	if err != nil {
+		return err
+	}
+	cfg := state.Config
+	enabledDeviceIDs := cloneStringMap(cfg.EnabledDeviceIDs)
+	changed := false
+	for _, group := range state.DetectedTargets {
+		target := strings.ToLower(strings.TrimSpace(group.Target))
+		if target == "connection" || len(group.Instances) == 0 {
+			continue
+		}
+		configured, explicit := enabledDeviceIDs[target]
+		if !explicit {
+			configured = make([]string, 0, len(group.Instances))
+			for _, instance := range group.Instances {
+				if instance.Enabled {
+					configured = append(configured, instance.ID)
+				}
+			}
+		}
+		configured = uniqueStrings(configured)
+		for _, instance := range group.Instances {
+			current := contains(configured, instance.ID)
+			value, promptErr := promptBool(reader, fmt.Sprintf("%s/%s 上报", group.Label, instance.Name), current)
+			if promptErr != nil {
+				return promptErr
+			}
+			if value == current {
+				continue
+			}
+			changed = true
+			if value {
+				configured = appendUnique(configured, instance.ID)
+			} else {
+				configured = removeString(configured, instance.ID)
+			}
+		}
+		enabledDeviceIDs[target] = uniqueStrings(configured)
+	}
+	if !changed {
+		fmt.Println("实例配置未修改。")
+		return nil
+	}
+	cfg.EnabledDeviceIDs = enabledDeviceIDs
+	if err := saveConfig(client, cfg, true); err != nil {
+		return err
+	}
+	fmt.Println("实例上报配置已保存。")
+	return nil
+}
+
+func editInstanceMetrics(client *backendClient, reader *bufio.Reader) error {
+	state, err := loadDetectedState(client)
+	if err != nil {
+		return err
+	}
+	cfg := state.Config
+	overrides := cloneStringMap(cfg.InstanceMetricConfig)
+	changed := false
+	for _, group := range state.DetectedTargets {
+		target := strings.ToLower(strings.TrimSpace(group.Target))
+		options, supported := instanceMetricKeys[target]
+		if !supported || len(group.Instances) == 0 {
+			continue
+		}
+		fmt.Printf("\n%s 实例指标（可输入 inherit、none 或逗号分隔 key）\n", group.Label)
+		for _, instance := range group.Instances {
+			current, hasOverride := overrides[instance.ID]
+			currentLabel := "跟随全局"
+			if hasOverride {
+				currentLabel = strings.Join(current, ",")
+			}
+			value, readErr := readLine(reader, fmt.Sprintf("%s [%s]: ", instance.Name, valueOr(currentLabel, "none")), "")
+			if readErr != nil {
+				return readErr
+			}
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			trimmed := strings.ToLower(strings.TrimSpace(value))
+			if trimmed == "inherit" || trimmed == "default" {
+				if hasOverride {
+					delete(overrides, instance.ID)
+					changed = true
+				}
+				continue
+			}
+			metrics, parseErr := parseInstanceMetrics(value, options, cfg.EnabledMetrics)
+			if parseErr != nil {
+				return fmt.Errorf("%s: %w", instance.Name, parseErr)
+			}
+			overrides[instance.ID] = metrics
+			changed = true
+		}
+	}
+	if !changed {
+		fmt.Println("实例指标配置未修改。")
+		return nil
+	}
+	cfg.InstanceMetricConfig = overrides
+	if err := saveConfig(client, cfg, true); err != nil {
+		return err
+	}
+	fmt.Println("实例指标配置已保存。")
+	return nil
+}
+
+func parseInstanceMetrics(value string, allowed, global []string) ([]string, error) {
+	parsed, err := parseMetrics(value)
+	if err != nil {
+		return nil, err
+	}
+	allowedSet := map[string]bool{}
+	globalSet := map[string]bool{}
+	for _, key := range allowed {
+		allowedSet[key] = true
+	}
+	for _, key := range global {
+		globalSet[key] = true
+	}
+	for _, key := range parsed {
+		if !allowedSet[key] {
+			return nil, fmt.Errorf("指标 %q 不适用于此实例", key)
+		}
+		if !globalSet[key] {
+			return nil, fmt.Errorf("指标 %q 尚未在全局配置中启用", key)
+		}
+	}
+	return parsed, nil
+}
+
+func cloneStringMap(values map[string][]string) map[string][]string {
+	result := make(map[string][]string, len(values))
+	for key, items := range values {
+		result[key] = append([]string(nil), items...)
+	}
+	return result
+}
+
+func appendUnique(values []string, target string) []string {
+	if contains(values, target) {
+		return values
+	}
+	return append(values, target)
+}
+
+func removeString(values []string, target string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != target {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func uniqueStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	return result
 }
 
 func controlUI(client *backendClient, reader *bufio.Reader) error {
@@ -639,7 +1206,10 @@ func controlUI(client *backendClient, reader *bufio.Reader) error {
 			fmt.Printf("检测到 %d 个目标类别。\n", len(state.DetectedTargets))
 		}
 	case "5":
-		state, err = client.control("/api/cloud/push", nil)
+		err = pushCloudConfig(client)
+		if err == nil {
+			fmt.Println("展示配置已成功同步到中枢。")
+		}
 	default:
 		return errors.New("无效选择")
 	}
@@ -665,6 +1235,21 @@ func doctorUI(client *backendClient) error {
 	}
 	if checkErr != nil && result.Message == "" {
 		fmt.Printf("连接检查: %v\n", checkErr)
+	}
+	detected, detectErr := client.control("/api/probes/detect", nil)
+	if detectErr != nil {
+		fmt.Printf("探针检测: %v\n", detectErr)
+	} else {
+		fmt.Printf("探针检测: 已发现 %d 个目标类别\n", len(detected.DetectedTargets))
+	}
+	if checkErr != nil {
+		return fmt.Errorf("connection check failed: %w", checkErr)
+	}
+	if !result.OK {
+		return fmt.Errorf("connection check failed: %s", valueOr(result.Status, "not_ok"))
+	}
+	if detectErr != nil {
+		return fmt.Errorf("probe detection failed: %w", detectErr)
 	}
 	return nil
 }
@@ -729,17 +1314,22 @@ func startBackend(root string) (*backendClient, error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("create config directory: %w", err)
 	}
+	if err := writeSecureTextFile(localTokenPath(root), token); err != nil {
+		return nil, fmt.Errorf("write local token file: %w", err)
+	}
 	logPath := filepath.Join(root, processLogName)
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
+		_ = os.Remove(localTokenPath(root))
 		return nil, fmt.Errorf("open backend log: %w", err)
 	}
+	_ = logFile.Chmod(0o600)
 	args := []string{
 		"--listen", "127.0.0.1:" + strconv.Itoa(port),
 		"--bundle-root", exeDir,
 		"--config-root", root,
 		"--child-binary", collectorPath,
-		"--local-token", token,
+		"--local-token-file", localTokenPath(root),
 	}
 	cmd := exec.Command(backendPath, args...)
 	cmd.Dir = exeDir
@@ -748,6 +1338,7 @@ func startBackend(root string) (*backendClient, error) {
 	detachCommand(cmd)
 	if err := cmd.Start(); err != nil {
 		_ = logFile.Close()
+		_ = os.Remove(localTokenPath(root))
 		return nil, fmt.Errorf("start backend: %w", err)
 	}
 	_ = logFile.Close()
@@ -759,6 +1350,7 @@ func startBackend(root string) (*backendClient, error) {
 	}
 	if err := writeRuntime(root, record); err != nil {
 		terminateProcess(record.PID)
+		_ = os.Remove(localTokenPath(root))
 		return nil, err
 	}
 	client := newBackendClient(record)
@@ -774,6 +1366,7 @@ func startBackend(root string) (*backendClient, error) {
 	}
 	terminateProcess(record.PID)
 	_ = os.Remove(filepath.Join(root, runtimeFileName))
+	_ = os.Remove(localTokenPath(root))
 	return nil, fmt.Errorf("backend did not become ready: %v; see %s", lastErr, logPath)
 }
 
@@ -806,9 +1399,12 @@ func (c *backendClient) request(method, endpoint string, payload any, output any
 		return err
 	}
 	defer response.Body.Close()
-	raw, readErr := io.ReadAll(response.Body)
+	raw, readErr := io.ReadAll(io.LimitReader(response.Body, maxBackendResponseBytes+1))
 	if readErr != nil {
 		return readErr
+	}
+	if int64(len(raw)) > maxBackendResponseBytes {
+		return errors.New("backend response is too large")
 	}
 	if output != nil && len(bytes.TrimSpace(raw)) > 0 {
 		if err := json.Unmarshal(raw, output); err != nil {
@@ -910,6 +1506,10 @@ func runtimePath(root string) string {
 	return filepath.Join(root, runtimeFileName)
 }
 
+func localTokenPath(root string) string {
+	return filepath.Join(root, localTokenFileName)
+}
+
 func loadRuntime(root string) (*runtimeRecord, error) {
 	raw, err := os.ReadFile(runtimePath(root))
 	if err != nil {
@@ -956,6 +1556,13 @@ func writeRuntime(root string, record *runtimeRecord) error {
 	return os.Rename(tempPath, runtimePath(root))
 }
 
+func writeSecureTextFile(path, value string) error {
+	if err := os.WriteFile(path, []byte(value+"\n"), 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
+}
+
 func terminateProcess(pid int) {
 	if pid <= 0 {
 		return
@@ -967,34 +1574,48 @@ func terminateProcess(pid int) {
 }
 
 func printDashboard(state *backendState) {
+	redacted := redactState(state)
 	fmt.Printf("观澜 CLI %s (%s)\n", BuildVersion, BuildChannel)
 	fmt.Println("────────────────────────────────────────")
 	collector := "已停止"
-	if state.Running {
+	if redacted.Running {
 		collector = "运行中"
 	}
-	fmt.Printf("采集器: %-8s  连接: %s\n", collector, valueOr(state.ConnectionStatus, "unknown"))
-	fmt.Printf("中枢地址: %s\n", valueOr(state.Config.Connection.ServerURL, "未配置"))
-	fmt.Printf("设备: %s (%s)\n", valueOr(state.Config.Connection.DeviceID, "未配置"), valueOr(state.Config.Connection.Hostname, "未配置"))
-	fmt.Printf("上传间隔: %d 秒  待上传: %d 条\n", state.EffectiveUploadIntervalSeconds, state.PendingSampleCount)
-	if state.LastUploadError != "" {
-		fmt.Printf("最近错误: %s\n", state.LastUploadError)
+	fmt.Printf("采集器: %-8s  连接: %s\n", collector, valueOr(redacted.ConnectionStatus, "unknown"))
+	fmt.Printf("中枢地址: %s\n", valueOr(redacted.Config.Connection.ServerURL, "未配置"))
+	fmt.Printf("设备: %s (%s)\n", valueOr(redacted.Config.Connection.DeviceID, "未配置"), valueOr(redacted.Config.Connection.Hostname, "未配置"))
+	fmt.Printf("上传间隔: %d 秒  待上传: %d 条\n", redacted.EffectiveUploadIntervalSeconds, redacted.PendingSampleCount)
+	if redacted.CloudConfigPending {
+		fmt.Println("展示配置: 待同步")
+	}
+	if redacted.LastCloudSyncError != "" {
+		fmt.Printf("展示配置同步错误: %s\n", redacted.LastCloudSyncError)
+	}
+	if redacted.LastUploadError != "" {
+		fmt.Printf("最近错误: %s\n", redacted.LastUploadError)
 	}
 }
 
 func printStateSummary(state *backendState) {
+	redacted := redactState(state)
 	collector := "stopped"
-	if state.Running {
+	if redacted.Running {
 		collector = "running"
 	}
 	fmt.Printf("采集器: %s\n", collector)
-	fmt.Printf("连接状态: %s\n", valueOr(state.ConnectionStatus, "unknown"))
-	fmt.Printf("配置文件: %s\n", valueOr(state.ConfigPath, "unknown"))
-	fmt.Printf("诊断日志: %s\n", valueOr(state.DiagnosticsPath, "unknown"))
-	fmt.Printf("最近上传: %s\n", valueOr(state.LastUploadAt, "暂无"))
-	fmt.Printf("待上传样本: %d 条（%d bytes）\n", state.PendingSampleCount, state.PendingBytes)
-	if state.LastUploadError != "" {
-		fmt.Printf("最近上传错误: %s\n", state.LastUploadError)
+	fmt.Printf("连接状态: %s\n", valueOr(redacted.ConnectionStatus, "unknown"))
+	fmt.Printf("配置文件: %s\n", valueOr(redacted.ConfigPath, "unknown"))
+	fmt.Printf("诊断日志: %s\n", valueOr(redacted.DiagnosticsPath, "unknown"))
+	fmt.Printf("最近上传: %s\n", valueOr(redacted.LastUploadAt, "暂无"))
+	fmt.Printf("待上传样本: %d 条（%d bytes）\n", redacted.PendingSampleCount, redacted.PendingBytes)
+	if redacted.CloudConfigPending {
+		fmt.Println("展示配置: 待同步")
+	}
+	if redacted.LastCloudSyncError != "" {
+		fmt.Printf("展示配置同步错误: %s\n", redacted.LastCloudSyncError)
+	}
+	if redacted.LastUploadError != "" {
+		fmt.Printf("最近上传错误: %s\n", redacted.LastUploadError)
 	}
 }
 
@@ -1015,8 +1636,24 @@ func redactConfig(cfg agentLocalConfig) agentLocalConfig {
 
 func redactState(state *backendState) backendState {
 	copy := *state
+	secret := state.Config.Connection.Secret
+	copy.LastChildLog = redactSensitiveText(copy.LastChildLog, secret)
+	copy.LastCloudSyncError = redactSensitiveText(copy.LastCloudSyncError, secret)
+	copy.LastIssueDetail = redactSensitiveText(copy.LastIssueDetail, secret)
+	copy.LastUploadError = redactSensitiveText(copy.LastUploadError, secret)
 	copy.Config = redactConfig(copy.Config)
 	return copy
+}
+
+func redactSensitiveText(value, secret string) string {
+	value = strings.TrimSpace(value)
+	if secret = strings.TrimSpace(secret); secret != "" {
+		value = strings.ReplaceAll(value, secret, "[redacted]")
+	}
+	if len(value) > 2000 {
+		return value[:2000] + "…"
+	}
+	return value
 }
 
 func writeOutputJSON(value any) error {
@@ -1029,7 +1666,38 @@ func promptValue(reader *bufio.Reader, label, current string) (string, error) {
 	return readLine(reader, fmt.Sprintf("%s [%s]: ", label, valueOr(current, "空")), current)
 }
 
-func promptInt(reader *bufio.Reader, label string, current, minimum int) (int, error) {
+func promptChoice(reader *bufio.Reader, label, current string, options []string) (string, error) {
+	if len(options) == 0 {
+		return current, errors.New("没有可用选项")
+	}
+	fmt.Printf("%s选项: ", label)
+	for index, option := range options {
+		if index > 0 {
+			fmt.Print(" / ")
+		}
+		fmt.Printf("%d=%s", index+1, option)
+	}
+	fmt.Println()
+	value, err := readLine(reader, fmt.Sprintf("%s [%s]: ", label, valueOr(current, options[0])), current)
+	if err != nil {
+		return current, err
+	}
+	trimmed := strings.TrimSpace(value)
+	if index, parseErr := strconv.Atoi(trimmed); parseErr == nil {
+		if index < 1 || index > len(options) {
+			return current, fmt.Errorf("%s 选项无效", label)
+		}
+		return options[index-1], nil
+	}
+	for _, option := range options {
+		if trimmed == option {
+			return option, nil
+		}
+	}
+	return current, fmt.Errorf("%s 必须选择支持的 provider", label)
+}
+
+func promptInt(reader *bufio.Reader, label string, current, minimum, maximum int) (int, error) {
 	value, err := readLine(reader, fmt.Sprintf("%s [%d]: ", label, current), "")
 	if err != nil {
 		return current, err
@@ -1038,8 +1706,8 @@ func promptInt(reader *bufio.Reader, label string, current, minimum int) (int, e
 		return current, nil
 	}
 	parsed, err := strconv.Atoi(strings.TrimSpace(value))
-	if err != nil || parsed < minimum {
-		return current, fmt.Errorf("%s 必须是大于等于 %d 的整数", label, minimum)
+	if err != nil || parsed < minimum || parsed > maximum {
+		return current, fmt.Errorf("%s 必须是 %d 到 %d 之间的整数", label, minimum, maximum)
 	}
 	return parsed, nil
 }
