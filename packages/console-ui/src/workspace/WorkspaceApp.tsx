@@ -464,7 +464,10 @@ function TelemetryChartCard({
   const latestSampleTime = allTimestamps.length ? Math.max(...allTimestamps) : Date.now();
   const earliestSampleTime = allTimestamps.length ? Math.min(...allTimestamps) : latestSampleTime - windowDurationMs;
   const windowEndTime = latestSampleTime;
-  const windowStartTime = Math.min(earliestSampleTime, windowEndTime - windowDurationMs);
+  // Keep the plotted interval within the selected range when the API returns
+  // more history than requested; use all available samples only when the
+  // device has less history than that range.
+  const windowStartTime = Math.max(earliestSampleTime, windowEndTime - windowDurationMs);
   const totalSpan = Math.max(windowEndTime - windowStartTime, 1000);
 
   const timeToX = (timestampStr: string) => {
@@ -867,7 +870,10 @@ function WorkspaceTrend({
   const latestSampleTime = timestamps.length ? Math.max(...timestamps) : Date.now();
   const earliestSampleTime = timestamps.length ? Math.min(...timestamps) : latestSampleTime - windowDurationMs;
   const windowEndTime = latestSampleTime;
-  const windowStartTime = Math.min(earliestSampleTime, windowEndTime - windowDurationMs);
+  // Keep the plotted interval within the selected range when the API returns
+  // more history than requested; use all available samples only when the
+  // device has less history than that range.
+  const windowStartTime = Math.max(earliestSampleTime, windowEndTime - windowDurationMs);
   const totalSpan = Math.max(windowEndTime - windowStartTime, 1000);
 
   const timeToX = (timestampStr: string) => {
