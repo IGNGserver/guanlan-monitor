@@ -2156,7 +2156,26 @@ func collectHardwareSensors() hardwareSensorMetrics {
 		}
 	}
 
-	probeDetail := ""
+	// The bundled LibreHardwareMonitor library is the Windows-compatible
+	// build used by the existing PowerShell integration. Its mutex setup uses
+	// the .NET Framework constructor, which is not callable from the .NET 10
+	// probe. Keep PowerShell as the primary path so CPU/PawnIO sensors are not
+	// lost to an incompatible optional probe, while retaining the .NET probe as
+	// a fallback for future compatible monitor libraries.
+	powerShellSnapshots, powerShellErr := collectWindowsHardwareSnapshotsWithPowerShell(dllPath)
+	if powerShellErr == nil {
+		powerShellSnapshots = alignWindowsHardwareGPUIdentifiers(powerShellSnapshots)
+		metrics := mapHardwareSensors(powerShellSnapshots)
+		metrics.sensorBackends = []sensorBackendStatus{{
+			ID:     "librehardwaremonitor",
+			Label:  "LibreHardwareMonitor",
+			OK:     true,
+			Detail: hardwareSensorDetail(metrics, "PowerShell 传感器探针"),
+		}}
+		return metrics
+	}
+
+	probeDetail := "；PowerShell 传感器探针读取失败：" + powerShellErr.Error()
 	if probePath := resolveHardwareMonitorProbePath(); probePath != "" {
 		if snapshots, pawnIO, probeErr := collectWindowsHardwareSnapshotsWithDotnetProbe(probePath, dllPath); probeErr == nil {
 			snapshots = alignWindowsHardwareGPUIdentifiers(snapshots)
@@ -2165,56 +2184,40 @@ func collectHardwareSensors() hardwareSensorMetrics {
 				ID:     "librehardwaremonitor",
 				Label:  "LibreHardwareMonitor",
 				OK:     true,
-				Detail: hardwareSensorDetail(metrics, ".NET 传感器探针") + formatHardwarePawnIOStatus(pawnIO),
+				Detail: hardwareSensorDetail(metrics, ".NET 传感器探针") + formatHardwarePawnIOStatus(pawnIO) + probeDetail,
 			}}
 			return metrics
 		} else {
-			probeDetail = "；.NET 传感器探针读取失败：" + probeErr.Error()
+			probeDetail += "；.NET 传感器探针读取失败：" + probeErr.Error()
 		}
 	}
 
+	return hardwareSensorMetrics{
+		gpus:               []gpuDeviceStats{},
+		fans:               []fanSensorStats{},
+		diskSensorMetadata: map[string]diskSensorMetadata{},
+		sensorBackends: []sensorBackendStatus{{
+			ID:     "librehardwaremonitor",
+			Label:  "LibreHardwareMonitor",
+			OK:     false,
+			Detail: "读取失败：" + probeDetail,
+		}},
+	}
+}
+
+func collectWindowsHardwareSnapshotsWithPowerShell(dllPath string) ([]hardwareSensorSnapshot, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
 	commandText := `$ErrorActionPreference='Stop'; $dllDir=Split-Path -Parent $env:DSC_LHM_DLL; [System.IO.Directory]::SetCurrentDirectory($dllDir); Set-Location -LiteralPath $dllDir; Get-ChildItem -LiteralPath $dllDir -Filter '*.dll' -File | ForEach-Object { try { [System.Reflection.Assembly]::LoadFrom($_.FullName) | Out-Null } catch {} }; Add-Type -Path $env:DSC_LHM_DLL; $gpuIds=@{}; Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { if($_.Name -and $_.PNPDeviceID){ $gpuIds[[string]$_.Name]=[string]$_.PNPDeviceID } }; $computer=New-Object LibreHardwareMonitor.Hardware.Computer; $computer.IsCpuEnabled=$true; $computer.IsGpuEnabled=$true; $computer.IsMotherboardEnabled=$true; $computer.IsControllerEnabled=$true; $computer.IsStorageEnabled=$true; $computer.Open(); function Read-Hardware($hardware) { $hardware.Update(); $instanceId=''; $temperatureC=$null; $healthPercent=$null; $healthStatus=''; $healthReason=''; $smartAttributes=@(); if($gpuIds.ContainsKey([string]$hardware.Name)){ $instanceId=$gpuIds[[string]$hardware.Name] }; if([string]$hardware.HardwareType -eq 'Storage') { $storage=$hardware.Storage; $smart=$null; if($storage){ $smart=$storage.Smart }; if($smart){ if($smart.Temperature -ne $null){ $temperatureC=[double]$smart.Temperature }; if($smart.Life -ne $null){ $healthPercent=[double]$smart.Life }; $healthStatus=[string]$smart.DiskStatus; if($healthStatus -and $healthStatus -ne 'Unknown'){ $healthReason='SMART status from LibreHardwareMonitor' } }; $smartAttributes=@($hardware.Attributes | ForEach-Object { [pscustomobject]@{ id=[int]$_.Id; name=[string]$_.Name; value=[double]$_.Value; threshold=[double]$_.Threshold } }) }; $result=@([pscustomobject]@{ hardwareType=[string]$hardware.HardwareType; name=[string]$hardware.Name; instanceId=$instanceId; temperatureC=$temperatureC; healthPercent=$healthPercent; healthStatus=$healthStatus; healthReason=$healthReason; smartAttributes=$smartAttributes; sensors=@($hardware.Sensors | ForEach-Object { [pscustomobject]@{ sensorType=[string]$_.SensorType; name=[string]$_.Name; value=$_.Value } }) }); foreach($sub in $hardware.SubHardware) { $result += Read-Hardware $sub }; return $result }; try { @($computer.Hardware | ForEach-Object { Read-Hardware $_ }) | ConvertTo-Json -Depth 7 -Compress } finally { $computer.Close() }`
 	output, err := runWindowsPowerShell(ctx, commandText, "DSC_LHM_DLL="+dllPath)
 	if err != nil {
-		return hardwareSensorMetrics{
-			gpus:               []gpuDeviceStats{},
-			fans:               []fanSensorStats{},
-			diskSensorMetadata: map[string]diskSensorMetadata{},
-			sensorBackends: []sensorBackendStatus{{
-				ID:     "librehardwaremonitor",
-				Label:  "LibreHardwareMonitor",
-				OK:     false,
-				Detail: "读取失败：" + err.Error() + probeDetail,
-			}},
-		}
+		return nil, err
 	}
-
 	snapshots, err := decodeHardwareSnapshots(output)
 	if err != nil {
-		return hardwareSensorMetrics{
-			gpus:               []gpuDeviceStats{},
-			fans:               []fanSensorStats{},
-			diskSensorMetadata: map[string]diskSensorMetadata{},
-			sensorBackends: []sensorBackendStatus{{
-				ID:     "librehardwaremonitor",
-				Label:  "LibreHardwareMonitor",
-				OK:     false,
-				Detail: "传感器输出解析失败：" + err.Error() + probeDetail,
-			}},
-		}
+		return nil, fmt.Errorf("传感器输出解析失败：%w", err)
 	}
-	snapshots = alignWindowsHardwareGPUIdentifiers(snapshots)
-	metrics := mapHardwareSensors(snapshots)
-	detail := hardwareSensorDetail(metrics, "PowerShell 传感器探针") + probeDetail
-	metrics.sensorBackends = []sensorBackendStatus{{
-		ID:     "librehardwaremonitor",
-		Label:  "LibreHardwareMonitor",
-		OK:     true,
-		Detail: detail,
-	}}
-	return metrics
+	return snapshots, nil
 }
 
 func collectLinuxHardwareSensors() hardwareSensorMetrics {
