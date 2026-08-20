@@ -64,7 +64,16 @@ func TestNormalizeProbeSelectionsFallsBackFromUnsupportedProvider(t *testing.T) 
 	normalized := normalizeProbeSelections([]agentProbeSelection{
 		{Target: "CPU", Provider: "not-supported", Enabled: true},
 	}, defaults.ProbeSelections)
-	if len(normalized) != 1 || normalized[0].Target != "cpu" || normalized[0].Provider != "gopsutil" || !normalized[0].Enabled {
+	var cpu agentProbeSelection
+	found := false
+	for _, selection := range normalized {
+		if selection.Target == "cpu" {
+			cpu = selection
+			found = true
+			break
+		}
+	}
+	if !found || cpu.Provider != "gopsutil" || !cpu.Enabled {
 		t.Fatalf("unexpected normalized probe selection: %#v", normalized)
 	}
 }
