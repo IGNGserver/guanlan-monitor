@@ -318,18 +318,21 @@ export function placementStyle(
   placement: Partial<WidgetPlacement> | undefined,
   fallbackSize: WidgetSize = DEFAULT_SIZE,
   customH?: number,
-  customW?: number
+  customW?: number,
+  customCompactH?: number
 ): {
   "--widget-w": number;
   "--widget-h": number;
   "--widget-w-md": number;
   "--widget-h-md": number;
+  "--widget-h-compact": number;
   order: number;
 } {
   const size = placement?.size ?? fallbackSize;
   const preset = SIZE_PRESETS[size] ?? SIZE_PRESETS.medium;
   const w = placement?.w && placement.w >= 1 ? placement.w : (customW ?? preset.w);
   const h = placement?.h && placement.h >= 1 ? placement.h : (customH ?? preset.h);
+  const compactH = customCompactH && customCompactH >= 1 ? customCompactH : h;
   const x = placement?.x ?? 1;
   const y = placement?.y ?? 1;
   const order = (y - 1) * 100 + x;
@@ -338,6 +341,7 @@ export function placementStyle(
     "--widget-h": h,
     "--widget-w-md": w >= 3 ? 2 : 1,
     "--widget-h-md": h,
+    "--widget-h-compact": compactH,
     order
   };
 }

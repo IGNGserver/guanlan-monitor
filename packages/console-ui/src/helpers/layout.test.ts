@@ -133,6 +133,31 @@ test("placementStyle computes dimensions and CSS order based on placement coordi
 
   const style3 = placementStyle({ x: 1, y: 3, w: 4, h: 2, size: "large" });
   assert.strictEqual(style3.order, 201);
+
+  const compactStyle = placementStyle({ x: 1, y: 1, w: 4, h: 4, size: "large" }, "large", undefined, undefined, 6);
+  assert.strictEqual(compactStyle["--widget-h"], 4);
+  assert.strictEqual(compactStyle["--widget-h-compact"], 6);
+});
+
+test("normalizePlacements expands grouped device layouts from visible child count", async () => {
+  const { normalizePlacements } = await import("./widgetGrid.ts");
+  const catalog = {
+    group: { title: "CPU", kind: "group" as const, defaultSize: "large" as const },
+    chart1: { title: "使用率", kind: "content" as const, defaultSize: "medium" as const, groupId: "group" },
+    chart2: { title: "频率", kind: "content" as const, defaultSize: "medium" as const, groupId: "group" },
+    chart3: { title: "温度", kind: "content" as const, defaultSize: "medium" as const, groupId: "group" }
+  };
+  const normalized = normalizePlacements({
+    group: { x: 1, y: 1, w: 4, h: 2, size: "large" },
+    chart1: { x: 1, y: 1, w: 2, h: 2, size: "medium" },
+    chart2: { x: 3, y: 1, w: 2, h: 2, size: "medium" },
+    chart3: { x: 1, y: 3, w: 2, h: 2, size: "medium" }
+  }, true, catalog);
+
+  assert.strictEqual(normalized.group.h, 4);
+  assert.strictEqual(normalized.chart1.x, 1);
+  assert.strictEqual(normalized.chart2.x, 3);
+  assert.strictEqual(normalized.chart3.y, 3);
 });
 
 test("findNextFreePlacement correctly reuses freed column space on the first row", async () => {
@@ -223,4 +248,3 @@ test("getWidgetLines strictly isolates GPU temperature by targetId and does not 
   assert.strictEqual(summaryTemp.lines.length, 1);
   assert.deepStrictEqual(summaryTemp.lines[0].points, [{ timestamp: "2026-08-05T08:00:00.000Z", value: 49 }]);
 });
-

@@ -60,6 +60,7 @@ export type WidgetDefinition = {
   kind: WidgetKind;
   defaultSize: WidgetSize;
   defaultH?: number;
+  compactH?: number;
   defaultW?: number;
   widgetType?: string;
   category?: string;
@@ -260,7 +261,7 @@ function mergeDefinitions(layout: WidgetLayoutDocument, definitions: Record<stri
       if (definition.groupId) {
         next.placements[definition.id] = normalizePlacement({ x: 1, y: 1, size: definition.defaultSize });
       } else {
-        const customH = definition.id === "compute-cpu-facts" ? 2 : undefined;
+        const customH = definition.id === "compute-cpu-facts" ? 2 : definition.defaultH;
         const initialPreset = SIZE_PRESETS[definition.defaultSize];
         const position = findNextFreePlacement(topLevelPlacements(next.placements, next.catalog), definition.defaultSize, 1, 1, { w: initialPreset.w, h: customH ?? initialPreset.h });
         next.placements[definition.id] = normalizePlacement({ ...position, size: definition.defaultSize, h: customH });
@@ -578,7 +579,7 @@ export function WidgetLayoutProvider({
         ...(definition.visualization ? { visualization: definition.visualization } : {}),
         ...(definition.config ? { config: { ...definition.config } } : {})
       };
-      const customH = id === "compute-cpu-facts" ? 2 : undefined;
+      const customH = id === "compute-cpu-facts" ? 2 : definition.defaultH;
       const initialPreset = SIZE_PRESETS[definition.defaultSize];
       const position = findNextFreePlacement(topLevelPlacements(current.placements, current.catalog), definition.defaultSize, 1, 1, { w: initialPreset.w, h: customH ?? initialPreset.h });
       current.placements[id] = normalizePlacement({ ...position, size: definition.defaultSize, h: customH });
@@ -885,6 +886,7 @@ export function DesktopWidget({
   kind = "content",
   defaultSize = DEFAULT_SIZE,
   defaultH,
+  compactH,
   defaultW,
   widgetType,
   category,
@@ -900,6 +902,7 @@ export function DesktopWidget({
   kind?: WidgetKind;
   defaultSize?: WidgetSize;
   defaultH?: number;
+  compactH?: number;
   defaultW?: number;
   widgetType?: string;
   category?: string;
@@ -917,12 +920,13 @@ export function DesktopWidget({
     kind,
     defaultSize,
     defaultH,
+    compactH,
     defaultW,
     widgetType,
     category,
     visualization,
     config
-  }), [category, config, defaultH, defaultSize, defaultW, groupId, id, kind, templateId, title, visualization, widgetType]);
+  }), [category, compactH, config, defaultH, defaultSize, defaultW, groupId, id, kind, templateId, title, visualization, widgetType]);
   const resolved = layout.resolveWidget(definition);
   const editing = layout.editable && layout.editMode;
   const widgetRef = useRef<HTMLDivElement>(null);
@@ -1068,8 +1072,9 @@ export function DesktopWidget({
 
   const customH = id === "compute-cpu-facts" ? 2 : (defaultH ?? resolved.placement?.h);
   const customW = defaultW ?? resolved.placement?.w;
+  const customCompactH = compactH ?? customH;
   const widgetStyle = {
-    ...placementStyle(resolved.placement, resolved.size ?? defaultSize, customH, customW),
+    ...placementStyle(resolved.placement, resolved.size ?? defaultSize, customH, customW, customCompactH),
     ...(dragging ? { transform: `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`, zIndex: 30 } : {})
   } as React.CSSProperties;
 

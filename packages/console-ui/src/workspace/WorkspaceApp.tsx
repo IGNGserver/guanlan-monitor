@@ -1829,6 +1829,7 @@ function TelemetryDeviceBlock({
     : undefined;
   const childCount = React.Children.count(children);
   const defaultH = childCount >= 3 ? 4 : 2;
+  const compactH = Math.max(2, childCount * 2);
   const frame = (
     <DeviceWidgetFrame kind={kind} eyebrow={eyebrow} title={title} subtitle={subtitle} count={`${childCount} 个图表`} contentClassName="workspace-device-block__charts--dynamic">
       {children}
@@ -1847,6 +1848,7 @@ function TelemetryDeviceBlock({
       kind="group"
       defaultSize={widgetDefaultSize}
       defaultH={defaultH}
+      compactH={compactH}
       className="workspace-widget--device-frame"
     >
       {frame}
@@ -2998,7 +3000,7 @@ function WorkspaceFrame() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
   return (
-    <div className={clsx("workspace-root", !capabilities.canControlNativeWindow && "is-web", sidebarCollapsed && "is-sidebar-collapsed", sidebarPeek && "is-sidebar-peek")}>
+    <div className={clsx("workspace-root", !capabilities.canControlNativeWindow && "is-web", sidebarCollapsed && "is-sidebar-collapsed", !sidebarCollapsed && "is-sidebar-open", sidebarPeek && "is-sidebar-peek")}>
       {capabilities.canControlNativeWindow && <WindowTitleBar />}
       <WorkspaceSidebar sidebarPeek={sidebarPeek} onSidebarLeave={() => setSidebarPeek(false)} />
       {!sidebarCollapsed && <div className="workspace-sidebar-backdrop" onPointerDown={() => setSidebarCollapsed(true)} aria-hidden="true" />}

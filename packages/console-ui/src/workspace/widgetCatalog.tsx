@@ -674,6 +674,7 @@ function DynamicWidgetGroupCard({ entry, children, context }: { entry: WidgetLay
       category={definition.category}
       visualization={entry.visualization}
       config={entry.config}
+      compactH={Math.max(2, children.length * 2)}
       className="workspace-widget--device-frame"
     >
       <DeviceWidgetFrame
