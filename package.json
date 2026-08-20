@@ -1,7 +1,7 @@
 {
   "name": "guanlan-monitor",
   "private": true,
-  "version": "0.2.195",
+  "version": "0.2.196",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "build": "pnpm -r build",

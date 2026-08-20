@@ -4,6 +4,7 @@
     "jsx": "preserve",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
     "allowJs": true,
     "incremental": true,
     "plugins": [
