@@ -69,6 +69,7 @@ Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "DeviceStateConsoleAgent"; Flags: deletevalue
 
 [Run]
+Filename: "{app}\backend\windows-hardware\pawnio\PawnIO_setup.exe"; Parameters: "-install -silent"; StatusMsg: "正在安装硬件传感器驱动..."; Flags: runhidden waituntilterminated
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\install-dotnet-runtime.ps1"""; StatusMsg: "正在校验 .NET Desktop Runtime 8..."; Flags: runhidden waituntilterminated
 Filename: "{sys}\reg.exe"; Parameters: "add ""HKCU\Software\Microsoft\Windows\CurrentVersion\Run"" /v ""{#MyAppName}"" /t REG_SZ /d """"{sys}\wscript.exe"" ""{app}\start-agent.vbs"""" /f"; Flags: runhidden runasoriginaluser; Tasks: autostart
 Filename: "{sys}\wscript.exe"; Parameters: """{app}\start-agent.vbs"""; Description: "启动 {#MyAppName}"; Flags: nowait postinstall skipifsilent runasoriginaluser

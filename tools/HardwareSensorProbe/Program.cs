@@ -18,8 +18,8 @@ internal static class Program
 
         try
         {
-            var snapshots = ReadSnapshots(Path.GetFullPath(dllPath));
-            Console.WriteLine(JsonSerializer.Serialize(snapshots));
+            var result = ReadSnapshots(Path.GetFullPath(dllPath));
+            Console.WriteLine(JsonSerializer.Serialize(result));
             return 0;
         }
         catch (Exception exception)
@@ -29,7 +29,7 @@ internal static class Program
         }
     }
 
-    private static List<HardwareSnapshot> ReadSnapshots(string dllPath)
+    private static HardwareProbeResult ReadSnapshots(string dllPath)
     {
         var dllDirectory = Path.GetDirectoryName(dllPath) ?? AppContext.BaseDirectory;
         var loadContext = AssemblyLoadContext.Default;
@@ -46,6 +46,7 @@ internal static class Program
             ?? throw new InvalidOperationException("LibreHardwareMonitor Computer type was not found.");
         var computer = Activator.CreateInstance(computerType)
             ?? throw new InvalidOperationException("LibreHardwareMonitor Computer could not be created.");
+        var pawnIo = ReadPawnIoStatus(assembly);
 
         SetProperty(computer, "IsCpuEnabled", true);
         SetProperty(computer, "IsGpuEnabled", true);
@@ -73,7 +74,11 @@ internal static class Program
             {
                 ReadHardware(hardware, snapshots);
             }
-            return snapshots;
+            return new HardwareProbeResult
+            {
+                Snapshots = snapshots,
+                PawnIo = pawnIo
+            };
         }
         finally
         {
@@ -142,6 +147,41 @@ internal static class Program
         };
     }
 
+    private static PawnIoStatus ReadPawnIoStatus(Assembly assembly)
+    {
+        try
+        {
+            var pawnIoType = assembly.GetType("LibreHardwareMonitor.PawnIo.PawnIo");
+            if (pawnIoType is null)
+            {
+                return new PawnIoStatus
+                {
+                    Available = false,
+                    Error = "LibreHardwareMonitor PawnIO API was not found."
+                };
+            }
+
+            var installed = pawnIoType.GetProperty("IsInstalled", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+            var loaded = pawnIoType.GetProperty("IsLoaded", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+            var version = pawnIoType.GetProperty("Version", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+            return new PawnIoStatus
+            {
+                Available = true,
+                Installed = ToNullableBool(installed),
+                Loaded = ToNullableBool(loaded),
+                Version = ToText(version)
+            };
+        }
+        catch (Exception exception)
+        {
+            return new PawnIoStatus
+            {
+                Available = true,
+                Error = exception.GetBaseException().Message
+            };
+        }
+    }
+
     private static string? ReadArgument(IReadOnlyList<string> args, string name)
     {
         for (var index = 0; index < args.Count - 1; index++)
@@ -199,6 +239,46 @@ internal static class Program
         {
             return null;
         }
+    }
+
+    private static bool? ToNullableBool(object? value)
+    {
+        if (value is null) return null;
+        try
+        {
+            return Convert.ToBoolean(value, CultureInfo.InvariantCulture);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private sealed class HardwareProbeResult
+    {
+        [JsonPropertyName("snapshots")]
+        public List<HardwareSnapshot> Snapshots { get; set; } = [];
+
+        [JsonPropertyName("pawnIo")]
+        public PawnIoStatus PawnIo { get; set; } = new();
+    }
+
+    private sealed class PawnIoStatus
+    {
+        [JsonPropertyName("available")]
+        public bool Available { get; set; }
+
+        [JsonPropertyName("installed")]
+        public bool? Installed { get; set; }
+
+        [JsonPropertyName("loaded")]
+        public bool? Loaded { get; set; }
+
+        [JsonPropertyName("version")]
+        public string Version { get; set; } = string.Empty;
+
+        [JsonPropertyName("error")]
+        public string Error { get; set; } = string.Empty;
     }
 
     private sealed class HardwareSnapshot

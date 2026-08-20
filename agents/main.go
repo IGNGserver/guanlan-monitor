@@ -2081,6 +2081,19 @@ type hardwareSensorSnapshot struct {
 	Sensors         []hardwareSensor         `json:"sensors"`
 }
 
+type hardwarePawnIOStatus struct {
+	Available bool    `json:"available"`
+	Installed *bool   `json:"installed"`
+	Loaded    *bool   `json:"loaded"`
+	Version   string  `json:"version"`
+	Error     string  `json:"error"`
+}
+
+type hardwareSensorProbeResult struct {
+	Snapshots []hardwareSensorSnapshot `json:"snapshots"`
+	PawnIO    hardwarePawnIOStatus     `json:"pawnIo"`
+}
+
 type hardwareSensor struct {
 	SensorType string   `json:"sensorType"`
 	Name       string   `json:"name"`
@@ -2134,14 +2147,14 @@ func collectHardwareSensors() hardwareSensorMetrics {
 
 	probeDetail := ""
 	if probePath := resolveHardwareMonitorProbePath(); probePath != "" {
-		if snapshots, probeErr := collectWindowsHardwareSnapshotsWithDotnetProbe(probePath, dllPath); probeErr == nil {
+		if snapshots, pawnIO, probeErr := collectWindowsHardwareSnapshotsWithDotnetProbe(probePath, dllPath); probeErr == nil {
 			snapshots = alignWindowsHardwareGPUIdentifiers(snapshots)
 			metrics := mapHardwareSensors(snapshots)
 			metrics.sensorBackends = []sensorBackendStatus{{
 				ID:     "librehardwaremonitor",
 				Label:  "LibreHardwareMonitor",
 				OK:     true,
-				Detail: hardwareSensorDetail(metrics, ".NET 传感器探针"),
+				Detail: hardwareSensorDetail(metrics, ".NET 传感器探针") + formatHardwarePawnIOStatus(pawnIO),
 			}}
 			return metrics
 		} else {
@@ -2358,13 +2371,13 @@ func resolveDotnetPath() string {
 	return ""
 }
 
-func collectWindowsHardwareSnapshotsWithDotnetProbe(probePath, dllPath string) ([]hardwareSensorSnapshot, error) {
+func collectWindowsHardwareSnapshotsWithDotnetProbe(probePath, dllPath string) ([]hardwareSensorSnapshot, hardwarePawnIOStatus, error) {
 	if runtime.GOOS != "windows" {
-		return nil, errors.New(".NET hardware sensor probe is only available on Windows")
+		return nil, hardwarePawnIOStatus{}, errors.New(".NET hardware sensor probe is only available on Windows")
 	}
 	dotnetPath := resolveDotnetPath()
 	if dotnetPath == "" {
-		return nil, errors.New("未找到可运行 .NET 传感器探针的 dotnet.exe")
+		return nil, hardwarePawnIOStatus{}, errors.New("未找到可运行 .NET 传感器探针的 dotnet.exe")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
@@ -2376,11 +2389,11 @@ func collectWindowsHardwareSnapshotsWithDotnetProbe(probePath, dllPath string) (
 	if err != nil {
 		detail := strings.TrimSpace(stderr.String())
 		if detail != "" {
-			return nil, fmt.Errorf("%w: %s", err, detail)
+			return nil, hardwarePawnIOStatus{}, fmt.Errorf("%w: %s", err, detail)
 		}
-		return nil, err
+		return nil, hardwarePawnIOStatus{}, err
 	}
-	return decodeHardwareSnapshots(output)
+	return decodeHardwareProbeResult(output)
 }
 
 func alignWindowsHardwareGPUIdentifiers(snapshots []hardwareSensorSnapshot) []hardwareSensorSnapshot {
@@ -2426,6 +2439,41 @@ func decodeHardwareSnapshots(raw []byte) ([]hardwareSensorSnapshot, error) {
 		return nil, err
 	}
 	return []hardwareSensorSnapshot{single}, nil
+}
+
+func decodeHardwareProbeResult(raw []byte) ([]hardwareSensorSnapshot, hardwarePawnIOStatus, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return []hardwareSensorSnapshot{}, hardwarePawnIOStatus{}, nil
+	}
+	var result hardwareSensorProbeResult
+	if err := json.Unmarshal(trimmed, &result); err == nil && result.Snapshots != nil {
+		return result.Snapshots, result.PawnIO, nil
+	}
+	snapshots, err := decodeHardwareSnapshots(trimmed)
+	return snapshots, hardwarePawnIOStatus{}, err
+}
+
+func formatHardwarePawnIOStatus(status hardwarePawnIOStatus) string {
+	if !status.Available && status.Installed == nil && status.Loaded == nil && strings.TrimSpace(status.Error) == "" {
+		return ""
+	}
+	installed := "unknown"
+	if status.Installed != nil {
+		installed = strconv.FormatBool(*status.Installed)
+	}
+	loaded := "unknown"
+	if status.Loaded != nil {
+		loaded = strconv.FormatBool(*status.Loaded)
+	}
+	detail := fmt.Sprintf("；PawnIO installed=%s, loaded=%s", installed, loaded)
+	if version := strings.TrimSpace(status.Version); version != "" {
+		detail += ", version=" + version
+	}
+	if status.Error != "" {
+		detail += ", error=" + status.Error
+	}
+	return detail
 }
 
 func resolveHardwareMonitorPath() string {
@@ -4712,7 +4760,6 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 
 	if !enabledBlocks["fan"] {
 		payload.Fans = []fanSensorStats{}
-		payload.SensorBackends = []sensorBackendStatus{}
 	} else {
 		payload.Fans = filterFans(payload.Fans, cfg)
 		for index := range payload.Fans {

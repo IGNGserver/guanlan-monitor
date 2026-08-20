@@ -64,6 +64,7 @@ $report = [ordered]@{
     legacyMachineStartupRemoved = Test-Contains 'Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "{#MyAppName}"; Flags: deletevalue'
     windowsAppRuntimePrereqRemoved = (-not (Test-Contains 'Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\install-windows-app-runtime.ps1""'))
     legacyWindowsAppRuntimeFileCleanupConfigured = Test-Contains 'Type: files; Name: "{app}\install-windows-app-runtime.ps1"'
+    pawnIoDriverInstallConfigured = Test-Contains 'Filename: "{app}\backend\windows-hardware\pawnio\PawnIO_setup.exe"; Parameters: "-install -silent"; StatusMsg: "正在安装硬件传感器驱动..."; Flags: runhidden waituntilterminated'
     dotnetRuntimePrereqConfigured = Test-Contains 'Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\install-dotnet-runtime.ps1"""; StatusMsg: "正在校验 .NET Desktop Runtime 8..."; Flags: runhidden waituntilterminated'
     postInstallLaunchUsesBootstrap = Test-Contains 'Filename: "{sys}\wscript.exe"; Parameters: """{app}\start-agent.vbs"""; Description: "启动 {#MyAppName}"; Flags: nowait postinstall skipifsilent runasoriginaluser'
     uninstallPromptPresent = Test-Contains '是否在卸载时一并删除这些本地配置与同步状态文件？'

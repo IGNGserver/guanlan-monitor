@@ -29,6 +29,7 @@ const checks = [
   [installer.includes("IsWindowVisible"), "The installer must distinguish a visible window from a tray-only instance."],
   [installer.includes("GetDlgItem $0 $HWNDPARENT 1203"), "The installer must hide the finish-page launch checkbox through the NSIS dialog handle."],
   [installer.includes("nsExec::Exec"), "Process cleanup must use the hidden nsExec runner."],
+  [installer.includes("resources\\agent\\windows-hardware\\pawnio\\PawnIO_setup.exe") && installer.includes("-install -silent"), "The Windows GUI installer must install the bundled PawnIO driver silently."],
   [!/(?<!:)\b(?:ExecWait|Exec)\s+['"][^'\n]*taskkill\\.exe/i.test(installer), "taskkill must not be launched through a visible Exec/ExecWait command."],
   [installer.includes("!macro customInstall"), "The installer migration hook must be present."],
   [installer.includes("!macro customFinishPage\n!ifndef BUILD_UNINSTALLER"), "The installer finish page customization must be scoped at macro expansion time."],
