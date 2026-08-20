@@ -32,6 +32,26 @@ local backend on demand, stores its per-user runtime/configuration files outside
 the install directory, and provides both an interactive UI and scriptable
 `status`, `doctor`, `start`, `stop`, `restart`, `shutdown`, and `config` commands.
 
+### CLI/TUI configuration contract
+
+The CLI backend persists `agent-ui.config.json` under the user configuration
+directory, not under the installation directory. Set `DSC_CLI_CONFIG_ROOT` to
+override that directory when running the CLI. The same JSON contract is used by
+the desktop Agent backend and includes `connection`, `sampling`,
+`enabledMetrics`, `enabledDeviceIds`, `instanceMetricConfig`,
+`probeSelections`, `cloudSyncEnabled`, `dataRecordingEnabled`,
+`autoStartCollector`, `autoRestartCollector`, and the non-secret
+`virtualization` settings.
+
+Use `dsc config validate`, `dsc config import --file`, and
+`dsc config export --file` for unattended configuration. Export always clears
+the connection secret; import preserves the current secret when the imported
+file contains an empty or redacted value unless `--clear-secret` is supplied.
+An omitted `enabledMetrics` field keeps the legacy all-metrics default, while
+an explicit empty array disables every metric. The TUI exposes the same
+connection, sampling/runtime, metric, probe, instance, and cloud-push controls
+that the desktop Agent settings page exposes.
+
 After installation, run the bundled binary's update command from an elevated
 terminal. It checks `/api/updates`, accepts only a strictly newer release,
 verifies the release SHA-256, stops the service/task, replaces only the

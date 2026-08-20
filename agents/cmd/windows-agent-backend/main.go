@@ -32,6 +32,22 @@ import (
 var BuildVersion = "dev"
 var BuildChannel = "test"
 
+const (
+	currentConfigVersion             = 1
+	maxConfigBodyBytes         int64 = 256 * 1024
+	maxCloudResponseBytes      int64 = 512 * 1024
+	maxSamplingIntervalSeconds       = 86400
+)
+
+var allMetricKeys = []string{
+	"cpuUsage", "cpuFrequency", "cpuTemperature", "cpuTopology", "systemOverview",
+	"gpuUsage", "gpuEncode", "gpuDecode", "gpuFrequency", "gpuMemory", "gpuTemperature", "gpuDriverInfo",
+	"memoryUsage", "swapUsage", "memoryAvailable", "memoryCached", "memoryCommitted", "memoryHardware",
+	"diskUsage", "diskRead", "diskWrite", "diskMetadata", "diskActivity", "diskHealth",
+	"networkRxRate", "networkTxRate", "networkTraffic", "networkIdentity",
+	"fanRpm", "fanControl", "fanTargetTemperature", "fanPwm", "fanChannelState", "fanNote",
+}
+
 type agentConnectionConfig struct {
 	ServerURL string `json:"serverUrl"`
 	Secret    string `json:"secret"`
@@ -60,17 +76,18 @@ type agentVirtualizationConfig struct {
 }
 
 type agentLocalConfig struct {
-	Connection           agentConnectionConfig `json:"connection"`
-	Sampling             agentSamplingConfig   `json:"sampling"`
-	EnabledMetrics       []string              `json:"enabledMetrics"`
-	EnabledDeviceIDs     map[string][]string   `json:"enabledDeviceIds"`
-	InstanceMetricConfig map[string][]string   `json:"instanceMetricConfig"`
-	ProbeSelections      []agentProbeSelection `json:"probeSelections"`
+	ConfigVersion        int                        `json:"configVersion"`
+	Connection           agentConnectionConfig      `json:"connection"`
+	Sampling             agentSamplingConfig        `json:"sampling"`
+	EnabledMetrics       []string                   `json:"enabledMetrics"`
+	EnabledDeviceIDs     map[string][]string        `json:"enabledDeviceIds"`
+	InstanceMetricConfig map[string][]string        `json:"instanceMetricConfig"`
+	ProbeSelections      []agentProbeSelection      `json:"probeSelections"`
 	Virtualization       *agentVirtualizationConfig `json:"virtualization,omitempty"`
-	CloudSyncEnabled     bool                  `json:"cloudSyncEnabled"`
-	DataRecordingEnabled bool                  `json:"dataRecordingEnabled"`
-	AutoRestartCollector bool                  `json:"autoRestartCollector"`
-	AutoStartCollector   bool                  `json:"autoStartCollector"`
+	CloudSyncEnabled     bool                       `json:"cloudSyncEnabled"`
+	DataRecordingEnabled bool                       `json:"dataRecordingEnabled"`
+	AutoRestartCollector bool                       `json:"autoRestartCollector"`
+	AutoStartCollector   bool                       `json:"autoStartCollector"`
 }
 
 type agentCloudConfigSyncPayload struct {
@@ -219,14 +236,14 @@ func main() {
 	configRoot := flag.String("config-root", "", "directory for local config files")
 	childBinary := flag.String("child-binary", "", "path to the collector binary")
 	parentPID := flag.Int("parent-pid", 0, "frontend process id to watch; backend exits when this process exits")
-	localToken := flag.String("local-token", "", "optional bearer token required for loopback control API calls")
+	localToken := flag.String("local-token", "", "legacy bearer token for local control API calls")
+	localTokenFile := flag.String("local-token-file", "", "file containing the bearer token for local control API calls")
 	flag.Parse()
 
 	exePath, err := os.Executable()
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	resolvedBundleRoot := filepath.Dir(exePath)
 	if strings.TrimSpace(*bundleRoot) != "" {
 		resolvedBundleRoot = *bundleRoot
@@ -242,6 +259,23 @@ func main() {
 	}
 	resolvedConfigRoot, err = filepath.Abs(resolvedConfigRoot)
 	if err != nil {
+		log.Fatal(err)
+	}
+	if strings.TrimSpace(*localTokenFile) != "" {
+		tokenPath := strings.TrimSpace(*localTokenFile)
+		if !filepath.IsAbs(tokenPath) {
+			tokenPath = filepath.Join(resolvedConfigRoot, tokenPath)
+		}
+		rawToken, readErr := os.ReadFile(tokenPath)
+		if readErr != nil {
+			log.Fatalf("read local token file: %v", readErr)
+		}
+		if len(rawToken) > 4096 {
+			log.Fatal("local token file is too large")
+		}
+		*localToken = strings.TrimSpace(string(rawToken))
+	}
+	if err := validateListenAddress(*listenAddr, strings.TrimSpace(*localToken)); err != nil {
 		log.Fatal(err)
 	}
 
@@ -361,6 +395,7 @@ func defaultLocalConfig() agentLocalConfig {
 	}
 
 	return agentLocalConfig{
+		ConfigVersion: currentConfigVersion,
 		Connection: agentConnectionConfig{
 			ServerURL: "http://127.0.0.1:3100",
 			Secret:    "",
@@ -411,7 +446,7 @@ func supportedProbePlans() []probePlanSupport {
 }
 
 func (s *server) loadConfig() error {
-	raw, err := os.ReadFile(s.configPath)
+	raw, err := readLimitedFile(s.configPath, maxConfigBodyBytes)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return s.saveConfigLocked()
@@ -430,7 +465,7 @@ func (s *server) loadConfig() error {
 }
 
 func (s *server) loadSyncState() error {
-	raw, err := os.ReadFile(s.syncStatePath)
+	raw, err := readLimitedFile(s.syncStatePath, maxConfigBodyBytes)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -448,6 +483,22 @@ func (s *server) loadSyncState() error {
 		s.lastCloudSyncAt = parsed.UTC()
 	}
 	return nil
+}
+
+func readLimitedFile(path string, limit int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > limit {
+		return nil, fmt.Errorf("file %s is too large", path)
+	}
+	return raw, nil
 }
 
 func (s *server) saveConfigLocked() error {
@@ -478,13 +529,6 @@ func (s *server) marshalSyncStateLocked() ([]byte, error) {
 	}, "", "  ")
 }
 
-func writeStateFile(path string, raw []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, raw, 0o600)
-}
-
 func fileExists(path string) bool {
 	if strings.TrimSpace(path) == "" {
 		return false
@@ -505,10 +549,10 @@ func (s *server) snapshotLocked() backendState {
 		FrontendParentPID:              s.frontendParentPID,
 		ChildStartedAt:                 formatTime(s.childStartedAt),
 		ConnectionStatus:               s.connectionState,
-		LastChildLog:                   s.logBuffer,
+		LastChildLog:                   redactSensitiveText(s.logBuffer, s.config.Connection.Secret),
 		LastUploadAt:                   formatTime(s.lastUploadAt),
 		LastCloudSyncAt:                formatTime(s.lastCloudSyncAt),
-		LastCloudSyncError:             s.lastCloudSyncErr,
+		LastCloudSyncError:             redactSensitiveText(s.lastCloudSyncErr, s.config.Connection.Secret),
 		CloudConfigPending:             s.cloudConfigDirty,
 		LastDetectAt:                   formatTime(s.lastDetectAt),
 		LastExitAt:                     formatTime(s.lastExitAt),
@@ -518,7 +562,7 @@ func (s *server) snapshotLocked() backendState {
 		AutoRestartPending:             s.autoRestarting,
 		EffectiveUploadIntervalSeconds: s.config.Sampling.NormalIntervalSeconds,
 		LastIssueCategory:              s.lastIssueCategory,
-		LastIssueDetail:                s.lastIssueDetail,
+		LastIssueDetail:                redactSensitiveText(s.lastIssueDetail, s.config.Connection.Secret),
 		LastIssueAt:                    formatTime(s.lastIssueAt),
 		LastIssueCount:                 s.lastIssueCount,
 		LastIssueRecoveredAt:           formatTime(s.lastIssueRecoveredAt),
@@ -533,7 +577,7 @@ func (s *server) snapshotLocked() backendState {
 		PendingSampleCount:             pending.PendingCount,
 		PendingBytes:                   pending.PendingBytes,
 		OldestPendingAt:                pending.OldestSampledAt,
-		LastUploadError:                pending.LastUploadError,
+		LastUploadError:                redactSensitiveText(pending.LastUploadError, s.config.Connection.Secret),
 		Config:                         s.config,
 		SupportedProbePlans:            supportedProbePlans(),
 		DetectedTargets:                append([]probeTargetState(nil), s.detectedTargets...),
@@ -595,6 +639,24 @@ func readCollectorPendingState(path string) collectorPendingStateFile {
 	return state
 }
 
+func validateListenAddress(raw, token string) error {
+	address := strings.TrimSpace(raw)
+	if address == "" {
+		return errors.New("local listen address is required")
+	}
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("invalid local listen address: %w", err)
+	}
+	if isLoopbackHost(host) {
+		return nil
+	}
+	if strings.TrimSpace(token) == "" {
+		return errors.New("non-loopback local listen address requires a local token")
+	}
+	return nil
+}
+
 func (s *server) authorizeLocalRequest(writer http.ResponseWriter, request *http.Request) bool {
 	if s.localToken == "" {
 		return true
@@ -628,9 +690,13 @@ func (s *server) handleConfig(writer http.ResponseWriter, request *http.Request)
 		s.mu.Unlock()
 		writeJSON(writer, http.StatusOK, config)
 	case http.MethodPut:
-		raw, readErr := io.ReadAll(request.Body)
+		raw, readErr := io.ReadAll(io.LimitReader(request.Body, maxConfigBodyBytes+1))
 		if readErr != nil {
 			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_json"})
+			return
+		}
+		if int64(len(raw)) > maxConfigBodyBytes {
+			writeJSON(writer, http.StatusRequestEntityTooLarge, map[string]string{"error": "config_too_large"})
 			return
 		}
 
@@ -872,26 +938,36 @@ func (s *server) handleCloudPush(writer http.ResponseWriter, request *http.Reque
 		var syncStateRaw []byte
 		s.mu.Lock()
 		s.lastCloudSyncAt = time.Now().UTC()
-		s.lastCloudSyncErr = err.Error()
+		safeErr := redactSensitiveText(err.Error(), cfg.Connection.Secret)
+		s.lastCloudSyncErr = safeErr
 		s.cloudConfigDirty = true
-		s.appendDiagnosticLocked("cloud push failed: %v", err)
+		s.appendDiagnosticLocked("cloud push failed: %s", safeErr)
 		syncStateRaw, _ = s.marshalSyncStateLocked()
 		s.mu.Unlock()
 		if len(syncStateRaw) > 0 {
 			_ = writeStateFile(s.syncStatePath, syncStateRaw)
 		}
-		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": safeErr})
 		return
 	}
 	defer response.Body.Close()
 
-	responseBody, _ := io.ReadAll(response.Body)
+	responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, maxCloudResponseBytes+1))
+	if readErr != nil {
+		responseBody = []byte("cloud_response_read_failed")
+		response.StatusCode = http.StatusBadGateway
+	}
+	if int64(len(responseBody)) > maxCloudResponseBytes {
+		responseBody = []byte("cloud_response_too_large")
+		response.StatusCode = http.StatusBadGateway
+	}
+	responseText := redactSensitiveText(string(responseBody), cfg.Connection.Secret)
 	var syncStateRaw []byte
 	s.mu.Lock()
 	s.lastCloudSyncAt = time.Now().UTC()
 	if response.StatusCode >= 300 {
-		s.lastCloudSyncErr = strings.TrimSpace(string(responseBody))
-		s.appendDiagnosticLocked("cloud push returned status=%d body=%s", response.StatusCode, strings.TrimSpace(string(responseBody)))
+		s.lastCloudSyncErr = responseText
+		s.appendDiagnosticLocked("cloud push returned status=%d body=%s", response.StatusCode, responseText)
 	} else {
 		s.lastCloudSyncErr = ""
 		s.cloudConfigDirty = false
@@ -904,13 +980,17 @@ func (s *server) handleCloudPush(writer http.ResponseWriter, request *http.Reque
 	}
 
 	if response.StatusCode >= 300 {
-		writeJSON(writer, response.StatusCode, map[string]string{"error": strings.TrimSpace(string(responseBody))})
+		writeJSON(writer, response.StatusCode, map[string]string{"error": responseText})
 		return
+	}
+	responsePayload := json.RawMessage("null")
+	if json.Valid(responseBody) {
+		responsePayload = json.RawMessage(responseBody)
 	}
 
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"ok":       true,
-		"response": json.RawMessage(responseBody),
+		"response": responsePayload,
 	})
 }
 
@@ -965,7 +1045,7 @@ func (s *server) checkConnection(cfg agentLocalConfig) connectionCheckResult {
 		ServerTime string `json:"serverTime"`
 		Error      string `json:"error"`
 	}
-	_ = json.NewDecoder(pingResponse.Body).Decode(&pingBody)
+	_ = json.NewDecoder(io.LimitReader(pingResponse.Body, 64*1024)).Decode(&pingBody)
 
 	if pingResponse.StatusCode == http.StatusUnauthorized {
 		return connectionCheckResult{
@@ -984,13 +1064,60 @@ func (s *server) checkConnection(cfg agentLocalConfig) connectionCheckResult {
 		}
 	}
 
+	deviceRequest, err := http.NewRequest(http.MethodGet, strings.TrimRight(serverURL, "/")+"/api/agent/device-state?deviceId="+url.QueryEscape(deviceID), nil)
+	if err != nil {
+		return connectionCheckResult{
+			Status:     "invalid_device_check_url",
+			Message:    fmt.Sprintf("设备状态地址格式不正确：%v", err),
+			Reachable:  true,
+			Authorized: true,
+		}
+	}
+	deviceRequest.Header.Set("Authorization", "Bearer "+secret)
+	deviceResponse, err := s.requestClient.Do(deviceRequest)
+	if err != nil {
+		return connectionCheckResult{
+			Status:     "device_check_failed",
+			Message:    fmt.Sprintf("中枢可达，但设备状态检查失败：%v", err),
+			Reachable:  true,
+			Authorized: true,
+		}
+	}
+	defer deviceResponse.Body.Close()
+	if deviceResponse.StatusCode == http.StatusNotFound {
+		return connectionCheckResult{
+			Status:      "device_not_known",
+			Message:     "中枢已认证，但尚未找到该设备。",
+			Reachable:   true,
+			Authorized:  true,
+			DeviceKnown: false,
+		}
+	}
+	if deviceResponse.StatusCode == http.StatusUnauthorized {
+		return connectionCheckResult{
+			Status:     "unauthorized",
+			Message:    "Agent Secret 校验失败，请确认与中枢 AGENT_SHARED_SECRET 一致。",
+			Reachable:  true,
+			Authorized: false,
+		}
+	}
+	if deviceResponse.StatusCode >= 300 {
+		return connectionCheckResult{
+			Status:     "device_check_failed",
+			Message:    fmt.Sprintf("中枢已响应，但设备状态检查返回了异常状态：%s", deviceResponse.Status),
+			Reachable:  true,
+			Authorized: true,
+		}
+	}
+
 	result := connectionCheckResult{
-		OK:         true,
-		Reachable:  true,
-		Authorized: true,
-		Status:     "authorized",
-		Message:    "已成功连接中枢，Agent Secret 校验通过。",
-		ServerTime: strings.TrimSpace(pingBody.ServerTime),
+		OK:          true,
+		Reachable:   true,
+		Authorized:  true,
+		DeviceKnown: true,
+		Status:      "authorized",
+		Message:     "已成功连接中枢，Agent Secret 校验通过。",
+		ServerTime:  strings.TrimSpace(pingBody.ServerTime),
 	}
 
 	result.Message = "已成功连接中枢，Agent Secret 校验通过。"
@@ -1514,6 +1641,7 @@ func (s *server) captureLogs(reader io.Reader) {
 			line := strings.TrimSpace(string(buffer[:count]))
 			if line != "" {
 				s.mu.Lock()
+				line = redactSensitiveText(line, s.config.Connection.Secret)
 				s.logBuffer = line
 				if strings.Contains(strings.ToLower(line), "uploaded") {
 					s.connectionState = "connected"
@@ -1830,16 +1958,29 @@ func (s *server) appendDiagnosticLocked(format string, values ...any) {
 	if strings.TrimSpace(s.diagnosticsPath) == "" {
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(s.diagnosticsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.diagnosticsPath), 0o700); err != nil {
 		return
 	}
-	line := fmt.Sprintf("%s %s\n", time.Now().UTC().Format(time.RFC3339), fmt.Sprintf(format, values...))
-	file, err := os.OpenFile(s.diagnosticsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	_ = os.Chmod(filepath.Dir(s.diagnosticsPath), 0o700)
+	line := fmt.Sprintf("%s %s\n", time.Now().UTC().Format(time.RFC3339), redactSensitiveText(fmt.Sprintf(format, values...), s.config.Connection.Secret))
+	file, err := os.OpenFile(s.diagnosticsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
 	}
 	defer file.Close()
+	_ = file.Chmod(0o600)
 	_, _ = file.WriteString(line)
+}
+
+func redactSensitiveText(value, secret string) string {
+	value = strings.TrimSpace(value)
+	if secret = strings.TrimSpace(secret); secret != "" {
+		value = strings.ReplaceAll(value, secret, "[redacted]")
+	}
+	if len(value) > 2000 {
+		return value[:2000] + "…"
+	}
+	return value
 }
 
 func parseCollectorIssue(line string) (string, string, bool) {
@@ -1865,6 +2006,11 @@ func parseCollectorIssue(line string) (string, string, bool) {
 
 func normalizeLocalConfig(cfg agentLocalConfig, raw []byte) agentLocalConfig {
 	defaults := defaultLocalConfig()
+	metricsConfigured := bytes.Contains(raw, []byte(`"enabledMetrics"`))
+
+	if cfg.ConfigVersion <= 0 {
+		cfg.ConfigVersion = currentConfigVersion
+	}
 
 	if strings.TrimSpace(cfg.Connection.ServerURL) == "" {
 		cfg.Connection.ServerURL = defaults.Connection.ServerURL
@@ -1876,48 +2022,51 @@ func normalizeLocalConfig(cfg agentLocalConfig, raw []byte) agentLocalConfig {
 		cfg.Connection.Hostname = defaults.Connection.Hostname
 	}
 
-	if cfg.Sampling.NormalIntervalSeconds <= 0 {
+	if cfg.Sampling.NormalIntervalSeconds <= 0 || cfg.Sampling.NormalIntervalSeconds > maxSamplingIntervalSeconds {
 		cfg.Sampling.NormalIntervalSeconds = defaults.Sampling.NormalIntervalSeconds
 	}
-	if cfg.Sampling.SlowIntervalSeconds <= 0 {
+	if cfg.Sampling.SlowIntervalSeconds <= 0 || cfg.Sampling.SlowIntervalSeconds > maxSamplingIntervalSeconds {
 		cfg.Sampling.SlowIntervalSeconds = defaults.Sampling.SlowIntervalSeconds
 	}
-	if len(cfg.EnabledMetrics) == 0 {
+	if len(cfg.ProbeSelections) == 0 {
+		cfg.ProbeSelections = append([]agentProbeSelection(nil), defaults.ProbeSelections...)
+	}
+	if !metricsConfigured && len(cfg.EnabledMetrics) == 0 {
 		cfg.EnabledMetrics = append([]string(nil), defaults.EnabledMetrics...)
 	}
-	if isProbeSelectionEnabled(cfg.ProbeSelections, "gpu") && !containsMetricPrefix(cfg.EnabledMetrics, "gpu") {
-		cfg.EnabledMetrics = append(cfg.EnabledMetrics,
-			"gpuUsage",
-			"gpuEncode",
-			"gpuDecode",
-			"gpuFrequency",
-			"gpuMemory",
-			"gpuTemperature",
-		)
-	}
-	if isProbeSelectionEnabled(cfg.ProbeSelections, "cpu") && containsMetricPrefix(cfg.EnabledMetrics, "cpu") {
-		cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"cpuTopology", "systemOverview"})
-	}
-	if isProbeSelectionEnabled(cfg.ProbeSelections, "memory") && containsMetricPrefix(cfg.EnabledMetrics, "memory") {
-		cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"memoryAvailable", "memoryCached", "memoryCommitted", "memoryHardware"})
-	}
-	if isProbeSelectionEnabled(cfg.ProbeSelections, "disk") && containsMetricPrefix(cfg.EnabledMetrics, "disk") {
-		cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"diskMetadata", "diskActivity", "diskHealth"})
-	}
-	if isProbeSelectionEnabled(cfg.ProbeSelections, "network") && containsMetricPrefix(cfg.EnabledMetrics, "network") {
-		cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"networkIdentity"})
-	}
-	if isProbeSelectionEnabled(cfg.ProbeSelections, "fan") {
-		cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"fanRpm", "fanControl", "fanTargetTemperature", "fanPwm", "fanChannelState", "fanNote"})
+	cfg.EnabledMetrics = normalizeMetricKeys(cfg.EnabledMetrics)
+	if !(metricsConfigured && len(cfg.EnabledMetrics) == 0) {
+		if isProbeSelectionEnabled(cfg.ProbeSelections, "gpu") && !containsMetricPrefix(cfg.EnabledMetrics, "gpu") {
+			cfg.EnabledMetrics = append(cfg.EnabledMetrics,
+				"gpuUsage",
+				"gpuEncode",
+				"gpuDecode",
+				"gpuFrequency",
+				"gpuMemory",
+				"gpuTemperature",
+			)
+		}
+		if isProbeSelectionEnabled(cfg.ProbeSelections, "cpu") && containsMetricPrefix(cfg.EnabledMetrics, "cpu") {
+			cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"cpuTopology", "systemOverview"})
+		}
+		if isProbeSelectionEnabled(cfg.ProbeSelections, "memory") && containsMetricPrefix(cfg.EnabledMetrics, "memory") {
+			cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"memoryAvailable", "memoryCached", "memoryCommitted", "memoryHardware"})
+		}
+		if isProbeSelectionEnabled(cfg.ProbeSelections, "disk") && containsMetricPrefix(cfg.EnabledMetrics, "disk") {
+			cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"diskMetadata", "diskActivity", "diskHealth"})
+		}
+		if isProbeSelectionEnabled(cfg.ProbeSelections, "network") && containsMetricPrefix(cfg.EnabledMetrics, "network") {
+			cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"networkIdentity"})
+		}
+		if isProbeSelectionEnabled(cfg.ProbeSelections, "fan") {
+			cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"fanRpm", "fanControl", "fanTargetTemperature", "fanPwm", "fanChannelState", "fanNote"})
+		}
 	}
 	if cfg.EnabledDeviceIDs == nil {
 		cfg.EnabledDeviceIDs = map[string][]string{}
 	}
 	if cfg.InstanceMetricConfig == nil {
 		cfg.InstanceMetricConfig = map[string][]string{}
-	}
-	if len(cfg.ProbeSelections) == 0 {
-		cfg.ProbeSelections = append([]agentProbeSelection(nil), defaults.ProbeSelections...)
 	}
 	if len(raw) == 0 || !bytes.Contains(raw, []byte(`"cloudSyncEnabled"`)) {
 		cfg.CloudSyncEnabled = defaults.CloudSyncEnabled
@@ -1933,7 +2082,7 @@ func normalizeLocalConfig(cfg agentLocalConfig, raw []byte) agentLocalConfig {
 	cfg.Connection.Secret = strings.TrimSpace(cfg.Connection.Secret)
 	cfg.Connection.DeviceID = strings.TrimSpace(cfg.Connection.DeviceID)
 	cfg.Connection.Hostname = strings.TrimSpace(cfg.Connection.Hostname)
-	cfg.EnabledMetrics = uniqueTrimmedStrings(cfg.EnabledMetrics)
+	cfg.EnabledMetrics = normalizeMetricKeys(cfg.EnabledMetrics)
 	cfg.EnabledDeviceIDs = normalizeStringMap(cfg.EnabledDeviceIDs)
 	cfg.InstanceMetricConfig = normalizeStringMap(cfg.InstanceMetricConfig)
 	cfg.ProbeSelections = normalizeProbeSelections(cfg.ProbeSelections, defaults.ProbeSelections)
@@ -2036,6 +2185,14 @@ func normalizeStringMap(values map[string][]string) map[string][]string {
 
 func normalizeProbeSelections(selections []agentProbeSelection, defaults []agentProbeSelection) []agentProbeSelection {
 	defaultByTarget := map[string]agentProbeSelection{}
+	supportedByTarget := map[string]map[string]bool{}
+	for _, plan := range supportedProbePlans() {
+		providers := map[string]bool{}
+		for _, provider := range plan.Providers {
+			providers[provider] = true
+		}
+		supportedByTarget[plan.Target] = providers
+	}
 	for _, item := range defaults {
 		defaultByTarget[item.Target] = item
 	}
@@ -2043,8 +2200,12 @@ func normalizeProbeSelections(selections []agentProbeSelection, defaults []agent
 	result := make([]agentProbeSelection, 0, len(selections))
 	seen := map[string]struct{}{}
 	for _, item := range selections {
-		target := strings.TrimSpace(item.Target)
+		target := strings.ToLower(strings.TrimSpace(item.Target))
 		if target == "" {
+			continue
+		}
+		providers, supported := supportedByTarget[target]
+		if !supported {
 			continue
 		}
 		if _, exists := seen[target]; exists {
@@ -2053,8 +2214,11 @@ func normalizeProbeSelections(selections []agentProbeSelection, defaults []agent
 		seen[target] = struct{}{}
 
 		provider := strings.TrimSpace(item.Provider)
-		if provider == "" {
+		if provider == "" || !providers[provider] {
 			provider = defaultByTarget[target].Provider
+		}
+		if provider == "" {
+			provider = "disabled"
 		}
 
 		result = append(result, agentProbeSelection{
@@ -2071,6 +2235,24 @@ func normalizeProbeSelections(selections []agentProbeSelection, defaults []agent
 		result = append(result, item)
 	}
 
+	return result
+}
+
+func normalizeMetricKeys(items []string) []string {
+	known := make(map[string]bool, len(allMetricKeys))
+	for _, key := range allMetricKeys {
+		known[key] = true
+	}
+	result := make([]string, 0, len(items))
+	seen := map[string]bool{}
+	for _, item := range items {
+		key := strings.TrimSpace(item)
+		if key == "" || !known[key] || seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, key)
+	}
 	return result
 }
 

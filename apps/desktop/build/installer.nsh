@@ -99,6 +99,16 @@
 !macro customInstall
   SetRegView 64
 
+  ; LibreHardwareMonitor needs the bundled PawnIO kernel driver for CPU
+  ; package sensors on Windows. The setup is already running elevated, so
+  ; install it silently before the desktop app is launched. Existing
+  ; installations are left intact when PawnIO reports that it is already
+  ; installed.
+  IfFileExists "$INSTDIR\resources\agent\windows-hardware\pawnio\PawnIO_setup.exe" 0 dsc_skip_pawnio_install
+  nsExec::Exec '"$INSTDIR\resources\agent\windows-hardware\pawnio\PawnIO_setup.exe" -install -silent'
+  Pop $0
+dsc_skip_pawnio_install:
+
   ; Remove the old Inno Setup registration after the new installer owns this path.
   DeleteRegKey HKLM "${DSC_LEGACY_INNO_UNINSTALL_KEY}"
   DeleteRegKey HKCU "${DSC_LEGACY_INNO_UNINSTALL_KEY}"

@@ -180,6 +180,21 @@ func TestApplyIntegratedGPUTemperatureUsesCPUValue(t *testing.T) {
 	}
 }
 
+func TestDecodeHardwareProbeResultIncludesPawnIOStatus(t *testing.T) {
+	installed := true
+	loaded := true
+	snapshots, status, err := decodeHardwareProbeResult([]byte(`{"snapshots":[{"hardwareType":"Cpu","name":"Intel CPU","sensors":[]}],"pawnIo":{"available":true,"installed":true,"loaded":true,"version":"2.2.0"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshots) != 1 || snapshots[0].Name != "Intel CPU" {
+		t.Fatalf("unexpected snapshots: %#v", snapshots)
+	}
+	if status.Installed == nil || *status.Installed != installed || status.Loaded == nil || *status.Loaded != loaded || status.Version != "2.2.0" {
+		t.Fatalf("unexpected PawnIO status: %#v", status)
+	}
+}
+
 func TestMapHardwareSensorsIntegratedGPUIgnoresDedicatedAperture(t *testing.T) {
 	dedicatedUsed := 128.0
 	dedicatedTotal := 512.0
@@ -585,5 +600,28 @@ func TestParseNonNegativeFloat(t *testing.T) {
 		if ok != tc.ok || (ok && val != tc.expected) {
 			t.Errorf("parseNonNegativeFloat(%q) = (%v, %v); want (%v, %v)", tc.input, val, ok, tc.expected, tc.ok)
 		}
+	}
+}
+
+func TestMergeConfigPreservesExplicitEmptyMetrics(t *testing.T) {
+	defaults := newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "https://hub.example", Secret: "secret"})
+	empty := []string{}
+	merged := mergeConfig(defaults, agentConfigFile{EnabledMetrics: &empty})
+	if merged.EnabledMetrics == nil || len(merged.EnabledMetrics) != 0 {
+		t.Fatalf("explicit empty metrics must remain disabled: %#v", merged.EnabledMetrics)
+	}
+	if len(makeEnabledMetricSet(merged.EnabledMetrics)) != 0 {
+		t.Fatalf("explicit empty metrics must not be expanded by the collector: %#v", merged.EnabledMetrics)
+	}
+}
+
+func TestMergeConfigDefaultsOmittedCloudSyncAndAcceptsExplicitDisable(t *testing.T) {
+	defaults := newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "https://hub.example", Secret: "secret"})
+	if !mergeConfig(defaults, agentConfigFile{}).CloudSyncEnabled {
+		t.Fatal("omitted cloudSyncEnabled must preserve the default")
+	}
+	disabled := false
+	if mergeConfig(defaults, agentConfigFile{CloudSyncEnabled: &disabled}).CloudSyncEnabled {
+		t.Fatal("explicit cloudSyncEnabled=false must disable uploads")
 	}
 }

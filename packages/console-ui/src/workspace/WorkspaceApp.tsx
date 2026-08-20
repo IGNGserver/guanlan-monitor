@@ -2731,7 +2731,7 @@ function ConnectionSettings() {
   const [saving, setSaving] = useState(false);
   const [disconnectConfirmOpen, setDisconnectConfirmOpen] = useState(false);
   const authenticated = snapshot?.session.authenticated ?? false;
-  const agentConfigured = Boolean(snapshot?.localBackend && (snapshot.localBackend.config.connection.secretConfigured || snapshot.localBackend.config.cloudSyncEnabled));
+  const agentConfigured = Boolean(snapshot?.localBackend?.config.connection.secretConfigured);
   const agentRunning = snapshot?.localBackend?.running ?? false;
   useEffect(() => {
     setServerUrl(snapshot?.localBackend?.config.connection.serverUrl ?? "");
