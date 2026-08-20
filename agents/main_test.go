@@ -203,6 +203,45 @@ func TestApplyCPUPackageTemperatureDoesNotMislabelMultiplePackages(t *testing.T)
 	}
 }
 
+func TestMergeSlowMetricsReappliesCurrentCPUTemperatureToIntegratedGPU(t *testing.T) {
+	previousTemperature := 85.0
+	currentTemperature := 87.0
+	previous := emptySlowMetrics()
+	previous.hardwareCollected = true
+	previous.gpus = []gpuDeviceStats{{
+		ID:                "gpu-intel-uhd",
+		Name:              "Intel(R) UHD Graphics",
+		Integrated:        true,
+		MemoryKind:        "shared",
+		TemperatureC:      &previousTemperature,
+		TemperatureSource: "cpuPackageShared",
+		MemoryTotalBytes:  16 * 1024 * 1024 * 1024,
+		memoryObserved:    true,
+	}}
+
+	next := emptySlowMetrics()
+	next.hardwareCollected = true
+	next.cpuTemperatureC = &currentTemperature
+	next.gpus = []gpuDeviceStats{{
+		ID:                "gpu-intel-uhd",
+		Name:              "Intel(R) UHD Graphics",
+		Integrated:        true,
+		MemoryKind:        "shared",
+		TemperatureC:      &currentTemperature,
+		TemperatureSource: "cpuPackageShared",
+		MemoryTotalBytes:  16 * 1024 * 1024 * 1024,
+		memoryObserved:    true,
+	}}
+
+	merged := mergeSlowMetrics(previous, next)
+	if len(merged.gpus) != 1 || merged.gpus[0].TemperatureC == nil || *merged.gpus[0].TemperatureC != currentTemperature {
+		t.Fatalf("expected integrated GPU to follow current CPU temperature, got %#v", merged.gpus)
+	}
+	if merged.gpus[0].TemperatureSource != "cpuPackageShared" {
+		t.Fatalf("expected integrated GPU temperature source to remain CPU package, got %#v", merged.gpus[0])
+	}
+}
+
 func TestHardwareSensorCacheRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	temperature := 68.0
