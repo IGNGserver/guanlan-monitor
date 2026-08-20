@@ -240,6 +240,44 @@ func TestMergeGPUMemoryStatsDoesNotMixMemoryKinds(t *testing.T) {
 	}
 }
 
+func TestMergeGPUStatsCoalescesDuplicateIDs(t *testing.T) {
+	merged := mergeGPUStats(
+		[]gpuDeviceStats{{
+			ID:         "gpu-pci-ven-8086&dev-a788",
+			Name:       "Intel(R) UHD Graphics",
+			Integrated: true,
+			MemoryKind: "shared",
+		}},
+		[]gpuDeviceStats{
+			{
+				ID:               "gpu-pci-ven-8086&dev-a788",
+				Name:             "Intel(R) UHD Graphics",
+				Integrated:       true,
+				MemoryKind:       "shared",
+				MemoryUsedBytes:  256 * 1024,
+				MemoryTotalBytes: 128 * 1024 * 1024,
+				memoryObserved:   true,
+			},
+			{
+				ID:               "gpu-pci-ven-8086&dev-a788",
+				Name:             "Intel(R) UHD Graphics",
+				Integrated:       true,
+				MemoryKind:       "shared",
+				MemoryUsedBytes:  3 * 1024 * 1024 * 1024,
+				MemoryTotalBytes: 16 * 1024 * 1024 * 1024,
+				memoryObserved:   true,
+			},
+		},
+	)
+
+	if len(merged) != 1 {
+		t.Fatalf("expected duplicate GPU IDs to coalesce, got %d entries: %#v", len(merged), merged)
+	}
+	if merged[0].MemoryUsedBytes != 3*1024*1024*1024 || merged[0].MemoryTotalBytes != 16*1024*1024*1024 {
+		t.Fatalf("expected the fullest shared-memory observation to win, got %#v", merged[0])
+	}
+}
+
 func TestMapHardwareSensorsStorage(t *testing.T) {
 	temperature := 42.0
 	life := 97.0

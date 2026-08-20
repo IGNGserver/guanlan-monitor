@@ -1493,15 +1493,13 @@ func mergeGPUStats(base []gpuDeviceStats, overlays ...[]gpuDeviceStats) []gpuDev
 }
 
 func mergeGPUStatsWithOptions(preserveObservedMemory bool, base []gpuDeviceStats, overlays ...[]gpuDeviceStats) []gpuDeviceStats {
-	result := make([]gpuDeviceStats, 0, len(base))
-	for _, item := range base {
-		result = append(result, item)
-	}
+	result := coalesceGPUStats(base)
 
 	for _, overlay := range overlays {
 		if len(overlay) == 0 {
 			continue
 		}
+		overlay = coalesceGPUStats(overlay)
 		matchedOverlay := make([]bool, len(overlay))
 		for index := range result {
 			matchIndex := -1
@@ -1548,45 +1546,87 @@ func mergeGPUStatsWithOptions(preserveObservedMemory bool, base []gpuDeviceStats
 			}
 			matchedOverlay[matchIndex] = true
 			candidate := overlay[matchIndex]
-			if candidate.UtilizationPercent > 0 || result[index].UtilizationPercent == 0 {
-				result[index].UtilizationPercent = candidate.UtilizationPercent
-			}
-			if candidate.EncodeUtilizationPercent != nil {
-				result[index].EncodeUtilizationPercent = candidate.EncodeUtilizationPercent
-			}
-			if candidate.DecodeUtilizationPercent != nil {
-				result[index].DecodeUtilizationPercent = candidate.DecodeUtilizationPercent
-			}
-			if candidate.FrequencyMHz != nil {
-				result[index].FrequencyMHz = candidate.FrequencyMHz
-			}
-			if candidate.Integrated {
-				result[index].Integrated = true
-			}
-			if result[index].MemoryKind == "" || result[index].MemoryKind == "unknown" {
-				if candidate.MemoryKind != "" {
-					result[index].MemoryKind = candidate.MemoryKind
-				}
-			}
-			if candidate.TemperatureC != nil {
-				result[index].TemperatureC = candidate.TemperatureC
-				result[index].TemperatureSource = candidate.TemperatureSource
-			}
-			if !preserveObservedMemory || !result[index].memoryObserved {
-				mergeGPUMemoryStats(&result[index], candidate)
-			}
-			if result[index].DriverVersion == "" && candidate.DriverVersion != "" {
-				result[index].DriverVersion = candidate.DriverVersion
-			}
+			mergeGPUStatsRecord(&result[index], candidate, preserveObservedMemory)
 		}
 
 		for overlayIndex, candidate := range overlay {
 			if !matchedOverlay[overlayIndex] {
+				if resultIndex := findGPUStatsIdentity(result, candidate); resultIndex >= 0 {
+					mergeGPUStatsRecord(&result[resultIndex], candidate, preserveObservedMemory)
+					continue
+				}
 				result = append(result, candidate)
 			}
 		}
 	}
 	return result
+}
+
+// coalesceGPUStats collapses duplicate observations produced by different
+// hardware APIs before they reach the dashboard. Windows can expose the same
+// physical adapter once through a root LHM node and again through a child or
+// performance-counter node, all carrying the same PNP-derived ID.
+func coalesceGPUStats(items []gpuDeviceStats) []gpuDeviceStats {
+	result := make([]gpuDeviceStats, 0, len(items))
+	for _, candidate := range items {
+		if index := findGPUStatsIdentity(result, candidate); index >= 0 {
+			mergeGPUStatsRecord(&result[index], candidate, false)
+			continue
+		}
+		result = append(result, candidate)
+	}
+	return result
+}
+
+func findGPUStatsIdentity(items []gpuDeviceStats, candidate gpuDeviceStats) int {
+	if strings.TrimSpace(candidate.ID) != "" {
+		for index := range items {
+			if strings.TrimSpace(items[index].ID) != "" && strings.EqualFold(items[index].ID, candidate.ID) {
+				return index
+			}
+		}
+	}
+	for index := range items {
+		if strings.TrimSpace(items[index].ID) == "" || strings.TrimSpace(candidate.ID) == "" {
+			if matchGPUName(items[index].Name, candidate.Name) {
+				return index
+			}
+		}
+	}
+	return -1
+}
+
+func mergeGPUStatsRecord(target *gpuDeviceStats, candidate gpuDeviceStats, preserveObservedMemory bool) {
+	if candidate.UtilizationPercent > 0 || target.UtilizationPercent == 0 {
+		target.UtilizationPercent = candidate.UtilizationPercent
+	}
+	if candidate.EncodeUtilizationPercent != nil {
+		target.EncodeUtilizationPercent = candidate.EncodeUtilizationPercent
+	}
+	if candidate.DecodeUtilizationPercent != nil {
+		target.DecodeUtilizationPercent = candidate.DecodeUtilizationPercent
+	}
+	if candidate.FrequencyMHz != nil {
+		target.FrequencyMHz = candidate.FrequencyMHz
+	}
+	if candidate.Integrated {
+		target.Integrated = true
+	}
+	if target.MemoryKind == "" || target.MemoryKind == "unknown" {
+		if candidate.MemoryKind != "" {
+			target.MemoryKind = candidate.MemoryKind
+		}
+	}
+	if candidate.TemperatureC != nil {
+		target.TemperatureC = candidate.TemperatureC
+		target.TemperatureSource = candidate.TemperatureSource
+	}
+	if !preserveObservedMemory || !target.memoryObserved {
+		mergeGPUMemoryStats(target, candidate)
+	}
+	if target.DriverVersion == "" && candidate.DriverVersion != "" {
+		target.DriverVersion = candidate.DriverVersion
+	}
 }
 
 func mergeMissingGPUMemory(previous, next []gpuDeviceStats) []gpuDeviceStats {
@@ -1666,16 +1706,16 @@ func mergeGPUMemoryStats(target *gpuDeviceStats, candidate gpuDeviceStats) {
 	if !candidateObserved {
 		return
 	}
-	if candidate.MemoryTotalBytes > 0 {
+	if candidate.MemoryTotalBytes > target.MemoryTotalBytes {
+		// Multiple Windows providers may report the same adapter with different
+		// scopes (for example a small child-node budget and a full shared-memory
+		// view). Keep the observation with the larger known capacity.
 		target.MemoryTotalBytes = candidate.MemoryTotalBytes
-		target.MemoryUsedBytes = candidate.MemoryUsedBytes
-	} else if candidate.memoryObserved {
-		target.MemoryUsedBytes = candidate.MemoryUsedBytes
-	} else if candidate.MemoryUsedBytes > 0 && (target.MemoryUsedBytes == 0 || candidate.MemoryUsedBytes > target.MemoryUsedBytes) {
-		// Test fixtures and older collectors do not carry the internal
-		// observation marker, but an explicit non-zero used value is still
-		// useful when no capacity was reported.
-		target.MemoryUsedBytes = candidate.MemoryUsedBytes
+	}
+	if candidate.memoryObserved || candidate.MemoryUsedBytes > 0 {
+		if candidate.MemoryUsedBytes > target.MemoryUsedBytes {
+			target.MemoryUsedBytes = candidate.MemoryUsedBytes
+		}
 	}
 	target.memoryObserved = target.memoryObserved || candidate.memoryObserved
 	if target.MemoryTotalBytes > 0 && target.MemoryTotalBytes < target.MemoryUsedBytes {
