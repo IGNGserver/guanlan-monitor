@@ -200,7 +200,7 @@ test("moveWidgetWithAvoidance reorders widgets and packs them compactly without 
   assert.deepStrictEqual(afterDragW1ToW2.placements.w3, { x: 1, y: 3, w: 4, h: 2, size: "large" });
 });
 
-test("getWidgetLines strictly isolates GPU temperature by targetId and does not leak dGPU temperature to iGPU", async () => {
+test("getWidgetLines keeps GPU temperature per target and identifies shared iGPU memory", async () => {
   const { getWidgetLines } = await import("./widgetLines.ts");
   const sampleMetrics = {
     series: {
@@ -210,6 +210,8 @@ test("getWidgetLines strictly isolates GPU temperature by targetId and does not 
         {
           id: "gpu-nvidia",
           name: "NVIDIA GeForce RTX 2060 SUPER",
+          integrated: false,
+          memoryKind: "dedicated",
           usagePercent: [],
           encodePercent: [],
           decodePercent: [],
@@ -221,13 +223,16 @@ test("getWidgetLines strictly isolates GPU temperature by targetId and does not 
         {
           id: "gpu-intel",
           name: "Intel(R) UHD Graphics",
+          integrated: true,
+          memoryKind: "shared",
           usagePercent: [],
           encodePercent: [],
           decodePercent: [],
           frequencyMHz: [],
           memoryUsagePercent: [],
           memoryUsedBytes: [],
-          temperatureC: [] // No independent temperature sensor
+          temperatureC: [{ timestamp: "2026-08-05T08:00:00.000Z", value: 42 }],
+          temperatureSource: "cpuPackageShared"
         }
       ]
     }
@@ -238,10 +243,13 @@ test("getWidgetLines strictly isolates GPU temperature by targetId and does not 
   assert.strictEqual(nvidiaTemp.lines.length, 1);
   assert.deepStrictEqual(nvidiaTemp.lines[0].points, [{ timestamp: "2026-08-05T08:00:00.000Z", value: 49 }]);
 
-  // Intel iGPU has no temperature sensor -> must be empty array, NOT fallback to 49
+  // Intel iGPU follows the CPU package temperature, but must not inherit the dGPU value.
   const intelTemp = getWidgetLines("gpu-temperature", sampleMetrics, "gpu-intel");
   assert.strictEqual(intelTemp.lines.length, 1);
-  assert.deepStrictEqual(intelTemp.lines[0].points, []);
+  assert.deepStrictEqual(intelTemp.lines[0].points, [{ timestamp: "2026-08-05T08:00:00.000Z", value: 42 }]);
+
+  const intelMemory = getWidgetLines("gpu-memory", sampleMetrics, "gpu-intel");
+  assert.strictEqual(intelMemory.lines[0]?.label, "共享显存已用");
 
   // Summary (no targetId) -> returns global summary
   const summaryTemp = getWidgetLines("gpu-temperature", sampleMetrics);

@@ -7,6 +7,7 @@ import type {
   DeviceRealtimeEvent,
   DeviceSummary,
   DiskDeviceStats,
+  GpuMemoryKind,
   MetricSeries,
   MetricWindow,
   TrafficCalendarMode,
@@ -93,6 +94,8 @@ export interface InstanceMetricRecord {
   frequencyMHz?: number;
   memoryUsagePercent?: number;
   memoryUsedBytes?: number;
+  integrated?: boolean;
+  memoryKind?: GpuMemoryKind | null;
   temperatureC?: number | null;
   healthStatus?: string | null;
   healthReason?: string | null;

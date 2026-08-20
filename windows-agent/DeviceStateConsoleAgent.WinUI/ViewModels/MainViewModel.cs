@@ -53,7 +53,7 @@ public sealed class MainViewModel : ObservableObject
         ["gpuEncode"] = "显卡编码利用率",
         ["gpuDecode"] = "显卡解码利用率",
         ["gpuFrequency"] = "显卡频率",
-        ["gpuMemory"] = "显卡显存占用",
+        ["gpuMemory"] = "显卡 GPU 内存占用",
         ["gpuTemperature"] = "显卡温度",
         ["gpuDriverInfo"] = "驱动与适配器信息",
         ["fanRpm"] = "风扇转速",
@@ -90,7 +90,7 @@ public sealed class MainViewModel : ObservableObject
         ["gpuEncode"] = "显卡视频编码利用率。",
         ["gpuDecode"] = "显卡视频解码利用率。",
         ["gpuFrequency"] = "显卡核心频率。",
-        ["gpuMemory"] = "显存已用、总量与使用率。",
+        ["gpuMemory"] = "独立显存或共享显存的已用量、总量与使用率。",
         ["gpuTemperature"] = "显卡温度。",
         ["gpuDriverInfo"] = "显卡驱动版本与适配器信息。",
         ["fanRpm"] = "风扇当前转速。",
@@ -1896,7 +1896,7 @@ public sealed class MainViewModel : ObservableObject
             ViewerDiskUsagePercent = Math.Clamp(diskPercent, 0, 100);
             ViewerGpuUsagePercent = Math.Clamp(gpu?.UtilizationPercent ?? 0, 0, 100);
             ViewerNetworkUsagePercent = Math.Clamp((latest.NetworkRxBytesPerSec + latest.NetworkTxBytesPerSec) / (1024 * 1024) * 10, 0, 100);
-            ViewerDetailGpuText = gpu is null ? "显卡：暂无数据" : $"显卡：{gpu.Name} {gpu.UtilizationPercent:0.0}% · 显存 {FormatBytesOrDash(gpu.MemoryUsedBytes)} / {FormatBytesOrDash(gpu.MemoryTotalBytes)}";
+            ViewerDetailGpuText = gpu is null ? "显卡：暂无数据" : $"显卡：{gpu.Name} {gpu.UtilizationPercent:0.0}% · {GpuMemoryLabel(gpu.MemoryKind)} {FormatBytesOrDash(gpu.MemoryUsedBytes)} / {(gpu.MemoryTotalBytes > 0 ? FormatBytesOrDash(gpu.MemoryTotalBytes) : "容量未知")}";
             var primaryNetwork = latest.NetworkInterfaces.FirstOrDefault(item => item.Id.Equals(SelectedViewerInstanceId, StringComparison.OrdinalIgnoreCase));
             ViewerDetailNetworkText = primaryNetwork is null
                 ? "网络：暂无所选网卡数据"
@@ -2000,9 +2000,9 @@ public sealed class MainViewModel : ObservableObject
                 TaskManagerStatStatus = gpu?.EncodeUtilizationPercent.HasValue == true && IsMetricAvailable(payload, "gpuEncode") ? $"{gpu.EncodeUtilizationPercent:0.0}%" : "--";
                 TaskManagerStatWriteSpeed = gpu?.DecodeUtilizationPercent.HasValue == true && IsMetricAvailable(payload, "gpuDecode") ? $"{gpu.DecodeUtilizationPercent:0.0}%" : "--";
                 TaskManagerStatReadSpeed = gpu?.TemperatureC.HasValue == true && IsMetricAvailable(payload, "gpuTemperature") ? $"{gpu.TemperatureC:0.0} °C" : "--";
-                TaskManagerRightLabel1 = "显存已用:"; TaskManagerRightValue1 = gpu is null || !IsMetricAvailable(payload, "gpuMemory") ? "--" : FormatBytesOrDash(gpu.MemoryUsedBytes);
+                TaskManagerRightLabel1 = $"{GpuMemoryLabel(gpu?.MemoryKind)}已用:"; TaskManagerRightValue1 = gpu is null || !IsMetricAvailable(payload, "gpuMemory") ? "--" : FormatBytesOrDash(gpu.MemoryUsedBytes);
                 TaskManagerRightLabel2 = "驱动版本:"; TaskManagerRightValue2 = gpu?.DriverVersion ?? "--";
-                TaskManagerRightLabel3 = "温度:"; TaskManagerRightValue3 = gpu?.TemperatureC.HasValue == true ? $"{gpu.TemperatureC:0.0} °C" : "--";
+                TaskManagerRightLabel3 = $"{GpuTemperatureLabel(gpu?.TemperatureSource)}:"; TaskManagerRightValue3 = gpu?.TemperatureC.HasValue == true ? $"{gpu.TemperatureC:0.0} °C" : "--";
                 break;
             case "fan":
                 TaskManagerStatUsage = fan?.Rpm.ToString("0") ?? fanSeries?.Rpm.LastOrDefault()?.Value.ToString("0") ?? "--";
@@ -2224,7 +2224,7 @@ public sealed class MainViewModel : ObservableObject
             Chart("全部显卡", "编码", series.GpuEncodePercent, ViewerMetricValueKind.Percent),
             Chart("全部显卡", "解码", series.GpuDecodePercent, ViewerMetricValueKind.Percent),
             Chart("全部显卡", "频率", series.GpuFrequencyMHz, ViewerMetricValueKind.Megahertz),
-            Chart("全部显卡", "显存占用", series.GpuMemoryUsagePercent, ViewerMetricValueKind.Percent),
+            Chart("全部显卡", "GPU 内存占用", series.GpuMemoryUsagePercent, ViewerMetricValueKind.Percent),
             Chart("全部显卡", "温度", series.GpuTemperatureC, ViewerMetricValueKind.Celsius)
         }.Concat(series.Gpus.SelectMany(gpuSeries => new[]
         {
@@ -2232,9 +2232,9 @@ public sealed class MainViewModel : ObservableObject
             Chart(gpuSeries.Name, "编码", gpuSeries.EncodePercent, ViewerMetricValueKind.Percent),
             Chart(gpuSeries.Name, "解码", gpuSeries.DecodePercent, ViewerMetricValueKind.Percent),
             Chart(gpuSeries.Name, "频率", gpuSeries.FrequencyMHz, ViewerMetricValueKind.Megahertz),
-            Chart(gpuSeries.Name, "显存占用", gpuSeries.MemoryUsagePercent, ViewerMetricValueKind.Percent),
-            Chart(gpuSeries.Name, GpuSubtitle(gpuSeries, latest.Gpus.FirstOrDefault(candidate => candidate.Id == gpuSeries.Id)), "显存已用", gpuSeries.MemoryUsedBytes, ViewerMetricValueKind.Bytes),
-            Chart(gpuSeries.Name, "温度", gpuSeries.TemperatureC, ViewerMetricValueKind.Celsius)
+            Chart(gpuSeries.Name, GpuMemoryLabel(gpuSeries.MemoryKind) + "占用", gpuSeries.MemoryUsagePercent, ViewerMetricValueKind.Percent),
+            Chart(gpuSeries.Name, GpuSubtitle(gpuSeries, latest.Gpus.FirstOrDefault(candidate => candidate.Id == gpuSeries.Id)), GpuMemoryLabel(gpuSeries.MemoryKind) + "已用", gpuSeries.MemoryUsedBytes, ViewerMetricValueKind.Bytes),
+            Chart(gpuSeries.Name, GpuTemperatureLabel(gpuSeries.TemperatureSource), gpuSeries.TemperatureC, ViewerMetricValueKind.Celsius)
         })) : Array.Empty<ViewerDetailChartViewModel>());
 
         ReplaceCharts(ViewerNetworkCharts, series.Networks.Count > 0 && IsViewerCategoryVisible(enabledMetrics, availableMetrics, "networkRxRate", "networkTxRate", "networkTraffic") ? new[]
@@ -2333,8 +2333,8 @@ public sealed class MainViewModel : ObservableObject
                     Chart(gpu.Name, "编码", gpu.EncodePercent, ViewerMetricValueKind.Percent),
                     Chart(gpu.Name, "解码", gpu.DecodePercent, ViewerMetricValueKind.Percent),
                     Chart(gpu.Name, "频率", gpu.FrequencyMHz, ViewerMetricValueKind.Megahertz),
-                    Chart(gpu.Name, "显存占用", gpu.MemoryUsagePercent, ViewerMetricValueKind.Percent),
-                    Chart(gpu.Name, "温度", gpu.TemperatureC, ViewerMetricValueKind.Celsius)
+                    Chart(gpu.Name, GpuMemoryLabel(gpu.MemoryKind) + "占用", gpu.MemoryUsagePercent, ViewerMetricValueKind.Percent),
+                    Chart(gpu.Name, GpuTemperatureLabel(gpu.TemperatureSource), gpu.TemperatureC, ViewerMetricValueKind.Celsius)
                 }));
             }
         }
@@ -2403,9 +2403,24 @@ public sealed class MainViewModel : ObservableObject
         => string.Join(" · ", new[] { network.MacAddress, string.Join(", ", network.Ipv4) }.Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value!));
 
     private static string GpuSubtitle(ViewerGpuMetricSeriesDto gpu, ViewerGpuDto? latest)
-        => latest is not null && latest.MemoryTotalBytes > 0
-            ? $"{FormatBytes(latest.MemoryUsedBytes)} / {FormatBytes(latest.MemoryTotalBytes)}"
-            : "显存容量未提供";
+    {
+        var label = GpuMemoryLabel(latest?.MemoryKind ?? gpu.MemoryKind);
+        return latest is not null && latest.MemoryTotalBytes > 0
+            ? $"{label} {FormatBytes(latest.MemoryUsedBytes)} / {FormatBytes(latest.MemoryTotalBytes)}"
+            : latest is not null && latest.MemoryUsedBytes > 0
+                ? $"{label} {FormatBytes(latest.MemoryUsedBytes)} / 容量未知"
+                : $"{label}容量未提供";
+    }
+
+    private static string GpuMemoryLabel(string? memoryKind)
+        => string.Equals(memoryKind, "shared", StringComparison.OrdinalIgnoreCase)
+            ? "共享显存"
+            : string.Equals(memoryKind, "dedicated", StringComparison.OrdinalIgnoreCase)
+                ? "独立显存"
+                : "GPU 内存";
+
+    private static string GpuTemperatureLabel(string? temperatureSource)
+        => string.Equals(temperatureSource, "cpuPackageShared", StringComparison.OrdinalIgnoreCase) ? "温度（随 CPU）" : "温度";
 
     private static void EnsureTrendFallback(ObservableCollection<TrendPointViewModel> target, double value)
     {

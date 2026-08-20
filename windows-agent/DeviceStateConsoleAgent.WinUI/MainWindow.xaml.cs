@@ -315,13 +315,13 @@ public sealed partial class MainWindow : Window
             case "gpu":
                 TaskManagerCategoryTitle.Text = "显卡";
                 _viewModel.TaskManagerStatLabel1 = "利用率";
-                _viewModel.TaskManagerStatLabel2 = "显存占用";
+                _viewModel.TaskManagerStatLabel2 = "GPU 内存占用";
                 _viewModel.TaskManagerStatLabel3 = "核心频率";
                 _viewModel.TaskManagerStatLabel4 = "编码利用率";
                 _viewModel.TaskManagerStatLabel5 = "解码利用率";
                 _viewModel.TaskManagerStatLabel6 = "显卡温度";
 
-                _viewModel.TaskManagerRightLabel1 = "显存总量:"; _viewModel.TaskManagerRightValue1 = "--";
+                _viewModel.TaskManagerRightLabel1 = "GPU 内存总量:"; _viewModel.TaskManagerRightValue1 = "--";
                 _viewModel.TaskManagerRightLabel2 = "驱动版本:"; _viewModel.TaskManagerRightValue2 = "--";
                 _viewModel.TaskManagerRightLabel3 = "显卡温度:"; _viewModel.TaskManagerRightValue3 = "--";
 

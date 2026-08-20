@@ -407,6 +407,8 @@ function averageInstanceMetrics(
           meta: {
             id: item.id,
             name: item.name,
+            integrated: item.integrated,
+            memoryKind: item.memoryKind,
             macAddress: item.macAddress,
             ipv4: item.ipv4,
             ipv6: item.ipv6,
@@ -443,6 +445,13 @@ function averageInstanceMetrics(
       }
       const current = grouped.get(item.id)!;
       current.count += 1;
+      if (item.integrated) current.meta.integrated = true;
+      if ((!current.meta.memoryKind || current.meta.memoryKind === "unknown") && item.memoryKind) {
+        current.meta.memoryKind = item.memoryKind;
+      }
+      if (item.temperatureSource === "cpuPackageShared" || (!current.meta.temperatureSource && item.temperatureSource)) {
+        current.meta.temperatureSource = item.temperatureSource;
+      }
       current.sums.usagePercent += item.usagePercent ?? 0;
       current.sums.totalBytes += item.totalBytes ?? 0;
       current.sums.usedBytes += item.usedBytes ?? 0;

@@ -174,6 +174,8 @@ public sealed class ViewerGpuMetricSeriesDto
 {
     public string Id { get; set; } = "";
     public string Name { get; set; } = "显卡";
+    public bool Integrated { get; set; }
+    public string? MemoryKind { get; set; }
     public List<ViewerSamplePointDto> UsagePercent { get; set; } = new();
     public List<ViewerSamplePointDto> EncodePercent { get; set; } = new();
     public List<ViewerSamplePointDto> DecodePercent { get; set; } = new();
@@ -181,6 +183,7 @@ public sealed class ViewerGpuMetricSeriesDto
     public List<ViewerSamplePointDto> MemoryUsagePercent { get; set; } = new();
     public List<ViewerSamplePointDto> MemoryUsedBytes { get; set; } = new();
     public List<ViewerSamplePointDto> TemperatureC { get; set; } = new();
+    public string? TemperatureSource { get; set; }
 }
 
 public sealed class ViewerFanMetricSeriesDto
@@ -279,9 +282,12 @@ public sealed class ViewerGpuDto
     public double? EncodeUtilizationPercent { get; set; }
     public double? DecodeUtilizationPercent { get; set; }
     public double? FrequencyMHz { get; set; }
+    public bool Integrated { get; set; }
+    public string? MemoryKind { get; set; }
     public double MemoryUsedBytes { get; set; }
     public double MemoryTotalBytes { get; set; }
     public double? TemperatureC { get; set; }
+    public string? TemperatureSource { get; set; }
     public string? DriverVersion { get; set; }
 }
 
@@ -446,8 +452,12 @@ public sealed class GpuStatsDto
 {
     public string Name { get; set; } = "显卡";
     public double UtilizationPercent { get; set; }
+    public bool Integrated { get; set; }
+    public string? MemoryKind { get; set; }
     public double MemoryUsedBytes { get; set; }
     public double MemoryTotalBytes { get; set; }
+    public double? TemperatureC { get; set; }
+    public string? TemperatureSource { get; set; }
 }
 
 public sealed class ProbeDetectResponseDto

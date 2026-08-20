@@ -82,7 +82,8 @@ export function getWidgetLines(widgetType: string, metrics: MetricsResponse | nu
   if (widgetType === "gpu-memory" || widgetType === "gpu-memory-pie") {
     const gpu = targetId ? series.gpus?.find((item) => item.id === targetId) : undefined;
     const points = targetId ? (gpu?.memoryUsedBytes ?? []) : series.gpuMemoryUsedBytes;
-    return { lines: [{ label: "显存已用", points, formatter: formatBytes }], valueFormatter: formatBytes };
+    const label = gpu?.memoryKind === "shared" ? "共享显存已用" : gpu?.memoryKind === "dedicated" ? "独立显存已用" : "GPU 内存已用";
+    return { lines: [{ label, points, formatter: formatBytes }], valueFormatter: formatBytes };
   }
   if (widgetType === "gpu-temperature") {
     const gpu = targetId ? series.gpus?.find((item) => item.id === targetId) : undefined;

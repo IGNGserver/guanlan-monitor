@@ -520,7 +520,7 @@ private fun DeviceListCard(
       FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         StatChip("CPU", formatPercent(device.cpuUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Cpu) })
         StatChip("GPU", formatPercent(device.gpuUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Gpu) })
-        StatChip("显存", formatPercent(device.gpuMemoryUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Gpu) })
+        StatChip("GPU 内存", formatPercent(device.gpuMemoryUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Gpu) })
         StatChip("内存", formatPercent(device.memoryUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Memory) })
         StatChip("硬盘", formatPercent(device.diskUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Disk) })
         StatChip("流量", "查看", onClick = onOpenTraffic)
@@ -934,8 +934,6 @@ private fun SummaryCapsule(capsule: OverviewCapsuleModel, onClick: () -> Unit) {
 }
 
 private fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWindow): List<OverviewCapsuleModel> {
-  val totalGpuMemoryUsedBytes = metrics.latest.gpus.sumOf { it.memoryUsedBytes }
-  val totalGpuMemoryBytes = metrics.latest.gpus.sumOf { it.memoryTotalBytes }
   return buildList {
     add(
       OverviewCapsuleModel(
@@ -956,7 +954,7 @@ private fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWin
         subtitle = if (metrics.latest.gpus.isEmpty()) "未读取到显卡" else "${metrics.latest.gpus.size} 张显卡 / 适配器",
         metrics = listOf(
           "占用" to metricPoint(metrics.series.gpuUsagePercent, selectedWindow, ::formatPercent),
-          "显存" to buildUsage(totalGpuMemoryUsedBytes, totalGpuMemoryBytes),
+          "GPU 内存" to formatGpuMemorySummary(metrics.latest.gpus),
           "温度" to metricPoint(metrics.series.gpuTemperatureC, selectedWindow, ::formatCelsius)
         )
       )
@@ -1183,24 +1181,22 @@ private fun NetworkSheetContent(metrics: MetricsDto, tabId: String, selectedWind
 
 @Composable
 private fun GpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, onEditInstance: (String) -> Unit) {
-  val totalGpuMemoryUsedBytes = metrics.latest.gpus.sumOf { it.memoryUsedBytes }
-  val totalGpuMemoryBytes = metrics.latest.gpus.sumOf { it.memoryTotalBytes }
   if (tabId == "total") {
     MetricCardGrid(
       cards = listOf(
         MetricCardModel("总占用", metricPoint(metrics.series.gpuUsagePercent, selectedWindow, ::formatPercent), metrics.series.gpuUsagePercent, ::formatPercent, 100.0),
-        MetricCardModel("总显存", buildUsage(totalGpuMemoryUsedBytes, totalGpuMemoryBytes), metrics.series.gpuMemoryUsagePercent, ::formatPercent, 100.0),
+        MetricCardModel("总 GPU 内存", formatGpuMemorySummary(metrics.latest.gpus), metrics.series.gpuMemoryUsagePercent, ::formatPercent, 100.0),
         MetricCardModel("总温度", metricPoint(metrics.series.gpuTemperatureC, selectedWindow, ::formatCelsius), metrics.series.gpuTemperatureC, ::formatCelsius)
       )
     )
-    MetaGrid(listOf("总显存" to buildUsage(totalGpuMemoryUsedBytes, totalGpuMemoryBytes)))
+    MetaGrid(listOf("总 GPU 内存" to formatGpuMemorySummary(metrics.latest.gpus)))
     return
   }
 
   val gpu = metrics.latest.gpus.firstOrNull { it.id == tabId } ?: return
   val series = metrics.series.gpus.firstOrNull { it.id == tabId }
   GpuInstanceCard(gpu, series, onEdit = { onEditInstance(gpu.id) })
-  MetaGrid(listOfNotNull("驱动" to (gpu.driverVersion ?: "未知"), "显存" to buildUsage(gpu.memoryUsedBytes, gpu.memoryTotalBytes)))
+  MetaGrid(listOfNotNull("驱动" to (gpu.driverVersion ?: "未知"), gpuMemoryLabel(gpu.memoryKind) to buildGpuUsage(gpu.memoryUsedBytes, gpu.memoryTotalBytes)))
 }
 
 @Composable
@@ -1339,8 +1335,6 @@ private fun NetworkSection(metrics: MetricsDto, onEditBlock: () -> Unit, onEditI
 @Composable
 private fun GpuSection(metrics: MetricsDto, onEditBlock: () -> Unit, onEditInstance: (String) -> Unit) {
   if (metrics.latest.gpus.isEmpty()) return
-  val totalGpuMemoryUsedBytes = metrics.latest.gpus.sumOf { it.memoryUsedBytes }
-  val totalGpuMemoryBytes = metrics.latest.gpus.sumOf { it.memoryTotalBytes }
   Section(title = "显卡", onEdit = onEditBlock) {
     MetricCardGrid(
       cards = listOf(
@@ -1348,7 +1342,7 @@ private fun GpuSection(metrics: MetricsDto, onEditBlock: () -> Unit, onEditInsta
         MetricCardModel("编码", formatPercent(metrics.series.gpuEncodePercent.lastOrNull()?.value), metrics.series.gpuEncodePercent, ::formatPercent, 100.0),
         MetricCardModel("解码", formatPercent(metrics.series.gpuDecodePercent.lastOrNull()?.value), metrics.series.gpuDecodePercent, ::formatPercent, 100.0),
         MetricCardModel("频率", formatMHz(metrics.series.gpuFrequencyMHz.lastOrNull()?.value), metrics.series.gpuFrequencyMHz, ::formatMHz),
-        MetricCardModel("显存", buildUsage(totalGpuMemoryUsedBytes, totalGpuMemoryBytes), metrics.series.gpuMemoryUsagePercent, ::formatPercent, 100.0),
+        MetricCardModel("GPU 内存", formatGpuMemorySummary(metrics.latest.gpus), metrics.series.gpuMemoryUsagePercent, ::formatPercent, 100.0),
         MetricCardModel("温度", formatCelsius(metrics.series.gpuTemperatureC.lastOrNull()?.value), metrics.series.gpuTemperatureC, ::formatCelsius)
       )
     )
@@ -1451,9 +1445,9 @@ private fun GpuInstanceCard(gpu: GpuDto, series: GpuMetricSeriesDto?, onEdit: ()
         MetricCardModel("编码", formatPercent(gpu.encodeUtilizationPercent), series?.encodePercent.orEmpty(), ::formatPercent, 100.0),
         MetricCardModel("解码", formatPercent(gpu.decodeUtilizationPercent), series?.decodePercent.orEmpty(), ::formatPercent, 100.0),
         MetricCardModel("频率", formatMHz(gpu.frequencyMHz), series?.frequencyMHz.orEmpty(), ::formatMHz),
-        MetricCardModel("显存", buildUsage(gpu.memoryUsedBytes, gpu.memoryTotalBytes), series?.memoryUsagePercent.orEmpty(), ::formatPercent, 100.0),
-        MetricCardModel("显存已用", formatBytes(gpu.memoryUsedBytes.toDouble()), series?.memoryUsedBytes.orEmpty(), { value -> formatBytes(value ?: 0.0) }),
-        MetricCardModel("温度", formatCelsius(gpu.temperatureC), series?.temperatureC.orEmpty(), ::formatCelsius)
+        MetricCardModel(gpuMemoryLabel(gpu.memoryKind), buildGpuUsage(gpu.memoryUsedBytes, gpu.memoryTotalBytes), series?.memoryUsagePercent.orEmpty(), ::formatPercent, 100.0),
+        MetricCardModel("${gpuMemoryLabel(gpu.memoryKind)}已用", formatBytes(gpu.memoryUsedBytes.toDouble()), series?.memoryUsedBytes.orEmpty(), { value -> formatBytes(value ?: 0.0) }),
+        MetricCardModel(if ((gpu.temperatureSource ?: series?.temperatureSource) == "cpuPackageShared") "温度（随 CPU）" else "温度", formatCelsius(gpu.temperatureC), series?.temperatureC.orEmpty(), ::formatCelsius)
       )
     )
   }
@@ -1669,7 +1663,7 @@ private fun metricLabel(metric: String): String = when (metric) {
   "gpuEncode" -> "GPU 编码"
   "gpuDecode" -> "GPU 解码"
   "gpuFrequency" -> "GPU 频率"
-  "gpuMemory" -> "GPU 显存"
+  "gpuMemory" -> "GPU 内存"
   "gpuTemperature" -> "GPU 温度"
   "memoryUsage" -> "内存"
   "swapUsage" -> "虚拟内存"
@@ -2086,6 +2080,30 @@ private fun formatAxisTime(value: String): String = runCatching {
 }.getOrDefault("--")
 
 private fun buildUsage(used: Long, total: Long): String = "${formatBytes(used.toDouble())} / ${formatBytes(total.toDouble())}"
+
+private fun buildGpuUsage(used: Long, total: Long): String = if (total > 0) {
+  buildUsage(used, total)
+} else if (used > 0) {
+  "${formatBytes(used.toDouble())} / 容量未知"
+} else {
+  "容量暂无"
+}
+
+private fun gpuMemoryLabel(memoryKind: String?): String = when (memoryKind) {
+  "shared" -> "共享显存"
+  "dedicated" -> "独立显存"
+  else -> "GPU 内存"
+}
+
+private fun formatGpuMemorySummary(gpus: List<GpuDto>): String = gpus
+  .groupBy { gpuMemoryLabel(it.memoryKind) }
+  .map { (label, items) ->
+    val used = items.sumOf { it.memoryUsedBytes }
+    val total = items.sumOf { it.memoryTotalBytes }
+    "$label：${buildGpuUsage(used, total)}"
+  }
+  .ifEmpty { listOf("容量暂无") }
+  .joinToString(" · ")
 
 private fun formatBytes(value: Double): String {
   if (value <= 0.0) return "0 B"

@@ -177,6 +177,33 @@ function formatCapacitySummary(usedBytes: number | null | undefined, totalBytes:
   return `已用 ${formatBytes(usedBytes)} / ${formatBytes(totalBytes)}`;
 }
 
+function gpuMemoryLabel(memoryKind: string | null | undefined): string {
+  if (memoryKind === "shared") return "共享显存";
+  if (memoryKind === "dedicated") return "独立显存";
+  return "GPU 内存";
+}
+
+function formatGpuMemorySummary(
+  gpus: Array<{ memoryUsedBytes: number; memoryTotalBytes: number; memoryKind?: string | null }>
+): string {
+  const groups = new Map<string, { usedBytes: number; totalBytes: number }>();
+  for (const gpu of gpus) {
+    const label = gpuMemoryLabel(gpu.memoryKind);
+    const current = groups.get(label) ?? { usedBytes: 0, totalBytes: 0 };
+    current.usedBytes += Number.isFinite(gpu.memoryUsedBytes) ? gpu.memoryUsedBytes : 0;
+    current.totalBytes += Number.isFinite(gpu.memoryTotalBytes) ? gpu.memoryTotalBytes : 0;
+    groups.set(label, current);
+  }
+  const summaries = [...groups.entries()].map(([label, values]) =>
+    values.totalBytes > 0
+      ? `${label}：${formatCapacitySummary(values.usedBytes, values.totalBytes)}`
+      : values.usedBytes > 0
+        ? `${label}：已用 ${formatBytes(values.usedBytes)} / 容量未知`
+        : `${label}：容量暂无`
+  );
+  return summaries.length ? summaries.join(" · ") : "容量暂无";
+}
+
 function formatDuration(seconds: number | null | undefined): string {
   if (!Number.isFinite(seconds)) return "未采集";
   let remaining = Math.max(0, Math.round(seconds ?? 0));
@@ -1050,7 +1077,7 @@ const metricGroups: Array<{ label: string; items: Array<{ key: DeviceMetricKey; 
       { key: "gpuEncode", label: "编码负载" },
       { key: "gpuDecode", label: "解码负载" },
       { key: "gpuFrequency", label: "GPU 频率" },
-      { key: "gpuMemory", label: "显存使用" },
+      { key: "gpuMemory", label: "GPU 内存使用" },
       { key: "gpuTemperature", label: "GPU 温度" },
       { key: "gpuDriverInfo", label: "驱动信息" }
     ]
@@ -2382,12 +2409,7 @@ function DevicePage() {
   const gpuAverageEncode = averageSamplePointsOrFallback(gpuInstances.map((gpu) => gpu.encodePercent), hasInstanceConfiguration("gpu") ? [] : series?.gpuEncodePercent ?? []);
   const gpuAverageDecode = averageSamplePointsOrFallback(gpuInstances.map((gpu) => gpu.decodePercent), hasInstanceConfiguration("gpu") ? [] : series?.gpuDecodePercent ?? []);
   const gpuAverageMemoryUsedBytes = averageSamplePointsOrFallback(gpuInstances.map((gpu) => gpu.memoryUsedBytes), hasInstanceConfiguration("gpu") ? [] : series?.gpuMemoryUsedBytes ?? []);
-  const gpuMemorySummary = filteredLatest
-    ? formatCapacitySummary(
-        filteredLatest.gpus.reduce((total, gpu) => total + gpu.memoryUsedBytes, 0),
-        filteredLatest.gpus.reduce((total, gpu) => total + gpu.memoryTotalBytes, 0)
-      )
-    : "容量暂无";
+  const gpuMemorySummary = filteredLatest ? formatGpuMemorySummary(filteredLatest.gpus) : "容量暂无";
   const commitLimitBytes = filteredLatest
     ? filteredLatest.memoryCommitLimitBytes || filteredLatest.memoryTotalBytes + filteredLatest.swapTotalBytes
     : 0;
@@ -2476,7 +2498,7 @@ function DevicePage() {
           <TelemetryChartCard widgetId="overview-disk-total" title="磁盘总已用容量" subtitle={`全部 ${diskInstances.length} 个硬盘实例的总量 · ${formatCapacitySummary(filteredLatest?.diskUsedBytes, filteredLatest?.diskTotalBytes)}`} series={[{ label: "全部硬盘总已用", points: diskTotalUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集硬盘型号" items={diskModelItems} />} />
           <TelemetryChartCard widgetId="overview-network-average" title="网卡平均吞吐" subtitle={`全部 ${networkInstances.length} 个网卡实例的平均值`} series={[{ label: "平均接收 (Rx)", points: networkAverageRx, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "平均发送 (Tx)", points: networkAverageTx, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} footer={<TelemetryModelList label="已采集网卡型号" items={networkModelItems} />} />
           <TelemetryChartCard widgetId="overview-gpu-average" title="GPU 平均使用率" subtitle={`全部 ${gpuInstances.length} 个显卡实例的平均值`} series={[{ label: "平均核心", points: gpuAverageUsage }, { label: "平均编码", points: gpuAverageEncode }, { label: "平均解码", points: gpuAverageDecode }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
-          <TelemetryChartCard widgetId="overview-gpu-memory" title="GPU 平均显存已用容量" subtitle={`${gpuMemorySummary} · 按显卡实例平均`} series={[{ label: "平均显存已用", points: gpuAverageMemoryUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
+          <TelemetryChartCard widgetId="overview-gpu-memory" title="GPU 平均内存已用容量" subtitle={`${gpuMemorySummary} · 按显卡实例平均`} series={[{ label: "平均 GPU 内存已用", points: gpuAverageMemoryUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
           {fanInstances.length ? fanInstances.map((fan, index) => <TelemetryChartCard key={`overview-fan-${fan.id}`} widgetId={`overview-fan-${fan.id}`} widgetTemplateId={`overview-fan-${index}`} title={`${fan.name} · 风扇转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : null}
         </TelemetrySection>
       )}
@@ -2558,11 +2580,14 @@ function DevicePage() {
             const gpuTemperaturePoints = gpu.temperatureC ?? [];
             const gpuLabel = displayInstanceName(gpu.name, "GPU");
             const gpuIndex = gpuInstances.findIndex((item) => item.id === gpu.id);
+            const memoryLabel = gpuMemoryLabel(gpuLatest?.memoryKind ?? gpu.memoryKind);
+            const memorySummary = gpuLatest ? formatGpuMemorySummary([gpuLatest]) : "容量暂无";
+            const temperatureSource = gpuLatest?.temperatureSource ?? gpu.temperatureSource;
             const temperatureSubtitle = gpuTemperaturePoints.length > 0
-              ? (gpu.temperatureSource === "cpuPackageShared"
+              ? (temperatureSource === "cpuPackageShared"
                 ? "集成显卡未暴露独立温度 · 使用 CPU 封装温度"
                 : "GPU 传感器温度")
-              : "未检测到独立温度传感器";
+              : (gpu.integrated ? "未采集 CPU 封装温度" : "未检测到 GPU 温度传感器");
             return (
               <TelemetryDeviceBlock
                 key={`gpu-${gpu.id}`}
@@ -2572,17 +2597,17 @@ function DevicePage() {
                 targetId={gpu.id}
                 eyebrow="显卡实例"
                 title={gpuLabel}
-                subtitle={gpuLatest ? `${formatCapacitySummary(gpuLatest.memoryUsedBytes, gpuLatest.memoryTotalBytes)} · ${temperatureSubtitle}` : temperatureSubtitle}
+                subtitle={gpuLatest ? `${memorySummary} · ${temperatureSubtitle}` : temperatureSubtitle}
               >
                 <TelemetryChartCard widgetId={`gpu-${gpu.id}-load`} widgetTemplateId={`gpu-${gpuIndex}-load`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-load" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "line" }} title={`${gpuLabel} · 核心负载`} subtitle="核心、编码与解码" series={[{ label: "核心", points: gpu.usagePercent }, { label: "编码", points: gpu.encodePercent }, { label: "解码", points: gpu.decodePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
-                <TelemetryChartCard widgetId={`gpu-${gpu.id}-memory`} widgetTemplateId={`gpu-${gpuIndex}-memory`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-memory" widgetCategory="显卡" widgetVisualization="area" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "area" }} title={`${gpuLabel} · 显存已用容量`} subtitle={formatCapacitySummary(gpuLatest?.memoryUsedBytes, gpuLatest?.memoryTotalBytes)} series={[{ label: "显存已用", points: gpu.memoryUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
-                <TelemetryChartCard widgetId={`gpu-${gpu.id}-temperature`} widgetTemplateId={`gpu-${gpuIndex}-temperature`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-temperature" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "line" }} title={`${gpuLabel} · 温度`} subtitle={temperatureSubtitle} emptyMessage="未检测到独立温度传感器" series={[{ label: "温度", points: gpuTemperaturePoints, valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
+                <TelemetryChartCard widgetId={`gpu-${gpu.id}-memory`} widgetTemplateId={`gpu-${gpuIndex}-memory`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-memory" widgetCategory="显卡" widgetVisualization="area" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "area" }} title={`${gpuLabel} · ${memoryLabel}已用容量`} subtitle={memorySummary} series={[{ label: `${memoryLabel}已用`, points: gpu.memoryUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
+                <TelemetryChartCard widgetId={`gpu-${gpu.id}-temperature`} widgetTemplateId={`gpu-${gpuIndex}-temperature`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-temperature" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "line" }} title={`${gpuLabel} · 温度`} subtitle={temperatureSubtitle} emptyMessage={gpu.integrated ? "未采集 CPU 封装温度" : "未检测到 GPU 温度传感器"} series={[{ label: "温度", points: gpuTemperaturePoints, valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
               </TelemetryDeviceBlock>
             );
           }) : hasInstanceConfiguration("gpu") ? <div className="workspace-telemetry-empty">当前已关闭所有显卡实例</div> : (
             <TelemetryDeviceBlock widgetId="gpu-summary" kind="gpu" eyebrow="显卡汇总" title="GPU 总览" subtitle={`${gpuMemorySummary} · 设备汇总`}>
               <TelemetryChartCard widgetId="gpu-summary-load" widgetGroupId="gpu-summary" widgetType="gpu-load" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, visualization: "line" }} title="核心负载" series={[{ label: "GPU 核心", points: series.gpuUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
-              <TelemetryChartCard widgetId="gpu-summary-memory" widgetGroupId="gpu-summary" widgetType="gpu-memory" widgetCategory="显卡" widgetVisualization="area" widgetConfig={{ systemRendered: true, visualization: "area" }} title="显存已用容量" subtitle={gpuMemorySummary} series={[{ label: "显存已用", points: series.gpuMemoryUsedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
+              <TelemetryChartCard widgetId="gpu-summary-memory" widgetGroupId="gpu-summary" widgetType="gpu-memory" widgetCategory="显卡" widgetVisualization="area" widgetConfig={{ systemRendered: true, visualization: "area" }} title="GPU 内存已用容量" subtitle={gpuMemorySummary} series={[{ label: "GPU 内存已用", points: series.gpuMemoryUsedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
               <TelemetryChartCard widgetId="gpu-summary-temperature" widgetGroupId="gpu-summary" widgetType="gpu-temperature" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, visualization: "line" }} title="温度" subtitle="GPU 设备汇总" emptyMessage="等待 GPU 温度传感器" series={[{ label: "温度", points: series.gpuTemperatureC ?? [], valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
             </TelemetryDeviceBlock>
           )}

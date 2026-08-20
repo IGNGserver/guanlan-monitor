@@ -197,6 +197,8 @@ export function payloadToTimeSeries(
         frequencyMHz: enabled.has("gpuFrequency") && instanceEnabled.has("gpuFrequency") ? gpu.frequencyMHz ?? 0 : 0,
         memoryUsagePercent: enabled.has("gpuMemory") && instanceEnabled.has("gpuMemory") ? percent(gpu.memoryUsedBytes, gpu.memoryTotalBytes) : 0,
         memoryUsedBytes: enabled.has("gpuMemory") && instanceEnabled.has("gpuMemory") ? gpu.memoryUsedBytes : 0,
+        integrated: gpu.integrated,
+        memoryKind: gpu.memoryKind,
         temperatureC: enabled.has("gpuTemperature") && instanceEnabled.has("gpuTemperature") ? gpu.temperatureC : undefined,
         temperatureSource: enabled.has("gpuTemperature") && instanceEnabled.has("gpuTemperature") ? gpu.temperatureSource ?? undefined : undefined
       } satisfies InstanceMetricRecord);
@@ -500,6 +502,8 @@ function gpuInstancesAtPoint(point: TimeSeriesRecord, config: DeviceMetricConfig
     frequencyMHz: gpu.frequencyMHz ?? 0,
     memoryUsagePercent: percent(gpu.memoryUsedBytes, gpu.memoryTotalBytes),
     memoryUsedBytes: gpu.memoryUsedBytes,
+    integrated: gpu.integrated,
+    memoryKind: gpu.memoryKind,
     temperatureC: gpu.temperatureC,
     temperatureSource: gpu.temperatureSource
   }));
@@ -641,6 +645,8 @@ function buildGpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricCo
         grouped.set(gpu.id, {
           id: gpu.id,
           name: gpu.name,
+          integrated: gpu.integrated,
+          memoryKind: gpu.memoryKind,
           usagePercent: [],
           encodePercent: [],
           decodePercent: [],
@@ -652,6 +658,10 @@ function buildGpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricCo
       }
       const target = grouped.get(gpu.id)!;
       const timestamp = new Date(point.timestamp).toISOString();
+      if (gpu.integrated) target.integrated = true;
+      if ((!target.memoryKind || target.memoryKind === "unknown") && gpu.memoryKind) {
+        target.memoryKind = gpu.memoryKind;
+      }
       target.usagePercent.push({ timestamp, value: Number(gpu.usagePercent ?? 0) });
       target.encodePercent.push({ timestamp, value: Number(gpu.encodePercent ?? 0) });
       target.decodePercent.push({ timestamp, value: Number(gpu.decodePercent ?? 0) });
@@ -662,7 +672,7 @@ function buildGpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricCo
         lastMemoryUsed.set(gpu.id, memoryUsed);
       }
       target.memoryUsedBytes.push({ timestamp, value: lastMemoryUsed.get(gpu.id) ?? 0 });
-      if (!target.temperatureSource && gpu.temperatureSource) {
+      if (gpu.temperatureSource === "cpuPackageShared" || (!target.temperatureSource && gpu.temperatureSource)) {
         target.temperatureSource = gpu.temperatureSource;
       }
       const temperature = Number(gpu.temperatureC);

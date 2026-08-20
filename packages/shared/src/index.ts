@@ -31,6 +31,8 @@ export type UpdatePlatform =
 
 export type DeviceBlockKey = "cpu" | "gpu" | "memory" | "disk" | "network" | "fan";
 
+export type GpuMemoryKind = "dedicated" | "shared" | "unknown";
+
 export type AgentProbeTarget = DeviceBlockKey | "connection";
 
 export type AgentProbeProvider =
@@ -222,6 +224,8 @@ export interface GpuDeviceStats {
   encodeUtilizationPercent?: number | null;
   decodeUtilizationPercent?: number | null;
   frequencyMHz?: number | null;
+  integrated?: boolean;
+  memoryKind?: GpuMemoryKind | null;
   memoryUsedBytes: number;
   memoryTotalBytes: number;
   temperatureC?: number | null;
@@ -535,6 +539,8 @@ export interface DiskMetricSeries {
 export interface GpuMetricSeries {
   id: string;
   name: string;
+  integrated?: boolean;
+  memoryKind?: GpuMemoryKind | null;
   usagePercent: SamplePoint[];
   encodePercent: SamplePoint[];
   decodePercent: SamplePoint[];

@@ -154,10 +154,89 @@ func TestMapHardwareSensorsIntelGPU(t *testing.T) {
 	if gpu.FrequencyMHz == nil || *gpu.FrequencyMHz != clock {
 		t.Fatalf("unexpected GPU clock: %v", gpu.FrequencyMHz)
 	}
-	expectedUsedBytes := uint64((dedicatedUsed + sharedUsed) * 1024 * 1024)
-	expectedTotalBytes := uint64((dedicatedTotal + sharedTotal) * 1024 * 1024)
+	expectedUsedBytes := uint64(sharedUsed * 1024 * 1024)
+	expectedTotalBytes := uint64(sharedTotal * 1024 * 1024)
 	if gpu.MemoryUsedBytes != expectedUsedBytes || gpu.MemoryTotalBytes != expectedTotalBytes {
-		t.Fatalf("expected dedicated+shared sum used=%d total=%d, got used=%d total=%d", expectedUsedBytes, expectedTotalBytes, gpu.MemoryUsedBytes, gpu.MemoryTotalBytes)
+		t.Fatalf("expected shared memory used=%d total=%d, got used=%d total=%d", expectedUsedBytes, expectedTotalBytes, gpu.MemoryUsedBytes, gpu.MemoryTotalBytes)
+	}
+	if !gpu.Integrated || gpu.MemoryKind != "shared" {
+		t.Fatalf("expected Intel UHD to be an integrated shared-memory GPU, got integrated=%v kind=%q", gpu.Integrated, gpu.MemoryKind)
+	}
+}
+
+func TestApplyIntegratedGPUTemperatureUsesCPUValue(t *testing.T) {
+	independentTemperature := 37.0
+	gpus := []gpuDeviceStats{
+		{Name: "Intel(R) UHD Graphics", Integrated: true, TemperatureC: &independentTemperature, TemperatureSource: "device"},
+		{Name: "NVIDIA GeForce RTX 2060 SUPER", TemperatureC: &independentTemperature, TemperatureSource: "device"},
+	}
+
+	applyIntegratedGPUTemperature(gpus, 54.5)
+	if gpus[0].TemperatureC == nil || *gpus[0].TemperatureC != 54.5 || gpus[0].TemperatureSource != "cpuPackageShared" {
+		t.Fatalf("expected iGPU temperature to follow CPU package temperature, got %#v", gpus[0])
+	}
+	if gpus[1].TemperatureC == nil || *gpus[1].TemperatureC != independentTemperature || gpus[1].TemperatureSource != "device" {
+		t.Fatalf("discrete GPU temperature must remain independent, got %#v", gpus[1])
+	}
+}
+
+func TestMapHardwareSensorsIntegratedGPUIgnoresDedicatedAperture(t *testing.T) {
+	dedicatedUsed := 128.0
+	dedicatedTotal := 512.0
+	metrics := mapHardwareSensors([]hardwareSensorSnapshot{{
+		HardwareType: "GpuIntel",
+		Name:         "Intel(R) UHD Graphics",
+		Sensors: []hardwareSensor{
+			{SensorType: "SmallData", Name: "D3D Dedicated Memory Used", Value: &dedicatedUsed},
+			{SensorType: "SmallData", Name: "D3D Dedicated Memory Total", Value: &dedicatedTotal},
+		},
+	}})
+
+	if len(metrics.gpus) != 1 {
+		t.Fatalf("expected one GPU, got %d", len(metrics.gpus))
+	}
+	gpu := metrics.gpus[0]
+	if gpu.MemoryUsedBytes != 0 || gpu.MemoryTotalBytes != 0 || gpu.MemoryKind != "shared" {
+		t.Fatalf("dedicated aperture must not become iGPU VRAM: %#v", gpu)
+	}
+}
+
+func TestGPUAdapterMemorySemantics(t *testing.T) {
+	tests := []struct {
+		name  string
+		ram   uint64
+		kind  string
+		total uint64
+	}{
+		{name: "Intel(R) UHD Graphics", ram: 2 * 1024 * 1024 * 1024, kind: "shared", total: 0},
+		{name: "NVIDIA GeForce RTX 2060 SUPER", ram: 8 * 1024 * 1024 * 1024, kind: "dedicated", total: 8 * 1024 * 1024 * 1024},
+		{name: "Microsoft Remote Display Adapter", ram: 0, kind: "unknown", total: 0},
+	}
+	for _, test := range tests {
+		if got := gpuMemoryKindForAdapter(test.name, test.ram); got != test.kind {
+			t.Errorf("gpuMemoryKindForAdapter(%q) = %q, want %q", test.name, got, test.kind)
+		}
+		if got := gpuMemoryTotalForAdapter(test.name, test.ram); got != test.total {
+			t.Errorf("gpuMemoryTotalForAdapter(%q) = %d, want %d", test.name, got, test.total)
+		}
+	}
+}
+
+func TestMergeGPUMemoryStatsDoesNotMixMemoryKinds(t *testing.T) {
+	target := gpuDeviceStats{
+		MemoryKind:      "shared",
+		MemoryUsedBytes: 2 * 1024 * 1024 * 1024,
+		memoryObserved:  true,
+	}
+	candidate := gpuDeviceStats{
+		MemoryKind:       "dedicated",
+		MemoryUsedBytes:  512 * 1024 * 1024,
+		MemoryTotalBytes: 8 * 1024 * 1024 * 1024,
+		memoryObserved:   true,
+	}
+	mergeGPUMemoryStats(&target, candidate)
+	if target.MemoryKind != "shared" || target.MemoryUsedBytes != 2*1024*1024*1024 || target.MemoryTotalBytes != 0 {
+		t.Fatalf("dedicated memory must not overwrite shared memory: %#v", target)
 	}
 }
 
@@ -470,4 +549,3 @@ func TestParseNonNegativeFloat(t *testing.T) {
 		}
 	}
 }
-

@@ -240,11 +240,14 @@ type gpuDeviceStats struct {
 	EncodeUtilizationPercent *float64 `json:"encodeUtilizationPercent,omitempty"`
 	DecodeUtilizationPercent *float64 `json:"decodeUtilizationPercent,omitempty"`
 	FrequencyMHz             *float64 `json:"frequencyMHz,omitempty"`
+	Integrated               bool     `json:"integrated,omitempty"`
+	MemoryKind               string   `json:"memoryKind,omitempty"`
 	MemoryUsedBytes          uint64   `json:"memoryUsedBytes"`
 	MemoryTotalBytes         uint64   `json:"memoryTotalBytes"`
 	TemperatureC             *float64 `json:"temperatureC,omitempty"`
 	TemperatureSource        string   `json:"temperatureSource,omitempty"`
 	DriverVersion            string   `json:"driverVersion,omitempty"`
+	memoryObserved           bool     `json:"-"`
 }
 
 type fanSensorStats struct {
@@ -1486,6 +1489,10 @@ func gpuVendorFamily(name, id string) string {
 }
 
 func mergeGPUStats(base []gpuDeviceStats, overlays ...[]gpuDeviceStats) []gpuDeviceStats {
+	return mergeGPUStatsWithOptions(false, base, overlays...)
+}
+
+func mergeGPUStatsWithOptions(preserveObservedMemory bool, base []gpuDeviceStats, overlays ...[]gpuDeviceStats) []gpuDeviceStats {
 	result := make([]gpuDeviceStats, 0, len(base))
 	for _, item := range base {
 		result = append(result, item)
@@ -1553,18 +1560,20 @@ func mergeGPUStats(base []gpuDeviceStats, overlays ...[]gpuDeviceStats) []gpuDev
 			if candidate.FrequencyMHz != nil {
 				result[index].FrequencyMHz = candidate.FrequencyMHz
 			}
+			if candidate.Integrated {
+				result[index].Integrated = true
+			}
+			if result[index].MemoryKind == "" || result[index].MemoryKind == "unknown" {
+				if candidate.MemoryKind != "" {
+					result[index].MemoryKind = candidate.MemoryKind
+				}
+			}
 			if candidate.TemperatureC != nil {
 				result[index].TemperatureC = candidate.TemperatureC
 				result[index].TemperatureSource = candidate.TemperatureSource
 			}
-			if candidate.MemoryTotalBytes > 0 {
-				result[index].MemoryTotalBytes = candidate.MemoryTotalBytes
-				result[index].MemoryUsedBytes = candidate.MemoryUsedBytes
-			} else if candidate.MemoryUsedBytes > 0 && (result[index].MemoryUsedBytes == 0 || candidate.MemoryUsedBytes > result[index].MemoryUsedBytes) {
-				result[index].MemoryUsedBytes = candidate.MemoryUsedBytes
-			}
-			if result[index].MemoryTotalBytes < result[index].MemoryUsedBytes {
-				result[index].MemoryTotalBytes = result[index].MemoryUsedBytes
+			if !preserveObservedMemory || !result[index].memoryObserved {
+				mergeGPUMemoryStats(&result[index], candidate)
 			}
 			if result[index].DriverVersion == "" && candidate.DriverVersion != "" {
 				result[index].DriverVersion = candidate.DriverVersion
@@ -1587,7 +1596,7 @@ func mergeMissingGPUMemory(previous, next []gpuDeviceStats) []gpuDeviceStats {
 	if len(previous) == 0 {
 		return next
 	}
-	return mergeGPUStats(next, previous)
+	return mergeGPUStatsWithOptions(true, next, previous)
 }
 
 func mergeWindowsGPUFallback(primary, fallback []gpuDeviceStats) []gpuDeviceStats {
@@ -1599,12 +1608,13 @@ func applyIntegratedGPUTemperature(gpus []gpuDeviceStats, cpuTemperature float64
 		return
 	}
 	for index := range gpus {
-		if gpus[index].TemperatureC != nil || !isIntegratedGPUName(gpus[index].Name) {
+		if !gpus[index].Integrated && !isIntegratedGPUName(gpus[index].Name) {
 			continue
 		}
 		value := cpuTemperature
 		gpus[index].TemperatureC = &value
 		gpus[index].TemperatureSource = "cpuPackageShared"
+		gpus[index].Integrated = true
 	}
 }
 
@@ -1613,8 +1623,77 @@ func isIntegratedGPUName(name string) bool {
 	if lower == "" {
 		return false
 	}
-	return (strings.Contains(lower, "intel") && (strings.Contains(lower, "uhd") || strings.Contains(lower, "iris") || strings.Contains(lower, "graphics"))) ||
+	if strings.Contains(lower, "arc") || strings.Contains(lower, "rx ") || strings.Contains(lower, "firepro") {
+		return false
+	}
+	return (strings.Contains(lower, "intel") && (strings.Contains(lower, "uhd") || strings.Contains(lower, "iris") || strings.Contains(lower, "hd graphics"))) ||
+		(strings.Contains(lower, "amd") && strings.Contains(lower, "radeon") && strings.Contains(lower, "graphics")) ||
 		strings.Contains(lower, "integrated") || strings.Contains(lower, "apu")
+}
+
+func gpuMemoryKindForAdapter(name string, adapterRAM uint64) string {
+	if isIntegratedGPUName(name) {
+		return "shared"
+	}
+	if adapterRAM > 0 {
+		return "dedicated"
+	}
+	return "unknown"
+}
+
+func gpuMemoryTotalForAdapter(name string, adapterRAM uint64) uint64 {
+	if isIntegratedGPUName(name) {
+		return 0
+	}
+	return adapterRAM
+}
+
+func mergeGPUMemoryStats(target *gpuDeviceStats, candidate gpuDeviceStats) {
+	candidateKind := normalizeGPUMemoryKind(candidate.MemoryKind)
+	targetKind := normalizeGPUMemoryKind(target.MemoryKind)
+	if targetKind != "" && targetKind != "unknown" && candidateKind != "" && candidateKind != "unknown" && targetKind != candidateKind {
+		return
+	}
+	if targetKind != "" && targetKind != "unknown" && candidateKind == "unknown" {
+		return
+	}
+	if targetKind == "" || targetKind == "unknown" {
+		if candidateKind != "" {
+			target.MemoryKind = candidateKind
+		}
+	}
+	candidateObserved := candidate.memoryObserved || candidate.MemoryTotalBytes > 0 || candidate.MemoryUsedBytes > 0
+	if !candidateObserved {
+		return
+	}
+	if candidate.MemoryTotalBytes > 0 {
+		target.MemoryTotalBytes = candidate.MemoryTotalBytes
+		target.MemoryUsedBytes = candidate.MemoryUsedBytes
+	} else if candidate.memoryObserved {
+		target.MemoryUsedBytes = candidate.MemoryUsedBytes
+	} else if candidate.MemoryUsedBytes > 0 && (target.MemoryUsedBytes == 0 || candidate.MemoryUsedBytes > target.MemoryUsedBytes) {
+		// Test fixtures and older collectors do not carry the internal
+		// observation marker, but an explicit non-zero used value is still
+		// useful when no capacity was reported.
+		target.MemoryUsedBytes = candidate.MemoryUsedBytes
+	}
+	target.memoryObserved = target.memoryObserved || candidate.memoryObserved
+	if target.MemoryTotalBytes > 0 && target.MemoryTotalBytes < target.MemoryUsedBytes {
+		target.MemoryTotalBytes = target.MemoryUsedBytes
+	}
+}
+
+func normalizeGPUMemoryKind(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "dedicated":
+		return "dedicated"
+	case "shared":
+		return "shared"
+	case "unknown":
+		return "unknown"
+	default:
+		return ""
+	}
 }
 
 func collectLinuxMemoryMetadata() (*float64, *int, string) {
@@ -2472,8 +2551,12 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 			gpuID = snapshot.Name
 		}
 		gpu := gpuDeviceStats{
-			ID:   "gpu-" + sanitizeKey(gpuID),
-			Name: snapshot.Name,
+			ID:         "gpu-" + sanitizeKey(gpuID),
+			Name:       snapshot.Name,
+			Integrated: isIntegratedGPUName(snapshot.Name),
+		}
+		if gpu.Integrated {
+			gpu.MemoryKind = "shared"
 		}
 		var clock, load, temperature *float64
 		var dedicatedMemoryUsed, dedicatedMemoryTotal *float64
@@ -2525,26 +2608,60 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 			gpu.UtilizationPercent = *load
 		}
 		var finalUsedMB, finalTotalMB float64
-		if dedicatedMemoryUsed != nil || sharedMemoryUsed != nil {
+		switch {
+		case gpu.Integrated:
+			// UMA/iGPU adapters consume system memory. Dedicated memory exposed
+			// by LHM on these adapters is a reserved aperture, not independent
+			// VRAM, so never use it as an iGPU memory source.
+			if sharedMemoryUsed != nil || sharedMemoryTotal != nil {
+				if sharedMemoryUsed != nil {
+					finalUsedMB = *sharedMemoryUsed
+				}
+				if sharedMemoryTotal != nil {
+					finalTotalMB = *sharedMemoryTotal
+				}
+				gpu.memoryObserved = true
+			} else if genericMemoryUsed != nil || genericMemoryTotal != nil {
+				if genericMemoryUsed != nil {
+					finalUsedMB = *genericMemoryUsed
+				}
+				if genericMemoryTotal != nil {
+					finalTotalMB = *genericMemoryTotal
+				}
+				gpu.memoryObserved = true
+			}
+			gpu.MemoryKind = "shared"
+		case dedicatedMemoryUsed != nil || dedicatedMemoryTotal != nil:
+			// A discrete adapter's GPU-memory metric represents its local
+			// dedicated VRAM. Shared system-memory spillover is intentionally
+			// not mixed into this value.
 			if dedicatedMemoryUsed != nil {
-				finalUsedMB += *dedicatedMemoryUsed
+				finalUsedMB = *dedicatedMemoryUsed
 			}
-			if sharedMemoryUsed != nil {
-				finalUsedMB += *sharedMemoryUsed
-			}
-		} else if genericMemoryUsed != nil {
-			finalUsedMB = *genericMemoryUsed
-		}
-
-		if dedicatedMemoryTotal != nil || sharedMemoryTotal != nil {
 			if dedicatedMemoryTotal != nil {
-				finalTotalMB += *dedicatedMemoryTotal
+				finalTotalMB = *dedicatedMemoryTotal
+			}
+			gpu.MemoryKind = "dedicated"
+			gpu.memoryObserved = true
+		case sharedMemoryUsed != nil || sharedMemoryTotal != nil:
+			// If a platform exposes only shared memory for an otherwise
+			// unclassified adapter, preserve the source semantics explicitly.
+			if sharedMemoryUsed != nil {
+				finalUsedMB = *sharedMemoryUsed
 			}
 			if sharedMemoryTotal != nil {
-				finalTotalMB += *sharedMemoryTotal
+				finalTotalMB = *sharedMemoryTotal
 			}
-		} else if genericMemoryTotal != nil {
-			finalTotalMB = *genericMemoryTotal
+			gpu.MemoryKind = "shared"
+			gpu.memoryObserved = true
+		case genericMemoryUsed != nil || genericMemoryTotal != nil:
+			if genericMemoryUsed != nil {
+				finalUsedMB = *genericMemoryUsed
+			}
+			if genericMemoryTotal != nil {
+				finalTotalMB = *genericMemoryTotal
+			}
+			gpu.memoryObserved = true
 		}
 
 		if finalUsedMB > 0 {
@@ -2553,7 +2670,7 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 		if finalTotalMB > 0 {
 			gpu.MemoryTotalBytes = uint64(finalTotalMB * 1024 * 1024)
 		}
-		if gpu.MemoryTotalBytes < gpu.MemoryUsedBytes {
+		if gpu.MemoryTotalBytes > 0 && gpu.MemoryTotalBytes < gpu.MemoryUsedBytes {
 			gpu.MemoryTotalBytes = gpu.MemoryUsedBytes
 		}
 		metrics.gpus = append(metrics.gpus, gpu)
@@ -3214,6 +3331,7 @@ func collectNvidiaGPUs() []gpuDeviceStats {
 			ID:           fmt.Sprintf("gpu-%s-%d", sanitizeKey(name), index),
 			Name:         name,
 			FrequencyMHz: &frequency,
+			MemoryKind:   "dedicated",
 		}
 		if value, ok := parseNonNegativeFloat(parts[1]); ok {
 			gpu.UtilizationPercent = value
@@ -3223,9 +3341,11 @@ func collectNvidiaGPUs() []gpuDeviceStats {
 		}
 		if value, ok := parseNonNegativeFloat(parts[4]); ok {
 			gpu.MemoryUsedBytes = uint64(value * 1024 * 1024)
+			gpu.memoryObserved = true
 		}
 		if value, ok := parseNonNegativeFloat(parts[5]); ok {
 			gpu.MemoryTotalBytes = uint64(value * 1024 * 1024)
+			gpu.memoryObserved = true
 		}
 		result = append(result, gpu)
 	}
@@ -3263,6 +3383,9 @@ type windowsGPUPerformanceAggregate struct {
 	Encode         float64
 	Decode         float64
 	MemoryUsed     uint64
+	DedicatedUsed  uint64
+	SharedUsed     uint64
+	MemoryObserved bool
 	MemoryTotal    uint64
 	TotalCommitted uint64
 }
@@ -3312,6 +3435,9 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 		}
 		aggregate := getGPUPerformanceAggregate(aggregates, key)
 		aggregate.MemoryUsed += item.DedicatedUsage + item.SharedUsage
+		aggregate.DedicatedUsed += item.DedicatedUsage
+		aggregate.SharedUsed += item.SharedUsage
+		aggregate.MemoryObserved = true
 		aggregate.TotalCommitted = maxUint64(aggregate.TotalCommitted, item.TotalCommitted)
 	}
 	for _, item := range engines {
@@ -3379,7 +3505,6 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 			ID:                 "gpu-windows-" + sanitizeKey(key),
 			Name:               name,
 			UtilizationPercent: round(aggregate.Utilization),
-			MemoryUsedBytes:    aggregate.MemoryUsed,
 			DriverVersion:      driver,
 		}
 		if index < len(physicalAdapters) {
@@ -3388,6 +3513,19 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 				keySource = physicalAdapters[index].Name
 			}
 			gpu.ID = "gpu-" + sanitizeKey(keySource)
+			gpu.Integrated = isIntegratedGPUName(name)
+			if gpu.Integrated {
+				gpu.MemoryKind = "shared"
+				gpu.MemoryUsedBytes = aggregate.SharedUsed
+			} else {
+				gpu.MemoryKind = "dedicated"
+				gpu.MemoryUsedBytes = aggregate.DedicatedUsed
+			}
+			gpu.memoryObserved = aggregate.MemoryObserved
+		} else {
+			gpu.MemoryUsedBytes = aggregate.MemoryUsed
+			gpu.MemoryKind = "unknown"
+			gpu.memoryObserved = aggregate.MemoryObserved
 		}
 		if aggregate.Encode > 0 {
 			value := round(aggregate.Encode)
@@ -3397,11 +3535,11 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 			value := round(aggregate.Decode)
 			gpu.DecodeUtilizationPercent = &value
 		}
-		if index < len(physicalAdapters) && physicalAdapters[index].AdapterRAM > 0 {
-			gpu.MemoryTotalBytes = maxUint64(physicalAdapters[index].AdapterRAM, aggregate.TotalCommitted)
-			if gpu.MemoryTotalBytes < aggregate.MemoryUsed {
-				gpu.MemoryTotalBytes = aggregate.MemoryUsed
-			}
+		if index < len(physicalAdapters) && !gpu.Integrated && physicalAdapters[index].AdapterRAM > 0 {
+			// AdapterRAM is useful as a dedicated VRAM capacity for a
+			// discrete adapter. TotalCommitted is a current committed usage
+			// value, not a capacity, and must not become the denominator.
+			gpu.MemoryTotalBytes = physicalAdapters[index].AdapterRAM
 		}
 		result = append(result, gpu)
 	}
@@ -3455,7 +3593,9 @@ func collectWindowsGPUAdapters() []gpuDeviceStats {
 		result = append(result, gpuDeviceStats{
 			ID:                 id,
 			Name:               name,
-			MemoryTotalBytes:   record.AdapterRAM,
+			Integrated:         isIntegratedGPUName(name),
+			MemoryKind:         gpuMemoryKindForAdapter(name, record.AdapterRAM),
+			MemoryTotalBytes:   gpuMemoryTotalForAdapter(name, record.AdapterRAM),
 			DriverVersion:      strings.TrimSpace(record.DriverVersion),
 			UtilizationPercent: 0,
 		})

@@ -116,9 +116,13 @@ export function Dashboard({
         encodeUtilizationPercent?: number | null;
         decodeUtilizationPercent?: number | null;
         frequencyMHz?: number | null;
+        integrated?: boolean;
+        memoryKind?: "dedicated" | "shared" | "unknown" | null;
         memoryUsedBytes: number;
         memoryTotalBytes: number;
         temperatureC?: number | null;
+        temperatureSource?: string | null;
+        driverVersion?: string | null;
       }[];
       sensorBackends: {
         id: string;
@@ -359,11 +363,11 @@ export function Dashboard({
               )}
               {availableKeys.has("gpuMemory") && (
                 <ChartCard
-                  title="GPU 显存占用率"
+                  title="GPU 内存占用率"
                   value={`${(series.gpuMemoryUsagePercent.at(-1)?.value ?? 0).toFixed(0)}%`}
                   color="var(--accent-cyan)"
                   points={series.gpuMemoryUsagePercent}
-                  detail="VRAM 渲染存取"
+                  detail="按适配器类型统计独立显存或共享显存"
                 />
               )}
               {availableKeys.has("gpuTemperature") && series.gpuTemperatureC.length > 0 && (
@@ -591,21 +595,24 @@ export function Dashboard({
                 <h3 className={styles.chartTitle}>GPU 实例详情</h3>
                 {series.gpus.map((gpuSeries) => {
                   const gpu = latest.gpus.find((item) => item.id === gpuSeries.id);
+                  const memoryKind = gpu?.memoryKind ?? gpuSeries.memoryKind;
+                  const memoryLabel = memoryKind === "shared" ? "共享显存" : memoryKind === "dedicated" ? "独立显存" : "GPU 内存";
+                  const temperatureLabel = (gpu?.temperatureSource ?? gpuSeries.temperatureSource) === "cpuPackageShared" ? "温度（随 CPU）" : "温度";
                   return (
                     <div key={gpuSeries.id} style={{ marginTop: "18px", borderTop: "1px solid var(--border-subtle)", paddingTop: "18px" }}>
                       <div className={styles.deviceDetailMeta} style={{ marginBottom: "10px" }}>
                         <span className={styles.metaBadge}>{gpu?.name || gpuSeries.name}</span>
                         {gpu?.driverVersion && <span className={styles.metaBadge}>驱动：{gpu.driverVersion}</span>}
-                        <span className={styles.metaBadge}>显存：{formatBytes(gpu?.memoryUsedBytes ?? 0)} / {formatBytes(gpu?.memoryTotalBytes ?? 0)}</span>
+                        <span className={styles.metaBadge}>{memoryLabel}：{formatBytes(gpu?.memoryUsedBytes ?? 0)} / {(gpu?.memoryTotalBytes ?? 0) > 0 ? formatBytes(gpu?.memoryTotalBytes ?? 0) : "容量未知"}</span>
                       </div>
                       <div className={styles.chartGrid}>
                         <ChartCard title={`${gpuSeries.name} 使用率`} chartId={`${gpuSeries.id}-usage`} value={`${(gpuSeries.usagePercent.at(-1)?.value ?? 0).toFixed(0)}%`} color="var(--accent-violet)" points={gpuSeries.usagePercent} />
                         <ChartCard title={`${gpuSeries.name} 编码`} chartId={`${gpuSeries.id}-encode`} value={`${(gpuSeries.encodePercent.at(-1)?.value ?? 0).toFixed(0)}%`} color="var(--accent-blue)" points={gpuSeries.encodePercent} />
                         <ChartCard title={`${gpuSeries.name} 解码`} chartId={`${gpuSeries.id}-decode`} value={`${(gpuSeries.decodePercent.at(-1)?.value ?? 0).toFixed(0)}%`} color="var(--accent-cyan)" points={gpuSeries.decodePercent} />
                         <ChartCard title={`${gpuSeries.name} 频率`} chartId={`${gpuSeries.id}-frequency`} value={formatMHz(gpuSeries.frequencyMHz.at(-1)?.value ?? 0)} color="var(--accent-amber)" points={gpuSeries.frequencyMHz} detail="MHz" />
-                        <ChartCard title={`${gpuSeries.name} 显存`} chartId={`${gpuSeries.id}-memory`} value={`${(gpuSeries.memoryUsagePercent.at(-1)?.value ?? 0).toFixed(0)}%`} color="var(--accent-emerald)" points={gpuSeries.memoryUsagePercent} />
-                        <ChartCard title={`${gpuSeries.name} 显存已用`} chartId={`${gpuSeries.id}-memory-bytes`} value={formatBytes(gpuSeries.memoryUsedBytes.at(-1)?.value ?? 0)} color="var(--accent-emerald)" points={gpuSeries.memoryUsedBytes} />
-                        <ChartCard title={`${gpuSeries.name} 温度`} chartId={`${gpuSeries.id}-temperature`} value={`${(gpuSeries.temperatureC.at(-1)?.value ?? 0).toFixed(0)}°C`} color="var(--accent-rose)" points={gpuSeries.temperatureC} />
+                        <ChartCard title={`${gpuSeries.name} ${memoryLabel}`} chartId={`${gpuSeries.id}-memory`} value={`${(gpuSeries.memoryUsagePercent.at(-1)?.value ?? 0).toFixed(0)}%`} color="var(--accent-emerald)" points={gpuSeries.memoryUsagePercent} />
+                        <ChartCard title={`${gpuSeries.name} ${memoryLabel}已用`} chartId={`${gpuSeries.id}-memory-bytes`} value={formatBytes(gpuSeries.memoryUsedBytes.at(-1)?.value ?? 0)} color="var(--accent-emerald)" points={gpuSeries.memoryUsedBytes} />
+                        <ChartCard title={`${gpuSeries.name} ${temperatureLabel}`} chartId={`${gpuSeries.id}-temperature`} value={`${(gpuSeries.temperatureC.at(-1)?.value ?? 0).toFixed(0)}°C`} color="var(--accent-rose)" points={gpuSeries.temperatureC} />
                       </div>
                     </div>
                   );

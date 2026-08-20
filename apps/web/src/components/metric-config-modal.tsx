@@ -15,7 +15,7 @@ const ALL_METRIC_KEYS: { key: DeviceMetricKey; label: string; group: string }[] 
   { key: "gpuEncode", label: "GPU 视频编码", group: "GPU" },
   { key: "gpuDecode", label: "GPU 视频解码", group: "GPU" },
   { key: "gpuFrequency", label: "GPU 核心频率", group: "GPU" },
-  { key: "gpuMemory", label: "GPU 显存占用", group: "GPU" },
+  { key: "gpuMemory", label: "GPU 内存占用", group: "GPU" },
   { key: "gpuTemperature", label: "GPU 核心温度", group: "GPU" },
   { key: "gpuDriverInfo", label: "GPU 驱动与适配器信息", group: "GPU" },
   { key: "memoryUsage", label: "系统物理内存", group: "内存" },

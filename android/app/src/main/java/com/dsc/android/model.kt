@@ -137,9 +137,12 @@ data class GpuDto(
   val encodeUtilizationPercent: Double? = null,
   val decodeUtilizationPercent: Double? = null,
   val frequencyMHz: Double? = null,
+  val integrated: Boolean = false,
+  val memoryKind: String? = null,
   val memoryUsedBytes: Long,
   val memoryTotalBytes: Long,
   val temperatureC: Double? = null,
+  val temperatureSource: String? = null,
   val driverVersion: String? = null
 )
 
@@ -203,13 +206,16 @@ data class NetworkMetricSeriesDto(
 data class GpuMetricSeriesDto(
   val id: String,
   val name: String,
+  val integrated: Boolean = false,
+  val memoryKind: String? = null,
   val usagePercent: List<SamplePointDto> = emptyList(),
   val encodePercent: List<SamplePointDto> = emptyList(),
   val decodePercent: List<SamplePointDto> = emptyList(),
   val frequencyMHz: List<SamplePointDto> = emptyList(),
   val memoryUsagePercent: List<SamplePointDto> = emptyList(),
   val memoryUsedBytes: List<SamplePointDto> = emptyList(),
-  val temperatureC: List<SamplePointDto> = emptyList()
+  val temperatureC: List<SamplePointDto> = emptyList(),
+  val temperatureSource: String? = null
 )
 
 @Serializable

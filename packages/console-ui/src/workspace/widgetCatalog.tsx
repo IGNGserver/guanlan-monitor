@@ -90,7 +90,7 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
   {
     widgetType: "gpu-device-group",
     title: "显卡设备组",
-    description: "一次添加指定显卡的负载、显存和温度图表；组内图表仍可单独移除。",
+    description: "一次添加指定显卡的负载、GPU 内存和温度图表；组内图表仍可单独移除。",
     category: "设备组",
     kind: "group",
     defaultSize: "large",
@@ -289,8 +289,8 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
   },
   {
     widgetType: "gpu-memory",
-    title: "GPU 显存使用 (折线图)",
-    description: "指定显卡的显存已用容量历史趋势。",
+    title: "GPU 内存使用 (折线图)",
+    description: "指定显卡的独立显存或共享显存已用容量历史趋势。",
     category: "显卡",
     kind: "content",
     defaultSize: "medium",
@@ -301,8 +301,8 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
   },
   {
     widgetType: "gpu-memory-pie",
-    title: "GPU 显存使用 (饼图)",
-    description: "当前显存已用与剩余容量环形饼图。",
+    title: "GPU 内存使用 (饼图)",
+    description: "当前独立显存或共享显存已用与容量环形饼图。",
     category: "显卡",
     kind: "content",
     defaultSize: "medium",
@@ -520,6 +520,12 @@ function getTargetId(entry: WidgetLayoutCatalogEntry): string | undefined {
   return typeof target === "string" ? target : undefined;
 }
 
+function gpuMemoryLabel(memoryKind: string | null | undefined): string {
+  if (memoryKind === "shared") return "共享显存";
+  if (memoryKind === "dedicated") return "独立显存";
+  return "GPU 内存";
+}
+
 
 function hardwareRows(device: DeviceSummary, latest: MetricsLatest | undefined): Array<{ label: string; value: string; detail?: string }> {
   const cpu = latest?.cpuPackages?.[0];
@@ -594,7 +600,8 @@ function WidgetContent({ definition, entry, context }: { definition: WidgetCatal
     const gpu = targetId ? latest?.gpus?.find((item) => item.id === targetId) : latest?.gpus?.[0];
     const used = gpu?.memoryUsedBytes ?? 0;
     const total = gpu?.memoryTotalBytes ?? 0;
-    return <DonutChart data={[{ name: "已用", value: Math.max(0, used), color: "#a78bfa" }, { name: "空闲", value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />;
+    const memoryLabel = gpuMemoryLabel(gpu?.memoryKind);
+    return <DonutChart data={[{ name: `${memoryLabel}已用`, value: Math.max(0, used), color: "#a78bfa" }, { name: `${memoryLabel}剩余`, value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />;
   }
   const { lines, valueFormatter } = getWidgetLines(definition.widgetType, metrics, getTargetId(entry));
   return <TrendChart lines={lines} visualization={visualization} valueFormatter={valueFormatter} />;
