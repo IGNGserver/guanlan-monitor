@@ -1354,6 +1354,7 @@ func collectSlowMetrics() slowMetrics {
 			result.cpuPackages[index].FrequencyMHz = hardware.cpuFrequencyMHz
 		}
 	}
+	applyCPUPackageTemperature(result.cpuPackages, hardware.cpuTemperatureC)
 	sensorBackends := append([]sensorBackendStatus{}, hardware.sensorBackends...)
 	sensorBackends = append(sensorBackends, collectPlatformSensorBackends()...)
 
@@ -1669,6 +1670,21 @@ func applyIntegratedGPUTemperature(gpus []gpuDeviceStats, cpuTemperature float64
 	}
 }
 
+// A machine with one CPU package has no ambiguity when the hardware probe only
+// exposes an aggregate Package/Core temperature. Preserve that value on the
+// package record as well as the top-level metric so the server and per-CPU
+// charts use the same source. Do not copy an aggregate across multiple
+// packages, where it could falsely look like a per-package reading.
+func applyCPUPackageTemperature(packages []cpuPackageStats, temperature *float64) {
+	if len(packages) != 1 || temperature == nil || !isValidHardwareTemperature(*temperature) {
+		return
+	}
+	if packages[0].TemperatureC == nil {
+		value := *temperature
+		packages[0].TemperatureC = &value
+	}
+}
+
 func isIntegratedGPUName(name string) bool {
 	lower := strings.ToLower(strings.TrimSpace(name))
 	if lower == "" {
@@ -1875,7 +1891,16 @@ func runWindowsPowerShell(ctx context.Context, script string, environment ...str
 	if len(environment) > 0 {
 		command.Env = append(os.Environ(), environment...)
 	}
-	return command.Output()
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
+	if err == nil {
+		return output, nil
+	}
+	if detail := strings.TrimSpace(stderr.String()); detail != "" {
+		return output, fmt.Errorf("%w；PowerShell stderr: %s", err, detail)
+	}
+	return output, err
 }
 
 func collectCPUPackages() (*float64, []cpuPackageStats, error) {
@@ -2170,12 +2195,12 @@ func collectHardwareSensors() hardwareSensorMetrics {
 			ID:     "librehardwaremonitor",
 			Label:  "LibreHardwareMonitor",
 			OK:     true,
-			Detail: hardwareSensorDetail(metrics, "PowerShell 传感器探针"),
+			Detail: hardwareSensorDetail(metrics, "PowerShell 传感器探针", dllPath),
 		}}
 		return metrics
 	}
 
-	probeDetail := "；PowerShell 传感器探针读取失败：" + powerShellErr.Error()
+	probeDetail := hardwareMonitorLibraryDetail(dllPath) + "；PowerShell 传感器探针读取失败：" + powerShellErr.Error()
 	if probePath := resolveHardwareMonitorProbePath(); probePath != "" {
 		if snapshots, pawnIO, probeErr := collectWindowsHardwareSnapshotsWithDotnetProbe(probePath, dllPath); probeErr == nil {
 			snapshots = alignWindowsHardwareGPUIdentifiers(snapshots)
@@ -2184,7 +2209,7 @@ func collectHardwareSensors() hardwareSensorMetrics {
 				ID:     "librehardwaremonitor",
 				Label:  "LibreHardwareMonitor",
 				OK:     true,
-				Detail: hardwareSensorDetail(metrics, ".NET 传感器探针") + formatHardwarePawnIOStatus(pawnIO) + probeDetail,
+				Detail: hardwareSensorDetail(metrics, ".NET 传感器探针", dllPath) + formatHardwarePawnIOStatus(pawnIO) + probeDetail,
 			}}
 			return metrics
 		} else {
@@ -2331,8 +2356,8 @@ func readLinuxSensorValue(path string, divisor float64) (float64, bool) {
 	return value / divisor, true
 }
 
-func hardwareSensorDetail(metrics hardwareSensorMetrics, source string) string {
-	detail := fmt.Sprintf("已通过 %s 读取硬件传感器；风扇 %d 个，磁盘 SMART %d 个", source, len(metrics.fans), len(metrics.diskSensorMetadata))
+func hardwareSensorDetail(metrics hardwareSensorMetrics, source, dllPath string) string {
+	detail := fmt.Sprintf("已通过 %s 读取硬件传感器；风扇 %d 个，磁盘 SMART %d 个%s", source, len(metrics.fans), len(metrics.diskSensorMetadata), hardwareMonitorLibraryDetail(dllPath))
 	if metrics.cpuTemperatureC == nil {
 		detail += "；未发现 CPU Package/Core 温度传感器，不使用 ACPI 热区值"
 	}
@@ -2340,6 +2365,13 @@ func hardwareSensorDetail(metrics hardwareSensorMetrics, source string) string {
 		detail += "；主板/EC 未暴露可用风扇转速传感器"
 	}
 	return detail
+}
+
+func hardwareMonitorLibraryDetail(dllPath string) string {
+	if strings.TrimSpace(dllPath) == "" {
+		return ""
+	}
+	return "；LibreHardwareMonitor 库=" + dllPath
 }
 
 func resolveHardwareMonitorProbePath() string {
@@ -2491,25 +2523,53 @@ func formatHardwarePawnIOStatus(status hardwarePawnIOStatus) string {
 }
 
 func resolveHardwareMonitorPath() string {
-	candidates := []string{}
-	for _, programFiles := range []string{os.Getenv("ProgramFiles(x86)"), os.Getenv("ProgramFiles")} {
-		if strings.TrimSpace(programFiles) == "" {
-			continue
-		}
-		candidates = append(candidates, filepath.Join(programFiles, "FanControl", "LibreHardwareMonitorLib.dll"))
-	}
+	executablePath := ""
 	if executable, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(executable), "windows-hardware", "librehardwaremonitor", "LibreHardwareMonitorLib.dll"))
+		executablePath = executable
 	}
-	if workingDirectory, err := os.Getwd(); err == nil {
-		candidates = append(candidates, filepath.Join(workingDirectory, "windows-hardware", "librehardwaremonitor", "LibreHardwareMonitorLib.dll"))
-	}
-	for _, candidate := range candidates {
+	workingDirectory, _ := os.Getwd()
+	for _, candidate := range hardwareMonitorPathCandidates(
+		executablePath,
+		workingDirectory,
+		os.Getenv("ProgramFiles(x86)"),
+		os.Getenv("ProgramFiles"),
+	) {
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 			return candidate
 		}
 	}
 	return ""
+}
+
+func hardwareMonitorPathCandidates(executablePath, workingDirectory, programFilesX86, programFiles string) []string {
+	candidates := []string{}
+	appendCandidate := func(candidate string) {
+		if strings.TrimSpace(candidate) == "" {
+			return
+		}
+		for _, existing := range candidates {
+			if filepath.Clean(existing) == filepath.Clean(candidate) {
+				return
+			}
+		}
+		candidates = append(candidates, candidate)
+	}
+	// Prefer the library shipped with this Agent. An older FanControl copy can
+	// be installed system-wide and may not expose the CPU/PawnIO sensors needed
+	// by the current collector.
+	for _, base := range []string{filepath.Dir(executablePath), workingDirectory} {
+		if strings.TrimSpace(base) == "" || base == "." {
+			continue
+		}
+		appendCandidate(filepath.Join(base, "windows-hardware", "librehardwaremonitor", "LibreHardwareMonitorLib.dll"))
+	}
+	for _, programFiles := range []string{programFilesX86, programFiles} {
+		if strings.TrimSpace(programFiles) == "" {
+			continue
+		}
+		appendCandidate(filepath.Join(programFiles, "FanControl", "LibreHardwareMonitorLib.dll"))
+	}
+	return candidates
 }
 
 func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetrics {

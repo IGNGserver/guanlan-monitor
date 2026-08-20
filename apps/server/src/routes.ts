@@ -9,6 +9,7 @@ import type {
   MetricSeries,
   MetricWindow,
   ReleaseChannel,
+  SamplePoint,
   TrafficCalendarMode,
   WidgetLayoutSaveRequest
 } from "@dsc/shared";
@@ -374,7 +375,7 @@ export async function registerRoutes(
       const state = await repositories.realtime.getDevice(request.params.deviceId);
       if (!state) return reply.code(404).send({ error: "device_not_found" });
       const notes = await fanNotes.get(request.params.deviceId);
-      const availableMetrics = getAvailableMetrics(state);
+      const baseAvailableMetrics = getAvailableMetrics(state);
       const metricConfig = await metricsService.getMetricConfig(request.params.deviceId);
       const enabledMetrics = metricConfig.enabledMetrics;
       const latest = filterAgentPayloadInstances(state.latest, metricConfig);
@@ -387,8 +388,9 @@ export async function registerRoutes(
           ),
           query.window
         ),
-        availableMetrics
+        baseAvailableMetrics
       );
+      const availableMetrics = markSeriesBackedMetricAvailability(baseAvailableMetrics, series);
       return {
         device: toDetail(state),
         status: state.status,
@@ -678,7 +680,7 @@ function rejectInsecureAgentTransport(request: FastifyRequest, reply: FastifyRep
 
 function sanitizeUnsupportedMetricSeries(series: MetricSeries, availableMetrics: DeviceMetricOption[]) {
   const available = new Map(availableMetrics.map((item) => [item.key, item.available]));
-  if (available.get("cpuTemperature") === false) {
+  if (available.get("cpuTemperature") === false && !hasCpuTemperatureSeries(series)) {
     return {
       ...series,
       cpuTemperatureC: [],
@@ -689,6 +691,21 @@ function sanitizeUnsupportedMetricSeries(series: MetricSeries, availableMetrics:
     };
   }
   return series;
+}
+
+function hasMetricSeries(points: SamplePoint[] | undefined): boolean {
+  return (points ?? []).some((point) => Number.isFinite(point.value) && point.value > 0);
+}
+
+function hasCpuTemperatureSeries(series: MetricSeries): boolean {
+  return hasMetricSeries(series.cpuTemperatureC) || series.cpus.some((cpu) => hasMetricSeries(cpu.temperatureC));
+}
+
+function markSeriesBackedMetricAvailability(availableMetrics: DeviceMetricOption[], series: MetricSeries): DeviceMetricOption[] {
+  if (!hasCpuTemperatureSeries(series)) {
+    return availableMetrics;
+  }
+  return availableMetrics.map((item) => item.key === "cpuTemperature" ? { ...item, available: true } : item);
 }
 
 function alignMetricSeriesToWindow(series: MetricSeries, window: MetricWindow) {

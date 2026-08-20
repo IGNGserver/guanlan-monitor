@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -177,6 +178,46 @@ func TestApplyIntegratedGPUTemperatureUsesCPUValue(t *testing.T) {
 	}
 	if gpus[1].TemperatureC == nil || *gpus[1].TemperatureC != independentTemperature || gpus[1].TemperatureSource != "device" {
 		t.Fatalf("discrete GPU temperature must remain independent, got %#v", gpus[1])
+	}
+}
+
+func TestApplyCPUPackageTemperatureCopiesAggregateForSinglePackage(t *testing.T) {
+	temperature := 66.5
+	packages := []cpuPackageStats{{ID: "package-0"}}
+
+	applyCPUPackageTemperature(packages, &temperature)
+	if packages[0].TemperatureC == nil || *packages[0].TemperatureC != temperature {
+		t.Fatalf("expected single CPU package temperature to be copied, got %#v", packages)
+	}
+}
+
+func TestApplyCPUPackageTemperatureDoesNotMislabelMultiplePackages(t *testing.T) {
+	temperature := 66.5
+	packages := []cpuPackageStats{{ID: "package-0"}, {ID: "package-1"}}
+
+	applyCPUPackageTemperature(packages, &temperature)
+	for _, packageStats := range packages {
+		if packageStats.TemperatureC != nil {
+			t.Fatalf("aggregate temperature must not be copied to multiple packages: %#v", packages)
+		}
+	}
+}
+
+func TestHardwareMonitorPathCandidatesPreferBundledLibrary(t *testing.T) {
+	candidates := hardwareMonitorPathCandidates(
+		filepath.Join("/opt", "DeviceStateConsoleAgent", "backend.exe"),
+		filepath.Join("/workspace"),
+		filepath.Join("/Program Files (x86)"),
+		filepath.Join("/Program Files"),
+	)
+	if len(candidates) < 3 {
+		t.Fatalf("expected bundled and external candidates, got %#v", candidates)
+	}
+	if !strings.Contains(candidates[0], `DeviceStateConsoleAgent`) || !strings.Contains(candidates[0], `windows-hardware`) {
+		t.Fatalf("bundled executable directory must be tried first, got %#v", candidates)
+	}
+	if strings.Contains(candidates[0], "FanControl") {
+		t.Fatalf("external FanControl library must not be first, got %#v", candidates)
 	}
 }
 
