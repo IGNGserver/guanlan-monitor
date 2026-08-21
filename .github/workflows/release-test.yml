@@ -47,6 +47,9 @@ jobs:
       - name: Typecheck and build web packages
         run: |
           pnpm check:desktop-ui-boundaries
+          pnpm check:web-ui-boundary
+          pnpm check:adapter-contracts
+          pnpm test:adapter-contracts
           pnpm test:ui-helpers
           pnpm typecheck
           pnpm build
@@ -121,6 +124,7 @@ jobs:
           pnpm --filter @dsc/desktop exec electron-builder --win nsis dir --publish never "--config.directories.output=$outputDir"
           $unpacked = Join-Path $outputDir "win-unpacked"
           if (-not (Test-Path $unpacked)) { throw "Electron unpacked directory missing: $unpacked" }
+          node scripts/verify-electron-artifact-version.mjs $unpacked $version
           if (-not (Test-Path (Join-Path $unpacked "resources/agent/hardware-sensor-probe/HardwareSensorProbe.dll"))) { throw "Packaged hardware sensor probe missing." }
           if (-not (Test-Path (Join-Path $unpacked "resources/agent/windows-hardware/librehardwaremonitor/LibreHardwareMonitorLib.dll"))) { throw "Packaged hardware monitor library missing." }
           $portable = Join-Path $outputDir "DeviceStateConsole-Windows-GUI-Portable-v$version.zip"

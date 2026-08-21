@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { UpdateInfo } from "@dsc/shared";
-import { getHubUpdateStatus, getSystemVersionInfo, getUpdateInfo, requestHubUpdate } from "../lib/api";
+import { getHubUpdateStatus, getSystemVersionInfo, getUpdateInfo, requestHubUpdate } from "../../lib/api";
 import styles from "./monitor.module.css";
 
 type UpdatePhase = "checking" | "ready" | "requesting" | "requested" | "completed" | "failed";

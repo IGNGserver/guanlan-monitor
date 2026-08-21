@@ -1,0 +1,104 @@
+:root {
+  --workspace-bg: #f5f7fa;
+  --workspace-topbar: #f5f7fa;
+  --workspace-sidebar: #eef2f6;
+  --workspace-surface: #ffffff;
+  --workspace-surface-subtle: #f8fafc;
+  --workspace-surface-hover: #eef5fb;
+  --workspace-surface-control: #ffffff;
+  --workspace-surface-popover: #ffffff;
+  --workspace-surface-modal: #ffffff;
+  --workspace-surface-foreground: #f6fafd;
+  --workspace-scrim: rgb(23 32 43 / 18%);
+  --workspace-text: #17202b;
+  --workspace-text-secondary: #516071;
+  --workspace-text-muted: #7b8795;
+  --workspace-border: #dce3ea;
+  --workspace-border-strong: #c5d0db;
+  --workspace-accent: #1772c8;
+  --workspace-accent-strong: #0d5ea8;
+  --workspace-accent-soft: #e4f1fd;
+  --workspace-green: #178653;
+  --workspace-green-soft: #e6f6ee;
+  --workspace-amber: #a96808;
+  --workspace-amber-soft: #fff5df;
+  --workspace-red: #c44747;
+  --workspace-red-soft: #fcebea;
+  --workspace-purple: #6d5ab1;
+  --workspace-purple-soft: #f0edfc;
+  --workspace-shadow: 0 9px 28px rgba(30, 48, 67, 0.07);
+  --workspace-shadow-soft: 0 2px 10px rgba(30, 48, 67, 0.05);
+  --workspace-radius-sm: 6px;
+  --workspace-radius-md: 10px;
+  --workspace-radius-lg: 14px;
+  --workspace-sidebar-width: 262px;
+  --workspace-content-pad: 34px;
+  --workspace-control-height: 34px;
+  --workspace-transition: 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+html[data-dsc-resolved-theme="dark"] {
+  color-scheme: dark;
+  --workspace-bg: #14181d;
+  --workspace-topbar: #14181d;
+  --workspace-sidebar: #191e24;
+  --workspace-surface: #1c2229;
+  --workspace-surface-subtle: #20272f;
+  --workspace-surface-hover: #25313b;
+  --workspace-surface-control: #20272f;
+  --workspace-surface-popover: #1c2229;
+  --workspace-surface-modal: #1c2229;
+  --workspace-surface-foreground: #1b2329;
+  --workspace-scrim: rgb(0 0 0 / 32%);
+  --workspace-text: #f1f4f7;
+  --workspace-text-secondary: #b5c0ca;
+  --workspace-text-muted: #83909c;
+  --workspace-border: #303b46;
+  --workspace-border-strong: #43515f;
+  --workspace-accent: #68b5f2;
+  --workspace-accent-strong: #8fcafd;
+  --workspace-accent-soft: #1b3c58;
+  --workspace-green: #55c38a;
+  --workspace-green-soft: #193b2c;
+  --workspace-amber: #e7ad52;
+  --workspace-amber-soft: #43351f;
+  --workspace-red: #ef8888;
+  --workspace-red-soft: #452426;
+  --workspace-purple: #b9a8f2;
+  --workspace-purple-soft: #332c4e;
+  --workspace-shadow: 0 14px 34px rgba(0, 0, 0, 0.25);
+  --workspace-shadow-soft: 0 2px 12px rgba(0, 0, 0, 0.22);
+}
+
+html[data-dsc-density="compact"] {
+  --workspace-control-height: 30px;
+  --workspace-sidebar-width: 248px;
+  --workspace-content-pad: 26px;
+}
+
+html,
+body,
+#root {
+  background: var(--workspace-bg);
+}
+
+* {
+  scrollbar-color: var(--workspace-border-strong) transparent;
+  scrollbar-width: thin;
+}
+
+button,
+input,
+select {
+  color: inherit;
+}
+
+button {
+  border: 0;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--workspace-accent);
+  outline-offset: 2px;
+}

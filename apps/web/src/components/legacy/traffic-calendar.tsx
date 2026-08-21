@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import type { TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
-import { getTrafficCalendar } from "../lib/api";
+import { getTrafficCalendar } from "../../lib/api";
 import styles from "./monitor.module.css";
 
 const MODES: { key: TrafficCalendarMode; label: string }[] = [

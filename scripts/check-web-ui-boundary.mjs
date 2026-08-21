@@ -6,8 +6,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
 const appRoot = path.join(projectRoot, "apps/web/src/app");
+const componentRoot = path.join(projectRoot, "apps/web/src/components");
+const legacyComponentRoot = path.join(componentRoot, "legacy");
 const homeRoute = path.join(appRoot, "page.tsx");
 const deviceRoute = path.join(appRoot, "devices/[deviceId]/page.tsx");
+const archivedLegacyFiles = [
+  "chart-card.tsx",
+  "dashboard.tsx",
+  "device-sidebar.tsx",
+  "home-client.tsx",
+  "home-overview.tsx",
+  "metric-config-modal.tsx",
+  "monitor.module.css",
+  "saas-shell.tsx",
+  "traffic-calendar.tsx",
+  "update-notice.tsx"
+];
 
 const legacyRoutePatterns = [
   { pattern: /HomeClient/, reason: "legacy HomeClient route" },
@@ -70,7 +84,25 @@ if (!/from\s+["']@dsc\/console-ui["']/.test(unifiedConsoleSource)) {
   console.error("❌ Web UI boundary: UnifiedConsole must render the shared @dsc/console-ui package.");
 }
 
-console.log(`[check:web-ui-boundary] Scanned active Web routes under ${path.relative(projectRoot, appRoot)}.`);
+if (!fs.existsSync(legacyComponentRoot)) {
+  violationCount++;
+  console.error("❌ Web UI boundary: legacy Web component archive is missing.");
+} else {
+  for (const fileName of archivedLegacyFiles) {
+    const archivedPath = path.join(legacyComponentRoot, fileName);
+    if (!fs.existsSync(archivedPath)) {
+      violationCount++;
+      console.error(`❌ Web UI boundary: archived legacy component is missing ${path.relative(projectRoot, archivedPath)}.`);
+    }
+    const activePath = path.join(componentRoot, fileName);
+    if (fs.existsSync(activePath)) {
+      violationCount++;
+      console.error(`❌ Web UI boundary: legacy component remains in the active component root ${path.relative(projectRoot, activePath)}.`);
+    }
+  }
+}
+
+console.log(`[check:web-ui-boundary] Scanned active Web routes under ${path.relative(projectRoot, appRoot)} and archived legacy components.`);
 
 if (violationCount > 0) {
   console.error(`[check:web-ui-boundary] FAILED: ${violationCount} boundary violation(s) detected.`);

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import type { DeviceMetricConfigResponse, DeviceMetricKey } from "@dsc/shared";
-import { getDeviceMetricConfig, saveDeviceMetricConfig } from "../lib/api";
+import { getDeviceMetricConfig, saveDeviceMetricConfig } from "../../lib/api";
 import styles from "./monitor.module.css";
 
 const ALL_METRIC_KEYS: { key: DeviceMetricKey; label: string; group: string }[] = [

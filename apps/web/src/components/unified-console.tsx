@@ -6,7 +6,7 @@ import type { WorkspaceRoute } from "@dsc/console-ui";
 import { ApiError, getSession } from "../lib/api";
 import { webConsoleAdapter } from "../lib/console-adapter";
 import { LoginForm } from "./login-form";
-import styles from "./monitor.module.css";
+import styles from "./auth.module.css";
 
 export function UnifiedConsole({ initialDeviceId = null }: { initialDeviceId?: string | null }) {
   const [state, setState] = useState<"loading" | "authenticated" | "anonymous">("loading");

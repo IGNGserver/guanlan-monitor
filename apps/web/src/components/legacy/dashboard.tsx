@@ -10,7 +10,7 @@ import type {
   MetricWindow,
   MetricsResponse
 } from "@dsc/shared";
-import { getMetrics, saveFanNote } from "../lib/api";
+import { getMetrics, saveFanNote } from "../../lib/api";
 import { ChartCard } from "./chart-card";
 import { TrafficCalendar } from "./traffic-calendar";
 import styles from "./monitor.module.css";

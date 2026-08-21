@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { ApiError, getSession, login } from "../lib/api";
-import styles from "./monitor.module.css";
+import styles from "./auth.module.css";
 
 export function LoginForm({ onAuthenticated }: { onAuthenticated: () => Promise<void> }) {
   const [accessKey, setAccessKey] = useState("");

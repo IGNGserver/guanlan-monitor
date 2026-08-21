@@ -1,5 +1,5 @@
 import type { ConsoleSnapshot, ConsoleSnapshotRequest, WidgetLayoutRequest, WidgetLayoutSaveRequest, WidgetLayoutSync } from "@dsc/shared";
-import { emptyConsoleSnapshot, WEB_CAPABILITIES, type ConsoleAdapter } from "./adapter";
+import { emptyConsoleSnapshot, WEB_CAPABILITIES, type ConsoleAdapter } from "./adapter.ts";
 
 export class MockConsoleAdapter implements ConsoleAdapter {
   readonly capabilities = WEB_CAPABILITIES;

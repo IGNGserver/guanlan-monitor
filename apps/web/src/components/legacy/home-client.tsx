@@ -4,10 +4,10 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
 import type { DeviceRealtimeEvent, DeviceSummary, InstanceType, MetricWindow } from "@dsc/shared";
-import { deleteDevice, getSession, getServerUrl, listDevices, logout, reorderDevices } from "../lib/api";
+import { deleteDevice, getSession, getServerUrl, listDevices, logout, reorderDevices } from "../../lib/api";
 import { Dashboard } from "./dashboard";
 import { HomeOverview } from "./home-overview";
-import { LoginForm } from "./login-form";
+import { LoginForm } from "../login-form";
 import { SaasShell } from "./saas-shell";
 import styles from "./monitor.module.css";
 
