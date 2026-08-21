@@ -3021,6 +3021,8 @@ function AgentSettings() {
   const supportedProbePlans = Array.isArray(backend?.supportedProbePlans) ? backend.supportedProbePlans : [];
   const detectedTargets = Array.isArray(backend?.detectedTargets) ? backend.detectedTargets : [];
   const [selectedMetrics, setSelectedMetrics] = useState<DeviceMetricKey[]>(enabledMetrics);
+  const selectedMetricsRef = useRef<DeviceMetricKey[]>(enabledMetrics);
+  const metricSaveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
   const [probeSelections, setProbeSelections] = useState(configuredProbes);
   const [enabledDeviceIds, setEnabledDeviceIds] = useState<Partial<Record<DeviceBlockKey, string[]>>>(config?.enabledDeviceIds ?? {});
   const [instanceMetricConfig, setInstanceMetricConfig] = useState<Record<string, DeviceMetricKey[]>>(config?.instanceMetricConfig ?? {});
@@ -3036,6 +3038,7 @@ function AgentSettings() {
   const instanceMetricDraftKey = JSON.stringify(config?.instanceMetricConfig ?? {});
   const runtimeDraftKey = `${config?.connection.hostname ?? ""}|${config?.sampling.normalIntervalSeconds ?? 30}|${config?.sampling.slowIntervalSeconds ?? 30}`;
   useEffect(() => {
+    selectedMetricsRef.current = enabledMetrics;
     setSelectedMetrics(enabledMetrics);
   }, [metricDraftKey]);
   useEffect(() => {
@@ -3089,7 +3092,7 @@ function AgentSettings() {
     void updateLocalConfig({ enabledDeviceIds: nextEnabledDeviceIds });
   };
 
-  const saveCollectionConfig = () => void updateLocalConfig({ enabledMetrics: selectedMetrics, enabledDeviceIds, instanceMetricConfig, probeSelections });
+  const saveCollectionConfig = () => void updateLocalConfig({ enabledMetrics: selectedMetricsRef.current, enabledDeviceIds, instanceMetricConfig, probeSelections });
   const updateInstanceMetricConfig = (instanceId: string, value: DeviceMetricKey[] | undefined) => {
     setInstanceMetricConfig((current) => {
       const next = { ...current };
@@ -3109,7 +3112,14 @@ function AgentSettings() {
     });
   };
   const toggleMetric = (key: DeviceMetricKey) => {
-    setSelectedMetrics((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
+    const current = selectedMetricsRef.current;
+    const next = current.includes(key) ? current.filter((item) => item !== key) : [...current, key];
+    selectedMetricsRef.current = next;
+    setSelectedMetrics(next);
+    metricSaveQueueRef.current = metricSaveQueueRef.current
+      .catch(() => undefined)
+      .then(() => updateLocalConfig({ enabledMetrics: next }))
+      .catch(() => undefined);
   };
   const updateProbe = (target: AgentProbeTarget, patch: { provider?: AgentProbeProvider; enabled?: boolean }) => {
     setProbeSelections((current) => {
@@ -3140,13 +3150,13 @@ function AgentSettings() {
       </Surface>
       <Surface className="workspace-collection-surface">
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">上报数据</span><h3>选择 Agent 采集内容</h3></div><span className="workspace-caption">已选 {selectedMetrics.length} 项</span></div>
-        <p className="workspace-surface__description">按勾选项采集并上报指标；启用某个硬件探针时，Agent 可能自动补齐该探针运行所需的依赖指标。完成选择后点击一次保存。</p>
+        <p className="workspace-surface__description">按勾选项采集并上报指标；指标勾选会立即保存，离开页面后仍会保留。启用某个硬件探针时，Agent 可能自动补齐该探针运行所需的依赖指标；探针来源和实例覆盖完成后点击一次保存。</p>
         <div className="workspace-metric-option-grid">{metricGroups.map((group) => <div className="workspace-metric-option-group" key={group.label}><strong>{group.label}</strong>{group.items.map((item) => <label className="workspace-check-row" key={item.key}><input type="checkbox" checked={selectedMetrics.includes(item.key)} onChange={() => toggleMetric(item.key)} /><span>{item.label}</span></label>)}</div>)}</div>
         <div className="workspace-probe-config"><div className="workspace-probe-config__header"><div><strong>硬件探针</strong><span>先启用探针来源，再在下方决定每个实例是否上报。</span></div></div>{supportedProbePlans.map((plan) => { const selection = probeSelections.find((item) => item.target === plan.target); const providers = plan.providers.filter((provider): provider is AgentProbeProvider => provider in probeProviderLabels); const selectedProvider = selection?.provider && providers.includes(selection.provider) ? selection.provider : providers.includes(plan.default as AgentProbeProvider) ? plan.default as AgentProbeProvider : providers[0]; return <div className="workspace-probe-row" key={plan.target}><div><strong>{probeTargetLabels[plan.target]}</strong><small>{selection?.enabled === false ? "已停用" : "已启用"}</small></div><select className="workspace-select workspace-select--small" value={selectedProvider ?? "disabled"} onChange={(event) => updateProbe(plan.target, { provider: event.target.value as AgentProbeProvider })} disabled={!providers.length || mutationPending}>{providers.map((provider) => <option value={provider} key={provider}>{probeProviderLabels[provider]}</option>)}</select><Toggle checked={selection?.enabled ?? true} onChange={(enabled) => updateProbe(plan.target, { enabled })} label={`${probeTargetLabels[plan.target]} 探针`} disabled={mutationPending} /></div>; })}</div>
-        <div className="workspace-form__actions"><Button variant="primary" onClick={saveCollectionConfig} disabled={refreshing || mutationPending}>保存采集配置</Button><Button variant="quiet" onClick={() => void cloudPush()} disabled={refreshing || mutationPending}>同步到中枢</Button></div>
+        <div className="workspace-form__actions"><Button variant="primary" onClick={saveCollectionConfig} disabled={refreshing || mutationPending}>保存探针与实例配置</Button><Button variant="quiet" onClick={() => void cloudPush()} disabled={refreshing || mutationPending}>同步到中枢</Button></div>
       </Surface>
       <Surface>
-        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">检测结果</span><h3>已发现硬件</h3><p className="workspace-surface__description">关闭某个实例后立即停止上报并写入本机配置；指标和探针来源仍需点击“保存采集配置”。</p></div><span className="workspace-caption">{detectedGroups.reduce((count, group) => count + group.instances.length, 0)} 个实例</span></div>
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">检测结果</span><h3>已发现硬件</h3><p className="workspace-surface__description">关闭某个实例后立即停止上报并写入本机配置；探针来源和实例覆盖需点击“保存探针与实例配置”，指标勾选会立即保存。</p></div><span className="workspace-caption">{detectedGroups.reduce((count, group) => count + group.instances.length, 0)} 个实例</span></div>
         {detectedGroups.length ? <div className="workspace-detected-list">{detectedGroups.map((group) => <div className="workspace-detected-group" key={group.target}><strong>{group.label}</strong>{group.instances.map((instance) => { const enabled = isInstanceEnabled(group.target, instance.id, instance.enabled); return <div className="workspace-detected-row" key={instance.id}><div className="workspace-detected-row__identity"><strong>{instance.name}</strong>{instance.subtitle && <small>{instance.subtitle}</small>}<InstanceMetricOverride target={group.target} instanceId={instance.id} globalMetrics={selectedMetrics} override={instanceMetricConfig[instance.id]} onChange={(value) => updateInstanceMetricConfig(instance.id, value)} disabled={mutationPending} /></div><div className="workspace-detected-row__control"><small className={enabled ? "is-enabled" : "is-disabled"}>{enabled ? "上报中" : "不上传"}</small><Toggle checked={enabled} onChange={(checked) => toggleDetectedInstance(group.target, instance.id, checked)} label={`${instance.name} 上报`} disabled={mutationPending} /></div></div>; })}</div>)}</div> : <div className="workspace-muted-block">尚未检测到硬件探针，请点击“重新检测硬件”。</div>}
       </Surface>
       <AgentTemperatureSourcesPanel sensors={temperatureSources} backends={temperatureSensorBackends} probeError={backend.temperatureProbeError} />
