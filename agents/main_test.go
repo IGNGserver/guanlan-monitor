@@ -448,8 +448,8 @@ func TestMapHardwareSensorsStorage(t *testing.T) {
 	if len(metadata.SmartAttributes) != 1 || metadata.SmartAttributes[0].ID != 194 {
 		t.Fatalf("unexpected SMART attributes: %#v", metadata.SmartAttributes)
 	}
-	if len(metadata.TemperatureSensors) != 1 || metadata.TemperatureSensors[0].Role != "storage_composite" {
-		t.Fatalf("expected storage temperature source metadata, got %#v", metadata.TemperatureSensors)
+	if len(metrics.temperatureSensors) != 1 || metrics.temperatureSensors[0].Role != "storage_composite" {
+		t.Fatalf("expected storage temperature source metadata, got %#v", metrics.temperatureSensors)
 	}
 }
 
