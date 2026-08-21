@@ -72,5 +72,5 @@ archived dashboard.
 - `check:adapter-contracts` and `test:adapter-contracts` cover adapter shape and
   the platform-neutral snapshot fixture.
 - CI packages Electron and checks `resources/app.asar` against `VERSION`.
-- CI runs the Web visual smoke test at desktop and portrait widths, uploading
-  screenshots and layout metrics as workflow evidence.
+- CI runs both Web and real Electron renderer visual smoke tests at desktop and
+  portrait widths, uploading screenshots and layout metrics as workflow evidence.

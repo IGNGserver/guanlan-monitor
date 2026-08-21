@@ -321,3 +321,59 @@ jobs:
           name: web-visual-regression-${{ github.sha }}
           path: ${{ runner.temp }}/dsc-visual
           if-no-files-found: warn
+
+  electron-visual:
+    name: Electron visual regression smoke
+    runs-on: ubuntu-24.04
+    needs: verify
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build shared package and Electron renderer
+        run: |
+          pnpm --filter @dsc/shared build
+          pnpm --filter @dsc/desktop typecheck
+          pnpm --filter @dsc/desktop build
+
+      - name: Install isolated Playwright runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          playwright_dir="$RUNNER_TEMP/dsc-electron-playwright"
+          mkdir -p "$playwright_dir"
+          npm init -y --prefix "$playwright_dir" >/dev/null
+          npm install --prefix "$playwright_dir" --no-save playwright@1.55.0 >/dev/null
+          "$playwright_dir/node_modules/.bin/playwright" install --with-deps chromium
+
+      - name: Run Electron shared workspace visual smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/dsc-electron-visual"
+          xvfb-run --auto-servernum --server-args="-screen 0 1600x1000x24" \
+            env NODE_PATH="$RUNNER_TEMP/dsc-electron-playwright/node_modules" \
+            node scripts/electron-visual-regression.cjs "$RUNNER_TEMP/dsc-electron-visual"
+
+      - name: Upload Electron visual regression evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-visual-regression-${{ github.sha }}
+          path: ${{ runner.temp }}/dsc-electron-visual
+          if-no-files-found: warn
