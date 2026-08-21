@@ -41,7 +41,7 @@ const (
 
 var allMetricKeys = []string{
 	"cpuUsage", "cpuFrequency", "cpuTemperature", "cpuTopology", "systemOverview",
-	"gpuUsage", "gpuEncode", "gpuDecode", "gpuFrequency", "gpuMemory", "gpuTemperature", "gpuDriverInfo",
+	"gpuUsage", "gpuEncode", "gpuDecode", "gpuFrequency", "gpuMemory", "gpuTemperature", "gpuDriverInfo", "temperatureSources",
 	"memoryUsage", "swapUsage", "memoryAvailable", "memoryCached", "memoryCommitted", "memoryHardware",
 	"diskUsage", "diskRead", "diskWrite", "diskMetadata", "diskActivity", "diskHealth",
 	"networkRxRate", "networkTxRate", "networkTraffic", "networkIdentity",

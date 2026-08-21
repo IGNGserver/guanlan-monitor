@@ -109,6 +109,7 @@ var allMetricKeys = []string{
 	"gpuMemory",
 	"gpuTemperature",
 	"gpuDriverInfo",
+	"temperatureSources",
 	"memoryUsage",
 	"swapUsage",
 	"memoryAvailable",
@@ -271,6 +272,27 @@ type fanSensorStats struct {
 	Note               string   `json:"note,omitempty"`
 }
 
+type temperatureSensorReading struct {
+	ID           string   `json:"id"`
+	Source       string   `json:"source"`
+	Backend      string   `json:"backend,omitempty"`
+	Hardware     string   `json:"hardware,omitempty"`
+	HardwareType string   `json:"hardwareType,omitempty"`
+	InstanceID   string   `json:"instanceId,omitempty"`
+	Path         string   `json:"path,omitempty"`
+	RawName      string   `json:"rawName"`
+	DisplayName  string   `json:"displayName,omitempty"`
+	Role         string   `json:"role"`
+	CurrentC     *float64 `json:"currentC,omitempty"`
+	HighC        *float64 `json:"highC,omitempty"`
+	CriticalC    *float64 `json:"criticalC,omitempty"`
+	EmergencyC   *float64 `json:"emergencyC,omitempty"`
+	Alarm        *bool    `json:"alarm,omitempty"`
+	Status       string   `json:"status"`
+	Confidence   string   `json:"confidence"`
+	Note         string   `json:"note,omitempty"`
+}
+
 type sensorBackendStatus struct {
 	ID     string `json:"id"`
 	Label  string `json:"label"`
@@ -279,25 +301,26 @@ type sensorBackendStatus struct {
 }
 
 type metricsPayload struct {
-	SampleID        string                  `json:"sampleId,omitempty"`
-	Identity        agentIdentity           `json:"identity"`
-	Timestamp       string                  `json:"timestamp"`
-	HeartbeatAt     string                  `json:"heartbeatAt"`
-	System          systemStats             `json:"system"`
-	CPUUsagePercent float64                 `json:"cpuUsagePercent"`
-	CPUFrequencyMHz *float64                `json:"cpuFrequencyMHz,omitempty"`
-	CPUTemperatureC *float64                `json:"cpuTemperatureC,omitempty"`
-	CPUPackages     []cpuPackageStats       `json:"cpuPackages,omitempty"`
-	Memory          memoryStats             `json:"memory"`
-	DiskUsage       storageUsage            `json:"diskUsage"`
-	Disks           []diskDeviceStats       `json:"disks,omitempty"`
-	DiskRate        rateStats               `json:"diskRate"`
-	NetworkRate     networkTrafficStats     `json:"networkRate"`
-	NetworkIfaces   []networkInterfaceStats `json:"networkInterfaces,omitempty"`
-	GPUs            []gpuDeviceStats        `json:"gpus"`
-	Fans            []fanSensorStats        `json:"fans"`
-	SensorBackends  []sensorBackendStatus   `json:"sensorBackends,omitempty"`
-	Virtualization  *virtualizationSnapshot `json:"virtualization,omitempty"`
+	SampleID           string                     `json:"sampleId,omitempty"`
+	Identity           agentIdentity              `json:"identity"`
+	Timestamp          string                     `json:"timestamp"`
+	HeartbeatAt        string                     `json:"heartbeatAt"`
+	System             systemStats                `json:"system"`
+	CPUUsagePercent    float64                    `json:"cpuUsagePercent"`
+	CPUFrequencyMHz    *float64                   `json:"cpuFrequencyMHz,omitempty"`
+	CPUTemperatureC    *float64                   `json:"cpuTemperatureC,omitempty"`
+	CPUPackages        []cpuPackageStats          `json:"cpuPackages,omitempty"`
+	Memory             memoryStats                `json:"memory"`
+	DiskUsage          storageUsage               `json:"diskUsage"`
+	Disks              []diskDeviceStats          `json:"disks,omitempty"`
+	DiskRate           rateStats                  `json:"diskRate"`
+	NetworkRate        networkTrafficStats        `json:"networkRate"`
+	NetworkIfaces      []networkInterfaceStats    `json:"networkInterfaces,omitempty"`
+	GPUs               []gpuDeviceStats           `json:"gpus"`
+	Fans               []fanSensorStats           `json:"fans"`
+	TemperatureSensors []temperatureSensorReading `json:"temperatureSensors,omitempty"`
+	SensorBackends     []sensorBackendStatus      `json:"sensorBackends,omitempty"`
+	Virtualization     *virtualizationSnapshot    `json:"virtualization,omitempty"`
 }
 
 type agentConnectionConfig struct {
@@ -389,11 +412,12 @@ type diskHardwareMetadata struct {
 }
 
 type diskSensorMetadata struct {
-	TemperatureC    *float64
-	HealthStatus    string
-	HealthReason    string
-	HealthPercent   *float64
-	SmartAttributes []diskSmartAttribute
+	TemperatureC       *float64
+	TemperatureSensors []temperatureSensorReading
+	HealthStatus       string
+	HealthReason       string
+	HealthPercent      *float64
+	SmartAttributes    []diskSmartAttribute
 }
 
 type windowsHardwareMetadata struct {
@@ -429,6 +453,7 @@ type slowMetrics struct {
 	diskSensorMetadata map[string]diskSensorMetadata
 	fans               []fanSensorStats
 	sensorBackends     []sensorBackendStatus
+	temperatureSensors []temperatureSensorReading
 }
 
 type agentState struct {
@@ -1091,24 +1116,25 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	}
 
 	payload := metricsPayload{
-		Identity:        identity,
-		Timestamp:       now.Format(time.RFC3339),
-		HeartbeatAt:     now.Format(time.RFC3339),
-		System:          collectSystemStats(),
-		CPUUsagePercent: cpuUsagePercent,
-		CPUFrequencyMHz: slow.cpuFrequencyMHz,
-		CPUTemperatureC: slow.cpuTemperatureC,
-		CPUPackages:     ensureCPUPackages(slow.cpuPackages),
-		Memory:          memory,
-		DiskUsage:       slow.diskUsage,
-		Disks:           slow.disks,
-		DiskRate:        diskRate,
-		NetworkRate:     networkRate,
-		NetworkIfaces:   slow.networkInterfaces,
-		GPUs:            ensureGPUs(slow.gpus),
-		Fans:            ensureFans(slow.fans),
-		SensorBackends:  slow.sensorBackends,
-		Virtualization:  s.collectVirtualization(cfg, now),
+		Identity:           identity,
+		Timestamp:          now.Format(time.RFC3339),
+		HeartbeatAt:        now.Format(time.RFC3339),
+		System:             collectSystemStats(),
+		CPUUsagePercent:    cpuUsagePercent,
+		CPUFrequencyMHz:    slow.cpuFrequencyMHz,
+		CPUTemperatureC:    slow.cpuTemperatureC,
+		CPUPackages:        ensureCPUPackages(slow.cpuPackages),
+		Memory:             memory,
+		DiskUsage:          slow.diskUsage,
+		Disks:              slow.disks,
+		DiskRate:           diskRate,
+		NetworkRate:        networkRate,
+		NetworkIfaces:      slow.networkInterfaces,
+		GPUs:               ensureGPUs(slow.gpus),
+		Fans:               ensureFans(slow.fans),
+		TemperatureSensors: append([]temperatureSensorReading{}, slow.temperatureSensors...),
+		SensorBackends:     slow.sensorBackends,
+		Virtualization:     s.collectVirtualization(cfg, now),
 	}
 
 	applyRuntimeConfig(&payload, cfg)
@@ -1229,6 +1255,7 @@ func emptySlowMetrics() slowMetrics {
 		diskSensorMetadata: map[string]diskSensorMetadata{},
 		fans:               []fanSensorStats{},
 		sensorBackends:     []sensorBackendStatus{},
+		temperatureSensors: []temperatureSensorReading{},
 	}
 }
 
@@ -1286,6 +1313,7 @@ func mergeSlowMetrics(previous slowMetrics, next slowMetrics) slowMetrics {
 		merged.diskSensorMetadata = next.diskSensorMetadata
 		merged.fans = next.fans
 		merged.sensorBackends = next.sensorBackends
+		merged.temperatureSensors = mergeTemperatureSensors(previous.temperatureSensors, next.temperatureSensors)
 		if next.cpuFrequencyMHz != nil {
 			merged.cpuFrequencyMHz = next.cpuFrequencyMHz
 		}
@@ -1324,6 +1352,7 @@ func collectSlowMetrics() slowMetrics {
 	}
 
 	hardware := collectHardwareSensors()
+	temperatureSensors := append([]temperatureSensorReading{}, hardware.temperatureSensors...)
 	windowsMetadata := collectWindowsHardwareMetadata()
 	memorySpeedMHz := windowsMetadata.MemorySpeedMHz
 	memorySlotCount := windowsMetadata.MemorySlotCount
@@ -1347,6 +1376,7 @@ func collectSlowMetrics() slowMetrics {
 			metadata := windowsMetadata.DiskMetadata[disk.SourceKey]
 			if sensor, ok := windowsDiskSensors[metadata.PhysicalDevice]; ok {
 				applyDiskSensorMetadata(disk, sensor)
+				temperatureSensors = append(temperatureSensors, sensor.TemperatureSensors...)
 			}
 		}
 	}
@@ -1355,6 +1385,7 @@ func collectSlowMetrics() slowMetrics {
 		for index := range result.disks {
 			if sensor, ok := lookupDiskSensorMetadata(linuxDiskSensors, result.disks[index].SourceKey, result.disks[index].Name, result.disks[index].Model, result.disks[index].MountPoint); ok {
 				applyDiskSensorMetadata(&result.disks[index], sensor)
+				temperatureSensors = append(temperatureSensors, sensor.TemperatureSensors...)
 			}
 		}
 	}
@@ -1364,6 +1395,7 @@ func collectSlowMetrics() slowMetrics {
 		baseAdapters := collectWindowsGPUAdapters()
 		lhmGpus := hardware.gpus
 		nvidiaGpus := collectNvidiaGPUs()
+		appendGPUTemperatureSensors(&temperatureSensors, nvidiaGpus, "nvidia-smi")
 		perfGpus := collectWindowsGPUPerformance()
 		gpus = mergeGPUStats(baseAdapters, lhmGpus, nvidiaGpus, perfGpus)
 		if len(gpus) == 0 {
@@ -1371,10 +1403,12 @@ func collectSlowMetrics() slowMetrics {
 		}
 	} else {
 		nvidiaGpus := collectNvidiaGPUs()
+		appendGPUTemperatureSensors(&temperatureSensors, nvidiaGpus, "nvidia-smi")
 		gpus = mergeGPUStats(hardware.gpus, nvidiaGpus)
 	}
 	if hardware.cpuTemperatureC != nil {
 		applyIntegratedGPUTemperature(gpus, *hardware.cpuTemperatureC)
+		appendIntegratedGPUTemperatureSensors(&temperatureSensors, gpus, *hardware.cpuTemperatureC)
 	}
 	hardware.gpus = gpus
 	if hardware.cpuFrequencyMHz == nil {
@@ -1403,6 +1437,7 @@ func collectSlowMetrics() slowMetrics {
 	result.diskSensorMetadata = hardware.diskSensorMetadata
 	result.fans = hardware.fans
 	result.sensorBackends = sensorBackends
+	result.temperatureSensors = mergeTemperatureSensors(nil, temperatureSensors)
 	return result
 }
 
@@ -1699,6 +1734,61 @@ func applyIntegratedGPUTemperature(gpus []gpuDeviceStats, cpuTemperature float64
 		gpus[index].TemperatureC = &value
 		gpus[index].TemperatureSource = "cpuPackageShared"
 		gpus[index].Integrated = true
+	}
+}
+
+func appendIntegratedGPUTemperatureSensors(sensors *[]temperatureSensorReading, gpus []gpuDeviceStats, cpuTemperature float64) {
+	if sensors == nil || !isValidHardwareTemperature(cpuTemperature) {
+		return
+	}
+	for _, gpu := range gpus {
+		if !gpu.Integrated && !isIntegratedGPUName(gpu.Name) {
+			continue
+		}
+		value := cpuTemperature
+		reading := newTemperatureSensorReading(
+			"temperature-derived-gpu-"+sanitizeKey(gpu.ID),
+			"cpu-package-shared",
+			"derived",
+			gpu.Name,
+			"gpu",
+			gpu.ID,
+			"CPU Package shared temperature",
+			&value,
+			nil,
+			nil,
+			nil,
+			"derived",
+			"Integrated GPU has no independent temperature sensor",
+		)
+		*sensors = append(*sensors, reading)
+	}
+}
+
+func appendGPUTemperatureSensors(sensors *[]temperatureSensorReading, gpus []gpuDeviceStats, source string) {
+	if sensors == nil {
+		return
+	}
+	for _, gpu := range gpus {
+		if gpu.TemperatureC == nil {
+			continue
+		}
+		value := *gpu.TemperatureC
+		*sensors = append(*sensors, newTemperatureSensorReading(
+			"temperature-"+sanitizeKey(source)+"-"+sanitizeKey(gpu.ID),
+			source,
+			source,
+			gpu.Name,
+			"gpu",
+			gpu.ID,
+			"GPU Temperature",
+			&value,
+			nil,
+			nil,
+			nil,
+			"gpu_core",
+			"Alternate GPU temperature source",
+		))
 	}
 }
 
@@ -2188,6 +2278,7 @@ type hardwareSensorMetrics struct {
 	fans                 []fanSensorStats
 	diskSensorMetadata   map[string]diskSensorMetadata
 	sensorBackends       []sensorBackendStatus
+	temperatureSensors   []temperatureSensorReading
 }
 
 // LibreHardwareMonitor exposes live clocks, including CPU boost clocks, where WMI often reports a nominal value.
@@ -2285,7 +2376,7 @@ func hardwareSensorCachePath() string {
 }
 
 func applyPrivilegedHardwareTemperature(metrics hardwareSensorMetrics) hardwareSensorMetrics {
-	if runtime.GOOS != "windows" || metrics.cpuTemperatureC != nil {
+	if runtime.GOOS != "windows" {
 		return metrics
 	}
 
@@ -2294,12 +2385,43 @@ func applyPrivilegedHardwareTemperature(metrics hardwareSensorMetrics) hardwareS
 		return metrics
 	}
 	cachedMetrics := mapHardwareSensors(cache.Snapshots)
-	if cachedMetrics.cpuTemperatureC == nil {
+	if cachedMetrics.cpuTemperatureC == nil && len(cachedMetrics.temperatureSensors) == 0 {
 		return metrics
 	}
-	metrics.cpuTemperatureC = cachedMetrics.cpuTemperatureC
-	metrics.cpuTemperatureSource = "SYSTEM 硬件传感器缓存"
+	if len(cachedMetrics.temperatureSensors) > 0 {
+		metrics.temperatureSensors = mergeTemperatureSensors(metrics.temperatureSensors, cachedMetrics.temperatureSensors)
+	}
+	if metrics.cpuTemperatureC == nil && cachedMetrics.cpuTemperatureC != nil {
+		metrics.cpuTemperatureC = cachedMetrics.cpuTemperatureC
+		metrics.cpuTemperatureSource = "SYSTEM 硬件传感器缓存"
+	}
 	return metrics
+}
+
+func mergeTemperatureSensors(previous, next []temperatureSensorReading) []temperatureSensorReading {
+	if len(previous) == 0 {
+		return append([]temperatureSensorReading{}, next...)
+	}
+	if len(next) == 0 {
+		return append([]temperatureSensorReading{}, previous...)
+	}
+	merged := make(map[string]temperatureSensorReading, len(previous)+len(next))
+	order := make([]string, 0, len(previous)+len(next))
+	for _, reading := range append(append([]temperatureSensorReading{}, previous...), next...) {
+		key := reading.ID
+		if strings.TrimSpace(key) == "" {
+			key = reading.Source + "-" + reading.Hardware + "-" + reading.RawName
+		}
+		if _, exists := merged[key]; !exists {
+			order = append(order, key)
+		}
+		merged[key] = reading
+	}
+	result := make([]temperatureSensorReading, 0, len(order))
+	for _, key := range order {
+		result = append(result, merged[key])
+	}
+	return result
 }
 
 func readHardwareSensorCache(path string) (hardwareSensorCache, error) {
@@ -2452,26 +2574,82 @@ func collectLinuxHardwareSensors() hardwareSensorMetrics {
 		gpus:               []gpuDeviceStats{},
 		fans:               []fanSensorStats{},
 		diskSensorMetadata: map[string]diskSensorMetadata{},
+		temperatureSensors: []temperatureSensorReading{},
 	}
 	if runtime.GOOS != "linux" {
 		return metrics
 	}
 
 	cpuTemperatures := []float64{}
+	cpuPackageTemperatures := []float64{}
+	linuxGPUs := map[string]*gpuDeviceStats{}
 	hwmonPaths, _ := filepath.Glob("/sys/class/hwmon/hwmon*")
 	hwmonSensorCount := 0
 	for _, hwmonPath := range hwmonPaths {
 		hwmonName := readTrimmedFile(filepath.Join(hwmonPath, "name"))
-		lowerName := strings.ToLower(hwmonName)
-		isCPU := strings.Contains(lowerName, "coretemp") || strings.Contains(lowerName, "k10temp") || strings.Contains(lowerName, "zenpower") || strings.Contains(lowerName, "cpu")
+		hwmonIdentity := linuxHwmonIdentity(hwmonPath, hwmonName)
 		for _, temperaturePath := range globFiles(filepath.Join(hwmonPath, "temp*_input")) {
-			value, ok := readLinuxSensorValue(temperaturePath, 1000)
-			if !ok || value <= 0 || value > 150 {
+			value, ok := readLinuxRawSensorValue(temperaturePath, 1000)
+			if !ok {
 				continue
 			}
 			hwmonSensorCount++
-			if isCPU {
-				cpuTemperatures = append(cpuTemperatures, value)
+			baseName := strings.TrimSuffix(filepath.Base(temperaturePath), "_input")
+			label := readTrimmedFile(filepath.Join(hwmonPath, baseName+"_label"))
+			if label == "" {
+				label = baseName
+			}
+			role := linuxTemperatureRole(hwmonName, label)
+			highC := readOptionalLinuxSensorValue(filepath.Join(hwmonPath, baseName+"_max"), 1000)
+			criticalC := readOptionalLinuxSensorValue(filepath.Join(hwmonPath, baseName+"_crit"), 1000)
+			emergencyC := readOptionalLinuxSensorValue(filepath.Join(hwmonPath, baseName+"_emergency"), 1000)
+			reading := newTemperatureSensorReading(
+				"temperature-linux-hwmon-"+sanitizeKey(hwmonIdentity+"-"+baseName+"-"+label),
+				"linux-hwmon",
+				"hwmon",
+				hwmonName,
+				"hwmon",
+				hwmonIdentity,
+				label,
+				&value,
+				highC,
+				criticalC,
+				emergencyC,
+				role,
+				"",
+			)
+			reading.Path = temperaturePath
+			if alarm, exists := readOptionalLinuxAlarm(filepath.Join(hwmonPath, baseName+"_alarm")); exists {
+				reading.Alarm = &alarm
+			}
+			metrics.temperatureSensors = append(metrics.temperatureSensors, reading)
+			if reading.Status == "valid" && (role == "gpu_core" || role == "gpu_hotspot") {
+				gpu := linuxGPUs[hwmonIdentity]
+				if gpu == nil {
+					gpuName := hwmonName
+					if strings.EqualFold(gpuName, "nouveau") {
+						gpuName = "NVIDIA GPU (nouveau)"
+					}
+					gpu = &gpuDeviceStats{
+						ID:         "gpu-linux-" + sanitizeKey(hwmonIdentity),
+						Name:       gpuName,
+						MemoryKind: "unknown",
+					}
+					linuxGPUs[hwmonIdentity] = gpu
+				}
+				if role == "gpu_core" || gpu.TemperatureC == nil {
+					value := value
+					gpu.TemperatureC = &value
+					gpu.TemperatureSource = "linux-hwmon"
+				}
+			}
+			if reading.Status == "valid" {
+				switch role {
+				case "cpu_package":
+					cpuPackageTemperatures = append(cpuPackageTemperatures, value)
+				case "cpu_core":
+					cpuTemperatures = append(cpuTemperatures, value)
+				}
 			}
 		}
 		for _, fanPath := range globFiles(filepath.Join(hwmonPath, "fan*_input")) {
@@ -2508,22 +2686,54 @@ func collectLinuxHardwareSensors() hardwareSensorMetrics {
 			metrics.fans = append(metrics.fans, fan)
 		}
 	}
+	for _, gpu := range linuxGPUs {
+		metrics.gpus = append(metrics.gpus, *gpu)
+	}
 
-	if len(cpuTemperatures) == 0 {
-		thermalPaths, _ := filepath.Glob("/sys/class/thermal/thermal_zone*/temp")
-		for _, thermalPath := range thermalPaths {
-			zonePath := filepath.Dir(thermalPath)
-			zoneType := strings.ToLower(readTrimmedFile(filepath.Join(zonePath, "type")))
-			if !strings.Contains(zoneType, "cpu") && !strings.Contains(zoneType, "x86_pkg") && !strings.Contains(zoneType, "processor") {
-				continue
-			}
-			if value, ok := readLinuxSensorValue(thermalPath, 1000); ok && value > 0 && value <= 150 {
+	useThermalForCPU := len(cpuTemperatures) == 0 && len(cpuPackageTemperatures) == 0
+	thermalPaths, _ := filepath.Glob("/sys/class/thermal/thermal_zone*/temp")
+	for _, thermalPath := range thermalPaths {
+		zonePath := filepath.Dir(thermalPath)
+		zoneType := readTrimmedFile(filepath.Join(zonePath, "type"))
+		value, ok := readLinuxRawSensorValue(thermalPath, 1000)
+		if !ok {
+			continue
+		}
+		role := linuxThermalZoneRole(zoneType)
+		reading := newTemperatureSensorReading(
+			"temperature-linux-thermal-"+sanitizeKey(zoneType+"-"+filepath.Base(zonePath)),
+			"linux-thermal",
+			"thermal",
+			zoneType,
+			"thermal",
+			filepath.Base(zonePath),
+			zoneType,
+			&value,
+			nil,
+			nil,
+			nil,
+			role,
+			"",
+		)
+		reading.Path = thermalPath
+		if role == "acpi_zone" && reading.Status == "valid" {
+			reading.Confidence = "diagnostic"
+		}
+		metrics.temperatureSensors = append(metrics.temperatureSensors, reading)
+		if useThermalForCPU && reading.Status == "valid" {
+			if role == "cpu_package" {
+				cpuPackageTemperatures = append(cpuPackageTemperatures, value)
+			} else if role == "cpu_core" {
 				cpuTemperatures = append(cpuTemperatures, value)
 			}
 		}
 	}
-	metrics.cpuTemperatureC = averagePointer(cpuTemperatures)
-	if hwmonSensorCount > 0 || len(cpuTemperatures) > 0 {
+	if len(cpuPackageTemperatures) > 0 {
+		metrics.cpuTemperatureC = averagePointer(cpuPackageTemperatures)
+	} else {
+		metrics.cpuTemperatureC = averagePointer(cpuTemperatures)
+	}
+	if hwmonSensorCount > 0 || len(metrics.temperatureSensors) > 0 {
 		metrics.sensorBackends = []sensorBackendStatus{{
 			ID:     "linux-hwmon-thermal",
 			Label:  "Linux hwmon / thermal",
@@ -2541,25 +2751,89 @@ func collectLinuxHardwareSensors() hardwareSensorMetrics {
 	return metrics
 }
 
+func linuxHwmonIdentity(hwmonPath, hwmonName string) string {
+	if target, err := filepath.EvalSymlinks(filepath.Join(hwmonPath, "device")); err == nil && strings.TrimSpace(target) != "" {
+		return hwmonName + "-" + target
+	}
+	return hwmonName + "-" + filepath.Base(hwmonPath)
+}
+
+func linuxTemperatureRole(hwmonName, label string) string {
+	lowerHardware := strings.ToLower(strings.TrimSpace(hwmonName))
+	lowerLabel := strings.ToLower(strings.TrimSpace(label))
+	switch {
+	case strings.Contains(lowerLabel, "peci"):
+		return "peci"
+	case strings.Contains(lowerHardware, "coretemp") || strings.Contains(lowerHardware, "k10temp") || strings.Contains(lowerHardware, "zenpower") || strings.Contains(lowerHardware, "cpu"):
+		if strings.Contains(lowerLabel, "package") || strings.Contains(lowerLabel, "tctl") || strings.Contains(lowerLabel, "tdie") || strings.Contains(lowerLabel, "die") {
+			return "cpu_package"
+		}
+		return "cpu_core"
+	case strings.Contains(lowerHardware, "nouveau") || strings.Contains(lowerHardware, "amdgpu") || strings.Contains(lowerHardware, "nvidia") || strings.Contains(lowerHardware, "gpu"):
+		if strings.Contains(lowerLabel, "hot") || strings.Contains(lowerLabel, "junction") {
+			return "gpu_hotspot"
+		}
+		return "gpu_core"
+	case strings.Contains(lowerHardware, "nvme") || strings.Contains(lowerHardware, "storage"):
+		if strings.Contains(lowerLabel, "composite") || lowerLabel == "temp1" || lowerLabel == "temperature" {
+			return "storage_composite"
+		}
+		return "storage_sensor"
+	case strings.Contains(lowerHardware, "nct") || strings.Contains(lowerHardware, "it8") || strings.Contains(lowerHardware, "superio") || strings.Contains(lowerHardware, "w836"):
+		return "superio"
+	default:
+		return "motherboard"
+	}
+}
+
+func linuxThermalZoneRole(zoneType string) string {
+	lower := strings.ToLower(strings.TrimSpace(zoneType))
+	if strings.Contains(lower, "x86_pkg") || strings.Contains(lower, "cpu") || strings.Contains(lower, "processor") {
+		return "cpu_package"
+	}
+	return "acpi_zone"
+}
+
 func globFiles(pattern string) []string {
 	files, _ := filepath.Glob(pattern)
 	return files
 }
 
 func readLinuxSensorValue(path string, divisor float64) (float64, bool) {
+	value, ok := readLinuxRawSensorValue(path, divisor)
+	return value, ok && isFiniteNonNegative(value)
+}
+
+func readLinuxRawSensorValue(path string, divisor float64) (float64, bool) {
 	if divisor <= 0 {
 		return 0, false
 	}
 	raw := readTrimmedFile(path)
 	value, err := strconv.ParseFloat(raw, 64)
-	if err != nil || !isFiniteNonNegative(value) {
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
 		return 0, false
 	}
 	return value / divisor, true
 }
 
+func readOptionalLinuxSensorValue(path string, divisor float64) *float64 {
+	value, ok := readLinuxRawSensorValue(path, divisor)
+	if !ok || value <= 0 || value > 150 {
+		return nil
+	}
+	return &value
+}
+
+func readOptionalLinuxAlarm(path string) (bool, bool) {
+	raw := strings.TrimSpace(readTrimmedFile(path))
+	if raw == "" {
+		return false, false
+	}
+	return raw == "1" || strings.EqualFold(raw, "true"), true
+}
+
 func hardwareSensorDetail(metrics hardwareSensorMetrics, source, dllPath string) string {
-	detail := fmt.Sprintf("已通过 %s 读取硬件传感器；风扇 %d 个，磁盘 SMART %d 个%s", source, len(metrics.fans), len(metrics.diskSensorMetadata), hardwareMonitorLibraryDetail(dllPath))
+	detail := fmt.Sprintf("已通过 %s 读取硬件传感器；温度源 %d 个，风扇 %d 个，磁盘 SMART %d 个%s", source, len(metrics.temperatureSensors), len(metrics.fans), len(metrics.diskSensorMetadata), hardwareMonitorLibraryDetail(dllPath))
 	if strings.TrimSpace(metrics.cpuTemperatureSource) != "" {
 		detail += "；CPU 温度来源=" + metrics.cpuTemperatureSource
 	}
@@ -2777,11 +3051,125 @@ func hardwareMonitorPathCandidates(executablePath, workingDirectory, programFile
 	return candidates
 }
 
+func newTemperatureSensorReading(
+	id, source, backend, hardware, hardwareType, instanceID, rawName string,
+	currentC, highC, criticalC, emergencyC *float64,
+	role, note string,
+) temperatureSensorReading {
+	reading := temperatureSensorReading{
+		ID:           id,
+		Source:       source,
+		Backend:      backend,
+		Hardware:     hardware,
+		HardwareType: hardwareType,
+		InstanceID:   instanceID,
+		RawName:      strings.TrimSpace(rawName),
+		DisplayName:  strings.TrimSpace(strings.Trim(strings.Join([]string{hardware, rawName}, " · "), " ·")),
+		Role:         role,
+		CurrentC:     currentC,
+		HighC:        highC,
+		CriticalC:    criticalC,
+		EmergencyC:   emergencyC,
+		Status:       "valid",
+		Confidence:   "direct",
+		Note:         strings.TrimSpace(note),
+	}
+	if reading.RawName == "" {
+		reading.RawName = "Temperature"
+	}
+	if reading.DisplayName == "" {
+		reading.DisplayName = reading.RawName
+	}
+	if role == "threshold" {
+		reading.Status = "threshold"
+		reading.Confidence = "diagnostic"
+	} else if currentC == nil {
+		reading.Status = "unavailable"
+		reading.Confidence = "diagnostic"
+	} else if !isValidHardwareTemperature(*currentC) || isLikelyUnwiredTemperature(hardwareType, rawName, *currentC) {
+		reading.Status = "invalid"
+		reading.Confidence = "diagnostic"
+	}
+	if role == "derived" {
+		reading.Confidence = "derived"
+	}
+	if role == "motherboard" || role == "superio" || role == "peci" || role == "unknown" {
+		if reading.Status == "valid" {
+			reading.Confidence = "unmapped"
+		}
+	}
+	return reading
+}
+
+func hardwareTemperatureRole(hardwareType, hardwareName, sensorName string) string {
+	lowerType := strings.ToLower(strings.TrimSpace(hardwareType))
+	lowerHardware := strings.ToLower(strings.TrimSpace(hardwareName))
+	lowerName := strings.ToLower(strings.TrimSpace(sensorName))
+	switch {
+	case strings.Contains(lowerName, "warning") || strings.Contains(lowerName, "critical") || strings.Contains(lowerName, "threshold"):
+		return "threshold"
+	case lowerType == "storage" || strings.Contains(lowerType, "storage"):
+		if strings.Contains(lowerName, "composite") || lowerName == "temperature" {
+			return "storage_composite"
+		}
+		return "storage_sensor"
+	case lowerType == "cpu" || strings.HasPrefix(lowerType, "cpu"):
+		if strings.Contains(lowerName, "package") || strings.Contains(lowerName, "die") || strings.Contains(lowerName, "tctl") || strings.Contains(lowerName, "tdie") || strings.Contains(lowerName, "ccd") {
+			return "cpu_package"
+		}
+		return "cpu_core"
+	case strings.HasPrefix(lowerType, "gpu") || strings.Contains(lowerType, "graphics"):
+		if strings.Contains(lowerName, "hot spot") || strings.Contains(lowerName, "hotspot") || strings.Contains(lowerName, "junction") {
+			return "gpu_hotspot"
+		}
+		return "gpu_core"
+	case strings.Contains(lowerName, "peci"):
+		return "peci"
+	case strings.Contains(lowerType, "acpi") || strings.Contains(lowerHardware, "thermal zone"):
+		return "acpi_zone"
+	case strings.Contains(lowerType, "superio") || strings.Contains(lowerType, "motherboard") || strings.Contains(lowerType, "controller"):
+		return "superio"
+	default:
+		return "motherboard"
+	}
+}
+
+func hardwareTemperatureThresholds(sensors []hardwareSensor) (highC, criticalC *float64) {
+	for _, sensor := range sensors {
+		if sensor.Value == nil || !isFiniteNonNegative(*sensor.Value) || !strings.EqualFold(strings.TrimSpace(sensor.SensorType), "temperature") {
+			continue
+		}
+		name := strings.ToLower(strings.TrimSpace(sensor.Name))
+		value := *sensor.Value
+		switch {
+		case strings.Contains(name, "warning") || strings.Contains(name, "high"):
+			if highC == nil {
+				highC = &value
+			}
+		case strings.Contains(name, "critical") || strings.Contains(name, "crit"):
+			if criticalC == nil {
+				criticalC = &value
+			}
+		}
+	}
+	return highC, criticalC
+}
+
+func isLikelyUnwiredTemperature(hardwareType, sensorName string, value float64) bool {
+	if value > 1 {
+		return false
+	}
+	lowerType := strings.ToLower(strings.TrimSpace(hardwareType))
+	lowerName := strings.ToLower(strings.TrimSpace(sensorName))
+	return strings.Contains(lowerType, "superio") && strings.HasPrefix(lowerName, "temperature #")
+}
+
 func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetrics {
 	metrics := hardwareSensorMetrics{
 		gpus:               []gpuDeviceStats{},
 		fans:               []fanSensorStats{},
 		diskSensorMetadata: map[string]diskSensorMetadata{},
+		temperatureSensors: []temperatureSensorReading{},
 	}
 	cpuClocks := []float64{}
 	cpuTemperatures := []float64{}
@@ -2789,6 +3177,56 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 
 	for _, snapshot := range snapshots {
 		hardwareType := strings.ToLower(snapshot.HardwareType)
+		highC, criticalC := hardwareTemperatureThresholds(snapshot.Sensors)
+		hasTemperatureSensor := false
+		for _, sensor := range snapshot.Sensors {
+			if !strings.EqualFold(strings.TrimSpace(sensor.SensorType), "temperature") {
+				continue
+			}
+			hasTemperatureSensor = true
+			role := hardwareTemperatureRole(hardwareType, snapshot.Name, sensor.Name)
+			readingHighC, readingCriticalC := highC, criticalC
+			if role == "threshold" {
+				readingHighC = nil
+				readingCriticalC = nil
+			}
+			metrics.temperatureSensors = append(metrics.temperatureSensors, newTemperatureSensorReading(
+				"temperature-windows-"+sanitizeKey(snapshot.HardwareType+"-"+snapshot.Name+"-"+sensor.Name),
+				"librehardwaremonitor",
+				"librehardwaremonitor",
+				snapshot.Name,
+				snapshot.HardwareType,
+				snapshot.InstanceID,
+				sensor.Name,
+				sensor.Value,
+				readingHighC,
+				readingCriticalC,
+				nil,
+				role,
+				"",
+			))
+		}
+		if snapshot.TemperatureC != nil && !hasTemperatureSensor {
+			aggregateRole := hardwareTemperatureRole(hardwareType, snapshot.Name, "Hardware aggregate")
+			metrics.temperatureSensors = append(metrics.temperatureSensors, newTemperatureSensorReading(
+				"temperature-windows-"+sanitizeKey(snapshot.HardwareType+"-"+snapshot.Name+"-aggregate"),
+				"librehardwaremonitor",
+				"librehardwaremonitor",
+				snapshot.Name,
+				snapshot.HardwareType,
+				snapshot.InstanceID,
+				"Hardware aggregate",
+				snapshot.TemperatureC,
+				highC,
+				criticalC,
+				nil,
+				aggregateRole,
+				"",
+			))
+			if isValidHardwareTemperature(*snapshot.TemperatureC) && (hardwareType == "cpu" || strings.HasPrefix(hardwareType, "cpu")) {
+				cpuPackageTemperatures = append(cpuPackageTemperatures, *snapshot.TemperatureC)
+			}
+		}
 		if hardwareType == "storage" {
 			metadata := diskSensorMetadata{
 				TemperatureC:  snapshot.TemperatureC,
@@ -2926,6 +3364,10 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 			gpu.MemoryKind = "shared"
 		}
 		var clock, load, temperature *float64
+		if snapshot.TemperatureC != nil && isValidHardwareTemperature(*snapshot.TemperatureC) {
+			value := *snapshot.TemperatureC
+			temperature = &value
+		}
 		var dedicatedMemoryUsed, dedicatedMemoryTotal *float64
 		var sharedMemoryUsed, sharedMemoryTotal *float64
 		var genericMemoryUsed, genericMemoryTotal *float64
@@ -3355,6 +3797,34 @@ func collectSmartctlDiskSensor(smartctlPath, devicePath string) (diskSensorMetad
 		return diskSensorMetadata{}, false
 	}
 	metadata, ok := parseSmartctlJSON(output.Bytes())
+	if ok && metadata.TemperatureC != nil {
+		if len(metadata.TemperatureSensors) == 0 {
+			value := *metadata.TemperatureC
+			metadata.TemperatureSensors = []temperatureSensorReading{newTemperatureSensorReading(
+				"temperature-smartctl-"+sanitizeKey(devicePath),
+				"smartctl",
+				"smartctl",
+				filepath.Base(devicePath),
+				"storage",
+				devicePath,
+				"SMART Temperature",
+				&value,
+				nil,
+				nil,
+				nil,
+				"storage_composite",
+				"SMART disk temperature; alternate source",
+			)}
+		}
+		for index := range metadata.TemperatureSensors {
+			sensor := &metadata.TemperatureSensors[index]
+			sensor.ID = "temperature-smartctl-" + sanitizeKey(devicePath+"-"+sensor.RawName)
+			sensor.Hardware = filepath.Base(devicePath)
+			sensor.HardwareType = "storage"
+			sensor.InstanceID = devicePath
+			sensor.DisplayName = strings.TrimSpace(strings.Trim(strings.Join([]string{sensor.Hardware, sensor.RawName}, " · "), " ·"))
+		}
+	}
 	return metadata, ok
 }
 
@@ -3379,15 +3849,38 @@ func parseSmartctlJSON(raw []byte) (diskSensorMetadata, bool) {
 			metadata.HealthReason = "SMART status failed"
 		}
 	}
-	for _, path := range [][]string{
-		{"temperature", "current"},
-		{"nvme_smart_health_information_log", "temperature"},
-		{"nvme_smart_health_information_log", "temperature_sensor_1"},
+	for _, candidate := range []struct {
+		name string
+		path []string
+	}{
+		{name: "SMART Temperature", path: []string{"temperature", "current"}},
+		{name: "NVMe Composite", path: []string{"nvme_smart_health_information_log", "temperature"}},
+		{name: "NVMe Temperature Sensor 1", path: []string{"nvme_smart_health_information_log", "temperature_sensor_1"}},
 	} {
-		if value, ok := jsonNumberAt(root, path...); ok && value > 0 && value <= 150 {
-			metadata.TemperatureC = &value
-			break
+		value, ok := jsonNumberAt(root, candidate.path...)
+		if !ok || value <= 0 || value > 150 {
+			continue
 		}
+		if metadata.TemperatureC == nil {
+			valueCopy := value
+			metadata.TemperatureC = &valueCopy
+		}
+		valueCopy := value
+		metadata.TemperatureSensors = append(metadata.TemperatureSensors, newTemperatureSensorReading(
+			"temperature-smartctl-"+sanitizeKey(strings.Join(candidate.path, "-")),
+			"smartctl",
+			"smartctl",
+			"storage",
+			"storage",
+			"",
+			candidate.name,
+			&valueCopy,
+			nil,
+			nil,
+			nil,
+			"storage_composite",
+			"SMART disk temperature; alternate source",
+		))
 	}
 	if used, ok := jsonNumberAt(root, "nvme_smart_health_information_log", "percentage_used"); ok && used >= 0 && used <= 100 {
 		value := 100 - used
@@ -3452,6 +3945,24 @@ func collectWindowsStorageReliabilityMetadata() map[int]diskSensorMetadata {
 		}
 		if metadata.TemperatureC != nil || metadata.HealthPercent != nil {
 			metadata.HealthReason = "Windows Storage Reliability Counter"
+			if metadata.TemperatureC != nil {
+				value := *metadata.TemperatureC
+				metadata.TemperatureSensors = []temperatureSensorReading{newTemperatureSensorReading(
+					fmt.Sprintf("temperature-windows-storage-reliability-%d", record.DiskNumber),
+					"windows-storage-reliability",
+					"storage-reliability",
+					fmt.Sprintf("Disk %d", record.DiskNumber),
+					"storage",
+					"",
+					"StorageReliabilityCounter Temperature",
+					&value,
+					nil,
+					nil,
+					nil,
+					"storage_composite",
+					"Windows Storage Reliability Counter; alternate source",
+				)}
+			}
 			result[record.DiskNumber] = metadata
 		}
 	}
@@ -3506,6 +4017,9 @@ func mergeDiskSensorMetadata(target *diskSensorMetadata, source diskSensorMetada
 	}
 	if len(target.SmartAttributes) == 0 {
 		target.SmartAttributes = source.SmartAttributes
+	}
+	if len(source.TemperatureSensors) > 0 {
+		target.TemperatureSensors = mergeTemperatureSensors(target.TemperatureSensors, source.TemperatureSensors)
 	}
 }
 
@@ -4759,6 +5273,9 @@ func computeRates(previous, current *ioSnapshot, fallbackSeconds int) (rateStats
 func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 	enabledMetricSet := makeEnabledMetricSet(cfg.EnabledMetrics)
 	enabledBlocks := makeEnabledBlockSet(cfg.ProbeSelections)
+	if !enabledMetricSet["temperatureSources"] {
+		payload.TemperatureSensors = []temperatureSensorReading{}
+	}
 
 	if !enabledBlocks["cpu"] {
 		payload.CPUUsagePercent = 0
@@ -5179,6 +5696,12 @@ func normalizeMetricKeys(metrics []string) []string {
 		}
 		seen[key] = true
 		result = append(result, key)
+	}
+	// Existing configs predate the generic temperature-source metric. Preserve
+	// their opt-in metric list while enabling the newly added temperature
+	// channels; an explicitly empty list still means "disable everything".
+	if len(result) > 0 && !seen["temperatureSources"] {
+		result = append(result, "temperatureSources")
 	}
 	return result
 }

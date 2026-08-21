@@ -1,4 +1,4 @@
-import type { AgentMetricsPayload, DeviceMetricConfigPayload, DeviceMetricKey, DeviceRealtimeEvent, MetricWindow } from "@dsc/shared";
+import type { AgentMetricsPayload, DeviceMetricConfigPayload, DeviceMetricKey, DeviceRealtimeEvent, MetricWindow, TemperatureSensorReading } from "@dsc/shared";
 import type { TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import type {
   AggregatedWindowConfig,
@@ -265,6 +265,8 @@ function hasIdentityBoundaryChanged(previous: AgentMetricsPayload["identity"], n
 
 function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[], timestamp = samples[samples.length - 1]?.timestamp ?? Date.now()) {
   const lastSample = samples[samples.length - 1];
+  const recordedDetails = lastSample?.recordedDetails;
+  const temperatureSensors = mergeTemperatureSensorDetails(samples);
   const total = samples.reduce(
     (acc, sample) => ({
       timestamp,
@@ -360,8 +362,23 @@ function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[], timest
     networks,
     gpus,
     fans,
-    recordedDetails: lastSample?.recordedDetails
+    recordedDetails: recordedDetails
+      ? {
+          ...recordedDetails,
+          temperatureSensors
+        }
+      : undefined
   };
+}
+
+function mergeTemperatureSensorDetails(samples: ReturnType<typeof payloadToTimeSeries>[]): TemperatureSensorReading[] {
+  const sensors = new Map<string, TemperatureSensorReading>();
+  for (const sample of samples) {
+    for (const sensor of sample.recordedDetails?.temperatureSensors ?? []) {
+      sensors.set(sensor.id, sensor);
+    }
+  }
+  return [...sensors.values()];
 }
 
 function averageInstanceMetrics(

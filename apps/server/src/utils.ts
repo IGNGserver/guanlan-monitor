@@ -10,7 +10,8 @@ import type {
   DeviceSummary,
   GpuMetricSeries,
   MetricSeries,
-  NetworkMetricSeries
+  NetworkMetricSeries,
+  TemperatureMetricSeries
 } from "@dsc/shared";
 import type { DeviceMetricConfigValue, DeviceRealtimeState, InstanceMetricRecord, TimeSeriesRecord } from "./types.js";
 
@@ -31,6 +32,7 @@ export const ALL_DEVICE_METRIC_KEYS: DeviceMetricKey[] = [
   "gpuMemory",
   "gpuTemperature",
   "gpuDriverInfo",
+  "temperatureSources",
   "memoryUsage",
   "swapUsage",
   "memoryAvailable",
@@ -263,6 +265,7 @@ export function payloadToTimeSeries(
       networkInterfaces: payload.networkInterfaces ?? [],
       gpus: payload.gpus,
       fans: payload.fans ?? [],
+      temperatureSensors: enabled.has("temperatureSources") ? payload.temperatureSensors ?? [] : [],
       diskRate: payload.diskRate,
       networkRate: payload.networkRate,
       virtualization: payload.virtualization ?? null
@@ -334,6 +337,7 @@ export function timeSeriesToMetricSeries(
   const networks = buildNetworkMetricSeries(points, config);
   const gpus = buildGpuMetricSeries(points, config);
   const fans = buildFanMetricSeries(points, config);
+  const temperatureSensors = buildTemperatureMetricSeries(points, config);
 
   return {
     cpuUsagePercent: mapPoint("cpuUsagePercent"),
@@ -387,7 +391,8 @@ export function timeSeriesToMetricSeries(
     disks,
     networks,
     gpus,
-    fans
+    fans,
+    temperatureSensors
   };
 }
 
@@ -708,6 +713,42 @@ function buildFanMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricCo
   return [...grouped.values()];
 }
 
+function buildTemperatureMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricConfigValue): TemperatureMetricSeries[] {
+  if (!new Set(config.enabledMetrics).has("temperatureSources")) return [];
+  const grouped = new Map<string, TemperatureMetricSeries>();
+  for (const point of points) {
+    for (const sensor of point.recordedDetails?.temperatureSensors ?? []) {
+      const name = sensor.displayName || [sensor.hardware, sensor.rawName].filter(Boolean).join(" · ") || sensor.rawName;
+      if (!grouped.has(sensor.id)) {
+        grouped.set(sensor.id, {
+          id: sensor.id,
+          name,
+          rawName: sensor.rawName,
+          source: sensor.source,
+          backend: sensor.backend,
+          hardware: sensor.hardware,
+          role: sensor.role,
+          confidence: sensor.confidence,
+          status: sensor.status,
+          currentC: []
+        });
+      }
+      const target = grouped.get(sensor.id)!;
+      target.name = name;
+      target.status = sensor.status;
+      target.confidence = sensor.confidence;
+      target.highC = sensor.highC ?? target.highC;
+      target.criticalC = sensor.criticalC ?? target.criticalC;
+      target.emergencyC = sensor.emergencyC ?? target.emergencyC;
+      const current = Number(sensor.currentC);
+      if (sensor.status === "valid" && Number.isFinite(current) && current > 0) {
+        target.currentC.push({ timestamp: new Date(point.timestamp).toISOString(), value: current });
+      }
+    }
+  }
+  return [...grouped.values()];
+}
+
 export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOption[] {
   const latest = state.latest;
   const hasGpu = latest.gpus.length > 0;
@@ -715,6 +756,7 @@ export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOpt
   const hasGpuEncode = latest.gpus.some((gpu) => gpu.encodeUtilizationPercent != null);
   const hasGpuDecode = latest.gpus.some((gpu) => gpu.decodeUtilizationPercent != null);
   const hasGpuTemperature = latest.gpus.some((gpu) => gpu.temperatureC != null);
+  const hasTemperatureSources = (latest.temperatureSensors?.length ?? 0) > 0;
   const hasSwap = latest.memory.swapTotalBytes > 0 || latest.memory.swapUsedBytes > 0;
   const hasCpuFrequency =
     (latest.cpuFrequencyMHz ?? 0) > 0 || (latest.cpuPackages ?? []).some((cpu) => (cpu.frequencyMHz ?? 0) > 0);
@@ -754,6 +796,7 @@ export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOpt
     ["gpuMemory", hasGpu],
     ["gpuTemperature", hasGpuTemperature],
     ["gpuDriverInfo", latest.gpus.some((gpu) => gpu.driverVersion != null)],
+    ["temperatureSources", hasTemperatureSources],
     ["memoryUsage", latest.memory.totalBytes > 0],
     ["swapUsage", hasSwap],
     ["memoryAvailable", latest.memory.availableBytes > 0],

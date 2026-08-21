@@ -59,6 +59,7 @@ export type DeviceMetricKey =
   | "gpuMemory"
   | "gpuTemperature"
   | "gpuDriverInfo"
+  | "temperatureSources"
   | "memoryUsage"
   | "swapUsage"
   | "memoryAvailable"
@@ -231,6 +232,46 @@ export interface GpuDeviceStats {
   temperatureC?: number | null;
   temperatureSource?: string | null;
   driverVersion?: string | null;
+}
+
+export type TemperatureSensorRole =
+  | "cpu_package"
+  | "cpu_core"
+  | "gpu_core"
+  | "gpu_hotspot"
+  | "storage_composite"
+  | "storage_sensor"
+  | "motherboard"
+  | "superio"
+  | "peci"
+  | "acpi_zone"
+  | "threshold"
+  | "derived"
+  | "unknown";
+
+export type TemperatureSensorStatus = "valid" | "invalid" | "threshold" | "unavailable";
+
+export type TemperatureSensorConfidence = "direct" | "derived" | "unmapped" | "diagnostic";
+
+export interface TemperatureSensorReading {
+  id: string;
+  source: string;
+  backend?: string | null;
+  hardware?: string | null;
+  hardwareType?: string | null;
+  instanceId?: string | null;
+  path?: string | null;
+  rawName: string;
+  displayName?: string | null;
+  role: TemperatureSensorRole;
+  currentC?: number | null;
+  highC?: number | null;
+  criticalC?: number | null;
+  emergencyC?: number | null;
+  alarm?: boolean | null;
+  status: TemperatureSensorStatus;
+  confidence: TemperatureSensorConfidence;
+  note?: string | null;
 }
 
 export interface FanSensorStats {
@@ -487,6 +528,7 @@ export interface AgentMetricsPayload {
   networkInterfaces?: NetworkInterfaceStats[];
   gpus: GpuDeviceStats[];
   fans: FanSensorStats[];
+  temperatureSensors?: TemperatureSensorReading[];
   sensorBackends?: SensorBackendStatus[];
   virtualization?: VirtualizationSnapshot | null;
 }
@@ -562,6 +604,22 @@ export interface FanMetricSeries {
   rpm: SamplePoint[];
 }
 
+export interface TemperatureMetricSeries {
+  id: string;
+  name: string;
+  rawName: string;
+  source: string;
+  backend?: string | null;
+  hardware?: string | null;
+  role: TemperatureSensorRole;
+  confidence: TemperatureSensorConfidence;
+  status: TemperatureSensorStatus;
+  currentC: SamplePoint[];
+  highC?: number | null;
+  criticalC?: number | null;
+  emergencyC?: number | null;
+}
+
 export interface CpuMetricSeries {
   id: string;
   name: string;
@@ -622,6 +680,7 @@ export interface MetricSeries {
   networks: NetworkMetricSeries[];
   gpus: GpuMetricSeries[];
   fans: FanMetricSeries[];
+  temperatureSensors: TemperatureMetricSeries[];
 }
 
 export interface UpdateInfo {
@@ -685,6 +744,7 @@ export interface MetricsLatest {
   disks: DiskDeviceStats[];
   networkInterfaces: NetworkInterfaceStats[];
   gpus: GpuDeviceStats[];
+  temperatureSensors: TemperatureSensorReading[];
   sensorBackends: SensorBackendStatus[];
   fans: FanSensorStats[];
   virtualization?: VirtualizationSnapshot | null;

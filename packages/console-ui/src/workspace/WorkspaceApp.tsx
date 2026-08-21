@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, SamplePoint, SystemStats, TrafficCalendarMode, TrafficCalendarResponse, WidgetInstanceConfig, WidgetLayoutDocument, WidgetPanelMetadata, WidgetVisualization } from "@dsc/shared";
+import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, SamplePoint, SystemStats, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, WidgetInstanceConfig, WidgetLayoutDocument, WidgetPanelMetadata, WidgetVisualization } from "@dsc/shared";
 import clsx from "clsx";
 import appIcon from "../assets/app-icon.png";
 import type { ConsoleAdapter } from "../services/adapter";
@@ -1123,6 +1123,12 @@ const metricGroups: Array<{ label: string; items: Array<{ key: DeviceMetricKey; 
       { key: "fanChannelState", label: "通道状态" },
       { key: "fanNote", label: "风扇备注" }
     ]
+  },
+  {
+    label: "温度源",
+    items: [
+      { key: "temperatureSources", label: "全部温度传感器" }
+    ]
   }
 ];
 
@@ -2227,6 +2233,139 @@ function WidgetPanelBar({
   );
 }
 
+const temperatureRoleLabels: Record<string, string> = {
+  cpu_package: "CPU 封装",
+  cpu_core: "CPU 核心",
+  gpu_core: "GPU 核心",
+  gpu_hotspot: "GPU 热点",
+  storage_composite: "磁盘综合温度",
+  storage_sensor: "磁盘附加传感器",
+  motherboard: "主板温度",
+  superio: "SuperIO 温度",
+  peci: "PECI 温度",
+  acpi_zone: "ACPI 热区",
+  threshold: "温度阈值",
+  derived: "派生温度",
+  unknown: "未知温度源"
+};
+
+const temperatureSourceLabels: Record<string, string> = {
+  librehardwaremonitor: "LibreHardwareMonitor",
+  "linux-hwmon": "Linux hwmon",
+  "linux-thermal": "Linux thermal",
+  smartctl: "smartctl / SMART",
+  "windows-storage-reliability": "Windows 存储可靠性",
+  "cpu-package-shared": "CPU Package 共享",
+};
+
+function temperatureStatusLabel(status: TemperatureSensorReading["status"]): string {
+  if (status === "valid") return "正常";
+  if (status === "threshold") return "阈值";
+  if (status === "invalid") return "无效值";
+  return "不可用";
+}
+
+function temperatureSourceLabel(source: string): string {
+  return temperatureSourceLabels[source] ?? (source || "未知来源");
+}
+
+function temperatureValueLabel(sensor: TemperatureSensorReading): string {
+  if (sensor.currentC == null || !Number.isFinite(sensor.currentC)) {
+    return sensor.status === "threshold" ? "仅阈值" : "—";
+  }
+  return `${sensor.currentC.toFixed(1)} °C`;
+}
+
+function temperatureLimitsLabel(sensor: TemperatureSensorReading): string {
+  const limits = [
+    sensor.highC != null ? `高 ${sensor.highC.toFixed(1)}°C` : "",
+    sensor.criticalC != null ? `临界 ${sensor.criticalC.toFixed(1)}°C` : "",
+    sensor.emergencyC != null ? `紧急 ${sensor.emergencyC.toFixed(1)}°C` : ""
+  ].filter(Boolean);
+  return limits.join(" · ");
+}
+
+function TemperatureSourcesPanel({
+  sensors,
+  series
+}: {
+  sensors: TemperatureSensorReading[];
+  series: TemperatureMetricSeries[];
+}) {
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [selectedId, setSelectedId] = useState("");
+  const visibleSensors = useMemo(
+    () => sensors.filter((sensor) => showDiagnostics || sensor.status === "valid"),
+    [sensors, showDiagnostics]
+  );
+  const chartableSeries = useMemo(
+    () => series.filter((sensor) => sensor.currentC.length > 0 && (showDiagnostics || sensor.status === "valid")),
+    [series, showDiagnostics]
+  );
+  const selectedSeries = chartableSeries.find((sensor) => sensor.id === selectedId) ?? chartableSeries[0];
+
+  useEffect(() => {
+    if (!selectedSeries || selectedSeries.id === selectedId) return;
+    setSelectedId(selectedSeries.id);
+  }, [selectedId, selectedSeries]);
+
+  if (!sensors.length && !series.length) return null;
+
+  return (
+    <DesktopWidget id="temperature-sources" title="温度源" kind="group" defaultSize="large">
+      <Surface className="workspace-temperature-sources">
+        <div className="workspace-surface__header">
+          <div>
+            <span className="workspace-section-kicker">温度源</span>
+            <h3>全部温度传感器</h3>
+          </div>
+          <label className="workspace-temperature-toggle">
+            <input type="checkbox" checked={showDiagnostics} onChange={(event) => setShowDiagnostics(event.target.checked)} />
+            <span>显示诊断通道</span>
+          </label>
+        </div>
+        <p className="workspace-surface__description">按传感器原始名称和采集后端展示；不同来源不会合并平均，阈值和无效值默认隐藏。</p>
+        <div className="workspace-temperature-sources__body">
+          <div className="workspace-temperature-source-list">
+            {visibleSensors.length ? visibleSensors.map((sensor) => {
+              const isSelected = sensor.id === selectedSeries?.id;
+              return (
+                <button
+                  type="button"
+                  key={sensor.id}
+                  className={`workspace-temperature-source-row${isSelected ? " is-selected" : ""}`}
+                  onClick={() => setSelectedId(sensor.id)}
+                >
+                  <span className="workspace-temperature-source-row__identity">
+                    <strong>{sensor.displayName || sensor.rawName}</strong>
+                    <small>{temperatureRoleLabels[sensor.role] ?? sensor.role} · {temperatureSourceLabel(sensor.source)}</small>
+                  </span>
+                  <span className="workspace-temperature-source-row__value">
+                    <strong>{temperatureValueLabel(sensor)}</strong>
+                    <small className={`workspace-temperature-status workspace-temperature-status--${sensor.status}`}>{temperatureStatusLabel(sensor.status)}</small>
+                    {temperatureLimitsLabel(sensor) && <small>{temperatureLimitsLabel(sensor)}</small>}
+                  </span>
+                </button>
+              );
+            }) : <div className="workspace-telemetry-empty">当前只有无效或诊断温度通道</div>}
+          </div>
+          <div className="workspace-temperature-source-chart">
+            {selectedSeries ? (
+              <TelemetryChartCard
+                title={`${selectedSeries.name} · 历史`}
+                subtitle={`${temperatureRoleLabels[selectedSeries.role] ?? selectedSeries.role} · ${temperatureSourceLabel(selectedSeries.source)}`}
+                series={[{ label: "温度", points: selectedSeries.currentC, valueFormatter: (value) => `${value.toFixed(1)} °C` }]}
+                valueFormatter={(value) => `${value.toFixed(1)} °C`}
+                emptyMessage="等待有效温度样本"
+              />
+            ) : <div className="workspace-trend-empty">选择一个有效温度源查看历史</div>}
+          </div>
+        </div>
+      </Surface>
+    </DesktopWidget>
+  );
+}
+
 function DevicePage() {
   const { selectedDevice, snapshot, navigate, openSettings, metricsWindow, setMetricsWindow, trafficMode, setTrafficMode, getWidgetLayout, saveWidgetLayout, orientation } = useWorkspace();
   const canEditRemote = snapshot?.source === "live" && Boolean(snapshot.session.authenticated);
@@ -2613,6 +2752,7 @@ function DevicePage() {
               <TelemetryChartCard widgetId="gpu-summary-temperature" widgetGroupId="gpu-summary" widgetType="gpu-temperature" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, visualization: "line" }} title="温度" subtitle="GPU 设备汇总" emptyMessage="等待 GPU 温度传感器" series={[{ label: "温度", points: series.gpuTemperatureC ?? [], valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
             </TelemetryDeviceBlock>
           )}
+          <TemperatureSourcesPanel sensors={filteredLatest?.temperatureSensors ?? []} series={series.temperatureSensors ?? []} />
           {fanInstances.length ? fanInstances.map((fan, index) => { const fanLatest = filteredLatest?.fans.find((item) => item.id === fan.id); return <React.Fragment key={`thermal-fan-${fan.id}`}><TelemetryChartCard widgetId={`thermal-fan-${fan.id}`} widgetTemplateId={`thermal-fan-${index}`} title={`${fan.name} · 转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm, valueFormatter: (v) => `${Math.round(v)} RPM` }]} valueFormatter={(v) => `${Math.round(v)} RPM`} /><FanNoteEditor deviceId={selectedDevice.deviceId} fanId={fan.id} initialNote={fanLatest?.note} editable={canEditRemote} /></React.Fragment>; }) : null}
           </TelemetrySection>
       )}

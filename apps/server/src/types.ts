@@ -58,6 +58,7 @@ export interface TimeSeriesRecord {
     networkInterfaces: AgentMetricsPayload["networkInterfaces"];
     gpus: AgentMetricsPayload["gpus"];
     fans: AgentMetricsPayload["fans"];
+    temperatureSensors: AgentMetricsPayload["temperatureSensors"];
     diskRate: AgentMetricsPayload["diskRate"];
     networkRate: AgentMetricsPayload["networkRate"];
     virtualization: AgentMetricsPayload["virtualization"];

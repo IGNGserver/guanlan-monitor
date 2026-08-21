@@ -18,6 +18,7 @@ const ALL_METRIC_KEYS: { key: DeviceMetricKey; label: string; group: string }[] 
   { key: "gpuMemory", label: "GPU 内存占用", group: "GPU" },
   { key: "gpuTemperature", label: "GPU 核心温度", group: "GPU" },
   { key: "gpuDriverInfo", label: "GPU 驱动与适配器信息", group: "GPU" },
+  { key: "temperatureSources", label: "全部温度传感器", group: "温度" },
   { key: "memoryUsage", label: "系统物理内存", group: "内存" },
   { key: "swapUsage", label: "交换空间/虚拟内存", group: "内存" },
   { key: "memoryAvailable", label: "可用内存", group: "内存" },

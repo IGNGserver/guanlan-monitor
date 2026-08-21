@@ -55,6 +55,7 @@ const metricConfigSchema = z.object({
       "gpuMemory",
       "gpuTemperature",
       "gpuDriverInfo",
+      "temperatureSources",
       "memoryUsage",
       "swapUsage",
       "memoryAvailable",
@@ -96,6 +97,7 @@ const metricConfigSchema = z.object({
         "gpuMemory",
         "gpuTemperature",
         "gpuDriverInfo",
+        "temperatureSources",
         "memoryUsage",
         "swapUsage",
         "memoryAvailable",
@@ -423,6 +425,7 @@ export async function registerRoutes(
           disks: latest.disks ?? [],
           networkInterfaces: latest.networkInterfaces ?? [],
           gpus: latest.gpus,
+          temperatureSensors: latest.temperatureSensors ?? [],
           sensorBackends: latest.sensorBackends ?? [],
           virtualization: latest.virtualization ?? null,
           fans: (latest.fans ?? []).map((fan) => ({
@@ -680,17 +683,24 @@ function rejectInsecureAgentTransport(request: FastifyRequest, reply: FastifyRep
 
 function sanitizeUnsupportedMetricSeries(series: MetricSeries, availableMetrics: DeviceMetricOption[]) {
   const available = new Map(availableMetrics.map((item) => [item.key, item.available]));
-  if (available.get("cpuTemperature") === false && !hasCpuTemperatureSeries(series)) {
-    return {
-      ...series,
+  let sanitized = series;
+  if (available.get("temperatureSources") === false) {
+    sanitized = {
+      ...sanitized,
+      temperatureSensors: []
+    };
+  }
+  if (available.get("cpuTemperature") === false && !hasCpuTemperatureSeries(sanitized)) {
+    sanitized = {
+      ...sanitized,
       cpuTemperatureC: [],
-      cpus: series.cpus.map((cpu) => ({
+      cpus: sanitized.cpus.map((cpu) => ({
         ...cpu,
         temperatureC: []
       }))
     };
   }
-  return series;
+  return sanitized;
 }
 
 function hasMetricSeries(points: SamplePoint[] | undefined): boolean {
@@ -702,10 +712,15 @@ function hasCpuTemperatureSeries(series: MetricSeries): boolean {
 }
 
 function markSeriesBackedMetricAvailability(availableMetrics: DeviceMetricOption[], series: MetricSeries): DeviceMetricOption[] {
-  if (!hasCpuTemperatureSeries(series)) {
+  const hasTemperatureSeries = series.temperatureSensors.some((sensor) => sensor.currentC.some((point) => point.value > 0));
+  if (!hasCpuTemperatureSeries(series) && !hasTemperatureSeries) {
     return availableMetrics;
   }
-  return availableMetrics.map((item) => item.key === "cpuTemperature" ? { ...item, available: true } : item);
+  return availableMetrics.map((item) => {
+    if (item.key === "cpuTemperature" && hasCpuTemperatureSeries(series)) return { ...item, available: true };
+    if (item.key === "temperatureSources" && hasTemperatureSeries) return { ...item, available: true };
+    return item;
+  });
 }
 
 function alignMetricSeriesToWindow(series: MetricSeries, window: MetricWindow) {
@@ -778,6 +793,10 @@ function alignMetricSeriesToWindow(series: MetricSeries, window: MetricWindow) {
       memoryUsagePercent: alignSamplePoints(gpu.memoryUsagePercent, bucketMs),
       memoryUsedBytes: alignSamplePoints(gpu.memoryUsedBytes, bucketMs),
       temperatureC: alignSamplePoints(gpu.temperatureC, bucketMs)
+    })),
+    temperatureSensors: series.temperatureSensors.map((sensor) => ({
+      ...sensor,
+      currentC: alignSamplePoints(sensor.currentC, bucketMs)
     })),
     fans: series.fans.map((fan) => ({
       ...fan,

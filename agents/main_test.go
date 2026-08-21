@@ -448,6 +448,83 @@ func TestMapHardwareSensorsStorage(t *testing.T) {
 	if len(metadata.SmartAttributes) != 1 || metadata.SmartAttributes[0].ID != 194 {
 		t.Fatalf("unexpected SMART attributes: %#v", metadata.SmartAttributes)
 	}
+	if len(metadata.TemperatureSensors) != 1 || metadata.TemperatureSensors[0].Role != "storage_composite" {
+		t.Fatalf("expected storage temperature source metadata, got %#v", metadata.TemperatureSensors)
+	}
+}
+
+func TestMapHardwareSensorsExportsTemperatureSourcesAndDiagnostics(t *testing.T) {
+	cpuPackage := 82.0
+	cpuCore := 78.0
+	board := 40.0
+	unwired := 1.0
+	gpu := 43.0
+	disk := 52.0
+	threshold := 90.0
+	metrics := mapHardwareSensors([]hardwareSensorSnapshot{
+		{
+			HardwareType: "Cpu",
+			Name:         "Intel Core",
+			Sensors: []hardwareSensor{
+				{SensorType: "Temperature", Name: "CPU Package", Value: &cpuPackage},
+				{SensorType: "Temperature", Name: "Core #1", Value: &cpuCore},
+			},
+		},
+		{
+			HardwareType: "SuperIO",
+			Name:         "ITE IT8613E",
+			Sensors: []hardwareSensor{
+				{SensorType: "Temperature", Name: "Temperature #1", Value: &board},
+				{SensorType: "Temperature", Name: "Temperature #2", Value: &unwired},
+				{SensorType: "Temperature", Name: "Temperature Warning", Value: &threshold},
+			},
+		},
+		{
+			HardwareType: "GpuNvidia",
+			Name:         "NVIDIA GPU",
+			Sensors: []hardwareSensor{
+				{SensorType: "Temperature", Name: "GPU Core", Value: &gpu},
+			},
+		},
+		{
+			HardwareType: "Storage",
+			Name:         "NVMe Disk",
+			Sensors: []hardwareSensor{
+				{SensorType: "Temperature", Name: "Composite", Value: &disk},
+			},
+		},
+	})
+
+	if len(metrics.temperatureSensors) != 7 {
+		t.Fatalf("expected every temperature source to be retained, got %d: %#v", len(metrics.temperatureSensors), metrics.temperatureSensors)
+	}
+	byName := map[string]temperatureSensorReading{}
+	for _, reading := range metrics.temperatureSensors {
+		byName[reading.RawName] = reading
+	}
+	if byName["CPU Package"].Role != "cpu_package" || byName["Core #1"].Role != "cpu_core" {
+		t.Fatalf("unexpected CPU temperature roles: %#v", byName)
+	}
+	if byName["GPU Core"].Role != "gpu_core" || byName["Composite"].Role != "storage_composite" {
+		t.Fatalf("unexpected GPU/storage temperature roles: %#v", byName)
+	}
+	if byName["Temperature #2"].Status != "invalid" || byName["Temperature #2"].Confidence != "diagnostic" {
+		t.Fatalf("unwired SuperIO channel must remain visible as diagnostic: %#v", byName["Temperature #2"])
+	}
+	if byName["Temperature Warning"].Status != "threshold" || byName["Temperature Warning"].Confidence != "diagnostic" {
+		t.Fatalf("threshold channel must not become a historical reading: %#v", byName["Temperature Warning"])
+	}
+}
+
+func TestMergeTemperatureSensorsKeepsLatestObservationBySourceID(t *testing.T) {
+	oldValue := 40.0
+	newValue := 44.0
+	previous := []temperatureSensorReading{{ID: "sensor-a", RawName: "SYSTIN", CurrentC: &oldValue, Status: "valid"}}
+	next := []temperatureSensorReading{{ID: "sensor-a", RawName: "SYSTIN", CurrentC: &newValue, Status: "valid"}}
+	merged := mergeTemperatureSensors(previous, next)
+	if len(merged) != 1 || merged[0].CurrentC == nil || *merged[0].CurrentC != newValue {
+		t.Fatalf("expected latest sensor observation to replace previous value, got %#v", merged)
+	}
 }
 
 func TestDiskRateLookupNormalizesLinuxPartitionNames(t *testing.T) {
@@ -531,6 +608,26 @@ func TestParseSmartctlJSON(t *testing.T) {
 	}
 	if len(metadata.SmartAttributes) != 1 || metadata.SmartAttributes[0].ID != 194 {
 		t.Fatalf("unexpected SMART attributes: %#v", metadata.SmartAttributes)
+	}
+}
+
+func TestParseSmartctlJSONPreservesNVMeTemperatureSensors(t *testing.T) {
+	raw := []byte(`{
+  "nvme_smart_health_information_log": {
+    "temperature": 58,
+    "temperature_sensor_1": 61
+  }
+}`)
+
+	metadata, ok := parseSmartctlJSON(raw)
+	if !ok || metadata.TemperatureC == nil || *metadata.TemperatureC != 58 {
+		t.Fatalf("expected NVMe composite temperature, got %#v, ok=%v", metadata, ok)
+	}
+	if len(metadata.TemperatureSensors) != 2 {
+		t.Fatalf("expected composite and sensor 1 temperature sources, got %#v", metadata.TemperatureSensors)
+	}
+	if metadata.TemperatureSensors[0].RawName != "NVMe Composite" || metadata.TemperatureSensors[1].RawName != "NVMe Temperature Sensor 1" {
+		t.Fatalf("unexpected NVMe temperature source names: %#v", metadata.TemperatureSensors)
 	}
 }
 

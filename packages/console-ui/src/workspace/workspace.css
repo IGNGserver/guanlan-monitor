@@ -1011,6 +1011,31 @@ kbd {
 .workspace-summary-row strong.is-success { color: var(--workspace-green); }
 .workspace-summary-row strong.is-warning { color: var(--workspace-amber); }
 
+.workspace-temperature-toggle { display: inline-flex; align-items: center; gap: 7px; color: var(--workspace-text-secondary); font-size: 11px; white-space: nowrap; }
+.workspace-temperature-toggle input { accent-color: var(--workspace-accent); }
+.workspace-temperature-sources__body { display: grid; min-width: 0; grid-template-columns: minmax(250px, 0.85fr) minmax(0, 1.15fr); gap: 14px; }
+.workspace-temperature-source-list { display: flex; min-width: 0; max-height: 360px; flex-direction: column; gap: 5px; overflow: auto; padding-right: 2px; }
+.workspace-temperature-source-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid var(--workspace-border); border-radius: var(--workspace-radius-sm); color: var(--workspace-text-secondary); background: var(--workspace-surface-subtle); cursor: pointer; text-align: left; transition: border-color var(--workspace-transition), background var(--workspace-transition); }
+.workspace-temperature-source-row:hover,
+.workspace-temperature-source-row.is-selected { border-color: var(--workspace-accent); background: var(--workspace-surface-hover); }
+.workspace-temperature-source-row__identity,
+.workspace-temperature-source-row__value { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.workspace-temperature-source-row__identity { overflow: hidden; }
+.workspace-temperature-source-row__identity strong { overflow: hidden; color: var(--workspace-text); font-size: 11px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-temperature-source-row__identity small,
+.workspace-temperature-source-row__value small { color: var(--workspace-text-muted); font-size: 9px; }
+.workspace-temperature-source-row__value { flex: 0 0 auto; align-items: flex-end; text-align: right; }
+.workspace-temperature-source-row__value strong { color: var(--workspace-text); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.workspace-temperature-status--valid { color: var(--workspace-green) !important; }
+.workspace-temperature-status--threshold { color: var(--workspace-amber) !important; }
+.workspace-temperature-status--invalid { color: var(--workspace-red) !important; }
+.workspace-temperature-source-chart { min-width: 0; }
+
+@media (max-width: 900px) {
+  .workspace-temperature-sources__body { grid-template-columns: 1fr; }
+  .workspace-temperature-source-list { max-height: 280px; }
+}
+
 .workspace-trend { display: flex; min-width: 0; flex-direction: column; gap: 8px; margin-top: 5px; }
 .workspace-trend__readout { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; color: var(--workspace-text-muted); font-size: 10px; }
 .workspace-trend__readout strong { overflow: hidden; color: var(--workspace-text); font-size: 11px; font-weight: 640; text-overflow: ellipsis; white-space: nowrap; }
