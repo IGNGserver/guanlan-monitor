@@ -109,9 +109,12 @@ export class AgentManager {
       "check-connection": "/api/control/check-connection",
       "detect-probes": "/api/probes/detect"
     };
+    // Hardware probing invokes a one-shot slow sensor scan. Keep the normal
+    // control timeout for lifecycle/connection actions, but allow the probe
+    // request to cover the backend's 25-second sensor-probe deadline.
     await this.request(endpoint[action], {
       method: "POST"
-    });
+    }, action === "detect-probes" ? 45_000 : 10_000);
     return this.getState();
   }
 
@@ -145,7 +148,7 @@ export class AgentManager {
     return this.lastOutput;
   }
 
-  private async request<T>(endpoint: string, init: RequestInit = {}): Promise<T> {
+  private async request<T>(endpoint: string, init: RequestInit = {}, timeoutMs = 10_000): Promise<T> {
     if (!this.baseUrl) throw new BackendUnavailableError("The local Agent backend is not running.");
     const requestHeaders = Object.fromEntries(new Headers(init.headers).entries());
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
@@ -156,7 +159,7 @@ export class AgentManager {
         "X-DSC-Local-Token": this.localToken,
         ...requestHeaders
       },
-      signal: init.signal ?? AbortSignal.timeout(10_000)
+      signal: init.signal ?? AbortSignal.timeout(timeoutMs)
     });
     const text = await response.text();
     let payload: unknown = null;

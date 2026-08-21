@@ -1,4 +1,4 @@
-import type { MetricsResponse, SamplePoint } from "@dsc/shared";
+import type { MetricsResponse, SamplePoint, TemperatureSensorReading } from "@dsc/shared";
 import { formatBytes } from "./metricsNormalizer.ts";
 
 export interface WidgetLine {
@@ -34,8 +34,22 @@ export function averageSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
     .map((point) => ({ timestamp: point.timestamp, value: point.count ? point.total / point.count : 0 }));
 }
 
-export function getWidgetLines(widgetType: string, metrics: MetricsResponse | null, targetId?: string): { lines: WidgetLine[]; valueFormatter?: (value: number) => string } {
+export function getWidgetLines(widgetType: string, metrics: MetricsResponse | null, targetId?: string, localTemperatureSources: TemperatureSensorReading[] = [], localTemperatureSourcesAt?: string | null): { lines: WidgetLine[]; valueFormatter?: (value: number) => string } {
   const series = metrics?.series;
+  if (widgetType === "temperature-source-line") {
+    const sensor = targetId ? series?.temperatureSensors?.find((item) => item.id === targetId) : undefined;
+    const latestSensor = targetId ? metrics?.latest.temperatureSensors?.find((item) => item.id === targetId) : undefined;
+    const localSensor = targetId ? localTemperatureSources.find((item) => item.id === targetId) : undefined;
+    const points = sensor?.currentC.length
+      ? sensor.currentC
+      : latestSensor?.currentC != null && Number.isFinite(latestSensor.currentC)
+        ? [{ timestamp: metrics?.lastSeenAt ?? metrics?.device.lastSeenAt ?? new Date().toISOString(), value: latestSensor.currentC }]
+        : localSensor?.currentC != null && Number.isFinite(localSensor.currentC)
+          ? [{ timestamp: localTemperatureSourcesAt ?? metrics?.lastSeenAt ?? metrics?.device.lastSeenAt ?? new Date().toISOString(), value: localSensor.currentC }]
+          : [];
+    const label = sensor?.name ?? latestSensor?.displayName ?? latestSensor?.rawName ?? localSensor?.displayName ?? localSensor?.rawName ?? "温度";
+    return { lines: points.length ? [{ label, points, formatter: (value: number) => `${value.toFixed(1)} °C` }] : [], valueFormatter: (value) => `${value.toFixed(1)} °C` };
+  }
   if (!series) return { lines: [] };
   if (widgetType === "cpu-usage" || widgetType === "cpu-usage-pie") {
     const lines = series.cpus?.length && targetId ? series.cpus.filter((item) => item.id === targetId).map((item) => ({ label: item.name, points: item.usagePercent, formatter: (value: number) => `${Math.round(value)}%` })) : [{ label: "CPU 使用率", points: series.cpuUsagePercent, formatter: (value: number) => `${Math.round(value)}%` }];
@@ -48,17 +62,6 @@ export function getWidgetLines(widgetType: string, metrics: MetricsResponse | nu
   if (widgetType === "cpu-temperature") {
     const cpu = targetId ? series.cpus?.find((item) => item.id === targetId) : undefined;
     return { lines: [{ label: "温度", points: cpu?.temperatureC ?? series.cpuTemperatureC, formatter: (value: number) => `${Math.round(value)} °C` }], valueFormatter: (value) => `${Math.round(value)} °C` };
-  }
-  if (widgetType === "temperature-source-line") {
-    const sensor = targetId ? series.temperatureSensors?.find((item) => item.id === targetId) : undefined;
-    const latestSensor = targetId ? metrics?.latest.temperatureSensors?.find((item) => item.id === targetId) : undefined;
-    const points = sensor?.currentC.length
-      ? sensor.currentC
-      : latestSensor?.currentC != null && Number.isFinite(latestSensor.currentC)
-        ? [{ timestamp: metrics?.lastSeenAt ?? metrics?.device.lastSeenAt ?? new Date().toISOString(), value: latestSensor.currentC }]
-        : [];
-    const label = sensor?.name ?? latestSensor?.displayName ?? latestSensor?.rawName ?? "温度";
-    return { lines: points.length ? [{ label, points, formatter: (value: number) => `${value.toFixed(1)} °C` }] : [], valueFormatter: (value) => `${value.toFixed(1)} °C` };
   }
   if (widgetType === "memory-usage" || widgetType === "memory-usage-pie") return { lines: [{ label: "物理内存", points: series.memoryUsedBytes, formatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes, formatter: formatBytes }], valueFormatter: formatBytes };
   if (widgetType === "disk-capacity" || widgetType === "disk-capacity-pie") {

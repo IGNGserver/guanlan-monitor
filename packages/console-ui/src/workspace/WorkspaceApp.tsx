@@ -2612,6 +2612,11 @@ function DevicePage() {
   };
 
   const metrics = snapshot?.metrics?.device.deviceId === selectedDevice.deviceId ? snapshot.metrics : null;
+  const localTemperatureSources = snapshot?.localBackend
+    && (snapshot.localBackend.config.connection.deviceId === selectedDevice.deviceId || snapshot.localBackend.config.connection.hostname === selectedDevice.hostname)
+    ? snapshot.localBackend.temperatureSources
+    : [];
+  const localTemperatureSourcesAt = snapshot?.localBackend?.lastDetectAt ?? null;
   const latest = metrics?.latest;
   const series = metrics?.series;
   const enabledDeviceIds = metrics?.enabledDeviceIds;
@@ -2873,7 +2878,7 @@ function DevicePage() {
           </TelemetrySection>
       )}
 
-      {activeTab !== "all" && <DynamicWidgetCanvas device={selectedDevice} metrics={metrics} showEmptyState={isCustomPanel} onOpenDrawer={canEditRemote ? () => setWidgetDrawerOpen(true) : undefined} />}
+      {activeTab !== "all" && <DynamicWidgetCanvas device={selectedDevice} metrics={metrics} localTemperatureSources={localTemperatureSources} localTemperatureSourcesAt={localTemperatureSourcesAt} showEmptyState={isCustomPanel} onOpenDrawer={canEditRemote ? () => setWidgetDrawerOpen(true) : undefined} />}
 
       {(activeTab === "overview" || activeTab === "all") && (
         <div id="section-info" className="workspace-widget-grid workspace-device-info-widgets">
@@ -2919,7 +2924,7 @@ function DevicePage() {
         </div>
       )}
 
-      <WidgetDrawer open={widgetDrawerOpen} onClose={() => setWidgetDrawerOpen(false)} device={selectedDevice} metrics={metrics} />
+      <WidgetDrawer open={widgetDrawerOpen} onClose={() => setWidgetDrawerOpen(false)} device={selectedDevice} metrics={metrics} localTemperatureSources={localTemperatureSources} />
 
       </WidgetLayoutProvider>
     </div>

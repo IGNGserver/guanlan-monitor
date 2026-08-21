@@ -52,6 +52,8 @@ type WidgetTargetKind = "cpu" | "disk" | "gpu" | "fan" | "network" | "temperatur
 type WidgetCatalogContext = {
   device: DeviceSummary;
   metrics: MetricsResponse | null;
+  localTemperatureSources?: TemperatureSensorReading[];
+  localTemperatureSourcesAt?: string | null;
 };
 
 const visualizationLabels: Record<WidgetVisualization, string> = {
@@ -485,7 +487,8 @@ function sumSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
 }
 
 
-function metricAvailable(definition: WidgetCatalogDefinition, metrics: MetricsResponse | null): boolean {
+function metricAvailable(definition: WidgetCatalogDefinition, metrics: MetricsResponse | null, localTemperatureSources: TemperatureSensorReading[] = []): boolean {
+  if (definition.targetKind === "temperature" && localTemperatureSources.some((sensor) => sensor.currentC != null && Number.isFinite(sensor.currentC))) return true;
   if (!definition.requires?.length || !metrics) return true;
   return definition.requires.some((key) => metrics.enabledMetrics.includes(key) || metrics.availableMetrics.some((option) => option.key === key && option.available));
 }
@@ -683,7 +686,7 @@ function healthDonutData(disks: DiskDeviceStats[]) {
 }
 
 function WidgetContent({ definition, entry, context }: { definition: WidgetCatalogDefinition; entry: WidgetLayoutCatalogEntry; context: WidgetCatalogContext }) {
-  const { device, metrics } = context;
+  const { device, metrics, localTemperatureSources = [], localTemperatureSourcesAt } = context;
   const latest = metrics?.latest;
   const visualization = visualizationFor(entry, definition);
   if (definition.widgetType === "hardware-system") return <DataTable rows={hardwareRows(device, latest)} />;
@@ -742,46 +745,45 @@ function WidgetContent({ definition, entry, context }: { definition: WidgetCatal
     const targetId = getTargetId(entry);
     const latestSensor = targetId ? latest?.temperatureSensors?.find((sensor) => sensor.id === targetId) : undefined;
     const seriesSensor = targetId ? metrics?.series.temperatureSensors?.find((sensor) => sensor.id === targetId) : undefined;
-    const current = latestSensor?.currentC ?? latestValue(seriesSensor?.currentC);
+    const localSensor = targetId ? localTemperatureSources.find((sensor) => sensor.id === targetId) : undefined;
+    const current = latestSensor?.currentC ?? localSensor?.currentC ?? latestValue(seriesSensor?.currentC);
     if (current == null || !Number.isFinite(current)) return <div className="workspace-dynamic-empty__inline">当前时间范围没有可用的温度数据</div>;
-    const configuredLimit = latestSensor?.criticalC ?? seriesSensor?.criticalC ?? latestSensor?.highC ?? seriesSensor?.highC;
+    const configuredLimit = latestSensor?.criticalC ?? localSensor?.criticalC ?? seriesSensor?.criticalC ?? latestSensor?.highC ?? localSensor?.highC ?? seriesSensor?.highC;
     const limit = Math.max(0, current, configuredLimit ?? 100);
     const displayCurrent = Math.max(0, current);
     const limitLabel = configuredLimit != null ? "温度上限余量" : "参考温度余量";
     return <DonutChart data={[{ name: "当前温度", value: displayCurrent, color: "#f59e0b" }, { name: limitLabel, value: Math.max(0, limit - displayCurrent), color: "#cbd5e1" }]} centerLabel={`${current.toFixed(1)} °C`} valueFormatter={(value) => `${value.toFixed(1)} °C`} />;
   }
-  const { lines, valueFormatter } = getWidgetLines(definition.widgetType, metrics, getTargetId(entry));
+  const { lines, valueFormatter } = getWidgetLines(definition.widgetType, metrics, getTargetId(entry), localTemperatureSources, localTemperatureSourcesAt);
   return <TrendChart lines={lines} visualization={visualization} valueFormatter={valueFormatter} />;
 }
 
-function targetOptions(definition: WidgetCatalogDefinition, metrics: MetricsResponse | null): Array<{ id: string; name: string; detail?: string }> {
-  if (!metrics || !definition.targetKind) return [];
+function targetOptions(definition: WidgetCatalogDefinition, metrics: MetricsResponse | null, localTemperatureSources: TemperatureSensorReading[] = []): Array<{ id: string; name: string; detail?: string }> {
+  if (!definition.targetKind) return [];
   const filterEnabled = <T extends { id: string }>(items: T[], blockKey?: DeviceBlockKey) => {
+    if (!metrics) return [];
     const enabledIds = blockKey ? metrics.enabledDeviceIds?.[blockKey] : undefined;
     return Array.isArray(enabledIds) ? items.filter((item) => enabledIds.includes(item.id)) : items;
   };
-  if (definition.targetKind === "cpu") return filterEnabled(metrics.series.cpus ?? [], "cpu").map((item) => ({ id: item.id, name: item.name, detail: item.model }));
-  if (definition.targetKind === "disk") return filterEnabled(metrics.series.disks ?? [], "disk").map((item) => ({ id: item.id, name: item.model || item.name, detail: item.mountPoint }));
-  if (definition.targetKind === "gpu") return filterEnabled(metrics.series.gpus ?? [], "gpu").map((item) => ({ id: item.id, name: item.name }));
-  if (definition.targetKind === "fan") return filterEnabled(metrics.series.fans ?? [], "fan").map((item) => ({ id: item.id, name: item.name, detail: item.interface }));
-  if (definition.targetKind === "network") return filterEnabled(metrics.series.networks ?? [], "network").map((item) => ({ id: item.id, name: item.model || item.name, detail: item.macAddress }));
   if (definition.targetKind === "temperature") {
-    const latestById = new Map((metrics.latest?.temperatureSensors ?? []).map((sensor) => [sensor.id, sensor]));
+    const latestById = new Map((metrics?.latest?.temperatureSensors ?? []).map((sensor) => [sensor.id, sensor]));
+    const localById = new Map(localTemperatureSources.map((sensor) => [sensor.id, sensor]));
     const seen = new Set<string>();
     const targets: Array<{ id: string; name: string; detail?: string }> = [];
-    for (const sensor of metrics.series.temperatureSensors ?? []) {
+    for (const sensor of metrics?.series.temperatureSensors ?? []) {
       const latestSensor = latestById.get(sensor.id);
+      const localSensor = localById.get(sensor.id);
       const hasHistory = sensor.currentC.some((point) => Number.isFinite(point.value));
-      const hasCurrent = latestSensor?.currentC != null && Number.isFinite(latestSensor.currentC);
+      const hasCurrent = [latestSensor?.currentC, localSensor?.currentC].some((value) => value != null && Number.isFinite(value));
       if (!hasHistory && !hasCurrent) continue;
       seen.add(sensor.id);
       targets.push({
         id: sensor.id,
-        name: latestSensor?.displayName || sensor.name || latestSensor?.rawName || sensor.rawName,
+        name: latestSensor?.displayName || localSensor?.displayName || sensor.name || latestSensor?.rawName || localSensor?.rawName || sensor.rawName,
         detail: [sensor.role, sensor.source, sensor.backend, sensor.hardware].filter(Boolean).join(" · ")
       });
     }
-    for (const sensor of metrics.latest?.temperatureSensors ?? []) {
+    for (const sensor of metrics?.latest?.temperatureSensors ?? []) {
       if (seen.has(sensor.id) || sensor.currentC == null || !Number.isFinite(sensor.currentC)) continue;
       seen.add(sensor.id);
       targets.push({
@@ -790,8 +792,23 @@ function targetOptions(definition: WidgetCatalogDefinition, metrics: MetricsResp
         detail: [sensor.role, sensor.source, sensor.backend, sensor.hardware, sensor.path].filter(Boolean).join(" · ")
       });
     }
+    for (const sensor of localTemperatureSources) {
+      if (seen.has(sensor.id) || sensor.currentC == null || !Number.isFinite(sensor.currentC)) continue;
+      seen.add(sensor.id);
+      targets.push({
+        id: sensor.id,
+        name: sensor.displayName || sensor.rawName || sensor.id,
+        detail: [sensor.role, sensor.source, sensor.backend, sensor.hardware, sensor.path].filter(Boolean).join(" · ")
+      });
+    }
     return targets;
   }
+  if (!metrics) return [];
+  if (definition.targetKind === "cpu") return filterEnabled(metrics.series.cpus ?? [], "cpu").map((item) => ({ id: item.id, name: item.name, detail: item.model }));
+  if (definition.targetKind === "disk") return filterEnabled(metrics.series.disks ?? [], "disk").map((item) => ({ id: item.id, name: item.model || item.name, detail: item.mountPoint }));
+  if (definition.targetKind === "gpu") return filterEnabled(metrics.series.gpus ?? [], "gpu").map((item) => ({ id: item.id, name: item.name }));
+  if (definition.targetKind === "fan") return filterEnabled(metrics.series.fans ?? [], "fan").map((item) => ({ id: item.id, name: item.name, detail: item.interface }));
+  if (definition.targetKind === "network") return filterEnabled(metrics.series.networks ?? [], "network").map((item) => ({ id: item.id, name: item.model || item.name, detail: item.macAddress }));
   return [];
 }
 
@@ -840,7 +857,7 @@ function DynamicWidgetGroupCard({ entry, children, context }: { entry: WidgetLay
   const definition = widgetDefinitionByType.get(entry.widgetType ?? "");
   if (!definition) return null;
   const target = definition.targetKind
-    ? targetOptions(definition, context.metrics).find((item) => item.id === getTargetId(entry))
+    ? targetOptions(definition, context.metrics, context.localTemperatureSources).find((item) => item.id === getTargetId(entry))
     : undefined;
   const frameTitle = target
     ? definition.targetKind === "cpu" ? target.detail || target.name : target.name
@@ -883,7 +900,7 @@ function DynamicWidgetCard({ entry, context }: { entry: WidgetLayoutCatalogEntry
   const definition = widgetDefinitionByType.get(entry.widgetType ?? "");
   if (!definition) return null;
   const visualization = visualizationFor(entry, definition);
-  const targets = targetOptions(definition, context.metrics);
+  const targets = targetOptions(definition, context.metrics, context.localTemperatureSources);
   const targetId = getTargetId(entry) ?? "all";
   return (
     <DesktopWidget
@@ -916,16 +933,16 @@ function DynamicWidgetCard({ entry, context }: { entry: WidgetLayoutCatalogEntry
   );
 }
 
-export function DynamicWidgetCanvas({ device, metrics, showEmptyState = false, onOpenDrawer }: WidgetCatalogContext & { showEmptyState?: boolean; onOpenDrawer?: () => void }) {
+export function DynamicWidgetCanvas({ device, metrics, localTemperatureSources = [], localTemperatureSourcesAt, showEmptyState = false, onOpenDrawer }: WidgetCatalogContext & { showEmptyState?: boolean; onOpenDrawer?: () => void }) {
   const layout = useWidgetLayout();
   const entries = layout.widgetEntries.filter((entry) => Boolean(entry.widgetType) && !isSystemRenderedEntry(entry));
 
   useEffect(() => {
-    if (!metrics || !layout.editable || layout.locked) return;
+    if ((!metrics && !localTemperatureSources.length) || !layout.editable || layout.locked) return;
     entries.forEach((entry) => {
       const definition = widgetDefinitionByType.get(entry.widgetType ?? "");
       if (!definition?.targetKind || definition.deviceGroup || entry.groupId || getTargetId(entry)) return;
-      const targets = targetOptions(definition, metrics);
+      const targets = targetOptions(definition, metrics, localTemperatureSources);
       if (!targets.length) return;
       layout.updateWidgetConfig(entry.id, { targetId: targets[0].id });
       targets.slice(1).forEach((target) => {
@@ -940,7 +957,7 @@ export function DynamicWidgetCanvas({ device, metrics, showEmptyState = false, o
         });
       });
     });
-  }, [entries, layout.addWidget, layout.editable, layout.locked, layout.updateWidgetConfig, metrics]);
+  }, [entries, layout.addWidget, layout.editable, layout.locked, layout.updateWidgetConfig, localTemperatureSources, localTemperatureSourcesAt, metrics]);
 
   if (!entries.length) {
     return showEmptyState ? <div className="workspace-dynamic-empty"><strong>这个面板还没有自定义小组件</strong><span>{onOpenDrawer ? "打开小组件抽屉，从处理器、存储、网络和 SMART 数据中选择内容。" : "当前为离线缓存，只能查看，暂不能添加小组件。"}</span>{onOpenDrawer && <button type="button" onClick={onOpenDrawer}>打开小组件抽屉</button>}</div> : null;
@@ -957,13 +974,13 @@ export function DynamicWidgetCanvas({ device, metrics, showEmptyState = false, o
   const standaloneEntries = entries.filter((entry) => !groupIds.has(entry.id) && !entry.groupId);
   return (
     <div className="workspace-widget-grid">
-      {groupEntries.map((entry) => <DynamicWidgetGroupCard key={entry.id} entry={entry} children={childrenByGroup.get(entry.id) ?? []} context={{ device, metrics }} />)}
-      {standaloneEntries.map((entry) => <DynamicWidgetCard key={entry.id} entry={entry} context={{ device, metrics }} />)}
+      {groupEntries.map((entry) => <DynamicWidgetGroupCard key={entry.id} entry={entry} children={childrenByGroup.get(entry.id) ?? []} context={{ device, metrics, localTemperatureSources, localTemperatureSourcesAt }} />)}
+      {standaloneEntries.map((entry) => <DynamicWidgetCard key={entry.id} entry={entry} context={{ device, metrics, localTemperatureSources, localTemperatureSourcesAt }} />)}
     </div>
   );
 }
 
-export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogContext & { open: boolean; onClose: () => void }) {
+export function WidgetDrawer({ open, onClose, device, metrics, localTemperatureSources = [] }: WidgetCatalogContext & { open: boolean; onClose: () => void }) {
   const layout = useWidgetLayout();
   const [targetDefinition, setTargetDefinition] = useState<WidgetCatalogDefinition | null>(null);
   const drawerRef = useRef<HTMLElement>(null);
@@ -1083,7 +1100,7 @@ export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogCo
     }
     addWidget(definition, undefined, customVis);
   };
-  const targetChoices = targetDefinition ? targetOptions(targetDefinition, metrics) : [];
+  const targetChoices = targetDefinition ? targetOptions(targetDefinition, metrics, localTemperatureSources) : [];
   const targetLabels: Record<WidgetTargetKind, string> = { cpu: "处理器", disk: "硬盘", gpu: "显卡", fan: "风扇", network: "网卡", temperature: "温度源" };
   const targetSelectionLabel = targetDefinition?.targetKind === "temperature" ? "温度源" : targetDefinition ? `${targetLabels[targetDefinition.targetKind ?? "cpu"]}实例` : "";
   return (
@@ -1111,8 +1128,8 @@ export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogCo
               )) : <div className="workspace-widget-drawer__empty">当前时间范围没有可用的{targetSelectionLabel}。</div>}
             </section>
           ) : Object.entries(grouped).map(([category, definitions]) => <section className="workspace-widget-drawer__group" key={category}><h3>{category}</h3>{definitions.map((definition) => {
-            const targets = targetOptions(definition, metrics);
-            const available = metricAvailable(definition, metrics) && (!definition.targetKind || targets.length > 0);
+            const targets = targetOptions(definition, metrics, localTemperatureSources);
+            const available = metricAvailable(definition, metrics, localTemperatureSources) && (!definition.targetKind || targets.length > 0);
             const count = layout.widgetEntries.filter((entry) => entry.widgetType === definition.widgetType && !isSystemRenderedEntry(entry)).length;
             const availability = definition.targetKind ? (targets.length ? "添加时选择具体实例" : "当前没有可用实例") : definition.requires?.length ? "需要对应采集指标" : "可直接使用";
             return (
