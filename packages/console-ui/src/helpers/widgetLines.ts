@@ -79,6 +79,18 @@ export function getWidgetLines(widgetType: string, metrics: MetricsResponse | nu
     const gpuLines = series.gpus?.length && targetId ? series.gpus.filter((item) => item.id === targetId) : series.gpus ?? [];
     return { lines: gpuLines.length ? [{ label: "核心", points: averageSamplePoints(gpuLines.map((item) => item.usagePercent)), formatter: (value: number) => `${Math.round(value)}%` }, { label: "编码", points: averageSamplePoints(gpuLines.map((item) => item.encodePercent)), formatter: (value: number) => `${Math.round(value)}%` }, { label: "解码", points: averageSamplePoints(gpuLines.map((item) => item.decodePercent)), formatter: (value: number) => `${Math.round(value)}%` }] : [{ label: "GPU 使用率", points: series.gpuUsagePercent, formatter: (value: number) => `${Math.round(value)}%` }], valueFormatter: (value) => `${Math.round(value)}%` };
   }
+  if (widgetType === "gpu-encode" || widgetType === "gpu-decode") {
+    const gpuLines = series.gpus?.length && targetId ? series.gpus.filter((item) => item.id === targetId) : series.gpus ?? [];
+    const points = gpuLines.length
+      ? averageSamplePoints(gpuLines.map((item) => widgetType === "gpu-encode" ? item.encodePercent : item.decodePercent))
+      : widgetType === "gpu-encode" ? series.gpuEncodePercent : series.gpuDecodePercent;
+    return { lines: [{ label: widgetType === "gpu-encode" ? "编码" : "解码", points, formatter: (value: number) => `${Math.round(value)}%` }], valueFormatter: (value) => `${Math.round(value)}%` };
+  }
+  if (widgetType === "gpu-frequency") {
+    const gpuLines = series.gpus?.length && targetId ? series.gpus.filter((item) => item.id === targetId) : series.gpus ?? [];
+    const points = gpuLines.length ? averageSamplePoints(gpuLines.map((item) => item.frequencyMHz)) : series.gpuFrequencyMHz;
+    return { lines: [{ label: "频率", points, formatter: (value: number) => `${Math.round(value)} MHz` }], valueFormatter: (value) => `${Math.round(value)} MHz` };
+  }
   if (widgetType === "gpu-memory" || widgetType === "gpu-memory-pie") {
     const gpu = targetId ? series.gpus?.find((item) => item.id === targetId) : undefined;
     const points = targetId ? (gpu?.memoryUsedBytes ?? []) : series.gpuMemoryUsedBytes;

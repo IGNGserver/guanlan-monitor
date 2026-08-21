@@ -856,6 +856,9 @@ export interface DesktopAgentBackendState {
   config: DesktopAgentConfig;
   supportedProbePlans: DesktopProbePlan[];
   detectedTargets: DesktopDetectedTargetGroup[];
+  temperatureSources: TemperatureSensorReading[];
+  temperatureSensorBackends: SensorBackendStatus[];
+  temperatureProbeError?: string;
 }
 
 export type DesktopSnapshotSource = "live" | "cache" | "empty";

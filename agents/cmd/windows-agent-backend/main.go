@@ -98,43 +98,46 @@ type agentCloudConfigSyncPayload struct {
 }
 
 type backendState struct {
-	Running                        bool               `json:"running"`
-	BackendStartedAt               string             `json:"backendStartedAt"`
-	FrontendParentPID              int                `json:"frontendParentPid"`
-	ChildStartedAt                 string             `json:"childStartedAt,omitempty"`
-	ConnectionStatus               string             `json:"connectionStatus"`
-	LastChildLog                   string             `json:"lastChildLog,omitempty"`
-	LastUploadAt                   string             `json:"lastUploadAt,omitempty"`
-	LastCloudSyncAt                string             `json:"lastCloudSyncAt,omitempty"`
-	LastCloudSyncError             string             `json:"lastCloudSyncError,omitempty"`
-	CloudConfigPending             bool               `json:"cloudConfigPending"`
-	LastDetectAt                   string             `json:"lastDetectAt,omitempty"`
-	LastExitAt                     string             `json:"lastExitAt,omitempty"`
-	LastRestartAt                  string             `json:"lastRestartAt,omitempty"`
-	RestartCount                   int                `json:"restartCount"`
-	LastExitCode                   *int               `json:"lastExitCode,omitempty"`
-	AutoRestartPending             bool               `json:"autoRestartPending"`
-	EffectiveUploadIntervalSeconds int                `json:"effectiveUploadIntervalSeconds"`
-	LastIssueCategory              string             `json:"lastIssueCategory,omitempty"`
-	LastIssueDetail                string             `json:"lastIssueDetail,omitempty"`
-	LastIssueAt                    string             `json:"lastIssueAt,omitempty"`
-	LastIssueCount                 int                `json:"lastIssueCount"`
-	LastIssueRecoveredAt           string             `json:"lastIssueRecoveredAt,omitempty"`
-	ConfigPath                     string             `json:"configPath"`
-	ConfigFileExists               bool               `json:"configFileExists"`
-	SyncStatePath                  string             `json:"syncStatePath"`
-	SyncStateFileExists            bool               `json:"syncStateFileExists"`
-	DiagnosticsPath                string             `json:"diagnosticsPath"`
-	DiagnosticsFileExists          bool               `json:"diagnosticsFileExists"`
-	PendingStatePath               string             `json:"pendingStatePath"`
-	PendingStateFileExists         bool               `json:"pendingStateFileExists"`
-	PendingSampleCount             int                `json:"pendingSampleCount"`
-	PendingBytes                   int64              `json:"pendingBytes"`
-	OldestPendingAt                string             `json:"oldestPendingAt,omitempty"`
-	LastUploadError                string             `json:"lastUploadError,omitempty"`
-	Config                         agentLocalConfig   `json:"config"`
-	SupportedProbePlans            []probePlanSupport `json:"supportedProbePlans"`
-	DetectedTargets                []probeTargetState `json:"detectedTargets"`
+	Running                        bool                       `json:"running"`
+	BackendStartedAt               string                     `json:"backendStartedAt"`
+	FrontendParentPID              int                        `json:"frontendParentPid"`
+	ChildStartedAt                 string                     `json:"childStartedAt,omitempty"`
+	ConnectionStatus               string                     `json:"connectionStatus"`
+	LastChildLog                   string                     `json:"lastChildLog,omitempty"`
+	LastUploadAt                   string                     `json:"lastUploadAt,omitempty"`
+	LastCloudSyncAt                string                     `json:"lastCloudSyncAt,omitempty"`
+	LastCloudSyncError             string                     `json:"lastCloudSyncError,omitempty"`
+	CloudConfigPending             bool                       `json:"cloudConfigPending"`
+	LastDetectAt                   string                     `json:"lastDetectAt,omitempty"`
+	LastExitAt                     string                     `json:"lastExitAt,omitempty"`
+	LastRestartAt                  string                     `json:"lastRestartAt,omitempty"`
+	RestartCount                   int                        `json:"restartCount"`
+	LastExitCode                   *int                       `json:"lastExitCode,omitempty"`
+	AutoRestartPending             bool                       `json:"autoRestartPending"`
+	EffectiveUploadIntervalSeconds int                        `json:"effectiveUploadIntervalSeconds"`
+	LastIssueCategory              string                     `json:"lastIssueCategory,omitempty"`
+	LastIssueDetail                string                     `json:"lastIssueDetail,omitempty"`
+	LastIssueAt                    string                     `json:"lastIssueAt,omitempty"`
+	LastIssueCount                 int                        `json:"lastIssueCount"`
+	LastIssueRecoveredAt           string                     `json:"lastIssueRecoveredAt,omitempty"`
+	ConfigPath                     string                     `json:"configPath"`
+	ConfigFileExists               bool                       `json:"configFileExists"`
+	SyncStatePath                  string                     `json:"syncStatePath"`
+	SyncStateFileExists            bool                       `json:"syncStateFileExists"`
+	DiagnosticsPath                string                     `json:"diagnosticsPath"`
+	DiagnosticsFileExists          bool                       `json:"diagnosticsFileExists"`
+	PendingStatePath               string                     `json:"pendingStatePath"`
+	PendingStateFileExists         bool                       `json:"pendingStateFileExists"`
+	PendingSampleCount             int                        `json:"pendingSampleCount"`
+	PendingBytes                   int64                      `json:"pendingBytes"`
+	OldestPendingAt                string                     `json:"oldestPendingAt,omitempty"`
+	LastUploadError                string                     `json:"lastUploadError,omitempty"`
+	Config                         agentLocalConfig           `json:"config"`
+	SupportedProbePlans            []probePlanSupport         `json:"supportedProbePlans"`
+	DetectedTargets                []probeTargetState         `json:"detectedTargets"`
+	TemperatureSources             []temperatureSourceReading `json:"temperatureSources"`
+	TemperatureSensorBackends      []sensorBackendStatus      `json:"temperatureSensorBackends"`
+	TemperatureProbeError          string                     `json:"temperatureProbeError,omitempty"`
 }
 
 type probePlanSupport struct {
@@ -157,6 +160,43 @@ type probeDetectedTarget struct {
 	Metrics  []string `json:"metrics"`
 }
 
+// Keep this response shape aligned with the collector's temperature sensor
+// payload. The backend exposes the result of the same one-shot probe to the
+// local Agent page without turning temperature sources into fake hardware
+// instances.
+type temperatureSourceReading struct {
+	ID           string   `json:"id"`
+	Source       string   `json:"source"`
+	Backend      string   `json:"backend,omitempty"`
+	Hardware     string   `json:"hardware,omitempty"`
+	HardwareType string   `json:"hardwareType,omitempty"`
+	InstanceID   string   `json:"instanceId,omitempty"`
+	Path         string   `json:"path,omitempty"`
+	RawName      string   `json:"rawName"`
+	DisplayName  string   `json:"displayName,omitempty"`
+	Role         string   `json:"role"`
+	CurrentC     *float64 `json:"currentC,omitempty"`
+	HighC        *float64 `json:"highC,omitempty"`
+	CriticalC    *float64 `json:"criticalC,omitempty"`
+	EmergencyC   *float64 `json:"emergencyC,omitempty"`
+	Alarm        *bool    `json:"alarm,omitempty"`
+	Status       string   `json:"status"`
+	Confidence   string   `json:"confidence"`
+	Note         string   `json:"note,omitempty"`
+}
+
+type sensorBackendStatus struct {
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	OK     bool   `json:"ok"`
+	Detail string `json:"detail,omitempty"`
+}
+
+type temperatureProbeResponse struct {
+	TemperatureSources        []temperatureSourceReading `json:"temperatureSources"`
+	TemperatureSensorBackends []sensorBackendStatus      `json:"temperatureSensorBackends"`
+}
+
 type gpuAdapterDetectRow struct {
 	Name                 string `json:"Name"`
 	PNPDeviceID          string `json:"PNPDeviceID"`
@@ -175,41 +215,44 @@ type connectionCheckResult struct {
 }
 
 type server struct {
-	mu                   sync.Mutex
-	shutdownOnce         sync.Once
-	configPath           string
-	syncStatePath        string
-	diagnosticsPath      string
-	pendingStatePath     string
-	childBinaryPath      string
-	localToken           string
-	childJob             jobObject
-	config               agentLocalConfig
-	cmd                  *exec.Cmd
-	requestClient        *http.Client
-	httpServer           *http.Server
-	frontendParentPID    int
-	logBuffer            string
-	connectionState      string
-	childStartedAt       time.Time
-	backendStartedAt     time.Time
-	lastUploadAt         time.Time
-	lastCloudSyncAt      time.Time
-	lastCloudSyncErr     string
-	cloudConfigDirty     bool
-	lastDetectAt         time.Time
-	detectedTargets      []probeTargetState
-	lastExitAt           time.Time
-	lastRestartAt        time.Time
-	restartCount         int
-	lastExitCode         *int
-	lastIssueCategory    string
-	lastIssueDetail      string
-	lastIssueAt          time.Time
-	lastIssueCount       int
-	lastIssueRecoveredAt time.Time
-	stopRequested        bool
-	autoRestarting       bool
+	mu                        sync.Mutex
+	shutdownOnce              sync.Once
+	configPath                string
+	syncStatePath             string
+	diagnosticsPath           string
+	pendingStatePath          string
+	childBinaryPath           string
+	localToken                string
+	childJob                  jobObject
+	config                    agentLocalConfig
+	cmd                       *exec.Cmd
+	requestClient             *http.Client
+	httpServer                *http.Server
+	frontendParentPID         int
+	logBuffer                 string
+	connectionState           string
+	childStartedAt            time.Time
+	backendStartedAt          time.Time
+	lastUploadAt              time.Time
+	lastCloudSyncAt           time.Time
+	lastCloudSyncErr          string
+	cloudConfigDirty          bool
+	lastDetectAt              time.Time
+	detectedTargets           []probeTargetState
+	lastExitAt                time.Time
+	lastRestartAt             time.Time
+	restartCount              int
+	lastExitCode              *int
+	lastIssueCategory         string
+	lastIssueDetail           string
+	lastIssueAt               time.Time
+	lastIssueCount            int
+	lastIssueRecoveredAt      time.Time
+	temperatureSources        []temperatureSourceReading
+	temperatureSensorBackends []sensorBackendStatus
+	temperatureProbeError     string
+	stopRequested             bool
+	autoRestarting            bool
 }
 
 type cloudSyncStateFile struct {
@@ -581,6 +624,9 @@ func (s *server) snapshotLocked() backendState {
 		Config:                         s.config,
 		SupportedProbePlans:            supportedProbePlans(),
 		DetectedTargets:                append([]probeTargetState(nil), s.detectedTargets...),
+		TemperatureSources:             append([]temperatureSourceReading(nil), s.temperatureSources...),
+		TemperatureSensorBackends:      append([]sensorBackendStatus(nil), s.temperatureSensorBackends...),
+		TemperatureProbeError:          s.temperatureProbeError,
 	}
 }
 
@@ -1143,18 +1189,57 @@ func (s *server) handleProbeDetect(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	decorateDetectedMetrics(detected)
+	temperatureSources, temperatureBackends, temperatureErr := s.detectTemperatureSources()
 
 	s.mu.Lock()
 	s.detectedTargets = detected
+	s.temperatureSources = temperatureSources
+	s.temperatureSensorBackends = temperatureBackends
+	s.temperatureProbeError = ""
+	if temperatureErr != nil {
+		s.temperatureProbeError = temperatureErr.Error()
+		s.appendDiagnosticLocked("temperature source probe failed: %v", temperatureErr)
+	}
 	s.lastDetectAt = time.Now().UTC()
-	s.appendDiagnosticLocked("probe detect succeeded; targets=%d", len(detected))
+	s.appendDiagnosticLocked("probe detect succeeded; targets=%d temperatureSources=%d", len(detected), len(temperatureSources))
 	s.mu.Unlock()
 
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"ok":              true,
-		"providers":       supportedProbePlans(),
-		"detectedTargets": detected,
+		"ok":                        true,
+		"providers":                 supportedProbePlans(),
+		"detectedTargets":           detected,
+		"temperatureSources":        temperatureSources,
+		"temperatureSensorBackends": temperatureBackends,
+		"temperatureProbeError": func() string {
+			if temperatureErr == nil {
+				return ""
+			}
+			return temperatureErr.Error()
+		}(),
 	})
+}
+
+func (s *server) detectTemperatureSources() ([]temperatureSourceReading, []sensorBackendStatus, error) {
+	if strings.TrimSpace(s.childBinaryPath) == "" {
+		return []temperatureSourceReading{}, []sensorBackendStatus{}, errors.New("collector_binary_missing")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, s.childBinaryPath, "hardware-sensor-probe")
+	command.Dir = filepath.Dir(s.childBinaryPath)
+	command.Env = append(os.Environ(), fmt.Sprintf("DSC_AGENT_CONFIG_FILE=%s", s.configPath))
+	output, err := command.Output()
+	if err != nil {
+		if ctx.Err() != nil {
+			return []temperatureSourceReading{}, []sensorBackendStatus{}, fmt.Errorf("temperature_probe_timeout: %w", ctx.Err())
+		}
+		return []temperatureSourceReading{}, []sensorBackendStatus{}, fmt.Errorf("temperature_probe_failed: %w", err)
+	}
+	var response temperatureProbeResponse
+	if err := json.Unmarshal(bytes.TrimSpace(output), &response); err != nil {
+		return []temperatureSourceReading{}, []sensorBackendStatus{}, fmt.Errorf("temperature_probe_invalid_response: %w", err)
+	}
+	return response.TemperatureSources, response.TemperatureSensorBackends, nil
 }
 
 func decorateDetectedMetrics(targets []probeTargetState) {
@@ -2044,6 +2129,7 @@ func normalizeLocalConfig(cfg agentLocalConfig, raw []byte) agentLocalConfig {
 				"gpuFrequency",
 				"gpuMemory",
 				"gpuTemperature",
+				"gpuDriverInfo",
 			)
 		}
 		if isProbeSelectionEnabled(cfg.ProbeSelections, "cpu") && containsMetricPrefix(cfg.EnabledMetrics, "cpu") {

@@ -512,6 +512,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "hardware-sensor-probe":
+			if err := runHardwareSensorProbe(); err != nil {
+				log.Printf("hardware sensor probe failed: %v", err)
+				os.Exit(1)
+			}
+			return
 		case "install-hardware-helper":
 			if err := installHardwareSensorHelper(); err != nil {
 				log.Printf("install hardware sensor helper failed: %v", err)
@@ -857,6 +863,22 @@ func (s *pendingStore) writeState() {
 		return
 	}
 	_ = os.WriteFile(s.statePath, raw, 0o600)
+}
+
+func runHardwareSensorProbe() error {
+	// Use the same slow collection path as normal telemetry so the detection
+	// result includes motherboard/CPU/GPU sensors as well as disk SMART and
+	// platform-specific fallbacks. The command is intentionally one-shot: the
+	// desktop backend invokes it only after the user requests hardware detect.
+	metrics := collectSlowMetrics()
+	response := struct {
+		TemperatureSensors []temperatureSensorReading `json:"temperatureSources"`
+		SensorBackends     []sensorBackendStatus      `json:"temperatureSensorBackends"`
+	}{
+		TemperatureSensors: metrics.temperatureSensors,
+		SensorBackends:     metrics.sensorBackends,
+	}
+	return json.NewEncoder(os.Stdout).Encode(response)
 }
 
 func sampleID(payload metricsPayload) string {

@@ -475,7 +475,10 @@ function redactBackendState(state: RawAgentBackendState): DesktopAgentBackendSta
         ...group,
         instances: Array.isArray(group.instances) ? group.instances : []
       }))
-      : []
+      : [],
+    temperatureSources: Array.isArray(state.temperatureSources) ? state.temperatureSources : [],
+    temperatureSensorBackends: Array.isArray(state.temperatureSensorBackends) ? state.temperatureSensorBackends : [],
+    temperatureProbeError: scrub(state.temperatureProbeError)
   };
 }
 

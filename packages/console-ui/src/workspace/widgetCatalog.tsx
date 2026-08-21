@@ -6,6 +6,7 @@ import type {
   MetricsLatest,
   MetricsResponse,
   SamplePoint,
+  TemperatureSensorReading,
   WidgetLayoutCatalogEntry,
   WidgetInstanceConfig,
   WidgetVisualization
@@ -90,7 +91,7 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
   {
     widgetType: "gpu-device-group",
     title: "显卡设备组",
-    description: "一次添加指定显卡的负载、GPU 内存和温度图表；组内图表仍可单独移除。",
+    description: "一次添加指定显卡的核心、编码、解码、频率、内存、温度和驱动信息；组内图表仍可单独移除。",
     category: "设备组",
     kind: "group",
     defaultSize: "large",
@@ -288,6 +289,42 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
     targetKind: "gpu"
   },
   {
+    widgetType: "gpu-encode",
+    title: "GPU 编码负载",
+    description: "指定显卡的视频编码引擎负载趋势。",
+    category: "显卡",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "line",
+    visualizations: ["line", "area", "bar", "number"],
+    requires: ["gpuEncode"],
+    targetKind: "gpu"
+  },
+  {
+    widgetType: "gpu-decode",
+    title: "GPU 解码负载",
+    description: "指定显卡的视频解码引擎负载趋势。",
+    category: "显卡",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "line",
+    visualizations: ["line", "area", "bar", "number"],
+    requires: ["gpuDecode"],
+    targetKind: "gpu"
+  },
+  {
+    widgetType: "gpu-frequency",
+    title: "GPU 频率",
+    description: "指定显卡核心时钟频率的实时趋势。",
+    category: "显卡",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "line",
+    visualizations: ["line", "area", "bar", "number"],
+    requires: ["gpuFrequency"],
+    targetKind: "gpu"
+  },
+  {
     widgetType: "gpu-memory",
     title: "GPU 内存使用 (折线图)",
     description: "指定显卡的独立显存或共享显存已用容量历史趋势。",
@@ -322,6 +359,29 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
     visualizations: ["line", "area", "bar", "number"],
     requires: ["gpuTemperature"],
     targetKind: "gpu"
+  },
+  {
+    widgetType: "gpu-driver",
+    title: "GPU 驱动信息",
+    description: "显示显卡适配器和驱动版本等硬件信息。",
+    category: "显卡",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "table",
+    visualizations: ["table"],
+    requires: ["gpuDriverInfo"],
+    targetKind: "gpu"
+  },
+  {
+    widgetType: "temperature-sources",
+    title: "全部温度源",
+    description: "列出 CPU、GPU、硬盘、主板、供电和其他可用温度传感器。",
+    category: "温度",
+    kind: "content",
+    defaultSize: "large",
+    visualization: "table",
+    visualizations: ["table"],
+    requires: ["temperatureSources"]
   },
   {
     widgetType: "fan-speed",
@@ -548,6 +608,30 @@ function diskRows(disks: DiskDeviceStats[]): Array<{ label: string; value: strin
   });
 }
 
+function temperatureRows(sensors: TemperatureSensorReading[]): Array<{ label: string; value: string; detail?: string; tone?: "good" | "warn" | "muted" }> {
+  return sensors.map((sensor) => {
+    const current = sensor.currentC != null && Number.isFinite(sensor.currentC) ? `${sensor.currentC.toFixed(1)} °C` : "—";
+    const status = sensor.status === "valid" ? "正常" : sensor.status === "threshold" ? "阈值" : sensor.status === "invalid" ? "无效值" : "不可用";
+    const tone: "good" | "warn" | "muted" = sensor.status === "valid" ? "good" : sensor.status === "threshold" || sensor.status === "invalid" ? "warn" : "muted";
+    return {
+      label: sensor.displayName || sensor.rawName,
+      value: `${current} · ${status}`,
+      detail: [sensor.role, sensor.source, sensor.backend, sensor.hardware, sensor.path].filter(Boolean).join(" · "),
+      tone
+    };
+  });
+}
+
+function gpuDriverRows(gpus: MetricsLatest["gpus"], targetId?: string): Array<{ label: string; value: string; detail?: string; tone?: "good" | "warn" | "muted" }> {
+  const visible = targetId ? gpus.filter((gpu) => gpu.id === targetId) : gpus;
+  return visible.map((gpu) => ({
+    label: gpu.name,
+    value: gpu.driverVersion || "未报告",
+    detail: [gpu.memoryKind === "shared" ? "共享显存" : gpu.memoryKind === "dedicated" ? "独立显存" : "GPU 内存类型未知", gpu.integrated ? "集成显卡" : "独立显卡"].join(" · "),
+    tone: gpu.driverVersion ? "good" : "muted"
+  }));
+}
+
 function healthDonutData(disks: DiskDeviceStats[]) {
   const good = disks.filter((disk) => diskHealthTone(disk.healthStatus) === "good").length;
   const warn = disks.filter((disk) => diskHealthTone(disk.healthStatus) === "warn").length;
@@ -560,6 +644,11 @@ function WidgetContent({ definition, entry, context }: { definition: WidgetCatal
   const latest = metrics?.latest;
   const visualization = visualizationFor(entry, definition);
   if (definition.widgetType === "hardware-system") return <DataTable rows={hardwareRows(device, latest)} />;
+  if (definition.widgetType === "temperature-sources") return <DataTable rows={temperatureRows(latest?.temperatureSensors ?? [])} />;
+  if (definition.widgetType === "gpu-driver") {
+    const targetId = getTargetId(entry);
+    return <DataTable rows={gpuDriverRows(latest?.gpus ?? [], targetId)} />;
+  }
   if (definition.widgetType === "disk-health") {
     const targetId = getTargetId(entry);
     const allDisks = latest?.disks ?? [];
@@ -624,7 +713,7 @@ function targetOptions(definition: WidgetCatalogDefinition, metrics: MetricsResp
 const DEVICE_GROUP_CHILD_TYPES: Record<WidgetTargetKind, string[]> = {
   cpu: ["cpu-usage", "cpu-frequency", "cpu-temperature"],
   disk: ["disk-capacity", "disk-io", "disk-health"],
-  gpu: ["gpu-load", "gpu-memory", "gpu-temperature"],
+  gpu: ["gpu-load", "gpu-encode", "gpu-decode", "gpu-frequency", "gpu-memory", "gpu-temperature", "gpu-driver"],
   network: ["network-throughput"],
   fan: ["fan-speed"]
 };

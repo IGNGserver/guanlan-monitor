@@ -46,4 +46,7 @@ export interface RawAgentBackendState {
   config: AgentBackendConfig;
   supportedProbePlans: DesktopAgentBackendState["supportedProbePlans"];
   detectedTargets: DesktopAgentBackendState["detectedTargets"];
+  temperatureSources: DesktopAgentBackendState["temperatureSources"];
+  temperatureSensorBackends: DesktopAgentBackendState["temperatureSensorBackends"];
+  temperatureProbeError?: string;
 }

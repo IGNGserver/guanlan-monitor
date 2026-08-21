@@ -851,6 +851,60 @@ function MiniTrend({
   return <WorkspaceTrend points={points} label={label} valueFormatter={valueFormatter} fixedMaxValue={fixedMaxValue} compact={compact} />;
 }
 
+function TelemetryInfoCard({
+  title,
+  subtitle,
+  rows,
+  widgetId,
+  widgetTemplateId,
+  widgetGroupId,
+  widgetType,
+  widgetCategory,
+  widgetConfig,
+  widgetDefaultSize = "medium"
+}: {
+  title: string;
+  subtitle?: string;
+  rows: Array<{ label: string; value: string }>;
+  widgetId?: string;
+  widgetTemplateId?: string;
+  widgetGroupId?: string;
+  widgetType?: string;
+  widgetCategory?: string;
+  widgetConfig?: WidgetInstanceConfig;
+  widgetDefaultSize?: WidgetSize;
+}) {
+  const card = (
+    <Surface className="telemetry-chart-card">
+      <div className="telemetry-chart-header">
+        <div className="telemetry-chart-title">
+          <h3>{title}</h3>
+          {subtitle && <span>{subtitle}</span>}
+        </div>
+      </div>
+      <div className="workspace-detail-list telemetry-info-card__rows">
+        {rows.map((row) => <SummaryRow key={row.label} label={row.label} value={row.value} />)}
+      </div>
+    </Surface>
+  );
+  return widgetId ? (
+    <DesktopWidget
+      id={widgetId}
+      templateId={widgetTemplateId}
+      groupId={widgetGroupId}
+      title={title}
+      kind="content"
+      defaultSize={widgetDefaultSize}
+      widgetType={widgetType}
+      category={widgetCategory}
+      visualization="table"
+      config={{ ...widgetConfig, visualization: "table" }}
+    >
+      {card}
+    </DesktopWidget>
+  ) : card;
+}
+
 function WorkspaceTrend({
   points,
   label = "指标",
@@ -2366,6 +2420,60 @@ function TemperatureSourcesPanel({
   );
 }
 
+function AgentTemperatureSourcesPanel({
+  sensors,
+  backends,
+  probeError
+}: {
+  sensors: TemperatureSensorReading[];
+  backends: Array<{ id: string; label: string; ok: boolean; detail?: string }>;
+  probeError?: string;
+}) {
+  return (
+    <Surface className="workspace-agent-temperature-sources">
+      <div className="workspace-surface__header">
+        <div>
+          <span className="workspace-section-kicker">温度探测</span>
+          <h3>已发现温度源</h3>
+        </div>
+        <span className="workspace-caption">{sensors.length} 个源</span>
+      </div>
+      <p className="workspace-surface__description">这里展示本机探测到的全部温度源，不按 CPU/GPU 平均合并。有效值、阈值、无效值和核显共享 CPU Package 的来源都会保留。</p>
+      <div className="workspace-agent-temperature-sources__body">
+        {sensors.length ? (
+          <div className="workspace-temperature-source-list">
+            {sensors.map((sensor) => (
+              <div className="workspace-temperature-source-row" key={sensor.id}>
+                <span className="workspace-temperature-source-row__identity">
+                  <strong>{sensor.displayName || sensor.rawName}</strong>
+                  <small>{temperatureRoleLabels[sensor.role] ?? sensor.role} · {temperatureSourceLabel(sensor.source)}{sensor.backend ? ` · ${sensor.backend}` : ""}</small>
+                  {sensor.path && <small>{sensor.path}</small>}
+                </span>
+                <span className="workspace-temperature-source-row__value">
+                  <strong>{temperatureValueLabel(sensor)}</strong>
+                  <small className={`workspace-temperature-status workspace-temperature-status--${sensor.status}`}>{temperatureStatusLabel(sensor.status)}</small>
+                  {temperatureLimitsLabel(sensor) && <small>{temperatureLimitsLabel(sensor)}</small>}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : <div className="workspace-muted-block">{probeError ? `温度探测失败：${probeError}` : "尚未返回温度源，请点击上方“重新检测硬件”。"}</div>}
+        {backends.length ? (
+          <div className="workspace-agent-temperature-backends">
+            <strong>探测后端</strong>
+            {backends.map((backend) => (
+              <div className="workspace-agent-temperature-backend" key={backend.id}>
+                <span className={backend.ok ? "is-enabled" : "is-disabled"}>{backend.ok ? "可用" : "不可用"}</span>
+                <div><strong>{backend.label}</strong>{backend.detail && <small>{backend.detail}</small>}</div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </Surface>
+  );
+}
+
 function DevicePage() {
   const { selectedDevice, snapshot, navigate, openSettings, metricsWindow, setMetricsWindow, trafficMode, setTrafficMode, getWidgetLayout, saveWidgetLayout, orientation } = useWorkspace();
   const canEditRemote = snapshot?.source === "live" && Boolean(snapshot.session.authenticated);
@@ -2740,16 +2848,24 @@ function DevicePage() {
                 title={gpuLabel}
                 subtitle={gpuLatest ? `${memorySummary} · ${temperatureSubtitle}` : temperatureSubtitle}
               >
-                <TelemetryChartCard widgetId={`gpu-${gpu.id}-load`} widgetTemplateId={`gpu-${gpuIndex}-load`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-load" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "line" }} title={`${gpuLabel} · 核心负载`} subtitle="核心、编码与解码" series={[{ label: "核心", points: gpu.usagePercent }, { label: "编码", points: gpu.encodePercent }, { label: "解码", points: gpu.decodePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+                <TelemetryChartCard widgetId={`gpu-${gpu.id}-load`} widgetTemplateId={`gpu-${gpuIndex}-load`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-load" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "line" }} title={`${gpuLabel} · 核心负载`} subtitle="GPU 核心引擎" series={[{ label: "核心", points: gpu.usagePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+                <TelemetryChartCard widgetId={`gpu-${gpu.id}-encode`} widgetTemplateId={`gpu-${gpuIndex}-encode`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-encode" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "line" }} title={`${gpuLabel} · 编码负载`} subtitle="视频编码引擎" series={[{ label: "编码", points: gpu.encodePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+                <TelemetryChartCard widgetId={`gpu-${gpu.id}-decode`} widgetTemplateId={`gpu-${gpuIndex}-decode`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-decode" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "line" }} title={`${gpuLabel} · 解码负载`} subtitle="视频解码引擎" series={[{ label: "解码", points: gpu.decodePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+                <TelemetryChartCard widgetId={`gpu-${gpu.id}-frequency`} widgetTemplateId={`gpu-${gpuIndex}-frequency`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-frequency" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "line" }} title={`${gpuLabel} · 核心频率`} subtitle="GPU 核心时钟" series={[{ label: "频率", points: gpu.frequencyMHz }]} valueFormatter={(v) => `${Math.round(v)} MHz`} />
                 <TelemetryChartCard widgetId={`gpu-${gpu.id}-memory`} widgetTemplateId={`gpu-${gpuIndex}-memory`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-memory" widgetCategory="显卡" widgetVisualization="area" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "area" }} title={`${gpuLabel} · ${memoryLabel}已用容量`} subtitle={memorySummary} series={[{ label: `${memoryLabel}已用`, points: gpu.memoryUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
                 <TelemetryChartCard widgetId={`gpu-${gpu.id}-temperature`} widgetTemplateId={`gpu-${gpuIndex}-temperature`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-temperature" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "line" }} title={`${gpuLabel} · 温度`} subtitle={temperatureSubtitle} emptyMessage={gpu.integrated ? "未采集 CPU 封装温度" : "未检测到 GPU 温度传感器"} series={[{ label: "温度", points: gpuTemperaturePoints, valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
+                <TelemetryInfoCard widgetId={`gpu-${gpu.id}-driver`} widgetTemplateId={`gpu-${gpuIndex}-driver`} widgetGroupId={`gpu-device-${gpu.id}`} widgetType="gpu-driver" widgetCategory="显卡" widgetConfig={{ systemRendered: true, targetId: gpu.id, visualization: "table" }} title={`${gpuLabel} · 驱动信息`} subtitle="适配器与驱动版本" rows={[{ label: "适配器", value: gpuLabel }, { label: "驱动版本", value: gpuLatest?.driverVersion || "未报告" }, { label: "显存类型", value: memoryLabel }]} />
               </TelemetryDeviceBlock>
             );
           }) : hasInstanceConfiguration("gpu") ? <div className="workspace-telemetry-empty">当前已关闭所有显卡实例</div> : (
             <TelemetryDeviceBlock widgetId="gpu-summary" kind="gpu" eyebrow="显卡汇总" title="GPU 总览" subtitle={`${gpuMemorySummary} · 设备汇总`}>
-              <TelemetryChartCard widgetId="gpu-summary-load" widgetGroupId="gpu-summary" widgetType="gpu-load" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, visualization: "line" }} title="核心负载" series={[{ label: "GPU 核心", points: series.gpuUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+              <TelemetryChartCard widgetId="gpu-summary-load" widgetGroupId="gpu-summary" widgetType="gpu-load" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, visualization: "line" }} title="核心负载" subtitle="GPU 核心引擎" series={[{ label: "GPU 核心", points: series.gpuUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+              <TelemetryChartCard widgetId="gpu-summary-encode" widgetGroupId="gpu-summary" widgetType="gpu-encode" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, visualization: "line" }} title="编码负载" subtitle="视频编码引擎" series={[{ label: "GPU 编码", points: series.gpuEncodePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+              <TelemetryChartCard widgetId="gpu-summary-decode" widgetGroupId="gpu-summary" widgetType="gpu-decode" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, visualization: "line" }} title="解码负载" subtitle="视频解码引擎" series={[{ label: "GPU 解码", points: series.gpuDecodePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+              <TelemetryChartCard widgetId="gpu-summary-frequency" widgetGroupId="gpu-summary" widgetType="gpu-frequency" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, visualization: "line" }} title="核心频率" subtitle="GPU 核心时钟" series={[{ label: "GPU 频率", points: series.gpuFrequencyMHz ?? [] }]} valueFormatter={(v) => `${Math.round(v)} MHz`} />
               <TelemetryChartCard widgetId="gpu-summary-memory" widgetGroupId="gpu-summary" widgetType="gpu-memory" widgetCategory="显卡" widgetVisualization="area" widgetConfig={{ systemRendered: true, visualization: "area" }} title="GPU 内存已用容量" subtitle={gpuMemorySummary} series={[{ label: "GPU 内存已用", points: series.gpuMemoryUsedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
               <TelemetryChartCard widgetId="gpu-summary-temperature" widgetGroupId="gpu-summary" widgetType="gpu-temperature" widgetCategory="显卡" widgetVisualization="line" widgetConfig={{ systemRendered: true, visualization: "line" }} title="温度" subtitle="GPU 设备汇总" emptyMessage="等待 GPU 温度传感器" series={[{ label: "温度", points: series.gpuTemperatureC ?? [], valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
+              <TelemetryInfoCard widgetId="gpu-summary-driver" widgetGroupId="gpu-summary" widgetType="gpu-driver" widgetCategory="显卡" widgetConfig={{ systemRendered: true, visualization: "table" }} title="驱动信息" subtitle="全部 GPU 适配器" rows={(filteredLatest?.gpus ?? []).map((item) => ({ label: item.name, value: item.driverVersion || "未报告" }))} />
             </TelemetryDeviceBlock>
           )}
           <TemperatureSourcesPanel sensors={filteredLatest?.temperatureSensors ?? []} series={series.temperatureSensors ?? []} />
@@ -2912,6 +3028,8 @@ function AgentSettings() {
   const [normalSamplingSeconds, setNormalSamplingSeconds] = useState(String(config?.sampling.normalIntervalSeconds ?? 30));
   const [slowSamplingSeconds, setSlowSamplingSeconds] = useState(String(config?.sampling.slowIntervalSeconds ?? 30));
   const fanSeries = snapshot?.metrics?.series?.fans ?? [];
+  const temperatureSources = Array.isArray(backend?.temperatureSources) ? backend.temperatureSources : [];
+  const temperatureSensorBackends = Array.isArray(backend?.temperatureSensorBackends) ? backend.temperatureSensorBackends : [];
   const metricDraftKey = enabledMetrics.join("|");
   const probeDraftKey = configuredProbes.map((selection) => `${selection.target}:${selection.provider}:${selection.enabled}`).join("|");
   const deviceDraftKey = JSON.stringify(config?.enabledDeviceIds ?? {});
@@ -3031,6 +3149,7 @@ function AgentSettings() {
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">检测结果</span><h3>已发现硬件</h3><p className="workspace-surface__description">关闭某个实例后立即停止上报并写入本机配置；指标和探针来源仍需点击“保存采集配置”。</p></div><span className="workspace-caption">{detectedGroups.reduce((count, group) => count + group.instances.length, 0)} 个实例</span></div>
         {detectedGroups.length ? <div className="workspace-detected-list">{detectedGroups.map((group) => <div className="workspace-detected-group" key={group.target}><strong>{group.label}</strong>{group.instances.map((instance) => { const enabled = isInstanceEnabled(group.target, instance.id, instance.enabled); return <div className="workspace-detected-row" key={instance.id}><div className="workspace-detected-row__identity"><strong>{instance.name}</strong>{instance.subtitle && <small>{instance.subtitle}</small>}<InstanceMetricOverride target={group.target} instanceId={instance.id} globalMetrics={selectedMetrics} override={instanceMetricConfig[instance.id]} onChange={(value) => updateInstanceMetricConfig(instance.id, value)} disabled={mutationPending} /></div><div className="workspace-detected-row__control"><small className={enabled ? "is-enabled" : "is-disabled"}>{enabled ? "上报中" : "不上传"}</small><Toggle checked={enabled} onChange={(checked) => toggleDetectedInstance(group.target, instance.id, checked)} label={`${instance.name} 上报`} disabled={mutationPending} /></div></div>; })}</div>)}</div> : <div className="workspace-muted-block">尚未检测到硬件探针，请点击“重新检测硬件”。</div>}
       </Surface>
+      <AgentTemperatureSourcesPanel sensors={temperatureSources} backends={temperatureSensorBackends} probeError={backend.temperatureProbeError} />
     </div>
   );
 }
