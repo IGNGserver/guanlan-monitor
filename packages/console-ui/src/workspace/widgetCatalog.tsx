@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  DeviceBlockKey,
   DeviceMetricKey,
   DeviceSummary,
   DiskDeviceStats,
   MetricsLatest,
   MetricsResponse,
   SamplePoint,
+  TemperatureMetricSeries,
   TemperatureSensorReading,
   WidgetLayoutCatalogEntry,
   WidgetInstanceConfig,
@@ -45,7 +47,7 @@ type WidgetCatalogDefinition = {
   deviceGroup?: boolean;
 };
 
-type WidgetTargetKind = "cpu" | "disk" | "gpu" | "fan" | "network";
+type WidgetTargetKind = "cpu" | "disk" | "gpu" | "fan" | "network" | "temperature";
 
 type WidgetCatalogContext = {
   device: DeviceSummary;
@@ -373,14 +375,28 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
     targetKind: "gpu"
   },
   {
-    widgetType: "temperature-sources",
-    title: "全部温度源",
-    description: "列出 CPU、GPU、硬盘、主板、供电和其他可用温度传感器；尚未采集时也可以先添加。",
+    widgetType: "temperature-source-line",
+    title: "温度源 (折线图)",
+    description: "选择一个具体温度传感器，查看它的当前值和历史变化趋势。",
     category: "温度",
     kind: "content",
-    defaultSize: "large",
-    visualization: "table",
-    visualizations: ["table"]
+    defaultSize: "medium",
+    visualization: "line",
+    visualizations: ["line"],
+    requires: ["temperatureSources"],
+    targetKind: "temperature"
+  },
+  {
+    widgetType: "temperature-source-pie",
+    title: "温度源 (饼图)",
+    description: "选择一个具体温度传感器，按当前温度与高温/临界阈值展示环形饼图；没有阈值时以 100 °C 为参考。",
+    category: "温度",
+    kind: "content",
+    defaultSize: "medium",
+    visualization: "donut",
+    visualizations: ["donut"],
+    requires: ["temperatureSources"],
+    targetKind: "temperature"
   },
   {
     widgetType: "fan-speed",
@@ -408,6 +424,20 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
 ];
 
 const widgetDefinitionByType = new Map(WIDGET_CATALOG.map((definition) => [definition.widgetType, definition]));
+
+// Keep widgets created by versions that exposed the aggregate table renderable,
+// but do not offer that empty-prone aggregate as a new catalog item anymore.
+const legacyTemperatureSourcesDefinition: WidgetCatalogDefinition = {
+  widgetType: "temperature-sources",
+  title: "全部温度源",
+  description: "兼容旧版本的温度源总表；新组件应选择一个具体温度源。",
+  category: "温度",
+  kind: "content",
+  defaultSize: "large",
+  visualization: "table",
+  visualizations: ["table"]
+};
+widgetDefinitionByType.set(legacyTemperatureSourcesDefinition.widgetType, legacyTemperatureSourcesDefinition);
 
 function formatBytes(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
@@ -456,9 +486,6 @@ function sumSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
 
 
 function metricAvailable(definition: WidgetCatalogDefinition, metrics: MetricsResponse | null): boolean {
-  // The temperature table can be added before the first temperature sample;
-  // it renders an empty state until the Agent reports a source.
-  if (definition.widgetType === "temperature-sources") return true;
   if (!definition.requires?.length || !metrics) return true;
   return definition.requires.some((key) => metrics.enabledMetrics.includes(key) || metrics.availableMetrics.some((option) => option.key === key && option.available));
 }
@@ -544,7 +571,7 @@ function TrendChart({ lines, visualization, valueFormatter }: { lines: WidgetLin
   );
 }
 
-function DonutChart({ data, centerLabel }: { data: Array<{ name: string; value: number; color: string }>; centerLabel?: string }) {
+function DonutChart({ data, centerLabel, valueFormatter = (value) => formatNumber(value) }: { data: Array<{ name: string; value: number; color: string }>; centerLabel?: string; valueFormatter?: (value: number) => string }) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
   if (!total) return <div className="workspace-dynamic-empty__inline">暂无可用于构成图的数据</div>;
   return (
@@ -555,12 +582,12 @@ function DonutChart({ data, centerLabel }: { data: Array<{ name: string; value: 
             <Pie data={data} dataKey="value" nameKey="name" innerRadius="62%" outerRadius="88%" paddingAngle={3} stroke="none">
               {data.map((item) => <Cell key={item.name} fill={item.color} />)}
             </Pie>
-            <Tooltip formatter={(value, name) => [`${formatNumber(Number(value))}`, String(name)]} />
+            <Tooltip formatter={(value, name) => [valueFormatter(Number(value)), String(name)]} />
           </PieChart>
         </ResponsiveContainer>
         <span>{centerLabel ?? `${Math.round(total)}`}</span>
       </div>
-      <div className="workspace-dynamic-legend">{data.map((item) => <span key={item.name}><i style={{ background: item.color }} />{item.name} {Math.round(item.value)}</span>)}</div>
+      <div className="workspace-dynamic-legend">{data.map((item) => <span key={item.name}><i style={{ background: item.color }} />{item.name} {valueFormatter(item.value)}</span>)}</div>
     </div>
   );
 }
@@ -624,6 +651,20 @@ function temperatureRows(sensors: TemperatureSensorReading[]): Array<{ label: st
   });
 }
 
+function temperatureRowsFromSeries(sensors: TemperatureMetricSeries[]): Array<{ label: string; value: string; detail?: string; tone?: "good" | "warn" | "muted" }> {
+  return sensors.map((sensor) => {
+    const current = latestValue(sensor.currentC);
+    const status = sensor.status === "valid" ? "正常" : sensor.status === "threshold" ? "阈值" : sensor.status === "invalid" ? "无效值" : "不可用";
+    const tone: "good" | "warn" | "muted" = sensor.status === "valid" ? "good" : sensor.status === "threshold" || sensor.status === "invalid" ? "warn" : "muted";
+    return {
+      label: sensor.name || sensor.rawName,
+      value: `${current == null ? "—" : `${current.toFixed(1)} °C`} · ${status}`,
+      detail: [sensor.role, sensor.source, sensor.backend, sensor.hardware].filter(Boolean).join(" · "),
+      tone
+    };
+  });
+}
+
 function gpuDriverRows(gpus: MetricsLatest["gpus"], targetId?: string): Array<{ label: string; value: string; detail?: string; tone?: "good" | "warn" | "muted" }> {
   const visible = targetId ? gpus.filter((gpu) => gpu.id === targetId) : gpus;
   return visible.map((gpu) => ({
@@ -646,7 +687,10 @@ function WidgetContent({ definition, entry, context }: { definition: WidgetCatal
   const latest = metrics?.latest;
   const visualization = visualizationFor(entry, definition);
   if (definition.widgetType === "hardware-system") return <DataTable rows={hardwareRows(device, latest)} />;
-  if (definition.widgetType === "temperature-sources") return <DataTable rows={temperatureRows(latest?.temperatureSensors ?? [])} />;
+  if (definition.widgetType === "temperature-sources") {
+    const latestSensors = latest?.temperatureSensors ?? [];
+    return <DataTable rows={latestSensors.length ? temperatureRows(latestSensors) : temperatureRowsFromSeries(metrics?.series.temperatureSensors ?? [])} />;
+  }
   if (definition.widgetType === "gpu-driver") {
     const targetId = getTargetId(entry);
     return <DataTable rows={gpuDriverRows(latest?.gpus ?? [], targetId)} />;
@@ -694,21 +738,60 @@ function WidgetContent({ definition, entry, context }: { definition: WidgetCatal
     const memoryLabel = gpuMemoryLabel(gpu?.memoryKind);
     return <DonutChart data={[{ name: `${memoryLabel}已用`, value: Math.max(0, used), color: "#a78bfa" }, { name: `${memoryLabel}剩余`, value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />;
   }
+  if (definition.widgetType === "temperature-source-pie" && visualization === "donut") {
+    const targetId = getTargetId(entry);
+    const latestSensor = targetId ? latest?.temperatureSensors?.find((sensor) => sensor.id === targetId) : undefined;
+    const seriesSensor = targetId ? metrics?.series.temperatureSensors?.find((sensor) => sensor.id === targetId) : undefined;
+    const current = latestSensor?.currentC ?? latestValue(seriesSensor?.currentC);
+    if (current == null || !Number.isFinite(current)) return <div className="workspace-dynamic-empty__inline">当前时间范围没有可用的温度数据</div>;
+    const configuredLimit = latestSensor?.criticalC ?? seriesSensor?.criticalC ?? latestSensor?.highC ?? seriesSensor?.highC;
+    const limit = Math.max(0, current, configuredLimit ?? 100);
+    const displayCurrent = Math.max(0, current);
+    const limitLabel = configuredLimit != null ? "温度上限余量" : "参考温度余量";
+    return <DonutChart data={[{ name: "当前温度", value: displayCurrent, color: "#f59e0b" }, { name: limitLabel, value: Math.max(0, limit - displayCurrent), color: "#cbd5e1" }]} centerLabel={`${current.toFixed(1)} °C`} valueFormatter={(value) => `${value.toFixed(1)} °C`} />;
+  }
   const { lines, valueFormatter } = getWidgetLines(definition.widgetType, metrics, getTargetId(entry));
   return <TrendChart lines={lines} visualization={visualization} valueFormatter={valueFormatter} />;
 }
 
 function targetOptions(definition: WidgetCatalogDefinition, metrics: MetricsResponse | null): Array<{ id: string; name: string; detail?: string }> {
   if (!metrics || !definition.targetKind) return [];
-  const filterEnabled = <T extends { id: string }>(items: T[]) => {
-    const enabledIds = metrics.enabledDeviceIds?.[definition.targetKind!];
+  const filterEnabled = <T extends { id: string }>(items: T[], blockKey?: DeviceBlockKey) => {
+    const enabledIds = blockKey ? metrics.enabledDeviceIds?.[blockKey] : undefined;
     return Array.isArray(enabledIds) ? items.filter((item) => enabledIds.includes(item.id)) : items;
   };
-  if (definition.targetKind === "cpu") return filterEnabled(metrics.series.cpus ?? []).map((item) => ({ id: item.id, name: item.name, detail: item.model }));
-  if (definition.targetKind === "disk") return filterEnabled(metrics.series.disks ?? []).map((item) => ({ id: item.id, name: item.model || item.name, detail: item.mountPoint }));
-  if (definition.targetKind === "gpu") return filterEnabled(metrics.series.gpus ?? []).map((item) => ({ id: item.id, name: item.name }));
-  if (definition.targetKind === "fan") return filterEnabled(metrics.series.fans ?? []).map((item) => ({ id: item.id, name: item.name, detail: item.interface }));
-  if (definition.targetKind === "network") return filterEnabled(metrics.series.networks ?? []).map((item) => ({ id: item.id, name: item.model || item.name, detail: item.macAddress }));
+  if (definition.targetKind === "cpu") return filterEnabled(metrics.series.cpus ?? [], "cpu").map((item) => ({ id: item.id, name: item.name, detail: item.model }));
+  if (definition.targetKind === "disk") return filterEnabled(metrics.series.disks ?? [], "disk").map((item) => ({ id: item.id, name: item.model || item.name, detail: item.mountPoint }));
+  if (definition.targetKind === "gpu") return filterEnabled(metrics.series.gpus ?? [], "gpu").map((item) => ({ id: item.id, name: item.name }));
+  if (definition.targetKind === "fan") return filterEnabled(metrics.series.fans ?? [], "fan").map((item) => ({ id: item.id, name: item.name, detail: item.interface }));
+  if (definition.targetKind === "network") return filterEnabled(metrics.series.networks ?? [], "network").map((item) => ({ id: item.id, name: item.model || item.name, detail: item.macAddress }));
+  if (definition.targetKind === "temperature") {
+    const latestById = new Map((metrics.latest?.temperatureSensors ?? []).map((sensor) => [sensor.id, sensor]));
+    const seen = new Set<string>();
+    const targets: Array<{ id: string; name: string; detail?: string }> = [];
+    for (const sensor of metrics.series.temperatureSensors ?? []) {
+      const latestSensor = latestById.get(sensor.id);
+      const hasHistory = sensor.currentC.some((point) => Number.isFinite(point.value));
+      const hasCurrent = latestSensor?.currentC != null && Number.isFinite(latestSensor.currentC);
+      if (!hasHistory && !hasCurrent) continue;
+      seen.add(sensor.id);
+      targets.push({
+        id: sensor.id,
+        name: latestSensor?.displayName || sensor.name || latestSensor?.rawName || sensor.rawName,
+        detail: [sensor.role, sensor.source, sensor.backend, sensor.hardware].filter(Boolean).join(" · ")
+      });
+    }
+    for (const sensor of metrics.latest?.temperatureSensors ?? []) {
+      if (seen.has(sensor.id) || sensor.currentC == null || !Number.isFinite(sensor.currentC)) continue;
+      seen.add(sensor.id);
+      targets.push({
+        id: sensor.id,
+        name: sensor.displayName || sensor.rawName,
+        detail: [sensor.role, sensor.source, sensor.backend, sensor.hardware, sensor.path].filter(Boolean).join(" · ")
+      });
+    }
+    return targets;
+  }
   return [];
 }
 
@@ -717,7 +800,8 @@ const DEVICE_GROUP_CHILD_TYPES: Record<WidgetTargetKind, string[]> = {
   disk: ["disk-capacity", "disk-io", "disk-health"],
   gpu: ["gpu-load", "gpu-encode", "gpu-decode", "gpu-frequency", "gpu-memory", "gpu-temperature", "gpu-driver"],
   network: ["network-throughput"],
-  fan: ["fan-speed"]
+  fan: ["fan-speed"],
+  temperature: []
 };
 
 function groupChildrenForTarget(targetKind: WidgetTargetKind, target: { id: string; name: string }): WidgetGroupChildDefinition[] {
@@ -748,7 +832,8 @@ const deviceGroupEyebrows: Record<WidgetTargetKind, string> = {
   disk: "硬盘实例",
   gpu: "显卡实例",
   fan: "风扇实例",
-  network: "网卡实例"
+  network: "网卡实例",
+  temperature: "温度源"
 };
 
 function DynamicWidgetGroupCard({ entry, children, context }: { entry: WidgetLayoutCatalogEntry & { id: string }; children: Array<WidgetLayoutCatalogEntry & { id: string }>; context: WidgetCatalogContext }) {
@@ -999,7 +1084,8 @@ export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogCo
     addWidget(definition, undefined, customVis);
   };
   const targetChoices = targetDefinition ? targetOptions(targetDefinition, metrics) : [];
-  const targetLabels: Record<WidgetTargetKind, string> = { cpu: "处理器", disk: "硬盘", gpu: "显卡", fan: "风扇", network: "网卡" };
+  const targetLabels: Record<WidgetTargetKind, string> = { cpu: "处理器", disk: "硬盘", gpu: "显卡", fan: "风扇", network: "网卡", temperature: "温度源" };
+  const targetSelectionLabel = targetDefinition?.targetKind === "temperature" ? "温度源" : targetDefinition ? `${targetLabels[targetDefinition.targetKind ?? "cpu"]}实例` : "";
   return (
     <div className="workspace-widget-drawer-backdrop" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) closeDrawer(); }}>
       <aside ref={drawerRef} className="workspace-widget-drawer" role="dialog" aria-modal="true" aria-label="小组件抽屉" tabIndex={-1} style={{ "--workspace-drawer-drag-offset": `${dragOffset}px` } as React.CSSProperties}>
@@ -1007,7 +1093,7 @@ export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogCo
           <span className="workspace-widget-drawer__handle" aria-hidden="true" onPointerDown={handleDrawerHandlePointerDown} onPointerMove={handleDrawerHandlePointerMove} onPointerUp={finishDrawerHandlePointer} onPointerCancel={finishDrawerHandlePointer} onLostPointerCapture={finishDrawerHandlePointer} />
           <div>
             <span className="workspace-section-kicker">{targetDefinition ? "选择目标设备" : "组件目录"}</span>
-            <h2>{targetDefinition ? `选择${targetLabels[targetDefinition.targetKind ?? "cpu"]}实例` : "添加小组件"}</h2>
+            <h2>{targetDefinition ? `选择${targetSelectionLabel}` : "添加小组件"}</h2>
             <p>{targetDefinition ? `“${targetDefinition.title}”会绑定到一个具体实例。` : "可以在面板中自由添加和排布小组件。"}</p>
           </div>
           <button type="button" onClick={closeDrawer} aria-label="关闭小组件抽屉">×</button>
@@ -1022,7 +1108,7 @@ export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogCo
                     <button type="button" onClick={() => addWidget(targetDefinition, target)}>添加</button>
                   </div>
                 </div>
-              )) : <div className="workspace-widget-drawer__empty">当前时间范围没有可用的{targetLabels[targetDefinition.targetKind ?? "cpu"]}实例。</div>}
+              )) : <div className="workspace-widget-drawer__empty">当前时间范围没有可用的{targetSelectionLabel}。</div>}
             </section>
           ) : Object.entries(grouped).map(([category, definitions]) => <section className="workspace-widget-drawer__group" key={category}><h3>{category}</h3>{definitions.map((definition) => {
             const targets = targetOptions(definition, metrics);
@@ -1037,7 +1123,7 @@ export function WidgetDrawer({ open, onClose, device, metrics }: WidgetCatalogCo
                   <small>{count ? `已添加 ${count} 个 · ${availability}` : availability}</small>
                 </div>
                 <div className="workspace-widget-drawer__actions">
-                  <button type="button" disabled={!available} onClick={() => chooseDefinition(definition)}>{definition.targetKind ? "选择" : "添加"}</button>
+                  <button type="button" disabled={!available} onClick={() => chooseDefinition(definition)}>{definition.targetKind === "temperature" ? "添加" : definition.targetKind ? "选择" : "添加"}</button>
                 </div>
               </div>
             );

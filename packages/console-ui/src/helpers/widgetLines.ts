@@ -49,6 +49,17 @@ export function getWidgetLines(widgetType: string, metrics: MetricsResponse | nu
     const cpu = targetId ? series.cpus?.find((item) => item.id === targetId) : undefined;
     return { lines: [{ label: "温度", points: cpu?.temperatureC ?? series.cpuTemperatureC, formatter: (value: number) => `${Math.round(value)} °C` }], valueFormatter: (value) => `${Math.round(value)} °C` };
   }
+  if (widgetType === "temperature-source-line") {
+    const sensor = targetId ? series.temperatureSensors?.find((item) => item.id === targetId) : undefined;
+    const latestSensor = targetId ? metrics?.latest.temperatureSensors?.find((item) => item.id === targetId) : undefined;
+    const points = sensor?.currentC.length
+      ? sensor.currentC
+      : latestSensor?.currentC != null && Number.isFinite(latestSensor.currentC)
+        ? [{ timestamp: metrics?.lastSeenAt ?? metrics?.device.lastSeenAt ?? new Date().toISOString(), value: latestSensor.currentC }]
+        : [];
+    const label = sensor?.name ?? latestSensor?.displayName ?? latestSensor?.rawName ?? "温度";
+    return { lines: points.length ? [{ label, points, formatter: (value: number) => `${value.toFixed(1)} °C` }] : [], valueFormatter: (value) => `${value.toFixed(1)} °C` };
+  }
   if (widgetType === "memory-usage" || widgetType === "memory-usage-pie") return { lines: [{ label: "物理内存", points: series.memoryUsedBytes, formatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes, formatter: formatBytes }], valueFormatter: formatBytes };
   if (widgetType === "disk-capacity" || widgetType === "disk-capacity-pie") {
     const points = targetId ? series.disks?.find((item) => item.id === targetId)?.usedBytes ?? [] : series.diskUsedBytes;
