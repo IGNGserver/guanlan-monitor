@@ -44,10 +44,11 @@ async function run() {
     assert.ok(fs.existsSync(executablePath), `Electron executable is missing: ${executablePath}`);
     electronApp = await electron.launch({
       executablePath,
-      args: [desktopRoot],
+      args: ["--no-sandbox", desktopRoot],
       env: {
         ...process.env,
         ELECTRON_ENABLE_LOGGING: "1",
+        ELECTRON_DISABLE_SANDBOX: "1",
         NODE_ENV: "test"
       }
     });

@@ -326,6 +326,8 @@ jobs:
     name: Electron visual regression smoke
     runs-on: ubuntu-24.04
     needs: verify
+    env:
+      ELECTRON_DISABLE_SANDBOX: "1"
 
     steps:
       - name: Checkout
@@ -348,7 +350,7 @@ jobs:
       - name: Prepare Electron runtime
         run: |
           pnpm rebuild electron
-          pnpm --filter @dsc/desktop exec electron --version
+          pnpm --filter @dsc/desktop exec electron --no-sandbox --version
 
       - name: Build shared package and Electron renderer
         run: |
