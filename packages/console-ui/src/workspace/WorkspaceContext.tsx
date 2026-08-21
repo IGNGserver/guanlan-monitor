@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import type {
   DesktopAgentControlAction,
   DesktopConfigPatch,
-  DesktopSnapshot,
+  ConsoleSnapshot,
   DesktopStartupSettings,
   DeviceSummary,
   InstanceType,
@@ -49,7 +49,7 @@ interface WorkspaceContextValue {
   canGoBack: boolean;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean) => void;
-  snapshot: DesktopSnapshot | null;
+  snapshot: ConsoleSnapshot | null;
   loading: boolean;
   refreshing: boolean;
   mutationPending: boolean;
@@ -188,7 +188,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     const stored = localStorage.getItem("dsc-sidebar-collapsed");
     return stored === "true";
   });
-  const [snapshot, setSnapshot] = useState<DesktopSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<ConsoleSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [mutationPending, setMutationPending] = useState(false);
@@ -447,7 +447,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   }, []);
 
   const runMutation = useCallback(
-    async (action: () => Promise<DesktopSnapshot>, successText: string, errorText: string): Promise<boolean> => {
+    async (action: () => Promise<ConsoleSnapshot>, successText: string, errorText: string): Promise<boolean> => {
       pendingMutationsRef.current += 1;
       setMutationPending(true);
       try {

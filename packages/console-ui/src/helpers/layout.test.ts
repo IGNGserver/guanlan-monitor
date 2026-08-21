@@ -4,6 +4,7 @@ import { getLayoutClass, getScreenOrientation, getResponsiveTier } from "./layou
 import { resolveInteractionScale, detectDefaultInteractionScale, detectTouchSupport } from "./density.ts";
 import { resolveEffectiveTheme } from "./theme.ts";
 import { normalizeMetricsResponse, formatBytes } from "./metricsNormalizer.ts";
+import { DESKTOP_CAPABILITIES, WEB_CAPABILITIES, emptyConsoleSnapshot } from "../services/adapter.ts";
 import type { MetricsResponse } from "@dsc/shared";
 
 test("getLayoutClass correctly categorizes window widths at key breakpoints", () => {
@@ -57,6 +58,17 @@ test("theme helpers correctly resolve system theme preferences", () => {
   assert.strictEqual(resolveEffectiveTheme("dark", false), "dark");
   assert.strictEqual(resolveEffectiveTheme("system", true), "dark");
   assert.strictEqual(resolveEffectiveTheme("system", false), "light");
+});
+
+test("shared console snapshot keeps platform state explicit", () => {
+  const snapshot = emptyConsoleSnapshot();
+  assert.strictEqual(snapshot.source, "empty");
+  assert.strictEqual(snapshot.localBackend, null);
+  assert.deepStrictEqual(snapshot.startup, { openAtLogin: false, startMinimized: false });
+  assert.strictEqual(WEB_CAPABILITIES.canManageLocalAgent, false);
+  assert.strictEqual(DESKTOP_CAPABILITIES.canManageLocalAgent, true);
+  assert.strictEqual(WEB_CAPABILITIES.canControlNativeWindow, false);
+  assert.strictEqual(DESKTOP_CAPABILITIES.canControlNativeWindow, true);
 });
 
 test("normalizeMetricsResponse extracts stable chart model from MetricsResponse series", () => {

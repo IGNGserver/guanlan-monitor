@@ -29,9 +29,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Verify Desktop UI boundaries and helpers
+      - name: Verify shared UI boundaries and helpers
         run: |
           pnpm check:desktop-ui-boundaries
+          pnpm check:web-ui-boundary
           pnpm test:ui-helpers
 
       - name: Typecheck

@@ -1,13 +1,13 @@
-import type { DesktopSnapshot, DesktopSnapshotRequest, WidgetLayoutRequest, WidgetLayoutSaveRequest, WidgetLayoutSync } from "@dsc/shared";
+import type { ConsoleSnapshot, ConsoleSnapshotRequest, WidgetLayoutRequest, WidgetLayoutSaveRequest, WidgetLayoutSync } from "@dsc/shared";
 import { emptyConsoleSnapshot, WEB_CAPABILITIES, type ConsoleAdapter } from "./adapter";
 
 export class MockConsoleAdapter implements ConsoleAdapter {
   readonly capabilities = WEB_CAPABILITIES;
   private snapshot = emptyConsoleSnapshot();
-  private listeners = new Set<(snapshot: DesktopSnapshot) => void>();
+  private listeners = new Set<(snapshot: ConsoleSnapshot) => void>();
 
-  async getSnapshot(_request?: DesktopSnapshotRequest) { return this.snapshot; }
-  async refresh(_request?: DesktopSnapshotRequest) { return this.snapshot; }
+  async getSnapshot(_request?: ConsoleSnapshotRequest) { return this.snapshot; }
+  async refresh(_request?: ConsoleSnapshotRequest) { return this.snapshot; }
   async login() { this.snapshot = { ...this.snapshot, session: { authenticated: true, accessKeyConfigured: true } }; return this.snapshot; }
   async logout() { this.snapshot = { ...this.snapshot, session: { authenticated: false, accessKeyConfigured: false } }; return this.snapshot; }
   async disconnectAgent() { this.snapshot = { ...this.snapshot, session: { authenticated: false, accessKeyConfigured: false } }; return this.snapshot; }
@@ -18,5 +18,5 @@ export class MockConsoleAdapter implements ConsoleAdapter {
   async getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync> { return { ...request, instanceLayout: null, templates: [] }; }
   async saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> { return { scopeKey: request.scopeKey, templateKey: request.templateKey, instanceLayout: request.instanceLayout ?? null, templates: [] }; }
   async openExternal(url: string) { window.open(url, "_blank", "noopener,noreferrer"); }
-  subscribe(listener: (snapshot: DesktopSnapshot) => void) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+  subscribe(listener: (snapshot: ConsoleSnapshot) => void) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 }

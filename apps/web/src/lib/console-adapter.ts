@@ -1,7 +1,7 @@
 import { io, type Socket } from "socket.io-client";
 import type {
-  DesktopSnapshot,
-  DesktopSnapshotRequest,
+  ConsoleSnapshot,
+  ConsoleSnapshotRequest,
   DeviceRealtimeEvent,
   DeviceSummary,
   MetricWindow,
@@ -30,25 +30,25 @@ import {
 
 export class WebConsoleAdapter implements ConsoleAdapter {
   readonly capabilities = WEB_CAPABILITIES;
-  private snapshot: DesktopSnapshot = emptyConsoleSnapshot();
-  private listeners = new Set<(snapshot: DesktopSnapshot) => void>();
+  private snapshot: ConsoleSnapshot = emptyConsoleSnapshot();
+  private listeners = new Set<(snapshot: ConsoleSnapshot) => void>();
   private socket: Socket | null = null;
 
-  async getSnapshot(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot> {
+  async getSnapshot(request?: ConsoleSnapshotRequest): Promise<ConsoleSnapshot> {
     return this.loadSnapshot(request);
   }
 
-  async refresh(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot> {
+  async refresh(request?: ConsoleSnapshotRequest): Promise<ConsoleSnapshot> {
     return this.loadSnapshot(request);
   }
 
-  async login(accessKey: string): Promise<DesktopSnapshot> {
+  async login(accessKey: string): Promise<ConsoleSnapshot> {
     await login({ accessKey });
     await getSession();
     return this.loadSnapshot();
   }
 
-  async logout(): Promise<DesktopSnapshot> {
+  async logout(): Promise<ConsoleSnapshot> {
     this.socket?.close();
     this.socket = null;
     await logout();
@@ -57,25 +57,25 @@ export class WebConsoleAdapter implements ConsoleAdapter {
     return this.snapshot;
   }
 
-  async disconnectAgent(): Promise<DesktopSnapshot> {
+  async disconnectAgent(): Promise<ConsoleSnapshot> {
     return this.logout();
   }
 
-  async saveHubConnection(_serverUrl: string, accessKey: string): Promise<DesktopSnapshot> {
+  async saveHubConnection(_serverUrl: string, accessKey: string): Promise<ConsoleSnapshot> {
     return this.login(accessKey);
   }
 
-  async deleteInstance(deviceId: string): Promise<DesktopSnapshot> {
+  async deleteInstance(deviceId: string): Promise<ConsoleSnapshot> {
     await deleteDevice(deviceId);
     return this.loadSnapshot({ selectedDeviceId: this.snapshot.selectedDeviceId === deviceId ? null : this.snapshot.selectedDeviceId });
   }
 
-  async reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot> {
+  async reorderInstances(deviceIds: string[]): Promise<ConsoleSnapshot> {
     await reorderDevices(deviceIds);
     return this.loadSnapshot({ selectedDeviceId: this.snapshot.selectedDeviceId });
   }
 
-  async saveFanNote(deviceId: string, fanId: string, note: string): Promise<DesktopSnapshot> {
+  async saveFanNote(deviceId: string, fanId: string, note: string): Promise<ConsoleSnapshot> {
     await saveFanNote(deviceId, fanId, { note });
     return this.loadSnapshot({ selectedDeviceId: deviceId });
   }
@@ -92,7 +92,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
-  subscribe(listener: (snapshot: DesktopSnapshot) => void): () => void {
+  subscribe(listener: (snapshot: ConsoleSnapshot) => void): () => void {
     this.listeners.add(listener);
     this.connectSocket();
     return () => {
@@ -104,7 +104,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
     };
   }
 
-  private async loadSnapshot(request: DesktopSnapshotRequest = {}): Promise<DesktopSnapshot> {
+  private async loadSnapshot(request: ConsoleSnapshotRequest = {}): Promise<ConsoleSnapshot> {
     const devices = await listDevices();
     const selectedDeviceId = request.selectedDeviceId !== undefined
       ? request.selectedDeviceId

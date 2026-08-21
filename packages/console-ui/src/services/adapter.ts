@@ -2,13 +2,10 @@ import type {
   DesktopAgentBackendState,
   DesktopAgentControlAction,
   DesktopConfigPatch,
-  DesktopSnapshot,
-  DesktopSnapshotRequest,
   DesktopStartupSettings,
-  WidgetLayoutRequest,
-  WidgetLayoutSaveRequest,
-  WidgetLayoutSync
+  ConsoleSnapshot
 } from "@dsc/shared";
+import type { ConsoleFleetPort, ConsoleReadPort, ConsoleSessionPort } from "./ports.ts";
 
 export interface ConsoleCapabilities {
   canManageLocalAgent: boolean;
@@ -20,25 +17,12 @@ export interface ConsoleCapabilities {
   requiresAuthentication: boolean;
 }
 
-export interface ConsoleAdapter {
+export interface ConsoleAdapter extends ConsoleReadPort, ConsoleSessionPort, ConsoleFleetPort {
   readonly capabilities: ConsoleCapabilities;
-  getSnapshot(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot>;
-  refresh(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot>;
-  subscribe(listener: (snapshot: DesktopSnapshot) => void): () => void;
-  login(accessKey: string): Promise<DesktopSnapshot>;
-  logout(): Promise<DesktopSnapshot>;
-  disconnectAgent(): Promise<DesktopSnapshot>;
-  saveHubConnection(serverUrl: string, accessKey: string): Promise<DesktopSnapshot>;
-  deleteInstance(deviceId: string): Promise<DesktopSnapshot>;
-  reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot>;
-  saveFanNote(deviceId: string, fanId: string, note: string): Promise<DesktopSnapshot>;
-  getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync>;
-  saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync>;
-  openExternal(url: string): Promise<void>;
-  updateLocalConfig?(patch: DesktopConfigPatch): Promise<DesktopSnapshot>;
-  controlAgent?(action: DesktopAgentControlAction): Promise<DesktopSnapshot>;
-  updateStartupSettings?(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot>;
-  cloudPush?(): Promise<DesktopSnapshot>;
+  updateLocalConfig?(patch: DesktopConfigPatch): Promise<ConsoleSnapshot>;
+  controlAgent?(action: DesktopAgentControlAction): Promise<ConsoleSnapshot>;
+  updateStartupSettings?(settings: Partial<DesktopStartupSettings>): Promise<ConsoleSnapshot>;
+  cloudPush?(): Promise<ConsoleSnapshot>;
   getLocalBackend?(): Promise<DesktopAgentBackendState | null>;
   windowMinimize?(): Promise<void>;
   windowToggleMaximize?(): Promise<boolean>;
@@ -92,7 +76,7 @@ export function fallbackWindowMaterialCapabilities(): WindowMaterialCapabilities
   };
 }
 
-export function emptyConsoleSnapshot(): DesktopSnapshot {
+export function emptyConsoleSnapshot(): ConsoleSnapshot {
   return {
     generatedAt: new Date().toISOString(),
     source: "empty",

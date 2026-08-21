@@ -861,24 +861,33 @@ export interface DesktopAgentBackendState {
   temperatureProbeError?: string;
 }
 
-export type DesktopSnapshotSource = "live" | "cache" | "empty";
+/**
+ * Snapshot state shared by the browser console and the Electron renderer.
+ *
+ * `Desktop*` aliases below are retained for the IPC and cache contracts while
+ * the presentation layer moves to platform-neutral terminology.
+ */
+export type ConsoleSnapshotSource = "live" | "cache" | "empty";
+export type DesktopSnapshotSource = ConsoleSnapshotSource;
 
-export interface DesktopCacheState {
+export interface ConsoleCacheState {
   available: boolean;
   savedAt: string | null;
   ageSeconds: number | null;
 }
+export type DesktopCacheState = ConsoleCacheState;
 
-export interface DesktopSessionState {
+export interface ConsoleSessionState {
   authenticated: boolean;
   accessKeyConfigured: boolean;
 }
+export type DesktopSessionState = ConsoleSessionState;
 
-export interface DesktopSnapshot {
+export interface ConsoleSnapshot {
   generatedAt: string;
-  source: DesktopSnapshotSource;
-  cache: DesktopCacheState;
-  session: DesktopSessionState;
+  source: ConsoleSnapshotSource;
+  cache: ConsoleCacheState;
+  session: ConsoleSessionState;
   localBackend: DesktopAgentBackendState | null;
   devices: DeviceSummary[];
   selectedDeviceId: string | null;
@@ -888,19 +897,21 @@ export interface DesktopSnapshot {
   update: UpdateInfo | null;
   startup: DesktopStartupSettings;
 }
+export type DesktopSnapshot = ConsoleSnapshot;
 
 export interface DesktopStartupSettings {
   openAtLogin: boolean;
   startMinimized: boolean;
 }
 
-export interface DesktopSnapshotRequest {
+export interface ConsoleSnapshotRequest {
   metricWindow?: MetricWindow;
   selectedDeviceId?: string | null;
   trafficMode?: TrafficCalendarMode;
   trafficAnchor?: string;
   preferCache?: boolean;
 }
+export type DesktopSnapshotRequest = ConsoleSnapshotRequest;
 
 export type WidgetLayoutSize = "large" | "medium" | "small";
 export type WidgetLayoutKind = "group" | "content";

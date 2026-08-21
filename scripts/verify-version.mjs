@@ -12,6 +12,7 @@ const packagePaths = [
   "../apps/web/package.json",
   "../apps/desktop/package.json",
   "../packages/shared/package.json",
+  "../packages/console-ui/package.json",
 ];
 
 if (!/^\d+\.\d+\.\d+$/.test(rootVersion)) {
