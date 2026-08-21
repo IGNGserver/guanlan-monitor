@@ -375,13 +375,12 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
   {
     widgetType: "temperature-sources",
     title: "全部温度源",
-    description: "列出 CPU、GPU、硬盘、主板、供电和其他可用温度传感器。",
+    description: "列出 CPU、GPU、硬盘、主板、供电和其他可用温度传感器；尚未采集时也可以先添加。",
     category: "温度",
     kind: "content",
     defaultSize: "large",
     visualization: "table",
-    visualizations: ["table"],
-    requires: ["temperatureSources"]
+    visualizations: ["table"]
   },
   {
     widgetType: "fan-speed",
@@ -457,6 +456,9 @@ function sumSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
 
 
 function metricAvailable(definition: WidgetCatalogDefinition, metrics: MetricsResponse | null): boolean {
+  // The temperature table can be added before the first temperature sample;
+  // it renders an empty state until the Agent reports a source.
+  if (definition.widgetType === "temperature-sources") return true;
   if (!definition.requires?.length || !metrics) return true;
   return definition.requires.some((key) => metrics.enabledMetrics.includes(key) || metrics.availableMetrics.some((option) => option.key === key && option.available));
 }
