@@ -861,7 +861,7 @@ function DynamicWidgetGroupCard({ entry, children, context }: { entry: WidgetLay
       className="workspace-widget--device-frame"
     >
       <DeviceWidgetFrame
-        kind={definition.targetKind ?? "generic"}
+        kind={definition.targetKind === "temperature" ? "generic" : definition.targetKind ?? "generic"}
         eyebrow={definition.targetKind ? deviceGroupEyebrows[definition.targetKind] : "设备组"}
         title={frameTitle}
         subtitle={frameSubtitle}
