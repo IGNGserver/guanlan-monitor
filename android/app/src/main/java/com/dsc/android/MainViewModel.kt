@@ -94,11 +94,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(savingConfig = false, message = "请输入中枢地址") }
         return@launch
       }
-      val resolvedBaseUrl = runCatching { apiFactory.resolveApiBaseUrl(normalizedBaseUrl) }.getOrNull()
-      if (resolvedBaseUrl == null) {
-        _state.update { it.copy(savingConfig = false, message = "中枢地址格式不正确") }
-        return@launch
-      }
+      val resolvedBaseUrl = runCatching { apiFactory.resolveApiBaseUrl(normalizedBaseUrl) }
+        .getOrElse { error ->
+          _state.update {
+            it.copy(
+              savingConfig = false,
+              message = error.message ?: "中枢地址格式不正确"
+            )
+          }
+          return@launch
+        }
       if (resolvedBaseUrl.contains(":4000/") || resolvedBaseUrl.contains(":3101/")) {
         _state.update {
           it.copy(
@@ -109,18 +114,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return@launch
       }
 
-      if (runCatching { settingsRepository.save(ServerConfig(baseUrl = normalizedBaseUrl, accessKey = accessKey)) }.isFailure) {
+      val canonicalBaseUrl = resolvedBaseUrl.removeSuffix("/")
+      if (runCatching { settingsRepository.save(ServerConfig(baseUrl = canonicalBaseUrl, accessKey = accessKey)) }.isFailure) {
         _state.update { it.copy(savingConfig = false, message = "保存配置失败") }
         return@launch
       }
 
-      if (!configureApiClient(normalizedBaseUrl)) {
+      if (!configureApiClient(canonicalBaseUrl)) {
         _state.update { it.copy(savingConfig = false) }
         return@launch
       }
 
       _state.update { it.copy(savingConfig = false, message = "已保存中枢配置") }
-      lastAutoLoginSignature = "${normalizedBaseUrl}\n${accessKey}"
+      lastAutoLoginSignature = "${canonicalBaseUrl}\n${accessKey}"
       login()
     }
   }

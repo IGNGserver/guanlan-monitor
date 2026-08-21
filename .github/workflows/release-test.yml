@@ -284,6 +284,13 @@ jobs:
           java-version: 17
           cache: gradle
 
+      - name: Run Android unit tests and lint
+        working-directory: android
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon
+
       - name: Prepare Android signing key
         shell: bash
         env:

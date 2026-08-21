@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -62,6 +63,9 @@ interface DeviceStateApi {
 
   @GET("/api/instances")
   suspend fun devices(): List<DeviceSummaryDto>
+
+  @GET("/api/overview/metrics")
+  suspend fun overviewMetrics(@Query("window") window: String): OverviewMetricsDto
 
   @retrofit2.http.DELETE("/api/devices/{deviceId}")
   suspend fun deleteDevice(@Path("deviceId") deviceId: String): Map<String, Boolean>
@@ -106,6 +110,54 @@ class InMemoryCookieJar : CookieJar {
     val values = loadForRequest(url)
     if (values.isEmpty()) return null
     return values.joinToString("; ") { "${it.name}=${it.value}" }
+  }
+}
+
+internal class InvalidServerUrlException(message: String) : IllegalArgumentException(message)
+
+internal object ServerUrlPolicy {
+  fun parse(value: String): HttpUrl {
+    val trimmed = value.trim()
+    if (trimmed.isBlank()) {
+      throw InvalidServerUrlException("请输入中枢地址")
+    }
+
+    val withScheme = if (trimmed.contains("://")) trimmed else "http://$trimmed"
+    val parsed = runCatching { withScheme.toHttpUrl() }
+      .getOrElse { throw InvalidServerUrlException("中枢地址格式不正确") }
+    if (parsed.username.isNotEmpty() || parsed.password.isNotEmpty()) {
+      throw InvalidServerUrlException("中枢地址不能包含用户名或密码")
+    }
+
+    val isHttps = parsed.scheme == "https"
+    val isAllowedHttp = parsed.scheme == "http" && isPrivateNetworkHost(parsed.host)
+    if (!isHttps && !isAllowedHttp) {
+      throw InvalidServerUrlException("公网中枢必须使用 HTTPS；HTTP 仅支持 localhost 或私有网络地址")
+    }
+    return parsed
+  }
+
+  fun normalize(value: String): String = parse(value).toString().removeSuffix("/")
+
+  private fun isPrivateNetworkHost(rawHost: String): Boolean {
+    val host = rawHost.removePrefix("[").removeSuffix("]").lowercase()
+    if (host == "localhost" || host == "::1") return true
+
+    val octets = host.split('.')
+    if (octets.size == 4) {
+      val values = octets.mapNotNull { it.toIntOrNull() }
+      if (values.size == 4 && values.all { it in 0..255 }) {
+        val first = values[0]
+        val second = values[1]
+        return first == 127 ||
+          first == 10 ||
+          (first == 172 && second in 16..31) ||
+          (first == 192 && second == 168) ||
+          (first == 169 && second == 254)
+      }
+    }
+
+    return host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")
   }
 }
 
@@ -168,14 +220,14 @@ class SettingsRepository(private val application: Application) {
   private fun normalizeServerUrl(value: String): String {
     val trimmed = value.trim()
     if (trimmed.isBlank()) return ""
-    val withScheme = if (trimmed.contains("://")) trimmed else "http://$trimmed"
     return runCatching {
-      val parsed = withScheme.toHttpUrl()
-      if (parsed.port in setOf(4000, 3101)) {
-        parsed.newBuilder().port(3100).build().toString().removeSuffix("/")
+      val parsed = ServerUrlPolicy.parse(trimmed)
+      val normalized = if (parsed.port in setOf(4000, 3101)) {
+        parsed.newBuilder().port(3100).build()
       } else {
-        trimmed
+        parsed
       }
+      normalized.toString().removeSuffix("/")
     }.getOrDefault(trimmed)
   }
 }
@@ -208,10 +260,7 @@ class ApiFactory(private val application: Application) {
   }
 
   fun resolveApiBaseUrl(value: String): String {
-    val trimmed = value.trim()
-    val withScheme = if (trimmed.contains("://")) trimmed else "http://$trimmed"
-    val parsed = withScheme.toHttpUrl()
-    val normalized = parsed.toString()
+    val normalized = ServerUrlPolicy.normalize(value)
     return if (normalized.endsWith("/")) normalized else "$normalized/"
   }
 }
@@ -275,5 +324,6 @@ class DeviceRealtimeSocket(
 @Serializable
 data class DeviceRealtimeEventDto(
   val deviceId: String,
-  val summary: DeviceSummaryDto
+  val summary: DeviceSummaryDto,
+  val latest: JsonObject? = null
 )
