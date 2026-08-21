@@ -113,6 +113,8 @@ import com.dsc.android.ScreenTransitionDirection
 import com.dsc.android.SamplePointDto
 import com.dsc.android.TrafficCalendarDto
 import com.dsc.android.TrafficCalendarMode
+import com.dsc.android.TemperatureMetricSeriesDto
+import com.dsc.android.TemperatureSensorDto
 import kotlin.math.absoluteValue
 import kotlin.math.max
 
@@ -675,6 +677,16 @@ private fun DeviceDetailScreen(
           onSelectWindow = onSelectWindow
         )
       }
+      if (metrics.latest.temperatureSensors.isNotEmpty() || metrics.series.temperatureSensors.isNotEmpty()) {
+        item(key = "temperature-sources") {
+          TemperatureSourcesCard(
+            deviceId = metrics.device.deviceId,
+            sensors = metrics.latest.temperatureSensors,
+            series = metrics.series.temperatureSensors,
+            selectedWindow = state.selectedWindow
+          )
+        }
+      }
       if (state.loadingMetrics) {
         item(key = "metrics-loading") {
           InlineLoadingCard("正在加载当前粒度数据")
@@ -955,6 +967,116 @@ private fun BlockSheet(
 }
 
 @Composable
+private fun TemperatureSourcesCard(
+  deviceId: String,
+  sensors: List<TemperatureSensorDto>,
+  series: List<TemperatureMetricSeriesDto>,
+  selectedWindow: MetricWindow
+) {
+  var showDiagnostics by remember(deviceId) { mutableStateOf(false) }
+  var selectedId by remember(deviceId) { mutableStateOf("") }
+  val visibleSensors = sensors.filter { showDiagnostics || it.status == "valid" }
+  val chartableSeries = series.filter { showDiagnostics || it.status == "valid" }
+  val selectedSeries = chartableSeries.firstOrNull { it.id == selectedId } ?: chartableSeries.firstOrNull()
+
+  LaunchedEffect(chartableSeries, selectedId) {
+    if (chartableSeries.isNotEmpty() && chartableSeries.none { it.id == selectedId }) {
+      selectedId = chartableSeries.first().id
+    }
+  }
+
+  ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+      Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+          Text("温度源", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+          Text(
+            "按传感器原始名称和采集后端展示；阈值与无效值默认隐藏。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Text("诊断", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Checkbox(checked = showDiagnostics, onCheckedChange = { showDiagnostics = it })
+        }
+      }
+
+      if (visibleSensors.isEmpty()) {
+        Text(
+          "当前只有无效或诊断温度通道",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+      } else {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          visibleSensors.forEach { sensor ->
+            val isSelected = sensor.id == selectedSeries?.id
+            Surface(
+              modifier = Modifier
+                .fillMaxWidth()
+                .clickable { selectedId = sensor.id },
+              shape = RoundedCornerShape(16.dp),
+              color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface
+            ) {
+              Row(
+                Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                  Text(sensor.displayName ?: sensor.rawName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                  Text(
+                    listOfNotNull(
+                      temperatureRoleLabel(sensor.role),
+                      temperatureSourceLabel(sensor.source),
+                      sensor.backend?.takeIf { it.isNotBlank() }
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                  )
+                }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                  Text(temperatureValueLabel(sensor), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                  Text(
+                    temperatureStatusLabel(sensor.status),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                  temperatureLimitsLabel(sensor)?.let { limits ->
+                    Text(limits, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      selectedSeries?.let { sensorSeries ->
+        HorizontalDivider()
+        MetricCardGrid(
+          cards = listOf(
+            MetricCardModel(
+              title = "${sensorSeries.name} · 历史",
+              value = metricPoint(sensorSeries.currentC, selectedWindow, ::formatCelsius),
+              points = sensorSeries.currentC,
+              valueFormatter = ::formatCelsius
+            )
+          )
+        )
+      } ?: Text(
+        "选择一个有效温度源查看历史",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+      )
+    }
+  }
+}
+
+@Composable
 private fun SummaryCapsule(capsule: OverviewCapsuleModel, onClick: () -> Unit) {
   val haptic = LocalHapticFeedback.current
   Surface(
@@ -1114,6 +1236,7 @@ private fun CpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: 
       listOf(
         "处理器" to (metrics.device.cpuModel ?: "未知"),
         "包数量" to metrics.latest.cpuPackages.size.toString(),
+        "L3 缓存" to formatOptionalBytes(metrics.latest.cpuPackages.mapNotNull { it.l3CacheBytes }.takeIf { it.isNotEmpty() }?.sum()),
         "进程" to metrics.latest.system.processCount.toString(),
         "线程" to metrics.latest.system.threadCount.toString(),
         "句柄" to metrics.latest.system.handleCount.toString(),
@@ -1136,7 +1259,13 @@ private fun CpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: 
         MetricCardModel("温度", metricPoint(cpu.temperatureC, selectedWindow, ::formatCelsius, zeroMeansMissing = true), cpu.temperatureC, ::formatCelsius)
       )
     )
-    MetaGrid(listOf("型号" to (cpu.model ?: "未知"), "核心 / 线程" to "${cpu.coreCount ?: "--"} / ${cpu.logicalCount ?: "--"}"))
+    MetaGrid(
+      listOf(
+        "型号" to (cpu.model ?: "未知"),
+        "核心 / 线程" to "${cpu.coreCount ?: "--"} / ${cpu.logicalCount ?: "--"}",
+        "L3 缓存" to formatOptionalBytes(cpu.l3CacheBytes)
+      )
+    )
   }
 }
 
@@ -1149,6 +1278,7 @@ private fun MemorySheetContent(metrics: MetricsDto) {
       MetricCardModel("可用内存", formatBytes(metrics.latest.memoryAvailableBytes.toDouble()), metrics.series.memoryAvailableBytes, { value -> formatBytes(value ?: 0.0) }),
       MetricCardModel("缓存内存", formatBytes(metrics.latest.memoryCachedBytes.toDouble()), metrics.series.memoryCachedBytes, { value -> formatBytes(value ?: 0.0) }),
       MetricCardModel("已提交", formatBytes(metrics.latest.memoryCommittedBytes.toDouble()), metrics.series.memoryCommittedBytes, { value -> formatBytes(value ?: 0.0) }),
+      MetricCardModel("提交上限", formatOptionalBytes(metrics.latest.memoryCommitLimitBytes), metrics.series.memoryCommitLimitBytes, ::formatOptionalBytes),
       MetricCardModel("已用字节", formatBytes(metrics.latest.memoryUsedBytes.toDouble()), metrics.series.memoryUsedBytes, { value -> formatBytes(value ?: 0.0) }),
       MetricCardModel("Swap 已用", formatBytes(metrics.latest.swapUsedBytes.toDouble()), metrics.series.swapUsedBytes, { value -> formatBytes(value ?: 0.0) }),
       MetricCardModel("进程数", metrics.latest.system.processCount.toString(), metrics.series.systemProcessCount, { value -> value?.toInt()?.toString() ?: "--" }),
@@ -1160,6 +1290,7 @@ private fun MemorySheetContent(metrics: MetricsDto) {
     listOf(
       "物理内存" to buildUsage(metrics.latest.memoryUsedBytes, metrics.latest.memoryTotalBytes),
       "虚拟内存" to buildUsage(metrics.latest.swapUsedBytes, metrics.latest.swapTotalBytes),
+      "提交上限" to formatOptionalBytes(metrics.latest.memoryCommitLimitBytes),
       "频率" to (metrics.latest.memorySpeedMHz?.let { formatMHz(it) } ?: "未知"),
       "插槽" to (metrics.latest.memorySlotCount?.toString() ?: "未知"),
       "形态" to (metrics.latest.memoryFormFactor ?: "未知")
@@ -1247,7 +1378,15 @@ private fun GpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: 
   val gpu = metrics.latest.gpus.firstOrNull { it.id == tabId } ?: return
   val series = metrics.series.gpus.firstOrNull { it.id == tabId }
   GpuInstanceCard(gpu, series, onEdit = { onEditInstance(gpu.id) })
-  MetaGrid(listOfNotNull("驱动" to (gpu.driverVersion ?: "未知"), gpuMemoryLabel(gpu.memoryKind) to buildGpuUsage(gpu.memoryUsedBytes, gpu.memoryTotalBytes)))
+  MetaGrid(
+    listOfNotNull(
+      "驱动" to (gpu.driverVersion ?: "未知"),
+      "类型" to if (gpu.integrated) "集成显卡" else "独立显卡",
+      "显存类型" to gpuMemoryLabel(gpu.memoryKind ?: series?.memoryKind),
+      "温度源" to gpuTemperatureSourceLabel(gpu.temperatureSource ?: series?.temperatureSource),
+      gpuMemoryLabel(gpu.memoryKind) to buildGpuUsage(gpu.memoryUsedBytes, gpu.memoryTotalBytes)
+    )
+  )
 }
 
 @Composable
@@ -2102,6 +2241,64 @@ private fun metricPoint(
   return formatter(value)
 }
 
+private fun temperatureRoleLabel(role: String): String = when (role) {
+  "cpu_package" -> "CPU 封装"
+  "cpu_core" -> "CPU 核心"
+  "gpu_core" -> "GPU 核心"
+  "gpu_hotspot" -> "GPU 热点"
+  "storage_composite" -> "磁盘综合温度"
+  "storage_sensor" -> "磁盘附加传感器"
+  "motherboard" -> "主板温度"
+  "superio" -> "SuperIO 温度"
+  "peci" -> "PECI 温度"
+  "acpi_zone" -> "ACPI 热区"
+  "threshold" -> "温度阈值"
+  "derived" -> "派生温度"
+  "unknown" -> "未知温度源"
+  else -> role.ifBlank { "未知温度源" }
+}
+
+private fun temperatureSourceLabel(source: String): String = when (source) {
+  "librehardwaremonitor" -> "LibreHardwareMonitor"
+  "linux-hwmon" -> "Linux hwmon"
+  "linux-thermal" -> "Linux thermal"
+  "smartctl" -> "smartctl / SMART"
+  "windows-storage-reliability" -> "Windows 存储可靠性"
+  "cpu-package-shared", "cpuPackageShared" -> "CPU Package 共享"
+  else -> source.ifBlank { "未知来源" }
+}
+
+private fun temperatureStatusLabel(status: String): String = when (status) {
+  "valid" -> "正常"
+  "threshold" -> "阈值"
+  "invalid" -> "无效值"
+  else -> "不可用"
+}
+
+private fun temperatureValueLabel(sensor: TemperatureSensorDto): String {
+  val current = sensor.currentC
+  return if (current == null || !current.isFinite()) {
+    if (sensor.status == "threshold") "仅阈值" else "—"
+  } else {
+    formatCelsius(current)
+  }
+}
+
+private fun temperatureLimitsLabel(sensor: TemperatureSensorDto): String? {
+  val limits = listOfNotNull(
+    sensor.highC?.let { "高 ${formatCelsius(it)}" },
+    sensor.criticalC?.let { "临界 ${formatCelsius(it)}" },
+    sensor.emergencyC?.let { "紧急 ${formatCelsius(it)}" }
+  )
+  return limits.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+}
+
+private fun gpuTemperatureSourceLabel(source: String?): String = when {
+  source.isNullOrBlank() -> "未知"
+  source == "cpuPackageShared" || source == "cpu-package-shared" -> "CPU 封装共享"
+  else -> temperatureSourceLabel(source)
+}
+
 private fun formatPercent(value: Double?): String = if (value == null) "--" else "${"%.1f".format(value)}%"
 private fun formatMHz(value: Double?): String = if (value == null) "--" else "${"%.0f".format(value)} MHz"
 private fun formatCelsius(value: Double?): String = if (value == null) "--" else "${"%.1f".format(value)} °C"
@@ -2155,6 +2352,9 @@ private fun formatGpuMemorySummary(gpus: List<GpuDto>): String = gpus
   }
   .ifEmpty { listOf("容量暂无") }
   .joinToString(" · ")
+
+private fun formatOptionalBytes(value: Long?): String = value?.takeIf { it > 0 }?.let { formatBytes(it.toDouble()) } ?: "未知"
+private fun formatOptionalBytes(value: Double?): String = value?.takeIf { it > 0.0 }?.let(::formatBytes) ?: "未知"
 
 private fun formatBytes(value: Double): String {
   if (value <= 0.0) return "0 B"
