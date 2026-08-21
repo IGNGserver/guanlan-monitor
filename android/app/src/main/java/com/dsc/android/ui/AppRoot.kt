@@ -146,6 +146,7 @@ fun AppRoot(
   onToggleDeviceInstance: (DeviceBlockKey, String) -> Unit,
   onToggleInstanceMetric: (String, String) -> Unit,
   onSaveMetricConfig: () -> Unit,
+  onSaveFanNote: (String, String, String) -> Unit,
   onRefresh: () -> Unit,
   onDownloadUpdate: () -> Unit,
   onLaunchUpdateInstaller: (String) -> Unit,
@@ -202,7 +203,7 @@ fun AppRoot(
           }
           AppScreen.DeviceList -> DeviceListScreen(state, onOpenDevice, onOpenTraffic, onOpenDeviceEditor, onSelectInstanceType, onDeleteDevice, onReorderDevices, onRequestLogout = { showLogoutConfirm = true }, onRefresh = onRefresh, onDownloadUpdate = onDownloadUpdate)
           AppScreen.Traffic -> TrafficScreen(state, onShowDeviceList, onSelectTrafficMode, onSelectTrafficCell, onShiftTrafficAnchor, onRefresh)
-          AppScreen.DeviceDetail -> DeviceDetailScreen(state, onShowDeviceList, onSelectWindow, onOpenTraffic, onCloseTrafficSheet, onSelectTrafficCell, onOpenBlockEditor, onOpenInstanceEditor, onRefresh, onClearFocusedBlock)
+          AppScreen.DeviceDetail -> DeviceDetailScreen(state, onShowDeviceList, onSelectWindow, onOpenTraffic, onCloseTrafficSheet, onSelectTrafficCell, onOpenBlockEditor, onOpenInstanceEditor, onSaveFanNote, onRefresh, onClearFocusedBlock)
         }
       }
 
@@ -591,6 +592,7 @@ private fun DeviceDetailScreen(
   onSelectTrafficCell: (String) -> Unit,
   onOpenBlockEditor: (String, DeviceBlockKey) -> Unit,
   onOpenInstanceEditor: (String, DeviceBlockKey, String) -> Unit,
+  onSaveFanNote: (String, String, String) -> Unit,
   onRefresh: () -> Unit,
   onClearFocusedBlock: () -> Unit
 ) {
@@ -728,7 +730,9 @@ private fun DeviceDetailScreen(
       onSelectTab = { openTabId = it },
       onDismiss = { openBlock = null },
       onEditBlock = { onOpenBlockEditor(metrics.device.deviceId, blockKey) },
-      onEditInstance = { instanceId -> onOpenInstanceEditor(metrics.device.deviceId, blockKey, instanceId) }
+      onEditInstance = { instanceId -> onOpenInstanceEditor(metrics.device.deviceId, blockKey, instanceId) },
+      onSaveFanNote = onSaveFanNote,
+      savingFanNote = state.savingFanNote
     )
   }
   if (state.trafficSheetRequested) {
@@ -890,7 +894,9 @@ private fun BlockSheet(
   onSelectTab: (String) -> Unit,
   onDismiss: () -> Unit,
   onEditBlock: () -> Unit,
-  onEditInstance: (String) -> Unit
+  onEditInstance: (String) -> Unit,
+  onSaveFanNote: (String, String, String) -> Unit,
+  savingFanNote: Boolean
 ) {
   val haptic = LocalHapticFeedback.current
   ModalBottomSheet(
@@ -915,11 +921,13 @@ private fun BlockSheet(
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )
           }
-          IconButton(onClick = {
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            onEditBlock()
-          }) {
-            Icon(Icons.Rounded.Edit, contentDescription = "编辑")
+          if (blockKey != DeviceBlockKey.Fan) {
+            IconButton(onClick = {
+              haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+              onEditBlock()
+            }) {
+              Icon(Icons.Rounded.Edit, contentDescription = "编辑")
+            }
           }
         }
       }
@@ -958,7 +966,9 @@ private fun BlockSheet(
             tabId = tabId,
             selectedWindow = selectedWindow,
             selectedTabIndex = selectedIndex,
-            onEditInstance = onEditInstance
+            onEditInstance = onEditInstance,
+            onSaveFanNote = onSaveFanNote,
+            savingFanNote = savingFanNote
           )
         }
       }
@@ -1205,7 +1215,9 @@ private fun BlockSheetTabContent(
   tabId: String,
   selectedWindow: MetricWindow,
   selectedTabIndex: Int,
-  onEditInstance: (String) -> Unit
+  onEditInstance: (String) -> Unit,
+  onSaveFanNote: (String, String, String) -> Unit,
+  savingFanNote: Boolean
 ) {
   Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
     when (blockKey) {
@@ -1214,7 +1226,7 @@ private fun BlockSheetTabContent(
       DeviceBlockKey.Disk -> DiskSheetContent(metrics, tabId, selectedWindow, onEditInstance)
       DeviceBlockKey.Network -> NetworkSheetContent(metrics, tabId, selectedWindow, onEditInstance)
       DeviceBlockKey.Gpu -> GpuSheetContent(metrics, tabId, selectedWindow, onEditInstance)
-      DeviceBlockKey.Fan -> FanSheetContent(metrics, tabId, onEditInstance)
+      DeviceBlockKey.Fan -> FanSheetContent(metrics, tabId, onSaveFanNote, savingFanNote)
     }
   }
 }
@@ -1390,7 +1402,12 @@ private fun GpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: 
 }
 
 @Composable
-private fun FanSheetContent(metrics: MetricsDto, tabId: String, onEditInstance: (String) -> Unit) {
+private fun FanSheetContent(
+  metrics: MetricsDto,
+  tabId: String,
+  onSaveFanNote: (String, String, String) -> Unit,
+  savingFanNote: Boolean
+) {
   if (tabId == "total") {
     if (metrics.latest.sensorBackends.isNotEmpty()) {
       MetaGrid(
@@ -1412,10 +1429,10 @@ private fun FanSheetContent(metrics: MetricsDto, tabId: String, onEditInstance: 
 
   val fan = metrics.latest.fans.firstOrNull { it.id == tabId } ?: return
   val series = metrics.series.fans.firstOrNull { it.id == fan.id }
+  var noteDraft by remember(fan.id, fan.note) { mutableStateOf(fan.note.orEmpty()) }
   InstanceCard(
     title = fan.label,
-    subtitle = listOfNotNull(fan.interfaceName ?: fan.interfaceRaw, fan.note?.takeIf { it.isNotBlank() }).joinToString(" · "),
-    onEdit = { onEditInstance(fan.id) }
+    subtitle = fan.interfaceName ?: fan.interfaceRaw ?: "风扇实例"
   ) {
     MetricCardGrid(
       cards = listOf(
@@ -1437,6 +1454,24 @@ private fun FanSheetContent(metrics: MetricsDto, tabId: String, onEditInstance: 
         "通道" to (fan.channelState ?: "未知")
       )
     )
+    OutlinedTextField(
+      value = noteDraft,
+      onValueChange = { value -> if (value.length <= 100) noteDraft = value },
+      modifier = Modifier.fillMaxWidth(),
+      label = { Text("风扇备注") },
+      placeholder = { Text("例如：前置进风风扇") },
+      minLines = 2,
+      maxLines = 3
+    )
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+      Text("${noteDraft.length}/100", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      Button(
+        onClick = { onSaveFanNote(metrics.device.deviceId, fan.id, noteDraft) },
+        enabled = !savingFanNote
+      ) {
+        Text(if (savingFanNote) "保存中" else "保存备注")
+      }
+    }
   }
 }
 

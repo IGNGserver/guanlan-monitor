@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
           onToggleDeviceInstance = appViewModel::toggleDeviceInstance,
           onToggleInstanceMetric = appViewModel::toggleInstanceMetric,
           onSaveMetricConfig = appViewModel::saveMetricConfig,
+          onSaveFanNote = appViewModel::saveFanNote,
           onRefresh = appViewModel::refresh,
           onDownloadUpdate = appViewModel::downloadUpdate,
           onLaunchUpdateInstaller = ::launchUpdateInstaller,
