@@ -504,6 +504,12 @@ enum class AppScreen {
   Traffic
 }
 
+enum class RemoteDataSource {
+  Empty,
+  Live,
+  Cache
+}
+
 enum class ScreenTransitionDirection {
   Forward,
   Backward,
@@ -514,6 +520,9 @@ data class AppState(
   val serverConfig: ServerConfig = ServerConfig(),
   val loading: Boolean = true,
   val authenticated: Boolean = false,
+  val dataSource: RemoteDataSource = RemoteDataSource.Empty,
+  val cacheSavedAt: String? = null,
+  val realtimeConnected: Boolean = false,
   val savingConfig: Boolean = false,
   val loggingIn: Boolean = false,
   val refreshing: Boolean = false,
@@ -525,6 +534,7 @@ data class AppState(
   val focusedBlock: DeviceBlockKey? = null,
   val selectedWindow: MetricWindow = MetricWindow.OneMinute,
   val metrics: MetricsDto? = null,
+  val overviewMetrics: OverviewMetricsDto? = null,
   val trafficCalendar: TrafficCalendarDto? = null,
   val trafficSheetRequested: Boolean = false,
   val trafficMode: TrafficCalendarMode = TrafficCalendarMode.Day,

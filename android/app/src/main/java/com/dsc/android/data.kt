@@ -272,9 +272,15 @@ class DeviceRealtimeSocket(
 ) {
   private val json = Json { ignoreUnknownKeys = true }
   private var socket: WebSocket? = null
+  private var explicitlyClosed = false
 
-  fun connect(onUpdate: (DeviceRealtimeEventDto) -> Unit, onFailure: (() -> Unit)? = null) {
+  fun connect(
+    onUpdate: (DeviceRealtimeEventDto) -> Unit,
+    onConnected: (() -> Unit)? = null,
+    onDisconnected: (() -> Unit)? = null
+  ) {
     close()
+    explicitlyClosed = false
     val base = normalize(serverBaseUrl).toHttpUrl()
     val wsScheme = if (base.isHttps) "wss" else "ws"
     val socketUrl = base.newBuilder()
@@ -288,6 +294,10 @@ class DeviceRealtimeSocket(
     val requestBuilder = Request.Builder().url(socketUrl)
     cookieJar.headerValue(base)?.let { requestBuilder.header("Cookie", it) }
     socket = client.newWebSocket(requestBuilder.build(), object : WebSocketListener() {
+      override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
+        onConnected?.invoke()
+      }
+
       override fun onMessage(webSocket: WebSocket, text: String) {
         when {
           text == "2" -> webSocket.send("3")
@@ -308,12 +318,17 @@ class DeviceRealtimeSocket(
       }
 
       override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
-        onFailure?.invoke()
+        if (!explicitlyClosed) onDisconnected?.invoke()
+      }
+
+      override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+        if (!explicitlyClosed) onDisconnected?.invoke()
       }
     })
   }
 
   fun close() {
+    explicitlyClosed = true
     socket?.close(1000, null)
     socket = null
   }

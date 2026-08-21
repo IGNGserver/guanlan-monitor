@@ -9,21 +9,22 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dsc.android.ui.AppRoot
 import com.dsc.android.ui.theme.DeviceStateConsoleTheme
 
 class MainActivity : ComponentActivity() {
+  private val appViewModel: MainViewModel by viewModels { MainViewModel.Factory }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
     applyThemedTaskDescription()
 
     setContent {
-      val appViewModel: MainViewModel = viewModel(factory = MainViewModel.Factory)
       val state by appViewModel.state.collectAsStateWithLifecycle()
 
       DeviceStateConsoleTheme {
@@ -61,6 +62,16 @@ class MainActivity : ComponentActivity() {
         )
       }
     }
+  }
+
+  override fun onStart() {
+    super.onStart()
+    appViewModel.onAppForeground()
+  }
+
+  override fun onStop() {
+    appViewModel.onAppBackground()
+    super.onStop()
   }
 
   private fun launchUpdateInstaller(uriString: String) {

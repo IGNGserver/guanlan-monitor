@@ -108,6 +108,7 @@ import com.dsc.android.MetricWindow
 import com.dsc.android.MetricsDto
 import com.dsc.android.NetworkInterfaceDto
 import com.dsc.android.NetworkMetricSeriesDto
+import com.dsc.android.RemoteDataSource
 import com.dsc.android.ScreenTransitionDirection
 import com.dsc.android.SamplePointDto
 import com.dsc.android.TrafficCalendarDto
@@ -427,6 +428,11 @@ private fun DeviceListScreen(
           }
         }
       }
+      if (state.dataSource == RemoteDataSource.Cache || (state.authenticated && !state.realtimeConnected)) {
+        item(key = "connection-status") {
+          ConnectionStatusCard(state = state, onRefresh = onRefresh)
+        }
+      }
       if (visibleDevices.isEmpty()) {
         item(key = "empty-instance-list") {
           InlineLoadingCard(if (state.instanceType == "virtual_machine") "暂未发现虚拟机" else "暂未发现普通设备")
@@ -469,6 +475,41 @@ private fun DeviceListScreen(
       },
       dismissButton = { OutlinedButton(onClick = { pendingDeleteDevice = null }) { Text("取消") } }
     )
+  }
+}
+
+@Composable
+private fun ConnectionStatusCard(state: AppState, onRefresh: () -> Unit) {
+  val cached = state.dataSource == RemoteDataSource.Cache
+  ElevatedCard(
+    colors = CardDefaults.elevatedCardColors(
+      containerColor = if (cached) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+    )
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(16.dp),
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+          if (cached) "当前显示离线缓存" else "实时通道未连接，正在自动刷新",
+          fontWeight = FontWeight.SemiBold
+        )
+        Text(
+          if (cached) {
+            "缓存于 ${formatTime(state.cacheSavedAt)}；数据可能已经过期。"
+          } else {
+            "Socket.IO 暂时不可用，安卓端每 15 秒通过 HTTP 重新同步。"
+          },
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+      }
+      OutlinedButton(onClick = onRefresh, enabled = !state.refreshing) {
+        Text(if (state.refreshing) "刷新中" else "重试")
+      }
+    }
   }
 }
 
@@ -607,6 +648,11 @@ private fun DeviceDetailScreen(
       contentPadding = PaddingValues(16.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+      if (state.dataSource == RemoteDataSource.Cache || (state.authenticated && !state.realtimeConnected)) {
+        item(key = "connection-status") {
+          ConnectionStatusCard(state = state, onRefresh = onRefresh)
+        }
+      }
       item(key = "overview") {
         OverviewCard(
           metrics = metrics,
@@ -737,6 +783,11 @@ private fun TrafficScreen(
       contentPadding = PaddingValues(16.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+      if (state.dataSource == RemoteDataSource.Cache || (state.authenticated && !state.realtimeConnected)) {
+        item(key = "connection-status") {
+          ConnectionStatusCard(state = state, onRefresh = onRefresh)
+        }
+      }
       item {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
           TrafficCalendarMode.entries.forEach { mode ->
