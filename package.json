@@ -1,8 +1,11 @@
 {
   "name": "guanlan-monitor",
   "private": true,
-  "version": "0.2.223",
+  "version": "0.2.224",
   "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": ["electron"]
+  },
   "scripts": {
     "build": "pnpm -r build",
     "clean": "rm -rf apps/server/dist apps/web/.next apps/web/tsconfig.tsbuildinfo packages/shared/dist",
