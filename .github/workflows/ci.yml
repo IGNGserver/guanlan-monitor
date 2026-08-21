@@ -345,6 +345,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      - name: Prepare Electron runtime
+        run: |
+          pnpm rebuild electron
+          pnpm --filter @dsc/desktop exec electron --version
+
       - name: Build shared package and Electron renderer
         run: |
           pnpm --filter @dsc/shared build
