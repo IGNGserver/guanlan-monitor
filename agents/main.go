@@ -874,9 +874,11 @@ func runHardwareSensorProbe() error {
 	response := struct {
 		TemperatureSensors []temperatureSensorReading `json:"temperatureSources"`
 		SensorBackends     []sensorBackendStatus      `json:"temperatureSensorBackends"`
+		Fans               []fanSensorStats           `json:"fans"`
 	}{
 		TemperatureSensors: metrics.temperatureSensors,
 		SensorBackends:     metrics.sensorBackends,
+		Fans:               metrics.fans,
 	}
 	return json.NewEncoder(os.Stdout).Encode(response)
 }

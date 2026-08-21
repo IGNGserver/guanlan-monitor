@@ -192,9 +192,16 @@ type sensorBackendStatus struct {
 	Detail string `json:"detail,omitempty"`
 }
 
+type fanSensorReading struct {
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Interface string `json:"interface"`
+}
+
 type temperatureProbeResponse struct {
 	TemperatureSources        []temperatureSourceReading `json:"temperatureSources"`
 	TemperatureSensorBackends []sensorBackendStatus      `json:"temperatureSensorBackends"`
+	Fans                      []fanSensorReading         `json:"fans"`
 }
 
 type gpuAdapterDetectRow struct {
@@ -1188,8 +1195,9 @@ func (s *server) handleProbeDetect(writer http.ResponseWriter, request *http.Req
 		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	temperatureSources, temperatureBackends, fans, temperatureErr := s.detectTemperatureSources()
+	decorateDetectedFanTargets(detected, fans, cfg)
 	decorateDetectedMetrics(detected)
-	temperatureSources, temperatureBackends, temperatureErr := s.detectTemperatureSources()
 
 	s.mu.Lock()
 	s.detectedTargets = detected
@@ -1210,6 +1218,7 @@ func (s *server) handleProbeDetect(writer http.ResponseWriter, request *http.Req
 		"detectedTargets":           detected,
 		"temperatureSources":        temperatureSources,
 		"temperatureSensorBackends": temperatureBackends,
+		"fans":                      fans,
 		"temperatureProbeError": func() string {
 			if temperatureErr == nil {
 				return ""
@@ -1219,9 +1228,9 @@ func (s *server) handleProbeDetect(writer http.ResponseWriter, request *http.Req
 	})
 }
 
-func (s *server) detectTemperatureSources() ([]temperatureSourceReading, []sensorBackendStatus, error) {
+func (s *server) detectTemperatureSources() ([]temperatureSourceReading, []sensorBackendStatus, []fanSensorReading, error) {
 	if strings.TrimSpace(s.childBinaryPath) == "" {
-		return []temperatureSourceReading{}, []sensorBackendStatus{}, errors.New("collector_binary_missing")
+		return []temperatureSourceReading{}, []sensorBackendStatus{}, []fanSensorReading{}, errors.New("collector_binary_missing")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
@@ -1231,15 +1240,42 @@ func (s *server) detectTemperatureSources() ([]temperatureSourceReading, []senso
 	output, err := command.Output()
 	if err != nil {
 		if ctx.Err() != nil {
-			return []temperatureSourceReading{}, []sensorBackendStatus{}, fmt.Errorf("temperature_probe_timeout: %w", ctx.Err())
+			return []temperatureSourceReading{}, []sensorBackendStatus{}, []fanSensorReading{}, fmt.Errorf("temperature_probe_timeout: %w", ctx.Err())
 		}
-		return []temperatureSourceReading{}, []sensorBackendStatus{}, fmt.Errorf("temperature_probe_failed: %w", err)
+		return []temperatureSourceReading{}, []sensorBackendStatus{}, []fanSensorReading{}, fmt.Errorf("temperature_probe_failed: %w", err)
 	}
 	var response temperatureProbeResponse
 	if err := json.Unmarshal(bytes.TrimSpace(output), &response); err != nil {
-		return []temperatureSourceReading{}, []sensorBackendStatus{}, fmt.Errorf("temperature_probe_invalid_response: %w", err)
+		return []temperatureSourceReading{}, []sensorBackendStatus{}, []fanSensorReading{}, fmt.Errorf("temperature_probe_invalid_response: %w", err)
 	}
-	return response.TemperatureSources, response.TemperatureSensorBackends, nil
+	return response.TemperatureSources, response.TemperatureSensorBackends, response.Fans, nil
+}
+
+func decorateDetectedFanTargets(targets []probeTargetState, fans []fanSensorReading, cfg agentLocalConfig) {
+	enabled, explicit := enabledIDs(cfg.EnabledDeviceIDs, "fan")
+	instances := make([]probeDetectedTarget, 0, len(fans))
+	for index, fan := range fans {
+		id := strings.TrimSpace(fan.ID)
+		if id == "" {
+			id = fmt.Sprintf("fan-%s", detectSanitizeKey(strings.TrimSpace(fan.Interface)+"-"+strings.TrimSpace(fan.Label)))
+		}
+		name := strings.TrimSpace(fan.Label)
+		if name == "" {
+			name = fmt.Sprintf("风扇 %d", index+1)
+		}
+		instances = append(instances, probeDetectedTarget{
+			ID:       id,
+			Name:     name,
+			Subtitle: strings.TrimSpace(fan.Interface),
+			Enabled:  isIDEnabled(enabled, explicit, id),
+		})
+	}
+	for index := range targets {
+		if targets[index].Target == "fan" {
+			targets[index].Instances = instances
+			return
+		}
+	}
 }
 
 func decorateDetectedMetrics(targets []probeTargetState) {

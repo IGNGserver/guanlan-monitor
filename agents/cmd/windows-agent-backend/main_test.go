@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"runtime"
 	"testing"
 )
@@ -87,5 +88,33 @@ func TestValidateListenAddressRequiresTokenOutsideLoopback(t *testing.T) {
 	}
 	if err := validateListenAddress("0.0.0.0:17891", "local-token"); err != nil {
 		t.Fatalf("token-protected non-loopback listener should be accepted: %v", err)
+	}
+}
+
+func TestHardwareProbeResponseDecodesFans(t *testing.T) {
+	var response temperatureProbeResponse
+	if err := json.Unmarshal([]byte(`{"fans":[{"id":"fan-board-fan1","label":"CPU Fan","interface":"nct6775"}]}`), &response); err != nil {
+		t.Fatalf("decode hardware probe response: %v", err)
+	}
+	if len(response.Fans) != 1 || response.Fans[0].ID != "fan-board-fan1" || response.Fans[0].Interface != "nct6775" {
+		t.Fatalf("fan probe response was not decoded: %#v", response.Fans)
+	}
+}
+
+func TestDecorateDetectedFanTargetsUsesProbeIDsAndSelections(t *testing.T) {
+	targets := []probeTargetState{{Target: "fan", Label: "风扇实例"}}
+	cfg := agentLocalConfig{EnabledDeviceIDs: map[string][]string{"fan": []string{"fan-board-fan1"}}}
+	decorateDetectedFanTargets(targets, []fanSensorReading{
+		{ID: "fan-board-fan1", Label: "CPU Fan", Interface: "nct6775"},
+		{ID: "fan-board-fan2", Label: "Case Fan", Interface: "nct6775"},
+	}, cfg)
+	if len(targets[0].Instances) != 2 {
+		t.Fatalf("expected two detected fans, got %#v", targets[0].Instances)
+	}
+	if !targets[0].Instances[0].Enabled || targets[0].Instances[1].Enabled {
+		t.Fatalf("fan enabled selections were not preserved: %#v", targets[0].Instances)
+	}
+	if targets[0].Instances[0].Subtitle != "nct6775" {
+		t.Fatalf("fan interface was not preserved: %#v", targets[0].Instances[0])
 	}
 }

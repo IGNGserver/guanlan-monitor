@@ -1,6 +1,7 @@
 param(
   [string]$OutputDir = "",
   [string]$GoPath = "",
+  [string]$HardwareProbeDir = "",
   [switch]$Zip
 )
 
@@ -58,6 +59,22 @@ function Build-PlatformPackage {
   Copy-Item -LiteralPath (Join-Path $repoRoot "VERSION") -Destination (Join-Path $directory "VERSION") -Force
   Copy-Item -LiteralPath (Join-Path $repoRoot "deploy\$InstallerName") -Destination (Join-Path $directory $InstallerName) -Force
   Copy-Item -LiteralPath $CliInstallerPath -Destination (Join-Path $directory (Split-Path $CliInstallerPath -Leaf)) -Force
+  if ($Goos -eq "windows") {
+    $hardwareAssetDir = Join-Path $repoRoot "agents\windows-hardware"
+    if (-not (Test-Path -LiteralPath $hardwareAssetDir -PathType Container)) {
+      throw "Windows hardware asset directory not found: $hardwareAssetDir"
+    }
+    Copy-Item -LiteralPath $hardwareAssetDir -Destination (Join-Path $directory "windows-hardware") -Recurse -Force
+    if ([string]::IsNullOrWhiteSpace($HardwareProbeDir)) {
+      throw "HardwareProbeDir is required when building the Windows CLI package."
+    }
+    if (-not (Test-Path -LiteralPath $HardwareProbeDir -PathType Container)) {
+      throw "Hardware sensor probe directory not found: $HardwareProbeDir"
+    }
+    $probeDestination = Join-Path $directory "hardware-sensor-probe"
+    New-Item -ItemType Directory -Path $probeDestination -Force | Out-Null
+    Copy-Item -Path (Join-Path $HardwareProbeDir "*") -Destination $probeDestination -Recurse -Force
+  }
   "Device State Console CLI UI $ReleaseAssetName`r`nRun dsc to open the terminal UI." | Set-Content -LiteralPath (Join-Path $directory "README.txt") -Encoding ASCII
 }
 

@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -108,40 +109,190 @@ type probeDetectedInstance struct {
 	Metrics  []string `json:"metrics"`
 }
 
+type temperatureSourceReading struct {
+	ID           string   `json:"id"`
+	Source       string   `json:"source"`
+	Backend      string   `json:"backend,omitempty"`
+	Hardware     string   `json:"hardware,omitempty"`
+	HardwareType string   `json:"hardwareType,omitempty"`
+	InstanceID   string   `json:"instanceId,omitempty"`
+	Path         string   `json:"path,omitempty"`
+	RawName      string   `json:"rawName"`
+	DisplayName  string   `json:"displayName,omitempty"`
+	Role         string   `json:"role"`
+	CurrentC     *float64 `json:"currentC,omitempty"`
+	HighC        *float64 `json:"highC,omitempty"`
+	CriticalC    *float64 `json:"criticalC,omitempty"`
+	EmergencyC   *float64 `json:"emergencyC,omitempty"`
+	Alarm        *bool    `json:"alarm,omitempty"`
+	Status       string   `json:"status"`
+	Confidence   string   `json:"confidence"`
+	Note         string   `json:"note,omitempty"`
+}
+
+type sensorBackendStatus struct {
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	OK     bool   `json:"ok"`
+	Detail string `json:"detail,omitempty"`
+}
+
 type backendState struct {
-	Running                        bool               `json:"running"`
-	ConnectionStatus               string             `json:"connectionStatus"`
-	LastChildLog                   string             `json:"lastChildLog,omitempty"`
-	LastUploadAt                   string             `json:"lastUploadAt,omitempty"`
-	LastCloudSyncAt                string             `json:"lastCloudSyncAt,omitempty"`
-	LastCloudSyncError             string             `json:"lastCloudSyncError,omitempty"`
-	CloudConfigPending             bool               `json:"cloudConfigPending"`
-	LastExitAt                     string             `json:"lastExitAt,omitempty"`
-	LastRestartAt                  string             `json:"lastRestartAt,omitempty"`
-	RestartCount                   int                `json:"restartCount"`
-	LastExitCode                   *int               `json:"lastExitCode,omitempty"`
-	AutoRestartPending             bool               `json:"autoRestartPending"`
-	EffectiveUploadIntervalSeconds int                `json:"effectiveUploadIntervalSeconds"`
-	LastIssueCategory              string             `json:"lastIssueCategory,omitempty"`
-	LastIssueDetail                string             `json:"lastIssueDetail,omitempty"`
-	LastIssueAt                    string             `json:"lastIssueAt,omitempty"`
-	LastIssueCount                 int                `json:"lastIssueCount"`
-	LastIssueRecoveredAt           string             `json:"lastIssueRecoveredAt,omitempty"`
-	ConfigPath                     string             `json:"configPath"`
-	ConfigFileExists               bool               `json:"configFileExists"`
-	SyncStatePath                  string             `json:"syncStatePath"`
-	SyncStateFileExists            bool               `json:"syncStateFileExists"`
-	DiagnosticsPath                string             `json:"diagnosticsPath"`
-	DiagnosticsFileExists          bool               `json:"diagnosticsFileExists"`
-	PendingStatePath               string             `json:"pendingStatePath"`
-	PendingStateFileExists         bool               `json:"pendingStateFileExists"`
-	PendingSampleCount             int                `json:"pendingSampleCount"`
-	PendingBytes                   int64              `json:"pendingBytes"`
-	OldestPendingAt                string             `json:"oldestPendingAt,omitempty"`
-	LastUploadError                string             `json:"lastUploadError,omitempty"`
-	Config                         agentLocalConfig   `json:"config"`
-	SupportedProbePlans            []probePlanSupport `json:"supportedProbePlans"`
-	DetectedTargets                []probeTargetState `json:"detectedTargets"`
+	Running                        bool                       `json:"running"`
+	ConnectionStatus               string                     `json:"connectionStatus"`
+	LastChildLog                   string                     `json:"lastChildLog,omitempty"`
+	LastUploadAt                   string                     `json:"lastUploadAt,omitempty"`
+	LastCloudSyncAt                string                     `json:"lastCloudSyncAt,omitempty"`
+	LastCloudSyncError             string                     `json:"lastCloudSyncError,omitempty"`
+	CloudConfigPending             bool                       `json:"cloudConfigPending"`
+	LastExitAt                     string                     `json:"lastExitAt,omitempty"`
+	LastRestartAt                  string                     `json:"lastRestartAt,omitempty"`
+	RestartCount                   int                        `json:"restartCount"`
+	LastExitCode                   *int                       `json:"lastExitCode,omitempty"`
+	AutoRestartPending             bool                       `json:"autoRestartPending"`
+	EffectiveUploadIntervalSeconds int                        `json:"effectiveUploadIntervalSeconds"`
+	LastIssueCategory              string                     `json:"lastIssueCategory,omitempty"`
+	LastIssueDetail                string                     `json:"lastIssueDetail,omitempty"`
+	LastIssueAt                    string                     `json:"lastIssueAt,omitempty"`
+	LastIssueCount                 int                        `json:"lastIssueCount"`
+	LastIssueRecoveredAt           string                     `json:"lastIssueRecoveredAt,omitempty"`
+	ConfigPath                     string                     `json:"configPath"`
+	ConfigFileExists               bool                       `json:"configFileExists"`
+	SyncStatePath                  string                     `json:"syncStatePath"`
+	SyncStateFileExists            bool                       `json:"syncStateFileExists"`
+	DiagnosticsPath                string                     `json:"diagnosticsPath"`
+	DiagnosticsFileExists          bool                       `json:"diagnosticsFileExists"`
+	PendingStatePath               string                     `json:"pendingStatePath"`
+	PendingStateFileExists         bool                       `json:"pendingStateFileExists"`
+	PendingSampleCount             int                        `json:"pendingSampleCount"`
+	PendingBytes                   int64                      `json:"pendingBytes"`
+	OldestPendingAt                string                     `json:"oldestPendingAt,omitempty"`
+	LastUploadError                string                     `json:"lastUploadError,omitempty"`
+	Config                         agentLocalConfig           `json:"config"`
+	SupportedProbePlans            []probePlanSupport         `json:"supportedProbePlans"`
+	DetectedTargets                []probeTargetState         `json:"detectedTargets"`
+	LastDetectAt                   string                     `json:"lastDetectAt,omitempty"`
+	TemperatureSources             []temperatureSourceReading `json:"temperatureSources"`
+	TemperatureSensorBackends      []sensorBackendStatus      `json:"temperatureSensorBackends"`
+	TemperatureProbeError          string                     `json:"temperatureProbeError,omitempty"`
+}
+
+type metricDefinition struct {
+	Key   string
+	Label string
+}
+
+type metricGroupDefinition struct {
+	Label string
+	Items []metricDefinition
+}
+
+var metricGroups = []metricGroupDefinition{
+	{Label: "处理器", Items: []metricDefinition{
+		{Key: "cpuUsage", Label: "CPU 使用率"},
+		{Key: "cpuFrequency", Label: "CPU 频率"},
+		{Key: "cpuTemperature", Label: "CPU 温度"},
+		{Key: "cpuTopology", Label: "核心、线程与 L3 缓存"},
+		{Key: "systemOverview", Label: "系统概览"},
+	}},
+	{Label: "显卡", Items: []metricDefinition{
+		{Key: "gpuUsage", Label: "GPU 使用率"},
+		{Key: "gpuEncode", Label: "编码负载"},
+		{Key: "gpuDecode", Label: "解码负载"},
+		{Key: "gpuFrequency", Label: "GPU 频率"},
+		{Key: "gpuMemory", Label: "GPU 内存使用"},
+		{Key: "gpuTemperature", Label: "GPU 温度"},
+		{Key: "gpuDriverInfo", Label: "驱动信息"},
+	}},
+	{Label: "内存", Items: []metricDefinition{
+		{Key: "memoryUsage", Label: "内存使用率"},
+		{Key: "swapUsage", Label: "交换分区"},
+		{Key: "memoryAvailable", Label: "可用内存"},
+		{Key: "memoryCached", Label: "缓存内存"},
+		{Key: "memoryCommitted", Label: "已提交内存"},
+		{Key: "memoryHardware", Label: "内存硬件信息"},
+	}},
+	{Label: "磁盘", Items: []metricDefinition{
+		{Key: "diskUsage", Label: "磁盘使用率"},
+		{Key: "diskRead", Label: "读取速率"},
+		{Key: "diskWrite", Label: "写入速率"},
+		{Key: "diskMetadata", Label: "磁盘信息"},
+		{Key: "diskActivity", Label: "活动状态"},
+		{Key: "diskHealth", Label: "健康状态"},
+	}},
+	{Label: "网络", Items: []metricDefinition{
+		{Key: "networkRxRate", Label: "接收速率"},
+		{Key: "networkTxRate", Label: "发送速率"},
+		{Key: "networkTraffic", Label: "流量统计"},
+		{Key: "networkIdentity", Label: "网卡信息"},
+	}},
+	{Label: "风扇", Items: []metricDefinition{
+		{Key: "fanRpm", Label: "转速"},
+		{Key: "fanControl", Label: "控制状态"},
+		{Key: "fanTargetTemperature", Label: "目标温度"},
+		{Key: "fanPwm", Label: "PWM 占空比"},
+		{Key: "fanChannelState", Label: "通道状态"},
+		{Key: "fanNote", Label: "风扇备注"},
+	}},
+	{Label: "温度源", Items: []metricDefinition{
+		{Key: "temperatureSources", Label: "全部温度传感器"},
+	}},
+}
+
+var metricLabels = buildMetricLabels()
+
+var probeTargetLabels = map[string]string{
+	"cpu":        "CPU 处理器",
+	"gpu":        "GPU 显卡",
+	"memory":     "内存",
+	"disk":       "磁盘",
+	"network":    "网络",
+	"fan":        "风扇",
+	"connection": "连接",
+}
+
+var probeProviderLabels = map[string]string{
+	"builtin":              "内置采集",
+	"gopsutil":             "系统采集（gopsutil）",
+	"hwmon":                "Linux hwmon",
+	"wmi":                  "Windows WMI",
+	"librehardwaremonitor": "LibreHardwareMonitor",
+	"libreHardwareMonitor": "LibreHardwareMonitor",
+	"openHardwareMonitor":  "OpenHardwareMonitor",
+	"redfish":              "Redfish",
+	"disabled":             "禁用",
+}
+
+var temperatureRoleLabels = map[string]string{
+	"cpu_package":       "CPU 封装",
+	"cpu_core":          "CPU 核心",
+	"gpu_core":          "GPU 核心",
+	"gpu_hotspot":       "GPU 热点",
+	"storage_composite": "磁盘综合温度",
+	"storage_sensor":    "磁盘附加传感器",
+	"motherboard":       "主板温度",
+	"superio":           "SuperIO 温度",
+	"peci":              "PECI 温度",
+	"acpi_zone":         "ACPI 热区",
+	"threshold":         "温度阈值",
+	"derived":           "派生温度",
+	"unknown":           "未知温度源",
+}
+
+var temperatureSourceLabels = map[string]string{
+	"librehardwaremonitor":        "LibreHardwareMonitor",
+	"linux-hwmon":                 "Linux hwmon",
+	"linux-thermal":               "Linux thermal",
+	"smartctl":                    "smartctl / SMART",
+	"windows-storage-reliability": "Windows 存储可靠性",
+	"cpu-package-shared":          "CPU Package 共享",
+}
+
+var temperatureStatusLabels = map[string]string{
+	"valid":       "正常",
+	"threshold":   "阈值",
+	"invalid":     "无效值",
+	"unavailable": "不可用",
 }
 
 type connectionCheckResult struct {
@@ -196,6 +347,8 @@ func run(args []string) error {
 		return shutdownBackend()
 	case "doctor":
 		return runDoctor()
+	case "probes":
+		return runProbes(args[1:])
 	case "config":
 		return runConfig(args[1:])
 	default:
@@ -216,6 +369,8 @@ func printUsage() {
 	fmt.Println("  dsc restart                 重启采集器")
 	fmt.Println("  dsc shutdown                停止本地 CLI backend")
 	fmt.Println("  dsc doctor                  检查连接和探针")
+	fmt.Println("  dsc probes status [--json]  查看最近一次探测结果")
+	fmt.Println("  dsc probes detect [--json]  强制重新探测硬件")
 	fmt.Println("  dsc config get [--json]     输出本地配置（密钥会脱敏）")
 	fmt.Println("  dsc config set [options]    无界面修改配置")
 	fmt.Println("  dsc config validate [file]  校验 JSON 配置")
@@ -329,11 +484,12 @@ func runDoctor() error {
 		fmt.Println("连接检查结果: 未通过")
 	}
 
-	detected, detectErr := client.control("/api/probes/detect", nil)
+	detected, detectErr := detectAndRefresh(client)
 	if detectErr != nil {
 		fmt.Printf("探针检测失败: %v\n", detectErr)
 	} else {
-		fmt.Printf("探针检测完成: %d 个目标类别\n", len(detected.DetectedTargets))
+		fmt.Println("探针检测完成:")
+		printProbeDetection(detected)
 	}
 	if checkErr != nil {
 		return fmt.Errorf("connection check failed: %w", checkErr)
@@ -344,6 +500,40 @@ func runDoctor() error {
 	if detectErr != nil {
 		return fmt.Errorf("probe detection failed: %w", detectErr)
 	}
+	return nil
+}
+
+func runProbes(args []string) error {
+	jsonOutput := contains(args, "--json")
+	command := "status"
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--") {
+			continue
+		}
+		command = strings.ToLower(strings.TrimSpace(arg))
+		break
+	}
+	client, err := ensureClient()
+	if err != nil {
+		return err
+	}
+
+	var state *backendState
+	switch command {
+	case "status":
+		state, err = client.getState()
+	case "detect", "redetect", "refresh":
+		state, err = detectAndRefresh(client)
+	default:
+		return fmt.Errorf("unknown probes command %q; use status or detect", command)
+	}
+	if err != nil {
+		return err
+	}
+	if jsonOutput {
+		return writeOutputJSON(redactState(state))
+	}
+	printProbeDetection(state)
 	return nil
 }
 
@@ -414,6 +604,7 @@ func runConfigSet(client *backendClient, args []string) error {
 	}
 	changed := false
 	displayChanged := false
+	detectionChanged := false
 	if strings.TrimSpace(*serverURL) != "" {
 		cfg.Connection.ServerURL = strings.TrimSpace(*serverURL)
 		changed = true
@@ -443,6 +634,7 @@ func runConfigSet(client *backendClient, args []string) error {
 		cfg.EnabledMetrics = parsed
 		changed = true
 		displayChanged = true
+		detectionChanged = true
 	}
 	if strings.TrimSpace(*enabledDeviceIDsJSON) != "" {
 		if err := decodeJSON(*enabledDeviceIDsJSON, &cfg.EnabledDeviceIDs); err != nil {
@@ -464,6 +656,7 @@ func runConfigSet(client *backendClient, args []string) error {
 		}
 		changed = true
 		displayChanged = true
+		detectionChanged = true
 	}
 	if strings.TrimSpace(*virtualizationJSON) != "" {
 		if err := decodeJSON(*virtualizationJSON, &cfg.Virtualization); err != nil {
@@ -510,6 +703,11 @@ func runConfigSet(client *backendClient, args []string) error {
 	}
 	if err := saveConfig(client, cfg, displayChanged); err != nil {
 		return err
+	}
+	if detectionChanged {
+		if _, err := detectAndRefresh(client); err != nil {
+			return fmt.Errorf("配置已保存，但重新探测失败: %w", err)
+		}
 	}
 	fmt.Printf("配置已保存到 %s\n", cfgPathFromClient(client))
 	return nil
@@ -588,6 +786,9 @@ func runConfigImport(client *backendClient, args []string) error {
 	}
 	if err := client.putConfig(cfg); err != nil {
 		return err
+	}
+	if _, err := detectAndRefresh(client); err != nil {
+		return fmt.Errorf("配置已导入，但重新探测失败: %w", err)
 	}
 	fmt.Printf("配置已导入: %s\n", *file)
 	return nil
@@ -800,7 +1001,7 @@ func runUI() error {
 		fmt.Println()
 		fmt.Println("[1] 中枢连接   [2] 采样与记录 [3] 全局指标")
 		fmt.Println("[4] 硬件探针   [5] 实例上报   [6] 实例指标")
-		fmt.Println("[7] 运行控制   [8] 诊断")
+		fmt.Println("[7] 运行控制   [8] 诊断       [9] 探测结果")
 		fmt.Println("[q] 退出（后台继续运行）")
 		choice, err := readLine(reader, "\n请选择: ", "")
 		if err != nil {
@@ -824,6 +1025,8 @@ func runUI() error {
 			actionErr = controlUI(client, reader)
 		case "8":
 			actionErr = doctorUI(client)
+		case "9":
+			actionErr = probeStatusUI(client)
 		case "q", "quit", "exit":
 			fmt.Println("已退出 UI；后台 Agent 仍继续运行。")
 			return nil
@@ -911,8 +1114,8 @@ func editMetrics(client *backendClient, reader *bufio.Reader) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("\n当前指标:")
-	fmt.Println(strings.Join(cfg.EnabledMetrics, ", "))
+	fmt.Println("\n当前指标（● 已启用，○ 未启用）:")
+	printMetricCatalog(cfg.EnabledMetrics)
 	fmt.Println("输入 all 启用全部，none 停用全部，或输入逗号分隔的指标 key。")
 	value, err := readLine(reader, "指标: ", "")
 	if err != nil {
@@ -928,6 +1131,9 @@ func editMetrics(client *backendClient, reader *bufio.Reader) error {
 	cfg.EnabledMetrics = metrics
 	if err := saveConfig(client, cfg, true); err != nil {
 		return err
+	}
+	if _, err := detectAndRefresh(client); err != nil {
+		return fmt.Errorf("指标配置已保存，但重新探测失败: %w", err)
 	}
 	fmt.Println("指标配置已保存。")
 	return nil
@@ -964,8 +1170,9 @@ func editProbes(client *backendClient, reader *bufio.Reader) error {
 				selection.Provider = plan.Providers[0]
 			}
 		}
-		fmt.Printf("\n目标: %s\n", target)
-		if selection.Provider, err = promptChoice(reader, "提供者", selection.Provider, plan.Providers); err != nil {
+		fmt.Printf("\n目标: %s\n", displayProbeTarget(target))
+		providerOptions := append([]string(nil), plan.Providers...)
+		if selection.Provider, err = promptChoice(reader, "提供者", selection.Provider, providerOptions); err != nil {
 			return err
 		}
 		if selection.Enabled, err = promptBool(reader, "是否启用", selection.Enabled); err != nil {
@@ -980,7 +1187,12 @@ func editProbes(client *backendClient, reader *bufio.Reader) error {
 	if err := saveConfig(client, cfg, true); err != nil {
 		return err
 	}
-	fmt.Println("探针配置已保存。")
+	state, err = detectAndRefresh(client)
+	if err != nil {
+		return fmt.Errorf("探针配置已保存，但重新探测失败: %w", err)
+	}
+	fmt.Println("探针配置已保存，探测结果已刷新。")
+	printProbeDetection(state)
 	return nil
 }
 
@@ -996,14 +1208,14 @@ func loadDetectedState(client *backendClient) (*backendState, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(state.DetectedTargets) == 0 {
-		detected, detectErr := client.control("/api/probes/detect", nil)
-		if detectErr != nil {
-			return nil, detectErr
-		}
-		state = &detected
+	if needsProbeDetection(state) {
+		return detectAndRefresh(client)
 	}
 	return state, nil
+}
+
+func needsProbeDetection(state *backendState) bool {
+	return state == nil || len(state.DetectedTargets) == 0 || strings.TrimSpace(state.LastDetectAt) == ""
 }
 
 func editInstances(client *backendClient, reader *bufio.Reader) error {
@@ -1031,7 +1243,7 @@ func editInstances(client *backendClient, reader *bufio.Reader) error {
 		configured = uniqueStrings(configured)
 		for _, instance := range group.Instances {
 			current := contains(configured, instance.ID)
-			value, promptErr := promptBool(reader, fmt.Sprintf("%s/%s 上报", group.Label, instance.Name), current)
+			value, promptErr := promptBool(reader, fmt.Sprintf("%s/%s 上报", displayProbeTarget(target), instance.Name), current)
 			if promptErr != nil {
 				return promptErr
 			}
@@ -1073,12 +1285,13 @@ func editInstanceMetrics(client *backendClient, reader *bufio.Reader) error {
 		if !supported || len(group.Instances) == 0 {
 			continue
 		}
-		fmt.Printf("\n%s 实例指标（可输入 inherit、none 或逗号分隔 key）\n", group.Label)
+		fmt.Printf("\n%s 实例指标（可输入 inherit、none 或逗号分隔 key）\n", displayProbeTarget(target))
+		fmt.Printf("可用指标: %s\n", formatMetricDefinitions(metricDefinitions(options)))
 		for _, instance := range group.Instances {
 			current, hasOverride := overrides[instance.ID]
 			currentLabel := "跟随全局"
 			if hasOverride {
-				currentLabel = strings.Join(current, ",")
+				currentLabel = formatMetricKeys(current)
 			}
 			value, readErr := readLine(reader, fmt.Sprintf("%s [%s]: ", instance.Name, valueOr(currentLabel, "none")), "")
 			if readErr != nil {
@@ -1201,9 +1414,11 @@ func controlUI(client *backendClient, reader *bufio.Reader) error {
 			fmt.Println("连接检查未通过。")
 		}
 	case "4":
-		state, err = client.control("/api/probes/detect", nil)
+		var detected *backendState
+		detected, err = detectAndRefresh(client)
 		if err == nil {
-			fmt.Printf("检测到 %d 个目标类别。\n", len(state.DetectedTargets))
+			state = *detected
+			printProbeDetection(detected)
 		}
 	case "5":
 		err = pushCloudConfig(client)
@@ -1236,11 +1451,12 @@ func doctorUI(client *backendClient) error {
 	if checkErr != nil && result.Message == "" {
 		fmt.Printf("连接检查: %v\n", checkErr)
 	}
-	detected, detectErr := client.control("/api/probes/detect", nil)
+	detected, detectErr := detectAndRefresh(client)
 	if detectErr != nil {
 		fmt.Printf("探针检测: %v\n", detectErr)
 	} else {
-		fmt.Printf("探针检测: 已发现 %d 个目标类别\n", len(detected.DetectedTargets))
+		fmt.Println("探针检测:")
+		printProbeDetection(detected)
 	}
 	if checkErr != nil {
 		return fmt.Errorf("connection check failed: %w", checkErr)
@@ -1251,6 +1467,15 @@ func doctorUI(client *backendClient) error {
 	if detectErr != nil {
 		return fmt.Errorf("probe detection failed: %w", detectErr)
 	}
+	return nil
+}
+
+func probeStatusUI(client *backendClient) error {
+	state, err := client.getState()
+	if err != nil {
+		return err
+	}
+	printProbeDetection(state)
 	return nil
 }
 
@@ -1429,6 +1654,13 @@ func (c *backendClient) getState() (*backendState, error) {
 	return &state, nil
 }
 
+func detectAndRefresh(client *backendClient) (*backendState, error) {
+	if _, err := client.control("/api/probes/detect", nil); err != nil {
+		return nil, err
+	}
+	return client.getState()
+}
+
 func (c *backendClient) getConfig() (agentLocalConfig, error) {
 	var cfg agentLocalConfig
 	if err := c.request(http.MethodGet, "/api/config", nil, &cfg); err != nil {
@@ -1573,6 +1805,208 @@ func terminateProcess(pid int) {
 	}
 }
 
+func buildMetricLabels() map[string]string {
+	labels := make(map[string]string)
+	for _, group := range metricGroups {
+		for _, item := range group.Items {
+			labels[item.Key] = item.Label
+		}
+	}
+	return labels
+}
+
+func metricLabel(key string) string {
+	return valueOr(metricLabels[key], key)
+}
+
+func metricDefinitions(keys []string) []metricDefinition {
+	definitions := make([]metricDefinition, 0, len(keys))
+	for _, key := range keys {
+		definitions = append(definitions, metricDefinition{Key: key, Label: metricLabel(key)})
+	}
+	return definitions
+}
+
+func formatMetricDefinitions(definitions []metricDefinition) string {
+	if len(definitions) == 0 {
+		return "无"
+	}
+	values := make([]string, 0, len(definitions))
+	for _, definition := range definitions {
+		values = append(values, fmt.Sprintf("%s (%s)", definition.Label, definition.Key))
+	}
+	return strings.Join(values, ", ")
+}
+
+func formatMetricKeys(keys []string) string {
+	return formatMetricDefinitions(metricDefinitions(keys))
+}
+
+func printMetricCatalog(enabled []string) {
+	enabledSet := make(map[string]bool, len(enabled))
+	for _, key := range enabled {
+		enabledSet[key] = true
+	}
+	for _, group := range metricGroups {
+		fmt.Printf("%s:\n", group.Label)
+		for _, item := range group.Items {
+			marker := "○"
+			if enabledSet[item.Key] {
+				marker = "●"
+			}
+			fmt.Printf("  %s %-18s %s\n", marker, item.Label, item.Key)
+		}
+	}
+}
+
+func displayProbeTarget(target string) string {
+	target = strings.ToLower(strings.TrimSpace(target))
+	return valueOr(probeTargetLabels[target], target)
+}
+
+func displayProbeProvider(provider string) string {
+	provider = strings.TrimSpace(provider)
+	return valueOr(probeProviderLabels[provider], provider)
+}
+
+func displayTemperatureRole(role string) string {
+	role = strings.TrimSpace(role)
+	return valueOr(temperatureRoleLabels[role], role)
+}
+
+func displayTemperatureSource(source string) string {
+	source = strings.TrimSpace(source)
+	return valueOr(temperatureSourceLabels[source], source)
+}
+
+func displayTemperatureStatus(status string) string {
+	status = strings.TrimSpace(status)
+	return valueOr(temperatureStatusLabels[status], status)
+}
+
+func temperatureValueLabel(sensor temperatureSourceReading) string {
+	if sensor.CurrentC == nil || math.IsNaN(*sensor.CurrentC) || math.IsInf(*sensor.CurrentC, 0) {
+		if sensor.Status == "threshold" {
+			return "仅阈值"
+		}
+		return "—"
+	}
+	return fmt.Sprintf("%.1f °C", *sensor.CurrentC)
+}
+
+func temperatureLimitsLabel(sensor temperatureSourceReading) string {
+	limits := make([]string, 0, 3)
+	if sensor.HighC != nil {
+		limits = append(limits, fmt.Sprintf("高 %.1f°C", *sensor.HighC))
+	}
+	if sensor.CriticalC != nil {
+		limits = append(limits, fmt.Sprintf("临界 %.1f°C", *sensor.CriticalC))
+	}
+	if sensor.EmergencyC != nil {
+		limits = append(limits, fmt.Sprintf("紧急 %.1f°C", *sensor.EmergencyC))
+	}
+	return strings.Join(limits, " · ")
+}
+
+func probeTargetCounts(state *backendState) (groups, instances int) {
+	if state == nil {
+		return 0, 0
+	}
+	groups = len(state.DetectedTargets)
+	for _, target := range state.DetectedTargets {
+		instances += len(target.Instances)
+	}
+	return groups, instances
+}
+
+func printProbeSummary(state *backendState) {
+	if state == nil || (strings.TrimSpace(state.LastDetectAt) == "" && len(state.DetectedTargets) == 0 && len(state.TemperatureSources) == 0) {
+		fmt.Println("最近探测: 尚未执行")
+		return
+	}
+	groups, instances := probeTargetCounts(state)
+	fmt.Printf("最近探测: %s（%d 个目标类别，%d 个实例，%d 个温度源）\n", valueOr(state.LastDetectAt, "时间未知"), groups, instances, len(state.TemperatureSources))
+	if state.TemperatureProbeError != "" {
+		fmt.Printf("温度探测警告: %s\n", state.TemperatureProbeError)
+	}
+}
+
+func printProbeDetection(state *backendState) {
+	if state == nil {
+		fmt.Println("探测结果为空。")
+		return
+	}
+	redacted := redactState(state)
+	state = &redacted
+	printProbeSummary(state)
+	for _, group := range state.DetectedTargets {
+		label := displayProbeTarget(group.Target)
+		if strings.TrimSpace(group.Label) != "" {
+			label = group.Label
+		}
+		fmt.Printf("  %s: %d 个实例\n", label, len(group.Instances))
+		for _, instance := range group.Instances {
+			detail := instance.Name
+			if instance.Subtitle != "" {
+				detail += " · " + instance.Subtitle
+			}
+			if !instance.Enabled {
+				detail += " · 未启用"
+			}
+			fmt.Printf("    - %s [%s]\n", detail, instance.ID)
+			if len(instance.Metrics) > 0 {
+				fmt.Printf("      组件: %s\n", strings.Join(instance.Metrics, ", "))
+			}
+		}
+	}
+
+	if len(state.TemperatureSources) > 0 {
+		fmt.Println("温度源:")
+		for _, sensor := range state.TemperatureSources {
+			name := valueOr(sensor.DisplayName, sensor.RawName)
+			metadata := []string{displayTemperatureRole(sensor.Role), displayTemperatureSource(sensor.Source)}
+			if sensor.Backend != "" {
+				metadata = append(metadata, sensor.Backend)
+			}
+			metadata = append(metadata, displayTemperatureStatus(sensor.Status))
+			fmt.Printf("  - %s: %s · %s\n", name, temperatureValueLabel(sensor), strings.Join(metadata, " · "))
+			if limits := temperatureLimitsLabel(sensor); limits != "" {
+				fmt.Printf("    阈值: %s\n", limits)
+			}
+			if sensor.Path != "" || sensor.Hardware != "" || sensor.Note != "" {
+				details := make([]string, 0, 3)
+				if sensor.Hardware != "" {
+					details = append(details, "硬件="+sensor.Hardware)
+				}
+				if sensor.Path != "" {
+					details = append(details, "路径="+sensor.Path)
+				}
+				if sensor.Note != "" {
+					details = append(details, sensor.Note)
+				}
+				fmt.Printf("    %s\n", strings.Join(details, " · "))
+			}
+		}
+	}
+	if len(state.TemperatureSensorBackends) > 0 {
+		fmt.Println("温度探测后端:")
+		for _, backend := range state.TemperatureSensorBackends {
+			status := "可用"
+			if !backend.OK {
+				status = "不可用"
+			}
+			detail := backend.Label
+			if backend.Detail != "" {
+				detail += " · " + backend.Detail
+			}
+			fmt.Printf("  - %s: %s\n", detail, status)
+		}
+	}
+	if state.TemperatureProbeError != "" {
+		fmt.Printf("温度探测错误: %s\n", state.TemperatureProbeError)
+	}
+}
+
 func printDashboard(state *backendState) {
 	redacted := redactState(state)
 	fmt.Printf("观澜 CLI %s (%s)\n", BuildVersion, BuildChannel)
@@ -1594,6 +2028,7 @@ func printDashboard(state *backendState) {
 	if redacted.LastUploadError != "" {
 		fmt.Printf("最近错误: %s\n", redacted.LastUploadError)
 	}
+	printProbeSummary(&redacted)
 }
 
 func printStateSummary(state *backendState) {
@@ -1617,6 +2052,7 @@ func printStateSummary(state *backendState) {
 	if redacted.LastUploadError != "" {
 		fmt.Printf("最近上传错误: %s\n", redacted.LastUploadError)
 	}
+	printProbeSummary(&redacted)
 }
 
 func printConfig(cfg agentLocalConfig) {
@@ -1641,6 +2077,7 @@ func redactState(state *backendState) backendState {
 	copy.LastCloudSyncError = redactSensitiveText(copy.LastCloudSyncError, secret)
 	copy.LastIssueDetail = redactSensitiveText(copy.LastIssueDetail, secret)
 	copy.LastUploadError = redactSensitiveText(copy.LastUploadError, secret)
+	copy.TemperatureProbeError = redactSensitiveText(copy.TemperatureProbeError, secret)
 	copy.Config = redactConfig(copy.Config)
 	return copy
 }
@@ -1675,10 +2112,14 @@ func promptChoice(reader *bufio.Reader, label, current string, options []string)
 		if index > 0 {
 			fmt.Print(" / ")
 		}
-		fmt.Printf("%d=%s", index+1, option)
+		fmt.Printf("%d=%s", index+1, displayChoiceOption(label, option))
 	}
 	fmt.Println()
-	value, err := readLine(reader, fmt.Sprintf("%s [%s]: ", label, valueOr(current, options[0])), current)
+	currentLabel := valueOr(current, options[0])
+	if label == "提供者" {
+		currentLabel = displayProbeProvider(currentLabel)
+	}
+	value, err := readLine(reader, fmt.Sprintf("%s [%s]: ", label, currentLabel), current)
 	if err != nil {
 		return current, err
 	}
@@ -1695,6 +2136,13 @@ func promptChoice(reader *bufio.Reader, label, current string, options []string)
 		}
 	}
 	return current, fmt.Errorf("%s 必须选择支持的 provider", label)
+}
+
+func displayChoiceOption(label, option string) string {
+	if label == "提供者" {
+		return displayProbeProvider(option)
+	}
+	return option
 }
 
 func promptInt(reader *bufio.Reader, label string, current, minimum, maximum int) (int, error) {

@@ -52,6 +52,12 @@ try {
       Copy-Item -LiteralPath $source -Destination (Join-Path $InstallDir $file) -Force
     }
   }
+  foreach ($directory in @("windows-hardware", "hardware-sensor-probe")) {
+    $source = Join-Path $packageRoot $directory
+    if (Test-Path -LiteralPath $source -PathType Container) {
+      Copy-Item -LiteralPath $source -Destination (Join-Path $InstallDir $directory) -Recurse -Force
+    }
+  }
 
   if (-not $NoPathNotice) {
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")

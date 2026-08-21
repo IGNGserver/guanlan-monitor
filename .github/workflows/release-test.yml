@@ -156,7 +156,9 @@ jobs:
 
       - name: Build Windows and Linux CLI packages
         shell: powershell
-        run: ./deploy/build-cli-agent.ps1 -OutputDir release/cli-agent -Zip
+        run: |
+          $probeDir = Join-Path $env:RUNNER_TEMP "device-state-console-hardware-probe"
+          ./deploy/build-cli-agent.ps1 -OutputDir release/cli-agent -HardwareProbeDir $probeDir -Zip
 
       - name: Verify CLI package layout
         shell: powershell
@@ -172,11 +174,20 @@ jobs:
               if (-not (Test-Path -LiteralPath $path)) { throw "CLI package is missing $path" }
             }
           }
+          $windowsCli = Join-Path "release/cli-agent/windows-x64" ""
+          foreach ($path in @(
+            (Join-Path $windowsCli "windows-hardware\librehardwaremonitor\LibreHardwareMonitorLib.dll"),
+            (Join-Path $windowsCli "hardware-sensor-probe\HardwareSensorProbe.dll")
+          )) {
+            if (-not (Test-Path -LiteralPath $path)) { throw "Windows CLI package is missing hardware asset $path" }
+          }
           if ((Get-Content -LiteralPath "release/cli-agent/install-cli.ps1" -Raw) -match "__DSC_VERSION__") { throw "Windows CLI installer still has an unresolved version placeholder." }
           if ((Get-Content -LiteralPath "release/cli-agent/install-cli.sh" -Raw) -match "__DSC_VERSION__") { throw "Linux CLI installer still has an unresolved version placeholder." }
           $shellBytes = [System.IO.File]::ReadAllBytes((Join-Path "release/cli-agent" "install-cli.sh"))
           if ($shellBytes.Length -ge 3 -and $shellBytes[0] -eq 0xEF -and $shellBytes[1] -eq 0xBB -and $shellBytes[2] -eq 0xBF) { throw "Linux CLI installer must not contain a UTF-8 BOM." }
           if ([Array]::IndexOf($shellBytes, [byte]0x0D) -ge 0) { throw "Linux CLI installer must use LF line endings." }
+          & "release/cli-agent/windows-x64/dsc.exe" --help
+          if ($LASTEXITCODE -ne 0) { throw "Windows CLI help command failed." }
 
       - name: Upload Windows assets
         uses: actions/upload-artifact@v4

@@ -131,6 +131,12 @@ install -m 0755 "${PACKAGE_ROOT}/device-state-console-agent-backend" "${INSTALL_
 if [[ -f "${PACKAGE_ROOT}/VERSION" ]]; then
   install -m 0644 "${PACKAGE_ROOT}/VERSION" "${INSTALL_DIR}/VERSION"
 fi
+for directory in windows-hardware hardware-sensor-probe; do
+  if [[ -d "${PACKAGE_ROOT}/${directory}" ]]; then
+    install -d -m 0755 "${INSTALL_DIR}/${directory}"
+    cp -R "${PACKAGE_ROOT}/${directory}/." "${INSTALL_DIR}/${directory}/"
+  fi
+done
 
 echo "观澜 CLI 已安装到 ${INSTALL_DIR}。"
 if [[ "${NO_PATH_NOTICE}" != "true" ]] && [[ ":${PATH}:" != *":${INSTALL_DIR}:"* ]]; then
