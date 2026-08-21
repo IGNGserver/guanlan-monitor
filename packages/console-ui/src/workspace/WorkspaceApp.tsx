@@ -20,7 +20,7 @@ import {
 } from "./WidgetLayout";
 import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
 import { DynamicWidgetCanvas, WidgetDrawer } from "./widgetCatalog";
-import { Button, Icon, StatusLabel, Surface, SummaryRow, type IconName } from "./ui";
+import { Button, Icon, StatusDot, StatusLabel, Surface, SummaryRow, type IconName } from "./ui";
 import { MiniTrend, TelemetryChartCard, TelemetryInfoCard } from "./TelemetryCards";
 import {
   CapacityMetricValue,
