@@ -22,17 +22,12 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.WebSocket
-import okhttp3.WebSocketListener
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.http.Body
@@ -113,11 +108,6 @@ class InMemoryCookieJar : CookieJar {
 
   override fun loadForRequest(url: HttpUrl): List<Cookie> = cookies[url.host].orEmpty()
 
-  fun headerValue(url: HttpUrl): String? {
-    val values = loadForRequest(url)
-    if (values.isEmpty()) return null
-    return values.joinToString("; ") { "${it.name}=${it.value}" }
-  }
 }
 
 internal class InvalidServerUrlException(message: String) : IllegalArgumentException(message)
@@ -136,36 +126,14 @@ internal object ServerUrlPolicy {
       throw InvalidServerUrlException("中枢地址不能包含用户名或密码")
     }
 
-    val isHttps = parsed.scheme == "https"
-    val isAllowedHttp = parsed.scheme == "http" && isPrivateNetworkHost(parsed.host)
-    if (!isHttps && !isAllowedHttp) {
-      throw InvalidServerUrlException("公网中枢必须使用 HTTPS；HTTP 仅支持 localhost 或私有网络地址")
+    if (parsed.scheme != "http" && parsed.scheme != "https") {
+      throw InvalidServerUrlException("中枢地址必须使用 HTTP 或 HTTPS")
     }
     return parsed
   }
 
   fun normalize(value: String): String = parse(value).toString().removeSuffix("/")
 
-  private fun isPrivateNetworkHost(rawHost: String): Boolean {
-    val host = rawHost.removePrefix("[").removeSuffix("]").lowercase()
-    if (host == "localhost" || host == "::1") return true
-
-    val octets = host.split('.')
-    if (octets.size == 4) {
-      val values = octets.mapNotNull { it.toIntOrNull() }
-      if (values.size == 4 && values.all { it in 0..255 }) {
-        val first = values[0]
-        val second = values[1]
-        return first == 127 ||
-          first == 10 ||
-          (first == 172 && second in 16..31) ||
-          (first == 192 && second == 168) ||
-          (first == 169 && second == 254)
-      }
-    }
-
-    return host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")
-  }
 }
 
 class SettingsRepository(private val application: Application) {
@@ -271,81 +239,3 @@ class ApiFactory(private val application: Application) {
     return if (normalized.endsWith("/")) normalized else "$normalized/"
   }
 }
-
-class DeviceRealtimeSocket(
-  private val client: OkHttpClient,
-  private val cookieJar: InMemoryCookieJar,
-  private val serverBaseUrl: String
-) {
-  private val json = Json { ignoreUnknownKeys = true }
-  private var socket: WebSocket? = null
-  private var explicitlyClosed = false
-
-  fun connect(
-    onUpdate: (DeviceRealtimeEventDto) -> Unit,
-    onConnected: (() -> Unit)? = null,
-    onDisconnected: (() -> Unit)? = null
-  ) {
-    close()
-    explicitlyClosed = false
-    val base = normalize(serverBaseUrl).toHttpUrl()
-    val wsScheme = if (base.isHttps) "wss" else "ws"
-    val socketUrl = base.newBuilder()
-      .addPathSegments("socket.io/")
-      .addQueryParameter("EIO", "4")
-      .addQueryParameter("transport", "websocket")
-      .build()
-      .toString()
-      .replaceFirst("${base.scheme}://", "$wsScheme://")
-
-    val requestBuilder = Request.Builder().url(socketUrl)
-    cookieJar.headerValue(base)?.let { requestBuilder.header("Cookie", it) }
-    socket = client.newWebSocket(requestBuilder.build(), object : WebSocketListener() {
-      override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
-        onConnected?.invoke()
-      }
-
-      override fun onMessage(webSocket: WebSocket, text: String) {
-        when {
-          text == "2" -> webSocket.send("3")
-          text.startsWith("0") -> webSocket.send("40")
-          text.startsWith("40") -> Unit
-          text.startsWith("42") -> {
-            val payload = text.removePrefix("42")
-            runCatching {
-              val event = json.parseToJsonElement(payload) as JsonArray
-              val eventName = event.getOrNull(0)?.toString()?.trim('"')
-              if (eventName == "device:update") {
-                val data = json.decodeFromJsonElement(DeviceRealtimeEventDto.serializer(), event[1])
-                onUpdate(data)
-              }
-            }
-          }
-        }
-      }
-
-      override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
-        if (!explicitlyClosed) onDisconnected?.invoke()
-      }
-
-      override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-        if (!explicitlyClosed) onDisconnected?.invoke()
-      }
-    })
-  }
-
-  fun close() {
-    explicitlyClosed = true
-    socket?.close(1000, null)
-    socket = null
-  }
-
-  private fun normalize(url: String): String = if (url.endsWith("/")) url else "$url/"
-}
-
-@Serializable
-data class DeviceRealtimeEventDto(
-  val deviceId: String,
-  val summary: DeviceSummaryDto,
-  val latest: JsonObject? = null
-)

@@ -27,6 +27,10 @@ const LIVE_WINDOWS: AggregatedWindowConfig[] = [
 
 const HOURLY_WINDOW_MS = 60 * 60 * 1000;
 const MINUTE_WINDOW_MS = 60 * 1000;
+const LIVE_WINDOW_DURATION_MS = {
+  "1m": 60 * 1000,
+  "5m": 5 * 60 * 1000
+} as const;
 
 export class MetricsService {
   private readonly minuteAccumulators = new Map<string, MetricAccumulator>();
@@ -130,10 +134,10 @@ export class MetricsService {
 
   async getSeries(deviceId: string, window: MetricWindow) {
     if (window === "1m") {
-      return this.repositories.realtime.readSeries(deviceId, "1m");
+      return this.readLiveSeries(deviceId, "1m");
     }
     if (window === "5m") {
-      return this.repositories.realtime.readSeries(deviceId, "5m");
+      return this.readLiveSeries(deviceId, "5m");
     }
     if (window === "15m" || window === "1h" || window === "6h" || window === "24h" || window === "1d") {
       const history = await this.repositories.history.getHistoricalSeries(deviceId, window);
@@ -141,6 +145,12 @@ export class MetricsService {
     }
     const history = await this.repositories.history.getHistoricalSeries(deviceId, window);
     return this.withCurrentHourlyAggregate(deviceId, history);
+  }
+
+  private async readLiveSeries(deviceId: string, window: "1m" | "5m") {
+    const rangeStart = Date.now() - LIVE_WINDOW_DURATION_MS[window];
+    const points = await this.repositories.realtime.readSeries(deviceId, window);
+    return points.filter((point) => point.timestamp >= rangeStart);
   }
 
   async getTrafficCalendar(

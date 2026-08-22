@@ -200,6 +200,9 @@ export interface MetricsResponse {
   device: DeviceDetail;
   status: DeviceSummary["status"];
   lastSeenAt: string | null;
+  window: MetricWindow;
+  rangeStart: string;
+  rangeEnd: string;
   series: MetricSeries;
 }
 

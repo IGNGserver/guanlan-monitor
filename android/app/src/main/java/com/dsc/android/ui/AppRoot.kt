@@ -97,6 +97,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
 import com.dsc.android.AppScreen
 import com.dsc.android.AppState
+import com.dsc.android.ChartWindow
 import com.dsc.android.DeviceBlockKey
 import com.dsc.android.DeviceSummaryDto
 import com.dsc.android.DiskDto
@@ -108,6 +109,7 @@ import com.dsc.android.MetricWindow
 import com.dsc.android.MetricsDto
 import com.dsc.android.NetworkInterfaceDto
 import com.dsc.android.NetworkMetricSeriesDto
+import com.dsc.android.parseTimestampMillis
 import com.dsc.android.RemoteDataSource
 import com.dsc.android.ScreenTransitionDirection
 import com.dsc.android.SamplePointDto
@@ -115,7 +117,8 @@ import com.dsc.android.TrafficCalendarDto
 import com.dsc.android.TrafficCalendarMode
 import com.dsc.android.TemperatureMetricSeriesDto
 import com.dsc.android.TemperatureSensorDto
-import kotlin.math.absoluteValue
+import com.dsc.android.resolveChartIndex
+import com.dsc.android.splitSamplePointSegments
 import kotlin.math.max
 
 @Composable
@@ -338,7 +341,8 @@ private fun DeviceListScreen(
   onDownloadUpdate: () -> Unit
 ) {
   val haptic = LocalHapticFeedback.current
-  var pendingDeleteDevice by remember { mutableStateOf<DeviceSummaryDto?>(null) }
+  var pendingDeleteDevice by remember(state.instanceType) { mutableStateOf<DeviceSummaryDto?>(null) }
+  var editMode by remember(state.instanceType) { mutableStateOf(false) }
   val visibleDevices = state.devices
     .filter { it.instanceType == state.instanceType }
     .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
@@ -353,6 +357,17 @@ private fun DeviceListScreen(
           }
         },
         actions = {
+          IconButton(onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            editMode = !editMode
+            if (!editMode) pendingDeleteDevice = null
+          }) {
+            if (editMode) {
+              Text("完成", style = MaterialTheme.typography.labelLarge)
+            } else {
+              Icon(Icons.Rounded.Edit, contentDescription = "编辑设备列表")
+            }
+          }
           IconButton(onClick = {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             onRefresh()
@@ -431,9 +446,25 @@ private fun DeviceListScreen(
           }
         }
       }
-      if (state.dataSource == RemoteDataSource.Cache || (state.authenticated && !state.realtimeConnected)) {
+      if (state.dataSource == RemoteDataSource.Cache) {
         item(key = "connection-status") {
           ConnectionStatusCard(state = state, onRefresh = onRefresh)
+        }
+      }
+      if (editMode) {
+        item(key = "device-list-edit-mode") {
+          Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer
+          ) {
+            Text(
+              "编辑设备列表：可调整顺序或删除设备；完成后点击右上角“完成”。",
+              modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+          }
         }
       }
       if (visibleDevices.isEmpty()) {
@@ -445,22 +476,25 @@ private fun DeviceListScreen(
         val device = visibleDevices[index]
         DeviceListCard(
           device,
+          editMode = editMode,
           onOpenDevice = { onOpenDevice(device.deviceId, null) },
           onOpenBlock = { blockKey -> onOpenDevice(device.deviceId, blockKey) },
           onOpenTraffic = { onOpenTraffic(device.deviceId) },
           onOpenEditor = { onOpenDeviceEditor(device.deviceId) },
           onMove = { direction ->
-            val targetIndex = index + direction
-            if (targetIndex in visibleDevices.indices) {
-              val reordered = visibleDevices.toMutableList()
-              val moved = reordered.removeAt(index)
-              reordered.add(targetIndex, moved)
-              onReorderDevices(reordered.map { it.deviceId })
+            if (editMode) {
+              val targetIndex = index + direction
+              if (targetIndex in visibleDevices.indices) {
+                val reordered = visibleDevices.toMutableList()
+                val moved = reordered.removeAt(index)
+                reordered.add(targetIndex, moved)
+                onReorderDevices(reordered.map { it.deviceId })
+              }
             }
           },
           canMoveUp = index > 0,
           canMoveDown = index < visibleDevices.lastIndex,
-          onRequestDelete = { pendingDeleteDevice = device }
+          onRequestDelete = { if (editMode) pendingDeleteDevice = device }
         )
       }
     }
@@ -496,14 +530,14 @@ private fun ConnectionStatusCard(state: AppState, onRefresh: () -> Unit) {
     ) {
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
-          if (cached) "当前显示离线缓存" else "实时通道未连接，正在自动刷新",
+          if (cached) "当前显示离线缓存" else "正在自动同步",
           fontWeight = FontWeight.SemiBold
         )
         Text(
           if (cached) {
             "缓存于 ${formatTime(state.cacheSavedAt)}；数据可能已经过期。"
           } else {
-            "Socket.IO 暂时不可用，安卓端每 15 秒通过 HTTP 重新同步。"
+            "前台每 15 秒通过 HTTP 同步一次，也可以手动刷新。"
           },
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -519,6 +553,7 @@ private fun ConnectionStatusCard(state: AppState, onRefresh: () -> Unit) {
 @Composable
 private fun DeviceListCard(
   device: DeviceSummaryDto,
+  editMode: Boolean,
   onOpenDevice: () -> Unit,
   onOpenBlock: (DeviceBlockKey) -> Unit,
   onOpenTraffic: () -> Unit,
@@ -557,9 +592,11 @@ private fun DeviceListCard(
           }
         }
         Text(if (device.instanceType == "virtual_machine") "VM" else device.os.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        IconButton(onClick = { onMove(-1) }, enabled = canMoveUp) { Text("↑") }
-        IconButton(onClick = { onMove(1) }, enabled = canMoveDown) { Text("↓") }
-        IconButton(onClick = onRequestDelete) { Text("×", color = MaterialTheme.colorScheme.error) }
+        if (editMode) {
+          IconButton(onClick = { onMove(-1) }, enabled = canMoveUp) { Text("↑") }
+          IconButton(onClick = { onMove(1) }, enabled = canMoveDown) { Text("↓") }
+          IconButton(onClick = onRequestDelete) { Text("×", color = MaterialTheme.colorScheme.error) }
+        }
       }
       FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         StatChip("CPU", formatPercent(device.cpuUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Cpu) })
@@ -652,7 +689,7 @@ private fun DeviceDetailScreen(
       contentPadding = PaddingValues(16.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-      if (state.dataSource == RemoteDataSource.Cache || (state.authenticated && !state.realtimeConnected)) {
+      if (state.dataSource == RemoteDataSource.Cache) {
         item(key = "connection-status") {
           ConnectionStatusCard(state = state, onRefresh = onRefresh)
         }
@@ -685,7 +722,8 @@ private fun DeviceDetailScreen(
             deviceId = metrics.device.deviceId,
             sensors = metrics.latest.temperatureSensors,
             series = metrics.series.temperatureSensors,
-            selectedWindow = state.selectedWindow
+            selectedWindow = state.selectedWindow,
+            chartWindow = chartWindowFor(metrics, state.selectedWindow)
           )
         }
       }
@@ -799,7 +837,7 @@ private fun TrafficScreen(
       contentPadding = PaddingValues(16.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-      if (state.dataSource == RemoteDataSource.Cache || (state.authenticated && !state.realtimeConnected)) {
+      if (state.dataSource == RemoteDataSource.Cache) {
         item(key = "connection-status") {
           ConnectionStatusCard(state = state, onRefresh = onRefresh)
         }
@@ -857,6 +895,15 @@ private data class BlockSheetTabModel(
   val label: String
 )
 
+private fun chartWindowFor(metrics: MetricsDto, selectedWindow: MetricWindow): ChartWindow {
+  val hasMatchingServerRange = metrics.window == selectedWindow.value
+  return ChartWindow.from(
+    window = selectedWindow,
+    rangeStart = metrics.rangeStart.takeIf { hasMatchingServerRange },
+    rangeEnd = metrics.rangeEnd.takeIf { hasMatchingServerRange }
+  )
+}
+
 @Composable
 private fun OverviewCard(metrics: MetricsDto, selectedWindow: MetricWindow, onOpenBlock: (DeviceBlockKey) -> Unit, onOpenTraffic: () -> Unit) {
   val capsules = remember(metrics, selectedWindow) { buildOverviewCapsules(metrics, selectedWindow) }
@@ -899,6 +946,7 @@ private fun BlockSheet(
   savingFanNote: Boolean
 ) {
   val haptic = LocalHapticFeedback.current
+  val chartWindow = remember(metrics, selectedWindow) { chartWindowFor(metrics, selectedWindow) }
   ModalBottomSheet(
     onDismissRequest = onDismiss
   ) {
@@ -965,6 +1013,7 @@ private fun BlockSheet(
             blockKey = blockKey,
             tabId = tabId,
             selectedWindow = selectedWindow,
+            chartWindow = chartWindow,
             selectedTabIndex = selectedIndex,
             onEditInstance = onEditInstance,
             onSaveFanNote = onSaveFanNote,
@@ -981,7 +1030,8 @@ private fun TemperatureSourcesCard(
   deviceId: String,
   sensors: List<TemperatureSensorDto>,
   series: List<TemperatureMetricSeriesDto>,
-  selectedWindow: MetricWindow
+  selectedWindow: MetricWindow,
+  chartWindow: ChartWindow
 ) {
   var showDiagnostics by remember(deviceId) { mutableStateOf(false) }
   var selectedId by remember(deviceId) { mutableStateOf("") }
@@ -1014,7 +1064,7 @@ private fun TemperatureSourcesCard(
 
       if (visibleSensors.isEmpty()) {
         Text(
-          "当前只有无效或诊断温度通道",
+          if (sensors.isEmpty() && chartableSeries.isEmpty()) "当前没有独立温度源" else "当前只有无效或诊断温度通道",
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1075,7 +1125,8 @@ private fun TemperatureSourcesCard(
               points = sensorSeries.currentC,
               valueFormatter = ::formatCelsius
             )
-          )
+          ),
+          chartWindow = chartWindow
         )
       } ?: Text(
         "选择一个有效温度源查看历史",
@@ -1192,8 +1243,50 @@ private fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWin
         )
       )
     }
+    if (hasTemperatureData(metrics)) {
+      val validSensors = metrics.latest.temperatureSensors.filter { it.status == "valid" }
+      val auxiliarySources = buildList<Double> {
+        metrics.latest.cpuTemperatureC?.let { add(it) }
+        metrics.latest.gpus.mapNotNull { it.temperatureC }.forEach { add(it) }
+        metrics.latest.disks.mapNotNull { it.temperatureC }.forEach { add(it) }
+      }
+      val sourceCount = validSensors.size + auxiliarySources.size
+      add(
+        OverviewCapsuleModel(
+          blockKey = DeviceBlockKey.Temperature,
+          title = "温度",
+          subtitle = if (sourceCount == 0) "温度源需要诊断" else "$sourceCount 个温度源",
+          metrics = listOf(
+            "当前" to temperatureOverviewValue(validSensors, metrics),
+            "告警" to validSensors.count { it.alarm == true }.toString()
+          )
+        )
+      )
+    }
   }
 }
+
+private fun hasTemperatureData(metrics: MetricsDto): Boolean =
+  metrics.latest.temperatureSensors.isNotEmpty() ||
+    metrics.series.temperatureSensors.isNotEmpty() ||
+    metrics.latest.cpuTemperatureC != null ||
+    metrics.latest.gpus.any { it.temperatureC != null } ||
+    metrics.latest.disks.any { it.temperatureC != null } ||
+    metrics.series.cpuTemperatureC.isNotEmpty() ||
+    metrics.series.gpuTemperatureC.isNotEmpty() ||
+    metrics.series.cpus.any { it.temperatureC.isNotEmpty() } ||
+    metrics.series.gpus.any { it.temperatureC.isNotEmpty() } ||
+    metrics.series.disks.any { it.temperatureC.isNotEmpty() }
+
+private fun temperatureOverviewValue(sensors: List<TemperatureSensorDto>, metrics: MetricsDto): String {
+  val current = sensors.mapNotNull { it.currentC }.averageOrNull()
+    ?: metrics.latest.cpuTemperatureC
+    ?: metrics.latest.gpus.mapNotNull { it.temperatureC }.averageOrNull()
+    ?: metrics.latest.disks.mapNotNull { it.temperatureC }.averageOrNull()
+  return current?.let(::formatCelsius) ?: "未知"
+}
+
+private fun List<Double>.averageOrNull(): Double? = takeIf { isNotEmpty() }?.average()
 
 private fun buildBlockSheetTabs(metrics: MetricsDto, blockKey: DeviceBlockKey): List<BlockSheetTabModel> {
   val tabs = mutableListOf(BlockSheetTabModel("total", "总和"))
@@ -1203,6 +1296,7 @@ private fun buildBlockSheetTabs(metrics: MetricsDto, blockKey: DeviceBlockKey): 
     DeviceBlockKey.Memory -> Unit
     DeviceBlockKey.Disk -> metrics.latest.disks.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
     DeviceBlockKey.Network -> metrics.latest.networkInterfaces.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
+    DeviceBlockKey.Temperature -> Unit
     DeviceBlockKey.Fan -> metrics.latest.fans.forEach { tabs += BlockSheetTabModel(it.id, it.label) }
   }
   return tabs
@@ -1214,6 +1308,7 @@ private fun BlockSheetTabContent(
   blockKey: DeviceBlockKey,
   tabId: String,
   selectedWindow: MetricWindow,
+  chartWindow: ChartWindow,
   selectedTabIndex: Int,
   onEditInstance: (String) -> Unit,
   onSaveFanNote: (String, String, String) -> Unit,
@@ -1221,18 +1316,19 @@ private fun BlockSheetTabContent(
 ) {
   Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
     when (blockKey) {
-      DeviceBlockKey.Cpu -> CpuSheetContent(metrics, tabId, selectedWindow, onEditInstance)
-      DeviceBlockKey.Memory -> MemorySheetContent(metrics)
-      DeviceBlockKey.Disk -> DiskSheetContent(metrics, tabId, selectedWindow, onEditInstance)
-      DeviceBlockKey.Network -> NetworkSheetContent(metrics, tabId, selectedWindow, onEditInstance)
-      DeviceBlockKey.Gpu -> GpuSheetContent(metrics, tabId, selectedWindow, onEditInstance)
-      DeviceBlockKey.Fan -> FanSheetContent(metrics, tabId, onSaveFanNote, savingFanNote)
+      DeviceBlockKey.Cpu -> CpuSheetContent(metrics, tabId, selectedWindow, chartWindow, onEditInstance)
+      DeviceBlockKey.Memory -> MemorySheetContent(metrics, selectedWindow, chartWindow)
+      DeviceBlockKey.Disk -> DiskSheetContent(metrics, tabId, selectedWindow, chartWindow, onEditInstance)
+      DeviceBlockKey.Network -> NetworkSheetContent(metrics, tabId, selectedWindow, chartWindow, onEditInstance)
+      DeviceBlockKey.Temperature -> TemperatureSheetContent(metrics, selectedWindow, chartWindow)
+      DeviceBlockKey.Gpu -> GpuSheetContent(metrics, tabId, selectedWindow, chartWindow, onEditInstance)
+      DeviceBlockKey.Fan -> FanSheetContent(metrics, tabId, chartWindow, onSaveFanNote, savingFanNote)
     }
   }
 }
 
 @Composable
-private fun CpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, onEditInstance: (String) -> Unit) {
+private fun CpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, chartWindow: ChartWindow, onEditInstance: (String) -> Unit) {
   if (tabId == "total") {
     if (!isMetricAvailable(metrics, "cpuTemperature")) {
       Text("当前设备未提供 CPU 温度传感器，虚拟机环境下较常见。", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
@@ -1242,7 +1338,8 @@ private fun CpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: 
         MetricCardModel("CPU 占用", metricPoint(metrics.series.cpuUsagePercent, selectedWindow, ::formatPercent), metrics.series.cpuUsagePercent, ::formatPercent, 100.0),
         MetricCardModel("CPU 频率", metricPoint(metrics.series.cpuFrequencyMHz, selectedWindow, ::formatMHz), metrics.series.cpuFrequencyMHz, ::formatMHz),
         MetricCardModel("CPU 温度", metricPoint(metrics.series.cpuTemperatureC, selectedWindow, ::formatCelsius, zeroMeansMissing = true), metrics.series.cpuTemperatureC, ::formatCelsius)
-      )
+      ),
+      chartWindow = chartWindow
     )
     MetaGrid(
       listOf(
@@ -1269,7 +1366,8 @@ private fun CpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: 
         MetricCardModel("占用", metricPoint(cpu.usagePercent, selectedWindow, ::formatPercent), cpu.usagePercent, ::formatPercent, 100.0),
         MetricCardModel("频率", metricPoint(cpu.frequencyMHz, selectedWindow, ::formatMHz), cpu.frequencyMHz, ::formatMHz),
         MetricCardModel("温度", metricPoint(cpu.temperatureC, selectedWindow, ::formatCelsius, zeroMeansMissing = true), cpu.temperatureC, ::formatCelsius)
-      )
+      ),
+      chartWindow = chartWindow
     )
     MetaGrid(
       listOf(
@@ -1282,7 +1380,7 @@ private fun CpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: 
 }
 
 @Composable
-private fun MemorySheetContent(metrics: MetricsDto) {
+private fun MemorySheetContent(metrics: MetricsDto, selectedWindow: MetricWindow, chartWindow: ChartWindow) {
   MetricCardGrid(
     cards = listOf(
       MetricCardModel("物理内存", buildUsage(metrics.latest.memoryUsedBytes, metrics.latest.memoryTotalBytes), metrics.series.memoryUsagePercent, ::formatPercent, 100.0),
@@ -1296,7 +1394,8 @@ private fun MemorySheetContent(metrics: MetricsDto) {
       MetricCardModel("进程数", metrics.latest.system.processCount.toString(), metrics.series.systemProcessCount, { value -> value?.toInt()?.toString() ?: "--" }),
       MetricCardModel("线程数", metrics.latest.system.threadCount.toString(), metrics.series.systemThreadCount, { value -> value?.toInt()?.toString() ?: "--" }),
       MetricCardModel("句柄数", metrics.latest.system.handleCount.toString(), metrics.series.systemHandleCount, { value -> value?.toInt()?.toString() ?: "--" })
-    )
+    ),
+    chartWindow = chartWindow
   )
   MetaGrid(
     listOf(
@@ -1311,14 +1410,15 @@ private fun MemorySheetContent(metrics: MetricsDto) {
 }
 
 @Composable
-private fun DiskSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, onEditInstance: (String) -> Unit) {
+private fun DiskSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, chartWindow: ChartWindow, onEditInstance: (String) -> Unit) {
   if (tabId == "total") {
     MetricCardGrid(
       cards = listOf(
         MetricCardModel("总占用", buildUsage(metrics.latest.diskUsedBytes, metrics.latest.diskTotalBytes), metrics.series.diskUsagePercent, ::formatPercent, 100.0),
         MetricCardModel("总读取", metricPoint(metrics.series.diskReadBytesPerSec, selectedWindow, ::formatSpeed), metrics.series.diskReadBytesPerSec, ::formatSpeed),
         MetricCardModel("总写入", metricPoint(metrics.series.diskWriteBytesPerSec, selectedWindow, ::formatSpeed), metrics.series.diskWriteBytesPerSec, ::formatSpeed)
-      )
+      ),
+      chartWindow = chartWindow
     )
     MetaGrid(listOf("总容量" to buildUsage(metrics.latest.diskUsedBytes, metrics.latest.diskTotalBytes)))
     return
@@ -1326,7 +1426,7 @@ private fun DiskSheetContent(metrics: MetricsDto, tabId: String, selectedWindow:
 
   val disk = metrics.latest.disks.firstOrNull { it.id == tabId } ?: return
   val series = metrics.series.disks.firstOrNull { it.id == tabId }
-  DiskInstanceCard(disk, series, onEdit = { onEditInstance(disk.id) })
+  DiskInstanceCard(disk, series, onEdit = { onEditInstance(disk.id) }, chartWindow = chartWindow)
   MetaGrid(
     buildList {
       add("接口" to (disk.interfaceType ?: "未知"))
@@ -1344,7 +1444,7 @@ private fun DiskSheetContent(metrics: MetricsDto, tabId: String, selectedWindow:
 }
 
 @Composable
-private fun NetworkSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, onEditInstance: (String) -> Unit) {
+private fun NetworkSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, chartWindow: ChartWindow, onEditInstance: (String) -> Unit) {
   if (tabId == "total") {
     MetricCardGrid(
       cards = listOf(
@@ -1352,14 +1452,15 @@ private fun NetworkSheetContent(metrics: MetricsDto, tabId: String, selectedWind
         MetricCardModel("总发送", metricPoint(metrics.series.networkTxBytesPerSec, selectedWindow, ::formatSpeed), metrics.series.networkTxBytesPerSec, ::formatSpeed),
         MetricCardModel("累计接收", formatBytes(metrics.series.trafficRxBytes.lastOrNull()?.value ?: 0.0), metrics.series.trafficRxBytes, { value -> formatBytes(value ?: 0.0) }),
         MetricCardModel("累计发送", formatBytes(metrics.series.trafficTxBytes.lastOrNull()?.value ?: 0.0), metrics.series.trafficTxBytes, { value -> formatBytes(value ?: 0.0) })
-      )
+      ),
+      chartWindow = chartWindow
     )
     return
   }
 
   val nic = metrics.latest.networkInterfaces.firstOrNull { it.id == tabId } ?: return
   val series = metrics.series.networks.firstOrNull { it.id == tabId }
-  NetworkInstanceCard(nic, series, onEdit = { onEditInstance(nic.id) })
+  NetworkInstanceCard(nic, series, onEdit = { onEditInstance(nic.id) }, chartWindow = chartWindow)
   MetaGrid(
     listOfNotNull(
       "IPv4" to nic.ipv4.joinToString(", ").ifBlank { "未知" },
@@ -1374,14 +1475,15 @@ private fun NetworkSheetContent(metrics: MetricsDto, tabId: String, selectedWind
 }
 
 @Composable
-private fun GpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, onEditInstance: (String) -> Unit) {
+private fun GpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, chartWindow: ChartWindow, onEditInstance: (String) -> Unit) {
   if (tabId == "total") {
     MetricCardGrid(
       cards = listOf(
         MetricCardModel("总占用", metricPoint(metrics.series.gpuUsagePercent, selectedWindow, ::formatPercent), metrics.series.gpuUsagePercent, ::formatPercent, 100.0),
         MetricCardModel("总 GPU 内存", formatGpuMemorySummary(metrics.latest.gpus), metrics.series.gpuMemoryUsagePercent, ::formatPercent, 100.0),
         MetricCardModel("总温度", metricPoint(metrics.series.gpuTemperatureC, selectedWindow, ::formatCelsius), metrics.series.gpuTemperatureC, ::formatCelsius)
-      )
+      ),
+      chartWindow = chartWindow
     )
     MetaGrid(listOf("总 GPU 内存" to formatGpuMemorySummary(metrics.latest.gpus)))
     return
@@ -1389,7 +1491,7 @@ private fun GpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: 
 
   val gpu = metrics.latest.gpus.firstOrNull { it.id == tabId } ?: return
   val series = metrics.series.gpus.firstOrNull { it.id == tabId }
-  GpuInstanceCard(gpu, series, onEdit = { onEditInstance(gpu.id) })
+  GpuInstanceCard(gpu, series, onEdit = { onEditInstance(gpu.id) }, chartWindow = chartWindow)
   MetaGrid(
     listOfNotNull(
       "驱动" to (gpu.driverVersion ?: "未知"),
@@ -1402,9 +1504,58 @@ private fun GpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: 
 }
 
 @Composable
+private fun TemperatureSheetContent(metrics: MetricsDto, selectedWindow: MetricWindow, chartWindow: ChartWindow) {
+  if (metrics.latest.temperatureSensors.isNotEmpty() || metrics.series.temperatureSensors.isNotEmpty()) {
+    TemperatureSourcesCard(
+      deviceId = metrics.device.deviceId,
+      sensors = metrics.latest.temperatureSensors,
+      series = metrics.series.temperatureSensors,
+      selectedWindow = selectedWindow,
+      chartWindow = chartWindow
+    )
+  } else {
+    Text(
+      "当前没有独立温度源；CPU、显卡或硬盘温度仍会在对应类别中显示。",
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+  }
+  val cards = buildList {
+    if (metrics.series.cpuTemperatureC.isNotEmpty()) {
+      add(MetricCardModel("CPU 温度", metricPoint(metrics.series.cpuTemperatureC, selectedWindow, ::formatCelsius, zeroMeansMissing = true), metrics.series.cpuTemperatureC, ::formatCelsius))
+    }
+    metrics.series.cpus.filter { it.temperatureC.isNotEmpty() }.forEach { cpu ->
+      add(MetricCardModel("${cpu.name} 温度", metricPoint(cpu.temperatureC, selectedWindow, ::formatCelsius, zeroMeansMissing = true), cpu.temperatureC, ::formatCelsius))
+    }
+    if (metrics.series.gpuTemperatureC.isNotEmpty()) {
+      add(MetricCardModel("显卡温度", metricPoint(metrics.series.gpuTemperatureC, selectedWindow, ::formatCelsius), metrics.series.gpuTemperatureC, ::formatCelsius))
+    }
+    metrics.series.gpus.filter { it.temperatureC.isNotEmpty() }.forEach { gpu ->
+      add(MetricCardModel("${gpu.name} 温度", metricPoint(gpu.temperatureC, selectedWindow, ::formatCelsius), gpu.temperatureC, ::formatCelsius))
+    }
+    metrics.series.disks.filter { it.temperatureC.isNotEmpty() }.forEach { disk ->
+      add(MetricCardModel("${disk.name} 温度", metricPoint(disk.temperatureC, selectedWindow, ::formatCelsius), disk.temperatureC, ::formatCelsius))
+    }
+    if (isEmpty()) {
+      metrics.latest.cpuTemperatureC?.let { temperature ->
+        add(MetricCardModel("CPU 温度", formatCelsius(temperature), emptyList(), ::formatCelsius))
+      }
+      metrics.latest.gpus.filter { it.temperatureC != null }.forEach { gpu ->
+        add(MetricCardModel("${gpu.name} 温度", formatCelsius(gpu.temperatureC), emptyList(), ::formatCelsius))
+      }
+      metrics.latest.disks.filter { it.temperatureC != null }.forEach { disk ->
+        add(MetricCardModel("${disk.name} 温度", formatCelsius(disk.temperatureC), emptyList(), ::formatCelsius))
+      }
+    }
+  }
+  if (cards.isNotEmpty()) MetricCardGrid(cards = cards, chartWindow = chartWindow)
+}
+
+@Composable
 private fun FanSheetContent(
   metrics: MetricsDto,
   tabId: String,
+  chartWindow: ChartWindow,
   onSaveFanNote: (String, String, String) -> Unit,
   savingFanNote: Boolean
 ) {
@@ -1422,7 +1573,8 @@ private fun FanSheetContent(
         MetricCardModel("风扇转速", "${fan.rpm} RPM", series.rpm, valueFormatter = { value ->
           if (value == null) "--" else "${value.toInt()} RPM"
         })
-      }
+      },
+      chartWindow = chartWindow
     )
     return
   }
@@ -1443,7 +1595,8 @@ private fun FanSheetContent(
           valueFormatter = { value ->
           if (value == null) "--" else "${value.toInt()} RPM"
         })
-      )
+      ),
+      chartWindow = chartWindow
     )
     MetaGrid(listOf("转速" to "${fan.rpm} RPM", "备注" to (fan.note ?: "未备注")))
     MetaGrid(
@@ -1622,7 +1775,12 @@ private fun FanSection(metrics: MetricsDto) {
 }
 
 @Composable
-private fun DiskInstanceCard(disk: DiskDto, series: DiskMetricSeriesDto?, onEdit: () -> Unit) {
+private fun DiskInstanceCard(
+  disk: DiskDto,
+  series: DiskMetricSeriesDto?,
+  onEdit: () -> Unit,
+  chartWindow: ChartWindow = ChartWindow.from(MetricWindow.OneMinute)
+) {
   InstanceCard(
     title = disk.name,
     subtitle = listOfNotNull(disk.mountPoint, disk.filesystem, disk.model?.takeIf { it.isNotBlank() }).joinToString(" · "),
@@ -1634,13 +1792,19 @@ private fun DiskInstanceCard(disk: DiskDto, series: DiskMetricSeriesDto?, onEdit
         add(MetricCardModel("读取", formatSpeed(series?.readBytesPerSec?.lastOrNull()?.value), series?.readBytesPerSec.orEmpty(), ::formatSpeed))
         add(MetricCardModel("写入", formatSpeed(series?.writeBytesPerSec?.lastOrNull()?.value), series?.writeBytesPerSec.orEmpty(), ::formatSpeed))
         add(MetricCardModel("温度", formatCelsius(disk.temperatureC), series?.temperatureC.orEmpty(), ::formatCelsius))
-      }
+      },
+      chartWindow = chartWindow
     )
   }
 }
 
 @Composable
-private fun NetworkInstanceCard(network: NetworkInterfaceDto, series: NetworkMetricSeriesDto?, onEdit: () -> Unit) {
+private fun NetworkInstanceCard(
+  network: NetworkInterfaceDto,
+  series: NetworkMetricSeriesDto?,
+  onEdit: () -> Unit,
+  chartWindow: ChartWindow = ChartWindow.from(MetricWindow.OneMinute)
+) {
   InstanceCard(
     title = network.name,
     subtitle = listOfNotNull(network.ipv4.firstOrNull(), network.macAddress?.takeIf { it.isNotBlank() }).joinToString(" · "),
@@ -1652,13 +1816,19 @@ private fun NetworkInstanceCard(network: NetworkInterfaceDto, series: NetworkMet
         MetricCardModel("发送速率", formatSpeed(network.txBytesPerSec), series?.txBytesPerSec.orEmpty(), ::formatSpeed),
         MetricCardModel("累计接收", formatBytes(network.totalRxBytes?.toDouble() ?: 0.0), series?.trafficRxBytes.orEmpty(), { value -> formatBytes(value ?: 0.0) }),
         MetricCardModel("累计发送", formatBytes(network.totalTxBytes?.toDouble() ?: 0.0), series?.trafficTxBytes.orEmpty(), { value -> formatBytes(value ?: 0.0) })
-      )
+      ),
+      chartWindow = chartWindow
     )
   }
 }
 
 @Composable
-private fun GpuInstanceCard(gpu: GpuDto, series: GpuMetricSeriesDto?, onEdit: () -> Unit) {
+private fun GpuInstanceCard(
+  gpu: GpuDto,
+  series: GpuMetricSeriesDto?,
+  onEdit: () -> Unit,
+  chartWindow: ChartWindow = ChartWindow.from(MetricWindow.OneMinute)
+) {
   InstanceCard(
     title = gpu.name,
     subtitle = gpu.id,
@@ -1673,7 +1843,8 @@ private fun GpuInstanceCard(gpu: GpuDto, series: GpuMetricSeriesDto?, onEdit: ()
         MetricCardModel(gpuMemoryLabel(gpu.memoryKind), buildGpuUsage(gpu.memoryUsedBytes, gpu.memoryTotalBytes), series?.memoryUsagePercent.orEmpty(), ::formatPercent, 100.0),
         MetricCardModel("${gpuMemoryLabel(gpu.memoryKind)}已用", formatBytes(gpu.memoryUsedBytes.toDouble()), series?.memoryUsedBytes.orEmpty(), { value -> formatBytes(value ?: 0.0) }),
         MetricCardModel(if ((gpu.temperatureSource ?: series?.temperatureSource) == "cpuPackageShared") "温度（随 CPU）" else "温度", formatCelsius(gpu.temperatureC), series?.temperatureC.orEmpty(), ::formatCelsius)
-      )
+      ),
+      chartWindow = chartWindow
     )
   }
 }
@@ -1877,6 +2048,7 @@ private fun blockMetricKeys(block: DeviceBlockKey): List<String> = when (block) 
   DeviceBlockKey.Memory -> listOf("memoryUsage", "swapUsage")
   DeviceBlockKey.Disk -> listOf("diskUsage", "diskRead", "diskWrite")
   DeviceBlockKey.Network -> listOf("networkRxRate", "networkTxRate", "networkTraffic")
+  DeviceBlockKey.Temperature -> listOf("temperatureSources")
   DeviceBlockKey.Fan -> emptyList()
 }
 
@@ -1898,6 +2070,7 @@ private fun metricLabel(metric: String): String = when (metric) {
   "networkRxRate" -> "网络接收"
   "networkTxRate" -> "网络发送"
   "networkTraffic" -> "网络流量"
+  "temperatureSources" -> "温度源"
   else -> metric
 }
 
@@ -1916,7 +2089,7 @@ private fun blockInstances(state: AppState, block: DeviceBlockKey): List<Instanc
     DeviceBlockKey.Network -> metrics.latest.networkInterfaces.map {
       InstanceOption(it.id, it.name, it.ipv4.firstOrNull() ?: it.macAddress.orEmpty())
     }
-    DeviceBlockKey.Memory, DeviceBlockKey.Fan -> emptyList()
+    DeviceBlockKey.Memory, DeviceBlockKey.Temperature, DeviceBlockKey.Fan -> emptyList()
   }
 }
 
@@ -1925,7 +2098,10 @@ private fun isMetricAvailable(metrics: MetricsDto, key: String): Boolean {
 }
 
 @Composable
-private fun MetricCardGrid(cards: List<MetricCardModel>) {
+private fun MetricCardGrid(
+  cards: List<MetricCardModel>,
+  chartWindow: ChartWindow = ChartWindow.from(MetricWindow.OneMinute)
+) {
   BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
     val minCardWidth = 220.dp
     val spacing = 12.dp
@@ -1944,11 +2120,17 @@ private fun MetricCardGrid(cards: List<MetricCardModel>) {
               Text(card.title, style = MaterialTheme.typography.titleSmall)
               Text(card.value, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            MiniLineChart(title = card.title, valueFormatter = card.valueFormatter, points = card.points, fixedMaxValue = card.fixedMaxValue)
+            MiniLineChart(
+              title = card.title,
+              valueFormatter = card.valueFormatter,
+              points = card.points,
+              fixedMaxValue = card.fixedMaxValue,
+              chartWindow = chartWindow
+            )
             if (card.points.isNotEmpty()) {
               Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(formatAxisTime(card.points.first().timestamp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(formatAxisTime(card.points.last().timestamp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(formatChartTime(java.time.Instant.ofEpochMilli(chartWindow.startMillis).toString(), chartWindow.window), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(formatChartTime(java.time.Instant.ofEpochMilli(chartWindow.endMillis).toString(), chartWindow.window), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
               }
             }
           }
@@ -2020,12 +2202,21 @@ private fun InlineLoadingCard(label: String) {
 }
 
 @Composable
-private fun MiniLineChart(title: String, valueFormatter: (Double?) -> String, points: List<SamplePointDto>, fixedMaxValue: Double? = null) {
+private fun MiniLineChart(
+  title: String,
+  valueFormatter: (Double?) -> String,
+  points: List<SamplePointDto>,
+  fixedMaxValue: Double? = null,
+  chartWindow: ChartWindow
+) {
   val lineColor = MaterialTheme.colorScheme.primary
   val fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
   val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
   val markerOuterColor = MaterialTheme.colorScheme.surface
-  var selectedIndex by remember(points) { mutableStateOf(points.lastIndex.coerceAtLeast(0)) }
+  val chartPoints = remember(points) {
+    points.sortedBy { parseTimestampMillis(it.timestamp) ?: Long.MIN_VALUE }
+  }
+  var selectedIndex by remember(chartPoints, chartWindow) { mutableStateOf(chartPoints.lastIndex.coerceAtLeast(0)) }
   val haptic = LocalHapticFeedback.current
 
   fun updateSelectedIndex(
@@ -2042,10 +2233,10 @@ private fun MiniLineChart(title: String, valueFormatter: (Double?) -> String, po
   }
 
   Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-    if (points.isNotEmpty()) {
-      val selectedPoint = points[selectedIndex.coerceIn(0, points.lastIndex)]
+    if (chartPoints.isNotEmpty()) {
+      val selectedPoint = chartPoints[selectedIndex.coerceIn(0, chartPoints.lastIndex)]
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(formatAxisTime(selectedPoint.timestamp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(formatChartTime(selectedPoint.timestamp, chartWindow.window), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("${title} ${valueFormatter(selectedPoint.value)}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
       }
     }
@@ -2055,27 +2246,27 @@ private fun MiniLineChart(title: String, valueFormatter: (Double?) -> String, po
         .height(120.dp)
         .clip(RoundedCornerShape(16.dp))
         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-        .pointerInput(points) {
+        .pointerInput(chartPoints, chartWindow) {
           detectTapGestures { offset ->
-            if (points.isEmpty()) return@detectTapGestures
+            if (chartPoints.isEmpty()) return@detectTapGestures
             updateSelectedIndex(
-              resolveChartIndex(offset.x, size.width.toFloat(), points.size),
+              resolveChartIndex(offset.x, size.width.toFloat(), chartPoints, chartWindow),
               feedbackType = HapticFeedbackType.LongPress
             )
           }
         }
-        .pointerInput(points) {
+        .pointerInput(chartPoints, chartWindow) {
           detectDragGestures(
             onDragStart = { offset ->
-              if (points.isEmpty()) return@detectDragGestures
+              if (chartPoints.isEmpty()) return@detectDragGestures
               updateSelectedIndex(
-                resolveChartIndex(offset.x, size.width.toFloat(), points.size),
+                resolveChartIndex(offset.x, size.width.toFloat(), chartPoints, chartWindow),
                 feedbackType = HapticFeedbackType.LongPress
               )
             },
             onDrag = { change, _ ->
               updateSelectedIndex(
-                resolveChartIndex(change.position.x, size.width.toFloat(), points.size),
+                resolveChartIndex(change.position.x, size.width.toFloat(), chartPoints, chartWindow),
                 feedbackType = HapticFeedbackType.LongPress
               )
               change.consume()
@@ -2083,10 +2274,9 @@ private fun MiniLineChart(title: String, valueFormatter: (Double?) -> String, po
           )
         }
     ) {
-      if (points.isEmpty()) return@Canvas
+      if (chartPoints.isEmpty()) return@Canvas
 
-      val maxValue = fixedMaxValue ?: max(points.maxOf { it.value }, 1.0)
-      val stepX = if (points.size == 1) 0f else size.width / (points.size - 1)
+      val maxValue = fixedMaxValue ?: max(chartPoints.maxOf { it.value }, 1.0)
       val yFor: (Double) -> Float = { value -> size.height - ((value / maxValue).toFloat() * size.height) }
 
       repeat(4) { idx ->
@@ -2094,28 +2284,30 @@ private fun MiniLineChart(title: String, valueFormatter: (Double?) -> String, po
         drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
       }
 
-      val path = Path()
-      val fillPath = Path()
-      points.forEachIndexed { index, point ->
-        val x = index * stepX
-        val y = yFor(point.value)
-        if (index == 0) {
-          path.moveTo(x, y)
-          fillPath.moveTo(x, size.height)
-          fillPath.lineTo(x, y)
-        } else {
-          path.lineTo(x, y)
-          fillPath.lineTo(x, y)
+      splitSamplePointSegments(chartPoints, chartWindow).forEach { segment ->
+        val path = Path()
+        val fillPath = Path()
+        segment.forEachIndexed { index, point ->
+          val x = chartWindow.xFor(point.timestamp, size.width)
+          val y = yFor(point.value)
+          if (index == 0) {
+            path.moveTo(x, y)
+            fillPath.moveTo(x, size.height)
+            fillPath.lineTo(x, y)
+          } else {
+            path.lineTo(x, y)
+            fillPath.lineTo(x, y)
+          }
         }
+        val lastX = chartWindow.xFor(segment.last().timestamp, size.width)
+        fillPath.lineTo(lastX, size.height)
+        fillPath.close()
+        drawPath(path = fillPath, brush = Brush.verticalGradient(listOf(fillColor, Color.Transparent)))
+        drawPath(path = path, color = lineColor, style = Stroke(width = 4f, cap = StrokeCap.Round))
       }
-      fillPath.lineTo(size.width, size.height)
-      fillPath.close()
 
-      drawPath(path = fillPath, brush = Brush.verticalGradient(listOf(fillColor, Color.Transparent)))
-      drawPath(path = path, color = lineColor, style = Stroke(width = 4f, cap = StrokeCap.Round))
-
-      val selectedPoint = points[selectedIndex.coerceIn(0, points.lastIndex)]
-      val selectedX = if (points.size == 1) size.width / 2f else selectedIndex.coerceIn(0, points.lastIndex) * stepX
+      val selectedPoint = chartPoints[selectedIndex.coerceIn(0, chartPoints.lastIndex)]
+      val selectedX = chartWindow.xFor(selectedPoint.timestamp, size.width)
       val selectedY = yFor(selectedPoint.value)
       drawLine(
         color = lineColor.copy(alpha = 0.35f),
@@ -2127,12 +2319,6 @@ private fun MiniLineChart(title: String, valueFormatter: (Double?) -> String, po
       drawCircle(color = lineColor, radius = 6f, center = Offset(selectedX, selectedY))
     }
   }
-}
-
-private fun resolveChartIndex(x: Float, width: Float, count: Int): Int {
-  if (count <= 1 || width <= 0f) return 0
-  val stepX = width / (count - 1)
-  return (x / stepX).toInt().coerceIn(0, count - 1)
 }
 
 @Composable
@@ -2357,9 +2543,13 @@ private fun formatTime(value: String?): String = if (value.isNullOrBlank()) "--"
   val dt = java.time.OffsetDateTime.parse(value).atZoneSameInstant(java.time.ZoneId.systemDefault()).toLocalDateTime()
   "%04d-%02d-%02d %02d:%02d:%02d".format(dt.year, dt.monthValue, dt.dayOfMonth, dt.hour, dt.minute, dt.second)
 }.getOrDefault(value)
-private fun formatAxisTime(value: String): String = runCatching {
+private fun formatChartTime(value: String, window: MetricWindow): String = runCatching {
   val dt = java.time.OffsetDateTime.parse(value).atZoneSameInstant(java.time.ZoneId.systemDefault())
-  "%02d:%02d".format(dt.hour, dt.minute)
+  when (window) {
+    MetricWindow.OneMinute, MetricWindow.FiveMinutes -> "%02d:%02d:%02d".format(dt.hour, dt.minute, dt.second)
+    MetricWindow.OneHour, MetricWindow.SixHours -> "%02d:%02d".format(dt.hour, dt.minute)
+    MetricWindow.OneDay, MetricWindow.SevenDays -> "%02d-%02d %02d:%02d".format(dt.monthValue, dt.dayOfMonth, dt.hour, dt.minute)
+  }
 }.getOrDefault("--")
 
 private fun buildUsage(used: Long, total: Long): String = "${formatBytes(used.toDouble())} / ${formatBytes(total.toDouble())}"

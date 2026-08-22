@@ -754,6 +754,9 @@ export interface MetricsResponse {
   device: DeviceDetail;
   status: DeviceStatus;
   lastSeenAt: string | null;
+  window: MetricWindow;
+  rangeStart: string;
+  rangeEnd: string;
   enabledMetrics: DeviceMetricKey[];
   enabledDeviceIds: Partial<Record<DeviceBlockKey, string[]>>;
   instanceMetricConfig: Record<string, DeviceMetricKey[]>;

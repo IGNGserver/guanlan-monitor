@@ -386,6 +386,9 @@ data class SensorBackendDto(
 data class MetricsDto(
   val status: String,
   val lastSeenAt: String? = null,
+  val window: String = "5m",
+  val rangeStart: String? = null,
+  val rangeEnd: String? = null,
   val device: DeviceDetailDto,
   val enabledMetrics: List<String> = emptyList(),
   val enabledDeviceIds: Map<String, List<String>> = emptyMap(),
@@ -478,6 +481,7 @@ enum class DeviceBlockKey(val value: String, val label: String) {
   Memory("memory", "内存"),
   Disk("disk", "硬盘"),
   Network("network", "网络"),
+  Temperature("temperature", "温度"),
   Fan("fan", "风扇")
 }
 
@@ -535,7 +539,6 @@ data class AppState(
   val authenticated: Boolean = false,
   val dataSource: RemoteDataSource = RemoteDataSource.Empty,
   val cacheSavedAt: String? = null,
-  val realtimeConnected: Boolean = false,
   val savingConfig: Boolean = false,
   val loggingIn: Boolean = false,
   val refreshing: Boolean = false,

@@ -14,20 +14,14 @@ class ServerUrlPolicyTest {
   }
 
   @Test
-  fun acceptsPrivateHttpForLanHub() {
+  fun acceptsHttpForPrivateAndPublicHub() {
     assertEquals(
       "http://192.168.1.20:3100",
       ServerUrlPolicy.normalize("192.168.1.20:3100")
     )
     assertEquals("http://localhost:3100", ServerUrlPolicy.normalize("http://localhost:3100/"))
     assertEquals("http://[fd00::20]:3100", ServerUrlPolicy.normalize("http://[fd00::20]:3100"))
-  }
-
-  @Test
-  fun rejectsPublicHttp() {
-    assertThrows(InvalidServerUrlException::class.java) {
-      ServerUrlPolicy.normalize("http://hub.example.com:3100")
-    }
+    assertEquals("http://hub.example.com:3100", ServerUrlPolicy.normalize("http://hub.example.com:3100"))
   }
 
   @Test

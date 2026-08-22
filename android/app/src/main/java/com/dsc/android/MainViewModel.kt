@@ -39,10 +39,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   val state: StateFlow<AppState> = _state.asStateFlow()
 
   private var api: DeviceStateApi? = null
-  private var cookieJar: InMemoryCookieJar? = null
   private var httpClient: OkHttpClient? = null
-  private var socket: DeviceRealtimeSocket? = null
-  private var socketReconnectJob: Job? = null
   private var refreshLoopJob: Job? = null
   private var metricsLoadJob: Job? = null
   private var trafficLoadJob: Job? = null
@@ -52,7 +49,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private var trafficSelectedStart: String? = null
   private var lastAutoLoginSignature: String? = null
   private var appInForeground = false
-  private var reconnectAttempt = 0
   private val screenBackStack = mutableListOf<AppScreen>()
 
   private val blockMetrics = mapOf(
@@ -61,6 +57,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     DeviceBlockKey.Memory to listOf("memoryUsage", "swapUsage"),
     DeviceBlockKey.Disk to listOf("diskUsage", "diskRead", "diskWrite"),
     DeviceBlockKey.Network to listOf("networkRxRate", "networkTxRate", "networkTraffic"),
+    DeviceBlockKey.Temperature to listOf("temperatureSources"),
     DeviceBlockKey.Fan to emptyList()
   )
 
@@ -96,7 +93,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else {
           stopRemoteActivity(clearCache = false)
           api = null
-          cookieJar = null
           httpClient = null
           lastAutoLoginSignature = null
           screenBackStack.clear()
@@ -108,7 +104,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   fun onAppForeground() {
     appInForeground = true
     if (_state.value.authenticated) {
-      ensureRealtimeSocket()
       startRefreshLoop()
       refresh()
     }
@@ -174,19 +169,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     return runCatching { apiFactory.create(baseUrl) }
       .onSuccess { created ->
         api = created.first
-        cookieJar = created.second
         httpClient = created.third
-        _state.update { it.copy(realtimeConnected = false) }
       }
       .onFailure {
         api = null
-        cookieJar = null
         httpClient = null
         _state.update {
           it.copy(
             authenticated = false,
             loggingIn = false,
-            realtimeConnected = false,
             message = "中枢地址格式不正确"
           )
         }
@@ -201,7 +192,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       settingsRepository.clear()
       screenBackStack.clear()
       api = null
-      cookieJar = null
       httpClient = null
       _state.update {
         it.copy(
@@ -209,7 +199,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           authenticated = false,
           dataSource = RemoteDataSource.Empty,
           cacheSavedAt = null,
-          realtimeConnected = false,
           devices = emptyList(),
           selectedDeviceId = null,
           metrics = null,
@@ -271,7 +260,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           loadMetrics(it, current.selectedWindow, showScreen = false)
           loadTraffic(it, _state.value.trafficMode, showScreen = false)
         }
-        ensureRealtimeSocket()
         startRefreshLoop()
         persistRemoteSnapshot()
       }.onFailure { error ->
@@ -281,7 +269,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             loggingIn = false,
             authenticated = false,
             dataSource = if (it.devices.isEmpty()) RemoteDataSource.Empty else RemoteDataSource.Cache,
-            realtimeConnected = false,
             currentScreen = AppScreen.Login,
             transitionDirection = ScreenTransitionDirection.None,
             message = loginErrorMessage(error)
@@ -805,80 +792,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
-  private fun ensureRealtimeSocket() {
-    if (!appInForeground) return
-    val baseUrl = runCatching { apiFactory.resolveApiBaseUrl(_state.value.serverConfig.baseUrl) }
-      .getOrElse {
-        _state.update { state -> state.copy(message = "中枢地址格式不正确") }
-        return
-      }
-    val currentCookieJar = cookieJar ?: return
-    val currentHttpClient = httpClient ?: return
-    if (baseUrl.isBlank() || !_state.value.authenticated) return
-    socket?.close()
-    socket = null
-    _state.update { it.copy(realtimeConnected = false) }
-    runCatching {
-      DeviceRealtimeSocket(currentHttpClient, currentCookieJar, baseUrl).also { realtime ->
-        realtime.connect(
-          onUpdate = { event ->
-            val savedAt = Instant.now().toString()
-            _state.update { current ->
-              current.copy(
-                dataSource = RemoteDataSource.Live,
-                cacheSavedAt = savedAt,
-                devices = if (current.devices.any { it.deviceId == event.deviceId }) {
-                  current.devices.map { device ->
-                    if (device.deviceId == event.deviceId) {
-                      event.summary.copy(sortOrder = event.summary.sortOrder ?: device.sortOrder)
-                    } else {
-                      device
-                    }
-                  }
-                } else {
-                  current.devices + event.summary
-                }
-              )
-            }
-            persistRemoteSnapshot()
-            val selectedDeviceId = _state.value.selectedDeviceId
-            val selectedWindow = _state.value.selectedWindow
-            if (
-              _state.value.currentScreen == AppScreen.DeviceDetail &&
-                selectedDeviceId == event.deviceId
-            ) {
-              loadMetrics(selectedDeviceId, selectedWindow, showScreen = false)
-            }
-          },
-          onConnected = {
-            reconnectAttempt = 0
-            _state.update { it.copy(realtimeConnected = true, message = null) }
-          },
-          onDisconnected = {
-            _state.update { it.copy(realtimeConnected = false) }
-            scheduleRealtimeReconnect()
-          }
-        )
-      }
-    }.onSuccess { createdSocket ->
-      socket = createdSocket
-    }.onFailure {
-      socket = null
-      _state.update { state -> state.copy(realtimeConnected = false, message = "实时连接初始化失败") }
-    }
-  }
-
-  private fun scheduleRealtimeReconnect() {
-    if (!_state.value.authenticated || !appInForeground) return
-    socketReconnectJob?.cancel()
-    socketReconnectJob = viewModelScope.launch {
-      val waitMillis = (3_000L * (1L shl reconnectAttempt.coerceAtMost(3))).coerceAtMost(30_000L)
-      reconnectAttempt = (reconnectAttempt + 1).coerceAtMost(4)
-      delay(waitMillis)
-      ensureRealtimeSocket()
-    }
-  }
-
   private fun startRefreshLoop() {
     if (!appInForeground || !_state.value.authenticated || refreshLoopJob?.isActive == true) return
     refreshLoopJob = viewModelScope.launch {
@@ -892,8 +805,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   private fun stopRemoteActivity(clearCache: Boolean) {
-    socketReconnectJob?.cancel()
-    socketReconnectJob = null
     refreshLoopJob?.cancel()
     refreshLoopJob = null
     metricsLoadJob?.cancel()
@@ -902,12 +813,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     trafficLoadJob = null
     overviewLoadJob?.cancel()
     overviewLoadJob = null
-    socket?.close()
-    socket = null
-    reconnectAttempt = 0
     _state.update {
       it.copy(
-        realtimeConnected = false,
         refreshing = false,
         loadingMetrics = false,
         loadingTraffic = false
@@ -1000,7 +907,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       DeviceBlockKey.Gpu -> metrics.latest.gpus.map { it.id }
       DeviceBlockKey.Disk -> metrics.latest.disks.map { it.id }
       DeviceBlockKey.Network -> metrics.latest.networkInterfaces.map { it.id }
-      DeviceBlockKey.Memory, DeviceBlockKey.Fan -> emptyList()
+      DeviceBlockKey.Memory, DeviceBlockKey.Temperature, DeviceBlockKey.Fan -> emptyList()
     }
   }
 
