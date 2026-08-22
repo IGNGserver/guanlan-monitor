@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -33,6 +34,7 @@ const (
 	localTokenFileName         = "agent-ui.local-token"
 	backendWait                = 8 * time.Second
 	backendRequestTTL          = 5 * time.Second
+	backendProbeRequestTTL     = 45 * time.Second
 	maxConfigFileBytes         = 256 * 1024
 	maxBackendResponseBytes    = 2 * 1024 * 1024
 	maxSamplingIntervalSeconds = 86400
@@ -1599,11 +1601,22 @@ func newBackendClient(record *runtimeRecord) *backendClient {
 	return &backendClient{
 		baseURL: "http://127.0.0.1:" + strconv.Itoa(record.Port),
 		token:   record.Token,
-		http:    &http.Client{Timeout: backendRequestTTL},
+		http:    &http.Client{},
 	}
 }
 
 func (c *backendClient) request(method, endpoint string, payload any, output any) error {
+	return c.requestWithTimeout(backendRequestTTL, method, endpoint, payload, output)
+}
+
+func requestTimeoutForEndpoint(endpoint string) time.Duration {
+	if endpoint == "/api/probes/detect" {
+		return backendProbeRequestTTL
+	}
+	return backendRequestTTL
+}
+
+func (c *backendClient) requestWithTimeout(timeout time.Duration, method, endpoint string, payload any, output any) error {
 	var body io.Reader
 	if payload != nil {
 		raw, err := json.Marshal(payload)
@@ -1612,7 +1625,9 @@ func (c *backendClient) request(method, endpoint string, payload any, output any
 		}
 		body = bytes.NewReader(raw)
 	}
-	request, err := http.NewRequest(method, c.baseURL+endpoint, body)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, method, c.baseURL+endpoint, body)
 	if err != nil {
 		return err
 	}
@@ -1675,7 +1690,7 @@ func (c *backendClient) putConfig(cfg agentLocalConfig) error {
 
 func (c *backendClient) control(endpoint string, output any) (backendState, error) {
 	var state backendState
-	err := c.request(http.MethodPost, endpoint, nil, &state)
+	err := c.requestWithTimeout(requestTimeoutForEndpoint(endpoint), http.MethodPost, endpoint, nil, &state)
 	if output != nil {
 		if raw, marshalErr := json.Marshal(state); marshalErr == nil {
 			_ = json.Unmarshal(raw, output)

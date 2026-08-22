@@ -2,8 +2,38 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
+
+func TestBackendRequestTimeoutForEndpoint(t *testing.T) {
+	if got := requestTimeoutForEndpoint("/api/probes/detect"); got != backendProbeRequestTTL {
+		t.Fatalf("probe detection timeout = %s, want %s", got, backendProbeRequestTTL)
+	}
+	if got := requestTimeoutForEndpoint("/api/control/start"); got != backendRequestTTL {
+		t.Fatalf("normal backend timeout = %s, want %s", got, backendRequestTTL)
+	}
+}
+
+func TestBackendClientRequestWithTimeoutCancelsSlowRequest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(250 * time.Millisecond):
+			t.Error("slow backend request was not canceled")
+		}
+	}))
+	defer server.Close()
+
+	client := &backendClient{baseURL: server.URL, http: server.Client()}
+	err := client.requestWithTimeout(25*time.Millisecond, http.MethodPost, "/api/probes/detect", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("slow backend request error = %v, want context deadline exceeded", err)
+	}
+}
 
 func TestValidateServerURLRequiresHTTPSForPublicHosts(t *testing.T) {
 	cases := []struct {
