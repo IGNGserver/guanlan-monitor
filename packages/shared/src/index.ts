@@ -516,6 +516,8 @@ export interface AgentMetricsPayload {
   identity: AgentIdentity;
   timestamp: string;
   heartbeatAt: string;
+  /** Metrics that the collector knows are unavailable, kept separate from real zero values. */
+  unavailableMetrics?: DeviceMetricKey[];
   system: SystemStats;
   cpuUsagePercent: number;
   cpuFrequencyMHz?: number | null;
@@ -555,6 +557,8 @@ export interface DeviceSummary {
   instanceType?: InstanceType;
   hostName?: string | null;
   virtualMachine?: VirtualMachineIdentity | null;
+  /** Metrics that are not meaningful for the current instance state. */
+  unavailableMetrics?: DeviceMetricKey[];
 }
 
 export interface DeviceReorderPayload {
@@ -750,6 +754,7 @@ export interface MetricsLatest {
   sensorBackends: SensorBackendStatus[];
   fans: FanSensorStats[];
   virtualization?: VirtualizationSnapshot | null;
+  unavailableMetrics?: DeviceMetricKey[];
 }
 
 export interface MetricsResponse {
@@ -777,6 +782,7 @@ export interface OverviewInstanceSeries {
   diskUsedBytes: SamplePoint[];
   networkRxBytesPerSec: SamplePoint[];
   networkTxBytesPerSec: SamplePoint[];
+  unavailableMetrics?: DeviceMetricKey[];
 }
 
 /** All-instance metrics for the overview page charts. */

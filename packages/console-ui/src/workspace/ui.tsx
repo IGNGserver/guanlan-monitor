@@ -107,6 +107,34 @@ export function StatusLabel({ state, compact = false }: { state: "online" | "off
   );
 }
 
+export function virtualMachinePowerState(powerState: string | null | undefined): {
+  state: "online" | "offline" | "warning" | "unknown";
+  label: string;
+} {
+  switch (powerState?.trim().toLowerCase()) {
+    case "running":
+      return { state: "online", label: "运行中" };
+    case "stopped":
+      return { state: "offline", label: "已关机" };
+    case "paused":
+      return { state: "warning", label: "已暂停" };
+    case "suspended":
+      return { state: "warning", label: "已挂起" };
+    default:
+      return { state: "unknown", label: "电源状态未知" };
+  }
+}
+
+export function VirtualMachinePowerLabel({ powerState, compact = false }: { powerState: string | null | undefined; compact?: boolean }) {
+  const status = virtualMachinePowerState(powerState);
+  return (
+    <span className={`workspace-status-label workspace-status-label--${status.state} ${compact ? "is-compact" : ""}`} title={`虚拟机电源：${status.label}`}>
+      <StatusDot state={status.state} />
+      {!compact && status.label}
+    </span>
+  );
+}
+
 export function Surface({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <section className={`workspace-surface ${className}`}>{children}</section>;
 }

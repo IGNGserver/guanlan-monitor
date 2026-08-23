@@ -16,6 +16,7 @@ import type {
 import { z } from "zod";
 import { env } from "./config.js";
 import type { MetricsService } from "./services/metrics.js";
+import { unavailableMetricsForVirtualMachinePowerState } from "./services/virtual-machines.js";
 import { LocalDeviceMetricConfigStore, LocalFanNoteStore, LocalWidgetLayoutStore, createLocalStore } from "./repositories/local.js";
 import type { Repositories, SessionValue } from "./types.js";
 import { ALL_DEVICE_METRIC_KEYS, filterAgentPayloadInstances, getAvailableMetrics, resolveCpuFrequencyMHz, resolveCpuTemperatureC, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
@@ -347,7 +348,8 @@ export async function registerRoutes(
             memoryUsedBytes: series.memoryUsedBytes,
             diskUsedBytes: series.diskUsedBytes,
             networkRxBytesPerSec: series.networkRxBytesPerSec,
-            networkTxBytesPerSec: series.networkTxBytesPerSec
+            networkTxBytesPerSec: series.networkTxBytesPerSec,
+            unavailableMetrics: state.latest.unavailableMetrics ?? []
           };
         })
       );
@@ -449,6 +451,7 @@ export async function registerRoutes(
           temperatureSensors: latest.temperatureSensors ?? [],
           sensorBackends: latest.sensorBackends ?? [],
           virtualization: latest.virtualization ?? null,
+          unavailableMetrics: latest.unavailableMetrics ?? [],
           fans: (latest.fans ?? []).map((fan) => ({
             ...fan,
             note: notes[fan.id] ?? fan.note ?? ""
@@ -682,7 +685,8 @@ async function buildVirtualMachineSummaries(repositories: Repositories) {
         powerState: record.powerState,
         hostDeviceId: record.hostDeviceId,
         hostName: record.hostName
-      }
+      },
+      unavailableMetrics: unavailableMetricsForVirtualMachinePowerState(record.powerState)
     };
   }).sort((a, b) => ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.deviceId.localeCompare(b.deviceId));
 }
