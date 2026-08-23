@@ -18,7 +18,7 @@ import { env } from "./config.js";
 import type { MetricsService } from "./services/metrics.js";
 import { LocalDeviceMetricConfigStore, LocalFanNoteStore, LocalWidgetLayoutStore, createLocalStore } from "./repositories/local.js";
 import type { Repositories, SessionValue } from "./types.js";
-import { ALL_DEVICE_METRIC_KEYS, filterAgentPayloadInstances, getAvailableMetrics, resolveCpuFrequencyMHz, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
+import { ALL_DEVICE_METRIC_KEYS, filterAgentPayloadInstances, getAvailableMetrics, resolveCpuFrequencyMHz, resolveCpuTemperatureC, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
 import { getSystemVersionInfo, getUpdateInfo } from "./updates.js";
 import { getHubUpdateStatus, HubUpdateError, requestHubUpdate } from "./hub-update.js";
 
@@ -426,7 +426,7 @@ export async function registerRoutes(
           system: state.latest.system,
           cpuUsagePercent: state.latest.cpuUsagePercent,
           cpuFrequencyMHz: resolveCpuFrequencyMHz(latest),
-          cpuTemperatureC: latest.cpuTemperatureC ?? null,
+          cpuTemperatureC: resolveCpuTemperatureC(latest),
           cpuPackages: latest.cpuPackages ?? [],
           memoryUsedBytes: latest.memory.usedBytes,
           memoryTotalBytes: latest.memory.totalBytes,

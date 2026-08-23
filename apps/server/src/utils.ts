@@ -62,6 +62,26 @@ export function percent(used: number, total: number) {
   return Number(((used / total) * 100).toFixed(2));
 }
 
+function positiveFiniteValues(values: Array<number | null | undefined>): number[] {
+  return values.filter((value): value is number =>
+    typeof value === "number" && Number.isFinite(value) && value > 0
+  );
+}
+
+function averagePositive(values: Array<number | null | undefined>): number {
+  const valid = positiveFiniteValues(values);
+  return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : 0;
+}
+
+export function resolveCpuTemperatureC(
+  payload: Pick<AgentMetricsPayload, "cpuTemperatureC" | "cpuPackages">
+): number | null {
+  const direct = positiveFiniteValues([payload.cpuTemperatureC])[0];
+  if (direct != null) return direct;
+  const average = averagePositive((payload.cpuPackages ?? []).map((cpu) => cpu.temperatureC));
+  return average > 0 ? average : null;
+}
+
 export function toSummary(state: DeviceRealtimeState): DeviceSummary {
   const latest = state.latest;
   const displayName = DEVICE_DISPLAY_NAMES[state.identity.deviceId] ?? state.identity.hostname;
@@ -111,6 +131,7 @@ export function payloadToTimeSeries(
 ): TimeSeriesRecord {
   const enabled = new Set(config.enabledMetrics);
   const resolvedCpuFrequencyMHz = resolveCpuFrequencyMHz(payload);
+  const resolvedCpuTemperatureC = resolveCpuTemperatureC(payload);
   const totalGpuMemory = payload.gpus.reduce((sum, gpu) => sum + gpu.memoryTotalBytes, 0);
   const usedGpuMemory = payload.gpus.reduce((sum, gpu) => sum + gpu.memoryUsedBytes, 0);
   const gpuUsagePercent =
@@ -126,7 +147,7 @@ export function payloadToTimeSeries(
   const gpuDecodeValues = payload.gpus
     .map((gpu) => gpu.decodeUtilizationPercent)
     .filter((value): value is number => value != null && Number.isFinite(value));
-  const gpuTemperatureValues = payload.gpus.map((gpu) => gpu.temperatureC).filter((value): value is number => value != null);
+  const gpuTemperatureValues = positiveFiniteValues(payload.gpus.map((gpu) => gpu.temperatureC));
   const disks = (payload.disks ?? [])
     .filter((disk) => isInstanceEnabled(config, "disk", disk.id))
     .map((disk) => {
@@ -222,7 +243,7 @@ export function payloadToTimeSeries(
     timestamp: Date.parse(payload.timestamp),
     cpuUsagePercent: enabled.has("cpuUsage") ? payload.cpuUsagePercent : 0,
     cpuFrequencyMHz: enabled.has("cpuFrequency") ? resolvedCpuFrequencyMHz ?? 0 : 0,
-    cpuTemperatureC: enabled.has("cpuTemperature") ? payload.cpuTemperatureC ?? 0 : 0,
+    cpuTemperatureC: enabled.has("cpuTemperature") ? resolvedCpuTemperatureC ?? 0 : 0,
     gpuUsagePercent: enabled.has("gpuUsage") ? gpuUsagePercent : 0,
     gpuEncodePercent:
       enabled.has("gpuEncode") && gpuEncodeValues.length > 0
@@ -766,8 +787,7 @@ export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOpt
   const hasSwap = latest.memory.swapTotalBytes > 0 || latest.memory.swapUsedBytes > 0;
   const hasCpuFrequency =
     (latest.cpuFrequencyMHz ?? 0) > 0 || (latest.cpuPackages ?? []).some((cpu) => (cpu.frequencyMHz ?? 0) > 0);
-  const hasCpuTemperature =
-    latest.cpuTemperatureC != null || (latest.cpuPackages ?? []).some((cpu) => cpu.temperatureC != null);
+  const hasCpuTemperature = resolveCpuTemperatureC(latest) != null;
   const hasCpuTopology = (latest.cpuPackages ?? []).some((cpu) => cpu.coreCount != null || cpu.logicalCount != null);
   const hasSystemOverview = latest.system.processCount > 0 || latest.system.threadCount > 0 || latest.system.handleCount > 0;
   const hasDisks = latest.diskUsage.totalBytes > 0 || (latest.disks?.length ?? 0) > 0;
