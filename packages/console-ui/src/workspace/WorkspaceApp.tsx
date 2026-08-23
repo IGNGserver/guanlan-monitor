@@ -20,11 +20,12 @@ import {
 } from "./WidgetLayout";
 import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
 import { DynamicWidgetCanvas, WidgetDrawer } from "./widgetCatalog";
-import { Button, Icon, StatusDot, StatusLabel, Surface, SummaryRow, type IconName } from "./ui";
+import { Button, Icon, StatusDot, StatusLabel, Surface, SummaryRow, VirtualMachinePowerLabel, type IconName, virtualMachinePowerState } from "./ui";
 import { MiniTrend, TelemetryChartCard, TelemetryInfoCard } from "./TelemetryCards";
 import {
   CapacityMetricValue,
   MetricValue,
+  UNAVAILABLE_METRIC_LABEL,
   WINDOW_DURATION_MAP,
   averageSamplePointsOrFallback,
   displayInstanceName,
@@ -43,6 +44,19 @@ import {
 } from "./formatters";
 
 const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: string }).src;
+
+function isMetricUnavailable(
+  device: Pick<DeviceSummary, "instanceType" | "unavailableMetrics">,
+  key: DeviceMetricKey,
+  latest?: { unavailableMetrics?: DeviceMetricKey[] } | null
+): boolean {
+  if (device.instanceType !== "virtual_machine") return false;
+  return new Set([...(device.unavailableMetrics ?? []), ...(latest?.unavailableMetrics ?? [])]).has(key);
+}
+
+function unavailablePoints(points: SamplePoint[], unavailable: boolean): SamplePoint[] {
+  return unavailable ? [] : points;
+}
 
 const metricGroups: Array<{ label: string; items: Array<{ key: DeviceMetricKey; label: string }> }> = [
   {
@@ -216,8 +230,10 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
           <div className="workspace-device-list">
             {devices.length ? devices.map((device) => (
               <button className={`workspace-device-item ${route.kind === "device" && route.deviceId === device.deviceId ? "is-active" : ""}`} type="button" key={device.deviceId} onClick={() => navigate({ kind: "device", deviceId: device.deviceId })} title={device.hostname}>
-                <StatusDot state={device.status === "online" ? "online" : "offline"} />
-                <span className="workspace-device-item__copy"><strong>{device.hostname}</strong><small>{(device.instanceType ?? "device") === "virtual_machine" ? `宿主机：${device.hostName ?? "未知"}` : device.os} · <MetricValue value={device.cpuUsagePercent} /></small></span>
+                {(device.instanceType ?? "device") === "virtual_machine"
+                  ? <StatusDot state={virtualMachinePowerState(device.virtualMachine?.powerState).state} />
+                  : <StatusDot state={device.status === "online" ? "online" : "offline"} />}
+                <span className="workspace-device-item__copy"><strong>{device.hostname}</strong><small>{(device.instanceType ?? "device") === "virtual_machine" ? `${virtualMachinePowerState(device.virtualMachine?.powerState).label} · 宿主机：${device.hostName ?? "未知"}` : device.os} · <MetricValue value={device.cpuUsagePercent} unavailable={isMetricUnavailable(device, "cpuUsage")} /></small></span>
               </button>
             )) : <div className="workspace-sidebar__empty">尚未发现设备</div>}
           </div>
@@ -554,6 +570,7 @@ function DeviceRow({
   const { navigate } = useWorkspace();
   const open = () => navigate({ kind: "device", deviceId: device.deviceId });
   const isVm = device.instanceType === "virtual_machine";
+  const powerState = isVm ? virtualMachinePowerState(device.virtualMachine?.powerState) : null;
   return <div
     className="workspace-device-row"
     role="button"
@@ -561,11 +578,11 @@ function DeviceRow({
     onClick={open}
     onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}
   >
-    <span className="workspace-device-row__status"><StatusDot state={device.status === "online" ? "online" : "offline"} /></span>
-    <span className="workspace-device-row__identity"><strong>{device.hostname}</strong><small>{isVm ? `宿主机：${device.hostName ?? "未知"}` : device.os} · {device.deviceId}</small></span>
-    <span className="workspace-device-row__metric"><small>CPU</small><MetricValue value={device.cpuUsagePercent} /></span>
-    <span className="workspace-device-row__metric"><small>内存</small><CapacityMetricValue usedBytes={device.memoryUsedBytes} totalBytes={device.memoryTotalBytes} percentValue={device.memoryUsagePercent} /></span>
-    <span className="workspace-device-row__metric"><small>磁盘</small><CapacityMetricValue usedBytes={device.diskUsedBytes} totalBytes={device.diskTotalBytes} percentValue={device.diskUsagePercent} /></span>
+    <span className="workspace-device-row__status"><StatusDot state={powerState?.state ?? (device.status === "online" ? "online" : "offline")} /></span>
+    <span className="workspace-device-row__identity"><strong>{device.hostname}</strong><small>{isVm ? `${powerState?.label ?? "电源状态未知"} · 宿主机：${device.hostName ?? "未知"}` : device.os} · {device.deviceId}</small></span>
+    <span className="workspace-device-row__metric"><small>CPU</small><MetricValue value={device.cpuUsagePercent} unavailable={isMetricUnavailable(device, "cpuUsage")} /></span>
+    <span className="workspace-device-row__metric"><small>内存</small><CapacityMetricValue usedBytes={device.memoryUsedBytes} totalBytes={device.memoryTotalBytes} percentValue={device.memoryUsagePercent} unavailable={isMetricUnavailable(device, "memoryUsage")} /></span>
+    <span className="workspace-device-row__metric"><small>磁盘</small><CapacityMetricValue usedBytes={device.diskUsedBytes} totalBytes={device.diskTotalBytes} percentValue={device.diskUsagePercent} unavailable={isMetricUnavailable(device, "diskUsage")} /></span>
     {onMove || onDelete ? <span className="workspace-device-row__actions" onClick={(event) => event.stopPropagation()}>
       {onMove && <>
         <button type="button" className="workspace-row-action" disabled={index === 0} onClick={() => onMove(-1)} aria-label="上移" title="上移">↑</button>
@@ -596,8 +613,8 @@ function OverviewPage() {
   const metricWindowLabel = ({ "1m": "1 分钟", "5m": "5 分钟", "15m": "15 分钟", "1h": "1 小时", "6h": "6 小时", "24h": "24 小时", "1d": "1 天", "7d": "7 天", "1w": "1 周", "30d": "30 天", "1mo": "1 个月", "90d": "90 天", "1y": "1 年" } as Record<string, string>)[metricsWindow] ?? metricsWindow;
 
   // 计算 TOP 5 资源消耗榜
-  const topCpuDevices = [...liveDevices].filter((device) => Number.isFinite(device.cpuUsagePercent)).sort((a, b) => (b.cpuUsagePercent ?? 0) - (a.cpuUsagePercent ?? 0)).slice(0, 5);
-  const topMemoryDevices = [...liveDevices].filter((device) => Number.isFinite(device.memoryUsagePercent)).sort((a, b) => (b.memoryUsagePercent ?? 0) - (a.memoryUsagePercent ?? 0)).slice(0, 5);
+  const topCpuDevices = [...liveDevices].filter((device) => Number.isFinite(device.cpuUsagePercent) && !isMetricUnavailable(device, "cpuUsage")).sort((a, b) => (b.cpuUsagePercent ?? 0) - (a.cpuUsagePercent ?? 0)).slice(0, 5);
+  const topMemoryDevices = [...liveDevices].filter((device) => Number.isFinite(device.memoryUsagePercent) && !isMetricUnavailable(device, "memoryUsage")).sort((a, b) => (b.memoryUsagePercent ?? 0) - (a.memoryUsagePercent ?? 0)).slice(0, 5);
 
   const moveInstance = (deviceId: string, direction: -1 | 1) => {
     const currentIndex = devices.findIndex((device) => device.deviceId === deviceId);
@@ -700,7 +717,7 @@ function OverviewPage() {
                 <div key={dev.deviceId} className="workspace-ranking-item">
                   <span className="workspace-ranking-badge">{idx + 1}</span>
                   <span className="workspace-ranking-name">{dev.hostname}</span>
-                  <span className="workspace-ranking-val">{dev.cpuUsagePercent ?? 0}%</span>
+                <span className="workspace-ranking-val"><MetricValue value={dev.cpuUsagePercent} unavailable={isMetricUnavailable(dev, "cpuUsage")} /></span>
                 </div>
               )) : <div className="workspace-muted-block">暂无在线实例数据</div>}
             </div>
@@ -718,7 +735,7 @@ function OverviewPage() {
                 <div key={dev.deviceId} className="workspace-ranking-item">
                   <span className="workspace-ranking-badge">{idx + 1}</span>
                   <span className="workspace-ranking-name">{dev.hostname}</span>
-                  <span className="workspace-ranking-val"><CapacityMetricValue usedBytes={dev.memoryUsedBytes} totalBytes={dev.memoryTotalBytes} percentValue={dev.memoryUsagePercent} /></span>
+                  <span className="workspace-ranking-val"><CapacityMetricValue usedBytes={dev.memoryUsedBytes} totalBytes={dev.memoryTotalBytes} percentValue={dev.memoryUsagePercent} unavailable={isMetricUnavailable(dev, "memoryUsage")} /></span>
                 </div>
               )) : <div className="workspace-muted-block">暂无在线实例数据</div>}
             </div>
@@ -732,28 +749,28 @@ function OverviewPage() {
           <TelemetryChartCard
             title="CPU 图表"
             subtitle={`每个实例一条数据线 · 最近 ${metricWindowLabel}`}
-            series={overviewInstances.map((instance) => ({ label: instance.hostname, points: instance.cpuUsagePercent }))}
+            series={overviewInstances.map((instance) => ({ label: instance.hostname, points: unavailablePoints(instance.cpuUsagePercent, instance.unavailableMetrics?.includes("cpuUsage") ?? false) }))}
             valueFormatter={(v) => `${Math.round(v)}%`}
             fixedMaxValue={100}
           />
           <TelemetryChartCard
             title="内存图表"
             subtitle={`每个实例一条数据线 · 最近 ${metricWindowLabel}`}
-            series={overviewInstances.map((instance) => ({ label: instance.hostname, points: instance.memoryUsedBytes, valueFormatter: formatBytes }))}
+            series={overviewInstances.map((instance) => ({ label: instance.hostname, points: unavailablePoints(instance.memoryUsedBytes, instance.unavailableMetrics?.includes("memoryUsage") ?? false), valueFormatter: formatBytes }))}
             valueFormatter={formatBytes}
           />
           <TelemetryChartCard
             title="总存储图表"
             subtitle={`每个实例一条数据线 · 最近 ${metricWindowLabel}`}
-            series={overviewInstances.map((instance) => ({ label: instance.hostname, points: instance.diskUsedBytes, valueFormatter: formatBytes }))}
+            series={overviewInstances.map((instance) => ({ label: instance.hostname, points: unavailablePoints(instance.diskUsedBytes, instance.unavailableMetrics?.includes("diskUsage") ?? false), valueFormatter: formatBytes }))}
             valueFormatter={formatBytes}
           />
           <TelemetryChartCard
             title="总网络吞吐"
             subtitle={`所有实例上行与下行叠加 · 最近 ${metricWindowLabel}`}
             series={[
-              { label: "下行 (Rx)", points: sumSamplePoints(overviewInstances.map((instance) => instance.networkRxBytesPerSec)), valueFormatter: (v) => `${formatBytes(v)}/s` },
-              { label: "上行 (Tx)", points: sumSamplePoints(overviewInstances.map((instance) => instance.networkTxBytesPerSec)), valueFormatter: (v) => `${formatBytes(v)}/s` }
+              { label: "下行 (Rx)", points: sumSamplePoints(overviewInstances.map((instance) => unavailablePoints(instance.networkRxBytesPerSec, instance.unavailableMetrics?.includes("networkRxRate") ?? false))), valueFormatter: (v) => `${formatBytes(v)}/s` },
+              { label: "上行 (Tx)", points: sumSamplePoints(overviewInstances.map((instance) => unavailablePoints(instance.networkTxBytesPerSec, instance.unavailableMetrics?.includes("networkTxRate") ?? false))), valueFormatter: (v) => `${formatBytes(v)}/s` }
             ]}
             valueFormatter={(v) => `${formatBytes(v)}/s`}
           />
@@ -914,19 +931,19 @@ function FanNoteEditor({
   return <div className="workspace-fan-note"><label><span>风扇备注</span><input className="workspace-input" value={note} onChange={(event) => setNote(event.target.value)} maxLength={160} placeholder="例如：前置进风风扇" /></label><Button variant="quiet" onClick={() => void saveFanNote(deviceId, fanId, note.trim())} disabled={mutationPending}>保存备注</Button></div>;
 }
 
-function CpuFactsCard({ cpus, system }: { cpus: CpuPackageStats[]; system?: SystemStats }) {
+function CpuFactsCard({ cpus, system, unavailable = false }: { cpus: CpuPackageStats[]; system?: SystemStats; unavailable?: boolean }) {
   const sum = (values: Array<number | null | undefined>) => {
     const valid = values.filter((value): value is number => Number.isFinite(value));
     return valid.length ? valid.reduce((total, value) => total + value, 0) : null;
   };
   const facts = [
-    { label: "运行时间", value: formatDuration(system?.uptimeSeconds), className: "workspace-cpu-fact--duration" },
+    { label: "运行时间", value: unavailable ? UNAVAILABLE_METRIC_LABEL : formatDuration(system?.uptimeSeconds), className: "workspace-cpu-fact--duration" },
     { label: "物理核心", value: formatCount(sum(cpus.map((cpu) => cpu.coreCount))) },
     { label: "逻辑线程", value: formatCount(sum(cpus.map((cpu) => cpu.logicalCount))) },
     { label: "L3 缓存", value: formatBytes(sum(cpus.map((cpu) => cpu.l3CacheBytes))) },
-    { label: "系统线程", value: formatCount(system?.threadCount) },
-    { label: "进程数", value: formatCount(system?.processCount) },
-    { label: "句柄数", value: formatCount(system?.handleCount) }
+    { label: "系统线程", value: unavailable ? UNAVAILABLE_METRIC_LABEL : formatCount(system?.threadCount) },
+    { label: "进程数", value: unavailable ? UNAVAILABLE_METRIC_LABEL : formatCount(system?.processCount) },
+    { label: "句柄数", value: unavailable ? UNAVAILABLE_METRIC_LABEL : formatCount(system?.handleCount) }
   ];
   return (
     <Surface className="workspace-cpu-facts">
@@ -1546,6 +1563,7 @@ function DevicePage() {
   const localTemperatureSourcesAt = snapshot?.localBackend?.lastDetectAt ?? null;
   const latest = metrics?.latest;
   const series = metrics?.series;
+  const metricUnavailable = (key: DeviceMetricKey) => isMetricUnavailable(selectedDevice, key, latest);
   const enabledDeviceIds = metrics?.enabledDeviceIds;
   const hasInstanceConfiguration = (block: DeviceBlockKey) => Array.isArray(enabledDeviceIds?.[block]);
   const filterEnabledInstances = <T extends { id: string }>(block: DeviceBlockKey, instances: T[]) => {
@@ -1578,12 +1596,12 @@ function DevicePage() {
   const diskOptions = diskInstances.map((disk) => ({ id: disk.id, name: displayModelName(disk.model, disk.name, "磁盘"), detail: disk.mountPoint }));
   const networkOptions = networkInstances.map((network) => ({ id: network.id, name: displayModelName(network.model, network.name, "网卡") }));
   const gpuOptions = gpuInstances.map((gpu) => ({ id: gpu.id, name: gpu.name }));
-  const cpuAverageUsage = averageSamplePointsOrFallback(cpuInstances.map((cpu) => cpu.usagePercent), hasInstanceConfiguration("cpu") ? [] : series?.cpuUsagePercent ?? []);
+  const cpuAverageUsage = metricUnavailable("cpuUsage") ? [] : averageSamplePointsOrFallback(cpuInstances.map((cpu) => cpu.usagePercent), hasInstanceConfiguration("cpu") ? [] : series?.cpuUsagePercent ?? []);
   const diskTotalUsedBytes = diskInstances.length
-    ? sumSamplePoints(diskInstances.map((disk) => disk.usedBytes))
-    : hasInstanceConfiguration("disk") ? [] : series?.diskUsedBytes ?? [];
-  const networkAverageRx = averageSamplePointsOrFallback(networkInstances.map((network) => network.rxBytesPerSec), hasInstanceConfiguration("network") ? [] : series?.networkRxBytesPerSec ?? []);
-  const networkAverageTx = averageSamplePointsOrFallback(networkInstances.map((network) => network.txBytesPerSec), hasInstanceConfiguration("network") ? [] : series?.networkTxBytesPerSec ?? []);
+    ? metricUnavailable("diskUsage") ? [] : sumSamplePoints(diskInstances.map((disk) => disk.usedBytes))
+    : metricUnavailable("diskUsage") ? [] : hasInstanceConfiguration("disk") ? [] : series?.diskUsedBytes ?? [];
+  const networkAverageRx = metricUnavailable("networkRxRate") ? [] : averageSamplePointsOrFallback(networkInstances.map((network) => network.rxBytesPerSec), hasInstanceConfiguration("network") ? [] : series?.networkRxBytesPerSec ?? []);
+  const networkAverageTx = metricUnavailable("networkTxRate") ? [] : averageSamplePointsOrFallback(networkInstances.map((network) => network.txBytesPerSec), hasInstanceConfiguration("network") ? [] : series?.networkTxBytesPerSec ?? []);
   const gpuAverageUsage = averageSamplePointsOrFallback(gpuInstances.map((gpu) => gpu.usagePercent), hasInstanceConfiguration("gpu") ? [] : series?.gpuUsagePercent ?? []);
   const gpuAverageEncode = averageSamplePointsOrFallback(gpuInstances.map((gpu) => gpu.encodePercent), hasInstanceConfiguration("gpu") ? [] : series?.gpuEncodePercent ?? []);
   const gpuAverageDecode = averageSamplePointsOrFallback(gpuInstances.map((gpu) => gpu.decodePercent), hasInstanceConfiguration("gpu") ? [] : series?.gpuDecodePercent ?? []);
@@ -1595,10 +1613,10 @@ function DevicePage() {
     ? filteredLatest.memoryCommitLimitBytes || filteredLatest.memoryTotalBytes + filteredLatest.swapTotalBytes
     : 0;
   const committedMemorySummary = filteredLatest
-    ? formatCapacitySummary(filteredLatest.memoryCommittedBytes, commitLimitBytes)
+    ? formatCapacitySummary(filteredLatest.memoryCommittedBytes, commitLimitBytes, metricUnavailable("memoryCommitted"))
     : "容量暂无";
   const pagefileMemorySummary = filteredLatest
-    ? formatCapacitySummary(filteredLatest.swapUsedBytes, filteredLatest.swapTotalBytes)
+    ? formatCapacitySummary(filteredLatest.swapUsedBytes, filteredLatest.swapTotalBytes, metricUnavailable("swapUsage"))
     : "容量暂无";
   const cpuModelItems = cpuInstances.map((cpu) => ({
     id: cpu.id,
@@ -1634,10 +1652,10 @@ function DevicePage() {
       />
 
       <div className="workspace-device-statusline">
-        <StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} />
+        {selectedDevice.instanceType === "virtual_machine" ? <VirtualMachinePowerLabel powerState={selectedDevice.virtualMachine?.powerState} /> : <StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} />}
         <span>Agent {selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</span>
         <span>通道 {selectedDevice.agentChannel ?? "未知"}</span>
-        {selectedDevice.instanceType === "virtual_machine" && <span>宿主机 {selectedDevice.hostName ?? "未知"}</span>}
+        {selectedDevice.instanceType === "virtual_machine" && <span>宿主机 Agent {selectedDevice.status === "online" ? "在线" : "离线"} · {selectedDevice.hostName ?? "未知"}</span>}
         <span>{snapshot?.source === "cache" ? `缓存于 ${formatDate(snapshot.cache.savedAt)}` : `数据更新时间 ${formatDate(snapshot?.generatedAt)}`}</span>
       </div>
 
@@ -1675,9 +1693,9 @@ function DevicePage() {
       {(activeTab === "overview" || activeTab === "all") && series && (
         <TelemetrySection id="section-overview" eyebrow="综合遥测" title="硬件平均趋势" description="综合面板按类别平均所有已采集实例；各硬件型号显示在对应图表底部，单独图表请切换到明细选项卡。">
           <TelemetryChartCard widgetId="overview-cpu-average" title="CPU 平均使用率" subtitle={`全部 ${cpuInstances.length} 个 CPU 实例的平均值`} series={[{ label: "全部 CPU 平均", points: cpuAverageUsage }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集 CPU 型号" items={cpuModelItems} />} />
-          <TelemetryChartCard widgetId="overview-memory" title="物理与已提交内存" subtitle={`物理 ${formatCapacitySummary(filteredLatest?.memoryUsedBytes, filteredLatest?.memoryTotalBytes)} · 已提交 ${committedMemorySummary} · 页面文件 ${pagefileMemorySummary}`} series={[{ label: "已用物理内存", points: series.memoryUsedBytes ?? [], valueFormatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
-          <TelemetryChartCard widgetId="overview-disk-total" title="磁盘总已用容量" subtitle={`全部 ${diskInstances.length} 个硬盘实例的总量 · ${formatCapacitySummary(filteredLatest?.diskUsedBytes, filteredLatest?.diskTotalBytes)}`} series={[{ label: "全部硬盘总已用", points: diskTotalUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集硬盘型号" items={diskModelItems} />} />
-          <TelemetryChartCard widgetId="overview-network-average" title="网卡平均吞吐" subtitle={`全部 ${networkInstances.length} 个网卡实例的平均值`} series={[{ label: "平均接收 (Rx)", points: networkAverageRx, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "平均发送 (Tx)", points: networkAverageTx, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} footer={<TelemetryModelList label="已采集网卡型号" items={networkModelItems} />} />
+          <TelemetryChartCard widgetId="overview-memory" title="物理与已提交内存" subtitle={`物理 ${formatCapacitySummary(filteredLatest?.memoryUsedBytes, filteredLatest?.memoryTotalBytes, metricUnavailable("memoryUsage"))} · 已提交 ${committedMemorySummary} · 页面文件 ${pagefileMemorySummary}`} series={[{ label: "已用物理内存", points: unavailablePoints(series.memoryUsedBytes ?? [], metricUnavailable("memoryUsage")), valueFormatter: formatBytes }, { label: "已提交", points: unavailablePoints(series.memoryCommittedBytes ?? [], metricUnavailable("memoryCommitted")), valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
+          <TelemetryChartCard widgetId="overview-disk-total" title="磁盘总已用容量" subtitle={`全部 ${diskInstances.length} 个硬盘实例的总量 · ${formatCapacitySummary(filteredLatest?.diskUsedBytes, filteredLatest?.diskTotalBytes, metricUnavailable("diskUsage"))}`} series={[{ label: "全部硬盘总已用", points: diskTotalUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集硬盘型号" items={diskModelItems} />} />
+          <TelemetryChartCard widgetId="overview-network-average" title="网卡平均吞吐" subtitle={metricUnavailable("networkRxRate") || metricUnavailable("networkTxRate") ? UNAVAILABLE_METRIC_LABEL : `全部 ${networkInstances.length} 个网卡实例的平均值`} series={[{ label: "平均接收 (Rx)", points: networkAverageRx, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "平均发送 (Tx)", points: networkAverageTx, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} footer={<TelemetryModelList label="已采集网卡型号" items={networkModelItems} />} />
           <TelemetryChartCard widgetId="overview-gpu-average" title="GPU 平均使用率" subtitle={`全部 ${gpuInstances.length} 个显卡实例的平均值`} series={[{ label: "平均核心", points: gpuAverageUsage }, { label: "平均编码", points: gpuAverageEncode }, { label: "平均解码", points: gpuAverageDecode }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
           <TelemetryChartCard widgetId="overview-gpu-memory" title="GPU 总内存已用容量" subtitle={`${gpuMemorySummary} · 全部显卡实例合计`} series={[{ label: "GPU 总内存已用", points: gpuTotalMemoryUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
           {fanInstances.length ? fanInstances.map((fan, index) => <TelemetryChartCard key={`overview-fan-${fan.id}`} widgetId={`overview-fan-${fan.id}`} widgetTemplateId={`overview-fan-${index}`} title={`${fan.name} · 风扇转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : null}
@@ -1687,7 +1705,7 @@ function DevicePage() {
       {/* ================= Tab 2: 算力与内存 (Compute & Memory) ================= */}
       {(activeTab === "compute" || activeTab === "all") && series && (
         <TelemetrySection id="section-compute" eyebrow="处理器与内存" title="算力与内存明细" description="CPU 实例、频率、温度和内存层级数据分开呈现，避免不同单位被压缩成一条汇总线。">
-           <DesktopWidget id="compute-cpu-facts" title="处理器与系统统计" defaultSize="large"><CpuFactsCard cpus={filteredLatest?.cpuPackages ?? []} system={filteredLatest?.system} /></DesktopWidget>
+           <DesktopWidget id="compute-cpu-facts" title="处理器与系统统计" defaultSize="large"><CpuFactsCard cpus={filteredLatest?.cpuPackages ?? []} system={filteredLatest?.system} unavailable={metricUnavailable("systemOverview")} /></DesktopWidget>
            {cpuInstances.length ? cpuInstances.map((cpu) => {
              const cpuTemperaturePoints = cpu.temperatureC.length ? cpu.temperatureC : series.cpuTemperatureC ?? [];
              const cpuLabel = displayModelName(cpu.model, cpu.name, "CPU");
@@ -1702,18 +1720,18 @@ function DevicePage() {
                  title={cpuLabel}
                  subtitle={`${cpu.coreCount ?? "未知"} 核 · ${cpu.logicalCount ?? "未知"} 线程${cpu.l3CacheBytes ? ` · L3 ${formatBytes(cpu.l3CacheBytes)}` : ""}`}
                >
-                 <TelemetryChartCard widgetId={`compute-cpu-${cpu.id}-usage`} widgetGroupId={`compute-cpu-device-${cpu.id}`} widgetType="cpu-usage" widgetCategory="处理器" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: cpu.id, visualization: "line" }} title={`${cpuLabel} · 使用率`} subtitle="处理器负载" series={[{ label: "使用率", points: cpu.usagePercent }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
-                 <TelemetryChartCard widgetId={`compute-cpu-${cpu.id}-frequency`} widgetGroupId={`compute-cpu-device-${cpu.id}`} widgetType="cpu-frequency" widgetCategory="处理器" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: cpu.id, visualization: "line" }} title={`${cpuLabel} · 主频`} subtitle="实时有效频率" series={[{ label: "频率", points: cpu.frequencyMHz, valueFormatter: (v) => `${Math.round(v)} MHz` }]} valueFormatter={(v) => `${Math.round(v)} MHz`} />
-                 <TelemetryChartCard widgetId={`compute-cpu-${cpu.id}-temperature`} widgetGroupId={`compute-cpu-device-${cpu.id}`} widgetType="cpu-temperature" widgetCategory="处理器" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: cpu.id, visualization: "line" }} title={`${cpuLabel} · 温度`} subtitle="CPU Package / Core" emptyMessage="等待 CPU Package/Core 温度传感器" series={[{ label: "温度", points: cpuTemperaturePoints, valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
+                 <TelemetryChartCard widgetId={`compute-cpu-${cpu.id}-usage`} widgetGroupId={`compute-cpu-device-${cpu.id}`} widgetType="cpu-usage" widgetCategory="处理器" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: cpu.id, visualization: "line" }} title={`${cpuLabel} · 使用率`} subtitle={metricUnavailable("cpuUsage") ? UNAVAILABLE_METRIC_LABEL : "处理器负载"} emptyMessage={UNAVAILABLE_METRIC_LABEL} series={[{ label: "使用率", points: unavailablePoints(cpu.usagePercent, metricUnavailable("cpuUsage")) }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+                 <TelemetryChartCard widgetId={`compute-cpu-${cpu.id}-frequency`} widgetGroupId={`compute-cpu-device-${cpu.id}`} widgetType="cpu-frequency" widgetCategory="处理器" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: cpu.id, visualization: "line" }} title={`${cpuLabel} · 主频`} subtitle={metricUnavailable("cpuFrequency") ? UNAVAILABLE_METRIC_LABEL : "实时有效频率"} emptyMessage={UNAVAILABLE_METRIC_LABEL} series={[{ label: "频率", points: unavailablePoints(cpu.frequencyMHz, metricUnavailable("cpuFrequency")), valueFormatter: (v) => `${Math.round(v)} MHz` }]} valueFormatter={(v) => `${Math.round(v)} MHz`} />
+                 <TelemetryChartCard widgetId={`compute-cpu-${cpu.id}-temperature`} widgetGroupId={`compute-cpu-device-${cpu.id}`} widgetType="cpu-temperature" widgetCategory="处理器" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: cpu.id, visualization: "line" }} title={`${cpuLabel} · 温度`} subtitle={metricUnavailable("cpuTemperature") ? UNAVAILABLE_METRIC_LABEL : "CPU Package / Core"} emptyMessage={metricUnavailable("cpuTemperature") ? UNAVAILABLE_METRIC_LABEL : "等待 CPU Package/Core 温度传感器"} series={[{ label: "温度", points: unavailablePoints(cpuTemperaturePoints, metricUnavailable("cpuTemperature")), valueFormatter: (v) => `${Math.round(v)} °C` }]} valueFormatter={(v) => `${Math.round(v)} °C`} />
                </TelemetryDeviceBlock>
              );
            }) : hasInstanceConfiguration("cpu") ? <div className="workspace-telemetry-empty">当前已关闭所有 CPU 实例</div> : (
              <TelemetryDeviceBlock widgetId="compute-cpu-summary" kind="cpu" eyebrow="CPU 汇总" title="处理器总览" subtitle="未拆分出独立 CPU 实例">
-               <TelemetryChartCard widgetId="compute-cpu-summary-usage" widgetGroupId="compute-cpu-summary" widgetType="cpu-usage" widgetCategory="处理器" widgetVisualization="line" widgetConfig={{ systemRendered: true, visualization: "line" }} title="使用率" series={[{ label: "CPU 占用", points: series.cpuUsagePercent ?? [] }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
+               <TelemetryChartCard widgetId="compute-cpu-summary-usage" widgetGroupId="compute-cpu-summary" widgetType="cpu-usage" widgetCategory="处理器" widgetVisualization="line" widgetConfig={{ systemRendered: true, visualization: "line" }} title="使用率" emptyMessage={UNAVAILABLE_METRIC_LABEL} series={[{ label: "CPU 占用", points: unavailablePoints(series.cpuUsagePercent ?? [], metricUnavailable("cpuUsage")) }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} />
              </TelemetryDeviceBlock>
            )}
-           <TelemetryChartCard widgetId="compute-memory" title="内存容量明细" subtitle={`物理 ${formatCapacitySummary(filteredLatest?.memoryUsedBytes, filteredLatest?.memoryTotalBytes)} · 已提交 ${committedMemorySummary} · 页面文件 ${pagefileMemorySummary}`} series={[{ label: "已用物理内存", points: series.memoryUsedBytes ?? [], valueFormatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes ?? [], valueFormatter: formatBytes }, { label: "缓存", points: series.memoryCachedBytes ?? [], valueFormatter: formatBytes }, { label: "页面文件实际使用", points: series.swapUsedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
-           <TelemetryChartCard widgetId="compute-system" title="系统进程、线程与句柄" series={[{ label: "线程数", points: series.systemThreadCount ?? [] }, { label: "进程数", points: series.systemProcessCount ?? [] }, { label: "句柄数", points: series.systemHandleCount ?? [] }]} valueFormatter={(v) => `${Math.round(v)}`} />
+           <TelemetryChartCard widgetId="compute-memory" title="内存容量明细" subtitle={`物理 ${formatCapacitySummary(filteredLatest?.memoryUsedBytes, filteredLatest?.memoryTotalBytes, metricUnavailable("memoryUsage"))} · 已提交 ${committedMemorySummary} · 页面文件 ${pagefileMemorySummary}`} emptyMessage={UNAVAILABLE_METRIC_LABEL} series={[{ label: "已用物理内存", points: unavailablePoints(series.memoryUsedBytes ?? [], metricUnavailable("memoryUsage")), valueFormatter: formatBytes }, { label: "已提交", points: unavailablePoints(series.memoryCommittedBytes ?? [], metricUnavailable("memoryCommitted")), valueFormatter: formatBytes }, { label: "缓存", points: unavailablePoints(series.memoryCachedBytes ?? [], metricUnavailable("memoryCached")), valueFormatter: formatBytes }, { label: "页面文件实际使用", points: unavailablePoints(series.swapUsedBytes ?? [], metricUnavailable("swapUsage")), valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
+           <TelemetryChartCard widgetId="compute-system" title="系统进程、线程与句柄" emptyMessage={metricUnavailable("systemOverview") ? UNAVAILABLE_METRIC_LABEL : undefined} series={[{ label: "线程数", points: unavailablePoints(series.systemThreadCount ?? [], metricUnavailable("systemOverview")) }, { label: "进程数", points: unavailablePoints(series.systemProcessCount ?? [], metricUnavailable("systemOverview")) }, { label: "句柄数", points: unavailablePoints(series.systemHandleCount ?? [], metricUnavailable("systemOverview")) }]} valueFormatter={(v) => `${Math.round(v)}`} />
         </TelemetrySection>
       )}
 
@@ -1723,8 +1741,8 @@ function DevicePage() {
           <TrafficCalendarCard data={snapshot?.trafficCalendar ?? null} mode={trafficMode} onModeChange={setTrafficMode} />
           {networkInstances.length ? visibleNetworkInstances.map((network) => {
             const networkIndex = networkInstances.findIndex((item) => item.id === network.id);
-            return <TelemetryChartCard key={`network-${network.id}`} widgetId={`storage-network-${network.id}`} widgetTemplateId={`network-${networkIndex}`} title={`${displayModelName(network.model, network.name, "网卡")} · 吞吐`} subtitle={[network.name, network.macAddress, network.ipv4?.[0] || network.ipv6?.[0]].filter(Boolean).join(" · ") || "独立网卡实例"} series={[{ label: "接收 (Rx)", points: network.rxBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: network.txBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />;
-          }) : hasInstanceConfiguration("network") ? <div className="workspace-telemetry-empty">当前已关闭所有网卡实例</div> : <TelemetryChartCard widgetId="storage-network-summary" title="网络实时吞吐" subtitle="设备汇总" series={[{ label: "接收 (Rx)", points: series.networkRxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: series.networkTxBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />}
+            return <TelemetryChartCard key={`network-${network.id}`} widgetId={`storage-network-${network.id}`} widgetTemplateId={`network-${networkIndex}`} title={`${displayModelName(network.model, network.name, "网卡")} · 吞吐`} subtitle={metricUnavailable("networkRxRate") || metricUnavailable("networkTxRate") ? UNAVAILABLE_METRIC_LABEL : [network.name, network.macAddress, network.ipv4?.[0] || network.ipv6?.[0]].filter(Boolean).join(" · ") || "独立网卡实例"} emptyMessage={UNAVAILABLE_METRIC_LABEL} series={[{ label: "接收 (Rx)", points: unavailablePoints(network.rxBytesPerSec, metricUnavailable("networkRxRate")) , valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: unavailablePoints(network.txBytesPerSec, metricUnavailable("networkTxRate")), valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />;
+          }) : hasInstanceConfiguration("network") ? <div className="workspace-telemetry-empty">当前已关闭所有网卡实例</div> : <TelemetryChartCard widgetId="storage-network-summary" title="网络实时吞吐" subtitle={metricUnavailable("networkRxRate") || metricUnavailable("networkTxRate") ? UNAVAILABLE_METRIC_LABEL : "设备汇总"} emptyMessage={UNAVAILABLE_METRIC_LABEL} series={[{ label: "接收 (Rx)", points: unavailablePoints(series.networkRxBytesPerSec ?? [], metricUnavailable("networkRxRate")), valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: unavailablePoints(series.networkTxBytesPerSec ?? [], metricUnavailable("networkTxRate")), valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />}
           {diskInstances.length ? visibleDiskInstances.map((disk) => {
             const diskLatest = filteredLatest?.disks?.find((item) => item.id === disk.id);
             const diskLabel = displayModelName(disk.model, disk.name, "磁盘");
@@ -1740,14 +1758,14 @@ function DevicePage() {
                 title={diskLabel}
                 subtitle={[disk.mountPoint, disk.filesystem].filter(Boolean).join(" · ") || "独立硬盘实例"}
               >
-                <TelemetryChartCard widgetId={`storage-disk-${disk.id}-capacity`} widgetTemplateId={`disk-${diskIndex}-capacity`} widgetGroupId={`storage-disk-device-${disk.id}`} widgetType="disk-capacity" widgetCategory="存储" widgetVisualization="area" widgetConfig={{ systemRendered: true, targetId: disk.id, visualization: "area" }} title={`${diskLabel} · 已用容量`} subtitle={formatCapacitySummary(diskLatest?.usedBytes, diskLatest?.totalBytes)} series={[{ label: "已用容量", points: disk.usedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
-                <TelemetryChartCard widgetId={`storage-disk-${disk.id}-io`} widgetTemplateId={`disk-${diskIndex}-io`} widgetGroupId={`storage-disk-device-${disk.id}`} widgetType="disk-io" widgetCategory="存储" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: disk.id, visualization: "line" }} title={`${diskLabel} · 读写速率`} subtitle="当前硬盘 I/O" series={[{ label: "读取", points: disk.readBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "写入", points: disk.writeBytesPerSec, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />
+                <TelemetryChartCard widgetId={`storage-disk-${disk.id}-capacity`} widgetTemplateId={`disk-${diskIndex}-capacity`} widgetGroupId={`storage-disk-device-${disk.id}`} widgetType="disk-capacity" widgetCategory="存储" widgetVisualization="area" widgetConfig={{ systemRendered: true, targetId: disk.id, visualization: "area" }} title={`${diskLabel} · 已用容量`} subtitle={formatCapacitySummary(diskLatest?.usedBytes, diskLatest?.totalBytes, metricUnavailable("diskUsage"))} emptyMessage={UNAVAILABLE_METRIC_LABEL} series={[{ label: "已用容量", points: unavailablePoints(disk.usedBytes, metricUnavailable("diskUsage")), valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
+                <TelemetryChartCard widgetId={`storage-disk-${disk.id}-io`} widgetTemplateId={`disk-${diskIndex}-io`} widgetGroupId={`storage-disk-device-${disk.id}`} widgetType="disk-io" widgetCategory="存储" widgetVisualization="line" widgetConfig={{ systemRendered: true, targetId: disk.id, visualization: "line" }} title={`${diskLabel} · 读写速率`} subtitle={metricUnavailable("diskRead") || metricUnavailable("diskWrite") ? UNAVAILABLE_METRIC_LABEL : "当前硬盘 I/O"} emptyMessage={UNAVAILABLE_METRIC_LABEL} series={[{ label: "读取", points: unavailablePoints(disk.readBytesPerSec, metricUnavailable("diskRead")), valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "写入", points: unavailablePoints(disk.writeBytesPerSec, metricUnavailable("diskWrite")), valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />
               </TelemetryDeviceBlock>
             );
           }) : hasInstanceConfiguration("disk") ? <div className="workspace-telemetry-empty">当前已关闭所有硬盘实例</div> : (
-            <TelemetryDeviceBlock widgetId="storage-disk-summary" kind="disk" eyebrow="硬盘汇总" title="存储总览" subtitle={formatCapacitySummary(filteredLatest?.diskUsedBytes, filteredLatest?.diskTotalBytes)}>
-              <TelemetryChartCard widgetId="storage-disk-summary-capacity" widgetGroupId="storage-disk-summary" widgetType="disk-capacity" widgetCategory="存储" widgetVisualization="area" widgetConfig={{ systemRendered: true, visualization: "area" }} title="已用容量" series={[{ label: "已用容量", points: series.diskUsedBytes ?? [], valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
-              <TelemetryChartCard widgetId="storage-disk-summary-io" widgetGroupId="storage-disk-summary" widgetType="disk-io" widgetCategory="存储" widgetVisualization="line" widgetConfig={{ systemRendered: true, visualization: "line" }} title="读写速率" subtitle="设备汇总" series={[{ label: "读取", points: series.diskReadBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "写入", points: series.diskWriteBytesPerSec ?? [], valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />
+            <TelemetryDeviceBlock widgetId="storage-disk-summary" kind="disk" eyebrow="硬盘汇总" title="存储总览" subtitle={formatCapacitySummary(filteredLatest?.diskUsedBytes, filteredLatest?.diskTotalBytes, metricUnavailable("diskUsage"))}>
+              <TelemetryChartCard widgetId="storage-disk-summary-capacity" widgetGroupId="storage-disk-summary" widgetType="disk-capacity" widgetCategory="存储" widgetVisualization="area" widgetConfig={{ systemRendered: true, visualization: "area" }} title="已用容量" emptyMessage={UNAVAILABLE_METRIC_LABEL} series={[{ label: "已用容量", points: unavailablePoints(series.diskUsedBytes ?? [], metricUnavailable("diskUsage")), valueFormatter: formatBytes }]} valueFormatter={formatBytes} />
+              <TelemetryChartCard widgetId="storage-disk-summary-io" widgetGroupId="storage-disk-summary" widgetType="disk-io" widgetCategory="存储" widgetVisualization="line" widgetConfig={{ systemRendered: true, visualization: "line" }} title="读写速率" subtitle={metricUnavailable("diskRead") || metricUnavailable("diskWrite") ? UNAVAILABLE_METRIC_LABEL : "设备汇总"} emptyMessage={UNAVAILABLE_METRIC_LABEL} series={[{ label: "读取", points: unavailablePoints(series.diskReadBytesPerSec ?? [], metricUnavailable("diskRead")), valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "写入", points: unavailablePoints(series.diskWriteBytesPerSec ?? [], metricUnavailable("diskWrite")), valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />
             </TelemetryDeviceBlock>
           )}
         </TelemetrySection>
@@ -1825,12 +1843,12 @@ function DevicePage() {
                 <SummaryRow label="设备 ID" value={selectedDevice.deviceId} />
                 <SummaryRow label="Agent 版本" value={selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "未知"} />
                 <SummaryRow label="CPU 型号" value={filteredLatest?.cpuPackages.map((cpu) => cpu.model || cpu.name).join("、") || "未采集"} />
-                <SummaryRow label="运行时间" value={formatDuration(filteredLatest?.system.uptimeSeconds)} />
+                <SummaryRow label="运行时间" value={metricUnavailable("systemOverview") ? UNAVAILABLE_METRIC_LABEL : formatDuration(filteredLatest?.system.uptimeSeconds)} />
                 <SummaryRow label="CPU 核心 / 线程" value={`${formatCount(filteredLatest?.cpuPackages.reduce((total, cpu) => total + (cpu.coreCount ?? 0), 0))} / ${formatCount(filteredLatest?.cpuPackages.reduce((total, cpu) => total + (cpu.logicalCount ?? 0), 0))}`} />
                 <SummaryRow label="L3 缓存" value={formatBytes(filteredLatest?.cpuPackages.reduce((total, cpu) => total + (cpu.l3CacheBytes ?? 0), 0))} />
-                <SummaryRow label="进程 / 系统线程 / 句柄" value={`${formatCount(filteredLatest?.system.processCount)} / ${formatCount(filteredLatest?.system.threadCount)} / ${formatCount(filteredLatest?.system.handleCount)}`} />
-                <SummaryRow label="内存容量" value={filteredLatest ? formatCapacitySummary(filteredLatest.memoryUsedBytes, filteredLatest.memoryTotalBytes) : "未采集"} />
-                <SummaryRow label="磁盘容量" value={filteredLatest ? formatCapacitySummary(filteredLatest.diskUsedBytes, filteredLatest.diskTotalBytes) : "未采集"} />
+                <SummaryRow label="进程 / 系统线程 / 句柄" value={metricUnavailable("systemOverview") ? UNAVAILABLE_METRIC_LABEL : `${formatCount(filteredLatest?.system.processCount)} / ${formatCount(filteredLatest?.system.threadCount)} / ${formatCount(filteredLatest?.system.handleCount)}`} />
+                <SummaryRow label="内存容量" value={filteredLatest ? formatCapacitySummary(filteredLatest.memoryUsedBytes, filteredLatest.memoryTotalBytes, metricUnavailable("memoryUsage")) : "未采集"} />
+                <SummaryRow label="磁盘容量" value={filteredLatest ? formatCapacitySummary(filteredLatest.diskUsedBytes, filteredLatest.diskTotalBytes, metricUnavailable("diskUsage")) : "未采集"} />
               </div>
             </Surface>
           </DesktopWidget>
@@ -1840,7 +1858,7 @@ function DevicePage() {
               <div className="workspace-surface__header">
                 <div>
                   <span className="workspace-section-kicker">操作</span>
-                  <h3>设备 Agent</h3>
+                  <h3>{selectedDevice.instanceType === "virtual_machine" ? "宿主机 Agent" : "设备 Agent"}</h3>
                 </div>
                 <StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} />
               </div>
@@ -1867,7 +1885,9 @@ function HubPage() {
   const hub = hubs.find((item) => item.id === (route.kind === "hub" ? route.hubId : "")) ?? hubs[0];
   if (!hub) return <EmptyState title="没有配置中枢" detail="添加一个中枢后，设备会显示在侧边栏。" action={<Button variant="primary" onClick={() => openSettings("connections")}>添加中枢</Button>} />;
   const online = hub.devices.filter((device) => device.status === "online").length;
-  return <div className="workspace-page"><PageIntro eyebrow="中枢" title={hub.name} description={hub.endpoint} actions={<><Button variant="quiet" onClick={() => navigate({ kind: "overview" })}><Icon name="back" size={16} />返回总览</Button><Button variant="primary" onClick={() => openSettings("connections")}><Icon name="settings" size={16} />管理连接</Button></>} /><div className="workspace-hub-hero"><div><StatusLabel state={hub.state === "online" ? "online" : hub.state === "cached" ? "cached" : hub.state === "offline" ? "warning" : "unknown"} /><strong>{hub.state === "online" ? "连接正常" : hub.state === "cached" ? "正在显示缓存" : "需要检查连接"}</strong><p>{online} 个实例在线，共 {hub.devices.length} 个实例。</p></div><div className="workspace-hub-hero__stat"><span>实例</span><strong>{hub.devices.length}</strong></div><div className="workspace-hub-hero__stat"><span>在线</span><strong>{online}</strong></div></div><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">实例列表</span><h3>{hub.devices.length} 个实例</h3></div><Button variant="quiet" onClick={() => openSettings("connections")}>连接设置</Button></div><div className="workspace-device-rows">{hub.devices.map((device) => <DeviceRow key={device.deviceId} device={device} />)}</div></Surface></div>;
+  const allVirtualMachines = hub.devices.length > 0 && hub.devices.every((device) => device.instanceType === "virtual_machine");
+  const onlineLabel = allVirtualMachines ? "Agent 在线" : "在线";
+  return <div className="workspace-page"><PageIntro eyebrow="中枢" title={hub.name} description={hub.endpoint} actions={<><Button variant="quiet" onClick={() => navigate({ kind: "overview" })}><Icon name="back" size={16} />返回总览</Button><Button variant="primary" onClick={() => openSettings("connections")}><Icon name="settings" size={16} />管理连接</Button></>} /><div className="workspace-hub-hero"><div><StatusLabel state={hub.state === "online" ? "online" : hub.state === "cached" ? "cached" : hub.state === "offline" ? "warning" : "unknown"} /><strong>{hub.state === "online" ? "连接正常" : hub.state === "cached" ? "正在显示缓存" : "需要检查连接"}</strong><p>{online} 个实例 Agent 在线，共 {hub.devices.length} 个实例。</p></div><div className="workspace-hub-hero__stat"><span>实例</span><strong>{hub.devices.length}</strong></div><div className="workspace-hub-hero__stat"><span>{onlineLabel}</span><strong>{online}</strong></div></div><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">实例列表</span><h3>{hub.devices.length} 个实例</h3></div><Button variant="quiet" onClick={() => openSettings("connections")}>连接设置</Button></div><div className="workspace-device-rows">{hub.devices.map((device) => <DeviceRow key={device.deviceId} device={device} />)}</div></Surface></div>;
 }
 
 function SettingsPage() {

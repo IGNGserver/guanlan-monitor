@@ -32,6 +32,7 @@ import {
 import { DesktopWidget, useWidgetLayout, type WidgetGroupChildDefinition, type WidgetKind, type WidgetSize } from "./WidgetLayout";
 import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
 import { getWidgetLines, averageSamplePoints, type WidgetLine } from "../helpers/widgetLines";
+import { UNAVAILABLE_METRIC_LABEL } from "./formatters";
 
 type WidgetCatalogDefinition = {
   widgetType: string;
@@ -612,6 +613,23 @@ function getTargetId(entry: WidgetLayoutCatalogEntry): string | undefined {
   return typeof target === "string" ? target : undefined;
 }
 
+function unavailableMetricForWidget(widgetType: string): DeviceMetricKey | undefined {
+  if (widgetType === "cpu-usage" || widgetType === "cpu-usage-pie") return "cpuUsage";
+  if (widgetType === "cpu-frequency") return "cpuFrequency";
+  if (widgetType === "cpu-temperature") return "cpuTemperature";
+  if (widgetType === "memory-usage" || widgetType === "memory-usage-pie") return "memoryUsage";
+  if (widgetType === "disk-capacity" || widgetType === "disk-capacity-pie") return "diskUsage";
+  if (widgetType === "disk-io") return "diskRead";
+  if (widgetType === "network-throughput") return "networkRxRate";
+  if (widgetType === "system-processes") return "systemOverview";
+  return undefined;
+}
+
+function metricUnavailable(metrics: MetricsResponse | null, key: DeviceMetricKey | undefined, device?: DeviceSummary): boolean {
+  if (!key) return false;
+  return new Set([...(device?.unavailableMetrics ?? []), ...(metrics?.latest.unavailableMetrics ?? [])]).has(key);
+}
+
 function gpuMemoryLabel(memoryKind: string | null | undefined): string {
   if (memoryKind === "shared") return "共享显存";
   if (memoryKind === "dedicated") return "独立显存";
@@ -621,14 +639,15 @@ function gpuMemoryLabel(memoryKind: string | null | undefined): string {
 
 function hardwareRows(device: DeviceSummary, latest: MetricsLatest | undefined): Array<{ label: string; value: string; detail?: string }> {
   const cpu = latest?.cpuPackages?.[0];
+  const unavailable = new Set([...(device.unavailableMetrics ?? []), ...(latest?.unavailableMetrics ?? [])]);
   return [
     { label: "操作系统", value: device.os },
     { label: "设备 ID", value: device.deviceId },
     { label: "Agent", value: device.agentVersion ? `v${device.agentVersion}` : "未知" },
     { label: "CPU", value: cpu?.model || cpu?.name || "未采集", detail: cpu ? `${cpu.coreCount ?? "?"} 核 · ${cpu.logicalCount ?? "?"} 线程` : undefined },
-    { label: "运行时间", value: formatDuration(latest?.system.uptimeSeconds) },
-    { label: "内存", value: latest ? `${formatBytes(latest.memoryUsedBytes)} / ${formatBytes(latest.memoryTotalBytes)}` : "未采集" },
-    { label: "磁盘", value: latest ? `${formatBytes(latest.diskUsedBytes)} / ${formatBytes(latest.diskTotalBytes)}` : "未采集" }
+    { label: "运行时间", value: unavailable.has("systemOverview") ? UNAVAILABLE_METRIC_LABEL : formatDuration(latest?.system.uptimeSeconds) },
+    { label: "内存", value: unavailable.has("memoryUsage") ? `${UNAVAILABLE_METRIC_LABEL}${latest?.memoryTotalBytes ? ` · 总容量 ${formatBytes(latest.memoryTotalBytes)}` : ""}` : latest ? `${formatBytes(latest.memoryUsedBytes)} / ${formatBytes(latest.memoryTotalBytes)}` : "未采集" },
+    { label: "磁盘", value: unavailable.has("diskUsage") ? `${UNAVAILABLE_METRIC_LABEL}${latest?.diskTotalBytes ? ` · 总容量 ${formatBytes(latest.diskTotalBytes)}` : ""}` : latest ? `${formatBytes(latest.diskUsedBytes)} / ${formatBytes(latest.diskTotalBytes)}` : "未采集" }
   ];
 }
 
@@ -689,6 +708,10 @@ function WidgetContent({ definition, entry, context }: { definition: WidgetCatal
   const { device, metrics, localTemperatureSources = [], localTemperatureSourcesAt } = context;
   const latest = metrics?.latest;
   const visualization = visualizationFor(entry, definition);
+  const unavailableKey = unavailableMetricForWidget(definition.widgetType);
+  if (metricUnavailable(metrics, unavailableKey, device)) {
+    return <div className="workspace-dynamic-empty__inline">{UNAVAILABLE_METRIC_LABEL}</div>;
+  }
   if (definition.widgetType === "hardware-system") return <DataTable rows={hardwareRows(device, latest)} />;
   if (definition.widgetType === "temperature-sources") {
     const latestSensors = latest?.temperatureSensors ?? [];

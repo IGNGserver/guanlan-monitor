@@ -1,6 +1,8 @@
 import React from "react";
 import type { SamplePoint } from "@dsc/shared";
 
+export const UNAVAILABLE_METRIC_LABEL = "无法获取数据";
+
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "暂无记录";
   const date = new Date(value);
@@ -19,19 +21,29 @@ export function formatBytes(value: number | null | undefined): string {
   return `${amount.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
-export function MetricValue({ value, suffix = "%" }: { value: number | null | undefined; suffix?: string }) {
-  return <span className="workspace-metric-value">{value == null ? "—" : `${value}${suffix}`}</span>;
+export function MetricValue({ value, suffix = "%", unavailable = false }: { value: number | null | undefined; suffix?: string; unavailable?: boolean }) {
+  return <span className={`workspace-metric-value${unavailable ? " workspace-metric-value--unavailable" : ""}`}>{unavailable ? UNAVAILABLE_METRIC_LABEL : value == null ? "—" : `${value}${suffix}`}</span>;
 }
 
 export function CapacityMetricValue({
   usedBytes,
   totalBytes,
-  percentValue
+  percentValue,
+  unavailable = false
 }: {
   usedBytes?: number | null;
   totalBytes?: number | null;
   percentValue?: number | null;
+  unavailable?: boolean;
 }) {
+  if (unavailable) {
+    return (
+      <span className="workspace-metric-value workspace-metric-value--capacity workspace-metric-value--unavailable">
+        <strong>{UNAVAILABLE_METRIC_LABEL}</strong>
+        {Number.isFinite(totalBytes) && (totalBytes ?? 0) > 0 && <small>总容量 {formatBytes(totalBytes)}</small>}
+      </span>
+    );
+  }
   const hasCapacity = Number.isFinite(usedBytes) && Number.isFinite(totalBytes) && (totalBytes ?? 0) > 0;
   if (!hasCapacity) return <MetricValue value={percentValue} />;
   return (
@@ -42,7 +54,12 @@ export function CapacityMetricValue({
   );
 }
 
-export function formatCapacitySummary(usedBytes: number | null | undefined, totalBytes: number | null | undefined): string {
+export function formatCapacitySummary(usedBytes: number | null | undefined, totalBytes: number | null | undefined, unavailable = false): string {
+  if (unavailable) {
+    return Number.isFinite(totalBytes) && (totalBytes ?? 0) > 0
+      ? `${UNAVAILABLE_METRIC_LABEL} · 总容量 ${formatBytes(totalBytes)}`
+      : UNAVAILABLE_METRIC_LABEL;
+  }
   if (!Number.isFinite(usedBytes) || !Number.isFinite(totalBytes) || (totalBytes ?? 0) <= 0) return "容量暂无";
   return `已用 ${formatBytes(usedBytes)} / ${formatBytes(totalBytes)}`;
 }

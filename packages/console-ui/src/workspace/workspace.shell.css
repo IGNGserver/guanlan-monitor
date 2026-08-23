@@ -879,6 +879,7 @@ kbd {
 .workspace-device-row__metric small { color: var(--workspace-text-muted); font-size: 10px; }
 .workspace-device-row__metric { text-align: right; }
 .workspace-metric-value { color: var(--workspace-text); font-variant-numeric: tabular-nums; }
+.workspace-metric-value--unavailable { color: var(--workspace-amber); }
 .workspace-metric-value--capacity { display: flex; align-items: baseline; justify-content: flex-end; gap: 4px; white-space: nowrap; }
 .workspace-metric-value--capacity strong { color: var(--workspace-text); font-size: 11px; font-weight: 620; }
 .workspace-metric-value--capacity small { color: var(--workspace-text-muted); font-size: 9px; }

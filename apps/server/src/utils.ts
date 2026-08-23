@@ -112,7 +112,8 @@ export function toSummary(state: DeviceRealtimeState): DeviceSummary {
     diskTotalBytes: latest.diskUsage.totalBytes,
     instanceType: state.identity.instanceType ?? "device",
     hostName: state.identity.hostName ?? null,
-    virtualMachine: state.identity.virtualMachine ?? null
+    virtualMachine: state.identity.virtualMachine ?? null,
+    unavailableMetrics: latest.unavailableMetrics ?? []
   };
 }
 
@@ -783,6 +784,7 @@ function buildTemperatureMetricSeries(points: TimeSeriesRecord[], config: Device
 
 export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOption[] {
   const latest = state.latest;
+  const unavailable = new Set(latest.unavailableMetrics ?? []);
   const hasGpu = latest.gpus.length > 0;
   const hasGpuFrequency = latest.gpus.some((gpu) => gpu.frequencyMHz != null);
   const hasGpuEncode = latest.gpus.some((gpu) => gpu.encodeUtilizationPercent != null);
@@ -850,7 +852,7 @@ export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOpt
     ["fanPwm", hasFanPwm],
     ["fanChannelState", hasFanChannelState],
     ["fanNote", hasFanNote]
-  ]);
+  ].map(([key, available]) => [key, unavailable.has(key) ? false : available] as [DeviceMetricKey, boolean]));
 
   return ALL_DEVICE_METRIC_KEYS.map((key) => ({
     key,

@@ -1,12 +1,77 @@
 import { createHash } from "node:crypto";
 import type {
   AgentMetricsPayload,
+  DeviceMetricKey,
   DiskDeviceStats,
   NetworkInterfaceStats,
   VirtualMachineTelemetry,
   VirtualizationSnapshot
 } from "@dsc/shared";
 import type { VirtualMachineRecord } from "../repositories/virtual-machines.js";
+
+export const VIRTUAL_MACHINE_RUNTIME_METRICS: DeviceMetricKey[] = [
+  "cpuUsage",
+  "cpuFrequency",
+  "cpuTemperature",
+  "systemOverview",
+  "memoryUsage",
+  "memoryAvailable",
+  "memoryCached",
+  "memoryCommitted",
+  "memoryHardware",
+  "swapUsage",
+  "diskUsage",
+  "diskRead",
+  "diskWrite",
+  "diskActivity",
+  "networkRxRate",
+  "networkTxRate",
+  "networkTraffic"
+];
+
+export function unavailableMetricsForVirtualMachinePowerState(powerState: string | null | undefined): DeviceMetricKey[] {
+  return powerState?.trim().toLowerCase() === "running" ? [] : [...VIRTUAL_MACHINE_RUNTIME_METRICS];
+}
+
+export function unavailableMetricsForVirtualMachine(vm: VirtualMachineTelemetry): DeviceMetricKey[] {
+  const unavailable = new Set(unavailableMetricsForVirtualMachinePowerState(vm.powerState));
+  if (unavailable.size > 0) return [...unavailable];
+
+  // Proxmox exposes the VM configuration and cumulative counters without a
+  // guest OS. Keep those static facts, but do not turn missing guest/runtime
+  // fields into zero-valued telemetry.
+  unavailable.add("cpuFrequency");
+  unavailable.add("cpuTemperature");
+  unavailable.add("systemOverview");
+  unavailable.add("memoryAvailable");
+  unavailable.add("memoryCached");
+  unavailable.add("memoryCommitted");
+  unavailable.add("memoryHardware");
+  unavailable.add("swapUsage");
+
+  if (vm.cpu?.usagePercent == null) unavailable.add("cpuUsage");
+  if (vm.memory?.usedBytes == null) unavailable.add("memoryUsage");
+
+  const hasDiskUsage = vm.disk?.usedBytes != null || (vm.disks ?? []).some((disk) => disk.usedBytes != null);
+  if (!hasDiskUsage) unavailable.add("diskUsage");
+
+  const hasDiskReadRate = vm.disk?.readBytesPerSec != null || (vm.disks ?? []).some((disk) => disk.readBytesPerSec != null);
+  const hasDiskWriteRate = vm.disk?.writeBytesPerSec != null || (vm.disks ?? []).some((disk) => disk.writeBytesPerSec != null);
+  if (!hasDiskReadRate) unavailable.add("diskRead");
+  if (!hasDiskWriteRate) unavailable.add("diskWrite");
+  unavailable.add("diskActivity");
+
+  const hasNetworkRxRate = vm.network?.rxBytesPerSec != null || (vm.networks ?? []).some((network) => network.rxBytesPerSec != null);
+  const hasNetworkTxRate = vm.network?.txBytesPerSec != null || (vm.networks ?? []).some((network) => network.txBytesPerSec != null);
+  if (!hasNetworkRxRate) unavailable.add("networkRxRate");
+  if (!hasNetworkTxRate) unavailable.add("networkTxRate");
+  const hasNetworkTraffic = (
+    vm.network?.totalRxBytes != null && vm.network?.totalTxBytes != null
+  ) || (vm.networks ?? []).some((network) => network.totalRxBytes != null && network.totalTxBytes != null);
+  if (!hasNetworkTraffic) unavailable.add("networkTraffic");
+
+  return [...unavailable];
+}
 
 export function virtualMachineScopeKey(snapshot: VirtualizationSnapshot, hostDeviceId: string): string {
   const source = snapshot.source.trim() || hostDeviceId;
@@ -30,6 +95,7 @@ export function buildVirtualMachinePayload(
   record: VirtualMachineRecord,
   vm: VirtualMachineTelemetry
 ): AgentMetricsPayload {
+  const unavailableMetrics = unavailableMetricsForVirtualMachine(vm);
   const diskDevices = buildDiskDevices(vm);
   const diskTotalBytes = diskDevices.reduce((sum, disk) => sum + disk.totalBytes, 0) || unsigned(vm.disk?.provisionedBytes);
   const diskUsedBytes = diskDevices.reduce((sum, disk) => sum + disk.usedBytes, 0) || unsigned(vm.disk?.usedBytes ?? vm.disk?.allocatedBytes);
@@ -87,6 +153,7 @@ export function buildVirtualMachinePayload(
     },
     timestamp: hostPayload.timestamp,
     heartbeatAt: hostPayload.heartbeatAt,
+    unavailableMetrics,
     system: { processCount: 0, threadCount: 0, handleCount: 0 },
     cpuUsagePercent,
     cpuFrequencyMHz: null,
