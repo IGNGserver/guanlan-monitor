@@ -1541,7 +1541,7 @@ private fun GpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: 
 private fun TemperatureSheetContent(metrics: MetricsDto, selectedWindow: MetricWindow, chartWindow: ChartWindow) {
   val summaryCards = buildTemperatureSummaryCards(metrics, selectedWindow)
   if (summaryCards.isNotEmpty()) {
-    Text("核心温度概览", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    Text("设备温度（按实例）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
     MetricCardGrid(cards = summaryCards, chartWindow = chartWindow)
   }
 
@@ -1621,75 +1621,120 @@ private fun isGpuTemperatureSeries(sensor: TemperatureMetricSeriesDto): Boolean 
       (sensor.role == "derived" && (sensor.source == "cpu-package-shared" || sensor.source == "cpuPackageShared"))
     )
 
-private fun isDiskTemperatureSensor(sensor: TemperatureSensorDto): Boolean =
-  sensor.status == "valid" && (sensor.role == "storage_composite" || sensor.role == "storage_sensor")
-
-private fun isDiskTemperatureSeries(sensor: TemperatureMetricSeriesDto): Boolean =
-  sensor.status == "valid" && (sensor.role == "storage_composite" || sensor.role == "storage_sensor")
-
-private fun buildTemperatureSummaryCards(metrics: MetricsDto, selectedWindow: MetricWindow): List<MetricCardModel> {
-  val cards = buildList {
-    val cpuPoints = cpuTemperaturePoints(metrics)
-    if (cpuPoints.isNotEmpty()) {
+private fun buildTemperatureSummaryCards(metrics: MetricsDto, selectedWindow: MetricWindow): List<MetricCardModel> =
+  buildList {
+    addAll(buildCpuTemperatureCards(metrics, selectedWindow))
+    addAll(buildGpuTemperatureCards(metrics, selectedWindow))
+    buildDiskTemperatureGroups(metrics).forEach { disk ->
       add(
         MetricCardModel(
-          title = "CPU 温度",
-          value = metricPoint(cpuPoints, selectedWindow, ::formatCelsius, zeroMeansMissing = true),
-          points = cpuPoints,
-          valueFormatter = ::formatCelsius
-        )
-      )
-    } else {
-      cpuLatestTemperature(metrics)?.let { temperature ->
-        add(MetricCardModel("CPU 温度", formatCelsius(temperature), emptyList(), ::formatCelsius))
-      }
-    }
-
-    val gpuPoints = gpuTemperaturePoints(metrics)
-    if (gpuPoints.isNotEmpty()) {
-      add(
-        MetricCardModel(
-          title = "显卡温度",
-          value = metricPoint(gpuPoints, selectedWindow, ::formatCelsius),
-          points = gpuPoints,
-          valueFormatter = ::formatCelsius
-        )
-      )
-    } else {
-      gpuLatestTemperature(metrics)?.let { temperature ->
-        add(MetricCardModel("显卡温度", formatCelsius(temperature), emptyList(), ::formatCelsius))
-      }
-    }
-
-    val diskGroups = buildDiskTemperatureGroups(metrics)
-    diskGroups.forEach { disk ->
-      add(
-        MetricCardModel(
-          title = disk.title,
+          title = "${disk.title} · 温度",
           value = if (disk.points.isNotEmpty()) metricPoint(disk.points, selectedWindow, ::formatCelsius) else formatCelsius(disk.latestC),
           points = disk.points,
           valueFormatter = ::formatCelsius
         )
       )
     }
-    if (diskGroups.isEmpty()) {
-      val diskPoints = averageTemperaturePointSeries(temperatureSensorPointSeries(metrics, ::isDiskTemperatureSeries))
-      val diskLatest = metrics.latest.temperatureSensors.filter(::isDiskTemperatureSensor)
-        .mapNotNull { validTemperature(it.currentC) }
-        .averageOrNull()
-      if (diskPoints.isNotEmpty() || diskLatest != null) {
-        add(
-          MetricCardModel(
-            title = "硬盘温度",
-            value = if (diskPoints.isNotEmpty()) metricPoint(diskPoints, selectedWindow, ::formatCelsius) else formatCelsius(diskLatest),
-            points = diskPoints,
-            valueFormatter = ::formatCelsius
-          )
-        )
+  }
+
+private fun buildCpuTemperatureCards(metrics: MetricsDto, selectedWindow: MetricWindow): List<MetricCardModel> {
+  val latestById = metrics.latest.cpuPackages.associateBy { it.id }
+  val instanceIds = (metrics.series.cpus.map { it.id } + metrics.latest.cpuPackages.map { it.id }).toSet()
+  val singleInstanceFallback = if (instanceIds.size == 1) cpuTemperaturePoints(metrics) else emptyList()
+  val singleInstanceLatest = if (instanceIds.size == 1) cpuLatestTemperature(metrics) else null
+  val cards = buildList {
+    val seenIds = mutableSetOf<String>()
+    metrics.series.cpus.forEach { cpu ->
+      val latest = latestById[cpu.id]
+      val points = validTemperaturePoints(cpu.temperatureC).ifEmpty { singleInstanceFallback }
+      val temperature = validTemperature(latest?.temperatureC) ?: singleInstanceLatest
+      buildTemperatureInstanceCard(
+        kind = "CPU",
+        name = cpu.name,
+        model = cpu.model ?: latest?.model ?: metrics.device.cpuModel,
+        points = points,
+        latestC = temperature,
+        selectedWindow = selectedWindow
+      )?.let { card ->
+        add(card)
+        seenIds += cpu.id
       }
+    }
+    metrics.latest.cpuPackages.forEach { cpu ->
+      if (cpu.id in seenIds) return@forEach
+      buildTemperatureInstanceCard(
+        kind = "CPU",
+        name = cpu.name,
+        model = cpu.model ?: metrics.device.cpuModel,
+        points = singleInstanceFallback,
+        latestC = validTemperature(cpu.temperatureC) ?: singleInstanceLatest,
+        selectedWindow = selectedWindow
+      )?.let(::add)
     }
   }
   return cards
+}
+
+private fun buildGpuTemperatureCards(metrics: MetricsDto, selectedWindow: MetricWindow): List<MetricCardModel> {
+  val latestById = metrics.latest.gpus.associateBy { it.id }
+  val instanceIds = (metrics.series.gpus.map { it.id } + metrics.latest.gpus.map { it.id }).toSet()
+  val singleInstanceFallback = if (instanceIds.size == 1) gpuTemperaturePoints(metrics) else emptyList()
+  val singleInstanceLatest = if (instanceIds.size == 1) gpuLatestTemperature(metrics) else null
+  val cards = buildList {
+    val seenIds = mutableSetOf<String>()
+    metrics.series.gpus.forEach { gpu ->
+      val latest = latestById[gpu.id]
+      val points = validTemperaturePoints(gpu.temperatureC).ifEmpty { singleInstanceFallback }
+      val temperature = validTemperature(latest?.temperatureC) ?: singleInstanceLatest
+      buildTemperatureInstanceCard(
+        kind = "显卡",
+        name = gpu.name,
+        model = latest?.name,
+        points = points,
+        latestC = temperature,
+        selectedWindow = selectedWindow
+      )?.let { card ->
+        add(card)
+        seenIds += gpu.id
+      }
+    }
+    metrics.latest.gpus.forEach { gpu ->
+      if (gpu.id in seenIds) return@forEach
+      buildTemperatureInstanceCard(
+        kind = "显卡",
+        name = gpu.name,
+        model = gpu.name,
+        points = singleInstanceFallback,
+        latestC = validTemperature(gpu.temperatureC) ?: singleInstanceLatest,
+        selectedWindow = selectedWindow
+      )?.let(::add)
+    }
+  }
+  return cards
+}
+
+private fun buildTemperatureInstanceCard(
+  kind: String,
+  name: String?,
+  model: String?,
+  points: List<SamplePointDto>,
+  latestC: Double?,
+  selectedWindow: MetricWindow
+): MetricCardModel? {
+  if (points.isEmpty() && latestC == null) return null
+  return MetricCardModel(
+    title = temperatureInstanceTitle(kind, name, model),
+    value = if (points.isNotEmpty()) metricPoint(points, selectedWindow, ::formatCelsius) else formatCelsius(latestC),
+    points = points,
+    valueFormatter = ::formatCelsius
+  )
+}
+
+private fun temperatureInstanceTitle(kind: String, name: String?, model: String?): String {
+  val normalizedModel = model?.trim()?.takeIf { it.isNotEmpty() }
+  val normalizedName = name?.trim()?.takeIf { it.isNotEmpty() && !it.equals(normalizedModel, ignoreCase = true) }
+  val identity = listOfNotNull(normalizedModel, normalizedName).joinToString(" · ").ifBlank { "未知型号" }
+  return "$kind · $identity 温度"
 }
 
 private fun averageTemperaturePointSeries(series: List<List<SamplePointDto>>): List<SamplePointDto> {
