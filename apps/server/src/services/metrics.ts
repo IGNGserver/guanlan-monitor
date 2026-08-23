@@ -348,13 +348,13 @@ function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[], timest
     timestamp: total.timestamp,
     cpuUsagePercent: total.cpuUsagePercent / samples.length,
     cpuFrequencyMHz: total.cpuFrequencyMHz / samples.length,
-    cpuTemperatureC: total.cpuTemperatureC / samples.length,
+    cpuTemperatureC: averagePositiveTemperature(samples.map((sample) => sample.cpuTemperatureC)),
     gpuUsagePercent: total.gpuUsagePercent / samples.length,
     gpuEncodePercent: total.gpuEncodePercent / samples.length,
     gpuDecodePercent: total.gpuDecodePercent / samples.length,
     gpuFrequencyMHz: total.gpuFrequencyMHz / samples.length,
     gpuMemoryUsagePercent: total.gpuMemoryUsagePercent / samples.length,
-    gpuTemperatureC: total.gpuTemperatureC / samples.length,
+    gpuTemperatureC: averagePositiveTemperature(samples.map((sample) => sample.gpuTemperatureC)),
     memoryUsagePercent: total.memoryUsagePercent / samples.length,
     swapUsagePercent: total.swapUsagePercent / samples.length,
     memoryUsedBytes: total.memoryUsedBytes / samples.length,
@@ -379,6 +379,11 @@ function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[], timest
         }
       : undefined
   };
+}
+
+function averagePositiveTemperature(values: number[]): number {
+  const valid = values.filter((value) => Number.isFinite(value) && value > 0);
+  return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : 0;
 }
 
 function mergeTemperatureSensorDetails(samples: ReturnType<typeof payloadToTimeSeries>[]): TemperatureSensorReading[] {

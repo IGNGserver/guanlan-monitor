@@ -1211,7 +1211,7 @@ private fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWin
         metrics = listOf(
           "占用" to metricPoint(metrics.series.cpuUsagePercent, selectedWindow, ::formatPercent),
           "频率" to metricPoint(metrics.series.cpuFrequencyMHz, selectedWindow, ::formatMHz),
-          "温度" to metricPoint(metrics.series.cpuTemperatureC, selectedWindow, ::formatCelsius, zeroMeansMissing = true)
+          "温度" to metricPoint(cpuTemperaturePoints(metrics), selectedWindow, ::formatCelsius, zeroMeansMissing = true)
         )
       )
     )
@@ -1223,7 +1223,7 @@ private fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWin
         metrics = listOf(
           "占用" to metricPoint(metrics.series.gpuUsagePercent, selectedWindow, ::formatPercent),
           "GPU 内存" to formatGpuMemorySummary(metrics.latest.gpus),
-          "温度" to metricPoint(metrics.series.gpuTemperatureC, selectedWindow, ::formatCelsius)
+          "温度" to metricPoint(gpuTemperaturePoints(metrics), selectedWindow, ::formatCelsius)
         )
       )
     )
@@ -1280,9 +1280,9 @@ private fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWin
     if (hasTemperatureData(metrics)) {
       val validSensors = metrics.latest.temperatureSensors.filter { it.status == "valid" }
       val auxiliarySources = buildList<Double> {
-        metrics.latest.cpuTemperatureC?.let { add(it) }
-        metrics.latest.gpus.mapNotNull { it.temperatureC }.forEach { add(it) }
-        metrics.latest.disks.mapNotNull { it.temperatureC }.forEach { add(it) }
+        cpuLatestTemperature(metrics)?.let { add(it) }
+        metrics.latest.gpus.mapNotNull { validTemperature(it.temperatureC) }.forEach { add(it) }
+        metrics.latest.disks.mapNotNull { validDiskTemperature(it.temperatureC) }.forEach { add(it) }
       }
       val sourceCount = validSensors.size + auxiliarySources.size
       add(
@@ -1303,19 +1303,17 @@ private fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWin
 private fun hasTemperatureData(metrics: MetricsDto): Boolean =
   metrics.latest.temperatureSensors.isNotEmpty() ||
     metrics.series.temperatureSensors.isNotEmpty() ||
-    metrics.latest.cpuTemperatureC != null ||
-    metrics.latest.gpus.any { it.temperatureC != null } ||
+    cpuLatestTemperature(metrics) != null ||
+    metrics.latest.gpus.any { validTemperature(it.temperatureC) != null } ||
     metrics.latest.disks.any { validDiskTemperature(it.temperatureC) != null } ||
-    metrics.series.cpuTemperatureC.isNotEmpty() ||
-    metrics.series.gpuTemperatureC.isNotEmpty() ||
-    metrics.series.cpus.any { it.temperatureC.isNotEmpty() } ||
-    metrics.series.gpus.any { it.temperatureC.isNotEmpty() } ||
+    cpuTemperaturePoints(metrics).isNotEmpty() ||
+    gpuTemperaturePoints(metrics).isNotEmpty() ||
     metrics.series.disks.any { disk -> disk.temperatureC.any { validDiskTemperature(it.value) != null } }
 
 private fun temperatureOverviewValue(sensors: List<TemperatureSensorDto>, metrics: MetricsDto): String {
-  val current = sensors.mapNotNull { it.currentC }.averageOrNull()
-    ?: metrics.latest.cpuTemperatureC
-    ?: metrics.latest.gpus.mapNotNull { it.temperatureC }.averageOrNull()
+  val current = sensors.mapNotNull { validTemperature(it.currentC) }.averageOrNull()
+    ?: cpuLatestTemperature(metrics)
+    ?: metrics.latest.gpus.mapNotNull { validTemperature(it.temperatureC) }.averageOrNull()
     ?: metrics.latest.disks.mapNotNull { validDiskTemperature(it.temperatureC) }.averageOrNull()
   return current?.let(::formatCelsius) ?: "未知"
 }
@@ -1364,6 +1362,7 @@ private fun BlockSheetTabContent(
 @Composable
 private fun CpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, chartWindow: ChartWindow, onEditInstance: (String) -> Unit) {
   if (tabId == "total") {
+    val temperaturePoints = cpuTemperaturePoints(metrics)
     if (!isMetricAvailable(metrics, "cpuTemperature")) {
       Text("当前设备未提供 CPU 温度传感器，虚拟机环境下较常见。", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
     }
@@ -1371,7 +1370,7 @@ private fun CpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: 
       cards = listOf(
         MetricCardModel("CPU 占用", metricPoint(metrics.series.cpuUsagePercent, selectedWindow, ::formatPercent), metrics.series.cpuUsagePercent, ::formatPercent, 100.0),
         MetricCardModel("CPU 频率", metricPoint(metrics.series.cpuFrequencyMHz, selectedWindow, ::formatMHz), metrics.series.cpuFrequencyMHz, ::formatMHz),
-        MetricCardModel("CPU 温度", metricPoint(metrics.series.cpuTemperatureC, selectedWindow, ::formatCelsius, zeroMeansMissing = true), metrics.series.cpuTemperatureC, ::formatCelsius)
+        MetricCardModel("CPU 温度", metricPoint(temperaturePoints, selectedWindow, ::formatCelsius, zeroMeansMissing = true), temperaturePoints, ::formatCelsius)
       ),
       chartWindow = chartWindow
     )
@@ -1511,11 +1510,12 @@ private fun NetworkSheetContent(metrics: MetricsDto, tabId: String, selectedWind
 @Composable
 private fun GpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, chartWindow: ChartWindow, onEditInstance: (String) -> Unit) {
   if (tabId == "total") {
+    val temperaturePoints = gpuTemperaturePoints(metrics)
     MetricCardGrid(
       cards = listOf(
         MetricCardModel("总占用", metricPoint(metrics.series.gpuUsagePercent, selectedWindow, ::formatPercent), metrics.series.gpuUsagePercent, ::formatPercent, 100.0),
         MetricCardModel("总 GPU 内存", formatGpuMemorySummary(metrics.latest.gpus), metrics.series.gpuMemoryUsagePercent, ::formatPercent, 100.0),
-        MetricCardModel("总温度", metricPoint(metrics.series.gpuTemperatureC, selectedWindow, ::formatCelsius), metrics.series.gpuTemperatureC, ::formatCelsius)
+        MetricCardModel("总温度", metricPoint(temperaturePoints, selectedWindow, ::formatCelsius), temperaturePoints, ::formatCelsius)
       ),
       chartWindow = chartWindow
     )
@@ -1570,11 +1570,66 @@ private data class DiskTemperatureGroup(
   val latestC: Double?
 )
 
+private fun cpuTemperaturePoints(metrics: MetricsDto): List<SamplePointDto> =
+  validTemperaturePoints(metrics.series.cpuTemperatureC)
+    .ifEmpty { averageTemperaturePointSeries(metrics.series.cpus.map { it.temperatureC }) }
+    .ifEmpty { averageTemperaturePointSeries(temperatureSensorPointSeries(metrics, ::isCpuTemperatureSeries)) }
+
+private fun gpuTemperaturePoints(metrics: MetricsDto): List<SamplePointDto> =
+  validTemperaturePoints(metrics.series.gpuTemperatureC)
+    .ifEmpty { averageTemperaturePointSeries(metrics.series.gpus.map { it.temperatureC }) }
+    .ifEmpty { averageTemperaturePointSeries(temperatureSensorPointSeries(metrics, ::isGpuTemperatureSeries)) }
+
+private fun cpuLatestTemperature(metrics: MetricsDto): Double? =
+  validTemperature(metrics.latest.cpuTemperatureC)
+    ?: metrics.latest.cpuPackages.mapNotNull { validTemperature(it.temperatureC) }.averageOrNull()
+    ?: metrics.latest.temperatureSensors.filter(::isCpuTemperatureSensor)
+      .mapNotNull { validTemperature(it.currentC) }
+      .averageOrNull()
+
+private fun gpuLatestTemperature(metrics: MetricsDto): Double? =
+  metrics.latest.gpus.mapNotNull { validTemperature(it.temperatureC) }.averageOrNull()
+    ?: metrics.latest.temperatureSensors.filter(::isGpuTemperatureSensor)
+      .mapNotNull { validTemperature(it.currentC) }
+      .averageOrNull()
+
+private fun temperatureSensorPointSeries(
+  metrics: MetricsDto,
+  predicate: (TemperatureMetricSeriesDto) -> Boolean
+): List<List<SamplePointDto>> =
+  metrics.series.temperatureSensors.filter(predicate).map { validTemperaturePoints(it.currentC) }
+
+private fun isCpuTemperatureSensor(sensor: TemperatureSensorDto): Boolean =
+  sensor.status == "valid" && isCpuTemperatureRole(sensor.role)
+
+private fun isCpuTemperatureSeries(sensor: TemperatureMetricSeriesDto): Boolean =
+  sensor.status == "valid" && isCpuTemperatureRole(sensor.role)
+
+private fun isCpuTemperatureRole(role: String): Boolean = role == "cpu_package" || role == "cpu_core" || role == "peci"
+
+private fun isGpuTemperatureSensor(sensor: TemperatureSensorDto): Boolean =
+  sensor.status == "valid" && (
+    sensor.role == "gpu_core" ||
+      sensor.role == "gpu_hotspot" ||
+      (sensor.role == "derived" && (sensor.hardwareType == "gpu" || sensor.source == "cpu-package-shared" || sensor.source == "cpuPackageShared"))
+    )
+
+private fun isGpuTemperatureSeries(sensor: TemperatureMetricSeriesDto): Boolean =
+  sensor.status == "valid" && (
+    sensor.role == "gpu_core" ||
+      sensor.role == "gpu_hotspot" ||
+      (sensor.role == "derived" && (sensor.source == "cpu-package-shared" || sensor.source == "cpuPackageShared"))
+    )
+
+private fun isDiskTemperatureSensor(sensor: TemperatureSensorDto): Boolean =
+  sensor.status == "valid" && (sensor.role == "storage_composite" || sensor.role == "storage_sensor")
+
+private fun isDiskTemperatureSeries(sensor: TemperatureMetricSeriesDto): Boolean =
+  sensor.status == "valid" && (sensor.role == "storage_composite" || sensor.role == "storage_sensor")
+
 private fun buildTemperatureSummaryCards(metrics: MetricsDto, selectedWindow: MetricWindow): List<MetricCardModel> {
   val cards = buildList {
-    val cpuPoints = metrics.series.cpuTemperatureC.ifEmpty {
-      averageTemperaturePointSeries(metrics.series.cpus.map { it.temperatureC })
-    }
+    val cpuPoints = cpuTemperaturePoints(metrics)
     if (cpuPoints.isNotEmpty()) {
       add(
         MetricCardModel(
@@ -1585,14 +1640,12 @@ private fun buildTemperatureSummaryCards(metrics: MetricsDto, selectedWindow: Me
         )
       )
     } else {
-      metrics.latest.cpuTemperatureC?.let { temperature ->
+      cpuLatestTemperature(metrics)?.let { temperature ->
         add(MetricCardModel("CPU 温度", formatCelsius(temperature), emptyList(), ::formatCelsius))
       }
     }
 
-    val gpuPoints = metrics.series.gpuTemperatureC.ifEmpty {
-      averageTemperaturePointSeries(metrics.series.gpus.map { it.temperatureC })
-    }
+    val gpuPoints = gpuTemperaturePoints(metrics)
     if (gpuPoints.isNotEmpty()) {
       add(
         MetricCardModel(
@@ -1603,12 +1656,13 @@ private fun buildTemperatureSummaryCards(metrics: MetricsDto, selectedWindow: Me
         )
       )
     } else {
-      metrics.latest.gpus.mapNotNull { it.temperatureC }.averageOrNull()?.let { temperature ->
+      gpuLatestTemperature(metrics)?.let { temperature ->
         add(MetricCardModel("显卡温度", formatCelsius(temperature), emptyList(), ::formatCelsius))
       }
     }
 
-    buildDiskTemperatureGroups(metrics).forEach { disk ->
+    val diskGroups = buildDiskTemperatureGroups(metrics)
+    diskGroups.forEach { disk ->
       add(
         MetricCardModel(
           title = disk.title,
@@ -1618,6 +1672,22 @@ private fun buildTemperatureSummaryCards(metrics: MetricsDto, selectedWindow: Me
         )
       )
     }
+    if (diskGroups.isEmpty()) {
+      val diskPoints = averageTemperaturePointSeries(temperatureSensorPointSeries(metrics, ::isDiskTemperatureSeries))
+      val diskLatest = metrics.latest.temperatureSensors.filter(::isDiskTemperatureSensor)
+        .mapNotNull { validTemperature(it.currentC) }
+        .averageOrNull()
+      if (diskPoints.isNotEmpty() || diskLatest != null) {
+        add(
+          MetricCardModel(
+            title = "硬盘温度",
+            value = if (diskPoints.isNotEmpty()) metricPoint(diskPoints, selectedWindow, ::formatCelsius) else formatCelsius(diskLatest),
+            points = diskPoints,
+            valueFormatter = ::formatCelsius
+          )
+        )
+      }
+    }
   }
   return cards
 }
@@ -1625,7 +1695,9 @@ private fun buildTemperatureSummaryCards(metrics: MetricsDto, selectedWindow: Me
 private fun averageTemperaturePointSeries(series: List<List<SamplePointDto>>): List<SamplePointDto> {
   val valuesByTimestamp = linkedMapOf<String, MutableList<Double>>()
   series.flatten().forEach { point ->
-    valuesByTimestamp.getOrPut(point.timestamp) { mutableListOf() }.add(point.value)
+    validTemperature(point.value)?.let { value ->
+      valuesByTimestamp.getOrPut(point.timestamp) { mutableListOf() }.add(value)
+    }
   }
   return valuesByTimestamp
     .map { (timestamp, values) -> SamplePointDto(timestamp, values.average()) }
@@ -1635,7 +1707,7 @@ private fun averageTemperaturePointSeries(series: List<List<SamplePointDto>>): L
 private fun buildDiskTemperatureGroups(metrics: MetricsDto): List<DiskTemperatureGroup> {
   val seriesByKey = linkedMapOf<String, MutableList<DiskMetricSeriesDto>>()
   metrics.series.disks
-    .filter { it.temperatureC.isNotEmpty() }
+    .filter { it.temperatureC.any { point -> validDiskTemperature(point.value) != null } }
     .forEach { disk ->
       seriesByKey.getOrPut(diskTemperatureKey(disk)) { mutableListOf() }.add(disk)
     }
@@ -2658,7 +2730,10 @@ private fun gpuTemperatureSourceLabel(source: String?): String = when {
 private fun formatPercent(value: Double?): String = if (value == null) "--" else "${"%.1f".format(value)}%"
 private fun formatMHz(value: Double?): String = if (value == null) "--" else "${"%.0f".format(value)} MHz"
 private fun formatCelsius(value: Double?): String = if (value == null) "--" else "${"%.1f".format(value)} °C"
-private fun validDiskTemperature(value: Double?): Double? = value?.takeIf { it.isFinite() && it > 0.0 }
+private fun validTemperature(value: Double?): Double? = value?.takeIf { it.isFinite() && it > 0.0 }
+private fun validTemperaturePoints(points: List<SamplePointDto>): List<SamplePointDto> =
+  points.filter { validTemperature(it.value) != null }
+private fun validDiskTemperature(value: Double?): Double? = validTemperature(value)
 private fun formatSpeed(value: Double?): String = formatBytes(value ?: 0.0) + "/s"
 private fun formatDiskHealth(value: String): String = when (value.lowercase()) {
   "good" -> "正常"
