@@ -816,7 +816,7 @@ export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOpt
   const hasFanChannelState = (latest.fans ?? []).some((fan) => fan.channelState != null);
   const hasFanNote = (latest.fans ?? []).some((fan) => fan.note != null);
 
-  const availability = new Map<DeviceMetricKey, boolean>([
+  const availabilityEntries: Array<[DeviceMetricKey, boolean]> = [
     ["cpuUsage", true],
     ["cpuFrequency", hasCpuFrequency],
     ["cpuTemperature", hasCpuTemperature],
@@ -852,7 +852,10 @@ export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOpt
     ["fanPwm", hasFanPwm],
     ["fanChannelState", hasFanChannelState],
     ["fanNote", hasFanNote]
-  ].map(([key, available]) => [key, unavailable.has(key) ? false : available] as [DeviceMetricKey, boolean]));
+  ];
+  const availability = new Map<DeviceMetricKey, boolean>(
+    availabilityEntries.map(([key, available]) => [key, unavailable.has(key) ? false : available])
+  );
 
   return ALL_DEVICE_METRIC_KEYS.map((key) => ({
     key,
