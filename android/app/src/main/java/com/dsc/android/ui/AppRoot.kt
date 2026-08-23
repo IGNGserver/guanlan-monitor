@@ -1625,17 +1625,180 @@ private fun buildTemperatureSummaryCards(metrics: MetricsDto, selectedWindow: Me
   buildList {
     addAll(buildCpuTemperatureCards(metrics, selectedWindow))
     addAll(buildGpuTemperatureCards(metrics, selectedWindow))
-    buildDiskTemperatureGroups(metrics).forEach { disk ->
-      add(
-        MetricCardModel(
-          title = "${disk.title} · 温度",
-          value = if (disk.points.isNotEmpty()) metricPoint(disk.points, selectedWindow, ::formatCelsius) else formatCelsius(disk.latestC),
-          points = disk.points,
-          valueFormatter = ::formatCelsius
-        )
-      )
+    buildDiskTemperatureCards(metrics, selectedWindow).forEach { card ->
+      add(card)
     }
   }
+
+private fun buildDiskTemperatureCards(metrics: MetricsDto, selectedWindow: MetricWindow): List<MetricCardModel> =
+  (buildDiskTemperatureGroups(metrics) + buildStorageTemperatureGroups(metrics))
+    .distinctBy { it.key }
+    .map { disk ->
+      MetricCardModel(
+        title = "${disk.title} · 温度",
+        value = if (disk.points.isNotEmpty()) metricPoint(disk.points, selectedWindow, ::formatCelsius) else formatCelsius(disk.latestC),
+        points = disk.points,
+        valueFormatter = ::formatCelsius
+      )
+    }
+
+private fun buildStorageTemperatureGroups(metrics: MetricsDto): List<DiskTemperatureGroup> {
+  val latestById = metrics.latest.temperatureSensors.associateBy { it.id }
+  val seriesById = metrics.series.temperatureSensors.associateBy { it.id }
+  val seriesByKey = linkedMapOf<String, MutableList<TemperatureMetricSeriesDto>>()
+  val latestByKey = linkedMapOf<String, MutableList<TemperatureSensorDto>>()
+
+  metrics.series.temperatureSensors
+    .filter(::isStorageTemperatureSeries)
+    .forEach { sensorSeries ->
+      val key = storageTemperatureKey(metrics, latestById[sensorSeries.id], sensorSeries)
+      seriesByKey.getOrPut(key) { mutableListOf() }.add(sensorSeries)
+    }
+  metrics.latest.temperatureSensors
+    .filter(::isStorageTemperatureSensor)
+    .forEach { sensor ->
+      val key = storageTemperatureKey(metrics, sensor, seriesById[sensor.id])
+      latestByKey.getOrPut(key) { mutableListOf() }.add(sensor)
+    }
+
+  return (seriesByKey.keys + latestByKey.keys)
+    .distinct()
+    .mapNotNull { key ->
+      val seriesItems = seriesByKey[key].orEmpty()
+      val latestItems = latestByKey[key].orEmpty()
+      val points = averageTemperaturePointSeries(
+        seriesItems.map { sensor -> validTemperaturePoints(sensor.currentC) }
+      )
+      val latestC = latestItems.mapNotNull { validTemperature(it.currentC) }.averageOrNull()
+      if (points.isEmpty() && latestC == null) return@mapNotNull null
+
+      val disk = latestItems.asSequence()
+        .map { sensor -> findDiskForStorageSensor(metrics, sensor, seriesById[sensor.id]) }
+        .filterNotNull()
+        .firstOrNull()
+        ?: seriesItems.asSequence()
+          .map { sensor -> findDiskForStorageSensor(metrics, latestById[sensor.id], sensor) }
+          .filterNotNull()
+          .firstOrNull()
+      val title = disk?.let { physicalDiskTemperatureTitle(diskTemperatureKey(it), it.model, it.name) }
+        ?: storageTemperatureTitle(latestItems.firstOrNull(), seriesItems.firstOrNull())
+      DiskTemperatureGroup(key = key, title = title, points = points, latestC = latestC)
+    }
+}
+
+private fun isStorageTemperatureSensor(sensor: TemperatureSensorDto): Boolean =
+  sensor.status == "valid" && isStorageTemperatureRole(sensor.role)
+
+private fun isStorageTemperatureSeries(sensor: TemperatureMetricSeriesDto): Boolean =
+  sensor.status == "valid" && isStorageTemperatureRole(sensor.role)
+
+private fun isStorageTemperatureRole(role: String): Boolean =
+  role == "storage_composite" || role == "storage_sensor"
+
+private fun storageTemperatureKey(
+  metrics: MetricsDto,
+  sensor: TemperatureSensorDto?,
+  series: TemperatureMetricSeriesDto?
+): String =
+  findDiskForStorageSensor(metrics, sensor, series)?.let(::diskTemperatureKey)
+    ?: "temperature-sensor:${sensor?.id ?: series?.id ?: "unknown"}"
+
+private fun findDiskForStorageSensor(
+  metrics: MetricsDto,
+  sensor: TemperatureSensorDto?,
+  series: TemperatureMetricSeriesDto?
+): DiskDto? {
+  val strongSensorIdentities = listOfNotNull(sensor?.instanceId, sensor?.path)
+    .mapNotNull(::normalizeTemperatureIdentity)
+    .distinct()
+  val sensorIdentities = listOfNotNull(
+    sensor?.instanceId,
+    sensor?.path,
+    sensor?.hardware,
+    sensor?.displayName,
+    sensor?.rawName,
+    series?.hardware,
+    series?.name,
+    series?.rawName
+  ).mapNotNull(::normalizeTemperatureIdentity).distinct()
+  if (sensorIdentities.isEmpty()) return null
+
+  val disks = metrics.latest.disks
+  val strongMatches = disks.filter { disk ->
+    diskTemperatureIdentities(disk).any { identity -> identity in strongSensorIdentities }
+  }
+  if (strongMatches.isNotEmpty()) return strongMatches.first()
+
+  val exactMatches = disks.filter { disk ->
+    diskTemperatureIdentities(disk).any { identity -> identity in sensorIdentities }
+  }
+  if (exactMatches.map(::diskTemperatureKey).distinct().size == 1) return exactMatches.first()
+
+  val containmentMatches = disks.filter { disk ->
+    diskTemperatureIdentities(disk).any { diskIdentity ->
+      sensorIdentities.any { sensorIdentity ->
+        diskIdentity.length >= 4 && sensorIdentity.length >= 4 &&
+          (diskIdentity.contains(sensorIdentity) || sensorIdentity.contains(diskIdentity))
+      }
+    }
+  }
+  return containmentMatches.takeIf { matches -> matches.map(::diskTemperatureKey).distinct().size == 1 }?.firstOrNull()
+}
+
+private fun diskTemperatureIdentities(disk: DiskDto): List<String> =
+  listOfNotNull(disk.physicalDevice, disk.id, disk.name, disk.model, disk.mountPoint)
+    .mapNotNull(::normalizeTemperatureIdentity)
+    .distinct()
+
+private fun normalizeTemperatureIdentity(value: String?): String? =
+  value?.trim()?.lowercase()?.filter { it.isLetterOrDigit() }?.takeIf { it.length >= 4 }
+
+private fun storageTemperatureTitle(
+  sensor: TemperatureSensorDto?,
+  series: TemperatureMetricSeriesDto?
+): String {
+  val hardware = sensor?.hardware?.trim()?.takeIf { it.isNotEmpty() } ?: series?.hardware?.trim()?.takeIf { it.isNotEmpty() }
+  val sensorName = sensor?.rawName?.trim()?.takeIf { it.isNotEmpty() }
+    ?: series?.rawName?.trim()?.takeIf { it.isNotEmpty() }
+    ?: sensor?.displayName?.trim()?.takeIf { it.isNotEmpty() }
+    ?: series?.name?.trim()?.takeIf { it.isNotEmpty() }
+  val identity = listOfNotNull(hardware, sensorName).distinct().joinToString(" · ").ifBlank { "未知型号" }
+  return "硬盘 · $identity"
+}
+
+private fun buildDiskTemperatureGroups(metrics: MetricsDto): List<DiskTemperatureGroup> {
+  val seriesByKey = linkedMapOf<String, MutableList<DiskMetricSeriesDto>>()
+  metrics.series.disks
+    .filter { it.temperatureC.any { point -> validDiskTemperature(point.value) != null } }
+    .forEach { disk ->
+      seriesByKey.getOrPut(diskTemperatureKey(disk)) { mutableListOf() }.add(disk)
+    }
+  val latestByKey = metrics.latest.disks
+    .filter { validDiskTemperature(it.temperatureC) != null }
+    .groupBy(::diskTemperatureKey)
+
+  return (seriesByKey.keys + latestByKey.keys)
+    .distinct()
+    .mapNotNull { key ->
+      val seriesItems = seriesByKey[key].orEmpty()
+      val latestItems = latestByKey[key].orEmpty()
+      val points = averageTemperaturePointSeries(
+        seriesItems.map { disk -> disk.temperatureC.filter { validDiskTemperature(it.value) != null } }
+      )
+      val latestC = latestItems.mapNotNull { validDiskTemperature(it.temperatureC) }.averageOrNull()
+      if (points.isEmpty() && latestC == null) return@mapNotNull null
+      val model = seriesItems.mapNotNull { it.model?.takeIf(String::isNotBlank) }.firstOrNull()
+        ?: latestItems.mapNotNull { it.model?.takeIf(String::isNotBlank) }.firstOrNull()
+      val name = seriesItems.mapNotNull { it.name.takeIf(String::isNotBlank) }.firstOrNull()
+        ?: latestItems.mapNotNull { it.name.takeIf(String::isNotBlank) }.firstOrNull()
+      DiskTemperatureGroup(
+        key = key,
+        title = physicalDiskTemperatureTitle(key, model, name),
+        points = points,
+        latestC = latestC
+      )
+    }
+}
 
 private fun buildCpuTemperatureCards(metrics: MetricsDto, selectedWindow: MetricWindow): List<MetricCardModel> {
   val latestById = metrics.latest.cpuPackages.associateBy { it.id }
