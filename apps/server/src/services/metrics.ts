@@ -498,7 +498,7 @@ function averageInstanceMetrics(
       current.sums.frequencyMHz += item.frequencyMHz ?? 0;
       current.sums.memoryUsagePercent += item.memoryUsagePercent ?? 0;
       current.sums.memoryUsedBytes += item.memoryUsedBytes ?? 0;
-      if (typeof item.temperatureC === "number" && Number.isFinite(item.temperatureC)) {
+      if (typeof item.temperatureC === "number" && Number.isFinite(item.temperatureC) && item.temperatureC > 0) {
         current.temperatureSum += item.temperatureC;
         current.temperatureCount += 1;
       }

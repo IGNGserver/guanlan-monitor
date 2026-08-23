@@ -592,7 +592,10 @@ function buildDiskMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricC
       target.usedBytes.push({ timestamp, value: Number(disk.usedBytes ?? 0) });
       target.readBytesPerSec.push({ timestamp, value: Number(disk.readBytesPerSec ?? 0) });
       target.writeBytesPerSec.push({ timestamp, value: Number(disk.writeBytesPerSec ?? 0) });
-      target.temperatureC.push({ timestamp, value: Number(disk.temperatureC ?? 0) });
+      const temperature = Number(disk.temperatureC);
+      if (Number.isFinite(temperature) && temperature > 0) {
+        target.temperatureC.push({ timestamp, value: temperature });
+      }
     }
   }
   return [...grouped.values()];
