@@ -716,17 +716,6 @@ private fun DeviceDetailScreen(
           onSelectWindow = onSelectWindow
         )
       }
-      if (metrics.latest.temperatureSensors.isNotEmpty() || metrics.series.temperatureSensors.isNotEmpty()) {
-        item(key = "temperature-sources") {
-          TemperatureSourcesCard(
-            deviceId = metrics.device.deviceId,
-            sensors = metrics.latest.temperatureSensors,
-            series = metrics.series.temperatureSensors,
-            selectedWindow = state.selectedWindow,
-            chartWindow = chartWindowFor(metrics, state.selectedWindow)
-          )
-        }
-      }
       if (state.loadingMetrics) {
         item(key = "metrics-loading") {
           InlineLoadingCard("正在加载当前粒度数据")
@@ -1025,6 +1014,7 @@ private fun BlockSheet(
   }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TemperatureSourcesCard(
   deviceId: String,
@@ -1034,14 +1024,41 @@ private fun TemperatureSourcesCard(
   chartWindow: ChartWindow
 ) {
   var showDiagnostics by remember(deviceId) { mutableStateOf(false) }
-  var selectedId by remember(deviceId) { mutableStateOf("") }
-  val visibleSensors = sensors.filter { showDiagnostics || it.status == "valid" }
+  var selectedId by remember(deviceId) { mutableStateOf<String?>(null) }
   val chartableSeries = series.filter { showDiagnostics || it.status == "valid" }
-  val selectedSeries = chartableSeries.firstOrNull { it.id == selectedId } ?: chartableSeries.firstOrNull()
+  val latestById = sensors.associateBy { it.id }
+  val displaySensors = buildList {
+    sensors.forEach { sensor ->
+      if (showDiagnostics || sensor.status == "valid") add(sensor)
+    }
+    series
+      .filter { it.id !in latestById }
+      .filter { showDiagnostics || it.status == "valid" }
+      .forEach { sensorSeries ->
+        add(
+          TemperatureSensorDto(
+            id = sensorSeries.id,
+            source = sensorSeries.source,
+            backend = sensorSeries.backend,
+            hardware = sensorSeries.hardware,
+            rawName = sensorSeries.rawName,
+            displayName = sensorSeries.name,
+            role = sensorSeries.role,
+            currentC = sensorSeries.currentC.lastOrNull()?.value,
+            highC = sensorSeries.highC,
+            criticalC = sensorSeries.criticalC,
+            emergencyC = sensorSeries.emergencyC,
+            status = sensorSeries.status,
+            confidence = sensorSeries.confidence
+          )
+        )
+      }
+  }
+  val selectedSeries = selectedId?.let { id -> chartableSeries.firstOrNull { it.id == id } }
 
   LaunchedEffect(chartableSeries, selectedId) {
-    if (chartableSeries.isNotEmpty() && chartableSeries.none { it.id == selectedId }) {
-      selectedId = chartableSeries.first().id
+    if (selectedId != null && chartableSeries.none { it.id == selectedId }) {
+      selectedId = null
     }
   }
 
@@ -1051,7 +1068,7 @@ private fun TemperatureSourcesCard(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
           Text("温度源", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
           Text(
-            "按传感器原始名称和采集后端展示；阈值与无效值默认隐藏。",
+            "点击温度源打开半屏图表；按传感器原始名称和采集后端展示。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
@@ -1062,7 +1079,7 @@ private fun TemperatureSourcesCard(
         }
       }
 
-      if (visibleSensors.isEmpty()) {
+      if (displaySensors.isEmpty()) {
         Text(
           if (sensors.isEmpty() && chartableSeries.isEmpty()) "当前没有独立温度源" else "当前只有无效或诊断温度通道",
           style = MaterialTheme.typography.bodySmall,
@@ -1070,14 +1087,14 @@ private fun TemperatureSourcesCard(
         )
       } else {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          visibleSensors.forEach { sensor ->
-            val isSelected = sensor.id == selectedSeries?.id
+          displaySensors.forEach { sensor ->
+            val hasChart = chartableSeries.any { it.id == sensor.id }
             Surface(
               modifier = Modifier
                 .fillMaxWidth()
-                .clickable { selectedId = sensor.id },
+                .clickable(enabled = hasChart) { selectedId = sensor.id },
               shape = RoundedCornerShape(16.dp),
-              color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface
+              color = MaterialTheme.colorScheme.surface
             ) {
               Row(
                 Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -1101,7 +1118,7 @@ private fun TemperatureSourcesCard(
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                   Text(temperatureValueLabel(sensor), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                   Text(
-                    temperatureStatusLabel(sensor.status),
+                    if (hasChart) "查看图表 · ${temperatureStatusLabel(sensor.status)}" else temperatureStatusLabel(sensor.status),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                   )
@@ -1114,13 +1131,34 @@ private fun TemperatureSourcesCard(
           }
         }
       }
+    }
+  }
 
-      selectedSeries?.let { sensorSeries ->
-        HorizontalDivider()
+  selectedSeries?.let { sensorSeries ->
+    ModalBottomSheet(
+      onDismissRequest = { selectedId = null }
+    ) {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .fillMaxHeight(0.52f)
+          .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+      ) {
+        Text("温度源图表", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text(
+          listOfNotNull(
+            sensorSeries.name,
+            temperatureRoleLabel(sensorSeries.role),
+            temperatureSourceLabel(sensorSeries.source)
+          ).joinToString(" · "),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         MetricCardGrid(
           cards = listOf(
             MetricCardModel(
-              title = "${sensorSeries.name} · 历史",
+              title = sensorSeries.name,
               value = metricPoint(sensorSeries.currentC, selectedWindow, ::formatCelsius),
               points = sensorSeries.currentC,
               valueFormatter = ::formatCelsius
@@ -1128,11 +1166,7 @@ private fun TemperatureSourcesCard(
           ),
           chartWindow = chartWindow
         )
-      } ?: Text(
-        "选择一个有效温度源查看历史",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-      )
+      }
     }
   }
 }
@@ -1505,7 +1539,14 @@ private fun GpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: 
 
 @Composable
 private fun TemperatureSheetContent(metrics: MetricsDto, selectedWindow: MetricWindow, chartWindow: ChartWindow) {
+  val summaryCards = buildTemperatureSummaryCards(metrics, selectedWindow)
+  if (summaryCards.isNotEmpty()) {
+    Text("核心温度概览", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    MetricCardGrid(cards = summaryCards, chartWindow = chartWindow)
+  }
+
   if (metrics.latest.temperatureSensors.isNotEmpty() || metrics.series.temperatureSensors.isNotEmpty()) {
+    Text("全部温度源", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
     TemperatureSourcesCard(
       deviceId = metrics.device.deviceId,
       sensors = metrics.latest.temperatureSensors,
@@ -1520,35 +1561,126 @@ private fun TemperatureSheetContent(metrics: MetricsDto, selectedWindow: MetricW
       color = MaterialTheme.colorScheme.onSurfaceVariant
     )
   }
+}
+
+private data class DiskTemperatureGroup(
+  val key: String,
+  val title: String,
+  val points: List<SamplePointDto>,
+  val latestC: Double?
+)
+
+private fun buildTemperatureSummaryCards(metrics: MetricsDto, selectedWindow: MetricWindow): List<MetricCardModel> {
   val cards = buildList {
-    if (metrics.series.cpuTemperatureC.isNotEmpty()) {
-      add(MetricCardModel("CPU 温度", metricPoint(metrics.series.cpuTemperatureC, selectedWindow, ::formatCelsius, zeroMeansMissing = true), metrics.series.cpuTemperatureC, ::formatCelsius))
+    val cpuPoints = metrics.series.cpuTemperatureC.ifEmpty {
+      averageTemperaturePointSeries(metrics.series.cpus.map { it.temperatureC })
     }
-    metrics.series.cpus.filter { it.temperatureC.isNotEmpty() }.forEach { cpu ->
-      add(MetricCardModel("${cpu.name} 温度", metricPoint(cpu.temperatureC, selectedWindow, ::formatCelsius, zeroMeansMissing = true), cpu.temperatureC, ::formatCelsius))
-    }
-    if (metrics.series.gpuTemperatureC.isNotEmpty()) {
-      add(MetricCardModel("显卡温度", metricPoint(metrics.series.gpuTemperatureC, selectedWindow, ::formatCelsius), metrics.series.gpuTemperatureC, ::formatCelsius))
-    }
-    metrics.series.gpus.filter { it.temperatureC.isNotEmpty() }.forEach { gpu ->
-      add(MetricCardModel("${gpu.name} 温度", metricPoint(gpu.temperatureC, selectedWindow, ::formatCelsius), gpu.temperatureC, ::formatCelsius))
-    }
-    metrics.series.disks.filter { it.temperatureC.isNotEmpty() }.forEach { disk ->
-      add(MetricCardModel("${disk.name} 温度", metricPoint(disk.temperatureC, selectedWindow, ::formatCelsius), disk.temperatureC, ::formatCelsius))
-    }
-    if (isEmpty()) {
+    if (cpuPoints.isNotEmpty()) {
+      add(
+        MetricCardModel(
+          title = "CPU 温度",
+          value = metricPoint(cpuPoints, selectedWindow, ::formatCelsius, zeroMeansMissing = true),
+          points = cpuPoints,
+          valueFormatter = ::formatCelsius
+        )
+      )
+    } else {
       metrics.latest.cpuTemperatureC?.let { temperature ->
         add(MetricCardModel("CPU 温度", formatCelsius(temperature), emptyList(), ::formatCelsius))
       }
-      metrics.latest.gpus.filter { it.temperatureC != null }.forEach { gpu ->
-        add(MetricCardModel("${gpu.name} 温度", formatCelsius(gpu.temperatureC), emptyList(), ::formatCelsius))
-      }
-      metrics.latest.disks.filter { it.temperatureC != null }.forEach { disk ->
-        add(MetricCardModel("${disk.name} 温度", formatCelsius(disk.temperatureC), emptyList(), ::formatCelsius))
+    }
+
+    val gpuPoints = metrics.series.gpuTemperatureC.ifEmpty {
+      averageTemperaturePointSeries(metrics.series.gpus.map { it.temperatureC })
+    }
+    if (gpuPoints.isNotEmpty()) {
+      add(
+        MetricCardModel(
+          title = "显卡温度",
+          value = metricPoint(gpuPoints, selectedWindow, ::formatCelsius),
+          points = gpuPoints,
+          valueFormatter = ::formatCelsius
+        )
+      )
+    } else {
+      metrics.latest.gpus.mapNotNull { it.temperatureC }.averageOrNull()?.let { temperature ->
+        add(MetricCardModel("显卡温度", formatCelsius(temperature), emptyList(), ::formatCelsius))
       }
     }
+
+    buildDiskTemperatureGroups(metrics).forEach { disk ->
+      add(
+        MetricCardModel(
+          title = disk.title,
+          value = if (disk.points.isNotEmpty()) metricPoint(disk.points, selectedWindow, ::formatCelsius) else formatCelsius(disk.latestC),
+          points = disk.points,
+          valueFormatter = ::formatCelsius
+        )
+      )
+    }
   }
-  if (cards.isNotEmpty()) MetricCardGrid(cards = cards, chartWindow = chartWindow)
+  return cards
+}
+
+private fun averageTemperaturePointSeries(series: List<List<SamplePointDto>>): List<SamplePointDto> {
+  val valuesByTimestamp = linkedMapOf<String, MutableList<Double>>()
+  series.flatten().forEach { point ->
+    valuesByTimestamp.getOrPut(point.timestamp) { mutableListOf() }.add(point.value)
+  }
+  return valuesByTimestamp
+    .map { (timestamp, values) -> SamplePointDto(timestamp, values.average()) }
+    .sortedBy { parseTimestampMillis(it.timestamp) ?: Long.MIN_VALUE }
+}
+
+private fun buildDiskTemperatureGroups(metrics: MetricsDto): List<DiskTemperatureGroup> {
+  val seriesByKey = linkedMapOf<String, MutableList<DiskMetricSeriesDto>>()
+  metrics.series.disks
+    .filter { it.temperatureC.isNotEmpty() }
+    .forEach { disk ->
+      seriesByKey.getOrPut(diskTemperatureKey(disk)) { mutableListOf() }.add(disk)
+    }
+  val latestByKey = metrics.latest.disks
+    .filter { it.temperatureC != null }
+    .groupBy(::diskTemperatureKey)
+
+  return (seriesByKey.keys + latestByKey.keys)
+    .distinct()
+    .mapNotNull { key ->
+      val seriesItems = seriesByKey[key].orEmpty()
+      val latestItems = latestByKey[key].orEmpty()
+      val points = averageTemperaturePointSeries(seriesItems.map { it.temperatureC })
+      val latestC = latestItems.mapNotNull { it.temperatureC }.averageOrNull()
+      if (points.isEmpty() && latestC == null) return@mapNotNull null
+      val model = seriesItems.mapNotNull { it.model?.takeIf(String::isNotBlank) }.firstOrNull()
+        ?: latestItems.mapNotNull { it.model?.takeIf(String::isNotBlank) }.firstOrNull()
+      val name = seriesItems.mapNotNull { it.name.takeIf(String::isNotBlank) }.firstOrNull()
+        ?: latestItems.mapNotNull { it.name.takeIf(String::isNotBlank) }.firstOrNull()
+      DiskTemperatureGroup(
+        key = key,
+        title = physicalDiskTemperatureTitle(key, model, name),
+        points = points,
+        latestC = latestC
+      )
+    }
+}
+
+private fun diskTemperatureKey(disk: DiskMetricSeriesDto): String =
+  disk.physicalDevice?.trim()?.takeIf { it.isNotEmpty() } ?: disk.id
+
+private fun diskTemperatureKey(disk: DiskDto): String =
+  disk.physicalDevice?.trim()?.takeIf { it.isNotEmpty() } ?: disk.id
+
+private fun physicalDiskTemperatureTitle(key: String, model: String?, name: String?): String {
+  val physicalLabel = when {
+    key.contains("PhysicalDrive", ignoreCase = true) -> "硬盘 ${key.substringAfterLast("PhysicalDrive", key)}"
+    key.startsWith("/dev/") -> "硬盘 ${key.substringAfterLast('/')}"
+    key.startsWith("sd") || key.startsWith("nvme") || key.startsWith("mmcblk") || key.startsWith("vd") || key.startsWith("xvd") -> "硬盘 $key"
+    key.matches(Regex("[a-zA-Z]+[0-9]+")) -> "硬盘 $key"
+    else -> null
+  }
+  return listOfNotNull(model, physicalLabel).joinToString(" · ").ifBlank {
+    name?.takeIf { it.isNotBlank() }?.let { "硬盘 · $it" } ?: "硬盘"
+  }
 }
 
 @Composable

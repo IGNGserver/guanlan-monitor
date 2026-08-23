@@ -446,6 +446,7 @@ function averageInstanceMetrics(
             filesystem: item.filesystem,
             model: item.model,
             vendor: item.vendor,
+            physicalDevice: item.physicalDevice,
             totalBytes: item.totalBytes
           },
           sums: {
@@ -475,6 +476,9 @@ function averageInstanceMetrics(
       if (item.integrated) current.meta.integrated = true;
       if ((!current.meta.memoryKind || current.meta.memoryKind === "unknown") && item.memoryKind) {
         current.meta.memoryKind = item.memoryKind;
+      }
+      if (!current.meta.physicalDevice && item.physicalDevice) {
+        current.meta.physicalDevice = item.physicalDevice;
       }
       if (item.temperatureSource === "cpuPackageShared" || (!current.meta.temperatureSource && item.temperatureSource)) {
         current.meta.temperatureSource = item.temperatureSource;
