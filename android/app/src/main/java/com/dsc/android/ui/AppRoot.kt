@@ -343,9 +343,19 @@ private fun DeviceListScreen(
   val haptic = LocalHapticFeedback.current
   var pendingDeleteDevice by remember(state.instanceType) { mutableStateOf<DeviceSummaryDto?>(null) }
   var editMode by remember(state.instanceType) { mutableStateOf(false) }
-  val visibleDevices = state.devices
+  var draftDeviceIds by remember(state.instanceType) { mutableStateOf<List<String>?>(null) }
+  val persistedDevices = state.devices
     .filter { it.instanceType == state.instanceType }
     .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
+  val persistedDeviceIds = persistedDevices.map { it.deviceId }
+  val draftIds = draftDeviceIds
+  val visibleDevices = if (editMode && draftIds != null) {
+    val devicesById = persistedDevices.associateBy { it.deviceId }
+    val draftIdSet = draftIds.toSet()
+    draftIds.mapNotNull { devicesById[it] } + persistedDevices.filterNot { it.deviceId in draftIdSet }
+  } else {
+    persistedDevices
+  }
   Scaffold(
     topBar = {
       TopAppBar(
@@ -359,8 +369,18 @@ private fun DeviceListScreen(
         actions = {
           IconButton(onClick = {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            editMode = !editMode
-            if (!editMode) pendingDeleteDevice = null
+            if (editMode) {
+              val idsToSave = visibleDevices.map { it.deviceId }
+              if (draftDeviceIds != null && idsToSave != persistedDeviceIds) {
+                onReorderDevices(idsToSave)
+              }
+              editMode = false
+              draftDeviceIds = null
+              pendingDeleteDevice = null
+            } else {
+              draftDeviceIds = persistedDeviceIds
+              editMode = true
+            }
           }) {
             if (editMode) {
               Text("完成", style = MaterialTheme.typography.labelLarge)
@@ -485,10 +505,10 @@ private fun DeviceListScreen(
             if (editMode) {
               val targetIndex = index + direction
               if (targetIndex in visibleDevices.indices) {
-                val reordered = visibleDevices.toMutableList()
+                val reordered = visibleDevices.map { it.deviceId }.toMutableList()
                 val moved = reordered.removeAt(index)
                 reordered.add(targetIndex, moved)
-                onReorderDevices(reordered.map { it.deviceId })
+                draftDeviceIds = reordered
               }
             }
           },
@@ -571,7 +591,7 @@ private fun DeviceListCard(
       Modifier.border(1.5.dp, MaterialTheme.colorScheme.error, CircleShape)
     }
   ElevatedCard(
-    modifier = Modifier.fillMaxWidth().clickable {
+    modifier = Modifier.fillMaxWidth().clickable(enabled = !editMode) {
       haptic.performHapticFeedback(HapticFeedbackType.LongPress)
       onOpenDevice()
     },
@@ -599,17 +619,17 @@ private fun DeviceListCard(
         }
       }
       FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        StatChip("CPU", formatPercent(device.cpuUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Cpu) })
-        StatChip("GPU", formatPercent(device.gpuUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Gpu) })
-        StatChip("GPU 内存", formatPercent(device.gpuMemoryUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Gpu) })
-        StatChip("内存", formatPercent(device.memoryUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Memory) })
-        StatChip("硬盘", formatPercent(device.diskUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Disk) })
-        StatChip("流量", "查看", onClick = onOpenTraffic)
+        StatChip("CPU", formatPercent(device.cpuUsagePercent), onClick = { if (!editMode) onOpenBlock(DeviceBlockKey.Cpu) })
+        StatChip("GPU", formatPercent(device.gpuUsagePercent), onClick = { if (!editMode) onOpenBlock(DeviceBlockKey.Gpu) })
+        StatChip("GPU 内存", formatPercent(device.gpuMemoryUsagePercent), onClick = { if (!editMode) onOpenBlock(DeviceBlockKey.Gpu) })
+        StatChip("内存", formatPercent(device.memoryUsagePercent), onClick = { if (!editMode) onOpenBlock(DeviceBlockKey.Memory) })
+        StatChip("硬盘", formatPercent(device.diskUsagePercent), onClick = { if (!editMode) onOpenBlock(DeviceBlockKey.Disk) })
+        StatChip("流量", "查看", onClick = { if (!editMode) onOpenTraffic() })
       }
       OutlinedButton(onClick = {
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         onOpenEditor()
-      }, modifier = Modifier.fillMaxWidth()) {
+      }, enabled = !editMode, modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Rounded.Edit, contentDescription = null)
         Spacer(Modifier.width(8.dp))
         Text("编辑记录项")
