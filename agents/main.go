@@ -179,6 +179,7 @@ type diskDeviceStats struct {
 	Model             string               `json:"model,omitempty"`
 	Vendor            string               `json:"vendor,omitempty"`
 	SourceKey         string               `json:"sourceKey,omitempty"`
+	PhysicalDevice    string               `json:"physicalDevice,omitempty"`
 	TemperatureC      *float64             `json:"temperatureC,omitempty"`
 	HealthStatus      string               `json:"healthStatus,omitempty"`
 	HealthReason      string               `json:"healthReason,omitempty"`
@@ -1398,6 +1399,9 @@ func collectSlowMetrics() slowMetrics {
 		for index := range result.disks {
 			disk := &result.disks[index]
 			metadata := windowsMetadata.DiskMetadata[disk.SourceKey]
+			if metadata.PhysicalDevice != "" {
+				disk.PhysicalDevice = metadata.PhysicalDevice
+			}
 			if sensor, ok := windowsDiskSensors[metadata.PhysicalDevice]; ok {
 				applyDiskSensorMetadata(disk, sensor)
 				temperatureSensors = append(temperatureSensors, sensor.TemperatureSensors...)
@@ -4832,17 +4836,18 @@ func collectDisks() ([]diskDeviceStats, storageUsage, error) {
 			metadata.TemperatureC = diskTemperatures[linuxBlockDeviceName(deviceName)]
 		}
 		disks = append(disks, diskDeviceStats{
-			ID:            fmt.Sprintf("%s:%s", deviceName, mountPoint),
-			Name:          deviceName,
-			MountPoint:    mountPoint,
-			FileSystem:    partition.Fstype,
-			Model:         metadata.Model,
-			Vendor:        metadata.Vendor,
-			SourceKey:     deviceName,
-			TemperatureC:  metadata.TemperatureC,
-			InterfaceType: metadata.InterfaceType,
-			TotalBytes:    usage.Total,
-			UsedBytes:     usage.Used,
+			ID:             fmt.Sprintf("%s:%s", deviceName, mountPoint),
+			Name:           deviceName,
+			MountPoint:     mountPoint,
+			FileSystem:     partition.Fstype,
+			Model:          metadata.Model,
+			Vendor:         metadata.Vendor,
+			SourceKey:      deviceName,
+			PhysicalDevice: linuxBlockDeviceName(deviceName),
+			TemperatureC:   metadata.TemperatureC,
+			InterfaceType:  metadata.InterfaceType,
+			TotalBytes:     usage.Total,
+			UsedBytes:      usage.Used,
 		})
 		totalBytes += usage.Total
 		usedBytes += usage.Used

@@ -79,6 +79,7 @@ export interface InstanceMetricRecord {
   filesystem?: string;
   model?: string;
   vendor?: string;
+  physicalDevice?: string;
   interfaceType?: string | null;
   totalBytes?: number;
   usagePercent?: number;

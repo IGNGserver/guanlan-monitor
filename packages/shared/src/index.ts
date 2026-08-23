@@ -133,6 +133,7 @@ export interface DiskDeviceStats {
   model?: string;
   vendor?: string;
   sourceKey?: string;
+  physicalDevice?: string;
   temperatureC?: number | null;
   healthStatus?: string | null;
   healthReason?: string | null;
@@ -573,6 +574,7 @@ export interface DiskMetricSeries {
   filesystem?: string;
   model?: string;
   vendor?: string;
+  physicalDevice?: string;
   totalBytes: SamplePoint[];
   usagePercent: SamplePoint[];
   activePercent: SamplePoint[];
