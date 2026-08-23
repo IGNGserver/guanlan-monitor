@@ -1305,18 +1305,18 @@ private fun hasTemperatureData(metrics: MetricsDto): Boolean =
     metrics.series.temperatureSensors.isNotEmpty() ||
     metrics.latest.cpuTemperatureC != null ||
     metrics.latest.gpus.any { it.temperatureC != null } ||
-    metrics.latest.disks.any { it.temperatureC != null } ||
+    metrics.latest.disks.any { validDiskTemperature(it.temperatureC) != null } ||
     metrics.series.cpuTemperatureC.isNotEmpty() ||
     metrics.series.gpuTemperatureC.isNotEmpty() ||
     metrics.series.cpus.any { it.temperatureC.isNotEmpty() } ||
     metrics.series.gpus.any { it.temperatureC.isNotEmpty() } ||
-    metrics.series.disks.any { it.temperatureC.isNotEmpty() }
+    metrics.series.disks.any { disk -> disk.temperatureC.any { validDiskTemperature(it.value) != null } }
 
 private fun temperatureOverviewValue(sensors: List<TemperatureSensorDto>, metrics: MetricsDto): String {
   val current = sensors.mapNotNull { it.currentC }.averageOrNull()
     ?: metrics.latest.cpuTemperatureC
     ?: metrics.latest.gpus.mapNotNull { it.temperatureC }.averageOrNull()
-    ?: metrics.latest.disks.mapNotNull { it.temperatureC }.averageOrNull()
+    ?: metrics.latest.disks.mapNotNull { validDiskTemperature(it.temperatureC) }.averageOrNull()
   return current?.let(::formatCelsius) ?: "未知"
 }
 
@@ -1464,7 +1464,7 @@ private fun DiskSheetContent(metrics: MetricsDto, tabId: String, selectedWindow:
   MetaGrid(
     buildList {
       add("接口" to (disk.interfaceType ?: "未知"))
-      add("温度" to (disk.temperatureC?.let { formatCelsius(it) } ?: "未知"))
+      add("温度" to (validDiskTemperature(disk.temperatureC)?.let(::formatCelsius) ?: "未知"))
       add("活动" to (disk.activePercent?.let { formatPercent(it) } ?: "未知"))
       add("响应" to (disk.averageResponseMs?.let { "%.1f ms".format(it) } ?: "未知"))
       disk.healthStatus?.let { add("健康" to formatDiskHealth(it)) }
@@ -1640,7 +1640,7 @@ private fun buildDiskTemperatureGroups(metrics: MetricsDto): List<DiskTemperatur
       seriesByKey.getOrPut(diskTemperatureKey(disk)) { mutableListOf() }.add(disk)
     }
   val latestByKey = metrics.latest.disks
-    .filter { it.temperatureC != null }
+    .filter { validDiskTemperature(it.temperatureC) != null }
     .groupBy(::diskTemperatureKey)
 
   return (seriesByKey.keys + latestByKey.keys)
@@ -1648,8 +1648,10 @@ private fun buildDiskTemperatureGroups(metrics: MetricsDto): List<DiskTemperatur
     .mapNotNull { key ->
       val seriesItems = seriesByKey[key].orEmpty()
       val latestItems = latestByKey[key].orEmpty()
-      val points = averageTemperaturePointSeries(seriesItems.map { it.temperatureC })
-      val latestC = latestItems.mapNotNull { it.temperatureC }.averageOrNull()
+      val points = averageTemperaturePointSeries(
+        seriesItems.map { disk -> disk.temperatureC.filter { validDiskTemperature(it.value) != null } }
+      )
+      val latestC = latestItems.mapNotNull { validDiskTemperature(it.temperatureC) }.averageOrNull()
       if (points.isEmpty() && latestC == null) return@mapNotNull null
       val model = seriesItems.mapNotNull { it.model?.takeIf(String::isNotBlank) }.firstOrNull()
         ?: latestItems.mapNotNull { it.model?.takeIf(String::isNotBlank) }.firstOrNull()
@@ -1918,12 +1920,13 @@ private fun DiskInstanceCard(
     subtitle = listOfNotNull(disk.mountPoint, disk.filesystem, disk.model?.takeIf { it.isNotBlank() }).joinToString(" · "),
     onEdit = onEdit
   ) {
+    val temperaturePoints = series?.temperatureC.orEmpty().filter { validDiskTemperature(it.value) != null }
     MetricCardGrid(
       cards = buildList {
         add(MetricCardModel("容量", buildUsage(disk.usedBytes, disk.totalBytes), series?.usagePercent.orEmpty(), ::formatPercent, 100.0))
         add(MetricCardModel("读取", formatSpeed(series?.readBytesPerSec?.lastOrNull()?.value), series?.readBytesPerSec.orEmpty(), ::formatSpeed))
         add(MetricCardModel("写入", formatSpeed(series?.writeBytesPerSec?.lastOrNull()?.value), series?.writeBytesPerSec.orEmpty(), ::formatSpeed))
-        add(MetricCardModel("温度", formatCelsius(disk.temperatureC), series?.temperatureC.orEmpty(), ::formatCelsius))
+        add(MetricCardModel("温度", formatCelsius(validDiskTemperature(disk.temperatureC)), temperaturePoints, ::formatCelsius))
       },
       chartWindow = chartWindow
     )
@@ -2655,6 +2658,7 @@ private fun gpuTemperatureSourceLabel(source: String?): String = when {
 private fun formatPercent(value: Double?): String = if (value == null) "--" else "${"%.1f".format(value)}%"
 private fun formatMHz(value: Double?): String = if (value == null) "--" else "${"%.0f".format(value)} MHz"
 private fun formatCelsius(value: Double?): String = if (value == null) "--" else "${"%.1f".format(value)} °C"
+private fun validDiskTemperature(value: Double?): Double? = value?.takeIf { it.isFinite() && it > 0.0 }
 private fun formatSpeed(value: Double?): String = formatBytes(value ?: 0.0) + "/s"
 private fun formatDiskHealth(value: String): String = when (value.lowercase()) {
   "good" -> "正常"
