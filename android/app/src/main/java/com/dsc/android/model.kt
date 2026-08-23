@@ -35,6 +35,11 @@ data class DeviceSummaryDto(
 )
 
 @Serializable
+data class DeviceReorderPayloadDto(
+  val deviceIds: List<String>
+)
+
+@Serializable
 data class VirtualMachineIdentityDto(
   val vmId: String,
   val platform: String,

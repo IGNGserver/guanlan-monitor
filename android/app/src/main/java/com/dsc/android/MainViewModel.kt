@@ -666,7 +666,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   fun reorderDevices(deviceIds: List<String>) {
     val currentApi = api ?: return
     viewModelScope.launch {
-      runCatching { currentApi.reorderDevices(mapOf("deviceIds" to deviceIds)) }
+      runCatching { currentApi.reorderDevices(DeviceReorderPayloadDto(deviceIds)) }
         .onSuccess {
           refresh()
         }
