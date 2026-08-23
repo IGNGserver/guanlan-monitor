@@ -1766,40 +1766,6 @@ private fun storageTemperatureTitle(
   return "硬盘 · $identity"
 }
 
-private fun buildDiskTemperatureGroups(metrics: MetricsDto): List<DiskTemperatureGroup> {
-  val seriesByKey = linkedMapOf<String, MutableList<DiskMetricSeriesDto>>()
-  metrics.series.disks
-    .filter { it.temperatureC.any { point -> validDiskTemperature(point.value) != null } }
-    .forEach { disk ->
-      seriesByKey.getOrPut(diskTemperatureKey(disk)) { mutableListOf() }.add(disk)
-    }
-  val latestByKey = metrics.latest.disks
-    .filter { validDiskTemperature(it.temperatureC) != null }
-    .groupBy(::diskTemperatureKey)
-
-  return (seriesByKey.keys + latestByKey.keys)
-    .distinct()
-    .mapNotNull { key ->
-      val seriesItems = seriesByKey[key].orEmpty()
-      val latestItems = latestByKey[key].orEmpty()
-      val points = averageTemperaturePointSeries(
-        seriesItems.map { disk -> disk.temperatureC.filter { validDiskTemperature(it.value) != null } }
-      )
-      val latestC = latestItems.mapNotNull { validDiskTemperature(it.temperatureC) }.averageOrNull()
-      if (points.isEmpty() && latestC == null) return@mapNotNull null
-      val model = seriesItems.mapNotNull { it.model?.takeIf(String::isNotBlank) }.firstOrNull()
-        ?: latestItems.mapNotNull { it.model?.takeIf(String::isNotBlank) }.firstOrNull()
-      val name = seriesItems.mapNotNull { it.name.takeIf(String::isNotBlank) }.firstOrNull()
-        ?: latestItems.mapNotNull { it.name.takeIf(String::isNotBlank) }.firstOrNull()
-      DiskTemperatureGroup(
-        key = key,
-        title = physicalDiskTemperatureTitle(key, model, name),
-        points = points,
-        latestC = latestC
-      )
-    }
-}
-
 private fun buildCpuTemperatureCards(metrics: MetricsDto, selectedWindow: MetricWindow): List<MetricCardModel> {
   val latestById = metrics.latest.cpuPackages.associateBy { it.id }
   val instanceIds = (metrics.series.cpus.map { it.id } + metrics.latest.cpuPackages.map { it.id }).toSet()
