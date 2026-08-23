@@ -132,6 +132,7 @@ export function payloadToTimeSeries(
   const enabled = new Set(config.enabledMetrics);
   const resolvedCpuFrequencyMHz = resolveCpuFrequencyMHz(payload);
   const resolvedCpuTemperatureC = resolveCpuTemperatureC(payload);
+  const cpuPackageCount = (payload.cpuPackages ?? []).length;
   const totalGpuMemory = payload.gpus.reduce((sum, gpu) => sum + gpu.memoryTotalBytes, 0);
   const usedGpuMemory = payload.gpus.reduce((sum, gpu) => sum + gpu.memoryUsedBytes, 0);
   const gpuUsagePercent =
@@ -188,7 +189,9 @@ export function payloadToTimeSeries(
         l3CacheBytes: enabled.has("cpuTopology") && instanceEnabled.has("cpuTopology") ? cpu.l3CacheBytes ?? undefined : undefined,
         usagePercent: enabled.has("cpuUsage") && instanceEnabled.has("cpuUsage") ? cpu.usagePercent ?? payload.cpuUsagePercent : 0,
         frequencyMHz: enabled.has("cpuFrequency") && instanceEnabled.has("cpuFrequency") ? cpu.frequencyMHz ?? resolvedCpuFrequencyMHz ?? 0 : 0,
-        temperatureC: enabled.has("cpuTemperature") && instanceEnabled.has("cpuTemperature") ? cpu.temperatureC ?? payload.cpuTemperatureC : undefined
+        temperatureC: enabled.has("cpuTemperature") && instanceEnabled.has("cpuTemperature")
+          ? cpu.temperatureC ?? (cpuPackageCount === 1 ? resolvedCpuTemperatureC : undefined)
+          : undefined
       } satisfies InstanceMetricRecord;
     });
   const networks = (payload.networkInterfaces ?? [])
@@ -455,7 +458,9 @@ function normalizeTrafficSeries(values: number[]) {
 }
 
 function cpuInstancesAtPoint(point: TimeSeriesRecord, config: DeviceMetricConfigValue): InstanceMetricRecord[] {
-  const instances = point.cpus ?? (point.recordedDetails?.cpuPackages ?? []).map((cpu) => ({
+  const recordedCpuPackages = point.recordedDetails?.cpuPackages ?? [];
+  const aggregateTemperature = recordedCpuPackages.length === 1 ? point.cpuTemperatureC : undefined;
+  const instances = point.cpus ?? recordedCpuPackages.map((cpu) => ({
     id: cpu.id,
     name: cpu.name,
     model: cpu.model,
@@ -464,7 +469,7 @@ function cpuInstancesAtPoint(point: TimeSeriesRecord, config: DeviceMetricConfig
     l3CacheBytes: cpu.l3CacheBytes ?? undefined,
     usagePercent: cpu.usagePercent ?? point.cpuUsagePercent,
     frequencyMHz: cpu.frequencyMHz ?? point.cpuFrequencyMHz,
-    temperatureC: cpu.temperatureC ?? point.cpuTemperatureC
+    temperatureC: cpu.temperatureC ?? aggregateTemperature
   }));
   return instances.filter((cpu) => isInstanceEnabled(config, "cpu", cpu.id));
 }
