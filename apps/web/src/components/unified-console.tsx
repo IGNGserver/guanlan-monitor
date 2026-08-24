@@ -29,7 +29,20 @@ export function UnifiedConsole({ initialDeviceId = null }: { initialDeviceId?: s
   ), [initialDeviceId]);
 
   if (state === "loading") {
-    return <main className={styles.loginShell}><div className={`${styles.doubleBezelShell} ${styles.loginCardShell}`}><div className={styles.doubleBezelInner} style={{ textAlign: "center" }}><h1 style={{ margin: 0, fontSize: "20px" }}>正在连接观澜中枢</h1><p style={{ color: "var(--text-muted)" }}>正在检查当前登录会话...</p></div></div></main>;
+    return (
+      <main className={styles.loginShell}>
+        <section className={styles.loginLoading} aria-live="polite">
+          <div className={styles.loginBrand}>
+            <img src="/logo.png" alt="观澜" className={styles.brandLogoImage} />
+            <span>观澜</span>
+            <small>WEB HUB</small>
+          </div>
+          <div className={styles.loginLoadingBar} aria-hidden="true" />
+          <h1>正在连接观澜中枢</h1>
+          <p>正在检查当前登录会话...</p>
+        </section>
+      </main>
+    );
   }
 
   if (state === "anonymous") {
