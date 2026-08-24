@@ -10,7 +10,7 @@ on:
       targets:
         description: "SSH host names or addresses, separated by spaces"
         required: true
-        default: "pve1 pve2 pve3 nas"
+        default: "192.168.5.8 192.168.5.7 192.168.5.10 nas"
         type: string
 
 permissions:
@@ -86,8 +86,13 @@ jobs:
               if [[ -s "$HOME/.ssh/id_ed25519" ]]; then
                 ssh_options+=(-i "$HOME/.ssh/id_ed25519")
               fi
+              if [[ "$remote_user" == 'root' ]]; then
+                remote_update_command='/opt/device-state-console-agent/device-state-console-agent update --channel test; /opt/device-state-console-agent/device-state-console-agent version'
+              else
+                remote_update_command='sudo -n /opt/device-state-console-agent/device-state-console-agent update --channel test; sudo -n /opt/device-state-console-agent/device-state-console-agent version'
+              fi
               reported="$(ssh "${ssh_options[@]}" "$remote_user@$target" \
-                "sudo -n /opt/device-state-console-agent/device-state-console-agent update --channel test; sudo -n /opt/device-state-console-agent/device-state-console-agent version")"
+                "$remote_update_command")"
             fi
             echo "$target: $reported"
             grep -Fq "$REQUESTED_VERSION" <<< "$reported" || {
