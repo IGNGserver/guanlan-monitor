@@ -52,16 +52,18 @@ export function getWidgetLines(widgetType: string, metrics: MetricsResponse | nu
   }
   if (!series) return { lines: [] };
   if (widgetType === "cpu-usage" || widgetType === "cpu-usage-pie") {
-    const lines = series.cpus?.length && targetId ? series.cpus.filter((item) => item.id === targetId).map((item) => ({ label: item.name, points: item.usagePercent, formatter: (value: number) => `${Math.round(value)}%` })) : [{ label: "CPU 使用率", points: series.cpuUsagePercent, formatter: (value: number) => `${Math.round(value)}%` }];
+    const lines = series.cpus?.length && targetId ? series.cpus.filter((item) => item.id === targetId).map((item) => ({ label: item.socketIndex != null ? `Socket ${item.socketIndex}` : item.name, points: item.usagePercent, formatter: (value: number) => `${Math.round(value)}%` })) : [{ label: "CPU 使用率", points: series.cpuUsagePercent, formatter: (value: number) => `${Math.round(value)}%` }];
     return { lines, valueFormatter: (value) => `${Math.round(value)}%` };
   }
   if (widgetType === "cpu-frequency") {
     const cpu = targetId ? series.cpus?.find((item) => item.id === targetId) : undefined;
-    return { lines: [{ label: "主频", points: cpu?.frequencyMHz ?? series.cpuFrequencyMHz, formatter: (value: number) => `${Math.round(value)} MHz` }], valueFormatter: (value) => `${Math.round(value)} MHz` };
+    const fallback = targetId && (series.cpus?.length ?? 0) > 1 ? [] : series.cpuFrequencyMHz;
+    return { lines: [{ label: "主频", points: cpu?.frequencyMHz ?? fallback, formatter: (value: number) => `${Math.round(value)} MHz` }], valueFormatter: (value) => `${Math.round(value)} MHz` };
   }
   if (widgetType === "cpu-temperature") {
     const cpu = targetId ? series.cpus?.find((item) => item.id === targetId) : undefined;
-    return { lines: [{ label: "温度", points: cpu?.temperatureC ?? series.cpuTemperatureC, formatter: (value: number) => `${Math.round(value)} °C` }], valueFormatter: (value) => `${Math.round(value)} °C` };
+    const fallback = targetId && (series.cpus?.length ?? 0) > 1 ? [] : series.cpuTemperatureC;
+    return { lines: [{ label: "温度", points: cpu?.temperatureC ?? fallback, formatter: (value: number) => `${Math.round(value)} °C` }], valueFormatter: (value) => `${Math.round(value)} °C` };
   }
   if (widgetType === "memory-usage" || widgetType === "memory-usage-pie") return { lines: [{ label: "物理内存", points: series.memoryUsedBytes, formatter: formatBytes }, { label: "已提交", points: series.memoryCommittedBytes, formatter: formatBytes }], valueFormatter: formatBytes };
   if (widgetType === "disk-capacity" || widgetType === "disk-capacity-pie") {

@@ -203,6 +203,77 @@ func TestApplyCPUPackageTemperatureDoesNotMislabelMultiplePackages(t *testing.T)
 	}
 }
 
+func TestCPUUsagePercentBetweenCalculatesSocketDelta(t *testing.T) {
+	value, ok := cpuUsagePercentBetween(
+		cpuSnapshot{idle: 100, total: 1_000},
+		cpuSnapshot{idle: 150, total: 1_100},
+	)
+	if !ok || value != 50 {
+		t.Fatalf("expected 50%% CPU usage from counter delta, got value=%v ok=%v", value, ok)
+	}
+}
+
+func TestCPUUsagePercentBetweenRejectsCounterReset(t *testing.T) {
+	if _, ok := cpuUsagePercentBetween(cpuSnapshot{idle: 200, total: 1_000}, cpuSnapshot{idle: 100, total: 1_100}); ok {
+		t.Fatal("counter reset must not produce a CPU usage sample")
+	}
+}
+
+func TestApplyCPUPackageRuntimeMetricsKeepsSocketValuesIndependent(t *testing.T) {
+	usage0, frequency0, temperature0 := 20.0, 2_400.0, 85.0
+	usage1, frequency1, temperature1 := 60.0, 3_100.0, 73.0
+	packages := []cpuPackageStats{{ID: "cpu-0", SocketIndex: 0}, {ID: "cpu-1", SocketIndex: 1}}
+	runtimeMetrics := cpuRuntimeMetrics{
+		linuxDynamic: true,
+		packages: map[string]cpuPackageRuntimeMetrics{
+			"cpu-0": {usagePercent: &usage0, frequencyMHz: &frequency0, temperatureC: &temperature0},
+			"cpu-1": {usagePercent: &usage1, frequencyMHz: &frequency1, temperatureC: &temperature1},
+		},
+	}
+	updated := applyCPUPackageRuntimeMetrics(packages, runtimeMetrics)
+	if len(updated) != 2 || updated[0].UsagePercent == nil || updated[1].UsagePercent == nil {
+		t.Fatalf("expected runtime values on both packages, got %#v", updated)
+	}
+	if *updated[0].UsagePercent != usage0 || *updated[1].UsagePercent != usage1 || *updated[0].FrequencyMHz != frequency0 || *updated[1].FrequencyMHz != frequency1 || *updated[0].TemperatureC != temperature0 || *updated[1].TemperatureC != temperature1 {
+		t.Fatalf("socket runtime values were not kept independent: %#v", updated)
+	}
+}
+
+func TestApplyCPUPackageRuntimeMetricsDoesNotReuseUnavailableSocketValues(t *testing.T) {
+	staleFrequency, staleTemperature := 2_400.0, 85.0
+	packages := []cpuPackageStats{{
+		ID:           "cpu-1",
+		FrequencyMHz: &staleFrequency,
+		TemperatureC: &staleTemperature,
+	}}
+	updated := applyCPUPackageRuntimeMetrics(packages, cpuRuntimeMetrics{
+		linuxDynamic: true,
+		packages:     map[string]cpuPackageRuntimeMetrics{"cpu-1": {}},
+	})
+	if updated[0].FrequencyMHz != nil || updated[0].TemperatureC != nil || updated[0].UsagePercent != nil {
+		t.Fatalf("unavailable socket metrics must remain nil, got %#v", updated[0])
+	}
+}
+
+func TestLinuxCPUPackageIDMapsKnownSensorNames(t *testing.T) {
+	cases := []struct {
+		hardware string
+		label    string
+		identity string
+		want     string
+	}{
+		{hardware: "coretemp", label: "Package id 0", identity: "coretemp-/sys/devices/platform/coretemp.0", want: "cpu-0"},
+		{hardware: "nct6779", label: "PECI Agent 1", identity: "nct6779-/sys/devices/platform/nct6775.2592", want: "cpu-1"},
+		{hardware: "coretemp", label: "Core 0", identity: "coretemp-/sys/devices/platform/coretemp.1", want: "cpu-1"},
+		{hardware: "x86_pkg_temp", label: "x86_pkg_temp", identity: "thermal_zone1", want: "cpu-1"},
+	}
+	for _, testCase := range cases {
+		if got := linuxCPUPackageID(testCase.hardware, testCase.label, testCase.identity); got != testCase.want {
+			t.Errorf("linuxCPUPackageID(%q, %q, %q) = %q, want %q", testCase.hardware, testCase.label, testCase.identity, got, testCase.want)
+		}
+	}
+}
+
 func TestMergeSlowMetricsReappliesCurrentCPUTemperatureToIntegratedGPU(t *testing.T) {
 	previousTemperature := 85.0
 	currentTemperature := 87.0
