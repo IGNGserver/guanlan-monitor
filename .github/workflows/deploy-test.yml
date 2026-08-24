@@ -140,6 +140,14 @@ jobs:
             export WEB_PORT DSC_VERSION DSC_RELEASE_CHANNEL
             export DSC_SERVER_IMAGE='ghcr.io/igngserver/device-state-console-server'
             export DSC_WEB_IMAGE='ghcr.io/igngserver/device-state-console-web'
+            if [[ -f .env ]]; then
+              legacy_mysql_url="$(sed -n 's/^MYSQL_URL=//p' .env | head -n 1 | tr -d '\r')"
+              if [[ -n "$legacy_mysql_url" ]]; then
+                legacy_mysql_url="${legacy_mysql_url/@127.0.0.1:/@mysql:}"
+                legacy_mysql_url="${legacy_mysql_url/@localhost:/@mysql:}"
+                export MYSQL_URL="$legacy_mysql_url"
+              fi
+            fi
             previous="$(docker inspect --format '{{.Config.Image}}' $(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\1/' || true)"
             docker compose up -d --no-deps --pull never server web
             healthy=0
@@ -166,6 +174,7 @@ jobs:
               "set -euo pipefail; \
                cd '$DEPLOY_PATH'; \
                export WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' DSC_SERVER_IMAGE='ghcr.io/igngserver/device-state-console-server' DSC_WEB_IMAGE='ghcr.io/igngserver/device-state-console-web'; \
+               if [ -f .env ]; then legacy_mysql_url=\$(sed -n 's/^MYSQL_URL=//p' .env | head -n 1 | tr -d '\\r'); if [ -n \"\$legacy_mysql_url\" ]; then legacy_mysql_url=\${legacy_mysql_url/@127.0.0.1:/@mysql:}; legacy_mysql_url=\${legacy_mysql_url/@localhost:/@mysql:}; export MYSQL_URL=\"\$legacy_mysql_url\"; fi; fi; \
                previous=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\\1/' || true); \
                docker compose up -d --no-deps --pull never server web; \
                healthy=0; for attempt in \$(seq 1 30); do \
