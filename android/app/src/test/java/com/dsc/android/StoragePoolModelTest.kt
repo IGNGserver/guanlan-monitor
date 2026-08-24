@@ -22,7 +22,7 @@ class StoragePoolModelTest {
     )
     val metrics = MetricsDto(
       status = "online",
-      device = DeviceDetailDto("device-1", "pve3", "linux", "proxmox", "x86_64"),
+      device = DeviceDetailDto("device-1", "pve3", "linux", "proxmox", "x86_64", status = "online"),
       latest = latest,
       series = series
     )
@@ -39,7 +39,7 @@ class StoragePoolModelTest {
   fun hidesInactiveOrCapacitylessPools() {
     val metrics = MetricsDto(
       status = "online",
-      device = DeviceDetailDto("device-1", "pve1", "linux", "proxmox", "x86_64"),
+      device = DeviceDetailDto("device-1", "pve1", "linux", "proxmox", "x86_64", status = "online"),
       latest = DeviceLatestDto(
         storagePools = listOf(
           VirtualizationStorageDto("pve1:pve-ssd", "pve-ssd", node = "pve3", active = false),
