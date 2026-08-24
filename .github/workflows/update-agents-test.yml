@@ -123,7 +123,7 @@ jobs:
             exit 1
           }
           unzip -q "$archive" -d "$package_dir"
-          agent_binary="$package_dir/linux-x64/device-state-console-agent"
+          agent_binary="$package_dir/device-state-console-agent"
           [[ -x "$agent_binary" ]] || {
             echo "Release package is missing the Linux Agent binary." >&2
             exit 1
@@ -140,11 +140,11 @@ jobs:
           set -euo pipefail
           work_dir="${RUNNER_TEMP:-/tmp}/dsc-agent-update-${GITHUB_RUN_ID:-manual}"
           trap 'rm -rf "$work_dir"' EXIT
-          [[ -n "$work_dir" && -d "$work_dir/package/linux-x64" ]] || {
+          [[ -n "$work_dir" && -d "$work_dir/package" ]] || {
             echo "Verified Agent package directory is unavailable." >&2
             exit 1
           }
-          agent_binary="$work_dir/package/linux-x64/device-state-console-agent"
+          agent_binary="$work_dir/package/device-state-console-agent"
 
           install_script='set -euo pipefail
           version="$1"
