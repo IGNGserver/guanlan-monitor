@@ -20,11 +20,13 @@ import { detectTouchSupport, resolveInteractionScale, type InteractionScaleSetti
 
 export type SettingsSection =
   | "general"
+  | "workspace"
   | "appearance"
   | "connections"
   | "agent"
   | "data"
   | "shortcuts"
+  | "session"
   | "about";
 
 export type WorkspaceRoute =
@@ -113,11 +115,13 @@ const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 const defaultRoute: WorkspaceRoute = { kind: "overview" };
 const settingsSections = new Set<SettingsSection>([
   "general",
+  "workspace",
   "appearance",
   "connections",
   "agent",
   "data",
   "shortcuts",
+  "session",
   "about"
 ]);
 
@@ -262,11 +266,11 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   }, []);
 
   const openSettings = useCallback(
-    (section: SettingsSection = "general") => {
+    (section: SettingsSection = adapter.capabilities.canControlNativeWindow ? "general" : "workspace") => {
       setReturnRoute((current) => (route.kind === "settings" ? current : route));
       navigate({ kind: "settings", section });
     },
-    [navigate, route]
+    [adapter, navigate, route]
   );
 
   const closeSettings = useCallback(() => navigate(returnRoute), [navigate, returnRoute]);
@@ -409,7 +413,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
       }
       if (!editing && (event.ctrlKey || event.metaKey) && event.key === ",") {
         event.preventDefault();
-        openSettings("general");
+        openSettings();
       }
       if (!editing && (event.key === "F5" || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "r"))) {
         event.preventDefault();

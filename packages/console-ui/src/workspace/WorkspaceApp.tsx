@@ -259,7 +259,7 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
             ))}
           </div>
           {hubAbnormal ? (
-            <button className="workspace-sidebar-hub-alert" type="button" onClick={() => openSettings("connections")} title="中枢连接异常，点击检查连接设置">
+            <button className="workspace-sidebar-hub-alert" type="button" onClick={() => openSettings(capabilities.canConfigureConnection ? "connections" : "workspace")} title={capabilities.canConfigureConnection ? "中枢连接异常，点击检查连接设置" : "中枢连接异常，点击查看中枢设置"}>
               <StatusDot state="warning" />
               <span>中枢连接异常</span>
             </button>
@@ -288,7 +288,7 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
         {inSettings ? (
           <button className="workspace-nav-item" type="button" onClick={closeSettings} title="返回设备控制台"><Icon name="back" /><span>返回控制台</span></button>
         ) : (
-          <button className="workspace-nav-item" type="button" onClick={() => openSettings("general")} title="设置"><Icon name="settings" /><span>设置</span></button>
+          <button className="workspace-nav-item" type="button" onClick={() => openSettings()} title="设置"><Icon name="settings" /><span>设置</span></button>
         )}
         <button className="workspace-sidebar__support" type="button" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor/issues")} title="打开帮助与反馈">
           <span>帮助与反馈</span><Icon name="external" size={14} />
@@ -298,7 +298,7 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
   );
 }
 
-const settingsNav: Array<{ id: SettingsSection; label: string; icon: IconName }> = [
+const desktopSettingsNav: Array<{ id: SettingsSection; label: string; icon: IconName }> = [
   { id: "general", label: "通用", icon: "settings" },
   { id: "appearance", label: "外观", icon: "appearance" },
   { id: "connections", label: "中枢与连接", icon: "connection" },
@@ -308,9 +308,22 @@ const settingsNav: Array<{ id: SettingsSection; label: string; icon: IconName }>
   { id: "about", label: "关于观澜", icon: "about" }
 ];
 
+const webSettingsNav: Array<{ id: SettingsSection; label: string; icon: IconName }> = [
+  { id: "workspace", label: "工作台", icon: "overview" },
+  { id: "appearance", label: "外观", icon: "appearance" },
+  { id: "session", label: "会话安全", icon: "connection" },
+  { id: "data", label: "数据与更新", icon: "data" },
+  { id: "shortcuts", label: "快捷键", icon: "keyboard" },
+  { id: "about", label: "关于观澜", icon: "about" }
+];
+
+function settingsNavigation(capabilities: ReturnType<typeof useWorkspace>["capabilities"]) {
+  return capabilities.canControlNativeWindow ? desktopSettingsNav : webSettingsNav;
+}
+
 function SettingsSidebar() {
   const { route, navigate, capabilities } = useWorkspace();
-  const visibleSettings = settingsNav.filter((item) => {
+  const visibleSettings = settingsNavigation(capabilities).filter((item) => {
     if (item.id === "agent") return capabilities.canManageLocalAgent;
     if (item.id === "connections") return capabilities.canConfigureConnection;
     return true;
@@ -382,8 +395,8 @@ function WindowTitleBar() {
 }
 
 function TopBar() {
-  const { route, snapshot, refreshing, mutationPending, refresh, setCommandOpen, sidebarCollapsed, setSidebarCollapsed, openSettings } = useWorkspace();
-  const title = route.kind === "overview" ? "总览" : route.kind === "device" ? "设备详情" : route.kind === "hub" ? "中枢详情" : settingsNav.find((item) => item.id === route.section)?.label ?? "设置";
+  const { route, snapshot, refreshing, mutationPending, refresh, setCommandOpen, sidebarCollapsed, setSidebarCollapsed, openSettings, capabilities } = useWorkspace();
+  const title = route.kind === "overview" ? "总览" : route.kind === "device" ? "设备详情" : route.kind === "hub" ? "中枢详情" : settingsNavigation(capabilities).find((item) => item.id === route.section)?.label ?? "设置";
   const sourceState = snapshot?.source === "cache" ? "cached" : snapshot?.session.authenticated ? "online" : snapshot?.source === "empty" ? "unknown" : "offline";
   return (
     <header className="workspace-topbar">
@@ -413,7 +426,7 @@ function ShellNotice() {
 }
 
 function CommandPalette() {
-  const { commandOpen, setCommandOpen, searchQuery, setSearchQuery, filteredDevices, navigate, openSettings } = useWorkspace();
+  const { commandOpen, setCommandOpen, searchQuery, setSearchQuery, filteredDevices, navigate, openSettings, capabilities } = useWorkspace();
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
@@ -461,8 +474,10 @@ function CommandPalette() {
   if (!commandOpen) return null;
   const commands: Array<{ label: string; detail: string; action: () => void }> = [
     { label: "打开总览", detail: "查看所有设备状态", action: () => navigate({ kind: "overview" }) },
-    { label: "打开连接设置", detail: "添加或重新认证中枢", action: () => openSettings("connections") },
-    { label: "打开本机 Agent", detail: "控制本机采集服务", action: () => openSettings("agent") },
+    capabilities.canConfigureConnection
+      ? { label: "打开连接设置", detail: "添加或重新认证中枢", action: () => openSettings("connections") }
+      : { label: "打开中枢工作台", detail: "查看网页端同步和会话状态", action: () => openSettings("workspace") },
+    ...(capabilities.canManageLocalAgent ? [{ label: "打开本机 Agent", detail: "控制本机采集服务", action: () => openSettings("agent") }] : []),
     ...filteredDevices.slice(0, 8).map((device) => ({ label: device.hostname, detail: `${device.os} · ${device.deviceId}`, action: () => navigate({ kind: "device", deviceId: device.deviceId }) }))
   ];
   const query = searchQuery.trim().toLowerCase();
@@ -631,7 +646,7 @@ function DeviceRow({
 }
 
 function OverviewPage() {
-  const { snapshot, devices, instanceType, metricsWindow, loading, mutationPending, error, refresh, openSettings, deleteInstance, reorderInstances } = useWorkspace();
+  const { snapshot, devices, instanceType, metricsWindow, loading, mutationPending, error, refresh, openSettings, deleteInstance, reorderInstances, capabilities } = useWorkspace();
   const [deleteTarget, setDeleteTarget] = useState<DeviceSummary | null>(null);
   if (loading && !snapshot) return <LoadingSurface />;
   if (!snapshot) return <ErrorSurface title="无法读取设备状态" detail={error ?? "桌面桥接尚未准备好"} onRetry={() => void refresh()} />;
@@ -646,7 +661,12 @@ function OverviewPage() {
   const overviewInstances = (snapshot.overviewMetrics?.instances ?? []).filter((instance) => (instance.instanceType ?? "device") === instanceType);
   const liveDevices = devices.filter((device) => device.status === "online");
   const instanceLabel = instanceType === "virtual_machine" ? "虚拟机" : "普通设备";
-  const noDataSettingsSection = snapshot.localBackend ? "agent" : "connections";
+  const webSettings = !capabilities.canControlNativeWindow;
+  const primarySettingsSection: SettingsSection = capabilities.canConfigureConnection ? "connections" : "workspace";
+  const noDataSettingsSection: SettingsSection = capabilities.canManageLocalAgent
+    ? (snapshot.localBackend ? "agent" : "connections")
+    : "workspace";
+  const settingsLabel = capabilities.canConfigureConnection ? "连接设置" : "中枢设置";
   const metricWindowLabel = ({ "1m": "1 分钟", "5m": "5 分钟", "15m": "15 分钟", "1h": "1 小时", "6h": "6 小时", "24h": "24 小时", "1d": "1 天", "7d": "7 天", "1w": "1 周", "30d": "30 天", "1mo": "1 个月", "90d": "90 天", "1y": "1 年" } as Record<string, string>)[metricsWindow] ?? metricsWindow;
 
   // 计算 TOP 5 资源消耗榜
@@ -672,16 +692,18 @@ function OverviewPage() {
         eyebrow="系统状态"
         title={hubAbnormal ? "中枢连接异常" : issueCount ? `${issueCount} 项事项需要留意` : "所有设备运行正常"}
         description={emptySource
-          ? "尚未取得实时设备状态，请先启动本机 Agent 或配置中枢。"
+          ? capabilities.canManageLocalAgent
+            ? "尚未取得实时设备状态，请先启动本机 Agent 或配置中枢。"
+            : "尚未取得实时设备状态，请确认中枢已接入设备后刷新。"
           : hubAbnormal
-          ? cached
-            ? `当前显示的是离线缓存，缓存于 ${formatDate(snapshot.cache.savedAt)}；无法确认中枢当前状态。`
+            ? cached
+              ? `当前显示的是离线缓存，缓存于 ${formatDate(snapshot.cache.savedAt)}；无法确认中枢当前状态。`
             : "无法连接到中枢，请检查中枢地址与访问密钥。"
           : `最后同步于 ${formatDate(snapshot.generatedAt)}。数据来自实时连接。`}
         actions={
           <>
-            <Button variant="quiet" onClick={() => openSettings("connections")}>
-              <Icon name="connection" size={16} />连接设置
+            <Button variant="quiet" onClick={() => openSettings(primarySettingsSection)}>
+              <Icon name={webSettings ? "overview" : "connection"} size={16} />{settingsLabel}
             </Button>
             <Button variant="primary" onClick={() => void refresh()} disabled={loading || mutationPending}>
               <Icon name="refresh" size={16} />刷新状态
@@ -697,8 +719,8 @@ function OverviewPage() {
             <strong>中枢连接异常</strong>
             <p>{cached ? "无法取得最新数据，页面中的设备信息可能已经过期。" : "无法连接到中枢，请检查中枢地址与访问密钥后重试。"}</p>
           </div>
-          <Button variant="quiet" onClick={() => openSettings("connections")}>
-            检查连接设置<Icon name="arrow" size={15} />
+          <Button variant="quiet" onClick={() => openSettings(primarySettingsSection)}>
+            {webSettings ? "查看中枢设置" : "检查连接设置"}<Icon name="arrow" size={15} />
           </Button>
         </div>
       ) : issueCount > 0 && (
@@ -708,7 +730,7 @@ function OverviewPage() {
             <strong>{noData ? "还没有可用设备" : "设备状态存在异常"}</strong>
             <p>{noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : `${offline} 台设备离线，${snapshot.localBackend?.lastIssueCount ?? 0} 条本机采集问题待处理。`}</p>
           </div>
-          <Button variant="quiet" onClick={() => openSettings(noData ? noDataSettingsSection : "agent")}>
+          <Button variant="quiet" onClick={() => openSettings(noData ? noDataSettingsSection : capabilities.canManageLocalAgent ? "agent" : "workspace")}>
             查看详情<Icon name="arrow" size={15} />
           </Button>
         </div>
@@ -735,7 +757,7 @@ function OverviewPage() {
                 onDelete={canManageRemote && !mutationPending ? () => removeInstance(device) : undefined}
               />)
             ) : (
-              <EmptyState title="还没有设备" detail="连接一个中枢后，设备会出现在这里。" action={<Button variant="primary" onClick={() => openSettings("connections")}>连接设置</Button>} />
+              <EmptyState title="还没有设备" detail="连接一个中枢后，设备会出现在这里。" action={<Button variant="primary" onClick={() => openSettings(capabilities.canConfigureConnection ? "connections" : "workspace")}>{capabilities.canConfigureConnection ? "连接设置" : "查看中枢设置"}</Button>} />
             )}
           </div>
         </Surface>
@@ -1456,7 +1478,7 @@ function AgentTemperatureSourcesPanel({
 }
 
 function DevicePage() {
-  const { selectedDevice, snapshot, navigate, openSettings, metricsWindow, setMetricsWindow, trafficMode, setTrafficMode, getWidgetLayout, saveWidgetLayout, orientation } = useWorkspace();
+  const { selectedDevice, snapshot, navigate, openSettings, metricsWindow, setMetricsWindow, trafficMode, setTrafficMode, getWidgetLayout, saveWidgetLayout, orientation, capabilities } = useWorkspace();
   const canEditRemote = snapshot?.source === "live" && Boolean(snapshot.session.authenticated);
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [panels, setPanels] = useState<WidgetPanelMetadata[]>(cloneDevicePanels(DEFAULT_DEVICE_PANELS));
@@ -2002,7 +2024,7 @@ function DevicePage() {
                 <StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} />
               </div>
               <p className="workspace-surface__description">设备状态和遥测均由中枢提供，本页面不直接读取本机采集状态；未上传或中枢离线时，数据会与其他设备一样不完整。</p>
-              <Button variant="quiet" onClick={() => openSettings("connections")}>查看中枢连接</Button>
+              <Button variant="quiet" onClick={() => openSettings(capabilities.canConfigureConnection ? "connections" : "workspace")}>{capabilities.canConfigureConnection ? "查看中枢连接" : "查看中枢状态"}</Button>
             </Surface>
           </DesktopWidget>
         </div>
@@ -2020,30 +2042,104 @@ function InstanceRow({ label, name, value }: { label: string; name: string; valu
 }
 
 function HubPage() {
-  const { hubs, route, navigate, openSettings } = useWorkspace();
+  const { hubs, route, navigate, openSettings, capabilities } = useWorkspace();
   const hub = hubs.find((item) => item.id === (route.kind === "hub" ? route.hubId : "")) ?? hubs[0];
-  if (!hub) return <EmptyState title="没有配置中枢" detail="添加一个中枢后，设备会显示在侧边栏。" action={<Button variant="primary" onClick={() => openSettings("connections")}>添加中枢</Button>} />;
+  if (!hub) return <EmptyState title="没有配置中枢" detail="添加一个中枢后，设备会显示在侧边栏。" action={<Button variant="primary" onClick={() => openSettings(capabilities.canConfigureConnection ? "connections" : "workspace")}>{capabilities.canConfigureConnection ? "添加中枢" : "查看中枢设置"}</Button>} />;
   const online = hub.devices.filter((device) => device.status === "online").length;
   const allVirtualMachines = hub.devices.length > 0 && hub.devices.every((device) => device.instanceType === "virtual_machine");
   const onlineLabel = allVirtualMachines ? "Agent 在线" : "在线";
-  return <div className="workspace-page"><PageIntro eyebrow="中枢" title={hub.name} description={hub.endpoint} actions={<><Button variant="quiet" onClick={() => navigate({ kind: "overview" })}><Icon name="back" size={16} />返回总览</Button><Button variant="primary" onClick={() => openSettings("connections")}><Icon name="settings" size={16} />管理连接</Button></>} /><div className="workspace-hub-hero"><div><StatusLabel state={hub.state === "online" ? "online" : hub.state === "cached" ? "cached" : hub.state === "offline" ? "warning" : "unknown"} /><strong>{hub.state === "online" ? "连接正常" : hub.state === "cached" ? "正在显示缓存" : "需要检查连接"}</strong><p>{online} 个实例 Agent 在线，共 {hub.devices.length} 个实例。</p></div><div className="workspace-hub-hero__stat"><span>实例</span><strong>{hub.devices.length}</strong></div><div className="workspace-hub-hero__stat"><span>{onlineLabel}</span><strong>{online}</strong></div></div><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">实例列表</span><h3>{hub.devices.length} 个实例</h3></div><Button variant="quiet" onClick={() => openSettings("connections")}>连接设置</Button></div><div className="workspace-device-rows">{hub.devices.map((device) => <DeviceRow key={device.deviceId} device={device} />)}</div></Surface></div>;
+  const settingsSection: SettingsSection = capabilities.canConfigureConnection ? "connections" : "workspace";
+  const settingsLabel = capabilities.canConfigureConnection ? "管理连接" : "查看中枢设置";
+  return <div className="workspace-page"><PageIntro eyebrow="中枢" title={hub.name} description={hub.endpoint} actions={<><Button variant="quiet" onClick={() => navigate({ kind: "overview" })}><Icon name="back" size={16} />返回总览</Button><Button variant="primary" onClick={() => openSettings(settingsSection)}><Icon name="settings" size={16} />{settingsLabel}</Button></>} /><div className="workspace-hub-hero"><div><StatusLabel state={hub.state === "online" ? "online" : hub.state === "cached" ? "cached" : hub.state === "offline" ? "warning" : "unknown"} /><strong>{hub.state === "online" ? "连接正常" : hub.state === "cached" ? "正在显示缓存" : "需要检查连接"}</strong><p>{online} 个实例 Agent 在线，共 {hub.devices.length} 个实例。</p></div><div className="workspace-hub-hero__stat"><span>实例</span><strong>{hub.devices.length}</strong></div><div className="workspace-hub-hero__stat"><span>{onlineLabel}</span><strong>{online}</strong></div></div><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">实例列表</span><h3>{hub.devices.length} 个实例</h3></div><Button variant="quiet" onClick={() => openSettings(settingsSection)}>{capabilities.canConfigureConnection ? "连接设置" : "中枢设置"}</Button></div><div className="workspace-device-rows">{hub.devices.map((device) => <DeviceRow key={device.deviceId} device={device} />)}</div></Surface></div>;
 }
 
 function SettingsPage() {
-  const { route } = useWorkspace();
-  const section = route.kind === "settings" ? route.section : "general";
-  const { capabilities } = useWorkspace();
+  const { route, capabilities } = useWorkspace();
+  const section: SettingsSection = route.kind === "settings"
+    ? route.section
+    : capabilities.canControlNativeWindow ? "general" : "workspace";
   const pages: Record<SettingsSection, React.ReactNode> = {
     general: <GeneralSettings />,
+    workspace: capabilities.canControlNativeWindow ? <GeneralSettings /> : <WebWorkspaceSettings />,
     appearance: <AppearanceSettings />,
-    connections: capabilities.canConfigureConnection ? <ConnectionSettings /> : <EmptyState title="连接由当前平台管理" detail="浏览器端使用当前站点的登录会话，不需要配置桌面连接。" />,
-    agent: capabilities.canManageLocalAgent ? <AgentSettings /> : <EmptyState title="本机 Agent 仅支持桌面端" detail="浏览器端可以查看已接入的设备，但不能管理当前机器上的采集服务。" />,
+    connections: capabilities.canConfigureConnection ? <ConnectionSettings /> : <WebSessionSettings />,
+    agent: capabilities.canManageLocalAgent ? <AgentSettings /> : <WebWorkspaceSettings />,
     data: <DataSettings />,
     shortcuts: <ShortcutSettings />,
+    session: capabilities.canConfigureConnection ? <ConnectionSettings /> : <WebSessionSettings />,
     about: <AboutSettings />
   };
-  const heading = settingsNav.find((item) => item.id === section);
-  return <div className="workspace-page workspace-page--settings"><PageIntro eyebrow="设置" title={heading?.label ?? "设置"} description={section === "general" ? "调整观澜的日常行为。" : undefined} />{pages[section]}</div>;
+  const heading = settingsNavigation(capabilities).find((item) => item.id === section);
+  const descriptions: Partial<Record<SettingsSection, string>> = {
+    general: "调整观澜的日常行为。",
+    workspace: "浏览器端的刷新、实例筛选和中枢状态。",
+    appearance: "调整浏览器工作台的显示方式。",
+    session: "管理当前浏览器会话和访问边界。",
+    data: "查看实时数据来源与版本信息。",
+    shortcuts: "用键盘快速切换页面和刷新状态。",
+    about: "查看观澜中枢的版本与项目链接。"
+  };
+  return <div className="workspace-page workspace-page--settings"><PageIntro eyebrow="设置" title={heading?.label ?? "设置"} description={descriptions[section]} />{pages[section]}</div>;
+}
+
+function WebWorkspaceSettings() {
+  const { snapshot, hubs, allDevices, instanceType, setInstanceType, refreshInterval, setRefreshInterval, refresh, refreshing, mutationPending } = useWorkspace();
+  const hub = hubs[0];
+  const online = allDevices.filter((device) => device.status === "online").length;
+  const state = snapshot?.session.authenticated && snapshot.source === "live" ? "online" : snapshot?.source === "cache" ? "cached" : "unknown";
+  const stateLabel = state === "online" ? "连接正常" : state === "cached" ? "显示缓存" : "等待同步";
+  return (
+    <div className="workspace-settings-stack workspace-web-settings">
+      <div className="workspace-web-settings__status">
+        <div className="workspace-web-settings__status-main">
+          <StatusLabel state={state} />
+          <strong>{stateLabel}</strong>
+          <p>{hub?.name ?? "观澜中枢"} · 浏览器端通过当前站点读取实时设备状态。</p>
+        </div>
+        <div className="workspace-web-settings__stat"><span>实例</span><strong>{allDevices.length}</strong></div>
+        <div className="workspace-web-settings__stat"><span>在线</span><strong>{online}</strong></div>
+        <div className="workspace-web-settings__stat"><span>同步</span><strong>{snapshot ? formatDate(snapshot.generatedAt) : "等待"}</strong></div>
+      </div>
+
+      <div className="workspace-web-settings__grid">
+        <Surface>
+          <div className="workspace-surface__header"><div><span className="workspace-section-kicker">工作台偏好</span><h3>浏览器显示与刷新</h3></div></div>
+          <div className="workspace-settings-list">
+            <SettingRow label="状态刷新频率" description="只影响当前网页读取状态的频率，不改变 Agent 的采样间隔。"><select className="workspace-select" value={refreshInterval} onChange={(event) => setRefreshInterval(Number(event.target.value) as typeof refreshInterval)} disabled={mutationPending}><option value="5">5 秒</option><option value="10">10 秒</option><option value="30">30 秒</option></select></SettingRow>
+            <SettingRow label="默认实例类型" description="选择打开总览时优先查看的实例分组。"><select className="workspace-select" value={instanceType} onChange={(event) => setInstanceType(event.target.value as typeof instanceType)}><option value="device">普通设备</option><option value="virtual_machine">虚拟机</option></select></SettingRow>
+          </div>
+        </Surface>
+
+        <Surface>
+          <div className="workspace-surface__header"><div><span className="workspace-section-kicker">中枢状态</span><h3>当前数据链路</h3></div><StatusLabel state={state} /></div>
+          <div className="workspace-detail-list"><SummaryRow label="数据来源" value={snapshot?.source === "live" ? "实时中枢" : snapshot?.source === "cache" ? "缓存" : "等待数据"} /><SummaryRow label="最近同步" value={snapshot ? formatPreciseDateTime(snapshot.generatedAt) : "尚未同步"} /><SummaryRow label="接入实例" value={`${allDevices.length} 个`} /></div>
+          <div className="workspace-form__actions"><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing || mutationPending}><Icon name="refresh" size={15} />{refreshing ? "正在同步" : "立即同步"}</Button></div>
+        </Surface>
+      </div>
+    </div>
+  );
+}
+
+function WebSessionSettings() {
+  const { snapshot, logout, mutationPending } = useWorkspace();
+  const authenticated = snapshot?.session.authenticated ?? false;
+  const signOut = async () => {
+    await logout();
+    if (typeof window !== "undefined") window.location.reload();
+  };
+  return (
+    <div className="workspace-settings-stack workspace-web-settings">
+      <Surface>
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">当前会话</span><h3>{authenticated ? "浏览器会话已认证" : "会话需要重新认证"}</h3></div><StatusLabel state={authenticated ? "online" : "warning"} /></div>
+        <div className="workspace-detail-list"><SummaryRow label="认证方式" value="中枢访问密钥" /><SummaryRow label="会话范围" value="当前浏览器" /><SummaryRow label="访问权限" value="已授权设备与指标" /></div>
+        <div className="workspace-form__actions"><Button variant="danger" onClick={() => void signOut()} disabled={!authenticated || mutationPending}>{mutationPending ? "正在退出" : "退出当前会话"}</Button></div>
+      </Surface>
+      <Surface className="workspace-connection-note">
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">网页端边界</span><h3>中枢地址由站点提供</h3></div></div>
+        <p className="workspace-surface__description">浏览器端不保存桌面连接地址，也不管理本机 Agent。页面只使用当前站点的认证会话访问中枢，并通过实时通道接收设备更新。</p>
+      </Surface>
+    </div>
+  );
 }
 
 function SettingRow({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
@@ -2055,7 +2151,8 @@ function Toggle({ checked, onChange, label, disabled = false }: { checked: boole
 }
 
 function GeneralSettings() {
-  const { snapshot, updateStartupSettings, mutationPending, refreshInterval, setRefreshInterval } = useWorkspace();
+  const { snapshot, updateStartupSettings, mutationPending, refreshInterval, setRefreshInterval, capabilities } = useWorkspace();
+  if (!capabilities.canChangeStartupSettings) return <WebWorkspaceSettings />;
   const startup = snapshot?.startup ?? { openAtLogin: false, startMinimized: false };
   return <Surface><div className="workspace-settings-list"><SettingRow label="开机启动" description="登录系统后自动启动观澜。"><Toggle checked={startup.openAtLogin} onChange={(checked) => void updateStartupSettings({ openAtLogin: checked })} label="开机启动" disabled={mutationPending} /></SettingRow><SettingRow label="启动时最小化" description="启动后保持在系统托盘，不打断当前工作。"><Toggle checked={startup.startMinimized} onChange={(checked) => void updateStartupSettings({ startMinimized: checked })} label="启动时最小化" disabled={mutationPending} /></SettingRow><SettingRow label="数据刷新频率" description="实时连接下，桌面端自动刷新状态的间隔；不改变 Agent 的采样频率。"><select className="workspace-select" value={refreshInterval} onChange={(event) => setRefreshInterval(Number(event.target.value) as typeof refreshInterval)} disabled={mutationPending}><option value="5">5 秒</option><option value="10">10 秒</option><option value="30">30 秒</option></select></SettingRow></div></Surface>;
 }
@@ -2256,9 +2353,10 @@ function AgentSettings() {
 }
 
 function DataSettings() {
-  const { snapshot, openExternal } = useWorkspace();
+  const { snapshot, openExternal, capabilities } = useWorkspace();
   const update = snapshot?.update;
-  return <div className="workspace-settings-stack"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">缓存</span><h3>数据与更新</h3></div></div><div className="workspace-detail-list"><SummaryRow label="数据来源" value={snapshot?.source === "cache" ? "离线缓存" : snapshot?.source === "live" ? "实时连接" : "无数据"} /><SummaryRow label="缓存时间" value={formatDate(snapshot?.cache.savedAt)} /><SummaryRow label="缓存年龄" value={snapshot?.cache.ageSeconds == null ? "—" : `${snapshot.cache.ageSeconds} 秒`} /><SummaryRow label="当前版本" value={update?.currentVersion ?? "未知"} /></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">版本</span><h3>{update?.available ? `可用更新：${update.latestVersion}` : "当前已是最新版本"}</h3></div>{update?.available && <StatusLabel state="warning" />}</div>{update?.message && <p className="workspace-surface__description">{update.message}</p>}{update?.releaseUrl && <Button variant="quiet" onClick={() => void openExternal(update.releaseUrl!)}>查看更新说明<Icon name="external" size={15} /></Button>}</Surface></div>;
+  const sourceLabel = snapshot?.source === "cache" ? "离线缓存" : snapshot?.source === "live" ? capabilities.canUseOfflineCache ? "实时连接" : "实时中枢" : "无数据";
+  return <div className="workspace-settings-stack"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">同步状态</span><h3>数据与更新</h3></div></div><div className="workspace-detail-list"><SummaryRow label="数据来源" value={sourceLabel} /><SummaryRow label={capabilities.canUseOfflineCache ? "缓存时间" : "最近同步"} value={capabilities.canUseOfflineCache ? formatDate(snapshot?.cache.savedAt) : formatPreciseDateTime(snapshot?.generatedAt)} />{capabilities.canUseOfflineCache && <SummaryRow label="缓存年龄" value={snapshot?.cache.ageSeconds == null ? "无" : `${snapshot.cache.ageSeconds} 秒`} />}<SummaryRow label="当前版本" value={update?.currentVersion ?? "未知"} /></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">版本</span><h3>{update?.available ? `可用更新：${update.latestVersion}` : "当前已是最新版本"}</h3></div>{update?.available && <StatusLabel state="warning" />}</div>{update?.message && <p className="workspace-surface__description">{update.message}</p>}{update?.releaseUrl && <Button variant="quiet" onClick={() => void openExternal(update.releaseUrl!)}>查看更新说明<Icon name="external" size={15} /></Button>}</Surface></div>;
 }
 
 function ShortcutSettings() {

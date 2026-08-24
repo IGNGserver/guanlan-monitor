@@ -227,6 +227,17 @@
 .workspace-hub-hero__stat strong { font-size: 30px; font-variant-numeric: tabular-nums; }
 
 .workspace-settings-stack { display: flex; max-width: 780px; flex-direction: column; gap: 16px; }
+.workspace-web-settings { max-width: 980px; }
+.workspace-web-settings__status { display: grid; grid-template-columns: minmax(0, 1.45fr) repeat(3, minmax(120px, .55fr)); gap: 1px; overflow: hidden; border: 1px solid var(--workspace-border); border-radius: var(--workspace-radius-md); background: var(--workspace-border); box-shadow: var(--workspace-shadow-soft); }
+.workspace-web-settings__status-main,
+.workspace-web-settings__stat { min-width: 0; padding: 20px; background: var(--workspace-surface); }
+.workspace-web-settings__status-main { display: flex; min-height: 126px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 7px; }
+.workspace-web-settings__status-main strong { color: var(--workspace-text); font-size: 16px; font-weight: 680; }
+.workspace-web-settings__status-main p { max-width: 48ch; margin: 0; color: var(--workspace-text-secondary); font-size: 12px; line-height: 1.55; }
+.workspace-web-settings__stat { display: flex; flex-direction: column; justify-content: center; gap: 6px; }
+.workspace-web-settings__stat span { color: var(--workspace-text-muted); font-size: 11px; }
+.workspace-web-settings__stat strong { overflow: hidden; color: var(--workspace-text); font-size: 17px; font-weight: 680; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-web-settings__grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr); gap: 16px; }
 .workspace-settings-list { display: flex; flex-direction: column; }
 .workspace-setting-row { display: flex; min-height: 67px; align-items: center; justify-content: space-between; gap: 20px; border-top: 1px solid var(--workspace-border); }
 .workspace-setting-row:first-child { border-top: 0; }
@@ -416,6 +427,8 @@
   .workspace-instance-filter { align-items: flex-start; flex-direction: column; }
   .workspace-setting-row { align-items: flex-start; flex-direction: column; justify-content: center; gap: 8px; padding: 13px 0; }
   .workspace-setting-row__control { align-self: flex-start; }
+  .workspace-web-settings__status,
+  .workspace-web-settings__grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Device frames dynamically size with their child charts. */

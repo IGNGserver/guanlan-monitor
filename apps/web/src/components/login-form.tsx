@@ -30,49 +30,61 @@ export function LoginForm({ onAuthenticated }: { onAuthenticated: () => Promise<
 
   return (
     <main className={styles.loginShell}>
-      <div className={`${styles.doubleBezelShell} ${styles.loginCardShell}`}>
-        <form className={`${styles.doubleBezelInner} ${styles.loginCardInner}`} onSubmit={handleSubmit}>
-          <div className={styles.loginHeader}>
-            <img src="/logo.png" alt="DSC Logo" className={styles.brandLogoImage} style={{ width: "48px", height: "48px" }} />
-            <div className={styles.eyebrowTag} style={{ marginTop: "12px" }}>
-              <span>SaaS 安全中枢控制台</span>
+      <section className={styles.loginAside} aria-label="观澜中枢介绍">
+        <div className={styles.loginBrand}>
+          <img src="/logo.png" alt="观澜" className={styles.brandLogoImage} />
+          <span>观澜</span>
+          <small>WEB HUB</small>
+        </div>
+        <div className={styles.loginAsideContent}>
+          <p className={styles.loginEyebrow}>浏览器端中枢</p>
+          <h1>从一个中枢，看见全部节点。</h1>
+          <p>通过浏览器访问接入中枢，查看设备、虚拟机和硬件指标的实时状态。</p>
+        </div>
+        <div className={styles.loginSignals} aria-label="网页端能力">
+          <div className={styles.loginSignal}><span>运行模式</span><strong>浏览器工作台</strong></div>
+          <div className={styles.loginSignal}><span>数据通道</span><strong>中枢实时同步</strong></div>
+          <div className={styles.loginSignal}><span>访问范围</span><strong>已授权节点</strong></div>
+        </div>
+        <div className={styles.loginAsideFooter}><span className={styles.loginLiveIndicator} aria-hidden="true" />安全会话由中枢验证</div>
+      </section>
+
+      <section className={styles.loginPanel} aria-label="登录观澜中枢">
+        <div className={styles.loginFormShell}>
+          <div className={styles.loginPanelTop}><span>欢迎回来</span><span>ACCESS / SESSION</span></div>
+          <form onSubmit={handleSubmit}>
+            <div className={styles.loginHeader}>
+              <p className={styles.loginPanelEyebrow}>登录设备中枢</p>
+              <h1>进入中枢工作台</h1>
+              <p>使用中枢访问密钥登录浏览器控制台。</p>
             </div>
-            <h1 style={{ fontSize: "24px", fontWeight: 800, margin: "4px 0 0", color: "var(--text-primary)" }}>
-              登录设备中枢系统
-            </h1>
-            <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: 0 }}>
-              请输入授权 AccessKey 以解锁全网节点监控与图表看板
-            </p>
-          </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-secondary)" }}>
-              访问密钥 (Access Key)
-            </label>
-            <input
-              type="password"
-              className={styles.loginInput}
-              placeholder="••••••••••••••••"
-              value={accessKey}
-              onChange={(e) => setAccessKey(e.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </div>
+            <div className={styles.loginField}>
+              <label className={styles.loginFieldLabel} htmlFor="access-key"><span>访问密钥</span><small>ACCESS KEY</small></label>
+              <input
+                id="access-key"
+                type="password"
+                className={styles.loginInput}
+                placeholder="输入访问密钥"
+                value={accessKey}
+                onChange={(event) => setAccessKey(event.target.value)}
+                autoComplete="current-password"
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? "login-error" : "access-key-help"}
+                required
+              />
+              <p className={styles.loginFieldHelp} id="access-key-help">密钥只用于当前浏览器会话认证。</p>
+            </div>
 
-          {error && <div className={styles.errorMessage}>{error}</div>}
+            {error && <div className={styles.errorMessage} id="login-error" role="alert">{error}</div>}
 
-          <button
-            type="submit"
-            className={styles.pillButton}
-            disabled={pending}
-            style={{ width: "100%", justifyContent: "center", padding: "12px" }}
-          >
-            <span>{pending ? "正在验证密钥..." : "解锁进入控制台"}</span>
-            <span className={styles.buttonIconCircle}>→</span>
-          </button>
-        </form>
-      </div>
+            <button type="submit" className={styles.loginSubmit} disabled={pending}>
+              {pending ? "正在验证密钥..." : "进入中枢"}
+            </button>
+          </form>
+          <p className={styles.loginSecurityNote}><span aria-hidden="true">TLS</span>登录请求通过当前站点发送。请不要在公共设备上保存访问密钥。</p>
+        </div>
+      </section>
     </main>
   );
 }

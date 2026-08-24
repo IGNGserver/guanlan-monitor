@@ -182,6 +182,12 @@ html[data-dsc-density="touch"] {
 .workspace-root.is-web {
   --workspace-chrome-height: 0px;
   grid-template-rows: 0 minmax(0, 1fr);
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  min-height: 0;
 }
 
 .workspace-root.is-web .workspace-sidebar,
