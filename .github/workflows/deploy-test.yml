@@ -92,10 +92,16 @@ jobs:
           SSH_KNOWN_HOSTS: ${{ secrets.TEST_DEPLOY_SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+          if [[ -n "$SSH_PRIVATE_KEY" || -n "$SSH_KNOWN_HOSTS" ]]; then
+            test -n "$SSH_PRIVATE_KEY"
+            test -n "$SSH_KNOWN_HOSTS"
+            install -d -m 700 "$HOME/.ssh"
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+            chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+          else
+            echo 'SSH deploy secrets are empty; the NAS runner will deploy locally.'
+          fi
 
       - name: Download staged images
         uses: actions/download-artifact@v4
@@ -127,19 +133,49 @@ jobs:
           WEB_PORT: "3100"
         run: |
           set -euo pipefail
-          ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "set -euo pipefail; \
-             cd '$DEPLOY_PATH'; \
-             export WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' DSC_SERVER_IMAGE='ghcr.io/igngserver/device-state-console-server' DSC_WEB_IMAGE='ghcr.io/igngserver/device-state-console-web'; \
-             previous=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\\1/' || true); \
-             docker compose up -d --no-deps --pull never server web; \
-             healthy=0; for attempt in \$(seq 1 30); do \
-               if docker compose exec -T server node -e \"fetch('http://127.0.0.1:4000/api/system/version').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"; then healthy=1; break; fi; \
-               sleep 5; \
-             done; \
-             if [ \"\$healthy\" -ne 1 ]; then \
-               echo 'Test deployment health check failed; attempting rollback.' >&2; \
-               if [ -n \"\$previous\" ]; then DSC_VERSION=\"\$previous\" DSC_RELEASE_CHANNEL='test' docker compose up -d --no-deps --pull never server web; fi; \
-               exit 1; \
-             fi; \
-             docker compose ps"
+          if [[ -z "$DEPLOY_HOST" ]]; then
+            DEPLOY_PATH="${DEPLOY_PATH:-/vol2/1000/Docker/device-state-console}"
+            test -d "$DEPLOY_PATH"
+            cd "$DEPLOY_PATH"
+            export WEB_PORT DSC_VERSION DSC_RELEASE_CHANNEL
+            export DSC_SERVER_IMAGE='ghcr.io/igngserver/device-state-console-server'
+            export DSC_WEB_IMAGE='ghcr.io/igngserver/device-state-console-web'
+            previous="$(docker inspect --format '{{.Config.Image}}' $(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\1/' || true)"
+            docker compose up -d --no-deps --pull never server web
+            healthy=0
+            for attempt in $(seq 1 30); do
+              if docker compose exec -T server node -e "fetch('http://127.0.0.1:4000/api/system/version').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"; then
+                healthy=1
+                break
+              fi
+              sleep 5
+            done
+            if [[ "$healthy" -ne 1 ]]; then
+              echo 'Test deployment health check failed; attempting rollback.' >&2
+              if [[ -n "$previous" ]]; then
+                DSC_VERSION="$previous" DSC_RELEASE_CHANNEL='test' docker compose up -d --no-deps --pull never server web
+              fi
+              exit 1
+            fi
+            docker compose ps
+          else
+            test -n "$DEPLOY_USER"
+            test -n "$DEPLOY_PATH"
+            test -s "$HOME/.ssh/id_ed25519"
+            ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
+              "set -euo pipefail; \
+               cd '$DEPLOY_PATH'; \
+               export WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' DSC_SERVER_IMAGE='ghcr.io/igngserver/device-state-console-server' DSC_WEB_IMAGE='ghcr.io/igngserver/device-state-console-web'; \
+               previous=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\\1/' || true); \
+               docker compose up -d --no-deps --pull never server web; \
+               healthy=0; for attempt in \$(seq 1 30); do \
+                 if docker compose exec -T server node -e \"fetch('http://127.0.0.1:4000/api/system/version').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"; then healthy=1; break; fi; \
+                 sleep 5; \
+               done; \
+               if [ \"\$healthy\" -ne 1 ]; then \
+                 echo 'Test deployment health check failed; attempting rollback.' >&2; \
+                 if [ -n \"\$previous\" ]; then DSC_VERSION=\"\$previous\" DSC_RELEASE_CHANNEL='test' docker compose up -d --no-deps --pull never server web; fi; \
+                 exit 1; \
+               fi; \
+               docker compose ps"
+          fi

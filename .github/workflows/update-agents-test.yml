@@ -56,12 +56,16 @@ jobs:
           SSH_KNOWN_HOSTS: ${{ secrets.TEST_DEPLOY_SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          test -n "$SSH_PRIVATE_KEY"
-          test -n "$SSH_KNOWN_HOSTS"
-          install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+          if [[ -n "$SSH_PRIVATE_KEY" || -n "$SSH_KNOWN_HOSTS" ]]; then
+            test -n "$SSH_PRIVATE_KEY"
+            test -n "$SSH_KNOWN_HOSTS"
+            install -d -m 700 "$HOME/.ssh"
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+            chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+          else
+            echo 'SSH deploy secrets are empty; remote targets will use the NAS runner SSH configuration.'
+          fi
 
       - name: Update and verify each Agent
         shell: bash
@@ -71,13 +75,20 @@ jobs:
           TARGETS: ${{ inputs.targets }}
         run: |
           set -euo pipefail
-          test -n "$DEPLOY_USER"
           for target in $TARGETS; do
             echo "Updating Agent on $target"
-            ssh -o BatchMode=yes -o ConnectTimeout=15 -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$target" \
-              "sudo -n /opt/device-state-console-agent/device-state-console-agent update --channel test"
-            reported="$(ssh -o BatchMode=yes -o ConnectTimeout=15 -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$target" \
-              "sudo -n /opt/device-state-console-agent/device-state-console-agent version")"
+            if [[ "$target" == 'nas' || "$target" == 'localhost' || "$target" == '127.0.0.1' ]]; then
+              sudo -n /opt/device-state-console-agent/device-state-console-agent update --channel test
+              reported="$(sudo -n /opt/device-state-console-agent/device-state-console-agent version)"
+            else
+              remote_user="${DEPLOY_USER:-root}"
+              ssh_options=(-o BatchMode=yes -o ConnectTimeout=15)
+              if [[ -s "$HOME/.ssh/id_ed25519" ]]; then
+                ssh_options+=(-i "$HOME/.ssh/id_ed25519")
+              fi
+              reported="$(ssh "${ssh_options[@]}" "$remote_user@$target" \
+                "sudo -n /opt/device-state-console-agent/device-state-console-agent update --channel test; sudo -n /opt/device-state-console-agent/device-state-console-agent version")"
+            fi
             echo "$target: $reported"
             grep -Fq "$REQUESTED_VERSION" <<< "$reported" || {
               echo "Agent on $target did not report version $REQUESTED_VERSION." >&2
