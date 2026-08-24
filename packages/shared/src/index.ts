@@ -403,6 +403,8 @@ export interface VirtualizationGuestInfo {
 export interface VirtualizationStorageTelemetry {
   id: string;
   name: string;
+  /** Cluster node that owns this storage pool. The device scope already identifies the cluster. */
+  node?: string | null;
   type?: string | null;
   active?: boolean | null;
   shared?: boolean | null;
@@ -456,6 +458,30 @@ export interface VirtualizationSnapshot {
   storages?: VirtualizationStorageTelemetry[];
   capabilities: string[];
   issues?: VirtualizationIssue[];
+}
+
+export function virtualizationStorageInstanceId(node: string | null | undefined, storageId: string): string {
+  return node ? `${node}:${storageId}` : storageId;
+}
+
+/**
+ * Return one stable, node-scoped record for every virtualization storage pool.
+ * Node records are authoritative; the legacy top-level list is only a fallback.
+ */
+export function virtualizationStorageInstances(snapshot: VirtualizationSnapshot | null | undefined): VirtualizationStorageTelemetry[] {
+  if (!snapshot) return [];
+  const nodeStorages = snapshot.nodes.flatMap((node) =>
+    (node.storages ?? []).map((storage) => ({
+      ...storage,
+      id: virtualizationStorageInstanceId(node.id, storage.id),
+      node: node.id
+    }))
+  );
+  if (nodeStorages.length) return nodeStorages;
+  return (snapshot.storages ?? []).map((storage) => ({
+    ...storage,
+    id: virtualizationStorageInstanceId(storage.node, storage.id)
+  }));
 }
 
 export interface DeviceMetricOption {
@@ -653,6 +679,19 @@ export interface NetworkMetricSeries {
   trafficTxBytes: SamplePoint[];
 }
 
+export interface VirtualizationStorageMetricSeries {
+  id: string;
+  name: string;
+  node?: string | null;
+  type?: string | null;
+  active?: boolean | null;
+  shared?: boolean | null;
+  totalBytes: SamplePoint[];
+  usedBytes: SamplePoint[];
+  availableBytes: SamplePoint[];
+  usagePercent: SamplePoint[];
+}
+
 export interface MetricSeries {
   cpuUsagePercent: SamplePoint[];
   cpuFrequencyMHz: SamplePoint[];
@@ -689,6 +728,8 @@ export interface MetricSeries {
   gpus: GpuMetricSeries[];
   fans: FanMetricSeries[];
   temperatureSensors: TemperatureMetricSeries[];
+  /** Virtualization storage pools are separate from mounted filesystem disks. */
+  storagePools?: VirtualizationStorageMetricSeries[];
 }
 
 export interface UpdateInfo {
@@ -756,6 +797,8 @@ export interface MetricsLatest {
   sensorBackends: SensorBackendStatus[];
   fans: FanSensorStats[];
   virtualization?: VirtualizationSnapshot | null;
+  /** Current virtualization storage pools, normalized to stable node-scoped IDs. */
+  storagePools?: VirtualizationStorageTelemetry[];
   unavailableMetrics?: DeviceMetricKey[];
 }
 

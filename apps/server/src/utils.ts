@@ -11,8 +11,10 @@ import type {
   GpuMetricSeries,
   MetricSeries,
   NetworkMetricSeries,
-  TemperatureMetricSeries
+  TemperatureMetricSeries,
+  VirtualizationStorageMetricSeries
 } from "@dsc/shared";
+import { virtualizationStorageInstances } from "@dsc/shared";
 import type { DeviceMetricConfigValue, DeviceRealtimeState, InstanceMetricRecord, TimeSeriesRecord } from "./types.js";
 
 export const HEARTBEAT_TIMEOUT_MS = 45_000;
@@ -369,6 +371,7 @@ export function timeSeriesToMetricSeries(
   const gpus = buildGpuMetricSeries(points, config);
   const fans = buildFanMetricSeries(points, config);
   const temperatureSensors = buildTemperatureMetricSeries(points, config);
+  const storagePools = buildVirtualizationStorageMetricSeries(points);
 
   return {
     cpuUsagePercent: mapPoint("cpuUsagePercent"),
@@ -423,7 +426,8 @@ export function timeSeriesToMetricSeries(
     networks,
     gpus,
     fans,
-    temperatureSensors
+    temperatureSensors,
+    storagePools
   };
 }
 
@@ -633,6 +637,52 @@ function buildDiskMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricC
       const temperature = Number(disk.temperatureC);
       if (Number.isFinite(temperature) && temperature > 0) {
         target.temperatureC.push({ timestamp, value: temperature });
+      }
+    }
+  }
+  return [...grouped.values()];
+}
+
+function buildVirtualizationStorageMetricSeries(points: TimeSeriesRecord[]): VirtualizationStorageMetricSeries[] {
+  const grouped = new Map<string, VirtualizationStorageMetricSeries>();
+  for (const point of points) {
+    const snapshot = point.recordedDetails?.virtualization;
+    for (const storage of virtualizationStorageInstances(snapshot)) {
+      if (!grouped.has(storage.id)) {
+        grouped.set(storage.id, {
+          id: storage.id,
+          name: storage.name,
+          node: storage.node,
+          type: storage.type,
+          active: storage.active,
+          shared: storage.shared,
+          totalBytes: [],
+          usedBytes: [],
+          availableBytes: [],
+          usagePercent: []
+        });
+      }
+      const target = grouped.get(storage.id)!;
+      if (storage.name) target.name = storage.name;
+      if (storage.node != null) target.node = storage.node;
+      if (storage.type != null) target.type = storage.type;
+      if (storage.active != null) target.active = storage.active;
+      if (storage.shared != null) target.shared = storage.shared;
+
+      const timestamp = new Date(point.timestamp).toISOString();
+      const append = (targetPoints: Array<{ timestamp: string; value: number }>, value: number | null | undefined) => {
+        if (typeof value === "number" && Number.isFinite(value)) {
+          targetPoints.push({ timestamp, value });
+        }
+      };
+      append(target.totalBytes, storage.totalBytes);
+      append(target.usedBytes, storage.usedBytes);
+      append(target.availableBytes, storage.availableBytes);
+      if (
+        typeof storage.totalBytes === "number" && Number.isFinite(storage.totalBytes) && storage.totalBytes > 0
+        && typeof storage.usedBytes === "number" && Number.isFinite(storage.usedBytes) && storage.usedBytes >= 0
+      ) {
+        append(target.usagePercent, Number(((storage.usedBytes / storage.totalBytes) * 100).toFixed(2)));
       }
     }
   }

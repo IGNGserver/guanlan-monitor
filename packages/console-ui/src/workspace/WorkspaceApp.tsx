@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, SamplePoint, SystemStats, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, WidgetInstanceConfig, WidgetLayoutDocument, WidgetPanelMetadata } from "@dsc/shared";
+import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, SamplePoint, SystemStats, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, VirtualizationStorageMetricSeries, VirtualizationStorageTelemetry, WidgetInstanceConfig, WidgetLayoutDocument, WidgetPanelMetadata } from "@dsc/shared";
+import { virtualizationStorageInstances } from "@dsc/shared";
 import clsx from "clsx";
 import appIcon from "../assets/app-icon.png";
 import type { ConsoleAdapter } from "../services/adapter";
@@ -56,6 +57,42 @@ function isMetricUnavailable(
 
 function unavailablePoints(points: SamplePoint[], unavailable: boolean): SamplePoint[] {
   return unavailable ? [] : points;
+}
+
+function formatVirtualizationStorageType(type: string | null | undefined): string {
+  const labels: Record<string, string> = {
+    btrfs: "Btrfs",
+    cephfs: "CephFS",
+    cifs: "CIFS",
+    dir: "目录",
+    glusterfs: "GlusterFS",
+    iscsi: "iSCSI",
+    lvm: "LVM",
+    lvmthin: "LVM-Thin",
+    nfs: "NFS",
+    rbd: "RBD",
+    zfspool: "ZFS 存储池"
+  };
+  return type ? labels[type.toLowerCase()] ?? type : UNAVAILABLE_METRIC_LABEL;
+}
+
+function formatVirtualizationStorageValue(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? formatBytes(value) : UNAVAILABLE_METRIC_LABEL;
+}
+
+function formatVirtualizationStoragePercent(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(2)}%` : UNAVAILABLE_METRIC_LABEL;
+}
+
+function formatVirtualizationStorageCapacity(usedBytes: number | null | undefined, totalBytes: number | null | undefined): string {
+  const complete = typeof usedBytes === "number" && Number.isFinite(usedBytes)
+    && typeof totalBytes === "number" && Number.isFinite(totalBytes) && totalBytes > 0;
+  return formatCapacitySummary(usedBytes, totalBytes, !complete);
+}
+
+function latestSampleValue(points: SamplePoint[] | undefined): number | null {
+  const value = points?.at(-1)?.value;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 const metricGroups: Array<{ label: string; items: Array<{ key: DeviceMetricKey; label: string }> }> = [
@@ -1584,6 +1621,29 @@ function DevicePage() {
         diskTotalBytes: filteredDiskDetails.length || hasInstanceConfiguration("disk") ? filteredDiskDetails.reduce((total, disk) => total + disk.totalBytes, 0) : latest.diskTotalBytes
       }
     : undefined;
+  const storagePoolDetails: VirtualizationStorageTelemetry[] = latest
+    ? latest.storagePools?.length
+      ? latest.storagePools
+      : virtualizationStorageInstances(latest.virtualization)
+    : [];
+  const storagePoolSeries = series?.storagePools ?? [];
+  const storagePoolDisplaySeries: VirtualizationStorageMetricSeries[] = [
+    ...storagePoolSeries,
+    ...storagePoolDetails
+      .filter((pool) => !storagePoolSeries.some((seriesPool) => seriesPool.id === pool.id))
+      .map((pool) => ({
+        id: pool.id,
+        name: pool.name,
+        node: pool.node,
+        type: pool.type,
+        active: pool.active,
+        shared: pool.shared,
+        totalBytes: [],
+        usedBytes: [],
+        availableBytes: [],
+        usagePercent: []
+      }))
+  ];
 
   const cpuInstances = filterEnabledInstances("cpu", series?.cpus ?? []);
   const diskInstances = filterEnabledInstances("disk", series?.disks ?? []);
@@ -1737,7 +1797,86 @@ function DevicePage() {
 
       {/* ================= Tab 3: 存储与网络 (Storage & Network) ================= */}
       {(activeTab === "storage_net" || activeTab === "all") && series && (
-        <TelemetrySection id="section-storage" eyebrow="存储与网络" title="I/O 实例明细" description="按网卡和磁盘实例拆分，选择全部时会同时展示每个实例，而不是只看设备总量。" controls={<><InstanceFilter label="网卡" value={selectedNetId} onChange={setSelectedNetId} options={networkOptions} /><InstanceFilter label="磁盘" value={selectedDiskId} onChange={setSelectedDiskId} options={diskOptions} /></>}>
+        <TelemetrySection id="section-storage" eyebrow="存储与网络" title="I/O 实例明细" description="虚拟化存储池与普通挂载硬盘分开统计；网卡和硬盘实例选择全部时会同时展示每个实例。" controls={<><InstanceFilter label="网卡" value={selectedNetId} onChange={setSelectedNetId} options={networkOptions} /><InstanceFilter label="磁盘" value={selectedDiskId} onChange={setSelectedDiskId} options={diskOptions} /></>}>
+          {storagePoolDisplaySeries.length ? storagePoolDisplaySeries.map((pool, poolIndex) => {
+            const poolLatest = storagePoolDetails.find((item) => item.id === pool.id);
+            const totalBytes = poolLatest?.totalBytes ?? latestSampleValue(pool.totalBytes);
+            const usedBytes = poolLatest?.usedBytes ?? latestSampleValue(pool.usedBytes);
+            const availableBytes = poolLatest?.availableBytes ?? latestSampleValue(pool.availableBytes);
+            const usagePercent = totalBytes != null && totalBytes > 0 && usedBytes != null
+              ? Number(((usedBytes / totalBytes) * 100).toFixed(2))
+              : latestSampleValue(pool.usagePercent);
+            const poolName = poolLatest?.name ?? pool.name;
+            const poolNode = poolLatest?.node ?? pool.node;
+            const poolType = poolLatest?.type ?? pool.type;
+            const poolActive = poolLatest?.active ?? pool.active;
+            const poolShared = poolLatest?.shared ?? pool.shared;
+            const poolLabel = [
+              poolNode ? `节点 ${poolNode}` : null,
+              formatVirtualizationStorageType(poolType),
+              poolShared == null ? null : poolShared ? "共享" : "本地",
+              poolActive == null ? null : poolActive ? "启用" : "停用"
+            ].filter(Boolean).join(" · ");
+            return (
+              <TelemetryDeviceBlock
+                key={`storage-pool-${pool.id}`}
+                kind="disk"
+                widgetId={`storage-pool-device-${pool.id}`}
+                widgetTemplateId={`storage-pool-device-${poolIndex}`}
+                targetId={pool.id}
+                eyebrow="虚拟化存储池"
+                title={poolName}
+                subtitle={poolLabel || "Proxmox 存储池"}
+              >
+                <TelemetryInfoCard
+                  widgetId={`storage-pool-${pool.id}-summary`}
+                  widgetGroupId={`storage-pool-device-${pool.id}`}
+                  widgetType="virtualization-storage-pool-summary"
+                  widgetCategory="存储"
+                  widgetConfig={{ systemRendered: true, targetId: pool.id, visualization: "table" }}
+                  title={`${poolName} · 当前状态`}
+                  rows={[
+                    { label: "节点", value: poolNode ?? UNAVAILABLE_METRIC_LABEL },
+                    { label: "类型", value: formatVirtualizationStorageType(poolType) },
+                    { label: "容量", value: formatVirtualizationStorageCapacity(usedBytes, totalBytes) },
+                    { label: "可用空间", value: formatVirtualizationStorageValue(availableBytes) },
+                    { label: "使用率", value: formatVirtualizationStoragePercent(usagePercent) },
+                    { label: "读写速率", value: "无法获取数据 · Proxmox 存储池接口未提供" }
+                  ]}
+                />
+                <TelemetryChartCard
+                  widgetId={`storage-pool-${pool.id}-capacity`}
+                  widgetGroupId={`storage-pool-device-${pool.id}`}
+                  widgetType="virtualization-storage-pool-capacity"
+                  widgetCategory="存储"
+                  widgetVisualization="area"
+                  widgetConfig={{ systemRendered: true, targetId: pool.id, visualization: "area" }}
+                  title={`${poolName} · 已用与可用空间`}
+                  subtitle={formatVirtualizationStorageCapacity(usedBytes, totalBytes)}
+                  emptyMessage={UNAVAILABLE_METRIC_LABEL}
+                  series={[
+                    { label: "已用空间", points: pool.usedBytes, valueFormatter: formatBytes },
+                    { label: "可用空间", points: pool.availableBytes, valueFormatter: formatBytes }
+                  ]}
+                  valueFormatter={formatBytes}
+                />
+                <TelemetryChartCard
+                  widgetId={`storage-pool-${pool.id}-usage`}
+                  widgetGroupId={`storage-pool-device-${pool.id}`}
+                  widgetType="virtualization-storage-pool-usage"
+                  widgetCategory="存储"
+                  widgetVisualization="line"
+                  widgetConfig={{ systemRendered: true, targetId: pool.id, visualization: "line" }}
+                  title={`${poolName} · 使用率`}
+                  subtitle={formatVirtualizationStoragePercent(usagePercent)}
+                  emptyMessage={UNAVAILABLE_METRIC_LABEL}
+                  series={[{ label: "使用率", points: pool.usagePercent }]}
+                  valueFormatter={(value) => `${value.toFixed(2)}%`}
+                  fixedMaxValue={100}
+                />
+              </TelemetryDeviceBlock>
+            );
+          }) : null}
           <TrafficCalendarCard data={snapshot?.trafficCalendar ?? null} mode={trafficMode} onModeChange={setTrafficMode} />
           {networkInstances.length ? visibleNetworkInstances.map((network) => {
             const networkIndex = networkInstances.findIndex((item) => item.id === network.id);
