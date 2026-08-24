@@ -91,12 +91,6 @@ interface DeviceStateApi {
     @Body payload: DeviceMetricConfigPayloadDto
   ): DeviceMetricConfigDto
 
-  @retrofit2.http.PUT("/api/devices/{deviceId}/fans/{fanId}/note")
-  suspend fun saveFanNote(
-    @Path("deviceId") deviceId: String,
-    @Path("fanId") fanId: String,
-    @Body payload: FanNotePayloadDto
-  ): FanNoteResponseDto
 }
 
 class InMemoryCookieJar : CookieJar {

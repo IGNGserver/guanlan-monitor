@@ -537,19 +537,6 @@ data class DeviceMetricConfigPayloadDto(
   val instanceMetricConfig: Map<String, List<String>> = emptyMap()
 )
 
-@Serializable
-data class FanNotePayloadDto(
-  val note: String
-)
-
-@Serializable
-data class FanNoteResponseDto(
-  val ok: Boolean = false,
-  val deviceId: String = "",
-  val fanId: String = "",
-  val note: String = ""
-)
-
 enum class AppScreen {
   Login,
   DeviceList,
@@ -598,7 +585,6 @@ data class AppState(
   val editingBlockKey: DeviceBlockKey? = null,
   val editingInstanceId: String? = null,
   val savingMetricConfig: Boolean = false,
-  val savingFanNote: Boolean = false,
   val updateInfo: UpdateInfoDto? = null,
   val updateDownloading: Boolean = false,
   val updateProgress: Float = 0f,

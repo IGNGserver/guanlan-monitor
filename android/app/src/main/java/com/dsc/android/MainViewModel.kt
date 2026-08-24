@@ -208,7 +208,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           loadingMetrics = false,
           loadingTraffic = false,
           loggingIn = false,
-          savingFanNote = false,
           currentScreen = AppScreen.Login,
           transitionDirection = ScreenTransitionDirection.None,
           message = "已登出"
@@ -527,47 +526,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           it.copy(
             savingMetricConfig = false,
             message = error.message ?: "记录项保存失败"
-          )
-        }
-      }
-    }
-  }
-
-  fun saveFanNote(deviceId: String, fanId: String, note: String) {
-    val currentApi = api ?: return
-    val normalizedNote = note.trim().take(100)
-    viewModelScope.launch {
-      _state.update { it.copy(savingFanNote = true, message = null) }
-      runCatching {
-        currentApi.saveFanNote(deviceId, fanId, FanNotePayloadDto(normalizedNote))
-      }.onSuccess { saved ->
-        _state.update { current ->
-          val nextMetrics = current.metrics
-            ?.let { metrics ->
-              if (metrics.device.deviceId != deviceId) {
-                metrics
-              } else {
-                metrics.copy(
-                  latest = metrics.latest.copy(
-                    fans = metrics.latest.fans.map { fan ->
-                      if (fan.id == fanId) fan.copy(note = saved.note) else fan
-                    }
-                  )
-                )
-              }
-            }
-          current.copy(
-            metrics = nextMetrics,
-            savingFanNote = false,
-            message = "风扇备注已保存"
-          )
-        }
-        persistRemoteSnapshot()
-      }.onFailure { error ->
-        _state.update {
-          it.copy(
-            savingFanNote = false,
-            message = error.message ?: "风扇备注保存失败"
           )
         }
       }
