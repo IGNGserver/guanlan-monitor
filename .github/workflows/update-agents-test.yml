@@ -147,36 +147,36 @@ jobs:
           agent_binary="$work_dir/package/linux-x64/device-state-console-agent"
 
           install_script='set -euo pipefail
-version="$1"
-staged="$2"
-install_dir="/opt/device-state-console-agent"
-target="$install_dir/device-state-console-agent"
-version_file="$install_dir/VERSION"
-backup="$target.backup-$version-$$"
-owner="root:root"
-if [[ -e "$target" ]]; then
-  owner="$(stat -c "%u:%g" "$target")"
-fi
-install -d -m 0755 "$install_dir"
-systemctl stop device-state-console-agent.service
-if [[ -e "$target" ]]; then
-  mv "$target" "$backup"
-fi
-mv "$staged" "$target"
-chown "$owner" "$target"
-chmod 0755 "$target"
-printf "%s\n" "$version" > "$version_file"
-if ! systemctl start device-state-console-agent.service || ! systemctl is-active --quiet device-state-console-agent.service; then
-  systemctl stop device-state-console-agent.service || true
-  rm -f "$target"
-  if [[ -e "$backup" ]]; then
-    mv "$backup" "$target"
-  fi
-  systemctl start device-state-console-agent.service || true
-  exit 1
-fi
-rm -f "$backup" "$staged"
-cat "$version_file"'
+          version="$1"
+          staged="$2"
+          install_dir="/opt/device-state-console-agent"
+          target="$install_dir/device-state-console-agent"
+          version_file="$install_dir/VERSION"
+          backup="$target.backup-$version-$$"
+          owner="root:root"
+          if [[ -e "$target" ]]; then
+            owner="$(stat -c "%u:%g" "$target")"
+          fi
+          install -d -m 0755 "$install_dir"
+          systemctl stop device-state-console-agent.service
+          if [[ -e "$target" ]]; then
+            mv "$target" "$backup"
+          fi
+          mv "$staged" "$target"
+          chown "$owner" "$target"
+          chmod 0755 "$target"
+          printf "%s\n" "$version" > "$version_file"
+          if ! systemctl start device-state-console-agent.service || ! systemctl is-active --quiet device-state-console-agent.service; then
+            systemctl stop device-state-console-agent.service || true
+            rm -f "$target"
+            if [[ -e "$backup" ]]; then
+              mv "$backup" "$target"
+            fi
+            systemctl start device-state-console-agent.service || true
+            exit 1
+          fi
+          rm -f "$backup" "$staged"
+          cat "$version_file"'
 
           for target in $TARGETS; do
             echo "Updating Agent on $target"
