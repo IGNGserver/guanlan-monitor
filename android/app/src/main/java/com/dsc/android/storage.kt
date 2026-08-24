@@ -24,7 +24,7 @@ internal fun displayableVirtualizationStoragePools(metrics: MetricsDto): List<Vi
   val series = metrics.series.storagePools.filter(::isDisplayableVirtualizationStorageSeries)
   val latestById = latest.associateBy { it.id }
   val seriesById = series.associateBy { it.id }
-  val ids = buildList {
+  val ids: List<String> = buildList {
     addAll(series.map { it.id })
     addAll(latest.map { it.id })
   }.distinct()
@@ -32,10 +32,12 @@ internal fun displayableVirtualizationStoragePools(metrics: MetricsDto): List<Vi
   return ids.mapNotNull { id ->
     val latestPool = latestById[id]
     val seriesPool = seriesById[id]
-    val source = latestPool ?: seriesPool ?: return@mapNotNull null
+    if (latestPool == null && seriesPool == null) return@mapNotNull null
     VirtualizationStorageDisplay(
       id = id,
-      name = latestPool?.name?.takeIf { it.isNotBlank() } ?: source.name.ifBlank { id },
+      name = latestPool?.name?.takeIf { it.isNotBlank() }
+        ?: seriesPool?.name?.takeIf { it.isNotBlank() }
+        ?: id,
       node = latestPool?.node ?: seriesPool?.node,
       type = latestPool?.type ?: seriesPool?.type,
       active = latestPool?.active ?: seriesPool?.active,
