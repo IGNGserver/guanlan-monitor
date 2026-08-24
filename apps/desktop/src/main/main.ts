@@ -8,12 +8,15 @@ import { registerIpc } from "./ipc.js";
 import { resolveWindowMaterial } from "../window-material.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const GPU_FALLBACK_ARGUMENT = "--dsc-disable-gpu";
+const gpuFallbackActive = process.platform === "win32" && process.argv.includes(GPU_FALLBACK_ARGUMENT);
 
 crashReporter.start({
   productName: "观澜",
   uploadToServer: false,
   compress: false
 });
+if (gpuFallbackActive) app.disableHardwareAcceleration();
 
 function resolveAppIconPath(): string {
   const resourceIcon = path.join(process.resourcesPath, "app-icon.ico");
@@ -63,6 +66,7 @@ if (!hasSingleInstanceLock) {
   let rendererRecoveryTimer: NodeJS.Timeout | null = null;
   let rendererRecoveryWindowStartedAt = 0;
   let rendererRecoveryCount = 0;
+  let gpuFallbackRelaunchScheduled = false;
 
   const reportProcessEvent = (event: string, details: Record<string, unknown>) => {
     appendDesktopDiagnostic(event, {
@@ -115,6 +119,17 @@ if (!hasSingleInstanceLock) {
     if (!controller) return;
     shutdownPromise ??= controller.shutdown();
     await shutdownPromise;
+  };
+
+  const relaunchWithGpuFallback = (reason: string) => {
+    if (gpuFallbackActive || gpuFallbackRelaunchScheduled || quitting) return false;
+    gpuFallbackRelaunchScheduled = true;
+    reportProcessEvent("gpu-fallback-relaunch", { reason });
+    const args = process.argv.slice(1).filter((argument) => argument !== GPU_FALLBACK_ARGUMENT);
+    app.relaunch({ args: [...args, GPU_FALLBACK_ARGUMENT] });
+    quitting = true;
+    void shutdown().finally(() => app.exit(0));
+    return true;
   };
 
   const createWindow = () => {
@@ -225,7 +240,10 @@ if (!hasSingleInstanceLock) {
       exitCode: details.exitCode,
       serviceName: details.serviceName
     });
-    if (details.reason !== "clean-exit" && details.type === "GPU") scheduleRendererRecovery(`gpu:${details.reason}`);
+    if (details.reason !== "clean-exit" && details.type === "GPU") {
+      const reason = `gpu:${details.reason}`;
+      if (!relaunchWithGpuFallback(reason)) scheduleRendererRecovery(reason);
+    }
   });
   app.on("before-quit", (event) => {
     if (quitting) return;
