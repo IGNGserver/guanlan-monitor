@@ -86,6 +86,7 @@ jobs:
           asset="DeviceStateConsole-Linux-CLI-Install-v${REQUESTED_VERSION}.zip"
           base_url="https://github.com/IGNGserver/guanlan-monitor/releases/download/v${REQUESTED_VERSION}"
           archive="$work_dir/$asset"
+          partial="$archive.part"
           checksum="$work_dir/$asset.sha256"
           package_dir="$work_dir/package"
 
@@ -108,10 +109,11 @@ jobs:
             fi
             echo "Downloading $asset (attempt $attempt/20; resumable)"
             curl -4 -fL --retry 2 --retry-all-errors --connect-timeout 20 --max-time 180 \
-              -C - "$base_url/$asset" -o "$archive" || true
-            if [[ -s "$archive" ]]; then
-              actual="$(sha256sum "$archive" | awk '{print $1}')"
+              -C - "$base_url/$asset" -o "$partial" || true
+            if [[ -s "$partial" ]]; then
+              actual="$(sha256sum "$partial" | awk '{print $1}')"
               if [[ "${actual,,}" == "${expected,,}" ]]; then
+                mv "$partial" "$archive"
                 downloaded=true
                 break
               fi
@@ -124,10 +126,11 @@ jobs:
           }
           unzip -q "$archive" -d "$package_dir"
           agent_binary="$package_dir/device-state-console-agent"
-          [[ -x "$agent_binary" ]] || {
+          [[ -f "$agent_binary" ]] || {
             echo "Release package is missing the Linux Agent binary." >&2
             exit 1
           }
+          chmod 0755 "$agent_binary"
           echo "Verified $asset ($expected)"
 
       - name: Distribute and verify each Agent
@@ -145,6 +148,10 @@ jobs:
             exit 1
           }
           agent_binary="$work_dir/package/device-state-console-agent"
+          [[ -f "$agent_binary" ]] || {
+            echo "Verified Agent package is missing the Linux Agent binary." >&2
+            exit 1
+          }
 
           install_script='set -euo pipefail
           version="$1"
