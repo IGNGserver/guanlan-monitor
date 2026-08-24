@@ -470,7 +470,9 @@ function hasVirtualizationStorageCapacity(storage: VirtualizationStorageTelemetr
   );
 }
 
-export function isDisplayableVirtualizationStorage(storage: VirtualizationStorageTelemetry): boolean {
+export function isDisplayableVirtualizationStorage(
+  storage: Pick<VirtualizationStorageTelemetry, "active" | "totalBytes" | "usedBytes" | "availableBytes">
+): boolean {
   // Proxmox returns cluster-wide storage configuration for every node. A pool
   // that is inactive on this node, or has no capacity values, is not a
   // node-local telemetry instance and should not become a misleading card.
