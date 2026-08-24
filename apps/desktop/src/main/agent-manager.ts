@@ -4,6 +4,7 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { DesktopAgentControlAction } from "@dsc/shared";
+import { appendDesktopDiagnostic } from "./diagnostics.js";
 import type { AgentBackendConfig, RawAgentBackendState } from "./types.js";
 
 export class BackendUnavailableError extends Error {
@@ -72,7 +73,13 @@ export class AgentManager {
     this.child = child;
     child.stdout?.on("data", (chunk: Buffer) => this.appendOutput(chunk.toString("utf8")));
     child.stderr?.on("data", (chunk: Buffer) => this.appendOutput(chunk.toString("utf8")));
-    child.once("exit", () => {
+    child.once("error", (error) => {
+      this.appendOutput(`[backend-error] ${error.message}\n`);
+      appendDesktopDiagnostic("agent-backend-error", { error });
+    });
+    child.once("exit", (code, signal) => {
+      this.appendOutput(`[backend-exit] code=${code ?? "null"} signal=${signal ?? "null"}\n`);
+      appendDesktopDiagnostic("agent-backend-exit", { code, signal });
       if (this.child === child) {
         this.child = null;
         this.baseUrl = null;

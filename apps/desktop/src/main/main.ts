@@ -1,12 +1,19 @@
-import { app, BrowserWindow, Menu, nativeImage, nativeTheme, screen, Tray } from "electron";
+import { app, BrowserWindow, crashReporter, Menu, nativeImage, nativeTheme, screen, Tray } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DesktopController } from "./controller.js";
+import { appendDesktopDiagnostic } from "./diagnostics.js";
 import { registerIpc } from "./ipc.js";
 import { resolveWindowMaterial } from "../window-material.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+crashReporter.start({
+  productName: "观澜",
+  uploadToServer: false,
+  compress: false
+});
 
 function resolveAppIconPath(): string {
   const resourceIcon = path.join(process.resourcesPath, "app-icon.ico");
@@ -53,6 +60,49 @@ if (!hasSingleInstanceLock) {
   let controller: DesktopController | null = null;
   let quitting = false;
   let shutdownPromise: Promise<void> | null = null;
+  let rendererRecoveryTimer: NodeJS.Timeout | null = null;
+  let rendererRecoveryWindowStartedAt = 0;
+  let rendererRecoveryCount = 0;
+
+  const reportProcessEvent = (event: string, details: Record<string, unknown>) => {
+    appendDesktopDiagnostic(event, {
+      ...details,
+      appMetrics: (() => {
+        try {
+          return app.getAppMetrics().map((metric) => ({
+            pid: metric.pid,
+            type: metric.type,
+            name: metric.name,
+            cpu: metric.cpu,
+            memory: metric.memory
+          }));
+        } catch {
+          return undefined;
+        }
+      })()
+    });
+    console.error(`[${event}]`, details);
+  };
+
+  const scheduleRendererRecovery = (reason: string) => {
+    if (quitting || !mainWindow || mainWindow.isDestroyed() || rendererRecoveryTimer) return;
+    const now = Date.now();
+    if (now - rendererRecoveryWindowStartedAt > 60_000) {
+      rendererRecoveryWindowStartedAt = now;
+      rendererRecoveryCount = 0;
+    }
+    if (rendererRecoveryCount >= 3) {
+      reportProcessEvent("renderer-recovery-suppressed", { reason, count: rendererRecoveryCount });
+      return;
+    }
+    rendererRecoveryCount += 1;
+    rendererRecoveryTimer = setTimeout(() => {
+      rendererRecoveryTimer = null;
+      if (quitting || !mainWindow || mainWindow.isDestroyed()) return;
+      reportProcessEvent("renderer-recovery-reload", { reason, count: rendererRecoveryCount });
+      mainWindow.reload();
+    }, 1_000);
+  };
 
   const showWindow = () => {
     if (!mainWindow) return;
@@ -114,6 +164,19 @@ if (!hasSingleInstanceLock) {
     };
     nativeTheme.on("updated", updateNativeWindowMaterial);
     mainWindow.once("closed", () => nativeTheme.removeListener("updated", updateNativeWindowMaterial));
+    mainWindow.webContents.on("render-process-gone", (_event, details) => {
+      reportProcessEvent("render-process-gone", {
+        reason: details.reason,
+        exitCode: details.exitCode
+      });
+      if (details.reason !== "clean-exit") scheduleRendererRecovery(details.reason);
+    });
+    mainWindow.webContents.on("unresponsive", () => {
+      reportProcessEvent("renderer-unresponsive", {});
+    });
+    mainWindow.webContents.on("responsive", () => {
+      reportProcessEvent("renderer-responsive", {});
+    });
     mainWindow.on("close", (event) => {
       if (quitting) return;
       event.preventDefault();
@@ -155,11 +218,29 @@ if (!hasSingleInstanceLock) {
     if (getInstallerRestoreState(commandLine) === "tray") mainWindow?.hide();
     else showWindow();
   });
+  app.on("child-process-gone", (_event, details) => {
+    reportProcessEvent("child-process-gone", {
+      type: details.type,
+      reason: details.reason,
+      exitCode: details.exitCode,
+      serviceName: details.serviceName
+    });
+    if (details.reason !== "clean-exit" && details.type === "GPU") scheduleRendererRecovery(`gpu:${details.reason}`);
+  });
   app.on("before-quit", (event) => {
     if (quitting) return;
     event.preventDefault();
     quitting = true;
     void shutdown().finally(() => app.quit());
+  });
+  process.on("uncaughtException", (error) => {
+    appendDesktopDiagnostic("main-uncaught-exception", { error });
+    console.error("Device State Console main process failed", error);
+    app.exit(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    appendDesktopDiagnostic("main-unhandled-rejection", { reason });
+    console.error("Device State Console unhandled rejection", reason);
   });
 
   app.whenReady().then(async () => {
@@ -179,6 +260,7 @@ if (!hasSingleInstanceLock) {
       else showWindow();
     });
   }).catch((error) => {
+    appendDesktopDiagnostic("startup-failed", { error });
     console.error("Device State Console startup failed", error);
     app.quit();
   });
