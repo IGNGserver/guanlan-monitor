@@ -177,6 +177,7 @@ export interface SystemStats {
 export interface CpuPackageStats {
   id: string;
   name: string;
+  socketIndex?: number;
   model?: string;
   coreCount?: number;
   logicalCount?: number;
@@ -629,6 +630,7 @@ export interface TemperatureMetricSeries {
 export interface CpuMetricSeries {
   id: string;
   name: string;
+  socketIndex?: number;
   model?: string;
   coreCount?: number;
   logicalCount?: number;

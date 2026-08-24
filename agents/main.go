@@ -202,6 +202,7 @@ type diskSmartAttribute struct {
 type cpuPackageStats struct {
 	ID           string   `json:"id"`
 	Name         string   `json:"name"`
+	SocketIndex  int      `json:"socketIndex"`
 	Model        string   `json:"model,omitempty"`
 	CoreCount    int      `json:"coreCount,omitempty"`
 	LogicalCount int      `json:"logicalCount,omitempty"`
@@ -371,6 +372,24 @@ type cpuSnapshot struct {
 	total float64
 }
 
+type cpuTimesSample struct {
+	aggregate cpuSnapshot
+	packages  map[string]cpuSnapshot
+}
+
+type cpuPackageRuntimeMetrics struct {
+	usagePercent *float64
+	frequencyMHz *float64
+	temperatureC *float64
+}
+
+type cpuRuntimeMetrics struct {
+	packages              map[string]cpuPackageRuntimeMetrics
+	aggregateFrequencyMHz *float64
+	aggregateTemperatureC *float64
+	linuxDynamic          bool
+}
+
 type ioSnapshot struct {
 	read      uint64
 	write     uint64
@@ -463,6 +482,8 @@ type agentState struct {
 	client               *http.Client
 	lastCPU              cpuSnapshot
 	hasLastCPU           bool
+	lastCPUByPackage     map[string]cpuSnapshot
+	currentCPUUsage      map[string]*float64
 	lastIO               *ioSnapshot
 	lastSlow             slowMetrics
 	hasSlow              bool
@@ -1051,7 +1072,7 @@ func (s *agentState) currentIdentity(cfg agentRuntimeConfig) agentIdentity {
 func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	now := time.Now().UTC()
 	identity := s.currentIdentity(cfg)
-	cpuUsagePercent := s.sampleCPUUsage()
+	cpuUsagePercent, cpuRuntime := s.sampleCPURuntime()
 	memory := sampleMemory()
 	diskRate, networkRate := s.sampleFastRates(now, cfg.currentUploadIntervalSeconds())
 
@@ -1072,6 +1093,15 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	memory.SpeedMHz = slow.memorySpeedMHz
 	memory.SlotCount = slow.memorySlotCount
 	memory.FormFactor = slow.memoryFormFactor
+	cpuFrequencyMHz := slow.cpuFrequencyMHz
+	if cpuRuntime.aggregateFrequencyMHz != nil {
+		cpuFrequencyMHz = cpuRuntime.aggregateFrequencyMHz
+	}
+	cpuTemperatureC := slow.cpuTemperatureC
+	if cpuRuntime.aggregateTemperatureC != nil {
+		cpuTemperatureC = cpuRuntime.aggregateTemperatureC
+	}
+	cpuPackages := applyCPUPackageRuntimeMetrics(slow.cpuPackages, cpuRuntime)
 	for index := range slow.disks {
 		if metadata, ok := slow.diskMetadata[slow.disks[index].SourceKey]; ok {
 			if slow.disks[index].InterfaceType == "" {
@@ -1146,9 +1176,9 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 		HeartbeatAt:        now.Format(time.RFC3339),
 		System:             collectSystemStats(),
 		CPUUsagePercent:    cpuUsagePercent,
-		CPUFrequencyMHz:    slow.cpuFrequencyMHz,
-		CPUTemperatureC:    slow.cpuTemperatureC,
-		CPUPackages:        ensureCPUPackages(slow.cpuPackages),
+		CPUFrequencyMHz:    cpuFrequencyMHz,
+		CPUTemperatureC:    cpuTemperatureC,
+		CPUPackages:        ensureCPUPackages(cpuPackages),
 		Memory:             memory,
 		DiskUsage:          slow.diskUsage,
 		Disks:              slow.disks,
@@ -1167,30 +1197,395 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	return payload
 }
 
-func (s *agentState) sampleCPUUsage() float64 {
-	times, err := cpu.Times(false)
-	if err != nil || len(times) == 0 {
-		return 0
+func (s *agentState) sampleCPURuntime() (float64, cpuRuntimeMetrics) {
+	cpuUsagePercent := s.sampleCPUUsage()
+	runtimeMetrics := cpuRuntimeMetrics{packages: map[string]cpuPackageRuntimeMetrics{}}
+	for id, usage := range s.currentCPUUsage {
+		runtimeMetrics.packages[id] = cpuPackageRuntimeMetrics{usagePercent: usage}
 	}
 
-	current := cpuSnapshot{
-		idle:  times[0].Idle,
-		total: times[0].User + times[0].System + times[0].Idle + times[0].Nice + times[0].Iowait + times[0].Irq + times[0].Softirq + times[0].Steal,
+	if runtime.GOOS == "linux" {
+		infoCtx, cancel := context.WithTimeout(context.Background(), cpuPackagesTimeout)
+		info, _ := cpu.InfoWithContext(infoCtx)
+		cancel()
+		frequencies := collectLinuxCPUPackageFrequencies(info)
+		temperatures := collectLinuxCPUPackageTemperatures()
+		runtimeMetrics.linuxDynamic = true
+		for id, frequency := range frequencies {
+			entry := runtimeMetrics.packages[id]
+			entry.frequencyMHz = frequency
+			runtimeMetrics.packages[id] = entry
+		}
+		for id, temperature := range temperatures {
+			entry := runtimeMetrics.packages[id]
+			entry.temperatureC = temperature
+			runtimeMetrics.packages[id] = entry
+		}
+		runtimeMetrics.aggregateFrequencyMHz = averagePointerMap(frequencies)
+		runtimeMetrics.aggregateTemperatureC = averagePointerMap(temperatures)
+	}
+
+	return cpuUsagePercent, runtimeMetrics
+}
+
+func (s *agentState) sampleCPUUsage() float64 {
+	sample, err := collectCPUTimesSample()
+	if err != nil || len(sample.packages) == 0 {
+		s.currentCPUUsage = map[string]*float64{}
+		return 0
 	}
 
 	if !s.hasLastCPU {
-		s.lastCPU = current
+		s.lastCPU = sample.aggregate
+		s.lastCPUByPackage = sample.packages
 		s.hasLastCPU = true
+		s.currentCPUUsage = map[string]*float64{}
 		return 0
 	}
 
-	idleDiff := current.idle - s.lastCPU.idle
-	totalDiff := current.total - s.lastCPU.total
-	s.lastCPU = current
-	if totalDiff <= 0 {
+	currentUsage := map[string]*float64{}
+	for id, current := range sample.packages {
+		previous, exists := s.lastCPUByPackage[id]
+		if !exists {
+			continue
+		}
+		if usage, ok := cpuUsagePercentBetween(previous, current); ok {
+			value := usage
+			currentUsage[id] = &value
+		}
+	}
+	aggregateUsage, aggregateOK := cpuUsagePercentBetween(s.lastCPU, sample.aggregate)
+	s.lastCPU = sample.aggregate
+	s.lastCPUByPackage = sample.packages
+	s.currentCPUUsage = currentUsage
+	if !aggregateOK {
 		return 0
 	}
-	return round((1 - idleDiff/totalDiff) * 100)
+	return aggregateUsage
+}
+
+func collectCPUTimesSample() (cpuTimesSample, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), cpuPackagesTimeout)
+	defer cancel()
+	times, err := cpu.TimesWithContext(ctx, true)
+	if err != nil {
+		return cpuTimesSample{}, err
+	}
+	if len(times) == 0 {
+		return cpuTimesSample{}, errors.New("no per-CPU time counters reported")
+	}
+
+	info, err := cpu.InfoWithContext(ctx)
+	if err != nil {
+		return cpuTimesSample{}, err
+	}
+	if len(info) == 0 {
+		return cpuTimesSample{}, errors.New("no per-CPU topology reported")
+	}
+	packageIDs := cpuPackageIDs(info)
+	sample := cpuTimesSample{packages: map[string]cpuSnapshot{}}
+	for index, timesStat := range times {
+		current := cpuSnapshotFromTimes(timesStat)
+		sample.aggregate.idle += current.idle
+		sample.aggregate.total += current.total
+		packageID := cpuPackageIDForTimes(index, timesStat, info, packageIDs)
+		packageSnapshot := sample.packages[packageID]
+		packageSnapshot.idle += current.idle
+		packageSnapshot.total += current.total
+		sample.packages[packageID] = packageSnapshot
+	}
+	return sample, nil
+}
+
+func cpuSnapshotFromTimes(times cpu.TimesStat) cpuSnapshot {
+	return cpuSnapshot{
+		idle:  times.Idle,
+		total: times.User + times.System + times.Idle + times.Nice + times.Iowait + times.Irq + times.Softirq + times.Steal,
+	}
+}
+
+func cpuUsagePercentBetween(previous, current cpuSnapshot) (float64, bool) {
+	idleDiff := current.idle - previous.idle
+	totalDiff := current.total - previous.total
+	if idleDiff < 0 || totalDiff <= 0 {
+		return 0, false
+	}
+	busyDiff := totalDiff - idleDiff
+	if busyDiff < 0 {
+		busyDiff = 0
+	}
+	value := round((busyDiff / totalDiff) * 100)
+	if value < 0 {
+		value = 0
+	}
+	if value > 100 {
+		value = 100
+	}
+	return value, true
+}
+
+func applyCPUPackageRuntimeMetrics(packages []cpuPackageStats, runtimeMetrics cpuRuntimeMetrics) []cpuPackageStats {
+	if len(packages) == 0 {
+		return []cpuPackageStats{}
+	}
+	result := append([]cpuPackageStats(nil), packages...)
+	for index := range result {
+		current, exists := runtimeMetrics.packages[result[index].ID]
+		if !exists {
+			result[index].UsagePercent = nil
+			if runtimeMetrics.linuxDynamic {
+				result[index].FrequencyMHz = nil
+				result[index].TemperatureC = nil
+			}
+			continue
+		}
+		result[index].UsagePercent = cloneFloat64(current.usagePercent)
+		if runtimeMetrics.linuxDynamic {
+			result[index].FrequencyMHz = cloneFloat64(current.frequencyMHz)
+			result[index].TemperatureC = cloneFloat64(current.temperatureC)
+		}
+	}
+	return result
+}
+
+func cloneFloat64(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func cpuPackageIDs(info []cpu.InfoStat) map[int]string {
+	result := map[int]string{}
+	if runtime.GOOS == "linux" {
+		for _, cpuPath := range globFiles("/sys/devices/system/cpu/cpu[0-9]*") {
+			cpuIndex, ok := linuxCPUIndex(cpuPath)
+			if !ok {
+				continue
+			}
+			physicalID := readTrimmedFile(filepath.Join(cpuPath, "topology", "physical_package_id"))
+			if physicalID != "" {
+				result[cpuIndex] = cpuPackageIDFromPhysicalID(physicalID)
+			}
+		}
+	}
+	for index, entry := range info {
+		packageID := cpuPackageIDFromPhysicalID(entry.PhysicalID)
+		if packageID == "" {
+			packageID = "cpu-0"
+		}
+		cpuIndex := int(entry.CPU)
+		if cpuIndex < 0 {
+			cpuIndex = index
+		}
+		if _, exists := result[cpuIndex]; !exists {
+			result[cpuIndex] = packageID
+		}
+		if _, exists := result[index]; !exists {
+			result[index] = result[cpuIndex]
+		}
+	}
+	return result
+}
+
+func cpuPackageIDForInfoIndex(index int, info []cpu.InfoStat, packageIDs map[int]string) string {
+	if index < len(info) {
+		cpuIndex := int(info[index].CPU)
+		if packageID := packageIDs[cpuIndex]; packageID != "" {
+			return packageID
+		}
+	}
+	if packageID := packageIDs[index]; packageID != "" {
+		return packageID
+	}
+	return "cpu-0"
+}
+
+func cpuPackageIDForTimes(index int, times cpu.TimesStat, info []cpu.InfoStat, packageIDs map[int]string) string {
+	if cpuIndex, ok := linuxCPUIndex(strings.TrimSpace(times.CPU)); ok {
+		if packageID := packageIDs[cpuIndex]; packageID != "" {
+			return packageID
+		}
+	}
+	return cpuPackageIDForInfoIndex(index, info, packageIDs)
+}
+
+func cpuPackageIDFromPhysicalID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	return "cpu-" + sanitizeKey(value)
+}
+
+func linuxCPUIndex(path string) (int, bool) {
+	base := filepath.Base(path)
+	if !strings.HasPrefix(base, "cpu") {
+		return 0, false
+	}
+	value, err := strconv.Atoi(strings.TrimPrefix(base, "cpu"))
+	return value, err == nil && value >= 0
+}
+
+func collectLinuxCPUPackageFrequencies(info []cpu.InfoStat) map[string]*float64 {
+	result := map[string]*float64{}
+	if runtime.GOOS != "linux" {
+		return result
+	}
+	packageIDs := cpuPackageIDs(info)
+	values := map[string][]float64{}
+	for _, cpuPath := range globFiles("/sys/devices/system/cpu/cpu[0-9]*") {
+		cpuIndex, ok := linuxCPUIndex(cpuPath)
+		if !ok || readTrimmedFile(filepath.Join(cpuPath, "online")) == "0" {
+			continue
+		}
+		var frequencyMHz float64
+		for _, name := range []string{"scaling_cur_freq", "cpuinfo_cur_freq"} {
+			value, valueOK := readLinuxRawSensorValue(filepath.Join(cpuPath, "cpufreq", name), 1000)
+			if valueOK && isFinitePositive(value) {
+				frequencyMHz = value
+				break
+			}
+		}
+		if !isFinitePositive(frequencyMHz) {
+			continue
+		}
+		packageID := packageIDs[cpuIndex]
+		if packageID == "" {
+			packageID = "cpu-0"
+		}
+		values[packageID] = append(values[packageID], frequencyMHz)
+	}
+	for packageID, packageValues := range values {
+		result[packageID] = averagePointer(packageValues)
+	}
+	return result
+}
+
+func collectLinuxCPUPackageTemperatures() map[string]*float64 {
+	result := map[string]*float64{}
+	if runtime.GOOS != "linux" {
+		return result
+	}
+	values := map[string]float64{}
+	priorities := map[string]int{}
+	record := func(packageID string, value float64, priority int) {
+		if packageID == "" || !isValidHardwareTemperature(value) {
+			return
+		}
+		currentPriority, exists := priorities[packageID]
+		if exists && (priority < currentPriority || (priority == currentPriority && value <= values[packageID])) {
+			return
+		}
+		values[packageID] = value
+		priorities[packageID] = priority
+	}
+
+	for _, hwmonPath := range globFiles("/sys/class/hwmon/hwmon*") {
+		hwmonName := readTrimmedFile(filepath.Join(hwmonPath, "name"))
+		hwmonIdentity := linuxHwmonIdentity(hwmonPath, hwmonName)
+		for _, temperaturePath := range globFiles(filepath.Join(hwmonPath, "temp*_input")) {
+			value, ok := readLinuxRawSensorValue(temperaturePath, 1000)
+			if !ok {
+				continue
+			}
+			baseName := strings.TrimSuffix(filepath.Base(temperaturePath), "_input")
+			label := readTrimmedFile(filepath.Join(hwmonPath, baseName+"_label"))
+			if label == "" {
+				label = baseName
+			}
+			role := linuxTemperatureRole(hwmonName, label)
+			packageID := linuxCPUPackageID(hwmonName, label, hwmonIdentity)
+			switch role {
+			case "cpu_package":
+				record(packageID, value, 4)
+			case "peci":
+				record(packageID, value, 2)
+			case "cpu_core":
+				record(packageID, value, 1)
+			}
+		}
+	}
+
+	for _, temperaturePath := range globFiles("/sys/class/thermal/thermal_zone*/temp") {
+		value, ok := readLinuxRawSensorValue(temperaturePath, 1000)
+		if !ok {
+			continue
+		}
+		zonePath := filepath.Dir(temperaturePath)
+		zoneType := readTrimmedFile(filepath.Join(zonePath, "type"))
+		if linuxThermalZoneRole(zoneType) != "cpu_package" {
+			continue
+		}
+		packageID := linuxCPUPackageID("x86_pkg_temp", zoneType, filepath.Base(zonePath))
+		record(packageID, value, 3)
+	}
+
+	for packageID, value := range values {
+		current := value
+		result[packageID] = &current
+	}
+	return result
+}
+
+func linuxCPUPackageID(_ string, label, identity string) string {
+	lowerLabel := strings.ToLower(strings.TrimSpace(label))
+	for _, phrase := range []string{"package id", "peci agent"} {
+		if value, ok := numberAfterPhrase(lowerLabel, phrase); ok {
+			return fmt.Sprintf("cpu-%d", value)
+		}
+	}
+	for _, marker := range []string{"coretemp.", "k10temp.", "zenpower."} {
+		if value, ok := numberAfterMarker(identity, marker); ok {
+			return fmt.Sprintf("cpu-%d", value)
+		}
+	}
+	if value, ok := numberAfterMarker(identity, "thermal_zone"); ok {
+		return fmt.Sprintf("cpu-%d", value)
+	}
+	return ""
+}
+
+func numberAfterPhrase(value, phrase string) (int, bool) {
+	index := strings.Index(value, phrase)
+	if index < 0 {
+		return 0, false
+	}
+	rest := strings.TrimSpace(value[index+len(phrase):])
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return 0, false
+	}
+	parsed, err := strconv.Atoi(strings.Trim(fields[0], ":#"))
+	return parsed, err == nil && parsed >= 0
+}
+
+func numberAfterMarker(value, marker string) (int, bool) {
+	index := strings.LastIndex(strings.ToLower(value), strings.ToLower(marker))
+	if index < 0 {
+		return 0, false
+	}
+	rest := value[index+len(marker):]
+	end := 0
+	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0, false
+	}
+	parsed, err := strconv.Atoi(rest[:end])
+	return parsed, err == nil && parsed >= 0
+}
+
+func averagePointerMap(values map[string]*float64) *float64 {
+	items := make([]float64, 0, len(values))
+	for _, value := range values {
+		if value != nil {
+			items = append(items, *value)
+		}
+	}
+	return averagePointer(items)
 }
 
 func sampleMemory() memoryStats {
@@ -1444,10 +1839,11 @@ func collectSlowMetrics() slowMetrics {
 	}
 	if hardware.cpuFrequencyMHz != nil {
 		result.cpuFrequencyMHz = hardware.cpuFrequencyMHz
-		for index := range result.cpuPackages {
-			result.cpuPackages[index].FrequencyMHz = hardware.cpuFrequencyMHz
+		if len(result.cpuPackages) == 1 {
+			result.cpuPackages[0].FrequencyMHz = hardware.cpuFrequencyMHz
 		}
 	}
+	applyCPUPackageTemperatures(result.cpuPackages, hardware.cpuPackageTemperatures)
 	applyCPUPackageTemperature(result.cpuPackages, hardware.cpuTemperatureC)
 	sensorBackends := append([]sensorBackendStatus{}, hardware.sensorBackends...)
 	sensorBackends = append(sensorBackends, collectPlatformSensorBackends()...)
@@ -1835,6 +2231,14 @@ func applyCPUPackageTemperature(packages []cpuPackageStats, temperature *float64
 	}
 }
 
+func applyCPUPackageTemperatures(packages []cpuPackageStats, temperatures map[string]*float64) {
+	for index := range packages {
+		if temperature, ok := temperatures[packages[index].ID]; ok {
+			packages[index].TemperatureC = cloneFloat64(temperature)
+		}
+	}
+}
+
 func isIntegratedGPUName(name string) bool {
 	lower := strings.ToLower(strings.TrimSpace(name))
 	if lower == "" {
@@ -2069,6 +2473,7 @@ func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 	defer countsCancel()
 	logicalCount, _ := cpu.CountsWithContext(countsCtx, true)
 	physicalCount, _ := cpu.CountsWithContext(countsCtx, false)
+	packageIDs := cpuPackageIDs(info)
 
 	type packageAccumulator struct {
 		id           string
@@ -2085,12 +2490,7 @@ func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 	allFrequencies := []float64{}
 
 	for index, entry := range info {
-		key := strings.TrimSpace(entry.PhysicalID)
-		if key == "" {
-			key = "cpu-0"
-		} else {
-			key = fmt.Sprintf("cpu-%s", sanitizeKey(key))
-		}
+		key := cpuPackageIDForInfoIndex(index, info, packageIDs)
 		if _, exists := packages[key]; !exists {
 			name := entry.ModelName
 			if name == "" {
@@ -2115,7 +2515,7 @@ func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 				current.l3CacheBytes = cacheBytes
 			}
 		}
-		if strings.TrimSpace(entry.PhysicalID) == "" && len(info) == 1 {
+		if len(packages) == 1 && len(info) == 1 {
 			current.logicalCount = logicalCount
 			if physicalCount > 0 {
 				current.coreCount = physicalCount
@@ -2162,9 +2562,14 @@ func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 		if logical == 0 {
 			logical = fallbackLogical
 		}
+		socketIndex := len(result)
+		if parsed, parseErr := strconv.Atoi(strings.TrimPrefix(key, "cpu-")); parseErr == nil && parsed >= 0 {
+			socketIndex = parsed
+		}
 		result = append(result, cpuPackageStats{
 			ID:           entry.id,
 			Name:         entry.name,
+			SocketIndex:  socketIndex,
 			Model:        entry.model,
 			CoreCount:    entry.coreCount,
 			LogicalCount: logical,
@@ -2245,6 +2650,7 @@ func collectWindowsCPUPackagesFallback() (*float64, []cpuPackageStats, error) {
 		packages = append(packages, cpuPackageStats{
 			ID:           "cpu-" + sanitizeKey(id),
 			Name:         name,
+			SocketIndex:  index,
 			Model:        model,
 			CoreCount:    record.CoreCount,
 			LogicalCount: record.LogicalCount,
@@ -2299,14 +2705,15 @@ type hardwareSmartAttribute struct {
 }
 
 type hardwareSensorMetrics struct {
-	cpuFrequencyMHz      *float64
-	cpuTemperatureC      *float64
-	cpuTemperatureSource string
-	gpus                 []gpuDeviceStats
-	fans                 []fanSensorStats
-	diskSensorMetadata   map[string]diskSensorMetadata
-	sensorBackends       []sensorBackendStatus
-	temperatureSensors   []temperatureSensorReading
+	cpuFrequencyMHz        *float64
+	cpuTemperatureC        *float64
+	cpuPackageTemperatures map[string]*float64
+	cpuTemperatureSource   string
+	gpus                   []gpuDeviceStats
+	fans                   []fanSensorStats
+	diskSensorMetadata     map[string]diskSensorMetadata
+	sensorBackends         []sensorBackendStatus
+	temperatureSensors     []temperatureSensorReading
 }
 
 // LibreHardwareMonitor exposes live clocks, including CPU boost clocks, where WMI often reports a nominal value.
@@ -2761,6 +3168,7 @@ func collectLinuxHardwareSensors() hardwareSensorMetrics {
 	} else {
 		metrics.cpuTemperatureC = averagePointer(cpuTemperatures)
 	}
+	metrics.cpuPackageTemperatures = collectLinuxCPUPackageTemperatures()
 	if hwmonSensorCount > 0 || len(metrics.temperatureSensors) > 0 {
 		metrics.sensorBackends = []sensorBackendStatus{{
 			ID:     "linux-hwmon-thermal",

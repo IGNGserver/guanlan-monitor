@@ -1620,7 +1620,7 @@ function DevicePage() {
     : "容量暂无";
   const cpuModelItems = cpuInstances.map((cpu) => ({
     id: cpu.id,
-    name: displayModelName(cpu.model, cpu.name, "CPU"),
+    name: `${cpu.socketIndex != null ? `Socket ${cpu.socketIndex}` : cpu.id} · ${displayModelName(cpu.model, cpu.name, "CPU")}`,
     detail: [cpu.coreCount ? `${cpu.coreCount} 核` : "", cpu.logicalCount ? `${cpu.logicalCount} 线程` : "", cpu.l3CacheBytes ? `L3 ${formatBytes(cpu.l3CacheBytes)}` : ""].filter(Boolean).join(" · ")
   }));
   const diskModelItems = diskInstances.map((disk) => ({
@@ -1707,8 +1707,8 @@ function DevicePage() {
         <TelemetrySection id="section-compute" eyebrow="处理器与内存" title="算力与内存明细" description="CPU 实例、频率、温度和内存层级数据分开呈现，避免不同单位被压缩成一条汇总线。">
            <DesktopWidget id="compute-cpu-facts" title="处理器与系统统计" defaultSize="large"><CpuFactsCard cpus={filteredLatest?.cpuPackages ?? []} system={filteredLatest?.system} unavailable={metricUnavailable("systemOverview")} /></DesktopWidget>
            {cpuInstances.length ? cpuInstances.map((cpu) => {
-             const cpuTemperaturePoints = cpu.temperatureC.length ? cpu.temperatureC : series.cpuTemperatureC ?? [];
-             const cpuLabel = displayModelName(cpu.model, cpu.name, "CPU");
+             const cpuTemperaturePoints = cpu.temperatureC.length || cpuInstances.length > 1 ? cpu.temperatureC : series.cpuTemperatureC ?? [];
+             const cpuLabel = `${cpu.socketIndex != null ? `Socket ${cpu.socketIndex}` : cpu.id} · ${displayModelName(cpu.model, cpu.name, "CPU")}`;
              return (
                <TelemetryDeviceBlock
                  key={`compute-cpu-${cpu.id}`}
@@ -1842,7 +1842,7 @@ function DevicePage() {
                 <SummaryRow label="操作系统" value={selectedDevice.os} />
                 <SummaryRow label="设备 ID" value={selectedDevice.deviceId} />
                 <SummaryRow label="Agent 版本" value={selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "未知"} />
-                <SummaryRow label="CPU 型号" value={filteredLatest?.cpuPackages.map((cpu) => cpu.model || cpu.name).join("、") || "未采集"} />
+                <SummaryRow label="CPU 型号" value={filteredLatest?.cpuPackages.map((cpu) => `${cpu.socketIndex != null ? `Socket ${cpu.socketIndex} · ` : ""}${cpu.model || cpu.name}`).join("、") || "未采集"} />
                 <SummaryRow label="运行时间" value={metricUnavailable("systemOverview") ? UNAVAILABLE_METRIC_LABEL : formatDuration(filteredLatest?.system.uptimeSeconds)} />
                 <SummaryRow label="CPU 核心 / 线程" value={`${formatCount(filteredLatest?.cpuPackages.reduce((total, cpu) => total + (cpu.coreCount ?? 0), 0))} / ${formatCount(filteredLatest?.cpuPackages.reduce((total, cpu) => total + (cpu.logicalCount ?? 0), 0))}`} />
                 <SummaryRow label="L3 缓存" value={formatBytes(filteredLatest?.cpuPackages.reduce((total, cpu) => total + (cpu.l3CacheBytes ?? 0), 0))} />

@@ -404,6 +404,8 @@ function averageInstanceMetrics(
     string,
     {
       count: number;
+      usageCount: number;
+      frequencyCount: number;
       meta: InstanceMetricRecord;
       sums: Required<
         Pick<
@@ -436,9 +438,12 @@ function averageInstanceMetrics(
       if (!grouped.has(item.id)) {
         grouped.set(item.id, {
           count: 0,
+          usageCount: 0,
+          frequencyCount: 0,
           meta: {
             id: item.id,
             name: item.name,
+            socketIndex: item.socketIndex,
             integrated: item.integrated,
             memoryKind: item.memoryKind,
             macAddress: item.macAddress,
@@ -488,7 +493,10 @@ function averageInstanceMetrics(
       if (item.temperatureSource === "cpuPackageShared" || (!current.meta.temperatureSource && item.temperatureSource)) {
         current.meta.temperatureSource = item.temperatureSource;
       }
-      current.sums.usagePercent += item.usagePercent ?? 0;
+      if (typeof item.usagePercent === "number" && Number.isFinite(item.usagePercent)) {
+        current.sums.usagePercent += item.usagePercent;
+        current.usageCount += 1;
+      }
       current.sums.totalBytes += item.totalBytes ?? 0;
       current.sums.usedBytes += item.usedBytes ?? 0;
       current.sums.readBytesPerSec += item.readBytesPerSec ?? 0;
@@ -500,7 +508,10 @@ function averageInstanceMetrics(
       current.sums.trafficTxBytes = item.trafficTxBytes ?? current.sums.trafficTxBytes;
       current.sums.encodePercent += item.encodePercent ?? 0;
       current.sums.decodePercent += item.decodePercent ?? 0;
-      current.sums.frequencyMHz += item.frequencyMHz ?? 0;
+      if (typeof item.frequencyMHz === "number" && Number.isFinite(item.frequencyMHz) && item.frequencyMHz > 0) {
+        current.sums.frequencyMHz += item.frequencyMHz;
+        current.frequencyCount += 1;
+      }
       current.sums.memoryUsagePercent += item.memoryUsagePercent ?? 0;
       current.sums.memoryUsedBytes += item.memoryUsedBytes ?? 0;
       if (typeof item.temperatureC === "number" && Number.isFinite(item.temperatureC) && item.temperatureC > 0) {
@@ -511,9 +522,9 @@ function averageInstanceMetrics(
     }
   }
 
-  return [...grouped.values()].map(({ count, meta, sums, temperatureSum, temperatureCount }) => ({
+  return [...grouped.values()].map(({ count, usageCount, frequencyCount, meta, sums, temperatureSum, temperatureCount }) => ({
     ...meta,
-    usagePercent: sums.usagePercent / count,
+    usagePercent: usageCount > 0 ? sums.usagePercent / usageCount : undefined,
     totalBytes: sums.totalBytes / count,
     usedBytes: sums.usedBytes / count,
     readBytesPerSec: sums.readBytesPerSec / count,
@@ -528,7 +539,7 @@ function averageInstanceMetrics(
     trafficTxBytes: sums.trafficTxBytes,
     encodePercent: sums.encodePercent / count,
     decodePercent: sums.decodePercent / count,
-    frequencyMHz: sums.frequencyMHz / count,
+    frequencyMHz: frequencyCount > 0 ? sums.frequencyMHz / frequencyCount : undefined,
     memoryUsagePercent: sums.memoryUsagePercent / count,
     memoryUsedBytes: sums.memoryUsedBytes / count,
     temperatureC: temperatureCount > 0 ? temperatureSum / temperatureCount : undefined,

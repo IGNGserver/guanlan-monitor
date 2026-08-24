@@ -1,0 +1,86 @@
+name: Update test Agents
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Fixed published test version without the v prefix"
+        required: true
+        type: string
+      targets:
+        description: "SSH host names or addresses, separated by spaces"
+        required: true
+        default: "pve1 pve2 pve3 nas"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-agent-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Update Linux Agents
+    runs-on: [self-hosted, Linux, X64, nas]
+    timeout-minutes: 30
+    environment: test
+    steps:
+      - name: Validate request
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          TARGETS: ${{ inputs.targets }}
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Agent update requires a fixed semantic version." >&2
+            exit 1
+          }
+          [[ -n "${TARGETS//[[:space:]]/}" ]] || {
+            echo "At least one Agent target is required." >&2
+            exit 1
+          }
+          for target in $TARGETS; do
+            [[ "$target" =~ ^[A-Za-z0-9_.:-]+$ ]] || {
+              echo "Invalid SSH target: $target" >&2
+              exit 1
+            }
+          done
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.TEST_DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.TEST_DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Update and verify each Agent
+        shell: bash
+        env:
+          DEPLOY_USER: ${{ secrets.TEST_DEPLOY_USER }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+          TARGETS: ${{ inputs.targets }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          for target in $TARGETS; do
+            echo "Updating Agent on $target"
+            ssh -o BatchMode=yes -o ConnectTimeout=15 -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$target" \
+              "sudo -n /opt/device-state-console-agent/device-state-console-agent update --channel test"
+            reported="$(ssh -o BatchMode=yes -o ConnectTimeout=15 -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$target" \
+              "sudo -n /opt/device-state-console-agent/device-state-console-agent version")"
+            echo "$target: $reported"
+            grep -Fq "$REQUESTED_VERSION" <<< "$reported" || {
+              echo "Agent on $target did not report version $REQUESTED_VERSION." >&2
+              exit 1
+            }
+          done

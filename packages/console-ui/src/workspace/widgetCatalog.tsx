@@ -638,13 +638,17 @@ function gpuMemoryLabel(memoryKind: string | null | undefined): string {
 
 
 function hardwareRows(device: DeviceSummary, latest: MetricsLatest | undefined): Array<{ label: string; value: string; detail?: string }> {
-  const cpu = latest?.cpuPackages?.[0];
+  const cpus = latest?.cpuPackages ?? [];
   const unavailable = new Set([...(device.unavailableMetrics ?? []), ...(latest?.unavailableMetrics ?? [])]);
   return [
     { label: "操作系统", value: device.os },
     { label: "设备 ID", value: device.deviceId },
     { label: "Agent", value: device.agentVersion ? `v${device.agentVersion}` : "未知" },
-    { label: "CPU", value: cpu?.model || cpu?.name || "未采集", detail: cpu ? `${cpu.coreCount ?? "?"} 核 · ${cpu.logicalCount ?? "?"} 线程` : undefined },
+    {
+      label: "CPU",
+      value: cpus.length ? cpus.map((cpu) => `${cpu.socketIndex != null ? `Socket ${cpu.socketIndex} · ` : ""}${cpu.model || cpu.name || "未命名"}`).join(" / ") : "未采集",
+      detail: cpus.length ? cpus.map((cpu) => `${cpu.socketIndex != null ? `Socket ${cpu.socketIndex} ` : ""}${cpu.coreCount ?? "?"} 核 · ${cpu.logicalCount ?? "?"} 线程`).join(" / ") : undefined
+    },
     { label: "运行时间", value: unavailable.has("systemOverview") ? UNAVAILABLE_METRIC_LABEL : formatDuration(latest?.system.uptimeSeconds) },
     { label: "内存", value: unavailable.has("memoryUsage") ? `${UNAVAILABLE_METRIC_LABEL}${latest?.memoryTotalBytes ? ` · 总容量 ${formatBytes(latest.memoryTotalBytes)}` : ""}` : latest ? `${formatBytes(latest.memoryUsedBytes)} / ${formatBytes(latest.memoryTotalBytes)}` : "未采集" },
     { label: "磁盘", value: unavailable.has("diskUsage") ? `${UNAVAILABLE_METRIC_LABEL}${latest?.diskTotalBytes ? ` · 总容量 ${formatBytes(latest.diskTotalBytes)}` : ""}` : latest ? `${formatBytes(latest.diskUsedBytes)} / ${formatBytes(latest.diskTotalBytes)}` : "未采集" }
@@ -735,7 +739,8 @@ function WidgetContent({ definition, entry, context }: { definition: WidgetCatal
   if ((definition.widgetType === "cpu-usage" || definition.widgetType === "cpu-usage-pie") && visualization === "donut") {
     const targetId = getTargetId(entry);
     const cpu = targetId ? latest?.cpuPackages?.find((item) => item.id === targetId) : latest?.cpuPackages?.[0];
-    const used = cpu?.usagePercent ?? latestValue(metrics?.series.cpuUsagePercent) ?? 0;
+    const used = cpu?.usagePercent ?? (targetId && (latest?.cpuPackages?.length ?? 0) > 1 ? undefined : latestValue(metrics?.series.cpuUsagePercent));
+    if (used == null || !Number.isFinite(used)) return <div className="workspace-dynamic-empty__inline">{UNAVAILABLE_METRIC_LABEL}</div>;
     return <DonutChart data={[{ name: "已用", value: Math.min(100, Math.max(0, used)), color: "#3b82f6" }, { name: "空闲", value: Math.max(0, 100 - used), color: "#cbd5e1" }]} centerLabel={`${Math.round(used)}%`} />;
   }
   if ((definition.widgetType === "memory-usage" || definition.widgetType === "memory-usage-pie") && visualization === "donut") {
@@ -827,7 +832,11 @@ function targetOptions(definition: WidgetCatalogDefinition, metrics: MetricsResp
     return targets;
   }
   if (!metrics) return [];
-  if (definition.targetKind === "cpu") return filterEnabled(metrics.series.cpus ?? [], "cpu").map((item) => ({ id: item.id, name: item.name, detail: item.model }));
+  if (definition.targetKind === "cpu") return filterEnabled(metrics.series.cpus ?? [], "cpu").map((item) => ({
+    id: item.id,
+    name: item.socketIndex != null ? `Socket ${item.socketIndex}` : item.id,
+    detail: `${item.socketIndex != null ? `Socket ${item.socketIndex} · ` : ""}${item.model || item.name}`
+  }));
   if (definition.targetKind === "disk") return filterEnabled(metrics.series.disks ?? [], "disk").map((item) => ({ id: item.id, name: item.model || item.name, detail: item.mountPoint }));
   if (definition.targetKind === "gpu") return filterEnabled(metrics.series.gpus ?? [], "gpu").map((item) => ({ id: item.id, name: item.name }));
   if (definition.targetKind === "fan") return filterEnabled(metrics.series.fans ?? [], "fan").map((item) => ({ id: item.id, name: item.name, detail: item.interface }));

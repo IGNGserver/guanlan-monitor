@@ -184,12 +184,17 @@ export function payloadToTimeSeries(
       return {
         id: cpu.id,
         name: cpu.name,
+        socketIndex: cpu.socketIndex,
         model: cpu.model,
         coreCount: enabled.has("cpuTopology") && instanceEnabled.has("cpuTopology") ? cpu.coreCount : undefined,
         logicalCount: enabled.has("cpuTopology") && instanceEnabled.has("cpuTopology") ? cpu.logicalCount : undefined,
         l3CacheBytes: enabled.has("cpuTopology") && instanceEnabled.has("cpuTopology") ? cpu.l3CacheBytes ?? undefined : undefined,
-        usagePercent: enabled.has("cpuUsage") && instanceEnabled.has("cpuUsage") ? cpu.usagePercent ?? payload.cpuUsagePercent : 0,
-        frequencyMHz: enabled.has("cpuFrequency") && instanceEnabled.has("cpuFrequency") ? cpu.frequencyMHz ?? resolvedCpuFrequencyMHz ?? 0 : 0,
+        usagePercent: enabled.has("cpuUsage") && instanceEnabled.has("cpuUsage")
+          ? cpu.usagePercent ?? (cpuPackageCount === 1 ? payload.cpuUsagePercent : undefined)
+          : undefined,
+        frequencyMHz: enabled.has("cpuFrequency") && instanceEnabled.has("cpuFrequency")
+          ? cpu.frequencyMHz ?? (cpuPackageCount === 1 ? resolvedCpuFrequencyMHz : undefined)
+          : undefined,
         temperatureC: enabled.has("cpuTemperature") && instanceEnabled.has("cpuTemperature")
           ? cpu.temperatureC ?? (cpuPackageCount === 1 ? resolvedCpuTemperatureC : undefined)
           : undefined
@@ -464,12 +469,13 @@ function cpuInstancesAtPoint(point: TimeSeriesRecord, config: DeviceMetricConfig
   const instances = point.cpus ?? recordedCpuPackages.map((cpu) => ({
     id: cpu.id,
     name: cpu.name,
+    socketIndex: cpu.socketIndex,
     model: cpu.model,
     coreCount: cpu.coreCount,
     logicalCount: cpu.logicalCount,
     l3CacheBytes: cpu.l3CacheBytes ?? undefined,
-    usagePercent: cpu.usagePercent ?? point.cpuUsagePercent,
-    frequencyMHz: cpu.frequencyMHz ?? point.cpuFrequencyMHz,
+    usagePercent: cpu.usagePercent ?? (recordedCpuPackages.length === 1 ? point.cpuUsagePercent : undefined),
+    frequencyMHz: cpu.frequencyMHz ?? (recordedCpuPackages.length === 1 ? point.cpuFrequencyMHz : undefined),
     temperatureC: cpu.temperatureC ?? aggregateTemperature
   }));
   return instances.filter((cpu) => isInstanceEnabled(config, "cpu", cpu.id));
@@ -563,6 +569,7 @@ function buildCpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricCo
         grouped.set(cpu.id, {
           id: cpu.id,
           name: cpu.name,
+          socketIndex: cpu.socketIndex,
           model: cpu.model,
           coreCount: cpu.coreCount,
           logicalCount: cpu.logicalCount,
@@ -574,8 +581,12 @@ function buildCpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricCo
       }
       const target = grouped.get(cpu.id)!;
       const timestamp = new Date(point.timestamp).toISOString();
-      target.usagePercent.push({ timestamp, value: Number(cpu.usagePercent ?? 0) });
-      target.frequencyMHz.push({ timestamp, value: Number(cpu.frequencyMHz ?? 0) });
+      if (typeof cpu.usagePercent === "number" && Number.isFinite(cpu.usagePercent)) {
+        target.usagePercent.push({ timestamp, value: cpu.usagePercent });
+      }
+      if (typeof cpu.frequencyMHz === "number" && Number.isFinite(cpu.frequencyMHz) && cpu.frequencyMHz > 0) {
+        target.frequencyMHz.push({ timestamp, value: cpu.frequencyMHz });
+      }
       const temperature = Number(cpu.temperatureC);
       if (Number.isFinite(temperature) && temperature > 0) {
         lastTemperature.set(cpu.id, temperature);

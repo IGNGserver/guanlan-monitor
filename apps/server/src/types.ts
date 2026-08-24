@@ -68,6 +68,7 @@ export interface TimeSeriesRecord {
 export interface InstanceMetricRecord {
   id: string;
   name: string;
+  socketIndex?: number;
   interface?: string;
   macAddress?: string;
   ipv4?: string[];
