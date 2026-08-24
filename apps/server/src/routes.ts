@@ -20,6 +20,7 @@ import { unavailableMetricsForVirtualMachinePowerState } from "./services/virtua
 import { LocalDeviceMetricConfigStore, LocalFanNoteStore, LocalWidgetLayoutStore, createLocalStore } from "./repositories/local.js";
 import type { Repositories, SessionValue } from "./types.js";
 import { ALL_DEVICE_METRIC_KEYS, filterAgentPayloadInstances, getAvailableMetrics, resolveCpuFrequencyMHz, resolveCpuTemperatureC, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
+import { virtualizationStorageInstances } from "@dsc/shared";
 import { getSystemVersionInfo, getUpdateInfo } from "./updates.js";
 import { getHubUpdateStatus, HubUpdateError, requestHubUpdate } from "./hub-update.js";
 
@@ -451,6 +452,7 @@ export async function registerRoutes(
           temperatureSensors: latest.temperatureSensors ?? [],
           sensorBackends: latest.sensorBackends ?? [],
           virtualization: latest.virtualization ?? null,
+          storagePools: virtualizationStorageInstances(latest.virtualization),
           unavailableMetrics: latest.unavailableMetrics ?? [],
           fans: (latest.fans ?? []).map((fan) => ({
             ...fan,
@@ -801,6 +803,13 @@ function alignMetricSeriesToWindow(series: MetricSeries, window: MetricWindow) {
       readBytesPerSec: alignSamplePoints(disk.readBytesPerSec, bucketMs),
       writeBytesPerSec: alignSamplePoints(disk.writeBytesPerSec, bucketMs),
       temperatureC: alignSamplePoints(disk.temperatureC, bucketMs)
+    })),
+    storagePools: (series.storagePools ?? []).map((storage) => ({
+      ...storage,
+      totalBytes: alignSamplePoints(storage.totalBytes, bucketMs),
+      usedBytes: alignSamplePoints(storage.usedBytes, bucketMs),
+      availableBytes: alignSamplePoints(storage.availableBytes, bucketMs),
+      usagePercent: alignSamplePoints(storage.usagePercent, bucketMs)
     })),
     networks: series.networks.map((network) => ({
       ...network,
