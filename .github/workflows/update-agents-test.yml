@@ -86,6 +86,10 @@ jobs:
               if [[ -s "$HOME/.ssh/id_ed25519" ]]; then
                 ssh_options+=(-i "$HOME/.ssh/id_ed25519")
               fi
+              # The self-hosted test runner may provide its SSH identity without
+              # a checked-in known_hosts file. Preserve pinned keys when present,
+              # while allowing first-use keys on the isolated test channel.
+              ssh_options+=(-o StrictHostKeyChecking=accept-new)
               if [[ "$remote_user" == 'root' ]]; then
                 remote_update_command='/opt/device-state-console-agent/device-state-console-agent update --channel test; /opt/device-state-console-agent/device-state-console-agent version'
               else
