@@ -1,6 +1,6 @@
 {
   "name": "@dsc/web",
-  "version": "0.2.266",
+  "version": "0.2.267",
   "private": true,
   "scripts": {
     "build": "next build",

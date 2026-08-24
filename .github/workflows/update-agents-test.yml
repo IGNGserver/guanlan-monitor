@@ -15,14 +15,53 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: test-agent-update
   cancel-in-progress: false
 
 jobs:
+  stage:
+    name: Stage Linux Agent package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download and verify published Agent package
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          for command in curl sha256sum unzip; do
+            command -v "$command" >/dev/null 2>&1 || {
+              echo "$command is required on the staging runner." >&2
+              exit 1
+            }
+          done
+          stage_dir="$GITHUB_WORKSPACE/release"
+          mkdir -p "$stage_dir"
+          asset="DeviceStateConsole-Linux-CLI-Install-v${REQUESTED_VERSION}.zip"
+          base_url="https://github.com/IGNGserver/guanlan-monitor/releases/download/v${REQUESTED_VERSION}"
+          curl -4 -fL --retry 8 --retry-all-errors --connect-timeout 20 --max-time 180 \
+            "$base_url/$asset.sha256" -o "$stage_dir/$asset.sha256"
+          curl -4 -fL --retry 8 --retry-all-errors --connect-timeout 20 --max-time 300 \
+            "$base_url/$asset" -o "$stage_dir/$asset"
+          (cd "$stage_dir" && sha256sum -c "$asset.sha256")
+          unzip -tq "$stage_dir/$asset"
+
+      - name: Upload staged Agent package
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-agent-release-${{ inputs.version }}
+          path: |
+            release/DeviceStateConsole-Linux-CLI-Install-v${{ inputs.version }}.zip
+            release/DeviceStateConsole-Linux-CLI-Install-v${{ inputs.version }}.zip.sha256
+          if-no-files-found: error
+
   update:
     name: Update Linux Agents
+    needs: stage
     runs-on: [self-hosted, Linux, X64, nas]
     timeout-minutes: 30
     environment: test
@@ -67,18 +106,13 @@ jobs:
             echo 'SSH deploy secrets are empty; remote targets will use the NAS runner SSH configuration.'
           fi
 
-      - name: Checkout requested Agent source
-        uses: actions/checkout@v4
+      - name: Download staged Agent package
+        uses: actions/download-artifact@v4
         with:
-          ref: v${{ inputs.version }}
-          fetch-depth: 1
+          name: linux-agent-release-${{ inputs.version }}
+          path: ${{ runner.temp }}/dsc-agent-artifact-${{ github.run_id }}
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.24.x"
-
-      - name: Build and verify Agent package on runner
+      - name: Extract and verify Agent package
         shell: bash
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
@@ -86,24 +120,33 @@ jobs:
           set -euo pipefail
           work_dir="${RUNNER_TEMP:-/tmp}/dsc-agent-update-${GITHUB_RUN_ID:-manual}"
           rm -rf "$work_dir"
+          artifact_dir="${RUNNER_TEMP:-/tmp}/dsc-agent-artifact-${GITHUB_RUN_ID:-manual}"
+          archive="$(find "$artifact_dir" -maxdepth 1 -type f -name 'DeviceStateConsole-Linux-CLI-Install-v*.zip' -print -quit)"
+          [[ -n "$archive" && -f "$archive" ]] || {
+            echo "Staged Agent ZIP is unavailable." >&2
+            exit 1
+          }
+          checksum="$archive.sha256"
+          [[ -f "$checksum" ]] || {
+            echo "Staged Agent checksum is unavailable." >&2
+            exit 1
+          }
+          (cd "$(dirname "$archive")" && sha256sum -c "$(basename "$checksum")")
           package_dir="$work_dir/package"
           mkdir -p "$package_dir"
-          source_version="$(tr -d '[:space:]' < VERSION)"
-          [[ "$source_version" == "$REQUESTED_VERSION" ]] || {
-            echo "Checked out source version $source_version does not match requested version $REQUESTED_VERSION." >&2
+          unzip -q "$archive" -d "$package_dir"
+          agent_binary="$(find "$package_dir" -type f -name 'device-state-console-agent' -print -quit)"
+          [[ -n "$agent_binary" && -f "$agent_binary" ]] || {
+            echo "Staged Agent package is missing the Linux Agent binary." >&2
             exit 1
           }
-          agent_binary="$package_dir/device-state-console-agent"
-          go -C agents build -trimpath \
-            -ldflags "-s -w -X main.BuildVersion=${source_version} -X main.BuildChannel=test" \
-            -o "$agent_binary" .
           chmod 0755 "$agent_binary"
-          reported="$($agent_binary version)"
+          reported="$("$agent_binary" version)"
           [[ "$reported" == "$REQUESTED_VERSION (test)" ]] || {
-            echo "Built Agent reported '$reported', expected '$REQUESTED_VERSION (test)'." >&2
+            echo "Staged Agent reported '$reported', expected '$REQUESTED_VERSION (test)'." >&2
             exit 1
           }
-          echo "Built and verified Agent $reported on the Actions runner."
+          echo "Downloaded and verified Agent $reported through Actions artifacts."
 
       - name: Distribute and verify each Agent
         shell: bash
@@ -119,8 +162,8 @@ jobs:
             echo "Verified Agent package directory is unavailable." >&2
             exit 1
           }
-          agent_binary="$work_dir/package/device-state-console-agent"
-          [[ -f "$agent_binary" ]] || {
+          agent_binary="$(find "$work_dir/package" -type f -name 'device-state-console-agent' -print -quit)"
+          [[ -n "$agent_binary" && -f "$agent_binary" ]] || {
             echo "Verified Agent package is missing the Linux Agent binary." >&2
             exit 1
           }
