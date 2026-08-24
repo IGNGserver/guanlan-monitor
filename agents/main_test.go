@@ -840,6 +840,97 @@ func TestMergeGPUStatsWithAliasedNvidiaGPU(t *testing.T) {
 	}
 }
 
+func TestMergeWindowsGPUStatsPrefersPhysicalSourcesOverPerformanceFallback(t *testing.T) {
+	base := []gpuDeviceStats{
+		{
+			ID:   "gpu-pci-ven-10de-dev-1f0b-subsys-88041043",
+			Name: "NVIDIA GeForce RTX 2060 SUPER",
+		},
+		{
+			ID:   "gpu-pci-ven-8086-dev-a788",
+			Name: "Intel(R) UHD Graphics",
+		},
+	}
+	performance := []gpuDeviceStats{
+		{
+			ID:                  base[0].ID,
+			Name:                base[0].Name,
+			UtilizationPercent:  10.045,
+			utilizationObserved: true,
+		},
+	}
+	lhmFrequency := 1815.0
+	lhmTemperature := 87.0
+	lhm := []gpuDeviceStats{
+		{
+			ID:                  "gpu-lhm-nvidia-0",
+			Name:                "NVIDIA CMP 40HX",
+			UtilizationPercent:  99,
+			utilizationObserved: true,
+			FrequencyMHz:        &lhmFrequency,
+			TemperatureC:        &lhmTemperature,
+			TemperatureSource:   "device",
+		},
+	}
+	nvidiaFrequency := 1815.0
+	nvidiaTemperature := 87.0
+	nvidia := []gpuDeviceStats{
+		{
+			ID:                  "gpu-nvidia-cmp-40hx-0",
+			Name:                "NVIDIA CMP 40HX",
+			UtilizationPercent:  99,
+			utilizationObserved: true,
+			FrequencyMHz:        &nvidiaFrequency,
+			TemperatureC:        &nvidiaTemperature,
+			TemperatureSource:   "nvidia-smi",
+		},
+	}
+
+	merged := mergeGPUStats(base, performance, lhm, nvidia)
+	if len(merged) != 2 {
+		t.Fatalf("expected 2 merged GPUs, got %d", len(merged))
+	}
+	if merged[0].UtilizationPercent != 99 {
+		t.Errorf("expected NVIDIA utilization from physical source, got %v", merged[0].UtilizationPercent)
+	}
+	if merged[0].FrequencyMHz == nil || *merged[0].FrequencyMHz != 1815 {
+		t.Errorf("expected NVIDIA frequency from physical source, got %v", merged[0].FrequencyMHz)
+	}
+	if merged[0].TemperatureC == nil || *merged[0].TemperatureC != 87 {
+		t.Errorf("expected NVIDIA temperature from physical source, got %v", merged[0].TemperatureC)
+	}
+	if merged[0].TemperatureSource != "nvidia-smi" {
+		t.Errorf("expected nvidia-smi temperature source, got %q", merged[0].TemperatureSource)
+	}
+}
+
+func TestMergeGPUStatsPreservesObservedZeroUtilization(t *testing.T) {
+	base := []gpuDeviceStats{{
+		ID:   "gpu-pci-ven-10de-dev-1f0b-subsys-88041043",
+		Name: "NVIDIA GeForce RTX 2060 SUPER",
+	}}
+	performance := []gpuDeviceStats{{
+		ID:                  base[0].ID,
+		Name:                base[0].Name,
+		UtilizationPercent:  10,
+		utilizationObserved: true,
+	}}
+	nvidia := []gpuDeviceStats{{
+		ID:                  "gpu-nvidia-cmp-40hx-0",
+		Name:                "NVIDIA CMP 40HX",
+		UtilizationPercent:  0,
+		utilizationObserved: true,
+	}}
+
+	merged := mergeGPUStats(base, performance, nvidia)
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged GPU, got %d", len(merged))
+	}
+	if merged[0].UtilizationPercent != 0 {
+		t.Errorf("expected observed zero utilization to override fallback, got %v", merged[0].UtilizationPercent)
+	}
+}
+
 func TestVirtualGPUAdapterFiltering(t *testing.T) {
 	virtualAdapters := []struct {
 		name string
