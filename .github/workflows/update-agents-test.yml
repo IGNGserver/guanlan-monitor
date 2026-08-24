@@ -152,6 +152,7 @@ jobs:
         shell: bash
         env:
           DEPLOY_USER: ${{ secrets.TEST_DEPLOY_USER }}
+          DEPLOY_PASSWORD: ${{ secrets.TEST_DEPLOY_PASSWORD }}
           REQUESTED_VERSION: ${{ inputs.version }}
           TARGETS: ${{ inputs.targets }}
         run: |
@@ -205,8 +206,18 @@ jobs:
             echo "Updating Agent on $target"
             if [[ "$target" == 'nas' || "$target" == 'localhost' || "$target" == '127.0.0.1' ]]; then
               local_stage="/opt/device-state-console-agent/.dsc-agent-${REQUESTED_VERSION}.new"
-              sudo -n install -m 0755 "$agent_binary" "$local_stage"
-              reported="$(sudo -n bash -s -- "$REQUESTED_VERSION" "$local_stage" <<< "$install_script")"
+              if [[ -n "$DEPLOY_PASSWORD" ]]; then
+                printf '%s\n' "$DEPLOY_PASSWORD" | sudo -S -p '' install -m 0755 "$agent_binary" "$local_stage"
+                reported="$(
+                  {
+                    printf '%s\n' "$DEPLOY_PASSWORD"
+                    printf '%s\n' "$install_script"
+                  } | sudo -S -p '' bash -s -- "$REQUESTED_VERSION" "$local_stage"
+                )"
+              else
+                sudo -n install -m 0755 "$agent_binary" "$local_stage"
+                reported="$(sudo -n bash -s -- "$REQUESTED_VERSION" "$local_stage" <<< "$install_script")"
+              fi
             else
               remote_user="${DEPLOY_USER:-root}"
               ssh_options=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new)
