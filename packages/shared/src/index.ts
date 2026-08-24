@@ -464,9 +464,23 @@ export function virtualizationStorageInstanceId(node: string | null | undefined,
   return node ? `${node}:${storageId}` : storageId;
 }
 
+function hasVirtualizationStorageCapacity(storage: VirtualizationStorageTelemetry): boolean {
+  return [storage.totalBytes, storage.usedBytes, storage.availableBytes].some((value) =>
+    typeof value === "number" && Number.isFinite(value) && value > 0
+  );
+}
+
+export function isDisplayableVirtualizationStorage(storage: VirtualizationStorageTelemetry): boolean {
+  // Proxmox returns cluster-wide storage configuration for every node. A pool
+  // that is inactive on this node, or has no capacity values, is not a
+  // node-local telemetry instance and should not become a misleading card.
+  return storage.active !== false && hasVirtualizationStorageCapacity(storage);
+}
+
 /**
- * Return one stable, node-scoped record for every virtualization storage pool.
- * Node records are authoritative; the legacy top-level list is only a fallback.
+ * Return one stable, node-scoped record for every usable virtualization
+ * storage pool. Node records are authoritative; the legacy top-level list is
+ * only a fallback.
  */
 export function virtualizationStorageInstances(snapshot: VirtualizationSnapshot | null | undefined): VirtualizationStorageTelemetry[] {
   if (!snapshot) return [];
@@ -476,12 +490,12 @@ export function virtualizationStorageInstances(snapshot: VirtualizationSnapshot 
       id: virtualizationStorageInstanceId(node.id, storage.id),
       node: node.id
     }))
-  );
+  ).filter(isDisplayableVirtualizationStorage);
   if (nodeStorages.length) return nodeStorages;
   return (snapshot.storages ?? []).map((storage) => ({
     ...storage,
     id: virtualizationStorageInstanceId(storage.node, storage.id)
-  }));
+  })).filter(isDisplayableVirtualizationStorage);
 }
 
 export interface DeviceMetricOption {
