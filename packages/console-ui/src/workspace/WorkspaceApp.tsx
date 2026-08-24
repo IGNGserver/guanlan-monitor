@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, SamplePoint, SystemStats, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, VirtualizationStorageMetricSeries, VirtualizationStorageTelemetry, WidgetInstanceConfig, WidgetLayoutDocument, WidgetPanelMetadata } from "@dsc/shared";
-import { isDisplayableVirtualizationStorage, virtualizationStorageInstances } from "@dsc/shared";
+import { isDisplayableVirtualizationStorage, isDisplayableVirtualizationStorageSeries, virtualizationStorageInstances } from "@dsc/shared";
 import clsx from "clsx";
 import appIcon from "../assets/app-icon.png";
 import type { ConsoleAdapter } from "../services/adapter";
@@ -1649,7 +1649,7 @@ function DevicePage() {
       ? currentStoragePools
       : virtualizationStorageInstances(latest.virtualization)
     : [];
-  const storagePoolSeries = series?.storagePools?.filter(isDisplayableVirtualizationStorage) ?? [];
+  const storagePoolSeries = series?.storagePools?.filter(isDisplayableVirtualizationStorageSeries) ?? [];
   const storagePoolDisplaySeries: VirtualizationStorageMetricSeries[] = [
     ...storagePoolSeries,
     ...storagePoolDetails
