@@ -153,7 +153,6 @@ fun AppRoot(
   onToggleDeviceInstance: (DeviceBlockKey, String) -> Unit,
   onToggleInstanceMetric: (String, String) -> Unit,
   onSaveMetricConfig: () -> Unit,
-  onSaveFanNote: (String, String, String) -> Unit,
   onRefresh: () -> Unit,
   onDownloadUpdate: () -> Unit,
   onLaunchUpdateInstaller: (String) -> Unit,
@@ -210,7 +209,7 @@ fun AppRoot(
           }
           AppScreen.DeviceList -> DeviceListScreen(state, onOpenDevice, onOpenTraffic, onOpenDeviceEditor, onSelectInstanceType, onDeleteDevice, onReorderDevices, onRequestLogout = { showLogoutConfirm = true }, onRefresh = onRefresh, onDownloadUpdate = onDownloadUpdate)
           AppScreen.Traffic -> TrafficScreen(state, onShowDeviceList, onSelectTrafficMode, onSelectTrafficCell, onShiftTrafficAnchor, onRefresh)
-          AppScreen.DeviceDetail -> DeviceDetailScreen(state, onShowDeviceList, onSelectWindow, onOpenTraffic, onCloseTrafficSheet, onSelectTrafficCell, onOpenBlockEditor, onOpenInstanceEditor, onSaveFanNote, onRefresh, onClearFocusedBlock)
+          AppScreen.DeviceDetail -> DeviceDetailScreen(state, onShowDeviceList, onSelectWindow, onOpenTraffic, onCloseTrafficSheet, onSelectTrafficCell, onOpenBlockEditor, onOpenInstanceEditor, onRefresh, onClearFocusedBlock)
         }
       }
 
@@ -653,7 +652,6 @@ private fun DeviceDetailScreen(
   onSelectTrafficCell: (String) -> Unit,
   onOpenBlockEditor: (String, DeviceBlockKey) -> Unit,
   onOpenInstanceEditor: (String, DeviceBlockKey, String) -> Unit,
-  onSaveFanNote: (String, String, String) -> Unit,
   onRefresh: () -> Unit,
   onClearFocusedBlock: () -> Unit
 ) {
@@ -781,9 +779,7 @@ private fun DeviceDetailScreen(
       onSelectTab = { openTabId = it },
       onDismiss = { openBlock = null },
       onEditBlock = { onOpenBlockEditor(metrics.device.deviceId, blockKey) },
-      onEditInstance = { instanceId -> onOpenInstanceEditor(metrics.device.deviceId, blockKey, instanceId) },
-      onSaveFanNote = onSaveFanNote,
-      savingFanNote = state.savingFanNote
+      onEditInstance = { instanceId -> onOpenInstanceEditor(metrics.device.deviceId, blockKey, instanceId) }
     )
   }
   if (state.trafficSheetRequested) {
@@ -954,9 +950,7 @@ private fun BlockSheet(
   onSelectTab: (String) -> Unit,
   onDismiss: () -> Unit,
   onEditBlock: () -> Unit,
-  onEditInstance: (String) -> Unit,
-  onSaveFanNote: (String, String, String) -> Unit,
-  savingFanNote: Boolean
+  onEditInstance: (String) -> Unit
 ) {
   val haptic = LocalHapticFeedback.current
   val chartWindow = remember(metrics, selectedWindow) { chartWindowFor(metrics, selectedWindow) }
@@ -1028,9 +1022,7 @@ private fun BlockSheet(
             selectedWindow = selectedWindow,
             chartWindow = chartWindow,
             selectedTabIndex = selectedIndex,
-            onEditInstance = onEditInstance,
-            onSaveFanNote = onSaveFanNote,
-            savingFanNote = savingFanNote
+            onEditInstance = onEditInstance
           )
         }
       }
@@ -1391,9 +1383,7 @@ private fun BlockSheetTabContent(
   selectedWindow: MetricWindow,
   chartWindow: ChartWindow,
   selectedTabIndex: Int,
-  onEditInstance: (String) -> Unit,
-  onSaveFanNote: (String, String, String) -> Unit,
-  savingFanNote: Boolean
+  onEditInstance: (String) -> Unit
 ) {
   Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
     when (blockKey) {
@@ -1403,7 +1393,7 @@ private fun BlockSheetTabContent(
       DeviceBlockKey.Network -> NetworkSheetContent(metrics, tabId, selectedWindow, chartWindow, onEditInstance)
       DeviceBlockKey.Temperature -> TemperatureSheetContent(metrics, selectedWindow, chartWindow)
       DeviceBlockKey.Gpu -> GpuSheetContent(metrics, tabId, selectedWindow, chartWindow, onEditInstance)
-      DeviceBlockKey.Fan -> FanSheetContent(metrics, tabId, chartWindow, onSaveFanNote, savingFanNote)
+      DeviceBlockKey.Fan -> FanSheetContent(metrics, tabId, chartWindow)
     }
   }
 }
@@ -1992,9 +1982,7 @@ private fun physicalDiskTemperatureTitle(key: String, model: String?, name: Stri
 private fun FanSheetContent(
   metrics: MetricsDto,
   tabId: String,
-  chartWindow: ChartWindow,
-  onSaveFanNote: (String, String, String) -> Unit,
-  savingFanNote: Boolean
+  chartWindow: ChartWindow
 ) {
   val fans = fanInstancesForDisplay(metrics)
   if (tabId == "total") {
@@ -2027,7 +2015,6 @@ private fun FanSheetContent(
 
   val fan = fans.firstOrNull { it.id == tabId } ?: return
   val series = metrics.series.fans.firstOrNull { it.id == fan.id }
-  var noteDraft by remember(fan.id, fan.note) { mutableStateOf(fan.note.orEmpty()) }
   InstanceCard(
     title = fan.label,
     subtitle = fan.interfaceName ?: fan.interfaceRaw ?: "风扇实例"
@@ -2044,7 +2031,7 @@ private fun FanSheetContent(
       ),
       chartWindow = chartWindow
     )
-    MetaGrid(listOf("转速" to "${fan.rpm} RPM", "备注" to (fan.note ?: "未备注")))
+    MetaGrid(listOf("转速" to "${fan.rpm} RPM"))
     MetaGrid(
       listOfNotNull(
         "控制" to (fan.controlMode ?: "未知"),
@@ -2053,24 +2040,6 @@ private fun FanSheetContent(
         "通道" to (fan.channelState ?: "未知")
       )
     )
-    OutlinedTextField(
-      value = noteDraft,
-      onValueChange = { value -> if (value.length <= 100) noteDraft = value },
-      modifier = Modifier.fillMaxWidth(),
-      label = { Text("风扇备注") },
-      placeholder = { Text("例如：前置进风风扇") },
-      minLines = 2,
-      maxLines = 3
-    )
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-      Text("${noteDraft.length}/100", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-      Button(
-        onClick = { onSaveFanNote(metrics.device.deviceId, fan.id, noteDraft) },
-        enabled = !savingFanNote
-      ) {
-        Text(if (savingFanNote) "保存中" else "保存备注")
-      }
-    }
   }
 }
 
@@ -2199,7 +2168,7 @@ private fun FanSection(metrics: MetricsDto) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
           Text(fan.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
           Text(
-            listOfNotNull(fan.interfaceName ?: fan.interfaceRaw, fan.note?.takeIf { it.isNotBlank() }).joinToString(" · "),
+            fan.interfaceName ?: fan.interfaceRaw ?: "风扇实例",
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
           Text("${fan.rpm} RPM", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)

@@ -156,8 +156,7 @@ const metricGroups: Array<{ label: string; items: Array<{ key: DeviceMetricKey; 
       { key: "fanControl", label: "控制状态" },
       { key: "fanTargetTemperature", label: "目标温度" },
       { key: "fanPwm", label: "PWM 占空比" },
-      { key: "fanChannelState", label: "通道状态" },
-      { key: "fanNote", label: "风扇备注" }
+      { key: "fanChannelState", label: "通道状态" }
     ]
   },
   {
@@ -999,24 +998,6 @@ function TelemetryModelList({ label, items }: { label: string; items: TelemetryI
       )}
     </div>
   );
-}
-
-function FanNoteEditor({
-  deviceId,
-  fanId,
-  initialNote,
-  editable
-}: {
-  deviceId: string;
-  fanId: string;
-  initialNote?: string;
-  editable: boolean;
-}) {
-  const { saveFanNote, mutationPending } = useWorkspace();
-  const [note, setNote] = useState(initialNote ?? "");
-  useEffect(() => setNote(initialNote ?? ""), [initialNote]);
-  if (!editable) return <div className="workspace-fan-note"><span>风扇备注</span><strong>{initialNote?.trim() || "暂无备注"}</strong></div>;
-  return <div className="workspace-fan-note"><label><span>风扇备注</span><input className="workspace-input" value={note} onChange={(event) => setNote(event.target.value)} maxLength={160} placeholder="例如：前置进风风扇" /></label><Button variant="quiet" onClick={() => void saveFanNote(deviceId, fanId, note.trim())} disabled={mutationPending}>保存备注</Button></div>;
 }
 
 function CpuFactsCard({ cpus, system, unavailable = false }: { cpus: CpuPackageStats[]; system?: SystemStats; unavailable?: boolean }) {
@@ -2020,7 +2001,7 @@ function DevicePage() {
             </TelemetryDeviceBlock>
           )}
           <TemperatureSourcesPanel sensors={filteredLatest?.temperatureSensors ?? []} series={series.temperatureSensors ?? []} />
-          {activeTab === "gpu_thermal" && fanInstances.length ? fanInstances.map((fan, index) => { const fanLatest = filteredLatest?.fans.find((item) => item.id === fan.id); return <React.Fragment key={`thermal-fan-${fan.id}`}><TelemetryChartCard widgetId={`thermal-fan-${fan.id}`} widgetTemplateId={`thermal-fan-${index}`} title={`${fan.name} · 转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm, valueFormatter: (v) => `${Math.round(v)} RPM` }]} valueFormatter={(v) => `${Math.round(v)} RPM`} /><FanNoteEditor deviceId={selectedDevice.deviceId} fanId={fan.id} initialNote={fanLatest?.note} editable={canEditRemote} /></React.Fragment>; }) : null}
+          {activeTab === "gpu_thermal" && fanInstances.length ? fanInstances.map((fan, index) => <TelemetryChartCard key={`thermal-fan-${fan.id}`} widgetId={`thermal-fan-${fan.id}`} widgetTemplateId={`thermal-fan-${index}`} title={`${fan.name} · 转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm, valueFormatter: (v) => `${Math.round(v)} RPM` }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : null}
           </TelemetrySection>
       )}
 
@@ -2030,17 +2011,15 @@ function DevicePage() {
             const fanLatest = filteredLatest?.fans.find((item) => item.id === fan.id);
             const currentRpm = fanLatest?.rpm ?? fan.rpm[fan.rpm.length - 1]?.value;
             return (
-              <React.Fragment key={`fan-${fan.id}`}>
-                <TelemetryChartCard
-                  widgetId={`fan-${fan.id}-rpm`}
-                  widgetTemplateId={`fan-${index}-rpm`}
-                  title={`${fan.name} · 风扇转速`}
-                  subtitle={[fan.interface || "风扇接口", currentRpm == null ? "当前值未知" : `当前 ${Math.round(currentRpm)} RPM`].join(" · ")}
-                  series={[{ label: "转速", points: fan.rpm, valueFormatter: (value) => `${Math.round(value)} RPM` }]}
-                  valueFormatter={(value) => `${Math.round(value)} RPM`}
-                />
-                <FanNoteEditor deviceId={selectedDevice.deviceId} fanId={fan.id} initialNote={fanLatest?.note} editable={canEditRemote} />
-              </React.Fragment>
+              <TelemetryChartCard
+                key={`fan-${fan.id}`}
+                widgetId={`fan-${fan.id}-rpm`}
+                widgetTemplateId={`fan-${index}-rpm`}
+                title={`${fan.name} · 风扇转速`}
+                subtitle={[fan.interface || "风扇接口", currentRpm == null ? "当前值未知" : `当前 ${Math.round(currentRpm)} RPM`].join(" · ")}
+                series={[{ label: "转速", points: fan.rpm, valueFormatter: (value) => `${Math.round(value)} RPM` }]}
+                valueFormatter={(value) => `${Math.round(value)} RPM`}
+              />
             );
           }) : <div className="workspace-telemetry-empty">尚未收到风扇样本；请先在 Agent 设置中重新检测硬件并启动采集。</div>}
         </TelemetrySection>
