@@ -2145,7 +2145,29 @@ func mergeMissingGPUMemory(previous, next []gpuDeviceStats) []gpuDeviceStats {
 	if len(previous) == 0 {
 		return next
 	}
-	return mergeGPUStatsWithOptions(true, next, previous)
+
+	// The current slow sample owns utilization, frequency, and temperature.
+	// Only carry memory observations forward when a provider temporarily omits
+	// them; merging the complete previous GPU record would resurrect stale
+	// telemetry (including a previous non-zero utilization) over the current
+	// sample.
+	result := coalesceGPUStats(next)
+	previous = coalesceGPUStats(previous)
+	matchedPrevious := make([]bool, len(previous))
+	for index := range result {
+		previousIndex := findGPUStatsIdentity(previous, result[index])
+		if previousIndex < 0 {
+			continue
+		}
+		matchedPrevious[previousIndex] = true
+		mergeGPUMemoryStats(&result[index], previous[previousIndex])
+	}
+	for index, candidate := range previous {
+		if !matchedPrevious[index] {
+			result = append(result, candidate)
+		}
+	}
+	return result
 }
 
 func mergeWindowsGPUFallback(primary, fallback []gpuDeviceStats) []gpuDeviceStats {

@@ -931,6 +931,52 @@ func TestMergeGPUStatsPreservesObservedZeroUtilization(t *testing.T) {
 	}
 }
 
+func TestMergeMissingGPUMemoryKeepsCurrentGPUReadings(t *testing.T) {
+	previousFrequency := 300.0
+	previousTemperature := 34.0
+	currentFrequency := 1815.0
+	currentTemperature := 87.0
+	previous := []gpuDeviceStats{{
+		ID:                  "gpu-pci-ven-10de-dev-1f0b-subsys-88041043",
+		Name:                "NVIDIA GeForce RTX 2060 SUPER",
+		UtilizationPercent:  99,
+		FrequencyMHz:        &previousFrequency,
+		TemperatureC:        &previousTemperature,
+		MemoryKind:          "dedicated",
+		MemoryUsedBytes:     4 * 1024 * 1024 * 1024,
+		MemoryTotalBytes:    8 * 1024 * 1024 * 1024,
+		memoryObserved:      true,
+		utilizationObserved: true,
+	}}
+	current := []gpuDeviceStats{{
+		ID:                  previous[0].ID,
+		Name:                previous[0].Name,
+		UtilizationPercent:  0,
+		FrequencyMHz:        &currentFrequency,
+		TemperatureC:        &currentTemperature,
+		TemperatureSource:   "nvidia-smi",
+		MemoryKind:          "dedicated",
+		utilizationObserved: true,
+	}}
+
+	merged := mergeMissingGPUMemory(previous, current)
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged GPU, got %d", len(merged))
+	}
+	if merged[0].UtilizationPercent != 0 {
+		t.Errorf("expected current observed zero utilization, got %v", merged[0].UtilizationPercent)
+	}
+	if merged[0].FrequencyMHz == nil || *merged[0].FrequencyMHz != currentFrequency {
+		t.Errorf("expected current frequency %v, got %v", currentFrequency, merged[0].FrequencyMHz)
+	}
+	if merged[0].TemperatureC == nil || *merged[0].TemperatureC != currentTemperature {
+		t.Errorf("expected current temperature %v, got %v", currentTemperature, merged[0].TemperatureC)
+	}
+	if merged[0].MemoryUsedBytes != previous[0].MemoryUsedBytes || merged[0].MemoryTotalBytes != previous[0].MemoryTotalBytes {
+		t.Errorf("expected previous memory to be retained, got used=%d total=%d", merged[0].MemoryUsedBytes, merged[0].MemoryTotalBytes)
+	}
+}
+
 func TestVirtualGPUAdapterFiltering(t *testing.T) {
 	virtualAdapters := []struct {
 		name string
