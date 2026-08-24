@@ -518,7 +518,7 @@ enum class DeviceBlockKey(val value: String, val label: String) {
   Disk("disk", "硬盘"),
   Network("network", "网络"),
   Temperature("temperature", "温度"),
-  Fan("fan", "风扇")
+  Fan("fan", "风扇转速")
 }
 
 @Serializable

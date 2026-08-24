@@ -839,7 +839,23 @@ function targetOptions(definition: WidgetCatalogDefinition, metrics: MetricsResp
   }));
   if (definition.targetKind === "disk") return filterEnabled(metrics.series.disks ?? [], "disk").map((item) => ({ id: item.id, name: item.model || item.name, detail: item.mountPoint }));
   if (definition.targetKind === "gpu") return filterEnabled(metrics.series.gpus ?? [], "gpu").map((item) => ({ id: item.id, name: item.name }));
-  if (definition.targetKind === "fan") return filterEnabled(metrics.series.fans ?? [], "fan").map((item) => ({ id: item.id, name: item.name, detail: item.interface }));
+  if (definition.targetKind === "fan") {
+    const seriesFans = filterEnabled(metrics.series.fans ?? [], "fan");
+    const latestFans = filterEnabled(metrics.latest.fans ?? [], "fan");
+    const latestById = new Map(latestFans.map((item) => [item.id, item]));
+    const targets = seriesFans.map((item) => ({
+      id: item.id,
+      name: latestById.get(item.id)?.label || item.name,
+      detail: latestById.get(item.id)?.interface || item.interface
+    }));
+    const seen = new Set(targets.map((item) => item.id));
+    latestFans.forEach((item) => {
+      if (seen.has(item.id)) return;
+      seen.add(item.id);
+      targets.push({ id: item.id, name: item.label, detail: item.interface });
+    });
+    return targets;
+  }
   if (definition.targetKind === "network") return filterEnabled(metrics.series.networks ?? [], "network").map((item) => ({ id: item.id, name: item.model || item.name, detail: item.macAddress }));
   return [];
 }
