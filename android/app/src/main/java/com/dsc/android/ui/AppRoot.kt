@@ -120,6 +120,8 @@ import com.dsc.android.TemperatureSensorDto
 import com.dsc.android.VirtualizationStorageDisplay
 import com.dsc.android.displayableVirtualizationStoragePools
 import com.dsc.android.resolveChartIndex
+import com.dsc.android.storagePoolIdFromTabId
+import com.dsc.android.storagePoolTabId
 import com.dsc.android.splitSamplePointSegments
 import kotlin.math.max
 
@@ -1368,7 +1370,12 @@ private fun buildBlockSheetTabs(metrics: MetricsDto, blockKey: DeviceBlockKey): 
     DeviceBlockKey.Cpu -> metrics.series.cpus.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
     DeviceBlockKey.Gpu -> metrics.latest.gpus.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
     DeviceBlockKey.Memory -> Unit
-    DeviceBlockKey.Disk -> metrics.latest.disks.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
+    DeviceBlockKey.Disk -> {
+      metrics.latest.disks.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
+      displayableVirtualizationStoragePools(metrics).forEach { storagePool ->
+        tabs += BlockSheetTabModel(storagePoolTabId(storagePool.id), storagePool.name)
+      }
+    }
     DeviceBlockKey.Network -> metrics.latest.networkInterfaces.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
     DeviceBlockKey.Temperature -> Unit
     DeviceBlockKey.Fan -> fanInstancesForDisplay(metrics).forEach { tabs += BlockSheetTabModel(it.id, it.label) }
@@ -1486,8 +1493,15 @@ private fun MemorySheetContent(metrics: MetricsDto, selectedWindow: MetricWindow
 
 @Composable
 private fun DiskSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, chartWindow: ChartWindow, onEditInstance: (String) -> Unit) {
+  val storagePools = displayableVirtualizationStoragePools(metrics)
+  storagePoolIdFromTabId(tabId)?.let { storagePoolId ->
+    storagePools.firstOrNull { it.id == storagePoolId }?.let { storagePool ->
+      StoragePoolInstanceCard(storagePool, selectedWindow, chartWindow)
+    }
+    return
+  }
+
   if (tabId == "total") {
-    val storagePools = displayableVirtualizationStoragePools(metrics)
     MetricCardGrid(
       cards = listOf(
         MetricCardModel("总占用", buildUsage(metrics.latest.diskUsedBytes, metrics.latest.diskTotalBytes), metrics.series.diskUsagePercent, ::formatPercent, 100.0),
@@ -1497,12 +1511,6 @@ private fun DiskSheetContent(metrics: MetricsDto, tabId: String, selectedWindow:
       chartWindow = chartWindow
     )
     MetaGrid(listOf("总容量" to buildUsage(metrics.latest.diskUsedBytes, metrics.latest.diskTotalBytes)))
-    if (storagePools.isNotEmpty()) {
-      Text("虚拟化存储池", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-      storagePools.forEach { storagePool ->
-        StoragePoolInstanceCard(storagePool, selectedWindow, chartWindow)
-      }
-    }
     return
   }
 

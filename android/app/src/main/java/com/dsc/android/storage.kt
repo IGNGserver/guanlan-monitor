@@ -11,6 +11,15 @@ internal data class VirtualizationStorageDisplay(
   val series: VirtualizationStorageMetricSeriesDto?
 )
 
+private const val STORAGE_POOL_TAB_PREFIX = "storage-pool:"
+
+internal fun storagePoolTabId(storagePoolId: String): String = "$STORAGE_POOL_TAB_PREFIX$storagePoolId"
+
+internal fun storagePoolIdFromTabId(tabId: String): String? {
+  if (!tabId.startsWith(STORAGE_POOL_TAB_PREFIX)) return null
+  return tabId.removePrefix(STORAGE_POOL_TAB_PREFIX).takeIf { it.isNotBlank() }
+}
+
 internal fun isDisplayableVirtualizationStorage(storage: VirtualizationStorageDto): Boolean =
   storage.active != false && listOfNotNull(storage.totalBytes, storage.usedBytes, storage.availableBytes).any { it > 0L }
 

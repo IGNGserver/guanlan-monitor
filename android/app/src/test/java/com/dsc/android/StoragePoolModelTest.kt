@@ -3,6 +3,7 @@ package com.dsc.android
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -54,5 +55,14 @@ class StoragePoolModelTest {
     assertTrue(pools.isEmpty())
     assertFalse(isDisplayableVirtualizationStorage(metrics.latest.storagePools[0]))
     assertFalse(isDisplayableVirtualizationStorage(metrics.latest.storagePools[1]))
+  }
+
+  @Test
+  fun givesStoragePoolsIndependentTabIds() {
+    val tabId = storagePoolTabId("pve3:pve-ssd")
+
+    assertEquals("storage-pool:pve3:pve-ssd", tabId)
+    assertEquals("pve3:pve-ssd", storagePoolIdFromTabId(tabId))
+    assertNull(storagePoolIdFromTabId("/dev/dm-1"))
   }
 }
