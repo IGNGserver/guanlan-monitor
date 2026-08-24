@@ -128,6 +128,19 @@ data class DiskDto(
 )
 
 @Serializable
+data class VirtualizationStorageDto(
+  val id: String,
+  val name: String,
+  val node: String? = null,
+  val type: String? = null,
+  val active: Boolean? = null,
+  val shared: Boolean? = null,
+  val totalBytes: Long? = null,
+  val usedBytes: Long? = null,
+  val availableBytes: Long? = null
+)
+
+@Serializable
 data class NetworkInterfaceDto(
   val id: String,
   val name: String,
@@ -243,6 +256,20 @@ data class FanMetricSeriesDto(
 )
 
 @Serializable
+data class VirtualizationStorageMetricSeriesDto(
+  val id: String,
+  val name: String,
+  val node: String? = null,
+  val type: String? = null,
+  val active: Boolean? = null,
+  val shared: Boolean? = null,
+  val totalBytes: List<SamplePointDto> = emptyList(),
+  val usedBytes: List<SamplePointDto> = emptyList(),
+  val availableBytes: List<SamplePointDto> = emptyList(),
+  val usagePercent: List<SamplePointDto> = emptyList()
+)
+
+@Serializable
 data class DeviceMetricSeriesDto(
   val cpuUsagePercent: List<SamplePointDto> = emptyList(),
   val cpuFrequencyMHz: List<SamplePointDto> = emptyList(),
@@ -276,7 +303,8 @@ data class DeviceMetricSeriesDto(
   val networks: List<NetworkMetricSeriesDto> = emptyList(),
   val gpus: List<GpuMetricSeriesDto> = emptyList(),
   val fans: List<FanMetricSeriesDto> = emptyList(),
-  val temperatureSensors: List<TemperatureMetricSeriesDto> = emptyList()
+  val temperatureSensors: List<TemperatureMetricSeriesDto> = emptyList(),
+  val storagePools: List<VirtualizationStorageMetricSeriesDto> = emptyList()
 )
 
 @Serializable
@@ -349,7 +377,8 @@ data class DeviceLatestDto(
   val sensorBackends: List<SensorBackendDto> = emptyList(),
   val fans: List<FanDto> = emptyList(),
   val temperatureSensors: List<TemperatureSensorDto> = emptyList(),
-  val virtualization: JsonObject? = null
+  val virtualization: JsonObject? = null,
+  val storagePools: List<VirtualizationStorageDto> = emptyList()
 )
 
 @Serializable
