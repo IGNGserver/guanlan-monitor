@@ -120,7 +120,12 @@ export function getWidgetLines(widgetType: string, metrics: MetricsResponse | nu
   }
   if (widgetType === "fan-speed") {
     const fanLines = series.fans?.length && targetId ? series.fans.filter((item) => item.id === targetId) : series.fans ?? [];
-    return { lines: fanLines.length ? fanLines.map((item) => ({ label: item.name, points: item.rpm, formatter: (value: number) => `${Math.round(value)} RPM` })) : [], valueFormatter: (value) => `${Math.round(value)} RPM` };
+    if (fanLines.length) {
+      return { lines: fanLines.map((item) => ({ label: item.name, points: item.rpm, formatter: (value: number) => `${Math.round(value)} RPM` })), valueFormatter: (value) => `${Math.round(value)} RPM` };
+    }
+    const latestFans = targetId ? metrics?.latest.fans.filter((item) => item.id === targetId) ?? [] : metrics?.latest.fans ?? [];
+    const timestamp = metrics?.lastSeenAt ?? metrics?.device.lastSeenAt ?? new Date().toISOString();
+    return { lines: latestFans.map((item) => ({ label: item.label, points: [{ timestamp, value: item.rpm }], formatter: (value: number) => `${Math.round(value)} RPM` })), valueFormatter: (value) => `${Math.round(value)} RPM` };
   }
   if (widgetType === "system-processes") return { lines: [{ label: "进程", points: series.systemProcessCount, formatter: (value: number) => formatNumber(value) }, { label: "线程", points: series.systemThreadCount, formatter: (value: number) => formatNumber(value) }, { label: "句柄", points: series.systemHandleCount, formatter: (value: number) => formatNumber(value) }] };
   return { lines: [] };

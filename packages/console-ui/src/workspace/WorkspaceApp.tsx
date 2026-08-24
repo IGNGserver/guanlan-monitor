@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, SamplePoint, SystemStats, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, VirtualizationStorageMetricSeries, VirtualizationStorageTelemetry, WidgetInstanceConfig, WidgetLayoutDocument, WidgetPanelMetadata } from "@dsc/shared";
+import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, SystemStats, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, VirtualizationStorageMetricSeries, VirtualizationStorageTelemetry, WidgetInstanceConfig, WidgetLayoutDocument, WidgetPanelMetadata } from "@dsc/shared";
 import { isDisplayableVirtualizationStorage, isDisplayableVirtualizationStorageSeries, virtualizationStorageInstances } from "@dsc/shared";
 import clsx from "clsx";
 import appIcon from "../assets/app-icon.png";
@@ -876,6 +876,35 @@ function TelemetrySection({
   );
 }
 
+function mergeFanMetricSeries(latestFans: FanSensorStats[], historicalFans: FanMetricSeries[], fallbackTimestamp: string): FanMetricSeries[] {
+  const latestById = new Map(latestFans.map((fan) => [fan.id, fan]));
+  const merged = historicalFans.map((fan) => {
+    const latest = latestById.get(fan.id);
+    const currentPoint = latest ? { timestamp: fallbackTimestamp, value: latest.rpm } : null;
+    const hasCurrentPoint = currentPoint ? fan.rpm.some((point) => point.timestamp === currentPoint.timestamp) : true;
+    const rpm = currentPoint && !hasCurrentPoint
+      ? [...fan.rpm, currentPoint].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
+      : fan.rpm;
+    return {
+      ...fan,
+      name: latest?.label || fan.name,
+      interface: latest?.interface || fan.interface,
+      rpm
+    };
+  });
+  const seen = new Set(merged.map((fan) => fan.id));
+  for (const fan of latestFans) {
+    if (seen.has(fan.id)) continue;
+    merged.push({
+      id: fan.id,
+      name: fan.label,
+      interface: fan.interface,
+      rpm: [{ timestamp: fallbackTimestamp, value: fan.rpm }]
+    });
+  }
+  return merged;
+}
+
 const TELEMETRY_DEVICE_GROUP_TYPES: Record<"cpu" | "disk" | "gpu" | "network" | "fan", string> = {
   cpu: "cpu-device-group",
   disk: "disk-device-group",
@@ -1159,14 +1188,15 @@ function MetricWindowControl({ value, onChange }: { value: DesktopMetricWindowVa
   );
 }
 
-type DeviceTabKey = "overview" | "compute" | "storage_net" | "gpu_thermal" | "all";
+type DeviceTabKey = "overview" | "compute" | "storage_net" | "gpu_thermal" | "fan" | "all";
 
 const DEFAULT_DEVICE_PANELS: WidgetPanelMetadata[] = [
   { id: "overview", name: "综合面板", kind: "system", order: 0 },
   { id: "compute", name: "算力与内存", kind: "system", order: 1 },
   { id: "storage_net", name: "存储与网络", kind: "system", order: 2 },
   { id: "gpu_thermal", name: "显卡与散热", kind: "system", order: 3 },
-  { id: "all", name: "全景视图", kind: "system", order: 4 }
+  { id: "fan", name: "风扇转速", kind: "system", order: 4 },
+  { id: "all", name: "全景视图", kind: "system", order: 5 }
 ];
 
 function cloneDevicePanels(panels: WidgetPanelMetadata[]): WidgetPanelMetadata[] {
@@ -1269,6 +1299,7 @@ function WidgetPanelBar({
             {panel.id === "compute" && <Icon name="device" size={15} />}
             {panel.id === "storage_net" && <Icon name="data" size={15} />}
             {panel.id === "gpu_thermal" && <Icon name="hub" size={15} />}
+            {panel.id === "fan" && <Icon name="clock" size={15} />}
             {panel.name}
           </button>
         ))}
@@ -1490,6 +1521,7 @@ function DevicePage() {
     { id: "section-compute", label: "算力与内存", tabs: ["compute", "all"] },
     { id: "section-storage", label: "存储与网络", tabs: ["storage_net", "all"] },
     { id: "section-gpu", label: "显卡与散热", tabs: ["gpu_thermal", "all"] },
+    { id: "section-fan", label: "风扇转速", tabs: ["fan", "all"] },
     { id: "section-info", label: "硬件信息", tabs: ["overview", "all"] }
   ], []);
   const availableAnchors = useMemo(
@@ -1672,7 +1704,12 @@ function DevicePage() {
   const diskInstances = filterEnabledInstances("disk", series?.disks ?? []);
   const networkInstances = filterEnabledInstances("network", series?.networks ?? []);
   const gpuInstances = filterEnabledInstances("gpu", series?.gpus ?? []);
-  const fanInstances = filterEnabledInstances("fan", series?.fans ?? []);
+  const latestFanInstances = latest ? filterEnabledInstances("fan", latest.fans ?? []) : [];
+  const fanInstances = mergeFanMetricSeries(
+    latestFanInstances,
+    filterEnabledInstances("fan", series?.fans ?? []),
+    snapshot?.generatedAt ?? metrics?.lastSeenAt ?? selectedDevice.lastSeenAt ?? new Date().toISOString()
+  );
   const visibleDiskInstances = selectedDiskId === "all" ? diskInstances : diskInstances.filter((disk) => disk.id === selectedDiskId);
   const visibleNetworkInstances = selectedNetId === "all" ? networkInstances : networkInstances.filter((network) => network.id === selectedNetId);
   const visibleGpuInstances = selectedGpuId === "all" ? gpuInstances : gpuInstances.filter((gpu) => gpu.id === selectedGpuId);
@@ -1861,7 +1898,7 @@ function DevicePage() {
           <TelemetryChartCard widgetId="overview-network-average" title="网卡平均吞吐" subtitle={metricUnavailable("networkRxRate") || metricUnavailable("networkTxRate") ? UNAVAILABLE_METRIC_LABEL : `全部 ${networkInstances.length} 个网卡实例的平均值`} series={[{ label: "平均接收 (Rx)", points: networkAverageRx, valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "平均发送 (Tx)", points: networkAverageTx, valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} footer={<TelemetryModelList label="已采集网卡型号" items={networkModelItems} />} />
           <TelemetryChartCard widgetId="overview-gpu-average" title="GPU 平均使用率" subtitle={`全部 ${gpuInstances.length} 个显卡实例的平均值`} series={[{ label: "平均核心", points: gpuAverageUsage }, { label: "平均编码", points: gpuAverageEncode }, { label: "平均解码", points: gpuAverageDecode }]} valueFormatter={(v) => `${Math.round(v)}%`} fixedMaxValue={100} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
           <TelemetryChartCard widgetId="overview-gpu-memory" title="GPU 总内存已用容量" subtitle={`${gpuMemorySummary} · 全部显卡实例合计`} series={[{ label: "GPU 总内存已用", points: gpuTotalMemoryUsedBytes, valueFormatter: formatBytes }]} valueFormatter={formatBytes} footer={<TelemetryModelList label="已采集显卡型号" items={gpuModelItems} />} />
-          {fanInstances.length ? fanInstances.map((fan, index) => <TelemetryChartCard key={`overview-fan-${fan.id}`} widgetId={`overview-fan-${fan.id}`} widgetTemplateId={`overview-fan-${index}`} title={`${fan.name} · 风扇转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : null}
+          {activeTab === "overview" && fanInstances.length ? fanInstances.map((fan, index) => <TelemetryChartCard key={`overview-fan-${fan.id}`} widgetId={`overview-fan-${fan.id}`} widgetTemplateId={`overview-fan-${index}`} title={`${fan.name} · 风扇转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm }]} valueFormatter={(v) => `${Math.round(v)} RPM`} />) : null}
         </TelemetrySection>
       )}
 
@@ -1937,7 +1974,7 @@ function DevicePage() {
 
       {/* ================= Tab 4: 显卡与散热 (GPU & Thermal) ================= */}
       {(activeTab === "gpu_thermal" || activeTab === "all") && series && (
-        <TelemetrySection id="section-gpu" eyebrow="显卡与散热" title="GPU、温度与风扇明细" description="每个 GPU 和每个风扇都有独立时间序列，悬停图表即可查看选中时间附近各系列的具体值。" controls={<InstanceFilter label="GPU" value={selectedGpuId} onChange={setSelectedGpuId} options={gpuOptions} />}>
+        <TelemetrySection id="section-gpu" eyebrow="显卡与温度" title="GPU 与温度明细" description="每个 GPU 都有独立的负载、频率、显存和温度数据；风扇转速请切换到单独的风扇转速面板。" controls={<InstanceFilter label="GPU" value={selectedGpuId} onChange={setSelectedGpuId} options={gpuOptions} />}>
           {gpuInstances.length ? visibleGpuInstances.map((gpu) => {
             const gpuLatest = filteredLatest?.gpus?.find((item) => item.id === gpu.id);
             const gpuTemperaturePoints = gpu.temperatureC ?? [];
@@ -1983,8 +2020,30 @@ function DevicePage() {
             </TelemetryDeviceBlock>
           )}
           <TemperatureSourcesPanel sensors={filteredLatest?.temperatureSensors ?? []} series={series.temperatureSensors ?? []} />
-          {fanInstances.length ? fanInstances.map((fan, index) => { const fanLatest = filteredLatest?.fans.find((item) => item.id === fan.id); return <React.Fragment key={`thermal-fan-${fan.id}`}><TelemetryChartCard widgetId={`thermal-fan-${fan.id}`} widgetTemplateId={`thermal-fan-${index}`} title={`${fan.name} · 转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm, valueFormatter: (v) => `${Math.round(v)} RPM` }]} valueFormatter={(v) => `${Math.round(v)} RPM`} /><FanNoteEditor deviceId={selectedDevice.deviceId} fanId={fan.id} initialNote={fanLatest?.note} editable={canEditRemote} /></React.Fragment>; }) : null}
+          {activeTab === "gpu_thermal" && fanInstances.length ? fanInstances.map((fan, index) => { const fanLatest = filteredLatest?.fans.find((item) => item.id === fan.id); return <React.Fragment key={`thermal-fan-${fan.id}`}><TelemetryChartCard widgetId={`thermal-fan-${fan.id}`} widgetTemplateId={`thermal-fan-${index}`} title={`${fan.name} · 转速`} subtitle={fan.interface || "风扇实例"} series={[{ label: "转速", points: fan.rpm, valueFormatter: (v) => `${Math.round(v)} RPM` }]} valueFormatter={(v) => `${Math.round(v)} RPM`} /><FanNoteEditor deviceId={selectedDevice.deviceId} fanId={fan.id} initialNote={fanLatest?.note} editable={canEditRemote} /></React.Fragment>; }) : null}
           </TelemetrySection>
+      )}
+
+      {(activeTab === "fan" || activeTab === "all") && metrics && (
+        <TelemetrySection id="section-fan" eyebrow="散热" title="风扇转速" description="这里显示每个风扇接口的当前转速和历史趋势；0 RPM 也会保留，表示当前接口确实报告了停转。">
+          {fanInstances.length ? fanInstances.map((fan, index) => {
+            const fanLatest = filteredLatest?.fans.find((item) => item.id === fan.id);
+            const currentRpm = fanLatest?.rpm ?? fan.rpm[fan.rpm.length - 1]?.value;
+            return (
+              <React.Fragment key={`fan-${fan.id}`}>
+                <TelemetryChartCard
+                  widgetId={`fan-${fan.id}-rpm`}
+                  widgetTemplateId={`fan-${index}-rpm`}
+                  title={`${fan.name} · 风扇转速`}
+                  subtitle={[fan.interface || "风扇接口", currentRpm == null ? "当前值未知" : `当前 ${Math.round(currentRpm)} RPM`].join(" · ")}
+                  series={[{ label: "转速", points: fan.rpm, valueFormatter: (value) => `${Math.round(value)} RPM` }]}
+                  valueFormatter={(value) => `${Math.round(value)} RPM`}
+                />
+                <FanNoteEditor deviceId={selectedDevice.deviceId} fanId={fan.id} initialNote={fanLatest?.note} editable={canEditRemote} />
+              </React.Fragment>
+            );
+          }) : <div className="workspace-telemetry-empty">尚未收到风扇样本；请先在 Agent 设置中重新检测硬件并启动采集。</div>}
+        </TelemetrySection>
       )}
 
       {activeTab !== "all" && <DynamicWidgetCanvas device={selectedDevice} metrics={metrics} localTemperatureSources={localTemperatureSources} localTemperatureSourcesAt={localTemperatureSourcesAt} showEmptyState={isCustomPanel} onOpenDrawer={canEditRemote ? () => setWidgetDrawerOpen(true) : undefined} />}
@@ -2212,7 +2271,11 @@ function AgentSettings() {
   const [agentHostname, setAgentHostname] = useState(config?.connection.hostname ?? "");
   const [normalSamplingSeconds, setNormalSamplingSeconds] = useState(String(config?.sampling.normalIntervalSeconds ?? 30));
   const [slowSamplingSeconds, setSlowSamplingSeconds] = useState(String(config?.sampling.slowIntervalSeconds ?? 30));
-  const fanSeries = snapshot?.metrics?.series?.fans ?? [];
+  const fanSeries = mergeFanMetricSeries(
+    snapshot?.metrics?.latest.fans ?? [],
+    snapshot?.metrics?.series?.fans ?? [],
+    snapshot?.generatedAt ?? snapshot?.metrics?.lastSeenAt ?? new Date().toISOString()
+  );
   const temperatureSources = Array.isArray(backend?.temperatureSources) ? backend.temperatureSources : [];
   const temperatureSensorBackends = Array.isArray(backend?.temperatureSensorBackends) ? backend.temperatureSensorBackends : [];
   const metricDraftKey = enabledMetrics.join("|");

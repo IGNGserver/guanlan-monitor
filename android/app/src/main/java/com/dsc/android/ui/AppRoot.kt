@@ -1223,8 +1223,26 @@ private fun SummaryCapsule(capsule: OverviewCapsuleModel, onClick: () -> Unit) {
   }
 }
 
+private fun fanInstancesForDisplay(metrics: MetricsDto): List<FanDto> {
+  val fans = metrics.latest.fans.toMutableList()
+  val latestIds = fans.map { it.id }.toMutableSet()
+  metrics.series.fans.forEach { series ->
+    if (series.rpm.isEmpty()) return@forEach
+    if (latestIds.add(series.id)) {
+      fans += FanDto(
+        id = series.id,
+        label = series.name,
+        interfaceRaw = series.interfaceRaw,
+        rpm = series.rpm.lastOrNull()?.value?.toInt() ?: 0
+      )
+    }
+  }
+  return fans
+}
+
 private fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWindow): List<OverviewCapsuleModel> {
   val storagePoolCount = displayableVirtualizationStoragePools(metrics).size
+  val fans = fanInstancesForDisplay(metrics)
   return buildList {
     add(
       OverviewCapsuleModel(
@@ -1289,20 +1307,18 @@ private fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWin
         )
       )
     )
-    if (metrics.latest.fans.isNotEmpty()) {
-      add(
-        OverviewCapsuleModel(
-          blockKey = DeviceBlockKey.Fan,
-          title = "风扇",
-          subtitle = "${metrics.latest.fans.size} 个风扇接口",
-          metrics = listOf(
-            "最高" to "${metrics.latest.fans.maxOf { it.rpm }} RPM",
-            "平均" to "${metrics.latest.fans.map { it.rpm }.average().toInt()} RPM",
-            "后端" to if (metrics.latest.sensorBackends.any { it.ok }) "可用" else "不可用"
-          )
+    add(
+      OverviewCapsuleModel(
+        blockKey = DeviceBlockKey.Fan,
+        title = "风扇转速",
+        subtitle = if (fans.isEmpty()) "未检测到风扇接口" else "${fans.size} 个风扇接口 · 点击查看趋势",
+        metrics = listOf(
+          "最高" to (fans.maxOfOrNull { it.rpm }?.let { "$it RPM" } ?: "暂无"),
+          "平均" to (fans.takeIf { it.isNotEmpty() }?.map { it.rpm }?.average()?.toInt()?.let { "$it RPM" } ?: "暂无"),
+          "后端" to if (metrics.latest.sensorBackends.any { it.ok }) "可用" else "不可用"
         )
       )
-    }
+    )
     if (hasTemperatureData(metrics)) {
       val validSensors = metrics.latest.temperatureSensors.filter { it.status == "valid" }
       val auxiliarySources = buildList<Double> {
@@ -1355,7 +1371,7 @@ private fun buildBlockSheetTabs(metrics: MetricsDto, blockKey: DeviceBlockKey): 
     DeviceBlockKey.Disk -> metrics.latest.disks.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
     DeviceBlockKey.Network -> metrics.latest.networkInterfaces.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
     DeviceBlockKey.Temperature -> Unit
-    DeviceBlockKey.Fan -> metrics.latest.fans.forEach { tabs += BlockSheetTabModel(it.id, it.label) }
+    DeviceBlockKey.Fan -> fanInstancesForDisplay(metrics).forEach { tabs += BlockSheetTabModel(it.id, it.label) }
   }
   return tabs
 }
@@ -1972,6 +1988,7 @@ private fun FanSheetContent(
   onSaveFanNote: (String, String, String) -> Unit,
   savingFanNote: Boolean
 ) {
+  val fans = fanInstancesForDisplay(metrics)
   if (tabId == "total") {
     if (metrics.latest.sensorBackends.isNotEmpty()) {
       MetaGrid(
@@ -1980,19 +1997,27 @@ private fun FanSheetContent(
         }
       )
     }
-    MetricCardGrid(
-      cards = metrics.latest.fans.mapNotNull { fan ->
-        val series = metrics.series.fans.firstOrNull { it.id == fan.id } ?: return@mapNotNull null
-        MetricCardModel("风扇转速", "${fan.rpm} RPM", series.rpm, valueFormatter = { value ->
-          if (value == null) "--" else "${value.toInt()} RPM"
-        })
-      },
-      chartWindow = chartWindow
-    )
+    if (fans.isEmpty()) {
+      Text(
+        "尚未收到风扇样本；请先在 Agent 设置中重新检测硬件并启动采集。",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+      )
+    } else {
+      MetricCardGrid(
+        cards = fans.map { fan ->
+          val series = metrics.series.fans.firstOrNull { it.id == fan.id }
+          MetricCardModel("风扇转速 · ${fan.label}", "${fan.rpm} RPM", series?.rpm.orEmpty(), valueFormatter = { value ->
+            if (value == null) "--" else "${value.toInt()} RPM"
+          })
+        },
+        chartWindow = chartWindow
+      )
+    }
     return
   }
 
-  val fan = metrics.latest.fans.firstOrNull { it.id == tabId } ?: return
+  val fan = fans.firstOrNull { it.id == tabId } ?: return
   val series = metrics.series.fans.firstOrNull { it.id == fan.id }
   var noteDraft by remember(fan.id, fan.note) { mutableStateOf(fan.note.orEmpty()) }
   InstanceCard(
@@ -2146,8 +2171,9 @@ private fun GpuSection(metrics: MetricsDto, onEditBlock: () -> Unit, onEditInsta
 
 @Composable
 private fun FanSection(metrics: MetricsDto) {
-  if (metrics.latest.fans.isEmpty()) return
-  Section(title = "风扇") {
+  val fans = fanInstancesForDisplay(metrics)
+  if (fans.isEmpty()) return
+  Section(title = "风扇转速") {
     if (metrics.latest.sensorBackends.isNotEmpty()) {
       Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         metrics.latest.sensorBackends.forEach { backend ->
@@ -2159,7 +2185,7 @@ private fun FanSection(metrics: MetricsDto) {
         }
       }
     }
-    metrics.latest.fans.forEach { fan ->
+    fans.forEach { fan ->
       val series = metrics.series.fans.find { it.id == fan.id }
       ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
