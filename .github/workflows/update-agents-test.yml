@@ -67,7 +67,70 @@ jobs:
             echo 'SSH deploy secrets are empty; remote targets will use the NAS runner SSH configuration.'
           fi
 
-      - name: Update and verify each Agent
+      - name: Download and verify Agent package on runner
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          for command in curl sha256sum unzip; do
+            command -v "$command" >/dev/null 2>&1 || {
+              echo "$command is required on the deployment runner." >&2
+              exit 1
+            }
+          done
+
+          work_dir="${RUNNER_TEMP:-/tmp}/dsc-agent-update-${GITHUB_RUN_ID:-manual}"
+          rm -rf "$work_dir"
+          mkdir -p "$work_dir"
+          asset="DeviceStateConsole-Linux-CLI-Install-v${REQUESTED_VERSION}.zip"
+          base_url="https://github.com/IGNGserver/guanlan-monitor/releases/download/v${REQUESTED_VERSION}"
+          archive="$work_dir/$asset"
+          checksum="$work_dir/$asset.sha256"
+          package_dir="$work_dir/package"
+
+          curl -4 -fL --retry 8 --retry-all-errors --connect-timeout 20 --max-time 90 \
+            "$base_url/$asset.sha256" -o "$checksum"
+          expected="$(awk '{print $1}' "$checksum")"
+          [[ "$expected" =~ ^[[:xdigit:]]{64}$ ]] || {
+            echo "Release checksum is invalid." >&2
+            exit 1
+          }
+
+          downloaded=false
+          for attempt in $(seq 1 20); do
+            if [[ -s "$archive" ]]; then
+              actual="$(sha256sum "$archive" | awk '{print $1}')"
+              if [[ "${actual,,}" == "${expected,,}" ]]; then
+                downloaded=true
+                break
+              fi
+            fi
+            echo "Downloading $asset (attempt $attempt/20; resumable)"
+            curl -4 -fL --retry 2 --retry-all-errors --connect-timeout 20 --max-time 180 \
+              -C - "$base_url/$asset" -o "$archive" || true
+            if [[ -s "$archive" ]]; then
+              actual="$(sha256sum "$archive" | awk '{print $1}')"
+              if [[ "${actual,,}" == "${expected,,}" ]]; then
+                downloaded=true
+                break
+              fi
+            fi
+            sleep 2
+          done
+          [[ "$downloaded" == true ]] || {
+            echo "Unable to download and verify $asset after resumable retries." >&2
+            exit 1
+          }
+          unzip -q "$archive" -d "$package_dir"
+          agent_binary="$package_dir/linux-x64/device-state-console-agent"
+          [[ -x "$agent_binary" ]] || {
+            echo "Release package is missing the Linux Agent binary." >&2
+            exit 1
+          }
+          echo "Verified $asset ($expected)"
+
+      - name: Distribute and verify each Agent
         shell: bash
         env:
           DEPLOY_USER: ${{ secrets.TEST_DEPLOY_USER }}
@@ -75,31 +138,65 @@ jobs:
           TARGETS: ${{ inputs.targets }}
         run: |
           set -euo pipefail
+          work_dir="${RUNNER_TEMP:-/tmp}/dsc-agent-update-${GITHUB_RUN_ID:-manual}"
+          trap 'rm -rf "$work_dir"' EXIT
+          [[ -n "$work_dir" && -d "$work_dir/package/linux-x64" ]] || {
+            echo "Verified Agent package directory is unavailable." >&2
+            exit 1
+          }
+          agent_binary="$work_dir/package/linux-x64/device-state-console-agent"
+
+          install_script='set -euo pipefail
+version="$1"
+staged="$2"
+install_dir="/opt/device-state-console-agent"
+target="$install_dir/device-state-console-agent"
+version_file="$install_dir/VERSION"
+backup="$target.backup-$version-$$"
+owner="root:root"
+if [[ -e "$target" ]]; then
+  owner="$(stat -c "%u:%g" "$target")"
+fi
+install -d -m 0755 "$install_dir"
+systemctl stop device-state-console-agent.service
+if [[ -e "$target" ]]; then
+  mv "$target" "$backup"
+fi
+mv "$staged" "$target"
+chown "$owner" "$target"
+chmod 0755 "$target"
+printf "%s\n" "$version" > "$version_file"
+if ! systemctl start device-state-console-agent.service || ! systemctl is-active --quiet device-state-console-agent.service; then
+  systemctl stop device-state-console-agent.service || true
+  rm -f "$target"
+  if [[ -e "$backup" ]]; then
+    mv "$backup" "$target"
+  fi
+  systemctl start device-state-console-agent.service || true
+  exit 1
+fi
+rm -f "$backup" "$staged"
+cat "$version_file"'
+
           for target in $TARGETS; do
             echo "Updating Agent on $target"
             if [[ "$target" == 'nas' || "$target" == 'localhost' || "$target" == '127.0.0.1' ]]; then
-              sudo -n /opt/device-state-console-agent/device-state-console-agent update --channel test
-              reported="$(sudo -n /opt/device-state-console-agent/device-state-console-agent version)"
+              local_stage="/opt/device-state-console-agent/.dsc-agent-${REQUESTED_VERSION}.new"
+              sudo -n install -m 0755 "$agent_binary" "$local_stage"
+              reported="$(sudo -n bash -s -- "$REQUESTED_VERSION" "$local_stage" <<< "$install_script")"
             else
               remote_user="${DEPLOY_USER:-root}"
-              ssh_options=(-o BatchMode=yes -o ConnectTimeout=15)
+              ssh_options=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new)
               if [[ -s "$HOME/.ssh/id_ed25519" ]]; then
                 ssh_options+=(-i "$HOME/.ssh/id_ed25519")
               fi
-              # The self-hosted test runner may provide its SSH identity without
-              # a checked-in known_hosts file. Preserve pinned keys when present,
-              # while allowing first-use keys on the isolated test channel.
-              ssh_options+=(-o StrictHostKeyChecking=accept-new)
-              if [[ "$remote_user" == 'root' ]]; then
-                remote_update_command='/opt/device-state-console-agent/device-state-console-agent update --channel test; /opt/device-state-console-agent/device-state-console-agent version'
-              else
-                remote_update_command='sudo -n /opt/device-state-console-agent/device-state-console-agent update --channel test; sudo -n /opt/device-state-console-agent/device-state-console-agent version'
-              fi
+              remote_stage="/tmp/dsc-agent-${REQUESTED_VERSION}-${RANDOM}.new"
+              scp "${ssh_options[@]}" "$agent_binary" "$remote_user@$target:$remote_stage"
               reported="$(ssh "${ssh_options[@]}" "$remote_user@$target" \
-                "$remote_update_command")"
+                bash -s -- "$REQUESTED_VERSION" "$remote_stage" <<< "$install_script")"
             fi
-            echo "$target: $reported"
-            grep -Fq "$REQUESTED_VERSION" <<< "$reported" || {
+            echo "$target: Agent $reported"
+            [[ "$(tr -d '[:space:]' <<< "$reported")" == "$REQUESTED_VERSION" ]] || {
               echo "Agent on $target did not report version $REQUESTED_VERSION." >&2
               exit 1
             }
