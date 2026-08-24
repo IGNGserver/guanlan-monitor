@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +39,41 @@ func TestPendingStoreEvictsOldestSamplesWithinByteLimit(t *testing.T) {
 	}
 	if entries[0].SampledAt == "2026-08-04T12:00:00Z" {
 		t.Fatalf("oldest sample was not evicted: %#v", entries)
+	}
+}
+
+func TestDefaultFanProbeSelectionByPlatform(t *testing.T) {
+	tests := []struct {
+		goos     string
+		provider string
+		enabled  bool
+	}{
+		{goos: "linux", provider: "hwmon", enabled: true},
+		{goos: "windows", provider: "librehardwaremonitor", enabled: true},
+		{goos: "freebsd", provider: "disabled", enabled: false},
+	}
+	for _, test := range tests {
+		selection := defaultFanProbeSelection(test.goos)
+		if selection.Target != "fan" || selection.Provider != test.provider || selection.Enabled != test.enabled {
+			t.Fatalf("default fan selection for %s = %#v, want provider=%q enabled=%v", test.goos, selection, test.provider, test.enabled)
+		}
+	}
+
+	config := newDefaultRuntimeConfig(agentConnectionConfig{})
+	if runtime.GOOS == "linux" {
+		selection := config.ProbeSelections[len(config.ProbeSelections)-1]
+		if selection.Target != "fan" || selection.Provider != "hwmon" || !selection.Enabled {
+			t.Fatalf("Linux runtime default must enable hwmon fans, got %#v", selection)
+		}
+	}
+}
+
+func TestLinuxFanSensorIDUsesHardwareIdentity(t *testing.T) {
+	first := linuxFanSensorID("nct6779-/sys/devices/platform/nct6775.2592", "fan1")
+	second := linuxFanSensorID("nct6779-/sys/devices/platform/nct6775.2592", "fan1")
+	other := linuxFanSensorID("nct6779-/sys/devices/platform/nct6775.2592", "fan2")
+	if first == "" || first != second || first == other {
+		t.Fatalf("unexpected Linux fan IDs: first=%q second=%q other=%q", first, second, other)
 	}
 }
 
@@ -162,6 +198,23 @@ func TestMapHardwareSensorsIntelGPU(t *testing.T) {
 	}
 	if !gpu.Integrated || gpu.MemoryKind != "shared" {
 		t.Fatalf("expected Intel UHD to be an integrated shared-memory GPU, got integrated=%v kind=%q", gpu.Integrated, gpu.MemoryKind)
+	}
+}
+
+func TestMapHardwareSensorsIncludesZeroRPMFanChannel(t *testing.T) {
+	zero := 0.0
+	metrics := mapHardwareSensors([]hardwareSensorSnapshot{{
+		HardwareType: "SuperIO",
+		Name:         "Nuvoton Controller",
+		Sensors: []hardwareSensor{
+			{SensorType: "Fan", Name: "Fan #1", Value: &zero},
+		},
+	}})
+	if len(metrics.fans) != 1 {
+		t.Fatalf("expected zero-RPM fan channel to remain visible, got %#v", metrics.fans)
+	}
+	if metrics.fans[0].RPM != 0 || metrics.fans[0].ChannelState != "无转速" {
+		t.Fatalf("unexpected zero-RPM fan state: %#v", metrics.fans[0])
 	}
 }
 

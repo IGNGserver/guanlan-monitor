@@ -949,6 +949,7 @@ func buildIdentity(deviceID, hostnameOverride string) (agentIdentity, error) {
 }
 
 func newDefaultRuntimeConfig(connection agentConnectionConfig) agentRuntimeConfig {
+	fanSelection := defaultFanProbeSelection(runtime.GOOS)
 	return agentRuntimeConfig{
 		Connection: connection,
 		Sampling: agentSamplingConfig{
@@ -964,11 +965,22 @@ func newDefaultRuntimeConfig(connection agentConnectionConfig) agentRuntimeConfi
 			{Target: "disk", Provider: "builtin", Enabled: true},
 			{Target: "network", Provider: "builtin", Enabled: true},
 			{Target: "gpu", Provider: "disabled", Enabled: false},
-			{Target: "fan", Provider: "disabled", Enabled: false},
+			fanSelection,
 		},
 		Virtualization:       newDefaultVirtualizationConfig(),
 		CloudSyncEnabled:     true,
 		DataRecordingEnabled: true,
+	}
+}
+
+func defaultFanProbeSelection(goos string) agentProbeSelection {
+	switch strings.ToLower(strings.TrimSpace(goos)) {
+	case "linux":
+		return agentProbeSelection{Target: "fan", Provider: "hwmon", Enabled: true}
+	case "windows":
+		return agentProbeSelection{Target: "fan", Provider: "librehardwaremonitor", Enabled: true}
+	default:
+		return agentProbeSelection{Target: "fan", Provider: "disabled", Enabled: false}
 	}
 }
 
@@ -3048,6 +3060,7 @@ func collectLinuxHardwareSensors() hardwareSensorMetrics {
 	linuxGPUs := map[string]*gpuDeviceStats{}
 	hwmonPaths, _ := filepath.Glob("/sys/class/hwmon/hwmon*")
 	hwmonSensorCount := 0
+	hwmonFanCount := 0
 	for _, hwmonPath := range hwmonPaths {
 		hwmonName := readTrimmedFile(filepath.Join(hwmonPath, "name"))
 		hwmonIdentity := linuxHwmonIdentity(hwmonPath, hwmonName)
@@ -3121,13 +3134,14 @@ func collectLinuxHardwareSensors() hardwareSensorMetrics {
 				continue
 			}
 			hwmonSensorCount++
+			hwmonFanCount++
 			baseName := strings.TrimSuffix(filepath.Base(fanPath), "_input")
 			label := readTrimmedFile(filepath.Join(hwmonPath, baseName+"_label"))
 			if label == "" {
 				label = baseName
 			}
 			fan := fanSensorStats{
-				ID:        "fan-linux-" + sanitizeKey(hwmonName+"-"+baseName),
+				ID:        linuxFanSensorID(hwmonIdentity, baseName),
 				Label:     label,
 				Interface: hwmonName,
 				RPM:       int(math.Round(value)),
@@ -3198,11 +3212,15 @@ func collectLinuxHardwareSensors() hardwareSensorMetrics {
 	}
 	metrics.cpuPackageTemperatures = collectLinuxCPUPackageTemperatures()
 	if hwmonSensorCount > 0 || len(metrics.temperatureSensors) > 0 {
+		detail := fmt.Sprintf("已读取 Linux hwmon/thermal：温度源 %d 个，风扇 %d 个", len(metrics.temperatureSensors), hwmonFanCount)
+		if hwmonFanCount == 0 {
+			detail += "；未发现 fan*_input 节点"
+		}
 		metrics.sensorBackends = []sensorBackendStatus{{
 			ID:     "linux-hwmon-thermal",
 			Label:  "Linux hwmon / thermal",
 			OK:     true,
-			Detail: "已读取温度或风扇传感器",
+			Detail: detail,
 		}}
 	} else {
 		metrics.sensorBackends = []sensorBackendStatus{{
@@ -3220,6 +3238,10 @@ func linuxHwmonIdentity(hwmonPath, hwmonName string) string {
 		return hwmonName + "-" + target
 	}
 	return hwmonName + "-" + filepath.Base(hwmonPath)
+}
+
+func linuxFanSensorID(hwmonIdentity, channel string) string {
+	return "fan-linux-" + sanitizeKey(strings.TrimSpace(hwmonIdentity)+"-"+strings.TrimSpace(channel))
 }
 
 func linuxTemperatureRole(hwmonName, label string) string {
@@ -3764,7 +3786,7 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 		}
 
 		for _, sensor := range snapshot.Sensors {
-			if sensor.Value == nil || !isFinitePositive(*sensor.Value) || !strings.EqualFold(sensor.SensorType, "fan") {
+			if sensor.Value == nil || !isFiniteNonNegative(*sensor.Value) || !strings.EqualFold(sensor.SensorType, "fan") {
 				continue
 			}
 
@@ -3806,7 +3828,11 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 				}
 			}
 			if fan.ControlMode == "" {
-				fan.ChannelState = "可用"
+				if fan.RPM == 0 {
+					fan.ChannelState = "无转速"
+				} else {
+					fan.ChannelState = "可用"
+				}
 			}
 			metrics.fans = append(metrics.fans, fan)
 		}

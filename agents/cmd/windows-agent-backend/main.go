@@ -440,7 +440,7 @@ func defaultLocalConfig() agentLocalConfig {
 			{Target: "disk", Provider: "gopsutil", Enabled: true},
 			{Target: "network", Provider: "gopsutil", Enabled: true},
 			{Target: "gpu", Provider: "disabled", Enabled: false},
-			{Target: "fan", Provider: "disabled", Enabled: false},
+			{Target: "fan", Provider: "hwmon", Enabled: true},
 		}
 	}
 
@@ -481,7 +481,7 @@ func supportedProbePlans() []probePlanSupport {
 			{Target: "disk", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
 			{Target: "network", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
 			{Target: "gpu", Providers: []string{"disabled"}, Default: "disabled"},
-			{Target: "fan", Providers: []string{"disabled", "hwmon"}, Default: "disabled"},
+			{Target: "fan", Providers: []string{"disabled", "hwmon"}, Default: "hwmon"},
 		}
 	}
 	return []probePlanSupport{

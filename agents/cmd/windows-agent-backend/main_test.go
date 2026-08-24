@@ -32,6 +32,22 @@ func TestNormalizeLocalConfigMigratesEnabledGpuMetrics(t *testing.T) {
 	}
 }
 
+func TestDefaultLocalConfigEnablesLinuxHwmonFans(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux hwmon defaults apply only to the Linux backend")
+	}
+	config := defaultLocalConfig()
+	for _, selection := range config.ProbeSelections {
+		if selection.Target == "fan" {
+			if selection.Provider != "hwmon" || !selection.Enabled {
+				t.Fatalf("Linux default fan probe must use hwmon, got %#v", selection)
+			}
+			return
+		}
+	}
+	t.Fatal("Linux default config has no fan probe selection")
+}
+
 func TestNormalizeLocalConfigPreservesExplicitGpuMetricSelection(t *testing.T) {
 	cfg := agentLocalConfig{
 		EnabledMetrics: []string{"cpuUsage", "gpuTemperature"},
