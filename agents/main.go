@@ -258,6 +258,7 @@ type gpuDeviceStats struct {
 	TemperatureC             *float64 `json:"temperatureC,omitempty"`
 	TemperatureSource        string   `json:"temperatureSource,omitempty"`
 	DriverVersion            string   `json:"driverVersion,omitempty"`
+	utilizationObserved      bool     `json:"-"`
 	memoryObserved           bool     `json:"-"`
 }
 
@@ -1816,13 +1817,17 @@ func collectSlowMetrics() slowMetrics {
 	var gpus []gpuDeviceStats
 	if runtime.GOOS == "windows" {
 		baseAdapters := collectWindowsGPUAdapters()
+		perfGpus := collectWindowsGPUPerformance()
 		lhmGpus := hardware.gpus
 		nvidiaGpus := collectNvidiaGPUs()
 		appendGPUTemperatureSensors(&temperatureSensors, nvidiaGpus, "nvidia-smi")
-		perfGpus := collectWindowsGPUPerformance()
-		gpus = mergeGPUStats(baseAdapters, lhmGpus, nvidiaGpus, perfGpus)
+		// GPU performance counters are useful as a fallback, but may report a
+		// virtual or aggregated engine value instead of the physical adapter's
+		// readings. Apply them first so LHM and nvidia-smi can provide
+		// authoritative values.
+		gpus = mergeGPUStats(baseAdapters, perfGpus, lhmGpus, nvidiaGpus)
 		if len(gpus) == 0 {
-			gpus = mergeGPUStats(lhmGpus, nvidiaGpus, perfGpus)
+			gpus = mergeGPUStats(perfGpus, lhmGpus, nvidiaGpus)
 		}
 	} else {
 		nvidiaGpus := collectNvidiaGPUs()
@@ -2100,8 +2105,9 @@ func findGPUStatsIdentity(items []gpuDeviceStats, candidate gpuDeviceStats) int 
 }
 
 func mergeGPUStatsRecord(target *gpuDeviceStats, candidate gpuDeviceStats, preserveObservedMemory bool) {
-	if candidate.UtilizationPercent > 0 || target.UtilizationPercent == 0 {
+	if candidate.utilizationObserved || candidate.UtilizationPercent > 0 {
 		target.UtilizationPercent = candidate.UtilizationPercent
+		target.utilizationObserved = true
 	}
 	if candidate.EncodeUtilizationPercent != nil {
 		target.EncodeUtilizationPercent = candidate.EncodeUtilizationPercent
@@ -3851,6 +3857,7 @@ func mapHardwareSensors(snapshots []hardwareSensorSnapshot) hardwareSensorMetric
 		}
 		if load != nil {
 			gpu.UtilizationPercent = *load
+			gpu.utilizationObserved = true
 		}
 		var finalUsedMB, finalTotalMB float64
 		switch {
@@ -4652,9 +4659,11 @@ func collectNvidiaGPUs() []gpuDeviceStats {
 		}
 		if value, ok := parseNonNegativeFloat(parts[1]); ok {
 			gpu.UtilizationPercent = value
+			gpu.utilizationObserved = true
 		}
 		if value, ok := parseNonNegativeFloat(parts[3]); ok {
 			gpu.TemperatureC = &value
+			gpu.TemperatureSource = "nvidia-smi"
 		}
 		if value, ok := parseNonNegativeFloat(parts[4]); ok {
 			gpu.MemoryUsedBytes = uint64(value * 1024 * 1024)
@@ -4695,16 +4704,17 @@ type windowsGPUPerformancePayload struct {
 }
 
 type windowsGPUPerformanceAggregate struct {
-	Key            string
-	Utilization    float64
-	Encode         float64
-	Decode         float64
-	MemoryUsed     uint64
-	DedicatedUsed  uint64
-	SharedUsed     uint64
-	MemoryObserved bool
-	MemoryTotal    uint64
-	TotalCommitted uint64
+	Key                 string
+	Utilization         float64
+	UtilizationObserved bool
+	Encode              float64
+	Decode              float64
+	MemoryUsed          uint64
+	DedicatedUsed       uint64
+	SharedUsed          uint64
+	MemoryObserved      bool
+	MemoryTotal         uint64
+	TotalCommitted      uint64
 }
 
 // Windows exposes GPU utilization and adapter memory through the standard
@@ -4772,6 +4782,7 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 			aggregate.Decode = math.Max(aggregate.Decode, value)
 		default:
 			aggregate.Utilization = math.Max(aggregate.Utilization, value)
+			aggregate.UtilizationObserved = true
 		}
 	}
 
@@ -4819,10 +4830,11 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 			driver = physicalAdapters[index].DriverVersion
 		}
 		gpu := gpuDeviceStats{
-			ID:                 "gpu-windows-" + sanitizeKey(key),
-			Name:               name,
-			UtilizationPercent: round(aggregate.Utilization),
-			DriverVersion:      driver,
+			ID:                  "gpu-windows-" + sanitizeKey(key),
+			Name:                name,
+			UtilizationPercent:  round(aggregate.Utilization),
+			utilizationObserved: aggregate.UtilizationObserved,
+			DriverVersion:       driver,
 		}
 		if index < len(physicalAdapters) {
 			keySource := strings.TrimSpace(physicalAdapters[index].PNPDeviceID)
