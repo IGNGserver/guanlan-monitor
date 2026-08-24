@@ -1,19 +1,37 @@
-export const WINDOW_MATERIALS = ["guanlan", "mica", "acrylic"] as const;
+export const MIN_WINDOWS_MATERIAL_BUILD = 22621;
 
-export type WindowMaterial = (typeof WINDOW_MATERIALS)[number];
+export type WindowMaterial = "opaque" | "mica";
 
 export interface WindowMaterialCapabilities {
   platform: "windows" | "other";
   windowsBuild: number | null;
   supportsMica: boolean;
-  supportsAcrylic: boolean;
   prefersReducedTransparency: boolean;
   activeMaterial: WindowMaterial;
 }
 
 export interface WindowMaterialBridge {
   getWindowMaterialCapabilities(): Promise<WindowMaterialCapabilities>;
-  setWindowMaterial(material: WindowMaterial): Promise<WindowMaterialCapabilities>;
+}
+
+export function resolveWindowMaterial({
+  platform,
+  windowsBuild,
+  prefersReducedTransparency,
+  supportsNativeMaterial
+}: {
+  platform: "windows" | "other";
+  windowsBuild: number | null;
+  prefersReducedTransparency: boolean;
+  supportsNativeMaterial: boolean;
+}): WindowMaterial {
+  return platform === "windows" &&
+    windowsBuild !== null &&
+    windowsBuild >= MIN_WINDOWS_MATERIAL_BUILD &&
+    supportsNativeMaterial &&
+    !prefersReducedTransparency
+    ? "mica"
+    : "opaque";
 }
 
 export function createFallbackWindowMaterialCapabilities(): WindowMaterialCapabilities {
@@ -21,8 +39,7 @@ export function createFallbackWindowMaterialCapabilities(): WindowMaterialCapabi
     platform: "other",
     windowsBuild: null,
     supportsMica: false,
-    supportsAcrylic: false,
     prefersReducedTransparency: false,
-    activeMaterial: "guanlan"
+    activeMaterial: "opaque"
   };
 }

@@ -36,6 +36,7 @@ jobs:
           pnpm check:adapter-contracts
           pnpm test:adapter-contracts
           pnpm test:ui-helpers
+          pnpm test:window-material
 
       - name: Typecheck
         run: pnpm typecheck

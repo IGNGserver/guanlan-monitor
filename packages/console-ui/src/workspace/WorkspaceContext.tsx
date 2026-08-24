@@ -12,7 +12,7 @@ import type {
   WidgetLayoutSaveRequest,
   WidgetLayoutSync
 } from "@dsc/shared";
-import type { ConsoleAdapter, WindowMaterial, WindowMaterialCapabilities } from "../services/adapter";
+import type { ConsoleAdapter } from "../services/adapter";
 import { fallbackWindowMaterialCapabilities } from "../services/adapter";
 import { confirmDiscardWidgetLayoutDraft } from "./WidgetLayout";
 import { getResponsiveTier, getScreenOrientation, type ResponsiveTier, type ScreenOrientation } from "../helpers/layout";
@@ -74,9 +74,6 @@ interface WorkspaceContextValue {
   setCommandOpen: (open: boolean) => void;
   theme: "system" | "light" | "dark";
   setTheme: (theme: "system" | "light" | "dark") => void;
-  windowMaterial: WindowMaterial;
-  setWindowMaterial: (material: WindowMaterial) => void;
-  windowMaterialCapabilities: WindowMaterialCapabilities | null;
   density: InteractionScaleSetting;
   setDensity: (density: InteractionScaleSetting) => void;
   refreshInterval: 5 | 10 | 30;
@@ -155,11 +152,6 @@ function getStoredTheme(): "system" | "light" | "dark" {
   return value === "light" || value === "dark" ? value : "system";
 }
 
-function getStoredWindowMaterial(): WindowMaterial {
-  const value = typeof window === "undefined" ? "guanlan" : localStorage.getItem("dsc-window-material");
-  return value === "mica" || value === "acrylic" ? value : "guanlan";
-}
-
 function getStoredDensity(): InteractionScaleSetting {
   const value = typeof window === "undefined" ? "auto" : localStorage.getItem("dsc-density");
   return value === "compact" || value === "touch" || value === "comfortable" ? value : "auto";
@@ -204,9 +196,6 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   const [searchQuery, setSearchQuery] = useState("");
   const [commandOpen, setCommandOpen] = useState(false);
   const [theme, setThemeState] = useState<"system" | "light" | "dark">(getStoredTheme);
-  const [windowMaterial, setWindowMaterialState] = useState<WindowMaterial>(getStoredWindowMaterial);
-  const [windowMaterialCapabilities, setWindowMaterialCapabilities] = useState<WindowMaterialCapabilities | null>(null);
-  const [windowMaterialReady, setWindowMaterialReady] = useState(false);
   const [density, setDensityState] = useState<InteractionScaleSetting>(getStoredDensity);
   const [refreshInterval, setRefreshIntervalState] = useState<5 | 10 | 30>(getStoredRefreshInterval);
   const [instanceType, setInstanceType] = useState<InstanceType>("device");
@@ -348,45 +337,36 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     root.dataset.dscDensitySetting = density;
     root.dataset.dscPointer = inputMode;
     root.dataset.dscTouchSupport = isTouch ? "true" : "false";
-    root.dataset.dscMaterial = windowMaterialReady ? windowMaterial : "guanlan";
     applyTheme();
     if (theme !== "system") return;
 
     mediaQuery.addEventListener("change", applyTheme);
     return () => mediaQuery.removeEventListener("change", applyTheme);
-  }, [density, inputMode, isTouch, theme, windowMaterial, windowMaterialReady]);
+  }, [density, inputMode, isTouch, theme]);
 
   useEffect(() => {
     let cancelled = false;
     const syncWindowMaterial = async () => {
+      const root = document.documentElement;
+      root.dataset.dscMaterial = "opaque";
+      localStorage.removeItem("dsc-window-material");
       try {
-        if (!adapter.getWindowMaterialCapabilities || !adapter.setWindowMaterial) {
-          setWindowMaterialCapabilities(fallbackWindowMaterialCapabilities());
-          setWindowMaterialReady(true);
-          return;
-        }
-        const capabilities = await adapter.getWindowMaterialCapabilities();
+        const capabilities = adapter.getWindowMaterialCapabilities
+          ? await adapter.getWindowMaterialCapabilities()
+          : fallbackWindowMaterialCapabilities();
         if (cancelled) return;
-        setWindowMaterialCapabilities(capabilities);
-        const applied = await adapter.setWindowMaterial(windowMaterial);
-        if (cancelled) return;
-        setWindowMaterialCapabilities(applied);
-        if (applied.activeMaterial !== windowMaterial) {
-          setWindowMaterialState(applied.activeMaterial);
-          localStorage.setItem("dsc-window-material", applied.activeMaterial);
-        }
-        setWindowMaterialReady(true);
+        root.dataset.dscMaterial = capabilities.activeMaterial;
       } catch {
         if (cancelled) return;
-        setWindowMaterialCapabilities(fallbackWindowMaterialCapabilities());
-        setWindowMaterialState("guanlan");
-        localStorage.setItem("dsc-window-material", "guanlan");
-        setWindowMaterialReady(true);
+        root.dataset.dscMaterial = "opaque";
       }
     };
     void syncWindowMaterial();
-    return () => { cancelled = true; };
-  }, [adapter, windowMaterial]);
+    return () => {
+      cancelled = true;
+      document.documentElement.dataset.dscMaterial = "opaque";
+    };
+  }, [adapter]);
 
   useEffect(() => {
     if (!notice) return;
@@ -432,12 +412,6 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   const setTheme = useCallback((nextTheme: "system" | "light" | "dark") => {
     setThemeState(nextTheme);
     localStorage.setItem("dsc-theme", nextTheme);
-  }, []);
-
-  const setWindowMaterial = useCallback((nextMaterial: WindowMaterial) => {
-    setWindowMaterialState(nextMaterial);
-    setWindowMaterialReady(false);
-    localStorage.setItem("dsc-window-material", nextMaterial);
   }, []);
 
   const setDensity = useCallback((nextDensity: InteractionScaleSetting) => {
@@ -613,9 +587,6 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     setCommandOpen,
     theme,
     setTheme,
-    windowMaterial,
-    setWindowMaterial,
-    windowMaterialCapabilities,
     density,
     setDensity,
     refreshInterval,

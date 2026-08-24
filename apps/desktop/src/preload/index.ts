@@ -31,7 +31,6 @@ const bridge: DesktopRendererBridge & WindowMaterialBridge = {
   updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => ipcRenderer.invoke(IPC_CHANNELS.updateStartupSettings, settings),
   openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.openExternal, url),
   getWindowMaterialCapabilities: () => ipcRenderer.invoke(IPC_CHANNELS.getWindowMaterialCapabilities),
-  setWindowMaterial: (material) => ipcRenderer.invoke(IPC_CHANNELS.setWindowMaterial, material),
   windowMinimize: () => ipcRenderer.invoke(IPC_CHANNELS.windowMinimize),
   windowToggleMaximize: () => ipcRenderer.invoke(IPC_CHANNELS.windowToggleMaximize),
   windowDragStart: (screenX: number, screenY: number) => { ipcRenderer.send(IPC_CHANNELS.windowDragStart, screenX, screenY); },

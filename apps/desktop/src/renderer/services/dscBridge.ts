@@ -11,7 +11,6 @@ import type {
 } from "@dsc/shared";
 import {
   createFallbackWindowMaterialCapabilities,
-  type WindowMaterial,
   type WindowMaterialBridge,
   type WindowMaterialCapabilities
 } from "../../window-material";
@@ -105,11 +104,6 @@ class SafeDscBridge implements DesktopRendererBridge, WindowMaterialBridge {
   async getWindowMaterialCapabilities(): Promise<WindowMaterialCapabilities> {
     const bridge = this.bridge;
     return bridge ? await bridge.getWindowMaterialCapabilities() : createFallbackWindowMaterialCapabilities();
-  }
-
-  async setWindowMaterial(material: WindowMaterial): Promise<WindowMaterialCapabilities> {
-    const bridge = this.bridge;
-    return bridge ? await bridge.setWindowMaterial(material) : createFallbackWindowMaterialCapabilities();
   }
 
   async windowMinimize(): Promise<void> {

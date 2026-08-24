@@ -320,7 +320,7 @@
 .telemetry-chart-axis-x span { max-width: 33%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .telemetry-chart-axis-x span:nth-child(2) { text-align: center; }
 .telemetry-chart-axis-x span:last-child { text-align: right; }
-.telemetry-chart-tooltip { position: absolute; z-index: 5; top: 8px; min-width: 174px; max-width: 250px; padding: 9px 10px; border: 1px solid color-mix(in srgb, var(--workspace-accent) 45%, var(--workspace-border-strong)); border-radius: 9px; color: var(--workspace-text); background: color-mix(in srgb, var(--workspace-surface-popover) 94%, var(--workspace-accent-soft)); box-shadow: 0 8px 22px color-mix(in srgb, var(--workspace-text) 16%, transparent); transform: translateX(-50%); pointer-events: none; }
+.telemetry-chart-tooltip { position: absolute; z-index: 5; top: 8px; min-width: 174px; max-width: 250px; padding: 9px 10px; border: 1px solid color-mix(in srgb, var(--workspace-accent) 45%, var(--workspace-border-strong)); border-radius: 9px; color: var(--workspace-text); background: var(--workspace-surface-acrylic); box-shadow: var(--workspace-shadow), var(--workspace-surface-highlight); backdrop-filter: var(--workspace-acrylic-filter); -webkit-backdrop-filter: var(--workspace-acrylic-filter); transform: translateX(-50%); pointer-events: none; }
 .telemetry-chart-tooltip.is-start { transform: translateX(0); }
 .telemetry-chart-tooltip.is-end { transform: translateX(-100%); }
 .telemetry-chart-tooltip time { display: block; margin-bottom: 6px; color: var(--workspace-text-secondary); font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -642,10 +642,10 @@
   padding: 10px;
   border: 1px solid var(--workspace-border-strong);
   border-radius: var(--workspace-radius-md);
-  background: var(--workspace-surface-popover);
-  box-shadow: var(--workspace-shadow);
-  backdrop-filter: blur(18px) saturate(120%);
-  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  background: var(--workspace-surface-acrylic);
+  box-shadow: var(--workspace-shadow), var(--workspace-surface-highlight);
+  backdrop-filter: var(--workspace-acrylic-filter);
+  -webkit-backdrop-filter: var(--workspace-acrylic-filter);
 }
 
 .workspace-layout-more-tray__row {

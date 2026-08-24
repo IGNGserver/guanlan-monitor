@@ -17,7 +17,6 @@ export const IPC_CHANNELS = {
   updateStartupSettings: "dsc:update-startup-settings",
   openExternal: "dsc:open-external",
   getWindowMaterialCapabilities: "dsc:get-window-material-capabilities",
-  setWindowMaterial: "dsc:set-window-material",
   windowMinimize: "dsc:window-minimize",
   windowToggleMaximize: "dsc:window-toggle-maximize",
   windowDragStart: "dsc:window-drag-start",

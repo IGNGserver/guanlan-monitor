@@ -746,7 +746,7 @@ kbd {
   border: 1px solid var(--workspace-border);
   border-radius: var(--workspace-radius-md);
   background: var(--workspace-surface);
-  box-shadow: var(--workspace-shadow-soft);
+  box-shadow: var(--workspace-shadow-soft), var(--workspace-surface-highlight);
 }
 
 .workspace-surface__header {
