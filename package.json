@@ -1,7 +1,7 @@
 {
   "name": "guanlan-monitor",
   "private": true,
-  "version": "0.2.265",
+  "version": "0.2.266",
   "packageManager": "pnpm@10.33.0",
   "pnpm": {
     "onlyBuiltDependencies": ["electron"]
