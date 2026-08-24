@@ -481,6 +481,17 @@ export function isDisplayableVirtualizationStorage(
   return storage.active !== false && hasVirtualizationStorageCapacity(storage);
 }
 
+export function isDisplayableVirtualizationStorageSeries(
+  storage: Pick<VirtualizationStorageMetricSeries, "active" | "totalBytes" | "usedBytes" | "availableBytes">
+): boolean {
+  // Historical series use arrays rather than the latest snapshot's scalar
+  // capacity values. Keep the same node-local and real-capacity policy for
+  // legacy data already stored by the Hub.
+  return storage.active !== false && [storage.totalBytes, storage.usedBytes, storage.availableBytes].some((points) =>
+    points.some((point) => typeof point.value === "number" && Number.isFinite(point.value) && point.value > 0)
+  );
+}
+
 /**
  * Return one stable, node-scoped record for every usable virtualization
  * storage pool. Node records are authoritative; the legacy top-level list is
