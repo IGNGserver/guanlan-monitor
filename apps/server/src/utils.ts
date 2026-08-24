@@ -193,10 +193,10 @@ export function payloadToTimeSeries(
           ? cpu.usagePercent ?? (cpuPackageCount === 1 ? payload.cpuUsagePercent : undefined)
           : undefined,
         frequencyMHz: enabled.has("cpuFrequency") && instanceEnabled.has("cpuFrequency")
-          ? cpu.frequencyMHz ?? (cpuPackageCount === 1 ? resolvedCpuFrequencyMHz : undefined)
+          ? cpu.frequencyMHz ?? (cpuPackageCount === 1 ? resolvedCpuFrequencyMHz ?? undefined : undefined)
           : undefined,
         temperatureC: enabled.has("cpuTemperature") && instanceEnabled.has("cpuTemperature")
-          ? cpu.temperatureC ?? (cpuPackageCount === 1 ? resolvedCpuTemperatureC : undefined)
+          ? cpu.temperatureC ?? (cpuPackageCount === 1 ? resolvedCpuTemperatureC ?? undefined : undefined)
           : undefined
       } satisfies InstanceMetricRecord;
     });
