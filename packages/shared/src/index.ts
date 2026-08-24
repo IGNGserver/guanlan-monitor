@@ -464,7 +464,9 @@ export function virtualizationStorageInstanceId(node: string | null | undefined,
   return node ? `${node}:${storageId}` : storageId;
 }
 
-function hasVirtualizationStorageCapacity(storage: VirtualizationStorageTelemetry): boolean {
+function hasVirtualizationStorageCapacity(
+  storage: Pick<VirtualizationStorageTelemetry, "totalBytes" | "usedBytes" | "availableBytes">
+): boolean {
   return [storage.totalBytes, storage.usedBytes, storage.availableBytes].some((value) =>
     typeof value === "number" && Number.isFinite(value) && value > 0
   );
