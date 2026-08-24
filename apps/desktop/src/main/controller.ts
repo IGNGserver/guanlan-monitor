@@ -23,6 +23,13 @@ import type { AgentBackendConfig, RawAgentBackendState } from "./types.js";
 
 const DEFAULT_METRIC_WINDOW: MetricWindow = "5m";
 const DEFAULT_TRAFFIC_MODE: TrafficCalendarMode = "day";
+const TRAFFIC_CALENDAR_CACHE_TTL_MS = 60_000;
+
+type CachedTrafficCalendar = {
+  key: string;
+  value: NonNullable<DesktopSnapshot["trafficCalendar"]>;
+  savedAt: number;
+};
 
 export class DesktopController {
   readonly bridge: Omit<DesktopRendererBridge, "subscribe" | "windowMinimize" | "windowToggleMaximize" | "windowDragStart" | "windowDragMove" | "windowDragEnd" | "windowClose">;
@@ -32,10 +39,13 @@ export class DesktopController {
   private readonly localConfig: LocalConfigStore;
   private readonly listeners = new Set<(snapshot: DesktopSnapshot) => void>();
   private currentSnapshot: DesktopSnapshot | null = null;
+  private refreshInFlight: Promise<DesktopSnapshot> | null = null;
+  private queuedRefreshRequest: DesktopSnapshotRequest | null = null;
   private metricWindow: MetricWindow = DEFAULT_METRIC_WINDOW;
   private selectedDeviceId: string | null = null;
   private trafficMode: TrafficCalendarMode = DEFAULT_TRAFFIC_MODE;
   private trafficAnchor = new Date().toISOString();
+  private trafficCalendarCache: CachedTrafficCalendar | null = null;
   private startup: DesktopStartupSettings = { openAtLogin: false, startMinimized: false };
 
   constructor() {
@@ -104,7 +114,7 @@ export class DesktopController {
   }
 
   async getSnapshot(request: DesktopSnapshotRequest = {}): Promise<DesktopSnapshot> {
-    const requestChanged = this.applyRequest(request);
+    const requestChanged = this.hasRequestChanges(request);
     if (request.preferCache) {
       try {
         const cached = await this.cache.read();
@@ -118,6 +128,34 @@ export class DesktopController {
   }
 
   async refresh(request: DesktopSnapshotRequest = {}): Promise<DesktopSnapshot> {
+    if (this.refreshInFlight) {
+      if (this.hasRequestChanges(request)) {
+        this.queuedRefreshRequest = mergeSnapshotRequests(this.queuedRefreshRequest, request);
+      }
+      return this.refreshInFlight;
+    }
+    this.queuedRefreshRequest = mergeSnapshotRequests(this.queuedRefreshRequest, request);
+
+    const refresh = this.drainRefreshQueue();
+    this.refreshInFlight = refresh;
+    try {
+      return await refresh;
+    } finally {
+      if (this.refreshInFlight === refresh) this.refreshInFlight = null;
+    }
+  }
+
+  private async drainRefreshQueue(): Promise<DesktopSnapshot> {
+    let snapshot = this.currentSnapshot;
+    while (this.queuedRefreshRequest) {
+      const request = this.queuedRefreshRequest;
+      this.queuedRefreshRequest = null;
+      snapshot = await this.refreshOnce(request);
+    }
+    return snapshot ?? this.emptySnapshot();
+  }
+
+  private async refreshOnce(request: DesktopSnapshotRequest): Promise<DesktopSnapshot> {
     this.applyRequest(request);
     let cached: DesktopSnapshot | null = null;
     try {
@@ -309,11 +347,10 @@ export class DesktopController {
     if (selectedDeviceId && this.hub.isConfigured) {
       try {
         metrics = await this.hub.getMetrics(selectedDeviceId, this.metricWindow);
-        trafficCalendar = await this.hub.getTrafficCalendar(selectedDeviceId, this.trafficMode, this.trafficAnchor);
       } catch {
         metrics = null;
-        trafficCalendar = null;
       }
+      trafficCalendar = await this.readTrafficCalendar(selectedDeviceId);
     }
 
     if (this.hub.isConfigured) {
@@ -344,6 +381,22 @@ export class DesktopController {
       update,
       authenticated
     };
+  }
+
+  private async readTrafficCalendar(deviceId: string): Promise<DesktopSnapshot["trafficCalendar"]> {
+    const key = [deviceId, this.trafficMode, this.trafficAnchor].join("\u001f");
+    const cached = this.trafficCalendarCache;
+    if (cached?.key === key && Date.now() - cached.savedAt < TRAFFIC_CALENDAR_CACHE_TTL_MS) {
+      return cached.value;
+    }
+
+    try {
+      const value = await this.hub.getTrafficCalendar(deviceId, this.trafficMode, this.trafficAnchor);
+      this.trafficCalendarCache = { key, value, savedAt: Date.now() };
+      return value;
+    } catch {
+      return cached?.key === key ? cached.value : null;
+    }
   }
 
   private createSnapshot(source: "live" | "empty", live: Awaited<ReturnType<DesktopController["readLiveData"]>>, cached: DesktopSnapshot | null): DesktopSnapshot {
@@ -413,22 +466,45 @@ export class DesktopController {
     }
     if (request.selectedDeviceId !== undefined && request.selectedDeviceId !== this.selectedDeviceId) {
       this.selectedDeviceId = request.selectedDeviceId;
+      this.trafficCalendarCache = null;
       changed = true;
     }
     if (request.trafficMode && request.trafficMode !== this.trafficMode) {
       this.trafficMode = request.trafficMode;
+      this.trafficCalendarCache = null;
       changed = true;
     }
     if (request.trafficAnchor && request.trafficAnchor !== this.trafficAnchor) {
       this.trafficAnchor = request.trafficAnchor;
+      this.trafficCalendarCache = null;
       changed = true;
     }
     return changed;
   }
 
+  private hasRequestChanges(request: DesktopSnapshotRequest): boolean {
+    return (request.metricWindow !== undefined && request.metricWindow !== this.metricWindow)
+      || (request.selectedDeviceId !== undefined && request.selectedDeviceId !== this.selectedDeviceId)
+      || (request.trafficMode !== undefined && request.trafficMode !== this.trafficMode)
+      || (request.trafficAnchor !== undefined && request.trafficAnchor !== this.trafficAnchor);
+  }
+
   private notify(snapshot: DesktopSnapshot): void {
     for (const listener of this.listeners) listener(snapshot);
   }
+}
+
+function mergeSnapshotRequests(
+  current: DesktopSnapshotRequest | null,
+  next: DesktopSnapshotRequest
+): DesktopSnapshotRequest {
+  const merged: DesktopSnapshotRequest = { ...(current ?? {}) };
+  if (next.metricWindow !== undefined) merged.metricWindow = next.metricWindow;
+  if (next.selectedDeviceId !== undefined) merged.selectedDeviceId = next.selectedDeviceId;
+  if (next.trafficMode !== undefined) merged.trafficMode = next.trafficMode;
+  if (next.trafficAnchor !== undefined) merged.trafficAnchor = next.trafficAnchor;
+  if (next.preferCache !== undefined) merged.preferCache = next.preferCache;
+  return merged;
 }
 
 function redactBackendState(state: RawAgentBackendState): DesktopAgentBackendState {

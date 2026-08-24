@@ -189,6 +189,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   const [refreshing, setRefreshing] = useState(false);
   const [mutationPending, setMutationPending] = useState(false);
   const pendingMutationsRef = useRef(0);
+  const mutationEpochRef = useRef(0);
+  const refreshInFlightRef = useRef<Promise<void> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<WorkspaceContextValue["notice"]>(null);
   const [metricsWindow, setMetricsWindow] = useState<MetricWindow>("5m");
@@ -271,28 +273,41 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
       // closes that small window and prevents a stale refresh from overwriting
       // the mutation result.
       if (pendingMutationsRef.current > 0) return;
+      if (refreshInFlightRef.current) return refreshInFlightRef.current;
       const request = {
         selectedDeviceId: selectedDeviceId ?? undefined,
         metricWindow: metricsWindow,
         trafficMode
       };
-      try {
-        setError(null);
-        if (forceRefresh) setRefreshing(true);
-        else setLoading(true);
-        const nextSnapshot = forceRefresh
-          ? await adapter.refresh(request)
-          : await adapter.getSnapshot(request);
-        setSnapshot(nextSnapshot);
-        if (announce) {
-          setNotice({ tone: "success", text: "状态已更新" });
+      const requestEpoch = mutationEpochRef.current;
+      const refresh = (async () => {
+        try {
+          setError(null);
+          if (forceRefresh) setRefreshing(true);
+          else setLoading(true);
+          const nextSnapshot = forceRefresh
+            ? await adapter.refresh(request)
+            : await adapter.getSnapshot(request);
+          if (requestEpoch !== mutationEpochRef.current || pendingMutationsRef.current > 0) return;
+          setSnapshot(nextSnapshot);
+          if (announce) {
+            setNotice({ tone: "success", text: "状态已更新" });
+          }
+        } catch (nextError) {
+          if (requestEpoch === mutationEpochRef.current && pendingMutationsRef.current === 0) {
+            setError(formatError(nextError, "无法读取设备状态"));
+            if (announce) setNotice({ tone: "error", text: "刷新失败，请检查连接" });
+          }
+        } finally {
+          setLoading(false);
+          setRefreshing(false);
         }
-      } catch (nextError) {
-        setError(formatError(nextError, "无法读取设备状态"));
-        if (announce) setNotice({ tone: "error", text: "刷新失败，请检查连接" });
+      })();
+      refreshInFlightRef.current = refresh;
+      try {
+        await refresh;
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (refreshInFlightRef.current === refresh) refreshInFlightRef.current = null;
       }
     },
     [adapter, metricsWindow, selectedDeviceId, trafficMode]
@@ -300,7 +315,10 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
 
   useEffect(() => {
     void fetchSnapshot(false);
-    const unsubscribe = adapter.subscribe((nextSnapshot) => setSnapshot(nextSnapshot));
+    const unsubscribe = adapter.subscribe((nextSnapshot) => {
+      if (pendingMutationsRef.current > 0) return;
+      setSnapshot(nextSnapshot);
+    });
     return unsubscribe;
   }, [adapter, fetchSnapshot]);
 
@@ -311,8 +329,21 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   }, []);
 
   useEffect(() => {
-    const timer = window.setInterval(() => void fetchSnapshot(true, false), refreshInterval * 1000);
-    return () => window.clearInterval(timer);
+    let cancelled = false;
+    let timer: number | null = null;
+    const schedule = () => {
+      if (cancelled) return;
+      timer = window.setTimeout(async () => {
+        timer = null;
+        await fetchSnapshot(true, false);
+        schedule();
+      }, refreshInterval * 1000);
+    };
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
   }, [fetchSnapshot, refreshInterval]);
 
   useEffect(() => {
@@ -427,6 +458,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   const runMutation = useCallback(
     async (action: () => Promise<ConsoleSnapshot>, successText: string, errorText: string): Promise<boolean> => {
       pendingMutationsRef.current += 1;
+      mutationEpochRef.current += 1;
       setMutationPending(true);
       try {
         const nextSnapshot = await action();
@@ -506,6 +538,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   const adapterDragMove = useCallback((screenX: number, screenY: number) => adapter.windowDragMove?.(screenX, screenY), [adapter]);
   const adapterDragEnd = useCallback(() => adapter.windowDragEnd?.(), [adapter]);
   const login = useCallback(async (accessKey: string) => {
+    mutationEpochRef.current += 1;
     try {
       const nextSnapshot = await adapter.login(accessKey);
       setSnapshot(nextSnapshot);
