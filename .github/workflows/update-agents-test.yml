@@ -67,71 +67,43 @@ jobs:
             echo 'SSH deploy secrets are empty; remote targets will use the NAS runner SSH configuration.'
           fi
 
-      - name: Download and verify Agent package on runner
+      - name: Checkout requested Agent source
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+          fetch-depth: 1
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Build and verify Agent package on runner
         shell: bash
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          for command in curl sha256sum unzip; do
-            command -v "$command" >/dev/null 2>&1 || {
-              echo "$command is required on the deployment runner." >&2
-              exit 1
-            }
-          done
-
           work_dir="${RUNNER_TEMP:-/tmp}/dsc-agent-update-${GITHUB_RUN_ID:-manual}"
           rm -rf "$work_dir"
-          mkdir -p "$work_dir"
-          asset="DeviceStateConsole-Linux-CLI-Install-v${REQUESTED_VERSION}.zip"
-          base_url="https://github.com/IGNGserver/guanlan-monitor/releases/download/v${REQUESTED_VERSION}"
-          archive="$work_dir/$asset"
-          partial="$archive.part"
-          checksum="$work_dir/$asset.sha256"
           package_dir="$work_dir/package"
-
-          curl -4 -fL --retry 8 --retry-all-errors --connect-timeout 20 --max-time 90 \
-            "$base_url/$asset.sha256" -o "$checksum"
-          expected="$(awk '{print $1}' "$checksum")"
-          [[ "$expected" =~ ^[[:xdigit:]]{64}$ ]] || {
-            echo "Release checksum is invalid." >&2
+          mkdir -p "$package_dir"
+          source_version="$(tr -d '[:space:]' < VERSION)"
+          [[ "$source_version" == "$REQUESTED_VERSION" ]] || {
+            echo "Checked out source version $source_version does not match requested version $REQUESTED_VERSION." >&2
             exit 1
           }
-
-          downloaded=false
-          for attempt in $(seq 1 20); do
-            if [[ -s "$archive" ]]; then
-              actual="$(sha256sum "$archive" | awk '{print $1}')"
-              if [[ "${actual,,}" == "${expected,,}" ]]; then
-                downloaded=true
-                break
-              fi
-            fi
-            echo "Downloading $asset (attempt $attempt/20; resumable)"
-            curl -4 -fL --retry 2 --retry-all-errors --connect-timeout 20 --max-time 180 \
-              -C - "$base_url/$asset" -o "$partial" || true
-            if [[ -s "$partial" ]]; then
-              actual="$(sha256sum "$partial" | awk '{print $1}')"
-              if [[ "${actual,,}" == "${expected,,}" ]]; then
-                mv "$partial" "$archive"
-                downloaded=true
-                break
-              fi
-            fi
-            sleep 2
-          done
-          [[ "$downloaded" == true ]] || {
-            echo "Unable to download and verify $asset after resumable retries." >&2
-            exit 1
-          }
-          unzip -q "$archive" -d "$package_dir"
           agent_binary="$package_dir/device-state-console-agent"
-          [[ -f "$agent_binary" ]] || {
-            echo "Release package is missing the Linux Agent binary." >&2
+          go -C agents build -trimpath \
+            -ldflags "-s -w -X main.BuildVersion=${source_version} -X main.BuildChannel=test" \
+            -o "$agent_binary" .
+          chmod 0755 "$agent_binary"
+          reported="$($agent_binary version)"
+          [[ "$reported" == "$REQUESTED_VERSION (test)" ]] || {
+            echo "Built Agent reported '$reported', expected '$REQUESTED_VERSION (test)'." >&2
             exit 1
           }
-          chmod 0755 "$agent_binary"
-          echo "Verified $asset ($expected)"
+          echo "Built and verified Agent $reported on the Actions runner."
 
       - name: Distribute and verify each Agent
         shell: bash
@@ -152,6 +124,7 @@ jobs:
             echo "Verified Agent package is missing the Linux Agent binary." >&2
             exit 1
           }
+          chmod 0755 "$agent_binary"
 
           install_script='set -euo pipefail
           version="$1"
