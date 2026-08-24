@@ -9,6 +9,9 @@
   --workspace-surface-popover: #ffffff;
   --workspace-surface-modal: #ffffff;
   --workspace-surface-foreground: #f6fafd;
+  --workspace-surface-acrylic: #ffffff;
+  --workspace-acrylic-filter: none;
+  --workspace-surface-highlight: inset 0 1px 0 rgb(255 255 255 / 78%);
   --workspace-scrim: rgb(23 32 43 / 18%);
   --workspace-text: #17202b;
   --workspace-text-secondary: #516071;
@@ -48,6 +51,9 @@ html[data-dsc-resolved-theme="dark"] {
   --workspace-surface-popover: #1c2229;
   --workspace-surface-modal: #1c2229;
   --workspace-surface-foreground: #1b2329;
+  --workspace-surface-acrylic: #1c2229;
+  --workspace-acrylic-filter: none;
+  --workspace-surface-highlight: inset 0 1px 0 rgb(215 230 240 / 12%);
   --workspace-scrim: rgb(0 0 0 / 32%);
   --workspace-text: #f1f4f7;
   --workspace-text-secondary: #b5c0ca;

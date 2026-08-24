@@ -2073,7 +2073,7 @@ function SettingsPage() {
   const descriptions: Partial<Record<SettingsSection, string>> = {
     general: "调整观澜的日常行为。",
     workspace: "浏览器端的刷新、实例筛选和中枢状态。",
-    appearance: "调整浏览器工作台的显示方式。",
+    appearance: "调整工作区的主题、密度和动画适配。",
     session: "管理当前浏览器会话和访问边界。",
     data: "查看实时数据来源与版本信息。",
     shortcuts: "用键盘快速切换页面和刷新状态。",
@@ -2158,16 +2158,8 @@ function GeneralSettings() {
 }
 
 function AppearanceSettings() {
-  const { theme, setTheme, windowMaterial, setWindowMaterial, windowMaterialCapabilities, density, setDensity, capabilities } = useWorkspace();
-  const materialSupported = Boolean(windowMaterialCapabilities?.supportsMica || windowMaterialCapabilities?.supportsAcrylic);
-  const materialDescription = !windowMaterialCapabilities
-    ? "选择窗口背景材质。"
-    : materialSupported
-      ? "云母适合长期使用；亚克力为实验性透明效果。"
-      : windowMaterialCapabilities.prefersReducedTransparency
-        ? "系统已关闭透明效果，材质选项会自动回退到观澜。"
-        : "当前系统不支持 Windows 原生材质，已使用观澜。";
-  return <Surface><div className="workspace-settings-list"><SettingRow label="主题" description="跟随系统，或固定使用浅色/深色主题。"><select className="workspace-select" value={theme} onChange={(event) => setTheme(event.target.value as typeof theme)}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></SettingRow>{capabilities.canUseWindowMaterial && <SettingRow label="窗口材质" description={materialDescription}><select className="workspace-select" value={windowMaterial} onChange={(event) => setWindowMaterial(event.target.value as typeof windowMaterial)}><option value="guanlan">观澜（标准）</option><option value="mica" disabled={!windowMaterialCapabilities?.supportsMica}>云母（Windows 11）</option><option value="acrylic" disabled={!windowMaterialCapabilities?.supportsAcrylic}>亚克力（实验性）</option></select></SettingRow>}<SettingRow label="界面密度" description="自动会根据触摸输入和窗口尺寸放大操作目标；远控手机时可手动选择触摸。"><select className="workspace-select" value={density} onChange={(event) => setDensity(event.target.value as typeof density)}><option value="auto">自动</option><option value="comfortable">舒适</option><option value="compact">紧凑</option><option value="touch">触摸</option></select></SettingRow><SettingRow label="动画" description="尊重系统的减少动态效果设置。"><span className="workspace-setting-note"><Icon name="check" size={15} />已启用可访问性适配</span></SettingRow></div></Surface>;
+  const { theme, setTheme, density, setDensity } = useWorkspace();
+  return <Surface><div className="workspace-settings-list"><SettingRow label="主题" description="跟随系统，或固定使用浅色/深色主题。"><select className="workspace-select" value={theme} onChange={(event) => setTheme(event.target.value as typeof theme)}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></SettingRow><SettingRow label="界面密度" description="自动会根据触摸输入和窗口尺寸放大操作目标；远控手机时可手动选择触摸。"><select className="workspace-select" value={density} onChange={(event) => setDensity(event.target.value as typeof density)}><option value="auto">自动</option><option value="comfortable">舒适</option><option value="compact">紧凑</option><option value="touch">触摸</option></select></SettingRow><SettingRow label="动画" description="尊重系统的减少动态效果设置。"><span className="workspace-setting-note"><Icon name="check" size={15} />已启用可访问性适配</span></SettingRow></div></Surface>;
 }
 
 function ConnectionSettings() {

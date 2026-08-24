@@ -11,13 +11,14 @@ import type {
 } from "@dsc/shared";
 import { DesktopController } from "./controller.js";
 import { IPC_CHANNELS } from "../ipc-contract.js";
-import type { WindowMaterial, WindowMaterialCapabilities } from "../window-material.js";
-
-const MIN_WINDOWS_MATERIAL_BUILD = 22621;
+import {
+  MIN_WINDOWS_MATERIAL_BUILD,
+  resolveWindowMaterial,
+  type WindowMaterialCapabilities
+} from "../window-material.js";
 
 export function registerIpc(controller: DesktopController, getWindow: () => BrowserWindow | null, markQuitting: () => void): void {
   const windowDragOffsets = new Map<number, { x: number; y: number }>();
-  let activeWindowMaterial: WindowMaterial = "guanlan";
 
   ipcMain.handle(IPC_CHANNELS.getSnapshot, (_event, request?: DesktopSnapshotRequest) => controller.getSnapshot(asSnapshotRequest(request)));
   ipcMain.handle(IPC_CHANNELS.refresh, (_event, request?: DesktopSnapshotRequest) => controller.refresh(asSnapshotRequest(request)));
@@ -36,28 +37,7 @@ export function registerIpc(controller: DesktopController, getWindow: () => Brow
   ipcMain.handle(IPC_CHANNELS.reorderInstances, (_event, deviceIds: unknown) => controller.reorderInstances(asStringArray(deviceIds, "device_ids")));
   ipcMain.handle(IPC_CHANNELS.updateStartupSettings, (_event, settings) => controller.updateStartupSettings(asStartupSettings(settings)));
   ipcMain.handle(IPC_CHANNELS.openExternal, (_event, url: string) => controller.openExternal(asString(url, "external_url")));
-  ipcMain.handle(IPC_CHANNELS.getWindowMaterialCapabilities, () => getWindowMaterialCapabilities(getWindow(), activeWindowMaterial));
-  ipcMain.handle(IPC_CHANNELS.setWindowMaterial, (_event, value: unknown) => {
-    const requestedMaterial = asWindowMaterial(value);
-    const window = getWindow();
-
-    if (requestedMaterial === "guanlan") {
-      setNativeWindowMaterial(window, "guanlan");
-      activeWindowMaterial = "guanlan";
-      return getWindowMaterialCapabilities(window, activeWindowMaterial);
-    }
-
-    const capabilities = getWindowMaterialCapabilities(window, activeWindowMaterial);
-    const supported = requestedMaterial === "mica" ? capabilities.supportsMica : capabilities.supportsAcrylic;
-    if (!supported || !setNativeWindowMaterial(window, requestedMaterial)) {
-      setNativeWindowMaterial(window, "guanlan");
-      activeWindowMaterial = "guanlan";
-      return getWindowMaterialCapabilities(window, activeWindowMaterial);
-    }
-
-    activeWindowMaterial = requestedMaterial;
-    return getWindowMaterialCapabilities(window, activeWindowMaterial);
-  });
+  ipcMain.handle(IPC_CHANNELS.getWindowMaterialCapabilities, () => getWindowMaterialCapabilities(getWindow()));
   ipcMain.handle(IPC_CHANNELS.windowMinimize, () => {
     getWindow()?.minimize();
   });
@@ -111,7 +91,7 @@ function getWindowsBuild(): number | null {
   return match ? Number(match[1]) : null;
 }
 
-function getWindowMaterialCapabilities(window: BrowserWindow | null, activeMaterial: WindowMaterial): WindowMaterialCapabilities {
+function getWindowMaterialCapabilities(window: BrowserWindow | null): WindowMaterialCapabilities {
   const windowsBuild = getWindowsBuild();
   const prefersReducedTransparency = process.platform === "win32" && nativeTheme.prefersReducedTransparency;
   const nativeMaterialSupported = Boolean(
@@ -123,30 +103,21 @@ function getWindowMaterialCapabilities(window: BrowserWindow | null, activeMater
     typeof window.setBackgroundMaterial === "function" &&
     !prefersReducedTransparency
   );
+  const platform = process.platform === "win32" ? "windows" : "other";
+  const activeMaterial = resolveWindowMaterial({
+    platform,
+    windowsBuild,
+    prefersReducedTransparency,
+    supportsNativeMaterial: nativeMaterialSupported
+  });
 
   return {
-    platform: process.platform === "win32" ? "windows" : "other",
+    platform,
     windowsBuild,
-    supportsMica: nativeMaterialSupported,
-    supportsAcrylic: nativeMaterialSupported,
+    supportsMica: activeMaterial === "mica",
     prefersReducedTransparency,
-    activeMaterial: nativeMaterialSupported ? activeMaterial : "guanlan"
+    activeMaterial
   };
-}
-
-function setNativeWindowMaterial(window: BrowserWindow | null, material: WindowMaterial): boolean {
-  if (!window || window.isDestroyed() || process.platform !== "win32" || typeof window.setBackgroundMaterial !== "function") return material === "guanlan";
-  try {
-    window.setBackgroundMaterial(material === "guanlan" ? "none" : material);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function asWindowMaterial(value: unknown): WindowMaterial {
-  if (value === "guanlan" || value === "mica" || value === "acrylic") return value;
-  throw new Error("invalid_window_material");
 }
 
 function asString(value: unknown, field: string): string {

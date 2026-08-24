@@ -1,90 +1,81 @@
+/*
+ * Window-level material policy.
+ *
+ * Mica belongs to the native window backdrop. Acrylic is intentionally
+ * represented by the transient-surface tokens below and is applied only to
+ * menus, dialogs, toasts, and drawers. The opaque mode is the Windows 10 and
+ * reduced-transparency fallback with the same semantic surface hierarchy.
+ */
+
 html[data-dsc-material="mica"],
 html[data-dsc-material="mica"] body,
-html[data-dsc-material="mica"] #root,
-html[data-dsc-material="acrylic"],
-html[data-dsc-material="acrylic"] body,
-html[data-dsc-material="acrylic"] #root {
+html[data-dsc-material="mica"] #root {
   background: transparent;
 }
 
 html[data-dsc-material="mica"] {
-  /* Mica is the window-level backdrop. App chrome, content cards, controls,
-     and elevated surfaces intentionally use different tint levels so modal
-     UI does not become a transparent duplicate of the page underneath. */
   --workspace-bg: transparent;
-  --workspace-topbar: rgb(248 250 253 / 68%);
-  --workspace-sidebar: rgb(238 243 248 / 76%);
-  --workspace-surface: rgb(255 255 255 / 76%);
-  --workspace-surface-subtle: rgb(248 251 253 / 54%);
-  --workspace-surface-hover: rgb(238 245 251 / 72%);
-  --workspace-surface-control: rgb(255 255 255 / 62%);
+  --workspace-topbar: rgb(248 250 253 / 72%);
+  --workspace-sidebar: rgb(238 243 248 / 80%);
+  --workspace-surface: rgb(255 255 255 / 84%);
+  --workspace-surface-subtle: rgb(248 251 253 / 64%);
+  --workspace-surface-hover: rgb(238 245 251 / 78%);
+  --workspace-surface-control: rgb(255 255 255 / 72%);
   --workspace-surface-popover: rgb(249 252 255 / 94%);
-  --workspace-surface-modal: rgb(246 250 253 / 92%);
-  --workspace-surface-foreground: #f6fafd;
-  --workspace-scrim: rgb(26 38 48 / 24%);
-  --workspace-border: rgb(92 113 130 / 28%);
-  --workspace-border-strong: rgb(72 96 117 / 40%);
-  --workspace-shadow: 0 18px 44px rgba(30, 48, 67, 0.14);
-  --workspace-shadow-soft: 0 3px 14px rgba(30, 48, 67, 0.075);
+  --workspace-surface-modal: rgb(246 250 253 / 95%);
+  --workspace-surface-foreground: rgb(246 250 253 / 92%);
+  --workspace-surface-acrylic: rgb(249 252 255 / 82%);
+  --workspace-acrylic-filter: blur(26px) saturate(125%);
+  --workspace-surface-highlight: inset 0 1px 0 rgb(255 255 255 / 72%);
+  --workspace-scrim: rgb(26 38 48 / 28%);
+  --workspace-border: rgb(92 113 130 / 30%);
+  --workspace-border-strong: rgb(72 96 117 / 44%);
+  --workspace-shadow: 0 18px 44px rgb(30 48 67 / 16%);
+  --workspace-shadow-soft: 0 3px 14px rgb(30 48 67 / 9%);
 }
 
 html[data-dsc-resolved-theme="dark"][data-dsc-material="mica"] {
   --workspace-bg: transparent;
-  --workspace-topbar: rgb(21 28 33 / 86%);
-  --workspace-sidebar: rgb(23 30 35 / 88%);
-  --workspace-surface: rgb(31 38 44 / 90%);
-  --workspace-surface-subtle: rgb(37 45 51 / 72%);
-  --workspace-surface-hover: rgb(47 59 68 / 82%);
-  --workspace-surface-control: rgb(35 44 50 / 84%);
-  --workspace-surface-popover: rgb(29 36 42 / 96%);
-  --workspace-surface-modal: rgb(27 35 41 / 97%);
-  --workspace-surface-foreground: #1b2329;
-  --workspace-scrim: rgb(4 10 13 / 44%);
-  --workspace-border: rgb(205 221 232 / 18%);
-  --workspace-border-strong: rgb(215 230 240 / 30%);
-  --workspace-shadow: 0 22px 52px rgba(0, 0, 0, 0.38);
-  --workspace-shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.24);
+  --workspace-topbar: rgb(21 28 33 / 88%);
+  --workspace-sidebar: rgb(23 30 35 / 90%);
+  --workspace-surface: rgb(31 38 44 / 92%);
+  --workspace-surface-subtle: rgb(37 45 51 / 76%);
+  --workspace-surface-hover: rgb(47 59 68 / 84%);
+  --workspace-surface-control: rgb(35 44 50 / 86%);
+  --workspace-surface-popover: rgb(29 36 42 / 97%);
+  --workspace-surface-modal: rgb(27 35 41 / 98%);
+  --workspace-surface-foreground: rgb(27 35 41 / 96%);
+  --workspace-surface-acrylic: rgb(29 36 42 / 86%);
+  --workspace-acrylic-filter: blur(26px) saturate(120%);
+  --workspace-surface-highlight: inset 0 1px 0 rgb(215 230 240 / 16%);
+  --workspace-scrim: rgb(4 10 13 / 48%);
+  --workspace-border: rgb(205 221 232 / 19%);
+  --workspace-border-strong: rgb(215 230 240 / 32%);
+  --workspace-shadow: 0 22px 52px rgb(0 0 0 / 42%);
+  --workspace-shadow-soft: 0 4px 16px rgb(0 0 0 / 26%);
 }
 
-html[data-dsc-material="acrylic"] {
-  --workspace-bg: transparent;
-  --workspace-topbar: rgb(248 250 253 / 58%);
-  --workspace-sidebar: rgb(238 243 248 / 64%);
-  --workspace-surface: rgb(255 255 255 / 66%);
-  --workspace-surface-subtle: rgb(248 251 253 / 42%);
-  --workspace-surface-hover: rgb(238 245 251 / 62%);
-  --workspace-surface-control: rgb(255 255 255 / 52%);
-  --workspace-surface-popover: rgb(249 252 255 / 90%);
-  --workspace-surface-modal: rgb(246 250 253 / 88%);
-  --workspace-surface-foreground: #f6fafd;
-  --workspace-scrim: rgb(26 38 48 / 22%);
-  --workspace-border: rgb(92 113 130 / 24%);
-  --workspace-border-strong: rgb(72 96 117 / 36%);
-  --workspace-shadow: 0 18px 44px rgba(30, 48, 67, 0.16);
-  --workspace-shadow-soft: 0 3px 14px rgba(30, 48, 67, 0.085);
+html[data-dsc-material="opaque"] {
+  --workspace-surface-acrylic: #ffffff;
+  --workspace-acrylic-filter: none;
+  --workspace-surface-highlight: inset 0 1px 0 rgb(255 255 255 / 78%);
 }
 
-html[data-dsc-resolved-theme="dark"][data-dsc-material="acrylic"] {
-  --workspace-bg: transparent;
-  --workspace-topbar: rgb(21 28 33 / 80%);
-  --workspace-sidebar: rgb(23 30 35 / 82%);
-  --workspace-surface: rgb(31 38 44 / 84%);
-  --workspace-surface-subtle: rgb(37 45 51 / 64%);
-  --workspace-surface-hover: rgb(47 59 68 / 76%);
-  --workspace-surface-control: rgb(35 44 50 / 78%);
-  --workspace-surface-popover: rgb(29 36 42 / 95%);
-  --workspace-surface-modal: rgb(27 35 41 / 96%);
-  --workspace-surface-foreground: #1b2329;
-  --workspace-scrim: rgb(4 10 13 / 40%);
-  --workspace-border: rgb(205 221 232 / 16%);
-  --workspace-border-strong: rgb(215 230 240 / 28%);
-  --workspace-shadow: 0 22px 52px rgba(0, 0, 0, 0.42);
-  --workspace-shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.28);
+html[data-dsc-resolved-theme="dark"][data-dsc-material="opaque"] {
+  --workspace-surface-acrylic: #1c2229;
+  --workspace-acrylic-filter: none;
+  --workspace-surface-highlight: inset 0 1px 0 rgb(215 230 240 / 12%);
 }
 
+/* CSS is also defensive when Windows changes its transparency preference. */
 @media (prefers-reduced-transparency: reduce) {
   html[data-dsc-material="mica"],
-  html[data-dsc-material="acrylic"] {
+  html[data-dsc-material="mica"] body,
+  html[data-dsc-material="mica"] #root {
+    background: var(--workspace-bg);
+  }
+
+  html[data-dsc-material="mica"] {
     --workspace-bg: #f5f7fa;
     --workspace-topbar: #f5f7fa;
     --workspace-sidebar: #eef2f6;
@@ -95,13 +86,15 @@ html[data-dsc-resolved-theme="dark"][data-dsc-material="acrylic"] {
     --workspace-surface-popover: #ffffff;
     --workspace-surface-modal: #ffffff;
     --workspace-surface-foreground: #f6fafd;
+    --workspace-surface-acrylic: #ffffff;
+    --workspace-acrylic-filter: none;
+    --workspace-surface-highlight: inset 0 1px 0 rgb(255 255 255 / 78%);
     --workspace-scrim: rgb(23 32 43 / 18%);
     --workspace-border: #dce3ea;
     --workspace-border-strong: #c5d0db;
   }
 
-  html[data-dsc-resolved-theme="dark"][data-dsc-material="mica"],
-  html[data-dsc-resolved-theme="dark"][data-dsc-material="acrylic"] {
+  html[data-dsc-resolved-theme="dark"][data-dsc-material="mica"] {
     --workspace-bg: #14181d;
     --workspace-topbar: #14181d;
     --workspace-sidebar: #191e24;
@@ -112,6 +105,9 @@ html[data-dsc-resolved-theme="dark"][data-dsc-material="acrylic"] {
     --workspace-surface-popover: #1c2229;
     --workspace-surface-modal: #1c2229;
     --workspace-surface-foreground: #1b2329;
+    --workspace-surface-acrylic: #1c2229;
+    --workspace-acrylic-filter: none;
+    --workspace-surface-highlight: inset 0 1px 0 rgb(215 230 240 / 12%);
     --workspace-scrim: rgb(0 0 0 / 32%);
     --workspace-border: #303b46;
     --workspace-border-strong: #43515f;

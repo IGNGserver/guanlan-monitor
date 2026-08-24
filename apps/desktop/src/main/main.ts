@@ -1,9 +1,10 @@
-import { app, BrowserWindow, Menu, nativeImage, screen, Tray } from "electron";
+import { app, BrowserWindow, Menu, nativeImage, nativeTheme, screen, Tray } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DesktopController } from "./controller.js";
 import { registerIpc } from "./ipc.js";
+import { resolveWindowMaterial } from "../window-material.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -22,6 +23,23 @@ function getInstallerRestoreState(commandLine: string[]): InstallerRestoreState 
   if (argument === "--dsc-installer-restore=window") return "window";
   if (argument === "--dsc-installer-restore=tray") return "tray";
   return null;
+}
+
+function getWindowsBuild(): number | null {
+  const electronProcess = process as NodeJS.Process & { getSystemVersion?: () => string };
+  if (process.platform !== "win32" || typeof electronProcess.getSystemVersion !== "function") return null;
+  const match = electronProcess.getSystemVersion().match(/^\d+\.\d+\.(\d+)/);
+  return match ? Number(match[1]) : null;
+}
+
+function resolveNativeWindowMaterial(): "mica" | "none" {
+  const material = resolveWindowMaterial({
+    platform: process.platform === "win32" ? "windows" : "other",
+    windowsBuild: getWindowsBuild(),
+    prefersReducedTransparency: process.platform === "win32" && nativeTheme.prefersReducedTransparency,
+    supportsNativeMaterial: process.platform === "win32"
+  });
+  return material === "mica" ? "mica" : "none";
 }
 
 const installerRestoreState = getInstallerRestoreState(process.argv);
@@ -53,6 +71,7 @@ if (!hasSingleInstanceLock) {
     const preloadPath = path.join(__dirname, "../preload/index.js");
     const iconPath = resolveAppIconPath();
     const appIcon = nativeImage.createFromPath(iconPath);
+    const nativeWindowMaterial = resolveNativeWindowMaterial();
     const workArea = screen.getPrimaryDisplay().workAreaSize;
     const minWidth = Math.min(360, Math.max(320, workArea.width - 32));
     const minHeight = Math.min(360, Math.max(320, workArea.height - 32));
@@ -64,11 +83,11 @@ if (!hasSingleInstanceLock) {
       show: false,
       frame: false,
       icon: appIcon.isEmpty() ? undefined : appIcon,
-      // Native Windows materials need the web contents to leave the window
-      // background visible. Guanlan still paints an opaque surface through
-      // its renderer theme, while Mica/Acrylic can reveal the DWM backdrop.
-      backgroundColor: process.platform === "win32" ? "#00000000" : "#f5f7fa",
-      backgroundMaterial: process.platform === "win32" ? "none" : undefined,
+      // Windows 11 uses native Mica as the window-level backdrop. Windows 10,
+      // reduced-transparency systems, and other platforms stay opaque; the
+      // renderer applies the matching surface token set automatically.
+      backgroundColor: nativeWindowMaterial === "mica" ? "#00000000" : "#f5f7fa",
+      backgroundMaterial: process.platform === "win32" ? nativeWindowMaterial : undefined,
       title: "观澜 · 设备状态控制台",
       autoHideMenuBar: true,
       webPreferences: {
@@ -83,6 +102,18 @@ if (!hasSingleInstanceLock) {
       }
     });
     mainWindow.setMenuBarVisibility(false);
+    const updateNativeWindowMaterial = () => {
+      if (!mainWindow || mainWindow.isDestroyed() || process.platform !== "win32") return;
+      const material = resolveNativeWindowMaterial();
+      try {
+        mainWindow.setBackgroundMaterial(material);
+        mainWindow.setBackgroundColor(material === "mica" ? "#00000000" : "#f5f7fa");
+      } catch {
+        // Older Electron builds can expose the option but reject a runtime update.
+      }
+    };
+    nativeTheme.on("updated", updateNativeWindowMaterial);
+    mainWindow.once("closed", () => nativeTheme.removeListener("updated", updateNativeWindowMaterial));
     mainWindow.on("close", (event) => {
       if (quitting) return;
       event.preventDefault();

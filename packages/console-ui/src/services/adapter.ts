@@ -12,7 +12,6 @@ export interface ConsoleCapabilities {
   canUseOfflineCache: boolean;
   canChangeStartupSettings: boolean;
   canControlNativeWindow: boolean;
-  canUseWindowMaterial: boolean;
   canConfigureConnection: boolean;
   requiresAuthentication: boolean;
 }
@@ -31,16 +30,14 @@ export interface ConsoleAdapter extends ConsoleReadPort, ConsoleSessionPort, Con
   windowDragMove?(screenX: number, screenY: number): void;
   windowDragEnd?(): void;
   getWindowMaterialCapabilities?(): Promise<WindowMaterialCapabilities>;
-  setWindowMaterial?(material: WindowMaterial): Promise<WindowMaterialCapabilities>;
 }
 
-export type WindowMaterial = "guanlan" | "mica" | "acrylic";
+export type WindowMaterial = "opaque" | "mica";
 
 export interface WindowMaterialCapabilities {
   platform: "windows" | "other";
   windowsBuild: number | null;
   supportsMica: boolean;
-  supportsAcrylic: boolean;
   prefersReducedTransparency: boolean;
   activeMaterial: WindowMaterial;
 }
@@ -50,7 +47,6 @@ export const WEB_CAPABILITIES: ConsoleCapabilities = {
   canUseOfflineCache: false,
   canChangeStartupSettings: false,
   canControlNativeWindow: false,
-  canUseWindowMaterial: false,
   canConfigureConnection: false,
   requiresAuthentication: true
 };
@@ -60,7 +56,6 @@ export const DESKTOP_CAPABILITIES: ConsoleCapabilities = {
   canUseOfflineCache: true,
   canChangeStartupSettings: true,
   canControlNativeWindow: true,
-  canUseWindowMaterial: true,
   canConfigureConnection: true,
   requiresAuthentication: false
 };
@@ -70,9 +65,8 @@ export function fallbackWindowMaterialCapabilities(): WindowMaterialCapabilities
     platform: "other",
     windowsBuild: null,
     supportsMica: false,
-    supportsAcrylic: false,
     prefersReducedTransparency: false,
-    activeMaterial: "guanlan"
+    activeMaterial: "opaque"
   };
 }
 
