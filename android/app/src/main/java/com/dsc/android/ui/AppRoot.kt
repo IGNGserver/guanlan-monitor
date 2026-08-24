@@ -117,6 +117,8 @@ import com.dsc.android.TrafficCalendarDto
 import com.dsc.android.TrafficCalendarMode
 import com.dsc.android.TemperatureMetricSeriesDto
 import com.dsc.android.TemperatureSensorDto
+import com.dsc.android.VirtualizationStorageDisplay
+import com.dsc.android.displayableVirtualizationStoragePools
 import com.dsc.android.resolveChartIndex
 import com.dsc.android.splitSamplePointSegments
 import kotlin.math.max
@@ -1222,6 +1224,7 @@ private fun SummaryCapsule(capsule: OverviewCapsuleModel, onClick: () -> Unit) {
 }
 
 private fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWindow): List<OverviewCapsuleModel> {
+  val storagePoolCount = displayableVirtualizationStoragePools(metrics).size
   return buildList {
     add(
       OverviewCapsuleModel(
@@ -1263,7 +1266,10 @@ private fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWin
       OverviewCapsuleModel(
         blockKey = DeviceBlockKey.Disk,
         title = "硬盘",
-        subtitle = "${metrics.latest.disks.size} 个设备 / 分区",
+        subtitle = buildString {
+          append("${metrics.latest.disks.size} 个设备 / 分区")
+          if (storagePoolCount > 0) append(" · $storagePoolCount 个存储池")
+        },
         metrics = listOf(
           "总占用" to buildUsage(metrics.latest.diskUsedBytes, metrics.latest.diskTotalBytes),
           "读取" to metricPoint(metrics.series.diskReadBytesPerSec, selectedWindow, ::formatSpeed),
@@ -1465,6 +1471,7 @@ private fun MemorySheetContent(metrics: MetricsDto, selectedWindow: MetricWindow
 @Composable
 private fun DiskSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, chartWindow: ChartWindow, onEditInstance: (String) -> Unit) {
   if (tabId == "total") {
+    val storagePools = displayableVirtualizationStoragePools(metrics)
     MetricCardGrid(
       cards = listOf(
         MetricCardModel("总占用", buildUsage(metrics.latest.diskUsedBytes, metrics.latest.diskTotalBytes), metrics.series.diskUsagePercent, ::formatPercent, 100.0),
@@ -1474,6 +1481,12 @@ private fun DiskSheetContent(metrics: MetricsDto, tabId: String, selectedWindow:
       chartWindow = chartWindow
     )
     MetaGrid(listOf("总容量" to buildUsage(metrics.latest.diskUsedBytes, metrics.latest.diskTotalBytes)))
+    if (storagePools.isNotEmpty()) {
+      Text("虚拟化存储池", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+      storagePools.forEach { storagePool ->
+        StoragePoolInstanceCard(storagePool, selectedWindow, chartWindow)
+      }
+    }
     return
   }
 
@@ -2200,6 +2213,62 @@ private fun DiskInstanceCard(
 }
 
 @Composable
+private fun StoragePoolInstanceCard(
+  storagePool: VirtualizationStorageDisplay,
+  selectedWindow: MetricWindow,
+  chartWindow: ChartWindow
+) {
+  val series = storagePool.series
+  InstanceCard(
+    title = storagePool.name,
+    subtitle = listOfNotNull(
+      storagePool.node?.takeIf { it.isNotBlank() }?.let { "节点 $it" },
+      formatVirtualizationStorageType(storagePool.type),
+      if (storagePool.shared == true) "共享" else null
+    ).joinToString(" · ")
+  ) {
+    MetricCardGrid(
+      cards = listOf(
+        MetricCardModel(
+          title = "容量",
+          value = storagePoolCapacityValue(storagePool, selectedWindow),
+          points = series?.usedBytes.orEmpty(),
+          valueFormatter = { value -> formatStorageBytes(value) }
+        ),
+        MetricCardModel(
+          title = "可用空间",
+          value = storagePoolBytesValue(storagePool.latest?.availableBytes, series?.availableBytes.orEmpty(), selectedWindow),
+          points = series?.availableBytes.orEmpty(),
+          valueFormatter = { value -> formatStorageBytes(value) }
+        ),
+        MetricCardModel(
+          title = "使用率",
+          value = storagePoolUsageValue(storagePool, selectedWindow),
+          points = series?.usagePercent.orEmpty(),
+          valueFormatter = ::formatPercent,
+          fixedMaxValue = 100.0
+        ),
+        MetricCardModel(
+          title = "读写速率",
+          value = "无法获取数据",
+          points = emptyList(),
+          valueFormatter = { "无法获取数据" }
+        )
+      ),
+      chartWindow = chartWindow
+    )
+    MetaGrid(
+      listOf(
+        "节点" to (storagePool.node?.takeIf { it.isNotBlank() } ?: "无法获取数据"),
+        "类型" to formatVirtualizationStorageType(storagePool.type),
+        "状态" to if (storagePool.active == false) "不可用" else "可用",
+        "共享" to if (storagePool.shared == true) "是" else "否"
+      )
+    )
+  }
+}
+
+@Composable
 private fun NetworkInstanceCard(
   network: NetworkInterfaceDto,
   series: NetworkMetricSeriesDto?,
@@ -2854,13 +2923,13 @@ private fun metricPoint(
   if (zeroMeansMissing && points.isNotEmpty() && points.all { it.value == 0.0 }) {
     return formatter(null)
   }
-  val value =
-    when {
-      points.isEmpty() -> null
-      window == MetricWindow.OneMinute -> points.lastOrNull()?.value
-      else -> points.map { it.value }.average()
-    }
-  return formatter(value)
+  return formatter(selectedPointValue(points, window))
+}
+
+private fun selectedPointValue(points: List<SamplePointDto>, window: MetricWindow): Double? = when {
+  points.isEmpty() -> null
+  window == MetricWindow.OneMinute -> points.lastOrNull()?.value
+  else -> points.map { it.value }.average()
 }
 
 private fun temperatureRoleLabel(role: String): String = when (role) {
@@ -2913,6 +2982,42 @@ private fun temperatureLimitsLabel(sensor: TemperatureSensorDto): String? {
     sensor.emergencyC?.let { "紧急 ${formatCelsius(it)}" }
   )
   return limits.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+}
+
+private fun formatVirtualizationStorageType(type: String?): String = when (type?.lowercase()) {
+  "dir" -> "目录存储"
+  "lvm" -> "LVM"
+  "lvmthin" -> "LVM-Thin"
+  "zfspool" -> "ZFS 存储池"
+  "nfs" -> "NFS"
+  "cifs", "smb" -> "SMB / CIFS"
+  "cephfs" -> "CephFS"
+  "rbd" -> "Ceph RBD"
+  else -> type?.takeIf { it.isNotBlank() } ?: "无法获取数据"
+}
+
+private fun storagePoolCapacityValue(storagePool: VirtualizationStorageDisplay, selectedWindow: MetricWindow): String {
+  val used = storagePool.latest?.usedBytes?.toDouble()
+    ?: selectedPointValue(storagePool.series?.usedBytes.orEmpty(), selectedWindow)
+  val total = storagePool.latest?.totalBytes?.toDouble()
+    ?: selectedPointValue(storagePool.series?.totalBytes.orEmpty(), selectedWindow)
+  if (used == null && total == null) return "无法获取数据"
+  return "${formatStorageBytes(used)} / ${formatStorageBytes(total)}"
+}
+
+private fun storagePoolBytesValue(
+  current: Long?,
+  points: List<SamplePointDto>,
+  selectedWindow: MetricWindow
+): String = formatStorageBytes(current?.toDouble() ?: selectedPointValue(points, selectedWindow))
+
+private fun storagePoolUsageValue(storagePool: VirtualizationStorageDisplay, selectedWindow: MetricWindow): String {
+  val used = storagePool.latest?.usedBytes?.toDouble()
+  val total = storagePool.latest?.totalBytes?.toDouble()
+  val currentUsage = if (used != null && total != null && total > 0.0 && used >= 0.0) used / total * 100.0 else null
+  return formatPercent(currentUsage ?: selectedPointValue(storagePool.series?.usagePercent.orEmpty(), selectedWindow))
+    .takeUnless { it == "--" }
+    ?: "无法获取数据"
 }
 
 private fun gpuTemperatureSourceLabel(source: String?): String = when {
@@ -2985,6 +3090,8 @@ private fun formatGpuMemorySummary(gpus: List<GpuDto>): String = gpus
 
 private fun formatOptionalBytes(value: Long?): String = value?.takeIf { it > 0 }?.let { formatBytes(it.toDouble()) } ?: "未知"
 private fun formatOptionalBytes(value: Double?): String = value?.takeIf { it > 0.0 }?.let(::formatBytes) ?: "未知"
+private fun formatStorageBytes(value: Long?): String = value?.takeIf { it >= 0L }?.let { formatBytes(it.toDouble()) } ?: "无法获取数据"
+private fun formatStorageBytes(value: Double?): String = value?.takeIf { it.isFinite() && it >= 0.0 }?.let(::formatBytes) ?: "无法获取数据"
 
 private fun formatBytes(value: Double): String {
   if (value <= 0.0) return "0 B"
