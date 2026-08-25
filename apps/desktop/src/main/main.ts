@@ -9,7 +9,68 @@ import { resolveWindowMaterial } from "../window-material.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const GPU_FALLBACK_ARGUMENT = "--dsc-disable-gpu";
-const gpuFallbackActive = process.platform === "win32" && process.argv.includes(GPU_FALLBACK_ARGUMENT);
+const GPU_FORCE_HARDWARE_ARGUMENT = "--dsc-enable-gpu";
+const GPU_FALLBACK_MARKER = "desktop-gpu-fallback.json";
+
+function gpuFallbackMarkerPath(): string | null {
+  try {
+    return path.join(app.getPath("userData"), GPU_FALLBACK_MARKER);
+  } catch {
+    return null;
+  }
+}
+
+function hasPersistedGpuFallback(): boolean {
+  const markerPath = gpuFallbackMarkerPath();
+  if (!markerPath) return false;
+  try {
+    const marker = JSON.parse(fs.readFileSync(markerPath, "utf8")) as { enabled?: unknown };
+    return marker.enabled === true;
+  } catch {
+    return false;
+  }
+}
+
+function hasPreviousGpuCrash(): boolean {
+  const diagnosticPath = (() => {
+    try {
+      return path.join(app.getPath("userData"), "desktop-diagnostics.log");
+    } catch {
+      return null;
+    }
+  })();
+  if (!diagnosticPath) return false;
+  try {
+    const lines = fs.readFileSync(diagnosticPath, "utf8").split(/\r?\n/).slice(-128);
+    return lines.some((line) => {
+      try {
+        const event = JSON.parse(line) as { event?: unknown; type?: unknown; reason?: unknown };
+        return event.event === "child-process-gone" && event.type === "GPU" && event.reason !== "clean-exit";
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
+function persistGpuFallback(reason: string): void {
+  const markerPath = gpuFallbackMarkerPath();
+  if (!markerPath) return;
+  try {
+    fs.mkdirSync(path.dirname(markerPath), { recursive: true });
+    const temporaryPath = `${markerPath}.${process.pid}.tmp`;
+    fs.writeFileSync(temporaryPath, JSON.stringify({ enabled: true, reason, at: new Date().toISOString() }), "utf8");
+    fs.renameSync(temporaryPath, markerPath);
+  } catch {
+    // A missing marker must not prevent the one-shot fallback relaunch.
+  }
+}
+
+const gpuFallbackActive = process.platform === "win32"
+  && !process.argv.includes(GPU_FORCE_HARDWARE_ARGUMENT)
+  && (process.argv.includes(GPU_FALLBACK_ARGUMENT) || hasPersistedGpuFallback() || hasPreviousGpuCrash());
 
 crashReporter.start({
   productName: "观澜",
@@ -88,6 +149,12 @@ if (!hasSingleInstanceLock) {
     console.error(`[${event}]`, details);
   };
 
+  reportProcessEvent("process-start", {
+    version: app.getVersion(),
+    gpuFallbackActive,
+    argv: process.argv.slice(1)
+  });
+
   const scheduleRendererRecovery = (reason: string) => {
     if (quitting || !mainWindow || mainWindow.isDestroyed() || rendererRecoveryTimer) return;
     const now = Date.now();
@@ -124,6 +191,7 @@ if (!hasSingleInstanceLock) {
   const relaunchWithGpuFallback = (reason: string) => {
     if (gpuFallbackActive || gpuFallbackRelaunchScheduled || quitting) return false;
     gpuFallbackRelaunchScheduled = true;
+    persistGpuFallback(reason);
     reportProcessEvent("gpu-fallback-relaunch", { reason });
     const args = process.argv.slice(1).filter((argument) => argument !== GPU_FALLBACK_ARGUMENT);
     app.relaunch({ args: [...args, GPU_FALLBACK_ARGUMENT] });
@@ -233,6 +301,12 @@ if (!hasSingleInstanceLock) {
     if (getInstallerRestoreState(commandLine) === "tray") mainWindow?.hide();
     else showWindow();
   });
+  app.on("will-quit", () => {
+    reportProcessEvent("will-quit", { quitting });
+  });
+  app.on("quit", (_event, exitCode) => {
+    appendDesktopDiagnostic("app-quit", { exitCode, gpuFallbackActive });
+  });
   app.on("child-process-gone", (_event, details) => {
     reportProcessEvent("child-process-gone", {
       type: details.type,
@@ -260,11 +334,15 @@ if (!hasSingleInstanceLock) {
     appendDesktopDiagnostic("main-unhandled-rejection", { reason });
     console.error("Device State Console unhandled rejection", reason);
   });
+  process.on("exit", (code) => {
+    appendDesktopDiagnostic("process-exit", { code, gpuFallbackActive });
+  });
 
   app.whenReady().then(async () => {
     app.setAppUserModelId("org.igng.devicestateconsole");
     controller = new DesktopController();
     await controller.initialize();
+    reportProcessEvent("desktop-ready", { gpuFallbackActive });
     registerIpc(controller, () => mainWindow, () => { quitting = true; });
     createWindow();
     createTray();
