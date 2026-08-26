@@ -94,7 +94,8 @@ jobs:
           ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
             "mv '$remote_compose' '$DEPLOY_PATH/docker-compose.yml' && grep -Fq './data:/app/data' '$DEPLOY_PATH/docker-compose.yml'"
 
-      - name: Authenticate NAS to GHCR
+      - name: Authenticate NAS to GHCR for stable deployment
+        if: ${{ inputs.channel == 'stable' }}
         shell: bash
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
