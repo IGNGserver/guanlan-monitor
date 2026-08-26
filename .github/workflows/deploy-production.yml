@@ -123,7 +123,7 @@ jobs:
             image_registry='ghcr.io'
           fi
           ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "cd '$DEPLOY_PATH' && \
+            "set -euo pipefail; cd '$DEPLOY_PATH' && \
              export WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' \
                DSC_SERVER_IMAGE='$image_registry/igngserver/device-state-console-server' \
                DSC_WEB_IMAGE='$image_registry/igngserver/device-state-console-web' && \
