@@ -392,6 +392,51 @@
   min-height: 0;
 }
 
+.telemetry-chart-card__content {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.telemetry-number-grid {
+  display: grid;
+  min-width: 0;
+  min-height: 120px;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  align-items: stretch;
+}
+
+.telemetry-number {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 13px;
+  background: var(--workspace-surface-subtle);
+}
+
+.telemetry-number span {
+  color: var(--workspace-text-muted);
+  font-size: 10px;
+}
+
+.telemetry-number strong {
+  overflow: hidden;
+  color: var(--workspace-text);
+  font-size: clamp(20px, 4vw, 30px);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .telemetry-chart-card__pages {
   display: flex;
   min-width: 0;

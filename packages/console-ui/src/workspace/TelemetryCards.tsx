@@ -9,7 +9,7 @@ import { useWorkspace } from "./WorkspaceContext";
 import { Surface, SummaryRow } from "./ui";
 import { formatAxisTime, formatPreciseDateTime, limitSamplePoints, splitPointsIntoSegments, WINDOW_DURATION_MAP } from "./formatters";
 
-type TelemetrySeries = {
+export type TelemetrySeries = {
   label: string;
   points: SamplePoint[];
   valueFormatter?: (value: number) => string;
@@ -39,6 +39,8 @@ export function TelemetryChartCard({
   fixedMaxValue,
   controls,
   footer,
+  content,
+  showDetailsControl = true,
   emptyMessage = "等待足够的遥测样本",
   widgetId,
   widgetTemplateId,
@@ -57,6 +59,8 @@ export function TelemetryChartCard({
   fixedMaxValue?: number;
   controls?: React.ReactNode;
   footer?: React.ReactNode;
+  content?: React.ReactNode;
+  showDetailsControl?: boolean;
   emptyMessage?: string;
   widgetId?: string;
   widgetTemplateId?: string;
@@ -110,21 +114,24 @@ export function TelemetryChartCard({
 
   const formatValue = (item: TelemetrySeries, value: number) => item.valueFormatter?.(value) ?? valueFormatter(value);
 
-  const headerControls = (
+  const headerControls = controls || showDetailsControl ? (
     <div className="telemetry-chart-controls">
       {controls}
-      <button
-        type="button"
-        className="workspace-btn workspace-btn--subtle telemetry-chart-details-btn"
-        onClick={() => setShowDetails(!showDetails)}
-        aria-label={showDetails ? "返回图表" : "查看详细信息"}
-      >
-        {showDetails ? "返回图表" : "详细信息"}
-      </button>
+      {showDetailsControl && (
+        <button
+          type="button"
+          className="workspace-btn workspace-btn--subtle telemetry-chart-details-btn"
+          onClick={() => setShowDetails(!showDetails)}
+          aria-label={showDetails ? "返回图表" : "查看详细信息"}
+        >
+          {showDetails ? "返回图表" : "详细信息"}
+        </button>
+      )}
     </div>
-  );
+  ) : null;
 
-  if (!activeSeries.length || !primaryPoints.length) {
+  const hasContent = content !== undefined && content !== null;
+  if ((!activeSeries.length || !primaryPoints.length) && !hasContent) {
     const emptyCard = (
       <Surface className="telemetry-chart-card">
         <div className="telemetry-chart-header">
@@ -319,7 +326,9 @@ export function TelemetryChartCard({
         {headerControls}
       </div>
 
-      {showDetails ? (
+      {hasContent ? (
+        <div className="telemetry-chart-card__content">{content}</div>
+      ) : showDetails ? (
         <div className="telemetry-chart-card__details">
           <div className="telemetry-chart-stats">
             {statsList.map((st, idx) => (
@@ -391,6 +400,18 @@ export function TelemetryChartCard({
               </div>
             </div>
           </div>
+        </div>
+      ) : visType === "number" ? (
+        <div className="telemetry-number-grid">
+          {activeSeries.map((item) => {
+            const current = item.points.at(-1)?.value;
+            return (
+              <div className="telemetry-number" key={item.label}>
+                <span>{item.label}</span>
+                <strong>{current == null ? "—" : formatValue(item, current)}</strong>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="telemetry-chart-box">

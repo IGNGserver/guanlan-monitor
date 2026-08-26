@@ -92,10 +92,6 @@
 .workspace-widget__content > .telemetry-chart-card .telemetry-chart-box { height: auto; min-height: 180px; flex: 1 1 228px; }
 .workspace-widget__content > .telemetry-chart-card > .workspace-trend { min-height: 150px; flex: 1 0 150px; }
 .workspace-widget__content > .telemetry-chart-card .telemetry-chart-card__details { min-height: 0; flex: 0 1 auto; overflow-y: auto; overscroll-behavior: contain; padding-right: 3px; }
-.workspace-widget__content > .workspace-dynamic-card { height: 100%; overflow: hidden; }
-.workspace-widget__content > .workspace-dynamic-card > .workspace-dynamic-chart { height: auto; min-height: 180px; flex: 1 0 180px; }
-.workspace-widget__content > .workspace-dynamic-card > .workspace-dynamic-number-grid { min-height: 0; flex: 1 1 120px; overflow-y: auto; }
-.workspace-widget__content > .workspace-dynamic-card > .workspace-dynamic-table { min-height: 0; flex: 1 1 auto; }
 .workspace-widget.is-editing { outline: 1px dashed color-mix(in srgb, var(--workspace-accent) 55%, var(--workspace-border)); outline-offset: 4px; overflow: visible; }
 .workspace-widget.is-dragging { z-index: 30; opacity: 0.94; box-shadow: 0 18px 38px color-mix(in srgb, var(--workspace-accent) 20%, transparent); cursor: grabbing; transition: none; }
 .workspace-widget.is-editing > .workspace-widget__content { cursor: default; }
@@ -537,12 +533,6 @@
 .workspace-dynamic-empty strong { color: var(--workspace-text); font-size: 13px; }
 .workspace-dynamic-empty span { max-width: 48ch; font-size: 11px; line-height: 1.5; }
 .workspace-dynamic-empty button { margin-top: 4px; border: 1px solid var(--workspace-accent); border-radius: 8px; padding: 7px 11px; color: var(--workspace-accent); background: var(--workspace-accent-soft); font: inherit; font-size: 11px; cursor: pointer; }
-.workspace-dynamic-card { display: flex; min-width: 0; height: 100%; min-height: 0; flex-direction: column; padding: 16px; border: 1px solid var(--workspace-border); border-radius: 18px; background: var(--workspace-surface); box-shadow: var(--workspace-shadow-soft); }
-.workspace-dynamic-card__header { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
-.workspace-dynamic-card__header > div:first-child { min-width: 0; }
-.workspace-dynamic-card__header h3 { overflow: hidden; margin: 3px 0 0; color: var(--workspace-text); font-size: 15px; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
-.workspace-dynamic-card__header p { overflow: hidden; margin: 4px 0 0; color: var(--workspace-text-muted); font-size: 10px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
-.workspace-dynamic-card__controls { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
 .workspace-dynamic-chart { min-height: 180px; height: auto; flex: 1 0 180px; }
 .workspace-dynamic-chart .recharts-wrapper { font-size: 9px; }
 .workspace-dynamic-chart .recharts-text { fill: var(--workspace-text-muted); }
