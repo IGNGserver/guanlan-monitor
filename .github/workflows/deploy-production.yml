@@ -81,10 +81,18 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
           set -euo pipefail
+          backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "set -euo pipefail; \
+             mkdir -p '$DEPLOY_PATH/data' '$DEPLOY_PATH/backups'; \
+             server_container=\$(docker ps -aq --filter name=device-state-console-server-1 | head -n 1 || true); \
+             if [ -n \"\$server_container\" ]; then docker cp \"\$server_container:/app/data/local-db.json\" '$DEPLOY_PATH/backups/local-db.json.$backup_stamp' 2>/dev/null || true; fi; \
+             backup_file='$DEPLOY_PATH/backups/local-db.json.$backup_stamp'; \
+             if [ ! -s '$DEPLOY_PATH/data/local-db.json' ] && [ -s \"\$backup_file\" ]; then cp \"\$backup_file\" '$DEPLOY_PATH/data/local-db.json.tmp'; mv '$DEPLOY_PATH/data/local-db.json.tmp' '$DEPLOY_PATH/data/local-db.json'; fi"
           remote_compose="$DEPLOY_PATH/.docker-compose.yml.codex.tmp"
           scp -i "$HOME/.ssh/id_ed25519" docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:$remote_compose"
           ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "mv '$remote_compose' '$DEPLOY_PATH/docker-compose.yml'"
+            "mv '$remote_compose' '$DEPLOY_PATH/docker-compose.yml' && grep -Fq './data:/app/data' '$DEPLOY_PATH/docker-compose.yml'"
 
       - name: Authenticate NAS to GHCR
         shell: bash

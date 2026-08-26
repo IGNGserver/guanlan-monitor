@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import type { DeviceBlockKey, DeviceMetricKey, MetricWindow, WidgetLayoutDocument, WidgetLayoutSaveRequest, WidgetLayoutSync, WidgetLayoutTemplate } from "@dsc/shared";
@@ -12,10 +12,16 @@ import type {
   FanNoteStore,
   HistoryRepository,
   RealtimeRepository,
-  TimeSeriesRecord
+  TimeSeriesRecord,
+  WidgetLayoutStore
 } from "../types.js";
 import type { VirtualMachineRecord, VirtualMachineRegistration, VirtualMachineRepository } from "./virtual-machines.js";
 import { buildTrafficCalendar } from "../traffic-calendar.js";
+
+export interface LocalWidgetLayoutSnapshot {
+  instances: Record<string, { templateKey: string; updatedAt: string; layout: WidgetLayoutDocument }>;
+  templates: Record<string, Record<string, WidgetLayoutTemplate>>;
+}
 
 interface LocalDbShape {
   devices: Record<string, DeviceRealtimeState>;
@@ -33,10 +39,7 @@ interface LocalDbShape {
       instanceMetricConfig?: Record<string, DeviceMetricKey[]>;
     }
   >;
-  widgetLayouts?: {
-    instances: Record<string, { templateKey: string; updatedAt: string; layout: WidgetLayoutDocument }>;
-    templates: Record<string, Record<string, WidgetLayoutTemplate>>;
-  };
+  widgetLayouts?: LocalWidgetLayoutSnapshot;
 }
 
 const EMPTY_DB: LocalDbShape = {
@@ -50,6 +53,27 @@ const EMPTY_DB: LocalDbShape = {
   deviceMetricConfigs: {},
   widgetLayouts: { instances: {}, templates: {} }
 };
+
+function emptyWidgetLayouts(): LocalWidgetLayoutSnapshot {
+  return { instances: {}, templates: {} };
+}
+
+function setLocalWidgetInstance(
+  layouts: LocalWidgetLayoutSnapshot,
+  scopeKey: string,
+  templateKey: string,
+  instanceLayout: WidgetLayoutDocument | null
+) {
+  if (instanceLayout === null) {
+    delete layouts.instances[scopeKey];
+    return;
+  }
+  layouts.instances[scopeKey] = {
+    templateKey,
+    updatedAt: new Date().toISOString(),
+    layout: structuredClone(instanceLayout)
+  };
+}
 
 class LocalJsonStore {
   private readonly filePath: string;
@@ -73,7 +97,14 @@ class LocalJsonStore {
       const db = await this.read();
       await mutator(db);
       await mkdir(dirname(this.filePath), { recursive: true });
-      await writeFile(this.filePath, JSON.stringify(db, null, 2), "utf8");
+      const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
+      try {
+        await writeFile(temporaryPath, JSON.stringify(db, null, 2), "utf8");
+        await rename(temporaryPath, this.filePath);
+      } catch (error) {
+        await unlink(temporaryPath).catch(() => undefined);
+        throw error;
+      }
     });
     return this.writeQueue;
   }
@@ -263,35 +294,45 @@ export class LocalDeviceMetricConfigStore implements DeviceMetricConfigStore {
   }
 }
 
-export class LocalWidgetLayoutStore {
+export class LocalWidgetLayoutStore implements WidgetLayoutStore {
   constructor(private readonly store: LocalJsonStore) {}
 
   async get(scopeKey: string, templateKey: string): Promise<WidgetLayoutSync> {
     const db = await this.store.read();
-    const layouts = db.widgetLayouts ?? { instances: {}, templates: {} };
+    const layouts = db.widgetLayouts ?? emptyWidgetLayouts();
     const instance = layouts.instances[scopeKey];
     return {
       scopeKey,
       templateKey,
-      instanceLayout: instance?.templateKey === templateKey ? instance.layout : null,
+      instanceLayout: instance?.templateKey === templateKey ? structuredClone(instance.layout) : null,
       templates: Object.values(layouts.templates[templateKey] ?? {})
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
         .map((template) => structuredClone(template))
     };
   }
 
+  async readAll(): Promise<LocalWidgetLayoutSnapshot> {
+    const db = await this.store.read();
+    return structuredClone(db.widgetLayouts ?? emptyWidgetLayouts());
+  }
+
   async save(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> {
     const instanceLayout = request.instanceLayout;
     const templateRequest = request.template;
     await this.store.update((db) => {
-      const layouts = (db.widgetLayouts ??= { instances: {}, templates: {} });
+      const layouts = (db.widgetLayouts ??= emptyWidgetLayouts());
       if (Object.prototype.hasOwnProperty.call(request, "instanceLayout")) {
         if (instanceLayout === null) delete layouts.instances[request.scopeKey];
-        else if (instanceLayout) layouts.instances[request.scopeKey] = {
-          templateKey: request.templateKey,
-          updatedAt: new Date().toISOString(),
-          layout: structuredClone(instanceLayout)
-        };
+        else if (instanceLayout) setLocalWidgetInstance(layouts, request.scopeKey, request.templateKey, instanceLayout);
+      }
+
+      if (request.linkedInstance) {
+        setLocalWidgetInstance(
+          layouts,
+          request.linkedInstance.scopeKey,
+          request.linkedInstance.templateKey,
+          request.linkedInstance.instanceLayout
+        );
       }
 
       if (templateRequest) {

@@ -17,8 +17,7 @@ import { z } from "zod";
 import { env } from "./config.js";
 import type { MetricsService } from "./services/metrics.js";
 import { unavailableMetricsForVirtualMachinePowerState } from "./services/virtual-machines.js";
-import { LocalDeviceMetricConfigStore, LocalFanNoteStore, LocalWidgetLayoutStore, createLocalStore } from "./repositories/local.js";
-import type { Repositories, SessionValue } from "./types.js";
+import type { DeviceMetricConfigStore, FanNoteStore, Repositories, SessionValue, WidgetLayoutStore } from "./types.js";
 import { ALL_DEVICE_METRIC_KEYS, filterAgentPayloadInstances, getAvailableMetrics, resolveCpuFrequencyMHz, resolveCpuTemperatureC, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
 import { virtualizationStorageInstances } from "@dsc/shared";
 import { getSystemVersionInfo, getUpdateInfo } from "./updates.js";
@@ -184,6 +183,12 @@ const widgetLayoutDocumentSchema = z.object({
   panels: z.array(widgetPanelMetadataSchema).max(32).optional()
 });
 
+const linkedWidgetLayoutSchema = z.object({
+  scopeKey: z.string().trim().min(1).max(240),
+  templateKey: z.string().trim().min(1).max(240),
+  instanceLayout: widgetLayoutDocumentSchema.nullable()
+});
+
 const widgetLayoutQuerySchema = z.object({
   scopeKey: z.string().trim().min(1).max(240),
   templateKey: z.string().trim().min(1).max(240)
@@ -193,6 +198,7 @@ const widgetLayoutSaveSchema = z.object({
   scopeKey: z.string().trim().min(1).max(240),
   templateKey: z.string().trim().min(1).max(240),
   instanceLayout: widgetLayoutDocumentSchema.nullable().optional(),
+  linkedInstance: linkedWidgetLayoutSchema.optional(),
   template: z.object({
     id: z.string().trim().min(1).max(160).optional(),
     name: z.string().trim().min(1).max(80),
@@ -221,15 +227,19 @@ const hubUpdateRequestSchema = z.object({
   version: z.string().regex(/^\d+\.\d+\.\d+$/)
 });
 
+export interface RouteStores {
+  fanNotes: FanNoteStore;
+  metricConfigs: DeviceMetricConfigStore;
+  widgetLayouts: WidgetLayoutStore;
+}
+
 export async function registerRoutes(
   app: FastifyInstance,
   repositories: Repositories,
   metricsService: MetricsService,
+  stores: RouteStores
 ) {
-  const store = createLocalStore();
-  const fanNotes = new LocalFanNoteStore(store);
-  const metricConfigs = new LocalDeviceMetricConfigStore(store);
-  const widgetLayouts = new LocalWidgetLayoutStore(store);
+  const { fanNotes, metricConfigs, widgetLayouts } = stores;
 
   app.get("/api/system/version", async () => getSystemVersionInfo());
 

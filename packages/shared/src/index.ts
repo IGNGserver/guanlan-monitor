@@ -1077,6 +1077,11 @@ export interface WidgetLayoutSaveRequest {
   scopeKey: string;
   templateKey: string;
   instanceLayout?: WidgetLayoutDocument | null;
+  linkedInstance?: {
+    scopeKey: string;
+    templateKey: string;
+    instanceLayout: WidgetLayoutDocument | null;
+  };
   template?: {
     id?: string;
     name: string;

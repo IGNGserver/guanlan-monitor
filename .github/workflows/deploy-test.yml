@@ -103,6 +103,14 @@ jobs:
             echo 'SSH deploy secrets are empty; the NAS runner will deploy locally.'
           fi
 
+      - name: Checkout deployment definition
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            docker-compose.yml
+            scripts/verify-widget-layout-persistence.sh
+          sparse-checkout-cone-mode: false
+
       - name: Download staged images
         uses: actions/download-artifact@v4
         with:
@@ -121,6 +129,56 @@ jobs:
           docker image inspect \
             "ghcr.io/igngserver/device-state-console-server:${DSC_VERSION}" \
             "ghcr.io/igngserver/device-state-console-web:${DSC_VERSION}" >/dev/null
+
+      - name: Preserve server data and sync Compose definition
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.TEST_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.TEST_DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.TEST_DEPLOY_PATH }}
+          DSC_VERSION: ${{ inputs.version }}
+          DSC_RELEASE_CHANNEL: ${{ inputs.channel }}
+          WEB_PORT: "3100"
+        run: |
+          set -euo pipefail
+          backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          if [[ -z "$DEPLOY_HOST" ]]; then
+            DEPLOY_PATH="${DEPLOY_PATH:-/vol2/1000/Docker/device-state-console}"
+            test -d "$DEPLOY_PATH"
+            mkdir -p "$DEPLOY_PATH/data" "$DEPLOY_PATH/backups"
+            cd "$DEPLOY_PATH"
+            export WEB_PORT DSC_VERSION DSC_RELEASE_CHANNEL
+            export DSC_SERVER_IMAGE='ghcr.io/igngserver/device-state-console-server'
+            export DSC_WEB_IMAGE='ghcr.io/igngserver/device-state-console-web'
+            server_container="$(docker ps -aq --filter name=device-state-console-server-1 | head -n 1 || true)"
+            if [[ -n "$server_container" ]]; then
+              docker cp "$server_container:/app/data/local-db.json" "$DEPLOY_PATH/backups/local-db.json.$backup_stamp" 2>/dev/null || true
+            fi
+            backup_file="$DEPLOY_PATH/backups/local-db.json.$backup_stamp"
+            if [[ ! -s "$DEPLOY_PATH/data/local-db.json" && -s "$backup_file" ]]; then
+              cp "$backup_file" "$DEPLOY_PATH/data/local-db.json.tmp"
+              mv "$DEPLOY_PATH/data/local-db.json.tmp" "$DEPLOY_PATH/data/local-db.json"
+            fi
+            temp="$DEPLOY_PATH/.docker-compose.yml.codex.tmp"
+            cp "$GITHUB_WORKSPACE/docker-compose.yml" "$temp"
+            mv "$temp" "$DEPLOY_PATH/docker-compose.yml"
+            grep -Fq './data:/app/data' "$DEPLOY_PATH/docker-compose.yml"
+          else
+            test -n "$DEPLOY_USER"
+            test -n "$DEPLOY_PATH"
+            test -s "$HOME/.ssh/id_ed25519"
+            ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
+              "set -euo pipefail; \
+               mkdir -p '$DEPLOY_PATH/data' '$DEPLOY_PATH/backups'; \
+               server_container=\$(docker ps -aq --filter name=device-state-console-server-1 | head -n 1 || true); \
+               if [ -n \"\$server_container\" ]; then docker cp \"\$server_container:/app/data/local-db.json\" '$DEPLOY_PATH/backups/local-db.json.$backup_stamp' 2>/dev/null || true; fi; \
+               backup_file='$DEPLOY_PATH/backups/local-db.json.$backup_stamp'; \
+               if [ ! -s '$DEPLOY_PATH/data/local-db.json' ] && [ -s \"\$backup_file\" ]; then cp \"\$backup_file\" '$DEPLOY_PATH/data/local-db.json.tmp'; mv '$DEPLOY_PATH/data/local-db.json.tmp' '$DEPLOY_PATH/data/local-db.json'; fi"
+            scp -i "$HOME/.ssh/id_ed25519" "$GITHUB_WORKSPACE/docker-compose.yml" \
+              "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/.docker-compose.yml.codex.tmp"
+            ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
+              "mv '$DEPLOY_PATH/.docker-compose.yml.codex.tmp' '$DEPLOY_PATH/docker-compose.yml' && grep -Fq './data:/app/data' '$DEPLOY_PATH/docker-compose.yml'"
+          fi
 
       - name: Pull and restart fixed test images
         shell: bash
@@ -187,4 +245,36 @@ jobs:
                  exit 1; \
                fi; \
                docker compose ps"
+          fi
+
+      - name: Verify widget layouts survive server recreation
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.TEST_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.TEST_DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.TEST_DEPLOY_PATH }}
+          DSC_VERSION: ${{ inputs.version }}
+          DSC_RELEASE_CHANNEL: ${{ inputs.channel }}
+          WEB_PORT: "3100"
+          SMOKE_SCOPE: __codex_widget_smoke__${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$DEPLOY_HOST" ]]; then
+            DEPLOY_PATH="${DEPLOY_PATH:-/vol2/1000/Docker/device-state-console}"
+            test -d "$DEPLOY_PATH"
+            SMOKE_BASE_URL="http://127.0.0.1:3100" \
+              SMOKE_COMPOSE_DIR="$DEPLOY_PATH" \
+              DSC_VERSION="$DSC_VERSION" \
+              DSC_RELEASE_CHANNEL="$DSC_RELEASE_CHANNEL" \
+              WEB_PORT="$WEB_PORT" \
+              SMOKE_SCOPE="$SMOKE_SCOPE" \
+              bash "$GITHUB_WORKSPACE/scripts/verify-widget-layout-persistence.sh"
+          else
+            test -n "$DEPLOY_USER"
+            test -n "$DEPLOY_PATH"
+            test -s "$HOME/.ssh/id_ed25519"
+            ssh -i "$HOME/.ssh/id_ed25519" \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "SMOKE_BASE_URL='http://127.0.0.1:3100' SMOKE_COMPOSE_DIR='$DEPLOY_PATH' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' WEB_PORT='$WEB_PORT' SMOKE_SCOPE='$SMOKE_SCOPE' bash -s" \
+              < "$GITHUB_WORKSPACE/scripts/verify-widget-layout-persistence.sh"
           fi

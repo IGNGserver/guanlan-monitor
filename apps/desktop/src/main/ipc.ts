@@ -204,6 +204,7 @@ function asWidgetLayoutSaveRequest(value: unknown): WidgetLayoutSaveRequest {
     scopeKey: asString(record.scopeKey, "widget_layout_scope_key"),
     templateKey: asString(record.templateKey, "widget_layout_template_key"),
     instanceLayout: record.instanceLayout,
+    linkedInstance: record.linkedInstance,
     template: record.template,
     deleteTemplateId: record.deleteTemplateId
   };
