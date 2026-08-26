@@ -4,7 +4,7 @@ import test from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WidgetLayoutDocument } from "@dsc/shared";
-import { createLocalStore, LocalWidgetLayoutStore } from "./local.ts";
+import { createLocalStore, LocalWidgetLayoutStore } from "./local.js";
 
 function layout(panels?: WidgetLayoutDocument["panels"]): WidgetLayoutDocument {
   return {
