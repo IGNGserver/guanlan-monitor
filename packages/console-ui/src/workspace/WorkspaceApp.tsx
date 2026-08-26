@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, SystemStats, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, VirtualizationStorageMetricSeries, VirtualizationStorageTelemetry, WidgetInstanceConfig, WidgetLayoutDocument, WidgetPanelMetadata } from "@dsc/shared";
+import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, SystemStats, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, VirtualizationStorageMetricSeries, VirtualizationStorageTelemetry, WidgetInstanceConfig, WidgetLayoutDocument, WidgetLayoutSaveRequest, WidgetPanelMetadata } from "@dsc/shared";
 import { isDisplayableVirtualizationStorage, isDisplayableVirtualizationStorageSeries, virtualizationStorageInstances } from "@dsc/shared";
 import clsx from "clsx";
 import appIcon from "../assets/app-icon.png";
@@ -1495,6 +1495,8 @@ function DevicePage() {
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [panels, setPanels] = useState<WidgetPanelMetadata[]>(cloneDevicePanels(DEFAULT_DEVICE_PANELS));
   const [panelIndexLoading, setPanelIndexLoading] = useState(false);
+  const [panelMutationMessage, setPanelMutationMessage] = useState("");
+  const panelMutationQueue = useRef(Promise.resolve());
   const [widgetDrawerOpen, setWidgetDrawerOpen] = useState(false);
   const [activeAnchor, setActiveAnchor] = useState("section-overview");
   const anchorDefinitions = useMemo(() => [
@@ -1545,6 +1547,7 @@ function DevicePage() {
     const deviceId = selectedDevice.deviceId;
     const instanceType = selectedDevice.instanceType ?? "device";
     setPanelIndexLoading(true);
+    setPanelMutationMessage("");
     setActiveTab("overview");
     void getWidgetLayout({ scopeKey: `device:${deviceId}:panel-index`, templateKey: `device-type:${instanceType}:panel-index` }).then((remote) => {
       if (cancelled) return;
@@ -1582,23 +1585,43 @@ function DevicePage() {
   const panelIndexTemplate = `device-type:${selectedDevice.instanceType ?? "device"}:panel-index`;
   const customPanelScope = (panelId: string) => `device:${selectedDevice.deviceId}:panel:${panelId}`;
   const customPanelTemplate = `device-type:${selectedDevice.instanceType ?? "device"}:panel`;
-  const savePanelIndex = (nextPanels: WidgetPanelMetadata[]) => {
-    if (!canEditRemote) return;
-    setPanels(nextPanels);
-    void saveWidgetLayout({ scopeKey: panelIndexScope, templateKey: panelIndexTemplate, instanceLayout: { version: 4, placements: {}, catalog: {}, snapToGrid: true, panels: nextPanels } });
+  type LinkedWidgetLayout = NonNullable<WidgetLayoutSaveRequest["linkedInstance"]>;
+  const savePanelIndex = (nextPanels: WidgetPanelMetadata[], linkedInstance?: LinkedWidgetLayout): Promise<boolean> => {
+    if (!canEditRemote) return Promise.resolve(false);
+    const mutation = panelMutationQueue.current.then(async () => {
+      await saveWidgetLayout({
+        scopeKey: panelIndexScope,
+        templateKey: panelIndexTemplate,
+        instanceLayout: { version: 4, placements: {}, catalog: {}, snapToGrid: true, panels: nextPanels },
+        ...(linkedInstance ? { linkedInstance } : {})
+      });
+      setPanels(nextPanels);
+      setPanelMutationMessage("");
+      return true;
+    }).catch((error) => {
+      setPanelMutationMessage(error instanceof Error ? `面板保存失败：${error.message}` : "面板保存失败");
+      return false;
+    });
+    panelMutationQueue.current = mutation.then(() => undefined, () => undefined);
+    return mutation;
   };
   const createPanel = (name: string) => {
     if (!canEditRemote) return;
     if (!confirmDiscardWidgetLayoutDraft()) return;
     const id = `panel-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const nextPanels = [...panels, { id, name: name.trim().slice(0, 80), kind: "custom" as const, order: panels.length }];
-    savePanelIndex(nextPanels);
-    void saveWidgetLayout({ scopeKey: customPanelScope(id), templateKey: customPanelTemplate, instanceLayout: createStarterDynamicLayout() }).then(() => setActiveTab(id));
+    void savePanelIndex(nextPanels, {
+      scopeKey: customPanelScope(id),
+      templateKey: customPanelTemplate,
+      instanceLayout: createStarterDynamicLayout()
+    }).then((saved) => {
+      if (saved) setActiveTab(id);
+    });
   };
   const renamePanel = (panelId: string, name: string) => {
     if (!canEditRemote) return;
     const nextPanels = panels.map((panel) => panel.id === panelId && panel.kind === "custom" ? { ...panel, name: name.trim().slice(0, 80) } : panel);
-    savePanelIndex(nextPanels);
+    void savePanelIndex(nextPanels);
   };
   const duplicatePanel = (sourceId: string, sourceLayout?: WidgetLayoutDocument) => {
     if (!canEditRemote) return;
@@ -1607,14 +1630,21 @@ function DevicePage() {
     if (!source) return;
     const id = `panel-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const nextPanels = [...panels, { id, name: `${source.name} 副本`.slice(0, 80), kind: "custom" as const, order: panels.length }];
-    savePanelIndex(nextPanels);
     const sourceScope = source.kind === "custom" ? customPanelScope(source.id) : `device:${selectedDevice.deviceId}:${source.id}`;
     const sourceTemplate = source.kind === "custom" ? customPanelTemplate : `device-type:${selectedDevice.instanceType ?? "device"}:tab:${source.id}`;
     void (async () => {
-      const sourceRemote = sourceLayout ? null : await getWidgetLayout({ scopeKey: sourceScope, templateKey: sourceTemplate });
-      const layout = sourceLayout ?? sourceRemote?.instanceLayout ?? undefined;
-      await saveWidgetLayout({ scopeKey: customPanelScope(id), templateKey: customPanelTemplate, instanceLayout: createDynamicLayout(layout) });
-      setActiveTab(id);
+      try {
+        const sourceRemote = sourceLayout ? null : await getWidgetLayout({ scopeKey: sourceScope, templateKey: sourceTemplate });
+        const layout = sourceLayout ?? sourceRemote?.instanceLayout ?? undefined;
+        const saved = await savePanelIndex(nextPanels, {
+          scopeKey: customPanelScope(id),
+          templateKey: customPanelTemplate,
+          instanceLayout: createDynamicLayout(layout)
+        });
+        if (saved) setActiveTab(id);
+      } catch (error) {
+        setPanelMutationMessage(error instanceof Error ? `面板复制失败：${error.message}` : "面板复制失败");
+      }
     })();
   };
   const deletePanel = (panelId: string) => {
@@ -1622,9 +1652,13 @@ function DevicePage() {
     const panel = panels.find((item) => item.id === panelId);
     if (!panel || panel.kind !== "custom") return;
     const nextPanels = panels.filter((item) => item.id !== panelId);
-    savePanelIndex(nextPanels);
-    void saveWidgetLayout({ scopeKey: customPanelScope(panelId), templateKey: customPanelTemplate, instanceLayout: null });
-    if (activeTab === panelId) setActiveTab("overview");
+    void savePanelIndex(nextPanels, {
+      scopeKey: customPanelScope(panelId),
+      templateKey: customPanelTemplate,
+      instanceLayout: null
+    }).then((saved) => {
+      if (saved && activeTab === panelId) setActiveTab("overview");
+    });
   };
 
   const metrics = snapshot?.metrics?.device.deviceId === selectedDevice.deviceId ? snapshot.metrics : null;
@@ -1857,6 +1891,7 @@ function DevicePage() {
 
         <div className="workspace-device-toolbar">
           {panelIndexLoading && <span className="workspace-layout-notice">读取面板</span>}
+          {panelMutationMessage && <span className="workspace-layout-notice">{panelMutationMessage}</span>}
           <MetricWindowControl value={metricsWindow as DesktopMetricWindowValue} onChange={(value) => setMetricsWindow(value)} />
           <WidgetLayoutToolbar onOpenWidgetDrawer={activeTab !== "all" && canEditRemote ? () => setWidgetDrawerOpen(true) : undefined} />
         </div>

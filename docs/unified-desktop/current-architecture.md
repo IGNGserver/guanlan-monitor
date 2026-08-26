@@ -11,7 +11,7 @@ records the legacy systems that were audited, not the new runtime topology.
 - `agents/cmd/windows-agent-backend/` contains the local desktop backend. It owns the local JSON config, sync-state file, diagnostics log, probe detection, collector child process, auto-restart, and a loopback HTTP API on `127.0.0.1:17891`.
 - `windows-agent/DeviceStateConsoleAgent.WinUI/` is the current Windows UI. It starts/attaches to the local backend, configures the collector, renders Hub devices and charts, and implements a Windows tray icon and single-instance mutex.
 - `linux-agent-gui/` is a separate GTK4/libadwaita application. It owns a native configuration page, a WebKitGTK Hub page, a diagnostics page, and a user systemd unit fallback. This is the implementation that the new Electron client must replace for the desktop scope; it remains in the repository during migration.
-- `apps/server/` is the Hub API and realtime service. Fastify serves authenticated device and metric APIs, Redis/local JSON stores realtime state, MySQL/local JSON stores minute/hour history, and Socket.IO emits `device:update` events.
+- `apps/server/` is the Hub API and realtime service. Fastify serves authenticated device, metric, and widget-layout APIs, Redis/local JSON stores realtime state, MySQL/local JSON stores minute/hour history and widget layouts, and Socket.IO emits `device:update` events.
 - `apps/web/` is the existing Hub web client. It is out of scope for visual migration and must not be embedded in the Electron renderer.
 
 ## Existing lifecycle behavior
@@ -29,7 +29,7 @@ The WinUI process starts the Go backend with its own PID. The backend watches th
 ## Existing storage and retention
 
 - Local Hub fallback: `data/local-db.json` stores devices, realtime series, minute/hour history, fan notes, and metric configs behind a serialized write queue.
-- MySQL: `device_minute_metrics` retains 90 days and `device_hourly_metrics` retains 370 days; instance data and recorded detail metadata are JSON columns.
+- MySQL: `device_minute_metrics` retains 90 days and `device_hourly_metrics` retains 370 days; instance data, recorded detail metadata, and `widget_layout_instances` / `widget_layout_templates` layouts are JSON columns. Widget layouts use MySQL whenever `MYSQL_URL` is configured and fall back to the persistent local JSON store otherwise.
 - Redis: realtime device state and short `1m`/`15m` series.
 - Desktop local files: `agent-ui.config.json`, `agent-ui.sync-state.json`, and `agent-ui.backend.log`, normally under the portable directory or the per-user application-data directory.
 - At audit time there was no durable Agent upload spool; the refactor adds a bounded JSONL spool with state reporting and replay.

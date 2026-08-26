@@ -13,14 +13,17 @@ import {
   createLocalStore,
   LocalDeviceMetricConfigStore,
   LocalDeviceRepository,
+  LocalFanNoteStore,
   LocalHistoryRepository,
   LocalRealtimeRepository,
+  LocalWidgetLayoutStore,
   LocalVirtualMachineRepository
 } from "./repositories/local.js";
+import { MysqlWidgetLayoutStore } from "./repositories/widget-layouts.js";
 import { MetricsService } from "./services/metrics.js";
 import { registerRoutes } from "./routes.js";
 import type { AgentMetricsPayload, DeviceRealtimeEvent } from "@dsc/shared";
-import type { Repositories } from "./types.js";
+import type { Repositories, WidgetLayoutStore } from "./types.js";
 
 const app = Fastify({ logger: true });
 await app.register(cors, {
@@ -33,6 +36,9 @@ await app.register(cookie, { secret: env.SESSION_SECRET });
 let repositories: Repositories;
 const store = createLocalStore();
 const deviceMetricConfigs = new LocalDeviceMetricConfigStore(store);
+const fanNotes = new LocalFanNoteStore(store);
+const localWidgetLayouts = new LocalWidgetLayoutStore(store);
+let widgetLayouts: WidgetLayoutStore = localWidgetLayouts;
 
 const realtime = env.REDIS_URL
   ? new RedisRealtimeRepository(new Redis(env.REDIS_URL, { maxRetriesPerRequest: null }))
@@ -43,9 +49,12 @@ if (env.MYSQL_URL) {
   const history = new MysqlHistoryRepository(mysqlPool);
   const devicesRepo = new MysqlDeviceRepository(mysqlPool);
   const virtualMachinesRepo = new MysqlVirtualMachineRepository(mysqlPool);
+  const mysqlWidgetLayouts = new MysqlWidgetLayoutStore(mysqlPool, localWidgetLayouts);
   await history.init();
   await devicesRepo.init();
   await virtualMachinesRepo.init();
+  await mysqlWidgetLayouts.init();
+  widgetLayouts = mysqlWidgetLayouts;
   repositories = { realtime, history, devices: devicesRepo, virtualMachines: virtualMachinesRepo };
   app.log.info(env.REDIS_URL ? "using redis + mysql repositories" : "using local realtime + mysql history repositories");
 } else {
@@ -67,7 +76,11 @@ const metricsService = new MetricsService(
   deviceMetricConfigs
 );
 
-await registerRoutes(app, repositories, metricsService);
+await registerRoutes(app, repositories, metricsService, {
+  fanNotes,
+  metricConfigs: deviceMetricConfigs,
+  widgetLayouts
+});
 
 app.post<{ Body: AgentMetricsPayload }>("/api/agent/ingest", async (request, reply) => {
   if (env.AGENT_REQUIRE_HTTPS) {

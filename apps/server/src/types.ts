@@ -11,7 +11,9 @@ import type {
   MetricSeries,
   MetricWindow,
   TrafficCalendarMode,
-  TrafficCalendarResponse
+  TrafficCalendarResponse,
+  WidgetLayoutSaveRequest,
+  WidgetLayoutSync
 } from "@dsc/shared";
 import type { VirtualMachineRepository } from "./repositories/virtual-machines.js";
 
@@ -181,6 +183,12 @@ export interface FanNoteStore {
 export interface DeviceMetricConfigStore {
   get(deviceId: string): Promise<DeviceMetricConfigValue | null>;
   set(deviceId: string, value: DeviceMetricConfigValue): Promise<void>;
+}
+
+export interface WidgetLayoutStore {
+  init?(): Promise<void>;
+  get(scopeKey: string, templateKey: string): Promise<WidgetLayoutSync>;
+  save(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync>;
 }
 
 export interface DeviceMetricConfigValue {

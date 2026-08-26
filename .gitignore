@@ -9,6 +9,7 @@ tmp
 bin
 .codex
 logs
+data
 release
 *.log
 *.tsbuildinfo
