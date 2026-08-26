@@ -136,7 +136,12 @@ jobs:
                fi; \
              fi && \
              previous=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\\1/' || true); \
-             if ! docker compose pull server web; then \
+             pull_ok=0; for pull_attempt in \$(seq 1 6); do \
+               if timeout 120 docker compose pull server web; then pull_ok=1; break; fi; \
+               echo \"Published image pull attempt \${pull_attempt}/6 failed; retrying.\" >&2; \
+               sleep 10; \
+             done; \
+             if [ \"\$pull_ok\" -ne 1 ]; then \
                echo 'Published image pull failed; keeping the current deployment.' >&2; \
                exit 1; \
              fi; \
