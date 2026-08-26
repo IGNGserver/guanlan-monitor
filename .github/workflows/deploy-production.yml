@@ -135,11 +135,22 @@ jobs:
                  export MYSQL_URL=\"\$legacy_mysql_url\"; \
                fi; \
              fi && \
-             previous=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\\1/' || true) && \
-             docker compose pull server web && \
+             previous=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\\1/' || true); \
+             if ! docker compose pull server web; then \
+               echo 'Published image pull failed; keeping the current deployment.' >&2; \
+               exit 1; \
+             fi; \
              if ! docker compose up -d --no-build --no-deps server web; then \
                echo 'Deployment restart failed; attempting rollback.' >&2; \
                if [ -n \"\$previous\" ]; then DSC_VERSION=\"\$previous\" docker compose up -d --no-build --no-deps server web; fi; \
+               exit 1; \
+             fi; \
+             server_image=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server)); \
+             web_image=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q web)); \
+             expected_server=\"\$DSC_SERVER_IMAGE:\$DSC_VERSION\"; \
+             expected_web=\"\$DSC_WEB_IMAGE:\$DSC_VERSION\"; \
+             if [ \"\$server_image\" != \"\$expected_server\" ] || [ \"\$web_image\" != \"\$expected_web\" ]; then \
+               echo \"Deployment image mismatch: server=\$server_image web=\$web_image expected=\$expected_server / \$expected_web\" >&2; \
                exit 1; \
              fi; \
              healthy=0; for attempt in \$(seq 1 30); do \
