@@ -117,11 +117,15 @@ jobs:
           WEB_PORT: "3100"
         run: |
           set -euo pipefail
+          image_registry='ghcr.nju.edu.cn'
+          if [[ "$DSC_RELEASE_CHANNEL" == 'test' ]]; then
+            image_registry='ghcr.io'
+          fi
           ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
             "cd '$DEPLOY_PATH' && \
              export WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' \
-               DSC_SERVER_IMAGE='ghcr.nju.edu.cn/igngserver/device-state-console-server' \
-               DSC_WEB_IMAGE='ghcr.nju.edu.cn/igngserver/device-state-console-web' && \
+               DSC_SERVER_IMAGE='$image_registry/igngserver/device-state-console-server' \
+               DSC_WEB_IMAGE='$image_registry/igngserver/device-state-console-web' && \
              if [ -f .env ]; then \
                legacy_mysql_url=\$(sed -n 's/^MYSQL_URL=//p' .env | head -n 1 | tr -d '\r'); \
                if [ -n \"\$legacy_mysql_url\" ]; then \
