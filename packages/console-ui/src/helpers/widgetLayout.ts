@@ -12,7 +12,7 @@ import {
   topLevelPlacements,
   type WidgetKind,
   type WidgetSize
-} from "./widgetGrid";
+} from "./widgetGrid.ts";
 
 export type WidgetDefinition = {
   id: string;
