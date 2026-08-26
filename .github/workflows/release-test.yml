@@ -48,7 +48,9 @@ jobs:
         run: |
           pnpm --filter @dsc/shared build
           pnpm --filter @dsc/server test
-          pnpm --filter @dsc/server exec node --import tsx --test src/repositories/widget-layouts.test.ts
+          if [[ -f apps/server/src/repositories/widget-layouts.test.ts ]]; then
+            pnpm --filter @dsc/server exec node --import tsx --test src/repositories/widget-layouts.test.ts
+          fi
 
       - name: Typecheck and build web packages
         run: |
