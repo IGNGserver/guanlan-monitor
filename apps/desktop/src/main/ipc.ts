@@ -16,8 +16,14 @@ import {
   resolveWindowMaterial,
   type WindowMaterialCapabilities
 } from "../window-material.js";
+import { getDesktopRuntimeProfile } from "./runtime-profile.js";
 
-export function registerIpc(controller: DesktopController, getWindow: () => BrowserWindow | null, markQuitting: () => void): void {
+export function registerIpc(
+  controller: DesktopController,
+  getWindow: () => BrowserWindow | null,
+  markQuitting: () => void,
+  gpuFallbackActive: boolean
+): void {
   const windowDragOffsets = new Map<number, { x: number; y: number }>();
 
   ipcMain.handle(IPC_CHANNELS.getSnapshot, (_event, request?: DesktopSnapshotRequest) => controller.getSnapshot(asSnapshotRequest(request)));
@@ -37,7 +43,8 @@ export function registerIpc(controller: DesktopController, getWindow: () => Brow
   ipcMain.handle(IPC_CHANNELS.reorderInstances, (_event, deviceIds: unknown) => controller.reorderInstances(asStringArray(deviceIds, "device_ids")));
   ipcMain.handle(IPC_CHANNELS.updateStartupSettings, (_event, settings) => controller.updateStartupSettings(asStartupSettings(settings)));
   ipcMain.handle(IPC_CHANNELS.openExternal, (_event, url: string) => controller.openExternal(asString(url, "external_url")));
-  ipcMain.handle(IPC_CHANNELS.getWindowMaterialCapabilities, () => getWindowMaterialCapabilities(getWindow()));
+  ipcMain.handle(IPC_CHANNELS.getRuntimeProfile, () => getDesktopRuntimeProfile(gpuFallbackActive));
+  ipcMain.handle(IPC_CHANNELS.getWindowMaterialCapabilities, () => getWindowMaterialCapabilities(getWindow(), gpuFallbackActive));
   ipcMain.handle(IPC_CHANNELS.windowMinimize, () => {
     getWindow()?.minimize();
   });
@@ -91,9 +98,10 @@ function getWindowsBuild(): number | null {
   return match ? Number(match[1]) : null;
 }
 
-function getWindowMaterialCapabilities(window: BrowserWindow | null): WindowMaterialCapabilities {
+function getWindowMaterialCapabilities(window: BrowserWindow | null, gpuFallbackActive: boolean): WindowMaterialCapabilities {
   const windowsBuild = getWindowsBuild();
   const prefersReducedTransparency = process.platform === "win32" && nativeTheme.prefersReducedTransparency;
+  const runtimeProfile = getDesktopRuntimeProfile(gpuFallbackActive);
   const nativeMaterialSupported = Boolean(
     process.platform === "win32" &&
     windowsBuild !== null &&
@@ -104,7 +112,7 @@ function getWindowMaterialCapabilities(window: BrowserWindow | null): WindowMate
     !prefersReducedTransparency
   );
   const platform = process.platform === "win32" ? "windows" : "other";
-  const activeMaterial = resolveWindowMaterial({
+  const activeMaterial = runtimeProfile.useOpaqueWindow ? "opaque" : resolveWindowMaterial({
     platform,
     windowsBuild,
     prefersReducedTransparency,

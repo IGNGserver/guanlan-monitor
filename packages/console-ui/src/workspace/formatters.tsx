@@ -182,6 +182,19 @@ export function sumSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
     .map(([, bucket]) => ({ timestamp: bucket.timestamp, value: bucket.total }));
 }
 
+export function limitSamplePoints(points: SamplePoint[], maxPoints = 240): SamplePoint[] {
+  if (points.length <= maxPoints || maxPoints < 2) return points;
+  const limited: SamplePoint[] = [];
+  let lastIndex = -1;
+  for (let index = 0; index < maxPoints; index++) {
+    const sourceIndex = Math.round((index * (points.length - 1)) / (maxPoints - 1));
+    if (sourceIndex === lastIndex) continue;
+    limited.push(points[sourceIndex]);
+    lastIndex = sourceIndex;
+  }
+  return limited;
+}
+
 export function displayInstanceName(name: string | undefined, fallback: string): string {
   const value = name?.trim();
   return value || fallback;

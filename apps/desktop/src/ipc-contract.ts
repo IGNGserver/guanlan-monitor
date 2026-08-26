@@ -16,6 +16,7 @@ export const IPC_CHANNELS = {
   reorderInstances: "dsc:reorder-instances",
   updateStartupSettings: "dsc:update-startup-settings",
   openExternal: "dsc:open-external",
+  getRuntimeProfile: "dsc:get-runtime-profile",
   getWindowMaterialCapabilities: "dsc:get-window-material-capabilities",
   windowMinimize: "dsc:window-minimize",
   windowToggleMaximize: "dsc:window-toggle-maximize",

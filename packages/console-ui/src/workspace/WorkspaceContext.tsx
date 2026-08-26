@@ -3,6 +3,7 @@ import type {
   DesktopAgentControlAction,
   DesktopConfigPatch,
   ConsoleSnapshot,
+  DesktopRuntimeProfile,
   DesktopStartupSettings,
   DeviceSummary,
   InstanceType,
@@ -13,7 +14,7 @@ import type {
   WidgetLayoutSync
 } from "@dsc/shared";
 import type { ConsoleAdapter } from "../services/adapter";
-import { fallbackWindowMaterialCapabilities } from "../services/adapter";
+import { fallbackRuntimeProfile, fallbackWindowMaterialCapabilities } from "../services/adapter";
 import { confirmDiscardWidgetLayoutDraft } from "./WidgetLayout";
 import { getResponsiveTier, getScreenOrientation, type ResponsiveTier, type ScreenOrientation } from "../helpers/layout";
 import { detectTouchSupport, resolveInteractionScale, type InteractionScaleSetting, type PointerType } from "../helpers/density";
@@ -105,6 +106,9 @@ interface WorkspaceContextValue {
   isTouch: boolean;
   inputMode: PointerType;
   layoutTier: "xs" | "sm" | "md" | "lg" | "xl";
+  runtimeProfile: DesktopRuntimeProfile;
+  lowResourceMode: boolean;
+  chartPointLimit: number;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -208,6 +212,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   const [isTouch, setIsTouch] = useState(false);
   const [inputMode, setInputMode] = useState<PointerType>("mouse");
   const [layoutTier, setLayoutTier] = useState<ResponsiveTier>("lg");
+  const [runtimeProfile, setRuntimeProfile] = useState<DesktopRuntimeProfile>(fallbackRuntimeProfile);
   const pointerSeenRef = useRef(false);
 
   useEffect(() => {
@@ -245,6 +250,37 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
       document.removeEventListener("pointerdown", handlePointerDown);
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const syncRuntimeProfile = async () => {
+      try {
+        const nextProfile = adapter.getRuntimeProfile
+          ? await adapter.getRuntimeProfile()
+          : fallbackRuntimeProfile();
+        if (!cancelled) setRuntimeProfile(nextProfile);
+      } catch {
+        if (!cancelled) setRuntimeProfile(fallbackRuntimeProfile());
+      }
+    };
+    void syncRuntimeProfile();
+    const timer = window.setInterval(() => void syncRuntimeProfile(), 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [adapter]);
+
+  const lowResourceMode = adapter.capabilities.canControlNativeWindow && (
+    runtimeProfile.isRemoteSession
+    || runtimeProfile.memoryPressure !== "normal"
+    || orientation === "portrait"
+    || layoutTier === "xs"
+  );
+  const chartPointLimit = Math.max(2, Math.min(
+    runtimeProfile.chartPointLimit,
+    lowResourceMode ? 120 : 240
+  ));
 
   const selectedDeviceId = route.kind === "device" ? route.deviceId : snapshot?.selectedDeviceId ?? null;
 
@@ -331,20 +367,23 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   useEffect(() => {
     let cancelled = false;
     let timer: number | null = null;
+    const effectiveRefreshInterval = lowResourceMode
+      ? 30
+      : Math.max(refreshInterval, runtimeProfile.recommendedRefreshInterval);
     const schedule = () => {
       if (cancelled) return;
       timer = window.setTimeout(async () => {
         timer = null;
         await fetchSnapshot(true, false);
         schedule();
-      }, refreshInterval * 1000);
+      }, effectiveRefreshInterval * 1000);
     };
     schedule();
     return () => {
       cancelled = true;
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [fetchSnapshot, refreshInterval]);
+  }, [fetchSnapshot, lowResourceMode, refreshInterval, runtimeProfile.recommendedRefreshInterval]);
 
   useEffect(() => {
     const currentDevice = snapshot?.devices.find((device) => device.deviceId === selectedDeviceId);
@@ -398,6 +437,16 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
       document.documentElement.dataset.dscMaterial = "opaque";
     };
   }, [adapter]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.dscRuntimeMode = lowResourceMode ? "low-resource" : "normal";
+    root.dataset.dscMemoryPressure = runtimeProfile.memoryPressure;
+    return () => {
+      delete root.dataset.dscRuntimeMode;
+      delete root.dataset.dscMemoryPressure;
+    };
+  }, [lowResourceMode, runtimeProfile.memoryPressure]);
 
   useEffect(() => {
     if (!notice) return;
@@ -650,7 +699,10 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     orientation,
     isTouch,
     inputMode,
-    layoutTier
+    layoutTier,
+    runtimeProfile,
+    lowResourceMode,
+    chartPointLimit
   };
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

@@ -3,6 +3,7 @@ import type {
   DesktopAgentControlAction,
   DesktopConfigPatch,
   DesktopStartupSettings,
+  DesktopRuntimeProfile,
   ConsoleSnapshot
 } from "@dsc/shared";
 import type { ConsoleFleetPort, ConsoleReadPort, ConsoleSessionPort } from "./ports.ts";
@@ -30,6 +31,7 @@ export interface ConsoleAdapter extends ConsoleReadPort, ConsoleSessionPort, Con
   windowDragMove?(screenX: number, screenY: number): void;
   windowDragEnd?(): void;
   getWindowMaterialCapabilities?(): Promise<WindowMaterialCapabilities>;
+  getRuntimeProfile?(): Promise<DesktopRuntimeProfile>;
 }
 
 export type WindowMaterial = "opaque" | "mica";
@@ -67,6 +69,16 @@ export function fallbackWindowMaterialCapabilities(): WindowMaterialCapabilities
     supportsMica: false,
     prefersReducedTransparency: false,
     activeMaterial: "opaque"
+  };
+}
+
+export function fallbackRuntimeProfile(): DesktopRuntimeProfile {
+  return {
+    isRemoteSession: false,
+    memoryPressure: "normal",
+    recommendedRefreshInterval: 5,
+    chartPointLimit: 240,
+    useOpaqueWindow: false
   };
 }
 

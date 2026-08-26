@@ -5,6 +5,7 @@ import type {
   DesktopRendererBridge,
   DesktopSnapshot,
   DesktopSnapshotRequest,
+  DesktopRuntimeProfile,
   DesktopStartupSettings,
   WidgetLayoutRequest,
   WidgetLayoutSaveRequest
@@ -30,6 +31,7 @@ const bridge: DesktopRendererBridge & WindowMaterialBridge = {
   reorderInstances: (deviceIds: string[]) => ipcRenderer.invoke(IPC_CHANNELS.reorderInstances, deviceIds),
   updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => ipcRenderer.invoke(IPC_CHANNELS.updateStartupSettings, settings),
   openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.openExternal, url),
+  getRuntimeProfile: (): Promise<DesktopRuntimeProfile> => ipcRenderer.invoke(IPC_CHANNELS.getRuntimeProfile),
   getWindowMaterialCapabilities: () => ipcRenderer.invoke(IPC_CHANNELS.getWindowMaterialCapabilities),
   windowMinimize: () => ipcRenderer.invoke(IPC_CHANNELS.windowMinimize),
   windowToggleMaximize: () => ipcRenderer.invoke(IPC_CHANNELS.windowToggleMaximize),

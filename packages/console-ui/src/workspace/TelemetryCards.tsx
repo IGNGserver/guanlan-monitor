@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { SamplePoint, WidgetInstanceConfig, WidgetVisualization } from "@dsc/shared";
 import {
   DesktopWidget,
@@ -7,7 +7,7 @@ import {
 } from "./WidgetLayout";
 import { useWorkspace } from "./WorkspaceContext";
 import { Surface, SummaryRow } from "./ui";
-import { formatAxisTime, formatPreciseDateTime, splitPointsIntoSegments, WINDOW_DURATION_MAP } from "./formatters";
+import { formatAxisTime, formatPreciseDateTime, limitSamplePoints, splitPointsIntoSegments, WINDOW_DURATION_MAP } from "./formatters";
 
 type TelemetrySeries = {
   label: string;
@@ -68,10 +68,15 @@ export function TelemetryChartCard({
   widgetKind?: WidgetKind;
   widgetDefaultSize?: WidgetSize;
 }) {
-  const { metricsWindow } = useWorkspace();
+  const { metricsWindow, chartPointLimit } = useWorkspace();
   const visType: WidgetVisualization = widgetConfig?.visualization ?? widgetVisualization ?? "line";
 
-  const activeSeries = series.filter((item) => item.points && item.points.length > 0);
+  const activeSeries = useMemo(
+    () => series
+      .map((item) => ({ ...item, points: limitSamplePoints(item.points, chartPointLimit) }))
+      .filter((item) => item.points && item.points.length > 0),
+    [chartPointLimit, series]
+  );
   const primaryPoints = activeSeries[0]?.points ?? [];
   const [selectedIndex, setSelectedIndex] = useState(Math.max(primaryPoints.length - 1, 0));
   const [isHovering, setIsHovering] = useState(false);
@@ -586,18 +591,19 @@ export function WorkspaceTrend({
   fixedMaxValue?: number;
   compact?: boolean;
 }) {
-  const { metricsWindow } = useWorkspace();
-  const [selectedIndex, setSelectedIndex] = useState(Math.max(points.length - 1, 0));
+  const { metricsWindow, chartPointLimit } = useWorkspace();
+  const chartPoints = useMemo(() => limitSamplePoints(points, chartPointLimit), [chartPointLimit, points]);
+  const [selectedIndex, setSelectedIndex] = useState(Math.max(chartPoints.length - 1, 0));
   const [isHovering, setIsHovering] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
   const plotRef = useRef<HTMLDivElement>(null);
   const pointerGestureRef = useRef<{ pointerId: number; index: number; startX: number; startY: number; moved: boolean } | null>(null);
   useEffect(() => {
-    setSelectedIndex(Math.max(points.length - 1, 0));
+    setSelectedIndex(Math.max(chartPoints.length - 1, 0));
     setIsHovering(false);
     setIsPinned(false);
     pointerGestureRef.current = null;
-  }, [points.length, points.at(-1)?.timestamp]);
+  }, [chartPoints.length, chartPoints.at(-1)?.timestamp]);
   useEffect(() => {
     if (!isPinned) return;
     const handleOutsidePointerDown = (event: PointerEvent) => {
@@ -610,12 +616,12 @@ export function WorkspaceTrend({
     return () => document.removeEventListener("pointerdown", handleOutsidePointerDown, true);
   }, [isPinned]);
 
-  if (!points.length) {
+  if (!chartPoints.length) {
     return <div className={`workspace-trend workspace-trend--empty ${compact ? "workspace-trend--compact" : ""}`} aria-label={label} role="img"><div className="workspace-trend-empty">等待足够的遥测样本</div></div>;
   }
 
   const windowDurationMs = WINDOW_DURATION_MAP[metricsWindow] ?? 300000;
-  const timestamps = points.map((p) => Date.parse(p.timestamp)).filter((t) => Number.isFinite(t));
+  const timestamps = chartPoints.map((p) => Date.parse(p.timestamp)).filter((t) => Number.isFinite(t));
   const latestSampleTime = timestamps.length ? Math.max(...timestamps) : Date.now();
   const earliestSampleTime = timestamps.length ? Math.min(...timestamps) : latestSampleTime - windowDurationMs;
   const windowEndTime = latestSampleTime;
@@ -631,10 +637,10 @@ export function WorkspaceTrend({
     return Math.min(100, Math.max(0, ((t - windowStartTime) / totalSpan) * 100));
   };
 
-  const maxValue = Math.max(fixedMaxValue, Math.max(...points.map((point) => point.value), 1));
+  const maxValue = Math.max(fixedMaxValue, Math.max(...chartPoints.map((point) => point.value), 1));
   const yFor = (value: number) => 100 - Math.min(Math.max(value / maxValue, 0), 1) * 100;
 
-  const segments = splitPointsIntoSegments(points, windowDurationMs);
+  const segments = splitPointsIntoSegments(chartPoints, windowDurationMs);
 
   const linePath = segments.map((seg) => {
     if (seg.length === 1) {
@@ -652,20 +658,20 @@ export function WorkspaceTrend({
     return `${lPath} L ${endX} 100 L ${startX} 100 Z`;
   }).join(" ");
 
-  const curIndex = Math.min(selectedIndex, points.length - 1);
-  const selected = points[curIndex] ?? points[points.length - 1];
+  const curIndex = Math.min(selectedIndex, chartPoints.length - 1);
+  const selected = chartPoints[curIndex] ?? chartPoints[chartPoints.length - 1];
   const selectedX = timeToX(selected.timestamp);
   const selectedY = yFor(selected.value);
 
   const resolveIndex = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!points.length) return 0;
+    if (!chartPoints.length) return 0;
     const bounds = event.currentTarget.getBoundingClientRect();
     const ratio = bounds.width > 0 ? (event.clientX - bounds.left) / bounds.width : 1;
     const hoverTime = windowStartTime + ratio * totalSpan;
     let bestIndex = 0;
     let bestDiff = Infinity;
-    for (let i = 0; i < points.length; i++) {
-      const t = Date.parse(points[i].timestamp);
+    for (let i = 0; i < chartPoints.length; i++) {
+      const t = Date.parse(chartPoints[i].timestamp);
       const diff = Math.abs(t - hoverTime);
       if (diff < bestDiff) {
         bestDiff = diff;
