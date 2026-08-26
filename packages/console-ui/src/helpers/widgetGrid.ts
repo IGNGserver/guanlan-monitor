@@ -53,6 +53,21 @@ export function normalizePlacement(
   };
 }
 
+export function resizePlacement(
+  value: Partial<WidgetPlacement> | undefined,
+  size: WidgetSize,
+  options?: { customH?: number; customW?: number }
+): WidgetPlacement {
+  const existing = normalizePlacement(value, size, options);
+  const preset = SIZE_PRESETS[size];
+  return normalizePlacement({
+    ...existing,
+    size,
+    w: options?.customW ?? preset.w,
+    h: options?.customH ?? preset.h
+  }, size, options);
+}
+
 export function findNextFreePlacement(
   placements: Record<string, WidgetPlacement>,
   size: WidgetSize,

@@ -6,6 +6,7 @@ import { resolveEffectiveTheme } from "./theme.ts";
 import { normalizeMetricsResponse, formatBytes } from "./metricsNormalizer.ts";
 import { DESKTOP_CAPABILITIES, WEB_CAPABILITIES, emptyConsoleSnapshot } from "../services/adapter.ts";
 import type { MetricsResponse } from "@dsc/shared";
+import { isDeclarativeWidgetDefinition, mergeDefinitions } from "./widgetLayout.ts";
 
 test("getLayoutClass correctly categorizes window widths at key breakpoints", () => {
   assert.strictEqual(getLayoutClass(390), "compact");
@@ -149,6 +150,43 @@ test("placementStyle computes dimensions and CSS order based on placement coordi
   const compactStyle = placementStyle({ x: 1, y: 1, w: 4, h: 4, size: "large" }, "large", undefined, undefined, 6);
   assert.strictEqual(compactStyle["--widget-h"], 4);
   assert.strictEqual(compactStyle["--widget-h-compact"], 6);
+});
+
+test("resizePlacement updates the persisted grid dimensions when a widget size changes", async () => {
+  const { resizePlacement } = await import("./widgetGrid.ts");
+  const resized = resizePlacement({ x: 3, y: 4, w: 1, h: 2, size: "small" }, "large");
+  assert.deepStrictEqual(resized, { x: 1, y: 4, w: 4, h: 2, size: "large", hidden: false });
+});
+
+test("mergeDefinitions does not recreate deleted user widgets after a save response", () => {
+  const standaloneDefinition = {
+    id: "cpu-usage-instance",
+    title: "CPU 使用率",
+    kind: "content" as const,
+    defaultSize: "medium" as const,
+    widgetType: "cpu-usage"
+  };
+  assert.strictEqual(isDeclarativeWidgetDefinition(standaloneDefinition), false);
+
+  const afterDelete = mergeDefinitions({ version: 4, snapToGrid: true, catalog: {}, placements: {} }, { [standaloneDefinition.id]: standaloneDefinition });
+  assert.deepStrictEqual(afterDelete.catalog, {});
+  assert.deepStrictEqual(afterDelete.placements, {});
+});
+
+test("mergeDefinitions still rehydrates system widgets declared by the page", () => {
+  const systemDefinition = {
+    id: "compute-memory",
+    title: "内存容量明细",
+    kind: "content" as const,
+    defaultSize: "large" as const,
+    widgetType: "memory-usage",
+    config: { systemRendered: true }
+  };
+  assert.strictEqual(isDeclarativeWidgetDefinition(systemDefinition), true);
+
+  const restored = mergeDefinitions({ version: 4, snapToGrid: true, catalog: {}, placements: {} }, { [systemDefinition.id]: systemDefinition });
+  assert.strictEqual(restored.catalog[systemDefinition.id].config?.systemRendered, true);
+  assert.ok(restored.placements[systemDefinition.id]);
 });
 
 test("normalizePlacements expands grouped device layouts from visible child count", async () => {

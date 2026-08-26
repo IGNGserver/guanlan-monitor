@@ -31,7 +31,8 @@ import {
 } from "recharts";
 import { DesktopWidget, useWidgetLayout, type WidgetGroupChildDefinition, type WidgetKind, type WidgetSize } from "./WidgetLayout";
 import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
-import { getWidgetLines, averageSamplePoints, type WidgetLine } from "../helpers/widgetLines";
+import { TelemetryChartCard, type TelemetrySeries } from "./TelemetryCards";
+import { getWidgetLines, type WidgetLine } from "../helpers/widgetLines";
 import { UNAVAILABLE_METRIC_LABEL } from "./formatters";
 
 type WidgetCatalogDefinition = {
@@ -708,58 +709,75 @@ function healthDonutData(disks: DiskDeviceStats[]) {
   return [{ name: "正常", value: good, color: "#14b8a6" }, { name: "需要注意", value: warn, color: "#f59e0b" }, { name: "未报告", value: unknown, color: "#94a3b8" }].filter((item) => item.value > 0);
 }
 
-function WidgetContent({ definition, entry, context }: { definition: WidgetCatalogDefinition; entry: WidgetLayoutCatalogEntry; context: WidgetCatalogContext }) {
+type DynamicWidgetCardModel = {
+  series?: TelemetrySeries[];
+  valueFormatter?: (value: number) => string;
+  fixedMaxValue?: number;
+  content?: React.ReactNode;
+  emptyMessage?: string;
+  showDetailsControl?: boolean;
+};
+
+function buildWidgetCardModel({ definition, entry, context }: { definition: WidgetCatalogDefinition; entry: WidgetLayoutCatalogEntry; context: WidgetCatalogContext }): DynamicWidgetCardModel {
   const { device, metrics, localTemperatureSources = [], localTemperatureSourcesAt } = context;
   const latest = metrics?.latest;
   const visualization = visualizationFor(entry, definition);
   const unavailableKey = unavailableMetricForWidget(definition.widgetType);
   if (metricUnavailable(metrics, unavailableKey, device)) {
-    return <div className="workspace-dynamic-empty__inline">{UNAVAILABLE_METRIC_LABEL}</div>;
+    return { emptyMessage: UNAVAILABLE_METRIC_LABEL, showDetailsControl: false };
   }
-  if (definition.widgetType === "hardware-system") return <DataTable rows={hardwareRows(device, latest)} />;
+  if (definition.widgetType === "hardware-system") return { content: <DataTable rows={hardwareRows(device, latest)} />, showDetailsControl: false };
   if (definition.widgetType === "temperature-sources") {
     const latestSensors = latest?.temperatureSensors ?? [];
-    return <DataTable rows={latestSensors.length ? temperatureRows(latestSensors) : temperatureRowsFromSeries(metrics?.series.temperatureSensors ?? [])} />;
+    return { content: <DataTable rows={latestSensors.length ? temperatureRows(latestSensors) : temperatureRowsFromSeries(metrics?.series.temperatureSensors ?? [])} />, showDetailsControl: false };
   }
   if (definition.widgetType === "gpu-driver") {
     const targetId = getTargetId(entry);
-    return <DataTable rows={gpuDriverRows(latest?.gpus ?? [], targetId)} />;
+    return { content: <DataTable rows={gpuDriverRows(latest?.gpus ?? [], targetId)} />, showDetailsControl: false };
   }
   if (definition.widgetType === "disk-health") {
     const targetId = getTargetId(entry);
     const allDisks = latest?.disks ?? [];
     const disks = targetId ? allDisks.filter((disk) => disk.id === targetId) : allDisks;
-    if (visualization === "donut") return <DonutChart data={healthDonutData(disks)} centerLabel={`${disks.length} 盘`} />;
+    if (visualization === "donut") return { content: <DonutChart data={healthDonutData(disks)} centerLabel={`${disks.length} 盘`} />, showDetailsControl: false };
     if (visualization === "number") {
       const healthy = disks.filter((disk) => diskHealthTone(disk.healthStatus) === "good").length;
-      return <div className="workspace-dynamic-number-grid"><div className="workspace-dynamic-number"><span>健康磁盘</span><strong>{healthy} / {disks.length}</strong></div><div className="workspace-dynamic-number"><span>SMART 属性</span><strong>{disks.reduce((sum, disk) => sum + (disk.smartAttributes?.length ?? 0), 0)}</strong></div></div>;
+      const smartAttributes = disks.reduce((sum, disk) => sum + (disk.smartAttributes?.length ?? 0), 0);
+      const timestamp = metrics?.lastSeenAt ?? device.lastSeenAt ?? new Date().toISOString();
+      return {
+        series: [
+          { label: "健康磁盘", points: [{ timestamp, value: healthy }], valueFormatter: () => `${healthy} / ${disks.length}` },
+          { label: "SMART 属性", points: [{ timestamp, value: smartAttributes }], valueFormatter: (value) => `${Math.round(value)}` }
+        ],
+        showDetailsControl: false
+      };
     }
-    return <DataTable rows={diskRows(disks)} />;
+    return { content: <DataTable rows={diskRows(disks)} />, showDetailsControl: false };
   }
   if ((definition.widgetType === "cpu-usage" || definition.widgetType === "cpu-usage-pie") && visualization === "donut") {
     const targetId = getTargetId(entry);
     const cpu = targetId ? latest?.cpuPackages?.find((item) => item.id === targetId) : latest?.cpuPackages?.[0];
     const used = cpu?.usagePercent ?? (targetId && (latest?.cpuPackages?.length ?? 0) > 1 ? undefined : latestValue(metrics?.series.cpuUsagePercent));
-    if (used == null || !Number.isFinite(used)) return <div className="workspace-dynamic-empty__inline">{UNAVAILABLE_METRIC_LABEL}</div>;
-    return <DonutChart data={[{ name: "已用", value: Math.min(100, Math.max(0, used)), color: "#3b82f6" }, { name: "空闲", value: Math.max(0, 100 - used), color: "#cbd5e1" }]} centerLabel={`${Math.round(used)}%`} />;
+    if (used == null || !Number.isFinite(used)) return { emptyMessage: UNAVAILABLE_METRIC_LABEL, showDetailsControl: false };
+    return { content: <DonutChart data={[{ name: "已用", value: Math.min(100, Math.max(0, used)), color: "#3b82f6" }, { name: "空闲", value: Math.max(0, 100 - used), color: "#cbd5e1" }]} centerLabel={`${Math.round(used)}%`} />, showDetailsControl: false };
   }
   if ((definition.widgetType === "memory-usage" || definition.widgetType === "memory-usage-pie") && visualization === "donut") {
     const used = latest?.memoryUsedBytes ?? 0;
     const total = latest?.memoryTotalBytes ?? 0;
-    return <DonutChart data={[{ name: "已用", value: Math.max(0, used), color: "#14b8a6" }, { name: "空闲", value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />;
+    return { content: <DonutChart data={[{ name: "已用", value: Math.max(0, used), color: "#14b8a6" }, { name: "空闲", value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />, showDetailsControl: false };
   }
   if ((definition.widgetType === "disk-capacity" || definition.widgetType === "disk-capacity-pie") && visualization === "donut") {
     const targetId = getTargetId(entry);
     const disk = targetId ? latest?.disks?.find((item) => item.id === targetId) : undefined;
     const used = disk?.usedBytes ?? latest?.diskUsedBytes ?? 0;
     const total = disk?.totalBytes ?? latest?.diskTotalBytes ?? 0;
-    return <DonutChart data={[{ name: "已用", value: Math.max(0, used), color: "#3b82f6" }, { name: "剩余", value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />;
+    return { content: <DonutChart data={[{ name: "已用", value: Math.max(0, used), color: "#3b82f6" }, { name: "剩余", value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />, showDetailsControl: false };
   }
   if ((definition.widgetType === "gpu-load" || definition.widgetType === "gpu-load-pie") && visualization === "donut") {
     const targetId = getTargetId(entry);
     const gpu = targetId ? latest?.gpus?.find((item) => item.id === targetId) : latest?.gpus?.[0];
     const used = gpu?.utilizationPercent ?? latestValue(metrics?.series.gpuUsagePercent) ?? 0;
-    return <DonutChart data={[{ name: "负载", value: Math.min(100, Math.max(0, used)), color: "#f59e0b" }, { name: "空闲", value: Math.max(0, 100 - used), color: "#cbd5e1" }]} centerLabel={`${Math.round(used)}%`} />;
+    return { content: <DonutChart data={[{ name: "负载", value: Math.min(100, Math.max(0, used)), color: "#f59e0b" }, { name: "空闲", value: Math.max(0, 100 - used), color: "#cbd5e1" }]} centerLabel={`${Math.round(used)}%`} />, showDetailsControl: false };
   }
   if ((definition.widgetType === "gpu-memory" || definition.widgetType === "gpu-memory-pie") && visualization === "donut") {
     const targetId = getTargetId(entry);
@@ -767,7 +785,7 @@ function WidgetContent({ definition, entry, context }: { definition: WidgetCatal
     const used = gpu?.memoryUsedBytes ?? 0;
     const total = gpu?.memoryTotalBytes ?? 0;
     const memoryLabel = gpuMemoryLabel(gpu?.memoryKind);
-    return <DonutChart data={[{ name: `${memoryLabel}已用`, value: Math.max(0, used), color: "#a78bfa" }, { name: `${memoryLabel}剩余`, value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />;
+    return { content: <DonutChart data={[{ name: `${memoryLabel}已用`, value: Math.max(0, used), color: "#a78bfa" }, { name: `${memoryLabel}剩余`, value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />, showDetailsControl: false };
   }
   if (definition.widgetType === "temperature-source-pie" && visualization === "donut") {
     const targetId = getTargetId(entry);
@@ -775,15 +793,18 @@ function WidgetContent({ definition, entry, context }: { definition: WidgetCatal
     const seriesSensor = targetId ? metrics?.series.temperatureSensors?.find((sensor) => sensor.id === targetId) : undefined;
     const localSensor = targetId ? localTemperatureSources.find((sensor) => sensor.id === targetId) : undefined;
     const current = latestSensor?.currentC ?? localSensor?.currentC ?? latestValue(seriesSensor?.currentC);
-    if (current == null || !Number.isFinite(current)) return <div className="workspace-dynamic-empty__inline">当前时间范围没有可用的温度数据</div>;
+    if (current == null || !Number.isFinite(current)) return { emptyMessage: "当前时间范围没有可用的温度数据", showDetailsControl: false };
     const configuredLimit = latestSensor?.criticalC ?? localSensor?.criticalC ?? seriesSensor?.criticalC ?? latestSensor?.highC ?? localSensor?.highC ?? seriesSensor?.highC;
     const limit = Math.max(0, current, configuredLimit ?? 100);
     const displayCurrent = Math.max(0, current);
     const limitLabel = configuredLimit != null ? "温度上限余量" : "参考温度余量";
-    return <DonutChart data={[{ name: "当前温度", value: displayCurrent, color: "#f59e0b" }, { name: limitLabel, value: Math.max(0, limit - displayCurrent), color: "#cbd5e1" }]} centerLabel={`${current.toFixed(1)} °C`} valueFormatter={(value) => `${value.toFixed(1)} °C`} />;
+    return { content: <DonutChart data={[{ name: "当前温度", value: displayCurrent, color: "#f59e0b" }, { name: limitLabel, value: Math.max(0, limit - displayCurrent), color: "#cbd5e1" }]} centerLabel={`${current.toFixed(1)} °C`} valueFormatter={(value) => `${value.toFixed(1)} °C`} />, showDetailsControl: false };
   }
   const { lines, valueFormatter } = getWidgetLines(definition.widgetType, metrics, getTargetId(entry), localTemperatureSources, localTemperatureSourcesAt);
-  return <TrendChart lines={lines} visualization={visualization} valueFormatter={valueFormatter} />;
+  if (visualization === "bar") {
+    return { content: <TrendChart lines={lines} visualization={visualization} valueFormatter={valueFormatter} />, showDetailsControl: false };
+  }
+  return { series: lines, valueFormatter, showDetailsControl: visualization !== "number" };
 }
 
 function targetOptions(definition: WidgetCatalogDefinition, metrics: MetricsResponse | null, localTemperatureSources: TemperatureSensorReading[] = []): Array<{ id: string; name: string; detail?: string }> {
@@ -950,6 +971,18 @@ function DynamicWidgetCard({ entry, context }: { entry: WidgetLayoutCatalogEntry
   const visualization = visualizationFor(entry, definition);
   const targets = targetOptions(definition, context.metrics, context.localTemperatureSources);
   const targetId = getTargetId(entry) ?? "all";
+  const model = buildWidgetCardModel({ definition, entry, context });
+  const controls = (
+    <>
+      {layout.editMode && <select className="workspace-select workspace-select--small" value={visualization} onChange={(event) => layout.updateWidgetConfig(entry.id, { visualization: event.target.value as WidgetVisualization })} aria-label={`${entry.title}图表形式`}>
+        {definition.visualizations.map((item) => <option key={item} value={item}>{visualizationLabels[item]}</option>)}
+      </select>}
+      {layout.editMode && !entry.groupId && targets.length > 0 && <select className="workspace-select workspace-select--small" value={targetId} onChange={(event) => layout.updateWidgetConfig(entry.id, { targetId: event.target.value === "all" ? null : event.target.value })} aria-label={`${entry.title}实例`}>
+        <option value="all">全部实例</option>
+        {targets.map((target) => <option value={target.id} key={target.id}>{target.name}</option>)}
+      </select>}
+    </>
+  );
   return (
     <DesktopWidget
       id={entry.id}
@@ -962,21 +995,19 @@ function DynamicWidgetCard({ entry, context }: { entry: WidgetLayoutCatalogEntry
       visualization={visualization}
       config={entry.config}
     >
-      <div className="workspace-dynamic-card">
-        <div className="workspace-dynamic-card__header">
-          <div><span className="workspace-section-kicker">{definition.category}</span><h3>{entry.title}</h3><p>{definition.description}</p></div>
-          <div className="workspace-dynamic-card__controls">
-            {layout.editMode && <select className="workspace-select workspace-select--small" value={visualization} onChange={(event) => layout.updateWidgetConfig(entry.id, { visualization: event.target.value as WidgetVisualization })} aria-label={`${entry.title}图表形式`}>
-              {definition.visualizations.map((item) => <option key={item} value={item}>{visualizationLabels[item]}</option>)}
-            </select>}
-            {layout.editMode && !entry.groupId && targets.length > 0 && <select className="workspace-select workspace-select--small" value={targetId} onChange={(event) => layout.updateWidgetConfig(entry.id, { targetId: event.target.value === "all" ? null : event.target.value })} aria-label={`${entry.title}实例`}>
-              <option value="all">全部实例</option>
-              {targets.map((target) => <option value={target.id} key={target.id}>{target.name}</option>)}
-            </select>}
-          </div>
-        </div>
-        <WidgetContent key={`${entry.id}-${visualization}-${targetId}`} definition={definition} entry={entry} context={context} />
-      </div>
+      <TelemetryChartCard
+        key={`${entry.id}-${visualization}-${targetId}`}
+        title={entry.title}
+        subtitle={definition.description}
+        series={model.series ?? []}
+        valueFormatter={model.valueFormatter}
+        fixedMaxValue={model.fixedMaxValue}
+        controls={controls}
+        content={model.content}
+        emptyMessage={model.emptyMessage}
+        showDetailsControl={model.showDetailsControl}
+        widgetVisualization={visualization}
+      />
     </DesktopWidget>
   );
 }

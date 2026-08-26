@@ -2,11 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useLayoutEffe
 import type {
   WidgetLayoutCatalogEntry as SharedWidgetLayoutCatalogEntry,
   WidgetLayoutDocument,
-  WidgetLayoutKind,
-  WidgetLayoutPlacement as SharedWidgetLayoutPlacement,
   WidgetLayoutRequest,
   WidgetLayoutSaveRequest,
-  WidgetLayoutSize,
   WidgetLayoutSync,
   WidgetLayoutTemplate,
   WidgetInstanceConfig,
@@ -26,6 +23,7 @@ import {
   normalizePlacement,
   normalizePlacements,
   placementStyle,
+  resizePlacement,
   topLevelPlacements,
   type WidgetKind,
   type WidgetPlacement,
@@ -46,27 +44,20 @@ export {
   normalizePlacement,
   normalizePlacements,
   placementStyle,
+  resizePlacement,
   topLevelPlacements,
   type WidgetKind,
   type WidgetPlacement,
   type WidgetSize
 };
+import {
+  cloneWidgetLayout as cloneLayout,
+  mergeDefinitions,
+  mergeWidgetConfig,
+  type WidgetDefinition as WidgetLayoutDefinition
+} from "../helpers/widgetLayout";
 
-export type WidgetDefinition = {
-  id: string;
-  templateId?: string;
-  groupId?: string;
-  title: string;
-  kind: WidgetKind;
-  defaultSize: WidgetSize;
-  defaultH?: number;
-  compactH?: number;
-  defaultW?: number;
-  widgetType?: string;
-  category?: string;
-  visualization?: WidgetVisualization;
-  config?: WidgetInstanceConfig;
-};
+export type WidgetDefinition = WidgetLayoutDefinition;
 
 export type WidgetGroupChildDefinition = Omit<WidgetDefinition, "id" | "groupId">;
 
@@ -159,25 +150,6 @@ export function confirmDiscardWidgetLayoutDraft(): boolean {
   return window.confirm("当前布局修改尚未保存，退出后修改将丢失。是否继续？");
 }
 
-function cloneLayout(layout: WidgetLayoutDocument): WidgetLayoutDocument {
-  return {
-    ...(layout.version ? { version: layout.version } : {}),
-    placements: Object.fromEntries(Object.entries(layout.placements).map(([id, placement]) => [id, { ...placement }])),
-    catalog: Object.fromEntries(Object.entries(layout.catalog).map(([id, entry]) => [id, {
-      ...entry,
-      ...(entry.groupId ? { groupId: entry.groupId } : {}),
-      ...(entry.config ? { config: { ...entry.config } } : {})
-    }])),
-    snapToGrid: layout.snapToGrid,
-    ...(layout.panels ? { panels: layout.panels.map((panel) => ({ ...panel })) } : {})
-  };
-}
-
-function mergeWidgetConfig(existing: WidgetInstanceConfig | undefined, incoming: WidgetInstanceConfig | undefined): WidgetInstanceConfig | undefined {
-  if (!existing && !incoming) return undefined;
-  return { ...(existing ?? {}), ...(incoming ?? {}) };
-}
-
 type WidgetMutationOptions = {
   compact?: boolean;
 };
@@ -232,44 +204,6 @@ function normalizeLayout(layout: WidgetLayoutDocument | null | undefined, option
     snapToGrid: layout.snapToGrid !== false,
     ...(panels.length ? { panels } : {})
   };
-}
-
-function mergeDefinitions(layout: WidgetLayoutDocument, definitions: Record<string, WidgetDefinition>): WidgetLayoutDocument {
-  const next = cloneLayout(layout);
-  const deletedGroupIds = new Set(Object.entries(next.catalog).filter(([, entry]) => entry.config?.deleted === true).map(([id]) => id));
-  for (const definition of Object.values(definitions)) {
-    if (definition.groupId && deletedGroupIds.has(definition.groupId)) {
-      delete next.catalog[definition.id];
-      delete next.placements[definition.id];
-      continue;
-    }
-    const existing = next.catalog[definition.id];
-    const config = mergeWidgetConfig(existing?.config, definition.config);
-    next.catalog[definition.id] = {
-      ...existing,
-      title: definition.title,
-      kind: definition.kind,
-      defaultSize: definition.defaultSize,
-      ...(definition.templateId ? { templateId: definition.templateId } : {}),
-      ...(definition.groupId ? { groupId: definition.groupId } : {}),
-      ...(definition.widgetType ? { widgetType: definition.widgetType } : {}),
-      ...(definition.category ? { category: definition.category } : {}),
-      ...(definition.visualization ? { visualization: definition.visualization } : {}),
-      ...(config ? { config } : {})
-    };
-    if (!next.placements[definition.id]) {
-      if (definition.groupId) {
-        next.placements[definition.id] = normalizePlacement({ x: 1, y: 1, size: definition.defaultSize });
-      } else {
-        const customH = definition.id === "compute-cpu-facts" ? 2 : definition.defaultH;
-        const initialPreset = SIZE_PRESETS[definition.defaultSize];
-        const position = findNextFreePlacement(topLevelPlacements(next.placements, next.catalog), definition.defaultSize, 1, 1, { w: initialPreset.w, h: customH ?? initialPreset.h });
-        next.placements[definition.id] = normalizePlacement({ ...position, size: definition.defaultSize, h: customH });
-      }
-    }
-  }
-  next.placements = normalizePlacements(next.placements, next.snapToGrid, next.catalog);
-  return next;
 }
 
 function createInitialLayout(definitions: Record<string, WidgetDefinition>): WidgetLayoutDocument {
@@ -661,7 +595,9 @@ export function WidgetLayoutProvider({
   const updateSize = useCallback((id: string, size: WidgetSize) => {
     mutateDraft((current) => {
       const existing = current.placements[id] ?? normalizePlacement({ size });
-      current.placements[id] = normalizePlacement({ ...existing, size });
+      current.placements[id] = resizePlacement(existing, size, {
+        customH: id === "compute-cpu-facts" ? 2 : undefined
+      });
       const entry = current.catalog[id];
       if (entry?.kind === "group") {
         entry.config = { ...(entry.config ?? {}), sizeOverride: size };
