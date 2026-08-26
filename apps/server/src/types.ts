@@ -136,6 +136,7 @@ export interface RealtimeRepository {
   upsert(state: DeviceRealtimeState): Promise<void>;
   getDevice(deviceId: string): Promise<DeviceRealtimeState | null>;
   listDevices(): Promise<DeviceRealtimeState[]>;
+  remove(deviceId: string): Promise<void>;
   appendSeries(deviceId: string, bucket: MetricWindow, point: TimeSeriesRecord, maxPoints: number): Promise<void>;
   readSeries(deviceId: string, bucket: MetricWindow): Promise<TimeSeriesRecord[]>;
   clearSeries(deviceId: string): Promise<void>;

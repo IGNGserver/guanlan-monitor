@@ -453,6 +453,10 @@ export interface VirtualizationSnapshot {
   platform: AgentVirtualizationPlatform;
   source: string;
   collectedAt: string;
+  /** Coverage label for inventory reconciliation, for example cluster or node:pve1. */
+  inventoryScope?: string;
+  /** True only when the snapshot is a complete inventory for its scope. */
+  inventoryComplete?: boolean;
   nodes: VirtualizationNodeTelemetry[];
   vms: VirtualMachineTelemetry[];
   storages?: VirtualizationStorageTelemetry[];
@@ -1149,6 +1153,8 @@ export interface DeviceRealtimeEvent {
   deviceId: string;
   summary: DeviceSummary;
   latest: AgentMetricsPayload;
+  /** The Hub removed this instance from its live inventory. */
+  removed?: boolean;
 }
 
 export type TrafficCalendarMode = "day" | "week" | "month";

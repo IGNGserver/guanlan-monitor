@@ -12,6 +12,16 @@ on:
         required: true
         default: "192.168.5.8 192.168.5.7 192.168.5.10 nas"
         type: string
+      cluster_inventory_target:
+        description: "Proxmox Agent target that reports the complete cluster VM inventory"
+        required: false
+        default: "192.168.5.8"
+        type: string
+      configure_cluster_inventory:
+        description: "Configure the cluster inventory target without a node filter"
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -71,6 +81,8 @@ jobs:
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
           TARGETS: ${{ inputs.targets }}
+          CLUSTER_INVENTORY_TARGET: ${{ inputs.cluster_inventory_target }}
+          CONFIGURE_CLUSTER_INVENTORY: ${{ inputs.configure_cluster_inventory }}
         run: |
           set -euo pipefail
           [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
@@ -87,6 +99,23 @@ jobs:
               exit 1
             }
           done
+          if [[ "$CONFIGURE_CLUSTER_INVENTORY" == "true" ]]; then
+            [[ "$CLUSTER_INVENTORY_TARGET" =~ ^[A-Za-z0-9_.:-]+$ ]] || {
+              echo "Invalid cluster inventory target: $CLUSTER_INVENTORY_TARGET" >&2
+              exit 1
+            }
+            target_found=false
+            for target in $TARGETS; do
+              if [[ "$target" == "$CLUSTER_INVENTORY_TARGET" ]]; then
+                target_found=true
+                break
+              fi
+            done
+            [[ "$target_found" == "true" ]] || {
+              echo "The cluster inventory target must be included in targets." >&2
+              exit 1
+            }
+          fi
 
       - name: Configure SSH
         shell: bash
@@ -235,3 +264,31 @@ jobs:
               exit 1
             }
           done
+
+      - name: Configure Proxmox cluster inventory authority
+        if: ${{ inputs.configure_cluster_inventory }}
+        shell: bash
+        env:
+          DEPLOY_USER: ${{ secrets.TEST_DEPLOY_USER }}
+          CLUSTER_INVENTORY_TARGET: ${{ inputs.cluster_inventory_target }}
+        run: |
+          set -euo pipefail
+          remote_user="${DEPLOY_USER:-root}"
+          ssh_options=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new)
+          if [[ -s "$HOME/.ssh/id_ed25519" ]]; then
+            ssh_options+=(-i "$HOME/.ssh/id_ed25519")
+          fi
+          ssh "${ssh_options[@]}" "$remote_user@$CLUSTER_INVENTORY_TARGET" bash -s <<'REMOTE'
+          set -euo pipefail
+          env_file="/opt/device-state-console-agent/agent.env"
+          test -f "$env_file"
+          if grep -q '^DSC_VIRTUALIZATION_NODE=' "$env_file"; then
+            sed -i 's/^DSC_VIRTUALIZATION_NODE=.*/DSC_VIRTUALIZATION_NODE=/' "$env_file"
+          else
+            printf '\nDSC_VIRTUALIZATION_NODE=\n' >> "$env_file"
+          fi
+          systemctl restart device-state-console-agent.service
+          systemctl is-active --quiet device-state-console-agent.service
+          grep -q '^DSC_VIRTUALIZATION_NODE=$' "$env_file"
+          echo "Proxmox Agent is configured for complete cluster inventory."
+          REMOTE

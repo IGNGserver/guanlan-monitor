@@ -149,6 +149,15 @@ export class WebConsoleAdapter implements ConsoleAdapter {
       withCredentials: true
     });
     this.socket.on("device:update", (event: DeviceRealtimeEvent) => {
+      if (event.removed) {
+        const devices = this.snapshot.devices.filter((device) => device.deviceId !== event.deviceId);
+        this.snapshot = { ...this.snapshot, generatedAt: new Date().toISOString(), devices };
+        this.notify();
+        if (this.snapshot.selectedDeviceId === event.deviceId) {
+          void this.loadSnapshot();
+        }
+        return;
+      }
       const devices = upsertDevice(this.snapshot.devices, event.summary);
       this.snapshot = { ...this.snapshot, generatedAt: new Date().toISOString(), devices };
       this.notify();

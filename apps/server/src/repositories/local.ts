@@ -98,6 +98,13 @@ export class LocalRealtimeRepository implements RealtimeRepository {
     return Object.values(db.devices);
   }
 
+  async remove(deviceId: string) {
+    await this.store.update((db) => {
+      delete db.devices[deviceId];
+      delete db.series[deviceId];
+    });
+  }
+
   async appendSeries(deviceId: string, bucket: MetricWindow, point: TimeSeriesRecord, maxPoints: number) {
     await this.store.update((db) => {
       db.series[deviceId] ??= {};
@@ -442,6 +449,21 @@ export class LocalVirtualMachineRepository implements VirtualMachineRepository {
     return Object.values(db.virtualMachines ?? {})
       .filter((item) => item.status === "open")
       .sort((a, b) => (a.sortOrder - b.sortOrder) || a.virtualMachineId.localeCompare(b.virtualMachineId));
+  }
+
+  async reconcile(scopeKey: string, observedVirtualMachineIds: string[], observedAt: string): Promise<string[]> {
+    const observed = new Set(observedVirtualMachineIds);
+    const closedIds: string[] = [];
+    await this.store.update((db) => {
+      for (const record of Object.values(db.virtualMachines ?? {})) {
+        if (record.status === "open" && record.scopeKey === scopeKey && !observed.has(record.virtualMachineId)) {
+          record.status = "closed";
+          record.updatedAt = observedAt;
+          closedIds.push(record.virtualMachineId);
+        }
+      }
+    });
+    return closedIds;
   }
 
   async delete(virtualMachineId: string): Promise<void> {
