@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import type { DesktopMemoryPressure, DesktopRuntimeProfile } from "@dsc/shared";
 
 export interface DesktopSystemMemoryInfo {
@@ -34,12 +35,27 @@ export function readSystemMemoryInfo(): DesktopSystemMemoryInfo | null {
   }
 }
 
+function hasActiveRdpSession(): boolean {
+  const result = spawnSync("query.exe", ["session"], {
+    encoding: "utf8",
+    timeout: 1_500,
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  const output = typeof result.stdout === "string" ? result.stdout : "";
+  return output.split(/\r?\n/).some((line) => /rdp-tcp#\d+/i.test(line));
+}
+
 export function isWindowsRemoteSession(): boolean {
   if (process.platform !== "win32") return false;
   const sessionName = process.env.SESSIONNAME?.trim() ?? "";
   const clientName = process.env.CLIENTNAME?.trim() ?? "";
-  return /^RDP-/i.test(sessionName)
-    || Boolean(clientName && !/^(console|unknown)$/i.test(clientName));
+  if (/^RDP-/i.test(sessionName) || Boolean(clientName && !/^(console|unknown)$/i.test(clientName))) return true;
+  try {
+    return hasActiveRdpSession();
+  } catch {
+    return false;
+  }
 }
 
 function memoryPressure(info: DesktopSystemMemoryInfo | null): DesktopMemoryPressure {
