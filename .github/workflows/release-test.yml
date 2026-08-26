@@ -44,6 +44,12 @@ jobs:
       - name: Verify Hub public port
         run: pnpm verify:hub-port
 
+      - name: Test server VM inventory reconciliation
+        run: |
+          pnpm --filter @dsc/shared build
+          pnpm --filter @dsc/server test
+          pnpm --filter @dsc/server exec node --import tsx --test src/repositories/widget-layouts.test.ts
+
       - name: Typecheck and build web packages
         run: |
           pnpm check:desktop-ui-boundaries

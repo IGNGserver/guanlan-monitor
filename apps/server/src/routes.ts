@@ -328,7 +328,12 @@ export async function registerRoutes(
     { preHandler: requireAuth },
     async (request) => {
       const query = metricsQuerySchema.parse(request.query);
-      const states = await repositories.realtime.listDevices();
+      const openVirtualMachineIds = new Set(
+        (await repositories.virtualMachines.listOpen()).map((record) => record.virtualMachineId)
+      );
+      const states = (await repositories.realtime.listDevices()).filter(
+        (state) => state.identity.instanceType !== "virtual_machine" || openVirtualMachineIds.has(state.identity.deviceId)
+      );
       const instances = await Promise.all(
         states.map(async (state) => {
           const series = sanitizeUnsupportedMetricSeries(
@@ -362,6 +367,7 @@ export async function registerRoutes(
     const { deviceId } = request.params;
     if (isVirtualMachineId(deviceId)) {
       await repositories.virtualMachines.delete(deviceId);
+      await metricsService.removeDevice(deviceId);
     } else {
       await repositories.devices.deleteDevice(deviceId);
     }
@@ -383,6 +389,9 @@ export async function registerRoutes(
   });
 
   app.get<{ Params: { deviceId: string } }>("/api/devices/:deviceId", { preHandler: requireAuth }, async (request, reply) => {
+    if (await isClosedVirtualMachine(repositories, request.params.deviceId)) {
+      return reply.code(404).send({ error: "device_not_found" });
+    }
     const state = await repositories.realtime.getDevice(request.params.deviceId);
     if (!state) return reply.code(404).send({ error: "device_not_found" });
     return toDetail(state);
@@ -393,6 +402,9 @@ export async function registerRoutes(
     { preHandler: requireAuth },
     async (request, reply) => {
       const query = metricsQuerySchema.parse(request.query);
+      if (await isClosedVirtualMachine(repositories, request.params.deviceId)) {
+        return reply.code(404).send({ error: "device_not_found" });
+      }
       const state = await repositories.realtime.getDevice(request.params.deviceId);
       if (!state) return reply.code(404).send({ error: "device_not_found" });
       const notes = await fanNotes.get(request.params.deviceId);
@@ -469,6 +481,9 @@ export async function registerRoutes(
     { preHandler: requireAuth },
     async (request, reply) => {
       const query = trafficCalendarSchema.parse(request.query);
+      if (await isClosedVirtualMachine(repositories, request.params.deviceId)) {
+        return reply.code(404).send({ error: "device_not_found" });
+      }
       const state = await repositories.realtime.getDevice(request.params.deviceId);
       if (!state) return reply.code(404).send({ error: "device_not_found" });
       return metricsService.getTrafficCalendar(
@@ -691,6 +706,12 @@ async function buildVirtualMachineSummaries(repositories: Repositories) {
       unavailableMetrics: unavailableMetricsForVirtualMachinePowerState(record.powerState)
     };
   }).sort((a, b) => ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.deviceId.localeCompare(b.deviceId));
+}
+
+async function isClosedVirtualMachine(repositories: Repositories, deviceId: string): Promise<boolean> {
+  if (!isVirtualMachineId(deviceId)) return false;
+  const openVirtualMachines = await repositories.virtualMachines.listOpen();
+  return !openVirtualMachines.some((record) => record.virtualMachineId === deviceId);
 }
 
 function rejectInsecureAgentTransport(request: FastifyRequest, reply: FastifyReply): boolean {

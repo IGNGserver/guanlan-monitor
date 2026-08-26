@@ -35,6 +35,7 @@ export interface VirtualMachineRepository {
   init?(): Promise<void>;
   registerOrUpdate(input: VirtualMachineRegistration): Promise<VirtualMachineRecord>;
   listOpen(): Promise<VirtualMachineRecord[]>;
+  reconcile(scopeKey: string, observedVirtualMachineIds: string[], observedAt: string): Promise<string[]>;
   delete(virtualMachineId: string): Promise<void>;
   reorder(virtualMachineIds: string[]): Promise<void>;
 }
@@ -176,6 +177,29 @@ export class MysqlVirtualMachineRepository implements VirtualMachineRepository {
        ORDER BY sort_order ASC, virtual_machine_id ASC`
     );
     return rows as VirtualMachineRecord[];
+  }
+
+  async reconcile(scopeKey: string, observedVirtualMachineIds: string[], observedAt: string): Promise<string[]> {
+    const [rows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT virtual_machine_id AS virtualMachineId
+       FROM virtual_machines
+       WHERE scope_key = ? AND status = 'open'`,
+      [scopeKey]
+    );
+    const observed = new Set(observedVirtualMachineIds);
+    const closedIds = rows
+      .map((row) => String(row.virtualMachineId))
+      .filter((virtualMachineId) => !observed.has(virtualMachineId));
+    if (closedIds.length === 0) return [];
+
+    const placeholders = closedIds.map(() => "?").join(", ");
+    await this.pool.query(
+      `UPDATE virtual_machines
+       SET status = 'closed', updated_at = ?
+       WHERE scope_key = ? AND status = 'open' AND virtual_machine_id IN (${placeholders})`,
+      [sqlDate(observedAt), scopeKey, ...closedIds]
+    );
+    return closedIds;
   }
 
   async delete(virtualMachineId: string): Promise<void> {

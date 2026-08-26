@@ -16,7 +16,9 @@ import {
   buildVirtualMachinePayload,
   virtualMachineExternalId,
   virtualMachineId,
-  virtualMachineScopeKey
+  virtualMachineScopeKey,
+  shouldIngestVirtualMachineSnapshot,
+  shouldReconcileVirtualMachineSnapshot
 } from "./virtual-machines.js";
 
 const LIVE_WINDOWS: AggregatedWindowConfig[] = [
@@ -87,10 +89,12 @@ export class MetricsService {
 
   private async ingestVirtualMachines(hostPayload: AgentMetricsPayload) {
     const snapshot = hostPayload.virtualization;
-    if (!snapshot?.vms?.length) return;
+    if (!snapshot || !shouldIngestVirtualMachineSnapshot(snapshot)) return;
 
     const scopeKey = virtualMachineScopeKey(snapshot, hostPayload.identity.deviceId);
-    for (const vm of snapshot.vms) {
+    const observedAt = new Date().toISOString();
+    const observedVirtualMachineIds: string[] = [];
+    for (const vm of snapshot.vms ?? []) {
       const externalId = virtualMachineExternalId(vm);
       if (!externalId) continue;
       const proposedId = virtualMachineId(scopeKey, externalId);
@@ -105,10 +109,36 @@ export class MetricsService {
         node: vm.node ?? null,
         type: vm.type ?? null,
         powerState: vm.powerState || "unknown",
-        observedAt: new Date().toISOString()
+        observedAt
       });
-      await this.persistPayload(buildVirtualMachinePayload(hostPayload, record, vm), undefined, record.sortOrder);
+      observedVirtualMachineIds.push(record.virtualMachineId);
+      await this.persistPayload(buildVirtualMachinePayload(hostPayload, record, vm), observedAt, record.sortOrder);
     }
+
+    if (shouldReconcileVirtualMachineSnapshot(snapshot)) {
+      const closedIds = await this.repositories.virtualMachines.reconcile(
+        scopeKey,
+        observedVirtualMachineIds,
+        observedAt
+      );
+      await Promise.all(closedIds.map((deviceId) => this.removeDevice(deviceId)));
+    }
+  }
+
+  async removeDevice(deviceId: string) {
+    const state = await this.repositories.realtime.getDevice(deviceId);
+    this.minuteAccumulators.delete(deviceId);
+    this.hourlyAccumulators.delete(deviceId);
+    await this.repositories.realtime.remove(deviceId);
+    if (!state) return;
+
+    const offlineState = { ...state, status: "offline" as const };
+    this.emitDeviceEvent({
+      deviceId,
+      summary: toSummary(offlineState),
+      latest: offlineState.latest,
+      removed: true
+    });
   }
 
   async markOfflineDevices() {

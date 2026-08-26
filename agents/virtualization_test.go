@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestParsePVESizeBytes(t *testing.T) {
@@ -47,6 +48,79 @@ func TestPVEUsagePercent(t *testing.T) {
 	}
 	if actual := pveUsagePercent(125); actual != 100 {
 		t.Fatalf("clamped usage = %v, want 100", actual)
+	}
+}
+
+func TestVirtualizationCounterRates(t *testing.T) {
+	state := &agentState{}
+	first := &virtualizationSnapshot{
+		Platform: "proxmox",
+		Source:   "https://pve.example/api2/json",
+		VMs: []virtualMachineTelemetry{{
+			ID: "qemu/101",
+			Disk: &virtualizationDiskStats{
+				TotalReadBytes:  uintPointerAlways(100),
+				TotalWriteBytes: uintPointerAlways(200),
+			},
+			Network: &virtualizationNetworkStats{
+				TotalRxBytes: uintPointerAlways(300),
+				TotalTxBytes: uintPointerAlways(400),
+			},
+		}},
+	}
+	firstAt := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	state.applyVirtualizationCounterRates(first, firstAt)
+	if first.VMs[0].Disk.ReadBytesPerSec != nil || first.VMs[0].Network.RxBytesPerSec != nil {
+		t.Fatalf("first counter sample must not produce rates: %#v", first.VMs[0])
+	}
+
+	second := &virtualizationSnapshot{
+		Platform: first.Platform,
+		Source:   first.Source,
+		VMs: []virtualMachineTelemetry{{
+			ID: "qemu/101",
+			Disk: &virtualizationDiskStats{
+				TotalReadBytes:  uintPointerAlways(400),
+				TotalWriteBytes: uintPointerAlways(800),
+			},
+			Network: &virtualizationNetworkStats{
+				TotalRxBytes: uintPointerAlways(900),
+				TotalTxBytes: uintPointerAlways(1_000),
+			},
+		}},
+	}
+	state.applyVirtualizationCounterRates(second, firstAt.Add(30*time.Second))
+	if second.VMs[0].Disk.ReadBytesPerSec == nil || *second.VMs[0].Disk.ReadBytesPerSec != 10 {
+		t.Fatalf("unexpected disk read rate: %#v", second.VMs[0].Disk)
+	}
+	if second.VMs[0].Disk.WriteBytesPerSec == nil || *second.VMs[0].Disk.WriteBytesPerSec != 20 {
+		t.Fatalf("unexpected disk write rate: %#v", second.VMs[0].Disk)
+	}
+	if second.VMs[0].Network.RxBytesPerSec == nil || *second.VMs[0].Network.RxBytesPerSec != 20 {
+		t.Fatalf("unexpected network receive rate: %#v", second.VMs[0].Network)
+	}
+	if second.VMs[0].Network.TxBytesPerSec == nil || *second.VMs[0].Network.TxBytesPerSec != 20 {
+		t.Fatalf("unexpected network transmit rate: %#v", second.VMs[0].Network)
+	}
+
+	reset := &virtualizationSnapshot{
+		Platform: first.Platform,
+		Source:   first.Source,
+		VMs: []virtualMachineTelemetry{{
+			ID: "qemu/101",
+			Disk: &virtualizationDiskStats{
+				TotalReadBytes:  uintPointerAlways(1),
+				TotalWriteBytes: uintPointerAlways(2),
+			},
+			Network: &virtualizationNetworkStats{
+				TotalRxBytes: uintPointerAlways(3),
+				TotalTxBytes: uintPointerAlways(4),
+			},
+		}},
+	}
+	state.applyVirtualizationCounterRates(reset, firstAt.Add(60*time.Second))
+	if reset.VMs[0].Disk.ReadBytesPerSec != nil || reset.VMs[0].Network.RxBytesPerSec != nil {
+		t.Fatalf("counter reset must invalidate rates: %#v", reset.VMs[0])
 	}
 }
 

@@ -22,6 +22,11 @@ export class RedisRealtimeRepository implements RealtimeRepository {
     return raw.map((item) => JSON.parse(item) as DeviceRealtimeState);
   }
 
+  async remove(deviceId: string) {
+    await this.redis.hdel(DEVICE_KEY, deviceId);
+    await this.clearSeries(deviceId);
+  }
+
   async appendSeries(deviceId: string, bucket: MetricWindow, point: TimeSeriesRecord, maxPoints: number) {
     const key = `${SERIES_KEY}:${deviceId}:${bucket}`;
     const raw = await this.redis.lrange(key, 0, -1);

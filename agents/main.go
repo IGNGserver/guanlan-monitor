@@ -478,20 +478,21 @@ type slowMetrics struct {
 }
 
 type agentState struct {
-	baseIdentity         agentIdentity
-	configPath           string
-	client               *http.Client
-	lastCPU              cpuSnapshot
-	hasLastCPU           bool
-	lastCPUByPackage     map[string]cpuSnapshot
-	currentCPUUsage      map[string]*float64
-	lastIO               *ioSnapshot
-	lastSlow             slowMetrics
-	hasSlow              bool
-	currentCfg           agentRuntimeConfig
-	hasConfig            bool
-	lastVirtualizationAt time.Time
-	lastVirtualization   *virtualizationSnapshot
+	baseIdentity           agentIdentity
+	configPath             string
+	client                 *http.Client
+	lastCPU                cpuSnapshot
+	hasLastCPU             bool
+	lastCPUByPackage       map[string]cpuSnapshot
+	currentCPUUsage        map[string]*float64
+	lastIO                 *ioSnapshot
+	lastSlow               slowMetrics
+	hasSlow                bool
+	currentCfg             agentRuntimeConfig
+	hasConfig              bool
+	lastVirtualizationAt   time.Time
+	lastVirtualization     *virtualizationSnapshot
+	virtualizationCounters map[string]virtualizationCounterSample
 }
 
 type pendingSample struct {

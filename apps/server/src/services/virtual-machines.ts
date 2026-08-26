@@ -73,6 +73,34 @@ export function unavailableMetricsForVirtualMachine(vm: VirtualMachineTelemetry)
   return [...unavailable];
 }
 
+function hasVirtualMachineRefreshFailure(snapshot: VirtualizationSnapshot): boolean {
+  return snapshot.issues?.some((issue) => issue.code === "refresh_failed") ?? false;
+}
+
+/**
+ * Proxmox node-scoped snapshots are telemetry fragments, not an inventory
+ * authority. Only a successful complete snapshot may update the VM registry.
+ */
+export function shouldIngestVirtualMachineSnapshot(snapshot: VirtualizationSnapshot): boolean {
+  if (hasVirtualMachineRefreshFailure(snapshot)) return false;
+  return snapshot.platform.trim().toLowerCase() !== "proxmox" || snapshot.inventoryComplete === true;
+}
+
+export function shouldReconcileVirtualMachineSnapshot(snapshot: VirtualizationSnapshot): boolean {
+  return snapshot.inventoryComplete === true && !hasVirtualMachineRefreshFailure(snapshot);
+}
+
+export function virtualMachineIdsToClose(
+  records: Array<Pick<VirtualMachineRecord, "virtualMachineId" | "scopeKey" | "status">>,
+  scopeKey: string,
+  observedVirtualMachineIds: Iterable<string>
+): string[] {
+  const observed = new Set(observedVirtualMachineIds);
+  return records
+    .filter((record) => record.status === "open" && record.scopeKey === scopeKey && !observed.has(record.virtualMachineId))
+    .map((record) => record.virtualMachineId);
+}
+
 export function virtualMachineScopeKey(snapshot: VirtualizationSnapshot, hostDeviceId: string): string {
   const source = snapshot.source.trim() || hostDeviceId;
   return `${snapshot.platform}:${source}`;

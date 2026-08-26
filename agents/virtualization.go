@@ -26,14 +26,28 @@ type agentVirtualizationConfig struct {
 }
 
 type virtualizationSnapshot struct {
-	Platform     string                        `json:"platform"`
-	Source       string                        `json:"source"`
-	CollectedAt  string                        `json:"collectedAt"`
-	Nodes        []virtualizationNodeTelemetry `json:"nodes"`
-	VMs          []virtualMachineTelemetry     `json:"vms"`
-	Storages     []virtualizationStorage       `json:"storages,omitempty"`
-	Capabilities []string                      `json:"capabilities"`
-	Issues       []virtualizationIssue         `json:"issues,omitempty"`
+	Platform          string                        `json:"platform"`
+	Source            string                        `json:"source"`
+	CollectedAt       string                        `json:"collectedAt"`
+	InventoryScope    string                        `json:"inventoryScope,omitempty"`
+	InventoryComplete bool                          `json:"inventoryComplete"`
+	Nodes             []virtualizationNodeTelemetry `json:"nodes"`
+	VMs               []virtualMachineTelemetry     `json:"vms"`
+	Storages          []virtualizationStorage       `json:"storages,omitempty"`
+	Capabilities      []string                      `json:"capabilities"`
+	Issues            []virtualizationIssue         `json:"issues,omitempty"`
+}
+
+type virtualizationCounterSample struct {
+	ObservedAt   time.Time
+	DiskRead     uint64
+	HasDiskRead  bool
+	DiskWrite    uint64
+	HasDiskWrite bool
+	NetworkRx    uint64
+	HasNetworkRx bool
+	NetworkTx    uint64
+	HasNetworkTx bool
 }
 
 type virtualizationCPUStats struct {
@@ -278,9 +292,115 @@ func (s *agentState) collectVirtualization(cfg agentRuntimeConfig, now time.Time
 		}
 		snapshot = unsupportedVirtualizationSnapshot(virtualizationCfg.Platform, now, err.Error())
 	}
+	s.applyVirtualizationCounterRates(snapshot, now)
 	s.lastVirtualizationAt = now
 	s.lastVirtualization = snapshot
 	return snapshot
+}
+
+func (s *agentState) applyVirtualizationCounterRates(snapshot *virtualizationSnapshot, observedAt time.Time) {
+	if snapshot == nil {
+		return
+	}
+	if s.virtualizationCounters == nil {
+		s.virtualizationCounters = make(map[string]virtualizationCounterSample)
+	}
+	activeKeys := make(map[string]struct{}, len(snapshot.VMs))
+	for index := range snapshot.VMs {
+		vm := &snapshot.VMs[index]
+		key := virtualizationCounterKey(snapshot, vm)
+		if key == "" {
+			continue
+		}
+		activeKeys[key] = struct{}{}
+		current := virtualizationCounterSampleFor(vm, observedAt)
+		previous, hasPrevious := s.virtualizationCounters[key]
+		if hasPrevious {
+			elapsed := observedAt.Sub(previous.ObservedAt).Seconds()
+			if rate := counterRate(current.DiskRead, current.HasDiskRead, previous.DiskRead, previous.HasDiskRead, elapsed); rate != nil {
+				if vm.Disk == nil {
+					vm.Disk = &virtualizationDiskStats{}
+				}
+				vm.Disk.ReadBytesPerSec = rate
+			}
+			if rate := counterRate(current.DiskWrite, current.HasDiskWrite, previous.DiskWrite, previous.HasDiskWrite, elapsed); rate != nil {
+				if vm.Disk == nil {
+					vm.Disk = &virtualizationDiskStats{}
+				}
+				vm.Disk.WriteBytesPerSec = rate
+			}
+			if rate := counterRate(current.NetworkRx, current.HasNetworkRx, previous.NetworkRx, previous.HasNetworkRx, elapsed); rate != nil {
+				if vm.Network == nil {
+					vm.Network = &virtualizationNetworkStats{}
+				}
+				vm.Network.RxBytesPerSec = rate
+			}
+			if rate := counterRate(current.NetworkTx, current.HasNetworkTx, previous.NetworkTx, previous.HasNetworkTx, elapsed); rate != nil {
+				if vm.Network == nil {
+					vm.Network = &virtualizationNetworkStats{}
+				}
+				vm.Network.TxBytesPerSec = rate
+			}
+		}
+		s.virtualizationCounters[key] = current
+	}
+
+	for key := range s.virtualizationCounters {
+		if _, ok := activeKeys[key]; !ok {
+			delete(s.virtualizationCounters, key)
+		}
+	}
+}
+
+func virtualizationCounterKey(snapshot *virtualizationSnapshot, vm *virtualMachineTelemetry) string {
+	if snapshot == nil || vm == nil {
+		return ""
+	}
+	externalID := strings.TrimSpace(vm.ID)
+	if externalID == "" {
+		externalID = strings.TrimSpace(vm.Name)
+	}
+	if externalID == "" {
+		return ""
+	}
+	source := strings.TrimSpace(snapshot.Source)
+	if source == "" {
+		source = strings.TrimSpace(snapshot.Platform)
+	}
+	return strings.ToLower(strings.TrimSpace(snapshot.Platform)) + "\x00" + source + "\x00" + externalID
+}
+
+func virtualizationCounterSampleFor(vm *virtualMachineTelemetry, observedAt time.Time) virtualizationCounterSample {
+	sample := virtualizationCounterSample{ObservedAt: observedAt}
+	if vm.Disk != nil {
+		if vm.Disk.TotalReadBytes != nil {
+			sample.DiskRead = *vm.Disk.TotalReadBytes
+			sample.HasDiskRead = true
+		}
+		if vm.Disk.TotalWriteBytes != nil {
+			sample.DiskWrite = *vm.Disk.TotalWriteBytes
+			sample.HasDiskWrite = true
+		}
+	}
+	if vm.Network != nil {
+		if vm.Network.TotalRxBytes != nil {
+			sample.NetworkRx = *vm.Network.TotalRxBytes
+			sample.HasNetworkRx = true
+		}
+		if vm.Network.TotalTxBytes != nil {
+			sample.NetworkTx = *vm.Network.TotalTxBytes
+			sample.HasNetworkTx = true
+		}
+	}
+	return sample
+}
+
+func counterRate(current uint64, hasCurrent bool, previous uint64, hasPrevious bool, elapsedSeconds float64) *float64 {
+	if !hasCurrent || !hasPrevious || elapsedSeconds <= 0 || current < previous {
+		return nil
+	}
+	rate := float64(current-previous) / elapsedSeconds
+	return &rate
 }
 
 func collectVirtualizationProvider(ctx context.Context, cfg agentVirtualizationConfig) (*virtualizationSnapshot, error) {
@@ -406,15 +526,21 @@ func collectProxmoxSnapshot(ctx context.Context, cfg agentVirtualizationConfig) 
 	}
 
 	now := time.Now().UTC()
+	nodeName := strings.TrimSpace(cfg.Node)
 	snapshot := &virtualizationSnapshot{
-		Platform:     "proxmox",
-		Source:       apiClient.endpoint,
-		CollectedAt:  now.Format(time.RFC3339),
-		Nodes:        []virtualizationNodeTelemetry{},
-		VMs:          []virtualMachineTelemetry{},
-		Storages:     []virtualizationStorage{},
-		Capabilities: []string{"cluster", "nodes", "vm_inventory", "vm_cpu", "vm_memory", "vm_disk", "vm_network", "vm_config"},
-		Issues:       []virtualizationIssue{},
+		Platform:          "proxmox",
+		Source:            apiClient.endpoint,
+		CollectedAt:       now.Format(time.RFC3339),
+		InventoryScope:    "cluster",
+		InventoryComplete: nodeName == "",
+		Nodes:             []virtualizationNodeTelemetry{},
+		VMs:               []virtualMachineTelemetry{},
+		Storages:          []virtualizationStorage{},
+		Capabilities:      []string{"cluster", "nodes", "vm_inventory", "vm_cpu", "vm_memory", "vm_disk", "vm_network", "vm_config"},
+		Issues:            []virtualizationIssue{},
+	}
+	if nodeName != "" {
+		snapshot.InventoryScope = "node:" + nodeName
 	}
 	for _, resource := range nodeResources {
 		if cfg.Node != "" && resource.Node != cfg.Node {
@@ -475,12 +601,12 @@ func collectProxmoxSnapshot(ctx context.Context, cfg agentVirtualizationConfig) 
 			Disk: &virtualizationDiskStats{
 				ProvisionedBytes: uintPointer(resource.MaxDisk),
 				UsedBytes:        uintPointer(resource.Disk),
-				TotalReadBytes:   uintPointer(resource.DiskRead),
-				TotalWriteBytes:  uintPointer(resource.DiskWrite),
+				TotalReadBytes:   uintPointerAlways(resource.DiskRead),
+				TotalWriteBytes:  uintPointerAlways(resource.DiskWrite),
 			},
 			Network: &virtualizationNetworkStats{
-				TotalRxBytes: uintPointer(resource.NetIn),
-				TotalTxBytes: uintPointer(resource.NetOut),
+				TotalRxBytes: uintPointerAlways(resource.NetIn),
+				TotalTxBytes: uintPointerAlways(resource.NetOut),
 			},
 			Disks:    []virtualizationDiskDevice{},
 			Networks: []virtualizationNetworkDevice{},
@@ -698,6 +824,10 @@ func uintPointer(value uint64) *uint64 {
 	if value == 0 {
 		return nil
 	}
+	return &value
+}
+
+func uintPointerAlways(value uint64) *uint64 {
 	return &value
 }
 

@@ -90,6 +90,9 @@ export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: strin
 
     socket.on("device:update", (event: DeviceRealtimeEvent) => {
       setDevices((current) => {
+        if (event.removed) {
+          return current.filter((device) => device.deviceId !== event.deviceId);
+        }
         const previous = current.find((d) => d.deviceId === event.deviceId);
         if (previous) {
           return current.map((d) => (d.deviceId === event.deviceId
