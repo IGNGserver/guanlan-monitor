@@ -2,6 +2,7 @@ import type {
   DesktopRendererBridge,
   DesktopSnapshot,
   DesktopSnapshotRequest,
+  DesktopRuntimeProfile,
   DesktopConfigPatch,
   DesktopAgentControlAction,
   DesktopStartupSettings,
@@ -14,6 +15,16 @@ import {
   type WindowMaterialBridge,
   type WindowMaterialCapabilities
 } from "../../window-material";
+
+function createFallbackRuntimeProfile(): DesktopRuntimeProfile {
+  return {
+    isRemoteSession: false,
+    memoryPressure: "normal",
+    recommendedRefreshInterval: 5,
+    chartPointLimit: 240,
+    useOpaqueWindow: false
+  };
+}
 
 class SafeDscBridge implements DesktopRendererBridge, WindowMaterialBridge {
   private fallbackSnapshot: DesktopSnapshot = createEmptySnapshot();
@@ -104,6 +115,11 @@ class SafeDscBridge implements DesktopRendererBridge, WindowMaterialBridge {
   async getWindowMaterialCapabilities(): Promise<WindowMaterialCapabilities> {
     const bridge = this.bridge;
     return bridge ? await bridge.getWindowMaterialCapabilities() : createFallbackWindowMaterialCapabilities();
+  }
+
+  async getRuntimeProfile(): Promise<DesktopRuntimeProfile> {
+    const bridge = this.bridge;
+    return bridge ? await bridge.getRuntimeProfile() : createFallbackRuntimeProfile();
   }
 
   async windowMinimize(): Promise<void> {

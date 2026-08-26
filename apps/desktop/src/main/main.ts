@@ -1,10 +1,11 @@
 import { app, BrowserWindow, crashReporter, Menu, nativeImage, nativeTheme, screen, Tray } from "electron";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { DesktopController } from "./controller.js";
 import { appendDesktopDiagnostic } from "./diagnostics.js";
 import { registerIpc } from "./ipc.js";
+import { getDesktopRuntimeProfile, readSystemMemoryInfo } from "./runtime-profile.js";
 import { resolveWindowMaterial } from "../window-material.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -104,6 +105,7 @@ function getWindowsBuild(): number | null {
 }
 
 function resolveNativeWindowMaterial(): "mica" | "none" {
+  if (getDesktopRuntimeProfile(gpuFallbackActive).useOpaqueWindow) return "none";
   const material = resolveWindowMaterial({
     platform: process.platform === "win32" ? "windows" : "other",
     windowsBuild: getWindowsBuild(),
@@ -127,11 +129,18 @@ if (!hasSingleInstanceLock) {
   let rendererRecoveryTimer: NodeJS.Timeout | null = null;
   let rendererRecoveryWindowStartedAt = 0;
   let rendererRecoveryCount = 0;
+  let rendererRecoveryFallbackActive = false;
+  let rendererUnresponsiveTimer: NodeJS.Timeout | null = null;
+  let windowVisible = false;
+  let recreateWindowShowState: boolean | null = null;
   let gpuFallbackRelaunchScheduled = false;
+  let createWindow: () => void;
 
   const reportProcessEvent = (event: string, details: Record<string, unknown>) => {
     appendDesktopDiagnostic(event, {
       ...details,
+      systemMemory: readSystemMemoryInfo(),
+      runtimeProfile: getDesktopRuntimeProfile(gpuFallbackActive),
       appMetrics: (() => {
         try {
           return app.getAppMetrics().map((metric) => ({
@@ -155,6 +164,67 @@ if (!hasSingleInstanceLock) {
     argv: process.argv.slice(1)
   });
 
+  const loadMainContent = (window: BrowserWindow) => {
+    const devServerUrl = process.env.DSC_DEV_SERVER_URL ?? process.env.VITE_DEV_SERVER_URL;
+    if (devServerUrl) return window.loadURL(devServerUrl);
+    return window.loadFile(path.join(__dirname, "../renderer/index.html"));
+  };
+
+  const showRendererRecoveryPage = (reason: string) => {
+    if (quitting || !mainWindow || mainWindow.isDestroyed()) return;
+    rendererRecoveryFallbackActive = true;
+    const devServerUrl = process.env.DSC_DEV_SERVER_URL ?? process.env.VITE_DEV_SERVER_URL;
+    const retryTarget = devServerUrl ?? pathToFileURL(path.join(__dirname, "../renderer/index.html")).toString();
+    const recoveryPage = `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>观澜正在恢复</title>
+    <style>
+      :root { color-scheme: light; font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif; background: #f5f7fa; color: #17202a; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #f5f7fa; }
+      main { width: min(560px, calc(100vw - 48px)); padding: 32px; border: 1px solid #d8e0e8; border-radius: 18px; background: #ffffff; box-shadow: 0 16px 40px rgba(30, 48, 68, .12); }
+      h1 { margin: 0 0 12px; font-size: 22px; font-weight: 650; }
+      p { margin: 8px 0; line-height: 1.65; color: #526170; }
+      button { margin-top: 18px; border: 0; border-radius: 10px; padding: 10px 16px; background: #1668dc; color: #fff; font: inherit; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>观澜正在等待系统恢复</h1>
+      <p>显示进程刚刚因为系统资源不足或远程桌面显示切换而退出。主程序仍在运行，窗口已进入安全恢复页。</p>
+      <p>请稍等片刻；如果系统资源已经释放，可以点击下方按钮重新加载控制台。</p>
+      <button id="retry" type="button">重新加载控制台</button>
+    </main>
+    <script>
+      const retryTarget = ${JSON.stringify(retryTarget)};
+      document.getElementById("retry")?.addEventListener("click", () => window.location.replace(retryTarget));
+    </script>
+  </body>
+</html>`;
+    reportProcessEvent("renderer-recovery-fallback", { reason, count: rendererRecoveryCount });
+    void mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(recoveryPage)}`).catch((error) => {
+      reportProcessEvent("renderer-recovery-fallback-failed", { reason, error });
+    });
+  };
+
+  const recreateWindow = (reason: string) => {
+    if (quitting || !mainWindow || mainWindow.isDestroyed()) return;
+    const previousWindow = mainWindow;
+    recreateWindowShowState = windowVisible;
+    windowVisible = false;
+    mainWindow = null;
+    rendererRecoveryFallbackActive = false;
+    reportProcessEvent("renderer-recovery-recreate", { reason, count: rendererRecoveryCount });
+    try {
+      previousWindow.destroy();
+    } catch (error) {
+      reportProcessEvent("renderer-recovery-destroy-failed", { reason, error });
+    }
+    createWindow();
+  };
+
   const scheduleRendererRecovery = (reason: string) => {
     if (quitting || !mainWindow || mainWindow.isDestroyed() || rendererRecoveryTimer) return;
     const now = Date.now();
@@ -162,24 +232,50 @@ if (!hasSingleInstanceLock) {
       rendererRecoveryWindowStartedAt = now;
       rendererRecoveryCount = 0;
     }
-    if (rendererRecoveryCount >= 3) {
+    if (rendererRecoveryCount >= 5) {
       reportProcessEvent("renderer-recovery-suppressed", { reason, count: rendererRecoveryCount });
+      if (!rendererRecoveryFallbackActive) showRendererRecoveryPage(reason);
       return;
     }
     rendererRecoveryCount += 1;
+    const recoveryCount = rendererRecoveryCount;
+    const delay = Math.min(8_000, 1_000 * (2 ** (recoveryCount - 1)));
     rendererRecoveryTimer = setTimeout(() => {
       rendererRecoveryTimer = null;
       if (quitting || !mainWindow || mainWindow.isDestroyed()) return;
-      reportProcessEvent("renderer-recovery-reload", { reason, count: rendererRecoveryCount });
-      mainWindow.reload();
-    }, 1_000);
+      const hardFailure = reason === "oom" || reason === "launch-failed" || reason === "memory-eviction" || recoveryCount >= 2;
+      if (hardFailure) {
+        recreateWindow(reason);
+        return;
+      }
+      reportProcessEvent("renderer-recovery-reload", { reason, count: recoveryCount });
+      try {
+        void mainWindow.reload();
+      } catch (error) {
+        reportProcessEvent("renderer-recovery-reload-failed", { reason, count: recoveryCount, error });
+        recreateWindow(reason);
+      }
+    }, delay);
   };
 
   const showWindow = () => {
-    if (!mainWindow) return;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (rendererRecoveryFallbackActive) {
+      rendererRecoveryFallbackActive = false;
+      rendererRecoveryCount = 0;
+      void loadMainContent(mainWindow).catch((error) => {
+        reportProcessEvent("renderer-recovery-retry-failed", { error });
+      });
+    }
+    windowVisible = true;
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
+  };
+
+  const hideWindow = () => {
+    windowVisible = false;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
   };
 
   const shutdown = async () => {
@@ -200,7 +296,7 @@ if (!hasSingleInstanceLock) {
     return true;
   };
 
-  const createWindow = () => {
+  createWindow = () => {
     const preloadPath = path.join(__dirname, "../preload/index.js");
     const iconPath = resolveAppIconPath();
     const appIcon = nativeImage.createFromPath(iconPath);
@@ -208,7 +304,7 @@ if (!hasSingleInstanceLock) {
     const workArea = screen.getPrimaryDisplay().workAreaSize;
     const minWidth = Math.min(360, Math.max(320, workArea.width - 32));
     const minHeight = Math.min(360, Math.max(320, workArea.height - 32));
-    mainWindow = new BrowserWindow({
+    const window = new BrowserWindow({
       width: Math.min(1440, Math.max(minWidth, workArea.width - 48)),
       height: Math.min(920, Math.max(minHeight, workArea.height - 48)),
       minWidth,
@@ -234,48 +330,81 @@ if (!hasSingleInstanceLock) {
         spellcheck: false
       }
     });
-    mainWindow.setMenuBarVisibility(false);
+    mainWindow = window;
+    window.setMenuBarVisibility(false);
     const updateNativeWindowMaterial = () => {
-      if (!mainWindow || mainWindow.isDestroyed() || process.platform !== "win32") return;
+      if (window.isDestroyed() || process.platform !== "win32") return;
       const material = resolveNativeWindowMaterial();
       try {
-        mainWindow.setBackgroundMaterial(material);
-        mainWindow.setBackgroundColor(material === "mica" ? "#00000000" : "#f5f7fa");
+        window.setBackgroundMaterial(material);
+        window.setBackgroundColor(material === "mica" ? "#00000000" : "#f5f7fa");
       } catch {
         // Older Electron builds can expose the option but reject a runtime update.
       }
     };
     nativeTheme.on("updated", updateNativeWindowMaterial);
-    mainWindow.once("closed", () => nativeTheme.removeListener("updated", updateNativeWindowMaterial));
-    mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    window.once("closed", () => {
+      nativeTheme.removeListener("updated", updateNativeWindowMaterial);
+      if (rendererUnresponsiveTimer) {
+        clearTimeout(rendererUnresponsiveTimer);
+        rendererUnresponsiveTimer = null;
+      }
+    });
+    window.webContents.on("render-process-gone", (_event, details) => {
       reportProcessEvent("render-process-gone", {
         reason: details.reason,
         exitCode: details.exitCode
       });
       if (details.reason !== "clean-exit") scheduleRendererRecovery(details.reason);
     });
-    mainWindow.webContents.on("unresponsive", () => {
-      reportProcessEvent("renderer-unresponsive", {});
+    window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      reportProcessEvent("renderer-load-failed", {
+        errorCode,
+        errorDescription,
+        validatedURL,
+        isMainFrame
+      });
+      if (isMainFrame && errorCode !== -3) scheduleRendererRecovery(`load:${errorCode}`);
     });
-    mainWindow.webContents.on("responsive", () => {
+    window.webContents.on("unresponsive", () => {
+      reportProcessEvent("renderer-unresponsive", {});
+      if (!rendererUnresponsiveTimer) {
+        rendererUnresponsiveTimer = setTimeout(() => {
+          rendererUnresponsiveTimer = null;
+          scheduleRendererRecovery("unresponsive");
+        }, 10_000);
+      }
+    });
+    window.webContents.on("responsive", () => {
+      if (rendererUnresponsiveTimer) {
+        clearTimeout(rendererUnresponsiveTimer);
+        rendererUnresponsiveTimer = null;
+      }
       reportProcessEvent("renderer-responsive", {});
     });
-    mainWindow.on("close", (event) => {
+    window.webContents.once("did-finish-load", () => {
+      if (rendererRecoveryFallbackActive) return;
+      rendererRecoveryCount = 0;
+      rendererRecoveryWindowStartedAt = Date.now();
+      reportProcessEvent("renderer-ready", {});
+      void controller?.refresh();
+    });
+    window.on("close", (event) => {
       if (quitting) return;
       event.preventDefault();
-      mainWindow?.hide();
+      hideWindow();
     });
-    mainWindow.once("ready-to-show", () => {
+    window.once("ready-to-show", () => {
       if (installerRestoreState === "tray") return;
-      if (installerRestoreState === "window" || !controller?.startupSettings.startMinimized) showWindow();
+      const shouldShow = recreateWindowShowState ?? (installerRestoreState === "window" || !controller?.startupSettings.startMinimized);
+      recreateWindowShowState = null;
+      if (shouldShow) showWindow();
     });
 
-    const devServerUrl = process.env.DSC_DEV_SERVER_URL ?? process.env.VITE_DEV_SERVER_URL;
-    if (devServerUrl) {
-      void mainWindow.loadURL(devServerUrl);
-    } else {
-      void mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
-    }
+    void loadMainContent(window).catch((error) => {
+      reportProcessEvent("renderer-load-start-failed", { error });
+      scheduleRendererRecovery("load-start");
+    });
   };
 
   const createTray = () => {
@@ -298,7 +427,7 @@ if (!hasSingleInstanceLock) {
   };
 
   app.on("second-instance", (_event, commandLine) => {
-    if (getInstallerRestoreState(commandLine) === "tray") mainWindow?.hide();
+    if (getInstallerRestoreState(commandLine) === "tray") hideWindow();
     else showWindow();
   });
   app.on("will-quit", () => {
@@ -343,14 +472,9 @@ if (!hasSingleInstanceLock) {
     controller = new DesktopController();
     await controller.initialize();
     reportProcessEvent("desktop-ready", { gpuFallbackActive });
-    registerIpc(controller, () => mainWindow, () => { quitting = true; });
+    registerIpc(controller, () => mainWindow, () => { quitting = true; }, gpuFallbackActive);
     createWindow();
     createTray();
-    if (mainWindow) {
-      mainWindow.webContents.once("did-finish-load", () => {
-        void controller?.refresh();
-      });
-    }
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
       else showWindow();

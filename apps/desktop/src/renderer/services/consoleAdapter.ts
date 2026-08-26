@@ -10,7 +10,7 @@ import type {
   WidgetLayoutSync
 } from "@dsc/shared";
 import type { ConsoleAdapter, WindowMaterialCapabilities } from "@dsc/console-ui";
-import { DESKTOP_CAPABILITIES, emptyConsoleSnapshot, fallbackWindowMaterialCapabilities } from "@dsc/console-ui";
+import { DESKTOP_CAPABILITIES, emptyConsoleSnapshot, fallbackRuntimeProfile, fallbackWindowMaterialCapabilities } from "@dsc/console-ui";
 import { dscBridge } from "./dscBridge";
 
 export class DesktopConsoleAdapter implements ConsoleAdapter {
@@ -40,6 +40,7 @@ export class DesktopConsoleAdapter implements ConsoleAdapter {
   windowDragMove(screenX: number, screenY: number): void { dscBridge.windowDragMove(screenX, screenY); }
   windowDragEnd(): void { dscBridge.windowDragEnd(); }
   getWindowMaterialCapabilities(): Promise<WindowMaterialCapabilities> { return dscBridge.getWindowMaterialCapabilities(); }
+  getRuntimeProfile() { return dscBridge.getRuntimeProfile(); }
   getLocalBackend(): Promise<DesktopAgentBackendState | null> { return dscBridge.getSnapshot().then((snapshot) => snapshot.localBackend); }
 }
 
@@ -61,6 +62,7 @@ export function createDesktopFallbackAdapter(): ConsoleAdapter {
     getWidgetLayout: async (request) => ({ ...request, instanceLayout: null, templates: [] }),
     saveWidgetLayout: async (request) => ({ scopeKey: request.scopeKey, templateKey: request.templateKey, instanceLayout: request.instanceLayout ?? null, templates: [] }),
     openExternal: async () => undefined,
-    getWindowMaterialCapabilities: async () => fallbackWindowMaterialCapabilities()
+    getWindowMaterialCapabilities: async () => fallbackWindowMaterialCapabilities(),
+    getRuntimeProfile: async () => fallbackRuntimeProfile()
   };
 }

@@ -1098,6 +1098,16 @@ export interface DesktopConfigPatch {
   autoStartCollector?: boolean;
 }
 
+export type DesktopMemoryPressure = "normal" | "elevated" | "critical";
+
+export interface DesktopRuntimeProfile {
+  isRemoteSession: boolean;
+  memoryPressure: DesktopMemoryPressure;
+  recommendedRefreshInterval: 5 | 10 | 30;
+  chartPointLimit: number;
+  useOpaqueWindow: boolean;
+}
+
 export interface DesktopRendererBridge {
   getSnapshot(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot>;
   refresh(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot>;
@@ -1116,6 +1126,7 @@ export interface DesktopRendererBridge {
   reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot>;
   updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot>;
   openExternal(url: string): Promise<void>;
+  getRuntimeProfile(): Promise<DesktopRuntimeProfile>;
   windowMinimize(): Promise<void>;
   windowToggleMaximize(): Promise<boolean>;
   windowDragStart(screenX: number, screenY: number): void;
