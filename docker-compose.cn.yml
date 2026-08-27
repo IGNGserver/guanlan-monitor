@@ -1,12 +1,12 @@
 services:
   redis:
-    image: docker.1ms.run/redis:7.4-alpine
+    image: docker.1ms.run/redis:7.4-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
 
   mysql:
-    image: docker.1ms.run/mysql:8.4
+    image: docker.1ms.run/mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
 
   server:
-    image: ${DSC_SERVER_IMAGE:-ghcr.io/igngserver/device-state-console-server}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
+    image: ${DSC_SERVER_IMAGE_REF:-${DSC_SERVER_IMAGE:-ghcr.io/igngserver/device-state-console-server}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}}
 
   web:
-    image: ${DSC_WEB_IMAGE:-ghcr.io/igngserver/device-state-console-web}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
+    image: ${DSC_WEB_IMAGE_REF:-${DSC_WEB_IMAGE:-ghcr.io/igngserver/device-state-console-web}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}}

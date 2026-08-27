@@ -30,6 +30,7 @@ const checks = [
   [installer.includes("GetDlgItem $0 $HWNDPARENT 1203"), "The installer must hide the finish-page launch checkbox through the NSIS dialog handle."],
   [installer.includes("nsExec::Exec"), "Process cleanup must use the hidden nsExec runner."],
   [installer.includes("resources\\agent\\windows-hardware\\pawnio\\PawnIO_setup.exe") && installer.includes("-install -silent"), "The Windows GUI installer must install the bundled PawnIO driver silently."],
+  [installer.includes('Pop $0\n  ${If} $0 != 0\n    MessageBox MB_ICONSTOP|MB_OK') && installer.includes("    Abort\n  ${EndIf}\ndsc_skip_pawnio_install:"), "PawnIO installation failures must abort the installer."],
   [!/(?<!:)\b(?:ExecWait|Exec)\s+['"][^'\n]*taskkill\\.exe/i.test(installer), "taskkill must not be launched through a visible Exec/ExecWait command."],
   [installer.includes("!macro customInstall"), "The installer migration hook must be present."],
   [installer.includes("!macro customFinishPage\n!ifndef BUILD_UNINSTALLER"), "The installer finish page customization must be scoped at macro expansion time."],

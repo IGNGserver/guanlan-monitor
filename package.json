@@ -1,7 +1,7 @@
 {
   "name": "guanlan-monitor",
   "private": true,
-  "version": "0.2.285",
+  "version": "0.2.286",
   "packageManager": "pnpm@10.33.0",
   "pnpm": {
     "onlyBuiltDependencies": ["electron"]
@@ -17,11 +17,14 @@
     "check:adapter-contracts": "node scripts/check-adapter-contracts.mjs",
     "test:adapter-contracts": "node --test packages/console-ui/src/services/adapter.contract.test.ts",
     "test:ui-helpers": "node --test packages/console-ui/src/helpers/layout.test.ts",
+    "test:renderer-security": "node --test apps/desktop/src/main/renderer-security.test.ts",
     "test:window-material": "node --test apps/desktop/src/window-material.test.ts",
     "test:electron-visual": "node scripts/electron-visual-regression.cjs",
     "verify:version": "node scripts/verify-version.mjs",
     "verify:electron-artifact-version": "node scripts/verify-electron-artifact-version.mjs",
     "verify:windows-installer": "node scripts/verify-windows-installer-config.mjs",
+    "verify:windows-hardware": "node scripts/verify-windows-hardware-integrity.mjs",
+    "verify:web-security-headers": "node scripts/verify-web-security-headers.mjs",
     "verify:hub-port": "node scripts/verify-hub-port.mjs"
   }
 }

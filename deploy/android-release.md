@@ -4,7 +4,7 @@
 
 Android release packages must be signed with the same keystore every time. If you lose the keystore, future APK updates cannot replace the installed app.
 
-The current Android client intentionally allows `http://` server addresses in release builds so it can connect to LAN deployments that do not use HTTPS yet.
+Release builds reject cleartext `http://` Hub addresses and disable Android cleartext traffic. LAN deployments must provide HTTPS, for example through a TLS reverse proxy; debug builds retain HTTP support for local development.
 
 Android `versionCode` is encoded from the semantic version as
 `major * 1,000,000 + minor * 10,000 + patch`. Keep this mapping when changing
@@ -61,7 +61,7 @@ powershell -ExecutionPolicy Bypass -File .\deploy\package-android-release.ps1
 
 Output: `release/android/DeviceStateConsole-Android-vX.Y.Z.apk`
 
-Unsigned output when signing variables are missing:
+Unsigned output when signing variables are missing (development only; the release workflow refuses to publish it):
 
 - `android/app/build/outputs/apk/release/app-release-unsigned.apk`
 
@@ -76,10 +76,9 @@ keep the same signing certificate across releases:
 - `DSC_ANDROID_KEY_ALIAS`
 - `DSC_ANDROID_KEY_PASSWORD`
 
-When these secrets are not available, the workflow creates a temporary signing
-key so the test APK remains installable. That fallback key is intentionally not
-stable, so configure the secrets before distributing updates to an existing
-installation.
+When any of these secrets is unavailable or invalid, the workflow fails. It never
+generates an ephemeral signing key, so every distributed APK remains upgradeable
+with the repository's configured signing certificate.
 
 ## Verify the Signature
 

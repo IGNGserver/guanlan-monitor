@@ -107,7 +107,7 @@ class InMemoryCookieJar : CookieJar {
 internal class InvalidServerUrlException(message: String) : IllegalArgumentException(message)
 
 internal object ServerUrlPolicy {
-  fun parse(value: String): HttpUrl {
+  fun parse(value: String, allowCleartext: Boolean = true): HttpUrl {
     val trimmed = value.trim()
     if (trimmed.isBlank()) {
       throw InvalidServerUrlException("请输入中枢地址")
@@ -123,10 +123,14 @@ internal object ServerUrlPolicy {
     if (parsed.scheme != "http" && parsed.scheme != "https") {
       throw InvalidServerUrlException("中枢地址必须使用 HTTP 或 HTTPS")
     }
+    if (!allowCleartext && parsed.scheme != "https") {
+      throw InvalidServerUrlException("正式版中枢地址必须使用 HTTPS")
+    }
     return parsed
   }
 
-  fun normalize(value: String): String = parse(value).toString().removeSuffix("/")
+  fun normalize(value: String, allowCleartext: Boolean = true): String =
+    parse(value, allowCleartext).toString().removeSuffix("/")
 
 }
 
@@ -145,6 +149,8 @@ class SettingsRepository(private val application: Application) {
     )
   }
   private val accessKeyKey = "access_key"
+  private val allowCleartext =
+    (application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
   fun settings(): Flow<ServerConfig> =
     application.dataStore.data
@@ -190,7 +196,7 @@ class SettingsRepository(private val application: Application) {
     val trimmed = value.trim()
     if (trimmed.isBlank()) return ""
     return runCatching {
-      val parsed = ServerUrlPolicy.parse(trimmed)
+      val parsed = ServerUrlPolicy.parse(trimmed, allowCleartext)
       val normalized = if (parsed.port in setOf(4000, 3101)) {
         parsed.newBuilder().port(3100).build()
       } else {
@@ -229,7 +235,7 @@ class ApiFactory(private val application: Application) {
   }
 
   fun resolveApiBaseUrl(value: String): String {
-    val normalized = ServerUrlPolicy.normalize(value)
+    val normalized = ServerUrlPolicy.normalize(value, isDebuggable)
     return if (normalized.endsWith("/")) normalized else "$normalized/"
   }
 }

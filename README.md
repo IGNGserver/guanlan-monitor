@@ -70,15 +70,15 @@ Fedora/RPM、Arch 等发行版暂时继续使用 Linux CLI 安装包，后续可
 
 ### Android
 
-下载 `DeviceStateConsole-Android-v<版本>.apk` 并安装。首次打开时填写与 Windows 端相同的中枢地址和查看密钥。
+下载 `DeviceStateConsole-Android-v<版本>.apk` 并安装。首次打开时填写与 Windows 端相同的 HTTPS 中枢地址和查看密钥。正式 APK 不允许明文 HTTP；局域网部署也应通过 TLS 反向代理提供 HTTPS。
 
 Android 安装包使用 `IGNGserver` 发布证书签名。Android 在提示未知来源安装时，需要由用户确认允许该来源安装应用。
 
 ## 连接中枢
 
-客户端通常使用下列地址之一：
+客户端通常使用下列地址之一（正式 Android APK 与生产 Agent 要求 HTTPS）：
 
-- 局域网：`http://服务器IP:3100`
+- 局域网：`https://服务器域名:3100`
 - 公网：`https://你的域名`
 
 所有客户端和 agent 都应使用同一个公开入口。不要将 Docker 容器内部的 `4000` 端口填入客户端。
@@ -89,18 +89,18 @@ Docker Compose 默认只拉取 GitHub Container Registry 中已发布的应用�
 
 ```bash
 cp .env.example .env
-DSC_VERSION=0.1.111 docker compose pull
-DSC_VERSION=0.1.111 docker compose up -d
+DSC_VERSION=0.2.286 docker compose pull
+DSC_VERSION=0.2.286 docker compose up -d
 ```
 
-也可以明确选择 Docker Hub 的移动标签：
+开发或测试环境如果确实需要移动标签，可以显式选择 `latest`；生产环境必须使用固定版本或不可变 digest：
 
 ```bash
 DSC_VERSION=latest docker compose pull
 DSC_VERSION=latest docker compose up -d
 ```
 
-至少修改 `.env` 内的 `SESSION_SECRET`、`ACCESS_KEY`、`MYSQL_ROOT_PASSWORD` 与 `MYSQL_PASSWORD`。`ACCESS_KEY` 是网页、Windows/Android 客户端和所有 agent 共用的唯一访问密钥；升级时即使旧 `.env` 仍有 `AGENT_SHARED_SECRET`，也会以 `ACCESS_KEY` 为准。启动后通过 `http://服务器IP:3100` 访问控制台。
+至少修改 `.env` 内的 `SESSION_SECRET`、`ACCESS_KEY`、`MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD` 与 `REDIS_PASSWORD`，并为 `REDIS_URL` 配置相同的认证密码。生产环境应通过 TLS 反向代理访问控制台；只有当 server 仅能从该受信代理访问时才设置 `TRUST_PROXY=true`，否则保持 `false`。`SESSION_COOKIE_SECURE=true` 与 `AGENT_REQUIRE_HTTPS=true` 会拒绝明文会话和 Agent 上传。`ACCESS_KEY` 是网页、Windows/Android 客户端和所有 agent 共用的唯一访问密钥；升级时即使旧 `.env` 仍有 `AGENT_SHARED_SECRET`，也会以 `ACCESS_KEY` 为准。
 
 Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 的专项说明见下方“开发与维护”。
 

@@ -20,9 +20,9 @@ The WinUI process starts the Go backend with its own PID. The backend watches th
 
 ## Existing Hub API surface
 
-- Authentication: `POST /api/auth/login`, `GET /api/auth/session`, `POST /api/auth/logout`; the browser session is an HTTP-only cookie derived from the global access key.
+- Authentication: `POST /api/auth/login`, `GET /api/auth/session`, `POST /api/auth/logout`; the browser session is a signed, expiring HTTP-only cookie derived from the global access key.
 - Read-only fleet: `GET /api/devices`, `GET /api/devices/:deviceId`, `GET /api/devices/:deviceId/metrics?window=...`, and `GET /api/devices/:deviceId/traffic-calendar`.
-- Realtime: Socket.IO at `/socket.io`, event `device:update`.
+- Realtime: Socket.IO at `/socket.io`, event `device:update`; the event contains only the device summary and never the full telemetry payload.
 - Agent integration: `POST /api/agent/ingest`, `GET /api/agent/ping`, `GET /api/agent/device-state`, and `POST /api/agent/device-config`, all using the same global key and optional HTTPS enforcement.
 - Existing Hub metric-config writes (`PUT /api/devices/:deviceId/metric-config`) are web-oriented. The new desktop client must not expose that write path for remote devices; local writes go through the local Agent backend and only sync the local device.
 

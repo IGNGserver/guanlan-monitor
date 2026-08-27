@@ -55,7 +55,7 @@ jobs:
           ls -lh image-bundle/dsc-test-images.tar.gz
 
       - name: Upload staged images
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: dsc-test-images-${{ inputs.version }}
           path: image-bundle/dsc-test-images.tar.gz
@@ -90,21 +90,23 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.TEST_DEPLOY_SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.TEST_DEPLOY_SSH_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.TEST_DEPLOY_HOST }}
         run: |
           set -euo pipefail
-          if [[ -n "$SSH_PRIVATE_KEY" || -n "$SSH_KNOWN_HOSTS" ]]; then
-            test -n "$SSH_PRIVATE_KEY"
-            test -n "$SSH_KNOWN_HOSTS"
+          if [[ -n "$DEPLOY_HOST" ]]; then
+            test -n "$SSH_PRIVATE_KEY" || { echo "SSH_PRIVATE_KEY is required for remote test deployment." >&2; exit 1; }
+            test -n "$SSH_KNOWN_HOSTS" || { echo "SSH_KNOWN_HOSTS is required for remote test deployment." >&2; exit 1; }
             install -d -m 700 "$HOME/.ssh"
             printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
             printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
             chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
-          else
-            echo 'SSH deploy secrets are empty; the NAS runner will deploy locally.'
+          elif [[ -n "$SSH_PRIVATE_KEY" || -n "$SSH_KNOWN_HOSTS" ]]; then
+            echo "SSH_PRIVATE_KEY and SSH_KNOWN_HOSTS must be provided together." >&2
+            exit 1
           fi
 
       - name: Checkout deployment definition
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           sparse-checkout: |
             docker-compose.yml
@@ -112,7 +114,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Download staged images
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: dsc-test-images-${{ inputs.version }}
           path: ${{ runner.temp }}/dsc-test-images
@@ -167,16 +169,16 @@ jobs:
             test -n "$DEPLOY_USER"
             test -n "$DEPLOY_PATH"
             test -s "$HOME/.ssh/id_ed25519"
-            ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
               "set -euo pipefail; \
                mkdir -p '$DEPLOY_PATH/data' '$DEPLOY_PATH/backups'; \
                server_container=\$(docker ps -aq --filter name=device-state-console-server-1 | head -n 1 || true); \
                if [ -n \"\$server_container\" ]; then docker cp \"\$server_container:/app/data/local-db.json\" '$DEPLOY_PATH/backups/local-db.json.$backup_stamp' 2>/dev/null || true; fi; \
                backup_file='$DEPLOY_PATH/backups/local-db.json.$backup_stamp'; \
                if [ ! -s '$DEPLOY_PATH/data/local-db.json' ] && [ -s \"\$backup_file\" ]; then cp \"\$backup_file\" '$DEPLOY_PATH/data/local-db.json.tmp'; mv '$DEPLOY_PATH/data/local-db.json.tmp' '$DEPLOY_PATH/data/local-db.json'; fi"
-            scp -i "$HOME/.ssh/id_ed25519" "$GITHUB_WORKSPACE/docker-compose.yml" \
+            scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$GITHUB_WORKSPACE/docker-compose.yml" \
               "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/.docker-compose.yml.codex.tmp"
-            ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
               "mv '$DEPLOY_PATH/.docker-compose.yml.codex.tmp' '$DEPLOY_PATH/docker-compose.yml' && grep -Fq './data:/app/data' '$DEPLOY_PATH/docker-compose.yml'"
           fi
 
@@ -228,7 +230,7 @@ jobs:
             test -n "$DEPLOY_USER"
             test -n "$DEPLOY_PATH"
             test -s "$HOME/.ssh/id_ed25519"
-            ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
               "set -euo pipefail; \
                cd '$DEPLOY_PATH'; \
                export WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' DSC_SERVER_IMAGE='ghcr.io/igngserver/device-state-console-server' DSC_WEB_IMAGE='ghcr.io/igngserver/device-state-console-web'; \
@@ -273,7 +275,7 @@ jobs:
             test -n "$DEPLOY_USER"
             test -n "$DEPLOY_PATH"
             test -s "$HOME/.ssh/id_ed25519"
-            ssh -i "$HOME/.ssh/id_ed25519" \
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" \
               "$DEPLOY_USER@$DEPLOY_HOST" \
               "SMOKE_BASE_URL='http://127.0.0.1:3100' SMOKE_COMPOSE_DIR='$DEPLOY_PATH' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' WEB_PORT='$WEB_PORT' SMOKE_SCOPE='$SMOKE_SCOPE' bash -s" \
               < "$GITHUB_WORKSPACE/scripts/verify-widget-layout-persistence.sh"

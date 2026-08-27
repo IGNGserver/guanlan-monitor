@@ -72,7 +72,7 @@ android {
     }
     release {
       isMinifyEnabled = false
-      manifestPlaceholders["usesCleartextTraffic"] = "true"
+      manifestPlaceholders["usesCleartextTraffic"] = "false"
       signingConfig = signingConfigs.findByName("release")
       proguardFiles(
         getDefaultProguardFile("proguard-android-optimize.txt"),

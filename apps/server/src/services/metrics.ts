@@ -29,6 +29,8 @@ const LIVE_WINDOWS: AggregatedWindowConfig[] = [
 
 const HOURLY_WINDOW_MS = 60 * 60 * 1000;
 const MINUTE_WINDOW_MS = 60 * 1000;
+const MAX_MINUTE_SAMPLES = 256;
+const MAX_HOURLY_SAMPLES = 4_096;
 const LIVE_WINDOW_DURATION_MS = {
   "1m": 60 * 1000,
   "5m": 5 * 60 * 1000
@@ -37,6 +39,7 @@ const LIVE_WINDOW_DURATION_MS = {
 export class MetricsService {
   private readonly minuteAccumulators = new Map<string, MetricAccumulator>();
   private readonly hourlyAccumulators = new Map<string, MetricAccumulator>();
+  private aggregateQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly repositories: Repositories,
@@ -46,7 +49,8 @@ export class MetricsService {
 
   async ingest(payload: AgentMetricsPayload) {
     const receivedAt = new Date().toISOString();
-    await this.repositories.devices.registerOrUpdateDevice(payload.identity.deviceId, payload.identity.hostname);
+    const device = await this.repositories.devices.registerOrUpdateDevice(payload.identity.deviceId, payload.identity.hostname);
+    if (device.status === "closed") return;
     await this.persistPayload(payload, receivedAt);
     await this.ingestVirtualMachines(payload);
   }
@@ -58,7 +62,7 @@ export class MetricsService {
   ) {
     const previousState = await this.repositories.realtime.getDevice(payload.identity.deviceId);
     if (previousState && hasIdentityBoundaryChanged(previousState.identity, payload.identity)) {
-      await this.resetDeviceSeries(payload.identity.deviceId);
+      await this.runAggregateOperation(() => this.resetDeviceSeries(payload.identity.deviceId));
     }
     const state: DeviceRealtimeState = {
       identity: payload.identity,
@@ -73,16 +77,17 @@ export class MetricsService {
     const point = payloadToTimeSeries(payload, config);
     await this.repositories.realtime.appendSeries(payload.identity.deviceId, "1m", point, 30);
     await this.repositories.realtime.appendSeries(payload.identity.deviceId, "5m", point, 150);
-    await this.addMinuteAggregate(payload.identity.deviceId, point);
-    await this.addHourlyAggregate(payload.identity.deviceId, point);
+    await this.runAggregateOperation(async () => {
+      await this.addMinuteAggregate(payload.identity.deviceId, point);
+      await this.addHourlyAggregate(payload.identity.deviceId, point);
+    });
 
     const event: DeviceRealtimeEvent = {
       deviceId: payload.identity.deviceId,
       summary: {
         ...toSummary(state),
         ...(sortOrder === undefined ? {} : { sortOrder })
-      },
-      latest: payload
+      }
     };
     this.emitDeviceEvent(event);
   }
@@ -127,16 +132,17 @@ export class MetricsService {
 
   async removeDevice(deviceId: string) {
     const state = await this.repositories.realtime.getDevice(deviceId);
-    this.minuteAccumulators.delete(deviceId);
-    this.hourlyAccumulators.delete(deviceId);
-    await this.repositories.realtime.remove(deviceId);
+    await this.runAggregateOperation(async () => {
+      this.minuteAccumulators.delete(deviceId);
+      this.hourlyAccumulators.delete(deviceId);
+      await this.repositories.realtime.remove(deviceId);
+    });
     if (!state) return;
 
     const offlineState = { ...state, status: "offline" as const };
     this.emitDeviceEvent({
       deviceId,
       summary: toSummary(offlineState),
-      latest: offlineState.latest,
       removed: true
     });
   }
@@ -155,8 +161,7 @@ export class MetricsService {
         await this.repositories.realtime.upsert(offlineState);
         this.emitDeviceEvent({
           deviceId: offlineState.identity.deviceId,
-          summary: toSummary(offlineState),
-          latest: offlineState.latest
+          summary: toSummary(offlineState)
         });
       })
     );
@@ -216,6 +221,44 @@ export class MetricsService {
     await this.deviceMetricConfigs.set(deviceId, config);
   }
 
+  async flushAggregates(): Promise<void> {
+    await this.runAggregateOperation(async () => {
+      const failures: unknown[] = [];
+      for (const [deviceId, accumulator] of this.minuteAccumulators) {
+        if (!accumulator.samples.length) continue;
+        try {
+          await this.repositories.history.insertMinutePoint(
+            deviceId,
+            averageRecord(accumulator.samples, accumulator.bucketStartedAt)
+          );
+          await this.flushAggregate(
+            deviceId,
+            "15m",
+            accumulator.samples,
+            15,
+            accumulator.bucketStartedAt
+          );
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+      for (const [deviceId, accumulator] of this.hourlyAccumulators) {
+        if (!accumulator.samples.length) continue;
+        try {
+          await this.repositories.history.insertHourlyPoint(
+            deviceId,
+            averageRecord(accumulator.samples, accumulator.bucketStartedAt)
+          );
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+      if (failures.length) {
+        throw new AggregateError(failures, "one or more metric aggregate flushes failed");
+      }
+    });
+  }
+
   private async addMinuteAggregate(deviceId: string, point: ReturnType<typeof payloadToTimeSeries>) {
     const bucketStartedAt = Math.floor(point.timestamp / MINUTE_WINDOW_MS) * MINUTE_WINDOW_MS;
     const current = this.minuteAccumulators.get(deviceId);
@@ -232,6 +275,7 @@ export class MetricsService {
     if (existingIndex >= 0) {
       current.samples[existingIndex] = point;
     } else {
+      if (current.samples.length >= MAX_MINUTE_SAMPLES) current.samples.shift();
       current.samples.push(point);
     }
   }
@@ -251,16 +295,24 @@ export class MetricsService {
     if (existingIndex >= 0) {
       current.samples[existingIndex] = point;
     } else {
+      if (current.samples.length >= MAX_HOURLY_SAMPLES) current.samples.shift();
       current.samples.push(point);
     }
   }
 
-  private async flushAggregate(deviceId: string, bucket: MetricWindow, samples: ReturnType<typeof payloadToTimeSeries>[], maxPoints: number) {
-    const bucketStartedAt =
+  private async flushAggregate(
+    deviceId: string,
+    bucket: MetricWindow,
+    samples: ReturnType<typeof payloadToTimeSeries>[],
+    maxPoints: number,
+    bucketStartedAt?: number
+  ) {
+    const resolvedBucketStartedAt = bucketStartedAt ?? (
       bucket === "15m"
         ? Math.floor((samples[samples.length - 1]?.timestamp ?? Date.now()) / MINUTE_WINDOW_MS) * MINUTE_WINDOW_MS
-        : Math.floor((samples[samples.length - 1]?.timestamp ?? Date.now()) / HOURLY_WINDOW_MS) * HOURLY_WINDOW_MS;
-    const aggregate = averageRecord(samples, bucketStartedAt);
+        : Math.floor((samples[samples.length - 1]?.timestamp ?? Date.now()) / HOURLY_WINDOW_MS) * HOURLY_WINDOW_MS
+    );
+    const aggregate = averageRecord(samples, resolvedBucketStartedAt);
     await this.repositories.realtime.appendSeries(deviceId, bucket, aggregate, maxPoints);
   }
 
@@ -291,6 +343,12 @@ export class MetricsService {
     this.hourlyAccumulators.delete(deviceId);
     await this.repositories.realtime.clearSeries(deviceId);
     await this.repositories.history.clearDeviceHistory(deviceId);
+  }
+
+  private runAggregateOperation<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.aggregateQueue.then(operation, operation);
+    this.aggregateQueue = next.then(() => undefined, () => undefined);
+    return next;
   }
 }
 

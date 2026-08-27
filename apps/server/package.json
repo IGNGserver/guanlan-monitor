@@ -1,6 +1,6 @@
 {
   "name": "@dsc/server",
-  "version": "0.2.285",
+  "version": "0.2.286",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,7 @@
     "dev": "tsx watch src/index.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test src/services/virtual-machines.test.ts"
+    "test": "node --import tsx --test src"
   },
   "dependencies": {
     "@dsc/shared": "workspace:*",

@@ -114,16 +114,14 @@ export class MysqlHistoryRepository implements HistoryRepository {
     await this.pool.query(
       `
         DELETE FROM device_minute_metrics
-        WHERE recorded_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)
-      `,
-      [MINUTE_RETENTION_DAYS]
+        WHERE recorded_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${MINUTE_RETENTION_DAYS} DAY)
+      `
     );
     await this.pool.query(
       `
         DELETE FROM device_hourly_metrics
-        WHERE recorded_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)
-      `,
-      [HOURLY_RETENTION_DAYS]
+        WHERE recorded_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${HOURLY_RETENTION_DAYS} DAY)
+      `
     );
   }
 

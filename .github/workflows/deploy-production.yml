@@ -40,12 +40,17 @@ jobs:
             echo "Production deployment requires a fixed version." >&2
             exit 1
           }
+          [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Production deployment requires a semantic version without the v prefix." >&2
+            exit 1
+          }
           release_json="$(curl -fsSL --connect-timeout 10 --max-time 30 \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H 'Accept: application/vnd.github+json' \
             "https://api.github.com/repos/IGNGserver/guanlan-monitor/releases/tags/v$REQUESTED_VERSION")"
           release_tag="$(printf '%s' "$release_json" | jq -r '.tag_name')"
           release_draft="$(printf '%s' "$release_json" | jq -r '.draft')"
+          release_prerelease="$(printf '%s' "$release_json" | jq -r '.prerelease')"
           [[ "$release_tag" == "v$REQUESTED_VERSION" && "$release_draft" == "false" ]] || {
             echo "Requested version $REQUESTED_VERSION is not a published release." >&2
             exit 1
@@ -54,12 +59,48 @@ jobs:
             echo "Invalid release channel." >&2
             exit 1
           }
+          if [[ "${{ inputs.channel }}" == "stable" && "$release_prerelease" != "false" ]]; then
+            echo "Stable production deployment requires a non-prerelease GitHub Release." >&2
+            exit 1
+          fi
           curl -fsSL --connect-timeout 10 --max-time 30 \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H 'Accept: application/vnd.github.raw' \
             "https://api.github.com/repos/IGNGserver/guanlan-monitor/contents/docker-compose.yml?ref=v$REQUESTED_VERSION" \
             -o "$GITHUB_WORKSPACE/docker-compose.yml"
           grep -q 'ghcr.io/igngserver/device-state-console-server' "$GITHUB_WORKSPACE/docker-compose.yml"
+
+      - name: Resolve immutable GHCR image references
+        id: images
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          GHCR_TOKEN: ${{ github.token }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          resolve_image_ref() {
+            local repository="$1"
+            local token
+            local digest
+            token="$(curl -fsSL --connect-timeout 10 --max-time 30 \
+              -u "$GHCR_USER:$GHCR_TOKEN" \
+              "https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull" | jq -er '.token')"
+            digest="$(curl -fsSI --connect-timeout 10 --max-time 30 \
+              -H "Authorization: Bearer $token" \
+              -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+              "https://ghcr.io/v2/${repository}/manifests/${REQUESTED_VERSION}" \
+              | tr -d '\r' | awk -F': ' 'tolower($1) == "docker-content-digest" { print $2; exit }')"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+              echo "Could not resolve an immutable digest for ${repository}:${REQUESTED_VERSION}." >&2
+              exit 1
+            }
+            printf 'ghcr.io/%s@%s' "$repository" "$digest"
+          }
+          {
+            echo "server_image_ref=$(resolve_image_ref igngserver/device-state-console-server)"
+            echo "web_image_ref=$(resolve_image_ref igngserver/device-state-console-web)"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Configure SSH
         shell: bash
@@ -68,6 +109,8 @@ jobs:
           SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY" || { echo "DEPLOY_SSH_PRIVATE_KEY is required for production deployment." >&2; exit 1; }
+          test -n "$SSH_KNOWN_HOSTS" || { echo "DEPLOY_SSH_KNOWN_HOSTS is required for production deployment." >&2; exit 1; }
           install -d -m 700 "$HOME/.ssh"
           printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
@@ -82,7 +125,7 @@ jobs:
         run: |
           set -euo pipefail
           backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-          ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
             "set -euo pipefail; \
              mkdir -p '$DEPLOY_PATH/data' '$DEPLOY_PATH/backups'; \
              server_container=\$(docker ps -aq --filter name=device-state-console-server-1 | head -n 1 || true); \
@@ -90,8 +133,8 @@ jobs:
              backup_file='$DEPLOY_PATH/backups/local-db.json.$backup_stamp'; \
              if [ ! -s '$DEPLOY_PATH/data/local-db.json' ] && [ -s \"\$backup_file\" ]; then cp \"\$backup_file\" '$DEPLOY_PATH/data/local-db.json.tmp'; mv '$DEPLOY_PATH/data/local-db.json.tmp' '$DEPLOY_PATH/data/local-db.json'; fi"
           remote_compose="$DEPLOY_PATH/.docker-compose.yml.codex.tmp"
-          scp -i "$HOME/.ssh/id_ed25519" docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:$remote_compose"
-          ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:$remote_compose"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
             "mv '$remote_compose' '$DEPLOY_PATH/docker-compose.yml' && grep -Fq './data:/app/data' '$DEPLOY_PATH/docker-compose.yml'"
 
       - name: Authenticate NAS to GHCR for stable deployment
@@ -104,7 +147,7 @@ jobs:
           GHCR_USER: ${{ github.actor }}
         run: |
           set -euo pipefail
-          printf '%s' "$GHCR_TOKEN" | ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
+          printf '%s' "$GHCR_TOKEN" | ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
             "docker login ghcr.io --username '$GHCR_USER' --password-stdin"
 
       - name: Pull and restart published images
@@ -115,18 +158,18 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           DSC_VERSION: ${{ inputs.version }}
           DSC_RELEASE_CHANNEL: ${{ inputs.channel }}
+          SERVER_IMAGE_REF: ${{ steps.images.outputs.server_image_ref }}
+          WEB_IMAGE_REF: ${{ steps.images.outputs.web_image_ref }}
           WEB_PORT: "3100"
         run: |
           set -euo pipefail
-          image_registry='ghcr.nju.edu.cn'
-          if [[ "$DSC_RELEASE_CHANNEL" == 'test' ]]; then
-            image_registry='ghcr.io'
-          fi
-          ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
             "set -euo pipefail; cd '$DEPLOY_PATH' && \
              export WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' \
-               DSC_SERVER_IMAGE='$image_registry/igngserver/device-state-console-server' \
-               DSC_WEB_IMAGE='$image_registry/igngserver/device-state-console-web' && \
+               DSC_SERVER_IMAGE_REF='$SERVER_IMAGE_REF' \
+               DSC_WEB_IMAGE_REF='$WEB_IMAGE_REF' \
+               SERVER_IMAGE_REF='$SERVER_IMAGE_REF' \
+               WEB_IMAGE_REF='$WEB_IMAGE_REF' && \
              if [ -f .env ]; then \
                legacy_mysql_url=\$(sed -n 's/^MYSQL_URL=//p' .env | head -n 1 | tr -d '\r'); \
                if [ -n \"\$legacy_mysql_url\" ]; then \
@@ -135,7 +178,8 @@ jobs:
                  export MYSQL_URL=\"\$legacy_mysql_url\"; \
                fi; \
              fi && \
-             previous=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\\1/' || true); \
+             previous_server=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server) 2>/dev/null || true); \
+             previous_web=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q web) 2>/dev/null || true); \
              pull_ok=0; for pull_attempt in \$(seq 1 6); do \
                if timeout 120 docker compose pull server web; then pull_ok=1; break; fi; \
                echo \"Published image pull attempt \${pull_attempt}/6 failed; retrying.\" >&2; \
@@ -147,15 +191,17 @@ jobs:
              fi; \
              if ! docker compose up -d --no-build --no-deps server web; then \
                echo 'Deployment restart failed; attempting rollback.' >&2; \
-               if [ -n \"\$previous\" ]; then DSC_VERSION=\"\$previous\" docker compose up -d --no-build --no-deps server web; fi; \
+               if [ -n \"\$previous_server\" ] && [ -n \"\$previous_web\" ]; then DSC_SERVER_IMAGE_REF=\"\$previous_server\" DSC_WEB_IMAGE_REF=\"\$previous_web\" docker compose up -d --no-build --no-deps server web; fi; \
                exit 1; \
              fi; \
              server_image=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server)); \
              web_image=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q web)); \
-             expected_server=\"\$DSC_SERVER_IMAGE:\$DSC_VERSION\"; \
-             expected_web=\"\$DSC_WEB_IMAGE:\$DSC_VERSION\"; \
+             expected_server=\"\$SERVER_IMAGE_REF\"; \
+             expected_web=\"\$WEB_IMAGE_REF\"; \
              if [ \"\$server_image\" != \"\$expected_server\" ] || [ \"\$web_image\" != \"\$expected_web\" ]; then \
                echo \"Deployment image mismatch: server=\$server_image web=\$web_image expected=\$expected_server / \$expected_web\" >&2; \
+               echo 'Deployment image mismatch; attempting rollback.' >&2; \
+               if [ -n \"\$previous_server\" ] && [ -n \"\$previous_web\" ]; then DSC_SERVER_IMAGE_REF=\"\$previous_server\" DSC_WEB_IMAGE_REF=\"\$previous_web\" docker compose up -d --no-build --no-deps server web; fi; \
                exit 1; \
              fi; \
              healthy=0; for attempt in \$(seq 1 30); do \
@@ -164,7 +210,7 @@ jobs:
              done; \
              if [ \"\$healthy\" -ne 1 ]; then \
                echo 'Deployment health check failed; attempting rollback.' >&2; \
-               if [ -n \"\$previous\" ]; then DSC_VERSION=\"\$previous\" docker compose up -d --no-build --no-deps server web; fi; \
+               if [ -n \"\$previous_server\" ] && [ -n \"\$previous_web\" ]; then DSC_SERVER_IMAGE_REF=\"\$previous_server\" DSC_WEB_IMAGE_REF=\"\$previous_web\" docker compose up -d --no-build --no-deps server web; fi; \
                exit 1; \
              fi; \
              docker compose ps"
@@ -177,5 +223,5 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
           set -euo pipefail
-          ssh -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
             "docker logout ghcr.io >/dev/null 2>&1 || true"

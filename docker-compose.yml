@@ -2,30 +2,28 @@ name: device-state-console
 
 services:
   redis:
-    image: redis:7.4-alpine
+    image: redis:7.4-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
       interval: 10s
       timeout: 3s
       retries: 10
 
   mysql:
-    image: mysql:8.4
+    image: mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
     restart: unless-stopped
     command: ["mysqld", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
-    ports:
-      - "${MYSQL_PORT:-3306}:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?Set MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
@@ -35,7 +33,7 @@ services:
       retries: 15
 
   server:
-    image: ${DSC_SERVER_IMAGE:-ghcr.io/igngserver/device-state-console-server}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
+    image: ${DSC_SERVER_IMAGE_REF:-${DSC_SERVER_IMAGE:-ghcr.io/igngserver/device-state-console-server}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}}
     pull_policy: always
     restart: unless-stopped
     env_file:
@@ -46,7 +44,7 @@ services:
       DSC_RELEASE_CHANNEL: ${DSC_RELEASE_CHANNEL:-test}
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 4000
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: ${REDIS_URL:?Set REDIS_URL to an authenticated Redis URL}
       MYSQL_URL: "${MYSQL_URL:-mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}}"
     volumes:
       - ./data:/app/data
@@ -57,7 +55,7 @@ services:
         condition: service_healthy
 
   web:
-    image: ${DSC_WEB_IMAGE:-ghcr.io/igngserver/device-state-console-web}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
+    image: ${DSC_WEB_IMAGE_REF:-${DSC_WEB_IMAGE:-ghcr.io/igngserver/device-state-console-web}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}}
     pull_policy: always
     restart: unless-stopped
     env_file:
