@@ -17,6 +17,11 @@ import {
   type WindowMaterialCapabilities
 } from "../window-material.js";
 import { getDesktopRuntimeProfile } from "./runtime-profile.js";
+import { isTrustedRendererUrl } from "./renderer-security.js";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const rendererRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../renderer");
 
 export function registerIpc(
   controller: DesktopController,
@@ -26,29 +31,36 @@ export function registerIpc(
 ): void {
   const windowDragOffsets = new Map<number, { x: number; y: number }>();
 
-  ipcMain.handle(IPC_CHANNELS.getSnapshot, (_event, request?: DesktopSnapshotRequest) => controller.getSnapshot(asSnapshotRequest(request)));
-  ipcMain.handle(IPC_CHANNELS.refresh, (_event, request?: DesktopSnapshotRequest) => controller.refresh(asSnapshotRequest(request)));
-  ipcMain.handle(IPC_CHANNELS.updateLocalConfig, (_event, patch: DesktopConfigPatch) => controller.updateLocalConfig(asConfigPatch(patch)));
-  ipcMain.handle(IPC_CHANNELS.controlAgent, (_event, action: DesktopAgentControlAction) => controller.controlAgent(asControlAction(action)));
-  ipcMain.handle(IPC_CHANNELS.setAgentSecret, (_event, secret: string) => controller.setAgentSecret(asString(secret, "agent_secret")));
-  ipcMain.handle(IPC_CHANNELS.saveHubConnection, (_event, serverUrl: string, accessKey: string) => controller.saveHubConnection(asString(serverUrl, "server_url"), asString(accessKey, "access_key")));
-  ipcMain.handle(IPC_CHANNELS.login, (_event, accessKey: string) => controller.login(asString(accessKey, "access_key")));
-  ipcMain.handle(IPC_CHANNELS.logout, () => controller.logout());
-  ipcMain.handle(IPC_CHANNELS.disconnectAgent, () => controller.disconnectAgent());
-  ipcMain.handle(IPC_CHANNELS.cloudPush, () => controller.cloudPush());
-  ipcMain.handle(IPC_CHANNELS.getWidgetLayout, (_event, request: WidgetLayoutRequest) => controller.getWidgetLayout(asWidgetLayoutRequest(request)));
-  ipcMain.handle(IPC_CHANNELS.saveWidgetLayout, (_event, request: WidgetLayoutSaveRequest) => controller.saveWidgetLayout(asWidgetLayoutSaveRequest(request)));
-  ipcMain.handle(IPC_CHANNELS.saveFanNote, (_event, deviceId: string, fanId: string, note: string) => controller.saveFanNote(asString(deviceId, "device_id"), asString(fanId, "fan_id"), asString(note, "fan_note")));
-  ipcMain.handle(IPC_CHANNELS.deleteInstance, (_event, deviceId: string) => controller.deleteInstance(asString(deviceId, "device_id")));
-  ipcMain.handle(IPC_CHANNELS.reorderInstances, (_event, deviceIds: unknown) => controller.reorderInstances(asStringArray(deviceIds, "device_ids")));
-  ipcMain.handle(IPC_CHANNELS.updateStartupSettings, (_event, settings) => controller.updateStartupSettings(asStartupSettings(settings)));
-  ipcMain.handle(IPC_CHANNELS.openExternal, (_event, url: string) => controller.openExternal(asString(url, "external_url")));
-  ipcMain.handle(IPC_CHANNELS.getRuntimeProfile, () => getDesktopRuntimeProfile(gpuFallbackActive));
-  ipcMain.handle(IPC_CHANNELS.getWindowMaterialCapabilities, () => getWindowMaterialCapabilities(getWindow(), gpuFallbackActive));
-  ipcMain.handle(IPC_CHANNELS.windowMinimize, () => {
+  const handle = (channel: string, handler: IpcHandler) => {
+    ipcMain.handle(channel, (event, ...args) => {
+      assertTrustedIpcSender(event, getWindow);
+      return handler(event, ...args);
+    });
+  };
+
+  handle(IPC_CHANNELS.getSnapshot, (_event, request?: DesktopSnapshotRequest) => controller.getSnapshot(asSnapshotRequest(request)));
+  handle(IPC_CHANNELS.refresh, (_event, request?: DesktopSnapshotRequest) => controller.refresh(asSnapshotRequest(request)));
+  handle(IPC_CHANNELS.updateLocalConfig, (_event, patch: DesktopConfigPatch) => controller.updateLocalConfig(asConfigPatch(patch)));
+  handle(IPC_CHANNELS.controlAgent, (_event, action: DesktopAgentControlAction) => controller.controlAgent(asControlAction(action)));
+  handle(IPC_CHANNELS.setAgentSecret, (_event, secret: string) => controller.setAgentSecret(asString(secret, "agent_secret")));
+  handle(IPC_CHANNELS.saveHubConnection, (_event, serverUrl: string, accessKey: string) => controller.saveHubConnection(asString(serverUrl, "server_url"), asString(accessKey, "access_key")));
+  handle(IPC_CHANNELS.login, (_event, accessKey: string) => controller.login(asString(accessKey, "access_key")));
+  handle(IPC_CHANNELS.logout, () => controller.logout());
+  handle(IPC_CHANNELS.disconnectAgent, () => controller.disconnectAgent());
+  handle(IPC_CHANNELS.cloudPush, () => controller.cloudPush());
+  handle(IPC_CHANNELS.getWidgetLayout, (_event, request: WidgetLayoutRequest) => controller.getWidgetLayout(asWidgetLayoutRequest(request)));
+  handle(IPC_CHANNELS.saveWidgetLayout, (_event, request: WidgetLayoutSaveRequest) => controller.saveWidgetLayout(asWidgetLayoutSaveRequest(request)));
+  handle(IPC_CHANNELS.saveFanNote, (_event, deviceId: string, fanId: string, note: string) => controller.saveFanNote(asString(deviceId, "device_id"), asString(fanId, "fan_id"), asString(note, "fan_note")));
+  handle(IPC_CHANNELS.deleteInstance, (_event, deviceId: string) => controller.deleteInstance(asString(deviceId, "device_id")));
+  handle(IPC_CHANNELS.reorderInstances, (_event, deviceIds: unknown) => controller.reorderInstances(asStringArray(deviceIds, "device_ids")));
+  handle(IPC_CHANNELS.updateStartupSettings, (_event, settings) => controller.updateStartupSettings(asStartupSettings(settings)));
+  handle(IPC_CHANNELS.openExternal, (_event, url: string) => controller.openExternal(asString(url, "external_url")));
+  handle(IPC_CHANNELS.getRuntimeProfile, () => getDesktopRuntimeProfile(gpuFallbackActive));
+  handle(IPC_CHANNELS.getWindowMaterialCapabilities, () => getWindowMaterialCapabilities(getWindow(), gpuFallbackActive));
+  handle(IPC_CHANNELS.windowMinimize, () => {
     getWindow()?.minimize();
   });
-  ipcMain.handle(IPC_CHANNELS.windowToggleMaximize, () => {
+  handle(IPC_CHANNELS.windowToggleMaximize, () => {
     const window = getWindow();
     if (!window || window.isDestroyed()) return false;
     if (window.isMaximized()) window.unmaximize();
@@ -56,6 +68,7 @@ export function registerIpc(
     return window.isMaximized();
   });
   ipcMain.on(IPC_CHANNELS.windowDragStart, (event, screenX: unknown, screenY: unknown) => {
+    if (!isTrustedIpcSender(event, getWindow)) return;
     windowDragOffsets.delete(event.sender.id);
     if (!isFiniteScreenCoordinate(screenX) || !isFiniteScreenCoordinate(screenY)) return;
     const window = BrowserWindow.fromWebContents(event.sender);
@@ -64,6 +77,7 @@ export function registerIpc(
     windowDragOffsets.set(event.sender.id, { x: screenX - windowX, y: screenY - windowY });
   });
   ipcMain.on(IPC_CHANNELS.windowDragMove, (event, screenX: unknown, screenY: unknown) => {
+    if (!isTrustedIpcSender(event, getWindow)) return;
     if (!isFiniteScreenCoordinate(screenX) || !isFiniteScreenCoordinate(screenY)) return;
     const offset = windowDragOffsets.get(event.sender.id);
     const window = BrowserWindow.fromWebContents(event.sender);
@@ -71,12 +85,13 @@ export function registerIpc(
     window.setPosition(Math.round(screenX - offset.x), Math.round(screenY - offset.y));
   });
   ipcMain.on(IPC_CHANNELS.windowDragEnd, (event) => {
+    if (!isTrustedIpcSender(event, getWindow)) return;
     windowDragOffsets.delete(event.sender.id);
   });
-  ipcMain.handle(IPC_CHANNELS.windowClose, () => {
+  handle(IPC_CHANNELS.windowClose, () => {
     getWindow()?.close();
   });
-  ipcMain.handle(IPC_CHANNELS.exit, async () => {
+  handle(IPC_CHANNELS.exit, async () => {
     markQuitting();
     await controller.shutdown();
     app.quit();
@@ -85,6 +100,35 @@ export function registerIpc(
   controller.subscribe((snapshot) => {
     getWindow()?.webContents.send(IPC_CHANNELS.snapshot, snapshot);
   });
+}
+
+type IpcHandler = (event: Electron.IpcMainInvokeEvent, ...args: any[]) => unknown;
+
+function assertTrustedIpcSender(
+  event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent,
+  getWindow: () => BrowserWindow | null
+): void {
+  const window = getWindow();
+  if (!window || window.isDestroyed() || BrowserWindow.fromWebContents(event.sender) !== window) {
+    throw new Error("untrusted_ipc_sender");
+  }
+  const devServerUrl = process.env.DSC_DEV_SERVER_URL ?? process.env.VITE_DEV_SERVER_URL;
+  const senderUrl = "senderFrame" in event && event.senderFrame ? event.senderFrame.url : event.sender.getURL();
+  if (!isTrustedRendererUrl(senderUrl, rendererRoot, devServerUrl)) {
+    throw new Error("untrusted_ipc_origin");
+  }
+}
+
+function isTrustedIpcSender(
+  event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent,
+  getWindow: () => BrowserWindow | null
+): boolean {
+  try {
+    assertTrustedIpcSender(event, getWindow);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isFiniteScreenCoordinate(value: unknown): value is number {

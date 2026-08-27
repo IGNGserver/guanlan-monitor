@@ -28,6 +28,16 @@ export class MysqlDeviceRepository implements DeviceRepository {
 
     if (rows.length > 0) {
       const existing = rows[0];
+      if (existing.status === "closed") {
+        return {
+          deviceId: existing.device_id,
+          name: existing.name,
+          status: "closed",
+          sortOrder: existing.sort_order,
+          registeredAt: String(existing.registered_at),
+          updatedAt: String(existing.updated_at)
+        };
+      }
       await this.pool.query(
         `UPDATE devices SET status = 'open', updated_at = ? WHERE device_id = ?`,
         [formattedNow, deviceId]
@@ -73,8 +83,12 @@ export class MysqlDeviceRepository implements DeviceRepository {
   async deleteDevice(deviceId: string): Promise<void> {
     const formattedNow = new Date().toISOString().slice(0, 19).replace("T", " ");
     await this.pool.query(
-      `UPDATE devices SET status = 'closed', updated_at = ? WHERE device_id = ?`,
-      [formattedNow, deviceId]
+      `
+        INSERT INTO devices (device_id, name, status, sort_order, registered_at, updated_at)
+        VALUES (?, ?, 'closed', 0, ?, ?)
+        ON DUPLICATE KEY UPDATE status = 'closed', updated_at = ?
+      `,
+      [deviceId, deviceId, formattedNow, formattedNow, formattedNow]
     );
   }
 

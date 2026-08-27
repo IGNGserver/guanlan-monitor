@@ -54,6 +54,22 @@ const EMPTY_DB: LocalDbShape = {
   widgetLayouts: { instances: {}, templates: {} }
 };
 
+const MINUTE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+const HOURLY_RETENTION_MS = 370 * 24 * 60 * 60 * 1000;
+const MAX_MINUTE_POINTS = 60 * 24 * 90;
+const MAX_HOURLY_POINTS = 24 * 370;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readRecordField<T>(parsed: Record<string, unknown>, key: string): T {
+  const value = parsed[key];
+  if (value === undefined) return {} as T;
+  if (!isRecord(value)) throw new Error(`local database field ${key} must be an object`);
+  return value as T;
+}
+
 function emptyWidgetLayouts(): LocalWidgetLayoutSnapshot {
   return { instances: {}, templates: {} };
 }
@@ -86,27 +102,47 @@ class LocalJsonStore {
   async read() {
     try {
       const raw = await readFile(this.filePath, "utf8");
-      return { ...EMPTY_DB, ...JSON.parse(raw) } as LocalDbShape;
-    } catch {
-      return structuredClone(EMPTY_DB);
+      const parsed = JSON.parse(raw) as unknown;
+      if (!isRecord(parsed)) throw new Error("local database root must be an object");
+      return {
+        ...structuredClone(EMPTY_DB),
+        devices: readRecordField<LocalDbShape["devices"]>(parsed, "devices"),
+        deviceRegistry: readRecordField<NonNullable<LocalDbShape["deviceRegistry"]>>(parsed, "deviceRegistry"),
+        virtualMachines: readRecordField<LocalDbShape["virtualMachines"]>(parsed, "virtualMachines"),
+        series: readRecordField<LocalDbShape["series"]>(parsed, "series"),
+        minuteHistory: readRecordField<LocalDbShape["minuteHistory"]>(parsed, "minuteHistory"),
+        history: readRecordField<LocalDbShape["history"]>(parsed, "history"),
+        fanNotes: readRecordField<LocalDbShape["fanNotes"]>(parsed, "fanNotes"),
+        deviceMetricConfigs: readRecordField<LocalDbShape["deviceMetricConfigs"]>(parsed, "deviceMetricConfigs"),
+        widgetLayouts: parsed.widgetLayouts === undefined
+          ? structuredClone(EMPTY_DB.widgetLayouts)
+          : (() => {
+              if (!isRecord(parsed.widgetLayouts)) throw new Error("local database field widgetLayouts must be an object");
+              return parsed.widgetLayouts as LocalWidgetLayoutSnapshot;
+            })()
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return structuredClone(EMPTY_DB);
+      throw error;
     }
   }
 
   async update(mutator: (db: LocalDbShape) => void | Promise<void>) {
-    this.writeQueue = this.writeQueue.then(async () => {
+    const operation = this.writeQueue.then(async () => {
       const db = await this.read();
       await mutator(db);
       await mkdir(dirname(this.filePath), { recursive: true });
       const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
       try {
-        await writeFile(temporaryPath, JSON.stringify(db, null, 2), "utf8");
+        await writeFile(temporaryPath, JSON.stringify(db, null, 2), { encoding: "utf8", mode: 0o600 });
         await rename(temporaryPath, this.filePath);
       } catch (error) {
         await unlink(temporaryPath).catch(() => undefined);
         throw error;
       }
     });
-    return this.writeQueue;
+    this.writeQueue = operation.then(() => undefined, () => undefined);
+    return operation;
   }
 }
 
@@ -174,8 +210,8 @@ export class LocalHistoryRepository implements HistoryRepository {
       } else {
         db.minuteHistory[deviceId].push(point);
         db.minuteHistory[deviceId].sort((a, b) => a.timestamp - b.timestamp);
-        db.minuteHistory[deviceId] = db.minuteHistory[deviceId].slice(-60 * 24 * 90);
       }
+      db.minuteHistory[deviceId] = db.minuteHistory[deviceId].slice(-MAX_MINUTE_POINTS);
     });
   }
 
@@ -188,6 +224,25 @@ export class LocalHistoryRepository implements HistoryRepository {
       } else {
         db.history[deviceId].push(point);
         db.history[deviceId].sort((a, b) => a.timestamp - b.timestamp);
+      }
+      db.history[deviceId] = db.history[deviceId].slice(-MAX_HOURLY_POINTS);
+    });
+  }
+
+  async runRetentionCleanup() {
+    const now = Date.now();
+    const minuteThreshold = now - MINUTE_RETENTION_MS;
+    const hourlyThreshold = now - HOURLY_RETENTION_MS;
+    await this.store.update((db) => {
+      for (const [deviceId, points] of Object.entries(db.minuteHistory)) {
+        const retained = points.filter((point) => point.timestamp >= minuteThreshold).slice(-MAX_MINUTE_POINTS);
+        if (retained.length) db.minuteHistory[deviceId] = retained;
+        else delete db.minuteHistory[deviceId];
+      }
+      for (const [deviceId, points] of Object.entries(db.history)) {
+        const retained = points.filter((point) => point.timestamp >= hourlyThreshold).slice(-MAX_HOURLY_POINTS);
+        if (retained.length) db.history[deviceId] = retained;
+        else delete db.history[deviceId];
       }
     });
   }
@@ -367,6 +422,10 @@ export class LocalDeviceRepository implements DeviceRepository {
       const existing = registry[deviceId];
 
       if (existing) {
+        if (existing.status === "closed") {
+          resultRecord = { ...existing };
+          return;
+        }
         existing.status = "open";
         existing.updatedAt = now;
         if (name) existing.name = name;

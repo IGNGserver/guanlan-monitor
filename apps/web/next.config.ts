@@ -8,6 +8,21 @@ const releaseChannel = process.env.DSC_RELEASE_CHANNEL === "stable" ? "stable" :
 const nextConfig: NextConfig = {
   typedRoutes: true,
   transpilePackages: ["@dsc/console-ui", "@dsc/shared"],
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          { key: "Content-Security-Policy", value: "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), geolocation=(), microphone=()" },
+          { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }
+        ]
+      }
+    ];
+  },
   env: {
     NEXT_PUBLIC_DSC_VERSION: releaseVersion,
     NEXT_PUBLIC_DSC_RELEASE_CHANNEL: releaseChannel

@@ -14,26 +14,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
         with:
           version: 10.33.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: pnpm
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: "1.24.x"
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Verify version
         run: pnpm verify:version
@@ -41,16 +41,19 @@ jobs:
       - name: Verify Windows installer compatibility
         run: pnpm verify:windows-installer
 
+      - name: Verify bundled PawnIO integrity metadata
+        run: pnpm verify:windows-hardware
+
       - name: Verify Hub public port
         run: pnpm verify:hub-port
+
+      - name: Verify Web security headers
+        run: pnpm verify:web-security-headers
 
       - name: Test server VM inventory reconciliation
         run: |
           pnpm --filter @dsc/shared build
           pnpm --filter @dsc/server test
-          if [[ -f apps/server/src/repositories/widget-layouts.test.ts ]]; then
-            pnpm --filter @dsc/server exec node --import tsx --test src/repositories/widget-layouts.test.ts
-          fi
 
       - name: Typecheck and build web packages
         run: |
@@ -59,6 +62,7 @@ jobs:
           pnpm check:adapter-contracts
           pnpm test:adapter-contracts
           pnpm test:ui-helpers
+          pnpm test:renderer-security
           pnpm test:window-material
           pnpm typecheck
           pnpm build
@@ -75,32 +79,32 @@ jobs:
     needs: verify
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
         with:
           version: 10.33.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: pnpm
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: "1.24.x"
 
       - name: Setup .NET for hardware sensor probe
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         with:
           dotnet-version: 10.x
 
       - name: Install desktop dependencies
         shell: powershell
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Build bundled Windows Agent binaries
         shell: powershell
@@ -122,6 +126,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path "release/desktop-agent/hardware-sensor-probe" | Out-Null
           Copy-Item -Path (Join-Path $probeDir "*") -Destination "release/desktop-agent/hardware-sensor-probe" -Recurse -Force
           Copy-Item -Path "agents/windows-hardware" -Destination "release/desktop-agent/windows-hardware" -Recurse -Force
+          node scripts/verify-windows-hardware-integrity.mjs
+          $pawnIo = Join-Path (Get-Location) "release/desktop-agent/windows-hardware/pawnio/PawnIO_setup.exe"
+          $signature = Get-AuthenticodeSignature -LiteralPath $pawnIo
+          if ($signature.Status -ne "Valid") { throw "Bundled PawnIO installer is not Authenticode-valid: $($signature.Status)" }
 
       - name: Build Windows Electron setup and portable assets
         shell: powershell
@@ -136,6 +144,9 @@ jobs:
           node scripts/verify-electron-artifact-version.mjs $unpacked $version
           if (-not (Test-Path (Join-Path $unpacked "resources/agent/hardware-sensor-probe/HardwareSensorProbe.dll"))) { throw "Packaged hardware sensor probe missing." }
           if (-not (Test-Path (Join-Path $unpacked "resources/agent/windows-hardware/librehardwaremonitor/LibreHardwareMonitorLib.dll"))) { throw "Packaged hardware monitor library missing." }
+          node scripts/verify-windows-hardware-integrity.mjs (Join-Path $unpacked "resources/agent/windows-hardware/pawnio/PawnIO_setup.exe")
+          $packagedPawnIoSignature = Get-AuthenticodeSignature -LiteralPath (Join-Path $unpacked "resources/agent/windows-hardware/pawnio/PawnIO_setup.exe")
+          if ($packagedPawnIoSignature.Status -ne "Valid") { throw "Packaged PawnIO installer is not Authenticode-valid: $($packagedPawnIoSignature.Status)" }
           $portable = Join-Path $outputDir "DeviceStateConsole-Windows-GUI-Portable-v$version.zip"
           Compress-Archive -Path (Join-Path $unpacked "*") -DestinationPath $portable -CompressionLevel Optimal -Force
           $update = Join-Path $outputDir "DeviceStateConsole-Windows-GUI-Update-v$version.zip"
@@ -203,7 +214,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Windows CLI help command failed." }
 
       - name: Upload Windows assets
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: windows-release-assets
           path: |
@@ -222,28 +233,28 @@ jobs:
     needs: verify
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
         with:
           version: 10.33.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: pnpm
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: "1.24.x"
 
       - name: Install desktop dependencies
         shell: bash
         run: |
-          pnpm install --no-frozen-lockfile
+          pnpm install --frozen-lockfile
 
       - name: Build bundled Linux Agent binaries
         shell: bash
@@ -270,7 +281,7 @@ jobs:
           sha256sum "$package" > "$package.sha256"
 
       - name: Upload Linux GUI asset
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: linux-gui-release-assets
           path: |
@@ -284,10 +295,10 @@ jobs:
     needs: verify
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         with:
           distribution: temurin
           java-version: 17
@@ -311,37 +322,13 @@ jobs:
           set -euo pipefail
           keystore="$RUNNER_TEMP/device-state-console-release.jks"
 
-          generate_ephemeral_key() {
-            echo "Generating an ephemeral Android signing key for this test release."
-            store_password="device-state-console-test-store"
-            key_password="device-state-console-test-key"
-            keytool -genkeypair \
-              -keystore "$keystore" \
-              -storetype JKS \
-              -storepass "$store_password" \
-              -keypass "$key_password" \
-              -alias device-state-console-test \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Device State Console Test, OU=CI, O=IGNGserver, L=CI, ST=CI, C=CN" \
-              >/dev/null
-            DSC_ANDROID_STORE_PASSWORD="$store_password"
-            DSC_ANDROID_KEY_ALIAS="device-state-console-test"
-            DSC_ANDROID_KEY_PASSWORD="$key_password"
-          }
-
-          if [[ -n "$DSC_ANDROID_KEYSTORE_BASE64" && -n "$DSC_ANDROID_STORE_PASSWORD" && -n "$DSC_ANDROID_KEY_ALIAS" && -n "$DSC_ANDROID_KEY_PASSWORD" ]] \
-            && printf '%s' "$DSC_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore" \
-            && keytool -list -keystore "$keystore" \
-              -storepass "$DSC_ANDROID_STORE_PASSWORD" \
-              -alias "$DSC_ANDROID_KEY_ALIAS" >/dev/null 2>&1; then
-            echo "Using the configured Android signing key."
-          else
-            echo "Configured Android signing key is unavailable or invalid; using an ephemeral key for this test release."
-            rm -f "$keystore"
-            generate_ephemeral_key
-          fi
+          [[ -n "$DSC_ANDROID_KEYSTORE_BASE64" && -n "$DSC_ANDROID_STORE_PASSWORD" && -n "$DSC_ANDROID_KEY_ALIAS" && -n "$DSC_ANDROID_KEY_PASSWORD" ]] \
+            || { echo "Configured Android signing credentials are required; refusing an ephemeral signing key." >&2; exit 1; }
+          printf '%s' "$DSC_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          test -s "$keystore"
+          keytool -list -keystore "$keystore" \
+            -storepass "$DSC_ANDROID_STORE_PASSWORD" \
+            -alias "$DSC_ANDROID_KEY_ALIAS" >/dev/null
 
           {
             echo "DSC_UPLOAD_STORE_FILE=$keystore"
@@ -385,7 +372,7 @@ jobs:
           cp "$apk" "release/android/DeviceStateConsole-Android-v${version}.apk"
 
       - name: Upload Android asset
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: android-release-assets
           path: release/android/DeviceStateConsole-Android-v*.apk
@@ -401,10 +388,10 @@ jobs:
     if: ${{ always() && needs.windows.result == 'success' && needs['linux-gui'].result == 'success' && needs.android.result == 'success' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Download release assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           pattern: "*-release-assets"
           path: release-assets
@@ -447,7 +434,7 @@ jobs:
           test "$(find release-assets -type f -name 'DeviceStateConsole-Android-v*.apk.sha256' | wc -l)" -eq 1
 
       - name: Publish prerelease
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           tag_name: ${{ github.ref_name }}
           name: Device State Console ${{ github.ref_name }} (测试版)

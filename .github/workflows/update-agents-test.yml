@@ -61,7 +61,7 @@ jobs:
           unzip -tq "$stage_dir/$asset"
 
       - name: Upload staged Agent package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: linux-agent-release-${{ inputs.version }}
           path: |
@@ -122,21 +122,32 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.TEST_DEPLOY_SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.TEST_DEPLOY_SSH_KNOWN_HOSTS }}
+          TARGETS: ${{ inputs.targets }}
+          CONFIGURE_CLUSTER_INVENTORY: ${{ inputs.configure_cluster_inventory }}
         run: |
           set -euo pipefail
-          if [[ -n "$SSH_PRIVATE_KEY" || -n "$SSH_KNOWN_HOSTS" ]]; then
-            test -n "$SSH_PRIVATE_KEY"
-            test -n "$SSH_KNOWN_HOSTS"
+          needs_ssh=false
+          if [[ "$CONFIGURE_CLUSTER_INVENTORY" == "true" ]]; then needs_ssh=true; fi
+          for target in $TARGETS; do
+            case "$target" in
+              nas|localhost|127.0.0.1) ;;
+              *) needs_ssh=true ;;
+            esac
+          done
+          if [[ "$needs_ssh" == "true" ]]; then
+            test -n "$SSH_PRIVATE_KEY" || { echo "SSH_PRIVATE_KEY is required for remote Agent updates." >&2; exit 1; }
+            test -n "$SSH_KNOWN_HOSTS" || { echo "SSH_KNOWN_HOSTS is required for remote Agent updates." >&2; exit 1; }
             install -d -m 700 "$HOME/.ssh"
             printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
             printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
             chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
-          else
-            echo 'SSH deploy secrets are empty; remote targets will use the NAS runner SSH configuration.'
+          elif [[ -n "$SSH_PRIVATE_KEY" || -n "$SSH_KNOWN_HOSTS" ]]; then
+            echo "SSH_PRIVATE_KEY and SSH_KNOWN_HOSTS must be provided together." >&2
+            exit 1
           fi
 
       - name: Download staged Agent package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: linux-agent-release-${{ inputs.version }}
           path: ${{ runner.temp }}/dsc-agent-artifact-${{ github.run_id }}
@@ -249,7 +260,7 @@ jobs:
               fi
             else
               remote_user="${DEPLOY_USER:-root}"
-              ssh_options=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new)
+              ssh_options=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
               if [[ -s "$HOME/.ssh/id_ed25519" ]]; then
                 ssh_options+=(-i "$HOME/.ssh/id_ed25519")
               fi
@@ -274,7 +285,7 @@ jobs:
         run: |
           set -euo pipefail
           remote_user="${DEPLOY_USER:-root}"
-          ssh_options=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new)
+          ssh_options=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
           if [[ -s "$HOME/.ssh/id_ed25519" ]]; then
             ssh_options+=(-i "$HOME/.ssh/id_ed25519")
           fi

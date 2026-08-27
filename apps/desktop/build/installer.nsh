@@ -113,6 +113,10 @@
   IfFileExists "$INSTDIR\resources\agent\windows-hardware\pawnio\PawnIO_setup.exe" 0 dsc_skip_pawnio_install
   nsExec::Exec '"$INSTDIR\resources\agent\windows-hardware\pawnio\PawnIO_setup.exe" -install -silent'
   Pop $0
+  ${If} $0 != 0
+    MessageBox MB_ICONSTOP|MB_OK "PawnIO 硬件传感器驱动安装失败（错误码 $0）。安装已中止。"
+    Abort
+  ${EndIf}
 dsc_skip_pawnio_install:
 
   ; CPU package sensors require the bundled LHM probe to run with the SYSTEM

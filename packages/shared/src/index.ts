@@ -1157,7 +1157,6 @@ export interface AuthLoginResponse {
 export interface DeviceRealtimeEvent {
   deviceId: string;
   summary: DeviceSummary;
-  latest: AgentMetricsPayload;
   /** The Hub removed this instance from its live inventory. */
   removed?: boolean;
 }

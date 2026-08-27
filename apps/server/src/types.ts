@@ -156,6 +156,7 @@ export interface HistoryRepository {
     selectedStart?: string
   ): Promise<TrafficCalendarResponse>;
   listKnownDevices(): Promise<Array<{ deviceId: string; lastSeenAt: string }>>;
+  runRetentionCleanup?(): Promise<void>;
 }
 
 export interface DeviceQueryResult {
@@ -173,6 +174,8 @@ export interface AggregatedWindowConfig {
 
 export interface SessionValue {
   issuedAt: string;
+  expiresAt: string;
+  credentialVersion: string;
 }
 
 export interface FanNoteStore {

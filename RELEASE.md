@@ -69,15 +69,16 @@ not deploy `latest`.
 
 ## Docker Deployment
 
-Production Compose pulls tested images from GitHub Container Registry. It never clones the
-repository and it does not build from the current checkout:
+Production Compose pulls tested images from GitHub Container Registry. The protected
+production workflow resolves the requested release tag to immutable image digests before
+starting it; it never clones the repository and it does not build from the current checkout:
 
 ```bash
-DSC_VERSION=0.1.111 docker compose pull
-DSC_VERSION=0.1.111 docker compose up -d
+DSC_VERSION=X.Y.Z docker compose pull
+DSC_VERSION=X.Y.Z docker compose up -d
 ```
 
-To intentionally use the moving Docker Hub tag:
+For development or test environments only, a moving tag can be selected explicitly:
 
 ```bash
 DSC_VERSION=latest docker compose pull
@@ -89,7 +90,9 @@ The default image repositories are
 `ghcr.io/igngserver/device-state-console-web`. Private packages require a
 GitHub token with `read:packages` on the deployment host. Override them with
 `DSC_SERVER_IMAGE` and `DSC_WEB_IMAGE` when using a private or mirrored
-repository. `docker-compose.cn.yml` only changes infrastructure image mirrors.
+repository, or use `DSC_SERVER_IMAGE_REF` and `DSC_WEB_IMAGE_REF` for an
+immutable digest reference. `docker-compose.cn.yml` only changes infrastructure
+image mirrors.
 Do not run a production deployment from an unreviewed `main` checkout and do
 not use `latest` unless it was explicitly selected.
 

@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { DesktopController } from "./controller.js";
 import { appendDesktopDiagnostic } from "./diagnostics.js";
 import { registerIpc } from "./ipc.js";
+import { isTrustedRendererUrl } from "./renderer-security.js";
 import { getDesktopRuntimeProfile, readSystemMemoryInfo } from "./runtime-profile.js";
 import { resolveWindowMaterial } from "../window-material.js";
 
@@ -332,6 +333,17 @@ if (!hasSingleInstanceLock) {
     });
     mainWindow = window;
     window.setMenuBarVisibility(false);
+    const devServerUrl = process.env.DSC_DEV_SERVER_URL ?? process.env.VITE_DEV_SERVER_URL;
+    const rendererRoot = path.resolve(__dirname, "../renderer");
+    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    const blockUntrustedNavigation = (event: Electron.Event, url: string) => {
+      if (!isTrustedRendererUrl(url, rendererRoot, devServerUrl, rendererRecoveryFallbackActive)) {
+        event.preventDefault();
+        reportProcessEvent("renderer-navigation-blocked", { url });
+      }
+    };
+    window.webContents.on("will-navigate", blockUntrustedNavigation);
+    window.webContents.on("will-redirect", blockUntrustedNavigation);
     const updateNativeWindowMaterial = () => {
       if (window.isDestroyed() || process.platform !== "win32") return;
       const material = resolveNativeWindowMaterial();

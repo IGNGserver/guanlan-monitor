@@ -14,9 +14,9 @@ export function middleware(request: NextRequest) {
 
   const targetUrl = new URL(`${getServerTarget()}${pathname}${search}`);
   const requestHeaders = new Headers(request.headers);
-  if (!requestHeaders.has("x-forwarded-proto")) {
-    requestHeaders.set("x-forwarded-proto", request.nextUrl.protocol.replace(":", ""));
-  }
+  // The browser can submit this header itself. Replace it with the protocol
+  // observed by the public Next.js endpoint before forwarding to the Hub.
+  requestHeaders.set("x-forwarded-proto", request.nextUrl.protocol.replace(":", ""));
   return NextResponse.rewrite(targetUrl, {
     request: { headers: requestHeaders }
   });
