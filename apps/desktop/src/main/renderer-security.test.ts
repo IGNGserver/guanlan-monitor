@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
-import { isTrustedRendererUrl } from "./renderer-security.js";
+import { isTrustedRendererUrl } from "./renderer-security.ts";
 
 const rendererRoot = "/opt/device-state-console/dist/renderer";
 
