@@ -33,11 +33,7 @@ const configuredCorsOrigins = new Set(
     .map((origin) => origin.trim())
     .filter(Boolean)
 );
-const corsOrigin = configuredCorsOrigins.size
-  ? (origin: string | undefined, callback: (error: Error | null, value?: boolean | string) => void) => {
-      callback(null, !origin || configuredCorsOrigins.has(origin));
-    }
-  : false;
+const corsOrigins = configuredCorsOrigins.size ? [...configuredCorsOrigins] : false;
 
 const app = Fastify({
   logger: true,
@@ -45,7 +41,7 @@ const app = Fastify({
   trustProxy: env.TRUST_PROXY
 });
 await app.register(cors, {
-  origin: corsOrigin,
+  origin: corsOrigins,
   credentials: true,
   methods: ["GET", "HEAD", "POST", "PUT", "OPTIONS"]
 });
