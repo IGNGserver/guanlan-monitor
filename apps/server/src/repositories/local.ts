@@ -74,6 +74,14 @@ function emptyWidgetLayouts(): LocalWidgetLayoutSnapshot {
   return { instances: {}, templates: {} };
 }
 
+function readWidgetLayouts(value: unknown): LocalWidgetLayoutSnapshot {
+  if (!isRecord(value)) throw new Error("local database field widgetLayouts must be an object");
+  return {
+    instances: readRecordField<LocalWidgetLayoutSnapshot["instances"]>(value, "instances"),
+    templates: readRecordField<LocalWidgetLayoutSnapshot["templates"]>(value, "templates")
+  };
+}
+
 function setLocalWidgetInstance(
   layouts: LocalWidgetLayoutSnapshot,
   scopeKey: string,
@@ -116,10 +124,7 @@ class LocalJsonStore {
         deviceMetricConfigs: readRecordField<LocalDbShape["deviceMetricConfigs"]>(parsed, "deviceMetricConfigs"),
         widgetLayouts: parsed.widgetLayouts === undefined
           ? structuredClone(EMPTY_DB.widgetLayouts)
-          : (() => {
-              if (!isRecord(parsed.widgetLayouts)) throw new Error("local database field widgetLayouts must be an object");
-              return parsed.widgetLayouts as LocalWidgetLayoutSnapshot;
-            })()
+          : readWidgetLayouts(parsed.widgetLayouts)
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return structuredClone(EMPTY_DB);
