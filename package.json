@@ -1,7 +1,7 @@
 {
   "name": "guanlan-monitor",
   "private": true,
-  "version": "0.2.287",
+  "version": "0.2.288",
   "packageManager": "pnpm@10.33.0",
   "pnpm": {
     "onlyBuiltDependencies": ["electron"]
@@ -17,7 +17,7 @@
     "check:adapter-contracts": "node scripts/check-adapter-contracts.mjs",
     "test:adapter-contracts": "node --test packages/console-ui/src/services/adapter.contract.test.ts",
     "test:ui-helpers": "node --test packages/console-ui/src/helpers/layout.test.ts",
-    "test:renderer-security": "pnpm --filter @dsc/desktop exec tsx --test src/main/renderer-security.test.ts",
+    "test:renderer-security": "pnpm --filter @dsc/desktop exec node --import tsx --test src/main/renderer-security.test.ts",
     "test:window-material": "node --test apps/desktop/src/window-material.test.ts",
     "test:electron-visual": "node scripts/electron-visual-regression.cjs",
     "verify:version": "node scripts/verify-version.mjs",
