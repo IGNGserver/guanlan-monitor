@@ -51,6 +51,10 @@ jobs:
         run: pnpm verify:web-security-headers
 
       - name: Test server VM inventory reconciliation
+        env:
+          NODE_ENV: test
+          SESSION_SECRET: dsc-ci-session-secret-please-use-only-for-tests
+          ACCESS_KEY: dsc-ci-access-key-please-use-only-for-tests
         run: |
           pnpm --filter @dsc/shared build
           pnpm --filter @dsc/server test
