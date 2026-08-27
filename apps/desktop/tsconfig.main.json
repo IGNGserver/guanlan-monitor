@@ -18,5 +18,6 @@
     "declaration": true,
     "sourceMap": true
   },
-  "include": ["src/main/**/*.ts", "src/preload/**/*.ts"]
+  "include": ["src/main/**/*.ts", "src/preload/**/*.ts"],
+  "exclude": ["src/main/**/*.test.ts"]
 }
