@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, SystemStats, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, VirtualizationStorageMetricSeries, VirtualizationStorageTelemetry, WidgetInstanceConfig, WidgetLayoutDocument, WidgetLayoutSaveRequest, WidgetPanelMetadata } from "@dsc/shared";
 import { isDisplayableVirtualizationStorage, isDisplayableVirtualizationStorageSeries, virtualizationStorageInstances } from "@dsc/shared";
@@ -17,6 +17,7 @@ import {
   confirmDiscardWidgetLayoutDraft,
   useOptionalWidgetLayout,
   type WidgetKind,
+  type WidgetDisplayMode,
   type WidgetSize
 } from "./WidgetLayout";
 import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
@@ -1498,6 +1499,86 @@ function DevicePage() {
   const [panelMutationMessage, setPanelMutationMessage] = useState("");
   const panelMutationQueue = useRef(Promise.resolve());
   const [widgetDrawerOpen, setWidgetDrawerOpen] = useState(false);
+  const [displayMode, setDisplayModeState] = useState<WidgetDisplayMode>("normal");
+  const displayModeStorageKey = selectedDevice ? `dsc-widget-display-mode:${selectedDevice.deviceId}:${activeTab}` : "";
+  const boardRootRef = useRef<HTMLDivElement>(null);
+  const boardFullscreenRef = useRef(false);
+  const previousDisplayModeRef = useRef<Exclude<WidgetDisplayMode, "board">>("normal");
+
+  const enterBoardPresentation = useCallback(() => {
+    previousDisplayModeRef.current = displayMode === "minimal" ? "minimal" : "normal";
+    setWidgetDrawerOpen(false);
+    setDisplayModeState("board");
+    const root = boardRootRef.current;
+    if (!root?.requestFullscreen) return;
+    void root.requestFullscreen().then(() => {
+      boardFullscreenRef.current = true;
+    }).catch(() => {
+      // The fixed-position CSS presentation remains available when the host
+      // denies the browser Fullscreen API (for example in an embedded shell).
+    });
+  }, [displayMode]);
+
+  const exitBoardPresentation = useCallback(async () => {
+    if (typeof document !== "undefined" && document.fullscreenElement && document.exitFullscreen) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // Keep the view usable when the host has already left fullscreen.
+      }
+    }
+    boardFullscreenRef.current = false;
+    setDisplayModeState(previousDisplayModeRef.current);
+  }, []);
+
+  const handleDisplayModeChange = useCallback((mode: WidgetDisplayMode) => {
+    if (mode === "board") {
+      enterBoardPresentation();
+      return;
+    }
+    setDisplayModeState(mode);
+    if (displayModeStorageKey && typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(displayModeStorageKey, mode);
+      } catch {
+        // Local display preferences are optional and must not block the panel.
+      }
+    }
+  }, [displayModeStorageKey, enterBoardPresentation]);
+
+  useEffect(() => {
+    if (!displayModeStorageKey || typeof window === "undefined") return;
+    let stored: string | null = null;
+    try {
+      stored = window.localStorage.getItem(displayModeStorageKey);
+    } catch {
+      stored = null;
+    }
+    const nextMode: Exclude<WidgetDisplayMode, "board"> = stored === "minimal" ? "minimal" : "normal";
+    previousDisplayModeRef.current = nextMode;
+    setDisplayModeState(nextMode);
+  }, [displayModeStorageKey]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      if (boardFullscreenRef.current && !document.fullscreenElement) {
+        boardFullscreenRef.current = false;
+        setDisplayModeState(previousDisplayModeRef.current);
+      }
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    if (displayMode !== "board") return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") void exitBoardPresentation();
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [displayMode, exitBoardPresentation]);
+
   const [activeAnchor, setActiveAnchor] = useState("section-overview");
   const anchorDefinitions = useMemo(() => [
     { id: "section-overview", label: "综合概览", tabs: ["overview", "all"] },
@@ -1563,6 +1644,7 @@ function DevicePage() {
   const changeTab = (tab: string) => {
     if (tab === activeTab) return;
     if (!confirmDiscardWidgetLayoutDraft()) return;
+    if (displayMode === "board") void exitBoardPresentation();
     setActiveTab(tab);
   };
 
@@ -1576,6 +1658,15 @@ function DevicePage() {
     setSelectedDiskId("all");
     setSelectedGpuId("all");
   }, [selectedDevice?.deviceId]);
+
+  const previousDeviceIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const nextDeviceId = selectedDevice?.deviceId ?? null;
+    if (previousDeviceIdRef.current !== null && previousDeviceIdRef.current !== nextDeviceId && displayMode === "board") {
+      void exitBoardPresentation();
+    }
+    previousDeviceIdRef.current = nextDeviceId;
+  }, [displayMode, exitBoardPresentation, selectedDevice?.deviceId]);
 
   if (!selectedDevice) return <EmptyState title="没有找到这台设备" detail="设备可能已被移除，或者中枢还没有返回它。" action={<Button variant="primary" onClick={() => navigate({ kind: "overview" })}>返回总览</Button>} />;
 
@@ -1854,7 +1945,12 @@ function DevicePage() {
   });
 
   return (
-    <div className="workspace-page workspace-page--device">
+    <div
+      ref={boardRootRef}
+      className={`workspace-page workspace-page--device workspace-page--display-${displayMode}`}
+      data-widget-display-mode={displayMode}
+    >
+      {displayMode === "board" && <button className="workspace-board-exit" type="button" onClick={() => void exitBoardPresentation()} aria-label="退出展板模式">退出展板</button>}
       <PageIntro
         eyebrow={selectedDevice.instanceType === "virtual_machine" ? "虚拟机实例" : "设备实例"}
         title={selectedDevice.hostname}
@@ -1882,6 +1978,8 @@ function DevicePage() {
         templateKey={isCustomPanel ? customPanelTemplate : `device-type:${selectedDevice.instanceType ?? "device"}:tab:${activeTab}`}
         editable={activeTab !== "all" && snapshot?.source === "live" && Boolean(snapshot.session.authenticated)}
         locked={activeTab === "all"}
+        displayMode={displayMode}
+        onDisplayModeChange={handleDisplayModeChange}
         getWidgetLayout={getWidgetLayout}
         saveWidgetLayout={saveWidgetLayout}
       >
@@ -1893,7 +1991,11 @@ function DevicePage() {
           {panelIndexLoading && <span className="workspace-layout-notice">读取面板</span>}
           {panelMutationMessage && <span className="workspace-layout-notice">{panelMutationMessage}</span>}
           <MetricWindowControl value={metricsWindow as DesktopMetricWindowValue} onChange={(value) => setMetricsWindow(value)} />
-          <WidgetLayoutToolbar onOpenWidgetDrawer={activeTab !== "all" && canEditRemote ? () => setWidgetDrawerOpen(true) : undefined} />
+          <WidgetLayoutToolbar
+            onOpenWidgetDrawer={activeTab !== "all" && canEditRemote ? () => setWidgetDrawerOpen(true) : undefined}
+            onEnterBoardMode={enterBoardPresentation}
+            onExitBoardMode={exitBoardPresentation}
+          />
         </div>
       </div>
 

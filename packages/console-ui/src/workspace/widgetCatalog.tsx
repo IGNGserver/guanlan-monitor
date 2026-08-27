@@ -1014,7 +1014,7 @@ function DynamicWidgetCard({ entry, context }: { entry: WidgetLayoutCatalogEntry
 
 export function DynamicWidgetCanvas({ device, metrics, localTemperatureSources = [], localTemperatureSourcesAt, showEmptyState = false, onOpenDrawer }: WidgetCatalogContext & { showEmptyState?: boolean; onOpenDrawer?: () => void }) {
   const layout = useWidgetLayout();
-  const entries = layout.widgetEntries.filter((entry) => Boolean(entry.widgetType) && !isSystemRenderedEntry(entry));
+  const entries = layout.orderedWidgetEntries.filter((entry) => Boolean(entry.widgetType) && !isSystemRenderedEntry(entry));
 
   useEffect(() => {
     if ((!metrics && !localTemperatureSources.length) || !layout.editable || layout.locked) return;

@@ -152,6 +152,32 @@ test("placementStyle computes dimensions and CSS order based on placement coordi
   assert.strictEqual(compactStyle["--widget-h-compact"], 6);
 });
 
+test("display projections compact widgets without mutating the persisted layout", async () => {
+  const { projectDisplayPlacements } = await import("./widgetGrid.ts");
+  const layout = {
+    catalog: {
+      "first-widget": { title: "第一个", kind: "content" as const, defaultSize: "medium" as const },
+      "second-widget": { title: "第二个", kind: "content" as const, defaultSize: "small" as const },
+      "device-group": { title: "设备组", kind: "group" as const, defaultSize: "large" as const },
+      "group-child": { title: "组内图表", kind: "content" as const, defaultSize: "medium" as const, groupId: "device-group" }
+    },
+    placements: {
+      "first-widget": { x: 1, y: 3, w: 2, h: 2, size: "medium" as const, hidden: false },
+      "second-widget": { x: 3, y: 1, w: 1, h: 2, size: "small" as const, hidden: false },
+      "device-group": { x: 1, y: 8, w: 4, h: 4, size: "large" as const, hidden: false },
+      "group-child": { x: 1, y: 1, w: 2, h: 2, size: "medium" as const, hidden: false }
+    }
+  };
+
+  const projected = projectDisplayPlacements(layout, "board");
+  assert.deepStrictEqual(projected["second-widget"], { x: 1, y: 1, w: 1, h: 1, size: "small", hidden: false });
+  assert.deepStrictEqual(projected["first-widget"], { x: 2, y: 1, w: 2, h: 1, size: "medium", hidden: false });
+  assert.deepStrictEqual(projected["device-group"], { x: 1, y: 2, w: 4, h: 2, size: "large", hidden: false });
+  assert.deepStrictEqual(projected["group-child"], layout.placements["group-child"]);
+  assert.strictEqual(layout.placements["first-widget"].h, 2);
+  assert.strictEqual(layout.placements["device-group"].h, 4);
+});
+
 test("resizePlacement updates the persisted grid dimensions when a widget size changes", async () => {
   const { resizePlacement } = await import("./widgetGrid.ts");
   const resized = resizePlacement({ x: 3, y: 4, w: 1, h: 2, size: "small" }, "large");
