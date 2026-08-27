@@ -23,9 +23,11 @@ import {
   normalizePlacement,
   normalizePlacements,
   placementStyle,
+  projectDisplayPlacements,
   resizePlacement,
   topLevelPlacements,
   type WidgetKind,
+  type WidgetDisplayMode,
   type WidgetPlacement,
   type WidgetSize
 } from "../helpers/widgetGrid";
@@ -44,9 +46,11 @@ export {
   normalizePlacement,
   normalizePlacements,
   placementStyle,
+  projectDisplayPlacements,
   resizePlacement,
   topLevelPlacements,
   type WidgetKind,
+  type WidgetDisplayMode,
   type WidgetPlacement,
   type WidgetSize
 };
@@ -82,6 +86,9 @@ type WidgetLayoutContextValue = {
   locked: boolean;
   editMode: boolean;
   setEditMode: (value: React.SetStateAction<boolean>) => void;
+  displayMode: WidgetDisplayMode;
+  setDisplayMode: (value: WidgetDisplayMode) => void;
+  displayPlacements: Record<string, WidgetPlacement>;
   loading: boolean;
   saving: boolean;
   dirty: boolean;
@@ -112,6 +119,7 @@ type WidgetLayoutContextValue = {
   redo: () => void;
   hasInstanceLayout: boolean;
   widgetEntries: Array<{ id: string } & WidgetCatalogEntry>;
+  orderedWidgetEntries: Array<{ id: string } & WidgetCatalogEntry>;
   addWidget: (definition: Omit<WidgetDefinition, "id"> & { id?: string }) => string | null;
   addWidgetGroup: (group: Omit<WidgetDefinition, "id" | "groupId">, children: WidgetGroupChildDefinition[]) => string | null;
   removeWidget: (id: string) => void;
@@ -266,6 +274,8 @@ export function WidgetLayoutProvider({
   templateKey,
   editable,
   locked = false,
+  displayMode = "normal",
+  onDisplayModeChange,
   getWidgetLayout,
   saveWidgetLayout,
   children
@@ -274,6 +284,8 @@ export function WidgetLayoutProvider({
   templateKey: string;
   editable: boolean;
   locked?: boolean;
+  displayMode?: WidgetDisplayMode;
+  onDisplayModeChange?: (value: WidgetDisplayMode) => void;
   getWidgetLayout: WidgetLayoutSyncClient["getWidgetLayout"];
   saveWidgetLayout: WidgetLayoutSyncClient["saveWidgetLayout"];
   children: React.ReactNode;
@@ -295,6 +307,10 @@ export function WidgetLayoutProvider({
   const futureRef = useRef<WidgetLayoutDocument[]>([]);
   const dragSessionRef = useRef<WidgetDragSession | null>(null);
   const [draggingWidgetId, setDraggingWidgetId] = useState<string | null>(null);
+
+  const setDisplayMode = useCallback((value: WidgetDisplayMode) => {
+    onDisplayModeChange?.(value);
+  }, [onDisplayModeChange]);
 
   const replaceDraft = useCallback((next: WidgetLayoutDocument, markDirty: boolean) => {
     const normalized = normalizeLayout(next);
@@ -753,7 +769,19 @@ export function WidgetLayoutProvider({
     replaceDraft(next, true);
   }, [editable, locked, replaceDraft]);
 
+  const displayPlacements = useMemo(
+    () => projectDisplayPlacements(draft, displayMode),
+    [displayMode, draft]
+  );
   const widgetEntries = useMemo(() => Object.entries(draft.catalog).map(([id, entry]) => ({ id, ...entry })), [draft.catalog]);
+  const orderedWidgetEntries = useMemo(() => [...widgetEntries].sort((left, right) => {
+    const leftPlacement = displayPlacements[left.id];
+    const rightPlacement = displayPlacements[right.id];
+    if (!leftPlacement && !rightPlacement) return left.id.localeCompare(right.id);
+    if (!leftPlacement) return 1;
+    if (!rightPlacement) return -1;
+    return leftPlacement.y - rightPlacement.y || leftPlacement.x - rightPlacement.x || left.id.localeCompare(right.id);
+  }), [displayPlacements, widgetEntries]);
 
   const contextValue = useMemo<WidgetLayoutContextValue>(() => ({
     scopeKey,
@@ -762,6 +790,9 @@ export function WidgetLayoutProvider({
     locked,
     editMode,
     setEditMode,
+    displayMode,
+    setDisplayMode,
+    displayPlacements,
     loading,
     saving,
     dirty,
@@ -792,13 +823,14 @@ export function WidgetLayoutProvider({
     redo,
     hasInstanceLayout: Boolean(remote.instanceLayout),
     widgetEntries,
+    orderedWidgetEntries,
     addWidget,
     addWidgetGroup,
     removeWidget,
     updateWidgetConfig,
     compactLayout,
     getLayoutSnapshot
-  }), [addWidget, addWidgetGroup, applyTemplate, beginWidgetDrag, cancelWidgetDrag, compactLayout, deleteTemplate, dirty, draft.snapToGrid, draggingWidgetId, editable, editMode, exportLayout, finishWidgetDrag, getLayoutSnapshot, getWidgetSize, historyVersion, importLayout, loading, locked, previewWidgetDrop, redo, registerWidget, remote.instanceLayout, remote.templates, removeWidget, reorderWidgets, resetDeviceLayout, resolveWidget, saveAsTemplate, saveLayout, saving, scopeKey, syncMessage, templateKey, toggleSnapToGrid, undo, updateSize, updateWidgetConfig, widgetEntries]);
+  }), [addWidget, addWidgetGroup, applyTemplate, beginWidgetDrag, cancelWidgetDrag, compactLayout, deleteTemplate, dirty, displayMode, displayPlacements, draft.snapToGrid, draggingWidgetId, editable, editMode, exportLayout, finishWidgetDrag, getLayoutSnapshot, getWidgetSize, historyVersion, importLayout, loading, locked, onDisplayModeChange, orderedWidgetEntries, previewWidgetDrop, redo, registerWidget, remote.instanceLayout, remote.templates, removeWidget, reorderWidgets, resetDeviceLayout, resolveWidget, saveAsTemplate, saveLayout, saving, scopeKey, setDisplayMode, syncMessage, templateKey, toggleSnapToGrid, undo, updateSize, updateWidgetConfig, widgetEntries]);
 
   return <WidgetLayoutContext.Provider value={contextValue}>{children}</WidgetLayoutContext.Provider>;
 }
@@ -864,7 +896,8 @@ export function DesktopWidget({
     config
   }), [category, compactH, config, defaultH, defaultSize, defaultW, groupId, id, kind, templateId, title, visualization, widgetType]);
   const resolved = layout.resolveWidget(definition);
-  const editing = layout.editable && layout.editMode;
+  const displayPlacement = layout.displayPlacements[id] ?? resolved.placement;
+  const editing = layout.editable && layout.editMode && layout.displayMode !== "board";
   const widgetRef = useRef<HTMLDivElement>(null);
   const pointerDragRef = useRef<{ pointerId: number; startX: number; startY: number; lastTargetId: string | null; handle: HTMLElement; activated: boolean; timer: number | null } | null>(null);
   const previousRectRef = useRef<DOMRect | null>(null);
@@ -899,7 +932,7 @@ export function DesktopWidget({
       ],
       { duration: 220, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }
     );
-  }, [dragging, layout.draggingWidgetId, resolved.placement?.h, resolved.placement?.size, resolved.placement?.w, resolved.placement?.x, resolved.placement?.y]);
+  }, [displayPlacement?.h, displayPlacement?.size, displayPlacement?.w, displayPlacement?.x, displayPlacement?.y, dragging, layout.displayMode, layout.draggingWidgetId, resolved.placement?.h, resolved.placement?.size, resolved.placement?.w, resolved.placement?.x, resolved.placement?.y]);
 
   if (!resolved.visible || resolved.hidden) return null;
 
@@ -1009,17 +1042,19 @@ export function DesktopWidget({
   const customH = id === "compute-cpu-facts" ? 2 : (defaultH ?? resolved.placement?.h);
   const customW = defaultW ?? resolved.placement?.w;
   const customCompactH = compactH ?? customH;
+  const displayCompactH = layout.displayMode === "normal" ? customCompactH : displayPlacement?.h ?? customCompactH;
   const widgetStyle = {
-    ...placementStyle(resolved.placement, resolved.size ?? defaultSize, customH, customW, customCompactH),
+    ...placementStyle(displayPlacement, resolved.size ?? defaultSize, customH, customW, displayCompactH),
     ...(dragging ? { transform: `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`, zIndex: 30 } : {})
   } as React.CSSProperties;
 
   return (
     <div
       ref={widgetRef}
-      className={`workspace-widget workspace-widget--${resolved.size} workspace-widget--${kind}${editing ? " is-editing" : ""}${dragging ? " is-dragging" : ""}${className ? ` ${className}` : ""}`}
+      className={`workspace-widget workspace-widget--${resolved.size} workspace-widget--${kind} workspace-widget--display-${layout.displayMode}${editing ? " is-editing" : ""}${dragging ? " is-dragging" : ""}${className ? ` ${className}` : ""}`}
       style={widgetStyle}
       data-widget-id={id}
+      data-widget-display-mode={layout.displayMode}
     >
       {editing && (
         <div className="workspace-widget__tools" onPointerDown={(event) => event.stopPropagation()}>
@@ -1050,7 +1085,15 @@ export function DesktopWidget({
   );
 }
 
-export function WidgetLayoutToolbar({ onOpenWidgetDrawer }: { onOpenWidgetDrawer?: () => void } = {}) {
+export function WidgetLayoutToolbar({
+  onOpenWidgetDrawer,
+  onEnterBoardMode,
+  onExitBoardMode
+}: {
+  onOpenWidgetDrawer?: () => void;
+  onEnterBoardMode?: () => void;
+  onExitBoardMode?: () => void;
+} = {}) {
   const layout = useWidgetLayout();
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
@@ -1108,13 +1151,43 @@ export function WidgetLayoutToolbar({ onOpenWidgetDrawer }: { onOpenWidgetDrawer
     layout.setEditMode(false);
   };
 
-  if (!layout.editable) return <span className="workspace-layout-lock">{layout.locked ? "全景视图 · 布局锁定" : "离线缓存 · 布局只读"}</span>;
+  const handleDisplayMode = (mode: WidgetDisplayMode) => {
+    if (mode === "board") {
+      if (layout.editMode) return;
+      onEnterBoardMode?.();
+      if (!onEnterBoardMode) layout.setDisplayMode("board");
+      return;
+    }
+    layout.setDisplayMode(mode);
+  };
+
+  const displayModeControl = (
+    <div className="workspace-layout-display-mode" role="group" aria-label="组件显示模式">
+      {(["normal", "minimal", "board"] as WidgetDisplayMode[]).map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          className={layout.displayMode === mode ? "is-active" : ""}
+          aria-pressed={layout.displayMode === mode}
+          disabled={layout.editMode && mode === "board"}
+          title={mode === "normal" ? "保留当前布局和完整标题" : mode === "minimal" ? "压缩标题和图表内边距，不改变中枢布局" : "按当前面板顺序进入全屏展板"}
+          onClick={() => handleDisplayMode(mode)}
+        >
+          {mode === "normal" ? "标准" : mode === "minimal" ? "极简" : "展板"}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (!layout.editable) return <div className="workspace-layout-toolbar"><span className="workspace-layout-lock">{layout.locked ? "全景视图 · 布局锁定" : "离线缓存 · 布局只读"}</span>{displayModeControl}</div>;
 
   return (
     <div ref={toolbarRef} className="workspace-layout-toolbar">
       <span className={`workspace-layout-source${layout.dirty ? " is-dirty" : ""}`} title="布局由中枢保存和分发">
         {layout.loading ? "读取中枢布局" : layout.dirty ? "草稿布局" : layout.hasInstanceLayout ? "中枢布局" : "初始模板"}
       </span>
+      {displayModeControl}
+      {layout.displayMode === "board" && <button className="workspace-layout-actions__button" type="button" onClick={() => { onExitBoardMode?.(); if (!onExitBoardMode) layout.setDisplayMode("normal"); }}>退出展板</button>}
       <button className={`workspace-layout-toggle${layout.editMode ? " is-active" : ""}`} type="button" aria-pressed={layout.editMode} disabled={layout.saving && layout.dirty} onClick={() => void handleToggleEditMode()}>
         <span className="workspace-layout-toggle__mark">⌘</span>{layout.editMode ? "完成排布" : "编辑排布"}
       </button>

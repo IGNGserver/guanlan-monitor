@@ -10,6 +10,7 @@ import type {
 export type WidgetSize = WidgetLayoutSize;
 export type WidgetKind = WidgetLayoutKind;
 export type WidgetPlacement = WidgetLayoutPlacement;
+export type WidgetDisplayMode = "normal" | "minimal" | "board";
 
 export const GRID_COLUMNS = 4;
 export const DEFAULT_SIZE: WidgetSize = "medium";
@@ -18,6 +19,19 @@ export const SIZE_PRESETS: Record<WidgetSize, Pick<WidgetPlacement, "w" | "h">> 
   large: { w: 4, h: 2 },
   medium: { w: 2, h: 2 },
   small: { w: 1, h: 2 }
+};
+
+export const COMPACT_SIZE_PRESETS: Record<Exclude<WidgetDisplayMode, "normal">, Record<WidgetSize, Pick<WidgetPlacement, "w" | "h">>> = {
+  minimal: {
+    large: { w: 4, h: 1 },
+    medium: { w: 2, h: 1 },
+    small: { w: 1, h: 1 }
+  },
+  board: {
+    large: { w: 4, h: 1 },
+    medium: { w: 2, h: 1 },
+    small: { w: 1, h: 1 }
+  }
 };
 
 export function isWidgetSize(value: unknown): value is WidgetSize {
@@ -138,6 +152,39 @@ export function topLevelPlacements(
   catalog: Record<string, WidgetLayoutCatalogEntry>
 ): Record<string, WidgetPlacement> {
   return Object.fromEntries(Object.entries(placements).filter(([id]) => !isGroupedEntry(id, catalog)));
+}
+
+export function projectDisplayPlacements(
+  layout: Pick<WidgetLayoutDocument, "placements" | "catalog">,
+  mode: WidgetDisplayMode
+): Record<string, WidgetPlacement> {
+  const source = Object.fromEntries(
+    Object.entries(layout.placements).map(([id, placement]) => [id, { ...placement }])
+  ) as Record<string, WidgetPlacement>;
+  if (mode === "normal") return source;
+
+  const projected: Record<string, WidgetPlacement> = {};
+  const topLevel = Object.entries(topLevelPlacements(source, layout.catalog))
+    .filter(([, placement]) => !placement.hidden)
+    .sort(([leftId, left], [rightId, right]) => (
+      left.y - right.y || left.x - right.x || leftId.localeCompare(rightId)
+    ));
+
+  for (const [id, placement] of topLevel) {
+    const compactPreset = COMPACT_SIZE_PRESETS[mode][placement.size];
+    const isGroup = layout.catalog[id]?.kind === "group";
+    const width = compactPreset.w;
+    // Groups keep their child-driven shape, but each saved row becomes one
+    // compact row. Standalone widgets always use a single compact row.
+    const height = isGroup ? Math.max(1, Math.ceil(placement.h / 2)) : compactPreset.h;
+    const position = findNextFreePlacement(projected, placement.size, 1, 1, { w: width, h: height });
+    projected[id] = { ...placement, ...position, w: width, h: height };
+  }
+
+  for (const [id, placement] of Object.entries(source)) {
+    if (placement.hidden || isGroupedEntry(id, layout.catalog)) projected[id] = placement;
+  }
+  return projected;
 }
 
 export function layoutContainerForWidget(id: string, catalog: Record<string, WidgetLayoutCatalogEntry>): string | null {
