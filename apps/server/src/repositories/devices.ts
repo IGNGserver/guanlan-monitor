@@ -1,5 +1,5 @@
 import mysql, { type RowDataPacket } from "mysql2/promise";
-import type { DeviceRecord, DeviceRepository } from "../types.js";
+import type { DeviceRecord, DeviceRegistrationOptions, DeviceRepository } from "../types.js";
 
 export class MysqlDeviceRepository implements DeviceRepository {
   constructor(private readonly pool: mysql.Pool) {}
@@ -17,7 +17,11 @@ export class MysqlDeviceRepository implements DeviceRepository {
     `);
   }
 
-  async registerOrUpdateDevice(deviceId: string, name?: string): Promise<DeviceRecord> {
+  async registerOrUpdateDevice(
+    deviceId: string,
+    name?: string,
+    options?: DeviceRegistrationOptions
+  ): Promise<DeviceRecord> {
     const now = new Date();
     const formattedNow = now.toISOString().slice(0, 19).replace("T", " ");
 
@@ -28,7 +32,7 @@ export class MysqlDeviceRepository implements DeviceRepository {
 
     if (rows.length > 0) {
       const existing = rows[0];
-      if (existing.status === "closed") {
+      if (existing.status === "closed" && !options?.reopenClosed) {
         return {
           deviceId: existing.device_id,
           name: existing.name,
@@ -38,13 +42,14 @@ export class MysqlDeviceRepository implements DeviceRepository {
           updatedAt: String(existing.updated_at)
         };
       }
+      const deviceName = name || existing.name;
       await this.pool.query(
-        `UPDATE devices SET status = 'open', updated_at = ? WHERE device_id = ?`,
-        [formattedNow, deviceId]
+        `UPDATE devices SET name = ?, status = 'open', updated_at = ? WHERE device_id = ?`,
+        [deviceName, formattedNow, deviceId]
       );
       return {
         deviceId: existing.device_id,
-        name: name || existing.name,
+        name: deviceName,
         status: "open",
         sortOrder: existing.sort_order,
         registeredAt: String(existing.registered_at),

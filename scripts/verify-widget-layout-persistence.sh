@@ -24,11 +24,12 @@ fi
 
 access_key="$(docker compose exec -T server node -p 'process.env.ACCESS_KEY' | tr -d '\r\n')"
 test -n "$access_key"
-cookie_file="$(mktemp)"
+headers_file="$(mktemp)"
+session_cookie=""
 seeded=0
 
 cleanup() {
-  if [[ "$seeded" -eq 1 && -s "$cookie_file" ]]; then
+  if [[ "$seeded" -eq 1 && -n "$session_cookie" ]]; then
     local delete_payload
     delete_payload="$(jq -cn \
       --arg scope "$SMOKE_SCOPE" \
@@ -36,17 +37,19 @@ cleanup() {
       --arg linked_scope "device:__codex-smoke__:panel" \
       --arg linked_template 'device-type:device:panel' \
       '{scopeKey:$scope, templateKey:$template, instanceLayout:null, linkedInstance:{scopeKey:$linked_scope,templateKey:$linked_template,instanceLayout:null}}')"
-    curl -fsS -b "$cookie_file" -H 'Content-Type: application/json' \
+    curl -fsS -H "Cookie: $session_cookie" -H 'Content-Type: application/json' \
       -X PUT --data-raw "$delete_payload" "$SMOKE_BASE_URL/api/widget-layouts" >/dev/null || true
   fi
-  rm -f "$cookie_file"
+  rm -f "$headers_file"
 }
 trap cleanup EXIT
 
 login_payload="$(jq -cn --arg accessKey "$access_key" '{accessKey:$accessKey}')"
-login_response="$(curl -fsS -c "$cookie_file" -H 'Content-Type: application/json' \
+login_response="$(curl -fsS -D "$headers_file" -H 'Content-Type: application/json' \
   -X POST --data-raw "$login_payload" "$SMOKE_BASE_URL/api/auth/login")"
 printf '%s' "$login_response" | jq -e '.ok == true' >/dev/null
+session_cookie="$(sed -n 's/^[Ss][Ee][Tt]-[Cc][Oo][Oo][Kk][Ii][Ee]:[[:space:]]*\(dsc_session=[^;[:space:]]*\).*/\1/p' "$headers_file" | head -n 1 | tr -d '\r')"
+test -n "$session_cookie"
 
 index_layout='{"version":4,"placements":{},"catalog":{},"snapToGrid":true,"panels":[{"id":"panel-smoke","name":"部署持久化验证","kind":"custom","order":0}]}'
 panel_layout='{"version":4,"placements":{},"catalog":{},"snapToGrid":true}'
@@ -59,7 +62,7 @@ seed_payload="$(jq -cn \
   --argjson linked "$panel_layout" \
   '{scopeKey:$scope, templateKey:$template, instanceLayout:$instance, linkedInstance:{scopeKey:$linked_scope,templateKey:$linked_template,instanceLayout:$linked}}')"
 seeded=1
-curl -fsS -b "$cookie_file" -H 'Content-Type: application/json' \
+curl -fsS -H "Cookie: $session_cookie" -H 'Content-Type: application/json' \
   -X PUT --data-raw "$seed_payload" "$SMOKE_BASE_URL/api/widget-layouts" \
   | jq -e --arg id panel-smoke '.instanceLayout.panels | any(.[]; .id == $id)' >/dev/null
 
@@ -77,13 +80,13 @@ if [[ "$healthy" -ne 1 ]]; then
   exit 1
 fi
 
-index_after="$(curl -fsS -b "$cookie_file" --get \
+index_after="$(curl -fsS -H "Cookie: $session_cookie" --get \
   --data-urlencode "scopeKey=$SMOKE_SCOPE" \
   --data-urlencode 'templateKey=device-type:device:panel-index' \
   "$SMOKE_BASE_URL/api/widget-layouts")"
 printf '%s' "$index_after" | jq -e --arg id panel-smoke '.instanceLayout.panels | any(.[]; .id == $id)' >/dev/null
 
-panel_after="$(curl -fsS -b "$cookie_file" --get \
+panel_after="$(curl -fsS -H "Cookie: $session_cookie" --get \
   --data-urlencode 'scopeKey=device:__codex-smoke__:panel' \
   --data-urlencode 'templateKey=device-type:device:panel' \
   "$SMOKE_BASE_URL/api/widget-layouts")"

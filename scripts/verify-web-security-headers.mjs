@@ -19,5 +19,8 @@ for (const header of [
 if (!config.includes("frame-ancestors 'none'")) throw new Error("CSP must deny framing.");
 if (!config.includes("object-src 'none'")) throw new Error("CSP must deny plugin content.");
 if (!config.includes("connect-src 'self'")) throw new Error("CSP must restrict network connections.");
+if (config.includes("includeSubDomains")) {
+  throw new Error("HSTS must not claim includeSubDomains until every subdomain is HTTPS-only.");
+}
 
 console.log("Web security header configuration verified.");

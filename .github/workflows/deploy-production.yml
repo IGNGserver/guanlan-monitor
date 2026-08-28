@@ -68,7 +68,13 @@ jobs:
             -H 'Accept: application/vnd.github.raw' \
             "https://api.github.com/repos/IGNGserver/guanlan-monitor/contents/docker-compose.yml?ref=v$REQUESTED_VERSION" \
             -o "$GITHUB_WORKSPACE/docker-compose.yml"
+          curl -fsSL --connect-timeout 10 --max-time 30 \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H 'Accept: application/vnd.github.raw' \
+            "https://api.github.com/repos/IGNGserver/guanlan-monitor/contents/scripts/prepare-compose-env.sh?ref=v$REQUESTED_VERSION" \
+            -o "$RUNNER_TEMP/prepare-compose-env.sh"
           grep -q 'ghcr.io/igngserver/device-state-console-server' "$GITHUB_WORKSPACE/docker-compose.yml"
+          grep -Fq 'Compose environment preflight' "$RUNNER_TEMP/prepare-compose-env.sh"
 
       - name: Resolve immutable GHCR image references
         id: images
@@ -133,9 +139,11 @@ jobs:
              backup_file='$DEPLOY_PATH/backups/local-db.json.$backup_stamp'; \
              if [ ! -s '$DEPLOY_PATH/data/local-db.json' ] && [ -s \"\$backup_file\" ]; then cp \"\$backup_file\" '$DEPLOY_PATH/data/local-db.json.tmp'; mv '$DEPLOY_PATH/data/local-db.json.tmp' '$DEPLOY_PATH/data/local-db.json'; fi"
           remote_compose="$DEPLOY_PATH/.docker-compose.yml.codex.tmp"
+          remote_prepare="$DEPLOY_PATH/.prepare-compose-env.codex.tmp"
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:$remote_compose"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$RUNNER_TEMP/prepare-compose-env.sh" "$DEPLOY_USER@$DEPLOY_HOST:$remote_prepare"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "mv '$remote_compose' '$DEPLOY_PATH/docker-compose.yml' && grep -Fq './data:/app/data' '$DEPLOY_PATH/docker-compose.yml'"
+            "set -euo pipefail; cleanup() { rm -f '$remote_compose' '$remote_prepare'; }; trap cleanup EXIT; bash '$remote_prepare' '$DEPLOY_PATH/.env'; mv '$remote_compose' '$DEPLOY_PATH/docker-compose.yml'; grep -Fq './data:/app/data' '$DEPLOY_PATH/docker-compose.yml'; rm -f '$remote_prepare'; trap - EXIT"
 
       - name: Authenticate NAS to GHCR for stable deployment
         if: ${{ inputs.channel == 'stable' }}
@@ -189,6 +197,12 @@ jobs:
                echo 'Published image pull failed; keeping the current deployment.' >&2; \
                exit 1; \
              fi; \
+             docker compose up -d --no-build redis mysql; \
+             infra_healthy=0; for attempt in \$(seq 1 30); do \
+               if docker compose exec -T redis sh -c 'redis-cli --no-auth-warning -a "\$REDIS_PASSWORD" ping | grep -q PONG' && docker compose exec -T mysql sh -c 'mysqladmin ping -h 127.0.0.1 -uroot -p"\$MYSQL_ROOT_PASSWORD" --silent'; then infra_healthy=1; break; fi; \
+               sleep 5; \
+             done; \
+             if [ \"\$infra_healthy\" -ne 1 ]; then echo 'Redis/MySQL migration health check failed; keeping the current application containers.' >&2; exit 1; fi; \
              if ! docker compose up -d --no-build --no-deps server web; then \
                echo 'Deployment restart failed; attempting rollback.' >&2; \
                if [ -n \"\$previous_server\" ] && [ -n \"\$previous_web\" ]; then DSC_SERVER_IMAGE_REF=\"\$previous_server\" DSC_WEB_IMAGE_REF=\"\$previous_web\" docker compose up -d --no-build --no-deps server web; fi; \

@@ -411,7 +411,11 @@ export const agentMetricsPayloadSchema = z.object({
   timestamp,
   heartbeatAt: timestamp,
   unavailableMetrics: z.array(metricKey).max(64).optional(),
-  system: systemSchema,
+  system: systemSchema.default({
+    processCount: 0,
+    threadCount: 0,
+    handleCount: 0
+  }),
   cpuUsagePercent: percentage,
   cpuFrequencyMHz: nonNegative.nullable().optional(),
   cpuTemperatureC: temperature,

@@ -64,6 +64,7 @@ jobs:
           pnpm verify:windows-installer
           pnpm verify:windows-hardware
           pnpm verify:web-security-headers
+          bash scripts/test-compose-env-migration.sh
           pnpm --filter @dsc/shared build
           pnpm --filter @dsc/server test
           pnpm typecheck

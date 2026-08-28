@@ -38,6 +38,7 @@ jobs:
           pnpm verify:windows-installer
           pnpm verify:windows-hardware
           pnpm verify:web-security-headers
+          bash scripts/test-compose-env-migration.sh
 
       - name: Verify shared UI boundaries and helpers
         run: |
