@@ -119,9 +119,17 @@ export interface DeviceRecord {
   updatedAt: string;
 }
 
+export interface DeviceRegistrationOptions {
+  reopenClosed?: boolean;
+}
+
 export interface DeviceRepository {
   init?(): Promise<void>;
-  registerOrUpdateDevice(deviceId: string, name?: string): Promise<DeviceRecord>;
+  registerOrUpdateDevice(
+    deviceId: string,
+    name?: string,
+    options?: DeviceRegistrationOptions
+  ): Promise<DeviceRecord>;
   listOpenDevices(): Promise<DeviceRecord[]>;
   deleteDevice(deviceId: string): Promise<void>;
   reorderDevices(deviceIds: string[]): Promise<void>;

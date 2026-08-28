@@ -49,7 +49,11 @@ export class MetricsService {
 
   async ingest(payload: AgentMetricsPayload) {
     const receivedAt = new Date().toISOString();
-    const device = await this.repositories.devices.registerOrUpdateDevice(payload.identity.deviceId, payload.identity.hostname);
+    const device = await this.repositories.devices.registerOrUpdateDevice(
+      payload.identity.deviceId,
+      payload.identity.hostname,
+      { reopenClosed: true }
+    );
     if (device.status === "closed") return;
     await this.persistPayload(payload, receivedAt);
     await this.ingestVirtualMachines(payload);

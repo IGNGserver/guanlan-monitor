@@ -47,6 +47,12 @@ export function parseSessionValue(
   }
 }
 
+export function millisecondsUntilSessionExpiry(session: SessionValue, now = Date.now()): number {
+  const expiresAt = Date.parse(session.expiresAt);
+  if (!Number.isFinite(expiresAt)) return 0;
+  return Math.max(0, expiresAt - now);
+}
+
 export function safeEqual(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left, "utf8");
   const rightBuffer = Buffer.from(right, "utf8");

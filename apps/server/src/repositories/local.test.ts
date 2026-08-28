@@ -34,7 +34,7 @@ test("recovers the write queue after a failed mutation", async () => {
   });
 });
 
-test("a closed physical device cannot be reopened by a later sample", async () => {
+test("history cannot reopen a closed physical device, but an authoritative sample can", async () => {
   await withTempStore(async (filePath) => {
     const devices = new LocalDeviceRepository(createLocalStore(filePath));
     await devices.registerOrUpdateDevice("device-1", "Host");
@@ -42,6 +42,15 @@ test("a closed physical device cannot be reopened by a later sample", async () =
     const result = await devices.registerOrUpdateDevice("device-1", "Host again");
     assert.equal(result.status, "closed");
     assert.deepEqual(await devices.listOpenDevices(), []);
+
+    const reopened = await devices.registerOrUpdateDevice(
+      "device-1",
+      "Host reporting again",
+      { reopenClosed: true }
+    );
+    assert.equal(reopened.status, "open");
+    assert.equal(reopened.name, "Host reporting again");
+    assert.deepEqual((await devices.listOpenDevices()).map((device) => device.deviceId), ["device-1"]);
   });
 });
 

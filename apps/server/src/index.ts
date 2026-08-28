@@ -5,7 +5,7 @@ import { Server as SocketIOServer } from "socket.io";
 import Redis from "ioredis";
 import mysql from "mysql2/promise";
 import { env } from "./config.js";
-import { getBearerToken, parseSessionValue, safeEqual } from "./auth.js";
+import { getBearerToken, millisecondsUntilSessionExpiry, parseSessionValue, safeEqual } from "./auth.js";
 import { agentMetricsPayloadSchema } from "./metrics-schema.js";
 import { RedisRealtimeRepository } from "./repositories/realtime.js";
 import { MysqlHistoryRepository } from "./repositories/history.js";
@@ -135,13 +135,23 @@ io.use((socket, next) => {
     const rawSession = cookies.dsc_session;
     if (!rawSession) return next(new Error("unauthorized"));
     const unsigned = app.unsignCookie(rawSession);
-    if (!unsigned.valid || !parseSessionValue(unsigned.value, env.ACCESS_KEY)) {
+    if (!unsigned.valid) {
       return next(new Error("unauthorized"));
     }
+    const session = parseSessionValue(unsigned.value, env.ACCESS_KEY);
+    if (!session) return next(new Error("unauthorized"));
+    socket.data.session = session;
     next();
   } catch {
     next(new Error("unauthorized"));
   }
+});
+
+io.on("connection", (socket) => {
+  const expiryTimer = setTimeout(() => {
+    socket.disconnect(true);
+  }, millisecondsUntilSessionExpiry(socket.data.session));
+  socket.once("disconnect", () => clearTimeout(expiryTimer));
 });
 
 const offlineTimer = setInterval(() => {

@@ -89,8 +89,8 @@ Docker Compose 默认只拉取 GitHub Container Registry 中已发布的应用�
 
 ```bash
 cp .env.example .env
-DSC_VERSION=0.2.291 docker compose pull
-DSC_VERSION=0.2.291 docker compose up -d
+DSC_VERSION=0.2.292 docker compose pull
+DSC_VERSION=0.2.292 docker compose up -d
 ```
 
 开发或测试环境如果确实需要移动标签，可以显式选择 `latest`；生产环境必须使用固定版本或不可变 digest：

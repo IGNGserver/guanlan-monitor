@@ -108,8 +108,10 @@ jobs:
       - name: Checkout deployment definition
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          ref: v${{ inputs.version }}
           sparse-checkout: |
             docker-compose.yml
+            scripts/prepare-compose-env.sh
             scripts/verify-widget-layout-persistence.sh
           sparse-checkout-cone-mode: false
 
@@ -161,6 +163,7 @@ jobs:
               cp "$backup_file" "$DEPLOY_PATH/data/local-db.json.tmp"
               mv "$DEPLOY_PATH/data/local-db.json.tmp" "$DEPLOY_PATH/data/local-db.json"
             fi
+            bash "$GITHUB_WORKSPACE/scripts/prepare-compose-env.sh" "$DEPLOY_PATH/.env"
             temp="$DEPLOY_PATH/.docker-compose.yml.codex.tmp"
             cp "$GITHUB_WORKSPACE/docker-compose.yml" "$temp"
             mv "$temp" "$DEPLOY_PATH/docker-compose.yml"
@@ -176,10 +179,14 @@ jobs:
                if [ -n \"\$server_container\" ]; then docker cp \"\$server_container:/app/data/local-db.json\" '$DEPLOY_PATH/backups/local-db.json.$backup_stamp' 2>/dev/null || true; fi; \
                backup_file='$DEPLOY_PATH/backups/local-db.json.$backup_stamp'; \
                if [ ! -s '$DEPLOY_PATH/data/local-db.json' ] && [ -s \"\$backup_file\" ]; then cp \"\$backup_file\" '$DEPLOY_PATH/data/local-db.json.tmp'; mv '$DEPLOY_PATH/data/local-db.json.tmp' '$DEPLOY_PATH/data/local-db.json'; fi"
+            remote_compose="$DEPLOY_PATH/.docker-compose.yml.codex.tmp"
+            remote_prepare="$DEPLOY_PATH/.prepare-compose-env.codex.tmp"
             scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$GITHUB_WORKSPACE/docker-compose.yml" \
-              "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/.docker-compose.yml.codex.tmp"
+              "$DEPLOY_USER@$DEPLOY_HOST:$remote_compose"
+            scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$GITHUB_WORKSPACE/scripts/prepare-compose-env.sh" \
+              "$DEPLOY_USER@$DEPLOY_HOST:$remote_prepare"
             ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
-              "mv '$DEPLOY_PATH/.docker-compose.yml.codex.tmp' '$DEPLOY_PATH/docker-compose.yml' && grep -Fq './data:/app/data' '$DEPLOY_PATH/docker-compose.yml'"
+              "set -euo pipefail; cleanup() { rm -f '$remote_compose' '$remote_prepare'; }; trap cleanup EXIT; bash '$remote_prepare' '$DEPLOY_PATH/.env'; mv '$remote_compose' '$DEPLOY_PATH/docker-compose.yml'; grep -Fq './data:/app/data' '$DEPLOY_PATH/docker-compose.yml'; rm -f '$remote_prepare'; trap - EXIT"
           fi
 
       - name: Pull and restart fixed test images
@@ -200,15 +207,18 @@ jobs:
             export WEB_PORT DSC_VERSION DSC_RELEASE_CHANNEL
             export DSC_SERVER_IMAGE='ghcr.io/igngserver/device-state-console-server'
             export DSC_WEB_IMAGE='ghcr.io/igngserver/device-state-console-web'
-            if [[ -f .env ]]; then
-              legacy_mysql_url="$(sed -n 's/^MYSQL_URL=//p' .env | head -n 1 | tr -d '\r')"
-              if [[ -n "$legacy_mysql_url" ]]; then
-                legacy_mysql_url="${legacy_mysql_url/@127.0.0.1:/@mysql:}"
-                legacy_mysql_url="${legacy_mysql_url/@localhost:/@mysql:}"
-                export MYSQL_URL="$legacy_mysql_url"
-              fi
-            fi
             previous="$(docker inspect --format '{{.Config.Image}}' $(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\1/' || true)"
+            docker compose up -d --no-build redis mysql
+            infra_healthy=0
+            for attempt in $(seq 1 30); do
+              if docker compose exec -T redis sh -c 'redis-cli --no-auth-warning -a "$REDIS_PASSWORD" ping | grep -q PONG' \
+                && docker compose exec -T mysql sh -c 'mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD" --silent'; then
+                infra_healthy=1
+                break
+              fi
+              sleep 5
+            done
+            [[ "$infra_healthy" -eq 1 ]] || { echo 'Redis/MySQL migration health check failed.' >&2; exit 1; }
             docker compose up -d --no-deps --pull never server web
             healthy=0
             for attempt in $(seq 1 30); do
@@ -236,6 +246,12 @@ jobs:
                export WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' DSC_SERVER_IMAGE='ghcr.io/igngserver/device-state-console-server' DSC_WEB_IMAGE='ghcr.io/igngserver/device-state-console-web'; \
                if [ -f .env ]; then legacy_mysql_url=\$(sed -n 's/^MYSQL_URL=//p' .env | head -n 1 | tr -d '\\r'); if [ -n \"\$legacy_mysql_url\" ]; then legacy_mysql_url=\${legacy_mysql_url/@127.0.0.1:/@mysql:}; legacy_mysql_url=\${legacy_mysql_url/@localhost:/@mysql:}; export MYSQL_URL=\"\$legacy_mysql_url\"; fi; fi; \
                previous=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\\1/' || true); \
+               docker compose up -d --no-build redis mysql; \
+               infra_healthy=0; for attempt in \$(seq 1 30); do \
+                 if docker compose exec -T redis sh -c 'redis-cli --no-auth-warning -a "\$REDIS_PASSWORD" ping | grep -q PONG' && docker compose exec -T mysql sh -c 'mysqladmin ping -h 127.0.0.1 -uroot -p"\$MYSQL_ROOT_PASSWORD" --silent'; then infra_healthy=1; break; fi; \
+                 sleep 5; \
+               done; \
+               if [ "\$infra_healthy" -ne 1 ]; then echo 'Redis/MySQL migration health check failed.' >&2; exit 1; fi; \
                docker compose up -d --no-deps --pull never server web; \
                healthy=0; for attempt in \$(seq 1 30); do \
                  if docker compose exec -T server node -e \"fetch('http://127.0.0.1:4000/api/system/version').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"; then healthy=1; break; fi; \

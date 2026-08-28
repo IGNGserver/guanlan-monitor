@@ -5,6 +5,7 @@ import type { DeviceBlockKey, DeviceMetricKey, MetricWindow, WidgetLayoutDocumen
 import type { TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import type {
   DeviceRecord,
+  DeviceRegistrationOptions,
   DeviceRepository,
   DeviceMetricConfigValue,
   DeviceMetricConfigStore,
@@ -419,7 +420,11 @@ export class LocalWidgetLayoutStore implements WidgetLayoutStore {
 export class LocalDeviceRepository implements DeviceRepository {
   constructor(private readonly store: LocalJsonStore) {}
 
-  async registerOrUpdateDevice(deviceId: string, name?: string): Promise<DeviceRecord> {
+  async registerOrUpdateDevice(
+    deviceId: string,
+    name?: string,
+    options?: DeviceRegistrationOptions
+  ): Promise<DeviceRecord> {
     let resultRecord!: DeviceRecord;
     await this.store.update((db) => {
       const registry = (db.deviceRegistry ??= {});
@@ -427,7 +432,7 @@ export class LocalDeviceRepository implements DeviceRepository {
       const existing = registry[deviceId];
 
       if (existing) {
-        if (existing.status === "closed") {
+        if (existing.status === "closed" && !options?.reopenClosed) {
           resultRecord = { ...existing };
           return;
         }
