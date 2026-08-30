@@ -8,7 +8,7 @@ trap 'rm -rf "$test_root"' EXIT
 good_env="$test_root/good.env"
 printf '%s\n' \
   'SESSION_SECRET=session-secret-for-compose-migration-test-1234567890' \
-  'ACCESS_KEY=access-key-for-compose-migration-test-1234567890123' \
+  'ACCESS_KEY=abc123' \
   'MYSQL_ROOT_PASSWORD=StrongRootSecret_1234567890' \
   'MYSQL_DATABASE=device_state_console' \
   'MYSQL_USER=dsc' \
@@ -19,7 +19,7 @@ printf '%s\n' \
   'MYSQL_URL=mysql://dsc:old@127.0.0.1:3306/device_state_console' \
   > "$good_env"
 
-bash "$root/scripts/prepare-compose-env.sh" "$good_env"
+DSC_RELEASE_CHANNEL=test bash "$root/scripts/prepare-compose-env.sh" "$good_env"
 redis_password="$(sed -n 's/^REDIS_PASSWORD=//p' "$good_env")"
 [[ "$redis_password" =~ ^[0-9a-f]{64}$ ]]
 grep -Fxq "REDIS_URL=redis://:${redis_password}@redis:6379" "$good_env"
@@ -39,7 +39,7 @@ printf '%s\n' \
   'MYSQL_PASSWORD=StrongDatabaseSecret_1234567890' \
   > "$weak_env"
 cp "$weak_env" "$weak_env.before"
-if bash "$root/scripts/prepare-compose-env.sh" "$weak_env"; then
+if DSC_RELEASE_CHANNEL=test bash "$root/scripts/prepare-compose-env.sh" "$weak_env"; then
   echo "Weak ACCESS_KEY unexpectedly passed the Compose environment preflight." >&2
   exit 1
 fi

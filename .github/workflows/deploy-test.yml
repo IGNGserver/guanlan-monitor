@@ -162,7 +162,10 @@ jobs:
               cp "$backup_file" "$DEPLOY_PATH/data/local-db.json.tmp"
               mv "$DEPLOY_PATH/data/local-db.json.tmp" "$DEPLOY_PATH/data/local-db.json"
             fi
-            bash "$GITHUB_WORKSPACE/scripts/prepare-compose-env.sh" "$DEPLOY_PATH/.env"
+            DSC_RELEASE_CHANNEL="$DSC_RELEASE_CHANNEL" \
+              DSC_RECOVER_EXISTING_MYSQL=true \
+              DSC_MYSQL_CONTAINER=device-state-console-mysql-1 \
+              bash "$GITHUB_WORKSPACE/scripts/prepare-compose-env.sh" "$DEPLOY_PATH/.env"
             temp="$DEPLOY_PATH/.docker-compose.yml.codex.tmp"
             cp "$GITHUB_WORKSPACE/docker-compose.yml" "$temp"
             mv "$temp" "$DEPLOY_PATH/docker-compose.yml"
@@ -185,7 +188,7 @@ jobs:
             scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$GITHUB_WORKSPACE/scripts/prepare-compose-env.sh" \
               "$DEPLOY_USER@$DEPLOY_HOST:$remote_prepare"
             ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
-              "set -euo pipefail; cleanup() { rm -f '$remote_compose' '$remote_prepare'; }; trap cleanup EXIT; bash '$remote_prepare' '$DEPLOY_PATH/.env'; mv '$remote_compose' '$DEPLOY_PATH/docker-compose.yml'; grep -Fq './data:/app/data' '$DEPLOY_PATH/docker-compose.yml'; rm -f '$remote_prepare'; trap - EXIT"
+              "set -euo pipefail; cleanup() { rm -f '$remote_compose' '$remote_prepare'; }; trap cleanup EXIT; DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' DSC_RECOVER_EXISTING_MYSQL=true DSC_MYSQL_CONTAINER='device-state-console-mysql-1' bash '$remote_prepare' '$DEPLOY_PATH/.env'; mv '$remote_compose' '$DEPLOY_PATH/docker-compose.yml'; grep -Fq './data:/app/data' '$DEPLOY_PATH/docker-compose.yml'; rm -f '$remote_prepare'; trap - EXIT"
           fi
 
       - name: Pull and restart fixed test images

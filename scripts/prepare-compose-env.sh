@@ -9,6 +9,10 @@ fi
 
 env_dir="$(cd "$(dirname "$env_file")" && pwd)"
 env_file="$env_dir/$(basename "$env_file")"
+working_file="$(mktemp "$env_dir/.env.compose-security.preflight.XXXXXX")"
+trap 'rm -f "$working_file" "$working_file.next"' EXIT
+cp -p "$env_file" "$working_file"
+active_env_file="$working_file"
 
 read_env() {
   local key="$1"
@@ -19,7 +23,7 @@ read_env() {
       print value
       exit
     }
-  ' "$env_file"
+  ' "$active_env_file"
 }
 
 unquote() {
@@ -80,10 +84,107 @@ url_encode() {
   printf '%s' "$output"
 }
 
+set_env() {
+  local key="$1"
+  local value="$2"
+  DSC_ENV_KEY="$key" DSC_ENV_VALUE="$value" awk '
+    BEGIN { key = ENVIRON["DSC_ENV_KEY"]; value = ENVIRON["DSC_ENV_VALUE"]; found = 0 }
+    index($0, key "=") == 1 {
+      if (!found) print key "=" value
+      found = 1
+      next
+    }
+    { print }
+    END { if (!found) print key "=" value }
+  ' "$working_file" > "$working_file.next"
+  mv "$working_file.next" "$working_file"
+}
+
+recover_existing_mysql_values() {
+  [[ "${DSC_RECOVER_EXISTING_MYSQL:-false}" == "true" ]] || return 0
+
+  command -v docker >/dev/null 2>&1 || {
+    echo "docker is required to recover the existing MySQL Compose credentials." >&2
+    exit 1
+  }
+  command -v python3 >/dev/null 2>&1 || {
+    echo "python3 is required to parse the existing MYSQL_URL during Compose migration." >&2
+    exit 1
+  }
+
+  local mysql_container="${DSC_MYSQL_CONTAINER:-device-state-console-mysql-1}"
+  local container_env
+  container_env="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$mysql_container")" || {
+    echo "Could not inspect the existing MySQL container for Compose migration." >&2
+    exit 1
+  }
+
+  container_env_value() {
+    local key="$1"
+    printf '%s\n' "$container_env" | awk -v key="$key" '
+      index($0, key "=") == 1 {
+        print substr($0, length(key) + 2)
+        exit
+      }
+    '
+  }
+
+  set_if_missing() {
+    local key="$1"
+    local value="$2"
+    if [[ -z "$(unquote "$(read_env "$key")")" && -n "$value" ]]; then
+      set_env "$key" "$value"
+    fi
+  }
+
+  local legacy_mysql_url
+  legacy_mysql_url="$(unquote "$(read_env MYSQL_URL)")"
+  local legacy_mysql_user=""
+  local legacy_mysql_password=""
+  local legacy_mysql_database=""
+  if [[ -n "$legacy_mysql_url" ]]; then
+    local parsed_mysql_url
+    parsed_mysql_url="$(MYSQL_URL="$legacy_mysql_url" python3 - <<'PY'
+from urllib.parse import unquote, urlsplit
+import os
+
+parsed = urlsplit(os.environ["MYSQL_URL"])
+if parsed.scheme != "mysql" or not parsed.username or not parsed.password or not parsed.path:
+    raise SystemExit("invalid MYSQL_URL")
+print("\t".join([
+    unquote(parsed.username),
+    unquote(parsed.password),
+    unquote(parsed.path.lstrip("/")),
+]))
+PY
+    )" || {
+      echo "Existing MYSQL_URL could not be parsed for Compose migration." >&2
+      exit 1
+    }
+    IFS=$'\t' read -r legacy_mysql_user legacy_mysql_password legacy_mysql_database <<< "$parsed_mysql_url"
+  fi
+
+  set_if_missing MYSQL_ROOT_PASSWORD "$(container_env_value MYSQL_ROOT_PASSWORD)"
+  set_if_missing MYSQL_DATABASE "${legacy_mysql_database:-$(container_env_value MYSQL_DATABASE)}"
+  set_if_missing MYSQL_USER "${legacy_mysql_user:-$(container_env_value MYSQL_USER)}"
+  # The URL credential is the one proven to work with an already initialized
+  # volume; MYSQL_PASSWORD is otherwise only used for first-time initialization.
+  set_if_missing MYSQL_PASSWORD "${legacy_mysql_password:-$(container_env_value MYSQL_PASSWORD)}"
+}
+
+recover_existing_mysql_values
+
+access_key_minimum=32
+mysql_password_minimum=16
+if [[ "${DSC_RELEASE_CHANNEL:-}" == "test" ]]; then
+  access_key_minimum=6
+  mysql_password_minimum=6
+fi
+
 session_secret="$(require_strong_secret SESSION_SECRET 32)"
-access_key="$(require_strong_secret ACCESS_KEY 32)"
+access_key="$(require_strong_secret ACCESS_KEY "$access_key_minimum")"
 mysql_root_password="$(require_strong_secret MYSQL_ROOT_PASSWORD 16)"
-mysql_password="$(require_strong_secret MYSQL_PASSWORD 16)"
+mysql_password="$(require_strong_secret MYSQL_PASSWORD "$mysql_password_minimum")"
 mysql_database="$(unquote "$(read_env MYSQL_DATABASE)")"
 mysql_user="$(unquote "$(read_env MYSQL_USER)")"
 
@@ -120,26 +221,6 @@ while [[ -e "$backup_file" ]]; do
   backup_file="$env_file.pre-compose-security.$backup_stamp.$counter"
 done
 cp -p "$env_file" "$backup_file"
-
-working_file="$(mktemp "$env_dir/.env.compose-security.XXXXXX")"
-trap 'rm -f "$working_file" "$working_file.next"' EXIT
-cp -p "$env_file" "$working_file"
-
-set_env() {
-  local key="$1"
-  local value="$2"
-  DSC_ENV_KEY="$key" DSC_ENV_VALUE="$value" awk '
-    BEGIN { key = ENVIRON["DSC_ENV_KEY"]; value = ENVIRON["DSC_ENV_VALUE"]; found = 0 }
-    index($0, key "=") == 1 {
-      if (!found) print key "=" value
-      found = 1
-      next
-    }
-    { print }
-    END { if (!found) print key "=" value }
-  ' "$working_file" > "$working_file.next"
-  mv "$working_file.next" "$working_file"
-}
 
 set_env REDIS_PASSWORD "$redis_password"
 set_env REDIS_URL "redis://:$(url_encode "$redis_password")@redis:6379"
