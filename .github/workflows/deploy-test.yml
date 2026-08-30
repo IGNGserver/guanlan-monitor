@@ -100,9 +100,8 @@ jobs:
             printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
             printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
             chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
-          elif [[ -n "$SSH_PRIVATE_KEY" || -n "$SSH_KNOWN_HOSTS" ]]; then
-            echo "SSH_PRIVATE_KEY and SSH_KNOWN_HOSTS must be provided together." >&2
-            exit 1
+          else
+            echo "SSH deploy secrets are not used for the local NAS runner deployment."
           fi
 
       - name: Checkout deployment definition
