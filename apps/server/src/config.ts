@@ -23,10 +23,11 @@ const booleanFromEnv = z.preprocess((value) => {
 }, z.boolean().default(false));
 
 const defaultSessionCookieSecure = process.env.NODE_ENV === "production";
+const minimumAccessKeyLength = 6;
 
 const schema = z.object({
   SESSION_SECRET: z.string().min(20),
-  ACCESS_KEY: z.string().min(16),
+  ACCESS_KEY: z.string().min(minimumAccessKeyLength),
   SESSION_COOKIE_SECURE: z.preprocess(
     (value) => (value === undefined ? defaultSessionCookieSecure : value),
     booleanFromEnv
@@ -70,8 +71,10 @@ if (process.env.NODE_ENV === "production") {
   if (env.SESSION_SECRET.length < 32 || hasWeakMarker(env.SESSION_SECRET)) {
     throw new Error("SESSION_SECRET must be a strong, non-placeholder secret in production.");
   }
-  if (env.ACCESS_KEY.length < 32 || hasWeakMarker(env.ACCESS_KEY)) {
-    throw new Error("ACCESS_KEY must be a strong, non-placeholder secret in production.");
+  const productionAccessKeyMinimum = env.DSC_RELEASE_CHANNEL === "test" ? minimumAccessKeyLength : 32;
+  const productionMysqlPasswordMinimum = env.DSC_RELEASE_CHANNEL === "test" ? 6 : 16;
+  if (env.ACCESS_KEY.length < productionAccessKeyMinimum || hasWeakMarker(env.ACCESS_KEY)) {
+    throw new Error(`ACCESS_KEY must be a strong, non-placeholder secret with at least ${productionAccessKeyMinimum} characters.`);
   }
   if (!env.SESSION_COOKIE_SECURE) {
     throw new Error("SESSION_COOKIE_SECURE must be true in production.");
@@ -84,8 +87,8 @@ if (process.env.NODE_ENV === "production") {
     throw new Error("REDIS_URL must contain a strong, non-placeholder password in production.");
   }
   const mysqlPassword = urlPassword(env.MYSQL_URL);
-  if (!env.MYSQL_URL || !mysqlPassword || mysqlPassword.length < 16 || hasWeakMarker(mysqlPassword)) {
-    throw new Error("MYSQL_URL must contain a strong, non-placeholder password in production.");
+  if (!env.MYSQL_URL || !mysqlPassword || mysqlPassword.length < productionMysqlPasswordMinimum || hasWeakMarker(mysqlPassword)) {
+    throw new Error(`MYSQL_URL must contain a strong, non-placeholder password with at least ${productionMysqlPasswordMinimum} characters.`);
   }
 }
 
