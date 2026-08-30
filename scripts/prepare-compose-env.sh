@@ -145,6 +145,17 @@ recover_existing_mysql_values() {
     fi
   }
 
+  local existing_mysql_root_password
+  existing_mysql_root_password="$(unquote "$(read_env MYSQL_ROOT_PASSWORD)")"
+  local live_mysql_root_password
+  live_mysql_root_password="$(container_env_value MYSQL_ROOT_PASSWORD)"
+  if [[ -n "$existing_mysql_root_password" && "$existing_mysql_root_password" == "$live_mysql_root_password" && ${#live_mysql_root_password} -ge 16 ]]; then
+    # A previous interrupted migration may already have persisted the exact
+    # live legacy credential before the container restart. Keep the migration
+    # idempotent without allowing an unrelated weak value.
+    legacy_mysql_root_recovered=true
+  fi
+
   local legacy_mysql_url
   legacy_mysql_url="$(unquote "$(read_env MYSQL_URL)")"
   local legacy_mysql_user=""
