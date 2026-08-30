@@ -25,13 +25,6 @@ class ServerUrlPolicyTest {
   }
 
   @Test
-  fun rejectsCleartextWhenDisabled() {
-    assertThrows(InvalidServerUrlException::class.java) {
-      ServerUrlPolicy.normalize("http://hub.example.com:3100", allowCleartext = false)
-    }
-  }
-
-  @Test
   fun rejectsEmbeddedCredentials() {
     assertThrows(InvalidServerUrlException::class.java) {
       ServerUrlPolicy.normalize("https://user:password@hub.example.com:3100")

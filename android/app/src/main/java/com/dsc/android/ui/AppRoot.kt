@@ -297,7 +297,7 @@ private fun LoginScreen(
       onValueChange = { baseUrl = it },
       modifier = Modifier.fillMaxWidth(),
       label = { Text("中枢地址") },
-      supportingText = { Text("例如 https://你的域名:3100（正式版必须使用 HTTPS）") },
+      supportingText = { Text("例如 http://局域网地址:3100 或 https://你的域名") },
       singleLine = true
     )
     Spacer(Modifier.height(12.dp))
