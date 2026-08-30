@@ -195,9 +195,11 @@ recover_existing_mysql_values
 
 access_key_minimum=32
 mysql_password_minimum=16
+agent_require_https=true
 if [[ "${DSC_RELEASE_CHANNEL:-}" == "test" ]]; then
   access_key_minimum=6
   mysql_password_minimum=6
+  agent_require_https=false
 fi
 
 session_secret="$(require_strong_secret SESSION_SECRET 32)"
@@ -248,7 +250,7 @@ set_env REDIS_PASSWORD "$redis_password"
 set_env REDIS_URL "redis://:$(url_encode "$redis_password")@redis:6379"
 set_env MYSQL_URL "mysql://$(url_encode "$mysql_user"):$(url_encode "$mysql_password")@mysql:3306/$(url_encode "$mysql_database")"
 set_env SESSION_COOKIE_SECURE true
-set_env AGENT_REQUIRE_HTTPS true
+set_env AGENT_REQUIRE_HTTPS "$agent_require_https"
 set_env TRUST_PROXY true
 
 mv "$working_file" "$env_file"

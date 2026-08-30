@@ -45,7 +45,7 @@ services:
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 4000
       SESSION_COOKIE_SECURE: "true"
-      AGENT_REQUIRE_HTTPS: "true"
+      AGENT_REQUIRE_HTTPS: "${AGENT_REQUIRE_HTTPS:-true}"
       TRUST_PROXY: "true"
       REDIS_URL: ${REDIS_URL:?Set REDIS_URL to an authenticated Redis URL}
       MYSQL_URL: "${MYSQL_URL:-mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}}"

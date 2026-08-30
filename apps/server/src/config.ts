@@ -79,8 +79,8 @@ if (process.env.NODE_ENV === "production") {
   if (!env.SESSION_COOKIE_SECURE) {
     throw new Error("SESSION_COOKIE_SECURE must be true in production.");
   }
-  if (!env.AGENT_REQUIRE_HTTPS) {
-    throw new Error("AGENT_REQUIRE_HTTPS must be true in production.");
+  if (env.DSC_RELEASE_CHANNEL === "stable" && !env.AGENT_REQUIRE_HTTPS) {
+    throw new Error("AGENT_REQUIRE_HTTPS must be true in stable production.");
   }
   const redisPassword = urlPassword(env.REDIS_URL);
   if (!env.REDIS_URL || !redisPassword || redisPassword.length < 16 || hasWeakMarker(redisPassword)) {
