@@ -40,17 +40,25 @@ jobs:
         shell: bash
         env:
           DSC_VERSION: ${{ inputs.version }}
+          DSC_REDIS_IMAGE: redis:7.4-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+          DSC_MYSQL_IMAGE: mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
         run: |
           set -euo pipefail
           docker pull "ghcr.io/igngserver/device-state-console-server:${DSC_VERSION}"
           docker pull "ghcr.io/igngserver/device-state-console-web:${DSC_VERSION}"
+          docker pull "$DSC_REDIS_IMAGE"
+          docker pull "$DSC_MYSQL_IMAGE"
           docker image inspect \
             "ghcr.io/igngserver/device-state-console-server:${DSC_VERSION}" \
-            "ghcr.io/igngserver/device-state-console-web:${DSC_VERSION}" >/dev/null
+            "ghcr.io/igngserver/device-state-console-web:${DSC_VERSION}" \
+            "$DSC_REDIS_IMAGE" \
+            "$DSC_MYSQL_IMAGE" >/dev/null
           mkdir -p image-bundle
           docker save \
             "ghcr.io/igngserver/device-state-console-server:${DSC_VERSION}" \
             "ghcr.io/igngserver/device-state-console-web:${DSC_VERSION}" \
+            "$DSC_REDIS_IMAGE" \
+            "$DSC_MYSQL_IMAGE" \
             | gzip -1 > image-bundle/dsc-test-images.tar.gz
           ls -lh image-bundle/dsc-test-images.tar.gz
 
@@ -124,6 +132,8 @@ jobs:
         shell: bash
         env:
           DSC_VERSION: ${{ inputs.version }}
+          DSC_REDIS_IMAGE: redis:7.4-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+          DSC_MYSQL_IMAGE: mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
         run: |
           set -euo pipefail
           archive="$RUNNER_TEMP/dsc-test-images/dsc-test-images.tar.gz"
@@ -131,7 +141,9 @@ jobs:
           gzip -dc "$archive" | docker load
           docker image inspect \
             "ghcr.io/igngserver/device-state-console-server:${DSC_VERSION}" \
-            "ghcr.io/igngserver/device-state-console-web:${DSC_VERSION}" >/dev/null
+            "ghcr.io/igngserver/device-state-console-web:${DSC_VERSION}" \
+            "$DSC_REDIS_IMAGE" \
+            "$DSC_MYSQL_IMAGE" >/dev/null
 
       - name: Preserve server data and sync Compose definition
         shell: bash
