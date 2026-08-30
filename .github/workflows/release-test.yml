@@ -169,10 +169,14 @@ jobs:
           $installer = Start-Process -FilePath $setup -ArgumentList "/S" -Wait -PassThru
           if ($installer.ExitCode -ne 0) { throw "Windows GUI silent installation failed with exit code $($installer.ExitCode)." }
           $installRoot = Join-Path $env:ProgramFiles "DeviceStateConsoleAgent"
-          $executable = Join-Path $installRoot "观澜.exe"
-          if (-not (Test-Path -LiteralPath $executable)) { throw "Installed Windows GUI executable is missing: $executable" }
+          if (-not (Test-Path -LiteralPath $installRoot -PathType Container)) { throw "Windows GUI installation directory is missing: $installRoot" }
           node scripts/verify-electron-artifact-version.mjs $installRoot $version
-          Get-Item -LiteralPath $executable | Select-Object FullName,Length
+          $mainExecutables = @(Get-ChildItem -LiteralPath $installRoot -File -Filter "*.exe" | Where-Object { $_.Name -notlike "Uninstall *" })
+          if ($mainExecutables.Count -ne 1) {
+            $found = ($mainExecutables | ForEach-Object { $_.Name }) -join ", "
+            throw "Expected exactly one installed Windows GUI executable, found $($mainExecutables.Count): $found"
+          }
+          $mainExecutables[0] | Select-Object FullName,Length
 
       - name: Smoke test bundled Windows Agent backend
         shell: powershell
