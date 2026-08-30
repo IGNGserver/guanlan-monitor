@@ -48,6 +48,8 @@ jobs:
           docker pull "ghcr.io/igngserver/device-state-console-web:${DSC_VERSION}"
           docker pull "$DSC_REDIS_IMAGE"
           docker pull "$DSC_MYSQL_IMAGE"
+          docker tag "$DSC_REDIS_IMAGE" redis:7.4-alpine
+          docker tag "$DSC_MYSQL_IMAGE" mysql:8.4
           docker image inspect \
             "ghcr.io/igngserver/device-state-console-server:${DSC_VERSION}" \
             "ghcr.io/igngserver/device-state-console-web:${DSC_VERSION}" \
@@ -57,8 +59,8 @@ jobs:
           docker save \
             "ghcr.io/igngserver/device-state-console-server:${DSC_VERSION}" \
             "ghcr.io/igngserver/device-state-console-web:${DSC_VERSION}" \
-            "$DSC_REDIS_IMAGE" \
-            "$DSC_MYSQL_IMAGE" \
+            redis:7.4-alpine \
+            mysql:8.4 \
             | gzip -1 > image-bundle/dsc-test-images.tar.gz
           ls -lh image-bundle/dsc-test-images.tar.gz
 
@@ -142,8 +144,8 @@ jobs:
           docker image inspect \
             "ghcr.io/igngserver/device-state-console-server:${DSC_VERSION}" \
             "ghcr.io/igngserver/device-state-console-web:${DSC_VERSION}" \
-            "$DSC_REDIS_IMAGE" \
-            "$DSC_MYSQL_IMAGE" >/dev/null
+            redis:7.4-alpine \
+            mysql:8.4 >/dev/null
 
       - name: Preserve server data and sync Compose definition
         shell: bash
@@ -165,6 +167,8 @@ jobs:
             export WEB_PORT DSC_VERSION DSC_RELEASE_CHANNEL
             export DSC_SERVER_IMAGE='ghcr.io/igngserver/device-state-console-server'
             export DSC_WEB_IMAGE='ghcr.io/igngserver/device-state-console-web'
+            export DSC_REDIS_IMAGE_REF='redis:7.4-alpine'
+            export DSC_MYSQL_IMAGE_REF='mysql:8.4'
             server_container="$(docker ps -aq --filter name=device-state-console-server-1 | head -n 1 || true)"
             if [[ -n "$server_container" ]]; then
               docker cp "$server_container:/app/data/local-db.json" "$DEPLOY_PATH/backups/local-db.json.$backup_stamp" 2>/dev/null || true
@@ -221,6 +225,8 @@ jobs:
             export WEB_PORT DSC_VERSION DSC_RELEASE_CHANNEL
             export DSC_SERVER_IMAGE='ghcr.io/igngserver/device-state-console-server'
             export DSC_WEB_IMAGE='ghcr.io/igngserver/device-state-console-web'
+            export DSC_REDIS_IMAGE_REF='redis:7.4-alpine'
+            export DSC_MYSQL_IMAGE_REF='mysql:8.4'
             previous="$(docker inspect --format '{{.Config.Image}}' $(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\1/' || true)"
             docker compose up -d --no-build redis mysql
             infra_healthy=0
@@ -257,7 +263,7 @@ jobs:
             ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
               "set -euo pipefail; \
                cd '$DEPLOY_PATH'; \
-               export WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' DSC_SERVER_IMAGE='ghcr.io/igngserver/device-state-console-server' DSC_WEB_IMAGE='ghcr.io/igngserver/device-state-console-web'; \
+               export WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' DSC_SERVER_IMAGE='ghcr.io/igngserver/device-state-console-server' DSC_WEB_IMAGE='ghcr.io/igngserver/device-state-console-web' DSC_REDIS_IMAGE_REF='redis:7.4-alpine' DSC_MYSQL_IMAGE_REF='mysql:8.4'; \
                if [ -f .env ]; then legacy_mysql_url=\$(sed -n 's/^MYSQL_URL=//p' .env | head -n 1 | tr -d '\\r'); if [ -n \"\$legacy_mysql_url\" ]; then legacy_mysql_url=\${legacy_mysql_url/@127.0.0.1:/@mysql:}; legacy_mysql_url=\${legacy_mysql_url/@localhost:/@mysql:}; export MYSQL_URL=\"\$legacy_mysql_url\"; fi; fi; \
                previous=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server) 2>/dev/null | sed -E 's/.*:([^:]+)$/\\1/' || true); \
                docker compose up -d --no-build redis mysql; \
