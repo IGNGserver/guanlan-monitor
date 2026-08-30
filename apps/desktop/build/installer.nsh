@@ -3,11 +3,49 @@
 !define DSC_LEGACY_ELECTRON_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\26118358-b500-54e1-881b-7e549a465667"
 !define DSC_WINDOW_TITLE "观澜 · 设备状态控制台"
 !define DSC_HARDWARE_SENSOR_TASK "DeviceStateConsoleHardwareSensors"
+!define DSC_PAWNIO_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO"
 
 !macro customHeader
 !ifndef BUILD_UNINSTALLER
   Var DSC_PREINSTALL_STATE
   Var DSC_RESTORE_LAUNCHED
+  Var DSC_PAWNIO_STATE
+  Var DSC_PAWNIO_VERSION
+
+  Function DSC_DetectPawnIO
+    StrCpy $DSC_PAWNIO_STATE ""
+    StrCpy $DSC_PAWNIO_VERSION ""
+    StrCpy $1 ""
+
+    ; PawnIO is a shared system driver. Preserve a valid installation owned by
+    ; PawnIO itself or another application instead of treating it as an error.
+    SetRegView 64
+    ReadRegStr $DSC_PAWNIO_VERSION HKLM "${DSC_PAWNIO_UNINSTALL_KEY}" "DisplayVersion"
+    ReadRegStr $1 HKLM "${DSC_PAWNIO_UNINSTALL_KEY}" "InstallLocation"
+    ${If} $1 != ""
+      IfFileExists "$1\uninstall.exe" 0 dsc_detect_pawnio_32
+      StrCpy $DSC_PAWNIO_STATE "registered"
+      Goto dsc_detect_pawnio_service
+    ${EndIf}
+
+dsc_detect_pawnio_32:
+    SetRegView 32
+    ReadRegStr $DSC_PAWNIO_VERSION HKLM "${DSC_PAWNIO_UNINSTALL_KEY}" "DisplayVersion"
+    ReadRegStr $1 HKLM "${DSC_PAWNIO_UNINSTALL_KEY}" "InstallLocation"
+    ${If} $1 != ""
+      IfFileExists "$1\uninstall.exe" 0 dsc_detect_pawnio_service
+      StrCpy $DSC_PAWNIO_STATE "registered"
+    ${EndIf}
+
+dsc_detect_pawnio_service:
+    SetRegView 64
+    nsExec::Exec '"$SYSDIR\sc.exe" query PawnIO'
+    Pop $0
+    ${If} $0 == 0
+      StrCpy $DSC_PAWNIO_STATE "service"
+    ${EndIf}
+    SetRegView 64
+  FunctionEnd
 
   Function DSC_CapturePreInstallState
     StrCpy $DSC_PREINSTALL_STATE "not_started"
@@ -107,13 +145,30 @@
 
   ; LibreHardwareMonitor needs the bundled PawnIO kernel driver for CPU
   ; package sensors on Windows. The setup is already running elevated, so
-  ; install it silently before the desktop app is launched. Existing
-  ; installations are left intact when PawnIO reports that it is already
-  ; installed.
+  ; install it silently before the desktop app is launched. PawnIO is shared
+  ; system-wide, so a verified existing installation must be left intact.
+  Call DSC_DetectPawnIO
+  ${If} $DSC_PAWNIO_STATE != ""
+    DetailPrint "PawnIO $DSC_PAWNIO_VERSION is already installed; keeping the existing system driver."
+    Goto dsc_skip_pawnio_install
+  ${EndIf}
   IfFileExists "$INSTDIR\resources\agent\windows-hardware\pawnio\PawnIO_setup.exe" 0 dsc_skip_pawnio_install
   nsExec::Exec '"$INSTDIR\resources\agent\windows-hardware\pawnio\PawnIO_setup.exe" -install -silent'
   Pop $0
-  ${If} $0 != 0
+  ${If} $0 == 3010
+    ; PawnIO 2.2.0 documents 3010 as a successful install that needs reboot.
+    SetRebootFlag true
+    DetailPrint "PawnIO installed successfully; Windows must be restarted to load the driver."
+  ${ElseIf} $0 == 183
+    ; ERROR_ALREADY_EXISTS is safe only when a valid shared installation can
+    ; be observed after the setup attempt. Do not blanket-ignore exit 183.
+    Call DSC_DetectPawnIO
+    ${If} $DSC_PAWNIO_STATE == ""
+      MessageBox MB_ICONSTOP|MB_OK "PawnIO 硬件传感器驱动安装失败（错误码 183），且未检测到可用的已安装驱动。安装已中止。"
+      Abort
+    ${EndIf}
+    DetailPrint "PawnIO is already installed; keeping the existing system driver."
+  ${ElseIf} $0 != 0
     MessageBox MB_ICONSTOP|MB_OK "PawnIO 硬件传感器驱动安装失败（错误码 $0）。安装已中止。"
     Abort
   ${EndIf}

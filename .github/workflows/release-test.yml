@@ -160,7 +160,7 @@ jobs:
           Compress-Archive -Path (Join-Path $unpacked "*") -DestinationPath $update -CompressionLevel Optimal -Force
           Get-ChildItem $outputDir -File | Select-Object Name,Length
 
-      - name: Silently install and verify Windows GUI setup
+      - name: Silently install, reinstall and verify Windows GUI setup
         shell: powershell
         run: |
           $version = (Get-Content VERSION -Raw).Trim()
@@ -177,6 +177,9 @@ jobs:
             throw "Expected exactly one installed Windows GUI executable, found $($mainExecutables.Count): $found"
           }
           $mainExecutables[0] | Select-Object FullName,Length
+          $reinstaller = Start-Process -FilePath $setup -ArgumentList "/S" -Wait -PassThru
+          if ($reinstaller.ExitCode -ne 0) { throw "Windows GUI silent reinstallation failed with exit code $($reinstaller.ExitCode)." }
+          node scripts/verify-electron-artifact-version.mjs $installRoot $version
 
       - name: Smoke test bundled Windows Agent backend
         shell: powershell

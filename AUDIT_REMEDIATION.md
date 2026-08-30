@@ -16,7 +16,7 @@
 | F-04 | 真实：ingest 主要依赖 TypeScript 类型，缺少运行时边界和大小限制 | 已修复：Zod 运行时校验、字段/数组限制、时间校验、4 MiB body limit；对旧 Agent 缺失 `system` 的 payload 使用有限默认值，但不接受非法计数器 |
 | F-05 | 真实：Android release 曾允许明文 HTTP，服务地址来源过宽；Hub 的 HTTPS 转发判断也不能信任任意客户端头 | 已修复：release 禁止 cleartext，运行时只在 debug 可放宽；Hub 仅在显式 `TRUST_PROXY` 时信任代理协议；Compose 中 Hub 不暴露宿主端口并固定信任内置 Web 代理 |
 | F-06 | 真实：Redis 无认证且 Redis/MySQL 暴露宿主机端口 | 已修复：Redis 密码、认证 URL、移除宿主端口、固定基础设施镜像摘要；部署前先验证强密钥、备份并原子升级 `.env`，再重建/检查 Redis 和 MySQL |
-| F-07 | 真实但分路径：发布中的 Electron 安装器缺少安装结果处理，PawnIO 来源校验不足；旧 Inno 路径仍需兼容性决策 | 已修复发布路径：固定官方来源与 SHA-256、静态校验、Windows Authenticode 校验、非零退出码中止；旧 Inno 路径留审 |
+| F-07 | 真实但分路径：发布中的 Electron 安装器缺少安装结果处理，PawnIO 来源校验不足；旧 Inno 路径仍需兼容性决策 | 已修复发布路径：固定官方来源与 SHA-256、静态校验、Windows Authenticode 校验；安装前保留经验证的共享 PawnIO 驱动，正确处理需重启成功码 3010，仅在二次验证已安装驱动后接受 183，其他非零码仍中止；旧 Inno 路径留审 |
 | F-08 | 真实：物理设备删除后，旧实时/缓存状态可能重新制造 open 设备 | 已修复并与 UI 语义对齐：MySQL/local 写入 closed tombstone，删除时清实时态；历史/缓存不能复活，只有后续物理 Agent 或宿主虚拟化清单的权威上报可重新显示 |
 | F-09 | 真实：本地 JSON 损坏会退化为空库，写队列可能永久拒绝，历史无明确上限 | 已修复：损坏 fail-closed、队列拒绝后可恢复、分钟/小时留存和容量上限、测试 |
 | F-10 | 真实：聚合仅驻留内存，退出可能丢失；定时任务错误处理和历史清理不足 | 已修复：串行聚合队列、退出 flush、周期留存清理、错误捕获、样本上限 |

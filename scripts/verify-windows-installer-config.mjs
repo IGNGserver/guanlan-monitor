@@ -5,9 +5,13 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const desktopPackagePath = path.join(root, "apps", "desktop", "package.json");
 const installerPath = path.join(root, "apps", "desktop", "build", "installer.nsh");
+const releaseWorkflowPath = path.join(root, ".github", "workflows", "release-test.yml");
 const desktopPackage = JSON.parse(fs.readFileSync(desktopPackagePath, "utf8"));
 const installer = fs.readFileSync(installerPath, "utf8");
+const releaseWorkflow = fs.readFileSync(releaseWorkflowPath, "utf8");
 const nsis = desktopPackage.build?.nsis ?? {};
+const pawnIoDetectionIndex = installer.indexOf("Call DSC_DetectPawnIO");
+const pawnIoSetupIndex = installer.indexOf('PawnIO_setup.exe" -install -silent');
 
 const checks = [
   [desktopPackage.build?.productName === "观澜", "Electron product name must remain 观澜."],
@@ -30,7 +34,12 @@ const checks = [
   [installer.includes("GetDlgItem $0 $HWNDPARENT 1203"), "The installer must hide the finish-page launch checkbox through the NSIS dialog handle."],
   [installer.includes("nsExec::Exec"), "Process cleanup must use the hidden nsExec runner."],
   [installer.includes("resources\\agent\\windows-hardware\\pawnio\\PawnIO_setup.exe") && installer.includes("-install -silent"), "The Windows GUI installer must install the bundled PawnIO driver silently."],
-  [installer.includes('Pop $0\n  ${If} $0 != 0\n    MessageBox MB_ICONSTOP|MB_OK') && installer.includes("    Abort\n  ${EndIf}\ndsc_skip_pawnio_install:"), "PawnIO installation failures must abort the installer."],
+  [installer.includes("Function DSC_DetectPawnIO") && installer.includes('"$SYSDIR\\sc.exe" query PawnIO') && installer.includes("DSC_PAWNIO_UNINSTALL_KEY") && installer.includes('IfFileExists "$1\\uninstall.exe"'), "The installer must verify an existing shared PawnIO service or official installation before invoking setup."],
+  [pawnIoDetectionIndex >= 0 && pawnIoSetupIndex >= 0 && pawnIoDetectionIndex < pawnIoSetupIndex, "The existing PawnIO check must run before the bundled setup."],
+  [installer.includes('${If} $0 == 3010') && installer.includes("SetRebootFlag true"), "PawnIO reboot-required success must not abort the installer."],
+  [installer.includes('${ElseIf} $0 == 183') && installer.includes('Call DSC_DetectPawnIO\n    ${If} $DSC_PAWNIO_STATE == ""'), "PawnIO ERROR_ALREADY_EXISTS must be accepted only after an installed-driver check."],
+  [installer.includes('${ElseIf} $0 != 0\n    MessageBox MB_ICONSTOP|MB_OK') && installer.includes("    Abort\n  ${EndIf}\ndsc_skip_pawnio_install:"), "Unrecognized PawnIO installation failures must abort the installer."],
+  [releaseWorkflow.includes("Silently install, reinstall and verify Windows GUI setup") && releaseWorkflow.includes("$reinstaller = Start-Process"), "The Windows release job must exercise silent reinstallation over an existing PawnIO installation."],
   [!/(?<!:)\b(?:ExecWait|Exec)\s+['"][^'\n]*taskkill\\.exe/i.test(installer), "taskkill must not be launched through a visible Exec/ExecWait command."],
   [installer.includes("!macro customInstall"), "The installer migration hook must be present."],
   [installer.includes("!macro customFinishPage\n!ifndef BUILD_UNINSTALLER"), "The installer finish page customization must be scoped at macro expansion time."],
