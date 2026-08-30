@@ -55,11 +55,14 @@ is_weak_secret() {
 require_strong_secret() {
   local key="$1"
   local minimum="$2"
+  local allow_legacy_marker="${3:-false}"
   local value
   value="$(unquote "$(read_env "$key")")"
   if is_weak_secret "$value" "$minimum"; then
-    echo "$key must be an existing non-placeholder secret with at least $minimum characters; it was not changed." >&2
-    exit 1
+    if [[ "$allow_legacy_marker" != "true" || ${#value} -lt "$minimum" ]]; then
+      echo "$key must be an existing non-placeholder secret with at least $minimum characters; it was not changed." >&2
+      exit 1
+    fi
   fi
   printf '%s' "$value"
 }
@@ -100,6 +103,8 @@ set_env() {
   mv "$working_file.next" "$working_file"
 }
 
+legacy_mysql_root_recovered=false
+
 recover_existing_mysql_values() {
   [[ "${DSC_RECOVER_EXISTING_MYSQL:-false}" == "true" ]] || return 0
 
@@ -134,6 +139,9 @@ recover_existing_mysql_values() {
     local value="$2"
     if [[ -z "$(unquote "$(read_env "$key")")" && -n "$value" ]]; then
       set_env "$key" "$value"
+      if [[ "$key" == "MYSQL_ROOT_PASSWORD" ]]; then
+        legacy_mysql_root_recovered=true
+      fi
     fi
   }
 
@@ -183,7 +191,10 @@ fi
 
 session_secret="$(require_strong_secret SESSION_SECRET 32)"
 access_key="$(require_strong_secret ACCESS_KEY "$access_key_minimum")"
-mysql_root_password="$(require_strong_secret MYSQL_ROOT_PASSWORD 16)"
+# An existing initialized volume may retain a legacy root marker. It is
+# tolerated only when this migration recovered that exact live credential;
+# stable deployments still reject it when no recovery is requested.
+mysql_root_password="$(require_strong_secret MYSQL_ROOT_PASSWORD 16 "$legacy_mysql_root_recovered")"
 mysql_password="$(require_strong_secret MYSQL_PASSWORD "$mysql_password_minimum")"
 mysql_database="$(unquote "$(read_env MYSQL_DATABASE)")"
 mysql_user="$(unquote "$(read_env MYSQL_USER)")"
