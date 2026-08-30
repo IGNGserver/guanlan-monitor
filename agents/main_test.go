@@ -125,6 +125,25 @@ func TestPendingStateIsWrittenWithoutPayloadData(t *testing.T) {
 	}
 }
 
+func TestSanitizePendingPayloadRemovesInvalidTemperatureValues(t *testing.T) {
+	invalid := -125.0
+	valid := 42.0
+	payload := metricsPayload{
+		TemperatureSensors: []temperatureSensorReading{
+			{ID: "invalid", HardwareType: "hwmon", RawName: "CPUTIN", CurrentC: &invalid, Status: "invalid"},
+			{ID: "valid", HardwareType: "hwmon", RawName: "Package", CurrentC: &valid, Status: "valid"},
+		},
+	}
+
+	sanitized := sanitizePendingPayload(payload)
+	if sanitized.TemperatureSensors[0].CurrentC != nil {
+		t.Fatalf("invalid hardware temperature must be removed from replay payload: %#v", sanitized.TemperatureSensors[0])
+	}
+	if sanitized.TemperatureSensors[1].CurrentC == nil || *sanitized.TemperatureSensors[1].CurrentC != valid {
+		t.Fatalf("valid hardware temperature must remain in replay payload: %#v", sanitized.TemperatureSensors[1])
+	}
+}
+
 func TestComputeRatesKeepsPerInterfaceNetworkActivity(t *testing.T) {
 	previousAt := time.Unix(100, 0)
 	currentAt := previousAt.Add(2 * time.Second)
@@ -637,6 +656,28 @@ func TestMapHardwareSensorsExportsTemperatureSourcesAndDiagnostics(t *testing.T)
 	}
 	if byName["Temperature Warning"].Status != "threshold" || byName["Temperature Warning"].Confidence != "diagnostic" {
 		t.Fatalf("threshold channel must not become a historical reading: %#v", byName["Temperature Warning"])
+	}
+}
+
+func TestNewTemperatureSensorReadingClearsOutOfRangeCurrentValue(t *testing.T) {
+	invalid := -125.0
+	reading := newTemperatureSensorReading(
+		"sensor-invalid",
+		"linux-hwmon",
+		"hwmon",
+		"nct6779",
+		"hwmon",
+		"nct6779",
+		"CPUTIN",
+		&invalid,
+		nil,
+		nil,
+		nil,
+		"superio",
+		"",
+	)
+	if reading.CurrentC != nil || reading.Status != "invalid" || reading.Confidence != "diagnostic" {
+		t.Fatalf("out-of-range temperature must remain diagnostic without a numeric value: %#v", reading)
 	}
 }
 

@@ -779,6 +779,7 @@ func (s *pendingStore) readEntries() ([]pendingSample, error) {
 		if entry.Payload.SampleID == "" {
 			entry.Payload.SampleID = entry.ID
 		}
+		entry.Payload = sanitizePendingPayload(entry.Payload)
 		if entry.ID == "" {
 			entry.ID = sampleID(entry.Payload)
 		}
@@ -788,6 +789,25 @@ func (s *pendingStore) readEntries() ([]pendingSample, error) {
 		entries = append(entries, entry)
 	}
 	return entries, nil
+}
+
+// Older Agent builds could retain an out-of-range hardware temperature while
+// marking the source as invalid. Keep those samples replayable: the source
+// remains visible as a diagnostic reading, but its invalid numeric value must
+// not reject the complete telemetry payload at the Hub.
+func sanitizePendingPayload(payload metricsPayload) metricsPayload {
+	for index := range payload.TemperatureSensors {
+		sensor := &payload.TemperatureSensors[index]
+		if sensor.CurrentC == nil {
+			continue
+		}
+		value := *sensor.CurrentC
+		if !isValidHardwareTemperature(value) ||
+			(sensor.Status == "invalid" && isLikelyUnwiredTemperature(sensor.HardwareType, sensor.RawName, value)) {
+			sensor.CurrentC = nil
+		}
+	}
+	return payload
 }
 
 func (s *pendingStore) prune(entries []pendingSample, now time.Time) []pendingSample {
@@ -3567,15 +3587,19 @@ func newTemperatureSensorReading(
 	if reading.DisplayName == "" {
 		reading.DisplayName = reading.RawName
 	}
+	invalidCurrent := currentC != nil && (!isValidHardwareTemperature(*currentC) || isLikelyUnwiredTemperature(hardwareType, rawName, *currentC))
+	if invalidCurrent {
+		reading.CurrentC = nil
+	}
 	if role == "threshold" {
 		reading.Status = "threshold"
 		reading.Confidence = "diagnostic"
-	} else if currentC == nil {
+	} else if currentC == nil || invalidCurrent {
 		reading.Status = "unavailable"
 		reading.Confidence = "diagnostic"
-	} else if !isValidHardwareTemperature(*currentC) || isLikelyUnwiredTemperature(hardwareType, rawName, *currentC) {
-		reading.Status = "invalid"
-		reading.Confidence = "diagnostic"
+		if currentC != nil {
+			reading.Status = "invalid"
+		}
 	}
 	if role == "derived" {
 		reading.Confidence = "derived"
