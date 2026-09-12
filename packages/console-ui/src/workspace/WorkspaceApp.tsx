@@ -22,7 +22,7 @@ import {
 } from "./WidgetLayout";
 import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
 import { DynamicWidgetCanvas, WidgetDrawer } from "./widgetCatalog";
-import { M3SegmentedControl, M3Switch, M3TextField } from "./m3";
+import { M3SegmentedControl, M3Switch, M3Tabs, M3TextField } from "./m3";
 import { Button, Icon, StatusDot, StatusLabel, Surface, SummaryRow, VirtualMachinePowerLabel, type IconName, virtualMachinePowerState } from "./ui";
 import { MiniTrend, TelemetryChartCard, TelemetryInfoCard } from "./TelemetryCards";
 import {
@@ -1273,18 +1273,16 @@ function WidgetPanelBar({
   return (
     <>
     <div className="workspace-panel-bar">
-      <div className="workspace-tabs" role="tablist" aria-label="设备面板">
-        {panels.map((panel) => (
-          <button className={`workspace-tab ${activePanelId === panel.id ? "is-active" : ""}`} type="button" role="tab" aria-selected={activePanelId === panel.id} onClick={() => onSelect(panel.id)} key={panel.id}>
-            {panel.id === "overview" && <Icon name="overview" size={15} />}
-            {panel.id === "compute" && <Icon name="device" size={15} />}
-            {panel.id === "storage_net" && <Icon name="data" size={15} />}
-            {panel.id === "gpu_thermal" && <Icon name="hub" size={15} />}
-            {panel.id === "fan" && <Icon name="clock" size={15} />}
-            {panel.name}
-          </button>
-        ))}
-      </div>
+      <M3Tabs
+        className="workspace-tabs"
+        options={panels.map((panel) => ({
+          value: panel.id,
+          label: <><span aria-hidden="true">{panel.id === "overview" && <Icon name="overview" size={15} />}{panel.id === "compute" && <Icon name="device" size={15} />}{panel.id === "storage_net" && <Icon name="data" size={15} />}{panel.id === "gpu_thermal" && <Icon name="hub" size={15} />}{panel.id === "fan" && <Icon name="clock" size={15} />}</span>{panel.name}</>
+        }))}
+        value={activePanelId}
+        onChange={onSelect}
+        aria-label="设备面板"
+      />
       <div ref={managerRef} className="workspace-panel-manager">
         <button className={`workspace-layout-actions__button${manageOpen ? " is-active" : ""}`} type="button" onClick={() => setManageOpen((value) => !value)} aria-expanded={manageOpen} disabled={!editable} title={editable ? "管理自定义面板" : "离线缓存下不能修改面板"}>面板管理</button>
         {manageOpen && (
