@@ -144,6 +144,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
         startup: { openAtLogin: false, startMinimized: false }
       };
       this.notify();
+      if (this.listeners.size) this.connectSocket();
       return this.snapshot;
     } catch (error) {
       if (isUnauthorized(error)) this.markSessionExpired();
