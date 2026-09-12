@@ -67,7 +67,15 @@ async function run() {
     assert.ok(desktopMetrics.mainWidth > 0);
     assert.equal(desktopMetrics.bridgeAvailable, true, "Electron preload bridge is unavailable");
     assert.ok(desktopMetrics.bodyScrollWidth <= desktopMetrics.viewportWidth + 1, "Electron desktop shell overflows horizontally");
+    assert.equal(await page.locator(".workspace-device-item").count(), 0, "Electron primary navigation must not contain a device list");
+    const desktopNavLabels = (await page.locator(".workspace-sidebar .m3-navigation-item").allTextContents()).map((label) => label.trim());
+    const expectedDesktopNav = desktopNavLabels.includes("本机 Agent") ? ["总览", "设备", "接入中枢", "本机 Agent", "设置"] : ["总览", "设备", "接入中枢", "设置"];
+    assert.deepEqual(desktopNavLabels, expectedDesktopNav, "Electron primary navigation contains non-destination commands");
     await page.screenshot({ path: path.join(outputDir, "electron-workspace-desktop.png"), fullPage: true, animations: "disabled" });
+
+    await page.locator(".workspace-sidebar .m3-navigation-item").filter({ hasText: "设备" }).click();
+    await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
+    await page.screenshot({ path: path.join(outputDir, "electron-devices-desktop.png"), fullPage: true, animations: "disabled" });
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(300);
@@ -81,7 +89,8 @@ async function run() {
         viewportWidth: window.innerWidth
       };
     });
-    assert.equal(mobileMetrics.bottomNavDisplay, "flex");
+    assert.equal(mobileMetrics.bottomNavDisplay, "grid");
+    assert.deepEqual((await page.locator(".workspace-bottom-nav__item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "中枢", "设置"]);
     assert.ok(mobileMetrics.rootWidth > 0);
     assert.ok(mobileMetrics.bodyScrollWidth <= mobileMetrics.viewportWidth + 1, "Electron narrow shell overflows horizontally");
     await page.screenshot({ path: path.join(outputDir, "electron-workspace-mobile.png"), fullPage: true, animations: "disabled" });

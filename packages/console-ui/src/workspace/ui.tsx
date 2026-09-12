@@ -27,6 +27,7 @@ export type IconName =
   | "windowMaximize"
   | "windowRestore"
   | "windowClose"
+  | "more"
   | "chevronUp";
 
 const iconPaths: Record<IconName, string[]> = {
@@ -55,7 +56,8 @@ const iconPaths: Record<IconName, string[]> = {
   windowMinimize: ["M5 19h14"],
   windowMaximize: ["M5 5h14v14H5z"],
   windowRestore: ["M8 8h11v11H8z", "M5 16V5h11"],
-  windowClose: ["m6 6 12 12", "m18 6L6 18"]
+  windowClose: ["m6 6 12 12", "m18 6L6 18"],
+  more: ["M5 12h.01", "M12 12h.01", "M19 12h.01"]
 };
 
 export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {

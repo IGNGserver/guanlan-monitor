@@ -18,23 +18,9 @@ import { fallbackRuntimeProfile, fallbackWindowMaterialCapabilities } from "../s
 import { confirmDiscardWidgetLayoutDraft } from "./WidgetLayout";
 import { getResponsiveTier, getScreenOrientation, type ResponsiveTier, type ScreenOrientation } from "../helpers/layout";
 import { detectTouchSupport, resolveInteractionScale, type InteractionScaleSetting, type PointerType } from "../helpers/density";
+import { defaultRoute, parseWorkspaceHash, routeFromLocation, serializeWorkspaceRoute, type SettingsSection, type WorkspaceRoute } from "./routes";
 
-export type SettingsSection =
-  | "general"
-  | "workspace"
-  | "appearance"
-  | "connections"
-  | "agent"
-  | "data"
-  | "shortcuts"
-  | "session"
-  | "about";
-
-export type WorkspaceRoute =
-  | { kind: "overview" }
-  | { kind: "hub"; hubId: string }
-  | { kind: "device"; deviceId: string }
-  | { kind: "settings"; section: SettingsSection };
+export type { SettingsSection, WorkspaceRoute } from "./routes";
 
 export interface HubViewModel {
   id: string;
@@ -113,44 +99,6 @@ interface WorkspaceContextValue {
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
-const defaultRoute: WorkspaceRoute = { kind: "overview" };
-const settingsSections = new Set<SettingsSection>([
-  "general",
-  "workspace",
-  "appearance",
-  "connections",
-  "agent",
-  "data",
-  "shortcuts",
-  "session",
-  "about"
-]);
-
-function routeFromHash(): WorkspaceRoute {
-  if (typeof window === "undefined") return defaultRoute;
-  const value = window.location.hash.replace(/^#/, "");
-  const [kind, id] = value.split("/");
-  if (kind === "device" && id) return { kind: "device", deviceId: decodeURIComponent(id) };
-  if (kind === "hub" && id) return { kind: "hub", hubId: decodeURIComponent(id) };
-  if (kind === "settings" && id && settingsSections.has(id as SettingsSection)) {
-    return { kind: "settings", section: id as SettingsSection };
-  }
-  return defaultRoute;
-}
-
-function hashForRoute(route: WorkspaceRoute): string {
-  switch (route.kind) {
-    case "device":
-      return `#device/${encodeURIComponent(route.deviceId)}`;
-    case "hub":
-      return `#hub/${encodeURIComponent(route.hubId)}`;
-    case "settings":
-      return `#settings/${route.section}`;
-    default:
-      return "#overview";
-  }
-}
-
 function getStoredTheme(): "system" | "light" | "dark" {
   const value = typeof window === "undefined" ? "system" : localStorage.getItem("dsc-theme");
   return value === "light" || value === "dark" ? value : "system";
@@ -181,7 +129,7 @@ function formatError(error: unknown, fallback: string): string {
 
 export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute?: WorkspaceRoute; children: React.ReactNode }> = ({ adapter, initialRoute, children }) => {
   const isPreview = false;
-  const [route, setRoute] = useState<WorkspaceRoute>(() => initialRoute ?? routeFromHash());
+  const [route, setRoute] = useState<WorkspaceRoute>(() => initialRoute ?? routeFromLocation());
   const [returnRoute, setReturnRoute] = useState<WorkspaceRoute>(defaultRoute);
   const [sidebarCollapsed, setSidebarCollapsedState] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -287,8 +235,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   const navigate = useCallback((nextRoute: WorkspaceRoute) => {
     if (!confirmDiscardWidgetLayoutDraft()) return;
     setRoute(nextRoute);
-    if (typeof window !== "undefined" && window.location.hash !== hashForRoute(nextRoute)) {
-      window.history.pushState({ route: nextRoute }, "", hashForRoute(nextRoute));
+    if (typeof window !== "undefined" && window.location.hash !== serializeWorkspaceRoute(nextRoute)) {
+      window.history.pushState({ route: nextRoute }, "", serializeWorkspaceRoute(nextRoute));
     }
   }, []);
 
@@ -359,9 +307,13 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   }, [adapter, fetchSnapshot]);
 
   useEffect(() => {
-    const handlePopState = () => setRoute(routeFromHash());
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
+    const handleLocationChange = () => setRoute(parseWorkspaceHash(window.location.hash));
+    window.addEventListener("popstate", handleLocationChange);
+    window.addEventListener("hashchange", handleLocationChange);
+    return () => {
+      window.removeEventListener("popstate", handleLocationChange);
+      window.removeEventListener("hashchange", handleLocationChange);
+    };
   }, []);
 
   useEffect(() => {
