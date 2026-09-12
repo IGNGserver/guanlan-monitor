@@ -270,10 +270,10 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
             )) : <div className="workspace-sidebar__empty">尚未发现设备</div>}
           </div>
           <div className="workspace-sidebar__spacer" />
-          {capabilities.canManageLocalAgent && <M3NavigationItem className="workspace-nav-item" selected={route.kind === "settings" && route.section === "agent"} onClick={() => openSettings("agent")} title="本机 Agent">
+          {capabilities.canManageLocalAgent && <M3NavigationItem className="workspace-nav-item" onClick={() => openSettings("agent")} title="本机 Agent">
             <Icon name="agent" /> <span>本机 Agent</span>
           </M3NavigationItem>}
-          {capabilities.canConfigureConnection && <M3NavigationItem className="workspace-nav-item" selected={route.kind === "settings" && route.section === "connections"} onClick={() => openSettings("connections")} title="连接设置">
+          {capabilities.canConfigureConnection && <M3NavigationItem className="workspace-nav-item" onClick={() => openSettings("connections")} title="连接设置">
             <Icon name="connection" /> <span>连接设置</span>
           </M3NavigationItem>}
         </nav>
@@ -283,7 +283,7 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
         {inSettings ? (
           <M3NavigationItem className="workspace-nav-item" onClick={closeSettings} title="返回设备控制台"><Icon name="back" /><span>返回控制台</span></M3NavigationItem>
         ) : (
-          <M3NavigationItem className="workspace-nav-item" selected={route.kind === "settings"} onClick={() => openSettings()} title="设置"><Icon name="settings" /><span>设置</span></M3NavigationItem>
+          <M3NavigationItem className="workspace-nav-item" onClick={() => openSettings()} title="设置"><Icon name="settings" /><span>设置</span></M3NavigationItem>
         )}
         <M3Button className="workspace-sidebar__support" variant="text" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor/issues")} title="打开帮助与反馈">
           <span>帮助与反馈</span><Icon name="external" size={14} />
