@@ -5,7 +5,7 @@ import { Button, Icon, StatusLabel } from "../ui";
 
 export function AppTopBar() {
   const { snapshot, refreshing, mutationPending, refresh, setCommandOpen, sidebarCollapsed, setSidebarCollapsed, openSettings, capabilities } = useWorkspace();
-  const sourceState = snapshot?.source === "cache" ? "cached" : snapshot?.session.authenticated ? "online" : snapshot?.source === "empty" ? "unknown" : "offline";
+  const sourceState = snapshot?.source === "cache" ? "cached" : snapshot?.source === "live" && snapshot.session.authenticated ? "online" : snapshot?.source === "empty" ? "unknown" : "offline";
   return <header className="workspace-topbar">
     <div className="workspace-topbar__leading">
       <M3IconButton className="workspace-icon-button workspace-topbar__toggle" label="切换侧边栏" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}><Icon name="collapse" /></M3IconButton>
@@ -13,7 +13,7 @@ export function AppTopBar() {
     </div>
     <div className="workspace-topbar__actions">
       <StatusLabel state={sourceState} />
-      <M3Button className="workspace-search-trigger" variant="outlined" leadingIcon={<Icon name="search" />} onClick={() => setCommandOpen(true)}><span>搜索设备</span><kbd>/</kbd></M3Button>
+      <M3Button className="workspace-search-trigger" variant="outlined" leadingIcon={<Icon name="search" />} onClick={() => setCommandOpen(true)}><span>搜索设备、页面或设置</span><kbd>/</kbd></M3Button>
       <Button variant="quiet" onClick={() => void refresh()} disabled={refreshing || mutationPending} title={mutationPending ? "正在保存更改" : "刷新状态"}><Icon name="refresh" size={16} />{!refreshing && <span>{mutationPending ? "保存中" : "刷新"}</span>}</Button>
       <Button variant="quiet" onClick={() => openSettings()} title="设置"><Icon name="settings" size={16} /></Button>
     </div>

@@ -108,6 +108,7 @@ type WidgetLayoutContextValue = {
   cancelWidgetDrag: () => void;
   toggleSnapToGrid: () => void;
   resetDeviceLayout: () => Promise<boolean>;
+  discardLayout: () => boolean;
   applyTemplate: (templateId: string) => void;
   saveLayout: () => Promise<boolean>;
   saveAsTemplate: (name: string, templateId?: string) => Promise<boolean>;
@@ -638,22 +639,24 @@ export function WidgetLayoutProvider({
 
   const resetDeviceLayout = useCallback(async (): Promise<boolean> => {
     if (!editable || locked || saving) return false;
-    setSaving(true);
-    try {
-      const nextRemote = await saveWidgetLayout({ scopeKey, templateKey, instanceLayout: null });
-      remoteRef.current = nextRemote;
-      setRemote(nextRemote);
-      replaceDraft(createInitialLayout(definitionsRef.current), false);
-      resetHistory();
-      setSyncMessage("已恢复初始布局");
-      return true;
-    } catch (error) {
-      setSyncMessage(error instanceof Error ? `恢复初始布局失败：${error.message}` : "恢复初始布局失败");
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }, [editable, locked, resetHistory, replaceDraft, saveWidgetLayout, saving, scopeKey, templateKey]);
+    replaceDraft(createInitialLayout(definitionsRef.current), true);
+    resetHistory();
+    setEditMode(true);
+    setSyncMessage("已恢复初始布局预览，点击“保存布局”后才会同步到中枢");
+    return true;
+  }, [editable, locked, replaceDraft, resetHistory, saving]);
+
+  const discardLayout = useCallback((): boolean => {
+    if (!editable || locked) return false;
+    const base = remoteRef.current.instanceLayout
+      ? normalizeLayout(remoteRef.current.instanceLayout)
+      : createInitialLayout(definitionsRef.current);
+    replaceDraft(mergeDefinitions(base, definitionsRef.current), false);
+    resetHistory();
+    setEditMode(false);
+    setSyncMessage("已放弃未保存的布局修改");
+    return true;
+  }, [editable, locked, replaceDraft, resetHistory]);
 
   const applyTemplate = useCallback((templateId: string) => {
     const template = remoteRef.current.templates.find((item) => item.id === templateId);
@@ -812,6 +815,7 @@ export function WidgetLayoutProvider({
     cancelWidgetDrag,
     toggleSnapToGrid,
     resetDeviceLayout,
+    discardLayout,
     applyTemplate,
     saveLayout,
     saveAsTemplate,
@@ -831,7 +835,7 @@ export function WidgetLayoutProvider({
     updateWidgetConfig,
     compactLayout,
     getLayoutSnapshot
-  }), [addWidget, addWidgetGroup, applyTemplate, beginWidgetDrag, cancelWidgetDrag, compactLayout, deleteTemplate, dirty, displayMode, displayPlacements, draft.snapToGrid, draggingWidgetId, editable, editMode, exportLayout, finishWidgetDrag, getLayoutSnapshot, getWidgetSize, historyVersion, importLayout, loading, locked, onDisplayModeChange, orderedWidgetEntries, previewWidgetDrop, redo, registerWidget, remote.instanceLayout, remote.templates, removeWidget, reorderWidgets, resetDeviceLayout, resolveWidget, saveAsTemplate, saveLayout, saving, scopeKey, setDisplayMode, syncMessage, templateKey, toggleSnapToGrid, undo, updateSize, updateWidgetConfig, widgetEntries]);
+  }), [addWidget, addWidgetGroup, applyTemplate, beginWidgetDrag, cancelWidgetDrag, compactLayout, deleteTemplate, dirty, discardLayout, displayMode, displayPlacements, draft.snapToGrid, draggingWidgetId, editable, editMode, exportLayout, finishWidgetDrag, getLayoutSnapshot, getWidgetSize, historyVersion, importLayout, loading, locked, onDisplayModeChange, orderedWidgetEntries, previewWidgetDrop, redo, registerWidget, remote.instanceLayout, remote.templates, removeWidget, reorderWidgets, resetDeviceLayout, resolveWidget, saveAsTemplate, saveLayout, saving, scopeKey, setDisplayMode, syncMessage, templateKey, toggleSnapToGrid, undo, updateSize, updateWidgetConfig, widgetEntries]);
 
   return <WidgetLayoutContext.Provider value={contextValue}>{children}</WidgetLayoutContext.Provider>;
 }
@@ -1142,17 +1146,13 @@ export function WidgetLayoutToolbar({
     layout.importLayout(await file.text());
   };
 
-  const handleToggleEditMode = async () => {
+  const handleToggleEditMode = () => {
     if (!layout.editMode) {
       layout.compactLayout();
       layout.setEditMode(true);
       return;
     }
-    if (layout.dirty) {
-      if (layout.saving) return;
-      const saved = await layout.saveLayout();
-      if (!saved) return;
-    }
+    if (layout.dirty) return;
     layout.setEditMode(false);
   };
 
@@ -1189,10 +1189,10 @@ export function WidgetLayoutToolbar({
       </span>
       {displayModeControl}
       {layout.displayMode === "board" && <M3Button className="workspace-layout-actions__button" variant="text" onClick={() => { onExitBoardMode?.(); if (!onExitBoardMode) layout.setDisplayMode("normal"); }}>退出展板</M3Button>}
-      <M3Button className={`workspace-layout-toggle${layout.editMode ? " is-active" : ""}`} variant={layout.editMode ? "tonal" : "outlined"} aria-pressed={layout.editMode} disabled={layout.saving && layout.dirty} onClick={() => void handleToggleEditMode()}>
-        <span className="workspace-layout-toggle__mark">⌘</span>{layout.editMode ? "完成排布" : "编辑排布"}
+      <M3Button className={`workspace-layout-toggle${layout.editMode ? " is-active" : ""}`} variant={layout.editMode ? "tonal" : "outlined"} aria-pressed={layout.editMode} disabled={layout.editMode && layout.dirty} onClick={handleToggleEditMode} title={layout.dirty ? "请先保存或放弃布局草稿" : undefined}>
+        <span className="workspace-layout-toggle__mark">⌘</span>{layout.editMode ? "退出编辑" : "编辑排布"}
       </M3Button>
-      {onOpenWidgetDrawer && <M3Button className="workspace-layout-actions__button workspace-layout-actions__button--accent" variant="tonal" onClick={onOpenWidgetDrawer}>添加小组件</M3Button>}
+      {onOpenWidgetDrawer && layout.editMode && <M3Button className="workspace-layout-actions__button workspace-layout-actions__button--accent" variant="tonal" onClick={onOpenWidgetDrawer}>添加小组件</M3Button>}
       {layout.editMode && (
         <>
           <div className="workspace-layout-history" role="group" aria-label="布局历史">
@@ -1201,6 +1201,9 @@ export function WidgetLayoutToolbar({
           </div>
           <M3Button className="workspace-layout-save" variant="filled" onClick={() => void layout.saveLayout()} disabled={!layout.dirty || layout.saving}>
             {layout.saving ? "保存中" : "保存布局"}
+          </M3Button>
+          <M3Button className="workspace-layout-discard" variant="outlined" onClick={() => void layout.discardLayout()} disabled={!layout.dirty || layout.saving}>
+            放弃修改
           </M3Button>
           <div className="workspace-layout-more-menu">
             <M3Button className={`workspace-layout-actions__button${moreMenuOpen ? " is-active" : ""}`} variant="outlined" onClick={() => setMoreMenuOpen((v) => !v)} aria-expanded={moreMenuOpen} title="更多操作">

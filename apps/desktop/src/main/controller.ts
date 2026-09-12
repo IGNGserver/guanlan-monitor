@@ -8,6 +8,7 @@ import type {
   DesktopSnapshot,
   DesktopSnapshotRequest,
   DesktopStartupSettings,
+  DeviceSummary,
   MetricWindow,
   TrafficCalendarMode,
   WidgetLayoutRequest,
@@ -47,6 +48,7 @@ export class DesktopController {
   private trafficAnchor = new Date().toISOString();
   private trafficCalendarCache: CachedTrafficCalendar | null = null;
   private startup: DesktopStartupSettings = { openAtLogin: false, startMinimized: false };
+  private readonly visualFixtureEnabled = process.env.NODE_ENV === "test" && process.env.DSC_VISUAL_FIXTURE === "1";
 
   constructor() {
     const userDataPath = app.getPath("userData");
@@ -114,6 +116,7 @@ export class DesktopController {
   }
 
   async getSnapshot(request: DesktopSnapshotRequest = {}): Promise<DesktopSnapshot> {
+    if (this.visualFixtureEnabled) return this.visualFixtureSnapshot(request);
     const requestChanged = this.hasRequestChanges(request);
     if (request.preferCache) {
       try {
@@ -128,6 +131,7 @@ export class DesktopController {
   }
 
   async refresh(request: DesktopSnapshotRequest = {}): Promise<DesktopSnapshot> {
+    if (this.visualFixtureEnabled) return this.visualFixtureSnapshot(request);
     if (this.refreshInFlight) {
       if (this.hasRequestChanges(request)) {
         this.queuedRefreshRequest = mergeSnapshotRequests(this.queuedRefreshRequest, request);
@@ -278,12 +282,14 @@ export class DesktopController {
   }
 
   async getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync> {
+    if (this.visualFixtureEnabled) return { ...request, instanceLayout: null, templates: [] };
     const rawState = await this.agent.start();
     if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
     return this.hub.getWidgetLayout(request);
   }
 
   async saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> {
+    if (this.visualFixtureEnabled) return { scopeKey: request.scopeKey, templateKey: request.templateKey, instanceLayout: request.instanceLayout ?? null, templates: [] };
     const rawState = await this.agent.start();
     if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
     return this.hub.saveWidgetLayout(request);
@@ -380,6 +386,91 @@ export class DesktopController {
       trafficCalendar,
       update,
       authenticated
+    };
+  }
+
+  private visualFixtureSnapshot(request: DesktopSnapshotRequest = {}): DesktopSnapshot {
+    const devices: DeviceSummary[] = [
+      {
+        deviceId: "visual-host",
+        hostname: "视觉验收主机",
+        os: "windows",
+        agentVersion: currentDesktopVersion(),
+        agentChannel: "test",
+        status: "online",
+        lastSeenAt: "2026-09-13T10:00:00.000Z",
+        cpuUsagePercent: 28,
+        gpuUsagePercent: 14,
+        gpuMemoryUsagePercent: 32,
+        memoryUsagePercent: 48,
+        memoryUsedBytes: 16_000_000_000,
+        memoryTotalBytes: 32_000_000_000,
+        diskUsagePercent: 61,
+        diskUsedBytes: 610_000_000_000,
+        diskTotalBytes: 1_000_000_000_000,
+        sortOrder: 0,
+        instanceType: "device"
+      },
+      {
+        deviceId: "visual-vm",
+        hostname: "视觉验收虚拟机",
+        os: "linux",
+        agentVersion: currentDesktopVersion(),
+        agentChannel: "test",
+        status: "online",
+        lastSeenAt: "2026-09-13T09:59:00.000Z",
+        cpuUsagePercent: 72,
+        gpuUsagePercent: null,
+        gpuMemoryUsagePercent: null,
+        memoryUsagePercent: null,
+        memoryUsedBytes: null,
+        memoryTotalBytes: null,
+        diskUsagePercent: 44,
+        diskUsedBytes: 440_000_000_000,
+        diskTotalBytes: 1_000_000_000_000,
+        sortOrder: 1,
+        instanceType: "virtual_machine",
+        hostName: "视觉验收主机",
+        virtualMachine: { vmId: "visual-vm", platform: "proxmox", node: "visual-node", type: "qemu", powerState: "running", hostName: "视觉验收主机" },
+        unavailableMetrics: ["memoryUsage", "gpuUsage", "gpuMemory"]
+      },
+      {
+        deviceId: "visual-offline",
+        hostname: "视觉验收离线设备",
+        os: "linux",
+        agentVersion: null,
+        agentChannel: null,
+        status: "offline",
+        lastSeenAt: "2026-09-12T19:42:00.000Z",
+        cpuUsagePercent: null,
+        gpuUsagePercent: null,
+        gpuMemoryUsagePercent: null,
+        memoryUsagePercent: null,
+        diskUsagePercent: null,
+        sortOrder: 2,
+        instanceType: "device"
+      }
+    ];
+    const selectedDeviceId = request.selectedDeviceId !== undefined
+      ? request.selectedDeviceId
+      : this.selectedDeviceId && devices.some((device) => device.deviceId === this.selectedDeviceId)
+        ? this.selectedDeviceId
+        : devices[0].deviceId;
+    this.selectedDeviceId = selectedDeviceId;
+    const generatedAt = "2026-09-13T10:00:00.000Z";
+    return {
+      generatedAt,
+      source: "live",
+      cache: { available: false, savedAt: null, ageSeconds: null },
+      session: { authenticated: true, accessKeyConfigured: true },
+      localBackend: null,
+      devices,
+      selectedDeviceId,
+      metrics: null,
+      overviewMetrics: null,
+      trafficCalendar: null,
+      update: { available: false, currentVersion: currentDesktopVersion(), currentChannel: "test", latestVersion: currentDesktopVersion(), latestChannel: "test", releaseTag: null, releaseUrl: null, notesUrl: null, publishedAt: null, assetName: null, assetUrl: null, assetSize: null, sha256: null, installMode: "none", message: null, platform: process.platform === "win32" ? "windows-gui" : "linux-gui", arch: process.arch },
+      startup: this.startup
     };
   }
 

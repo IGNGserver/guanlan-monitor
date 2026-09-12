@@ -332,7 +332,7 @@ jobs:
           cat "$RUNNER_TEMP/dsc-visual/web.log"
           exit 1
 
-      - name: Run shared workspace visual smoke test
+      - name: Run shared workspace behavior and two-round visual matrix
         shell: bash
         run: |
           set -euo pipefail

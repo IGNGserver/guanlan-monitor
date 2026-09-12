@@ -7,6 +7,10 @@ export interface HealthSummary {
   total: number;
   online: number;
   offline: number;
+  hostTotal: number;
+  hostOnline: number;
+  virtualMachineTotal: number;
+  virtualMachineOnline: number;
   pending: number | null;
   source: "live" | "cache" | "empty" | "unknown";
   sourceLabel: string;
@@ -23,8 +27,12 @@ function metricUnavailable(device: DeviceSummary, key: DeviceMetricKey): boolean
   return (device.unavailableMetrics ?? []).includes(key);
 }
 
-export function selectHealthSummary(snapshot: ConsoleSnapshot, devices: DeviceSummary[], formatDate: (value: string | null | undefined) => string): HealthSummary {
-  const online = devices.filter((device) => device.status === "online").length;
+export function selectHealthSummary(snapshot: ConsoleSnapshot, allDevices: DeviceSummary[], formatDate: (value: string | null | undefined) => string): HealthSummary {
+  const online = allDevices.filter((device) => device.status === "online").length;
+  const hostDevices = allDevices.filter((device) => device.instanceType !== "virtual_machine");
+  const virtualMachines = allDevices.filter((device) => device.instanceType === "virtual_machine");
+  const hostOnline = hostDevices.filter((device) => device.status === "online").length;
+  const virtualMachineOnline = virtualMachines.filter((device) => device.status === "online").length;
   const source = snapshot.source === "cache"
     ? "cache"
     : snapshot.source === "live" && snapshot.session.authenticated
@@ -33,12 +41,16 @@ export function selectHealthSummary(snapshot: ConsoleSnapshot, devices: DeviceSu
         ? "empty"
         : "unknown";
   const pending = source === "live"
-    ? devices.length - online + (snapshot.localBackend?.lastIssueCount ?? 0) + (devices.length === 0 ? 1 : 0)
+    ? allDevices.length - online + (snapshot.localBackend?.lastIssueCount ?? 0) + (allDevices.length === 0 ? 1 : 0)
     : null;
   return {
-    total: devices.length,
+    total: allDevices.length,
     online,
-    offline: devices.length - online,
+    offline: allDevices.length - online,
+    hostTotal: hostDevices.length,
+    hostOnline,
+    virtualMachineTotal: virtualMachines.length,
+    virtualMachineOnline,
     pending,
     source,
     sourceLabel: source === "live" ? "实时连接" : source === "cache" ? "离线缓存" : source === "empty" ? "等待数据" : "连接异常",
@@ -61,6 +73,20 @@ export function selectResourceRanking(devices: DeviceSummary[], metric: "cpu" | 
     .filter((device) => device.status === "online" && Number.isFinite(value(device)) && !metricUnavailable(device, key))
     .slice()
     .sort((left, right) => (value(right) ?? 0) - (value(left) ?? 0))
+    .slice(0, limit);
+}
+
+export function selectOverviewDevices(allDevices: DeviceSummary[], limit = 6): DeviceSummary[] {
+  const attentionRank = (device: DeviceSummary) => {
+    if (device.status !== "online") return 0;
+    if (device.instanceType === "virtual_machine" && ["stopped", "paused", "suspended"].includes(device.virtualMachine?.powerState?.toLowerCase() ?? "")) return 1;
+    return 2;
+  };
+  return allDevices
+    .slice()
+    .sort((left, right) => attentionRank(left) - attentionRank(right)
+      || (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
+      || Date.parse(right.lastSeenAt ?? "") - Date.parse(left.lastSeenAt ?? ""))
     .slice(0, limit);
 }
 
