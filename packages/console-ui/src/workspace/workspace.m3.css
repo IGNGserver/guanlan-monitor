@@ -399,3 +399,54 @@
     transition-duration: 0.01ms;
   }
 }
+
+/* Adaptive Navigation Bar: mobile uses a stable bottom surface instead of a floating capsule. */
+@media (max-width: 820px), (orientation: portrait) {
+  .workspace-sidebar-edge-trigger {
+    display: none;
+  }
+
+  .workspace-bottom-nav {
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    justify-content: space-around;
+    gap: 2px;
+    padding: 8px max(8px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-bottom));
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 0;
+    background: var(--workspace-color-surface-container);
+    box-shadow: 0 -2px 12px rgb(30 48 67 / 10%);
+    transform: none;
+  }
+
+  .workspace-bottom-nav__item {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 96px;
+    min-height: 56px;
+    padding: 6px 8px;
+    border-radius: var(--workspace-shape-large);
+    font-size: 11px;
+    font-weight: 620;
+  }
+
+  .workspace-bottom-nav__item.is-active {
+    color: var(--workspace-color-on-primary-container);
+    background: var(--workspace-color-primary-container);
+  }
+
+  .workspace-sidebar {
+    top: 0;
+    width: min(312px, 88vw);
+    border-right: 1px solid var(--workspace-color-outline-variant);
+    border-radius: 0 var(--workspace-shape-extra-large) var(--workspace-shape-extra-large) 0;
+  }
+
+  .workspace-sidebar-backdrop {
+    background: rgb(20 28 36 / 38%);
+  }
+}
