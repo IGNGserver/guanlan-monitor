@@ -79,11 +79,11 @@ async function run() {
     assert.equal(await page.locator(".workspace-device-row__heartbeat").count(), 3, "rich Electron fixture must render heartbeat facts");
     await page.screenshot({ path: path.join(outputDir, "electron-devices-desktop.png"), fullPage: true, animations: "disabled" });
 
-    await page.getByRole("button", { name: "打开设备 视觉验收虚拟机" }).click();
+    await page.locator('.workspace-device-row__main[aria-label="打开设备 视觉验收虚拟机"]').click();
     await page.locator(".workspace-page--device").waitFor({ state: "visible", timeout: 15_000 });
     assert.equal(await page.locator(".workspace-breadcrumb").getByText("设备", { exact: true }).count(), 1, "Electron detail must expose the device breadcrumb");
     assert.equal(await page.locator(".workspace-device-facts").count(), 1, "Electron detail must expose stable facts");
-    assert.equal(await page.getByText("宿主机 Agent：在线", { exact: false }).count(), 1, "Electron VM detail must separate host Agent state");
+    assert.equal(await page.getByText(/宿主机 Agent\s*[:：]?\s*在线/).count(), 1, "Electron VM detail must separate host Agent state");
     await page.screenshot({ path: path.join(outputDir, "electron-device-vm-rich.png"), fullPage: true, animations: "disabled" });
 
     await page.evaluate(() => { window.location.hash = "#settings/general"; });

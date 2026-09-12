@@ -1,7 +1,7 @@
 /* Settings is a destination with its own compact navigation, not a hidden desktop sidebar. */
 .workspace-settings-mobile-nav { display: none; }
 
-@media (max-width: 768px), (orientation: portrait), [data-dsc-orientation="portrait"] {
+@media (max-width: 768px), (orientation: portrait) {
   .workspace-settings-mobile-nav { display: block; margin: -18px 0 22px; }
   .workspace-settings-mobile-nav__list { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
   .workspace-settings-mobile-nav__list::-webkit-scrollbar { display: none; }
