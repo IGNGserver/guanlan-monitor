@@ -243,6 +243,62 @@ export function M3TextField({ label, supportingText, errorText, id, className, .
   );
 }
 
+export interface M3SelectOption {
+  value: string;
+  label: React.ReactNode;
+  disabled?: boolean;
+}
+
+export interface M3SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, "size"> {
+  label: string;
+  options: M3SelectOption[];
+  hideLabel?: boolean;
+  selectClassName?: string;
+}
+
+export function M3Select({ label, options, hideLabel = false, selectClassName, id, className, ...props }: M3SelectProps) {
+  const generatedId = useId();
+  const selectId = id ?? generatedId;
+  return (
+    <label className={joinClasses("m3-select", hideLabel && "m3-select--hidden-label", className)} htmlFor={selectId}>
+      <span className="m3-select__label">{label}</span>
+      <select {...props} id={selectId} className={joinClasses("m3-select__input", selectClassName)}>
+        {options.map((option) => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}
+      </select>
+    </label>
+  );
+}
+
+export interface M3CheckboxProps {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  label: string;
+  description?: React.ReactNode;
+  disabled?: boolean;
+  compact?: boolean;
+  className?: string;
+  title?: string;
+}
+
+export function M3Checkbox({ checked, onCheckedChange, label, description, disabled = false, compact = false, className, title }: M3CheckboxProps) {
+  return (
+    <label className={joinClasses("m3-checkbox", compact && "m3-checkbox--compact", disabled && "is-disabled", className)} title={title}>
+      <input
+        className="m3-checkbox__input"
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onCheckedChange(event.target.checked)}
+      />
+      <span className="m3-checkbox__box" aria-hidden="true" />
+      <span className="m3-checkbox__copy">
+        <span className="m3-checkbox__label">{label}</span>
+        {description && <span className="m3-checkbox__description">{description}</span>}
+      </span>
+    </label>
+  );
+}
+
 export interface M3SwitchProps {
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
