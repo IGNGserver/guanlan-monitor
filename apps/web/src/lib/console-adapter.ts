@@ -5,7 +5,11 @@ import type {
   DeviceRealtimeEvent,
   DeviceSummary,
   MetricWindow,
+  MetricsResponse,
+  OverviewMetricsResponse,
   TrafficCalendarMode,
+  TrafficCalendarResponse,
+  UpdateInfo,
   WidgetLayoutRequest,
   WidgetLayoutSaveRequest,
   WidgetLayoutSync
@@ -117,12 +121,12 @@ export class WebConsoleAdapter implements ConsoleAdapter {
       const trafficMode: TrafficCalendarMode = request.trafficMode ?? "day";
 
       const [metrics, overviewMetrics, update] = await Promise.all([
-        selectedDeviceId ? getMetrics(selectedDeviceId, metricWindow).catch((error) => optionalWebRequest(error)) : Promise.resolve(null),
-        getOverviewMetrics(metricWindow).catch((error) => optionalWebRequest(error)),
-        getUpdateInfo("web").catch((error) => optionalWebRequest(error))
+        selectedDeviceId ? getMetrics(selectedDeviceId, metricWindow).catch((error) => optionalWebRequest<MetricsResponse>(error)) : Promise.resolve(null),
+        getOverviewMetrics(metricWindow).catch((error) => optionalWebRequest<OverviewMetricsResponse>(error)),
+        getUpdateInfo("web").catch((error) => optionalWebRequest<UpdateInfo>(error))
       ]);
       const trafficCalendar = selectedDeviceId
-        ? await getTrafficCalendar(selectedDeviceId, trafficMode, request.trafficAnchor ?? new Date().toISOString()).catch((error) => optionalWebRequest(error))
+        ? await getTrafficCalendar(selectedDeviceId, trafficMode, request.trafficAnchor ?? new Date().toISOString()).catch((error) => optionalWebRequest<TrafficCalendarResponse>(error))
         : null;
 
       this.snapshot = {
