@@ -489,7 +489,10 @@ async function run() {
           assert.match(geometry.gridTemplateRows, /\d+(?:\.\d+)?px|auto|minmax/, `Web grid rows are missing at ${width}px`);
         }
         const screenshotPath = path.join(outputDir, `matrix-round-${round}-${theme}-${width}-${name}.png`);
-        await page.screenshot({ path: screenshotPath, fullPage: true, animations: "disabled" });
+        // The route-specific screenshots above retain full-page evidence. The 40-cell
+        // matrix deliberately samples the viewport so the runner cannot spend minutes
+        // rasterizing the same long telemetry surface at every breakpoint.
+        await page.screenshot({ path: screenshotPath, fullPage: false, animations: "disabled", timeout: 15_000 });
         matrix.push({ round, theme, width, name, screenshot: path.basename(screenshotPath), sha256: crypto.createHash("sha256").update(fs.readFileSync(screenshotPath)).digest("hex"), geometry });
       }
     }
