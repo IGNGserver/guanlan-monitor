@@ -1159,7 +1159,7 @@
 .workspace-status-label--warning { color: var(--workspace-color-warning); background: var(--workspace-color-warning-container); }
 .workspace-status-label--unknown { color: var(--workspace-color-on-surface-variant); background: var(--workspace-color-surface-container); }
 
-@media (pointer: coarse), [data-dsc-pointer="touch"] {
+@media (pointer: coarse) {
   .m3-button,
   .m3-icon-button,
   .m3-chip,

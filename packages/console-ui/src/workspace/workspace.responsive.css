@@ -18,7 +18,7 @@
 }
 
 /* Touch Friendly Targets (>= 44px) */
-@media (pointer: coarse), [data-dsc-pointer="touch"] {
+@media (pointer: coarse) {
   .workspace-btn,
   .workspace-button,
   .workspace-tab,
@@ -52,7 +52,7 @@
 }
 
 /* Portrait / Mobile / Remote Desktop Stream Layout */
-@media (orientation: portrait), (max-width: 768px), [data-dsc-orientation="portrait"] {
+@media (orientation: portrait), (max-width: 768px) {
   .workspace-sidebar-backdrop {
     display: block;
     position: fixed;
@@ -310,12 +310,7 @@ html[data-dsc-density="touch"] {
   scroll-margin-top: 76px;
 }
 
-@media (pointer: coarse),
-  [data-dsc-pointer="touch"],
-  [data-dsc-pointer="pen"],
-  [data-dsc-density="touch"],
-  [data-dsc-tier="xs"],
-  [data-dsc-tier="sm"] {
+@media (pointer: coarse) {
   .workspace-row-action,
   .workspace-btn,
   .workspace-button,
@@ -393,7 +388,7 @@ html[data-dsc-density="touch"] {
   }
 }
 
-@media (orientation: portrait), (max-width: 768px), [data-dsc-orientation="portrait"] {
+@media (orientation: portrait), (max-width: 768px) {
   .workspace-root:not(.is-web) {
     --workspace-chrome-height: 36px;
     grid-template-rows: 36px minmax(0, 1fr);

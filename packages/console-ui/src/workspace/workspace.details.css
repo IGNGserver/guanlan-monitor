@@ -10,6 +10,6 @@
 .workspace-order-actions { display: inline-flex; align-items: center; gap: 6px; }
 .workspace-layout-discard { color: var(--workspace-text-secondary); }
 
-@media (max-width: 768px), (orientation: portrait), [data-dsc-orientation="portrait"] {
+@media (max-width: 768px), (orientation: portrait) {
   .workspace-device-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
