@@ -54,6 +54,7 @@ import {
   TelemetryDeviceBlock,
   TelemetryModelList,
   TelemetrySection,
+  TrafficCalendarCard,
   WidgetPanelBar,
   cloneDevicePanels,
   createDynamicLayout,
@@ -70,7 +71,8 @@ import {
   temperatureSourceLabel,
   temperatureStatusLabel,
   temperatureValueLabel,
-  unavailablePoints
+  unavailablePoints,
+  type DesktopMetricWindowValue
 } from "./shared";
 
 export function DeviceDetailsPage() {

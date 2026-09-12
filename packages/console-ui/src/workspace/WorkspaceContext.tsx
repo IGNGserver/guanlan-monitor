@@ -14,6 +14,8 @@ import { useWorkspaceUiState } from "./context/useWorkspaceUiState";
 export type { SettingsSection, WorkspaceRoute } from "./routes";
 export type { HubViewModel } from "./context/WorkspaceTypes";
 
+const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
+
 export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute?: WorkspaceRoute; children: React.ReactNode }> = ({ adapter, initialRoute, children }) => {
   const isPreview = false;
   const {
