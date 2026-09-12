@@ -317,33 +317,28 @@ async function run() {
   assert.equal(await page.getByRole("button", { name: "添加小组件" }).count(), 1, "widget add action must appear in explicit edit mode");
   await page.getByRole("button", { name: "添加小组件" }).click();
   await page.locator(".workspace-widget-drawer").waitFor({ state: "visible", timeout: 2_000 });
-  const addWidgetButton = page.locator(".workspace-widget-drawer__actions button:not(:disabled)").first();
-  if (await addWidgetButton.count()) {
-    await addWidgetButton.click();
-    assert.equal(await page.getByRole("button", { name: "放弃修改" }).count(), 1, "widget edits must expose discard");
-    await page.getByRole("button", { name: "关闭小组件抽屉" }).click();
-    await page.getByRole("button", { name: "保存布局" }).click();
-    await page.waitForTimeout(150);
-    const widgetSave = requestLog.find((request) => request.method === "PUT" && request.url.includes("/api/widget-layouts"));
-    assert.ok(widgetSave, "widget save must call the shared layout adapter");
-    assert.equal(widgetSave.payload?.instanceLayout?.version, 4, "widget layout version 4 contract must be preserved");
-    assert.match(widgetSave.payload?.scopeKey ?? "", /^device:vm:102:/, "widget scope key must remain device-scoped");
-    assert.match(widgetSave.payload?.templateKey ?? "", /^device-type:virtual_machine:/, "widget template key must remain type-scoped");
-    await page.getByRole("button", { name: "退出编辑" }).click();
-    await page.getByRole("button", { name: "编辑排布" }).click();
-    await page.getByRole("button", { name: "添加小组件" }).click();
-    const secondAddWidgetButton = page.locator(".workspace-widget-drawer__actions button:not(:disabled)").first();
-    if (await secondAddWidgetButton.count()) {
-      await secondAddWidgetButton.click();
-      await page.getByRole("button", { name: "关闭小组件抽屉" }).click();
-      await page.getByRole("button", { name: "放弃修改" }).click();
-    } else {
-      await page.getByRole("button", { name: "关闭小组件抽屉" }).click();
-    }
-  } else {
-    await page.locator(".workspace-widget-drawer__header > button").click();
-    assert.equal(await page.getByRole("button", { name: "放弃修改" }).isDisabled(), true, "discard must remain disabled without a dirty layout");
-  }
+  const addDirectWidget = page.locator(".workspace-widget-drawer__item").filter({ hasText: "硬件与系统" }).getByRole("button", { name: "添加", exact: true });
+  assert.equal(await addDirectWidget.count(), 1, "widget drawer must expose a directly addable fixture widget");
+  await addDirectWidget.click();
+  await page.waitForTimeout(100);
+  assert.equal(await page.getByRole("button", { name: "放弃修改" }).count(), 1, "widget edits must expose discard");
+  assert.equal(await page.getByRole("button", { name: "保存布局" }).isEnabled(), true, "adding a widget must dirty the layout draft");
+  await page.getByRole("button", { name: "关闭小组件抽屉" }).click();
+  await page.getByRole("button", { name: "保存布局" }).click();
+  await page.waitForTimeout(150);
+  const widgetSave = requestLog.find((request) => request.method === "PUT" && request.url.includes("/api/widget-layouts"));
+  assert.ok(widgetSave, "widget save must call the shared layout adapter");
+  assert.equal(widgetSave.payload?.instanceLayout?.version, 4, "widget layout version 4 contract must be preserved");
+  assert.match(widgetSave.payload?.scopeKey ?? "", /^device:vm:102:/, "widget scope key must remain device-scoped");
+  assert.match(widgetSave.payload?.templateKey ?? "", /^device-type:virtual_machine:/, "widget template key must remain type-scoped");
+  await page.getByRole("button", { name: "退出编辑" }).click();
+  await page.getByRole("button", { name: "编辑排布" }).click();
+  await page.getByRole("button", { name: "添加小组件" }).click();
+  const secondDirectWidget = page.locator(".workspace-widget-drawer__item").filter({ hasText: "硬件与系统" }).getByRole("button", { name: "添加", exact: true });
+  assert.equal(await secondDirectWidget.count(), 1, "widget drawer must keep the direct add action available");
+  await secondDirectWidget.click();
+  await page.getByRole("button", { name: "关闭小组件抽屉" }).click();
+  await page.getByRole("button", { name: "放弃修改" }).click();
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
   await page.getByRole("button", { name: "管理顺序" }).click();
