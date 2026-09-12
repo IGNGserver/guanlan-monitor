@@ -73,7 +73,7 @@
 
 1. 语义令牌与基础组件：按钮、图标按钮、Chip、Segmented Control、Text Field、Switch、Surface。
 2. 应用外壳：标题栏、导航、顶部栏、搜索、Snackbar、Dialog 和移动端导航。
-   当前已完成窄屏 Navigation Bar、移动端 Modal Drawer 边界、设备详情 Tabs，以及时间范围、刷新频率、主题/密度、开关、Snackbar、命令搜索、Dialog 输入、筛选 Select、Checkbox、硬件探针配置和小组件抽屉操作的 Material 3 交互迁移。
+   当前已完成窄屏 Navigation Bar、移动端 Modal Drawer 边界、设备详情 Tabs，以及时间范围、刷新频率、主题/密度、开关、Snackbar、命令搜索、Dialog 输入、筛选 Select、Checkbox、硬件探针配置、小组件抽屉操作和布局编辑器工具栏的 Material 3 交互迁移。
 3. 总览：设备列表、状态摘要、异常提示、加载/空/缓存/离线/错误状态。
 4. 设备详情：指标 Tabs、时间范围、图表容器、Widget 编辑模式和布局保存反馈。
 5. 设置与登录：双栏设置、表单错误、连接状态、Agent 控制和认证恢复。
