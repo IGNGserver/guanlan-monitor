@@ -22,6 +22,7 @@ import {
 } from "./WidgetLayout";
 import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
 import { DynamicWidgetCanvas, WidgetDrawer } from "./widgetCatalog";
+import { M3SegmentedControl, M3Switch, M3TextField } from "./m3";
 import { Button, Icon, StatusDot, StatusLabel, Surface, SummaryRow, VirtualMachinePowerLabel, type IconName, virtualMachinePowerState } from "./ui";
 import { MiniTrend, TelemetryChartCard, TelemetryInfoCard } from "./TelemetryCards";
 import {
@@ -1121,9 +1122,13 @@ function TrafficCalendarCard({
     <Surface className="workspace-traffic-calendar">
       <div className="workspace-surface__header">
         <div><span className="workspace-section-kicker">流量日历</span><h3>网络流量消耗</h3></div>
-        <div className="workspace-range-control__options" role="group" aria-label="流量日历范围">
-          {modes.map((item) => <button key={item.value} type="button" className={`workspace-range-option ${mode === item.value ? "is-active" : ""}`} aria-pressed={mode === item.value} onClick={() => onModeChange(item.value)}>{item.label}</button>)}
-        </div>
+        <M3SegmentedControl
+          className="workspace-range-control__options"
+          options={modes}
+          value={mode}
+          onChange={(value) => onModeChange(value as TrafficCalendarMode)}
+          aria-label="流量日历范围"
+        />
       </div>
       {data ? <>
         <p className="workspace-surface__description">{data.title} · {formatDate(data.rangeStart)} 至 {formatDate(data.rangeEnd)}</p>
@@ -1153,19 +1158,13 @@ function MetricWindowControl({ value, onChange }: { value: DesktopMetricWindowVa
   return (
     <div className="workspace-range-control" role="group" aria-label="遥测时间范围">
       <span className="workspace-range-control__label"><Icon name="clock" size={14} />时间范围</span>
-      <div className="workspace-range-control__options">
-        {metricWindowOptions.map((option) => (
-          <button
-            type="button"
-            key={option.value}
-            className={`workspace-range-option ${value === option.value ? "is-active" : ""}`}
-            aria-pressed={value === option.value}
-            onClick={() => onChange(option.value)}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+      <M3SegmentedControl
+        className="workspace-range-control__options"
+        options={metricWindowOptions}
+        value={value}
+        onChange={(nextValue) => onChange(nextValue as DesktopMetricWindowValue)}
+        aria-label="遥测时间范围"
+      />
     </div>
   );
 }
@@ -2283,8 +2282,8 @@ function WebWorkspaceSettings() {
         <Surface>
           <div className="workspace-surface__header"><div><span className="workspace-section-kicker">工作台偏好</span><h3>浏览器显示与刷新</h3></div></div>
           <div className="workspace-settings-list">
-            <SettingRow label="状态刷新频率" description="只影响当前网页读取状态的频率，不改变 Agent 的采样间隔。"><select className="workspace-select" value={refreshInterval} onChange={(event) => setRefreshInterval(Number(event.target.value) as typeof refreshInterval)} disabled={mutationPending}><option value="5">5 秒</option><option value="10">10 秒</option><option value="30">30 秒</option></select></SettingRow>
-            <SettingRow label="默认实例类型" description="选择打开总览时优先查看的实例分组。"><select className="workspace-select" value={instanceType} onChange={(event) => setInstanceType(event.target.value as typeof instanceType)}><option value="device">普通设备</option><option value="virtual_machine">虚拟机</option></select></SettingRow>
+            <SettingRow label="状态刷新频率" description="只影响当前网页读取状态的频率，不改变 Agent 的采样间隔。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "5", label: "5 秒" }, { value: "10", label: "10 秒" }, { value: "30", label: "30 秒" }]} value={String(refreshInterval)} onChange={(value) => setRefreshInterval(Number(value) as typeof refreshInterval)} aria-label="状态刷新频率" disabled={mutationPending} /></SettingRow>
+            <SettingRow label="默认实例类型" description="选择打开总览时优先查看的实例分组。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={instanceType} onChange={(value) => setInstanceType(value as typeof instanceType)} aria-label="默认实例类型" /></SettingRow>
           </div>
         </Surface>
 
@@ -2325,19 +2324,35 @@ function SettingRow({ label, description, children }: { label: string; descripti
 }
 
 function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (checked: boolean) => void; label: string; disabled?: boolean }) {
-  return <label className={`workspace-toggle${disabled ? " is-disabled" : ""}`}><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} aria-label={label} disabled={disabled} /><span className="workspace-toggle__track"><span /></span></label>;
+  return <M3Switch className="workspace-m3-toggle" compact checked={checked} onCheckedChange={onChange} label={label} disabled={disabled} />;
 }
 
 function GeneralSettings() {
   const { snapshot, updateStartupSettings, mutationPending, refreshInterval, setRefreshInterval, capabilities } = useWorkspace();
   if (!capabilities.canChangeStartupSettings) return <WebWorkspaceSettings />;
   const startup = snapshot?.startup ?? { openAtLogin: false, startMinimized: false };
-  return <Surface><div className="workspace-settings-list"><SettingRow label="开机启动" description="登录系统后自动启动观澜。"><Toggle checked={startup.openAtLogin} onChange={(checked) => void updateStartupSettings({ openAtLogin: checked })} label="开机启动" disabled={mutationPending} /></SettingRow><SettingRow label="启动时最小化" description="启动后保持在系统托盘，不打断当前工作。"><Toggle checked={startup.startMinimized} onChange={(checked) => void updateStartupSettings({ startMinimized: checked })} label="启动时最小化" disabled={mutationPending} /></SettingRow><SettingRow label="数据刷新频率" description="实时连接下，桌面端自动刷新状态的间隔；不改变 Agent 的采样频率。"><select className="workspace-select" value={refreshInterval} onChange={(event) => setRefreshInterval(Number(event.target.value) as typeof refreshInterval)} disabled={mutationPending}><option value="5">5 秒</option><option value="10">10 秒</option><option value="30">30 秒</option></select></SettingRow></div></Surface>;
+  return (
+    <Surface>
+      <div className="workspace-settings-list">
+        <M3Switch label="开机启动" description="登录系统后自动启动观澜。" checked={startup.openAtLogin} onCheckedChange={(checked) => void updateStartupSettings({ openAtLogin: checked })} disabled={mutationPending} />
+        <M3Switch label="启动时最小化" description="启动后保持在系统托盘，不打断当前工作。" checked={startup.startMinimized} onCheckedChange={(checked) => void updateStartupSettings({ startMinimized: checked })} disabled={mutationPending} />
+        <SettingRow label="数据刷新频率" description="实时连接下，桌面端自动刷新状态的间隔；不改变 Agent 的采样频率。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "5", label: "5 秒" }, { value: "10", label: "10 秒" }, { value: "30", label: "30 秒" }]} value={String(refreshInterval)} onChange={(value) => setRefreshInterval(Number(value) as typeof refreshInterval)} aria-label="数据刷新频率" disabled={mutationPending} /></SettingRow>
+      </div>
+    </Surface>
+  );
 }
 
 function AppearanceSettings() {
   const { theme, setTheme, density, setDensity } = useWorkspace();
-  return <Surface><div className="workspace-settings-list"><SettingRow label="主题" description="跟随系统，或固定使用浅色/深色主题。"><select className="workspace-select" value={theme} onChange={(event) => setTheme(event.target.value as typeof theme)}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></SettingRow><SettingRow label="界面密度" description="自动会根据触摸输入和窗口尺寸放大操作目标；远控手机时可手动选择触摸。"><select className="workspace-select" value={density} onChange={(event) => setDensity(event.target.value as typeof density)}><option value="auto">自动</option><option value="comfortable">舒适</option><option value="compact">紧凑</option><option value="touch">触摸</option></select></SettingRow><SettingRow label="动画" description="尊重系统的减少动态效果设置。"><span className="workspace-setting-note"><Icon name="check" size={15} />已启用可访问性适配</span></SettingRow></div></Surface>;
+  return (
+    <Surface>
+      <div className="workspace-settings-list">
+        <SettingRow label="主题" description="跟随系统，或固定使用浅色/深色主题。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "system", label: "跟随系统" }, { value: "light", label: "浅色" }, { value: "dark", label: "深色" }]} value={theme} onChange={(value) => setTheme(value as typeof theme)} aria-label="主题" /></SettingRow>
+        <SettingRow label="界面密度" description="自动会根据触摸输入和窗口尺寸放大操作目标；远控手机时可手动选择触摸。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "auto", label: "自动" }, { value: "comfortable", label: "舒适" }, { value: "compact", label: "紧凑" }, { value: "touch", label: "触摸" }]} value={density} onChange={(value) => setDensity(value as typeof density)} aria-label="界面密度" /></SettingRow>
+        <SettingRow label="动画" description="尊重系统的减少动态效果设置。"><span className="workspace-setting-note"><Icon name="check" size={15} />已启用可访问性适配</span></SettingRow>
+      </div>
+    </Surface>
+  );
 }
 
 function ConnectionSettings() {
@@ -2500,8 +2515,8 @@ function AgentSettings() {
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">Agent 身份与节奏</span><h3>设备显示名与采样间隔</h3></div></div>
         <div className="workspace-form workspace-agent-runtime-form">
-          <label>设备显示名<input className="workspace-input" value={agentHostname} onChange={(event) => setAgentHostname(event.target.value)} placeholder="例如：办公室主机" maxLength={120} /></label>
-          <div className="workspace-form__grid"><label>正常采样间隔（秒）<input className="workspace-input" type="number" min="1" max="86400" value={normalSamplingSeconds} onChange={(event) => setNormalSamplingSeconds(event.target.value)} /></label><label>降级采样间隔（秒）<input className="workspace-input" type="number" min="1" max="86400" value={slowSamplingSeconds} onChange={(event) => setSlowSamplingSeconds(event.target.value)} /></label></div>
+          <M3TextField label="设备显示名" value={agentHostname} onChange={(event) => setAgentHostname(event.target.value)} placeholder="例如：办公室主机" maxLength={120} />
+          <div className="workspace-form__grid"><M3TextField label="正常采样间隔（秒）" type="number" min="1" max="86400" value={normalSamplingSeconds} onChange={(event) => setNormalSamplingSeconds(event.target.value)} /><M3TextField label="降级采样间隔（秒）" type="number" min="1" max="86400" value={slowSamplingSeconds} onChange={(event) => setSlowSamplingSeconds(event.target.value)} /></div>
           <p className="workspace-form__hint">采样间隔决定 Agent 多久采集一次数据；桌面端“数据刷新频率”只决定界面多久读取一次状态，两者互不替代。</p>
           <div className="workspace-form__actions"><Button variant="primary" onClick={saveRuntimeConfig} disabled={refreshing || mutationPending}>保存 Agent 设置</Button></div>
         </div>

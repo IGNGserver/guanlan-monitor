@@ -77,10 +77,11 @@ export interface M3SegmentedControlProps {
   value: string;
   onChange: (value: string) => void;
   "aria-label": string;
+  disabled?: boolean;
   className?: string;
 }
 
-export function M3SegmentedControl({ options, value, onChange, className, "aria-label": ariaLabel }: M3SegmentedControlProps) {
+export function M3SegmentedControl({ options, value, onChange, className, disabled = false, "aria-label": ariaLabel }: M3SegmentedControlProps) {
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const selectedIndex = options.findIndex((option) => option.value === value);
   const focusIndex = selectedIndex >= 0 && !options[selectedIndex].disabled
@@ -102,7 +103,7 @@ export function M3SegmentedControl({ options, value, onChange, className, "aria-
   };
 
   return (
-    <div className={joinClasses("m3-segmented-control", className)} role="tablist" aria-label={ariaLabel}>
+    <div className={joinClasses("m3-segmented-control", className)} role="radiogroup" aria-label={ariaLabel}>
       {options.map((option, index) => {
         const selected = option.value === value;
         return (
@@ -111,10 +112,10 @@ export function M3SegmentedControl({ options, value, onChange, className, "aria-
             ref={(element) => { buttonRefs.current[index] = element; }}
             className={joinClasses("m3-segmented-control__option", selected && "is-selected")}
             type="button"
-            role="tab"
-            aria-selected={selected}
+            role="radio"
+            aria-checked={selected}
             tabIndex={index === focusIndex ? 0 : -1}
-            disabled={option.disabled}
+            disabled={disabled || option.disabled}
             onClick={() => onChange(option.value)}
             onKeyDown={(event) => {
               if (event.key === "ArrowRight") {
@@ -174,16 +175,17 @@ export interface M3SwitchProps {
   label: string;
   description?: React.ReactNode;
   disabled?: boolean;
+  compact?: boolean;
   className?: string;
 }
 
-export function M3Switch({ checked, onCheckedChange, label, description, disabled = false, className }: M3SwitchProps) {
+export function M3Switch({ checked, onCheckedChange, label, description, disabled = false, compact = false, className }: M3SwitchProps) {
   return (
-    <div className={joinClasses("m3-switch-row", disabled && "is-disabled", className)}>
-      <div className="m3-switch-row__copy">
+    <div className={joinClasses("m3-switch-row", compact && "m3-switch-row--compact", disabled && "is-disabled", className)}>
+      {!compact && <div className="m3-switch-row__copy">
         <span className="m3-switch-row__label">{label}</span>
         {description && <span className="m3-switch-row__description">{description}</span>}
-      </div>
+      </div>}
       <button
         type="button"
         className={joinClasses("m3-switch", checked && "is-checked")}
