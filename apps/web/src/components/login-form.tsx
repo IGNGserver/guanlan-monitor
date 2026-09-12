@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { M3Button, M3TextField } from "@dsc/console-ui";
 import { ApiError, getSession, login } from "../lib/api";
 import styles from "./auth.module.css";
 
@@ -59,28 +60,23 @@ export function LoginForm({ onAuthenticated }: { onAuthenticated: () => Promise<
               <p>使用中枢访问密钥登录浏览器控制台。</p>
             </div>
 
-            <div className={styles.loginField}>
-              <label className={styles.loginFieldLabel} htmlFor="access-key"><span>访问密钥</span><small>ACCESS KEY</small></label>
-              <input
-                id="access-key"
-                type="password"
-                className={styles.loginInput}
-                placeholder="输入访问密钥"
-                value={accessKey}
-                onChange={(event) => setAccessKey(event.target.value)}
-                autoComplete="current-password"
-                aria-invalid={Boolean(error)}
-                aria-describedby={error ? "login-error" : "access-key-help"}
-                required
-              />
-              <p className={styles.loginFieldHelp} id="access-key-help">密钥只用于当前浏览器会话认证。</p>
-            </div>
+            <M3TextField
+              className={styles.loginField}
+              id="access-key"
+              label="访问密钥"
+              type="password"
+              placeholder="输入访问密钥"
+              value={accessKey}
+              onChange={(event) => setAccessKey(event.target.value)}
+              autoComplete="current-password"
+              errorText={error ?? undefined}
+              supportingText={error ? undefined : "密钥只用于当前浏览器会话认证。"}
+              required
+            />
 
-            {error && <div className={styles.errorMessage} id="login-error" role="alert">{error}</div>}
-
-            <button type="submit" className={styles.loginSubmit} disabled={pending}>
+            <M3Button type="submit" className={styles.loginSubmit} disabled={pending} variant="filled">
               {pending ? "正在验证密钥..." : "进入中枢"}
-            </button>
+            </M3Button>
           </form>
           <p className={styles.loginSecurityNote}><span aria-hidden="true">TLS</span>登录请求通过当前站点发送。请不要在公共设备上保存访问密钥。</p>
         </div>

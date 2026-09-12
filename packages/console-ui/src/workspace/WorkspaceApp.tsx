@@ -22,7 +22,7 @@ import {
 } from "./WidgetLayout";
 import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
 import { DynamicWidgetCanvas, WidgetDrawer } from "./widgetCatalog";
-import { M3Checkbox, M3IconButton, M3SegmentedControl, M3Select, M3Switch, M3Tabs, M3TextField } from "./m3";
+import { M3Button, M3Checkbox, M3IconButton, M3NavigationItem, M3SegmentedControl, M3Select, M3Switch, M3Tabs, M3TextField } from "./m3";
 import { Button, Icon, StatusDot, StatusLabel, Surface, SummaryRow, VirtualMachinePowerLabel, type IconName, virtualMachinePowerState } from "./ui";
 import { MiniTrend, TelemetryChartCard, TelemetryInfoCard } from "./TelemetryCards";
 import {
@@ -228,72 +228,66 @@ function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolea
           <img className="workspace-brand__mark-img" src={appIconSrc} alt="观澜" />
           <span className="workspace-brand__name">观澜</span>
         </button>
-        <button className="workspace-icon-button workspace-sidebar__collapse" type="button" onClick={() => setSidebarCollapsed(!sidebarCollapsed)} aria-label={sidebarCollapsed ? "展开侧边栏" : "折叠侧边栏"} title={sidebarCollapsed ? "展开侧边栏" : "折叠侧边栏"}>
+        <M3IconButton className="workspace-icon-button workspace-sidebar__collapse" label={sidebarCollapsed ? "展开侧边栏" : "折叠侧边栏"} onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
           <Icon name="collapse" />
-        </button>
+        </M3IconButton>
       </div>
 
       {inSettings ? (
         <SettingsSidebar />
       ) : (
         <nav className="workspace-sidebar__nav" aria-label="设备控制台导航">
-          <button className={`workspace-nav-item ${route.kind === "overview" ? "is-active" : ""}`} type="button" onClick={() => navigate({ kind: "overview" })} title="总览">
+          <M3NavigationItem className="workspace-nav-item" selected={route.kind === "overview"} onClick={() => navigate({ kind: "overview" })} title="总览">
             <Icon name="overview" /> <span>总览</span>
-          </button>
+          </M3NavigationItem>
           <div className="workspace-sidebar__label"><button className="workspace-sidebar__hub-link" type="button" onClick={() => navigate({ kind: "hub", hubId: "primary" })}>接入中枢</button><span className="workspace-sidebar__count">{allDevices.length}</span></div>
-          <div className="workspace-instance-tabs" role="tablist" aria-label="实例类型">
-            {(["device", "virtual_machine"] as const).map((type) => (
-              <button
-                key={type}
-                className={`workspace-instance-tab ${instanceType === type ? "is-active" : ""}`}
-                type="button"
-                role="tab"
-                aria-selected={instanceType === type}
-                onClick={() => {
-                  const current = route.kind === "device" ? allDevices.find((device) => device.deviceId === route.deviceId) : null;
-                  if (current && (current.instanceType ?? "device") !== type) navigate({ kind: "overview" });
-                  setInstanceType(type);
-                }}
-              >
-                {type === "device" ? `普通设备（${deviceCount}）` : `虚拟机（${virtualMachineCount}）`}
-              </button>
-            ))}
-          </div>
+          <M3SegmentedControl
+            className="workspace-instance-tabs"
+            options={[{ value: "device", label: `普通设备（${deviceCount}）` }, { value: "virtual_machine", label: `虚拟机（${virtualMachineCount}）` }]}
+            value={instanceType}
+            onChange={(value) => {
+              const type = value as "device" | "virtual_machine";
+              const current = route.kind === "device" ? allDevices.find((device) => device.deviceId === route.deviceId) : null;
+              if (current && (current.instanceType ?? "device") !== type) navigate({ kind: "overview" });
+              setInstanceType(type);
+            }}
+            aria-label="实例类型"
+          />
           {hubAbnormal ? (
-            <button className="workspace-sidebar-hub-alert" type="button" onClick={() => openSettings(capabilities.canConfigureConnection ? "connections" : "workspace")} title={capabilities.canConfigureConnection ? "中枢连接异常，点击检查连接设置" : "中枢连接异常，点击查看中枢设置"}>
+            <M3Button className="workspace-sidebar-hub-alert" variant="tonal" onClick={() => openSettings(capabilities.canConfigureConnection ? "connections" : "workspace")} title={capabilities.canConfigureConnection ? "中枢连接异常，点击检查连接设置" : "中枢连接异常，点击查看中枢设置"}>
               <StatusDot state="warning" />
               <span>中枢连接异常</span>
-            </button>
+            </M3Button>
           ) : null}
           <div className="workspace-device-list">
             {devices.length ? devices.map((device) => (
-              <button className={`workspace-device-item ${route.kind === "device" && route.deviceId === device.deviceId ? "is-active" : ""}`} type="button" key={device.deviceId} onClick={() => navigate({ kind: "device", deviceId: device.deviceId })} title={device.hostname}>
+              <M3NavigationItem className="workspace-device-item" selected={route.kind === "device" && route.deviceId === device.deviceId} key={device.deviceId} onClick={() => navigate({ kind: "device", deviceId: device.deviceId })} title={device.hostname}>
                 {(device.instanceType ?? "device") === "virtual_machine"
                   ? <StatusDot state={virtualMachinePowerState(device.virtualMachine?.powerState).state} />
                   : <StatusDot state={device.status === "online" ? "online" : "offline"} />}
                 <span className="workspace-device-item__copy"><strong>{device.hostname}</strong><small>{(device.instanceType ?? "device") === "virtual_machine" ? `${virtualMachinePowerState(device.virtualMachine?.powerState).label} · 宿主机：${device.hostName ?? "未知"}` : device.os} · <MetricValue value={device.cpuUsagePercent} unavailable={isMetricUnavailable(device, "cpuUsage")} /></small></span>
-              </button>
+              </M3NavigationItem>
             )) : <div className="workspace-sidebar__empty">尚未发现设备</div>}
           </div>
           <div className="workspace-sidebar__spacer" />
-          {capabilities.canManageLocalAgent && <button className="workspace-nav-item" type="button" onClick={() => openSettings("agent")} title="本机 Agent">
+          {capabilities.canManageLocalAgent && <M3NavigationItem className="workspace-nav-item" selected={route.kind === "settings" && route.section === "agent"} onClick={() => openSettings("agent")} title="本机 Agent">
             <Icon name="agent" /> <span>本机 Agent</span>
-          </button>}
-          {capabilities.canConfigureConnection && <button className="workspace-nav-item" type="button" onClick={() => openSettings("connections")} title="连接设置">
+          </M3NavigationItem>}
+          {capabilities.canConfigureConnection && <M3NavigationItem className="workspace-nav-item" selected={route.kind === "settings" && route.section === "connections"} onClick={() => openSettings("connections")} title="连接设置">
             <Icon name="connection" /> <span>连接设置</span>
-          </button>}
+          </M3NavigationItem>}
         </nav>
       )}
 
       <div className="workspace-sidebar__footer">
         {inSettings ? (
-          <button className="workspace-nav-item" type="button" onClick={closeSettings} title="返回设备控制台"><Icon name="back" /><span>返回控制台</span></button>
+          <M3NavigationItem className="workspace-nav-item" onClick={closeSettings} title="返回设备控制台"><Icon name="back" /><span>返回控制台</span></M3NavigationItem>
         ) : (
-          <button className="workspace-nav-item" type="button" onClick={() => openSettings()} title="设置"><Icon name="settings" /><span>设置</span></button>
+          <M3NavigationItem className="workspace-nav-item" selected={route.kind === "settings"} onClick={() => openSettings()} title="设置"><Icon name="settings" /><span>设置</span></M3NavigationItem>
         )}
-        <button className="workspace-sidebar__support" type="button" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor/issues")} title="打开帮助与反馈">
+        <M3Button className="workspace-sidebar__support" variant="text" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor/issues")} title="打开帮助与反馈">
           <span>帮助与反馈</span><Icon name="external" size={14} />
-        </button>
+        </M3Button>
       </div>
     </aside>
   );
@@ -333,9 +327,9 @@ function SettingsSidebar() {
     <nav className="workspace-sidebar__nav" aria-label="设置导航">
       <div className="workspace-sidebar__section-title">设置</div>
       {visibleSettings.map((item) => (
-        <button className={`workspace-nav-item ${route.kind === "settings" && route.section === item.id ? "is-active" : ""}`} type="button" key={item.id} onClick={() => navigate({ kind: "settings", section: item.id })} title={item.label}>
+        <M3NavigationItem className="workspace-nav-item" selected={route.kind === "settings" && route.section === item.id} key={item.id} onClick={() => navigate({ kind: "settings", section: item.id })} title={item.label}>
           <Icon name={item.icon} /><span>{item.label}</span>
-        </button>
+        </M3NavigationItem>
       ))}
     </nav>
   );
@@ -387,9 +381,9 @@ function WindowTitleBar() {
         <span className="workspace-windowbar__subtitle">设备状态控制台</span>
       </div>
       <div className="workspace-windowbar__controls" role="group" aria-label="窗口控制">
-        <button className="workspace-window-control" type="button" onClick={() => void minimizeWindow()} aria-label="最小化" title="最小化"><Icon name="windowMinimize" size={15} /></button>
-        <button className="workspace-window-control" type="button" onClick={() => void toggleMaximize()} aria-label={isMaximized ? "还原窗口" : "最大化"} title={isMaximized ? "还原窗口" : "最大化"}><Icon name={isMaximized ? "windowRestore" : "windowMaximize"} size={14} /></button>
-        <button className="workspace-window-control workspace-window-control--close" type="button" onClick={() => void closeWindow()} aria-label="隐藏到托盘" title="隐藏到托盘"><Icon name="windowClose" size={15} /></button>
+        <M3IconButton className="workspace-window-control" label="最小化" onClick={() => void minimizeWindow()}><Icon name="windowMinimize" size={15} /></M3IconButton>
+        <M3IconButton className="workspace-window-control" label={isMaximized ? "还原窗口" : "最大化"} onClick={() => void toggleMaximize()}><Icon name={isMaximized ? "windowRestore" : "windowMaximize"} size={14} /></M3IconButton>
+        <M3IconButton className="workspace-window-control workspace-window-control--close" label="隐藏到托盘" onClick={() => void closeWindow()}><Icon name="windowClose" size={15} /></M3IconButton>
       </div>
     </header>
   );
@@ -402,9 +396,9 @@ function TopBar() {
   return (
     <header className="workspace-topbar">
       <div className="workspace-topbar__title">
-        <button className="workspace-icon-button workspace-topbar__toggle" type="button" onClick={() => setSidebarCollapsed(!sidebarCollapsed)} aria-label="切换侧边栏">
+        <M3IconButton className="workspace-icon-button workspace-topbar__toggle" label="切换侧边栏" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
           <Icon name="collapse" />
-        </button>
+        </M3IconButton>
         <div>
           <span className="workspace-topbar__eyebrow">设备状态控制台</span>
           <h1>{title}</h1>
@@ -412,7 +406,7 @@ function TopBar() {
       </div>
       <div className="workspace-topbar__actions">
         <StatusLabel state={sourceState} />
-        <button className="workspace-search-trigger" type="button" onClick={() => setCommandOpen(true)}><Icon name="search" /><span>搜索设备</span><kbd>/</kbd></button>
+        <M3Button className="workspace-search-trigger" variant="outlined" leadingIcon={<Icon name="search" />} onClick={() => setCommandOpen(true)}><span>搜索设备</span><kbd>/</kbd></M3Button>
         <Button variant="quiet" onClick={() => void refresh()} disabled={refreshing || mutationPending} title={mutationPending ? "正在保存更改" : "刷新状态"}><Icon name="refresh" size={16} />{!refreshing && <span>{mutationPending ? "保存中" : "刷新"}</span>}</Button>
         {route.kind !== "settings" && <Button variant="quiet" onClick={() => openSettings("appearance")} title="外观设置"><Icon name="appearance" size={16} /></Button>}
       </div>
@@ -424,6 +418,26 @@ function ShellNotice() {
   const { notice } = useWorkspace();
   if (!notice) return null;
   return <div className={`workspace-toast m3-snackbar m3-snackbar--${notice.tone}`} role={notice.tone === "error" ? "alert" : "status"}>{notice.text}</div>;
+}
+
+function WebSessionRecoveryBanner() {
+  const { capabilities, snapshot, refresh, refreshing } = useWorkspace();
+  if (capabilities.canConfigureConnection || snapshot?.source !== "empty" || snapshot.session.authenticated) return null;
+  const reloadForAuthentication = () => {
+    if (typeof window !== "undefined") window.location.reload();
+  };
+  return (
+    <section className="workspace-session-recovery m3-inline-banner" role="alert" aria-live="assertive">
+      <div className="workspace-session-recovery__copy">
+        <strong>浏览器会话已失效</strong>
+        <p>当前数据已停止同步；重新认证后才能继续查看设备和指标。</p>
+      </div>
+      <div className="workspace-form__actions">
+        <Button variant="primary" onClick={reloadForAuthentication}>重新认证</Button>
+        <Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? "正在检查" : "重新检查"}</Button>
+      </div>
+    </section>
+  );
 }
 
 function CommandPalette() {
@@ -2422,10 +2436,13 @@ function WebWorkspaceSettings() {
 }
 
 function WebSessionSettings() {
-  const { snapshot, logout, mutationPending } = useWorkspace();
+  const { snapshot, logout, mutationPending, refresh, refreshing } = useWorkspace();
   const authenticated = snapshot?.session.authenticated ?? false;
   const signOut = async () => {
     await logout();
+    if (typeof window !== "undefined") window.location.reload();
+  };
+  const reloadForAuthentication = () => {
     if (typeof window !== "undefined") window.location.reload();
   };
   return (
@@ -2433,6 +2450,7 @@ function WebSessionSettings() {
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">当前会话</span><h3>{authenticated ? "浏览器会话已认证" : "会话需要重新认证"}</h3></div><StatusLabel state={authenticated ? "online" : "warning"} /></div>
         <div className="workspace-detail-list"><SummaryRow label="认证方式" value="中枢访问密钥" /><SummaryRow label="会话范围" value="当前浏览器" /><SummaryRow label="访问权限" value="已授权设备与指标" /></div>
+        {!authenticated && <div className="workspace-session-recovery m3-inline-banner" role="alert"><div className="workspace-session-recovery__copy"><strong>当前会话不可用</strong><p>站点认证可能已过期，重新认证会保留当前页面地址。</p></div><div className="workspace-form__actions"><Button variant="primary" onClick={reloadForAuthentication}>重新认证</Button><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? "正在检查" : "重新检查"}</Button></div></div>}
         <div className="workspace-form__actions"><Button variant="danger" onClick={() => void signOut()} disabled={!authenticated || mutationPending}>{mutationPending ? "正在退出" : "退出当前会话"}</Button></div>
       </Surface>
       <Surface className="workspace-connection-note">
@@ -2797,27 +2815,29 @@ function WorkspaceBottomNav() {
 
   return (
     <nav className="workspace-bottom-nav" aria-label="快捷操作栏">
-      <button
+      <M3NavigationItem
         type="button"
         className={`workspace-bottom-nav__item${route.kind === "overview" ? " is-active" : ""}`}
+        selected={route.kind === "overview"}
         onClick={() => navigate({ kind: "overview" })}
         title="返回总览"
       >
         <Icon name="overview" size={18} />
         <span>总览</span>
-      </button>
+      </M3NavigationItem>
 
-      <button
+      <M3NavigationItem
         type="button"
         className={`workspace-bottom-nav__item${!sidebarCollapsed ? " is-active" : ""}`}
+        selected={!sidebarCollapsed}
         onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
         title="切换设备列表"
       >
         <Icon name="device" size={18} />
         <span>设备</span>
-      </button>
+      </M3NavigationItem>
 
-      <button
+      <M3NavigationItem
         type="button"
         className="workspace-bottom-nav__item"
         onClick={() => void refresh()}
@@ -2828,9 +2848,9 @@ function WorkspaceBottomNav() {
           <Icon name="refresh" size={18} />
         </span>
         <span>{refreshing ? "更新中" : mutationPending ? "保存中" : "刷新"}</span>
-      </button>
+      </M3NavigationItem>
 
-      <button
+      <M3NavigationItem
         type="button"
         className="workspace-bottom-nav__item"
         onClick={() => setCommandOpen(true)}
@@ -2838,9 +2858,9 @@ function WorkspaceBottomNav() {
       >
         <Icon name="search" size={18} />
         <span>搜索</span>
-      </button>
+      </M3NavigationItem>
 
-      <button
+      <M3NavigationItem
         type="button"
         className="workspace-bottom-nav__item"
         onClick={scrollToTop}
@@ -2848,7 +2868,7 @@ function WorkspaceBottomNav() {
       >
         <Icon name="chevronUp" size={18} />
         <span>置顶</span>
-      </button>
+      </M3NavigationItem>
     </nav>
   );
 }
@@ -2888,6 +2908,7 @@ function WorkspaceFrame() {
       {!sidebarCollapsed && <div className="workspace-sidebar-backdrop" onPointerDown={() => setSidebarCollapsed(true)} aria-hidden="true" />}
       <div className="workspace-main">
         <TopBar />
+        <WebSessionRecoveryBanner />
         <main className="workspace-content" id="workspace-main-content">
           <RouteView />
         </main>

@@ -52,6 +52,24 @@ export function M3IconButton({ label, children, className, selected, variant = "
   );
 }
 
+export interface M3NavigationItemProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children" | "aria-current"> {
+  children: React.ReactNode;
+  selected?: boolean;
+}
+
+export function M3NavigationItem({ children, className, selected = false, type = "button", ...props }: M3NavigationItemProps) {
+  return (
+    <button
+      className={joinClasses("m3-navigation-item", selected && "is-selected", className)}
+      type={type}
+      aria-current={selected ? "page" : undefined}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
 export interface M3ChipProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "aria-pressed"> {
   leadingIcon?: React.ReactNode;
   selected?: boolean;
@@ -238,7 +256,7 @@ export function M3TextField({ label, supportingText, errorText, id, className, .
         aria-invalid={hasError ? true : props["aria-invalid"]}
         aria-describedby={describedBy}
       />
-      {(supportingText || errorText) && <span id={supportingId} className="m3-field__supporting">{errorText || supportingText}</span>}
+      {(supportingText || errorText) && <span id={supportingId} className="m3-field__supporting" role={hasError ? "alert" : undefined}>{errorText || supportingText}</span>}
     </label>
   );
 }

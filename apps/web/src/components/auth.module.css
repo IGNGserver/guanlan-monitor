@@ -4,8 +4,24 @@
   grid-template-columns: minmax(0, 1.12fr) minmax(390px, 0.88fr);
   min-height: 100dvh;
   overflow: hidden;
+  --workspace-color-primary: #75d0dc;
+  --workspace-color-on-primary: #092026;
+  --workspace-color-primary-container: #24434b;
+  --workspace-color-on-primary-container: #c0eff3;
+  --workspace-color-surface: #0d141c;
+  --workspace-color-surface-container-low: #0d151e;
+  --workspace-color-surface-container: #111b25;
+  --workspace-color-on-surface: #edf6f8;
+  --workspace-color-on-surface-variant: #9aacb6;
+  --workspace-color-outline: #6b858e;
+  --workspace-color-outline-variant: #394c56;
+  --workspace-color-error: #ffb4ab;
+  --workspace-color-on-error: #690005;
+  --workspace-shape-small: 8px;
+  --workspace-control-height: 50px;
   color: #edf4f7;
   background: #0d141c;
+  color-scheme: dark;
 }
 
 .loginShell::before {
@@ -205,9 +221,34 @@
 }
 
 .loginField {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 9px;
+}
+
+.loginField :global(.m3-field__label) {
+  color: #d4e1e5;
+}
+
+.loginField :global(.m3-field__input) {
+  min-height: 50px;
+  border-radius: 8px;
+  color: #edf6f8;
+  background: #0d151e;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+
+.loginField :global(.m3-field__input)::placeholder {
+  color: #526671;
+}
+
+.loginField :global(.m3-field__input):hover {
+  background: #101b25;
+}
+
+.loginField :global(.m3-field__supporting) {
+  color: #657983;
 }
 
 .loginFieldLabel {
@@ -286,6 +327,12 @@
   font-size: 13px;
   font-weight: 750;
   transition: background 150ms ease, border-color 150ms ease, transform 150ms ease, opacity 150ms ease;
+}
+
+.loginSubmit:global(.m3-button) {
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 750;
 }
 
 .loginSubmit:hover {

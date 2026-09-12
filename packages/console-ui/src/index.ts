@@ -1,7 +1,7 @@
 export { WorkspaceApp as GuanlanApp, WorkspaceApp as default } from "./workspace/WorkspaceApp";
 export { WorkspaceApp } from "./workspace/WorkspaceApp";
-export { M3Button, M3Chip, M3IconButton, M3SegmentedControl, M3Surface, M3Switch, M3TextField } from "./workspace/m3";
-export type { M3ButtonProps, M3ButtonVariant, M3ChipProps, M3IconButtonProps, M3SegmentedControlProps, M3SegmentedOption, M3SurfaceProps, M3SwitchProps, M3TextFieldProps } from "./workspace/m3";
+export { M3Button, M3Chip, M3IconButton, M3NavigationItem, M3SegmentedControl, M3Surface, M3Switch, M3TextField } from "./workspace/m3";
+export type { M3ButtonProps, M3ButtonVariant, M3ChipProps, M3IconButtonProps, M3NavigationItemProps, M3SegmentedControlProps, M3SegmentedOption, M3SurfaceProps, M3SwitchProps, M3TextFieldProps } from "./workspace/m3";
 export { MockConsoleAdapter } from "./services/mockAdapter";
 export type { WorkspaceRoute } from "./workspace/WorkspaceContext";
 export type {

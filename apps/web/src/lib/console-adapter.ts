@@ -13,6 +13,7 @@ import type {
 import type { ConsoleAdapter } from "@dsc/console-ui";
 import { WEB_CAPABILITIES, emptyConsoleSnapshot } from "@dsc/console-ui";
 import {
+  ApiError,
   deleteDevice,
   getMetrics,
   getOverviewMetrics,
@@ -105,40 +106,52 @@ export class WebConsoleAdapter implements ConsoleAdapter {
   }
 
   private async loadSnapshot(request: ConsoleSnapshotRequest = {}): Promise<ConsoleSnapshot> {
-    const devices = await listDevices();
-    const selectedDeviceId = request.selectedDeviceId !== undefined
-      ? request.selectedDeviceId
-      : this.snapshot.selectedDeviceId && devices.some((device) => device.deviceId === this.snapshot.selectedDeviceId)
-        ? this.snapshot.selectedDeviceId
-        : devices[0]?.deviceId ?? null;
-    const metricWindow: MetricWindow = request.metricWindow ?? "5m";
-    const trafficMode: TrafficCalendarMode = request.trafficMode ?? "day";
+    try {
+      const devices = await listDevices();
+      const selectedDeviceId = request.selectedDeviceId !== undefined
+        ? request.selectedDeviceId
+        : this.snapshot.selectedDeviceId && devices.some((device) => device.deviceId === this.snapshot.selectedDeviceId)
+          ? this.snapshot.selectedDeviceId
+          : devices[0]?.deviceId ?? null;
+      const metricWindow: MetricWindow = request.metricWindow ?? "5m";
+      const trafficMode: TrafficCalendarMode = request.trafficMode ?? "day";
 
-    const [metrics, overviewMetrics, update] = await Promise.all([
-      selectedDeviceId ? getMetrics(selectedDeviceId, metricWindow).catch(() => null) : Promise.resolve(null),
-      getOverviewMetrics(metricWindow).catch(() => null),
-      getUpdateInfo("web").catch(() => null)
-    ]);
-    const trafficCalendar = selectedDeviceId
-      ? await getTrafficCalendar(selectedDeviceId, trafficMode, request.trafficAnchor ?? new Date().toISOString()).catch(() => null)
-      : null;
+      const [metrics, overviewMetrics, update] = await Promise.all([
+        selectedDeviceId ? getMetrics(selectedDeviceId, metricWindow).catch((error) => optionalWebRequest(error)) : Promise.resolve(null),
+        getOverviewMetrics(metricWindow).catch((error) => optionalWebRequest(error)),
+        getUpdateInfo("web").catch((error) => optionalWebRequest(error))
+      ]);
+      const trafficCalendar = selectedDeviceId
+        ? await getTrafficCalendar(selectedDeviceId, trafficMode, request.trafficAnchor ?? new Date().toISOString()).catch((error) => optionalWebRequest(error))
+        : null;
 
-    this.snapshot = {
-      generatedAt: new Date().toISOString(),
-      source: "live",
-      cache: { available: false, savedAt: null, ageSeconds: null },
-      session: { authenticated: true, accessKeyConfigured: true },
-      localBackend: null,
-      devices,
-      selectedDeviceId,
-      metrics,
-      overviewMetrics,
-      trafficCalendar,
-      update,
-      startup: { openAtLogin: false, startMinimized: false }
-    };
+      this.snapshot = {
+        generatedAt: new Date().toISOString(),
+        source: "live",
+        cache: { available: false, savedAt: null, ageSeconds: null },
+        session: { authenticated: true, accessKeyConfigured: true },
+        localBackend: null,
+        devices,
+        selectedDeviceId,
+        metrics,
+        overviewMetrics,
+        trafficCalendar,
+        update,
+        startup: { openAtLogin: false, startMinimized: false }
+      };
+      this.notify();
+      return this.snapshot;
+    } catch (error) {
+      if (isUnauthorized(error)) this.markSessionExpired();
+      throw error;
+    }
+  }
+
+  private markSessionExpired(): void {
+    this.socket?.close();
+    this.socket = null;
+    this.snapshot = { ...emptyConsoleSnapshot(), generatedAt: new Date().toISOString() };
     this.notify();
-    return this.snapshot;
   }
 
   private connectSocket(): void {
@@ -170,6 +183,15 @@ export class WebConsoleAdapter implements ConsoleAdapter {
   private notify(): void {
     for (const listener of this.listeners) listener(this.snapshot);
   }
+}
+
+function isUnauthorized(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status === 401;
+}
+
+function optionalWebRequest<T>(error: unknown): T | null {
+  if (isUnauthorized(error)) throw error;
+  return null;
 }
 
 function upsertDevice(devices: DeviceSummary[], next: DeviceSummary): DeviceSummary[] {
