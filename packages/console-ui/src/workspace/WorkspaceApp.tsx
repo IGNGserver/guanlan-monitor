@@ -2658,6 +2658,9 @@ function WorkspaceFrame() {
     if (edgeSwipeRef.current?.pointerId === event.pointerId) edgeSwipeRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
+  const handleEdgePointerEnter = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === "mouse" && window.innerWidth > 820) setSidebarPeek(true);
+  };
   return (
     <div className={clsx("workspace-root", !capabilities.canControlNativeWindow && "is-web", sidebarCollapsed && "is-sidebar-collapsed", !sidebarCollapsed && "is-sidebar-open", sidebarPeek && "is-sidebar-peek")}>
       {capabilities.canControlNativeWindow && <WindowTitleBar />}
@@ -2675,8 +2678,8 @@ function WorkspaceFrame() {
           type="button"
           aria-label="展开侧边栏"
           onClick={() => setSidebarCollapsed(false)}
-          onMouseEnter={() => setSidebarPeek(true)}
-          onPointerEnter={() => setSidebarPeek(true)}
+          onPointerEnter={handleEdgePointerEnter}
+          onFocus={() => { if (window.innerWidth > 820) setSidebarPeek(true); }}
           onPointerDown={handleEdgePointerDown}
           onPointerMove={handleEdgePointerMove}
           onPointerUp={handleEdgePointerEnd}
