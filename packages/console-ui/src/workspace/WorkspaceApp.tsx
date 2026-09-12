@@ -423,7 +423,7 @@ function TopBar() {
 function ShellNotice() {
   const { notice } = useWorkspace();
   if (!notice) return null;
-  return <div className={`workspace-toast workspace-toast--${notice.tone}`} role={notice.tone === "error" ? "alert" : "status"}>{notice.text}</div>;
+  return <div className={`workspace-toast m3-snackbar m3-snackbar--${notice.tone}`} role={notice.tone === "error" ? "alert" : "status"}>{notice.text}</div>;
 }
 
 function CommandPalette() {
@@ -497,9 +497,9 @@ function CommandPalette() {
   return (
     <div className="workspace-overlay" style={overlayStyle} role="presentation" onPointerDown={() => setCommandOpen(false)}>
       <section ref={dialogRef} className="workspace-command" role="dialog" aria-modal="true" aria-label="搜索设备和命令" onPointerDown={(event) => event.stopPropagation()} onKeyDown={handleDialogKeyDown}>
-        <div className="workspace-command__input"><Icon name="search" /><input ref={inputRef} autoFocus value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setActiveIndex(0); }} onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); setActiveIndex((index) => Math.min(index + 1, filtered.length - 1)); } else if (event.key === "ArrowUp") { event.preventDefault(); setActiveIndex((index) => Math.max(index - 1, 0)); } else if (event.key === "Enter") { event.preventDefault(); select(activeIndex); } }} placeholder="搜索设备、页面或命令" /></div>
-        <div className="workspace-command__list">
-          {filtered.length ? filtered.map((command, index) => <button className={`workspace-command__item ${index === activeIndex ? "is-active" : ""}`} type="button" key={`${command.label}-${index}`} onPointerEnter={() => setActiveIndex(index)} onClick={() => select(index)}><span><strong>{command.label}</strong><small>{command.detail}</small></span><Icon name="arrow" size={15} /></button>) : <div className="workspace-command__empty">没有匹配结果</div>}
+        <div className="workspace-command__input"><Icon name="search" /><input ref={inputRef} autoFocus role="combobox" aria-label="搜索设备、页面或命令" aria-expanded="true" aria-controls="workspace-command-list" aria-activedescendant={filtered.length ? `workspace-command-option-${activeIndex}` : undefined} value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setActiveIndex(0); }} onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); setActiveIndex((index) => Math.min(index + 1, filtered.length - 1)); } else if (event.key === "ArrowUp") { event.preventDefault(); setActiveIndex((index) => Math.max(index - 1, 0)); } else if (event.key === "Enter") { event.preventDefault(); select(activeIndex); } }} placeholder="搜索设备、页面或命令" /></div>
+        <div id="workspace-command-list" className="workspace-command__list" role="listbox" aria-label="搜索结果">
+          {filtered.length ? filtered.map((command, index) => <button id={`workspace-command-option-${index}`} className={`workspace-command__item ${index === activeIndex ? "is-active" : ""}`} type="button" role="option" aria-selected={index === activeIndex} key={`${command.label}-${index}`} onPointerEnter={() => setActiveIndex(index)} onClick={() => select(index)}><span><strong>{command.label}</strong><small>{command.detail}</small></span><Icon name="arrow" size={15} /></button>) : <div className="workspace-command__empty" role="status">没有匹配结果</div>}
         </div>
         <div className="workspace-command__footer"><span><kbd>↑</kbd><kbd>↓</kbd>选择</span><span><kbd>Enter</kbd>打开</span><span><kbd>Esc</kbd>关闭</span></div>
       </section>
@@ -604,7 +604,7 @@ function PromptDialog({
     if (!nextValue || disabled) return;
     onConfirm(nextValue);
   };
-  return <div className="workspace-confirm-overlay" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget && !disabled) onCancel(); }}><section ref={dialogRef} className="workspace-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-prompt-title" onPointerDown={(event) => event.stopPropagation()}><span className="workspace-section-kicker">编辑名称</span><h2 id="workspace-prompt-title">{title}</h2><p>{detail}</p><input className="workspace-input" autoFocus value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submit(); } }} maxLength={80} /><div className="workspace-form__actions"><Button variant="primary" onClick={submit} disabled={disabled || !value.trim()}>{disabled ? "处理中…" : confirmLabel}</Button><Button variant="quiet" onClick={onCancel} disabled={disabled}>取消</Button></div></section></div>;
+  return <div className="workspace-confirm-overlay" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget && !disabled) onCancel(); }}><section ref={dialogRef} className="workspace-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-prompt-title" onPointerDown={(event) => event.stopPropagation()}><span className="workspace-section-kicker">编辑名称</span><h2 id="workspace-prompt-title">{title}</h2><p>{detail}</p><M3TextField label="名称" autoFocus value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submit(); } }} maxLength={80} /><div className="workspace-form__actions"><Button variant="primary" onClick={submit} disabled={disabled || !value.trim()}>{disabled ? "处理中…" : confirmLabel}</Button><Button variant="quiet" onClick={onCancel} disabled={disabled}>取消</Button></div></section></div>;
 }
 
 function DeviceRow({
