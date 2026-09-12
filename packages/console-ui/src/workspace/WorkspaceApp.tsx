@@ -22,7 +22,7 @@ import {
 } from "./WidgetLayout";
 import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
 import { DynamicWidgetCanvas, WidgetDrawer } from "./widgetCatalog";
-import { M3SegmentedControl, M3Switch, M3Tabs, M3TextField } from "./m3";
+import { M3Checkbox, M3SegmentedControl, M3Select, M3Switch, M3Tabs, M3TextField } from "./m3";
 import { Button, Icon, StatusDot, StatusLabel, Surface, SummaryRow, VirtualMachinePowerLabel, type IconName, virtualMachinePowerState } from "./ui";
 import { MiniTrend, TelemetryChartCard, TelemetryInfoCard } from "./TelemetryCards";
 import {
@@ -805,7 +805,7 @@ function OverviewPage() {
 
       {/* 总览图表：CPU / 内存 / 总存储 / 总网络吞吐，共用设备详情的时间范围 */}
       {snapshot.overviewMetrics && (
-        <div className="workspace-overview-grid" style={{ gridTemplateColumns: "1fr" }}>
+        <div className="workspace-overview-grid workspace-overview-grid--single">
           <TelemetryChartCard
             title="CPU 图表"
             subtitle={`每个实例一条数据线 · 最近 ${metricWindowLabel}`}
@@ -1045,13 +1045,17 @@ function InstanceFilter({
 }) {
   if (!options.length) return null;
   return (
-    <label className="workspace-instance-filter">
-      <span>{label}</span>
-      <select className="workspace-select workspace-select--small" value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="all">全部实例</option>
-        {options.map((option) => <option value={option.id} key={option.id}>{option.name}{option.detail ? ` · ${option.detail}` : ""}</option>)}
-      </select>
-    </label>
+    <M3Select
+      className="workspace-instance-filter"
+      selectClassName="workspace-select workspace-select--small"
+      label={label}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      options={[
+        { value: "all", label: "全部实例" },
+        ...options.map((option) => ({ value: option.id, label: `${option.name}${option.detail ? ` · ${option.detail}` : ""}` }))
+      ]}
+    />
   );
 }
 
@@ -1081,20 +1085,21 @@ function InstanceMetricOverride({
         <div className="workspace-detected-metrics__options">
           {options.map((option) => {
             const globallyEnabled = globalMetrics.includes(option.key);
-            return <label key={option.key} className={!globallyEnabled ? "is-unavailable" : undefined} title={!globallyEnabled ? "请先在上方启用全局指标" : undefined}>
-              <input
-                type="checkbox"
-                checked={globallyEnabled && enabledSet.has(option.key)}
-                disabled={disabled || !globallyEnabled}
-                onChange={(event) => {
-                  const next = new Set(enabledSet);
-                  if (event.target.checked) next.add(option.key);
-                  else next.delete(option.key);
-                  onChange([...next]);
-                }}
-              />
-              <span>{option.label}</span>
-            </label>;
+            return <M3Checkbox
+              key={option.key}
+              compact
+              className={!globallyEnabled ? "is-unavailable" : undefined}
+              label={option.label}
+              checked={globallyEnabled && enabledSet.has(option.key)}
+              disabled={disabled || !globallyEnabled}
+              title={!globallyEnabled ? "请先在上方启用全局指标" : undefined}
+              onCheckedChange={(checked) => {
+                const next = new Set(enabledSet);
+                if (checked) next.add(option.key);
+                else next.delete(option.key);
+                onChange([...next]);
+              }}
+            />;
           })}
         </div>
         {isOverridden && <button type="button" className="workspace-detected-metrics__inherit" onClick={() => onChange(undefined)} disabled={disabled}>恢复跟随全局</button>}
@@ -1288,7 +1293,10 @@ function WidgetPanelBar({
         {manageOpen && (
           <div className="workspace-panel-manager__tray">
             <div className="workspace-panel-manager__heading"><strong>我的面板</strong><span>系统面板保留兼容；自定义面板可以重复、重命名或删除。</span></div>
-            <form className="workspace-panel-manager__create" onSubmit={submitNewPanel}><input value={newPanelName} onChange={(event) => setNewPanelName(event.target.value)} placeholder="新面板名称" aria-label="新面板名称" maxLength={80} /><button type="submit" disabled={!newPanelName.trim()}>新建</button></form>
+            <form className="workspace-panel-manager__create" onSubmit={submitNewPanel}>
+              <M3TextField className="workspace-panel-manager__field" label="新面板名称" value={newPanelName} onChange={(event) => setNewPanelName(event.target.value)} placeholder="例如：值班视图" maxLength={80} />
+              <Button className="workspace-panel-manager__create-button" variant="secondary" type="submit" disabled={!newPanelName.trim()}>新建</Button>
+            </form>
             <div className="workspace-panel-manager__list">{panels.map((panel) => <div className="workspace-panel-manager__item" key={panel.id}><span><strong>{panel.name}</strong><small>{panel.kind === "custom" ? "自定义面板" : "系统面板"}</small></span><div>{panel.kind === "custom" && <><button type="button" onClick={() => setRenameTarget(panel)}>重命名</button><button type="button" onClick={() => onDuplicate(panel.id, activePanelId === panel.id ? layout?.getLayoutSnapshot() : undefined)}>复制</button><button type="button" className="is-danger" onClick={() => setDeleteTarget(panel)}>删除</button></>}{panel.kind === "system" && <button type="button" onClick={() => onDuplicate(panel.id, activePanelId === panel.id ? layout?.getLayoutSnapshot() : undefined)}>复制为自定义</button>}</div></div>)}</div>
           </div>
         )}
@@ -1386,10 +1394,13 @@ function TemperatureSourcesPanel({
             <span className="workspace-section-kicker">温度源</span>
             <h3>全部温度传感器</h3>
           </div>
-          <label className="workspace-temperature-toggle">
-            <input type="checkbox" checked={showDiagnostics} onChange={(event) => setShowDiagnostics(event.target.checked)} />
-            <span>显示诊断通道</span>
-          </label>
+          <M3Checkbox
+            className="workspace-temperature-toggle"
+            compact
+            checked={showDiagnostics}
+            onCheckedChange={setShowDiagnostics}
+            label="显示诊断通道"
+          />
         </div>
         <p className="workspace-surface__description">按传感器原始名称和采集后端展示；不同来源不会合并平均，阈值和无效值默认隐藏。</p>
         <div className="workspace-temperature-sources__body">
@@ -2526,8 +2537,8 @@ function AgentSettings() {
       <Surface className="workspace-collection-surface">
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">上报数据</span><h3>选择 Agent 采集内容</h3></div><span className="workspace-caption">已选 {selectedMetrics.length} 项</span></div>
         <p className="workspace-surface__description">按勾选项采集并上报指标；指标勾选会立即保存，离开页面后仍会保留。启用某个硬件探针时，Agent 可能自动补齐该探针运行所需的依赖指标；探针来源和实例覆盖完成后点击一次保存。</p>
-        <div className="workspace-metric-option-grid">{metricGroups.map((group) => <div className="workspace-metric-option-group" key={group.label}><strong>{group.label}</strong>{group.items.map((item) => <label className="workspace-check-row" key={item.key}><input type="checkbox" checked={selectedMetrics.includes(item.key)} onChange={() => toggleMetric(item.key)} /><span>{item.label}</span></label>)}</div>)}</div>
-        <div className="workspace-probe-config"><div className="workspace-probe-config__header"><div><strong>硬件探针</strong><span>先启用探针来源，再在下方决定每个实例是否上报。</span></div></div>{supportedProbePlans.map((plan) => { const selection = probeSelections.find((item) => item.target === plan.target); const providers = plan.providers.filter((provider): provider is AgentProbeProvider => provider in probeProviderLabels); const selectedProvider = selection?.provider && providers.includes(selection.provider) ? selection.provider : providers.includes(plan.default as AgentProbeProvider) ? plan.default as AgentProbeProvider : providers[0]; return <div className="workspace-probe-row" key={plan.target}><div><strong>{probeTargetLabels[plan.target]}</strong><small>{selection?.enabled === false ? "已停用" : "已启用"}</small></div><select className="workspace-select workspace-select--small" value={selectedProvider ?? "disabled"} onChange={(event) => updateProbe(plan.target, { provider: event.target.value as AgentProbeProvider })} disabled={!providers.length || mutationPending}>{providers.map((provider) => <option value={provider} key={provider}>{probeProviderLabels[provider]}</option>)}</select><Toggle checked={selection?.enabled ?? true} onChange={(enabled) => updateProbe(plan.target, { enabled })} label={`${probeTargetLabels[plan.target]} 探针`} disabled={mutationPending} /></div>; })}</div>
+        <div className="workspace-metric-option-grid">{metricGroups.map((group) => <div className="workspace-metric-option-group" key={group.label}><strong>{group.label}</strong>{group.items.map((item) => <M3Checkbox compact className="workspace-check-row" key={item.key} checked={selectedMetrics.includes(item.key)} onCheckedChange={() => toggleMetric(item.key)} label={item.label} />)}</div>)}</div>
+        <div className="workspace-probe-config"><div className="workspace-probe-config__header"><div><strong>硬件探针</strong><span>先启用探针来源，再在下方决定每个实例是否上报。</span></div></div>{supportedProbePlans.map((plan) => { const selection = probeSelections.find((item) => item.target === plan.target); const providers = plan.providers.filter((provider): provider is AgentProbeProvider => provider in probeProviderLabels); const selectedProvider = selection?.provider && providers.includes(selection.provider) ? selection.provider : providers.includes(plan.default as AgentProbeProvider) ? plan.default as AgentProbeProvider : providers[0]; return <div className="workspace-probe-row" key={plan.target}><div><strong>{probeTargetLabels[plan.target]}</strong><small>{selection?.enabled === false ? "已停用" : "已启用"}</small></div><M3Select label="探针来源" hideLabel selectClassName="workspace-select workspace-select--small" value={selectedProvider ?? "disabled"} onChange={(event) => updateProbe(plan.target, { provider: event.target.value as AgentProbeProvider })} disabled={!providers.length || mutationPending} options={providers.map((provider) => ({ value: provider, label: probeProviderLabels[provider] }))} /><Toggle checked={selection?.enabled ?? true} onChange={(enabled) => updateProbe(plan.target, { enabled })} label={`${probeTargetLabels[plan.target]} 探针`} disabled={mutationPending} /></div>; })}</div>
         <div className="workspace-form__actions"><Button variant="primary" onClick={saveCollectionConfig} disabled={refreshing || mutationPending}>保存探针与实例配置</Button><Button variant="quiet" onClick={() => void cloudPush()} disabled={refreshing || mutationPending}>同步到中枢</Button></div>
       </Surface>
       <Surface>
@@ -2557,15 +2568,15 @@ function AboutSettings() {
 }
 
 function LoadingSurface() {
-  return <div className="workspace-page"><div className="workspace-skeleton workspace-skeleton--hero" /><div className="workspace-skeleton workspace-skeleton--large" /><div className="workspace-skeleton workspace-skeleton--medium" /></div>;
+  return <div className="workspace-page workspace-loading-state" role="status" aria-busy="true" aria-label="正在加载设备状态"><span className="workspace-visually-hidden">正在加载设备状态</span><div className="workspace-skeleton workspace-skeleton--hero" /><div className="workspace-skeleton workspace-skeleton--large" /><div className="workspace-skeleton workspace-skeleton--medium" /></div>;
 }
 
-function EmptyState({ title, detail, action }: { title: string; detail: string; action?: React.ReactNode }) {
-  return <div className="workspace-empty"><div className="workspace-empty__mark"><Icon name="overview" size={22} /></div><h3>{title}</h3><p>{detail}</p>{action}</div>;
+function EmptyState({ title, detail, action, tone = "neutral" }: { title: string; detail: string; action?: React.ReactNode; tone?: "neutral" | "error" }) {
+  return <section className={`workspace-empty m3-state-surface m3-state-surface--${tone}`} role={tone === "error" ? "alert" : "status"}><div className="workspace-empty__mark"><Icon name={tone === "error" ? "warning" : "overview"} size={22} /></div><h3>{title}</h3><p>{detail}</p>{action}</section>;
 }
 
 function ErrorSurface({ title, detail, onRetry }: { title: string; detail: string; onRetry: () => void }) {
-  return <EmptyState title={title} detail={detail} action={<Button variant="primary" onClick={onRetry}><Icon name="refresh" size={16} />重试</Button>} />;
+  return <EmptyState tone="error" title={title} detail={detail} action={<Button variant="primary" onClick={onRetry}><Icon name="refresh" size={16} />重试</Button>} />;
 }
 
 function RouteView() {

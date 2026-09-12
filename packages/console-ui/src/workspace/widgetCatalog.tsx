@@ -34,6 +34,7 @@ import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
 import { TelemetryChartCard, type TelemetrySeries } from "./TelemetryCards";
 import { getWidgetLines, type WidgetLine } from "../helpers/widgetLines";
 import { UNAVAILABLE_METRIC_LABEL } from "./formatters";
+import { M3Button, M3IconButton, M3Select } from "./m3";
 
 type WidgetCatalogDefinition = {
   widgetType: string;
@@ -974,13 +975,8 @@ function DynamicWidgetCard({ entry, context }: { entry: WidgetLayoutCatalogEntry
   const model = buildWidgetCardModel({ definition, entry, context });
   const controls = (
     <>
-      {layout.editMode && <select className="workspace-select workspace-select--small" value={visualization} onChange={(event) => layout.updateWidgetConfig(entry.id, { visualization: event.target.value as WidgetVisualization })} aria-label={`${entry.title}图表形式`}>
-        {definition.visualizations.map((item) => <option key={item} value={item}>{visualizationLabels[item]}</option>)}
-      </select>}
-      {layout.editMode && !entry.groupId && targets.length > 0 && <select className="workspace-select workspace-select--small" value={targetId} onChange={(event) => layout.updateWidgetConfig(entry.id, { targetId: event.target.value === "all" ? null : event.target.value })} aria-label={`${entry.title}实例`}>
-        <option value="all">全部实例</option>
-        {targets.map((target) => <option value={target.id} key={target.id}>{target.name}</option>)}
-      </select>}
+      {layout.editMode && <M3Select label={`${entry.title}图表形式`} hideLabel selectClassName="workspace-select workspace-select--small" value={visualization} onChange={(event) => layout.updateWidgetConfig(entry.id, { visualization: event.target.value as WidgetVisualization })} options={definition.visualizations.map((item) => ({ value: item, label: visualizationLabels[item] }))} />}
+      {layout.editMode && !entry.groupId && targets.length > 0 && <M3Select label={`${entry.title}实例`} hideLabel selectClassName="workspace-select workspace-select--small" value={targetId} onChange={(event) => layout.updateWidgetConfig(entry.id, { targetId: event.target.value === "all" ? null : event.target.value })} options={[{ value: "all", label: "全部实例" }, ...targets.map((target) => ({ value: target.id, label: target.name }))]} />}
     </>
   );
   return (
@@ -1039,7 +1035,7 @@ export function DynamicWidgetCanvas({ device, metrics, localTemperatureSources =
   }, [entries, layout.addWidget, layout.editable, layout.locked, layout.updateWidgetConfig, localTemperatureSources, localTemperatureSourcesAt, metrics]);
 
   if (!entries.length) {
-    return showEmptyState ? <div className="workspace-dynamic-empty"><strong>这个面板还没有自定义小组件</strong><span>{onOpenDrawer ? "打开小组件抽屉，从处理器、存储、网络和 SMART 数据中选择内容。" : "当前为离线缓存，只能查看，暂不能添加小组件。"}</span>{onOpenDrawer && <button type="button" onClick={onOpenDrawer}>打开小组件抽屉</button>}</div> : null;
+    return showEmptyState ? <div className="workspace-dynamic-empty"><strong>这个面板还没有自定义小组件</strong><span>{onOpenDrawer ? "打开小组件抽屉，从处理器、存储、网络和 SMART 数据中选择内容。" : "当前为离线缓存，只能查看，暂不能添加小组件。"}</span>{onOpenDrawer && <M3Button variant="tonal" onClick={onOpenDrawer}>打开小组件抽屉</M3Button>}</div> : null;
   }
   const definitions = new Map(entries.map((entry) => [entry.id, widgetDefinitionByType.get(entry.widgetType ?? "")]));
   const groupEntries = entries.filter((entry) => isDeviceGroupDefinition(definitions.get(entry.id)));
@@ -1192,7 +1188,7 @@ export function WidgetDrawer({ open, onClose, device, metrics, localTemperatureS
             <h2>{targetDefinition ? `选择${targetSelectionLabel}` : "添加小组件"}</h2>
             <p>{targetDefinition ? `“${targetDefinition.title}”会绑定到一个具体实例。` : "可以在面板中自由添加和排布小组件。"}</p>
           </div>
-          <button type="button" onClick={closeDrawer} aria-label="关闭小组件抽屉">×</button>
+          <M3IconButton label="关闭小组件抽屉" onClick={closeDrawer}>×</M3IconButton>
         </div>
         <div className="workspace-widget-drawer__body">
           {targetDefinition ? (
@@ -1201,7 +1197,7 @@ export function WidgetDrawer({ open, onClose, device, metrics, localTemperatureS
                 <div className="workspace-widget-drawer__target" key={target.id}>
                   <span><strong>{target.name}</strong>{target.detail && <small>{target.detail}</small>}</span>
                   <div className="workspace-widget-drawer__target-actions">
-                    <button type="button" onClick={() => addWidget(targetDefinition, target)}>添加</button>
+                    <M3Button variant="tonal" onClick={() => addWidget(targetDefinition, target)}>添加</M3Button>
                   </div>
                 </div>
               )) : <div className="workspace-widget-drawer__empty">当前时间范围没有可用的{targetSelectionLabel}。</div>}
@@ -1219,13 +1215,13 @@ export function WidgetDrawer({ open, onClose, device, metrics, localTemperatureS
                   <small>{count ? `已添加 ${count} 个 · ${availability}` : availability}</small>
                 </div>
                 <div className="workspace-widget-drawer__actions">
-                  <button type="button" disabled={!available} onClick={() => chooseDefinition(definition)}>{definition.targetKind === "temperature" ? "添加" : definition.targetKind ? "选择" : "添加"}</button>
+                  <M3Button variant="tonal" disabled={!available} onClick={() => chooseDefinition(definition)}>{definition.targetKind === "temperature" ? "添加" : definition.targetKind ? "选择" : "添加"}</M3Button>
                 </div>
               </div>
             );
           })}</section>)}
         </div>
-        <div className="workspace-widget-drawer__footer"><span>{targetDefinition ? "选择后会绑定到当前设备" : `${device.hostname} · 当前面板`}</span>{targetDefinition ? <button type="button" onClick={() => setTargetDefinition(null)}>返回目录</button> : <button type="button" onClick={closeDrawer}>完成</button>}</div>
+        <div className="workspace-widget-drawer__footer"><span>{targetDefinition ? "选择后会绑定到当前设备" : `${device.hostname} · 当前面板`}</span>{targetDefinition ? <M3Button variant="text" onClick={() => setTargetDefinition(null)}>返回目录</M3Button> : <M3Button variant="filled" onClick={closeDrawer}>完成</M3Button>}</div>
       </aside>
     </div>
   );

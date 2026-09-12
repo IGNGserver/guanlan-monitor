@@ -361,6 +361,181 @@
   box-shadow: inset 0 0 0 1px var(--workspace-color-primary);
 }
 
+.m3-select {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  color: var(--workspace-color-on-surface);
+  font-size: 12px;
+}
+
+.m3-select__label {
+  color: var(--workspace-color-on-surface-variant);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.m3-select--hidden-label {
+  position: relative;
+  gap: 0;
+}
+
+.m3-select--hidden-label .m3-select__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.m3-select__input {
+  box-sizing: border-box;
+  min-height: var(--workspace-control-height);
+  padding: 0 32px 0 12px;
+  border: 1px solid var(--workspace-color-outline);
+  border-radius: var(--workspace-shape-small);
+  outline: 0;
+  color: var(--workspace-color-on-surface);
+  background-color: var(--workspace-color-surface-container-low);
+  font: inherit;
+  font-size: 13px;
+  transition: border-color var(--workspace-motion-standard), background-color var(--workspace-motion-standard), box-shadow var(--workspace-motion-standard);
+}
+
+.m3-select__input:hover:not(:disabled) {
+  border-color: var(--workspace-color-on-surface-variant);
+  background-color: var(--workspace-color-surface-container);
+}
+
+.m3-select__input:focus-visible {
+  border-color: var(--workspace-color-primary);
+  box-shadow: inset 0 0 0 1px var(--workspace-color-primary);
+}
+
+.m3-select__input:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.m3-checkbox {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  min-height: var(--workspace-min-touch-target);
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--workspace-color-on-surface);
+  cursor: pointer;
+}
+
+.m3-checkbox--compact {
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+}
+
+.m3-checkbox__input {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: 0 !important;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+  opacity: 0;
+}
+
+.m3-checkbox__box {
+  position: relative;
+  display: inline-grid;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  place-items: center;
+  border: 2px solid var(--workspace-color-outline);
+  border-radius: var(--workspace-shape-extra-small);
+  background: transparent;
+  transition: border-color var(--workspace-motion-standard), background-color var(--workspace-motion-standard), transform var(--workspace-motion-standard);
+}
+
+.m3-checkbox--compact .m3-checkbox__box {
+  margin-top: 0;
+}
+
+.m3-checkbox__input:checked + .m3-checkbox__box {
+  border-color: var(--workspace-color-primary);
+  background: var(--workspace-color-primary);
+}
+
+.m3-checkbox__input:checked + .m3-checkbox__box::after {
+  width: 9px;
+  height: 5px;
+  border-bottom: 2px solid var(--workspace-color-on-primary);
+  border-left: 2px solid var(--workspace-color-on-primary);
+  content: "";
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+.m3-checkbox__input:focus-visible + .m3-checkbox__box {
+  outline: 3px solid color-mix(in srgb, var(--workspace-color-primary) 42%, transparent);
+  outline-offset: 2px;
+}
+
+.m3-checkbox__copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.m3-checkbox__label {
+  color: var(--workspace-color-on-surface);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.m3-checkbox__description {
+  color: var(--workspace-color-on-surface-variant);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.m3-checkbox.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.workspace-check-row.m3-checkbox {
+  color: var(--workspace-color-on-surface-variant);
+  font-size: 11px;
+}
+
+.workspace-check-row.m3-checkbox .m3-checkbox__label {
+  color: inherit;
+  font-size: inherit;
+}
+
+.workspace-detected-metrics__options .m3-checkbox {
+  min-height: 28px;
+  gap: 5px;
+}
+
+.workspace-detected-metrics__options .m3-checkbox__box {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  border-width: 1px;
+}
+
+.workspace-detected-metrics__options .m3-checkbox__label {
+  color: inherit;
+  font-size: 10px;
+}
+
 .workspace-m3-toggle.m3-switch-row--compact {
   width: auto;
   min-height: 32px;
@@ -532,6 +707,67 @@
 .workspace-surface {
   border-color: var(--workspace-color-outline-variant);
   border-radius: var(--workspace-shape-large);
+  background: var(--workspace-color-surface-container-low);
+  box-shadow: var(--workspace-elevation-1);
+}
+
+.workspace-overview-grid--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.m3-state-surface {
+  border-style: solid;
+  border-color: var(--workspace-color-outline-variant);
+  background: var(--workspace-color-surface-container-low);
+  box-shadow: var(--workspace-elevation-1);
+}
+
+.m3-state-surface--error {
+  border-color: color-mix(in srgb, var(--workspace-color-error) 45%, var(--workspace-color-outline-variant));
+  background: color-mix(in srgb, var(--workspace-color-error-container) 42%, var(--workspace-color-surface-container-low));
+}
+
+.m3-state-surface--error .workspace-empty__mark {
+  color: var(--workspace-color-error);
+  background: var(--workspace-color-error-container);
+}
+
+.workspace-visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.workspace-panel-manager__create {
+  align-items: end;
+}
+
+.workspace-panel-manager__create .workspace-panel-manager__field {
+  min-width: 0;
+  flex: 1;
+}
+
+.workspace-panel-manager__create .workspace-panel-manager__field .m3-field__input {
+  min-height: 36px;
+  padding-inline: 12px;
+}
+
+.workspace-panel-manager__create .workspace-panel-manager__create-button {
+  min-height: 36px;
+  padding-inline: 14px;
+}
+
+.workspace-panel-manager__create .workspace-panel-manager__field .m3-field__label {
+  font-size: 10px;
+}
+
+.workspace-loading-state .workspace-skeleton {
+  border-color: var(--workspace-color-outline-variant);
   background: var(--workspace-color-surface-container-low);
   box-shadow: var(--workspace-elevation-1);
 }
