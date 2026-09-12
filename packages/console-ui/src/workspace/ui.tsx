@@ -1,4 +1,5 @@
 import React from "react";
+import { M3Button } from "./m3";
 
 export type IconName =
   | "overview"
@@ -86,10 +87,11 @@ export function Button({
   title?: string;
   autoFocus?: boolean;
 }) {
+  const m3Variant = variant === "primary" ? "filled" : variant === "secondary" ? "outlined" : variant === "quiet" ? "text" : "danger";
   return (
-    <button className={`workspace-button workspace-button--${variant} ${className}`} autoFocus={autoFocus} disabled={disabled} onClick={onClick} type={type} title={title}>
+    <M3Button className={`workspace-button workspace-button--${variant} ${className}`} autoFocus={autoFocus} disabled={disabled} onClick={onClick} type={type} title={title} variant={m3Variant}>
       {children}
-    </button>
+    </M3Button>
   );
 }
 
