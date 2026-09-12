@@ -227,12 +227,89 @@
   box-shadow: var(--workspace-elevation-1);
 }
 
+.workspace-setting-segmented {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.workspace-range-control {
+  display: inline-flex;
+  min-height: var(--workspace-control-height);
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.workspace-range-control__label {
+  color: var(--workspace-color-on-surface-variant);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.workspace-range-control__options.m3-segmented-control {
+  min-height: var(--workspace-control-height);
+}
+
+.workspace-range-control__options .m3-segmented-control__option {
+  min-width: 56px;
+  padding-inline: 12px;
+}
+
+.workspace-select,
+.workspace-input {
+  box-sizing: border-box;
+  min-height: var(--workspace-control-height);
+  border: 1px solid var(--workspace-color-outline);
+  border-radius: var(--workspace-shape-small);
+  outline: 0;
+  color: var(--workspace-color-on-surface);
+  background: var(--workspace-color-surface-container-low);
+  font: inherit;
+  font-size: 13px;
+  transition: border-color var(--workspace-motion-standard), background var(--workspace-motion-standard), box-shadow var(--workspace-motion-standard);
+}
+
+.workspace-select:hover,
+.workspace-input:hover {
+  border-color: var(--workspace-color-on-surface-variant);
+  background: var(--workspace-color-surface-container);
+}
+
+.workspace-select:focus,
+.workspace-input:focus {
+  border-color: var(--workspace-color-primary);
+  box-shadow: inset 0 0 0 1px var(--workspace-color-primary);
+}
+
+.workspace-m3-toggle.m3-switch-row--compact {
+  width: auto;
+  min-height: 32px;
+  height: auto;
+  cursor: default;
+}
+
+.workspace-m3-toggle.m3-switch-row--compact .m3-switch {
+  flex: 0 0 auto;
+}
+
 .m3-field {
   display: grid;
   min-width: 0;
   gap: 6px;
   color: var(--workspace-color-on-surface);
   font-size: 14px;
+}
+
+.workspace-form .m3-field {
+  display: grid;
+  gap: 6px;
+  color: var(--workspace-color-on-surface);
+  font-size: 14px;
+  font-weight: 400;
 }
 
 .m3-field__label {
@@ -349,6 +426,18 @@
 
 .m3-switch-row.is-disabled {
   opacity: 0.48;
+}
+
+.m3-switch-row--compact {
+  justify-content: flex-end;
+}
+
+.workspace-settings-list > .m3-switch-row:not(:first-child) {
+  border-top: 1px solid var(--workspace-color-outline-variant);
+}
+
+.workspace-settings-list > .m3-switch-row {
+  padding-block: 10px;
 }
 
 .m3-surface {
