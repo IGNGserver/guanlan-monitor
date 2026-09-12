@@ -469,7 +469,7 @@ export class DesktopController {
       metrics: null,
       overviewMetrics: null,
       trafficCalendar: null,
-      update: { available: false, currentVersion: currentDesktopVersion(), currentChannel: "test", latestVersion: currentDesktopVersion(), latestChannel: "test", releaseTag: null, releaseUrl: null, notesUrl: null, publishedAt: null, assetName: null, assetUrl: null, assetSize: null, sha256: null, installMode: "none", message: null, platform: process.platform === "win32" ? "windows-gui" : "linux-gui", arch: process.arch },
+      update: { available: false, currentVersion: currentDesktopVersion(), currentChannel: "test", latestVersion: currentDesktopVersion(), latestChannel: "test", releaseTag: null, releaseUrl: null, notesUrl: null, publishedAt: null, assetName: null, assetUrl: null, assetSize: null, sha256: null, installMode: "none", platform: process.platform === "win32" ? "windows-gui" : "linux-gui", arch: process.arch },
       startup: this.startup
     };
   }
