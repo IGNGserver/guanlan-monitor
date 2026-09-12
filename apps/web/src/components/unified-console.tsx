@@ -31,15 +31,20 @@ export function UnifiedConsole({ initialDeviceId = null }: { initialDeviceId?: s
   if (state === "loading") {
     return (
       <main className={styles.loginShell}>
-        <section className={styles.loginLoading} aria-live="polite">
+        <header className={styles.loginTop}>
           <div className={styles.loginBrand}>
             <img src="/logo.png" alt="观澜" className={styles.brandLogoImage} />
-            <span>观澜</span>
-            <small>WEB HUB</small>
+            <div><strong>观澜</strong><span>设备状态中枢</span></div>
           </div>
-          <div className={styles.loginLoadingBar} aria-hidden="true" />
-          <h1>正在连接观澜中枢</h1>
-          <p>正在检查当前登录会话...</p>
+          <span className={styles.loginTopNote}>浏览器工作台</span>
+        </header>
+        <section className={styles.loginPanel} aria-live="polite">
+          <div className={styles.loginFormShell}>
+            <div className={styles.loginLoadingBar} aria-hidden="true" />
+            <p className={styles.loginPanelEyebrow}>正在连接</p>
+            <h1>检查当前会话</h1>
+            <p>正在读取认证状态，请稍候。</p>
+          </div>
         </section>
       </main>
     );

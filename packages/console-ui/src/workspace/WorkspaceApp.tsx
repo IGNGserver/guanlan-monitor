@@ -1,8 +1,7 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, SystemStats, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, VirtualizationStorageMetricSeries, VirtualizationStorageTelemetry, WidgetInstanceConfig, WidgetLayoutDocument, WidgetLayoutSaveRequest, WidgetPanelMetadata } from "@dsc/shared";
 import { isDisplayableVirtualizationStorage, isDisplayableVirtualizationStorageSeries, virtualizationStorageInstances } from "@dsc/shared";
-import clsx from "clsx";
 import appIcon from "../assets/app-icon.png";
 import type { ConsoleAdapter } from "../services/adapter";
 import {
@@ -22,9 +21,12 @@ import {
 } from "./WidgetLayout";
 import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
 import { DynamicWidgetCanvas, WidgetDrawer } from "./widgetCatalog";
-import { M3Button, M3Checkbox, M3IconButton, M3NavigationItem, M3SegmentedControl, M3Select, M3Switch, M3Tabs, M3TextField } from "./m3";
-import { Button, Icon, StatusDot, StatusLabel, Surface, SummaryRow, VirtualMachinePowerLabel, type IconName, virtualMachinePowerState } from "./ui";
+import { M3Checkbox, M3Chip, M3SegmentedControl, M3Select, M3Switch, M3Tabs, M3TextField } from "./m3";
+import { Button, Icon, StatusDot, StatusLabel, Surface, SummaryRow, VirtualMachinePowerLabel, virtualMachinePowerState } from "./ui";
 import { MiniTrend, TelemetryChartCard, TelemetryInfoCard } from "./TelemetryCards";
+import { settingsNavigation } from "./shell/PrimaryNavigation";
+import { WorkspaceFrame as SharedWorkspaceFrame } from "./shell/WorkspaceFrame";
+import { selectDeviceDirectory, selectHealthSummary, selectResourceRanking, type DeviceDirectorySort, type DeviceDirectoryStatus } from "./selectors";
 import {
   CapacityMetricValue,
   MetricValue,
@@ -198,329 +200,6 @@ const probeProviderLabels: Record<AgentProbeProvider, string> = {
   disabled: "禁用"
 };
 
-function WorkspaceSidebar({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolean; onSidebarLeave: () => void }) {
-  const {
-    capabilities,
-    route,
-    sidebarCollapsed,
-    setSidebarCollapsed,
-    hubs,
-    navigate,
-    openSettings,
-    closeSettings,
-    openExternal,
-    snapshot,
-    allDevices,
-    devices,
-    instanceType,
-    setInstanceType
-  } = useWorkspace();
-  const deviceCount = allDevices.filter((device) => (device.instanceType ?? "device") === "device").length;
-  const virtualMachineCount = allDevices.filter((device) => device.instanceType === "virtual_machine").length;
-  const inSettings = route.kind === "settings";
-  const hubOnline = hubs[0]?.state === "online";
-  const hubAbnormal = !hubOnline && !snapshot?.session.authenticated && snapshot?.source !== "empty";
-
-  return (
-    <aside className={`workspace-sidebar ${sidebarCollapsed ? "is-collapsed" : ""} ${inSettings ? "is-settings" : ""}`} onMouseLeave={() => { if (sidebarCollapsed && sidebarPeek) onSidebarLeave(); }}>
-      <div className="workspace-sidebar__topline">
-        <button className="workspace-brand" type="button" onClick={() => (inSettings ? closeSettings() : navigate({ kind: "overview" }))} aria-label="返回总览">
-          <img className="workspace-brand__mark-img" src={appIconSrc} alt="观澜" />
-          <span className="workspace-brand__name">观澜</span>
-        </button>
-        <M3IconButton className="workspace-icon-button workspace-sidebar__collapse" label={sidebarCollapsed ? "展开侧边栏" : "折叠侧边栏"} onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
-          <Icon name="collapse" />
-        </M3IconButton>
-      </div>
-
-      {inSettings ? (
-        <SettingsSidebar />
-      ) : (
-        <nav className="workspace-sidebar__nav" aria-label="设备控制台导航">
-          <M3NavigationItem className="workspace-nav-item" selected={route.kind === "overview"} onClick={() => navigate({ kind: "overview" })} title="总览">
-            <Icon name="overview" /> <span>总览</span>
-          </M3NavigationItem>
-          <div className="workspace-sidebar__label"><button className="workspace-sidebar__hub-link" type="button" onClick={() => navigate({ kind: "hub", hubId: "primary" })}>接入中枢</button><span className="workspace-sidebar__count">{allDevices.length}</span></div>
-          <M3SegmentedControl
-            className="workspace-instance-tabs"
-            options={[{ value: "device", label: `普通设备（${deviceCount}）` }, { value: "virtual_machine", label: `虚拟机（${virtualMachineCount}）` }]}
-            value={instanceType}
-            onChange={(value) => {
-              const type = value as "device" | "virtual_machine";
-              const current = route.kind === "device" ? allDevices.find((device) => device.deviceId === route.deviceId) : null;
-              if (current && (current.instanceType ?? "device") !== type) navigate({ kind: "overview" });
-              setInstanceType(type);
-            }}
-            aria-label="实例类型"
-          />
-          {hubAbnormal ? (
-            <M3Button className="workspace-sidebar-hub-alert" variant="tonal" onClick={() => openSettings(capabilities.canConfigureConnection ? "connections" : "workspace")} title={capabilities.canConfigureConnection ? "中枢连接异常，点击检查连接设置" : "中枢连接异常，点击查看中枢设置"}>
-              <StatusDot state="warning" />
-              <span>中枢连接异常</span>
-            </M3Button>
-          ) : null}
-          <div className="workspace-device-list">
-            {devices.length ? devices.map((device) => (
-              <M3NavigationItem className="workspace-device-item" selected={route.kind === "device" && route.deviceId === device.deviceId} key={device.deviceId} onClick={() => navigate({ kind: "device", deviceId: device.deviceId })} title={device.hostname}>
-                {(device.instanceType ?? "device") === "virtual_machine"
-                  ? <StatusDot state={virtualMachinePowerState(device.virtualMachine?.powerState).state} />
-                  : <StatusDot state={device.status === "online" ? "online" : "offline"} />}
-                <span className="workspace-device-item__copy"><strong>{device.hostname}</strong><small>{(device.instanceType ?? "device") === "virtual_machine" ? `${virtualMachinePowerState(device.virtualMachine?.powerState).label} · 宿主机：${device.hostName ?? "未知"}` : device.os} · <MetricValue value={device.cpuUsagePercent} unavailable={isMetricUnavailable(device, "cpuUsage")} /></small></span>
-              </M3NavigationItem>
-            )) : <div className="workspace-sidebar__empty">尚未发现设备</div>}
-          </div>
-          <div className="workspace-sidebar__spacer" />
-          {capabilities.canManageLocalAgent && <M3NavigationItem className="workspace-nav-item" onClick={() => openSettings("agent")} title="本机 Agent">
-            <Icon name="agent" /> <span>本机 Agent</span>
-          </M3NavigationItem>}
-          {capabilities.canConfigureConnection && <M3NavigationItem className="workspace-nav-item" onClick={() => openSettings("connections")} title="连接设置">
-            <Icon name="connection" /> <span>连接设置</span>
-          </M3NavigationItem>}
-        </nav>
-      )}
-
-      <div className="workspace-sidebar__footer">
-        {inSettings ? (
-          <M3NavigationItem className="workspace-nav-item" onClick={closeSettings} title="返回设备控制台"><Icon name="back" /><span>返回控制台</span></M3NavigationItem>
-        ) : (
-          <M3NavigationItem className="workspace-nav-item" onClick={() => openSettings()} title="设置"><Icon name="settings" /><span>设置</span></M3NavigationItem>
-        )}
-        <M3Button className="workspace-sidebar__support" variant="text" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor/issues")} title="打开帮助与反馈">
-          <span>帮助与反馈</span><Icon name="external" size={14} />
-        </M3Button>
-      </div>
-    </aside>
-  );
-}
-
-const desktopSettingsNav: Array<{ id: SettingsSection; label: string; icon: IconName }> = [
-  { id: "general", label: "通用", icon: "settings" },
-  { id: "appearance", label: "外观", icon: "appearance" },
-  { id: "connections", label: "中枢与连接", icon: "connection" },
-  { id: "agent", label: "本机 Agent", icon: "agent" },
-  { id: "data", label: "数据与更新", icon: "data" },
-  { id: "shortcuts", label: "快捷键", icon: "keyboard" },
-  { id: "about", label: "关于观澜", icon: "about" }
-];
-
-const webSettingsNav: Array<{ id: SettingsSection; label: string; icon: IconName }> = [
-  { id: "workspace", label: "工作台", icon: "overview" },
-  { id: "appearance", label: "外观", icon: "appearance" },
-  { id: "session", label: "会话安全", icon: "connection" },
-  { id: "data", label: "数据与更新", icon: "data" },
-  { id: "shortcuts", label: "快捷键", icon: "keyboard" },
-  { id: "about", label: "关于观澜", icon: "about" }
-];
-
-function settingsNavigation(capabilities: ReturnType<typeof useWorkspace>["capabilities"]) {
-  return capabilities.canControlNativeWindow ? desktopSettingsNav : webSettingsNav;
-}
-
-function SettingsSidebar() {
-  const { route, navigate, capabilities } = useWorkspace();
-  const visibleSettings = settingsNavigation(capabilities).filter((item) => {
-    if (item.id === "agent") return capabilities.canManageLocalAgent;
-    if (item.id === "connections") return capabilities.canConfigureConnection;
-    return true;
-  });
-  return (
-    <nav className="workspace-sidebar__nav" aria-label="设置导航">
-      <div className="workspace-sidebar__section-title">设置</div>
-      {visibleSettings.map((item) => (
-        <M3NavigationItem className="workspace-nav-item" selected={route.kind === "settings" && route.section === item.id} key={item.id} onClick={() => navigate({ kind: "settings", section: item.id })} title={item.label}>
-          <Icon name={item.icon} /><span>{item.label}</span>
-        </M3NavigationItem>
-      ))}
-    </nav>
-  );
-}
-
-function WindowTitleBar() {
-  const { minimizeWindow, toggleMaximizeWindow, closeWindow, capabilities, adapterDragStart, adapterDragMove, adapterDragEnd } = useWorkspace();
-  const [isMaximized, setIsMaximized] = useState(false);
-  const dragPointerId = useRef<number | null>(null);
-
-  const toggleMaximize = async () => {
-    const next = await toggleMaximizeWindow();
-    setIsMaximized(next);
-  };
-
-  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    dragPointerId.current = event.pointerId;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    if (capabilities.canControlNativeWindow) adapterDragStart(event.screenX, event.screenY);
-  };
-
-  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (dragPointerId.current !== event.pointerId) return;
-    if (capabilities.canControlNativeWindow) adapterDragMove(event.screenX, event.screenY);
-  };
-
-  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (dragPointerId.current !== event.pointerId) return;
-    dragPointerId.current = null;
-    if (capabilities.canControlNativeWindow) adapterDragEnd();
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-  };
-
-  return (
-    <header className="workspace-windowbar">
-      <div
-        className="workspace-windowbar__drag"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        onLostPointerCapture={handlePointerUp}
-        onDoubleClick={() => void toggleMaximize()}
-      >
-        <img className="workspace-windowbar__mark-img" src={appIconSrc} alt="观澜" />
-        <strong>观澜</strong>
-        <span className="workspace-windowbar__separator" aria-hidden="true" />
-        <span className="workspace-windowbar__subtitle">设备状态控制台</span>
-      </div>
-      <div className="workspace-windowbar__controls" role="group" aria-label="窗口控制">
-        <M3IconButton className="workspace-window-control" label="最小化" onClick={() => void minimizeWindow()}><Icon name="windowMinimize" size={15} /></M3IconButton>
-        <M3IconButton className="workspace-window-control" label={isMaximized ? "还原窗口" : "最大化"} onClick={() => void toggleMaximize()}><Icon name={isMaximized ? "windowRestore" : "windowMaximize"} size={14} /></M3IconButton>
-        <M3IconButton className="workspace-window-control workspace-window-control--close" label="隐藏到托盘" onClick={() => void closeWindow()}><Icon name="windowClose" size={15} /></M3IconButton>
-      </div>
-    </header>
-  );
-}
-
-function TopBar() {
-  const { route, snapshot, refreshing, mutationPending, refresh, setCommandOpen, sidebarCollapsed, setSidebarCollapsed, openSettings, capabilities } = useWorkspace();
-  const title = route.kind === "overview" ? "总览" : route.kind === "device" ? "设备详情" : route.kind === "hub" ? "中枢详情" : settingsNavigation(capabilities).find((item) => item.id === route.section)?.label ?? "设置";
-  const sourceState = snapshot?.source === "cache" ? "cached" : snapshot?.session.authenticated ? "online" : snapshot?.source === "empty" ? "unknown" : "offline";
-  return (
-    <header className="workspace-topbar">
-      <div className="workspace-topbar__title">
-        <M3IconButton className="workspace-icon-button workspace-topbar__toggle" label="切换侧边栏" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
-          <Icon name="collapse" />
-        </M3IconButton>
-        <div>
-          <span className="workspace-topbar__eyebrow">设备状态控制台</span>
-          <h1>{title}</h1>
-        </div>
-      </div>
-      <div className="workspace-topbar__actions">
-        <StatusLabel state={sourceState} />
-        <M3Button className="workspace-search-trigger" variant="outlined" leadingIcon={<Icon name="search" />} onClick={() => setCommandOpen(true)}><span>搜索设备</span><kbd>/</kbd></M3Button>
-        <Button variant="quiet" onClick={() => void refresh()} disabled={refreshing || mutationPending} title={mutationPending ? "正在保存更改" : "刷新状态"}><Icon name="refresh" size={16} />{!refreshing && <span>{mutationPending ? "保存中" : "刷新"}</span>}</Button>
-        {route.kind !== "settings" && <Button variant="quiet" onClick={() => openSettings("appearance")} title="外观设置"><Icon name="appearance" size={16} /></Button>}
-      </div>
-    </header>
-  );
-}
-
-function ShellNotice() {
-  const { notice } = useWorkspace();
-  if (!notice) return null;
-  return <div className={`workspace-toast m3-snackbar m3-snackbar--${notice.tone}`} role={notice.tone === "error" ? "alert" : "status"}>{notice.text}</div>;
-}
-
-function WebSessionRecoveryBanner() {
-  const { capabilities, snapshot, refresh, refreshing } = useWorkspace();
-  if (capabilities.canConfigureConnection || snapshot?.source !== "empty" || snapshot.session.authenticated) return null;
-  const reloadForAuthentication = () => {
-    if (typeof window !== "undefined") window.location.reload();
-  };
-  return (
-    <section className="workspace-session-recovery m3-inline-banner" role="alert" aria-live="assertive">
-      <div className="workspace-session-recovery__copy">
-        <strong>浏览器会话已失效</strong>
-        <p>当前数据已停止同步；重新认证后才能继续查看设备和指标。</p>
-      </div>
-      <div className="workspace-form__actions">
-        <Button variant="primary" onClick={reloadForAuthentication}>重新认证</Button>
-        <Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? "正在检查" : "重新检查"}</Button>
-      </div>
-    </section>
-  );
-}
-
-function CommandPalette() {
-  const { commandOpen, setCommandOpen, searchQuery, setSearchQuery, filteredDevices, navigate, openSettings, capabilities } = useWorkspace();
-  const [activeIndex, setActiveIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-  const [viewport, setViewport] = useState({ top: 0, height: 0 });
-
-  useLayoutEffect(() => {
-    if (!commandOpen || typeof window === "undefined") return;
-    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const visualViewport = window.visualViewport;
-    const syncViewport = () => setViewport({ top: visualViewport?.offsetTop ?? 0, height: visualViewport?.height ?? window.innerHeight });
-    syncViewport();
-    const focusFrame = window.requestAnimationFrame(() => inputRef.current?.focus());
-    visualViewport?.addEventListener("resize", syncViewport);
-    visualViewport?.addEventListener("scroll", syncViewport);
-    return () => {
-      window.cancelAnimationFrame(focusFrame);
-      visualViewport?.removeEventListener("resize", syncViewport);
-      visualViewport?.removeEventListener("scroll", syncViewport);
-    };
-  }, [commandOpen]);
-
-  useEffect(() => {
-    if (commandOpen) setActiveIndex(0);
-  }, [commandOpen]);
-
-  useEffect(() => {
-    if (commandOpen) return;
-    previousFocusRef.current?.focus();
-    previousFocusRef.current = null;
-  }, [commandOpen]);
-
-  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
-    if (event.key !== "Tab") return;
-    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex='-1'])") ?? []);
-    if (!focusable.length) return;
-    const currentIndex = focusable.indexOf(document.activeElement as HTMLElement);
-    const nextIndex = event.shiftKey
-      ? (currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1)
-      : (currentIndex + 1) % focusable.length;
-    event.preventDefault();
-    focusable[nextIndex]?.focus();
-  };
-
-  if (!commandOpen) return null;
-  const commands: Array<{ label: string; detail: string; action: () => void }> = [
-    { label: "打开总览", detail: "查看所有设备状态", action: () => navigate({ kind: "overview" }) },
-    capabilities.canConfigureConnection
-      ? { label: "打开连接设置", detail: "添加或重新认证中枢", action: () => openSettings("connections") }
-      : { label: "打开中枢工作台", detail: "查看网页端同步和会话状态", action: () => openSettings("workspace") },
-    ...(capabilities.canManageLocalAgent ? [{ label: "打开本机 Agent", detail: "控制本机采集服务", action: () => openSettings("agent") }] : []),
-    ...filteredDevices.slice(0, 8).map((device) => ({ label: device.hostname, detail: `${device.os} · ${device.deviceId}`, action: () => navigate({ kind: "device", deviceId: device.deviceId }) }))
-  ];
-  const query = searchQuery.trim().toLowerCase();
-  const filtered = query ? commands.filter((command) => `${command.label} ${command.detail}`.toLowerCase().includes(query)) : commands;
-  const select = (index: number) => {
-    const command = filtered[index];
-    if (!command) return;
-    command.action();
-    setCommandOpen(false);
-    setSearchQuery("");
-  };
-  const overlayStyle = {
-    "--workspace-viewport-top": `${viewport.top}px`,
-    "--workspace-viewport-height": `${viewport.height || (typeof window === "undefined" ? 0 : window.innerHeight)}px`
-  } as React.CSSProperties;
-  return (
-    <div className="workspace-overlay" style={overlayStyle} role="presentation" onPointerDown={() => setCommandOpen(false)}>
-      <section ref={dialogRef} className="workspace-command" role="dialog" aria-modal="true" aria-label="搜索设备和命令" onPointerDown={(event) => event.stopPropagation()} onKeyDown={handleDialogKeyDown}>
-        <div className="workspace-command__input"><Icon name="search" /><input ref={inputRef} autoFocus role="combobox" aria-label="搜索设备、页面或命令" aria-expanded="true" aria-controls="workspace-command-list" aria-activedescendant={filtered.length ? `workspace-command-option-${activeIndex}` : undefined} value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setActiveIndex(0); }} onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); setActiveIndex((index) => Math.min(index + 1, filtered.length - 1)); } else if (event.key === "ArrowUp") { event.preventDefault(); setActiveIndex((index) => Math.max(index - 1, 0)); } else if (event.key === "Enter") { event.preventDefault(); select(activeIndex); } }} placeholder="搜索设备、页面或命令" /></div>
-        <div id="workspace-command-list" className="workspace-command__list" role="listbox" aria-label="搜索结果">
-          {filtered.length ? filtered.map((command, index) => <button id={`workspace-command-option-${index}`} className={`workspace-command__item ${index === activeIndex ? "is-active" : ""}`} type="button" role="option" aria-selected={index === activeIndex} key={`${command.label}-${index}`} onPointerEnter={() => setActiveIndex(index)} onClick={() => select(index)}><span><strong>{command.label}</strong><small>{command.detail}</small></span><Icon name="arrow" size={15} /></button>) : <div className="workspace-command__empty" role="status">没有匹配结果</div>}
-        </div>
-        <div className="workspace-command__footer"><span><kbd>↑</kbd><kbd>↓</kbd>选择</span><span><kbd>Enter</kbd>打开</span><span><kbd>Esc</kbd>关闭</span></div>
-      </section>
-    </div>
-  );
-}
-
 function PageIntro({ eyebrow, title, description, actions }: { eyebrow?: string; title: string; description?: string; actions?: React.ReactNode }) {
   return <div className="workspace-page-intro"><div>{eyebrow && <div className="workspace-page-intro__eyebrow">{eyebrow}</div>}<h2>{title}</h2>{description && <p>{description}</p>}</div>{actions && <div className="workspace-page-intro__actions">{actions}</div>}</div>;
 }
@@ -638,25 +317,25 @@ function DeviceRow({
   const open = () => navigate({ kind: "device", deviceId: device.deviceId });
   const isVm = device.instanceType === "virtual_machine";
   const powerState = isVm ? virtualMachinePowerState(device.virtualMachine?.powerState) : null;
-  return <div
-    className="workspace-device-row"
-    role="button"
-    tabIndex={0}
-    onClick={open}
-    onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}
-  >
-    <span className="workspace-device-row__status"><StatusDot state={powerState?.state ?? (device.status === "online" ? "online" : "offline")} /></span>
-    <span className="workspace-device-row__identity"><strong>{device.hostname}</strong><small>{isVm ? `${powerState?.label ?? "电源状态未知"} · 宿主机：${device.hostName ?? "未知"}` : device.os} · {device.deviceId}</small></span>
-    <span className="workspace-device-row__metric"><small>CPU</small><MetricValue value={device.cpuUsagePercent} unavailable={isMetricUnavailable(device, "cpuUsage")} /></span>
-    <span className="workspace-device-row__metric"><small>内存</small><CapacityMetricValue usedBytes={device.memoryUsedBytes} totalBytes={device.memoryTotalBytes} percentValue={device.memoryUsagePercent} unavailable={isMetricUnavailable(device, "memoryUsage")} /></span>
-    <span className="workspace-device-row__metric"><small>磁盘</small><CapacityMetricValue usedBytes={device.diskUsedBytes} totalBytes={device.diskTotalBytes} percentValue={device.diskUsagePercent} unavailable={isMetricUnavailable(device, "diskUsage")} /></span>
-    {onMove || onDelete ? <span className="workspace-device-row__actions" onClick={(event) => event.stopPropagation()}>
-      {onMove && <>
-        <M3IconButton className="workspace-row-action" label="上移" disabled={index === 0} onClick={() => onMove(-1)}>↑</M3IconButton>
-        <M3IconButton className="workspace-row-action" label="下移" disabled={index === (total ?? 0) - 1} onClick={() => onMove(1)}>↓</M3IconButton>
-      </>}
-      {onDelete && <M3IconButton className="workspace-row-action workspace-row-action--danger" label="删除实例" onClick={onDelete}>×</M3IconButton>}
-    </span> : <Icon name="arrow" size={15} />}
+  return <div className="workspace-device-row">
+    <button className="workspace-device-row__main" type="button" onClick={open} aria-label={`打开设备 ${device.hostname}`}>
+      <span className="workspace-device-row__status"><StatusDot state={powerState?.state ?? (device.status === "online" ? "online" : "offline")} /></span>
+      <span className="workspace-device-row__identity"><strong>{device.hostname}</strong><small>{isVm ? `${powerState?.label ?? "电源状态未知"} · 宿主机：${device.hostName ?? "未知"}` : device.os} · {device.deviceId}</small></span>
+      <span className="workspace-device-row__metric"><small>CPU</small><MetricValue value={device.cpuUsagePercent} unavailable={isMetricUnavailable(device, "cpuUsage")} /></span>
+      <span className="workspace-device-row__metric"><small>内存</small><CapacityMetricValue usedBytes={device.memoryUsedBytes} totalBytes={device.memoryTotalBytes} percentValue={device.memoryUsagePercent} unavailable={isMetricUnavailable(device, "memoryUsage")} /></span>
+      <span className="workspace-device-row__metric"><small>磁盘</small><CapacityMetricValue usedBytes={device.diskUsedBytes} totalBytes={device.diskTotalBytes} percentValue={device.diskUsagePercent} unavailable={isMetricUnavailable(device, "diskUsage")} /></span>
+      {!onMove && !onDelete && <Icon name="arrow" size={15} />}
+    </button>
+    {(onMove || onDelete) && <details className="workspace-device-row__menu">
+      <summary aria-label={`管理 ${device.hostname}`}><Icon name="more" size={18} /></summary>
+      <div className="workspace-device-row__menu-panel" role="menu">
+        {onMove && <>
+          <button type="button" role="menuitem" disabled={index === 0} onClick={() => onMove(-1)}>上移</button>
+          <button type="button" role="menuitem" disabled={index === (total ?? 0) - 1} onClick={() => onMove(1)}>下移</button>
+        </>}
+        {onDelete && <button className="is-danger" type="button" role="menuitem" onClick={onDelete}>删除</button>}
+      </div>
+    </details>}
   </div>;
 }
 
@@ -693,7 +372,7 @@ function OverviewSummary({
       </div>
       <div className={`workspace-overview-summary__item${issueCount ? " is-warning" : ""}`}>
         <span>待处理事项</span>
-        <strong>{issueCount}</strong>
+        <strong>{issueCount == null ? "无法判断" : issueCount}</strong>
         <small>{issueCount == null ? "连接状态异常，暂无法判断" : issueCount ? "需要进一步检查" : "当前没有待处理事项"}</small>
       </div>
       <div className="workspace-overview-summary__item workspace-overview-summary__item--source">
@@ -925,6 +604,106 @@ function OverviewPage() {
 }
 
 
+
+function V3OverviewPage() {
+  const { snapshot, devices, instanceType, metricsWindow, loading, error, refresh, openSettings, navigate, capabilities } = useWorkspace();
+  const [resourceMetric, setResourceMetric] = useState<"cpu" | "memory" | "disk">("cpu");
+  if (loading && !snapshot) return <LoadingSurface />;
+  if (!snapshot) return <ErrorSurface title="无法读取设备状态" detail={error ?? "桌面桥接尚未准备好"} onRetry={() => void refresh()} />;
+
+  const health = selectHealthSummary(snapshot, devices, formatDate);
+  const cached = health.source === "cache";
+  const noData = health.total === 0;
+  const hubAbnormal = health.source === "cache" || health.source === "unknown";
+  const overviewInstances = (snapshot.overviewMetrics?.instances ?? []).filter((instance) => (instance.instanceType ?? "device") === instanceType);
+  const resourceDevices = selectResourceRanking(devices, resourceMetric, 5);
+  const instanceLabel = instanceType === "virtual_machine" ? "虚拟机" : "普通设备";
+  const settingsSection: SettingsSection = capabilities.canConfigureConnection ? "connections" : "workspace";
+  const settingsLabel = capabilities.canConfigureConnection ? "连接设置" : "中枢设置";
+  const noDataSettingsSection: SettingsSection = capabilities.canManageLocalAgent
+    ? (snapshot.localBackend ? "agent" : "connections")
+    : "workspace";
+  const metricWindowLabel = ({ "1m": "1 分钟", "5m": "5 分钟", "15m": "15 分钟", "1h": "1 小时", "6h": "6 小时", "24h": "1 天", "1d": "1 天", "7d": "7 天", "1w": "1 周", "30d": "1 个月", "1mo": "1 个月", "90d": "90 天", "1y": "1 年" } as Record<string, string>)[metricsWindow] ?? metricsWindow;
+  const resourceLabel = resourceMetric === "cpu" ? "CPU 使用率" : resourceMetric === "memory" ? "内存占用" : "磁盘占用";
+  const issueCount = health.pending;
+
+  return <div className="workspace-page workspace-page--overview">
+    <PageIntro
+      eyebrow="总览"
+      title={hubAbnormal ? "中枢连接异常" : issueCount ? `${issueCount} 项事项需要留意` : noData ? "等待设备接入" : "系统状态正常"}
+      description={health.source === "empty"
+        ? capabilities.canManageLocalAgent ? "尚未取得实时设备状态，请先启动本机 Agent 或配置中枢。" : "尚未取得实时设备状态，请确认中枢已接入设备后刷新。"
+        : hubAbnormal
+          ? cached ? `当前显示的是离线缓存，${health.sourceDetail}；无法确认中枢当前状态。` : "无法连接到中枢，请检查中枢地址与访问密钥。"
+          : `${health.sourceDetail}。数据来自实时连接。`}
+      actions={<>
+        <Button variant="quiet" onClick={() => openSettings(settingsSection)}><Icon name="connection" size={16} />{settingsLabel}</Button>
+        <Button variant="primary" onClick={() => navigate({ kind: "devices" })}>查看全部设备<Icon name="arrow" size={16} /></Button>
+      </>}
+    />
+
+    <OverviewSummary
+      total={health.total}
+      online={health.online}
+      offline={health.offline}
+      issueCount={issueCount}
+      instanceLabel={instanceLabel}
+      sourceLabel={health.sourceLabel}
+      sourceState={health.source === "live" ? "online" : health.source === "cache" ? "cached" : health.source === "unknown" ? "warning" : "unknown"}
+      sourceDetail={health.sourceDetail}
+    />
+
+    {hubAbnormal ? <div className="workspace-attention">
+      <div className="workspace-attention__icon"><Icon name="warning" /></div>
+      <div><strong>中枢连接异常</strong><p>{cached ? "无法取得最新数据，页面中的设备信息可能已经过期。" : "无法连接到中枢，请检查中枢地址与访问密钥后重试。"}</p></div>
+      <Button variant="quiet" onClick={() => openSettings(settingsSection)}>{settingsLabel}<Icon name="arrow" size={15} /></Button>
+    </div> : (health.source === "empty" || (issueCount ?? 0) > 0) ? <div className="workspace-attention">
+      <div className="workspace-attention__icon"><Icon name="warning" /></div>
+      <div><strong>{noData ? "还没有可用设备" : "设备状态存在异常"}</strong><p>{noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : `${health.offline} 台设备离线，${snapshot.localBackend?.lastIssueCount ?? 0} 条本机采集问题待处理。`}</p></div>
+      <Button variant="quiet" onClick={() => openSettings(noData ? noDataSettingsSection : capabilities.canManageLocalAgent ? "agent" : "workspace")}>查看详情<Icon name="arrow" size={15} /></Button>
+    </div> : null}
+
+    <div className="workspace-overview-grid workspace-overview-grid--split">
+      <Surface className="workspace-overview-devices">
+        <div className="workspace-surface__header">
+          <div><span className="workspace-section-kicker">最近设备</span><h3>{devices.length} 个{instanceLabel}</h3></div>
+          <Button variant="quiet" onClick={() => navigate({ kind: "devices" })}>查看全部</Button>
+        </div>
+        {cached && <div className="workspace-inline-note">当前为缓存快照，设备列表只读。</div>}
+        <div className="workspace-device-rows">
+          {devices.slice(0, 6).length ? devices.slice(0, 6).map((device) => <DeviceRow key={device.deviceId} device={device} />) : <EmptyState title="还没有设备" detail="连接一个中枢后，设备会出现在这里。" action={<Button variant="primary" onClick={() => openSettings(capabilities.canConfigureConnection ? "connections" : "workspace")}>{capabilities.canConfigureConnection ? "连接设置" : "查看中枢设置"}</Button>} />}
+        </div>
+      </Surface>
+
+      <Surface className="workspace-resource-observation">
+        <div className="workspace-surface__header">
+          <div><span className="workspace-section-kicker">资源观察</span><h3>{resourceLabel} TOP 5</h3></div>
+          <M3SegmentedControl options={[{ value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "disk", label: "磁盘" }]} value={resourceMetric} onChange={(value) => setResourceMetric(value as typeof resourceMetric)} aria-label="资源观察指标" />
+        </div>
+        <p className="workspace-surface__description">只展示在线实例的可用指标；缺失或不适用的数据不会被估算。</p>
+        <div className="workspace-ranking-list">
+          {resourceDevices.length ? resourceDevices.map((device, index) => <div key={device.deviceId} className="workspace-ranking-item">
+            <span className="workspace-ranking-badge">{index + 1}</span><span className="workspace-ranking-name">{device.hostname}</span><span className="workspace-ranking-val">
+              {resourceMetric === "cpu" && <MetricValue value={device.cpuUsagePercent} unavailable={isMetricUnavailable(device, "cpuUsage")} />}
+              {resourceMetric === "memory" && <CapacityMetricValue usedBytes={device.memoryUsedBytes} totalBytes={device.memoryTotalBytes} percentValue={device.memoryUsagePercent} unavailable={isMetricUnavailable(device, "memoryUsage")} />}
+              {resourceMetric === "disk" && <CapacityMetricValue usedBytes={device.diskUsedBytes} totalBytes={device.diskTotalBytes} percentValue={device.diskUsagePercent} unavailable={isMetricUnavailable(device, "diskUsage")} />}
+            </span>
+          </div>) : <div className="workspace-muted-block">暂无可用的{resourceLabel}数据</div>}
+        </div>
+      </Surface>
+    </div>
+
+    {snapshot.overviewMetrics && <div className="workspace-overview-trend">
+      <TelemetryChartCard
+        title="CPU 趋势预览"
+        subtitle={`每个实例一条数据线 · 最近 ${metricWindowLabel}`}
+        series={overviewInstances.map((instance) => ({ label: instance.hostname, points: unavailablePoints(instance.cpuUsagePercent, instance.unavailableMetrics?.includes("cpuUsage") ?? false) }))}
+        valueFormatter={(value) => `${Math.round(value)}%`}
+        fixedMaxValue={100}
+      />
+    </div>}
+  </div>;
+}
 
 function MetricTile({ label, value, detail, tone, points }: { label: string; value: number | null | undefined; detail?: string; tone?: "blue" | "green" | "amber"; points?: SamplePoint[] }) {
   return <div className={`workspace-metric-tile ${tone ? `workspace-metric-tile--${tone}` : ""}`}><div className="workspace-metric-tile__header"><span>{label}</span><MetricValue value={value} /></div>{points && <MiniTrend compact label={label} points={points} />}{!points && <div className="workspace-metric-tile__empty">暂无趋势数据</div>}<small>{detail ?? "未采集"}</small></div>;
@@ -1582,7 +1361,7 @@ function AgentTemperatureSourcesPanel({
 }
 
 function DevicePage() {
-  const { selectedDevice, snapshot, navigate, openSettings, refresh, metricsWindow, setMetricsWindow, trafficMode, setTrafficMode, getWidgetLayout, saveWidgetLayout, orientation, capabilities } = useWorkspace();
+  const { selectedDevice, snapshot, navigate, openSettings, metricsWindow, setMetricsWindow, trafficMode, setTrafficMode, getWidgetLayout, saveWidgetLayout, orientation, capabilities } = useWorkspace();
   const canEditRemote = snapshot?.source === "live" && Boolean(snapshot.session.authenticated);
   const deviceSourceState: "online" | "offline" | "cached" | "warning" | "unknown" = snapshot?.source === "cache"
     ? "cached"
@@ -1966,14 +1745,14 @@ function DevicePage() {
         tone: "cached",
         title: "当前显示离线缓存",
         detail: `数据缓存于 ${formatDate(snapshot.cache.savedAt)}，设备和图表可能已经过期。`,
-        action: <Button variant="quiet" onClick={() => void refresh()}>重新获取数据<Icon name="refresh" size={15} /></Button>
+        action: <span className="workspace-caption">请使用顶部刷新按钮重新获取</span>
       }
     : !metrics || !series
       ? {
           tone: "empty",
           title: "还没有收到遥测样本",
           detail: "设备已经出现在中枢列表，但当前没有可展示的历史指标；确认 Agent 正在运行并刷新状态。",
-          action: <Button variant="quiet" onClick={() => void refresh()}>刷新状态<Icon name="refresh" size={15} /></Button>
+          action: <span className="workspace-caption">请使用顶部刷新按钮重新获取</span>
         }
       : selectedDevice.status !== "online"
         ? {
@@ -2139,8 +1918,7 @@ function DevicePage() {
       {(!metrics || !series) && (
         <EmptyState
           title="暂无可用遥测"
-          detail="硬件与系统信息仍可查看；收到第一批样本后，综合趋势和明细图表会自动出现。"
-          action={<Button variant="primary" onClick={() => void refresh()}>刷新状态</Button>}
+          detail="硬件与系统信息仍可查看；收到第一批样本后，综合趋势和明细图表会自动出现。可使用顶部刷新按钮重新读取。"
         />
       )}
 
@@ -2354,6 +2132,68 @@ function DevicePage() {
 
 function InstanceRow({ label, name, value }: { label: string; name: string; value: string }) {
   return <div className="workspace-instance-row"><span className="workspace-instance-row__label">{label}</span><span className="workspace-instance-row__name">{name}</span><strong>{value}</strong></div>;
+}
+
+function DevicesPage() {
+  const { snapshot, allDevices, loading, error, refresh, navigate, deleteInstance, reorderInstances, mutationPending, capabilities } = useWorkspace();
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"all" | "device" | "virtual_machine">("all");
+  const [statusFilter, setStatusFilter] = useState<DeviceDirectoryStatus>("all");
+  const [sort, setSort] = useState<DeviceDirectorySort>("order");
+  const [manageMode, setManageMode] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<DeviceSummary | null>(null);
+  if (loading && !snapshot) return <LoadingSurface />;
+  if (!snapshot) return <ErrorSurface title="无法读取设备目录" detail={error ?? "尚未取得设备快照"} onRetry={() => void refresh()} />;
+
+  const canManage = snapshot.source === "live" && snapshot.session.authenticated;
+  const visibleDevices = selectDeviceDirectory(allDevices, { query, instanceType: typeFilter, status: statusFilter, sort });
+  const moveInstance = (deviceId: string, direction: -1 | 1) => {
+    if (!canManage || !manageMode || mutationPending) return;
+    const currentIndex = allDevices.findIndex((device) => device.deviceId === deviceId);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= allDevices.length) return;
+    const next = [...allDevices];
+    [next[currentIndex], next[nextIndex]] = [next[nextIndex], next[currentIndex]];
+    void reorderInstances(next.map((device) => device.deviceId));
+  };
+  const settingsSection: SettingsSection = capabilities.canConfigureConnection ? "connections" : "workspace";
+
+  return <div className="workspace-page workspace-page--devices">
+    <PageIntro
+      eyebrow="设备"
+      title="全部设备"
+      description={snapshot.source === "cache" ? "当前显示离线缓存；筛选和查看可用，但管理操作已禁用。" : "浏览、筛选和管理接入当前中枢的全部实例。"}
+      actions={<Button variant="quiet" onClick={() => navigate({ kind: "hub", hubId: "primary" })}><Icon name="hub" size={16} />查看中枢</Button>}
+    />
+    <div className="workspace-directory-toolbar">
+      <M3TextField label="搜索设备" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="名称、设备 ID、系统或宿主机" type="search" />
+      <M3SegmentedControl options={[{ value: "all", label: "全部类型" }, { value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={typeFilter} onChange={(value) => setTypeFilter(value as typeof typeFilter)} aria-label="设备类型" />
+      <div className="workspace-directory-toolbar__chips" aria-label="设备状态">
+        <M3Chip selected={statusFilter === "all"} onClick={() => setStatusFilter("all")}>全部 {allDevices.length}</M3Chip>
+        <M3Chip selected={statusFilter === "online"} onClick={() => setStatusFilter("online")}>在线 {allDevices.filter((device) => device.status === "online").length}</M3Chip>
+        <M3Chip selected={statusFilter === "offline"} onClick={() => setStatusFilter("offline")}>离线 {allDevices.filter((device) => device.status !== "online").length}</M3Chip>
+      </div>
+      <M3Select label="排序" hideLabel value={sort} onChange={(event) => setSort(event.target.value as DeviceDirectorySort)} options={[{ value: "order", label: "中枢顺序" }, { value: "name", label: "名称" }, { value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "lastSeen", label: "最近响应" }]} />
+      <Button variant={manageMode ? "primary" : "quiet"} onClick={() => setManageMode((current) => !current)} disabled={!canManage}>{manageMode ? "完成管理" : "管理顺序"}</Button>
+    </div>
+    {!canManage && <div className="workspace-inline-note" role="status">{snapshot.source === "cache" ? "离线缓存为只读快照。" : "需要实时连接并完成认证后才能删除或调整设备顺序。"}</div>}
+    <Surface className="workspace-directory-surface">
+      <div className="workspace-directory-head" role="row">
+        <span>设备</span><span>状态</span><span>CPU</span><span>内存</span><span>磁盘</span><span>操作</span>
+      </div>
+      <div className="workspace-device-rows" role="rowgroup">
+        {visibleDevices.length ? visibleDevices.map((device, index) => <DeviceRow
+          key={device.deviceId}
+          device={device}
+          index={index}
+          total={visibleDevices.length}
+          onMove={manageMode && canManage && !mutationPending ? (direction) => moveInstance(device.deviceId, direction) : undefined}
+          onDelete={manageMode && canManage && !mutationPending ? () => setDeleteTarget(device) : undefined}
+        />) : <EmptyState title="没有匹配设备" detail="尝试清空搜索或调整类型、状态筛选。" action={<Button variant="quiet" onClick={() => { setQuery(""); setTypeFilter("all"); setStatusFilter("all"); }}>清除筛选</Button>} />}
+      </div>
+    </Surface>
+    {deleteTarget && <ConfirmDialog title={`删除“${deleteTarget.hostname}”？`} detail="删除后该实例不会继续出现在中枢列表中；下次宿主机或 Agent 再次上报时，它会重新显示。" confirmLabel="删除实例" disabled={mutationPending} onConfirm={() => { const deviceId = deleteTarget.deviceId; setDeleteTarget(null); void deleteInstance(deviceId); }} onCancel={() => setDeleteTarget(null)} />}
+  </div>;
 }
 
 function HubPage() {
@@ -2797,146 +2637,15 @@ function RouteView() {
   const { route, error, refresh, loading, snapshot } = useWorkspace();
   if (route.kind === "settings") return <SettingsPage />;
   if (loading && !snapshot) return <LoadingSurface />;
+  if (route.kind === "devices") return <DevicesPage />;
   if (route.kind === "device") return <DevicePage />;
   if (route.kind === "hub") return <HubPage />;
   if (error) return <ErrorSurface title="无法同步设备状态" detail={error} onRetry={() => void refresh()} />;
-  return <OverviewPage />;
-}
-
-function WorkspaceBottomNav() {
-  const { route, navigate, refresh, refreshing, mutationPending, setCommandOpen, setSidebarCollapsed, sidebarCollapsed } = useWorkspace();
-
-  const scrollToTop = () => {
-    const mainContent = document.getElementById("workspace-main-content");
-    if (mainContent) {
-      mainContent.scrollTo({ top: 0, behavior: "smooth" });
-    }
-  };
-
-  return (
-    <nav className="workspace-bottom-nav" aria-label="快捷操作栏">
-      <M3NavigationItem
-        type="button"
-        className={`workspace-bottom-nav__item${route.kind === "overview" ? " is-active" : ""}`}
-        selected={route.kind === "overview"}
-        onClick={() => navigate({ kind: "overview" })}
-        title="返回总览"
-      >
-        <Icon name="overview" size={18} />
-        <span>总览</span>
-      </M3NavigationItem>
-
-      <M3NavigationItem
-        type="button"
-        className={`workspace-bottom-nav__item${!sidebarCollapsed ? " is-active" : ""}`}
-        selected={!sidebarCollapsed}
-        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-        title="切换设备列表"
-      >
-        <Icon name="device" size={18} />
-        <span>设备</span>
-      </M3NavigationItem>
-
-      <M3NavigationItem
-        type="button"
-        className="workspace-bottom-nav__item"
-        onClick={() => void refresh()}
-        disabled={refreshing || mutationPending}
-        title="刷新状态"
-      >
-        <span className={`workspace-refresh-icon${refreshing ? " is-spinning" : ""}`}>
-          <Icon name="refresh" size={18} />
-        </span>
-        <span>{refreshing ? "更新中" : mutationPending ? "保存中" : "刷新"}</span>
-      </M3NavigationItem>
-
-      <M3NavigationItem
-        type="button"
-        className="workspace-bottom-nav__item"
-        onClick={() => setCommandOpen(true)}
-        title="搜索设备与命令"
-      >
-        <Icon name="search" size={18} />
-        <span>搜索</span>
-      </M3NavigationItem>
-
-      <M3NavigationItem
-        type="button"
-        className="workspace-bottom-nav__item"
-        onClick={scrollToTop}
-        title="返回顶部"
-      >
-        <Icon name="chevronUp" size={18} />
-        <span>置顶</span>
-      </M3NavigationItem>
-    </nav>
-  );
-}
-
-function WorkspaceFrame() {
-  const { sidebarCollapsed, setSidebarCollapsed, capabilities } = useWorkspace();
-  const [sidebarPeek, setSidebarPeek] = useState(false);
-  const edgeSwipeRef = useRef<{ pointerId: number; startX: number } | null>(null);
-  useEffect(() => {
-    if (!sidebarCollapsed) setSidebarPeek(false);
-  }, [sidebarCollapsed]);
-  const handleEdgePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0) return;
-    edgeSwipeRef.current = { pointerId: event.pointerId, startX: event.clientX };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-  const handleEdgePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
-    const gesture = edgeSwipeRef.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    if (event.clientX - gesture.startX > 24) {
-      event.preventDefault();
-      edgeSwipeRef.current = null;
-      setSidebarCollapsed(false);
-    }
-  };
-  const handleEdgePointerEnd = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (edgeSwipeRef.current?.pointerId === event.pointerId) edgeSwipeRef.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-  };
-  const handleEdgePointerEnter = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (event.pointerType === "mouse" && window.innerWidth > 820) setSidebarPeek(true);
-  };
-  return (
-    <div className={clsx("workspace-root", !capabilities.canControlNativeWindow && "is-web", sidebarCollapsed && "is-sidebar-collapsed", !sidebarCollapsed && "is-sidebar-open", sidebarPeek && "is-sidebar-peek")}>
-      {capabilities.canControlNativeWindow && <WindowTitleBar />}
-      <WorkspaceSidebar sidebarPeek={sidebarPeek} onSidebarLeave={() => setSidebarPeek(false)} />
-      {!sidebarCollapsed && <div className="workspace-sidebar-backdrop" onPointerDown={() => setSidebarCollapsed(true)} aria-hidden="true" />}
-      <div className="workspace-main">
-        <TopBar />
-        <WebSessionRecoveryBanner />
-        <main className="workspace-content" id="workspace-main-content">
-          <RouteView />
-        </main>
-      </div>
-      {sidebarCollapsed && (
-        <button
-          className="workspace-sidebar-edge-trigger"
-          type="button"
-          aria-label="展开侧边栏"
-          onClick={() => setSidebarCollapsed(false)}
-          onPointerEnter={handleEdgePointerEnter}
-          onFocus={() => { if (window.innerWidth > 820) setSidebarPeek(true); }}
-          onPointerDown={handleEdgePointerDown}
-          onPointerMove={handleEdgePointerMove}
-          onPointerUp={handleEdgePointerEnd}
-          onPointerCancel={handleEdgePointerEnd}
-          onLostPointerCapture={handleEdgePointerEnd}
-        />
-      )}
-      <WorkspaceBottomNav />
-      <CommandPalette />
-      <ShellNotice />
-    </div>
-  );
+  return <V3OverviewPage />;
 }
 
 export function WorkspaceApp({ adapter, initialRoute }: { adapter: ConsoleAdapter; initialRoute?: import("./WorkspaceContext").WorkspaceRoute }) {
-  return <WorkspaceProvider adapter={adapter} initialRoute={initialRoute}><WorkspaceFrame /></WorkspaceProvider>;
+  return <WorkspaceProvider adapter={adapter} initialRoute={initialRoute}><SharedWorkspaceFrame><RouteView /></SharedWorkspaceFrame></WorkspaceProvider>;
 }
 
 export default WorkspaceApp;

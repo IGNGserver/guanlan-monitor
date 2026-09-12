@@ -69,6 +69,7 @@ jobs:
           pnpm check:adapter-contracts
           pnpm test:adapter-contracts
           pnpm test:ui-helpers
+          pnpm test:workspace-contracts
           pnpm test:renderer-security
           pnpm test:window-material
           pnpm typecheck
