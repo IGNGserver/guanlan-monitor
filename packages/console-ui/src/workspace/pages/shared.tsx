@@ -1031,20 +1031,6 @@ function AgentTemperatureSourcesPanel({
     </Surface>
   );
 }
-
-
-            </Surface>
-          </DesktopWidget>
-        </div>
-      )}
-
-      <WidgetDrawer open={widgetDrawerOpen} onClose={() => setWidgetDrawerOpen(false)} device={selectedDevice} metrics={metrics} localTemperatureSources={localTemperatureSources} />
-
-      </WidgetLayoutProvider>
-    </div>
-  );
-}
-
 function InstanceRow({ label, name, value }: { label: string; name: string; value: string }) {
   return <div className="workspace-instance-row"><span className="workspace-instance-row__label">{label}</span><span className="workspace-instance-row__name">{name}</span><strong>{value}</strong></div>;
 }
