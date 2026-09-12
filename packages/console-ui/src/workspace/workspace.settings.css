@@ -1,0 +1,10 @@
+/* Settings is a destination with its own compact navigation, not a hidden desktop sidebar. */
+.workspace-settings-mobile-nav { display: none; }
+
+@media (max-width: 768px), (orientation: portrait), [data-dsc-orientation="portrait"] {
+  .workspace-settings-mobile-nav { display: block; margin: -18px 0 22px; }
+  .workspace-settings-mobile-nav__list { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+  .workspace-settings-mobile-nav__list::-webkit-scrollbar { display: none; }
+  .workspace-settings-mobile-nav__list button { flex: 0 0 auto; min-height: 38px; padding: 0 13px; border: 1px solid var(--workspace-border); border-radius: 999px; color: var(--workspace-text-secondary); background: var(--workspace-surface); cursor: pointer; font: inherit; font-size: 12px; }
+  .workspace-settings-mobile-nav__list button.is-selected { border-color: var(--workspace-accent); color: var(--workspace-accent-strong); background: var(--workspace-accent-soft); font-weight: 650; }
+}

@@ -182,6 +182,32 @@ jobs:
           if ($reinstaller.ExitCode -ne 0) { throw "Windows GUI silent reinstallation failed with exit code $($reinstaller.ExitCode)." }
           node scripts/verify-electron-artifact-version.mjs $installRoot $version
 
+      - name: Install isolated Playwright runner for installed GUI acceptance
+        shell: powershell
+        run: |
+          $playwrightDir = Join-Path $env:RUNNER_TEMP "dsc-release-playwright"
+          New-Item -ItemType Directory -Force -Path $playwrightDir | Out-Null
+          npm init -y --prefix $playwrightDir | Out-Null
+          npm install --prefix $playwrightDir --no-save playwright@1.55.0
+
+      - name: Launch installed Release setup and capture Windows evidence
+        shell: powershell
+        env:
+          DSC_RELEASE_VERSION: ${{ github.ref_name }}
+          NODE_ENV: test
+          DSC_VISUAL_FIXTURE: "1"
+          DSC_RELEASE_ACCEPTANCE_DEVICE_ID: visual-vm
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          $installRoot = Join-Path $env:ProgramFiles "DeviceStateConsoleAgent"
+          $main = @(Get-ChildItem -LiteralPath $installRoot -File -Filter "*.exe" | Where-Object { $_.Name -notlike "Uninstall *" })
+          if ($main.Count -ne 1) { throw "Expected exactly one installed GUI executable for launch acceptance." }
+          $evidenceDir = Join-Path $env:GITHUB_WORKSPACE "release/windows-desktop/release-launch-evidence"
+          New-Item -ItemType Directory -Force -Path $evidenceDir | Out-Null
+          $env:NODE_PATH = Join-Path $env:RUNNER_TEMP "dsc-release-playwright/node_modules"
+          $env:DSC_RELEASE_VERSION = $version
+          node scripts/electron-release-acceptance.cjs $main[0].FullName $evidenceDir
+
       - name: Smoke test bundled Windows Agent backend
         shell: powershell
         run: |
@@ -250,6 +276,7 @@ jobs:
             release/windows-desktop/DeviceStateConsole-Windows-GUI-Setup-v*.exe
             release/windows-desktop/DeviceStateConsole-Windows-GUI-Update-v*.zip
             release/windows-desktop/DeviceStateConsole-Windows-GUI-Portable-v*.zip
+            release/windows-desktop/release-launch-evidence/Windows-GUI-Release-Launch-Evidence-v*.json
             release/cli-agent/DeviceStateConsole-Windows-CLI-Install-v*.zip
             release/cli-agent/DeviceStateConsole-Linux-CLI-Install-v*.zip
             release/cli-agent/install-cli.ps1
@@ -447,6 +474,7 @@ jobs:
           done < <(find release-assets -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.deb' -o -name '*.apk' -o -name '*.ps1' -o -name '*.sh' \) -print)
           find release-assets -type f -print
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Setup-v*.exe' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'Windows-GUI-Release-Launch-Evidence-v*.json' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Portable-v*.zip' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Update-v*.zip' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-CLI-Install-v*.zip' | wc -l)" -eq 1

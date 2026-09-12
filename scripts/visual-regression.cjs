@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
@@ -25,7 +26,7 @@ const fixtureDevices = [
     deviceId: "workstation-01",
     hostname: "工作站 · 上海",
     os: "windows",
-    agentVersion: "3.0.0",
+    agentVersion: "3.0.1",
     agentChannel: "test",
     status: "online",
     lastSeenAt: "2026-09-13T10:00:00.000Z",
@@ -45,7 +46,7 @@ const fixtureDevices = [
     deviceId: "nas-01",
     hostname: "归档 NAS",
     os: "linux",
-    agentVersion: "3.0.0",
+    agentVersion: "3.0.1",
     agentChannel: "test",
     status: "online",
     lastSeenAt: "2026-09-13T09:59:40.000Z",
@@ -65,7 +66,7 @@ const fixtureDevices = [
     deviceId: "vm:102",
     hostname: "构建虚拟机",
     os: "linux",
-    agentVersion: "3.0.0",
+    agentVersion: "3.0.1",
     agentChannel: "test",
     status: "online",
     lastSeenAt: "2026-09-13T09:58:20.000Z",
@@ -208,18 +209,40 @@ async function run() {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   const pageErrors = [];
+  const requestLog = [];
+  let fixtureMode = "live";
   page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("request", (request) => {
+    if (["PUT", "POST", "DELETE"].includes(request.method())) {
+      let payload = null;
+      try { payload = request.postDataJSON(); } catch { /* non-JSON mutations are still recorded */ }
+      requestLog.push({ method: request.method(), url: request.url(), payload });
+    }
+  });
 
   await page.route("**/socket.io/**", (route) => route.abort());
   await page.route("**/api/**", async (route) => {
-    const pathname = new URL(route.request().url()).pathname;
+    const requestUrl = new URL(route.request().url());
+    const pathname = requestUrl.pathname;
+    if (fixtureMode === "unauthorized") return fulfillJson(route, { error: "unauthorized" }, 401);
+    if (fixtureMode === "login" && pathname === "/api/auth/session") return fulfillJson(route, { error: "unauthorized" }, 401);
     if (pathname === "/api/auth/session") return fulfillJson(route, { ok: true, issuedAt: "2026-08-21T00:00:00.000Z" });
-    if (pathname === "/api/instances") return fulfillJson(route, fixtureDevices);
-    if (pathname === "/api/overview/metrics") return fulfillJson(route, overviewMetrics);
+    if (pathname === "/api/instances") return fulfillJson(route, fixtureMode === "empty" ? [] : fixtureDevices);
+    if (pathname === "/api/overview/metrics") return fulfillJson(route, fixtureMode === "empty" ? { ...overviewMetrics, instances: [] } : overviewMetrics);
     if (/^\/api\/devices\/[^/]+\/metrics$/.test(pathname)) {
       const deviceId = decodeURIComponent(pathname.split("/")[3]);
       return fulfillJson(route, metricFixture(fixtureDevices.find((device) => device.deviceId === deviceId) ?? fixtureDevices[0]));
     }
+    if (pathname === "/api/devices/reorder") return fulfillJson(route, { ok: true });
+    if (pathname === "/api/widget-layouts" && route.request().method() === "GET") {
+      const url = new URL(route.request().url());
+      return fulfillJson(route, { scopeKey: url.searchParams.get("scopeKey"), templateKey: url.searchParams.get("templateKey"), instanceLayout: null, templates: [] });
+    }
+    if (pathname === "/api/widget-layouts" && route.request().method() === "PUT") {
+      const payload = route.request().postDataJSON() ?? {};
+      return fulfillJson(route, { scopeKey: payload.scopeKey, templateKey: payload.templateKey, instanceLayout: payload.instanceLayout ?? null, templates: [] });
+    }
+    if (/^\/api\/devices\/[^/]+\/traffic-calendar$/.test(pathname)) return fulfillJson(route, null);
     if (pathname === "/api/updates") {
       return fulfillJson(route, {
         available: false,
@@ -261,23 +284,95 @@ async function run() {
   assert.ok(desktopMetrics.bodyScrollWidth <= desktopMetrics.viewportWidth + 1, "desktop shell overflows horizontally");
   assert.equal(await page.locator(".workspace-device-item").count(), 0, "primary navigation must not contain a device list");
   assert.deepEqual((await page.locator(".workspace-sidebar .m3-navigation-item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "接入中枢", "设置"], "sidebar contains destinations only");
+  const overviewHealthTotal = await page.locator(".workspace-overview-summary__item").first().locator("strong").innerText();
+  assert.equal(overviewHealthTotal, String(fixtureDevices.length), "overview health must include VM and host instances globally");
   await page.screenshot({ path: path.join(outputDir, "web-workspace-desktop.png"), fullPage: true, animations: "disabled" });
 
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
   assert.equal(await page.locator(".workspace-directory-surface .workspace-device-row").count(), fixtureDevices.length);
+  const deviceSearch = page.getByLabel("搜索设备", { exact: true });
+  await deviceSearch.fill("构建虚拟机");
+  assert.equal(await page.locator(".workspace-directory-surface .workspace-device-row").count(), 1, "device search must filter the full directory");
+  await deviceSearch.fill("");
+  await page.getByRole("radio", { name: "虚拟机" }).click();
+  assert.equal(await page.locator(".workspace-directory-surface .workspace-device-row").count(), 1, "device type filter must isolate VMs");
+  await page.getByRole("radio", { name: "全部类型" }).click();
   await page.screenshot({ path: path.join(outputDir, "web-devices-desktop.png"), fullPage: true, animations: "disabled" });
 
   await page.goto(`${baseUrl}#settings/appearance`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
   await page.screenshot({ path: path.join(outputDir, "web-settings-desktop.png"), fullPage: true, animations: "disabled" });
 
+  await page.goto(`${baseUrl}#device/${encodeURIComponent("vm:102")}`, { waitUntil: "domcontentloaded" });
+  await page.locator(".workspace-page--device").waitFor({ state: "visible", timeout: 15_000 });
+  assert.equal(await page.locator(".workspace-breadcrumb").getByText("设备", { exact: true }).count(), 1, "device detail must expose a device breadcrumb");
+  assert.equal(await page.locator(".workspace-device-facts").count(), 1, "device detail must expose stable facts");
+  assert.equal(await page.getByText("宿主机 Agent：在线", { exact: false }).count(), 1, "VM detail must separate power state from host Agent state");
+  await page.getByRole("tab", { name: "算力与内存" }).click();
+  assert.equal(await page.getByRole("tab", { name: "算力与内存" }).getAttribute("aria-selected"), "true", "device tabs must change the active panel");
+  await page.getByRole("radio", { name: "1 小时" }).click();
+  assert.equal(await page.getByRole("button", { name: "添加小组件" }).count(), 0, "widget add action must be gated by edit mode");
+  await page.getByRole("button", { name: "编辑排布" }).click();
+  assert.equal(await page.getByRole("button", { name: "添加小组件" }).count(), 1, "widget add action must appear in explicit edit mode");
+  await page.getByRole("button", { name: "添加小组件" }).click();
+  await page.locator(".workspace-widget-drawer").waitFor({ state: "visible", timeout: 2_000 });
+  const addWidgetButton = page.locator(".workspace-widget-drawer__actions button:not(:disabled)").first();
+  if (await addWidgetButton.count()) {
+    await addWidgetButton.click();
+    assert.equal(await page.getByRole("button", { name: "放弃修改" }).count(), 1, "widget edits must expose discard");
+    await page.getByRole("button", { name: "关闭小组件抽屉" }).click();
+    await page.getByRole("button", { name: "保存布局" }).click();
+    await page.waitForTimeout(150);
+    const widgetSave = requestLog.find((request) => request.method === "PUT" && request.url.includes("/api/widget-layouts"));
+    assert.ok(widgetSave, "widget save must call the shared layout adapter");
+    assert.equal(widgetSave.payload?.instanceLayout?.version, 4, "widget layout version 4 contract must be preserved");
+    assert.match(widgetSave.payload?.scopeKey ?? "", /^device:vm:102:/, "widget scope key must remain device-scoped");
+    assert.match(widgetSave.payload?.templateKey ?? "", /^device-type:virtual_machine:/, "widget template key must remain type-scoped");
+    await page.getByRole("button", { name: "退出编辑" }).click();
+    await page.getByRole("button", { name: "编辑排布" }).click();
+    await page.getByRole("button", { name: "添加小组件" }).click();
+    const secondAddWidgetButton = page.locator(".workspace-widget-drawer__actions button:not(:disabled)").first();
+    if (await secondAddWidgetButton.count()) {
+      await secondAddWidgetButton.click();
+      await page.getByRole("button", { name: "关闭小组件抽屉" }).click();
+      await page.getByRole("button", { name: "放弃修改" }).click();
+    } else {
+      await page.getByRole("button", { name: "关闭小组件抽屉" }).click();
+    }
+  } else {
+    await page.locator(".workspace-widget-drawer__header > button").click();
+    assert.equal(await page.getByRole("button", { name: "放弃修改" }).isDisabled(), true, "discard must remain disabled without a dirty layout");
+  }
+  await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
+  await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
+  await page.getByRole("button", { name: "管理顺序" }).click();
+  const firstMenu = page.locator(".workspace-device-row__menu summary").first();
+  await firstMenu.click();
+  await page.getByRole("menuitem", { name: "删除" }).click();
+  assert.equal(await page.getByRole("dialog", { name: /删除/ }).count(), 1, "device deletion must require confirmation");
+  await page.getByRole("button", { name: "取消" }).click();
+  if (!(await page.getByRole("menuitem", { name: "下移" }).isVisible())) await firstMenu.click();
+  await page.getByRole("menuitem", { name: "下移" }).click();
+  assert.equal(await page.getByRole("button", { name: "保存顺序" }).isEnabled(), true, "device order must stay a draft until save");
+  await page.getByRole("button", { name: "取消" }).click();
+  assert.equal(await page.getByRole("button", { name: "管理顺序" }).count(), 1, "device order cancel must restore browsing mode");
+
   await page.goto(`${baseUrl}#overview`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--overview").waitFor({ state: "visible", timeout: 15_000 });
+  const searchTrigger = page.locator(".workspace-search-trigger");
+  await searchTrigger.focus();
   await page.keyboard.press("/");
   await page.locator(".workspace-command").waitFor({ state: "visible", timeout: 2_000 });
   await page.keyboard.press("Escape");
   assert.equal(await page.locator(".workspace-command").count(), 0, "Escape must close command palette");
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("workspace-search-trigger")), true, "command palette must restore focus to its trigger");
+
+  await page.keyboard.press("/");
+  const commandInput = page.locator(".workspace-command input");
+  await commandInput.fill("构建虚拟机");
+  await page.locator(".workspace-command__item").filter({ hasText: "构建虚拟机" }).click();
+  await page.locator(".workspace-page--device").waitFor({ state: "visible", timeout: 15_000 });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}#overview`, { waitUntil: "domcontentloaded" });
@@ -301,12 +396,121 @@ async function run() {
   assert.ok(mobileMetrics.bodyScrollWidth <= mobileMetrics.viewportWidth + 1, "mobile shell overflows horizontally");
   await page.screenshot({ path: path.join(outputDir, "web-workspace-mobile.png"), fullPage: true, animations: "disabled" });
 
+  await page.goto(`${baseUrl}#settings/appearance`, { waitUntil: "domcontentloaded" });
+  await page.locator(".workspace-settings-mobile-nav").waitFor({ state: "visible", timeout: 2_000 });
+  assert.equal(await page.getByRole("button", { name: "返回控制台" }).count(), 1, "compact settings must expose a back action");
+  assert.ok(await page.locator(".workspace-settings-mobile-nav__list button").count() >= 2, "compact settings must expose category navigation");
+  await page.evaluate(() => {
+    localStorage.setItem("dsc-sidebar-collapsed", "false");
+    localStorage.removeItem("dsc-sidebar-compact-migrated-v3");
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator(".workspace-settings-mobile-nav").waitFor({ state: "visible", timeout: 2_000 });
+  assert.equal(await page.locator(".workspace-root").evaluate((node) => node.classList.contains("is-sidebar-collapsed")), true, "compact settings must migrate the legacy expanded sidebar preference");
+
+  const stateEvidence = [];
+  await page.setViewportSize({ width: 1440, height: 900 });
+  fixtureMode = "login";
+  await page.goto(`${baseUrl}#overview`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "进入设备状态中枢" }).waitFor({ state: "visible", timeout: 15_000 });
+  assert.equal(await page.getByLabel("访问密钥", { exact: true }).count(), 1, "anonymous state must expose the login form");
+  assert.equal(await page.getByRole("button", { name: "登录" }).count(), 1, "anonymous state must expose login action");
+  await page.screenshot({ path: path.join(outputDir, "web-state-login.png"), fullPage: true, animations: "disabled" });
+  stateEvidence.push({ state: "login", screenshot: "web-state-login.png" });
+
+  fixtureMode = "live";
+  fixtureMode = "empty";
+  await page.goto(`${baseUrl}#overview`, { waitUntil: "domcontentloaded" });
+  await page.locator(".workspace-page--overview").waitFor({ state: "visible", timeout: 15_000 });
+  assert.equal(await page.getByRole("heading", { name: "等待设备接入" }).count(), 1, "empty fixture must explain the next action");
+  await page.screenshot({ path: path.join(outputDir, "web-state-empty.png"), fullPage: true, animations: "disabled" });
+  stateEvidence.push({ state: "empty", screenshot: "web-state-empty.png" });
+
+  fixtureMode = "live";
+  await page.goto(`${baseUrl}#overview`, { waitUntil: "domcontentloaded" });
+  await page.locator(".workspace-page--overview").waitFor({ state: "visible", timeout: 15_000 });
+  fixtureMode = "unauthorized";
+  await page.getByTitle("刷新状态").click();
+  await page.locator(".workspace-session-recovery").waitFor({ state: "visible", timeout: 5_000 });
+  assert.notEqual((await page.locator(".workspace-topbar .workspace-status-label").innerText()).trim(), "在线", "401 must not remain live");
+  await page.screenshot({ path: path.join(outputDir, "web-state-session-expired.png"), fullPage: true, animations: "disabled" });
+  stateEvidence.push({ state: "session-expired", screenshot: "web-state-session-expired.png" });
+  fixtureMode = "live";
+  await page.getByRole("button", { name: "重新检查" }).click();
+  await page.locator(".workspace-session-recovery").waitFor({ state: "hidden", timeout: 5_000 });
+  assert.equal((await page.locator(".workspace-topbar .workspace-status-label").innerText()).trim(), "在线", "re-authenticated refresh must restore live state");
+
+  const matrix = [];
+  const matrixRoutes = [
+    ["overview", ".workspace-page--overview"],
+    ["devices", ".workspace-page--devices"],
+    ["device-vm", `.workspace-page--device`],
+    ["settings", ".workspace-page--settings"]
+  ];
+  for (const [round, theme] of [[1, "light"], [2, "dark"]]) {
+    await page.evaluate((nextTheme) => localStorage.setItem("dsc-theme", nextTheme), theme);
+    for (const [width, height] of [[1440, 900], [1024, 768], [840, 900], [820, 900], [390, 844]]) {
+      await page.setViewportSize({ width, height });
+      for (const [name, selector] of matrixRoutes) {
+        const hash = name === "overview" ? "overview" : name === "devices" ? "devices" : name === "device-vm" ? `device/${encodeURIComponent("vm:102")}` : "settings/appearance";
+        await page.goto(`${baseUrl}#${hash}`, { waitUntil: "domcontentloaded" });
+        await page.locator(selector).waitFor({ state: "visible", timeout: 15_000 });
+        const geometry = await page.evaluate(() => {
+          const root = document.querySelector(".workspace-root");
+          const sidebar = document.querySelector(".workspace-sidebar");
+          const main = document.querySelector(".workspace-main");
+          const content = document.querySelector(".workspace-content");
+          const pageNode = document.querySelector(".workspace-page");
+          const heading = pageNode?.querySelector("h2");
+          const rect = heading?.getBoundingClientRect();
+          const rootStyle = root ? getComputedStyle(root) : null;
+          return {
+            root: root?.getBoundingClientRect().toJSON(),
+            sidebar: sidebar?.getBoundingClientRect().toJSON(),
+            main: main?.getBoundingClientRect().toJSON(),
+            gridTemplateRows: rootStyle?.gridTemplateRows ?? "",
+            gridTemplateColumns: rootStyle?.gridTemplateColumns ?? "",
+            content: content?.getBoundingClientRect().toJSON(),
+            page: pageNode?.getBoundingClientRect().toJSON(),
+            heading: rect?.toJSON(),
+            bodyScrollWidth: document.body.scrollWidth,
+            viewportWidth: window.innerWidth
+          };
+        });
+        assert.ok(geometry?.content?.width > 0 && geometry?.content?.height > 0, `${name} content is empty at ${width}px`);
+        assert.ok(geometry?.page?.width > 0 && geometry?.page?.height > 0, `${name} page is empty at ${width}px`);
+        assert.ok(geometry?.heading?.width > 0 && geometry?.heading?.height > 0 && geometry.heading.bottom > 0 && geometry.heading.top < height, `${name} heading is outside viewport at ${width}px`);
+        assert.ok(geometry.bodyScrollWidth <= width + 1, `${name} overflows horizontally at ${width}px`);
+        if (round === 1 && name === "overview" && [840, 1024, 1440].includes(width)) {
+          assert.ok(geometry.root?.width >= width - 1 && geometry.root?.height >= height - 1, `Web root geometry is incomplete at ${width}px`);
+          assert.ok(geometry.sidebar?.width > 0 && geometry.sidebar?.height >= height - 1, `Web sidebar geometry is incomplete at ${width}px`);
+          assert.ok(geometry.main?.width > 0 && geometry.main?.height >= height - 1, `Web main geometry is incomplete at ${width}px`);
+          assert.ok(geometry.main?.x > geometry.sidebar?.x + geometry.sidebar?.width - 1, `Web columns collapse at ${width}px`);
+          assert.match(geometry.gridTemplateRows, /\d+(?:\.\d+)?px|auto|minmax/, `Web grid rows are missing at ${width}px`);
+        }
+        const screenshotPath = path.join(outputDir, `matrix-round-${round}-${theme}-${width}-${name}.png`);
+        await page.screenshot({ path: screenshotPath, fullPage: true, animations: "disabled" });
+        matrix.push({ round, theme, width, name, screenshot: path.basename(screenshotPath), sha256: crypto.createHash("sha256").update(fs.readFileSync(screenshotPath)).digest("hex"), geometry });
+      }
+    }
+  }
+  const overviewHashes = new Set(matrix.filter((item) => item.width === 1440 && item.name === "overview").map((item) => item.sha256));
+  const routeHashes = new Set(matrix.filter((item) => item.round === 1 && item.width === 1440).map((item) => item.sha256));
+  assert.equal(overviewHashes.size, 2, "the two visual rounds must produce separate theme evidence");
+  assert.ok(routeHashes.size >= 3, "route screenshots must not collapse into one identical image");
+
   assert.deepEqual(pageErrors, [], `browser page errors: ${pageErrors.join("; ")}`);
+  const report = { baseUrl, fixtureDevices: fixtureDevices.length, desktopMetrics, mobileMetrics, stateEvidence, matrix, requestLog, screenshots: fs.readdirSync(outputDir).sort() };
+  fs.writeFileSync(path.join(outputDir, "web-visual-regression-report.json"), `${JSON.stringify(report, null, 2)}\n`);
   await browser.close();
-  console.log(JSON.stringify({ baseUrl, fixtureDevices: fixtureDevices.length, desktopMetrics, mobileMetrics, screenshots: fs.readdirSync(outputDir).sort() }, null, 2));
+  console.log(JSON.stringify(report, null, 2));
 }
 
-run().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  run().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { fixtureDevices, overviewMetrics, metricFixture, fulfillJson };

@@ -49,7 +49,8 @@ async function run() {
         ...process.env,
         ELECTRON_ENABLE_LOGGING: "1",
         ELECTRON_DISABLE_SANDBOX: "1",
-        NODE_ENV: "test"
+        NODE_ENV: "test",
+        DSC_VISUAL_FIXTURE: "1"
       }
     });
     electronApp.process().stderr?.on("data", (chunk) => mainStderr.push(chunk.toString("utf8")));
@@ -75,7 +76,19 @@ async function run() {
 
     await page.locator(".workspace-sidebar .m3-navigation-item").filter({ hasText: "设备" }).click();
     await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
+    assert.equal(await page.locator(".workspace-device-row__heartbeat").count(), 3, "rich Electron fixture must render heartbeat facts");
     await page.screenshot({ path: path.join(outputDir, "electron-devices-desktop.png"), fullPage: true, animations: "disabled" });
+
+    await page.getByRole("button", { name: "打开设备 视觉验收虚拟机" }).click();
+    await page.locator(".workspace-page--device").waitFor({ state: "visible", timeout: 15_000 });
+    assert.equal(await page.locator(".workspace-breadcrumb").getByText("设备", { exact: true }).count(), 1, "Electron detail must expose the device breadcrumb");
+    assert.equal(await page.locator(".workspace-device-facts").count(), 1, "Electron detail must expose stable facts");
+    assert.equal(await page.getByText("宿主机 Agent：在线", { exact: false }).count(), 1, "Electron VM detail must separate host Agent state");
+    await page.screenshot({ path: path.join(outputDir, "electron-device-vm-rich.png"), fullPage: true, animations: "disabled" });
+
+    await page.evaluate(() => { window.location.hash = "#settings/general"; });
+    await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
+    await page.screenshot({ path: path.join(outputDir, "electron-settings-desktop.png"), fullPage: true, animations: "disabled" });
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(300);
@@ -93,16 +106,21 @@ async function run() {
     assert.deepEqual((await page.locator(".workspace-bottom-nav__item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "中枢", "设置"]);
     assert.ok(mobileMetrics.rootWidth > 0);
     assert.ok(mobileMetrics.bodyScrollWidth <= mobileMetrics.viewportWidth + 1, "Electron narrow shell overflows horizontally");
+    await page.evaluate(() => { window.location.hash = "#settings/appearance"; });
+    await page.locator(".workspace-settings-mobile-nav").waitFor({ state: "visible", timeout: 5_000 });
+    assert.ok(await page.locator(".workspace-settings-mobile-nav__list button").count() >= 2, "Electron compact settings must expose category navigation");
     await page.screenshot({ path: path.join(outputDir, "electron-workspace-mobile.png"), fullPage: true, animations: "disabled" });
 
     assert.deepEqual(pageErrors, [], `Electron renderer page errors: ${pageErrors.join("; ")}`);
-    console.log(JSON.stringify({
+    const report = {
       executablePath,
       desktopMetrics,
       mobileMetrics,
       screenshots: fs.readdirSync(outputDir).sort(),
       mainStderr: mainStderr.join("").slice(-4000)
-    }, null, 2));
+    };
+    fs.writeFileSync(path.join(outputDir, "electron-visual-regression-report.json"), `${JSON.stringify(report, null, 2)}\n`);
+    console.log(JSON.stringify(report, null, 2));
   } finally {
     if (electronApp) await electronApp.close();
   }

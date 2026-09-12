@@ -8,4 +8,6 @@
 @import "./workspace.telemetry.css";
 @import "./workspace.responsive.css";
 @import "./workspace.m3.css";
-@import "./workspace.v3.css";
+@import "./workspace.pages.css";
+@import "./workspace.details.css";
+@import "./workspace.settings.css";

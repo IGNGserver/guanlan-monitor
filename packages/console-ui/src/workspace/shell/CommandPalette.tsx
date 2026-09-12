@@ -1,9 +1,10 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useWorkspace } from "../WorkspaceContext";
 import { Icon } from "../ui";
+import { settingsNavigation } from "./PrimaryNavigation";
 
 export function CommandPalette() {
-  const { commandOpen, setCommandOpen, searchQuery, setSearchQuery, filteredDevices, navigate, openSettings, capabilities } = useWorkspace();
+  const { commandOpen, setCommandOpen, searchQuery, setSearchQuery, allDevices, navigate, openSettings, capabilities } = useWorkspace();
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
@@ -23,12 +24,17 @@ export function CommandPalette() {
   useEffect(() => { if (commandOpen) setActiveIndex(0); }, [commandOpen]);
   useEffect(() => { if (!commandOpen) { previousFocusRef.current?.focus(); previousFocusRef.current = null; } }, [commandOpen]);
   if (!commandOpen) return null;
+  const settingsCommands = settingsNavigation(capabilities)
+    .filter((item) => item.id !== "agent" || capabilities.canManageLocalAgent)
+    .filter((item) => item.id !== "connections" || capabilities.canConfigureConnection)
+    .map((item) => ({ label: `设置 · ${item.label}`, detail: "打开设置分类", action: () => openSettings(item.id) }));
   const commands: Array<{ label: string; detail: string; action: () => void }> = [
     { label: "打开总览", detail: "查看所有设备状态", action: () => navigate({ kind: "overview" }) },
     { label: "打开设备目录", detail: "搜索、筛选和管理全部设备", action: () => navigate({ kind: "devices" }) },
     capabilities.canConfigureConnection ? { label: "打开连接设置", detail: "添加或重新认证中枢", action: () => openSettings("connections") } : { label: "打开中枢工作台", detail: "查看网页端同步和会话状态", action: () => openSettings("workspace") },
     ...(capabilities.canManageLocalAgent ? [{ label: "打开本机 Agent", detail: "控制本机采集服务", action: () => openSettings("agent") }] : []),
-    ...filteredDevices.slice(0, 8).map((device) => ({ label: device.hostname, detail: `${device.os} · ${device.deviceId}`, action: () => navigate({ kind: "device", deviceId: device.deviceId }) }))
+    ...settingsCommands,
+    ...allDevices.map((device) => ({ label: device.hostname, detail: `${device.os} · ${device.deviceId}${device.hostName ? ` · 宿主机 ${device.hostName}` : ""}`, action: () => navigate({ kind: "device", deviceId: device.deviceId }) }))
   ];
   const query = searchQuery.trim().toLowerCase();
   const filtered = query ? commands.filter((command) => `${command.label} ${command.detail}`.toLowerCase().includes(query)) : commands;
