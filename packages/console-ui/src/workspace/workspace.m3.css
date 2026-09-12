@@ -1185,6 +1185,24 @@
   color: var(--workspace-color-error);
 }
 
+.workspace-connection-form .m3-field {
+  gap: 7px;
+}
+
+.workspace-connection-form .m3-field + .m3-field {
+  margin-top: 2px;
+}
+
+.workspace-form__error {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--workspace-color-error) 42%, var(--workspace-color-outline-variant));
+  border-radius: var(--workspace-shape-small);
+  color: var(--workspace-color-error);
+  background: color-mix(in srgb, var(--workspace-color-error-container) 42%, var(--workspace-color-surface-container-low));
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 @media (max-width: 900px) {
   .workspace-overview-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));

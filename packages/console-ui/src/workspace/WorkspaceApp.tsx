@@ -2485,19 +2485,48 @@ function ConnectionSettings() {
   const [accessKey, setAccessKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [disconnectConfirmOpen, setDisconnectConfirmOpen] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<{ serverUrl?: string; accessKey?: string }>({});
+  const [formError, setFormError] = useState("");
   const authenticated = snapshot?.session.authenticated ?? false;
   const agentConfigured = Boolean(snapshot?.localBackend?.config.connection.secretConfigured);
   const agentRunning = snapshot?.localBackend?.running ?? false;
   useEffect(() => {
     setServerUrl(snapshot?.localBackend?.config.connection.serverUrl ?? "");
   }, [snapshot?.localBackend?.config.connection.serverUrl]);
+  const validateConnection = () => {
+    const nextErrors: { serverUrl?: string; accessKey?: string } = {};
+    const nextServerUrl = serverUrl.trim();
+    if (!nextServerUrl) {
+      nextErrors.serverUrl = "请输入中枢地址。";
+    } else {
+      try {
+        const parsed = new URL(nextServerUrl);
+        if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) {
+          nextErrors.serverUrl = "地址必须使用 http:// 或 https://，并包含主机名。";
+        }
+      } catch {
+        nextErrors.serverUrl = "请输入完整地址，例如 https://hub.example.com。";
+      }
+    }
+    if (!accessKey.trim() && !snapshot?.session.accessKeyConfigured) {
+      nextErrors.accessKey = "首次连接需要输入访问密钥。";
+    }
+    setFieldErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
   const saveConnection = async (event: FormEvent) => {
     event.preventDefault();
-    if (!serverUrl.trim() || (!accessKey.trim() && !snapshot?.session.accessKeyConfigured)) return;
+    setFormError("");
+    if (!validateConnection()) return;
     setSaving(true);
     try {
       const saved = await saveHubConnection(serverUrl, accessKey);
-      if (saved) setAccessKey("");
+      if (saved) {
+        setAccessKey("");
+        setFieldErrors({});
+      } else {
+        setFormError("连接未保存，请检查中枢地址、访问密钥和服务状态后重试。");
+      }
     } finally {
       setSaving(false);
     }
@@ -2506,7 +2535,59 @@ function ConnectionSettings() {
     const stopped = await disconnectAgent();
     if (stopped) setDisconnectConfirmOpen(false);
   };
-  return <div className="workspace-settings-stack"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">中枢连接</span><h3>{authenticated ? "已连接" : "需要认证"}</h3></div><StatusLabel state={authenticated ? "online" : "warning"} /></div><form className="workspace-form workspace-connection-form" onSubmit={saveConnection}><label>中枢地址<input className="workspace-input" value={serverUrl} onChange={(event) => setServerUrl(event.target.value)} placeholder="https://hub.example.com" autoComplete="url" required /></label><label>访问密钥<input className="workspace-input" type="password" value={accessKey} onChange={(event) => setAccessKey(event.target.value)} placeholder={snapshot?.session.accessKeyConfigured ? "已保存，留空保留当前认证" : "输入中枢访问密钥"} autoComplete="current-password" required={!snapshot?.session.accessKeyConfigured} /></label><p className="workspace-form__hint">地址和访问密钥会在同一次保存中提交。访问密钥只会发送到桌面主进程，不会进入页面状态或日志。</p><div className="workspace-form__actions"><Button variant="primary" type="submit" disabled={saving || mutationPending}>{saving ? "正在保存…" : authenticated ? "保存连接" : "保存并连接"}</Button>{authenticated && <Button variant="quiet" onClick={() => void logout()} disabled={saving || mutationPending}>退出桌面查看</Button>}</div></form></Surface><Surface className="workspace-connection-note"><div className="workspace-surface__header"><div><span className="workspace-section-kicker">本机上报</span><h3>{agentRunning ? "Agent 正在采集" : agentConfigured ? "Agent 已配置但未运行" : "Agent 未配置"}</h3></div><StatusLabel state={agentRunning ? "online" : agentConfigured ? "warning" : "unknown"} /></div><p className="workspace-surface__description">退出桌面查看只会结束当前界面的中枢认证，本机 Agent 仍可能继续采集和上报。如果要停止本机上报，会停止采集、关闭云同步并清除本机保存的上报凭据。</p>{agentConfigured && <div className="workspace-form__actions"><Button variant="danger" onClick={() => setDisconnectConfirmOpen(true)} disabled={mutationPending}>停止本机上报</Button></div>}{disconnectConfirmOpen && <div className="workspace-danger-note" role="alert"><strong>确认停止本机上报？</strong><p>这会停止 Agent、关闭云同步并清除上报凭据；之后需要重新配置连接才能恢复。</p><div className="workspace-form__actions"><Button variant="danger" onClick={() => void disconnect()} disabled={mutationPending}>{mutationPending ? "正在停止…" : "停止并清除凭据"}</Button><Button variant="quiet" onClick={() => setDisconnectConfirmOpen(false)} disabled={mutationPending}>取消</Button></div></div>}</Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">连接诊断</span><h3>如果连接失败</h3></div></div><p className="workspace-surface__description">请确认地址包含协议（例如 https://），中枢服务已启动，并使用中枢访问密钥。保存按钮会先写入地址，再用同一地址完成认证，避免出现 server url is missing。</p></Surface></div>;
+  return (
+    <div className="workspace-settings-stack">
+      <Surface>
+        <div className="workspace-surface__header">
+          <div><span className="workspace-section-kicker">中枢连接</span><h3>{authenticated ? "已连接" : "需要认证"}</h3></div>
+          <StatusLabel state={authenticated ? "online" : "warning"} />
+        </div>
+        <form className="workspace-form workspace-connection-form" onSubmit={saveConnection} noValidate>
+          <M3TextField
+            label="中枢地址"
+            type="url"
+            value={serverUrl}
+            onChange={(event) => { setServerUrl(event.target.value); setFieldErrors((current) => ({ ...current, serverUrl: undefined })); setFormError(""); }}
+            placeholder="https://hub.example.com"
+            autoComplete="url"
+            errorText={fieldErrors.serverUrl}
+            supportingText="必须包含 http:// 或 https:// 协议。"
+            required
+          />
+          <M3TextField
+            label="访问密钥"
+            type="password"
+            value={accessKey}
+            onChange={(event) => { setAccessKey(event.target.value); setFieldErrors((current) => ({ ...current, accessKey: undefined })); setFormError(""); }}
+            placeholder={snapshot?.session.accessKeyConfigured ? "已保存，留空保留当前认证" : "输入中枢访问密钥"}
+            autoComplete="current-password"
+            errorText={fieldErrors.accessKey}
+            supportingText={snapshot?.session.accessKeyConfigured ? "已配置访问密钥；留空会保留当前认证。" : "访问密钥只会发送到桌面主进程，不会进入页面状态或日志。"}
+            required={!snapshot?.session.accessKeyConfigured}
+          />
+          {formError && <div className="workspace-form__error" role="alert">{formError}</div>}
+          <p className="workspace-form__hint">地址和访问密钥会在同一次保存中提交；保存按钮会先写入地址，再用同一地址完成认证。</p>
+          <div className="workspace-form__actions">
+            <Button variant="primary" type="submit" disabled={saving || mutationPending}>{saving ? "正在保存…" : authenticated ? "保存连接" : "保存并连接"}</Button>
+            {authenticated && <Button variant="quiet" onClick={() => void logout()} disabled={saving || mutationPending}>退出桌面查看</Button>}
+          </div>
+        </form>
+      </Surface>
+      <Surface className="workspace-connection-note">
+        <div className="workspace-surface__header">
+          <div><span className="workspace-section-kicker">本机上报</span><h3>{agentRunning ? "Agent 正在采集" : agentConfigured ? "Agent 已配置但未运行" : "Agent 未配置"}</h3></div>
+          <StatusLabel state={agentRunning ? "online" : agentConfigured ? "warning" : "unknown"} />
+        </div>
+        <p className="workspace-surface__description">退出桌面查看只会结束当前界面的中枢认证，本机 Agent 仍可能继续采集和上报。如果要停止本机上报，会停止采集、关闭云同步并清除本机保存的上报凭据。</p>
+        {agentConfigured && <div className="workspace-form__actions"><Button variant="danger" onClick={() => setDisconnectConfirmOpen(true)} disabled={mutationPending}>停止本机上报</Button></div>}
+        {disconnectConfirmOpen && <div className="workspace-danger-note" role="alert"><strong>确认停止本机上报？</strong><p>这会停止 Agent、关闭云同步并清除上报凭据；之后需要重新配置连接才能恢复。</p><div className="workspace-form__actions"><Button variant="danger" onClick={() => void disconnect()} disabled={mutationPending}>{mutationPending ? "正在停止…" : "停止并清除凭据"}</Button><Button variant="quiet" onClick={() => setDisconnectConfirmOpen(false)} disabled={mutationPending}>取消</Button></div></div>}
+      </Surface>
+      <Surface>
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">连接诊断</span><h3>如果连接失败</h3></div></div>
+        <p className="workspace-surface__description">请确认地址包含协议（例如 https://），中枢服务已启动，并使用中枢访问密钥。保存按钮会先写入地址，再用同一地址完成认证，避免出现 server url is missing。</p>
+      </Surface>
+    </div>
+  );
 }
 
 function AgentSettings() {
