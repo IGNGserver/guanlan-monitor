@@ -141,6 +141,80 @@ export function M3SegmentedControl({ options, value, onChange, className, disabl
   );
 }
 
+export interface M3TabOption {
+  value: string;
+  label: React.ReactNode;
+  disabled?: boolean;
+}
+
+export interface M3TabsProps {
+  options: M3TabOption[];
+  value: string;
+  onChange: (value: string) => void;
+  "aria-label": string;
+  disabled?: boolean;
+  className?: string;
+}
+
+export function M3Tabs({ options, value, onChange, className, disabled = false, "aria-label": ariaLabel }: M3TabsProps) {
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const selectedIndex = options.findIndex((option) => option.value === value);
+  const focusIndex = selectedIndex >= 0 && !options[selectedIndex].disabled
+    ? selectedIndex
+    : options.findIndex((option) => !option.disabled);
+
+  const focusTab = (startIndex: number, step: 1 | -1) => {
+    if (options.length === 0) return;
+    let index = (startIndex + options.length) % options.length;
+    for (let count = 0; count < options.length; count += 1) {
+      if (!options[index].disabled) {
+        tabRefs.current[index]?.focus();
+        onChange(options[index].value);
+        return;
+      }
+      index = (index + step + options.length) % options.length;
+    }
+  };
+
+  return (
+    <div className={joinClasses("m3-tabs", className)} role="tablist" aria-label={ariaLabel}>
+      {options.map((option, index) => {
+        const selected = option.value === value;
+        return (
+          <button
+            key={option.value}
+            ref={(element) => { tabRefs.current[index] = element; }}
+            className={joinClasses("m3-tab", selected && "is-selected")}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            tabIndex={index === focusIndex ? 0 : -1}
+            disabled={disabled || option.disabled}
+            onClick={() => onChange(option.value)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowRight") {
+                event.preventDefault();
+                focusTab(index + 1, 1);
+              } else if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                focusTab(index - 1, -1);
+              } else if (event.key === "Home") {
+                event.preventDefault();
+                focusTab(0, 1);
+              } else if (event.key === "End") {
+                event.preventDefault();
+                focusTab(options.length - 1, -1);
+              }
+            }}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export interface M3TextFieldProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "size"> {
   label: string;
   supportingText?: React.ReactNode;

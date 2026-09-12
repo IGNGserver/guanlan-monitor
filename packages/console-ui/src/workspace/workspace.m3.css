@@ -27,7 +27,8 @@
 .m3-icon-button::before,
 .m3-chip::before,
 .m3-segmented-control__option::before,
-.m3-switch::before {
+.m3-switch::before,
+.m3-tab::before {
   position: absolute;
   inset: 0;
   border-radius: inherit;
@@ -42,7 +43,8 @@
 .m3-icon-button:hover::before,
 .m3-chip:hover::before,
 .m3-segmented-control__option:hover::before,
-.m3-switch:hover::before {
+.m3-switch:hover::before,
+.m3-tab:hover::before {
   opacity: 0.08;
 }
 
@@ -51,6 +53,7 @@
 .m3-chip:active,
 .m3-segmented-control__option:active,
 .m3-switch:active,
+.m3-tab:active,
 .workspace-button:active {
   transform: translateY(1px) scale(0.98);
 }
@@ -59,7 +62,8 @@
 .m3-icon-button:active::before,
 .m3-chip:active::before,
 .m3-segmented-control__option:active::before,
-.m3-switch:active::before {
+.m3-switch:active::before,
+.m3-tab:active::before {
   opacity: 0.12;
 }
 
@@ -68,6 +72,7 @@
 .m3-chip:focus-visible,
 .m3-segmented-control__option:focus-visible,
 .m3-switch:focus-visible,
+.m3-tab:focus-visible,
 .m3-field__input:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--workspace-color-primary) 42%, transparent);
   outline-offset: 2px;
@@ -225,6 +230,77 @@
   color: var(--workspace-color-on-primary-container);
   background: var(--workspace-color-primary-container);
   box-shadow: var(--workspace-elevation-1);
+}
+
+.m3-tabs {
+  display: flex;
+  min-width: 0;
+  align-items: flex-end;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.m3-tab {
+  position: relative;
+  display: inline-flex;
+  min-width: max-content;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--workspace-shape-small) var(--workspace-shape-small) 0 0;
+  color: var(--workspace-color-on-surface-variant);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 620;
+  white-space: nowrap;
+  transition: color var(--workspace-motion-standard), background var(--workspace-motion-standard), transform var(--workspace-motion-standard);
+}
+
+.m3-tab::after {
+  position: absolute;
+  right: 12px;
+  bottom: 0;
+  left: 12px;
+  height: 3px;
+  border-radius: var(--workspace-shape-full) var(--workspace-shape-full) 0 0;
+  background: var(--workspace-color-primary);
+  content: "";
+  opacity: 0;
+  transform: scaleX(0.4);
+  transition: opacity var(--workspace-motion-standard), transform var(--workspace-motion-emphasized);
+}
+
+.m3-tab:hover::before {
+  opacity: 0.08;
+}
+
+.m3-tab.is-selected {
+  color: var(--workspace-color-primary);
+}
+
+.m3-tab.is-selected::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.m3-tab:active {
+  transform: translateY(1px);
+}
+
+.m3-tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.workspace-tabs.m3-tabs {
+  padding: 0 4px;
+  border-bottom: 1px solid var(--workspace-color-outline-variant);
 }
 
 .workspace-setting-segmented {
@@ -475,6 +551,10 @@
     min-width: var(--workspace-min-touch-target);
     height: var(--workspace-min-touch-target);
   }
+
+  .m3-tab {
+    min-height: var(--workspace-min-touch-target);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -482,6 +562,7 @@
   .m3-icon-button,
   .m3-chip,
   .m3-segmented-control__option,
+  .m3-tab,
   .m3-field__input,
   .m3-switch,
   .m3-switch__thumb {
