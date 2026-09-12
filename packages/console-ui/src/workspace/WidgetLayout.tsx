@@ -31,6 +31,7 @@ import {
   type WidgetPlacement,
   type WidgetSize
 } from "../helpers/widgetGrid";
+import { M3Button, M3IconButton, M3SegmentedControl, M3TextField } from "./m3";
 
 export {
   DEFAULT_SIZE,
@@ -1070,14 +1071,18 @@ export function DesktopWidget({
             onLostPointerCapture={(event) => finishPointerDrag(event, true)}
           >⠿ <span>拖动</span></span>
           <span className="workspace-widget__tool-title" title={title}>{title}</span>
-          <div className="workspace-widget__size-control" role="group" aria-label={`${title}尺寸`}>
-            {(["large", "medium", "small"] as WidgetSize[]).map((size) => (
-              <button key={size} className={resolved.size === size ? "is-active" : ""} type="button" aria-pressed={resolved.size === size} onClick={() => layout.updateSize(id, size)}>
-                {size === "large" ? "大" : size === "medium" ? "中" : "小"}
-              </button>
-            ))}
-          </div>
-          <button className="workspace-widget__remove" type="button" onClick={(event) => { event.stopPropagation(); layout.removeWidget(id); }}>删除</button>
+          <M3SegmentedControl
+            className="workspace-widget__size-control"
+            options={[
+              { value: "large", label: "大" },
+              { value: "medium", label: "中" },
+              { value: "small", label: "小" }
+            ]}
+            value={resolved.size}
+            onChange={(value) => layout.updateSize(id, value as WidgetSize)}
+            aria-label={`${title}尺寸`}
+          />
+          <M3Button className="workspace-widget__remove" variant="danger" onClick={(event) => { event.stopPropagation(); layout.removeWidget(id); }}>删除</M3Button>
         </div>
       )}
       <div className="workspace-widget__content">{children}</div>
@@ -1162,21 +1167,17 @@ export function WidgetLayoutToolbar({
   };
 
   const displayModeControl = (
-    <div className="workspace-layout-display-mode" role="group" aria-label="组件显示模式">
-      {(["normal", "minimal", "board"] as WidgetDisplayMode[]).map((mode) => (
-        <button
-          key={mode}
-          type="button"
-          className={layout.displayMode === mode ? "is-active" : ""}
-          aria-pressed={layout.displayMode === mode}
-          disabled={layout.editMode && mode === "board"}
-          title={mode === "normal" ? "保留当前布局和完整标题" : mode === "minimal" ? "压缩标题和图表内边距，不改变中枢布局" : "按当前面板顺序进入全屏展板"}
-          onClick={() => handleDisplayMode(mode)}
-        >
-          {mode === "normal" ? "标准" : mode === "minimal" ? "极简" : "展板"}
-        </button>
-      ))}
-    </div>
+    <M3SegmentedControl
+      className="workspace-layout-display-mode"
+      options={[
+        { value: "normal", label: "标准" },
+        { value: "minimal", label: "极简" },
+        { value: "board", label: "展板", disabled: layout.editMode }
+      ]}
+      value={layout.displayMode}
+      onChange={(value) => handleDisplayMode(value as WidgetDisplayMode)}
+      aria-label="组件显示模式"
+    />
   );
 
   if (!layout.editable) return <div className="workspace-layout-toolbar"><span className="workspace-layout-lock">{layout.locked ? "全景视图 · 布局锁定" : "离线缓存 · 布局只读"}</span>{displayModeControl}</div>;
@@ -1187,57 +1188,57 @@ export function WidgetLayoutToolbar({
         {layout.loading ? "读取中枢布局" : layout.dirty ? "草稿布局" : layout.hasInstanceLayout ? "中枢布局" : "初始模板"}
       </span>
       {displayModeControl}
-      {layout.displayMode === "board" && <button className="workspace-layout-actions__button" type="button" onClick={() => { onExitBoardMode?.(); if (!onExitBoardMode) layout.setDisplayMode("normal"); }}>退出展板</button>}
-      <button className={`workspace-layout-toggle${layout.editMode ? " is-active" : ""}`} type="button" aria-pressed={layout.editMode} disabled={layout.saving && layout.dirty} onClick={() => void handleToggleEditMode()}>
+      {layout.displayMode === "board" && <M3Button className="workspace-layout-actions__button" variant="text" onClick={() => { onExitBoardMode?.(); if (!onExitBoardMode) layout.setDisplayMode("normal"); }}>退出展板</M3Button>}
+      <M3Button className={`workspace-layout-toggle${layout.editMode ? " is-active" : ""}`} variant={layout.editMode ? "tonal" : "outlined"} aria-pressed={layout.editMode} disabled={layout.saving && layout.dirty} onClick={() => void handleToggleEditMode()}>
         <span className="workspace-layout-toggle__mark">⌘</span>{layout.editMode ? "完成排布" : "编辑排布"}
-      </button>
-      {onOpenWidgetDrawer && <button className="workspace-layout-actions__button workspace-layout-actions__button--accent" type="button" onClick={onOpenWidgetDrawer}>添加小组件</button>}
+      </M3Button>
+      {onOpenWidgetDrawer && <M3Button className="workspace-layout-actions__button workspace-layout-actions__button--accent" variant="tonal" onClick={onOpenWidgetDrawer}>添加小组件</M3Button>}
       {layout.editMode && (
         <>
           <div className="workspace-layout-history" role="group" aria-label="布局历史">
-            <button type="button" disabled={!layout.canUndo} onClick={layout.undo} title="撤销">↶</button>
-            <button type="button" disabled={!layout.canRedo} onClick={layout.redo} title="重做">↷</button>
+            <M3IconButton label="撤销" disabled={!layout.canUndo} onClick={layout.undo}>↶</M3IconButton>
+            <M3IconButton label="重做" disabled={!layout.canRedo} onClick={layout.redo}>↷</M3IconButton>
           </div>
-          <button className="workspace-layout-save" type="button" onClick={() => void layout.saveLayout()} disabled={!layout.dirty || layout.saving}>
+          <M3Button className="workspace-layout-save" variant="filled" onClick={() => void layout.saveLayout()} disabled={!layout.dirty || layout.saving}>
             {layout.saving ? "保存中" : "保存布局"}
-          </button>
+          </M3Button>
           <div className="workspace-layout-more-menu">
-            <button className={`workspace-layout-actions__button${moreMenuOpen ? " is-active" : ""}`} type="button" onClick={() => setMoreMenuOpen((v) => !v)} aria-expanded={moreMenuOpen} title="更多操作">
+            <M3Button className={`workspace-layout-actions__button${moreMenuOpen ? " is-active" : ""}`} variant="outlined" onClick={() => setMoreMenuOpen((v) => !v)} aria-expanded={moreMenuOpen} title="更多操作">
               更多选项 ▾
-            </button>
+            </M3Button>
             {moreMenuOpen && (
               <div className="workspace-layout-more-tray" onPointerDown={(e) => e.stopPropagation()}>
                 <div className="workspace-layout-more-tray__row">
-                  <button className={`workspace-layout-snap${layout.snapToGrid ? " is-active" : ""}`} type="button" aria-pressed={layout.snapToGrid} onClick={layout.toggleSnapToGrid} title="打开后会按从左到右、从上到下自动填补空位">
+                  <M3Button className={`workspace-layout-snap${layout.snapToGrid ? " is-active" : ""}`} variant={layout.snapToGrid ? "tonal" : "outlined"} aria-pressed={layout.snapToGrid} onClick={layout.toggleSnapToGrid} title="打开后会按从左到右、从上到下自动填补空位">
                     自动吸附 {layout.snapToGrid ? "开" : "关"}
-                  </button>
-                  <button className="workspace-layout-actions__button" type="button" onClick={() => void layout.resetDeviceLayout()} disabled={layout.saving}>
+                  </M3Button>
+                  <M3Button className="workspace-layout-actions__button" variant="outlined" onClick={() => void layout.resetDeviceLayout()} disabled={layout.saving}>
                     {layout.saving ? "处理中" : "恢复初始"}
-                  </button>
+                  </M3Button>
                 </div>
                 <div className="workspace-layout-more-tray__row">
                   <div className="workspace-layout-template-menu">
-                    <button className="workspace-layout-actions__button" type="button" onClick={() => setTemplatesOpen((value) => !value)} aria-expanded={templatesOpen}>通用模板{layout.templates.length ? ` ${layout.templates.length}` : ""}</button>
+                    <M3Button className="workspace-layout-actions__button" variant="outlined" onClick={() => setTemplatesOpen((value) => !value)} aria-expanded={templatesOpen}>通用模板{layout.templates.length ? ` ${layout.templates.length}` : ""}</M3Button>
                     {templatesOpen && (
                       <div className="workspace-layout-template-tray">
                         {layout.templates.length ? layout.templates.map((template) => (
                           <div className="workspace-layout-template-item" key={template.id}>
                             <span><strong>{template.name}</strong><small>更新于 {new Date(template.updatedAt).toLocaleString()}</small></span>
-                            <div><button type="button" onClick={() => { layout.applyTemplate(template.id); setTemplatesOpen(false); }}>应用</button><button type="button" onClick={() => void layout.deleteTemplate(template.id)}>删除</button></div>
+                            <div><M3Button variant="text" onClick={() => { layout.applyTemplate(template.id); setTemplatesOpen(false); }}>应用</M3Button><M3Button variant="danger" onClick={() => void layout.deleteTemplate(template.id)}>删除</M3Button></div>
                           </div>
                         )) : <p className="workspace-layout-template-empty">当前类型和面板还没有通用模板。</p>}
                       </div>
                     )}
                   </div>
                   <div className="workspace-layout-actions" role="group" aria-label="布局文件操作">
-                    <button className="workspace-layout-actions__button" type="button" onClick={layout.exportLayout}>导出</button>
-                    <button className="workspace-layout-actions__button" type="button" onClick={() => fileInputRef.current?.click()}>导入</button>
+                    <M3Button className="workspace-layout-actions__button" variant="text" onClick={layout.exportLayout}>导出</M3Button>
+                    <M3Button className="workspace-layout-actions__button" variant="text" onClick={() => fileInputRef.current?.click()}>导入</M3Button>
                     <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={(event) => void handleImport(event)} />
                   </div>
                 </div>
                 <div className="workspace-layout-template-save">
-                  <input value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="新模板名称" aria-label="通用模板名称" />
-                  <button className="workspace-layout-actions__button" type="button" disabled={!templateName.trim() || layout.saving} onClick={() => { void layout.saveAsTemplate(templateName).then((saved) => { if (saved) setTemplateName(""); }); }}>保存为通用</button>
+                  <M3TextField className="workspace-layout-template-field" label="通用模板名称" value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="例如：值班布局" />
+                  <M3Button className="workspace-layout-actions__button" variant="tonal" disabled={!templateName.trim() || layout.saving} onClick={() => { void layout.saveAsTemplate(templateName).then((saved) => { if (saved) setTemplateName(""); }); }}>保存为通用</M3Button>
                 </div>
               </div>
             )}
