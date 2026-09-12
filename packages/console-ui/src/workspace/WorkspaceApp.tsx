@@ -22,7 +22,7 @@ import {
 } from "./WidgetLayout";
 import { DeviceWidgetFrame } from "./DeviceWidgetFrame";
 import { DynamicWidgetCanvas, WidgetDrawer } from "./widgetCatalog";
-import { M3Checkbox, M3SegmentedControl, M3Select, M3Switch, M3Tabs, M3TextField } from "./m3";
+import { M3Checkbox, M3IconButton, M3SegmentedControl, M3Select, M3Switch, M3Tabs, M3TextField } from "./m3";
 import { Button, Icon, StatusDot, StatusLabel, Surface, SummaryRow, VirtualMachinePowerLabel, type IconName, virtualMachinePowerState } from "./ui";
 import { MiniTrend, TelemetryChartCard, TelemetryInfoCard } from "./TelemetryCards";
 import {
@@ -638,12 +638,57 @@ function DeviceRow({
     <span className="workspace-device-row__metric"><small>磁盘</small><CapacityMetricValue usedBytes={device.diskUsedBytes} totalBytes={device.diskTotalBytes} percentValue={device.diskUsagePercent} unavailable={isMetricUnavailable(device, "diskUsage")} /></span>
     {onMove || onDelete ? <span className="workspace-device-row__actions" onClick={(event) => event.stopPropagation()}>
       {onMove && <>
-        <button type="button" className="workspace-row-action" disabled={index === 0} onClick={() => onMove(-1)} aria-label="上移" title="上移">↑</button>
-        <button type="button" className="workspace-row-action" disabled={index === (total ?? 0) - 1} onClick={() => onMove(1)} aria-label="下移" title="下移">↓</button>
+        <M3IconButton className="workspace-row-action" label="上移" disabled={index === 0} onClick={() => onMove(-1)}>↑</M3IconButton>
+        <M3IconButton className="workspace-row-action" label="下移" disabled={index === (total ?? 0) - 1} onClick={() => onMove(1)}>↓</M3IconButton>
       </>}
-      {onDelete && <button type="button" className="workspace-row-action workspace-row-action--danger" onClick={onDelete} aria-label="删除实例" title="删除实例">×</button>}
+      {onDelete && <M3IconButton className="workspace-row-action workspace-row-action--danger" label="删除实例" onClick={onDelete}>×</M3IconButton>}
     </span> : <Icon name="arrow" size={15} />}
   </div>;
+}
+
+function OverviewSummary({
+  total,
+  online,
+  offline,
+  issueCount,
+  instanceLabel,
+  sourceLabel,
+  sourceState,
+  sourceDetail
+}: {
+  total: number;
+  online: number;
+  offline: number;
+  issueCount: number | null;
+  instanceLabel: string;
+  sourceLabel: string;
+  sourceState: "online" | "offline" | "cached" | "warning" | "unknown";
+  sourceDetail: string;
+}) {
+  return (
+    <div className="workspace-overview-summary" aria-label="状态摘要">
+      <div className="workspace-overview-summary__item">
+        <span>当前实例</span>
+        <strong>{total}</strong>
+        <small>{instanceLabel} · 已纳入当前视图</small>
+      </div>
+      <div className="workspace-overview-summary__item">
+        <span>在线状态</span>
+        <strong>{online}<small> / {total}</small></strong>
+        <small>{offline ? `${offline} 台离线或未响应` : "全部实例正在响应"}</small>
+      </div>
+      <div className={`workspace-overview-summary__item${issueCount ? " is-warning" : ""}`}>
+        <span>待处理事项</span>
+        <strong>{issueCount}</strong>
+        <small>{issueCount == null ? "连接状态异常，暂无法判断" : issueCount ? "需要进一步检查" : "当前没有待处理事项"}</small>
+      </div>
+      <div className="workspace-overview-summary__item workspace-overview-summary__item--source">
+        <div className="workspace-overview-summary__label"><span>数据来源</span><StatusLabel state={sourceState} compact /></div>
+        <strong>{sourceLabel}</strong>
+        <small>{sourceDetail}</small>
+      </div>
+    </div>
+  );
 }
 
 function OverviewPage() {
@@ -668,6 +713,19 @@ function OverviewPage() {
     ? (snapshot.localBackend ? "agent" : "connections")
     : "workspace";
   const settingsLabel = capabilities.canConfigureConnection ? "连接设置" : "中枢设置";
+  const sourceLabel = cached ? "离线缓存" : emptySource ? "等待数据" : snapshot.source === "live" && snapshot.session.authenticated ? "实时连接" : "连接异常";
+  const sourceState: "online" | "offline" | "cached" | "warning" | "unknown" = cached
+    ? "cached"
+    : emptySource
+      ? "unknown"
+      : snapshot.source === "live" && snapshot.session.authenticated
+        ? "online"
+        : "warning";
+  const sourceDetail = cached
+    ? `缓存于 ${formatDate(snapshot.cache.savedAt)}`
+    : emptySource
+      ? "尚未取得设备快照"
+      : `同步于 ${formatDate(snapshot.generatedAt)}`;
   const metricWindowLabel = ({ "1m": "1 分钟", "5m": "5 分钟", "15m": "15 分钟", "1h": "1 小时", "6h": "6 小时", "24h": "24 小时", "1d": "1 天", "7d": "7 天", "1w": "1 周", "30d": "30 天", "1mo": "1 个月", "90d": "90 天", "1y": "1 年" } as Record<string, string>)[metricsWindow] ?? metricsWindow;
 
   // 计算 TOP 5 资源消耗榜
@@ -711,6 +769,17 @@ function OverviewPage() {
             </Button>
           </>
         }
+      />
+
+      <OverviewSummary
+        total={devices.length}
+        online={online}
+        offline={offline}
+        issueCount={hubAbnormal ? null : issueCount}
+        instanceLabel={instanceLabel}
+        sourceLabel={sourceLabel}
+        sourceState={sourceState}
+        sourceDetail={sourceDetail}
       />
 
       {hubAbnormal ? (
@@ -1499,8 +1568,15 @@ function AgentTemperatureSourcesPanel({
 }
 
 function DevicePage() {
-  const { selectedDevice, snapshot, navigate, openSettings, metricsWindow, setMetricsWindow, trafficMode, setTrafficMode, getWidgetLayout, saveWidgetLayout, orientation, capabilities } = useWorkspace();
+  const { selectedDevice, snapshot, navigate, openSettings, refresh, metricsWindow, setMetricsWindow, trafficMode, setTrafficMode, getWidgetLayout, saveWidgetLayout, orientation, capabilities } = useWorkspace();
   const canEditRemote = snapshot?.source === "live" && Boolean(snapshot.session.authenticated);
+  const deviceSourceState: "online" | "offline" | "cached" | "warning" | "unknown" = snapshot?.source === "cache"
+    ? "cached"
+    : snapshot?.source === "live" && snapshot.session.authenticated
+      ? "online"
+      : snapshot?.source === "empty"
+        ? "unknown"
+        : "warning";
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [panels, setPanels] = useState<WidgetPanelMetadata[]>(cloneDevicePanels(DEFAULT_DEVICE_PANELS));
   const [panelIndexLoading, setPanelIndexLoading] = useState(false);
@@ -1871,6 +1947,28 @@ function DevicePage() {
     id: gpu.id,
     name: displayInstanceName(gpu.name, "GPU")
   }));
+  const deviceStateBanner = snapshot?.source === "cache"
+    ? {
+        tone: "cached",
+        title: "当前显示离线缓存",
+        detail: `数据缓存于 ${formatDate(snapshot.cache.savedAt)}，设备和图表可能已经过期。`,
+        action: <Button variant="quiet" onClick={() => void refresh()}>重新获取数据<Icon name="refresh" size={15} /></Button>
+      }
+    : !metrics || !series
+      ? {
+          tone: "empty",
+          title: "还没有收到遥测样本",
+          detail: "设备已经出现在中枢列表，但当前没有可展示的历史指标；确认 Agent 正在运行并刷新状态。",
+          action: <Button variant="quiet" onClick={() => void refresh()}>刷新状态<Icon name="refresh" size={15} /></Button>
+        }
+      : selectedDevice.status !== "online"
+        ? {
+            tone: "offline",
+            title: "设备当前未在线",
+            detail: "下面仍会保留最近一次可用样本；设备重新上报后，刷新即可看到最新数据。",
+            action: <Button variant="quiet" onClick={() => openSettings(capabilities.canConfigureConnection ? "connections" : "workspace")}>查看中枢连接<Icon name="arrow" size={15} /></Button>
+          }
+        : null;
 
   const renderStoragePoolBlocks = () => storagePoolDisplaySeries.map((pool, poolIndex) => {
     const poolLatest = storagePoolDetails.find((item) => item.id === pool.id);
@@ -1976,7 +2074,16 @@ function DevicePage() {
         <span>通道 {selectedDevice.agentChannel ?? "未知"}</span>
         {selectedDevice.instanceType === "virtual_machine" && <span>宿主机 Agent {selectedDevice.status === "online" ? "在线" : "离线"} · {selectedDevice.hostName ?? "未知"}</span>}
         <span>{snapshot?.source === "cache" ? `缓存于 ${formatDate(snapshot.cache.savedAt)}` : `数据更新时间 ${formatDate(snapshot?.generatedAt)}`}</span>
+        <StatusLabel state={deviceSourceState} />
       </div>
+
+      {deviceStateBanner && (
+        <div className={`workspace-device-state-banner workspace-device-state-banner--${deviceStateBanner.tone}`} role={deviceStateBanner.tone === "offline" ? "alert" : "status"}>
+          <div className="workspace-device-state-banner__icon"><Icon name={deviceStateBanner.tone === "empty" ? "data" : deviceStateBanner.tone === "cached" ? "clock" : "warning"} size={18} /></div>
+          <div className="workspace-device-state-banner__copy"><strong>{deviceStateBanner.title}</strong><p>{deviceStateBanner.detail}</p></div>
+          {deviceStateBanner.action}
+        </div>
+      )}
 
 
 
@@ -2013,6 +2120,14 @@ function DevicePage() {
             <button key={anchor.id} type="button" className={`workspace-anchor-btn${activeAnchor === anchor.id ? " is-active" : ""}`} aria-current={activeAnchor === anchor.id ? "page" : undefined} onClick={() => scrollToAnchor(anchor.id)}>{anchor.label}</button>
           ))}
         </div>
+      )}
+
+      {(!metrics || !series) && (
+        <EmptyState
+          title="暂无可用遥测"
+          detail="硬件与系统信息仍可查看；收到第一批样本后，综合趋势和明细图表会自动出现。"
+          action={<Button variant="primary" onClick={() => void refresh()}>刷新状态</Button>}
+        />
       )}
 
       {/* ================= Tab 1: 综合面板 (Overview) ================= */}
