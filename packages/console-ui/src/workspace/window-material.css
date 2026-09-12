@@ -14,6 +14,15 @@ html[data-dsc-material="mica"] #root {
 }
 
 html[data-dsc-material="mica"] {
+  --workspace-color-surface: rgb(255 255 255 / 84%);
+  --workspace-color-surface-container-lowest: rgb(255 255 255 / 88%);
+  --workspace-color-surface-container-low: rgb(248 251 253 / 64%);
+  --workspace-color-surface-container: rgb(244 248 251 / 72%);
+  --workspace-color-surface-container-high: rgb(238 245 251 / 78%);
+  --workspace-color-surface-container-highest: rgb(232 240 247 / 82%);
+  --workspace-color-outline: rgb(72 96 117 / 44%);
+  --workspace-color-outline-variant: rgb(92 113 130 / 30%);
+  --workspace-elevation-1: 0 3px 14px rgb(30 48 67 / 9%);
   --workspace-bg: transparent;
   --workspace-topbar: rgb(248 250 253 / 72%);
   --workspace-sidebar: rgb(238 243 248 / 80%);
@@ -35,6 +44,15 @@ html[data-dsc-material="mica"] {
 }
 
 html[data-dsc-resolved-theme="dark"][data-dsc-material="mica"] {
+  --workspace-color-surface: rgb(31 38 44 / 92%);
+  --workspace-color-surface-container-lowest: rgb(25 31 36 / 94%);
+  --workspace-color-surface-container-low: rgb(37 45 51 / 76%);
+  --workspace-color-surface-container: rgb(31 38 44 / 86%);
+  --workspace-color-surface-container-high: rgb(47 59 68 / 84%);
+  --workspace-color-surface-container-highest: rgb(57 69 78 / 86%);
+  --workspace-color-outline: rgb(215 230 240 / 32%);
+  --workspace-color-outline-variant: rgb(205 221 232 / 19%);
+  --workspace-elevation-1: 0 4px 16px rgb(0 0 0 / 26%);
   --workspace-bg: transparent;
   --workspace-topbar: rgb(21 28 33 / 88%);
   --workspace-sidebar: rgb(23 30 35 / 90%);
