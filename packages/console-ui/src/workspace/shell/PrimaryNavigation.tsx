@@ -68,7 +68,7 @@ export function PrimaryNavigation({ sidebarPeek, onSidebarLeave }: { sidebarPeek
           <M3NavigationItem className="workspace-nav-item" selected={route.kind === "devices"} onClick={() => navigate({ kind: "devices" })} title="设备"><Icon name="device" /><span>设备</span></M3NavigationItem>
           <M3NavigationItem className="workspace-nav-item" selected={route.kind === "hub"} onClick={() => navigate({ kind: "hub", hubId: "primary" })} title="接入中枢"><Icon name="hub" /><span>接入中枢</span></M3NavigationItem>
           <div className="workspace-sidebar__spacer" />
-          {capabilities.canManageLocalAgent && <M3NavigationItem className="workspace-nav-item" selected={route.kind === "settings" && route.section === "agent"} onClick={() => navigate({ kind: "settings", section: "agent" })} title="本机 Agent"><Icon name="agent" /><span>本机 Agent</span></M3NavigationItem>}
+          {capabilities.canManageLocalAgent && <M3NavigationItem className="workspace-nav-item" onClick={() => navigate({ kind: "settings", section: "agent" })} title="本机 Agent"><Icon name="agent" /><span>本机 Agent</span></M3NavigationItem>}
         </nav>
       )}
       <div className="workspace-sidebar__footer">
