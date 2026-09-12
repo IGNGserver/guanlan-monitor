@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, SystemStats, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, VirtualizationStorageMetricSeries, VirtualizationStorageTelemetry, WidgetInstanceConfig, WidgetLayoutDocument, WidgetLayoutSaveRequest, WidgetPanelMetadata } from "@dsc/shared";
 import { isDisplayableVirtualizationStorage, isDisplayableVirtualizationStorageSeries, virtualizationStorageInstances } from "@dsc/shared";
 import appIcon from "../../assets/app-icon.png";
+import { useWorkspace } from "../WorkspaceContext";
 import {
   DesktopWidget,
   WidgetLayoutProvider,
@@ -683,7 +684,7 @@ function TrafficCalendarCard({
   );
 }
 
-type DesktopMetricWindowValue = "5m" | "1h" | "6h" | "24h" | "7d";
+export type DesktopMetricWindowValue = "5m" | "1h" | "6h" | "24h" | "7d";
 
 const metricWindowOptions: Array<{ value: DesktopMetricWindowValue; label: string }> = [
   { value: "5m", label: "5 分钟" },
