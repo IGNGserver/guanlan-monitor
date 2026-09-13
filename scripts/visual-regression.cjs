@@ -421,7 +421,7 @@ async function run() {
   fixtureMode = "empty";
   await page.goto(`${baseUrl}?visual-state=empty#overview`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--overview").waitFor({ state: "visible", timeout: 15_000 });
-  assert.equal(await page.getByRole("heading", { name: "等待设备接入" }).count(), 1, "empty fixture must explain the next action");
+  assert.equal(await page.getByText("还没有可用设备", { exact: true }).count(), 1, "empty fixture must explain the next action");
   await page.screenshot({ path: path.join(outputDir, "web-state-empty.png"), fullPage: true, animations: "disabled" });
   stateEvidence.push({ state: "empty", screenshot: "web-state-empty.png" });
 
