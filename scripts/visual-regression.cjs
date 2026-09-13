@@ -408,23 +408,25 @@ async function run() {
   const stateEvidence = [];
   await page.setViewportSize({ width: 1440, height: 900 });
   fixtureMode = "login";
-  await page.goto(`${baseUrl}#overview`, { waitUntil: "domcontentloaded" });
+  // Hash-only navigation keeps UnifiedConsole mounted, so auth state would not
+  // be rechecked after changing the fixture. Add a query marker for each state
+  // transition to force a fresh document and exercise the real session gate.
+  await page.goto(`${baseUrl}?visual-state=login#overview`, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "进入设备状态中枢" }).waitFor({ state: "visible", timeout: 15_000 });
   assert.equal(await page.getByLabel("访问密钥", { exact: true }).count(), 1, "anonymous state must expose the login form");
   assert.equal(await page.getByRole("button", { name: "登录" }).count(), 1, "anonymous state must expose login action");
   await page.screenshot({ path: path.join(outputDir, "web-state-login.png"), fullPage: true, animations: "disabled" });
   stateEvidence.push({ state: "login", screenshot: "web-state-login.png" });
 
-  fixtureMode = "live";
   fixtureMode = "empty";
-  await page.goto(`${baseUrl}#overview`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${baseUrl}?visual-state=empty#overview`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--overview").waitFor({ state: "visible", timeout: 15_000 });
   assert.equal(await page.getByRole("heading", { name: "等待设备接入" }).count(), 1, "empty fixture must explain the next action");
   await page.screenshot({ path: path.join(outputDir, "web-state-empty.png"), fullPage: true, animations: "disabled" });
   stateEvidence.push({ state: "empty", screenshot: "web-state-empty.png" });
 
   fixtureMode = "live";
-  await page.goto(`${baseUrl}#overview`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${baseUrl}?visual-state=live#overview`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--overview").waitFor({ state: "visible", timeout: 15_000 });
   fixtureMode = "unauthorized";
   await page.getByTitle("刷新状态").click();
