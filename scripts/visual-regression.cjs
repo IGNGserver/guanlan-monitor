@@ -7,6 +7,7 @@ const { chromium } = require("playwright");
 const baseUrl = process.argv[2] ?? "http://127.0.0.1:3000";
 const outputDir = path.resolve(process.argv[3] ?? "artifacts/visual-regression");
 fs.mkdirSync(outputDir, { recursive: true });
+let activeBrowser = null;
 
 async function fulfillJson(route, payload, status = 200) {
   await route.fulfill({
@@ -207,6 +208,7 @@ function metricFixture(device) {
 
 async function run() {
   const browser = await chromium.launch({ headless: true });
+  activeBrowser = browser;
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   const pageErrors = [];
   const requestLog = [];
@@ -346,7 +348,7 @@ async function run() {
   await firstMenu.click();
   await page.getByRole("menuitem", { name: "删除" }).click();
   assert.equal(await page.getByRole("dialog", { name: /删除/ }).count(), 1, "device deletion must require confirmation");
-  await page.getByRole("button", { name: "取消" }).click();
+  await page.getByRole("dialog", { name: /删除/ }).getByRole("button", { name: "取消" }).click();
   if (!(await page.getByRole("menuitem", { name: "下移" }).isVisible())) await firstMenu.click();
   await page.getByRole("menuitem", { name: "下移" }).click();
   assert.equal(await page.getByRole("button", { name: "保存顺序" }).isEnabled(), true, "device order must stay a draft until save");
@@ -501,11 +503,13 @@ async function run() {
   const report = { baseUrl, fixtureDevices: fixtureDevices.length, desktopMetrics, mobileMetrics, stateEvidence, matrix, requestLog, screenshots: fs.readdirSync(outputDir).sort() };
   fs.writeFileSync(path.join(outputDir, "web-visual-regression-report.json"), `${JSON.stringify(report, null, 2)}\n`);
   await browser.close();
+  activeBrowser = null;
   console.log(JSON.stringify(report, null, 2));
 }
 
 if (require.main === module) {
-  run().catch((error) => {
+  run().catch(async (error) => {
+    await activeBrowser?.close().catch(() => {});
     console.error(error);
     process.exitCode = 1;
   });
