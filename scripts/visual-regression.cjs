@@ -413,7 +413,7 @@ async function run() {
   // transition to force a fresh document and exercise the real session gate.
   await page.goto(`${baseUrl}?visual-state=login#overview`, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "进入设备状态中枢" }).waitFor({ state: "visible", timeout: 15_000 });
-  assert.equal(await page.getByLabel(/访问密钥/).count(), 1, "anonymous state must expose the login form");
+  assert.equal(await page.locator("#access-key").count(), 1, "anonymous state must expose the login form field");
   assert.equal(await page.getByRole("button", { name: "登录" }).count(), 1, "anonymous state must expose login action");
   await page.screenshot({ path: path.join(outputDir, "web-state-login.png"), fullPage: true, animations: "disabled" });
   stateEvidence.push({ state: "login", screenshot: "web-state-login.png" });
