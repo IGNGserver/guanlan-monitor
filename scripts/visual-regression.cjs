@@ -395,7 +395,7 @@ async function run() {
 
   await page.goto(`${baseUrl}#settings/appearance`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-settings-mobile-nav").waitFor({ state: "visible", timeout: 2_000 });
-  assert.equal(await page.getByRole("button", { name: "返回控制台" }).count(), 1, "compact settings must expose a back action");
+  assert.equal(await page.locator(".workspace-settings-mobile-nav").getByRole("button", { name: "返回控制台" }).count(), 1, "compact settings must expose a back action");
   assert.ok(await page.locator(".workspace-settings-mobile-nav__list button").count() >= 2, "compact settings must expose category navigation");
   await page.evaluate(() => {
     localStorage.setItem("dsc-sidebar-collapsed", "false");
