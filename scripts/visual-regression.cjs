@@ -448,10 +448,10 @@ async function run() {
   ];
   for (const [round, theme] of [[1, "light"], [2, "dark"]]) {
     await page.evaluate((nextTheme) => localStorage.setItem("dsc-theme", nextTheme), theme);
-    // The provider reads the persisted theme during mount. Reload once per
-    // round so every screenshot reflects the requested theme instead of only
-    // changing storage behind an already-mounted React tree.
-    await page.reload({ waitUntil: "domcontentloaded" });
+    // The provider reads the persisted theme during mount. Navigate to a fresh
+    // overview document once per round so the current route from the previous
+    // round (which ends on settings at 390px) cannot hide the overview gate.
+    await page.goto(`${baseUrl}?visual-round=${round}#overview`, { waitUntil: "domcontentloaded" });
     await page.locator(".workspace-page--overview").waitFor({ state: "visible", timeout: 15_000 });
     for (const [width, height] of [[1440, 900], [1024, 768], [840, 900], [820, 900], [390, 844]]) {
       await page.setViewportSize({ width, height });
