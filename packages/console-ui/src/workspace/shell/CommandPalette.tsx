@@ -12,7 +12,10 @@ export function CommandPalette() {
   const [viewport, setViewport] = useState({ top: 0, height: 0 });
   useLayoutEffect(() => {
     if (!commandOpen || typeof window === "undefined") return;
-    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const activeElement = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+      ? document.activeElement
+      : document.querySelector<HTMLElement>(".workspace-search-trigger");
+    previousFocusRef.current = activeElement;
     const visualViewport = window.visualViewport;
     const syncViewport = () => setViewport({ top: visualViewport?.offsetTop ?? 0, height: visualViewport?.height ?? window.innerHeight });
     syncViewport();
@@ -22,7 +25,17 @@ export function CommandPalette() {
     return () => { window.cancelAnimationFrame(focusFrame); visualViewport?.removeEventListener("resize", syncViewport); visualViewport?.removeEventListener("scroll", syncViewport); };
   }, [commandOpen]);
   useEffect(() => { if (commandOpen) setActiveIndex(0); }, [commandOpen]);
-  useEffect(() => { if (!commandOpen) { previousFocusRef.current?.focus(); previousFocusRef.current = null; } }, [commandOpen]);
+  useEffect(() => {
+    if (commandOpen) return;
+    const previousFocus = previousFocusRef.current;
+    const fallbackTrigger = document.querySelector<HTMLElement>(".workspace-search-trigger");
+    const target = previousFocus && previousFocus.isConnected && previousFocus !== document.body ? previousFocus : fallbackTrigger;
+    if (target) {
+      target.focus();
+      window.requestAnimationFrame(() => target.focus());
+    }
+    previousFocusRef.current = null;
+  }, [commandOpen]);
   if (!commandOpen) return null;
   const settingsCommands = settingsNavigation(capabilities)
     .filter((item) => item.id !== "agent" || capabilities.canManageLocalAgent)
