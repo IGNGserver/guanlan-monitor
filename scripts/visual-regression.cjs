@@ -345,12 +345,13 @@ async function run() {
   await page.getByRole("button", { name: "面板管理" }).click();
   await page.locator(".workspace-panel-manager__field input").fill("空测试面板");
   await page.getByRole("button", { name: "新建" }).click();
-  await page.getByRole("button", { name: "退出编辑" }).click();
+  // Wait for panel creation and tab switch to settle
+  await page.getByRole("tab", { name: "空测试面板" }).waitFor({ state: "visible", timeout: 5_000 });
+  await page.waitForTimeout(300);
 
-  // Select the newly created empty custom panel
-  await page.getByRole("tab", { name: "空测试面板" }).click();
-  assert.equal(await page.getByRole("tab", { name: "空测试面板" }).getAttribute("aria-selected"), "true", "empty custom panel tab must be selected");
   // Non-edit mode on empty custom panel: must NOT expose drawer open button, must show non-editable hint
+  await page.getByRole("button", { name: "退出编辑" }).click();
+  assert.equal(await page.getByRole("tab", { name: "空测试面板" }).getAttribute("aria-selected"), "true", "empty custom panel tab must be selected");
   assert.equal(await page.getByRole("button", { name: "打开小组件抽屉" }).count(), 0, "empty custom panel in browse mode must not expose open drawer button");
   assert.equal(await page.locator(".workspace-dynamic-empty").getByText("请先点击“编辑排布”，再添加小组件").count(), 1, "empty custom panel must show hint to enter edit mode");
   // Enter edit mode: must expose open drawer button
