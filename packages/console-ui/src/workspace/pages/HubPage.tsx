@@ -40,7 +40,7 @@ export function HubPage() {
       <div><span>最近同步</span><strong>{snapshot ? new Date(snapshot.generatedAt).toLocaleString() : "尚未同步"}</strong></div>
       <div><span>目录范围</span><strong>{hub.devices.length} 个实例 · {online} 个 Agent 在线</strong></div>
     </div>
-    <div className="workspace-inline-note" role="status"><Icon name="info" size={15} />{readonlyReason}</div>
+    <div className="workspace-inline-note" role="status"><Icon name="about" size={15} />{readonlyReason}</div>
     <DeviceDirectoryFilterBar
       devices={hub.devices}
       query={query}

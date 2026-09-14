@@ -458,7 +458,7 @@ export function DeviceDetailsPage() {
     name: displayInstanceName(gpu.name, "GPU")
   }));
   const vmPower = selectedDevice.instanceType === "virtual_machine" ? virtualMachinePowerState(selectedDevice.virtualMachine?.powerState) : null;
-  const deviceStateBanner = snapshotSource === "cache"
+  const deviceStateBanner = (snapshotSource === "cache" && snapshot)
     ? {
         tone: "cached",
         title: "当前显示离线缓存",
