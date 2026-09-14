@@ -4,6 +4,7 @@ import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
 import { M3Checkbox, M3SegmentedControl, M3Select, M3Switch, M3TextField } from "../m3";
 import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
 import { formatBytes, formatDate, formatPreciseDateTime } from "../formatters";
+import { selectSnapshotSource } from "../selectors";
 import { settingsNavigation } from "../shell/PrimaryNavigation";
 import {
   AgentTemperatureSourcesPanel,
@@ -63,7 +64,8 @@ function WebWorkspaceSettings() {
   const { snapshot, hubs, allDevices, instanceType, setInstanceType, refreshInterval, setRefreshInterval, refresh, refreshing, mutationPending } = useWorkspace();
   const hub = hubs[0];
   const online = allDevices.filter((device) => device.status === "online").length;
-  const state = snapshot?.session.authenticated && snapshot.source === "live" ? "online" : snapshot?.source === "cache" ? "cached" : "unknown";
+  const source = snapshot ? selectSnapshotSource(snapshot, allDevices) : "unknown";
+  const state = source === "live" ? "online" : source === "cache" ? "cached" : source === "unknown" ? "warning" : "unknown";
   const stateLabel = state === "online" ? "连接正常" : state === "cached" ? "显示缓存" : "等待同步";
   return (
     <div className="workspace-settings-stack workspace-web-settings">
@@ -83,13 +85,13 @@ function WebWorkspaceSettings() {
           <div className="workspace-surface__header"><div><span className="workspace-section-kicker">工作台偏好</span><h3>浏览器显示与刷新</h3></div></div>
           <div className="workspace-settings-list">
             <SettingRow label="状态刷新频率" description="只影响当前网页读取状态的频率，不改变 Agent 的采样间隔。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "5", label: "5 秒" }, { value: "10", label: "10 秒" }, { value: "30", label: "30 秒" }]} value={String(refreshInterval)} onChange={(value) => setRefreshInterval(Number(value) as typeof refreshInterval)} aria-label="状态刷新频率" disabled={mutationPending} /></SettingRow>
-            <SettingRow label="默认实例类型" description="选择打开总览时优先查看的实例分组。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={instanceType} onChange={(value) => setInstanceType(value as typeof instanceType)} aria-label="默认实例类型" /></SettingRow>
+            <SettingRow label="总览观察范围" description="健康结论始终覆盖全部实例；这里决定总览趋势默认观察普通设备还是虚拟机。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={instanceType} onChange={(value) => setInstanceType(value as typeof instanceType)} aria-label="总览观察范围" /></SettingRow>
           </div>
         </Surface>
 
         <Surface>
           <div className="workspace-surface__header"><div><span className="workspace-section-kicker">中枢状态</span><h3>当前数据链路</h3></div><StatusLabel state={state} /></div>
-          <div className="workspace-detail-list"><SummaryRow label="数据来源" value={snapshot?.source === "live" ? "实时中枢" : snapshot?.source === "cache" ? "缓存" : "等待数据"} /><SummaryRow label="最近同步" value={snapshot ? formatPreciseDateTime(snapshot.generatedAt) : "尚未同步"} /><SummaryRow label="接入实例" value={`${allDevices.length} 个`} /></div>
+          <div className="workspace-detail-list"><SummaryRow label="数据来源" value={source === "live" ? "实时中枢" : source === "cache" ? "缓存" : source === "empty" ? "等待数据" : "连接异常"} /><SummaryRow label="最近同步" value={snapshot ? formatPreciseDateTime(snapshot.generatedAt) : "尚未同步"} /><SummaryRow label="接入实例" value={`${allDevices.length} 个`} /></div>
           <div className="workspace-form__actions"><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing || mutationPending}><Icon name="refresh" size={15} />{refreshing ? "正在同步" : "立即同步"}</Button></div>
         </Surface>
       </div>

@@ -4,8 +4,9 @@ import type { ConsoleAdapter } from "../../services/adapter";
 import { detectTouchSupport, type InteractionScaleSetting, type PointerType } from "../../helpers/density";
 import { getResponsiveTier, getScreenOrientation, type ResponsiveTier, type ScreenOrientation } from "../../helpers/layout";
 import { confirmDiscardWidgetLayoutDraft } from "../WidgetLayout";
+import { confirmDiscardDeviceOrderDraft } from "../deviceOrderDraft";
 import { defaultRoute, routeFromLocation, serializeWorkspaceRoute, type SettingsSection, type WorkspaceRoute } from "../routes";
-import { getStoredDensity, getStoredRefreshInterval, getStoredTheme } from "./WorkspaceTypes";
+import { getStoredDensity, getStoredInstanceType, getStoredRefreshInterval, getStoredTheme } from "./WorkspaceTypes";
 
 export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: ConsoleAdapter; initialRoute?: WorkspaceRoute }) {
   const [route, setRoute] = useState<WorkspaceRoute>(() => initialRoute ?? routeFromLocation());
@@ -21,7 +22,7 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
   const [theme, setThemeState] = useState<"system" | "light" | "dark">(getStoredTheme);
   const [density, setDensityState] = useState<InteractionScaleSetting>(getStoredDensity);
   const [refreshInterval, setRefreshIntervalState] = useState<5 | 10 | 30>(getStoredRefreshInterval);
-  const [instanceType, setInstanceType] = useState<InstanceType>("device");
+  const [instanceType, setInstanceTypeState] = useState<InstanceType>(getStoredInstanceType);
   const [orientation, setOrientation] = useState<ScreenOrientation>("landscape");
   const [isTouch, setIsTouch] = useState(false);
   const [inputMode, setInputMode] = useState<PointerType>("mouse");
@@ -68,6 +69,7 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
 
   const navigate = useCallback((nextRoute: WorkspaceRoute) => {
     if (!confirmDiscardWidgetLayoutDraft()) return;
+    if (!confirmDiscardDeviceOrderDraft()) return;
     setRoute(nextRoute);
     if (typeof window !== "undefined" && window.location.hash !== serializeWorkspaceRoute(nextRoute)) {
       window.history.pushState({ route: nextRoute }, "", serializeWorkspaceRoute(nextRoute));
@@ -95,6 +97,10 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
   const setRefreshInterval = useCallback((nextInterval: 5 | 10 | 30) => {
     setRefreshIntervalState(nextInterval);
     localStorage.setItem("dsc-refresh-interval", String(nextInterval));
+  }, []);
+  const setInstanceType = useCallback((nextInstanceType: InstanceType) => {
+    setInstanceTypeState(nextInstanceType);
+    localStorage.setItem("dsc-instance-type", nextInstanceType);
   }, []);
 
   return {

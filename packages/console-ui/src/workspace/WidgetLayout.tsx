@@ -443,7 +443,7 @@ export function WidgetLayoutProvider({
   }, [draft.placements, locked]);
 
   const mutateDraft = useCallback((mutator: (current: WidgetLayoutDocument) => WidgetLayoutDocument, options: WidgetMutationOptions = {}) => {
-    if (!editable || locked) return;
+    if (!editable || locked || !editMode) return;
     const current = draftRef.current;
     const next = normalizeLayout(mutator(cloneLayout(current)), options);
     pastRef.current = [...pastRef.current, current].slice(-HISTORY_LIMIT);
@@ -453,7 +453,7 @@ export function WidgetLayoutProvider({
     dirtyRef.current = true;
     setDirty(true);
     setHistoryVersion((value) => value + 1);
-  }, [editable, locked]);
+  }, [editable, editMode, locked]);
 
   const compactLayout = useCallback(() => {
     if (!editable || locked) return;
@@ -470,12 +470,13 @@ export function WidgetLayoutProvider({
   }, [editable, locked]);
 
   const beginWidgetDrag = useCallback((id: string) => {
-    if (!editable || locked || dragSessionRef.current || !draftRef.current.placements[id]) return;
+    if (!editable || locked || !editMode || dragSessionRef.current || !draftRef.current.placements[id]) return;
     dragSessionRef.current = { id, base: cloneLayout(draftRef.current), moved: false };
     setDraggingWidgetId(id);
-  }, [editable, locked]);
+  }, [editable, editMode, locked]);
 
   const previewWidgetDrop = useCallback((draggedId: string, targetId: string) => {
+    if (!editable || locked || !editMode) return;
     const session = dragSessionRef.current;
     if (!session || session.id !== draggedId || draggedId === targetId) return;
     const current = draftRef.current;
@@ -484,7 +485,7 @@ export function WidgetLayoutProvider({
     draftRef.current = next;
     setDraft(next);
     session.moved = true;
-  }, []);
+  }, [editable, editMode, locked]);
 
   const finishWidgetDrag = useCallback(() => {
     const session = dragSessionRef.current;
@@ -513,7 +514,7 @@ export function WidgetLayoutProvider({
   }, []);
 
   const addWidget = useCallback((definition: Omit<WidgetDefinition, "id"> & { id?: string }): string | null => {
-    if (!editable || locked) return null;
+    if (!editable || locked || !editMode) return null;
     const requestedId = definition.id?.trim();
     let id = requestedId || `${definition.widgetType ?? "widget"}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     while (draftRef.current.catalog[id]) {
@@ -538,10 +539,10 @@ export function WidgetLayoutProvider({
       return current;
     }, { compact: true });
     return id;
-  }, [editable, locked, mutateDraft]);
+  }, [editable, editMode, locked, mutateDraft]);
 
   const addWidgetGroup = useCallback((group: Omit<WidgetDefinition, "id" | "groupId">, children: WidgetGroupChildDefinition[]): string | null => {
-    if (!editable || locked) return null;
+    if (!editable || locked || !editMode) return null;
     const groupId = `${group.widgetType ?? "device-group"}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     mutateDraft((current) => {
       current.catalog[groupId] = {
@@ -574,7 +575,7 @@ export function WidgetLayoutProvider({
       return current;
     }, { compact: true });
     return groupId;
-  }, [editable, locked, mutateDraft]);
+  }, [editable, editMode, locked, mutateDraft]);
 
   const removeWidget = useCallback((id: string) => {
     mutateDraft((current) => {
@@ -638,16 +639,16 @@ export function WidgetLayoutProvider({
   }, [mutateDraft]);
 
   const resetDeviceLayout = useCallback(async (): Promise<boolean> => {
-    if (!editable || locked || saving) return false;
+    if (!editable || locked || !editMode || saving) return false;
     replaceDraft(createInitialLayout(definitionsRef.current), true);
     resetHistory();
     setEditMode(true);
     setSyncMessage("已恢复初始布局预览，点击“保存布局”后才会同步到中枢");
     return true;
-  }, [editable, locked, replaceDraft, resetHistory, saving]);
+  }, [editable, editMode, locked, replaceDraft, resetHistory, saving]);
 
   const discardLayout = useCallback((): boolean => {
-    if (!editable || locked) return false;
+    if (!editable || locked || !editMode) return false;
     const base = remoteRef.current.instanceLayout
       ? normalizeLayout(remoteRef.current.instanceLayout)
       : createInitialLayout(definitionsRef.current);
@@ -656,19 +657,20 @@ export function WidgetLayoutProvider({
     setEditMode(false);
     setSyncMessage("已放弃未保存的布局修改");
     return true;
-  }, [editable, locked, replaceDraft, resetHistory]);
+  }, [editable, editMode, locked, replaceDraft, resetHistory]);
 
   const applyTemplate = useCallback((templateId: string) => {
+    if (!editable || locked || !editMode) return;
     const template = remoteRef.current.templates.find((item) => item.id === templateId);
     if (!template) return;
     replaceDraft(applyTemplateToLayout(template.layout, definitionsRef.current), true);
     resetHistory();
     setEditMode(true);
     setSyncMessage(`已应用“${template.name}”，点击“保存布局”后才会替换当前布局`);
-  }, [replaceDraft, resetHistory]);
+  }, [editable, editMode, locked, replaceDraft, resetHistory]);
 
   const saveLayout = useCallback(async (): Promise<boolean> => {
-    if (!editable || locked || saving) return false;
+    if (!editable || locked || !editMode || saving) return false;
     setSaving(true);
     try {
       const nextRemote = await saveWidgetLayout({ scopeKey, templateKey, instanceLayout: cloneLayout(draftRef.current) });
@@ -684,11 +686,11 @@ export function WidgetLayoutProvider({
     } finally {
       setSaving(false);
     }
-  }, [editable, locked, resetHistory, replaceDraft, saveWidgetLayout, saving, scopeKey, templateKey]);
+  }, [editable, editMode, locked, resetHistory, replaceDraft, saveWidgetLayout, saving, scopeKey, templateKey]);
 
   const saveAsTemplate = useCallback(async (name: string, templateId?: string): Promise<boolean> => {
     const normalizedName = name.trim();
-    if (!normalizedName || !editable || locked || saving) return false;
+    if (!normalizedName || !editable || locked || !editMode || saving) return false;
     setSaving(true);
     try {
       const nextRemote = await saveWidgetLayout({
@@ -706,10 +708,10 @@ export function WidgetLayoutProvider({
     } finally {
       setSaving(false);
     }
-  }, [editable, locked, saveWidgetLayout, saving, scopeKey, templateKey]);
+  }, [editable, editMode, locked, saveWidgetLayout, saving, scopeKey, templateKey]);
 
   const deleteTemplate = useCallback(async (templateId: string): Promise<boolean> => {
-    if (!editable || locked || saving) return false;
+    if (!editable || locked || !editMode || saving) return false;
     setSaving(true);
     try {
       const nextRemote = await saveWidgetLayout({ scopeKey, templateKey, deleteTemplateId: templateId });
@@ -723,7 +725,7 @@ export function WidgetLayoutProvider({
     } finally {
       setSaving(false);
     }
-  }, [editable, locked, saveWidgetLayout, saving, scopeKey, templateKey]);
+  }, [editable, editMode, locked, saveWidgetLayout, saving, scopeKey, templateKey]);
 
   const exportLayout = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -737,7 +739,7 @@ export function WidgetLayoutProvider({
   }, [templateKey]);
 
   const importLayout = useCallback((json: string): boolean => {
-    if (!editable || locked) return false;
+    if (!editable || locked || !editMode) return false;
     try {
       const parsed = JSON.parse(json) as { layout?: WidgetLayoutDocument; version?: number; placements?: WidgetLayoutDocument["placements"]; catalog?: WidgetLayoutDocument["catalog"]; snapToGrid?: boolean; panels?: WidgetLayoutDocument["panels"] };
       const candidate = parsed.layout ?? parsed;
@@ -755,23 +757,23 @@ export function WidgetLayoutProvider({
     } catch {
       return false;
     }
-  }, [editable, locked, replaceDraft, resetHistory]);
+  }, [editable, editMode, locked, replaceDraft, resetHistory]);
 
   const undo = useCallback(() => {
-    if (!editable || locked) return;
+    if (!editable || locked || !editMode) return;
     const previous = pastRef.current.pop();
     if (!previous) return;
     futureRef.current.push(cloneLayout(draftRef.current));
     replaceDraft(previous, true);
-  }, [editable, locked, replaceDraft]);
+  }, [editable, editMode, locked, replaceDraft]);
 
   const redo = useCallback(() => {
-    if (!editable || locked) return;
+    if (!editable || locked || !editMode) return;
     const next = futureRef.current.pop();
     if (!next) return;
     pastRef.current.push(cloneLayout(draftRef.current));
     replaceDraft(next, true);
-  }, [editable, locked, replaceDraft]);
+  }, [editable, editMode, locked, replaceDraft]);
 
   const displayPlacements = useMemo(
     () => projectDisplayPlacements(draft, displayMode),

@@ -6,10 +6,13 @@ import type {
 import type { ConsoleAdapter } from "../services/adapter";
 import { fallbackRuntimeProfile, fallbackWindowMaterialCapabilities } from "../services/adapter";
 import { resolveInteractionScale } from "../helpers/density";
-import { parseWorkspaceHash, type WorkspaceRoute } from "./routes";
+import { parseWorkspaceHash, serializeWorkspaceRoute, type WorkspaceRoute } from "./routes";
 import { formatWorkspaceError as formatError, type HubViewModel, type WorkspaceContextValue } from "./context/WorkspaceTypes";
 import { useWorkspaceMutations } from "./context/useWorkspaceMutations";
 import { useWorkspaceUiState } from "./context/useWorkspaceUiState";
+import { confirmDiscardDeviceOrderDraft } from "./deviceOrderDraft";
+import { confirmDiscardWidgetLayoutDraft } from "./WidgetLayout";
+import { selectSnapshotSource } from "./selectors";
 
 export type { SettingsSection, WorkspaceRoute } from "./routes";
 export type { HubViewModel } from "./context/WorkspaceTypes";
@@ -147,15 +150,30 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     return unsubscribe;
   }, [adapter, fetchSnapshot]);
 
+  const currentRouteRef = useRef(route);
   useEffect(() => {
-    const handleLocationChange = () => setRoute(parseWorkspaceHash(window.location.hash));
+    currentRouteRef.current = route;
+  }, [route]);
+
+  useEffect(() => {
+    const handleLocationChange = () => {
+      const targetRoute = parseWorkspaceHash(window.location.hash);
+      if (!confirmDiscardWidgetLayoutDraft() || !confirmDiscardDeviceOrderDraft()) {
+        const currentHash = serializeWorkspaceRoute(currentRouteRef.current);
+        if (window.location.hash !== currentHash) {
+          window.history.replaceState({ route: currentRouteRef.current }, "", currentHash);
+        }
+        return;
+      }
+      setRoute(targetRoute);
+    };
     window.addEventListener("popstate", handleLocationChange);
     window.addEventListener("hashchange", handleLocationChange);
     return () => {
       window.removeEventListener("popstate", handleLocationChange);
       window.removeEventListener("hashchange", handleLocationChange);
     };
-  }, []);
+  }, [setRoute]);
 
   useEffect(() => {
     let cancelled = false;
@@ -315,15 +333,21 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     return devices.filter((device) => [device.hostname, device.deviceId, device.os].some((value) => value.toLowerCase().includes(query)));
   }, [devices, searchQuery]);
   const endpoint = snapshot?.localBackend?.config.connection.serverUrl || "未配置地址";
-  const hubState: HubViewModel["state"] = snapshot?.source === "cache"
-    ? "cached"
-    : snapshot?.session.authenticated
-      ? "online"
-      : snapshot?.source === "empty"
-        ? "unknown"
-        : "offline";
+  const snapshotSource = snapshot ? selectSnapshotSource(snapshot, allDevices) : "unknown";
+  const hubState: HubViewModel["state"] = snapshotSource === "live"
+    ? "online"
+    : snapshotSource === "cache"
+      ? "cached"
+      : snapshotSource === "unknown"
+        ? "offline"
+        : "unknown";
   const hubs = useMemo<HubViewModel[]>(() => [{ id: "primary", name: "中枢", endpoint, devices: allDevices, state: hubState }], [allDevices, endpoint, hubState]);
   const selectedDevice = allDevices.find((device) => device.deviceId === selectedDeviceId) ?? null;
+  const closeWindowSafely = useCallback(async () => {
+    if (!confirmDiscardWidgetLayoutDraft()) return;
+    if (!confirmDiscardDeviceOrderDraft()) return;
+    await closeWindow();
+  }, [closeWindow]);
 
   const value: WorkspaceContextValue = {
     route,
@@ -373,7 +397,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     reorderInstances,
     minimizeWindow,
     toggleMaximizeWindow,
-    closeWindow,
+    closeWindow: closeWindowSafely,
     adapterDragStart,
     adapterDragMove,
     adapterDragEnd,

@@ -1013,7 +1013,7 @@ export function DynamicWidgetCanvas({ device, metrics, localTemperatureSources =
   const entries = layout.orderedWidgetEntries.filter((entry) => Boolean(entry.widgetType) && !isSystemRenderedEntry(entry));
 
   useEffect(() => {
-    if ((!metrics && !localTemperatureSources.length) || !layout.editable || layout.locked) return;
+    if ((!metrics && !localTemperatureSources.length) || !layout.editable || layout.locked || !layout.editMode) return;
     entries.forEach((entry) => {
       const definition = widgetDefinitionByType.get(entry.widgetType ?? "");
       if (!definition?.targetKind || definition.deviceGroup || entry.groupId || getTargetId(entry)) return;
@@ -1032,10 +1032,11 @@ export function DynamicWidgetCanvas({ device, metrics, localTemperatureSources =
         });
       });
     });
-  }, [entries, layout.addWidget, layout.editable, layout.locked, layout.updateWidgetConfig, localTemperatureSources, localTemperatureSourcesAt, metrics]);
+  }, [entries, layout.addWidget, layout.editMode, layout.editable, layout.locked, layout.updateWidgetConfig, localTemperatureSources, localTemperatureSourcesAt, metrics]);
 
   if (!entries.length) {
-    return showEmptyState ? <div className="workspace-dynamic-empty"><strong>这个面板还没有自定义小组件</strong><span>{onOpenDrawer ? "打开小组件抽屉，从处理器、存储、网络和 SMART 数据中选择内容。" : "当前为离线缓存，只能查看，暂不能添加小组件。"}</span>{onOpenDrawer && <M3Button variant="tonal" onClick={onOpenDrawer}>打开小组件抽屉</M3Button>}</div> : null;
+    const canOpenDrawer = Boolean(onOpenDrawer && layout.editable && layout.editMode && !layout.locked);
+    return showEmptyState ? <div className="workspace-dynamic-empty"><strong>这个面板还没有自定义小组件</strong><span>{canOpenDrawer ? "打开小组件抽屉，从处理器、存储、网络和 SMART 数据中选择内容。" : "请先点击“编辑排布”，再添加小组件；浏览模式不会改变当前布局。"}</span>{canOpenDrawer && <M3Button variant="tonal" onClick={onOpenDrawer}>打开小组件抽屉</M3Button>}</div> : null;
   }
   const definitions = new Map(entries.map((entry) => [entry.id, widgetDefinitionByType.get(entry.widgetType ?? "")]));
   const groupEntries = entries.filter((entry) => isDeviceGroupDefinition(definitions.get(entry.id)));
@@ -1108,7 +1109,7 @@ export function WidgetDrawer({ open, onClose, device, metrics, localTemperatureS
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose]);
-  if (!open) return null;
+  if (!open || !layout.editable || layout.locked || !layout.editMode) return null;
   const grouped = WIDGET_CATALOG.reduce<Record<string, WidgetCatalogDefinition[]>>((groups, definition) => {
     (groups[definition.category] ??= []).push(definition);
     return groups;
@@ -1140,10 +1141,10 @@ export function WidgetDrawer({ open, onClose, device, metrics, localTemperatureS
     else setDragOffset(0);
   };
   const addWidget = (definition: WidgetCatalogDefinition, target?: { id: string; name: string }, customVis?: WidgetVisualization) => {
+    if (!layout.editable || layout.locked || !layout.editMode) return;
     const selectedVis = customVis ?? definition.visualization;
     const config: WidgetInstanceConfig = { visualization: selectedVis };
     if (target) config.targetId = target.id;
-    layout.setEditMode(true);
     const id = definition.deviceGroup && target && definition.targetKind
       ? layout.addWidgetGroup(
           {
