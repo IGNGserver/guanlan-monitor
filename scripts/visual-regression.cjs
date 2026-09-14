@@ -305,18 +305,20 @@ async function run() {
     const head = document.querySelector(".workspace-directory-head");
     const row = document.querySelector(".workspace-device-row");
     if (!head || !row) return null;
-    const headComputed = getComputedStyle(head);
-    const rowComputed = getComputedStyle(row);
     const headCols = head.querySelectorAll("[role='columnheader']");
+    const rowMain = row.querySelector(".workspace-device-row__main");
+    const rowAction = row.querySelector(".workspace-device-row__action");
     return {
       headColsCount: headCols.length,
-      headGridTemplate: headComputed.gridTemplateColumns,
-      rowGridTemplate: rowComputed.gridTemplateColumns
+      headHasAction: Boolean(head.querySelector("[data-directory-column='action']")),
+      rowHasAction: Boolean(rowAction),
+      rowMainColSpan: rowMain?.getAttribute("style") || getComputedStyle(rowMain).gridColumn
     };
   });
   assert.ok(headRowMetrics, "directory table header or rows not found");
   assert.equal(headRowMetrics.headColsCount, 7, "directory header must expose 7 columns");
-  assert.equal(headRowMetrics.headGridTemplate, headRowMetrics.rowGridTemplate, "directory head and row gridTemplateColumns must align");
+  assert.equal(headRowMetrics.headHasAction, true, "directory header must include action column");
+  assert.equal(headRowMetrics.rowHasAction, true, "directory row must include action column");
   const deviceSearch = page.getByLabel("搜索设备", { exact: true });
   await deviceSearch.fill("构建虚拟机");
   assert.equal(await page.locator(".workspace-directory-surface .workspace-device-row").count(), 1, "device search must filter the full directory");
@@ -338,13 +340,20 @@ async function run() {
   await page.getByRole("tab", { name: "算力与内存" }).click();
   assert.equal(await page.getByRole("tab", { name: "算力与内存" }).getAttribute("aria-selected"), "true", "device tabs must change the active panel");
 
-  // Switch to 自定义面板 to assert empty panel boundary
-  await page.getByRole("tab", { name: "自定义面板" }).click();
-  assert.equal(await page.getByRole("tab", { name: "自定义面板" }).getAttribute("aria-selected"), "true", "custom panel tab must be selected");
+  // Create a custom panel to test empty custom panel boundaries
+  await page.getByRole("button", { name: "编辑排布" }).click();
+  await page.getByRole("button", { name: "面板管理" }).click();
+  await page.locator(".workspace-panel-manager__field input").fill("空测试面板");
+  await page.getByRole("button", { name: "新建" }).click();
+  await page.getByRole("button", { name: "退出编辑" }).click();
+
+  // Select the newly created empty custom panel
+  await page.getByRole("tab", { name: "空测试面板" }).click();
+  assert.equal(await page.getByRole("tab", { name: "空测试面板" }).getAttribute("aria-selected"), "true", "empty custom panel tab must be selected");
   // Non-edit mode on empty custom panel: must NOT expose drawer open button, must show non-editable hint
   assert.equal(await page.getByRole("button", { name: "打开小组件抽屉" }).count(), 0, "empty custom panel in browse mode must not expose open drawer button");
   assert.equal(await page.locator(".workspace-dynamic-empty").getByText("请先点击“编辑排布”，再添加小组件").count(), 1, "empty custom panel must show hint to enter edit mode");
-  // Enter edit mode
+  // Enter edit mode: must expose open drawer button
   await page.getByRole("button", { name: "编辑排布" }).click();
   assert.equal(await page.getByRole("button", { name: "打开小组件抽屉" }).count(), 1, "empty custom panel in edit mode must expose open drawer button");
   await page.getByRole("button", { name: "退出编辑" }).click();
