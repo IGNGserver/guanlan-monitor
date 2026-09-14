@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { DeviceSummary } from "@dsc/shared";
 import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
 import { Button, Icon, Surface } from "../ui";
-import { M3Chip, M3SegmentedControl, M3Select, M3TextField } from "../m3";
 import { selectDeviceDirectory, type DeviceDirectorySort, type DeviceDirectoryStatus } from "../selectors";
-import { DeviceRow, EmptyState, ErrorSurface, LoadingSurface, PageIntro, ConfirmDialog } from "./shared";
+import { mergeDeviceOrder, registerDeviceOrderDraftGuard } from "../deviceOrderDraft";
+import { ConfirmDialog, DeviceDirectoryFilterBar, DeviceDirectoryHeader, DeviceRow, EmptyState, ErrorSurface, LoadingSurface, PageIntro } from "./shared";
 
 export function DevicesPage() {
   const { snapshot, allDevices, loading, error, refresh, navigate, deleteInstance, reorderInstances, mutationPending, capabilities } = useWorkspace();
@@ -15,22 +15,45 @@ export function DevicesPage() {
   const [manageMode, setManageMode] = useState(false);
   const [orderDraft, setOrderDraft] = useState<string[] | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeviceSummary | null>(null);
+  const serverOrder = allDevices.map((device) => device.deviceId);
+  const serverOrderKey = serverOrder.join("\u0000");
+  const effectiveOrder = mergeDeviceOrder(orderDraft ?? serverOrder, serverOrder);
+  const orderDirty = Boolean(orderDraft && JSON.stringify(effectiveOrder) !== JSON.stringify(serverOrder));
+  const orderDirtyRef = useRef(false);
   useEffect(() => {
-    if (!manageMode) setOrderDraft(null);
-  }, [allDevices, manageMode]);
+    const unregisterGuard = registerDeviceOrderDraftGuard(() => orderDirtyRef.current);
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!orderDirtyRef.current) return;
+      const proceed = window.confirm("设备顺序修改尚未保存，离开后顺序草稿将丢失。是否继续退出？");
+      if (!proceed) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      unregisterGuard();
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
+  useEffect(() => {
+    if (!manageMode) {
+      setOrderDraft(null);
+      return;
+    }
+    setOrderDraft((current) => current ? mergeDeviceOrder(current, serverOrder) : current);
+  }, [manageMode, serverOrderKey]);
+  orderDirtyRef.current = orderDirty;
   if (loading && !snapshot) return <LoadingSurface />;
   if (!snapshot) return <ErrorSurface title="无法读取设备目录" detail={error ?? "尚未取得设备快照"} onRetry={() => void refresh()} />;
 
   const canManage = snapshot.source === "live" && snapshot.session.authenticated;
-  const serverOrder = allDevices.map((device) => device.deviceId);
-  const effectiveOrder = orderDraft ?? serverOrder;
   const orderPosition = new Map(effectiveOrder.map((deviceId, index) => [deviceId, index]));
   const orderedDevices = allDevices
     .slice()
     .sort((left, right) => (orderPosition.get(left.deviceId) ?? Number.MAX_SAFE_INTEGER) - (orderPosition.get(right.deviceId) ?? Number.MAX_SAFE_INTEGER))
     .map((device, index) => ({ ...device, sortOrder: index }));
   const visibleDevices = selectDeviceDirectory(orderedDevices, { query, instanceType: typeFilter, status: statusFilter, sort: manageMode ? "order" : sort });
-  const orderDirty = Boolean(orderDraft && JSON.stringify(orderDraft) !== JSON.stringify(serverOrder));
   const beginManage = () => {
     if (!canManage || mutationPending) return;
     setOrderDraft(serverOrder);
@@ -44,7 +67,7 @@ export function DevicesPage() {
   };
   const saveManage = async () => {
     if (!canManage || !orderDraft || mutationPending) return;
-    const saved = await reorderInstances(orderDraft);
+    const saved = await reorderInstances(effectiveOrder);
     if (saved) {
       setOrderDraft(null);
       setManageMode(false);
@@ -52,7 +75,7 @@ export function DevicesPage() {
   };
   const moveInstance = (deviceId: string, direction: -1 | 1) => {
     if (!canManage || !manageMode || mutationPending) return;
-    const current = orderDraft ?? serverOrder;
+    const current = effectiveOrder;
     const currentIndex = current.indexOf(deviceId);
     const nextIndex = currentIndex + direction;
     if (currentIndex < 0 || nextIndex < 0 || nextIndex >= current.length) return;
@@ -69,28 +92,28 @@ export function DevicesPage() {
       description={snapshot.source === "cache" ? "当前显示离线缓存；筛选和查看可用，但管理操作已禁用。" : "浏览、筛选和管理接入当前中枢的全部实例。"}
       actions={<Button variant="quiet" onClick={() => navigate({ kind: "hub", hubId: "primary" })}><Icon name="hub" size={16} />查看中枢</Button>}
     />
-    <div className="workspace-directory-toolbar">
-      <M3TextField label="搜索设备" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="名称、设备 ID、系统或宿主机" type="search" />
-      <M3SegmentedControl options={[{ value: "all", label: "全部类型" }, { value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={typeFilter} onChange={(value) => setTypeFilter(value as typeof typeFilter)} aria-label="设备类型" />
-      <div className="workspace-directory-toolbar__chips" aria-label="设备状态">
-        <M3Chip selected={statusFilter === "all"} onClick={() => setStatusFilter("all")}>全部 {allDevices.length}</M3Chip>
-        <M3Chip selected={statusFilter === "online"} onClick={() => setStatusFilter("online")}>在线 {allDevices.filter((device) => device.status === "online").length}</M3Chip>
-        <M3Chip selected={statusFilter === "offline"} onClick={() => setStatusFilter("offline")}>离线 {allDevices.filter((device) => device.status !== "online").length}</M3Chip>
-      </div>
-      <M3Select label="排序" hideLabel value={sort} onChange={(event) => setSort(event.target.value as DeviceDirectorySort)} disabled={manageMode} options={[{ value: "order", label: "中枢顺序" }, { value: "name", label: "名称" }, { value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "lastSeen", label: "最近响应" }]} />
-      {!manageMode ? <Button variant="quiet" onClick={beginManage} disabled={!canManage}>管理顺序</Button> : <div className="workspace-order-actions"><Button variant="primary" onClick={() => void saveManage()} disabled={!orderDirty || mutationPending}>保存顺序</Button><Button variant="quiet" onClick={cancelManage} disabled={mutationPending}>取消</Button></div>}
-    </div>
+    <DeviceDirectoryFilterBar
+      devices={allDevices}
+      query={query}
+      onQueryChange={setQuery}
+      typeFilter={typeFilter}
+      onTypeFilterChange={setTypeFilter}
+      statusFilter={statusFilter}
+      onStatusFilterChange={setStatusFilter}
+      sort={sort}
+      onSortChange={setSort}
+      sortDisabled={manageMode}
+      actions={!manageMode ? <Button variant="quiet" onClick={beginManage} disabled={!canManage}>管理顺序</Button> : <div className="workspace-order-actions"><Button variant="primary" onClick={() => void saveManage()} disabled={!orderDirty || mutationPending}>保存顺序</Button><Button variant="quiet" onClick={cancelManage} disabled={mutationPending}>取消</Button></div>}
+    />
     {!canManage && <div className="workspace-inline-note" role="status">{snapshot.source === "cache" ? "离线缓存为只读快照。" : "需要实时连接并完成认证后才能删除或调整设备顺序。"}</div>}
     <Surface className="workspace-directory-surface">
-      <div className="workspace-directory-head" role="row">
-        <span>设备</span><span>状态</span><span>CPU</span><span>内存</span><span>磁盘</span><span>操作</span>
-      </div>
+      <DeviceDirectoryHeader />
       <div className="workspace-device-rows" role="rowgroup">
-        {visibleDevices.length ? visibleDevices.map((device, index) => <DeviceRow
+        {visibleDevices.length ? visibleDevices.map((device) => <DeviceRow
           key={device.deviceId}
           device={device}
-          index={index}
-          total={visibleDevices.length}
+          index={effectiveOrder.indexOf(device.deviceId)}
+          total={effectiveOrder.length}
           onMove={manageMode && canManage && !mutationPending ? (direction) => moveInstance(device.deviceId, direction) : undefined}
           onDelete={manageMode && canManage && !mutationPending ? () => setDeleteTarget(device) : undefined}
         />) : <EmptyState title="没有匹配设备" detail="尝试清空搜索或调整类型、状态筛选。" action={<Button variant="quiet" onClick={() => { setQuery(""); setTypeFilter("all"); setStatusFilter("all"); }}>清除筛选</Button>} />}

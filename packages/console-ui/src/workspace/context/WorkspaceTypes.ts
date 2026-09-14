@@ -106,6 +106,11 @@ export function getStoredRefreshInterval(): 5 | 10 | 30 {
   return value === "5" || value === "30" ? Number(value) as 5 | 30 : 10;
 }
 
+export function getStoredInstanceType(): InstanceType {
+  const value = typeof window === "undefined" ? "device" : localStorage.getItem("dsc-instance-type");
+  return value === "virtual_machine" ? "virtual_machine" : "device";
+}
+
 export function formatWorkspaceError(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) {
     const messages: Record<string, string> = {

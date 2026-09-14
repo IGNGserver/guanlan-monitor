@@ -293,6 +293,30 @@ async function run() {
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
   assert.equal(await page.locator(".workspace-directory-surface .workspace-device-row").count(), fixtureDevices.length);
+
+  // 1. Assert 7-column header alignment and column names
+  const headerColumns = await page.locator(".workspace-directory-head [role='columnheader']").allTextContents();
+  assert.deepEqual(headerColumns.map((col) => col.trim()), ["状态", "设备", "CPU", "内存", "磁盘", "最近心跳", "操作"], "directory table header must contain exactly 7 columns in order");
+  const columnCount = await page.locator(".workspace-directory-head [role='columnheader']").count();
+  assert.equal(columnCount, 7, "directory header must have 7 column headers");
+
+  // Verify alignment / grid structure of header vs row
+  const headRowMetrics = await page.evaluate(() => {
+    const head = document.querySelector(".workspace-directory-head");
+    const row = document.querySelector(".workspace-device-row");
+    if (!head || !row) return null;
+    const headComputed = getComputedStyle(head);
+    const rowComputed = getComputedStyle(row);
+    const headCols = head.querySelectorAll("[role='columnheader']");
+    return {
+      headColsCount: headCols.length,
+      headGridTemplate: headComputed.gridTemplateColumns,
+      rowGridTemplate: rowComputed.gridTemplateColumns
+    };
+  });
+  assert.ok(headRowMetrics, "directory table header or rows not found");
+  assert.equal(headRowMetrics.headColsCount, 7, "directory header must expose 7 columns");
+  assert.equal(headRowMetrics.headGridTemplate, headRowMetrics.rowGridTemplate, "directory head and row gridTemplateColumns must align");
   const deviceSearch = page.getByLabel("搜索设备", { exact: true });
   await deviceSearch.fill("构建虚拟机");
   assert.equal(await page.locator(".workspace-directory-surface .workspace-device-row").count(), 1, "device search must filter the full directory");
@@ -313,6 +337,19 @@ async function run() {
   assert.equal(await page.getByText(/宿主机 Agent\s*[:：]?\s*在线/).count(), 1, "VM detail must separate power state from host Agent state");
   await page.getByRole("tab", { name: "算力与内存" }).click();
   assert.equal(await page.getByRole("tab", { name: "算力与内存" }).getAttribute("aria-selected"), "true", "device tabs must change the active panel");
+
+  // Switch to 自定义面板 to assert empty panel boundary
+  await page.getByRole("tab", { name: "自定义面板" }).click();
+  assert.equal(await page.getByRole("tab", { name: "自定义面板" }).getAttribute("aria-selected"), "true", "custom panel tab must be selected");
+  // Non-edit mode on empty custom panel: must NOT expose drawer open button, must show non-editable hint
+  assert.equal(await page.getByRole("button", { name: "打开小组件抽屉" }).count(), 0, "empty custom panel in browse mode must not expose open drawer button");
+  assert.equal(await page.locator(".workspace-dynamic-empty").getByText("请先点击“编辑排布”，再添加小组件").count(), 1, "empty custom panel must show hint to enter edit mode");
+  // Enter edit mode
+  await page.getByRole("button", { name: "编辑排布" }).click();
+  assert.equal(await page.getByRole("button", { name: "打开小组件抽屉" }).count(), 1, "empty custom panel in edit mode must expose open drawer button");
+  await page.getByRole("button", { name: "退出编辑" }).click();
+
+  await page.getByRole("tab", { name: "算力与内存" }).click();
   await page.getByRole("radio", { name: "1 小时" }).click();
   assert.equal(await page.getByRole("button", { name: "添加小组件" }).count(), 0, "widget add action must be gated by edit mode");
   await page.getByRole("button", { name: "编辑排布" }).click();
@@ -352,6 +389,23 @@ async function run() {
   if (!(await page.getByRole("menuitem", { name: "下移" }).isVisible())) await firstMenu.click();
   await page.getByRole("menuitem", { name: "下移" }).click();
   assert.equal(await page.getByRole("button", { name: "保存顺序" }).isEnabled(), true, "device order must stay a draft until save");
+
+  // Assert leave guard: when order is modified and user clicks navigation destination, confirm dialog must trigger
+  let dialogMessage = null;
+  let dialogDismissed = false;
+  const dismissDialog = async (dialog) => {
+    dialogMessage = dialog.message();
+    dialogDismissed = true;
+    await dialog.dismiss();
+  };
+  page.once("dialog", dismissDialog);
+  await page.locator(".workspace-sidebar .m3-navigation-item").filter({ hasText: "总览" }).click();
+  await page.waitForTimeout(200);
+  assert.ok(dialogDismissed, "navigating away with dirty device order must prompt confirmation");
+  assert.match(dialogMessage ?? "", /设备顺序修改尚未保存/, "confirm message must warn about device order draft");
+  // Since dismissed, we must still remain on #devices page
+  assert.match(page.url(), /#devices$/, "cancelling leave guard must keep the current page");
+
   await page.getByRole("button", { name: "取消" }).click();
   assert.equal(await page.getByRole("button", { name: "管理顺序" }).count(), 1, "device order cancel must restore browsing mode");
 
@@ -375,6 +429,14 @@ async function run() {
   await page.goto(`${baseUrl}#overview`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-root").waitFor({ state: "visible", timeout: 15_000 });
   await page.waitForTimeout(300);
+
+  // Assert 390px search button contains .m3-button__icon and accessible name is "搜索设备、页面或设置"
+  const mobileSearchTrigger = page.locator(".workspace-topbar .workspace-search-trigger");
+  assert.equal(await mobileSearchTrigger.count(), 1, "390px topbar must have search trigger");
+  assert.equal(await mobileSearchTrigger.getAttribute("aria-label"), "搜索设备、页面或设置", "search trigger accessible name must be '搜索设备、页面或设置'");
+  assert.equal(await mobileSearchTrigger.locator(".m3-button__icon").isVisible(), true, "390px search trigger icon must be visible");
+  assert.equal(await mobileSearchTrigger.locator(".m3-button__label").isVisible(), false, "390px search trigger text label must be hidden");
+
   const mobileMetrics = await page.evaluate(() => {
     const root = document.querySelector(".workspace-root");
     const bottomNav = document.querySelector(".workspace-bottom-nav");

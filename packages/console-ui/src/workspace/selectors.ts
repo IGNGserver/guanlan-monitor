@@ -23,6 +23,20 @@ export interface DeviceDirectoryQuery {
   sort?: DeviceDirectorySort;
 }
 
+export type SnapshotDataSource = HealthSummary["source"];
+
+/**
+ * Keep source/auth/data semantics in one selector so the shell, overview,
+ * settings and hub pages cannot disagree about an authenticated empty state.
+ */
+export function selectSnapshotSource(snapshot: ConsoleSnapshot, allDevices: DeviceSummary[] = snapshot.devices): SnapshotDataSource {
+  if (snapshot.source === "cache") return "cache";
+  const hasData = allDevices.length > 0 || (snapshot.overviewMetrics?.instances.length ?? 0) > 0;
+  if (snapshot.source === "live" && snapshot.session.authenticated) return hasData ? "live" : "empty";
+  if (snapshot.source === "empty") return "empty";
+  return "unknown";
+}
+
 function metricUnavailable(device: DeviceSummary, key: DeviceMetricKey): boolean {
   return (device.unavailableMetrics ?? []).includes(key);
 }
@@ -33,15 +47,14 @@ export function selectHealthSummary(snapshot: ConsoleSnapshot, allDevices: Devic
   const virtualMachines = allDevices.filter((device) => device.instanceType === "virtual_machine");
   const hostOnline = hostDevices.filter((device) => device.status === "online").length;
   const virtualMachineOnline = virtualMachines.filter((device) => device.status === "online").length;
-  const source = snapshot.source === "cache"
-    ? "cache"
-    : snapshot.source === "live" && snapshot.session.authenticated
-      ? "live"
-      : snapshot.source === "empty"
-        ? "empty"
-        : "unknown";
+  const source = selectSnapshotSource(snapshot, allDevices);
+  const unhealthyDevices = allDevices.filter((device) => {
+    if (device.status !== "online") return true;
+    if (device.instanceType !== "virtual_machine") return false;
+    return device.virtualMachine?.powerState?.trim().toLowerCase() !== "running";
+  }).length;
   const pending = source === "live"
-    ? allDevices.length - online + (snapshot.localBackend?.lastIssueCount ?? 0) + (allDevices.length === 0 ? 1 : 0)
+    ? unhealthyDevices + (snapshot.localBackend?.lastIssueCount ?? 0)
     : null;
   return {
     total: allDevices.length,
@@ -79,7 +92,7 @@ export function selectResourceRanking(devices: DeviceSummary[], metric: "cpu" | 
 export function selectOverviewDevices(allDevices: DeviceSummary[], limit = 6): DeviceSummary[] {
   const attentionRank = (device: DeviceSummary) => {
     if (device.status !== "online") return 0;
-    if (device.instanceType === "virtual_machine" && ["stopped", "paused", "suspended"].includes(device.virtualMachine?.powerState?.toLowerCase() ?? "")) return 1;
+    if (device.instanceType === "virtual_machine" && device.virtualMachine?.powerState?.trim().toLowerCase() !== "running") return 1;
     return 2;
   };
   return allDevices

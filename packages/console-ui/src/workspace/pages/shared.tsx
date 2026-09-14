@@ -4,6 +4,7 @@ import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlock
 import { isDisplayableVirtualizationStorage, isDisplayableVirtualizationStorageSeries, virtualizationStorageInstances } from "@dsc/shared";
 import appIcon from "../../assets/app-icon.png";
 import { useWorkspace } from "../WorkspaceContext";
+import type { DeviceDirectorySort, DeviceDirectoryStatus } from "../selectors";
 import {
   DesktopWidget,
   WidgetLayoutProvider,
@@ -196,6 +197,61 @@ function PageIntro({ eyebrow, title, description, actions }: { eyebrow?: string;
   return <div className="workspace-page-intro"><div>{eyebrow && <div className="workspace-page-intro__eyebrow">{eyebrow}</div>}<h2>{title}</h2>{description && <p>{description}</p>}</div>{actions && <div className="workspace-page-intro__actions">{actions}</div>}</div>;
 }
 
+const DEVICE_DIRECTORY_COLUMNS = [
+  { key: "status", label: "状态" },
+  { key: "device", label: "设备" },
+  { key: "cpu", label: "CPU" },
+  { key: "memory", label: "内存" },
+  { key: "disk", label: "磁盘" },
+  { key: "heartbeat", label: "最近心跳" },
+  { key: "action", label: "操作" }
+] as const;
+
+function DeviceDirectoryHeader() {
+  return <div className="workspace-directory-head" role="row" aria-label="设备目录表头">
+    {DEVICE_DIRECTORY_COLUMNS.map((column) => <span key={column.key} role="columnheader" data-directory-column={column.key}>{column.label}</span>)}
+  </div>;
+}
+
+function DeviceDirectoryFilterBar({
+  devices,
+  query,
+  onQueryChange,
+  typeFilter,
+  onTypeFilterChange,
+  statusFilter,
+  onStatusFilterChange,
+  sort,
+  onSortChange,
+  sortDisabled = false,
+  actions
+}: {
+  devices: DeviceSummary[];
+  query: string;
+  onQueryChange: (value: string) => void;
+  typeFilter: "all" | "device" | "virtual_machine";
+  onTypeFilterChange: (value: "all" | "device" | "virtual_machine") => void;
+  statusFilter: DeviceDirectoryStatus;
+  onStatusFilterChange: (value: DeviceDirectoryStatus) => void;
+  sort: DeviceDirectorySort;
+  onSortChange: (value: DeviceDirectorySort) => void;
+  sortDisabled?: boolean;
+  actions?: React.ReactNode;
+}) {
+  const onlineCount = devices.filter((device) => device.status === "online").length;
+  return <div className="workspace-directory-toolbar">
+    <M3TextField label="搜索设备" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="名称、设备 ID、系统或宿主机" type="search" />
+    <M3SegmentedControl options={[{ value: "all", label: "全部类型" }, { value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={typeFilter} onChange={(value) => onTypeFilterChange(value as "all" | "device" | "virtual_machine")} aria-label="设备类型" />
+    <div className="workspace-directory-toolbar__chips" aria-label="设备状态">
+      <M3Chip selected={statusFilter === "all"} onClick={() => onStatusFilterChange("all")}>全部 {devices.length}</M3Chip>
+      <M3Chip selected={statusFilter === "online"} onClick={() => onStatusFilterChange("online")}>在线 {onlineCount}</M3Chip>
+      <M3Chip selected={statusFilter === "offline"} onClick={() => onStatusFilterChange("offline")}>离线 {devices.length - onlineCount}</M3Chip>
+    </div>
+    <M3Select label="排序" hideLabel value={sort} onChange={(event) => onSortChange(event.target.value as DeviceDirectorySort)} disabled={sortDisabled} options={[{ value: "order", label: "中枢顺序" }, { value: "name", label: "名称" }, { value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "lastSeen", label: "最近响应" }]} />
+    {actions && <div className="workspace-directory-toolbar__actions">{actions}</div>}
+  </div>;
+}
+
 
 
 function useModalFocusTrap() {
@@ -309,26 +365,30 @@ function DeviceRow({
   const open = () => navigate({ kind: "device", deviceId: device.deviceId });
   const isVm = device.instanceType === "virtual_machine";
   const powerState = isVm ? virtualMachinePowerState(device.virtualMachine?.powerState) : null;
-  return <div className="workspace-device-row">
+  const agentLabel = device.status === "online" ? "在线" : "离线";
+  const heartbeatState = device.status === "online" ? "当前响应" : "心跳已过期";
+  const unavailable = (device.unavailableMetrics ?? []).map((metric) => metric === "memoryUsage" ? "内存" : metric === "gpuUsage" || metric === "gpuMemory" ? "GPU" : metric).join("、");
+  return <div className="workspace-device-row" role="row" data-device-id={device.deviceId} data-instance-type={device.instanceType ?? "device"} data-vm-power-state={isVm ? (device.virtualMachine?.powerState?.trim().toLowerCase() || "unknown") : undefined} data-agent-state={device.status} data-unavailable-metrics={unavailable || undefined}>
     <button className="workspace-device-row__main" type="button" onClick={open} aria-label={`打开设备 ${device.hostname}`}>
-      <span className="workspace-device-row__status"><StatusDot state={powerState?.state ?? (device.status === "online" ? "online" : "offline")} /></span>
-      <span className="workspace-device-row__identity"><strong>{device.hostname}</strong><small>{isVm ? `${powerState?.label ?? "电源状态未知"} · 宿主机 Agent：${device.status === "online" ? "在线" : "离线"} · ${device.hostName ?? "未知"}` : `${device.os} · Agent ${device.status === "online" ? "在线" : "离线"}`} · ${device.deviceId} · 最近响应 ${formatDate(device.lastSeenAt)}</small></span>
-      <span className="workspace-device-row__metric"><small>CPU</small><MetricValue value={device.cpuUsagePercent} unavailable={isMetricUnavailable(device, "cpuUsage")} /></span>
-      <span className="workspace-device-row__metric"><small>内存</small><CapacityMetricValue usedBytes={device.memoryUsedBytes} totalBytes={device.memoryTotalBytes} percentValue={device.memoryUsagePercent} unavailable={isMetricUnavailable(device, "memoryUsage")} /></span>
-      <span className="workspace-device-row__metric"><small>磁盘</small><CapacityMetricValue usedBytes={device.diskUsedBytes} totalBytes={device.diskTotalBytes} percentValue={device.diskUsagePercent} unavailable={isMetricUnavailable(device, "diskUsage")} /></span>
-      <span className="workspace-device-row__heartbeat"><small>最近心跳</small>{formatDate(device.lastSeenAt)}</span>
-      {!onMove && !onDelete && <Icon name="arrow" size={15} />}
+      <span className="workspace-device-row__status" role="gridcell" data-directory-column="status" aria-label={isVm ? `虚拟机电源：${powerState?.label}` : `Agent：${agentLabel}`}><StatusDot state={powerState?.state ?? (device.status === "online" ? "online" : "offline")} /></span>
+      <span className="workspace-device-row__identity" role="gridcell" data-directory-column="device"><strong>{device.hostname}</strong><small>{isVm ? `${powerState?.label ?? "电源状态未知"} · 宿主机 Agent：${agentLabel} · ${device.hostName ?? "未知"}` : `${device.os} · Agent ${agentLabel}`} · ID ${device.deviceId}</small></span>
+      <span className="workspace-device-row__metric" role="gridcell" data-directory-column="cpu"><small>CPU</small><MetricValue value={device.cpuUsagePercent} unavailable={isMetricUnavailable(device, "cpuUsage")} /></span>
+      <span className="workspace-device-row__metric" role="gridcell" data-directory-column="memory"><small>内存</small><CapacityMetricValue usedBytes={device.memoryUsedBytes} totalBytes={device.memoryTotalBytes} percentValue={device.memoryUsagePercent} unavailable={isMetricUnavailable(device, "memoryUsage")} /></span>
+      <span className="workspace-device-row__metric" role="gridcell" data-directory-column="disk"><small>磁盘</small><CapacityMetricValue usedBytes={device.diskUsedBytes} totalBytes={device.diskTotalBytes} percentValue={device.diskUsagePercent} unavailable={isMetricUnavailable(device, "diskUsage")} /></span>
+      <span className="workspace-device-row__heartbeat" role="gridcell" data-directory-column="heartbeat" data-heartbeat-state={device.status === "online" ? "fresh" : "stale"}><small>最近心跳</small><span>{formatDate(device.lastSeenAt)}</span><small>{heartbeatState}</small></span>
     </button>
-    {(onMove || onDelete) && <details className="workspace-device-row__menu">
-      <summary aria-label={`管理 ${device.hostname}`}><Icon name="more" size={18} /></summary>
-      <div className="workspace-device-row__menu-panel" role="menu">
-        {onMove && <>
-          <button type="button" role="menuitem" disabled={index === 0} onClick={() => onMove(-1)}>上移</button>
-          <button type="button" role="menuitem" disabled={index === (total ?? 0) - 1} onClick={() => onMove(1)}>下移</button>
-        </>}
-        {onDelete && <button className="is-danger" type="button" role="menuitem" onClick={onDelete}>删除</button>}
-      </div>
-    </details>}
+    <div className="workspace-device-row__action" role="gridcell" data-directory-column="action">
+      {(onMove || onDelete) ? <details className="workspace-device-row__menu">
+        <summary aria-label={`管理 ${device.hostname}`}><Icon name="more" size={18} /></summary>
+        <div className="workspace-device-row__menu-panel" role="menu">
+          {onMove && <>
+            <button type="button" role="menuitem" disabled={index === 0} onClick={() => onMove(-1)}>上移</button>
+            <button type="button" role="menuitem" disabled={index === (total ?? 0) - 1} onClick={() => onMove(1)}>下移</button>
+          </>}
+          {onDelete && <button className="is-danger" type="button" role="menuitem" onClick={onDelete}>删除</button>}
+        </div>
+      </details> : <span className="workspace-device-row__open" aria-hidden="true"><Icon name="arrow" size={15} /></span>}
+    </div>
   </div>;
 }
 
@@ -780,11 +840,16 @@ function WidgetPanelBar({
   onDelete: (panelId: string) => void;
 }) {
   const layout = useOptionalWidgetLayout();
+  const canManage = editable && layout?.editMode === true;
   const [manageOpen, setManageOpen] = useState(false);
   const [newPanelName, setNewPanelName] = useState("");
   const managerRef = useRef<HTMLDivElement>(null);
   const [renameTarget, setRenameTarget] = useState<WidgetPanelMetadata | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WidgetPanelMetadata | null>(null);
+
+  useEffect(() => {
+    if (!canManage) setManageOpen(false);
+  }, [canManage]);
 
   useEffect(() => {
     if (!manageOpen) return;
@@ -804,6 +869,7 @@ function WidgetPanelBar({
 
   const submitNewPanel = (event: FormEvent) => {
     event.preventDefault();
+    if (!canManage) return;
     const name = newPanelName.trim();
     if (!name) return;
     onCreate(name);
@@ -824,7 +890,7 @@ function WidgetPanelBar({
         aria-label="设备面板"
       />
       <div ref={managerRef} className="workspace-panel-manager">
-        <button className={`workspace-layout-actions__button${manageOpen ? " is-active" : ""}`} type="button" onClick={() => setManageOpen((value) => !value)} aria-expanded={manageOpen} disabled={!editable} title={editable ? "管理自定义面板" : "离线缓存下不能修改面板"}>面板管理</button>
+        <button className={`workspace-layout-actions__button${manageOpen ? " is-active" : ""}`} type="button" onClick={() => setManageOpen((value) => !value)} aria-expanded={manageOpen} disabled={!canManage} title={canManage ? "管理自定义面板" : "请先进入编辑排布模式后管理面板"}>面板管理</button>
         {manageOpen && (
           <div className="workspace-panel-manager__tray">
             <div className="workspace-panel-manager__heading"><strong>我的面板</strong><span>系统面板保留兼容；自定义面板可以重复、重命名或删除。</span></div>
@@ -1064,7 +1130,10 @@ export {
   probeTargetLabels,
   probeProviderLabels,
   DEFAULT_DEVICE_PANELS,
+  DEVICE_DIRECTORY_COLUMNS,
   PageIntro,
+  DeviceDirectoryHeader,
+  DeviceDirectoryFilterBar,
   ConfirmDialog,
   PromptDialog,
   DeviceRow,

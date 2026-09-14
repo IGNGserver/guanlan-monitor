@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { AgentProbeTarget, DeviceBlockKey, DeviceMetricKey, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, VirtualizationStorageMetricSeries, VirtualizationStorageTelemetry, WidgetLayoutDocument, WidgetLayoutSaveRequest, WidgetPanelMetadata } from "@dsc/shared";
 import { isDisplayableVirtualizationStorage, isDisplayableVirtualizationStorageSeries, virtualizationStorageInstances } from "@dsc/shared";
 import { useWorkspace } from "../WorkspaceContext";
+import { selectSnapshotSource } from "../selectors";
 import {
   DesktopWidget,
   WidgetLayoutProvider,
@@ -77,12 +78,13 @@ import {
 
 export function DeviceDetailsPage() {
   const { selectedDevice, snapshot, navigate, openSettings, metricsWindow, setMetricsWindow, trafficMode, setTrafficMode, getWidgetLayout, saveWidgetLayout, orientation, capabilities } = useWorkspace();
-  const canEditRemote = snapshot?.source === "live" && Boolean(snapshot.session.authenticated);
-  const deviceSourceState: "online" | "offline" | "cached" | "warning" | "unknown" = snapshot?.source === "cache"
+  const snapshotSource = snapshot ? selectSnapshotSource(snapshot, snapshot.devices) : "unknown";
+  const canEditRemote = snapshotSource === "live";
+  const deviceSourceState: "online" | "offline" | "cached" | "warning" | "unknown" = snapshotSource === "cache"
     ? "cached"
-    : snapshot?.source === "live" && snapshot.session.authenticated
+    : snapshotSource === "live"
       ? "online"
-      : snapshot?.source === "empty"
+      : snapshotSource === "empty"
         ? "unknown"
         : "warning";
   const [activeTab, setActiveTab] = useState<string>("overview");
@@ -455,13 +457,21 @@ export function DeviceDetailsPage() {
     id: gpu.id,
     name: displayInstanceName(gpu.name, "GPU")
   }));
-  const deviceStateBanner = snapshot?.source === "cache"
+  const vmPower = selectedDevice.instanceType === "virtual_machine" ? virtualMachinePowerState(selectedDevice.virtualMachine?.powerState) : null;
+  const deviceStateBanner = snapshotSource === "cache"
     ? {
         tone: "cached",
         title: "当前显示离线缓存",
         detail: `数据缓存于 ${formatDate(snapshot.cache.savedAt)}，设备和图表可能已经过期。`,
         action: <span className="workspace-caption">请使用顶部刷新按钮重新获取</span>
       }
+    : vmPower && vmPower.state !== "online"
+      ? {
+          tone: vmPower.state === "unknown" ? "empty" : "offline",
+          title: `虚拟机${vmPower.label}`,
+          detail: `${vmPower.label}时，CPU、内存、磁盘等运行时指标按“不适用”展示；宿主机 Agent 和最近心跳仍单独保留。`,
+          action: <span className="workspace-caption">电源状态由中枢虚拟化接口提供</span>
+        }
     : !metrics || !series
       ? {
           tone: "empty",
@@ -586,14 +596,16 @@ export function DeviceDetailsPage() {
         <span>Agent {selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</span>
         <span>通道 {selectedDevice.agentChannel ?? "未知"}</span>
         {selectedDevice.instanceType === "virtual_machine" && <span>宿主机 Agent {selectedDevice.status === "online" ? "在线" : "离线"} · {selectedDevice.hostName ?? "未知"}</span>}
-        <span>{snapshot?.source === "cache" ? `缓存于 ${formatDate(snapshot.cache.savedAt)}` : `数据更新时间 ${formatDate(snapshot?.generatedAt)}`}</span>
+        <span>{selectedDevice.status === "online" ? "最近心跳有效" : "最近心跳已过期"} · {formatDate(selectedDevice.lastSeenAt)}</span>
+        {selectedDevice.unavailableMetrics?.length ? <span>不适用指标：{selectedDevice.unavailableMetrics.join("、")}</span> : null}
+        <span>{snapshotSource === "cache" ? `缓存于 ${formatDate(snapshot?.cache.savedAt)}` : `数据更新时间 ${formatDate(snapshot?.generatedAt)}`}</span>
         <StatusLabel state={deviceSourceState} />
       </div>
 
       <div className="workspace-device-facts" aria-label="设备事实">
         <div><span>实例类型</span><strong>{selectedDevice.instanceType === "virtual_machine" ? "虚拟机" : "普通设备"}</strong></div>
         <div><span>宿主机</span><strong>{selectedDevice.instanceType === "virtual_machine" ? selectedDevice.hostName ?? "未知" : "本机 Agent"}</strong></div>
-        <div><span>最近心跳</span><strong>{formatDate(selectedDevice.lastSeenAt)}</strong></div>
+        <div><span>最近心跳</span><strong>{formatDate(selectedDevice.lastSeenAt)} · {selectedDevice.status === "online" ? "有效" : "已过期"}</strong></div>
         <div><span>中枢顺序</span><strong>{(selectedDevice.sortOrder ?? 0) + 1}</strong></div>
       </div>
 
@@ -611,7 +623,7 @@ export function DeviceDetailsPage() {
         key={activeTab}
         scopeKey={isCustomPanel ? customPanelScope(activeTab) : `device:${selectedDevice.deviceId}:${activeTab}`}
         templateKey={isCustomPanel ? customPanelTemplate : `device-type:${selectedDevice.instanceType ?? "device"}:tab:${activeTab}`}
-        editable={activeTab !== "all" && snapshot?.source === "live" && Boolean(snapshot.session.authenticated)}
+        editable={activeTab !== "all" && canEditRemote}
         locked={activeTab === "all"}
         displayMode={displayMode}
         onDisplayModeChange={handleDisplayModeChange}
