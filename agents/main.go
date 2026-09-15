@@ -6312,10 +6312,13 @@ func validateServerTransport(raw string) error {
 	if strings.EqualFold(parsed.Scheme, "https") {
 		return nil
 	}
-	if strings.EqualFold(parsed.Scheme, "http") && isPrivateNetworkHost(parsed.Hostname()) {
+	if strings.EqualFold(parsed.Scheme, "http") {
+		if !isPrivateNetworkHost(parsed.Hostname()) {
+			log.Printf("[WARN] Hub server URL uses unencrypted HTTP on a public or non-private host: %s", raw)
+		}
 		return nil
 	}
-	return fmt.Errorf("remote_server_requires_https")
+	return fmt.Errorf("server_url_requires_http_or_https")
 }
 
 func isLoopbackHost(host string) bool {

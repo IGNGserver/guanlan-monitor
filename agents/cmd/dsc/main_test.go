@@ -44,7 +44,7 @@ func TestValidateServerURLRequiresHTTPSForPublicHosts(t *testing.T) {
 		{name: "private http", url: "http://192.168.1.20:3100", ok: true},
 		{name: "loopback http", url: "http://127.0.0.1:3100", ok: true},
 		{name: "public https", url: "https://hub.example.com", ok: true},
-		{name: "public http", url: "http://hub.example.com", ok: false},
+		{name: "public http", url: "http://hub.example.com", ok: true},
 		{name: "userinfo", url: "https://user:pass@hub.example.com", ok: false},
 	}
 	for _, tc := range cases {

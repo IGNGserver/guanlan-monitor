@@ -496,14 +496,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       _state.update { it.copy(savingMetricConfig = true, message = null) }
       runCatching {
-        currentApi.saveMetricConfig(
-          editingDeviceId,
-          DeviceMetricConfigPayloadDto(
-            enabledMetrics = _state.value.metricConfigDraft,
-            enabledDeviceIds = _state.value.enabledDeviceIdsDraft,
-            instanceMetricConfig = _state.value.instanceMetricConfigDraft
+        executeWithAuthRetry {
+          it.saveMetricConfig(
+            editingDeviceId,
+            DeviceMetricConfigPayloadDto(
+              enabledMetrics = _state.value.metricConfigDraft,
+              enabledDeviceIds = _state.value.enabledDeviceIdsDraft,
+              instanceMetricConfig = _state.value.instanceMetricConfigDraft
+            )
           )
-        )
+        }
       }.onSuccess { saved ->
         _state.update {
           it.copy(
@@ -559,16 +561,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch { refreshOnce(showIndicator = true) }
   }
 
+  private suspend fun <T> executeWithAuthRetry(block: suspend (DeviceStateApi) -> T): T {
+    val currentApi = api ?: throw IllegalStateException("api_not_configured")
+    return try {
+      block(currentApi)
+    } catch (error: Throwable) {
+      if (error is CancellationException) throw error
+      val isUnauthorized = (error as? HttpException)?.code() == 401
+      val accessKey = _state.value.serverConfig.accessKey
+      if (isUnauthorized && accessKey.isNotBlank()) {
+        try {
+          currentApi.login(LoginRequestDto(accessKey))
+          block(currentApi)
+        } catch (retryError: Throwable) {
+          if (retryError is CancellationException) throw retryError
+          throw retryError
+        }
+      } else {
+        throw error
+      }
+    }
+  }
+
   private suspend fun refreshOnce(showIndicator: Boolean) = refreshMutex.withLock {
     val currentApi = api ?: return@withLock
     if (showIndicator) {
       _state.update { it.copy(refreshing = true, message = null) }
     }
     try {
-      val devices = currentApi.devices()
+      val devices = executeWithAuthRetry { it.devices() }
       val window = _state.value.selectedWindow
       val overview = try {
-        currentApi.overviewMetrics(window.value)
+        executeWithAuthRetry { it.overviewMetrics(window.value) }
       } catch (error: Throwable) {
         if (error is CancellationException) throw error
         null
@@ -609,9 +633,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun deleteDevice(deviceId: String) {
-    val currentApi = api ?: return
     viewModelScope.launch {
-      runCatching { currentApi.deleteDevice(deviceId) }
+      runCatching { executeWithAuthRetry { it.deleteDevice(deviceId) } }
         .onSuccess {
           refresh()
         }
@@ -622,9 +645,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun reorderDevices(deviceIds: List<String>) {
-    val currentApi = api ?: return
     viewModelScope.launch {
-      runCatching { currentApi.reorderDevices(DeviceReorderPayloadDto(deviceIds)) }
+      runCatching { executeWithAuthRetry { it.reorderDevices(DeviceReorderPayloadDto(deviceIds)) } }
         .onSuccess {
           refresh()
         }
@@ -635,12 +657,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   private fun loadMetrics(deviceId: String, window: MetricWindow, showScreen: Boolean) {
-    val currentApi = api ?: return
     metricsLoadJob?.cancel()
     metricsLoadJob = viewModelScope.launch {
       _state.update { it.copy(loadingMetrics = true, message = null) }
       try {
-        val metrics = currentApi.metrics(deviceId, window.value)
+        val metrics = executeWithAuthRetry { it.metrics(deviceId, window.value) }
         val isCurrentRequest = _state.value.selectedDeviceId == deviceId && _state.value.selectedWindow == window
         if (isCurrentRequest) {
           _state.update {
@@ -664,14 +685,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   private fun loadTraffic(deviceId: String, mode: TrafficCalendarMode, showScreen: Boolean) {
-    val currentApi = api ?: return
     val requestedAnchor = trafficAnchor
     val requestedSelectedStart = trafficSelectedStart
     trafficLoadJob?.cancel()
     trafficLoadJob = viewModelScope.launch {
       _state.update { it.copy(loadingTraffic = true, message = null) }
       try {
-        val traffic = currentApi.trafficCalendar(deviceId, mode.value, requestedAnchor, requestedSelectedStart)
+        val traffic = executeWithAuthRetry { it.trafficCalendar(deviceId, mode.value, requestedAnchor, requestedSelectedStart) }
         val isCurrentRequest =
           _state.value.selectedDeviceId == deviceId &&
             _state.value.trafficMode == mode &&
@@ -700,11 +720,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   private fun loadOverviewMetrics(window: MetricWindow) {
-    val currentApi = api ?: return
     overviewLoadJob?.cancel()
     overviewLoadJob = viewModelScope.launch {
       try {
-        val overview = currentApi.overviewMetrics(window.value)
+        val overview = executeWithAuthRetry { it.overviewMetrics(window.value) }
         if (_state.value.selectedWindow == window) {
           _state.update {
             it.copy(
@@ -727,9 +746,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     instanceId: String? = null,
     showMessage: Boolean
   ) {
-    val currentApi = api ?: return
     viewModelScope.launch {
-      runCatching { currentApi.metricConfig(deviceId) }
+      runCatching { executeWithAuthRetry { it.metricConfig(deviceId) } }
         .onSuccess { config ->
           _state.update {
             it.copy(

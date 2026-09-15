@@ -114,7 +114,7 @@ export function getStoredInstanceType(): InstanceType {
 export function formatWorkspaceError(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) {
     const messages: Record<string, string> = {
-      hub_server_url_invalid: "中枢地址无效：公网地址必须使用 HTTPS，局域网 HTTP 仅支持私有地址。",
+      hub_server_url_invalid: "中枢地址无效：请输入以 http:// 或 https:// 开头的合法完整 URL。",
       hub_server_url_missing: "还没有配置中枢地址。",
       hub_server_url_required: "请输入中枢地址。",
       hub_access_key_required: "请输入中枢访问密钥。"
