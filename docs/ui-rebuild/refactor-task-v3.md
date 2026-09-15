@@ -914,3 +914,29 @@ Windows Release workflow 的启动步骤明确设置 NODE_ENV=test、DSC_VISUAL_
    - 根目录 `VERSION`、`package.json` 以及所有子 package.json 全部同步递增为 `3.0.16`。
    - 静态检查 `node scripts/verify-version.mjs` 验证通过。
 
+5. **GitHub Actions 构建、测试与发布闭环完成**：
+   - 主 CI run `34862277738`（commit `84f7c7a`）全绿：unit/typecheck、Windows/Linux GUI 打包、Web/Electron 视觉回归全部 PASS。
+   - 测试版 Release workflow run `34862282363` 成功：生成并发布 [v3.0.16 GitHub Release](https://github.com/IGNGserver/guanlan-monitor/releases/tag/v3.0.16)（prerelease），包含全部平台命名资产及校验签名。
+   - 固定版本 Docker workflow run `34862282273` 成功发布 `v3.0.16` 镜像。
+   - 本机下载 Windows GUI setup 资产（`DeviceStateConsole-Windows-GUI-Setup-v3.0.16.exe`），SHA-256 校验通过，确认为标准 PE32 Nullsoft Installer。
+
+### 16.5 最终验收状态表（v3.0.16 / 84f7c7a）
+
+| 验收项 | 状态 | 证据 / 边界 |
+| --- | --- | --- |
+| 设备目录 7 列表头与行对齐 | PASS | 列契约共享 `DEVICE_DIRECTORY_COLUMNS`，E2E 几何与结构断言通过 |
+| 移动端 390/820px 搜索入口 | PASS | 隐藏文字保留 `.m3-button__icon`，无障碍名可查，截图与断言通过 |
+| Widget 显式编辑边界 | PASS | 空面板在浏览态禁用抽屉与 mutation，E2E 行为断言通过 |
+| 总览无边界摘要与单观察区 | PASS | 移除旧 KPI 卡外框与阴影，单图可切换 CPU/内存/磁盘/网络 |
+| 中枢页事实头部与状态一致性 | PASS | 统一采用 `selectSnapshotSource`，移除旧侧栏文案，显示只读目录 |
+| 设备顺序草稿离开守卫 | PASS | 覆盖内部导航、窗口关闭及浏览器前进/后退 (popstate/hash) 拦截并复原 |
+| VM 电源状态与数据语义 | PASS | 4×2 组合矩阵单元测试 100% 通过（9/9 tests pass） |
+| Actions CI 构建与打包 | PASS | run `34862277738` 包含 Linux/Windows GUI 及两端视觉回归 |
+| v3.0.16 测试版 Release 资产 | PASS | run `34862282363` 生成 Release，命名资产与 sha256 齐全 |
+| Windows runner 安装与启动 smoke | PASS (限定) | Actions runner 静默安装并完成 Playwright 真实启动 smoke |
+| 用户 Windows 实机运行 / 真实中枢 | NOT PROVEN | 本地为 Linux 环境，无 Wine/Windows 运行时；需由用户实机进一步验证 |
+| 生产部署与 latest 更新 | NOT RUN | 未获明确授权，正确保持不部署、不覆盖 latest |
+
+### 16.6 审查总结
+
+当前 `v3.0.16` 测试版已满足 `refactor-task-v3.md` 第 15 节与第 16 节所列出的全部代码结构、交互契约、测试用例与 GitHub Actions 发布门禁。除因本地 Linux 运行环境限制而客观无法在本机实机运行 Windows PE exe 之外（在 CI 的 Windows runner 上已完成自动化安装与启动 smoke），代码仓库与 Actions 流水线中**已无阻断性缺陷或未闭合要求**，本轮 v3 重构阶段性交付审查结论为 **PASS（测试版已就绪）**。
