@@ -50,10 +50,13 @@ export class HubClient {
         this.serverUrl = "";
         return false;
       }
-      const localHost = isPrivateNetworkHost(parsed.hostname);
-      if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && localHost)) {
+      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
         this.serverUrl = "";
         return false;
+      }
+      const localHost = isPrivateNetworkHost(parsed.hostname);
+      if (parsed.protocol === "http:" && !localHost) {
+        console.warn(`[HubClient] Connecting to remote Hub over unencrypted HTTP: ${normalized}`);
       }
       this.serverUrl = normalized;
       return true;
@@ -212,13 +215,35 @@ export class HubClient {
     if (includeSession && this.sessionCookie) {
       headers["Cookie"] = this.sessionCookie;
     }
-    const timeoutSignal = AbortSignal.timeout(12000);
-    const response = await fetch(`${this.serverUrl}${endpoint}`, {
+    const timeoutSignal = AbortSignal.timeout(15000);
+    let response = await fetch(`${this.serverUrl}${endpoint}`, {
       ...requestInit,
       headers,
       signal: requestInit.signal ?? timeoutSignal
     });
     this.captureSessionCookie(response);
+
+    // If 401 Unauthorized occurs on an authenticated request and we have an accessKey,
+    // attempt silent re-login once and replay the request.
+    if (response.status === 401 && includeSession && this.accessKey && endpoint !== "/api/auth/login") {
+      this.sessionCookie = null;
+      try {
+        await this.login(this.accessKey);
+        if (this.sessionCookie) {
+          headers["Cookie"] = this.sessionCookie;
+        }
+        const retryTimeoutSignal = AbortSignal.timeout(15000);
+        response = await fetch(`${this.serverUrl}${endpoint}`, {
+          ...requestInit,
+          headers,
+          signal: requestInit.signal ?? retryTimeoutSignal
+        });
+        this.captureSessionCookie(response);
+      } catch {
+        // If re-login fails, fall through to normal error handling
+      }
+    }
+
     const text = await response.text();
     let payload: unknown = null;
     if (text.trim()) {

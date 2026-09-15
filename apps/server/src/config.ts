@@ -76,8 +76,8 @@ if (process.env.NODE_ENV === "production") {
   if (env.ACCESS_KEY.length < productionAccessKeyMinimum || hasWeakMarker(env.ACCESS_KEY)) {
     throw new Error(`ACCESS_KEY must be a strong, non-placeholder secret with at least ${productionAccessKeyMinimum} characters.`);
   }
-  if (!env.SESSION_COOKIE_SECURE) {
-    throw new Error("SESSION_COOKIE_SECURE must be true in production.");
+  if (env.DSC_RELEASE_CHANNEL === "stable" && !env.SESSION_COOKIE_SECURE) {
+    throw new Error("SESSION_COOKIE_SECURE must be true in stable production.");
   }
   if (env.DSC_RELEASE_CHANNEL === "stable" && !env.AGENT_REQUIRE_HTTPS) {
     throw new Error("AGENT_REQUIRE_HTTPS must be true in stable production.");

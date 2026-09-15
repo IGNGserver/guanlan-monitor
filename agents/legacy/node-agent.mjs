@@ -134,10 +134,13 @@ function validateServerTransport(value) {
   if (parsed.username || parsed.password) {
     throw new Error("server_url_userinfo_not_allowed");
   }
-  if (parsed.protocol === "https:" || (parsed.protocol === "http:" && (isLoopback || privateIpv4))) {
+  if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+    if (parsed.protocol === "http:" && !(isLoopback || privateIpv4)) {
+      console.warn(`[WARN] Hub server URL uses unencrypted HTTP on a remote host: ${value}`);
+    }
     return;
   }
-  throw new Error("remote_server_requires_https");
+  throw new Error("server_url_requires_http_or_https");
 }
 
 function sampleCpuUsage() {

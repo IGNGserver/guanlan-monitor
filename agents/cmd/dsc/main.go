@@ -967,10 +967,10 @@ func validateServerURL(raw string) error {
 	if strings.EqualFold(parsed.Scheme, "https") {
 		return nil
 	}
-	if strings.EqualFold(parsed.Scheme, "http") && isPrivateNetworkHost(parsed.Hostname()) {
+	if strings.EqualFold(parsed.Scheme, "http") {
 		return nil
 	}
-	return errors.New("remote_server_requires_https")
+	return errors.New("server_url_requires_http_or_https")
 }
 
 func isPrivateNetworkHost(host string) bool {

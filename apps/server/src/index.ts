@@ -27,6 +27,14 @@ import { registerRoutes } from "./routes.js";
 import type { AgentMetricsPayload, DeviceRealtimeEvent } from "@dsc/shared";
 import type { Repositories, WidgetLayoutStore } from "./types.js";
 
+process.on("uncaughtException", (error) => {
+  console.error("FATAL: uncaughtException", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("FATAL: unhandledRejection", reason);
+});
+
 const configuredCorsOrigins = new Set(
   (env.CORS_ORIGINS ?? "")
     .split(",")
@@ -55,14 +63,36 @@ const localWidgetLayouts = new LocalWidgetLayoutStore(store);
 let widgetLayouts: WidgetLayoutStore = localWidgetLayouts;
 
 let redisClient: Redis | null = null;
-const realtime = env.REDIS_URL
-  ? new RedisRealtimeRepository((redisClient = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null })))
+if (env.REDIS_URL) {
+  redisClient = new Redis(env.REDIS_URL, {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+    retryStrategy(times) {
+      return Math.min(times * 1000, 10000);
+    }
+  });
+  redisClient.on("error", (err) => {
+    app.log.error({ err }, "Redis connection error");
+  });
+}
+const realtime = redisClient
+  ? new RedisRealtimeRepository(redisClient)
   : new LocalRealtimeRepository(store);
 
 let mysqlPool: mysql.Pool | null = null;
 if (env.MYSQL_URL) {
-  const pool = mysql.createPool(env.MYSQL_URL);
+  const pool = mysql.createPool({
+    uri: env.MYSQL_URL,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 10000
+  });
   mysqlPool = pool;
+  pool.pool.on("error", (err: unknown) => {
+    app.log.error({ err }, "MySQL pool error");
+  });
   const history = new MysqlHistoryRepository(pool);
   const devicesRepo = new MysqlDeviceRepository(pool);
   const virtualMachinesRepo = new MysqlVirtualMachineRepository(pool);
