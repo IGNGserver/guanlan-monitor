@@ -304,7 +304,13 @@ dsc_agent_cli_ready:
       Pop $0
       Delete "$PLUGINSDIR\dsc-agent-key.txt"
       ${If} $0 != 0
-        DetailPrint "Unattended configuration returned $0."
+        ; The caller asked for an unattended configuration, so failing to apply
+        ; it must not look like success.
+        DetailPrint "Unattended configuration failed with code $0."
+        SetErrorLevel 4
+        ${IfNot} ${Silent}
+          MessageBox MB_ICONSTOP|MB_OK "观澜已安装，但自动配置失败（错误码 $0）。请以管理员身份执行 guanlan-agent config set 完成配置。"
+        ${EndIf}
       ${EndIf}
     ${EndIf}
   ${EndIf}

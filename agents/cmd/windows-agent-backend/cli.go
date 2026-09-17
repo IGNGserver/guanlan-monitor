@@ -526,6 +526,12 @@ func runConfigSet(configDir, listenAddr string, args []string) int {
 	autoStart := flags.String("auto-start", "", "on or off")
 	keyStdin := flags.Bool("key-stdin", false, "read the access key from stdin")
 	keyFile := flags.String("key-file", "", "read the access key from a file")
+	// Global options are resolved by the caller before dispatch. They are
+	// declared here so a command such as
+	// "guanlan-agent config set --config-root DIR --hub URL" parses instead of
+	// failing with an unknown-flag error.
+	flags.String("config-root", "", "ignored: resolved before dispatch")
+	flags.String("listen", "", "ignored: resolved before dispatch")
 	if err := flags.Parse(args); err != nil {
 		writeError("%v", err)
 		return exitUsage
