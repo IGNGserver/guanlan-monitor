@@ -70,7 +70,7 @@ jobs:
             echo "The Linux package does not contain the collector binary." >&2
             exit 1
           }
-          install -m 0755 "$agent_binary" "$stage_dir/device-state-console-agent" 
+          install -m 0755 "$agent_binary" "$stage_dir/device-state-console-agent"
 
       - name: Upload staged Agent package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

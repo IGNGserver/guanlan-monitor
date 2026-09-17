@@ -185,7 +185,8 @@ jobs:
           mkdir -p release/desktop-agent
           go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=${version} -X main.BuildChannel=test" -o ../release/desktop-agent/device-state-console-agent .
           go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=${version} -X main.BuildChannel=test" -o ../release/desktop-agent/device-state-console-agent-backend ./cmd/windows-agent-backend
-          install -m 0755 ../release/desktop-agent/device-state-console-agent-backend ../release/desktop-agent/guanlan-agent
+          # "install" runs from the repository root, not from agents/.
+          install -m 0755 release/desktop-agent/device-state-console-agent-backend release/desktop-agent/guanlan-agent
 
       - name: Build Windows desktop Agent bundle
         if: matrix.target == 'windows'
