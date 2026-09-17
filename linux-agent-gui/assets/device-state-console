@@ -1,3 +1,0 @@
-#!/bin/sh
-set -eu
-exec /usr/lib/device-state-console/device-state-console-linux-gui "$@"

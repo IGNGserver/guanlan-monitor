@@ -88,7 +88,24 @@
       ],
       "category": "Utility",
       "maintainer": "Device State Console contributors <github-actions@github.com>",
+      "executableName": "guanlan",
       "artifactName": "DeviceStateConsole-Linux-GUI-Install-v${version}.${ext}"
+    },
+    "deb": {
+      "packageName": "guanlan-desktop",
+      "afterInstall": "build/linux/after-install.sh",
+      "afterRemove": "build/linux/after-remove.sh",
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0"
+      ]
     }
   }
 }

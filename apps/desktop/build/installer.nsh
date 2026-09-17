@@ -1,3 +1,5 @@
+!include "FileFunc.nsh"
+
 !define DSC_LEGACY_INNO_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\{E7EC0D43-10D7-4D88-BB80-6F1E901C3E7A}_is1"
 !define DSC_LEGACY_ELECTRON_APP_KEY "Software\26118358-b500-54e1-881b-7e549a465667"
 !define DSC_LEGACY_ELECTRON_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\26118358-b500-54e1-881b-7e549a465667"
@@ -5,12 +7,24 @@
 !define DSC_HARDWARE_SENSOR_TASK "DeviceStateConsoleHardwareSensors"
 !define DSC_PAWNIO_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO"
 
+; Machine-scope agent service. The desktop app is only the control plane; this
+; service keeps collecting and uploading with nobody logged in.
+!define DSC_AGENT_CLI_NAME "guanlan-agent.exe"
+!define DSC_AGENT_CLI_LEGACY_NAME "device-state-console-agent-backend.exe"
+
 !macro customHeader
 !ifndef BUILD_UNINSTALLER
   Var DSC_PREINSTALL_STATE
   Var DSC_RESTORE_LAUNCHED
   Var DSC_PAWNIO_STATE
   Var DSC_PAWNIO_VERSION
+  Var DSC_HUB
+  Var DSC_KEY
+  Var DSC_DEVICE
+  Var DSC_HOSTNAME
+  Var DSC_VERIFY
+  Var DSC_SERVICE
+  Var DSC_CONFIG_DIR
 
   Function DSC_DetectPawnIO
     StrCpy $DSC_PAWNIO_STATE ""
@@ -138,6 +152,19 @@ dsc_detect_pawnio_service:
   nsExec::Exec '"$SYSDIR\taskkill.exe" /F /T /IM "观澜.exe"'
   Pop $0
   Sleep 500
+
+  ; Unattended installation switches. Values that contain a slash (any URL) must
+  ; be quoted, because GetOptions ends an unquoted value at the next "/".
+  ;   /HUB="https://hub.example.com" /KEY="..." /DEVICE=node-01
+  ;   /HOSTNAME="节点 01" /SERVICE=0 /VERIFY=60
+  ClearErrors
+  ${GetOptions} $CMDLINE "/HUB=" $DSC_HUB
+  ${GetOptions} $CMDLINE "/KEY=" $DSC_KEY
+  ${GetOptions} $CMDLINE "/DEVICE=" $DSC_DEVICE
+  ${GetOptions} $CMDLINE "/HOSTNAME=" $DSC_HOSTNAME
+  ${GetOptions} $CMDLINE "/VERIFY=" $DSC_VERIFY
+  ${GetOptions} $CMDLINE "/SERVICE=" $DSC_SERVICE
+  ClearErrors
 !macroend
 
 !macro customInstall
@@ -219,9 +246,90 @@ dsc_skip_hardware_sensor_helper:
   ; Keep the previous Chinese uninstall shortcut flow.
   Delete "$SMPROGRAMS\卸载 观澜.lnk"
   CreateShortCut "$SMPROGRAMS\卸载 观澜.lnk" "$INSTDIR\${UNINSTALL_FILENAME}" "" "$INSTDIR\${UNINSTALL_FILENAME}" 0
+
+  ; ---------------------------------------------------------------------------
+  ; Machine-scope agent service (this is what makes the product usable on a host
+  ; with no interactive session).
+  ; ---------------------------------------------------------------------------
+  ReadEnvStr $DSC_CONFIG_DIR "ProgramData"
+  ${If} $DSC_CONFIG_DIR == ""
+    StrCpy $DSC_CONFIG_DIR "C:\ProgramData"
+  ${EndIf}
+  StrCpy $DSC_CONFIG_DIR "$DSC_CONFIG_DIR\Guanlan"
+
+  CreateDirectory "$INSTDIR\bin"
+  IfFileExists "$INSTDIR\resources\agent\${DSC_AGENT_CLI_NAME}" dsc_agent_cli_found
+  IfFileExists "$INSTDIR\resources\agent\${DSC_AGENT_CLI_LEGACY_NAME}" 0 dsc_agent_cli_missing
+  CopyFiles /SILENT "$INSTDIR\resources\agent\${DSC_AGENT_CLI_LEGACY_NAME}" "$INSTDIR\bin\${DSC_AGENT_CLI_NAME}"
+  Goto dsc_agent_cli_ready
+dsc_agent_cli_found:
+  CopyFiles /SILENT "$INSTDIR\resources\agent\${DSC_AGENT_CLI_NAME}" "$INSTDIR\bin\${DSC_AGENT_CLI_NAME}"
+  Goto dsc_agent_cli_ready
+dsc_agent_cli_missing:
+  DetailPrint "Bundled agent CLI is missing; the machine-scope service was not installed."
+  Goto dsc_skip_agent_service
+dsc_agent_cli_ready:
+
+  ${If} $DSC_SERVICE != "0"
+    nsExec::ExecToLog '"$INSTDIR\bin\${DSC_AGENT_CLI_NAME}" service install --config-root "$DSC_CONFIG_DIR"'
+    Pop $0
+    ${If} $0 != 0
+      DetailPrint "Machine-scope service installation returned $0."
+    ${EndIf}
+  ${EndIf}
+
+  ${If} $DSC_HUB != ""
+    ; The access key goes through a temporary file so it never appears in the
+    ; process list, and is deleted immediately after being stored.
+    ClearErrors
+    FileOpen $9 "$PLUGINSDIR\dsc-agent-key.txt" w
+    ${If} ${Errors}
+      DetailPrint "Could not stage the access key; skipping unattended configuration."
+    ${Else}
+      FileWrite $9 "$DSC_KEY"
+      FileClose $9
+      nsExec::ExecToLog '"$INSTDIR\bin\${DSC_AGENT_CLI_NAME}" config set --config-root "$DSC_CONFIG_DIR" --hub "$DSC_HUB" --device-id "$DSC_DEVICE" --hostname "$DSC_HOSTNAME" --key-file "$PLUGINSDIR\dsc-agent-key.txt"'
+      Pop $0
+      Delete "$PLUGINSDIR\dsc-agent-key.txt"
+      ${If} $0 != 0
+        DetailPrint "Unattended configuration returned $0."
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+
+  ${If} $DSC_VERIFY != ""
+    nsExec::ExecToLog '"$INSTDIR\bin\${DSC_AGENT_CLI_NAME}" wait-for-upload --timeout "$DSC_VERIFY"'
+    Pop $0
+    ${If} $0 != 0
+      ; Automation (Intune/SCCM/Ansible) branches on the exit code; an
+      ; interactive user gets a visible explanation instead.
+      SetErrorLevel 3
+      IfSilent dsc_verify_done
+      MessageBox MB_ICONEXCLAMATION|MB_OK "观澜已安装并注册为系统服务，但在 $DSC_VERIFY 秒内没有确认到首次上报。请检查中枢地址与访问密钥，或稍后在应用中查看诊断。"
+    ${EndIf}
+  ${EndIf}
+dsc_verify_done:
+dsc_skip_agent_service:
 !macroend
 
 !macro customUnInstall
+  ; The service must be stopped and deleted while its executable still exists.
+  IfFileExists "$INSTDIR\bin\${DSC_AGENT_CLI_NAME}" 0 dsc_skip_agent_service_uninstall
+  nsExec::ExecToLog '"$INSTDIR\bin\${DSC_AGENT_CLI_NAME}" service uninstall'
+  Pop $0
+dsc_skip_agent_service_uninstall:
+
+  ; Configuration is preserved by default; /REMOVECONFIG deletes it explicitly.
+  ClearErrors
+  ${GetOptions} $CMDLINE "/REMOVECONFIG" $0
+  ${IfNot} ${Errors}
+    ReadEnvStr $0 "ProgramData"
+    ${If} $0 == ""
+      StrCpy $0 "C:\ProgramData"
+    ${EndIf}
+    RMDir /r "$0\Guanlan"
+  ${EndIf}
+
   IfFileExists "$INSTDIR\resources\agent\device-state-console-agent.exe" 0 dsc_skip_hardware_sensor_helper_uninstall
   nsExec::Exec '"$INSTDIR\resources\agent\device-state-console-agent.exe" uninstall-hardware-helper'
   Pop $0

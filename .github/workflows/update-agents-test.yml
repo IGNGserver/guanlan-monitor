@@ -43,7 +43,7 @@ jobs:
           REQUESTED_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          for command in curl sha256sum unzip; do
+          for command in curl sha256sum dpkg-deb; do
             command -v "$command" >/dev/null 2>&1 || {
               echo "$command is required on the staging runner." >&2
               exit 1
@@ -51,22 +51,35 @@ jobs:
           done
           stage_dir="$GITHUB_WORKSPACE/release"
           mkdir -p "$stage_dir"
-          asset="DeviceStateConsole-Linux-CLI-Install-v${REQUESTED_VERSION}.zip"
+          asset="DeviceStateConsole-Linux-GUI-Install-v${REQUESTED_VERSION}.deb"
           base_url="https://github.com/IGNGserver/guanlan-monitor/releases/download/v${REQUESTED_VERSION}"
           curl -4 -fL --retry 8 --retry-all-errors --connect-timeout 20 --max-time 180 \
             "$base_url/$asset.sha256" -o "$stage_dir/$asset.sha256"
           curl -4 -fL --retry 8 --retry-all-errors --connect-timeout 20 --max-time 300 \
             "$base_url/$asset" -o "$stage_dir/$asset"
           (cd "$stage_dir" && sha256sum -c "$asset.sha256")
-          unzip -tq "$stage_dir/$asset"
+          dpkg-deb --info "$stage_dir/$asset"
+          # The fleet hosts keep their existing /opt layout, so only the
+          # collector binary is staged from the package.
+          extract_dir="$stage_dir/agent-payload"
+          rm -rf "$extract_dir"
+          mkdir -p "$extract_dir"
+          dpkg-deb -x "$stage_dir/$asset" "$extract_dir"
+          agent_binary="$(find "$extract_dir" -type f -name 'device-state-console-agent' -print -quit)"
+          [[ -n "$agent_binary" && -f "$agent_binary" ]] || {
+            echo "The Linux package does not contain the collector binary." >&2
+            exit 1
+          }
+          install -m 0755 "$agent_binary" "$stage_dir/device-state-console-agent" 
 
       - name: Upload staged Agent package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: linux-agent-release-${{ inputs.version }}
           path: |
-            release/DeviceStateConsole-Linux-CLI-Install-v${{ inputs.version }}.zip
-            release/DeviceStateConsole-Linux-CLI-Install-v${{ inputs.version }}.zip.sha256
+            release/device-state-console-agent
+            release/DeviceStateConsole-Linux-GUI-Install-v${{ inputs.version }}.deb
+            release/DeviceStateConsole-Linux-GUI-Install-v${{ inputs.version }}.deb.sha256
           if-no-files-found: error
 
   update:
@@ -161,23 +174,20 @@ jobs:
           work_dir="${RUNNER_TEMP:-/tmp}/dsc-agent-update-${GITHUB_RUN_ID:-manual}"
           rm -rf "$work_dir"
           artifact_dir="${RUNNER_TEMP:-/tmp}/dsc-agent-artifact-${GITHUB_RUN_ID:-manual}"
-          archive="$(find "$artifact_dir" -maxdepth 1 -type f -name 'DeviceStateConsole-Linux-CLI-Install-v*.zip' -print -quit)"
-          [[ -n "$archive" && -f "$archive" ]] || {
-            echo "Staged Agent ZIP is unavailable." >&2
+          package="$(find "$artifact_dir" -maxdepth 1 -type f -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb' -print -quit)"
+          [[ -n "$package" && -f "$package" ]] || {
+            echo "Staged Linux package is unavailable." >&2
             exit 1
           }
-          checksum="$archive.sha256"
+          checksum="$package.sha256"
           [[ -f "$checksum" ]] || {
-            echo "Staged Agent checksum is unavailable." >&2
+            echo "Staged Linux package checksum is unavailable." >&2
             exit 1
           }
-          (cd "$(dirname "$archive")" && sha256sum -c "$(basename "$checksum")")
-          package_dir="$work_dir/package"
-          mkdir -p "$package_dir"
-          unzip -q "$archive" -d "$package_dir"
-          agent_binary="$(find "$package_dir" -type f -name 'device-state-console-agent' -print -quit)"
-          [[ -n "$agent_binary" && -f "$agent_binary" ]] || {
-            echo "Staged Agent package is missing the Linux Agent binary." >&2
+          (cd "$(dirname "$package")" && sha256sum -c "$(basename "$checksum")")
+          agent_binary="$artifact_dir/device-state-console-agent"
+          [[ -f "$agent_binary" ]] || {
+            echo "Staged Agent binary is unavailable." >&2
             exit 1
           }
           chmod 0755 "$agent_binary"

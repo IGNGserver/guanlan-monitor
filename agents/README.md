@@ -11,52 +11,52 @@ server, web application, and shared package.
 
 | Delivery | Platform | Entry point | Lifecycle |
 | --- | --- | --- | --- |
-| CLI agent | Windows | `deploy/install-agent.ps1` | Install/upgrade/uninstall through a scheduled task or current-user startup fallback. |
-| CLI agent | Linux | `deploy/install-agent.sh` | Install/upgrade/uninstall through `device-state-console-agent.service`. |
-| CLI UI | Windows x64 | `deploy/install-cli.ps1` | User-local install; run `dsc` for the terminal UI and `dsc shutdown` to stop its local backend. |
-| CLI UI | Linux x64 | `deploy/install-cli.sh` | User-local install; run `dsc` for the terminal UI and `dsc shutdown` to stop its local backend. |
-| Desktop agent | Windows | `deploy/build-windows-agent-portable.ps1` and `deploy/build-windows-agent-setup.ps1` | Portable bundle includes frontend, backend, collector, runtime, and hardware assets; setup supports install, update, repair, and uninstall. |
-| Desktop agent | Linux (GNOME) | `deploy/build-linux-agent-gui.sh` | GTK4/libadwaita native configuration UI, WebKitGTK Hub view, Go backend/collector, and Debian `amd64` install package. |
+| Desktop product | Windows | `DeviceStateConsole-Windows-GUI-Setup-vX.Y.Z.exe` | Installs the tray application, the `guanlan-agent` machine-scope service and the collector. Supports `/S` plus `/HUB= /KEY= /DEVICE= /HOSTNAME= /SERVICE= /VERIFY=` for unattended installs. |
+| Desktop product | Linux | `DeviceStateConsole-Linux-GUI-Install-vX.Y.Z.deb` | Installs the Electron application and enables `guanlan-agent.service` (system unit). Supports unattended configuration through `GUANLAN_*` variables or `guanlan-agent config set`. |
+| Portable | Windows | `DeviceStateConsole-Windows-GUI-Portable-vX.Y.Z.zip` | Unpacked desktop application that spawns its own backend; no service is installed. |
+| Portable / headless | Linux | Collector binary inside the Debian package | Can be run directly under any supervisor with `DSC_SERVER_URL`, `DSC_AGENT_SECRET`, `DSC_DEVICE_ID`, `DSC_HOSTNAME`. |
 
 Android release APKs use `deploy/package-android-release.ps1` and are named
 `DeviceStateConsole-Android-vX.Y.Z.apk`.
 
-`main.go` is the only supported cross-platform CLI collector implementation.
-Run `deploy/build-cli-agent.ps1 -Zip` to create
-`DeviceStateConsole-Windows-CLI-Install-vX.Y.Z.zip` and
-`DeviceStateConsole-Linux-CLI-Install-vX.Y.Z.zip`. Their installers use the bundled binary and do
-not require Go on the target host. Each package now also contains `dsc`, the
-`device-state-console-agent-backend` process, and a generated fixed-version
-`install-cli.ps1` or `install-cli.sh` entry point. The `dsc` process starts the
-local backend on demand, stores its per-user runtime/configuration files outside
-the install directory, and provides both an interactive UI and scriptable
-`status`, `doctor`, `start`, `stop`, `restart`, `shutdown`, and `config` commands.
+There is no separate CLI distribution. `main.go` remains the cross-platform
+collector, and the desktop package ships `guanlan-agent` (the local control
+backend) which provides every headless capability the retired `dsc` tool had:
+`status`, `doctor`, `config get|set|validate|export|import`, `service
+install|uninstall|start|stop|status`, `collector start|stop|restart`, `probes
+status|detect`, `wait-for-upload`, and `onboarding-url`.
 
-### CLI/TUI configuration contract
+### Local configuration contract
 
-The CLI backend persists `agent-ui.config.json` under the user configuration
-directory, not under the installation directory. Set `DSC_CLI_CONFIG_ROOT` to
-override that directory when running the CLI. The same JSON contract is used by
-the desktop Agent backend and includes `connection`, `sampling`,
-`enabledMetrics`, `enabledDeviceIds`, `instanceMetricConfig`,
+The machine-scope service persists `agent-ui.config.json` in the machine
+configuration directory: `%ProgramData%\Guanlan` on Windows and `/etc/guanlan`
+on Linux. Override it with `GUANLAN_CONFIG_ROOT` (the retired
+`DSC_CLI_CONFIG_ROOT` is still honoured). A desktop process that was spawned
+with an explicit `--config-root` keeps using that directory, which is how the
+portable build stays self-contained.
+
+The JSON contract is shared by every consumer and includes `connection`,
+`sampling`, `enabledMetrics`, `enabledDeviceIds`, `instanceMetricConfig`,
 `probeSelections`, `cloudSyncEnabled`, `dataRecordingEnabled`,
 `autoStartCollector`, `autoRestartCollector`, and the non-secret
 `virtualization` settings.
 
-Use `dsc config validate`, `dsc config import --file`, and
-`dsc config export --file` for unattended configuration. Export always clears
-the connection secret; import preserves the current secret when the imported
-file contains an empty or redacted value unless `--clear-secret` is supplied.
-An omitted `enabledMetrics` field keeps the legacy all-metrics default, while
-an explicit empty array disables every metric. The TUI exposes the same
-connection, sampling/runtime, metric, probe, instance, and cloud-push controls
-that the desktop Agent settings page exposes.
+Use `guanlan-agent config validate|import|export` for unattended configuration.
+Export always clears the connection secret, and the access key is accepted only
+through `--key-stdin` or `--key-file`, never as a command-line value. Import
+preserves the current secret when the imported file contains an empty or
+redacted value. An omitted `enabledMetrics` field keeps the all-metrics
+default, while an explicit empty array disables every metric. The desktop
+settings page exposes the same connection, sampling/runtime, metric, probe,
+instance, and cloud-push controls.
 
 After installation, run the bundled binary's update command from an elevated
 terminal. It checks `/api/updates`, accepts only a strictly newer release,
-verifies the release SHA-256, stops the service/task, replaces only the
-executable, preserves configuration, and rolls back if the Linux service does
-not become active:
+verifies the release SHA-256, replaces only the executable, preserves
+configuration, and rolls back if the Linux service does not become active. When
+the collector runs as a child of the machine-scope service it replaces its own
+binary and exits, and the service restarts it; it never stops the service
+manager from the inside:
 
 ```text
 device-state-console-agent update

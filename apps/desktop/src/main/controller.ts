@@ -645,7 +645,8 @@ function redactBackendState(state: RawAgentBackendState): DesktopAgentBackendSta
       : [],
     temperatureSources: Array.isArray(state.temperatureSources) ? state.temperatureSources : [],
     temperatureSensorBackends: Array.isArray(state.temperatureSensorBackends) ? state.temperatureSensorBackends : [],
-    temperatureProbeError: scrub(state.temperatureProbeError)
+    temperatureProbeError: scrub(state.temperatureProbeError),
+    agentMode: state.agentMode ?? "child"
   };
 }
 

@@ -41,7 +41,10 @@ func WriteFileAtomic(path string, raw []byte, mode os.FileMode) error {
 	if err := replaceFile(temporaryPath, path); err != nil {
 		return fmt.Errorf("replace %s: %w", path, err)
 	}
-	return os.Chmod(path, mode)
+	if err := os.Chmod(path, mode); err != nil {
+		return err
+	}
+	return matchDirectoryOwner(path)
 }
 
 // ReadFileLimited reads at most MaxConfigBytes from path.

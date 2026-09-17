@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"device-state-console/agent/internal/agentconfig"
 )
@@ -40,6 +41,15 @@ type statusPayload struct {
 	Version            string `json:"version"`
 	Channel            string `json:"channel"`
 	ConfigDir          string `json:"configDir,omitempty"`
+	// The paths below let an unprivileged desktop shell show the same
+	// diagnostics locations as a privileged one. They carry no secret.
+	ConfigPath                     string `json:"configPath,omitempty"`
+	SyncStatePath                  string `json:"syncStatePath,omitempty"`
+	DiagnosticsPath                string `json:"diagnosticsPath,omitempty"`
+	PendingStatePath               string `json:"pendingStatePath,omitempty"`
+	BackendStartedAt               string `json:"backendStartedAt,omitempty"`
+	ChildStartedAt                 string `json:"childStartedAt,omitempty"`
+	EffectiveUploadIntervalSeconds int    `json:"effectiveUploadIntervalSeconds"`
 }
 
 func (s *server) handleStatus(writer http.ResponseWriter, request *http.Request) {
@@ -71,6 +81,14 @@ func (s *server) handleStatus(writer http.ResponseWriter, request *http.Request)
 		Version:            BuildVersion,
 		Channel:            BuildChannel,
 		ConfigDir:          configDirectoryOf(s.configPath),
+
+		ConfigPath:                     s.configPath,
+		SyncStatePath:                  s.syncStatePath,
+		DiagnosticsPath:                s.diagnosticsPath,
+		PendingStatePath:               s.pendingStatePath,
+		BackendStartedAt:               s.backendStartedAt.Format(time.RFC3339),
+		ChildStartedAt:                 formatTime(s.childStartedAt),
+		EffectiveUploadIntervalSeconds: s.config.Sampling.NormalIntervalSeconds,
 	}
 	s.mu.Unlock()
 	writeJSON(writer, http.StatusOK, payload)

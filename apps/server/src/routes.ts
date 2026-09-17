@@ -246,9 +246,7 @@ const updateQuerySchema = z.object({
     "windows-gui",
     "linux-gui",
     "android",
-    "ios",
-    "windows-cli",
-    "linux-cli"
+    "ios"
   ]),
   currentVersion: z.string().trim().min(1).optional(),
   currentChannel: z.enum(["stable", "test"]).optional(),
