@@ -292,7 +292,24 @@ jobs:
             "/HOSTNAME=ci-headless",
             "/VERIFY=180"
           ) -Wait -PassThru
-          if ($installer.ExitCode -ne 0) { throw "Silent installation with /VERIFY failed with exit code $($installer.ExitCode)." }
+          if ($installer.ExitCode -ne 0) {
+            # Dump the local state so a failure explains itself instead of only
+            # reporting an exit code.
+            $agentCli = Join-Path $env:ProgramFiles "DeviceStateConsoleAgent\bin\guanlan-agent.exe"
+            if (Test-Path -LiteralPath $agentCli) {
+              Write-Output "--- status ---"
+              & $agentCli status --json
+              Write-Output "--- service ---"
+              Get-Service -Name "GuanlanAgent" -ErrorAction SilentlyContinue | Format-List Name,Status,StartType
+              Write-Output "--- machine configuration ---"
+              Get-ChildItem -LiteralPath (Join-Path $env:ProgramData "Guanlan") -ErrorAction SilentlyContinue | Select-Object Name,Length
+              Write-Output "--- backend log (tail) ---"
+              Get-Content -LiteralPath (Join-Path $env:ProgramData "Guanlan\agent-ui.backend.log") -Tail 40 -ErrorAction SilentlyContinue
+            } else {
+              Write-Output "agent CLI not found at $agentCli"
+            }
+            throw "Silent installation with /VERIFY failed with exit code $($installer.ExitCode)."
+          }
 
       - name: Verify the machine-scope service and the first upload
         shell: powershell
@@ -496,15 +513,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f /etc/guanlan/agent-ui.config.json
+          # The machine directory is 0700 and owned by the service account, so
+          # these probes must run elevated; that restriction is the point.
+          sudo test -f /etc/guanlan/agent-ui.config.json
           sudo dpkg -r guanlan-desktop
           if systemctl is-enabled --quiet guanlan-agent.service 2>/dev/null; then
             echo "the agent service must not survive package removal" >&2
             exit 1
           fi
-          test -f /etc/guanlan/agent-ui.config.json
+          sudo test -f /etc/guanlan/agent-ui.config.json
           sudo dpkg --purge guanlan-desktop
-          test ! -d /etc/guanlan
+          sudo test ! -d /etc/guanlan
           if [ -f "$RUNNER_TEMP/stub.pid" ]; then
             kill "$(cat "$RUNNER_TEMP/stub.pid")" 2>/dev/null || true
           fi

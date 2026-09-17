@@ -281,7 +281,9 @@ dsc_agent_cli_missing:
 dsc_agent_cli_ready:
 
   ${If} $DSC_SERVICE != "0"
-    nsExec::ExecToLog '"$INSTDIR\bin\${DSC_AGENT_CLI_NAME}" service install --config-root "$DSC_CONFIG_DIR"'
+    ; bin\ holds the CLI; the collector lives in resources\agent, so the
+    ; service must be told which directory to supervise.
+    nsExec::ExecToLog '"$INSTDIR\bin\${DSC_AGENT_CLI_NAME}" service install --config-root "$DSC_CONFIG_DIR" --bundle-root "$INSTDIR\resources\agent"'
     Pop $0
     ${If} $0 != 0
       DetailPrint "Machine-scope service installation returned $0."

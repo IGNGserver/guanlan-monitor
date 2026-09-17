@@ -132,6 +132,14 @@ func runDaemon(ctx context.Context, options daemonOptions) error {
 	resolvedChildBinary := strings.TrimSpace(options.ChildBinary)
 	if resolvedChildBinary == "" {
 		resolvedChildBinary = filepath.Join(resolvedBundleRoot, collectorName)
+		if _, statErr := os.Stat(resolvedChildBinary); os.IsNotExist(statErr) {
+			// A packaged layout may keep the CLI outside the agent directory.
+			packaged := filepath.Join(filepath.Dir(exePath), "..", "resources", "agent", collectorName)
+			if _, packagedErr := os.Stat(packaged); packagedErr == nil {
+				resolvedBundleRoot = filepath.Dir(packaged)
+				resolvedChildBinary = packaged
+			}
+		}
 	} else if !filepath.IsAbs(resolvedChildBinary) {
 		resolvedChildBinary = filepath.Join(resolvedBundleRoot, resolvedChildBinary)
 	}
