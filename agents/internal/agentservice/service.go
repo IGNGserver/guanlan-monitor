@@ -111,11 +111,15 @@ func ensureConfigDocument(configDir string) error {
 	if dir == "" {
 		return nil
 	}
+	// Load with the service semantics, then persist: this creates the document
+	// when it is missing and migrates a legacy one whose recorded intent does
+	// not match how a machine-scope service behaves.
 	path := agentconfig.ConfigPath(dir)
-	if _, err := os.Stat(path); err == nil {
-		return nil
+	config, _, err := agentconfig.LoadWithOptions(path, agentconfig.LoadOptions{ServiceScope: true})
+	if err != nil {
+		return err
 	}
-	return agentconfig.Save(path, agentconfig.ServiceDefaults())
+	return agentconfig.Save(path, config)
 }
 
 func firstLine(value string) string {

@@ -21,7 +21,13 @@ import (
 
 const (
 	// CurrentConfigVersion is the schema version written by this build.
-	CurrentConfigVersion = 1
+	//
+	// Version 1 shipped with a machine-scope service that persisted
+	// autoStartCollector=false on its first start, so a version 1 document
+	// cannot tell "collection was deliberately disabled" apart from "the
+	// broken default was written". Version 2 is written with an explicit,
+	// meaningful value.
+	CurrentConfigVersion = 2
 	// MaxConfigBytes bounds every JSON document this package reads or writes.
 	MaxConfigBytes int64 = 256 * 1024
 	// MaxSamplingIntervalSeconds bounds both sampling intervals.
@@ -324,8 +330,20 @@ func LoadWithOptions(path string, options LoadOptions) (config LocalConfig, crea
 		return LocalConfig{}, false, fmt.Errorf("parse %s: %w", path, err)
 	}
 	config = Normalize(decoded, raw)
-	if options.ServiceScope && !bytes.Contains(raw, []byte(`"autoStartCollector"`)) {
-		config.AutoStartCollector = true
+	if options.ServiceScope {
+		if !bytes.Contains(raw, []byte(`"autoStartCollector"`)) {
+			// The key is absent: a machine-scope service collects continuously.
+			config.AutoStartCollector = true
+			config.ConfigVersion = CurrentConfigVersion
+		} else if decoded.ConfigVersion < CurrentConfigVersion && !config.AutoStartCollector {
+			// A version 1 document could only reach this state through the
+			// broken default that a pre-3.0.19 service wrote: that schema had
+			// no way to record a deliberate opt-out either. Enable collection
+			// once, stamp the document as version 2, and from then on an
+			// explicit false is honoured.
+			config.AutoStartCollector = true
+			config.ConfigVersion = CurrentConfigVersion
+		}
 	}
 	return config, false, nil
 }

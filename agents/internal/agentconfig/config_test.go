@@ -224,6 +224,67 @@ func TestPendingStatePathHonoursOverride(t *testing.T) {
 	}
 }
 
+// A host upgraded from a release whose service wrote the interactive default
+// has autoStartCollector=false recorded in a version 1 document. An upgraded
+// service must start collecting instead of silently never reporting.
+func TestServiceScopeMigratesBrokenVersion1OptOut(t *testing.T) {
+	dir := t.TempDir()
+	path := ConfigPath(dir)
+	legacy := []byte(`{"configVersion":1,"connection":{"serverUrl":"https://hub.example.com","secret":"s3cret","deviceId":"node-01"},"autoStartCollector":false,"dataRecordingEnabled":true}`)
+	if err := os.WriteFile(path, legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	config, _, err := LoadWithOptions(path, LoadOptions{ServiceScope: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !config.AutoStartCollector {
+		t.Fatal("a legacy version 1 opt-out must be migrated to collecting")
+	}
+	if config.ConfigVersion != CurrentConfigVersion {
+		t.Fatalf("configVersion = %d, want %d after migration", config.ConfigVersion, CurrentConfigVersion)
+	}
+
+	// The migration must be durable: once stamped, an explicit opt-out on the
+	// current schema is honoured.
+	if err := Save(path, config); err != nil {
+		t.Fatal(err)
+	}
+	explicit, _, err := LoadWithOptions(path, LoadOptions{ServiceScope: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	explicit.AutoStartCollector = false
+	if err := Save(path, explicit); err != nil {
+		t.Fatal(err)
+	}
+	respected, _, err := LoadWithOptions(path, LoadOptions{ServiceScope: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if respected.AutoStartCollector {
+		t.Fatal("an explicit opt-out on the current schema must be preserved")
+	}
+}
+
+// An interactive read must never rewrite the recorded intent.
+func TestInteractiveReadLeavesLegacyDocumentAlone(t *testing.T) {
+	dir := t.TempDir()
+	path := ConfigPath(dir)
+	legacy := []byte(`{"configVersion":1,"autoStartCollector":false,"dataRecordingEnabled":true}`)
+	if err := os.WriteFile(path, legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config, _, err := LoadWithOptions(path, LoadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.AutoStartCollector {
+		t.Fatal("an interactive load must not enable collection")
+	}
+}
+
 func findProbe(selections []ProbeSelection, target string) *ProbeSelection {
 	for index := range selections {
 		if selections[index].Target == target {
