@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,10 +43,12 @@ Usage:
   guanlan-agent collector start|stop|restart
   guanlan-agent probes status|detect [--json]
   guanlan-agent onboarding-url           print the loopback control URL
+  guanlan-agent wait-for-upload          block until the first upload is confirmed
 
 Configuration options for "config set":
   --hub URL               Hub address, for example https://hub.example.com
   --key-stdin             read the access key from stdin (never from argv)
+  --key-file PATH         read the access key from a file (used by installers)
   --device-id ID          device id shown in the console
   --hostname NAME         device display name shown in the console
   --normal-interval SEC   normal sampling interval
@@ -69,18 +72,19 @@ Exit codes:
 // knownSubcommands lists the first argument values that select a helper command
 // instead of the long-running daemon.
 var knownSubcommands = map[string]bool{
-	"version":        true,
-	"help":           true,
-	"--help":         true,
-	"-h":             true,
-	"status":         true,
-	"doctor":         true,
-	"config":         true,
-	"service":        true,
-	"collector":      true,
-	"probes":         true,
-	"onboarding-url": true,
-	"run":            true,
+	"version":         true,
+	"help":            true,
+	"--help":          true,
+	"-h":              true,
+	"status":          true,
+	"doctor":          true,
+	"config":          true,
+	"service":         true,
+	"collector":       true,
+	"probes":          true,
+	"onboarding-url":  true,
+	"wait-for-upload": true,
+	"run":             true,
 }
 
 // dispatchSubcommand runs a helper command when args select one. handled is
@@ -116,6 +120,8 @@ func dispatchSubcommand(args []string, configDir string, listenAddr string) (han
 	case "onboarding-url":
 		fmt.Printf("http://%s/\n", listenAddr)
 		return true, exitOK
+	case "wait-for-upload":
+		return true, runWaitForUpload(configDir, listenAddr, rest)
 	case "run":
 		return false, exitOK
 	}
@@ -518,6 +524,7 @@ func runConfigSet(configDir, listenAddr string, args []string) int {
 	autoRestart := flags.String("auto-restart", "", "on or off")
 	autoStart := flags.String("auto-start", "", "on or off")
 	keyStdin := flags.Bool("key-stdin", false, "read the access key from stdin")
+	keyFile := flags.String("key-file", "", "read the access key from a file")
 	if err := flags.Parse(args); err != nil {
 		writeError("%v", err)
 		return exitUsage
@@ -592,8 +599,12 @@ func runConfigSet(configDir, listenAddr string, args []string) int {
 		config.AutoStartCollector = value
 		changed = true
 	}
-	if *keyStdin {
-		secret, err := readSecretFromStdin()
+	if *keyStdin && strings.TrimSpace(*keyFile) != "" {
+		writeError("use either --key-stdin or --key-file, not both")
+		return exitUsage
+	}
+	if *keyStdin || strings.TrimSpace(*keyFile) != "" {
+		secret, err := readSecret(*keyStdin, *keyFile)
 		if err != nil {
 			writeError("%v", err)
 			return exitUsage
@@ -718,8 +729,8 @@ func runConfigImport(configDir, listenAddr string, args []string) int {
 			decoded.Connection.Secret = current.Connection.Secret
 		}
 	}
-	if containsFlag(args, "--key-stdin") {
-		secret, err := readSecretFromStdin()
+	if containsFlag(args, "--key-stdin") || flagValue(args, "--key-file") != "" {
+		secret, err := readSecret(containsFlag(args, "--key-stdin"), flagValue(args, "--key-file"))
 		if err != nil {
 			writeError("%v", err)
 			return exitUsage
@@ -815,18 +826,67 @@ func parseToggle(value, label string) (bool, bool, error) {
 	}
 }
 
-// readSecretFromStdin keeps the access key out of the process arguments, where
-// any local user could read it from the process list.
-func readSecretFromStdin() (string, error) {
-	raw, err := io.ReadAll(io.LimitReader(os.Stdin, 4096))
-	if err != nil {
-		return "", fmt.Errorf("read access key from stdin: %w", err)
+// readSecret keeps the access key out of the process arguments, where any local
+// user could read it from the process list. Installers write the key to a
+// temporary file and delete it right after this call.
+func readSecret(fromStdin bool, fromFile string) (string, error) {
+	var raw []byte
+	var err error
+	if fromStdin {
+		raw, err = io.ReadAll(io.LimitReader(os.Stdin, 4096))
+		if err != nil {
+			return "", fmt.Errorf("read access key from stdin: %w", err)
+		}
+	} else {
+		raw, err = agentconfig.ReadFileLimited(strings.TrimSpace(fromFile))
+		if err != nil {
+			return "", fmt.Errorf("read access key file: %w", err)
+		}
 	}
 	secret := strings.TrimSpace(string(raw))
 	if secret == "" {
-		return "", errors.New("stdin did not contain an access key")
+		return "", errors.New("no access key was provided")
 	}
 	return secret, nil
+}
+
+// runWaitForUpload blocks until the service confirms an upload or the timeout
+// expires. Installers and CI use it as a single-command acceptance check:
+// exit 0 means "this computer is reporting".
+func runWaitForUpload(configDir, listenAddr string, args []string) int {
+	timeoutSeconds := 60
+	if value := flagValue(args, "--timeout"); value != "" {
+		parsed, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || parsed < 0 {
+			writeError("--timeout must be a non-negative number of seconds")
+			return exitUsage
+		}
+		timeoutSeconds = parsed
+	}
+	deadline := time.Now().Add(time.Duration(timeoutSeconds) * time.Second)
+	client := newLocalClient(configDir, listenAddr)
+
+	for {
+		var status struct {
+			LastUploadAt    string `json:"lastUploadAt"`
+			LastUploadError string `json:"lastUploadError"`
+			Configured      bool   `json:"configured"`
+		}
+		if err := client.request(http.MethodGet, "/api/status", nil, &status); err == nil {
+			if strings.TrimSpace(status.LastUploadAt) != "" {
+				fmt.Printf("首次上报已确认：%s\n", status.LastUploadAt)
+				return exitOK
+			}
+			if strings.TrimSpace(status.LastUploadError) != "" {
+				fmt.Printf("等待上报中，最近错误：%s\n", status.LastUploadError)
+			}
+		}
+		if time.Now().After(deadline) {
+			writeError("在 %d 秒内没有确认到首次上报", timeoutSeconds)
+			return exitHubUnreachable
+		}
+		time.Sleep(2 * time.Second)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -865,6 +925,7 @@ func runServiceCommand(args []string) int {
 			Arguments:   []string{"--service-mode", "--config-root", configDir},
 			DisplayName: "观澜 本机 Agent 服务",
 			ServiceUser: flagValue(args[1:], "--service-user"),
+			ConfigDir:   configDir,
 		}
 
 		var status agentservice.Status

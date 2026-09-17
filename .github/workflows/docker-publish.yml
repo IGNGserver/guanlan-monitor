@@ -62,6 +62,7 @@ jobs:
         run: |
           pnpm verify:version
           pnpm verify:windows-installer
+          pnpm verify:linux-package
           pnpm verify:windows-hardware
           pnpm verify:web-security-headers
           bash scripts/test-compose-env-migration.sh

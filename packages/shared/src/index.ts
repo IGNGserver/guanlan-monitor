@@ -25,9 +25,7 @@ export type UpdatePlatform =
   | "windows-gui"
   | "linux-gui"
   | "android"
-  | "ios"
-  | "windows-cli"
-  | "linux-cli";
+  | "ios";
 
 export type DeviceBlockKey = "cpu" | "gpu" | "memory" | "disk" | "network" | "fan";
 
@@ -781,7 +779,7 @@ export interface UpdateInfo {
   assetUrl: string | null;
   assetSize: number | null;
   sha256: string | null;
-  installMode: "installer" | "package" | "apk" | "cli" | "hub" | "store" | "none";
+  installMode: "installer" | "package" | "apk" | "hub" | "store" | "none";
   message?: string;
 }
 
@@ -907,6 +905,16 @@ export interface DesktopDetectedTargetGroup {
   instances: DesktopDetectedTarget[];
 }
 
+/**
+ * How the desktop shell reaches the local agent data plane.
+ *
+ * - `service`: attached to the machine-scope service with full control access.
+ * - `service-readonly`: attached to the service but this user may not change
+ *   machine-scope settings; the payload carries no secret and no probe data.
+ * - `child`: the desktop shell owns a private backend process (portable mode).
+ */
+export type DesktopAgentMode = "service" | "service-readonly" | "child";
+
 export interface DesktopAgentBackendState {
   running: boolean;
   backendStartedAt: string;
@@ -948,6 +956,8 @@ export interface DesktopAgentBackendState {
   temperatureSources: TemperatureSensorReading[];
   temperatureSensorBackends: SensorBackendStatus[];
   temperatureProbeError?: string;
+  /** Additive: how this state was obtained. Absent on older payloads. */
+  agentMode?: DesktopAgentMode;
 }
 
 /**

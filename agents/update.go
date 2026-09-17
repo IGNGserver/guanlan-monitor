@@ -62,7 +62,7 @@ func runUpdateCommand(args []string) error {
 		return fmt.Errorf("current version %q is not a release version", *currentVersion)
 	}
 
-	update, err := fetchCliUpdate(*serverURL, *secret, *currentVersion, *channel)
+	update, err := fetchAgentUpdate(*serverURL, *secret, *currentVersion, *channel)
 	if err != nil {
 		return err
 	}
@@ -115,10 +115,10 @@ func runUpdateCommand(args []string) error {
 	return nil
 }
 
-func fetchCliUpdate(serverURL, secret, currentVersion, channel string) (*cliUpdateInfo, error) {
+func fetchAgentUpdate(serverURL, secret, currentVersion, channel string) (*cliUpdateInfo, error) {
 	base := strings.TrimRight(strings.TrimSpace(serverURL), "/")
 	query := url.Values{
-		"platform":       []string{cliUpdatePlatform()},
+		"platform":       []string{updatePlatform()},
 		"currentVersion": []string{currentVersion},
 		"currentChannel": []string{channel},
 		"arch":           []string{runtime.GOARCH},
@@ -257,8 +257,11 @@ func replaceInstalledBinary(installDir, newBinary, binaryName, version string) e
 		return scheduleWindowsBinaryReplacement(installDir, newBinary, binaryName, version)
 	}
 
-	_ = runCommand("systemctl", "stop", "device-state-console-agent.service")
-	_ = runCommand("systemctl", "--user", "stop", "device-state-console-agent-backend.service")
+	serviceManaged := managedByAgentService()
+	if !serviceManaged {
+		_ = runCommand("systemctl", "stop", "device-state-console-agent.service")
+		_ = runCommand("systemctl", "--user", "stop", "device-state-console-agent-backend.service")
+	}
 
 	target := filepath.Join(installDir, binaryName)
 	if err := os.MkdirAll(installDir, 0755); err != nil {
@@ -286,6 +289,12 @@ func replaceInstalledBinary(installDir, newBinary, binaryName, version string) e
 		return fmt.Errorf("write updated VERSION: %w", err)
 	}
 
+	if serviceManaged {
+		// The machine-scope service supervises this process: exiting lets it
+		// restart the collector from the replaced binary without touching the
+		// service manager.
+		return nil
+	}
 	if runtime.GOOS == "windows" {
 		startWindowsAgentProcesses()
 	} else {
@@ -544,11 +553,22 @@ func defaultInstallDir() string {
 	return "/opt/device-state-console-agent"
 }
 
-func cliUpdatePlatform() string {
+// updatePlatform reports which release asset family this collector belongs to.
+// The retired windows-cli/linux-cli platforms no longer exist; a collector
+// installed by the desktop package belongs to that platform.
+func updatePlatform() string {
 	if runtime.GOOS == "windows" {
-		return "windows-cli"
+		return "windows-gui"
 	}
-	return "linux-cli"
+	return "linux-gui"
+}
+
+// managedByAgentService reports whether this collector is a child of the
+// machine-scope service. Such a collector must not stop or start the service
+// manager itself: the service owns the process lifecycle, and stopping the unit
+// from inside would kill this very process mid-update.
+func managedByAgentService() bool {
+	return strings.TrimSpace(os.Getenv("DSC_AGENT_SERVICE_MANAGED")) == "1"
 }
 
 func validChannel(value string) bool {

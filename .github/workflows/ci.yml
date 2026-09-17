@@ -36,6 +36,7 @@ jobs:
         run: |
           pnpm verify:version
           pnpm verify:windows-installer
+          pnpm verify:linux-package
           pnpm verify:windows-hardware
           pnpm verify:web-security-headers
           bash scripts/test-compose-env-migration.sh
@@ -86,48 +87,6 @@ jobs:
       - name: Build Go agents
         working-directory: agents
         run: go build ./...
-
-  linux-gui:
-    name: Verify Linux GUI package
-    runs-on: ubuntu-24.04
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
-        with:
-          go-version: "1.24.x"
-
-      - name: Install GTK4/libadwaita build dependencies
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            dpkg-dev \
-            libadwaita-1-dev \
-            libgtk-4-dev \
-            libjson-glib-dev \
-            libsoup-3.0-dev \
-            libwebkitgtk-6.0-dev \
-            pkg-config
-
-      - name: Build and inspect Linux GUI Debian package
-        shell: bash
-        run: |
-          set -euo pipefail
-          output_dir="$RUNNER_TEMP/device-state-console-linux-gui"
-          bash ./deploy/build-linux-agent-gui.sh --output-dir "$output_dir"
-          package="$(find "$output_dir" -maxdepth 1 -type f -name '*.deb' -print -quit)"
-          test -n "$package"
-          dpkg-deb --info "$package"
-          dpkg-deb --contents "$package"
-          test "$(dpkg-deb --field "$package" Package)" = "device-state-console"
-          test "$(dpkg-deb --field "$package" Architecture)" = "amd64"
-          dpkg-deb --contents "$package" | grep -F '/usr/bin/device-state-console'
-          dpkg-deb --contents "$package" | grep -F '/usr/lib/systemd/user/device-state-console-agent-backend.service'
 
   windows-gui:
     name: Verify Windows GUI bundle
@@ -226,6 +185,7 @@ jobs:
           mkdir -p release/desktop-agent
           go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=${version} -X main.BuildChannel=test" -o ../release/desktop-agent/device-state-console-agent .
           go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=${version} -X main.BuildChannel=test" -o ../release/desktop-agent/device-state-console-agent-backend ./cmd/windows-agent-backend
+          install -m 0755 ../release/desktop-agent/device-state-console-agent-backend ../release/desktop-agent/guanlan-agent
 
       - name: Build Windows desktop Agent bundle
         if: matrix.target == 'windows'
@@ -235,6 +195,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path release/desktop-agent | Out-Null
           go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ..\release\desktop-agent\device-state-console-agent.exe .
           go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ..\release\desktop-agent\device-state-console-agent-backend.exe ./cmd/windows-agent-backend
+          Copy-Item -LiteralPath "release/desktop-agent/device-state-console-agent-backend.exe" -Destination "release/desktop-agent/guanlan-agent.exe" -Force
 
       - name: Add Windows hardware sensor probe and monitor assets
         if: matrix.target == 'windows'

@@ -8,65 +8,76 @@
 
 请从 [GitHub Releases](https://github.com/IGNGserver/guanlan-monitor/releases/latest) 下载与当前版本对应的客户端。
 
-### CLI UI（Windows/Linux）
+### 无桌面环境安装（Windows / Linux）
 
-CLI Release 包现在包含 `dsc` 终端配置界面、采集器和本地 backend。安装脚本固定指向
-指定的 GitHub Release tag，不从 `main` 分支拉取源码；脚本下载后的 ZIP 还会校验
-SHA-256。将命令中的 `X.Y.Z` 替换为目标版本即可：
+GUI 版就是唯一发行版；同一份安装包在无桌面会话的机器上也能完成安装、配置、
+开机自启与上报，不需要单独下载 CLI 版。
 
-```bash
-curl -fsSL https://github.com/IGNGserver/guanlan-monitor/releases/download/vX.Y.Z/install-cli.sh | bash -s -- --run
-```
-
-上面的 Linux 命令会安装到当前用户的 `~/.local/bin`，并立即进入 CLI UI；不使用
-`--run` 时，打开新终端后执行 `dsc`。Windows PowerShell 可执行：
+**Windows**（静默安装 + 自动配置 + 自动校验首次上报）：
 
 ```powershell
-$script = Invoke-WebRequest 'https://github.com/IGNGserver/guanlan-monitor/releases/download/vX.Y.Z/install-cli.ps1'
-& ([scriptblock]::Create($script.Content)) -Run
+& "DeviceStateConsole-Windows-GUI-Setup-vX.Y.Z.exe" /S `
+    /HUB="https://hub.example.com" /KEY="<ACCESS_KEY>" `
+    /DEVICE=node-01 /HOSTNAME="节点01" /VERIFY=120
 ```
 
-进入页面后可以修改中枢连接、采样间隔、指标、硬件探针、云同步和采集器运行状态。
-常用无界面命令包括 `dsc status`、`dsc doctor`、`dsc config get`、`dsc config set`，
-退出 UI 不会停止后台 Agent；需要停止本地 CLI backend 时执行 `dsc shutdown`。
+- `/S` 静默安装；`guanlan-agent` 机器级服务会自动注册为开机自启（若服务无法
+  创建则回退为 `AtStartup` + SYSTEM 计划任务，绝不使用需要登录的启动项）。
+- 含斜杠的值（任何 URL）必须加引号。
+- `/VERIFY=<秒>` 会在安装结束前等待首次上报确认；超时返回退出码 3，便于
+  Intune/SCCM/Ansible 判定。不传 `/HUB` 时保持“装完再配置”的行为。
+- 机器级配置写入 `%ProgramData%\Guanlan\agent-ui.config.json`。
 
-CLI 与桌面端共用 Agent 配置契约。默认配置文件位于
-`%AppData%/device-state-console/agent-ui.config.json`（Windows）或
-`$XDG_CONFIG_HOME/device-state-console/agent-ui.config.json`（Linux）；可用
-`DSC_CLI_CONFIG_ROOT` 指定目录。TUI 和 `dsc config set` 都支持中枢连接、采样间隔、
-本地记录、云同步、自动启动/重启、全局指标、探针 provider、设备实例开关和实例指标覆盖。
+**Linux**（一条命令装包 + 自动配置）：
+
+```bash
+sudo GUANLAN_HUB=https://hub.example.com GUANLAN_KEY="$KEY" GUANLAN_DEVICE_ID=node-01   apt-get install -y ./DeviceStateConsole-Linux-GUI-Install-vX.Y.Z.deb
+sudo guanlan-agent wait-for-upload --timeout 120   # 退出码 0 表示已确认上报
+```
+
+- `.deb` 安装时会启用系统级 `guanlan-agent.service`（`WantedBy=multi-user.target`，
+  不依赖 `graphical-session`），因此无人登录也会持续采集与上报。
+- 也可以先装后配：`sudo guanlan-agent config set --hub ... --key-stdin`，
+  或写 `/etc/guanlan/agent.env` 后 `systemctl restart guanlan-agent`。
+- 机器级配置位于 `/etc/guanlan/agent.json`（实际文件名 `agent-ui.config.json`）。
+
+**无界面命令**（随包发布，替代已下架的 `dsc`）：
 
 ```text
-dsc config validate [--file path]
-dsc config export [--file path]       # 只导出脱敏配置
-dsc config import --file path         # 脱敏 secret 为空时保留当前 secret
-dsc config set --metrics all|none|key1,key2
-dsc config push                       # 重试展示配置同步
+guanlan-agent status [--json]        服务/配置/上报状态（退出码 0/3/4/5 可用于编排）
+guanlan-agent doctor [--json]        服务 + 配置 + 中枢连通性检查
+guanlan-agent config get|set|validate|export|import
+guanlan-agent service install|uninstall|start|stop|status
+guanlan-agent collector start|stop|restart
+guanlan-agent probes status|detect
+guanlan-agent wait-for-upload --timeout N
+guanlan-agent onboarding-url
 ```
 
-`enabledMetrics` 缺省表示兼容旧配置的“全部指标”；显式写成 `[]` 才表示禁用全部指标。
-稳定生产环境的远程中枢使用 HTTPS；测试渠道可在受控内网穿透中使用 HTTP。访问密钥不会放在
-CLI/backend 的进程参数中，诊断输出、状态接口和导出文件都会脱敏。
+访问密钥只通过 `--key-stdin` 或 `--key-file` 传入，不会出现在进程参数里；
+`status`/`export`/诊断输出全部脱敏。卸载默认保留机器级配置，只有
+`--purge`（deb）或 `/REMOVECONFIG`（Windows）才删除。
 
 ### Windows
 
-**推荐下载 `DeviceStateConsole-Windows-GUI-Setup-v<版本>.exe`。** 这是常规 Windows 安装程序，支持选择安装目录、开始菜单、桌面快捷方式、开机启动、更新、修复和卸载。
+**推荐下载 `DeviceStateConsole-Windows-GUI-Setup-v<版本>.exe`。** 这是常规 Windows 安装程序，安装到 `%ProgramFiles%\DeviceStateConsoleAgent`，创建开始菜单与桌面快捷方式，并注册开机自启的机器级 Agent 服务；支持静默安装、更新和卸载。
 
 `DeviceStateConsole-Windows-GUI-Update-v<版本>.zip` 仅用于已安装客户端的更新分发，不应作为首次安装方式。`DeviceStateConsole-Windows-GUI-Portable-v<版本>.zip` 是无需安装的 Windows GUI 便携版。
 
-安装后打开“观澜”，在“配置”页填写中枢地址、访问密钥和设备名称。应用运行后会显示在系统托盘：左键打开主界面，右键查看状态或退出。
+安装后打开“观澜”，在“配置”页填写中枢地址、访问密钥和设备名称。应用运行后会显示在系统托盘：左键打开主界面，右键查看状态或退出。采集与上报由机器级服务负责，关闭窗口或注销登录都不会中断。
 
-### Linux（GNOME）
+### Linux
 
 下载 `DeviceStateConsole-Linux-GUI-Install-v<版本>.deb`，适用于 Ubuntu/Debian
-`amd64`。它使用 GTK4/libadwaita 提供原生 Agent 配置页，并在同一个窗口内嵌
-中枢网页查看实例和历史数据；界面会跟随 GNOME 的浅色、深色和高对比度设置。
-首次打开后可在“本机 Agent”页填写中枢地址和访问密钥；后台采集服务由 systemd
-user service 管理，没有 systemd user session 时会自动使用前台回退模式。
+`amd64`。安装后提供 `/usr/bin/guanlan` 桌面端与 `/usr/bin/guanlan-agent`
+命令；系统级 `guanlan-agent.service` 会随安装启用，无桌面会话也会持续采集与
+上报。首次打开桌面端可在“本机 Agent”页填写中枢地址和访问密钥；非提权用户
+只能查看状态，修改机器级配置需要管理员权限。
 
-该首个 Linux GUI 安装包以 Ubuntu 24.04 构建，目标为 Debian 系 `amd64`。
-Fedora/RPM、Arch 等发行版暂时继续使用 Linux CLI 安装包，后续可在不改变 GUI
-架构的情况下增加对应的原生包格式。
+该安装包以 Ubuntu 24.04 构建，目标为 Debian 系 `amd64`。Fedora/RPM、Arch
+等发行版可在不改变现有架构的前提下增加对应的原生包格式；在此之前这些系统
+可以直接以任意进程管理器运行包内的 `device-state-console-agent`，并通过
+`DSC_SERVER_URL`/`DSC_AGENT_SECRET`/`DSC_DEVICE_ID` 配置。
 
 ### Android
 
@@ -108,11 +119,10 @@ Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 
 
 ## 设备采集
 
-- Windows：优先安装上方的观澜 setup，在应用内完成探测、采集和中枢连接配置。
-- Linux 桌面：优先安装上方的 GNOME `.deb`，在“本机 Agent”页完成配置；无桌面环境时使用 [Linux agent 安装脚本](deploy/install-agent.sh)。
-- 脚本式 agent：使用按版本下载的 [Linux 安装入口](deploy/install-agent-from-release.sh) 或 [Windows 安装入口](deploy/install-agent-from-release.ps1)，显式指定 Release 版本。
-- CLI UI：使用上面的按版本 `install-cli.sh`/`install-cli.ps1` 一键安装入口，安装后用 `dsc` 打开终端配置页面；它适合无桌面环境或偏好终端操作的 Windows/Linux 主机。
-- 安装后的 Windows/Linux CLI 可运行 `device-state-console-agent update`（Linux 使用 `sudo`），自动检查更高版本、校验 SHA-256 并完成服务重启；配置文件不会被覆盖。
+- Windows：安装上方的观澜 setup，可在应用内配置；无人值守场景使用上面的静默参数。
+- Linux 桌面：安装上方的 `.deb`，在“本机 Agent”页配置；无桌面环境使用上面的环境变量或 `guanlan-agent config set`。
+- 服务化：安装包会注册机器级 `guanlan-agent` 服务（Windows 服务/计划任务，Linux systemd system 单元），开机即采集，无需登录。
+- 升级：Windows 使用 setup/update 包，Linux 使用新的 `.deb`；两种方式都会保留机器级配置。
 - 网页控制台：使用 `.env` 中的 `ACCESS_KEY` 登录，选择设备即可查看实时数据和历史图表。
 
 硬件、驱动或虚拟机未提供的传感器会显示为空，不会阻塞设备上线。
@@ -121,13 +131,13 @@ Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 
 
 每个测试版或正式版 Release 都必须使用带平台和交付方式的资产名，并包含：
 
-1. `DeviceStateConsole-Windows-GUI-Setup-v<版本>.exe`。
+1. `DeviceStateConsole-Windows-GUI-Setup-v<版本>.exe`（支持 `/S` 与无 GUI 参数化安装）。
 2. `DeviceStateConsole-Windows-GUI-Portable-v<版本>.zip` 或更新包。
-3. `DeviceStateConsole-Linux-GUI-Install-v<版本>.deb`。
+3. `DeviceStateConsole-Linux-GUI-Install-v<版本>.deb`（内含系统级 systemd 服务）。
 4. `DeviceStateConsole-Android-v<版本>.apk`。
-5. `DeviceStateConsole-Windows-CLI-Install-v<版本>.zip`。
-6. `DeviceStateConsole-Linux-CLI-Install-v<版本>.zip`。
-7. `install-cli.sh` 与 `install-cli.ps1`（固定版本 CLI UI 引导脚本）。
+
+不再发布独立 CLI 发行资产；无 GUI 场景的能力内建于上述安装包与随包的
+`guanlan-agent` 命令。
 
 仓库不会提交安装包、APK、密钥、日志或本机配置。发布资产只上传到 GitHub Release。
 

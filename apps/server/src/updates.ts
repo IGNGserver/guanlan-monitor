@@ -188,10 +188,6 @@ function assetNameFor(platform: UpdatePlatform, version: string) {
       return `DeviceStateConsole-Linux-GUI-Install-v${version}.deb`;
     case "android":
       return `DeviceStateConsole-Android-v${version}.apk`;
-    case "windows-cli":
-      return `DeviceStateConsole-Windows-CLI-Install-v${version}.zip`;
-    case "linux-cli":
-      return `DeviceStateConsole-Linux-CLI-Install-v${version}.zip`;
     default:
       return null;
   }
@@ -205,9 +201,6 @@ function installModeFor(platform: UpdatePlatform): UpdateInfo["installMode"] {
       return "package";
     case "android":
       return "apk";
-    case "windows-cli":
-    case "linux-cli":
-      return "cli";
     case "hub":
     case "web":
       return "hub";

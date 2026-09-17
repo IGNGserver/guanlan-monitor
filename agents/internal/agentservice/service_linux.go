@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -36,6 +38,9 @@ func Install(spec Spec) (Status, error) {
 	}
 
 	serviceUser, userDetail := resolveServiceUser(spec.ServiceUser)
+	if err := prepareConfigDir(spec.ConfigDir, serviceUser); err != nil {
+		return Status{Kind: KindSystemd}, err
+	}
 	unit := renderUnit(spec, serviceUser)
 	if err := os.WriteFile(unitPath, []byte(unit), 0o644); err != nil {
 		return Status{Kind: KindSystemd}, fmt.Errorf("write %s: %w", unitPath, err)
@@ -103,6 +108,41 @@ func Query() (Status, error) {
 // lifecycle and the daemon runs in the foreground.
 func runAsService(_ func(context.Context) error) (bool, error) {
 	return false, nil
+}
+
+// prepareConfigDir creates the machine-scope configuration directory and gives
+// it to the account the unit runs as, so the service can write its own document.
+func prepareConfigDir(dir, serviceUser string) error {
+	if strings.TrimSpace(dir) == "" {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create %s: %w", dir, err)
+	}
+	if serviceUser == "" {
+		return nil
+	}
+	account, err := user.Lookup(serviceUser)
+	if err != nil {
+		return nil
+	}
+	uid, uidErr := strconv.Atoi(account.Uid)
+	gid, gidErr := strconv.Atoi(account.Gid)
+	if uidErr != nil || gidErr != nil {
+		return nil
+	}
+	if err := os.Chown(dir, uid, gid); err != nil {
+		return fmt.Errorf("hand %s to %s: %w", dir, serviceUser, err)
+	}
+	// Existing documents may have been written by an earlier root command.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	for _, entry := range entries {
+		_ = os.Chown(filepath.Join(dir, entry.Name()), uid, gid)
+	}
+	return os.Chmod(dir, 0o700)
 }
 
 func unitExists() bool {

@@ -46,6 +46,9 @@ type Spec struct {
 	// tries a dedicated system account and falls back to root. On Windows the
 	// account is always LocalSystem.
 	ServiceUser string
+	// ConfigDir is the machine-scope configuration directory. On Linux it is
+	// created and handed to ServiceUser so the service can read and write it.
+	ConfigDir string
 }
 
 // Status is the observed service state.

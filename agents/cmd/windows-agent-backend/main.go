@@ -1759,6 +1759,11 @@ func (s *server) startChildLocked(isRestart bool) error {
 	cmd := exec.Command(s.childBinaryPath)
 	cmd.Dir = filepath.Dir(s.childBinaryPath)
 	cmd.Env = append(os.Environ(), fmt.Sprintf("DSC_AGENT_CONFIG_FILE=%s", s.configPath))
+	if s.serviceScope {
+		// Tell the collector that a service supervises it, so a self-update
+		// replaces the binary and exits instead of fighting the service manager.
+		cmd.Env = append(cmd.Env, "DSC_AGENT_SERVICE_MANAGED=1")
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err

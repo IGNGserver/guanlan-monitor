@@ -38,8 +38,10 @@ jobs:
       - name: Verify version
         run: pnpm verify:version
 
-      - name: Verify Windows installer compatibility
-        run: pnpm verify:windows-installer
+      - name: Verify installer and package compatibility
+        run: |
+          pnpm verify:windows-installer
+          pnpm verify:linux-package
 
       - name: Verify bundled PawnIO integrity metadata
         run: pnpm verify:windows-hardware
@@ -121,6 +123,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path release/desktop-agent | Out-Null
           go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ..\release\desktop-agent\device-state-console-agent.exe .
           go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ..\release\desktop-agent\device-state-console-agent-backend.exe ./cmd/windows-agent-backend
+          # Ship the backend under its product name. The historical name is kept
+          # for one release cycle so an in-place upgrade keeps working.
+          Copy-Item -LiteralPath "release/desktop-agent/device-state-console-agent-backend.exe" -Destination "release/desktop-agent/guanlan-agent.exe" -Force
 
       - name: Add Windows hardware sensor probe and monitor assets
         shell: powershell
@@ -233,41 +238,6 @@ jobs:
             if ($process -and -not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
           }
 
-      - name: Build Windows and Linux CLI packages
-        shell: powershell
-        run: |
-          $probeDir = Join-Path $env:RUNNER_TEMP "device-state-console-hardware-probe"
-          ./deploy/build-cli-agent.ps1 -OutputDir release/cli-agent -HardwareProbeDir $probeDir -Zip
-
-      - name: Verify CLI package layout
-        shell: powershell
-        run: |
-          $required = @{
-            "windows-x64" = @("dsc.exe", "device-state-console-agent.exe", "device-state-console-agent-backend.exe", "install-cli.ps1")
-            "linux-x64" = @("dsc", "device-state-console-agent", "device-state-console-agent-backend", "install-cli.sh")
-          }
-          foreach ($platform in $required.Keys) {
-            $directory = Join-Path "release/cli-agent" $platform
-            foreach ($file in $required[$platform]) {
-              $path = Join-Path $directory $file
-              if (-not (Test-Path -LiteralPath $path)) { throw "CLI package is missing $path" }
-            }
-          }
-          $windowsCli = Join-Path "release/cli-agent/windows-x64" ""
-          foreach ($path in @(
-            (Join-Path $windowsCli "windows-hardware\librehardwaremonitor\LibreHardwareMonitorLib.dll"),
-            (Join-Path $windowsCli "hardware-sensor-probe\HardwareSensorProbe.dll")
-          )) {
-            if (-not (Test-Path -LiteralPath $path)) { throw "Windows CLI package is missing hardware asset $path" }
-          }
-          if ((Get-Content -LiteralPath "release/cli-agent/install-cli.ps1" -Raw) -match "__DSC_VERSION__") { throw "Windows CLI installer still has an unresolved version placeholder." }
-          if ((Get-Content -LiteralPath "release/cli-agent/install-cli.sh" -Raw) -match "__DSC_VERSION__") { throw "Linux CLI installer still has an unresolved version placeholder." }
-          $shellBytes = [System.IO.File]::ReadAllBytes((Join-Path "release/cli-agent" "install-cli.sh"))
-          if ($shellBytes.Length -ge 3 -and $shellBytes[0] -eq 0xEF -and $shellBytes[1] -eq 0xBB -and $shellBytes[2] -eq 0xBF) { throw "Linux CLI installer must not contain a UTF-8 BOM." }
-          if ([Array]::IndexOf($shellBytes, [byte]0x0D) -ge 0) { throw "Linux CLI installer must use LF line endings." }
-          & "release/cli-agent/windows-x64/dsc.exe" --help
-          if ($LASTEXITCODE -ne 0) { throw "Windows CLI help command failed." }
-
       - name: Upload Windows assets
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -277,11 +247,94 @@ jobs:
             release/windows-desktop/DeviceStateConsole-Windows-GUI-Update-v*.zip
             release/windows-desktop/DeviceStateConsole-Windows-GUI-Portable-v*.zip
             release/windows-desktop/release-launch-evidence/Windows-GUI-Release-Launch-Evidence-v*.json
-            release/cli-agent/DeviceStateConsole-Windows-CLI-Install-v*.zip
-            release/cli-agent/DeviceStateConsole-Linux-CLI-Install-v*.zip
-            release/cli-agent/install-cli.ps1
-            release/cli-agent/install-cli.sh
           if-no-files-found: error
+
+  headless-windows:
+    name: Verify headless Windows install, service and reporting
+    runs-on: windows-latest
+    needs: windows
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+
+      - name: Download the Windows install package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: windows-release-assets
+          path: release-assets
+
+      - name: Install silently with configuration switches
+        shell: powershell
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          $setup = Join-Path $env:GITHUB_WORKSPACE "release-assets/DeviceStateConsole-Windows-GUI-Setup-v$version.exe"
+          if (-not (Test-Path -LiteralPath $setup)) { throw "Windows GUI setup is missing: $setup" }
+          $env:DSC_HEADLESS_KEY = "ci-headless-access-key"
+          $env:DSC_HEADLESS_MARKER = Join-Path $env:RUNNER_TEMP "ingest.json"
+          Start-Process -FilePath "node" -ArgumentList @(
+            "scripts/headless-hub-stub.mjs", "serve",
+            "--port", "3199",
+            "--marker", "`"$env:DSC_HEADLESS_MARKER`"",
+            "--key", $env:DSC_HEADLESS_KEY
+          ) -WindowStyle Hidden
+          Start-Sleep -Seconds 4
+          # Values containing a slash must be quoted for the NSIS switch parser.
+          $installer = Start-Process -FilePath $setup -ArgumentList @(
+            "/S",
+            "/HUB=`"http://127.0.0.1:3199`"",
+            "/KEY=`"$env:DSC_HEADLESS_KEY`"",
+            "/DEVICE=ci-headless",
+            "/HOSTNAME=ci-headless",
+            "/VERIFY=180"
+          ) -Wait -PassThru
+          if ($installer.ExitCode -ne 0) { throw "Silent installation with /VERIFY failed with exit code $($installer.ExitCode)." }
+
+      - name: Verify the machine-scope service and the first upload
+        shell: powershell
+        run: |
+          $service = Get-Service -Name "GuanlanAgent" -ErrorAction Stop
+          if ($service.StartType -ne "Automatic") { throw "The agent service must start automatically, found $($service.StartType)." }
+          if ($service.Status -ne "Running") { throw "The agent service must be running, found $($service.Status)." }
+          $cli = Join-Path $env:ProgramFiles "DeviceStateConsoleAgent\bin\guanlan-agent.exe"
+          if (-not (Test-Path -LiteralPath $cli)) { throw "The agent CLI is missing: $cli" }
+          & $cli status --json
+          if ($LASTEXITCODE -ne 0) { throw "guanlan-agent status reported a problem before the upload check." }
+          & $cli wait-for-upload --timeout 180
+          if ($LASTEXITCODE -ne 0) { throw "No first upload was confirmed within 180 seconds." }
+          if (-not (Test-Path -LiteralPath $env:DSC_HEADLESS_MARKER)) { throw "The stub Hub never received an ingest." }
+          Get-Content -LiteralPath $env:DSC_HEADLESS_MARKER
+
+      - name: Verify recovery after a service restart with no UI
+        shell: powershell
+        run: |
+          Remove-Item -LiteralPath $env:DSC_HEADLESS_MARKER -ErrorAction SilentlyContinue
+          Restart-Service -Name "GuanlanAgent" -Force
+          Start-Sleep -Seconds 5
+          $cli = Join-Path $env:ProgramFiles "DeviceStateConsoleAgent\bin\guanlan-agent.exe"
+          $service = Get-Service -Name "GuanlanAgent"
+          if ($service.Status -ne "Running") { throw "The agent service did not come back after a restart." }
+          & $cli wait-for-upload --timeout 180
+          if ($LASTEXITCODE -ne 0) { throw "Reporting did not resume after the service restart." }
+          if (-not (Test-Path -LiteralPath $env:DSC_HEADLESS_MARKER)) { throw "No ingest arrived after the restart." }
+          & $cli status --json
+
+      - name: Verify silent uninstall removes the service and keeps the configuration
+        shell: powershell
+        run: |
+          $installRoot = Join-Path $env:ProgramFiles "DeviceStateConsoleAgent"
+          $configPath = Join-Path $env:ProgramData "Guanlan\agent-ui.config.json"
+          if (-not (Test-Path -LiteralPath $configPath)) { throw "The unattended configuration was not written: $configPath" }
+          $uninstaller = Join-Path $installRoot "Uninstall 观澜.exe"
+          if (-not (Test-Path -LiteralPath $uninstaller)) { throw "The uninstaller is missing: $uninstaller" }
+          $process = Start-Process -FilePath $uninstaller -ArgumentList @("/S", "_?=$installRoot") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Silent uninstallation failed with exit code $($process.ExitCode)." }
+          if (Get-Service -Name "GuanlanAgent" -ErrorAction SilentlyContinue) { throw "The agent service must be removed with the application." }
+          if (-not (Test-Path -LiteralPath $configPath)) { throw "Uninstall must preserve the machine-scope configuration." }
 
   linux-gui:
     name: Build unified Linux Electron GUI asset
@@ -320,6 +373,9 @@ jobs:
           mkdir -p release/desktop-agent
           go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=${version} -X main.BuildChannel=test" -o ../release/desktop-agent/device-state-console-agent .
           go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=${version} -X main.BuildChannel=test" -o ../release/desktop-agent/device-state-console-agent-backend ./cmd/windows-agent-backend
+          # Ship the backend under its product name. The historical name is kept
+          # for one release cycle so an in-place upgrade keeps working.
+          install -m 0755 ../release/desktop-agent/device-state-console-agent-backend ../release/desktop-agent/guanlan-agent
 
       - name: Build Linux Electron GUI install package
         shell: bash
@@ -334,6 +390,7 @@ jobs:
           dpkg-deb --info "$package"
           dpkg-deb --contents "$package" | grep -F 'resources/agent/device-state-console-agent'
           dpkg-deb --contents "$package" | grep -F 'resources/agent/device-state-console-agent-backend'
+          dpkg-deb --contents "$package" | grep -F 'resources/agent/guanlan-agent'
           sha256sum "$package" > "$package.sha256"
 
       - name: Upload Linux GUI asset
@@ -344,6 +401,90 @@ jobs:
             release/linux-desktop/DeviceStateConsole-Linux-GUI-Install-v*.deb
             release/linux-desktop/DeviceStateConsole-Linux-GUI-Install-v*.deb.sha256
           if-no-files-found: error
+
+  headless-linux:
+    name: Verify headless Linux install, service and reporting
+    runs-on: ubuntu-24.04
+    needs: linux-gui
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+
+      - name: Download the Linux install package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: linux-gui-release-assets
+          path: release-assets
+
+      - name: Install the package without a desktop session
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="$(find release-assets -maxdepth 1 -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb' -print -quit)"
+          test -n "$package"
+          sudo apt-get update -qq
+          sudo apt-get install -y "./$package"
+          dpkg-query -W -f='${Package} ${Version}\n' guanlan-desktop
+
+      - name: Verify the machine-scope service is enabled and running
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo systemctl is-enabled guanlan-agent.service
+          sudo systemctl is-active guanlan-agent.service
+          sudo systemctl show -p UnitFileState,WantedBy guanlan-agent.service
+          test -x /usr/bin/guanlan-agent
+          sudo guanlan-agent status --json | tee "$RUNNER_TEMP/status-before.json"
+
+      - name: Verify reporting through a stub Hub
+        shell: bash
+        env:
+          DSC_HEADLESS_KEY: ci-headless-access-key
+        run: |
+          set -euo pipefail
+          marker="$RUNNER_TEMP/ingest.json"
+          node scripts/headless-hub-stub.mjs serve --port 3199 --marker "$marker" --key "$DSC_HEADLESS_KEY" &
+          stub_pid=$!
+          trap 'kill "$stub_pid" 2>/dev/null || true' EXIT
+          sleep 3
+          printf '%s' "$DSC_HEADLESS_KEY" | sudo guanlan-agent config set \
+            --hub http://127.0.0.1:3199 \
+            --key-stdin \
+            --device-id ci-headless \
+            --hostname ci-headless
+          sudo guanlan-agent wait-for-upload --timeout 150
+          test -f "$marker"
+          cat "$marker"
+
+      - name: Verify the service recovers after a restart without any UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$RUNNER_TEMP/ingest.json"
+          sudo systemctl restart guanlan-agent.service
+          sudo systemctl is-active guanlan-agent.service
+          sudo guanlan-agent wait-for-upload --timeout 150
+          test -f "$RUNNER_TEMP/ingest.json"
+          sudo guanlan-agent status --json | tee "$RUNNER_TEMP/status-after.json"
+
+      - name: Verify removal keeps the configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f /etc/guanlan/agent-ui.config.json
+          sudo dpkg -r guanlan-desktop
+          if systemctl is-enabled --quiet guanlan-agent.service 2>/dev/null; then
+            echo "the agent service must not survive package removal" >&2
+            exit 1
+          fi
+          test -f /etc/guanlan/agent-ui.config.json
+          sudo dpkg --purge guanlan-desktop
+          test ! -d /etc/guanlan
 
   android:
     name: Build Android asset
@@ -462,7 +603,7 @@ jobs:
           test "${GITHUB_REF_NAME}" = "v${version}"
           while IFS= read -r asset; do
             case "$asset" in
-              *.exe|*.zip|*.deb|*.apk|*.ps1|*.sh)
+              *.exe|*.zip|*.deb|*.apk)
                 checksum="${asset}.sha256"
                 if [[ ! -f "$checksum" ]]; then
                   asset_dir="$(dirname "$asset")"
@@ -471,24 +612,16 @@ jobs:
                 fi
                 ;;
             esac
-          done < <(find release-assets -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.deb' -o -name '*.apk' -o -name '*.ps1' -o -name '*.sh' \) -print)
+          done < <(find release-assets -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.deb' -o -name '*.apk' \) -print)
           find release-assets -type f -print
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Setup-v*.exe' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'Windows-GUI-Release-Launch-Evidence-v*.json' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Portable-v*.zip' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Update-v*.zip' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-CLI-Install-v*.zip' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-CLI-Install-v*.zip' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb.sha256' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Android-v*.apk' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Setup-v*.exe.sha256' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-CLI-Install-v*.zip.sha256' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-CLI-Install-v*.zip.sha256' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name 'install-cli.ps1' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name 'install-cli.sh' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name 'install-cli.ps1.sha256' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name 'install-cli.sh.sha256' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Android-v*.apk.sha256' | wc -l)" -eq 1
 
       - name: Publish prerelease
