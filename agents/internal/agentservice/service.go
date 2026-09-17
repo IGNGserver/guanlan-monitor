@@ -52,6 +52,11 @@ type Spec struct {
 	// ConfigDir is the machine-scope configuration directory. On Linux it is
 	// created and handed to ServiceUser so the service can read and write it.
 	ConfigDir string
+	// BundleRoot is the directory that holds the collector binary. It defaults
+	// to the directory of the daemon executable, which is correct when both
+	// binaries ship side by side; a packaged layout that keeps the CLI in a
+	// separate bin directory must point this at the real agent directory.
+	BundleRoot string
 }
 
 // Status is the observed service state.
@@ -64,9 +69,15 @@ type Status struct {
 
 // commandLine renders the executable plus arguments the way the platform
 // service tooling expects to receive it.
+//
+// Every element is quoted independently: the Service Control Manager and
+// schtasks split this string on spaces, so an unquoted argument value such as
+// "C:\Program Files\..." would silently become several arguments.
 func (s Spec) commandLine() string {
 	parts := []string{quoteWindows(s.Executable)}
-	parts = append(parts, s.Arguments...)
+	for _, argument := range s.Arguments {
+		parts = append(parts, quoteWindows(argument))
+	}
 	return strings.Join(parts, " ")
 }
 

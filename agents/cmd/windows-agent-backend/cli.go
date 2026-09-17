@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -920,12 +921,18 @@ func runServiceCommand(args []string) int {
 			return exitUsage
 		}
 		configDir := agentconfig.ResolveDir(flagValue(args[1:], "--config-root"))
+		bundleRoot := strings.TrimSpace(flagValue(args[1:], "--bundle-root"))
+		if bundleRoot == "" {
+			// Both binaries normally sit next to each other.
+			bundleRoot = filepath.Dir(executable)
+		}
 		spec := agentservice.Spec{
 			Executable:  executable,
-			Arguments:   []string{"--service-mode", "--config-root", configDir},
+			Arguments:   []string{"--service-mode", "--config-root", configDir, "--bundle-root", bundleRoot},
 			DisplayName: "观澜 本机 Agent 服务",
 			ServiceUser: flagValue(args[1:], "--service-user"),
 			ConfigDir:   configDir,
+			BundleRoot:  bundleRoot,
 		}
 
 		var status agentservice.Status
