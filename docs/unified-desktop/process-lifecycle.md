@@ -36,4 +36,9 @@ Each phase has a deadline. Only after the overall deadline is exceeded may main 
 
 ## Startup policy
 
-The OS startup entry launches the full Electron tray application with a start-minimized argument. It does not install Windows Service or systemd service. Uninstall terminates the app/backend/collector and preserves configuration unless the user explicitly chooses removal.
+The OS service starts the data plane at boot with no interactive session
+required. The tray application is a separate, optional control plane: when the
+service is reachable the desktop process attaches to it, and only in
+portable/development mode does it spawn its own backend child process. Uninstall
+stops and removes the service and preserves configuration unless the user
+explicitly chooses removal.

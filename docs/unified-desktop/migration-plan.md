@@ -28,8 +28,8 @@
 ## Phase 5: packaging and cutover
 
 - Replace the old GUI asset jobs with Electron Windows and Linux packages while leaving legacy package jobs available until parity is accepted.
-- Do not install Windows Service or systemd service for the new desktop app.
-- Verify Windows setup/portable assets and the Linux Debian package on CI runners; explicitly leave real-distro manual Linux testing to the user.
+- Install the machine-scope agent service from the same package on both platforms so the data plane runs without a desktop session.
+- Verify Windows setup/portable assets and the Linux Debian package on CI runners, including a headless install/configure/report/uninstall job; explicitly leave real-distro manual Linux testing to the user.
 
 ## Rollback
 

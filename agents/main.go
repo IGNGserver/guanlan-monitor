@@ -26,6 +26,8 @@ import (
 	"time"
 	"unicode/utf16"
 
+	"device-state-console/agent/internal/agentconfig"
+
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
@@ -96,43 +98,8 @@ func newCollectorIssueError(category string, err error) error {
 
 var errDiskUsageTimeout = errors.New("disk_usage_timeout")
 
-var allMetricKeys = []string{
-	"cpuUsage",
-	"cpuFrequency",
-	"cpuTemperature",
-	"cpuTopology",
-	"systemOverview",
-	"gpuUsage",
-	"gpuEncode",
-	"gpuDecode",
-	"gpuFrequency",
-	"gpuMemory",
-	"gpuTemperature",
-	"gpuDriverInfo",
-	"temperatureSources",
-	"memoryUsage",
-	"swapUsage",
-	"memoryAvailable",
-	"memoryCached",
-	"memoryCommitted",
-	"memoryHardware",
-	"diskUsage",
-	"diskRead",
-	"diskWrite",
-	"diskMetadata",
-	"diskActivity",
-	"diskHealth",
-	"networkRxRate",
-	"networkTxRate",
-	"networkTraffic",
-	"networkIdentity",
-	"fanRpm",
-	"fanControl",
-	"fanTargetTemperature",
-	"fanPwm",
-	"fanChannelState",
-	"fanNote",
-}
+// allMetricKeys is the shared metric whitelist (agents/internal/agentconfig).
+var allMetricKeys = agentconfig.AllMetricKeys
 
 type agentIdentity struct {
 	DeviceID string `json:"deviceId"`
@@ -326,23 +293,15 @@ type metricsPayload struct {
 	Virtualization     *virtualizationSnapshot    `json:"virtualization,omitempty"`
 }
 
-type agentConnectionConfig struct {
-	ServerURL string `json:"serverUrl"`
-	Secret    string `json:"secret"`
-	DeviceID  string `json:"deviceId"`
-	Hostname  string `json:"hostname"`
-}
-
-type agentSamplingConfig struct {
-	NormalIntervalSeconds int `json:"normalIntervalSeconds"`
-	SlowIntervalSeconds   int `json:"slowIntervalSeconds"`
-}
-
-type agentProbeSelection struct {
-	Target   string `json:"target"`
-	Provider string `json:"provider"`
-	Enabled  bool   `json:"enabled"`
-}
+// The configuration sub-schema lives in agents/internal/agentconfig so the
+// collector, the backend and the helper commands cannot drift apart. The file
+// view below stays pointer-typed because the collector must tell "key absent"
+// apart from "key explicitly empty".
+type (
+	agentConnectionConfig = agentconfig.Connection
+	agentSamplingConfig   = agentconfig.Sampling
+	agentProbeSelection   = agentconfig.ProbeSelection
+)
 
 type agentConfigFile struct {
 	Connection           agentConnectionConfig      `json:"connection"`

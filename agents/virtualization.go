@@ -14,16 +14,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"device-state-console/agent/internal/agentconfig"
 )
 
-type agentVirtualizationConfig struct {
-	Enabled               bool   `json:"enabled"`
-	Platform              string `json:"platform"`
-	Endpoint              string `json:"endpoint"`
-	Node                  string `json:"node"`
-	InsecureSkipTLSVerify bool   `json:"insecureSkipTlsVerify"`
-	PollIntervalSeconds   int    `json:"pollIntervalSeconds"`
-}
+// agentVirtualizationConfig is the shared virtualization settings contract.
+type agentVirtualizationConfig = agentconfig.Virtualization
 
 type virtualizationSnapshot struct {
 	Platform          string                        `json:"platform"`
