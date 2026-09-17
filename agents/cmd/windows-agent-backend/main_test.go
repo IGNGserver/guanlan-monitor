@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"runtime"
 	"testing"
+
+	"device-state-console/agent/internal/agentconfig"
 )
 
 func TestNormalizeLocalConfigMigratesEnabledGpuMetrics(t *testing.T) {
@@ -78,7 +80,7 @@ func TestNormalizeLocalConfigPreservesExplicitEmptyMetrics(t *testing.T) {
 
 func TestNormalizeProbeSelectionsFallsBackFromUnsupportedProvider(t *testing.T) {
 	defaults := defaultLocalConfig()
-	normalized := normalizeProbeSelections([]agentProbeSelection{
+	normalized := agentconfig.NormalizeProbeSelections([]agentProbeSelection{
 		{Target: "CPU", Provider: "not-supported", Enabled: true},
 	}, defaults.ProbeSelections)
 	var cpu agentProbeSelection

@@ -44,4 +44,23 @@ On first run, discover the legacy config root using packaged/portable heuristics
 
 ## Packaging
 
-The packaged application includes Electron renderer/main/preload and the platform-matched Go backend/collector under `resources/agent`. The new app is a tray application, not a service. Windows uses setup, portable ZIP, and update ZIP naming adapted to Electron. Linux uses a Debian package with a desktop entry and icon, and no systemd unit.
+The packaged application includes Electron renderer/main/preload and the platform-matched Go backend/collector under `resources/agent`. Windows uses setup, portable ZIP, and update ZIP naming adapted to Electron. Linux uses a Debian package with a desktop entry and icon.
+
+## Service model (revised)
+
+The tray application is an optional control plane. The data plane is a
+machine-scope service installed by the same package:
+
+- Windows: a native service (`GuanlanAgent`, LocalSystem, auto start) installed
+  by the NSIS installer; if service creation fails, the installer registers an
+  `AtStartup` + SYSTEM scheduled task instead. The installer never falls back to
+  a per-user `HKCU\...\Run` entry.
+- Linux: a system-level `guanlan-agent.service` unit, enabled by the Debian
+  package, running as a dedicated system user.
+
+The service owns the machine-scope configuration
+(`%ProgramData%\Guanlan\agent.json`, `/etc/guanlan/agent.json`), supervises the
+collector, and exposes a token-protected loopback control API. The Electron main
+process attaches to that service when it is running and only spawns its own
+backend in portable/development mode. See
+[HEADLESS_AGENT_SERVICE_PLAN.md](../HEADLESS_AGENT_SERVICE_PLAN.md).

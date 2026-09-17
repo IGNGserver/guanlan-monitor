@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package agentconfig
 
 import "golang.org/x/sys/windows"
 

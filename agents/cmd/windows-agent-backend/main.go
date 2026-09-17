@@ -6,7 +6,6 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -24,6 +23,9 @@ import (
 	"syscall"
 	"time"
 
+	"device-state-console/agent/internal/agentconfig"
+	"device-state-console/agent/internal/agentservice"
+
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	gnet "github.com/shirou/gopsutil/v4/net"
@@ -33,62 +35,21 @@ var BuildVersion = "dev"
 var BuildChannel = "test"
 
 const (
-	currentConfigVersion             = 1
-	maxConfigBodyBytes         int64 = 256 * 1024
-	maxCloudResponseBytes      int64 = 512 * 1024
-	maxSamplingIntervalSeconds       = 86400
+	currentConfigVersion        = agentconfig.CurrentConfigVersion
+	maxConfigBodyBytes    int64 = agentconfig.MaxConfigBytes
+	maxCloudResponseBytes int64 = 512 * 1024
 )
 
-var allMetricKeys = []string{
-	"cpuUsage", "cpuFrequency", "cpuTemperature", "cpuTopology", "systemOverview",
-	"gpuUsage", "gpuEncode", "gpuDecode", "gpuFrequency", "gpuMemory", "gpuTemperature", "gpuDriverInfo", "temperatureSources",
-	"memoryUsage", "swapUsage", "memoryAvailable", "memoryCached", "memoryCommitted", "memoryHardware",
-	"diskUsage", "diskRead", "diskWrite", "diskMetadata", "diskActivity", "diskHealth",
-	"networkRxRate", "networkTxRate", "networkTraffic", "networkIdentity",
-	"fanRpm", "fanControl", "fanTargetTemperature", "fanPwm", "fanChannelState", "fanNote",
-}
-
-type agentConnectionConfig struct {
-	ServerURL string `json:"serverUrl"`
-	Secret    string `json:"secret"`
-	DeviceID  string `json:"deviceId"`
-	Hostname  string `json:"hostname"`
-}
-
-type agentSamplingConfig struct {
-	NormalIntervalSeconds int `json:"normalIntervalSeconds"`
-	SlowIntervalSeconds   int `json:"slowIntervalSeconds"`
-}
-
-type agentProbeSelection struct {
-	Target   string `json:"target"`
-	Provider string `json:"provider"`
-	Enabled  bool   `json:"enabled"`
-}
-
-type agentVirtualizationConfig struct {
-	Enabled               bool   `json:"enabled"`
-	Platform              string `json:"platform"`
-	Endpoint              string `json:"endpoint"`
-	Node                  string `json:"node"`
-	InsecureSkipTLSVerify bool   `json:"insecureSkipTlsVerify"`
-	PollIntervalSeconds   int    `json:"pollIntervalSeconds"`
-}
-
-type agentLocalConfig struct {
-	ConfigVersion        int                        `json:"configVersion"`
-	Connection           agentConnectionConfig      `json:"connection"`
-	Sampling             agentSamplingConfig        `json:"sampling"`
-	EnabledMetrics       []string                   `json:"enabledMetrics"`
-	EnabledDeviceIDs     map[string][]string        `json:"enabledDeviceIds"`
-	InstanceMetricConfig map[string][]string        `json:"instanceMetricConfig"`
-	ProbeSelections      []agentProbeSelection      `json:"probeSelections"`
-	Virtualization       *agentVirtualizationConfig `json:"virtualization,omitempty"`
-	CloudSyncEnabled     bool                       `json:"cloudSyncEnabled"`
-	DataRecordingEnabled bool                       `json:"dataRecordingEnabled"`
-	AutoRestartCollector bool                       `json:"autoRestartCollector"`
-	AutoStartCollector   bool                       `json:"autoStartCollector"`
-}
+// The configuration contract lives in agents/internal/agentconfig so the
+// backend, the helper commands and the collector cannot drift apart.
+type (
+	agentConnectionConfig     = agentconfig.Connection
+	agentSamplingConfig       = agentconfig.Sampling
+	agentProbeSelection       = agentconfig.ProbeSelection
+	agentVirtualizationConfig = agentconfig.Virtualization
+	agentLocalConfig          = agentconfig.LocalConfig
+	probePlanSupport          = agentconfig.ProbePlan
+)
 
 type agentCloudConfigSyncPayload struct {
 	DeviceID             string              `json:"deviceId"`
@@ -138,12 +99,6 @@ type backendState struct {
 	TemperatureSources             []temperatureSourceReading `json:"temperatureSources"`
 	TemperatureSensorBackends      []sensorBackendStatus      `json:"temperatureSensorBackends"`
 	TemperatureProbeError          string                     `json:"temperatureProbeError,omitempty"`
-}
-
-type probePlanSupport struct {
-	Target    string   `json:"target"`
-	Providers []string `json:"providers"`
-	Default   string   `json:"default"`
 }
 
 type probeTargetState struct {
@@ -230,6 +185,7 @@ type server struct {
 	pendingStatePath          string
 	childBinaryPath           string
 	localToken                string
+	serviceScope              bool
 	childJob                  jobObject
 	config                    agentLocalConfig
 	cmd                       *exec.Cmd
@@ -281,248 +237,96 @@ const (
 )
 
 func main() {
-	listenAddr := flag.String("listen", "127.0.0.1:17891", "local listen address")
-	bundleRoot := flag.String("bundle-root", "", "directory containing packaged backend/agent binaries")
-	configRoot := flag.String("config-root", "", "directory for local config files")
-	childBinary := flag.String("child-binary", "", "path to the collector binary")
-	parentPID := flag.Int("parent-pid", 0, "frontend process id to watch; backend exits when this process exits")
-	localToken := flag.String("local-token", "", "legacy bearer token for local control API calls")
-	localTokenFile := flag.String("local-token-file", "", "file containing the bearer token for local control API calls")
-	flag.Parse()
+	args := os.Args[1:]
 
-	exePath, err := os.Executable()
+	// Helper commands are dispatched before flag parsing so their own options
+	// (for example "config set --hub ...") cannot collide with daemon flags.
+	preConfigDir := agentconfig.ResolveDir(flagValue(args, "--config-root"))
+	preListen := firstNonEmpty(flagValue(args, "--listen"), agentconfig.DefaultListenAddress)
+	if handled, code := dispatchSubcommand(args, preConfigDir, preListen); handled {
+		os.Exit(code)
+	}
+
+	// "run" is an explicit alias for the daemon; anything else positional is a
+	// typo that would otherwise be swallowed by flag parsing.
+	daemonArgs := args
+	if len(daemonArgs) > 0 && daemonArgs[0] == "run" {
+		daemonArgs = daemonArgs[1:]
+	}
+	if len(daemonArgs) > 0 && !strings.HasPrefix(daemonArgs[0], "-") {
+		writeError("unknown command %q", daemonArgs[0])
+		fmt.Printf(cliUsage, agentconfig.MachineDir(), agentconfig.DefaultListenAddress)
+		os.Exit(exitUsage)
+	}
+
+	options, err := parseDaemonOptions(daemonArgs)
 	if err != nil {
-		log.Fatal(err)
-	}
-	resolvedBundleRoot := filepath.Dir(exePath)
-	if strings.TrimSpace(*bundleRoot) != "" {
-		resolvedBundleRoot = *bundleRoot
-	}
-	resolvedBundleRoot, err = filepath.Abs(resolvedBundleRoot)
-	if err != nil {
-		log.Fatal(err)
+		writeError("%v", err)
+		fmt.Printf(cliUsage, agentconfig.MachineDir(), agentconfig.DefaultListenAddress)
+		os.Exit(exitUsage)
 	}
 
-	resolvedConfigRoot := resolvedBundleRoot
-	if strings.TrimSpace(*configRoot) != "" {
-		resolvedConfigRoot = *configRoot
-	}
-	resolvedConfigRoot, err = filepath.Abs(resolvedConfigRoot)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if strings.TrimSpace(*localTokenFile) != "" {
-		tokenPath := strings.TrimSpace(*localTokenFile)
-		if !filepath.IsAbs(tokenPath) {
-			tokenPath = filepath.Join(resolvedConfigRoot, tokenPath)
+	// On Windows the machine-scope service manager hosts the daemon; when the
+	// process was not started by the SCM this returns handled=false and the
+	// daemon keeps running in the foreground.
+	if options.ServiceMode {
+		handled, runErr := agentservice.RunAsService(func(ctx context.Context) error {
+			return runDaemon(ctx, options)
+		})
+		if runErr != nil {
+			log.Fatalf("agent service failed: %v", runErr)
 		}
-		rawToken, readErr := os.ReadFile(tokenPath)
-		if readErr != nil {
-			log.Fatalf("read local token file: %v", readErr)
-		}
-		if len(rawToken) > 4096 {
-			log.Fatal("local token file is too large")
-		}
-		*localToken = strings.TrimSpace(string(rawToken))
-	}
-	if err := validateListenAddress(*listenAddr, strings.TrimSpace(*localToken)); err != nil {
-		log.Fatal(err)
-	}
-
-	configPath := filepath.Join(resolvedConfigRoot, "agent-ui.config.json")
-	collectorName := "device-state-console-agent"
-	if runtime.GOOS == "windows" {
-		collectorName += ".exe"
-	}
-	resolvedChildBinary := strings.TrimSpace(*childBinary)
-	if resolvedChildBinary == "" {
-		resolvedChildBinary = filepath.Join(resolvedBundleRoot, collectorName)
-	} else if !filepath.IsAbs(resolvedChildBinary) {
-		resolvedChildBinary = filepath.Join(resolvedBundleRoot, resolvedChildBinary)
-	}
-	resolvedChildBinary, err = filepath.Abs(resolvedChildBinary)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	s := &server{
-		configPath:       configPath,
-		syncStatePath:    filepath.Join(resolvedConfigRoot, "agent-ui.sync-state.json"),
-		diagnosticsPath:  filepath.Join(resolvedConfigRoot, "agent-ui.backend.log"),
-		pendingStatePath: resolvePendingStatePath(resolvedConfigRoot, configPath),
-		childBinaryPath:  resolvedChildBinary,
-		localToken:       strings.TrimSpace(*localToken),
-		requestClient:    &http.Client{Timeout: 10 * time.Second},
-		config:           defaultLocalConfig(),
-		connectionState:  "stopped",
-		backendStartedAt: time.Now().UTC(),
-	}
-	if err := s.loadConfig(); err != nil {
-		log.Printf("load config failed: %v", err)
-	}
-	if err := s.loadSyncState(); err != nil {
-		log.Printf("load cloud sync state failed: %v", err)
-	}
-	if s.config.AutoStartCollector && s.config.DataRecordingEnabled {
-		s.mu.Lock()
-		if err := s.startChildLocked(false); err != nil {
-			s.connectionState = "error"
-			s.appendDiagnosticLocked("linux auto-start collector failed: %v", err)
-		}
-		s.mu.Unlock()
-	}
-	if childJob, err := newJobObject(); err != nil {
-		log.Printf("create child job object failed: %v", err)
-		s.appendDiagnostic("child job object unavailable: %v", err)
-	} else {
-		s.childJob = childJob
-	}
-	if s.childJob != nil {
-		defer func() {
-			if err := s.childJob.Close(); err != nil {
-				log.Printf("close child job object failed: %v", err)
-			}
-		}()
-	}
-	s.appendDiagnostic("backend started; config=%s child=%s", s.configPath, s.childBinaryPath)
-	if *parentPID > 0 {
-		if err := s.attachFrontendParent(*parentPID, "startup"); err != nil {
-			s.appendDiagnostic("frontend parent watch failed for pid=%d: %v", *parentPID, err)
-			s.requestShutdown(fmt.Sprintf("frontend parent process unavailable; pid=%d", *parentPID))
+		if handled {
+			return
 		}
 	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/state", s.handleState)
-	mux.HandleFunc("/api/config", s.handleConfig)
-	mux.HandleFunc("/api/control/start", s.handleStart)
-	mux.HandleFunc("/api/control/stop", s.handleStop)
-	mux.HandleFunc("/api/control/restart", s.handleRestart)
-	mux.HandleFunc("/api/control/attach-frontend", s.handleAttachFrontend)
-	mux.HandleFunc("/api/control/check-connection", s.handleConnectionCheck)
-	mux.HandleFunc("/api/control/shutdown", s.handleBackendShutdown)
-	mux.HandleFunc("/api/cloud/push", s.handleCloudPush)
-	mux.HandleFunc("/api/probes/detect", s.handleProbeDetect)
-
-	httpServer := &http.Server{
-		Addr:    *listenAddr,
-		Handler: mux,
-	}
-	s.httpServer = httpServer
-
-	log.Printf("device state console agent backend v%s listening on http://%s", BuildVersion, *listenAddr)
-	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := runDaemon(context.Background(), options); err != nil {
 		log.Fatal(err)
 	}
 }
 
 func defaultLocalConfig() agentLocalConfig {
-	deviceID := "windows-agent"
-	hostname := "Windows Agent"
-	probeSelections := []agentProbeSelection{
-		{Target: "cpu", Provider: "gopsutil", Enabled: true},
-		{Target: "memory", Provider: "gopsutil", Enabled: true},
-		{Target: "disk", Provider: "gopsutil", Enabled: true},
-		{Target: "network", Provider: "gopsutil", Enabled: true},
-		{Target: "gpu", Provider: "wmi", Enabled: true},
-		{Target: "fan", Provider: "librehardwaremonitor", Enabled: true},
-	}
-	if runtime.GOOS == "linux" {
-		deviceID = "linux-agent"
-		hostname = "Linux Agent"
-		if detectedHostname, err := os.Hostname(); err == nil && strings.TrimSpace(detectedHostname) != "" {
-			deviceID = strings.TrimSpace(detectedHostname)
-			hostname = strings.TrimSpace(detectedHostname)
-		}
-		probeSelections = []agentProbeSelection{
-			{Target: "cpu", Provider: "gopsutil", Enabled: true},
-			{Target: "memory", Provider: "gopsutil", Enabled: true},
-			{Target: "disk", Provider: "gopsutil", Enabled: true},
-			{Target: "network", Provider: "gopsutil", Enabled: true},
-			{Target: "gpu", Provider: "disabled", Enabled: false},
-			{Target: "fan", Provider: "hwmon", Enabled: true},
-		}
-	}
-
-	return agentLocalConfig{
-		ConfigVersion: currentConfigVersion,
-		Connection: agentConnectionConfig{
-			ServerURL: "http://127.0.0.1:3100",
-			Secret:    "",
-			DeviceID:  deviceID,
-			Hostname:  hostname,
-		},
-		Sampling: agentSamplingConfig{
-			NormalIntervalSeconds: 30,
-			SlowIntervalSeconds:   30,
-		},
-		EnabledMetrics: []string{
-			"cpuUsage", "cpuFrequency", "cpuTemperature", "cpuTopology", "systemOverview",
-			"memoryUsage", "swapUsage", "memoryAvailable", "memoryCached", "memoryCommitted", "memoryHardware",
-			"diskUsage", "diskRead", "diskWrite", "diskMetadata", "diskActivity", "diskHealth",
-			"networkRxRate", "networkTxRate", "networkTraffic", "networkIdentity",
-		},
-		EnabledDeviceIDs:     map[string][]string{},
-		InstanceMetricConfig: map[string][]string{},
-		ProbeSelections:      probeSelections,
-		CloudSyncEnabled:     true,
-		DataRecordingEnabled: true,
-		AutoRestartCollector: true,
-		AutoStartCollector:   false,
-	}
+	return agentconfig.Default()
 }
 
 func supportedProbePlans() []probePlanSupport {
-	if runtime.GOOS == "linux" {
-		return []probePlanSupport{
-			{Target: "connection", Providers: []string{"gopsutil"}, Default: "gopsutil"},
-			{Target: "cpu", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
-			{Target: "memory", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
-			{Target: "disk", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
-			{Target: "network", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
-			{Target: "gpu", Providers: []string{"disabled"}, Default: "disabled"},
-			{Target: "fan", Providers: []string{"disabled", "hwmon"}, Default: "hwmon"},
-		}
-	}
-	return []probePlanSupport{
-		{Target: "connection", Providers: []string{"gopsutil"}, Default: "gopsutil"},
-		{Target: "cpu", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
-		{Target: "memory", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
-		{Target: "disk", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
-		{Target: "network", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
-		{Target: "gpu", Providers: []string{"disabled", "wmi"}, Default: "wmi"},
-		{Target: "fan", Providers: []string{"disabled", "librehardwaremonitor"}, Default: "librehardwaremonitor"},
-	}
+	return agentconfig.SupportedProbePlans()
 }
 
 func (s *server) loadConfig() error {
-	raw, err := readLimitedFile(s.configPath, maxConfigBodyBytes)
+	raw, err := agentconfig.ReadFileLimited(s.configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return s.saveConfigLocked()
 		}
 		return err
 	}
-	raw = trimUTF8BOM(raw)
+	raw = agentconfig.TrimUTF8BOM(raw)
 	var cfg agentLocalConfig
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return err
 	}
 	s.config = normalizeLocalConfig(cfg, raw)
+	if s.serviceScope && !bytes.Contains(raw, []byte(`"autoStartCollector"`)) {
+		// A machine-scope service exists to collect continuously. An existing
+		// document that never mentioned the key keeps the zero value otherwise,
+		// which silently means "wait for the desktop UI".
+		s.config.AutoStartCollector = true
+	}
 	// Persist migrations so the collector, which reads the same file directly,
 	// observes the normalized metric set immediately after backend startup.
 	return s.saveConfigLocked()
 }
 
 func (s *server) loadSyncState() error {
-	raw, err := readLimitedFile(s.syncStatePath, maxConfigBodyBytes)
+	raw, err := agentconfig.ReadFileLimited(s.syncStatePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
-	raw = trimUTF8BOM(raw)
+	raw = agentconfig.TrimUTF8BOM(raw)
 	var state cloudSyncStateFile
 	if err := json.Unmarshal(raw, &state); err != nil {
 		return err
@@ -533,22 +337,6 @@ func (s *server) loadSyncState() error {
 		s.lastCloudSyncAt = parsed.UTC()
 	}
 	return nil
-}
-
-func readLimitedFile(path string, limit int64) ([]byte, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	raw, err := io.ReadAll(io.LimitReader(file, limit+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(raw)) > limit {
-		return nil, fmt.Errorf("file %s is too large", path)
-	}
-	return raw, nil
 }
 
 func (s *server) saveConfigLocked() error {
@@ -635,17 +423,6 @@ func (s *server) snapshotLocked() backendState {
 		TemperatureSensorBackends:      append([]sensorBackendStatus(nil), s.temperatureSensorBackends...),
 		TemperatureProbeError:          s.temperatureProbeError,
 	}
-}
-
-func resolvePendingStatePath(configRoot, configPath string) string {
-	pendingPath := strings.TrimSpace(os.Getenv("DSC_AGENT_PENDING_FILE"))
-	if pendingPath == "" {
-		pendingPath = configPath + ".pending.jsonl"
-	}
-	if !filepath.IsAbs(pendingPath) {
-		pendingPath = filepath.Join(configRoot, pendingPath)
-	}
-	return pendingPath + ".state.json"
 }
 
 func readCollectorPendingState(path string) collectorPendingStateFile {
@@ -2126,130 +1903,15 @@ func parseCollectorIssue(line string) (string, string, bool) {
 }
 
 func normalizeLocalConfig(cfg agentLocalConfig, raw []byte) agentLocalConfig {
-	defaults := defaultLocalConfig()
-	metricsConfigured := bytes.Contains(raw, []byte(`"enabledMetrics"`))
-
-	if cfg.ConfigVersion <= 0 {
-		cfg.ConfigVersion = currentConfigVersion
-	}
-
-	if strings.TrimSpace(cfg.Connection.ServerURL) == "" {
-		cfg.Connection.ServerURL = defaults.Connection.ServerURL
-	}
-	if strings.TrimSpace(cfg.Connection.DeviceID) == "" {
-		cfg.Connection.DeviceID = defaults.Connection.DeviceID
-	}
-	if strings.TrimSpace(cfg.Connection.Hostname) == "" {
-		cfg.Connection.Hostname = defaults.Connection.Hostname
-	}
-
-	if cfg.Sampling.NormalIntervalSeconds <= 0 || cfg.Sampling.NormalIntervalSeconds > maxSamplingIntervalSeconds {
-		cfg.Sampling.NormalIntervalSeconds = defaults.Sampling.NormalIntervalSeconds
-	}
-	if cfg.Sampling.SlowIntervalSeconds <= 0 || cfg.Sampling.SlowIntervalSeconds > maxSamplingIntervalSeconds {
-		cfg.Sampling.SlowIntervalSeconds = defaults.Sampling.SlowIntervalSeconds
-	}
-	if len(cfg.ProbeSelections) == 0 {
-		cfg.ProbeSelections = append([]agentProbeSelection(nil), defaults.ProbeSelections...)
-	}
-	if !metricsConfigured && len(cfg.EnabledMetrics) == 0 {
-		cfg.EnabledMetrics = append([]string(nil), defaults.EnabledMetrics...)
-	}
-	cfg.EnabledMetrics = normalizeMetricKeys(cfg.EnabledMetrics)
-	if !(metricsConfigured && len(cfg.EnabledMetrics) == 0) {
-		if isProbeSelectionEnabled(cfg.ProbeSelections, "gpu") && !containsMetricPrefix(cfg.EnabledMetrics, "gpu") {
-			cfg.EnabledMetrics = append(cfg.EnabledMetrics,
-				"gpuUsage",
-				"gpuEncode",
-				"gpuDecode",
-				"gpuFrequency",
-				"gpuMemory",
-				"gpuTemperature",
-				"gpuDriverInfo",
-			)
-		}
-		if isProbeSelectionEnabled(cfg.ProbeSelections, "cpu") && containsMetricPrefix(cfg.EnabledMetrics, "cpu") {
-			cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"cpuTopology", "systemOverview"})
-		}
-		if isProbeSelectionEnabled(cfg.ProbeSelections, "memory") && containsMetricPrefix(cfg.EnabledMetrics, "memory") {
-			cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"memoryAvailable", "memoryCached", "memoryCommitted", "memoryHardware"})
-		}
-		if isProbeSelectionEnabled(cfg.ProbeSelections, "disk") && containsMetricPrefix(cfg.EnabledMetrics, "disk") {
-			cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"diskMetadata", "diskActivity", "diskHealth"})
-		}
-		if isProbeSelectionEnabled(cfg.ProbeSelections, "network") && containsMetricPrefix(cfg.EnabledMetrics, "network") {
-			cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"networkIdentity"})
-		}
-		if isProbeSelectionEnabled(cfg.ProbeSelections, "fan") {
-			cfg.EnabledMetrics = appendMissingMetricKeys(cfg.EnabledMetrics, []string{"fanRpm", "fanControl", "fanTargetTemperature", "fanPwm", "fanChannelState", "fanNote"})
-		}
-	}
-	if cfg.EnabledDeviceIDs == nil {
-		cfg.EnabledDeviceIDs = map[string][]string{}
-	}
-	if cfg.InstanceMetricConfig == nil {
-		cfg.InstanceMetricConfig = map[string][]string{}
-	}
-	if len(raw) == 0 || !bytes.Contains(raw, []byte(`"cloudSyncEnabled"`)) {
-		cfg.CloudSyncEnabled = defaults.CloudSyncEnabled
-	}
-	if len(raw) == 0 || !bytes.Contains(raw, []byte(`"dataRecordingEnabled"`)) {
-		cfg.DataRecordingEnabled = defaults.DataRecordingEnabled
-	}
-	if len(raw) == 0 || !bytes.Contains(raw, []byte(`"autoRestartCollector"`)) {
-		cfg.AutoRestartCollector = defaults.AutoRestartCollector
-	}
-
-	cfg.Connection.ServerURL = strings.TrimSpace(cfg.Connection.ServerURL)
-	cfg.Connection.Secret = strings.TrimSpace(cfg.Connection.Secret)
-	cfg.Connection.DeviceID = strings.TrimSpace(cfg.Connection.DeviceID)
-	cfg.Connection.Hostname = strings.TrimSpace(cfg.Connection.Hostname)
-	cfg.EnabledMetrics = normalizeMetricKeys(cfg.EnabledMetrics)
-	cfg.EnabledDeviceIDs = normalizeStringMap(cfg.EnabledDeviceIDs)
-	cfg.InstanceMetricConfig = normalizeStringMap(cfg.InstanceMetricConfig)
-	cfg.ProbeSelections = normalizeProbeSelections(cfg.ProbeSelections, defaults.ProbeSelections)
-	return cfg
-}
-
-func isProbeSelectionEnabled(selections []agentProbeSelection, target string) bool {
-	for _, selection := range selections {
-		if strings.EqualFold(strings.TrimSpace(selection.Target), target) {
-			return selection.Enabled && !strings.EqualFold(strings.TrimSpace(selection.Provider), "disabled")
-		}
-	}
-	return false
-}
-
-func containsMetricPrefix(metrics []string, prefix string) bool {
-	for _, metric := range metrics {
-		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(metric)), strings.ToLower(prefix)) {
-			return true
-		}
-	}
-	return false
-}
-
-func appendMissingMetricKeys(metrics []string, keys []string) []string {
-	existing := make(map[string]struct{}, len(metrics)+len(keys))
-	for _, metric := range metrics {
-		existing[strings.TrimSpace(metric)] = struct{}{}
-	}
-	for _, key := range keys {
-		if _, found := existing[key]; found {
-			continue
-		}
-		metrics = append(metrics, key)
-		existing[key] = struct{}{}
-	}
-	return metrics
+	return agentconfig.Normalize(cfg, raw)
 }
 
 func displayConfigChanged(previous agentLocalConfig, next agentLocalConfig) bool {
 	previousPayload, err := json.Marshal(agentCloudConfigSyncPayload{
 		DeviceID:             strings.TrimSpace(previous.Connection.DeviceID),
-		EnabledMetrics:       uniqueTrimmedStrings(previous.EnabledMetrics),
-		EnabledDeviceIDs:     normalizeStringMap(previous.EnabledDeviceIDs),
-		InstanceMetricConfig: normalizeStringMap(previous.InstanceMetricConfig),
+		EnabledMetrics:       agentconfig.UniqueTrimmedStrings(previous.EnabledMetrics),
+		EnabledDeviceIDs:     agentconfig.NormalizeStringMap(previous.EnabledDeviceIDs),
+		InstanceMetricConfig: agentconfig.NormalizeStringMap(previous.InstanceMetricConfig),
 	})
 	if err != nil {
 		return true
@@ -2257,9 +1919,9 @@ func displayConfigChanged(previous agentLocalConfig, next agentLocalConfig) bool
 
 	nextPayload, err := json.Marshal(agentCloudConfigSyncPayload{
 		DeviceID:             strings.TrimSpace(next.Connection.DeviceID),
-		EnabledMetrics:       uniqueTrimmedStrings(next.EnabledMetrics),
-		EnabledDeviceIDs:     normalizeStringMap(next.EnabledDeviceIDs),
-		InstanceMetricConfig: normalizeStringMap(next.InstanceMetricConfig),
+		EnabledMetrics:       agentconfig.UniqueTrimmedStrings(next.EnabledMetrics),
+		EnabledDeviceIDs:     agentconfig.NormalizeStringMap(next.EnabledDeviceIDs),
+		InstanceMetricConfig: agentconfig.NormalizeStringMap(next.InstanceMetricConfig),
 	})
 	if err != nil {
 		return true
@@ -2274,112 +1936,6 @@ func cloneIntPointer(value *int) *int {
 	}
 	cloned := *value
 	return &cloned
-}
-
-func uniqueTrimmedStrings(items []string) []string {
-	seen := map[string]struct{}{}
-	result := make([]string, 0, len(items))
-	for _, item := range items {
-		trimmed := strings.TrimSpace(item)
-		if trimmed == "" {
-			continue
-		}
-		if _, exists := seen[trimmed]; exists {
-			continue
-		}
-		seen[trimmed] = struct{}{}
-		result = append(result, trimmed)
-	}
-	return result
-}
-
-func normalizeStringMap(values map[string][]string) map[string][]string {
-	result := make(map[string][]string, len(values))
-	for key, items := range values {
-		trimmedKey := strings.TrimSpace(key)
-		if trimmedKey == "" {
-			continue
-		}
-		result[trimmedKey] = uniqueTrimmedStrings(items)
-	}
-	return result
-}
-
-func normalizeProbeSelections(selections []agentProbeSelection, defaults []agentProbeSelection) []agentProbeSelection {
-	defaultByTarget := map[string]agentProbeSelection{}
-	supportedByTarget := map[string]map[string]bool{}
-	for _, plan := range supportedProbePlans() {
-		providers := map[string]bool{}
-		for _, provider := range plan.Providers {
-			providers[provider] = true
-		}
-		supportedByTarget[plan.Target] = providers
-	}
-	for _, item := range defaults {
-		defaultByTarget[item.Target] = item
-	}
-
-	result := make([]agentProbeSelection, 0, len(selections))
-	seen := map[string]struct{}{}
-	for _, item := range selections {
-		target := strings.ToLower(strings.TrimSpace(item.Target))
-		if target == "" {
-			continue
-		}
-		providers, supported := supportedByTarget[target]
-		if !supported {
-			continue
-		}
-		if _, exists := seen[target]; exists {
-			continue
-		}
-		seen[target] = struct{}{}
-
-		provider := strings.TrimSpace(item.Provider)
-		if provider == "" || !providers[provider] {
-			provider = defaultByTarget[target].Provider
-		}
-		if provider == "" {
-			provider = "disabled"
-		}
-
-		result = append(result, agentProbeSelection{
-			Target:   target,
-			Provider: provider,
-			Enabled:  item.Enabled,
-		})
-	}
-
-	for _, item := range defaults {
-		if _, exists := seen[item.Target]; exists {
-			continue
-		}
-		result = append(result, item)
-	}
-
-	return result
-}
-
-func normalizeMetricKeys(items []string) []string {
-	known := make(map[string]bool, len(allMetricKeys))
-	for _, key := range allMetricKeys {
-		known[key] = true
-	}
-	result := make([]string, 0, len(items))
-	seen := map[string]bool{}
-	for _, item := range items {
-		key := strings.TrimSpace(item)
-		if key == "" || !known[key] || seen[key] {
-			continue
-		}
-		seen[key] = true
-		result = append(result, key)
-	}
-	return result
-}
-
-func trimUTF8BOM(raw []byte) []byte {
-	return bytes.TrimPrefix(raw, []byte{0xEF, 0xBB, 0xBF})
 }
 
 func min(left, right int) int {
