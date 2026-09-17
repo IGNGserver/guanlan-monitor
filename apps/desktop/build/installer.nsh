@@ -377,6 +377,15 @@ dsc_skip_agent_service:
   Pop $0
 dsc_skip_agent_service_uninstall:
 
+  ; The CLI copy in bin\ is created with CopyFiles, which NSIS does not record
+  ; for automatic removal, and the collector is stopped through the job object
+  ; when the service goes away. Remove both explicitly so an uninstall leaves
+  ; nothing behind.
+  Delete "$INSTDIR\bin\${DSC_AGENT_CLI_NAME}"
+  RMDir "$INSTDIR\bin"
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /F /T /IM "device-state-console-agent.exe"'
+  Pop $0
+
   ; Configuration is preserved by default; /REMOVECONFIG deletes it explicitly.
   ClearErrors
   ${GetOptions} $CMDLINE "/REMOVECONFIG" $0

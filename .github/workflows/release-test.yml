@@ -368,10 +368,23 @@ jobs:
             Select-Object -First 1 -ExpandProperty FullName
           if (-not $uninstaller) { throw "The uninstaller is missing under $installRoot" }
           Write-Output "uninstaller = $uninstaller"
-          $process = Start-Process -FilePath $uninstaller -ArgumentList @("/S", "_?=$installRoot") -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw "Silent uninstallation failed with exit code $($process.ExitCode)." }
-          if (Get-Service -Name "GuanlanAgent" -ErrorAction SilentlyContinue) { throw "The agent service must be removed with the application." }
+          # Invoke the uninstaller directly: "Start-Process -Wait" with the NSIS
+          # "_?=<dir>" form returns -1 and performs no work here (verified on a
+          # Windows host), while a plain "/S" run removes the service and the
+          # installation. Wait on the observed outcome rather than the exit code.
+          & $uninstaller /S
+          $deadline = (Get-Date).AddMinutes(3)
+          while (Get-Service -Name "GuanlanAgent" -ErrorAction SilentlyContinue) {
+            if ((Get-Date) -gt $deadline) { throw "The agent service must be removed with the application." }
+            Start-Sleep -Seconds 3
+          }
+          $installDeadline = (Get-Date).AddMinutes(2)
+          while (Test-Path -LiteralPath $installRoot) {
+            if ((Get-Date) -gt $installDeadline) { throw "The installation directory must be removed by the uninstaller." }
+            Start-Sleep -Seconds 3
+          }
           if (-not (Test-Path -LiteralPath $configPath)) { throw "Uninstall must preserve the machine-scope configuration." }
+          Write-Output "service and installation removed; machine configuration preserved at $configPath"
 
   linux-gui:
     name: Build unified Linux Electron GUI asset
