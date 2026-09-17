@@ -1,6 +1,7 @@
 import type {
   AgentLocalConfig,
-  DesktopAgentBackendState
+  DesktopAgentBackendState,
+  DesktopAgentMode
 } from "@dsc/shared";
 
 export interface AgentBackendConfig extends AgentLocalConfig {
@@ -49,4 +50,9 @@ export interface RawAgentBackendState {
   temperatureSources: DesktopAgentBackendState["temperatureSources"];
   temperatureSensorBackends: DesktopAgentBackendState["temperatureSensorBackends"];
   temperatureProbeError?: string;
+  /**
+   * How this state was obtained: attached to the machine-scope service, attached
+   * but read-only for this user, or owned by a backend this process spawned.
+   */
+  agentMode?: DesktopAgentMode;
 }
