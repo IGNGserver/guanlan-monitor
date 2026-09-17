@@ -61,8 +61,8 @@ func TestServiceScopeBackfillsAutoStartCollector(t *testing.T) {
 		t.Fatal("the machine-scope service must start collecting when the key is absent")
 	}
 
-	// An explicit decision by the administrator is always respected.
-	explicit := []byte(`{"autoStartCollector":false,"dataRecordingEnabled":true}`)
+	// An explicit decision on a current-schema document is always respected.
+	explicit := []byte(`{"configVersion":2,"autoStartCollector":false,"dataRecordingEnabled":true}`)
 	if err := os.WriteFile(path, explicit, 0o600); err != nil {
 		t.Fatal(err)
 	}
