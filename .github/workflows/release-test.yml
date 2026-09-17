@@ -255,7 +255,6 @@ jobs:
     needs: windows
     env:
       DSC_HEADLESS_KEY: ci-headless-access-key
-      DSC_HEADLESS_MARKER: ${{ runner.temp }}\ingest.json
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -277,10 +276,14 @@ jobs:
           $version = (Get-Content VERSION -Raw).Trim()
           $setup = Join-Path $env:GITHUB_WORKSPACE "release-assets/DeviceStateConsole-Windows-GUI-Setup-v$version.exe"
           if (-not (Test-Path -LiteralPath $setup)) { throw "Windows GUI setup is missing: $setup" }
+          # The marker path is derived per step: environment variables set in one
+          # step do not reach the next one.
+          $marker = Join-Path $env:RUNNER_TEMP "ingest.json"
+          Remove-Item -LiteralPath $marker -ErrorAction SilentlyContinue
           Start-Process -FilePath "node" -ArgumentList @(
             "scripts/headless-hub-stub.mjs", "serve",
             "--port", "3199",
-            "--marker", "`"$env:DSC_HEADLESS_MARKER`"",
+            "--marker", "`"$marker`"",
             "--key", $env:DSC_HEADLESS_KEY
           ) -WindowStyle Hidden
           Start-Sleep -Seconds 4
@@ -328,16 +331,18 @@ jobs:
           if (-not $before.collectorRunning) { throw "the collector is not running after the service started." }
           & $cli wait-for-upload --timeout 180
           if ($LASTEXITCODE -ne 0) { throw "No first upload was confirmed within 180 seconds." }
-          if (-not (Test-Path -LiteralPath $env:DSC_HEADLESS_MARKER)) { throw "The stub Hub never received an ingest." }
+          $marker = Join-Path $env:RUNNER_TEMP "ingest.json"
+          if (-not (Test-Path -LiteralPath $marker)) { throw "The stub Hub never received an ingest." }
           $after = (& $cli status --json | Out-String) | ConvertFrom-Json
           if (-not $after.lastUploadAt) { throw "status does not report lastUploadAt after the first upload." }
           if (-not $after.configured) { throw "status does not report a configured agent after the unattended install." }
-          Get-Content -LiteralPath $env:DSC_HEADLESS_MARKER
+          Get-Content -LiteralPath $marker
 
       - name: Verify recovery after a service restart with no UI
         shell: powershell
         run: |
-          Remove-Item -LiteralPath $env:DSC_HEADLESS_MARKER -ErrorAction SilentlyContinue
+          $marker = Join-Path $env:RUNNER_TEMP "ingest.json"
+          Remove-Item -LiteralPath $marker -ErrorAction SilentlyContinue
           Restart-Service -Name "GuanlanAgent" -Force
           Start-Sleep -Seconds 5
           $cli = Join-Path $env:ProgramFiles "DeviceStateConsoleAgent\bin\guanlan-agent.exe"
@@ -345,7 +350,7 @@ jobs:
           if ($service.Status -ne "Running") { throw "The agent service did not come back after a restart." }
           & $cli wait-for-upload --timeout 180
           if ($LASTEXITCODE -ne 0) { throw "Reporting did not resume after the service restart." }
-          if (-not (Test-Path -LiteralPath $env:DSC_HEADLESS_MARKER)) { throw "No ingest arrived after the restart." }
+          if (-not (Test-Path -LiteralPath $marker)) { throw "No ingest arrived after the restart." }
           $status = (& $cli status --json | Out-String) | ConvertFrom-Json
           if (-not $status.lastUploadAt) { throw "status does not report lastUploadAt after the restart." }
           if (-not $status.collectorRunning) { throw "the collector is not running after the restart." }
