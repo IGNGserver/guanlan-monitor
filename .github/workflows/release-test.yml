@@ -302,11 +302,14 @@ jobs:
           if ($service.Status -ne "Running") { throw "The agent service must be running, found $($service.Status)." }
           $cli = Join-Path $env:ProgramFiles "DeviceStateConsoleAgent\bin\guanlan-agent.exe"
           if (-not (Test-Path -LiteralPath $cli)) { throw "The agent CLI is missing: $cli" }
-          & $cli status --json
-          if ($LASTEXITCODE -ne 0) { throw "guanlan-agent status reported a problem before the upload check." }
+          $before = (& $cli status --json | Out-String) | ConvertFrom-Json
+          if (-not $before.serviceInstalled) { throw "status does not report an installed service." }
           & $cli wait-for-upload --timeout 180
           if ($LASTEXITCODE -ne 0) { throw "No first upload was confirmed within 180 seconds." }
           if (-not (Test-Path -LiteralPath $env:DSC_HEADLESS_MARKER)) { throw "The stub Hub never received an ingest." }
+          $after = (& $cli status --json | Out-String) | ConvertFrom-Json
+          if (-not $after.lastUploadAt) { throw "status does not report lastUploadAt after the first upload." }
+          if (-not $after.configured) { throw "status does not report a configured agent after the unattended install." }
           Get-Content -LiteralPath $env:DSC_HEADLESS_MARKER
 
       - name: Verify recovery after a service restart with no UI
@@ -321,7 +324,8 @@ jobs:
           & $cli wait-for-upload --timeout 180
           if ($LASTEXITCODE -ne 0) { throw "Reporting did not resume after the service restart." }
           if (-not (Test-Path -LiteralPath $env:DSC_HEADLESS_MARKER)) { throw "No ingest arrived after the restart." }
-          & $cli status --json
+          $status = (& $cli status --json | Out-String) | ConvertFrom-Json
+          if (-not $status.lastUploadAt) { throw "status does not report lastUploadAt after the restart." }
 
       - name: Verify silent uninstall removes the service and keeps the configuration
         shell: powershell
@@ -440,6 +444,7 @@ jobs:
           sudo systemctl show -p UnitFileState,WantedBy guanlan-agent.service
           test -x /usr/bin/guanlan-agent
           sudo guanlan-agent status --json | tee "$RUNNER_TEMP/status-before.json"
+          node -e "const d=require(process.env.RUNNER_TEMP + '/status-before.json'); if (!d.serviceInstalled || !d.serviceRunning) { console.error('the service is not reported as installed and running', d); process.exit(1); }"
 
       - name: Verify reporting through a stub Hub
         shell: bash
@@ -448,10 +453,16 @@ jobs:
         run: |
           set -euo pipefail
           marker="$RUNNER_TEMP/ingest.json"
-          node scripts/headless-hub-stub.mjs serve --port 3199 --marker "$marker" --key "$DSC_HEADLESS_KEY" &
-          stub_pid=$!
-          trap 'kill "$stub_pid" 2>/dev/null || true' EXIT
-          sleep 3
+          # The stub has to outlive this step: the restart check below waits for
+          # a second ingest after the service comes back.
+          nohup node scripts/headless-hub-stub.mjs serve --port 3199 \
+            --marker "$marker" --key "$DSC_HEADLESS_KEY" > "$RUNNER_TEMP/stub.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/stub.pid"
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3199/api/agent/ping >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3199/api/agent/ping >/dev/null
           printf '%s' "$DSC_HEADLESS_KEY" | sudo guanlan-agent config set \
             --hub http://127.0.0.1:3199 \
             --key-stdin \
@@ -471,6 +482,7 @@ jobs:
           sudo guanlan-agent wait-for-upload --timeout 150
           test -f "$RUNNER_TEMP/ingest.json"
           sudo guanlan-agent status --json | tee "$RUNNER_TEMP/status-after.json"
+          node -e "const d=require(process.env.RUNNER_TEMP + '/status-after.json'); if (!d.lastUploadAt) { console.error('status did not report lastUploadAt after the restart', d); process.exit(1); } if (!d.configured) { console.error('status did not report a configured agent', d); process.exit(1); }"
 
       - name: Verify removal keeps the configuration
         shell: bash
@@ -485,6 +497,9 @@ jobs:
           test -f /etc/guanlan/agent-ui.config.json
           sudo dpkg --purge guanlan-desktop
           test ! -d /etc/guanlan
+          if [ -f "$RUNNER_TEMP/stub.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/stub.pid")" 2>/dev/null || true
+          fi
 
   android:
     name: Build Android asset
