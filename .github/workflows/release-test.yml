@@ -361,8 +361,13 @@ jobs:
           $installRoot = Join-Path $env:ProgramFiles "DeviceStateConsoleAgent"
           $configPath = Join-Path $env:ProgramData "Guanlan\agent-ui.config.json"
           if (-not (Test-Path -LiteralPath $configPath)) { throw "The unattended configuration was not written: $configPath" }
-          $uninstaller = Join-Path $installRoot "Uninstall 观澜.exe"
-          if (-not (Test-Path -LiteralPath $uninstaller)) { throw "The uninstaller is missing: $uninstaller" }
+          # Discover the uninstaller instead of hardcoding the CJK product name:
+          # GitHub writes the step script without a BOM, and a non-ASCII literal
+          # arrives mangled under Windows PowerShell 5.1.
+          $uninstaller = Get-ChildItem -LiteralPath $installRoot -Filter "Uninstall*.exe" -File |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $uninstaller) { throw "The uninstaller is missing under $installRoot" }
+          Write-Output "uninstaller = $uninstaller"
           $process = Start-Process -FilePath $uninstaller -ArgumentList @("/S", "_?=$installRoot") -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Silent uninstallation failed with exit code $($process.ExitCode)." }
           if (Get-Service -Name "GuanlanAgent" -ErrorAction SilentlyContinue) { throw "The agent service must be removed with the application." }
