@@ -16,7 +16,6 @@ package agentservice
 
 import (
 	"context"
-	"os"
 	"os/exec"
 	"strings"
 

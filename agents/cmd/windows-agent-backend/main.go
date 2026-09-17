@@ -35,7 +35,6 @@ var BuildVersion = "dev"
 var BuildChannel = "test"
 
 const (
-	currentConfigVersion        = agentconfig.CurrentConfigVersion
 	maxConfigBodyBytes    int64 = agentconfig.MaxConfigBytes
 	maxCloudResponseBytes int64 = 512 * 1024
 )
