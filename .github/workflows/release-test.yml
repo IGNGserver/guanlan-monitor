@@ -379,7 +379,8 @@ jobs:
           go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=${version} -X main.BuildChannel=test" -o ../release/desktop-agent/device-state-console-agent-backend ./cmd/windows-agent-backend
           # Ship the backend under its product name. The historical name is kept
           # for one release cycle so an in-place upgrade keeps working.
-          install -m 0755 ../release/desktop-agent/device-state-console-agent-backend ../release/desktop-agent/guanlan-agent
+          # "install" runs from the repository root, not from agents/.
+          install -m 0755 release/desktop-agent/device-state-console-agent-backend release/desktop-agent/guanlan-agent
 
       - name: Build Linux Electron GUI install package
         shell: bash
@@ -432,7 +433,11 @@ jobs:
           package="$(find release-assets -maxdepth 1 -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb' -print -quit)"
           test -n "$package"
           sudo apt-get update -qq
-          sudo apt-get install -y "./$package"
+          if ! sudo apt-get install -y "./$package"; then
+            echo "apt could not resolve the package dependencies directly; unpacking and repairing" >&2
+            sudo dpkg -i "$package" || true
+            sudo apt-get -f install -y
+          fi
           dpkg-query -W -f='${Package} ${Version}\n' guanlan-desktop
 
       - name: Verify the machine-scope service is enabled and running

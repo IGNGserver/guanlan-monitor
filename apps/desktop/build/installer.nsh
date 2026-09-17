@@ -140,7 +140,17 @@ dsc_detect_pawnio_service:
   nsExec::Exec '"$SYSDIR\schtasks.exe" /End /TN "${DSC_HARDWARE_SENSOR_TASK}"'
   Pop $0
 
+  ; Stop the machine-scope service before touching its binary: the running
+  ; service process holds bin\guanlan-agent.exe open, which would block an
+  ; in-place upgrade.
+  nsExec::Exec '"$SYSDIR\sc.exe" stop GuanlanAgent'
+  Pop $0
+  nsExec::Exec '"$SYSDIR\schtasks.exe" /End /TN GuanlanAgent'
+  Pop $0
+
   ; nsExec runs the console utility without opening a visible taskkill window.
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /F /T /IM "guanlan-agent.exe"'
+  Pop $0
   nsExec::Exec '"$SYSDIR\taskkill.exe" /F /T /IM "DeviceStateConsoleAgent.WinUI.exe"'
   Pop $0
   nsExec::Exec '"$SYSDIR\taskkill.exe" /F /T /IM "windows-agent-backend.exe"'
