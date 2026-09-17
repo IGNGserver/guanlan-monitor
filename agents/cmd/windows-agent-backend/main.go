@@ -294,24 +294,22 @@ func supportedProbePlans() []probePlanSupport {
 }
 
 func (s *server) loadConfig() error {
-	raw, err := agentconfig.ReadFileLimited(s.configPath)
+	// The shared loader owns the defaults, including the machine-scope rule that
+	// a missing document (or a missing autoStartCollector key) means "collect
+	// continuously". Hand-rolling this previously created a document with
+	// autoStartCollector=false on the very first service start, so the collector
+	// never ran and the host silently never reported.
+	config, created, err := agentconfig.LoadWithOptions(
+		s.configPath,
+		agentconfig.LoadOptions{ServiceScope: s.serviceScope},
+	)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return s.saveConfigLocked()
-		}
 		return err
 	}
-	raw = agentconfig.TrimUTF8BOM(raw)
-	var cfg agentLocalConfig
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return err
-	}
-	s.config = normalizeLocalConfig(cfg, raw)
-	if s.serviceScope && !bytes.Contains(raw, []byte(`"autoStartCollector"`)) {
-		// A machine-scope service exists to collect continuously. An existing
-		// document that never mentioned the key keeps the zero value otherwise,
-		// which silently means "wait for the desktop UI".
-		s.config.AutoStartCollector = true
+	s.config = config
+	if created {
+		s.appendDiagnostic("configuration created at %s (serviceScope=%t autoStartCollector=%t)",
+			s.configPath, s.serviceScope, config.AutoStartCollector)
 	}
 	// Persist migrations so the collector, which reads the same file directly,
 	// observes the normalized metric set immediately after backend startup.

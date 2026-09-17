@@ -16,8 +16,11 @@ package agentservice
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"strings"
+
+	"device-state-console/agent/internal/agentconfig"
 )
 
 // Kind identifies which mechanism currently provides the service.
@@ -86,6 +89,22 @@ func runCommand(name string, args ...string) (string, error) {
 // running in the foreground.
 func RunAsService(run func(context.Context) error) (handled bool, err error) {
 	return runAsService(run)
+}
+
+// ensureConfigDocument creates the machine-scope configuration document when it
+// does not exist yet, using the service defaults (continuous collection). Without
+// this an existing-but-empty state would be indistinguishable from an operator
+// deliberately turning auto-start off.
+func ensureConfigDocument(configDir string) error {
+	dir := strings.TrimSpace(configDir)
+	if dir == "" {
+		return nil
+	}
+	path := agentconfig.ConfigPath(dir)
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	return agentconfig.Save(path, agentconfig.ServiceDefaults())
 }
 
 func firstLine(value string) string {

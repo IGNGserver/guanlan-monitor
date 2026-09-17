@@ -41,6 +41,9 @@ func Install(spec Spec) (Status, error) {
 	if err := prepareConfigDir(spec.ConfigDir, serviceUser); err != nil {
 		return Status{Kind: KindSystemd}, err
 	}
+	if err := ensureConfigDocument(spec.ConfigDir); err != nil {
+		return Status{Kind: KindSystemd}, err
+	}
 	unit := renderUnit(spec, serviceUser)
 	if err := os.WriteFile(unitPath, []byte(unit), 0o644); err != nil {
 		return Status{Kind: KindSystemd}, fmt.Errorf("write %s: %w", unitPath, err)
