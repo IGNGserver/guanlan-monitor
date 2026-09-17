@@ -267,6 +267,28 @@ dsc_skip_hardware_sensor_helper:
   ${EndIf}
   StrCpy $DSC_CONFIG_DIR "$DSC_CONFIG_DIR\Guanlan"
 
+  ; Unattended installations must be auditable after the fact: a silent run
+  ; leaves no visible output, so record what the installer parsed and what each
+  ; configuration step returned. The access key is deliberately never written.
+  CreateDirectory "$DSC_CONFIG_DIR"
+  ClearErrors
+  FileOpen $8 "$DSC_CONFIG_DIR\install-report.txt" w
+  ${IfNot} ${Errors}
+    FileWrite $8 "installDir=$INSTDIR$\r$\n"
+    FileWrite $8 "configDir=$DSC_CONFIG_DIR$\r$\n"
+    FileWrite $8 "hub=$DSC_HUB$\r$\n"
+    FileWrite $8 "deviceId=$DSC_DEVICE$\r$\n"
+    FileWrite $8 "hostname=$DSC_HOSTNAME$\r$\n"
+    FileWrite $8 "serviceSwitch=$DSC_SERVICE$\r$\n"
+    FileWrite $8 "verifySeconds=$DSC_VERIFY$\r$\n"
+    ${If} $DSC_KEY == ""
+      FileWrite $8 "keyProvided=no$\r$\n"
+    ${Else}
+      FileWrite $8 "keyProvided=yes$\r$\n"
+    ${EndIf}
+    FileClose $8
+  ${EndIf}
+
   CreateDirectory "$INSTDIR\bin"
   IfFileExists "$INSTDIR\resources\agent\${DSC_AGENT_CLI_NAME}" dsc_agent_cli_found
   IfFileExists "$INSTDIR\resources\agent\${DSC_AGENT_CLI_LEGACY_NAME}" 0 dsc_agent_cli_missing
@@ -285,6 +307,12 @@ dsc_agent_cli_ready:
     ; service must be told which directory to supervise.
     nsExec::ExecToLog '"$INSTDIR\bin\${DSC_AGENT_CLI_NAME}" service install --config-root "$DSC_CONFIG_DIR" --bundle-root "$INSTDIR\resources\agent"'
     Pop $0
+    ClearErrors
+    FileOpen $8 "$DSC_CONFIG_DIR\install-report.txt" a
+    ${IfNot} ${Errors}
+      FileWrite $8 "serviceInstallExit=$0$\r$\n"
+      FileClose $8
+    ${EndIf}
     ${If} $0 != 0
       DetailPrint "Machine-scope service installation returned $0."
     ${EndIf}
@@ -303,6 +331,12 @@ dsc_agent_cli_ready:
       nsExec::ExecToLog '"$INSTDIR\bin\${DSC_AGENT_CLI_NAME}" config set --config-root "$DSC_CONFIG_DIR" --hub "$DSC_HUB" --device-id "$DSC_DEVICE" --hostname "$DSC_HOSTNAME" --key-file "$PLUGINSDIR\dsc-agent-key.txt"'
       Pop $0
       Delete "$PLUGINSDIR\dsc-agent-key.txt"
+      ClearErrors
+      FileOpen $8 "$DSC_CONFIG_DIR\install-report.txt" a
+      ${IfNot} ${Errors}
+        FileWrite $8 "configSetExit=$0$\r$\n"
+        FileClose $8
+      ${EndIf}
       ${If} $0 != 0
         ; The caller asked for an unattended configuration, so failing to apply
         ; it must not look like success.
@@ -318,6 +352,12 @@ dsc_agent_cli_ready:
   ${If} $DSC_VERIFY != ""
     nsExec::ExecToLog '"$INSTDIR\bin\${DSC_AGENT_CLI_NAME}" wait-for-upload --timeout "$DSC_VERIFY"'
     Pop $0
+    ClearErrors
+    FileOpen $8 "$DSC_CONFIG_DIR\install-report.txt" a
+    ${IfNot} ${Errors}
+      FileWrite $8 "verifyExit=$0$\r$\n"
+      FileClose $8
+    ${EndIf}
     ${If} $0 != 0
       ; Automation (Intune/SCCM/Ansible) branches on the exit code; an
       ; interactive user gets a visible explanation instead.

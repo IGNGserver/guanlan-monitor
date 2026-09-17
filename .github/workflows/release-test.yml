@@ -253,6 +253,9 @@ jobs:
     name: Verify headless Windows install, service and reporting
     runs-on: windows-latest
     needs: windows
+    env:
+      DSC_HEADLESS_KEY: ci-headless-access-key
+      DSC_HEADLESS_MARKER: ${{ runner.temp }}\ingest.json
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -274,8 +277,6 @@ jobs:
           $version = (Get-Content VERSION -Raw).Trim()
           $setup = Join-Path $env:GITHUB_WORKSPACE "release-assets/DeviceStateConsole-Windows-GUI-Setup-v$version.exe"
           if (-not (Test-Path -LiteralPath $setup)) { throw "Windows GUI setup is missing: $setup" }
-          $env:DSC_HEADLESS_KEY = "ci-headless-access-key"
-          $env:DSC_HEADLESS_MARKER = Join-Path $env:RUNNER_TEMP "ingest.json"
           Start-Process -FilePath "node" -ArgumentList @(
             "scripts/headless-hub-stub.mjs", "serve",
             "--port", "3199",
@@ -303,6 +304,8 @@ jobs:
               Get-Service -Name "GuanlanAgent" -ErrorAction SilentlyContinue | Format-List Name,Status,StartType
               Write-Output "--- machine configuration ---"
               Get-ChildItem -LiteralPath (Join-Path $env:ProgramData "Guanlan") -ErrorAction SilentlyContinue | Select-Object Name,Length
+              Write-Output "--- install report ---"
+              Get-Content -LiteralPath (Join-Path $env:ProgramData "Guanlan\install-report.txt") -ErrorAction SilentlyContinue
               Write-Output "--- backend log (tail) ---"
               Get-Content -LiteralPath (Join-Path $env:ProgramData "Guanlan\agent-ui.backend.log") -Tail 40 -ErrorAction SilentlyContinue
             } else {
