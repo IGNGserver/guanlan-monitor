@@ -30,6 +30,10 @@ func Install(spec Spec) (Status, error) {
 		displayName = serviceName
 	}
 
+	if err := ensureConfigDocument(spec.ConfigDir); err != nil {
+		return Status{Kind: KindNone}, err
+	}
+
 	binPath := spec.commandLine()
 	// Remove any previous registration first so an upgrade is idempotent.
 	_, _ = runCommand("sc.exe", "stop", serviceName)
