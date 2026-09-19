@@ -41,6 +41,12 @@ export function CommandPalette() {
     if (event.key === "ArrowUp") { event.preventDefault(); setActiveIndex((index) => Math.max(index - 1, 0)); }
     if (event.key === "Enter") { event.preventDefault(); select(activeIndex); }
   };
+  const handleKeyDownCapture = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    close();
+  };
 
   return <Modal
     open={commandOpen}
@@ -50,7 +56,7 @@ export function CommandPalette() {
     className="guanlan-command-modal"
     onRequestClose={close}
   >
-    <div className="workspace-command" onKeyDown={handleKeyDown}>
+    <div className="workspace-command" onKeyDownCapture={handleKeyDownCapture} onKeyDown={handleKeyDown}>
       <Search ref={inputRef} id="workspace-command-search" labelText="搜索设备、页面或命令" value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setActiveIndex(0); }} onClear={() => { setSearchQuery(""); setActiveIndex(0); }} placeholder="名称、设备 ID、页面或设置" size="lg" />
       <div id="workspace-command-list" className="workspace-command__list" role="listbox" aria-label="搜索结果">
         {filtered.length ? filtered.map((command, index) => <button id={`workspace-command-option-${index}`} className={`workspace-command__item ${index === activeIndex ? "is-active" : ""}`} type="button" role="option" aria-selected={index === activeIndex} key={`${command.label}-${index}`} onPointerEnter={() => setActiveIndex(index)} onClick={() => select(index)}><span><strong>{command.label}</strong><small>{command.detail}</small></span><Icon name="arrow" size={15} /></button>) : <div className="workspace-command__empty" role="status">没有匹配结果</div>}
