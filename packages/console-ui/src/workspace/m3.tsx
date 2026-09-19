@@ -200,10 +200,13 @@ export function M3Tabs({ options, value, onChange, className, disabled = false, 
   );
 }
 
-export interface M3TextFieldProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "size"> {
+export interface M3TextFieldProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "defaultValue" | "id" | "size" | "value"> {
   label: string;
   supportingText?: React.ReactNode;
   errorText?: React.ReactNode;
+  id?: string;
+  defaultValue?: string | number;
+  value?: string | number;
 }
 
 export function M3TextField({ label, supportingText, errorText, id, className, ...props }: M3TextFieldProps) {

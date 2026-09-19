@@ -365,14 +365,14 @@ function CarbonDeviceTable({
       {({ rows: tableRows, headers: tableHeaders, getTableProps, getHeaderProps, getRowProps }) => (
         <TableContainer>
           <Table {...getTableProps()} size="md" useZebraStyles={false}>
-            <TableHead><TableRow>{tableHeaders.map((header) => <TableHeader key={header.key} {...getHeaderProps({ header })}>{header.header}</TableHeader>)}</TableRow></TableHead>
+            <TableHead><TableRow>{tableHeaders.map((header) => <TableHeader {...getHeaderProps({ header })}>{header.header}</TableHeader>)}</TableRow></TableHead>
             <TableBody>
               {tableRows.map((row) => {
                 const device = devices.find((item) => item.deviceId === row.id);
                 if (!device) return null;
                 const deviceIndex = order?.indexOf(device.deviceId) ?? -1;
                 return (
-                  <TableRow key={row.id} {...getRowProps({ row })}>
+                  <TableRow {...getRowProps({ row })}>
                     {row.cells.map((cell) => {
                       if (cell.info.header === "status") return <TableCell key={cell.id}>{directoryStatusTag(device)}</TableCell>;
                       if (cell.info.header === "device") return <TableCell key={cell.id}><button className="guanlan-table-link" type="button" onClick={() => navigate({ kind: "device", deviceId: device.deviceId })}>{device.hostname}</button><small className="guanlan-table-secondary">{device.instanceType === "virtual_machine" ? `虚拟机 · ${device.hostName ?? "宿主机未知"}` : `${device.os} · ID ${device.deviceId}`}</small></TableCell>;
