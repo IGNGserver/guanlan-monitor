@@ -52,7 +52,8 @@ export class DesktopController {
   // an explicit marker. Keep the fixture opt-in even if the packaged process
   // normalizes NODE_ENV or does not inherit the test environment.
   private readonly visualFixtureEnabled = process.env.DSC_VISUAL_FIXTURE === "1"
-    || process.argv.includes("--dsc-release-acceptance");
+    || process.argv.includes("--dsc-release-acceptance")
+    || app.commandLine.hasSwitch("dsc-release-acceptance");
 
   constructor() {
     const userDataPath = app.getPath("userData");

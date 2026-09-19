@@ -27,7 +27,13 @@ async function run() {
   });
   const page = await app.firstWindow();
   const pageErrors = [];
+  const consoleMessages = [];
+  const failedRequests = [];
+  const mainStderr = [];
+  app.process().stderr?.on("data", (chunk) => mainStderr.push(chunk.toString("utf8")));
   page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => consoleMessages.push({ type: message.type(), text: message.text() }));
+  page.on("requestfailed", (request) => failedRequests.push({ url: request.url(), error: request.failure()?.errorText ?? "unknown" }));
   try {
     await page.locator(".workspace-root").waitFor({ state: "visible", timeout: 20_000 });
     const evidence = {
@@ -85,6 +91,19 @@ async function run() {
     fs.writeFileSync(path.join(outputDir, `Windows-Release-Launch-Evidence-v${evidence.version}.json`), `${JSON.stringify(evidence, null, 2)}\n`);
     assert.deepEqual(pageErrors, [], `renderer page errors: ${pageErrors.join("; ")}`);
     console.log(JSON.stringify(evidence, null, 2));
+  } catch (error) {
+    const diagnostics = {
+      url: page.url(),
+      bodyText: await page.locator("body").innerText().catch(() => ""),
+      bodyHtml: await page.locator("body").innerHTML().catch(() => ""),
+      pageErrors,
+      consoleMessages,
+      failedRequests,
+      mainStderr: mainStderr.join("").slice(-12_000)
+    };
+    fs.writeFileSync(path.join(outputDir, "Windows-Release-Launch-Diagnostics.json"), `${JSON.stringify(diagnostics, null, 2)}\n`);
+    console.error(JSON.stringify(diagnostics, null, 2));
+    throw error;
   } finally {
     await app.close();
     fs.rmSync(userDataDir, { recursive: true, force: true });
