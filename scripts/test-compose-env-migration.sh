@@ -24,10 +24,11 @@ redis_password="$(sed -n 's/^REDIS_PASSWORD=//p' "$good_env")"
 [[ "$redis_password" =~ ^[0-9a-f]{64}$ ]]
 grep -Fxq "REDIS_URL=redis://:${redis_password}@redis:6379" "$good_env"
 grep -Fxq 'MYSQL_URL=mysql://dsc:Strong-db%2Fsecret%3A1234567890@mysql:3306/device_state_console' "$good_env"
-grep -Fxq 'SESSION_COOKIE_SECURE=true' "$good_env"
+grep -Fxq 'SESSION_COOKIE_SECURE=false' "$good_env"
 grep -Fxq 'AGENT_REQUIRE_HTTPS=false' "$good_env"
 grep -Fxq 'TRUST_PROXY=true' "$good_env"
 compgen -G "$good_env.pre-compose-security.*" >/dev/null
+grep -Fq 'SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-true}"' "$root/docker-compose.yml"
 grep -Fq 'AGENT_REQUIRE_HTTPS: "${AGENT_REQUIRE_HTTPS:-true}"' "$root/docker-compose.yml"
 
 stable_env="$test_root/stable.env"

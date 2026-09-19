@@ -204,6 +204,15 @@ fi
 
 session_secret="$(require_strong_secret SESSION_SECRET 32)"
 access_key="$(require_strong_secret ACCESS_KEY "$access_key_minimum")"
+session_cookie_secure="$(unquote "$(read_env SESSION_COOKIE_SECURE)")"
+if [[ "${DSC_RELEASE_CHANNEL:-}" == "stable" ]]; then
+  session_cookie_secure=true
+elif [[ -z "$session_cookie_secure" ]]; then
+  session_cookie_secure=true
+elif [[ "$session_cookie_secure" != "true" && "$session_cookie_secure" != "false" ]]; then
+  echo "SESSION_COOKIE_SECURE must be true or false." >&2
+  exit 1
+fi
 # An existing initialized volume may retain a legacy root marker. It is
 # tolerated only when this migration recovered that exact live credential;
 # stable deployments still reject it when no recovery is requested.
@@ -249,7 +258,7 @@ cp -p "$env_file" "$backup_file"
 set_env REDIS_PASSWORD "$redis_password"
 set_env REDIS_URL "redis://:$(url_encode "$redis_password")@redis:6379"
 set_env MYSQL_URL "mysql://$(url_encode "$mysql_user"):$(url_encode "$mysql_password")@mysql:3306/$(url_encode "$mysql_database")"
-set_env SESSION_COOKIE_SECURE true
+set_env SESSION_COOKIE_SECURE "$session_cookie_secure"
 set_env AGENT_REQUIRE_HTTPS "$agent_require_https"
 set_env TRUST_PROXY true
 
