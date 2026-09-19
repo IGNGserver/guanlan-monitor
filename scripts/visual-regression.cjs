@@ -321,9 +321,9 @@ async function run() {
   await deviceSearch.fill("构建虚拟机");
   assert.equal(await deviceRows.count(), 1, "device search must filter the full directory");
   await deviceSearch.fill("");
-  await page.getByRole("radio", { name: "虚拟机" }).click();
+  await page.getByRole("tab", { name: "虚拟机" }).click();
   assert.equal(await deviceRows.count(), 1, "device type filter must isolate VMs");
-  await page.getByRole("radio", { name: "全部类型" }).click();
+  await page.getByRole("tab", { name: "全部类型" }).click();
   await page.screenshot({ path: path.join(outputDir, "web-devices-desktop.png"), fullPage: true, animations: "disabled" });
 
   await page.goto(`${baseUrl}#settings/appearance`, { waitUntil: "domcontentloaded" });
@@ -357,7 +357,7 @@ async function run() {
   await page.getByRole("button", { name: "退出编辑" }).click();
 
   await page.getByRole("tab", { name: "算力与内存" }).click();
-  await page.getByRole("radio", { name: "1 小时" }).click();
+  await page.getByRole("tab", { name: "1 小时" }).click();
   assert.equal(await page.getByRole("button", { name: "添加小组件" }).count(), 0, "widget add action must be gated by edit mode");
   await page.getByRole("button", { name: "编辑排布" }).click();
   assert.equal(await page.getByRole("button", { name: "添加小组件" }).count(), 1, "widget add action must appear in explicit edit mode");
