@@ -71,8 +71,8 @@ if (process.env.NODE_ENV === "production") {
   if (env.SESSION_SECRET.length < 32 || hasWeakMarker(env.SESSION_SECRET)) {
     throw new Error("SESSION_SECRET must be a strong, non-placeholder secret in production.");
   }
-  const productionAccessKeyMinimum = env.DSC_RELEASE_CHANNEL === "test" ? minimumAccessKeyLength : 32;
-  const productionMysqlPasswordMinimum = env.DSC_RELEASE_CHANNEL === "test" ? 6 : 16;
+  const productionAccessKeyMinimum = env.DSC_RELEASE_CHANNEL === "test" ? 16 : 32;
+  const productionMysqlPasswordMinimum = env.DSC_RELEASE_CHANNEL === "test" ? 8 : 16;
   if (env.ACCESS_KEY.length < productionAccessKeyMinimum || hasWeakMarker(env.ACCESS_KEY)) {
     throw new Error(`ACCESS_KEY must be a strong, non-placeholder secret with at least ${productionAccessKeyMinimum} characters.`);
   }

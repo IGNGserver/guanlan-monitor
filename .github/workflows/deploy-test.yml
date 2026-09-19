@@ -242,7 +242,7 @@ jobs:
             docker compose up -d --no-deps --pull never server web
             healthy=0
             for attempt in $(seq 1 30); do
-              if docker compose exec -T server node -e "fetch('http://127.0.0.1:4000/api/system/version').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"; then
+              if docker compose exec -T server node -e "fetch('http://127.0.0.1:4000/api/health/readiness').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"; then
                 healthy=1
                 break
               fi
@@ -274,7 +274,7 @@ jobs:
                if [ "\$infra_healthy" -ne 1 ]; then echo 'Redis/MySQL migration health check failed.' >&2; exit 1; fi; \
                docker compose up -d --no-deps --pull never server web; \
                healthy=0; for attempt in \$(seq 1 30); do \
-                 if docker compose exec -T server node -e \"fetch('http://127.0.0.1:4000/api/system/version').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"; then healthy=1; break; fi; \
+                 if docker compose exec -T server node -e \"fetch('http://127.0.0.1:4000/api/health/readiness').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"; then healthy=1; break; fi; \
                  sleep 5; \
                done; \
                if [ \"\$healthy\" -ne 1 ]; then \

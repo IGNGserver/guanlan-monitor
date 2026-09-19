@@ -699,6 +699,10 @@ func (s *pendingStore) drain(ctx context.Context, client *http.Client, currentSe
 		// permanently blocking the queue on the retired endpoint.
 		entries[index].ServerURL = serverURL
 		if err := postMetricsContext(ctx, client, serverURL, secret, entry.Payload); err != nil {
+			if isPermanentPayloadError(err) {
+				logCategoryf(logCategoryUpload, "dropping permanently invalid pending sample %s: %v", entry.ID, err)
+				continue
+			}
 			s.lastUploadErr = err.Error()
 			remaining := append([]pendingSample(nil), entries[index:]...)
 			if writeErr := s.writeEntries(remaining); writeErr != nil {
@@ -6255,9 +6259,28 @@ func postMetricsContext(ctx context.Context, client *http.Client, serverURL, sec
 	defer response.Body.Close()
 
 	if response.StatusCode >= 300 {
-		return fmt.Errorf("unexpected status %s", response.Status)
+		return &httpStatusError{StatusCode: response.StatusCode, Status: response.Status}
 	}
 	return nil
+}
+
+type httpStatusError struct {
+	StatusCode int
+	Status     string
+}
+
+func (e *httpStatusError) Error() string {
+	return fmt.Sprintf("unexpected status %s", e.Status)
+}
+
+func isPermanentPayloadError(err error) bool {
+	var statusErr *httpStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.StatusCode == http.StatusBadRequest ||
+			statusErr.StatusCode == http.StatusRequestEntityTooLarge ||
+			statusErr.StatusCode == http.StatusUnprocessableEntity
+	}
+	return false
 }
 
 func validateServerTransport(raw string) error {

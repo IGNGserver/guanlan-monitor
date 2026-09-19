@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -103,6 +104,27 @@ func TestPendingStorePrunesExpiredAndDuplicateSamples(t *testing.T) {
 	entries = store.prune(entries, time.Now().UTC())
 	if len(entries) != 1 || entries[0].ID != payload.SampleID {
 		t.Fatalf("unexpected pruned entries: %#v", entries)
+	}
+}
+
+func TestIsPermanentPayloadError(t *testing.T) {
+	if !isPermanentPayloadError(&httpStatusError{StatusCode: 400, Status: "400 Bad Request"}) {
+		t.Fatalf("expected 400 to be recognized as permanent error")
+	}
+	if !isPermanentPayloadError(&httpStatusError{StatusCode: 413, Status: "413 Payload Too Large"}) {
+		t.Fatalf("expected 413 to be recognized as permanent error")
+	}
+	if !isPermanentPayloadError(&httpStatusError{StatusCode: 422, Status: "422 Unprocessable Entity"}) {
+		t.Fatalf("expected 422 to be recognized as permanent error")
+	}
+	if isPermanentPayloadError(&httpStatusError{StatusCode: 500, Status: "500 Internal Server Error"}) {
+		t.Fatalf("did not expect 500 to be permanent error")
+	}
+	if isPermanentPayloadError(&httpStatusError{StatusCode: 401, Status: "401 Unauthorized"}) {
+		t.Fatalf("did not expect 401 to be permanent error")
+	}
+	if isPermanentPayloadError(fmt.Errorf("connection refused")) {
+		t.Fatalf("did not expect network error to be permanent error")
 	}
 }
 

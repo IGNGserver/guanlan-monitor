@@ -5,7 +5,7 @@ import { Server as SocketIOServer } from "socket.io";
 import Redis from "ioredis";
 import mysql from "mysql2/promise";
 import { env } from "./config.js";
-import { getBearerToken, millisecondsUntilSessionExpiry, parseSessionValue, safeEqual } from "./auth.js";
+import { authRateLimiter, getBearerToken, millisecondsUntilSessionExpiry, parseSessionValue, safeEqual } from "./auth.js";
 import { agentMetricsPayloadSchema } from "./metrics-schema.js";
 import { RedisRealtimeRepository } from "./repositories/realtime.js";
 import { MysqlHistoryRepository } from "./repositories/history.js";
@@ -29,10 +29,15 @@ import type { Repositories, WidgetLayoutStore } from "./types.js";
 
 process.on("uncaughtException", (error) => {
   console.error("FATAL: uncaughtException", error);
+  // Give background logging/cleanup at most 3 seconds before exiting with failure
+  setTimeout(() => process.exit(1), 3000).unref();
+  void shutdown("uncaughtException").finally(() => process.exit(1));
 });
 
 process.on("unhandledRejection", (reason) => {
   console.error("FATAL: unhandledRejection", reason);
+  setTimeout(() => process.exit(1), 3000).unref();
+  void shutdown("unhandledRejection").finally(() => process.exit(1));
 });
 
 const configuredCorsOrigins = new Set(
@@ -65,7 +70,7 @@ let widgetLayouts: WidgetLayoutStore = localWidgetLayouts;
 let redisClient: Redis | null = null;
 if (env.REDIS_URL) {
   redisClient = new Redis(env.REDIS_URL, {
-    maxRetriesPerRequest: null,
+    maxRetriesPerRequest: 3,
     enableReadyCheck: false,
     retryStrategy(times) {
       return Math.min(times * 1000, 10000);
@@ -112,7 +117,10 @@ if (env.MYSQL_URL) {
     devices: new LocalDeviceRepository(store),
     virtualMachines: new LocalVirtualMachineRepository(store)
   };
-  await localHistory.runRetentionCleanup();
+  // Non-blocking cleanup off startup critical path
+  void localHistory.runRetentionCleanup().catch((error) => {
+    app.log.error({ error }, "initial local history retention cleanup failed");
+  });
   app.log.warn("MYSQL_URL missing, falling back to local JSON history storage");
 }
 
@@ -135,10 +143,17 @@ app.post<{ Body: AgentMetricsPayload }>("/api/agent/ingest", async (request, rep
   if (env.AGENT_REQUIRE_HTTPS && request.protocol !== "https") {
     return reply.code(400).send({ error: "https_required", message: "Agent endpoint requires HTTPS when AGENT_REQUIRE_HTTPS=true." });
   }
+  const clientKey = request.ip;
+  if (!authRateLimiter.allow(clientKey)) {
+    reply.header("Retry-After", "60");
+    return reply.code(429).send({ error: "too_many_auth_attempts" });
+  }
   const token = getBearerToken(request.headers.authorization);
   if (!token || !safeEqual(token, env.ACCESS_KEY)) {
+    authRateLimiter.recordFailure(clientKey);
     return reply.code(401).send({ error: "unauthorized_agent" });
   }
+  authRateLimiter.clear(clientKey);
 
   const parsed = agentMetricsPayloadSchema.safeParse(request.body);
   if (!parsed.success) {

@@ -65,3 +65,40 @@ export function getBearerToken(header: string | undefined): string | null {
   const token = header.slice("Bearer ".length).trim();
   return token || null;
 }
+
+const AUTH_FAILURE_WINDOW_MS = 60_000;
+const AUTH_FAILURE_MAX_ATTEMPTS = 5;
+
+export class AuthFailureRateLimiter {
+  private readonly attempts = new Map<string, { startedAt: number; count: number }>();
+
+  allow(key: string, now = Date.now()): boolean {
+    const current = this.attempts.get(key);
+    if (!current || now - current.startedAt >= AUTH_FAILURE_WINDOW_MS) {
+      return true;
+    }
+    return current.count < AUTH_FAILURE_MAX_ATTEMPTS;
+  }
+
+  recordFailure(key: string, now = Date.now()): void {
+    const current = this.attempts.get(key);
+    if (!current || now - current.startedAt >= AUTH_FAILURE_WINDOW_MS) {
+      this.attempts.set(key, { startedAt: now, count: 1 });
+      this.prune(now);
+      return;
+    }
+    current.count += 1;
+  }
+
+  clear(key: string): void {
+    this.attempts.delete(key);
+  }
+
+  private prune(now: number): void {
+    for (const [key, value] of this.attempts) {
+      if (now - value.startedAt >= AUTH_FAILURE_WINDOW_MS) this.attempts.delete(key);
+    }
+  }
+}
+
+export const authRateLimiter = new AuthFailureRateLimiter();

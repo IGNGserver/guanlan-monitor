@@ -94,6 +94,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   ));
 
   const selectedDeviceId = route.kind === "device" ? route.deviceId : snapshot?.selectedDeviceId ?? null;
+  const currentRequestKeyRef = useRef<string>("");
+  const queuedRequestRef = useRef<{ forceRefresh: boolean; announce: boolean } | null>(null);
 
   const fetchSnapshot = useCallback(
     async (forceRefresh: boolean, announce = forceRefresh) => {
@@ -102,12 +104,21 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
       // closes that small window and prevents a stale refresh from overwriting
       // the mutation result.
       if (pendingMutationsRef.current > 0) return;
-      if (refreshInFlightRef.current) return refreshInFlightRef.current;
       const request = {
         selectedDeviceId: selectedDeviceId ?? undefined,
         metricWindow: metricsWindow,
         trafficMode
       };
+      const requestKey = `${selectedDeviceId ?? ""}:${metricsWindow}:${trafficMode}`;
+      currentRequestKeyRef.current = requestKey;
+
+      if (refreshInFlightRef.current) {
+        queuedRequestRef.current = {
+          forceRefresh: forceRefresh || (queuedRequestRef.current?.forceRefresh ?? false),
+          announce: announce || (queuedRequestRef.current?.announce ?? false)
+        };
+        return refreshInFlightRef.current;
+      }
       const requestEpoch = mutationEpochRef.current;
       const refresh = (async () => {
         try {
@@ -118,12 +129,15 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
             ? await adapter.refresh(request)
             : await adapter.getSnapshot(request);
           if (requestEpoch !== mutationEpochRef.current || pendingMutationsRef.current > 0) return;
-          setSnapshot(nextSnapshot);
-          if (announce) {
-            setNotice({ tone: "success", text: "状态已更新" });
+          // Verify request key still matches latest intent
+          if (currentRequestKeyRef.current === requestKey) {
+            setSnapshot(nextSnapshot);
+            if (announce) {
+              setNotice({ tone: "success", text: "状态已更新" });
+            }
           }
         } catch (nextError) {
-          if (requestEpoch === mutationEpochRef.current && pendingMutationsRef.current === 0) {
+          if (requestEpoch === mutationEpochRef.current && pendingMutationsRef.current === 0 && currentRequestKeyRef.current === requestKey) {
             setError(formatError(nextError, "无法读取设备状态"));
             if (announce) setNotice({ tone: "error", text: "刷新失败，请检查连接" });
           }
@@ -136,7 +150,14 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
       try {
         await refresh;
       } finally {
-        if (refreshInFlightRef.current === refresh) refreshInFlightRef.current = null;
+        if (refreshInFlightRef.current === refresh) {
+          refreshInFlightRef.current = null;
+          if (queuedRequestRef.current) {
+            const queued = queuedRequestRef.current;
+            queuedRequestRef.current = null;
+            void fetchSnapshot(queued.forceRefresh, queued.announce);
+          }
+        }
       }
     },
     [adapter, metricsWindow, selectedDeviceId, trafficMode]

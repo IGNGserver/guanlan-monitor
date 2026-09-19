@@ -346,7 +346,11 @@ export function DeviceDetailsPage() {
     });
   };
 
-  const metrics = snapshot?.metrics?.device.deviceId === selectedDevice.deviceId ? snapshot.metrics : null;
+  const metrics =
+    snapshot?.metrics?.device.deviceId === selectedDevice.deviceId &&
+    (!snapshot.metrics.window || snapshot.metrics.window === metricsWindow)
+      ? snapshot.metrics
+      : null;
   const localTemperatureSources = snapshot?.localBackend
     && (snapshot.localBackend.config.connection.deviceId === selectedDevice.deviceId || snapshot.localBackend.config.connection.hostname === selectedDevice.hostname)
     ? snapshot.localBackend.temperatureSources

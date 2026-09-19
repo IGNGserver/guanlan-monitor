@@ -1,6 +1,58 @@
 import Foundation
 import SwiftUI
 import Combine
+import Security
+
+public class KeychainHelper {
+    public static let standard = KeychainHelper()
+    private init() {}
+
+    public func save(key: String, data: Data) -> Bool {
+        let query = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecValueData as String: data
+        ] as [String: Any]
+
+        SecItemDelete(query as CFDictionary)
+        let status = SecItemAdd(query as CFDictionary, nil)
+        return status == errSecSuccess
+    }
+
+    public func read(key: String) -> Data? {
+        let query = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: kCFBooleanTrue!,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ] as [String: Any]
+
+        var dataTypeRef: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &dataTypeRef)
+        if status == errSecSuccess {
+            return dataTypeRef as? Data
+        }
+        return nil
+    }
+
+    public func delete(key: String) {
+        let query = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key
+        ] as [String: Any]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    public func saveString(key: String, value: String) -> Bool {
+        guard let data = value.data(using: .utf8) else { return false }
+        return save(key: key, data: data)
+    }
+
+    public func readString(key: String) -> String? {
+        guard let data = read(key: key) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+}
 
 @MainActor
 @Observable
@@ -55,7 +107,13 @@ public final class AppViewModel {
     
     public func loadServerConfig() {
         let baseUrl = UserDefaults.standard.string(forKey: AppViewModel.baseUrlStorageKey) ?? ""
-        let accessKey = UserDefaults.standard.string(forKey: AppViewModel.accessKeyStorageKey) ?? ""
+        // Migrate from UserDefaults to Keychain if needed
+        var accessKey = KeychainHelper.standard.readString(key: AppViewModel.accessKeyStorageKey) ?? ""
+        if accessKey.isEmpty, let legacyKey = UserDefaults.standard.string(forKey: AppViewModel.accessKeyStorageKey), !legacyKey.isEmpty {
+            accessKey = legacyKey
+            _ = KeychainHelper.standard.saveString(key: AppViewModel.accessKeyStorageKey, value: legacyKey)
+            UserDefaults.standard.removeObject(forKey: AppViewModel.accessKeyStorageKey)
+        }
         self.serverConfig = ServerConfig(baseUrl: baseUrl, accessKey: accessKey)
     }
     
@@ -63,7 +121,12 @@ public final class AppViewModel {
         let normalized = ApiClient.normalizeServerUrl(baseUrl)
         self.serverConfig = ServerConfig(baseUrl: normalized, accessKey: accessKey)
         UserDefaults.standard.set(normalized, forKey: AppViewModel.baseUrlStorageKey)
-        UserDefaults.standard.set(accessKey, forKey: AppViewModel.accessKeyStorageKey)
+        if accessKey.isEmpty {
+            KeychainHelper.standard.delete(key: AppViewModel.accessKeyStorageKey)
+        } else {
+            _ = KeychainHelper.standard.saveString(key: AppViewModel.accessKeyStorageKey, value: accessKey)
+        }
+        UserDefaults.standard.removeObject(forKey: AppViewModel.accessKeyStorageKey)
     }
     
     public func login() async {
@@ -151,10 +214,19 @@ public final class AppViewModel {
         await refreshMetrics()
     }
     
+    private var metricsRequestGeneration: Int = 0
+
     public func refreshMetrics() async {
         guard let deviceId = selectedDeviceId else { return }
+        let window = selectedWindow
+        metricsRequestGeneration += 1
+        let currentGen = metricsRequestGeneration
         do {
-            metrics = try await apiClient.fetchMetrics(baseUrl: serverConfig.baseUrl, deviceId: deviceId, window: selectedWindow.rawValue)
+            let res = try await apiClient.fetchMetrics(baseUrl: serverConfig.baseUrl, deviceId: deviceId, window: window.rawValue)
+            // Verify device, window, and generation match current intent
+            if currentGen == metricsRequestGeneration && selectedDeviceId == deviceId && selectedWindow == window {
+                metrics = res
+            }
         } catch {
             print("刷新指标失败: \(error)")
         }

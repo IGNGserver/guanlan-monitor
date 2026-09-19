@@ -45,8 +45,10 @@ export class MysqlHistoryRepository implements HistoryRepository {
         disk_instances_json JSON NULL,
         gpu_instances_json JSON NULL,
         recorded_details_json JSON NULL,
+        sample_count INT NOT NULL DEFAULT 1,
         UNIQUE KEY uniq_device_minute (device_id, recorded_at),
-        INDEX idx_device_minute_recorded_at (device_id, recorded_at)
+        INDEX idx_device_minute_recorded_at (device_id, recorded_at),
+        INDEX idx_minute_recorded_at (recorded_at)
       )
     `);
     await this.pool.query(`
@@ -75,8 +77,10 @@ export class MysqlHistoryRepository implements HistoryRepository {
         disk_instances_json JSON NULL,
         gpu_instances_json JSON NULL,
         recorded_details_json JSON NULL,
+        sample_count INT NOT NULL DEFAULT 1,
         UNIQUE KEY uniq_device_hour (device_id, recorded_at),
-        INDEX idx_device_recorded_at (device_id, recorded_at)
+        INDEX idx_device_recorded_at (device_id, recorded_at),
+        INDEX idx_hourly_recorded_at (recorded_at)
       )
     `);
     await this.ensureColumn("device_minute_metrics", "cpu_frequency_mhz", "DOUBLE NOT NULL DEFAULT 0");
@@ -101,7 +105,16 @@ export class MysqlHistoryRepository implements HistoryRepository {
     await this.ensureColumn("device_hourly_metrics", "gpu_instances_json", "JSON NULL");
     await this.ensureColumn("device_minute_metrics", "recorded_details_json", "JSON NULL");
     await this.ensureColumn("device_hourly_metrics", "recorded_details_json", "JSON NULL");
-    await this.runRetentionCleanup();
+    await this.ensureColumn("device_minute_metrics", "sample_count", "INT NOT NULL DEFAULT 1");
+    await this.ensureColumn("device_hourly_metrics", "sample_count", "INT NOT NULL DEFAULT 1");
+    await this.ensureIndex("device_minute_metrics", "idx_minute_recorded_at", "(recorded_at)");
+    await this.ensureIndex("device_hourly_metrics", "idx_hourly_recorded_at", "(recorded_at)");
+  }
+
+  async ensureIndex(tableName: string, indexName: string, indexDef: string) {
+    const [rows] = await this.pool.query<any[]>(`SHOW INDEX FROM ${tableName} WHERE Key_name = ?`, [indexName]);
+    if (rows.length > 0) return;
+    await this.pool.query(`ALTER TABLE ${tableName} ADD INDEX ${indexName} ${indexDef}`).catch(() => undefined);
   }
 
   async ensureColumn(tableName: string, columnName: string, definition: string) {
@@ -110,52 +123,65 @@ export class MysqlHistoryRepository implements HistoryRepository {
     await this.pool.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
   }
 
-  async runRetentionCleanup() {
-    await this.pool.query(
-      `
-        DELETE FROM device_minute_metrics
-        WHERE recorded_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${MINUTE_RETENTION_DAYS} DAY)
-      `
-    );
-    await this.pool.query(
-      `
-        DELETE FROM device_hourly_metrics
-        WHERE recorded_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${HOURLY_RETENTION_DAYS} DAY)
-      `
-    );
+  async runRetentionCleanup(batchSize = 5000) {
+    // Bounded batch deletion using index on recorded_at to avoid long table locks
+    while (true) {
+      const [result] = await this.pool.query<any>(
+        `
+          DELETE FROM device_minute_metrics
+          WHERE recorded_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${MINUTE_RETENTION_DAYS} DAY)
+          LIMIT ?
+        `,
+        [batchSize]
+      );
+      if (!result || result.affectedRows === 0 || result.affectedRows < batchSize) break;
+    }
+    while (true) {
+      const [result] = await this.pool.query<any>(
+        `
+          DELETE FROM device_hourly_metrics
+          WHERE recorded_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${HOURLY_RETENTION_DAYS} DAY)
+          LIMIT ?
+        `,
+        [batchSize]
+      );
+      if (!result || result.affectedRows === 0 || result.affectedRows < batchSize) break;
+    }
   }
 
   async insertMinutePoint(deviceId: string, point: TimeSeriesRecord) {
+    const count = point.sampleCount ?? 1;
     await this.pool.query(
       `
         INSERT INTO device_minute_metrics (
           device_id, recorded_at, cpu_usage_percent, cpu_frequency_mhz, cpu_temperature_c, gpu_usage_percent, gpu_encode_percent, gpu_decode_percent, gpu_frequency_mhz, gpu_memory_usage_percent, gpu_temperature_c, memory_usage_percent, swap_usage_percent,
           disk_usage_percent, disk_read_bytes_per_sec, disk_write_bytes_per_sec,
           network_rx_bytes_per_sec, network_tx_bytes_per_sec, traffic_rx_bytes, traffic_tx_bytes,
-          disk_instances_json, gpu_instances_json, recorded_details_json
-        ) VALUES (?, FROM_UNIXTIME(? / 1000), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          disk_instances_json, gpu_instances_json, recorded_details_json, sample_count
+        ) VALUES (?, FROM_UNIXTIME(? / 1000), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          cpu_usage_percent = VALUES(cpu_usage_percent),
-          cpu_frequency_mhz = VALUES(cpu_frequency_mhz),
-          cpu_temperature_c = VALUES(cpu_temperature_c),
-          gpu_usage_percent = VALUES(gpu_usage_percent),
-          gpu_encode_percent = VALUES(gpu_encode_percent),
-          gpu_decode_percent = VALUES(gpu_decode_percent),
-          gpu_frequency_mhz = VALUES(gpu_frequency_mhz),
-          gpu_memory_usage_percent = VALUES(gpu_memory_usage_percent),
-          gpu_temperature_c = VALUES(gpu_temperature_c),
-          memory_usage_percent = VALUES(memory_usage_percent),
-          swap_usage_percent = VALUES(swap_usage_percent),
-          disk_usage_percent = VALUES(disk_usage_percent),
-          disk_read_bytes_per_sec = VALUES(disk_read_bytes_per_sec),
-          disk_write_bytes_per_sec = VALUES(disk_write_bytes_per_sec),
-          network_rx_bytes_per_sec = VALUES(network_rx_bytes_per_sec),
-          network_tx_bytes_per_sec = VALUES(network_tx_bytes_per_sec),
-          traffic_rx_bytes = VALUES(traffic_rx_bytes),
-          traffic_tx_bytes = VALUES(traffic_tx_bytes),
-          disk_instances_json = VALUES(disk_instances_json),
-          gpu_instances_json = VALUES(gpu_instances_json),
-          recorded_details_json = VALUES(recorded_details_json)
+          cpu_usage_percent = IF(sample_count >= VALUES(sample_count), cpu_usage_percent, VALUES(cpu_usage_percent)),
+          cpu_frequency_mhz = IF(sample_count >= VALUES(sample_count), cpu_frequency_mhz, VALUES(cpu_frequency_mhz)),
+          cpu_temperature_c = IF(sample_count >= VALUES(sample_count), cpu_temperature_c, VALUES(cpu_temperature_c)),
+          gpu_usage_percent = IF(sample_count >= VALUES(sample_count), gpu_usage_percent, VALUES(gpu_usage_percent)),
+          gpu_encode_percent = IF(sample_count >= VALUES(sample_count), gpu_encode_percent, VALUES(gpu_encode_percent)),
+          gpu_decode_percent = IF(sample_count >= VALUES(sample_count), gpu_decode_percent, VALUES(gpu_decode_percent)),
+          gpu_frequency_mhz = IF(sample_count >= VALUES(sample_count), gpu_frequency_mhz, VALUES(gpu_frequency_mhz)),
+          gpu_memory_usage_percent = IF(sample_count >= VALUES(sample_count), gpu_memory_usage_percent, VALUES(gpu_memory_usage_percent)),
+          gpu_temperature_c = IF(sample_count >= VALUES(sample_count), gpu_temperature_c, VALUES(gpu_temperature_c)),
+          memory_usage_percent = IF(sample_count >= VALUES(sample_count), memory_usage_percent, VALUES(memory_usage_percent)),
+          swap_usage_percent = IF(sample_count >= VALUES(sample_count), swap_usage_percent, VALUES(swap_usage_percent)),
+          disk_usage_percent = IF(sample_count >= VALUES(sample_count), disk_usage_percent, VALUES(disk_usage_percent)),
+          disk_read_bytes_per_sec = IF(sample_count >= VALUES(sample_count), disk_read_bytes_per_sec, VALUES(disk_read_bytes_per_sec)),
+          disk_write_bytes_per_sec = IF(sample_count >= VALUES(sample_count), disk_write_bytes_per_sec, VALUES(disk_write_bytes_per_sec)),
+          network_rx_bytes_per_sec = IF(sample_count >= VALUES(sample_count), network_rx_bytes_per_sec, VALUES(network_rx_bytes_per_sec)),
+          network_tx_bytes_per_sec = IF(sample_count >= VALUES(sample_count), network_tx_bytes_per_sec, VALUES(network_tx_bytes_per_sec)),
+          traffic_rx_bytes = IF(sample_count >= VALUES(sample_count), traffic_rx_bytes, VALUES(traffic_rx_bytes)),
+          traffic_tx_bytes = IF(sample_count >= VALUES(sample_count), traffic_tx_bytes, VALUES(traffic_tx_bytes)),
+          disk_instances_json = IF(sample_count >= VALUES(sample_count), disk_instances_json, VALUES(disk_instances_json)),
+          gpu_instances_json = IF(sample_count >= VALUES(sample_count), gpu_instances_json, VALUES(gpu_instances_json)),
+          recorded_details_json = IF(sample_count >= VALUES(sample_count), recorded_details_json, VALUES(recorded_details_json)),
+          sample_count = GREATEST(sample_count, VALUES(sample_count))
       `,
       [
         deviceId,
@@ -180,42 +206,45 @@ export class MysqlHistoryRepository implements HistoryRepository {
         point.trafficTxBytes,
         JSON.stringify(point.disks ?? []),
         JSON.stringify(point.gpus ?? []),
-        JSON.stringify(point.recordedDetails ?? null)
+        JSON.stringify(point.recordedDetails ?? null),
+        count
       ]
     );
   }
 
   async insertHourlyPoint(deviceId: string, point: TimeSeriesRecord) {
+    const count = point.sampleCount ?? 1;
     await this.pool.query(
       `
         INSERT INTO device_hourly_metrics (
           device_id, recorded_at, cpu_usage_percent, cpu_frequency_mhz, cpu_temperature_c, gpu_usage_percent, gpu_encode_percent, gpu_decode_percent, gpu_frequency_mhz, gpu_memory_usage_percent, gpu_temperature_c, memory_usage_percent, swap_usage_percent,
           disk_usage_percent, disk_read_bytes_per_sec, disk_write_bytes_per_sec,
           network_rx_bytes_per_sec, network_tx_bytes_per_sec, traffic_rx_bytes, traffic_tx_bytes,
-          disk_instances_json, gpu_instances_json, recorded_details_json
-        ) VALUES (?, FROM_UNIXTIME(? / 1000), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          disk_instances_json, gpu_instances_json, recorded_details_json, sample_count
+        ) VALUES (?, FROM_UNIXTIME(? / 1000), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          cpu_usage_percent = VALUES(cpu_usage_percent),
-          cpu_frequency_mhz = VALUES(cpu_frequency_mhz),
-          cpu_temperature_c = VALUES(cpu_temperature_c),
-          gpu_usage_percent = VALUES(gpu_usage_percent),
-          gpu_encode_percent = VALUES(gpu_encode_percent),
-          gpu_decode_percent = VALUES(gpu_decode_percent),
-          gpu_frequency_mhz = VALUES(gpu_frequency_mhz),
-          gpu_memory_usage_percent = VALUES(gpu_memory_usage_percent),
-          gpu_temperature_c = VALUES(gpu_temperature_c),
-          memory_usage_percent = VALUES(memory_usage_percent),
-          swap_usage_percent = VALUES(swap_usage_percent),
-          disk_usage_percent = VALUES(disk_usage_percent),
-          disk_read_bytes_per_sec = VALUES(disk_read_bytes_per_sec),
-          disk_write_bytes_per_sec = VALUES(disk_write_bytes_per_sec),
-          network_rx_bytes_per_sec = VALUES(network_rx_bytes_per_sec),
-          network_tx_bytes_per_sec = VALUES(network_tx_bytes_per_sec),
-          traffic_rx_bytes = VALUES(traffic_rx_bytes),
-          traffic_tx_bytes = VALUES(traffic_tx_bytes),
-          disk_instances_json = VALUES(disk_instances_json),
-          gpu_instances_json = VALUES(gpu_instances_json),
-          recorded_details_json = VALUES(recorded_details_json)
+          cpu_usage_percent = IF(sample_count >= VALUES(sample_count), cpu_usage_percent, VALUES(cpu_usage_percent)),
+          cpu_frequency_mhz = IF(sample_count >= VALUES(sample_count), cpu_frequency_mhz, VALUES(cpu_frequency_mhz)),
+          cpu_temperature_c = IF(sample_count >= VALUES(sample_count), cpu_temperature_c, VALUES(cpu_temperature_c)),
+          gpu_usage_percent = IF(sample_count >= VALUES(sample_count), gpu_usage_percent, VALUES(gpu_usage_percent)),
+          gpu_encode_percent = IF(sample_count >= VALUES(sample_count), gpu_encode_percent, VALUES(gpu_encode_percent)),
+          gpu_decode_percent = IF(sample_count >= VALUES(sample_count), gpu_decode_percent, VALUES(gpu_decode_percent)),
+          gpu_frequency_mhz = IF(sample_count >= VALUES(sample_count), gpu_frequency_mhz, VALUES(gpu_frequency_mhz)),
+          gpu_memory_usage_percent = IF(sample_count >= VALUES(sample_count), gpu_memory_usage_percent, VALUES(gpu_memory_usage_percent)),
+          gpu_temperature_c = IF(sample_count >= VALUES(sample_count), gpu_temperature_c, VALUES(gpu_temperature_c)),
+          memory_usage_percent = IF(sample_count >= VALUES(sample_count), memory_usage_percent, VALUES(memory_usage_percent)),
+          swap_usage_percent = IF(sample_count >= VALUES(sample_count), swap_usage_percent, VALUES(swap_usage_percent)),
+          disk_usage_percent = IF(sample_count >= VALUES(sample_count), disk_usage_percent, VALUES(disk_usage_percent)),
+          disk_read_bytes_per_sec = IF(sample_count >= VALUES(sample_count), disk_read_bytes_per_sec, VALUES(disk_read_bytes_per_sec)),
+          disk_write_bytes_per_sec = IF(sample_count >= VALUES(sample_count), disk_write_bytes_per_sec, VALUES(disk_write_bytes_per_sec)),
+          network_rx_bytes_per_sec = IF(sample_count >= VALUES(sample_count), network_rx_bytes_per_sec, VALUES(network_rx_bytes_per_sec)),
+          network_tx_bytes_per_sec = IF(sample_count >= VALUES(sample_count), network_tx_bytes_per_sec, VALUES(network_tx_bytes_per_sec)),
+          traffic_rx_bytes = IF(sample_count >= VALUES(sample_count), traffic_rx_bytes, VALUES(traffic_rx_bytes)),
+          traffic_tx_bytes = IF(sample_count >= VALUES(sample_count), traffic_tx_bytes, VALUES(traffic_tx_bytes)),
+          disk_instances_json = IF(sample_count >= VALUES(sample_count), disk_instances_json, VALUES(disk_instances_json)),
+          gpu_instances_json = IF(sample_count >= VALUES(sample_count), gpu_instances_json, VALUES(gpu_instances_json)),
+          recorded_details_json = IF(sample_count >= VALUES(sample_count), recorded_details_json, VALUES(recorded_details_json)),
+          sample_count = GREATEST(sample_count, VALUES(sample_count))
       `,
       [
         deviceId,
@@ -240,7 +269,8 @@ export class MysqlHistoryRepository implements HistoryRepository {
         point.trafficTxBytes,
         JSON.stringify(point.disks ?? []),
         JSON.stringify(point.gpus ?? []),
-        JSON.stringify(point.recordedDetails ?? null)
+        JSON.stringify(point.recordedDetails ?? null),
+        count
       ]
     );
   }

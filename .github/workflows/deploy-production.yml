@@ -219,7 +219,7 @@ jobs:
                exit 1; \
              fi; \
              healthy=0; for attempt in \$(seq 1 30); do \
-               if docker compose exec -T server node -e \"fetch('http://127.0.0.1:4000/api/system/version').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"; then healthy=1; break; fi; \
+               if docker compose exec -T server node -e \"fetch('http://127.0.0.1:4000/api/health/readiness').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"; then healthy=1; break; fi; \
                sleep 5; \
              done; \
              if [ \"\$healthy\" -ne 1 ]; then \

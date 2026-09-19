@@ -161,6 +161,18 @@ export class LocalRealtimeRepository implements RealtimeRepository {
     });
   }
 
+  async markOfflineIfMatch(deviceId: string, expectedLastSeenAt: string): Promise<boolean> {
+    let updated = false;
+    await this.store.update((db) => {
+      const current = db.devices[deviceId];
+      if (current && current.lastSeenAt === expectedLastSeenAt) {
+        db.devices[deviceId] = { ...current, status: "offline" };
+        updated = true;
+      }
+    });
+    return updated;
+  }
+
   async getDevice(deviceId: string) {
     const db = await this.store.read();
     return db.devices[deviceId] ?? null;
@@ -212,7 +224,12 @@ export class LocalHistoryRepository implements HistoryRepository {
       db.minuteHistory[deviceId] ??= [];
       const existingIndex = db.minuteHistory[deviceId].findIndex((item) => item.timestamp === point.timestamp);
       if (existingIndex >= 0) {
-        db.minuteHistory[deviceId][existingIndex] = point;
+        const existing = db.minuteHistory[deviceId][existingIndex];
+        const existingCount = existing.sampleCount ?? 1;
+        const newCount = point.sampleCount ?? 1;
+        if (newCount >= existingCount) {
+          db.minuteHistory[deviceId][existingIndex] = { ...point, sampleCount: Math.max(existingCount, newCount) };
+        }
       } else {
         db.minuteHistory[deviceId].push(point);
         db.minuteHistory[deviceId].sort((a, b) => a.timestamp - b.timestamp);
@@ -226,7 +243,12 @@ export class LocalHistoryRepository implements HistoryRepository {
       db.history[deviceId] ??= [];
       const existingIndex = db.history[deviceId].findIndex((item) => item.timestamp === point.timestamp);
       if (existingIndex >= 0) {
-        db.history[deviceId][existingIndex] = point;
+        const existing = db.history[deviceId][existingIndex];
+        const existingCount = existing.sampleCount ?? 1;
+        const newCount = point.sampleCount ?? 1;
+        if (newCount >= existingCount) {
+          db.history[deviceId][existingIndex] = { ...point, sampleCount: Math.max(existingCount, newCount) };
+        }
       } else {
         db.history[deviceId].push(point);
         db.history[deviceId].sort((a, b) => a.timestamp - b.timestamp);
