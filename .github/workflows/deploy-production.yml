@@ -14,6 +14,11 @@ on:
         options:
           - stable
           - test
+      allow_http:
+        description: "Allow HTTP sessions and Agent uploads on a trusted network"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -128,6 +133,7 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          ALLOW_HTTP: ${{ inputs.allow_http }}
         run: |
           set -euo pipefail
           backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -143,7 +149,7 @@ jobs:
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:$remote_compose"
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$RUNNER_TEMP/prepare-compose-env.sh" "$DEPLOY_USER@$DEPLOY_HOST:$remote_prepare"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "set -euo pipefail; cleanup() { rm -f '$remote_compose' '$remote_prepare'; }; trap cleanup EXIT; bash '$remote_prepare' '$DEPLOY_PATH/.env'; mv '$remote_compose' '$DEPLOY_PATH/docker-compose.yml'; grep -Fq './data:/app/data' '$DEPLOY_PATH/docker-compose.yml'; rm -f '$remote_prepare'; trap - EXIT"
+            "set -euo pipefail; cleanup() { rm -f '$remote_compose' '$remote_prepare'; }; trap cleanup EXIT; DSC_ALLOW_HTTP='$ALLOW_HTTP' bash '$remote_prepare' '$DEPLOY_PATH/.env'; mv '$remote_compose' '$DEPLOY_PATH/docker-compose.yml'; grep -Fq './data:/app/data' '$DEPLOY_PATH/docker-compose.yml'; rm -f '$remote_prepare'; trap - EXIT"
 
       - name: Authenticate NAS to GHCR for stable deployment
         if: ${{ inputs.channel == 'stable' }}

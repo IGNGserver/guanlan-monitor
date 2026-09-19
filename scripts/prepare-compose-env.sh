@@ -193,32 +193,41 @@ PY
 
 recover_existing_mysql_values
 
-access_key_minimum=32
+access_key_minimum=6
 mysql_password_minimum=16
 if [[ "${DSC_RELEASE_CHANNEL:-}" == "test" ]]; then
-  access_key_minimum=6
   mysql_password_minimum=6
 fi
 
 session_secret="$(require_strong_secret SESSION_SECRET 32)"
 access_key="$(require_strong_secret ACCESS_KEY "$access_key_minimum")"
-session_cookie_secure="$(unquote "$(read_env SESSION_COOKIE_SECURE)")"
-if [[ -z "$session_cookie_secure" ]]; then
-  session_cookie_secure=true
-elif [[ "$session_cookie_secure" != "true" && "$session_cookie_secure" != "false" ]]; then
-  echo "SESSION_COOKIE_SECURE must be true or false." >&2
+allow_http="${DSC_ALLOW_HTTP:-false}"
+if [[ "$allow_http" != "true" && "$allow_http" != "false" ]]; then
+  echo "DSC_ALLOW_HTTP must be true or false." >&2
   exit 1
 fi
-agent_require_https="$(unquote "$(read_env AGENT_REQUIRE_HTTPS)")"
-if [[ -z "$agent_require_https" ]]; then
-  if [[ "${DSC_RELEASE_CHANNEL:-}" == "test" ]]; then
-    agent_require_https=false
-  else
-    agent_require_https=true
+if [[ "$allow_http" == "true" ]]; then
+  session_cookie_secure=false
+  agent_require_https=false
+else
+  session_cookie_secure="$(unquote "$(read_env SESSION_COOKIE_SECURE)")"
+  if [[ -z "$session_cookie_secure" ]]; then
+    session_cookie_secure=true
+  elif [[ "$session_cookie_secure" != "true" && "$session_cookie_secure" != "false" ]]; then
+    echo "SESSION_COOKIE_SECURE must be true or false." >&2
+    exit 1
   fi
-elif [[ "$agent_require_https" != "true" && "$agent_require_https" != "false" ]]; then
-  echo "AGENT_REQUIRE_HTTPS must be true or false." >&2
-  exit 1
+  agent_require_https="$(unquote "$(read_env AGENT_REQUIRE_HTTPS)")"
+  if [[ -z "$agent_require_https" ]]; then
+    if [[ "${DSC_RELEASE_CHANNEL:-}" == "test" ]]; then
+      agent_require_https=false
+    else
+      agent_require_https=true
+    fi
+  elif [[ "$agent_require_https" != "true" && "$agent_require_https" != "false" ]]; then
+    echo "AGENT_REQUIRE_HTTPS must be true or false." >&2
+    exit 1
+  fi
 fi
 # An existing initialized volume may retain a legacy root marker. It is
 # tolerated only when this migration recovered that exact live credential;

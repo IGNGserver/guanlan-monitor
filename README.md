@@ -87,7 +87,7 @@ Android 安装包使用 `IGNGserver` 发布证书签名。Android 在提示未�
 
 ## 连接中枢
 
-客户端通常使用下列地址之一（稳定生产环境的 Android 客户端与 Agent 要求 HTTPS；测试渠道可按部署配置使用 HTTP）：
+客户端通常使用下列地址之一（默认建议 HTTPS；稳定和测试渠道均可在明确受信的 HTTP 网络中通过部署参数启用 HTTP）：
 
 - 局域网 HTTP：`http://服务器IP:3100`
 - 局域网：`https://服务器域名:3100`
