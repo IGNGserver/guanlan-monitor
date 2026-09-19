@@ -113,7 +113,7 @@ DSC_VERSION=latest docker compose pull
 DSC_VERSION=latest docker compose up -d
 ```
 
-至少修改 `.env` 内的 `SESSION_SECRET`、`ACCESS_KEY`、`MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD` 与 `REDIS_PASSWORD`，并为 `REDIS_URL` 配置相同的认证密码。生产环境应通过 TLS 反向代理访问控制台；只有当 server 仅能从该受信代理访问时才设置 `TRUST_PROXY=true`，否则保持 `false`。稳定生产环境会强制 `SESSION_COOKIE_SECURE=true` 与 `AGENT_REQUIRE_HTTPS=true`，拒绝明文会话和 Agent 上传；测试渠道如明确使用可信 HTTP 网络，可在 `.env` 设置 `SESSION_COOKIE_SECURE=false`，Compose 预检会保留该设置，同时将 `AGENT_REQUIRE_HTTPS` 设为 `false`。`ACCESS_KEY` 是网页、Windows/Android 客户端和所有 agent 共用的唯一访问密钥；升级时即使旧 `.env` 仍有 `AGENT_SHARED_SECRET`，也会以 `ACCESS_KEY` 为准。
+至少修改 `.env` 内的 `SESSION_SECRET`、`ACCESS_KEY`、`MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD` 与 `REDIS_PASSWORD`，并为 `REDIS_URL` 配置相同的认证密码。生产环境默认应通过 TLS 反向代理访问控制台；只有当 server 仅能从该受信代理访问时才设置 `TRUST_PROXY=true`，否则保持 `false`。`SESSION_COOKIE_SECURE` 与 `AGENT_REQUIRE_HTTPS` 默认保持 `true`，但稳定和测试渠道都允许在明确受信的 HTTP 网络中将对应值设置为 `false`，Compose 预检会保留用户配置。`ACCESS_KEY` 是网页、Windows/Android 客户端和所有 agent 共用的唯一访问密钥；升级时即使旧 `.env` 仍有 `AGENT_SHARED_SECRET`，也会以 `ACCESS_KEY` 为准。
 
 Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 的专项说明见下方“开发与维护”。
 

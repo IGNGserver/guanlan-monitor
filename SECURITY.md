@@ -18,5 +18,5 @@ Instead, contact the maintainer privately and include:
 ## Deployment Notes
 
 - Change every secret in `.env` before exposing the service to other users.
-- Set `SESSION_COOKIE_SECURE=true` when the site is served over HTTPS.
+- Set `SESSION_COOKIE_SECURE=true` when the site is served over HTTPS. Set it to `false` only for a deliberately trusted HTTP network; the same rule applies to `AGENT_REQUIRE_HTTPS` for Agent uploads.
 - Restrict access to the web UI and server ports with a reverse proxy or firewall when possible.
