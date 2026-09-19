@@ -183,9 +183,9 @@ function releaseApiUrl() {
 function assetNameFor(platform: UpdatePlatform, version: string) {
   switch (platform) {
     case "windows-gui":
-      return `DeviceStateConsole-Windows-GUI-Setup-v${version}.exe`;
+      return `DeviceStateConsole-Windows-Setup-v${version}.exe`;
     case "linux-gui":
-      return `DeviceStateConsole-Linux-GUI-Install-v${version}.deb`;
+      return `DeviceStateConsole-Linux-Install-v${version}.deb`;
     case "android":
       return `DeviceStateConsole-Android-v${version}.apk`;
     default:

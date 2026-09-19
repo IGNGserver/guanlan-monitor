@@ -31,7 +31,10 @@ jobs:
           foreach ($side in @('before', 'after')) {
             $tag = if ($side -eq 'before') { $env:BASELINE } else { $env:CANDIDATE }
             if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw 'Invalid version tag' }
-            $asset = "DeviceStateConsole-Windows-GUI-Portable-$tag.zip"
+            $asset = "DeviceStateConsole-Windows-Portable-$tag.zip"
+            if (-not (gh release view $tag --json assets -q ".assets[].name" | Select-String -SimpleMatch $asset)) {
+              $asset = "DeviceStateConsole-Windows-GUI-Portable-$tag.zip"
+            }
             New-Item -ItemType Directory -Force $side | Out-Null
             gh release download $tag --pattern $asset --pattern "$asset.sha256" --dir $side
             if ($LASTEXITCODE -ne 0) { throw 'Release download failed' }

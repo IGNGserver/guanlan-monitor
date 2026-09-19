@@ -112,13 +112,13 @@ the major and minor numbers must remain unchanged.
 
 Every release asset must identify its platform and delivery mode:
 
-- `DeviceStateConsole-Windows-GUI-Setup-vX.Y.Z.exe`
-- `DeviceStateConsole-Windows-GUI-Portable-vX.Y.Z.zip`
-- `DeviceStateConsole-Windows-GUI-Update-vX.Y.Z.zip`
-- `DeviceStateConsole-Linux-GUI-Install-vX.Y.Z.deb`
+- `DeviceStateConsole-Windows-Setup-vX.Y.Z.exe`
+- `DeviceStateConsole-Windows-Portable-vX.Y.Z.zip`
+- `DeviceStateConsole-Windows-Update-vX.Y.Z.zip`
+- `DeviceStateConsole-Linux-Install-vX.Y.Z.deb`
 - `DeviceStateConsole-Android-vX.Y.Z.apk`
 
-There is no separate CLI distribution. Headless installations use the same GUI
+There is no separate CLI distribution. Headless installations use the desktop
 packages: the Windows setup supports `/S` plus `/HUB=`, `/KEY=`, `/DEVICE=`,
 `/HOSTNAME=` and `/VERIFY=` switches, and the Linux package installs and enables
 a system-level `guanlan-agent` service. Both ship the `guanlan-agent` command for

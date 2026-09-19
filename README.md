@@ -10,13 +10,13 @@
 
 ### 无桌面环境安装（Windows / Linux）
 
-GUI 版就是唯一发行版；同一份安装包在无桌面会话的机器上也能完成安装、配置、
+桌面版就是唯一发行版；同一份安装包在无桌面会话的机器上也能完成安装、配置、
 开机自启与上报，不需要单独下载 CLI 版。
 
 **Windows**（静默安装 + 自动配置 + 自动校验首次上报）：
 
 ```powershell
-& "DeviceStateConsole-Windows-GUI-Setup-vX.Y.Z.exe" /S `
+& "DeviceStateConsole-Windows-Setup-vX.Y.Z.exe" /S `
     /HUB="https://hub.example.com" /KEY="<ACCESS_KEY>" `
     /DEVICE=node-01 /HOSTNAME="节点01" /VERIFY=120
 ```
@@ -31,7 +31,7 @@ GUI 版就是唯一发行版；同一份安装包在无桌面会话的机器上�
 **Linux**（一条命令装包 + 自动配置）：
 
 ```bash
-sudo GUANLAN_HUB=https://hub.example.com GUANLAN_KEY="$KEY" GUANLAN_DEVICE_ID=node-01   apt-get install -y ./DeviceStateConsole-Linux-GUI-Install-vX.Y.Z.deb
+sudo GUANLAN_HUB=https://hub.example.com GUANLAN_KEY="$KEY" GUANLAN_DEVICE_ID=node-01   apt-get install -y ./DeviceStateConsole-Linux-Install-vX.Y.Z.deb
 sudo guanlan-agent wait-for-upload --timeout 120   # 退出码 0 表示已确认上报
 ```
 
@@ -60,15 +60,15 @@ guanlan-agent onboarding-url
 
 ### Windows
 
-**推荐下载 `DeviceStateConsole-Windows-GUI-Setup-v<版本>.exe`。** 这是常规 Windows 安装程序，安装到 `%ProgramFiles%\DeviceStateConsoleAgent`，创建开始菜单与桌面快捷方式，并注册开机自启的机器级 Agent 服务；支持静默安装、更新和卸载。
+**推荐下载 `DeviceStateConsole-Windows-Setup-v<版本>.exe`。** 这是常规 Windows 安装程序，安装到 `%ProgramFiles%\DeviceStateConsoleAgent`，创建开始菜单与桌面快捷方式，并注册开机自启的机器级 Agent 服务；支持静默安装、更新和卸载。
 
-`DeviceStateConsole-Windows-GUI-Update-v<版本>.zip` 仅用于已安装客户端的更新分发，不应作为首次安装方式。`DeviceStateConsole-Windows-GUI-Portable-v<版本>.zip` 是无需安装的 Windows GUI 便携版。
+`DeviceStateConsole-Windows-Update-v<版本>.zip` 仅用于已安装客户端的更新分发，不应作为首次安装方式。`DeviceStateConsole-Windows-Portable-v<版本>.zip` 是无需安装的 Windows 便携版。
 
 安装后打开“观澜”，在“配置”页填写中枢地址、访问密钥和设备名称。应用运行后会显示在系统托盘：左键打开主界面，右键查看状态或退出。采集与上报由机器级服务负责，关闭窗口或注销登录都不会中断。
 
 ### Linux
 
-下载 `DeviceStateConsole-Linux-GUI-Install-v<版本>.deb`，适用于 Ubuntu/Debian
+下载 `DeviceStateConsole-Linux-Install-v<版本>.deb`，适用于 Ubuntu/Debian
 `amd64`。安装后提供 `/usr/bin/guanlan` 桌面端与 `/usr/bin/guanlan-agent`
 命令；系统级 `guanlan-agent.service` 会随安装启用，无桌面会话也会持续采集与
 上报。首次打开桌面端可在“本机 Agent”页填写中枢地址和访问密钥；非提权用户
@@ -131,12 +131,12 @@ Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 
 
 每个测试版或正式版 Release 都必须使用带平台和交付方式的资产名，并包含：
 
-1. `DeviceStateConsole-Windows-GUI-Setup-v<版本>.exe`（支持 `/S` 与无 GUI 参数化安装）。
-2. `DeviceStateConsole-Windows-GUI-Portable-v<版本>.zip` 或更新包。
-3. `DeviceStateConsole-Linux-GUI-Install-v<版本>.deb`（内含系统级 systemd 服务）。
+1. `DeviceStateConsole-Windows-Setup-v<版本>.exe`（支持 `/S` 与无界面参数化安装）。
+2. `DeviceStateConsole-Windows-Portable-v<版本>.zip` 或更新包。
+3. `DeviceStateConsole-Linux-Install-v<版本>.deb`（内含系统级 systemd 服务）。
 4. `DeviceStateConsole-Android-v<版本>.apk`。
 
-不再发布独立 CLI 发行资产；无 GUI 场景的能力内建于上述安装包与随包的
+不再发布独立 CLI 发行资产；无桌面场景的能力内建于上述安装包与随包的
 `guanlan-agent` 命令。
 
 仓库不会提交安装包、APK、密钥、日志或本机配置。发布资产只上传到 GitHub Release。
