@@ -345,7 +345,7 @@ function CarbonDeviceTable({
     { key: "memory", header: "内存" },
     { key: "disk", header: "磁盘" },
     { key: "heartbeat", header: "最近心跳" },
-    { key: "actions", header: "" }
+    { key: "actions", header: "操作" }
   ];
   const rows = devices.map((device) => ({
     id: device.deviceId,
