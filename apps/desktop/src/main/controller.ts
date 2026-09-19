@@ -53,7 +53,7 @@ export class DesktopController {
   // normalizes NODE_ENV or does not inherit the test environment.
   private readonly visualFixtureEnabled = process.env.DSC_VISUAL_FIXTURE === "1"
     || process.argv.includes("--dsc-release-acceptance")
-    || app.commandLine.hasSwitch("dsc-release-acceptance");
+    || app.commandLine?.hasSwitch?.("dsc-release-acceptance") === true;
 
   constructor() {
     const userDataPath = app.getPath("userData");
