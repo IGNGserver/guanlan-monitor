@@ -209,7 +209,7 @@ function metricFixture(device) {
 async function run() {
   const browser = await chromium.launch({ headless: true });
   activeBrowser = browser;
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ locale: "en-US", viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   const pageErrors = [];
   const consoleMessages = [];
   const failedRequests = [];
@@ -308,39 +308,21 @@ async function run() {
 
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
-  assert.equal(await page.locator(".workspace-directory-surface .workspace-device-row").count(), fixtureDevices.length);
+  const deviceTable = page.locator(".workspace-directory-surface .cds--data-table");
+  const deviceRows = deviceTable.locator("tbody tr");
+  assert.equal(await deviceRows.count(), fixtureDevices.length, "Carbon device table must render every fixture instance");
 
-  // 1. Assert 7-column header alignment and column names
-  const headerColumns = await page.locator(".workspace-directory-head [role='columnheader']").allTextContents();
+  // Assert Carbon DataTable headers and body cells stay aligned.
+  const headerColumns = await deviceTable.locator("thead [role='columnheader']").allTextContents();
   assert.deepEqual(headerColumns.map((col) => col.trim()), ["状态", "设备", "CPU", "内存", "磁盘", "最近心跳", "操作"], "directory table header must contain exactly 7 columns in order");
-  const columnCount = await page.locator(".workspace-directory-head [role='columnheader']").count();
-  assert.equal(columnCount, 7, "directory header must have 7 column headers");
-
-  // Verify alignment / grid structure of header vs row
-  const headRowMetrics = await page.evaluate(() => {
-    const head = document.querySelector(".workspace-directory-head");
-    const row = document.querySelector(".workspace-device-row");
-    if (!head || !row) return null;
-    const headCols = head.querySelectorAll("[role='columnheader']");
-    const rowMain = row.querySelector(".workspace-device-row__main");
-    const rowAction = row.querySelector(".workspace-device-row__action");
-    return {
-      headColsCount: headCols.length,
-      headHasAction: Boolean(head.querySelector("[data-directory-column='action']")),
-      rowHasAction: Boolean(rowAction),
-      rowMainColSpan: rowMain?.getAttribute("style") || getComputedStyle(rowMain).gridColumn
-    };
-  });
-  assert.ok(headRowMetrics, "directory table header or rows not found");
-  assert.equal(headRowMetrics.headColsCount, 7, "directory header must expose 7 columns");
-  assert.equal(headRowMetrics.headHasAction, true, "directory header must include action column");
-  assert.equal(headRowMetrics.rowHasAction, true, "directory row must include action column");
+  assert.equal(await deviceTable.locator("thead [role='columnheader']").count(), 7, "directory table must have 7 column headers");
+  assert.equal(await deviceRows.first().locator("td").count(), 7, "Carbon device table rows must expose the same 7 columns");
   const deviceSearch = page.getByLabel("搜索设备", { exact: true });
   await deviceSearch.fill("构建虚拟机");
-  assert.equal(await page.locator(".workspace-directory-surface .workspace-device-row").count(), 1, "device search must filter the full directory");
+  assert.equal(await deviceRows.count(), 1, "device search must filter the full directory");
   await deviceSearch.fill("");
   await page.getByRole("radio", { name: "虚拟机" }).click();
-  assert.equal(await page.locator(".workspace-directory-surface .workspace-device-row").count(), 1, "device type filter must isolate VMs");
+  assert.equal(await deviceRows.count(), 1, "device type filter must isolate VMs");
   await page.getByRole("radio", { name: "全部类型" }).click();
   await page.screenshot({ path: path.join(outputDir, "web-devices-desktop.png"), fullPage: true, animations: "disabled" });
 
@@ -406,7 +388,7 @@ async function run() {
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
   await page.getByRole("button", { name: "管理顺序" }).click();
-  const firstMenu = page.locator(".workspace-device-row__menu summary").first();
+  const firstMenu = page.getByRole("button", { name: /管理/ }).first();
   await firstMenu.click();
   await page.getByRole("menuitem", { name: "删除" }).click();
   assert.equal(await page.getByRole("dialog", { name: /删除/ }).count(), 1, "device deletion must require confirmation");
