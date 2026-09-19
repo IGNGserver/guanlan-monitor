@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { InlineNotification } from "@carbon/react";
+import { ActionableNotification } from "@carbon/react";
 import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
 import { Button, Icon, Surface } from "../ui";
 import { M3SegmentedControl } from "../m3";
@@ -79,21 +79,27 @@ export function OverviewPage() {
       sourceDetail={health.sourceDetail}
     />
 
-    {hubAbnormal ? <InlineNotification
+    {hubAbnormal ? <ActionableNotification
+      inline
       className="workspace-attention"
       kind="warning"
       lowContrast
       hideCloseButton
       title="中枢连接异常"
       subtitle={cached ? "无法取得最新数据，页面中的设备信息可能已经过期。" : "无法连接到中枢，请检查中枢地址与访问密钥后重试。"}
-    ><Button variant="quiet" onClick={() => openSettings(settingsSection)}>{settingsLabel}<Icon name="arrow" size={15} /></Button></InlineNotification> : (health.source === "empty" || (issueCount ?? 0) > 0) ? <InlineNotification
+      actionButtonLabel={settingsLabel}
+      onActionButtonClick={() => openSettings(settingsSection)}
+    /> : (health.source === "empty" || (issueCount ?? 0) > 0) ? <ActionableNotification
+      inline
       className="workspace-attention"
       kind={noData ? "info" : "warning"}
       lowContrast
       hideCloseButton
       title={noData ? "还没有可用设备" : "设备状态存在异常"}
       subtitle={noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : health.offline + " 台设备离线，" + abnormalVmCount + " 台 VM 电源未运行，" + (snapshot.localBackend?.lastIssueCount ?? 0) + " 条本机采集问题待处理。"}
-    ><Button variant="quiet" onClick={() => openSettings(noData ? noDataSettingsSection : capabilities.canManageLocalAgent ? "agent" : "workspace")}>查看详情<Icon name="arrow" size={15} /></Button></InlineNotification> : null}
+      actionButtonLabel="查看详情"
+      onActionButtonClick={() => openSettings(noData ? noDataSettingsSection : capabilities.canManageLocalAgent ? "agent" : "workspace")}
+    /> : null}
 
     <div className="workspace-overview-scope" aria-label="总览观察范围">
       <div><span className="workspace-section-kicker">局部观察范围</span><p>健康结论和实例总数始终覆盖全部设备；趋势按这里的范围读取。</p></div>
