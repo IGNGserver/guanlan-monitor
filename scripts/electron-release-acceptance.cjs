@@ -75,6 +75,7 @@ async function run() {
     await page.keyboard.press("/");
     await page.locator(".workspace-command").waitFor({ state: "visible", timeout: 2_000 });
     await page.keyboard.press("Escape");
+    await page.locator(".workspace-command").waitFor({ state: "detached", timeout: 2_000 });
     assert.equal(await page.locator(".workspace-command").count(), 0, "Escape did not close the command palette");
     evidence.keyboardSearch = "PASS";
 
