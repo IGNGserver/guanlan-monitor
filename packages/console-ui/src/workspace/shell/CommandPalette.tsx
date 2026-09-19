@@ -44,8 +44,8 @@ export function CommandPalette() {
       event.stopImmediatePropagation();
       close();
     };
-    document.addEventListener("keydown", handleDocumentKeyDown, true);
-    return () => document.removeEventListener("keydown", handleDocumentKeyDown, true);
+    window.addEventListener("keydown", handleDocumentKeyDown, true);
+    return () => window.removeEventListener("keydown", handleDocumentKeyDown, true);
   }, [commandOpen]);
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "ArrowDown") { event.preventDefault(); setActiveIndex((index) => Math.min(index + 1, Math.max(filtered.length - 1, 0))); }
