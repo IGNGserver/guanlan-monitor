@@ -8,6 +8,8 @@ export function CommandPalette() {
   const { commandOpen, setCommandOpen, searchQuery, setSearchQuery, allDevices, navigate, openSettings, capabilities } = useWorkspace();
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const commandOpenRef = useRef(commandOpen);
+  commandOpenRef.current = commandOpen;
   useEffect(() => {
     if (!commandOpen) return;
     const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
@@ -37,16 +39,17 @@ export function CommandPalette() {
     close();
   };
   useEffect(() => {
-    if (!commandOpen) return;
-    const handleDocumentKeyDown = (event: KeyboardEvent) => {
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (!commandOpenRef.current) return;
       if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      close();
+      setCommandOpen(false);
+      setSearchQuery("");
     };
-    window.addEventListener("keydown", handleDocumentKeyDown, true);
-    return () => window.removeEventListener("keydown", handleDocumentKeyDown, true);
-  }, [commandOpen]);
+    window.addEventListener("keydown", handleWindowKeyDown, true);
+    return () => window.removeEventListener("keydown", handleWindowKeyDown, true);
+  }, [setCommandOpen, setSearchQuery]);
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "ArrowDown") { event.preventDefault(); setActiveIndex((index) => Math.min(index + 1, Math.max(filtered.length - 1, 0))); }
     if (event.key === "ArrowUp") { event.preventDefault(); setActiveIndex((index) => Math.max(index - 1, 0)); }
