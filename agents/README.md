@@ -11,9 +11,9 @@ server, web application, and shared package.
 
 | Delivery | Platform | Entry point | Lifecycle |
 | --- | --- | --- | --- |
-| Desktop product | Windows | `DeviceStateConsole-Windows-GUI-Setup-vX.Y.Z.exe` | Installs the tray application, the `guanlan-agent` machine-scope service and the collector. Supports `/S` plus `/HUB= /KEY= /DEVICE= /HOSTNAME= /SERVICE= /VERIFY=` for unattended installs. |
-| Desktop product | Linux | `DeviceStateConsole-Linux-GUI-Install-vX.Y.Z.deb` | Installs the Electron application and enables `guanlan-agent.service` (system unit). Supports unattended configuration through `GUANLAN_*` variables or `guanlan-agent config set`. |
-| Portable | Windows | `DeviceStateConsole-Windows-GUI-Portable-vX.Y.Z.zip` | Unpacked desktop application that spawns its own backend; no service is installed. |
+| Desktop product | Windows | `DeviceStateConsole-Windows-Setup-vX.Y.Z.exe` | Installs the tray application, the `guanlan-agent` machine-scope service and the collector. Supports `/S` plus `/HUB= /KEY= /DEVICE= /HOSTNAME= /SERVICE= /VERIFY=` for unattended installs. |
+| Desktop product | Linux | `DeviceStateConsole-Linux-Install-vX.Y.Z.deb` | Installs the Electron application and enables `guanlan-agent.service` (system unit). Supports unattended configuration through `GUANLAN_*` variables or `guanlan-agent config set`. |
+| Portable | Windows | `DeviceStateConsole-Windows-Portable-vX.Y.Z.zip` | Unpacked desktop application that spawns its own backend; no service is installed. |
 | Portable / headless | Linux | Collector binary inside the Debian package | Can be run directly under any supervisor with `DSC_SERVER_URL`, `DSC_AGENT_SECRET`, `DSC_DEVICE_ID`, `DSC_HOSTNAME`. |
 
 Android release APKs use `deploy/package-android-release.ps1` and are named
@@ -134,10 +134,10 @@ DSC_VSPHERE_PASSWORD=
 DSC_VSPHERE_TOKEN=
 ```
 
-The Linux GUI package is named
-`DeviceStateConsole-Linux-GUI-Install-vX.Y.Z.deb`; it is built and installed by
-GitHub Actions on Ubuntu 24.04. The GUI package is the recommended Linux desktop
-delivery for GNOME, while the CLI package remains the portable/headless option.
+The Linux desktop package is named
+`DeviceStateConsole-Linux-Install-vX.Y.Z.deb`; it is built and installed by
+GitHub Actions on Ubuntu 24.04. The desktop package is the recommended Linux desktop
+delivery, while the collector inside remains the portable/headless option.
 `node-agent.mjs` and `dev-machine-agent-launcher.ps1` are retained only for
 historical development-machine compatibility and are not part of release
 packages or recommended deployment paths.

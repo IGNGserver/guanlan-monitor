@@ -163,9 +163,9 @@ jobs:
           node scripts/verify-windows-hardware-integrity.mjs (Join-Path $unpacked "resources/agent/windows-hardware/pawnio/PawnIO_setup.exe")
           $packagedPawnIoSignature = Get-AuthenticodeSignature -LiteralPath (Join-Path $unpacked "resources/agent/windows-hardware/pawnio/PawnIO_setup.exe")
           if ($packagedPawnIoSignature.Status -ne "Valid") { throw "Packaged PawnIO installer is not Authenticode-valid: $($packagedPawnIoSignature.Status)" }
-          $portable = Join-Path $outputDir "DeviceStateConsole-Windows-GUI-Portable-v$version.zip"
+          $portable = Join-Path $outputDir "DeviceStateConsole-Windows-Portable-v$version.zip"
           Compress-Archive -Path (Join-Path $unpacked "*") -DestinationPath $portable -CompressionLevel Optimal -Force
-          $update = Join-Path $outputDir "DeviceStateConsole-Windows-GUI-Update-v$version.zip"
+          $update = Join-Path $outputDir "DeviceStateConsole-Windows-Update-v$version.zip"
           Compress-Archive -Path (Join-Path $unpacked "*") -DestinationPath $update -CompressionLevel Optimal -Force
           Get-ChildItem $outputDir -File | Select-Object Name,Length
 
@@ -173,7 +173,7 @@ jobs:
         shell: powershell
         run: |
           $version = (Get-Content VERSION -Raw).Trim()
-          $setup = Join-Path $env:GITHUB_WORKSPACE "release/windows-desktop/DeviceStateConsole-Windows-GUI-Setup-v$version.exe"
+          $setup = Join-Path $env:GITHUB_WORKSPACE "release/windows-desktop/DeviceStateConsole-Windows-Setup-v$version.exe"
           if (-not (Test-Path -LiteralPath $setup)) { throw "Windows GUI setup is missing: $setup" }
           $installer = Start-Process -FilePath $setup -ArgumentList "/S" -Wait -PassThru
           if ($installer.ExitCode -ne 0) { throw "Windows GUI silent installation failed with exit code $($installer.ExitCode)." }
@@ -246,10 +246,10 @@ jobs:
         with:
           name: windows-release-assets
           path: |
-            release/windows-desktop/DeviceStateConsole-Windows-GUI-Setup-v*.exe
-            release/windows-desktop/DeviceStateConsole-Windows-GUI-Update-v*.zip
-            release/windows-desktop/DeviceStateConsole-Windows-GUI-Portable-v*.zip
-            release/windows-desktop/release-launch-evidence/Windows-GUI-Release-Launch-Evidence-v*.json
+            release/windows-desktop/DeviceStateConsole-Windows-Setup-v*.exe
+            release/windows-desktop/DeviceStateConsole-Windows-Update-v*.zip
+            release/windows-desktop/DeviceStateConsole-Windows-Portable-v*.zip
+            release/windows-desktop/release-launch-evidence/Windows-Release-Launch-Evidence-v*.json
           if-no-files-found: error
 
   headless-windows:
@@ -277,7 +277,7 @@ jobs:
         shell: powershell
         run: |
           $version = (Get-Content VERSION -Raw).Trim()
-          $setup = Join-Path $env:GITHUB_WORKSPACE "release-assets/DeviceStateConsole-Windows-GUI-Setup-v$version.exe"
+          $setup = Join-Path $env:GITHUB_WORKSPACE "release-assets/DeviceStateConsole-Windows-Setup-v$version.exe"
           if (-not (Test-Path -LiteralPath $setup)) { throw "Windows GUI setup is missing: $setup" }
           # The marker path is derived per step: environment variables set in one
           # step do not reach the next one.
@@ -439,7 +439,7 @@ jobs:
           pnpm --filter @dsc/shared build
           pnpm --filter @dsc/desktop build
           pnpm --filter @dsc/desktop exec electron-builder --linux deb --publish never "--config.directories.output=$output_dir"
-          package="$(find "$output_dir" -maxdepth 1 -type f -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb' -print -quit)"
+          package="$(find "$output_dir" -maxdepth 1 -type f -name 'DeviceStateConsole-Linux-Install-v*.deb' -print -quit)"
           test -n "$package"
           dpkg-deb --info "$package"
           dpkg-deb --contents "$package" | grep -F 'resources/agent/device-state-console-agent'
@@ -452,8 +452,8 @@ jobs:
         with:
           name: linux-gui-release-assets
           path: |
-            release/linux-desktop/DeviceStateConsole-Linux-GUI-Install-v*.deb
-            release/linux-desktop/DeviceStateConsole-Linux-GUI-Install-v*.deb.sha256
+            release/linux-desktop/DeviceStateConsole-Linux-Install-v*.deb
+            release/linux-desktop/DeviceStateConsole-Linux-Install-v*.deb.sha256
           if-no-files-found: error
 
   headless-linux:
@@ -479,7 +479,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          package="$(find release-assets -maxdepth 1 -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb' -print -quit)"
+          package="$(find release-assets -maxdepth 1 -name 'DeviceStateConsole-Linux-Install-v*.deb' -print -quit)"
           test -n "$package"
           sudo apt-get update -qq
           if ! sudo apt-get install -y "./$package"; then
@@ -687,14 +687,14 @@ jobs:
             esac
           done < <(find release-assets -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.deb' -o -name '*.apk' \) -print)
           find release-assets -type f -print
-          test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Setup-v*.exe' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name 'Windows-GUI-Release-Launch-Evidence-v*.json' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Portable-v*.zip' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Update-v*.zip' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb.sha256' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-Setup-v*.exe' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'Windows-Release-Launch-Evidence-v*.json' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-Portable-v*.zip' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-Update-v*.zip' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-Install-v*.deb' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'DeviceStateConsole-Linux-Install-v*.deb.sha256' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Android-v*.apk' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-GUI-Setup-v*.exe.sha256' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-Setup-v*.exe.sha256' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Android-v*.apk.sha256' | wc -l)" -eq 1
 
       - name: Publish prerelease

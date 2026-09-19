@@ -1,6 +1,6 @@
 {
   "name": "@dsc/desktop",
-  "version": "3.0.28",
+  "version": "3.0.29",
   "private": true,
   "type": "module",
   "description": "Unified Windows and Linux Electron desktop client for Device State Console.",
@@ -65,7 +65,7 @@
         "nsis",
         "portable"
       ],
-      "artifactName": "DeviceStateConsole-Windows-GUI-Setup-v${version}.${ext}"
+      "artifactName": "DeviceStateConsole-Windows-Setup-v${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -80,7 +80,7 @@
       "include": "build/installer.nsh"
     },
     "portable": {
-      "artifactName": "DeviceStateConsole-Windows-GUI-Portable-v${version}.${ext}"
+      "artifactName": "DeviceStateConsole-Windows-Portable-v${version}.${ext}"
     },
     "linux": {
       "target": [
@@ -89,7 +89,7 @@
       "category": "Utility",
       "maintainer": "Device State Console contributors <github-actions@github.com>",
       "executableName": "guanlan",
-      "artifactName": "DeviceStateConsole-Linux-GUI-Install-v${version}.${ext}"
+      "artifactName": "DeviceStateConsole-Linux-Install-v${version}.${ext}"
     },
     "deb": {
       "packageName": "guanlan-desktop",

@@ -71,7 +71,7 @@ async function run() {
       evidence.deviceDetail = "NOT PROVEN: no release-runner device id was configured";
     }
     evidence.pageErrors = pageErrors;
-    fs.writeFileSync(path.join(outputDir, `Windows-GUI-Release-Launch-Evidence-v${evidence.version}.json`), `${JSON.stringify(evidence, null, 2)}\n`);
+    fs.writeFileSync(path.join(outputDir, `Windows-Release-Launch-Evidence-v${evidence.version}.json`), `${JSON.stringify(evidence, null, 2)}\n`);
     assert.deepEqual(pageErrors, [], `renderer page errors: ${pageErrors.join("; ")}`);
     console.log(JSON.stringify(evidence, null, 2));
   } finally {

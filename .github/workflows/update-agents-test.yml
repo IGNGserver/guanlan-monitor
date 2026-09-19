@@ -51,7 +51,7 @@ jobs:
           done
           stage_dir="$GITHUB_WORKSPACE/release"
           mkdir -p "$stage_dir"
-          asset="DeviceStateConsole-Linux-GUI-Install-v${REQUESTED_VERSION}.deb"
+          asset="DeviceStateConsole-Linux-Install-v${REQUESTED_VERSION}.deb"
           base_url="https://github.com/IGNGserver/guanlan-monitor/releases/download/v${REQUESTED_VERSION}"
           curl -4 -fL --retry 8 --retry-all-errors --connect-timeout 20 --max-time 180 \
             "$base_url/$asset.sha256" -o "$stage_dir/$asset.sha256"
@@ -78,8 +78,8 @@ jobs:
           name: linux-agent-release-${{ inputs.version }}
           path: |
             release/device-state-console-agent
-            release/DeviceStateConsole-Linux-GUI-Install-v${{ inputs.version }}.deb
-            release/DeviceStateConsole-Linux-GUI-Install-v${{ inputs.version }}.deb.sha256
+            release/DeviceStateConsole-Linux-Install-v${{ inputs.version }}.deb
+            release/DeviceStateConsole-Linux-Install-v${{ inputs.version }}.deb.sha256
           if-no-files-found: error
 
   update:
@@ -174,7 +174,7 @@ jobs:
           work_dir="${RUNNER_TEMP:-/tmp}/dsc-agent-update-${GITHUB_RUN_ID:-manual}"
           rm -rf "$work_dir"
           artifact_dir="${RUNNER_TEMP:-/tmp}/dsc-agent-artifact-${GITHUB_RUN_ID:-manual}"
-          package="$(find "$artifact_dir" -maxdepth 1 -type f -name 'DeviceStateConsole-Linux-GUI-Install-v*.deb' -print -quit)"
+          package="$(find "$artifact_dir" -maxdepth 1 -type f -name 'DeviceStateConsole-Linux-Install-v*.deb' -print -quit)"
           [[ -n "$package" && -f "$package" ]] || {
             echo "Staged Linux package is unavailable." >&2
             exit 1
