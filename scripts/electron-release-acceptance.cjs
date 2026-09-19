@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { _electron: electron } = require("playwright");
 
@@ -9,10 +10,20 @@ fs.mkdirSync(outputDir, { recursive: true });
 
 async function run() {
   assert.ok(executablePath && fs.existsSync(executablePath), `installed Guanlan executable is missing: ${executablePath}`);
+  // The silent installer can leave an older single-instance process behind.
+  // Use a fresh Chromium profile so the acceptance process owns its controller
+  // and receives the fixture environment below instead of handing off to that
+  // earlier process.
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "guanlan-release-acceptance-"));
   const app = await electron.launch({
     executablePath,
-    args: ["--dsc-release-acceptance"],
-    env: { ...process.env, ELECTRON_ENABLE_LOGGING: "1" }
+    args: ["--dsc-release-acceptance", `--user-data-dir=${userDataDir}`],
+    env: {
+      ...process.env,
+      ELECTRON_ENABLE_LOGGING: "1",
+      NODE_ENV: "test",
+      DSC_VISUAL_FIXTURE: "1"
+    }
   });
   const page = await app.firstWindow();
   const pageErrors = [];
@@ -76,6 +87,7 @@ async function run() {
     console.log(JSON.stringify(evidence, null, 2));
   } finally {
     await app.close();
+    fs.rmSync(userDataDir, { recursive: true, force: true });
   }
 }
 
