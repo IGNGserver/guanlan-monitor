@@ -60,18 +60,16 @@
   - `refreshOnce` 的 catch 块仅将数据源降级为 `RemoteDataSource.Cache`，并显示“刷新失败”或“unauthorized”。
   - 与桌面端不同，Android 客户端没有像桌面端 `hub-client.ts` (`ensureSession`) 那样在捕获到 401 时**自动使用保存的 `accessKey` 调用 `/api/auth/login` 进行静默重连和会话刷新**，导致用户在后台静置或长期使用后提示断联或离线。
 
-### 2.5 【P1 重要】中枢生产模式下的配置约束强制 `SESSION_COOKIE_SECURE=true` 与 `AGENT_REQUIRE_HTTPS=true`
+### 2.5 【P1 重要】中枢生产模式下的 HTTP 配置应可显式控制
 - **位置**:
   - `apps/server/src/config.ts:79-84`
   - `apps/server/src/index.ts:105-107`
   - `apps/server/src/routes.ts:780-789` (`rejectInsecureAgentTransport`)
   - `apps/server/src/routes.ts:943` (`reply.setCookie`)
-- **根因**:
-  - 在生产模式下（`NODE_ENV=production` 且 `DSC_RELEASE_CHANNEL=stable`），如果用户未配置 TLS 证书而是使用公网 HTTP 穿透：
-    1. 中枢在启动时会强制要求 `SESSION_COOKIE_SECURE=true` 和 `AGENT_REQUIRE_HTTPS=true`，否则直接拒绝启动抛出异常。
-    2. 若 `SESSION_COOKIE_SECURE=true`，浏览器和某些 WebView 客户端在纯 HTTP 连接下会直接丢弃带有 `Secure` 属性的 Cookie，导致登录成功但随后的 API 均报 401 未授权。
-    3. `rejectInsecureAgentTransport` 只要探测到协议非 HTTPS 就会直接拒绝 Agent 数据上报（返回 400 `https_required`）。
-  - 当前测试渠道（`test`）虽然放宽了部分检查，但如果缺少明确的环境变量开关或配置指引，外网穿透场景极易被误杀。
+- **现状**:
+  - 稳定和测试渠道默认仍使用安全配置（`SESSION_COOKIE_SECURE=true`、`AGENT_REQUIRE_HTTPS=true`）。
+  - 用户在明确受信的 HTTP 网络部署时，可在 `.env` 将对应值显式设为 `false`；Compose 预检和 server 启动校验都会保留该配置。
+  - 若 `SESSION_COOKIE_SECURE=true`，浏览器和某些 WebView 客户端在纯 HTTP 连接下会丢弃带有 `Secure` 属性的 Cookie，导致登录成功但随后的 API 均报 401 未授权；若 `AGENT_REQUIRE_HTTPS=true`，Agent 的 HTTP 上报会返回 `https_required`。
 
 ### 2.6 【P1 细节】网络抖动与长耗时请求的超时与重试缺失
 - **位置**:

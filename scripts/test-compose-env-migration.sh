@@ -46,8 +46,8 @@ printf '%s\n' \
   > "$stable_env"
 
 DSC_RELEASE_CHANNEL=stable bash "$root/scripts/prepare-compose-env.sh" "$stable_env"
-grep -Fxq 'SESSION_COOKIE_SECURE=true' "$stable_env"
-grep -Fxq 'AGENT_REQUIRE_HTTPS=true' "$stable_env"
+grep -Fxq 'SESSION_COOKIE_SECURE=false' "$stable_env"
+grep -Fxq 'AGENT_REQUIRE_HTTPS=false' "$stable_env"
 grep -Fxq 'TRUST_PROXY=true' "$stable_env"
 
 weak_env="$test_root/weak.env"

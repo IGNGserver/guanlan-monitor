@@ -195,27 +195,34 @@ recover_existing_mysql_values
 
 access_key_minimum=32
 mysql_password_minimum=16
-agent_require_https=true
 if [[ "${DSC_RELEASE_CHANNEL:-}" == "test" ]]; then
   access_key_minimum=6
   mysql_password_minimum=6
-  agent_require_https=false
 fi
 
 session_secret="$(require_strong_secret SESSION_SECRET 32)"
 access_key="$(require_strong_secret ACCESS_KEY "$access_key_minimum")"
 session_cookie_secure="$(unquote "$(read_env SESSION_COOKIE_SECURE)")"
-if [[ "${DSC_RELEASE_CHANNEL:-}" == "stable" ]]; then
-  session_cookie_secure=true
-elif [[ -z "$session_cookie_secure" ]]; then
+if [[ -z "$session_cookie_secure" ]]; then
   session_cookie_secure=true
 elif [[ "$session_cookie_secure" != "true" && "$session_cookie_secure" != "false" ]]; then
   echo "SESSION_COOKIE_SECURE must be true or false." >&2
   exit 1
 fi
+agent_require_https="$(unquote "$(read_env AGENT_REQUIRE_HTTPS)")"
+if [[ -z "$agent_require_https" ]]; then
+  if [[ "${DSC_RELEASE_CHANNEL:-}" == "test" ]]; then
+    agent_require_https=false
+  else
+    agent_require_https=true
+  fi
+elif [[ "$agent_require_https" != "true" && "$agent_require_https" != "false" ]]; then
+  echo "AGENT_REQUIRE_HTTPS must be true or false." >&2
+  exit 1
+fi
 # An existing initialized volume may retain a legacy root marker. It is
 # tolerated only when this migration recovered that exact live credential;
-# stable deployments still reject it when no recovery is requested.
+# the migration still refuses unrelated weak credentials.
 mysql_root_password="$(require_strong_secret MYSQL_ROOT_PASSWORD 16 "$legacy_mysql_root_recovered")"
 mysql_password="$(require_strong_secret MYSQL_PASSWORD "$mysql_password_minimum")"
 mysql_database="$(unquote "$(read_env MYSQL_DATABASE)")"
