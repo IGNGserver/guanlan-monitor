@@ -48,7 +48,11 @@ export class DesktopController {
   private trafficAnchor = new Date().toISOString();
   private trafficCalendarCache: CachedTrafficCalendar | null = null;
   private startup: DesktopStartupSettings = { openAtLogin: false, startMinimized: false };
-  private readonly visualFixtureEnabled = process.env.NODE_ENV === "test" && process.env.DSC_VISUAL_FIXTURE === "1";
+  // Release acceptance launches the installed executable directly and passes
+  // an explicit marker. Keep the fixture opt-in even if the packaged process
+  // normalizes NODE_ENV or does not inherit the test environment.
+  private readonly visualFixtureEnabled = process.env.DSC_VISUAL_FIXTURE === "1"
+    || process.argv.includes("--dsc-release-acceptance");
 
   constructor() {
     const userDataPath = app.getPath("userData");
