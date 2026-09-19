@@ -27,6 +27,8 @@ export class HubClient {
   private accessKey: string | null = null;
   private sessionCookie: string | null = null;
   private serverUrl = "";
+  private updateCache: { key: string; expiresAt: number; value: UpdateInfo } | null = null;
+  private sessionInFlight: Promise<void> | null = null;
 
   constructor(private readonly credentialPath: string) {}
 
@@ -156,13 +158,17 @@ export class HubClient {
   }
 
   async getUpdateInfo(currentVersion: string): Promise<UpdateInfo> {
+    const key = `${this.serverUrl}|${currentVersion}`;
+    if (this.updateCache?.key === key && Date.now() < this.updateCache.expiresAt) return this.updateCache.value;
     const platform = process.platform === "win32" ? "windows-gui" : "linux-gui";
     const params = new URLSearchParams({
       platform,
       currentVersion,
       currentChannel: "test"
     });
-    return this.request<UpdateInfo>(`/api/updates?${params.toString()}`, { includeSession: false });
+    const value = await this.request<UpdateInfo>(`/api/updates?${params.toString()}`, { includeSession: false });
+    this.updateCache = { key, expiresAt: Date.now() + 15 * 60_000, value };
+    return value;
   }
 
   async getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync> {
@@ -183,7 +189,13 @@ export class HubClient {
     if (!this.serverUrl) throw new Error("hub_server_url_missing");
     if (this.sessionCookie) return;
     if (!this.accessKey) throw new Error("hub_login_required");
-    await this.login(this.accessKey);
+    this.sessionInFlight ??= this.login(this.accessKey);
+    const pending = this.sessionInFlight;
+    try {
+      await pending;
+    } finally {
+      if (this.sessionInFlight === pending) this.sessionInFlight = null;
+    }
   }
 
   private async persistAccessKey(value: string): Promise<void> {
@@ -226,9 +238,9 @@ export class HubClient {
     // If 401 Unauthorized occurs on an authenticated request and we have an accessKey,
     // attempt silent re-login once and replay the request.
     if (response.status === 401 && includeSession && this.accessKey && endpoint !== "/api/auth/login") {
-      this.sessionCookie = null;
+      if (this.sessionCookie === headers.Cookie) this.sessionCookie = null;
       try {
-        await this.login(this.accessKey);
+        await this.ensureSession();
         if (this.sessionCookie) {
           headers["Cookie"] = this.sessionCookie;
         }

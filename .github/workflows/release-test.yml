@@ -77,6 +77,9 @@ jobs:
           pnpm typecheck
           pnpm build
 
+      - name: Verify performance regression cases
+        run: node --experimental-test-module-mocks --test scripts/performance-regression.test.mjs
+
       - name: Test and build Go agents
         working-directory: agents
         run: |

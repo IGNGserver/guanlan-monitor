@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import type { DesktopMemoryPressure, DesktopRuntimeProfile } from "@dsc/shared";
 
 export interface DesktopSystemMemoryInfo {
@@ -35,27 +35,41 @@ export function readSystemMemoryInfo(): DesktopSystemMemoryInfo | null {
   }
 }
 
-function hasActiveRdpSession(): boolean {
-  const result = spawnSync("query.exe", ["session"], {
-    encoding: "utf8",
-    timeout: 1_500,
-    windowsHide: true,
-    stdio: ["ignore", "pipe", "ignore"]
+function hasActiveRdpSession(): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    execFile("query.exe", ["session"], { encoding: "utf8", timeout: 1_500, windowsHide: true }, (error, stdout) => {
+      if (error) reject(error);
+      else resolve(stdout.split(/\r?\n/).some((line) => /rdp-tcp#\d+/i.test(line)));
+    });
   });
-  const output = typeof result.stdout === "string" ? result.stdout : "";
-  return output.split(/\r?\n/).some((line) => /rdp-tcp#\d+/i.test(line));
 }
+
+/** Non-blocking, bounded probe; environment hints still handle known RDP sessions. */
+export function createRemoteSessionProbe(probe: () => Promise<boolean>, now = Date.now) {
+  let value = false;
+  let expiresAt = -Infinity;
+  let pending: Promise<void> | null = null;
+  return () => {
+    if (!pending && now() >= expiresAt) {
+      pending = Promise.resolve().then(probe).then((next) => { value = next; }, () => {
+        // Retain the last known result if query.exe is temporarily unavailable.
+      }).finally(() => {
+        expiresAt = now() + 30_000;
+        pending = null;
+      });
+    }
+    return value;
+  };
+}
+
+const readRemoteSession = createRemoteSessionProbe(hasActiveRdpSession);
 
 export function isWindowsRemoteSession(): boolean {
   if (process.platform !== "win32") return false;
   const sessionName = process.env.SESSIONNAME?.trim() ?? "";
   const clientName = process.env.CLIENTNAME?.trim() ?? "";
   if (/^RDP-/i.test(sessionName) || Boolean(clientName && !/^(console|unknown)$/i.test(clientName))) return true;
-  try {
-    return hasActiveRdpSession();
-  } catch {
-    return false;
-  }
+  return readRemoteSession();
 }
 
 function memoryPressure(info: DesktopSystemMemoryInfo | null): DesktopMemoryPressure {
