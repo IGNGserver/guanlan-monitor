@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test, mock } from 'node:test';
+import { createRequire } from 'node:module';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -7,7 +8,8 @@ import { DesktopCacheStore } from '../apps/desktop/dist/main/cache-store.js';
 import { createRemoteSessionProbe } from '../apps/desktop/dist/main/runtime-profile.js';
 import { startVisiblePolling } from '../packages/console-ui/src/helpers/visiblePolling.ts';
 
-mock.module('electron', { namedExports: {
+const desktopRequire = createRequire(new URL('../apps/desktop/package.json', import.meta.url));
+mock.module(desktopRequire.resolve('electron'), { namedExports: {
   safeStorage: { isEncryptionAvailable: () => false },
   app: { getPath: () => tmpdir(), getVersion: () => '3.0.28' },
   shell: {}
