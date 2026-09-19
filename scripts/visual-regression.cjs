@@ -388,7 +388,7 @@ async function run() {
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
   await page.getByRole("button", { name: "管理顺序" }).click();
-  const firstMenu = page.getByRole("button", { name: /管理/ }).first();
+  const firstMenu = page.locator(".cds--overflow-menu").first();
   await firstMenu.click();
   await page.getByRole("menuitem", { name: "删除" }).click();
   assert.equal(await page.getByRole("dialog", { name: /删除/ }).count(), 1, "device deletion must require confirmation");
