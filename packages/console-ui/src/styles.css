@@ -1,2 +1,3 @@
-@import "./workspace/workspace.css";
-@import "./workspace/window-material.css";
+/* Kept as a compatibility entry for older consumers. New web and desktop
+ * entrypoints import styles.scss so Carbon's Sass theme is bundled once. */
+@import "./styles.scss";

@@ -1,11 +1,12 @@
 import React, { useState } from "react";
+import { InlineNotification } from "@carbon/react";
 import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
 import { Button, Icon, Surface } from "../ui";
 import { M3SegmentedControl } from "../m3";
 import { TelemetryChartCard } from "../TelemetryCards";
 import { formatBytes, formatDate } from "../formatters";
 import { selectHealthSummary, selectOverviewDevices } from "../selectors";
-import { DeviceRow, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, PageIntro, OverviewSummary, unavailablePoints } from "./shared";
+import { CarbonDeviceTable, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, PageIntro, OverviewSummary, unavailablePoints } from "./shared";
 
 type ObservationMetric = "cpu" | "memory" | "disk" | "network";
 
@@ -78,15 +79,21 @@ export function OverviewPage() {
       sourceDetail={health.sourceDetail}
     />
 
-    {hubAbnormal ? <div className="workspace-attention">
-      <div className="workspace-attention__icon"><Icon name="warning" /></div>
-      <div><strong>中枢连接异常</strong><p>{cached ? "无法取得最新数据，页面中的设备信息可能已经过期。" : "无法连接到中枢，请检查中枢地址与访问密钥后重试。"}</p></div>
-      <Button variant="quiet" onClick={() => openSettings(settingsSection)}>{settingsLabel}<Icon name="arrow" size={15} /></Button>
-    </div> : (health.source === "empty" || (issueCount ?? 0) > 0) ? <div className="workspace-attention">
-      <div className="workspace-attention__icon"><Icon name="warning" /></div>
-      <div><strong>{noData ? "还没有可用设备" : "设备状态存在异常"}</strong><p>{noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : health.offline + " 台设备离线，" + abnormalVmCount + " 台 VM 电源未运行，" + (snapshot.localBackend?.lastIssueCount ?? 0) + " 条本机采集问题待处理。"}</p></div>
-      <Button variant="quiet" onClick={() => openSettings(noData ? noDataSettingsSection : capabilities.canManageLocalAgent ? "agent" : "workspace")}>查看详情<Icon name="arrow" size={15} /></Button>
-    </div> : null}
+    {hubAbnormal ? <InlineNotification
+      className="workspace-attention"
+      kind="warning"
+      lowContrast
+      hideCloseButton
+      title="中枢连接异常"
+      subtitle={cached ? "无法取得最新数据，页面中的设备信息可能已经过期。" : "无法连接到中枢，请检查中枢地址与访问密钥后重试。"}
+    ><Button variant="quiet" onClick={() => openSettings(settingsSection)}>{settingsLabel}<Icon name="arrow" size={15} /></Button></InlineNotification> : (health.source === "empty" || (issueCount ?? 0) > 0) ? <InlineNotification
+      className="workspace-attention"
+      kind={noData ? "info" : "warning"}
+      lowContrast
+      hideCloseButton
+      title={noData ? "还没有可用设备" : "设备状态存在异常"}
+      subtitle={noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : health.offline + " 台设备离线，" + abnormalVmCount + " 台 VM 电源未运行，" + (snapshot.localBackend?.lastIssueCount ?? 0) + " 条本机采集问题待处理。"}
+    ><Button variant="quiet" onClick={() => openSettings(noData ? noDataSettingsSection : capabilities.canManageLocalAgent ? "agent" : "workspace")}>查看详情<Icon name="arrow" size={15} /></Button></InlineNotification> : null}
 
     <div className="workspace-overview-scope" aria-label="总览观察范围">
       <div><span className="workspace-section-kicker">局部观察范围</span><p>健康结论和实例总数始终覆盖全部设备；趋势按这里的范围读取。</p></div>
@@ -97,9 +104,7 @@ export function OverviewPage() {
       <Surface className="workspace-overview-devices">
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">异常与最近设备</span><h3>{recentDevices.length ? recentDevices.length + " 个重点实例" : "等待设备"}</h3></div><Button variant="quiet" onClick={() => navigate({ kind: "devices" })}>查看全部</Button></div>
         {cached && <div className="workspace-inline-note">当前为缓存快照，设备列表只读。</div>}
-        <div className="workspace-device-rows">
-          {recentDevices.length ? recentDevices.map((device) => <DeviceRow key={device.deviceId} device={device} />) : <EmptyState title="还没有设备" detail="连接一个中枢后，设备会出现在这里。" action={<Button variant="primary" onClick={() => openSettings(capabilities.canConfigureConnection ? "connections" : "workspace")}>{capabilities.canConfigureConnection ? "连接设置" : "查看中枢设置"}</Button>} />}
-        </div>
+        <CarbonDeviceTable devices={recentDevices} emptyState={<EmptyState title="还没有设备" detail="连接一个中枢后，设备会出现在这里。" action={<Button variant="primary" onClick={() => openSettings(capabilities.canConfigureConnection ? "connections" : "workspace")}>{capabilities.canConfigureConnection ? "连接设置" : "查看中枢设置"}</Button>} />} />
       </Surface>
     </div>
 

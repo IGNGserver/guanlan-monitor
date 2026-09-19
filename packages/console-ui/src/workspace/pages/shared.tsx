@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { DataTable, Modal, OverflowMenu, OverflowMenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow, Tag } from "@carbon/react";
 import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, SystemStats, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, VirtualizationStorageMetricSeries, VirtualizationStorageTelemetry, WidgetInstanceConfig, WidgetLayoutDocument, WidgetLayoutSaveRequest, WidgetPanelMetadata } from "@dsc/shared";
 import { isDisplayableVirtualizationStorage, isDisplayableVirtualizationStorageSeries, virtualizationStorageInstances } from "@dsc/shared";
 import appIcon from "../../assets/app-icon.png";
@@ -18,11 +19,9 @@ import {
 import { DeviceWidgetFrame } from "../DeviceWidgetFrame";
 import { DynamicWidgetCanvas, WidgetDrawer } from "../widgetCatalog";
 import { M3Checkbox, M3Chip, M3SegmentedControl, M3Select, M3Switch, M3Tabs, M3TextField } from "../m3";
-import { Button, Icon, StatusDot, StatusLabel, Surface, SummaryRow, VirtualMachinePowerLabel, virtualMachinePowerState } from "../ui";
-import { MiniTrend, TelemetryChartCard, TelemetryInfoCard } from "../TelemetryCards";
+import { Button, Icon, StatusLabel, Surface, SummaryRow, virtualMachinePowerState } from "../ui";
+import { TelemetryChartCard, TelemetryInfoCard } from "../TelemetryCards";
 import {
-  CapacityMetricValue,
-  MetricValue,
   UNAVAILABLE_METRIC_LABEL,
   WINDOW_DURATION_MAP,
   averageSamplePointsOrFallback,
@@ -197,22 +196,6 @@ function PageIntro({ eyebrow, title, description, actions }: { eyebrow?: string;
   return <div className="workspace-page-intro"><div>{eyebrow && <div className="workspace-page-intro__eyebrow">{eyebrow}</div>}<h2>{title}</h2>{description && <p>{description}</p>}</div>{actions && <div className="workspace-page-intro__actions">{actions}</div>}</div>;
 }
 
-const DEVICE_DIRECTORY_COLUMNS = [
-  { key: "status", label: "状态" },
-  { key: "device", label: "设备" },
-  { key: "cpu", label: "CPU" },
-  { key: "memory", label: "内存" },
-  { key: "disk", label: "磁盘" },
-  { key: "heartbeat", label: "最近心跳" },
-  { key: "action", label: "操作" }
-] as const;
-
-function DeviceDirectoryHeader() {
-  return <div className="workspace-directory-head" role="row" aria-label="设备目录表头">
-    {DEVICE_DIRECTORY_COLUMNS.map((column) => <span key={column.key} role="columnheader" data-directory-column={column.key}>{column.label}</span>)}
-  </div>;
-}
-
 function DeviceDirectoryFilterBar({
   devices,
   query,
@@ -251,42 +234,6 @@ function DeviceDirectoryFilterBar({
     {actions && <div className="workspace-directory-toolbar__actions">{actions}</div>}
   </div>;
 }
-
-
-
-function useModalFocusTrap() {
-  const dialogRef = useRef<HTMLElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focusFrame = window.requestAnimationFrame(() => {
-      const firstControl = dialogRef.current?.querySelector<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])");
-      firstControl?.focus();
-    });
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Tab") return;
-      const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])") ?? []);
-      if (!focusable.length) return;
-      const currentIndex = focusable.indexOf(document.activeElement as HTMLElement);
-      const nextIndex = event.shiftKey
-        ? (currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1)
-        : (currentIndex + 1) % focusable.length;
-      event.preventDefault();
-      focusable[nextIndex]?.focus();
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.cancelAnimationFrame(focusFrame);
-      document.removeEventListener("keydown", handleKeyDown);
-      previousFocusRef.current?.focus();
-      previousFocusRef.current = null;
-    };
-  }, []);
-
-  return dialogRef;
-}
-
 function ConfirmDialog({
   title,
   detail,
@@ -302,15 +249,20 @@ function ConfirmDialog({
   onCancel: () => void;
   disabled?: boolean;
 }) {
-  const dialogRef = useModalFocusTrap();
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !disabled) onCancel();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [disabled, onCancel]);
-  return <div className="workspace-confirm-overlay" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget && !disabled) onCancel(); }}><section ref={dialogRef} className="workspace-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-confirm-title" onPointerDown={(event) => event.stopPropagation()}><span className="workspace-section-kicker">请确认操作</span><h2 id="workspace-confirm-title">{title}</h2><p>{detail}</p><div className="workspace-form__actions"><Button variant="danger" autoFocus onClick={onConfirm} disabled={disabled}>{disabled ? "处理中…" : confirmLabel}</Button><Button variant="quiet" onClick={onCancel} disabled={disabled}>取消</Button></div></section></div>;
+  return <Modal
+    open
+    danger
+    modalLabel="请确认操作"
+    modalHeading={title}
+    primaryButtonText={disabled ? "处理中…" : confirmLabel}
+    secondaryButtonText="取消"
+    primaryButtonDisabled={disabled}
+    onRequestClose={(event) => { event.preventDefault(); if (!disabled) onCancel(); }}
+    onSecondarySubmit={(event) => { event.preventDefault(); if (!disabled) onCancel(); }}
+    onRequestSubmit={(event) => { event.preventDefault(); if (!disabled) onConfirm(); }}
+  >
+    <p>{detail}</p>
+  </Modal>;
 }
 
 function PromptDialog({
@@ -331,65 +283,112 @@ function PromptDialog({
   disabled?: boolean;
 }) {
   const [value, setValue] = useState(initialValue);
-  const dialogRef = useModalFocusTrap();
   useEffect(() => setValue(initialValue), [initialValue]);
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !disabled) onCancel();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [disabled, onCancel]);
   const submit = () => {
     const nextValue = value.trim();
     if (!nextValue || disabled) return;
     onConfirm(nextValue);
   };
-  return <div className="workspace-confirm-overlay" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget && !disabled) onCancel(); }}><section ref={dialogRef} className="workspace-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-prompt-title" onPointerDown={(event) => event.stopPropagation()}><span className="workspace-section-kicker">编辑名称</span><h2 id="workspace-prompt-title">{title}</h2><p>{detail}</p><M3TextField label="名称" autoFocus value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submit(); } }} maxLength={80} /><div className="workspace-form__actions"><Button variant="primary" onClick={submit} disabled={disabled || !value.trim()}>{disabled ? "处理中…" : confirmLabel}</Button><Button variant="quiet" onClick={onCancel} disabled={disabled}>取消</Button></div></section></div>;
+  return <Modal
+    open
+    modalLabel="编辑名称"
+    modalHeading={title}
+    primaryButtonText={disabled ? "处理中…" : confirmLabel}
+    secondaryButtonText="取消"
+    primaryButtonDisabled={disabled || !value.trim()}
+    onRequestClose={(event) => { event.preventDefault(); if (!disabled) onCancel(); }}
+    onSecondarySubmit={(event) => { event.preventDefault(); if (!disabled) onCancel(); }}
+    onRequestSubmit={(event) => { event.preventDefault(); submit(); }}
+  >
+    <p>{detail}</p>
+    <M3TextField label="名称" autoFocus value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submit(); } }} maxLength={80} />
+  </Modal>;
 }
 
-function DeviceRow({
-  device,
-  index,
-  total,
+function directoryCapacityText(device: DeviceSummary, kind: "memory" | "disk", unavailable: boolean): string {
+  if (unavailable) return UNAVAILABLE_METRIC_LABEL;
+  const used = kind === "memory" ? device.memoryUsedBytes : device.diskUsedBytes;
+  const total = kind === "memory" ? device.memoryTotalBytes : device.diskTotalBytes;
+  const percent = kind === "memory" ? device.memoryUsagePercent : device.diskUsagePercent;
+  if (Number.isFinite(used) && Number.isFinite(total) && (total ?? 0) > 0) return `${formatBytes(used)} / ${formatBytes(total)}${percent == null ? "" : ` · ${percent}%`}`;
+  return percent == null ? "—" : `${percent}%`;
+}
+
+function directoryStatusTag(device: DeviceSummary) {
+  if (device.instanceType === "virtual_machine") {
+    const power = virtualMachinePowerState(device.virtualMachine?.powerState);
+    return <Tag type={power.state === "online" ? "green" : power.state === "warning" ? "warm-gray" : "red"}>{power.label}</Tag>;
+  }
+  return <Tag type={device.status === "online" ? "green" : "gray"}>{device.status === "online" ? "在线" : "离线"}</Tag>;
+}
+
+function CarbonDeviceTable({
+  devices,
+  order,
+  manageMode = false,
   onMove,
-  onDelete
+  onDelete,
+  emptyState
 }: {
-  device: DeviceSummary;
-  index?: number;
-  total?: number;
-  onMove?: (direction: -1 | 1) => void;
-  onDelete?: () => void;
+  devices: DeviceSummary[];
+  order?: string[];
+  manageMode?: boolean;
+  onMove?: (deviceId: string, direction: -1 | 1) => void;
+  onDelete?: (device: DeviceSummary) => void;
+  emptyState?: React.ReactNode;
 }) {
   const { navigate } = useWorkspace();
-  const open = () => navigate({ kind: "device", deviceId: device.deviceId });
-  const isVm = device.instanceType === "virtual_machine";
-  const powerState = isVm ? virtualMachinePowerState(device.virtualMachine?.powerState) : null;
-  const agentLabel = device.status === "online" ? "在线" : "离线";
-  const heartbeatState = device.status === "online" ? "当前响应" : "心跳已过期";
-  const unavailable = (device.unavailableMetrics ?? []).map((metric) => metric === "memoryUsage" ? "内存" : metric === "gpuUsage" || metric === "gpuMemory" ? "GPU" : metric).join("、");
-  return <div className="workspace-device-row" role="row" data-device-id={device.deviceId} data-instance-type={device.instanceType ?? "device"} data-vm-power-state={isVm ? (device.virtualMachine?.powerState?.trim().toLowerCase() || "unknown") : undefined} data-agent-state={device.status} data-unavailable-metrics={unavailable || undefined}>
-    <button className="workspace-device-row__main" type="button" onClick={open} aria-label={`打开设备 ${device.hostname}`}>
-      <span className="workspace-device-row__status" role="gridcell" data-directory-column="status" aria-label={isVm ? `虚拟机电源：${powerState?.label}` : `Agent：${agentLabel}`}><StatusDot state={powerState?.state ?? (device.status === "online" ? "online" : "offline")} /></span>
-      <span className="workspace-device-row__identity" role="gridcell" data-directory-column="device"><strong>{device.hostname}</strong><small>{isVm ? `${powerState?.label ?? "电源状态未知"} · 宿主机 Agent：${agentLabel} · ${device.hostName ?? "未知"}` : `${device.os} · Agent ${agentLabel}`} · ID ${device.deviceId}</small></span>
-      <span className="workspace-device-row__metric" role="gridcell" data-directory-column="cpu"><small>CPU</small><MetricValue value={device.cpuUsagePercent} unavailable={isMetricUnavailable(device, "cpuUsage")} /></span>
-      <span className="workspace-device-row__metric" role="gridcell" data-directory-column="memory"><small>内存</small><CapacityMetricValue usedBytes={device.memoryUsedBytes} totalBytes={device.memoryTotalBytes} percentValue={device.memoryUsagePercent} unavailable={isMetricUnavailable(device, "memoryUsage")} /></span>
-      <span className="workspace-device-row__metric" role="gridcell" data-directory-column="disk"><small>磁盘</small><CapacityMetricValue usedBytes={device.diskUsedBytes} totalBytes={device.diskTotalBytes} percentValue={device.diskUsagePercent} unavailable={isMetricUnavailable(device, "diskUsage")} /></span>
-      <span className="workspace-device-row__heartbeat" role="gridcell" data-directory-column="heartbeat" data-heartbeat-state={device.status === "online" ? "fresh" : "stale"}><small>最近心跳</small><span>{formatDate(device.lastSeenAt)}</span><small>{heartbeatState}</small></span>
-    </button>
-    <div className="workspace-device-row__action" role="gridcell" data-directory-column="action">
-      {(onMove || onDelete) ? <details className="workspace-device-row__menu">
-        <summary aria-label={`管理 ${device.hostname}`}><Icon name="more" size={18} /></summary>
-        <div className="workspace-device-row__menu-panel" role="menu">
-          {onMove && <>
-            <button type="button" role="menuitem" disabled={index === 0} onClick={() => onMove(-1)}>上移</button>
-            <button type="button" role="menuitem" disabled={index === (total ?? 0) - 1} onClick={() => onMove(1)}>下移</button>
-          </>}
-          {onDelete && <button className="is-danger" type="button" role="menuitem" onClick={onDelete}>删除</button>}
-        </div>
-      </details> : <span className="workspace-device-row__open" aria-hidden="true"><Icon name="arrow" size={15} /></span>}
-    </div>
-  </div>;
+  const headers = [
+    { key: "status", header: "状态" },
+    { key: "device", header: "设备实例" },
+    { key: "cpu", header: "CPU" },
+    { key: "memory", header: "内存" },
+    { key: "disk", header: "磁盘" },
+    { key: "heartbeat", header: "最近心跳" },
+    { key: "actions", header: "" }
+  ];
+  const rows = devices.map((device) => ({
+    id: device.deviceId,
+    status: device.status,
+    device: device.hostname,
+    cpu: isMetricUnavailable(device, "cpuUsage") || device.cpuUsagePercent == null ? "—" : `${device.cpuUsagePercent}%`,
+    memory: directoryCapacityText(device, "memory", isMetricUnavailable(device, "memoryUsage")),
+    disk: directoryCapacityText(device, "disk", isMetricUnavailable(device, "diskUsage")),
+    heartbeat: formatDate(device.lastSeenAt),
+    actions: ""
+  }));
+
+  if (!rows.length) return <>{emptyState ?? <EmptyState title="没有匹配设备" detail="尝试清空搜索或调整筛选条件。" />}</>;
+
+  return (
+    <DataTable rows={rows} headers={headers} isSortable={false}>
+      {({ rows: tableRows, headers: tableHeaders, getTableProps, getHeaderProps, getRowProps }) => (
+        <TableContainer>
+          <Table {...getTableProps()} size="md" useZebraStyles={false}>
+            <TableHead><TableRow>{tableHeaders.map((header) => <TableHeader key={header.key} {...getHeaderProps({ header })}>{header.header}</TableHeader>)}</TableRow></TableHead>
+            <TableBody>
+              {tableRows.map((row) => {
+                const device = devices.find((item) => item.deviceId === row.id);
+                if (!device) return null;
+                const deviceIndex = order?.indexOf(device.deviceId) ?? -1;
+                return (
+                  <TableRow key={row.id} {...getRowProps({ row })}>
+                    {row.cells.map((cell) => {
+                      if (cell.info.header === "status") return <TableCell key={cell.id}>{directoryStatusTag(device)}</TableCell>;
+                      if (cell.info.header === "device") return <TableCell key={cell.id}><button className="guanlan-table-link" type="button" onClick={() => navigate({ kind: "device", deviceId: device.deviceId })}>{device.hostname}</button><small className="guanlan-table-secondary">{device.instanceType === "virtual_machine" ? `虚拟机 · ${device.hostName ?? "宿主机未知"}` : `${device.os} · ID ${device.deviceId}`}</small></TableCell>;
+                      if (cell.info.header === "heartbeat") return <TableCell key={cell.id}><span className={device.status === "online" ? "" : "guanlan-table-stale"}>{cell.value}</span><small className="guanlan-table-secondary">{device.status === "online" ? "当前响应" : "心跳已过期"}</small></TableCell>;
+                      if (cell.info.header === "actions") return <TableCell key={cell.id}>{manageMode && (onMove || onDelete) ? <OverflowMenu aria-label={`管理 ${device.hostname}`} size="sm" direction="bottom"><OverflowMenuItem itemText="上移" disabled={deviceIndex <= 0} onClick={() => onMove?.(device.deviceId, -1)} /><OverflowMenuItem itemText="下移" disabled={deviceIndex < 0 || deviceIndex >= (order?.length ?? 1) - 1} onClick={() => onMove?.(device.deviceId, 1)} /><OverflowMenuItem itemText="删除" isDelete onClick={() => onDelete?.(device)} /></OverflowMenu> : null}</TableCell>;
+                      return <TableCell key={cell.id}>{cell.value}</TableCell>;
+                    })}
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+    </DataTable>
+  );
 }
 
 function OverviewSummary({
@@ -437,10 +436,6 @@ function OverviewSummary({
   );
 }
 
-
-function MetricTile({ label, value, detail, tone, points }: { label: string; value: number | null | undefined; detail?: string; tone?: "blue" | "green" | "amber"; points?: SamplePoint[] }) {
-  return <div className={`workspace-metric-tile ${tone ? `workspace-metric-tile--${tone}` : ""}`}><div className="workspace-metric-tile__header"><span>{label}</span><MetricValue value={value} /></div>{points && <MiniTrend compact label={label} points={points} />}{!points && <div className="workspace-metric-tile__empty">暂无趋势数据</div>}<small>{detail ?? "未采集"}</small></div>;
-}
 
 function TelemetrySection({
   id,
@@ -1130,15 +1125,12 @@ export {
   probeTargetLabels,
   probeProviderLabels,
   DEFAULT_DEVICE_PANELS,
-  DEVICE_DIRECTORY_COLUMNS,
   PageIntro,
-  DeviceDirectoryHeader,
   DeviceDirectoryFilterBar,
+  CarbonDeviceTable,
   ConfirmDialog,
   PromptDialog,
-  DeviceRow,
   OverviewSummary,
-  MetricTile,
   TelemetrySection,
   mergeFanMetricSeries,
   TelemetryDeviceBlock,

@@ -1,6 +1,6 @@
 {
   "name": "@dsc/console-ui",
-  "version": "3.0.33",
+  "version": "3.0.34",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -11,7 +11,8 @@
       "import": "./src/index.ts"
     },
     "./assets/*": "./src/assets/*",
-    "./styles.css": "./src/styles.css",
+    "./styles.css": "./src/styles.scss",
+    "./styles.scss": "./src/styles.scss",
     "./window-material.css": "./src/workspace/window-material.css"
   },
   "scripts": {
@@ -21,15 +22,17 @@
     "test:ui-helpers": "node --test src/helpers/layout.test.ts"
   },
   "dependencies": {
+    "@carbon/charts-react": "1.27.20",
+    "@carbon/react": "1.116.0",
     "@dsc/shared": "workspace:*",
     "clsx": "^2.1.1",
     "react": "19.1.1",
-    "react-dom": "19.1.1",
-    "recharts": "^3.2.1"
+    "react-dom": "19.1.1"
   },
   "devDependencies": {
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
+    "sass": "^1.93.2",
     "typescript": "^5.9.2"
   }
 }

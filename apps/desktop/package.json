@@ -1,6 +1,6 @@
 {
   "name": "@dsc/desktop",
-  "version": "3.0.33",
+  "version": "3.0.34",
   "private": true,
   "type": "module",
   "description": "Unified Windows and Linux Electron desktop client for Device State Console.",
@@ -33,6 +33,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "electron": "^37.2.6",
     "electron-builder": "^26.0.12",
+    "sass": "^1.93.2",
     "typescript": "^5.9.2",
     "vite": "^7.0.6"
   },

@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
 import { Button, Icon, StatusLabel, Surface } from "../ui";
 import { selectDeviceDirectory, selectSnapshotSource, type DeviceDirectorySort, type DeviceDirectoryStatus } from "../selectors";
-import { DeviceDirectoryFilterBar, DeviceDirectoryHeader, DeviceRow, EmptyState, PageIntro } from "./shared";
+import { CarbonDeviceTable, DeviceDirectoryFilterBar, EmptyState, PageIntro } from "./shared";
 
 export function HubPage() {
   const { snapshot, hubs, route, navigate, openSettings, capabilities } = useWorkspace();
@@ -52,12 +52,9 @@ export function HubPage() {
       sort={sort}
       onSortChange={setSort}
     />
-    <Surface className="workspace-directory-surface workspace-hub-directory">
+    <Surface className="workspace-directory-surface workspace-hub-directory guanlan-data-table-surface">
       <div className="workspace-surface__header"><div><span className="workspace-section-kicker">只读目录</span><h3>{visibleDevices.length} / {hub.devices.length} 个实例</h3></div><Button variant="quiet" onClick={() => openSettings(settingsSection)}>{capabilities.canConfigureConnection ? "连接设置" : "中枢设置"}</Button></div>
-      <DeviceDirectoryHeader />
-      <div className="workspace-device-rows" role="rowgroup">
-        {visibleDevices.length ? visibleDevices.map((device) => <DeviceRow key={device.deviceId} device={device} />) : <EmptyState title="没有匹配设备" detail="尝试清空搜索或调整类型、状态筛选。" action={<Button variant="quiet" onClick={() => { setQuery(""); setTypeFilter("all"); setStatusFilter("all"); }}>清除筛选</Button>} />}
-      </div>
+      <CarbonDeviceTable devices={visibleDevices} emptyState={<EmptyState title="没有匹配设备" detail="尝试清空搜索或调整类型、状态筛选。" action={<Button variant="quiet" onClick={() => { setQuery(""); setTypeFilter("all"); setStatusFilter("all"); }}>清除筛选</Button>} />} />
     </Surface>
   </div>;
 }

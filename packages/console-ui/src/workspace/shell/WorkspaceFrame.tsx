@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { Theme } from "@carbon/react";
 import { useWorkspace } from "../WorkspaceContext";
 import { AppTopBar, SessionRecoveryBanner, ShellNotice } from "./AppTopBar";
 import { CommandPalette } from "./CommandPalette";
@@ -7,7 +8,16 @@ import { NativeTitleBar } from "./NativeTitleBar";
 import { PrimaryNavigation } from "./PrimaryNavigation";
 
 export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
-  const { sidebarCollapsed, setSidebarCollapsed, capabilities } = useWorkspace();
+  const { sidebarCollapsed, setSidebarCollapsed, capabilities, theme } = useWorkspace();
+  const [systemDark, setSystemDark] = useState(false);
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const sync = () => setSystemDark(mediaQuery.matches);
+    sync();
+    mediaQuery.addEventListener("change", sync);
+    return () => mediaQuery.removeEventListener("change", sync);
+  }, []);
+  const carbonTheme = (theme === "dark" || (theme === "system" && systemDark)) ? "g100" : "g10";
   const [sidebarPeek, setSidebarPeek] = useState(false);
   const edgeSwipeRef = useRef<{ pointerId: number; startX: number } | null>(null);
   useEffect(() => { if (!sidebarCollapsed) setSidebarPeek(false); }, [sidebarCollapsed]);
@@ -26,7 +36,7 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
   const handleEdgePointerEnter = (event: React.PointerEvent<HTMLButtonElement>) => { if (event.pointerType === "mouse" && window.innerWidth > 820) setSidebarPeek(true); };
-  return <div className={`workspace-root ${!capabilities.canControlNativeWindow ? "is-web" : ""} ${sidebarCollapsed ? "is-sidebar-collapsed" : "is-sidebar-open"} ${sidebarPeek ? "is-sidebar-peek" : ""}`}>
+  return <Theme theme={carbonTheme} className="guanlan-carbon-theme"><div className={`workspace-root ${!capabilities.canControlNativeWindow ? "is-web" : ""} ${sidebarCollapsed ? "is-sidebar-collapsed" : "is-sidebar-open"} ${sidebarPeek ? "is-sidebar-peek" : ""}`}>
     <NativeTitleBar />
     <PrimaryNavigation sidebarPeek={sidebarPeek} onSidebarLeave={() => setSidebarPeek(false)} />
     {!sidebarCollapsed && <div className="workspace-sidebar-backdrop" onPointerDown={() => setSidebarCollapsed(true)} aria-hidden="true" />}
@@ -39,5 +49,5 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
     <CompactNavigation />
     <CommandPalette />
     <ShellNotice />
-  </div>;
+  </div></Theme>;
 }

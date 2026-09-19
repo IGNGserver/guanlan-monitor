@@ -4,7 +4,7 @@ import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
 import { Button, Icon, Surface } from "../ui";
 import { selectDeviceDirectory, type DeviceDirectorySort, type DeviceDirectoryStatus } from "../selectors";
 import { mergeDeviceOrder, registerDeviceOrderDraftGuard } from "../deviceOrderDraft";
-import { ConfirmDialog, DeviceDirectoryFilterBar, DeviceDirectoryHeader, DeviceRow, EmptyState, ErrorSurface, LoadingSurface, PageIntro } from "./shared";
+import { CarbonDeviceTable, ConfirmDialog, DeviceDirectoryFilterBar, EmptyState, ErrorSurface, LoadingSurface, PageIntro } from "./shared";
 
 export function DevicesPage() {
   const { snapshot, allDevices, loading, error, refresh, navigate, deleteInstance, reorderInstances, mutationPending, capabilities } = useWorkspace();
@@ -106,18 +106,15 @@ export function DevicesPage() {
       actions={!manageMode ? <Button variant="quiet" onClick={beginManage} disabled={!canManage}>管理顺序</Button> : <div className="workspace-order-actions"><Button variant="primary" onClick={() => void saveManage()} disabled={!orderDirty || mutationPending}>保存顺序</Button><Button variant="quiet" onClick={cancelManage} disabled={mutationPending}>取消</Button></div>}
     />
     {!canManage && <div className="workspace-inline-note" role="status">{snapshot.source === "cache" ? "离线缓存为只读快照。" : "需要实时连接并完成认证后才能删除或调整设备顺序。"}</div>}
-    <Surface className="workspace-directory-surface">
-      <DeviceDirectoryHeader />
-      <div className="workspace-device-rows" role="rowgroup">
-        {visibleDevices.length ? visibleDevices.map((device) => <DeviceRow
-          key={device.deviceId}
-          device={device}
-          index={effectiveOrder.indexOf(device.deviceId)}
-          total={effectiveOrder.length}
-          onMove={manageMode && canManage && !mutationPending ? (direction) => moveInstance(device.deviceId, direction) : undefined}
-          onDelete={manageMode && canManage && !mutationPending ? () => setDeleteTarget(device) : undefined}
-        />) : <EmptyState title="没有匹配设备" detail="尝试清空搜索或调整类型、状态筛选。" action={<Button variant="quiet" onClick={() => { setQuery(""); setTypeFilter("all"); setStatusFilter("all"); }}>清除筛选</Button>} />}
-      </div>
+    <Surface className="workspace-directory-surface guanlan-data-table-surface">
+      <CarbonDeviceTable
+        devices={visibleDevices}
+        order={effectiveOrder}
+        manageMode={manageMode && canManage && !mutationPending}
+        onMove={moveInstance}
+        onDelete={setDeleteTarget}
+        emptyState={<EmptyState title="没有匹配设备" detail="尝试清空搜索或调整类型、状态筛选。" action={<Button variant="quiet" onClick={() => { setQuery(""); setTypeFilter("all"); setStatusFilter("all"); }}>清除筛选</Button>} />}
+      />
     </Surface>
     {deleteTarget && <ConfirmDialog title={`删除“${deleteTarget.hostname}”？`} detail="删除后该实例不会继续出现在中枢列表中；下次宿主机或 Agent 再次上报时，它会重新显示。" confirmLabel="删除实例" disabled={mutationPending} onConfirm={() => { const deviceId = deleteTarget.deviceId; setDeleteTarget(null); void deleteInstance(deviceId); }} onCancel={() => setDeleteTarget(null)} />}
   </div>;

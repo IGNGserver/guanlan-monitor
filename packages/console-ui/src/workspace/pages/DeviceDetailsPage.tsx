@@ -16,10 +16,8 @@ import { DeviceWidgetFrame } from "../DeviceWidgetFrame";
 import { DynamicWidgetCanvas, WidgetDrawer } from "../widgetCatalog";
 import { M3Checkbox, M3Chip, M3SegmentedControl, M3Select, M3Switch, M3Tabs, M3TextField } from "../m3";
 import { Button, Icon, StatusDot, StatusLabel, Surface, SummaryRow, VirtualMachinePowerLabel, virtualMachinePowerState } from "../ui";
-import { MiniTrend, TelemetryChartCard, TelemetryInfoCard } from "../TelemetryCards";
+import { TelemetryChartCard, TelemetryInfoCard } from "../TelemetryCards";
 import {
-  CapacityMetricValue,
-  MetricValue,
   UNAVAILABLE_METRIC_LABEL,
   WINDOW_DURATION_MAP,
   averageSamplePointsOrFallback,
@@ -42,12 +40,10 @@ import {
   ConfirmDialog,
   CpuFactsCard,
   DEFAULT_DEVICE_PANELS,
-  DeviceRow,
   EmptyState,
   ErrorSurface,
   InstanceFilter,
   InstanceMetricOverride,
-  MetricTile,
   MetricWindowControl,
   OverviewSummary,
   PageIntro,

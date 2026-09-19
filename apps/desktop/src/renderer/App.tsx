@@ -1,6 +1,6 @@
 import React from "react";
 import WorkspaceApp from "@dsc/console-ui";
-import "@dsc/console-ui/styles.css";
+import "@dsc/console-ui/styles.scss";
 import appIcon from "@dsc/console-ui/assets/app-icon.png";
 import { desktopConsoleAdapter } from "./services/consoleAdapter";
 
