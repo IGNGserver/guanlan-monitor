@@ -37,6 +37,8 @@ async function readShellMetrics(page) {
 async function run() {
   let electronApp;
   const pageErrors = [];
+  const consoleMessages = [];
+  const failedRequests = [];
   const mainStderr = [];
 
   try {
@@ -57,10 +59,25 @@ async function run() {
 
     const page = await electronApp.firstWindow();
     page.on("pageerror", (error) => pageErrors.push(error.message));
+    page.on("console", (message) => consoleMessages.push({ type: message.type(), text: message.text() }));
+    page.on("requestfailed", (request) => failedRequests.push({ url: request.url(), error: request.failure()?.errorText ?? "unknown" }));
     await page.locator(".workspace-root").waitFor({ state: "visible", timeout: 15_000 });
     await page.waitForTimeout(500);
 
     const desktopMetrics = await readShellMetrics(page);
+    if (!desktopMetrics) {
+      const diagnostics = {
+        url: page.url(),
+        bodyText: await page.locator("body").innerText().catch(() => ""),
+        bodyHtml: await page.locator("body").innerHTML().catch(() => ""),
+        pageErrors,
+        consoleMessages,
+        failedRequests,
+        mainStderr: mainStderr.join("").slice(-8000)
+      };
+      fs.writeFileSync(path.join(outputDir, "electron-visual-regression-diagnostics.json"), `${JSON.stringify(diagnostics, null, 2)}\n`);
+      console.error(JSON.stringify(diagnostics, null, 2));
+    }
     assert.ok(desktopMetrics, "Electron shared workspace shell is missing");
     assert.equal(desktopMetrics.display, "grid");
     assert.equal(desktopMetrics.sidebarDisplay, "flex");
