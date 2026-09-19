@@ -49,7 +49,8 @@ export async function requestHubUpdate(version: string) {
         ref: "main",
         inputs: {
           version,
-          channel: env.DSC_RELEASE_CHANNEL
+          channel: env.DSC_RELEASE_CHANNEL,
+          allow_http: String(!env.SESSION_COOKIE_SECURE || !env.AGENT_REQUIRE_HTTPS)
         }
       })
     }

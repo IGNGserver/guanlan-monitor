@@ -34,18 +34,18 @@ grep -Fq 'AGENT_REQUIRE_HTTPS: "${AGENT_REQUIRE_HTTPS:-true}"' "$root/docker-com
 stable_env="$test_root/stable.env"
 printf '%s\n' \
   'SESSION_SECRET=stable-session-secret-for-compose-migration-test-1234567890' \
-  'ACCESS_KEY=stable-access-key-for-compose-migration-test-1234567890' \
+  'ACCESS_KEY=abcdef' \
   'MYSQL_ROOT_PASSWORD=StableRootSecret_1234567890' \
   'MYSQL_DATABASE=device_state_console' \
   'MYSQL_USER=dsc' \
   'MYSQL_PASSWORD=StableDatabaseSecret_1234567890' \
-  'SESSION_COOKIE_SECURE=false' \
-  'AGENT_REQUIRE_HTTPS=false' \
+  'SESSION_COOKIE_SECURE=true' \
+  'AGENT_REQUIRE_HTTPS=true' \
   'TRUST_PROXY=false' \
   'MYSQL_URL=mysql://dsc:old@127.0.0.1:3306/device_state_console' \
   > "$stable_env"
 
-DSC_RELEASE_CHANNEL=stable bash "$root/scripts/prepare-compose-env.sh" "$stable_env"
+DSC_RELEASE_CHANNEL=stable DSC_ALLOW_HTTP=true bash "$root/scripts/prepare-compose-env.sh" "$stable_env"
 grep -Fxq 'SESSION_COOKIE_SECURE=false' "$stable_env"
 grep -Fxq 'AGENT_REQUIRE_HTTPS=false' "$stable_env"
 grep -Fxq 'TRUST_PROXY=true' "$stable_env"
