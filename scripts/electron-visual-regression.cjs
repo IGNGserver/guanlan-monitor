@@ -46,7 +46,7 @@ async function run() {
     assert.ok(fs.existsSync(executablePath), `Electron executable is missing: ${executablePath}`);
     electronApp = await electron.launch({
       executablePath,
-      args: ["--no-sandbox", desktopRoot],
+      args: ["--no-sandbox", "--lang=en-US", desktopRoot],
       env: {
         ...process.env,
         ELECTRON_ENABLE_LOGGING: "1",
@@ -93,10 +93,13 @@ async function run() {
 
     await page.locator(".workspace-sidebar .m3-navigation-item").filter({ hasText: "设备" }).click();
     await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
-    assert.equal(await page.locator(".workspace-device-row__heartbeat").count(), 3, "rich Electron fixture must render heartbeat facts");
+    const deviceTable = page.locator(".workspace-directory-surface .cds--data-table");
+    assert.equal(await deviceTable.locator("tbody tr").count(), 3, "rich Electron fixture must render every device instance");
+    assert.equal(await deviceTable.getByText("当前响应", { exact: true }).count(), 2, "online instances must expose current heartbeat facts");
+    assert.equal(await deviceTable.getByText("心跳已过期", { exact: true }).count(), 1, "offline instances must expose stale heartbeat facts");
     await page.screenshot({ path: path.join(outputDir, "electron-devices-desktop.png"), fullPage: true, animations: "disabled" });
 
-    await page.locator('.workspace-device-row__main[aria-label="打开设备 视觉验收虚拟机"]').click();
+    await deviceTable.locator(".guanlan-table-link").filter({ hasText: "视觉验收虚拟机" }).click();
     await page.locator(".workspace-page--device").waitFor({ state: "visible", timeout: 15_000 });
     assert.equal(await page.locator(".workspace-breadcrumb").getByText("设备", { exact: true }).count(), 1, "Electron detail must expose the device breadcrumb");
     assert.equal(await page.locator(".workspace-device-facts").count(), 1, "Electron detail must expose stable facts");

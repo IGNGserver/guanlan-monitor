@@ -17,7 +17,7 @@ async function run() {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "guanlan-release-acceptance-"));
   const app = await electron.launch({
     executablePath,
-    args: ["--dsc-release-acceptance", `--user-data-dir=${userDataDir}`],
+    args: ["--lang=en-US", "--dsc-release-acceptance", `--user-data-dir=${userDataDir}`],
     env: {
       ...process.env,
       ELECTRON_ENABLE_LOGGING: "1",
