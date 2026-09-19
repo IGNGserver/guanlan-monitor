@@ -391,9 +391,10 @@ async function run() {
   const firstMenu = page.locator(".cds--overflow-menu").first();
   await firstMenu.click();
   await page.getByRole("menuitem", { name: "删除" }).click();
-  const deleteDialog = page.getByRole("dialog", { name: /删除/ });
+  const deleteDialog = page.getByRole("dialog", { name: "请确认操作" });
   await deleteDialog.waitFor({ state: "visible", timeout: 2_000 });
   assert.equal(await deleteDialog.count(), 1, "device deletion must require confirmation");
+  assert.equal(await deleteDialog.getByRole("heading", { name: /删除/ }).count(), 1, "delete dialog must expose a destructive heading");
   await deleteDialog.getByRole("button", { name: "取消" }).click();
   if (!(await page.getByRole("menuitem", { name: "下移" }).isVisible())) await firstMenu.click();
   await page.getByRole("menuitem", { name: "下移" }).click();
