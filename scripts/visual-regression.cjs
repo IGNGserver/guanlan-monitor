@@ -313,9 +313,9 @@ async function run() {
   assert.equal(await deviceRows.count(), fixtureDevices.length, "Carbon device table must render every fixture instance");
 
   // Assert Carbon DataTable headers and body cells stay aligned.
-  const headerColumns = await deviceTable.locator("thead [role='columnheader']").allTextContents();
+  const headerColumns = await deviceTable.locator("thead th").allTextContents();
   assert.deepEqual(headerColumns.map((col) => col.trim()), ["状态", "设备", "CPU", "内存", "磁盘", "最近心跳", "操作"], "directory table header must contain exactly 7 columns in order");
-  assert.equal(await deviceTable.locator("thead [role='columnheader']").count(), 7, "directory table must have 7 column headers");
+  assert.equal(await deviceTable.locator("thead th").count(), 7, "directory table must have 7 column headers");
   assert.equal(await deviceRows.first().locator("td").count(), 7, "Carbon device table rows must expose the same 7 columns");
   const deviceSearch = page.getByLabel("搜索设备", { exact: true });
   await deviceSearch.fill("构建虚拟机");
