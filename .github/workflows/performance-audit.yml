@@ -1,0 +1,57 @@
+name: Compare released desktop performance
+on:
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: Baseline release tag
+        required: true
+        default: v3.0.27
+      candidate:
+        description: Candidate release tag
+        required: true
+        default: v3.0.28
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Download and verify released assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASELINE: ${{ inputs.baseline }}
+          CANDIDATE: ${{ inputs.candidate }}
+        run: |
+          foreach ($side in @('before', 'after')) {
+            $tag = if ($side -eq 'before') { $env:BASELINE } else { $env:CANDIDATE }
+            if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw 'Invalid version tag' }
+            $asset = "DeviceStateConsole-Windows-GUI-Portable-$tag.zip"
+            New-Item -ItemType Directory -Force $side | Out-Null
+            gh release download $tag --pattern $asset --pattern "$asset.sha256" --dir $side
+            if ($LASTEXITCODE -ne 0) { throw 'Release download failed' }
+            $expected = ((Get-Content "$side/$asset.sha256" -Raw).Trim() -split '\s+')[0]
+            $actual = (Get-FileHash "$side/$asset" -Algorithm SHA256).Hash
+            if ($expected -ne $actual) { throw 'Asset checksum mismatch' }
+            Expand-Archive "$side/$asset" "$side/app"
+          }
+      - name: Install isolated measurement tooling
+        shell: pwsh
+        run: npm install --prefix "$env:RUNNER_TEMP/perf-tools" --no-save playwright@1.55.0
+      - name: Compare package, startup, memory, CPU and runtime-profile latency
+        shell: pwsh
+        run: |
+          $env:NODE_PATH = "$env:RUNNER_TEMP/perf-tools/node_modules"
+          node scripts/electron-performance.cjs before/app after/app artifacts/desktop-performance.json
+          if ($LASTEXITCODE -ne 0) { throw 'Performance comparison failed' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: desktop-performance-comparison
+          path: artifacts/
+          if-no-files-found: error

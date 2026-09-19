@@ -327,6 +327,7 @@ export class DesktopController {
 
   async shutdown(): Promise<void> {
     await this.agent.stop();
+    await this.cache.flush().catch(() => { /* Offline persistence is best-effort. */ });
   }
 
   private async readLiveData(rawState: RawAgentBackendState) {
@@ -350,31 +351,20 @@ export class DesktopController {
       // other device, but local agent telemetry must never become a device page.
     }
 
-    if (selectedDeviceId && this.hub.isConfigured) {
-      try {
-        metrics = await this.hub.getMetrics(selectedDeviceId, this.metricWindow);
-      } catch {
-        metrics = null;
-      }
-      trafficCalendar = await this.readTrafficCalendar(selectedDeviceId);
-    }
-
-    if (this.hub.isConfigured) {
-      try {
-        // Keep overview lines on the same time window as the device page;
-        // otherwise the shared toolbar would claim to change a range that
-        // only affected the detail charts.
-        overviewMetrics = await this.hub.getOverviewMetrics(this.metricWindow);
-      } catch {
-        overviewMetrics = null;
-      }
-    }
-
-    try {
-      update = await this.hub.getUpdateInfo(currentDesktopVersion());
-    } catch {
-      update = null;
-    }
+    // These reads depend on device selection, but not on each other. Isolate
+    // failures so a slow optional endpoint does not serialize every request.
+    [metrics, trafficCalendar, overviewMetrics, update] = await Promise.all([
+      selectedDeviceId && this.hub.isConfigured
+        ? this.hub.getMetrics(selectedDeviceId, this.metricWindow).catch(() => null)
+        : Promise.resolve(null),
+      selectedDeviceId && this.hub.isConfigured
+        ? this.readTrafficCalendar(selectedDeviceId)
+        : Promise.resolve(null),
+      this.hub.isConfigured
+        ? this.hub.getOverviewMetrics(this.metricWindow).catch(() => null)
+        : Promise.resolve(null),
+      this.hub.getUpdateInfo(currentDesktopVersion()).catch(() => null)
+    ]);
 
     this.selectedDeviceId = selectedDeviceId;
     return {

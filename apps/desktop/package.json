@@ -1,6 +1,6 @@
 {
   "name": "@dsc/desktop",
-  "version": "3.0.27",
+  "version": "3.0.28",
   "private": true,
   "type": "module",
   "description": "Unified Windows and Linux Electron desktop client for Device State Console.",
@@ -20,15 +20,13 @@
     "package:windows": "pnpm build && electron-builder --win nsis portable",
     "package:linux": "pnpm build && electron-builder --linux deb"
   },
-  "dependencies": {
+  "devDependencies": {
     "@dsc/shared": "workspace:*",
     "@dsc/console-ui": "workspace:*",
     "clsx": "^2.1.1",
     "react": "19.1.1",
     "react-dom": "19.1.1",
-    "recharts": "^3.2.1"
-  },
-  "devDependencies": {
+    "recharts": "^3.2.1",
     "@types/node": "^24.3.0",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
@@ -44,7 +42,9 @@
     "asar": true,
     "files": [
       "dist/**/*",
-      "package.json"
+      "package.json",
+      "!dist/**/*.map",
+      "!dist/**/*.d.ts"
     ],
     "extraResources": [
       {

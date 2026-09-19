@@ -5,6 +5,7 @@ import type {
 } from "@dsc/shared";
 import type { ConsoleAdapter } from "../services/adapter";
 import { fallbackRuntimeProfile, fallbackWindowMaterialCapabilities } from "../services/adapter";
+import { startVisiblePolling } from "../helpers/visiblePolling";
 import { resolveInteractionScale } from "../helpers/density";
 import { parseWorkspaceHash, serializeWorkspaceRoute, type WorkspaceRoute } from "./routes";
 import { formatWorkspaceError as formatError, type HubViewModel, type WorkspaceContextValue } from "./context/WorkspaceTypes";
@@ -62,6 +63,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   const [runtimeProfile, setRuntimeProfile] = useState<DesktopRuntimeProfile>(fallbackRuntimeProfile);
 
   useEffect(() => {
+    if (!adapter.getRuntimeProfile) return;
     let cancelled = false;
     const syncRuntimeProfile = async () => {
       try {
@@ -73,11 +75,10 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
         if (!cancelled) setRuntimeProfile(fallbackRuntimeProfile());
       }
     };
-    void syncRuntimeProfile();
-    const timer = window.setInterval(() => void syncRuntimeProfile(), 30_000);
+    const stop = startVisiblePolling(syncRuntimeProfile, 30_000, true);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      stop();
     };
   }, [adapter]);
 
@@ -176,24 +177,11 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   }, [setRoute]);
 
   useEffect(() => {
-    let cancelled = false;
-    let timer: number | null = null;
     const effectiveRefreshInterval = lowResourceMode
-      ? 30
+      ? Math.max(30, refreshInterval)
       : Math.max(refreshInterval, runtimeProfile.recommendedRefreshInterval);
-    const schedule = () => {
-      if (cancelled) return;
-      timer = window.setTimeout(async () => {
-        timer = null;
-        await fetchSnapshot(true, false);
-        schedule();
-      }, effectiveRefreshInterval * 1000);
-    };
-    schedule();
-    return () => {
-      cancelled = true;
-      if (timer !== null) window.clearTimeout(timer);
-    };
+    return startVisiblePolling(() => fetchSnapshot(true, false), effectiveRefreshInterval * 1000);
+
   }, [fetchSnapshot, lowResourceMode, refreshInterval, runtimeProfile.recommendedRefreshInterval]);
 
   useEffect(() => {

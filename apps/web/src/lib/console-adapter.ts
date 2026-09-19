@@ -120,14 +120,14 @@ export class WebConsoleAdapter implements ConsoleAdapter {
       const metricWindow: MetricWindow = request.metricWindow ?? "5m";
       const trafficMode: TrafficCalendarMode = request.trafficMode ?? "day";
 
-      const [metrics, overviewMetrics, update] = await Promise.all([
+      const [metrics, overviewMetrics, update, trafficCalendar] = await Promise.all([
         selectedDeviceId ? getMetrics(selectedDeviceId, metricWindow).catch((error) => optionalWebRequest<MetricsResponse>(error)) : Promise.resolve(null),
         getOverviewMetrics(metricWindow).catch((error) => optionalWebRequest<OverviewMetricsResponse>(error)),
-        getUpdateInfo("web").catch((error) => optionalWebRequest<UpdateInfo>(error))
+        getUpdateInfo("web").catch((error) => optionalWebRequest<UpdateInfo>(error)),
+        selectedDeviceId
+          ? getTrafficCalendar(selectedDeviceId, trafficMode, request.trafficAnchor ?? new Date().toISOString()).catch((error) => optionalWebRequest<TrafficCalendarResponse>(error))
+          : Promise.resolve(null)
       ]);
-      const trafficCalendar = selectedDeviceId
-        ? await getTrafficCalendar(selectedDeviceId, trafficMode, request.trafficAnchor ?? new Date().toISOString()).catch((error) => optionalWebRequest<TrafficCalendarResponse>(error))
-        : null;
 
       this.snapshot = {
         generatedAt: new Date().toISOString(),
@@ -172,16 +172,16 @@ export class WebConsoleAdapter implements ConsoleAdapter {
         this.snapshot = { ...this.snapshot, generatedAt: new Date().toISOString(), devices };
         this.notify();
         if (this.snapshot.selectedDeviceId === event.deviceId) {
-          void this.loadSnapshot();
+          void this.loadSnapshot().catch(() => { /* The visible poller retries failed reads. */ });
         }
         return;
       }
       const devices = upsertDevice(this.snapshot.devices, event.summary);
       this.snapshot = { ...this.snapshot, generatedAt: new Date().toISOString(), devices };
       this.notify();
-      if (this.snapshot.selectedDeviceId === event.deviceId) {
-        void this.loadSnapshot({ selectedDeviceId: event.deviceId });
-      }
+      // The event already carries the new device summary. History/calendar
+      // reads belong to the visibility-aware UI poller, not every agent push.
+      // This also preserves the user's selected history window.
     });
   }
 

@@ -12,11 +12,11 @@ export async function readJsonFile<T>(filePath: string): Promise<T | null> {
   }
 }
 
-export async function writeJsonAtomically(filePath: string, value: unknown): Promise<void> {
+export async function writeJsonAtomically(filePath: string, value: unknown, pretty = true): Promise<void> {
   const directory = path.dirname(filePath);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
+  await writeFile(temporaryPath, `${JSON.stringify(value, null, pretty ? 2 : undefined)}\n`, {
     encoding: "utf8",
     mode: 0o600
   });
