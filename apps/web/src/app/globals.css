@@ -1,54 +1,29 @@
+/* Application-level reset. The shared console stylesheet owns the Carbon
+ * theme and all workspace surfaces; this file intentionally stays neutral. */
 :root {
-  --bg-dark: #06080d;
-  --bg-surface: #0a0e17;
-  --bg-card: rgba(13, 17, 26, 0.75);
-  --bg-card-hover: rgba(20, 26, 38, 0.85);
-  --bg-glass: rgba(255, 255, 255, 0.03);
-  --bg-glass-heavy: rgba(10, 14, 23, 0.92);
-  
-  --border-light: rgba(255, 255, 255, 0.08);
-  --border-subtle: rgba(255, 255, 255, 0.04);
-  --border-focus: rgba(6, 182, 212, 0.5);
-
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-
-  --accent-cyan: #06b6d4;
-  --accent-blue: #3b82f6;
-  --accent-violet: #8b5cf6;
-  --accent-emerald: #10b981;
-  --accent-rose: #f43f5e;
-  --accent-amber: #f59e0b;
-
-  --glow-cyan: rgba(6, 182, 212, 0.15);
-  --glow-emerald: rgba(16, 185, 129, 0.15);
-  --glow-rose: rgba(244, 63, 94, 0.15);
-
-  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
-
-  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-* {
-  box-sizing: border-box;
+  color-scheme: light;
+  font-family: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
 html,
 body {
-  padding: 0;
-  margin: 0;
-  background: var(--workspace-bg, #10161f);
-  color: var(--workspace-text, #f1f4f7);
-  font-family: var(--font-sans);
   min-height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--cds-background, #f4f4f4);
+  color: var(--cds-text-primary, #161616);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   min-height: 100dvh;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 a {
@@ -60,60 +35,10 @@ button,
 input,
 select,
 textarea {
-  font-family: inherit;
-}
-
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 9999px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  font: inherit;
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--workspace-accent, #68b5f2) 32%, transparent);
-  color: var(--workspace-text, #f1f4f7);
-}
-
-/* Animation utilities */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes pulseGlow {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.5;
-    transform: scale(1.15);
-  }
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.4s var(--ease-spring) forwards;
-}
-
-.animate-pulse-glow {
-  animation: pulseGlow 2s infinite ease-in-out;
+  color: var(--cds-text-on-color, #fff);
+  background: var(--cds-interactive, #0f62fe);
 }

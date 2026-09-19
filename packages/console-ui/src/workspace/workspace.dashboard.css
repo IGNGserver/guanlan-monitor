@@ -518,8 +518,6 @@
 .workspace-dynamic-empty span { max-width: 48ch; font-size: 11px; line-height: 1.5; }
 .workspace-dynamic-empty button { margin-top: 4px; border: 1px solid var(--workspace-accent); border-radius: 8px; padding: 7px 11px; color: var(--workspace-accent); background: var(--workspace-accent-soft); font: inherit; font-size: 11px; cursor: pointer; }
 .workspace-dynamic-chart { min-height: 180px; height: auto; flex: 1 0 180px; }
-.workspace-dynamic-chart .recharts-wrapper { font-size: 9px; }
-.workspace-dynamic-chart .recharts-text { fill: var(--workspace-text-muted); }
 .workspace-dynamic-number-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; align-items: stretch; min-height: 120px; }
 .workspace-dynamic-number { display: flex; min-width: 0; flex-direction: column; justify-content: center; gap: 7px; padding: 14px; border: 1px solid var(--workspace-border); border-radius: 13px; background: var(--workspace-surface-subtle); }
 .workspace-dynamic-number span { color: var(--workspace-text-muted); font-size: 10px; }

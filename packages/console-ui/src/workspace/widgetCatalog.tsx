@@ -49,7 +49,7 @@ const visualizationLabels: Record<WidgetVisualization, string> = {
   line: "折线图",
   area: "面积图",
   bar: "条形图",
-  donut: "环形图",
+  donut: "比例条",
   number: "纯数据显示",
   table: "数据表格"
 };
@@ -141,8 +141,8 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
   },
   {
     widgetType: "cpu-usage-pie",
-    title: "CPU 使用率 (饼图)",
-    description: "当前处理器核心负载占用环形饼图。",
+    title: "CPU 使用率 (比例条)",
+    description: "当前处理器负载与空闲容量的水平比例条。",
     category: "处理器",
     kind: "content",
     defaultSize: "medium",
@@ -188,8 +188,8 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
   },
   {
     widgetType: "memory-usage-pie",
-    title: "内存使用 (饼图)",
-    description: "当前物理内存已用与剩余空间环形饼图。",
+    title: "内存使用 (比例条)",
+    description: "当前物理内存已用与剩余空间的水平比例条。",
     category: "内存",
     kind: "content",
     defaultSize: "medium",
@@ -211,8 +211,8 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
   },
   {
     widgetType: "disk-capacity-pie",
-    title: "磁盘容量 (饼图)",
-    description: "指定磁盘当前已用与剩余空间环形饼图。",
+    title: "磁盘容量 (比例条)",
+    description: "指定磁盘当前已用与剩余空间的水平比例条。",
     category: "存储",
     kind: "content",
     defaultSize: "medium",
@@ -271,8 +271,8 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
   },
   {
     widgetType: "gpu-load-pie",
-    title: "GPU 负载 (饼图)",
-    description: "当前显卡核心负载占用环形饼图。",
+    title: "GPU 负载 (比例条)",
+    description: "当前显卡核心负载与空闲容量的水平比例条。",
     category: "显卡",
     kind: "content",
     defaultSize: "medium",
@@ -331,8 +331,8 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
   },
   {
     widgetType: "gpu-memory-pie",
-    title: "GPU 内存使用 (饼图)",
-    description: "当前独立显存或共享显存已用与容量环形饼图。",
+    title: "GPU 内存使用 (比例条)",
+    description: "当前独立显存或共享显存已用与容量的水平比例条。",
     category: "显卡",
     kind: "content",
     defaultSize: "medium",
@@ -379,8 +379,8 @@ export const WIDGET_CATALOG: WidgetCatalogDefinition[] = [
   },
   {
     widgetType: "temperature-source-pie",
-    title: "温度源 (饼图)",
-    description: "选择一个具体温度传感器，按当前温度与高温/临界阈值展示环形饼图；没有阈值时以 100 °C 为参考。",
+    title: "温度源 (阈值比例条)",
+    description: "选择一个具体温度传感器，以当前温度对照高温/临界阈值；没有阈值时以 100 °C 为参考。",
     category: "温度",
     kind: "content",
     defaultSize: "medium",
@@ -480,15 +480,15 @@ function visualizationFor(entry: WidgetLayoutCatalogEntry, definition: WidgetCat
 
 
 const LazyTrendChart = React.lazy(() => import("./WidgetCharts").then((module) => ({ default: module.TrendChart })));
-const LazyDonutChart = React.lazy(() => import("./WidgetCharts").then((module) => ({ default: module.DonutChart })));
+const LazyCompositionMeter = React.lazy(() => import("./WidgetCharts").then((module) => ({ default: module.CompositionMeter })));
 const chartLoading = <div className="workspace-dynamic-empty__inline" role="status">正在加载图表…</div>;
 
 function TrendChart(props: React.ComponentProps<typeof LazyTrendChart>) {
   return <React.Suspense fallback={chartLoading}><LazyTrendChart {...props} /></React.Suspense>;
 }
 
-function DonutChart(props: React.ComponentProps<typeof LazyDonutChart>) {
-  return <React.Suspense fallback={chartLoading}><LazyDonutChart {...props} /></React.Suspense>;
+function CompositionMeter(props: React.ComponentProps<typeof LazyCompositionMeter>) {
+  return <React.Suspense fallback={chartLoading}><LazyCompositionMeter {...props} /></React.Suspense>;
 }
 
 function DataTable({ rows }: { rows: Array<{ label: string; value: string; detail?: string; tone?: "good" | "warn" | "muted" }> }) {
@@ -633,7 +633,7 @@ function buildWidgetCardModel({ definition, entry, context }: { definition: Widg
     const targetId = getTargetId(entry);
     const allDisks = latest?.disks ?? [];
     const disks = targetId ? allDisks.filter((disk) => disk.id === targetId) : allDisks;
-    if (visualization === "donut") return { content: <DonutChart data={healthDonutData(disks)} centerLabel={`${disks.length} 盘`} />, showDetailsControl: false };
+    if (visualization === "donut") return { content: <CompositionMeter data={healthDonutData(disks)} centerLabel={`${disks.length} 盘`} />, showDetailsControl: false };
     if (visualization === "number") {
       const healthy = disks.filter((disk) => diskHealthTone(disk.healthStatus) === "good").length;
       const smartAttributes = disks.reduce((sum, disk) => sum + (disk.smartAttributes?.length ?? 0), 0);
@@ -653,25 +653,25 @@ function buildWidgetCardModel({ definition, entry, context }: { definition: Widg
     const cpu = targetId ? latest?.cpuPackages?.find((item) => item.id === targetId) : latest?.cpuPackages?.[0];
     const used = cpu?.usagePercent ?? (targetId && (latest?.cpuPackages?.length ?? 0) > 1 ? undefined : latestValue(metrics?.series.cpuUsagePercent));
     if (used == null || !Number.isFinite(used)) return { emptyMessage: UNAVAILABLE_METRIC_LABEL, showDetailsControl: false };
-    return { content: <DonutChart data={[{ name: "已用", value: Math.min(100, Math.max(0, used)), color: "#3b82f6" }, { name: "空闲", value: Math.max(0, 100 - used), color: "#cbd5e1" }]} centerLabel={`${Math.round(used)}%`} />, showDetailsControl: false };
+    return { content: <CompositionMeter data={[{ name: "已用", value: Math.min(100, Math.max(0, used)), color: "#3b82f6" }, { name: "空闲", value: Math.max(0, 100 - used), color: "#cbd5e1" }]} centerLabel={`${Math.round(used)}%`} />, showDetailsControl: false };
   }
   if ((definition.widgetType === "memory-usage" || definition.widgetType === "memory-usage-pie") && visualization === "donut") {
     const used = latest?.memoryUsedBytes ?? 0;
     const total = latest?.memoryTotalBytes ?? 0;
-    return { content: <DonutChart data={[{ name: "已用", value: Math.max(0, used), color: "#14b8a6" }, { name: "空闲", value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />, showDetailsControl: false };
+    return { content: <CompositionMeter data={[{ name: "已用", value: Math.max(0, used), color: "#14b8a6" }, { name: "空闲", value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />, showDetailsControl: false };
   }
   if ((definition.widgetType === "disk-capacity" || definition.widgetType === "disk-capacity-pie") && visualization === "donut") {
     const targetId = getTargetId(entry);
     const disk = targetId ? latest?.disks?.find((item) => item.id === targetId) : undefined;
     const used = disk?.usedBytes ?? latest?.diskUsedBytes ?? 0;
     const total = disk?.totalBytes ?? latest?.diskTotalBytes ?? 0;
-    return { content: <DonutChart data={[{ name: "已用", value: Math.max(0, used), color: "#3b82f6" }, { name: "剩余", value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />, showDetailsControl: false };
+    return { content: <CompositionMeter data={[{ name: "已用", value: Math.max(0, used), color: "#3b82f6" }, { name: "剩余", value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />, showDetailsControl: false };
   }
   if ((definition.widgetType === "gpu-load" || definition.widgetType === "gpu-load-pie") && visualization === "donut") {
     const targetId = getTargetId(entry);
     const gpu = targetId ? latest?.gpus?.find((item) => item.id === targetId) : latest?.gpus?.[0];
     const used = gpu?.utilizationPercent ?? latestValue(metrics?.series.gpuUsagePercent) ?? 0;
-    return { content: <DonutChart data={[{ name: "负载", value: Math.min(100, Math.max(0, used)), color: "#f59e0b" }, { name: "空闲", value: Math.max(0, 100 - used), color: "#cbd5e1" }]} centerLabel={`${Math.round(used)}%`} />, showDetailsControl: false };
+    return { content: <CompositionMeter data={[{ name: "负载", value: Math.min(100, Math.max(0, used)), color: "#f59e0b" }, { name: "空闲", value: Math.max(0, 100 - used), color: "#cbd5e1" }]} centerLabel={`${Math.round(used)}%`} />, showDetailsControl: false };
   }
   if ((definition.widgetType === "gpu-memory" || definition.widgetType === "gpu-memory-pie") && visualization === "donut") {
     const targetId = getTargetId(entry);
@@ -679,7 +679,7 @@ function buildWidgetCardModel({ definition, entry, context }: { definition: Widg
     const used = gpu?.memoryUsedBytes ?? 0;
     const total = gpu?.memoryTotalBytes ?? 0;
     const memoryLabel = gpuMemoryLabel(gpu?.memoryKind);
-    return { content: <DonutChart data={[{ name: `${memoryLabel}已用`, value: Math.max(0, used), color: "#a78bfa" }, { name: `${memoryLabel}剩余`, value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />, showDetailsControl: false };
+    return { content: <CompositionMeter data={[{ name: `${memoryLabel}已用`, value: Math.max(0, used), color: "#a78bfa" }, { name: `${memoryLabel}剩余`, value: Math.max(0, total - used), color: "#cbd5e1" }]} centerLabel={total ? `${Math.round((used / total) * 100)}%` : "—"} />, showDetailsControl: false };
   }
   if (definition.widgetType === "temperature-source-pie" && visualization === "donut") {
     const targetId = getTargetId(entry);
@@ -692,7 +692,7 @@ function buildWidgetCardModel({ definition, entry, context }: { definition: Widg
     const limit = Math.max(0, current, configuredLimit ?? 100);
     const displayCurrent = Math.max(0, current);
     const limitLabel = configuredLimit != null ? "温度上限余量" : "参考温度余量";
-    return { content: <DonutChart data={[{ name: "当前温度", value: displayCurrent, color: "#f59e0b" }, { name: limitLabel, value: Math.max(0, limit - displayCurrent), color: "#cbd5e1" }]} centerLabel={`${current.toFixed(1)} °C`} valueFormatter={(value) => `${value.toFixed(1)} °C`} />, showDetailsControl: false };
+    return { content: <CompositionMeter data={[{ name: "当前温度", value: displayCurrent, color: "#f59e0b" }, { name: limitLabel, value: Math.max(0, limit - displayCurrent), color: "#cbd5e1" }]} centerLabel={`${current.toFixed(1)} °C`} valueFormatter={(value) => `${value.toFixed(1)} °C`} />, showDetailsControl: false };
   }
   const { lines, valueFormatter } = getWidgetLines(definition.widgetType, metrics, getTargetId(entry), localTemperatureSources, localTemperatureSourcesAt);
   if (visualization === "bar") {
@@ -1074,7 +1074,7 @@ export function WidgetDrawer({ open, onClose, device, metrics, localTemperatureS
   const targetSelectionLabel = targetDefinition?.targetKind === "temperature" ? "温度源" : targetDefinition ? `${targetLabels[targetDefinition.targetKind ?? "cpu"]}实例` : "";
   return (
     <div className="workspace-widget-drawer-backdrop" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) closeDrawer(); }}>
-      <aside ref={drawerRef} className="workspace-widget-drawer" role="dialog" aria-modal="true" aria-label="小组件抽屉" tabIndex={-1} style={{ "--workspace-drawer-drag-offset": `${dragOffset}px` } as React.CSSProperties}>
+      <aside ref={drawerRef} className="workspace-widget-drawer guanlan-side-panel" role="dialog" aria-modal="true" aria-label="小组件抽屉" tabIndex={-1} style={{ "--workspace-drawer-drag-offset": `${dragOffset}px` } as React.CSSProperties}>
         <div className="workspace-widget-drawer__header">
           <span className="workspace-widget-drawer__handle" aria-hidden="true" onPointerDown={handleDrawerHandlePointerDown} onPointerMove={handleDrawerHandlePointerMove} onPointerUp={finishDrawerHandlePointer} onPointerCancel={finishDrawerHandlePointer} onLostPointerCapture={finishDrawerHandlePointer} />
           <div>

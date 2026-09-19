@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import "@dsc/console-ui/styles.css";
+import "@dsc/console-ui/styles.scss";
 
 export const metadata: Metadata = {
-  title: "DSC Hub - 设备状态集中控制台",
-  description: "企业级 SaaS 设备状态监控系统，全域节点状态实时感知与硬件监控",
+  title: "观澜 / Guanlan · 设备状态工作区",
+  description: "面向硬件监控与可观测性的设备状态工作区",
   icons: {
     icon: "/favicon.png",
     apple: "/logo.png"

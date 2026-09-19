@@ -1,4 +1,5 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { Modal, Search } from "@carbon/react";
 import { useWorkspace } from "../WorkspaceContext";
 import { Icon } from "../ui";
 import { settingsNavigation } from "./PrimaryNavigation";
@@ -7,36 +8,13 @@ export function CommandPalette() {
   const { commandOpen, setCommandOpen, searchQuery, setSearchQuery, allDevices, navigate, openSettings, capabilities } = useWorkspace();
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-  const [viewport, setViewport] = useState({ top: 0, height: 0 });
-  useLayoutEffect(() => {
-    if (!commandOpen || typeof window === "undefined") return;
-    const activeElement = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
-      ? document.activeElement
-      : document.querySelector<HTMLElement>(".workspace-search-trigger");
-    previousFocusRef.current = activeElement;
-    const visualViewport = window.visualViewport;
-    const syncViewport = () => setViewport({ top: visualViewport?.offsetTop ?? 0, height: visualViewport?.height ?? window.innerHeight });
-    syncViewport();
-    const focusFrame = window.requestAnimationFrame(() => inputRef.current?.focus());
-    visualViewport?.addEventListener("resize", syncViewport);
-    visualViewport?.addEventListener("scroll", syncViewport);
-    return () => { window.cancelAnimationFrame(focusFrame); visualViewport?.removeEventListener("resize", syncViewport); visualViewport?.removeEventListener("scroll", syncViewport); };
+  useEffect(() => {
+    if (!commandOpen) return;
+    const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
   }, [commandOpen]);
   useEffect(() => { if (commandOpen) setActiveIndex(0); }, [commandOpen]);
-  useEffect(() => {
-    if (commandOpen) return;
-    const previousFocus = previousFocusRef.current;
-    const fallbackTrigger = document.querySelector<HTMLElement>(".workspace-search-trigger");
-    const target = previousFocus && previousFocus.isConnected && previousFocus !== document.body ? previousFocus : fallbackTrigger;
-    if (target) {
-      target.focus();
-      window.requestAnimationFrame(() => target.focus());
-    }
-    previousFocusRef.current = null;
-  }, [commandOpen]);
-  if (!commandOpen) return null;
+
   const settingsCommands = settingsNavigation(capabilities)
     .filter((item) => item.id !== "agent" || capabilities.canManageLocalAgent)
     .filter((item) => item.id !== "connections" || capabilities.canConfigureConnection)
@@ -51,31 +29,33 @@ export function CommandPalette() {
   ];
   const query = searchQuery.trim().toLowerCase();
   const filtered = query ? commands.filter((command) => `${command.label} ${command.detail}`.toLowerCase().includes(query)) : commands;
-  const select = (index: number) => { const command = filtered[index]; if (!command) return; command.action(); setCommandOpen(false); setSearchQuery(""); };
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
-    if (event.key === "Tab") {
-      const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex='-1'])") ?? []);
-      if (focusable.length) {
-        const currentIndex = focusable.indexOf(document.activeElement as HTMLElement);
-        const nextIndex = event.shiftKey ? (currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1) : (currentIndex + 1) % focusable.length;
-        event.preventDefault();
-        focusable[nextIndex]?.focus();
-      }
-      return;
-    }
-    if (event.key === "Escape") { event.preventDefault(); setCommandOpen(false); return; }
-    if (event.key === "ArrowDown") { event.preventDefault(); setActiveIndex((index) => Math.min(index + 1, filtered.length - 1)); }
+  const close = () => { setCommandOpen(false); setSearchQuery(""); };
+  const select = (index: number) => {
+    const command = filtered[index];
+    if (!command) return;
+    command.action();
+    close();
+  };
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "ArrowDown") { event.preventDefault(); setActiveIndex((index) => Math.min(index + 1, Math.max(filtered.length - 1, 0))); }
     if (event.key === "ArrowUp") { event.preventDefault(); setActiveIndex((index) => Math.max(index - 1, 0)); }
     if (event.key === "Enter") { event.preventDefault(); select(activeIndex); }
   };
-  const overlayStyle = { "--workspace-viewport-top": `${viewport.top}px`, "--workspace-viewport-height": `${viewport.height || window.innerHeight}px` } as React.CSSProperties;
-  return <div className="workspace-overlay" style={overlayStyle} role="presentation" onPointerDown={() => setCommandOpen(false)}>
-    <section ref={dialogRef} className="workspace-command" role="dialog" aria-modal="true" aria-label="搜索设备和命令" onPointerDown={(event) => event.stopPropagation()} onKeyDown={handleKeyDown}>
-      <div className="workspace-command__input"><Icon name="search" /><input ref={inputRef} autoFocus role="combobox" aria-label="搜索设备、页面或命令" aria-expanded="true" aria-controls="workspace-command-list" value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setActiveIndex(0); }} placeholder="搜索设备、页面或命令" /></div>
+
+  return <Modal
+    open={commandOpen}
+    passiveModal
+    modalLabel="快捷导航"
+    modalHeading="搜索设备和命令"
+    className="guanlan-command-modal"
+    onRequestClose={close}
+  >
+    <div className="workspace-command" onKeyDown={handleKeyDown}>
+      <Search ref={inputRef} id="workspace-command-search" labelText="搜索设备、页面或命令" value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setActiveIndex(0); }} onClear={() => { setSearchQuery(""); setActiveIndex(0); }} placeholder="名称、设备 ID、页面或设置" size="lg" />
       <div id="workspace-command-list" className="workspace-command__list" role="listbox" aria-label="搜索结果">
         {filtered.length ? filtered.map((command, index) => <button id={`workspace-command-option-${index}`} className={`workspace-command__item ${index === activeIndex ? "is-active" : ""}`} type="button" role="option" aria-selected={index === activeIndex} key={`${command.label}-${index}`} onPointerEnter={() => setActiveIndex(index)} onClick={() => select(index)}><span><strong>{command.label}</strong><small>{command.detail}</small></span><Icon name="arrow" size={15} /></button>) : <div className="workspace-command__empty" role="status">没有匹配结果</div>}
       </div>
       <div className="workspace-command__footer"><span><kbd>↑</kbd><kbd>↓</kbd>选择</span><span><kbd>Enter</kbd>打开</span><span><kbd>Esc</kbd>关闭</span></div>
-    </section>
-  </div>;
+    </div>
+  </Modal>;
 }
