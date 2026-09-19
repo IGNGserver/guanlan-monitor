@@ -61,19 +61,23 @@ public sealed class UpdateService
         var destination = Path.Combine(Path.GetTempPath(), $"dsc-update-{Guid.NewGuid():N}-{fileName}");
         using var response = await _httpClient.GetAsync(assetUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
-        await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
-        await using var output = File.Create(destination);
         var total = response.Content.Headers.ContentLength;
         var buffer = new byte[128 * 1024];
         long copied = 0;
         int read;
-        while ((read = await input.ReadAsync(buffer, cancellationToken)) > 0)
+        await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken))
         {
-            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-            copied += read;
-            if (total is > 0) progress?.Report((double)copied / total.Value);
+            await using (var output = File.Create(destination))
+            {
+                while ((read = await input.ReadAsync(buffer, cancellationToken)) > 0)
+                {
+                    await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                    copied += read;
+                    if (total is > 0) progress?.Report((double)copied / total.Value);
+                }
+                await output.FlushAsync(cancellationToken);
+            }
         }
-        await output.FlushAsync(cancellationToken);
 
         if (string.IsNullOrWhiteSpace(update.Sha256))
         {

@@ -296,6 +296,7 @@ private struct ServerLatestDto: Codable, Equatable, Sendable {
     let gpus: [GpuDto]
     let sensorBackends: [SensorBackendDto]
     let fans: [FanDto]
+    let unavailableMetrics: [String]?
 }
 
 private struct ServerCpuSeriesDto: Codable, Equatable, Sendable {
@@ -415,6 +416,11 @@ public struct MetricsDto: Decodable, Equatable, Sendable {
     public let diskTotalBytes: Int64
     public let networkRxBytesPerSec: Double
     public let networkTxBytesPerSec: Double
+    public let unavailableMetrics: Set<String>
+
+    public func isMetricUnavailable(_ key: String) -> Bool {
+        unavailableMetrics.contains(key)
+    }
     
     enum CodingKeys: String, CodingKey {
         case device, status, lastSeenAt, availableMetrics, latest, series
@@ -475,6 +481,7 @@ public struct MetricsDto: Decodable, Equatable, Sendable {
         diskTotalBytes = latest.diskTotalBytes
         networkRxBytesPerSec = latest.networkRxBytesPerSec
         networkTxBytesPerSec = latest.networkTxBytesPerSec
+        unavailableMetrics = Set(latest.unavailableMetrics ?? [])
     }
 }
 

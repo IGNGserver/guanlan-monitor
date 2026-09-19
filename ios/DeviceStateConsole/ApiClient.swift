@@ -53,15 +53,29 @@ public actor ApiClient {
         return request
     }
     
+    private func executeRequest(request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.cannotParseResponse)
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let errorMsg: String
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let err = json["error"] as? String {
+                errorMsg = err
+            } else {
+                errorMsg = "HTTP \(httpResponse.statusCode)"
+            }
+            throw NSError(domain: "ApiClient", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errorMsg])
+        }
+        return (data, httpResponse)
+    }
     public func login(baseUrl: String, accessKey: String) async throws -> LoginResponseDto {
         let payload = LoginRequestDto(accessKey: accessKey)
         let bodyData = try JSONEncoder().encode(payload)
         let request = try buildRequest(baseUrl: baseUrl, path: "/api/auth/login", method: "POST", body: bodyData)
         
-        let (data, response) = try await session.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw URLError(.cannotParseResponse)
-        }
+        let (data, httpResponse) = try await executeRequest(request: request)
         
         if let url = request.url, let headerFields = httpResponse.allHeaderFields as? [String: String] {
             let cookies = HTTPCookie.cookies(withResponseHeaderFields: headerFields, for: url)
@@ -75,13 +89,13 @@ public actor ApiClient {
     
     public func logout(baseUrl: String) async throws -> LoginResponseDto {
         let request = try buildRequest(baseUrl: baseUrl, path: "/api/auth/logout", method: "POST")
-        let (data, _) = try await session.data(for: request)
+        let (data, _) = try await executeRequest(request: request)
         return try JSONDecoder().decode(LoginResponseDto.self, from: data)
     }
     
     public func fetchSession(baseUrl: String) async throws -> LoginResponseDto {
         let request = try buildRequest(baseUrl: baseUrl, path: "/api/auth/session")
-        let (data, _) = try await session.data(for: request)
+        let (data, _) = try await executeRequest(request: request)
         return try JSONDecoder().decode(LoginResponseDto.self, from: data)
     }
 
@@ -93,31 +107,31 @@ public actor ApiClient {
             URLQueryItem(name: "arch", value: "universal")
         ]
         let request = try buildRequest(baseUrl: baseUrl, path: "/api/updates", queryItems: queryItems)
-        let (data, _) = try await session.data(for: request)
+        let (data, _) = try await executeRequest(request: request)
         return try JSONDecoder().decode(UpdateInfoDto.self, from: data)
     }
     
     public func fetchDevices(baseUrl: String) async throws -> [DeviceSummaryDto] {
         let request = try buildRequest(baseUrl: baseUrl, path: "/api/instances")
-        let (data, _) = try await session.data(for: request)
+        let (data, _) = try await executeRequest(request: request)
         return try JSONDecoder().decode([DeviceSummaryDto].self, from: data)
     }
 
     public func deleteDevice(baseUrl: String, deviceId: String) async throws {
         let request = try buildRequest(baseUrl: baseUrl, path: "/api/devices/\(deviceId)", method: "DELETE")
-        _ = try await session.data(for: request)
+        _ = try await executeRequest(request: request)
     }
 
     public func reorderDevices(baseUrl: String, deviceIds: [String]) async throws {
         let bodyData = try JSONSerialization.data(withJSONObject: ["deviceIds": deviceIds])
         let request = try buildRequest(baseUrl: baseUrl, path: "/api/devices/reorder", method: "PUT", body: bodyData)
-        _ = try await session.data(for: request)
+        _ = try await executeRequest(request: request)
     }
     
     public func fetchMetrics(baseUrl: String, deviceId: String, window: String) async throws -> MetricsDto {
         let queryItems = [URLQueryItem(name: "window", value: window)]
         let request = try buildRequest(baseUrl: baseUrl, path: "/api/devices/\(deviceId)/metrics", queryItems: queryItems)
-        let (data, _) = try await session.data(for: request)
+        let (data, _) = try await executeRequest(request: request)
         return try JSONDecoder().decode(MetricsDto.self, from: data)
     }
     
@@ -130,20 +144,20 @@ public actor ApiClient {
             queryItems.append(URLQueryItem(name: "selectedStart", value: selectedStart))
         }
         let request = try buildRequest(baseUrl: baseUrl, path: "/api/devices/\(deviceId)/traffic-calendar", queryItems: queryItems)
-        let (data, _) = try await session.data(for: request)
+        let (data, _) = try await executeRequest(request: request)
         return try JSONDecoder().decode(TrafficCalendarDto.self, from: data)
     }
     
     public func fetchMetricConfig(baseUrl: String, deviceId: String) async throws -> DeviceMetricConfigDto {
         let request = try buildRequest(baseUrl: baseUrl, path: "/api/devices/\(deviceId)/metric-config")
-        let (data, _) = try await session.data(for: request)
+        let (data, _) = try await executeRequest(request: request)
         return try JSONDecoder().decode(DeviceMetricConfigDto.self, from: data)
     }
     
     public func saveMetricConfig(baseUrl: String, deviceId: String, payload: DeviceMetricConfigPayloadDto) async throws -> DeviceMetricConfigDto {
         let bodyData = try JSONEncoder().encode(payload)
         let request = try buildRequest(baseUrl: baseUrl, path: "/api/devices/\(deviceId)/metric-config", method: "PUT", body: bodyData)
-        let (data, _) = try await session.data(for: request)
+        let (data, _) = try await executeRequest(request: request)
         return try JSONDecoder().decode(DeviceMetricConfigDto.self, from: data)
     }
 }

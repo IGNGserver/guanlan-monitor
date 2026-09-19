@@ -15,7 +15,7 @@ import type {
 } from "@dsc/shared";
 import { z } from "zod";
 import { env } from "./config.js";
-import { createSession, getBearerToken, parseSessionValue, safeEqual, SESSION_TTL_MS } from "./auth.js";
+import { authRateLimiter, createSession, getBearerToken, parseSessionValue, safeEqual, SESSION_TTL_MS } from "./auth.js";
 import type { MetricsService } from "./services/metrics.js";
 import { unavailableMetricsForVirtualMachinePowerState } from "./services/virtual-machines.js";
 import type { DeviceMetricConfigStore, FanNoteStore, Repositories, SessionValue, WidgetLayoutStore } from "./types.js";
@@ -27,37 +27,6 @@ import { getHubUpdateStatus, HubUpdateError, requestHubUpdate } from "./hub-upda
 const loginSchema = z.object({
   accessKey: z.string().min(1).max(512)
 });
-
-const LOGIN_WINDOW_MS = 60_000;
-const LOGIN_MAX_ATTEMPTS = 5;
-
-class LoginRateLimiter {
-  private readonly attempts = new Map<string, { startedAt: number; count: number }>();
-
-  allow(key: string, now = Date.now()): boolean {
-    const current = this.attempts.get(key);
-    if (!current || now - current.startedAt >= LOGIN_WINDOW_MS) {
-      this.attempts.set(key, { startedAt: now, count: 1 });
-      this.prune(now);
-      return true;
-    }
-    if (current.count >= LOGIN_MAX_ATTEMPTS) return false;
-    current.count += 1;
-    return true;
-  }
-
-  clear(key: string): void {
-    this.attempts.delete(key);
-  }
-
-  private prune(now: number): void {
-    for (const [key, value] of this.attempts) {
-      if (now - value.startedAt >= LOGIN_WINDOW_MS) this.attempts.delete(key);
-    }
-  }
-}
-
-const loginRateLimiter = new LoginRateLimiter();
 
 const metricsQuerySchema = z.object({
   window: z.enum(["1m", "5m", "15m", "1h", "6h", "24h", "1d", "7d", "1w", "30d", "1mo", "90d", "1y"]).default("5m")
@@ -273,6 +242,18 @@ export async function registerRoutes(
 
   app.get("/api/system/version", async () => getSystemVersionInfo());
 
+  app.get("/api/health/liveness", async () => ({ status: "ok" }));
+
+  app.get("/api/health/readiness", async (_request, reply) => {
+    // Check repositories / stores readiness
+    try {
+      await repositories.realtime.listDevices();
+      return { status: "ready" };
+    } catch (error) {
+      return reply.code(503).send({ status: "not_ready", error: String(error) });
+    }
+  });
+
   app.get<{ Querystring: { platform: string; currentVersion?: string; currentChannel?: ReleaseChannel; arch?: string } }>(
     "/api/updates",
     async (request, reply) => {
@@ -307,8 +288,8 @@ export async function registerRoutes(
 
   app.post<{ Body: AuthLoginPayload }>("/api/auth/login", async (request, reply) => {
     const clientKey = request.ip;
-    if (!loginRateLimiter.allow(clientKey)) {
-      reply.header("Retry-After", String(Math.ceil(LOGIN_WINDOW_MS / 1000)));
+    if (!authRateLimiter.allow(clientKey)) {
+      reply.header("Retry-After", "60");
       return reply.code(429).send({ error: "too_many_login_attempts" });
     }
     const parsed = loginSchema.safeParse(request.body);
@@ -317,9 +298,10 @@ export async function registerRoutes(
     }
     const body = parsed.data;
     if (!safeEqual(body.accessKey, env.ACCESS_KEY)) {
+      authRateLimiter.recordFailure(clientKey);
       return reply.code(401).send({ error: "invalid_credentials" });
     }
-    loginRateLimiter.clear(clientKey);
+    authRateLimiter.clear(clientKey);
     setSession(reply, createSession(env.ACCESS_KEY));
     return { ok: true };
   });
@@ -597,10 +579,17 @@ export async function registerRoutes(
 
   app.post<{ Body: AgentCloudConfigSyncPayload }>("/api/agent/device-config", async (request, reply) => {
     if (rejectInsecureAgentTransport(request, reply)) return;
+    const clientKey = request.ip;
+    if (!authRateLimiter.allow(clientKey)) {
+      reply.header("Retry-After", "60");
+      return reply.code(429).send({ error: "too_many_auth_attempts" });
+    }
     const token = getBearerToken(request.headers.authorization);
     if (!token || !safeEqual(token, env.ACCESS_KEY)) {
+      authRateLimiter.recordFailure(clientKey);
       return reply.code(401).send({ error: "unauthorized_agent" });
     }
+    authRateLimiter.clear(clientKey);
 
     const parsed = metricConfigSchema.extend({
       deviceId: z.string().min(1)
@@ -628,10 +617,17 @@ export async function registerRoutes(
 
   app.get("/api/agent/ping", async (request, reply) => {
     if (rejectInsecureAgentTransport(request, reply)) return;
+    const clientKey = request.ip;
+    if (!authRateLimiter.allow(clientKey)) {
+      reply.header("Retry-After", "60");
+      return reply.code(429).send({ error: "too_many_auth_attempts" });
+    }
     const token = getBearerToken(request.headers.authorization);
     if (!token || !safeEqual(token, env.ACCESS_KEY)) {
+      authRateLimiter.recordFailure(clientKey);
       return reply.code(401).send({ error: "unauthorized_agent" });
     }
+    authRateLimiter.clear(clientKey);
 
     return {
       ok: true,
@@ -641,10 +637,17 @@ export async function registerRoutes(
 
   app.get<{ Querystring: { deviceId: string } }>("/api/agent/device-state", async (request, reply) => {
     if (rejectInsecureAgentTransport(request, reply)) return;
+    const clientKey = request.ip;
+    if (!authRateLimiter.allow(clientKey)) {
+      reply.header("Retry-After", "60");
+      return reply.code(429).send({ error: "too_many_auth_attempts" });
+    }
     const token = getBearerToken(request.headers.authorization);
     if (!token || !safeEqual(token, env.ACCESS_KEY)) {
+      authRateLimiter.recordFailure(clientKey);
       return reply.code(401).send({ error: "unauthorized_agent" });
     }
+    authRateLimiter.clear(clientKey);
 
     const parsed = z.string().min(1).safeParse(request.query.deviceId);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_device_id" });

@@ -7,7 +7,7 @@ public struct DeviceDetailView: View {
     public var body: some View {
         NavigationStack {
             Group {
-                if let metrics = viewModel.metrics {
+                if let metrics = viewModel.metrics, metrics.deviceId == deviceId {
                     ScrollView {
                         VStack(spacing: 16) {
                             // Window selector strip
@@ -281,12 +281,18 @@ struct MemorySectionView: View {
     
     var body: some View {
         SectionContainer(title: "内存 Memory", onOpenBlock: onOpenBlock, onEdit: onEdit) {
-            Text("可用 \(formatBytes(metrics.memoryAvailableBytes)) · 缓存 \(formatBytes(metrics.memoryCachedBytes)) · 已提交 \(formatBytes(metrics.memoryCommittedBytes))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text("频率 \(formatMHz(metrics.memorySpeedMHz)) · 插槽 \(metrics.memorySlotCount.map { String($0) } ?? "未知") · 形态 \(metrics.memoryFormFactor ?? "未知")")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            if metrics.isMetricUnavailable("memoryUsage") {
+                Text("此虚拟化环境不提供内存硬件详情")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("可用 \(formatBytes(metrics.memoryAvailableBytes)) · 缓存 \(formatBytes(metrics.memoryCachedBytes)) · 已提交 \(formatBytes(metrics.memoryCommittedBytes))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("频率 \(formatMHz(metrics.memorySpeedMHz)) · 插槽 \(metrics.memorySlotCount.map { String($0) } ?? "未知") · 形态 \(metrics.memoryFormFactor ?? "未知")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
             MiniLineChartView(
                 title: "内存使用率",
                 points: metrics.memorySeries,
@@ -462,13 +468,19 @@ struct DeviceInfoSection: View {
                     Text("系统：\(metrics.platform) / \(metrics.arch) · 状态：\(metrics.status)")
                 }
                 Text("最近上报：\(metrics.lastSeenAt ?? "未知")")
-                Text("进程：\(metrics.processCount) · 线程：\(metrics.threadCount) · 句柄：\(metrics.handleCount)")
+                if metrics.isMetricUnavailable("systemOverview") {
+                    Text("系统计数：不可用")
+                } else {
+                    Text("进程：\(metrics.processCount) · 线程：\(metrics.threadCount) · 句柄：\(metrics.handleCount)")
+                }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
-            MiniLineChartView(title: "进程数", points: metrics.processSeries, valueFormatter: { String(format: "%.0f", $0) }, lineColor: .blue)
-            MiniLineChartView(title: "线程数", points: metrics.threadSeries, valueFormatter: { String(format: "%.0f", $0) }, lineColor: .cyan)
-            MiniLineChartView(title: "句柄数", points: metrics.handleSeries, valueFormatter: { String(format: "%.0f", $0) }, lineColor: .orange)
+            if !metrics.isMetricUnavailable("systemOverview") {
+                MiniLineChartView(title: "进程数", points: metrics.processSeries, valueFormatter: { String(format: "%.0f", $0) }, lineColor: .blue)
+                MiniLineChartView(title: "线程数", points: metrics.threadSeries, valueFormatter: { String(format: "%.0f", $0) }, lineColor: .cyan)
+                MiniLineChartView(title: "句柄数", points: metrics.handleSeries, valueFormatter: { String(format: "%.0f", $0) }, lineColor: .orange)
+            }
         }
     }
 }

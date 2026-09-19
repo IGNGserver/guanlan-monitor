@@ -39,7 +39,8 @@ const LIVE_WINDOW_DURATION_MS = {
 export class MetricsService {
   private readonly minuteAccumulators = new Map<string, MetricAccumulator>();
   private readonly hourlyAccumulators = new Map<string, MetricAccumulator>();
-  private aggregateQueue: Promise<void> = Promise.resolve();
+  private readonly deviceQueues = new Map<string, Promise<void>>();
+  private flushInFlight = false;
 
   constructor(
     private readonly repositories: Repositories,
@@ -66,7 +67,10 @@ export class MetricsService {
   ) {
     const previousState = await this.repositories.realtime.getDevice(payload.identity.deviceId);
     if (previousState && hasIdentityBoundaryChanged(previousState.identity, payload.identity)) {
-      await this.runAggregateOperation(() => this.resetDeviceSeries(payload.identity.deviceId));
+      // Identity metadata changed (e.g. hostname, os, platform, arch).
+      // Preserve historical metrics in history repository, and reset only live accumulators.
+      this.minuteAccumulators.delete(payload.identity.deviceId);
+      this.hourlyAccumulators.delete(payload.identity.deviceId);
     }
     const state: DeviceRealtimeState = {
       identity: payload.identity,
@@ -81,7 +85,7 @@ export class MetricsService {
     const point = payloadToTimeSeries(payload, config);
     await this.repositories.realtime.appendSeries(payload.identity.deviceId, "1m", point, 30);
     await this.repositories.realtime.appendSeries(payload.identity.deviceId, "5m", point, 150);
-    await this.runAggregateOperation(async () => {
+    await this.runDeviceAggregateOperation(payload.identity.deviceId, async () => {
       await this.addMinuteAggregate(payload.identity.deviceId, point);
       await this.addHourlyAggregate(payload.identity.deviceId, point);
     });
@@ -136,7 +140,7 @@ export class MetricsService {
 
   async removeDevice(deviceId: string) {
     const state = await this.repositories.realtime.getDevice(deviceId);
-    await this.runAggregateOperation(async () => {
+    await this.runDeviceAggregateOperation(deviceId, async () => {
       this.minuteAccumulators.delete(deviceId);
       this.hourlyAccumulators.delete(deviceId);
       await this.repositories.realtime.remove(deviceId);
@@ -161,12 +165,17 @@ export class MetricsService {
         if (device.status === "offline") return;
         if (device.identity.instanceType === "virtual_machine" && !openVirtualMachineIds.has(device.identity.deviceId)) return;
         if (now - Date.parse(device.lastSeenAt) < HEARTBEAT_TIMEOUT_MS) return;
-        const offlineState = { ...device, status: "offline" as const };
-        await this.repositories.realtime.upsert(offlineState);
-        this.emitDeviceEvent({
-          deviceId: offlineState.identity.deviceId,
-          summary: toSummary(offlineState)
-        });
+        const marked = await this.repositories.realtime.markOfflineIfMatch(
+          device.identity.deviceId,
+          device.lastSeenAt
+        );
+        if (marked) {
+          const offlineState = { ...device, status: "offline" as const };
+          this.emitDeviceEvent({
+            deviceId: offlineState.identity.deviceId,
+            summary: toSummary(offlineState)
+          });
+        }
       })
     );
   }
@@ -226,41 +235,55 @@ export class MetricsService {
   }
 
   async flushAggregates(): Promise<void> {
-    await this.runAggregateOperation(async () => {
+    if (this.flushInFlight) return;
+    this.flushInFlight = true;
+    try {
       const failures: unknown[] = [];
-      for (const [deviceId, accumulator] of this.minuteAccumulators) {
-        if (!accumulator.samples.length) continue;
-        try {
-          await this.repositories.history.insertMinutePoint(
-            deviceId,
-            averageRecord(accumulator.samples, accumulator.bucketStartedAt)
-          );
-          await this.flushAggregate(
-            deviceId,
-            "15m",
-            accumulator.samples,
-            15,
-            accumulator.bucketStartedAt
-          );
-        } catch (error) {
-          failures.push(error);
-        }
-      }
-      for (const [deviceId, accumulator] of this.hourlyAccumulators) {
-        if (!accumulator.samples.length) continue;
-        try {
-          await this.repositories.history.insertHourlyPoint(
-            deviceId,
-            averageRecord(accumulator.samples, accumulator.bucketStartedAt)
-          );
-        } catch (error) {
-          failures.push(error);
-        }
-      }
+      const deviceIds = new Set([...this.minuteAccumulators.keys(), ...this.hourlyAccumulators.keys()]);
+      
+      await Promise.all(
+        [...deviceIds].map((deviceId) =>
+          this.runDeviceAggregateOperation(deviceId, async () => {
+            const minAcc = this.minuteAccumulators.get(deviceId);
+            if (minAcc?.samples.length) {
+              try {
+                await this.repositories.history.insertMinutePoint(
+                  deviceId,
+                  averageRecord(minAcc.samples, minAcc.bucketStartedAt)
+                );
+                await this.flushAggregate(
+                  deviceId,
+                  "15m",
+                  minAcc.samples,
+                  15,
+                  minAcc.bucketStartedAt
+                );
+              } catch (error) {
+                failures.push(error);
+              }
+            }
+
+            const hrAcc = this.hourlyAccumulators.get(deviceId);
+            if (hrAcc?.samples.length) {
+              try {
+                await this.repositories.history.insertHourlyPoint(
+                  deviceId,
+                  averageRecord(hrAcc.samples, hrAcc.bucketStartedAt)
+                );
+              } catch (error) {
+                failures.push(error);
+              }
+            }
+          })
+        )
+      );
+
       if (failures.length) {
         throw new AggregateError(failures, "one or more metric aggregate flushes failed");
       }
-    });
+    } finally {
+      this.flushInFlight = false;
+    }
   }
 
   private async addMinuteAggregate(deviceId: string, point: ReturnType<typeof payloadToTimeSeries>) {
@@ -349,9 +372,20 @@ export class MetricsService {
     await this.repositories.history.clearDeviceHistory(deviceId);
   }
 
-  private runAggregateOperation<T>(operation: () => Promise<T>): Promise<T> {
-    const next = this.aggregateQueue.then(operation, operation);
-    this.aggregateQueue = next.then(() => undefined, () => undefined);
+  private runDeviceAggregateOperation<T>(deviceId: string, operation: () => Promise<T>): Promise<T> {
+    const queue = this.deviceQueues.get(deviceId) ?? Promise.resolve();
+    const withTimeout = () =>
+      Promise.race([
+        operation(),
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error(`aggregate operation timed out for device ${deviceId}`)), 10_000)
+        )
+      ]);
+    const next = queue.then(withTimeout, withTimeout);
+    this.deviceQueues.set(
+      deviceId,
+      next.then(() => undefined, () => undefined)
+    );
     return next;
   }
 }
@@ -469,7 +503,8 @@ function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[], timest
           ...recordedDetails,
           temperatureSensors
         }
-      : undefined
+      : undefined,
+    sampleCount: samples.length
   };
 }
 

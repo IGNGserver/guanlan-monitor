@@ -65,6 +65,7 @@ export interface TimeSeriesRecord {
     networkRate: AgentMetricsPayload["networkRate"];
     virtualization: AgentMetricsPayload["virtualization"];
   };
+  sampleCount?: number;
 }
 
 export interface InstanceMetricRecord {
@@ -144,6 +145,7 @@ export interface Repositories {
 
 export interface RealtimeRepository {
   upsert(state: DeviceRealtimeState): Promise<void>;
+  markOfflineIfMatch(deviceId: string, expectedLastSeenAt: string): Promise<boolean>;
   getDevice(deviceId: string): Promise<DeviceRealtimeState | null>;
   listDevices(): Promise<DeviceRealtimeState[]>;
   remove(deviceId: string): Promise<void>;

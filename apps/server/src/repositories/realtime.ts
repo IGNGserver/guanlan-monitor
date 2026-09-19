@@ -12,6 +12,22 @@ export class RedisRealtimeRepository implements RealtimeRepository {
     await this.redis.hset(DEVICE_KEY, state.identity.deviceId, JSON.stringify(state));
   }
 
+  async markOfflineIfMatch(deviceId: string, expectedLastSeenAt: string): Promise<boolean> {
+    const script = `
+      local raw = redis.call('hget', KEYS[1], ARGV[1])
+      if not raw then return 0 end
+      local state = cjson.decode(raw)
+      if state.lastSeenAt == ARGV[2] then
+        state.status = 'offline'
+        redis.call('hset', KEYS[1], ARGV[1], cjson.encode(state))
+        return 1
+      end
+      return 0
+    `;
+    const result = await this.redis.eval(script, 1, DEVICE_KEY, deviceId, expectedLastSeenAt);
+    return result === 1;
+  }
+
   async getDevice(deviceId: string) {
     const raw = await this.redis.hget(DEVICE_KEY, deviceId);
     return raw ? (JSON.parse(raw) as DeviceRealtimeState) : null;
@@ -29,20 +45,28 @@ export class RedisRealtimeRepository implements RealtimeRepository {
 
   async appendSeries(deviceId: string, bucket: MetricWindow, point: TimeSeriesRecord, maxPoints: number) {
     const key = `${SERIES_KEY}:${deviceId}:${bucket}`;
-    const raw = await this.redis.lrange(key, 0, -1);
-    const existingIndex = raw.findIndex((item) => {
-      try {
-        return (JSON.parse(item) as TimeSeriesRecord).timestamp === point.timestamp;
-      } catch {
-        return false;
-      }
-    });
-    if (existingIndex >= 0) {
-      await this.redis.lset(key, existingIndex, JSON.stringify(point));
-    } else {
-      await this.redis.rpush(key, JSON.stringify(point));
-    }
-    await this.redis.ltrim(key, -maxPoints, -1);
+    const pointJson = JSON.stringify(point);
+    const script = `
+      local list = redis.call('lrange', KEYS[1], 0, -1)
+      local targetTime = tonumber(ARGV[1])
+      local found = -1
+      for i, item in ipairs(list) do
+        local ok, decoded = pcall(cjson.decode, item)
+        if ok and decoded.timestamp == targetTime then
+          found = i - 1
+          break
+        end
+      end
+      if found >= 0 then
+        redis.call('lset', KEYS[1], found, ARGV[2])
+      else
+        redis.call('rpush', KEYS[1], ARGV[2])
+      end
+      local maxP = tonumber(ARGV[3])
+      redis.call('ltrim', KEYS[1], -maxP, -1)
+      return 1
+    `;
+    await this.redis.eval(script, 1, key, point.timestamp, pointJson, maxPoints);
   }
 
   async readSeries(deviceId: string, bucket: MetricWindow) {
