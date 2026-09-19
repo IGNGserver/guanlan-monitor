@@ -200,22 +200,25 @@ export function M3Tabs({ options, value, onChange, className, disabled = false, 
   );
 }
 
-export interface M3TextFieldProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "defaultValue" | "id" | "size" | "value"> {
+export interface M3TextFieldProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "defaultValue" | "id" | "onClick" | "size" | "value"> {
   label: string;
   supportingText?: React.ReactNode;
   errorText?: React.ReactNode;
   id?: string;
   defaultValue?: string | number;
   value?: string | number;
+  onClick?: React.MouseEventHandler<HTMLElement>;
 }
 
-export function M3TextField({ label, supportingText, errorText, id, className, ...props }: M3TextFieldProps) {
+export function M3TextField({ label, supportingText, errorText, id, className, defaultValue, value, ...props }: M3TextFieldProps) {
   const generatedId = useId();
   const inputId = id ?? generatedId;
   const hasError = Boolean(errorText);
   return (
     <TextInput
       {...props}
+      defaultValue={defaultValue}
+      value={value}
       id={inputId}
       className={joinClasses("m3-field", className)}
       labelText={label}
