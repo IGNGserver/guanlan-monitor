@@ -3,7 +3,7 @@ import test from "node:test";
 import { AuthFailureRateLimiter } from "../auth.js";
 import { LocalRealtimeRepository, LocalHistoryRepository, createLocalStore } from "../repositories/local.js";
 import { MetricsService } from "./metrics.js";
-import type { TimeSeriesRecord } from "./types.js";
+import type { TimeSeriesRecord } from "../types.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
