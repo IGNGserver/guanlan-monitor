@@ -123,7 +123,7 @@ async function run() {
       };
     });
     assert.equal(mobileMetrics.bottomNavDisplay, "grid");
-    assert.deepEqual((await page.locator(".workspace-bottom-nav__item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "中枢", "设置"]);
+    assert.deepEqual((await page.locator(".workspace-bottom-nav__item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "连接", "设置"]);
     assert.ok(mobileMetrics.rootWidth > 0);
     assert.ok(mobileMetrics.bodyScrollWidth <= mobileMetrics.viewportWidth + 1, "Electron narrow shell overflows horizontally");
     await page.evaluate(() => { window.location.hash = "#settings/appearance"; });

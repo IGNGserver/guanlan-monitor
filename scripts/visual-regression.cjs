@@ -358,7 +358,7 @@ async function run() {
 
   await page.getByRole("tab", { name: "算力与内存" }).click();
   await page.getByRole("tab", { name: "1 小时" }).click();
-  assert.equal(await page.getByRole("button", { name: "添加小组件" }).count(), 0, "widget add action must be gated by edit mode");
+  assert.equal(await page.getByRole("button", { name: "添加小组件" }).count(), 1, "widget add action must remain discoverable in browse mode");
   await page.getByRole("button", { name: "编辑排布" }).click();
   assert.equal(await page.getByRole("button", { name: "添加小组件" }).count(), 1, "widget add action must appear in explicit edit mode");
   await page.getByRole("button", { name: "添加小组件" }).click();
@@ -460,7 +460,7 @@ async function run() {
     };
   });
   assert.equal(mobileMetrics.bottomNavDisplay, "grid");
-  assert.deepEqual((await page.locator(".workspace-bottom-nav__item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "中枢", "设置"]);
+  assert.deepEqual((await page.locator(".workspace-bottom-nav__item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "连接", "设置"]);
   assert.equal(await page.locator(".workspace-bottom-nav").getByText("刷新", { exact: true }).count(), 0, "compact navigation must not contain refresh");
   assert.equal(await page.locator(".workspace-bottom-nav").getByText("搜索", { exact: true }).count(), 0, "compact navigation must not contain search");
   assert.ok(mobileMetrics.rootWidth > 0);
