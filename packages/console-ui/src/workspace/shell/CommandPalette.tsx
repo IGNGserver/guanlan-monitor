@@ -16,7 +16,9 @@ export function CommandPalette() {
     if (commandOpen) {
       if (!wasOpenRef.current) {
         const activeElement = document.activeElement;
-        restoreFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+        restoreFocusRef.current = activeElement instanceof HTMLElement && !activeElement.closest(".cds--modal-container")
+          ? activeElement
+          : document.querySelector<HTMLElement>(".workspace-search-trigger");
         wasOpenRef.current = true;
       }
       return;
