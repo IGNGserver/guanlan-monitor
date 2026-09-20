@@ -87,7 +87,7 @@ async function run() {
     assert.ok(desktopMetrics.bodyScrollWidth <= desktopMetrics.viewportWidth + 1, "Electron desktop shell overflows horizontally");
     assert.equal(await page.locator(".workspace-device-item").count(), 0, "Electron primary navigation must not contain a device list");
     const desktopNavLabels = (await page.locator(".workspace-sidebar .m3-navigation-item").allTextContents()).map((label) => label.trim());
-    const expectedDesktopNav = desktopNavLabels.includes("本机 Agent") ? ["总览", "设备", "接入中枢", "本机 Agent", "设置"] : ["总览", "设备", "接入中枢", "设置"];
+    const expectedDesktopNav = desktopNavLabels.includes("本机 Agent") ? ["总览", "设备", "中枢状态", "本机 Agent", "设置"] : ["总览", "设备", "中枢状态", "设置"];
     assert.deepEqual(desktopNavLabels, expectedDesktopNav, "Electron primary navigation contains non-destination commands");
     await page.screenshot({ path: path.join(outputDir, "electron-workspace-desktop.png"), fullPage: true, animations: "disabled" });
 

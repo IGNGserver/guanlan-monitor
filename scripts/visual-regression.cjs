@@ -301,7 +301,7 @@ async function run() {
   assert.ok(desktopMetrics.mainWidth > 0);
   assert.ok(desktopMetrics.bodyScrollWidth <= desktopMetrics.viewportWidth + 1, "desktop shell overflows horizontally");
   assert.equal(await page.locator(".workspace-device-item").count(), 0, "primary navigation must not contain a device list");
-  assert.deepEqual((await page.locator(".workspace-sidebar .m3-navigation-item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "接入中枢", "设置"], "sidebar contains destinations only");
+  assert.deepEqual((await page.locator(".workspace-sidebar .m3-navigation-item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "中枢状态", "设置"], "sidebar contains destinations only");
   const overviewHealthTotal = await page.locator(".workspace-overview-summary__item").first().locator("strong").innerText();
   assert.equal(overviewHealthTotal, String(fixtureDevices.length), "overview health must include VM and host instances globally");
   await page.screenshot({ path: path.join(outputDir, "web-workspace-desktop.png"), fullPage: true, animations: "disabled" });
