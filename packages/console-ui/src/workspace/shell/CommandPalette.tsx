@@ -28,9 +28,8 @@ export function CommandPalette() {
   useLayoutEffect(() => {
     if (!commandOpen || wasOpenRef.current) return;
     const activeElement = document.activeElement;
-    restoreFocusRef.current = activeElement instanceof HTMLElement && !activeElement.closest(".cds--modal-container")
-      ? activeElement
-      : document.querySelector<HTMLElement>(".workspace-search-trigger");
+    restoreFocusRef.current = document.querySelector<HTMLElement>(".workspace-search-trigger")
+      ?? (activeElement instanceof HTMLElement && !activeElement.closest(".cds--modal-container") ? activeElement : null);
     launcherButtonRef.current = restoreFocusRef.current;
     wasOpenRef.current = true;
   }, [commandOpen]);
