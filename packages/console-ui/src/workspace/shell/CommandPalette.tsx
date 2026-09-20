@@ -13,6 +13,18 @@ export function CommandPalette() {
   const wasOpenRef = useRef(false);
   const commandOpenRef = useRef(commandOpen);
   commandOpenRef.current = commandOpen;
+  const focusLauncher = () => {
+    const launcher = launcherButtonRef.current?.isConnected
+      ? launcherButtonRef.current
+      : restoreFocusRef.current?.isConnected
+        ? restoreFocusRef.current
+        : document.querySelector<HTMLElement>(".workspace-search-trigger");
+    if (!launcher) return;
+    const focusTarget = launcher.matches("button, a[href], input, select, textarea")
+      ? launcher
+      : launcher.querySelector<HTMLElement>("button, a[href], input, select, textarea") ?? launcher;
+    focusTarget.focus();
+  };
   useLayoutEffect(() => {
     if (!commandOpen || wasOpenRef.current) return;
     const activeElement = document.activeElement;
@@ -25,18 +37,20 @@ export function CommandPalette() {
   useEffect(() => {
     if (commandOpen || !wasOpenRef.current) return;
     wasOpenRef.current = false;
-    const restoreFocus = restoreFocusRef.current;
     restoreFocusRef.current = null;
     let firstFrame = 0;
     let secondFrame = 0;
+    let transitionTimer = 0;
     firstFrame = window.requestAnimationFrame(() => {
       secondFrame = window.requestAnimationFrame(() => {
-        if (restoreFocus?.isConnected) restoreFocus.focus();
+        focusLauncher();
       });
     });
+    transitionTimer = window.setTimeout(focusLauncher, 320);
     return () => {
       window.cancelAnimationFrame(firstFrame);
       window.cancelAnimationFrame(secondFrame);
+      window.clearTimeout(transitionTimer);
     };
   }, [commandOpen]);
   useEffect(() => {
@@ -98,6 +112,7 @@ export function CommandPalette() {
     modalLabel="快捷导航"
     modalHeading="搜索设备和命令"
     className="guanlan-command-modal"
+    onTransitionEnd={(event) => { if (!commandOpen && event.target === event.currentTarget) focusLauncher(); }}
     onRequestClose={close}
   >
     {commandOpen && <div className="workspace-command" onKeyDownCapture={handleKeyDownCapture} onKeyDown={handleKeyDown}>
