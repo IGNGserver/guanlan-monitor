@@ -442,10 +442,10 @@ async function run() {
   await page.locator(".workspace-root").waitFor({ state: "visible", timeout: 15_000 });
   await page.waitForTimeout(300);
 
-  // Assert 390px search button contains .m3-button__icon and accessible name is "搜索设备、页面或设置"
+  // Assert 390px search button contains .m3-button__icon and accessible name is "查找设备、页面或设置"
   const mobileSearchTrigger = page.locator(".workspace-topbar .workspace-search-trigger");
   assert.equal(await mobileSearchTrigger.count(), 1, "390px topbar must have search trigger");
-  assert.equal(await mobileSearchTrigger.getAttribute("aria-label"), "搜索设备、页面或设置", "search trigger accessible name must be '搜索设备、页面或设置'");
+  assert.equal(await mobileSearchTrigger.getAttribute("aria-label"), "查找设备、页面或设置", "search trigger accessible name must be '查找设备、页面或设置'");
   assert.equal(await mobileSearchTrigger.locator(".m3-button__icon").isVisible(), true, "390px search trigger icon must be visible");
   assert.equal(await mobileSearchTrigger.locator(".m3-button__label").isVisible(), false, "390px search trigger text label must be hidden");
 
