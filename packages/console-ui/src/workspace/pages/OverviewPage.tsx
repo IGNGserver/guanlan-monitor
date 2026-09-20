@@ -84,6 +84,7 @@ export function OverviewPage() {
       className="workspace-attention"
       kind="warning"
       lowContrast
+      hasFocus={false}
       hideCloseButton
       title="中枢连接异常"
       subtitle={cached ? "无法取得最新数据，页面中的设备信息可能已经过期。" : "无法连接到中枢，请检查中枢地址与访问密钥后重试。"}
@@ -94,6 +95,7 @@ export function OverviewPage() {
       className="workspace-attention"
       kind={noData ? "info" : "warning"}
       lowContrast
+      hasFocus={false}
       hideCloseButton
       title={noData ? "还没有可用设备" : "设备状态存在异常"}
       subtitle={noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : health.offline + " 台设备离线，" + abnormalVmCount + " 台 VM 电源未运行，" + (snapshot.localBackend?.lastIssueCount ?? 0) + " 条本机采集问题待处理。"}
