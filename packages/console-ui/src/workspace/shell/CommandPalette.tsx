@@ -9,6 +9,7 @@ export function CommandPalette() {
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const launcherButtonRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef(false);
   const commandOpenRef = useRef(commandOpen);
   commandOpenRef.current = commandOpen;
@@ -18,6 +19,7 @@ export function CommandPalette() {
     restoreFocusRef.current = activeElement instanceof HTMLElement && !activeElement.closest(".cds--modal-container")
       ? activeElement
       : document.querySelector<HTMLElement>(".workspace-search-trigger");
+    launcherButtonRef.current = restoreFocusRef.current;
     wasOpenRef.current = true;
   }, [commandOpen]);
   useEffect(() => {
@@ -89,22 +91,21 @@ export function CommandPalette() {
     close();
   };
 
-  if (!commandOpen) return null;
-
   return <Modal
     open={commandOpen}
+    launcherButtonRef={launcherButtonRef}
     passiveModal
     modalLabel="快捷导航"
     modalHeading="搜索设备和命令"
     className="guanlan-command-modal"
     onRequestClose={close}
   >
-    <div className="workspace-command" onKeyDownCapture={handleKeyDownCapture} onKeyDown={handleKeyDown}>
+    {commandOpen && <div className="workspace-command" onKeyDownCapture={handleKeyDownCapture} onKeyDown={handleKeyDown}>
       <Search ref={inputRef} id="workspace-command-search" labelText="搜索设备、页面或命令" value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setActiveIndex(0); }} onClear={() => { setSearchQuery(""); setActiveIndex(0); }} placeholder="名称、设备 ID、页面或设置" size="lg" />
       <div id="workspace-command-list" className="workspace-command__list" role="listbox" aria-label="搜索结果">
         {filtered.length ? filtered.map((command, index) => <button id={`workspace-command-option-${index}`} className={`workspace-command__item ${index === activeIndex ? "is-active" : ""}`} type="button" role="option" aria-selected={index === activeIndex} key={`${command.label}-${index}`} onPointerEnter={() => setActiveIndex(index)} onClick={() => select(index)}><span><strong>{command.label}</strong><small>{command.detail}</small></span><Icon name="arrow" size={15} /></button>) : <div className="workspace-command__empty" role="status">没有匹配结果</div>}
       </div>
       <div className="workspace-command__footer"><span><kbd>↑</kbd><kbd>↓</kbd>选择</span><span><kbd>Enter</kbd>打开</span><span><kbd>Esc</kbd>关闭</span></div>
-    </div>
+    </div>}
   </Modal>;
 }
