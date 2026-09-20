@@ -2706,6 +2706,25 @@ private fun InlineLoadingCard(label: String) {
 }
 
 @Composable
+private fun InlineEmptyCard(label: String) {
+  Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp, vertical = 18.dp),
+      verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+      Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+      Text(
+        "可以切换上方筛选条件，或先检查中枢连接与上报设置。",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+      )
+    }
+  }
+}
+
+@Composable
 private fun MiniLineChart(
   title: String,
   valueFormatter: (Double?) -> String,
