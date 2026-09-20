@@ -435,9 +435,9 @@ async function run() {
         tag: document.activeElement.tagName,
         id: document.activeElement.id,
         className: document.activeElement.className,
-        outerHTML: document.activeElement.outerHTML.slice(0, 500)
+        outerHTML: document.activeElement.outerHTML?.slice?.(0, 500) ?? null
       } : null,
-      trigger: document.querySelector<HTMLElement>(".workspace-search-trigger")?.outerHTML.slice(0, 500) ?? null
+      trigger: document.querySelector(".workspace-search-trigger")?.outerHTML?.slice?.(0, 500) ?? null
     }));
     console.error(`Command palette focus state: ${JSON.stringify(focusState)}`);
     throw error;
