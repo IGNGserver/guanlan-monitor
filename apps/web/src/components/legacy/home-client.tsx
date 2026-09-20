@@ -143,7 +143,7 @@ export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: strin
         <div className={`${styles.doubleBezelShell} ${styles.loginCardShell}`}>
           <div className={`${styles.doubleBezelInner} ${styles.loginCardInner}`} style={{ textAlign: "center" }}>
             <img src="/logo.png" alt="DSC Logo" className={styles.brandLogoImage} style={{ margin: "0 auto 12px" }} />
-            <h2 style={{ fontSize: "18px", fontWeight: 700, margin: 0 }}>正在接入中枢服务</h2>
+            <h2 style={{ fontSize: "18px", fontWeight: 700, margin: 0 }}>正在连接中枢服务</h2>
             <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: "6px 0 0" }}>
               检查登录凭证与节点全域快照...
             </p>
