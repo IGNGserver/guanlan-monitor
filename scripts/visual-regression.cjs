@@ -427,21 +427,7 @@ async function run() {
   await page.locator(".workspace-command").waitFor({ state: "visible", timeout: 2_000 });
   await page.keyboard.press("Escape");
   await page.locator(".workspace-command").waitFor({ state: "detached", timeout: 2_000 });
-  try {
-    await page.waitForFunction(() => document.activeElement?.classList.contains("workspace-search-trigger"), null, { timeout: 2_000 });
-  } catch (error) {
-    const focusState = await page.evaluate(() => ({
-      active: document.activeElement instanceof HTMLElement ? {
-        tag: document.activeElement.tagName,
-        id: document.activeElement.id,
-        className: document.activeElement.className,
-        outerHTML: document.activeElement.outerHTML?.slice?.(0, 500) ?? null
-      } : null,
-      trigger: document.querySelector(".workspace-search-trigger")?.outerHTML?.slice?.(0, 500) ?? null
-    }));
-    console.error(`Command palette focus state: ${JSON.stringify(focusState)}`);
-    throw error;
-  }
+  await page.waitForFunction(() => document.activeElement?.classList.contains("workspace-search-trigger"), null, { timeout: 2_000 });
   assert.equal(await page.locator(".workspace-command").count(), 0, "Escape must close command palette");
   assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("workspace-search-trigger")), true, "command palette must restore focus to its trigger");
 
