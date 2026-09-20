@@ -16,7 +16,7 @@ data class CachedRemoteSnapshot(
   val savedAt: String,
   val devices: List<DeviceSummaryDto> = emptyList(),
   val selectedDeviceId: String? = null,
-  val selectedWindow: String = "1m",
+  val selectedWindow: String = "5m",
   val metrics: MetricsDto? = null,
   val overviewMetrics: OverviewMetricsDto? = null,
   val trafficCalendar: TrafficCalendarDto? = null

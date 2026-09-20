@@ -33,13 +33,10 @@ export function OverviewPage() {
   const instanceLabel = health.virtualMachineTotal ? "主机 " + health.hostTotal + " · 虚拟机 " + health.virtualMachineTotal : "设备实例";
   const settingsSection: SettingsSection = capabilities.canConfigureConnection ? "connections" : "workspace";
   const settingsLabel = capabilities.canConfigureConnection ? "连接设置" : "中枢设置";
-  const noDataSettingsSection: SettingsSection = capabilities.canManageLocalAgent
-    ? (snapshot.localBackend ? "agent" : "connections")
-    : "workspace";
   const metricWindowLabel = ({ "1m": "1 分钟", "5m": "5 分钟", "15m": "15 分钟", "1h": "1 小时", "6h": "6 小时", "24h": "1 天", "1d": "1 天", "7d": "1 周", "1w": "1 周", "30d": "1 个月", "1mo": "1 个月", "90d": "90 天", "1y": "1 年" } as Record<string, string>)[metricsWindow] ?? metricsWindow;
   const issueCount = health.pending;
   const abnormalVmCount = allDevices.filter((device) => device.instanceType === "virtual_machine" && device.virtualMachine?.powerState?.trim().toLowerCase() !== "running").length;
-  const scopedLabel = instanceType === "virtual_machine" ? "虚拟机" : "普通设备";
+  const scopedLabel = instanceType === "all" ? "全部实例" : instanceType === "virtual_machine" ? "虚拟机" : "普通设备";
 
   const observationSeries = overviewInstances.flatMap((instance) => {
     const unavailable = (key: Parameters<typeof isMetricUnavailable>[1]) => instance.unavailableMetrics?.includes(key) ?? false;
@@ -99,13 +96,15 @@ export function OverviewPage() {
       hideCloseButton
       title={noData ? "还没有可用设备" : "设备状态存在异常"}
       subtitle={noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : health.offline + " 台设备离线，" + abnormalVmCount + " 台 VM 电源未运行，" + (snapshot.localBackend?.lastIssueCount ?? 0) + " 条本机采集问题待处理。"}
-      actionButtonLabel="查看详情"
-      onActionButtonClick={() => openSettings(noData ? noDataSettingsSection : capabilities.canManageLocalAgent ? "agent" : "workspace")}
+      actionButtonLabel={noData ? "配置数据来源" : "查看设备"}
+      onActionButtonClick={() => noData
+        ? openSettings(capabilities.canManageLocalAgent ? (snapshot.localBackend ? "agent" : "connections") : "workspace")
+        : navigate({ kind: "devices" })}
     /> : null}
 
     <div className="workspace-overview-scope" aria-label="总览观察范围">
       <div><span className="workspace-section-kicker">局部观察范围</span><p>健康结论和实例总数始终覆盖全部设备；趋势按这里的范围读取。</p></div>
-      <M3SegmentedControl options={[{ value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={instanceType} onChange={(value) => setInstanceType(value as typeof instanceType)} aria-label="总览观察范围" />
+      <M3SegmentedControl options={[{ value: "all", label: "全部" }, { value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={instanceType} onChange={(value) => setInstanceType(value as typeof instanceType)} aria-label="总览观察范围" />
     </div>
 
     <div className="workspace-overview-grid workspace-overview-grid--single">

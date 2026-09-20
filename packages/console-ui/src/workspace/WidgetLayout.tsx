@@ -32,6 +32,7 @@ import {
   type WidgetSize
 } from "../helpers/widgetGrid";
 import { M3Button, M3IconButton, M3SegmentedControl, M3TextField } from "./m3";
+import { formatWorkspaceError } from "./context/WorkspaceTypes";
 
 export {
   DEFAULT_SIZE,
@@ -154,9 +155,12 @@ export function registerWidgetLayoutDraftGuard(guard: WidgetLayoutDraftGuard): (
   };
 }
 
+export function hasWidgetLayoutDraft(): boolean {
+  return [...draftGuards].some((guard) => guard());
+}
+
 export function confirmDiscardWidgetLayoutDraft(): boolean {
-  const hasDraft = [...draftGuards].some((guard) => guard());
-  if (!hasDraft) return true;
+  if (!hasWidgetLayoutDraft()) return true;
   return window.confirm("当前布局修改尚未保存，退出后修改将丢失。是否继续？");
 }
 
@@ -344,7 +348,7 @@ export function WidgetLayoutProvider({
       }
       setSyncMessage("");
     } catch (error) {
-      setSyncMessage(error instanceof Error ? `中枢布局读取失败：${error.message}` : "中枢布局读取失败");
+      setSyncMessage(`中枢布局读取失败：${formatWorkspaceError(error, "请检查连接后重试")}`);
     } finally {
       setLoading(false);
     }
@@ -681,7 +685,7 @@ export function WidgetLayoutProvider({
       setSyncMessage("当前布局已保存到中枢");
       return true;
     } catch (error) {
-      setSyncMessage(error instanceof Error ? `布局保存失败：${error.message}` : "布局保存失败");
+      setSyncMessage(`布局保存失败：${formatWorkspaceError(error, "请检查连接后重试")}`);
       return false;
     } finally {
       setSaving(false);
@@ -703,7 +707,7 @@ export function WidgetLayoutProvider({
       setSyncMessage(`通用模板“${normalizedName}”已保存到中枢`);
       return true;
     } catch (error) {
-      setSyncMessage(error instanceof Error ? `通用模板保存失败：${error.message}` : "通用模板保存失败");
+      setSyncMessage(`通用模板保存失败：${formatWorkspaceError(error, "请检查连接后重试")}`);
       return false;
     } finally {
       setSaving(false);
@@ -720,7 +724,7 @@ export function WidgetLayoutProvider({
       setSyncMessage("通用模板已删除");
       return true;
     } catch (error) {
-      setSyncMessage(error instanceof Error ? `通用模板删除失败：${error.message}` : "通用模板删除失败");
+      setSyncMessage(`通用模板删除失败：${formatWorkspaceError(error, "请检查连接后重试")}`);
       return false;
     } finally {
       setSaving(false);
@@ -1158,6 +1162,15 @@ export function WidgetLayoutToolbar({
     layout.setEditMode(false);
   };
 
+  const handleOpenWidgetDrawer = () => {
+    if (!onOpenWidgetDrawer) return;
+    if (!layout.editMode) {
+      layout.compactLayout();
+      layout.setEditMode(true);
+    }
+    onOpenWidgetDrawer();
+  };
+
   const handleDisplayMode = (mode: WidgetDisplayMode) => {
     if (mode === "board") {
       if (layout.editMode) return;
@@ -1194,7 +1207,7 @@ export function WidgetLayoutToolbar({
       <M3Button className={`workspace-layout-toggle${layout.editMode ? " is-active" : ""}`} variant={layout.editMode ? "tonal" : "outlined"} aria-pressed={layout.editMode} disabled={layout.editMode && layout.dirty} onClick={handleToggleEditMode} title={layout.dirty ? "请先保存或放弃布局草稿" : undefined}>
         <span className="workspace-layout-toggle__mark">⌘</span>{layout.editMode ? "退出编辑" : "编辑排布"}
       </M3Button>
-      {onOpenWidgetDrawer && layout.editMode && <M3Button className="workspace-layout-actions__button workspace-layout-actions__button--accent" variant="tonal" onClick={onOpenWidgetDrawer}>添加小组件</M3Button>}
+      {onOpenWidgetDrawer && <M3Button className="workspace-layout-actions__button workspace-layout-actions__button--accent" variant="tonal" onClick={handleOpenWidgetDrawer}>添加小组件</M3Button>}
       {layout.editMode && (
         <>
           <div className="workspace-layout-history" role="group" aria-label="布局历史">

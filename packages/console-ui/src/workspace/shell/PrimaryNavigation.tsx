@@ -9,7 +9,7 @@ const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: st
 const desktopSettingsNav: Array<{ id: SettingsSection; label: string; icon: IconName }> = [
   { id: "general", label: "通用", icon: "settings" },
   { id: "appearance", label: "外观", icon: "appearance" },
-  { id: "connections", label: "中枢与连接", icon: "connection" },
+  { id: "connections", label: "连接与上报", icon: "connection" },
   { id: "agent", label: "本机 Agent", icon: "agent" },
   { id: "data", label: "数据与更新", icon: "data" },
   { id: "shortcuts", label: "快捷键", icon: "keyboard" },
@@ -17,7 +17,7 @@ const desktopSettingsNav: Array<{ id: SettingsSection; label: string; icon: Icon
 ];
 
 const webSettingsNav: Array<{ id: SettingsSection; label: string; icon: IconName }> = [
-  { id: "workspace", label: "工作台", icon: "overview" },
+  { id: "workspace", label: "中枢状态", icon: "overview" },
   { id: "appearance", label: "外观", icon: "appearance" },
   { id: "session", label: "会话安全", icon: "connection" },
   { id: "data", label: "数据与更新", icon: "data" },
@@ -66,7 +66,7 @@ export function PrimaryNavigation({ sidebarPeek, onSidebarLeave }: { sidebarPeek
         <nav className="workspace-sidebar__nav" aria-label="设备控制台导航">
           <M3NavigationItem className="workspace-nav-item" selected={route.kind === "overview"} onClick={() => navigate({ kind: "overview" })} title="总览"><Icon name="overview" /><span>总览</span></M3NavigationItem>
           <M3NavigationItem className="workspace-nav-item" selected={route.kind === "devices"} onClick={() => navigate({ kind: "devices" })} title="设备"><Icon name="device" /><span>设备</span></M3NavigationItem>
-          <M3NavigationItem className="workspace-nav-item" selected={route.kind === "hub"} onClick={() => navigate({ kind: "hub", hubId: "primary" })} title="接入中枢"><Icon name="hub" /><span>接入中枢</span></M3NavigationItem>
+          <M3NavigationItem className="workspace-nav-item" selected={route.kind === "hub"} onClick={() => navigate({ kind: "hub", hubId: "primary" })} title="中枢状态"><Icon name="hub" /><span>中枢状态</span></M3NavigationItem>
           <div className="workspace-sidebar__spacer" />
           {capabilities.canManageLocalAgent && <M3NavigationItem className="workspace-nav-item" onClick={() => navigate({ kind: "settings", section: "agent" })} title="本机 Agent"><Icon name="agent" /><span>本机 Agent</span></M3NavigationItem>}
         </nav>

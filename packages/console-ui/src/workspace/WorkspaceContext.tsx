@@ -11,8 +11,7 @@ import { parseWorkspaceHash, serializeWorkspaceRoute, type WorkspaceRoute } from
 import { formatWorkspaceError as formatError, type HubViewModel, type WorkspaceContextValue } from "./context/WorkspaceTypes";
 import { useWorkspaceMutations } from "./context/useWorkspaceMutations";
 import { useWorkspaceUiState } from "./context/useWorkspaceUiState";
-import { confirmDiscardDeviceOrderDraft } from "./deviceOrderDraft";
-import { confirmDiscardWidgetLayoutDraft } from "./WidgetLayout";
+import { confirmDiscardWorkspaceDrafts } from "./draftGuards";
 import { selectSnapshotSource } from "./selectors";
 
 export type { SettingsSection, WorkspaceRoute } from "./routes";
@@ -34,6 +33,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     setMetricsWindow,
     trafficMode,
     setTrafficMode,
+    trafficAnchor,
+    shiftTrafficAnchor,
     searchQuery,
     setSearchQuery,
     commandOpen,
@@ -107,9 +108,10 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
       const request = {
         selectedDeviceId: selectedDeviceId ?? undefined,
         metricWindow: metricsWindow,
-        trafficMode
+        trafficMode,
+        trafficAnchor
       };
-      const requestKey = `${selectedDeviceId ?? ""}:${metricsWindow}:${trafficMode}`;
+      const requestKey = `${selectedDeviceId ?? ""}:${metricsWindow}:${trafficMode}:${trafficAnchor}`;
       currentRequestKeyRef.current = requestKey;
 
       if (refreshInFlightRef.current) {
@@ -160,7 +162,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
         }
       }
     },
-    [adapter, metricsWindow, selectedDeviceId, trafficMode]
+    [adapter, metricsWindow, selectedDeviceId, trafficAnchor, trafficMode]
   );
 
   useEffect(() => {
@@ -180,7 +182,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   useEffect(() => {
     const handleLocationChange = () => {
       const targetRoute = parseWorkspaceHash(window.location.hash);
-      if (!confirmDiscardWidgetLayoutDraft() || !confirmDiscardDeviceOrderDraft()) {
+      if (!confirmDiscardWorkspaceDrafts()) {
         const currentHash = serializeWorkspaceRoute(currentRouteRef.current);
         if (window.location.hash !== currentHash) {
           window.history.replaceState({ route: currentRouteRef.current }, "", currentHash);
@@ -270,7 +272,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
 
   useEffect(() => {
     if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), 3600);
+    const timer = window.setTimeout(() => setNotice(null), notice.tone === "error" ? 8000 : 5000);
     return () => window.clearTimeout(timer);
   }, [notice]);
 
@@ -333,7 +335,9 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
 
   const allDevices = snapshot?.devices ?? [];
   const devices = useMemo(
-    () => allDevices.filter((device) => (device.instanceType ?? "device") === instanceType),
+    () => instanceType === "all"
+      ? allDevices
+      : allDevices.filter((device) => (device.instanceType ?? "device") === instanceType),
     [allDevices, instanceType]
   );
   const filteredDevices = useMemo(() => {
@@ -353,8 +357,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   const hubs = useMemo<HubViewModel[]>(() => [{ id: "primary", name: "中枢", endpoint, devices: allDevices, state: hubState }], [allDevices, endpoint, hubState]);
   const selectedDevice = allDevices.find((device) => device.deviceId === selectedDeviceId) ?? null;
   const closeWindowSafely = useCallback(async () => {
-    if (!confirmDiscardWidgetLayoutDraft()) return;
-    if (!confirmDiscardDeviceOrderDraft()) return;
+    if (!confirmDiscardWorkspaceDrafts()) return;
     await closeWindow();
   }, [closeWindow]);
 
@@ -383,6 +386,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     setMetricsWindow,
     trafficMode,
     setTrafficMode,
+    trafficAnchor,
+    shiftTrafficAnchor,
     searchQuery,
     setSearchQuery,
     commandOpen,

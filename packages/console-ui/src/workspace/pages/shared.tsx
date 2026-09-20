@@ -701,11 +701,13 @@ function InstanceMetricOverride({
 function TrafficCalendarCard({
   data,
   mode,
-  onModeChange
+  onModeChange,
+  onShiftAnchor
 }: {
   data: TrafficCalendarResponse | null;
   mode: TrafficCalendarMode;
   onModeChange: (mode: TrafficCalendarMode) => void;
+  onShiftAnchor: (direction: -1 | 1) => void;
 }) {
   const modes: Array<{ value: TrafficCalendarMode; label: string }> = [
     { value: "day", label: "日" },
@@ -724,6 +726,10 @@ function TrafficCalendarCard({
           onChange={(value) => onModeChange(value as TrafficCalendarMode)}
           aria-label="流量日历范围"
         />
+        <div className="workspace-traffic-calendar__navigation" role="group" aria-label="流量日历翻页">
+          <Button variant="quiet" onClick={() => onShiftAnchor(-1)} aria-label="查看上一周期">上一周期</Button>
+          <Button variant="quiet" onClick={() => onShiftAnchor(1)} aria-label="查看下一周期">下一周期</Button>
+        </div>
       </div>
       {data ? <>
         <p className="workspace-surface__description">{data.title} · {formatDate(data.rangeStart)} 至 {formatDate(data.rangeEnd)}</p>
@@ -767,12 +773,12 @@ function MetricWindowControl({ value, onChange }: { value: DesktopMetricWindowVa
 type DeviceTabKey = "overview" | "compute" | "storage_net" | "gpu_thermal" | "fan" | "all";
 
 const DEFAULT_DEVICE_PANELS: WidgetPanelMetadata[] = [
-  { id: "overview", name: "综合面板", kind: "system", order: 0 },
+  { id: "overview", name: "摘要", kind: "system", order: 0 },
   { id: "compute", name: "算力与内存", kind: "system", order: 1 },
   { id: "storage_net", name: "存储与网络", kind: "system", order: 2 },
   { id: "gpu_thermal", name: "显卡与散热", kind: "system", order: 3 },
   { id: "fan", name: "风扇转速", kind: "system", order: 4 },
-  { id: "all", name: "全景视图", kind: "system", order: 5 }
+  { id: "all", name: "全部指标", kind: "system", order: 5 }
 ];
 
 function cloneDevicePanels(panels: WidgetPanelMetadata[]): WidgetPanelMetadata[] {
@@ -835,7 +841,7 @@ function WidgetPanelBar({
   onDelete: (panelId: string) => void;
 }) {
   const layout = useOptionalWidgetLayout();
-  const canManage = editable && layout?.editMode === true;
+  const canManage = editable && Boolean(layout && !layout.locked);
   const [manageOpen, setManageOpen] = useState(false);
   const [newPanelName, setNewPanelName] = useState("");
   const managerRef = useRef<HTMLDivElement>(null);
@@ -870,6 +876,14 @@ function WidgetPanelBar({
     onCreate(name);
     setNewPanelName("");
   };
+  const openPanelManager = () => {
+    if (!layout || !canManage) return;
+    if (!layout.editMode) {
+      layout.compactLayout();
+      layout.setEditMode(true);
+    }
+    setManageOpen(true);
+  };
 
   return (
     <>
@@ -885,7 +899,7 @@ function WidgetPanelBar({
         aria-label="设备面板"
       />
       <div ref={managerRef} className="workspace-panel-manager">
-        <button className={`workspace-layout-actions__button${manageOpen ? " is-active" : ""}`} type="button" onClick={() => setManageOpen((value) => !value)} aria-expanded={manageOpen} disabled={!canManage} title={canManage ? "管理自定义面板" : "请先进入编辑排布模式后管理面板"}>面板管理</button>
+        <button className={`workspace-layout-actions__button${manageOpen ? " is-active" : ""}`} type="button" onClick={() => (manageOpen ? setManageOpen(false) : openPanelManager())} aria-expanded={manageOpen} disabled={!canManage} title={canManage ? "管理和定制设备面板" : "当前视图不支持自定义面板"}>面板管理</button>
         {manageOpen && (
           <div className="workspace-panel-manager__tray">
             <div className="workspace-panel-manager__heading"><strong>我的面板</strong><span>系统面板保留兼容；自定义面板可以重复、重命名或删除。</span></div>

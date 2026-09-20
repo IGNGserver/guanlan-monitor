@@ -60,7 +60,7 @@ export function useWorkspaceMutations({
     action === "restart" ? "Agent 重启失败" : "Agent 操作失败"
   ), [adapter, runMutation]);
   const saveHubConnection = useCallback(
-    (serverUrl: string, accessKey: string) => runMutation(() => adapter.saveHubConnection(serverUrl, accessKey), "中枢连接已保存", "连接保存失败"),
+    (serverUrl: string, accessKey: string) => runMutation(() => adapter.saveHubConnection(serverUrl, accessKey), "中枢已连接，设备状态正在同步", "连接保存失败"),
     [adapter, runMutation]
   );
   const updateStartupSettings = useCallback((settings: Partial<DesktopStartupSettings>) => runMutation(
