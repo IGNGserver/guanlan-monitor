@@ -13,21 +13,29 @@ export function CommandPalette() {
   const commandOpenRef = useRef(commandOpen);
   commandOpenRef.current = commandOpen;
   useLayoutEffect(() => {
-    if (commandOpen) {
-      if (!wasOpenRef.current) {
-        const activeElement = document.activeElement;
-        restoreFocusRef.current = activeElement instanceof HTMLElement && !activeElement.closest(".cds--modal-container")
-          ? activeElement
-          : document.querySelector<HTMLElement>(".workspace-search-trigger");
-        wasOpenRef.current = true;
-      }
-      return;
-    }
-    if (!wasOpenRef.current) return;
+    if (!commandOpen || wasOpenRef.current) return;
+    const activeElement = document.activeElement;
+    restoreFocusRef.current = activeElement instanceof HTMLElement && !activeElement.closest(".cds--modal-container")
+      ? activeElement
+      : document.querySelector<HTMLElement>(".workspace-search-trigger");
+    wasOpenRef.current = true;
+  }, [commandOpen]);
+  useEffect(() => {
+    if (commandOpen || !wasOpenRef.current) return;
     wasOpenRef.current = false;
     const restoreFocus = restoreFocusRef.current;
     restoreFocusRef.current = null;
-    if (restoreFocus?.isConnected) restoreFocus.focus();
+    let firstFrame = 0;
+    let secondFrame = 0;
+    firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        if (restoreFocus?.isConnected) restoreFocus.focus();
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
   }, [commandOpen]);
   useEffect(() => {
     if (!commandOpen) return;
