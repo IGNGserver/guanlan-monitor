@@ -132,7 +132,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           _state.update {
             it.copy(
               savingConfig = false,
-              message = error.message ?: "中枢地址格式不正确"
+              message = userFacingError(error, "中枢地址格式不正确")
             )
           }
           return@launch
@@ -158,7 +158,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return@launch
       }
 
-      _state.update { it.copy(savingConfig = false, message = "已保存中枢配置") }
+      // Login is the meaningful result of this form; a separate saved message
+      // made a successful connection look like two unrelated steps.
+      _state.update { it.copy(savingConfig = false, message = null) }
       lastAutoLoginSignature = "${canonicalBaseUrl}\n${accessKey}"
       login()
     }
@@ -235,7 +237,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         currentApi.devices()
       }.onSuccess { devices ->
         val visibleDevices = devices
-          .filter { it.instanceType == current.instanceType }
+          .filter { current.instanceType == "all" || it.instanceType == current.instanceType }
           .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
         val selectedDeviceId = current.selectedDeviceId?.takeIf { id -> visibleDevices.any { it.deviceId == id } }
           ?: visibleDevices.firstOrNull()?.deviceId
@@ -325,7 +327,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       }.onSuccess { uri ->
         _state.update { it.copy(updateDownloading = false, updateProgress = 1f, updateInstallerUri = uri, message = "更新包已下载，正在打开系统安装器") }
       }.onFailure { error ->
-        _state.update { it.copy(updateDownloading = false, updateProgress = 0f, message = error.message ?: "更新失败") }
+        _state.update { it.copy(updateDownloading = false, updateProgress = 0f, message = userFacingError(error, "更新失败")) }
       }
     }
   }
@@ -385,14 +387,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun selectInstanceType(instanceType: String) {
-    val normalized = if (instanceType == "virtual_machine") "virtual_machine" else "device"
+    val normalized = when (instanceType) {
+      "virtual_machine" -> "virtual_machine"
+      "all" -> "all"
+      else -> "device"
+    }
     _state.update { current ->
       val selected = current.selectedDeviceId?.let { id -> current.devices.firstOrNull { it.deviceId == id } }
       val nextSelectedId = if (selected?.instanceType == normalized) {
         selected.deviceId
       } else {
         current.devices
-          .filter { it.instanceType == normalized }
+          .filter { normalized == "all" || it.instanceType == normalized }
           .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
           .firstOrNull()
           ?.deviceId
@@ -527,7 +533,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
           it.copy(
             savingMetricConfig = false,
-            message = error.message ?: "记录项保存失败"
+            message = userFacingError(error, "记录项保存失败")
           )
         }
       }
@@ -598,7 +604,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         null
       }
       val visibleDevices = devices
-        .filter { it.instanceType == _state.value.instanceType }
+        .filter { _state.value.instanceType == "all" || it.instanceType == _state.value.instanceType }
         .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
       val selectedDeviceId = _state.value.selectedDeviceId?.takeIf { id -> visibleDevices.any { it.deviceId == id } }
         ?: visibleDevices.firstOrNull()?.deviceId
@@ -626,7 +632,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         it.copy(
           dataSource = if (it.devices.isEmpty()) RemoteDataSource.Empty else RemoteDataSource.Cache,
           refreshing = false,
-          message = error.message ?: "刷新失败"
+          message = userFacingError(error, "刷新失败，请检查中枢连接")
         )
       }
     }
@@ -639,7 +645,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           refresh()
         }
         .onFailure { error ->
-          _state.update { it.copy(message = error.message ?: "删除失败") }
+          _state.update { it.copy(message = userFacingError(error, "删除失败，请稍后重试")) }
         }
     }
   }
@@ -651,7 +657,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           refresh()
         }
         .onFailure { error ->
-          _state.update { it.copy(message = error.message ?: "重排序失败") }
+          _state.update { it.copy(message = userFacingError(error, "设备顺序保存失败，请稍后重试")) }
         }
     }
   }
@@ -678,7 +684,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       } catch (error: Throwable) {
         if (error is CancellationException) throw error
         if (_state.value.selectedDeviceId == deviceId && _state.value.selectedWindow == window) {
-          _state.update { it.copy(loadingMetrics = false, message = error.message ?: "读取指标失败") }
+          _state.update { it.copy(loadingMetrics = false, message = userFacingError(error, "读取指标失败，请稍后重试")) }
         }
       }
     }
@@ -713,7 +719,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       } catch (error: Throwable) {
         if (error is CancellationException) throw error
         if (_state.value.selectedDeviceId == deviceId && _state.value.trafficMode == mode) {
-          _state.update { it.copy(loadingTraffic = false, message = error.message ?: "读取流量失败") }
+          _state.update { it.copy(loadingTraffic = false, message = userFacingError(error, "读取流量失败，请稍后重试")) }
         }
       }
     }
@@ -763,7 +769,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           }
         }
         .onFailure { error ->
-          _state.update { it.copy(message = error.message ?: "读取记录项配置失败") }
+          _state.update { it.copy(message = userFacingError(error, "读取记录项配置失败，请稍后重试")) }
         }
     }
   }
@@ -891,15 +897,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private const val AUTO_REFRESH_INTERVAL_MS = 15_000L
 
     private fun metricWindowFor(value: String): MetricWindow =
-      MetricWindow.entries.firstOrNull { it.value == value } ?: MetricWindow.OneMinute
+      MetricWindow.entries.firstOrNull { it.value == value } ?: MetricWindow.FiveMinutes
 
     private fun trafficModeFor(value: String?): TrafficCalendarMode =
       TrafficCalendarMode.entries.firstOrNull { it.value == value } ?: TrafficCalendarMode.Day
 
-    private fun loginErrorMessage(error: Throwable): String {
+    private fun loginErrorMessage(error: Throwable): String = userFacingError(error, "无法连接到中枢")
+
+    private fun userFacingError(error: Throwable, fallback: String): String {
       return when ((error as? HttpException)?.code()) {
-        401, 403 -> "访问密钥无效"
-        else -> "无法连接到中枢"
+        401, 403 -> "访问密钥无效或已过期，请重新输入"
+        404 -> "找不到中枢服务，请检查地址和端口"
+        408, 504 -> "中枢响应超时，请检查网络后重试"
+        500, 502, 503 -> "中枢暂时不可用，请稍后重试"
+        else -> {
+          val message = error.message.orEmpty().lowercase()
+          when {
+            "unknownhost" in message || "unable to resolve" in message -> "找不到中枢地址，请检查网络和域名"
+            "timeout" in message || "timed out" in message -> "连接中枢超时，请检查网络后重试"
+            "api_not_configured" in message -> "请先填写中枢地址"
+            else -> fallback
+          }
+        }
       }
     }
 
@@ -917,8 +936,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       return runCatching {
         val date = ZonedDateTime.parse(anchor)
         when (mode) {
-          TrafficCalendarMode.Month -> date.plusYears(direction.toLong())
-          TrafficCalendarMode.Day, TrafficCalendarMode.Week -> date.plusMonths(direction.toLong())
+          TrafficCalendarMode.Month -> date.plusMonths(direction.toLong())
+          TrafficCalendarMode.Week -> date.plusWeeks(direction.toLong())
+          TrafficCalendarMode.Day -> date.plusDays(direction.toLong())
         }.toInstant().toString()
       }.getOrElse {
         todayAnchor()

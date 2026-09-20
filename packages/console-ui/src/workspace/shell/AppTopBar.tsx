@@ -15,7 +15,7 @@ export function AppTopBar() {
     </div>
     <div className="workspace-topbar__actions">
       <StatusLabel state={sourceState} />
-      <M3Button className="workspace-search-trigger" variant="outlined" leadingIcon={<Icon name="search" />} aria-label="搜索设备、页面或设置" title="搜索设备、页面或设置" onClick={() => setCommandOpen(true)}><span>搜索设备、页面或设置</span><kbd>/</kbd></M3Button>
+      <M3Button className="workspace-search-trigger" variant="outlined" leadingIcon={<Icon name="search" />} aria-label="查找设备、页面或设置" title="查找设备、页面或设置" onClick={() => setCommandOpen(true)}><span>查找设备、页面或设置</span><kbd>/</kbd></M3Button>
       <Button variant="quiet" onClick={() => void refresh()} disabled={refreshing || mutationPending} title={mutationPending ? "正在保存更改" : "刷新状态"}><Icon name="refresh" size={16} />{!refreshing && <span>{mutationPending ? "保存中" : "刷新"}</span>}</Button>
       <Button variant="quiet" onClick={() => openSettings()} title="设置"><Icon name="settings" size={16} /></Button>
     </div>

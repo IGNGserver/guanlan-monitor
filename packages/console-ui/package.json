@@ -1,6 +1,6 @@
 {
   "name": "@dsc/console-ui",
-  "version": "3.0.65",
+  "version": "3.0.66",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",

@@ -3,8 +3,7 @@ import type { InstanceType, MetricWindow, TrafficCalendarMode } from "@dsc/share
 import type { ConsoleAdapter } from "../../services/adapter";
 import { detectTouchSupport, type InteractionScaleSetting, type PointerType } from "../../helpers/density";
 import { getResponsiveTier, getScreenOrientation, type ResponsiveTier, type ScreenOrientation } from "../../helpers/layout";
-import { confirmDiscardWidgetLayoutDraft } from "../WidgetLayout";
-import { confirmDiscardDeviceOrderDraft } from "../deviceOrderDraft";
+import { confirmDiscardWorkspaceDrafts } from "../draftGuards";
 import { defaultRoute, routeFromLocation, serializeWorkspaceRoute, type SettingsSection, type WorkspaceRoute } from "../routes";
 import { getStoredDensity, getStoredInstanceType, getStoredRefreshInterval, getStoredTheme } from "./WorkspaceTypes";
 
@@ -16,13 +15,14 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
     return localStorage.getItem("dsc-sidebar-collapsed") === "true";
   });
   const [metricsWindow, setMetricsWindow] = useState<MetricWindow>("5m");
-  const [trafficMode, setTrafficMode] = useState<TrafficCalendarMode>("day");
+  const [trafficMode, setTrafficModeState] = useState<TrafficCalendarMode>("day");
+  const [trafficAnchor, setTrafficAnchor] = useState(() => new Date().toISOString());
   const [searchQuery, setSearchQuery] = useState("");
   const [commandOpen, setCommandOpen] = useState(false);
   const [theme, setThemeState] = useState<"system" | "light" | "dark">(getStoredTheme);
   const [density, setDensityState] = useState<InteractionScaleSetting>(getStoredDensity);
   const [refreshInterval, setRefreshIntervalState] = useState<5 | 10 | 30>(getStoredRefreshInterval);
-  const [instanceType, setInstanceTypeState] = useState<InstanceType>(getStoredInstanceType);
+  const [instanceType, setInstanceTypeState] = useState<InstanceType | "all">(getStoredInstanceType);
   const [orientation, setOrientation] = useState<ScreenOrientation>("landscape");
   const [isTouch, setIsTouch] = useState(false);
   const [inputMode, setInputMode] = useState<PointerType>("mouse");
@@ -68,8 +68,7 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
   }, [pointerSeen]);
 
   const navigate = useCallback((nextRoute: WorkspaceRoute) => {
-    if (!confirmDiscardWidgetLayoutDraft()) return;
-    if (!confirmDiscardDeviceOrderDraft()) return;
+    if (!confirmDiscardWorkspaceDrafts()) return;
     setRoute(nextRoute);
     if (typeof window !== "undefined" && window.location.hash !== serializeWorkspaceRoute(nextRoute)) {
       window.history.pushState({ route: nextRoute }, "", serializeWorkspaceRoute(nextRoute));
@@ -98,10 +97,24 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
     setRefreshIntervalState(nextInterval);
     localStorage.setItem("dsc-refresh-interval", String(nextInterval));
   }, []);
-  const setInstanceType = useCallback((nextInstanceType: InstanceType) => {
+  const setInstanceType = useCallback((nextInstanceType: InstanceType | "all") => {
     setInstanceTypeState(nextInstanceType);
     localStorage.setItem("dsc-instance-type", nextInstanceType);
   }, []);
+  const setTrafficMode = useCallback((nextMode: TrafficCalendarMode) => {
+    setTrafficModeState(nextMode);
+    setTrafficAnchor(new Date().toISOString());
+  }, []);
+  const shiftTrafficAnchor = useCallback((direction: -1 | 1) => {
+    setTrafficAnchor((current) => {
+      const date = new Date(current);
+      if (Number.isNaN(date.getTime())) return new Date().toISOString();
+      if (trafficMode === "month") date.setUTCMonth(date.getUTCMonth() + direction);
+      else if (trafficMode === "week") date.setUTCDate(date.getUTCDate() + direction * 7);
+      else date.setUTCDate(date.getUTCDate() + direction);
+      return date.toISOString();
+    });
+  }, [trafficMode]);
 
   return {
     route,
@@ -116,6 +129,8 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
     setMetricsWindow,
     trafficMode,
     setTrafficMode,
+    trafficAnchor,
+    shiftTrafficAnchor,
     searchQuery,
     setSearchQuery,
     commandOpen,

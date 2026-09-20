@@ -5,6 +5,7 @@ import { M3Checkbox, M3SegmentedControl, M3Select, M3Switch, M3TextField } from 
 import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
 import { formatBytes, formatDate, formatPreciseDateTime } from "../formatters";
 import { selectSnapshotSource } from "../selectors";
+import { formatWorkspaceError } from "../context/WorkspaceTypes";
 import { settingsNavigation } from "../shell/PrimaryNavigation";
 import {
   AgentTemperatureSourcesPanel,
@@ -82,10 +83,10 @@ function WebWorkspaceSettings() {
 
       <div className="workspace-web-settings__grid">
         <Surface>
-          <div className="workspace-surface__header"><div><span className="workspace-section-kicker">工作台偏好</span><h3>浏览器显示与刷新</h3></div></div>
+          <div className="workspace-surface__header"><div><span className="workspace-section-kicker">中枢状态偏好</span><h3>浏览器显示与刷新</h3></div></div>
           <div className="workspace-settings-list">
             <SettingRow label="状态刷新频率" description="只影响当前网页读取状态的频率，不改变 Agent 的采样间隔。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "5", label: "5 秒" }, { value: "10", label: "10 秒" }, { value: "30", label: "30 秒" }]} value={String(refreshInterval)} onChange={(value) => setRefreshInterval(Number(value) as typeof refreshInterval)} aria-label="状态刷新频率" disabled={mutationPending} /></SettingRow>
-            <SettingRow label="总览观察范围" description="健康结论始终覆盖全部实例；这里决定总览趋势默认观察普通设备还是虚拟机。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={instanceType} onChange={(value) => setInstanceType(value as typeof instanceType)} aria-label="总览观察范围" /></SettingRow>
+            <SettingRow label="总览观察范围" description="健康结论始终覆盖全部实例；默认自动显示所有类型，也可以只看普通设备或虚拟机。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "all", label: "全部" }, { value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={instanceType} onChange={(value) => setInstanceType(value as typeof instanceType)} aria-label="总览观察范围" /></SettingRow>
           </div>
         </Surface>
 
@@ -266,7 +267,7 @@ function ConnectionSettings() {
       </Surface>
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">连接诊断</span><h3>如果连接失败</h3></div></div>
-        <p className="workspace-surface__description">请确认地址包含协议（例如 https://），中枢服务已启动，并使用中枢访问密钥。保存按钮会先写入地址，再用同一地址完成认证，避免出现 server url is missing。</p>
+        <p className="workspace-surface__description">请确认地址包含协议（例如 https://），中枢服务已启动，并使用中枢访问密钥。保存按钮会先写入地址，再用同一地址完成认证；如果地址未保存，页面会直接提示需要补充中枢地址。</p>
       </Surface>
     </div>
   );
@@ -294,8 +295,11 @@ function AgentSettings() {
   const selectedMetricsRef = useRef<DeviceMetricKey[]>(enabledMetrics);
   const metricSaveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
   const [probeSelections, setProbeSelections] = useState(configuredProbes);
+  const probeSelectionsRef = useRef(probeSelections);
   const [enabledDeviceIds, setEnabledDeviceIds] = useState<Partial<Record<DeviceBlockKey, string[]>>>(config?.enabledDeviceIds ?? {});
+  const enabledDeviceIdsRef = useRef(enabledDeviceIds);
   const [instanceMetricConfig, setInstanceMetricConfig] = useState<Record<string, DeviceMetricKey[]>>(config?.instanceMetricConfig ?? {});
+  const instanceMetricConfigRef = useRef(instanceMetricConfig);
   const [agentHostname, setAgentHostname] = useState(config?.connection.hostname ?? "");
   const [normalSamplingSeconds, setNormalSamplingSeconds] = useState(String(config?.sampling.normalIntervalSeconds ?? 30));
   const [slowSamplingSeconds, setSlowSamplingSeconds] = useState(String(config?.sampling.slowIntervalSeconds ?? 30));
@@ -317,12 +321,15 @@ function AgentSettings() {
   }, [metricDraftKey]);
   useEffect(() => {
     setProbeSelections(configuredProbes);
+    probeSelectionsRef.current = configuredProbes;
   }, [probeDraftKey]);
   useEffect(() => {
     setEnabledDeviceIds(config?.enabledDeviceIds ?? {});
+    enabledDeviceIdsRef.current = config?.enabledDeviceIds ?? {};
   }, [deviceDraftKey]);
   useEffect(() => {
     setInstanceMetricConfig(config?.instanceMetricConfig ?? {});
+    instanceMetricConfigRef.current = config?.instanceMetricConfig ?? {};
   }, [instanceMetricDraftKey]);
   useEffect(() => {
     setAgentHostname(config?.connection.hostname ?? "");
@@ -357,23 +364,23 @@ function AgentSettings() {
     if (target === "connection") return;
     const group = detectedGroups.find((item) => item.target === target);
     const fallbackIds = group?.instances.filter((instance) => instance.enabled).map((instance) => instance.id) ?? [];
-    const currentIds = enabledDeviceIds[target] ?? fallbackIds;
+    const currentIds = enabledDeviceIdsRef.current[target] ?? fallbackIds;
     const nextIds = enabled ? Array.from(new Set([...currentIds, id])) : currentIds.filter((item) => item !== id);
-    const nextEnabledDeviceIds = { ...enabledDeviceIds, [target]: nextIds };
+    const nextEnabledDeviceIds = { ...enabledDeviceIdsRef.current, [target]: nextIds };
+    enabledDeviceIdsRef.current = nextEnabledDeviceIds;
     setEnabledDeviceIds(nextEnabledDeviceIds);
     // Instance switches are actions in their own right. Persist immediately so
     // leaving and re-entering settings cannot restore the previous selection.
     void updateLocalConfig({ enabledDeviceIds: nextEnabledDeviceIds });
   };
 
-  const saveCollectionConfig = () => void updateLocalConfig({ enabledMetrics: selectedMetricsRef.current, enabledDeviceIds, instanceMetricConfig, probeSelections });
   const updateInstanceMetricConfig = (instanceId: string, value: DeviceMetricKey[] | undefined) => {
-    setInstanceMetricConfig((current) => {
-      const next = { ...current };
-      if (value === undefined) delete next[instanceId];
-      else next[instanceId] = value;
-      return next;
-    });
+    const next = { ...instanceMetricConfigRef.current };
+    if (value === undefined) delete next[instanceId];
+    else next[instanceId] = value;
+    instanceMetricConfigRef.current = next;
+    setInstanceMetricConfig(next);
+    void updateLocalConfig({ instanceMetricConfig: next });
   };
   const saveRuntimeConfig = () => {
     const normalIntervalSeconds = Math.max(1, Number.parseInt(normalSamplingSeconds, 10) || 30);
@@ -396,11 +403,14 @@ function AgentSettings() {
       .catch(() => undefined);
   };
   const updateProbe = (target: AgentProbeTarget, patch: { provider?: AgentProbeProvider; enabled?: boolean }) => {
-    setProbeSelections((current) => {
-      const existing = current.find((selection) => selection.target === target);
-      if (existing) return current.map((selection) => selection.target === target ? { ...selection, ...patch } : selection);
-      return [...current, { target, provider: patch.provider ?? "builtin", enabled: patch.enabled ?? true }];
-    });
+    const current = probeSelectionsRef.current;
+    const existing = current.find((selection) => selection.target === target);
+    const next = existing
+      ? current.map((selection) => selection.target === target ? { ...selection, ...patch } : selection)
+      : [...current, { target, provider: patch.provider ?? "builtin", enabled: patch.enabled ?? true }];
+    probeSelectionsRef.current = next;
+    setProbeSelections(next);
+    void updateLocalConfig({ probeSelections: next });
   };
   return (
     <div className="workspace-settings-stack">
@@ -409,7 +419,7 @@ function AgentSettings() {
         {agentReadOnly && <p className="workspace-surface__description">本机 Agent 由系统级服务运行（开机自启、无需登录），当前用户没有修改权限。请在管理员终端执行 <code>guanlan-agent config set --hub &lt;中枢地址&gt; --key-stdin</code>，或以管理员身份重新打开本应用后再修改设置。</p>}
         {agentMode === "service" && <p className="workspace-surface__description">本机 Agent 由系统级服务运行，关闭本应用或注销登录后仍会继续采集与上报。</p>}
         <div className="workspace-agent-actions"><Button variant="primary" onClick={() => void controlAgent(backend.running ? "stop" : "start")} disabled={refreshing || mutationPending || agentReadOnly}>{backend.running ? "停止服务" : "启动服务"}</Button><Button variant="quiet" onClick={() => void controlAgent("restart")} disabled={refreshing || mutationPending || agentReadOnly}>重启服务</Button><Button variant="quiet" onClick={() => void controlAgent("check-connection")} disabled={refreshing || mutationPending || agentReadOnly}>检查连接</Button><Button variant="quiet" onClick={() => void controlAgent("detect-probes")} disabled={refreshing || mutationPending || agentReadOnly}>重新检测硬件</Button></div>
-        <div className="workspace-detail-list"><SummaryRow label="运行方式" value={agentModeLabel} /><SummaryRow label="连接状态" value={backend.connectionStatus} /><SummaryRow label="上传间隔" value={`${backend.effectiveUploadIntervalSeconds} 秒`} /><SummaryRow label="待上传样本" value={backend.pendingSampleCount ? `${backend.pendingSampleCount} 条 · ${formatBytes(backend.pendingBytes)}` : "0 条"} /><SummaryRow label="配置文件" value={backend.configFileExists ? "已找到" : "未找到"} />{backend.lastUploadError && <SummaryRow label="最近上传错误" value={backend.lastUploadError} />}</div>
+        <div className="workspace-detail-list"><SummaryRow label="运行方式" value={agentModeLabel} /><SummaryRow label="连接状态" value={backend.connectionStatus} /><SummaryRow label="上传间隔" value={`${backend.effectiveUploadIntervalSeconds} 秒`} /><SummaryRow label="待上传样本" value={backend.pendingSampleCount ? `${backend.pendingSampleCount} 条 · ${formatBytes(backend.pendingBytes)}` : "0 条"} /><SummaryRow label="配置文件" value={backend.configFileExists ? "已找到" : "未找到"} />{backend.lastUploadError && <SummaryRow label="最近上传问题" value={formatWorkspaceError(new Error(backend.lastUploadError), "本机 Agent 上报失败，请检查连接和配置")}/>}</div>
       </Surface>
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">Agent 身份与节奏</span><h3>设备显示名与采样间隔</h3></div></div>
@@ -426,13 +436,13 @@ function AgentSettings() {
       </Surface>
       <Surface className="workspace-collection-surface">
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">上报数据</span><h3>选择 Agent 采集内容</h3></div><span className="workspace-caption">已选 {selectedMetrics.length} 项</span></div>
-        <p className="workspace-surface__description">按勾选项采集并上报指标；指标勾选会立即保存，离开页面后仍会保留。启用某个硬件探针时，Agent 可能自动补齐该探针运行所需的依赖指标；探针来源和实例覆盖完成后点击一次保存。</p>
+        <p className="workspace-surface__description">指标、探针来源和实例覆盖都会立即保存，离开页面后仍会保留。启用某个硬件探针时，Agent 可能自动补齐该探针运行所需的依赖指标；“同步到中枢”仍需单独执行。</p>
         <div className="workspace-metric-option-grid">{metricGroups.map((group) => <div className="workspace-metric-option-group" key={group.label}><strong>{group.label}</strong>{group.items.map((item) => <M3Checkbox compact className="workspace-check-row" key={item.key} checked={selectedMetrics.includes(item.key)} onCheckedChange={() => toggleMetric(item.key)} label={item.label} />)}</div>)}</div>
-        <div className="workspace-probe-config"><div className="workspace-probe-config__header"><div><strong>硬件探针</strong><span>先启用探针来源，再在下方决定每个实例是否上报。</span></div></div>{supportedProbePlans.map((plan) => { const selection = probeSelections.find((item) => item.target === plan.target); const providers = plan.providers.filter((provider): provider is AgentProbeProvider => provider in probeProviderLabels); const selectedProvider = selection?.provider && providers.includes(selection.provider) ? selection.provider : providers.includes(plan.default as AgentProbeProvider) ? plan.default as AgentProbeProvider : providers[0]; return <div className="workspace-probe-row" key={plan.target}><div><strong>{probeTargetLabels[plan.target]}</strong><small>{selection?.enabled === false ? "已停用" : "已启用"}</small></div><M3Select label="探针来源" hideLabel selectClassName="workspace-select workspace-select--small" value={selectedProvider ?? "disabled"} onChange={(event) => updateProbe(plan.target, { provider: event.target.value as AgentProbeProvider })} disabled={!providers.length || mutationPending || agentReadOnly} options={providers.map((provider) => ({ value: provider, label: probeProviderLabels[provider] }))} /><Toggle checked={selection?.enabled ?? true} onChange={(enabled) => updateProbe(plan.target, { enabled })} label={`${probeTargetLabels[plan.target]} 探针`} disabled={mutationPending || agentReadOnly} /></div>; })}</div>
-        <div className="workspace-form__actions"><Button variant="primary" onClick={saveCollectionConfig} disabled={refreshing || mutationPending || agentReadOnly}>保存探针与实例配置</Button><Button variant="quiet" onClick={() => void cloudPush()} disabled={refreshing || mutationPending || agentReadOnly}>同步到中枢</Button></div>
+        <div className="workspace-probe-config"><div className="workspace-probe-config__header"><div><strong>硬件探针</strong><span>更换探针来源或启停探针后会立即保存；下方再决定每个实例是否上报。</span></div></div>{supportedProbePlans.map((plan) => { const selection = probeSelections.find((item) => item.target === plan.target); const providers = plan.providers.filter((provider): provider is AgentProbeProvider => provider in probeProviderLabels); const selectedProvider = selection?.provider && providers.includes(selection.provider) ? selection.provider : providers.includes(plan.default as AgentProbeProvider) ? plan.default as AgentProbeProvider : providers[0]; return <div className="workspace-probe-row" key={plan.target}><div><strong>{probeTargetLabels[plan.target]}</strong><small>{selection?.enabled === false ? "已停用" : "已启用"}</small></div><M3Select label="探针来源" hideLabel selectClassName="workspace-select workspace-select--small" value={selectedProvider ?? "disabled"} onChange={(event) => updateProbe(plan.target, { provider: event.target.value as AgentProbeProvider })} disabled={!providers.length || mutationPending || agentReadOnly} options={providers.map((provider) => ({ value: provider, label: probeProviderLabels[provider] }))} /><Toggle checked={selection?.enabled ?? true} onChange={(enabled) => updateProbe(plan.target, { enabled })} label={`${probeTargetLabels[plan.target]} 探针`} disabled={mutationPending || agentReadOnly} /></div>; })}</div>
+        <div className="workspace-form__actions"><Button variant="quiet" onClick={() => void cloudPush()} disabled={refreshing || mutationPending || agentReadOnly}>同步到中枢</Button></div>
       </Surface>
       <Surface>
-        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">检测结果</span><h3>已发现硬件</h3><p className="workspace-surface__description">关闭某个实例后立即停止上报并写入本机配置；探针来源和实例覆盖需点击“保存探针与实例配置”，指标勾选会立即保存。</p></div><span className="workspace-caption">{detectedGroups.reduce((count, group) => count + group.instances.length, 0)} 个实例</span></div>
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">检测结果</span><h3>已发现硬件</h3><p className="workspace-surface__description">关闭某个实例或修改它的指标覆盖后会立即写入本机配置。</p></div><span className="workspace-caption">{detectedGroups.reduce((count, group) => count + group.instances.length, 0)} 个实例</span></div>
         {detectedGroups.length ? <div className="workspace-detected-list">{detectedGroups.map((group) => <div className="workspace-detected-group" key={group.target}><strong>{group.label}</strong>{group.instances.map((instance) => { const enabled = isInstanceEnabled(group.target, instance.id, instance.enabled); return <div className="workspace-detected-row" key={instance.id}><div className="workspace-detected-row__identity"><strong>{instance.name}</strong>{instance.subtitle && <small>{instance.subtitle}</small>}<InstanceMetricOverride target={group.target} instanceId={instance.id} globalMetrics={selectedMetrics} override={instanceMetricConfig[instance.id]} onChange={(value) => updateInstanceMetricConfig(instance.id, value)} disabled={mutationPending || agentReadOnly} /></div><div className="workspace-detected-row__control"><small className={enabled ? "is-enabled" : "is-disabled"}>{enabled ? "上报中" : "不上传"}</small><Toggle checked={enabled} onChange={(checked) => toggleDetectedInstance(group.target, instance.id, checked)} label={`${instance.name} 上报`} disabled={mutationPending || agentReadOnly} /></div></div>; })}</div>)}</div> : <div className="workspace-muted-block">尚未检测到硬件探针，请点击“重新检测硬件”。</div>}
       </Surface>
       <AgentTemperatureSourcesPanel sensors={temperatureSources} backends={temperatureSensorBackends} probeError={backend.temperatureProbeError} />

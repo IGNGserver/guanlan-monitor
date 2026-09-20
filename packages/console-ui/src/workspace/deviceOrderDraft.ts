@@ -9,8 +9,12 @@ export function registerDeviceOrderDraftGuard(guard: DeviceOrderDraftGuard): () 
   };
 }
 
+export function hasDeviceOrderDraft(): boolean {
+  return [...draftGuards].some((guard) => guard());
+}
+
 export function confirmDiscardDeviceOrderDraft(): boolean {
-  if (![...draftGuards].every((guard) => !guard())) return window.confirm("设备顺序修改尚未保存，离开后顺序草稿将丢失。是否继续？");
+  if (hasDeviceOrderDraft()) return window.confirm("设备顺序修改尚未保存，离开后顺序草稿将丢失。是否继续？");
   return true;
 }
 

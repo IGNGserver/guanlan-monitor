@@ -5,7 +5,7 @@ import { Icon } from "../ui";
 import { settingsNavigation } from "./PrimaryNavigation";
 
 export function CommandPalette() {
-  const { commandOpen, setCommandOpen, searchQuery, setSearchQuery, allDevices, navigate, openSettings, capabilities } = useWorkspace();
+  const { commandOpen, setCommandOpen, searchQuery, setSearchQuery, allDevices, navigate, openSettings, refresh, capabilities } = useWorkspace();
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
@@ -63,16 +63,17 @@ export function CommandPalette() {
     .filter((item) => item.id !== "agent" || capabilities.canManageLocalAgent)
     .filter((item) => item.id !== "connections" || capabilities.canConfigureConnection)
     .map((item) => ({ label: `设置 · ${item.label}`, detail: "打开设置分类", action: () => openSettings(item.id) }));
-  const commands: Array<{ label: string; detail: string; action: () => void }> = [
-    { label: "打开总览", detail: "查看所有设备状态", action: () => navigate({ kind: "overview" }) },
-    { label: "打开设备目录", detail: "搜索、筛选和管理全部设备", action: () => navigate({ kind: "devices" }) },
-    capabilities.canConfigureConnection ? { label: "打开连接设置", detail: "添加或重新认证中枢", action: () => openSettings("connections") } : { label: "打开中枢工作台", detail: "查看网页端同步和会话状态", action: () => openSettings("workspace") },
-    ...(capabilities.canManageLocalAgent ? [{ label: "打开本机 Agent", detail: "控制本机采集服务", action: () => openSettings("agent") }] : []),
+  const commands: Array<{ label: string; detail: string; keywords?: string[]; action: () => void }> = [
+    { label: "打开总览", detail: "查看所有设备状态", keywords: ["首页", "状态", "dashboard"], action: () => navigate({ kind: "overview" }) },
+    { label: "打开设备目录", detail: "搜索、筛选和管理全部设备", keywords: ["设备", "列表", "目录"], action: () => navigate({ kind: "devices" }) },
+    { label: "刷新设备状态", detail: "重新读取中枢和设备数据", keywords: ["刷新", "同步", "reload"], action: () => void refresh() },
+    capabilities.canConfigureConnection ? { label: "打开连接设置", detail: "添加或重新认证中枢", keywords: ["中枢", "地址", "密钥", "连接"], action: () => openSettings("connections") } : { label: "打开中枢状态", detail: "查看网页端同步和会话状态", keywords: ["中枢", "会话", "连接"], action: () => openSettings("workspace") },
+    ...(capabilities.canManageLocalAgent ? [{ label: "打开本机 Agent", detail: "控制本机采集服务", keywords: ["采集", "上报", "agent"], action: () => openSettings("agent") }] : []),
     ...settingsCommands,
     ...allDevices.map((device) => ({ label: device.hostname, detail: `${device.os} · ${device.deviceId}${device.hostName ? ` · 宿主机 ${device.hostName}` : ""}`, action: () => navigate({ kind: "device", deviceId: device.deviceId }) }))
   ];
   const query = searchQuery.trim().toLowerCase();
-  const filtered = query ? commands.filter((command) => `${command.label} ${command.detail}`.toLowerCase().includes(query)) : commands;
+  const filtered = query ? commands.filter((command) => `${command.label} ${command.detail} ${(command.keywords ?? []).join(" ")}`.toLowerCase().includes(query)) : commands;
   const close = () => { setCommandOpen(false); setSearchQuery(""); };
   const select = (index: number) => {
     const command = filtered[index];
@@ -109,13 +110,13 @@ export function CommandPalette() {
     launcherButtonRef={launcherButtonRef}
     passiveModal
     modalLabel="快捷导航"
-    modalHeading="搜索设备和命令"
+    modalHeading="查找设备、页面和操作"
     className="guanlan-command-modal"
     onTransitionEnd={(event) => { if (!commandOpen && event.target === event.currentTarget) focusLauncher(); }}
     onRequestClose={close}
   >
     {commandOpen && <div className="workspace-command" onKeyDownCapture={handleKeyDownCapture} onKeyDown={handleKeyDown}>
-      <Search ref={inputRef} id="workspace-command-search" labelText="搜索设备、页面或命令" value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setActiveIndex(0); }} onClear={() => { setSearchQuery(""); setActiveIndex(0); }} placeholder="名称、设备 ID、页面或设置" size="lg" />
+      <Search ref={inputRef} id="workspace-command-search" labelText="查找设备、页面或操作" value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setActiveIndex(0); }} onClear={() => { setSearchQuery(""); setActiveIndex(0); }} placeholder="设备名、ID、页面、设置或操作" size="lg" />
       <div id="workspace-command-list" className="workspace-command__list" role="listbox" aria-label="搜索结果">
         {filtered.length ? filtered.map((command, index) => <button id={`workspace-command-option-${index}`} className={`workspace-command__item ${index === activeIndex ? "is-active" : ""}`} type="button" role="option" aria-selected={index === activeIndex} key={`${command.label}-${index}`} onPointerEnter={() => setActiveIndex(index)} onClick={() => select(index)}><span><strong>{command.label}</strong><small>{command.detail}</small></span><Icon name="arrow" size={15} /></button>) : <div className="workspace-command__empty" role="status">没有匹配结果</div>}
       </div>

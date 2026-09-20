@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { AgentProbeTarget, DeviceBlockKey, DeviceMetricKey, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, VirtualizationStorageMetricSeries, VirtualizationStorageTelemetry, WidgetLayoutDocument, WidgetLayoutSaveRequest, WidgetPanelMetadata } from "@dsc/shared";
 import { isDisplayableVirtualizationStorage, isDisplayableVirtualizationStorageSeries, virtualizationStorageInstances } from "@dsc/shared";
 import { useWorkspace } from "../WorkspaceContext";
+import { formatWorkspaceError } from "../context/WorkspaceTypes";
 import { selectSnapshotSource } from "../selectors";
 import {
   DesktopWidget,
@@ -73,7 +74,7 @@ import {
 } from "./shared";
 
 export function DeviceDetailsPage() {
-  const { selectedDevice, snapshot, navigate, openSettings, metricsWindow, setMetricsWindow, trafficMode, setTrafficMode, getWidgetLayout, saveWidgetLayout, orientation, capabilities } = useWorkspace();
+  const { selectedDevice, snapshot, navigate, openSettings, metricsWindow, setMetricsWindow, trafficMode, setTrafficMode, shiftTrafficAnchor, getWidgetLayout, saveWidgetLayout, orientation, capabilities } = useWorkspace();
   const snapshotSource = snapshot ? selectSnapshotSource(snapshot, snapshot.devices) : "unknown";
   const canEditRemote = snapshotSource === "live";
   const deviceSourceState: "online" | "offline" | "cached" | "warning" | "unknown" = snapshotSource === "cache"
@@ -258,7 +259,7 @@ export function DeviceDetailsPage() {
     previousDeviceIdRef.current = nextDeviceId;
   }, [displayMode, exitBoardPresentation, selectedDevice?.deviceId]);
 
-  if (!selectedDevice) return <EmptyState title="没有找到这台设备" detail="设备可能已被移除，或者中枢还没有返回它。" action={<Button variant="primary" onClick={() => navigate({ kind: "overview" })}>返回总览</Button>} />;
+  if (!selectedDevice) return <EmptyState title="没有找到这台设备" detail="设备可能已被移除，或者中枢还没有返回它。" action={<Button variant="primary" onClick={() => navigate({ kind: "devices" })}>返回设备目录</Button>} />;
 
   const activePanel = panels.find((panel) => panel.id === activeTab) ?? DEFAULT_DEVICE_PANELS[0];
   const isCustomPanel = activePanel.kind === "custom";
@@ -280,7 +281,7 @@ export function DeviceDetailsPage() {
       setPanelMutationMessage("");
       return true;
     }).catch((error) => {
-      setPanelMutationMessage(error instanceof Error ? `面板保存失败：${error.message}` : "面板保存失败");
+      setPanelMutationMessage(`面板保存失败：${formatWorkspaceError(error, "请检查连接后重试")}`);
       return false;
     });
     panelMutationQueue.current = mutation.then(() => undefined, () => undefined);
@@ -324,7 +325,7 @@ export function DeviceDetailsPage() {
         });
         if (saved) setActiveTab(id);
       } catch (error) {
-        setPanelMutationMessage(error instanceof Error ? `面板复制失败：${error.message}` : "面板复制失败");
+        setPanelMutationMessage(`面板复制失败：${formatWorkspaceError(error, "请检查连接后重试")}`);
       }
     })();
   };
@@ -586,7 +587,7 @@ export function DeviceDetailsPage() {
         description={`${selectedDevice.instanceType === "virtual_machine" ? "虚拟机" : selectedDevice.os} · ${selectedDevice.deviceId} · 最后心跳 ${formatDate(selectedDevice.lastSeenAt)}`}
         actions={
           <>
-            <Button variant="quiet" onClick={() => navigate({ kind: "overview" })}><Icon name="back" size={16} />返回总览</Button>
+            <Button variant="quiet" onClick={() => navigate({ kind: "devices" })}><Icon name="back" size={16} />返回设备目录</Button>
           </>
         }
       />
@@ -710,7 +711,7 @@ export function DeviceDetailsPage() {
       {/* ================= Tab 3: 存储与网络 (Storage & Network) ================= */}
       {(activeTab === "storage_net" || activeTab === "all") && series && (
         <TelemetrySection id="section-storage" eyebrow="存储与网络" title="I/O 实例明细" description="虚拟化存储池与普通挂载硬盘分开统计；网卡和硬盘实例选择全部时会同时展示每个实例。" controls={<><InstanceFilter label="网卡" value={selectedNetId} onChange={setSelectedNetId} options={networkOptions} /><InstanceFilter label="磁盘" value={selectedDiskId} onChange={setSelectedDiskId} options={diskOptions} /></>}>
-          <TrafficCalendarCard data={snapshot?.trafficCalendar ?? null} mode={trafficMode} onModeChange={setTrafficMode} />
+          <TrafficCalendarCard data={snapshot?.trafficCalendar ?? null} mode={trafficMode} onModeChange={setTrafficMode} onShiftAnchor={shiftTrafficAnchor} />
           {networkInstances.length ? visibleNetworkInstances.map((network) => {
             const networkIndex = networkInstances.findIndex((item) => item.id === network.id);
             return <TelemetryChartCard key={`network-${network.id}`} widgetId={`storage-network-${network.id}`} widgetTemplateId={`network-${networkIndex}`} title={`${displayModelName(network.model, network.name, "网卡")} · 吞吐`} subtitle={metricUnavailable("networkRxRate") || metricUnavailable("networkTxRate") ? UNAVAILABLE_METRIC_LABEL : [network.name, network.macAddress, network.ipv4?.[0] || network.ipv6?.[0]].filter(Boolean).join(" · ") || "独立网卡实例"} emptyMessage={UNAVAILABLE_METRIC_LABEL} series={[{ label: "接收 (Rx)", points: unavailablePoints(network.rxBytesPerSec, metricUnavailable("networkRxRate")) , valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "发送 (Tx)", points: unavailablePoints(network.txBytesPerSec, metricUnavailable("networkTxRate")), valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />;

@@ -67,6 +67,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -290,7 +291,7 @@ private fun LoginScreen(
   ) {
     Text("连接中枢", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(8.dp))
-    Text("输入中枢地址和访问密钥后连接，界面自动使用系统 Material 3 动态配色。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("先连接观澜中枢，再查看设备状态和历史指标。地址决定连接到哪台中枢，访问密钥用于验证权限。", color = MaterialTheme.colorScheme.onSurfaceVariant)
     Spacer(Modifier.height(24.dp))
     OutlinedTextField(
       value = baseUrl,
@@ -348,7 +349,7 @@ private fun DeviceListScreen(
   var editMode by remember(state.instanceType) { mutableStateOf(false) }
   var draftDeviceIds by remember(state.instanceType) { mutableStateOf<List<String>?>(null) }
   val persistedDevices = state.devices
-    .filter { it.instanceType == state.instanceType }
+    .filter { state.instanceType == "all" || it.instanceType == state.instanceType }
     .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
   val persistedDeviceIds = persistedDevices.map { it.deviceId }
   val draftIds = draftDeviceIds
@@ -370,26 +371,27 @@ private fun DeviceListScreen(
           }
         },
         actions = {
-          IconButton(onClick = {
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            if (editMode) {
-              val idsToSave = visibleDevices.map { it.deviceId }
-              if (draftDeviceIds != null && idsToSave != persistedDeviceIds) {
-                onReorderDevices(idsToSave)
-              }
+          if (editMode) {
+            TextButton(onClick = {
+              haptic.performHapticFeedback(HapticFeedbackType.LongPress)
               editMode = false
               draftDeviceIds = null
               pendingDeleteDevice = null
-            } else {
+            }) { Text("取消") }
+            TextButton(onClick = {
+              haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+              val idsToSave = visibleDevices.map { it.deviceId }
+              if (draftDeviceIds != null && idsToSave != persistedDeviceIds) onReorderDevices(idsToSave)
+              editMode = false
+              draftDeviceIds = null
+              pendingDeleteDevice = null
+            }) { Text("保存") }
+          } else {
+            IconButton(onClick = {
+              haptic.performHapticFeedback(HapticFeedbackType.LongPress)
               draftDeviceIds = persistedDeviceIds
               editMode = true
-            }
-          }) {
-            if (editMode) {
-              Text("完成", style = MaterialTheme.typography.labelLarge)
-            } else {
-              Icon(Icons.Rounded.Edit, contentDescription = "编辑设备列表")
-            }
+            }) { Icon(Icons.Rounded.Edit, contentDescription = "编辑设备列表") }
           }
           IconButton(onClick = {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -457,7 +459,7 @@ private fun DeviceListScreen(
       }
       item(key = "instance-tabs") {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          listOf("device" to "普通设备", "virtual_machine" to "虚拟机").forEach { (type, label) ->
+          listOf("all" to "全部", "device" to "普通设备", "virtual_machine" to "虚拟机").forEach { (type, label) ->
             FilterChip(
               selected = state.instanceType == type,
               onClick = {
@@ -482,7 +484,7 @@ private fun DeviceListScreen(
             color = MaterialTheme.colorScheme.secondaryContainer
           ) {
             Text(
-              "编辑设备列表：可调整顺序或删除设备；完成后点击右上角“完成”。",
+              "编辑设备列表：调整顺序或删除设备。选择“保存”提交，选择“取消”放弃本次修改。",
               modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -492,7 +494,7 @@ private fun DeviceListScreen(
       }
       if (visibleDevices.isEmpty()) {
         item(key = "empty-instance-list") {
-          InlineLoadingCard(if (state.instanceType == "virtual_machine") "暂未发现虚拟机" else "暂未发现普通设备")
+          InlineEmptyCard(if (state.instanceType == "all") "暂未发现设备" else if (state.instanceType == "virtual_machine") "暂未发现虚拟机" else "暂未发现普通设备")
         }
       }
       items(visibleDevices.size, key = { index -> visibleDevices[index].deviceId }) { index ->
@@ -614,7 +616,10 @@ private fun DeviceListCard(
             Text("宿主机：${device.hostName ?: "未知"}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
           }
         }
-        Text(if (device.instanceType == "virtual_machine") "VM" else device.os.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(horizontalAlignment = Alignment.End) {
+          Text(if (device.instanceType == "virtual_machine") "虚拟机" else device.os.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Text(if (device.status == "online") "在线" else "离线", style = MaterialTheme.typography.labelSmall, color = if (device.status == "online") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+        }
         if (editMode) {
           IconButton(onClick = { onMove(-1) }, enabled = canMoveUp) { Text("↑") }
           IconButton(onClick = { onMove(1) }, enabled = canMoveDown) { Text("↓") }
@@ -754,7 +759,7 @@ private fun DeviceDetailScreen(
           ) {
             Text("总览模式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-              "点击上方胶囊查看图表详情。1 分钟显示实时值，其余粒度显示区间平均值。",
+              "点击上方指标查看图表详情。5 分钟适合日常观察；更短或更长粒度可按需切换。",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -2195,7 +2200,7 @@ private fun DiskInstanceCard(
   disk: DiskDto,
   series: DiskMetricSeriesDto?,
   onEdit: () -> Unit,
-  chartWindow: ChartWindow = ChartWindow.from(MetricWindow.OneMinute)
+  chartWindow: ChartWindow = ChartWindow.from(MetricWindow.FiveMinutes)
 ) {
   InstanceCard(
     title = disk.name,
@@ -2276,7 +2281,7 @@ private fun NetworkInstanceCard(
   network: NetworkInterfaceDto,
   series: NetworkMetricSeriesDto?,
   onEdit: () -> Unit,
-  chartWindow: ChartWindow = ChartWindow.from(MetricWindow.OneMinute)
+  chartWindow: ChartWindow = ChartWindow.from(MetricWindow.FiveMinutes)
 ) {
   InstanceCard(
     title = network.name,
@@ -2300,7 +2305,7 @@ private fun GpuInstanceCard(
   gpu: GpuDto,
   series: GpuMetricSeriesDto?,
   onEdit: () -> Unit,
-  chartWindow: ChartWindow = ChartWindow.from(MetricWindow.OneMinute)
+  chartWindow: ChartWindow = ChartWindow.from(MetricWindow.FiveMinutes)
 ) {
   InstanceCard(
     title = gpu.name,
@@ -2400,9 +2405,22 @@ private fun MetricConfigDialog(
   val editingInstanceId = state.editingInstanceId
   val enabledSet = state.metricConfigDraft.toSet()
   val availableMap = config.availableMetrics.associate { it.key to it.available }
+  val savedDeviceIds = config.enabledDeviceIds.mapValues { (_, values) -> values.toSet() }
+  val draftDeviceIds = state.enabledDeviceIdsDraft.mapValues { (_, values) -> values.toSet() }
+  val savedInstanceMetrics = config.instanceMetricConfig.mapValues { (_, values) -> values.toSet() }
+  val draftInstanceMetrics = state.instanceMetricConfigDraft.mapValues { (_, values) -> values.toSet() }
+  val hasUnsavedChanges = config.enabledMetrics.toSet() != enabledSet
+    || savedDeviceIds != draftDeviceIds
+    || savedInstanceMetrics != draftInstanceMetrics
+  var discardConfirmOpen by remember(config.deviceId, editingBlockKey, editingInstanceId) { mutableStateOf(false) }
+  val requestDismiss: () -> Unit = {
+    if (!state.savingMetricConfig) {
+      if (hasUnsavedChanges) discardConfirmOpen = true else onDismiss()
+    }
+  }
 
   AlertDialog(
-    onDismissRequest = onDismiss,
+    onDismissRequest = requestDismiss,
     title = {
       Text(
         when {
@@ -2506,11 +2524,24 @@ private fun MetricConfigDialog(
       }
     },
     dismissButton = {
-      OutlinedButton(onClick = onDismiss, enabled = !state.savingMetricConfig) {
-        Text("关闭")
+      OutlinedButton(onClick = requestDismiss, enabled = !state.savingMetricConfig) {
+        Text("取消")
       }
     }
   )
+  if (discardConfirmOpen) {
+    AlertDialog(
+      onDismissRequest = { discardConfirmOpen = false },
+      title = { Text("放弃未保存修改？") },
+      text = { Text("当前记录项配置尚未保存，放弃后本次勾选和实例选择都会丢失。") },
+      confirmButton = {
+        Button(onClick = { discardConfirmOpen = false; onDismiss() }) { Text("放弃修改") }
+      },
+      dismissButton = {
+        OutlinedButton(onClick = { discardConfirmOpen = false }) { Text("继续编辑") }
+      }
+    )
+  }
 }
 
 private data class InstanceOption(val id: String, val title: String, val subtitle: String)
@@ -2573,7 +2604,7 @@ private fun isMetricAvailable(metrics: MetricsDto, key: String): Boolean {
 @Composable
 private fun MetricCardGrid(
   cards: List<MetricCardModel>,
-  chartWindow: ChartWindow = ChartWindow.from(MetricWindow.OneMinute)
+  chartWindow: ChartWindow = ChartWindow.from(MetricWindow.FiveMinutes)
 ) {
   BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
     val minCardWidth = 220.dp
