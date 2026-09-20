@@ -62,6 +62,8 @@ export function CommandPalette() {
     close();
   };
 
+  if (!commandOpen) return null;
+
   return <Modal
     open={commandOpen}
     passiveModal
