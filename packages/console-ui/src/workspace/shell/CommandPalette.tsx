@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Modal, Search } from "@carbon/react";
 import { useWorkspace } from "../WorkspaceContext";
 import { Icon } from "../ui";
@@ -8,8 +8,25 @@ export function CommandPalette() {
   const { commandOpen, setCommandOpen, searchQuery, setSearchQuery, allDevices, navigate, openSettings, capabilities } = useWorkspace();
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const wasOpenRef = useRef(false);
   const commandOpenRef = useRef(commandOpen);
   commandOpenRef.current = commandOpen;
+  useLayoutEffect(() => {
+    if (commandOpen) {
+      if (!wasOpenRef.current) {
+        const activeElement = document.activeElement;
+        restoreFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+        wasOpenRef.current = true;
+      }
+      return;
+    }
+    if (!wasOpenRef.current) return;
+    wasOpenRef.current = false;
+    const restoreFocus = restoreFocusRef.current;
+    restoreFocusRef.current = null;
+    if (restoreFocus?.isConnected) restoreFocus.focus();
+  }, [commandOpen]);
   useEffect(() => {
     if (!commandOpen) return;
     const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
