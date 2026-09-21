@@ -67,13 +67,308 @@ jobs:
             redis:7.4-alpine \
             mysql:8.4 \
             | gzip -1 > image-bundle/dsc-test-images.tar.gz
-          ls -lh image-bundle/dsc-test-images.tar.gz
+          (
+            cd image-bundle
+            sha256sum dsc-test-images.tar.gz > dsc-test-images.tar.gz.sha256
+          )
+          split --bytes=64m --numeric-suffixes=0 --suffix-length=3 \
+            image-bundle/dsc-test-images.tar.gz \
+            image-bundle/dsc-test-images.tar.gz.part-
+          ls -lh image-bundle/dsc-test-images.tar.gz image-bundle/dsc-test-images.tar.gz.part-*
 
-      - name: Upload staged images
+      - name: Upload staged image manifest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: dsc-test-images-${{ inputs.version }}
-          path: image-bundle/dsc-test-images.tar.gz
+          name: dsc-test-images-${{ inputs.version }}-manifest
+          path: image-bundle/dsc-test-images.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 000
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-000') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-000
+          path: image-bundle/dsc-test-images.tar.gz.part-000
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 001
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-001') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-001
+          path: image-bundle/dsc-test-images.tar.gz.part-001
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 002
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-002') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-002
+          path: image-bundle/dsc-test-images.tar.gz.part-002
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 003
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-003') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-003
+          path: image-bundle/dsc-test-images.tar.gz.part-003
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 004
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-004') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-004
+          path: image-bundle/dsc-test-images.tar.gz.part-004
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 005
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-005') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-005
+          path: image-bundle/dsc-test-images.tar.gz.part-005
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 006
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-006') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-006
+          path: image-bundle/dsc-test-images.tar.gz.part-006
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 007
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-007') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-007
+          path: image-bundle/dsc-test-images.tar.gz.part-007
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 008
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-008') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-008
+          path: image-bundle/dsc-test-images.tar.gz.part-008
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 009
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-009') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-009
+          path: image-bundle/dsc-test-images.tar.gz.part-009
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 010
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-010') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-010
+          path: image-bundle/dsc-test-images.tar.gz.part-010
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 011
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-011') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-011
+          path: image-bundle/dsc-test-images.tar.gz.part-011
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 012
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-012') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-012
+          path: image-bundle/dsc-test-images.tar.gz.part-012
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 013
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-013') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-013
+          path: image-bundle/dsc-test-images.tar.gz.part-013
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 014
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-014') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-014
+          path: image-bundle/dsc-test-images.tar.gz.part-014
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 015
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-015') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-015
+          path: image-bundle/dsc-test-images.tar.gz.part-015
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 016
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-016') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-016
+          path: image-bundle/dsc-test-images.tar.gz.part-016
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 017
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-017') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-017
+          path: image-bundle/dsc-test-images.tar.gz.part-017
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 018
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-018') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-018
+          path: image-bundle/dsc-test-images.tar.gz.part-018
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 019
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-019') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-019
+          path: image-bundle/dsc-test-images.tar.gz.part-019
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 020
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-020') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-020
+          path: image-bundle/dsc-test-images.tar.gz.part-020
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 021
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-021') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-021
+          path: image-bundle/dsc-test-images.tar.gz.part-021
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 022
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-022') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-022
+          path: image-bundle/dsc-test-images.tar.gz.part-022
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 023
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-023') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-023
+          path: image-bundle/dsc-test-images.tar.gz.part-023
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 024
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-024') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-024
+          path: image-bundle/dsc-test-images.tar.gz.part-024
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 025
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-025') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-025
+          path: image-bundle/dsc-test-images.tar.gz.part-025
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 026
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-026') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-026
+          path: image-bundle/dsc-test-images.tar.gz.part-026
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 027
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-027') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-027
+          path: image-bundle/dsc-test-images.tar.gz.part-027
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 028
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-028') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-028
+          path: image-bundle/dsc-test-images.tar.gz.part-028
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 029
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-029') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-029
+          path: image-bundle/dsc-test-images.tar.gz.part-029
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 030
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-030') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-030
+          path: image-bundle/dsc-test-images.tar.gz.part-030
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload staged image part 031
+        if: ${{ hashFiles('image-bundle/dsc-test-images.tar.gz.part-031') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-test-images-${{ inputs.version }}-part-031
+          path: image-bundle/dsc-test-images.tar.gz.part-031
           if-no-files-found: error
           retention-days: 1
 
@@ -148,10 +443,17 @@ jobs:
             scripts/verify-widget-layout-persistence.sh
           sparse-checkout-cone-mode: false
 
-      - name: Download staged images
+      - name: Download staged image parts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: dsc-test-images-${{ inputs.version }}
+          pattern: dsc-test-images-${{ inputs.version }}-part-*
+          path: ${{ runner.temp }}/dsc-test-images
+          merge-multiple: true
+
+      - name: Download staged image manifest
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: dsc-test-images-${{ inputs.version }}-manifest
           path: ${{ runner.temp }}/dsc-test-images
 
       - name: Load staged images
@@ -162,9 +464,15 @@ jobs:
           DSC_MYSQL_IMAGE: mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
         run: |
           set -euo pipefail
-          archive="$RUNNER_TEMP/dsc-test-images/dsc-test-images.tar.gz"
-          test -f "$archive"
-          gzip -dc "$archive" | docker load
+          archive_dir="$RUNNER_TEMP/dsc-test-images"
+          manifest="$archive_dir/dsc-test-images.tar.gz.sha256"
+          part_files=("$archive_dir"/dsc-test-images.tar.gz.part-*)
+          test -f "$manifest"
+          test -f "${part_files[0]}"
+          expected_hash="$(awk 'NR == 1 { print $1 }' "$manifest")"
+          actual_hash="$(cat "${part_files[@]}" | sha256sum | awk '{ print $1 }')"
+          test "$actual_hash" = "$expected_hash"
+          cat "${part_files[@]}" | gzip -dc | docker load
           docker image inspect \
             "ghcr.io/igngserver/device-state-console-server:${DSC_VERSION}" \
             "ghcr.io/igngserver/device-state-console-web:${DSC_VERSION}" \
