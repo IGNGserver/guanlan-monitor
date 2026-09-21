@@ -90,11 +90,7 @@ jobs:
       HTTP_PROXY: http://127.0.0.1:7890
       HTTPS_PROXY: http://127.0.0.1:7890
       ALL_PROXY: http://127.0.0.1:7890
-      http_proxy: http://127.0.0.1:7890
-      https_proxy: http://127.0.0.1:7890
-      all_proxy: http://127.0.0.1:7890
       NO_PROXY: 127.0.0.1,localhost,::1,192.168.5.17
-      no_proxy: 127.0.0.1,localhost,::1,192.168.5.17
     steps:
       - name: Validate requested version and channel
         shell: bash
