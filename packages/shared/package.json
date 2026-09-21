@@ -1,6 +1,6 @@
 {
   "name": "@dsc/shared",
-  "version": "3.0.72",
+  "version": "3.0.73",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
