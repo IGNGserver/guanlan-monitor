@@ -83,6 +83,18 @@ jobs:
     needs: stage-images
     timeout-minutes: 30
     environment: test
+    env:
+      # The NAS runner shares the host with Clash. Keep GitHub checkout and
+      # artifact traffic on the runner's loopback proxy; deployment traffic to
+      # the local Hub remains direct through NO_PROXY.
+      HTTP_PROXY: http://127.0.0.1:7890
+      HTTPS_PROXY: http://127.0.0.1:7890
+      ALL_PROXY: http://127.0.0.1:7890
+      http_proxy: http://127.0.0.1:7890
+      https_proxy: http://127.0.0.1:7890
+      all_proxy: http://127.0.0.1:7890
+      NO_PROXY: 127.0.0.1,localhost,::1,192.168.5.17
+      no_proxy: 127.0.0.1,localhost,::1,192.168.5.17
     steps:
       - name: Validate requested version and channel
         shell: bash
@@ -99,6 +111,17 @@ jobs:
             echo "Test deployment accepts only the test channel." >&2
             exit 1
           }
+
+      - name: Verify NAS Clash proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          proxy_probe="$RUNNER_TEMP/guanlan-clash-proxy-check.json"
+          curl --proxy "$HTTPS_PROXY" --connect-timeout 10 --max-time 30 \
+            --fail --silent --show-error https://api.github.com/rate_limit \
+            -o "$proxy_probe"
+          test -s "$proxy_probe"
+          echo "NAS Clash proxy is reachable through $HTTPS_PROXY"
 
       - name: Configure SSH
         shell: bash
