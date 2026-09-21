@@ -20,6 +20,7 @@ on:
         type: boolean
 
 permissions:
+  actions: read
   contents: read
   packages: read
 
@@ -376,7 +377,7 @@ jobs:
     name: Deploy fixed test version
     runs-on: [self-hosted, Linux, X64, nas]
     needs: stage-images
-    timeout-minutes: 30
+    timeout-minutes: 60
     environment: test
     env:
       # The NAS runner shares the host with Clash. Keep GitHub checkout and
@@ -443,12 +444,97 @@ jobs:
             scripts/verify-widget-layout-persistence.sh
           sparse-checkout-cone-mode: false
 
-      - name: Download staged image parts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          pattern: dsc-test-images-${{ inputs.version }}-part-*
-          path: ${{ runner.temp }}/dsc-test-images
-          merge-multiple: true
+      - name: Download staged image parts through NAS proxy
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DSC_VERSION: ${{ inputs.version }}
+          DOWNLOAD_WORKERS: "4"
+        run: |
+          set -euo pipefail
+          command -v curl >/dev/null
+          command -v jq >/dev/null
+          command -v unzip >/dev/null
+
+          archive_dir="$RUNNER_TEMP/dsc-test-images"
+          download_dir="$RUNNER_TEMP/dsc-test-artifacts"
+          api_url="${GITHUB_API_URL:-https://api.github.com}"
+          prefix="dsc-test-images-${DSC_VERSION}-part-"
+          artifacts_json="$download_dir/artifacts.json"
+          mkdir -p "$archive_dir" "$download_dir"
+
+          curl --proxy "$HTTPS_PROXY" --fail --silent --show-error \
+            --connect-timeout 30 --max-time 120 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "$api_url/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" \
+            -o "$artifacts_json"
+
+          part_rows="$download_dir/parts.tsv"
+          jq -er --arg prefix "$prefix" '
+            [.artifacts[]
+              | select(.expired == false and (.name | startswith($prefix)))
+              | {name, url: .archive_download_url}]
+            | sort_by(.name)
+            | .[]
+            | [.name, .url]
+            | @tsv
+          ' "$artifacts_json" > "$part_rows"
+          test -s "$part_rows"
+
+          expected_index=0
+          while IFS=$'\t' read -r part_name _part_url; do
+            part_index="${part_name##*-part-}"
+            printf -v expected_suffix '%03d' "$expected_index"
+            test "$part_index" = "$expected_suffix"
+            expected_index=$((expected_index + 1))
+          done < "$part_rows"
+
+          download_part() {
+            local part_name="$1"
+            local artifact_url="$2"
+            local part_index="${part_name##*-part-}"
+            local part_tmp="$download_dir/$part_name"
+            local zip_file="$part_tmp.zip"
+            local headers_file="$part_tmp.headers"
+            local location
+            local extracted
+
+            mkdir -p "$part_tmp"
+            curl --proxy "$HTTPS_PROXY" --fail --silent --show-error \
+              --connect-timeout 30 --max-time 120 \
+              -D "$headers_file" -o /dev/null \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              "$artifact_url"
+            location="$(sed -n 's/^location: //Ip' "$headers_file" | tr -d '\r' | tail -n 1)"
+            test -n "$location"
+            curl --proxy "$HTTPS_PROXY" --fail --silent --show-error \
+              --connect-timeout 30 --max-time 600 \
+              "$location" -o "$zip_file"
+            extracted="$(unzip -Z1 "$zip_file" | sed -n '1p')"
+            test -n "$extracted"
+            test "$(unzip -Z1 "$zip_file" | wc -l)" -eq 1
+            unzip -p "$zip_file" > "$archive_dir/dsc-test-images.tar.gz.part-$part_index"
+            test -s "$archive_dir/dsc-test-images.tar.gz.part-$part_index"
+            rm -rf "$part_tmp" "$zip_file" "$headers_file"
+          }
+          export -f download_part
+
+          pids=()
+          while IFS=$'\t' read -r part_name part_url; do
+            download_part "$part_name" "$part_url" &
+            pids+=("$!")
+            if (( ${#pids[@]} >= DOWNLOAD_WORKERS )); then
+              wait "${pids[0]}"
+              pids=("${pids[@]:1}")
+            fi
+          done < "$part_rows"
+          for pid in "${pids[@]}"; do
+            wait "$pid"
+          done
+
+          test "$(find "$archive_dir" -maxdepth 1 -name 'dsc-test-images.tar.gz.part-*' -type f | wc -l)" -eq "$expected_index"
 
       - name: Download staged image manifest
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
