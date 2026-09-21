@@ -224,13 +224,13 @@ function DeviceDirectoryFilterBar({
   const onlineCount = devices.filter((device) => device.status === "online").length;
   return <div className="workspace-directory-toolbar">
     <M3TextField label="搜索设备" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="名称、设备 ID、系统或宿主机" type="search" />
-    <M3SegmentedControl options={[{ value: "all", label: "全部类型" }, { value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={typeFilter} onChange={(value) => onTypeFilterChange(value as "all" | "device" | "virtual_machine")} aria-label="设备类型" />
+    <M3SegmentedControl className="workspace-directory-toolbar__type" options={[{ value: "all", label: "全部类型" }, { value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={typeFilter} onChange={(value) => onTypeFilterChange(value as "all" | "device" | "virtual_machine")} aria-label="设备类型" />
     <div className="workspace-directory-toolbar__chips" aria-label="设备状态">
       <M3Chip selected={statusFilter === "all"} onClick={() => onStatusFilterChange("all")}>全部 {devices.length}</M3Chip>
       <M3Chip selected={statusFilter === "online"} onClick={() => onStatusFilterChange("online")}>在线 {onlineCount}</M3Chip>
       <M3Chip selected={statusFilter === "offline"} onClick={() => onStatusFilterChange("offline")}>离线 {devices.length - onlineCount}</M3Chip>
     </div>
-    <M3Select label="排序" hideLabel value={sort} onChange={(event) => onSortChange(event.target.value as DeviceDirectorySort)} disabled={sortDisabled} options={[{ value: "order", label: "中枢顺序" }, { value: "name", label: "名称" }, { value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "lastSeen", label: "最近响应" }]} />
+    <M3Select className="workspace-directory-toolbar__sort" label="排序" hideLabel value={sort} onChange={(event) => onSortChange(event.target.value as DeviceDirectorySort)} disabled={sortDisabled} options={[{ value: "order", label: "中枢顺序" }, { value: "name", label: "名称" }, { value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "lastSeen", label: "最近响应" }]} />
     {actions && <div className="workspace-directory-toolbar__actions">{actions}</div>}
   </div>;
 }
@@ -345,7 +345,7 @@ function CarbonDeviceTable({
     { key: "memory", header: "内存" },
     { key: "disk", header: "磁盘" },
     { key: "heartbeat", header: "最近心跳" },
-    { key: "actions", header: "操作" }
+    ...(manageMode ? [{ key: "actions", header: "操作" }] : [])
   ];
   const rows = devices.map((device) => ({
     id: device.deviceId,
@@ -371,11 +371,28 @@ function CarbonDeviceTable({
                 const device = devices.find((item) => item.deviceId === row.id);
                 if (!device) return null;
                 const deviceIndex = order?.indexOf(device.deviceId) ?? -1;
+                const rowIsActionable = !manageMode;
+                const openDevice = () => navigate({ kind: "device", deviceId: device.deviceId });
                 return (
-                  <TableRow {...getRowProps({ row })}>
+                  <TableRow
+                    {...getRowProps({ row })}
+                    className={rowIsActionable ? "guanlan-data-table-row--actionable" : undefined}
+                    tabIndex={rowIsActionable ? 0 : undefined}
+                    aria-label={rowIsActionable ? `打开 ${device.hostname}` : undefined}
+                    onClick={rowIsActionable ? (event) => {
+                      if (event.target instanceof Element && event.target.closest("button, a, [role=menuitem]")) return;
+                      openDevice();
+                    } : undefined}
+                    onKeyDown={rowIsActionable ? (event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      if (event.target instanceof Element && event.target.closest("button, a, [role=menuitem]")) return;
+                      event.preventDefault();
+                      openDevice();
+                    } : undefined}
+                  >
                     {row.cells.map((cell) => {
                       if (cell.info.header === "status") return <TableCell key={cell.id}>{directoryStatusTag(device)}</TableCell>;
-                      if (cell.info.header === "device") return <TableCell key={cell.id}><button className="guanlan-table-link" type="button" onClick={() => navigate({ kind: "device", deviceId: device.deviceId })}>{device.hostname}</button><small className="guanlan-table-secondary">{device.instanceType === "virtual_machine" ? `虚拟机 · ${device.hostName ?? "宿主机未知"}` : `${device.os} · ID ${device.deviceId}`}</small></TableCell>;
+                      if (cell.info.header === "device") return <TableCell key={cell.id}><button className="guanlan-table-link" type="button" onClick={openDevice}>{device.hostname}</button><small className="guanlan-table-secondary">{device.instanceType === "virtual_machine" ? `虚拟机 · ${device.hostName ?? "宿主机未知"}` : `${device.os} · ID ${device.deviceId}`}</small></TableCell>;
                       if (cell.info.header === "heartbeat") return <TableCell key={cell.id}><span className={device.status === "online" ? "" : "guanlan-table-stale"}>{cell.value}</span><small className="guanlan-table-secondary">{device.status === "online" ? "当前响应" : "心跳已过期"}</small></TableCell>;
                       if (cell.info.header === "actions") return <TableCell key={cell.id}>{manageMode && (onMove || onDelete) ? <OverflowMenu aria-label={`管理 ${device.hostname}`} size="sm" direction="bottom"><OverflowMenuItem itemText="上移" disabled={deviceIndex <= 0} onClick={() => onMove?.(device.deviceId, -1)} /><OverflowMenuItem itemText="下移" disabled={deviceIndex < 0 || deviceIndex >= (order?.length ?? 1) - 1} onClick={() => onMove?.(device.deviceId, 1)} /><OverflowMenuItem itemText="删除" isDelete onClick={() => onDelete?.(device)} /></OverflowMenu> : null}</TableCell>;
                       return <TableCell key={cell.id}>{cell.value}</TableCell>;

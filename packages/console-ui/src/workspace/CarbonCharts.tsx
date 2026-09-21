@@ -24,7 +24,11 @@ export function carbonChartData(series: CarbonSeries[]): ChartTabularData {
     })));
 }
 
-function axisOptions(height: string, seriesCount: number) {
+function axisOptions(height: string, series: CarbonSeries[]) {
+  const valueFormatter = series.find((item) => item.valueFormatter)?.valueFormatter;
+  const formatTick = (tick: number | Date) => typeof tick === "number" && Number.isFinite(tick)
+    ? valueFormatter?.(tick) ?? String(tick)
+    : String(tick);
   return {
     height,
     theme: chartTheme(),
@@ -39,14 +43,15 @@ function axisOptions(height: string, seriesCount: number) {
       left: {
         title: "",
         mapsTo: "value",
-        scaleType: "linear"
+        scaleType: "linear",
+        ticks: valueFormatter ? { formatter: formatTick } : undefined
       }
     },
     curve: "curveMonotoneX",
     points: { enabled: false },
-    legend: { enabled: seriesCount > 1 },
+    legend: { enabled: series.length > 1 },
     toolbar: { enabled: false },
-    tooltip: { enabled: true },
+    tooltip: { enabled: true, valueFormatter: valueFormatter ? (value: unknown) => typeof value === "number" ? valueFormatter(value) : String(value) : undefined },
     accessibility: { svgAriaLabel: "硬件指标时间趋势图" }
   };
 }
@@ -66,7 +71,7 @@ export function CarbonTimeSeriesChart({
   if (!data.length) return <div className={`telemetry-empty ${className}`}>当前时间范围没有可用数据</div>;
 
   const height = compact ? "128px" : "248px";
-  const options = axisOptions(height, series.length);
+  const options = axisOptions(height, series);
   const wrapperClassName = `telemetry-carbon-chart${compact ? " telemetry-carbon-chart--compact" : ""}${className ? ` ${className}` : ""}`;
 
   if (visualization === "area") {
