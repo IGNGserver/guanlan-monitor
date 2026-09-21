@@ -372,6 +372,22 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   text-decoration: underline;
 }
 
+.guanlan-table-row-action {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid transparent;
+  color: var(--guanlan-interactive);
+  background: transparent;
+  cursor: pointer;
+}
+
+.guanlan-table-row-action:hover {
+  border-color: var(--guanlan-rule-strong);
+  background: var(--cds-layer-hover-01, #e8e8e8);
+}
+
 .guanlan-table-secondary {
   display: block;
   margin-top: 4px;
