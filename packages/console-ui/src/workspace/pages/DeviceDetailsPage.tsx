@@ -584,7 +584,7 @@ export function DeviceDetailsPage() {
       <PageIntro
         eyebrow={selectedDevice.instanceType === "virtual_machine" ? "虚拟机实例" : "设备实例"}
         title={selectedDevice.hostname}
-        description={`${selectedDevice.instanceType === "virtual_machine" ? "虚拟机" : selectedDevice.os} · ${selectedDevice.deviceId} · 最后心跳 ${formatDate(selectedDevice.lastSeenAt)}`}
+        description={`${selectedDevice.instanceType === "virtual_machine" ? "虚拟机" : selectedDevice.os} · ${selectedDevice.deviceId}`}
         actions={
           <>
             <Button variant="quiet" onClick={() => navigate({ kind: "devices" })}><Icon name="back" size={16} />返回设备目录</Button>
@@ -597,7 +597,6 @@ export function DeviceDetailsPage() {
         <span>Agent {selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</span>
         <span>通道 {selectedDevice.agentChannel ?? "未知"}</span>
         {selectedDevice.instanceType === "virtual_machine" && <span>宿主机 Agent {selectedDevice.status === "online" ? "在线" : "离线"} · {selectedDevice.hostName ?? "未知"}</span>}
-        <span>{selectedDevice.status === "online" ? "最近心跳有效" : "最近心跳已过期"} · {formatDate(selectedDevice.lastSeenAt)}</span>
         {selectedDevice.unavailableMetrics?.length ? <span>不适用指标：{selectedDevice.unavailableMetrics.join("、")}</span> : null}
         <span>{snapshotSource === "cache" ? `缓存于 ${formatDate(snapshot?.cache.savedAt)}` : `数据更新时间 ${formatDate(snapshot?.generatedAt)}`}</span>
         <StatusLabel state={deviceSourceState} />
@@ -631,29 +630,37 @@ export function DeviceDetailsPage() {
         getWidgetLayout={getWidgetLayout}
         saveWidgetLayout={saveWidgetLayout}
       >
-      {/* 视图 Tab 切换与时间范围控制器 */}
-      <div className="telemetry-chart-header">
-        <WidgetPanelBar panels={panels} activePanelId={activeTab} editable={canEditRemote} onSelect={changeTab} onCreate={createPanel} onRename={renamePanel} onDuplicate={duplicatePanel} onDelete={deletePanel} />
-
-        <div className="workspace-device-toolbar">
-          {panelIndexLoading && <span className="workspace-layout-notice">读取面板</span>}
-          {panelMutationMessage && <span className="workspace-layout-notice">{panelMutationMessage}</span>}
-          <MetricWindowControl value={metricsWindow as DesktopMetricWindowValue} onChange={(value) => setMetricsWindow(value)} />
-          <WidgetLayoutToolbar
-            onOpenWidgetDrawer={activeTab !== "all" && canEditRemote ? () => setWidgetDrawerOpen(true) : undefined}
-            onEnterBoardMode={enterBoardPresentation}
-            onExitBoardMode={exitBoardPresentation}
-          />
+      {/* 视图、时间范围与布局操作属于同一个设备上下文，滚动图表时保持可见。 */}
+      <div className="workspace-device-context">
+        <div className="workspace-device-context__navigation">
+          <div className="telemetry-chart-header">
+            <WidgetPanelBar panels={panels} activePanelId={activeTab} editable={canEditRemote} onSelect={changeTab} onCreate={createPanel} onRename={renamePanel} onDuplicate={duplicatePanel} onDelete={deletePanel} />
+          </div>
         </div>
+
+        <div className="workspace-device-context__controls">
+          <div className="workspace-device-toolbar">
+            {(panelIndexLoading || panelMutationMessage) && <div className="workspace-device-context__notice" role="status">
+              {panelIndexLoading && <span className="workspace-layout-notice">读取面板</span>}
+              {panelMutationMessage && <span className="workspace-layout-notice">{panelMutationMessage}</span>}
+            </div>}
+            <MetricWindowControl value={metricsWindow as DesktopMetricWindowValue} onChange={(value) => setMetricsWindow(value)} />
+            <WidgetLayoutToolbar
+              onOpenWidgetDrawer={activeTab !== "all" && canEditRemote ? () => setWidgetDrawerOpen(true) : undefined}
+              onEnterBoardMode={enterBoardPresentation}
+              onExitBoardMode={exitBoardPresentation}
+            />
+          </div>
+        </div>
+
+        {availableAnchors.length > 1 && (activeTab === "all" || orientation === "portrait") && (
+          <div className="workspace-anchor-bar" role="navigation" aria-label="硬件模块跳转">
+            {availableAnchors.map((anchor) => (
+              <button key={anchor.id} type="button" className={`workspace-anchor-btn${activeAnchor === anchor.id ? " is-active" : ""}`} aria-current={activeAnchor === anchor.id ? "page" : undefined} onClick={() => scrollToAnchor(anchor.id)}>{anchor.label}</button>
+            ))}
+          </div>
+        )}
       </div>
-
-      {availableAnchors.length > 1 && (activeTab === "all" || orientation === "portrait") && (
-        <div className="workspace-anchor-bar" role="navigation" aria-label="硬件模块跳转">
-          {availableAnchors.map((anchor) => (
-            <button key={anchor.id} type="button" className={`workspace-anchor-btn${activeAnchor === anchor.id ? " is-active" : ""}`} aria-current={activeAnchor === anchor.id ? "page" : undefined} onClick={() => scrollToAnchor(anchor.id)}>{anchor.label}</button>
-          ))}
-        </div>
-      )}
 
       {(!metrics || !series) && (
         <EmptyState

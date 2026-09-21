@@ -13,11 +13,6 @@
   gap: 12px;
 }
 
-.workspace-page--device > .telemetry-chart-header { align-items: flex-start; flex-wrap: wrap; }
-.workspace-page--device > .telemetry-chart-header > .workspace-panel-bar { flex: 1 1 520px; min-width: 0; }
-.workspace-page--device > .telemetry-chart-header > .workspace-range-control { flex: 0 0 auto; margin-bottom: 12px; }
-.workspace-page--device > .telemetry-chart-header > .workspace-device-toolbar { flex: 0 0 auto; margin-bottom: 12px; }
-
 .telemetry-chart-title {
   display: flex;
   flex-direction: column;

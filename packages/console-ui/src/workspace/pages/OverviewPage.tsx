@@ -103,8 +103,8 @@ export function OverviewPage() {
     /> : null}
 
     <div className="workspace-overview-scope" aria-label="总览观察范围">
-      <div><span className="workspace-section-kicker">局部观察范围</span><p>健康结论和实例总数始终覆盖全部设备；趋势按这里的范围读取。</p></div>
-      <M3SegmentedControl options={[{ value: "all", label: "全部" }, { value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={instanceType} onChange={(value) => setInstanceType(value as typeof instanceType)} aria-label="总览观察范围" />
+      <div className="workspace-overview-scope__copy"><span className="workspace-section-kicker">健康结论范围</span><p>健康结论和实例总数始终覆盖全部设备；趋势数据按右侧范围读取。</p></div>
+      <div className="workspace-overview-scope__control"><span className="workspace-overview-scope__control-label">趋势数据范围</span><M3SegmentedControl options={[{ value: "all", label: "全部" }, { value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={instanceType} onChange={(value) => setInstanceType(value as typeof instanceType)} aria-label="趋势数据范围" /></div>
     </div>
 
     <div className="workspace-overview-grid workspace-overview-grid--single">
