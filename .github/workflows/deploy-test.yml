@@ -434,6 +434,12 @@ jobs:
             echo "SSH deploy secrets are not used for the local NAS runner deployment."
           fi
 
+      - name: Configure Git for NAS Clash
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global http.version HTTP/1.1
+
       - name: Checkout deployment definition
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
