@@ -377,7 +377,7 @@ jobs:
     name: Deploy fixed test version
     runs-on: [self-hosted, Linux, X64, nas]
     needs: stage-images
-    timeout-minutes: 60
+    timeout-minutes: 240
     environment: test
     env:
       # The NAS runner shares the host with Clash. Keep GitHub checkout and
@@ -449,7 +449,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           DSC_VERSION: ${{ inputs.version }}
-          DOWNLOAD_WORKERS: "4"
+          DOWNLOAD_WORKERS: "2"
         run: |
           set -euo pipefail
           command -v curl >/dev/null
@@ -499,19 +499,40 @@ jobs:
             local headers_file="$part_tmp.headers"
             local location
             local extracted
+            local download_complete=0
+            local attempt
 
             mkdir -p "$part_tmp"
-            curl --proxy "$HTTPS_PROXY" --fail --silent --show-error \
-              --connect-timeout 30 --max-time 120 \
-              -D "$headers_file" -o /dev/null \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H 'Accept: application/vnd.github+json' \
-              "$artifact_url"
-            location="$(sed -n 's/^location: //Ip' "$headers_file" | tr -d '\r' | tail -n 1)"
-            test -n "$location"
-            curl --proxy "$HTTPS_PROXY" --fail --silent --show-error \
-              --connect-timeout 30 --max-time 600 \
-              "$location" -o "$zip_file"
+            for attempt in $(seq 1 12); do
+              rm -f "$headers_file"
+              if ! curl --proxy "$HTTPS_PROXY" --fail --silent --show-error \
+                --connect-timeout 30 --max-time 120 \
+                -D "$headers_file" -o /dev/null \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H 'Accept: application/vnd.github+json' \
+                "$artifact_url"; then
+                echo "Unable to resolve artifact URL for $part_name (attempt $attempt/12)." >&2
+                sleep 10
+                continue
+              fi
+              location="$(sed -n 's/^location: //Ip' "$headers_file" | tr -d '\r' | tail -n 1)"
+              if [[ -z "$location" ]]; then
+                echo "Artifact redirect was empty for $part_name (attempt $attempt/12)." >&2
+                sleep 10
+                continue
+              fi
+              if curl --proxy "$HTTPS_PROXY" --fail --silent --show-error \
+                --connect-timeout 30 --max-time 900 \
+                --retry 3 --retry-all-errors --retry-delay 5 --retry-max-time 900 \
+                --continue-at - \
+                "$location" -o "$zip_file"; then
+                download_complete=1
+                break
+              fi
+              echo "Artifact download interrupted for $part_name; resuming (attempt $attempt/12)." >&2
+              sleep 10
+            done
+            test "$download_complete" -eq 1
             extracted="$(unzip -Z1 "$zip_file" | sed -n '1p')"
             test -n "$extracted"
             test "$(unzip -Z1 "$zip_file" | wc -l)" -eq 1
