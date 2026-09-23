@@ -602,16 +602,16 @@ async function run() {
         let mobileDirectory = null;
         if (width <= 839 && name === "devices") {
           mobileDirectory = await page.evaluate(() => {
-            const container = document.querySelector(".guanlan-data-table-surface .cds--data-table-container");
-            const table = container?.querySelector(".cds--data-table");
+            const scrollViewport = document.querySelector(".workspace-directory-table-scroll");
+            const table = scrollViewport?.querySelector(".cds--data-table");
             const hint = document.querySelector(".workspace-directory-scroll-hint");
             const hintBounds = hint?.getBoundingClientRect();
             const hintStyle = hint ? getComputedStyle(hint) : null;
             const sortBounds = document.querySelector(".workspace-directory-toolbar__sort")?.getBoundingClientRect();
             const actionsBounds = document.querySelector(".workspace-directory-toolbar__actions")?.getBoundingClientRect();
             return {
-              containerClientWidth: container?.clientWidth ?? 0,
-              containerScrollWidth: container?.scrollWidth ?? 0,
+              scrollViewportClientWidth: scrollViewport?.clientWidth ?? 0,
+              scrollViewportWidth: scrollViewport?.scrollWidth ?? 0,
               tableWidth: table?.getBoundingClientRect().width ?? 0,
               hintVisible: Boolean(hint && hintStyle?.display !== "none" && hintStyle?.visibility !== "hidden" && hintBounds?.width > 0 && hintBounds?.height > 0),
               sortWidth: sortBounds?.width ?? 0,
@@ -622,9 +622,9 @@ async function run() {
               actionsBottom: actionsBounds?.bottom ?? null
             };
           });
-          assert.ok(mobileDirectory.containerClientWidth > 0, `devices table container is missing at ${width}px`);
+          assert.ok(mobileDirectory.scrollViewportClientWidth > 0, `devices table scroll viewport is missing at ${width}px`);
           assert.ok(mobileDirectory.tableWidth >= 1076, `devices table was compressed below its readable width at ${width}px (${mobileDirectory.tableWidth}px)`);
-          assert.ok(mobileDirectory.containerScrollWidth > mobileDirectory.containerClientWidth, `devices table does not scroll inside its container at ${width}px`);
+          assert.ok(mobileDirectory.scrollViewportWidth > mobileDirectory.scrollViewportClientWidth, `devices table does not scroll inside its viewport at ${width}px (scroll ${mobileDirectory.scrollViewportWidth}px, viewport ${mobileDirectory.scrollViewportClientWidth}px)`);
           assert.ok(mobileDirectory.hintVisible, `devices table scroll hint is not visible at ${width}px`);
           assert.ok(mobileDirectory.sortWidth > 0 && mobileDirectory.actionsWidth > 0, `devices sort or management control is missing at ${width}px`);
           if (width === 390) {

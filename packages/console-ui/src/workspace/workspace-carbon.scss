@@ -306,6 +306,11 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 .guanlan-data-table-surface {
   overflow: hidden;
   padding: 0;
+  min-width: 0;
+}
+
+.workspace-directory-table-scroll {
+  min-width: 0;
 }
 
 .workspace-directory-scroll-hint {
@@ -1190,7 +1195,7 @@ html[data-dsc-resolved-theme="dark"] .workspace-device-row:hover {
     line-height: 1.4;
   }
 
-  .guanlan-data-table-surface .cds--data-table-container {
+  .workspace-directory-table-scroll {
     box-sizing: border-box;
     width: 100%;
     max-width: 100%;
@@ -1199,6 +1204,12 @@ html[data-dsc-resolved-theme="dark"] .workspace-device-row:hover {
     overflow-y: hidden;
     overscroll-behavior-x: contain;
     scrollbar-width: thin;
+  }
+
+  .guanlan-data-table-surface .cds--data-table-container {
+    width: max-content;
+    max-width: none;
+    overflow: visible;
   }
 
   .guanlan-data-table-surface .cds--data-table {

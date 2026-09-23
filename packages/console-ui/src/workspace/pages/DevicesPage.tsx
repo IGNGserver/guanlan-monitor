@@ -108,14 +108,16 @@ export function DevicesPage() {
     {!canManage && <div className="workspace-inline-note" role="status">{snapshot.source === "cache" ? "离线缓存为只读快照。" : "需要实时连接并完成认证后才能删除或调整设备顺序。"}</div>}
     <Surface className="workspace-directory-surface guanlan-data-table-surface">
       {visibleDevices.length > 0 && <div className="workspace-directory-scroll-hint" role="note">左右滑动查看更多字段 · 点按设备行查看详情</div>}
-      <CarbonDeviceTable
-        devices={visibleDevices}
-        order={effectiveOrder}
-        manageMode={manageMode && canManage && !mutationPending}
-        onMove={moveInstance}
-        onDelete={setDeleteTarget}
-        emptyState={<EmptyState title="没有匹配设备" detail="尝试清空搜索或调整类型、状态筛选。" action={<Button variant="quiet" onClick={() => { setQuery(""); setTypeFilter("all"); setStatusFilter("all"); }}>清除筛选</Button>} />}
-      />
+      <div className="workspace-directory-table-scroll">
+        <CarbonDeviceTable
+          devices={visibleDevices}
+          order={effectiveOrder}
+          manageMode={manageMode && canManage && !mutationPending}
+          onMove={moveInstance}
+          onDelete={setDeleteTarget}
+          emptyState={<EmptyState title="没有匹配设备" detail="尝试清空搜索或调整类型、状态筛选。" action={<Button variant="quiet" onClick={() => { setQuery(""); setTypeFilter("all"); setStatusFilter("all"); }}>清除筛选</Button>} />}
+        />
+      </div>
     </Surface>
     {deleteTarget && <ConfirmDialog title={`删除“${deleteTarget.hostname}”？`} detail="删除后该实例不会继续出现在中枢列表中；下次宿主机或 Agent 再次上报时，它会重新显示。" confirmLabel="删除实例" disabled={mutationPending} onConfirm={() => { const deviceId = deleteTarget.deviceId; setDeleteTarget(null); void deleteInstance(deviceId); }} onCancel={() => setDeleteTarget(null)} />}
   </div>;
