@@ -759,6 +759,7 @@ jobs:
           DEPLOY_HOST: ${{ secrets.TEST_DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.TEST_DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.TEST_DEPLOY_PATH }}
+          DEPLOY_DEFINITION_DIR: ${{ runner.temp }}/dsc-release-definition
           DSC_VERSION: ${{ inputs.version }}
           DSC_RELEASE_CHANNEL: ${{ inputs.channel }}
           WEB_PORT: "3100"
