@@ -107,6 +107,7 @@ export function DevicesPage() {
     />
     {!canManage && <div className="workspace-inline-note" role="status">{snapshot.source === "cache" ? "离线缓存为只读快照。" : "需要实时连接并完成认证后才能删除或调整设备顺序。"}</div>}
     <Surface className="workspace-directory-surface guanlan-data-table-surface">
+      {visibleDevices.length > 0 && <div className="workspace-directory-scroll-hint" role="note">左右滑动查看更多字段 · 点按设备行查看详情</div>}
       <CarbonDeviceTable
         devices={visibleDevices}
         order={effectiveOrder}
