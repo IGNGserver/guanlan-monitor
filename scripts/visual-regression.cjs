@@ -559,6 +559,46 @@ async function run() {
         assert.ok(geometry?.page?.width > 0 && geometry?.page?.height > 0, `${name} page is empty at ${width}px`);
         assert.ok(geometry?.heading?.width > 0 && geometry?.heading?.height > 0 && geometry.heading.bottom > 0 && geometry.heading.top < height, `${name} heading is outside viewport at ${width}px`);
         assert.ok(geometry.bodyScrollWidth <= width + 1, `${name} overflows horizontally at ${width}px`);
+        const segmentedControls = await page.locator(".m3-segmented-control").evaluateAll((controls) => {
+          const luminance = (color) => {
+            const channels = color.match(/[\d.]+/g)?.slice(0, 3).map(Number);
+            if (!channels || channels.length !== 3) return null;
+            const linear = channels.map((channel) => {
+              const normalized = channel / 255;
+              return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+            });
+            return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+          };
+          return controls.map((control) => {
+            const selected = control.querySelector('[role="tab"][aria-selected="true"]');
+            const label = selected?.querySelector(".cds--content-switcher__label");
+            const foreground = selected ? getComputedStyle(selected).color : "";
+            const background = selected ? getComputedStyle(selected, "::after").backgroundColor : "";
+            const labelStyle = label ? getComputedStyle(label) : null;
+            const labelBounds = label?.getBoundingClientRect();
+            const alphaMatch = background.match(/^rgba\([^)]*,\s*([\d.]+)\)$/);
+            const backgroundAlpha = alphaMatch ? Number(alphaMatch[1]) : 1;
+            const foregroundLuminance = luminance(foreground);
+            const backgroundLuminance = luminance(background);
+            const contrast = foregroundLuminance == null || backgroundLuminance == null
+              ? null
+              : (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+            return {
+              name: control.getAttribute("aria-label") ?? "",
+              label: label?.textContent?.trim() ?? "",
+              labelVisible: Boolean(label && labelStyle?.display !== "none" && labelStyle?.visibility !== "hidden" && labelBounds?.width > 0 && labelBounds?.height > 0),
+              foreground,
+              background,
+              backgroundAlpha,
+              contrast
+            };
+          });
+        });
+        for (const segment of segmentedControls) {
+          assert.ok(segment.label && segment.labelVisible, `${name} has a segmented control without visible selected text at ${width}px (${segment.name})`);
+          assert.equal(segment.backgroundAlpha, 1, `${name} selected segment fill is transparent at ${width}px (${segment.name})`);
+          assert.ok(segment.contrast >= 4.5, `${name} selected segment text contrast is ${segment.contrast?.toFixed(2) ?? "unknown"} at ${width}px (${segment.name}: ${segment.foreground} on ${segment.background})`);
+        }
         if (round === 1 && name === "overview" && [840, 1024, 1440].includes(width)) {
           assert.ok(geometry.root?.width >= width - 1 && geometry.root?.height >= height - 1, `Web root geometry is incomplete at ${width}px`);
           assert.ok(geometry.sidebar?.width > 0 && geometry.sidebar?.height >= height - 1, `Web sidebar geometry is incomplete at ${width}px`);
@@ -571,7 +611,7 @@ async function run() {
         // matrix deliberately samples the viewport so the runner cannot spend minutes
         // rasterizing the same long telemetry surface at every breakpoint.
         await page.screenshot({ path: screenshotPath, fullPage: false, animations: "disabled", timeout: 15_000 });
-        matrix.push({ round, theme, width, name, screenshot: path.basename(screenshotPath), sha256: crypto.createHash("sha256").update(fs.readFileSync(screenshotPath)).digest("hex"), geometry });
+        matrix.push({ round, theme, width, name, screenshot: path.basename(screenshotPath), sha256: crypto.createHash("sha256").update(fs.readFileSync(screenshotPath)).digest("hex"), geometry, segmentedControls });
       }
     }
   }

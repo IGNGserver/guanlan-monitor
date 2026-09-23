@@ -583,6 +583,11 @@ html[data-dsc-resolved-theme="dark"] .workspace-device-row:hover {
   background: var(--guanlan-layer-selected) !important;
 }
 
+.m3-segmented-control .cds--content-switcher-btn.cds--content-switcher--selected::after,
+.m3-segmented-control .cds--content-switcher-btn[aria-selected="true"]::after {
+  background-color: var(--guanlan-layer-selected) !important;
+}
+
 .m3-tabs .cds--tabs__nav-item,
 .m3-tabs .cds--tabs__nav-link {
   border-radius: 0;
