@@ -377,7 +377,7 @@ jobs:
     name: Deploy fixed test version
     runs-on: [self-hosted, Linux, X64, nas]
     needs: stage-images
-    timeout-minutes: 240
+    timeout-minutes: 360
     environment: test
     env:
       # The NAS runner shares the host with Clash. Keep GitHub API and artifact
