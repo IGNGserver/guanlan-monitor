@@ -380,9 +380,9 @@ jobs:
     timeout-minutes: 240
     environment: test
     env:
-      # The NAS runner shares the host with Clash. Keep GitHub checkout and
-      # artifact traffic on the runner's loopback proxy; deployment traffic to
-      # the local Hub remains direct through NO_PROXY.
+      # The NAS runner shares the host with Clash. Keep GitHub API and artifact
+      # traffic on the runner's loopback proxy; deployment traffic to the local
+      # Hub remains direct through NO_PROXY.
       HTTP_PROXY: http://127.0.0.1:7890
       HTTPS_PROXY: http://127.0.0.1:7890
       ALL_PROXY: http://127.0.0.1:7890
@@ -434,21 +434,40 @@ jobs:
             echo "SSH deploy secrets are not used for the local NAS runner deployment."
           fi
 
-      - name: Configure Git for NAS Clash
+      - name: Download pinned deployment definition through NAS proxy
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DSC_VERSION: ${{ inputs.version }}
+          DEFINITION_DIR: ${{ runner.temp }}/dsc-release-definition
         run: |
           set -euo pipefail
-          git config --global http.version HTTP/1.1
+          command -v curl >/dev/null
+          definition_api="${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/contents"
+          mkdir -p "$DEFINITION_DIR"
 
-      - name: Checkout deployment definition
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          ref: v${{ inputs.version }}
-          sparse-checkout: |
-            docker-compose.yml
-            scripts/prepare-compose-env.sh
-            scripts/verify-widget-layout-persistence.sh
-          sparse-checkout-cone-mode: false
+          fetch_release_file() {
+            local path="$1"
+            local destination="$DEFINITION_DIR/$path"
+            mkdir -p "$(dirname "$destination")"
+            curl --proxy "$HTTPS_PROXY" --fail --silent --show-error \
+              --connect-timeout 30 --max-time 120 \
+              --retry 3 --retry-all-errors --retry-delay 3 --retry-max-time 60 \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github.raw' \
+              "$definition_api/$path?ref=v$DSC_VERSION" \
+              -o "$destination.tmp"
+            test -s "$destination.tmp"
+            mv "$destination.tmp" "$destination"
+          }
+
+          fetch_release_file docker-compose.yml
+          fetch_release_file scripts/prepare-compose-env.sh
+          fetch_release_file scripts/verify-widget-layout-persistence.sh
+          grep -Fq './data:/app/data' "$DEFINITION_DIR/docker-compose.yml"
+          bash -n "$DEFINITION_DIR/scripts/prepare-compose-env.sh"
+          bash -n "$DEFINITION_DIR/scripts/verify-widget-layout-persistence.sh"
+          echo "Downloaded deployment files pinned to v$DSC_VERSION through the NAS proxy."
 
       - name: Download staged image parts through NAS proxy
         shell: bash
@@ -601,6 +620,7 @@ jobs:
           DSC_VERSION: ${{ inputs.version }}
           DSC_RELEASE_CHANNEL: ${{ inputs.channel }}
           DSC_ALLOW_HTTP: ${{ inputs.allow_http }}
+          DEPLOY_DEFINITION_DIR: ${{ runner.temp }}/dsc-release-definition
           WEB_PORT: "3100"
         run: |
           set -euo pipefail
@@ -628,9 +648,9 @@ jobs:
               DSC_ALLOW_HTTP="$DSC_ALLOW_HTTP" \
               DSC_RECOVER_EXISTING_MYSQL=true \
               DSC_MYSQL_CONTAINER=device-state-console-mysql-1 \
-              bash "$GITHUB_WORKSPACE/scripts/prepare-compose-env.sh" "$DEPLOY_PATH/.env"
+              bash "$DEPLOY_DEFINITION_DIR/scripts/prepare-compose-env.sh" "$DEPLOY_PATH/.env"
             temp="$DEPLOY_PATH/.docker-compose.yml.codex.tmp"
-            cp "$GITHUB_WORKSPACE/docker-compose.yml" "$temp"
+            cp "$DEPLOY_DEFINITION_DIR/docker-compose.yml" "$temp"
             mv "$temp" "$DEPLOY_PATH/docker-compose.yml"
             grep -Fq './data:/app/data' "$DEPLOY_PATH/docker-compose.yml"
           else
@@ -646,9 +666,9 @@ jobs:
                if [ ! -s '$DEPLOY_PATH/data/local-db.json' ] && [ -s \"\$backup_file\" ]; then cp \"\$backup_file\" '$DEPLOY_PATH/data/local-db.json.tmp'; mv '$DEPLOY_PATH/data/local-db.json.tmp' '$DEPLOY_PATH/data/local-db.json'; fi"
             remote_compose="$DEPLOY_PATH/.docker-compose.yml.codex.tmp"
             remote_prepare="$DEPLOY_PATH/.prepare-compose-env.codex.tmp"
-            scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$GITHUB_WORKSPACE/docker-compose.yml" \
+            scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_DEFINITION_DIR/docker-compose.yml" \
               "$DEPLOY_USER@$DEPLOY_HOST:$remote_compose"
-            scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$GITHUB_WORKSPACE/scripts/prepare-compose-env.sh" \
+            scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_DEFINITION_DIR/scripts/prepare-compose-env.sh" \
               "$DEPLOY_USER@$DEPLOY_HOST:$remote_prepare"
             ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \
               "set -euo pipefail; cleanup() { rm -f '$remote_compose' '$remote_prepare'; }; trap cleanup EXIT; DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' DSC_ALLOW_HTTP='$DSC_ALLOW_HTTP' DSC_RECOVER_EXISTING_MYSQL=true DSC_MYSQL_CONTAINER='device-state-console-mysql-1' bash '$remote_prepare' '$DEPLOY_PATH/.env'; mv '$remote_compose' '$DEPLOY_PATH/docker-compose.yml'; grep -Fq './data:/app/data' '$DEPLOY_PATH/docker-compose.yml'; rm -f '$remote_prepare'; trap - EXIT"
@@ -662,6 +682,7 @@ jobs:
           DEPLOY_PATH: ${{ secrets.TEST_DEPLOY_PATH }}
           DSC_VERSION: ${{ inputs.version }}
           DSC_RELEASE_CHANNEL: ${{ inputs.channel }}
+          DEPLOY_DEFINITION_DIR: ${{ runner.temp }}/dsc-release-definition
           WEB_PORT: "3100"
         run: |
           set -euo pipefail
@@ -753,7 +774,7 @@ jobs:
               DSC_RELEASE_CHANNEL="$DSC_RELEASE_CHANNEL" \
               WEB_PORT="$WEB_PORT" \
               SMOKE_SCOPE="$SMOKE_SCOPE" \
-              bash "$GITHUB_WORKSPACE/scripts/verify-widget-layout-persistence.sh"
+              bash "$DEPLOY_DEFINITION_DIR/scripts/verify-widget-layout-persistence.sh"
           else
             test -n "$DEPLOY_USER"
             test -n "$DEPLOY_PATH"
@@ -761,5 +782,5 @@ jobs:
             ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" \
               "$DEPLOY_USER@$DEPLOY_HOST" \
               "SMOKE_BASE_URL='http://127.0.0.1:3100' SMOKE_COMPOSE_DIR='$DEPLOY_PATH' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' WEB_PORT='$WEB_PORT' SMOKE_SCOPE='$SMOKE_SCOPE' bash -s" \
-              < "$GITHUB_WORKSPACE/scripts/verify-widget-layout-persistence.sh"
+              < "$DEPLOY_DEFINITION_DIR/scripts/verify-widget-layout-persistence.sh"
           fi
