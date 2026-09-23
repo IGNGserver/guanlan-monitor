@@ -599,6 +599,39 @@ async function run() {
           assert.equal(segment.backgroundAlpha, 1, `${name} selected segment fill is transparent at ${width}px (${segment.name})`);
           assert.ok(segment.contrast >= 4.5, `${name} selected segment text contrast is ${segment.contrast?.toFixed(2) ?? "unknown"} at ${width}px (${segment.name}: ${segment.foreground} on ${segment.background})`);
         }
+        let mobileDirectory = null;
+        if (width <= 839 && name === "devices") {
+          mobileDirectory = await page.evaluate(() => {
+            const container = document.querySelector(".guanlan-data-table-surface .cds--data-table-container");
+            const table = container?.querySelector(".cds--data-table");
+            const hint = document.querySelector(".workspace-directory-scroll-hint");
+            const hintBounds = hint?.getBoundingClientRect();
+            const hintStyle = hint ? getComputedStyle(hint) : null;
+            const sortBounds = document.querySelector(".workspace-directory-toolbar__sort")?.getBoundingClientRect();
+            const actionsBounds = document.querySelector(".workspace-directory-toolbar__actions")?.getBoundingClientRect();
+            return {
+              containerClientWidth: container?.clientWidth ?? 0,
+              containerScrollWidth: container?.scrollWidth ?? 0,
+              tableWidth: table?.getBoundingClientRect().width ?? 0,
+              hintVisible: Boolean(hint && hintStyle?.display !== "none" && hintStyle?.visibility !== "hidden" && hintBounds?.width > 0 && hintBounds?.height > 0),
+              sortWidth: sortBounds?.width ?? 0,
+              actionsWidth: actionsBounds?.width ?? 0,
+              sortTop: sortBounds?.top ?? null,
+              sortBottom: sortBounds?.bottom ?? null,
+              actionsTop: actionsBounds?.top ?? null,
+              actionsBottom: actionsBounds?.bottom ?? null
+            };
+          });
+          assert.ok(mobileDirectory.containerClientWidth > 0, `devices table container is missing at ${width}px`);
+          assert.ok(mobileDirectory.tableWidth >= 1076, `devices table was compressed below its readable width at ${width}px (${mobileDirectory.tableWidth}px)`);
+          assert.ok(mobileDirectory.containerScrollWidth > mobileDirectory.containerClientWidth, `devices table does not scroll inside its container at ${width}px`);
+          assert.ok(mobileDirectory.hintVisible, `devices table scroll hint is not visible at ${width}px`);
+          assert.ok(mobileDirectory.sortWidth > 0 && mobileDirectory.actionsWidth > 0, `devices sort or management control is missing at ${width}px`);
+          if (width === 390) {
+            assert.ok(Math.abs(mobileDirectory.sortTop - mobileDirectory.actionsTop) < 2, "mobile sort and management controls must share a row at 390px");
+            assert.ok(mobileDirectory.sortBottom > mobileDirectory.sortTop && mobileDirectory.actionsBottom > mobileDirectory.actionsTop, "mobile sort and management controls must remain visible at 390px");
+          }
+        }
         if (round === 1 && name === "overview" && [840, 1024, 1440].includes(width)) {
           assert.ok(geometry.root?.width >= width - 1 && geometry.root?.height >= height - 1, `Web root geometry is incomplete at ${width}px`);
           assert.ok(geometry.sidebar?.width > 0 && geometry.sidebar?.height >= height - 1, `Web sidebar geometry is incomplete at ${width}px`);
@@ -611,7 +644,7 @@ async function run() {
         // matrix deliberately samples the viewport so the runner cannot spend minutes
         // rasterizing the same long telemetry surface at every breakpoint.
         await page.screenshot({ path: screenshotPath, fullPage: false, animations: "disabled", timeout: 15_000 });
-        matrix.push({ round, theme, width, name, screenshot: path.basename(screenshotPath), sha256: crypto.createHash("sha256").update(fs.readFileSync(screenshotPath)).digest("hex"), geometry, segmentedControls });
+        matrix.push({ round, theme, width, name, screenshot: path.basename(screenshotPath), sha256: crypto.createHash("sha256").update(fs.readFileSync(screenshotPath)).digest("hex"), geometry, segmentedControls, mobileDirectory });
       }
     }
   }
