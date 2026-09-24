@@ -1,6 +1,6 @@
 # 观澜
 
-观澜是用于查看电脑、服务器和虚拟机运行状态的私有部署监控工具。它提供 Web 控制台、Windows 桌面端、GNOME Linux 桌面端和 Android 客户端，可查看 CPU、内存、磁盘、网络、显卡和风扇等实时数据与历史趋势。桌面端按 CPU、硬盘、网卡、显卡和风扇实例分别展示使用率、频率、温度、容量与读写/收发速率。
+观澜是用于查看电脑和服务器运行状态的私有部署监控工具。它提供 Web 控制台、Windows 桌面端、GNOME Linux 桌面端和 Android 客户端，可查看 CPU、内存、磁盘、网络、显卡和风扇等实时数据与历史趋势。桌面端按 CPU、硬盘、网卡、显卡和风扇实例分别展示使用率、频率、温度、容量与读写/收发速率。
 
 开发版本号以仓库根目录的 `VERSION` 为准。用户安装请以 [GitHub Releases](https://github.com/IGNGserver/guanlan-monitor/releases/latest) 中的稳定版本为准；`main` 分支不是稳定安装源。
 
@@ -125,7 +125,7 @@ Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 
 - 升级：Windows 使用 setup/update 包，Linux 使用新的 `.deb`；两种方式都会保留机器级配置。
 - 网页控制台：使用 `.env` 中的 `ACCESS_KEY` 登录，选择设备即可查看实时数据和历史图表。
 
-硬件、驱动或虚拟机未提供的传感器会显示为空，不会阻塞设备上线。
+设备、硬件或驱动未提供的传感器会显示为空，不会阻塞设备上线。
 
 ## 发布规则
 
