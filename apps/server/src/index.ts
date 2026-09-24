@@ -173,7 +173,7 @@ app.post<{ Body: AgentMetricsPayload }>("/api/agent/ingest", async (request, rep
     return reply.code(400).send({ error: "invalid_agent_payload" });
   }
 
-  await metricsService.ingest(parsed.data as AgentMetricsPayload);
+  await metricsService.ingest(parsed.data);
   return { ok: true };
 });
 

@@ -54,13 +54,12 @@ test("strips virtualization fields from legacy agent payloads", () => {
   const result = agentMetricsPayloadSchema.safeParse(payload);
   assert.equal(result.success, true);
   if (!result.success) return;
-  const identity = result.data.identity as Record<string, unknown>;
   assert.equal("virtualization" in result.data, false);
   assert.equal("storagePools" in result.data, false);
-  assert.equal("instanceType" in identity, false);
-  assert.equal("hostDeviceId" in identity, false);
-  assert.equal("hostName" in identity, false);
-  assert.equal("virtualMachine" in identity, false);
+  assert.equal("instanceType" in result.data.identity, false);
+  assert.equal("hostDeviceId" in result.data.identity, false);
+  assert.equal("hostName" in result.data.identity, false);
+  assert.equal("virtualMachine" in result.data.identity, false);
 });
 
 test("accepts legacy agent payloads without system counters", () => {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AgentIdentity, AgentMetricsPayload } from "@dsc/shared";
 
 const MAX_SAFE_METRIC = Number.MAX_SAFE_INTEGER;
 const MAX_SAMPLE_AGE_MS = 8 * 24 * 60 * 60 * 1000;
@@ -74,7 +75,7 @@ const identitySchema = z.object({
   cpuModel: optionalText(256),
   version: optionalText(64),
   channel: z.enum(["stable", "test"]).optional()
-}).passthrough().transform((identity) => {
+}).passthrough().transform((identity): AgentIdentity => {
   const sanitized = { ...identity } as Record<string, unknown>;
   delete sanitized.instanceType;
   delete sanitized.hostDeviceId;
@@ -82,7 +83,7 @@ const identitySchema = z.object({
   delete sanitized.virtualMachine;
   delete sanitized.virtualization;
   delete sanitized.storagePools;
-  return sanitized;
+  return sanitized as unknown as AgentIdentity;
 });
 
 const memorySchema = z.object({
@@ -282,9 +283,9 @@ export const agentMetricsPayloadSchema = z.object({
   fans: z.array(fanSchema).max(256),
   temperatureSensors: z.array(temperatureSensorSchema).max(1_024).optional(),
   sensorBackends: z.array(sensorBackendSchema).max(128).optional()
-}).passthrough().transform((payload) => {
+}).passthrough().transform((payload): AgentMetricsPayload => {
   const sanitized = { ...payload } as Record<string, unknown>;
   delete sanitized.virtualization;
   delete sanitized.storagePools;
-  return sanitized;
+  return sanitized as unknown as AgentMetricsPayload;
 });
