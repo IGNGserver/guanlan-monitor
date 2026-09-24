@@ -570,7 +570,7 @@ function mergeSnapshotRequests(
 
 function redactBackendState(state: RawAgentBackendState): DesktopAgentBackendState {
   const secret = state.config.connection.secret.trim();
-  const config = { ...state.config } as DesktopAgentBackendState["config"] & Record<string, unknown>;
+  const config = { ...state.config } as unknown as DesktopAgentBackendState["config"] & Record<string, unknown>;
   delete config.virtualization;
   const scrub = (value?: string) => {
     if (!value || !secret) return value;
