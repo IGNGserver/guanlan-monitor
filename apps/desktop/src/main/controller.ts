@@ -403,31 +403,7 @@ export class DesktopController {
         diskUsagePercent: 61,
         diskUsedBytes: 610_000_000_000,
         diskTotalBytes: 1_000_000_000_000,
-        sortOrder: 0,
-        instanceType: "device"
-      },
-      {
-        deviceId: "visual-vm",
-        hostname: "视觉验收虚拟机",
-        os: "linux",
-        agentVersion: currentDesktopVersion(),
-        agentChannel: "test",
-        status: "online",
-        lastSeenAt: "2026-09-13T09:59:00.000Z",
-        cpuUsagePercent: 72,
-        gpuUsagePercent: null,
-        gpuMemoryUsagePercent: null,
-        memoryUsagePercent: null,
-        memoryUsedBytes: null,
-        memoryTotalBytes: null,
-        diskUsagePercent: 44,
-        diskUsedBytes: 440_000_000_000,
-        diskTotalBytes: 1_000_000_000_000,
-        sortOrder: 1,
-        instanceType: "virtual_machine",
-        hostName: "视觉验收主机",
-        virtualMachine: { vmId: "visual-vm", platform: "proxmox", node: "visual-node", type: "qemu", powerState: "running", hostName: "视觉验收主机" },
-        unavailableMetrics: ["memoryUsage", "gpuUsage", "gpuMemory"]
+        sortOrder: 0
       },
       {
         deviceId: "visual-offline",
@@ -442,8 +418,7 @@ export class DesktopController {
         gpuMemoryUsagePercent: null,
         memoryUsagePercent: null,
         diskUsagePercent: null,
-        sortOrder: 2,
-        instanceType: "device"
+        sortOrder: 1
       }
     ];
     const selectedDeviceId = request.selectedDeviceId !== undefined
@@ -595,6 +570,8 @@ function mergeSnapshotRequests(
 
 function redactBackendState(state: RawAgentBackendState): DesktopAgentBackendState {
   const secret = state.config.connection.secret.trim();
+  const config = { ...state.config } as DesktopAgentBackendState["config"] & Record<string, unknown>;
+  delete config.virtualization;
   const scrub = (value?: string) => {
     if (!value || !secret) return value;
     return value.split(secret).join("[redacted]");
@@ -607,7 +584,7 @@ function redactBackendState(state: RawAgentBackendState): DesktopAgentBackendSta
     lastCloudSyncError: scrub(state.lastCloudSyncError),
     lastIssueDetail: scrub(state.lastIssueDetail),
     config: {
-      ...state.config,
+      ...config,
       configVersion: state.config.configVersion ?? 1,
       cloudSyncEnabled: state.config.cloudSyncEnabled ?? true,
       dataRecordingEnabled: state.config.dataRecordingEnabled ?? true,
@@ -617,7 +594,6 @@ function redactBackendState(state: RawAgentBackendState): DesktopAgentBackendSta
       enabledDeviceIds: state.config.enabledDeviceIds ?? {},
       instanceMetricConfig: state.config.instanceMetricConfig ?? {},
       probeSelections: state.config.probeSelections ?? [],
-      virtualization: state.config.virtualization,
       connection: {
         ...connection,
         secretConfigured: Boolean(secret)
@@ -647,7 +623,7 @@ function redactBackendState(state: RawAgentBackendState): DesktopAgentBackendSta
 
 function mergeAgentConfig(current: AgentBackendConfig, patch: DesktopConfigPatch): AgentBackendConfig {
   const connectionPatch = patch.connection ?? {};
-  return {
+  const merged = {
     ...current,
     configVersion: patch.configVersion ?? current.configVersion ?? 1,
     // Renderer patches never carry the Agent credential. The combined Hub
@@ -663,12 +639,13 @@ function mergeAgentConfig(current: AgentBackendConfig, patch: DesktopConfigPatch
     enabledDeviceIds: patch.enabledDeviceIds ?? current.enabledDeviceIds,
     instanceMetricConfig: patch.instanceMetricConfig ?? current.instanceMetricConfig,
     probeSelections: patch.probeSelections ?? current.probeSelections,
-    virtualization: patch.virtualization ?? current.virtualization,
     cloudSyncEnabled: patch.cloudSyncEnabled ?? current.cloudSyncEnabled,
     dataRecordingEnabled: patch.dataRecordingEnabled ?? current.dataRecordingEnabled,
     autoRestartCollector: patch.autoRestartCollector ?? current.autoRestartCollector,
     autoStartCollector: patch.autoStartCollector ?? current.autoStartCollector
   };
+  delete (merged as typeof merged & Record<string, unknown>).virtualization;
+  return merged;
 }
 
 function cacheState(snapshot: DesktopSnapshot | null): DesktopSnapshot["cache"] {

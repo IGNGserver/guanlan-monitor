@@ -282,7 +282,7 @@ struct MemorySectionView: View {
     var body: some View {
         SectionContainer(title: "内存 Memory", onOpenBlock: onOpenBlock, onEdit: onEdit) {
             if metrics.isMetricUnavailable("memoryUsage") {
-                Text("此虚拟化环境不提供内存硬件详情")
+                Text("当前设备未提供内存硬件详情")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -462,11 +462,7 @@ struct DeviceInfoSection: View {
         SectionContainer(title: "设备与上报状态", onOpenBlock: {}, onEdit: {}) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("ID：\(metrics.deviceId)")
-                if metrics.instanceType == "virtual_machine" {
-                    Text("虚拟机 · 宿主机：\(metrics.hostName ?? "未知") · 状态：\(metrics.status)")
-                } else {
-                    Text("系统：\(metrics.platform) / \(metrics.arch) · 状态：\(metrics.status)")
-                }
+                Text("系统：\(metrics.platform) / \(metrics.arch) · 状态：\(metrics.status)")
                 Text("最近上报：\(metrics.lastSeenAt ?? "未知")")
                 if metrics.isMetricUnavailable("systemOverview") {
                     Text("系统计数：不可用")

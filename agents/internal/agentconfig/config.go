@@ -66,16 +66,6 @@ type ProbeSelection struct {
 	Enabled  bool   `json:"enabled"`
 }
 
-// Virtualization holds the non-secret hypervisor inventory settings.
-type Virtualization struct {
-	Enabled               bool   `json:"enabled"`
-	Platform              string `json:"platform"`
-	Endpoint              string `json:"endpoint"`
-	Node                  string `json:"node"`
-	InsecureSkipTLSVerify bool   `json:"insecureSkipTlsVerify"`
-	PollIntervalSeconds   int    `json:"pollIntervalSeconds"`
-}
-
 // LocalConfig is the complete agent-ui.config.json document.
 type LocalConfig struct {
 	ConfigVersion        int                 `json:"configVersion"`
@@ -85,7 +75,6 @@ type LocalConfig struct {
 	EnabledDeviceIDs     map[string][]string `json:"enabledDeviceIds"`
 	InstanceMetricConfig map[string][]string `json:"instanceMetricConfig"`
 	ProbeSelections      []ProbeSelection    `json:"probeSelections"`
-	Virtualization       *Virtualization     `json:"virtualization,omitempty"`
 	CloudSyncEnabled     bool                `json:"cloudSyncEnabled"`
 	DataRecordingEnabled bool                `json:"dataRecordingEnabled"`
 	AutoRestartCollector bool                `json:"autoRestartCollector"`

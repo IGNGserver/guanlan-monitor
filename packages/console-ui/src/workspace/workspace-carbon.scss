@@ -236,7 +236,6 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   background: var(--cds-notification-background-warning, #3b2f00);
 }
 
-.workspace-overview-scope,
 .workspace-hub-facts {
   border-color: var(--guanlan-rule);
 }
@@ -261,8 +260,8 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 
 .workspace-directory-toolbar {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) auto minmax(220px, auto) minmax(150px, auto) auto;
-  grid-template-areas: "search type status sort actions";
+  grid-template-columns: minmax(260px, 1fr) minmax(220px, auto) minmax(150px, auto) auto;
+  grid-template-areas: "search status sort actions";
   margin-bottom: 16px;
   padding: 0;
   border: 1px solid var(--guanlan-rule);
@@ -277,7 +276,6 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   min-width: 0;
 }
 
-.workspace-directory-toolbar > .workspace-directory-toolbar__type { grid-area: type; min-width: 0; }
 .workspace-directory-toolbar > .workspace-directory-toolbar__chips { grid-area: status; min-width: 0; }
 .workspace-directory-toolbar > .workspace-directory-toolbar__sort { grid-area: sort; min-width: 0; }
 .workspace-directory-toolbar > .workspace-directory-toolbar__actions { grid-area: actions; min-width: 0; }
@@ -1105,7 +1103,6 @@ html[data-dsc-resolved-theme="dark"] .workspace-device-row:hover {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       "search search"
-      "type type"
       "status status"
       "sort actions";
   }
@@ -1125,15 +1122,9 @@ html[data-dsc-resolved-theme="dark"] .workspace-device-row:hover {
     grid-area: search;
   }
 
-  .workspace-directory-toolbar > .workspace-directory-toolbar__type,
-  .workspace-overview-scope .m3-segmented-control,
   .workspace-overview-observation .m3-segmented-control {
     width: 100%;
     inline-size: 100%;
-  }
-
-  .workspace-directory-toolbar > .workspace-directory-toolbar__type {
-    grid-area: type;
   }
 
   .workspace-directory-toolbar > .workspace-directory-toolbar__chips {
@@ -1155,8 +1146,6 @@ html[data-dsc-resolved-theme="dark"] .workspace-device-row:hover {
     gap: 4px;
   }
 
-  .workspace-directory-toolbar__type .cds--content-switcher-btn,
-  .workspace-overview-scope .cds--content-switcher-btn,
   .workspace-overview-observation .cds--content-switcher-btn {
     flex: 1 1 0;
     min-width: 0;

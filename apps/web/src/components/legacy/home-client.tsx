@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
-import type { DeviceRealtimeEvent, DeviceSummary, InstanceType, MetricWindow } from "@dsc/shared";
+import type { DeviceRealtimeEvent, DeviceSummary, MetricWindow } from "@dsc/shared";
 import { deleteDevice, getSession, getServerUrl, listDevices, logout, reorderDevices } from "../../lib/api";
 import { Dashboard } from "./dashboard";
 import { HomeOverview } from "./home-overview";
@@ -14,7 +14,6 @@ import styles from "./monitor.module.css";
 export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: string | null }) {
   const [state, setState] = useState<"loading" | "authenticated" | "anonymous">("loading");
   const [devices, setDevices] = useState<DeviceSummary[]>([]);
-  const [instanceType, setInstanceType] = useState<InstanceType>("device");
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(initialDeviceId);
   const [selectedWindow, setSelectedWindow] = useState<MetricWindow>("1m");
   const [socketConnected, setSocketConnected] = useState(false);
@@ -25,8 +24,6 @@ export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: strin
     await getSession();
     const nextDevices = await listDevices();
     setDevices(nextDevices);
-    const selected = initialDeviceId ? nextDevices.find((device) => device.deviceId === initialDeviceId) : null;
-    if (selected) setInstanceType(selected.instanceType ?? "device");
     setState("authenticated");
   }
 
@@ -52,8 +49,6 @@ export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: strin
         const nextDevices = await listDevices();
         if (!active) return;
         setDevices(nextDevices);
-        const selected = initialDeviceId ? nextDevices.find((device) => device.deviceId === initialDeviceId) : null;
-        if (selected) setInstanceType(selected.instanceType ?? "device");
         setState("authenticated");
       } catch {
         if (!active) return;
@@ -111,24 +106,14 @@ export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: strin
   function handleSelectDevice(deviceId: string | null) {
     setSelectedDeviceId(deviceId);
     if (deviceId) {
-      const selected = devices.find((device) => device.deviceId === deviceId);
-      if (selected) setInstanceType(selected.instanceType ?? "device");
       router.push(`/devices/${encodeURIComponent(deviceId)}`);
     } else {
       router.push("/");
     }
   }
 
-  function handleSelectInstanceType(nextType: InstanceType) {
-    setInstanceType(nextType);
-    if (selectedDeviceId) {
-      const selected = devices.find((device) => device.deviceId === selectedDeviceId);
-      if (selected && (selected.instanceType ?? "device") !== nextType) handleSelectDevice(null);
-    }
-  }
-
   const visibleDevices = devices
-    .filter((device) => (device.instanceType ?? "device") === instanceType)
+    .slice()
     .sort((left, right) => ((left.sortOrder ?? 0) - (right.sortOrder ?? 0)) || left.deviceId.localeCompare(right.deviceId));
 
   async function handleLogout() {
@@ -160,8 +145,6 @@ export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: strin
   return (
     <SaasShell
       devices={devices}
-      instanceType={instanceType}
-      onSelectInstanceType={handleSelectInstanceType}
       selectedDeviceId={selectedDeviceId}
       selectedWindow={selectedWindow}
       onSelectDevice={handleSelectDevice}
@@ -180,8 +163,6 @@ export function HomeClient({ initialDeviceId = null }: { initialDeviceId?: strin
       ) : (
         <HomeOverview
           devices={visibleDevices}
-          instanceType={instanceType}
-          onSelectInstanceType={handleSelectInstanceType}
           onOpenDevice={(id) => handleSelectDevice(id)}
           onDeleteDevice={handleDeleteDevice}
           onReorderDevices={handleReorderDevices}

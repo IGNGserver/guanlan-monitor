@@ -40,8 +40,7 @@ const fixtureDevices = [
     diskUsagePercent: 62,
     diskUsedBytes: 620_000_000_000,
     diskTotalBytes: 1_000_000_000_000,
-    sortOrder: 0,
-    instanceType: "device"
+    sortOrder: 0
   },
   {
     deviceId: "nas-01",
@@ -60,31 +59,7 @@ const fixtureDevices = [
     diskUsagePercent: 84,
     diskUsedBytes: 8_400_000_000_000,
     diskTotalBytes: 10_000_000_000_000,
-    sortOrder: 1,
-    instanceType: "device"
-  },
-  {
-    deviceId: "vm:102",
-    hostname: "构建虚拟机",
-    os: "linux",
-    agentVersion: "3.0.1",
-    agentChannel: "test",
-    status: "online",
-    lastSeenAt: "2026-09-13T09:58:20.000Z",
-    cpuUsagePercent: 91.2,
-    gpuUsagePercent: null,
-    gpuMemoryUsagePercent: null,
-    memoryUsagePercent: null,
-    memoryUsedBytes: null,
-    memoryTotalBytes: null,
-    diskUsagePercent: 71,
-    diskUsedBytes: 710_000_000_000,
-    diskTotalBytes: 1_000_000_000_000,
-    sortOrder: 2,
-    instanceType: "virtual_machine",
-    hostName: "归档 NAS",
-    virtualMachine: { vmId: "vm:102", platform: "proxmox", node: "pve-01", type: "qemu", powerState: "running", hostName: "归档 NAS" },
-    unavailableMetrics: ["memoryUsage", "gpuUsage", "gpuMemory"]
+    sortOrder: 1
   },
   {
     deviceId: "offline-01",
@@ -99,8 +74,7 @@ const fixtureDevices = [
     gpuMemoryUsagePercent: null,
     memoryUsagePercent: null,
     diskUsagePercent: null,
-    sortOrder: 3,
-    instanceType: "device"
+    sortOrder: 2
   }
 ];
 
@@ -109,8 +83,7 @@ const overviewMetrics = {
   instances: fixtureDevices.map((device, index) => ({
     deviceId: device.deviceId,
     hostname: device.hostname,
-    instanceType: device.instanceType,
-    cpuUsagePercent: [fixturePoint(index === 2 ? 91 : 12 + index * 18, 5), fixturePoint(device.cpuUsagePercent ?? 0)],
+    cpuUsagePercent: [fixturePoint(12 + index * 18, 5), fixturePoint(device.cpuUsagePercent ?? 0)],
     memoryUsedBytes: [fixturePoint((device.memoryUsedBytes ?? 0) * 0.96, 5), fixturePoint(device.memoryUsedBytes ?? 0)],
     diskUsedBytes: [fixturePoint((device.diskUsedBytes ?? 0) * 0.99, 5), fixturePoint(device.diskUsedBytes ?? 0)],
     networkRxBytesPerSec: [fixturePoint(2_400_000 + index * 800_000, 5), fixturePoint(3_100_000 + index * 500_000)],
@@ -146,11 +119,10 @@ function metricFixture(device) {
     networkTxBytesPerSec: 1_700_000,
     disks: [{ id: "disk-0", name: "系统盘", mountPoint: "/", filesystem: "ext4", totalBytes: device.diskTotalBytes ?? 1_000_000_000_000, usedBytes: device.diskUsedBytes ?? 0, activePercent: 12, temperatureC: 39, healthStatus: "良好" }],
     networkInterfaces: [{ id: "eth0", name: "以太网", model: "10 GbE", ipv4: ["192.168.5.24"], rxBytesPerSec: 3_100_000, txBytesPerSec: 1_700_000, totalRxBytes: 12_000_000_000, totalTxBytes: 4_000_000_000, linkSpeedMbps: 1_000 }],
-    gpus: device.instanceType === "virtual_machine" ? [] : [{ id: "gpu-0", name: "集成显卡", utilizationPercent: 18, encodeUtilizationPercent: 2, decodeUtilizationPercent: 4, frequencyMHz: 1_200, integrated: true, memoryKind: "shared", memoryUsedBytes: 2_000_000_000, memoryTotalBytes: 8_000_000_000, temperatureC: 48, driverVersion: "31.0" }],
+    gpus: [{ id: "gpu-0", name: "集成显卡", utilizationPercent: 18, encodeUtilizationPercent: 2, decodeUtilizationPercent: 4, frequencyMHz: 1_200, integrated: true, memoryKind: "shared", memoryUsedBytes: 2_000_000_000, memoryTotalBytes: 8_000_000_000, temperatureC: 48, driverVersion: "31.0" }],
     temperatureSensors: [{ id: "temp-0", source: "acpi", rawName: "Package", displayName: "CPU 封装", role: "cpu_package", currentC: 52, status: "valid", confidence: "direct" }],
     sensorBackends: [{ id: "builtin", label: "内置采集", ok: true }],
     fans: [{ id: "fan-0", label: "系统风扇", interface: "hwmon", rpm: 860, controlMode: "auto" }],
-    virtualization: null,
     unavailableMetrics: unavailable
   };
   return {
@@ -200,8 +172,7 @@ function metricFixture(device) {
       networks: [{ id: "eth0", name: "以太网", rxBytesPerSec: points([2_000_000, 2_600_000, 3_100_000]), txBytesPerSec: points([800_000, 1_200_000, 1_700_000]), trafficRxBytes: points([10_000_000_000, 11_000_000_000, 12_000_000_000]), trafficTxBytes: points([3_000_000_000, 3_500_000_000, 4_000_000_000]) }],
       gpus: [],
       fans: [{ id: "fan-0", name: "系统风扇", interface: "hwmon", rpm: points([700, 820, 860]) }],
-      temperatureSensors: [{ id: "temp-0", name: "CPU 封装", rawName: "Package", source: "acpi", role: "cpu_package", confidence: "direct", status: "valid", currentC: points([48, 50, 52]) }],
-      storagePools: []
+      temperatureSensors: [{ id: "temp-0", name: "CPU 封装", rawName: "Package", source: "acpi", role: "cpu_package", confidence: "direct", status: "valid", currentC: points([48, 50, 52]) }]
     }
   };
 }
@@ -303,14 +274,14 @@ async function run() {
   assert.equal(await page.locator(".workspace-device-item").count(), 0, "primary navigation must not contain a device list");
   assert.deepEqual((await page.locator(".workspace-sidebar .m3-navigation-item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "中枢状态", "设置"], "sidebar contains destinations only");
   const overviewHealthTotal = await page.locator(".workspace-overview-summary__item").first().locator("strong").innerText();
-  assert.equal(overviewHealthTotal, String(fixtureDevices.length), "overview health must include VM and host instances globally");
+  assert.equal(overviewHealthTotal, String(fixtureDevices.length), "overview health must include every registered device");
   await page.screenshot({ path: path.join(outputDir, "web-workspace-desktop.png"), fullPage: true, animations: "disabled" });
 
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
   const deviceTable = page.locator(".workspace-directory-surface .cds--data-table");
   const deviceRows = deviceTable.locator("tbody tr");
-  assert.equal(await deviceRows.count(), fixtureDevices.length, "Carbon device table must render every fixture instance");
+  assert.equal(await deviceRows.count(), fixtureDevices.length, "Carbon device table must render every fixture device");
 
   // Assert Carbon DataTable headers and body cells stay aligned.
   const headerColumns = await deviceTable.locator("thead th").allTextContents();
@@ -318,23 +289,19 @@ async function run() {
   assert.equal(await deviceTable.locator("thead th").count(), 7, "directory table must have 7 column headers");
   assert.equal(await deviceRows.first().locator("td").count(), 7, "Carbon device table rows must expose the same 7 columns");
   const deviceSearch = page.getByLabel("搜索设备", { exact: true });
-  await deviceSearch.fill("构建虚拟机");
+  await deviceSearch.fill("工作站");
   assert.equal(await deviceRows.count(), 1, "device search must filter the full directory");
   await deviceSearch.fill("");
-  await page.getByRole("tab", { name: "虚拟机" }).click();
-  assert.equal(await deviceRows.count(), 1, "device type filter must isolate VMs");
-  await page.getByRole("tab", { name: "全部类型" }).click();
   await page.screenshot({ path: path.join(outputDir, "web-devices-desktop.png"), fullPage: true, animations: "disabled" });
 
   await page.goto(`${baseUrl}#settings/appearance`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
   await page.screenshot({ path: path.join(outputDir, "web-settings-desktop.png"), fullPage: true, animations: "disabled" });
 
-  await page.goto(`${baseUrl}#device/${encodeURIComponent("vm:102")}`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${baseUrl}#device/${encodeURIComponent("workstation-01")}`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--device").waitFor({ state: "visible", timeout: 15_000 });
   assert.equal(await page.locator(".workspace-breadcrumb").getByText("设备", { exact: true }).count(), 1, "device detail must expose a device breadcrumb");
   assert.equal(await page.locator(".workspace-device-facts").count(), 1, "device detail must expose stable facts");
-  assert.equal(await page.getByText(/宿主机 Agent\s*[:：]?\s*在线/).count(), 1, "VM detail must separate power state from host Agent state");
   await page.getByRole("tab", { name: "算力与内存" }).click();
   assert.equal(await page.getByRole("tab", { name: "算力与内存" }).getAttribute("aria-selected"), "true", "device tabs must change the active panel");
 
@@ -375,8 +342,8 @@ async function run() {
   const widgetSave = requestLog.find((request) => request.method === "PUT" && request.url.includes("/api/widget-layouts"));
   assert.ok(widgetSave, "widget save must call the shared layout adapter");
   assert.equal(widgetSave.payload?.instanceLayout?.version, 4, "widget layout version 4 contract must be preserved");
-  assert.match(widgetSave.payload?.scopeKey ?? "", /^device:vm:102:/, "widget scope key must remain device-scoped");
-  assert.match(widgetSave.payload?.templateKey ?? "", /^device-type:virtual_machine:/, "widget template key must remain type-scoped");
+  assert.match(widgetSave.payload?.scopeKey ?? "", /^device:workstation-01:/, "widget scope key must remain device-scoped");
+  assert.match(widgetSave.payload?.templateKey ?? "", /^device-type:device:/, "widget template key must remain device-scoped");
   await page.getByRole("button", { name: "退出编辑" }).click();
   await page.getByRole("button", { name: "编辑排布" }).click();
   await page.getByRole("button", { name: "添加小组件" }).click();
@@ -433,8 +400,8 @@ async function run() {
 
   await page.keyboard.press("/");
   const commandInput = page.locator(".workspace-command input");
-  await commandInput.fill("构建虚拟机");
-  await page.locator(".workspace-command__item").filter({ hasText: "构建虚拟机" }).click();
+  await commandInput.fill("工作站");
+  await page.locator(".workspace-command__item").filter({ hasText: "工作站" }).click();
   await page.locator(".workspace-page--device").waitFor({ state: "visible", timeout: 15_000 });
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -517,7 +484,7 @@ async function run() {
   const matrixRoutes = [
     ["overview", ".workspace-page--overview"],
     ["devices", ".workspace-page--devices"],
-    ["device-vm", `.workspace-page--device`],
+    ["device-detail", `.workspace-page--device`],
     ["settings", ".workspace-page--settings"]
   ];
   for (const [round, theme] of [[1, "light"], [2, "dark"]]) {
@@ -530,7 +497,7 @@ async function run() {
     for (const [width, height] of [[1440, 900], [1024, 768], [840, 900], [820, 900], [390, 844]]) {
       await page.setViewportSize({ width, height });
       for (const [name, selector] of matrixRoutes) {
-        const hash = name === "overview" ? "overview" : name === "devices" ? "devices" : name === "device-vm" ? `device/${encodeURIComponent("vm:102")}` : "settings/appearance";
+        const hash = name === "overview" ? "overview" : name === "devices" ? "devices" : name === "device-detail" ? `device/${encodeURIComponent("workstation-01")}` : "settings/appearance";
         await page.goto(`${baseUrl}#${hash}`, { waitUntil: "domcontentloaded" });
         await page.locator(selector).waitFor({ state: "visible", timeout: 15_000 });
         const geometry = await page.evaluate(() => {

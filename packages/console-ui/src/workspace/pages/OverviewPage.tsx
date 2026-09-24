@@ -18,7 +18,7 @@ const observationLabels: Record<ObservationMetric, string> = {
 };
 
 export function OverviewPage() {
-  const { snapshot, allDevices, devices, instanceType, setInstanceType, metricsWindow, loading, error, refresh, openSettings, navigate, capabilities } = useWorkspace();
+  const { snapshot, allDevices, metricsWindow, loading, error, refresh, openSettings, navigate, capabilities } = useWorkspace();
   const [observationMetric, setObservationMetric] = useState<ObservationMetric>("cpu");
   if (loading && !snapshot) return <LoadingSurface />;
   if (!snapshot) return <ErrorSurface title="无法读取设备状态" detail={error ?? "桌面桥接尚未准备好"} onRetry={() => void refresh()} />;
@@ -28,15 +28,13 @@ export function OverviewPage() {
   const noData = health.total === 0;
   const hubAbnormal = health.source === "cache" || health.source === "unknown";
   const recentDevices = selectOverviewDevices(allDevices);
-  const scopedDeviceIds = new Set(devices.map((device) => device.deviceId));
-  const overviewInstances = (snapshot.overviewMetrics?.instances ?? []).filter((instance) => scopedDeviceIds.has(instance.deviceId));
-  const instanceLabel = health.virtualMachineTotal ? "主机 " + health.hostTotal + " · 虚拟机 " + health.virtualMachineTotal : "设备实例";
+  const overviewInstances = snapshot.overviewMetrics?.instances ?? [];
+  const instanceLabel = "设备";
   const settingsSection: SettingsSection = capabilities.canConfigureConnection ? "connections" : "workspace";
   const settingsLabel = capabilities.canConfigureConnection ? "连接设置" : "中枢设置";
   const metricWindowLabel = ({ "1m": "1 分钟", "5m": "5 分钟", "15m": "15 分钟", "1h": "1 小时", "6h": "6 小时", "24h": "1 天", "1d": "1 天", "7d": "1 周", "1w": "1 周", "30d": "1 个月", "1mo": "1 个月", "90d": "90 天", "1y": "1 年" } as Record<string, string>)[metricsWindow] ?? metricsWindow;
   const issueCount = health.pending;
-  const abnormalVmCount = allDevices.filter((device) => device.instanceType === "virtual_machine" && device.virtualMachine?.powerState?.trim().toLowerCase() !== "running").length;
-  const scopedLabel = instanceType === "all" ? "全部实例" : instanceType === "virtual_machine" ? "虚拟机" : "普通设备";
+  const scopedLabel = "全部设备";
 
   const observationSeries = overviewInstances.flatMap((instance) => {
     const unavailable = (key: Parameters<typeof isMetricUnavailable>[1]) => instance.unavailableMetrics?.includes(key) ?? false;
@@ -61,7 +59,7 @@ export function OverviewPage() {
         ? capabilities.canManageLocalAgent ? "尚未取得实时设备状态，请先启动本机 Agent 或配置中枢。" : "尚未取得实时设备状态，请确认中枢已接入设备后刷新。"
         : hubAbnormal
           ? cached ? "当前显示的是离线缓存，" + health.sourceDetail + "；无法确认中枢当前状态。" : "无法连接到中枢，请检查中枢地址与访问密钥。"
-          : health.sourceDetail + "。健康统计覆盖全部主机和虚拟机。"}
+        : health.sourceDetail + "。健康统计覆盖全部接入设备。"}
       actions={<><Button variant="quiet" onClick={() => openSettings(settingsSection)}><Icon name="connection" size={16} />{settingsLabel}</Button><Button variant="primary" onClick={() => navigate({ kind: "devices" })}>查看全部设备<Icon name="arrow" size={16} /></Button></>}
     />
 
@@ -95,17 +93,12 @@ export function OverviewPage() {
       hasFocus={false}
       hideCloseButton
       title={noData ? "还没有可用设备" : "设备状态存在异常"}
-      subtitle={noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : health.offline + " 台设备离线，" + abnormalVmCount + " 台 VM 电源未运行，" + (snapshot.localBackend?.lastIssueCount ?? 0) + " 条本机采集问题待处理。"}
+      subtitle={noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : health.offline + " 台设备离线，" + (snapshot.localBackend?.lastIssueCount ?? 0) + " 条本机采集问题待处理。"}
       actionButtonLabel={noData ? "配置数据来源" : "查看设备"}
       onActionButtonClick={() => noData
         ? openSettings(capabilities.canManageLocalAgent ? (snapshot.localBackend ? "agent" : "connections") : "workspace")
         : navigate({ kind: "devices" })}
     /> : null}
-
-    <div className="workspace-overview-scope" aria-label="总览观察范围">
-      <div className="workspace-overview-scope__copy"><span className="workspace-section-kicker">健康结论范围</span><p>健康结论和实例总数始终覆盖全部设备；趋势数据按右侧范围读取。</p></div>
-      <div className="workspace-overview-scope__control"><span className="workspace-overview-scope__control-label">趋势数据范围</span><M3SegmentedControl options={[{ value: "all", label: "全部" }, { value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={instanceType} onChange={(value) => setInstanceType(value as typeof instanceType)} aria-label="趋势数据范围" /></div>
-    </div>
 
     <div className="workspace-overview-grid workspace-overview-grid--single">
       <Surface className="workspace-overview-devices">
@@ -117,7 +110,7 @@ export function OverviewPage() {
 
     <Surface className="workspace-overview-observation">
       <div className="workspace-surface__header"><div><span className="workspace-section-kicker">单一资源观察</span><h3>{observationLabels[observationMetric]} · {scopedLabel}</h3></div><M3SegmentedControl options={[{ value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "disk", label: "磁盘" }, { value: "network", label: "网络" }]} value={observationMetric} onChange={(value) => setObservationMetric(value as ObservationMetric)} aria-label="总览观察指标" /></div>
-      <p className="workspace-surface__description">一张图只观察一个维度；VM 停止、暂停、挂起或未知电源状态的不可用指标会明确留空。</p>
+      <p className="workspace-surface__description">一张图只观察一个维度；缺失指标会明确留空，不会用估算值填充。</p>
       <TelemetryChartCard title={observationLabels[observationMetric] + "趋势"} subtitle={"每个实例一组数据线 · 最近 " + metricWindowLabel} series={observationSeries} valueFormatter={observationMetric === "cpu" ? (value) => Math.round(value) + "%" : observationMetric === "network" ? (value) => (Number.isFinite(value) && value > 0 ? formatBytes(value) + "/s" : "0 B/s") : formatBytes} fixedMaxValue={observationMetric === "cpu" ? 100 : undefined} emptyMessage={observationEmptyMessage} showDetailsControl={false} />
     </Surface>
   </div>;

@@ -16,7 +16,6 @@ import type {
   TimeSeriesRecord,
   WidgetLayoutStore
 } from "../types.js";
-import type { VirtualMachineRecord, VirtualMachineRegistration, VirtualMachineRepository } from "./virtual-machines.js";
 import { buildTrafficCalendar } from "../traffic-calendar.js";
 
 export interface LocalWidgetLayoutSnapshot {
@@ -27,7 +26,6 @@ export interface LocalWidgetLayoutSnapshot {
 interface LocalDbShape {
   devices: Record<string, DeviceRealtimeState>;
   deviceRegistry?: Record<string, DeviceRecord>;
-  virtualMachines: Record<string, VirtualMachineRecord>;
   series: Record<string, Record<string, TimeSeriesRecord[]>>;
   minuteHistory: Record<string, TimeSeriesRecord[]>;
   history: Record<string, TimeSeriesRecord[]>;
@@ -46,7 +44,6 @@ interface LocalDbShape {
 const EMPTY_DB: LocalDbShape = {
   devices: {},
   deviceRegistry: {},
-  virtualMachines: {},
   series: {},
   minuteHistory: {},
   history: {},
@@ -117,7 +114,6 @@ class LocalJsonStore {
         ...structuredClone(EMPTY_DB),
         devices: readRecordField<LocalDbShape["devices"]>(parsed, "devices"),
         deviceRegistry: readRecordField<NonNullable<LocalDbShape["deviceRegistry"]>>(parsed, "deviceRegistry"),
-        virtualMachines: readRecordField<LocalDbShape["virtualMachines"]>(parsed, "virtualMachines"),
         series: readRecordField<LocalDbShape["series"]>(parsed, "series"),
         minuteHistory: readRecordField<LocalDbShape["minuteHistory"]>(parsed, "minuteHistory"),
         history: readRecordField<LocalDbShape["history"]>(parsed, "history"),
@@ -149,6 +145,112 @@ class LocalJsonStore {
     });
     this.writeQueue = operation.then(() => undefined, () => undefined);
     return operation;
+  }
+
+  async removeLegacyVirtualMachineData() {
+    const db = await this.read();
+    const isLegacyId = (id: string) => id.startsWith("vm:");
+    const hasLegacyMetadata = (value: unknown) => {
+      if (!isRecord(value)) return false;
+      return value.instanceType === "virtual_machine"
+        || "virtualMachine" in value
+        || "virtualization" in value
+        || "storagePools" in value
+        || "hostDeviceId" in value
+        || "hostName" in value;
+    };
+    const isVirtualMachineState = (state: DeviceRealtimeState) => {
+      const identity = state.identity as DeviceRealtimeState["identity"] & Record<string, unknown>;
+      return state.identity.deviceId.startsWith("vm:")
+        || identity.instanceType === "virtual_machine"
+        || "virtualMachine" in identity;
+    };
+    const hasLegacyState = (state: DeviceRealtimeState) => isVirtualMachineState(state)
+      || hasLegacyMetadata(state.identity)
+      || hasLegacyMetadata(state.latest);
+    const hasLegacyDetails = (point: TimeSeriesRecord) => hasLegacyMetadata(point)
+      || hasLegacyMetadata(point.recordedDetails);
+    let hasLegacyData = false;
+    for (const [deviceId, state] of Object.entries(db.devices)) {
+      if (isLegacyId(deviceId) || hasLegacyState(state)) hasLegacyData = true;
+    }
+    for (const [deviceId, record] of Object.entries(db.deviceRegistry ?? {})) {
+      if (isLegacyId(deviceId) || hasLegacyMetadata(record)) hasLegacyData = true;
+    }
+    for (const [deviceId, buckets] of Object.entries(db.series)) {
+      if (isLegacyId(deviceId)) hasLegacyData = true;
+      for (const points of Object.values(buckets)) if (points.some(hasLegacyDetails)) hasLegacyData = true;
+    }
+    for (const map of [db.minuteHistory, db.history]) {
+      if (Object.keys(map).some(isLegacyId)) hasLegacyData = true;
+      for (const points of Object.values(map)) if (points.some(hasLegacyDetails)) hasLegacyData = true;
+    }
+    for (const [deviceId, config] of Object.entries(db.deviceMetricConfigs)) {
+      if (isLegacyId(deviceId) || Object.keys(config.instanceMetricConfig ?? {}).some(isLegacyId)) hasLegacyData = true;
+    }
+    if (Object.keys(db.fanNotes).some(isLegacyId)) hasLegacyData = true;
+    if (db.widgetLayouts) {
+      if (Object.keys(db.widgetLayouts.instances).some((key) => key.includes("vm:") || key.includes("virtual_machine"))) hasLegacyData = true;
+      if (Object.keys(db.widgetLayouts.templates).some((key) => key.includes("virtual_machine"))) hasLegacyData = true;
+    }
+    const raw = await readFile(this.filePath, "utf8").catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? null : Promise.reject(error));
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (isRecord(parsed) && Object.hasOwn(parsed, "virtualMachines")) hasLegacyData = true;
+    }
+    if (!hasLegacyData) return;
+
+    await this.update((current) => {
+      const vmIds = new Set<string>();
+      for (const [deviceId, state] of Object.entries(current.devices)) {
+        if (isLegacyId(deviceId) || isVirtualMachineState(state)) vmIds.add(deviceId);
+      }
+      for (const [deviceId, record] of Object.entries(current.deviceRegistry ?? {})) {
+        if (isLegacyId(deviceId) || hasLegacyMetadata(record)) vmIds.add(deviceId);
+      }
+      const removeIds = (map: Record<string, unknown>) => {
+        for (const key of Object.keys(map)) if (isLegacyId(key) || vmIds.has(key)) delete map[key];
+      };
+      removeIds(current.devices);
+      if (current.deviceRegistry) removeIds(current.deviceRegistry);
+      removeIds(current.series);
+      removeIds(current.minuteHistory);
+      removeIds(current.history);
+      removeIds(current.fanNotes);
+      removeIds(current.deviceMetricConfigs);
+      for (const state of Object.values(current.devices)) {
+        const identity = state.identity as DeviceRealtimeState["identity"] & Record<string, unknown>;
+        delete identity.instanceType;
+        delete identity.hostDeviceId;
+        delete identity.hostName;
+        delete identity.virtualMachine;
+        delete identity.virtualization;
+        delete (state.latest as DeviceRealtimeState["latest"] & Record<string, unknown>).virtualization;
+        delete (state.latest as DeviceRealtimeState["latest"] & Record<string, unknown>).storagePools;
+      }
+      const stripPoint = (point: TimeSeriesRecord) => {
+        delete (point.recordedDetails as (TimeSeriesRecord["recordedDetails"] & Record<string, unknown>) | undefined)?.virtualization;
+        delete (point.recordedDetails as (TimeSeriesRecord["recordedDetails"] & Record<string, unknown>) | undefined)?.storagePools;
+        delete (point as TimeSeriesRecord & Record<string, unknown>).virtualization;
+        delete (point as TimeSeriesRecord & Record<string, unknown>).storagePools;
+      };
+      for (const buckets of Object.values(current.series)) for (const points of Object.values(buckets)) points.forEach(stripPoint);
+      for (const points of [...Object.values(current.minuteHistory), ...Object.values(current.history)]) points.forEach(stripPoint);
+      for (const config of Object.values(current.deviceMetricConfigs)) {
+        if (config.instanceMetricConfig) {
+          for (const id of Object.keys(config.instanceMetricConfig)) if (isLegacyId(id)) delete config.instanceMetricConfig[id];
+        }
+        delete (config as typeof config & Record<string, unknown>).virtualization;
+      }
+      if (current.widgetLayouts) {
+        for (const [scopeKey, layout] of Object.entries(current.widgetLayouts.instances)) {
+          if (scopeKey.includes("vm:") || layout.templateKey.includes("virtual_machine")) delete current.widgetLayouts.instances[scopeKey];
+        }
+        for (const templateKey of Object.keys(current.widgetLayouts.templates)) {
+          if (templateKey.includes("virtual_machine")) delete current.widgetLayouts.templates[templateKey];
+        }
+      }
+    });
   }
 }
 
@@ -517,107 +619,6 @@ export class LocalDeviceRepository implements DeviceRepository {
         if (item) {
           item.sortOrder = index;
           item.updatedAt = now;
-        }
-      });
-    });
-  }
-}
-
-export class LocalVirtualMachineRepository implements VirtualMachineRepository {
-  constructor(private readonly store: LocalJsonStore) {}
-
-  async registerOrUpdate(input: VirtualMachineRegistration): Promise<VirtualMachineRecord> {
-    let result!: VirtualMachineRecord;
-    await this.store.update((db) => {
-      const registry = (db.virtualMachines ??= {});
-      const existing = Object.values(registry).find(
-        (item) => item.virtualMachineId === input.virtualMachineId ||
-          (item.scopeKey === input.scopeKey && item.externalId === input.externalId)
-      );
-      const now = input.observedAt;
-      if (existing) {
-        existing.scopeKey = input.scopeKey;
-        existing.externalId = input.externalId;
-        existing.platform = input.platform;
-        existing.name = input.name;
-        existing.hostDeviceId = input.hostDeviceId;
-        existing.hostName = input.hostName;
-        existing.node = input.node ?? null;
-        existing.type = input.type ?? null;
-        existing.powerState = input.powerState;
-        existing.status = "open";
-        existing.updatedAt = now;
-        existing.lastSeenAt = now;
-        result = { ...existing };
-        return;
-      }
-
-      const maxSortOrder = Object.values(registry).reduce((max, item) => Math.max(max, item.sortOrder ?? 0), -1);
-      const record: VirtualMachineRecord = {
-        virtualMachineId: input.virtualMachineId,
-        scopeKey: input.scopeKey,
-        externalId: input.externalId,
-        platform: input.platform,
-        name: input.name,
-        hostDeviceId: input.hostDeviceId,
-        hostName: input.hostName,
-        node: input.node ?? null,
-        type: input.type ?? null,
-        powerState: input.powerState,
-        status: "open",
-        sortOrder: maxSortOrder + 1,
-        registeredAt: now,
-        updatedAt: now,
-        lastSeenAt: now
-      };
-      registry[record.virtualMachineId] = record;
-      result = { ...record };
-    });
-    return result;
-  }
-
-  async listOpen(): Promise<VirtualMachineRecord[]> {
-    const db = await this.store.read();
-    return Object.values(db.virtualMachines ?? {})
-      .filter((item) => item.status === "open")
-      .sort((a, b) => (a.sortOrder - b.sortOrder) || a.virtualMachineId.localeCompare(b.virtualMachineId));
-  }
-
-  async reconcile(scopeKey: string, observedVirtualMachineIds: string[], observedAt: string): Promise<string[]> {
-    const observed = new Set(observedVirtualMachineIds);
-    const closedIds: string[] = [];
-    await this.store.update((db) => {
-      for (const record of Object.values(db.virtualMachines ?? {})) {
-        if (record.status === "open" && record.scopeKey === scopeKey && !observed.has(record.virtualMachineId)) {
-          record.status = "closed";
-          record.updatedAt = observedAt;
-          closedIds.push(record.virtualMachineId);
-        }
-      }
-    });
-    return closedIds;
-  }
-
-  async delete(virtualMachineId: string): Promise<void> {
-    await this.store.update((db) => {
-      const registry = (db.virtualMachines ??= {});
-      const record = registry[virtualMachineId];
-      if (record) {
-        record.status = "closed";
-        record.updatedAt = new Date().toISOString();
-      }
-    });
-  }
-
-  async reorder(virtualMachineIds: string[]): Promise<void> {
-    await this.store.update((db) => {
-      const registry = (db.virtualMachines ??= {});
-      const now = new Date().toISOString();
-      virtualMachineIds.forEach((id, index) => {
-        const record = registry[id];
-        if (record) {
-          record.sortOrder = index;
-          record.updatedAt = now;
         }
       });
     });

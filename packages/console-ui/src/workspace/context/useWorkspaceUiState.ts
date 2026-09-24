@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import type { InstanceType, MetricWindow, TrafficCalendarMode } from "@dsc/shared";
+import type { MetricWindow, TrafficCalendarMode } from "@dsc/shared";
 import type { ConsoleAdapter } from "../../services/adapter";
 import { detectTouchSupport, type InteractionScaleSetting, type PointerType } from "../../helpers/density";
 import { getResponsiveTier, getScreenOrientation, type ResponsiveTier, type ScreenOrientation } from "../../helpers/layout";
 import { confirmDiscardWorkspaceDrafts } from "../draftGuards";
 import { defaultRoute, routeFromLocation, serializeWorkspaceRoute, type SettingsSection, type WorkspaceRoute } from "../routes";
-import { getStoredDensity, getStoredInstanceType, getStoredRefreshInterval, getStoredTheme } from "./WorkspaceTypes";
+import { getStoredDensity, getStoredRefreshInterval, getStoredTheme } from "./WorkspaceTypes";
 
 export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: ConsoleAdapter; initialRoute?: WorkspaceRoute }) {
   const [route, setRoute] = useState<WorkspaceRoute>(() => initialRoute ?? routeFromLocation());
@@ -22,12 +22,19 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
   const [theme, setThemeState] = useState<"system" | "light" | "dark">(getStoredTheme);
   const [density, setDensityState] = useState<InteractionScaleSetting>(getStoredDensity);
   const [refreshInterval, setRefreshIntervalState] = useState<5 | 10 | 30>(getStoredRefreshInterval);
-  const [instanceType, setInstanceTypeState] = useState<InstanceType | "all">(getStoredInstanceType);
   const [orientation, setOrientation] = useState<ScreenOrientation>("landscape");
   const [isTouch, setIsTouch] = useState(false);
   const [inputMode, setInputMode] = useState<PointerType>("mouse");
   const [layoutTier, setLayoutTier] = useState<ResponsiveTier>("lg");
   const [pointerSeen, setPointerSeen] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (typeof window !== "undefined") localStorage.removeItem("dsc-instance-type");
+    } catch {
+      // Removing an obsolete optional preference must not block the workspace.
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -97,10 +104,6 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
     setRefreshIntervalState(nextInterval);
     localStorage.setItem("dsc-refresh-interval", String(nextInterval));
   }, []);
-  const setInstanceType = useCallback((nextInstanceType: InstanceType | "all") => {
-    setInstanceTypeState(nextInstanceType);
-    localStorage.setItem("dsc-instance-type", nextInstanceType);
-  }, []);
   const setTrafficMode = useCallback((nextMode: TrafficCalendarMode) => {
     setTrafficModeState(nextMode);
     setTrafficAnchor(new Date().toISOString());
@@ -141,8 +144,6 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
     setDensity,
     refreshInterval,
     setRefreshInterval,
-    instanceType,
-    setInstanceType,
     orientation,
     isTouch,
     inputMode,

@@ -9,7 +9,6 @@ import { CarbonDeviceTable, ConfirmDialog, DeviceDirectoryFilterBar, EmptyState,
 export function DevicesPage() {
   const { snapshot, allDevices, loading, error, refresh, navigate, deleteInstance, reorderInstances, mutationPending, capabilities } = useWorkspace();
   const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"all" | "device" | "virtual_machine">("all");
   const [statusFilter, setStatusFilter] = useState<DeviceDirectoryStatus>("all");
   const [sort, setSort] = useState<DeviceDirectorySort>("order");
   const [manageMode, setManageMode] = useState(false);
@@ -53,7 +52,7 @@ export function DevicesPage() {
     .slice()
     .sort((left, right) => (orderPosition.get(left.deviceId) ?? Number.MAX_SAFE_INTEGER) - (orderPosition.get(right.deviceId) ?? Number.MAX_SAFE_INTEGER))
     .map((device, index) => ({ ...device, sortOrder: index }));
-  const visibleDevices = selectDeviceDirectory(orderedDevices, { query, instanceType: typeFilter, status: statusFilter, sort: manageMode ? "order" : sort });
+  const visibleDevices = selectDeviceDirectory(orderedDevices, { query, status: statusFilter, sort: manageMode ? "order" : sort });
   const beginManage = () => {
     if (!canManage || mutationPending) return;
     setOrderDraft(serverOrder);
@@ -96,8 +95,6 @@ export function DevicesPage() {
       devices={allDevices}
       query={query}
       onQueryChange={setQuery}
-      typeFilter={typeFilter}
-      onTypeFilterChange={setTypeFilter}
       statusFilter={statusFilter}
       onStatusFilterChange={setStatusFilter}
       sort={sort}
@@ -115,7 +112,7 @@ export function DevicesPage() {
           manageMode={manageMode && canManage && !mutationPending}
           onMove={moveInstance}
           onDelete={setDeleteTarget}
-          emptyState={<EmptyState title="没有匹配设备" detail="尝试清空搜索或调整类型、状态筛选。" action={<Button variant="quiet" onClick={() => { setQuery(""); setTypeFilter("all"); setStatusFilter("all"); }}>清除筛选</Button>} />}
+          emptyState={<EmptyState title="没有匹配设备" detail="尝试清空搜索或调整状态筛选。" action={<Button variant="quiet" onClick={() => { setQuery(""); setStatusFilter("all"); }}>清除筛选</Button>} />}
         />
       </div>
     </Surface>

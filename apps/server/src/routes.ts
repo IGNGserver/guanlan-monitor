@@ -17,10 +17,8 @@ import { z } from "zod";
 import { env } from "./config.js";
 import { authRateLimiter, createSession, getBearerToken, parseSessionValue, safeEqual, SESSION_TTL_MS } from "./auth.js";
 import type { MetricsService } from "./services/metrics.js";
-import { unavailableMetricsForVirtualMachinePowerState } from "./services/virtual-machines.js";
 import type { DeviceMetricConfigStore, FanNoteStore, Repositories, SessionValue, WidgetLayoutStore } from "./types.js";
 import { ALL_DEVICE_METRIC_KEYS, filterAgentPayloadInstances, getAvailableMetrics, resolveCpuFrequencyMHz, resolveCpuTemperatureC, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
-import { virtualizationStorageInstances } from "@dsc/shared";
 import { getSystemVersionInfo, getUpdateInfo } from "./updates.js";
 import { getHubUpdateStatus, HubUpdateError, requestHubUpdate } from "./hub-update.js";
 
@@ -190,6 +188,14 @@ const linkedWidgetLayoutSchema = z.object({
   instanceLayout: widgetLayoutDocumentSchema.nullable()
 });
 
+function containsLegacyVirtualMachineKey(value: string): boolean {
+  return value.includes("vm:") || value.includes("virtual_machine");
+}
+
+function isLegacyVirtualMachineId(deviceId: string): boolean {
+  return deviceId.startsWith("vm:");
+}
+
 const widgetLayoutQuerySchema = z.object({
   scopeKey: z.string().trim().min(1).max(240),
   templateKey: z.string().trim().min(1).max(240)
@@ -320,12 +326,24 @@ export async function registerRoutes(
   app.get<{ Querystring: { scopeKey: string; templateKey: string } }>("/api/widget-layouts", { preHandler: requireAuth }, async (request, reply) => {
     const parsed = widgetLayoutQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_widget_layout_query" });
+    if (containsLegacyVirtualMachineKey(parsed.data.scopeKey) || containsLegacyVirtualMachineKey(parsed.data.templateKey)) {
+      return reply.code(400).send({ error: "invalid_widget_layout_query" });
+    }
     return widgetLayouts.get(parsed.data.scopeKey, parsed.data.templateKey);
   });
 
   app.put<{ Body: WidgetLayoutSaveRequest }>("/api/widget-layouts", { preHandler: requireAuth }, async (request, reply) => {
     const parsed = widgetLayoutSaveSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_widget_layout_payload" });
+    const layoutKeys = [
+      parsed.data.scopeKey,
+      parsed.data.templateKey,
+      parsed.data.linkedInstance?.scopeKey,
+      parsed.data.linkedInstance?.templateKey
+    ].filter((value): value is string => Boolean(value));
+    if (layoutKeys.some(containsLegacyVirtualMachineKey)) {
+      return reply.code(400).send({ error: "invalid_widget_layout_payload" });
+    }
     return widgetLayouts.save(parsed.data as WidgetLayoutSaveRequest);
   });
 
@@ -337,16 +355,8 @@ export async function registerRoutes(
     return buildDeviceSummaries(repositories);
   });
 
-  app.get("/api/virtual-machines", { preHandler: requireAuth }, async () => {
-    return buildVirtualMachineSummaries(repositories);
-  });
-
   app.get("/api/instances", { preHandler: requireAuth }, async () => {
-    const [devices, virtualMachines] = await Promise.all([
-      buildDeviceSummaries(repositories),
-      buildVirtualMachineSummaries(repositories)
-    ]);
-    return [...devices, ...virtualMachines];
+    return buildDeviceSummaries(repositories);
   });
 
   app.get<{ Querystring: { window: MetricWindow } }>(
@@ -356,12 +366,7 @@ export async function registerRoutes(
       const parsed = metricsQuerySchema.safeParse(request.query);
       if (!parsed.success) return reply.code(400).send({ error: "invalid_metrics_query" });
       const query = parsed.data;
-      const openVirtualMachineIds = new Set(
-        (await repositories.virtualMachines.listOpen()).map((record) => record.virtualMachineId)
-      );
-      const states = (await repositories.realtime.listDevices()).filter(
-        (state) => state.identity.instanceType !== "virtual_machine" || openVirtualMachineIds.has(state.identity.deviceId)
-      );
+      const states = await repositories.realtime.listDevices();
       const instances = await Promise.all(
         states.map(async (state) => {
           const series = sanitizeUnsupportedMetricSeries(
@@ -377,7 +382,6 @@ export async function registerRoutes(
           return {
             deviceId: state.identity.deviceId,
             hostname: toSummary(state).hostname,
-            instanceType: state.identity.instanceType ?? "device",
             cpuUsagePercent: series.cpuUsagePercent,
             memoryUsedBytes: series.memoryUsedBytes,
             diskUsedBytes: series.diskUsedBytes,
@@ -393,13 +397,9 @@ export async function registerRoutes(
 
   app.delete<{ Params: { deviceId: string } }>("/api/devices/:deviceId", { preHandler: requireAuth }, async (request, reply) => {
     const { deviceId } = request.params;
-    if (isVirtualMachineId(deviceId)) {
-      await repositories.virtualMachines.delete(deviceId);
-      await metricsService.removeDevice(deviceId);
-    } else {
-      await repositories.devices.deleteDevice(deviceId);
-      await metricsService.removeDevice(deviceId);
-    }
+    if (isLegacyVirtualMachineId(deviceId)) return reply.code(404).send({ error: "device_not_found" });
+    await repositories.devices.deleteDevice(deviceId);
+    await metricsService.removeDevice(deviceId);
     return { ok: true };
   });
 
@@ -408,19 +408,14 @@ export async function registerRoutes(
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_reorder_payload" });
     }
-    const virtualMachineIds = parsed.data.deviceIds.filter(isVirtualMachineId);
-    const deviceIds = parsed.data.deviceIds.filter((id) => !isVirtualMachineId(id));
-    await Promise.all([
-      repositories.devices.reorderDevices(deviceIds),
-      repositories.virtualMachines.reorder(virtualMachineIds)
-    ]);
+    if (parsed.data.deviceIds.some(isLegacyVirtualMachineId)) {
+      return reply.code(400).send({ error: "invalid_reorder_payload" });
+    }
+    await repositories.devices.reorderDevices(parsed.data.deviceIds);
     return { ok: true };
   });
 
   app.get<{ Params: { deviceId: string } }>("/api/devices/:deviceId", { preHandler: requireAuth }, async (request, reply) => {
-    if (await isClosedVirtualMachine(repositories, request.params.deviceId)) {
-      return reply.code(404).send({ error: "device_not_found" });
-    }
     const state = await repositories.realtime.getDevice(request.params.deviceId);
     if (!state) return reply.code(404).send({ error: "device_not_found" });
     return toDetail(state);
@@ -433,9 +428,6 @@ export async function registerRoutes(
       const parsed = metricsQuerySchema.safeParse(request.query);
       if (!parsed.success) return reply.code(400).send({ error: "invalid_metrics_query" });
       const query = parsed.data;
-      if (await isClosedVirtualMachine(repositories, request.params.deviceId)) {
-        return reply.code(404).send({ error: "device_not_found" });
-      }
       const state = await repositories.realtime.getDevice(request.params.deviceId);
       if (!state) return reply.code(404).send({ error: "device_not_found" });
       const notes = await fanNotes.get(request.params.deviceId);
@@ -494,8 +486,6 @@ export async function registerRoutes(
           gpus: latest.gpus,
           temperatureSensors: latest.temperatureSensors ?? [],
           sensorBackends: latest.sensorBackends ?? [],
-          virtualization: latest.virtualization ?? null,
-          storagePools: virtualizationStorageInstances(latest.virtualization),
           unavailableMetrics: latest.unavailableMetrics ?? [],
           fans: (latest.fans ?? []).map((fan) => ({
             ...fan,
@@ -514,9 +504,6 @@ export async function registerRoutes(
       const parsed = trafficCalendarSchema.safeParse(request.query);
       if (!parsed.success) return reply.code(400).send({ error: "invalid_traffic_calendar_query" });
       const query = parsed.data;
-      if (await isClosedVirtualMachine(repositories, request.params.deviceId)) {
-        return reply.code(404).send({ error: "device_not_found" });
-      }
       const state = await repositories.realtime.getDevice(request.params.deviceId);
       if (!state) return reply.code(404).send({ error: "device_not_found" });
       return metricsService.getTrafficCalendar(
@@ -532,6 +519,7 @@ export async function registerRoutes(
     "/api/devices/:deviceId/fans/:fanId/note",
     { preHandler: requireAuth },
     async (request, reply) => {
+      if (isLegacyVirtualMachineId(request.params.deviceId)) return reply.code(404).send({ error: "device_not_found" });
       const parsed = fanNoteSchema.safeParse(request.body);
       if (!parsed.success) return reply.code(400).send({ error: "invalid_fan_note_payload" });
       const body = parsed.data;
@@ -598,11 +586,17 @@ export async function registerRoutes(
       return reply.code(400).send({ error: "invalid_device_config_payload" });
     }
     const body = parsed.data;
+    if (body.deviceId.startsWith("vm:")) {
+      return reply.code(400).send({ error: "invalid_device_config_payload" });
+    }
+    const instanceMetricConfig = Object.fromEntries(
+      Object.entries(body.instanceMetricConfig ?? {}).filter(([deviceId]) => !deviceId.startsWith("vm:"))
+    );
 
     await metricsService.setEnabledMetrics(body.deviceId, {
       enabledMetrics: body.enabledMetrics,
       enabledDeviceIds: body.enabledDeviceIds ?? {},
-      instanceMetricConfig: body.instanceMetricConfig ?? {}
+      instanceMetricConfig
     });
 
     const state = await repositories.realtime.getDevice(body.deviceId);
@@ -611,7 +605,7 @@ export async function registerRoutes(
       availableMetrics: state ? getAvailableMetrics(state) : [],
       enabledMetrics: body.enabledMetrics,
       enabledDeviceIds: body.enabledDeviceIds ?? {},
-      instanceMetricConfig: body.instanceMetricConfig ?? {}
+      instanceMetricConfig
     };
   });
 
@@ -667,17 +661,11 @@ export async function registerRoutes(
 
 }
 
-function isVirtualMachineId(deviceId: string): boolean {
-  return deviceId.startsWith("vm:");
-}
-
 async function buildDeviceSummaries(repositories: Repositories) {
   const openDevices = await repositories.devices.listOpenDevices();
-  const realtimeDevices = (await repositories.realtime.listDevices()).filter(
-    (state) => state.identity.instanceType !== "virtual_machine"
-  );
+  const realtimeDevices = await repositories.realtime.listDevices();
   const realtimeMap = new Map(realtimeDevices.map((state) => [state.identity.deviceId, state]));
-  const knownDevices = (await repositories.history.listKnownDevices()).filter((known) => !isVirtualMachineId(known.deviceId));
+  const knownDevices = await repositories.history.listKnownDevices();
   const registeredIds = new Set(openDevices.map((device) => device.deviceId));
 
   for (const realtimeState of realtimeDevices) {
@@ -721,61 +709,9 @@ async function buildDeviceSummaries(repositories: Repositories) {
       gpuMemoryUsagePercent: null,
       memoryUsagePercent: null,
       diskUsagePercent: null,
-      sortOrder: record.sortOrder,
-      instanceType: "device" as const,
-      hostName: null,
-      virtualMachine: null
+      sortOrder: record.sortOrder
     };
   }).sort((a, b) => ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.deviceId.localeCompare(b.deviceId));
-}
-
-async function buildVirtualMachineSummaries(repositories: Repositories) {
-  const records = await repositories.virtualMachines.listOpen();
-  const realtimeStates = (await repositories.realtime.listDevices()).filter(
-    (state) => state.identity.instanceType === "virtual_machine"
-  );
-  const realtimeMap = new Map(realtimeStates.map((state) => [state.identity.deviceId, state]));
-
-  return records.map((record) => {
-    const realtimeState = realtimeMap.get(record.virtualMachineId);
-    if (realtimeState) {
-      return { ...toSummary(realtimeState), sortOrder: record.sortOrder };
-    }
-    return {
-      deviceId: record.virtualMachineId,
-      hostname: record.name,
-      os: "unknown" as const,
-      agentVersion: null,
-      agentChannel: null,
-      status: "offline" as const,
-      lastSeenAt: record.lastSeenAt,
-      cpuUsagePercent: null,
-      gpuUsagePercent: null,
-      gpuMemoryUsagePercent: null,
-      memoryUsagePercent: null,
-      diskUsagePercent: null,
-      sortOrder: record.sortOrder,
-      instanceType: "virtual_machine" as const,
-      hostName: record.hostName,
-      virtualMachine: {
-        vmId: record.virtualMachineId,
-        externalId: record.externalId,
-        platform: record.platform,
-        node: record.node,
-        type: record.type,
-        powerState: record.powerState,
-        hostDeviceId: record.hostDeviceId,
-        hostName: record.hostName
-      },
-      unavailableMetrics: unavailableMetricsForVirtualMachinePowerState(record.powerState)
-    };
-  }).sort((a, b) => ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.deviceId.localeCompare(b.deviceId));
-}
-
-async function isClosedVirtualMachine(repositories: Repositories, deviceId: string): Promise<boolean> {
-  if (!isVirtualMachineId(deviceId)) return false;
-  const openVirtualMachines = await repositories.virtualMachines.listOpen();
-  return !openVirtualMachines.some((record) => record.virtualMachineId === deviceId);
 }
 
 function rejectInsecureAgentTransport(request: FastifyRequest, reply: FastifyReply): boolean {
@@ -884,13 +820,6 @@ function alignMetricSeriesToWindow(series: MetricSeries, window: MetricWindow) {
       readBytesPerSec: alignSamplePoints(disk.readBytesPerSec, bucketMs),
       writeBytesPerSec: alignSamplePoints(disk.writeBytesPerSec, bucketMs),
       temperatureC: alignSamplePoints(disk.temperatureC, bucketMs)
-    })),
-    storagePools: (series.storagePools ?? []).map((storage) => ({
-      ...storage,
-      totalBytes: alignSamplePoints(storage.totalBytes, bucketMs),
-      usedBytes: alignSamplePoints(storage.usedBytes, bucketMs),
-      availableBytes: alignSamplePoints(storage.availableBytes, bucketMs),
-      usagePercent: alignSamplePoints(storage.usagePercent, bucketMs)
     })),
     networks: series.networks.map((network) => ({
       ...network,

@@ -38,6 +38,76 @@ export class RedisRealtimeRepository implements RealtimeRepository {
     return raw.map((item) => JSON.parse(item) as DeviceRealtimeState);
   }
 
+  async removeLegacyVirtualMachineData() {
+    const devices = await this.listDevices();
+    for (const state of devices) {
+      const identity = state.identity as typeof state.identity & Record<string, unknown>;
+      if (
+        state.identity.deviceId.startsWith("vm:")
+        || identity.instanceType === "virtual_machine"
+        || "virtualMachine" in identity
+      ) {
+        await this.remove(state.identity.deviceId);
+        continue;
+      }
+      delete identity.instanceType;
+      delete identity.hostDeviceId;
+      delete identity.hostName;
+      delete identity.virtualMachine;
+      delete identity.virtualization;
+      delete (state.latest as typeof state.latest & Record<string, unknown>).virtualization;
+      delete (state.latest as typeof state.latest & Record<string, unknown>).storagePools;
+      await this.upsert(state);
+    }
+
+    let cursor = "0";
+    do {
+      const [nextCursor, keys] = await this.redis.scan(cursor, "MATCH", `${SERIES_KEY}:*`, "COUNT", "250");
+      cursor = nextCursor;
+      for (const key of keys) {
+        if (key.startsWith(`${SERIES_KEY}:vm:`)) {
+          await this.redis.del(key);
+          continue;
+        }
+        const rawPoints = await this.redis.lrange(key, 0, -1);
+        let changed = false;
+        const sanitized = rawPoints.map((raw) => {
+          try {
+            const point = JSON.parse(raw) as Record<string, unknown>;
+            const details = point.recordedDetails;
+            if (details && typeof details === "object") {
+              const mutableDetails = details as Record<string, unknown>;
+              if ("virtualization" in mutableDetails) {
+                delete mutableDetails.virtualization;
+                changed = true;
+              }
+              if ("storagePools" in mutableDetails) {
+                delete mutableDetails.storagePools;
+                changed = true;
+              }
+            }
+            if ("virtualization" in point) {
+              delete point.virtualization;
+              changed = true;
+            }
+            if ("storagePools" in point) {
+              delete point.storagePools;
+              changed = true;
+            }
+            return JSON.stringify(point);
+          } catch {
+            return raw;
+          }
+        });
+        if (changed) {
+          const pipeline = this.redis.multi().del(key);
+          if (sanitized.length) pipeline.rpush(key, ...sanitized);
+          await pipeline.exec();
+        }
+      }
+    } while (cursor !== "0");
+  }
+
   async remove(deviceId: string) {
     await this.redis.hdel(DEVICE_KEY, deviceId);
     await this.clearSeries(deviceId);

@@ -237,7 +237,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         currentApi.devices()
       }.onSuccess { devices ->
         val visibleDevices = devices
-          .filter { current.instanceType == "all" || it.instanceType == current.instanceType }
           .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
         val selectedDeviceId = current.selectedDeviceId?.takeIf { id -> visibleDevices.any { it.deviceId == id } }
           ?: visibleDevices.firstOrNull()?.deviceId
@@ -384,27 +383,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   fun showDeviceList() {
     navigateBackTo(AppScreen.DeviceList)
-  }
-
-  fun selectInstanceType(instanceType: String) {
-    val normalized = when (instanceType) {
-      "virtual_machine" -> "virtual_machine"
-      "all" -> "all"
-      else -> "device"
-    }
-    _state.update { current ->
-      val selected = current.selectedDeviceId?.let { id -> current.devices.firstOrNull { it.deviceId == id } }
-      val nextSelectedId = if (selected?.instanceType == normalized) {
-        selected.deviceId
-      } else {
-        current.devices
-          .filter { normalized == "all" || it.instanceType == normalized }
-          .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
-          .firstOrNull()
-          ?.deviceId
-      }
-      current.copy(instanceType = normalized, selectedDeviceId = nextSelectedId)
-    }
   }
 
   fun clearFocusedBlock() {
@@ -604,7 +582,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         null
       }
       val visibleDevices = devices
-        .filter { _state.value.instanceType == "all" || it.instanceType == _state.value.instanceType }
         .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
       val selectedDeviceId = _state.value.selectedDeviceId?.takeIf { id -> visibleDevices.any { it.deviceId == id } }
         ?: visibleDevices.firstOrNull()?.deviceId

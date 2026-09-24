@@ -15,8 +15,6 @@ export type MetricWindow =
 
 export type DeviceStatus = "online" | "offline";
 
-export type InstanceType = "device" | "virtual_machine";
-
 export type ReleaseChannel = "stable" | "test";
 
 export type UpdatePlatform =
@@ -90,21 +88,6 @@ export interface AgentIdentity {
   cpuModel?: string;
   version?: string;
   channel?: ReleaseChannel;
-  instanceType?: InstanceType;
-  hostDeviceId?: string;
-  hostName?: string;
-  virtualMachine?: VirtualMachineIdentity;
-}
-
-export interface VirtualMachineIdentity {
-  vmId: string;
-  platform: AgentVirtualizationPlatform | string;
-  externalId?: string;
-  node?: string | null;
-  type?: string | null;
-  powerState?: string | null;
-  hostDeviceId?: string;
-  hostName?: string;
 }
 
 export interface SamplePoint {
@@ -294,227 +277,6 @@ export interface SensorBackendStatus {
   detail?: string;
 }
 
-export type AgentVirtualizationPlatform =
-  | "auto"
-  | "proxmox"
-  | "hyperv"
-  | "vsphere"
-  | "libvirt"
-  | "qemu"
-  | "virtualbox"
-  | "vmware-workstation"
-  | "vmware-fusion";
-
-export interface AgentVirtualizationConfig {
-  enabled: boolean;
-  platform: AgentVirtualizationPlatform;
-  endpoint?: string;
-  node?: string;
-  insecureSkipTlsVerify?: boolean;
-  pollIntervalSeconds?: number;
-}
-
-export interface VirtualizationCpuStats {
-  configuredCores?: number | null;
-  usagePercent?: number | null;
-  usageMHz?: number | null;
-  demandMHz?: number | null;
-  readinessPercent?: number | null;
-}
-
-export interface VirtualizationMemoryStats {
-  configuredBytes?: number | null;
-  usedBytes?: number | null;
-  availableBytes?: number | null;
-  activeBytes?: number | null;
-  balloonedBytes?: number | null;
-  swappedBytes?: number | null;
-  pressurePercent?: number | null;
-}
-
-export interface VirtualizationDiskStats {
-  provisionedBytes?: number | null;
-  allocatedBytes?: number | null;
-  usedBytes?: number | null;
-  readBytesPerSec?: number | null;
-  writeBytesPerSec?: number | null;
-  totalReadBytes?: number | null;
-  totalWriteBytes?: number | null;
-  readOpsPerSec?: number | null;
-  writeOpsPerSec?: number | null;
-  latencyMs?: number | null;
-}
-
-export interface VirtualizationNetworkStats {
-  rxBytesPerSec?: number | null;
-  txBytesPerSec?: number | null;
-  totalRxBytes?: number | null;
-  totalTxBytes?: number | null;
-}
-
-export interface VirtualizationDiskDevice {
-  id: string;
-  name: string;
-  storage?: string | null;
-  path?: string | null;
-  capacityBytes?: number | null;
-  allocatedBytes?: number | null;
-  usedBytes?: number | null;
-  readBytesPerSec?: number | null;
-  writeBytesPerSec?: number | null;
-  totalReadBytes?: number | null;
-  totalWriteBytes?: number | null;
-  latencyMs?: number | null;
-}
-
-export interface VirtualizationNetworkDevice {
-  id: string;
-  name: string;
-  macAddress?: string | null;
-  bridge?: string | null;
-  switchName?: string | null;
-  network?: string | null;
-  vlan?: number | null;
-  rxBytesPerSec?: number | null;
-  txBytesPerSec?: number | null;
-  totalRxBytes?: number | null;
-  totalTxBytes?: number | null;
-}
-
-export interface VirtualizationFilesystemDevice {
-  mountPoint: string;
-  filesystem?: string | null;
-  totalBytes?: number | null;
-  usedBytes?: number | null;
-  availableBytes?: number | null;
-}
-
-export interface VirtualizationGuestInfo {
-  hostname?: string | null;
-  ipv4?: string[];
-  ipv6?: string[];
-  agentAvailable?: boolean;
-  source?: string | null;
-  filesystems?: VirtualizationFilesystemDevice[];
-}
-
-export interface VirtualizationStorageTelemetry {
-  id: string;
-  name: string;
-  /** Cluster node that owns this storage pool. The device scope already identifies the cluster. */
-  node?: string | null;
-  type?: string | null;
-  active?: boolean | null;
-  shared?: boolean | null;
-  totalBytes?: number | null;
-  usedBytes?: number | null;
-  availableBytes?: number | null;
-}
-
-export interface VirtualizationNodeTelemetry {
-  id: string;
-  name: string;
-  platform: AgentVirtualizationPlatform;
-  status: string;
-  version?: string | null;
-  cpu?: VirtualizationCpuStats;
-  memory?: VirtualizationMemoryStats;
-  disk?: VirtualizationDiskStats;
-  network?: VirtualizationNetworkStats;
-  storages?: VirtualizationStorageTelemetry[];
-}
-
-export interface VirtualMachineTelemetry {
-  id: string;
-  name: string;
-  platform: AgentVirtualizationPlatform;
-  node?: string | null;
-  type?: string | null;
-  powerState: string;
-  cpu?: VirtualizationCpuStats;
-  memory?: VirtualizationMemoryStats;
-  disk?: VirtualizationDiskStats;
-  network?: VirtualizationNetworkStats;
-  disks?: VirtualizationDiskDevice[];
-  networks?: VirtualizationNetworkDevice[];
-  guest?: VirtualizationGuestInfo;
-}
-
-export interface VirtualizationIssue {
-  code: string;
-  message: string;
-  scope?: string | null;
-  retryable?: boolean;
-}
-
-export interface VirtualizationSnapshot {
-  platform: AgentVirtualizationPlatform;
-  source: string;
-  collectedAt: string;
-  /** Coverage label for inventory reconciliation, for example cluster or node:pve1. */
-  inventoryScope?: string;
-  /** True only when the snapshot is a complete inventory for its scope. */
-  inventoryComplete?: boolean;
-  nodes: VirtualizationNodeTelemetry[];
-  vms: VirtualMachineTelemetry[];
-  storages?: VirtualizationStorageTelemetry[];
-  capabilities: string[];
-  issues?: VirtualizationIssue[];
-}
-
-export function virtualizationStorageInstanceId(node: string | null | undefined, storageId: string): string {
-  return node ? `${node}:${storageId}` : storageId;
-}
-
-function hasVirtualizationStorageCapacity(
-  storage: Pick<VirtualizationStorageTelemetry, "totalBytes" | "usedBytes" | "availableBytes">
-): boolean {
-  return [storage.totalBytes, storage.usedBytes, storage.availableBytes].some((value) =>
-    typeof value === "number" && Number.isFinite(value) && value > 0
-  );
-}
-
-export function isDisplayableVirtualizationStorage(
-  storage: Pick<VirtualizationStorageTelemetry, "active" | "totalBytes" | "usedBytes" | "availableBytes">
-): boolean {
-  // Proxmox returns cluster-wide storage configuration for every node. A pool
-  // that is inactive on this node, or has no capacity values, is not a
-  // node-local telemetry instance and should not become a misleading card.
-  return storage.active !== false && hasVirtualizationStorageCapacity(storage);
-}
-
-export function isDisplayableVirtualizationStorageSeries(
-  storage: Pick<VirtualizationStorageMetricSeries, "active" | "totalBytes" | "usedBytes" | "availableBytes">
-): boolean {
-  // Historical series use arrays rather than the latest snapshot's scalar
-  // capacity values. Keep the same node-local and real-capacity policy for
-  // legacy data already stored by the Hub.
-  return storage.active !== false && [storage.totalBytes, storage.usedBytes, storage.availableBytes].some((points) =>
-    points.some((point) => typeof point.value === "number" && Number.isFinite(point.value) && point.value > 0)
-  );
-}
-
-/**
- * Return one stable, node-scoped record for every usable virtualization
- * storage pool. Node records are authoritative; the legacy top-level list is
- * only a fallback.
- */
-export function virtualizationStorageInstances(snapshot: VirtualizationSnapshot | null | undefined): VirtualizationStorageTelemetry[] {
-  if (!snapshot) return [];
-  const nodeStorages = snapshot.nodes.flatMap((node) =>
-    (node.storages ?? []).map((storage) => ({
-      ...storage,
-      id: virtualizationStorageInstanceId(node.id, storage.id),
-      node: node.id
-    }))
-  ).filter(isDisplayableVirtualizationStorage);
-  if (nodeStorages.length) return nodeStorages;
-  return (snapshot.storages ?? []).map((storage) => ({
-    ...storage,
-    id: virtualizationStorageInstanceId(storage.node, storage.id)
-  })).filter(isDisplayableVirtualizationStorage);
-}
-
 export interface DeviceMetricOption {
   key: DeviceMetricKey;
   available: boolean;
@@ -550,7 +312,6 @@ export interface AgentLocalConfig extends DeviceMetricConfigPayload {
   connection: AgentConnectionConfig;
   sampling: AgentSamplingConfig;
   probeSelections: AgentProbeSelection[];
-  virtualization?: AgentVirtualizationConfig;
   cloudSyncEnabled?: boolean;
   dataRecordingEnabled?: boolean;
   autoRestartCollector?: boolean;
@@ -591,7 +352,6 @@ export interface AgentMetricsPayload {
   fans: FanSensorStats[];
   temperatureSensors?: TemperatureSensorReading[];
   sensorBackends?: SensorBackendStatus[];
-  virtualization?: VirtualizationSnapshot | null;
 }
 
 export interface DeviceSummary {
@@ -612,9 +372,6 @@ export interface DeviceSummary {
   diskUsedBytes?: number | null;
   diskTotalBytes?: number | null;
   sortOrder?: number;
-  instanceType?: InstanceType;
-  hostName?: string | null;
-  virtualMachine?: VirtualMachineIdentity | null;
   /** Metrics that are not meaningful for the current instance state. */
   unavailableMetrics?: DeviceMetricKey[];
 }
@@ -710,19 +467,6 @@ export interface NetworkMetricSeries {
   trafficTxBytes: SamplePoint[];
 }
 
-export interface VirtualizationStorageMetricSeries {
-  id: string;
-  name: string;
-  node?: string | null;
-  type?: string | null;
-  active?: boolean | null;
-  shared?: boolean | null;
-  totalBytes: SamplePoint[];
-  usedBytes: SamplePoint[];
-  availableBytes: SamplePoint[];
-  usagePercent: SamplePoint[];
-}
-
 export interface MetricSeries {
   cpuUsagePercent: SamplePoint[];
   cpuFrequencyMHz: SamplePoint[];
@@ -759,8 +503,6 @@ export interface MetricSeries {
   gpus: GpuMetricSeries[];
   fans: FanMetricSeries[];
   temperatureSensors: TemperatureMetricSeries[];
-  /** Virtualization storage pools are separate from mounted filesystem disks. */
-  storagePools?: VirtualizationStorageMetricSeries[];
 }
 
 export interface UpdateInfo {
@@ -827,9 +569,6 @@ export interface MetricsLatest {
   temperatureSensors: TemperatureSensorReading[];
   sensorBackends: SensorBackendStatus[];
   fans: FanSensorStats[];
-  virtualization?: VirtualizationSnapshot | null;
-  /** Current virtualization storage pools, normalized to stable node-scoped IDs. */
-  storagePools?: VirtualizationStorageTelemetry[];
   unavailableMetrics?: DeviceMetricKey[];
 }
 
@@ -852,7 +591,6 @@ export interface MetricsResponse {
 export interface OverviewInstanceSeries {
   deviceId: string;
   hostname: string;
-  instanceType: InstanceType;
   cpuUsagePercent: SamplePoint[];
   memoryUsedBytes: SamplePoint[];
   diskUsedBytes: SamplePoint[];
@@ -878,7 +616,6 @@ export interface DesktopAgentConfig {
   enabledDeviceIds: Partial<Record<DeviceBlockKey, string[]>>;
   instanceMetricConfig: Record<string, DeviceMetricKey[]>;
   probeSelections: AgentProbeSelection[];
-  virtualization?: AgentVirtualizationConfig;
   cloudSyncEnabled: boolean;
   dataRecordingEnabled: boolean;
   autoRestartCollector: boolean;
@@ -1110,7 +847,6 @@ export interface DesktopConfigPatch {
   enabledDeviceIds?: Partial<Record<DeviceBlockKey, string[]>>;
   instanceMetricConfig?: Record<string, DeviceMetricKey[]>;
   probeSelections?: AgentProbeSelection[];
-  virtualization?: AgentVirtualizationConfig;
   cloudSyncEnabled?: boolean;
   dataRecordingEnabled?: boolean;
   autoRestartCollector?: boolean;

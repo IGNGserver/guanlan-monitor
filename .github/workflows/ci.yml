@@ -52,7 +52,7 @@ jobs:
           pnpm test:renderer-security
           pnpm test:window-material
 
-      - name: Test server VM inventory reconciliation
+      - name: Test server payload compatibility and storage
         env:
           NODE_ENV: test
           SESSION_SECRET: dsc-ci-session-secret-please-use-only-for-tests

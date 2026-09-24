@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentProbeTarget, DeviceBlockKey, DeviceMetricKey, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, VirtualizationStorageMetricSeries, VirtualizationStorageTelemetry, WidgetLayoutDocument, WidgetLayoutSaveRequest, WidgetPanelMetadata } from "@dsc/shared";
-import { isDisplayableVirtualizationStorage, isDisplayableVirtualizationStorageSeries, virtualizationStorageInstances } from "@dsc/shared";
+import type { AgentProbeTarget, DeviceBlockKey, DeviceMetricKey, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, WidgetLayoutDocument, WidgetLayoutSaveRequest, WidgetPanelMetadata } from "@dsc/shared";
 import { useWorkspace } from "../WorkspaceContext";
 import { formatWorkspaceError } from "../context/WorkspaceTypes";
 import { selectSnapshotSource } from "../selectors";
@@ -16,7 +15,7 @@ import {
 import { DeviceWidgetFrame } from "../DeviceWidgetFrame";
 import { DynamicWidgetCanvas, WidgetDrawer } from "../widgetCatalog";
 import { M3Checkbox, M3Chip, M3SegmentedControl, M3Select, M3Switch, M3Tabs, M3TextField } from "../m3";
-import { Button, Icon, StatusDot, StatusLabel, Surface, SummaryRow, VirtualMachinePowerLabel, virtualMachinePowerState } from "../ui";
+import { Button, Icon, StatusDot, StatusLabel, Surface, SummaryRow } from "../ui";
 import { TelemetryChartCard, TelemetryInfoCard } from "../TelemetryCards";
 import {
   UNAVAILABLE_METRIC_LABEL,
@@ -57,12 +56,7 @@ import {
   cloneDevicePanels,
   createDynamicLayout,
   createStarterDynamicLayout,
-  formatVirtualizationStorageCapacity,
-  formatVirtualizationStoragePercent,
-  formatVirtualizationStorageType,
-  formatVirtualizationStorageValue,
   isMetricUnavailable,
-  latestSampleValue,
   mergeFanMetricSeries,
   normalizeDevicePanels,
   temperatureLimitsLabel,
@@ -217,11 +211,10 @@ export function DeviceDetailsPage() {
       return () => { cancelled = true; };
     }
     const deviceId = selectedDevice.deviceId;
-    const instanceType = selectedDevice.instanceType ?? "device";
     setPanelIndexLoading(true);
     setPanelMutationMessage("");
     setActiveTab("overview");
-    void getWidgetLayout({ scopeKey: `device:${deviceId}:panel-index`, templateKey: `device-type:${instanceType}:panel-index` }).then((remote) => {
+    void getWidgetLayout({ scopeKey: `device:${deviceId}:panel-index`, templateKey: "device-type:device:panel-index" }).then((remote) => {
       if (cancelled) return;
       setPanels(normalizeDevicePanels(remote.instanceLayout?.panels));
     }).catch(() => {
@@ -230,7 +223,7 @@ export function DeviceDetailsPage() {
       if (!cancelled) setPanelIndexLoading(false);
     });
     return () => { cancelled = true; };
-  }, [getWidgetLayout, selectedDevice?.deviceId, selectedDevice?.instanceType]);
+  }, [getWidgetLayout, selectedDevice?.deviceId]);
 
   const changeTab = (tab: string) => {
     if (tab === activeTab) return;
@@ -264,9 +257,9 @@ export function DeviceDetailsPage() {
   const activePanel = panels.find((panel) => panel.id === activeTab) ?? DEFAULT_DEVICE_PANELS[0];
   const isCustomPanel = activePanel.kind === "custom";
   const panelIndexScope = `device:${selectedDevice.deviceId}:panel-index`;
-  const panelIndexTemplate = `device-type:${selectedDevice.instanceType ?? "device"}:panel-index`;
+  const panelIndexTemplate = "device-type:device:panel-index";
   const customPanelScope = (panelId: string) => `device:${selectedDevice.deviceId}:panel:${panelId}`;
-  const customPanelTemplate = `device-type:${selectedDevice.instanceType ?? "device"}:panel`;
+  const customPanelTemplate = "device-type:device:panel";
   type LinkedWidgetLayout = NonNullable<WidgetLayoutSaveRequest["linkedInstance"]>;
   const savePanelIndex = (nextPanels: WidgetPanelMetadata[], linkedInstance?: LinkedWidgetLayout): Promise<boolean> => {
     if (!canEditRemote) return Promise.resolve(false);
@@ -313,7 +306,7 @@ export function DeviceDetailsPage() {
     const id = `panel-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const nextPanels = [...panels, { id, name: `${source.name} 副本`.slice(0, 80), kind: "custom" as const, order: panels.length }];
     const sourceScope = source.kind === "custom" ? customPanelScope(source.id) : `device:${selectedDevice.deviceId}:${source.id}`;
-    const sourceTemplate = source.kind === "custom" ? customPanelTemplate : `device-type:${selectedDevice.instanceType ?? "device"}:tab:${source.id}`;
+    const sourceTemplate = source.kind === "custom" ? customPanelTemplate : `device-type:device:tab:${source.id}`;
     void (async () => {
       try {
         const sourceRemote = sourceLayout ? null : await getWidgetLayout({ scopeKey: sourceScope, templateKey: sourceTemplate });
@@ -376,31 +369,6 @@ export function DeviceDetailsPage() {
         diskTotalBytes: filteredDiskDetails.length || hasInstanceConfiguration("disk") ? filteredDiskDetails.reduce((total, disk) => total + disk.totalBytes, 0) : latest.diskTotalBytes
       }
     : undefined;
-  const currentStoragePools = latest?.storagePools?.filter(isDisplayableVirtualizationStorage) ?? [];
-  const storagePoolDetails: VirtualizationStorageTelemetry[] = latest
-    ? currentStoragePools.length
-      ? currentStoragePools
-      : virtualizationStorageInstances(latest.virtualization)
-    : [];
-  const storagePoolSeries = series?.storagePools?.filter(isDisplayableVirtualizationStorageSeries) ?? [];
-  const storagePoolDisplaySeries: VirtualizationStorageMetricSeries[] = [
-    ...storagePoolSeries,
-    ...storagePoolDetails
-      .filter((pool) => !storagePoolSeries.some((seriesPool) => seriesPool.id === pool.id))
-      .map((pool) => ({
-        id: pool.id,
-        name: pool.name,
-        node: pool.node,
-        type: pool.type,
-        active: pool.active,
-        shared: pool.shared,
-        totalBytes: [],
-        usedBytes: [],
-        availableBytes: [],
-        usagePercent: []
-      }))
-  ];
-
   const cpuInstances = filterEnabledInstances("cpu", series?.cpus ?? []);
   const diskInstances = filterEnabledInstances("disk", series?.disks ?? []);
   const networkInstances = filterEnabledInstances("network", series?.networks ?? []);
@@ -458,7 +426,6 @@ export function DeviceDetailsPage() {
     id: gpu.id,
     name: displayInstanceName(gpu.name, "GPU")
   }));
-  const vmPower = selectedDevice.instanceType === "virtual_machine" ? virtualMachinePowerState(selectedDevice.virtualMachine?.powerState) : null;
   const deviceStateBanner = (snapshotSource === "cache" && snapshot)
     ? {
         tone: "cached",
@@ -466,13 +433,6 @@ export function DeviceDetailsPage() {
         detail: `数据缓存于 ${formatDate(snapshot.cache.savedAt)}，设备和图表可能已经过期。`,
         action: <span className="workspace-caption">请使用顶部刷新按钮重新获取</span>
       }
-    : vmPower && vmPower.state !== "online"
-      ? {
-          tone: vmPower.state === "unknown" ? "empty" : "offline",
-          title: `虚拟机${vmPower.label}`,
-          detail: `${vmPower.label}时，CPU、内存、磁盘等运行时指标按“不适用”展示；宿主机 Agent 和最近心跳仍单独保留。`,
-          action: <span className="workspace-caption">电源状态由中枢虚拟化接口提供</span>
-        }
     : !metrics || !series
       ? {
           tone: "empty",
@@ -489,86 +449,6 @@ export function DeviceDetailsPage() {
           }
         : null;
 
-  const renderStoragePoolBlocks = () => storagePoolDisplaySeries.map((pool, poolIndex) => {
-    const poolLatest = storagePoolDetails.find((item) => item.id === pool.id);
-    const totalBytes = poolLatest?.totalBytes ?? latestSampleValue(pool.totalBytes);
-    const usedBytes = poolLatest?.usedBytes ?? latestSampleValue(pool.usedBytes);
-    const availableBytes = poolLatest?.availableBytes ?? latestSampleValue(pool.availableBytes);
-    const usagePercent = totalBytes != null && totalBytes > 0 && usedBytes != null
-      ? Number(((usedBytes / totalBytes) * 100).toFixed(2))
-      : latestSampleValue(pool.usagePercent);
-    const poolName = poolLatest?.name ?? pool.name;
-    const poolNode = poolLatest?.node ?? pool.node;
-    const poolType = poolLatest?.type ?? pool.type;
-    const poolActive = poolLatest?.active ?? pool.active;
-    const poolShared = poolLatest?.shared ?? pool.shared;
-    const poolLabel = [
-      poolNode ? `节点 ${poolNode}` : null,
-      formatVirtualizationStorageType(poolType),
-      poolShared == null ? null : poolShared ? "共享" : "本地",
-      poolActive == null ? null : poolActive ? "启用" : "停用"
-    ].filter(Boolean).join(" · ");
-    return (
-      <TelemetryDeviceBlock
-        key={`storage-pool-${pool.id}`}
-        kind="disk"
-        widgetId={`storage-pool-device-${pool.id}`}
-        widgetTemplateId={`storage-pool-device-${poolIndex}`}
-        targetId={pool.id}
-        eyebrow="虚拟化存储池"
-        title={poolName}
-        subtitle={poolLabel || "Proxmox 存储池"}
-      >
-        <TelemetryInfoCard
-          widgetId={`storage-pool-${pool.id}-summary`}
-          widgetGroupId={`storage-pool-device-${pool.id}`}
-          widgetType="virtualization-storage-pool-summary"
-          widgetCategory="存储"
-          widgetConfig={{ systemRendered: true, targetId: pool.id, visualization: "table" }}
-          title={`${poolName} · 当前状态`}
-          rows={[
-            { label: "节点", value: poolNode ?? UNAVAILABLE_METRIC_LABEL },
-            { label: "类型", value: formatVirtualizationStorageType(poolType) },
-            { label: "容量", value: formatVirtualizationStorageCapacity(usedBytes, totalBytes) },
-            { label: "可用空间", value: formatVirtualizationStorageValue(availableBytes) },
-            { label: "使用率", value: formatVirtualizationStoragePercent(usagePercent) },
-            { label: "读写速率", value: "无法获取数据 · Proxmox 存储池接口未提供" }
-          ]}
-        />
-        <TelemetryChartCard
-          widgetId={`storage-pool-${pool.id}-capacity`}
-          widgetGroupId={`storage-pool-device-${pool.id}`}
-          widgetType="virtualization-storage-pool-capacity"
-          widgetCategory="存储"
-          widgetVisualization="area"
-          widgetConfig={{ systemRendered: true, targetId: pool.id, visualization: "area" }}
-          title={`${poolName} · 已用与可用空间`}
-          subtitle={formatVirtualizationStorageCapacity(usedBytes, totalBytes)}
-          emptyMessage={UNAVAILABLE_METRIC_LABEL}
-          series={[
-            { label: "已用空间", points: pool.usedBytes, valueFormatter: formatBytes },
-            { label: "可用空间", points: pool.availableBytes, valueFormatter: formatBytes }
-          ]}
-          valueFormatter={formatBytes}
-        />
-        <TelemetryChartCard
-          widgetId={`storage-pool-${pool.id}-usage`}
-          widgetGroupId={`storage-pool-device-${pool.id}`}
-          widgetType="virtualization-storage-pool-usage"
-          widgetCategory="存储"
-          widgetVisualization="line"
-          widgetConfig={{ systemRendered: true, targetId: pool.id, visualization: "line" }}
-          title={`${poolName} · 使用率`}
-          subtitle={formatVirtualizationStoragePercent(usagePercent)}
-          emptyMessage={UNAVAILABLE_METRIC_LABEL}
-          series={[{ label: "使用率", points: pool.usagePercent }]}
-          valueFormatter={(value) => `${value.toFixed(2)}%`}
-          fixedMaxValue={100}
-        />
-      </TelemetryDeviceBlock>
-    );
-  });
-
   return (
     <div
       ref={boardRootRef}
@@ -582,9 +462,9 @@ export function DeviceDetailsPage() {
         <strong>{selectedDevice.hostname}</strong>
       </nav>
       <PageIntro
-        eyebrow={selectedDevice.instanceType === "virtual_machine" ? "虚拟机实例" : "设备实例"}
+        eyebrow="设备"
         title={selectedDevice.hostname}
-        description={`${selectedDevice.instanceType === "virtual_machine" ? "虚拟机" : selectedDevice.os} · ${selectedDevice.deviceId}`}
+        description={`${selectedDevice.os} · ${selectedDevice.deviceId}`}
         actions={
           <>
             <Button variant="quiet" onClick={() => navigate({ kind: "devices" })}><Icon name="back" size={16} />返回设备目录</Button>
@@ -593,18 +473,15 @@ export function DeviceDetailsPage() {
       />
 
       <div className="workspace-device-statusline">
-        {selectedDevice.instanceType === "virtual_machine" ? <VirtualMachinePowerLabel powerState={selectedDevice.virtualMachine?.powerState} /> : <StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} />}
+        <StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} />
         <span>Agent {selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</span>
         <span>通道 {selectedDevice.agentChannel ?? "未知"}</span>
-        {selectedDevice.instanceType === "virtual_machine" && <span>宿主机 Agent {selectedDevice.status === "online" ? "在线" : "离线"} · {selectedDevice.hostName ?? "未知"}</span>}
         {selectedDevice.unavailableMetrics?.length ? <span>不适用指标：{selectedDevice.unavailableMetrics.join("、")}</span> : null}
         <span>{snapshotSource === "cache" ? `缓存于 ${formatDate(snapshot?.cache.savedAt)}` : `数据更新时间 ${formatDate(snapshot?.generatedAt)}`}</span>
         <StatusLabel state={deviceSourceState} />
       </div>
 
       <div className="workspace-device-facts" aria-label="设备事实">
-        <div><span>实例类型</span><strong>{selectedDevice.instanceType === "virtual_machine" ? "虚拟机" : "普通设备"}</strong></div>
-        <div><span>宿主机</span><strong>{selectedDevice.instanceType === "virtual_machine" ? selectedDevice.hostName ?? "未知" : "本机 Agent"}</strong></div>
         <div><span>最近心跳</span><strong>{formatDate(selectedDevice.lastSeenAt)} · {selectedDevice.status === "online" ? "有效" : "已过期"}</strong></div>
         <div><span>中枢顺序</span><strong>{(selectedDevice.sortOrder ?? 0) + 1}</strong></div>
       </div>
@@ -622,7 +499,7 @@ export function DeviceDetailsPage() {
       <WidgetLayoutProvider
         key={activeTab}
         scopeKey={isCustomPanel ? customPanelScope(activeTab) : `device:${selectedDevice.deviceId}:${activeTab}`}
-        templateKey={isCustomPanel ? customPanelTemplate : `device-type:${selectedDevice.instanceType ?? "device"}:tab:${activeTab}`}
+        templateKey={isCustomPanel ? customPanelTemplate : `device-type:device:tab:${activeTab}`}
         editable={activeTab !== "all" && canEditRemote}
         locked={activeTab === "all"}
         displayMode={displayMode}
@@ -717,7 +594,7 @@ export function DeviceDetailsPage() {
 
       {/* ================= Tab 3: 存储与网络 (Storage & Network) ================= */}
       {(activeTab === "storage_net" || activeTab === "all") && series && (
-        <TelemetrySection id="section-storage" eyebrow="存储与网络" title="I/O 实例明细" description="虚拟化存储池与普通挂载硬盘分开统计；网卡和硬盘实例选择全部时会同时展示每个实例。" controls={<><InstanceFilter label="网卡" value={selectedNetId} onChange={setSelectedNetId} options={networkOptions} /><InstanceFilter label="磁盘" value={selectedDiskId} onChange={setSelectedDiskId} options={diskOptions} /></>}>
+        <TelemetrySection id="section-storage" eyebrow="存储与网络" title="I/O 实例明细" description="网卡和硬盘实例选择全部时会同时展示每个实例。" controls={<><InstanceFilter label="网卡" value={selectedNetId} onChange={setSelectedNetId} options={networkOptions} /><InstanceFilter label="磁盘" value={selectedDiskId} onChange={setSelectedDiskId} options={diskOptions} /></>}>
           <TrafficCalendarCard data={snapshot?.trafficCalendar ?? null} mode={trafficMode} onModeChange={setTrafficMode} onShiftAnchor={shiftTrafficAnchor} />
           {networkInstances.length ? visibleNetworkInstances.map((network) => {
             const networkIndex = networkInstances.findIndex((item) => item.id === network.id);
@@ -748,7 +625,6 @@ export function DeviceDetailsPage() {
               <TelemetryChartCard widgetId="storage-disk-summary-io" widgetGroupId="storage-disk-summary" widgetType="disk-io" widgetCategory="存储" widgetVisualization="line" widgetConfig={{ systemRendered: true, visualization: "line" }} title="读写速率" subtitle={metricUnavailable("diskRead") || metricUnavailable("diskWrite") ? UNAVAILABLE_METRIC_LABEL : "设备汇总"} emptyMessage={UNAVAILABLE_METRIC_LABEL} series={[{ label: "读取", points: unavailablePoints(series.diskReadBytesPerSec ?? [], metricUnavailable("diskRead")), valueFormatter: (v) => `${formatBytes(v)}/s` }, { label: "写入", points: unavailablePoints(series.diskWriteBytesPerSec ?? [], metricUnavailable("diskWrite")), valueFormatter: (v) => `${formatBytes(v)}/s` }]} valueFormatter={(v) => `${formatBytes(v)}/s`} />
             </TelemetryDeviceBlock>
           )}
-          {storagePoolDisplaySeries.length ? renderStoragePoolBlocks() : null}
         </TelemetrySection>
       )}
 
@@ -859,7 +735,7 @@ export function DeviceDetailsPage() {
               <div className="workspace-surface__header">
                 <div>
                   <span className="workspace-section-kicker">操作</span>
-                  <h3>{selectedDevice.instanceType === "virtual_machine" ? "宿主机 Agent" : "设备 Agent"}</h3>
+                  <h3>设备 Agent</h3>
                 </div>
                 <StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} />
               </div>

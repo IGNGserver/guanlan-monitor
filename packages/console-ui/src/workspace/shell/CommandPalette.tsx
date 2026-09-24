@@ -70,7 +70,7 @@ export function CommandPalette() {
     capabilities.canConfigureConnection ? { label: "打开连接设置", detail: "添加或重新认证中枢", keywords: ["中枢", "地址", "密钥", "连接"], action: () => openSettings("connections") } : { label: "打开中枢状态", detail: "查看网页端同步和会话状态", keywords: ["中枢", "会话", "连接"], action: () => openSettings("workspace") },
     ...(capabilities.canManageLocalAgent ? [{ label: "打开本机 Agent", detail: "控制本机采集服务", keywords: ["采集", "上报", "agent"], action: () => openSettings("agent") }] : []),
     ...settingsCommands,
-    ...allDevices.map((device) => ({ label: device.hostname, detail: `${device.os} · ${device.deviceId}${device.hostName ? ` · 宿主机 ${device.hostName}` : ""}`, action: () => navigate({ kind: "device", deviceId: device.deviceId }) }))
+    ...allDevices.map((device) => ({ label: device.hostname, detail: `${device.os} · ${device.deviceId}`, action: () => navigate({ kind: "device", deviceId: device.deviceId }) }))
   ];
   const query = searchQuery.trim().toLowerCase();
   const filtered = query ? commands.filter((command) => `${command.label} ${command.detail} ${(command.keywords ?? []).join(" ")}`.toLowerCase().includes(query)) : commands;

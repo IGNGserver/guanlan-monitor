@@ -35,7 +35,6 @@ class MainActivity : ComponentActivity() {
           onLogout = appViewModel::logout,
           onSystemBack = appViewModel::handleBack,
           onOpenDevice = appViewModel::openDevice,
-          onSelectInstanceType = appViewModel::selectInstanceType,
           onDeleteDevice = appViewModel::deleteDevice,
           onReorderDevices = appViewModel::reorderDevices,
           onClearFocusedBlock = appViewModel::clearFocusedBlock,

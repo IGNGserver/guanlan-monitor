@@ -83,7 +83,6 @@ async function run() {
     if (deviceId) {
       await inspect("device-detail", `#device/${encodeURIComponent(deviceId)}`, ".workspace-page--device");
       assert.equal(await page.locator(".workspace-device-facts").count(), 1, "installed Release detail must expose stable facts");
-      assert.equal(await page.getByText(/宿主机 Agent\s*[:：]?\s*在线/).count(), 1, "installed Release VM detail must expose host Agent state");
       evidence.deviceDetail = "PASS";
     } else {
       evidence.deviceDetail = "NOT PROVEN: no release-runner device id was configured";

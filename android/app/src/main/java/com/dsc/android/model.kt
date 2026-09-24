@@ -2,7 +2,6 @@ package com.dsc.android
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class ServerConfig(
@@ -29,26 +28,11 @@ data class DeviceSummaryDto(
   val diskUsedBytes: Long? = null,
   val diskTotalBytes: Long? = null,
   val sortOrder: Int? = null,
-  val instanceType: String = "device",
-  val hostName: String? = null,
-  val virtualMachine: VirtualMachineIdentityDto? = null
 )
 
 @Serializable
 data class DeviceReorderPayloadDto(
   val deviceIds: List<String>
-)
-
-@Serializable
-data class VirtualMachineIdentityDto(
-  val vmId: String,
-  val platform: String,
-  val externalId: String? = null,
-  val node: String? = null,
-  val type: String? = null,
-  val powerState: String? = null,
-  val hostDeviceId: String? = null,
-  val hostName: String? = null
 )
 
 @Serializable
@@ -125,19 +109,6 @@ data class DiskDto(
   val interfaceType: String? = null,
   val totalBytes: Long,
   val usedBytes: Long
-)
-
-@Serializable
-data class VirtualizationStorageDto(
-  val id: String,
-  val name: String,
-  val node: String? = null,
-  val type: String? = null,
-  val active: Boolean? = null,
-  val shared: Boolean? = null,
-  val totalBytes: Long? = null,
-  val usedBytes: Long? = null,
-  val availableBytes: Long? = null
 )
 
 @Serializable
@@ -256,20 +227,6 @@ data class FanMetricSeriesDto(
 )
 
 @Serializable
-data class VirtualizationStorageMetricSeriesDto(
-  val id: String,
-  val name: String,
-  val node: String? = null,
-  val type: String? = null,
-  val active: Boolean? = null,
-  val shared: Boolean? = null,
-  val totalBytes: List<SamplePointDto> = emptyList(),
-  val usedBytes: List<SamplePointDto> = emptyList(),
-  val availableBytes: List<SamplePointDto> = emptyList(),
-  val usagePercent: List<SamplePointDto> = emptyList()
-)
-
-@Serializable
 data class DeviceMetricSeriesDto(
   val cpuUsagePercent: List<SamplePointDto> = emptyList(),
   val cpuFrequencyMHz: List<SamplePointDto> = emptyList(),
@@ -303,8 +260,7 @@ data class DeviceMetricSeriesDto(
   val networks: List<NetworkMetricSeriesDto> = emptyList(),
   val gpus: List<GpuMetricSeriesDto> = emptyList(),
   val fans: List<FanMetricSeriesDto> = emptyList(),
-  val temperatureSensors: List<TemperatureMetricSeriesDto> = emptyList(),
-  val storagePools: List<VirtualizationStorageMetricSeriesDto> = emptyList()
+  val temperatureSensors: List<TemperatureMetricSeriesDto> = emptyList()
 )
 
 @Serializable
@@ -344,9 +300,6 @@ data class DeviceDetailDto(
   val diskUsedBytes: Long? = null,
   val diskTotalBytes: Long? = null,
   val sortOrder: Int? = null,
-  val instanceType: String = "device",
-  val hostName: String? = null,
-  val virtualMachine: VirtualMachineIdentityDto? = null
 )
 
 @Serializable
@@ -376,9 +329,7 @@ data class DeviceLatestDto(
   val gpus: List<GpuDto> = emptyList(),
   val sensorBackends: List<SensorBackendDto> = emptyList(),
   val fans: List<FanDto> = emptyList(),
-  val temperatureSensors: List<TemperatureSensorDto> = emptyList(),
-  val virtualization: JsonObject? = null,
-  val storagePools: List<VirtualizationStorageDto> = emptyList()
+  val temperatureSensors: List<TemperatureSensorDto> = emptyList()
 )
 
 @Serializable
@@ -438,7 +389,6 @@ data class MetricsDto(
 data class OverviewInstanceSeriesDto(
   val deviceId: String,
   val hostname: String,
-  val instanceType: String = "device",
   val cpuUsagePercent: List<SamplePointDto> = emptyList(),
   val memoryUsedBytes: List<SamplePointDto> = emptyList(),
   val diskUsedBytes: List<SamplePointDto> = emptyList(),
@@ -568,7 +518,6 @@ data class AppState(
   val loadingMetrics: Boolean = false,
   val loadingTraffic: Boolean = false,
   val devices: List<DeviceSummaryDto> = emptyList(),
-  val instanceType: String = "all",
   val selectedDeviceId: String? = null,
   val focusedBlock: DeviceBlockKey? = null,
   val selectedWindow: MetricWindow = MetricWindow.FiveMinutes,
