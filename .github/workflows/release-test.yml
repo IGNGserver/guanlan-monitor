@@ -204,7 +204,7 @@ jobs:
           DSC_RELEASE_VERSION: ${{ github.ref_name }}
           NODE_ENV: test
           DSC_VISUAL_FIXTURE: "1"
-          DSC_RELEASE_ACCEPTANCE_DEVICE_ID: visual-vm
+          DSC_RELEASE_ACCEPTANCE_DEVICE_ID: visual-host
         run: |
           $version = (Get-Content VERSION -Raw).Trim()
           $installRoot = Join-Path $env:ProgramFiles "DeviceStateConsoleAgent"

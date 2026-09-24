@@ -5,7 +5,6 @@ import type {
   DesktopRuntimeProfile,
   DesktopStartupSettings,
   DeviceSummary,
-  InstanceType,
   MetricWindow,
   TrafficCalendarMode,
   WidgetLayoutRequest,
@@ -41,8 +40,6 @@ export interface WorkspaceContextValue {
   hubs: HubViewModel[];
   allDevices: DeviceSummary[];
   devices: DeviceSummary[];
-  instanceType: InstanceScope;
-  setInstanceType: (instanceType: InstanceScope) => void;
   filteredDevices: DeviceSummary[];
   selectedDevice: DeviceSummary | null;
   metricsWindow: MetricWindow;
@@ -93,8 +90,6 @@ export interface WorkspaceContextValue {
   chartPointLimit: number;
 }
 
-export type InstanceScope = InstanceType | "all";
-
 export function getStoredTheme(): "system" | "light" | "dark" {
   const value = typeof window === "undefined" ? "system" : localStorage.getItem("dsc-theme");
   return value === "light" || value === "dark" ? value : "system";
@@ -108,11 +103,6 @@ export function getStoredDensity(): InteractionScaleSetting {
 export function getStoredRefreshInterval(): 5 | 10 | 30 {
   const value = typeof window === "undefined" ? "10" : localStorage.getItem("dsc-refresh-interval");
   return value === "5" || value === "30" ? Number(value) as 5 | 30 : 10;
-}
-
-export function getStoredInstanceType(): InstanceScope {
-  const value = typeof window === "undefined" ? "all" : localStorage.getItem("dsc-instance-type");
-  return value === "device" || value === "virtual_machine" || value === "all" ? value : "all";
 }
 
 export function formatWorkspaceError(error: unknown, fallback: string): string {

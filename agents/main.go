@@ -290,7 +290,6 @@ type metricsPayload struct {
 	Fans               []fanSensorStats           `json:"fans"`
 	TemperatureSensors []temperatureSensorReading `json:"temperatureSensors,omitempty"`
 	SensorBackends     []sensorBackendStatus      `json:"sensorBackends,omitempty"`
-	Virtualization     *virtualizationSnapshot    `json:"virtualization,omitempty"`
 }
 
 // The configuration sub-schema lives in agents/internal/agentconfig so the
@@ -310,7 +309,6 @@ type agentConfigFile struct {
 	EnabledDeviceIDs     map[string][]string        `json:"enabledDeviceIds"`
 	InstanceMetricConfig map[string][]string        `json:"instanceMetricConfig"`
 	ProbeSelections      []agentProbeSelection      `json:"probeSelections"`
-	Virtualization       *agentVirtualizationConfig `json:"virtualization"`
 	CloudSyncEnabled     *bool                      `json:"cloudSyncEnabled"`
 	DataRecordingEnabled *bool                      `json:"dataRecordingEnabled"`
 }
@@ -322,7 +320,6 @@ type agentRuntimeConfig struct {
 	EnabledDeviceIDs     map[string][]string
 	InstanceMetricConfig map[string][]string
 	ProbeSelections      []agentProbeSelection
-	Virtualization       agentVirtualizationConfig
 	CloudSyncEnabled     bool
 	DataRecordingEnabled bool
 }
@@ -449,9 +446,6 @@ type agentState struct {
 	hasSlow                bool
 	currentCfg             agentRuntimeConfig
 	hasConfig              bool
-	lastVirtualizationAt   time.Time
-	lastVirtualization     *virtualizationSnapshot
-	virtualizationCounters map[string]virtualizationCounterSample
 }
 
 type pendingSample struct {
@@ -951,7 +945,6 @@ func newDefaultRuntimeConfig(connection agentConnectionConfig) agentRuntimeConfi
 			{Target: "gpu", Provider: "disabled", Enabled: false},
 			fanSelection,
 		},
-		Virtualization:       newDefaultVirtualizationConfig(),
 		CloudSyncEnabled:     true,
 		DataRecordingEnabled: true,
 	}
@@ -1024,9 +1017,6 @@ func mergeConfig(defaults agentRuntimeConfig, fileCfg agentConfigFile) agentRunt
 	}
 	if len(fileCfg.ProbeSelections) > 0 {
 		cfg.ProbeSelections = fileCfg.ProbeSelections
-	}
-	if fileCfg.Virtualization != nil {
-		cfg.Virtualization = normalizeVirtualizationConfig(*fileCfg.Virtualization)
 	}
 	if fileCfg.CloudSyncEnabled != nil {
 		cfg.CloudSyncEnabled = *fileCfg.CloudSyncEnabled
@@ -1186,7 +1176,6 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 		Fans:               ensureFans(slow.fans),
 		TemperatureSensors: append([]temperatureSensorReading{}, slow.temperatureSensors...),
 		SensorBackends:     slow.sensorBackends,
-		Virtualization:     s.collectVirtualization(cfg, now),
 	}
 
 	applyRuntimeConfig(&payload, cfg)

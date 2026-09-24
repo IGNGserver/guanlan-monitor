@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { DataTable, Modal, OverflowMenu, OverflowMenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow, Tag } from "@carbon/react";
-import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, SystemStats, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, VirtualizationStorageMetricSeries, VirtualizationStorageTelemetry, WidgetInstanceConfig, WidgetLayoutDocument, WidgetLayoutSaveRequest, WidgetPanelMetadata } from "@dsc/shared";
-import { isDisplayableVirtualizationStorage, isDisplayableVirtualizationStorageSeries, virtualizationStorageInstances } from "@dsc/shared";
+import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, SystemStats, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, WidgetInstanceConfig, WidgetLayoutDocument, WidgetLayoutSaveRequest, WidgetPanelMetadata } from "@dsc/shared";
 import appIcon from "../../assets/app-icon.png";
 import { useWorkspace } from "../WorkspaceContext";
 import type { DeviceDirectorySort, DeviceDirectoryStatus } from "../selectors";
@@ -19,7 +18,7 @@ import {
 import { DeviceWidgetFrame } from "../DeviceWidgetFrame";
 import { DynamicWidgetCanvas, WidgetDrawer } from "../widgetCatalog";
 import { M3Checkbox, M3Chip, M3SegmentedControl, M3Select, M3Switch, M3Tabs, M3TextField } from "../m3";
-import { Button, Icon, StatusLabel, Surface, SummaryRow, virtualMachinePowerState } from "../ui";
+import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
 import { TelemetryChartCard, TelemetryInfoCard } from "../TelemetryCards";
 import {
   UNAVAILABLE_METRIC_LABEL,
@@ -43,52 +42,15 @@ import {
 const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: string }).src;
 
 function isMetricUnavailable(
-  device: Pick<DeviceSummary, "instanceType" | "unavailableMetrics">,
+  device: Pick<DeviceSummary, "unavailableMetrics">,
   key: DeviceMetricKey,
   latest?: { unavailableMetrics?: DeviceMetricKey[] } | null
 ): boolean {
-  if (device.instanceType !== "virtual_machine") return false;
   return new Set([...(device.unavailableMetrics ?? []), ...(latest?.unavailableMetrics ?? [])]).has(key);
 }
 
 function unavailablePoints(points: SamplePoint[], unavailable: boolean): SamplePoint[] {
   return unavailable ? [] : points;
-}
-
-function formatVirtualizationStorageType(type: string | null | undefined): string {
-  const labels: Record<string, string> = {
-    btrfs: "Btrfs",
-    cephfs: "CephFS",
-    cifs: "CIFS",
-    dir: "目录",
-    glusterfs: "GlusterFS",
-    iscsi: "iSCSI",
-    lvm: "LVM",
-    lvmthin: "LVM-Thin",
-    nfs: "NFS",
-    rbd: "RBD",
-    zfspool: "ZFS 存储池"
-  };
-  return type ? labels[type.toLowerCase()] ?? type : UNAVAILABLE_METRIC_LABEL;
-}
-
-function formatVirtualizationStorageValue(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value) ? formatBytes(value) : UNAVAILABLE_METRIC_LABEL;
-}
-
-function formatVirtualizationStoragePercent(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(2)}%` : UNAVAILABLE_METRIC_LABEL;
-}
-
-function formatVirtualizationStorageCapacity(usedBytes: number | null | undefined, totalBytes: number | null | undefined): string {
-  const complete = typeof usedBytes === "number" && Number.isFinite(usedBytes)
-    && typeof totalBytes === "number" && Number.isFinite(totalBytes) && totalBytes > 0;
-  return formatCapacitySummary(usedBytes, totalBytes, !complete);
-}
-
-function latestSampleValue(points: SamplePoint[] | undefined): number | null {
-  const value = points?.at(-1)?.value;
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 const metricGroups: Array<{ label: string; items: Array<{ key: DeviceMetricKey; label: string }> }> = [
@@ -200,8 +162,6 @@ function DeviceDirectoryFilterBar({
   devices,
   query,
   onQueryChange,
-  typeFilter,
-  onTypeFilterChange,
   statusFilter,
   onStatusFilterChange,
   sort,
@@ -212,8 +172,6 @@ function DeviceDirectoryFilterBar({
   devices: DeviceSummary[];
   query: string;
   onQueryChange: (value: string) => void;
-  typeFilter: "all" | "device" | "virtual_machine";
-  onTypeFilterChange: (value: "all" | "device" | "virtual_machine") => void;
   statusFilter: DeviceDirectoryStatus;
   onStatusFilterChange: (value: DeviceDirectoryStatus) => void;
   sort: DeviceDirectorySort;
@@ -223,8 +181,7 @@ function DeviceDirectoryFilterBar({
 }) {
   const onlineCount = devices.filter((device) => device.status === "online").length;
   return <div className="workspace-directory-toolbar">
-    <M3TextField label="搜索设备" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="名称、设备 ID、系统或宿主机" type="search" />
-    <M3SegmentedControl className="workspace-directory-toolbar__type" options={[{ value: "all", label: "全部类型" }, { value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={typeFilter} onChange={(value) => onTypeFilterChange(value as "all" | "device" | "virtual_machine")} aria-label="设备类型" />
+    <M3TextField label="搜索设备" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="名称、设备 ID 或系统" type="search" />
     <div className="workspace-directory-toolbar__chips" aria-label="设备状态">
       <M3Chip selected={statusFilter === "all"} onClick={() => onStatusFilterChange("all")}>全部 {devices.length}</M3Chip>
       <M3Chip selected={statusFilter === "online"} onClick={() => onStatusFilterChange("online")}>在线 {onlineCount}</M3Chip>
@@ -315,10 +272,6 @@ function directoryCapacityText(device: DeviceSummary, kind: "memory" | "disk", u
 }
 
 function directoryStatusTag(device: DeviceSummary) {
-  if (device.instanceType === "virtual_machine") {
-    const power = virtualMachinePowerState(device.virtualMachine?.powerState);
-    return <Tag type={power.state === "online" ? "green" : power.state === "warning" ? "warm-gray" : "red"}>{power.label}</Tag>;
-  }
   return <Tag type={device.status === "online" ? "green" : "gray"}>{device.status === "online" ? "在线" : "离线"}</Tag>;
 }
 
@@ -392,7 +345,7 @@ function CarbonDeviceTable({
                   >
                     {row.cells.map((cell) => {
                       if (cell.info.header === "status") return <TableCell key={cell.id}>{directoryStatusTag(device)}</TableCell>;
-                      if (cell.info.header === "device") return <TableCell key={cell.id}><button className="guanlan-table-link" type="button" onClick={openDevice}>{device.hostname}</button><small className="guanlan-table-secondary">{device.instanceType === "virtual_machine" ? `虚拟机 · ${device.hostName ?? "宿主机未知"}` : `${device.os} · ID ${device.deviceId}`}</small></TableCell>;
+                      if (cell.info.header === "device") return <TableCell key={cell.id}><button className="guanlan-table-link" type="button" onClick={openDevice}>{device.hostname}</button><small className="guanlan-table-secondary">{`${device.os} · ID ${device.deviceId}`}</small></TableCell>;
                       if (cell.info.header === "heartbeat") return <TableCell key={cell.id}><span className={device.status === "online" ? "" : "guanlan-table-stale"}>{cell.value}</span><small className="guanlan-table-secondary">{device.status === "online" ? "当前响应" : "心跳已过期"}</small></TableCell>;
                       if (cell.info.header === "actions") return <TableCell key={cell.id}>{manageMode && (onMove || onDelete) ? <OverflowMenu aria-label={`管理 ${device.hostname}`} size="sm" direction="bottom"><OverflowMenuItem itemText="上移" disabled={deviceIndex <= 0} onClick={() => onMove?.(device.deviceId, -1)} /><OverflowMenuItem itemText="下移" disabled={deviceIndex < 0 || deviceIndex >= (order?.length ?? 1) - 1} onClick={() => onMove?.(device.deviceId, 1)} /><OverflowMenuItem itemText="删除" isDelete onClick={() => onDelete?.(device)} /></OverflowMenu> : <button className="guanlan-table-row-action" type="button" aria-label={`打开 ${device.hostname}`} onClick={openDevice}><Icon name="arrow" size={14} /></button>}</TableCell>;
                       return <TableCell key={cell.id}>{cell.value}</TableCell>;
@@ -437,7 +390,7 @@ function OverviewSummary({
       <div className="workspace-overview-summary__item">
         <span>在线状态</span>
         <strong>{online}<small> / {total}</small></strong>
-        <small>{offline ? `${offline} 台离线或未响应；VM 按电源状态展示` : "全部实例正在响应；VM 另显示电源状态"}</small>
+        <small>{offline ? `${offline} 台离线或未响应` : "全部设备正在响应"}</small>
       </div>
       <div className={`workspace-overview-summary__item${issueCount ? " is-warning" : ""}`}>
         <span>待处理事项</span>
@@ -1146,11 +1099,6 @@ export {
   appIconSrc,
   isMetricUnavailable,
   unavailablePoints,
-  formatVirtualizationStorageType,
-  formatVirtualizationStorageValue,
-  formatVirtualizationStoragePercent,
-  formatVirtualizationStorageCapacity,
-  latestSampleValue,
   metricGroups,
   instanceMetricOptions,
   probeTargetLabels,

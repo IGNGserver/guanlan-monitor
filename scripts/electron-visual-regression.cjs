@@ -94,17 +94,16 @@ async function run() {
     await page.locator(".workspace-sidebar .m3-navigation-item").filter({ hasText: "设备" }).click();
     await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
     const deviceTable = page.locator(".workspace-directory-surface .cds--data-table");
-    assert.equal(await deviceTable.locator("tbody tr").count(), 3, "rich Electron fixture must render every device instance");
-    assert.equal(await deviceTable.getByText("当前响应", { exact: true }).count(), 2, "online instances must expose current heartbeat facts");
+    assert.equal(await deviceTable.locator("tbody tr").count(), 2, "Electron fixture must render every device");
+    assert.equal(await deviceTable.getByText("当前响应", { exact: true }).count(), 1, "online devices must expose current heartbeat facts");
     assert.equal(await deviceTable.getByText("心跳已过期", { exact: true }).count(), 1, "offline instances must expose stale heartbeat facts");
     await page.screenshot({ path: path.join(outputDir, "electron-devices-desktop.png"), fullPage: true, animations: "disabled" });
 
-    await deviceTable.locator(".guanlan-table-link").filter({ hasText: "视觉验收虚拟机" }).click();
+    await deviceTable.locator(".guanlan-table-link").filter({ hasText: "视觉验收主机" }).click();
     await page.locator(".workspace-page--device").waitFor({ state: "visible", timeout: 15_000 });
     assert.equal(await page.locator(".workspace-breadcrumb").getByText("设备", { exact: true }).count(), 1, "Electron detail must expose the device breadcrumb");
     assert.equal(await page.locator(".workspace-device-facts").count(), 1, "Electron detail must expose stable facts");
-    assert.equal(await page.getByText(/宿主机 Agent\s*[:：]?\s*在线/).count(), 1, "Electron VM detail must separate host Agent state");
-    await page.screenshot({ path: path.join(outputDir, "electron-device-vm-rich.png"), fullPage: true, animations: "disabled" });
+    await page.screenshot({ path: path.join(outputDir, "electron-device-rich.png"), fullPage: true, animations: "disabled" });
 
     await page.evaluate(() => { window.location.hash = "#settings/general"; });
     await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });

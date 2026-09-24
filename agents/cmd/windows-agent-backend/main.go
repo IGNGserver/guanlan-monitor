@@ -45,7 +45,6 @@ type (
 	agentConnectionConfig     = agentconfig.Connection
 	agentSamplingConfig       = agentconfig.Sampling
 	agentProbeSelection       = agentconfig.ProbeSelection
-	agentVirtualizationConfig = agentconfig.Virtualization
 	agentLocalConfig          = agentconfig.LocalConfig
 	probePlanSupport          = agentconfig.ProbePlan
 )

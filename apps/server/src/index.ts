@@ -10,7 +10,6 @@ import { agentMetricsPayloadSchema } from "./metrics-schema.js";
 import { RedisRealtimeRepository } from "./repositories/realtime.js";
 import { MysqlHistoryRepository } from "./repositories/history.js";
 import { MysqlDeviceRepository } from "./repositories/devices.js";
-import { MysqlVirtualMachineRepository } from "./repositories/virtual-machines.js";
 import {
   createLocalStore,
   LocalDeviceMetricConfigStore,
@@ -18,8 +17,7 @@ import {
   LocalFanNoteStore,
   LocalHistoryRepository,
   LocalRealtimeRepository,
-  LocalWidgetLayoutStore,
-  LocalVirtualMachineRepository
+  LocalWidgetLayoutStore
 } from "./repositories/local.js";
 import { MysqlWidgetLayoutStore } from "./repositories/widget-layouts.js";
 import { MetricsService } from "./services/metrics.js";
@@ -62,6 +60,7 @@ await app.register(cookie, { secret: env.SESSION_SECRET });
 
 let repositories: Repositories;
 const store = createLocalStore();
+await store.removeLegacyVirtualMachineData();
 const deviceMetricConfigs = new LocalDeviceMetricConfigStore(store);
 const fanNotes = new LocalFanNoteStore(store);
 const localWidgetLayouts = new LocalWidgetLayoutStore(store);
@@ -83,6 +82,7 @@ if (env.REDIS_URL) {
 const realtime = redisClient
   ? new RedisRealtimeRepository(redisClient)
   : new LocalRealtimeRepository(store);
+if (realtime instanceof RedisRealtimeRepository) await realtime.removeLegacyVirtualMachineData();
 
 let mysqlPool: mysql.Pool | null = null;
 if (env.MYSQL_URL) {
@@ -100,28 +100,38 @@ if (env.MYSQL_URL) {
   });
   const history = new MysqlHistoryRepository(pool);
   const devicesRepo = new MysqlDeviceRepository(pool);
-  const virtualMachinesRepo = new MysqlVirtualMachineRepository(pool);
   const mysqlWidgetLayouts = new MysqlWidgetLayoutStore(pool, localWidgetLayouts);
   await history.init();
   await devicesRepo.init();
-  await virtualMachinesRepo.init();
   await mysqlWidgetLayouts.init();
+  await removeLegacyVirtualMachineData(pool);
   widgetLayouts = mysqlWidgetLayouts;
-  repositories = { realtime, history, devices: devicesRepo, virtualMachines: virtualMachinesRepo };
+  repositories = { realtime, history, devices: devicesRepo };
   app.log.info(env.REDIS_URL ? "using redis + mysql repositories" : "using local realtime + mysql history repositories");
 } else {
   const localHistory = new LocalHistoryRepository(store);
   repositories = {
     realtime,
     history: localHistory,
-    devices: new LocalDeviceRepository(store),
-    virtualMachines: new LocalVirtualMachineRepository(store)
+    devices: new LocalDeviceRepository(store)
   };
   // Non-blocking cleanup off startup critical path
   void localHistory.runRetentionCleanup().catch((error) => {
     app.log.error({ error }, "initial local history retention cleanup failed");
   });
   app.log.warn("MYSQL_URL missing, falling back to local JSON history storage");
+}
+
+async function removeLegacyVirtualMachineData(pool: mysql.Pool) {
+  await pool.query("DROP TABLE IF EXISTS virtual_machines");
+  await pool.query("DELETE FROM devices WHERE device_id LIKE 'vm:%'");
+  for (const table of ["device_minute_metrics", "device_hourly_metrics"]) {
+    await pool.query(`DELETE FROM ${table} WHERE device_id LIKE 'vm:%'`);
+    await pool.query(`UPDATE ${table} SET recorded_details_json = JSON_REMOVE(recorded_details_json, '$.virtualization') WHERE JSON_CONTAINS_PATH(recorded_details_json, 'one', '$.virtualization')`);
+    await pool.query(`UPDATE ${table} SET recorded_details_json = JSON_REMOVE(recorded_details_json, '$.storagePools') WHERE JSON_CONTAINS_PATH(recorded_details_json, 'one', '$.storagePools')`);
+  }
+  await pool.query("DELETE FROM widget_layout_instances WHERE scope_key LIKE '%vm:%' OR template_key LIKE '%virtual_machine%'");
+  await pool.query("DELETE FROM widget_layout_templates WHERE template_key LIKE '%virtual_machine%'");
 }
 
 let io: SocketIOServer | null = null;
@@ -157,6 +167,9 @@ app.post<{ Body: AgentMetricsPayload }>("/api/agent/ingest", async (request, rep
 
   const parsed = agentMetricsPayloadSchema.safeParse(request.body);
   if (!parsed.success) {
+    return reply.code(400).send({ error: "invalid_agent_payload" });
+  }
+  if (parsed.data.identity.deviceId.startsWith("vm:")) {
     return reply.code(400).send({ error: "invalid_agent_payload" });
   }
 

@@ -39,6 +39,30 @@ test("accepts the collector payload shape", () => {
   assert.equal(result.success, true);
 });
 
+test("strips virtualization fields from legacy agent payloads", () => {
+  const payload = validPayload() as ReturnType<typeof validPayload> & Record<string, unknown>;
+  payload.identity = {
+    ...payload.identity,
+    instanceType: "virtual_machine",
+    hostDeviceId: "host-1",
+    hostName: "host-1",
+    virtualMachine: { vmId: "vm:old", platform: "proxmox" }
+  } as typeof payload.identity;
+  payload.virtualization = { platform: "proxmox", vms: [{ id: "vm-1" }] };
+  payload.storagePools = [{ id: "legacy-pool" }];
+
+  const result = agentMetricsPayloadSchema.safeParse(payload);
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  const identity = result.data.identity as Record<string, unknown>;
+  assert.equal("virtualization" in result.data, false);
+  assert.equal("storagePools" in result.data, false);
+  assert.equal("instanceType" in identity, false);
+  assert.equal("hostDeviceId" in identity, false);
+  assert.equal("hostName" in identity, false);
+  assert.equal("virtualMachine" in identity, false);
+});
+
 test("accepts legacy agent payloads without system counters", () => {
   const payload = validPayload();
   const legacyPayload = { ...payload } as Partial<typeof payload>;

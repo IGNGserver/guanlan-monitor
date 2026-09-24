@@ -12,14 +12,6 @@ import type {
 } from "../types.js";
 import { buildTrafficCalendar } from "../traffic-calendar.js";
 import { ALL_DEVICE_METRIC_KEYS, HEARTBEAT_TIMEOUT_MS, payloadToTimeSeries, toSummary } from "../utils.js";
-import {
-  buildVirtualMachinePayload,
-  virtualMachineExternalId,
-  virtualMachineId,
-  virtualMachineScopeKey,
-  shouldIngestVirtualMachineSnapshot,
-  shouldReconcileVirtualMachineSnapshot
-} from "./virtual-machines.js";
 
 const LIVE_WINDOWS: AggregatedWindowConfig[] = [
   { bucket: "1m", maxPoints: 30 },
@@ -57,7 +49,6 @@ export class MetricsService {
     );
     if (device.status === "closed") return;
     await this.persistPayload(payload, receivedAt);
-    await this.ingestVirtualMachines(payload);
   }
 
   private async persistPayload(
@@ -100,44 +91,6 @@ export class MetricsService {
     this.emitDeviceEvent(event);
   }
 
-  private async ingestVirtualMachines(hostPayload: AgentMetricsPayload) {
-    const snapshot = hostPayload.virtualization;
-    if (!snapshot || !shouldIngestVirtualMachineSnapshot(snapshot)) return;
-
-    const scopeKey = virtualMachineScopeKey(snapshot, hostPayload.identity.deviceId);
-    const observedAt = new Date().toISOString();
-    const observedVirtualMachineIds: string[] = [];
-    for (const vm of snapshot.vms ?? []) {
-      const externalId = virtualMachineExternalId(vm);
-      if (!externalId) continue;
-      const proposedId = virtualMachineId(scopeKey, externalId);
-      const record = await this.repositories.virtualMachines.registerOrUpdate({
-        virtualMachineId: proposedId,
-        scopeKey,
-        externalId,
-        platform: vm.platform || snapshot.platform,
-        name: vm.name || externalId,
-        hostDeviceId: hostPayload.identity.deviceId,
-        hostName: hostPayload.identity.hostname,
-        node: vm.node ?? null,
-        type: vm.type ?? null,
-        powerState: vm.powerState || "unknown",
-        observedAt
-      });
-      observedVirtualMachineIds.push(record.virtualMachineId);
-      await this.persistPayload(buildVirtualMachinePayload(hostPayload, record, vm), observedAt, record.sortOrder);
-    }
-
-    if (shouldReconcileVirtualMachineSnapshot(snapshot)) {
-      const closedIds = await this.repositories.virtualMachines.reconcile(
-        scopeKey,
-        observedVirtualMachineIds,
-        observedAt
-      );
-      await Promise.all(closedIds.map((deviceId) => this.removeDevice(deviceId)));
-    }
-  }
-
   async removeDevice(deviceId: string) {
     const state = await this.repositories.realtime.getDevice(deviceId);
     await this.runDeviceAggregateOperation(deviceId, async () => {
@@ -158,12 +111,10 @@ export class MetricsService {
   async markOfflineDevices() {
     const devices = await this.repositories.realtime.listDevices();
     const now = Date.now();
-    const openVirtualMachineIds = new Set((await this.repositories.virtualMachines.listOpen()).map((item) => item.virtualMachineId));
 
     await Promise.all(
       devices.map(async (device) => {
         if (device.status === "offline") return;
-        if (device.identity.instanceType === "virtual_machine" && !openVirtualMachineIds.has(device.identity.deviceId)) return;
         if (now - Date.parse(device.lastSeenAt) < HEARTBEAT_TIMEOUT_MS) return;
         const marked = await this.repositories.realtime.markOfflineIfMatch(
           device.identity.deviceId,

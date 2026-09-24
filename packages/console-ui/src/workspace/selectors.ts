@@ -1,4 +1,4 @@
-import type { ConsoleSnapshot, DeviceMetricKey, DeviceSummary, InstanceType } from "@dsc/shared";
+import type { ConsoleSnapshot, DeviceMetricKey, DeviceSummary } from "@dsc/shared";
 
 export type DeviceDirectoryStatus = "all" | "online" | "offline";
 export type DeviceDirectorySort = "order" | "name" | "cpu" | "memory" | "lastSeen";
@@ -7,10 +7,6 @@ export interface HealthSummary {
   total: number;
   online: number;
   offline: number;
-  hostTotal: number;
-  hostOnline: number;
-  virtualMachineTotal: number;
-  virtualMachineOnline: number;
   pending: number | null;
   source: "live" | "cache" | "empty" | "unknown";
   sourceLabel: string;
@@ -18,7 +14,6 @@ export interface HealthSummary {
 }
 export interface DeviceDirectoryQuery {
   query?: string;
-  instanceType?: InstanceType | "all";
   status?: DeviceDirectoryStatus;
   sort?: DeviceDirectorySort;
 }
@@ -43,16 +38,8 @@ function metricUnavailable(device: DeviceSummary, key: DeviceMetricKey): boolean
 
 export function selectHealthSummary(snapshot: ConsoleSnapshot, allDevices: DeviceSummary[], formatDate: (value: string | null | undefined) => string): HealthSummary {
   const online = allDevices.filter((device) => device.status === "online").length;
-  const hostDevices = allDevices.filter((device) => device.instanceType !== "virtual_machine");
-  const virtualMachines = allDevices.filter((device) => device.instanceType === "virtual_machine");
-  const hostOnline = hostDevices.filter((device) => device.status === "online").length;
-  const virtualMachineOnline = virtualMachines.filter((device) => device.status === "online").length;
   const source = selectSnapshotSource(snapshot, allDevices);
-  const unhealthyDevices = allDevices.filter((device) => {
-    if (device.status !== "online") return true;
-    if (device.instanceType !== "virtual_machine") return false;
-    return device.virtualMachine?.powerState?.trim().toLowerCase() !== "running";
-  }).length;
+  const unhealthyDevices = allDevices.filter((device) => device.status !== "online").length;
   const pending = source === "live"
     ? unhealthyDevices + (snapshot.localBackend?.lastIssueCount ?? 0)
     : null;
@@ -60,10 +47,6 @@ export function selectHealthSummary(snapshot: ConsoleSnapshot, allDevices: Devic
     total: allDevices.length,
     online,
     offline: allDevices.length - online,
-    hostTotal: hostDevices.length,
-    hostOnline,
-    virtualMachineTotal: virtualMachines.length,
-    virtualMachineOnline,
     pending,
     source,
     sourceLabel: source === "live" ? "实时连接" : source === "cache" ? "离线缓存" : source === "empty" ? "等待数据" : "连接异常",
@@ -90,14 +73,9 @@ export function selectResourceRanking(devices: DeviceSummary[], metric: "cpu" | 
 }
 
 export function selectOverviewDevices(allDevices: DeviceSummary[], limit = 6): DeviceSummary[] {
-  const attentionRank = (device: DeviceSummary) => {
-    if (device.status !== "online") return 0;
-    if (device.instanceType === "virtual_machine" && device.virtualMachine?.powerState?.trim().toLowerCase() !== "running") return 1;
-    return 2;
-  };
   return allDevices
     .slice()
-    .sort((left, right) => attentionRank(left) - attentionRank(right)
+    .sort((left, right) => (left.status === "online" ? 1 : 0) - (right.status === "online" ? 1 : 0)
       || (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
       || Date.parse(right.lastSeenAt ?? "") - Date.parse(left.lastSeenAt ?? ""))
     .slice(0, limit);
@@ -106,10 +84,9 @@ export function selectOverviewDevices(allDevices: DeviceSummary[], limit = 6): D
 export function selectDeviceDirectory(devices: DeviceSummary[], query: DeviceDirectoryQuery = {}): DeviceSummary[] {
   const normalizedQuery = query.query?.trim().toLocaleLowerCase() ?? "";
   const filtered = devices.filter((device) => {
-    const typeMatches = !query.instanceType || query.instanceType === "all" || (device.instanceType ?? "device") === query.instanceType;
     const statusMatches = !query.status || query.status === "all" || (query.status === "online" ? device.status === "online" : device.status !== "online");
-    const textMatches = !normalizedQuery || `${device.hostname} ${device.deviceId} ${device.os} ${device.hostName ?? ""}`.toLocaleLowerCase().includes(normalizedQuery);
-    return typeMatches && statusMatches && textMatches;
+    const textMatches = !normalizedQuery || `${device.hostname} ${device.deviceId} ${device.os}`.toLocaleLowerCase().includes(normalizedQuery);
+    return statusMatches && textMatches;
   });
   const sort = query.sort ?? "order";
   return filtered.slice().sort((left, right) => {

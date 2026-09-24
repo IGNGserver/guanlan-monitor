@@ -65,17 +65,6 @@ const metricKey = z.enum([
   "fanNote"
 ]);
 
-const virtualMachineIdentitySchema = z.object({
-  vmId: identifier,
-  platform: text(64),
-  externalId: optionalText(256),
-  node: optionalText(128).nullable(),
-  type: optionalText(128).nullable(),
-  powerState: optionalText(64).nullable(),
-  hostDeviceId: optionalText(128),
-  hostName: optionalText(255)
-}).passthrough();
-
 const identitySchema = z.object({
   deviceId: identifier,
   hostname: text(255),
@@ -84,12 +73,17 @@ const identitySchema = z.object({
   arch: text(64),
   cpuModel: optionalText(256),
   version: optionalText(64),
-  channel: z.enum(["stable", "test"]).optional(),
-  instanceType: z.enum(["device", "virtual_machine"]).optional(),
-  hostDeviceId: optionalText(128),
-  hostName: optionalText(255),
-  virtualMachine: virtualMachineIdentitySchema.optional()
-}).passthrough();
+  channel: z.enum(["stable", "test"]).optional()
+}).passthrough().transform((identity) => {
+  const sanitized = { ...identity } as Record<string, unknown>;
+  delete sanitized.instanceType;
+  delete sanitized.hostDeviceId;
+  delete sanitized.hostName;
+  delete sanitized.virtualMachine;
+  delete sanitized.virtualization;
+  delete sanitized.storagePools;
+  return sanitized;
+});
 
 const memorySchema = z.object({
   totalBytes: nonNegative,
@@ -260,151 +254,6 @@ const sensorBackendSchema = z.object({
   detail: optionalText(1_024)
 }).passthrough();
 
-const virtualizationCpuSchema = z.object({
-  configuredCores: nonNegativeInt.nullable().optional(),
-  usagePercent: percentage.nullable().optional(),
-  usageMHz: nonNegative.nullable().optional(),
-  demandMHz: nonNegative.nullable().optional(),
-  readinessPercent: percentage.nullable().optional()
-}).passthrough();
-
-const virtualizationMemorySchema = z.object({
-  configuredBytes: nonNegative.nullable().optional(),
-  usedBytes: nonNegative.nullable().optional(),
-  availableBytes: nonNegative.nullable().optional(),
-  activeBytes: nonNegative.nullable().optional(),
-  balloonedBytes: nonNegative.nullable().optional(),
-  swappedBytes: nonNegative.nullable().optional(),
-  pressurePercent: percentage.nullable().optional()
-}).passthrough();
-
-const virtualizationDiskSchema = z.object({
-  provisionedBytes: nonNegative.nullable().optional(),
-  allocatedBytes: nonNegative.nullable().optional(),
-  usedBytes: nonNegative.nullable().optional(),
-  readBytesPerSec: nonNegative.nullable().optional(),
-  writeBytesPerSec: nonNegative.nullable().optional(),
-  totalReadBytes: nonNegative.nullable().optional(),
-  totalWriteBytes: nonNegative.nullable().optional(),
-  readOpsPerSec: nonNegative.nullable().optional(),
-  writeOpsPerSec: nonNegative.nullable().optional(),
-  latencyMs: nonNegative.nullable().optional()
-}).passthrough();
-
-const virtualizationNetworkSchema = z.object({
-  rxBytesPerSec: nonNegative.nullable().optional(),
-  txBytesPerSec: nonNegative.nullable().optional(),
-  totalRxBytes: nonNegative.nullable().optional(),
-  totalTxBytes: nonNegative.nullable().optional()
-}).passthrough();
-
-const virtualizationDiskDeviceSchema = z.object({
-  id: identifier,
-  name: text(256),
-  storage: optionalText(256).nullable(),
-  path: optionalText(1_024).nullable(),
-  capacityBytes: nonNegative.nullable().optional(),
-  allocatedBytes: nonNegative.nullable().optional(),
-  usedBytes: nonNegative.nullable().optional(),
-  readBytesPerSec: nonNegative.nullable().optional(),
-  writeBytesPerSec: nonNegative.nullable().optional(),
-  totalReadBytes: nonNegative.nullable().optional(),
-  totalWriteBytes: nonNegative.nullable().optional(),
-  latencyMs: nonNegative.nullable().optional()
-}).passthrough();
-
-const virtualizationNetworkDeviceSchema = z.object({
-  id: identifier,
-  name: text(256),
-  macAddress: optionalText(64).nullable(),
-  bridge: optionalText(256).nullable(),
-  switchName: optionalText(256).nullable(),
-  network: optionalText(256).nullable(),
-  vlan: nonNegativeInt.max(4_094).nullable().optional(),
-  rxBytesPerSec: nonNegative.nullable().optional(),
-  txBytesPerSec: nonNegative.nullable().optional(),
-  totalRxBytes: nonNegative.nullable().optional(),
-  totalTxBytes: nonNegative.nullable().optional()
-}).passthrough();
-
-const virtualizationFilesystemSchema = z.object({
-  mountPoint: text(1_024),
-  filesystem: optionalText(128).nullable(),
-  totalBytes: nonNegative.nullable().optional(),
-  usedBytes: nonNegative.nullable().optional(),
-  availableBytes: nonNegative.nullable().optional()
-}).passthrough();
-
-const virtualizationGuestSchema = z.object({
-  hostname: optionalText(255).nullable(),
-  ipv4: z.array(text(64)).max(64).optional(),
-  ipv6: z.array(text(128)).max(64).optional(),
-  agentAvailable: z.boolean().optional(),
-  source: optionalText(128).nullable(),
-  filesystems: z.array(virtualizationFilesystemSchema).max(256).optional()
-}).passthrough();
-
-const virtualizationStorageSchema = z.object({
-  id: identifier,
-  name: text(256),
-  node: optionalText(128).nullable(),
-  type: optionalText(128).nullable(),
-  active: z.boolean().nullable().optional(),
-  shared: z.boolean().nullable().optional(),
-  totalBytes: nonNegative.nullable().optional(),
-  usedBytes: nonNegative.nullable().optional(),
-  availableBytes: nonNegative.nullable().optional()
-}).passthrough();
-
-const virtualizationNodeSchema = z.object({
-  id: identifier,
-  name: text(256),
-  platform: z.enum(["auto", "proxmox", "hyperv", "vsphere", "libvirt", "qemu", "virtualbox", "vmware-workstation", "vmware-fusion"]),
-  status: text(128),
-  version: optionalText(128).nullable(),
-  cpu: virtualizationCpuSchema.optional(),
-  memory: virtualizationMemorySchema.optional(),
-  disk: virtualizationDiskSchema.optional(),
-  network: virtualizationNetworkSchema.optional(),
-  storages: z.array(virtualizationStorageSchema).max(2_048).optional()
-}).passthrough();
-
-const virtualizationVmSchema = z.object({
-  id: identifier,
-  name: text(256),
-  platform: z.enum(["auto", "proxmox", "hyperv", "vsphere", "libvirt", "qemu", "virtualbox", "vmware-workstation", "vmware-fusion"]),
-  node: optionalText(128).nullable(),
-  type: optionalText(128).nullable(),
-  powerState: text(128),
-  cpu: virtualizationCpuSchema.optional(),
-  memory: virtualizationMemorySchema.optional(),
-  disk: virtualizationDiskSchema.optional(),
-  network: virtualizationNetworkSchema.optional(),
-  disks: z.array(virtualizationDiskDeviceSchema).max(2_048).optional(),
-  networks: z.array(virtualizationNetworkDeviceSchema).max(2_048).optional(),
-  guest: virtualizationGuestSchema.optional()
-}).passthrough();
-
-const virtualizationIssueSchema = z.object({
-  code: text(128),
-  message: text(2_048),
-  scope: optionalText(256).nullable(),
-  retryable: z.boolean().optional()
-}).passthrough();
-
-const virtualizationSchema = z.object({
-  platform: z.enum(["auto", "proxmox", "hyperv", "vsphere", "libvirt", "qemu", "virtualbox", "vmware-workstation", "vmware-fusion"]),
-  source: text(128),
-  collectedAt: timestamp,
-  inventoryScope: optionalText(256),
-  inventoryComplete: z.boolean().optional(),
-  nodes: z.array(virtualizationNodeSchema).max(256),
-  vms: z.array(virtualizationVmSchema).max(4_096),
-  storages: z.array(virtualizationStorageSchema).max(2_048).optional(),
-  capabilities: z.array(text(128)).max(256),
-  issues: z.array(virtualizationIssueSchema).max(256).optional()
-}).passthrough();
-
 export const agentMetricsPayloadSchema = z.object({
   sampleId: optionalText(128),
   identity: identitySchema,
@@ -432,6 +281,10 @@ export const agentMetricsPayloadSchema = z.object({
   gpus: z.array(gpuSchema).max(128),
   fans: z.array(fanSchema).max(256),
   temperatureSensors: z.array(temperatureSensorSchema).max(1_024).optional(),
-  sensorBackends: z.array(sensorBackendSchema).max(128).optional(),
-  virtualization: virtualizationSchema.nullable().optional()
-}).passthrough();
+  sensorBackends: z.array(sensorBackendSchema).max(128).optional()
+}).passthrough().transform((payload) => {
+  const sanitized = { ...payload } as Record<string, unknown>;
+  delete sanitized.virtualization;
+  delete sanitized.storagePools;
+  return sanitized;
+});

@@ -62,7 +62,7 @@ export function SettingsPage() {
 }
 
 function WebWorkspaceSettings() {
-  const { snapshot, hubs, allDevices, instanceType, setInstanceType, refreshInterval, setRefreshInterval, refresh, refreshing, mutationPending } = useWorkspace();
+  const { snapshot, hubs, allDevices, refreshInterval, setRefreshInterval, refresh, refreshing, mutationPending } = useWorkspace();
   const hub = hubs[0];
   const online = allDevices.filter((device) => device.status === "online").length;
   const source = snapshot ? selectSnapshotSource(snapshot, allDevices) : "unknown";
@@ -86,7 +86,6 @@ function WebWorkspaceSettings() {
           <div className="workspace-surface__header"><div><span className="workspace-section-kicker">中枢状态偏好</span><h3>浏览器显示与刷新</h3></div></div>
           <div className="workspace-settings-list">
             <SettingRow label="状态刷新频率" description="只影响当前网页读取状态的频率，不改变 Agent 的采样间隔。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "5", label: "5 秒" }, { value: "10", label: "10 秒" }, { value: "30", label: "30 秒" }]} value={String(refreshInterval)} onChange={(value) => setRefreshInterval(Number(value) as typeof refreshInterval)} aria-label="状态刷新频率" disabled={mutationPending} /></SettingRow>
-            <SettingRow label="总览观察范围" description="健康结论始终覆盖全部实例；默认自动显示所有类型，也可以只看普通设备或虚拟机。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "all", label: "全部" }, { value: "device", label: "普通设备" }, { value: "virtual_machine", label: "虚拟机" }]} value={instanceType} onChange={(value) => setInstanceType(value as typeof instanceType)} aria-label="总览观察范围" /></SettingRow>
           </div>
         </Surface>
 

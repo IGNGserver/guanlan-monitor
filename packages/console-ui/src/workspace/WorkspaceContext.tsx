@@ -45,8 +45,6 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     setDensity,
     refreshInterval,
     setRefreshInterval,
-    instanceType,
-    setInstanceType,
     orientation,
     isTouch,
     inputMode,
@@ -334,12 +332,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   const refresh = useCallback(() => fetchSnapshot(true), [fetchSnapshot]);
 
   const allDevices = snapshot?.devices ?? [];
-  const devices = useMemo(
-    () => instanceType === "all"
-      ? allDevices
-      : allDevices.filter((device) => (device.instanceType ?? "device") === instanceType),
-    [allDevices, instanceType]
-  );
+  const devices = allDevices;
   const filteredDevices = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return devices;
@@ -378,8 +371,6 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     hubs,
     devices,
     allDevices,
-    instanceType,
-    setInstanceType,
     filteredDevices,
     selectedDevice,
     metricsWindow,

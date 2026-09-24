@@ -65,11 +65,9 @@ public final class AppViewModel {
     
     public var devices: [DeviceSummaryDto] = []
     public var selectedDeviceId: String? = nil
-    public var instanceType: String = "device"
 
     public var visibleDevices: [DeviceSummaryDto] {
         devices
-            .filter { ($0.instanceType ?? "device") == instanceType }
             .sorted {
                 let left = $0.sortOrder ?? Int.max
                 let right = $1.sortOrder ?? Int.max
@@ -163,7 +161,6 @@ public final class AppViewModel {
         trafficCalendar = nil
         updateInfo = nil
         selectedDeviceId = nil
-        instanceType = "device"
         activeScreen = .login
         stopPolling()
         isLoading = false
@@ -180,12 +177,10 @@ public final class AppViewModel {
                 updateInfo = nil
             }
             if let currentId = selectedDeviceId, let current = devices.first(where: { $0.deviceId == currentId }) {
-                instanceType = current.instanceType ?? "device"
                 activeScreen = .deviceDetail(deviceId: currentId)
                 await refreshMetrics()
             } else if let first = visibleDevices.first ?? devices.first {
                 selectedDeviceId = first.deviceId
-                instanceType = first.instanceType ?? "device"
                 activeScreen = .deviceDetail(deviceId: first.deviceId)
                 await refreshMetrics()
             } else {
@@ -229,16 +224,6 @@ public final class AppViewModel {
             }
         } catch {
             print("刷新指标失败: \(error)")
-        }
-    }
-
-    public func selectInstanceType(_ type: String) {
-        instanceType = type == "virtual_machine" ? "virtual_machine" : "device"
-        if let currentSelectedId = selectedDeviceId,
-           let selected = devices.first(where: { $0.deviceId == currentSelectedId }),
-           (selected.instanceType ?? "device") != instanceType {
-            selectedDeviceId = visibleDevices.first?.deviceId
-            metrics = nil
         }
     }
 

@@ -118,11 +118,7 @@ import com.dsc.android.TrafficCalendarDto
 import com.dsc.android.TrafficCalendarMode
 import com.dsc.android.TemperatureMetricSeriesDto
 import com.dsc.android.TemperatureSensorDto
-import com.dsc.android.VirtualizationStorageDisplay
-import com.dsc.android.displayableVirtualizationStoragePools
 import com.dsc.android.resolveChartIndex
-import com.dsc.android.storagePoolIdFromTabId
-import com.dsc.android.storagePoolTabId
 import com.dsc.android.splitSamplePointSegments
 import kotlin.math.max
 
@@ -134,7 +130,6 @@ fun AppRoot(
   onLogout: () -> Unit,
   onSystemBack: () -> Unit,
   onOpenDevice: (String, DeviceBlockKey?) -> Unit,
-  onSelectInstanceType: (String) -> Unit,
   onDeleteDevice: (String) -> Unit,
   onReorderDevices: (List<String>) -> Unit,
   onClearFocusedBlock: () -> Unit,
@@ -208,7 +203,7 @@ fun AppRoot(
           AppScreen.Login -> {
             if (state.loading) LoadingScreen() else LoginScreen(state, onSaveServerConfig)
           }
-          AppScreen.DeviceList -> DeviceListScreen(state, onOpenDevice, onOpenTraffic, onOpenDeviceEditor, onSelectInstanceType, onDeleteDevice, onReorderDevices, onRequestLogout = { showLogoutConfirm = true }, onRefresh = onRefresh, onDownloadUpdate = onDownloadUpdate)
+          AppScreen.DeviceList -> DeviceListScreen(state, onOpenDevice, onOpenTraffic, onOpenDeviceEditor, onDeleteDevice, onReorderDevices, onRequestLogout = { showLogoutConfirm = true }, onRefresh = onRefresh, onDownloadUpdate = onDownloadUpdate)
           AppScreen.Traffic -> TrafficScreen(state, onShowDeviceList, onSelectTrafficMode, onSelectTrafficCell, onShiftTrafficAnchor, onRefresh)
           AppScreen.DeviceDetail -> DeviceDetailScreen(state, onShowDeviceList, onSelectWindow, onOpenTraffic, onCloseTrafficSheet, onSelectTrafficCell, onOpenBlockEditor, onOpenInstanceEditor, onRefresh, onClearFocusedBlock)
         }
@@ -337,7 +332,6 @@ private fun DeviceListScreen(
   onOpenDevice: (String, DeviceBlockKey?) -> Unit,
   onOpenTraffic: (String) -> Unit,
   onOpenDeviceEditor: (String) -> Unit,
-  onSelectInstanceType: (String) -> Unit,
   onDeleteDevice: (String) -> Unit,
   onReorderDevices: (List<String>) -> Unit,
   onRequestLogout: () -> Unit,
@@ -345,11 +339,10 @@ private fun DeviceListScreen(
   onDownloadUpdate: () -> Unit
 ) {
   val haptic = LocalHapticFeedback.current
-  var pendingDeleteDevice by remember(state.instanceType) { mutableStateOf<DeviceSummaryDto?>(null) }
-  var editMode by remember(state.instanceType) { mutableStateOf(false) }
-  var draftDeviceIds by remember(state.instanceType) { mutableStateOf<List<String>?>(null) }
+  var pendingDeleteDevice by remember(state.devices) { mutableStateOf<DeviceSummaryDto?>(null) }
+  var editMode by remember(state.devices) { mutableStateOf(false) }
+  var draftDeviceIds by remember(state.devices) { mutableStateOf<List<String>?>(null) }
   val persistedDevices = state.devices
-    .filter { state.instanceType == "all" || it.instanceType == state.instanceType }
     .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
   val persistedDeviceIds = persistedDevices.map { it.deviceId }
   val draftIds = draftDeviceIds
@@ -457,20 +450,6 @@ private fun DeviceListScreen(
           }
         }
       }
-      item(key = "instance-tabs") {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          listOf("all" to "全部", "device" to "普通设备", "virtual_machine" to "虚拟机").forEach { (type, label) ->
-            FilterChip(
-              selected = state.instanceType == type,
-              onClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                onSelectInstanceType(type)
-              },
-              label = { Text(label) }
-            )
-          }
-        }
-      }
       if (state.dataSource == RemoteDataSource.Cache) {
         item(key = "connection-status") {
           ConnectionStatusCard(state = state, onRefresh = onRefresh)
@@ -494,7 +473,7 @@ private fun DeviceListScreen(
       }
       if (visibleDevices.isEmpty()) {
         item(key = "empty-instance-list") {
-          InlineEmptyCard(if (state.instanceType == "all") "暂未发现设备" else if (state.instanceType == "virtual_machine") "暂未发现虚拟机" else "暂未发现普通设备")
+          InlineEmptyCard("暂未发现设备")
         }
       }
       items(visibleDevices.size, key = { index -> visibleDevices[index].deviceId }) { index ->
@@ -527,8 +506,8 @@ private fun DeviceListScreen(
   pendingDeleteDevice?.let { device ->
     AlertDialog(
       onDismissRequest = { pendingDeleteDevice = null },
-      title = { Text("删除${if (device.instanceType == "virtual_machine") "虚拟机" else "设备"}实例？") },
-      text = { Text("删除后它会从当前列表隐藏；宿主机/Agent下次上报时会自动重新显示。") },
+      title = { Text("删除设备实例？") },
+      text = { Text("删除后它会从当前列表隐藏；设备下次上报时会重新显示。") },
       confirmButton = {
         Button(onClick = {
           pendingDeleteDevice = null
@@ -612,12 +591,9 @@ private fun DeviceListCard(
         Column(modifier = Modifier.weight(1f)) {
           Text(device.hostname, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
           Text(device.deviceId, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          if (device.instanceType == "virtual_machine") {
-            Text("宿主机：${device.hostName ?: "未知"}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-          }
         }
         Column(horizontalAlignment = Alignment.End) {
-          Text(if (device.instanceType == "virtual_machine") "虚拟机" else device.os.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Text(device.os.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
           Text(if (device.status == "online") "在线" else "离线", style = MaterialTheme.typography.labelSmall, color = if (device.status == "online") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
         }
         if (editMode) {
@@ -686,11 +662,7 @@ private fun DeviceDetailScreen(
           Column {
             Text(metrics.device.hostname)
             Text(
-              if (metrics.device.instanceType == "virtual_machine") {
-                "虚拟机 · 宿主机：${metrics.device.hostName ?: "未知"} · ${metrics.status}"
-              } else {
-                "${metrics.device.os} · ${metrics.device.platform} · ${metrics.status}"
-              },
+              "${metrics.device.os} · ${metrics.device.platform} · ${metrics.status}",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -927,8 +899,7 @@ private fun OverviewCard(metrics: MetricsDto, selectedWindow: MetricWindow, onOp
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
       Text(metrics.device.hostname, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
       Text(
-        if (metrics.device.instanceType == "virtual_machine") "宿主机：${metrics.device.hostName ?: "未知"} · ${metrics.device.cpuModel ?: "虚拟 CPU"}"
-        else metrics.device.cpuModel ?: "--",
+        metrics.device.cpuModel ?: "--",
         color = MaterialTheme.colorScheme.onSurfaceVariant
       )
       HorizontalDivider()
@@ -1240,7 +1211,6 @@ private fun fanInstancesForDisplay(metrics: MetricsDto): List<FanDto> {
 }
 
 private fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWindow): List<OverviewCapsuleModel> {
-  val storagePoolCount = displayableVirtualizationStoragePools(metrics).size
   val fans = fanInstancesForDisplay(metrics)
   return buildList {
     add(
@@ -1283,10 +1253,7 @@ private fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWin
       OverviewCapsuleModel(
         blockKey = DeviceBlockKey.Disk,
         title = "硬盘",
-        subtitle = buildString {
-          append("${metrics.latest.disks.size} 个设备 / 分区")
-          if (storagePoolCount > 0) append(" · $storagePoolCount 个存储池")
-        },
+        subtitle = "${metrics.latest.disks.size} 个设备 / 分区",
         metrics = listOf(
           "总占用" to buildUsage(metrics.latest.diskUsedBytes, metrics.latest.diskTotalBytes),
           "读取" to metricPoint(metrics.series.diskReadBytesPerSec, selectedWindow, ::formatSpeed),
@@ -1369,9 +1336,6 @@ private fun buildBlockSheetTabs(metrics: MetricsDto, blockKey: DeviceBlockKey): 
     DeviceBlockKey.Memory -> Unit
     DeviceBlockKey.Disk -> {
       metrics.latest.disks.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
-      displayableVirtualizationStoragePools(metrics).forEach { storagePool ->
-        tabs += BlockSheetTabModel(storagePoolTabId(storagePool.id), storagePool.name)
-      }
     }
     DeviceBlockKey.Network -> metrics.latest.networkInterfaces.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
     DeviceBlockKey.Temperature -> Unit
@@ -1408,7 +1372,7 @@ private fun CpuSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: 
   if (tabId == "total") {
     val temperaturePoints = cpuTemperaturePoints(metrics)
     if (!isMetricAvailable(metrics, "cpuTemperature")) {
-      Text("当前设备未提供 CPU 温度传感器，虚拟机环境下较常见。", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+      Text("当前设备未提供 CPU 温度传感器。", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
     }
     MetricCardGrid(
       cards = listOf(
@@ -1488,14 +1452,6 @@ private fun MemorySheetContent(metrics: MetricsDto, selectedWindow: MetricWindow
 
 @Composable
 private fun DiskSheetContent(metrics: MetricsDto, tabId: String, selectedWindow: MetricWindow, chartWindow: ChartWindow, onEditInstance: (String) -> Unit) {
-  val storagePools = displayableVirtualizationStoragePools(metrics)
-  storagePoolIdFromTabId(tabId)?.let { storagePoolId ->
-    storagePools.firstOrNull { it.id == storagePoolId }?.let { storagePool ->
-      StoragePoolInstanceCard(storagePool, selectedWindow, chartWindow)
-    }
-    return
-  }
-
   if (tabId == "total") {
     MetricCardGrid(
       cards = listOf(
@@ -2052,7 +2008,7 @@ private fun FanSheetContent(
 private fun CpuSection(metrics: MetricsDto, onEditBlock: () -> Unit, onEditInstance: (String) -> Unit) {
   Section(title = "CPU", onEdit = onEditBlock) {
     if (!isMetricAvailable(metrics, "cpuTemperature")) {
-      Text("当前设备未提供 CPU 温度传感器，虚拟机环境下较常见。", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+      Text("当前设备未提供 CPU 温度传感器。", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
     }
     MetricCardGrid(
       cards = listOf(
@@ -2216,62 +2172,6 @@ private fun DiskInstanceCard(
         add(MetricCardModel("温度", formatCelsius(validDiskTemperature(disk.temperatureC)), temperaturePoints, ::formatCelsius))
       },
       chartWindow = chartWindow
-    )
-  }
-}
-
-@Composable
-private fun StoragePoolInstanceCard(
-  storagePool: VirtualizationStorageDisplay,
-  selectedWindow: MetricWindow,
-  chartWindow: ChartWindow
-) {
-  val series = storagePool.series
-  InstanceCard(
-    title = storagePool.name,
-    subtitle = listOfNotNull(
-      storagePool.node?.takeIf { it.isNotBlank() }?.let { "节点 $it" },
-      formatVirtualizationStorageType(storagePool.type),
-      if (storagePool.shared == true) "共享" else null
-    ).joinToString(" · ")
-  ) {
-    MetricCardGrid(
-      cards = listOf(
-        MetricCardModel(
-          title = "容量",
-          value = storagePoolCapacityValue(storagePool, selectedWindow),
-          points = series?.usedBytes.orEmpty(),
-          valueFormatter = { value -> formatStorageBytes(value) }
-        ),
-        MetricCardModel(
-          title = "可用空间",
-          value = storagePoolBytesValue(storagePool.latest?.availableBytes, series?.availableBytes.orEmpty(), selectedWindow),
-          points = series?.availableBytes.orEmpty(),
-          valueFormatter = { value -> formatStorageBytes(value) }
-        ),
-        MetricCardModel(
-          title = "使用率",
-          value = storagePoolUsageValue(storagePool, selectedWindow),
-          points = series?.usagePercent.orEmpty(),
-          valueFormatter = ::formatPercent,
-          fixedMaxValue = 100.0
-        ),
-        MetricCardModel(
-          title = "读写速率",
-          value = "无法获取数据",
-          points = emptyList(),
-          valueFormatter = { "无法获取数据" }
-        )
-      ),
-      chartWindow = chartWindow
-    )
-    MetaGrid(
-      listOf(
-        "节点" to (storagePool.node?.takeIf { it.isNotBlank() } ?: "无法获取数据"),
-        "类型" to formatVirtualizationStorageType(storagePool.type),
-        "状态" to if (storagePool.active == false) "不可用" else "可用",
-        "共享" to if (storagePool.shared == true) "是" else "否"
-      )
     )
   }
 }
@@ -3035,42 +2935,6 @@ private fun temperatureLimitsLabel(sensor: TemperatureSensorDto): String? {
     sensor.emergencyC?.let { "紧急 ${formatCelsius(it)}" }
   )
   return limits.takeIf { it.isNotEmpty() }?.joinToString(" · ")
-}
-
-private fun formatVirtualizationStorageType(type: String?): String = when (type?.lowercase()) {
-  "dir" -> "目录存储"
-  "lvm" -> "LVM"
-  "lvmthin" -> "LVM-Thin"
-  "zfspool" -> "ZFS 存储池"
-  "nfs" -> "NFS"
-  "cifs", "smb" -> "SMB / CIFS"
-  "cephfs" -> "CephFS"
-  "rbd" -> "Ceph RBD"
-  else -> type?.takeIf { it.isNotBlank() } ?: "无法获取数据"
-}
-
-private fun storagePoolCapacityValue(storagePool: VirtualizationStorageDisplay, selectedWindow: MetricWindow): String {
-  val used = storagePool.latest?.usedBytes?.toDouble()
-    ?: selectedPointValue(storagePool.series?.usedBytes.orEmpty(), selectedWindow)
-  val total = storagePool.latest?.totalBytes?.toDouble()
-    ?: selectedPointValue(storagePool.series?.totalBytes.orEmpty(), selectedWindow)
-  if (used == null && total == null) return "无法获取数据"
-  return "${formatStorageBytes(used)} / ${formatStorageBytes(total)}"
-}
-
-private fun storagePoolBytesValue(
-  current: Long?,
-  points: List<SamplePointDto>,
-  selectedWindow: MetricWindow
-): String = formatStorageBytes(current?.toDouble() ?: selectedPointValue(points, selectedWindow))
-
-private fun storagePoolUsageValue(storagePool: VirtualizationStorageDisplay, selectedWindow: MetricWindow): String {
-  val used = storagePool.latest?.usedBytes?.toDouble()
-  val total = storagePool.latest?.totalBytes?.toDouble()
-  val currentUsage = if (used != null && total != null && total > 0.0 && used >= 0.0) used / total * 100.0 else null
-  return formatPercent(currentUsage ?: selectedPointValue(storagePool.series?.usagePercent.orEmpty(), selectedWindow))
-    .takeUnless { it == "--" }
-    ?: "无法获取数据"
 }
 
 private fun gpuTemperatureSourceLabel(source: String?): String = when {

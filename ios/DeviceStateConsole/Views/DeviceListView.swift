@@ -23,16 +23,6 @@ public struct DeviceListView: View {
                     }
                 } else {
                     List {
-                        Section {
-                            Picker("实例类型", selection: $viewModel.instanceType) {
-                                Text("普通设备").tag("device")
-                                Text("虚拟机").tag("virtual_machine")
-                            }
-                            .pickerStyle(.segmented)
-                            .onChange(of: viewModel.instanceType) { _, value in
-                                viewModel.selectInstanceType(value)
-                            }
-                        }
                         if let update = viewModel.updateInfo, update.available {
                             Section {
                                 VStack(alignment: .leading, spacing: 10) {
@@ -55,8 +45,8 @@ public struct DeviceListView: View {
                         if viewModel.visibleDevices.isEmpty {
                             Section {
                                 ContentUnavailableView(
-                                    viewModel.instanceType == "virtual_machine" ? "未发现虚拟机" : "未发现普通设备",
-                                    systemImage: viewModel.instanceType == "virtual_machine" ? "shippingbox" : "desktopcomputer"
+                                    "未发现设备",
+                                    systemImage: "desktopcomputer"
                                 )
                             }
                         }
@@ -141,11 +131,6 @@ struct DeviceCardRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            if (device.instanceType ?? "device") == "virtual_machine" {
-                Label("宿主机：\(device.hostName ?? "未知")", systemImage: "server.rack")
-                    .font(.caption)
-                    .foregroundStyle(.tint)
-            }
             
             // Usage Pill Grid
             HStack(spacing: 8) {
