@@ -41,11 +41,6 @@ test("MockConsoleAdapter satisfies the shared read, session, and fleet contract"
   assert.equal(loggedIn.session.authenticated, true);
   assert.equal(loggedIn.session.accessKeyConfigured, true);
 
-  const layout = await adapter.getWidgetLayout({ scopeKey: "device:test", templateKey: "default" });
-  assert.equal(layout.scopeKey, "device:test");
-  assert.equal(layout.templateKey, "default");
-  assert.deepEqual(layout.templates, []);
-
   const loggedOut = await adapter.logout();
   assertSnapshotContract(loggedOut);
   assert.equal(loggedOut.session.authenticated, false);

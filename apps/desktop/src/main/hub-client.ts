@@ -10,10 +10,7 @@ import type {
   OverviewMetricsResponse,
   TrafficCalendarMode,
   TrafficCalendarResponse,
-  UpdateInfo,
-  WidgetLayoutRequest,
-  WidgetLayoutSaveRequest,
-  WidgetLayoutSync
+  UpdateInfo
 } from "@dsc/shared";
 import { writeJsonAtomically } from "./atomic-json.js";
 
@@ -169,20 +166,6 @@ export class HubClient {
     const value = await this.request<UpdateInfo>(`/api/updates?${params.toString()}`, { includeSession: false });
     this.updateCache = { key, expiresAt: Date.now() + 15 * 60_000, value };
     return value;
-  }
-
-  async getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync> {
-    await this.ensureSession();
-    const params = new URLSearchParams({ scopeKey: request.scopeKey, templateKey: request.templateKey });
-    return this.request<WidgetLayoutSync>(`/api/widget-layouts?${params.toString()}`);
-  }
-
-  async saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> {
-    await this.ensureSession();
-    return this.request<WidgetLayoutSync>("/api/widget-layouts", {
-      method: "PUT",
-      body: JSON.stringify(request)
-    });
   }
 
   private async ensureSession(): Promise<void> {

@@ -463,10 +463,8 @@ jobs:
 
           fetch_release_file docker-compose.yml
           fetch_release_file scripts/prepare-compose-env.sh
-          fetch_release_file scripts/verify-widget-layout-persistence.sh
           grep -Fq './data:/app/data' "$DEFINITION_DIR/docker-compose.yml"
           bash -n "$DEFINITION_DIR/scripts/prepare-compose-env.sh"
-          bash -n "$DEFINITION_DIR/scripts/verify-widget-layout-persistence.sh"
           echo "Downloaded deployment files pinned to v$DSC_VERSION through the NAS proxy."
 
       - name: Download staged image parts through NAS proxy
@@ -751,37 +749,4 @@ jobs:
                  exit 1; \
                fi; \
                docker compose ps"
-          fi
-
-      - name: Verify widget layouts survive server recreation
-        shell: bash
-        env:
-          DEPLOY_HOST: ${{ secrets.TEST_DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.TEST_DEPLOY_USER }}
-          DEPLOY_PATH: ${{ secrets.TEST_DEPLOY_PATH }}
-          DEPLOY_DEFINITION_DIR: ${{ runner.temp }}/dsc-release-definition
-          DSC_VERSION: ${{ inputs.version }}
-          DSC_RELEASE_CHANNEL: ${{ inputs.channel }}
-          WEB_PORT: "3100"
-          SMOKE_SCOPE: __codex_widget_smoke__${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$DEPLOY_HOST" ]]; then
-            DEPLOY_PATH="${DEPLOY_PATH:-/vol2/1000/Docker/device-state-console}"
-            test -d "$DEPLOY_PATH"
-            SMOKE_BASE_URL="http://127.0.0.1:3100" \
-              SMOKE_COMPOSE_DIR="$DEPLOY_PATH" \
-              DSC_VERSION="$DSC_VERSION" \
-              DSC_RELEASE_CHANNEL="$DSC_RELEASE_CHANNEL" \
-              WEB_PORT="$WEB_PORT" \
-              SMOKE_SCOPE="$SMOKE_SCOPE" \
-              bash "$DEPLOY_DEFINITION_DIR/scripts/verify-widget-layout-persistence.sh"
-          else
-            test -n "$DEPLOY_USER"
-            test -n "$DEPLOY_PATH"
-            test -s "$HOME/.ssh/id_ed25519"
-            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" \
-              "$DEPLOY_USER@$DEPLOY_HOST" \
-              "SMOKE_BASE_URL='http://127.0.0.1:3100' SMOKE_COMPOSE_DIR='$DEPLOY_PATH' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' WEB_PORT='$WEB_PORT' SMOKE_SCOPE='$SMOKE_SCOPE' bash -s" \
-              < "$DEPLOY_DEFINITION_DIR/scripts/verify-widget-layout-persistence.sh"
           fi

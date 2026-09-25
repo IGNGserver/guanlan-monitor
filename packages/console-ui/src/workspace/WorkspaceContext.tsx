@@ -11,7 +11,7 @@ import { parseWorkspaceHash, serializeWorkspaceRoute, type WorkspaceRoute } from
 import { formatWorkspaceError as formatError, type HubViewModel, type WorkspaceContextValue } from "./context/WorkspaceTypes";
 import { useWorkspaceMutations } from "./context/useWorkspaceMutations";
 import { useWorkspaceUiState } from "./context/useWorkspaceUiState";
-import { confirmDiscardWorkspaceDrafts } from "./draftGuards";
+import { confirmDiscardDeviceOrderDraft } from "./deviceOrderDraft";
 import { selectSnapshotSource } from "./selectors";
 
 export type { SettingsSection, WorkspaceRoute } from "./routes";
@@ -180,7 +180,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   useEffect(() => {
     const handleLocationChange = () => {
       const targetRoute = parseWorkspaceHash(window.location.hash);
-      if (!confirmDiscardWorkspaceDrafts()) {
+      if (!confirmDiscardDeviceOrderDraft()) {
         const currentHash = serializeWorkspaceRoute(currentRouteRef.current);
         if (window.location.hash !== currentHash) {
           window.history.replaceState({ route: currentRouteRef.current }, "", currentHash);
@@ -306,8 +306,6 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     saveHubConnection,
     updateStartupSettings,
     cloudPush,
-    getWidgetLayout,
-    saveWidgetLayout,
     saveFanNote,
     deleteInstance,
     reorderInstances,
@@ -350,7 +348,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   const hubs = useMemo<HubViewModel[]>(() => [{ id: "primary", name: "中枢", endpoint, devices: allDevices, state: hubState }], [allDevices, endpoint, hubState]);
   const selectedDevice = allDevices.find((device) => device.deviceId === selectedDeviceId) ?? null;
   const closeWindowSafely = useCallback(async () => {
-    if (!confirmDiscardWorkspaceDrafts()) return;
+    if (!confirmDiscardDeviceOrderDraft()) return;
     await closeWindow();
   }, [closeWindow]);
 
@@ -395,8 +393,6 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     saveHubConnection,
     updateStartupSettings,
     cloudPush,
-    getWidgetLayout,
-    saveWidgetLayout,
     saveFanNote,
     deleteInstance,
     reorderInstances,

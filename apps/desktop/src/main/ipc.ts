@@ -5,9 +5,7 @@ import type {
   MetricWindow,
   DesktopSnapshotRequest,
   DesktopStartupSettings,
-  TrafficCalendarMode,
-  WidgetLayoutRequest,
-  WidgetLayoutSaveRequest
+  TrafficCalendarMode
 } from "@dsc/shared";
 import { DesktopController } from "./controller.js";
 import { IPC_CHANNELS } from "../ipc-contract.js";
@@ -48,8 +46,6 @@ export function registerIpc(
   handle(IPC_CHANNELS.logout, () => controller.logout());
   handle(IPC_CHANNELS.disconnectAgent, () => controller.disconnectAgent());
   handle(IPC_CHANNELS.cloudPush, () => controller.cloudPush());
-  handle(IPC_CHANNELS.getWidgetLayout, (_event, request: WidgetLayoutRequest) => controller.getWidgetLayout(asWidgetLayoutRequest(request)));
-  handle(IPC_CHANNELS.saveWidgetLayout, (_event, request: WidgetLayoutSaveRequest) => controller.saveWidgetLayout(asWidgetLayoutSaveRequest(request)));
   handle(IPC_CHANNELS.saveFanNote, (_event, deviceId: string, fanId: string, note: string) => controller.saveFanNote(asString(deviceId, "device_id"), asString(fanId, "fan_id"), asString(note, "fan_note")));
   handle(IPC_CHANNELS.deleteInstance, (_event, deviceId: string) => controller.deleteInstance(asString(deviceId, "device_id")));
   handle(IPC_CHANNELS.reorderInstances, (_event, deviceIds: unknown) => controller.reorderInstances(asStringArray(deviceIds, "device_ids")));
@@ -232,26 +228,6 @@ function asMetricWindow(value: unknown): MetricWindow {
 function asTrafficMode(value: unknown): TrafficCalendarMode {
   if (value === "day" || value === "week" || value === "month") return value;
   throw new Error("invalid_traffic_mode");
-}
-
-function asWidgetLayoutRequest(value: unknown): WidgetLayoutRequest {
-  const record = asRecord(value);
-  return {
-    scopeKey: asString(record.scopeKey, "widget_layout_scope_key"),
-    templateKey: asString(record.templateKey, "widget_layout_template_key")
-  };
-}
-
-function asWidgetLayoutSaveRequest(value: unknown): WidgetLayoutSaveRequest {
-  const record = asRecord<WidgetLayoutSaveRequest>(value);
-  return {
-    scopeKey: asString(record.scopeKey, "widget_layout_scope_key"),
-    templateKey: asString(record.templateKey, "widget_layout_template_key"),
-    instanceLayout: record.instanceLayout,
-    linkedInstance: record.linkedInstance,
-    template: record.template,
-    deleteTemplateId: record.deleteTemplateId
-  };
 }
 
 function asControlAction(value: unknown): DesktopAgentControlAction {

@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
-import type { DeviceBlockKey, DeviceMetricKey, MetricWindow, WidgetLayoutDocument, WidgetLayoutSaveRequest, WidgetLayoutSync, WidgetLayoutTemplate } from "@dsc/shared";
+import type { DeviceBlockKey, DeviceMetricKey, MetricWindow } from "@dsc/shared";
 import type { TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import type {
   DeviceRecord,
@@ -13,16 +13,10 @@ import type {
   FanNoteStore,
   HistoryRepository,
   RealtimeRepository,
-  TimeSeriesRecord,
-  WidgetLayoutStore
+  TimeSeriesRecord
 } from "../types.js";
 import { buildTrafficCalendar } from "../traffic-calendar.js";
 import { isLegacyVirtualMachineId, legacyVirtualMachineRecord } from "../legacy-devices.js";
-
-export interface LocalWidgetLayoutSnapshot {
-  instances: Record<string, { templateKey: string; updatedAt: string; layout: WidgetLayoutDocument }>;
-  templates: Record<string, Record<string, WidgetLayoutTemplate>>;
-}
 
 interface LocalDbShape {
   devices: Record<string, DeviceRealtimeState>;
@@ -39,7 +33,6 @@ interface LocalDbShape {
       instanceMetricConfig?: Record<string, DeviceMetricKey[]>;
     }
   >;
-  widgetLayouts?: LocalWidgetLayoutSnapshot;
 }
 
 const EMPTY_DB: LocalDbShape = {
@@ -49,8 +42,7 @@ const EMPTY_DB: LocalDbShape = {
   minuteHistory: {},
   history: {},
   fanNotes: {},
-  deviceMetricConfigs: {},
-  widgetLayouts: { instances: {}, templates: {} }
+  deviceMetricConfigs: {}
 };
 
 const MINUTE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
@@ -67,35 +59,6 @@ function readRecordField<T>(parsed: Record<string, unknown>, key: string): T {
   if (value === undefined) return {} as T;
   if (!isRecord(value)) throw new Error(`local database field ${key} must be an object`);
   return value as T;
-}
-
-function emptyWidgetLayouts(): LocalWidgetLayoutSnapshot {
-  return { instances: {}, templates: {} };
-}
-
-function readWidgetLayouts(value: unknown): LocalWidgetLayoutSnapshot {
-  if (!isRecord(value)) throw new Error("local database field widgetLayouts must be an object");
-  return {
-    instances: readRecordField<LocalWidgetLayoutSnapshot["instances"]>(value, "instances"),
-    templates: readRecordField<LocalWidgetLayoutSnapshot["templates"]>(value, "templates")
-  };
-}
-
-function setLocalWidgetInstance(
-  layouts: LocalWidgetLayoutSnapshot,
-  scopeKey: string,
-  templateKey: string,
-  instanceLayout: WidgetLayoutDocument | null
-) {
-  if (instanceLayout === null) {
-    delete layouts.instances[scopeKey];
-    return;
-  }
-  layouts.instances[scopeKey] = {
-    templateKey,
-    updatedAt: new Date().toISOString(),
-    layout: structuredClone(instanceLayout)
-  };
 }
 
 class LocalJsonStore {
@@ -119,10 +82,7 @@ class LocalJsonStore {
         minuteHistory: readRecordField<LocalDbShape["minuteHistory"]>(parsed, "minuteHistory"),
         history: readRecordField<LocalDbShape["history"]>(parsed, "history"),
         fanNotes: readRecordField<LocalDbShape["fanNotes"]>(parsed, "fanNotes"),
-        deviceMetricConfigs: readRecordField<LocalDbShape["deviceMetricConfigs"]>(parsed, "deviceMetricConfigs"),
-        widgetLayouts: parsed.widgetLayouts === undefined
-          ? structuredClone(EMPTY_DB.widgetLayouts)
-          : readWidgetLayouts(parsed.widgetLayouts)
+        deviceMetricConfigs: readRecordField<LocalDbShape["deviceMetricConfigs"]>(parsed, "deviceMetricConfigs")
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return structuredClone(EMPTY_DB);
@@ -190,10 +150,6 @@ class LocalJsonStore {
       if (isLegacyId(deviceId) || Object.keys(config.instanceMetricConfig ?? {}).some(isLegacyId)) hasLegacyData = true;
     }
     if (Object.keys(db.fanNotes).some(isLegacyId)) hasLegacyData = true;
-    if (db.widgetLayouts) {
-      if (Object.keys(db.widgetLayouts.instances).some((key) => key.includes("vm:") || key.includes("virtual_machine"))) hasLegacyData = true;
-      if (Object.keys(db.widgetLayouts.templates).some((key) => key.includes("virtual_machine"))) hasLegacyData = true;
-    }
     const raw = await readFile(this.filePath, "utf8").catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? null : Promise.reject(error));
     if (raw) {
       const parsed = JSON.parse(raw) as unknown;
@@ -242,14 +198,6 @@ class LocalJsonStore {
           for (const id of Object.keys(config.instanceMetricConfig)) if (isLegacyId(id)) delete config.instanceMetricConfig[id];
         }
         delete (config as typeof config & Record<string, unknown>).virtualization;
-      }
-      if (current.widgetLayouts) {
-        for (const [scopeKey, layout] of Object.entries(current.widgetLayouts.instances)) {
-          if (scopeKey.includes("vm:") || layout.templateKey.includes("virtual_machine")) delete current.widgetLayouts.instances[scopeKey];
-        }
-        for (const templateKey of Object.keys(current.widgetLayouts.templates)) {
-          if (templateKey.includes("virtual_machine")) delete current.widgetLayouts.templates[templateKey];
-        }
       }
     });
   }
@@ -483,68 +431,6 @@ export class LocalDeviceMetricConfigStore implements DeviceMetricConfigStore {
         )
       };
     });
-  }
-}
-
-export class LocalWidgetLayoutStore implements WidgetLayoutStore {
-  constructor(private readonly store: LocalJsonStore) {}
-
-  async get(scopeKey: string, templateKey: string): Promise<WidgetLayoutSync> {
-    const db = await this.store.read();
-    const layouts = db.widgetLayouts ?? emptyWidgetLayouts();
-    const instance = layouts.instances[scopeKey];
-    return {
-      scopeKey,
-      templateKey,
-      instanceLayout: instance?.templateKey === templateKey ? structuredClone(instance.layout) : null,
-      templates: Object.values(layouts.templates[templateKey] ?? {})
-        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-        .map((template) => structuredClone(template))
-    };
-  }
-
-  async readAll(): Promise<LocalWidgetLayoutSnapshot> {
-    const db = await this.store.read();
-    return structuredClone(db.widgetLayouts ?? emptyWidgetLayouts());
-  }
-
-  async save(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> {
-    const instanceLayout = request.instanceLayout;
-    const templateRequest = request.template;
-    await this.store.update((db) => {
-      const layouts = (db.widgetLayouts ??= emptyWidgetLayouts());
-      if (Object.prototype.hasOwnProperty.call(request, "instanceLayout")) {
-        if (instanceLayout === null) delete layouts.instances[request.scopeKey];
-        else if (instanceLayout) setLocalWidgetInstance(layouts, request.scopeKey, request.templateKey, instanceLayout);
-      }
-
-      if (request.linkedInstance) {
-        setLocalWidgetInstance(
-          layouts,
-          request.linkedInstance.scopeKey,
-          request.linkedInstance.templateKey,
-          request.linkedInstance.instanceLayout
-        );
-      }
-
-      if (templateRequest) {
-        const templates = (layouts.templates[request.templateKey] ??= {});
-        const now = new Date().toISOString();
-        const id = templateRequest.id?.trim() || randomUUID();
-        const existing = templates[id];
-        templates[id] = {
-          id,
-          name: templateRequest.name.trim(),
-          templateKey: request.templateKey,
-          createdAt: existing?.createdAt ?? now,
-          updatedAt: now,
-          layout: structuredClone(templateRequest.layout)
-        };
-      }
-
-      if (request.deleteTemplateId) delete layouts.templates[request.templateKey]?.[request.deleteTemplateId];
-    });
-    return this.get(request.scopeKey, request.templateKey);
   }
 }
 

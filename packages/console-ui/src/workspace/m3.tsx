@@ -4,13 +4,9 @@ import {
   Checkbox,
   ContentSwitcher,
   IconButton as CarbonIconButton,
-  Layer,
   Select,
   SelectItem,
   Switch as CarbonSwitch,
-  Tab,
-  TabList,
-  Tabs,
   TextInput,
   Toggle
 } from "@carbon/react";
@@ -164,42 +160,6 @@ export function M3SegmentedControl({ options, value, onChange, className, disabl
   );
 }
 
-export interface M3TabOption {
-  value: string;
-  label: React.ReactNode;
-  disabled?: boolean;
-}
-
-export interface M3TabsProps {
-  options: M3TabOption[];
-  value: string;
-  onChange: (value: string) => void;
-  "aria-label": string;
-  disabled?: boolean;
-  className?: string;
-}
-
-export function M3Tabs({ options, value, onChange, className, disabled = false, "aria-label": ariaLabel }: M3TabsProps) {
-  const selectedIndex = Math.max(0, options.findIndex((option) => option.value === value));
-  return (
-    <div className={joinClasses("m3-tabs", className)}>
-      <Tabs
-        selectedIndex={selectedIndex}
-        onChange={({ selectedIndex: nextIndex }) => {
-          if (options[nextIndex]?.disabled || disabled) return;
-          onChange(options[nextIndex].value);
-        }}
-      >
-        <TabList aria-label={ariaLabel} activation="manual" size="md">
-          {options.map((option) => (
-            <Tab key={option.value} disabled={disabled || option.disabled}>{option.label}</Tab>
-          ))}
-        </TabList>
-      </Tabs>
-    </div>
-  );
-}
-
 export interface M3TextFieldProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "defaultValue" | "id" | "onClick" | "size" | "value"> {
   label: string;
   supportingText?: React.ReactNode;
@@ -314,14 +274,4 @@ export function M3Switch({ checked, onCheckedChange, label, description, disable
       />
     </div>
   );
-}
-
-export interface M3SurfaceProps extends React.HTMLAttributes<HTMLElement> {
-  as?: "section" | "article" | "div";
-}
-
-export function M3Surface({ as = "section", children, className, ...props }: M3SurfaceProps) {
-  // Carbon's Layer supplies the surface token while retaining the requested
-  // semantic landmark for existing consumers.
-  return <Layer as={as} className={joinClasses("m3-surface", className)} {...props}>{children}</Layer>;
 }

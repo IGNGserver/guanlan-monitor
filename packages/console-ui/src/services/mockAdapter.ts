@@ -1,4 +1,4 @@
-import type { ConsoleSnapshot, ConsoleSnapshotRequest, WidgetLayoutRequest, WidgetLayoutSaveRequest, WidgetLayoutSync } from "@dsc/shared";
+import type { ConsoleSnapshot, ConsoleSnapshotRequest } from "@dsc/shared";
 import { emptyConsoleSnapshot, WEB_CAPABILITIES, type ConsoleAdapter } from "./adapter.ts";
 
 export class MockConsoleAdapter implements ConsoleAdapter {
@@ -15,8 +15,6 @@ export class MockConsoleAdapter implements ConsoleAdapter {
   async deleteInstance() { return this.snapshot; }
   async reorderInstances() { return this.snapshot; }
   async saveFanNote() { return this.snapshot; }
-  async getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync> { return { ...request, instanceLayout: null, templates: [] }; }
-  async saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> { return { scopeKey: request.scopeKey, templateKey: request.templateKey, instanceLayout: request.instanceLayout ?? null, templates: [] }; }
   async openExternal(url: string) { window.open(url, "_blank", "noopener,noreferrer"); }
   subscribe(listener: (snapshot: ConsoleSnapshot) => void) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 }
