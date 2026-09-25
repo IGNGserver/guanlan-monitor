@@ -3,7 +3,7 @@ import type { MetricWindow, TrafficCalendarMode } from "@dsc/shared";
 import type { ConsoleAdapter } from "../../services/adapter";
 import { detectTouchSupport, type InteractionScaleSetting, type PointerType } from "../../helpers/density";
 import { getResponsiveTier, getScreenOrientation, type ResponsiveTier, type ScreenOrientation } from "../../helpers/layout";
-import { confirmDiscardWorkspaceDrafts } from "../draftGuards";
+import { confirmDiscardDeviceOrderDraft } from "../deviceOrderDraft";
 import { defaultRoute, routeFromLocation, serializeWorkspaceRoute, type SettingsSection, type WorkspaceRoute } from "../routes";
 import { getStoredDensity, getStoredRefreshInterval, getStoredTheme } from "./WorkspaceTypes";
 
@@ -75,7 +75,7 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
   }, [pointerSeen]);
 
   const navigate = useCallback((nextRoute: WorkspaceRoute) => {
-    if (!confirmDiscardWorkspaceDrafts()) return;
+    if (!confirmDiscardDeviceOrderDraft()) return;
     setRoute(nextRoute);
     if (typeof window !== "undefined" && window.location.hash !== serializeWorkspaceRoute(nextRoute)) {
       window.history.pushState({ route: nextRoute }, "", serializeWorkspaceRoute(nextRoute));
