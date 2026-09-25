@@ -72,7 +72,7 @@ export const DEVICE_DASHBOARD = {
           title: "处理器与系统统计",
           description: "拓扑、缓存与系统计数的静态事实，不随时间窗口变化。",
           charts: [
-            { id: "compute-cpu-facts", title: "处理器与系统统计", visualization: "custom", span: "full", requires: ["systemOverview"] }
+            { id: "compute-cpu-facts", title: "处理器与系统统计", visualization: "number", span: "full", requires: ["systemOverview"] }
           ]
         },
         {
