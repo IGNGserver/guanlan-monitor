@@ -211,14 +211,6 @@ async function run() {
       return fulfillJson(route, metricFixture(fixtureDevices.find((device) => device.deviceId === deviceId) ?? fixtureDevices[0]));
     }
     if (pathname === "/api/devices/reorder") return fulfillJson(route, { ok: true });
-    if (pathname === "/api/widget-layouts" && route.request().method() === "GET") {
-      const url = new URL(route.request().url());
-      return fulfillJson(route, { scopeKey: url.searchParams.get("scopeKey"), templateKey: url.searchParams.get("templateKey"), instanceLayout: null, templates: [] });
-    }
-    if (pathname === "/api/widget-layouts" && route.request().method() === "PUT") {
-      const payload = route.request().postDataJSON() ?? {};
-      return fulfillJson(route, { scopeKey: payload.scopeKey, templateKey: payload.templateKey, instanceLayout: payload.instanceLayout ?? null, templates: [] });
-    }
     if (/^\/api\/devices\/[^/]+\/traffic-calendar$/.test(pathname)) return fulfillJson(route, null);
     if (pathname === "/api/updates") {
       return fulfillJson(route, {
