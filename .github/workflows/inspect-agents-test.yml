@@ -42,6 +42,12 @@ jobs:
           dir=/opt/device-state-console-agent
           printf 'service_active=%s service_enabled=%s\n' "$(systemctl is-active "$unit" 2>/dev/null || true)" "$(systemctl is-enabled "$unit" 2>/dev/null || true)"
           exec_start="$(systemctl show "$unit" -p ExecStart --value 2>/dev/null || true)"
+          exec_start_path="$(printf '%s\n' "$exec_start" | sed -nE 's/.*path=([^ ;]+).*/\1/p')"
+          printf 'exec_start_path=%s\n' "${exec_start_path:-unavailable}"
+          exec_arg_path="$(printf '%s\n' "$exec_start" | grep -oE '/opt/device-state-console-agent/[A-Za-z0-9._/-]+' | tail -n 1 || true)"
+          printf 'exec_argument_path=%s\n' "${exec_arg_path:-unavailable}"
+          printf 'unit_fragment=%s\n' "$(systemctl show "$unit" -p FragmentPath --value 2>/dev/null || true)"
+          printf 'environment_files=%s\n' "$(systemctl show "$unit" -p EnvironmentFiles --value 2>/dev/null || true)"
           case "$exec_start" in
             *"path=$dir/run-dev-machine-agent.sh"*) echo 'exec_start=legacy_launcher' ;;
             *"path=$dir/device-state-console-agent"*) echo 'exec_start=collector_binary' ;;
@@ -51,7 +57,14 @@ jobs:
           if [[ "$pid" =~ ^[1-9][0-9]*$ ]]; then
             printf 'main_process=%s\n' "$(basename "$(readlink -f "/proc/$pid/exe" 2>/dev/null || echo unavailable)")"
           fi
-          for name in run-dev-machine-agent.sh device-state-console-agent dev-machine-agent dev-machine-agent.env VERSION; do
+          launcher_path="$exec_arg_path"
+          if [[ -f "$launcher_path" && "$launcher_path" != "$dir/device-state-console-agent" ]]; then
+            printf 'launcher_has_go_build=%s launcher_calls_collector=%s launcher_writes_agent_log=%s\n' \
+              "$(grep -Eq 'go[[:space:]]+build' "$launcher_path" && echo yes || echo no)" \
+              "$(grep -Fq 'device-state-console-agent' "$launcher_path" && echo yes || echo no)" \
+              "$(grep -Fq 'agent.err.log' "$launcher_path" && echo yes || echo no)"
+          fi
+          for name in run-dev-machine-agent.sh device-state-console-agent dev-machine-agent dev-machine-agent.env agent.env VERSION; do
             if [[ -f "$dir/$name" ]]; then
               printf 'file=%s present=true\n' "$name"
             else
