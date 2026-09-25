@@ -17,6 +17,7 @@ import type {
   WidgetLayoutStore
 } from "../types.js";
 import { buildTrafficCalendar } from "../traffic-calendar.js";
+import { isLegacyVirtualMachineId, legacyVirtualMachineRecord } from "../legacy-devices.js";
 
 export interface LocalWidgetLayoutSnapshot {
   instances: Record<string, { templateKey: string; updatedAt: string; layout: WidgetLayoutDocument }>;
@@ -286,7 +287,9 @@ export class LocalRealtimeRepository implements RealtimeRepository {
 
   async listDevices() {
     const db = await this.store.read();
-    return Object.values(db.devices);
+    // The store-level sweep reads `db.devices` directly, so filtering here cannot hide anything
+    // from it.
+    return Object.values(db.devices).filter((state) => !isLegacyVirtualMachineId(state.identity.deviceId));
   }
 
   async remove(deviceId: string) {
@@ -553,6 +556,8 @@ export class LocalDeviceRepository implements DeviceRepository {
     name?: string,
     options?: DeviceRegistrationOptions
   ): Promise<DeviceRecord> {
+    if (isLegacyVirtualMachineId(deviceId)) return legacyVirtualMachineRecord(deviceId);
+
     let resultRecord!: DeviceRecord;
     await this.store.update((db) => {
       const registry = (db.deviceRegistry ??= {});
@@ -590,11 +595,14 @@ export class LocalDeviceRepository implements DeviceRepository {
     const db = await this.store.read();
     const registry = db.deviceRegistry ?? {};
     return Object.values(registry)
-      .filter((d) => d.status === "open")
+      .filter((d) => d.status === "open" && !isLegacyVirtualMachineId(d.deviceId))
       .sort((a, b) => (a.sortOrder - b.sortOrder) || a.deviceId.localeCompare(b.deviceId));
   }
 
   async deleteDevice(deviceId: string): Promise<void> {
+    // The registry write below creates a row when one is missing, so a legacy id would be
+    // resurrected by the very call meant to hide it.
+    if (isLegacyVirtualMachineId(deviceId)) return;
     await this.store.update((db) => {
       const registry = (db.deviceRegistry ??= {});
       if (registry[deviceId]) {

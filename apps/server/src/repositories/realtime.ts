@@ -1,6 +1,7 @@
 import Redis from "ioredis";
 import type { MetricWindow } from "@dsc/shared";
 import { normalizeRealtimeState } from "../utils.js";
+import { isLegacyVirtualMachineId } from "../legacy-devices.js";
 import type { DeviceRealtimeState, RealtimeRepository, TimeSeriesRecord } from "../types.js";
 
 const DEVICE_KEY = "dsc:device";
@@ -47,13 +48,22 @@ export class RedisRealtimeRepository implements RealtimeRepository {
     return raw ? (normalizeRealtimeState(JSON.parse(raw) as DeviceRealtimeState)) : null;
   }
 
-  async listDevices() {
+  /**
+   * Every state in the hash, including the legacy virtual machine entries.
+   *
+   * The sweep below has to see those to delete them, so it cannot go through `listDevices()`.
+   */
+  private async listAllDevices(): Promise<DeviceRealtimeState[]> {
     const raw = await this.redis.hvals(DEVICE_KEY);
     return raw.map((item) => normalizeRealtimeState(JSON.parse(item) as DeviceRealtimeState));
   }
 
+  async listDevices() {
+    return (await this.listAllDevices()).filter((state) => !isLegacyVirtualMachineId(state.identity.deviceId));
+  }
+
   async removeLegacyVirtualMachineData() {
-    const devices = await this.listDevices();
+    const devices = await this.listAllDevices();
     for (const state of devices) {
       const identity = state.identity as typeof state.identity & Record<string, unknown>;
       if (
