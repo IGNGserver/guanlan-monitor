@@ -66,7 +66,7 @@ export interface DashboardChartSpec {
    * 该图表依赖的指标。任一指标被设备标记为不适用时，页面渲染「本机不适用」
    * 提示而不是画一张空图。
    */
-  requires?: DeviceMetricKey[];
+  requires?: readonly DeviceMetricKey[];
   /**
    * 按设备实例重复渲染的图表族。页面会把对应硬件块的每个实例展开成一张
    * 同规格图表，并沿用实例筛选器的选择结果。
@@ -83,7 +83,7 @@ export interface DashboardSectionSpec {
   eyebrow: string;
   title: string;
   description?: string;
-  charts: DashboardChartSpec[];
+  readonly charts: readonly DashboardChartSpec[];
 }
 
 /** 设备详情页的一个选项卡。 */
@@ -92,13 +92,19 @@ export interface DashboardTabSpec {
   name: string;
   /** 选项卡副标题，用于在标签栏下方说明这个页签覆盖的范围。 */
   caption?: string;
-  sections: DashboardSectionSpec[];
+  readonly sections: readonly DashboardSectionSpec[];
 }
 
-/** 一份完整的固定布局。 */
+/**
+ * 一份完整的固定布局。
+ *
+ * 所有集合都是 readonly：布局常量用 `as const satisfies DashboardSpec` 声明，
+ * 这样既能保留字面量类型（供 `DeviceChartId` 这类推导使用），又能在编译期
+ * 阻止运行期改写布局。
+ */
 export interface DashboardSpec {
   id: string;
-  tabs: DashboardTabSpec[];
+  readonly tabs: readonly DashboardTabSpec[];
 }
 
 /** 判断某个指标是否不可用的回调，由页面结合设备能力注入。 */

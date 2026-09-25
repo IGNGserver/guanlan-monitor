@@ -26,7 +26,10 @@ export {
   DEVICE_DASHBOARD,
   DEVICE_TAB_IDS,
   deviceTabAnchors,
-  findDeviceTab
+  findDeviceTab,
+  type DeviceChartId,
+  type DeviceSectionId,
+  type DeviceTabId
 } from "./deviceDashboard";
 
 export { ChartTile, DashboardSection, type ChartTileProps } from "./ChartTile";
