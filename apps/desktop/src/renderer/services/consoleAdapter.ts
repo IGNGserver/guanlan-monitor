@@ -4,10 +4,7 @@ import type {
   DesktopConfigPatch,
   ConsoleSnapshot,
   ConsoleSnapshotRequest,
-  DesktopStartupSettings,
-  WidgetLayoutRequest,
-  WidgetLayoutSaveRequest,
-  WidgetLayoutSync
+  DesktopStartupSettings
 } from "@dsc/shared";
 import type { ConsoleAdapter, WindowMaterialCapabilities } from "@dsc/console-ui";
 import { DESKTOP_CAPABILITIES, emptyConsoleSnapshot, fallbackRuntimeProfile, fallbackWindowMaterialCapabilities } from "@dsc/console-ui";
@@ -26,8 +23,6 @@ export class DesktopConsoleAdapter implements ConsoleAdapter {
   deleteInstance(deviceId: string): Promise<ConsoleSnapshot> { return dscBridge.deleteInstance(deviceId); }
   reorderInstances(deviceIds: string[]): Promise<ConsoleSnapshot> { return dscBridge.reorderInstances(deviceIds); }
   saveFanNote(deviceId: string, fanId: string, note: string): Promise<ConsoleSnapshot> { return dscBridge.saveFanNote(deviceId, fanId, note); }
-  getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync> { return dscBridge.getWidgetLayout(request); }
-  saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> { return dscBridge.saveWidgetLayout(request); }
   openExternal(url: string): Promise<void> { return dscBridge.openExternal(url); }
   updateLocalConfig(patch: DesktopConfigPatch): Promise<ConsoleSnapshot> { return dscBridge.updateLocalConfig(patch); }
   controlAgent(action: DesktopAgentControlAction): Promise<ConsoleSnapshot> { return dscBridge.controlAgent(action); }
@@ -59,8 +54,6 @@ export function createDesktopFallbackAdapter(): ConsoleAdapter {
     deleteInstance: async () => emptyConsoleSnapshot(),
     reorderInstances: async () => emptyConsoleSnapshot(),
     saveFanNote: async () => emptyConsoleSnapshot(),
-    getWidgetLayout: async (request) => ({ ...request, instanceLayout: null, templates: [] }),
-    saveWidgetLayout: async (request) => ({ scopeKey: request.scopeKey, templateKey: request.templateKey, instanceLayout: request.instanceLayout ?? null, templates: [] }),
     openExternal: async () => undefined,
     getWindowMaterialCapabilities: async () => fallbackWindowMaterialCapabilities(),
     getRuntimeProfile: async () => fallbackRuntimeProfile()
