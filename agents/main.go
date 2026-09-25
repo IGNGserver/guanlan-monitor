@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"device-state-console/agent/internal/agentconfig"
 
@@ -748,13 +749,12 @@ func (s *pendingStore) readEntries() ([]pendingSample, error) {
 	return entries, nil
 }
 
-// Older Agent builds could retain an out-of-range hardware temperature while
-// marking the source as invalid. Keep those samples replayable: the source
-// remains visible as a diagnostic reading, but its invalid numeric value must
-// not reject the complete telemetry payload at the Hub.
+// Normalize hardware sensor identifiers and clear invalid readings before a
+// sample is sent or replayed so one malformed sensor cannot reject telemetry.
 func sanitizePendingPayload(payload metricsPayload) metricsPayload {
 	for index := range payload.TemperatureSensors {
 		sensor := &payload.TemperatureSensors[index]
+		sensor.ID = limitTelemetryIdentifier(sensor.ID)
 		if sensor.CurrentC == nil {
 			continue
 		}
@@ -765,6 +765,25 @@ func sanitizePendingPayload(payload metricsPayload) metricsPayload {
 		}
 	}
 	return payload
+}
+
+const maxTelemetryIdentifierLength = 128
+
+// Keep hardware-derived IDs within the Hub's identifier limit without losing
+// stable uniqueness when a device path or hardware instance name is long.
+func limitTelemetryIdentifier(value string) string {
+	value = strings.ToValidUTF8(value, "-")
+	if len(value) <= maxTelemetryIdentifierLength {
+		return value
+	}
+
+	digest := sha256.Sum256([]byte(value))
+	suffix := "-" + hex.EncodeToString(digest[:12])
+	prefixLength := maxTelemetryIdentifierLength - len(suffix)
+	for prefixLength > 0 && !utf8.ValidString(value[:prefixLength]) {
+		prefixLength--
+	}
+	return value[:prefixLength] + suffix
 }
 
 func (s *pendingStore) prune(entries []pendingSample, now time.Time) []pendingSample {
@@ -1179,6 +1198,7 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	}
 
 	applyRuntimeConfig(&payload, cfg)
+	payload = sanitizePendingPayload(payload)
 	payload.SampleID = sampleID(payload)
 	return payload
 }
@@ -3516,7 +3536,7 @@ func newTemperatureSensorReading(
 	role, note string,
 ) temperatureSensorReading {
 	reading := temperatureSensorReading{
-		ID:           id,
+		ID:           limitTelemetryIdentifier(id),
 		Source:       source,
 		Backend:      backend,
 		Hardware:     hardware,
@@ -4286,7 +4306,7 @@ func collectSmartctlDiskSensor(smartctlPath, devicePath string) (diskSensorMetad
 		}
 		for index := range metadata.TemperatureSensors {
 			sensor := &metadata.TemperatureSensors[index]
-			sensor.ID = "temperature-smartctl-" + sanitizeKey(devicePath+"-"+sensor.RawName)
+			sensor.ID = limitTelemetryIdentifier("temperature-smartctl-" + sanitizeKey(devicePath+"-"+sensor.RawName))
 			sensor.Hardware = filepath.Base(devicePath)
 			sensor.HardwareType = "storage"
 			sensor.InstanceID = devicePath
@@ -6228,6 +6248,7 @@ func postMetricsContext(ctx context.Context, client *http.Client, serverURL, sec
 	if err := validateServerTransport(normalizedServerURL); err != nil {
 		return err
 	}
+	payload = sanitizePendingPayload(payload)
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
