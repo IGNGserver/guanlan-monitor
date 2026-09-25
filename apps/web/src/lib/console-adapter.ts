@@ -9,10 +9,7 @@ import type {
   OverviewMetricsResponse,
   TrafficCalendarMode,
   TrafficCalendarResponse,
-  UpdateInfo,
-  WidgetLayoutRequest,
-  WidgetLayoutSaveRequest,
-  WidgetLayoutSync
+  UpdateInfo
 } from "@dsc/shared";
 import type { ConsoleAdapter } from "@dsc/console-ui";
 import { WEB_CAPABILITIES, emptyConsoleSnapshot } from "@dsc/console-ui";
@@ -28,9 +25,7 @@ import {
   login,
   logout,
   reorderDevices,
-  saveFanNote,
-  getWidgetLayout,
-  saveWidgetLayout
+  saveFanNote
 } from "./api";
 
 export class WebConsoleAdapter implements ConsoleAdapter {
@@ -83,14 +78,6 @@ export class WebConsoleAdapter implements ConsoleAdapter {
   async saveFanNote(deviceId: string, fanId: string, note: string): Promise<ConsoleSnapshot> {
     await saveFanNote(deviceId, fanId, { note });
     return this.loadSnapshot({ selectedDeviceId: deviceId });
-  }
-
-  async getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync> {
-    return getWidgetLayout(request);
-  }
-
-  async saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> {
-    return saveWidgetLayout(request);
   }
 
   async openExternal(url: string): Promise<void> {

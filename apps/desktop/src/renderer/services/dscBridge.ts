@@ -5,10 +5,7 @@ import type {
   DesktopRuntimeProfile,
   DesktopConfigPatch,
   DesktopAgentControlAction,
-  DesktopStartupSettings,
-  WidgetLayoutRequest,
-  WidgetLayoutSaveRequest,
-  WidgetLayoutSync
+  DesktopStartupSettings
 } from "@dsc/shared";
 import {
   createFallbackWindowMaterialCapabilities,
@@ -82,14 +79,6 @@ class SafeDscBridge implements DesktopRendererBridge, WindowMaterialBridge {
 
   async cloudPush(): Promise<DesktopSnapshot> {
     return this.requireBridge().cloudPush();
-  }
-
-  async getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync> {
-    return this.requireBridge().getWidgetLayout(request);
-  }
-
-  async saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> {
-    return this.requireBridge().saveWidgetLayout(request);
   }
 
   async saveFanNote(deviceId: string, fanId: string, note: string): Promise<DesktopSnapshot> {

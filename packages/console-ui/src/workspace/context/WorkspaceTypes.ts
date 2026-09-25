@@ -6,10 +6,7 @@ import type {
   DesktopStartupSettings,
   DeviceSummary,
   MetricWindow,
-  TrafficCalendarMode,
-  WidgetLayoutRequest,
-  WidgetLayoutSaveRequest,
-  WidgetLayoutSync
+  TrafficCalendarMode
 } from "@dsc/shared";
 import type { ConsoleAdapter } from "../../services/adapter";
 import type { InteractionScaleSetting, PointerType } from "../../helpers/density";
@@ -64,8 +61,6 @@ export interface WorkspaceContextValue {
   saveHubConnection: (serverUrl: string, accessKey: string) => Promise<boolean>;
   updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => Promise<boolean>;
   cloudPush: () => Promise<boolean>;
-  getWidgetLayout: (request: WidgetLayoutRequest) => Promise<WidgetLayoutSync>;
-  saveWidgetLayout: (request: WidgetLayoutSaveRequest) => Promise<WidgetLayoutSync>;
   saveFanNote: (deviceId: string, fanId: string, note: string) => Promise<boolean>;
   deleteInstance: (deviceId: string) => Promise<boolean>;
   reorderInstances: (deviceIds: string[]) => Promise<boolean>;

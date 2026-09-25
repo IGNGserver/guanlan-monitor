@@ -4,10 +4,7 @@ import type {
   DesktopAgentBackendState,
   DesktopAgentControlAction,
   DesktopConfigPatch,
-  DesktopStartupSettings,
-  WidgetLayoutRequest,
-  WidgetLayoutSaveRequest,
-  WidgetLayoutSync
+  DesktopStartupSettings
 } from "@dsc/shared";
 
 /** Read-only state access shared by the Web and Electron shells. */
@@ -30,8 +27,6 @@ export interface ConsoleFleetPort {
   deleteInstance(deviceId: string): Promise<ConsoleSnapshot>;
   reorderInstances(deviceIds: string[]): Promise<ConsoleSnapshot>;
   saveFanNote(deviceId: string, fanId: string, note: string): Promise<ConsoleSnapshot>;
-  getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync>;
-  saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync>;
   openExternal(url: string): Promise<void>;
 }
 

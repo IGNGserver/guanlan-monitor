@@ -28,8 +28,6 @@ const requiredMethods = [
   "deleteInstance",
   "reorderInstances",
   "saveFanNote",
-  "getWidgetLayout",
-  "saveWidgetLayout",
   "openExternal"
 ];
 
