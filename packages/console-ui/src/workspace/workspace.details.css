@@ -8,7 +8,6 @@
 .workspace-device-facts span { display: block; color: var(--workspace-text-muted); font-size: 11px; }
 .workspace-device-facts strong { display: block; margin-top: 3px; overflow: hidden; color: var(--workspace-text); font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-order-actions { display: inline-flex; align-items: center; gap: 6px; }
-.workspace-layout-discard { color: var(--workspace-text-secondary); }
 
 @media (max-width: 768px), (orientation: portrait) {
   .workspace-device-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
