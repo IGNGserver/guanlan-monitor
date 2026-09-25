@@ -142,7 +142,11 @@ export interface Repositories {
 
 export interface RealtimeRepository {
   upsert(state: DeviceRealtimeState): Promise<void>;
-  markOfflineIfMatch(deviceId: string, expectedLastSeenAt: string): Promise<boolean>;
+  markOfflineIfMatch(
+    deviceId: string,
+    expectedLastSeenAt: string,
+    offlineState: DeviceRealtimeState
+  ): Promise<boolean>;
   getDevice(deviceId: string): Promise<DeviceRealtimeState | null>;
   listDevices(): Promise<DeviceRealtimeState[]>;
   remove(deviceId: string): Promise<void>;

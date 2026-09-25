@@ -263,12 +263,16 @@ export class LocalRealtimeRepository implements RealtimeRepository {
     });
   }
 
-  async markOfflineIfMatch(deviceId: string, expectedLastSeenAt: string): Promise<boolean> {
+  async markOfflineIfMatch(
+    deviceId: string,
+    expectedLastSeenAt: string,
+    offlineState: DeviceRealtimeState
+  ): Promise<boolean> {
     let updated = false;
     await this.store.update((db) => {
       const current = db.devices[deviceId];
       if (current && current.lastSeenAt === expectedLastSeenAt) {
-        db.devices[deviceId] = { ...current, status: "offline" };
+        db.devices[deviceId] = offlineState;
         updated = true;
       }
     });
