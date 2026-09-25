@@ -22,7 +22,7 @@ smaller ports:
 
 - `ConsoleReadPort`: snapshot reads and subscriptions.
 - `ConsoleSessionPort`: login and session lifecycle.
-- `ConsoleFleetPort`: Hub-backed fleet actions and widget layouts.
+- `ConsoleFleetPort`: Hub-backed fleet actions.
 - `ConsoleLocalAgentPort`: desktop-only Agent configuration and control.
 
 `ConsoleSnapshot` is the platform-neutral name for the shared read model.
