@@ -27,6 +27,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Check out the pinned update script
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+
       - name: Download and verify published Agent package
         shell: bash
         env:
@@ -90,6 +95,7 @@ jobs:
             exit 1
           }
           install -m 0755 "$agent_binary" "$stage_dir/device-state-console-agent"
+          install -m 0644 deploy/update-test-agents.sh "$stage_dir/update-test-agents.sh"
 
       - name: Upload staged Agent package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -97,6 +103,7 @@ jobs:
           name: linux-agent-release-${{ inputs.version }}
           path: |
             release/device-state-console-agent
+            release/update-test-agents.sh
             release/DeviceStateConsole-Linux-Install-v${{ inputs.version }}.deb
             release/DeviceStateConsole-Linux-Install-v${{ inputs.version }}.deb.sha256
           if-no-files-found: error
@@ -163,11 +170,6 @@ jobs:
           name: linux-agent-release-${{ inputs.version }}
           path: ${{ runner.temp }}/dsc-agent-artifact-${{ github.run_id }}
 
-      - name: Check out the versioned update script
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          ref: ${{ github.sha }}
-
       - name: Update and verify each Agent
         shell: bash
         env:
@@ -175,4 +177,4 @@ jobs:
           DEPLOY_PASSWORD: ${{ secrets.TEST_DEPLOY_PASSWORD }}
           REQUESTED_VERSION: ${{ inputs.version }}
           TARGETS: ${{ inputs.targets }}
-        run: bash deploy/update-test-agents.sh
+        run: bash "$RUNNER_TEMP/dsc-agent-artifact-${GITHUB_RUN_ID}/update-test-agents.sh"
