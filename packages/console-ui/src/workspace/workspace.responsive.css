@@ -218,22 +218,7 @@ html[data-dsc-density="touch"] {
   .workspace-anchor-btn,
   .workspace-icon-button,
   .workspace-nav-item,
-  .workspace-device-item,
-  .workspace-device-row,
   .workspace-window-control,
-  .workspace-range-option,
-  .workspace-layout-toggle,
-  .workspace-layout-save,
-  .workspace-layout-snap,
-  .workspace-layout-history button,
-  .workspace-layout-actions button,
-  .workspace-widget__size-control button,
-  .workspace-widget__remove,
-  .workspace-panel-manager__item button,
-  .workspace-widget-drawer__header > button,
-  .workspace-widget-drawer__item button,
-  .workspace-widget-drawer__target-actions button,
-  .workspace-widget-drawer__footer button,
   .workspace-command__item {
     min-width: 44px;
     min-height: 44px;

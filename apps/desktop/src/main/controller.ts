@@ -10,10 +10,7 @@ import type {
   DesktopStartupSettings,
   DeviceSummary,
   MetricWindow,
-  TrafficCalendarMode,
-  WidgetLayoutRequest,
-  WidgetLayoutSaveRequest,
-  WidgetLayoutSync
+  TrafficCalendarMode
 } from "@dsc/shared";
 import { AgentManager } from "./agent-manager.js";
 import { readJsonFile, writeJsonAtomically } from "./atomic-json.js";
@@ -83,8 +80,6 @@ export class DesktopController {
       logout: () => this.logout(),
       disconnectAgent: () => this.disconnectAgent(),
       cloudPush: () => this.cloudPush(),
-      getWidgetLayout: (request: WidgetLayoutRequest) => this.getWidgetLayout(request),
-      saveWidgetLayout: (request: WidgetLayoutSaveRequest) => this.saveWidgetLayout(request),
       saveFanNote: (deviceId: string, fanId: string, note: string) => this.saveFanNote(deviceId, fanId, note),
       deleteInstance: (deviceId: string) => this.deleteInstance(deviceId),
       reorderInstances: (deviceIds: string[]) => this.reorderInstances(deviceIds),
@@ -284,20 +279,6 @@ export class DesktopController {
     this.hub.setServerUrl(rawState.config.connection.serverUrl);
     await this.hub.saveFanNote(deviceId, fanId, note);
     return this.refresh({ selectedDeviceId: deviceId });
-  }
-
-  async getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync> {
-    if (this.visualFixtureEnabled) return { ...request, instanceLayout: null, templates: [] };
-    const rawState = await this.agent.start();
-    if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
-    return this.hub.getWidgetLayout(request);
-  }
-
-  async saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync> {
-    if (this.visualFixtureEnabled) return { scopeKey: request.scopeKey, templateKey: request.templateKey, instanceLayout: request.instanceLayout ?? null, templates: [] };
-    const rawState = await this.agent.start();
-    if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
-    return this.hub.saveWidgetLayout(request);
   }
 
   async deleteInstance(deviceId: string): Promise<DesktopSnapshot> {

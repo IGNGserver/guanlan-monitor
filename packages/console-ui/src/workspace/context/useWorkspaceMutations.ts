@@ -3,9 +3,7 @@ import type {
   ConsoleSnapshot,
   DesktopAgentControlAction,
   DesktopConfigPatch,
-  DesktopStartupSettings,
-  WidgetLayoutRequest,
-  WidgetLayoutSaveRequest
+  DesktopStartupSettings
 } from "@dsc/shared";
 import type { ConsoleAdapter } from "../../services/adapter";
 import type { WorkspaceContextValue } from "./WorkspaceTypes";
@@ -73,8 +71,6 @@ export function useWorkspaceMutations({
     "配置已同步到中枢",
     "同步失败"
   ), [adapter, runMutation]);
-  const getWidgetLayout = useCallback((request: WidgetLayoutRequest) => adapter.getWidgetLayout(request), [adapter]);
-  const saveWidgetLayout = useCallback((request: WidgetLayoutSaveRequest) => adapter.saveWidgetLayout(request), [adapter]);
   const saveFanNote = useCallback(
     (deviceId: string, fanId: string, note: string) => runMutation(() => adapter.saveFanNote(deviceId, fanId, note), "风扇备注已保存", "保存风扇备注失败"),
     [adapter, runMutation]
@@ -118,8 +114,6 @@ export function useWorkspaceMutations({
     saveHubConnection,
     updateStartupSettings,
     cloudPush,
-    getWidgetLayout,
-    saveWidgetLayout,
     saveFanNote,
     deleteInstance,
     reorderInstances,

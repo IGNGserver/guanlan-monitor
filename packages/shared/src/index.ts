@@ -749,94 +749,6 @@ export interface ConsoleSnapshotRequest {
 }
 export type DesktopSnapshotRequest = ConsoleSnapshotRequest;
 
-export type WidgetLayoutSize = "large" | "medium" | "small";
-export type WidgetLayoutKind = "group" | "content";
-export type WidgetVisualization = "line" | "area" | "bar" | "donut" | "number" | "table";
-export type WidgetPanelKind = "system" | "custom";
-
-export interface WidgetPanelMetadata {
-  id: string;
-  name: string;
-  kind: WidgetPanelKind;
-  order: number;
-}
-
-export type WidgetConfigValue = string | number | boolean | null;
-
-export interface WidgetInstanceConfig {
-  visualization?: WidgetVisualization;
-  metric?: string;
-  targetId?: string | null;
-  [key: string]: WidgetConfigValue | undefined;
-}
-
-export interface WidgetLayoutPlacement {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  size: WidgetLayoutSize;
-  hidden?: boolean;
-}
-
-export interface WidgetLayoutCatalogEntry {
-  title: string;
-  kind: WidgetLayoutKind;
-  defaultSize: WidgetLayoutSize;
-  templateId?: string;
-  groupId?: string;
-  widgetType?: string;
-  category?: string;
-  visualization?: WidgetVisualization;
-  config?: WidgetInstanceConfig;
-}
-
-export interface WidgetLayoutDocument {
-  version?: number;
-  placements: Record<string, WidgetLayoutPlacement>;
-  catalog: Record<string, WidgetLayoutCatalogEntry>;
-  snapToGrid: boolean;
-  panels?: WidgetPanelMetadata[];
-}
-
-export interface WidgetLayoutTemplate {
-  id: string;
-  name: string;
-  templateKey: string;
-  createdAt: string;
-  updatedAt: string;
-  layout: WidgetLayoutDocument;
-}
-
-export interface WidgetLayoutSync {
-  scopeKey: string;
-  templateKey: string;
-  instanceLayout: WidgetLayoutDocument | null;
-  templates: WidgetLayoutTemplate[];
-}
-
-export interface WidgetLayoutRequest {
-  scopeKey: string;
-  templateKey: string;
-}
-
-export interface WidgetLayoutSaveRequest {
-  scopeKey: string;
-  templateKey: string;
-  instanceLayout?: WidgetLayoutDocument | null;
-  linkedInstance?: {
-    scopeKey: string;
-    templateKey: string;
-    instanceLayout: WidgetLayoutDocument | null;
-  };
-  template?: {
-    id?: string;
-    name: string;
-    layout: WidgetLayoutDocument;
-  };
-  deleteTemplateId?: string;
-}
-
 export type DesktopAgentControlAction = "start" | "stop" | "restart" | "check-connection" | "detect-probes";
 
 export interface DesktopConfigPatch {
@@ -874,8 +786,6 @@ export interface DesktopRendererBridge {
   logout(): Promise<DesktopSnapshot>;
   disconnectAgent(): Promise<DesktopSnapshot>;
   cloudPush(): Promise<DesktopSnapshot>;
-  getWidgetLayout(request: WidgetLayoutRequest): Promise<WidgetLayoutSync>;
-  saveWidgetLayout(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync>;
   saveFanNote(deviceId: string, fanId: string, note: string): Promise<DesktopSnapshot>;
   deleteInstance(deviceId: string): Promise<DesktopSnapshot>;
   reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot>;
