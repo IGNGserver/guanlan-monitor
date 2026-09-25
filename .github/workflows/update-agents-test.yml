@@ -10,7 +10,7 @@ on:
       targets:
         description: "SSH host names or addresses, separated by spaces"
         required: true
-        default: "192.168.5.8 192.168.5.7 192.168.5.10 nas"
+        default: "192.168.5.8 192.168.5.64 192.168.5.32 nas"
         type: string
 
 permissions:
@@ -33,6 +33,10 @@ jobs:
           REQUESTED_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
+          [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Agent update requires a fixed semantic version." >&2
+            exit 1
+          }
           for command in curl sha256sum dpkg-deb; do
             command -v "$command" >/dev/null 2>&1 || {
               echo "$command is required on the staging runner." >&2
@@ -48,16 +52,31 @@ jobs:
           curl -4 -fL --retry 8 --retry-all-errors --connect-timeout 20 --max-time 300 \
             "$base_url/$asset" -o "$stage_dir/$asset"
           (cd "$stage_dir" && sha256sum -c "$asset.sha256")
+          [[ "$(dpkg-deb -f "$stage_dir/$asset" Version)" == "$REQUESTED_VERSION" ]] || {
+            echo "The Debian package version does not match the requested release." >&2
+            exit 1
+          }
           dpkg-deb --info "$stage_dir/$asset"
-          # The fleet hosts keep their existing /opt layout, so only the
-          # collector binary is staged from the package.
           extract_dir="$stage_dir/agent-payload"
-          rm -rf "$extract_dir"
           mkdir -p "$extract_dir"
           dpkg-deb -x "$stage_dir/$asset" "$extract_dir"
-          agent_binary="$(find "$extract_dir" -type f -name 'device-state-console-agent' -print -quit)"
-          [[ -n "$agent_binary" && -f "$agent_binary" ]] || {
-            echo "The Linux package does not contain the collector binary." >&2
+          agent_binary="$(find "$extract_dir" -type f -path '*/resources/agent/device-state-console-agent' -print -quit)"
+          agent_cli="$(find "$extract_dir" -type f -path '*/resources/agent/guanlan-agent' -print -quit)"
+          [[ -n "$agent_binary" && -x "$agent_binary" ]] || {
+            echo "The Linux package does not contain an executable collector." >&2
+            exit 1
+          }
+          [[ -n "$agent_cli" && -x "$agent_cli" ]] || {
+            echo "The Linux package does not contain the Guanlan Agent CLI." >&2
+            exit 1
+          }
+          expected="$REQUESTED_VERSION (test)"
+          [[ "$("$agent_binary" version)" == "$expected" ]] || {
+            echo "The package collector version or channel does not match the requested test release." >&2
+            exit 1
+          }
+          [[ "$("$agent_cli" version)" == "$expected" ]] || {
+            echo "The package Agent CLI version or channel does not match the requested test release." >&2
             exit 1
           }
           install -m 0755 "$agent_binary" "$stage_dir/device-state-console-agent"
@@ -76,7 +95,7 @@ jobs:
     name: Update Linux Agents
     needs: stage
     runs-on: [self-hosted, Linux, X64, nas]
-    timeout-minutes: 30
+    timeout-minutes: 60
     environment: test
     steps:
       - name: Validate request
@@ -134,123 +153,16 @@ jobs:
           name: linux-agent-release-${{ inputs.version }}
           path: ${{ runner.temp }}/dsc-agent-artifact-${{ github.run_id }}
 
-      - name: Extract and verify Agent package
-        shell: bash
-        env:
-          REQUESTED_VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          work_dir="${RUNNER_TEMP:-/tmp}/dsc-agent-update-${GITHUB_RUN_ID:-manual}"
-          rm -rf "$work_dir"
-          artifact_dir="${RUNNER_TEMP:-/tmp}/dsc-agent-artifact-${GITHUB_RUN_ID:-manual}"
-          package="$(find "$artifact_dir" -maxdepth 1 -type f -name 'DeviceStateConsole-Linux-Install-v*.deb' -print -quit)"
-          [[ -n "$package" && -f "$package" ]] || {
-            echo "Staged Linux package is unavailable." >&2
-            exit 1
-          }
-          checksum="$package.sha256"
-          [[ -f "$checksum" ]] || {
-            echo "Staged Linux package checksum is unavailable." >&2
-            exit 1
-          }
-          (cd "$(dirname "$package")" && sha256sum -c "$(basename "$checksum")")
-          agent_binary="$artifact_dir/device-state-console-agent"
-          [[ -f "$agent_binary" ]] || {
-            echo "Staged Agent binary is unavailable." >&2
-            exit 1
-          }
-          chmod 0755 "$agent_binary"
-          reported="$("$agent_binary" version)"
-          [[ "$reported" == "$REQUESTED_VERSION (test)" ]] || {
-            echo "Staged Agent reported '$reported', expected '$REQUESTED_VERSION (test)'." >&2
-            exit 1
-          }
-          echo "Downloaded and verified Agent $reported through Actions artifacts."
+      - name: Check out the versioned update script
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
 
-      - name: Distribute and verify each Agent
+      - name: Update and verify each Agent
         shell: bash
         env:
           DEPLOY_USER: ${{ secrets.TEST_DEPLOY_USER }}
           DEPLOY_PASSWORD: ${{ secrets.TEST_DEPLOY_PASSWORD }}
           REQUESTED_VERSION: ${{ inputs.version }}
           TARGETS: ${{ inputs.targets }}
-        run: |
-          set -euo pipefail
-          work_dir="${RUNNER_TEMP:-/tmp}/dsc-agent-update-${GITHUB_RUN_ID:-manual}"
-          trap 'rm -rf "$work_dir"' EXIT
-          [[ -n "$work_dir" && -d "$work_dir/package" ]] || {
-            echo "Verified Agent package directory is unavailable." >&2
-            exit 1
-          }
-          agent_binary="$(find "$work_dir/package" -type f -name 'device-state-console-agent' -print -quit)"
-          [[ -n "$agent_binary" && -f "$agent_binary" ]] || {
-            echo "Verified Agent package is missing the Linux Agent binary." >&2
-            exit 1
-          }
-          chmod 0755 "$agent_binary"
-
-          install_script='set -euo pipefail
-          version="$1"
-          staged="$2"
-          install_dir="/opt/device-state-console-agent"
-          target="$install_dir/device-state-console-agent"
-          version_file="$install_dir/VERSION"
-          backup="$target.backup-$version-$$"
-          owner="root:root"
-          if [[ -e "$target" ]]; then
-            owner="$(stat -c "%u:%g" "$target")"
-          fi
-          install -d -m 0755 "$install_dir"
-          systemctl stop device-state-console-agent.service
-          if [[ -e "$target" ]]; then
-            mv "$target" "$backup"
-          fi
-          mv "$staged" "$target"
-          chown "$owner" "$target"
-          chmod 0755 "$target"
-          printf "%s\n" "$version" > "$version_file"
-          if ! systemctl start device-state-console-agent.service || ! systemctl is-active --quiet device-state-console-agent.service; then
-            systemctl stop device-state-console-agent.service || true
-            rm -f "$target"
-            if [[ -e "$backup" ]]; then
-              mv "$backup" "$target"
-            fi
-            systemctl start device-state-console-agent.service || true
-            exit 1
-          fi
-          rm -f "$backup" "$staged"
-          cat "$version_file"'
-
-          for target in $TARGETS; do
-            echo "Updating Agent on $target"
-            if [[ "$target" == 'nas' || "$target" == 'localhost' || "$target" == '127.0.0.1' ]]; then
-              local_stage="/opt/device-state-console-agent/.dsc-agent-${REQUESTED_VERSION}.new"
-              if [[ -n "$DEPLOY_PASSWORD" ]]; then
-                printf '%s\n' "$DEPLOY_PASSWORD" | sudo -S -p '' install -m 0755 "$agent_binary" "$local_stage"
-                reported="$(
-                  {
-                    printf '%s\n' "$DEPLOY_PASSWORD"
-                    printf '%s\n' "$install_script"
-                  } | sudo -S -p '' bash -s -- "$REQUESTED_VERSION" "$local_stage"
-                )"
-              else
-                sudo -n install -m 0755 "$agent_binary" "$local_stage"
-                reported="$(sudo -n bash -s -- "$REQUESTED_VERSION" "$local_stage" <<< "$install_script")"
-              fi
-            else
-              remote_user="${DEPLOY_USER:-root}"
-              ssh_options=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
-              if [[ -s "$HOME/.ssh/id_ed25519" ]]; then
-                ssh_options+=(-i "$HOME/.ssh/id_ed25519")
-              fi
-              remote_stage="/tmp/dsc-agent-${REQUESTED_VERSION}-${RANDOM}.new"
-              scp "${ssh_options[@]}" "$agent_binary" "$remote_user@$target:$remote_stage"
-              reported="$(ssh "${ssh_options[@]}" "$remote_user@$target" \
-                bash -s -- "$REQUESTED_VERSION" "$remote_stage" <<< "$install_script")"
-            fi
-            echo "$target: Agent $reported"
-            [[ "$(tr -d '[:space:]' <<< "$reported")" == "$REQUESTED_VERSION" ]] || {
-              echo "Agent on $target did not report version $REQUESTED_VERSION." >&2
-              exit 1
-            }
-          done
+        run: bash deploy/update-test-agents.sh
