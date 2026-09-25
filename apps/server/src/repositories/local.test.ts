@@ -72,8 +72,19 @@ test("local history retention removes expired points", async () => {
   });
 });
 
-async function readFileAsDb(filePath: string) {
-  return JSON.parse(await readFile(filePath, "utf8")) as { deviceRegistry?: Record<string, unknown> };
+/**
+ * Registry ids on disk, with a missing file meaning nothing was ever written.
+ *
+ * A refused registration must not touch the store at all, so the file genuinely does not exist
+ * yet; reading through the repository would hide that behind its empty-database default.
+ */
+async function readPersistedRegistryIds(filePath: string): Promise<string[]> {
+  const raw = await readFile(filePath, "utf8").catch((error: NodeJS.ErrnoException) =>
+    error.code === "ENOENT" ? null : Promise.reject(error)
+  );
+  if (!raw) return [];
+  const parsed = JSON.parse(raw) as { deviceRegistry?: Record<string, unknown> };
+  return Object.keys(parsed.deviceRegistry ?? {});
 }
 
 test("the device registry refuses legacy virtual machine ids", async () => {
@@ -85,12 +96,12 @@ test("the device registry refuses legacy virtual machine ids", async () => {
     const refused = await devices.registerOrUpdateDevice("vm:05c91cad", "ubuntu-vm", { reopenClosed: true });
     assert.equal(refused.status, "closed");
     assert.deepEqual(await devices.listOpenDevices(), []);
-    assert.deepEqual(Object.keys((await readFileAsDb(filePath)).deviceRegistry ?? {}), []);
+    assert.deepEqual(await readPersistedRegistryIds(filePath), []);
 
     await devices.registerOrUpdateDevice("device-1", "Host");
     await devices.deleteDevice("vm:05c91cad");
     assert.deepEqual((await devices.listOpenDevices()).map((device) => device.deviceId), ["device-1"]);
-    assert.deepEqual(Object.keys((await readFileAsDb(filePath)).deviceRegistry ?? {}), ["device-1"]);
+    assert.deepEqual(await readPersistedRegistryIds(filePath), ["device-1"]);
   });
 });
 
