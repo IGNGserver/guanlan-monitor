@@ -11,9 +11,7 @@ import type {
   MetricSeries,
   MetricWindow,
   TrafficCalendarMode,
-  TrafficCalendarResponse,
-  WidgetLayoutSaveRequest,
-  WidgetLayoutSync
+  TrafficCalendarResponse
 } from "@dsc/shared";
 
 export interface DeviceRealtimeState {
@@ -197,12 +195,6 @@ export interface FanNoteStore {
 export interface DeviceMetricConfigStore {
   get(deviceId: string): Promise<DeviceMetricConfigValue | null>;
   set(deviceId: string, value: DeviceMetricConfigValue): Promise<void>;
-}
-
-export interface WidgetLayoutStore {
-  init?(): Promise<void>;
-  get(scopeKey: string, templateKey: string): Promise<WidgetLayoutSync>;
-  save(request: WidgetLayoutSaveRequest): Promise<WidgetLayoutSync>;
 }
 
 export interface DeviceMetricConfigValue {
