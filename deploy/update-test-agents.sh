@@ -282,7 +282,8 @@ systemctl is-active --quiet "$unit" && systemctl is-enabled --quiet "$unit" || {
   exit 1
 }
 
-owner="$(stat -c '%u:%g' "$target")"
+owner="$(stat -c '%u' "$target")"
+group="$(stat -c '%g' "$target")"
 mode="$(stat -c '%a' "$target")"
 had_version_file=false
 if [[ -f "$version_file" ]]; then
@@ -311,11 +312,23 @@ restore() {
   return 1
 }
 
-install -m "$mode" -o "$owner" "$staged" "$target.new"
+if ! install -m "$mode" -o "$owner" -g "$group" "$staged" "$target.new"; then
+  rm -f "$target.new" "$version_file.new"
+  rm -rf "$stage_dir"
+  exit 1
+fi
 if [[ "$had_version_file" == true ]]; then
-  install -m 0644 -o "$owner" "$version_backup" "$version_file.new"
+  if ! install -m 0644 -o "$owner" -g "$group" "$version_backup" "$version_file.new"; then
+    rm -f "$target.new" "$version_file.new"
+    rm -rf "$stage_dir"
+    exit 1
+  fi
 else
-  install -m 0644 -o "$owner" /dev/null "$version_file.new"
+  if ! install -m 0644 -o "$owner" -g "$group" /dev/null "$version_file.new"; then
+    rm -f "$target.new" "$version_file.new"
+    rm -rf "$stage_dir"
+    exit 1
+  fi
 fi
 printf '%s\n' "$version" > "$version_file.new"
 systemctl stop "$unit"
