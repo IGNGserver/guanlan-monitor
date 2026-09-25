@@ -16,14 +16,12 @@ import {
   LocalDeviceRepository,
   LocalFanNoteStore,
   LocalHistoryRepository,
-  LocalRealtimeRepository,
-  LocalWidgetLayoutStore
+  LocalRealtimeRepository
 } from "./repositories/local.js";
-import { MysqlWidgetLayoutStore } from "./repositories/widget-layouts.js";
 import { MetricsService } from "./services/metrics.js";
 import { registerRoutes } from "./routes.js";
 import type { AgentMetricsPayload, DeviceRealtimeEvent } from "@dsc/shared";
-import type { Repositories, WidgetLayoutStore } from "./types.js";
+import type { Repositories } from "./types.js";
 
 process.on("uncaughtException", (error) => {
   console.error("FATAL: uncaughtException", error);
@@ -63,8 +61,6 @@ const store = createLocalStore();
 const legacyCleanupSteps: Array<() => Promise<void>> = [() => store.removeLegacyVirtualMachineData()];
 const deviceMetricConfigs = new LocalDeviceMetricConfigStore(store);
 const fanNotes = new LocalFanNoteStore(store);
-const localWidgetLayouts = new LocalWidgetLayoutStore(store);
-let widgetLayouts: WidgetLayoutStore = localWidgetLayouts;
 
 let redisClient: Redis | null = null;
 if (env.REDIS_URL) {
@@ -100,12 +96,13 @@ if (env.MYSQL_URL) {
   });
   const history = new MysqlHistoryRepository(pool);
   const devicesRepo = new MysqlDeviceRepository(pool);
-  const mysqlWidgetLayouts = new MysqlWidgetLayoutStore(pool, localWidgetLayouts);
   await history.init();
   await devicesRepo.init();
-  await mysqlWidgetLayouts.init();
+  // 小组件机制随 v3.0.104 移除：两张布局表已无读写方，线上数据在发布前已导出
+  // 备份，这里沿用 virtual_machines 的先例做幂等删除。
+  await pool.query("DROP TABLE IF EXISTS widget_layout_instances");
+  await pool.query("DROP TABLE IF EXISTS widget_layout_templates");
   legacyCleanupSteps.push(() => removeLegacyVirtualMachineData(pool, app.log));
-  widgetLayouts = mysqlWidgetLayouts;
   repositories = { realtime, history, devices: devicesRepo };
   app.log.info(env.REDIS_URL ? "using redis + mysql repositories" : "using local realtime + mysql history repositories");
 } else {
@@ -150,8 +147,6 @@ async function removeLegacyVirtualMachineData(pool: mysql.Pool, log: FastifyBase
       }
     }
   }
-  await pool.query("DELETE FROM widget_layout_instances WHERE scope_key LIKE '%vm:%' OR template_key LIKE '%virtual_machine%'");
-  await pool.query("DELETE FROM widget_layout_templates WHERE template_key LIKE '%virtual_machine%'");
 }
 
 let io: SocketIOServer | null = null;
@@ -165,8 +160,7 @@ const metricsService = new MetricsService(
 
 await registerRoutes(app, repositories, metricsService, {
   fanNotes,
-  metricConfigs: deviceMetricConfigs,
-  widgetLayouts
+  metricConfigs: deviceMetricConfigs
 });
 
 app.post<{ Body: AgentMetricsPayload }>("/api/agent/ingest", async (request, reply) => {

@@ -9,7 +9,7 @@
     "dev": "tsx watch src/index.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test src/auth.test.ts src/metrics-schema.test.ts src/utils.test.ts src/repositories/local.test.ts src/repositories/realtime.test.ts src/repositories/widget-layouts.test.ts src/services/metrics-audit.test.ts"
+    "test": "node --import tsx --test src/auth.test.ts src/metrics-schema.test.ts src/utils.test.ts src/repositories/local.test.ts src/repositories/realtime.test.ts src/services/metrics-audit.test.ts"
   },
   "dependencies": {
     "@dsc/shared": "workspace:*",
