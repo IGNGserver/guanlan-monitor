@@ -332,6 +332,37 @@ async function run() {
 
   await page.getByRole("tab", { name: "概览" }).click();
   await page.waitForTimeout(300);
+  // 诊断探针：固定布局的磁贴必须撑满自己的栅格单元。这里只记录几何与计算
+  // 样式，不做断言，等根因修掉后再把断言补回来。
+  const deviceChartGeometry = await page.evaluate(() => {
+    const box = (el) => {
+      const rect = el.getBoundingClientRect();
+      return { width: Math.round(rect.width), height: Math.round(rect.height), x: Math.round(rect.x) };
+    };
+    const style = (el, props) => {
+      const computed = getComputedStyle(el);
+      const out = {};
+      for (const prop of props) out[prop] = computed.getPropertyValue(prop);
+      return out;
+    };
+    const cells = [...document.querySelectorAll(".dashboard-section .dashboard-cell")].slice(0, 4);
+    return {
+      cells: cells.map((cell) => {
+        const tile = cell.querySelector(".chart-tile");
+        const body = tile ? tile.querySelector(".chart-tile__body") : null;
+        const holder = body ? body.firstElementChild : null;
+        return {
+          className: cell.className,
+          cell: { ...box(cell), ...style(cell, ["display", "flex", "flex-basis", "max-width", "width"]) },
+          row: cell.parentElement ? { className: cell.parentElement.className, ...style(cell.parentElement, ["display", "flex-wrap"]) } : null,
+          grid: cell.parentElement && cell.parentElement.parentElement ? { className: cell.parentElement.parentElement.className, ...style(cell.parentElement.parentElement, ["display", "max-width", "width"]) } : null,
+          tile: tile ? { ...box(tile), ...style(tile, ["display", "width"]) } : null,
+          body: body ? { ...box(body), ...style(body, ["display", "width", "min-width"]) } : null,
+          holder: holder ? { className: holder.className, ...box(holder), ...style(holder, ["display", "width", "height"]) } : null
+        };
+      })
+    };
+  });
   await page.screenshot({ path: path.join(outputDir, "web-device-desktop.png"), fullPage: true, animations: "disabled" });
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
@@ -602,7 +633,7 @@ async function run() {
   assert.ok(routeHashes.size >= 3, "route screenshots must not collapse into one identical image");
 
   assert.deepEqual(pageErrors, [], `browser page errors: ${pageErrors.join("; ")}`);
-  const report = { baseUrl, fixtureDevices: fixtureDevices.length, desktopMetrics, mobileMetrics, stateEvidence, matrix, requestLog, screenshots: fs.readdirSync(outputDir).sort() };
+  const report = { baseUrl, fixtureDevices: fixtureDevices.length, desktopMetrics, mobileMetrics, deviceChartGeometry, stateEvidence, matrix, requestLog, screenshots: fs.readdirSync(outputDir).sort() };
   fs.writeFileSync(path.join(outputDir, "web-visual-regression-report.json"), `${JSON.stringify(report, null, 2)}\n`);
   await browser.close();
   activeBrowser = null;
