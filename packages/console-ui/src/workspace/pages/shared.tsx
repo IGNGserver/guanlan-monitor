@@ -1,12 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { DataTable, Modal, OverflowMenu, OverflowMenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow, Tag } from "@carbon/react";
-import type { AgentProbeProvider, AgentProbeTarget, DeviceMetricKey, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, WidgetLayoutDocument, WidgetPanelMetadata } from "@dsc/shared";
+import type { AgentProbeProvider, AgentProbeTarget, DeviceMetricKey, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import appIcon from "../../assets/app-icon.png";
 import { useWorkspace } from "../WorkspaceContext";
 import type { DeviceDirectorySort, DeviceDirectoryStatus } from "../selectors";
-import { useOptionalWidgetLayout } from "../WidgetLayout";
-import { M3Checkbox, M3Chip, M3SegmentedControl, M3Select, M3Tabs, M3TextField } from "../m3";
+import { M3Checkbox, M3Chip, M3SegmentedControl, M3Select, M3TextField } from "../m3";
 import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
 import { CarbonTimeSeriesChart } from "../CarbonCharts";
 import { UNAVAILABLE_METRIC_LABEL, formatBytes, formatDate } from "../formatters";
@@ -593,154 +591,6 @@ function MetricWindowControl({ value, onChange }: { value: DesktopMetricWindowVa
   );
 }
 
-type DeviceTabKey = "overview" | "compute" | "storage_net" | "gpu_thermal" | "fan" | "all";
-
-const DEFAULT_DEVICE_PANELS: WidgetPanelMetadata[] = [
-  { id: "overview", name: "摘要", kind: "system", order: 0 },
-  { id: "compute", name: "算力与内存", kind: "system", order: 1 },
-  { id: "storage_net", name: "存储与网络", kind: "system", order: 2 },
-  { id: "gpu_thermal", name: "显卡与散热", kind: "system", order: 3 },
-  { id: "fan", name: "风扇转速", kind: "system", order: 4 },
-  { id: "all", name: "全部指标", kind: "system", order: 5 }
-];
-
-function cloneDevicePanels(panels: WidgetPanelMetadata[]): WidgetPanelMetadata[] {
-  return panels.map((panel) => ({ ...panel }));
-}
-
-function normalizeDevicePanels(panels: WidgetPanelMetadata[] | undefined): WidgetPanelMetadata[] {
-  const systemIds = new Set(DEFAULT_DEVICE_PANELS.map((panel) => panel.id));
-  const customPanels = (panels ?? [])
-    .filter((panel) => panel.kind === "custom" && !systemIds.has(panel.id))
-    .map((panel, index) => ({
-      id: panel.id,
-      name: panel.name.trim().slice(0, 80) || `自定义面板 ${index + 1}`,
-      kind: "custom" as const,
-      order: DEFAULT_DEVICE_PANELS.length + index
-    }));
-  return [...cloneDevicePanels(DEFAULT_DEVICE_PANELS), ...customPanels];
-}
-
-function createDynamicLayout(source: WidgetLayoutDocument | undefined): WidgetLayoutDocument {
-  if (!source) return { version: 4, placements: {}, catalog: {}, snapToGrid: true };
-  const removedSystemIds = new Set(Object.entries(source.catalog).filter(([, entry]) => entry.config?.systemRendered === true && entry.config.deleted === true).map(([id]) => id));
-  const catalog = Object.fromEntries(Object.entries(source.catalog)
-    .filter(([, entry]) => Boolean(entry.widgetType) && !removedSystemIds.has(entry.groupId ?? ""))
-    .map(([id, entry]) => {
-      const config = entry.config ? { ...entry.config } : undefined;
-      if (config) {
-        delete config.systemRendered;
-        delete config.deleted;
-      }
-      return [id, { ...entry, ...(config && Object.keys(config).length ? { config } : {}) }];
-    }));
-  const placements = Object.fromEntries(Object.entries(source.placements).filter(([id]) => Boolean(catalog[id])).map(([id, placement]) => [id, { ...placement }]));
-  return { version: 4, placements, catalog, snapToGrid: source.snapToGrid };
-}
-
-function createStarterDynamicLayout(): WidgetLayoutDocument {
-  // Instance-backed widgets must be added through the drawer so the user can
-  // bind each one to an exact CPU, disk, GPU, fan or network device.
-  return { version: 4, placements: {}, catalog: {}, snapToGrid: true };
-}
-
-function WidgetPanelBar({
-  panels,
-  activePanelId,
-  editable,
-  onSelect,
-  onCreate,
-  onRename,
-  onDuplicate,
-  onDelete
-}: {
-  panels: WidgetPanelMetadata[];
-  activePanelId: string;
-  editable: boolean;
-  onSelect: (panelId: string) => void;
-  onCreate: (name: string) => void;
-  onRename: (panelId: string, name: string) => void;
-  onDuplicate: (panelId: string, layout?: WidgetLayoutDocument) => void;
-  onDelete: (panelId: string) => void;
-}) {
-  const layout = useOptionalWidgetLayout();
-  const canManage = editable && Boolean(layout && !layout.locked);
-  const [manageOpen, setManageOpen] = useState(false);
-  const [newPanelName, setNewPanelName] = useState("");
-  const managerRef = useRef<HTMLDivElement>(null);
-  const [renameTarget, setRenameTarget] = useState<WidgetPanelMetadata | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<WidgetPanelMetadata | null>(null);
-
-  useEffect(() => {
-    if (!canManage) setManageOpen(false);
-  }, [canManage]);
-
-  useEffect(() => {
-    if (!manageOpen) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Node && !managerRef.current?.contains(event.target)) setManageOpen(false);
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setManageOpen(false);
-    };
-    document.addEventListener("pointerdown", handlePointerDown, true);
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown, true);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [manageOpen]);
-
-  const submitNewPanel = (event: FormEvent) => {
-    event.preventDefault();
-    if (!canManage) return;
-    const name = newPanelName.trim();
-    if (!name) return;
-    onCreate(name);
-    setNewPanelName("");
-  };
-  const openPanelManager = () => {
-    if (!layout || !canManage) return;
-    if (!layout.editMode) {
-      layout.compactLayout();
-      layout.setEditMode(true);
-    }
-    setManageOpen(true);
-  };
-
-  return (
-    <>
-    <div className="workspace-panel-bar">
-      <M3Tabs
-        className="workspace-tabs"
-        options={panels.map((panel) => ({
-          value: panel.id,
-          label: <><span aria-hidden="true">{panel.id === "overview" && <Icon name="overview" size={15} />}{panel.id === "compute" && <Icon name="device" size={15} />}{panel.id === "storage_net" && <Icon name="data" size={15} />}{panel.id === "gpu_thermal" && <Icon name="hub" size={15} />}{panel.id === "fan" && <Icon name="clock" size={15} />}</span>{panel.name}</>
-        }))}
-        value={activePanelId}
-        onChange={onSelect}
-        aria-label="设备面板"
-      />
-      <div ref={managerRef} className="workspace-panel-manager">
-        <button className={`workspace-layout-actions__button${manageOpen ? " is-active" : ""}`} type="button" onClick={() => (manageOpen ? setManageOpen(false) : openPanelManager())} aria-expanded={manageOpen} disabled={!canManage} title={canManage ? "管理和定制设备面板" : "当前视图不支持自定义面板"}>面板管理</button>
-        {manageOpen && (
-          <div className="workspace-panel-manager__tray">
-            <div className="workspace-panel-manager__heading"><strong>我的面板</strong><span>系统面板保留兼容；自定义面板可以重复、重命名或删除。</span></div>
-            <form className="workspace-panel-manager__create" onSubmit={submitNewPanel}>
-              <M3TextField className="workspace-panel-manager__field" label="新面板名称" value={newPanelName} onChange={(event) => setNewPanelName(event.target.value)} placeholder="例如：值班视图" maxLength={80} />
-              <Button className="workspace-panel-manager__create-button" variant="secondary" type="submit" disabled={!newPanelName.trim()}>新建</Button>
-            </form>
-            <div className="workspace-panel-manager__list">{panels.map((panel) => <div className="workspace-panel-manager__item" key={panel.id}><span><strong>{panel.name}</strong><small>{panel.kind === "custom" ? "自定义面板" : "系统面板"}</small></span><div>{panel.kind === "custom" && <><button type="button" onClick={() => setRenameTarget(panel)}>重命名</button><button type="button" onClick={() => onDuplicate(panel.id, activePanelId === panel.id ? layout?.getLayoutSnapshot() : undefined)}>复制</button><button type="button" className="is-danger" onClick={() => setDeleteTarget(panel)}>删除</button></>}{panel.kind === "system" && <button type="button" onClick={() => onDuplicate(panel.id, activePanelId === panel.id ? layout?.getLayoutSnapshot() : undefined)}>复制为自定义</button>}</div></div>)}</div>
-          </div>
-        )}
-      </div>
-    </div>
-    {renameTarget && <PromptDialog title={`重命名“${renameTarget.name}”`} detail="名称只用于当前设备的面板列表，最多 80 个字符。" initialValue={renameTarget.name} onConfirm={(name) => { onRename(renameTarget.id, name); setRenameTarget(null); }} onCancel={() => setRenameTarget(null)} />}
-    {deleteTarget && <ConfirmDialog title={`删除“${deleteTarget.name}”？`} detail="删除自定义面板后，其中的小组件布局也会从当前设备的面板列表中移除。" confirmLabel="删除面板" onConfirm={() => { onDelete(deleteTarget.id); setDeleteTarget(null); }} onCancel={() => setDeleteTarget(null)} />}
-    </>
-  );
-}
-
 const temperatureRoleLabels: Record<string, string> = {
   cpu_package: "CPU 封装",
   cpu_core: "CPU 核心",
@@ -935,10 +785,6 @@ function AgentTemperatureSourcesPanel({
     </Surface>
   );
 }
-function InstanceRow({ label, name, value }: { label: string; name: string; value: string }) {
-  return <div className="workspace-instance-row"><span className="workspace-instance-row__label">{label}</span><span className="workspace-instance-row__name">{name}</span><strong>{value}</strong></div>;
-}
-
 function LoadingSurface() {
   return <div className="workspace-page workspace-loading-state" role="status" aria-busy="true" aria-label="正在加载设备状态"><span className="workspace-visually-hidden">正在加载设备状态</span><div className="workspace-skeleton workspace-skeleton--hero" /><div className="workspace-skeleton workspace-skeleton--large" /><div className="workspace-skeleton workspace-skeleton--medium" /></div>;
 }
@@ -961,7 +807,6 @@ export {
   instanceMetricOptions,
   probeTargetLabels,
   probeProviderLabels,
-  DEFAULT_DEVICE_PANELS,
   PageIntro,
   DeviceDirectoryFilterBar,
   CarbonDeviceTable,
@@ -975,18 +820,12 @@ export {
   TrafficCalendar,
   TrafficCalendarControls,
   MetricWindowControl,
-  cloneDevicePanels,
-  normalizeDevicePanels,
-  createDynamicLayout,
-  createStarterDynamicLayout,
-  WidgetPanelBar,
   temperatureStatusLabel,
   temperatureSourceLabel,
   temperatureValueLabel,
   temperatureLimitsLabel,
   TemperatureSourcesPanel,
   AgentTemperatureSourcesPanel,
-  InstanceRow,
   LoadingSurface,
   EmptyState,
   ErrorSurface
