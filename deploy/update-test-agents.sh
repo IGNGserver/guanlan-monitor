@@ -291,6 +291,11 @@ if [[ -f "$version_file" ]]; then
   had_version_file=true
 fi
 started_at="$(date --iso-8601=seconds)"
+upload_log="$install_dir/agent.err.log"
+upload_log_offset=0
+if [[ -f "$upload_log" ]]; then
+  upload_log_offset="$(stat -c '%s' "$upload_log")"
+fi
 
 restore() {
   set +e
@@ -363,8 +368,42 @@ fi
 
 upload_confirmed=false
 for _ in $(seq 1 90); do
-  if journalctl -u "$unit" --since "$started_at" --no-pager -o cat 2>/dev/null |
-    grep -Fq 'uploaded metrics at '; then
+  if python3 - "$unit" "$started_at" "$upload_log" "$upload_log_offset" "$version" <<'PY'
+import subprocess
+import sys
+
+unit, started_at, log_path, log_offset, version = sys.argv[1:]
+texts = []
+try:
+    with open(log_path, "rb") as stream:
+        offset = int(log_offset)
+        if stream.seek(0, 2) < offset:
+            offset = 0
+        stream.seek(offset)
+        texts.append(stream.read().decode("utf-8", "replace"))
+except OSError:
+    pass
+
+journal = subprocess.run(
+    ["journalctl", "-u", unit, "--since", started_at, "--no-pager", "-o", "cat"],
+    check=False,
+    capture_output=True,
+    text=True,
+)
+if journal.returncode == 0:
+    texts.append(journal.stdout)
+
+startup = f"go agent v{version} started for "
+for text in texts:
+    started = False
+    for line in text.splitlines():
+        if startup in line:
+            started = True
+        elif started and "uploaded metrics at " in line:
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
+  then
     upload_confirmed=true
     break
   fi
@@ -380,6 +419,19 @@ if [[ "$upload_confirmed" != true ]]; then
     printf 'Agent main process executable: %s\n' "${service_executable:-unavailable}" >&2
   else
     echo "Agent main process executable: no active process." >&2
+  fi
+  if [[ -f "$upload_log" ]]; then
+    current_log_size="$(stat -c '%s' "$upload_log" 2>/dev/null || printf '0')"
+    if [[ "$current_log_size" =~ ^[0-9]+$ && "$current_log_size" -lt "$upload_log_offset" ]]; then
+      upload_log_offset=0
+    fi
+    app_log_diagnostics="$(tail -c +"$((upload_log_offset + 1))" "$upload_log" 2>/dev/null |
+      grep -aEi 'go agent v|uploaded metrics at |upload failed|data recording is disabled|cloud sync is disabled|fatal|error|failed to|not found|permission denied' |
+      sed -E 's/^([^ ]+ [^ ]+) go agent v[^ ]+ started for .*/\1 Go Agent startup message recorded/; s#https?://[^[:space:]]+#<url>#g; s/(Bearer )[[:graph:]]+/\1[redacted]/g' |
+      tail -n 30 || true)"
+    if [[ -n "$app_log_diagnostics" ]]; then
+      printf 'Agent application log diagnostics:\n%s\n' "$app_log_diagnostics" >&2
+    fi
   fi
   upload_diagnostics="$(journalctl -u "$unit" --since "$started_at" --no-pager -o cat 2>/dev/null |
     grep -Ei 'go agent v|upload failed|uploaded metrics at |data recording is disabled|cloud sync is disabled|fatal|error|failed to|not found|permission denied' |
