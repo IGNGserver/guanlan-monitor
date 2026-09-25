@@ -53,11 +53,15 @@ test("fixed layout never declares an empty tab or section", () => {
 });
 
 test("every chart resolves to a responsive Carbon grid span", () => {
+  // 栅格列数与 Carbon 2x Grid 的约定一致：320/672/1056 断点分别 4/8/16 列。
+  // 跨度超出列数会让 grid-column 的 span 溢出到隐式轨道，整行被挤乱。
+  const columns = { sm: 4, md: 8, lg: 16 } as const;
   for (const chart of allCharts) {
     const span = resolveChartSpan(chart);
     assert.ok(span, `chart ${chart.id} declares an unknown span`);
     for (const breakpoint of ["sm", "md", "lg"] as const) {
       assert.ok(span[breakpoint] > 0, `chart ${chart.id} must span columns at ${breakpoint}`);
+      assert.ok(span[breakpoint] <= columns[breakpoint], `chart ${chart.id} spans more than the ${columns[breakpoint]} columns available at ${breakpoint}`);
     }
     // 窄屏不能比宽屏占更多列，否则 390px 下会出现横向溢出。
     assert.ok(span.sm <= span.md && span.md <= span.lg, `chart ${chart.id} span must not grow towards narrow breakpoints`);

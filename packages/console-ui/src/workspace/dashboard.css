@@ -64,13 +64,40 @@
   gap: var(--cds-spacing-03, 8px);
 }
 
-/* Carbon Grid 自带外边距与列间距；这里只负责把整块栅格对齐到分区内容。 */
+/* 固定布局栅格：列数与断点对齐 Carbon 2x Grid（4/8/16 @ 320/672/1056），
+   间距取 Carbon 令牌。跨度由 .dashboard-cell 上的 --cell-* 自定义属性决定。 */
 .dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--cds-spacing-05, 16px);
   padding-inline: 0;
 }
 
 .dashboard-cell {
+  grid-column: span var(--cell-sm, 4);
   min-width: 0;
+}
+
+@media (min-width: 672px) {
+  .dashboard-grid {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    column-gap: var(--cds-spacing-06, 24px);
+  }
+
+  .dashboard-cell {
+    grid-column: span var(--cell-md, var(--cell-sm, 4));
+  }
+}
+
+@media (min-width: 1056px) {
+  .dashboard-grid {
+    grid-template-columns: repeat(16, minmax(0, 1fr));
+    column-gap: var(--cds-spacing-07, 32px);
+  }
+
+  .dashboard-cell {
+    grid-column: span var(--cell-lg, var(--cell-md, var(--cell-sm, 4)));
+  }
 }
 
 /* 卡片：Carbon Tile 提供背景与内边距，这里只补排版与分隔线。 */

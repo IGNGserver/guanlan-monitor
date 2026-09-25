@@ -332,8 +332,9 @@ async function run() {
 
   await page.getByRole("tab", { name: "概览" }).click();
   await page.waitForTimeout(300);
-  // 诊断探针：固定布局的磁贴必须撑满自己的栅格单元。这里只记录几何与计算
-  // 样式，不做断言，等根因修掉后再把断言补回来。
+  // 固定布局的磁贴必须撑满自己声明的栅格跨度。曾经 Carbon css-grid 的行规则
+  // 没有产出，行退化成块级盒子被压进一条隐式轨道，磁贴塌缩成标题的宽度；
+  // 这里把几何记进报告的同时直接断言，防止同类塌缩悄悄回来。
   const deviceChartGeometry = await page.evaluate(() => {
     const box = (el) => {
       const rect = el.getBoundingClientRect();
@@ -353,9 +354,8 @@ async function run() {
         const holder = body ? body.firstElementChild : null;
         return {
           className: cell.className,
-          cell: { ...box(cell), ...style(cell, ["display", "flex", "flex-basis", "max-width", "width"]) },
-          row: cell.parentElement ? { className: cell.parentElement.className, ...style(cell.parentElement, ["display", "flex-wrap"]) } : null,
-          grid: cell.parentElement && cell.parentElement.parentElement ? { className: cell.parentElement.parentElement.className, ...style(cell.parentElement.parentElement, ["display", "max-width", "width"]) } : null,
+          cell: { ...box(cell), ...style(cell, ["display", "grid-column", "min-width"]) },
+          grid: cell.parentElement ? { className: cell.parentElement.className, ...box(cell.parentElement), ...style(cell.parentElement, ["display", "grid-template-columns"]) } : null,
           tile: tile ? { ...box(tile), ...style(tile, ["display", "width"]) } : null,
           body: body ? { ...box(body), ...style(body, ["display", "width", "min-width"]) } : null,
           holder: holder ? { className: holder.className, ...box(holder), ...style(holder, ["display", "width", "height"]) } : null
@@ -363,6 +363,14 @@ async function run() {
       })
     };
   });
+  assert.ok(deviceChartGeometry.cells.length > 0, "overview section must render chart cells");
+  for (const cell of deviceChartGeometry.cells) {
+    assert.ok(cell.grid && cell.grid.display === "grid", "chart cells must sit in a CSS grid");
+    assert.ok(cell.grid.width > 600, "fixed layout grid must span the content column");
+    // half 跨度在 1440px 下约占栅格的一半；任何小于四分之一的宽度都说明塌缩。
+    assert.ok(cell.cell.width > cell.grid.width * 0.25, `chart cell collapsed to ${cell.cell.width}px of a ${cell.grid.width}px grid`);
+    assert.ok(cell.tile && cell.tile.width >= cell.cell.width - 2, `chart tile must fill its cell (tile ${cell.tile?.width}px, cell ${cell.cell.width}px)`);
+  }
   await page.screenshot({ path: path.join(outputDir, "web-device-desktop.png"), fullPage: true, animations: "disabled" });
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
