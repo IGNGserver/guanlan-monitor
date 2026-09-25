@@ -372,6 +372,14 @@ for _ in $(seq 1 90); do
 done
 if [[ "$upload_confirmed" != true ]]; then
   echo "The updated legacy Agent did not confirm a new upload; restoring the previous binary." >&2
+  upload_diagnostics="$(journalctl -u "$unit" --since "$started_at" --no-pager -o cat 2>/dev/null |
+    grep -E 'upload failed; sample persisted for replay:|upload failed and pending spool write failed:|uploaded metrics at |data recording is disabled;|cloud sync is disabled;' |
+    tail -n 20 || true)"
+  if [[ -n "$upload_diagnostics" ]]; then
+    printf 'Agent upload diagnostics:\n%s\n' "$upload_diagnostics" >&2
+  else
+    echo "Agent upload diagnostics: no upload or sync status messages were recorded after restart." >&2
+  fi
   restore || true
   exit 1
 fi
