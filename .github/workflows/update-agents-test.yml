@@ -7,6 +7,11 @@ on:
         description: "Fixed published test version without the v prefix"
         required: true
         type: string
+      rollback_versions:
+        description: "Installed fixed Debian package versions to stage for rollback, separated by spaces"
+        required: true
+        default: "3.0.84"
+        type: string
       targets:
         description: "SSH host names or addresses, separated by spaces"
         required: true
@@ -36,6 +41,7 @@ jobs:
         shell: bash
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
+          ROLLBACK_VERSIONS: ${{ inputs.rollback_versions }}
         run: |
           set -euo pipefail
           [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
@@ -50,22 +56,30 @@ jobs:
           done
           stage_dir="$GITHUB_WORKSPACE/release"
           mkdir -p "$stage_dir"
+
+          verify_asset_checksum() {
+            local file="$1"
+            local manifest="$2"
+            local expected actual
+            expected="$(awk 'NR == 1 { print $1 }' "$manifest")"
+            [[ "$expected" =~ ^[[:xdigit:]]{64}$ ]] || {
+              echo "The checksum manifest is invalid: $manifest" >&2
+              exit 1
+            }
+            actual="$(sha256sum "$file" | awk '{ print $1 }')"
+            [[ "$actual" == "$expected" ]] || {
+              echo "The checksum does not match its manifest: $file" >&2
+              exit 1
+            }
+          }
+
           asset="DeviceStateConsole-Linux-Install-v${REQUESTED_VERSION}.deb"
           base_url="https://github.com/IGNGserver/guanlan-monitor/releases/download/v${REQUESTED_VERSION}"
           curl -4 -fL --retry 8 --retry-all-errors --connect-timeout 20 --max-time 180 \
             "$base_url/$asset.sha256" -o "$stage_dir/$asset.sha256"
           curl -4 -fL --retry 8 --retry-all-errors --connect-timeout 20 --max-time 300 \
             "$base_url/$asset" -o "$stage_dir/$asset"
-          expected_checksum="$(awk 'NR == 1 { print $1 }' "$stage_dir/$asset.sha256")"
-          [[ "$expected_checksum" =~ ^[[:xdigit:]]{64}$ ]] || {
-            echo "The Linux package checksum manifest is invalid." >&2
-            exit 1
-          }
-          actual_checksum="$(sha256sum "$stage_dir/$asset" | awk '{ print $1 }')"
-          [[ "$actual_checksum" == "$expected_checksum" ]] || {
-            echo "The Linux package checksum does not match the published manifest." >&2
-            exit 1
-          }
+          verify_asset_checksum "$stage_dir/$asset" "$stage_dir/$asset.sha256"
           echo "The Linux package SHA-256 checksum is verified."
           [[ "$(dpkg-deb -f "$stage_dir/$asset" Version)" == "$REQUESTED_VERSION" ]] || {
             echo "The Debian package version does not match the requested release." >&2
@@ -97,6 +111,31 @@ jobs:
           install -m 0755 "$agent_binary" "$stage_dir/device-state-console-agent"
           install -m 0644 deploy/update-test-agents.sh "$stage_dir/update-test-agents.sh"
 
+          rollback_dir="$stage_dir/rollback"
+          mkdir -p "$rollback_dir"
+          [[ -n "${ROLLBACK_VERSIONS//[[:space:]]/}" ]] || {
+            echo "At least one rollback version is required." >&2
+            exit 1
+          }
+          for rollback_version in $ROLLBACK_VERSIONS; do
+            [[ "$rollback_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+              echo "Rollback versions must be fixed semantic versions." >&2
+              exit 1
+            }
+            rollback_asset="DeviceStateConsole-Linux-Install-v${rollback_version}.deb"
+            rollback_url="https://github.com/IGNGserver/guanlan-monitor/releases/download/v${rollback_version}"
+            curl -4 -fL --retry 8 --retry-all-errors --connect-timeout 20 --max-time 180 \
+              "$rollback_url/$rollback_asset.sha256" -o "$rollback_dir/$rollback_asset.sha256"
+            curl -4 -fL --retry 8 --retry-all-errors --connect-timeout 20 --max-time 300 \
+              "$rollback_url/$rollback_asset" -o "$rollback_dir/$rollback_asset"
+            verify_asset_checksum "$rollback_dir/$rollback_asset" "$rollback_dir/$rollback_asset.sha256"
+            [[ "$(dpkg-deb -f "$rollback_dir/$rollback_asset" Version)" == "$rollback_version" ]] || {
+              echo "The rollback Debian package version does not match $rollback_version." >&2
+              exit 1
+            }
+            echo "Rollback package $rollback_version is staged and verified."
+          done
+
       - name: Upload staged Agent package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -106,6 +145,7 @@ jobs:
             release/update-test-agents.sh
             release/DeviceStateConsole-Linux-Install-v${{ inputs.version }}.deb
             release/DeviceStateConsole-Linux-Install-v${{ inputs.version }}.deb.sha256
+            release/rollback/*
           if-no-files-found: error
 
   update:

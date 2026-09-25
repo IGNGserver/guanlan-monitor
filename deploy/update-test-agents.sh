@@ -9,7 +9,7 @@ if [[ ! "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-for command in curl dpkg dpkg-deb dpkg-query grep journalctl python3 sha256sum ssh scp sudo systemctl; do
+for command in dpkg dpkg-deb dpkg-query grep journalctl python3 sha256sum ssh scp sudo systemctl; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "$command is required on the NAS Actions runner." >&2
     exit 1
@@ -379,12 +379,15 @@ download_rollback_package() {
   local version="$1"
   local directory="$work_dir/rollback/$version"
   local asset="DeviceStateConsole-Linux-Install-v$version.deb"
-  local base_url="https://github.com/IGNGserver/guanlan-monitor/releases/download/v$version"
+  local staged_asset="$artifact_dir/rollback/$asset"
+  local staged_checksum="$staged_asset.sha256"
+  [[ -f "$staged_asset" && -f "$staged_checksum" ]] || {
+    echo "The rollback package for installed version $version was not staged." >&2
+    exit 1
+  }
   mkdir -p "$directory"
-  curl -4 -fL --retry 5 --retry-all-errors --connect-timeout 20 --max-time 300 \
-    "$base_url/$asset.sha256" -o "$directory/$asset.sha256"
-  curl -4 -fL --retry 5 --retry-all-errors --connect-timeout 20 --max-time 300 \
-    "$base_url/$asset" -o "$directory/$asset"
+  cp "$staged_asset" "$directory/$asset"
+  cp "$staged_checksum" "$directory/$asset.sha256"
   verify_asset_checksum "$directory/$asset" "$directory/$asset.sha256"
   [[ "$(dpkg-deb -f "$directory/$asset" Version)" == "$version" ]] || {
     echo "Rollback asset version does not match $version." >&2
