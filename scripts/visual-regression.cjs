@@ -302,56 +302,37 @@ async function run() {
   await page.locator(".workspace-page--device").waitFor({ state: "visible", timeout: 15_000 });
   assert.equal(await page.locator(".workspace-breadcrumb").getByText("设备", { exact: true }).count(), 1, "device detail must expose a device breadcrumb");
   assert.equal(await page.locator(".workspace-device-facts").count(), 1, "device detail must expose stable facts");
-  await page.getByRole("tab", { name: "算力与内存" }).click();
-  assert.equal(await page.getByRole("tab", { name: "算力与内存" }).getAttribute("aria-selected"), "true", "device tabs must change the active panel");
+  // 设备详情页现在完全由 DEVICE_DASHBOARD 常量驱动，选项卡集合本身就是布局契约。
+  // 用 .cds--tabs 限定范围：同一个上下文条里还有时间范围的 ContentSwitcher，它同样
+  // 暴露 role="tab"，不限定会连它一起数进来。
+  const deviceTabs = page.locator(".workspace-device-context .cds--tabs");
+  assert.deepEqual(
+    (await deviceTabs.getByRole("tab").allTextContents()).map((label) => label.trim()),
+    ["概览", "处理器与内存", "存储与网络", "显卡与散热"],
+    "device detail must render exactly the four fixed layout tabs in order"
+  );
 
-  // Create a custom panel to test empty custom panel boundaries
-  await page.getByRole("button", { name: "编辑排布" }).click();
-  await page.getByRole("button", { name: "面板管理" }).click();
-  await page.locator(".workspace-panel-manager__field input").fill("空测试面板");
-  await page.getByRole("button", { name: "新建" }).click();
-  // Wait for panel creation and tab switch to settle
-  await page.getByRole("tab", { name: "空测试面板" }).waitFor({ state: "visible", timeout: 5_000 });
-  await page.waitForTimeout(300);
+  await page.getByRole("tab", { name: "处理器与内存" }).click();
+  assert.equal(await page.getByRole("tab", { name: "处理器与内存" }).getAttribute("aria-selected"), "true", "device tabs must change the active panel");
+  // 切换选项卡必须整体换掉分区，上一个选项卡的图表不能残留在页面上。
+  assert.equal(await page.locator(".dashboard-section#section-compute").count(), 1, "compute tab must render its fixed sections");
+  assert.equal(await page.locator(".dashboard-section#section-overview").count(), 0, "switching tabs must unmount the previous tab's sections");
+  assert.ok((await page.locator(".dashboard-section .chart-tile").count()) > 0, "fixed sections must render Carbon chart tiles");
 
-  // Non-edit mode on empty custom panel: must NOT expose drawer open button, must show non-editable hint
-  assert.equal(await page.getByRole("tab", { name: "空测试面板" }).getAttribute("aria-selected"), "true", "empty custom panel tab must be selected");
-  assert.equal(await page.getByRole("button", { name: "打开小组件抽屉" }).count(), 0, "empty custom panel in browse mode must not expose open drawer button");
-  assert.equal(await page.locator(".workspace-dynamic-empty").getByText("请先点击“编辑排布”，再添加小组件").count(), 1, "empty custom panel must show hint to enter edit mode");
-  // Enter edit mode: must expose open drawer button
-  await page.getByRole("button", { name: "编辑排布" }).click();
-  assert.equal(await page.getByRole("button", { name: "打开小组件抽屉" }).count(), 1, "empty custom panel in edit mode must expose open drawer button");
-  await page.getByRole("button", { name: "退出编辑" }).click();
+  // 小组件机制已经彻底移除：设备页不得再出现排布编辑入口，也不得再写布局接口。
+  assert.equal(await page.getByRole("button", { name: "编辑排布" }).count(), 0, "widget layout editing must be gone from the device page");
+  assert.equal(await page.getByRole("button", { name: "添加小组件" }).count(), 0, "widget drawer entry must be gone from the device page");
+  assert.equal(await page.locator(".workspace-widget-drawer, .workspace-dynamic-empty").count(), 0, "widget drawer and empty-canvas hints must not render");
+  assert.equal(requestLog.filter((request) => request.url.includes("/api/widget-layouts")).length, 0, "device page must not write the widget layout API");
 
-  await page.getByRole("tab", { name: "算力与内存" }).click();
-  await page.getByRole("tab", { name: "1 小时" }).click();
-  assert.equal(await page.getByRole("button", { name: "添加小组件" }).count(), 1, "widget add action must remain discoverable in browse mode");
-  await page.getByRole("button", { name: "编辑排布" }).click();
-  assert.equal(await page.getByRole("button", { name: "添加小组件" }).count(), 1, "widget add action must appear in explicit edit mode");
-  await page.getByRole("button", { name: "添加小组件" }).click();
-  await page.locator(".workspace-widget-drawer").waitFor({ state: "visible", timeout: 2_000 });
-  const addDirectWidget = page.locator(".workspace-widget-drawer__item").filter({ hasText: "硬件与系统" }).getByRole("button", { name: "添加", exact: true });
-  assert.equal(await addDirectWidget.count(), 1, "widget drawer must expose a directly addable fixture widget");
-  await addDirectWidget.click();
-  await page.waitForTimeout(100);
-  assert.equal(await page.getByRole("button", { name: "放弃修改" }).count(), 1, "widget edits must expose discard");
-  assert.equal(await page.getByRole("button", { name: "保存布局" }).isEnabled(), true, "adding a widget must dirty the layout draft");
-  await page.getByRole("button", { name: "关闭小组件抽屉" }).click();
-  await page.getByRole("button", { name: "保存布局" }).click();
+  const oneHourRange = page.locator(".workspace-range-control button", { hasText: "1 小时" });
+  await oneHourRange.click();
   await page.waitForTimeout(150);
-  const widgetSave = requestLog.find((request) => request.method === "PUT" && request.url.includes("/api/widget-layouts"));
-  assert.ok(widgetSave, "widget save must call the shared layout adapter");
-  assert.equal(widgetSave.payload?.instanceLayout?.version, 4, "widget layout version 4 contract must be preserved");
-  assert.match(widgetSave.payload?.scopeKey ?? "", /^device:workstation-01:/, "widget scope key must remain device-scoped");
-  assert.match(widgetSave.payload?.templateKey ?? "", /^device-type:device:/, "widget template key must remain device-scoped");
-  await page.getByRole("button", { name: "退出编辑" }).click();
-  await page.getByRole("button", { name: "编辑排布" }).click();
-  await page.getByRole("button", { name: "添加小组件" }).click();
-  const secondDirectWidget = page.locator(".workspace-widget-drawer__item").filter({ hasText: "硬件与系统" }).getByRole("button", { name: "添加", exact: true });
-  assert.equal(await secondDirectWidget.count(), 1, "widget drawer must keep the direct add action available");
-  await secondDirectWidget.click();
-  await page.getByRole("button", { name: "关闭小组件抽屉" }).click();
-  await page.getByRole("button", { name: "放弃修改" }).click();
+  assert.equal(await oneHourRange.getAttribute("aria-selected"), "true", "switching the metric window must mark the new range as active");
+
+  await page.getByRole("tab", { name: "概览" }).click();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(outputDir, "web-device-desktop.png"), fullPage: true, animations: "disabled" });
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
   await page.getByRole("button", { name: "管理顺序" }).click();
