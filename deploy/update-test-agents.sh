@@ -31,7 +31,24 @@ checksum="$package.sha256"
   echo "The Linux package checksum is unavailable." >&2
   exit 1
 }
-(cd "$(dirname "$package")" && sha256sum -c "$(basename "$checksum")")
+
+verify_asset_checksum() {
+  local file="$1"
+  local manifest="$2"
+  local expected actual
+  expected="$(awk 'NR == 1 { print $1 }' "$manifest")"
+  [[ "$expected" =~ ^[[:xdigit:]]{64}$ ]] || {
+    echo "The checksum manifest is invalid: $manifest" >&2
+    return 1
+  }
+  actual="$(sha256sum "$file" | awk '{ print $1 }')"
+  [[ "$actual" == "$expected" ]] || {
+    echo "The checksum does not match the manifest: $file" >&2
+    return 1
+  }
+}
+
+verify_asset_checksum "$package" "$checksum"
 
 rm -rf "$work_dir"
 mkdir -p "$work_dir/package" "$work_dir/rollback"
@@ -368,7 +385,7 @@ download_rollback_package() {
     "$base_url/$asset.sha256" -o "$directory/$asset.sha256"
   curl -4 -fL --retry 5 --retry-all-errors --connect-timeout 20 --max-time 300 \
     "$base_url/$asset" -o "$directory/$asset"
-  (cd "$directory" && sha256sum -c "$asset.sha256")
+  verify_asset_checksum "$directory/$asset" "$directory/$asset.sha256"
   [[ "$(dpkg-deb -f "$directory/$asset" Version)" == "$version" ]] || {
     echo "Rollback asset version does not match $version." >&2
     exit 1
