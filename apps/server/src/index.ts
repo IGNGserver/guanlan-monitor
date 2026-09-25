@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyBaseLogger } from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import { Server as SocketIOServer } from "socket.io";
@@ -60,7 +60,7 @@ await app.register(cookie, { secret: env.SESSION_SECRET });
 
 let repositories: Repositories;
 const store = createLocalStore();
-await store.removeLegacyVirtualMachineData();
+const legacyCleanupSteps: Array<() => Promise<void>> = [() => store.removeLegacyVirtualMachineData()];
 const deviceMetricConfigs = new LocalDeviceMetricConfigStore(store);
 const fanNotes = new LocalFanNoteStore(store);
 const localWidgetLayouts = new LocalWidgetLayoutStore(store);
@@ -82,7 +82,7 @@ if (env.REDIS_URL) {
 const realtime = redisClient
   ? new RedisRealtimeRepository(redisClient)
   : new LocalRealtimeRepository(store);
-if (realtime instanceof RedisRealtimeRepository) await realtime.removeLegacyVirtualMachineData();
+if (realtime instanceof RedisRealtimeRepository) legacyCleanupSteps.push(() => realtime.removeLegacyVirtualMachineData());
 
 let mysqlPool: mysql.Pool | null = null;
 if (env.MYSQL_URL) {
@@ -104,7 +104,7 @@ if (env.MYSQL_URL) {
   await history.init();
   await devicesRepo.init();
   await mysqlWidgetLayouts.init();
-  await removeLegacyVirtualMachineData(pool);
+  legacyCleanupSteps.push(() => removeLegacyVirtualMachineData(pool, app.log));
   widgetLayouts = mysqlWidgetLayouts;
   repositories = { realtime, history, devices: devicesRepo };
   app.log.info(env.REDIS_URL ? "using redis + mysql repositories" : "using local realtime + mysql history repositories");
@@ -122,13 +122,33 @@ if (env.MYSQL_URL) {
   app.log.warn("MYSQL_URL missing, falling back to local JSON history storage");
 }
 
-async function removeLegacyVirtualMachineData(pool: mysql.Pool) {
+const LEGACY_CLEANUP_CHUNK_ROWS = 2_000;
+const LEGACY_CLEANUP_ID_SPAN = 20_000;
+
+async function removeLegacyVirtualMachineData(pool: mysql.Pool, log: FastifyBaseLogger) {
   await pool.query("DROP TABLE IF EXISTS virtual_machines");
   await pool.query("DELETE FROM devices WHERE device_id LIKE 'vm:%'");
   for (const table of ["device_minute_metrics", "device_hourly_metrics"]) {
-    await pool.query(`DELETE FROM ${table} WHERE device_id LIKE 'vm:%'`);
-    await pool.query(`UPDATE ${table} SET recorded_details_json = JSON_REMOVE(recorded_details_json, '$.virtualization') WHERE JSON_CONTAINS_PATH(recorded_details_json, 'one', '$.virtualization')`);
-    await pool.query(`UPDATE ${table} SET recorded_details_json = JSON_REMOVE(recorded_details_json, '$.storagePools') WHERE JSON_CONTAINS_PATH(recorded_details_json, 'one', '$.storagePools')`);
+    // Chunked because the agents insert into these same tables: one unbounded statement over a
+    // multi-gigabyte history table holds row locks long enough to fail live ingestion.
+    for (;;) {
+      const [result] = await pool.query(
+        `DELETE FROM ${table} WHERE device_id LIKE 'vm:%' ORDER BY id LIMIT ${LEGACY_CLEANUP_CHUNK_ROWS}`
+      );
+      const deleted = (result as { affectedRows?: number }).affectedRows ?? 0;
+      if (!deleted) break;
+      log.info({ table, deleted }, "removed legacy virtual machine history rows");
+    }
+    const [bounds] = await pool.query(`SELECT COALESCE(MIN(id), 0) AS lowest, COALESCE(MAX(id), 0) AS highest FROM ${table}`);
+    const { lowest, highest } = (bounds as Array<{ lowest: number; highest: number }>)[0];
+    for (const key of ["virtualization", "storagePools"]) {
+      for (let start = lowest; start <= highest; start += LEGACY_CLEANUP_ID_SPAN) {
+        await pool.query(
+          `UPDATE ${table} SET recorded_details_json = JSON_REMOVE(recorded_details_json, '$.${key}') WHERE id BETWEEN ? AND ? AND JSON_CONTAINS_PATH(recorded_details_json, 'one', '$.${key}')`,
+          [start, start + LEGACY_CLEANUP_ID_SPAN - 1]
+        );
+      }
+    }
   }
   await pool.query("DELETE FROM widget_layout_instances WHERE scope_key LIKE '%vm:%' OR template_key LIKE '%virtual_machine%'");
   await pool.query("DELETE FROM widget_layout_templates WHERE template_key LIKE '%virtual_machine%'");
@@ -178,6 +198,19 @@ app.post<{ Body: AgentMetricsPayload }>("/api/agent/ingest", async (request, rep
 });
 
 const server = await app.listen({ host: env.SERVER_HOST, port: env.SERVER_PORT });
+
+// Deliberately after listen(): these sweeps outlive the data they target, and awaiting them
+// here kept the whole hub unreachable for as long as the largest history table took to clear.
+void (async () => {
+  for (const step of legacyCleanupSteps) {
+    try {
+      await step();
+    } catch (error) {
+      app.log.error({ error }, "legacy virtual machine cleanup failed");
+    }
+  }
+})();
+
 io = new SocketIOServer(app.server, {
   path: "/socket.io",
   addTrailingSlash: false,
