@@ -197,6 +197,10 @@ jobs:
               *) needs_ssh=true ;;
             esac
           done
+          if [[ -n "$SSH_PRIVATE_KEY" && -z "$SSH_KNOWN_HOSTS" ]] || [[ -z "$SSH_PRIVATE_KEY" && -n "$SSH_KNOWN_HOSTS" ]]; then
+            echo "SSH_PRIVATE_KEY and SSH_KNOWN_HOSTS must be provided together." >&2
+            exit 1
+          fi
           if [[ "$needs_ssh" == "true" ]]; then
             test -n "$SSH_PRIVATE_KEY" || { echo "SSH_PRIVATE_KEY is required for remote Agent updates." >&2; exit 1; }
             test -n "$SSH_KNOWN_HOSTS" || { echo "SSH_KNOWN_HOSTS is required for remote Agent updates." >&2; exit 1; }
@@ -204,9 +208,6 @@ jobs:
             printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
             printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
             chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
-          elif [[ -n "$SSH_PRIVATE_KEY" || -n "$SSH_KNOWN_HOSTS" ]]; then
-            echo "SSH_PRIVATE_KEY and SSH_KNOWN_HOSTS must be provided together." >&2
-            exit 1
           fi
 
       - name: Download staged Agent package
