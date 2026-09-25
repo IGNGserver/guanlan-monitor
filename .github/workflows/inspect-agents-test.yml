@@ -86,6 +86,28 @@ jobs:
               printf 'log=%s present=false\n' "$name"
             fi
           done
+          python3 - "$dir/agent.err.log" <<'PY'
+          import re
+          import sys
+
+          try:
+              lines = open(sys.argv[1], encoding="utf-8", errors="replace").readlines()
+          except OSError:
+              lines = []
+          starts = [(index, match.group(1)) for index, line in enumerate(lines)
+                    if (match := re.search(r"go agent v([0-9]+\.[0-9]+\.[0-9]+) started for ", line))]
+          for version in ("3.0.96", "3.0.97", "3.0.98"):
+              matching = [position for position, started_version in starts if started_version == version]
+              if not matching:
+                  print(f"attempt={version} startup=false")
+                  continue
+              position = matching[-1]
+              later = next((other for other, _ in starts if other > position), len(lines))
+              segment = lines[position:later]
+              uploads = sum("uploaded metrics at " in line for line in segment)
+              failures = sum("upload failed" in line for line in segment)
+              print(f"attempt={version} startup=true uploads={uploads} failures={failures}")
+          PY
           REMOTE
           for target in $TARGETS; do
             case "$target" in
