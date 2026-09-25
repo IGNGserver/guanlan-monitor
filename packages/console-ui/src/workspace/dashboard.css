@@ -1,0 +1,249 @@
+/* Guanlan 固定图表布局层
+ *
+ * 只服务于 workspace/dashboard 下的组件：ChartTile、DashboardSection、
+ * DashboardGrid / DashboardCell，以及 CarbonCharts 里的数值读数网格。
+ *
+ * 设计约定：
+ * - 颜色一律取 Carbon 原生 --cds-* 令牌，不引入第四套令牌，也不写死色值。
+ *   WorkspaceFrame 用 Carbon <Theme theme="g10|g100"> 包裹整个工作区，
+ *   因此深浅色切换由令牌自动完成。
+ * - 形状遵循 Carbon：直角、1px 细线、靠 layer 层级而非阴影区分卡片。
+ * - 字号对齐 Carbon 排版比例（label-01 / helper-01 / body-compact-01 /
+ *   heading-02 / heading-03），数值一律启用等宽数字。
+ */
+
+.dashboard-section {
+  margin-bottom: var(--cds-spacing-07, 32px);
+}
+
+.dashboard-section__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--cds-spacing-05, 16px);
+  padding-bottom: var(--cds-spacing-04, 12px);
+  margin-bottom: var(--cds-spacing-05, 16px);
+  border-bottom: 1px solid var(--cds-border-subtle-00, #e0e0e0);
+}
+
+.dashboard-section__copy {
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.dashboard-section__eyebrow {
+  display: block;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  letter-spacing: 0.01rem;
+  color: var(--cds-text-secondary, #525252);
+  margin-bottom: var(--cds-spacing-02, 4px);
+}
+
+.dashboard-section__title {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+  font-weight: 400;
+  color: var(--cds-text-primary, #161616);
+}
+
+.dashboard-section__description {
+  margin: var(--cds-spacing-03, 8px) 0 0;
+  max-width: 62ch;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--cds-text-secondary, #525252);
+}
+
+.dashboard-section__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cds-spacing-03, 8px);
+}
+
+/* Carbon Grid 自带外边距与列间距；这里只负责把整块栅格对齐到分区内容。 */
+.dashboard-grid {
+  padding-inline: 0;
+}
+
+.dashboard-cell {
+  min-width: 0;
+}
+
+/* 卡片：Carbon Tile 提供背景与内边距，这里只补排版与分隔线。 */
+.chart-tile {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: var(--cds-spacing-05, 16px);
+  background: var(--cds-layer-01, #ffffff);
+  border: 1px solid var(--cds-border-subtle-00, #e0e0e0);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.chart-tile__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--cds-spacing-04, 12px);
+  padding-bottom: var(--cds-spacing-04, 12px);
+  border-bottom: 1px solid var(--cds-border-subtle-00, #e0e0e0);
+}
+
+.chart-tile__titles {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.chart-tile__eyebrow {
+  display: block;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  letter-spacing: 0.01rem;
+  color: var(--cds-text-secondary, #525252);
+  margin-bottom: var(--cds-spacing-02, 4px);
+}
+
+.chart-tile__title {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.375rem;
+  font-weight: 400;
+  color: var(--cds-text-primary, #161616);
+  overflow-wrap: anywhere;
+}
+
+.chart-tile__subtitle {
+  margin: var(--cds-spacing-02, 4px) 0 0;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--cds-text-secondary, #525252);
+  overflow-wrap: anywhere;
+}
+
+.chart-tile__controls {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--cds-spacing-02, 4px);
+}
+
+/* 卡片操作区里的 Carbon 按钮不需要自带的大内边距。 */
+.chart-tile__controls .cds--btn {
+  min-height: 2rem;
+  padding-block: 0;
+}
+
+.chart-tile__controls .cds--btn--ghost {
+  color: var(--cds-link-primary, #0f62fe);
+}
+
+.chart-tile__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-top: var(--cds-spacing-05, 16px);
+}
+
+.chart-tile__empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 8rem;
+  padding: var(--cds-spacing-05, 16px);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--cds-text-placeholder, #6f6f6f);
+  text-align: center;
+}
+
+.chart-tile__footer {
+  padding-top: var(--cds-spacing-04, 12px);
+  margin-top: var(--cds-spacing-04, 12px);
+  border-top: 1px solid var(--cds-border-subtle-00, #e0e0e0);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--cds-text-secondary, #525252);
+}
+
+/* 环形图与仪表图：给一个稳定的最小高度，避免同一行卡片高低不齐。 */
+.telemetry-carbon-chart--donut {
+  min-height: 208px;
+}
+
+.telemetry-carbon-chart--donut.telemetry-carbon-chart--compact {
+  min-height: 168px;
+}
+
+.telemetry-carbon-chart--meter {
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.telemetry-carbon-chart--meter.telemetry-carbon-chart--compact {
+  min-height: 72px;
+}
+
+/* 数值读数网格 */
+.carbon-number-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--cds-spacing-05, 16px);
+}
+
+.carbon-number-grid__cell {
+  min-width: 0;
+  padding-left: var(--cds-spacing-04, 12px);
+  border-left: 2px solid var(--cds-border-subtle-01, #c6c6c6);
+}
+
+.carbon-number-grid__label {
+  display: block;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  letter-spacing: 0.01rem;
+  color: var(--cds-text-secondary, #525252);
+  overflow-wrap: anywhere;
+}
+
+.carbon-number-grid__value {
+  display: block;
+  margin-top: var(--cds-spacing-02, 4px);
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--cds-text-primary, #161616);
+  overflow-wrap: anywhere;
+}
+
+.carbon-number-grid__hint {
+  display: block;
+  margin-top: var(--cds-spacing-02, 4px);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--cds-text-placeholder, #6f6f6f);
+}
+
+/* 窄屏：卡片头部改为纵向堆叠，避免操作区把标题挤没。 */
+@media (max-width: 671px) {
+  .chart-tile__header,
+  .dashboard-section__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .chart-tile__controls {
+    justify-content: flex-start;
+  }
+
+  .carbon-number-grid {
+    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  }
+}
