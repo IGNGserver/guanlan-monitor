@@ -71,3 +71,46 @@ test("local history retention removes expired points", async () => {
     assert.deepEqual(persisted.minuteHistory["device-1"].map((point) => point.timestamp), [now]);
   });
 });
+
+async function readFileAsDb(filePath: string) {
+  return JSON.parse(await readFile(filePath, "utf8")) as { deviceRegistry?: Record<string, unknown> };
+}
+
+test("the device registry refuses legacy virtual machine ids", async () => {
+  await withTempStore(async (filePath) => {
+    const devices = new LocalDeviceRepository(createLocalStore(filePath));
+
+    // The startup sweep deletes these rows; a concurrent device listing re-registering them from
+    // realtime state is what made the phantom devices permanent.
+    const refused = await devices.registerOrUpdateDevice("vm:05c91cad", "ubuntu-vm", { reopenClosed: true });
+    assert.equal(refused.status, "closed");
+    assert.deepEqual(await devices.listOpenDevices(), []);
+    assert.deepEqual(Object.keys((await readFileAsDb(filePath)).deviceRegistry ?? {}), []);
+
+    await devices.registerOrUpdateDevice("device-1", "Host");
+    await devices.deleteDevice("vm:05c91cad");
+    assert.deepEqual((await devices.listOpenDevices()).map((device) => device.deviceId), ["device-1"]);
+    assert.deepEqual(Object.keys((await readFileAsDb(filePath)).deviceRegistry ?? {}), ["device-1"]);
+  });
+});
+
+test("device listings hide legacy virtual machine rows an older hub left behind", async () => {
+  await withTempStore(async (filePath) => {
+    await writeFile(filePath, JSON.stringify({
+      devices: {},
+      series: {},
+      minuteHistory: {},
+      history: {},
+      fanNotes: {},
+      deviceMetricConfigs: {},
+      deviceRegistry: {
+        "node-1": { deviceId: "node-1", name: "node-1", status: "open", sortOrder: 0, registeredAt: "2026-09-25T00:00:00.000Z", updatedAt: "2026-09-25T00:00:00.000Z" },
+        "vm:05c91cad": { deviceId: "vm:05c91cad", name: "vm:05c91cad", status: "open", sortOrder: 1, registeredAt: "2026-09-25T00:00:00.000Z", updatedAt: "2026-09-25T00:00:00.000Z" }
+      }
+    }), "utf8");
+
+    const devices = new LocalDeviceRepository(createLocalStore(filePath));
+
+    assert.deepEqual((await devices.listOpenDevices()).map((device) => device.deviceId), ["node-1"]);
+  });
+});

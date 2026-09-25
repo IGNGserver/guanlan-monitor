@@ -33,14 +33,54 @@ function fixture(): DeviceRealtimeState {
   } as DeviceRealtimeState;
 }
 
-function stubRedis(stored: Record<string, string>) {
+function stubRedis(stored: Record<string, string>, series: Record<string, string[]> = {}) {
   const evalArgs: Array<string> = [];
+  const deletedKeys: Array<string> = [];
   const redis = {
     async hvals() {
       return Object.values(stored);
     },
     async hget(_key: string, field: string) {
       return stored[field] ?? null;
+    },
+    async hset(_key: string, field: string, value: string) {
+      stored[field] = value;
+    },
+    async hdel(_key: string, ...fields: string[]) {
+      for (const field of fields) delete stored[field];
+    },
+    async del(...keys: string[]) {
+      deletedKeys.push(...keys);
+      for (const key of keys) delete series[key];
+    },
+    async scan(_cursor: string, _matchKeyword: string, pattern: string) {
+      const prefix = pattern.replace(/\*$/, "");
+      return ["0", Object.keys(series).filter((key) => key.startsWith(prefix))];
+    },
+    async lrange(key: string) {
+      return series[key] ?? [];
+    },
+    multi() {
+      const pending: Array<() => void> = [];
+      const chain = {
+        del(key: string) {
+          pending.push(() => {
+            deletedKeys.push(key);
+            delete series[key];
+          });
+          return chain;
+        },
+        rpush(key: string, ...values: string[]) {
+          pending.push(() => {
+            series[key] = values;
+          });
+          return chain;
+        },
+        async exec() {
+          for (const step of pending) step();
+        }
+      };
+      return chain;
     },
     async eval(_script: string, _numKeys: number, _hash: string, field: string, expected: string, replacement: string) {
       evalArgs.push(field, expected, replacement);
@@ -49,7 +89,7 @@ function stubRedis(stored: Record<string, string>) {
       return 1;
     }
   };
-  return { repo: new RedisRealtimeRepository(redis as never), evalArgs };
+  return { repo: new RedisRealtimeRepository(redis as never), evalArgs, deletedKeys, stored, series };
 }
 
 test("marking a device offline writes back arrays as arrays instead of cjson objects", async () => {
@@ -81,4 +121,27 @@ test("reads repair device state that Redis already mangled", async () => {
 
   assert.deepEqual(listed.latest.gpus, []);
   assert.deepEqual((await repo.getDevice("node-1"))?.latest.gpus, []);
+});
+
+test("listings hide legacy virtual machine states without hiding them from the sweep", async () => {
+  const legacy = {
+    ...fixture(),
+    identity: { ...fixture().identity, deviceId: "vm:05c91cad", instanceType: "virtual_machine" }
+  };
+  const { repo, stored, series, deletedKeys } = stubRedis(
+    { "node-1": JSON.stringify(fixture()), "vm:05c91cad": JSON.stringify(legacy) },
+    { "dsc:series:vm:05c91cad:5m": ["{}"], "dsc:series:node-1:5m": [] }
+  );
+
+  // Every read path goes through listDevices(), so the phantom device must not surface there even
+  // while the startup sweep is still running.
+  assert.deepEqual((await repo.listDevices()).map((state) => state.identity.deviceId), ["node-1"]);
+
+  // ...but the sweep reads the raw hash, so it still finds and deletes the entry. Routing the
+  // sweep through the filtered listing would leave these keys in Redis forever.
+  await repo.removeLegacyVirtualMachineData();
+
+  assert.deepEqual(Object.keys(stored), ["node-1"]);
+  assert.ok(deletedKeys.includes("dsc:series:vm:05c91cad:5m"));
+  assert.ok(!Object.keys(series).some((key) => key.includes("vm:")));
 });

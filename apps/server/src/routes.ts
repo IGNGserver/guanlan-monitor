@@ -21,6 +21,7 @@ import type { DeviceMetricConfigStore, FanNoteStore, Repositories, SessionValue,
 import { ALL_DEVICE_METRIC_KEYS, filterAgentPayloadInstances, getAvailableMetrics, resolveCpuFrequencyMHz, resolveCpuTemperatureC, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
 import { getSystemVersionInfo, getUpdateInfo } from "./updates.js";
 import { getHubUpdateStatus, HubUpdateError, requestHubUpdate } from "./hub-update.js";
+import { isLegacyVirtualMachineId } from "./legacy-devices.js";
 
 const loginSchema = z.object({
   accessKey: z.string().min(1).max(512)
@@ -190,10 +191,6 @@ const linkedWidgetLayoutSchema = z.object({
 
 function containsLegacyVirtualMachineKey(value: string): boolean {
   return value.includes("vm:") || value.includes("virtual_machine");
-}
-
-function isLegacyVirtualMachineId(deviceId: string): boolean {
-  return deviceId.startsWith("vm:");
 }
 
 const widgetLayoutQuerySchema = z.object({
