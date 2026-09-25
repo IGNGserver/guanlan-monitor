@@ -247,3 +247,147 @@
     grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * 设备详情页外壳
+ * ------------------------------------------------------------------------- */
+
+.workspace-device-dashboard {
+  min-width: 0;
+}
+
+/* 选项卡说明放在吸顶条内部，跟随选项卡切换而不是散落在分区标题里。 */
+.workspace-device-context__caption {
+  margin: 0;
+  padding: var(--cds-spacing-03, 8px) var(--cds-spacing-04, 12px);
+  border-top: 1px solid var(--cds-border-subtle-00, #e0e0e0);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--cds-text-secondary, #525252);
+}
+
+/* Carbon Tabs 自带背景，塞进吸顶条后只需要撑满宽度。 */
+.workspace-device-context .cds--tabs {
+  width: 100%;
+}
+
+/* 整页全屏：宿主授予 Fullscreen API 时，页面自己成为滚动容器。 */
+.workspace-page--fullscreen {
+  height: 100%;
+  overflow: auto;
+  padding: var(--cds-spacing-06, 24px);
+  background: var(--cds-background, #ffffff);
+}
+
+/* ---------------------------------------------------------------------------
+ * 卡片内部构件
+ * ------------------------------------------------------------------------- */
+
+/* 「详细信息」与键值表都建在 Carbon StructuredList 上，这里只压缩默认留白，
+ * 并让数值列启用等宽数字，避免刷新时数字左右跳动。 */
+.chart-details,
+.chart-info-rows {
+  min-width: 0;
+  background: transparent;
+}
+
+.chart-details .cds--structured-list-row,
+.chart-info-rows .cds--structured-list-row {
+  border-bottom: 1px solid var(--cds-border-subtle-00, #e0e0e0);
+}
+
+.chart-details .cds--structured-list-cell,
+.chart-info-rows .cds--structured-list-cell {
+  padding: var(--cds-spacing-03, 8px) var(--cds-spacing-04, 12px) var(--cds-spacing-03, 8px) 0;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--cds-text-primary, #161616);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.chart-details .cds--structured-list-cell:first-child,
+.chart-info-rows .cds--structured-list-cell:first-child {
+  color: var(--cds-text-secondary, #525252);
+}
+
+/* 设备 Agent 卡片：一段说明加一个入口，不再套一层 Surface。 */
+.chart-agent-note {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--cds-spacing-04, 12px);
+}
+
+.chart-agent-note__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cds-spacing-04, 12px);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--cds-text-secondary, #525252);
+}
+
+.chart-agent-note p {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--cds-text-secondary, #525252);
+}
+
+/* 流量日历的周期切换与前后的翻页按钮，落在卡片头部的操作区里。 */
+.workspace-traffic-calendar__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cds-spacing-03, 8px);
+}
+
+.workspace-traffic-calendar__navigation {
+  display: flex;
+  align-items: center;
+  gap: var(--cds-spacing-02, 4px);
+}
+
+/* 温度传感器面板：筛选工具条与图表标题。 */
+.workspace-temperature-sources__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cds-spacing-04, 12px);
+  margin-bottom: var(--cds-spacing-04, 12px);
+}
+
+.workspace-temperature-sources__toolbar p {
+  margin: 0;
+  flex: 1 1 20rem;
+  min-width: 0;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--cds-text-secondary, #525252);
+}
+
+.workspace-temperature-source-chart__heading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--cds-spacing-02, 4px);
+  margin-bottom: var(--cds-spacing-03, 8px);
+}
+
+.workspace-temperature-source-chart__heading strong {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 400;
+  color: var(--cds-text-primary, #161616);
+  overflow-wrap: anywhere;
+}
+
+.workspace-temperature-source-chart__heading small {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--cds-text-secondary, #525252);
+}

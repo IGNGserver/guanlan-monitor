@@ -31,7 +31,7 @@ export function carbonChartData(series: CarbonSeries[]): ChartTabularData {
     })));
 }
 
-function axisOptions(height: string, series: CarbonSeries[]) {
+function axisOptions(height: string, series: CarbonSeries[], maxValue?: number) {
   const valueFormatter = series.find((item) => item.valueFormatter)?.valueFormatter;
   const formatTick = (tick: number | Date) => typeof tick === "number" && Number.isFinite(tick)
     ? valueFormatter?.(tick) ?? String(tick)
@@ -51,7 +51,10 @@ function axisOptions(height: string, series: CarbonSeries[]) {
         title: "",
         mapsTo: "value",
         scaleType: "linear",
-        ticks: valueFormatter ? { formatter: formatTick } : undefined
+        ticks: valueFormatter ? { formatter: formatTick } : undefined,
+        // 百分比这类有天然上界的指标必须钉住坐标轴，否则 3% 的抖动会被拉满
+        // 整个绘图区，看起来像满载。
+        ...(maxValue == null ? {} : { max: maxValue })
       }
     },
     curve: "curveMonotoneX",
@@ -66,11 +69,14 @@ function axisOptions(height: string, series: CarbonSeries[]) {
 export function CarbonTimeSeriesChart({
   series,
   visualization = "line",
+  maxValue,
   compact = false,
   className = ""
 }: {
   series: CarbonSeries[];
   visualization?: "line" | "area" | "bar";
+  /** 钉住纵轴上界，用于百分比这类有天然上界的指标。 */
+  maxValue?: number;
   compact?: boolean;
   className?: string;
 }) {
@@ -78,7 +84,7 @@ export function CarbonTimeSeriesChart({
   if (!data.length) return <div className={`telemetry-empty ${className}`}>当前时间范围没有可用数据</div>;
 
   const height = compact ? "128px" : "248px";
-  const options = axisOptions(height, series);
+  const options = axisOptions(height, series, maxValue);
   const wrapperClassName = `telemetry-carbon-chart${compact ? " telemetry-carbon-chart--compact" : ""}${className ? ` ${className}` : ""}`;
 
   if (visualization === "area") {

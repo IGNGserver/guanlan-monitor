@@ -1,43 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { DataTable, Modal, OverflowMenu, OverflowMenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow, Tag } from "@carbon/react";
-import type { AgentProbeProvider, AgentProbeTarget, CpuPackageStats, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, SystemStats, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, WidgetInstanceConfig, WidgetLayoutDocument, WidgetLayoutSaveRequest, WidgetPanelMetadata } from "@dsc/shared";
+import type { AgentProbeProvider, AgentProbeTarget, DeviceMetricKey, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse, WidgetLayoutDocument, WidgetPanelMetadata } from "@dsc/shared";
 import appIcon from "../../assets/app-icon.png";
 import { useWorkspace } from "../WorkspaceContext";
 import type { DeviceDirectorySort, DeviceDirectoryStatus } from "../selectors";
-import {
-  DesktopWidget,
-  WidgetLayoutProvider,
-  WidgetLayoutToolbar,
-  confirmDiscardWidgetLayoutDraft,
-  useOptionalWidgetLayout,
-  type WidgetKind,
-  type WidgetDisplayMode,
-  type WidgetSize
-} from "../WidgetLayout";
-import { DeviceWidgetFrame } from "../DeviceWidgetFrame";
-import { DynamicWidgetCanvas, WidgetDrawer } from "../widgetCatalog";
-import { M3Checkbox, M3Chip, M3SegmentedControl, M3Select, M3Switch, M3Tabs, M3TextField } from "../m3";
+import { useOptionalWidgetLayout } from "../WidgetLayout";
+import { M3Checkbox, M3Chip, M3SegmentedControl, M3Select, M3Tabs, M3TextField } from "../m3";
 import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
-import { TelemetryChartCard, TelemetryInfoCard } from "../TelemetryCards";
-import {
-  UNAVAILABLE_METRIC_LABEL,
-  WINDOW_DURATION_MAP,
-  averageSamplePointsOrFallback,
-  displayInstanceName,
-  displayModelName,
-  formatAxisTime,
-  formatBytes,
-  formatCapacitySummary,
-  formatCount,
-  formatDate,
-  formatDuration,
-  formatGpuMemorySummary,
-  formatPreciseDateTime,
-  gpuMemoryLabel,
-  splitPointsIntoSegments,
-  sumSamplePoints
-} from "../formatters";
+import { CarbonTimeSeriesChart } from "../CarbonCharts";
+import { UNAVAILABLE_METRIC_LABEL, formatBytes, formatDate } from "../formatters";
 
 const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: string }).src;
 
@@ -407,36 +379,6 @@ function OverviewSummary({
 }
 
 
-function TelemetrySection({
-  id,
-  eyebrow,
-  title,
-  description,
-  controls,
-  children
-}: {
-  id?: string;
-  eyebrow: string;
-  title: string;
-  description?: string;
-  controls?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section id={id} className="workspace-telemetry-section">
-      <div className="workspace-telemetry-section__header">
-        <div>
-          <span className="workspace-section-kicker">{eyebrow}</span>
-          <h3>{title}</h3>
-          {description && <p>{description}</p>}
-        </div>
-        {controls && <div className="workspace-telemetry-section__controls">{controls}</div>}
-      </div>
-      <div className="workspace-device-chart-grid">{children}</div>
-    </section>
-  );
-}
-
 function mergeFanMetricSeries(latestFans: FanSensorStats[], historicalFans: FanMetricSeries[], fallbackTimestamp: string): FanMetricSeries[] {
   const latestById = new Map(latestFans.map((fan) => [fan.id, fan]));
   const merged = historicalFans.map((fan) => {
@@ -466,76 +408,6 @@ function mergeFanMetricSeries(latestFans: FanSensorStats[], historicalFans: FanM
   return merged;
 }
 
-const TELEMETRY_DEVICE_GROUP_TYPES: Record<"cpu" | "disk" | "gpu" | "network" | "fan", string> = {
-  cpu: "cpu-device-group",
-  disk: "disk-device-group",
-  gpu: "gpu-device-group",
-  network: "network-device-group",
-  fan: "fan-device-group"
-};
-
-const TELEMETRY_DEVICE_GROUP_CATEGORIES: Record<"cpu" | "disk" | "gpu" | "network" | "fan", string> = {
-  cpu: "处理器",
-  disk: "存储",
-  gpu: "显卡",
-  network: "网络",
-  fan: "散热"
-};
-
-function TelemetryDeviceBlock({
-  widgetId,
-  widgetTemplateId,
-  targetId,
-  widgetDefaultSize = "large",
-  kind = "cpu",
-  eyebrow = "设备实例",
-  title = "设备详情",
-  subtitle,
-  children
-}: {
-  widgetId?: string;
-  widgetTemplateId?: string;
-  targetId?: string;
-  widgetDefaultSize?: WidgetSize;
-  kind?: "cpu" | "disk" | "gpu" | "network" | "fan";
-  eyebrow?: string;
-  title?: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  const widgetType = widgetId ? TELEMETRY_DEVICE_GROUP_TYPES[kind] : undefined;
-  const widgetConfig: WidgetInstanceConfig | undefined = widgetId
-    ? { systemRendered: true, ...(targetId ? { targetId } : {}) }
-    : undefined;
-  const childCount = React.Children.count(children);
-  const defaultH = childCount >= 3 ? 4 : 2;
-  const compactH = Math.max(2, childCount * 2);
-  const frame = (
-    <DeviceWidgetFrame kind={kind} eyebrow={eyebrow} title={title} subtitle={subtitle} count={`${childCount} 个图表`} contentClassName="workspace-device-block__charts--dynamic">
-      {children}
-    </DeviceWidgetFrame>
-  );
-  if (!widgetId) return frame;
-  return (
-    <DesktopWidget
-      id={widgetId}
-      templateId={widgetTemplateId}
-      title={title}
-      widgetType={widgetType}
-      category={widgetType ? TELEMETRY_DEVICE_GROUP_CATEGORIES[kind] : undefined}
-      visualization="table"
-      config={widgetConfig}
-      kind="group"
-      defaultSize={widgetDefaultSize}
-      defaultH={defaultH}
-      compactH={compactH}
-      className="workspace-widget--device-frame"
-    >
-      {frame}
-    </DesktopWidget>
-  );
-}
-
 type TelemetryInstanceSummary = {
   id: string;
   name: string;
@@ -559,36 +431,6 @@ function TelemetryModelList({ label, items }: { label: string; items: TelemetryI
         <span className="workspace-telemetry-models__empty">未发现可参与聚合的实例</span>
       )}
     </div>
-  );
-}
-
-function CpuFactsCard({ cpus, system, unavailable = false }: { cpus: CpuPackageStats[]; system?: SystemStats; unavailable?: boolean }) {
-  const sum = (values: Array<number | null | undefined>) => {
-    const valid = values.filter((value): value is number => Number.isFinite(value));
-    return valid.length ? valid.reduce((total, value) => total + value, 0) : null;
-  };
-  const facts = [
-    { label: "运行时间", value: unavailable ? UNAVAILABLE_METRIC_LABEL : formatDuration(system?.uptimeSeconds), className: "workspace-cpu-fact--duration" },
-    { label: "物理核心", value: formatCount(sum(cpus.map((cpu) => cpu.coreCount))) },
-    { label: "逻辑线程", value: formatCount(sum(cpus.map((cpu) => cpu.logicalCount))) },
-    { label: "L3 缓存", value: formatBytes(sum(cpus.map((cpu) => cpu.l3CacheBytes))) },
-    { label: "系统线程", value: unavailable ? UNAVAILABLE_METRIC_LABEL : formatCount(system?.threadCount) },
-    { label: "进程数", value: unavailable ? UNAVAILABLE_METRIC_LABEL : formatCount(system?.processCount) },
-    { label: "句柄数", value: unavailable ? UNAVAILABLE_METRIC_LABEL : formatCount(system?.handleCount) }
-  ];
-  return (
-    <Surface className="workspace-cpu-facts">
-      <div className="workspace-cpu-facts__header">
-        <div>
-          <span className="workspace-section-kicker">任务管理器式摘要</span>
-          <h3>处理器与系统统计</h3>
-        </div>
-        <span className="workspace-caption">{cpus.length ? `${cpus.length} 个 CPU 实例` : "CPU 实例未采集"}</span>
-      </div>
-      <div className="workspace-cpu-facts__grid">
-        {facts.map((fact) => <div className={`workspace-cpu-fact ${fact.className ?? ""}`} key={fact.label}><span>{fact.label}</span><strong>{fact.value}</strong></div>)}
-      </div>
-    </Surface>
   );
 }
 
@@ -668,13 +510,17 @@ function InstanceMetricOverride({
   );
 }
 
-function TrafficCalendarCard({
-  data,
+/**
+ * 流量日历的范围切换与翻页控件。
+ *
+ * 单独导出是为了让它落在 `ChartTile` 的 controls 插槽里，而不是在卡片体内再
+ * 套一层「卡中卡」的标题栏。
+ */
+function TrafficCalendarControls({
   mode,
   onModeChange,
   onShiftAnchor
 }: {
-  data: TrafficCalendarResponse | null;
   mode: TrafficCalendarMode;
   onModeChange: (mode: TrafficCalendarMode) => void;
   onShiftAnchor: (direction: -1 | 1) => void;
@@ -684,34 +530,41 @@ function TrafficCalendarCard({
     { value: "week", label: "周" },
     { value: "month", label: "月" }
   ];
-  const maxTraffic = Math.max(...(data?.cells ?? []).map((cell) => cell.totalRxBytes + cell.totalTxBytes), 1);
   return (
-    <Surface className="workspace-traffic-calendar">
-      <div className="workspace-surface__header">
-        <div><span className="workspace-section-kicker">流量日历</span><h3>网络流量消耗</h3></div>
-        <M3SegmentedControl
-          className="workspace-range-control__options"
-          options={modes}
-          value={mode}
-          onChange={(value) => onModeChange(value as TrafficCalendarMode)}
-          aria-label="流量日历范围"
-        />
-        <div className="workspace-traffic-calendar__navigation" role="group" aria-label="流量日历翻页">
-          <Button variant="quiet" onClick={() => onShiftAnchor(-1)} aria-label="查看上一周期">上一周期</Button>
-          <Button variant="quiet" onClick={() => onShiftAnchor(1)} aria-label="查看下一周期">下一周期</Button>
-        </div>
+    <div className="workspace-traffic-calendar__controls">
+      <M3SegmentedControl
+        className="workspace-range-control__options"
+        options={modes}
+        value={mode}
+        onChange={(value) => onModeChange(value as TrafficCalendarMode)}
+        aria-label="流量日历范围"
+      />
+      <div className="workspace-traffic-calendar__navigation" role="group" aria-label="流量日历翻页">
+        <Button variant="quiet" onClick={() => onShiftAnchor(-1)} aria-label="查看上一周期">上一周期</Button>
+        <Button variant="quiet" onClick={() => onShiftAnchor(1)} aria-label="查看下一周期">下一周期</Button>
       </div>
-      {data ? <>
-        <p className="workspace-surface__description">{data.title} · {formatDate(data.rangeStart)} 至 {formatDate(data.rangeEnd)}</p>
-        <div className="workspace-traffic-calendar__cells">
-          {data.cells.map((cell) => {
-            const total = cell.totalRxBytes + cell.totalTxBytes;
-            return <div className={`workspace-traffic-calendar__cell${cell.isSelected ? " is-selected" : ""}`} key={cell.key} style={{ opacity: 0.45 + (total / maxTraffic) * 0.55 }}><strong>{cell.label}</strong><small>{formatBytes(total)}</small></div>;
-          })}
-        </div>
-        <div className="workspace-detail-list"><SummaryRow label="接收" value={formatBytes(data.totalRxBytes)} /><SummaryRow label="发送" value={formatBytes(data.totalTxBytes)} /><SummaryRow label="采样记录" value={`${data.records.length} 条`} /></div>
-      </> : <div className="workspace-muted-block">暂无流量日历数据；请确认设备已上报网络流量统计。</div>}
-    </Surface>
+    </div>
+  );
+}
+
+/** 流量日历的图体；卡片外壳由 `ChartTile` 提供。 */
+function TrafficCalendar({ data }: { data: TrafficCalendarResponse | null }) {
+  const maxTraffic = Math.max(...(data?.cells ?? []).map((cell) => cell.totalRxBytes + cell.totalTxBytes), 1);
+  if (!data) return <div className="workspace-muted-block">暂无流量日历数据；请确认设备已上报网络流量统计。</div>;
+  return (
+    <div className="workspace-traffic-calendar">
+      <div className="workspace-traffic-calendar__cells">
+        {data.cells.map((cell) => {
+          const total = cell.totalRxBytes + cell.totalTxBytes;
+          return <div className={`workspace-traffic-calendar__cell${cell.isSelected ? " is-selected" : ""}`} key={cell.key} style={{ opacity: 0.45 + (total / maxTraffic) * 0.55 }}><strong>{cell.label}</strong><small>{formatBytes(total)}</small></div>;
+        })}
+      </div>
+      <div className="workspace-detail-list">
+        <SummaryRow label="接收" value={formatBytes(data.totalRxBytes)} />
+        <SummaryRow label="发送" value={formatBytes(data.totalTxBytes)} />
+        <SummaryRow label="采样记录" value={`${data.records.length} 条`} />
+      </div>
+    </div>
   );
 }
 
@@ -940,6 +793,12 @@ function temperatureLimitsLabel(sensor: TemperatureSensorReading): string {
   return limits.join(" · ");
 }
 
+/**
+ * 全部温度传感器面板。
+ *
+ * 卡片外壳由 `ChartTile` 提供，这里只负责「诊断通道开关 + 传感器列表 + 选中项
+ * 历史曲线」这套复合内容，所以不再包 `Surface` 或小组件容器。
+ */
 function TemperatureSourcesPanel({
   sensors,
   series
@@ -964,63 +823,62 @@ function TemperatureSourcesPanel({
     setSelectedId(selectedSeries.id);
   }, [selectedId, selectedSeries]);
 
-  if (!sensors.length && !series.length) return null;
+  if (!sensors.length && !series.length) {
+    return <div className="workspace-muted-block">本机没有暴露任何温度传感器。</div>;
+  }
 
   return (
-    <DesktopWidget id="temperature-sources" title="温度源" kind="group" defaultSize="large">
-      <Surface className="workspace-temperature-sources">
-        <div className="workspace-surface__header">
-          <div>
-            <span className="workspace-section-kicker">温度源</span>
-            <h3>全部温度传感器</h3>
-          </div>
-          <M3Checkbox
-            className="workspace-temperature-toggle"
-            compact
-            checked={showDiagnostics}
-            onCheckedChange={setShowDiagnostics}
-            label="显示诊断通道"
-          />
+    <div className="workspace-temperature-sources">
+      <div className="workspace-temperature-sources__toolbar">
+        <p>按传感器原始名称和采集后端展示；不同来源不会合并平均，阈值和无效值默认隐藏。</p>
+        <M3Checkbox
+          className="workspace-temperature-toggle"
+          compact
+          checked={showDiagnostics}
+          onCheckedChange={setShowDiagnostics}
+          label="显示诊断通道"
+        />
+      </div>
+      <div className="workspace-temperature-sources__body">
+        <div className="workspace-temperature-source-list">
+          {visibleSensors.length ? visibleSensors.map((sensor) => {
+            const isSelected = sensor.id === selectedSeries?.id;
+            return (
+              <button
+                type="button"
+                key={sensor.id}
+                className={`workspace-temperature-source-row${isSelected ? " is-selected" : ""}`}
+                onClick={() => setSelectedId(sensor.id)}
+              >
+                <span className="workspace-temperature-source-row__identity">
+                  <strong>{sensor.displayName || sensor.rawName}</strong>
+                  <small>{temperatureRoleLabels[sensor.role] ?? sensor.role} · {temperatureSourceLabel(sensor.source)}</small>
+                </span>
+                <span className="workspace-temperature-source-row__value">
+                  <strong>{temperatureValueLabel(sensor)}</strong>
+                  <small className={`workspace-temperature-status workspace-temperature-status--${sensor.status}`}>{temperatureStatusLabel(sensor.status)}</small>
+                  {temperatureLimitsLabel(sensor) && <small>{temperatureLimitsLabel(sensor)}</small>}
+                </span>
+              </button>
+            );
+          }) : <div className="workspace-telemetry-empty">当前只有无效或诊断温度通道</div>}
         </div>
-        <p className="workspace-surface__description">按传感器原始名称和采集后端展示；不同来源不会合并平均，阈值和无效值默认隐藏。</p>
-        <div className="workspace-temperature-sources__body">
-          <div className="workspace-temperature-source-list">
-            {visibleSensors.length ? visibleSensors.map((sensor) => {
-              const isSelected = sensor.id === selectedSeries?.id;
-              return (
-                <button
-                  type="button"
-                  key={sensor.id}
-                  className={`workspace-temperature-source-row${isSelected ? " is-selected" : ""}`}
-                  onClick={() => setSelectedId(sensor.id)}
-                >
-                  <span className="workspace-temperature-source-row__identity">
-                    <strong>{sensor.displayName || sensor.rawName}</strong>
-                    <small>{temperatureRoleLabels[sensor.role] ?? sensor.role} · {temperatureSourceLabel(sensor.source)}</small>
-                  </span>
-                  <span className="workspace-temperature-source-row__value">
-                    <strong>{temperatureValueLabel(sensor)}</strong>
-                    <small className={`workspace-temperature-status workspace-temperature-status--${sensor.status}`}>{temperatureStatusLabel(sensor.status)}</small>
-                    {temperatureLimitsLabel(sensor) && <small>{temperatureLimitsLabel(sensor)}</small>}
-                  </span>
-                </button>
-              );
-            }) : <div className="workspace-telemetry-empty">当前只有无效或诊断温度通道</div>}
-          </div>
-          <div className="workspace-temperature-source-chart">
-            {selectedSeries ? (
-              <TelemetryChartCard
-                title={`${selectedSeries.name} · 历史`}
-                subtitle={`${temperatureRoleLabels[selectedSeries.role] ?? selectedSeries.role} · ${temperatureSourceLabel(selectedSeries.source)}`}
+        <div className="workspace-temperature-source-chart">
+          {selectedSeries ? (
+            <>
+              <div className="workspace-temperature-source-chart__heading">
+                <strong>{selectedSeries.name}</strong>
+                <small>{temperatureRoleLabels[selectedSeries.role] ?? selectedSeries.role} · {temperatureSourceLabel(selectedSeries.source)}</small>
+              </div>
+              <CarbonTimeSeriesChart
                 series={[{ label: "温度", points: selectedSeries.currentC, valueFormatter: (value) => `${value.toFixed(1)} °C` }]}
-                valueFormatter={(value) => `${value.toFixed(1)} °C`}
-                emptyMessage="等待有效温度样本"
+                compact
               />
-            ) : <div className="workspace-trend-empty">选择一个有效温度源查看历史</div>}
-          </div>
+            </>
+          ) : <div className="workspace-trend-empty">选择一个有效温度源查看历史</div>}
         </div>
-      </Surface>
-    </DesktopWidget>
+      </div>
+    </div>
   );
 }
 
@@ -1110,14 +968,12 @@ export {
   ConfirmDialog,
   PromptDialog,
   OverviewSummary,
-  TelemetrySection,
   mergeFanMetricSeries,
-  TelemetryDeviceBlock,
   TelemetryModelList,
-  CpuFactsCard,
   InstanceFilter,
   InstanceMetricOverride,
-  TrafficCalendarCard,
+  TrafficCalendar,
+  TrafficCalendarControls,
   MetricWindowControl,
   cloneDevicePanels,
   normalizeDevicePanels,

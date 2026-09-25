@@ -11,18 +11,20 @@ import type { DeviceBlockKey, DeviceMetricKey } from "@dsc/shared";
 /**
  * 图表可视化类型。
  *
- * - `line` / `area` / `bar` 走 Carbon Charts 的笛卡尔时间序列图；
+ * - `line` / `area` 走 Carbon Charts 的笛卡尔时间序列图；
  * - `donut` / `meter` 走 Carbon Charts 的占比与仪表图，替代原先手绘的
  *   `CompositionMeter` 与 `MeterView`；
- * - `number` 是纯数值读数网格；
+ * - `number` 是纯数值读数网格，用于「只要当前值、不需要趋势」的静态事实；
  * - `table` 走 Carbon `StructuredList`；
  * - `custom` 表示该位置渲染页面自带的复合组件（例如流量日历、温度传感器面板），
  *   仍然由 `ChartTile` 提供统一的卡片外壳。
+ *
+ * 这里刻意不收 `bar`：固定布局里目前没有柱状图需求，等真的要用时再加档位，
+ * 避免类型里挂着一条永远走不到的分支。
  */
 export type ChartVisualization =
   | "line"
   | "area"
-  | "bar"
   | "donut"
   | "meter"
   | "number"

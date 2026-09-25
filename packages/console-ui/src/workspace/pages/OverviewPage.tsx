@@ -3,7 +3,8 @@ import { ActionableNotification } from "@carbon/react";
 import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
 import { Button, Icon, Surface } from "../ui";
 import { M3SegmentedControl } from "../m3";
-import { TelemetryChartCard } from "../TelemetryCards";
+import { CarbonTimeSeriesChart } from "../CarbonCharts";
+import { ChartTile, DashboardCell, DashboardGrid, DashboardSection } from "../dashboard";
 import { formatBytes, formatDate } from "../formatters";
 import { selectHealthSummary, selectOverviewDevices } from "../selectors";
 import { CarbonDeviceTable, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, PageIntro, OverviewSummary, unavailablePoints } from "./shared";
@@ -38,7 +39,7 @@ export function OverviewPage() {
 
   const observationSeries = overviewInstances.flatMap((instance) => {
     const unavailable = (key: Parameters<typeof isMetricUnavailable>[1]) => instance.unavailableMetrics?.includes(key) ?? false;
-    if (observationMetric === "cpu") return [{ label: instance.hostname, points: unavailablePoints(instance.cpuUsagePercent, unavailable("cpuUsage")) }];
+    if (observationMetric === "cpu") return [{ label: instance.hostname, points: unavailablePoints(instance.cpuUsagePercent, unavailable("cpuUsage")), valueFormatter: (value: number) => `${Math.round(value)}%` }];
     if (observationMetric === "memory") return [{ label: instance.hostname, points: unavailablePoints(instance.memoryUsedBytes, unavailable("memoryUsage")), valueFormatter: formatBytes }];
     if (observationMetric === "disk") return [{ label: instance.hostname, points: unavailablePoints(instance.diskUsedBytes, unavailable("diskUsage")), valueFormatter: formatBytes }];
     return [
@@ -108,10 +109,24 @@ export function OverviewPage() {
       </Surface>
     </div>
 
-    <Surface className="workspace-overview-observation">
-      <div className="workspace-surface__header"><div><span className="workspace-section-kicker">单一资源观察</span><h3>{observationLabels[observationMetric]} · {scopedLabel}</h3></div><M3SegmentedControl options={[{ value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "disk", label: "磁盘" }, { value: "network", label: "网络" }]} value={observationMetric} onChange={(value) => setObservationMetric(value as ObservationMetric)} aria-label="总览观察指标" /></div>
-      <p className="workspace-surface__description">一张图只观察一个维度；缺失指标会明确留空，不会用估算值填充。</p>
-      <TelemetryChartCard title={observationLabels[observationMetric] + "趋势"} subtitle={"每个实例一组数据线 · 最近 " + metricWindowLabel} series={observationSeries} valueFormatter={observationMetric === "cpu" ? (value) => Math.round(value) + "%" : observationMetric === "network" ? (value) => (Number.isFinite(value) && value > 0 ? formatBytes(value) + "/s" : "0 B/s") : formatBytes} fixedMaxValue={observationMetric === "cpu" ? 100 : undefined} emptyMessage={observationEmptyMessage} showDetailsControl={false} />
-    </Surface>
+    <DashboardSection
+      id="section-observation"
+      eyebrow="单一资源观察"
+      title={`${observationLabels[observationMetric]} · ${scopedLabel}`}
+      description="一张图只观察一个维度；缺失指标会明确留空，不会用估算值填充。"
+      controls={<M3SegmentedControl options={[{ value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "disk", label: "磁盘" }, { value: "network", label: "网络" }]} value={observationMetric} onChange={(value) => setObservationMetric(value as ObservationMetric)} aria-label="总览观察指标" />}
+    >
+      <DashboardGrid>
+        <DashboardCell span="full">
+          <ChartTile
+            title={`${observationLabels[observationMetric]}趋势`}
+            subtitle={`每个实例一组数据线 · 最近 ${metricWindowLabel}`}
+            emptyMessage={observationEmptyMessage}
+          >
+            <CarbonTimeSeriesChart series={observationSeries} maxValue={observationMetric === "cpu" ? 100 : undefined} />
+          </ChartTile>
+        </DashboardCell>
+      </DashboardGrid>
+    </DashboardSection>
   </div>;
 }
