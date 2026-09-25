@@ -167,14 +167,19 @@ elif systemctl is-active --quiet device-state-console-agent.service && systemctl
     exit 1
   }
   systemctl show device-state-console-agent.service -p ExecStart --value |
-    grep -Fq 'path=/opt/device-state-console-agent/run-dev-machine-agent.sh' || {
+    grep -Fq 'path=/opt/device-state-console-agent/run-agent.sh' || {
       echo "The legacy Agent service does not use the expected launcher; refusing to update." >&2
       exit 1
     }
-  [[ -f /opt/device-state-console-agent/run-dev-machine-agent.sh ]] || {
-    echo "The legacy Agent launcher is missing." >&2
+  [[ -f /opt/device-state-console-agent/run-agent.sh && -f /opt/device-state-console-agent/agent.env ]] || {
+    echo "The legacy Agent launcher or environment file is missing." >&2
     exit 1
   }
+  grep -Fq 'device-state-console-agent' /opt/device-state-console-agent/run-agent.sh &&
+    grep -Fq 'agent.err.log' /opt/device-state-console-agent/run-agent.sh || {
+      echo "The legacy Agent launcher does not match the inspected collector and log layout." >&2
+      exit 1
+    }
   printf 'legacy|%s\n' "$(cat /opt/device-state-console-agent/VERSION 2>/dev/null || printf unknown)"
 else
   echo "No supported active and enabled Guanlan Agent service was found." >&2
@@ -277,35 +282,35 @@ stage_dir="$2"
 unit="device-state-console-agent.service"
 install_dir="/opt/device-state-console-agent"
 target="$install_dir/device-state-console-agent"
-launcher="$install_dir/run-dev-machine-agent.sh"
 version_file="$install_dir/VERSION"
 staged="$stage_dir/device-state-console-agent"
 backup="$target.backup-$version-$$"
-launcher_backup="$launcher.backup-$version-$$"
 version_backup="$version_file.backup-$version-$$"
 
-[[ -f "$staged" && -x "$target" && -f "$launcher" ]] || {
-  echo "The staged Agent, installed binary or legacy launcher is missing." >&2
+[[ -f "$staged" && -x "$target" ]] || {
+  echo "The staged or installed legacy Agent binary is missing." >&2
   exit 1
 }
 systemctl is-active --quiet "$unit" && systemctl is-enabled --quiet "$unit" || {
   echo "The legacy Agent service is not active and enabled." >&2
   exit 1
 }
+systemctl show "$unit" -p ExecStart --value |
+  grep -Fq "path=$install_dir/run-agent.sh" || {
+    echo "The legacy Agent launcher changed after preflight; refusing to update." >&2
+    exit 1
+  }
 
 owner="$(stat -c '%u' "$target")"
 group="$(stat -c '%g' "$target")"
 mode="$(stat -c '%a' "$target")"
-launcher_mode="$(stat -c '%a' "$launcher")"
-launcher_owner="$(stat -c '%u' "$launcher")"
-launcher_group="$(stat -c '%g' "$launcher")"
 had_version_file=false
 if [[ -f "$version_file" ]]; then
   cp -p "$version_file" "$version_backup"
   had_version_file=true
 fi
 started_at="$(date --iso-8601=seconds)"
-upload_log="$install_dir/dev-machine-agent.err.log"
+upload_log="$install_dir/agent.err.log"
 upload_log_offset=0
 if [[ -f "$upload_log" ]]; then
   upload_log_offset="$(stat -c '%s' "$upload_log")"
@@ -314,9 +319,9 @@ fi
 restore() {
   set +e
   systemctl stop "$unit"
-  rm -f "$target.new" "$launcher.new" "$version_file.new"
-  if [[ -f "$backup" ]]; then rm -f "$target"; mv "$backup" "$target"; fi
-  if [[ -f "$launcher_backup" ]]; then rm -f "$launcher"; mv "$launcher_backup" "$launcher"; fi
+  rm -f "$target.new" "$version_file.new"
+  rm -f "$target"
+  if [[ -f "$backup" ]]; then mv "$backup" "$target"; fi
   if [[ "$had_version_file" == true && -f "$version_backup" ]]; then
     mv "$version_backup" "$version_file"
   else
@@ -332,46 +337,40 @@ restore() {
 }
 
 if ! install -m "$mode" -o "$owner" -g "$group" "$staged" "$target.new"; then
-  rm -f "$target.new" "$launcher.new" "$version_file.new"
+  rm -f "$target.new" "$version_file.new"
   rm -rf "$stage_dir"
   exit 1
 fi
-cat > "$launcher.new" <<'LAUNCHER'
-#!/usr/bin/env bash
-set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/dev-machine-agent.env"
-if [[ -f "$ENV_FILE" ]]; then
-  set -a
-  source "$ENV_FILE"
-  set +a
-fi
-exec "$SCRIPT_DIR/device-state-console-agent" >> "$SCRIPT_DIR/dev-machine-agent.out.log" 2>> "$SCRIPT_DIR/dev-machine-agent.err.log"
-LAUNCHER
-chown "$launcher_owner:$launcher_group" "$launcher.new"
-chmod "$launcher_mode" "$launcher.new"
 if [[ "$had_version_file" == true ]]; then
   if ! install -m 0644 -o "$owner" -g "$group" "$version_backup" "$version_file.new"; then
-    rm -f "$target.new" "$launcher.new" "$version_file.new"
+    rm -f "$target.new" "$version_file.new"
     rm -rf "$stage_dir"
     exit 1
   fi
 else
   if ! install -m 0644 -o "$owner" -g "$group" /dev/null "$version_file.new"; then
-    rm -f "$target.new" "$launcher.new" "$version_file.new"
+    rm -f "$target.new" "$version_file.new"
     rm -rf "$stage_dir"
     exit 1
   fi
 fi
 printf '%s\n' "$version" > "$version_file.new"
 systemctl stop "$unit"
-if ! mv "$target" "$backup" || ! mv "$launcher" "$launcher_backup"; then
-  restore || true
+if ! mv "$target" "$backup"; then
   systemctl start "$unit" || true
   exit 1
 fi
-if ! mv "$target.new" "$target" || ! mv "$launcher.new" "$launcher" || ! mv "$version_file.new" "$version_file"; then
-  restore || true
+if ! mv "$target.new" "$target"; then
+  rm -f "$target.new" "$version_file.new"
+  mv "$backup" "$target"
+  systemctl start "$unit" || true
+  exit 1
+fi
+if ! mv "$version_file.new" "$version_file"; then
+  rm -f "$version_file.new"
+  rm -f "$target"
+  mv "$backup" "$target"
+  systemctl start "$unit" || true
   exit 1
 fi
 
@@ -466,7 +465,7 @@ if [[ "$upload_confirmed" != true ]]; then
   exit 1
 fi
 
-rm -f "$backup" "$launcher_backup" "$version_backup" "$staged"
+rm -f "$backup" "$version_backup" "$staged"
 rm -rf "$stage_dir"
 printf '%s\n' "$version"
 REMOTE
