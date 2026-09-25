@@ -116,12 +116,13 @@ export class MetricsService {
       devices.map(async (device) => {
         if (device.status === "offline") return;
         if (now - Date.parse(device.lastSeenAt) < HEARTBEAT_TIMEOUT_MS) return;
+        const offlineState = { ...device, status: "offline" as const };
         const marked = await this.repositories.realtime.markOfflineIfMatch(
           device.identity.deviceId,
-          device.lastSeenAt
+          device.lastSeenAt,
+          offlineState
         );
         if (marked) {
-          const offlineState = { ...device, status: "offline" as const };
           this.emitDeviceEvent({
             deviceId: offlineState.identity.deviceId,
             summary: toSummary(offlineState)

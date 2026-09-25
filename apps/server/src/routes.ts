@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type {
   AgentCloudConfigSyncPayload,
   AuthLoginPayload,
@@ -352,11 +352,11 @@ export async function registerRoutes(
   });
 
   app.get("/api/devices", { preHandler: requireAuth }, async () => {
-    return buildDeviceSummaries(repositories);
+    return buildDeviceSummaries(repositories, app.log);
   });
 
   app.get("/api/instances", { preHandler: requireAuth }, async () => {
-    return buildDeviceSummaries(repositories);
+    return buildDeviceSummaries(repositories, app.log);
   });
 
   app.get<{ Querystring: { window: MetricWindow } }>(
@@ -661,7 +661,7 @@ export async function registerRoutes(
 
 }
 
-async function buildDeviceSummaries(repositories: Repositories) {
+async function buildDeviceSummaries(repositories: Repositories, log: FastifyBaseLogger) {
   const openDevices = await repositories.devices.listOpenDevices();
   const realtimeDevices = await repositories.realtime.listDevices();
   const realtimeMap = new Map(realtimeDevices.map((state) => [state.identity.deviceId, state]));
@@ -694,7 +694,11 @@ async function buildDeviceSummaries(repositories: Repositories) {
   return openDevices.map((record) => {
     const realtimeState = realtimeMap.get(record.deviceId);
     if (realtimeState) {
-      return { ...toSummary(realtimeState), sortOrder: record.sortOrder };
+      try {
+        return { ...toSummary(realtimeState), sortOrder: record.sortOrder };
+      } catch (error) {
+        log.error({ error, deviceId: record.deviceId }, "failed to summarize device state");
+      }
     }
     return {
       deviceId: record.deviceId,
@@ -703,7 +707,7 @@ async function buildDeviceSummaries(repositories: Repositories) {
       agentVersion: null,
       agentChannel: null,
       status: "offline" as const,
-      lastSeenAt: record.updatedAt,
+      lastSeenAt: realtimeState?.lastSeenAt ?? record.updatedAt,
       cpuUsagePercent: null,
       gpuUsagePercent: null,
       gpuMemoryUsagePercent: null,

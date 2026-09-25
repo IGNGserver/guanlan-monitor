@@ -1,5 +1,6 @@
 import Redis from "ioredis";
 import type { MetricWindow } from "@dsc/shared";
+import { normalizeRealtimeState } from "../utils.js";
 import type { DeviceRealtimeState, RealtimeRepository, TimeSeriesRecord } from "../types.js";
 
 const DEVICE_KEY = "dsc:device";
@@ -12,30 +13,43 @@ export class RedisRealtimeRepository implements RealtimeRepository {
     await this.redis.hset(DEVICE_KEY, state.identity.deviceId, JSON.stringify(state));
   }
 
-  async markOfflineIfMatch(deviceId: string, expectedLastSeenAt: string): Promise<boolean> {
+  async markOfflineIfMatch(
+    deviceId: string,
+    expectedLastSeenAt: string,
+    offlineState: DeviceRealtimeState
+  ): Promise<boolean> {
+    // The script only compares lastSeenAt; the state that gets written back is serialized by Node.
+    // Round-tripping the stored JSON through `cjson` turned every empty array into `{}`.
     const script = `
       local raw = redis.call('hget', KEYS[1], ARGV[1])
       if not raw then return 0 end
-      local state = cjson.decode(raw)
+      local ok, state = pcall(cjson.decode, raw)
+      if not ok then return 0 end
       if state.lastSeenAt == ARGV[2] then
-        state.status = 'offline'
-        redis.call('hset', KEYS[1], ARGV[1], cjson.encode(state))
+        redis.call('hset', KEYS[1], ARGV[1], ARGV[3])
         return 1
       end
       return 0
     `;
-    const result = await this.redis.eval(script, 1, DEVICE_KEY, deviceId, expectedLastSeenAt);
+    const result = await this.redis.eval(
+      script,
+      1,
+      DEVICE_KEY,
+      deviceId,
+      expectedLastSeenAt,
+      JSON.stringify(offlineState)
+    );
     return result === 1;
   }
 
   async getDevice(deviceId: string) {
     const raw = await this.redis.hget(DEVICE_KEY, deviceId);
-    return raw ? (JSON.parse(raw) as DeviceRealtimeState) : null;
+    return raw ? (normalizeRealtimeState(JSON.parse(raw) as DeviceRealtimeState)) : null;
   }
 
   async listDevices() {
     const raw = await this.redis.hvals(DEVICE_KEY);
-    return raw.map((item) => JSON.parse(item) as DeviceRealtimeState);
+    return raw.map((item) => normalizeRealtimeState(JSON.parse(item) as DeviceRealtimeState));
   }
 
   async removeLegacyVirtualMachineData() {

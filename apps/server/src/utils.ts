@@ -73,6 +73,44 @@ function averagePositive(values: Array<number | null | undefined>): number {
   return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : 0;
 }
 
+const REALTIME_ARRAY_FIELDS = [
+  "unavailableMetrics",
+  "cpuPackages",
+  "disks",
+  "networkInterfaces",
+  "gpus",
+  "fans",
+  "temperatureSensors",
+  "sensorBackends"
+];
+const REALTIME_NESTED_ARRAY_FIELDS = ["ipv4", "ipv6", "smartAttributes"];
+
+function isEmptyNonArray(value: unknown): boolean {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && Object.keys(value).length === 0;
+}
+
+/**
+ * Redis keeps device state as JSON written by Lua `cjson`, which renders an empty array as `{}`.
+ * A device that only went offline therefore comes back with list fields that no `.map`/`.reduce`
+ * can read, so repair them where the state leaves Redis instead of at each consumer.
+ */
+export function normalizeRealtimeState(state: DeviceRealtimeState): DeviceRealtimeState {
+  const latest = state.latest as unknown as Record<string, unknown>;
+  for (const field of REALTIME_ARRAY_FIELDS) {
+    if (isEmptyNonArray(latest[field])) latest[field] = [];
+  }
+  for (const field of ["disks", "networkInterfaces"]) {
+    const items = latest[field];
+    if (!Array.isArray(items)) continue;
+    for (const item of items as Array<Record<string, unknown>>) {
+      for (const nested of REALTIME_NESTED_ARRAY_FIELDS) {
+        if (isEmptyNonArray(item[nested])) item[nested] = [];
+      }
+    }
+  }
+  return state;
+}
+
 export function resolveCpuTemperatureC(
   payload: Pick<AgentMetricsPayload, "cpuTemperatureC" | "cpuPackages">
 ): number | null {
