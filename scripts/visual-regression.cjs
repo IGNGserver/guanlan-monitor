@@ -354,22 +354,27 @@ async function run() {
         const holder = body ? body.firstElementChild : null;
         return {
           className: cell.className,
-          cell: { ...box(cell), ...style(cell, ["display", "grid-column", "min-width"]) },
-          grid: cell.parentElement ? { className: cell.parentElement.className, ...box(cell.parentElement), ...style(cell.parentElement, ["display", "grid-template-columns"]) } : null,
-          tile: tile ? { ...box(tile), ...style(tile, ["display", "width"]) } : null,
-          body: body ? { ...box(body), ...style(body, ["display", "width", "min-width"]) } : null,
-          holder: holder ? { className: holder.className, ...box(holder), ...style(holder, ["display", "width", "height"]) } : null
+          // 计算样式收进 css 子对象：它把宽度序列化成 "541px" 字符串，和 box 的
+          // 数字宽度同名平铺会互相覆盖，断言就会拿字符串去比数字。
+          cell: { ...box(cell), css: style(cell, ["display", "grid-column", "min-width"]) },
+          grid: cell.parentElement ? { className: cell.parentElement.className, ...box(cell.parentElement), css: style(cell.parentElement, ["display", "grid-template-columns"]) } : null,
+          tile: tile ? { ...box(tile), css: style(tile, ["display", "width"]) } : null,
+          body: body ? { ...box(body), css: style(body, ["display", "width", "min-width"]) } : null,
+          holder: holder ? { className: holder.className, ...box(holder), css: style(holder, ["display", "width", "height"]) } : null
         };
       })
     };
   });
   assert.ok(deviceChartGeometry.cells.length > 0, "overview section must render chart cells");
   for (const cell of deviceChartGeometry.cells) {
-    assert.ok(cell.grid && cell.grid.display === "grid", "chart cells must sit in a CSS grid");
+    assert.ok(cell.grid && cell.grid.css.display === "grid", "chart cells must sit in a CSS grid");
     assert.ok(cell.grid.width > 600, "fixed layout grid must span the content column");
     // half 跨度在 1440px 下约占栅格的一半；任何小于四分之一的宽度都说明塌缩。
     assert.ok(cell.cell.width > cell.grid.width * 0.25, `chart cell collapsed to ${cell.cell.width}px of a ${cell.grid.width}px grid`);
-    assert.ok(cell.tile && cell.tile.width >= cell.cell.width - 2, `chart tile must fill its cell (tile ${cell.tile?.width}px, cell ${cell.cell.width}px)`);
+    assert.ok(
+      cell.tile && Number.isFinite(cell.tile.width) && cell.tile.width >= cell.cell.width - 2,
+      `chart tile must fill its cell (tile ${cell.tile?.width}px, cell ${cell.cell.width}px)`
+    );
   }
   await page.screenshot({ path: path.join(outputDir, "web-device-desktop.png"), fullPage: true, animations: "disabled" });
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
