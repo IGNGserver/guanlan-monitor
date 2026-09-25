@@ -16,7 +16,7 @@ import type {
  * - `requires` 必须如实反映图表依赖的指标，否则设备不适用时会画出空图；
  * - `perInstance` 图表由页面按硬件实例展开，并沿用实例筛选器的选择结果。
  */
-export const DEVICE_DASHBOARD: DashboardSpec = {
+export const DEVICE_DASHBOARD = {
   id: "device-dashboard",
   tabs: [
     {
@@ -172,13 +172,24 @@ export const DEVICE_DASHBOARD: DashboardSpec = {
       ]
     }
   ]
-};
+} as const satisfies DashboardSpec;
+
+/**
+ * 从常量反推出来的 id 联合类型。
+ *
+ * 这三个类型是「声明即约束」的关键：页面用 `Record<DeviceChartId, …>` 存放每张
+ * 图表的渲染器，只要常量里新增了图表而渲染器没有跟上，typecheck 就会失败，
+ * 不会出现「布局里写了、页面上永远不显示」的静默缺口。
+ */
+export type DeviceTabId = (typeof DEVICE_DASHBOARD)["tabs"][number]["id"];
+export type DeviceSectionId = (typeof DEVICE_DASHBOARD)["tabs"][number]["sections"][number]["id"];
+export type DeviceChartId = (typeof DEVICE_DASHBOARD)["tabs"][number]["sections"][number]["charts"][number]["id"];
 
 /** 固定布局里的全部选项卡 id，顺序即渲染顺序。 */
-export const DEVICE_TAB_IDS: string[] = DEVICE_DASHBOARD.tabs.map((tab) => tab.id);
+export const DEVICE_TAB_IDS: readonly DeviceTabId[] = DEVICE_DASHBOARD.tabs.map((tab) => tab.id);
 
 /** 默认选中的选项卡。 */
-export const DEFAULT_DEVICE_TAB_ID: string = DEVICE_DASHBOARD.tabs[0].id;
+export const DEFAULT_DEVICE_TAB_ID: DeviceTabId = DEVICE_DASHBOARD.tabs[0].id;
 
 export function findDeviceTab(tabId: string): DashboardTabSpec {
   return DEVICE_DASHBOARD.tabs.find((tab) => tab.id === tabId) ?? DEVICE_DASHBOARD.tabs[0];
