@@ -1,12 +1,13 @@
 ## 开发要求
 - 普通开发完成后提交并推送到 `main`，由 GitHub Actions 执行检查、构建和打包；代理不得在本机执行项目构建、安装包生成、Docker 镜像构建或部署。
 - 本机只允许执行不产生交付物的静态检查（例如版本一致性、工作流语法检查）以及 Git 操作；需要构建结果时读取对应 GitHub Actions run、artifact、image 或 deployment 状态。
+- 代理不得在用户本机安装任何应用或交付物，包括以 `/S` 静默方式运行安装包，也不得注册系统服务、开机自启或安装驱动；Windows setup 等资产只允许下载、校验 sha256 并报告结果。需要安装时由用户自行执行，代理可以给出命令但不得代为运行。
 - 所有构建、测试、打包、镜像发布和部署必须落在 `.github/workflows/` 的 job 中，并使用 Actions runner 或受控的 GitHub environment；`deploy/*.ps1`、Gradle、Go、pnpm、Docker 等脚本只能由 workflow 调用。
 - 如果缺少对应 workflow，先补充 workflow 或明确报告缺口，不得用本地构建或手工部署作为替代。
 - `main` 是开发线，不代表稳定发布；默认每次开发完成后自动创建测试版 GitHub Release，绝不覆盖 `latest`、上传正式安装包或部署生产环境，除非用户明确确认正式发布。
 - 正式发布必须遵循仓库根目录 `RELEASE.md`，使用版本 tag 和固定版本 Docker 部署。
-- 每次开发后更新版本号并递增 patch；提交并推送 `main` 后创建匹配的 `vX.Y.Z` tag，触发测试版 Release workflow。代理必须等待 workflow 完成并确认 Release 已发布，再下载 Windows setup 资产，在本机完成静默安装并确认安装成功后才能结束任务。
-- 自动发布流程固定为：版本同步 → 静态检查 → 提交并推送 `main` → 创建并推送版本 tag → 等待 GitHub Actions verify/build/publish 全部完成 → 核对 Release 与 Windows setup 资产 → 本机安装 → 验证安装结果。workflow 失败、Release 未生成、资产缺失或安装失败时，任务不得宣称完成，应继续排查或明确报告阻塞原因。
+- 每次开发后更新版本号并递增 patch；提交并推送 `main` 后创建匹配的 `vX.Y.Z` tag，触发测试版 Release workflow。代理必须等待 workflow 完成并确认 Release 已发布，再下载 Windows setup 资产并校验其 sha256 后才能结束任务。
+- 自动发布流程固定为：版本同步 → 静态检查 → 提交并推送 `main` → 创建并推送版本 tag → 等待 GitHub Actions verify/build/publish 全部完成 → 核对 Release 与 Windows setup 资产 → 下载资产并校验 sha256。workflow 失败、Release 未生成、资产缺失或校验不匹配时，任务不得宣称完成，应继续排查或明确报告阻塞原因。
 - 在我明确要求“发布正式版 release”之前，我说“发布 release”均指测试版 release；测试版不得被当作稳定安装源或生产部署依据。
 - 版本号在我明确允许前只能递增第三位（patch）；第一位和第二位必须保持不变。版本号必须同步更新根目录 `VERSION` 与所有 package manifest。
 - Docker 生产运行必须从 Docker Hub 拉取用户指定的固定版本镜像，或在用户明确选择时拉取 `latest`；不得从未经测试的仓库工作区源码构建生产镜像。
