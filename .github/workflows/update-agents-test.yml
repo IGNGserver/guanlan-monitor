@@ -51,7 +51,17 @@ jobs:
             "$base_url/$asset.sha256" -o "$stage_dir/$asset.sha256"
           curl -4 -fL --retry 8 --retry-all-errors --connect-timeout 20 --max-time 300 \
             "$base_url/$asset" -o "$stage_dir/$asset"
-          (cd "$stage_dir" && sha256sum -c "$asset.sha256")
+          expected_checksum="$(awk 'NR == 1 { print $1 }' "$stage_dir/$asset.sha256")"
+          [[ "$expected_checksum" =~ ^[[:xdigit:]]{64}$ ]] || {
+            echo "The Linux package checksum manifest is invalid." >&2
+            exit 1
+          }
+          actual_checksum="$(sha256sum "$stage_dir/$asset" | awk '{ print $1 }')"
+          [[ "$actual_checksum" == "$expected_checksum" ]] || {
+            echo "The Linux package checksum does not match the published manifest." >&2
+            exit 1
+          }
+          echo "The Linux package SHA-256 checksum is verified."
           [[ "$(dpkg-deb -f "$stage_dir/$asset" Version)" == "$REQUESTED_VERSION" ]] || {
             echo "The Debian package version does not match the requested release." >&2
             exit 1
