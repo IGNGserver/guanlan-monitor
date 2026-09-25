@@ -17,6 +17,11 @@ on:
         required: true
         default: "192.168.5.8 192.168.5.64 192.168.5.32 nas"
         type: string
+      allow_known_http_400_targets:
+        description: "Explicitly permit a configured modern Agent with pending samples and the known HTTP 400 rejection; use only after confirming the payload schema cause"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -217,4 +222,5 @@ jobs:
           DEPLOY_PASSWORD: ${{ secrets.TEST_DEPLOY_PASSWORD }}
           REQUESTED_VERSION: ${{ inputs.version }}
           TARGETS: ${{ inputs.targets }}
+          ALLOW_KNOWN_400_TARGETS: ${{ inputs.allow_known_http_400_targets }}
         run: bash "$RUNNER_TEMP/dsc-agent-artifact-${GITHUB_RUN_ID}/update-test-agents.sh"

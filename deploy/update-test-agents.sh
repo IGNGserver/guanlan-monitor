@@ -66,6 +66,7 @@ agent_reported="$("$agent_binary" version)"
 
 remote_user="${DEPLOY_USER:-root}"
 remote_password="${DEPLOY_PASSWORD:-}"
+allow_known_400_targets="${ALLOW_KNOWN_400_TARGETS:-}"
 target_list=()
 for target in $TARGETS; do
   [[ "$target" =~ ^[A-Za-z0-9_.:-]+$ ]] || {
@@ -78,6 +79,26 @@ done
   echo "At least one Agent target is required." >&2
   exit 1
 }
+
+declare -A allow_known_400_by_target
+for target in $allow_known_400_targets; do
+  [[ "$target" =~ ^[A-Za-z0-9_.:-]+$ ]] || {
+    echo "Invalid known HTTP 400 override target: $target" >&2
+    exit 1
+  }
+  requested=false
+  for requested_target in "${target_list[@]}"; do
+    if [[ "$requested_target" == "$target" ]]; then
+      requested=true
+      break
+    fi
+  done
+  [[ "$requested" == true ]] || {
+    echo "Known HTTP 400 override target $target is not in the requested target list." >&2
+    exit 1
+  }
+  allow_known_400_by_target["$target"]=true
+done
 
 ssh_options=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="${HOME}/.ssh/known_hosts")
 if [[ -s "${HOME}/.ssh/id_ed25519" ]]; then
@@ -117,6 +138,7 @@ run_target_script() {
 preflight_script="$work_dir/preflight.sh"
 cat > "$preflight_script" <<'REMOTE'
 set -euo pipefail
+allow_known_400="$1"
 
 if systemctl is-active --quiet guanlan-agent.service && systemctl is-enabled --quiet guanlan-agent.service; then
   package_version="$(dpkg-query -W -f='${Version}' guanlan-desktop 2>/dev/null)"
@@ -130,12 +152,16 @@ if systemctl is-active --quiet guanlan-agent.service && systemctl is-enabled --q
     exit 1
   }
   status_json="$(guanlan-agent status --json)"
-  python3 -c 'import json,sys; d=json.load(sys.stdin); ok=(d.get("serviceInstalled") and d.get("serviceRunning") and d.get("configured") and d.get("daemonReachable") and d.get("collectorRunning") and d.get("connectionStatus")=="connected" and d.get("channel")=="test"); sys.exit(0 if ok else 1)' <<< "$status_json" || {
+  preflight_state="$(python3 -c 'import json,sys; d=json.load(sys.stdin); allow=sys.argv[1]=="true"; base=(d.get("serviceInstalled") and d.get("serviceRunning") and d.get("configured") and d.get("daemonReachable") and d.get("collectorRunning") and d.get("channel")=="test"); connected=d.get("connectionStatus")=="connected"; known_400=(allow and d.get("connectionStatus")=="error" and d.get("lastUploadError")=="unexpected status 400 Bad Request" and d.get("pendingSamples",0)>0); print("healthy" if connected else "known-http-400" if known_400 else "rejected") if base else print("rejected"); sys.exit(0 if base and (connected or known_400) else 1)' "$allow_known_400" <<< "$status_json")" || {
     echo "The installed Guanlan Agent is not configured, connected, and healthy." >&2
     exit 1
   }
-  printf 'modern|%s\n' "$package_version"
+  printf 'modern|%s|%s\n' "$package_version" "$preflight_state"
 elif systemctl is-active --quiet device-state-console-agent.service && systemctl is-enabled --quiet device-state-console-agent.service; then
+  [[ "$allow_known_400" != true ]] || {
+    echo "Known HTTP 400 overrides are only valid for modern Guanlan Agents." >&2
+    exit 1
+  }
   [[ -x /opt/device-state-console-agent/device-state-console-agent ]] || {
     echo "The legacy Agent service has no executable at its expected install path." >&2
     exit 1
@@ -347,8 +373,9 @@ declare -A version_by_target
 
 echo "Preflighting all Agent targets before making any change."
 for target in "${target_list[@]}"; do
-  result="$(run_target_script "$target" "$preflight_script")"
-  IFS='|' read -r layout installed_version <<< "$result"
+  allow_known_400="${allow_known_400_by_target[$target]:-false}"
+  result="$(run_target_script "$target" "$preflight_script" "$allow_known_400")"
+  IFS='|' read -r layout installed_version preflight_state <<< "$result"
   case "$layout" in
     modern)
       [[ "$installed_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
@@ -361,7 +388,18 @@ for target in "${target_list[@]}"; do
       fi
       layout_by_target["$target"]="$layout"
       version_by_target["$target"]="$installed_version"
-      echo "$target: modern client $installed_version is healthy and connected."
+      case "$preflight_state" in
+        healthy)
+          echo "$target: modern client $installed_version is healthy and connected."
+          ;;
+        known-http-400)
+          echo "$target: modern client $installed_version has a confirmed HTTP 400 rejection; the explicit target override is accepted."
+          ;;
+        *)
+          echo "Unexpected modern Agent preflight result from $target." >&2
+          exit 1
+          ;;
+      esac
       ;;
     legacy)
       layout_by_target["$target"]="$layout"
