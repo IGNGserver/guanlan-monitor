@@ -372,13 +372,23 @@ for _ in $(seq 1 90); do
 done
 if [[ "$upload_confirmed" != true ]]; then
   echo "The updated legacy Agent did not confirm a new upload; restoring the previous binary." >&2
-  upload_diagnostics="$(journalctl -u "$unit" --since "$started_at" --no-pager -o cat 2>/dev/null |
-    grep -E 'upload failed; sample persisted for replay:|upload failed and pending spool write failed:|uploaded metrics at |data recording is disabled;|cloud sync is disabled;' |
-    tail -n 20 || true)"
-  if [[ -n "$upload_diagnostics" ]]; then
-    printf 'Agent upload diagnostics:\n%s\n' "$upload_diagnostics" >&2
+  service_state="$(systemctl show "$unit" -p ActiveState -p SubState -p Result -p ExecMainStatus -p NRestarts --no-pager 2>/dev/null | tr '\n' ' ' || true)"
+  printf 'Agent service state: %s\n' "${service_state:-unavailable}" >&2
+  service_pid="$(systemctl show "$unit" -p MainPID --value 2>/dev/null || true)"
+  if [[ "$service_pid" =~ ^[1-9][0-9]*$ && -e "/proc/$service_pid/exe" ]]; then
+    service_executable="$(readlink -f "/proc/$service_pid/exe" 2>/dev/null || true)"
+    printf 'Agent main process executable: %s\n' "${service_executable:-unavailable}" >&2
   else
-    echo "Agent upload diagnostics: no upload or sync status messages were recorded after restart." >&2
+    echo "Agent main process executable: no active process." >&2
+  fi
+  upload_diagnostics="$(journalctl -u "$unit" --since "$started_at" --no-pager -o cat 2>/dev/null |
+    grep -Ei 'go agent v|upload failed|uploaded metrics at |data recording is disabled|cloud sync is disabled|fatal|error|failed to|not found|permission denied' |
+    sed -E 's/^go agent v[^ ]+ started for .*/go agent startup message recorded/; s#https?://[^[:space:]]+#<url>#g; s/(Bearer )[[:graph:]]+/\1[redacted]/g' |
+    tail -n 30 || true)"
+  if [[ -n "$upload_diagnostics" ]]; then
+    printf 'Agent service diagnostics:\n%s\n' "$upload_diagnostics" >&2
+  else
+    echo "Agent service diagnostics: no matching startup, upload or error messages were recorded after restart." >&2
   fi
   restore || true
   exit 1
