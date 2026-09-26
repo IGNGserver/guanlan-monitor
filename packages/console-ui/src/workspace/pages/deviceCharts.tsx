@@ -58,7 +58,7 @@ import {
   limitSamplePoints
 } from "../formatters";
 import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
-import { Button, Icon, StatusLabel } from "../ui";
+import { Button, CopyButton, Icon, StatusLabel } from "../ui";
 import { TemperatureSourcesPanel, TelemetryModelList, TrafficCalendar, TrafficCalendarControls, unavailablePoints } from "./shared";
 
 /** 一张磁贴的描述。字段与 `ChartTile` 的插槽一一对应。 */
@@ -475,16 +475,7 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
   "device-hardware-system": (chart, context) => [{
     key: chart.id,
     rows: hardwareRows(context),
-    controls: (
-      <Button
-        variant="quiet"
-        title="复制设备 ID"
-        aria-label="复制设备 ID"
-        onClick={() => void navigator.clipboard?.writeText(context.device.deviceId)}
-      >
-        <Icon name="copy" size={16} />
-      </Button>
-    )
+    controls: <CopyButton text={context.device.deviceId} label="复制设备 ID" />
   }],
 
   "device-agent-status": (chart, context) => [{
@@ -499,7 +490,7 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
         </div>
         <p>设备状态和遥测均由中枢提供，本页面不直接读取本机采集状态；未上传或中枢离线时，数据会与其他设备一样不完整。</p>
         <Button variant="quiet" onClick={() => context.openSettings(context.settingsSection)}>
-          {context.canConfigureConnection ? "查看中枢连接" : "查看中枢状态"}
+          查看连接设置
           <Icon name="arrow" size={15} />
         </Button>
       </div>

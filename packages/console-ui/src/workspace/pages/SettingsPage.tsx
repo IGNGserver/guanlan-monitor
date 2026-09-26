@@ -2,17 +2,16 @@ import React, { useEffect, useRef, useState } from "react";
 import type { AgentProbeProvider, AgentProbeTarget, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup } from "@dsc/shared";
 import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
 import { M3Checkbox, M3SegmentedControl, M3Select, M3Switch, M3TextField } from "../m3";
-import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
+import { Button, CopyButton, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
 import { formatBytes, formatDate, formatPreciseDateTime } from "../formatters";
 import { selectSnapshotSource } from "../selectors";
 import { formatWorkspaceError } from "../context/WorkspaceTypes";
-import { settingsNavigation } from "../shell/PrimaryNavigation";
+import { visibleSettingsNavigation } from "../shell/PrimaryNavigation";
 import {
   AgentTemperatureSourcesPanel,
   InstanceMetricOverride,
   PageIntro,
   appIconSrc,
-  instanceMetricOptions,
   metricGroups,
   mergeFanMetricSeries,
   probeProviderLabels,
@@ -21,35 +20,37 @@ import {
 
 export function SettingsPage() {
   const { route, capabilities, closeSettings, navigate } = useWorkspace();
-  const section: SettingsSection = route.kind === "settings"
-    ? route.section
-    : capabilities.canControlNativeWindow ? "general" : "workspace";
+  const visibleSettings = visibleSettingsNavigation(capabilities);
+  const defaultSection: SettingsSection = "general";
+  const requestedSection: SettingsSection = route.kind === "settings" ? route.section : defaultSection;
+  // Sections carry client-scoped content: the machine-agent page only exists
+  // where an agent can be managed. Reaching such a section by URL must not
+  // render someone else's page under a label that is not even in the
+  // navigation, so fall back to the shared default and correct the address.
+  const section = visibleSettings.some((item) => item.id === requestedSection) ? requestedSection : defaultSection;
+  useEffect(() => {
+    if (route.kind === "settings" && route.section !== section) navigate({ kind: "settings", section });
+  }, [route, section, navigate]);
   const pages: Record<SettingsSection, React.ReactNode> = {
     general: <GeneralSettings />,
-    workspace: capabilities.canControlNativeWindow ? <GeneralSettings /> : <WebWorkspaceSettings />,
     appearance: <AppearanceSettings />,
-    connections: capabilities.canConfigureConnection ? <ConnectionSettings /> : <WebSessionSettings />,
-    agent: capabilities.canManageLocalAgent ? <AgentSettings /> : <WebWorkspaceSettings />,
+    connections: capabilities.canConfigureConnection ? <ConnectionSettings /> : <WebConnectionSettings />,
+    agent: <AgentSettings />,
     data: <DataSettings />,
     shortcuts: <ShortcutSettings />,
-    session: capabilities.canConfigureConnection ? <ConnectionSettings /> : <WebSessionSettings />,
     about: <AboutSettings />
   };
-  const heading = settingsNavigation(capabilities).find((item) => item.id === section);
+  const heading = visibleSettings.find((item) => item.id === section);
+  // One line each: long enough to orient, short enough to read in one pass.
   const descriptions: Partial<Record<SettingsSection, string>> = {
-    general: "调整观澜的日常行为。",
-    workspace: "浏览器端的刷新、实例筛选和中枢状态。",
-    appearance: "调整工作区的主题、密度和动画适配。",
-    session: "管理当前浏览器会话和访问边界。",
-    data: "查看实时数据来源与版本信息。",
-    shortcuts: "用键盘快速切换页面和刷新状态。",
-    about: "查看观澜中枢的版本与项目链接。"
+    general: "启动方式与刷新频率。",
+    appearance: "主题、控件大小与动画。",
+    connections: "中枢地址、访问密钥与本机上报。",
+    agent: "本机采集服务与上报内容。",
+    data: "数据来源与版本信息。",
+    shortcuts: "键盘操作一览。",
+    about: "版本信息与项目链接。"
   };
-  const visibleSettings = settingsNavigation(capabilities).filter((item) => {
-    if (item.id === "agent") return capabilities.canManageLocalAgent;
-    if (item.id === "connections") return capabilities.canConfigureConnection;
-    return true;
-  });
   return <div className="workspace-page workspace-page--settings">
     <div className="workspace-settings-mobile-nav" aria-label="设置分类">
       <Button variant="quiet" onClick={closeSettings}><Icon name="back" size={16} />返回控制台</Button>
@@ -61,67 +62,46 @@ export function SettingsPage() {
   </div>;
 }
 
-function WebWorkspaceSettings() {
-  const { snapshot, hubs, allDevices, refreshInterval, setRefreshInterval, refresh, refreshing, mutationPending } = useWorkspace();
-  const hub = hubs[0];
-  const online = allDevices.filter((device) => device.status === "online").length;
-  const source = snapshot ? selectSnapshotSource(snapshot, allDevices) : "unknown";
-  const state = source === "live" ? "online" : source === "cache" ? "cached" : source === "unknown" ? "warning" : "unknown";
-  const stateLabel = state === "online" ? "连接正常" : state === "cached" ? "显示缓存" : "等待同步";
+
+/**
+ * "通用" means the same thing on both clients: how the app behaves day to day.
+ * The browser console has no startup or tray behaviour to offer, so it sees the
+ * refresh row plus the link facts that its old "中枢状态" section used to own.
+ */
+function GeneralSettings() {
+  const { snapshot, updateStartupSettings, mutationPending, refreshInterval, setRefreshInterval, capabilities } = useWorkspace();
+  const startup = snapshot?.startup ?? { openAtLogin: false, startMinimized: false };
+  const canControlStartup = capabilities.canChangeStartupSettings;
   return (
-    <div className="workspace-settings-stack workspace-web-settings">
-      <div className="workspace-web-settings__status">
-        <div className="workspace-web-settings__status-main">
-          <StatusLabel state={state} />
-          <strong>{stateLabel}</strong>
-          <p>{hub?.name ?? "观澜中枢"} · 浏览器端通过当前站点读取实时设备状态。</p>
+    <div className="workspace-settings-stack">
+      <Surface>
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">日常行为</span><h3>启动与刷新</h3></div></div>
+        <div className="workspace-settings-list">
+          {canControlStartup && <M3Switch label="开机启动" description="登录系统后自动启动观澜。" checked={startup.openAtLogin} onCheckedChange={(checked) => void updateStartupSettings({ openAtLogin: checked })} disabled={mutationPending} />}
+          {canControlStartup && <M3Switch label="启动时最小化" description="启动后保持在系统托盘，不打断当前工作。" checked={startup.startMinimized} onCheckedChange={(checked) => void updateStartupSettings({ startMinimized: checked })} disabled={mutationPending} />}
+          <SettingRow label="状态刷新频率" description="界面多久读取一次状态；不影响 Agent 的采集间隔。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "5", label: "5 秒" }, { value: "10", label: "10 秒" }, { value: "30", label: "30 秒" }]} value={String(refreshInterval)} onChange={(value) => setRefreshInterval(Number(value) as typeof refreshInterval)} aria-label="状态刷新频率" disabled={mutationPending} /></SettingRow>
         </div>
-        <div className="workspace-web-settings__stat"><span>实例</span><strong>{allDevices.length}</strong></div>
-        <div className="workspace-web-settings__stat"><span>在线</span><strong>{online}</strong></div>
-        <div className="workspace-web-settings__stat"><span>同步</span><strong>{snapshot ? formatDate(snapshot.generatedAt) : "等待"}</strong></div>
-      </div>
-
-      <div className="workspace-web-settings__grid">
-        <Surface>
-          <div className="workspace-surface__header"><div><span className="workspace-section-kicker">中枢状态偏好</span><h3>浏览器显示与刷新</h3></div></div>
-          <div className="workspace-settings-list">
-            <SettingRow label="状态刷新频率" description="只影响当前网页读取状态的频率，不改变 Agent 的采样间隔。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "5", label: "5 秒" }, { value: "10", label: "10 秒" }, { value: "30", label: "30 秒" }]} value={String(refreshInterval)} onChange={(value) => setRefreshInterval(Number(value) as typeof refreshInterval)} aria-label="状态刷新频率" disabled={mutationPending} /></SettingRow>
-          </div>
-        </Surface>
-
-        <Surface>
-          <div className="workspace-surface__header"><div><span className="workspace-section-kicker">中枢状态</span><h3>当前数据链路</h3></div><StatusLabel state={state} /></div>
-          <div className="workspace-detail-list"><SummaryRow label="数据来源" value={source === "live" ? "实时中枢" : source === "cache" ? "缓存" : source === "empty" ? "等待数据" : "连接异常"} /><SummaryRow label="最近同步" value={snapshot ? formatPreciseDateTime(snapshot.generatedAt) : "尚未同步"} /><SummaryRow label="接入实例" value={`${allDevices.length} 个`} /></div>
-          <div className="workspace-form__actions"><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing || mutationPending}><Icon name="refresh" size={15} />{refreshing ? "正在同步" : "立即同步"}</Button></div>
-        </Surface>
-      </div>
+      </Surface>
+      {!canControlStartup && <WebSyncSummary />}
     </div>
   );
 }
 
-function WebSessionSettings() {
-  const { snapshot, logout, mutationPending, refresh, refreshing } = useWorkspace();
-  const authenticated = snapshot?.session.authenticated ?? false;
-  const signOut = async () => {
-    await logout();
-    if (typeof window !== "undefined") window.location.reload();
-  };
-  const reloadForAuthentication = () => {
-    if (typeof window !== "undefined") window.location.reload();
-  };
+function WebSyncSummary() {
+  const { snapshot, allDevices, refresh, refreshing } = useWorkspace();
+  const online = allDevices.filter((device) => device.status === "online").length;
+  const source = snapshot ? selectSnapshotSource(snapshot, allDevices) : "unknown";
+  const state = source === "live" ? "online" : source === "cache" ? "cached" : source === "unknown" ? "warning" : "unknown";
   return (
-    <div className="workspace-settings-stack workspace-web-settings">
-      <Surface>
-        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">当前会话</span><h3>{authenticated ? "浏览器会话已认证" : "会话需要重新认证"}</h3></div><StatusLabel state={authenticated ? "online" : "warning"} /></div>
-        <div className="workspace-detail-list"><SummaryRow label="认证方式" value="中枢访问密钥" /><SummaryRow label="会话范围" value="当前浏览器" /><SummaryRow label="访问权限" value="已授权设备与指标" /></div>
-        {!authenticated && <div className="workspace-session-recovery m3-inline-banner" role="alert"><div className="workspace-session-recovery__copy"><strong>当前会话不可用</strong><p>站点认证可能已过期，重新认证会保留当前页面地址。</p></div><div className="workspace-form__actions"><Button variant="primary" onClick={reloadForAuthentication}>重新认证</Button><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? "正在检查" : "重新检查"}</Button></div></div>}
-        <div className="workspace-form__actions"><Button variant="danger" onClick={() => void signOut()} disabled={!authenticated || mutationPending}>{mutationPending ? "正在退出" : "退出当前会话"}</Button></div>
-      </Surface>
-      <Surface className="workspace-connection-note">
-        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">网页端边界</span><h3>中枢地址由站点提供</h3></div></div>
-        <p className="workspace-surface__description">浏览器端不保存桌面连接地址，也不管理本机 Agent。页面只使用当前站点的认证会话访问中枢，并通过实时通道接收设备更新。</p>
-      </Surface>
-    </div>
+    <Surface>
+      <div className="workspace-surface__header"><div><span className="workspace-section-kicker">当前数据</span><h3>同步情况</h3></div><StatusLabel state={state} /></div>
+      <div className="workspace-detail-list">
+        <SummaryRow label="数据来源" value={source === "live" ? "实时中枢" : source === "cache" ? "离线缓存" : source === "empty" ? "等待数据" : "连接异常"} />
+        <SummaryRow label="最近同步" value={snapshot ? formatPreciseDateTime(snapshot.generatedAt) : "尚未同步"} />
+        <SummaryRow label="已接入设备" value={`${allDevices.length} 台 · ${online} 台在线`} />
+      </div>
+      <div className="workspace-form__actions"><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}><Icon name="refresh" size={15} />{refreshing ? "正在同步" : "立即同步"}</Button></div>
+    </Surface>
   );
 }
 
@@ -133,18 +113,20 @@ function Toggle({ checked, onChange, label, disabled = false }: { checked: boole
   return <M3Switch className="workspace-m3-toggle" compact checked={checked} onCheckedChange={onChange} label={label} disabled={disabled} />;
 }
 
-function GeneralSettings() {
-  const { snapshot, updateStartupSettings, mutationPending, refreshInterval, setRefreshInterval, capabilities } = useWorkspace();
-  if (!capabilities.canChangeStartupSettings) return <WebWorkspaceSettings />;
-  const startup = snapshot?.startup ?? { openAtLogin: false, startMinimized: false };
+/**
+ * Advanced blocks stay collapsed until asked for. Nothing inside them is
+ * deferred: every control still saves on change, so hiding a block can never
+ * silently discard an edit the user made and then scrolled past.
+ */
+function AdvancedSettings({ summary, detail, children }: { summary: string; detail: string; children: React.ReactNode }) {
   return (
-    <Surface>
-      <div className="workspace-settings-list">
-        <M3Switch label="开机启动" description="登录系统后自动启动观澜。" checked={startup.openAtLogin} onCheckedChange={(checked) => void updateStartupSettings({ openAtLogin: checked })} disabled={mutationPending} />
-        <M3Switch label="启动时最小化" description="启动后保持在系统托盘，不打断当前工作。" checked={startup.startMinimized} onCheckedChange={(checked) => void updateStartupSettings({ startMinimized: checked })} disabled={mutationPending} />
-        <SettingRow label="数据刷新频率" description="实时连接下，桌面端自动刷新状态的间隔；不改变 Agent 的采样频率。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "5", label: "5 秒" }, { value: "10", label: "10 秒" }, { value: "30", label: "30 秒" }]} value={String(refreshInterval)} onChange={(value) => setRefreshInterval(Number(value) as typeof refreshInterval)} aria-label="数据刷新频率" disabled={mutationPending} /></SettingRow>
-      </div>
-    </Surface>
+    <details className="workspace-advanced">
+      <summary className="workspace-advanced__summary">
+        <span className="workspace-advanced__copy"><strong>{summary}</strong><small>{detail}</small></span>
+        <Icon name="chevron" size={16} />
+      </summary>
+      <div className="workspace-settings-stack workspace-advanced__body">{children}</div>
+    </details>
   );
 }
 
@@ -154,7 +136,9 @@ function AppearanceSettings() {
     <Surface>
       <div className="workspace-settings-list">
         <SettingRow label="主题" description="跟随系统，或固定使用浅色/深色主题。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "system", label: "跟随系统" }, { value: "light", label: "浅色" }, { value: "dark", label: "深色" }]} value={theme} onChange={(value) => setTheme(value as typeof theme)} aria-label="主题" /></SettingRow>
-        <SettingRow label="界面密度" description="自动会根据触摸输入和窗口尺寸放大操作目标；远控手机时可手动选择触摸。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "auto", label: "自动" }, { value: "comfortable", label: "舒适" }, { value: "compact", label: "紧凑" }, { value: "touch", label: "触摸" }]} value={density} onChange={(value) => setDensity(value as typeof density)} aria-label="界面密度" /></SettingRow>
+        {/* "界面密度" was design vocabulary and its options were not ordered by
+            the size they produce. The row now names what it changes: controls. */}
+        <SettingRow label="控件大小" description="用手机或远程桌面时选“触控”，按钮更好点中。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "auto", label: "自动" }, { value: "compact", label: "紧凑" }, { value: "comfortable", label: "标准" }, { value: "touch", label: "触控" }]} value={density} onChange={(value) => setDensity(value as typeof density)} aria-label="控件大小" /></SettingRow>
         <SettingRow label="动画" description="尊重系统的减少动态效果设置。"><span className="workspace-setting-note"><Icon name="check" size={15} />已启用可访问性适配</span></SettingRow>
       </div>
     </Surface>
@@ -175,23 +159,25 @@ function ConnectionSettings() {
   useEffect(() => {
     setServerUrl(snapshot?.localBackend?.config.connection.serverUrl ?? "");
   }, [snapshot?.localBackend?.config.connection.serverUrl]);
+  // Every message names the problem first and the fix second, in one sentence,
+  // so the user never has to decode which of the three fields is at fault.
   const validateConnection = () => {
     const nextErrors: { serverUrl?: string; accessKey?: string } = {};
     const nextServerUrl = serverUrl.trim();
     if (!nextServerUrl) {
-      nextErrors.serverUrl = "请输入中枢地址。";
+      nextErrors.serverUrl = "未填写中枢地址。请输入完整地址，例如 https://hub.example.com。";
     } else {
       try {
         const parsed = new URL(nextServerUrl);
         if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) {
-          nextErrors.serverUrl = "地址必须使用 http:// 或 https://，并包含主机名。";
+          nextErrors.serverUrl = "地址协议不支持。请使用以 http:// 或 https:// 开头的地址。";
         }
       } catch {
-        nextErrors.serverUrl = "请输入完整地址，例如 https://hub.example.com。";
+        nextErrors.serverUrl = "地址格式不正确。请包含协议和主机名，例如 https://hub.example.com。";
       }
     }
     if (!accessKey.trim() && !snapshot?.session.accessKeyConfigured) {
-      nextErrors.accessKey = "首次连接需要输入访问密钥。";
+      nextErrors.accessKey = "缺少访问密钥。首次连接需要输入中枢的访问密钥。";
     }
     setFieldErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -207,7 +193,7 @@ function ConnectionSettings() {
         setAccessKey("");
         setFieldErrors({});
       } else {
-        setFormError("连接未保存，请检查中枢地址、访问密钥和服务状态后重试。");
+        setFormError("连接未保存。请核对中枢地址、访问密钥与中枢服务状态后重试。");
       }
     } finally {
       setSaving(false);
@@ -267,6 +253,39 @@ function ConnectionSettings() {
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">连接诊断</span><h3>如果连接失败</h3></div></div>
         <p className="workspace-surface__description">请确认地址包含协议（例如 https://），中枢服务已启动，并使用中枢访问密钥。保存按钮会先写入地址，再用同一地址完成认证；如果地址未保存，页面会直接提示需要补充中枢地址。</p>
+      </Surface>
+    </div>
+  );
+}
+
+/**
+ * The browser console cannot point at another hub or run a local agent, so its
+ * "连接" page states that boundary and manages the session instead. This is the
+ * page the old web-only "中枢状态" and "会话安全" sections collapsed into: one
+ * place to answer "am I talking to the hub, and as whom".
+ */
+function WebConnectionSettings() {
+  const { snapshot, allDevices, logout, mutationPending, refresh, refreshing } = useWorkspace();
+  const authenticated = snapshot?.session.authenticated ?? false;
+  const source = snapshot ? selectSnapshotSource(snapshot, allDevices) : "unknown";
+  const signOut = async () => {
+    await logout();
+    if (typeof window !== "undefined") window.location.reload();
+  };
+  const reloadForAuthentication = () => {
+    if (typeof window !== "undefined") window.location.reload();
+  };
+  return (
+    <div className="workspace-settings-stack">
+      <Surface>
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">当前会话</span><h3>{authenticated ? "浏览器会话已认证" : "会话需要重新认证"}</h3></div><StatusLabel state={authenticated ? "online" : "warning"} /></div>
+        <div className="workspace-detail-list"><SummaryRow label="认证方式" value="中枢访问密钥" /><SummaryRow label="会话范围" value="当前浏览器" /><SummaryRow label="访问权限" value="已授权设备与指标" /><SummaryRow label="数据链路" value={source === "live" ? "实时中枢" : source === "cache" ? "离线缓存" : source === "empty" ? "等待数据" : "连接异常"} /></div>
+        {!authenticated && <div className="workspace-session-recovery m3-inline-banner" role="alert"><div className="workspace-session-recovery__copy"><strong>当前会话不可用</strong><p>站点认证可能已过期，重新认证会保留当前页面地址。</p></div><div className="workspace-form__actions"><Button variant="primary" onClick={reloadForAuthentication}>重新认证</Button><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? "正在检查" : "重新检查"}</Button></div></div>}
+        <div className="workspace-form__actions"><Button variant="danger" onClick={() => void signOut()} disabled={!authenticated || mutationPending}>{mutationPending ? "正在退出" : "退出当前会话"}</Button></div>
+      </Surface>
+      <Surface className="workspace-connection-note">
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">网页端边界</span><h3>中枢地址由站点提供</h3></div></div>
+        <p className="workspace-surface__description">浏览器端不保存桌面连接地址，也不管理本机 Agent。页面只使用当前站点的认证会话访问中枢，并通过实时通道接收设备更新。</p>
       </Surface>
     </div>
   );
@@ -411,6 +430,7 @@ function AgentSettings() {
     setProbeSelections(next);
     void updateLocalConfig({ probeSelections: next });
   };
+  const detectedInstanceCount = detectedGroups.reduce((count, group) => count + group.instances.length, 0);
   return (
     <div className="workspace-settings-stack">
       <Surface>
@@ -421,30 +441,40 @@ function AgentSettings() {
         <div className="workspace-detail-list"><SummaryRow label="运行方式" value={agentModeLabel} /><SummaryRow label="连接状态" value={backend.connectionStatus} /><SummaryRow label="上传间隔" value={`${backend.effectiveUploadIntervalSeconds} 秒`} /><SummaryRow label="待上传样本" value={backend.pendingSampleCount ? `${backend.pendingSampleCount} 条 · ${formatBytes(backend.pendingBytes)}` : "0 条"} /><SummaryRow label="配置文件" value={backend.configFileExists ? "已找到" : "未找到"} />{backend.lastUploadError && <SummaryRow label="最近上传问题" value={formatWorkspaceError(new Error(backend.lastUploadError), "本机 Agent 上报失败，请检查连接和配置")}/>}</div>
       </Surface>
       <Surface>
-        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">Agent 身份与节奏</span><h3>设备显示名与采样间隔</h3></div></div>
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">这台设备</span><h3>显示名与上报内容</h3></div></div>
         <div className="workspace-form workspace-agent-runtime-form">
-          <M3TextField label="设备显示名" value={agentHostname} onChange={(event) => setAgentHostname(event.target.value)} placeholder="例如：办公室主机" maxLength={120} />
-          <div className="workspace-form__grid"><M3TextField label="正常采样间隔（秒）" type="number" min="1" max="86400" value={normalSamplingSeconds} onChange={(event) => setNormalSamplingSeconds(event.target.value)} /><M3TextField label="降级采样间隔（秒）" type="number" min="1" max="86400" value={slowSamplingSeconds} onChange={(event) => setSlowSamplingSeconds(event.target.value)} /></div>
-          <p className="workspace-form__hint">采样间隔决定 Agent 多久采集一次数据；桌面端“数据刷新频率”只决定界面多久读取一次状态，两者互不替代。</p>
-          <div className="workspace-form__actions"><Button variant="primary" onClick={saveRuntimeConfig} disabled={refreshing || mutationPending || agentReadOnly}>保存 Agent 设置</Button></div>
+          <M3TextField label="设备显示名" value={agentHostname} onChange={(event) => setAgentHostname(event.target.value)} placeholder="例如：办公室主机" maxLength={120} supportingText="这台设备在设备目录里显示的名字。" />
+        </div>
+        <div className="workspace-settings-list">
+          <SettingRow label="正在上报的指标" description={`已选 ${selectedMetrics.length} 项；逐项调整在下方“高级设置”里。`}><span className="workspace-setting-note">{config.cloudSyncEnabled ? "已开启上传到中枢" : "仅本机记录，不上传"}</span></SettingRow>
+          <div className="workspace-form__actions"><Button variant="quiet" onClick={() => void cloudPush()} disabled={refreshing || mutationPending || agentReadOnly}><Icon name="connection" size={15} />同步到中枢</Button></div>
         </div>
       </Surface>
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">采集策略</span><h3>本机行为</h3></div></div>
         <div className="workspace-settings-list"><SettingRow label="自动启动采集" description="Agent 启动后自动开始采集硬件数据。"><Toggle checked={config.autoStartCollector} onChange={(checked) => void updateLocalConfig({ autoStartCollector: checked })} label="自动启动采集" disabled={mutationPending || agentReadOnly} /></SettingRow><SettingRow label="异常时自动重启" description="采集器异常退出后自动尝试恢复。"><Toggle checked={config.autoRestartCollector} onChange={(checked) => void updateLocalConfig({ autoRestartCollector: checked })} label="异常时自动重启" disabled={mutationPending || agentReadOnly} /></SettingRow><SettingRow label="采集与本地记录" description="关闭后停止采集器，不再生成新的本机样本。"><Toggle checked={config.dataRecordingEnabled} onChange={(checked) => void updateLocalConfig({ dataRecordingEnabled: checked })} label="采集与本地记录" disabled={mutationPending || agentReadOnly} /></SettingRow><SettingRow label="上传到中枢" description="允许本机 Agent 将采样数据上传到当前中枢；关闭后仍可保留本地配置。"><Toggle checked={config.cloudSyncEnabled} onChange={(checked) => void updateLocalConfig({ cloudSyncEnabled: checked })} label="上传到中枢" disabled={mutationPending || agentReadOnly} /></SettingRow></div>
       </Surface>
-      <Surface className="workspace-collection-surface">
-        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">上报数据</span><h3>选择 Agent 采集内容</h3></div><span className="workspace-caption">已选 {selectedMetrics.length} 项</span></div>
-        <p className="workspace-surface__description">指标、探针来源和实例覆盖都会立即保存，离开页面后仍会保留。启用某个硬件探针时，Agent 可能自动补齐该探针运行所需的依赖指标；“同步到中枢”仍需单独执行。</p>
-        <div className="workspace-metric-option-grid">{metricGroups.map((group) => <div className="workspace-metric-option-group" key={group.label}><strong>{group.label}</strong>{group.items.map((item) => <M3Checkbox compact className="workspace-check-row" key={item.key} checked={selectedMetrics.includes(item.key)} onCheckedChange={() => toggleMetric(item.key)} label={item.label} />)}</div>)}</div>
-        <div className="workspace-probe-config"><div className="workspace-probe-config__header"><div><strong>硬件探针</strong><span>更换探针来源或启停探针后会立即保存；下方再决定每个实例是否上报。</span></div></div>{supportedProbePlans.map((plan) => { const selection = probeSelections.find((item) => item.target === plan.target); const providers = plan.providers.filter((provider): provider is AgentProbeProvider => provider in probeProviderLabels); const selectedProvider = selection?.provider && providers.includes(selection.provider) ? selection.provider : providers.includes(plan.default as AgentProbeProvider) ? plan.default as AgentProbeProvider : providers[0]; return <div className="workspace-probe-row" key={plan.target}><div><strong>{probeTargetLabels[plan.target]}</strong><small>{selection?.enabled === false ? "已停用" : "已启用"}</small></div><M3Select label="探针来源" hideLabel selectClassName="workspace-select workspace-select--small" value={selectedProvider ?? "disabled"} onChange={(event) => updateProbe(plan.target, { provider: event.target.value as AgentProbeProvider })} disabled={!providers.length || mutationPending || agentReadOnly} options={providers.map((provider) => ({ value: provider, label: probeProviderLabels[provider] }))} /><Toggle checked={selection?.enabled ?? true} onChange={(enabled) => updateProbe(plan.target, { enabled })} label={`${probeTargetLabels[plan.target]} 探针`} disabled={mutationPending || agentReadOnly} /></div>; })}</div>
-        <div className="workspace-form__actions"><Button variant="quiet" onClick={() => void cloudPush()} disabled={refreshing || mutationPending || agentReadOnly}>同步到中枢</Button></div>
-      </Surface>
-      <Surface>
-        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">检测结果</span><h3>已发现硬件</h3><p className="workspace-surface__description">关闭某个实例或修改它的指标覆盖后会立即写入本机配置。</p></div><span className="workspace-caption">{detectedGroups.reduce((count, group) => count + group.instances.length, 0)} 个实例</span></div>
-        {detectedGroups.length ? <div className="workspace-detected-list">{detectedGroups.map((group) => <div className="workspace-detected-group" key={group.target}><strong>{group.label}</strong>{group.instances.map((instance) => { const enabled = isInstanceEnabled(group.target, instance.id, instance.enabled); return <div className="workspace-detected-row" key={instance.id}><div className="workspace-detected-row__identity"><strong>{instance.name}</strong>{instance.subtitle && <small>{instance.subtitle}</small>}<InstanceMetricOverride target={group.target} instanceId={instance.id} globalMetrics={selectedMetrics} override={instanceMetricConfig[instance.id]} onChange={(value) => updateInstanceMetricConfig(instance.id, value)} disabled={mutationPending || agentReadOnly} /></div><div className="workspace-detected-row__control"><small className={enabled ? "is-enabled" : "is-disabled"}>{enabled ? "上报中" : "不上传"}</small><Toggle checked={enabled} onChange={(checked) => toggleDetectedInstance(group.target, instance.id, checked)} label={`${instance.name} 上报`} disabled={mutationPending || agentReadOnly} /></div></div>; })}</div>)}</div> : <div className="workspace-muted-block">尚未检测到硬件探针，请点击“重新检测硬件”。</div>}
-      </Surface>
-      <AgentTemperatureSourcesPanel sensors={temperatureSources} backends={temperatureSensorBackends} probeError={backend.temperatureProbeError} />
+      <AdvancedSettings summary="高级设置" detail={`采样间隔、逐项指标与探针来源、${detectedInstanceCount} 个硬件实例、温度源`}>
+        <Surface>
+          <div className="workspace-surface__header"><div><span className="workspace-section-kicker">采集节奏</span><h3>采样间隔</h3></div></div>
+          <div className="workspace-form workspace-agent-runtime-form">
+            <div className="workspace-form__grid"><M3TextField label="正常采样间隔（秒）" type="number" min="1" max="86400" value={normalSamplingSeconds} onChange={(event) => setNormalSamplingSeconds(event.target.value)} /><M3TextField label="降级采样间隔（秒）" type="number" min="1" max="86400" value={slowSamplingSeconds} onChange={(event) => setSlowSamplingSeconds(event.target.value)} /></div>
+            <p className="workspace-form__hint">采样间隔决定 Agent 多久采集一次数据；“通用”页的刷新频率只决定界面多久读取一次状态，两者互不替代。</p>
+            <div className="workspace-form__actions"><Button variant="primary" onClick={saveRuntimeConfig} disabled={refreshing || mutationPending || agentReadOnly}>保存 Agent 设置</Button></div>
+          </div>
+        </Surface>
+        <Surface className="workspace-collection-surface">
+          <div className="workspace-surface__header"><div><span className="workspace-section-kicker">上报数据</span><h3>选择 Agent 采集内容</h3></div><span className="workspace-caption">已选 {selectedMetrics.length} 项</span></div>
+          <p className="workspace-surface__description">指标、探针来源和实例覆盖都会立即保存，离开页面后仍会保留。启用某个硬件探针时，Agent 可能自动补齐该探针运行所需的依赖指标；“同步到中枢”仍需单独执行。</p>
+          <div className="workspace-metric-option-grid">{metricGroups.map((group) => <div className="workspace-metric-option-group" key={group.label}><strong>{group.label}</strong>{group.items.map((item) => <M3Checkbox compact className="workspace-check-row" key={item.key} checked={selectedMetrics.includes(item.key)} onCheckedChange={() => toggleMetric(item.key)} label={item.label} />)}</div>)}</div>
+          <div className="workspace-probe-config"><div className="workspace-probe-config__header"><div><strong>硬件探针</strong><span>更换探针来源或启停探针后会立即保存；下方再决定每个实例是否上报。</span></div></div>{supportedProbePlans.map((plan) => { const selection = probeSelections.find((item) => item.target === plan.target); const providers = plan.providers.filter((provider): provider is AgentProbeProvider => provider in probeProviderLabels); const selectedProvider = selection?.provider && providers.includes(selection.provider) ? selection.provider : providers.includes(plan.default as AgentProbeProvider) ? plan.default as AgentProbeProvider : providers[0]; return <div className="workspace-probe-row" key={plan.target}><div><strong>{probeTargetLabels[plan.target]}</strong><small>{selection?.enabled === false ? "已停用" : "已启用"}</small></div><M3Select label="探针来源" hideLabel selectClassName="workspace-select workspace-select--small" value={selectedProvider ?? "disabled"} onChange={(event) => updateProbe(plan.target, { provider: event.target.value as AgentProbeProvider })} disabled={!providers.length || mutationPending || agentReadOnly} options={providers.map((provider) => ({ value: provider, label: probeProviderLabels[provider] }))} /><Toggle checked={selection?.enabled ?? true} onChange={(enabled) => updateProbe(plan.target, { enabled })} label={`${probeTargetLabels[plan.target]} 探针`} disabled={mutationPending || agentReadOnly} /></div>; })}</div>
+        </Surface>
+        <Surface>
+          <div className="workspace-surface__header"><div><span className="workspace-section-kicker">检测结果</span><h3>已发现硬件</h3><p className="workspace-surface__description">关闭某个实例或修改它的指标覆盖后会立即写入本机配置。</p></div><span className="workspace-caption">{detectedInstanceCount} 个实例</span></div>
+          {detectedGroups.length ? <div className="workspace-detected-list">{detectedGroups.map((group) => <div className="workspace-detected-group" key={group.target}><strong>{group.label}</strong>{group.instances.map((instance) => { const enabled = isInstanceEnabled(group.target, instance.id, instance.enabled); return <div className="workspace-detected-row" key={instance.id}><div className="workspace-detected-row__identity"><strong>{instance.name}</strong>{instance.subtitle && <small>{instance.subtitle}</small>}<InstanceMetricOverride target={group.target} instanceId={instance.id} globalMetrics={selectedMetrics} override={instanceMetricConfig[instance.id]} onChange={(value) => updateInstanceMetricConfig(instance.id, value)} disabled={mutationPending || agentReadOnly} /></div><div className="workspace-detected-row__control"><small className={enabled ? "is-enabled" : "is-disabled"}>{enabled ? "上报中" : "不上传"}</small><Toggle checked={enabled} onChange={(checked) => toggleDetectedInstance(group.target, instance.id, checked)} label={`${instance.name} 上报`} disabled={mutationPending || agentReadOnly} /></div></div>; })}</div>)}</div> : <div className="workspace-muted-block">尚未检测到硬件探针，请点击“重新检测硬件”。</div>}
+        </Surface>
+        <AgentTemperatureSourcesPanel sensors={temperatureSources} backends={temperatureSensorBackends} probeError={backend.temperatureProbeError} />
+      </AdvancedSettings>
     </div>
   );
 }
@@ -456,24 +486,40 @@ function DataSettings() {
   return <div className="workspace-settings-stack"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">同步状态</span><h3>数据与更新</h3></div></div><div className="workspace-detail-list"><SummaryRow label="数据来源" value={sourceLabel} /><SummaryRow label={capabilities.canUseOfflineCache ? "缓存时间" : "最近同步"} value={capabilities.canUseOfflineCache ? formatDate(snapshot?.cache.savedAt) : formatPreciseDateTime(snapshot?.generatedAt)} />{capabilities.canUseOfflineCache && <SummaryRow label="缓存年龄" value={snapshot?.cache.ageSeconds == null ? "无" : `${snapshot.cache.ageSeconds} 秒`} />}<SummaryRow label="当前版本" value={update?.currentVersion ?? "未知"} /></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">版本</span><h3>{update?.available ? `可用更新：${update.latestVersion}` : "当前已是最新版本"}</h3></div>{update?.available && <StatusLabel state="warning" />}</div>{update?.message && <p className="workspace-surface__description">{update.message}</p>}{update?.releaseUrl && <Button variant="quiet" onClick={() => void openExternal(update.releaseUrl!)}>查看更新说明<Icon name="external" size={15} /></Button>}</Surface></div>;
 }
 
+const shortcutRows: Array<{ keys: string; description: string }> = [
+  { keys: "/ 或 Ctrl/⌘ + K", description: "打开搜索和命令面板" },
+  { keys: "F5 或 Ctrl/⌘ + R", description: "刷新设备状态" },
+  { keys: "Esc", description: "关闭当前弹层" },
+  { keys: "Ctrl/⌘ + B", description: "折叠侧边栏" },
+  { keys: "Ctrl/⌘ + ,", description: "打开设置" }
+];
+
+/**
+ * The keys cannot be rebound yet, so the page calls itself a reference instead
+ * of implying an editor, and hands the list over as text for anyone who wants
+ * it beside them while they learn the console.
+ */
 function ShortcutSettings() {
-  const shortcuts = [["/ 或 Ctrl/⌘ + K", "打开搜索和命令面板"], ["F5 或 Ctrl/⌘ + R", "刷新设备状态"], ["Esc", "关闭当前弹层"], ["Ctrl/⌘ + B", "折叠侧边栏"], ["Ctrl/⌘ + ,", "打开设置"]];
-  return <Surface><div className="workspace-shortcut-list">{shortcuts.map(([key, description]) => <div className="workspace-shortcut-row" key={key}><kbd>{key}</kbd><span>{description}</span></div>)}</div></Surface>;
+  const shortcutText = shortcutRows.map(({ keys, description }) => `${keys}\t${description}`).join("\n");
+  return (
+    <div className="workspace-settings-stack">
+      <Surface>
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">键盘操作</span><h3>快捷键参考</h3></div><CopyButton text={shortcutText} label="复制全部快捷键" /></div>
+        <div className="workspace-shortcut-list">{shortcutRows.map(({ keys, description }) => <div className="workspace-shortcut-row" key={keys}><kbd>{keys}</kbd><span>{description}</span></div>)}</div>
+      </Surface>
+    </div>
+  );
 }
 
 function AboutSettings() {
-  const { snapshot, openExternal } = useWorkspace();
-  return <Surface><div className="workspace-about"><div className="workspace-about__mark-wrap"><img className="workspace-about__mark-img" src={appIconSrc} alt="观澜" /></div><h3>观澜设备状态控制台</h3><p>面向本机 Agent 与中枢连接的状态工作区。</p><div className="workspace-detail-list"><SummaryRow label="版本" value={snapshot?.update?.currentVersion ?? "开发版本"} /><SummaryRow label="发布通道" value={snapshot?.update?.currentChannel ?? "测试"} /></div><div className="workspace-form__actions"><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor")}><Icon name="external" size={15} />项目主页</Button><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor/issues")}><Icon name="external" size={15} />报告问题</Button></div></div></Surface>;
-}
-
-function LoadingSurface() {
-  return <div className="workspace-page workspace-loading-state" role="status" aria-busy="true" aria-label="正在加载设备状态"><span className="workspace-visually-hidden">正在加载设备状态</span><div className="workspace-skeleton workspace-skeleton--hero" /><div className="workspace-skeleton workspace-skeleton--large" /><div className="workspace-skeleton workspace-skeleton--medium" /></div>;
+  const { snapshot, openExternal, refresh, refreshing } = useWorkspace();
+  const version = snapshot?.update?.currentVersion ?? "开发版本";
+  const channel = snapshot?.update?.currentChannel ?? "测试";
+  const versionText = `观澜 ${version}（${channel} 通道）`;
+  return <div className="workspace-settings-stack"><Surface><div className="workspace-about"><div className="workspace-about__mark-wrap"><img className="workspace-about__mark-img" src={appIconSrc} alt="观澜" /></div><h3>观澜设备状态控制台</h3><p>面向本机 Agent 与中枢连接的状态工作区。</p><div className="workspace-detail-list"><SummaryRow label="版本" value={version} /><SummaryRow label="发布通道" value={channel} /></div><div className="workspace-form__actions"><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}><Icon name="refresh" size={15} />{refreshing ? "正在检查" : "重新检查更新"}</Button><CopyButton text={versionText} label="复制版本信息" /><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor")}><Icon name="external" size={15} />项目主页</Button><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor/issues")}><Icon name="external" size={15} />报告问题</Button></div></div></Surface></div>;
 }
 
 function EmptyState({ title, detail, action, tone = "neutral" }: { title: string; detail: string; action?: React.ReactNode; tone?: "neutral" | "error" }) {
   return <section className={`workspace-empty m3-state-surface m3-state-surface--${tone}`} role={tone === "error" ? "alert" : "status"}><div className="workspace-empty__mark"><Icon name={tone === "error" ? "warning" : "overview"} size={22} /></div><h3>{title}</h3><p>{detail}</p>{action}</section>;
 }
 
-function ErrorSurface({ title, detail, onRetry }: { title: string; detail: string; onRetry: () => void }) {
-  return <EmptyState tone="error" title={title} detail={detail} action={<Button variant="primary" onClick={onRetry}><Icon name="refresh" size={16} />重试</Button>} />;
-}

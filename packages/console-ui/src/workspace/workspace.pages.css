@@ -38,11 +38,6 @@
 .workspace-inline-note { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; padding: 11px 14px; color: var(--workspace-text-secondary); background: var(--workspace-surface-subtle); font-size: 12px; }
 
 .workspace-directory-toolbar__actions { display: flex; min-height: 40px; align-items: center; justify-content: flex-end; gap: 8px; }
-.workspace-hub-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin: 0 0 22px; padding: 0 0 18px; border-bottom: 1px solid var(--workspace-border); }
-.workspace-hub-facts > div { min-width: 0; padding: 0 18px; border-left: 1px solid var(--workspace-border); }
-.workspace-hub-facts > div:first-child { padding-left: 0; border-left: 0; }
-.workspace-hub-facts span { display: block; color: var(--workspace-text-muted); font-size: 11px; }
-.workspace-hub-facts strong { display: flex; min-width: 0; align-items: center; gap: 7px; margin-top: 7px; overflow: hidden; color: var(--workspace-text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 
 .workspace-page--settings { max-width: 1120px; }
 .workspace-page--settings .workspace-page-intro { margin-bottom: 28px; }
@@ -69,7 +64,7 @@
 
 @media (max-width: 839px) {
   .workspace-root { display: block; min-height: 100dvh; overflow: visible; }
-  .workspace-root:has(.workspace-windowbar) { display: grid; grid-template-columns: 1fr; grid-template-rows: 42px minmax(0, 1fr); }
+  .workspace-root:has(.workspace-windowbar) { display: grid; grid-template-columns: 1fr; grid-template-rows: var(--workspace-chrome-height) minmax(0, 1fr); }
   .workspace-root .workspace-sidebar { position: fixed; z-index: 25; inset: 0 auto 0 0; width: min(280px, 88vw); transform: translateX(-105%); box-shadow: var(--workspace-shadow); transition: transform var(--workspace-transition); }
   .workspace-root.is-sidebar-open .workspace-sidebar { transform: translateX(0); }
   .workspace-root .workspace-sidebar .workspace-brand__name,
@@ -94,12 +89,11 @@
   .workspace-overview-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-directory-toolbar { grid-template-columns: 1fr; align-items: stretch; }
   .workspace-directory-toolbar .m3-field { grid-column: auto; }
-  .workspace-bottom-nav { position: fixed; z-index: 22; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); left: 12px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; padding: 6px; border: 1px solid var(--workspace-border); border-radius: 16px; background: color-mix(in srgb, var(--workspace-surface) 95%, transparent); box-shadow: var(--workspace-shadow); backdrop-filter: blur(18px); }
+  .workspace-hub-card__grid { grid-template-columns: minmax(0, 1fr); }
+  .workspace-onboarding__steps { grid-template-columns: minmax(0, 1fr); }
+  .workspace-bottom-nav { position: fixed; z-index: 22; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); left: 12px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 6px; border: 1px solid var(--workspace-border); border-radius: 16px; background: color-mix(in srgb, var(--workspace-surface) 95%, transparent); box-shadow: var(--workspace-shadow); backdrop-filter: blur(18px); }
   .workspace-bottom-nav__item { min-height: 48px; flex-direction: column; gap: 2px; border-radius: 10px; font-size: 10px; }
   .workspace-bottom-nav__item.is-active { color: var(--workspace-accent-strong); background: var(--workspace-accent-soft); }
-  .workspace-hub-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 0; }
-  .workspace-hub-facts > div:nth-child(3) { padding-left: 0; border-left: 0; }
-  .workspace-hub-facts > div:nth-child(3), .workspace-hub-facts > div:nth-child(4) { padding-top: 12px; border-top: 1px solid var(--workspace-border); }
 }
 
 @media (max-width: 599px) {
@@ -118,3 +112,80 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 1ms !important; transition-duration: 1ms !important; }
 }
+
+/* ---------------------------------------------------------------------------
+ * v3.0.108 learnability pass: hub card, first-run guide, advanced disclosure,
+ * group-labelled command results, inline directory actions, and the refresh
+ * progress line. All of these are additive surfaces on top of the shared
+ * tokens; none of them redefine a control the Material layer already owns.
+ * ------------------------------------------------------------------------ */
+
+/* The page title carries the health tone, so "异常" no longer reads like a
+   second caption on an otherwise normal page. */
+.workspace-page-intro__title { display: flex; align-items: center; gap: 10px; }
+.workspace-page-intro__title > svg { flex-shrink: 0; }
+.workspace-page-intro--warning .workspace-page-intro__title { color: var(--workspace-amber); }
+.workspace-page-intro--warning .workspace-page-intro__title > svg { color: var(--workspace-amber); }
+
+/* Hub facts, folded in from the retired 中枢状态 page. */
+.workspace-hub-card { margin: 0 0 26px; }
+.workspace-hub-card__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 28px; padding: 4px 24px 8px; }
+.workspace-hub-card .workspace-form__actions { padding: 8px 24px 22px; }
+
+/* The attention list sits directly in the page column now that the old
+   two-up overview grid is gone, so it carries its own bottom rhythm. */
+.workspace-overview-devices { margin: 0 0 26px; }
+.workspace-overview-devices .workspace-muted-block { margin: 0 24px 22px; }
+
+/* First-run guide. Deliberately quiet: it is a card, not a modal. */
+.workspace-onboarding { margin: 0 0 26px; padding: 20px 22px; border: 1px solid var(--workspace-border); border-radius: 14px; background: var(--workspace-surface-subtle); }
+.workspace-onboarding__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.workspace-onboarding__lead { margin: 6px 0 0; color: var(--workspace-text); font-size: 15px; font-weight: 620; }
+.workspace-onboarding__steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 18px 0 0; padding: 0; list-style: none; }
+.workspace-onboarding__steps > li { display: flex; min-width: 0; gap: 12px; }
+.workspace-onboarding__index { display: grid; width: 22px; height: 22px; flex-shrink: 0; place-items: center; border-radius: 50%; color: var(--cds-text-on-color, #fff); background: var(--workspace-accent); font-size: 12px; font-weight: 650; }
+.workspace-onboarding__body { min-width: 0; }
+.workspace-onboarding__body strong { display: block; color: var(--workspace-text); font-size: 13px; }
+.workspace-onboarding__body p { margin: 4px 0 8px; color: var(--workspace-text-secondary); font-size: 12px; line-height: 1.6; }
+.workspace-onboarding__footer { display: flex; align-items: center; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--workspace-border); }
+.workspace-onboarding__footer p { margin: 0; color: var(--workspace-text-muted); font-size: 12px; }
+
+/* Advanced settings: collapsed by default, still saved on change. */
+.workspace-advanced { border: 1px solid var(--workspace-border); border-radius: 14px; background: var(--workspace-surface); }
+.workspace-advanced__summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 16px 20px; cursor: pointer; list-style: none; }
+.workspace-advanced__summary::-webkit-details-marker { display: none; }
+.workspace-advanced__summary > svg { color: var(--workspace-text-muted); transition: transform var(--workspace-transition); }
+.workspace-advanced[open] > .workspace-advanced__summary > svg { transform: rotate(180deg); }
+.workspace-advanced__copy strong { display: block; color: var(--workspace-text); font-size: 14px; }
+.workspace-advanced__copy small { display: block; margin-top: 3px; color: var(--workspace-text-muted); font-size: 12px; }
+.workspace-advanced__body { padding: 4px 20px 20px; border-top: 1px solid var(--workspace-border); }
+.workspace-advanced__body .workspace-surface { box-shadow: none; border: 1px solid var(--workspace-border); }
+
+/* Command panel groups. */
+.workspace-command__group { padding: 14px 16px 6px; color: var(--workspace-text-muted); font-size: 11px; font-weight: 680; letter-spacing: .04em; }
+.workspace-command__list > .workspace-command__group:first-child { padding-top: 4px; }
+
+/* Copy feedback, so a clipboard failure is not indistinguishable from success. */
+.workspace-copy { display: inline-flex; align-items: center; gap: 8px; }
+.workspace-copy__state { color: var(--workspace-text-muted); font-size: 12px; }
+
+/* Directory row actions in management mode: one click, no menu to discover. */
+.guanlan-table-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+.guanlan-table-icon-action { display: grid; width: 32px; height: 32px; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 8px; color: var(--workspace-text-secondary); background: transparent; cursor: pointer; transition: background var(--workspace-transition), color var(--workspace-transition); }
+.guanlan-table-icon-action:hover:not(:disabled) { color: var(--workspace-text); background: var(--workspace-surface-hover); }
+.guanlan-table-icon-action:disabled { opacity: .4; cursor: not-allowed; }
+.guanlan-table-icon-action.is-danger { color: var(--workspace-red); }
+.guanlan-table-icon-action.is-danger:hover:not(:disabled) { color: var(--workspace-red); background: color-mix(in srgb, var(--workspace-red) 12%, transparent); }
+
+/* Traffic calendar paging as icon buttons. */
+.workspace-traffic-calendar__nav-button { min-width: 34px; padding-inline: 6px; }
+
+/* Refresh progress. The topbar already had a spinner inside a button label;
+   this is the page-level signal that data is on its way. */
+.workspace-refresh-bar { position: fixed; z-index: 45; top: 0; left: 0; width: 100%; height: 2px; overflow: hidden; pointer-events: none; }
+.workspace-refresh-bar::after { display: block; width: 38%; height: 100%; content: ""; background: var(--workspace-accent); animation: workspace-refresh-slide 1.1s ease-in-out infinite; }
+@keyframes workspace-refresh-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(360%); }
+}
+

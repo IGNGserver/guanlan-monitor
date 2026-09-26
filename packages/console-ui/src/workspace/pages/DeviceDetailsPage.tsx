@@ -201,7 +201,7 @@ export function DeviceDetailsPage() {
   const commitLimitBytes = filteredLatest
     ? filteredLatest.memoryCommitLimitBytes || filteredLatest.memoryTotalBytes + filteredLatest.swapTotalBytes
     : 0;
-  const settingsSection = capabilities.canConfigureConnection ? "connections" : "workspace";
+  const settingsSection = "connections" as const;
 
   const chartContext: DeviceChartContext = {
     device: selectedDevice,
@@ -298,6 +298,8 @@ export function DeviceDetailsPage() {
   return (
     <div ref={rootRef} className={`workspace-page workspace-page--device${isFullscreen ? " workspace-page--fullscreen" : ""}`}>
       <nav className="workspace-breadcrumb" aria-label="面包屑">
+        <button type="button" onClick={() => navigate({ kind: "overview" })}>总览</button>
+        <span aria-hidden="true">/</span>
         <button type="button" onClick={() => navigate({ kind: "devices" })}>设备</button>
         <span aria-hidden="true">/</span>
         <strong>{selectedDevice.hostname}</strong>
@@ -309,19 +311,20 @@ export function DeviceDetailsPage() {
         actions={<Button variant="quiet" onClick={() => navigate({ kind: "devices" })}><Icon name="back" size={16} />返回设备目录</Button>}
       />
 
-      <div className="workspace-device-statusline">
-        <StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} />
-        <span>Agent {selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</span>
-        <span>通道 {selectedDevice.agentChannel ?? "未知"}</span>
-        {selectedDevice.unavailableMetrics?.length ? <span>不适用指标：{selectedDevice.unavailableMetrics.join("、")}</span> : null}
-        <span>{snapshotSource === "cache" ? `缓存于 ${formatDate(snapshot?.cache.savedAt)}` : `数据更新时间 ${formatDate(snapshot?.generatedAt)}`}</span>
-        <StatusLabel state={deviceSourceState} />
+      {/* One card carries every state fact. They used to be split across a
+          status line and a facts strip that repeated the same two things, so
+          answering "is this device live?" meant reading three places. */}
+      <div className="workspace-device-facts" aria-label="设备事实">
+        <div><span>设备状态</span><strong><StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} compact />{selectedDevice.status === "online" ? "在线" : "离线"}</strong></div>
+        <div><span>数据链路</span><strong><StatusLabel state={deviceSourceState} compact />{snapshotSource === "cache" ? "离线缓存" : snapshotSource === "live" ? "实时中枢" : snapshotSource === "empty" ? "等待数据" : "连接异常"}</strong></div>
+        <div><span>最后在线</span><strong>{formatDate(selectedDevice.lastSeenAt)} · {selectedDevice.status === "online" ? "刚刚上报" : "已停止上报"}</strong></div>
+        <div><span>{snapshotSource === "cache" ? "缓存时间" : "数据时间"}</span><strong>{formatDate(snapshotSource === "cache" ? snapshot?.cache.savedAt : snapshot?.generatedAt)}</strong></div>
+        <div><span>Agent 版本</span><strong>{selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</strong></div>
+        <div><span>发布通道</span><strong>{selectedDevice.agentChannel ?? "未知"}</strong></div>
+        <div><span>列表位置</span><strong>{(selectedDevice.sortOrder ?? 0) + 1}</strong></div>
       </div>
 
-      <div className="workspace-device-facts" aria-label="设备事实">
-        <div><span>最近心跳</span><strong>{formatDate(selectedDevice.lastSeenAt)} · {selectedDevice.status === "online" ? "有效" : "已过期"}</strong></div>
-        <div><span>中枢顺序</span><strong>{(selectedDevice.sortOrder ?? 0) + 1}</strong></div>
-      </div>
+      {selectedDevice.unavailableMetrics?.length ? <div className="workspace-inline-note" role="status"><Icon name="about" size={15} />本机不适用指标：{selectedDevice.unavailableMetrics.join("、")}；对应图表会留空而不是估算。</div> : null}
 
       {deviceStateBanner && (
         <div className={`workspace-device-state-banner workspace-device-state-banner--${deviceStateBanner.tone}`} role={deviceStateBanner.tone === "offline" ? "alert" : "status"}>

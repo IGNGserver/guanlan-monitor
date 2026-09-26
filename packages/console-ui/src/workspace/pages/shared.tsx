@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { DataTable, Modal, OverflowMenu, OverflowMenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow, Tag } from "@carbon/react";
+import { Modal, Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow, Tag } from "@carbon/react";
 import type { AgentProbeProvider, AgentProbeTarget, DeviceMetricKey, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import appIcon from "../../assets/app-icon.png";
 import { useWorkspace } from "../WorkspaceContext";
@@ -124,8 +124,14 @@ const probeProviderLabels: Record<AgentProbeProvider, string> = {
   disabled: "禁用"
 };
 
-function PageIntro({ eyebrow, title, description, actions }: { eyebrow?: string; title: string; description?: string; actions?: React.ReactNode }) {
-  return <div className="workspace-page-intro"><div>{eyebrow && <div className="workspace-page-intro__eyebrow">{eyebrow}</div>}<h2>{title}</h2>{description && <p>{description}</p>}</div>{actions && <div className="workspace-page-intro__actions">{actions}</div>}</div>;
+/**
+ * Page header. `tone` carries the health state into the title itself: the
+ * overview used to say "中枢连接异常" in the same weight and colour as
+ * "系统状态正常", so a scanning reader treated the two as the same kind of
+ * sentence.
+ */
+function PageIntro({ eyebrow, title, description, actions, tone = "normal" }: { eyebrow?: string; title: string; description?: string; actions?: React.ReactNode; tone?: "normal" | "warning" | "empty" }) {
+  return <div className={`workspace-page-intro workspace-page-intro--${tone}`}><div>{eyebrow && <div className="workspace-page-intro__eyebrow">{eyebrow}</div>}<h2 className="workspace-page-intro__title">{tone === "warning" && <Icon name="warning" size={18} />}<span>{title}</span></h2>{description && <p>{description}</p>}</div>{actions && <div className="workspace-page-intro__actions">{actions}</div>}</div>;
 }
 
 function DeviceDirectoryFilterBar({
@@ -157,7 +163,7 @@ function DeviceDirectoryFilterBar({
       <M3Chip selected={statusFilter === "online"} onClick={() => onStatusFilterChange("online")}>在线 {onlineCount}</M3Chip>
       <M3Chip selected={statusFilter === "offline"} onClick={() => onStatusFilterChange("offline")}>离线 {devices.length - onlineCount}</M3Chip>
     </div>
-    <M3Select className="workspace-directory-toolbar__sort" label="排序" hideLabel value={sort} onChange={(event) => onSortChange(event.target.value as DeviceDirectorySort)} disabled={sortDisabled} options={[{ value: "order", label: "中枢顺序" }, { value: "name", label: "名称" }, { value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "lastSeen", label: "最近响应" }]} />
+    <M3Select className="workspace-directory-toolbar__sort" label="排序" hideLabel value={sort} onChange={(event) => onSortChange(event.target.value as DeviceDirectorySort)} disabled={sortDisabled} options={[{ value: "order", label: "自定义顺序" }, { value: "name", label: "名称" }, { value: "cpu", label: "CPU 使用率" }, { value: "memory", label: "内存使用" }, { value: "lastSeen", label: "最后在线" }]} />
     {actions && <div className="workspace-directory-toolbar__actions">{actions}</div>}
   </div>;
 }
@@ -245,6 +251,21 @@ function directoryStatusTag(device: DeviceSummary) {
   return <Tag type={device.status === "online" ? "green" : "gray"}>{device.status === "online" ? "在线" : "离线"}</Tag>;
 }
 
+/**
+ * The device directory.
+ *
+ * Columns are declared once and rendered from that same list, so a header and
+ * its cells cannot disagree — an earlier version switched on the header label
+ * while the definitions were keyed, which silently fell back to raw values.
+ * "设备" is the one word used for a monitored machine; "实例" only survives
+ * where it means a piece of hardware inside it.
+ */
+interface DirectoryColumn {
+  key: string;
+  header: string;
+  cell: (device: DeviceSummary) => React.ReactNode;
+}
+
 function CarbonDeviceTable({
   devices,
   order,
@@ -261,82 +282,92 @@ function CarbonDeviceTable({
   emptyState?: React.ReactNode;
 }) {
   const { navigate } = useWorkspace();
-  const headers = [
-    { key: "status", header: "状态" },
-    { key: "device", header: "设备实例" },
-    { key: "cpu", header: "CPU" },
-    { key: "memory", header: "内存" },
-    { key: "disk", header: "磁盘" },
-    { key: "heartbeat", header: "最近心跳" },
-    { key: "actions", header: "操作" }
+  const openDevice = (device: DeviceSummary) => navigate({ kind: "device", deviceId: device.deviceId });
+  const deviceIndex = (device: DeviceSummary) => order?.indexOf(device.deviceId) ?? -1;
+  const columns: DirectoryColumn[] = [
+    { key: "status", header: "状态", cell: (device) => directoryStatusTag(device) },
+    {
+      key: "device",
+      header: "设备",
+      cell: (device) => <>
+        <button className="guanlan-table-link" type="button" onClick={() => openDevice(device)}>{device.hostname}</button>
+        <small className="guanlan-table-secondary">{`${device.os} · ID ${device.deviceId}`}</small>
+      </>
+    },
+    { key: "cpu", header: "CPU 使用率", cell: (device) => isMetricUnavailable(device, "cpuUsage") || device.cpuUsagePercent == null ? "—" : `${device.cpuUsagePercent}%` },
+    { key: "memory", header: "内存使用", cell: (device) => directoryCapacityText(device, "memory", isMetricUnavailable(device, "memoryUsage")) },
+    { key: "disk", header: "磁盘使用", cell: (device) => directoryCapacityText(device, "disk", isMetricUnavailable(device, "diskUsage")) },
+    {
+      key: "lastSeen",
+      header: "最后在线",
+      cell: (device) => <>
+        <span className={device.status === "online" ? "" : "guanlan-table-stale"}>{formatDate(device.lastSeenAt)}</span>
+        <small className="guanlan-table-secondary">{device.status === "online" ? "刚刚上报" : "已停止上报"}</small>
+      </>
+    },
+    {
+      key: "actions",
+      header: "操作",
+      cell: (device) => manageMode
+        ? <div className="guanlan-table-row-actions">
+          <button className="guanlan-table-icon-action" type="button" aria-label="上移" title="上移" disabled={deviceIndex(device) <= 0} onClick={() => onMove?.(device.deviceId, -1)}><Icon name="chevronUp" size={15} /></button>
+          <button className="guanlan-table-icon-action" type="button" aria-label="下移" title="下移" disabled={deviceIndex(device) < 0 || deviceIndex(device) >= (order?.length ?? 1) - 1} onClick={() => onMove?.(device.deviceId, 1)}><Icon name="chevron" size={15} /></button>
+          <button className="guanlan-table-icon-action is-danger" type="button" aria-label="删除" title="删除" onClick={() => onDelete?.(device)}><Icon name="delete" size={15} /></button>
+        </div>
+        : <button className="guanlan-table-row-action" type="button" aria-label={`打开 ${device.hostname}`} onClick={() => openDevice(device)}><Icon name="arrow" size={14} /></button>
+    }
   ];
-  const rows = devices.map((device) => ({
-    id: device.deviceId,
-    status: device.status,
-    device: device.hostname,
-    cpu: isMetricUnavailable(device, "cpuUsage") || device.cpuUsagePercent == null ? "—" : `${device.cpuUsagePercent}%`,
-    memory: directoryCapacityText(device, "memory", isMetricUnavailable(device, "memoryUsage")),
-    disk: directoryCapacityText(device, "disk", isMetricUnavailable(device, "diskUsage")),
-    heartbeat: formatDate(device.lastSeenAt),
-    actions: ""
-  }));
-
-  if (!rows.length) return <>{emptyState ?? <EmptyState title="没有匹配设备" detail="尝试清空搜索或调整筛选条件。" />}</>;
+  if (!devices.length) return <>{emptyState ?? <EmptyState title="没有匹配设备" detail="尝试清空搜索或调整筛选条件。" />}</>;
 
   return (
-    <DataTable rows={rows} headers={headers} isSortable={false}>
-      {({ rows: tableRows, headers: tableHeaders, getTableProps, getHeaderProps, getRowProps }) => (
-        <TableContainer>
-          <Table {...getTableProps()} size="md" useZebraStyles={false}>
-            <TableHead><TableRow>{tableHeaders.map((header) => <TableHeader {...getHeaderProps({ header })}>{header.header}</TableHeader>)}</TableRow></TableHead>
-            <TableBody>
-              {tableRows.map((row) => {
-                const device = devices.find((item) => item.deviceId === row.id);
-                if (!device) return null;
-                const deviceIndex = order?.indexOf(device.deviceId) ?? -1;
-                const rowIsActionable = !manageMode;
-                const openDevice = () => navigate({ kind: "device", deviceId: device.deviceId });
-                return (
-                  <TableRow
-                    {...getRowProps({ row })}
-                    className={rowIsActionable ? "guanlan-data-table-row--actionable" : undefined}
-                    tabIndex={rowIsActionable ? 0 : undefined}
-                    aria-label={rowIsActionable ? `打开 ${device.hostname}` : undefined}
-                    onClick={rowIsActionable ? (event) => {
-                      if (event.target instanceof Element && event.target.closest("button, a, [role=menuitem]")) return;
-                      openDevice();
-                    } : undefined}
-                    onKeyDown={rowIsActionable ? (event) => {
-                      if (event.key !== "Enter" && event.key !== " ") return;
-                      if (event.target instanceof Element && event.target.closest("button, a, [role=menuitem]")) return;
-                      event.preventDefault();
-                      openDevice();
-                    } : undefined}
-                  >
-                    {row.cells.map((cell) => {
-                      if (cell.info.header === "status") return <TableCell key={cell.id}>{directoryStatusTag(device)}</TableCell>;
-                      if (cell.info.header === "device") return <TableCell key={cell.id}><button className="guanlan-table-link" type="button" onClick={openDevice}>{device.hostname}</button><small className="guanlan-table-secondary">{`${device.os} · ID ${device.deviceId}`}</small></TableCell>;
-                      if (cell.info.header === "heartbeat") return <TableCell key={cell.id}><span className={device.status === "online" ? "" : "guanlan-table-stale"}>{cell.value}</span><small className="guanlan-table-secondary">{device.status === "online" ? "当前响应" : "心跳已过期"}</small></TableCell>;
-                      if (cell.info.header === "actions") return <TableCell key={cell.id}>{manageMode && (onMove || onDelete) ? <OverflowMenu aria-label={`管理 ${device.hostname}`} size="sm" direction="bottom"><OverflowMenuItem itemText="上移" disabled={deviceIndex <= 0} onClick={() => onMove?.(device.deviceId, -1)} /><OverflowMenuItem itemText="下移" disabled={deviceIndex < 0 || deviceIndex >= (order?.length ?? 1) - 1} onClick={() => onMove?.(device.deviceId, 1)} /><OverflowMenuItem itemText="删除" isDelete onClick={() => onDelete?.(device)} /></OverflowMenu> : <button className="guanlan-table-row-action" type="button" aria-label={`打开 ${device.hostname}`} onClick={openDevice}><Icon name="arrow" size={14} /></button>}</TableCell>;
-                      return <TableCell key={cell.id}>{cell.value}</TableCell>;
-                    })}
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
-    </DataTable>
+    <TableContainer>
+      <Table size="md" aria-label="设备列表">
+        <TableHead>
+          <TableRow>{columns.map((column) => <TableHeader key={column.header}>{column.header}</TableHeader>)}</TableRow>
+        </TableHead>
+        <TableBody>
+          {devices.map((device) => {
+            const rowIsActionable = !manageMode;
+            return <TableRow
+              className={rowIsActionable ? "guanlan-data-table-row--actionable" : undefined}
+              tabIndex={rowIsActionable ? 0 : undefined}
+              aria-label={rowIsActionable ? `打开 ${device.hostname}` : undefined}
+              key={device.deviceId}
+              onClick={rowIsActionable ? (event) => {
+                if (event.target instanceof Element && event.target.closest("button, a, [role=menuitem]")) return;
+                openDevice(device);
+              } : undefined}
+              onKeyDown={rowIsActionable ? (event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                if (event.target instanceof Element && event.target.closest("button, a, [role=menuitem]")) return;
+                event.preventDefault();
+                openDevice(device);
+              } : undefined}
+            >
+              {columns.map((column) => <TableCell key={column.key}>{column.cell(device)}</TableCell>)}
+            </TableRow>;
+          })}
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 }
 
+
+/**
+ * The four health tiles.
+ *
+ * "待处理事项" used to show one number whose composition nobody could
+ * reconstruct: it added offline devices to local collector problems and never
+ * said so. The tile is now called 需要关注 and spells out both parts, so the
+ * figure can be checked against the device directory instead of trusted.
+ */
 function OverviewSummary({
   total,
   online,
   offline,
-  issueCount,
-  instanceLabel,
+  attentionCount,
+  attentionDetail,
   sourceLabel,
   sourceState,
   sourceDetail
@@ -344,8 +375,8 @@ function OverviewSummary({
   total: number;
   online: number;
   offline: number;
-  issueCount: number | null;
-  instanceLabel: string;
+  attentionCount: number | null;
+  attentionDetail: string;
   sourceLabel: string;
   sourceState: "online" | "offline" | "cached" | "warning" | "unknown";
   sourceDetail: string;
@@ -353,19 +384,19 @@ function OverviewSummary({
   return (
     <div className="workspace-overview-summary" aria-label="状态摘要">
       <div className="workspace-overview-summary__item">
-        <span>当前实例</span>
+        <span>设备总数</span>
         <strong>{total}</strong>
-        <small>{instanceLabel} · 全局健康统计</small>
+        <small>接入当前中枢的设备</small>
       </div>
       <div className="workspace-overview-summary__item">
-        <span>在线状态</span>
+        <span>在线</span>
         <strong>{online}<small> / {total}</small></strong>
-        <small>{offline ? `${offline} 台离线或未响应` : "全部设备正在响应"}</small>
+        <small>{offline ? `${offline} 台未响应` : "全部设备正在响应"}</small>
       </div>
-      <div className={`workspace-overview-summary__item${issueCount ? " is-warning" : ""}`}>
-        <span>待处理事项</span>
-        <strong>{issueCount == null ? "无法判断" : issueCount}</strong>
-        <small>{issueCount == null ? "连接状态异常，暂无法判断" : issueCount ? "需要进一步检查" : "当前没有待处理事项"}</small>
+      <div className={`workspace-overview-summary__item${attentionCount ? " is-warning" : ""}`}>
+        <span>需要关注</span>
+        <strong>{attentionCount == null ? "无法判断" : attentionCount}</strong>
+        <small>{attentionCount == null ? "连接状态异常，暂无法判断" : attentionDetail}</small>
       </div>
       <div className="workspace-overview-summary__item workspace-overview-summary__item--source">
         <div className="workspace-overview-summary__label"><span>数据来源</span><StatusLabel state={sourceState} compact /></div>
@@ -538,8 +569,8 @@ function TrafficCalendarControls({
         aria-label="流量日历范围"
       />
       <div className="workspace-traffic-calendar__navigation" role="group" aria-label="流量日历翻页">
-        <Button variant="quiet" onClick={() => onShiftAnchor(-1)} aria-label="查看上一周期">上一周期</Button>
-        <Button variant="quiet" onClick={() => onShiftAnchor(1)} aria-label="查看下一周期">下一周期</Button>
+        <Button variant="quiet" className="workspace-traffic-calendar__nav-button" onClick={() => onShiftAnchor(-1)} aria-label="查看上一周期" title="查看上一周期"><Icon name="back" size={16} /></Button>
+        <Button variant="quiet" className="workspace-traffic-calendar__nav-button" onClick={() => onShiftAnchor(1)} aria-label="查看下一周期" title="查看下一周期"><Icon name="arrow" size={16} /></Button>
       </div>
     </div>
   );

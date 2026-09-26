@@ -1,18 +1,24 @@
+/**
+ * The canonical settings sections are identical on every client: the same id
+ * always means the same page, so a user who learned the desktop settings can
+ * find their way around the browser console without re-learning names.
+ *
+ * `workspace` and `session` were browser-only section ids and `connections` was
+ * desktop-only. They stay parseable as aliases (see `legacySettingsSections`)
+ * because bookmarks and chat screenshots still carry the old hashes.
+ */
 export type SettingsSection =
   | "general"
-  | "workspace"
   | "appearance"
   | "connections"
   | "agent"
   | "data"
   | "shortcuts"
-  | "session"
   | "about";
 
 export type WorkspaceRoute =
   | { kind: "overview" }
   | { kind: "devices" }
-  | { kind: "hub"; hubId: string }
   | { kind: "device"; deviceId: string }
   | { kind: "settings"; section: SettingsSection };
 
@@ -20,15 +26,19 @@ export const defaultRoute: WorkspaceRoute = { kind: "overview" };
 
 const settingsSections = new Set<SettingsSection>([
   "general",
-  "workspace",
   "appearance",
   "connections",
   "agent",
   "data",
   "shortcuts",
-  "session",
   "about"
 ]);
+
+/** Retired section ids mapped onto the section that replaced them. */
+const legacySettingsSections: Record<string, SettingsSection> = {
+  workspace: "general",
+  session: "connections"
+};
 
 function decodeSegment(value: string): string | null {
   try {
@@ -43,9 +53,16 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute {
   const [kind, rawId] = value.split("/");
   const id = rawId ? decodeSegment(rawId) : null;
   if (kind === "device" && id) return { kind: "device", deviceId: id };
-  if (kind === "hub" && id) return { kind: "hub", hubId: id };
-  if (kind === "settings" && id && settingsSections.has(id as SettingsSection)) {
-    return { kind: "settings", section: id as SettingsSection };
+  // The standalone hub page was folded into the overview: the connection facts
+  // it used to own are now a card there, and its settings live under 连接.
+  if (kind === "hub") return defaultRoute;
+  if (kind === "settings") {
+    if (id && settingsSections.has(id as SettingsSection)) return { kind: "settings", section: id as SettingsSection };
+    // A retired id still opens the page that absorbed it instead of bouncing the
+    // user back to the overview with no explanation.
+    if (id && legacySettingsSections[id]) return { kind: "settings", section: legacySettingsSections[id] };
+    // `#settings` without a section is the entry point the sidebar footer uses.
+    if (!id) return { kind: "settings", section: "general" };
   }
   return defaultRoute;
 }
@@ -61,8 +78,6 @@ export function serializeWorkspaceRoute(route: WorkspaceRoute): string {
       return "#devices";
     case "device":
       return `#device/${encodeURIComponent(route.deviceId)}`;
-    case "hub":
-      return `#hub/${encodeURIComponent(route.hubId)}`;
     case "settings":
       return `#settings/${route.section}`;
     default:

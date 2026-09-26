@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { DeviceSummary } from "@dsc/shared";
-import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
+import { useWorkspace } from "../WorkspaceContext";
 import { Button, Icon, Surface } from "../ui";
 import { selectDeviceDirectory, type DeviceDirectorySort, type DeviceDirectoryStatus } from "../selectors";
 import { mergeDeviceOrder, registerDeviceOrderDraftGuard } from "../deviceOrderDraft";
 import { CarbonDeviceTable, ConfirmDialog, DeviceDirectoryFilterBar, EmptyState, ErrorSurface, LoadingSurface, PageIntro } from "./shared";
 
 export function DevicesPage() {
-  const { snapshot, allDevices, loading, error, refresh, navigate, deleteInstance, reorderInstances, mutationPending, capabilities } = useWorkspace();
+  const { snapshot, allDevices, loading, error, refresh, deleteInstance, reorderInstances, mutationPending, openSettings } = useWorkspace();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<DeviceDirectoryStatus>("all");
   const [sort, setSort] = useState<DeviceDirectorySort>("order");
@@ -82,14 +82,12 @@ export function DevicesPage() {
     [next[currentIndex], next[nextIndex]] = [next[nextIndex], next[currentIndex]];
     setOrderDraft(next);
   };
-  const settingsSection: SettingsSection = capabilities.canConfigureConnection ? "connections" : "workspace";
 
   return <div className="workspace-page workspace-page--devices">
     <PageIntro
       eyebrow="设备"
       title="全部设备"
-      description={snapshot.source === "cache" ? "当前显示离线缓存；筛选和查看可用，但管理操作已禁用。" : "浏览、筛选和管理接入当前中枢的全部实例。"}
-      actions={<Button variant="quiet" onClick={() => navigate({ kind: "hub", hubId: "primary" })}><Icon name="hub" size={16} />查看中枢</Button>}
+      description={snapshot.source === "cache" ? "当前显示离线缓存；可以搜索和查看，管理操作已禁用。" : "搜索、筛选、排序和管理接入当前中枢的全部设备。"}
     />
     <DeviceDirectoryFilterBar
       devices={allDevices}
@@ -100,8 +98,9 @@ export function DevicesPage() {
       sort={sort}
       onSortChange={setSort}
       sortDisabled={manageMode}
-      actions={!manageMode ? <Button variant="quiet" onClick={beginManage} disabled={!canManage}>管理顺序</Button> : <div className="workspace-order-actions"><Button variant="primary" onClick={() => void saveManage()} disabled={!orderDirty || mutationPending}>保存顺序</Button><Button variant="quiet" onClick={cancelManage} disabled={mutationPending}>取消</Button></div>}
+      actions={!manageMode ? <Button variant="secondary" onClick={beginManage} disabled={!canManage}><Icon name="device" size={15} />管理顺序</Button> : <div className="workspace-order-actions"><Button variant="primary" onClick={() => void saveManage()} disabled={!orderDirty || mutationPending}>保存顺序</Button><Button variant="quiet" onClick={cancelManage} disabled={mutationPending}>取消</Button></div>}
     />
+    {manageMode && <div className="workspace-inline-note" role="status">调整只生成草稿，点“保存顺序”才会写入中枢；未保存就离开会被提示。</div>}
     {!canManage && <div className="workspace-inline-note" role="status">{snapshot.source === "cache" ? "离线缓存为只读快照。" : "需要实时连接并完成认证后才能删除或调整设备顺序。"}</div>}
     <Surface className="workspace-directory-surface guanlan-data-table-surface">
       {visibleDevices.length > 0 && <div className="workspace-directory-scroll-hint" role="note">左右滑动查看更多字段 · 点按设备行查看详情</div>}
@@ -116,6 +115,8 @@ export function DevicesPage() {
         />
       </div>
     </Surface>
-    {deleteTarget && <ConfirmDialog title={`删除“${deleteTarget.hostname}”？`} detail="删除后该实例不会继续出现在中枢列表中；下次宿主机或 Agent 再次上报时，它会重新显示。" confirmLabel="删除实例" disabled={mutationPending} onConfirm={() => { const deviceId = deleteTarget.deviceId; setDeleteTarget(null); void deleteInstance(deviceId); }} onCancel={() => setDeleteTarget(null)} />}
+    {!allDevices.length && <EmptyState title="还没有设备接入" detail="目标设备上的 Agent 上报一次后，就会自动出现在这里；也可以先检查中枢连接。" action={<Button variant="primary" onClick={() => openSettings("connections")}>连接设置</Button>} />}
+    {deleteTarget && <ConfirmDialog title={`删除“${deleteTarget.hostname}”？`} detail="删除后该设备不再出现在中枢列表；宿主机或 Agent 下次上报时，它会重新出现。" confirmLabel="删除设备" disabled={mutationPending} onConfirm={() => { const deviceId = deleteTarget.deviceId; setDeleteTarget(null); void deleteInstance(deviceId); }} onCancel={() => setDeleteTarget(null)} />}
   </div>;
 }
+

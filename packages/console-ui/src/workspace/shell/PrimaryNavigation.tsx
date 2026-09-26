@@ -6,22 +6,27 @@ import { Icon, type IconName } from "../ui";
 
 const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: string }).src;
 
+/**
+ * Both clients share one settings vocabulary. A section only appears where it
+ * can actually be used, and the machine-agent entry is the single exception
+ * that exists on the desktop client alone.
+ */
 const desktopSettingsNav: Array<{ id: SettingsSection; label: string; icon: IconName }> = [
   { id: "general", label: "通用", icon: "settings" },
   { id: "appearance", label: "外观", icon: "appearance" },
-  { id: "connections", label: "连接与上报", icon: "connection" },
+  { id: "connections", label: "连接", icon: "connection" },
   { id: "agent", label: "本机 Agent", icon: "agent" },
   { id: "data", label: "数据与更新", icon: "data" },
-  { id: "shortcuts", label: "快捷键", icon: "keyboard" },
+  { id: "shortcuts", label: "快捷键参考", icon: "keyboard" },
   { id: "about", label: "关于观澜", icon: "about" }
 ];
 
 const webSettingsNav: Array<{ id: SettingsSection; label: string; icon: IconName }> = [
-  { id: "workspace", label: "中枢状态", icon: "overview" },
+  { id: "general", label: "通用", icon: "settings" },
   { id: "appearance", label: "外观", icon: "appearance" },
-  { id: "session", label: "会话安全", icon: "connection" },
+  { id: "connections", label: "连接", icon: "connection" },
   { id: "data", label: "数据与更新", icon: "data" },
-  { id: "shortcuts", label: "快捷键", icon: "keyboard" },
+  { id: "shortcuts", label: "快捷键参考", icon: "keyboard" },
   { id: "about", label: "关于观澜", icon: "about" }
 ];
 
@@ -29,13 +34,17 @@ export function settingsNavigation(capabilities: ReturnType<typeof useWorkspace>
   return capabilities.canControlNativeWindow ? desktopSettingsNav : webSettingsNav;
 }
 
+/**
+ * One place decides which sections a client exposes, so the sidebar, the
+ * compact settings switcher and the command panel can never disagree.
+ */
+export function visibleSettingsNavigation(capabilities: ReturnType<typeof useWorkspace>["capabilities"]) {
+  return settingsNavigation(capabilities).filter((item) => (item.id === "agent" ? capabilities.canManageLocalAgent : true));
+}
+
 export function SettingsNavigation() {
   const { route, navigate, capabilities } = useWorkspace();
-  const visibleSettings = settingsNavigation(capabilities).filter((item) => {
-    if (item.id === "agent") return capabilities.canManageLocalAgent;
-    if (item.id === "connections") return capabilities.canConfigureConnection;
-    return true;
-  });
+  const visibleSettings = visibleSettingsNavigation(capabilities);
   return (
     <nav className="workspace-sidebar__nav" aria-label="设置导航">
       <div className="workspace-sidebar__section-title">设置</div>
@@ -65,8 +74,7 @@ export function PrimaryNavigation({ sidebarPeek, onSidebarLeave }: { sidebarPeek
       {inSettings ? <SettingsNavigation /> : (
         <nav className="workspace-sidebar__nav" aria-label="设备控制台导航">
           <M3NavigationItem className="workspace-nav-item" selected={route.kind === "overview"} onClick={() => navigate({ kind: "overview" })} title="总览"><Icon name="overview" /><span>总览</span></M3NavigationItem>
-          <M3NavigationItem className="workspace-nav-item" selected={route.kind === "devices"} onClick={() => navigate({ kind: "devices" })} title="设备"><Icon name="device" /><span>设备</span></M3NavigationItem>
-          <M3NavigationItem className="workspace-nav-item" selected={route.kind === "hub"} onClick={() => navigate({ kind: "hub", hubId: "primary" })} title="中枢状态"><Icon name="hub" /><span>中枢状态</span></M3NavigationItem>
+          <M3NavigationItem className="workspace-nav-item" selected={route.kind === "devices" || route.kind === "device"} onClick={() => navigate({ kind: "devices" })} title="设备"><Icon name="device" /><span>设备</span></M3NavigationItem>
           <div className="workspace-sidebar__spacer" />
           {capabilities.canManageLocalAgent && <M3NavigationItem className="workspace-nav-item" onClick={() => navigate({ kind: "settings", section: "agent" })} title="本机 Agent"><Icon name="agent" /><span>本机 Agent</span></M3NavigationItem>}
         </nav>
