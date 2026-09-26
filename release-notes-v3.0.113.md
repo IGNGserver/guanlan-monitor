@@ -21,6 +21,12 @@
 
 登录页不受影响——`.loginShell` 自带完整的明暗背景。
 
+## 发布过程备注
+
+v3.0.113 的第一个 tag 是坏的，值得记下来：`bb52d3a` 那次提交的 `git add` 明确列了 `VERSION` 与六个 manifest，本地 `verify-version.mjs` 也过了，但提交落地时这些文件不在里面——同一条命令伴随 CIFS 挂载上的 `maintenance.lock` Input/output error。CI 用诚实的方式抓到了它：tag 写着 3.0.113，而 tag 指向的树里 `VERSION` 是 3.0.112，于是 `verify-version` 直接拒绝。
+
+教训是**不能以 `git add` 成功作为「已入索引」的证据**，要用 `git show :VERSION` 从索引本身读回来核对；同理不能以 `gh run watch` 的退出码作为 CI 结论，它不带 `--exit-status` 时恒为 0。
+
 ## 边界
 
 本版本不含安卓端改动与中枢后端行为变更；构建、检查、打包与镜像发布全部由 `.github/workflows/` 承担。
