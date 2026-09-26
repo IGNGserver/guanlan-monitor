@@ -204,8 +204,13 @@
 }
 
 .workspace-overview-summary__item {
+  /* The value row is pinned rather than auto: the "在线状态" tile puts a smaller
+     unit inside its <strong>, and that inline box grew the row by a few pixels,
+     pushing the note of every other tile out of line. */
+  --guanlan-summary-value-height: 2.25rem;
+
   display: grid;
-  grid-template-rows: 1.5rem auto auto;
+  grid-template-rows: 1.5rem var(--guanlan-summary-value-height) auto;
   row-gap: var(--cds-spacing-03, 8px);
   min-width: 0;
   padding: 0 var(--cds-spacing-06, 24px) var(--cds-spacing-05, 16px);
@@ -248,7 +253,7 @@
   margin-top: 0;
   color: var(--cds-text-primary, #161616);
   font-size: 1.75rem;
-  line-height: 2.25rem;
+  line-height: var(--guanlan-summary-value-height);
   font-weight: 400;
 }
 
@@ -256,6 +261,7 @@
   color: var(--cds-text-secondary, #525252);
   font-size: 0.875rem;
   font-weight: 400;
+  line-height: 1;
 }
 
 .workspace-overview-summary__item > small {
@@ -1041,9 +1047,12 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
     flex-wrap: wrap;
   }
 
+  .workspace-overview-summary__item {
+    --guanlan-summary-value-height: 2rem;
+  }
+
   .workspace-overview-summary__item > strong {
     font-size: 1.5rem;
-    line-height: 2rem;
   }
 
   }
