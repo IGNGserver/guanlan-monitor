@@ -95,7 +95,13 @@ fun rememberOneUiCollapse(listState: LazyListState): Float {
   return progress
 }
 
-/** 顶部标题栏（构）：One UI 把标题放在屏幕上方、内容与操作分离。 */
+/**
+ * 顶部标题栏（构）。
+ *
+ * One UI 的组织方式：动作按钮永远贴顶，大标题在它们下方生长；
+ * 滚动时标题块整体上移并淡出，折叠后由同一行的紧凑标题接手——
+ * 所以导航、标题、动作三者始终不会同时占两行高度。
+ */
 @Composable
 fun OneUiTopBar(
   title: String,
@@ -108,8 +114,8 @@ fun OneUiTopBar(
   colors: OneUiColors = OneUiTheme.colors,
   metrics: OneUiMetrics = OneUiTheme.metrics
 ) {
-  val effectiveLarge = large && OneUiTheme.window.useCompactTopBar.not()
-  val height = if (effectiveLarge) {
+  val effectiveLarge = large && !OneUiTheme.window.useCompactTopBar
+  val barHeight = if (effectiveLarge) {
     metrics.topBarLargeHeight * (1f - collapse) + metrics.topBarSmallHeight * collapse
   } else {
     metrics.topBarSmallHeight
@@ -118,54 +124,30 @@ fun OneUiTopBar(
   Column(
     modifier = modifier
       .fillMaxWidth()
-      .height(height)
+      .height(barHeight)
       .background(colors.canvas)
       .padding(horizontal = metrics.screenMargin)
   ) {
-    if (effectiveLarge) {
-      // 展开态：整块标题留在上方，随滚动淡出
-      Box(
-        modifier = Modifier
-          .fillMaxWidth()
-          .weight(1f),
-        contentAlignment = Alignment.BottomStart
-      ) {
-        Column(
+    // 贴顶的一行：导航 + 紧凑标题（仅折叠后可见）+ 动作
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .height(metrics.topBarSmallHeight),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+    ) {
+      navigationIcon?.invoke()
+      if (effectiveLarge) {
+        OneUiText(
+          text = title,
+          role = OneUiTextRole.TopBarCollapsed,
+          maxLines = 1,
+          overflow = TextOverflow.Clip,
           modifier = Modifier
-            .graphicsLayerAlpha(1f - collapse)
-            .padding(bottom = 10.dp)
-        ) {
-          OneUiText(
-            text = title,
-            role = OneUiTextRole.TopBarLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-          )
-          if (!subtitle.isNullOrBlank()) {
-            OneUiText(
-              text = subtitle,
-              role = OneUiTextRole.RowSubtitle,
-              color = colors.textSecondary,
-              maxLines = 2,
-              modifier = Modifier.padding(top = 2.dp)
-            )
-          }
-        }
-      }
-      Row(
-        modifier = Modifier.fillMaxWidth().height(metrics.topBarSmallHeight - 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-      ) {
-        navigationIcon?.invoke()
-        actions()
-      }
-    } else {
-      Row(
-        modifier = Modifier.fillMaxWidth().weight(1f),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
-      ) {
-        navigationIcon?.invoke()
+            .weight(1f)
+            .graphicsLayerAlpha(collapse)
+        )
+      } else {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
           OneUiText(
             text = title,
@@ -183,10 +165,33 @@ fun OneUiTopBar(
             )
           }
         }
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(metrics.spaceXxs)
-        ) { actions() }
+      }
+      actions()
+    }
+
+    if (effectiveLarge) {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .weight(1f)
+          .graphicsLayerAlpha(1f - collapse),
+        verticalArrangement = Arrangement.Bottom
+      ) {
+        OneUiText(
+          text = title,
+          role = OneUiTextRole.TopBarLarge,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis
+        )
+        if (!subtitle.isNullOrBlank()) {
+          OneUiText(
+            text = subtitle,
+            role = OneUiTextRole.RowSubtitle,
+            color = colors.textSecondary,
+            maxLines = 2,
+            modifier = Modifier.padding(top = 2.dp)
+          )
+        }
       }
     }
   }
