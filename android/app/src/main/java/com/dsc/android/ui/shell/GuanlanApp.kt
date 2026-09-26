@@ -21,7 +21,7 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarVisuals
+import androidx.compose.material3.SnackbarData
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -184,7 +184,7 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
         .align(Alignment.BottomCenter)
         .padding(bottom = metrics.spaceXl)
     ) {
-      SnackbarHost(hostState = snackbarHostState) { visuals -> OneUiSnackbar(visuals) }
+      SnackbarHost(hostState = snackbarHostState) { data -> OneUiSnackbar(data) }
     }
 
     // 常驻状态用独立播报区，避免与 Snackbar 重复朗读（适）
@@ -335,7 +335,7 @@ private fun SplashScreen() {
 
 /** One UI 的消息条：胶囊容器 + 单行可读文本（件）。 */
 @Composable
-private fun OneUiSnackbar(visuals: SnackbarVisuals) {
+private fun OneUiSnackbar(data: SnackbarData) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
   Box(
@@ -343,10 +343,10 @@ private fun OneUiSnackbar(visuals: SnackbarVisuals) {
       .padding(horizontal = metrics.screenMargin)
       .background(colors.raised, OneUiTheme.shapes.pill)
       .padding(horizontal = metrics.spaceM, vertical = 13.dp)
-      .semantics { contentDescription = visuals.message }
+      .semantics { contentDescription = data.visuals.message }
   ) {
     OneUiText(
-      text = visuals.message,
+      text = data.visuals.message,
       role = OneUiTextRole.RowSubtitle,
       color = colors.textPrimary,
       modifier = Modifier.fillMaxWidth()
