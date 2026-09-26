@@ -686,7 +686,7 @@
 }
 
 /* Adaptive Navigation Bar: mobile uses a stable bottom surface instead of a floating capsule. */
-@media (max-width: 820px), (orientation: portrait) {
+@media (max-width: 839px), (orientation: portrait) {
   .workspace-sidebar-edge-trigger {
     display: none;
   }
