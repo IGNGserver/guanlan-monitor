@@ -229,6 +229,24 @@ else
     exit 1
   fi
 fi
+
+# docker-compose.yml resolves the image tags and reports the running build from
+# DSC_VERSION and DSC_RELEASE_CHANNEL. Persist both whenever the caller passes
+# them: an .env left behind by an older deployment otherwise makes the next
+# manual `docker compose up` silently fall back to stale images, and an old
+# server would recreate schema the current release has already retired.
+image_version="${DSC_VERSION:-}"
+if [[ -n "$image_version" && ! "$image_version" =~ ^(latest|[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+  echo "DSC_VERSION must be a fixed semantic version or latest." >&2
+  exit 1
+fi
+
+release_channel="${DSC_RELEASE_CHANNEL:-}"
+if [[ -n "$release_channel" && "$release_channel" != "test" && "$release_channel" != "stable" ]]; then
+  echo "DSC_RELEASE_CHANNEL must be test or stable." >&2
+  exit 1
+fi
+
 # An existing initialized volume may retain a legacy root marker. It is
 # tolerated only when this migration recovered that exact live credential;
 # the migration still refuses unrelated weak credentials.
@@ -278,9 +296,19 @@ set_env SESSION_COOKIE_SECURE "$session_cookie_secure"
 set_env AGENT_REQUIRE_HTTPS "$agent_require_https"
 set_env TRUST_PROXY true
 
+updated_keys="REDIS_PASSWORD REDIS_URL MYSQL_URL SESSION_COOKIE_SECURE AGENT_REQUIRE_HTTPS TRUST_PROXY"
+if [[ -n "$image_version" ]]; then
+  set_env DSC_VERSION "$image_version"
+  updated_keys="$updated_keys DSC_VERSION"
+fi
+if [[ -n "$release_channel" ]]; then
+  set_env DSC_RELEASE_CHANNEL "$release_channel"
+  updated_keys="$updated_keys DSC_RELEASE_CHANNEL"
+fi
+
 mv "$working_file" "$env_file"
 trap - EXIT
 
 echo "Compose environment preflight: PASS"
 echo "Backup: $backup_file"
-echo "Updated keys: REDIS_PASSWORD REDIS_URL MYSQL_URL SESSION_COOKIE_SECURE AGENT_REQUIRE_HTTPS TRUST_PROXY"
+echo "Updated keys: $updated_keys"
