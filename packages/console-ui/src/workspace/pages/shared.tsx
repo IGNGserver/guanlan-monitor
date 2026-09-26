@@ -253,7 +253,7 @@ function directoryCapacityText(device: DeviceSummary, kind: "memory" | "disk", u
  * to name the same fact in the aggregate tiles only, so a reader counted two
  * kinds of trouble.
  */
-export function DeviceCard({ device }: { device: DeviceSummary }) {
+function DeviceCard({ device }: { device: DeviceSummary }) {
   const { navigate } = useWorkspace();
   const openDevice = () => navigate({ kind: "device", deviceId: device.deviceId });
   const cpuPercent = isMetricUnavailable(device, "cpuUsage") ? null : device.cpuUsagePercent ?? null;
@@ -318,7 +318,7 @@ export function DeviceCard({ device }: { device: DeviceSummary }) {
   );
 }
 
-export function DeviceCardGrid({ devices }: { devices: DeviceSummary[] }) {
+function DeviceCardGrid({ devices }: { devices: DeviceSummary[] }) {
   return (
     <div className="guanlan-device-grid">
       {devices.map((device) => (
