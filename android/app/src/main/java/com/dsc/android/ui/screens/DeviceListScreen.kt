@@ -104,10 +104,12 @@ fun DeviceListScreen(
   var pendingDelete by remember { mutableStateOf<DeviceSummaryDto?>(null) }
   var actionTarget by remember { mutableStateOf<DeviceSummaryDto?>(null) }
 
-  val visible = if (editMode && draftIds != null) {
+  // draftIds 是委托属性，不能智能转换：先取本地快照再判空
+  val draft = draftIds
+  val visible = if (editMode && draft != null) {
     val byId = persisted.associateBy { it.deviceId }
-    val draftSet = draftIds.toSet()
-    draftIds.mapNotNull { byId[it] } + persisted.filterNot { it.deviceId in draftSet }
+    val draftSet = draft.toSet()
+    draft.mapNotNull { byId[it] } + persisted.filterNot { it.deviceId in draftSet }
   } else {
     persisted
   }

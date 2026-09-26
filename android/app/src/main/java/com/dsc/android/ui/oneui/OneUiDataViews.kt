@@ -307,12 +307,12 @@ internal fun OneUiMetricTile(
   Column(
     modifier = modifier
       .defaultMinSize(minHeight = 150.dp)
+      .background(colors.group, shapes.card)
       .oneUiPressable(
         onClick = onClick,
         shape = shapes.card,
         minHeight = null
       )
-      .background(colors.group, shapes.card)
       .padding(metrics.spaceM),
     verticalArrangement = Arrangement.spacedBy(metrics.spaceS)
   ) {
