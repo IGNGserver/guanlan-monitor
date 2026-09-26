@@ -1,7 +1,6 @@
 /* Application-level reset. The shared console stylesheet owns the Carbon
  * theme and all workspace surfaces; this file intentionally stays neutral. */
 :root {
-  color-scheme: light;
   font-family: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
@@ -10,8 +9,6 @@ body {
   min-height: 100%;
   margin: 0;
   padding: 0;
-  background: var(--cds-background, #f4f4f4);
-  color: var(--cds-text-primary, #161616);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -19,6 +16,25 @@ body {
 body {
   min-height: 100dvh;
 }
+
+/* No background, colour or `color-scheme` is declared here, and that is a
+ * correction rather than an omission.
+ *
+ * This file used to carry `background: var(--cds-background, #f4f4f4)` and
+ * `color: var(--cds-text-primary, #161616)` on `html, body`. Carbon's <Theme>
+ * emits its custom properties on `.guanlan-carbon-theme`, a descendant of
+ * `body`, and custom properties do not inherit upward — so on `html` and
+ * `body` those references were always undefined and always fell through to
+ * their literals. The same trap as the `--cds-spacing-*` scale.
+ *
+ * `color-scheme: light` was also pinned here, which told the browser to keep
+ * native scrollbars and form controls light while the console was dark;
+ * `WorkspaceContext` sets the resolved scheme inline, so the declaration only
+ * decided the pre-hydration flash.
+ *
+ * Theme colour for these elements belongs to `workspace.tokens.css` and the
+ * arbiter in `workspace-carbon.scss`, which are ordered after Carbon's own
+ * global `body` rule and can therefore actually win. */
 
 *,
 *::before,
@@ -38,7 +54,7 @@ textarea {
   font: inherit;
 }
 
-::selection {
-  color: var(--cds-text-on-color, #fff);
-  background: var(--cds-interactive, #0f62fe);
-}
+/* No `::selection` here either. `workspace.tokens.css` declares it per theme
+   with Carbon's own `$selection` values; the copy in this file disagreed (blue
+   background, white text) and lost on source order, so it was a second answer
+   to a question only one file should answer. */
