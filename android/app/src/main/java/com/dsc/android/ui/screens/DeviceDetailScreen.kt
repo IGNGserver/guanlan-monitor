@@ -348,7 +348,9 @@ private fun OverviewGroup(data: MetricsDto, state: AppState) {
         add("agent" to (data.device.agentVersion ?: "未知"))
         data.device.agentChannel?.takeIf { it.isNotBlank() }?.let { add("渠道" to it) }
       },
-      selectable = true
+      selectable = true,
+      collapsible = true,
+      defaultExpanded = false
     )
   }
 }
@@ -645,7 +647,9 @@ private fun CpuTab(
         "线程" to data.latest.system.threadCount.toString(),
         "句柄" to data.latest.system.handleCount.toString(),
         "平台" to "${data.device.platform} / ${data.device.arch}"
-      )
+      ),
+      collapsible = true,
+      defaultExpanded = false
     )
     return
   }
@@ -678,7 +682,9 @@ private fun CpuTab(
         "型号" to (cpu.model ?: "未知"),
         "核心 / 线程" to "${cpu.coreCount ?: "--"} / ${cpu.logicalCount ?: "--"}",
         "L3 缓存" to formatOptionalBytes(cpu.l3CacheBytes)
-      )
+      ),
+      collapsible = true,
+      defaultExpanded = false
     )
   }
 }
@@ -709,7 +715,9 @@ private fun MemoryTab(data: MetricsDto, selectedWindow: MetricWindow, chartWindo
       "频率" to (data.latest.memorySpeedMHz?.let { formatMHz(it) } ?: "未知"),
       "插槽" to (data.latest.memorySlotCount?.toString() ?: "未知"),
       "形态" to (data.latest.memoryFormFactor ?: "未知")
-    )
+    ),
+    collapsible = true,
+    defaultExpanded = false
   )
 }
 
@@ -754,7 +762,9 @@ private fun DiskTab(
         disk.smartAttributes.forEach { attribute ->
           add("SMART ${attribute.id}" to "${attribute.name}: ${attribute.value.toInt()} / 阈值 ${attribute.threshold.toInt()}")
         }
-      }
+      },
+      collapsible = true,
+      defaultExpanded = false
     )
   }
 }

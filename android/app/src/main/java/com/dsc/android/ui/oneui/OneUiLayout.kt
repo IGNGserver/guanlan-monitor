@@ -93,7 +93,7 @@ data class OneUiMetrics(
   /** 分段选择器：容器比格子宽 2×内边距，保证每个格子自己就有 48dp 命中区 */
   val segmentHeight: Dp = 48.dp,
   val topBarSmallHeight: Dp = 60.dp,
-  val topBarLargeHeight: Dp = 108.dp,
+  val topBarLargeHeight: Dp = 124.dp,
   val bottomBarHeight: Dp = 72.dp,
   val dockHeight: Dp = 64.dp,
   val navigationRailWidth: Dp = 88.dp,
@@ -193,7 +193,7 @@ fun oneUiMetrics(window: OneUiWindowLayout, fontScale: Float): OneUiMetrics {
       contentMaxWidth = 840.dp,
       thumbZone = 32.dp,
       cardGap = 16.dp,
-      topBarLargeHeight = 124.dp
+      topBarLargeHeight = 136.dp
     )
   }
   // 适：字号放大后行高与留白同步放宽，避免文字被固定高度裁掉

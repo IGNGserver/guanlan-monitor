@@ -213,7 +213,8 @@ fun OneUiTopBar(
         modifier = Modifier
           .fillMaxWidth()
           .weight(1f)
-          .graphicsLayerAlpha(1f - collapse),
+          .padding(bottom = metrics.spaceXs)
+          .graphicsLayerAlpha((1f - collapse * 1.5f).coerceIn(0f, 1f)),
         verticalArrangement = Arrangement.Bottom
       ) {
         OneUiText(
