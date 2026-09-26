@@ -1020,6 +1020,31 @@ async function run() {
       }, touchExempt);
       for (const row of small) touchViolations.push({ route: routeHash, ...row });
     }
+    /* The drawer, open. Every sidebar control is `visibility: hidden` at phone
+       widths until the drawer is pulled out, so a pass that only samples the
+       closed state cannot see the support link or the nav rows — which is
+       exactly where a `(0,2,0)` `min-height` in the first layer used to survive
+       the coarse contract. */
+    await touchPage.goto(`${baseUrl}?visual-state=live#overview`, { waitUntil: "domcontentloaded" });
+    await touchPage.locator(".workspace-root").waitFor({ state: "visible", timeout: 15_000 });
+    await touchPage.locator(".workspace-topbar__toggle").click();
+    await touchPage.locator(".workspace-root.is-sidebar-open .workspace-sidebar").waitFor({ state: "visible", timeout: 5_000 });
+    const drawerSmall = await touchPage.evaluate((exempt) => {
+      const rows = [];
+      for (const el of document.querySelectorAll(".workspace-sidebar button, .workspace-sidebar a[href]")) {
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        if (style.display === "none" || style.visibility === "hidden" || rect.width < 1 || rect.height < 1) continue;
+        if (rect.width >= 44 && rect.height >= 44) continue;
+        if (exempt.some((selector) => el.matches(selector))) continue;
+        const cls = typeof el.className === "string" ? el.className.trim().split(/\s+/).slice(0, 3).join(".") : el.tagName.toLowerCase();
+        rows.push({ cls, w: Math.round(rect.width), h: Math.round(rect.height), label: (el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 24) });
+      }
+      const seen = new Map();
+      for (const row of rows) seen.set(`${row.cls} ${row.w}x${row.h}`, row);
+      return [...seen.values()];
+    }, touchExempt);
+    for (const row of drawerSmall) touchViolations.push({ route: "drawer-open", ...row });
   } finally {
     await touchPage.close();
     fixtureMode = "live";
