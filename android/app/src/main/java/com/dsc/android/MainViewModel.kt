@@ -366,23 +366,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     loadMetrics(deviceId, _state.value.selectedWindow, showScreen = true)
   }
 
+  /** 流量改为整页：One UI 不把一个需要日历与明细的内容塞进半屏面板。 */
   fun openTraffic(deviceId: String) {
     pushCurrentScreen()
     _state.update {
       it.copy(
         selectedDeviceId = deviceId,
-        currentScreen = AppScreen.DeviceDetail,
+        currentScreen = AppScreen.Traffic,
         transitionDirection = ScreenTransitionDirection.Forward,
-        trafficSheetRequested = true,
+        trafficSheetRequested = false,
         message = null
       )
     }
-    loadMetrics(deviceId, _state.value.selectedWindow, showScreen = true)
-    loadTraffic(deviceId, _state.value.trafficMode, showScreen = false)
+    loadMetrics(deviceId, _state.value.selectedWindow, showScreen = false)
+    loadTraffic(deviceId, _state.value.trafficMode, showScreen = true)
   }
 
   fun showDeviceList() {
     navigateBackTo(AppScreen.DeviceList)
+  }
+
+  /** 设置是目的地而不是页面内弹层；已在设置页时不重复入栈。 */
+  fun showSettings() {
+    if (_state.value.currentScreen == AppScreen.Settings) return
+    pushCurrentScreen()
+    _state.update {
+      it.copy(
+        currentScreen = AppScreen.Settings,
+        transitionDirection = ScreenTransitionDirection.Forward,
+        message = null
+      )
+    }
+  }
+
+  /** Snackbar 展示后回收消息，避免同一条提示在返回上一级时重复播报。 */
+  fun clearMessage() {
+    if (_state.value.message != null) _state.update { it.copy(message = null) }
   }
 
   fun clearFocusedBlock() {

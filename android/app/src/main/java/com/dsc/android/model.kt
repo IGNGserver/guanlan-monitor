@@ -491,7 +491,10 @@ enum class AppScreen {
   Login,
   DeviceList,
   DeviceDetail,
-  Traffic
+  Traffic,
+
+  /** One UI 重构新增的一级目的地：登出、外观、版本与更新从设备列表顶栏迁出。 */
+  Settings
 }
 
 enum class RemoteDataSource {
