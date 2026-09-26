@@ -490,7 +490,7 @@ fun OneUiWindowSelector(
   val keys = labels.map { it.second }
   val index = labels.indexOfFirst { it.first == selected }.coerceAtLeast(0)
 
-  if (window.isWide && labels.size <= 4) {
+  if (window.isWide) {
     OneUiSegmentedRow(
       options = keys,
       selectedIndex = index,

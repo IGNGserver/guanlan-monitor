@@ -34,11 +34,13 @@ Samsung 不公开 One UI 的设计 token（其设计规范不对第三方开放�
 **字体** `OneUiType.kt`。使用平台默认字族：三星机型解析结果即 One UI Sans / SamsungOne，
 其他机型落到 Noto Sans CJK，中文排版一致。Samsung 字体不可随包分发；拿到授权后把文件放进
 `res/font/`，把 `OneUiFontFamily` 换成 `FontFamily(Font(R.font.oneui_sans_regular))` 即可，字阶不动。
-字阶按角色定义（21 个角色，见 `OneUiTextRole`），数字统一 `tnum` 等宽，避免 15 秒刷新时数字抖动。
+字阶按角色定义（19 个角色，见 `OneUiTextRole`），数字统一 `tnum` 等宽，避免 15 秒刷新时数字抖动。
 
 **Shape / Surface / Elevation / Spacing** `OneUiLayout.kt`。圆角阶梯 8/12/16/20/24/28/32 + 胶囊；
-按钮与筛选一律全圆胶囊，分组 24，对话框 28，面板顶部 32。间距基准 4dp，页面留白 20dp（宽屏 28/40），
-组与组之间 24dp。`Modifier.oneUiSurface()` 是唯一容器实现，负责「色层 + 可选投影 + 额外暗色下的描边」。
+按钮与筛选一律全圆胶囊，分组 24，对话框 28，面板顶部 32，底部工具坞只圆上沿两角（`shapes.dock`）。间距基准 4dp，页面留白 20dp（宽屏 28/40），
+组与组之间 24dp。`Modifier.oneUiSurface()` 是唯一容器实现，负责「色层 + 可选投影 + 额外暗色下的描边」；
+分组、通知条、对话框、胶囊读数、指标块、元信息表都走它——额外暗色下 `group == canvas == sunken` 都是纯黑，
+只有这条路能保留发丝描边，页面自己叠 `background()` 就等于把容器抹平。
 
 ## 2. 构（信息层级与导航）
 
@@ -73,15 +75,20 @@ IconButton / Switch / AlertDialog / PopupMenu / InkRipple` 分别对应
 OneUiSwitch / OneUiDialog / OneUiActionSheet / oneUiPressable`。
 
 开关与勾选自行绘制（One UI 形态与 Material 默认差别最大：大号圆形滑块、描边空轨道、圆角方框勾选），
-但点击与状态语义仍走官方 `clickable(role = Role.Switch/Checkbox)` + `stateDescription`。
-必须复用官方实现的容器（`ModalBottomSheet`、`SnackbarHost`、`TextField`）通过
-`OneUiColors.toMaterialColorScheme()` 落回同一套 token。
+但点击与状态语义仍走官方 `clickable(role = Role.Switch/Checkbox)` + `stateDescription`，
+选中态另外补 `semantics.selected`，读屏才会念「已选中」而不是只有一段状态文案。
+输入框是自己拼的 `BasicTextField`（One UI 的浅底 + 聚焦描边与 M3 `TextField` 差别太大），
+但它的 `interactionSource` 必须是页面上真正那一个，否则聚焦态永远不出现。
+只有 `ModalBottomSheet` 与 `SnackbarHost` 复用官方实现，并通过 `OneUiColors.toMaterialColorScheme()`
+落回同一套 token；面板状态（`SheetState`）在设计层内部创建，页面因此不需要任何
+`ExperimentalMaterial3Api` 授权，`Snackbar` 也是设计系统目录之外唯一允许出现的 Material 3 引用。
 
 ## 4. 交（操作与状态）
 
 一个可交互表面固定 6 态：普通 / hover / pressed / selected / disabled / focus，全部由
 `oneUiPressable` 统一表达——同一支墨色只改透明度（pressed 0.11、hover 0.05、selected 0.08）、
-按下整体缩放 0.972、禁用内容 0.38、键盘/触控笔/DeX 焦点出现 3dp 强调色轮廓。
+按下整体缩放 0.972、禁用内容 0.38、键盘/触控笔/DeX 焦点出现 3dp 强调色轮廓（画在墨色与底色之上、
+边界内侧，否则会被自己那层容器色盖掉）。
 不使用 Material 的触点水波（`indication = null`），改为整面墨色，符合 One UI 的实际观感。
 触觉分级：轻触 `VirtualPress`、开关 `VirtualRelease`、长按 `LongPress`。
 加载态保留文案宽度（按钮内嵌 `OneUiSpinner`）；错误态必须带重试出口；空态必须给出下一步。
@@ -92,10 +99,12 @@ OneUiSwitch / OneUiDialog / OneUiActionSheet / oneUiPressable`。
 曲线 `EmphasizedDecelerate(0.05,0.7,0.1,1)`（进场收尾）、`EmphasizedAccelerate(0.3,0,0.8,0.15)`（退场）、
 `Emphasized(0.2,0,0,1)`（形变）；交互反馈用带轻微回弹的 spring，面板用 0.82 阻尼弹性。
 
-落点：页面前进=自下方轻微上移 + 1.5% 放大 + 淡入，退场更快且提前结束；同页切换（粒度、tab、实例）
-=横向轻推 + 淡入淡出；列表逐项交错入场（34ms 步进，最多 6 档）；分段选择器指示器连续位移；
-开关滑块与轨道色同步动画；图表首次出现或切换粒度时描线一次（15 秒自动刷新不重播）；
-数值变化走补间。系统动画缩放为 0（含三星「减少动画」）或用户在设置里开启「减少动画」时，
+落点：页面前进=新页自下方轻微上移 + 1.5% 放大 + 淡入，旧页只淡出且更快结束；后退=镜像；
+同页切换（粒度、实例 tab、日/周/月）=横向轻推 + 淡入淡出；列表逐项交错入场（34ms 步进，最多 6 档），
+离场统一淡出；分段选择器指示器与进度条数值都走同一支补间（`oneUiAnimatedValue`）；
+开关滑块与轨道色同步动画；图表首次出现或切换粒度时描线一次（15 秒自动刷新不重播，
+准线选中位置也不因刷新复位）。常驻指示器周期（加载环 820ms、旋转 900ms、不确定进度 1100ms）
+同样登记在 `OneUiDuration` 里，页面与组件不得再写裸 `tween(...)`。系统动画缩放为 0（含三星「减少动画」）或用户在设置里开启「减少动画」时，
 整套体系降级为瞬时切换，位移量归零。
 
 ## 6. 适（适配与无障碍）
@@ -103,7 +112,8 @@ OneUiSwitch / OneUiDialog / OneUiActionSheet / oneUiPressable`。
 - **窗口**：`OneUiWindowLayout` 按 600dp / 840dp 分紧凑、中等、展开，并带高度维度。
   紧凑=底部导航 + 单栏；展开=侧栏 + 列表—详情双栏；矮窗（横屏、分屏、折叠屏外屏）自动把大标题降级为小标题。
   宽屏限制正文行长（720 / 840dp）并居中，不把一行文字拉到屏幕两端。
-- **输入**：hover 只在真有指针时出现；键盘/遥控器/DeX 有焦点轮廓；触控命中区 ≥48dp，列表行 ≥64dp。
+- **输入**：hover 只在真有指针时出现；键盘/遥控器/DeX 有焦点轮廓；触控命中区 ≥48dp，列表行 ≥64dp；
+  只承载读数的胶囊（不可点）保持视觉高度，不硬撑到 48dp。
 - **字号**：正文与标签全量跟随系统字号（One UI 支持到 200%），装饰性大标题在 130% 后停止线性放大，
   改为靠换行与纵向堆叠继续提供可读性；行高与图表高度随字号同步放宽，指标网格在窄屏/大字号退化单列。
 - **深浅色**：浅色 / 深色 / 额外暗色 / 跟随系统，应用内可覆盖并落盘。
@@ -114,7 +124,15 @@ OneUiSwitch / OneUiDialog / OneUiActionSheet / oneUiPressable`。
 
 ## 7. 验证与后续
 
-本机不执行构建（见 `AGENTS.md`）。编译、单测与 lint 由 `.github/workflows/ci.yml` 的新增 `android` job
+本机不执行构建（见 `AGENTS.md`）。编译、单测与 lint 由 `.github/workflows/ci.yml` 的 `android` job
 承担（`:app:assembleDebug`、`:app:testDebugUnitTest`、`:app:lintDebug`）。
-仍待补齐的两项：One UI Sans 授权字体的随包方案（当前回落平台字体），
-以及双栏态下面板/对话框在右栏的定位策略（当前跟随系统默认位置）。
+
+两类契约由 `android/app/src/test/java/com/dsc/android/OneUiDesignContractTest.kt`（取值与自适应）
+和 `OneUiSourceContractTest.kt`（源码扫描：页面不得引用 Material 3、不得自带色值、不得手搓可点击表面、
+`groupGap`/`oneUiContentWidth`/`shapes.dock` 等 token 必须真被页面使用）共同守住。
+**改设计前先跑这两个类的规则**：把 token 加在定义处却不让页面用上，测试会直接失败。
+
+双栏（≥840dp，平板 / DeX / 折叠屏外屏）的类别明细已改为内联进右栏正文，
+单栏仍是半屏底部面板；未登录时不进入双栏，引导页始终占满窗口。
+
+仍待补齐的一项：One UI Sans 授权字体的随包方案（当前回落平台字体）。

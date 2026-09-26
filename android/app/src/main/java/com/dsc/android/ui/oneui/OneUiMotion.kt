@@ -139,13 +139,11 @@ fun oneUiScreenTransition(forward: Boolean, motion: OneUiMotion): ContentTransfo
         animationSpec = tween(enterDuration, easing = OneUiEasing.EmphasizedDecelerate),
         initialOffsetY = { offsetY }
       ) + scaleIn(
+        // 1.5% 的放大：与按下缩放 0.972 不是一个量，别把进场的“展开”做成“按下”（动）
         animationSpec = tween(enterDuration, easing = OneUiEasing.EmphasizedDecelerate),
-        initialScale = if (motion.isReduced) 1f else 0.972f
+        initialScale = if (motion.isReduced) 1f else 0.985f
       ) + fadeIn(tween(motion.duration(OneUiDuration.Enter), easing = OneUiEasing.Standard)),
-      initialContentExit = slideOutHorizontally(
-        animationSpec = tween(exitDuration, easing = OneUiEasing.EmphasizedAccelerate),
-        targetOffsetX = { -slideX }
-      ) + fadeOut(tween(exitDuration, easing = OneUiEasing.EmphasizedAccelerate)),
+      initialContentExit = fadeOut(tween(exitDuration, easing = OneUiEasing.EmphasizedAccelerate)),
       sizeTransform = null
     )
   } else {
