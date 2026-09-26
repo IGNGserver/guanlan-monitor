@@ -227,33 +227,41 @@ CSS 里定义了但**全部 `.tsx` 零引用**（判据：类名在所有 `class
 
 ---
 
-## 线上实测复验（对已部署的 v3.0.110，20 项）
+## 线上实测复验（最终对 v3.0.113，21 项全通过）
 
-部署后用缓存 chromium 走 CDP 直接量线上页面。**浏览器以 `--lang=en-US` 启动**，好让「图表轴语言」这项测的是控制台的自己的约定而不是访问者环境。脚本：`/tmp/dsc-ui-audit/verify-live.cjs`。
+> 演进过程值得留档：对已部署的 **v3.0.110** 首轮复验是 **19/20**——唯一未过的是一条 `2px` 圆角（裁决层收口后仅剩的非零圆角），归零后随 **v3.0.112** 发布。而正是这次复验的原始数据带出了一条**不在原 76 项清单里**的新缺陷：`body` 在明暗两套主题下实测都是纯白。修掉它并清掉 `apps/web/globals.css` 里两处同类幻影引用后，构成 **v3.0.113**，复验项增至 21 项并全部通过。
 
 | 项 | 结果 | 实测值 |
 |---|---|---|
-| V0 版本闸门 | PASS | 关于页 `3.0.110` |
+| V0 版本闸门 | PASS | 关于页 `3.0.113` |
 | A1 命令面板内层容器 | PASS | `radius 0` / `border 0` / `bg transparent` / `backdrop none`，宽 646 = 模态内容框 646 |
 | D2 combobox 契约 | PASS | `aria-activedescendant=workspace-command-option-0`、`role=combobox` |
 | B9 select 外层不再画第二个盒子 | PASS | 无 `.workspace-select` 盒子 |
-| B16 状态标签直角 | **FAIL** | `border-radius: 2px`（裁决层唯一残留，见下） |
-| E5 设备表百分号取整 | PASS | `86% 57% 77% 1% 45% 29%` |
+| B16 状态标签直角 | PASS | `0px` |
+| E5 设备表百分号取整 | PASS | `89% 59% 77% 1% 46% 29%` |
 | E8 无「未响应」 | PASS | 全页 clean |
-| A4 图表 X 轴 24 小时制 | PASS | `9月26日 19:28 … 19:33`（en-US 浏览器下） |
+| A4 图表 X 轴 24 小时制 | PASS | `9月26日 20:48 …`（**en-US 浏览器下**） |
 | B1 硬件胶囊直角 | PASS | `0px` |
 | A17 设备事实条直角 | PASS | `0px` |
-| A5 百分比图 Y 轴带单位 | PASS | `0% 20% 40% 60% 80%` |
+| A5 百分比图 Y 轴带单位 | PASS | `0% 20% 40% 60% 80% 100%` |
 | A7/D5 compact 状态点有可及名 | PASS | `role=img`、`aria-label=在线` |
-| A8 1440px 只剩一个品牌 | PASS | 顶栏 1 个但不可见，侧栏 1 个可见 |
+| A8 1440px 只剩一个品牌 | PASS | 顶栏 1 个不可见，侧栏 1 个可见 |
 | C 390px × 4 条路由命中区域 ≥44 | PASS | 全部 |
 | C 拉开抽屉后 ≥44 | PASS | 全部 |
 | B10 暗色单一来源 | PASS | `resolved=dark`，wrapper `#161616`、surface `#262626` |
+| **B18 body 背景跟随主题** | PASS | `html` 与 `body` 同为 `rgb(22,22,22)`，`color-scheme=dark` |
 | B2 暗色空态与 Carbon 同色 | PASS | — |
 
-**关于唯一未通过的那条**：`2px` 不是 Material 几何，肉眼几乎不可辨，但它是这轮收口之后整个裁决层里**唯一**的非零圆角，而两行之上的 Carbon `Tag` 是 `0`。留一个需要下一个人去判断「这是故意的吗」的例外，与这轮工作的目的直接冲突，所以归零并在 v3.0.112 单独发一版。
+### B18：复验带出的新缺陷（原清单之外）
 
-**复验脚本自身修正过的四处**（都是探针写错，不是被测代码的问题，记下来免得下次又怀疑线上）：命令面板要跟模态**内容框**比宽而不是 border-box（模态自带左右内边距）；Carbon Charts 的轴组名是 `axis left` / `axis bottom`，不是 `.cds--axes--x`；`cds--visually-hidden` 用 1px clip 而非 `visibility: hidden`，会漏进热区测量；`dsc-theme` 只在 Provider 挂载时读一次，改完 localStorage 必须整文档重载（hash 导航不重载）。
+`html` 背景一直正确跟随主题，而 `body` 在两套主题下都实测为 `rgb(255,255,255)`。根因是 `@carbon/react` 编译出的全局样式带了一条 `body { background: $background }`，用的是**未套主题**的 Sass 默认值（白），落在生效顺序第 2 层，压掉了第 1 层 `workspace.tokens.css` 里主题感知的那条。平时被满屏的 wrapper 盖住，但触控板/手机橡皮筋回弹会露出白底。修法是在裁决层重述——只有排在 Carbon 之后的层才赢得回来。
+
+同批清掉 `apps/web/src/app/globals.css` 里两处同类错误：`html/body` 上引用 `var(--cds-background)`/`var(--cds-text-primary)`（Carbon 只把自定义属性挂在 wrapper 子树，**不向上继承**，实测 `html` 上为空，永远走 fallback），以及 `:root { color-scheme: light }` 把原生控件钉死浅色。重复的 `::selection` 一并移除。登录页不受影响（`.loginShell` 自带明暗两套背景）。
+
+### 发布流程自身暴露的两个假信号
+
+- `gh run watch` 不带 `--exit-status` 时**恒返回 0**，包括 run 失败。本任务里踩了两次。
+- `git add` 成功**不代表内容进了索引**：v3.0.113 的第一个 tag 名写着 113、指向的树里 `VERSION` 仍是 112（同条命令伴随 CIFS 上 `.git/objects/maintenance.lock` 的 I/O 报错），被 CI 的 `verify-version` 正确拒绝。此后一律用 `git show :VERSION` 从索引读回、`git show HEAD:VERSION` 从提交读回来核对。
 
 ---
 
