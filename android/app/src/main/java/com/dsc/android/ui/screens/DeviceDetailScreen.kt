@@ -552,7 +552,7 @@ private fun BlockDetail(
       targetState = tabId,
       transitionSpec = {
         oneUiSlideSwitch(
-          forwardToRight = tabs.indexOf(targetState) >= tabs.indexOf(initialState),
+          forwardToRight = tabs.indexOfFirst { it.id == targetState } >= tabs.indexOfFirst { it.id == initialState },
           motion = motion
         )
       },

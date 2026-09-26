@@ -23,19 +23,19 @@ import androidx.compose.ui.unit.dp
 @Immutable
 data class OneUiShapes(
   /** 角标、状态点容器 */
-  val badge: Shape = RoundedCornerShape(8.dp),
+  val badge: RoundedCornerShape = RoundedCornerShape(8.dp),
   /** 图表底、元信息小块 */
-  val tile: Shape = RoundedCornerShape(12.dp),
+  val tile: RoundedCornerShape = RoundedCornerShape(12.dp),
   /** 输入框、小开关 */
-  val control: Shape = RoundedCornerShape(16.dp),
+  val control: RoundedCornerShape = RoundedCornerShape(16.dp),
   /** 指标卡 */
-  val card: Shape = RoundedCornerShape(20.dp),
+  val card: RoundedCornerShape = RoundedCornerShape(20.dp),
   /** 分组容器（One UI 设置列表的组） */
-  val group: Shape = RoundedCornerShape(24.dp),
+  val group: RoundedCornerShape = RoundedCornerShape(24.dp),
   /** 底部工具坞/确认条：只圆上沿两角，下沿贴屏幕边 */
   val dock: Shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 0.dp, bottomEnd = 0.dp),
-  val dialog: Shape = RoundedCornerShape(28.dp),
-  val sheet: Shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
+  val dialog: RoundedCornerShape = RoundedCornerShape(28.dp),
+  val sheet: RoundedCornerShape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
   /** 按钮 / 芯片：One UI 一律是两端全圆的胶囊 */
   val pill: Shape = RoundedCornerShape(999.dp),
   val circle: Shape = CircleShape

@@ -98,11 +98,11 @@ fun rememberOneUiHighTextContrast(): Boolean {
     context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? android.view.accessibility.AccessibilityManager
   }
   var enabled by remember(manager) {
-    mutableStateOf(manager?.isHighTextContrastEnabled == true)
+    mutableStateOf(manager?.isHighTextContrastEnabled() == true)
   }
   DisposableEffect(manager) {
     val listener = android.view.accessibility.AccessibilityManager.AccessibilityStateChangeListener {
-      enabled = manager?.isHighTextContrastEnabled == true
+      enabled = manager?.isHighTextContrastEnabled() == true
     }
     manager?.addAccessibilityStateChangeListener(listener)
     onDispose { manager?.removeAccessibilityStateChangeListener(listener) }

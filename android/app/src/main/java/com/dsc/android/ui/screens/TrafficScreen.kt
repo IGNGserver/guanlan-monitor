@@ -99,6 +99,8 @@ fun TrafficScreen(
   val traffic = state.trafficCalendar
   val modes = TrafficCalendarMode.entries.map { it.label }
   val modeIndex = TrafficCalendarMode.entries.indexOf(state.trafficMode).coerceAtLeast(0)
+  // transitionSpec 不在组合上下文里，动效必须先在这里取好
+  val motion = OneUiTheme.motion
   // 双栏的右栏没有「返回」这一说：换设备永远回到左栏点选（构）
   val backIcon: @Composable () -> Unit = {
     OneUiIconButton(contentDescription = "返回上一页", onClick = actions.onSystemBack) {
@@ -188,7 +190,7 @@ fun TrafficScreen(
                 oneUiSlideSwitch(
                   forwardToRight = TrafficCalendarMode.entries.indexOf(targetState) >=
                     TrafficCalendarMode.entries.indexOf(initialState),
-                  motion = OneUiTheme.motion
+                  motion = motion
                 )
               },
               label = "oneui_traffic_mode"
@@ -442,12 +444,12 @@ private fun TrafficRecords(records: List<TrafficRangeRecordDto>) {
     if (hiddenCount > 0) {
       OneUiListDivider()
       OneUiListItem(
-        title = if (expanded) "收起记录" : "展开其余 $hiddenCount 条记录",
+        title = if (expanded) "收起记录" else "展开其余 $hiddenCount 条记录",
         subtitle = if (expanded) null else "该区间最多保留最近 36 条上报",
         onClick = { expanded = !expanded },
         trailing = {
           OneUiText(
-            text = if (expanded) "收起" : "展开",
+            text = if (expanded) "收起" else "展开",
             role = OneUiTextRole.ChartLabel,
             color = colors.accent,
             weight = FontWeight.SemiBold

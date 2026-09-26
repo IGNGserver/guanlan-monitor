@@ -66,6 +66,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.material.icons.Icons
@@ -1223,11 +1224,17 @@ fun OneUiExpandable(
   modifier: Modifier = Modifier,
   content: @Composable ColumnScope.() -> Unit
 ) {
+  val motion = OneUiTheme.motion
   AnimatedVisibility(
     visible = expanded,
     modifier = modifier,
-    enter = expandVertically() + fadeIn(),
-    exit = shrinkVertically() + fadeOut()
+    // 时长与曲线仍由 OneUiMotion 决定，不用动画库的默认值（动）
+    enter = expandVertically(
+      animationSpec = motion.tween<IntSize>(OneUiDuration.Content, OneUiEasing.EmphasizedDecelerate)
+    ) + fadeIn(animationSpec = motion.tween(OneUiDuration.Content)),
+    exit = shrinkVertically(
+      animationSpec = motion.tween<IntSize>(OneUiDuration.Exit, OneUiEasing.EmphasizedAccelerate)
+    ) + fadeOut(animationSpec = motion.tween(OneUiDuration.Exit))
   ) {
     Column(modifier = Modifier.fillMaxWidth()) { content() }
   }
