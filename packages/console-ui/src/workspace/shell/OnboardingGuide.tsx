@@ -64,7 +64,10 @@ export function OnboardingGuide() {
           <span className="workspace-section-kicker">开始使用</span>
           <p className="workspace-onboarding__lead">观澜按这三步接入第一台设备。</p>
         </div>
-        <Button variant="quiet" onClick={dismiss} aria-label="关闭首次使用引导">不再显示</Button>
+        {/* No aria-label here on purpose: the button reads "不再显示" on screen,
+            and an override would make the accessible name something a sighted
+            user could never guess from the label they clicked. */}
+        <Button variant="quiet" onClick={dismiss}>不再显示</Button>
       </div>
       <ol className="workspace-onboarding__steps">
         {steps.map((step, index) => (
