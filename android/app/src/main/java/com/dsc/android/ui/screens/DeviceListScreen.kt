@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Timeline
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,11 +71,13 @@ import com.dsc.android.ui.oneui.OneUiTheme
 import com.dsc.android.ui.oneui.OneUiTopBar
 import com.dsc.android.ui.oneui.OneUiSurfaceLevel
 import com.dsc.android.ui.oneui.formatPercent
+import com.dsc.android.ui.oneui.oneUiContentWidth
 import com.dsc.android.ui.oneui.oneUiListContentPadding
 import com.dsc.android.ui.oneui.oneUiSurface
 import com.dsc.android.ui.oneui.oneUiListEnter
 import com.dsc.android.ui.oneui.rememberOneUiCollapse
 import com.dsc.android.ui.shell.GuanlanActions
+import kotlinx.coroutines.launch
 
 /**
  * 设备列表（构）。
@@ -94,6 +97,8 @@ fun DeviceListScreen(
   val motion = OneUiTheme.motion
   val listState = rememberLazyListState()
   val collapse = rememberOneUiCollapse(listState)
+  // 折叠后点紧凑标题回到大标题：滚动动画需要协程作用域（交）
+  val topBarScope = rememberCoroutineScope()
 
   val persisted = state.devices.sortedWith(
     compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname }
@@ -120,7 +125,11 @@ fun DeviceListScreen(
       .fillMaxSize()
       .background(colors.canvas)
   ) {
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+      modifier = Modifier.fillMaxSize(),
+      // 宽屏上正文按可读行长居中，紧凑态不受影响（适）
+      horizontalAlignment = Alignment.CenterHorizontally
+    ) {
       // 双栏的列表栏也用同一条顶栏，只是降级成紧凑高度：
       // 刷新与编辑是这一栏的主动作，嵌入态把它们整个删掉就没有入口了（构）
       OneUiTopBar(
@@ -131,6 +140,7 @@ fun DeviceListScreen(
           connectionSummary(state, persisted)
         },
         collapse = collapse,
+        onCollapsedTitleClick = { topBarScope.launch { listState.animateScrollToItem(0) } },
         large = !embedded,
         actions = {
           if (!editMode) {
@@ -160,13 +170,14 @@ fun DeviceListScreen(
         state = listState,
         modifier = Modifier
           .weight(1f)
-          .fillMaxWidth(),
+          .fillMaxWidth()
+          .oneUiContentWidth(metrics),
         contentPadding = if (embedded) {
           PaddingValues(start = metrics.spaceS, end = metrics.spaceS, top = metrics.spaceXs, bottom = metrics.spaceXxl)
         } else {
           oneUiListContentPadding()
         },
-        verticalArrangement = Arrangement.spacedBy(metrics.cardGap)
+        verticalArrangement = Arrangement.spacedBy(metrics.groupGap)
       ) {
         if (!state.authenticated && state.serverConfig.baseUrl.isNotBlank()) {
           item(key = "connecting") {
@@ -381,14 +392,23 @@ private fun DeviceRow(
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
   val online = device.status == "online"
+  // 读数即入口：点某个胶囊直接进那一类明细，卡片下方不必再排一排同类按钮（构）
   val pills = buildList {
-    add(OneUiPillModel("CPU", formatPercent(device.cpuUsagePercent)))
-    if (device.gpuUsagePercent != null) add(OneUiPillModel("GPU", formatPercent(device.gpuUsagePercent)))
-    if (device.gpuMemoryUsagePercent != null) {
-      add(OneUiPillModel("GPU 内存", formatPercent(device.gpuMemoryUsagePercent)))
+    add(OneUiPillModel("CPU", formatPercent(device.cpuUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Cpu) }))
+    if (device.gpuUsagePercent != null) {
+      add(OneUiPillModel("GPU", formatPercent(device.gpuUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Gpu) }))
     }
-    add(OneUiPillModel("内存", formatPercent(device.memoryUsagePercent)))
-    add(OneUiPillModel("硬盘", formatPercent(device.diskUsagePercent)))
+    if (device.gpuMemoryUsagePercent != null) {
+      add(
+        OneUiPillModel(
+          label = "GPU 内存",
+          value = formatPercent(device.gpuMemoryUsagePercent),
+          onClick = { onOpenBlock(DeviceBlockKey.Gpu) }
+        )
+      )
+    }
+    add(OneUiPillModel("内存", formatPercent(device.memoryUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Memory) }))
+    add(OneUiPillModel("硬盘", formatPercent(device.diskUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Disk) }))
   }
 
   OneUiGroup {
@@ -445,54 +465,12 @@ private fun DeviceRow(
       },
       supporting = {
         if (!editMode) {
-          Column(
-            modifier = Modifier.padding(top = metrics.spaceXs),
-            verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
-          ) {
+          Box(modifier = Modifier.padding(top = metrics.spaceXs)) {
             OneUiPillRow(pills = pills)
-            Row(horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
-              OneUiButton(
-                label = "流量",
-                onClick = onOpenTraffic,
-                variant = OneUiButtonVariant.Tonal,
-                size = OneUiButtonSize.Compact
-              )
-              OneUiButton(
-                label = "记录项",
-                onClick = onEditMetrics,
-                variant = OneUiButtonVariant.Outlined,
-                size = OneUiButtonSize.Compact
-              )
-              OneUiButton(
-                label = "全部指标",
-                onClick = onOpen,
-                variant = OneUiButtonVariant.Text,
-                size = OneUiButtonSize.Compact
-              )
-            }
           }
         }
       }
     )
-    if (!editMode) {
-      OneUiListDivider()
-      // 常用指标直接指向对应类别，符合 One UI“就近进入下一步”的组织方式（构）
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = metrics.rowPadding, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
-      ) {
-        DeviceBlockKey.entries.take(3).forEach { block ->
-          OneUiButton(
-            label = block.label,
-            onClick = { onOpenBlock(block) },
-            variant = OneUiButtonVariant.Text,
-            size = OneUiButtonSize.Compact
-          )
-        }
-      }
-    }
   }
 }
 
@@ -559,4 +537,3 @@ private fun deviceIcon(os: String) = when {
   os.contains("linux", ignoreCase = true) -> Icons.Rounded.Dns
   else -> Icons.Rounded.Router
 }
-

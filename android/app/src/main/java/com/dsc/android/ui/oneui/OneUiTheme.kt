@@ -5,7 +5,13 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.BrightnessAuto
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ProvidableCompositionLocal
@@ -136,7 +142,16 @@ enum class OneUiAppearanceSetting(val storageKey: String, val label: String, val
   FollowSystem("system", "跟随系统", "随系统深浅色与定时切换"),
   Light("light", "浅色", "始终使用浅色表面"),
   Dark("dark", "深色", "始终使用深色表面"),
-  ExtraDark("extra_dark", "额外暗色", "纯黑表面并取消投影，适合 OLED")
+  ExtraDark("extra_dark", "额外暗色", "纯黑表面并取消投影，适合 OLED");
+
+  /** 设置列表里每项都带图标，整组才有 One UI 的设置感（件）。 */
+  val icon: ImageVector
+    get() = when (this) {
+      FollowSystem -> Icons.Rounded.BrightnessAuto
+      Light -> Icons.Rounded.LightMode
+      Dark -> Icons.Rounded.DarkMode
+      ExtraDark -> Icons.Rounded.Bedtime
+    }
 }
 
 private val Context.oneUiAppearanceStore: DataStore<Preferences> by preferencesDataStore(name = "oneui_appearance")

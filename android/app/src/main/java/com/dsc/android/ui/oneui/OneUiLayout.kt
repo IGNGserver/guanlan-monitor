@@ -104,6 +104,8 @@ data class OneUiMetrics(
   val navigationRailWidthWithLabel: Dp = 108.dp,
   /** 展开态限制正文行宽，避免 4K/平板上一行文字拉到边 */
   val contentMaxWidth: Dp = Dp.Unspecified,
+  /** 对话框在中/展开窗口里仍然是一张小卡片，不跟着屏幕变宽（One UI 的对话框尺寸） */
+  val dialogMaxWidth: Dp = 520.dp,
   /** One UI 的核心：底部保留拇指区，正文不铺到屏幕最下沿 */
   val thumbZone: Dp = 24.dp,
   val focusStroke: Dp = 3.dp,

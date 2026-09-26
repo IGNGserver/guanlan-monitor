@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -58,6 +59,7 @@ import com.dsc.android.ui.oneui.formatBytes
 import com.dsc.android.ui.oneui.formatDate
 import com.dsc.android.ui.oneui.formatDateInclusive
 import com.dsc.android.ui.oneui.formatTime
+import com.dsc.android.ui.oneui.oneUiContentWidth
 import com.dsc.android.ui.oneui.oneUiListContentPadding
 import com.dsc.android.ui.oneui.oneUiPressable
 import com.dsc.android.ui.oneui.rememberOneUiCollapse
@@ -65,6 +67,7 @@ import com.dsc.android.ui.oneui.trafficCalendarColumns
 import com.dsc.android.ui.oneui.trafficCellAnnouncement
 import com.dsc.android.ui.shell.GuanlanActions
 import kotlin.math.max
+import kotlinx.coroutines.launch
 
 /**
  * 流量日历（构）。
@@ -83,6 +86,8 @@ fun TrafficScreen(
   val metrics = OneUiTheme.metrics
   val listState = rememberLazyListState()
   val collapse = rememberOneUiCollapse(listState)
+  // 折叠后点紧凑标题回到大标题：滚动动画需要协程作用域（交）
+  val topBarScope = rememberCoroutineScope()
   val selectedDevice = state.devices.find { it.deviceId == state.selectedDeviceId }
   val traffic = state.trafficCalendar
   val modes = TrafficCalendarMode.entries.map { it.label }
@@ -99,11 +104,16 @@ fun TrafficScreen(
       .fillMaxSize()
       .background(colors.canvas)
   ) {
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+      modifier = Modifier.fillMaxSize(),
+      // 宽屏上正文按可读行长居中，紧凑态不受影响（适）
+      horizontalAlignment = Alignment.CenterHorizontally
+    ) {
       OneUiTopBar(
         title = selectedDevice?.hostname ?: "流量记录",
         subtitle = "流量日历",
         collapse = collapse,
+        onCollapsedTitleClick = { topBarScope.launch { listState.animateScrollToItem(0) } },
         large = !embedded,
         navigationIcon = if (embedded) null else backIcon,
         actions = {
@@ -122,9 +132,10 @@ fun TrafficScreen(
         state = listState,
         modifier = Modifier
           .weight(1f)
-          .fillMaxWidth(),
+          .fillMaxWidth()
+          .oneUiContentWidth(metrics),
         contentPadding = oneUiListContentPadding(),
-        verticalArrangement = Arrangement.spacedBy(metrics.cardGap)
+        verticalArrangement = Arrangement.spacedBy(metrics.groupGap)
       ) {
         if (state.dataSource == RemoteDataSource.Cache) {
           item(key = "offline-cache") {

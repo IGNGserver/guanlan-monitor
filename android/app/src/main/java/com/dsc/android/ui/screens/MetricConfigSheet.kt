@@ -84,6 +84,38 @@ fun MetricConfigSheet(
     onDismissRequest = requestDismiss,
     title = title,
     subtitle = subtitle,
+    // 确认条在滚动区之外：勾选列表一长，「保存」不再被顶到折叠线以外（交 + 适）
+    confirmBar = {
+      Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+      ) {
+        OneUiText(
+          text = if (hasUnsavedChanges) "有未保存的修改" else "保存后立即生效，图表在下一次刷新时重算",
+          role = OneUiTextRole.RowSubtitle,
+          color = if (hasUnsavedChanges) colors.warningContent else colors.textSecondary
+        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(metrics.spaceS),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          OneUiButton(
+            label = "取消",
+            onClick = requestDismiss,
+            variant = OneUiButtonVariant.Text,
+            modifier = Modifier.weight(1f),
+            enabled = !state.savingMetricConfig
+          )
+          OneUiButton(
+            label = if (state.savingMetricConfig) "保存中" else "保存",
+            onClick = actions.onSaveMetricConfig,
+            modifier = Modifier.weight(1f),
+            loading = state.savingMetricConfig
+          )
+        }
+      }
+    }
   ) {
     if (editingInstanceId == null && editingBlockKey == null) {
       DeviceBlockKey.entries.filter { it != DeviceBlockKey.Fan }.forEachIndexed { index, block ->
@@ -177,31 +209,6 @@ fun MetricConfigSheet(
       }
     }
 
-    // 面板只有一个行动区：说明在上一行，取消与保存固定在面板底部（One UI 的确认条）
-    OneUiText(
-      text = if (hasUnsavedChanges) "有未保存的修改" else "保存后立即生效，图表在下一次刷新时重算",
-      role = OneUiTextRole.RowSubtitle,
-      color = if (hasUnsavedChanges) colors.warningContent else colors.textSecondary
-    )
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(metrics.spaceS),
-      verticalAlignment = Alignment.CenterVertically
-    ) {
-      OneUiButton(
-        label = "取消",
-        onClick = requestDismiss,
-        variant = OneUiButtonVariant.Text,
-        modifier = Modifier.weight(1f),
-        enabled = !state.savingMetricConfig
-      )
-      OneUiButton(
-        label = if (state.savingMetricConfig) "保存中" else "保存",
-        onClick = actions.onSaveMetricConfig,
-        modifier = Modifier.weight(1f),
-        loading = state.savingMetricConfig
-      )
-    }
   }
 
   if (discardConfirm) {

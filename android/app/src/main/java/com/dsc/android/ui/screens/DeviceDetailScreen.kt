@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VideogameAsset
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +58,7 @@ import com.dsc.android.TemperatureMetricSeriesDto
 import com.dsc.android.TemperatureSensorDto
 import com.dsc.android.ui.oneui.*
 import com.dsc.android.ui.shell.GuanlanActions
+import kotlinx.coroutines.launch
 
 /**
  * 设备详情（构）。
@@ -79,6 +81,8 @@ fun DeviceDetailScreen(
   val motion = OneUiTheme.motion
   val listState = rememberLazyListState()
   val collapse = rememberOneUiCollapse(listState)
+  // 折叠后点紧凑标题回到大标题：滚动动画需要协程作用域（交）
+  val topBarScope = rememberCoroutineScope()
   val data = state.metrics
 
   var openBlock by remember(state.selectedDeviceId) { mutableStateOf<DeviceBlockKey?>(null) }
@@ -102,22 +106,52 @@ fun DeviceDetailScreen(
     }
   }
 
+  // 类别明细的实例 tab 与选中项：底部面板与双栏内联正文共用同一份推导（件）
+  val focusedBlockKey = openBlock
+  val tabs = remember(data, focusedBlockKey) {
+    if (data != null && focusedBlockKey != null) buildBlockSheetTabs(data, focusedBlockKey) else emptyList()
+  }
+  val tabIds = tabs.map { it.id }
+  val effectiveTab = if (openTabId in tabIds) openTabId else (tabIds.firstOrNull()?.id ?: "total")
+  // 双栏（平板 / DeX / 折叠屏外屏）：类别明细直接铺在右栏正文里。
+  // 全屏底部面板会横向盖住左栏、用 scrim 挡住列表，还把粒度坞压在下面切不动（构 + 适）
+  val inlineBlock: DeviceBlockKey? = if (embedded) openBlock else null
+  val blockBackIcon: @Composable () -> Unit = {
+    OneUiIconButton(contentDescription = "返回设备概览", onClick = { openBlock = null }) {
+      OneUiIcon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
+    }
+  }
+
   Box(
     modifier = Modifier
       .fillMaxSize()
       .background(colors.canvas)
   ) {
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+      modifier = Modifier.fillMaxSize(),
+      // 宽屏上正文按可读行长居中，紧凑态不受影响（适）
+      horizontalAlignment = Alignment.CenterHorizontally
+    ) {
       OneUiTopBar(
-        title = data?.device?.hostname ?: "设备",
-        subtitle = if (data == null) {
-          "正在读取指标"
-        } else {
-          "${data.device.os} · ${data.device.platform} · ${if (data.status == "online") "在线" else "离线"}"
+        title = inlineBlock?.label ?: (data?.device?.hostname ?: "设备"),
+        subtitle = when {
+          inlineBlock != null -> if (state.selectedWindow == MetricWindow.OneMinute) {
+            "当前显示实时值"
+          } else {
+            "当前显示 ${state.selectedWindow.label} 区间平均值"
+          }
+
+          data == null -> "正在读取指标"
+          else -> "${data.device.os} · ${data.device.platform} · ${if (data.status == "online") "在线" else "离线"}"
         },
         collapse = collapse,
+        onCollapsedTitleClick = { topBarScope.launch { listState.animateScrollToItem(0) } },
         large = !embedded,
-        navigationIcon = if (embedded) null else backIcon,
+        navigationIcon = when {
+          inlineBlock != null -> blockBackIcon
+          embedded -> null
+          else -> backIcon
+        },
         actions = {
           OneUiIconButton(
             contentDescription = "刷新",
@@ -127,14 +161,7 @@ fun DeviceDetailScreen(
           ) {
             OneUiIcon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textPrimary)
           }
-          if (data != null) {
-            OneUiIconButton(
-              contentDescription = "查看流量",
-              onClick = { actions.onOpenTraffic(data.device.deviceId) }
-            ) {
-              OneUiIcon(Icons.Rounded.Timeline, contentDescription = null, tint = colors.textPrimary)
-            }
-          }
+          // 流量在类别列表里已经是一行，顶栏不再放第二个入口（构）
         }
       )
 
@@ -142,10 +169,33 @@ fun DeviceDetailScreen(
         state = listState,
         modifier = Modifier
           .weight(1f)
-          .fillMaxWidth(),
+          .fillMaxWidth()
+          .oneUiContentWidth(metrics),
         contentPadding = oneUiListContentPadding(),
-        verticalArrangement = Arrangement.spacedBy(metrics.cardGap)
+        verticalArrangement = Arrangement.spacedBy(metrics.groupGap)
       ) {
+        val snapshot = data
+        if (inlineBlock != null && snapshot != null) {
+          item(key = "block-detail") {
+            BlockDetail(
+              data = snapshot,
+              blockKey = inlineBlock,
+              tabs = tabs,
+              tabId = effectiveTab,
+              selectedWindow = state.selectedWindow,
+              onSelectTab = { openTabId = it },
+              onEditInstance = { instanceId ->
+                actions.onOpenInstanceEditor(snapshot.device.deviceId, inlineBlock, instanceId)
+              }
+            )
+          }
+          if (state.loadingMetrics) {
+            item(key = "metrics-loading") {
+              OneUiLoadingRow("正在切换 ${state.selectedWindow.label} 粒度")
+            }
+          }
+        }
+
         if (state.dataSource == RemoteDataSource.Cache) {
           item(key = "offline-cache") {
             OneUiNotice(
@@ -187,35 +237,37 @@ fun DeviceDetailScreen(
           }
         }
 
-        data?.let { snapshot ->
-          item(key = "overview") {
-            OverviewGroup(data = snapshot, state = state)
+        if (inlineBlock == null) {
+          snapshot?.let { current ->
+            item(key = "overview") {
+              OverviewGroup(data = current, state = state)
+            }
           }
-        }
 
-        item(key = "blocks-header") {
-          OneUiGroupHeader(
-            label = "硬件类别",
-            description = "点按任一类查看图表与实例明细；长按不可用，请使用行尾编辑按钮选择记录项"
-          )
-        }
-
-        data?.let { snapshot ->
-          item(key = "blocks") {
-            BlockGroup(
-              data = snapshot,
-              selectedWindow = state.selectedWindow,
-              loading = state.loadingMetrics,
-              onOpenBlock = { block -> openBlock = block },
-              onOpenTraffic = { actions.onOpenTraffic(snapshot.device.deviceId) },
-              onEditDeviceMetrics = { actions.onOpenDeviceEditor(snapshot.device.deviceId) }
+          item(key = "blocks-header") {
+            OneUiGroupHeader(
+              label = "硬件类别",
+              description = "点按任一类查看图表与实例明细；采集哪些记录项用底部「编辑记录项」"
             )
           }
-        }
 
-        if (state.loadingMetrics) {
-          item(key = "metrics-loading") {
-            OneUiLoadingRow("正在切换 ${state.selectedWindow.label} 粒度")
+          snapshot?.let { current ->
+            item(key = "blocks") {
+              BlockGroup(
+              data = snapshot,
+                selectedWindow = state.selectedWindow,
+                loading = state.loadingMetrics,
+                onOpenBlock = { block -> openBlock = block },
+                onOpenTraffic = { actions.onOpenTraffic(snapshot.device.deviceId) },
+                onEditDeviceMetrics = { actions.onOpenDeviceEditor(snapshot.device.deviceId) }
+              )
+            }
+          }
+
+          if (state.loadingMetrics) {
+            item(key = "metrics-loading") {
+              OneUiLoadingRow("正在切换 ${state.selectedWindow.label} 粒度")
+            }
           }
         }
       }
@@ -229,24 +281,23 @@ fun DeviceDetailScreen(
     }
   }
 
-  data?.let { snapshot ->
-    openBlock?.let { blockKey ->
-      val tabs = remember(snapshot, blockKey) { buildBlockSheetTabs(snapshot, blockKey) }
-      val tabIds = tabs.map { it.id }
-      val effectiveTab = if (openTabId in tabIds) openTabId else (tabIds.firstOrNull() ?: "total")
-      BlockSheet(
+  if (!embedded) {
+    data?.let { snapshot ->
+      openBlock?.let { blockKey ->
+        BlockSheet(
         data = snapshot,
         blockKey = blockKey,
         selectedWindow = state.selectedWindow,
         tabs = tabs,
         selectedTabId = effectiveTab,
         onSelectTab = { openTabId = it },
-        onDismiss = { openBlock = null },
-        onEditBlock = { actions.onOpenBlockEditor(snapshot.device.deviceId, blockKey) },
-        onEditInstance = { instanceId ->
-          actions.onOpenInstanceEditor(snapshot.device.deviceId, blockKey, instanceId)
-        }
-      )
+          onDismiss = { openBlock = null },
+          onEditBlock = { actions.onOpenBlockEditor(snapshot.device.deviceId, blockKey) },
+          onEditInstance = { instanceId ->
+            actions.onOpenInstanceEditor(snapshot.device.deviceId, blockKey, instanceId)
+          }
+        )
+      }
     }
   }
 }
@@ -434,8 +485,6 @@ private fun BlockSheet(
   onEditInstance: (String) -> Unit
 ) {
   val colors = OneUiTheme.colors
-  val metrics = OneUiTheme.metrics
-  val chartWindow = remember(data, selectedWindow) { chartWindowFor(data, selectedWindow) }
   val editAction: @Composable () -> Unit = {
     OneUiIconButton(contentDescription = "编辑记录项", onClick = onEditBlock) {
       OneUiIcon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textPrimary)
@@ -448,6 +497,46 @@ private fun BlockSheet(
     subtitle = if (selectedWindow == MetricWindow.OneMinute) "当前显示实时值" else "当前显示 ${selectedWindow.label} 区间平均值",
     headerAction = if (blockKey == DeviceBlockKey.Fan) null else editAction
   ) {
+    BlockDetail(
+      data = data,
+      blockKey = blockKey,
+      tabs = tabs,
+      tabId = selectedTabId,
+      selectedWindow = selectedWindow,
+      onSelectTab = onSelectTab,
+      onEditInstance = onEditInstance
+    )
+  }
+}
+
+/**
+ * 类别明细本体（件）：实例胶囊行 + 图表与元信息。
+ *
+ * 底部面板与双栏右栏共用它——同一套内容不该有两个版本，
+ * 否则宽屏下的明细永远比手机上少一层交互（构 + 适）。
+ */
+@Composable
+private fun BlockDetail(
+  data: MetricsDto,
+  blockKey: DeviceBlockKey,
+  tabs: List<BlockSheetTabModel>,
+  tabId: String,
+  selectedWindow: MetricWindow,
+  onSelectTab: (String) -> Unit,
+  onEditInstance: (String) -> Unit
+) {
+  val metrics = OneUiTheme.metrics
+  val motion = OneUiTheme.motion
+  val chartWindow = remember(data, selectedWindow) { chartWindowFor(data, selectedWindow) }
+
+  Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceM)) {
+    if (tabs.size > 1) {
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+      ) {
     if (tabs.size > 1) {
       Row(
         modifier = Modifier
@@ -458,17 +547,17 @@ private fun BlockSheet(
         tabs.forEach { tab ->
           OneUiFilterChip(
             label = tab.label,
-            selected = tab.id == selectedTabId,
+            selected = tab.id == tabId,
             onClick = { onSelectTab(tab.id) }
           )
         }
       }
     }
-    AnimatedVisibility(visible = true, enter = oneUiSheetContentEnter(OneUiTheme.motion)) {
+    AnimatedVisibility(visible = true, enter = oneUiSheetContentEnter(motion)) {
       BlockTabContent(
         data = data,
         blockKey = blockKey,
-        tabId = selectedTabId,
+        tabId = tabId,
         selectedWindow = selectedWindow,
         chartWindow = chartWindow,
         onEditInstance = onEditInstance
@@ -1067,4 +1156,3 @@ private fun InstanceGroup(
     }
   }
 }
-
