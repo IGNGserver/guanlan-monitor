@@ -220,14 +220,18 @@
   padding-inline: 12px;
 }
 
+/* No `min-height` and no radius here. This `(0,2,0)` composite outranked the
+   `(0,1,0)` coarse contract in the arbiter, so the sidebar's support link kept
+   a 32px target on phones — invisible to a screenshot pass that only samples
+   the drawer closed, and to the coarse pass until it opens the drawer. Height
+   now comes from `.m3-button`, which the coarse contract can reach. */
 .workspace-sidebar__support.m3-button {
-  min-height: 32px;
   justify-content: space-between;
   gap: 8px;
   padding: 8px 10px 2px;
-  border-radius: var(--workspace-shape-small);
+  border-radius: 0;
   color: var(--workspace-color-on-surface-variant);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 560;
   text-align: start;
 }
@@ -264,10 +268,12 @@
 /* One rule for the search trigger. It used to be split across this file twice
    (`(0,2,0)` here and `(0,1,0)` further down), and the higher-specificity half
    pinned `padding-inline: 11px` and a 12px corner, so the shared control-height
-   and inline-padding contract in `workspace-carbon.scss` could never reach it. */
+   and inline-padding contract in `workspace-carbon.scss` could never reach it.
+   `min-height` is gone too, for the same reason: `.m3-button` already carries
+   the control height, and only a rule that does not restate it can be raised by
+   the coarse contract. */
 .workspace-search-trigger.m3-button {
   min-width: 142px;
-  min-height: var(--workspace-control-height);
   justify-content: flex-start;
   color: var(--workspace-color-on-surface-variant);
   background: var(--workspace-color-surface-container-low);
@@ -456,14 +462,15 @@
   font-size: 11px;
 }
 
+/* `min-height` removed from both composites: at `(0,2,0)` they outranked the
+   coarse contract, so a touch device kept a 28px metric checkbox and a 32px
+   compact toggle row. The arbiter now owns those heights. */
 .workspace-detected-metrics__options .m3-checkbox {
-  min-height: 28px;
   gap: 5px;
 }
 
 .workspace-m3-toggle.m3-switch-row--compact {
   width: auto;
-  min-height: 32px;
   height: auto;
   cursor: default;
 }
