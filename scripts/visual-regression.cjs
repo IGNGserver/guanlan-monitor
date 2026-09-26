@@ -660,6 +660,17 @@ async function run() {
     await page.locator(".workspace-page--overview").waitFor({ state: "visible", timeout: 15_000 });
     for (const [width, height] of [[1440, 900], [1024, 768], [840, 900], [820, 900], [390, 844]]) {
       await page.setViewportSize({ width, height });
+      // Crossing the drawer breakpoint animates the sidebar, and a hash-only
+      // navigation does not outlast that transition. Measure once it settles.
+      await page.waitForFunction(() => {
+        const node = document.querySelector(".workspace-sidebar");
+        if (!node) return true;
+        const rect = node.getBoundingClientRect();
+        const key = `${Math.round(rect.left)}:${Math.round(rect.width)}`;
+        const previous = window.__dscSettledRect;
+        window.__dscSettledRect = key;
+        return previous === key;
+      }, null, { timeout: 5_000, polling: 120 }).catch(() => undefined);
       for (const [name, selector] of matrixRoutes) {
         const hash = name === "overview" ? "overview" : name === "devices" ? "devices" : name === "device-detail" ? `device/${encodeURIComponent("workstation-01")}` : "settings/appearance";
         await page.goto(`${baseUrl}#${hash}`, { waitUntil: "domcontentloaded" });
