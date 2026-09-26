@@ -907,6 +907,19 @@
   padding-top: 0;
 }
 
+/* Carbon's compiled global stylesheet carries `body { background: $background }`
+   with the *unthemed* Sass default — white — and it lands in the second layer,
+   above `workspace.tokens.css`. Measured on the deployed console: `html`
+   followed the theme (#f4f4f4 / #161616) while `body` stayed rgb(255,255,255)
+   in both. It is normally hidden behind `.guanlan-carbon-theme`, which fills the
+   viewport, but a trackpad or phone rubber-band overscroll exposes the white
+   strip, and any layout where the wrapper does not fill would show it too.
+   Restated here, in the arbiter, so the theme-aware value wins again. */
+body {
+  background: var(--workspace-bg);
+  color: var(--workspace-text);
+}
+
 /* The palette is a Carbon modal; the Material panel that used to sit inside it
  * added a 28px corner, a second border, an acrylic fill and a 620px width
  * against the modal's 680px, which left a dead band down the right edge. This
