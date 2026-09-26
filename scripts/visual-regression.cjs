@@ -277,33 +277,40 @@ async function run() {
     }
   });
 
-  await page.route("**/socket.io/**", (route) => route.abort());
-  await page.route("**/api/**", async (route) => {
-    const requestUrl = new URL(route.request().url());
-    const pathname = requestUrl.pathname;
-    if (fixtureMode === "unauthorized") return fulfillJson(route, { error: "unauthorized" }, 401);
-    if (fixtureMode === "login" && pathname === "/api/auth/session") return fulfillJson(route, { error: "unauthorized" }, 401);
-    if (pathname === "/api/auth/session") return fulfillJson(route, { ok: true, issuedAt: "2026-08-21T00:00:00.000Z" });
-    if (pathname === "/api/instances") return fulfillJson(route, fixtureMode === "empty" ? [] : fixtureDevices);
-    if (pathname === "/api/overview/metrics") return fulfillJson(route, fixtureMode === "empty" ? { ...overviewMetrics, instances: [] } : overviewMetrics);
-    if (/^\/api\/devices\/[^/]+\/metrics$/.test(pathname)) {
-      const deviceId = decodeURIComponent(pathname.split("/")[3]);
-      return fulfillJson(route, metricFixture(fixtureDevices.find((device) => device.deviceId === deviceId) ?? fixtureDevices[0]));
-    }
-    if (pathname === "/api/devices/reorder") return fulfillJson(route, { ok: true });
-    if (/^\/api\/devices\/[^/]+\/traffic-calendar$/.test(pathname)) return fulfillJson(route, null);
-    if (pathname === "/api/updates") {
-      return fulfillJson(route, {
-        available: false,
-        currentVersion: "visual-test",
-        currentChannel: "test",
-        latestVersion: "visual-test",
-        message: null,
-        releaseUrl: null
-      });
-    }
-    return fulfillJson(route, {});
-  });
+  /* The fixture is intercepted per page, not per browser. Anything that opens a
+     second page has to install the same routes on it, or `/api/auth/session`
+     reaches the real dev server, answers 401, and the console renders the login
+     form instead of the workspace. */
+  const installFixtureRoutes = async (target) => {
+    await target.route("**/socket.io/**", (route) => route.abort());
+    await target.route("**/api/**", async (route) => {
+      const requestUrl = new URL(route.request().url());
+      const pathname = requestUrl.pathname;
+      if (fixtureMode === "unauthorized") return fulfillJson(route, { error: "unauthorized" }, 401);
+      if (fixtureMode === "login" && pathname === "/api/auth/session") return fulfillJson(route, { error: "unauthorized" }, 401);
+      if (pathname === "/api/auth/session") return fulfillJson(route, { ok: true, issuedAt: "2026-08-21T00:00:00.000Z" });
+      if (pathname === "/api/instances") return fulfillJson(route, fixtureMode === "empty" ? [] : fixtureDevices);
+      if (pathname === "/api/overview/metrics") return fulfillJson(route, fixtureMode === "empty" ? { ...overviewMetrics, instances: [] } : overviewMetrics);
+      if (/^\/api\/devices\/[^/]+\/metrics$/.test(pathname)) {
+        const deviceId = decodeURIComponent(pathname.split("/")[3]);
+        return fulfillJson(route, metricFixture(fixtureDevices.find((device) => device.deviceId === deviceId) ?? fixtureDevices[0]));
+      }
+      if (pathname === "/api/devices/reorder") return fulfillJson(route, { ok: true });
+      if (/^\/api\/devices\/[^/]+\/traffic-calendar$/.test(pathname)) return fulfillJson(route, null);
+      if (pathname === "/api/updates") {
+        return fulfillJson(route, {
+          available: false,
+          currentVersion: "visual-test",
+          currentChannel: "test",
+          latestVersion: "visual-test",
+          message: null,
+          releaseUrl: null
+        });
+      }
+      return fulfillJson(route, {});
+    });
+  };
+  await installFixtureRoutes(page);
 
   await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-root").waitFor({ state: "visible", timeout: 15_000 });
@@ -966,22 +973,46 @@ async function run() {
   const touchViolations = [];
   try {
     fixtureMode = "live";
+    await installFixtureRoutes(touchPage);
     for (const routeHash of ["#overview", "#devices", "#settings/general"]) {
       await touchPage.goto(`${baseUrl}?visual-state=live${routeHash}`, { waitUntil: "domcontentloaded" });
-      await touchPage.locator(".workspace-root").waitFor({ state: "visible", timeout: 15_000 });
+      const root = touchPage.locator(".workspace-root");
+      await root.waitFor({ state: "visible", timeout: 15_000 }).catch(async () => {
+        throw new Error(`the touch pass never reached the workspace at ${routeHash}; the page rendered ${await touchPage.locator("main, form, .workspace-login-shell").first().evaluate((node) => node.className).catch(() => "nothing")}`);
+      });
       const coarse = await touchPage.evaluate(() => matchMedia("(pointer: coarse)").matches);
       assert.ok(coarse, `(pointer: coarse) must match on a touch page (${routeHash})`);
       const small = await touchPage.evaluate((exempt) => {
+        /* Measure the area a thumb actually hits, not the graphic.
+         *
+         * Carbon draws a toggle as a 20px pill and a checkbox as a small box
+         * inside a label row. Requiring 44px of the *graphic* would push the
+         * stylesheet to distort the control, so the CSS deliberately leaves
+         * those alone — what has to clear 44px is the label or row that carries
+         * the pointer target. Walking up to the nearest such wrapper and taking
+         * the larger box asks the question a user actually asks.
+         */
+        const HIT_AREA = 'label, [class*="--checkbox-label"], [class*="--toggle__wrapper"], .m3-switch-row, .m3-checkbox, .workspace-setting-row, .workspace-check-row, .cds--data-table tr';
         const rows = [];
         for (const el of document.querySelectorAll('button, a[href], input, select, [role="button"], [role="tab"], [role="option"], [role="checkbox"], [role="switch"]')) {
           const style = getComputedStyle(el);
           const rect = el.getBoundingClientRect();
-          if (style.display === "none" || style.visibility === "hidden" || rect.width < 1 || rect.height < 1) continue;
+          if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
+          if (rect.width < 1 || rect.height < 1) continue;
           if (rect.width >= 44 && rect.height >= 44) continue;
           if (exempt.some((selector) => el.matches(selector))) continue;
           if (el.closest("[hidden]") || el.getAttribute("aria-hidden") === "true") continue;
+          let hitWidth = rect.width;
+          let hitHeight = rect.height;
+          const wrapper = el.closest(HIT_AREA);
+          if (wrapper) {
+            const box = wrapper.getBoundingClientRect();
+            hitWidth = Math.max(hitWidth, box.width);
+            hitHeight = Math.max(hitHeight, box.height);
+          }
+          if (hitWidth >= 44 && hitHeight >= 44) continue;
           const cls = typeof el.className === "string" ? el.className.trim().split(/\s+/).slice(0, 3).join(".") : el.tagName.toLowerCase();
-          rows.push({ cls, w: Math.round(rect.width), h: Math.round(rect.height), label: (el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 24) });
+          rows.push({ cls, w: Math.round(rect.width), h: Math.round(rect.height), hitW: Math.round(hitWidth), hitH: Math.round(hitHeight), label: (el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 24) });
         }
         const seen = new Map();
         for (const row of rows) seen.set(`${row.cls} ${row.w}x${row.h}`, row);

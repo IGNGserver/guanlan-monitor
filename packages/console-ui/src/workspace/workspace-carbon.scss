@@ -1256,12 +1256,23 @@
   .cds--content-switcher-btn,
   .cds--text-input,
   .cds--select-input,
+  .cds--overflow-menu__trigger,
+  .cds--tabs__nav-link,
+  .cds--tabs__nav-item,
   .cds--checkbox-label,
-  .cds--toggle__switch,
+  .cds--toggle__wrapper,
+  .m3-switch-row,
+  .workspace-brand,
   .m3-segmented-control .cds--content-switcher-btn {
     min-width: var(--workspace-min-touch-target);
     min-height: var(--workspace-min-touch-target);
   }
+
+  /* The switch graphic and the checkbox box are deliberately NOT sized here.
+     Carbon draws them at their own dimensions inside a label row, and the row
+     is what a thumb actually hits; forcing 44px onto the 20px-tall pill would
+     just distort the control. The coarse pass in `visual-regression.cjs`
+     measures the enclosing label/row wrapper for exactly that reason. */
 
   .m3-segmented-control {
     /* Wrapping keeps every 44px target reachable without the control ever
