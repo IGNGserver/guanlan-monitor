@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -63,6 +65,7 @@ fun OnboardingScreen(
     modifier = Modifier
       .fillMaxSize()
       .background(colors.canvas)
+      .statusBarsPadding()
       .imePadding()
   ) {
     Column(
@@ -140,11 +143,12 @@ fun OnboardingScreen(
       Spacer(Modifier.height(metrics.spaceXxl))
     }
 
-    // 底部行动区：主行动固定在拇指可及处（构 + 交）
+    // 底部行动区：主行动固定在拇指可及处（构 + 交），并且让开三键导航栏
     Column(
       modifier = Modifier
         .fillMaxWidth()
         .background(colors.canvas)
+        .navigationBarsPadding()
         .padding(horizontal = metrics.screenMargin, vertical = metrics.spaceM),
       verticalArrangement = Arrangement.spacedBy(metrics.spaceXs),
       horizontalAlignment = Alignment.Start

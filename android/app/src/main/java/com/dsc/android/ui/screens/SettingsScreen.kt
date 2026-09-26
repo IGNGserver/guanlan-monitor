@@ -99,14 +99,13 @@ fun SettingsScreen(
       .background(colors.canvas)
   ) {
     Column(modifier = Modifier.fillMaxSize()) {
-      if (!embedded) {
-        OneUiTopBar(
-          title = "设置",
-          subtitle = "中枢连接、同步、外观与更新",
-          collapse = collapse,
-          large = true
-        )
-      }
+      // 双栏右栏同样要有标题，只是降级成紧凑高度：没有标题就不知道这一栏是什么（构）
+      OneUiTopBar(
+        title = "设置",
+        subtitle = "中枢连接、同步、外观与更新",
+        collapse = collapse,
+        large = !embedded
+      )
 
       LazyColumn(
         state = listState,
@@ -310,8 +309,19 @@ fun SettingsScreen(
               OneUiListDivider()
               OneUiListItem(
                 title = "检查更新",
-                subtitle = update?.message ?: "下次同步时向中枢确认是否有新的安装包",
-                onClick = { if (!state.refreshing) actions.onRefresh() }
+                subtitle = "向中枢确认是否有新的安装包",
+                leading = {
+                  OneUiLeadingIcon(icon = Icons.Rounded.Refresh, contentDescription = null, tone = OneUiIconTone.Neutral)
+                },
+                onClick = actions.onCheckUpdate,
+                trailing = {
+                  OneUiText(
+                    text = "检查",
+                    role = OneUiTextRole.ChartLabel,
+                    color = colors.accent,
+                    weight = FontWeight.SemiBold
+                  )
+                }
               )
             }
           }

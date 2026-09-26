@@ -209,6 +209,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           metricConfig = null,
           loadingMetrics = false,
           loadingTraffic = false,
+          metricsError = null,
+          trafficError = null,
           loggingIn = false,
           currentScreen = AppScreen.Login,
           transitionDirection = ScreenTransitionDirection.None,
@@ -335,31 +337,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     _state.update { it.copy(updateInstallerUri = null) }
   }
 
-  private fun checkForUpdate() {
+  /**
+   * 检查中枢上的更新。
+   *
+   * 登录后的自动检查保持静默（`reportResult = false`）；只有用户在「设置 › 版本与更新」
+   * 里主动点「检查更新」时，才把「已是最新 / 检查失败」的结论说出来（交）。
+   */
+  fun checkForUpdate(reportResult: Boolean = false) {
     val currentApi = api ?: return
     val config = _state.value.serverConfig
     if (config.baseUrl.isBlank()) return
     viewModelScope.launch {
-      val update = runCatching {
+      val result = runCatching {
         currentApi.updateInfo(
           platform = "android",
           currentVersion = BuildConfig.RELEASE_VERSION,
           currentChannel = BuildConfig.RELEASE_CHANNEL,
           arch = "universal"
         )
-      }.getOrNull()
-      _state.update { it.copy(updateInfo = update?.takeIf { item -> item.available && !item.assetUrl.isNullOrBlank() }) }
+      }
+      val update = result.getOrNull()
+      val hasInstallableUpdate = update?.available == true && !update.assetUrl.isNullOrBlank()
+      _state.update {
+        it.copy(
+          updateInfo = update?.takeIf { item -> item.available && !item.assetUrl.isNullOrBlank() },
+          message = when {
+            !reportResult -> it.message
+            result.isFailure -> "检查更新失败，请确认中枢可达"
+            hasInstallableUpdate -> "发现新版本 v${update?.latestVersion ?: ""}，可在下方下载"
+            else -> "当前已是最新版本（v${BuildConfig.RELEASE_VERSION}）"
+          }
+        )
+      }
     }
   }
 
   fun openDevice(deviceId: String, focusBlock: DeviceBlockKey? = null) {
     pushCurrentScreen()
+    val switchingDevice = _state.value.selectedDeviceId != deviceId
     _state.update {
       it.copy(
         selectedDeviceId = deviceId,
         focusedBlock = focusBlock,
         currentScreen = AppScreen.DeviceDetail,
         transitionDirection = ScreenTransitionDirection.Forward,
+        // 顶栏标题取自已加载的快照，换设备时必须先清掉，否则会短暂显示上一台的名字（交）
+        metrics = if (switchingDevice) null else it.metrics,
+        metricsError = if (switchingDevice) null else it.metricsError,
         message = null
       )
     }
@@ -369,12 +393,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   /** 流量改为整页：One UI 不把一个需要日历与明细的内容塞进半屏面板。 */
   fun openTraffic(deviceId: String) {
     pushCurrentScreen()
+    val switchingDevice = _state.value.selectedDeviceId != deviceId
     _state.update {
       it.copy(
         selectedDeviceId = deviceId,
         currentScreen = AppScreen.Traffic,
         transitionDirection = ScreenTransitionDirection.Forward,
         trafficSheetRequested = false,
+        // 换设备时不能把上一台的日历留在屏幕上，否则标题与数字对不上（交）
+        trafficCalendar = if (switchingDevice) null else it.trafficCalendar,
+        metrics = if (switchingDevice) null else it.metrics,
+        trafficError = if (switchingDevice) null else it.trafficError,
         message = null
       )
     }
@@ -661,7 +690,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private fun loadMetrics(deviceId: String, window: MetricWindow, showScreen: Boolean) {
     metricsLoadJob?.cancel()
     metricsLoadJob = viewModelScope.launch {
-      _state.update { it.copy(loadingMetrics = true, message = null) }
+      _state.update { it.copy(loadingMetrics = true, message = null, metricsError = null) }
       try {
         val metrics = executeWithAuthRetry { it.metrics(deviceId, window.value) }
         val isCurrentRequest = _state.value.selectedDeviceId == deviceId && _state.value.selectedWindow == window
@@ -672,6 +701,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
               dataSource = RemoteDataSource.Live,
               metrics = metrics,
               currentScreen = if (showScreen) AppScreen.DeviceDetail else it.currentScreen,
+              metricsError = null,
               message = null
             )
           }
@@ -680,7 +710,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       } catch (error: Throwable) {
         if (error is CancellationException) throw error
         if (_state.value.selectedDeviceId == deviceId && _state.value.selectedWindow == window) {
-          _state.update { it.copy(loadingMetrics = false, message = userFacingError(error, "读取指标失败，请稍后重试")) }
+          val reason = userFacingError(error, "读取指标失败，请稍后重试")
+          // 失败原因要留在页面上（而不是只闪一条 3 秒的消息条），否则页面会停在骨架屏上
+          // 让人以为还在加载（交：错误态必须带重试出口）。
+          _state.update { it.copy(loadingMetrics = false, metricsError = reason, message = reason) }
         }
       }
     }
@@ -691,7 +724,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val requestedSelectedStart = trafficSelectedStart
     trafficLoadJob?.cancel()
     trafficLoadJob = viewModelScope.launch {
-      _state.update { it.copy(loadingTraffic = true, message = null) }
+      _state.update { it.copy(loadingTraffic = true, message = null, trafficError = null) }
       try {
         val traffic = executeWithAuthRetry { it.trafficCalendar(deviceId, mode.value, requestedAnchor, requestedSelectedStart) }
         val isCurrentRequest =
@@ -707,6 +740,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
               dataSource = RemoteDataSource.Live,
               trafficCalendar = traffic,
               currentScreen = if (showScreen) AppScreen.Traffic else it.currentScreen,
+              trafficError = null,
               message = null
             )
           }
@@ -715,7 +749,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       } catch (error: Throwable) {
         if (error is CancellationException) throw error
         if (_state.value.selectedDeviceId == deviceId && _state.value.trafficMode == mode) {
-          _state.update { it.copy(loadingTraffic = false, message = userFacingError(error, "读取流量失败，请稍后重试")) }
+          val reason = userFacingError(error, "读取流量失败，请稍后重试")
+          _state.update { it.copy(loadingTraffic = false, trafficError = reason, message = reason) }
         }
       }
     }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -120,51 +121,40 @@ fun DeviceListScreen(
       .background(colors.canvas)
   ) {
     Column(modifier = Modifier.fillMaxSize()) {
-      if (!embedded) {
-        OneUiTopBar(
-          title = if (editMode) "编辑设备列表" else "观澜",
-          subtitle = if (editMode) {
-            "调整顺序或删除设备"
-          } else {
-            connectionSummary(state, persisted)
-          },
-          collapse = collapse,
-          large = true,
-          actions = {
-            if (!editMode) {
-              OneUiIconButton(
-                contentDescription = "刷新",
-                onClick = { if (!state.refreshing) actions.onRefresh() },
-                enabled = !state.refreshing,
-                spinning = state.refreshing
-              ) {
-                Icon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textSecondary)
-              }
-              OneUiIconButton(
-                contentDescription = "编辑设备列表",
-                onClick = {
-                  draftIds = persistedIds
-                  editMode = true
-                },
-                enabled = persisted.isNotEmpty()
-              ) {
-                Icon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textSecondary)
-              }
+      // 双栏的列表栏也用同一条顶栏，只是降级成紧凑高度：
+      // 刷新与编辑是这一栏的主动作，嵌入态把它们整个删掉就没有入口了（构）
+      OneUiTopBar(
+        title = if (editMode) "编辑设备列表" else "观澜",
+        subtitle = if (editMode) {
+          "调整顺序或删除设备"
+        } else {
+          connectionSummary(state, persisted)
+        },
+        collapse = collapse,
+        large = !embedded,
+        actions = {
+          if (!editMode) {
+            OneUiIconButton(
+              contentDescription = "刷新",
+              onClick = { if (!state.refreshing) actions.onRefresh() },
+              enabled = !state.refreshing,
+              spinning = state.refreshing
+            ) {
+              Icon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textSecondary)
+            }
+            OneUiIconButton(
+              contentDescription = "编辑设备列表",
+              onClick = {
+                draftIds = persistedIds
+                editMode = true
+              },
+              enabled = persisted.isNotEmpty()
+            ) {
+              Icon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textSecondary)
             }
           }
-        )
-      } else {
-        Spacer(
-          Modifier
-            .fillMaxWidth()
-            .height(metrics.spaceL)
-        )
-        OneUiText(
-          text = "观澜",
-          role = OneUiTextRole.TopBarCollapsed,
-          modifier = Modifier.padding(horizontal = metrics.screenMargin, vertical = metrics.spaceXs)
-        )
-      }
+        }
+      )
 
       LazyColumn(
         state = listState,
@@ -515,6 +505,7 @@ private fun EditDock(onCancel: () -> Unit, onSave: () -> Unit, dirty: Boolean) {
     modifier = Modifier
       .fillMaxWidth()
       .background(colors.group)
+      .navigationBarsPadding()
       .padding(horizontal = metrics.screenMargin, vertical = metrics.spaceM),
     horizontalArrangement = Arrangement.spacedBy(metrics.spaceS),
     verticalAlignment = Alignment.CenterVertically

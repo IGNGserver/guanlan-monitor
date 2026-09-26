@@ -36,6 +36,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -45,6 +47,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,14 +85,27 @@ import androidx.compose.ui.graphics.vector.ImageVector
  * 不再自己决定“卡片该多大、组与组之间留多少”（构）。
  */
 
-/** 大标题随列表滚动折叠的比例：由调用方把 LazyListState 传进来。 */
+/**
+ * 大标题随列表滚动折叠的比例：由调用方把 LazyListState 传进来。
+ *
+ * 按比例而不是「能不能往上滚」：滚过 1px 就整段塌缩会让正文跟着跳一下，
+ * One UI 的实际表现是标题随滚动距离连续上移淡出，滚满一条大标题的高度后收完（动）。
+ */
 @Composable
 fun rememberOneUiCollapse(listState: LazyListState): Float {
   val motion = OneUiTheme.motion
-  val collapsed = listState.canScrollBackward
+  val density = LocalDensity.current
+  val thresholdPx = remember(density, OneUiTheme.metrics.topBarLargeHeight) {
+    with(density) { OneUiTheme.metrics.topBarLargeHeight.toPx() }.coerceAtLeast(1f)
+  }
+  val raw = if (listState.firstVisibleItemIndex > 0) {
+    1f
+  } else {
+    (listState.firstVisibleItemScrollOffset / thresholdPx).coerceIn(0f, 1f)
+  }
   val progress by animateFloatAsState(
-    targetValue = if (collapsed) 1f else 0f,
-    animationSpec = motion.tween(OneUiDuration.Content, OneUiEasing.EmphasizedDecelerate),
+    targetValue = raw,
+    animationSpec = motion.tween(OneUiDuration.Press, OneUiEasing.EmphasizedDecelerate),
     label = "oneui_collapse"
   )
   return progress
@@ -124,8 +140,11 @@ fun OneUiTopBar(
   Column(
     modifier = modifier
       .fillMaxWidth()
-      .height(barHeight)
+      // 边到边下由顶栏自己吃掉状态栏高度，并把底色铺到状态栏后面；
+      // 底色必须先于 padding，否则挖孔/通知栏区域会露出上一层页面的颜色（适）
       .background(colors.canvas)
+      .statusBarsPadding()
+      .height(barHeight)
       .padding(horizontal = metrics.screenMargin)
   ) {
     // 贴顶的一行：导航 + 紧凑标题（仅折叠后可见）+ 动作
@@ -312,6 +331,8 @@ fun OneUiNavigationRail(
       .width(metrics.navigationRailWidth)
       .fillMaxSize()
       .background(colors.canvas)
+      // 侧栏占满整列高度，安全区由它自己消费（边到边）
+      .safeDrawingPadding()
       .padding(top = metrics.spaceXl, bottom = metrics.spaceXl),
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.spacedBy(metrics.spaceM)

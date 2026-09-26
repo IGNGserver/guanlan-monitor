@@ -18,6 +18,7 @@ import com.dsc.android.NetworkMetricSeriesDto
 import com.dsc.android.SamplePointDto
 import com.dsc.android.TemperatureMetricSeriesDto
 import com.dsc.android.TemperatureSensorDto
+import com.dsc.android.TrafficCalendarMode
 import com.dsc.android.parseTimestampMillis
 
 /**
@@ -727,9 +728,34 @@ internal fun formatDate(value: String): String = runCatching {
 internal fun formatDateInclusive(value: String): String = runCatching {
   java.time.OffsetDateTime.parse(value).minusNanos(1).atZoneSameInstant(java.time.ZoneId.systemDefault()).toLocalDate().toString()
 }.getOrDefault(value)
-internal fun trafficDayLabel(value: String): String = runCatching {
-  java.time.OffsetDateTime.parse(value).atZoneSameInstant(java.time.ZoneId.systemDefault()).dayOfMonth.toString()
-}.getOrDefault(value)
+/**
+ * 日历每行的格数（构）。
+ *
+ * 中枢按模式返回不同数量的格子：日=整月的日历格（含上下月的补位），周=本月覆盖的周，
+ * 月=固定 12 格。用同一个列数排三种格子会让月视图变成 7+5 的错位残局。
+ */
+internal fun trafficCalendarColumns(mode: TrafficCalendarMode): Int = when (mode) {
+  TrafficCalendarMode.Day -> 7
+  TrafficCalendarMode.Week -> 3
+  TrafficCalendarMode.Month -> 4
+}
+
+/**
+ * 格子的读屏文案（适）：One UI 要求「日期 + 总量 + 是否选中」都能被朗读，
+ * 并且当前周期与选中是两件事，不能互相吃掉。
+ */
+internal fun trafficCellAnnouncement(
+  label: String,
+  rangeStart: String,
+  total: String,
+  isCurrentPeriod: Boolean,
+  isSelected: Boolean
+): String = listOfNotNull(
+  "$label（${formatDate(rangeStart)}）",
+  total,
+  if (isCurrentPeriod) "当前周期" else null,
+  if (isSelected) "已选中" else null
+).joinToString("，")
 internal fun formatTime(value: String?): String = if (value.isNullOrBlank()) "--" else runCatching {
   val dt = java.time.OffsetDateTime.parse(value).atZoneSameInstant(java.time.ZoneId.systemDefault()).toLocalDateTime()
   "%04d-%02d-%02d %02d:%02d:%02d".format(dt.year, dt.monthValue, dt.dayOfMonth, dt.hour, dt.minute, dt.second)

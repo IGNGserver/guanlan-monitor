@@ -520,6 +520,9 @@ data class AppState(
   val refreshing: Boolean = false,
   val loadingMetrics: Boolean = false,
   val loadingTraffic: Boolean = false,
+  /** 读取失败的原因：错误必须留在页面上并带重试出口，而不是只闪一条 Snackbar（交）。 */
+  val metricsError: String? = null,
+  val trafficError: String? = null,
   val devices: List<DeviceSummaryDto> = emptyList(),
   val selectedDeviceId: String? = null,
   val focusedBlock: DeviceBlockKey? = null,
