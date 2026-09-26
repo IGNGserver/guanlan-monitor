@@ -974,7 +974,7 @@ async function run() {
   try {
     fixtureMode = "live";
     await installFixtureRoutes(touchPage);
-    for (const routeHash of ["#overview", "#devices", "#settings/general"]) {
+    for (const routeHash of ["#overview", "#devices", `#device/${encodeURIComponent("workstation-01")}`, "#settings/general"]) {
       await touchPage.goto(`${baseUrl}?visual-state=live${routeHash}`, { waitUntil: "domcontentloaded" });
       const root = touchPage.locator(".workspace-root");
       await root.waitFor({ state: "visible", timeout: 15_000 }).catch(async () => {
