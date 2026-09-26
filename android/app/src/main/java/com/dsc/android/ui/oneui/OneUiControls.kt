@@ -157,8 +157,8 @@ fun OneUiButton(
   val interaction = rememberOneUiInteractionSource()
   val visual = oneUiInteraction(interaction, enabled = enabled && !loading && onClick != null)
 
-  val container = when (variant) {
-    OneUiButtonVariant.Filled -> if (visual.pressed) colors.accentPressed else colors.accent
+  val containerBase = when (variant) {
+    OneUiButtonVariant.Filled -> colors.accent
     OneUiButtonVariant.Tonal -> colors.accentSoft
     OneUiButtonVariant.Outlined, OneUiButtonVariant.Text -> Color.Transparent
   }
@@ -173,6 +173,7 @@ fun OneUiButton(
     modifier = modifier
       .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
       .defaultMinSize(minHeight = size.height)
+      .background(if (variant == OneUiButtonVariant.Filled && visual.pressed) colors.accentPressed else containerBase, shapes.pill)
       .oneUiPressable(
         onClick = if (loading) null else onClick,
         enabled = enabled && !loading,
@@ -189,7 +190,6 @@ fun OneUiButton(
           else -> null
         }
       )
-      .background(container, shapes.pill)
       .then(
         if (variant == OneUiButtonVariant.Outlined) {
           Modifier.border(
@@ -436,6 +436,7 @@ fun OneUiFilterChip(
   Box(
     modifier = modifier
       .defaultMinSize(minHeight = 38.dp)
+      .background(if (selected) colors.accent else colors.group, shapes.pill)
       .oneUiPressable(
         onClick = onClick,
         enabled = enabled,
@@ -446,7 +447,6 @@ fun OneUiFilterChip(
         minHeight = null,
         stateLabel = if (selected) "已选中" else "未选中"
       )
-      .background(color = if (selected) colors.accent else colors.group, shape = shapes.pill)
       .border(
         width = if (selected) 0.dp else 1.4.dp,
         color = if (selected) Color.Transparent else colors.outline,
