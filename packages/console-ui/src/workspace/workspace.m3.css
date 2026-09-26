@@ -1,4 +1,12 @@
-/* Material 3 semantic layer. Keep platform material overrides in window-material.css. */
+/* Material 3 semantic layer. Keep platform material overrides in window-material.css.
+ *
+ * Dead selectors were removed from the shared state-layer lists below:
+ * `.m3-tab` and `.m3-segmented-control__option` no longer render (the segmented
+ * control is Carbon's `ContentSwitcher`, whose items are
+ * `.cds--content-switcher-btn`), and `.m3-field__input` is not emitted by
+ * `m3.tsx`. They were also the reason the touch-target block at the bottom of
+ * this file could never reach the controls that actually ship.
+ */
 
 .m3-button,
 .workspace-button {
@@ -11,7 +19,7 @@
   overflow: hidden;
   padding: 0 18px;
   border: 1px solid transparent;
-  border-radius: var(--workspace-shape-full);
+  border-radius: 0;
   color: var(--workspace-color-on-surface);
   background: transparent;
   cursor: pointer;
@@ -26,9 +34,7 @@
 .m3-button::before,
 .m3-icon-button::before,
 .m3-chip::before,
-.m3-segmented-control__option::before,
 .m3-switch::before,
-.m3-tab::before,
 .m3-navigation-item::before {
   position: absolute;
   inset: 0;
@@ -43,9 +49,7 @@
 .m3-button:hover::before,
 .m3-icon-button:hover::before,
 .m3-chip:hover::before,
-.m3-segmented-control__option:hover::before,
 .m3-switch:hover::before,
-.m3-tab:hover::before,
 .m3-navigation-item:hover::before {
   opacity: 0.08;
 }
@@ -53,9 +57,7 @@
 .m3-button:active,
 .m3-icon-button:active,
 .m3-chip:active,
-.m3-segmented-control__option:active,
 .m3-switch:active,
-.m3-tab:active,
 .m3-navigation-item:active,
 .workspace-button:active {
   transform: translateY(1px) scale(0.98);
@@ -64,24 +66,15 @@
 .m3-button:active::before,
 .m3-icon-button:active::before,
 .m3-chip:active::before,
-.m3-segmented-control__option:active::before,
 .m3-switch:active::before,
-.m3-tab:active::before,
 .m3-navigation-item:active::before {
   opacity: 0.12;
 }
 
-.m3-button:focus-visible,
-.m3-icon-button:focus-visible,
-.m3-chip:focus-visible,
-.m3-segmented-control__option:focus-visible,
-.m3-switch:focus-visible,
-.m3-tab:focus-visible,
-.m3-navigation-item:focus-visible,
-.m3-field__input:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--workspace-color-primary) 42%, transparent);
-  outline-offset: 2px;
-}
+/* Focus is Carbon's to draw. The ring here stacked a second 3px outline on top
+   of `.cds--btn`'s own inset focus, so a focused control read as two nested
+   boxes. `workspace.tokens.css` keeps a ring for the few bare elements that are
+   not Carbon components. */
 
 .m3-button__icon,
 .m3-button__label {
@@ -131,7 +124,6 @@
 .m3-button:disabled,
 .m3-icon-button:disabled,
 .m3-chip:disabled,
-.m3-segmented-control__option:disabled,
 .m3-switch:disabled,
 .workspace-button:disabled {
   opacity: 0.48;
@@ -150,7 +142,7 @@
   overflow: hidden;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 50%;
+  border-radius: 0;
   color: var(--workspace-color-on-surface-variant);
   background: transparent;
   cursor: pointer;
@@ -179,7 +171,7 @@
   overflow: hidden;
   padding: 0 16px;
   border: 0;
-  border-radius: var(--workspace-shape-full);
+  border-radius: 0;
   color: var(--workspace-color-on-surface-variant);
   background: transparent;
   cursor: pointer;
@@ -208,10 +200,14 @@
   transform: none;
 }
 
+/* Geometry for shell controls is arbitrated in `workspace-carbon.scss`.
+   `min-height` and `border-radius` used to live here as `(0,2,0)` composite
+   declarations, which out-ranked the single-class rules in both the arbiter and
+   the `@media (pointer: coarse)` block — that is how a 40px nav row and a
+   30x30 icon button survived every attempt to raise them to the 44px touch
+   contract. Padding stays, because the arbiter does not set it. */
 .workspace-nav-item.m3-navigation-item {
-  min-height: 40px;
   padding-inline: 12px;
-  border-radius: var(--workspace-shape-full);
 }
 
 .workspace-sidebar.is-collapsed .workspace-nav-item.m3-navigation-item {
@@ -253,9 +249,9 @@
   justify-content: center;
   gap: 2px;
   padding: 4px 8px;
-  border-radius: var(--workspace-shape-full);
+  border-radius: 0;
   color: var(--workspace-color-on-surface-variant);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 560;
   text-align: center;
 }
@@ -265,12 +261,14 @@
   z-index: 1;
 }
 
+/* One rule for the search trigger. It used to be split across this file twice
+   (`(0,2,0)` here and `(0,1,0)` further down), and the higher-specificity half
+   pinned `padding-inline: 11px` and a 12px corner, so the shared control-height
+   and inline-padding contract in `workspace-carbon.scss` could never reach it. */
 .workspace-search-trigger.m3-button {
   min-width: 142px;
   min-height: var(--workspace-control-height);
   justify-content: flex-start;
-  padding-inline: 11px;
-  border-radius: var(--workspace-shape-medium);
   color: var(--workspace-color-on-surface-variant);
   background: var(--workspace-color-surface-container-low);
   font-size: 12px;
@@ -335,12 +333,15 @@
   border-radius: 0;
 }
 
+/* Same arbitration note as `.workspace-nav-item.m3-navigation-item`: the fixed
+   30x30 box here outranked the 44px touch contract twice over, and the
+   `@media (pointer: coarse)` block in this file could not beat it either. */
 .workspace-icon-button.m3-icon-button {
-  width: 30px;
-  min-width: 30px;
-  height: 30px;
-  min-height: 30px;
-  border-radius: var(--workspace-shape-small);
+  width: var(--workspace-control-height);
+  min-width: var(--workspace-control-height);
+  height: var(--workspace-control-height);
+  min-height: var(--workspace-control-height);
+  border-radius: 0;
 }
 
 .m3-chip {
@@ -412,31 +413,13 @@
   min-height: var(--workspace-control-height);
 }
 
-.workspace-select,
-.workspace-input {
-  box-sizing: border-box;
-  min-height: var(--workspace-control-height);
-  border: 1px solid var(--workspace-color-outline);
-  border-radius: var(--workspace-shape-small);
-  outline: 0;
-  color: var(--workspace-color-on-surface);
-  background: var(--workspace-color-surface-container-low);
-  font: inherit;
-  font-size: 13px;
-  transition: border-color var(--workspace-motion-standard), background var(--workspace-motion-standard), box-shadow var(--workspace-motion-standard);
-}
-
-.workspace-select:hover,
-.workspace-input:hover {
-  border-color: var(--workspace-color-on-surface-variant);
-  background: var(--workspace-color-surface-container);
-}
-
-.workspace-select:focus,
-.workspace-input:focus {
-  border-color: var(--workspace-color-primary);
-  box-shadow: inset 0 0 0 1px var(--workspace-color-primary);
-}
+/* `.workspace-select` / `.workspace-input` used to paint a bordered, rounded,
+   filled box here. `selectClassName` puts that class on Carbon's `.cds--select`
+   *wrapper*, not on the `<select>`, so the box stacked around a field that
+   already draws its own fill and underline — a double border and a double
+   background on every select in the toolbar and the settings probes.
+   `.workspace-input` had no JSX reference at all. Sizing now lives in
+   `workspace.dashboard.css` as `min-width` only. */
 
 .m3-select {
   display: grid;
@@ -533,22 +516,9 @@
   line-height: 1.45;
 }
 
-.m3-switch {
-  position: relative;
-  display: inline-flex;
-  width: 52px;
-  min-width: 52px;
-  height: 32px;
-  min-height: 32px;
-  align-items: center;
-  padding: 0 4px;
-  border: 2px solid var(--workspace-color-outline);
-  border-radius: var(--workspace-shape-full);
-  color: var(--workspace-color-on-surface-variant);
-  background: var(--workspace-color-surface-container-high);
-  cursor: pointer;
-  transition: color var(--workspace-motion-standard), background var(--workspace-motion-standard), border-color var(--workspace-motion-standard), transform var(--workspace-motion-standard);
-}
+/* `.m3-switch` is the class Carbon's own `<Toggle>` is given, so the 52x32
+   pill with a 2px outline border used to draw a second Material switch on top
+   of Carbon's. The control now comes from Carbon untouched. */
 
 .m3-switch-row.is-disabled {
   opacity: 0.48;
@@ -558,31 +528,26 @@
   justify-content: flex-end;
 }
 
+/* One row contract for the settings list. `M3Switch` rows used to be the odd
+   ones out: a 44px row with an outline-variant divider sitting among 72px
+   `workspace-setting-row` items with a Carbon divider, so a single list read as
+   two different densities. */
 .workspace-settings-list > .m3-switch-row:not(:first-child) {
-  border-top: 1px solid var(--workspace-color-outline-variant);
+  border-top: 1px solid var(--cds-border-subtle-00, #e0e0e0);
 }
 
 .workspace-settings-list > .m3-switch-row {
-  padding-block: 10px;
+  min-height: 72px;
+  padding-block: 0;
 }
 
-/* First migration pass: existing shared primitives consume the new semantic roles. */
-.workspace-surface {
-  border-color: var(--workspace-color-outline-variant);
-  border-radius: var(--workspace-shape-large);
-  background: var(--workspace-color-surface-container-low);
-  box-shadow: var(--workspace-elevation-1);
-}
-
-.workspace-overview-grid--single {
-  grid-template-columns: minmax(0, 1fr);
-}
-
+/* The empty/error state surface. Carbon keeps tiles flat, so this carries a
+   hairline and a layer colour but no elevation. */
 .m3-state-surface {
   border-style: solid;
   border-color: var(--workspace-color-outline-variant);
   background: var(--workspace-color-surface-container-low);
-  box-shadow: var(--workspace-elevation-1);
+  box-shadow: none;
 }
 
 .m3-state-surface--error {
@@ -595,48 +560,20 @@
   background: var(--workspace-color-error-container);
 }
 
-.workspace-visually-hidden {
-  position: absolute !important;
-  width: 1px !important;
-  height: 1px !important;
-  padding: 0 !important;
-  overflow: hidden !important;
-  clip: rect(0 0 0 0) !important;
-  white-space: nowrap !important;
-  border: 0 !important;
-}
+/* `.workspace-visually-hidden` is declared once, in `workspace.pages.css`.
+   The duplicate here disagreed on the `clip` value and won the tie only by
+   source order, which is not a contract anyone can read. */
 
 .workspace-loading-state .workspace-skeleton {
-  border-color: var(--workspace-color-outline-variant);
-  background: var(--workspace-color-surface-container-low);
-  box-shadow: var(--workspace-elevation-1);
-}
-
-.workspace-search-trigger {
-  border-color: var(--workspace-color-outline);
-  border-radius: var(--workspace-shape-small);
-  color: var(--workspace-color-on-surface-variant);
   background: var(--workspace-color-surface-container-low);
 }
 
-.workspace-search-trigger:hover {
-  border-color: var(--workspace-color-on-surface-variant);
-  color: var(--workspace-color-on-surface);
-  background: var(--workspace-color-surface-container);
-}
-
-.workspace-command {
-  border-color: var(--workspace-color-outline-variant);
-  border-radius: var(--workspace-shape-extra-large);
-  background: var(--workspace-color-surface-container-high);
-  box-shadow: var(--workspace-elevation-3);
-}
-
-.workspace-command__item.is-active,
-.workspace-command__item:hover {
-  color: var(--workspace-color-on-primary-container);
-  background: var(--workspace-color-primary-container);
-}
+/* Removed as duplicates of the higher-specificity `.workspace-search-trigger.m3-button`
+   rule above, of `.workspace-command` now being arbitrated in
+   `workspace-carbon.scss`, and of `.workspace-command__item` states that the
+   same arbiter owns. `.workspace-surface` and `.workspace-overview-grid--single`
+   went too: the first is owned by `workspace-carbon.scss`, the second has no
+   JSX reference. */
 
 .m3-snackbar.workspace-toast {
   display: flex;
@@ -644,43 +581,50 @@
   align-items: center;
   padding: 12px 16px;
   border-color: var(--workspace-color-outline);
-  border-radius: var(--workspace-shape-small);
+  border-radius: 0;
   color: var(--workspace-color-on-surface);
   background: var(--workspace-color-surface-container-high);
   box-shadow: var(--workspace-elevation-3);
 }
 
+/* A toast used to look identical whether `notice.tone` was `error`, `info` or
+   success, because the modifier classes `AppTopBar` emits had no rules at all.
+   Carbon's support colours now carry the distinction. */
+.m3-snackbar--error {
+  border-left: 3px solid var(--cds-support-error, #da1e28);
+  color: var(--cds-support-error, #da1e28);
+}
+
+.m3-snackbar--success {
+  border-left: 3px solid var(--cds-support-success, #24a148);
+}
+
+.m3-snackbar--info {
+  border-left: 3px solid var(--cds-support-info, #0043ce);
+}
+
+/* Single owner for the status label roles. `workspace.shell.css` declared the
+   same five selectors with different token sources; whichever the bundle
+   ordered last silently won, so changing a status colour meant guessing which
+   of two files was live. */
 .workspace-status-label--online { color: var(--workspace-color-success); background: var(--workspace-color-success-container); }
 .workspace-status-label--offline { color: var(--workspace-color-on-surface-variant); background: var(--workspace-color-surface-container); }
 .workspace-status-label--cached { color: var(--workspace-color-info); background: var(--workspace-color-info-container); }
 .workspace-status-label--warning { color: var(--workspace-color-warning); background: var(--workspace-color-warning-container); }
 .workspace-status-label--unknown { color: var(--workspace-color-on-surface-variant); background: var(--workspace-color-surface-container); }
 
-@media (pointer: coarse) {
-  .m3-button,
-  .m3-icon-button,
-  .m3-chip,
-  .m3-segmented-control__option {
-    min-height: var(--workspace-min-touch-target);
-  }
-
-  .m3-icon-button {
-    width: var(--workspace-min-touch-target);
-    min-width: var(--workspace-min-touch-target);
-    height: var(--workspace-min-touch-target);
-  }
-
-  }
+/* The `@media (pointer: coarse)` block that used to sit here is gone. It was
+   `(0,1,0)` in the first layer, so it could never outrank the arbiter in
+   `workspace-carbon.scss` — and it had already lost to the `(0,2,0)` composite
+   size declarations above that no longer exist. The 44px contract now lives in
+   exactly one place, at the end of `workspace-carbon.scss`. */
 
 @media (prefers-reduced-motion: reduce) {
   .m3-button,
   .m3-icon-button,
   .m3-chip,
-  .m3-segmented-control__option,
-  .m3-tab,
-  .m3-field__input,
   .m3-switch,
-  .m3-switch__thumb {
+  .m3-navigation-item {
     transition-duration: 0.01ms;
   }
 }
@@ -691,30 +635,37 @@
     display: none;
   }
 
+  /* `display` has to be repeated here. The bar is switched on by
+     `workspace.pages.css` at `max-width: 839px` only, so on a portrait viewport
+     wider than 839px this block restyled an element that was still
+     `display: none` and the bottom navigation never appeared on a tablet held
+     upright. */
   .workspace-bottom-nav {
+    display: grid;
     right: 0;
     bottom: 0;
     left: 0;
     width: 100%;
     justify-content: space-around;
     gap: 2px;
-    padding: 8px max(8px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-bottom));
+    padding: 0 max(8px, env(safe-area-inset-left));
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
     border-right: 0;
     border-bottom: 0;
     border-left: 0;
     border-radius: 0;
     background: var(--workspace-color-surface-container);
-    box-shadow: 0 -2px 12px rgb(30 48 67 / 10%);
+    box-shadow: none;
     transform: none;
   }
 
   .workspace-bottom-nav__item {
     flex: 1 1 0;
     min-width: 0;
-    max-width: 96px;
+    max-width: 128px;
     min-height: 56px;
     padding: 6px 8px;
-    border-radius: var(--workspace-shape-large);
+    border-radius: 0;
     font-size: 11px;
     font-weight: 620;
   }
@@ -725,7 +676,7 @@
   }
 
   .workspace-sidebar-backdrop {
-    background: rgb(20 28 36 / 38%);
+    background: var(--workspace-scrim);
   }
 
   .m3-snackbar.workspace-toast {
@@ -737,19 +688,9 @@
   }
 }
 
-.workspace-device-statusline {
-  margin-top: -10px;
-  margin-bottom: 16px;
-  padding: 10px 12px;
-  border: 1px solid var(--workspace-color-outline-variant);
-  border-radius: var(--workspace-shape-medium);
-  color: var(--workspace-color-on-surface-variant);
-  background: var(--workspace-color-surface-container-low);
-}
-
-.workspace-device-statusline > .workspace-status-label {
-  flex: 0 0 auto;
-}
+/* `.workspace-device-statusline` had no JSX reference left after the device
+   header moved to `.workspace-device-facts`; both its base rule and its
+   `max-width: 620px` branch are gone rather than parked as dead weight. */
 
 .workspace-device-state-banner {
   display: flex;
@@ -759,7 +700,7 @@
   margin: -4px 0 18px;
   padding: 12px 14px;
   border: 1px solid var(--workspace-color-outline-variant);
-  border-radius: var(--workspace-shape-medium);
+  border-radius: 0;
   background: var(--workspace-color-surface-container-low);
 }
 
@@ -769,7 +710,7 @@
   height: 32px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: var(--workspace-shape-small);
+  border-radius: 0;
   color: var(--workspace-color-on-surface-variant);
   background: var(--workspace-color-surface-container);
 }
@@ -824,7 +765,7 @@
 .workspace-form__error {
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--workspace-color-error) 42%, var(--workspace-color-outline-variant));
-  border-radius: var(--workspace-shape-small);
+  border-radius: 0;
   color: var(--workspace-color-error);
   background: color-mix(in srgb, var(--workspace-color-error-container) 42%, var(--workspace-color-surface-container-low));
   font-size: 12px;
@@ -832,16 +773,6 @@
 }
 
 @media (max-width: 620px) {
-  .workspace-device-statusline {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 7px;
-  }
-
-  .workspace-device-statusline > span:not(.workspace-status-label)::before {
-    display: none;
-  }
-
   .workspace-device-state-banner {
     align-items: flex-start;
     flex-wrap: wrap;

@@ -136,10 +136,16 @@ export function StatusDot({ state }: { state: "online" | "offline" | "cached" | 
   return <span className={`workspace-status-dot workspace-status-dot--${state}`} aria-hidden="true" />;
 }
 
+/**
+ * `compact` drops the visible word and the dot is decorative, so on its own the
+ * label was an unnamed colour chip (the overview "数据来源" tile rendered exactly
+ * that). A compact label keeps the same vocabulary as the full one, exposed as
+ * the name of an image rather than as forced visible text.
+ */
 export function StatusLabel({ state, compact = false }: { state: "online" | "offline" | "cached" | "warning" | "unknown"; compact?: boolean }) {
   const labels = { online: "在线", offline: "离线", cached: "缓存", warning: "异常", unknown: "未连接" };
   return (
-    <span className={`workspace-status-label workspace-status-label--${state} ${compact ? "is-compact" : ""}`}>
+    <span className={`workspace-status-label workspace-status-label--${state} ${compact ? "is-compact" : ""}`} role={compact ? "img" : undefined} aria-label={compact ? labels[state] : undefined}>
       <StatusDot state={state} />
       {!compact && labels[state]}
     </span>

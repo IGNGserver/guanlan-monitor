@@ -6,9 +6,9 @@ import { M3SegmentedControl } from "../m3";
 import { CarbonTimeSeriesChart } from "../CarbonCharts";
 import { ChartTile, DashboardCell, DashboardGrid, DashboardSection } from "../dashboard";
 import { OnboardingGuide } from "../shell/OnboardingGuide";
-import { formatBytes, formatDate } from "../formatters";
+import { formatBytes, formatDate, formatPercent } from "../formatters";
 import { selectAttentionDevices, selectHealthSummary } from "../selectors";
-import { CarbonDeviceTable, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, PageIntro, OverviewSummary, unavailablePoints } from "./shared";
+import { CarbonDeviceTable, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints } from "./shared";
 
 type ObservationMetric = "cpu" | "memory" | "disk" | "network";
 
@@ -20,6 +20,20 @@ const observationLabels: Record<ObservationMetric, string> = {
 };
 
 /**
+ * Where to send the reader when the shell itself has nothing to show.
+ *
+ * The two shells fail for different reasons: the desktop client reads the hub
+ * through the host bridge it owns, while a browser tab talks to the hub through
+ * this site with a session key. One fallback sentence covered both, so web
+ * readers were told to reopen a desktop app that was never involved.
+ */
+function failureGuide(isDesktopShell: boolean): string {
+  return isDesktopShell
+    ? "桌面桥接尚未准备好。请重新打开观澜后再试。"
+    : "网页端通过当前站点读取中枢。请刷新页面重试；如果仍然读不到，请到“设置 · 连接”用访问密钥重新完成认证，并确认站点配置的中枢地址正在运行。";
+}
+
+/**
  * The overview answers one question first: is anything wrong, and where.
  *
  * The standalone hub page was folded in here as a card, because it held four
@@ -29,10 +43,10 @@ const observationLabels: Record<ObservationMetric, string> = {
  * themselves, and says so plainly when there are none.
  */
 export function OverviewPage() {
-  const { snapshot, allDevices, metricsWindow, loading, refreshing, error, refresh, openSettings, navigate } = useWorkspace();
+  const { snapshot, allDevices, metricsWindow, loading, refreshing, error, refresh, openSettings, navigate, capabilities } = useWorkspace();
   const [observationMetric, setObservationMetric] = useState<ObservationMetric>("cpu");
   if (loading && !snapshot) return <LoadingSurface />;
-  if (!snapshot) return <ErrorSurface title="无法读取设备状态" detail={error ?? "桌面桥接尚未准备好。请重新打开观澜后再试。"} onRetry={() => void refresh()} />;
+  if (!snapshot) return <ErrorSurface title="无法读取设备状态" detail={error ?? failureGuide(capabilities.canControlNativeWindow)} onRetry={() => void refresh()} />;
 
   const health = selectHealthSummary(snapshot, allDevices, formatDate);
   const cached = health.source === "cache";
@@ -44,16 +58,19 @@ export function OverviewPage() {
   const metricWindowLabel = ({ "1m": "1 分钟", "5m": "5 分钟", "15m": "15 分钟", "1h": "1 小时", "6h": "6 小时", "24h": "1 天", "1d": "1 天", "7d": "1 周", "1w": "1 周", "30d": "1 个月", "1mo": "1 个月", "90d": "90 天", "1y": "1 年" } as Record<string, string>)[metricsWindow] ?? metricsWindow;
   const attentionCount = health.pending;
   // Spell out what the number is made of so it can be checked, not believed.
+  // The device half says 离线 — the same word the directory tags, the filter
+  // chips and the device page use. "未响应" used to name that identical state
+  // here only, so a reader counted two kinds of trouble.
   const attentionDetail = attentionCount == null
     ? "连接状态异常，暂无法判断"
     : attentionCount === 0
       ? "当前没有需要关注的项目"
-      : `${health.offline} 台未响应${localIssues ? ` · ${localIssues} 条本机采集问题` : ""}`;
+      : [health.offline ? `${health.offline} 台设备离线` : "", localIssues ? `${localIssues} 条本机采集问题` : ""].filter(Boolean).join(" · ");
   const tone = hubAbnormal ? "warning" : noData ? "empty" : attentionCount ? "warning" : "normal";
 
   const observationSeries = overviewInstances.flatMap((instance) => {
     const unavailable = (key: Parameters<typeof isMetricUnavailable>[1]) => instance.unavailableMetrics?.includes(key) ?? false;
-    if (observationMetric === "cpu") return [{ label: instance.hostname, points: unavailablePoints(instance.cpuUsagePercent, unavailable("cpuUsage")), valueFormatter: (value: number) => `${Math.round(value)}%` }];
+    if (observationMetric === "cpu") return [{ label: instance.hostname, points: unavailablePoints(instance.cpuUsagePercent, unavailable("cpuUsage")), valueFormatter: formatPercent }];
     if (observationMetric === "memory") return [{ label: instance.hostname, points: unavailablePoints(instance.memoryUsedBytes, unavailable("memoryUsage")), valueFormatter: formatBytes }];
     if (observationMetric === "disk") return [{ label: instance.hostname, points: unavailablePoints(instance.diskUsedBytes, unavailable("diskUsage")), valueFormatter: formatBytes }];
     return [
@@ -78,6 +95,11 @@ export function OverviewPage() {
           : health.sourceDetail + "。统计覆盖全部已接入设备。"}
       actions={<><Button variant="quiet" onClick={() => openSettings("connections")}><Icon name="connection" size={16} />连接设置</Button><Button variant="primary" onClick={() => navigate({ kind: "devices" })}>查看全部设备<Icon name="arrow" size={16} /></Button></>}
     />
+
+    {/* When the hub itself is unreachable the notification below already says the
+        data may be expired; this one covers the quieter failure — a live
+        snapshot that simply stopped refreshing. */}
+    {!hubAbnormal && <SnapshotFreshnessNotice />}
 
     <OverviewSummary
       total={health.total}
@@ -130,7 +152,7 @@ export function OverviewPage() {
 
     <Surface className="workspace-overview-devices">
       <div className="workspace-surface__header">
-        <div><span className="workspace-section-kicker">需要关注</span><h3>{attentionDevices.length ? `${attentionDevices.length} 台设备未响应` : "没有需要处理的设备"}</h3></div>
+        <div><span className="workspace-section-kicker">需要关注</span><h3>{attentionDevices.length ? `${attentionDevices.length} 台设备离线` : "没有需要处理的设备"}</h3></div>
         <Button variant="quiet" onClick={() => navigate({ kind: "devices" })}>查看全部设备</Button>
       </div>
       {cached && <div className="workspace-inline-note">当前为缓存快照，设备列表只读。</div>}

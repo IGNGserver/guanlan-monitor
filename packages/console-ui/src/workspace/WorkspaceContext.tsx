@@ -163,14 +163,24 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     [adapter, metricsWindow, selectedDeviceId, trafficAnchor, trafficMode]
   );
 
+  /* Subscribe once per adapter.
+   *
+   * This effect used to depend on `fetchSnapshot` as well, because the initial
+   * load and the subscription shared a body. `fetchSnapshot` changes whenever
+   * the selected device, metric window, traffic mode or traffic anchor changes —
+   * so every time-range click closed the live socket and opened a new one, and
+   * paid for a full snapshot fetch on top. The two concerns are split now: the
+   * subscription is tied to the adapter's identity alone, and the load runs off
+   * the callback that actually encodes the request.
+   */
   useEffect(() => {
     void fetchSnapshot(false);
-    const unsubscribe = adapter.subscribe((nextSnapshot) => {
-      if (pendingMutationsRef.current > 0) return;
-      setSnapshot(nextSnapshot);
-    });
-    return unsubscribe;
-  }, [adapter, fetchSnapshot]);
+  }, [fetchSnapshot]);
+
+  useEffect(() => adapter.subscribe((nextSnapshot) => {
+    if (pendingMutationsRef.current > 0) return;
+    setSnapshot(nextSnapshot);
+  }), [adapter]);
 
   const currentRouteRef = useRef(route);
   useEffect(() => {
@@ -212,14 +222,27 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     }
   }, [navigate, route, selectedDeviceId, snapshot]);
 
+  /* One resolver for both theme systems.
+   *
+   * `WorkspaceFrame` used to run its own `matchMedia("(prefers-color-scheme:
+   * dark)")` listener to pick the Carbon `g10`/`g100` theme while this effect
+   * ran a second, independent one to write `data-dsc-resolved-theme`. Two
+   * sources of truth for the same question: any change to one left the Material
+   * token layer and the Carbon token layer on different themes, which is what
+   * made dark mode look "half applied". The resolved value is published here and
+   * consumed by the frame.
+   */
+  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
+
   useEffect(() => {
     const root = document.documentElement;
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const applyTheme = () => {
-      const resolvedTheme = theme === "system" ? (mediaQuery.matches ? "dark" : "light") : theme;
+      const nextTheme = theme === "system" ? (mediaQuery.matches ? "dark" : "light") : theme;
+      setResolvedTheme(nextTheme);
       root.dataset.dscTheme = theme;
-      root.dataset.dscResolvedTheme = resolvedTheme;
-      root.style.colorScheme = resolvedTheme;
+      root.dataset.dscResolvedTheme = nextTheme;
+      root.style.colorScheme = nextTheme;
     };
 
     root.dataset.dscTheme = theme;
@@ -352,7 +375,16 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     await closeWindow();
   }, [closeWindow]);
 
-  const value: WorkspaceContextValue = {
+  const openExternal = useCallback((url: string) => adapter.openExternal(url), [adapter]);
+
+  /* Memoised on purpose.
+   *
+   * The object used to be rebuilt on every render along with a fresh
+   * `openExternal` arrow, so every consumer of `useWorkspace()` re-rendered on
+   * every tick of the poll — navigation, the device table and every chart tile
+   * on the device page, including renders where nothing they read had changed.
+   */
+  const value = useMemo<WorkspaceContextValue>(() => ({
     route,
     navigate,
     openSettings,
@@ -383,6 +415,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     setCommandOpen,
     theme,
     setTheme,
+    resolvedTheme,
     density,
     setDensity,
     refreshInterval,
@@ -405,7 +438,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     login,
     logout,
     disconnectAgent,
-    openExternal: (url: string) => adapter.openExternal(url),
+    openExternal,
     isPreview,
     capabilities: adapter.capabilities,
     orientation,
@@ -415,7 +448,69 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     runtimeProfile,
     lowResourceMode,
     chartPointLimit
-  };
+  }), [
+    route,
+    navigate,
+    openSettings,
+    closeSettings,
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    snapshot,
+    loading,
+    refreshing,
+    mutationPending,
+    error,
+    notice,
+    hubs,
+    devices,
+    allDevices,
+    filteredDevices,
+    selectedDevice,
+    metricsWindow,
+    setMetricsWindow,
+    trafficMode,
+    setTrafficMode,
+    trafficAnchor,
+    shiftTrafficAnchor,
+    searchQuery,
+    setSearchQuery,
+    commandOpen,
+    setCommandOpen,
+    theme,
+    setTheme,
+    resolvedTheme,
+    density,
+    setDensity,
+    refreshInterval,
+    setRefreshInterval,
+    refresh,
+    updateLocalConfig,
+    controlAgent,
+    saveHubConnection,
+    updateStartupSettings,
+    cloudPush,
+    saveFanNote,
+    deleteInstance,
+    reorderInstances,
+    minimizeWindow,
+    toggleMaximizeWindow,
+    closeWindowSafely,
+    adapterDragStart,
+    adapterDragMove,
+    adapterDragEnd,
+    login,
+    logout,
+    disconnectAgent,
+    openExternal,
+    adapter.capabilities,
+    orientation,
+    isTouch,
+    inputMode,
+    layoutTier,
+    runtimeProfile,
+    lowResourceMode,
+    chartPointLimit
+  ]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 };

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Tab, TabList, Tabs } from "@carbon/react";
-import type { DeviceBlockKey, DeviceMetricKey } from "@dsc/shared";
+import type { DeviceBlockKey, DeviceMetricKey, MetricsLatest } from "@dsc/shared";
 import { useWorkspace } from "../WorkspaceContext";
 import { selectSnapshotSource } from "../selectors";
 import {
@@ -15,6 +15,7 @@ import {
 } from "../dashboard";
 import {
   averageSamplePointsOrFallback,
+  describeNetworkIdentity,
   displayInstanceName,
   displayModelName,
   formatBytes,
@@ -23,15 +24,18 @@ import {
   formatGpuMemorySummary,
   sumSamplePoints
 } from "../formatters";
-import { Button, Icon, StatusLabel } from "../ui";
+import { Button, Icon, StatusDot } from "../ui";
 import { DeviceChartCells, type DeviceChartContext, type DeviceSectionControls } from "./deviceCharts";
 import {
   EmptyState,
   InstanceFilter,
+  MetricsLoadingSurface,
   MetricWindowControl,
   PageIntro,
+  SnapshotFreshnessNotice,
   isMetricUnavailable,
   mergeFanMetricSeries,
+  metricWindowLabel,
   type DesktopMetricWindowValue
 } from "./shared";
 
@@ -48,6 +52,8 @@ export function DeviceDetailsPage() {
     snapshot,
     navigate,
     openSettings,
+    loading,
+    refreshing,
     metricsWindow,
     setMetricsWindow,
     trafficMode,
@@ -132,6 +138,10 @@ export function DeviceDetailsPage() {
     setActiveTab(DEFAULT_DEVICE_TAB_ID);
   }, [deviceId]);
 
+  // Devices this page has already served a telemetry payload for, this session.
+  // Keyed by id, so one machine's history cannot excuse another one's charts.
+  const seenMetricsDevicesRef = useRef<Set<string>>(new Set());
+
   if (!selectedDevice) {
     return (
       <EmptyState
@@ -142,11 +152,31 @@ export function DeviceDetailsPage() {
     );
   }
 
+  const metricsPayloadForDevice = snapshot?.metrics?.device.deviceId === selectedDevice.deviceId ? snapshot.metrics : null;
+  // Once this device has produced a telemetry payload in the session, a later
+  // null means "the read for what is on screen did not land" — a range switch,
+  // or a metrics request that failed on its own — and not "the Agent has never
+  // reported". Latched during render because the payload itself is transient.
+  if (snapshot?.metrics) seenMetricsDevicesRef.current.add(snapshot.metrics.device.deviceId);
+  const hadTelemetryHere = seenMetricsDevicesRef.current.has(selectedDevice.deviceId);
   const metrics =
-    snapshot?.metrics?.device.deviceId === selectedDevice.deviceId &&
-    (!snapshot.metrics.window || snapshot.metrics.window === metricsWindow)
-      ? snapshot.metrics
+    metricsPayloadForDevice &&
+    (!metricsPayloadForDevice.window || metricsPayloadForDevice.window === metricsWindow)
+      ? metricsPayloadForDevice
       : null;
+  const telemetryMissing = !metrics || !metrics.series;
+  const windowLabel = metricWindowLabel(metricsWindow);
+  /**
+   * What the missing charts actually mean, in the order the reader can act on:
+   * waiting for this range, this range did not arrive, or nothing yet at all.
+   */
+  const telemetryState: "ready" | "pending" | "range" | "none" = !telemetryMissing
+    ? "ready"
+    : loading || refreshing
+      ? "pending"
+      : metricsPayloadForDevice || hadTelemetryHere
+        ? "range"
+        : "none";
   const latest = metrics?.latest;
   const series = metrics?.series;
   const metricUnavailable = (key: DeviceMetricKey) => isMetricUnavailable(selectedDevice, key, latest);
@@ -157,6 +187,14 @@ export function DeviceDetailsPage() {
     return configuredIds ? instances.filter((instance) => configuredIds.includes(instance.id)) : instances;
   };
   const filteredDiskDetails = latest ? filterEnabledInstances("disk", latest.disks ?? []) : [];
+  // One disk without a size must not cost the whole machine its disk total: a
+  // single `undefined` used to turn the sum into NaN, which
+  // `formatCapacitySummary` then reported as "容量暂无" for every healthy disk.
+  // Same rule as the chart side, which already treats a missing value as zero.
+  const sumDiskBytes = (pick: (disk: MetricsLatest["disks"][number]) => number) => filteredDiskDetails.reduce((total, disk) => {
+    const value = pick(disk);
+    return total + (Number.isFinite(value) ? value : 0);
+  }, 0);
   const filteredGpuDetails = latest ? filterEnabledInstances("gpu", latest.gpus ?? []) : [];
   const filteredLatest = latest
     ? {
@@ -166,8 +204,8 @@ export function DeviceDetailsPage() {
         networkInterfaces: filterEnabledInstances("network", latest.networkInterfaces ?? []),
         gpus: filteredGpuDetails,
         fans: filterEnabledInstances("fan", latest.fans ?? []),
-        diskUsedBytes: filteredDiskDetails.length || hasInstanceConfiguration("disk") ? filteredDiskDetails.reduce((total, disk) => total + disk.usedBytes, 0) : latest.diskUsedBytes,
-        diskTotalBytes: filteredDiskDetails.length || hasInstanceConfiguration("disk") ? filteredDiskDetails.reduce((total, disk) => total + disk.totalBytes, 0) : latest.diskTotalBytes
+        diskUsedBytes: filteredDiskDetails.length || hasInstanceConfiguration("disk") ? sumDiskBytes((disk) => disk.usedBytes) : latest.diskUsedBytes,
+        diskTotalBytes: filteredDiskDetails.length || hasInstanceConfiguration("disk") ? sumDiskBytes((disk) => disk.totalBytes) : latest.diskTotalBytes
       }
     : undefined;
   const cpuInstances = filterEnabledInstances("cpu", series?.cpus ?? []);
@@ -248,7 +286,7 @@ export function DeviceDetailsPage() {
       network: networkInstances.map((network) => ({
         id: network.id,
         name: displayModelName(network.model, network.name, "网卡"),
-        detail: [network.name, network.macAddress || network.ipv4?.[0] || network.ipv6?.[0]].filter(Boolean).join(" · ")
+        detail: describeNetworkIdentity(network)
       })),
       gpu: gpuInstances.map((gpu) => ({ id: gpu.id, name: displayInstanceName(gpu.name, "GPU") }))
     },
@@ -277,21 +315,38 @@ export function DeviceDetailsPage() {
         detail: `数据缓存于 ${formatDate(snapshot.cache.savedAt)}，设备和图表可能已经过期。`,
         action: <span className="workspace-caption">请使用顶部刷新按钮重新获取</span>
       }
-    : !metrics || !series
+    : telemetryState === "pending"
       ? {
-          tone: "empty",
-          title: "还没有收到遥测样本",
-          detail: "设备已经出现在中枢列表，但当前没有可展示的历史指标；确认 Agent 正在运行并刷新状态。",
-          action: <span className="workspace-caption">请使用顶部刷新按钮重新获取</span>
+          // `cached` is the banner that already reads "this is not current yet"
+          // without alarming the reader; the loading tone has no styling of its
+          // own and would fall back to the warning icon.
+          tone: "cached",
+          title: `正在读取最近 ${windowLabel} 的遥测样本`,
+          detail: "切换时间范围或设备后，上一批数据不再适用于当前画面；图表会在这段样本到达后自动补齐，设备的上报状态不受影响。",
+          action: <span className="workspace-caption">无需检查 Agent，正在读取</span>
         }
-      : selectedDevice.status !== "online"
+      : telemetryState === "range"
         ? {
-            tone: "offline",
-            title: "设备当前未在线",
-            detail: "下面仍会保留最近一次可用样本；设备重新上报后，刷新即可看到最新数据。",
-            action: <Button variant="quiet" onClick={() => openSettings(settingsSection)}>查看中枢连接<Icon name="arrow" size={15} /></Button>
+            tone: "empty",
+            title: `${windowLabel} 范围内还没有读到样本`,
+            detail: "这台设备在本页展示过其他范围的样本，所以更可能是这次读取没有完成；用顶部刷新按钮重试即可。",
+            action: <span className="workspace-caption">硬件与系统信息仍可查看</span>
           }
-        : null;
+        : telemetryState === "none"
+          ? {
+              tone: "empty",
+              title: "还没有收到遥测样本",
+              detail: "设备已经出现在中枢列表，但中枢还没有它任何一段历史指标；确认 Agent 正在运行并刷新状态。",
+              action: <span className="workspace-caption">请使用顶部刷新按钮重新获取</span>
+            }
+          : selectedDevice.status !== "online"
+            ? {
+                tone: "offline",
+                title: "设备当前离线",
+                detail: "下面仍会保留最近一次可用样本；设备重新上报后，刷新即可看到最新数据。",
+                action: <Button variant="quiet" onClick={() => openSettings(settingsSection)}>查看中枢连接<Icon name="arrow" size={15} /></Button>
+              }
+            : null;
 
   const selectedIndex = Math.max(0, DEVICE_DASHBOARD.tabs.findIndex((item) => item.id === activeTab));
 
@@ -310,13 +365,19 @@ export function DeviceDetailsPage() {
         description={`${selectedDevice.os} · ${selectedDevice.deviceId}`}
         actions={<Button variant="quiet" onClick={() => navigate({ kind: "devices" })}><Icon name="back" size={16} />返回设备目录</Button>}
       />
+      <SnapshotFreshnessNotice />
 
       {/* One card carries every state fact. They used to be split across a
           status line and a facts strip that repeated the same two things, so
           answering "is this device live?" meant reading three places. */}
       <div className="workspace-device-facts" aria-label="设备事实">
-        <div><span>设备状态</span><strong><StatusLabel state={selectedDevice.status === "online" ? "online" : "offline"} compact />{selectedDevice.status === "online" ? "在线" : "离线"}</strong></div>
-        <div><span>数据链路</span><strong><StatusLabel state={deviceSourceState} compact />{snapshotSource === "cache" ? "离线缓存" : snapshotSource === "live" ? "实时中枢" : snapshotSource === "empty" ? "等待数据" : "连接异常"}</strong></div>
+        {/* The visible word already names the state, so the dot is decoration
+            here and must stay out of the accessibility tree. `StatusLabel
+            compact` carries its own accessible name (it is the only indicator on
+            the overview tile), which read these two cells as "在线 在线" — and on
+            the data-link row as "在线 实时中枢", two different names for one fact. */}
+        <div><span>设备状态</span><strong><StatusDot state={selectedDevice.status === "online" ? "online" : "offline"} />{selectedDevice.status === "online" ? "在线" : "离线"}</strong></div>
+        <div><span>数据链路</span><strong><StatusDot state={deviceSourceState} />{snapshotSource === "cache" ? "离线缓存" : snapshotSource === "live" ? "实时中枢" : snapshotSource === "empty" ? "等待数据" : "连接异常"}</strong></div>
         <div><span>最后在线</span><strong>{formatDate(selectedDevice.lastSeenAt)} · {selectedDevice.status === "online" ? "刚刚上报" : "已停止上报"}</strong></div>
         <div><span>{snapshotSource === "cache" ? "缓存时间" : "数据时间"}</span><strong>{formatDate(snapshotSource === "cache" ? snapshot?.cache.savedAt : snapshot?.generatedAt)}</strong></div>
         <div><span>Agent 版本</span><strong>{selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</strong></div>
@@ -374,12 +435,17 @@ export function DeviceDetailsPage() {
         )}
       </div>
 
-      {(!metrics || !series) && (
-        <EmptyState
-          title="暂无可用遥测"
-          detail="硬件与系统信息仍可查看；收到第一批样本后，综合趋势和明细图表会自动出现。可使用顶部刷新按钮重新读取。"
-        />
-      )}
+      {/* The banner above already states why this range is empty, so the chart
+          area adds a placeholder only while samples are actually on their way
+          (where they will land) or when the device has never reported at all. */}
+      {telemetryMissing && (telemetryState === "pending"
+        ? <MetricsLoadingSurface detail={`正在读取最近 ${windowLabel} 的遥测样本，综合趋势与明细图表会在样本到达后自动补齐。`} />
+        : telemetryState === "range"
+          ? null
+          : <EmptyState
+            title="暂无可用遥测"
+            detail="硬件与系统信息仍可查看；收到第一批样本后，综合趋势和明细图表会自动出现。可使用顶部刷新按钮重新读取。"
+          />)}
 
       <div className="workspace-device-dashboard">
         {tab.sections.map((section) => (

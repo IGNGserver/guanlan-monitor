@@ -21,6 +21,29 @@ function chartTheme(): "g10" | "g100" {
   return document.documentElement.dataset.dscResolvedTheme === "dark" ? "g100" : "g10";
 }
 
+/**
+ * Axis ticks are formatted here rather than left to Carbon Charts.
+ *
+ * Carbon Charts formats a `scaleType: "time"` axis with the browser locale, so
+ * an English browser rendered `9:56:30 AM` on a page whose every other
+ * timestamp is `9月26日 08:13` — and the CI runner, pinned to `en-US`, was
+ * quietly asserting against the English form. This is the same `zh-CN` 24-hour
+ * contract `formatAxisTime` gives the rest of the console, so the axis can no
+ * longer drift with whoever is looking at it.
+ */
+const axisTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23"
+});
+
+function formatAxisTickDate(value: unknown): string {
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isFinite(date.getTime()) ? axisTimeFormatter.format(date) : "";
+}
+
 export function carbonChartData(series: CarbonSeries[]): ChartTabularData {
   return series.flatMap((item) => item.points
     .filter((point) => Number.isFinite(Date.parse(point.timestamp)) && Number.isFinite(point.value))
@@ -31,11 +54,17 @@ export function carbonChartData(series: CarbonSeries[]): ChartTabularData {
     })));
 }
 
-function axisOptions(height: string, series: CarbonSeries[], maxValue?: number) {
-  const valueFormatter = series.find((item) => item.valueFormatter)?.valueFormatter;
+function axisOptions(height: string, series: CarbonSeries[], maxValue?: number, valueFormatter?: (value: number) => string) {
+  /* A tile can carry one formatter for all of its series; that is the common
+     case here (`PERCENT_TILE`). Falling back to the first series that declares
+     one used to be the only path, so every percentage tile whose series did
+     not repeat the formatter rendered a bare `10 … 60` with no unit, and you
+     had to read the card title to learn it was a utilisation percentage. */
+  const tickFormatter = valueFormatter ?? series.find((item) => item.valueFormatter)?.valueFormatter
+    ?? (maxValue === 100 ? (value: number) => `${Math.round(value)}%` : undefined);
   const formatTick = (tick: number | Date) => typeof tick === "number" && Number.isFinite(tick)
-    ? valueFormatter?.(tick) ?? String(tick)
-    : String(tick);
+    ? tickFormatter?.(tick) ?? String(tick)
+    : formatAxisTickDate(tick);
   return {
     height,
     theme: chartTheme(),
@@ -45,13 +74,14 @@ function axisOptions(height: string, series: CarbonSeries[], maxValue?: number) 
       bottom: {
         title: "时间",
         mapsTo: "date",
-        scaleType: "time"
+        scaleType: "time",
+        ticks: { formatter: formatTick }
       },
       left: {
         title: "",
         mapsTo: "value",
         scaleType: "linear",
-        ticks: valueFormatter ? { formatter: formatTick } : undefined,
+        ticks: tickFormatter ? { formatter: formatTick } : undefined,
         // 百分比这类有天然上界的指标必须钉住坐标轴，否则 3% 的抖动会被拉满
         // 整个绘图区，看起来像满载。
         ...(maxValue == null ? {} : { max: maxValue })
@@ -61,15 +91,33 @@ function axisOptions(height: string, series: CarbonSeries[], maxValue?: number) 
     points: { enabled: false },
     legend: { enabled: series.length > 1 },
     toolbar: { enabled: false },
-    tooltip: { enabled: true, valueFormatter: valueFormatter ? (value: unknown) => typeof value === "number" ? valueFormatter(value) : String(value) : undefined },
-    accessibility: { svgAriaLabel: "硬件指标时间趋势图" }
+    tooltip: { enabled: true, valueFormatter: tickFormatter ? (value: unknown) => typeof value === "number" ? tickFormatter(value) : String(value) : undefined },
+    accessibility: { svgAriaLabel: timeSeriesAriaLabel(series) }
   };
+}
+
+/**
+ * A time-series chart used to announce itself as `硬件指标时间趋势图` no matter
+ * what it plotted, so a screen-reader user on the device page heard the same
+ * phrase over a dozen different charts with no way to tell CPU frequency from
+ * disk temperature. The series labels are already specific, so they become the
+ * distinguishing part of the name by default; `ariaLabel` overrides it where a
+ * caller has something better.
+ */
+function timeSeriesAriaLabel(series: CarbonSeries[], ariaLabel?: string): string {
+  if (ariaLabel) return ariaLabel;
+  const labels = series.map((item) => item.label).filter(Boolean);
+  return labels.length
+    ? `硬件指标时间趋势图：${labels.join("、")}`
+    : "硬件指标时间趋势图";
 }
 
 export function CarbonTimeSeriesChart({
   series,
   visualization = "line",
   maxValue,
+  valueFormatter,
+  ariaLabel,
   compact = false,
   className = ""
 }: {
@@ -77,14 +125,20 @@ export function CarbonTimeSeriesChart({
   visualization?: "line" | "area" | "bar";
   /** 钉住纵轴上界，用于百分比这类有天然上界的指标。 */
   maxValue?: number;
+  /** 整个磁贴共用的读数格式，纵轴刻度与浮层都走它。 */
+  valueFormatter?: (value: number) => string;
+  /** 读屏用的图表名；缺省时由序列标签拼出，保证每张图名字不同。 */
+  ariaLabel?: string;
   compact?: boolean;
   className?: string;
 }) {
   const data = useMemo(() => carbonChartData(series), [series]);
+  const options = useMemo(
+    () => axisOptions(compact ? "128px" : "248px", series, maxValue, valueFormatter),
+    [compact, series, maxValue, valueFormatter]
+  );
   if (!data.length) return <div className={`telemetry-empty ${className}`}>当前时间范围没有可用数据</div>;
 
-  const height = compact ? "128px" : "248px";
-  const options = axisOptions(height, series, maxValue);
   const wrapperClassName = `telemetry-carbon-chart${compact ? " telemetry-carbon-chart--compact" : ""}${className ? ` ${className}` : ""}`;
 
   if (visualization === "area") {

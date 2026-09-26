@@ -1,4 +1,3 @@
-import React from "react";
 import type { SamplePoint } from "@dsc/shared";
 
 export const UNAVAILABLE_METRIC_LABEL = "无法获取数据";
@@ -21,37 +20,30 @@ export function formatBytes(value: number | null | undefined): string {
   return `${amount.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
-export function MetricValue({ value, suffix = "%", unavailable = false }: { value: number | null | undefined; suffix?: string; unavailable?: boolean }) {
-  return <span className={`workspace-metric-value${unavailable ? " workspace-metric-value--unavailable" : ""}`}>{unavailable ? UNAVAILABLE_METRIC_LABEL : value == null ? "—" : `${value}${suffix}`}</span>;
+/**
+ * Percentages are read as a magnitude, not as a measurement: the hub answers
+ * with `66.69`, and a directory that printed `66.69%` next to a chart saying
+ * `67%` made the two look like different metrics. One rounding rule now lives
+ * here, and a value that is not a number renders as a dash instead of `NaN%`.
+ */
+export function formatPercent(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}%` : "—";
 }
 
-export function CapacityMetricValue({
-  usedBytes,
-  totalBytes,
-  percentValue,
-  unavailable = false
-}: {
-  usedBytes?: number | null;
-  totalBytes?: number | null;
-  percentValue?: number | null;
-  unavailable?: boolean;
-}) {
-  if (unavailable) {
-    return (
-      <span className="workspace-metric-value workspace-metric-value--capacity workspace-metric-value--unavailable">
-        <strong>{UNAVAILABLE_METRIC_LABEL}</strong>
-        {Number.isFinite(totalBytes) && (totalBytes ?? 0) > 0 && <small>总容量 {formatBytes(totalBytes)}</small>}
-      </span>
-    );
-  }
-  const hasCapacity = Number.isFinite(usedBytes) && Number.isFinite(totalBytes) && (totalBytes ?? 0) > 0;
-  if (!hasCapacity) return <MetricValue value={percentValue} />;
-  return (
-    <span className="workspace-metric-value workspace-metric-value--capacity">
-      <strong>{formatBytes(usedBytes)} / {formatBytes(totalBytes)}</strong>
-      {percentValue != null && <small>{percentValue}%</small>}
-    </span>
-  );
+/** One place writes temperatures, always as number + space + unit. */
+export function formatTemperature(value: number | null | undefined, digits = 0): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return `${digits > 0 ? value.toFixed(digits) : Math.round(value)} °C`;
+}
+
+/**
+ * A bare MAC address next to a bare IP address reads as noise: neither says
+ * which field it is, and the same interface appeared with one half in the chart
+ * subtitle and the other half in the model chip. Label both, in one place.
+ */
+export function describeNetworkIdentity(network: { name?: string; macAddress?: string | null; ipv4?: string[] | null; ipv6?: string[] | null }): string {
+  const address = network.ipv4?.[0] ? `IPv4 ${network.ipv4[0]}` : network.ipv6?.[0] ? `IPv6 ${network.ipv6[0]}` : "";
+  return [network.name, network.macAddress ? `MAC ${network.macAddress}` : "", address].filter(Boolean).join(" · ");
 }
 
 export function formatCapacitySummary(usedBytes: number | null | undefined, totalBytes: number | null | undefined, unavailable = false): string {

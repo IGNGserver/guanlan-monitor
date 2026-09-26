@@ -46,6 +46,7 @@ import { ChartTile, DashboardCell, isChartAvailable } from "../dashboard";
 import type { ChartSpanName, DashboardChartSpec, DashboardSectionSpec, DeviceChartId, DeviceSectionId } from "../dashboard";
 import {
   UNAVAILABLE_METRIC_LABEL,
+  describeNetworkIdentity,
   displayInstanceName,
   displayModelName,
   formatBytes,
@@ -54,6 +55,8 @@ import {
   formatDate,
   formatDuration,
   formatGpuMemorySummary,
+  formatPercent,
+  formatTemperature,
   gpuMemoryLabel,
   limitSamplePoints
 } from "../formatters";
@@ -136,9 +139,12 @@ export interface DeviceChartContext {
   canConfigureConnection: boolean;
 }
 
-const percent = (value: number) => `${Math.round(value)}%`;
+// Unit spellings come from `formatters.tsx` so a table cell and the chart of the
+// same metric can never disagree: `percent` rounds the way the directory now
+// does, and a value that is not a number shows as a dash instead of "NaN%".
+const percent = (value: number) => formatPercent(value);
 const bytesPerSecond = (value: number) => `${formatBytes(value)}/s`;
-const celsius = (value: number) => `${Math.round(value)} °C`;
+const celsius = (value: number) => formatTemperature(value);
 const megahertz = (value: number) => `${Math.round(value)} MHz`;
 const revolutions = (value: number) => `${Math.round(value)} RPM`;
 const plainCount = (value: number) => `${Math.round(value)}`;
@@ -613,7 +619,7 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
     block: "network",
     label: (network) => displayModelName(network.model, network.name, "网卡"),
     tile: (network) => ({
-      subtitle: [network.name, network.macAddress, network.ipv4?.[0] || network.ipv6?.[0]].filter(Boolean).join(" · ") || "独立网卡实例",
+      subtitle: describeNetworkIdentity(network) || "独立网卡实例",
       series: [
         { label: "接收 (Rx)", points: unavailablePoints(network.rxBytesPerSec, context.unavailable("networkRxRate")), valueFormatter: bytesPerSecond },
         { label: "发送 (Tx)", points: unavailablePoints(network.txBytesPerSec, context.unavailable("networkTxRate")), valueFormatter: bytesPerSecond }

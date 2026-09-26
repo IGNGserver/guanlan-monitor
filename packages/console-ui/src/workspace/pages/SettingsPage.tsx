@@ -55,7 +55,8 @@ export function SettingsPage() {
     <div className="workspace-settings-mobile-nav" aria-label="设置分类">
       <Button variant="quiet" onClick={closeSettings}><Icon name="back" size={16} />返回控制台</Button>
       <div className="workspace-settings-mobile-nav__list">
-        {visibleSettings.map((item) => <button type="button" className={item.id === section ? "is-selected" : ""} key={item.id} onClick={() => navigate({ kind: "settings", section: item.id })}>{item.label}</button>)}
+        {/* The class is a paint; without aria-current a screen reader cannot tell which section is open. */}
+        {visibleSettings.map((item) => <button type="button" aria-current={item.id === section ? "page" : undefined} className={item.id === section ? "is-selected" : ""} key={item.id} onClick={() => navigate({ kind: "settings", section: item.id })}>{item.label}</button>)}
       </div>
     </div>
     <PageIntro eyebrow="设置" title={heading?.label ?? "设置"} description={descriptions[section]} />{pages[section]}

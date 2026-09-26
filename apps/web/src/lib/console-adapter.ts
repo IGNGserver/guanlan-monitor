@@ -117,7 +117,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
       ]);
 
       this.snapshot = {
-        generatedAt: new Date().toISOString(),
+        generatedAt: dataTimestamp(devices, metrics),
         source: "live",
         cache: { available: false, savedAt: null, ageSeconds: null },
         session: { authenticated: true, accessKeyConfigured: true },
@@ -156,7 +156,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
     this.socket.on("device:update", (event: DeviceRealtimeEvent) => {
       if (event.removed) {
         const devices = this.snapshot.devices.filter((device) => device.deviceId !== event.deviceId);
-        this.snapshot = { ...this.snapshot, generatedAt: new Date().toISOString(), devices };
+        this.snapshot = { ...this.snapshot, generatedAt: dataTimestamp(devices, this.snapshot.metrics), devices };
         this.notify();
         if (this.snapshot.selectedDeviceId === event.deviceId) {
           void this.loadSnapshot().catch(() => { /* The visible poller retries failed reads. */ });
@@ -164,7 +164,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
         return;
       }
       const devices = upsertDevice(this.snapshot.devices, event.summary);
-      this.snapshot = { ...this.snapshot, generatedAt: new Date().toISOString(), devices };
+      this.snapshot = { ...this.snapshot, generatedAt: dataTimestamp(devices, this.snapshot.metrics), devices };
       this.notify();
       // The event already carries the new device summary. History/calendar
       // reads belong to the visibility-aware UI poller, not every agent push.
@@ -190,6 +190,27 @@ function upsertDevice(devices: DeviceSummary[], next: DeviceSummary): DeviceSumm
   const index = devices.findIndex((device) => device.deviceId === next.deviceId);
   if (index < 0) return [...devices, next];
   return devices.map((device, itemIndex) => itemIndex === index ? { ...device, ...next, sortOrder: next.sortOrder ?? device.sortOrder } : device);
+}
+
+/**
+ * When the data on screen was last true, not when we looked at it.
+ *
+ * `generatedAt` used to be `new Date()` on every read, so a poll that came back
+ * with the same minutes-old device rows still announced "同步于 <现在>", and the
+ * only way to notice a fleet that had stopped reporting was to open each device.
+ * `/api/instances` carries no envelope timestamp, so the freshest fact the hub
+ * does give is each device's own `lastSeenAt`, plus the selected device's metric
+ * report time and the end of the sample range it served. With nothing usable —
+ * an empty fleet, or a payload without times — the moment of the read is the
+ * honest answer, and the pages label that as "还没有设备接入" anyway.
+ */
+function dataTimestamp(devices: DeviceSummary[], metrics: MetricsResponse | null): string {
+  let newest = 0;
+  for (const candidate of [...devices.map((device) => device.lastSeenAt), metrics?.lastSeenAt ?? null, metrics?.rangeEnd ?? null]) {
+    const value = candidate ? Date.parse(candidate) : Number.NaN;
+    if (Number.isFinite(value) && value > newest) newest = value;
+  }
+  return newest > 0 ? new Date(newest).toISOString() : new Date().toISOString();
 }
 
 export const webConsoleAdapter = new WebConsoleAdapter();

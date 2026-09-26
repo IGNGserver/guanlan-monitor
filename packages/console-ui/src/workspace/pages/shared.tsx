@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Modal, Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow, Tag } from "@carbon/react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { ActionableNotification, Modal, Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow, Tag } from "@carbon/react";
 import type { AgentProbeProvider, AgentProbeTarget, DeviceMetricKey, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import appIcon from "../../assets/app-icon.png";
 import { useWorkspace } from "../WorkspaceContext";
@@ -7,7 +7,7 @@ import type { DeviceDirectorySort, DeviceDirectoryStatus } from "../selectors";
 import { M3Checkbox, M3Chip, M3SegmentedControl, M3Select, M3TextField } from "../m3";
 import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
 import { CarbonTimeSeriesChart } from "../CarbonCharts";
-import { UNAVAILABLE_METRIC_LABEL, formatBytes, formatDate } from "../formatters";
+import { UNAVAILABLE_METRIC_LABEL, formatBytes, formatDate, formatPercent, formatTemperature } from "../formatters";
 
 const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: string }).src;
 
@@ -242,11 +242,17 @@ function directoryCapacityText(device: DeviceSummary, kind: "memory" | "disk", u
   if (unavailable) return UNAVAILABLE_METRIC_LABEL;
   const used = kind === "memory" ? device.memoryUsedBytes : device.diskUsedBytes;
   const total = kind === "memory" ? device.memoryTotalBytes : device.diskTotalBytes;
-  const percent = kind === "memory" ? device.memoryUsagePercent : device.diskUsagePercent;
-  if (Number.isFinite(used) && Number.isFinite(total) && (total ?? 0) > 0) return `${formatBytes(used)} / ${formatBytes(total)}${percent == null ? "" : ` · ${percent}%`}`;
-  return percent == null ? "—" : `${percent}%`;
+  const percentText = formatPercent(kind === "memory" ? device.memoryUsagePercent : device.diskUsagePercent);
+  if (Number.isFinite(used) && Number.isFinite(total) && (total ?? 0) > 0) return `${formatBytes(used)} / ${formatBytes(total)}${percentText === "—" ? "" : ` · ${percentText}`}`;
+  return percentText;
 }
 
+/**
+ * One word for one state. A device that has stopped reporting is 离线 here, in
+ * the filter chips, on the device page and in the overview counts; "未响应" used
+ * to name the same fact in the aggregate tiles only, so a reader counted two
+ * kinds of trouble.
+ */
 function directoryStatusTag(device: DeviceSummary) {
   return <Tag type={device.status === "online" ? "green" : "gray"}>{device.status === "online" ? "在线" : "离线"}</Tag>;
 }
@@ -294,7 +300,7 @@ function CarbonDeviceTable({
         <small className="guanlan-table-secondary">{`${device.os} · ID ${device.deviceId}`}</small>
       </>
     },
-    { key: "cpu", header: "CPU 使用率", cell: (device) => isMetricUnavailable(device, "cpuUsage") || device.cpuUsagePercent == null ? "—" : `${device.cpuUsagePercent}%` },
+    { key: "cpu", header: "CPU 使用率", cell: (device) => isMetricUnavailable(device, "cpuUsage") ? "—" : formatPercent(device.cpuUsagePercent) },
     { key: "memory", header: "内存使用", cell: (device) => directoryCapacityText(device, "memory", isMetricUnavailable(device, "memoryUsage")) },
     { key: "disk", header: "磁盘使用", cell: (device) => directoryCapacityText(device, "disk", isMetricUnavailable(device, "diskUsage")) },
     {
@@ -391,7 +397,7 @@ function OverviewSummary({
       <div className="workspace-overview-summary__item">
         <span>在线</span>
         <strong>{online}<small> / {total}</small></strong>
-        <small>{offline ? `${offline} 台未响应` : "全部设备正在响应"}</small>
+        <small>{offline ? `${offline} 台设备离线` : "全部设备在线"}</small>
       </div>
       <div className={`workspace-overview-summary__item${attentionCount ? " is-warning" : ""}`}>
         <span>需要关注</span>
@@ -607,6 +613,11 @@ const metricWindowOptions: Array<{ value: DesktopMetricWindowValue; label: strin
   { value: "7d", label: "7 天" }
 ];
 
+/** The label a range control shows; copy that names a waiting range reuses it. */
+function metricWindowLabel(value: string): string {
+  return metricWindowOptions.find((option) => option.value === value)?.label ?? value;
+}
+
 function MetricWindowControl({ value, onChange }: { value: DesktopMetricWindowValue; onChange: (value: DesktopMetricWindowValue) => void }) {
   return (
     <div className="workspace-range-control" role="group" aria-label="遥测时间范围">
@@ -662,14 +673,14 @@ function temperatureValueLabel(sensor: TemperatureSensorReading): string {
   if (sensor.currentC == null || !Number.isFinite(sensor.currentC)) {
     return sensor.status === "threshold" ? "仅阈值" : "—";
   }
-  return `${sensor.currentC.toFixed(1)} °C`;
+  return formatTemperature(sensor.currentC, 1);
 }
 
 function temperatureLimitsLabel(sensor: TemperatureSensorReading): string {
   const limits = [
-    sensor.highC != null ? `高 ${sensor.highC.toFixed(1)}°C` : "",
-    sensor.criticalC != null ? `临界 ${sensor.criticalC.toFixed(1)}°C` : "",
-    sensor.emergencyC != null ? `紧急 ${sensor.emergencyC.toFixed(1)}°C` : ""
+    sensor.highC != null ? `高 ${formatTemperature(sensor.highC, 1)}` : "",
+    sensor.criticalC != null ? `临界 ${formatTemperature(sensor.criticalC, 1)}` : "",
+    sensor.emergencyC != null ? `紧急 ${formatTemperature(sensor.emergencyC, 1)}` : ""
   ].filter(Boolean);
   return limits.join(" · ");
 }
@@ -752,7 +763,7 @@ function TemperatureSourcesPanel({
                 <small>{temperatureRoleLabels[selectedSeries.role] ?? selectedSeries.role} · {temperatureSourceLabel(selectedSeries.source)}</small>
               </div>
               <CarbonTimeSeriesChart
-                series={[{ label: "温度", points: selectedSeries.currentC, valueFormatter: (value) => `${value.toFixed(1)} °C` }]}
+                series={[{ label: "温度", points: selectedSeries.currentC, valueFormatter: (value) => formatTemperature(value, 1) }]}
                 compact
               />
             </>
@@ -816,8 +827,59 @@ function AgentTemperatureSourcesPanel({
     </Surface>
   );
 }
+
+/**
+ * A failed poll used to be invisible.
+ *
+ * `error` only ever reached the screen when there was no snapshot at all. With
+ * a snapshot present the failure was dropped, so a reader kept scanning a
+ * device list that had stopped updating and nothing said it was old. This
+ * notice stays for as long as the most recent read failed and names the
+ * snapshot still on screen; it keeps its wording while the retry is in flight,
+ * because the shared poller clears `error` the moment it starts another
+ * attempt and a blinking warning reads as a glitch rather than a fact.
+ */
+function SnapshotFreshnessNotice() {
+  const { snapshot, error, loading, refreshing, refresh } = useWorkspace();
+  const lastErrorRef = useRef<string | null>(null);
+  if (error) lastErrorRef.current = error;
+  else if (!loading && !refreshing) lastErrorRef.current = null;
+  const failure = error ?? (loading || refreshing ? lastErrorRef.current : null);
+  // An empty directory cannot have gone stale; the pages already own that case
+  // through their own connection and first-run surfaces.
+  if (!failure || !snapshot || !snapshot.devices.length) return null;
+  const retrying = Boolean(loading || refreshing);
+  return <ActionableNotification
+    inline
+    className="workspace-attention"
+    kind="warning"
+    lowContrast
+    hasFocus={false}
+    hideCloseButton
+    title="自动刷新失败，页面数据已停止更新"
+    subtitle={`${failure} 当前显示的是 ${formatDate(snapshot.generatedAt)} 读取的 ${snapshot.devices.length} 台设备状态。${retrying ? "正在重试。" : "到点的自动刷新会继续尝试。"}`}
+    actionButtonLabel={retrying ? "正在重试" : "立即重试"}
+    onActionButtonClick={() => void refresh()}
+  />;
+}
+
 function LoadingSurface() {
   return <div className="workspace-page workspace-loading-state" role="status" aria-busy="true" aria-label="正在加载设备状态"><span className="workspace-visually-hidden">正在加载设备状态</span><div className="workspace-skeleton workspace-skeleton--hero" /><div className="workspace-skeleton workspace-skeleton--large" /><div className="workspace-skeleton workspace-skeleton--medium" /></div>;
+}
+
+/**
+ * 时间范围切换之后的等待态。
+ *
+ * 换范围时上一份数据不再属于当前范围，图表会先空下来。这过去被当成「设备没有
+ * 遥测」告诉用户，让人去检查本来就在正常上报的 Agent；这里只说明在等什么。
+ */
+function MetricsLoadingSurface({ detail }: { detail: string }) {
+  return (
+    <div className="workspace-loading-state" role="status" aria-busy="true">
+      <span className="workspace-caption">{detail}</span>
+      <div className="workspace-skeleton workspace-skeleton--medium" />
+    </div>
+  );
 }
 
 function EmptyState({ title, detail, action, tone = "neutral" }: { title: string; detail: string; action?: React.ReactNode; tone?: "neutral" | "error" }) {
@@ -851,6 +913,7 @@ export {
   TrafficCalendar,
   TrafficCalendarControls,
   MetricWindowControl,
+  metricWindowLabel,
   temperatureStatusLabel,
   temperatureSourceLabel,
   temperatureValueLabel,
@@ -858,6 +921,8 @@ export {
   TemperatureSourcesPanel,
   AgentTemperatureSourcesPanel,
   LoadingSurface,
+  MetricsLoadingSurface,
+  SnapshotFreshnessNotice,
   EmptyState,
   ErrorSurface
 };

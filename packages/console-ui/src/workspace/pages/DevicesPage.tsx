@@ -4,7 +4,7 @@ import { useWorkspace } from "../WorkspaceContext";
 import { Button, Icon, Surface } from "../ui";
 import { selectDeviceDirectory, type DeviceDirectorySort, type DeviceDirectoryStatus } from "../selectors";
 import { mergeDeviceOrder, registerDeviceOrderDraftGuard } from "../deviceOrderDraft";
-import { CarbonDeviceTable, ConfirmDialog, DeviceDirectoryFilterBar, EmptyState, ErrorSurface, LoadingSurface, PageIntro } from "./shared";
+import { CarbonDeviceTable, ConfirmDialog, DeviceDirectoryFilterBar, EmptyState, ErrorSurface, LoadingSurface, PageIntro, SnapshotFreshnessNotice } from "./shared";
 
 export function DevicesPage() {
   const { snapshot, allDevices, loading, error, refresh, deleteInstance, reorderInstances, mutationPending, openSettings } = useWorkspace();
@@ -83,12 +83,29 @@ export function DevicesPage() {
     setOrderDraft(next);
   };
 
+  // One empty directory says exactly one thing. With nothing connected the
+  // table used to answer "没有匹配设备 · 尝试清空搜索或调整状态筛选" *and*, right
+  // below it, "还没有设备接入" — the first is a lie in that case, and it sent the
+  // reader to a filter box instead of the hub connection.
+  const emptyDirectory = allDevices.length
+    ? <EmptyState
+      title="没有匹配设备"
+      detail={`${allDevices.length} 台已接入设备里没有符合当前搜索或筛选的；清除后即可看到全部设备。`}
+      action={<Button variant="quiet" onClick={() => { setQuery(""); setStatusFilter("all"); }}>清除筛选</Button>}
+    />
+    : <EmptyState
+      title="还没有设备接入"
+      detail="目标设备上的 Agent 上报一次后，就会自动出现在这里；也可以先检查中枢连接。"
+      action={<Button variant="primary" onClick={() => openSettings("connections")}>连接设置</Button>}
+    />;
+
   return <div className="workspace-page workspace-page--devices">
     <PageIntro
       eyebrow="设备"
       title="全部设备"
       description={snapshot.source === "cache" ? "当前显示离线缓存；可以搜索和查看，管理操作已禁用。" : "搜索、筛选、排序和管理接入当前中枢的全部设备。"}
     />
+    <SnapshotFreshnessNotice />
     <DeviceDirectoryFilterBar
       devices={allDevices}
       query={query}
@@ -111,11 +128,10 @@ export function DevicesPage() {
           manageMode={manageMode && canManage && !mutationPending}
           onMove={moveInstance}
           onDelete={setDeleteTarget}
-          emptyState={<EmptyState title="没有匹配设备" detail="尝试清空搜索或调整状态筛选。" action={<Button variant="quiet" onClick={() => { setQuery(""); setStatusFilter("all"); }}>清除筛选</Button>} />}
+          emptyState={emptyDirectory}
         />
       </div>
     </Surface>
-    {!allDevices.length && <EmptyState title="还没有设备接入" detail="目标设备上的 Agent 上报一次后，就会自动出现在这里；也可以先检查中枢连接。" action={<Button variant="primary" onClick={() => openSettings("connections")}>连接设置</Button>} />}
     {deleteTarget && <ConfirmDialog title={`删除“${deleteTarget.hostname}”？`} detail="删除后该设备不再出现在中枢列表；宿主机或 Agent 下次上报时，它会重新出现。" confirmLabel="删除设备" disabled={mutationPending} onConfirm={() => { const deviceId = deleteTarget.deviceId; setDeleteTarget(null); void deleteInstance(deviceId); }} onCancel={() => setDeleteTarget(null)} />}
   </div>;
 }

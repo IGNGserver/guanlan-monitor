@@ -2,53 +2,27 @@
   display: none;
 }
 
-/* Bottom Navigation Capsule for Portrait / Touch */
-.workspace-bottom-nav {
-  display: none;
-}
+/* `.workspace-bottom-nav { display: none }` also lived here; `workspace.pages.css`
+   declares the same base and is ordered after this file within the bundle, so
+   this copy could never be the one in effect.
+   `@keyframes workspace-spin` was unreferenced, and the `@media (pointer:
+   coarse)` block that followed it was `(0,1,0)` in this, the first layer — it
+   could not outrank the arbiter, and it named `.workspace-btn`, `.workspace-tab`,
+   `.m3-tab` and `.workspace-layout-actions__button`, none of which render. The
+   44px contract now lives only at the end of `workspace-carbon.scss`. */
 
-@keyframes workspace-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* Touch Friendly Targets (>= 44px) */
-@media (pointer: coarse) {
-  .workspace-btn,
-  .workspace-button,
-  .workspace-tab,
-  .m3-tab,
-  .workspace-anchor-btn,
-  .workspace-layout-actions__button,
-  .workspace-icon-button,
-  .workspace-nav-item {
-    min-height: 44px;
-    min-width: 44px;
-  }
-
-  .workspace-icon-button {
-    padding: 10px;
-  }
-
-  .workspace-sidebar__collapse {
-    min-height: 44px;
-    min-width: 44px;
-  }
-
-  }
-
-/* Portrait / Mobile / Remote Desktop Stream Layout */
-@media (orientation: portrait), (max-width: 768px) {
+/* 839px to match the drawer, not 768px — see the note on the block below. */
+@media (orientation: portrait), (max-width: 839px) {
   .workspace-sidebar-backdrop {
     display: block;
     position: fixed;
     inset: 0;
-    z-index: 18;
-    background: rgba(0, 0, 0, 0.45);
+    z-index: var(--workspace-layer-scrim);
+    background: var(--workspace-scrim);
   }
 
   .workspace-sidebar {
-    z-index: 19;
+    z-index: var(--workspace-layer-drawer);
     background: var(--workspace-surface-acrylic);
     box-shadow: var(--workspace-shadow), var(--workspace-surface-highlight);
     backdrop-filter: var(--workspace-acrylic-filter);
@@ -57,11 +31,11 @@
   }
 
   .workspace-root.is-sidebar-open .workspace-sidebar-backdrop {
-    z-index: 28;
+    z-index: var(--workspace-layer-scrim-open);
   }
 
   .workspace-root.is-sidebar-open .workspace-sidebar {
-    z-index: 30;
+    z-index: var(--workspace-layer-drawer-open);
   }
 
   .workspace-root.is-sidebar-open .workspace-bottom-nav {
@@ -70,22 +44,18 @@
     pointer-events: none;
   }
 
-  .workspace-content {
-    padding-bottom: 74px !important;
-  }
-
   /* Compact header on portrait display */
   .workspace-windowbar {
     height: 36px;
   }
 
-  .workspace-topbar {
-    min-height: 52px;
-    height: auto;
-    padding-block: 6px;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
+  /* The 52px / `flex-wrap: wrap` topbar override that used to be here never
+     took effect: `workspace-carbon.scss` fixes the topbar at 56px with
+     `flex-wrap: nowrap`, and a media query adds no specificity to break that
+     tie. The compact layout is reachable on its own terms — the status label,
+     the search label and the `<kbd>` all drop out at 839px and the action
+     buttons collapse to icons at 599px — so the dead declaration is removed
+     rather than escalated into another `!important`. */
 
   .workspace-device-toolbar {
     flex-wrap: wrap;
@@ -135,7 +105,7 @@ html[data-dsc-density="touch"] {
 }
 
 .workspace-content {
-  scroll-padding-top: 76px;
+  scroll-padding-top: var(--workspace-sticky-offset);
 }
 
 .workspace-sidebar-backdrop {
@@ -147,16 +117,16 @@ html[data-dsc-density="touch"] {
 }
 
 .workspace-command {
-  max-height: calc(var(--workspace-viewport-height, 100dvh) - 32px);
+  max-height: calc(100dvh - 32px);
 }
 
 .workspace-command__list {
-  max-height: min(360px, calc(var(--workspace-viewport-height, 100dvh) - 156px));
+  max-height: min(360px, calc(100dvh - 156px));
 }
 
 .workspace-anchor-bar {
   position: sticky;
-  z-index: 10;
+  z-index: var(--workspace-layer-anchor);
   top: 0;
 }
 
@@ -166,30 +136,12 @@ html[data-dsc-density="touch"] {
   background: var(--workspace-accent-soft);
 }
 
-@media (pointer: coarse) {
-  .workspace-row-action,
-  .workspace-btn,
-  .workspace-button,
-  .workspace-tab,
-  .m3-tab,
-  .workspace-anchor-btn,
-  .workspace-icon-button,
-  .workspace-nav-item,
-  .workspace-window-control,
-  .workspace-command__item {
-    min-width: 44px;
-    min-height: 44px;
-  }
-
-  .workspace-search-trigger {
-    min-height: 44px;
-  }
-
-  .workspace-sidebar-edge-trigger {
-    width: 44px;
-  }
-
-  }
+/* The second `@media (pointer: coarse)` block in this file is gone for the same
+   reason as the first: `(0,1,0)` in the first layer cannot outrank the arbiter,
+   and it listed `.workspace-btn`, `.workspace-tab`, `.m3-tab` and
+   `.workspace-row-action`, which do not render. `.workspace-sidebar-edge-trigger`
+   was the only rule here with no equivalent in the arbiter; it moved to the
+   coarse block at the end of `workspace-carbon.scss`. */
 
 @media (max-width: 839px) {
   .workspace-root {
@@ -214,7 +166,10 @@ html[data-dsc-density="touch"] {
   }
 }
 
-@media (orientation: portrait), (max-width: 768px) {
+/* 839px, not 768px. The drawer itself turns on at `max-width: 839px` in
+   `workspace.pages.css`, so between 769 and 839 on a landscape phone or a
+   small window the drawer opened with no backdrop to tap to dismiss it. */
+@media (orientation: portrait), (max-width: 839px) {
   .workspace-root:not(.is-web) {
     --workspace-chrome-height: 36px;
     grid-template-rows: 36px minmax(0, 1fr);
@@ -236,12 +191,11 @@ html[data-dsc-density="touch"] {
     left: 0;
   }
 
-  .workspace-content {
-    padding-bottom: calc(74px + env(safe-area-inset-bottom)) !important;
-  }
-
-  .workspace-device-toolbar,
-  .workspace-panel-bar {
+  /* No bottom padding here. `.workspace-page` already reserves 92px for the
+     fixed navigation bar at `max-width: 839px`; this `!important` rule stacked
+     a further 74px on the content wrapper, so every phone page ended in about
+     166px of dead space. */
+  .workspace-device-toolbar {
     width: 100%;
   }
 

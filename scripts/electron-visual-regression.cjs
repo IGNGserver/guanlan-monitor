@@ -97,6 +97,11 @@ async function run() {
     assert.equal(await deviceTable.locator("tbody tr").count(), 2, "Electron fixture must render every device");
     assert.equal(await deviceTable.getByText("刚刚上报", { exact: true }).count(), 1, "online devices must expose their latest report");
     assert.equal(await deviceTable.getByText("已停止上报", { exact: true }).count(), 1, "offline devices must say that reporting stopped");
+    // 一台不可达的设备在桌面端也只有一个名字：目录、筛选与总览都说「离线」。
+    assert.equal(await deviceTable.getByText("离线", { exact: true }).count(), 1, "an unreachable device is tagged 离线 in the desktop directory");
+    assert.doesNotMatch(await deviceTable.innerText(), /未响应/, "the desktop directory must not invent a second name for an offline device");
+    // 表格百分比与图表共用同一个取整规则（中枢会回 28.4 这种原值）。
+    assert.equal((await deviceTable.locator("tbody tr").first().locator("td").nth(2).innerText()).trim(), "28%", "desktop directory percentages must round like the charts");
     await page.screenshot({ path: path.join(outputDir, "electron-devices-desktop.png"), fullPage: true, animations: "disabled" });
 
     await deviceTable.locator(".guanlan-table-link").filter({ hasText: "视觉验收主机" }).click();
