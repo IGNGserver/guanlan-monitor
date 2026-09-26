@@ -214,11 +214,14 @@ const UI_CONTRACT = `(() => {
     heading: box(document.querySelector(".workspace-page-intro h2")),
     segmented: [...document.querySelectorAll(".m3-segmented-control")].map((el) => {
       const s = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      const parent = el.parentElement?.getBoundingClientRect();
       return {
         name: el.getAttribute("aria-label") ?? "",
-        height: Math.round(el.getBoundingClientRect().height),
+        height: Math.round(rect.height),
         scrollsHorizontally: el.scrollWidth > el.clientWidth + 1,
         scrollsVertically: el.scrollHeight > el.clientHeight + 1,
+        rightWithinParent: parent ? rect.right <= parent.right + 1 : true,
         borderWidth: s.borderTopWidth,
         paddingTop: s.paddingTop,
         background: s.backgroundColor,
@@ -719,12 +722,16 @@ async function run() {
         assert.ok(contract.topbar && contract.topbar.h > 0, at("the header is missing"));
         headerHeights.set(width, new Set([...(headerHeights.get(width) ?? []), contract.topbar.h]));
 
-        // 3. Horizontally arranged options must not carry an outer box or a scrollbar.
+        // 3. Horizontally arranged options must not carry an outer box, and must
+        //    not be a scroll container. Only an overflow of auto/scroll can draw
+        //    the scrollbar that was reported, so that is the contract; the
+        //    switcher's own skewed ::after legitimately inks past its box.
         for (const control of contract.segmented) {
           assert.equal(control.borderWidth, "0px", at(`segmented control "${control.name}" still has an outer border`));
           assert.equal(control.paddingTop, "0px", at(`segmented control "${control.name}" still has outer padding`));
           assert.equal(control.background, "rgba(0, 0, 0, 0)", at(`segmented control "${control.name}" still has an outer fill`));
-          assert.ok(!control.scrollsHorizontally && !control.scrollsVertically, at(`segmented control "${control.name}" scrolls inside itself (${control.overflow})`));
+          assert.equal(control.overflow, "visible/visible", at(`segmented control "${control.name}" is still a scroll container (${control.overflow})`));
+          assert.ok(control.rightWithinParent, at(`segmented control "${control.name}" overflows its container`));
         }
         for (const chip of contract.chips) {
           if (chip.selected) {
