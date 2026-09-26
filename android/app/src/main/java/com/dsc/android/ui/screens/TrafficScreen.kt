@@ -1,5 +1,3 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-
 package com.dsc.android.ui.screens
 
 import androidx.compose.foundation.background
@@ -22,7 +20,6 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,7 +36,10 @@ import com.dsc.android.TrafficCalendarMode
 import com.dsc.android.TrafficRangeRecordDto
 import com.dsc.android.ui.oneui.OneUiErrorState
 import com.dsc.android.ui.oneui.OneUiGroup
+import com.dsc.android.ui.oneui.OneUiSurfaceLevel
+import com.dsc.android.ui.oneui.oneUiSurface
 import com.dsc.android.ui.oneui.OneUiGroupHeader
+import com.dsc.android.ui.oneui.OneUiIcon
 import com.dsc.android.ui.oneui.OneUiIconButton
 import com.dsc.android.ui.oneui.OneUiListDivider
 import com.dsc.android.ui.oneui.OneUiListItem
@@ -90,7 +90,7 @@ fun TrafficScreen(
   // 双栏的右栏没有「返回」这一说：换设备永远回到左栏点选（构）
   val backIcon: @Composable () -> Unit = {
     OneUiIconButton(contentDescription = "返回上一页", onClick = actions.onSystemBack) {
-      Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
+      OneUiIcon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
     }
   }
 
@@ -113,7 +113,7 @@ fun TrafficScreen(
             enabled = !state.loadingTraffic,
             spinning = state.loadingTraffic
           ) {
-            Icon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textSecondary)
+            OneUiIcon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textPrimary)
           }
         }
       )
@@ -178,9 +178,14 @@ fun TrafficScreen(
       Column(
         modifier = Modifier
           .fillMaxWidth()
-          .background(colors.group)
+          .oneUiSurface(
+            colors.raised,
+            OneUiTheme.shapes.dock,
+            colors = colors,
+            level = OneUiSurfaceLevel.Raised
+          )
           .navigationBarsPadding()
-          .padding(horizontal = metrics.screenMargin, vertical = 10.dp),
+          .padding(horizontal = metrics.screenMargin, vertical = metrics.spaceS),
         verticalArrangement = Arrangement.spacedBy(6.dp)
       ) {
         OneUiText(
@@ -210,13 +215,13 @@ private fun TrafficHeader(
 ) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
-  Column(
-    modifier = Modifier
-      .fillMaxWidth()
-      .background(colors.group, OneUiTheme.shapes.group)
-      .padding(metrics.groupPadding),
-    verticalArrangement = Arrangement.spacedBy(metrics.spaceM)
-  ) {
+  OneUiGroup {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = metrics.groupPadding, vertical = metrics.spaceM),
+      verticalArrangement = Arrangement.spacedBy(metrics.spaceM)
+    ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
       Column(modifier = Modifier.weight(1f)) {
         OneUiText(text = title, role = OneUiTextRole.Title)
@@ -230,10 +235,10 @@ private fun TrafficHeader(
       // 翻页箭头贴着读数区：One UI 日历的换月操作就在标题右侧（件）
       Row(horizontalArrangement = Arrangement.spacedBy(metrics.spaceXxs)) {
         OneUiIconButton(contentDescription = "上一个区间", onClick = { onShiftAnchor(-1) }) {
-          Icon(Icons.Rounded.KeyboardArrowLeft, contentDescription = null, tint = colors.textSecondary)
+          OneUiIcon(Icons.Rounded.KeyboardArrowLeft, contentDescription = null, size = metrics.iconFilledSize)
         }
         OneUiIconButton(contentDescription = "下一个区间", onClick = { onShiftAnchor(1) }) {
-          Icon(Icons.Rounded.KeyboardArrowRight, contentDescription = null, tint = colors.textSecondary)
+          OneUiIcon(Icons.Rounded.KeyboardArrowRight, contentDescription = null, size = metrics.iconFilledSize)
         }
       }
     }
@@ -245,6 +250,7 @@ private fun TrafficHeader(
       OneUiReading(value = formatBytes(traffic.totalRxBytes + traffic.totalTxBytes), unit = "合计", label = "区间总量")
       OneUiReading(value = formatBytes(traffic.totalRxBytes), unit = "接收", label = "下行")
       OneUiReading(value = formatBytes(traffic.totalTxBytes), unit = "发送", label = "上行")
+    }
     }
   }
 }

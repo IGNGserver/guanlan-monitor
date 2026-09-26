@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -50,7 +49,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
@@ -60,6 +58,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -95,8 +94,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 fun rememberOneUiCollapse(listState: LazyListState): Float {
   val motion = OneUiTheme.motion
   val density = LocalDensity.current
-  val thresholdPx = remember(density, OneUiTheme.metrics.topBarLargeHeight) {
-    with(density) { OneUiTheme.metrics.topBarLargeHeight.toPx() }.coerceAtLeast(1f)
+  val largeTitleHeight = OneUiTheme.metrics.topBarLargeHeight
+  val thresholdPx = remember(density, largeTitleHeight) {
+    with(density) { largeTitleHeight.toPx() }.coerceAtLeast(1f)
   }
   val raw = if (listState.firstVisibleItemIndex > 0) {
     1f
@@ -270,6 +270,7 @@ private fun OneUiBottomBarItem(
   val colors = OneUiTheme.colors
   val shapes = OneUiTheme.shapes
   val motion = OneUiTheme.motion
+  val metrics = OneUiTheme.metrics
   val pillAlpha by animateFloatAsState(
     targetValue = if (selected) 1f else 0f,
     animationSpec = motion.tween(OneUiDuration.Content),
@@ -282,12 +283,13 @@ private fun OneUiBottomBarItem(
       .defaultMinSize(minWidth = 76.dp)
       .oneUiPressable(
         onClick = onSelect,
-        selected = false,
+        selected = selected,
         shape = shapes.pill,
         role = androidx.compose.ui.semantics.Role.Tab,
-        minHeight = null,
+        minHeight = metrics.touchTarget,
         stateLabel = if (selected) "当前页面" else destination.label
       )
+      .semantics { if (selected) this.selected = true }
       .padding(horizontal = 14.dp, vertical = 6.dp),
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.spacedBy(3.dp)
@@ -296,13 +298,12 @@ private fun OneUiBottomBarItem(
       Box(
         modifier = Modifier
           .size(width = 54.dp, height = 30.dp)
-          .background(colors.accent.copy(alpha = 0.16f * pillAlpha), shapes.pill)
+          .background(colors.accent.copy(alpha = metrics.navIndicatorAlpha * pillAlpha), shapes.pill)
       )
-      Icon(
+      OneUiIcon(
         imageVector = if (selected && destination.selectedIcon != null) destination.selectedIcon else destination.icon,
         contentDescription = destination.label,
-        tint = iconTint,
-        modifier = Modifier.size(24.dp)
+        tint = iconTint
       )
     }
     OneUiText(
@@ -344,20 +345,21 @@ fun OneUiNavigationRail(
           .width(metrics.navigationRailWidth - 20.dp)
           .oneUiPressable(
             onClick = { onSelect(destination.key) },
+            selected = selected,
             shape = OneUiTheme.shapes.group,
             role = androidx.compose.ui.semantics.Role.Tab,
             minHeight = null,
             stateLabel = if (selected) "当前页面" else destination.label
           )
+          .semantics { if (selected) this.selected = true }
           .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
       ) {
-        Icon(
+        OneUiIcon(
           imageVector = if (selected && destination.selectedIcon != null) destination.selectedIcon else destination.icon,
           contentDescription = destination.label,
-          tint = if (selected) colors.accent else colors.textTertiary,
-          modifier = Modifier.size(24.dp)
+          tint = if (selected) colors.accent else colors.textTertiary
         )
         OneUiText(
           text = destination.label,
@@ -379,20 +381,14 @@ fun OneUiGroup(
   colors: OneUiColors = OneUiTheme.colors,
   shapes: OneUiShapes = OneUiTheme.shapes,
   surface: OneUiSurfaceLevel = OneUiSurfaceLevel.Group,
-  clipContent: Boolean = true,
   content: @Composable ColumnScope.() -> Unit
 ) {
   val metrics = OneUiTheme.metrics
   Column(
     modifier = modifier
       .fillMaxWidth()
-      .then(
-        if (clipContent) {
-          Modifier.oneUiSurface(colors.group, shapes.group, colors = colors, level = surface)
-        } else {
-          Modifier.background(colors.group, shapes.group)
-        }
-      )
+      // 唯一容器实现：额外暗色下靠它补出发丝描边，页面不再自己叠 background
+      .oneUiSurface(colors.group, shapes.group, colors = colors, level = surface)
       .padding(vertical = metrics.spaceXs)
   ) { content() }
 }
@@ -521,6 +517,28 @@ fun OneUiListItem(
   }
 }
 
+/**
+ * 页面唯一可用的图标入口（形）。
+ *
+ * 尺寸与着色都来自 token：页面不再依赖 Material 的默认 24dp，也不会在同一个顶栏里
+ * 把返回键染成 primary、把同级动作染成 secondary。
+ */
+@Composable
+fun OneUiIcon(
+  imageVector: ImageVector,
+  contentDescription: String?,
+  modifier: Modifier = Modifier,
+  size: Dp = OneUiTheme.metrics.iconSize,
+  tint: Color = OneUiTheme.colors.textSecondary
+) {
+  Icon(
+    imageVector = imageVector,
+    contentDescription = contentDescription,
+    tint = tint,
+    modifier = modifier.size(size)
+  )
+}
+
 /** 图标起点容器：One UI 用圆形浅色底承载功能图标。 */
 @Composable
 fun OneUiLeadingIcon(
@@ -530,6 +548,7 @@ fun OneUiLeadingIcon(
   modifier: Modifier = Modifier
 ) {
   val colors = OneUiTheme.colors
+  val metrics = OneUiTheme.metrics
   val (container, tint) = when (tone) {
     OneUiIconTone.Neutral -> Pair(colors.sunken, colors.textSecondary)
     OneUiIconTone.Accent -> Pair(colors.accentSoft, colors.accent)
@@ -540,11 +559,16 @@ fun OneUiLeadingIcon(
   }
   Box(
     modifier = modifier
-      .size(40.dp)
-      .background(container, CircleShape),
+      .size(metrics.leadingIconBox)
+      .oneUiSurface(container, CircleShape, colors = colors, level = OneUiSurfaceLevel.Group),
     contentAlignment = Alignment.Center
   ) {
-    Icon(imageVector = icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(20.dp))
+    OneUiIcon(
+      imageVector = icon,
+      contentDescription = contentDescription,
+      size = metrics.iconFilledSize,
+      tint = tint
+    )
   }
 }
 
@@ -586,6 +610,7 @@ fun OneUiPill(
 ) {
   val colors = OneUiTheme.colors
   val shapes = OneUiTheme.shapes
+  val metrics = OneUiTheme.metrics
   val (container, content) = when (tone) {
     OneUiPillTone.Neutral -> Pair(colors.sunken, colors.textSecondary)
     OneUiPillTone.Accent -> Pair(colors.accentSoft, colors.accentSoftContent)
@@ -596,7 +621,9 @@ fun OneUiPill(
   }
   Row(
     modifier = modifier
-      .defaultMinSize(minHeight = 30.dp)
+      // 只有真的可点的胶囊才需要 48dp 命中区；纯读数的胶囊保持视觉高度（适）
+      .defaultMinSize(minHeight = if (onClick != null) metrics.touchTarget else metrics.pillHeight)
+      .oneUiSurface(container, shapes.pill, colors = colors, level = OneUiSurfaceLevel.Group)
       .oneUiPressable(
         onClick = onClick,
         enabled = enabled && onClick != null,
@@ -604,7 +631,6 @@ fun OneUiPill(
         haptics = OneUiHaptics.Tap,
         minHeight = null
       )
-      .background(container, shapes.pill)
       .padding(horizontal = 11.dp, vertical = 5.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(5.dp)
@@ -686,13 +712,18 @@ fun OneUiNotice(
   Row(
     modifier = modifier
       .fillMaxWidth()
-      .background(container, shapes.card)
+      .oneUiSurface(container, shapes.card, colors = colors, level = OneUiSurfaceLevel.Group)
       .padding(horizontal = metrics.spaceM, vertical = 14.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(metrics.spaceS)
   ) {
     if (icon != null) {
-      Icon(imageVector = icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.dp))
+      OneUiIcon(
+        imageVector = icon,
+        contentDescription = null,
+        tint = accentColor,
+        size = metrics.iconFilledSize
+      )
     }
     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
       OneUiText(text = title, role = OneUiTextRole.Subtitle, color = content)
@@ -802,7 +833,7 @@ fun OneUiLoadingRow(
   Row(
     modifier = modifier
       .fillMaxWidth()
-      .background(colors.sunken, OneUiTheme.shapes.card)
+      .oneUiSurface(colors.sunken, shapes.card, colors = colors, level = OneUiSurfaceLevel.Group)
       .padding(horizontal = metrics.spaceM, vertical = 14.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(metrics.spaceS)
@@ -859,11 +890,11 @@ fun OneUiEmptyState(
     verticalArrangement = Arrangement.spacedBy(metrics.spaceS)
   ) {
     if (icon != null) {
-      Icon(
+      OneUiIcon(
         imageVector = icon,
         contentDescription = null,
         tint = colors.textTertiary,
-        modifier = Modifier.size(34.dp)
+        size = metrics.iconSize * 1.4f
       )
     }
     OneUiText(
@@ -948,8 +979,7 @@ fun OneUiDialog(
       modifier = modifier
         .fillMaxWidth()
         .padding(horizontal = metrics.spaceXxl)
-        .clip(shapes.dialog)
-        .background(colors.group, shapes.dialog)
+        .oneUiSurface(colors.raised, shapes.dialog, colors = colors, level = OneUiSurfaceLevel.Floating)
         .padding(top = metrics.spaceXl, bottom = metrics.spaceM, start = metrics.spaceXl, end = metrics.spaceXl),
       verticalArrangement = Arrangement.spacedBy(metrics.spaceS)
     ) {
@@ -1158,11 +1188,7 @@ fun OneUiExpandable(
   }
 }
 
-/** 顶部安全区 + 状态栏内边距，供非 Scaffold 场景使用（适）。 */
-@Composable
-fun oneUiStatusBarPadding(): PaddingValues =
-  WindowInsets.statusBars.asPaddingValues()
-
+/** 顶部安全区由 [OneUiTopBar]、[OneUiNavigationRail] 与各级工具坞自己消费，这里只留列表底部留白的统一值。 */
 @Composable
 fun oneUiNavigationBarPadding(): PaddingValues =
   WindowInsets.navigationBars.asPaddingValues()

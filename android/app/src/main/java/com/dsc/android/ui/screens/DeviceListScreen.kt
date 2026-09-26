@@ -1,5 +1,3 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-
 package com.dsc.android.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
@@ -29,7 +27,6 @@ import androidx.compose.material.icons.rounded.Router
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Timeline
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +50,7 @@ import com.dsc.android.ui.oneui.OneUiEmptyState
 import com.dsc.android.ui.oneui.OneUiGroup
 import com.dsc.android.ui.oneui.OneUiGroupHeader
 import com.dsc.android.ui.oneui.OneUiHaptics
+import com.dsc.android.ui.oneui.OneUiIcon
 import com.dsc.android.ui.oneui.OneUiIconButton
 import com.dsc.android.ui.oneui.OneUiIconTone
 import com.dsc.android.ui.oneui.OneUiLeadingIcon
@@ -70,8 +68,10 @@ import com.dsc.android.ui.oneui.OneUiText
 import com.dsc.android.ui.oneui.OneUiTextRole
 import com.dsc.android.ui.oneui.OneUiTheme
 import com.dsc.android.ui.oneui.OneUiTopBar
+import com.dsc.android.ui.oneui.OneUiSurfaceLevel
 import com.dsc.android.ui.oneui.formatPercent
 import com.dsc.android.ui.oneui.oneUiListContentPadding
+import com.dsc.android.ui.oneui.oneUiSurface
 import com.dsc.android.ui.oneui.oneUiListEnter
 import com.dsc.android.ui.oneui.rememberOneUiCollapse
 import com.dsc.android.ui.shell.GuanlanActions
@@ -140,7 +140,7 @@ fun DeviceListScreen(
               enabled = !state.refreshing,
               spinning = state.refreshing
             ) {
-              Icon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textSecondary)
+              OneUiIcon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textPrimary)
             }
             OneUiIconButton(
               contentDescription = "编辑设备列表",
@@ -150,7 +150,7 @@ fun DeviceListScreen(
               },
               enabled = persisted.isNotEmpty()
             ) {
-              Icon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textSecondary)
+              OneUiIcon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textPrimary)
             }
           }
         }
@@ -412,21 +412,21 @@ private fun DeviceRow(
               contentDescription = "上移",
               onClick = { onMove(-1) },
               enabled = canMoveUp,
-              size = 44.dp,
+              size = metrics.iconButton,
               haptics = OneUiHaptics.Toggle
-            ) { Icon(Icons.Rounded.ArrowUpward, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp)) }
+            ) { OneUiIcon(Icons.Rounded.ArrowUpward, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize) }
             OneUiIconButton(
               contentDescription = "下移",
               onClick = { onMove(1) },
               enabled = canMoveDown,
-              size = 44.dp,
+              size = metrics.iconButton,
               haptics = OneUiHaptics.Toggle
-            ) { Icon(Icons.Rounded.ArrowDownward, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp)) }
+            ) { OneUiIcon(Icons.Rounded.ArrowDownward, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize) }
             OneUiIconButton(
               contentDescription = "删除设备",
               onClick = onRequestDelete,
               size = 44.dp
-            ) { Icon(Icons.Rounded.Delete, contentDescription = null, tint = colors.critical, modifier = Modifier.size(20.dp)) }
+            ) { OneUiIcon(Icons.Rounded.Delete, contentDescription = null, tint = colors.criticalContent, size = metrics.iconFilledSize) }
           }
         } else {
           Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -504,7 +504,12 @@ private fun EditDock(onCancel: () -> Unit, onSave: () -> Unit, dirty: Boolean) {
   Row(
     modifier = Modifier
       .fillMaxWidth()
-      .background(colors.group)
+      .oneUiSurface(
+        colors.raised,
+        OneUiTheme.shapes.dock,
+        colors = colors,
+        level = OneUiSurfaceLevel.Raised
+      )
       .navigationBarsPadding()
       .padding(horizontal = metrics.screenMargin, vertical = metrics.spaceM),
     horizontalArrangement = Arrangement.spacedBy(metrics.spaceS),
