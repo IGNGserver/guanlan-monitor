@@ -8,7 +8,7 @@ import { ChartTile, DashboardCell, DashboardGrid, DashboardSection } from "../da
 import { OnboardingGuide } from "../shell/OnboardingGuide";
 import { formatBytes, formatDate, formatPercent } from "../formatters";
 import { selectAttentionDevices, selectHealthSummary } from "../selectors";
-import { CarbonDeviceTable, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints } from "./shared";
+import { CarbonDeviceTable, DeviceCardGrid, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints } from "./shared";
 
 type ObservationMetric = "cpu" | "memory" | "disk" | "network";
 
@@ -157,7 +157,16 @@ export function OverviewPage() {
       </div>
       {cached && <div className="workspace-inline-note">当前为缓存快照，设备列表只读。</div>}
       {attentionDevices.length
-        ? <CarbonDeviceTable devices={attentionDevices} />
+        ? (
+          <div className="workspace-attention-content">
+            <div className="workspace-attention-cards">
+              <DeviceCardGrid devices={attentionDevices} />
+            </div>
+            <div className="workspace-visually-hidden" aria-hidden="true">
+              <CarbonDeviceTable devices={attentionDevices} />
+            </div>
+          </div>
+        )
         : <div className="workspace-muted-block">{noData ? "还没有设备接入；Agent 上报一次后就会出现在这里。" : `${health.total} 台设备全部在线，无需处理。到“设备”页可以搜索、筛选和管理。`}</div>}
     </Surface>
 

@@ -4,7 +4,7 @@ import { useWorkspace } from "../WorkspaceContext";
 import { Button, Icon, Surface } from "../ui";
 import { selectDeviceDirectory, type DeviceDirectorySort, type DeviceDirectoryStatus } from "../selectors";
 import { mergeDeviceOrder, registerDeviceOrderDraftGuard } from "../deviceOrderDraft";
-import { CarbonDeviceTable, ConfirmDialog, DeviceDirectoryFilterBar, EmptyState, ErrorSurface, LoadingSurface, PageIntro, SnapshotFreshnessNotice } from "./shared";
+import { CarbonDeviceTable, ConfirmDialog, DeviceCardGrid, DeviceDirectoryFilterBar, EmptyState, ErrorSurface, LoadingSurface, PageIntro, SnapshotFreshnessNotice } from "./shared";
 
 export function DevicesPage() {
   const { snapshot, allDevices, loading, error, refresh, deleteInstance, reorderInstances, mutationPending, openSettings } = useWorkspace();
@@ -120,6 +120,11 @@ export function DevicesPage() {
     {manageMode && <div className="workspace-inline-note" role="status">调整只生成草稿，点“保存顺序”才会写入中枢；未保存就离开会被提示。</div>}
     {!canManage && <div className="workspace-inline-note" role="status">{snapshot.source === "cache" ? "离线缓存为只读快照。" : "需要实时连接并完成认证后才能删除或调整设备顺序。"}</div>}
     <Surface className="workspace-directory-surface guanlan-data-table-surface">
+      {visibleDevices.length > 0 && (
+        <div className="guanlan-fleet-cards-wrap" style={{ padding: "16px 16px 0 16px" }}>
+          <DeviceCardGrid devices={visibleDevices} />
+        </div>
+      )}
       {visibleDevices.length > 0 && <div className="workspace-directory-scroll-hint" role="note">左右滑动查看更多字段 · 点按设备行查看详情</div>}
       <div className="workspace-directory-table-scroll">
         <CarbonDeviceTable
