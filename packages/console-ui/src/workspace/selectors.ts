@@ -72,14 +72,23 @@ export function selectResourceRanking(devices: DeviceSummary[], metric: "cpu" | 
     .slice(0, limit);
 }
 
-export function selectOverviewDevices(allDevices: DeviceSummary[], limit = 6): DeviceSummary[] {
+/**
+ * Devices the overview should surface.
+ *
+ * The overview used to show "重点实例" while actually listing the first six
+ * devices in any state, which duplicated the device directory one click away.
+ * It now surfaces only what cannot answer for itself, so a healthy fleet leaves
+ * nothing to read here and the directory keeps its role as the device list.
+ */
+export function selectAttentionDevices(allDevices: DeviceSummary[], limit = 6): DeviceSummary[] {
   return allDevices
+    .filter((device) => device.status !== "online")
     .slice()
-    .sort((left, right) => (left.status === "online" ? 1 : 0) - (right.status === "online" ? 1 : 0)
-      || (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
-      || Date.parse(right.lastSeenAt ?? "") - Date.parse(left.lastSeenAt ?? ""))
+    .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
+      || Date.parse(left.lastSeenAt ?? "") - Date.parse(right.lastSeenAt ?? ""))
     .slice(0, limit);
 }
+
 
 export function selectDeviceDirectory(devices: DeviceSummary[], query: DeviceDirectoryQuery = {}): DeviceSummary[] {
   const normalizedQuery = query.query?.trim().toLocaleLowerCase() ?? "";

@@ -344,9 +344,15 @@ async function run() {
   assert.ok(desktopMetrics.mainWidth > 0);
   assert.ok(desktopMetrics.bodyScrollWidth <= desktopMetrics.viewportWidth + 1, "desktop shell overflows horizontally");
   assert.equal(await page.locator(".workspace-device-item").count(), 0, "primary navigation must not contain a device list");
-  assert.deepEqual((await page.locator(".workspace-sidebar .m3-navigation-item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "中枢状态", "设置"], "sidebar contains destinations only");
+  assert.deepEqual((await page.locator(".workspace-sidebar .m3-navigation-item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "设置"], "sidebar contains destinations only");
+  assert.equal(await page.getByRole("button", { name: "中枢状态" }).count(), 0, "the retired hub destination must not come back");
+  assert.equal(await page.locator(".workspace-hub-card").count(), 1, "the overview must own the hub connection facts");
   const overviewHealthTotal = await page.locator(".workspace-overview-summary__item").first().locator("strong").innerText();
   assert.equal(overviewHealthTotal, String(fixtureDevices.length), "overview health must include every registered device");
+  // "需要关注" is only defensible if the tile says what it adds up.
+  const attentionTile = page.locator(".workspace-overview-summary__item").nth(2);
+  assert.equal((await attentionTile.locator("span").first().innerText()).trim(), "需要关注", "the attention tile must be labelled by what it counts");
+  assert.match((await attentionTile.locator("small").innerText()).trim(), /未响应/, "the attention tile must expose its composition");
   await page.screenshot({ path: path.join(outputDir, "web-workspace-desktop.png"), fullPage: true, animations: "disabled" });
 
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
@@ -357,7 +363,7 @@ async function run() {
 
   // Assert Carbon DataTable headers and body cells stay aligned.
   const headerColumns = await deviceTable.locator("thead th").allTextContents();
-  assert.deepEqual(headerColumns.map((col) => col.trim()), ["状态", "设备实例", "CPU", "内存", "磁盘", "最近心跳", "操作"], "directory table header must contain exactly 7 columns in order");
+  assert.deepEqual(headerColumns.map((col) => col.trim()), ["状态", "设备", "CPU 使用率", "内存使用", "磁盘使用", "最后在线", "操作"], "directory table header must contain exactly 7 columns in order");
   assert.equal(await deviceTable.locator("thead th").count(), 7, "directory table must have 7 column headers");
   assert.equal(await deviceRows.first().locator("td").count(), 7, "Carbon device table rows must expose the same 7 columns");
   const deviceSearch = page.getByLabel("搜索设备", { exact: true });
@@ -368,6 +374,14 @@ async function run() {
 
   await page.goto(`${baseUrl}#settings/appearance`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
+  // The browser console and the desktop client must offer the same section names;
+  // only 本机 Agent is allowed to differ, and that is the desktop's own run.
+  assert.deepEqual(
+    (await page.locator(".workspace-sidebar__nav .workspace-nav-item span").allTextContents()).map((label) => label.trim()),
+    ["通用", "外观", "连接", "数据与更新", "快捷键参考", "关于观澜"],
+    "web settings must use the shared section vocabulary"
+  );
+  assert.equal(await page.locator(".workspace-page--settings h2").innerText(), "外观", "the settings heading must name the open section");
   await page.screenshot({ path: path.join(outputDir, "web-settings-desktop.png"), fullPage: true, animations: "disabled" });
 
   await page.goto(`${baseUrl}#device/${encodeURIComponent("workstation-01")}`, { waitUntil: "domcontentloaded" });
@@ -477,17 +491,18 @@ async function run() {
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
   await page.getByRole("button", { name: "管理顺序" }).click();
-  const firstMenu = page.locator(".cds--overflow-menu").first();
-  await firstMenu.click();
-  await page.getByRole("menuitem", { name: "删除" }).click();
+  // Management mode exposes each row action directly: a menu that has to be
+  // discovered before it can be used was the whole cost of the old flow.
+  const firstRow = deviceRows.first();
+  await firstRow.getByRole("button", { name: "删除" }).click();
   const deleteDialog = page.getByRole("dialog", { name: "请确认操作" });
   await deleteDialog.waitFor({ state: "visible", timeout: 2_000 });
   assert.equal(await deleteDialog.count(), 1, "device deletion must require confirmation");
   assert.equal(await deleteDialog.getByRole("heading", { name: /删除/ }).count(), 1, "delete dialog must expose a destructive heading");
   await deleteDialog.getByRole("button", { name: "取消" }).click();
-  if (!(await page.getByRole("menuitem", { name: "下移" }).isVisible())) await firstMenu.click();
-  await page.getByRole("menuitem", { name: "下移" }).click();
+  await firstRow.getByRole("button", { name: "下移" }).click();
   assert.equal(await page.getByRole("button", { name: "保存顺序" }).isEnabled(), true, "device order must stay a draft until save");
+  assert.equal(await firstRow.getByRole("button", { name: "上移" }).isDisabled(), true, "the first row cannot move further up");
 
   // Assert leave guard: when order is modified and user clicks navigation destination, confirm dialog must trigger
   let dialogMessage = null;
@@ -549,7 +564,7 @@ async function run() {
     };
   });
   assert.equal(mobileMetrics.bottomNavDisplay, "grid");
-  assert.deepEqual((await page.locator(".workspace-bottom-nav__item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "连接", "设置"]);
+  assert.deepEqual((await page.locator(".workspace-bottom-nav__item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "设置"], "compact destinations must match the rail one-for-one");
   assert.equal(await page.locator(".workspace-bottom-nav").getByText("刷新", { exact: true }).count(), 0, "compact navigation must not contain refresh");
   assert.equal(await page.locator(".workspace-bottom-nav").getByText("搜索", { exact: true }).count(), 0, "compact navigation must not contain search");
   assert.ok(mobileMetrics.rootWidth > 0);
@@ -622,6 +637,13 @@ async function run() {
   await page.goto(`${baseUrl}?visual-state=empty#overview`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--overview").waitFor({ state: "visible", timeout: 15_000 });
   assert.equal(await page.getByText("还没有可用设备", { exact: true }).count(), 1, "empty fixture must explain the next action");
+  // The first-run guide is the answer to "where does the key come from" and
+  // "what makes a device appear"; it must show while the fleet is empty.
+  assert.equal(await page.locator(".workspace-onboarding").count(), 1, "an empty fleet must offer the first-run guide");
+  assert.equal(await page.locator(".workspace-onboarding__steps > li").count(), 3, "the guide must list every step");
+  await page.locator(".workspace-onboarding").getByRole("button", { name: "不再显示" }).click();
+  assert.equal(await page.locator(".workspace-onboarding").count(), 0, "dismissing the guide must be honoured immediately");
+  assert.equal(await page.evaluate(() => localStorage.getItem("dsc-onboarding-dismissed")), "true", "the dismissal must persist");
   await page.screenshot({ path: path.join(outputDir, "web-state-empty.png"), fullPage: true, animations: "disabled" });
   stateEvidence.push({ state: "empty", screenshot: "web-state-empty.png" });
 

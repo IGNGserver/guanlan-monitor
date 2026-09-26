@@ -15,7 +15,7 @@ function readStoredSidebarCollapsed(): boolean {
   return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
 }
 
-export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: ConsoleAdapter; initialRoute?: WorkspaceRoute }) {
+export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter; initialRoute?: WorkspaceRoute }) {
   const [route, setRoute] = useState<WorkspaceRoute>(() => initialRoute ?? routeFromLocation());
   const [returnRoute, setReturnRoute] = useState<WorkspaceRoute>(defaultRoute);
   const [sidebarCollapsed, setSidebarCollapsedState] = useState<boolean>(() => {
@@ -107,10 +107,13 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
     }
   }, []);
 
-  const openSettings = useCallback((section: SettingsSection = adapter.capabilities.canControlNativeWindow ? "general" : "workspace") => {
+  // "通用" is the first section on both clients, so opening settings from the
+  // sidebar, the topbar or Ctrl+, always lands on the same page.
+  const openSettings = useCallback((section: SettingsSection = "general") => {
     setReturnRoute((current) => (route.kind === "settings" ? current : route));
     navigate({ kind: "settings", section });
-  }, [adapter, navigate, route]);
+  }, [navigate, route]);
+
 
   const closeSettings = useCallback(() => navigate(returnRoute), [navigate, returnRoute]);
   const setSidebarCollapsed = useCallback((collapsed: boolean) => {

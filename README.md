@@ -71,7 +71,7 @@ guanlan-agent onboarding-url
 下载 `DeviceStateConsole-Linux-Install-v<版本>.deb`，适用于 Ubuntu/Debian
 `amd64`。安装后提供 `/usr/bin/guanlan` 桌面端与 `/usr/bin/guanlan-agent`
 命令；系统级 `guanlan-agent.service` 会随安装启用，无桌面会话也会持续采集与
-上报。首次打开桌面端可在“连接与上报”页填写中枢地址和访问密钥；非提权用户
+上报。首次打开桌面端可在“连接”页填写中枢地址和访问密钥；非提权用户
 只能查看状态，修改机器级配置需要管理员权限。
 
 该安装包以 Ubuntu 24.04 构建，目标为 Debian 系 `amd64`。Fedora/RPM、Arch
@@ -120,7 +120,7 @@ Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 
 ## 设备采集
 
 - Windows：安装上方的观澜 setup，可在应用内配置；无人值守场景使用上面的静默参数。
-- Linux 桌面：安装上方的 `.deb`，在“连接与上报”页配置；无桌面环境使用上面的环境变量或 `guanlan-agent config set`。
+- Linux 桌面：安装上方的 `.deb`，在“连接”页配置；无桌面环境使用上面的环境变量或 `guanlan-agent config set`。
 - 服务化：安装包会注册机器级 `guanlan-agent` 服务（Windows 服务/计划任务，Linux systemd system 单元），开机即采集，无需登录。
 - 升级：Windows 使用 setup/update 包，Linux 使用新的 `.deb`；两种方式都会保留机器级配置。
 - 网页控制台：使用 `.env` 中的 `ACCESS_KEY` 登录，选择设备即可查看实时数据和历史图表。

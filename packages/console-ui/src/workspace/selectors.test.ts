@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ConsoleSnapshot, DeviceSummary } from "@dsc/shared";
-import { selectDeviceDirectory, selectHealthSummary, selectOverviewDevices, selectResourceRanking, selectSnapshotSource } from "./selectors.ts";
+import { selectAttentionDevices, selectDeviceDirectory, selectHealthSummary, selectResourceRanking, selectSnapshotSource } from "./selectors.ts";
 import { mergeDeviceOrder, registerDeviceOrderDraftGuard, confirmDiscardDeviceOrderDraft } from "./deviceOrderDraft.ts";
 
 const device = (overrides: Partial<DeviceSummary>): DeviceSummary => ({
@@ -61,14 +61,20 @@ test("directory filters and resource ranking are deterministic", () => {
   assert.deepEqual(selectResourceRanking(devices, "cpu").map((item) => item.deviceId), ["b", "a"]);
 });
 
-test("overview puts offline devices before healthy devices without changing server order", () => {
+// The overview surfaces only what cannot answer for itself; the device directory
+// stays the single place that lists the whole fleet.
+test("attention list keeps offline devices and drops the healthy ones", () => {
   const devices = [
     device({ deviceId: "healthy", sortOrder: 0 }),
     device({ deviceId: "offline", status: "offline", sortOrder: 1 }),
-    device({ deviceId: "healthy-2", sortOrder: 2 })
+    device({ deviceId: "healthy-2", sortOrder: 2 }),
+    device({ deviceId: "offline-early", status: "offline", sortOrder: 3 })
   ];
-  assert.deepEqual(selectOverviewDevices(devices).map((item) => item.deviceId), ["offline", "healthy", "healthy-2"]);
+  assert.deepEqual(selectAttentionDevices(devices).map((item) => item.deviceId), ["offline", "offline-early"]);
+  assert.deepEqual(selectAttentionDevices(devices, 1).map((item) => item.deviceId), ["offline"], "the limit must keep the directory order");
+  assert.deepEqual(selectAttentionDevices([device({})]), [], "a fully healthy fleet leaves nothing to surface");
 });
+
 
 test("selectSnapshotSource handles live, cache, empty, and unknown correctly", () => {
   const devices = [device({ deviceId: "d1" })];

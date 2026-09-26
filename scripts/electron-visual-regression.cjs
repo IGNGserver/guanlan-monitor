@@ -87,7 +87,7 @@ async function run() {
     assert.ok(desktopMetrics.bodyScrollWidth <= desktopMetrics.viewportWidth + 1, "Electron desktop shell overflows horizontally");
     assert.equal(await page.locator(".workspace-device-item").count(), 0, "Electron primary navigation must not contain a device list");
     const desktopNavLabels = (await page.locator(".workspace-sidebar .m3-navigation-item").allTextContents()).map((label) => label.trim());
-    const expectedDesktopNav = desktopNavLabels.includes("本机 Agent") ? ["总览", "设备", "中枢状态", "本机 Agent", "设置"] : ["总览", "设备", "中枢状态", "设置"];
+    const expectedDesktopNav = desktopNavLabels.includes("本机 Agent") ? ["总览", "设备", "本机 Agent", "设置"] : ["总览", "设备", "设置"];
     assert.deepEqual(desktopNavLabels, expectedDesktopNav, "Electron primary navigation contains non-destination commands");
     await page.screenshot({ path: path.join(outputDir, "electron-workspace-desktop.png"), fullPage: true, animations: "disabled" });
 
@@ -95,8 +95,8 @@ async function run() {
     await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
     const deviceTable = page.locator(".workspace-directory-surface .cds--data-table");
     assert.equal(await deviceTable.locator("tbody tr").count(), 2, "Electron fixture must render every device");
-    assert.equal(await deviceTable.getByText("当前响应", { exact: true }).count(), 1, "online devices must expose current heartbeat facts");
-    assert.equal(await deviceTable.getByText("心跳已过期", { exact: true }).count(), 1, "offline instances must expose stale heartbeat facts");
+    assert.equal(await deviceTable.getByText("刚刚上报", { exact: true }).count(), 1, "online devices must expose their latest report");
+    assert.equal(await deviceTable.getByText("已停止上报", { exact: true }).count(), 1, "offline devices must say that reporting stopped");
     await page.screenshot({ path: path.join(outputDir, "electron-devices-desktop.png"), fullPage: true, animations: "disabled" });
 
     await deviceTable.locator(".guanlan-table-link").filter({ hasText: "视觉验收主机" }).click();
@@ -107,6 +107,13 @@ async function run() {
 
     await page.evaluate(() => { window.location.hash = "#settings/general"; });
     await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
+    // Same vocabulary as the browser console, plus the one section that only
+    // exists where a machine agent can be managed.
+    assert.deepEqual(
+      (await page.locator(".workspace-sidebar__nav .workspace-nav-item span").allTextContents()).map((label) => label.trim()),
+      ["通用", "外观", "连接", "本机 Agent", "数据与更新", "快捷键参考", "关于观澜"],
+      "desktop settings must use the shared section vocabulary"
+    );
     await page.screenshot({ path: path.join(outputDir, "electron-settings-desktop.png"), fullPage: true, animations: "disabled" });
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -122,7 +129,7 @@ async function run() {
       };
     });
     assert.equal(mobileMetrics.bottomNavDisplay, "grid");
-    assert.deepEqual((await page.locator(".workspace-bottom-nav__item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "连接", "设置"]);
+    assert.deepEqual((await page.locator(".workspace-bottom-nav__item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "设置"], "compact destinations must match the desktop rail");
     assert.ok(mobileMetrics.rootWidth > 0);
     assert.ok(mobileMetrics.bodyScrollWidth <= mobileMetrics.viewportWidth + 1, "Electron narrow shell overflows horizontally");
     await page.evaluate(() => { window.location.hash = "#settings/appearance"; });

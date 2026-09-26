@@ -1016,6 +1016,11 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
       "search search"
       "status status"
       "sort actions";
+    /* The sort select and the action group are a few pixels apart in height.
+       Centring them in the row kept their mid-lines aligned but their top edges
+       several pixels apart, which is the edge a reader actually scans to tell two
+       controls are one row - and the edge the 390px contract measures. */
+    align-items: start;
   }
 
   .workspace-directory-toolbar > * {
