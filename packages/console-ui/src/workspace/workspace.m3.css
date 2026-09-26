@@ -339,14 +339,14 @@
   border-radius: 0;
 }
 
-/* Same arbitration note as `.workspace-nav-item.m3-navigation-item`: the fixed
-   30x30 box here outranked the 44px touch contract twice over, and the
-   `@media (pointer: coarse)` block in this file could not beat it either. */
+/* Size removed entirely, not re-pointed at the control-height token. The
+   previous commit swapped `30px` for `var(--workspace-control-height)` and the
+   sidebar collapse button still measured 40x40 on a phone: the composite is
+   `(0,2,0)`, so as long as it declares a height at all it outranks the
+   `(0,1,0)` coarse contract in the arbiter and there is nothing that contract
+   can do about it. `.m3-icon-button` already supplies the desktop size; this
+   rule now only says the shell icon buttons are square. */
 .workspace-icon-button.m3-icon-button {
-  width: var(--workspace-control-height);
-  min-width: var(--workspace-control-height);
-  height: var(--workspace-control-height);
-  min-height: var(--workspace-control-height);
   border-radius: 0;
 }
 
