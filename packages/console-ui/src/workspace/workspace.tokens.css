@@ -73,6 +73,7 @@
   --workspace-radius-md: var(--workspace-shape-medium);
   --workspace-radius-lg: var(--workspace-shape-large);
   --workspace-sidebar-width: 262px;
+  --workspace-sidebar-rail-width: 76px;
   --workspace-content-pad: 34px;
   --workspace-control-height: 40px;
   --workspace-transition: var(--workspace-motion-standard);

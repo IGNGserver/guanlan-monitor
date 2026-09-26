@@ -139,17 +139,12 @@
   .workspace-metric-option-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-@media (max-width: 820px) {
+/* Drawer mode. The sidebar itself is positioned by workspace.pages.css at the
+   same 839px line; only the topbar affordances belong here, so the two layers
+   no longer define two different drawers. */
+@media (max-width: 839px) {
   .workspace-topbar__toggle { display: inline-grid; }
   .workspace-topbar { padding-inline: 16px; }
-  .workspace-sidebar { position: absolute; top: 42px; right: auto; bottom: 0; left: 0; width: min(280px, 86vw); box-shadow: var(--workspace-shadow); transform: translateX(0); }
-  .workspace-sidebar.is-collapsed { width: 0; border: 0; transform: translateX(-100%); }
-  .workspace-root,
-  .workspace-root.is-sidebar-collapsed,
-  .workspace-root.is-sidebar-peek { grid-template-columns: 1fr; }
-  .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed { width: min(280px, 86vw); transform: translateX(0); }
-  .workspace-main { grid-column: 1; }
-  .workspace-sidebar-edge-trigger { left: 8px; }
 }
 
 @media (max-width: 620px) {

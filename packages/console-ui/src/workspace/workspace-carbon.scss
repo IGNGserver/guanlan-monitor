@@ -18,6 +18,9 @@
 :root {
   --guanlan-page-pad: 32px;
   --guanlan-motion-fast: 120ms cubic-bezier(0.2, 0, 0, 1);
+  /* One band for the app header and one control height for every action that
+     sits in it, so neither route changes the shape of the shell. */
+  --guanlan-topbar-height: 56px;
 }
 
 .workspace-root {
@@ -43,6 +46,19 @@
   border-color: var(--cds-border-subtle-00, #e0e0e0);
   background: var(--cds-layer-01, #f4f4f4);
   box-shadow: none;
+}
+
+/* The header is a fixed band. It used to be `min-height` plus vertical
+ * padding, so whatever the tallest action grew to, the header grew to — and the
+ * refresh action grew whenever its label appeared or disappeared, which pushed
+ * the whole page up and down. */
+.workspace-topbar {
+  display: flex;
+  height: var(--guanlan-topbar-height);
+  min-height: var(--guanlan-topbar-height);
+  flex-wrap: nowrap;
+  align-items: center;
+  padding-block: 0;
 }
 
 .workspace-windowbar {
@@ -169,17 +185,31 @@
   color: var(--cds-text-secondary, #525252);
 }
 
+/* Overview status strip: one three-row contract for all four tiles.
+ *
+ * The "数据来源" tile wraps its label in a flex row with its own min-height, so
+ * its value and note sat 9px below the other three, and the per-tile bottom
+ * padding stacked on the container padding to leave a dead band above the
+ * rule. Every tile now gets the same three rows, the same gutters, and a
+ * divider that runs the full height of the strip.
+ */
 .workspace-overview-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-bottom: 24px;
+  gap: 0;
+  margin-bottom: var(--cds-spacing-07, 32px);
+  padding: 0;
   border-bottom: 1px solid var(--cds-border-subtle-00, #e0e0e0);
   background: transparent;
 }
 
 .workspace-overview-summary__item {
-  min-height: 0;
-  padding: 0 20px 18px;
+  display: grid;
+  grid-template-rows: 1.5rem auto auto;
+  row-gap: var(--cds-spacing-03, 8px);
+  min-width: 0;
+  padding: 0 var(--cds-spacing-06, 24px) var(--cds-spacing-05, 16px);
+  border: 0;
   border-left: 1px solid var(--cds-border-subtle-00, #e0e0e0);
   border-radius: 0;
   background: transparent;
@@ -187,20 +217,51 @@
 }
 
 .workspace-overview-summary__item:first-child {
+  padding-left: 0;
   border-left: 0;
 }
 
-.workspace-overview-summary__item > strong {
-  margin-top: 10px;
-  color: var(--cds-text-primary, #161616);
-  font-size: 28px;
-  font-weight: 400;
+.workspace-overview-summary__label {
+  display: flex;
+  height: 1.5rem;
+  min-height: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cds-spacing-03, 8px);
 }
 
-.workspace-overview-summary__item > small,
+/* The compact source indicator is a bare dot; its pill height must not push the
+   label row past the shared 1.5rem row the other three tiles use. */
+.workspace-overview-summary__label .workspace-status-label {
+  min-height: 0;
+  height: 7px;
+}
+
 .workspace-overview-summary__item > span,
 .workspace-overview-summary__label span {
   color: var(--cds-text-secondary, #525252);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.workspace-overview-summary__item > strong {
+  margin-top: 0;
+  color: var(--cds-text-primary, #161616);
+  font-size: 1.75rem;
+  line-height: 2.25rem;
+  font-weight: 400;
+}
+
+.workspace-overview-summary__item > strong small {
+  color: var(--cds-text-secondary, #525252);
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+.workspace-overview-summary__item > small {
+  color: var(--cds-text-secondary, #525252);
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
 .workspace-attention {
@@ -242,10 +303,12 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 
 .workspace-directory-toolbar {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(220px, auto) minmax(150px, auto) auto;
+  grid-template-columns: minmax(240px, 1fr) auto auto auto;
   grid-template-areas: "search status sort actions";
-  margin-bottom: 16px;
-  padding: 0;
+  align-items: center;
+  gap: var(--cds-spacing-03, 8px);
+  margin-bottom: var(--cds-spacing-06, 24px);
+  padding: var(--cds-spacing-03, 8px) var(--cds-spacing-04, 12px);
   border: 1px solid var(--cds-border-subtle-00, #e0e0e0);
   border-radius: 0;
   background: var(--cds-layer-01, #f4f4f4);
@@ -262,17 +325,45 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 .workspace-directory-toolbar > .workspace-directory-toolbar__sort { grid-area: sort; min-width: 0; }
 .workspace-directory-toolbar > .workspace-directory-toolbar__actions { grid-area: actions; min-width: 0; }
 
+/* One control height per toolbar row.
+ *
+ * The row mixed a 70px search field, a 48px chip group, a 40px sort select and
+ * a 48px action group, bottom-aligned against each other. The visible field
+ * labels are what made the search box taller than its neighbours, so they move
+ * into the accessibility tree only, and the inner column dividers go away with
+ * the uneven heights they were hiding.
+ */
 .workspace-directory-toolbar > * {
   margin: 0;
-  border-right: 1px solid var(--cds-border-subtle-00, #e0e0e0);
-}
-
-.workspace-directory-toolbar > *:last-child {
   border-right: 0;
 }
 
+.workspace-directory-toolbar .m3-field,
+.workspace-directory-toolbar .m3-select {
+  gap: 0;
+}
+
+.workspace-directory-toolbar .cds--label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .workspace-directory-toolbar__chips {
-  padding: 8px;
+  min-height: 0;
+  gap: var(--cds-spacing-02, 4px);
+  padding: 0;
+}
+
+.workspace-directory-toolbar__actions {
+  min-height: 0;
+  gap: var(--cds-spacing-03, 8px);
+  padding: 0;
 }
 
 .workspace-directory-surface {
@@ -422,6 +513,25 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   font-family: "IBM Plex Sans", "Noto Sans SC", sans-serif;
 }
 
+/* Carbon's own button padding out-ran the M3 layer, so every action was 48px
+ * tall with 14px of vertical padding, and the shared icon (`display: block`)
+ * stacked above the label instead of beside it. That is what made the header
+ * 85px on desktop and 65px on a phone. One control height, one baseline. */
+.m3-button,
+.workspace-button {
+  min-height: var(--workspace-control-height);
+  padding-block: 0;
+  padding-inline: var(--cds-spacing-04, 12px);
+  line-height: 1rem;
+}
+
+.m3-button__label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--cds-spacing-03, 8px);
+}
+
 .m3-button,
 .m3-icon-button,
 .m3-navigation-item,
@@ -501,17 +611,28 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   background: var(--cds-layer-hover-01, #e8e8e8);
 }
 
-.m3-segmented-control {
-  border-radius: 0 !important;
-}
-
+/* Horizontal option rows: segmented controls and chips.
+ *
+ * The M3 layer wraps the content switcher in a bordered, padded container and
+ * the Carbon layer then pinned that container to the same 40px as its own
+ * buttons. 40px of buttons inside 40px minus 3px padding minus 2px border does
+ * not fit, so the control grew an inner scrollbar and a near-white box that no
+ * other surface in the shell has. Carbon's switcher is already a flat row of
+ * cells, so the outer chrome goes away and the height contract is held by the
+ * buttons themselves. Narrow viewports wrap the row instead of scrolling it.
+ */
 .m3-segmented-control {
   display: inline-flex;
-  width: fit-content;
+  flex-wrap: wrap;
+  align-items: center;
+  width: max-content;
   max-width: 100%;
-  inline-size: fit-content;
-  overflow-x: auto;
-  min-height: 40px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 0 !important;
+  overflow: visible;
 }
 
 .m3-segmented-control .cds--content-switcher-btn {
@@ -519,11 +640,11 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   width: auto !important;
   min-width: max-content;
   inline-size: auto !important;
-  min-height: 40px;
+  min-height: var(--workspace-control-height);
   border-color: var(--cds-border-subtle-00, #e0e0e0);
   color: var(--cds-text-secondary, #525252);
   white-space: nowrap;
-  background: var(--cds-layer-02, #ffffff);
+  background: var(--cds-layer-01, #f4f4f4);
 }
 
 .m3-segmented-control .cds--content-switcher-btn.cds--content-switcher--selected,
@@ -536,6 +657,32 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 .m3-segmented-control .cds--content-switcher-btn.cds--content-switcher--selected::after,
 .m3-segmented-control .cds--content-switcher-btn[aria-selected="true"]::after {
   background-color: var(--cds-layer-selected-01, #e0e0e0) !important;
+}
+
+/* Filter chips were the last M3-coloured control left in the shell: a filled
+   primary container sitting beside Carbon's grey layers. */
+.m3-chip {
+  min-height: 2rem;
+  padding-block: 0;
+  padding-inline: var(--cds-spacing-04, 12px);
+  border: 1px solid var(--cds-border-strong-01, #8d8d8d);
+  border-radius: 0;
+  color: var(--cds-text-secondary, #525252);
+  background: transparent;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.m3-chip:hover {
+  border-color: var(--cds-text-primary, #161616);
+  color: var(--cds-text-primary, #161616);
+  background: var(--cds-layer-hover-01, #e8e8e8);
+}
+
+.m3-chip.is-selected {
+  border-color: var(--cds-text-primary, #161616);
+  color: var(--cds-text-primary, #161616);
+  background: var(--cds-layer-selected-01, #e0e0e0);
 }
 
 .m3-field,
@@ -551,14 +698,13 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   font-size: 12px;
 }
 
-.workspace-directory-toolbar .m3-field .cds--label,
-.workspace-directory-toolbar .m3-select .cds--label {
-  padding-inline: 12px;
-}
-
+/* Carbon fields keep their underline; the labels above them are visually hidden
+   inside the toolbar, so their inline padding no longer applies. */
 .workspace-directory-toolbar .m3-field .cds--text-input,
 .workspace-directory-toolbar .m3-select .cds--select-input {
-  border-bottom: 0;
+  min-height: var(--workspace-control-height);
+  border-bottom: 1px solid var(--cds-border-strong-01, #8d8d8d);
+  background: var(--cds-field, #f4f4f4);
 }
 
 .m3-checkbox--compact .cds--checkbox-label {
@@ -600,7 +746,6 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   font-size: 12px;
 }
 
-.workspace-anchor-bar,
 .workspace-panel-bar,
 .workspace-device-toolbar {
   border-color: var(--cds-border-subtle-00, #e0e0e0);
@@ -609,21 +754,44 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   box-shadow: none;
 }
 
+/* Section jump bar: Carbon tabs, not a row of boxed pills. The pill borders
+   came from the M3 outline token, so they were the only grey-blue rectangles on
+   the device page. */
 .workspace-anchor-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+  padding: 0;
+  border: 0;
   border-bottom: 1px solid var(--cds-border-subtle-00, #e0e0e0);
   background: transparent;
+  overflow: visible;
 }
 
 .workspace-anchor-btn {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  padding: 0 var(--cds-spacing-04, 12px);
+  border: 0;
+  border-bottom: 2px solid transparent;
   border-radius: 0 !important;
   color: var(--cds-text-secondary, #525252);
+  background: transparent;
+  font-size: 0.875rem;
+}
+
+.workspace-anchor-btn:hover {
+  color: var(--cds-text-primary, #161616);
   background: transparent;
 }
 
 .workspace-anchor-btn.is-active {
   color: var(--cds-text-primary, #161616);
-  background: var(--cds-layer-selected-01, #e0e0e0);
-  box-shadow: inset 0 -2px var(--cds-interactive, #0f62fe);
+  border-bottom-color: var(--cds-interactive, #0f62fe);
+  background: transparent;
+  box-shadow: none;
 }
 
 .workspace-range-control {
@@ -638,6 +806,18 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 .workspace-session-recovery {
   border-radius: 0;
   box-shadow: none;
+}
+
+/* Notices read as Carbon notes: a layer band with an accent edge, not a
+   borderless grey paragraph block. */
+.workspace-inline-note {
+  padding: var(--cds-spacing-04, 12px) var(--cds-spacing-05, 16px);
+  border: 0;
+  border-left: 3px solid var(--cds-interactive, #0f62fe);
+  color: var(--cds-text-secondary, #525252);
+  background: var(--cds-layer-01, #f4f4f4);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 .workspace-settings-stack {
@@ -754,12 +934,17 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .workspace-overview-summary__item:nth-child(3) {
+  .workspace-overview-summary__item:nth-child(odd) {
+    padding-left: 0;
     border-left: 0;
-    border-top: 1px solid var(--cds-border-subtle-00, #e0e0e0);
   }
 
-  .workspace-overview-summary__item:nth-child(4) {
+  .workspace-overview-summary__item:nth-child(even) {
+    padding-right: 0;
+  }
+
+  .workspace-overview-summary__item:nth-child(n + 3) {
+    padding-top: var(--cds-spacing-05, 16px);
     border-top: 1px solid var(--cds-border-subtle-00, #e0e0e0);
   }
 
@@ -853,16 +1038,12 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   }
 
   .workspace-directory-toolbar__chips {
-    overflow-x: auto;
-  }
-
-  .workspace-overview-summary__item {
-    min-height: 92px;
-    padding: 14px;
+    flex-wrap: wrap;
   }
 
   .workspace-overview-summary__item > strong {
-    font-size: 24px;
+    font-size: 1.5rem;
+    line-height: 2rem;
   }
 
   }
@@ -992,6 +1173,33 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   }
 
   }
+
+/* Touch targets last, so they out-rank every desktop control height above.
+ * The header/segmented/chip/jump-bar normalisation all lowered minimum heights,
+ * and on a coarse pointer 44px is the contract. */
+@media (pointer: coarse) {
+  .m3-button,
+  .workspace-button,
+  .m3-chip,
+  .m3-icon-button,
+  .m3-navigation-item,
+  .m3-tab,
+  .workspace-anchor-btn,
+  .workspace-nav-item,
+  .workspace-search-trigger,
+  .workspace-window-control,
+  .workspace-command__item,
+  .m3-segmented-control .cds--content-switcher-btn {
+    min-width: var(--workspace-min-touch-target);
+    min-height: var(--workspace-min-touch-target);
+  }
+
+  .m3-segmented-control {
+    /* Wrapping keeps every 44px target reachable without the control ever
+       needing an inner scrollbar. */
+    row-gap: var(--cds-spacing-02, 4px);
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *,

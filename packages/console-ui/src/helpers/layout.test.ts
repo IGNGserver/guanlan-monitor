@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import test from "node:test";
-import { getLayoutClass, getScreenOrientation, getResponsiveTier } from "./layout.ts";
+import { getLayoutClass, getScreenOrientation, getResponsiveTier, usesSidebarDrawer, SIDEBAR_DRAWER_MAX_WIDTH } from "./layout.ts";
 import { resolveInteractionScale, detectDefaultInteractionScale, detectTouchSupport } from "./density.ts";
 import { resolveEffectiveTheme } from "./theme.ts";
 import { normalizeMetricsResponse, formatBytes } from "./metricsNormalizer.ts";
@@ -19,6 +19,15 @@ test("getLayoutClass correctly categorizes window widths at key breakpoints", ()
   assert.strictEqual(getLayoutClass(1200), "large");
   assert.strictEqual(getLayoutClass(1440), "large");
   assert.strictEqual(getLayoutClass(1920), "large");
+});
+
+test("usesSidebarDrawer matches the drawer breakpoint the shell CSS uses", () => {
+  assert.strictEqual(SIDEBAR_DRAWER_MAX_WIDTH, 839);
+  assert.strictEqual(usesSidebarDrawer(390), true);
+  assert.strictEqual(usesSidebarDrawer(839), true);
+  assert.strictEqual(usesSidebarDrawer(840), false);
+  assert.strictEqual(usesSidebarDrawer(1024), false);
+  assert.strictEqual(usesSidebarDrawer(1440), false);
 });
 
 test("getScreenOrientation and getResponsiveTier handle portrait and extreme breakpoints", () => {

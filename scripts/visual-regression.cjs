@@ -177,6 +177,81 @@ function metricFixture(device) {
   };
 }
 
+// Resolves a Carbon token to a computed rgb() string so assertions can compare
+// against the live theme instead of a hardcoded colour.
+const RESOLVE_TOKENS = `(() => {
+  const probe = document.createElement("span");
+  probe.style.display = "none";
+  probe.style.color = "var(--cds-layer-selected-01)";
+  document.body.append(probe);
+  const selectedLayer = getComputedStyle(probe).color;
+  probe.style.color = "var(--workspace-color-primary-container)";
+  const m3PrimaryContainer = getComputedStyle(probe).color;
+  probe.remove();
+  return { selectedLayer, m3PrimaryContainer };
+})()`;
+
+// The five shell contracts that regressed in v3.0.106. Every value is measured,
+// not inferred from a class name, so a future layer cannot silently re-add an
+// outer box or a second drawer.
+const UI_CONTRACT = `(() => {
+  const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), top: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; };
+  const clickable = (el) => { if (!el) return false; const s = getComputedStyle(el); const r = el.getBoundingClientRect(); return s.display !== "none" && s.visibility !== "hidden" && r.width > 0 && r.height > 0; };
+  const sidebar = document.querySelector(".workspace-sidebar");
+  const root = document.querySelector(".workspace-root");
+  return {
+    sidebar: {
+      open: Boolean(root?.classList.contains("is-sidebar-open")),
+      offCanvas: sidebar ? Math.round(sidebar.getBoundingClientRect().right) <= 0 : null,
+      width: sidebar ? Math.round(sidebar.getBoundingClientRect().width) : 0,
+      labelWidths: [...document.querySelectorAll(".workspace-sidebar .workspace-nav-item span")].map((s) => Math.round(s.getBoundingClientRect().width)),
+      collapseButton: clickable(document.querySelector(".workspace-sidebar__collapse")),
+      topbarToggle: clickable(document.querySelector(".workspace-topbar__toggle"))
+    },
+    topbar: box(document.querySelector(".workspace-topbar")),
+    heading: box(document.querySelector(".workspace-page-intro h2")),
+    segmented: [...document.querySelectorAll(".m3-segmented-control")].map((el) => {
+      const s = getComputedStyle(el);
+      return {
+        name: el.getAttribute("aria-label") ?? "",
+        height: Math.round(el.getBoundingClientRect().height),
+        scrollsHorizontally: el.scrollWidth > el.clientWidth + 1,
+        scrollsVertically: el.scrollHeight > el.clientHeight + 1,
+        borderWidth: s.borderTopWidth,
+        paddingTop: s.paddingTop,
+        background: s.backgroundColor,
+        overflow: s.overflowX + "/" + s.overflowY
+      };
+    }),
+    chips: [...document.querySelectorAll(".m3-chip")].map((el) => {
+      const s = getComputedStyle(el);
+      return { selected: el.classList.contains("is-selected"), height: Math.round(el.getBoundingClientRect().height), background: s.backgroundColor, borderWidth: s.borderTopWidth };
+    }),
+    summary: (() => {
+      const grid = document.querySelector(".workspace-overview-summary");
+      if (!grid) return null;
+      return {
+        grid: box(grid),
+        items: [...grid.children].map((item) => ({
+          box: box(item),
+          rowTops: [...item.children].map((child) => Math.round(child.getBoundingClientRect().top)),
+          paddingLeft: getComputedStyle(item).paddingLeft,
+          paddingRight: getComputedStyle(item).paddingRight
+        }))
+      };
+    })(),
+    toolbar: (() => {
+      const bar = document.querySelector(".workspace-directory-toolbar");
+      if (!bar) return null;
+      return { box: box(bar), childHeights: [...bar.children].map((el) => Math.round(el.getBoundingClientRect().height)) };
+    })(),
+    deviceContext: (() => {
+      const ctx = document.querySelector(".workspace-device-context");
+      return ctx ? box(ctx) : null;
+    })()
+  };
+})()`;
+
 async function run() {
   const browser = await chromium.launch({ headless: true });
   activeBrowser = browser;
@@ -310,6 +385,27 @@ async function run() {
   assert.equal(await page.locator(".dashboard-section#section-compute").count(), 1, "compute tab must render its fixed sections");
   assert.equal(await page.locator(".dashboard-section#section-overview").count(), 0, "switching tabs must unmount the previous tab's sections");
   assert.ok((await page.locator(".dashboard-section .chart-tile").count()) > 0, "fixed sections must render Carbon chart tiles");
+
+  // 换选项卡时页眉与吸顶设备条必须一动不动，否则整页内容会上下跳一下。
+  const tabHeaderHeights = {};
+  for (const tabName of ["处理器与内存", "存储与网络", "显卡与散热", "概览"]) {
+    await page.getByRole("tab", { name: tabName }).click();
+    await page.waitForTimeout(220);
+    tabHeaderHeights[tabName] = await page.evaluate(() => {
+      const box = (el) => (el ? Math.round(el.getBoundingClientRect().height) : null);
+      const context = document.querySelector(".workspace-device-context");
+      return {
+        topbar: box(document.querySelector(".workspace-topbar")),
+        headingTop: Math.round(document.querySelector(".workspace-page-intro h2")?.getBoundingClientRect().top ?? 0),
+        context: box(context),
+        tabs: box(context?.querySelector(".cds--tabs")),
+        controls: box(context?.querySelector(".workspace-device-context__controls"))
+      };
+    });
+  }
+  for (const [tabName, measured] of Object.entries(tabHeaderHeights)) {
+    assert.deepEqual(measured, tabHeaderHeights["处理器与内存"], `switching to the "${tabName}" tab must not move the header (saw ${JSON.stringify(measured)})`);
+  }
 
   // 小组件机制已经彻底移除：设备页不得再出现排布编辑入口，也不得再写布局接口。
   assert.equal(await page.getByRole("button", { name: "编辑排布" }).count(), 0, "widget layout editing must be gone from the device page");
@@ -455,13 +551,14 @@ async function run() {
   await page.locator(".workspace-settings-mobile-nav").waitFor({ state: "visible", timeout: 2_000 });
   assert.equal(await page.locator(".workspace-settings-mobile-nav").getByRole("button", { name: "返回控制台" }).count(), 1, "compact settings must expose a back action");
   assert.ok(await page.locator(".workspace-settings-mobile-nav__list button").count() >= 2, "compact settings must expose category navigation");
-  await page.evaluate(() => {
-    localStorage.setItem("dsc-sidebar-collapsed", "false");
-    localStorage.removeItem("dsc-sidebar-compact-migrated-v3");
-  });
+  // A stored sidebar choice belongs to the user. The shell used to overwrite it
+  // once per device on a narrow viewport, so "expanded" could never be honoured
+  // on a tablet or phone.
+  await page.evaluate(() => localStorage.setItem("dsc-sidebar-collapsed", "false"));
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator(".workspace-settings-mobile-nav").waitFor({ state: "visible", timeout: 2_000 });
-  assert.equal(await page.locator(".workspace-root").evaluate((node) => node.classList.contains("is-sidebar-collapsed")), true, "compact settings must migrate the legacy expanded sidebar preference");
+  assert.equal(await page.locator(".workspace-root").evaluate((node) => node.classList.contains("is-sidebar-collapsed")), false, "a stored expanded sidebar preference must survive a compact viewport");
+  assert.equal(await page.locator(".workspace-topbar__toggle").evaluate((node) => getComputedStyle(node).display), "inline-grid", "the topbar must keep a sidebar toggle while the sidebar is a drawer");
 
   const stateEvidence = [];
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -498,6 +595,11 @@ async function run() {
   assert.equal((await page.locator(".workspace-topbar .workspace-status-label").innerText()).trim(), "在线", "re-authenticated refresh must restore live state");
 
   const matrix = [];
+  // Header band height per viewport, and the sticky device context per route, so
+  // "the header floats when I change page or tab" cannot come back.
+  const headerHeights = new Map();
+  const contextHeights = new Map();
+  const uiContracts = [];
   const matrixRoutes = [
     ["overview", ".workspace-page--overview"],
     ["devices", ".workspace-page--devices"],
@@ -543,6 +645,72 @@ async function run() {
         assert.ok(geometry?.page?.width > 0 && geometry?.page?.height > 0, `${name} page is empty at ${width}px`);
         assert.ok(geometry?.heading?.width > 0 && geometry?.heading?.height > 0 && geometry.heading.bottom > 0 && geometry.heading.top < height, `${name} heading is outside viewport at ${width}px`);
         assert.ok(geometry.bodyScrollWidth <= width + 1, `${name} overflows horizontally at ${width}px`);
+
+        // ---- shell contracts (sidebar drawer, header band, option rows) ----
+        const contract = await page.evaluate(UI_CONTRACT);
+        const tokens = await page.evaluate(RESOLVE_TOKENS);
+        const at = (label) => `${name} ${label} at ${width}px/${theme}`;
+
+        // 1. The sidebar must be able to show its labels at every width.
+        assert.ok(contract.sidebar.topbarToggle || contract.sidebar.collapseButton, at("has no way to open the sidebar"));
+        if (width <= 839) {
+          assert.ok(contract.sidebar.topbarToggle, at("the drawer needs a topbar toggle on a compact viewport"));
+        } else {
+          assert.ok(contract.sidebar.collapseButton, at("the inline sidebar needs its own collapse toggle"));
+          if (contract.sidebar.open) {
+            assert.ok(contract.sidebar.width >= 200, at(`an expanded sidebar collapsed to ${contract.sidebar.width}px`));
+            assert.ok(contract.sidebar.labelWidths.length > 0 && contract.sidebar.labelWidths.every((w) => w > 16), at(`an expanded sidebar hides its labels (${contract.sidebar.labelWidths.join(",")})`));
+          } else {
+            assert.ok(contract.sidebar.labelWidths.every((w) => w === 0), at("a collapsed sidebar must not render labels"));
+          }
+        }
+
+        // 2. The header is a fixed band: same height on every route at a width.
+        assert.ok(contract.topbar && contract.topbar.h > 0, at("the header is missing"));
+        headerHeights.set(width, new Set([...(headerHeights.get(width) ?? []), contract.topbar.h]));
+
+        // 3. Horizontally arranged options must not carry an outer box or a scrollbar.
+        for (const control of contract.segmented) {
+          assert.equal(control.borderWidth, "0px", at(`segmented control "${control.name}" still has an outer border`));
+          assert.equal(control.paddingTop, "0px", at(`segmented control "${control.name}" still has outer padding`));
+          assert.equal(control.background, "rgba(0, 0, 0, 0)", at(`segmented control "${control.name}" still has an outer fill`));
+          assert.ok(!control.scrollsHorizontally && !control.scrollsVertically, at(`segmented control "${control.name}" scrolls inside itself (${control.overflow})`));
+          assert.ok(control.height <= 48, at(`segmented control "${control.name}" is ${control.height}px tall`));
+        }
+        for (const chip of contract.chips) {
+          if (chip.selected) {
+            assert.notEqual(chip.background, tokens.m3PrimaryContainer, at("a selected chip still uses the Material primary container fill"));
+            assert.notEqual(chip.background, "rgba(0, 0, 0, 0)", at("a selected chip must read as selected"));
+          }
+        }
+
+        // 4. The four overview tiles share one row contract.
+        if (contract.summary) {
+          const tiles = contract.summary.items;
+          assert.equal(tiles.length, 4, at("the overview summary must hold four tiles"));
+          for (const [rowIndex, label] of ["label", "value", "note"].entries()) {
+            const tops = tiles.map((tile) => tile.rowTops[rowIndex]).filter((top) => Number.isFinite(top));
+            if (tops.length >= 2) {
+              const spread = Math.max(...tops) - Math.min(...tops);
+              assert.ok(spread <= 2, at(`${label} row is off by ${spread}px between tiles`));
+            }
+          }
+          const gutters = new Set(tiles.map((tile) => `${tile.paddingLeft}/${tile.paddingRight}`));
+          assert.ok(gutters.size <= 3, at(`tile gutters are inconsistent (${[...gutters].join(" ")})`));
+        }
+
+        // 5. The devices toolbar keeps one control height per row.
+        if (contract.toolbar) {
+          const heights = contract.toolbar.childHeights.filter((h) => h > 0);
+          assert.ok(heights.length >= 2, at("the directory toolbar lost its controls"));
+          const spread = Math.max(...heights) - Math.min(...heights);
+          assert.ok(spread <= 16, at(`directory toolbar controls differ by ${spread}px (${heights.join("/")})`));
+        }
+        if (contract.deviceContext) {
+          contextHeights.set(`${width}:${name}`, contract.deviceContext.h);
+        }
+        uiContracts.push({ round, theme, width, name, contract, tokens });
+
         const segmentedControls = await page.locator(".m3-segmented-control").evaluateAll((controls) => {
           const luminance = (color) => {
             const channels = color.match(/[\d.]+/g)?.slice(0, 3).map(Number);
@@ -637,8 +805,15 @@ async function run() {
   assert.equal(overviewHashes.size, 2, "the two visual rounds must produce separate theme evidence");
   assert.ok(routeHashes.size >= 3, "route screenshots must not collapse into one identical image");
 
+  for (const [width, heights] of headerHeights) {
+    assert.equal(heights.size, 1, `the header band must keep one height at ${width}px across routes (saw ${[...heights].join("/")})`);
+  }
+  for (const [key, height] of contextHeights) {
+    assert.ok(height > 0 && height <= 200, `the sticky device context is ${height}px on ${key}`);
+  }
+
   assert.deepEqual(pageErrors, [], `browser page errors: ${pageErrors.join("; ")}`);
-  const report = { baseUrl, fixtureDevices: fixtureDevices.length, desktopMetrics, mobileMetrics, deviceChartGeometry, stateEvidence, matrix, requestLog, screenshots: fs.readdirSync(outputDir).sort() };
+  const report = { baseUrl, fixtureDevices: fixtureDevices.length, desktopMetrics, mobileMetrics, deviceChartGeometry, headerHeights: Object.fromEntries(headerHeights), stateEvidence, uiContracts, matrix, requestLog, screenshots: fs.readdirSync(outputDir).sort() };
   fs.writeFileSync(path.join(outputDir, "web-visual-regression-report.json"), `${JSON.stringify(report, null, 2)}\n`);
   await browser.close();
   activeBrowser = null;

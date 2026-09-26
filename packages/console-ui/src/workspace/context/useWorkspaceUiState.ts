@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { MetricWindow, TrafficCalendarMode } from "@dsc/shared";
 import type { ConsoleAdapter } from "../../services/adapter";
 import { detectTouchSupport, type InteractionScaleSetting, type PointerType } from "../../helpers/density";
-import { getResponsiveTier, getScreenOrientation, type ResponsiveTier, type ScreenOrientation } from "../../helpers/layout";
+import { getResponsiveTier, getScreenOrientation, usesSidebarDrawer, type ResponsiveTier, type ScreenOrientation } from "../../helpers/layout";
 import { confirmDiscardDeviceOrderDraft } from "../deviceOrderDraft";
 import { defaultRoute, routeFromLocation, serializeWorkspaceRoute, type SettingsSection, type WorkspaceRoute } from "../routes";
 import { getStoredDensity, getStoredRefreshInterval, getStoredTheme } from "./WorkspaceTypes";
@@ -12,7 +12,12 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
   const [returnRoute, setReturnRoute] = useState<WorkspaceRoute>(defaultRoute);
   const [sidebarCollapsed, setSidebarCollapsedState] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    return localStorage.getItem("dsc-sidebar-collapsed") === "true";
+    const stored = localStorage.getItem("dsc-sidebar-collapsed");
+    // A stored choice is the user's own and must survive a narrow window; only a
+    // first visit picks a viewport-sized default.
+    if (stored === "true") return true;
+    if (stored === "false") return false;
+    return usesSidebarDrawer(window.innerWidth);
   });
   const [metricsWindow, setMetricsWindow] = useState<MetricWindow>("5m");
   const [trafficMode, setTrafficModeState] = useState<TrafficCalendarMode>("day");
@@ -30,7 +35,11 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
 
   useEffect(() => {
     try {
-      if (typeof window !== "undefined") localStorage.removeItem("dsc-instance-type");
+      if (typeof window === "undefined") return;
+      localStorage.removeItem("dsc-instance-type");
+      // The v3 compact viewport used to force-collapse the sidebar once and leave
+      // this marker behind. The preference is the user's again.
+      localStorage.removeItem("dsc-sidebar-compact-migrated-v3");
     } catch {
       // Removing an obsolete optional preference must not block the workspace.
     }
@@ -48,11 +57,6 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
       setLayoutTier(nextTier);
       setIsTouch(nextTouch);
       if (!pointerSeen) setInputMode(nextTouch ? "touch" : "mouse");
-      if (width <= 820 && localStorage.getItem("dsc-sidebar-compact-migrated-v3") !== "true") {
-        setSidebarCollapsedState(true);
-        localStorage.setItem("dsc-sidebar-collapsed", "true");
-        localStorage.setItem("dsc-sidebar-compact-migrated-v3", "true");
-      }
       document.documentElement.dataset.dscOrientation = nextOrientation;
       document.documentElement.dataset.dscTier = nextTier;
       document.documentElement.dataset.dscTouchSupport = nextTouch ? "true" : "false";

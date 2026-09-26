@@ -387,7 +387,7 @@
 
 .workspace-setting-segmented {
   max-width: 100%;
-  overflow-x: auto;
+  flex-wrap: wrap;
 }
 
 .workspace-range-control {
@@ -722,13 +722,6 @@
   .workspace-bottom-nav__item.is-active {
     color: var(--workspace-color-on-primary-container);
     background: var(--workspace-color-primary-container);
-  }
-
-  .workspace-sidebar {
-    top: 0;
-    width: min(312px, 88vw);
-    border-right: 1px solid var(--workspace-color-outline-variant);
-    border-radius: 0 var(--workspace-shape-extra-large) var(--workspace-shape-extra-large) 0;
   }
 
   .workspace-sidebar-backdrop {

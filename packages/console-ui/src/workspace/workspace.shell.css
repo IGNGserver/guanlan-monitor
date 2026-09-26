@@ -14,7 +14,7 @@
 }
 
 .workspace-root.is-sidebar-collapsed {
-  grid-template-columns: 68px minmax(0, 1fr);
+  grid-template-columns: var(--workspace-sidebar-rail-width) minmax(0, 1fr);
 }
 
 .workspace-root.is-sidebar-peek {
@@ -80,8 +80,23 @@
 }
 
 .workspace-sidebar.is-collapsed {
-  width: 68px;
+  width: var(--workspace-sidebar-rail-width);
   overflow: hidden;
+}
+
+/* The collapsed rail carries two controls: the brand mark and the expand
+ * button. Anything narrower clips the button, and the button is the only way
+ * back to the expanded sidebar above the drawer breakpoint. */
+.workspace-sidebar.is-collapsed .workspace-sidebar__topline {
+  gap: 2px;
+  justify-content: center;
+  padding-inline: 8px;
+}
+
+.workspace-sidebar.is-collapsed .workspace-brand {
+  margin: 0;
+  padding: 0;
+  gap: 0;
 }
 
 .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed {
@@ -132,7 +147,7 @@
   z-index: 9;
   top: 42px;
   bottom: 0;
-  left: 68px;
+  left: var(--workspace-sidebar-rail-width);
   width: 12px;
   border: 0;
   background: transparent;
@@ -192,14 +207,6 @@
 .workspace-sidebar.is-collapsed .workspace-sidebar__section-title,
 .workspace-sidebar.is-collapsed .workspace-instance-tabs {
   display: none;
-}
-
-.workspace-sidebar.is-collapsed .workspace-brand {
-  margin: 0 auto;
-}
-
-.workspace-sidebar.is-collapsed .workspace-sidebar__topline {
-  padding-inline: 10px;
 }
 
 .workspace-sidebar__collapse,
