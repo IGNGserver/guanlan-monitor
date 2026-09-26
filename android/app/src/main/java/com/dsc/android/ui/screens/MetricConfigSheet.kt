@@ -2,7 +2,6 @@
 
 package com.dsc.android.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -87,24 +86,6 @@ fun MetricConfigSheet(
     onDismissRequest = requestDismiss,
     title = title,
     subtitle = subtitle,
-    headerAction = {
-      Row(horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
-        OneUiButton(
-          label = "取消",
-          onClick = requestDismiss,
-          variant = OneUiButtonVariant.Text,
-          size = OneUiButtonSize.Compact,
-          enabled = !state.savingMetricConfig
-        )
-        OneUiButton(
-          label = if (state.savingMetricConfig) "保存中" else "保存",
-          onClick = actions.onSaveMetricConfig,
-          variant = OneUiButtonVariant.Filled,
-          size = OneUiButtonSize.Compact,
-          loading = state.savingMetricConfig
-        )
-      }
-    }
   ) {
     if (editingInstanceId == null && editingBlockKey == null) {
       DeviceBlockKey.entries.filter { it != DeviceBlockKey.Fan }.forEachIndexed { index, block ->
@@ -198,23 +179,28 @@ fun MetricConfigSheet(
       }
     }
 
+    // 面板只有一个行动区：说明在上一行，取消与保存固定在面板底部（One UI 的确认条）
+    OneUiText(
+      text = if (hasUnsavedChanges) "有未保存的修改" else "保存后立即生效，图表在下一次刷新时重算",
+      role = OneUiTextRole.RowSubtitle,
+      color = if (hasUnsavedChanges) colors.warningContent else colors.textSecondary
+    )
     Row(
-      modifier = Modifier
-        .fillMaxWidth()
-        .background(colors.sunken, OneUiTheme.shapes.card)
-        .padding(horizontal = metrics.spaceM, vertical = 12.dp),
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(metrics.spaceS),
       verticalAlignment = Alignment.CenterVertically
     ) {
-      OneUiText(
-        text = if (hasUnsavedChanges) "有未保存的修改" else "修改后立即生效，图表在下一次刷新时重算",
-        role = OneUiTextRole.RowSubtitle,
-        color = if (hasUnsavedChanges) colors.warningContent else colors.textSecondary,
-        modifier = Modifier.weight(1f)
+      OneUiButton(
+        label = "取消",
+        onClick = requestDismiss,
+        variant = OneUiButtonVariant.Text,
+        modifier = Modifier.weight(1f),
+        enabled = !state.savingMetricConfig
       )
       OneUiButton(
-        label = "保存",
+        label = if (state.savingMetricConfig) "保存中" else "保存",
         onClick = actions.onSaveMetricConfig,
-        size = OneUiButtonSize.Compact,
+        modifier = Modifier.weight(1f),
         loading = state.savingMetricConfig
       )
     }
