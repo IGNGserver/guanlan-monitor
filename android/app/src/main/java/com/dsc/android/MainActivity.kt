@@ -13,8 +13,9 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.dsc.android.ui.AppRoot
-import com.dsc.android.ui.theme.DeviceStateConsoleTheme
+import com.dsc.android.ui.oneui.GuanlanTheme
+import com.dsc.android.ui.shell.GuanlanActions
+import com.dsc.android.ui.shell.GuanlanApp
 
 class MainActivity : ComponentActivity() {
   private val appViewModel: MainViewModel by viewModels { MainViewModel.Factory }
@@ -27,9 +28,9 @@ class MainActivity : ComponentActivity() {
     setContent {
       val state by appViewModel.state.collectAsStateWithLifecycle()
 
-      DeviceStateConsoleTheme {
-        AppRoot(
-          state = state,
+      GuanlanApp(
+        state = state,
+        actions = GuanlanActions(
           onSaveServerConfig = appViewModel::saveServerConfig,
           onLogin = appViewModel::login,
           onLogout = appViewModel::logout,
@@ -42,6 +43,7 @@ class MainActivity : ComponentActivity() {
           onCloseTrafficSheet = appViewModel::closeTrafficSheet,
           onOpenDeviceEditor = appViewModel::openDeviceEditor,
           onShowDeviceList = appViewModel::showDeviceList,
+          onShowSettings = appViewModel::showSettings,
           onSelectWindow = appViewModel::selectWindow,
           onSelectTrafficMode = appViewModel::selectTrafficMode,
           onSelectTrafficCell = appViewModel::selectTrafficCell,
@@ -57,9 +59,10 @@ class MainActivity : ComponentActivity() {
           onRefresh = appViewModel::refresh,
           onDownloadUpdate = appViewModel::downloadUpdate,
           onLaunchUpdateInstaller = ::launchUpdateInstaller,
-          onUpdateInstallerLaunched = appViewModel::clearUpdateInstallerUri
+          onUpdateInstallerLaunched = appViewModel::clearUpdateInstallerUri,
+          onConsumeMessage = appViewModel::clearMessage
         )
-      }
+      )
     }
   }
 
