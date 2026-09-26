@@ -236,6 +236,12 @@ fun DeviceListScreen(
           }
         }
 
+        if (!editMode && persisted.isNotEmpty()) {
+          item(key = "cluster-glance") {
+            ClusterGlanceCard(devices = persisted)
+          }
+        }
+
         item(key = "devices-header") {
           OneUiGroupHeader(
             label = "设备",
@@ -399,7 +405,12 @@ private fun DeviceRow(
   val online = device.status == "online"
   // 读数即入口：点某个胶囊直接进那一类明细，卡片下方不必再排一排同类按钮（构）
   val pills = buildList {
-    add(OneUiPillModel("CPU", formatPercent(device.cpuUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Cpu) }))
+    val cpuTone = when {
+      (device.cpuUsagePercent ?: 0.0) >= 90.0 -> OneUiPillTone.Critical
+      (device.cpuUsagePercent ?: 0.0) >= 75.0 -> OneUiPillTone.Warning
+      else -> OneUiPillTone.Neutral
+    }
+    add(OneUiPillModel("CPU", formatPercent(device.cpuUsagePercent), tone = cpuTone, onClick = { onOpenBlock(DeviceBlockKey.Cpu) }))
     if (device.gpuUsagePercent != null) {
       add(OneUiPillModel("GPU", formatPercent(device.gpuUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Gpu) }))
     }
@@ -412,7 +423,12 @@ private fun DeviceRow(
         )
       )
     }
-    add(OneUiPillModel("内存", formatPercent(device.memoryUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Memory) }))
+    val memTone = when {
+      (device.memoryUsagePercent ?: 0.0) >= 90.0 -> OneUiPillTone.Critical
+      (device.memoryUsagePercent ?: 0.0) >= 80.0 -> OneUiPillTone.Warning
+      else -> OneUiPillTone.Neutral
+    }
+    add(OneUiPillModel("内存", formatPercent(device.memoryUsagePercent), tone = memTone, onClick = { onOpenBlock(DeviceBlockKey.Memory) }))
     add(OneUiPillModel("硬盘", formatPercent(device.diskUsagePercent), onClick = { onOpenBlock(DeviceBlockKey.Disk) }))
   }
 
@@ -470,13 +486,92 @@ private fun DeviceRow(
       },
       supporting = {
         if (!editMode) {
-          Box(modifier = Modifier.padding(top = metrics.spaceXs)) {
+          Column(
+            modifier = Modifier.padding(top = metrics.spaceXs),
+            verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+          ) {
+            if (online && (device.cpuUsagePercent != null || device.memoryUsagePercent != null)) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(metrics.spaceS),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                device.cpuUsagePercent?.let { cpu ->
+                  val cpuFraction = (cpu / 100.0).toFloat().coerceIn(0f, 1f)
+                  val cpuToneColor = when {
+                    cpu >= 90.0 -> colors.critical
+                    cpu >= 75.0 -> colors.warning
+                    else -> colors.accent
+                  }
+                  Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                      OneUiText(text = "CPU", role = OneUiTextRole.Caption, color = colors.textTertiary)
+                      OneUiText(text = formatPercent(cpu), role = OneUiTextRole.Caption, color = colors.textSecondary, weight = FontWeight.SemiBold)
+                    }
+                    OneUiLinearProgress(
+                      fraction = cpuFraction,
+                      color = cpuToneColor,
+                      height = 4.dp
+                    )
+                  }
+                }
+                device.memoryUsagePercent?.let { mem ->
+                  val memFraction = (mem / 100.0).toFloat().coerceIn(0f, 1f)
+                  val memToneColor = when {
+                    mem >= 90.0 -> colors.critical
+                    mem >= 80.0 -> colors.warning
+                    else -> colors.online
+                  }
+                  Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                      OneUiText(text = "内存", role = OneUiTextRole.Caption, color = colors.textTertiary)
+                      OneUiText(text = formatPercent(mem), role = OneUiTextRole.Caption, color = colors.textSecondary, weight = FontWeight.SemiBold)
+                    }
+                    OneUiLinearProgress(
+                      fraction = memFraction,
+                      color = memToneColor,
+                      height = 4.dp
+                    )
+                  }
+                }
+              }
+            }
             OneUiPillRow(pills = pills)
           }
         }
       }
     )
   }
+}
+
+/** 集群健康态势卡片（构 + 形）：打开软件第一眼获知整体运行状态 */
+@Composable
+private fun ClusterGlanceCard(devices: List<DeviceSummaryDto>) {
+  val colors = OneUiTheme.colors
+  val metrics = OneUiTheme.metrics
+  val onlineCount = devices.count { it.status == "online" }
+  val offlineCount = devices.size - onlineCount
+  val highCpuCount = devices.count { it.status == "online" && (it.cpuUsagePercent ?: 0.0) >= 85.0 }
+
+  val (statusTitle, statusTone) = when {
+    offlineCount > 0 && highCpuCount > 0 -> Pair("存在离线与高负荷设备", OneUiNoticeTone.Critical)
+    offlineCount > 0 -> Pair("${offlineCount} 台设备离线", OneUiNoticeTone.Warning)
+    highCpuCount > 0 -> Pair("${highCpuCount} 台设备高负荷运转", OneUiNoticeTone.Warning)
+    else -> Pair("全部设备健康运转", OneUiNoticeTone.Online)
+  }
+
+  OneUiNotice(
+    title = statusTitle,
+    description = "${devices.size} 台受管主机 · ${onlineCount} 台在线 · 实时监测中",
+    tone = statusTone,
+    icon = Icons.Rounded.Computer
+  )
 }
 
 /** 编辑态的上下文操作条（构）：One UI 把确认/取消放在底部拇指区。 */

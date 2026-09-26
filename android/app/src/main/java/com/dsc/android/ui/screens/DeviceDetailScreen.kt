@@ -255,12 +255,22 @@ fun DeviceDetailScreen(
           snapshot?.let { current ->
             item(key = "blocks") {
               BlockGroup(
-              data = snapshot,
+                data = snapshot,
                 selectedWindow = state.selectedWindow,
                 loading = state.loadingMetrics,
-                onOpenBlock = { block -> openBlock = block },
+                openBlock = openBlock,
+                tabs = tabs,
+                effectiveTab = effectiveTab,
+                onSelectTab = { openTabId = it },
+                onToggleBlock = { block ->
+                  openBlock = if (openBlock == block) null else block
+                },
                 onOpenTraffic = { actions.onOpenTraffic(snapshot.device.deviceId) },
-                onEditDeviceMetrics = { actions.onOpenDeviceEditor(snapshot.device.deviceId) }
+                onEditDeviceMetrics = { actions.onOpenDeviceEditor(snapshot.device.deviceId) },
+                onEditBlock = { block -> actions.onOpenBlockEditor(snapshot.device.deviceId, block) },
+                onEditInstance = { block, instanceId ->
+                  actions.onOpenInstanceEditor(snapshot.device.deviceId, block, instanceId)
+                }
               )
             }
           }
@@ -283,23 +293,7 @@ fun DeviceDetailScreen(
   }
 
   if (!embedded) {
-    data?.let { snapshot ->
-      openBlock?.let { blockKey ->
-        BlockSheet(
-        data = snapshot,
-        blockKey = blockKey,
-        selectedWindow = state.selectedWindow,
-        tabs = tabs,
-        selectedTabId = effectiveTab,
-        onSelectTab = { openTabId = it },
-          onDismiss = { openBlock = null },
-          onEditBlock = { actions.onOpenBlockEditor(snapshot.device.deviceId, blockKey) },
-          onEditInstance = { instanceId ->
-            actions.onOpenInstanceEditor(snapshot.device.deviceId, blockKey, instanceId)
-          }
-        )
-      }
-    }
+    // 手机端已采用平滑就地展开卡片流，保留兜底能力
   }
 }
 
@@ -359,27 +353,33 @@ private fun OverviewGroup(data: MetricsDto, state: AppState) {
   }
 }
 
-/** 硬件类别列表：每个类别一行，行内直接给出该类别的关键读数（构）。 */
+/** 硬件类别看板（构 + 动）：每个类别为独立可展开模块，就地展开图表，无需频繁弹窗 */
 @Composable
 private fun BlockGroup(
   data: MetricsDto,
   selectedWindow: MetricWindow,
   loading: Boolean,
-  onOpenBlock: (DeviceBlockKey) -> Unit,
+  openBlock: DeviceBlockKey?,
+  tabs: List<BlockSheetTabModel>,
+  effectiveTab: String,
+  onSelectTab: (String) -> Unit,
+  onToggleBlock: (DeviceBlockKey) -> Unit,
   onOpenTraffic: () -> Unit,
-  onEditDeviceMetrics: () -> Unit
+  onEditDeviceMetrics: () -> Unit,
+  onEditBlock: (DeviceBlockKey) -> Unit,
+  onEditInstance: (DeviceBlockKey, String) -> Unit
 ) {
   val colors = OneUiTheme.colors
   val capsules = remember(data, selectedWindow) { buildOverviewCapsules(data, selectedWindow) }
 
-  OneUiGroup {
-    capsules.forEachIndexed { index, capsule ->
-      if (index > 0) OneUiListDivider()
-      OneUiListItem(
+  Column(verticalArrangement = Arrangement.spacedBy(OneUiTheme.metrics.spaceM)) {
+    capsules.forEach { capsule ->
+      val isExpanded = openBlock == capsule.blockKey
+      OneUiExpandableGroup(
+        expanded = isExpanded,
+        onToggle = { if (!loading) onToggleBlock(capsule.blockKey) },
         title = capsule.title,
         subtitle = capsule.subtitle,
-        onClick = { onOpenBlock(capsule.blockKey) },
-        enabled = !loading,
         leading = {
           OneUiLeadingIcon(
             icon = blockIcon(capsule.blockKey),
@@ -400,37 +400,53 @@ private fun BlockGroup(
             }
           }
         },
+        actions = if (isExpanded && capsule.blockKey != DeviceBlockKey.Fan) {
+          {
+            OneUiIconButton(
+              contentDescription = "编辑记录项",
+              onClick = { onEditBlock(capsule.blockKey) }
+            ) {
+              OneUiIcon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textPrimary)
+            }
+          }
+        } else null
+      ) {
+        BlockDetail(
+          data = data,
+          blockKey = capsule.blockKey,
+          tabs = tabs,
+          tabId = effectiveTab,
+          selectedWindow = selectedWindow,
+          onSelectTab = onSelectTab,
+          onEditInstance = { instanceId ->
+            onEditInstance(capsule.blockKey, instanceId)
+          }
+        )
+      }
+    }
+
+    OneUiGroup {
+      OneUiListItem(
+        title = "流量日历",
+        subtitle = "按日/周/月查看接收、发送与明细记录",
+        onClick = onOpenTraffic,
+        leading = {
+          OneUiLeadingIcon(icon = Icons.Rounded.Timeline, contentDescription = null, tone = OneUiIconTone.Accent)
+        },
         trailing = {
-          OneUiText(
-            text = "明细",
-            role = OneUiTextRole.ChartLabel,
-            color = colors.accent,
-            weight = FontWeight.SemiBold
-          )
+          OneUiText(text = "查看", role = OneUiTextRole.ChartLabel, color = colors.accent, weight = FontWeight.SemiBold)
+        }
+      )
+      OneUiListDivider()
+      OneUiListItem(
+        title = "编辑记录项",
+        subtitle = "选择这台设备要采集的指标与实例",
+        onClick = onEditDeviceMetrics,
+        leading = {
+          OneUiLeadingIcon(icon = Icons.Rounded.Tune, contentDescription = null, tone = OneUiIconTone.Neutral)
         }
       )
     }
-    OneUiListDivider()
-    OneUiListItem(
-      title = "流量",
-      subtitle = "按日/周/月查看接收、发送与明细记录",
-      onClick = onOpenTraffic,
-      leading = {
-        OneUiLeadingIcon(icon = Icons.Rounded.Timeline, contentDescription = null, tone = OneUiIconTone.Accent)
-      },
-      trailing = {
-        OneUiText(text = "日历", role = OneUiTextRole.ChartLabel, color = colors.accent, weight = FontWeight.SemiBold)
-      }
-    )
-    OneUiListDivider()
-    OneUiListItem(
-      title = "编辑记录项",
-      subtitle = "选择这台设备要采集的指标与实例",
-      onClick = onEditDeviceMetrics,
-      leading = {
-        OneUiLeadingIcon(icon = Icons.Rounded.Tune, contentDescription = null, tone = OneUiIconTone.Neutral)
-      }
-    )
   }
 }
 
