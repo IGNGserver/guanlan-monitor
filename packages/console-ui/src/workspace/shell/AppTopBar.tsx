@@ -24,9 +24,10 @@ export function AppTopBar() {
 export function SessionRecoveryBanner() {
   const { capabilities, snapshot, refresh, refreshing } = useWorkspace();
   if (capabilities.canConfigureConnection || snapshot?.source !== "empty" || snapshot.session.authenticated) return null;
+  const desktop = capabilities.canControlNativeWindow;
   return <section className="workspace-session-recovery m3-inline-banner" role="alert" aria-live="assertive">
-    <div className="workspace-session-recovery__copy"><strong>浏览器会话已失效</strong><p>当前数据已停止同步；重新认证后才能继续查看设备和指标。</p></div>
-    <div className="workspace-form__actions"><Button variant="primary" onClick={() => window.location.reload()}>重新认证</Button><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? "正在检查" : "重新检查"}</Button></div>
+    <div className="workspace-session-recovery__copy"><strong>{desktop ? "尚未连接到中枢" : "浏览器会话已失效"}</strong><p>{desktop ? "当前没有可读取的设备状态；请在连接设置中确认中枢地址与访问密钥。" : "当前数据已停止同步；重新认证后才能继续查看设备和指标。"}</p></div>
+    <div className="workspace-form__actions">{desktop ? <Button variant="primary" onClick={() => window.location.assign("#settings/connections")}>打开连接设置</Button> : <Button variant="primary" onClick={() => window.location.reload()}>重新认证</Button>}<Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? "正在检查" : "重新检查"}</Button></div>
   </section>;
 }
 

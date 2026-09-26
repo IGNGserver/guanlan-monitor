@@ -601,22 +601,25 @@
 
 ## 优先级实施路线图
 
-### 第一阶段（1-2 周）：解决 P0 问题
-1. 登录页添加"如何获取密钥"帮助信息
-2. 首次登录后添加简短引导
-3. 统一术语："实例"→"设备"，"心跳"→"最后在线"
+原计划分三阶段推进；实际在同一天一次性落地（见文末「实施结果」），此处保留优先级判断作为依据。
 
-### 第二阶段（2-3 周）：解决 P1 问题
-4. 统一设置分区命名
-5. 简化 Agent 设置页面（分基础/高级）
-6. 重命名"单一资源观察"为"资源趋势"
-7. 评估"中枢状态"页面的去留
+### 第一阶段（阻塞新用户）
+1. 登录页添加「如何获取密钥」帮助信息 ✅
+2. 首次登录后添加简短引导 ✅
+3. 统一术语：「实例」→「设备」，「心跳」→「最后在线」 ✅
 
-### 第三阶段（3-4 周）：解决 P2 问题
-8. 命令面板结果分组
-9. 优化设备表格操作入口
-10. 统一错误消息风格
-11. 添加全局加载指示
+### 第二阶段（显著影响效率）
+4. 统一设置分区命名 ✅
+5. 简化 Agent 设置页面（分基础/高级）✅
+6. 重命名「单一资源观察」为「资源趋势」✅
+7. 评估「中枢状态」页面的去留 ✅（结论：并入总览 + 设置·连接，页面删除）
+
+### 第三阶段（体验优化）
+8. 命令面板结果分组 ✅
+9. 优化设备表格操作入口 ✅
+10. 统一错误消息风格 ✅
+11. 添加全局加载指示 ✅
+
 
 ---
 
@@ -695,8 +698,13 @@
 
 ### 遗留项（明确未做，非遗漏）
 
-1. **死 CSS**：`.workspace-web-settings*`、`.workspace-hub-next-step`、`.workspace-device-statusline`、`.workspace-hub-facts`（carbon.scss 层）已无引用，但我所在的 `workspace.pages.css` 之外那几个文件正被另一会话编辑，未去动它们以免互相覆盖。
-2. **版本号与发布**：`VERSION` 与 6 个 manifest 目前是**另一会话未提交**的 3.0.108；本次改动不含版本递增，也不打 tag、不触发 Release，等两路工作协调后再定版本号归属。
-3. **可自定义快捷键**（问题 26 的长期解）：需要快捷键绑定层与冲突检测，本次只把命名改成事实（「参考」）。
-4. **Android 端术语**：`android/.../AppRoot.kt` 仍有「删除设备实例？」「中枢连接与上报设置」，属另一会话正在推进的 Android 改动范围，未跨端改词。
+1. **死 CSS 待一次集中清理**。本次让若干类失去引用，但我没有在多个层里逐个删——`workspace-carbon.scss`、`workspace.responsive.css`、`workspace.shell.css`、`workspace.m3.css` 正被另一会话编辑，跨层半删会重新制造「同一个类名被多层定义」的问题。当前实测无 TSX 引用的类：
+   - `.workspace-overview-grid`（含 `--single`/`--v3` 变体）：样式散在 5 个文件——`workspace.m3.css`、`workspace.shell.css`、`workspace.dashboard.css`、`workspace-carbon.scss`、`workspace.pages.css`
+   - `.workspace-web-settings*`（旧 web 中枢状态块）：`workspace.dashboard.css`
+   - `.workspace-device-statusline`（详情页状态行，已并入事实卡）：`workspace.m3.css`、`workspace.dashboard.css`
+   - `.workspace-hub-facts`（随中枢页删除）：`workspace-carbon.scss`（我在自己所属的 `workspace.pages.css` 内已删）
+   - `.workspace-hub-next-step`、`.workspace-collection-surface`：已无样式定义，仅历史遗留
+2. **可自定义快捷键**（问题 26 的长期解）：需要快捷键绑定层与冲突检测，本次只把命名改成事实（「参考」）。
+3. **Android 端术语**：`android/app/src/main/java/com/dsc/android/ui/AppRoot.kt` 仍有「删除设备实例？」「中枢连接与上报设置」，属另一会话正在推进的 Android 改动范围，未跨端改词。
+4. **版本号与发布归属**：`VERSION` 与 6 个 manifest 的 3.0.108 是另一会话**未提交**的改动，HEAD 仍是 3.0.107。本次提交（`1e7ec0a`）不含版本递增，也没有打 tag、没有测试版 Release——两路会话抢同一个 patch 号会破坏 AGENTS.md 的发布轨迹，需要先协调。
 

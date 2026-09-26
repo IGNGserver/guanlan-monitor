@@ -41,20 +41,34 @@ export class DesktopConsoleAdapter implements ConsoleAdapter {
 
 export const desktopConsoleAdapter = new DesktopConsoleAdapter();
 
+const DESKTOP_BRIDGE_NOT_READY = "desktop_bridge_not_ready";
+
 export function createDesktopFallbackAdapter(): ConsoleAdapter {
+  const notReady = async (): Promise<ConsoleSnapshot> => { throw new Error(DESKTOP_BRIDGE_NOT_READY); };
   return {
     capabilities: DESKTOP_CAPABILITIES,
     getSnapshot: async () => emptyConsoleSnapshot(),
     refresh: async () => emptyConsoleSnapshot(),
     subscribe: () => () => undefined,
-    login: async () => emptyConsoleSnapshot(),
-    logout: async () => emptyConsoleSnapshot(),
-    disconnectAgent: async () => emptyConsoleSnapshot(),
-    saveHubConnection: async () => emptyConsoleSnapshot(),
-    deleteInstance: async () => emptyConsoleSnapshot(),
-    reorderInstances: async () => emptyConsoleSnapshot(),
-    saveFanNote: async () => emptyConsoleSnapshot(),
+    login: notReady,
+    logout: notReady,
+    disconnectAgent: notReady,
+    saveHubConnection: notReady,
+    deleteInstance: notReady,
+    reorderInstances: notReady,
+    saveFanNote: notReady,
     openExternal: async () => undefined,
+    updateLocalConfig: notReady,
+    controlAgent: notReady,
+    updateStartupSettings: notReady,
+    cloudPush: notReady,
+    getLocalBackend: async () => null,
+    windowMinimize: async () => undefined,
+    windowToggleMaximize: async () => false,
+    windowClose: async () => undefined,
+    windowDragStart: () => undefined,
+    windowDragMove: () => undefined,
+    windowDragEnd: () => undefined,
     getWindowMaterialCapabilities: async () => fallbackWindowMaterialCapabilities(),
     getRuntimeProfile: async () => fallbackRuntimeProfile()
   };
