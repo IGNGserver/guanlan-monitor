@@ -2,7 +2,6 @@ package com.dsc.android
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.dsc.android.ui.oneui.MetricWindow
 import com.dsc.android.ui.oneui.OneUiAppearanceSetting
 import com.dsc.android.ui.oneui.OneUiDarkColors
 import com.dsc.android.ui.oneui.OneUiExtraDarkColors
