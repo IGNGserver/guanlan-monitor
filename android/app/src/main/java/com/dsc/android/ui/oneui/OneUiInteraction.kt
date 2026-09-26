@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.dsc.android.ui.oneui
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -80,7 +82,7 @@ fun oneUiInteraction(
 /** 让 hover 进入同一个 interactionSource；触屏设备上永远为 false，因此不需要判定“是否接了鼠标”。 */
 @Composable
 fun Modifier.oneUiHoverable(interactionSource: MutableInteractionSource): Modifier =
-  this.hoverable(interactionSource = interactionSource, indication = null)
+  this.hoverable(interactionSource = interactionSource)
 
 @Immutable
 enum class OneUiHaptics {
@@ -155,8 +157,8 @@ fun Modifier.oneUiPressable(
         Modifier.combinedClickable(
           onClick = {
             when (haptics) {
-              OneUiHaptics.Tap -> haptic.performHapticFeedback(HapticFeedbackType.VirtualPress)
-              OneUiHaptics.Toggle -> haptic.performHapticFeedback(HapticFeedbackType.VirtualRelease)
+              OneUiHaptics.Tap -> haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
+              OneUiHaptics.Toggle -> haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
               else -> Unit
             }
             onClick?.invoke()

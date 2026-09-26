@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.dsc.android.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
@@ -438,7 +440,7 @@ private fun DeviceRow(
           Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OneUiStatusDot(
               color = if (online) colors.online else colors.offline,
-              contentDescription = if (online) "在线" else "离线"
+              description = if (online) "在线" else "离线"
             )
             OneUiText(
               text = if (online) "在线" else "离线",

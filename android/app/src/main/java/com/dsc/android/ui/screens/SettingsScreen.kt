@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.dsc.android.ui.screens
 
 import androidx.compose.foundation.background
@@ -137,7 +139,7 @@ fun SettingsScreen(
               trailing = {
                 OneUiStatusDot(
                   color = if (state.authenticated) colors.online else colors.offline,
-                  contentDescription = if (state.authenticated) "已连接" else "未连接"
+                  description = if (state.authenticated) "已连接" else "未连接"
                 )
               }
             )

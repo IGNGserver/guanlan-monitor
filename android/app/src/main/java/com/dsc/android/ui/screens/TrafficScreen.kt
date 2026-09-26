@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.dsc.android.ui.screens
 
 import androidx.compose.foundation.background
@@ -16,8 +18,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.ChevronLeft
-import androidx.compose.material.icons.automirrored.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
@@ -209,10 +211,10 @@ private fun TrafficHeader(
       // 翻页箭头贴着读数区：One UI 日历的换月操作就在标题右侧（件）
       Row(horizontalArrangement = Arrangement.spacedBy(metrics.spaceXxs)) {
         OneUiIconButton(contentDescription = "上一个区间", onClick = { onShiftAnchor(-1) }) {
-          Icon(Icons.AutoMirrored.Rounded.ChevronLeft, contentDescription = null, tint = colors.textSecondary)
+          Icon(Icons.Rounded.KeyboardArrowLeft, contentDescription = null, tint = colors.textSecondary)
         }
         OneUiIconButton(contentDescription = "下一个区间", onClick = { onShiftAnchor(1) }) {
-          Icon(Icons.AutoMirrored.Rounded.ChevronRight, contentDescription = null, tint = colors.textSecondary)
+          Icon(Icons.Rounded.KeyboardArrowRight, contentDescription = null, tint = colors.textSecondary)
         }
       }
     }

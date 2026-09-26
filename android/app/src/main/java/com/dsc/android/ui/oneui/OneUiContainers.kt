@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -51,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -62,6 +64,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -189,7 +193,7 @@ fun OneUiTopBar(
 }
 
 private fun Modifier.graphicsLayerAlpha(alpha: Float): Modifier =
-  this.then(androidx.compose.ui.graphics.graphicsLayer(alpha = alpha))
+  this.then(Modifier.graphicsLayer(alpha = alpha))
 
 /** 底部导航（构）：一级目的地永远在下方拇指区，宽屏换成侧栏。 */
 @Immutable
@@ -525,10 +529,11 @@ enum class OneUiIconTone { Neutral, Accent, Online, Offline, Warning, Critical }
 @Composable
 fun OneUiStatusDot(
   color: Color,
-  contentDescription: String,
   modifier: Modifier = Modifier,
+  description: String? = null,
   hollow: Boolean = false
 ) {
+  val label = description
   Box(
     modifier = modifier
       .size(9.dp)
@@ -539,7 +544,7 @@ fun OneUiStatusDot(
           Modifier.background(color, CircleShape)
         }
       )
-      .semantics { this.contentDescription = contentDescription }
+      .then(if (label == null) Modifier else Modifier.semantics { contentDescription = label })
   )
 }
 
@@ -753,7 +758,7 @@ fun OneUiLinearProgress(
     Box(
       modifier = Modifier
         .fillMaxWidth(effective)
-        .let { if (indeterminate) it.padding(start = slide * (1f - effective) * 340.dp) else it }
+        .let { if (indeterminate) it.padding(start = 340.dp * (slide * (1f - effective))) else it }
         .height(6.dp)
         .background(color, RoundedCornerShape(999.dp))
     )
@@ -877,9 +882,9 @@ fun OneUiErrorState(
     description = description,
     tone = OneUiNoticeTone.Critical,
     modifier = modifier,
-    icon = androidx.compose.material.icons.Icons.Rounded.Refresh,
+    icon = Icons.Rounded.Refresh,
     action = onRetry?.let { callback ->
-      {
+      @Composable {
         OneUiButton(
           label = retryLabel,
           onClick = callback,

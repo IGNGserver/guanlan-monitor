@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.DeviceStateConsole" parent="Theme.Material3.DayNight.NoActionBar" />
+    <!-- 真正的颜色分层由 Compose 侧的 One UI token 负责；
+         这里只提供首帧窗口底色与透明系统栏（深色启动不闪白）。 -->
+    <style name="Theme.DeviceStateConsole" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/guanlan_window_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
 </resources>

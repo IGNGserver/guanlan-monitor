@@ -62,7 +62,7 @@ import kotlin.math.max
  */
 
 @Composable
-fun OneUiLineChart(
+internal fun OneUiLineChart(
   points: List<SamplePointDto>,
   chartWindow: ChartWindow,
   valueFormatter: (Double?) -> String,
@@ -125,7 +125,7 @@ fun OneUiLineChart(
         verticalAlignment = Alignment.CenterVertically
       ) {
         OneUiText(
-          text = chartTimeLabel(selectedPoint.timestamp, chartWindow),
+          text = chartTimeLabel(selectedPoint.timestamp, chartWindow.window),
           role = OneUiTextRole.ChartLabel,
           color = colors.textSecondary
         )
@@ -294,7 +294,7 @@ private fun chartSummary(points: List<SamplePointDto>, formatter: (Double?) -> S
 
 /** 指标块：标题 + 当前值 + 图表，One UI 的监控卡形态。 */
 @Composable
-fun OneUiMetricTile(
+internal fun OneUiMetricTile(
   card: MetricCardModel,
   chartWindow: ChartWindow,
   modifier: Modifier = Modifier,
@@ -361,7 +361,7 @@ fun OneUiMetricTile(
  * 而不是把卡片挤到看不清。
  */
 @Composable
-fun OneUiMetricTileGrid(
+internal fun OneUiMetricTileGrid(
   cards: List<MetricCardModel>,
   chartWindow: ChartWindow,
   modifier: Modifier = Modifier,
