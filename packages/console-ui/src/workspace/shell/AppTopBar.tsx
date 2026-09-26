@@ -17,7 +17,18 @@ export function AppTopBar() {
       <StatusLabel state={sourceState} />
       <M3Button className="workspace-search-trigger" variant="outlined" leadingIcon={<Icon name="search" />} aria-label="查找设备、页面或设置" title="查找设备、页面或设置" onClick={() => setCommandOpen(true)}><span>查找设备、页面或设置</span><kbd>/</kbd></M3Button>
       {/* The visible word disappears while refreshing, so the button carries a permanent accessible name instead of degrading to a bare icon whose only text was the tooltip. */}
-      <Button variant="quiet" onClick={() => void refresh()} disabled={refreshing || mutationPending} aria-label={refreshing ? "正在刷新" : mutationPending ? "正在保存更改" : "刷新状态"} title={mutationPending ? "正在保存更改" : "刷新状态"}><Icon name="refresh" size={16} />{!refreshing && <span>{mutationPending ? "保存中" : "刷新"}</span>}</Button>
+      <Button
+        variant="quiet"
+        onClick={() => void refresh()}
+        disabled={refreshing || mutationPending}
+        aria-label={refreshing ? "正在刷新" : mutationPending ? "正在保存更改" : "刷新状态"}
+        title={mutationPending ? "正在保存更改" : "刷新状态"}
+      >
+        <span className={refreshing ? "guanlan-spin" : ""}>
+          <Icon name="refresh" size={16} />
+        </span>
+        {!refreshing && <span>{mutationPending ? "保存中" : "刷新"}</span>}
+      </Button>
       <Button variant="quiet" onClick={() => openSettings()} aria-label="设置" title="设置"><Icon name="settings" size={16} /></Button>
     </div>
   </header>;

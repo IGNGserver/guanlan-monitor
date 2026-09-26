@@ -73,9 +73,9 @@ export function ChartTile({
       {emptyMessage ? (
         <div className="chart-tile__empty">{emptyMessage}</div>
       ) : detailsVisible ? (
-        <div className="chart-tile__body chart-tile__body--details">{details}</div>
+        <div className="chart-tile__body chart-tile__body--details guanlan-fade-in">{details}</div>
       ) : children ? (
-        <div className="chart-tile__body">{children}</div>
+        <div className="chart-tile__body guanlan-fade-in">{children}</div>
       ) : null}
 
       {footer && !detailsVisible ? <div className="chart-tile__footer">{footer}</div> : null}

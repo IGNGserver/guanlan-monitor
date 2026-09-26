@@ -41,6 +41,8 @@
   --workspace-elevation-3: 0 8px 16px rgb(0 0 0 / 16%);
   --workspace-motion-standard: 180ms cubic-bezier(0.2, 0, 0, 1);
   --workspace-motion-emphasized: 260ms cubic-bezier(0.2, 0, 0, 1);
+  --carbon-motion-productive: 120ms cubic-bezier(0.2, 0, 0.38, 0.9);
+  --carbon-motion-expressive: 240ms cubic-bezier(0, 0, 0.38, 0.9);
   --workspace-bg: var(--workspace-color-surface);
   --workspace-topbar: var(--workspace-color-surface);
   --workspace-sidebar: var(--workspace-color-surface-container-low);
