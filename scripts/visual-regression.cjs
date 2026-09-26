@@ -352,7 +352,12 @@ async function run() {
   // "需要关注" is only defensible if the tile says what it adds up.
   const attentionTile = page.locator(".workspace-overview-summary__item").nth(2);
   assert.equal((await attentionTile.locator("span").first().innerText()).trim(), "需要关注", "the attention tile must be labelled by what it counts");
-  assert.match((await attentionTile.locator("small").innerText()).trim(), /未响应/, "the attention tile must expose its composition");
+  const attentionComposition = (await attentionTile.locator("small").innerText()).trim();
+  assert.match(attentionComposition, /\d+ 台设备离线/, "the attention tile must expose its composition");
+  // One state, one word. The tile used to count "未响应" devices while the
+  // directory tagged those same machines "离线", which reads as two different
+  // kinds of trouble; the aggregate now borrows the directory's word.
+  assert.doesNotMatch(attentionComposition, /未响应/, "the overview must not invent a second name for an offline device");
   await page.screenshot({ path: path.join(outputDir, "web-workspace-desktop.png"), fullPage: true, animations: "disabled" });
 
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
@@ -366,9 +371,24 @@ async function run() {
   assert.deepEqual(headerColumns.map((col) => col.trim()), ["状态", "设备", "CPU 使用率", "内存使用", "磁盘使用", "最后在线", "操作"], "directory table header must contain exactly 7 columns in order");
   assert.equal(await deviceTable.locator("thead th").count(), 7, "directory table must have 7 column headers");
   assert.equal(await deviceRows.first().locator("td").count(), 7, "Carbon device table rows must expose the same 7 columns");
+  // One state, one word, on the page that lists the states.
+  assert.doesNotMatch(await deviceTable.innerText(), /未响应/, "the directory must not invent a second name for an offline device");
+  assert.equal(await deviceTable.getByText("离线", { exact: true }).count(), 1, "an unreachable device is tagged 离线 in the directory");
+  // The hub answers with 78.4; the table used to print `78.4%` while the chart of
+  // the same metric said `78%`, so the two disagreed on one screen.
+  assert.equal((await deviceRows.nth(1).locator("td").nth(2).innerText()).trim(), "78%", "directory percentages must round like the charts");
   const deviceSearch = page.getByLabel("搜索设备", { exact: true });
   await deviceSearch.fill("工作站");
   assert.equal(await deviceRows.count(), 1, "device search must filter the full directory");
+  // An empty *result* and an empty *fleet* are different facts. A filter that
+  // matches nothing used to render "没有匹配设备" and "还没有设备接入" together,
+  // sending the reader to the hub connection when the search box was the answer.
+  await deviceSearch.fill("绝对不存在的设备名");
+  assert.equal(await deviceRows.count(), 0, "a filter with no match must empty the table");
+  const filteredOutStates = page.locator(".workspace-page--devices .workspace-empty");
+  assert.equal(await filteredOutStates.count(), 1, "a filtered-out directory must offer exactly one explanation");
+  assert.equal((await filteredOutStates.locator("h3").innerText()).trim(), "没有匹配设备", "a filtered-out directory must blame the filter, not the hub");
+  assert.match((await filteredOutStates.locator("p").innerText()).trim(), /3 台已接入设备/, "the empty result must name the population the filter was applied to");
   await deviceSearch.fill("");
   await page.screenshot({ path: path.join(outputDir, "web-devices-desktop.png"), fullPage: true, animations: "disabled" });
 
@@ -644,6 +664,15 @@ async function run() {
   await page.locator(".workspace-onboarding").getByRole("button", { name: "不再显示" }).click();
   assert.equal(await page.locator(".workspace-onboarding").count(), 0, "dismissing the guide must be honoured immediately");
   assert.equal(await page.evaluate(() => localStorage.getItem("dsc-onboarding-dismissed")), "true", "the dismissal must persist");
+  // With nothing connected, the directory may only say so once. It used to answer
+  // "没有匹配设备 · 尝试清空搜索或调整状态筛选" and "还没有设备接入" at the same time.
+  await page.goto(`${baseUrl}?visual-state=empty#devices`, { waitUntil: "domcontentloaded" });
+  await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
+  const emptyFleetStates = page.locator(".workspace-page--devices .workspace-empty");
+  assert.equal(await emptyFleetStates.count(), 1, "an unconnected hub must offer exactly one empty state");
+  assert.equal((await emptyFleetStates.locator("h3").innerText()).trim(), "还没有设备接入", "an empty fleet must say the hub has no devices, not that the filter failed");
+  await page.goto(`${baseUrl}?visual-state=empty#overview`, { waitUntil: "domcontentloaded" });
+  await page.locator(".workspace-page--overview").waitFor({ state: "visible", timeout: 15_000 });
   await page.screenshot({ path: path.join(outputDir, "web-state-empty.png"), fullPage: true, animations: "disabled" });
   stateEvidence.push({ state: "empty", screenshot: "web-state-empty.png" });
 
@@ -908,8 +937,66 @@ async function run() {
     assert.ok(height > 0 && height <= 320, `the sticky device context is ${height}px on ${key}`);
   }
 
+  /* Touch-target contract.
+   *
+   * Every 44px rule in this UI lives behind `@media (pointer: coarse)`, and the
+   * whole reason that kept breaking is specificity, not intent: a `(0,2,0)`
+   * composite declaration in the first stylesheet layer silently outranked the
+   * `(0,1,0)` coarse rule, so a phone got 30x30 icon buttons and 40px rows while
+   * every desktop screenshot looked perfect. No assertion in this file could see
+   * it, because none of them ran with a coarse pointer.
+   *
+   * This pass opens a *second* page with `hasTouch` so `(pointer: coarse)`
+   * actually matches, walks every route, and fails on any interactive element
+   * under 44px on either axis. Exceptions are listed explicitly and by class so
+   * an addition has to be a deliberate decision.
+   */
+  const touchExempt = [
+    // Carbon's chart legend draws its series toggle as a small colour swatch;
+    // the label beside it is the reachable part and the markup is not ours.
+    ".checkbox"
+  ];
+  const touchPage = await browser.newPage({
+    locale: "en-US",
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 1,
+    hasTouch: true,
+    isMobile: true
+  });
+  const touchViolations = [];
+  try {
+    fixtureMode = "live";
+    for (const routeHash of ["#overview", "#devices", "#settings/general"]) {
+      await touchPage.goto(`${baseUrl}?visual-state=live${routeHash}`, { waitUntil: "domcontentloaded" });
+      await touchPage.locator(".workspace-root").waitFor({ state: "visible", timeout: 15_000 });
+      const coarse = await touchPage.evaluate(() => matchMedia("(pointer: coarse)").matches);
+      assert.ok(coarse, `(pointer: coarse) must match on a touch page (${routeHash})`);
+      const small = await touchPage.evaluate((exempt) => {
+        const rows = [];
+        for (const el of document.querySelectorAll('button, a[href], input, select, [role="button"], [role="tab"], [role="option"], [role="checkbox"], [role="switch"]')) {
+          const style = getComputedStyle(el);
+          const rect = el.getBoundingClientRect();
+          if (style.display === "none" || style.visibility === "hidden" || rect.width < 1 || rect.height < 1) continue;
+          if (rect.width >= 44 && rect.height >= 44) continue;
+          if (exempt.some((selector) => el.matches(selector))) continue;
+          if (el.closest("[hidden]") || el.getAttribute("aria-hidden") === "true") continue;
+          const cls = typeof el.className === "string" ? el.className.trim().split(/\s+/).slice(0, 3).join(".") : el.tagName.toLowerCase();
+          rows.push({ cls, w: Math.round(rect.width), h: Math.round(rect.height), label: (el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 24) });
+        }
+        const seen = new Map();
+        for (const row of rows) seen.set(`${row.cls} ${row.w}x${row.h}`, row);
+        return [...seen.values()];
+      }, touchExempt);
+      for (const row of small) touchViolations.push({ route: routeHash, ...row });
+    }
+  } finally {
+    await touchPage.close();
+    fixtureMode = "live";
+  }
+  assert.deepEqual(touchViolations, [], `coarse-pointer targets below 44px: ${JSON.stringify(touchViolations)}`);
+
   assert.deepEqual(pageErrors, [], `browser page errors: ${pageErrors.join("; ")}`);
-  const report = { baseUrl, fixtureDevices: fixtureDevices.length, desktopMetrics, mobileMetrics, deviceChartGeometry, headerHeights: Object.fromEntries(headerHeights), stateEvidence, uiContracts, matrix, requestLog, screenshots: fs.readdirSync(outputDir).sort() };
+  const report = { baseUrl, fixtureDevices: fixtureDevices.length, desktopMetrics, mobileMetrics, deviceChartGeometry, headerHeights: Object.fromEntries(headerHeights), stateEvidence, touchExempt, uiContracts, matrix, requestLog, screenshots: fs.readdirSync(outputDir).sort() };
   fs.writeFileSync(path.join(outputDir, "web-visual-regression-report.json"), `${JSON.stringify(report, null, 2)}\n`);
   await browser.close();
   activeBrowser = null;

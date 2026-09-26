@@ -5,6 +5,16 @@
  * represented by the transient-surface tokens below and is applied only to
  * menus, dialogs, toasts, and drawers. The opaque mode is the Windows 10 and
  * reduced-transparency fallback with the same semantic surface hierarchy.
+ *
+ * Material contributes *translucency*, never colour. Every value here is the
+ * Carbon token for that role mixed against `transparent`, so switching the
+ * window material can no longer repaint one half of the interface with a
+ * hand-picked blue-grey ramp while the Carbon half stays neutral.
+ *
+ * The rules target `.guanlan-carbon-theme` rather than `html` on purpose:
+ * `workspace.tokens.css` re-points the `--workspace-*` palette at `--cds-*` on
+ * that same element, and a value set on `html` only ever inherits into it.
+ * Declaring here keeps this file the last word, as its layer always has been.
  */
 
 html[data-dsc-material="mica"],
@@ -13,76 +23,25 @@ html[data-dsc-material="mica"] #root {
   background: transparent;
 }
 
-html[data-dsc-material="mica"] {
-  --workspace-color-surface: rgb(255 255 255 / 84%);
-  --workspace-color-surface-container-lowest: rgb(255 255 255 / 88%);
-  --workspace-color-surface-container-low: rgb(248 251 253 / 64%);
-  --workspace-color-surface-container: rgb(244 248 251 / 72%);
-  --workspace-color-surface-container-high: rgb(238 245 251 / 78%);
-  --workspace-color-surface-container-highest: rgb(232 240 247 / 82%);
-  --workspace-color-outline: rgb(72 96 117 / 44%);
-  --workspace-color-outline-variant: rgb(92 113 130 / 30%);
-  --workspace-elevation-1: 0 3px 14px rgb(30 48 67 / 9%);
+html[data-dsc-material="mica"] .guanlan-carbon-theme {
   --workspace-bg: transparent;
-  --workspace-topbar: rgb(248 250 253 / 72%);
-  --workspace-sidebar: rgb(238 243 248 / 80%);
-  --workspace-surface: rgb(255 255 255 / 84%);
-  --workspace-surface-subtle: rgb(248 251 253 / 64%);
-  --workspace-surface-hover: rgb(238 245 251 / 78%);
-  --workspace-surface-control: rgb(255 255 255 / 72%);
-  --workspace-surface-popover: rgb(249 252 255 / 94%);
-  --workspace-surface-modal: rgb(246 250 253 / 95%);
-  --workspace-surface-foreground: rgb(246 250 253 / 92%);
-  --workspace-surface-acrylic: rgb(249 252 255 / 82%);
+  --workspace-topbar: color-mix(in srgb, var(--cds-background, #f4f4f4) 72%, transparent);
+  --workspace-sidebar: color-mix(in srgb, var(--cds-layer-01, #ffffff) 80%, transparent);
+  --workspace-surface: color-mix(in srgb, var(--cds-layer-01, #ffffff) 84%, transparent);
+  --workspace-surface-subtle: color-mix(in srgb, var(--cds-layer-01, #ffffff) 64%, transparent);
+  --workspace-surface-hover: color-mix(in srgb, var(--cds-layer-hover-01, #e5e5e5) 78%, transparent);
+  --workspace-surface-control: color-mix(in srgb, var(--cds-field, #f4f4f4) 72%, transparent);
+  --workspace-surface-popover: color-mix(in srgb, var(--cds-layer-02, #e5e5e5) 94%, transparent);
+  --workspace-surface-modal: color-mix(in srgb, var(--cds-layer-01, #ffffff) 95%, transparent);
+  --workspace-surface-foreground: color-mix(in srgb, var(--cds-layer-01, #ffffff) 92%, transparent);
+  --workspace-surface-acrylic: color-mix(in srgb, var(--cds-layer-02, #e5e5e5) 82%, transparent);
   --workspace-acrylic-filter: blur(26px) saturate(125%);
-  --workspace-surface-highlight: inset 0 1px 0 rgb(255 255 255 / 72%);
-  --workspace-scrim: rgb(26 38 48 / 28%);
-  --workspace-border: rgb(92 113 130 / 30%);
-  --workspace-border-strong: rgb(72 96 117 / 44%);
-  --workspace-shadow: 0 18px 44px rgb(30 48 67 / 16%);
-  --workspace-shadow-soft: 0 3px 14px rgb(30 48 67 / 9%);
+  --workspace-scrim: color-mix(in srgb, var(--cds-overlay, rgb(0 0 0 / 50%)) 70%, transparent);
 }
 
-html[data-dsc-resolved-theme="dark"][data-dsc-material="mica"] {
-  --workspace-color-surface: rgb(31 38 44 / 92%);
-  --workspace-color-surface-container-lowest: rgb(25 31 36 / 94%);
-  --workspace-color-surface-container-low: rgb(37 45 51 / 76%);
-  --workspace-color-surface-container: rgb(31 38 44 / 86%);
-  --workspace-color-surface-container-high: rgb(47 59 68 / 84%);
-  --workspace-color-surface-container-highest: rgb(57 69 78 / 86%);
-  --workspace-color-outline: rgb(215 230 240 / 32%);
-  --workspace-color-outline-variant: rgb(205 221 232 / 19%);
-  --workspace-elevation-1: 0 4px 16px rgb(0 0 0 / 26%);
-  --workspace-bg: transparent;
-  --workspace-topbar: rgb(21 28 33 / 88%);
-  --workspace-sidebar: rgb(23 30 35 / 90%);
-  --workspace-surface: rgb(31 38 44 / 92%);
-  --workspace-surface-subtle: rgb(37 45 51 / 76%);
-  --workspace-surface-hover: rgb(47 59 68 / 84%);
-  --workspace-surface-control: rgb(35 44 50 / 86%);
-  --workspace-surface-popover: rgb(29 36 42 / 97%);
-  --workspace-surface-modal: rgb(27 35 41 / 98%);
-  --workspace-surface-foreground: rgb(27 35 41 / 96%);
-  --workspace-surface-acrylic: rgb(29 36 42 / 86%);
-  --workspace-acrylic-filter: blur(26px) saturate(120%);
-  --workspace-surface-highlight: inset 0 1px 0 rgb(215 230 240 / 16%);
-  --workspace-scrim: rgb(4 10 13 / 48%);
-  --workspace-border: rgb(205 221 232 / 19%);
-  --workspace-border-strong: rgb(215 230 240 / 32%);
-  --workspace-shadow: 0 22px 52px rgb(0 0 0 / 42%);
-  --workspace-shadow-soft: 0 4px 16px rgb(0 0 0 / 26%);
-}
-
-html[data-dsc-material="opaque"] {
-  --workspace-surface-acrylic: #ffffff;
+html[data-dsc-material="opaque"] .guanlan-carbon-theme {
+  --workspace-surface-acrylic: var(--cds-layer-02, #e5e5e5);
   --workspace-acrylic-filter: none;
-  --workspace-surface-highlight: inset 0 1px 0 rgb(255 255 255 / 78%);
-}
-
-html[data-dsc-resolved-theme="dark"][data-dsc-material="opaque"] {
-  --workspace-surface-acrylic: #1c2229;
-  --workspace-acrylic-filter: none;
-  --workspace-surface-highlight: inset 0 1px 0 rgb(215 230 240 / 12%);
 }
 
 /* CSS is also defensive when Windows changes its transparency preference. */
@@ -90,44 +49,22 @@ html[data-dsc-resolved-theme="dark"][data-dsc-material="opaque"] {
   html[data-dsc-material="mica"],
   html[data-dsc-material="mica"] body,
   html[data-dsc-material="mica"] #root {
-    background: var(--workspace-bg);
+    background: var(--cds-background, #f4f4f4);
   }
 
-  html[data-dsc-material="mica"] {
-    --workspace-bg: #f5f7fa;
-    --workspace-topbar: #f5f7fa;
-    --workspace-sidebar: #eef2f6;
-    --workspace-surface: #ffffff;
-    --workspace-surface-subtle: #f8fafc;
-    --workspace-surface-hover: #eef5fb;
-    --workspace-surface-control: #ffffff;
-    --workspace-surface-popover: #ffffff;
-    --workspace-surface-modal: #ffffff;
-    --workspace-surface-foreground: #f6fafd;
-    --workspace-surface-acrylic: #ffffff;
+  html[data-dsc-material="mica"] .guanlan-carbon-theme {
+    --workspace-bg: var(--cds-background, #f4f4f4);
+    --workspace-topbar: var(--cds-background, #f4f4f4);
+    --workspace-sidebar: var(--cds-layer-01, #ffffff);
+    --workspace-surface: var(--cds-layer-01, #ffffff);
+    --workspace-surface-subtle: var(--cds-layer-01, #ffffff);
+    --workspace-surface-hover: var(--cds-layer-hover-01, #e5e5e5);
+    --workspace-surface-control: var(--cds-field, #f4f4f4);
+    --workspace-surface-popover: var(--cds-layer-02, #e5e5e5);
+    --workspace-surface-modal: var(--cds-layer-01, #ffffff);
+    --workspace-surface-foreground: var(--cds-layer-01, #ffffff);
+    --workspace-surface-acrylic: var(--cds-layer-02, #e5e5e5);
     --workspace-acrylic-filter: none;
-    --workspace-surface-highlight: inset 0 1px 0 rgb(255 255 255 / 78%);
-    --workspace-scrim: rgb(23 32 43 / 18%);
-    --workspace-border: #dce3ea;
-    --workspace-border-strong: #c5d0db;
-  }
-
-  html[data-dsc-resolved-theme="dark"][data-dsc-material="mica"] {
-    --workspace-bg: #14181d;
-    --workspace-topbar: #14181d;
-    --workspace-sidebar: #191e24;
-    --workspace-surface: #1c2229;
-    --workspace-surface-subtle: #20272f;
-    --workspace-surface-hover: #25313b;
-    --workspace-surface-control: #20272f;
-    --workspace-surface-popover: #1c2229;
-    --workspace-surface-modal: #1c2229;
-    --workspace-surface-foreground: #1b2329;
-    --workspace-surface-acrylic: #1c2229;
-    --workspace-acrylic-filter: none;
-    --workspace-surface-highlight: inset 0 1px 0 rgb(215 230 240 / 12%);
-    --workspace-scrim: rgb(0 0 0 / 32%);
-    --workspace-border: #303b46;
-    --workspace-border-strong: #43515f;
+    --workspace-scrim: var(--cds-overlay, rgb(0 0 0 / 50%));
   }
 }

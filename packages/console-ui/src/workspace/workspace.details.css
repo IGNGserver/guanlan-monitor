@@ -4,9 +4,13 @@
 .workspace-breadcrumb button:hover { text-decoration: underline; }
 .workspace-breadcrumb strong { min-width: 0; overflow: hidden; color: var(--workspace-text-secondary); font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
 /* 事实行只有两条内容：列数交给 auto-fit，空轨道会被折叠掉。
-   固定 4 列时，多出来的两条空轨道会露出容器底色，变成半行灰色板。 */
-.workspace-device-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 1px; margin: 0 0 22px; border: 1px solid var(--workspace-border); border-radius: 12px; overflow: hidden; background: var(--workspace-border); }
+   固定 4 列时，多出来的两条空轨道会露出容器底色，变成半行灰色板。
+   分隔线不再用「容器铺底色 + 1px gap」：那样在事实条数为奇数时，最后一行右侧
+   会露出一块底色矩形（390px 下 7 条事实就是如此）。现在由每个格子自己画
+   inset 分隔线，容器底色与格子同色，奇数条只读作一个空格。见
+   `workspace-carbon.scss` 的裁决。 */
+.workspace-device-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 0; margin: 0 0 22px; border: 1px solid var(--workspace-border); border-radius: 0; overflow: hidden; background: var(--workspace-surface); }
 .workspace-device-facts > div { min-width: 0; padding: 12px 16px; background: var(--workspace-surface); }
-.workspace-device-facts span { display: block; color: var(--workspace-text-muted); font-size: 11px; }
+.workspace-device-facts span { display: block; color: var(--workspace-text-muted); font-size: 12px; }
 .workspace-device-facts strong { display: flex; min-width: 0; align-items: center; gap: 7px; margin-top: 3px; overflow: hidden; color: var(--workspace-text); font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-order-actions { display: inline-flex; align-items: center; gap: 6px; }

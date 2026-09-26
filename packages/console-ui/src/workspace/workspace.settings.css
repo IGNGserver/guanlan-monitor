@@ -1,10 +1,18 @@
 /* Settings is a destination with its own compact navigation, not a hidden desktop sidebar. */
 .workspace-settings-mobile-nav { display: none; }
 
-@media (max-width: 768px), (orientation: portrait) {
+/* 839px, matching the drawer, bottom navigation and directory toolbar. This
+   was the last navigation surface still switching at 768px, which left
+   769-839px with a phone layout everywhere except the settings jump list. */
+@media (max-width: 839px), (orientation: portrait) {
   .workspace-settings-mobile-nav { display: block; margin: -18px 0 22px; }
   .workspace-settings-mobile-nav__list { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
   .workspace-settings-mobile-nav__list::-webkit-scrollbar { display: none; }
-  .workspace-settings-mobile-nav__list button { flex: 0 0 auto; min-height: 38px; padding: 0 13px; border: 1px solid var(--workspace-border); border-radius: 999px; color: var(--workspace-text-secondary); background: var(--workspace-surface); cursor: pointer; font: inherit; font-size: 12px; }
+  /* Square, and the same resting border as the device directory filter chips.
+     These two controls do the same job — narrow a list by status or by section
+     — and used to render as a grey-filled square in one place and a
+     blue-outlined pill in the other. Height comes from the control-height token
+     so the coarse-pointer contract in `workspace-carbon.scss` can raise it. */
+  .workspace-settings-mobile-nav__list button { flex: 0 0 auto; min-height: var(--workspace-control-height); padding: 0 13px; border: 1px solid var(--workspace-border-strong); border-radius: 0; color: var(--workspace-text-secondary); background: var(--workspace-surface); cursor: pointer; font: inherit; font-size: 12px; }
   .workspace-settings-mobile-nav__list button.is-selected { border-color: var(--workspace-accent); color: var(--workspace-accent-strong); background: var(--workspace-accent-soft); font-weight: 650; }
 }

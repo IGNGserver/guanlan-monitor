@@ -47,8 +47,7 @@
 }
 
 .workspace-windowbar__drag > strong { color: var(--workspace-text); font-size: 12px; font-weight: 680; letter-spacing: -0.01em; }
-.workspace-windowbar__mark,
-.workspace-windowbar__mark-img { display: block; width: 21px; height: 21px; object-fit: contain; border-radius: 6px; flex-shrink: 0; }
+.workspace-windowbar__mark-img { display: block; width: 21px; height: 21px; object-fit: contain; border-radius: 0; flex-shrink: 0; }
 .workspace-windowbar__separator { width: 1px; height: 14px; margin-inline: 2px; background: var(--workspace-border-strong); }
 .workspace-windowbar__subtitle { overflow: hidden; color: var(--workspace-text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-windowbar__controls { display: flex; height: 100%; align-items: stretch; -webkit-app-region: no-drag; }
@@ -76,7 +75,7 @@
   grid-column: 1;
   grid-row: 2;
   transition: width var(--workspace-transition), transform var(--workspace-transition);
-  z-index: 5;
+  z-index: var(--workspace-layer-shell);
 }
 
 .workspace-sidebar.is-collapsed {
@@ -108,8 +107,6 @@
 .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-brand__name,
 .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-nav-item span,
 .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-sidebar__label,
-.workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-hub-heading__name,
-.workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-hub-heading__count,
 .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-device-item__copy,
 .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-sidebar__support span,
 .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-sidebar__section-title {
@@ -122,8 +119,6 @@
 }
 
 .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-nav-item span,
-.workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-hub-heading__name,
-.workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-hub-heading__count,
 .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-sidebar__support span,
 .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-brand__name {
   display: inline;
@@ -144,7 +139,7 @@
 
 .workspace-sidebar-edge-trigger {
   position: fixed;
-  z-index: 9;
+  z-index: var(--workspace-layer-rail);
   top: var(--workspace-chrome-height, 42px);
   bottom: 0;
   left: var(--workspace-sidebar-rail-width);
@@ -200,12 +195,9 @@
 .workspace-sidebar.is-collapsed .workspace-brand__name,
 .workspace-sidebar.is-collapsed .workspace-nav-item span,
 .workspace-sidebar.is-collapsed .workspace-sidebar__label,
-.workspace-sidebar.is-collapsed .workspace-hub-heading__name,
-.workspace-sidebar.is-collapsed .workspace-hub-heading__count,
 .workspace-sidebar.is-collapsed .workspace-device-item__copy,
 .workspace-sidebar.is-collapsed .workspace-sidebar__support span,
-.workspace-sidebar.is-collapsed .workspace-sidebar__section-title,
-.workspace-sidebar.is-collapsed .workspace-instance-tabs {
+.workspace-sidebar.is-collapsed .workspace-sidebar__section-title {
   display: none;
 }
 
@@ -359,7 +351,6 @@
   display: none;
 }
 
-.workspace-topbar__eyebrow,
 .workspace-page-intro__eyebrow,
 .workspace-section-kicker {
   display: block;
@@ -369,19 +360,12 @@
   letter-spacing: 0.04em;
 }
 
-.workspace-topbar h1,
 .workspace-page-intro h2,
 .workspace-surface h3,
 .workspace-empty h3,
 .workspace-about h3 {
   margin: 0;
   letter-spacing: -0.025em;
-}
-
-.workspace-topbar h1 {
-  color: var(--workspace-text);
-  font-size: 16px;
-  font-weight: 660;
 }
 
 .workspace-topbar__actions {
@@ -433,17 +417,17 @@ kbd {
   align-items: center;
   gap: 6px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: 0;
   font-size: 11px;
   font-weight: 620;
   white-space: nowrap;
 }
 
-.workspace-status-label--online { color: var(--workspace-green); background: var(--workspace-green-soft); }
-.workspace-status-label--offline { color: var(--workspace-text-muted); background: var(--workspace-surface-subtle); }
-.workspace-status-label--cached { color: var(--workspace-purple); background: var(--workspace-purple-soft); }
-.workspace-status-label--warning { color: var(--workspace-amber); background: var(--workspace-amber-soft); }
-.workspace-status-label--unknown { color: var(--workspace-text-secondary); background: var(--workspace-surface-subtle); }
+/* The five `.workspace-status-label--*` role colours are declared once, in
+   `workspace.m3.css`. They used to be duplicated here against a different token
+   family (`--workspace-green` aliases vs `--workspace-color-success` roles),
+   both `(0,1,0)` in the same layer, so whichever file the bundle ordered last
+   won and the other five lines were inert. */
 .workspace-status-label.is-compact { width: 17px; padding: 0; background: transparent; }
 .workspace-status-label.is-compact .workspace-status-dot { margin: 0; }
 
@@ -551,42 +535,22 @@ kbd {
   margin: 0 0 16px;
 }
 
-.workspace-overview-grid,
-.workspace-device-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
-  gap: 16px;
-}
+/* `.workspace-overview-grid` / `.workspace-device-grid` were the two-up overview
+   layout; the merged overview page renders `.workspace-hub-card` and
+   `.workspace-overview-devices` in one column, and neither grid class has a JSX
+   reference any more. The hand-written `.workspace-attention` block went with
+   it: that element is now Carbon's `ActionableNotification`, which draws its
+   own flex layout, tint and status strip, so these rules were fighting it and
+   forcing the warning tint onto `kind="info"` notifications too. Page rhythm
+   lives in `workspace.pages.css`, geometry in `workspace-carbon.scss`. */
 
 .workspace-overview-devices {
   min-height: 390px;
 }
 
-.workspace-attention {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding: 13px 15px;
-  border: 1px solid color-mix(in srgb, var(--workspace-amber) 30%, var(--workspace-border));
-  border-radius: var(--workspace-radius-md);
-  background: var(--workspace-amber-soft);
-}
-
-.workspace-attention > div:nth-child(2) {
-  min-width: 0;
-  flex: 1;
-}
-
-.workspace-attention strong { color: var(--workspace-text); font-size: 13px; }
-.workspace-attention p { margin: 2px 0 0; color: var(--workspace-text-secondary); font-size: 12px; }
-
-.workspace-metric-value { color: var(--workspace-text); font-variant-numeric: tabular-nums; }
-.workspace-metric-value--unavailable { color: var(--workspace-amber); }
-.workspace-metric-value--capacity { display: flex; align-items: baseline; justify-content: flex-end; gap: 4px; white-space: nowrap; }
-.workspace-metric-value--capacity strong { color: var(--workspace-text); font-size: 11px; font-weight: 620; }
-.workspace-metric-value--capacity small { color: var(--workspace-text-muted); font-size: 9px; }
+/* `.workspace-metric-value*` was the pre-Carbon NumberView; `formatters.tsx`
+   exports `MetricValue`/`CapacityMetricValue` but no page renders them, so these
+   four rules had nothing to match. */
 
 .workspace-summary-list,
 .workspace-detail-list {
@@ -621,7 +585,7 @@ kbd {
 .workspace-temperature-source-row__identity { overflow: hidden; }
 .workspace-temperature-source-row__identity strong { overflow: hidden; color: var(--workspace-text); font-size: 11px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-temperature-source-row__identity small,
-.workspace-temperature-source-row__value small { color: var(--workspace-text-muted); font-size: 9px; }
+.workspace-temperature-source-row__value small { color: var(--workspace-text-muted); font-size: 12px; }
 .workspace-temperature-source-row__value { flex: 0 0 auto; align-items: flex-end; text-align: right; }
 .workspace-temperature-source-row__value strong { color: var(--workspace-text); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .workspace-temperature-status--valid { color: var(--workspace-green) !important; }
@@ -633,10 +597,10 @@ kbd {
 .workspace-agent-temperature-backends { display: flex; min-width: 0; flex-direction: column; gap: 7px; padding: 10px 12px; border: 1px solid var(--workspace-border); border-radius: var(--workspace-radius-sm); background: var(--workspace-surface-subtle); }
 .workspace-agent-temperature-backends > strong { color: var(--workspace-text-secondary); font-size: 11px; }
 .workspace-agent-temperature-backend { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 8px; align-items: start; padding-top: 7px; border-top: 1px solid var(--workspace-border); }
-.workspace-agent-temperature-backend > span { font-size: 10px; }
+.workspace-agent-temperature-backend > span { font-size: 12px; }
 .workspace-agent-temperature-backend > div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .workspace-agent-temperature-backend strong { overflow: hidden; color: var(--workspace-text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.workspace-agent-temperature-backend small { color: var(--workspace-text-muted); font-size: 9px; line-height: 1.35; }
+.workspace-agent-temperature-backend small { color: var(--workspace-text-muted); font-size: 12px; line-height: 1.35; }
 
 :root[data-dsc-runtime-mode="low-resource"] *,
 :root[data-dsc-runtime-mode="low-resource"] *::before,

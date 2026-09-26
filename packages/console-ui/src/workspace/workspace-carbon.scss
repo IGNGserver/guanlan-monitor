@@ -44,7 +44,7 @@
 .workspace-windowbar,
 .workspace-topbar {
   border-color: var(--cds-border-subtle-00, #e0e0e0);
-  background: var(--cds-layer-01, #f4f4f4);
+  background: var(--cds-layer-01, #ffffff);
   box-shadow: none;
 }
 
@@ -67,7 +67,6 @@
 
 .workspace-windowbar__drag > strong,
 .workspace-windowbar__subtitle,
-.workspace-topbar h1,
 .workspace-topbar__brand {
   font-family: "IBM Plex Sans", "Noto Sans SC", sans-serif;
   letter-spacing: 0;
@@ -75,7 +74,7 @@
 
 .workspace-sidebar {
   border-right: 1px solid var(--cds-border-subtle-00, #e0e0e0);
-  background: var(--cds-layer-01, #f4f4f4);
+  background: var(--cds-layer-01, #ffffff);
   box-shadow: none;
 }
 
@@ -85,7 +84,8 @@
   border-bottom: 1px solid var(--cds-border-subtle-00, #e0e0e0);
 }
 
-.workspace-brand__mark,
+/* Only the `-img` variants render; the bare `__mark` selectors were left over
+   from the pre-Carbon brand markup. */
 .workspace-brand__mark-img,
 .workspace-windowbar__mark-img,
 .workspace-about__mark-wrap,
@@ -93,10 +93,27 @@
   border-radius: 0;
 }
 
-.workspace-brand__mark,
 .workspace-brand__mark-img {
   width: 28px;
   height: 28px;
+}
+
+/* One brand, not two.
+ *
+ * `AppTopBar` renders 观澜 in the header and `PrimaryNavigation` renders it in
+ * the sidebar, both guarded by the same `!canControlNativeWindow` condition — so
+ * on the web console every wide screen showed the word twice within 200px of
+ * each other. Desktop never hit this because its native title bar owns the
+ * header slot.
+ *
+ * The header copy is the one that drops out, and only while the sidebar is
+ * inline: below the drawer breakpoint the sidebar is off canvas, so the header
+ * is the only branding a phone user ever sees.
+ */
+@media (min-width: 840px) {
+  .workspace-root.is-web .workspace-topbar__brand {
+    display: none;
+  }
 }
 
 .workspace-sidebar__nav {
@@ -107,8 +124,7 @@
 .workspace-sidebar__section-title,
 .workspace-sidebar__label,
 .workspace-section-kicker,
-.workspace-page-intro__eyebrow,
-.workspace-topbar__eyebrow {
+.workspace-page-intro__eyebrow {
   color: var(--cds-text-placeholder, #6f6f6f);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 11px;
@@ -161,7 +177,7 @@
 .workspace-surface {
   border: 1px solid var(--cds-border-subtle-00, #e0e0e0);
   border-radius: 0;
-  background: var(--cds-layer-01, #f4f4f4);
+  background: var(--cds-layer-01, #ffffff);
   box-shadow: none;
 }
 
@@ -197,7 +213,7 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0;
-  margin-bottom: var(--cds-spacing-07, 32px);
+  margin-bottom: var(--workspace-space-07);
   padding: 0;
   border-bottom: 1px solid var(--cds-border-subtle-00, #e0e0e0);
   background: transparent;
@@ -211,9 +227,9 @@
 
   display: grid;
   grid-template-rows: 1.5rem var(--guanlan-summary-value-height) auto;
-  row-gap: var(--cds-spacing-03, 8px);
+  row-gap: var(--workspace-space-03);
   min-width: 0;
-  padding: 0 var(--cds-spacing-06, 24px) var(--cds-spacing-05, 16px);
+  padding: 0 var(--workspace-space-06) var(--workspace-space-05);
   border: 0;
   border-left: 1px solid var(--cds-border-subtle-00, #e0e0e0);
   border-radius: 0;
@@ -232,7 +248,7 @@
   min-height: 0;
   align-items: center;
   justify-content: space-between;
-  gap: var(--cds-spacing-03, 8px);
+  gap: var(--workspace-space-03);
 }
 
 /* The compact source indicator is a bare dot; its pill height must not push the
@@ -270,6 +286,12 @@
   line-height: 1rem;
 }
 
+/* Carbon's `ActionableNotification` already paints the coloured status strip,
+   the tinted background and the close button. Re-declaring them here both
+   double-drew the left bar and forced the warning tint onto `kind="info"`
+   notifications, and the dark-mode branch read the same token as the light one
+   so it could never differ. Width and page rhythm are the only facts the page
+   still owns. */
 .workspace-attention {
   width: 100%;
   inline-size: 100%;
@@ -277,31 +299,27 @@
   max-inline-size: none;
   box-sizing: border-box;
   margin-bottom: 24px;
-  border-left: 3px solid var(--cds-support-warning, #f1c21b);
-  background: var(--cds-notification-background-warning, #fff1c7);
+  border-radius: 0;
 }
 
-html[data-dsc-resolved-theme="dark"] .workspace-attention {
-  background: var(--cds-notification-background-warning, #3b2f00);
-}
-
-.workspace-hub-facts {
-  border-color: var(--cds-border-subtle-00, #e0e0e0);
-}
-
+/* The facts strip used a border-coloured mat behind a 1px gap to draw its
+   separators. `auto-fit` collapses unused tracks but not the trailing cell of
+   a partially filled row, so an odd fact count exposed a raw grey rectangle at
+   phone widths. The mat is now the cell colour and each cell draws its own
+   separator, which leaves an odd count reading as an empty cell. */
 .workspace-device-facts {
-  gap: 1px;
+  gap: 0;
   border-color: var(--cds-border-subtle-00, #e0e0e0);
   border-radius: 0;
-  background: var(--cds-border-subtle-00, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
   box-shadow: none;
 }
 
 .workspace-device-facts > div {
-  background: var(--cds-layer-01, #f4f4f4);
+  background: var(--cds-layer-01, #ffffff);
+  box-shadow: inset -1px -1px 0 var(--cds-border-subtle-00, #e0e0e0);
 }
 
-.workspace-overview-grid--single,
 .workspace-overview-observation,
 .workspace-overview-trend {
   gap: 24px;
@@ -312,12 +330,12 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   grid-template-columns: minmax(240px, 1fr) auto auto auto;
   grid-template-areas: "search status sort actions";
   align-items: center;
-  gap: var(--cds-spacing-03, 8px);
-  margin-bottom: var(--cds-spacing-06, 24px);
-  padding: var(--cds-spacing-03, 8px) var(--cds-spacing-04, 12px);
+  gap: var(--workspace-space-03);
+  margin-bottom: var(--workspace-space-06);
+  padding: var(--workspace-space-03) var(--workspace-space-04);
   border: 1px solid var(--cds-border-subtle-00, #e0e0e0);
   border-radius: 0;
-  background: var(--cds-layer-01, #f4f4f4);
+  background: var(--cds-layer-01, #ffffff);
   box-shadow: none;
 }
 
@@ -362,13 +380,13 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 
 .workspace-directory-toolbar__chips {
   min-height: 0;
-  gap: var(--cds-spacing-02, 4px);
+  gap: var(--workspace-space-02);
   padding: 0;
 }
 
 .workspace-directory-toolbar__actions {
   min-height: 0;
-  gap: var(--cds-spacing-03, 8px);
+  gap: var(--workspace-space-03);
   padding: 0;
 }
 
@@ -376,7 +394,7 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   overflow: visible;
   border: 1px solid var(--cds-border-subtle-00, #e0e0e0);
   border-radius: 0;
-  background: var(--cds-layer-01, #f4f4f4);
+  background: var(--cds-layer-01, #ffffff);
   box-shadow: none;
 }
 
@@ -395,7 +413,7 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 }
 
 .guanlan-data-table-surface .workspace-surface__header {
-  background: var(--cds-layer-01, #f4f4f4);
+  background: var(--cds-layer-01, #ffffff);
 }
 
 .guanlan-data-table-surface .cds--data-table-container,
@@ -404,14 +422,14 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 }
 
 .guanlan-data-table-surface .cds--data-table {
-  background: var(--cds-layer-01, #f4f4f4);
+  background: var(--cds-layer-01, #ffffff);
 }
 
 .guanlan-data-table-surface .cds--data-table thead th {
   height: 40px;
   border-color: var(--cds-border-subtle-00, #e0e0e0);
   color: var(--cds-text-secondary, #525252);
-  background: var(--cds-layer-02, #ffffff);
+  background: var(--cds-layer-02, #e5e5e5);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 11px;
   font-weight: 500;
@@ -421,7 +439,7 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   min-height: 56px;
   border-color: var(--cds-border-subtle-00, #e0e0e0);
   color: var(--cds-text-primary, #161616);
-  background: var(--cds-layer-01, #f4f4f4);
+  background: var(--cds-layer-01, #ffffff);
   font-size: 13px;
   vertical-align: middle;
 }
@@ -513,9 +531,8 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 .m3-chip,
 .m3-navigation-item,
 .m3-switch,
-.workspace-search-trigger,
-.workspace-device-row__menu summary {
-  border-radius: 0 !important;
+.workspace-search-trigger {
+  border-radius: 0;
   font-family: "IBM Plex Sans", "Noto Sans SC", sans-serif;
 }
 
@@ -527,7 +544,7 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 .workspace-button {
   min-height: var(--workspace-control-height);
   padding-block: 0;
-  padding-inline: var(--cds-spacing-04, 12px);
+  padding-inline: var(--workspace-space-04);
   line-height: 1rem;
 }
 
@@ -535,7 +552,7 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: var(--cds-spacing-03, 8px);
+  gap: var(--workspace-space-03);
 }
 
 .m3-button,
@@ -637,7 +654,7 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   padding: 0;
   border: 0;
   background: transparent;
-  border-radius: 0 !important;
+  border-radius: 0;
   overflow: visible;
 }
 
@@ -650,7 +667,7 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   border-color: var(--cds-border-subtle-00, #e0e0e0);
   color: var(--cds-text-secondary, #525252);
   white-space: nowrap;
-  background: var(--cds-layer-01, #f4f4f4);
+  background: var(--cds-layer-01, #ffffff);
 }
 
 .m3-segmented-control .cds--content-switcher-btn.cds--content-switcher--selected,
@@ -670,7 +687,7 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 .m3-chip {
   min-height: 2rem;
   padding-block: 0;
-  padding-inline: var(--cds-spacing-04, 12px);
+  padding-inline: var(--workspace-space-04);
   border: 1px solid var(--cds-border-strong-01, #8d8d8d);
   border-radius: 0;
   color: var(--cds-text-secondary, #525252);
@@ -737,14 +754,12 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   min-height: 220px;
 }
 
-.telemetry-info-card__rows,
 .workspace-detail-list {
   padding: 0 18px 18px;
 }
 
 .telemetry-empty,
-.workspace-trend-empty,
-.workspace-dynamic-empty__inline {
+.workspace-trend-empty {
   display: grid;
   min-height: 170px;
   place-items: center;
@@ -752,11 +767,10 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   font-size: 12px;
 }
 
-.workspace-panel-bar,
 .workspace-device-toolbar {
   border-color: var(--cds-border-subtle-00, #e0e0e0);
   border-radius: 0;
-  background: var(--cds-layer-01, #f4f4f4);
+  background: var(--cds-layer-01, #ffffff);
   box-shadow: none;
 }
 
@@ -779,10 +793,10 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   display: inline-flex;
   min-height: 2rem;
   align-items: center;
-  padding: 0 var(--cds-spacing-04, 12px);
+  padding: 0 var(--workspace-space-04);
   border: 0;
   border-bottom: 2px solid transparent;
-  border-radius: 0 !important;
+  border-radius: 0;
   color: var(--cds-text-secondary, #525252);
   background: transparent;
   font-size: 0.875rem;
@@ -807,12 +821,12 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--cds-spacing-03, 8px);
+  gap: var(--workspace-space-03);
   min-width: 0;
   max-width: 100%;
   border-color: var(--cds-border-subtle-00, #e0e0e0);
   border-radius: 0;
-  background: var(--cds-layer-01, #f4f4f4);
+  background: var(--cds-layer-01, #ffffff);
   box-shadow: none;
 }
 
@@ -826,11 +840,11 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 /* Notices read as Carbon notes: a layer band with an accent edge, not a
    borderless grey paragraph block. */
 .workspace-inline-note {
-  padding: var(--cds-spacing-04, 12px) var(--cds-spacing-05, 16px);
+  padding: var(--workspace-space-04) var(--workspace-space-05);
   border: 0;
   border-left: 3px solid var(--cds-interactive, #0f62fe);
   color: var(--cds-text-secondary, #525252);
-  background: var(--cds-layer-01, #f4f4f4);
+  background: var(--cds-layer-01, #ffffff);
   font-size: 0.875rem;
   line-height: 1.25rem;
 }
@@ -841,13 +855,13 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 
 .workspace-settings-stack .workspace-surface {
   border: 1px solid var(--cds-border-subtle-00, #e0e0e0);
-  background: var(--cds-layer-01, #f4f4f4);
+  background: var(--cds-layer-01, #ffffff);
 }
 
 .workspace-bottom-nav {
   padding: 0;
   border-radius: 0;
-  background: var(--cds-layer-02, #ffffff);
+  background: var(--cds-layer-02, #e5e5e5);
   box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
@@ -855,12 +869,12 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 
 .workspace-bottom-nav__item,
 .workspace-settings-mobile-nav__list button {
-  border-radius: 0 !important;
+  border-radius: 0;
 }
 
 .workspace-settings-mobile-nav__list button {
   border-color: var(--cds-border-subtle-00, #e0e0e0);
-  background: var(--cds-layer-01, #f4f4f4);
+  background: var(--cds-layer-01, #ffffff);
 }
 
 .workspace-setting-row,
@@ -869,7 +883,7 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 }
 
 .workspace-toast {
-  border-radius: 0 !important;
+  border-radius: 0;
   box-shadow: 0 4px 12px rgb(0 0 0 / 16%);
 }
 
@@ -877,21 +891,35 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   width: min(680px, calc(100vw - 32px));
   max-width: 680px;
   border-radius: 0;
-  background: var(--cds-layer-02, #ffffff);
+  background: var(--cds-layer-02, #e5e5e5);
 }
 
 .guanlan-command-modal .cds--modal-header,
 .guanlan-command-modal .cds--modal-content {
-  background: var(--cds-layer-02, #ffffff);
+  background: var(--cds-layer-02, #e5e5e5);
 }
 
 .guanlan-command-modal .cds--modal-content {
   padding-top: 0;
 }
 
+/* The palette is a Carbon modal; the Material panel that used to sit inside it
+ * added a 28px corner, a second border, an acrylic fill and a 620px width
+ * against the modal's 680px, which left a dead band down the right edge. This
+ * is `(0,2,0)`, so it outranks the single-class rules in the first layer that
+ * used to paint those.
+ */
 .guanlan-command-modal .workspace-command {
   display: grid;
+  width: auto;
+  max-width: none;
   gap: 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .guanlan-command-modal .workspace-command__list {
@@ -959,7 +987,7 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   }
 
   .workspace-overview-summary__item:nth-child(n + 3) {
-    padding-top: var(--cds-spacing-05, 16px);
+    padding-top: var(--workspace-space-05);
     border-top: 1px solid var(--cds-border-subtle-00, #e0e0e0);
   }
 
@@ -1129,13 +1157,13 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
 /* Device context stays together while the telemetry surface scrolls. */
 .workspace-device-context {
   position: sticky;
-  z-index: 12;
+  z-index: var(--workspace-layer-sticky);
   top: 0;
   min-width: 0;
   margin-bottom: 18px;
   border: 1px solid var(--cds-border-subtle-00, #e0e0e0);
-  background: var(--cds-layer-01, #f4f4f4);
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--cds-layer-01, #f4f4f4) 78%, transparent);
+  background: var(--cds-layer-01, #ffffff);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--cds-layer-01, #ffffff) 78%, transparent);
 }
 
 .workspace-device-context__controls {
@@ -1189,28 +1217,47 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
     flex-direction: column;
   }
 
-  .workspace-device-context__controls .workspace-range-control,
-  .workspace-device-context__controls .workspace-layout-toolbar {
+  .workspace-device-context__controls .workspace-range-control {
     width: 100%;
   }
 
   }
 
-/* Touch targets last, so they out-rank every desktop control height above.
- * The header/segmented/chip/jump-bar normalisation all lowered minimum heights,
- * and on a coarse pointer 44px is the contract. */
+/* Touch targets. This is the only 44px contract in the bundle.
+ *
+ * The comment here used to claim these rules win because they come last. That
+ * was never true: `@media (pointer: coarse)` adds no specificity, so "last"
+ * only breaks ties against rules of equal weight. What actually kept phones at
+ * 30x30 and 40px were the `(0,2,0)` composite size declarations in
+ * `workspace.m3.css` (`.workspace-icon-button.m3-icon-button`,
+ * `.workspace-nav-item.m3-navigation-item`, `.workspace-window-control.m3-icon-button`),
+ * which those declarations no longer carry. The Carbon-native classes below are
+ * listed explicitly because those controls size themselves, not us.
+ *
+ * If you lower any minimum height in this file, re-check this block: a desktop
+ * height declared here at `(0,1,0)` will silently outrank the coarse rules.
+ */
 @media (pointer: coarse) {
   .m3-button,
   .workspace-button,
   .m3-chip,
   .m3-icon-button,
   .m3-navigation-item,
-  .m3-tab,
   .workspace-anchor-btn,
   .workspace-nav-item,
   .workspace-search-trigger,
   .workspace-window-control,
   .workspace-command__item,
+  .workspace-sidebar-edge-trigger,
+  .workspace-settings-mobile-nav__list button,
+  .guanlan-table-icon-action,
+  .guanlan-table-row-action,
+  .cds--btn,
+  .cds--content-switcher-btn,
+  .cds--text-input,
+  .cds--select-input,
+  .cds--checkbox-label,
+  .cds--toggle__switch,
   .m3-segmented-control .cds--content-switcher-btn {
     min-width: var(--workspace-min-touch-target);
     min-height: var(--workspace-min-touch-target);
@@ -1219,7 +1266,7 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   .m3-segmented-control {
     /* Wrapping keeps every 44px target reachable without the control ever
        needing an inner scrollbar. */
-    row-gap: var(--cds-spacing-02, 4px);
+    row-gap: var(--workspace-space-02);
   }
 }
 

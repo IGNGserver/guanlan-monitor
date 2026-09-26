@@ -109,12 +109,22 @@ export function listDevices() {
   );
 }
 
+/**
+ * Device ids are free text from the hub (host names, MAC-derived ids, ids an
+ * operator typed), so every one of them has to be escaped before it becomes a
+ * path segment. `deleteDevice` already did; the reads did not, which turned an
+ * id with a space or a slash into a 404 rather than a missing device.
+ */
+function devicePath(deviceId: string, suffix = "") {
+  return `/api/devices/${encodeURIComponent(deviceId)}${suffix}`;
+}
+
 export function getDevice(deviceId: string) {
-  return apiFetch<DeviceDetail>(`/api/devices/${deviceId}`);
+  return apiFetch<DeviceDetail>(devicePath(deviceId));
 }
 
 export function deleteDevice(deviceId: string) {
-  return apiFetch<{ ok: true }>(`/api/devices/${encodeURIComponent(deviceId)}`, {
+  return apiFetch<{ ok: true }>(devicePath(deviceId), {
     method: "DELETE"
   });
 }
@@ -127,7 +137,7 @@ export function reorderDevices(deviceIds: string[]) {
 }
 
 export function getMetrics(deviceId: string, window: MetricWindow) {
-  return apiFetch<MetricsResponse>(`/api/devices/${deviceId}/metrics?window=${window}`).then((payload) => ({
+  return apiFetch<MetricsResponse>(devicePath(deviceId, `/metrics?window=${encodeURIComponent(window)}`)).then((payload) => ({
     ...payload,
     latest: {
       ...payload.latest,
@@ -151,7 +161,7 @@ export function getMetrics(deviceId: string, window: MetricWindow) {
 
 export function saveFanNote(deviceId: string, fanId: string, payload: FanNotePayload) {
   return apiFetch<{ ok: true; deviceId: string; fanId: string; note: string }>(
-    `/api/devices/${deviceId}/fans/${encodeURIComponent(fanId)}/note`,
+    devicePath(deviceId, `/fans/${encodeURIComponent(fanId)}/note`),
     {
       method: "PUT",
       body: JSON.stringify(payload)
@@ -164,11 +174,11 @@ export function getOverviewMetrics(window: MetricWindow) {
 }
 
 export function getDeviceMetricConfig(deviceId: string) {
-  return apiFetch<DeviceMetricConfigResponse>(`/api/devices/${deviceId}/metric-config`);
+  return apiFetch<DeviceMetricConfigResponse>(devicePath(deviceId, "/metric-config"));
 }
 
 export function saveDeviceMetricConfig(deviceId: string, payload: DeviceMetricConfigPayload) {
-  return apiFetch<DeviceMetricConfigResponse>(`/api/devices/${deviceId}/metric-config`, {
+  return apiFetch<DeviceMetricConfigResponse>(devicePath(deviceId, "/metric-config"), {
     method: "PUT",
     body: JSON.stringify(payload)
   });
@@ -185,7 +195,7 @@ export function getTrafficCalendar(
     anchor
   });
   if (selectedStart) params.set("selectedStart", selectedStart);
-  return apiFetch<TrafficCalendarResponse>(`/api/devices/${deviceId}/traffic-calendar?${params.toString()}`);
+  return apiFetch<TrafficCalendarResponse>(devicePath(deviceId, `/traffic-calendar?${params.toString()}`));
 }
 
 export { getServerUrl };

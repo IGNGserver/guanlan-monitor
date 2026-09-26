@@ -8,7 +8,7 @@
 
 .workspace-telemetry-models__label {
   color: var(--workspace-text-muted);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.04em;
 }
@@ -27,7 +27,7 @@
   gap: 2px;
   padding: 6px 8px;
   border: 1px solid var(--workspace-border);
-  border-radius: 7px;
+  border-radius: 0;
   background: var(--workspace-surface-subtle);
 }
 
@@ -38,20 +38,24 @@
   white-space: nowrap;
 }
 
+/* These read 10px/9px/10px. Carbon's smallest UI step is `helper-text-01` at
+   12px, and a hardware model string like `NVIDIA GeForce RTX 4070 SUPER` at 9px
+   is unreadable on the 4K panel this page is usually opened on. The two lines
+   are told apart by colour and weight, not by shrinking one below the scale. */
 .workspace-telemetry-model-chip strong {
   color: var(--workspace-text-secondary);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
 }
 
 .workspace-telemetry-model-chip small {
   color: var(--workspace-text-muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .workspace-telemetry-models__empty {
   color: var(--workspace-text-muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 /* Hardware Module Anchor Navigation Bar */
@@ -63,7 +67,7 @@
   padding: 8px 12px;
   margin-bottom: 14px;
   border: 1px solid var(--workspace-border);
-  border-radius: var(--workspace-radius-md);
+  border-radius: 0;
   background: var(--workspace-surface-subtle);
   scrollbar-width: none;
 }
@@ -72,20 +76,22 @@
   display: none;
 }
 
+/* `transition: all` animated layout properties (padding, border-width) alongside
+   colour, which is what made the jump bar jitter while it scrolled into view. */
 .workspace-anchor-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 6px 14px;
   border: 1px solid var(--workspace-border);
-  border-radius: 9999px;
+  border-radius: 0;
   background: var(--workspace-surface);
   color: var(--workspace-text-secondary);
   cursor: pointer;
   font-size: 12px;
   font-weight: 550;
   white-space: nowrap;
-  transition: all var(--workspace-transition);
+  transition: color var(--workspace-transition), background var(--workspace-transition), border-color var(--workspace-transition);
 }
 
 .workspace-anchor-btn:hover {

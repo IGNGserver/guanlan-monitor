@@ -51,6 +51,13 @@ export interface WorkspaceContextValue {
   setCommandOpen: (open: boolean) => void;
   theme: "system" | "light" | "dark";
   setTheme: (theme: "system" | "light" | "dark") => void;
+  /**
+   * `theme` resolved against the operating system, in exactly one place.
+   * Consumers that need a concrete light/dark choice — the Carbon `<Theme>`
+   * wrapper and the chart theme — read this instead of running their own
+   * `prefers-color-scheme` listener.
+   */
+  resolvedTheme: "light" | "dark";
   density: InteractionScaleSetting;
   setDensity: (density: InteractionScaleSetting) => void;
   refreshInterval: 5 | 10 | 30;
