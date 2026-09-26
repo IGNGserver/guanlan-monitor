@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -121,7 +122,7 @@ fun Modifier.oneUiPressable(
   stateLabel: String? = null
 ): Modifier {
   val interaction = oneUiInteraction(interactionSource, enabled = enabled)
-  val haptic = LocalHapticFeedback.current
+  val performHaptic = rememberOneUiHaptic()
 
   val inkAlpha = animateFloatAsState(
     targetValue = interaction.overlayAlpha(selected = selected, metrics = metrics),
@@ -156,16 +157,12 @@ fun Modifier.oneUiPressable(
       } else {
         Modifier.combinedClickable(
           onClick = {
-            when (haptics) {
-              OneUiHaptics.Tap -> haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
-              OneUiHaptics.Toggle -> haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
-              else -> Unit
-            }
+            performHaptic(haptics)
             onClick?.invoke()
           },
           onLongClick = onLongClick?.let { callback ->
             {
-              haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+              performHaptic(OneUiHaptics.LongPress)
               callback()
             }
           },
@@ -183,4 +180,32 @@ fun oneUiToggleDescription(state: ToggleableState): String = when (state) {
   ToggleableState.On -> "已开启"
   ToggleableState.Off -> "已关闭"
   ToggleableState.Indeterminate -> "部分开启"
+}
+
+/**
+ * 触觉反馈（交）。
+ *
+ * One UI 的反馈是分档的：点按是一下轻击，开关/勾选是更脆的一下，长按是确认。
+ * 这一档 Compose 的 HapticFeedbackType 只暴露了 LongPress 与 TextHandleMove，
+ * 所以直接走平台的 HapticFeedbackConstants（VIRTUAL_KEY / CLOCK_TICK / LONG_PRESS），
+ * 拿不到 View 或系统拒绝时回落 Compose 的 LongPress，绝不静默丢掉反馈。
+ */
+@Composable
+fun rememberOneUiHaptic(): (OneUiHaptics) -> Unit {
+  val view = LocalView.current
+  val fallback = LocalHapticFeedback.current
+  val action: (OneUiHaptics) -> Unit = haptic@{ type ->
+    val constant = when (type) {
+      OneUiHaptics.Tap -> android.view.HapticFeedbackConstants.VIRTUAL_KEY
+      OneUiHaptics.Toggle -> android.view.HapticFeedbackConstants.CLOCK_TICK
+      OneUiHaptics.LongPress -> android.view.HapticFeedbackConstants.LONG_PRESS
+      OneUiHaptics.None -> null
+    }
+    if (constant == null) return@haptic
+    val performed = runCatching { view.performHapticFeedback(constant) }.getOrDefault(false)
+    if (!performed) {
+      fallback.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+  }
+  return remember(view, fallback) { action }
 }
