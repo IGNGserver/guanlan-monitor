@@ -22,7 +22,6 @@ data class GuanlanActions(
   val onReorderDevices: (List<String>) -> Unit,
   val onClearFocusedBlock: () -> Unit,
   val onOpenTraffic: (String) -> Unit,
-  val onCloseTrafficSheet: () -> Unit,
   val onOpenDeviceEditor: (String) -> Unit,
   val onShowDeviceList: () -> Unit,
   val onShowSettings: () -> Unit,

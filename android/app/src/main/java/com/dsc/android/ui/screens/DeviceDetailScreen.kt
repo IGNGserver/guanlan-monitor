@@ -1,5 +1,6 @@
 package com.dsc.android.ui.screens
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -112,7 +113,7 @@ fun DeviceDetailScreen(
     if (data != null && focusedBlockKey != null) buildBlockSheetTabs(data, focusedBlockKey) else emptyList()
   }
   val tabIds = tabs.map { it.id }
-  val effectiveTab = if (openTabId in tabIds) openTabId else (tabIds.firstOrNull()?.id ?: "total")
+  val effectiveTab = if (openTabId in tabIds) openTabId else (tabIds.firstOrNull() ?: "total")
   // 双栏（平板 / DeX / 折叠屏外屏）：类别明细直接铺在右栏正文里。
   // 全屏底部面板会横向盖住左栏、用 scrim 挡住列表，还把粒度坞压在下面切不动（构 + 适）
   val inlineBlock: DeviceBlockKey? = if (embedded) openBlock else null
@@ -537,13 +538,6 @@ private fun BlockDetail(
           .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
       ) {
-    if (tabs.size > 1) {
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
-      ) {
         tabs.forEach { tab ->
           OneUiFilterChip(
             label = tab.label,
@@ -553,11 +547,21 @@ private fun BlockDetail(
         }
       }
     }
-    AnimatedVisibility(visible = true, enter = oneUiSheetContentEnter(motion)) {
+    // 同页切换（总和/实例）=横向轻推 + 淡入淡出，而不是整块闪现（动）
+    AnimatedContent(
+      targetState = tabId,
+      transitionSpec = {
+        oneUiSlideSwitch(
+          forwardToRight = tabs.indexOf(targetState) >= tabs.indexOf(initialState),
+          motion = motion
+        )
+      },
+      label = "oneui_block_tab"
+    ) { currentTab ->
       BlockTabContent(
         data = data,
         blockKey = blockKey,
-        tabId = tabId,
+        tabId = currentTab,
         selectedWindow = selectedWindow,
         chartWindow = chartWindow,
         onEditInstance = onEditInstance

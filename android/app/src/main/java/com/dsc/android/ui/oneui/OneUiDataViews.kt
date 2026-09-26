@@ -81,10 +81,13 @@ internal fun OneUiLineChart(
   val chartPoints = remember(points) {
     points.sortedBy { parseTimestampMillis(it.timestamp) ?: Long.MIN_VALUE }
   }
-  var selectedIndex by remember(chartPoints, chartWindow) {
-    mutableIntStateOf(chartPoints.lastIndex.coerceAtLeast(0))
+  var selectedIndex by remember(chartWindow) { mutableIntStateOf(-1) }
+  val effectiveIndex = when {
+    chartPoints.isEmpty() -> -1
+    selectedIndex < 0 -> chartPoints.lastIndex
+    else -> selectedIndex.coerceIn(0, chartPoints.lastIndex)
   }
-  val selectedPoint = chartPoints.getOrNull(selectedIndex.coerceIn(0, (chartPoints.size - 1).coerceAtLeast(0)))
+  val selectedPoint = chartPoints.getOrNull(effectiveIndex)
 
   // 动：序列首次出现或切换粒度时描线一次；15 秒自动刷新不重播。
   val reveal = remember(animationKey, motion.isReduced) {
@@ -106,7 +109,7 @@ internal fun OneUiLineChart(
 
   Column(
     modifier = modifier
-      .semantics {
+      .semantics(mergeDescendants = true) {
         contentDescription = buildString {
           append(title)
           append("，")
@@ -230,7 +233,7 @@ internal fun OneUiLineChart(
         }
 
         // 准线与游标：十字线 + 空心点，One UI 在读数时把上下文留住（交）
-        val point = chartPoints[selectedIndex.coerceIn(0, chartPoints.lastIndex)]
+        val point = chartPoints[effectiveIndex.coerceAtLeast(0)]
         val x = chartWindow.xFor(point.timestamp, size.width)
         val y = yFor(point.value)
         drawLine(

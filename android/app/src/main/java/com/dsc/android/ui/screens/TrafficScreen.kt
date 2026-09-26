@@ -21,6 +21,11 @@ import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +40,8 @@ import com.dsc.android.RemoteDataSource
 import com.dsc.android.TrafficCalendarCellDto
 import com.dsc.android.TrafficCalendarMode
 import com.dsc.android.TrafficRangeRecordDto
+import com.dsc.android.ui.oneui.OneUiExpandable
+import com.dsc.android.ui.oneui.oneUiSlideSwitch
 import com.dsc.android.ui.oneui.OneUiErrorState
 import com.dsc.android.ui.oneui.OneUiGroup
 import com.dsc.android.ui.oneui.OneUiSurfaceLevel
@@ -174,7 +181,20 @@ fun TrafficScreen(
             TrafficHeader(traffic.title, traffic.rangeStart, traffic.rangeEnd, traffic, actions.onShiftTrafficAnchor)
           }
           item(key = "traffic-calendar") {
-            TrafficCalendar(traffic.cells, state.trafficMode, actions.onSelectTrafficCell)
+            // 日/周/月是同一页的内容切换：横向轻推 + 淡入淡出（动）
+            AnimatedContent(
+              targetState = state.trafficMode,
+              transitionSpec = {
+                oneUiSlideSwitch(
+                  forwardToRight = TrafficCalendarMode.entries.indexOf(targetState) >=
+                    TrafficCalendarMode.entries.indexOf(initialState),
+                  motion = OneUiTheme.motion
+                )
+              },
+              label = "oneui_traffic_mode"
+            ) { mode ->
+              TrafficCalendar(traffic.cells, mode, actions.onSelectTrafficCell)
+            }
           }
           item(key = "traffic-records-header") {
             OneUiGroupHeader(label = "范围记录", description = "最多展示最近 36 条上报记录")
@@ -300,7 +320,7 @@ private fun TrafficCalendar(
             // 客户端不再改写它：按区间起点取 dayOfMonth 会让 12 个月格全部显示「1」
             val label = cell.label
             val total = formatBytes(cell.totalRxBytes + cell.totalTxBytes)
-            val cellHeight = if (mode == TrafficCalendarMode.Month) metrics.touchTarget else 56.dp
+            val cellHeight = if (mode == TrafficCalendarMode.Month) metrics.touchTarget else metrics.calendarCellHeight
             Box(
               modifier = Modifier
                 .weight(1f)
@@ -387,6 +407,8 @@ private fun TrafficCalendar(
 
 @Composable
 private fun TrafficRecords(records: List<TrafficRangeRecordDto>) {
+  val colors = OneUiTheme.colors
+  val metrics = OneUiTheme.metrics
   if (records.isEmpty()) {
     OneUiGroup {
       OneUiListItem(
@@ -396,13 +418,43 @@ private fun TrafficRecords(records: List<TrafficRangeRecordDto>) {
     }
     return
   }
+  // 记录最多 36 条：先给最近 6 条，其余用“更多信息”纵向展开，而不是把面板拉成一列长跑（构 + 动）
+  var expanded by remember(records) { mutableStateOf(false) }
+  val row: @Composable (TrafficRangeRecordDto) -> Unit = { record ->
+    OneUiListItem(
+      title = formatTime(record.timestamp),
+      subtitle = "接收 ${formatBytes(record.rxBytes)} · 发送 ${formatBytes(record.txBytes)}",
+      trailing = { OneUiPill(label = "合计", value = formatBytes(record.totalBytes)) }
+    )
+  }
+  val hiddenCount = (records.size - 6).coerceAtLeast(0)
   OneUiGroup {
-    records.forEachIndexed { index, record ->
+    records.take(6).forEachIndexed { index, record ->
       if (index > 0) OneUiListDivider()
+      row(record)
+    }
+    OneUiExpandable(expanded = expanded) {
+      records.drop(6).forEach { record ->
+        OneUiListDivider()
+        row(record)
+      }
+    }
+    if (hiddenCount > 0) {
+      OneUiListDivider()
       OneUiListItem(
-        title = formatTime(record.timestamp),
-        subtitle = "接收 ${formatBytes(record.rxBytes)} · 发送 ${formatBytes(record.txBytes)}",
-        trailing = { OneUiPill(label = "合计", value = formatBytes(record.totalBytes)) }
+        title = if (expanded) "收起记录" : "展开其余 $hiddenCount 条记录",
+        subtitle = if (expanded) null else "该区间最多保留最近 36 条上报",
+        onClick = { expanded = !expanded },
+        trailing = {
+          OneUiText(
+            text = if (expanded) "收起" : "展开",
+            role = OneUiTextRole.ChartLabel,
+            color = colors.accent,
+            weight = FontWeight.SemiBold
+          )
+        },
+        colors = colors,
+        metrics = metrics
       )
     }
   }

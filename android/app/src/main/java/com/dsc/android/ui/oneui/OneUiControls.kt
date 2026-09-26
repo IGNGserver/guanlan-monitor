@@ -493,11 +493,8 @@ fun OneUiSegmentedRow(
   val metrics = OneUiTheme.metrics
   val motion = OneUiTheme.motion
   val safeIndex = selectedIndex.coerceIn(0, options.lastIndex)
-  val indicatorIndex by animateFloatAsState(
-    targetValue = safeIndex.toFloat(),
-    animationSpec = motion.spring(dampingRatio = 0.82f, stiffness = 360f),
-    label = "oneui_segment_indicator"
-  )
+  // 指示器连续位移：走同一个数值补间（动）
+  val indicatorIndex = oneUiAnimatedValue(safeIndex.toFloat(), motion, OneUiDuration.Toggle)
   val inset = 3.dp
 
   BoxWithConstraints(
@@ -658,7 +655,7 @@ private fun oneUiSpinDegrees(active: Boolean, motion: OneUiMotion): Float {
       return@LaunchedEffect
     }
     while (true) {
-      animatable.animateTo(animatable.value + 360f, tween(900, easing = LinearEasing))
+      animatable.animateTo(animatable.value + 360f, tween(OneUiDuration.SpinFrame, easing = LinearEasing))
       delay(16)
     }
   }

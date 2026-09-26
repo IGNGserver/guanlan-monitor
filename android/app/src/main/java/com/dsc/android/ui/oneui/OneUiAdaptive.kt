@@ -2,11 +2,14 @@ package com.dsc.android.ui.oneui
 
 import android.app.UiModeManager
 import android.content.Context
-import android.provider.Settings
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
@@ -82,15 +85,29 @@ fun rememberOneUiWindowLayout(): OneUiWindowLayout {
 @Composable
 fun rememberOneUiFontScale(): Float = LocalDensity.current.fontScale
 
-/** 无障碍“高对比文本”开关（Android 系统设置），命中时去掉所有半透明文字层级。 */
+/**
+ * 无障碍「高对比文本」开关（适）。
+ *
+ * 走 AccessibilityManager 的公开状态并注册变化监听：Setting.Secure 上那个键是私有的，
+ * 而且 remember(context) 不会在用户拨动开关后重组，界面会一直停在旧配色上。
+ */
 @Composable
 fun rememberOneUiHighTextContrast(): Boolean {
   val context = LocalContext.current
-  return remember(context) {
-    runCatching {
-      Settings.Secure.getInt(context.contentResolver, "accessibility_high_text_contrast_enabled", 0) == 1
-    }.getOrDefault(false)
+  val manager = remember(context) {
+    context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? android.view.accessibility.AccessibilityManager
   }
+  var enabled by remember(manager) {
+    mutableStateOf(manager?.isHighTextContrastEnabled == true)
+  }
+  DisposableEffect(manager) {
+    val listener = android.view.accessibility.AccessibilityManager.AccessibilityStateChangeListener {
+      enabled = manager?.isHighTextContrastEnabled == true
+    }
+    manager?.addAccessibilityStateChangeListener(listener)
+    onDispose { manager?.removeAccessibilityStateChangeListener(listener) }
+  }
+  return enabled
 }
 
 @Composable

@@ -40,7 +40,6 @@ class MainActivity : ComponentActivity() {
           onReorderDevices = appViewModel::reorderDevices,
           onClearFocusedBlock = appViewModel::clearFocusedBlock,
           onOpenTraffic = appViewModel::openTraffic,
-          onCloseTrafficSheet = appViewModel::closeTrafficSheet,
           onOpenDeviceEditor = appViewModel::openDeviceEditor,
           onShowDeviceList = appViewModel::showDeviceList,
           onShowSettings = appViewModel::showSettings,
