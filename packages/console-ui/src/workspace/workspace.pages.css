@@ -108,7 +108,12 @@
   .workspace-topbar__leading { flex: 1; }
   .workspace-topbar__brand { font-size: 16px; }
   .workspace-topbar__actions { gap: 2px; }
-  .workspace-topbar__actions > .workspace-button { min-width: 40px; padding-inline: 8px; }
+  /* 44px, not 40px. This `(0,2,1)` rule outranks the `(0,1,0)` coarse contract
+     in `workspace-carbon.scss` on specificity alone, so layer order does not
+     save it: the header's icon-only actions measured 40x44 on a phone, which is
+     exactly the silent-under-rank failure the coarse pass now catches. Using the
+     touch token also removes one more bare pixel from the shell. */
+  .workspace-topbar__actions > .workspace-button { min-width: var(--workspace-min-touch-target); padding-inline: 8px; }
   .workspace-topbar__actions > .workspace-button .m3-button__label { display: none; }
   .workspace-page { padding-inline: 16px; }
   .workspace-page-intro h2 { font-size: 28px; }

@@ -1263,10 +1263,19 @@
   .cds--toggle__wrapper,
   .m3-switch-row,
   .workspace-brand,
+  .workspace-breadcrumb button,
   .m3-segmented-control .cds--content-switcher-btn {
     min-width: var(--workspace-min-touch-target);
     min-height: var(--workspace-min-touch-target);
   }
+
+  /* The breadcrumb's 总览/设备 links are unstyled text buttons (24x17 measured on
+     a phone). They are the one place where WCAG's inline exception would have
+     covered us, and the same destinations are reachable from the bottom
+     navigation — but a 17px-tall target in a row that is otherwise thumb-sized
+     is a defect wearing an exemption, so the row simply becomes a thumb row.
+     No margin compensation is attempted here: the breadcrumb already has its
+     own negative top margin, and the taller row is the correct result. */
 
   /* The switch graphic and the checkbox box are deliberately NOT sized here.
      Carbon draws them at their own dimensions inside a label row, and the row
