@@ -39,6 +39,7 @@ data class GuanlanActions(
   val onToggleInstanceMetric: (String, String) -> Unit,
   val onSaveMetricConfig: () -> Unit,
   val onRefresh: () -> Unit,
+  val onCheckUpdate: () -> Unit,
   val onDownloadUpdate: () -> Unit,
   val onLaunchUpdateInstaller: (String) -> Unit,
   val onUpdateInstallerLaunched: () -> Unit,

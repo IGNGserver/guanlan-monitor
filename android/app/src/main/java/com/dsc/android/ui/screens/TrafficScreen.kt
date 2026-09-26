@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -36,6 +37,7 @@ import com.dsc.android.RemoteDataSource
 import com.dsc.android.TrafficCalendarCellDto
 import com.dsc.android.TrafficCalendarMode
 import com.dsc.android.TrafficRangeRecordDto
+import com.dsc.android.ui.oneui.OneUiErrorState
 import com.dsc.android.ui.oneui.OneUiGroup
 import com.dsc.android.ui.oneui.OneUiGroupHeader
 import com.dsc.android.ui.oneui.OneUiIconButton
@@ -59,6 +61,8 @@ import com.dsc.android.ui.oneui.formatTime
 import com.dsc.android.ui.oneui.oneUiListContentPadding
 import com.dsc.android.ui.oneui.oneUiPressable
 import com.dsc.android.ui.oneui.rememberOneUiCollapse
+import com.dsc.android.ui.oneui.trafficCalendarColumns
+import com.dsc.android.ui.oneui.trafficCellAnnouncement
 import com.dsc.android.ui.shell.GuanlanActions
 import kotlin.math.max
 
@@ -83,6 +87,12 @@ fun TrafficScreen(
   val traffic = state.trafficCalendar
   val modes = TrafficCalendarMode.entries.map { it.label }
   val modeIndex = TrafficCalendarMode.entries.indexOf(state.trafficMode).coerceAtLeast(0)
+  // 双栏的右栏没有「返回」这一说：换设备永远回到左栏点选（构）
+  val backIcon: @Composable () -> Unit = {
+    OneUiIconButton(contentDescription = "返回上一页", onClick = actions.onSystemBack) {
+      Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
+    }
+  }
 
   Box(
     modifier = Modifier
@@ -95,11 +105,7 @@ fun TrafficScreen(
         subtitle = "流量日历",
         collapse = collapse,
         large = !embedded,
-        navigationIcon = {
-          OneUiIconButton(contentDescription = "返回上一页", onClick = actions.onSystemBack) {
-            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
-          }
-        },
+        navigationIcon = if (embedded) null else backIcon,
         actions = {
           OneUiIconButton(
             contentDescription = "刷新",
@@ -134,10 +140,22 @@ fun TrafficScreen(
           if (state.loadingTraffic) {
             item(key = "traffic-loading") { OneUiLoadingRow("正在读取流量数据") }
           }
-          item(key = "traffic-skeleton") {
-            Column(verticalArrangement = Arrangement.spacedBy(metrics.cardGap)) {
-              OneUiSkeleton(height = 108.dp)
-              OneUiSkeleton(height = 188.dp)
+          val error = state.trafficError
+          if (error == null || state.loadingTraffic) {
+            item(key = "traffic-skeleton") {
+              Column(verticalArrangement = Arrangement.spacedBy(metrics.cardGap)) {
+                OneUiSkeleton(height = 108.dp)
+                OneUiSkeleton(height = 188.dp)
+              }
+            }
+          } else {
+            // 失败不能停在骨架屏上假装还在加载：错误要留在页面上并给出重试（交）
+            item(key = "traffic-error") {
+              OneUiErrorState(
+                title = "没能读取流量数据",
+                description = error,
+                onRetry = actions.onRefresh
+              )
             }
           }
         } else {
@@ -156,11 +174,12 @@ fun TrafficScreen(
         }
       }
 
-      // 统计周期切换属于高频操作，放在底部（构 + 交）
+      // 统计周期切换属于高频操作，放在底部（构 + 交），并且不吃在手势条下面
       Column(
         modifier = Modifier
           .fillMaxWidth()
           .background(colors.group)
+          .navigationBarsPadding()
           .padding(horizontal = metrics.screenMargin, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
       ) {
@@ -238,9 +257,12 @@ private fun TrafficCalendar(
 ) {
   val colors = OneUiTheme.colors
   val shapes = OneUiTheme.shapes
+  val metrics = OneUiTheme.metrics
   if (cells.isEmpty()) return
   val maxValue = max(cells.maxOf { it.totalRxBytes + it.totalTxBytes }, 1.0)
-  val columns = 7
+  // 日=日历格（7 列）、周=本月覆盖的周（3 列）、月=12 个月（4 列），
+  // 三种格子的数量与含义不同，用同一个列数会把月视图排成 7+5 的残局（构）
+  val columns = trafficCalendarColumns(mode)
 
   OneUiGroup {
     Column(
@@ -257,12 +279,15 @@ private fun TrafficCalendar(
           rowCells.forEach { cell ->
             val ratio = ((cell.totalRxBytes + cell.totalTxBytes) / maxValue).toFloat()
             val selected = cell.isSelected
-            val label = dayLabel(cell, mode)
+            // label 由中枢按模式给出（日=「05」、周=「09/01」、月=「9月」），
+            // 客户端不再改写它：按区间起点取 dayOfMonth 会让 12 个月格全部显示「1」
+            val label = cell.label
             val total = formatBytes(cell.totalRxBytes + cell.totalTxBytes)
+            val cellHeight = if (mode == TrafficCalendarMode.Month) metrics.touchTarget else 56.dp
             Box(
               modifier = Modifier
                 .weight(1f)
-                .height(if (mode == TrafficCalendarMode.Month) 46.dp else 56.dp)
+                .height(cellHeight)
                 .background(
                   color = if (selected) colors.accent else colors.sunken,
                   shape = shapes.tile
@@ -275,9 +300,13 @@ private fun TrafficCalendar(
                   }
                 )
                 .semantics {
-                  contentDescription = "$label $total" +
-                    if (cell.isCurrentPeriod) "，当前周期" else "" +
-                    if (selected) "，已选中" else ""
+                  contentDescription = trafficCellAnnouncement(
+                    label = label,
+                    rangeStart = cell.rangeStart,
+                    total = total,
+                    isCurrentPeriod = cell.isCurrentPeriod,
+                    isSelected = selected
+                  )
                 }
                 .oneUiPressable(
                   onClick = { onSelectCell(cell.rangeStart) },
@@ -337,16 +366,6 @@ private fun TrafficCalendar(
       }
     }
   }
-}
-
-private fun dayLabel(cell: TrafficCalendarCellDto, mode: TrafficCalendarMode): String {
-  if (mode != TrafficCalendarMode.Month) return cell.label
-  return runCatching {
-    java.time.OffsetDateTime.parse(cell.rangeStart)
-      .atZoneSameInstant(java.time.ZoneId.systemDefault())
-      .dayOfMonth
-      .toString()
-  }.getOrDefault(cell.label)
 }
 
 @Composable

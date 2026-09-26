@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -94,6 +95,16 @@ fun DeviceDetailScreen(
     actions.onClearFocusedBlock()
   }
 
+  // 双栏的右栏不提供「返回设备列表」：换设备回到左栏点选（构）
+  val backIcon: @Composable () -> Unit = {
+    OneUiIconButton(
+      contentDescription = "返回设备列表",
+      onClick = actions.onShowDeviceList
+    ) {
+      Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
+    }
+  }
+
   Box(
     modifier = Modifier
       .fillMaxSize()
@@ -109,14 +120,7 @@ fun DeviceDetailScreen(
         },
         collapse = collapse,
         large = !embedded,
-        navigationIcon = {
-          OneUiIconButton(
-            contentDescription = "返回设备列表",
-            onClick = actions.onShowDeviceList
-          ) {
-            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
-          }
-        },
+        navigationIcon = if (embedded) null else backIcon,
         actions = {
           OneUiIconButton(
             contentDescription = "刷新",
@@ -165,11 +169,23 @@ fun DeviceDetailScreen(
         }
 
         if (data == null) {
-          item(key = "detail-skeleton") {
-            Column(verticalArrangement = Arrangement.spacedBy(metrics.cardGap)) {
-              OneUiSkeleton(height = 132.dp)
-              OneUiSkeleton(height = 96.dp)
-              OneUiSkeleton(height = 96.dp)
+          val error = state.metricsError
+          if (error == null || state.loadingMetrics) {
+            item(key = "detail-skeleton") {
+              Column(verticalArrangement = Arrangement.spacedBy(metrics.cardGap)) {
+                OneUiSkeleton(height = 132.dp)
+                OneUiSkeleton(height = 96.dp)
+                OneUiSkeleton(height = 96.dp)
+              }
+            }
+          } else {
+            // 读不到指标时不能永远停在骨架屏上（交：错误态必须带重试出口）
+            item(key = "detail-error") {
+              OneUiErrorState(
+                title = "没能读取这台设备的指标",
+                description = error,
+                onRetry = actions.onRefresh
+              )
             }
           }
         }
@@ -378,6 +394,8 @@ private fun WindowDock(selected: MetricWindow, enabled: Boolean, onSelect: (Metr
     modifier = Modifier
       .fillMaxWidth()
       .background(colors.group)
+      // 工具坞贴在屏幕下沿，必须自己让开手势条/三键栏（适）
+      .navigationBarsPadding()
       .padding(horizontal = metrics.screenMargin, vertical = 10.dp),
     verticalArrangement = Arrangement.spacedBy(6.dp)
   ) {

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -25,6 +26,7 @@ import androidx.compose.material3.SnackbarData
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -99,6 +102,20 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
   val snackbarHostState = remember { SnackbarHostState() }
   var pendingLogout by remember { mutableStateOf(false) }
 
+  // 边到边下状态栏图标必须由应用决定明暗：用户在应用内选了深色而系统仍是浅色时，
+  // enableEdgeToEdge 会把图标留在深色，全黑顶栏上就什么都看不见了（适）
+  val decorView = LocalView.current
+  val androidWindow = (decorView.context as? android.app.Activity)?.window
+  SideEffect {
+    androidWindow?.let { target ->
+      val lightBars = !colors.isDark && !colors.isExtraDark
+      androidx.core.view.WindowCompat.getInsetsController(target, target.decorView).apply {
+        isAppearanceLightStatusBars = lightBars
+        isAppearanceLightNavigationBars = lightBars
+      }
+    }
+  }
+
   val screen = state.resolvedScreen()
   val canHandleBack = pendingLogout ||
     state.editingDeviceId != null ||
@@ -108,7 +125,15 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
 
   LaunchedEffect(state.message) {
     val message = state.message ?: return@LaunchedEffect
-    runCatching { snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short) }
+    // 只有真正被吞掉的消息才回收：取消（新消息插进来）必须把上一条留给下一次循环，
+    // 否则会连着丢掉提示（交）。
+    try {
+      snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+      throw cancelled
+    } catch (_: Exception) {
+      // SnackbarHost 尚未组合时（例如后台刷新）不阻塞消息回收
+    }
     actions.onConsumeMessage()
   }
 
@@ -179,10 +204,19 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
       }
     }
 
+    // 消息条落在拇指区、贴着底部导航上方，并且不吃掉系统手势条（构 + 适）
     Box(
       modifier = Modifier
         .align(Alignment.BottomCenter)
-        .padding(bottom = metrics.spaceXl)
+        .navigationBarsPadding()
+        .padding(
+          horizontal = metrics.screenMargin,
+          bottom = if (screen.showsTopLevelNavigation) {
+            metrics.bottomBarHeight + metrics.spaceM
+          } else {
+            metrics.spaceXl
+          }
+        )
     ) {
       SnackbarHost(hostState = snackbarHostState) { data -> OneUiSnackbar(data) }
     }
@@ -230,7 +264,7 @@ private fun ScreenStack(
   val colors = OneUiTheme.colors
   val motion = OneUiTheme.motion
 
-  if (twoPane) {
+  if (twoPane && screen != AppScreen.Login) {
     Row(modifier = Modifier.fillMaxSize()) {
       Box(
         modifier = Modifier
@@ -244,14 +278,14 @@ private fun ScreenStack(
         modifier = Modifier
           .weight(1f)
           .fillMaxHeight()
-          .background(colors.group)
+          .background(colors.canvas)
       ) {
         when {
           screen.showsDetail -> ScreenContent(
             state = state,
             actions = actions,
             screen = screen,
-            embedded = false,
+            embedded = true,
             appearance = appearance
           )
 
@@ -340,7 +374,6 @@ private fun OneUiSnackbar(data: SnackbarData) {
   val metrics = OneUiTheme.metrics
   Box(
     modifier = Modifier
-      .padding(horizontal = metrics.screenMargin)
       .background(colors.raised, OneUiTheme.shapes.pill)
       .padding(horizontal = metrics.spaceM, vertical = 13.dp)
       .semantics { contentDescription = data.visuals.message }
@@ -349,7 +382,7 @@ private fun OneUiSnackbar(data: SnackbarData) {
       text = data.visuals.message,
       role = OneUiTextRole.RowSubtitle,
       color = colors.textPrimary,
-      modifier = Modifier.fillMaxWidth()
+      maxLines = 2
     )
   }
 }
