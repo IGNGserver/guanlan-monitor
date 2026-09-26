@@ -399,7 +399,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         selectedDeviceId = deviceId,
         currentScreen = AppScreen.Traffic,
         transitionDirection = ScreenTransitionDirection.Forward,
-        trafficSheetRequested = false,
         // 换设备时不能把上一台的日历留在屏幕上，否则标题与数字对不上（交）
         trafficCalendar = if (switchingDevice) null else it.trafficCalendar,
         metrics = if (switchingDevice) null else it.metrics,
@@ -440,7 +439,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   fun handleBack() {
     val current = _state.value
     when {
-      current.trafficSheetRequested -> _state.update { it.copy(trafficSheetRequested = false) }
       current.editingDeviceId != null -> closeMetricConfigEditor()
       screenBackStack.isNotEmpty() -> {
         val previous = screenBackStack.removeAt(screenBackStack.lastIndex)
@@ -453,10 +451,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
       }
     }
-  }
-
-  fun closeTrafficSheet() {
-    _state.update { it.copy(trafficSheetRequested = false) }
   }
 
   fun openDeviceEditor(deviceId: String) {

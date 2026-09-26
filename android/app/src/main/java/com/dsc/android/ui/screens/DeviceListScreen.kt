@@ -73,6 +73,7 @@ import com.dsc.android.ui.oneui.OneUiSurfaceLevel
 import com.dsc.android.ui.oneui.formatPercent
 import com.dsc.android.ui.oneui.oneUiContentWidth
 import com.dsc.android.ui.oneui.oneUiListContentPadding
+import com.dsc.android.ui.oneui.oneUiListExit
 import com.dsc.android.ui.oneui.oneUiSurface
 import com.dsc.android.ui.oneui.oneUiListEnter
 import com.dsc.android.ui.oneui.rememberOneUiCollapse
@@ -262,7 +263,11 @@ fun DeviceListScreen(
 
         visible.forEachIndexed { index, device ->
           item(key = device.deviceId) {
-            AnimatedVisibility(visible = true, enter = oneUiListEnter(motion, index)) {
+            AnimatedVisibility(
+                visible = true,
+                enter = oneUiListEnter(motion, index),
+                exit = oneUiListExit(motion)
+              ) {
               DeviceRow(
                 device = device,
                 editMode = editMode,

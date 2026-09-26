@@ -774,7 +774,7 @@ fun OneUiSpinner(
     initialValue = 0f,
     targetValue = if (animate) 360f else 0f,
     animationSpec = infiniteRepeatable(
-      animation = tween(if (animate) 820 else 1, easing = LinearEasing),
+      animation = tween(if (animate) OneUiDuration.SpinnerCycle else 1, easing = LinearEasing),
       repeatMode = RepeatMode.Restart
     ),
     label = "oneui_spinner_sweep"
@@ -817,14 +817,14 @@ fun OneUiLinearProgress(
   val slide by transition.animateFloat(
     initialValue = 0f,
     targetValue = if (indeterminate && !motion.isReduced) 1f else 0f,
-    animationSpec = infiniteRepeatable(tween(1_100, easing = LinearEasing), repeatMode = RepeatMode.Restart),
+    animationSpec = infiniteRepeatable(
+      tween(OneUiDuration.ProgressSlide, easing = LinearEasing),
+      repeatMode = RepeatMode.Restart
+    ),
     label = "oneui_progress_slide"
   )
-  val animated by animateFloatAsState(
-    targetValue = fraction.coerceIn(0f, 1f),
-    animationSpec = motion.tween(OneUiDuration.Content, OneUiEasing.EmphasizedDecelerate),
-    label = "oneui_progress_value"
-  )
+  // 数值变化统一走 oneUiAnimatedValue（动），页面与组件不再各写一份补间
+  val animated = oneUiAnimatedValue(fraction.coerceIn(0f, 1f), motion)
   val effective = if (indeterminate) 0.28f else animated
   Box(
     modifier = modifier
@@ -835,7 +835,16 @@ fun OneUiLinearProgress(
     Box(
       modifier = Modifier
         .fillMaxWidth(effective)
-        .let { if (indeterminate) it.padding(start = 340.dp * (slide * (1f - effective))) else it }
+        // 相对位移而不是绝对 dp：写死 340dp 在平板上会把指示段推出轨道。
+        // 指示段宽 effective×轨道宽，走完轨道对应的位移就是 size.width * (1/effective - 1)
+        .let {
+          if (indeterminate) {
+            val travel = 1f / effective - 1f
+            it.graphicsLayer { translationX = size.width * travel * slide }
+          } else {
+            it
+          }
+        }
         .height(6.dp)
         .background(color, RoundedCornerShape(999.dp))
     )

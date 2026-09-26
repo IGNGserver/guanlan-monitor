@@ -11,7 +11,6 @@ import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -28,7 +27,6 @@ import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 
 /**
@@ -54,6 +52,10 @@ object OneUiDuration {
   const val ChartDraw = 620
   const val Skeleton = 1_050
   const val Toast = 2_400
+  /** 常驻指示器的周期：不属于交互动效，但仍只在这里登记 */
+  const val SpinnerCycle = 820
+  const val SpinFrame = 900
+  const val ProgressSlide = 1_100
 }
 
 object OneUiEasing {
@@ -105,14 +107,6 @@ data class OneUiMotion(val scale: Float) {
     val Standard = OneUiMotion(1f)
   }
 }
-
-/** 交互反馈：按下快速回弹，不拖泥带水。 */
-fun <T> oneUiPressSpring(): AnimationSpec<T> =
-  spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessHigh)
-
-/** 面板/抽屉：轻微过冲，One UI 的 sheet 有明确的“弹到位”手感。 */
-fun <T> oneUiSheetSpring(): AnimationSpec<T> =
-  spring(dampingRatio = 0.82f, stiffness = 380f)
 
 val LocalOneUiMotion: ProvidableCompositionLocal<OneUiMotion> =
   compositionLocalOf { OneUiMotion.Standard }
@@ -191,16 +185,6 @@ fun oneUiSlideSwitch(forwardToRight: Boolean, motion: OneUiMotion, distancePx: I
   )
 }
 
-/** 卡片/条目出现：One UI 列表用很短的上移淡入，并在逐项之间交错。 */
-fun oneUiEnterSpec(motion: OneUiMotion, index: Int): FiniteAnimationSpec<Float> {
-  val total = motion.duration(OneUiDuration.Enter + OneUiDuration.Stagger * index.coerceAtMost(OneUiDuration.StaggerMax))
-  return keyframes {
-    durationMillis = total
-    0f at motion.duration(50) with OneUiEasing.EmphasizedDecelerate
-    1f at total
-  }
-}
-
 /** 数值刷新时的补间（动）：旧值滑向新值，而不是硬跳。 */
 @Composable
 fun oneUiAnimatedValue(target: Float, motion: OneUiMotion, durationMs: Int = OneUiDuration.ValueTick): Float =
@@ -209,20 +193,6 @@ fun oneUiAnimatedValue(target: Float, motion: OneUiMotion, durationMs: Int = One
     animationSpec = motion.tween(durationMs, OneUiEasing.EmphasizedDecelerate),
     label = "oneui_value"
   ).value
-
-internal val OneUiSheetOffset = 32.dp
-
-/** 表情的“确认”脉冲：开关、选择、保存成功时用一次，不做常驻动画。 */
-fun oneUiPulseSpec(motion: OneUiMotion): FiniteAnimationSpec<Float> {
-  val total = motion.duration(260)
-  return keyframes {
-    durationMillis = total
-    1f at 0
-    1.06f at motion.duration(70) with OneUiEasing.EmphasizedDecelerate
-    0.99f at motion.duration(170)
-    1f at total
-  }
-}
 
 /** 列表逐项入场（动）：One UI 的交错很短，只用于首次出现，滚动时不会重复播放。 */
 fun oneUiListEnter(motion: OneUiMotion, index: Int): EnterTransition {

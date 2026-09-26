@@ -530,7 +530,6 @@ data class AppState(
   val metrics: MetricsDto? = null,
   val overviewMetrics: OverviewMetricsDto? = null,
   val trafficCalendar: TrafficCalendarDto? = null,
-  val trafficSheetRequested: Boolean = false,
   val trafficMode: TrafficCalendarMode = TrafficCalendarMode.Day,
   val metricConfig: DeviceMetricConfigDto? = null,
   val metricConfigDraft: List<String> = emptyList(),

@@ -7,11 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
@@ -116,6 +112,8 @@ data class OneUiMetrics(
   val disabledContent: Float = 0.38f,
   /** 底部导航/侧栏选中态那枚浅色胶囊的透明度 */
   val navIndicatorAlpha: Float = 0.16f,
+  /** 日历格高度：非月视图要放下「标签 + 总量」两行 */
+  val calendarCellHeight: Dp = 56.dp,
   /** 指标网格在窄屏/大字号下退化为单列的阈值（适） */
   val metricMinCellWidth: Dp = 176.dp,
   val chartHeight: Dp = 132.dp,
@@ -173,27 +171,6 @@ internal fun Color.lift(amount: Float, target: Color = Color.White): Color {
   )
 }
 
-/**
- * 骨架屏/空态用的对角微渐变；One UI 不用整块灰色填充，
- * 而是在 surface 上做很轻的一层提亮。
- */
-internal fun Modifier.oneUiSkeleton(colors: OneUiColors, cornerRadius: Dp = 16.dp): Modifier =
-  drawWithContent {
-    drawContent()
-    val radius = CornerRadius(cornerRadius.toPx(), cornerRadius.toPx())
-    drawRoundRect(
-      color = colors.ink.copy(alpha = 0.045f),
-      cornerRadius = radius,
-      size = Size(size.width, size.height)
-    )
-    drawLine(
-      color = colors.hairline,
-      start = Offset(0f, size.height - 0.6f),
-      end = Offset(size.width, size.height - 0.6f),
-      strokeWidth = 0.8f
-    )
-  }
-
 /** 按窗口尺寸类别与字号缩放给出不同的度量（适）。 */
 fun oneUiMetrics(window: OneUiWindowLayout, fontScale: Float): OneUiMetrics {
   val base = when (window.widthClass) {
@@ -221,6 +198,7 @@ fun oneUiMetrics(window: OneUiWindowLayout, fontScale: Float): OneUiMetrics {
   }
   // 适：字号放大后行高与留白同步放宽，避免文字被固定高度裁掉
   val bump = when {
+    fontScale >= 1.9f -> 1.45f
     fontScale >= 1.6f -> 1.28f
     fontScale >= 1.3f -> 1.16f
     else -> 1f

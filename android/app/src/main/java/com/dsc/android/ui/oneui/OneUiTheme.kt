@@ -97,13 +97,15 @@ fun GuanlanTheme(
   }
   val typography = remember(fontScale) { oneUiTypographyFor(fontScale) }
   val metrics = remember(windowLayout, fontScale) { oneUiMetrics(windowLayout, fontScale) }
+  val oneUiShapes = remember { OneUiShapes() }
   val systemMotion = rememberOneUiMotion()
   val motion = if (reduceMotionOverride) OneUiMotion.Reduced else systemMotion
 
   CompositionLocalProvider(
     LocalOneUiColors provides colors,
     LocalOneUiTypography provides typography,
-    LocalOneUiShapes provides OneUiShapes(),
+    // 形状表只造一次：每次重组都新建会让所有读 shapes 的组件失效
+    LocalOneUiShapes provides oneUiShapes,
     LocalOneUiMetrics provides metrics,
     LocalOneUiWindowLayout provides windowLayout,
     LocalOneUiMotion provides motion,
@@ -112,26 +114,38 @@ fun GuanlanTheme(
     MaterialTheme(
       colorScheme = colors.toMaterialColorScheme(),
       typography = oneUiMaterialTypography(fontScale),
-      shapes = Shapes(
-        extraSmall = RoundedCornerShape(12.dp),
-        small = RoundedCornerShape(16.dp),
-        medium = RoundedCornerShape(20.dp),
-        large = RoundedCornerShape(24.dp),
-        extraLarge = RoundedCornerShape(32.dp)
-      ),
+      // M3 的形状档直接取同一份 One UI 形状表，不再另写一组字面圆角（形）
+      shapes = remember(oneUiShapes) {
+        Shapes(
+          extraSmall = oneUiShapes.tile,
+          small = oneUiShapes.control,
+          medium = oneUiShapes.card,
+          large = oneUiShapes.group,
+          extraLarge = oneUiShapes.sheet
+        )
+      },
       content = content
     )
   }
 }
 
-/** 高对比文本：压平三级文字，只保留主/次两级，并加深发丝线（适）。 */
-private fun OneUiColors.forHighTextContrast(): OneUiColors = copy(
-  textPrimary = if (isDark) Color.White else Color.Black,
-  textSecondary = if (isDark) Color(0xFFE3E6EA) else Color(0xFF101214),
-  textTertiary = if (isDark) Color(0xFFC7CCD3) else Color(0xFF2C3033),
-  textDisabled = if (isDark) Color(0xFFA7ACB5) else Color(0xFF5B6069),
-  hairline = if (isDark) Color(0xFF4A4E55) else Color(0xFFB9BEC6)
-)
+/**
+ * 高对比文本：压平成主/次两级文字、加深发丝线，并把靠透明度表达的层级
+ * （浅底、墨色、骨架屏脉冲）拉回实色——这类半透明层正是高对比模式下最先看不清的东西（适）。
+ */
+private fun OneUiColors.forHighTextContrast(): OneUiColors {
+  val secondary = if (isDark) Color(0xFFE3E6EA) else Color(0xFF101214)
+  return copy(
+    textPrimary = if (isDark) Color.White else Color.Black,
+    textSecondary = secondary,
+    textTertiary = secondary,
+    textDisabled = if (isDark) Color(0xFFA7ACB5) else Color(0xFF5B6069),
+    hairline = if (isDark) Color(0xFF4A4E55) else Color(0xFFB9BEC6),
+    sunken = if (isDark) sunken.lift(0.10f) else sunken,
+    chartTrack = if (isDark) chartTrack.lift(0.12f) else chartTrack,
+    scrim = if (isDark) Color(0xCC000000) else Color(0x66000000)
+  )
+}
 
 /**
  * 外观偏好。深浅色本身是系统能力，但 One UI 应用内也允许覆盖，
