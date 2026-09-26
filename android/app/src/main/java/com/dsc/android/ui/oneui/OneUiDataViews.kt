@@ -2,6 +2,7 @@
 
 package com.dsc.android.ui.oneui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -403,18 +404,51 @@ fun OneUiMetaTable(
   items: List<Pair<String, String>>,
   modifier: Modifier = Modifier,
   title: String? = null,
-  selectable: Boolean = false
+  selectable: Boolean = false,
+  collapsible: Boolean = false,
+  defaultExpanded: Boolean = true
 ) {
   if (items.isEmpty()) return
   val colors = OneUiTheme.colors
   val shapes = OneUiTheme.shapes
   val metrics = OneUiTheme.metrics
+  val motion = OneUiTheme.motion
+  var expanded by remember(items, collapsible, defaultExpanded) {
+    mutableStateOf(if (collapsible) defaultExpanded else true)
+  }
+
   Column(
     modifier = modifier
       .fillMaxWidth()
+      .animateContentSize(animationSpec = motion.tween(OneUiDuration.Content, OneUiEasing.EmphasizedDecelerate))
       .oneUiSurface(colors.group, shapes.card, colors = colors, level = OneUiSurfaceLevel.Group)
   ) {
-    if (!title.isNullOrBlank()) {
+    if (collapsible) {
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .oneUiPressable(
+            onClick = { expanded = !expanded },
+            shape = shapes.card,
+            minHeight = metrics.rowMinHeight
+          )
+          .padding(horizontal = metrics.spaceM, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+      ) {
+        OneUiText(
+          text = title ?: "详细硬件与系统参数",
+          role = OneUiTextRole.RowSubtitle,
+          color = colors.textSecondary
+        )
+        OneUiText(
+          text = if (expanded) "收起" else "查看详情",
+          role = OneUiTextRole.ChartLabel,
+          color = colors.accent,
+          weight = FontWeight.SemiBold
+        )
+      }
+    } else if (!title.isNullOrBlank()) {
       OneUiText(
         text = title,
         role = OneUiTextRole.RowSubtitle,
@@ -422,31 +456,52 @@ fun OneUiMetaTable(
         modifier = Modifier.padding(start = metrics.spaceM, end = metrics.spaceM, top = metrics.spaceM)
       )
     }
-    items.forEachIndexed { index, (label, value) ->
-      if (index > 0) {
+
+    if (expanded) {
+      if (collapsible) {
         Spacer(
           modifier = Modifier
             .fillMaxWidth()
             .height(metrics.hairline)
-            .padding(start = metrics.spaceM)
             .background(colors.hairline)
         )
       }
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = metrics.spaceM, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(metrics.spaceM)
-      ) {
-        OneUiText(
-          text = label,
-          role = OneUiTextRole.RowSubtitle,
-          color = colors.textSecondary,
-          modifier = Modifier.weight(1f)
-        )
-        if (selectable) {
-          SelectionContainer {
+      items.forEachIndexed { index, (label, value) ->
+        if (index > 0) {
+          Spacer(
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(metrics.hairline)
+              .padding(start = metrics.spaceM)
+              .background(colors.hairline)
+          )
+        }
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = metrics.spaceM, vertical = 12.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(metrics.spaceM)
+        ) {
+          OneUiText(
+            text = label,
+            role = OneUiTextRole.RowSubtitle,
+            color = colors.textSecondary,
+            modifier = Modifier.weight(1f)
+          )
+          if (selectable) {
+            SelectionContainer {
+              OneUiText(
+                text = value,
+                role = OneUiTextRole.RowSubtitle,
+                color = colors.textPrimary,
+                weight = FontWeight.Medium,
+                maxLines = 6,
+                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                modifier = Modifier.weight(1.4f, fill = false)
+              )
+            }
+          } else {
             OneUiText(
               text = value,
               role = OneUiTextRole.RowSubtitle,
@@ -457,16 +512,6 @@ fun OneUiMetaTable(
               modifier = Modifier.weight(1.4f, fill = false)
             )
           }
-        } else {
-          OneUiText(
-            text = value,
-            role = OneUiTextRole.RowSubtitle,
-            color = colors.textPrimary,
-            weight = FontWeight.Medium,
-            maxLines = 6,
-            textAlign = androidx.compose.ui.text.style.TextAlign.End,
-            modifier = Modifier.weight(1.4f, fill = false)
-          )
         }
       }
     }

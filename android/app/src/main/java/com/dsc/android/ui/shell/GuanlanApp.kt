@@ -53,7 +53,6 @@ import com.dsc.android.ui.oneui.OneUiDestination
 import com.dsc.android.ui.oneui.OneUiDialog
 import com.dsc.android.ui.oneui.OneUiEmptyState
 import com.dsc.android.ui.oneui.OneUiNavigationRail
-import com.dsc.android.ui.oneui.OneUiPredictiveBackProgress
 import com.dsc.android.ui.oneui.OneUiSpinner
 import com.dsc.android.ui.oneui.OneUiText
 import com.dsc.android.ui.oneui.OneUiTextRole
@@ -147,34 +146,51 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
     }
   }
 
-  var backProgress by remember { mutableStateOf(OneUiPredictiveBackProgress()) }
+  val predictiveAnimScope = rememberCoroutineScope()
+  var gestureProgress by remember { mutableStateOf(0f) }
+  var gestureSwipeEdge by remember { mutableStateOf(0) }
+  val motion = OneUiTheme.motion
 
   PredictiveBackHandler(enabled = canHandleBack) { progressFlow ->
     try {
       progressFlow.collect { backEvent ->
-        backProgress = OneUiPredictiveBackProgress(
-          progress = backEvent.progress,
-          swipeEdge = backEvent.swipeEdge
-        )
+        gestureSwipeEdge = backEvent.swipeEdge
+        gestureProgress = backEvent.progress
       }
+      // 手势确认完成
+      gestureProgress = 0f
       if (pendingLogout) {
         pendingLogout = false
       } else {
         actions.onSystemBack()
       }
+    } catch (_: kotlinx.coroutines.CancellationException) {
+      // 用户划到一半又收回（取消返回）：平滑回弹到原位，不阻塞下次手势
+      gestureProgress = 0f
     } finally {
-      backProgress = OneUiPredictiveBackProgress()
+      gestureProgress = 0f
     }
   }
+
+  val animatedScale by androidx.compose.animation.core.animateFloatAsState(
+    targetValue = (1f - gestureProgress * 0.08f).coerceIn(0.92f, 1f),
+    animationSpec = motion.spring(dampingRatio = 0.82f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
+    label = "predictive_scale"
+  )
+  val animatedTranslationX by androidx.compose.animation.core.animateFloatAsState(
+    targetValue = (if (gestureSwipeEdge == 0) 1f else -1f) * gestureProgress * 48f,
+    animationSpec = motion.spring(dampingRatio = 0.82f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
+    label = "predictive_tx"
+  )
 
   Box(
     modifier = Modifier
       .fillMaxSize()
       .background(colors.canvas)
       .graphicsLayer {
-        scaleX = backProgress.scale
-        scaleY = backProgress.scale
-        translationX = backProgress.translationX
+        scaleX = animatedScale
+        scaleY = animatedScale
+        translationX = animatedTranslationX
       }
   ) {
     if (window.useNavigationRail) {
