@@ -508,9 +508,13 @@
   font-size: 11px;
 }
 
+/* The last non-zero radius in the arbiter. It was 2px — not Material geometry,
+   but the only control on the page that was not square, which meant the next
+   reader had to decide whether it was deliberate. Carbon's own `Tag` two lines
+   above is 0, and the status label is the same kind of object. */
 .workspace-status-label,
 .workspace-status-label.is-compact {
-  border-radius: 2px;
+  border-radius: 0;
 }
 
 .workspace-status-dot {
