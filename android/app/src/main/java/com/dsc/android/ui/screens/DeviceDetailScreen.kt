@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.dsc.android.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
@@ -24,7 +26,7 @@ import androidx.compose.material.icons.rounded.Router
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Timeline
 import androidx.compose.material.icons.rounded.Air
-import androidx.compose.material.icons.rounded.HardDrive
+import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Tune
@@ -261,7 +263,7 @@ private fun OverviewGroup(data: MetricsDto, state: AppState) {
               )
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-              OneUiStatusDot(color = if (online) colors.online else colors.offline, contentDescription = null)
+              OneUiStatusDot(color = if (online) colors.online else colors.offline)
               OneUiText(
                 text = if (online) "在线" else "离线",
                 role = OneUiTextRole.ChartLabel,
@@ -393,7 +395,7 @@ private fun blockIcon(block: DeviceBlockKey) = when (block) {
   DeviceBlockKey.Cpu -> Icons.Rounded.Memory
   DeviceBlockKey.Gpu -> Icons.Rounded.VideogameAsset
   DeviceBlockKey.Memory -> Icons.Rounded.Storage
-  DeviceBlockKey.Disk -> Icons.Rounded.HardDrive
+  DeviceBlockKey.Disk -> Icons.Rounded.Dns
   DeviceBlockKey.Network -> Icons.Rounded.Router
   DeviceBlockKey.Temperature -> Icons.Rounded.Thermostat
   DeviceBlockKey.Fan -> Icons.Rounded.Air

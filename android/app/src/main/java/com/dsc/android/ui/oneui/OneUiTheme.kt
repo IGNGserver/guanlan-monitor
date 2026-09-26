@@ -91,9 +91,8 @@ fun GuanlanTheme(
   }
   val typography = remember(fontScale) { oneUiTypographyFor(fontScale) }
   val metrics = remember(windowLayout, fontScale) { oneUiMetrics(windowLayout, fontScale) }
-  val motion = remember(rememberOneUiMotion(), reduceMotionOverride) {
-    if (reduceMotionOverride) OneUiMotion.Reduced else rememberOneUiMotion()
-  }
+  val systemMotion = rememberOneUiMotion()
+  val motion = if (reduceMotionOverride) OneUiMotion.Reduced else systemMotion
 
   CompositionLocalProvider(
     LocalOneUiColors provides colors,

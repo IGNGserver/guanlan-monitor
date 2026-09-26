@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 与 OneUiDarkColors/OneUiExtraDarkColors.canvas 对齐（深色启动不闪白）。 -->
+    <color name="guanlan_window_background">#000000</color>
+</resources>

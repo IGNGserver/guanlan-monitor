@@ -78,8 +78,15 @@ data class OneUiMotion(val scale: Float) {
 
   fun duration(ms: Int): Int = if (isReduced) 0 else (ms * scale).roundToInt().coerceAtLeast(16)
 
-  fun <T> tween(durationMs: Int, easing: Easing = OneUiEasing.Standard, delayMs: Int = 0): FiniteAnimationSpec<T> =
-    tween(duration = duration(durationMs), easing = easing, delayMillis = if (isReduced) 0 else delayMs)
+  fun <T> tween(
+    durationMs: Int,
+    easing: Easing = OneUiEasing.Standard,
+    delayMs: Int = 0
+  ): FiniteAnimationSpec<T> = androidx.compose.animation.core.tween(
+    durationMillis = duration(durationMs),
+    easing = easing,
+    delayMillis = if (isReduced) 0 else delayMs
+  )
 
   /** 位移：减弱动效时为 0，避免任何滑动 */
   fun offset(fullWidth: Int, fraction: Float = 0.24f): Int = if (isReduced) 0 else (fullWidth * fraction).roundToInt()
@@ -88,9 +95,9 @@ data class OneUiMotion(val scale: Float) {
     dampingRatio: Float = Spring.DampingRatioNoBouncy,
     stiffness: Float = Spring.StiffnessMediumLow
   ): AnimationSpec<T> = if (isReduced) {
-    tween(durationMillis = 0)
+    androidx.compose.animation.core.tween(durationMillis = 0)
   } else {
-    spring(dampingRatio = dampingRatio, stiffness = stiffness)
+    androidx.compose.animation.core.spring(dampingRatio = dampingRatio, stiffness = stiffness)
   }
 
   companion object {
@@ -185,11 +192,13 @@ fun oneUiSlideSwitch(forwardToRight: Boolean, motion: OneUiMotion, distancePx: I
 }
 
 /** 卡片/条目出现：One UI 列表用很短的上移淡入，并在逐项之间交错。 */
-fun oneUiEnterSpec(motion: OneUiMotion, index: Int) = keyframes<Float>(
-  durationMillis = motion.duration(OneUiDuration.Enter + OneUiDuration.Stagger * index.coerceAtMost(OneUiDuration.StaggerMax))
-) {
-  0f at motion.duration(50) with OneUiEasing.EmphasizedDecelerate
-  1f at motion.duration(OneUiDuration.Enter + OneUiDuration.Stagger * index.coerceAtMost(OneUiDuration.StaggerMax))
+fun oneUiEnterSpec(motion: OneUiMotion, index: Int): FiniteAnimationSpec<Float> {
+  val total = motion.duration(OneUiDuration.Enter + OneUiDuration.Stagger * index.coerceAtMost(OneUiDuration.StaggerMax))
+  return keyframes {
+    durationMillis = total
+    0f at motion.duration(50) with OneUiEasing.EmphasizedDecelerate
+    1f at total
+  }
 }
 
 /** 数值刷新时的补间（动）：旧值滑向新值，而不是硬跳。 */
@@ -199,18 +208,20 @@ fun oneUiAnimatedValue(target: Float, motion: OneUiMotion, durationMs: Int = One
     targetValue = target,
     animationSpec = motion.tween(durationMs, OneUiEasing.EmphasizedDecelerate),
     label = "oneui_value"
-  )
+  ).value
 
 internal val OneUiSheetOffset = 32.dp
 
 /** 表情的“确认”脉冲：开关、选择、保存成功时用一次，不做常驻动画。 */
-fun oneUiPulseSpec(motion: OneUiMotion) = keyframes<Float>(
-  durationMillis = motion.duration(260)
-) {
-  1f at 0
-  1.06f at motion.duration(70) with OneUiEasing.EmphasizedDecelerate
-  0.99f at motion.duration(170)
-  1f at motion.duration(260)
+fun oneUiPulseSpec(motion: OneUiMotion): FiniteAnimationSpec<Float> {
+  val total = motion.duration(260)
+  return keyframes {
+    durationMillis = total
+    1f at 0
+    1.06f at motion.duration(70) with OneUiEasing.EmphasizedDecelerate
+    0.99f at motion.duration(170)
+    1f at total
+  }
 }
 
 /** 列表逐项入场（动）：One UI 的交错很短，只用于首次出现，滚动时不会重复播放。 */

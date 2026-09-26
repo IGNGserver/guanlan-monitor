@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -55,11 +55,10 @@ val LocalOneUiWindowLayout: ProvidableCompositionLocal<OneUiWindowLayout> =
 
 @Composable
 fun rememberOneUiWindowLayout(): OneUiWindowLayout {
-  val windowSize = LocalWindowInfo.current.containerSize
-  val density = LocalDensity.current.density
-  return remember(windowSize.width, windowSize.height, density) {
-    val widthDp = (windowSize.width / density).dp
-    val heightDp = (windowSize.height / density).dp
+  val configuration = LocalConfiguration.current
+  return remember(configuration.screenWidthDp, configuration.screenHeightDp) {
+    val widthDp = configuration.screenWidthDp.dp
+    val heightDp = configuration.screenHeightDp.dp
     val w = widthDp.value
     val h = heightDp.value
     OneUiWindowLayout(
@@ -89,7 +88,7 @@ fun rememberOneUiHighTextContrast(): Boolean {
   val context = LocalContext.current
   return remember(context) {
     runCatching {
-      Settings.Secure.getInt(context.contentResolver, Settings.Secure.ACCESSIBILITY_HIGH_TEXT_CONTRAST_ENABLED, 0) == 1
+      Settings.Secure.getInt(context.contentResolver, "accessibility_high_text_contrast_enabled", 0) == 1
     }.getOrDefault(false)
   }
 }
