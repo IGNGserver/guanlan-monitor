@@ -209,3 +209,21 @@ fun oneUiListExit(motion: OneUiMotion): ExitTransition =
 /** 面板内容出现（动）：先容器后面板内元素，避免整块一起闪现。 */
 fun oneUiSheetContentEnter(motion: OneUiMotion): EnterTransition =
   if (motion.isReduced) EnterTransition.None else fadeIn(tween(motion.duration(OneUiDuration.Content), delayMillis = motion.duration(60)))
+
+/**
+ * 预见式返回手势进度映射状态（动）。
+ *
+ * 在 Android 14+ / One UI 6+ / 7+ 上，用户从侧边滑入返回时提供实时位移与缩放，
+ * 带来如同原生系统级别的弹性跟手感。
+ */
+@Immutable
+data class OneUiPredictiveBackProgress(
+  val progress: Float = 0f,
+  val swipeEdge: Int = 0
+) {
+  val scale: Float
+    get() = 1f - (progress * 0.08f).coerceIn(0f, 0.08f)
+
+  val translationX: Float
+    get() = (if (swipeEdge == 0) 1f else -1f) * progress * 48f
+}

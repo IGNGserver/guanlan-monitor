@@ -1,6 +1,7 @@
 package com.dsc.android.ui.shell
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -34,6 +35,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -51,6 +53,7 @@ import com.dsc.android.ui.oneui.OneUiDestination
 import com.dsc.android.ui.oneui.OneUiDialog
 import com.dsc.android.ui.oneui.OneUiEmptyState
 import com.dsc.android.ui.oneui.OneUiNavigationRail
+import com.dsc.android.ui.oneui.OneUiPredictiveBackProgress
 import com.dsc.android.ui.oneui.OneUiSpinner
 import com.dsc.android.ui.oneui.OneUiText
 import com.dsc.android.ui.oneui.OneUiTextRole
@@ -144,15 +147,36 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
     }
   }
 
-  BackHandler(enabled = canHandleBack) {
-    if (pendingLogout) {
-      pendingLogout = false
-    } else {
-      actions.onSystemBack()
+  var backProgress by remember { mutableStateOf(OneUiPredictiveBackProgress()) }
+
+  PredictiveBackHandler(enabled = canHandleBack) { progressFlow ->
+    try {
+      progressFlow.collect { backEvent ->
+        backProgress = OneUiPredictiveBackProgress(
+          progress = backEvent.progress,
+          swipeEdge = backEvent.swipeEdge
+        )
+      }
+      if (pendingLogout) {
+        pendingLogout = false
+      } else {
+        actions.onSystemBack()
+      }
+    } finally {
+      backProgress = OneUiPredictiveBackProgress()
     }
   }
 
-  Box(modifier = Modifier.fillMaxSize().background(colors.canvas)) {
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(colors.canvas)
+      .graphicsLayer {
+        scaleX = backProgress.scale
+        scaleY = backProgress.scale
+        translationX = backProgress.translationX
+      }
+  ) {
     if (window.useNavigationRail) {
       Row(modifier = Modifier.fillMaxSize()) {
         OneUiNavigationRail(

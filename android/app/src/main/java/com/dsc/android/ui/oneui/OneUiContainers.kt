@@ -1,6 +1,7 @@
 package com.dsc.android.ui.oneui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -470,6 +471,66 @@ fun OneUiListDivider(
 }
 
 /**
+ * 可折叠面板组（构 + 动）：在同一个页面内就地展开硬件指标详情，
+ * 代替频繁呼出 BottomSheet 遮挡视线。
+ */
+@Composable
+fun OneUiExpandableGroup(
+  expanded: Boolean,
+  onToggle: () -> Unit,
+  title: String,
+  subtitle: String? = null,
+  leading: @Composable (() -> Unit)? = null,
+  supporting: @Composable (() -> Unit)? = null,
+  actions: @Composable (() -> Unit)? = null,
+  colors: OneUiColors = OneUiTheme.colors,
+  metrics: OneUiMetrics = OneUiTheme.metrics,
+  motion: OneUiMotion = OneUiTheme.motion,
+  content: @Composable ColumnScope.() -> Unit
+) {
+  OneUiGroup(
+    modifier = Modifier
+      .fillMaxWidth()
+      .animateContentSize(
+        animationSpec = motion.tween(OneUiDuration.Content, OneUiEasing.EmphasizedDecelerate)
+      )
+  ) {
+    OneUiListItem(
+      title = title,
+      subtitle = subtitle,
+      leading = leading,
+      onClick = onToggle,
+      supporting = supporting,
+      trailing = {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+        ) {
+          actions?.invoke()
+          OneUiText(
+            text = if (expanded) "收起" else "展开",
+            role = OneUiTextRole.ChartLabel,
+            color = colors.accent,
+            weight = FontWeight.SemiBold
+          )
+        }
+      }
+    )
+    if (expanded) {
+      OneUiListDivider(indent = false)
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = metrics.groupPadding, vertical = metrics.spaceM),
+        verticalArrangement = Arrangement.spacedBy(metrics.spaceM)
+      ) {
+        content()
+      }
+    }
+  }
+}
+
+/**
  * 列表行（件）：One UI 的主力组件。整行可点、命中区不低于 64dp、
  * 支持第二行自由内容与尾部控件，长按唤出操作面板（交）。
  */
@@ -811,7 +872,8 @@ fun OneUiLinearProgress(
   modifier: Modifier = Modifier,
   color: Color = OneUiTheme.colors.accent,
   track: Color = OneUiTheme.colors.sunken,
-  indeterminate: Boolean = false
+  indeterminate: Boolean = false,
+  height: Dp = 6.dp
 ) {
   val motion = OneUiTheme.motion
   val transition = rememberInfiniteTransition(label = "oneui_progress")
@@ -830,7 +892,7 @@ fun OneUiLinearProgress(
   Box(
     modifier = modifier
       .fillMaxWidth()
-      .height(6.dp)
+      .height(height)
       .background(track, RoundedCornerShape(999.dp))
   ) {
     Box(
@@ -846,7 +908,7 @@ fun OneUiLinearProgress(
             it
           }
         }
-        .height(6.dp)
+        .height(height)
         .background(color, RoundedCornerShape(999.dp))
     )
   }

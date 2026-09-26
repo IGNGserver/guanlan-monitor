@@ -100,7 +100,10 @@ OneUiSwitch / OneUiDialog / OneUiActionSheet / oneUiPressable`。
 `Emphasized(0.2,0,0,1)`（形变）；交互反馈用带轻微回弹的 spring，面板用 0.82 阻尼弹性。
 
 落点：页面前进=新页自下方轻微上移 + 1.5% 放大 + 淡入，旧页只淡出且更快结束；后退=镜像；
+系统级预测性返回（Predictive Back）：接入 `PredictiveBackHandler` 与 `android:enableOnBackInvokedCallback`，
+侧滑返回时页面实时随手势进度平滑缩放与水平阻尼微移；
 同页切换（粒度、实例 tab、日/周/月）=横向轻推 + 淡入淡出；列表逐项交错入场（34ms 步进，最多 6 档），
+设备详情页由弹窗转为就地展开折叠卡片（`OneUiExpandableGroup`），配合 `animateContentSize` 呈现流畅的模块升降；
 离场统一淡出；分段选择器指示器与进度条数值都走同一支补间（`oneUiAnimatedValue`）；
 开关滑块与轨道色同步动画；图表首次出现或切换粒度时描线一次（15 秒自动刷新不重播，
 准线选中位置也不因刷新复位）。常驻指示器周期（加载环 820ms、旋转 900ms、不确定进度 1100ms）
