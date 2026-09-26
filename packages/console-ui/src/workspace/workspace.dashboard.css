@@ -157,8 +157,6 @@
   .workspace-page-intro__actions { justify-content: flex-start; }
   .workspace-metric-option-grid { grid-template-columns: 1fr; }
   .workspace-probe-row { grid-template-columns: minmax(0, 1fr) 150px 38px; }
-  .workspace-range-control { max-width: 100%; overflow-x: auto; }
-  .workspace-range-control__options { min-width: max-content; }
   .workspace-instance-filter { align-items: flex-start; flex-direction: column; }
   .workspace-setting-row { align-items: flex-start; flex-direction: column; justify-content: center; gap: 8px; padding: 13px 0; }
   .workspace-setting-row__control { align-self: flex-start; }

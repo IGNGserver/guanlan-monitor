@@ -800,7 +800,16 @@ html[data-dsc-resolved-theme="dark"] .workspace-attention {
   box-shadow: none;
 }
 
+/* The time-range control pairs a text label with the switcher. On a phone the
+   pair is wider than the card, so it wraps onto a second line instead of
+   becoming a scroll container. */
 .workspace-range-control {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cds-spacing-03, 8px);
+  min-width: 0;
+  max-width: 100%;
   border-color: var(--cds-border-subtle-00, #e0e0e0);
   border-radius: 0;
   background: var(--cds-layer-01, #f4f4f4);
