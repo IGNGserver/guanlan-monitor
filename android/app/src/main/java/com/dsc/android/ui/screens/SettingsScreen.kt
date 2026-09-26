@@ -13,15 +13,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.dsc.android.AppState
@@ -58,9 +63,11 @@ import com.dsc.android.ui.oneui.OneUiTheme
 import com.dsc.android.ui.oneui.OneUiTopBar
 import com.dsc.android.ui.oneui.formatBytes
 import com.dsc.android.ui.oneui.formatTime
+import com.dsc.android.ui.oneui.oneUiContentWidth
 import com.dsc.android.ui.oneui.oneUiListContentPadding
 import com.dsc.android.ui.oneui.rememberOneUiCollapse
 import com.dsc.android.ui.shell.GuanlanActions
+import kotlinx.coroutines.launch
 
 /**
  * 设置（构）。
@@ -89,6 +96,8 @@ fun SettingsScreen(
   val metrics = OneUiTheme.metrics
   val listState = rememberLazyListState()
   val collapse = rememberOneUiCollapse(listState)
+  // 折叠后点紧凑标题回到大标题：滚动动画需要协程作用域（交）
+  val topBarScope = rememberCoroutineScope()
   var confirmLogout by remember { mutableStateOf(false) }
 
   Box(
@@ -96,12 +105,17 @@ fun SettingsScreen(
       .fillMaxSize()
       .background(colors.canvas)
   ) {
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+      modifier = Modifier.fillMaxSize(),
+      // 宽屏上正文按可读行长居中，紧凑态不受影响（适）
+      horizontalAlignment = Alignment.CenterHorizontally
+    ) {
       // 双栏右栏同样要有标题，只是降级成紧凑高度：没有标题就不知道这一栏是什么（构）
       OneUiTopBar(
         title = "设置",
         subtitle = "中枢连接、同步、外观与更新",
         collapse = collapse,
+        onCollapsedTitleClick = { topBarScope.launch { listState.animateScrollToItem(0) } },
         large = !embedded
       )
 
@@ -109,9 +123,10 @@ fun SettingsScreen(
         state = listState,
         modifier = Modifier
           .weight(1f)
-          .fillMaxWidth(),
+          .fillMaxWidth()
+          .oneUiContentWidth(metrics),
         contentPadding = oneUiListContentPadding(),
-        verticalArrangement = Arrangement.spacedBy(metrics.cardGap)
+        verticalArrangement = Arrangement.spacedBy(metrics.groupGap)
       ) {
         item(key = "hub-header") {
           OneUiGroupHeader(label = "中枢连接", description = state.serverConfig.baseUrl.ifBlank { "尚未配置中枢" })
@@ -156,6 +171,9 @@ fun SettingsScreen(
             OneUiListItem(
               title = "登出并清除配置",
               subtitle = "清空本地缓存与中枢地址，需要重新输入",
+              leading = {
+                OneUiLeadingIcon(icon = Icons.Rounded.Logout, contentDescription = null, tone = OneUiIconTone.Critical)
+              },
               onClick = { confirmLogout = true },
               trailing = {
                 OneUiText(
@@ -186,6 +204,9 @@ fun SettingsScreen(
             OneUiListItem(
               title = "立即刷新",
               subtitle = if (state.refreshing) "正在同步…" else "手动向中枢请求一次最新数据",
+              leading = {
+                OneUiLeadingIcon(icon = Icons.Rounded.Sync, contentDescription = null, tone = OneUiIconTone.Neutral)
+              },
               onClick = { if (!state.refreshing) actions.onRefresh() },
               trailing = {
                 OneUiButton(
@@ -200,6 +221,9 @@ fun SettingsScreen(
             OneUiListDivider()
             OneUiListItem(
               title = "离线缓存",
+              leading = {
+                OneUiLeadingIcon(icon = Icons.Rounded.Storage, contentDescription = null, tone = OneUiIconTone.Neutral)
+              },
               subtitle = when (state.dataSource) {
                 RemoteDataSource.Cache -> "当前正在展示缓存：${formatTime(state.cacheSavedAt)}"
                 RemoteDataSource.Live -> "缓存于 ${formatTime(state.cacheSavedAt)}"
@@ -216,38 +240,34 @@ fun SettingsScreen(
         item(key = "appearance") {
           OneUiGroup {
             OneUiAppearanceSetting.entries.forEachIndexed { index, setting ->
-              val description = setting.description
               if (index > 0) OneUiListDivider()
               val selected = appearance.setting == setting
-              Row(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .selectable(
-                    selected = selected,
-                    onClick = { appearance.onSetting(setting) },
-                    role = androidx.compose.ui.semantics.Role.RadioButton
+              OneUiListItem(
+                title = setting.label,
+                subtitle = setting.description,
+                onClick = { appearance.onSetting(setting) },
+                selected = selected,
+                role = Role.RadioButton,
+                leading = {
+                  OneUiLeadingIcon(
+                    icon = setting.icon,
+                    contentDescription = null,
+                    tone = if (selected) OneUiIconTone.Accent else OneUiIconTone.Neutral
                   )
-                  .padding(horizontal = metrics.rowPadding, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(metrics.rowIconGap)
-              ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                  OneUiText(text = setting.label, role = OneUiTextRole.RowTitle)
-                  OneUiText(
-                    text = description,
-                    role = OneUiTextRole.RowSubtitle,
-                    color = colors.textSecondary
-                  )
-                }
-                if (selected) {
-                  OneUiIcon(
-                    imageVector = Icons.Rounded.Check,
-                    contentDescription = "已选择",
-                    size = metrics.iconSize,
-                    tint = colors.accent
-                  )
-                }
-              }
+                },
+                trailing = {
+                  if (selected) {
+                    OneUiIcon(
+                      imageVector = Icons.Rounded.Check,
+                      contentDescription = "已选择",
+                      size = metrics.iconSize,
+                      tint = colors.accent
+                    )
+                  }
+                },
+                colors = colors,
+                metrics = metrics
+              )
             }
             OneUiListDivider()
             OneUiListItem(
@@ -274,7 +294,10 @@ fun SettingsScreen(
           OneUiGroup {
             OneUiListItem(
               title = "客户端版本",
-              subtitle = "v${BuildConfig.RELEASE_VERSION} · ${channelLabel(BuildConfig.RELEASE_CHANNEL)}"
+              subtitle = "v${BuildConfig.RELEASE_VERSION} · ${channelLabel(BuildConfig.RELEASE_CHANNEL)}",
+              leading = {
+                OneUiLeadingIcon(icon = Icons.Rounded.PhoneAndroid, contentDescription = null, tone = OneUiIconTone.Neutral)
+              }
             )
             if (update?.available == true) {
               OneUiListDivider()
@@ -334,6 +357,9 @@ fun SettingsScreen(
             OneUiListItem(
               title = "编辑记录项",
               subtitle = "在设备行长按，或在设备详情底部进入，可勾选要采集的指标与实例",
+              leading = {
+                OneUiLeadingIcon(icon = Icons.Rounded.Tune, contentDescription = null, tone = OneUiIconTone.Neutral)
+              },
               onClick = {
                 state.selectedDeviceId?.let { actions.onOpenDeviceEditor(it) }
               }
@@ -341,7 +367,10 @@ fun SettingsScreen(
             OneUiListDivider()
             OneUiListItem(
               title = "数据来源",
-              subtitle = "客户端只读取中枢已有的数据，不会向设备下发任何配置"
+              subtitle = "客户端只读取中枢已有的数据，不会向设备下发任何配置",
+              leading = {
+                OneUiLeadingIcon(icon = Icons.Rounded.Info, contentDescription = null, tone = OneUiIconTone.Neutral)
+              }
             )
           }
         }

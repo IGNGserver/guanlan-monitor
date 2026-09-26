@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -48,6 +49,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -72,9 +74,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SheetState
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
@@ -127,6 +127,7 @@ fun OneUiTopBar(
   navigationIcon: @Composable (() -> Unit)? = null,
   actions: @Composable RowScope.() -> Unit = {},
   large: Boolean = true,
+  onCollapsedTitleClick: (() -> Unit)? = null,
   colors: OneUiColors = OneUiTheme.colors,
   metrics: OneUiMetrics = OneUiTheme.metrics
 ) {
@@ -157,15 +158,32 @@ fun OneUiTopBar(
     ) {
       navigationIcon?.invoke()
       if (effectiveLarge) {
-        OneUiText(
-          text = title,
-          role = OneUiTextRole.TopBarCollapsed,
-          maxLines = 1,
-          overflow = TextOverflow.Clip,
+        // 折叠后可点紧凑标题回到大标题：One UI 的大标题页都能这样展开（构 + 交）
+        val expandClick: (() -> Unit)? = if (collapse > 0.5f) onCollapsedTitleClick else null
+        Box(
           modifier = Modifier
             .weight(1f)
             .graphicsLayerAlpha(collapse)
-        )
+            .then(
+              if (expandClick != null) {
+                Modifier.oneUiPressable(
+                  onClick = expandClick,
+                  haptics = OneUiHaptics.Toggle,
+                  minHeight = metrics.topBarSmallHeight
+                )
+              } else {
+                Modifier
+              }
+            ),
+          contentAlignment = Alignment.CenterStart
+        ) {
+          OneUiText(
+            text = title,
+            role = OneUiTextRole.TopBarCollapsed,
+            maxLines = 1,
+            overflow = TextOverflow.Clip
+          )
+        }
       } else {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
           OneUiText(
@@ -409,7 +427,7 @@ fun OneUiGroupHeader(
       .padding(
         start = metrics.screenMargin + 4.dp,
         end = metrics.screenMargin,
-        top = metrics.spaceL,
+        top = metrics.spaceXs,
         bottom = metrics.spaceXs
       )
   ) {
@@ -467,6 +485,7 @@ fun OneUiListItem(
   onLongClick: (() -> Unit)? = null,
   enabled: Boolean = true,
   selected: Boolean = false,
+  role: Role = Role.Button,
   colors: OneUiColors = OneUiTheme.colors,
   metrics: OneUiMetrics = OneUiTheme.metrics,
   contentPadding: PaddingValues = PaddingValues(horizontal = metrics.rowPadding, vertical = 13.dp)
@@ -481,6 +500,7 @@ fun OneUiListItem(
         selected = selected,
         shape = shapes.group,
         onLongClick = onLongClick,
+        role = role,
         haptics = if (onLongClick != null) OneUiHaptics.LongPress else OneUiHaptics.Tap,
         minHeight = metrics.rowMinHeight
       )
@@ -833,7 +853,7 @@ fun OneUiLoadingRow(
   Row(
     modifier = modifier
       .fillMaxWidth()
-      .oneUiSurface(colors.sunken, shapes.card, colors = colors, level = OneUiSurfaceLevel.Group)
+      .oneUiSurface(colors.sunken, OneUiTheme.shapes.card, colors = colors, level = OneUiSurfaceLevel.Group)
       .padding(horizontal = metrics.spaceM, vertical = 14.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(metrics.spaceS)
@@ -977,7 +997,7 @@ fun OneUiDialog(
   Dialog(onDismissRequest = onDismissRequest, properties = DialogProperties(usePlatformDefaultWidth = false)) {
     Column(
       modifier = modifier
-        .fillMaxWidth()
+        .widthIn(max = metrics.dialogMaxWidth)
         .padding(horizontal = metrics.spaceXxl)
         .oneUiSurface(colors.raised, shapes.dialog, colors = colors, level = OneUiSurfaceLevel.Floating)
         .padding(top = metrics.spaceXl, bottom = metrics.spaceM, start = metrics.spaceXl, end = metrics.spaceXl),
@@ -1031,13 +1051,15 @@ fun OneUiSheet(
   modifier: Modifier = Modifier,
   subtitle: String? = null,
   headerAction: @Composable (() -> Unit)? = null,
-  sheetState: SheetState = rememberModalBottomSheetState(),
+  confirmBar: @Composable (() -> Unit)? = null,
   content: @Composable ColumnScope.() -> Unit
 ) {
   val colors = OneUiTheme.colors
   val shapes = OneUiTheme.shapes
   val metrics = OneUiTheme.metrics
-  LaunchedEffect(Unit) { runCatching { sheetState.expand() } }
+  // 半屏面板：停在半展开态才能同时看到下面的正文，需要时用户自己上拉（构）。
+  // 面板状态在本层内部创建，页面因此不需要再授权 Material 的实验性 API。
+  val sheetState = rememberModalBottomSheetState()
 
   ModalBottomSheet(
     onDismissRequest = onDismissRequest,
@@ -1058,7 +1080,11 @@ fun OneUiSheet(
       )
     }
   ) {
-    Column(modifier = Modifier.padding(bottom = metrics.spaceXxl)) {
+    Column(
+      modifier = Modifier.padding(
+        bottom = if (confirmBar == null) metrics.spaceXxl else 0.dp
+      )
+    ) {
       Row(
         modifier = Modifier
           .fillMaxWidth()
@@ -1079,9 +1105,21 @@ fun OneUiSheet(
           .fillMaxWidth()
           .weight(1f, fill = false)
           .verticalScroll(rememberScrollState())
+          .oneUiContentWidth(metrics)
           .padding(horizontal = metrics.screenMargin, vertical = metrics.spaceM),
         verticalArrangement = Arrangement.spacedBy(metrics.spaceM)
       ) { content() }
+
+      // 确认条留在滚动区之外：列表一长，「保存」不该被顶到折叠线以外（交 + 适）
+      confirmBar?.let { bar ->
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = metrics.screenMargin, vertical = metrics.spaceS),
+          verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+        ) { bar() }
+      }
     }
   }
 }
@@ -1092,13 +1130,11 @@ fun OneUiSheet(
 fun OneUiActionSheet(
   onDismissRequest: () -> Unit,
   title: String,
-  actions: List<OneUiActionModel>,
-  sheetState: SheetState = rememberModalBottomSheetState()
+  actions: List<OneUiActionModel>
 ) {
   OneUiSheet(
     onDismissRequest = onDismissRequest,
-    title = title,
-    sheetState = sheetState
+    title = title
   ) {
     actions.forEachIndexed { index, action ->
       if (index > 0) {
