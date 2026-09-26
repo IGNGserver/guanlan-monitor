@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MetricWindow, TrafficCalendarMode } from "@dsc/shared";
 import type { ConsoleAdapter } from "../../services/adapter";
 import { detectTouchSupport, type InteractionScaleSetting, type PointerType } from "../../helpers/density";
@@ -7,18 +7,25 @@ import { confirmDiscardDeviceOrderDraft } from "../deviceOrderDraft";
 import { defaultRoute, routeFromLocation, serializeWorkspaceRoute, type SettingsSection, type WorkspaceRoute } from "../routes";
 import { getStoredDensity, getStoredRefreshInterval, getStoredTheme } from "./WorkspaceTypes";
 
+const SIDEBAR_COLLAPSED_KEY = "dsc-sidebar-collapsed";
+
+/** The stored choice for the inline rail. Missing means "show the rail". */
+function readStoredSidebarCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+}
+
 export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: ConsoleAdapter; initialRoute?: WorkspaceRoute }) {
   const [route, setRoute] = useState<WorkspaceRoute>(() => initialRoute ?? routeFromLocation());
   const [returnRoute, setReturnRoute] = useState<WorkspaceRoute>(defaultRoute);
   const [sidebarCollapsed, setSidebarCollapsedState] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    const stored = localStorage.getItem("dsc-sidebar-collapsed");
-    // A stored choice is the user's own and must survive a narrow window; only a
-    // first visit picks a viewport-sized default.
-    if (stored === "true") return true;
-    if (stored === "false") return false;
-    return usesSidebarDrawer(window.innerWidth);
+    // A drawer is never shown on arrival; the inline rail honours the user's
+    // stored choice.
+    if (usesSidebarDrawer(window.innerWidth)) return true;
+    return readStoredSidebarCollapsed();
   });
+  const drawerModeRef = useRef<boolean | null>(null);
   const [metricsWindow, setMetricsWindow] = useState<MetricWindow>("5m");
   const [trafficMode, setTrafficModeState] = useState<TrafficCalendarMode>("day");
   const [trafficAnchor, setTrafficAnchor] = useState(() => new Date().toISOString());
@@ -57,6 +64,20 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
       setLayoutTier(nextTier);
       setIsTouch(nextTouch);
       if (!pointerSeen) setInputMode(nextTouch ? "touch" : "mouse");
+      // Crossing into drawer mode closes the drawer without touching the stored
+      // preference: "expanded" describes the inline rail, and a modal drawer that
+      // reopened on every page would cover the content. Crossing back out
+      // restores what the user actually chose.
+      const nextDrawerMode = usesSidebarDrawer(width);
+      if (drawerModeRef.current !== nextDrawerMode) {
+        const firstRun = drawerModeRef.current === null;
+        drawerModeRef.current = nextDrawerMode;
+        if (nextDrawerMode) {
+          setSidebarCollapsedState(true);
+        } else if (!firstRun) {
+          setSidebarCollapsedState(readStoredSidebarCollapsed());
+        }
+      }
       document.documentElement.dataset.dscOrientation = nextOrientation;
       document.documentElement.dataset.dscTier = nextTier;
       document.documentElement.dataset.dscTouchSupport = nextTouch ? "true" : "false";
@@ -94,7 +115,7 @@ export function useWorkspaceUiState({ adapter, initialRoute }: { adapter: Consol
   const closeSettings = useCallback(() => navigate(returnRoute), [navigate, returnRoute]);
   const setSidebarCollapsed = useCallback((collapsed: boolean) => {
     setSidebarCollapsedState(collapsed);
-    localStorage.setItem("dsc-sidebar-collapsed", String(collapsed));
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
   }, []);
   const setTheme = useCallback((nextTheme: "system" | "light" | "dark") => {
     setThemeState(nextTheme);
