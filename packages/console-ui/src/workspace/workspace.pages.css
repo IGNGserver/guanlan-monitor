@@ -57,18 +57,9 @@
 .workspace-visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important; clip: rect(1px, 1px, 1px, 1px) !important; white-space: nowrap !important; }
 
 @media (max-width: 1199px) {
-  .workspace-root { grid-template-columns: 84px minmax(0, 1fr); }
-  .workspace-sidebar { padding-inline: 10px; }
-  .workspace-sidebar__topline { padding-inline: 0; justify-content: center; }
-  .workspace-sidebar__collapse { display: none; }
-  .workspace-brand { margin: 0 auto; }
-  .workspace-sidebar .workspace-brand__name,
-  .workspace-sidebar .workspace-nav-item span,
-  .workspace-sidebar .workspace-sidebar__support span,
-  .workspace-sidebar .workspace-sidebar__section-title { display: none; }
-  .workspace-nav-item { justify-content: center; padding-inline: 0; }
-  .workspace-sidebar__support { justify-content: center; padding-inline: 0; }
-  .workspace-sidebar__footer .workspace-nav-item { justify-content: center; }
+  /* The sidebar keeps its expanded/collapsed contract at every desktop width.
+     A forced 84px icon rail used to live here and hid both the labels and the
+     collapse affordance, so an "expanded" preference could not be honoured. */
   .workspace-page { padding-inline: 26px; }
   .workspace-overview-grid--v3,
   .workspace-overview-grid--single { grid-template-columns: minmax(0, 1fr); }
@@ -90,7 +81,6 @@
   .workspace-main,
   .workspace-root:has(.workspace-windowbar) .workspace-main { grid-column: 1; grid-row: 1; min-height: 100dvh; }
   .workspace-root:has(.workspace-windowbar) .workspace-main { grid-row: 2; min-height: 0; }
-  .workspace-topbar { min-height: 58px; padding: 8px 16px; }
   .workspace-search-trigger { width: 40px; min-width: 40px; justify-content: center; padding: 0; border: 0; background: transparent; }
   .workspace-search-trigger .m3-button__icon { display: inline-flex; }
   .workspace-search-trigger.m3-button .m3-button__label,
@@ -101,13 +91,9 @@
   .workspace-page-intro { align-items: flex-start; flex-direction: column; gap: 16px; margin-bottom: 26px; }
   .workspace-page-intro__actions { width: 100%; }
   .workspace-page-intro__actions > * { flex: 1; }
-  .workspace-overview-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 0; }
-  .workspace-overview-summary__item:nth-child(3) { padding-left: 0; border-left: 0; }
-  .workspace-overview-summary__item:nth-child(3), .workspace-overview-summary__item:nth-child(4) { padding-top: 12px; border-top: 1px solid var(--workspace-border); }
+  .workspace-overview-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-directory-toolbar { grid-template-columns: 1fr; align-items: stretch; }
   .workspace-directory-toolbar .m3-field { grid-column: auto; }
-  .workspace-directory-toolbar .m3-segmented-control { overflow-x: auto; }
-  .workspace-directory-toolbar__chips { min-height: 44px; }
   .workspace-bottom-nav { position: fixed; z-index: 22; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); left: 12px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; padding: 6px; border: 1px solid var(--workspace-border); border-radius: 16px; background: color-mix(in srgb, var(--workspace-surface) 95%, transparent); box-shadow: var(--workspace-shadow); backdrop-filter: blur(18px); }
   .workspace-bottom-nav__item { min-height: 48px; flex-direction: column; gap: 2px; border-radius: 10px; font-size: 10px; }
   .workspace-bottom-nav__item.is-active { color: var(--workspace-accent-strong); background: var(--workspace-accent-soft); }
@@ -117,7 +103,8 @@
 }
 
 @media (max-width: 599px) {
-  .workspace-topbar__toggle { display: none; }
+  /* The topbar toggle stays reachable: it is the only affordance that opens the
+     sidebar drawer on phones. */
   .workspace-topbar__leading { flex: 1; }
   .workspace-topbar__brand { font-size: 16px; }
   .workspace-topbar__actions { gap: 2px; }
@@ -125,10 +112,7 @@
   .workspace-topbar__actions > .workspace-button .m3-button__label { display: none; }
   .workspace-page { padding-inline: 16px; }
   .workspace-page-intro h2 { font-size: 28px; }
-  .workspace-overview-summary__item { padding-inline: 12px; }
-  .workspace-overview-summary__item > strong { font-size: 23px; }
   .workspace-surface__header { padding-inline: 18px; }
-  .workspace-directory-toolbar { padding: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

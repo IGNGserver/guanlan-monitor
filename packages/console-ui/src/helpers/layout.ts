@@ -11,11 +11,22 @@ export type LayoutClass = "compact" | "medium" | "expanded" | "large";
 export type ScreenOrientation = "portrait" | "landscape";
 export type ResponsiveTier = "xs" | "sm" | "md" | "lg" | "xl";
 
+/**
+ * Above this width the sidebar is a column of the page grid; at or below it the
+ * sidebar becomes an off-canvas drawer and the bottom navigation takes over.
+ * Keep the matching CSS breakpoints pinned to this same number.
+ */
+export const SIDEBAR_DRAWER_MAX_WIDTH = 839;
+
 export function getLayoutClass(width: number): LayoutClass {
   if (width < 600) return "compact";
   if (width < 840) return "medium";
   if (width < 1200) return "expanded";
   return "large";
+}
+
+export function usesSidebarDrawer(width: number): boolean {
+  return width <= SIDEBAR_DRAWER_MAX_WIDTH;
 }
 
 export function getScreenOrientation(width: number, height: number): ScreenOrientation {
