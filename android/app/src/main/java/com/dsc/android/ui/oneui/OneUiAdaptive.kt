@@ -1,15 +1,15 @@
 package com.dsc.android.ui.oneui
 
-import android.app.UiModeManager
 import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.getValue
+import android.provider.Settings
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
@@ -88,43 +88,35 @@ fun rememberOneUiFontScale(): Float = LocalDensity.current.fontScale
 /**
  * 无障碍「高对比文本」开关（适）。
  *
- * 走 AccessibilityManager 的公开状态并注册变化监听：Setting.Secure 上那个键是私有的，
- * 而且 remember(context) 不会在用户拨动开关后重组，界面会一直停在旧配色上。
+ * 平台没有把这个状态暴露成公开 API（`AccessibilityManager` 上取不到，`UiModeManager` 也不行），
+ * 可读的只有 `Settings.Secure` 里那个键名；原来的实现问题不在读它，而在 `remember(context)`
+ * ——用户拨动开关后既没有监听也不会重组，界面会一直停在旧配色上。这里补 ContentObserver。
  */
+private const val HighTextContrastSetting = "accessibility_high_text_contrast_enabled"
+
 @Composable
 fun rememberOneUiHighTextContrast(): Boolean {
   val context = LocalContext.current
-  val manager = remember(context) {
-    context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? android.view.accessibility.AccessibilityManager
-  }
-  var enabled by remember(manager) {
-    mutableStateOf(manager?.isHighTextContrastEnabled() == true)
-  }
-  DisposableEffect(manager) {
-    val listener = android.view.accessibility.AccessibilityManager.AccessibilityStateChangeListener {
-      enabled = manager?.isHighTextContrastEnabled() == true
+  var enabled by remember(context) { mutableStateOf(oneUiHighTextContrast(context)) }
+
+  DisposableEffect(context) {
+    val resolver = context.contentResolver
+    val observer = object : android.database.ContentObserver(null) {
+      override fun onChange(selfChange: Boolean) {
+        enabled = oneUiHighTextContrast(context)
+      }
     }
-    manager?.addAccessibilityStateChangeListener(listener)
-    onDispose { manager?.removeAccessibilityStateChangeListener(listener) }
+    runCatching {
+      resolver.registerContentObserver(Settings.Secure.getUriFor(HighTextContrastSetting), true, observer)
+    }
+    onDispose { runCatching { resolver.unregisterContentObserver(observer) } }
   }
   return enabled
 }
 
-@Composable
-fun rememberOneUiUiMode(context: Context = LocalContext.current): OneUiUiMode {
-  return remember(context) {
-    runCatching {
-      val manager = context.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
-      when (manager?.nightMode) {
-        UiModeManager.MODE_NIGHT_NO -> OneUiUiMode.Light
-        UiModeManager.MODE_NIGHT_YES -> OneUiUiMode.Dark
-        else -> OneUiUiMode.System
-      }
-    }.getOrDefault(OneUiUiMode.System)
-  }
-}
-
-enum class OneUiUiMode { System, Light, Dark, ExtraDark }
+private fun oneUiHighTextContrast(context: Context): Boolean = runCatching {
+  Settings.Secure.getInt(context.contentResolver, HighTextContrastSetting, 0) == 1
+}.getOrDefault(false)
 
 /**
  * 宽屏限流：One UI 在大屏上不会把一行文字拉到屏幕两端，
