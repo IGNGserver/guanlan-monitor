@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -127,7 +128,8 @@ enum class OneUiButtonVariant { Filled, Tonal, Outlined, Text }
 
 @Immutable
 enum class OneUiButtonSize(val height: Dp) {
-  Compact(40.dp),
+  /** 48dp：对话框、通知条与卡片里的次要动作也必须满足最小命中区（适） */
+  Compact(48.dp),
   Regular(52.dp),
   Large(60.dp)
 }
@@ -249,6 +251,8 @@ fun OneUiIconButton(
   Box(
     modifier = modifier
       .size(size)
+      // 选中态的浅底必须在墨色之下，否则按下去什么反馈都看不到（交）
+      .then(if (selected) Modifier.background(colors.accentSoft, shapes.circle) else Modifier)
       .oneUiPressable(
         onClick = onClick,
         enabled = enabled,
@@ -258,17 +262,13 @@ fun OneUiIconButton(
         role = Role.Button,
         minHeight = null
       )
-      .semantics { this.contentDescription = contentDescription },
+      .semantics {
+        this.contentDescription = contentDescription
+        if (selected) this.selected = true
+      },
     contentAlignment = Alignment.Center
   ) {
-    Box(
-      modifier = Modifier
-        .size(size)
-        .then(if (selected) Modifier.background(colors.accentSoft, shapes.circle) else Modifier),
-      contentAlignment = Alignment.Center
-    ) {
-      Box(modifier = if (spinning) Modifier.rotate(rotation) else Modifier) { content() }
-    }
+    Box(modifier = if (spinning) Modifier.rotate(rotation) else Modifier) { content() }
   }
 }
 
@@ -435,7 +435,7 @@ fun OneUiFilterChip(
   val interaction = rememberOneUiInteractionSource()
   Box(
     modifier = modifier
-      .defaultMinSize(minHeight = 38.dp)
+      .defaultMinSize(minHeight = metrics.chipHeight)
       .background(if (selected) colors.accent else colors.group, shapes.pill)
       .oneUiPressable(
         onClick = onClick,
@@ -452,7 +452,10 @@ fun OneUiFilterChip(
         color = if (selected) Color.Transparent else colors.outline,
         shape = shapes.pill
       )
-      .semantics { contentDescription = label },
+      .semantics {
+        contentDescription = label
+        if (selected) this.selected = true
+      },
     contentAlignment = Alignment.Center
   ) {
     Row(
@@ -487,6 +490,7 @@ fun OneUiSegmentedRow(
   if (options.isEmpty()) return
   val colors = OneUiTheme.colors
   val shapes = OneUiTheme.shapes
+  val metrics = OneUiTheme.metrics
   val motion = OneUiTheme.motion
   val safeIndex = selectedIndex.coerceIn(0, options.lastIndex)
   val indicatorIndex by animateFloatAsState(
@@ -494,13 +498,15 @@ fun OneUiSegmentedRow(
     animationSpec = motion.spring(dampingRatio = 0.82f, stiffness = 360f),
     label = "oneui_segment_indicator"
   )
+  val inset = 3.dp
 
   BoxWithConstraints(
     modifier = modifier
       .fillMaxWidth()
-      .height(48.dp)
+      // 容器比格子多两层内边距，保证每个分段自己就有 48dp 命中区（适）
+      .height(metrics.segmentHeight + inset * 2)
       .background(colors.sunken, shapes.pill)
-      .padding(3.dp)
+      .padding(inset)
   ) {
     val cellWidth = maxWidth / options.size
     Box(
@@ -596,6 +602,9 @@ fun OneUiTextField(
           .semantics { contentDescription = label },
         enabled = enabled,
         singleLine = singleLine,
+        // 聚焦态必须接到真正的输入框上：不传 interactionSource 时 focused 永远是 false，
+        // One UI 的强调色描边与标签变色就根本不会出现（交）
+        interactionSource = interaction,
         textStyle = OneUiTheme.type.body.copy(color = if (enabled) colors.textPrimary else colors.textDisabled),
         cursorBrush = SolidColor(colors.accent),
         keyboardOptions = KeyboardOptions(
@@ -612,7 +621,7 @@ fun OneUiTextField(
         OneUiIconButton(
           contentDescription = if (reveal) "隐藏访问密钥" else "显示访问密钥",
           onClick = { reveal = !reveal; onVisibleToggle() },
-          size = 36.dp
+          size = metrics.touchTarget
         ) {
           OneUiText(
             text = if (reveal) "隐藏" else "显示",

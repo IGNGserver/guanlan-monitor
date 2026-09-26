@@ -1,5 +1,3 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-
 package com.dsc.android.ui.screens
 
 import androidx.compose.foundation.background
@@ -23,7 +21,6 @@ import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Timer
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -42,6 +39,7 @@ import com.dsc.android.ui.oneui.OneUiIconTone
 import com.dsc.android.ui.oneui.OneUiDialog
 import com.dsc.android.ui.oneui.OneUiGroup
 import com.dsc.android.ui.oneui.OneUiGroupHeader
+import com.dsc.android.ui.oneui.OneUiIcon
 import com.dsc.android.ui.oneui.OneUiIconButton
 import com.dsc.android.ui.oneui.OneUiLeadingIcon
 import com.dsc.android.ui.oneui.OneUiLinearProgress
@@ -242,11 +240,11 @@ fun SettingsScreen(
                   )
                 }
                 if (selected) {
-                  Icon(
+                  OneUiIcon(
                     imageVector = Icons.Rounded.Check,
                     contentDescription = "已选择",
-                    tint = colors.accent,
-                    modifier = Modifier.size(22.dp)
+                    size = metrics.iconSize,
+                    tint = colors.accent
                   )
                 }
               }

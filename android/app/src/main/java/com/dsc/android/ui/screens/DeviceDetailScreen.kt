@@ -1,5 +1,3 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-
 package com.dsc.android.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
@@ -32,7 +30,6 @@ import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VideogameAsset
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -101,7 +98,7 @@ fun DeviceDetailScreen(
       contentDescription = "返回设备列表",
       onClick = actions.onShowDeviceList
     ) {
-      Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
+      OneUiIcon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
     }
   }
 
@@ -128,14 +125,14 @@ fun DeviceDetailScreen(
             enabled = !state.refreshing,
             spinning = state.refreshing
           ) {
-            Icon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textSecondary)
+            OneUiIcon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textPrimary)
           }
           if (data != null) {
             OneUiIconButton(
               contentDescription = "查看流量",
               onClick = { actions.onOpenTraffic(data.device.deviceId) }
             ) {
-              Icon(Icons.Rounded.Timeline, contentDescription = null, tint = colors.textSecondary)
+              OneUiIcon(Icons.Rounded.Timeline, contentDescription = null, tint = colors.textPrimary)
             }
           }
         }
@@ -261,13 +258,13 @@ private fun OverviewGroup(data: MetricsDto, state: AppState) {
   val metrics = OneUiTheme.metrics
   val online = data.status == "online"
   Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
-    Box(
-      modifier = Modifier
-        .fillMaxWidth()
-        .background(colors.group, OneUiTheme.shapes.group)
-        .padding(metrics.groupPadding),
-      content = {
-        Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceS)) {
+    OneUiGroup {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = metrics.groupPadding, vertical = metrics.spaceS),
+        verticalArrangement = Arrangement.spacedBy(metrics.spaceS)
+      ) {
           Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Column(modifier = Modifier.weight(1f)) {
               OneUiText(text = data.device.hostname, role = OneUiTextRole.Headline)
@@ -294,9 +291,8 @@ private fun OverviewGroup(data: MetricsDto, state: AppState) {
             label = "当前粒度 ${state.selectedWindow.label}",
             color = if (online) colors.accent else colors.textSecondary
           )
-        }
       }
-    )
+    }
     OneUiMetaTable(
       items = buildList {
         add("设备 ID" to data.device.deviceId)
@@ -393,10 +389,15 @@ private fun WindowDock(selected: MetricWindow, enabled: Boolean, onSelect: (Metr
   Column(
     modifier = Modifier
       .fillMaxWidth()
-      .background(colors.group)
+      .oneUiSurface(
+        colors.raised,
+        OneUiTheme.shapes.dock,
+        colors = colors,
+        level = OneUiSurfaceLevel.Raised
+      )
       // 工具坞贴在屏幕下沿，必须自己让开手势条/三键栏（适）
       .navigationBarsPadding()
-      .padding(horizontal = metrics.screenMargin, vertical = 10.dp),
+      .padding(horizontal = metrics.screenMargin, vertical = metrics.spaceS),
     verticalArrangement = Arrangement.spacedBy(6.dp)
   ) {
     OneUiText(
@@ -420,7 +421,6 @@ private fun blockIcon(block: DeviceBlockKey) = when (block) {
 }
 
 /** 类别面板（件 + 动）：实例切换用胶囊行，图表与元信息按 One UI 的层级重排。 */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun BlockSheet(
   data: MetricsDto,
@@ -438,7 +438,7 @@ private fun BlockSheet(
   val chartWindow = remember(data, selectedWindow) { chartWindowFor(data, selectedWindow) }
   val editAction: @Composable () -> Unit = {
     OneUiIconButton(contentDescription = "编辑记录项", onClick = onEditBlock) {
-      Icon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textSecondary)
+      OneUiIcon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textPrimary)
     }
   }
 
@@ -1037,27 +1037,34 @@ private fun InstanceGroup(
 ) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
-  Column(
-    modifier = Modifier
-      .fillMaxWidth()
-      .background(colors.group, OneUiTheme.shapes.group)
-      .padding(metrics.groupPadding),
-    verticalArrangement = Arrangement.spacedBy(metrics.spaceM)
-  ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        OneUiText(text = title, role = OneUiTextRole.Title)
-        if (subtitle.isNotBlank()) {
-          OneUiText(text = subtitle, role = OneUiTextRole.RowSubtitle, color = colors.textSecondary)
+  OneUiGroup {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = metrics.groupPadding, vertical = metrics.spaceM),
+      verticalArrangement = Arrangement.spacedBy(metrics.spaceM)
+    ) {
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          OneUiText(text = title, role = OneUiTextRole.Title)
+          if (subtitle.isNotBlank()) {
+            OneUiText(text = subtitle, role = OneUiTextRole.RowSubtitle, color = colors.textSecondary)
+          }
+        }
+        if (onEdit != null) {
+          OneUiIconButton(contentDescription = "编辑该实例的记录项", onClick = onEdit) {
+            // 行内动作：次级色 + 小一号，不与标题抢层级
+            OneUiIcon(
+              imageVector = Icons.Rounded.Tune,
+              contentDescription = null,
+              size = metrics.iconFilledSize,
+              tint = colors.textSecondary
+            )
+          }
         }
       }
-      if (onEdit != null) {
-        OneUiIconButton(contentDescription = "编辑该实例的记录项", onClick = onEdit) {
-          Icon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textSecondary)
-        }
-      }
+      content()
     }
-    content()
   }
 }
 

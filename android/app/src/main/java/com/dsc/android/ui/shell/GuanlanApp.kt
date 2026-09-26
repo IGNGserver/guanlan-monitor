@@ -210,7 +210,8 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
         .align(Alignment.BottomCenter)
         .navigationBarsPadding()
         .padding(
-          horizontal = metrics.screenMargin,
+          start = metrics.screenMargin,
+          end = metrics.screenMargin,
           bottom = if (screen.showsTopLevelNavigation) {
             metrics.bottomBarHeight + metrics.spaceM
           } else {

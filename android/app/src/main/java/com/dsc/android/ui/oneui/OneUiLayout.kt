@@ -36,6 +36,8 @@ data class OneUiShapes(
   val card: Shape = RoundedCornerShape(20.dp),
   /** 分组容器（One UI 设置列表的组） */
   val group: Shape = RoundedCornerShape(24.dp),
+  /** 底部工具坞/确认条：只圆上沿两角，下沿贴屏幕边 */
+  val dock: Shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 0.dp, bottomEnd = 0.dp),
   val dialog: Shape = RoundedCornerShape(28.dp),
   val sheet: Shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
   /** 按钮 / 芯片：One UI 一律是两端全圆的胶囊 */
@@ -86,8 +88,14 @@ data class OneUiMetrics(
   val dividerIndent: Dp = 20.dp,
   val iconSize: Dp = 24.dp,
   val iconFilledSize: Dp = 20.dp,
+  val leadingIconBox: Dp = 40.dp,
   val touchTarget: Dp = 48.dp,
   val iconButton: Dp = 48.dp,
+  /** 胶囊读数：非交互时按视觉高度，可点时按命中区（适） */
+  val pillHeight: Dp = 32.dp,
+  val chipHeight: Dp = 48.dp,
+  /** 分段选择器：容器比格子宽 2×内边距，保证每个格子自己就有 48dp 命中区 */
+  val segmentHeight: Dp = 48.dp,
   val topBarSmallHeight: Dp = 60.dp,
   val topBarLargeHeight: Dp = 108.dp,
   val bottomBarHeight: Dp = 72.dp,
@@ -99,12 +107,13 @@ data class OneUiMetrics(
   /** One UI 的核心：底部保留拇指区，正文不铺到屏幕最下沿 */
   val thumbZone: Dp = 24.dp,
   val focusStroke: Dp = 3.dp,
-  val focusGap: Dp = 2.dp,
   val pressedScale: Float = 0.972f,
   val hoverOverlay: Float = 0.05f,
   val pressedOverlay: Float = 0.11f,
   val selectedOverlay: Float = 0.08f,
   val disabledContent: Float = 0.38f,
+  /** 底部导航/侧栏选中态那枚浅色胶囊的透明度 */
+  val navIndicatorAlpha: Float = 0.16f,
   /** 指标网格在窄屏/大字号下退化为单列的阈值（适） */
   val metricMinCellWidth: Dp = 176.dp,
   val chartHeight: Dp = 132.dp,

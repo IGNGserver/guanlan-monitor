@@ -307,7 +307,7 @@ internal fun OneUiMetricTile(
   Column(
     modifier = modifier
       .defaultMinSize(minHeight = 150.dp)
-      .background(colors.group, shapes.card)
+      .oneUiSurface(colors.group, shapes.card, colors = colors, level = OneUiSurfaceLevel.Group)
       .oneUiPressable(
         onClick = onClick,
         shape = shapes.card,
@@ -409,8 +409,7 @@ fun OneUiMetaTable(
   Column(
     modifier = modifier
       .fillMaxWidth()
-      .background(colors.group, shapes.card)
-      .clip(shapes.card)
+      .oneUiSurface(colors.group, shapes.card, colors = colors, level = OneUiSurfaceLevel.Group)
   ) {
     if (!title.isNullOrBlank()) {
       OneUiText(

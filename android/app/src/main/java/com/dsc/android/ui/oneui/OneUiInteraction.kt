@@ -4,7 +4,6 @@ package com.dsc.android.ui.oneui
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -18,7 +17,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -144,11 +146,31 @@ fun Modifier.oneUiPressable(
       scaleY = layerScale.value
       alpha = if (enabled) 1f else metrics.disabledContent
     }
-    .then(
-      if (interaction.focused) Modifier.border(metrics.focusStroke, colors.focusRing, shape) else Modifier
-    )
     .clip(shape)
     .background(colors.ink.copy(alpha = inkAlpha.value), shape)
+    // 焦点框画在所有底色与墨色之上，并且整条 3dp 都留在边界内侧：
+    // 用 border() 会被自己的墨色或 clip 吃掉一半，键盘/遥控器/DeX 下等于没有焦点态（交 + 适）
+    .then(
+      if (interaction.focused) {
+        val stroke = metrics.focusStroke
+        val ringColor = colors.focusRing
+        Modifier.drawWithContent {
+          drawContent()
+          val half = stroke.toPx() / 2f
+          drawOutline(
+            outline = shape.createOutline(
+              size = Size(size.width - half * 2f, size.height - half * 2f),
+              direction = layoutDirection,
+              density = this
+            ),
+            color = ringColor,
+            style = Stroke(width = stroke.toPx())
+          )
+        }
+      } else {
+        Modifier
+      }
+    )
     .then(if (minHeight != null) Modifier.defaultMinSize(minHeight = minHeight) else Modifier)
     .oneUiHoverable(interactionSource)
     .then(
