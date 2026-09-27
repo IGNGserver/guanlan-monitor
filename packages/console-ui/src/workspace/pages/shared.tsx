@@ -578,10 +578,23 @@ type TelemetryInstanceSummary = {
 };
 
 function TelemetryModelList({ label, items }: { label: string; items: TelemetryInstanceSummary[] }) {
-  return (
-    <div className="workspace-telemetry-models">
-      <span className="workspace-telemetry-models__label">{label}</span>
-      {items.length ? (
+  if (!items.length) {
+    return (
+      <div className="workspace-telemetry-models">
+        <span className="workspace-telemetry-models__empty">未发现可参与聚合的实例</span>
+      </div>
+    );
+  }
+
+  // If there are more than 4 items (like many virtual network interfaces or disks),
+  // collapse them inside a details disclosure to preserve balanced tile heights.
+  if (items.length > 4) {
+    return (
+      <details className="workspace-telemetry-models-details">
+        <summary className="workspace-telemetry-models-summary">
+          <span>{label}（共 {items.length} 个实例）</span>
+          <small>点击展开 / 折叠</small>
+        </summary>
         <div className="workspace-telemetry-models__list">
           {items.map((item) => (
             <span className="workspace-telemetry-model-chip" key={item.id} title={item.detail ? `${item.name} · ${item.detail}` : item.name}>
@@ -590,9 +603,21 @@ function TelemetryModelList({ label, items }: { label: string; items: TelemetryI
             </span>
           ))}
         </div>
-      ) : (
-        <span className="workspace-telemetry-models__empty">未发现可参与聚合的实例</span>
-      )}
+      </details>
+    );
+  }
+
+  return (
+    <div className="workspace-telemetry-models">
+      <span className="workspace-telemetry-models__label">{label}</span>
+      <div className="workspace-telemetry-models__list">
+        {items.map((item) => (
+          <span className="workspace-telemetry-model-chip" key={item.id} title={item.detail ? `${item.name} · ${item.detail}` : item.name}>
+            <strong>{item.name}</strong>
+            {item.detail && <small>{item.detail}</small>}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

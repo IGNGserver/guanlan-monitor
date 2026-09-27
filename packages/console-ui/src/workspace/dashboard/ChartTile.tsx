@@ -16,6 +16,10 @@ export interface ChartTileProps {
   subtitle?: string;
   /** 头部右侧的操作区。 */
   controls?: React.ReactNode;
+  /** 核心最新指标值（如 24.5% 或 12.4 MB/s），直接大字号呈现于头部。 */
+  heroStat?: string;
+  /** 核心指标旁的小徽章/极值统计（如 峰值 78% · 均值 35%）。 */
+  heroBadge?: string;
   /** 图表主体。 */
   children?: React.ReactNode;
   /** 无数据时的提示；给出后主体被替换成提示文本。 */
@@ -35,6 +39,8 @@ export function ChartTile({
   eyebrow,
   subtitle,
   controls,
+  heroStat,
+  heroBadge,
   children,
   emptyMessage,
   details,
@@ -49,7 +55,15 @@ export function ChartTile({
       <div className="chart-tile__header">
         <div className="chart-tile__titles">
           {eyebrow ? <span className="chart-tile__eyebrow">{eyebrow}</span> : null}
-          <h3 className="chart-tile__title">{title}</h3>
+          <div className="chart-tile__title-row">
+            <h3 className="chart-tile__title">{title}</h3>
+            {heroStat ? (
+              <div className="chart-tile__hero-stat">
+                <span className="chart-tile__hero-value">{heroStat}</span>
+                {heroBadge ? <span className="chart-tile__hero-badge">{heroBadge}</span> : null}
+              </div>
+            ) : null}
+          </div>
           {subtitle ? <p className="chart-tile__subtitle">{subtitle}</p> : null}
         </div>
         {controls || details ? (

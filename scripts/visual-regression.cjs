@@ -421,12 +421,12 @@ async function run() {
   const deviceTabs = page.locator(".workspace-device-context .cds--tabs");
   assert.deepEqual(
     (await deviceTabs.getByRole("tab").allTextContents()).map((label) => label.trim()),
-    ["概览", "处理器与内存", "存储与网络", "显卡与散热"],
-    "device detail must render exactly the four fixed layout tabs in order"
+    ["概览", "计算与系统", "存储", "网络", "硬件与环境"],
+    "device detail must render exactly the five fixed layout tabs in order"
   );
 
-  await page.getByRole("tab", { name: "处理器与内存" }).click();
-  assert.equal(await page.getByRole("tab", { name: "处理器与内存" }).getAttribute("aria-selected"), "true", "device tabs must change the active panel");
+  await page.getByRole("tab", { name: "计算与系统" }).click();
+  assert.equal(await page.getByRole("tab", { name: "计算与系统" }).getAttribute("aria-selected"), "true", "device tabs must change the active panel");
   // 切换选项卡必须整体换掉分区，上一个选项卡的图表不能残留在页面上。
   assert.equal(await page.locator(".dashboard-section#section-compute").count(), 1, "compute tab must render its fixed sections");
   assert.equal(await page.locator(".dashboard-section#section-overview").count(), 0, "switching tabs must unmount the previous tab's sections");
@@ -434,7 +434,7 @@ async function run() {
 
   // 换选项卡时页眉与吸顶设备条必须一动不动，否则整页内容会上下跳一下。
   const tabHeaderHeights = {};
-  for (const tabName of ["处理器与内存", "存储与网络", "显卡与散热", "概览"]) {
+  for (const tabName of ["计算与系统", "存储", "网络", "硬件与环境", "概览"]) {
     await page.getByRole("tab", { name: tabName }).click();
     await page.waitForTimeout(220);
     tabHeaderHeights[tabName] = await page.evaluate(() => {
@@ -453,8 +453,8 @@ async function run() {
     // The caption copy differs per tab, so only the caption-independent parts of
     // the header must be identical; the strip may differ by a single line.
     const { context, ...fixed } = measured;
-    assert.deepEqual(fixed, (({ topbar, headingTop, tabs, controls }) => ({ topbar, headingTop, tabs, controls }))(tabHeaderHeights["处理器与内存"]), `switching to the "${tabName}" tab must not move the header (saw ${JSON.stringify(measured)})`);
-    assert.ok(Math.abs(context - tabHeaderHeights["处理器与内存"].context) <= 20, `switching to the "${tabName}" tab moved the sticky device context by more than one caption line (${context} vs ${tabHeaderHeights["处理器与内存"].context})`);
+    assert.deepEqual(fixed, (({ topbar, headingTop, tabs, controls }) => ({ topbar, headingTop, tabs, controls }))(tabHeaderHeights["计算与系统"]), `switching to the "${tabName}" tab must not move the header (saw ${JSON.stringify(measured)})`);
+    assert.ok(Math.abs(context - tabHeaderHeights["计算与系统"].context) <= 20, `switching to the "${tabName}" tab moved the sticky device context by more than one caption line (${context} vs ${tabHeaderHeights["计算与系统"].context})`);
   }
 
   // 小组件机制已经彻底移除：设备页不得再出现排布编辑入口，也不得再写布局接口。
