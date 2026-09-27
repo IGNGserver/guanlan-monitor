@@ -72,6 +72,39 @@
   scrollbar-width: none;
 }
 
+/* Collapsible / compact details summary for hardware models */
+.workspace-telemetry-models-details {
+  border: 1px solid var(--cds-border-subtle-00, #e0e0e0);
+  background: var(--cds-layer-01, #ffffff);
+  border-radius: 0;
+}
+
+.workspace-telemetry-models-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 550;
+  color: var(--cds-text-secondary, #525252);
+  user-select: none;
+}
+
+.workspace-telemetry-models-summary:hover {
+  color: var(--cds-text-primary, #161616);
+  background: var(--cds-layer-hover-01, rgba(0, 0, 0, 0.04));
+}
+
+.workspace-telemetry-models-summary::-webkit-details-marker {
+  display: none;
+}
+
+.workspace-telemetry-models-details .workspace-telemetry-models__list {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--cds-border-subtle-00, #e0e0e0);
+}
+
 .workspace-anchor-bar::-webkit-scrollbar {
   display: none;
 }

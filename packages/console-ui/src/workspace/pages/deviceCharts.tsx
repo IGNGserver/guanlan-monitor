@@ -73,6 +73,10 @@ export interface DeviceChartTile {
   /** 覆盖常量里的标题；实例磁贴会带上实例名。 */
   title?: string;
   subtitle?: string;
+  /** 核心最新数值，直接突出显示在卡片头部 */
+  heroStat?: string;
+  /** 核心统计徽章（如 峰值 / 均值） */
+  heroBadge?: string;
   /** 时间序列数据，`line` / `area` 与「详细信息」表都读它。 */
   series?: CarbonSeries[];
   donut?: { parts: CarbonDonutPart[]; centerLabel?: string };
@@ -374,36 +378,62 @@ function gpuCapacityTotals(context: DeviceChartContext): { used: number; total: 
  * `Record<DeviceChartId, ChartRenderer>` 编译失败。
  */
 export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
-  "overview-cpu-average": (chart, context) => [{
-    key: chart.id,
-    subtitle: `全部 ${context.cpuInstances.length} 个 CPU 实例的平均值`,
-    series: [{ label: "全部 CPU 平均", points: context.aggregates.cpuUsage }],
-    ...PERCENT_TILE,
-    footer: <TelemetryModelList label="已采集 CPU 型号" items={context.modelItems.cpu} />
-  }],
+  "overview-cpu-average": (chart, context) => {
+    const points = context.aggregates.cpuUsage;
+    const latestVal = points.length ? points[points.length - 1].value : undefined;
+    const maxVal = points.length ? Math.max(...points.map((p) => p.value).filter(Number.isFinite)) : undefined;
+    return [{
+      key: chart.id,
+      heroStat: latestVal != null ? formatPercent(latestVal) : undefined,
+      heroBadge: maxVal != null ? `峰值 ${formatPercent(maxVal)}` : undefined,
+      subtitle: `全部 ${context.cpuInstances.length} 个 CPU 实例的平均值`,
+      series: [{ label: "全部 CPU 平均", points: context.aggregates.cpuUsage }],
+      ...PERCENT_TILE,
+      footer: <TelemetryModelList label="已采集 CPU 型号" items={context.modelItems.cpu} />
+    }];
+  },
 
-  "overview-memory": (chart, context) => [{
-    key: chart.id,
-    subtitle: `物理 ${context.summaries.memory} · 已提交 ${context.summaries.committed} · 页面文件 ${context.summaries.pagefile}`,
-    series: [
-      { label: "已用物理内存", points: unavailablePoints(context.series?.memoryUsedBytes ?? [], context.unavailable("memoryUsage")), valueFormatter: formatBytes },
-      { label: "已提交", points: unavailablePoints(context.series?.memoryCommittedBytes ?? [], context.unavailable("memoryCommitted")), valueFormatter: formatBytes }
-    ],
-    valueFormatter: formatBytes
-  }],
+  "overview-memory": (chart, context) => {
+    const usedBytes = context.filteredLatest?.memoryUsedBytes;
+    const totalBytes = context.filteredLatest?.memoryTotalBytes;
+    const pct = usedBytes != null && totalBytes ? Math.round((usedBytes / totalBytes) * 100) : null;
+    return [{
+      key: chart.id,
+      heroStat: usedBytes != null ? formatBytes(usedBytes) : undefined,
+      heroBadge: pct != null ? `${pct}% 占用` : undefined,
+      subtitle: `物理 ${context.summaries.memory} · 已提交 ${context.summaries.committed} · 页面文件 ${context.summaries.pagefile}`,
+      series: [
+        { label: "已用物理内存", points: unavailablePoints(context.series?.memoryUsedBytes ?? [], context.unavailable("memoryUsage")), valueFormatter: formatBytes },
+        { label: "已提交", points: unavailablePoints(context.series?.memoryCommittedBytes ?? [], context.unavailable("memoryCommitted")), valueFormatter: formatBytes }
+      ],
+      valueFormatter: formatBytes
+    }];
+  },
 
-  "overview-disk-total": (chart, context) => [{
-    key: chart.id,
-    subtitle: `全部 ${context.diskInstances.length} 个硬盘实例的总量 · ${context.summaries.disk}`,
-    series: [{ label: "全部硬盘总已用", points: context.aggregates.diskUsedBytes, valueFormatter: formatBytes }],
-    valueFormatter: formatBytes,
-    footer: <TelemetryModelList label="已采集硬盘型号" items={context.modelItems.disk} />
-  }],
+  "overview-disk-total": (chart, context) => {
+    const usedBytes = context.filteredLatest?.diskUsedBytes;
+    const totalBytes = context.filteredLatest?.diskTotalBytes;
+    const pct = usedBytes != null && totalBytes ? Math.round((usedBytes / totalBytes) * 100) : null;
+    return [{
+      key: chart.id,
+      heroStat: usedBytes != null ? formatBytes(usedBytes) : undefined,
+      heroBadge: pct != null ? `${pct}% 已用` : undefined,
+      subtitle: `全部 ${context.diskInstances.length} 个硬盘实例的总量 · ${context.summaries.disk}`,
+      series: [{ label: "全部硬盘总已用", points: context.aggregates.diskUsedBytes, valueFormatter: formatBytes }],
+      valueFormatter: formatBytes,
+      footer: <TelemetryModelList label="已采集硬盘型号" items={context.modelItems.disk} />
+    }];
+  },
 
   "overview-network-average": (chart, context) => {
     const unavailable = context.unavailable("networkRxRate") || context.unavailable("networkTxRate");
+    const rxPoints = context.aggregates.networkRx;
+    const txPoints = context.aggregates.networkTx;
+    const lastRx = rxPoints.length ? rxPoints[rxPoints.length - 1].value : undefined;
+    const lastTx = txPoints.length ? txPoints[txPoints.length - 1].value : undefined;
     return [{
       key: chart.id,
+      heroStat: lastRx != null && lastTx != null ? `↓ ${bytesPerSecond(lastRx)} · ↑ ${bytesPerSecond(lastTx)}` : undefined,
       subtitle: unavailable ? UNAVAILABLE_METRIC_LABEL : `全部 ${context.networkInstances.length} 个网卡实例的平均值`,
       series: [
         { label: "平均接收 (Rx)", points: context.aggregates.networkRx, valueFormatter: bytesPerSecond },
@@ -413,26 +443,6 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
       footer: <TelemetryModelList label="已采集网卡型号" items={context.modelItems.network} />
     }];
   },
-
-  "overview-gpu-average": (chart, context) => [{
-    key: chart.id,
-    subtitle: `全部 ${context.gpuInstances.length} 个显卡实例的平均值`,
-    series: [
-      { label: "平均核心", points: context.aggregates.gpuUsage },
-      { label: "平均编码", points: context.aggregates.gpuEncode },
-      { label: "平均解码", points: context.aggregates.gpuDecode }
-    ],
-    ...PERCENT_TILE,
-    footer: <TelemetryModelList label="已采集显卡型号" items={context.modelItems.gpu} />
-  }],
-
-  "overview-gpu-memory": (chart, context) => [{
-    key: chart.id,
-    subtitle: `${context.summaries.gpuMemory} · 全部显卡实例合计`,
-    series: [{ label: "GPU 总内存已用", points: context.aggregates.gpuMemoryUsedBytes, valueFormatter: formatBytes }],
-    valueFormatter: formatBytes,
-    footer: <TelemetryModelList label="已采集显卡型号" items={context.modelItems.gpu} />
-  }],
 
   "overview-capacity-memory": (chart, context) => {
     const latest = context.filteredLatest;
@@ -513,11 +523,15 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
     instances: context.cpuInstances,
     block: "cpu",
     label: (cpu) => `${cpu.socketIndex != null ? `Socket ${cpu.socketIndex}` : cpu.id} · ${displayModelName(cpu.model, cpu.name, "CPU")}`,
-    tile: (cpu, label) => ({
-      subtitle: `${cpu.coreCount ?? "未知"} 核 · ${cpu.logicalCount ?? "未知"} 线程`,
-      series: [{ label: `${label} 使用率`, points: unavailablePoints(cpu.usagePercent, context.unavailable("cpuUsage")) }],
-      ...PERCENT_TILE
-    }),
+    tile: (cpu, label) => {
+      const lastUsage = cpu.usagePercent.length ? cpu.usagePercent[cpu.usagePercent.length - 1].value : undefined;
+      return {
+        subtitle: `${cpu.coreCount ?? "未知"} 核 · ${cpu.logicalCount ?? "未知"} 线程`,
+        heroStat: lastUsage != null ? formatPercent(lastUsage) : undefined,
+        series: [{ label: `${label} 使用率`, points: unavailablePoints(cpu.usagePercent, context.unavailable("cpuUsage")) }],
+        ...PERCENT_TILE
+      };
+    },
     fallback: () => ({
       subtitle: "未拆分出独立 CPU 实例",
       series: [{ label: "CPU 占用", points: unavailablePoints(context.series?.cpuUsagePercent ?? [], context.unavailable("cpuUsage")) }],
@@ -549,8 +563,10 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
       const points = cpu.temperatureC.length || context.cpuInstances.length > 1
         ? cpu.temperatureC
         : context.series?.cpuTemperatureC ?? [];
+      const lastTemp = points.length ? points[points.length - 1].value : undefined;
       return {
         subtitle: "CPU Package / Core",
+        heroStat: lastTemp != null ? celsius(lastTemp) : undefined,
         series: [{ label: `${label} 温度`, points: unavailablePoints(points, context.unavailable("cpuTemperature")), valueFormatter: celsius }],
         valueFormatter: celsius,
         emptyMessage: context.unavailable("cpuTemperature") ? UNAVAILABLE_METRIC_LABEL : points.length ? undefined : "等待 CPU Package/Core 温度传感器"
@@ -618,14 +634,19 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
     instances: context.visibleNetworkInstances,
     block: "network",
     label: (network) => displayModelName(network.model, network.name, "网卡"),
-    tile: (network) => ({
-      subtitle: describeNetworkIdentity(network) || "独立网卡实例",
-      series: [
-        { label: "接收 (Rx)", points: unavailablePoints(network.rxBytesPerSec, context.unavailable("networkRxRate")), valueFormatter: bytesPerSecond },
-        { label: "发送 (Tx)", points: unavailablePoints(network.txBytesPerSec, context.unavailable("networkTxRate")), valueFormatter: bytesPerSecond }
-      ],
-      valueFormatter: bytesPerSecond
-    }),
+    tile: (network) => {
+      const lastRx = network.rxBytesPerSec.length ? network.rxBytesPerSec[network.rxBytesPerSec.length - 1].value : undefined;
+      const lastTx = network.txBytesPerSec.length ? network.txBytesPerSec[network.txBytesPerSec.length - 1].value : undefined;
+      return {
+        subtitle: describeNetworkIdentity(network) || "独立网卡实例",
+        heroStat: lastRx != null && lastTx != null ? `↓ ${bytesPerSecond(lastRx)} · ↑ ${bytesPerSecond(lastTx)}` : undefined,
+        series: [
+          { label: "接收 (Rx)", points: unavailablePoints(network.rxBytesPerSec, context.unavailable("networkRxRate")), valueFormatter: bytesPerSecond },
+          { label: "发送 (Tx)", points: unavailablePoints(network.txBytesPerSec, context.unavailable("networkTxRate")), valueFormatter: bytesPerSecond }
+        ],
+        valueFormatter: bytesPerSecond
+      };
+    },
     fallback: () => ({
       series: [
         { label: "接收 (Rx)", points: unavailablePoints(context.series?.networkRxBytesPerSec ?? [], context.unavailable("networkRxRate")), valueFormatter: bytesPerSecond },
@@ -658,14 +679,19 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
     instances: context.visibleDiskInstances,
     block: "disk",
     label: (disk) => displayModelName(disk.model, disk.name, "磁盘"),
-    tile: (disk) => ({
-      subtitle: [disk.mountPoint, disk.filesystem].filter(Boolean).join(" · ") || "当前硬盘 I/O",
-      series: [
-        { label: "读取", points: unavailablePoints(disk.readBytesPerSec, context.unavailable("diskRead")), valueFormatter: bytesPerSecond },
-        { label: "写入", points: unavailablePoints(disk.writeBytesPerSec, context.unavailable("diskWrite")), valueFormatter: bytesPerSecond }
-      ],
-      valueFormatter: bytesPerSecond
-    }),
+    tile: (disk) => {
+      const lastRead = disk.readBytesPerSec.length ? disk.readBytesPerSec[disk.readBytesPerSec.length - 1].value : undefined;
+      const lastWrite = disk.writeBytesPerSec.length ? disk.writeBytesPerSec[disk.writeBytesPerSec.length - 1].value : undefined;
+      return {
+        subtitle: [disk.mountPoint, disk.filesystem].filter(Boolean).join(" · ") || "当前硬盘 I/O",
+        heroStat: lastRead != null && lastWrite != null ? `读 ${bytesPerSecond(lastRead)} · 写 ${bytesPerSecond(lastWrite)}` : undefined,
+        series: [
+          { label: "读取", points: unavailablePoints(disk.readBytesPerSec, context.unavailable("diskRead")), valueFormatter: bytesPerSecond },
+          { label: "写入", points: unavailablePoints(disk.writeBytesPerSec, context.unavailable("diskWrite")), valueFormatter: bytesPerSecond }
+        ],
+        valueFormatter: bytesPerSecond
+      };
+    },
     fallback: () => ({
       series: [
         { label: "读取", points: unavailablePoints(context.series?.diskReadBytesPerSec ?? [], context.unavailable("diskRead")), valueFormatter: bytesPerSecond },
@@ -675,21 +701,34 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
     })
   }),
 
-  "gpu-load": (chart, context) => expandInstances(chart, context, {
-    instances: context.visibleGpuInstances,
-    block: "gpu",
-    label: (gpu) => displayInstanceName(gpu.name, "GPU"),
-    tile: (gpu) => ({
-      subtitle: "GPU 核心引擎",
-      series: [{ label: "核心", points: gpu.usagePercent }],
-      ...PERCENT_TILE
-    }),
-    fallback: () => ({
-      subtitle: "GPU 核心引擎",
-      series: [{ label: "GPU 核心", points: context.series?.gpuUsagePercent ?? [] }],
-      ...PERCENT_TILE
-    })
-  }),
+  "gpu-load": (chart, context) => {
+    if (!context.visibleGpuInstances.length && !context.gpuInstances.length) {
+      return [{
+        key: `${chart.id}:none`,
+        title: chart.title,
+        emptyMessage: "未检测到独立显卡或 GPU 实例"
+      }];
+    }
+    return expandInstances(chart, context, {
+      instances: context.visibleGpuInstances,
+      block: "gpu",
+      label: (gpu) => displayInstanceName(gpu.name, "GPU"),
+      tile: (gpu) => {
+        const lastUsage = gpu.usagePercent.length ? gpu.usagePercent[gpu.usagePercent.length - 1].value : undefined;
+        return {
+          subtitle: "GPU 核心引擎",
+          heroStat: lastUsage != null ? formatPercent(lastUsage) : undefined,
+          series: [{ label: "核心", points: gpu.usagePercent }],
+          ...PERCENT_TILE
+        };
+      },
+      fallback: () => ({
+        subtitle: "GPU 核心引擎",
+        series: [{ label: "GPU 核心", points: context.series?.gpuUsagePercent ?? [] }],
+        ...PERCENT_TILE
+      })
+    });
+  },
 
   "gpu-encode": (chart, context) => expandInstances(chart, context, {
     instances: context.visibleGpuInstances,
@@ -741,26 +780,37 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
     })
   }),
 
-  "gpu-memory": (chart, context) => expandInstances(chart, context, {
-    instances: context.visibleGpuInstances,
-    block: "gpu",
-    label: (gpu) => displayInstanceName(gpu.name, "GPU"),
-    tile: (gpu) => {
-      const latest = gpuLatestFor(context, gpu.id);
-      const memoryLabel = gpuMemoryLabel(latest?.memoryKind ?? gpu.memoryKind);
-      return {
-        title: `${displayInstanceName(gpu.name, "GPU")} · ${memoryLabel}已用容量`,
-        subtitle: latest ? formatGpuMemorySummary([latest]) : "容量暂无",
-        series: [{ label: `${memoryLabel}已用`, points: gpu.memoryUsedBytes, valueFormatter: formatBytes }],
+  "gpu-memory": (chart, context) => {
+    if (!context.visibleGpuInstances.length && !context.gpuInstances.length) {
+      return [{
+        key: `${chart.id}:none`,
+        title: chart.title,
+        emptyMessage: "未检测到独立显卡或显存设备"
+      }];
+    }
+    return expandInstances(chart, context, {
+      instances: context.visibleGpuInstances,
+      block: "gpu",
+      label: (gpu) => displayInstanceName(gpu.name, "GPU"),
+      tile: (gpu) => {
+        const latest = gpuLatestFor(context, gpu.id);
+        const memoryLabel = gpuMemoryLabel(latest?.memoryKind ?? gpu.memoryKind);
+        const lastMem = gpu.memoryUsedBytes.length ? gpu.memoryUsedBytes[gpu.memoryUsedBytes.length - 1].value : undefined;
+        return {
+          title: `${displayInstanceName(gpu.name, "GPU")} · ${memoryLabel}已用容量`,
+          subtitle: latest ? formatGpuMemorySummary([latest]) : "容量暂无",
+          heroStat: lastMem != null ? formatBytes(lastMem) : undefined,
+          series: [{ label: `${memoryLabel}已用`, points: gpu.memoryUsedBytes, valueFormatter: formatBytes }],
+          valueFormatter: formatBytes
+        };
+      },
+      fallback: () => ({
+        subtitle: context.summaries.gpuMemory,
+        series: [{ label: "GPU 内存已用", points: context.series?.gpuMemoryUsedBytes ?? [], valueFormatter: formatBytes }],
         valueFormatter: formatBytes
-      };
-    },
-    fallback: () => ({
-      subtitle: context.summaries.gpuMemory,
-      series: [{ label: "GPU 内存已用", points: context.series?.gpuMemoryUsedBytes ?? [], valueFormatter: formatBytes }],
-      valueFormatter: formatBytes
-    })
-  }),
+      })
+    });
+  },
 
   "gpu-temperature": (chart, context) => expandInstances(chart, context, {
     instances: context.visibleGpuInstances,
@@ -817,7 +867,7 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
 
   "fan-rpm": (chart, context) => {
     if (!context.fanInstances.length) {
-      return [{ key: chart.id, title: chart.title, emptyMessage: "尚未收到风扇样本；请先在 Agent 设置中重新检测硬件并启动采集。" }];
+      return [{ key: chart.id, title: chart.title, emptyMessage: "尚未收到风扇样本；设备可能采用被动散热或未开放风扇传感器接口。" }];
     }
     return context.fanInstances.map((fan) => {
       const fanLatest = context.filteredLatest?.fans.find((item) => item.id === fan.id);
@@ -827,10 +877,12 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
       const rpmLabel = fanLatest?.rpmStatus === "disabled" ? "转速采集已关闭"
         : currentRpm != null ? `最新观测 ${Math.round(currentRpm)} RPM${context.filteredLatest?.hardwareSampledAt ? `（${formatDate(context.filteredLatest.hardwareSampledAt)}）` : ""}`
         : lastPoint ? `当前值未知 · 上次 ${Math.round(lastPoint.value)} RPM（${formatDate(lastPoint.timestamp)}）` : "当前值未知";
+      const displayRpm = currentRpm ?? (lastPoint ? lastPoint.value : null);
       return {
         key: `${chart.id}:${fan.id}`,
         title: `${fan.name} · ${chart.title}`,
         subtitle: [fan.interface || "风扇接口", rpmLabel].join(" · "),
+        heroStat: displayRpm != null ? `${Math.round(displayRpm)} RPM` : undefined,
         series: [{ label: "转速", points: fan.rpm, valueFormatter: revolutions }],
         valueFormatter: revolutions
       } satisfies DeviceChartTile;
@@ -877,6 +929,8 @@ export function DeviceChartCells({ section, context }: { section: DashboardSecti
           <ChartTile
             title={tile.title ?? chart.title}
             subtitle={tile.subtitle}
+            heroStat={tile.heroStat}
+            heroBadge={tile.heroBadge}
             controls={tile.controls}
             emptyMessage={tile.emptyMessage}
             footer={tile.footer}
