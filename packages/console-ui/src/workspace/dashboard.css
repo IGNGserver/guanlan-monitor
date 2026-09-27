@@ -308,6 +308,18 @@
   width: 100%;
 }
 
+.workspace-device-context .cds--tabs .cds--tabs__nav-item {
+  box-shadow: none !important;
+}
+
+.workspace-device-context .cds--tabs .cds--tabs__nav-item + .cds--tabs__nav-item {
+  border-left: 1px solid var(--cds-border-subtle-00, #e0e0e0);
+}
+
+.workspace-device-context .cds--tabs .cds--tabs__nav-item.cds--tabs__nav-item--selected {
+  box-shadow: inset 0 2px 0 0 var(--cds-interactive, #0f62fe) !important;
+}
+
 /* 整页全屏：宿主授予 Fullscreen API 时，页面自己成为滚动容器。 */
 .workspace-page--fullscreen {
   height: 100%;

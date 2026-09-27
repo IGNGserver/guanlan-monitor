@@ -668,22 +668,35 @@
   min-width: max-content;
   inline-size: auto !important;
   min-height: var(--workspace-control-height);
-  border-color: var(--cds-border-subtle-00, #e0e0e0);
+  border: 1px solid var(--cds-border-subtle-00, #e0e0e0) !important;
+  border-radius: 0 !important;
   color: var(--cds-text-secondary, #525252);
   white-space: nowrap;
   background: var(--cds-layer-01, #ffffff);
+  box-shadow: none !important;
+}
+
+.m3-segmented-control .cds--content-switcher-btn + .cds--content-switcher-btn {
+  margin-inline-start: -1px;
+}
+
+.m3-segmented-control .cds--content-switcher-btn::before {
+  display: none !important;
 }
 
 .m3-segmented-control .cds--content-switcher-btn.cds--content-switcher--selected,
 .m3-segmented-control .cds--content-switcher-btn[aria-pressed="true"],
 .m3-segmented-control .cds--content-switcher-btn[aria-selected="true"] {
+  border-color: var(--cds-border-subtle-00, #e0e0e0) !important;
   color: var(--cds-text-primary, #161616) !important;
   background: var(--cds-layer-selected-01, #e0e0e0) !important;
+  box-shadow: none !important;
 }
 
+.m3-segmented-control .cds--content-switcher-btn::after,
 .m3-segmented-control .cds--content-switcher-btn.cds--content-switcher--selected::after,
 .m3-segmented-control .cds--content-switcher-btn[aria-selected="true"]::after {
-  background-color: var(--cds-layer-selected-01, #e0e0e0) !important;
+  display: none !important;
 }
 
 /* Filter chips were the last M3-coloured control left in the shell: a filled
