@@ -40,3 +40,31 @@ export function getResponsiveTier(width: number): ResponsiveTier {
   if (width < 1440) return "lg";
   return "xl";
 }
+
+export type DeviceFormFactor = "phone" | "tablet" | "desktop";
+
+/**
+ * Detect device form factor combining User Agent heuristics, screen width,
+ * orientation and touch capabilities.
+ */
+export function detectDeviceFormFactor(width?: number, hasTouch?: boolean): DeviceFormFactor {
+  if (typeof window === "undefined" && width === undefined) return "desktop";
+  const effectiveWidth = width ?? (typeof window !== "undefined" ? window.innerWidth : 1200);
+  const touch = hasTouch ?? (typeof window !== "undefined" ? (("ontouchstart" in window) || (navigator.maxTouchPoints > 0)) : false);
+
+  if (typeof navigator !== "undefined") {
+    const ua = navigator.userAgent.toLowerCase();
+    const isMobileUa = /mobile|iphone|ipod|android.*mobile|windows phone/i.test(ua);
+    const isTabletUa = /ipad|tablet|(android(?!.*mobile))/i.test(ua) || (navigator.maxTouchPoints > 1 && /macintosh/i.test(ua));
+    if (isTabletUa) return "tablet";
+    if (isMobileUa) return "phone";
+  }
+
+  if (touch) {
+    if (effectiveWidth < 600) return "phone";
+    if (effectiveWidth <= 1024) return "tablet";
+  }
+
+  if (effectiveWidth < 600) return "phone";
+  return "desktop";
+}
