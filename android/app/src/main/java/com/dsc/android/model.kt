@@ -151,6 +151,7 @@ data class FanDto(
   val interfaceName: String? = null,
   @SerialName("interface") val interfaceRaw: String? = null,
   val rpm: Int,
+  val rpmStatus: String? = null,
   val note: String? = null,
   val controlMode: String? = null,
   val targetTemperatureC: Double? = null,
@@ -304,6 +305,8 @@ data class DeviceDetailDto(
 
 @Serializable
 data class DeviceLatestDto(
+  val hardwareSampledAt: String? = null,
+  val cpuTemperatureSampledAt: String? = null,
   val system: SystemStatsDto = SystemStatsDto(),
   val cpuUsagePercent: Double = 0.0,
   val cpuFrequencyMHz: Double? = null,
@@ -345,6 +348,7 @@ data class TemperatureSensorDto(
   val displayName: String? = null,
   val role: String,
   val currentC: Double? = null,
+  val observedAt: String? = null,
   val highC: Double? = null,
   val criticalC: Double? = null,
   val emergencyC: Double? = null,

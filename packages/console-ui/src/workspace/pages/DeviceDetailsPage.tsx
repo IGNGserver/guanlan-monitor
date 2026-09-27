@@ -216,7 +216,7 @@ export function DeviceDetailsPage() {
   const fanInstances = mergeFanMetricSeries(
     latestFanInstances,
     filterEnabledInstances("fan", series?.fans ?? []),
-    snapshot?.generatedAt ?? metrics?.lastSeenAt ?? selectedDevice.lastSeenAt ?? new Date().toISOString()
+    latest?.hardwareSampledAt ?? metrics?.lastSeenAt ?? selectedDevice.lastSeenAt ?? new Date().toISOString()
   );
   const visibleDiskInstances = selectedDiskId === "all" ? diskInstances : diskInstances.filter((disk) => disk.id === selectedDiskId);
   const visibleNetworkInstances = selectedNetId === "all" ? networkInstances : networkInstances.filter((network) => network.id === selectedNetId);

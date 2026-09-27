@@ -23,6 +23,8 @@ export interface DeviceRealtimeState {
 
 export interface TimeSeriesRecord {
   timestamp: number;
+  hardwareSampledAt?: string;
+  cpuTemperatureSampledAt?: string;
   cpuUsagePercent: number;
   cpuFrequencyMHz: number;
   cpuTemperatureC: number;
@@ -50,6 +52,8 @@ export interface TimeSeriesRecord {
   gpus?: InstanceMetricRecord[];
   fans?: InstanceMetricRecord[];
   recordedDetails?: {
+    hardwareSampledAt?: string;
+    cpuTemperatureSampledAt?: string;
     system: AgentMetricsPayload["system"];
     memory: AgentMetricsPayload["memory"];
     cpuPackages: AgentMetricsPayload["cpuPackages"];

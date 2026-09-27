@@ -543,7 +543,8 @@ function mergeFanMetricSeries(latestFans: FanSensorStats[], historicalFans: FanM
   const latestById = new Map(latestFans.map((fan) => [fan.id, fan]));
   const merged = historicalFans.map((fan) => {
     const latest = latestById.get(fan.id);
-    const currentPoint = latest ? { timestamp: fallbackTimestamp, value: latest.rpm } : null;
+    const currentPoint = latest && latest.rpmStatus !== "disabled" && latest.rpmStatus !== "unavailable"
+      ? { timestamp: fallbackTimestamp, value: latest.rpm } : null;
     const hasCurrentPoint = currentPoint ? fan.rpm.some((point) => point.timestamp === currentPoint.timestamp) : true;
     const rpm = currentPoint && !hasCurrentPoint
       ? [...fan.rpm, currentPoint].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
@@ -562,7 +563,9 @@ function mergeFanMetricSeries(latestFans: FanSensorStats[], historicalFans: FanM
       id: fan.id,
       name: fan.label,
       interface: fan.interface,
-      rpm: [{ timestamp: fallbackTimestamp, value: fan.rpm }]
+      rpm: fan.rpmStatus === "disabled" || fan.rpmStatus === "unavailable"
+        ? []
+        : [{ timestamp: fallbackTimestamp, value: fan.rpm }]
     });
   }
   return merged;
@@ -874,6 +877,7 @@ function TemperatureSourcesPanel({
                 <span className="workspace-temperature-source-row__value">
                   <strong>{temperatureValueLabel(sensor)}</strong>
                   <small className={`workspace-temperature-status workspace-temperature-status--${sensor.status}`}>{temperatureStatusLabel(sensor.status)}</small>
+                  {sensor.observedAt && <small>采样 {formatDate(sensor.observedAt)}</small>}
                   {temperatureLimitsLabel(sensor) && <small>{temperatureLimitsLabel(sensor)}</small>}
                 </span>
               </button>
@@ -886,6 +890,7 @@ function TemperatureSourcesPanel({
               <div className="workspace-temperature-source-chart__heading">
                 <strong>{selectedSeries.name}</strong>
                 <small>{temperatureRoleLabels[selectedSeries.role] ?? selectedSeries.role} · {temperatureSourceLabel(selectedSeries.source)}</small>
+                {!sensors.some((sensor) => sensor.id === selectedSeries.id) && <small>当前未检测到，仅显示历史记录</small>}
               </div>
               <CarbonTimeSeriesChart
                 series={[{ label: "温度", points: selectedSeries.currentC, valueFormatter: (value) => formatTemperature(value, 1) }]}

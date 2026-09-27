@@ -363,6 +363,8 @@ export async function registerRoutes(
         instanceMetricConfig: metricConfig.instanceMetricConfig ?? {},
         availableMetrics,
         latest: {
+          hardwareSampledAt: latest.hardwareSampledAt ?? null,
+          cpuTemperatureSampledAt: latest.cpuTemperatureSampledAt ?? null,
           system: state.latest.system,
           cpuUsagePercent: state.latest.cpuUsagePercent,
           cpuFrequencyMHz: resolveCpuFrequencyMHz(latest),
@@ -389,10 +391,16 @@ export async function registerRoutes(
           temperatureSensors: latest.temperatureSensors ?? [],
           sensorBackends: latest.sensorBackends ?? [],
           unavailableMetrics: latest.unavailableMetrics ?? [],
-          fans: (latest.fans ?? []).map((fan) => ({
-            ...fan,
-            note: notes[fan.id] ?? fan.note ?? ""
-          }))
+          fans: (latest.fans ?? []).map((fan) => {
+            const rpmEnabled = enabledMetrics.includes("fanRpm") &&
+              (metricConfig.instanceMetricConfig?.[fan.id]?.includes("fanRpm") ?? true);
+            return {
+              ...fan,
+              rpm: rpmEnabled ? fan.rpm : 0,
+              rpmStatus: rpmEnabled ? fan.rpmStatus : "disabled",
+              note: notes[fan.id] ?? fan.note ?? ""
+            };
+          })
         },
         series
       };

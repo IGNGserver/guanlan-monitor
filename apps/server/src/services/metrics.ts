@@ -32,6 +32,7 @@ export class MetricsService {
   private readonly minuteAccumulators = new Map<string, MetricAccumulator>();
   private readonly hourlyAccumulators = new Map<string, MetricAccumulator>();
   private readonly deviceQueues = new Map<string, Promise<void>>();
+  private readonly ingestQueues = new Map<string, Promise<void>>();
   private flushInFlight = false;
 
   constructor(
@@ -48,7 +49,7 @@ export class MetricsService {
       { reopenClosed: true }
     );
     if (device.status === "closed") return;
-    await this.persistPayload(payload, receivedAt);
+    await this.runDeviceIngestOperation(payload.identity.deviceId, () => this.persistPayload(payload, receivedAt));
   }
 
   private async persistPayload(
@@ -57,6 +58,12 @@ export class MetricsService {
     sortOrder?: number
   ) {
     const previousState = await this.repositories.realtime.getDevice(payload.identity.deviceId);
+    // An offline agent may replay an older pending sample after a newer one
+    // already reached the Hub. Never let it replace the live reading or roll
+    // the active aggregation window backwards.
+    if (previousState && Date.parse(payload.timestamp) <= Date.parse(previousState.latest.timestamp)) {
+      return;
+    }
     if (previousState && hasIdentityBoundaryChanged(previousState.identity, payload.identity)) {
       // Identity metadata changed (e.g. hostname, os, platform, arch).
       // Preserve historical metrics in history repository, and reset only live accumulators.
@@ -324,6 +331,13 @@ export class MetricsService {
     await this.repositories.history.clearDeviceHistory(deviceId);
   }
 
+  private runDeviceIngestOperation(deviceId: string, operation: () => Promise<void>): Promise<void> {
+    const queue = this.ingestQueues.get(deviceId) ?? Promise.resolve();
+    const next = queue.then(operation, operation);
+    this.ingestQueues.set(deviceId, next.then(() => undefined, () => undefined));
+    return next;
+  }
+
   private runDeviceAggregateOperation<T>(deviceId: string, operation: () => Promise<T>): Promise<T> {
     const queue = this.deviceQueues.get(deviceId) ?? Promise.resolve();
     const withTimeout = () =>
@@ -424,15 +438,17 @@ function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[], timest
 
   return {
     timestamp: total.timestamp,
+    hardwareSampledAt: lastSample?.hardwareSampledAt,
+    cpuTemperatureSampledAt: lastSample?.cpuTemperatureSampledAt,
     cpuUsagePercent: total.cpuUsagePercent / samples.length,
     cpuFrequencyMHz: total.cpuFrequencyMHz / samples.length,
-    cpuTemperatureC: averagePositiveTemperature(samples.map((sample) => sample.cpuTemperatureC)),
+    cpuTemperatureC: averageObservedTemperature(samples, "cpuTemperatureC", "cpuTemperatureSampledAt"),
     gpuUsagePercent: total.gpuUsagePercent / samples.length,
     gpuEncodePercent: total.gpuEncodePercent / samples.length,
     gpuDecodePercent: total.gpuDecodePercent / samples.length,
     gpuFrequencyMHz: total.gpuFrequencyMHz / samples.length,
     gpuMemoryUsagePercent: total.gpuMemoryUsagePercent / samples.length,
-    gpuTemperatureC: averagePositiveTemperature(samples.map((sample) => sample.gpuTemperatureC)),
+    gpuTemperatureC: averageObservedTemperature(samples, "gpuTemperatureC", "hardwareSampledAt"),
     memoryUsagePercent: total.memoryUsagePercent / samples.length,
     swapUsagePercent: total.swapUsagePercent / samples.length,
     memoryUsedBytes: total.memoryUsedBytes / samples.length,
@@ -460,19 +476,40 @@ function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[], timest
   };
 }
 
-function averagePositiveTemperature(values: number[]): number {
-  const valid = values.filter((value) => Number.isFinite(value) && value > 0);
-  return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : 0;
+function averageObservedTemperature(
+  samples: ReturnType<typeof payloadToTimeSeries>[],
+  valueKey: "cpuTemperatureC" | "gpuTemperatureC",
+  observedAtKey: "cpuTemperatureSampledAt" | "hardwareSampledAt"
+): number {
+  const values = new Map<string, number>();
+  for (const sample of samples) {
+    const value = sample[valueKey];
+    if (Number.isFinite(value) && value > 0) {
+      values.set(sample[observedAtKey] ?? String(sample.timestamp), value);
+    }
+  }
+  return values.size ? [...values.values()].reduce((sum, value) => sum + value, 0) / values.size : 0;
 }
 
 function mergeTemperatureSensorDetails(samples: ReturnType<typeof payloadToTimeSeries>[]): TemperatureSensorReading[] {
   const sensors = new Map<string, TemperatureSensorReading>();
+  const values = new Map<string, { readings: Map<string, number> }>();
   for (const sample of samples) {
     for (const sensor of sample.recordedDetails?.temperatureSensors ?? []) {
       sensors.set(sensor.id, sensor);
+      if (sensor.status === "valid" && typeof sensor.currentC === "number" && Number.isFinite(sensor.currentC)) {
+        const previous = values.get(sensor.id) ?? { readings: new Map<string, number>() };
+        previous.readings.set(sensor.observedAt ?? sample.hardwareSampledAt ?? String(sample.timestamp), sensor.currentC);
+        values.set(sensor.id, previous);
+      }
     }
   }
-  return [...sensors.values()];
+  return [...sensors.values()].map((sensor) => {
+    const measured = values.get(sensor.id);
+    return measured && sensor.status === "valid"
+      ? { ...sensor, currentC: [...measured.readings.values()].reduce((sum, value) => sum + value, 0) / measured.readings.size }
+      : sensor;
+  });
 }
 
 function averageInstanceMetrics(
@@ -509,6 +546,9 @@ function averageInstanceMetrics(
       >;
       temperatureSum: number;
       temperatureCount: number;
+      rpmCount: number;
+      temperatureObservedAt: Set<string>;
+      rpmObservedAt: Set<string>;
     }
   >();
 
@@ -557,7 +597,10 @@ function averageInstanceMetrics(
             rpm: 0
           },
           temperatureSum: 0,
-          temperatureCount: 0
+          temperatureCount: 0,
+          rpmCount: 0,
+          temperatureObservedAt: new Set<string>(),
+          rpmObservedAt: new Set<string>()
         });
       }
       const current = grouped.get(item.id)!;
@@ -593,15 +636,23 @@ function averageInstanceMetrics(
       }
       current.sums.memoryUsagePercent += item.memoryUsagePercent ?? 0;
       current.sums.memoryUsedBytes += item.memoryUsedBytes ?? 0;
-      if (typeof item.temperatureC === "number" && Number.isFinite(item.temperatureC) && item.temperatureC > 0) {
+      const temperatureAt = key === "cpus" ? sample.cpuTemperatureSampledAt : sample.hardwareSampledAt;
+      if (typeof item.temperatureC === "number" && Number.isFinite(item.temperatureC) && item.temperatureC > 0 &&
+        (!temperatureAt || !current.temperatureObservedAt.has(temperatureAt))) {
         current.temperatureSum += item.temperatureC;
         current.temperatureCount += 1;
+        if (temperatureAt) current.temperatureObservedAt.add(temperatureAt);
       }
-      current.sums.rpm += item.rpm ?? 0;
+      if (typeof item.rpm === "number" && Number.isFinite(item.rpm) &&
+        (!sample.hardwareSampledAt || !current.rpmObservedAt.has(sample.hardwareSampledAt))) {
+        current.sums.rpm += item.rpm;
+        current.rpmCount += 1;
+        if (sample.hardwareSampledAt) current.rpmObservedAt.add(sample.hardwareSampledAt);
+      }
     }
   }
 
-  return [...grouped.values()].map(({ count, usageCount, frequencyCount, meta, sums, temperatureSum, temperatureCount }) => ({
+  return [...grouped.values()].map(({ count, usageCount, frequencyCount, meta, sums, temperatureSum, temperatureCount, rpmCount }) => ({
     ...meta,
     usagePercent: usageCount > 0 ? sums.usagePercent / usageCount : undefined,
     totalBytes: sums.totalBytes / count,
@@ -622,6 +673,6 @@ function averageInstanceMetrics(
     memoryUsagePercent: sums.memoryUsagePercent / count,
     memoryUsedBytes: sums.memoryUsedBytes / count,
     temperatureC: temperatureCount > 0 ? temperatureSum / temperatureCount : undefined,
-    rpm: sums.rpm / count
+    rpm: rpmCount > 0 ? sums.rpm / rpmCount : undefined
   }));
 }

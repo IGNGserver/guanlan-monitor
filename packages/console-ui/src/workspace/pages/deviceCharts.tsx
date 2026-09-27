@@ -821,11 +821,16 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
     }
     return context.fanInstances.map((fan) => {
       const fanLatest = context.filteredLatest?.fans.find((item) => item.id === fan.id);
-      const currentRpm = fanLatest?.rpm ?? fan.rpm[fan.rpm.length - 1]?.value;
+      const currentRpm = fanLatest && fanLatest.rpmStatus !== "disabled" && fanLatest.rpmStatus !== "unavailable"
+        ? fanLatest.rpm : null;
+      const lastPoint = fan.rpm[fan.rpm.length - 1];
+      const rpmLabel = fanLatest?.rpmStatus === "disabled" ? "转速采集已关闭"
+        : currentRpm != null ? `最新观测 ${Math.round(currentRpm)} RPM${context.filteredLatest?.hardwareSampledAt ? `（${formatDate(context.filteredLatest.hardwareSampledAt)}）` : ""}`
+        : lastPoint ? `当前值未知 · 上次 ${Math.round(lastPoint.value)} RPM（${formatDate(lastPoint.timestamp)}）` : "当前值未知";
       return {
         key: `${chart.id}:${fan.id}`,
         title: `${fan.name} · ${chart.title}`,
-        subtitle: [fan.interface || "风扇接口", currentRpm == null ? "当前值未知" : `当前 ${Math.round(currentRpm)} RPM`].join(" · "),
+        subtitle: [fan.interface || "风扇接口", rpmLabel].join(" · "),
         series: [{ label: "转速", points: fan.rpm, valueFormatter: revolutions }],
         valueFormatter: revolutions
       } satisfies DeviceChartTile;
