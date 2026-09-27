@@ -109,7 +109,6 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
     if (edgeSwipeRef.current?.pointerId === event.pointerId) edgeSwipeRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
-  const handleEdgePointerEnter = (event: React.PointerEvent<HTMLButtonElement>) => { if (event.pointerType === "mouse" && window.innerWidth > 839) setSidebarPeek(true); };
   return <Theme theme={carbonTheme} className="guanlan-carbon-theme"><div className={`workspace-root ${!capabilities.canControlNativeWindow ? "is-web" : ""} ${sidebarCollapsed ? "is-sidebar-collapsed" : "is-sidebar-open"} ${sidebarPeek ? "is-sidebar-peek" : ""}`}>
     <NativeTitleBar />
     <PrimaryNavigation sidebarPeek={sidebarPeek} onSidebarLeave={() => setSidebarPeek(false)} />
@@ -123,7 +122,7 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
         </PullToRefresh>
       </main>
     </div>
-    {sidebarCollapsed && <button className="workspace-sidebar-edge-trigger" type="button" aria-label="展开侧边栏" onClick={() => setSidebarCollapsed(false)} onPointerEnter={handleEdgePointerEnter} onFocus={() => { if (window.innerWidth > 839) setSidebarPeek(true); }} onPointerDown={handleEdgePointerDown} onPointerMove={handleEdgePointerMove} onPointerUp={handleEdgePointerEnd} onPointerCancel={handleEdgePointerEnd} onLostPointerCapture={handleEdgePointerEnd} />}
+    {sidebarCollapsed && <button className="workspace-sidebar-edge-trigger" type="button" aria-label="展开侧边栏" onClick={() => setSidebarCollapsed(false)} onPointerDown={handleEdgePointerDown} onPointerMove={handleEdgePointerMove} onPointerUp={handleEdgePointerEnd} onPointerCancel={handleEdgePointerEnd} onLostPointerCapture={handleEdgePointerEnd} />}
     <CompactNavigation />
     <CommandPalette />
     <ShellNotice />
