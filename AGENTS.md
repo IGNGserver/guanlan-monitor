@@ -3,8 +3,10 @@
 只写本仓库与设备级规范的差异。Git 纪律、worktree、冲突处理见 `~/.qoder/coder-rules/global-rules.md`。
 
 Collaboration: solo
+Default branch: main
 Integration: direct-after-validation
-Release: prerelease-first
+Release: manual-on-explicit-request（不再每次开发自动发测试版）
+Validation: `pnpm lint`、`pnpm typecheck`、`pnpm verify:version` + 下方测试清单
 Worktree: `~/项目/.wt/设备状态控制台/<slug>`
 
 ## 这是什么
@@ -29,16 +31,18 @@ Worktree: `~/项目/.wt/设备状态控制台/<slug>`
 - 仓库根的 `AUDIT.md`、`AUDIT_REMEDIATION.md`、`NEEDS_SOL_REVIEW.md`、`FRONTEND_AUDIT_2026-09-26.md`、`UX_AUDIT_REPORT.md` 是历史审计快照，**不得当作待办清单自动执行**，只作背景。
 - 不提交 `.next`、`dist`、`*.tsbuildinfo` 等生成文件。
 
-## 发布
+## 发布（2026-09-27 起：取消"每次开发自动发测试版"）
 
-- 说"发布 release"即指测试版；只有明确要求"正式发布"才允许覆盖 `latest`、上传正式安装包或部署生产。测试版不得被当作稳定安装源或生产部署依据。
-- 版本号只能递增第三位（patch），前两位保持不变；同步更新根目录 `VERSION` 与所有 package manifest。
-- 流程固定：版本同步 → 静态检查 → 提交并推送 `main` → 打 `vX.Y.Z` tag → 等待 Actions verify/build/publish 全部完成 → 核对 Release 与 Windows setup 资产 → 下载资产并校验 sha256 才算完成。任一环节失败（workflow 失败、Release 未生成、资产缺失、校验不匹配）不得宣称完成，应继续排查或明确报告阻塞原因。
-- 生产运行从 Docker Hub 拉取用户指定的固定版本镜像（或用户明确选 `latest`），不得用未测试的工作区源码构建生产镜像；`main` 的推送本身不等于可安装版本。
+- **默认不发版。** 完成开发只做到：提交并推送 `main` → `ci.yml` 跑校验。**不** bump 版本号、**不**建 tag、**不**创建 GitHub Release、**不**下载资产。旧规范里"每次开发后自动递增 patch 并触发测试版 Release、必须等 workflow 完成才算结束"的要求已废止，不要再据此结束任务。
+- 只有你明确说"发布"时，才执行一次 `RELEASE.md` 的 Release Steps：更新根 `VERSION` → 同步 `package.json` 等所有 manifest → 提交发布准备改动 → `git tag vX.Y.Z` → `git push origin main --follow-tags` → 等 tag 触发的 `release-test.yml` 与 `docker-publish.yml` 跑完 → 核对 Release 与资产。
+- 说"发布 release"默认仍指测试版（prerelease）；测试版不得被当作稳定安装源或生产部署依据。只有明确要求"正式发布"才允许覆盖 `latest`、上传正式安装包或部署生产。
+- 版本号未经明确允许只递增第三位（patch），前两位保持不变；`VERSION` 与所有 package manifest 必须同步（`pnpm verify:version` 会检查一致性）。
+- 发布链任一环节失败（workflow 失败、Release 未生成、资产缺失、sha256 不匹配）不得宣称完成，应继续排查或明确报告阻塞原因；Windows setup 资产需下载并校验 sha256 后才算交付。
+- 生产运行从 Docker Hub 拉取指定固定版本镜像（或你明确选 `latest`），不得用未测试的工作区源码构建生产镜像；`main` 的推送本身不等于可安装版本。
 - **Release 资产命名必须明确包含系统与安装/便携属性**：Windows setup（支持 `/S` 静默安装与无界面参数化配置）、Windows portable、Windows update、Linux install（内含系统级 systemd 服务与静默配置）、Android。**不再单独发布 CLI 发行资产**——无桌面场景的安装、配置、自启动与上报能力内建于桌面版安装包、随包的 `guanlan-agent` 命令以及机器级 agent 服务中。
-- 详见 `RELEASE.md`（142 行，权威）与 `CONTRIBUTING.md`。
+- 权威流程见 `RELEASE.md`（142 行）与 `CONTRIBUTING.md`。
 
 ## 环境事实（不含凭据）
 
-- 生产：NAS Docker `taskdock`/观澜 生产 Compose；入口见部署文档。
-- CI：`ci.yml`（push main/master + 所有 PR）、`release-test.yml`、`docker-publish.yml`、`performance-audit.yml`、`inspect-agents-test.yml`、`update-agents-test.yml`。
+- 运行位置：NAS 上的 Docker Compose（Hub 服务端）+ Windows/Linux 桌面端与机器级 agent；入口与端口见部署文档，凭据只在受控 environment 与本机配置里。
+- CI/发布触发器：`ci.yml` 由 push main/master 与所有 PR 触发；`release-test.yml`、`docker-publish.yml` **只由 `v*.*.*` tag 触发**（docker-publish 另支持手动 dispatch）；`deploy-production.yml`、`deploy-test.yml`、`update-agents-test.yml`、`inspect-agents-test.yml`、`performance-audit.yml` 全部是 `workflow_dispatch` 手动触发。
