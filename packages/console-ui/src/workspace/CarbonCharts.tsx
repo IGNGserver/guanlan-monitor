@@ -22,26 +22,28 @@ function chartTheme(): "g10" | "g100" {
 }
 
 /**
- * Axis ticks are formatted here rather than left to Carbon Charts.
- *
- * Carbon Charts formats a `scaleType: "time"` axis with the browser locale, so
- * an English browser rendered `9:56:30 AM` on a page whose every other
- * timestamp is `9月26日 08:13` — and the CI runner, pinned to `en-US`, was
- * quietly asserting against the English form. This is the same `zh-CN` 24-hour
- * contract `formatAxisTime` gives the rest of the console, so the axis can no
- * longer drift with whoever is looking at it.
+ * Axis ticks are formatted dynamically based on time span and range.
+ * Short windows (1m, 5m, 15m, 1h) display concise HH:mm so ticks don't overlap.
+ * Longer windows include month and day.
  */
-const axisTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
-  month: "short",
+const timeOnlyFormatter = new Intl.DateTimeFormat("zh-CN", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23"
+});
+
+const monthDayTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  month: "numeric",
   day: "numeric",
   hour: "2-digit",
   minute: "2-digit",
   hourCycle: "h23"
 });
 
-function formatAxisTickDate(value: unknown): string {
+function formatAxisTickDate(value: unknown, isShortRange = true): string {
   const date = value instanceof Date ? value : new Date(String(value));
-  return Number.isFinite(date.getTime()) ? axisTimeFormatter.format(date) : "";
+  if (!Number.isFinite(date.getTime())) return "";
+  return isShortRange ? timeOnlyFormatter.format(date) : monthDayTimeFormatter.format(date);
 }
 
 export function carbonChartData(series: CarbonSeries[]): ChartTabularData {
@@ -54,17 +56,30 @@ export function carbonChartData(series: CarbonSeries[]): ChartTabularData {
     })));
 }
 
-function axisOptions(height: string, series: CarbonSeries[], maxValue?: number, valueFormatter?: (value: number) => string) {
-  /* A tile can carry one formatter for all of its series; that is the common
-     case here (`PERCENT_TILE`). Falling back to the first series that declares
-     one used to be the only path, so every percentage tile whose series did
-     not repeat the formatter rendered a bare `10 … 60` with no unit, and you
-     had to read the card title to learn it was a utilisation percentage. */
+function axisOptions(
+  height: string,
+  series: CarbonSeries[],
+  maxValue?: number,
+  valueFormatter?: (value: number) => string
+) {
   const tickFormatter = valueFormatter ?? series.find((item) => item.valueFormatter)?.valueFormatter
     ?? (maxValue === 100 ? (value: number) => `${Math.round(value)}%` : undefined);
+
+  // Compute time range duration to pick tick format
+  let isShortRange = true;
+  const allPoints = series.flatMap((s) => s.points);
+  if (allPoints.length >= 2) {
+    const minTime = Math.min(...allPoints.map((p) => Date.parse(p.timestamp)).filter((t) => Number.isFinite(t)));
+    const maxTime = Math.max(...allPoints.map((p) => Date.parse(p.timestamp)).filter((t) => Number.isFinite(t)));
+    if (Number.isFinite(minTime) && Number.isFinite(maxTime) && maxTime - minTime > 3600 * 6 * 1000) {
+      isShortRange = false;
+    }
+  }
+
   const formatTick = (tick: number | Date) => typeof tick === "number" && Number.isFinite(tick)
     ? tickFormatter?.(tick) ?? String(tick)
-    : formatAxisTickDate(tick);
+    : formatAxisTickDate(tick, isShortRange);
+
   return {
     height,
     theme: chartTheme(),
@@ -72,18 +87,20 @@ function axisOptions(height: string, series: CarbonSeries[], maxValue?: number, 
     resizable: true,
     axes: {
       bottom: {
-        title: "时间",
+        title: "",
         mapsTo: "date",
         scaleType: "time",
-        ticks: { formatter: formatTick }
+        ticks: {
+          formatter: formatTick,
+          rotation: "never"
+        }
       },
       left: {
         title: "",
         mapsTo: "value",
         scaleType: "linear",
         ticks: tickFormatter ? { formatter: formatTick } : undefined,
-        // 百分比这类有天然上界的指标必须钉住坐标轴，否则 3% 的抖动会被拉满
-        // 整个绘图区，看起来像满载。
+        // 百分比这类有天然上界的指标必须钉住坐标轴，否则 3% 的抖动会被拉满整个绘图区
         ...(maxValue == null ? {} : { max: maxValue })
       }
     },

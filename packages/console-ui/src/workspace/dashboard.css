@@ -126,6 +126,40 @@
   flex: 1 1 auto;
 }
 
+.chart-tile__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--workspace-space-03);
+}
+
+.chart-tile__hero-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--workspace-space-03);
+}
+
+.chart-tile__hero-value {
+  font-size: 1.25rem;
+  line-height: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--cds-text-primary, #161616);
+  letter-spacing: -0.01em;
+}
+
+.chart-tile__hero-badge {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--cds-text-secondary, #525252);
+  background: var(--cds-layer-02, rgba(0, 0, 0, 0.04));
+  padding: 1px 6px;
+  border-radius: 2px;
+}
+
 .chart-tile__eyebrow {
   display: block;
   font-size: 0.75rem;

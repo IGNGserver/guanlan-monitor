@@ -22,27 +22,25 @@ export const DEVICE_DASHBOARD = {
     {
       id: "overview",
       name: "概览",
-      caption: "跨硬件的平均趋势与容量占用",
+      caption: "系统关键指标驾驶舱与容量水位",
       sections: [
         {
           id: "section-overview",
-          eyebrow: "综合遥测",
-          title: "硬件平均趋势",
-          description: "按类别平均所有已采集实例；单个硬件的独立图表在对应明细选项卡里。",
+          eyebrow: "驾驶舱",
+          title: "核心性能走势",
+          description: "处理器、内存、主活动磁盘与核心网络吞吐的综合实时走势。",
           charts: [
             { id: "overview-cpu-average", title: "CPU 平均使用率", visualization: "line", span: "half", requires: ["cpuUsage"] },
             { id: "overview-memory", title: "物理与已提交内存", visualization: "area", span: "half", requires: ["memoryUsage", "memoryCommitted"] },
-            { id: "overview-disk-total", title: "磁盘总已用容量", visualization: "area", span: "half", requires: ["diskUsage"] },
-            { id: "overview-network-average", title: "网卡平均吞吐", visualization: "line", span: "half", requires: ["networkRxRate", "networkTxRate"] },
-            { id: "overview-gpu-average", title: "GPU 平均使用率", visualization: "line", span: "half", requires: ["gpuUsage", "gpuEncode", "gpuDecode"] },
-            { id: "overview-gpu-memory", title: "GPU 总内存已用容量", visualization: "area", span: "half", requires: ["gpuMemory"] }
+            { id: "overview-disk-total", title: "活动磁盘总已用", visualization: "area", span: "half", requires: ["diskUsage"] },
+            { id: "overview-network-average", title: "核心网卡平均吞吐", visualization: "line", span: "half", requires: ["networkRxRate", "networkTxRate"] }
           ]
         },
         {
           id: "section-overview-capacity",
           eyebrow: "容量",
-          title: "容量占用",
-          description: "以当前样本计算的占用比例，用 Carbon 仪表与环形图取代原来的文字摘要。",
+          title: "资源水位总览",
+          description: "关键硬件资源当前占用比例与容量分布。",
           charts: [
             { id: "overview-capacity-memory", title: "物理内存占用", visualization: "donut", span: "quarter", requires: ["memoryUsage"] },
             { id: "overview-capacity-disk", title: "磁盘占用", visualization: "donut", span: "quarter", requires: ["diskUsage"] },
@@ -63,14 +61,14 @@ export const DEVICE_DASHBOARD = {
     },
     {
       id: "compute",
-      name: "处理器与内存",
-      caption: "CPU 实例、频率、温度与内存层级",
+      name: "计算与系统",
+      caption: "CPU 实例负载、主频、温度与系统进程调度",
       sections: [
         {
           id: "section-compute",
           eyebrow: "处理器",
           title: "处理器与系统统计",
-          description: "拓扑、缓存与系统计数的静态事实，不随时间窗口变化。",
+          description: "拓扑、核心与系统调度的静态事实，不随时间窗口变化。",
           charts: [
             { id: "compute-cpu-facts", title: "处理器与系统统计", visualization: "number", span: "full", requires: ["systemOverview"] }
           ]
@@ -88,8 +86,8 @@ export const DEVICE_DASHBOARD = {
         },
         {
           id: "section-compute-memory",
-          eyebrow: "内存",
-          title: "内存与系统",
+          eyebrow: "内存与调度",
+          title: "内存层级与系统进程",
           charts: [
             { id: "compute-memory", title: "内存容量明细", visualization: "area", span: "half", requires: ["memoryUsage", "memoryCommitted", "memoryCached", "swapUsage"] },
             { id: "compute-memory-capacity", title: "物理内存占用", visualization: "donut", span: "half", requires: ["memoryUsage"] },
@@ -99,13 +97,30 @@ export const DEVICE_DASHBOARD = {
       ]
     },
     {
-      id: "storage_net",
-      name: "存储与网络",
-      caption: "网卡与硬盘实例的吞吐、容量与 I/O",
+      id: "storage",
+      name: "存储",
+      caption: "磁盘驱动器、挂载点容量与 I/O 读写性能",
+      sections: [
+        {
+          id: "section-storage-disk",
+          eyebrow: "硬盘实例",
+          title: "硬盘容量与 I/O",
+          description: "各磁盘实例的容量占用与实时读写吞吐。",
+          charts: [
+            { id: "storage-disk-capacity", title: "已用容量", visualization: "area", span: "half", perInstance: "disk", requires: ["diskUsage"] },
+            { id: "storage-disk-io", title: "读写速率", visualization: "line", span: "half", perInstance: "disk", requires: ["diskRead", "diskWrite"] }
+          ]
+        }
+      ]
+    },
+    {
+      id: "network",
+      name: "网络",
+      caption: "物理网卡吞吐、流量带宽与历史流量日历",
       sections: [
         {
           id: "section-storage-calendar",
-          eyebrow: "流量",
+          eyebrow: "流量统计",
           title: "流量日历",
           description: "按天聚合的历史流量视图，时间范围与顶部窗口控件独立。",
           charts: [
@@ -116,31 +131,23 @@ export const DEVICE_DASHBOARD = {
           id: "section-storage",
           eyebrow: "网卡实例",
           title: "网卡吞吐明细",
+          description: "实时接收与发送带宽，可按接口进行实例筛选。",
           charts: [
             { id: "storage-network-throughput", title: "吞吐", visualization: "line", span: "half", perInstance: "network", requires: ["networkRxRate", "networkTxRate"] }
-          ]
-        },
-        {
-          id: "section-storage-disk",
-          eyebrow: "硬盘实例",
-          title: "硬盘容量与 I/O",
-          charts: [
-            { id: "storage-disk-capacity", title: "已用容量", visualization: "area", span: "half", perInstance: "disk", requires: ["diskUsage"] },
-            { id: "storage-disk-io", title: "读写速率", visualization: "line", span: "half", perInstance: "disk", requires: ["diskRead", "diskWrite"] }
           ]
         }
       ]
     },
     {
-      id: "gpu_thermal",
-      name: "显卡与散热",
-      caption: "GPU 负载、显存、温度传感器与风扇转速",
+      id: "thermal_hardware",
+      name: "硬件与环境",
+      caption: "GPU 负载与显存、温度传感器矩阵与风扇转速",
       sections: [
         {
           id: "section-gpu",
           eyebrow: "显卡实例",
           title: "GPU 明细",
-          description: "每个 GPU 都有独立的负载、频率、显存和温度数据。",
+          description: "独立显卡负载、编解码、频率、显存和核心温度。",
           charts: [
             { id: "gpu-load", title: "核心负载", visualization: "line", span: "half", perInstance: "gpu", requires: ["gpuUsage"] },
             { id: "gpu-encode", title: "编码负载", visualization: "line", span: "quarter", perInstance: "gpu", requires: ["gpuEncode"] },

@@ -79,8 +79,10 @@ test("findDeviceTab falls back to the first tab for unknown ids", () => {
   for (const tab of allTabs) {
     assert.strictEqual(findDeviceTab(tab.id).id, tab.id, `findDeviceTab must resolve ${tab.id}`);
   }
-  // 旧的六选项卡布局里存在 fan / all 这两个 id；线上仍可能从历史记录里带过来。
+  // 旧的选项卡 id（如 fan / all / storage_net / gpu_thermal）；线上仍可能从历史记录里带过来。
   assert.strictEqual(findDeviceTab("fan").id, allTabs[0].id, "a retired tab id must fall back instead of rendering nothing");
+  assert.strictEqual(findDeviceTab("storage_net").id, allTabs[0].id, "retired storage_net must fall back");
+  assert.strictEqual(findDeviceTab("gpu_thermal").id, allTabs[0].id, "retired gpu_thermal must fall back");
   assert.strictEqual(findDeviceTab("").id, allTabs[0].id);
   assert.strictEqual(findDashboardTab(DEVICE_DASHBOARD, "fan").id, allTabs[0].id, "the generic resolver must share the fallback");
 });
