@@ -7,6 +7,7 @@ import { CommandPalette } from "./CommandPalette";
 import { CompactNavigation } from "./CompactNavigation";
 import { NativeTitleBar } from "./NativeTitleBar";
 import { PrimaryNavigation } from "./PrimaryNavigation";
+import { PullToRefresh } from "./PullToRefresh";
 
 /** Same calendar vocabulary the metric-window controls show to sighted users. */
 const metricsWindowAnnouncements: Record<string, string> = {
@@ -26,7 +27,7 @@ const metricsWindowAnnouncements: Record<string, string> = {
 };
 
 export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
-  const { sidebarCollapsed, setSidebarCollapsed, capabilities, refreshing, route, selectedDevice, metricsWindow, resolvedTheme } = useWorkspace();
+  const { sidebarCollapsed, setSidebarCollapsed, capabilities, refreshing, refresh, isTouch, route, selectedDevice, metricsWindow, resolvedTheme } = useWorkspace();
   /* The Carbon theme now comes from the provider's single
      `prefers-color-scheme` resolver. This component used to run a second,
      independent listener to derive `g10`/`g100`, so the two theme systems could
@@ -116,7 +117,11 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
     <div className="workspace-main" inert={sidebarDrawerOpen || undefined}>
       <AppTopBar />
       <SessionRecoveryBanner />
-      <main className="workspace-content" id="workspace-main-content">{children}</main>
+      <main className="workspace-content" id="workspace-main-content">
+        <PullToRefresh onRefresh={refresh} disabled={!isTouch || Boolean(sidebarDrawerOpen)}>
+          {children}
+        </PullToRefresh>
+      </main>
     </div>
     {sidebarCollapsed && <button className="workspace-sidebar-edge-trigger" type="button" aria-label="展开侧边栏" onClick={() => setSidebarCollapsed(false)} onPointerEnter={handleEdgePointerEnter} onFocus={() => { if (window.innerWidth > 839) setSidebarPeek(true); }} onPointerDown={handleEdgePointerDown} onPointerMove={handleEdgePointerMove} onPointerUp={handleEdgePointerEnd} onPointerCancel={handleEdgePointerEnd} onLostPointerCapture={handleEdgePointerEnd} />}
     <CompactNavigation />
