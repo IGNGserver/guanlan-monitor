@@ -99,7 +99,13 @@
      `backdrop-filter` re-blurred content behind an opaque Carbon surface. */
   .workspace-bottom-nav { position: fixed; z-index: var(--workspace-layer-nav); right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(3, 1fr); padding-bottom: env(safe-area-inset-bottom); }
   .workspace-bottom-nav__item { min-height: 56px; flex-direction: column; gap: 2px; font-size: 11px; }
-  .workspace-bottom-nav__item.is-active { color: var(--workspace-accent-strong); background: var(--workspace-accent-soft); }
+  .workspace-bottom-nav__item.is-active { color: var(--workspace-accent-strong); background: transparent; }
+  
+  /* Touch screen & mobile card adjustments */
+  .guanlan-device-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+  }
 }
 
 @media (max-width: 599px) {
@@ -118,6 +124,14 @@
   .workspace-page { padding-inline: 16px; }
   .workspace-page-intro h2 { font-size: 28px; }
   .workspace-surface__header { padding-inline: 18px; }
+  
+  /* Phone card optimizations */
+  .guanlan-fleet-card {
+    padding: 12px;
+  }
+  .guanlan-fleet-card:active {
+    transform: scale(0.98);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -199,4 +213,69 @@
   0% { transform: translateX(-100%); }
   100% { transform: translateX(360%); }
 }
+
+/* Pull to Refresh */
+.workspace-pull-container {
+  position: relative;
+  width: 100%;
+  min-height: 100%;
+}
+
+.workspace-pull-indicator {
+  display: flex;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.workspace-pull-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--workspace-surface, #ffffff);
+  color: var(--workspace-accent, #3d638f);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--workspace-border);
+}
+
+/* Tablet landscape split-view styling */
+.guanlan-tablet-split-view {
+  display: grid;
+  grid-template-columns: minmax(320px, 380px) 1fr;
+  height: 100%;
+  min-height: calc(100vh - 56px);
+  gap: 1px;
+  background: var(--workspace-border);
+}
+
+.guanlan-tablet-split-master {
+  background: var(--workspace-bg);
+  overflow-y: auto;
+  border-right: 1px solid var(--workspace-border);
+}
+
+.guanlan-tablet-split-detail {
+  background: var(--workspace-surface);
+  overflow-y: auto;
+}
+
+.guanlan-tablet-empty-detail {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  color: var(--workspace-text-muted);
+  font-size: 14px;
+}
+
+
 

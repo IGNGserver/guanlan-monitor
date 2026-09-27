@@ -10,9 +10,27 @@ import { Icon } from "../ui";
  */
 export function CompactNavigation() {
   const { route, navigate, openSettings } = useWorkspace();
+  const handleNav = (target: "overview" | "devices" | "settings") => {
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      try { navigator.vibrate(10); } catch {}
+    }
+    if (target === "overview") navigate({ kind: "overview" });
+    else if (target === "devices") navigate({ kind: "devices" });
+    else if (target === "settings") openSettings();
+  };
+
   return <nav className="workspace-bottom-nav" aria-label="主导航">
-    <M3NavigationItem className="workspace-bottom-nav__item" selected={route.kind === "overview"} onClick={() => navigate({ kind: "overview" })}><Icon name="overview" size={18} /><span>总览</span></M3NavigationItem>
-    <M3NavigationItem className="workspace-bottom-nav__item" selected={route.kind === "devices" || route.kind === "device"} onClick={() => navigate({ kind: "devices" })}><Icon name="device" size={18} /><span>设备</span></M3NavigationItem>
-    <M3NavigationItem className="workspace-bottom-nav__item" selected={route.kind === "settings"} onClick={() => openSettings()}><Icon name="settings" size={18} /><span>设置</span></M3NavigationItem>
+    <M3NavigationItem className={`workspace-bottom-nav__item ${route.kind === "overview" ? "is-active" : ""}`} selected={route.kind === "overview"} onClick={() => handleNav("overview")}>
+      <span className="workspace-bottom-nav__icon-indicator"><Icon name="overview" size={20} /></span>
+      <span>总览</span>
+    </M3NavigationItem>
+    <M3NavigationItem className={`workspace-bottom-nav__item ${route.kind === "devices" || route.kind === "device" ? "is-active" : ""}`} selected={route.kind === "devices" || route.kind === "device"} onClick={() => handleNav("devices")}>
+      <span className="workspace-bottom-nav__icon-indicator"><Icon name="device" size={20} /></span>
+      <span>设备</span>
+    </M3NavigationItem>
+    <M3NavigationItem className={`workspace-bottom-nav__item ${route.kind === "settings" ? "is-active" : ""}`} selected={route.kind === "settings"} onClick={() => handleNav("settings")}>
+      <span className="workspace-bottom-nav__icon-indicator"><Icon name="settings" size={20} /></span>
+      <span>设置</span>
+    </M3NavigationItem>
   </nav>;
 }

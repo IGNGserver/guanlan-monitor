@@ -260,6 +260,23 @@
   text-align: center;
 }
 
+.workspace-bottom-nav__icon-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--workspace-shape-full, 999px);
+  transition: background-color var(--workspace-motion-standard, 180ms cubic-bezier(0.2, 0, 0, 1)), transform var(--workspace-motion-standard, 180ms cubic-bezier(0.2, 0, 0, 1));
+}
+
+.workspace-bottom-nav__item.is-selected .workspace-bottom-nav__icon-indicator,
+.workspace-bottom-nav__item.is-active .workspace-bottom-nav__icon-indicator {
+  background-color: var(--workspace-color-secondary-container, #dce4ee);
+  transform: scale(1.05);
+}
+
 .workspace-bottom-nav__item.m3-navigation-item > * {
   position: relative;
   z-index: 1;
@@ -679,7 +696,7 @@
 
   .workspace-bottom-nav__item.is-active {
     color: var(--workspace-color-on-primary-container);
-    background: var(--workspace-color-primary-container);
+    background: transparent;
   }
 
   .workspace-sidebar-backdrop {
