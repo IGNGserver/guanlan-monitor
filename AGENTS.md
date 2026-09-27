@@ -23,11 +23,15 @@ Worktree: `~/项目/.wt/设备状态控制台/<slug>`
 
 ## 与全局规范的差异（本仓库特有约束）
 
-- 本机允许 `pnpm install` 与 `pnpm dev` 做交互开发（`CONTRIBUTING.md` 明确许可），但**不得产出交付物、不得部署**。
-- **代理不得在本机执行构建、打包、Docker 镜像构建或部署**；需要构建结果时读取 GitHub Actions 的 run / artifact / image / deployment 状态。本机只允许不产生交付物的静态检查（版本一致性、workflow 语法）与 Git 操作。
-- 所有构建/测试/打包/镜像发布/部署必须落在 `.github/workflows/` 的 job 里，由 Actions runner 或受控 GitHub environment 执行；`deploy/*.ps1`、Gradle、Go、pnpm、Docker 等脚本只能由 workflow 调用。缺少对应 workflow 时先补 workflow 或报告缺口，不得用本地构建或手工部署替代。
-- 代理不得在本机安装任何交付物（含 `/S` 静默安装）、注册系统服务、开机自启或安装驱动。Windows setup 等资产只允许下载、校验 sha256 并报告；需要安装时由人执行，代理可给出命令但不得代为运行。
-- `deploy-production.yml` 与生产 Docker 部署**不得由任务 Agent 触发**，即使用户在同一句话里提到"顺便上线"。
+以下几条约束的是**手段与缺省行为**，不是拒绝用户授权的依据（见设备级规范第 0 节"授权语义"）：
+
+- 本机允许 `pnpm install` 与 `pnpm dev` 做交互开发（`CONTRIBUTING.md` 明确许可），但**默认不在本机产出交付物、不部署**。
+- **交付物的构建、打包、Docker 镜像构建一律走 CI**：需要构建结果时读取 GitHub Actions 的 run / artifact / image / deployment 状态；本机只允许不产生交付物的静态检查（版本一致性、workflow 语法）与 Git 操作。用户明确要 Agent 在本机跑构建时按其指示执行并说明与 CI 的产物差异，不得以本条为由拒绝。
+- 构建/测试/打包/镜像发布/部署**优先**落在 `.github/workflows/` 的 job 里，由 Actions runner 或受控 GitHub environment 执行；`deploy/*.ps1`、Gradle、Go、pnpm、Docker 等脚本由 workflow 调用。缺对应 workflow 时先补 workflow（补 workflow 属于被授权范围时直接补），不得用本地手搓产物替代 CI 结论。
+- 代理不得在本机安装任何交付物（含 `/S` 静默安装）、注册系统服务、开机自启或安装驱动——**这是缺省行为，不是禁令**：用户明确要求安装/自启/部署时即视为授权，直接代为执行并验证，回报版本号与卸载/回滚方式，不要只丢一条命令让用户自己跑。
+- 生产与测试环境部署默认不自动发生。用户点名要部署（例如"发到 NAS 生产"、"更新那台 Windows 开发机"）即为授权：走本仓库受控通道完成（`deploy-production.yml` / `deploy-test.yml` / `update-agents-test.yml` + 固定版本镜像），执行到底并回报 environment 部署记录、镜像 tag 与健康检查；不得因"规范默认不部署"而拒绝或反复索要确认。
+- 部署手段受限而非目的受限：不得从工作区源码手搓生产镜像、不得部署 `latest` 除非用户明确选它、不得绕过 workflow 直接 scp 交付物。
+- `deploy-production.yml` 等 workflow 的触发权限属于用户；未要求时不触发，要求时即触发。
 - 仓库根的 `AUDIT.md`、`AUDIT_REMEDIATION.md`、`NEEDS_SOL_REVIEW.md`、`FRONTEND_AUDIT_2026-09-26.md`、`UX_AUDIT_REPORT.md` 是历史审计快照，**不得当作待办清单自动执行**，只作背景。
 - 不提交 `.next`、`dist`、`*.tsbuildinfo` 等生成文件。
 
