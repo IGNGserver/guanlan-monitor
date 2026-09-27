@@ -54,6 +54,11 @@ export interface TimeSeriesRecord {
   recordedDetails?: {
     hardwareSampledAt?: string;
     cpuTemperatureSampledAt?: string;
+    aggregatedInstances?: {
+      cpus: InstanceMetricRecord[];
+      networks: InstanceMetricRecord[];
+      fans: InstanceMetricRecord[];
+    };
     system: AgentMetricsPayload["system"];
     memory: AgentMetricsPayload["memory"];
     cpuPackages: AgentMetricsPayload["cpuPackages"];

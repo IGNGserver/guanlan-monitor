@@ -469,6 +469,7 @@ function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[], timest
     recordedDetails: recordedDetails
       ? {
           ...recordedDetails,
+          aggregatedInstances: { cpus, networks, fans },
           temperatureSensors
         }
       : undefined,

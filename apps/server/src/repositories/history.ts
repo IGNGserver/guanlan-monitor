@@ -453,12 +453,15 @@ export class MysqlHistoryRepository implements HistoryRepository {
   }
 }
 
-function mapHistoryRow(row: any): TimeSeriesRecord {
+export function mapHistoryRow(row: any): TimeSeriesRecord {
   const recordedDetails = parseJsonObject(row.recordedDetailsJson) as TimeSeriesRecord["recordedDetails"];
   return {
     ...row,
     hardwareSampledAt: recordedDetails?.hardwareSampledAt,
     cpuTemperatureSampledAt: recordedDetails?.cpuTemperatureSampledAt,
+    cpus: recordedDetails?.aggregatedInstances?.cpus,
+    networks: recordedDetails?.aggregatedInstances?.networks,
+    fans: recordedDetails?.aggregatedInstances?.fans,
     disks: parseJsonArray(row.diskInstancesJson),
     gpus: parseJsonArray(row.gpuInstancesJson),
     recordedDetails
