@@ -48,7 +48,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     orientation,
     isTouch,
     inputMode,
-    layoutTier
+    layoutTier,
+    formFactor
   } = useWorkspaceUiState({ adapter, initialRoute });
   const [snapshot, setSnapshot] = useState<ConsoleSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -445,6 +446,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     isTouch,
     inputMode,
     layoutTier,
+    formFactor,
     runtimeProfile,
     lowResourceMode,
     chartPointLimit
@@ -507,6 +509,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     isTouch,
     inputMode,
     layoutTier,
+    formFactor,
     runtimeProfile,
     lowResourceMode,
     chartPointLimit

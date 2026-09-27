@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import test from "node:test";
-import { getLayoutClass, getScreenOrientation, getResponsiveTier, usesSidebarDrawer, SIDEBAR_DRAWER_MAX_WIDTH } from "./layout.ts";
+import { getLayoutClass, getScreenOrientation, getResponsiveTier, usesSidebarDrawer, SIDEBAR_DRAWER_MAX_WIDTH, detectDeviceFormFactor } from "./layout.ts";
 import { resolveInteractionScale, detectDefaultInteractionScale, detectTouchSupport } from "./density.ts";
 import { resolveEffectiveTheme } from "./theme.ts";
 import { normalizeMetricsResponse, formatBytes } from "./metricsNormalizer.ts";
@@ -49,6 +49,13 @@ test("getScreenOrientation and getResponsiveTier handle portrait and extreme bre
 
 test("detectTouchSupport runs safely without window environment", () => {
   assert.strictEqual(typeof detectTouchSupport(), "boolean");
+});
+
+test("detectDeviceFormFactor detects phone, tablet and desktop", () => {
+  assert.strictEqual(detectDeviceFormFactor(390, true), "phone");
+  assert.strictEqual(detectDeviceFormFactor(800, true), "tablet");
+  assert.strictEqual(detectDeviceFormFactor(1200, false), "desktop");
+  assert.strictEqual(detectDeviceFormFactor(1200, true), "desktop");
 });
 
 test("density helpers resolve correctly and respect overrides", () => {

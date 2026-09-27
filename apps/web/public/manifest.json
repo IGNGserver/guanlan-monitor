@@ -1,0 +1,37 @@
+{
+  "name": "观澜 / Guanlan",
+  "short_name": "观澜",
+  "description": "跨设备硬件监控与状态中枢",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1a1c1e",
+  "theme_color": "#3d638f",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "productivity"],
+  "shortcuts": [
+    {
+      "name": "总览",
+      "url": "/#overview",
+      "description": "查看整体设备与系统健康状态"
+    },
+    {
+      "name": "全部设备",
+      "url": "/#devices",
+      "description": "查看与管理接入设备"
+    }
+  ]
+}
