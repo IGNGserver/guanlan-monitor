@@ -450,11 +450,12 @@ async function run() {
     });
   }
   for (const [tabName, measured] of Object.entries(tabHeaderHeights)) {
-    // The caption copy differs per tab, so only the caption-independent parts of
-    // the header must be identical; the strip may differ by a single line.
+    // The caption copy differs per tab, and tabs with multiple sections render
+    // an anchor jump bar inside the sticky header; the base fixed header (topbar,
+    // headingTop, tabs, controls) must remain identical across tab switches.
     const { context, ...fixed } = measured;
     assert.deepEqual(fixed, (({ topbar, headingTop, tabs, controls }) => ({ topbar, headingTop, tabs, controls }))(tabHeaderHeights["计算与系统"]), `switching to the "${tabName}" tab must not move the header (saw ${JSON.stringify(measured)})`);
-    assert.ok(Math.abs(context - tabHeaderHeights["计算与系统"].context) <= 20, `switching to the "${tabName}" tab moved the sticky device context by more than one caption line (${context} vs ${tabHeaderHeights["计算与系统"].context})`);
+    assert.ok(Math.abs(context - tabHeaderHeights["计算与系统"].context) <= 40, `switching to the "${tabName}" tab moved the sticky device context by more than expected (${context} vs ${tabHeaderHeights["计算与系统"].context})`);
   }
 
   // 小组件机制已经彻底移除：设备页不得再出现排布编辑入口，也不得再写布局接口。
