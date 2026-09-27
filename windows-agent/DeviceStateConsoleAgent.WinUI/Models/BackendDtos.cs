@@ -196,6 +196,8 @@ public sealed class ViewerFanMetricSeriesDto
 
 public sealed class ViewerLatestMetricsDto
 {
+    public string? HardwareSampledAt { get; set; }
+    public string? CpuTemperatureSampledAt { get; set; }
     public ViewerSystemStatsDto System { get; set; } = new();
     public double CpuUsagePercent { get; set; }
     public double MemoryUsedBytes { get; set; }
@@ -253,6 +255,7 @@ public sealed class ViewerFanDto
     public string Label { get; set; } = "风扇";
     public string Interface { get; set; } = "";
     public int Rpm { get; set; }
+    public string? RpmStatus { get; set; }
     public string? ControlMode { get; set; }
     public double? TargetTemperatureC { get; set; }
     public double? MinPwmPercent { get; set; }

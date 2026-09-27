@@ -435,7 +435,7 @@ struct FanSectionView: View {
                     Text(fan.label)
                         .font(.subheadline)
                     Spacer()
-                    Text("\(fan.rpm) RPM")
+                    Text(fan.rpmStatus == "disabled" ? "采集已关闭" : fan.rpmStatus == "unavailable" ? "当前值未知" : "\(fan.rpm) RPM")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundStyle(.teal)

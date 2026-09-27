@@ -143,6 +143,7 @@ internal static class Program
         {
             SensorType = ToText(GetPropertyValue(sensor, "SensorType")),
             Name = ToText(GetPropertyValue(sensor, "Name")),
+            Identifier = ToText(GetPropertyValue(sensor, "Identifier")),
             Value = ToNullableDouble(GetPropertyValue(sensor, "Value"))
         };
     }
@@ -318,6 +319,9 @@ internal static class Program
 
         [JsonPropertyName("name")]
         public string Name { get; set; } = string.Empty;
+
+        [JsonPropertyName("identifier")]
+        public string Identifier { get; set; } = string.Empty;
 
         [JsonPropertyName("value")]
         public double? Value { get; set; }

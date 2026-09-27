@@ -325,7 +325,7 @@ function AgentSettings() {
   const fanSeries = mergeFanMetricSeries(
     snapshot?.metrics?.latest.fans ?? [],
     snapshot?.metrics?.series?.fans ?? [],
-    snapshot?.generatedAt ?? snapshot?.metrics?.lastSeenAt ?? new Date().toISOString()
+    snapshot?.metrics?.latest.hardwareSampledAt ?? snapshot?.metrics?.lastSeenAt ?? new Date().toISOString()
   );
   const temperatureSources = Array.isArray(backend?.temperatureSources) ? backend.temperatureSources : [];
   const temperatureSensorBackends = Array.isArray(backend?.temperatureSensorBackends) ? backend.temperatureSensorBackends : [];
@@ -523,4 +523,3 @@ function AboutSettings() {
 function EmptyState({ title, detail, action, tone = "neutral" }: { title: string; detail: string; action?: React.ReactNode; tone?: "neutral" | "error" }) {
   return <section className={`workspace-empty m3-state-surface m3-state-surface--${tone}`} role={tone === "error" ? "alert" : "status"}><div className="workspace-empty__mark"><Icon name={tone === "error" ? "warning" : "overview"} size={22} /></div><h3>{title}</h3><p>{detail}</p>{action}</section>;
 }
-

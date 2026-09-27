@@ -205,6 +205,7 @@ const fanSchema = z.object({
   label: text(256),
   interface: text(256),
   rpm: nonNegativeInt.max(1_000_000),
+  rpmStatus: z.enum(["observed", "disabled", "unavailable"]).optional(),
   controlMode: optionalText(128).nullable(),
   targetTemperatureC: temperature,
   minPwmPercent: percentage.nullable().optional(),
@@ -239,6 +240,7 @@ const temperatureSensorSchema = z.object({
     "unknown"
   ]),
   currentC: temperature,
+  observedAt: timestamp.optional(),
   highC: temperature,
   criticalC: temperature,
   emergencyC: temperature,
@@ -260,6 +262,8 @@ export const agentMetricsPayloadSchema = z.object({
   identity: identitySchema,
   timestamp,
   heartbeatAt: timestamp,
+  hardwareSampledAt: timestamp.optional(),
+  cpuTemperatureSampledAt: timestamp.optional(),
   unavailableMetrics: z.array(metricKey).max(64).optional(),
   system: systemSchema.default({
     processCount: 0,

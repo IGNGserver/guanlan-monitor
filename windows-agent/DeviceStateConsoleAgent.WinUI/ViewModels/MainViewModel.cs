@@ -1902,7 +1902,7 @@ public sealed class MainViewModel : ObservableObject
                 ? "网络：暂无所选网卡数据"
                 : $"网络：{primaryNetwork.Name} · ↑ {FormatRate(primaryNetwork.TxBytesPerSec ?? 0)} · ↓ {FormatRate(primaryNetwork.RxBytesPerSec ?? 0)}";
             var primaryFan = latest.Fans.FirstOrDefault();
-            ViewerDetailFanText = primaryFan is null ? "风扇：暂无数据" : $"风扇：{primaryFan.Label} {primaryFan.Rpm:0} RPM";
+            ViewerDetailFanText = primaryFan is null ? "风扇：暂无当前数据" : $"风扇：{primaryFan.Label} {FanRpmLabel(primaryFan)}{(string.IsNullOrWhiteSpace(latest.HardwareSampledAt) ? "" : $" · 采样 {latest.HardwareSampledAt}")}";
             ReplaceTrend(ViewerCpuTrendPoints, payload.Series.CpuUsagePercent);
             ReplaceTrend(ViewerMemoryTrendPoints, payload.Series.MemoryUsagePercent);
             ReplaceTrend(ViewerDiskTrendPoints, payload.Series.DiskUsagePercent);
@@ -1955,7 +1955,6 @@ public sealed class MainViewModel : ObservableObject
         var networkSeries = payload.Series?.Networks?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase));
         var network = latest.NetworkInterfaces?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase));
         var gpu = latest.Gpus?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase));
-        var fanSeries = payload.Series?.Fans?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase));
         var fan = latest.Fans?.FirstOrDefault(item => item.Id.Equals(instanceId, StringComparison.OrdinalIgnoreCase));
 
         switch (category.ToLowerInvariant())
@@ -2005,7 +2004,7 @@ public sealed class MainViewModel : ObservableObject
                 TaskManagerRightLabel3 = $"{GpuTemperatureLabel(gpu?.TemperatureSource)}:"; TaskManagerRightValue3 = gpu?.TemperatureC.HasValue == true ? $"{gpu.TemperatureC:0.0} °C" : "--";
                 break;
             case "fan":
-                TaskManagerStatUsage = fan?.Rpm.ToString("0") ?? fanSeries?.Rpm.LastOrDefault()?.Value.ToString("0") ?? "--";
+                TaskManagerStatUsage = fan is not null && fan.RpmStatus != "disabled" && fan.RpmStatus != "unavailable" ? fan.Rpm.ToString("0") : "--";
                 TaskManagerStatSpeed = fan?.ControlMode ?? "--";
                 TaskManagerStatCapacity = fan?.TargetTemperatureC.HasValue == true ? $"{fan.TargetTemperatureC:0.0} °C" : "--";
                 TaskManagerStatStatus = fan?.MinPwmPercent.HasValue == true ? $"{fan.MinPwmPercent:0}%" : "--";
@@ -2421,6 +2420,9 @@ public sealed class MainViewModel : ObservableObject
 
     private static string GpuTemperatureLabel(string? temperatureSource)
         => string.Equals(temperatureSource, "cpuPackageShared", StringComparison.OrdinalIgnoreCase) ? "温度（随 CPU）" : "温度";
+
+    private static string FanRpmLabel(ViewerFanDto fan)
+        => fan.RpmStatus == "disabled" ? "采集已关闭" : fan.RpmStatus == "unavailable" ? "当前值未知" : $"{fan.Rpm:0} RPM";
 
     private static void EnsureTrendFallback(ObservableCollection<TrendPointViewModel> target, double value)
     {

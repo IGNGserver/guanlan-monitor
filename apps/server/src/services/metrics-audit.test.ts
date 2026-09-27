@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AuthFailureRateLimiter } from "../auth.js";
-import { LocalRealtimeRepository, LocalHistoryRepository, createLocalStore } from "../repositories/local.js";
+import { LocalRealtimeRepository, LocalHistoryRepository, LocalDeviceRepository, createLocalStore } from "../repositories/local.js";
 import { MetricsService } from "./metrics.js";
 import type { TimeSeriesRecord } from "../types.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentMetricsPayload } from "@dsc/shared";
 
 test("auth failure rate limiter records failures and rejects after threshold", () => {
   const limiter = new AuthFailureRateLimiter();
@@ -69,6 +70,37 @@ test("history repository merges higher sample count points and protects against 
     // Should retain the full aggregate of 50%, not overwritten by 10%
     assert.equal(series[0].cpuUsagePercent, 50);
     assert.equal(series[0].sampleCount, 12);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("replayed older samples cannot replace live telemetry or roll back the current series", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "dsc-test-replay-"));
+  try {
+    const store = createLocalStore(join(dir, "db.json"));
+    const realtime = new LocalRealtimeRepository(store);
+    const service = new MetricsService(
+      { realtime, history: new LocalHistoryRepository(store), devices: new LocalDeviceRepository(store) },
+      () => undefined,
+      { get: async () => null, set: async () => undefined }
+    );
+    const payload: AgentMetricsPayload = {
+      identity: { deviceId: "node-1", hostname: "node-1", os: "linux", platform: "linux", arch: "x64" },
+      timestamp: new Date(Date.now() - 5_000).toISOString(),
+      heartbeatAt: new Date().toISOString(),
+      system: { processCount: 1, threadCount: 1, handleCount: 1 },
+      cpuUsagePercent: 50,
+      memory: { totalBytes: 100, usedBytes: 50, availableBytes: 50, cachedBytes: 0, committedBytes: 0, commitLimitBytes: 0, swapTotalBytes: 0, swapUsedBytes: 0 },
+      diskUsage: { totalBytes: 100, usedBytes: 50 },
+      diskRate: { readBytesPerSec: 0, writeBytesPerSec: 0 },
+      networkRate: { rxBytesPerSec: 0, txBytesPerSec: 0, totalRxBytes: 0, totalTxBytes: 0 },
+      gpus: [], fans: []
+    };
+    await service.ingest(payload);
+    await service.ingest({ ...payload, timestamp: new Date(Date.parse(payload.timestamp) - 30_000).toISOString(), cpuUsagePercent: 10 });
+    assert.equal((await realtime.getDevice("node-1"))?.latest.cpuUsagePercent, 50);
+    assert.equal((await realtime.readSeries("node-1", "1m")).length, 1);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

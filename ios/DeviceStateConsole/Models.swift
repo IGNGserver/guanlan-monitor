@@ -188,6 +188,7 @@ public struct FanDto: Codable, Identifiable, Equatable, Sendable {
     public let label: String
     public let interfaceName: String?
     public let rpm: Int
+    public let rpmStatus: String?
     public let note: String?
     public let controlMode: String?
     public let targetTemperatureC: Double?
@@ -196,7 +197,7 @@ public struct FanDto: Codable, Identifiable, Equatable, Sendable {
     public let channelState: String?
     
     enum CodingKeys: String, CodingKey {
-        case id, label, rpm, note, controlMode, targetTemperatureC, minPwmPercent, maxPwmPercent, channelState
+        case id, label, rpm, rpmStatus, note, controlMode, targetTemperatureC, minPwmPercent, maxPwmPercent, channelState
         case interfaceName = "interface"
     }
 }

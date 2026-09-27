@@ -279,12 +279,15 @@ export function payloadToTimeSeries(
         id: fan.id,
         name: fan.label,
         interface: fan.interface,
-        rpm: enabled.has("fanRpm") && instanceEnabled.has("fanRpm") ? fan.rpm : 0
+        rpm: enabled.has("fanRpm") && instanceEnabled.has("fanRpm") &&
+          fan.rpmStatus !== "disabled" && fan.rpmStatus !== "unavailable" ? fan.rpm : undefined
       };
     });
 
   return {
     timestamp: Date.parse(payload.timestamp),
+    hardwareSampledAt: payload.hardwareSampledAt,
+    cpuTemperatureSampledAt: payload.cpuTemperatureSampledAt,
     cpuUsagePercent: enabled.has("cpuUsage") ? payload.cpuUsagePercent : 0,
     cpuFrequencyMHz: enabled.has("cpuFrequency") ? resolvedCpuFrequencyMHz ?? 0 : 0,
     cpuTemperatureC: enabled.has("cpuTemperature") ? resolvedCpuTemperatureC ?? 0 : 0,
@@ -324,6 +327,8 @@ export function payloadToTimeSeries(
     gpus,
     fans,
     recordedDetails: {
+      hardwareSampledAt: payload.hardwareSampledAt,
+      cpuTemperatureSampledAt: payload.cpuTemperatureSampledAt,
       system: payload.system,
       memory: payload.memory,
       cpuPackages: payload.cpuPackages ?? [],
@@ -382,14 +387,21 @@ export function timeSeriesToMetricSeries(
   const trafficSeriesTx = normalizeTrafficSeries(points.map((point) => point.trafficTxBytes));
 
   const mapPoint = (key: keyof TimeSeriesRecord) => {
-    const mapped = points.map((point) => {
+    let lastObservedAt: string | undefined;
+    const mapped = points.flatMap((point) => {
       const numeric = Number(point[key]);
-      return {
-        timestamp: new Date(point.timestamp).toISOString(),
+      const observedAt = key === "cpuTemperatureC" ? point.cpuTemperatureSampledAt
+        : key === "gpuTemperatureC" ? point.hardwareSampledAt : undefined;
+      if (observedAt && numeric > 0) {
+        if (observedAt === lastObservedAt) return [];
+        lastObservedAt = observedAt;
+      }
+      return [{
+        timestamp: observedAt && numeric > 0 ? observedAt : new Date(point.timestamp).toISOString(),
         // Older MySQL rows predate some capacity fields. Keep their charts
         // readable instead of serializing NaN as JSON null for native clients.
         value: Number.isFinite(numeric) ? numeric : 0
-      };
+      }];
     });
     if (key === "cpuTemperatureC" || key === "gpuTemperatureC") {
       return mapped.filter((point) => point.value > 0);
@@ -589,14 +601,14 @@ function fanInstancesAtPoint(point: TimeSeriesRecord, config: DeviceMetricConfig
     id: fan.id,
     name: fan.label,
     interface: fan.interface,
-    rpm: fan.rpm
+    rpm: fan.rpmStatus === "disabled" || fan.rpmStatus === "unavailable" ? undefined : fan.rpm
   }));
   return instances.filter((fan) => isInstanceEnabled(config, "fan", fan.id));
 }
 
 function buildCpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricConfigValue): CpuMetricSeries[] {
   const grouped = new Map<string, CpuMetricSeries>();
-  const lastTemperature = new Map<string, number>();
+  const lastTemperatureAt = new Map<string, string>();
   for (const point of points) {
     for (const cpu of cpuInstancesAtPoint(point, config)) {
       if (!grouped.has(cpu.id)) {
@@ -621,13 +633,11 @@ function buildCpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricCo
       if (typeof cpu.frequencyMHz === "number" && Number.isFinite(cpu.frequencyMHz) && cpu.frequencyMHz > 0) {
         target.frequencyMHz.push({ timestamp, value: cpu.frequencyMHz });
       }
-      const temperature = Number(cpu.temperatureC);
-      if (Number.isFinite(temperature) && temperature > 0) {
-        lastTemperature.set(cpu.id, temperature);
-      }
-      const usableTemperature = lastTemperature.get(cpu.id);
-      if (usableTemperature != null) {
-        target.temperatureC.push({ timestamp, value: usableTemperature });
+      const temperature = cpu.temperatureC;
+      if (typeof temperature === "number" && Number.isFinite(temperature) && temperature > 0 &&
+        (!point.cpuTemperatureSampledAt || lastTemperatureAt.get(cpu.id) !== point.cpuTemperatureSampledAt)) {
+        target.temperatureC.push({ timestamp: point.cpuTemperatureSampledAt ?? timestamp, value: temperature });
+        if (point.cpuTemperatureSampledAt) lastTemperatureAt.set(cpu.id, point.cpuTemperatureSampledAt);
       }
     }
   }
@@ -720,7 +730,7 @@ function buildNetworkMetricSeries(points: TimeSeriesRecord[], config: DeviceMetr
 
 function buildGpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricConfigValue): GpuMetricSeries[] {
   const grouped = new Map<string, GpuMetricSeries>();
-  const lastTemperature = new Map<string, number>();
+  const lastTemperatureAt = new Map<string, string>();
   const lastMemoryUsed = new Map<string, number>();
   for (const point of points) {
     for (const gpu of gpuInstancesAtPoint(point, config)) {
@@ -758,13 +768,11 @@ function buildGpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricCo
       if (gpu.temperatureSource === "cpuPackageShared" || (!target.temperatureSource && gpu.temperatureSource)) {
         target.temperatureSource = gpu.temperatureSource;
       }
-      const temperature = Number(gpu.temperatureC);
-      if (Number.isFinite(temperature) && temperature > 0) {
-        lastTemperature.set(gpu.id, temperature);
-      }
-      const usableTemperature = lastTemperature.get(gpu.id);
-      if (usableTemperature != null) {
-        target.temperatureC.push({ timestamp, value: usableTemperature });
+      const temperature = gpu.temperatureC;
+      if (typeof temperature === "number" && Number.isFinite(temperature) && temperature > 0 &&
+        (!point.hardwareSampledAt || lastTemperatureAt.get(gpu.id) !== point.hardwareSampledAt)) {
+        target.temperatureC.push({ timestamp: point.hardwareSampledAt ?? timestamp, value: temperature });
+        if (point.hardwareSampledAt) lastTemperatureAt.set(gpu.id, point.hardwareSampledAt);
       }
     }
   }
@@ -773,6 +781,7 @@ function buildGpuMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricCo
 
 function buildFanMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricConfigValue): FanMetricSeries[] {
   const grouped = new Map<string, FanMetricSeries>();
+  const lastRPMAt = new Map<string, string>();
   for (const point of points) {
     for (const fan of fanInstancesAtPoint(point, config)) {
       if (!grouped.has(fan.id)) {
@@ -785,7 +794,11 @@ function buildFanMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricCo
       }
       const target = grouped.get(fan.id)!;
       const timestamp = new Date(point.timestamp).toISOString();
-      target.rpm.push({ timestamp, value: Number(fan.rpm ?? 0) });
+      if (typeof fan.rpm === "number" && Number.isFinite(fan.rpm) &&
+        (!point.hardwareSampledAt || lastRPMAt.get(fan.id) !== point.hardwareSampledAt)) {
+        target.rpm.push({ timestamp: point.hardwareSampledAt ?? timestamp, value: fan.rpm });
+        if (point.hardwareSampledAt) lastRPMAt.set(fan.id, point.hardwareSampledAt);
+      }
     }
   }
   return [...grouped.values()];
@@ -794,6 +807,7 @@ function buildFanMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricCo
 function buildTemperatureMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricConfigValue): TemperatureMetricSeries[] {
   if (!new Set(config.enabledMetrics).has("temperatureSources")) return [];
   const grouped = new Map<string, TemperatureMetricSeries>();
+  const lastReadingAt = new Map<string, string>();
   for (const point of points) {
     for (const sensor of point.recordedDetails?.temperatureSensors ?? []) {
       const name = sensor.displayName || [sensor.hardware, sensor.rawName].filter(Boolean).join(" · ") || sensor.rawName;
@@ -819,8 +833,11 @@ function buildTemperatureMetricSeries(points: TimeSeriesRecord[], config: Device
       target.criticalC = sensor.criticalC ?? target.criticalC;
       target.emergencyC = sensor.emergencyC ?? target.emergencyC;
       const current = Number(sensor.currentC);
-      if (sensor.status === "valid" && Number.isFinite(current) && current > 0) {
-        target.currentC.push({ timestamp: new Date(point.timestamp).toISOString(), value: current });
+      const observedAt = sensor.observedAt ?? point.hardwareSampledAt;
+      if (sensor.status === "valid" && Number.isFinite(current) && current > 0 &&
+        (!observedAt || lastReadingAt.get(sensor.id) !== observedAt)) {
+        target.currentC.push({ timestamp: observedAt ?? new Date(point.timestamp).toISOString(), value: current });
+        if (observedAt) lastReadingAt.set(sensor.id, observedAt);
       }
     }
   }
@@ -854,12 +871,12 @@ export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOpt
   const hasNetworkIdentity = (latest.networkInterfaces ?? []).some((network) =>
     Boolean(network.macAddress || network.ipv4?.length || network.ipv6?.length || network.linkSpeedMbps != null || network.connectionType)
   );
-  const hasFan = (latest.fans?.length ?? 0) > 0;
-  const hasFanControl = (latest.fans ?? []).some((fan) => fan.controlMode != null);
+  const hasFanRpm = (latest.fans ?? []).some((fan) => fan.rpmStatus !== "unavailable");
+  const hasFanControl = (latest.fans ?? []).some((fan) => Boolean(fan.controlMode?.trim()));
   const hasFanTargetTemperature = (latest.fans ?? []).some((fan) => fan.targetTemperatureC != null);
   const hasFanPwm = (latest.fans ?? []).some((fan) => fan.minPwmPercent != null || fan.maxPwmPercent != null);
-  const hasFanChannelState = (latest.fans ?? []).some((fan) => fan.channelState != null);
-  const hasFanNote = (latest.fans ?? []).some((fan) => fan.note != null);
+  const hasFanChannelState = (latest.fans ?? []).some((fan) => Boolean(fan.channelState?.trim()));
+  const hasFanNote = (latest.fans ?? []).some((fan) => Boolean(fan.note?.trim()));
 
   const availabilityEntries: Array<[DeviceMetricKey, boolean]> = [
     ["cpuUsage", true],
@@ -891,7 +908,7 @@ export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOpt
     ["networkTxRate", hasNetworkInterfaces],
     ["networkTraffic", hasNetworkInterfaces],
     ["networkIdentity", hasNetworkIdentity],
-    ["fanRpm", hasFan],
+    ["fanRpm", hasFanRpm],
     ["fanControl", hasFanControl],
     ["fanTargetTemperature", hasFanTargetTemperature],
     ["fanPwm", hasFanPwm],

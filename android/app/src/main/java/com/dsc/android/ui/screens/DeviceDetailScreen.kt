@@ -948,7 +948,7 @@ private fun FanTab(data: MetricsDto, tabId: String, chartWindow: ChartWindow) {
           val series = data.series.fans.firstOrNull { it.id == fan.id }
           MetricCardModel(
             "风扇转速 · ${fan.label}",
-            "${fan.rpm} RPM",
+            fanCurrentLabel(fan),
             series?.rpm.orEmpty(),
             valueFormatter = { if (it == null) "--" else "${it.toInt()} RPM" }
           )
@@ -966,7 +966,7 @@ private fun FanTab(data: MetricsDto, tabId: String, chartWindow: ChartWindow) {
       cards = listOf(
         MetricCardModel(
           "风扇转速",
-          "${fan.rpm} RPM",
+          fanCurrentLabel(fan),
           series?.rpm.orEmpty(),
           valueFormatter = { if (it == null) "--" else "${it.toInt()} RPM" }
         )
@@ -975,7 +975,8 @@ private fun FanTab(data: MetricsDto, tabId: String, chartWindow: ChartWindow) {
     )
     OneUiMetaTable(
       items = listOfNotNull(
-        "转速" to "${fan.rpm} RPM",
+        "转速" to fanCurrentLabel(fan),
+        if (data.latest.fans.any { it.id == fan.id }) "采样时间" to formatTime(data.latest.hardwareSampledAt) else null,
         "控制" to (fan.controlMode ?: "未知"),
         "目标温度" to (fan.targetTemperatureC?.let { formatCelsius(it) } ?: "未知"),
         "PWM" to if (fan.minPwmPercent != null || fan.maxPwmPercent != null) {
@@ -1113,7 +1114,8 @@ private fun buildTemperatureRows(
         subtitle = listOfNotNull(
           temperatureRoleLabel(sensor.role),
           temperatureSourceLabel(sensor.source),
-          sensor.backend?.takeIf { it.isNotBlank() }
+          sensor.backend?.takeIf { it.isNotBlank() },
+          sensor.observedAt?.let { "采样 ${formatTime(it)}" }
         ).joinToString(" · "),
         value = temperatureValueLabel(sensor),
         status = temperatureStatusLabel(sensor.status),
@@ -1132,10 +1134,11 @@ private fun buildTemperatureRows(
           subtitle = listOfNotNull(
             temperatureRoleLabel(sensorSeries.role),
             temperatureSourceLabel(sensorSeries.source),
-            sensorSeries.backend?.takeIf { it.isNotBlank() }
+            sensorSeries.backend?.takeIf { it.isNotBlank() },
+            sensorSeries.currentC.lastOrNull()?.let { "上次 ${formatCelsius(it.value)} · ${formatTime(it.timestamp)}" }
           ).joinToString(" · "),
-          value = sensorSeries.currentC.lastOrNull()?.let { formatCelsius(it.value) } ?: "—",
-          status = temperatureStatusLabel(sensorSeries.status),
+          value = "—",
+          status = "当前未检测到",
           limits = listOfNotNull(
             sensorSeries.highC?.let { "高 ${formatCelsius(it)}" },
             sensorSeries.criticalC?.let { "临界 ${formatCelsius(it)}" },

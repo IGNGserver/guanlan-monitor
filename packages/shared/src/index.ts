@@ -248,6 +248,7 @@ export interface TemperatureSensorReading {
   displayName?: string | null;
   role: TemperatureSensorRole;
   currentC?: number | null;
+  observedAt?: string | null;
   highC?: number | null;
   criticalC?: number | null;
   emergencyC?: number | null;
@@ -262,6 +263,7 @@ export interface FanSensorStats {
   label: string;
   interface: string;
   rpm: number;
+  rpmStatus?: "observed" | "disabled" | "unavailable";
   controlMode?: string | null;
   targetTemperatureC?: number | null;
   minPwmPercent?: number | null;
@@ -335,6 +337,8 @@ export interface AgentMetricsPayload {
   identity: AgentIdentity;
   timestamp: string;
   heartbeatAt: string;
+  hardwareSampledAt?: string;
+  cpuTemperatureSampledAt?: string;
   /** Metrics that the collector knows are unavailable, kept separate from real zero values. */
   unavailableMetrics?: DeviceMetricKey[];
   system: SystemStats;
@@ -543,6 +547,8 @@ export interface HubUpdateStatus {
 }
 
 export interface MetricsLatest {
+  hardwareSampledAt?: string | null;
+  cpuTemperatureSampledAt?: string | null;
   system: SystemStats;
   cpuUsagePercent: number;
   cpuFrequencyMHz: number | null;

@@ -58,15 +58,23 @@ internal fun fanInstancesForDisplay(metrics: MetricsDto): List<FanDto> {
         id = series.id,
         label = series.name,
         interfaceRaw = series.interfaceRaw,
-        rpm = series.rpm.lastOrNull()?.value?.toInt() ?: 0
+        rpm = 0,
+        rpmStatus = "unavailable"
       )
     }
   }
   return fans
 }
 
+internal fun fanCurrentLabel(fan: FanDto): String = when (fan.rpmStatus) {
+  "disabled" -> "采集已关闭"
+  "unavailable" -> "当前值未知"
+  else -> "${fan.rpm} RPM"
+}
+
 internal fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWindow): List<OverviewCapsuleModel> {
   val fans = fanInstancesForDisplay(metrics)
+  val observedFans = metrics.latest.fans.filter { it.rpmStatus != "disabled" && it.rpmStatus != "unavailable" }
   return buildList {
     add(
       OverviewCapsuleModel(
@@ -132,29 +140,28 @@ internal fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWi
       OverviewCapsuleModel(
         blockKey = DeviceBlockKey.Fan,
         title = "风扇转速",
-        subtitle = if (fans.isEmpty()) "未检测到风扇接口" else "${fans.size} 个风扇接口 · 点击查看趋势",
+        subtitle = if (fans.isEmpty()) "未检测到风扇接口" else "已记录 ${fans.size} 个风扇接口 · 点击查看趋势",
         metrics = listOf(
-          "最高" to (fans.maxOfOrNull { it.rpm }?.let { "$it RPM" } ?: "暂无"),
-          "平均" to (fans.takeIf { it.isNotEmpty() }?.map { it.rpm }?.average()?.toInt()?.let { "$it RPM" } ?: "暂无"),
+          "最高" to (observedFans.maxOfOrNull { it.rpm }?.let { "$it RPM" } ?: "暂无"),
+          "平均" to (observedFans.takeIf { it.isNotEmpty() }?.map { it.rpm }?.average()?.toInt()?.let { "$it RPM" } ?: "暂无"),
           "后端" to if (metrics.latest.sensorBackends.any { it.ok }) "可用" else "不可用"
         )
       )
     )
     if (hasTemperatureData(metrics)) {
-      val validSensors = metrics.latest.temperatureSensors.filter { it.status == "valid" }
-      val auxiliarySources = buildList<Double> {
-        cpuLatestTemperature(metrics)?.let { add(it) }
-        metrics.latest.gpus.mapNotNull { validTemperature(it.temperatureC) }.forEach { add(it) }
-        metrics.latest.disks.mapNotNull { validDiskTemperature(it.temperatureC) }.forEach { add(it) }
-      }
-      val sourceCount = validSensors.size + auxiliarySources.size
+      val validSensors = metrics.latest.temperatureSensors.filter { it.status == "valid" && it.confidence == "direct" }
+      val sourceCount = validSensors.size
       add(
         OverviewCapsuleModel(
           blockKey = DeviceBlockKey.Temperature,
           title = "温度",
-          subtitle = if (sourceCount == 0) "温度源需要诊断" else "$sourceCount 个温度源",
+          subtitle = when {
+            sourceCount > 0 -> "$sourceCount 个实测通道"
+            cpuLatestTemperature(metrics) != null || metrics.latest.gpus.any { validTemperature(it.temperatureC) != null } || metrics.latest.disks.any { validDiskTemperature(it.temperatureC) != null } -> "仅有设备汇总温度"
+            else -> "当前无温度读数"
+          },
           metrics = listOf(
-            "当前" to temperatureOverviewValue(validSensors, metrics),
+            "最高" to temperatureOverviewValue(validSensors, metrics),
             "告警" to validSensors.count { it.alarm == true }.toString()
           )
         )
@@ -174,10 +181,12 @@ internal fun hasTemperatureData(metrics: MetricsDto): Boolean =
     metrics.series.disks.any { disk -> disk.temperatureC.any { validDiskTemperature(it.value) != null } }
 
 internal fun temperatureOverviewValue(sensors: List<TemperatureSensorDto>, metrics: MetricsDto): String {
-  val current = sensors.mapNotNull { validTemperature(it.currentC) }.averageOrNull()
-    ?: cpuLatestTemperature(metrics)
-    ?: metrics.latest.gpus.mapNotNull { validTemperature(it.temperatureC) }.averageOrNull()
-    ?: metrics.latest.disks.mapNotNull { validDiskTemperature(it.temperatureC) }.averageOrNull()
+  val current = buildList<Double> {
+    sensors.mapNotNullTo(this) { validTemperature(it.currentC) }
+    cpuLatestTemperature(metrics)?.let { add(it) }
+    metrics.latest.gpus.mapNotNullTo(this) { validTemperature(it.temperatureC) }
+    metrics.latest.disks.mapNotNullTo(this) { validDiskTemperature(it.temperatureC) }
+  }.maxOrNull()
   return current?.let(::formatCelsius) ?: "未知"
 }
 
@@ -812,4 +821,3 @@ internal fun formatBytes(value: Double): String {
   val precision = if (current >= 100) 0 else 1
   return "%.${precision}f %s".format(current, units[unitIndex])
 }
-

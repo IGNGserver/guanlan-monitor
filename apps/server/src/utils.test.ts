@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMetricsPayload } from "@dsc/shared";
 import type { DeviceRealtimeState } from "./types.js";
-import { normalizeRealtimeState, toSummary } from "./utils.js";
+import { normalizeRealtimeState, payloadToTimeSeries, timeSeriesToMetricSeries, toSummary } from "./utils.js";
 
 function stateWith(latest: Partial<AgentMetricsPayload>): DeviceRealtimeState {
   const payload: AgentMetricsPayload = {
@@ -70,4 +70,42 @@ test("leaves populated and absent list fields untouched", () => {
   assert.equal(state.latest.gpus.length, 1);
   assert.equal(toSummary(state).gpuUsagePercent, 40);
   assert.equal("temperatureSensors" in state.latest, false);
+});
+
+test("missing temperature and disabled fan samples leave gaps while observed zero RPM remains", () => {
+  const first = stateWith({
+    cpuPackages: [{ id: "cpu-0", name: "CPU", temperatureC: 55 }],
+    gpus: [{ id: "gpu-0", name: "GPU", utilizationPercent: 0, memoryUsedBytes: 0, memoryTotalBytes: 1, temperatureC: 60 }],
+    fans: [{ id: "fan-0", label: "Fan", interface: "hwmon", rpm: 0 }]
+  }).latest;
+  const second = stateWith({
+    timestamp: "2026-09-25T00:00:30.000Z",
+    cpuPackages: [{ id: "cpu-0", name: "CPU" }],
+    gpus: [{ id: "gpu-0", name: "GPU", utilizationPercent: 0, memoryUsedBytes: 0, memoryTotalBytes: 1 }],
+    fans: [{ id: "fan-0", label: "Fan", interface: "hwmon", rpm: 0, rpmStatus: "disabled" }]
+  }).latest;
+  const points = [payloadToTimeSeries(first), payloadToTimeSeries(second)];
+  const series = timeSeriesToMetricSeries(points);
+  assert.deepEqual(series.cpus[0]?.temperatureC.map((point) => point.value), [55]);
+  assert.deepEqual(series.gpus[0]?.temperatureC.map((point) => point.value), [60]);
+  assert.deepEqual(series.fans[0]?.rpm.map((point) => point.value), [0]);
+});
+
+test("a repeated slow hardware observation produces one temperature and RPM point", () => {
+  const hardwareSampledAt = "2026-09-25T00:00:00.123Z";
+  const first = stateWith({
+    hardwareSampledAt,
+    cpuTemperatureSampledAt: hardwareSampledAt,
+    cpuPackages: [{ id: "cpu-0", name: "CPU", temperatureC: 55 }],
+    gpus: [{ id: "gpu-0", name: "GPU", utilizationPercent: 0, memoryUsedBytes: 0, memoryTotalBytes: 1, temperatureC: 60 }],
+    fans: [{ id: "fan-0", label: "Fan", interface: "hwmon", rpm: 0 }],
+    temperatureSensors: [{ id: "temp-0", source: "linux-hwmon", rawName: "Tdie", role: "cpu_package", status: "valid", confidence: "direct", currentC: 55, observedAt: hardwareSampledAt }]
+  }).latest;
+  const repeated = { ...first, timestamp: "2026-09-25T00:00:30.000Z" };
+  const series = timeSeriesToMetricSeries([payloadToTimeSeries(first), payloadToTimeSeries(repeated)]);
+  assert.equal(series.cpuTemperatureC.length, 1);
+  assert.equal(series.cpus[0]?.temperatureC.length, 1);
+  assert.equal(series.gpus[0]?.temperatureC.length, 1);
+  assert.deepEqual(series.fans[0]?.rpm, [{ timestamp: hardwareSampledAt, value: 0 }]);
+  assert.equal(series.temperatureSensors[0]?.currentC.length, 1);
 });

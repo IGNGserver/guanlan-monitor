@@ -39,6 +39,24 @@ test("accepts the collector payload shape", () => {
   assert.equal(result.success, true);
 });
 
+test("accepts sensor observation times and distinguishes unavailable RPM from zero", () => {
+  const payload = validPayload();
+  const result = agentMetricsPayloadSchema.safeParse({
+    ...payload,
+    hardwareSampledAt: payload.timestamp,
+    cpuTemperatureSampledAt: payload.timestamp,
+    fans: [
+      { id: "fan-stopped", label: "Fan 1", interface: "hwmon", rpm: 0 },
+      { id: "fan-unreadable", label: "Fan 2", interface: "hwmon", rpm: 0, rpmStatus: "unavailable" }
+    ],
+    temperatureSensors: [{
+      id: "cpu-temp", source: "linux-hwmon", rawName: "Tdie", role: "cpu_package",
+      currentC: 55, observedAt: payload.timestamp, status: "valid", confidence: "direct"
+    }]
+  });
+  assert.equal(result.success, true);
+});
+
 test("strips virtualization fields from legacy agent payloads", () => {
   const payload = validPayload() as ReturnType<typeof validPayload> & Record<string, unknown>;
   payload.identity = {

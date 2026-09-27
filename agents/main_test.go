@@ -259,6 +259,62 @@ func TestMapHardwareSensorsIncludesZeroRPMFanChannel(t *testing.T) {
 	}
 }
 
+func TestMapHardwareSensorsMarksUnreadableFanAsUnavailable(t *testing.T) {
+	metrics := mapHardwareSensors([]hardwareSensorSnapshot{{
+		HardwareType: "SuperIO", Name: "Controller",
+		Sensors: []hardwareSensor{{SensorType: "Fan", Name: "Fan #1"}},
+	}})
+	if len(metrics.fans) != 1 || metrics.fans[0].RPMStatus != "unavailable" || metrics.fans[0].ChannelState != "转速读数不可用" {
+		t.Fatalf("unreadable fan must not look like a stopped fan: %#v", metrics.fans)
+	}
+}
+
+func TestMapHardwareSensorsKeepsFanControlUnknownWithoutChannelMatch(t *testing.T) {
+	rpm, pwm := 1200.0, 70.0
+	metrics := mapHardwareSensors([]hardwareSensorSnapshot{{
+		HardwareType: "SuperIO", Name: "Controller",
+		Sensors: []hardwareSensor{
+			{SensorType: "Fan", Name: "Fan #1", Value: &rpm},
+			{SensorType: "Control", Name: "Fan #2 PWM", Value: &pwm},
+		},
+	}})
+	if len(metrics.fans) != 1 || metrics.fans[0].MinPWMPercent != nil || metrics.fans[0].MaxPWMPercent != nil {
+		t.Fatalf("unmatched PWM must not be attributed to fan #1: %#v", metrics.fans)
+	}
+}
+
+func TestMapHardwareSensorsDisambiguatesRepeatedFanLabels(t *testing.T) {
+	rpm := 1000.0
+	metrics := mapHardwareSensors([]hardwareSensorSnapshot{{
+		HardwareType: "SuperIO", Name: "Controller",
+		Sensors: []hardwareSensor{
+			{SensorType: "Fan", Name: "Fan", Identifier: "/lpc/fan/0", Value: &rpm},
+			{SensorType: "Fan", Name: "Fan", Identifier: "/lpc/fan/1", Value: &rpm},
+		},
+	}})
+	if len(metrics.fans) != 2 || metrics.fans[0].ID == metrics.fans[1].ID {
+		t.Fatalf("repeated labels must retain distinct hardware channels: %#v", metrics.fans)
+	}
+}
+
+func TestMapHardwareSensorsPrefersPhysicalCPUTemperature(t *testing.T) {
+	tctl, tdie, ccd := 80.0, 55.0, 47.0
+	metrics := mapHardwareSensors([]hardwareSensorSnapshot{{
+		HardwareType: "Cpu", Name: "AMD CPU",
+		Sensors: []hardwareSensor{
+			{SensorType: "Temperature", Name: "Tctl", Value: &tctl},
+			{SensorType: "Temperature", Name: "Tdie", Value: &tdie},
+			{SensorType: "Temperature", Name: "CCD #1", Value: &ccd},
+		},
+	}})
+	if metrics.cpuTemperatureC == nil || *metrics.cpuTemperatureC != tdie {
+		t.Fatalf("expected Tdie instead of averaging Tctl and CCD: %#v", metrics.cpuTemperatureC)
+	}
+	if len(metrics.temperatureSensors) != 3 {
+		t.Fatalf("raw channels should remain available for diagnosis: %#v", metrics.temperatureSensors)
+	}
+}
+
 func TestApplyIntegratedGPUTemperatureUsesCPUValue(t *testing.T) {
 	independentTemperature := 37.0
 	gpus := []gpuDeviceStats{
@@ -711,6 +767,20 @@ func TestMergeTemperatureSensorsKeepsLatestObservationBySourceID(t *testing.T) {
 	merged := mergeTemperatureSensors(previous, next)
 	if len(merged) != 1 || merged[0].CurrentC == nil || *merged[0].CurrentC != newValue {
 		t.Fatalf("expected latest sensor observation to replace previous value, got %#v", merged)
+	}
+}
+
+func TestMergeSlowMetricsDoesNotResurrectMissingSensorsOrGPUs(t *testing.T) {
+	temperature := 45.0
+	previous := emptySlowMetrics()
+	previous.hardwareCollected = true
+	previous.temperatureSensors = []temperatureSensorReading{{ID: "old", CurrentC: &temperature}}
+	previous.gpus = []gpuDeviceStats{{ID: "old-gpu", TemperatureC: &temperature}}
+	next := emptySlowMetrics()
+	next.hardwareCollected = true
+	merged := mergeSlowMetrics(previous, next)
+	if len(merged.temperatureSensors) != 0 || len(merged.gpus) != 0 {
+		t.Fatalf("missing hardware must not remain in current metrics: sensors=%#v gpus=%#v", merged.temperatureSensors, merged.gpus)
 	}
 }
 
