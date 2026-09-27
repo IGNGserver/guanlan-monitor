@@ -466,6 +466,17 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
     }];
   },
 
+  "storage-disk-capacity-donut": (chart, context) => {
+    const latest = context.filteredLatest;
+    return [{
+      key: chart.id,
+      subtitle: context.summaries.disk,
+      donut: { parts: capacityParts(latest?.diskUsedBytes ?? 0, latest?.diskTotalBytes ?? 0), centerLabel: "磁盘" },
+      valueFormatter: formatBytes,
+      emptyMessage: latest && latest.diskTotalBytes > 0 ? undefined : "尚未采集到磁盘容量"
+    }];
+  },
+
   "overview-capacity-gpu": (chart, context) => {
     const { used, total } = gpuCapacityTotals(context);
     return [{

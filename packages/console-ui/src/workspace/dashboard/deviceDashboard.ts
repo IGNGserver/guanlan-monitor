@@ -110,6 +110,15 @@ export const DEVICE_DASHBOARD = {
             { id: "storage-disk-capacity", title: "已用容量", visualization: "area", span: "half", perInstance: "disk", requires: ["diskUsage"] },
             { id: "storage-disk-io", title: "读写速率", visualization: "line", span: "half", perInstance: "disk", requires: ["diskRead", "diskWrite"] }
           ]
+        },
+        {
+          id: "section-storage-summary",
+          eyebrow: "容量统计",
+          title: "分区水位总览",
+          description: "磁盘分区已用空间与系统文件层级分布。",
+          charts: [
+            { id: "storage-disk-capacity-donut", title: "磁盘占用", visualization: "donut", span: "half", requires: ["diskUsage"] }
+          ]
         }
       ]
     },
