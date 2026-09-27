@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AuthFailureRateLimiter } from "../auth.js";
 import { LocalRealtimeRepository, LocalHistoryRepository, LocalDeviceRepository, createLocalStore } from "../repositories/local.js";
+import { mapHistoryRow } from "../repositories/history.js";
 import { MetricsService } from "./metrics.js";
 import type { TimeSeriesRecord } from "../types.js";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -104,4 +105,24 @@ test("replayed older samples cannot replace live telemetry or roll back the curr
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("MySQL history rows recover averaged CPU, network, and fan instances", () => {
+  const row = mapHistoryRow({
+    timestamp: Date.now(),
+    diskInstancesJson: "[]",
+    gpuInstancesJson: "[]",
+    recordedDetailsJson: JSON.stringify({
+      hardwareSampledAt: "2026-09-27T00:00:00.123Z",
+      aggregatedInstances: {
+        cpus: [{ id: "cpu-0", name: "CPU", temperatureC: 55 }],
+        networks: [{ id: "net-0", name: "Network", rxBytesPerSec: 100 }],
+        fans: [{ id: "fan-0", name: "Fan", rpm: 500 }]
+      }
+    })
+  });
+  assert.equal(row.cpus?.[0]?.temperatureC, 55);
+  assert.equal(row.networks?.[0]?.rxBytesPerSec, 100);
+  assert.equal(row.fans?.[0]?.rpm, 500);
+  assert.equal(row.hardwareSampledAt, "2026-09-27T00:00:00.123Z");
 });
