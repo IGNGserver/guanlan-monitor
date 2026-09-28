@@ -4,7 +4,7 @@ import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
 import { M3Checkbox, M3SegmentedControl, M3Select, M3Switch, M3TextField } from "../m3";
 import { Button, CopyButton, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
 import { formatDate, formatPreciseDateTime } from "../formatters";
-import { selectSnapshotSource } from "../selectors";
+import { selectLinkLabel, selectSnapshotSource, liveLinkLabel } from "../selectors";
 import { formatWorkspaceError } from "../context/WorkspaceTypes";
 import { visibleSettingsNavigation } from "../shell/PrimaryNavigation";
 import { PlatformShortcuts } from "../shell/PlatformShortcuts";
@@ -100,7 +100,7 @@ function GeneralSettings() {
 }
 
 function WebSyncSummary() {
-  const { snapshot, allDevices, refresh, refreshing } = useWorkspace();
+  const { snapshot, allDevices, refresh, refreshing, capabilities } = useWorkspace();
   const online = allDevices.filter((device) => device.status === "online").length;
   const source = snapshot ? selectSnapshotSource(snapshot, allDevices) : "unknown";
   const state = source === "live" ? "online" : source === "cache" ? "cached" : source === "unknown" ? "warning" : "unknown";
@@ -108,7 +108,7 @@ function WebSyncSummary() {
     <Surface>
       <div className="workspace-surface__header"><div><span className="workspace-section-kicker">当前数据</span><h3>同步情况</h3></div><StatusLabel state={state} /></div>
       <div className="workspace-detail-list">
-        <SummaryRow label="数据来源" value={source === "live" ? "实时中枢" : source === "cache" ? "离线缓存" : source === "empty" ? "等待数据" : "连接异常"} />
+        <SummaryRow label="数据来源" value={selectLinkLabel(source, capabilities.liveDataTransport)} />
         <SummaryRow label="最近同步" value={snapshot ? formatPreciseDateTime(snapshot.generatedAt) : "尚未同步"} />
         <SummaryRow label="已接入设备" value={`${allDevices.length} 台 · ${online} 台在线`} />
       </div>
@@ -277,7 +277,7 @@ function ConnectionSettings() {
  * place to answer "am I talking to the hub, and as whom".
  */
 function WebConnectionSettings() {
-  const { snapshot, allDevices, logout, mutationPending, refresh, refreshing } = useWorkspace();
+  const { snapshot, allDevices, logout, mutationPending, refresh, refreshing, capabilities } = useWorkspace();
   const authenticated = snapshot?.session.authenticated ?? false;
   const source = snapshot ? selectSnapshotSource(snapshot, allDevices) : "unknown";
   const signOut = async () => {
@@ -291,7 +291,7 @@ function WebConnectionSettings() {
     <div className="workspace-settings-stack">
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">当前会话</span><h3>{authenticated ? "浏览器会话已认证" : "会话需要重新认证"}</h3></div><StatusLabel state={authenticated ? "online" : "warning"} /></div>
-        <div className="workspace-detail-list"><SummaryRow label="认证方式" value="中枢访问密钥" /><SummaryRow label="会话范围" value="当前浏览器" /><SummaryRow label="访问权限" value="已授权设备与指标" /><SummaryRow label="数据链路" value={source === "live" ? "实时中枢" : source === "cache" ? "离线缓存" : source === "empty" ? "等待数据" : "连接异常"} /></div>
+        <div className="workspace-detail-list"><SummaryRow label="认证方式" value="中枢访问密钥" /><SummaryRow label="会话范围" value="当前浏览器" /><SummaryRow label="访问权限" value="已授权设备与指标" /><SummaryRow label="数据链路" value={selectLinkLabel(source, capabilities.liveDataTransport)} /></div>
         {!authenticated && <div className="workspace-session-recovery m3-inline-banner" role="alert"><div className="workspace-session-recovery__copy"><strong>当前会话不可用</strong><p>站点认证可能已过期，重新认证会保留当前页面地址。</p></div><div className="workspace-form__actions"><Button variant="primary" onClick={reloadForAuthentication}>重新认证</Button><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? "正在检查" : "重新检查"}</Button></div></div>}
         <div className="workspace-form__actions"><Button variant="danger" onClick={() => void signOut()} disabled={!authenticated || mutationPending}>{mutationPending ? "正在退出" : "退出当前会话"}</Button></div>
       </Surface>
@@ -514,7 +514,7 @@ function AgentSettings() {
 function DataSettings() {
   const { snapshot, openExternal, capabilities } = useWorkspace();
   const update = snapshot?.update;
-  const sourceLabel = snapshot?.source === "cache" ? "离线缓存" : snapshot?.source === "live" ? capabilities.canUseOfflineCache ? "实时连接" : "实时中枢" : "无数据";
+  const sourceLabel = snapshot?.source === "cache" ? "离线缓存" : snapshot?.source === "live" ? liveLinkLabel(capabilities.liveDataTransport) : "无数据";
   return <div className="workspace-settings-stack"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">同步状态</span><h3>数据与更新</h3></div></div><div className="workspace-detail-list"><SummaryRow label="数据来源" value={sourceLabel} /><SummaryRow label={capabilities.canUseOfflineCache ? "缓存时间" : "最近同步"} value={capabilities.canUseOfflineCache ? formatDate(snapshot?.cache.savedAt) : formatPreciseDateTime(snapshot?.generatedAt)} />{capabilities.canUseOfflineCache && <SummaryRow label="缓存年龄" value={snapshot?.cache.ageSeconds == null ? "无" : `${snapshot.cache.ageSeconds} 秒`} />}<SummaryRow label="当前版本" value={update?.currentVersion ?? "未知"} /></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">版本</span><h3>{update?.available ? `可用更新：${update.latestVersion}` : "当前已是最新版本"}</h3></div>{update?.available && <StatusLabel state="warning" />}</div>{update?.message && <p className="workspace-surface__description">{update.message}</p>}{update?.releaseUrl && <Button variant="quiet" onClick={() => void openExternal(update.releaseUrl!)}>查看更新说明<Icon name="external" size={15} /></Button>}</Surface></div>;
 }
 

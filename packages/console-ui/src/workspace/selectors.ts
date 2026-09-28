@@ -36,7 +36,28 @@ function metricUnavailable(device: DeviceSummary, key: DeviceMetricKey): boolean
   return (device.unavailableMetrics ?? []).includes(key);
 }
 
-export function selectHealthSummary(snapshot: ConsoleSnapshot, allDevices: DeviceSummary[], formatDate: (value: string | null | undefined) => string): HealthSummary {
+export type LiveDataTransport = ConsoleSnapshot["source"] extends never ? never : "push" | "poll";
+
+/**
+ * One place names the live data link for both clients.
+ *
+ * The overview used to say "实时连接" while the device page and the connection
+ * card said "实时中枢" for the same fact, and both said "实时" even on the
+ * desktop shell, which polls. The transport is a capability, so the wording is
+ * derived from it rather than restated per page.
+ */
+export function liveLinkLabel(transport: LiveDataTransport): string {
+  return transport === "push" ? "实时连接" : "定时刷新";
+}
+
+export function selectLinkLabel(source: SnapshotDataSource, transport: LiveDataTransport): string {
+  if (source === "live") return liveLinkLabel(transport);
+  if (source === "cache") return "离线缓存";
+  if (source === "empty") return "等待数据";
+  return "连接异常";
+}
+
+export function selectHealthSummary(snapshot: ConsoleSnapshot, allDevices: DeviceSummary[], formatDate: (value: string | null | undefined) => string, transport: LiveDataTransport = "push"): HealthSummary {
   const online = allDevices.filter((device) => device.status === "online").length;
   const source = selectSnapshotSource(snapshot, allDevices);
   const unhealthyDevices = allDevices.filter((device) => device.status !== "online").length;
@@ -49,7 +70,7 @@ export function selectHealthSummary(snapshot: ConsoleSnapshot, allDevices: Devic
     offline: allDevices.length - online,
     pending,
     source,
-    sourceLabel: source === "live" ? "实时连接" : source === "cache" ? "离线缓存" : source === "empty" ? "等待数据" : "连接异常",
+    sourceLabel: selectLinkLabel(source, transport),
     sourceDetail: source === "cache"
       ? `缓存于 ${formatDate(snapshot.cache.savedAt)}`
       : source === "empty"

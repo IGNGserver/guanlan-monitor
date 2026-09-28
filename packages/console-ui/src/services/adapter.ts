@@ -15,6 +15,17 @@ export interface ConsoleCapabilities {
   canControlNativeWindow: boolean;
   canConfigureConnection: boolean;
   requiresAuthentication: boolean;
+  /**
+   * How a live snapshot reaches this client.
+   *
+   * `push` is a realtime channel (the browser console subscribes to
+   * `device:update` over socket.io); `poll` is a visibility-aware timer (the
+   * Electron shell refreshes through the host bridge). Both are "live" data, but
+   * "实时" is a claim about refresh latency that only the push client can make,
+   * so every data-link label is derived from this value instead of guessing from
+   * the source alone.
+   */
+  liveDataTransport: "push" | "poll";
 }
 
 export interface ConsoleAdapter extends ConsoleReadPort, ConsoleSessionPort, ConsoleFleetPort {
@@ -50,7 +61,8 @@ export const WEB_CAPABILITIES: ConsoleCapabilities = {
   canChangeStartupSettings: false,
   canControlNativeWindow: false,
   canConfigureConnection: false,
-  requiresAuthentication: true
+  requiresAuthentication: true,
+  liveDataTransport: "push"
 };
 
 export const DESKTOP_CAPABILITIES: ConsoleCapabilities = {
@@ -59,7 +71,8 @@ export const DESKTOP_CAPABILITIES: ConsoleCapabilities = {
   canChangeStartupSettings: true,
   canControlNativeWindow: true,
   canConfigureConnection: true,
-  requiresAuthentication: false
+  requiresAuthentication: false,
+  liveDataTransport: "poll"
 };
 
 export function fallbackWindowMaterialCapabilities(): WindowMaterialCapabilities {

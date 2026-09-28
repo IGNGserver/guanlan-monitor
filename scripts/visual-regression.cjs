@@ -641,13 +641,17 @@ async function run() {
   // The keyboard reference must name this client's keys: F5, no Command key, and
   // no tray shortcut, which the browser console cannot have.
   await page.goto(`${baseUrl}#settings/shortcuts`, { waitUntil: "domcontentloaded" });
-  await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
-  const shortcutKeys = (await page.locator(".workspace-shortcut-row kbd").allTextContents()).map((key) => key.trim());
+  await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });  const shortcutKeys = (await page.locator(".workspace-shortcut-row kbd").allTextContents()).map((key) => key.trim());
   assert.ok(shortcutKeys.some((key) => key.startsWith("F5")), `the browser console's reload key must be listed as F5 (${shortcutKeys.join(",")})`);
   assert.ok(shortcutKeys.every((key) => !key.includes("⌘")), `the browser console must not advertise the macOS Command key (${shortcutKeys.join(",")})`);
   assert.ok(shortcutKeys.every((key) => !key.includes("W")), `the browser console has no hide-to-tray shortcut (${shortcutKeys.join(",")})`);
   assert.equal(await page.locator(".workspace-shortcut-row").count(), 5, "the browser reference lists the five console shortcuts");
   await page.screenshot({ path: path.join(outputDir, "web-settings-shortcuts.png"), fullPage: true, animations: "disabled" });
+  // The browser console is the push client: live data may be called 实时 here.
+  await page.goto(`${baseUrl}#settings/general`, { waitUntil: "domcontentloaded" });
+  await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
+  assert.ok((await page.locator(".workspace-page--settings").innerText()).includes("实时连接"), "the push client must label live data 实时连接");
+  assert.ok(!(await page.locator(".workspace-page--settings").innerText()).includes("定时刷新"), "the push client must not describe itself as polling");
   // Leaving drawer mode restores the stored preference.
   await page.setViewportSize({ width: 1024, height: 900 });
   await page.waitForTimeout(400);

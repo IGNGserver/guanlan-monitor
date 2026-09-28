@@ -148,6 +148,11 @@ async function run() {
     await page.screenshot({ path: path.join(outputDir, "electron-agent-diagnostics.png"), fullPage: true, animations: "disabled" });
     await page.evaluate(() => { window.location.hash = "#settings/general"; });
     await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
+    const generalText = await page.locator(".workspace-page--settings").innerText();
+    // The desktop shell polls through the host bridge; it must not borrow the
+    // browser's 实时 claim for the same live snapshot.
+    assert.ok(generalText.includes("定时刷新"), `the polling client must label live data 定时刷新 (${generalText})`);
+    assert.ok(!generalText.includes("实时连接"), "the polling client must not describe itself as realtime");
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(300);

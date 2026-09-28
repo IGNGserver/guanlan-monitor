@@ -12,7 +12,7 @@ This inventory describes behavior, not old visual structure. The source of truth
 - Render only the metrics and hardware instances allowed by that device's `availableMetrics`, `enabledMetrics`, `enabledDeviceIds`, and `instanceMetricConfig` response.
 - Show CPU packages, memory and swap, disks and disk health metadata, network interfaces and traffic, GPUs, fans, sensor backends, and system process/thread/handle counts when present.
 - Show traffic calendar data by day/week/month.
-- Subscribe to realtime updates; fall back to explicit stale/offline state when the Hub or socket is unavailable.
+- Refresh device state on a visibility-aware timer through the host bridge. The browser console additionally subscribes to `device:update`, so only it labels live data "实时连接"; the desktop shell says "定时刷新". Fall back to explicit stale/offline state when the Hub is unavailable.
 - Cache device list, latest state, metric config, and recently opened histories for offline viewing, with an explicit cached-data badge and last successful refresh time.
 - Never render configuration-edit controls for remote devices.
 
