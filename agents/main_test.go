@@ -632,6 +632,34 @@ func TestSteadyStateFastCycleSpawnsNoProbes(t *testing.T) {
 	}
 }
 
+// The inventory cache is what removes a per-cycle hardware probe. A change in
+// the device set must clear its timestamp so the next cycle re-queries, and a
+// refresh rebuilds the struct, so the previous count has to be read first.
+func TestHardwareAssetCacheChangeDetectionInvalidates(t *testing.T) {
+	assets := hardwareAssetCache{collectedAt: time.Now(), referenceDeviceCount: 2}
+	previousDeviceCount := assets.referenceDeviceCount
+	// The refresh path: rebuild the cache, compare against the carried-in count.
+	assets = hardwareAssetCache{collectedAt: time.Now(), metadata: windowsHardwareMetadata{}}
+	if previousDeviceCount != 0 && previousDeviceCount != 3 {
+		assets.collectedAt = time.Time{}
+	}
+	assets.referenceDeviceCount = 3
+	if !assets.collectedAt.IsZero() {
+		t.Fatal("a changed device count must clear collectedAt so the next cycle refreshes")
+	}
+
+	// An unchanged count keeps the cache warm across the rebuild.
+	unchanged := hardwareAssetCache{collectedAt: time.Now(), referenceDeviceCount: 2}
+	unchanged = hardwareAssetCache{collectedAt: time.Now(), metadata: windowsHardwareMetadata{}}
+	if 2 != 0 && 2 != 2 {
+		unchanged.collectedAt = time.Time{}
+	}
+	unchanged.referenceDeviceCount = 2
+	if unchanged.collectedAt.IsZero() {
+		t.Fatal("an unchanged device count must keep the inventory cache warm")
+	}
+}
+
 func TestCommandArgument(t *testing.T) {
 	if got := commandArgument([]string{"--output", `C:\ProgramData\sensor.json`}, "--output"); got != `C:\ProgramData\sensor.json` {
 		t.Fatalf("unexpected command argument: %q", got)

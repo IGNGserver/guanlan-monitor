@@ -2056,9 +2056,6 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 			memoryFormFactor = linuxFormFactor
 		}
 	}
-	if refreshAssets {
-		assets = hardwareAssetCache{collectedAt: time.Now().UTC(), metadata: windowsMetadata}
-	}
 	if runtime.GOOS == "windows" {
 		windowsDiskSensors := collectWindowsDiskSensorMetadata(windowsMetadata.DiskMetadata)
 		for index := range result.disks {
@@ -2082,15 +2079,19 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 			}
 		}
 	}
-	// A device appeared or vanished since the last cycle: drop the inventory
-	// cache so the next collection re-queries instead of reporting a stale set
-	// for up to a full TTL.
+	// Record the fresh inventory, then decide whether the device set changed.
+	// When it did, clear the timestamp so the next collection re-queries instead
+	// of reporting a stale set for up to a full TTL. The comparison uses the
+	// count carried in from the previous cycle, before it is overwritten.
+	currentDeviceCount := deviceReferenceCount(result)
+	previousDeviceCount := assets.referenceDeviceCount
 	if refreshAssets {
-		if count := deviceReferenceCount(result); assets.referenceDeviceCount != 0 && assets.referenceDeviceCount != count {
-			assets.collectedAt = time.Time{}
-		}
+		assets = hardwareAssetCache{collectedAt: time.Now().UTC(), metadata: windowsMetadata}
 	}
-	assets.referenceDeviceCount = deviceReferenceCount(result)
+	if previousDeviceCount != 0 && previousDeviceCount != currentDeviceCount {
+		assets.collectedAt = time.Time{}
+	}
+	assets.referenceDeviceCount = currentDeviceCount
 
 	var gpus []gpuDeviceStats
 	if runtime.GOOS == "windows" {
