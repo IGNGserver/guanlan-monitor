@@ -947,11 +947,16 @@ async function run() {
           }
         }
         if (round === 1 && name === "overview" && [840, 1024, 1440].includes(width)) {
-          assert.ok(geometry.root?.width >= width - 1 && geometry.root?.height >= height - 1, `Web root geometry is incomplete at ${width}px`);
-          assert.ok(geometry.sidebar?.width > 0 && geometry.sidebar?.height >= height - 1, `Web sidebar geometry is incomplete at ${width}px`);
-          assert.ok(geometry.main?.width > 0 && geometry.main?.height >= height - 1, `Web main geometry is incomplete at ${width}px`);
-          assert.ok(geometry.main?.x > geometry.sidebar?.x + geometry.sidebar?.width - 1, `Web columns collapse at ${width}px`);
-          assert.match(geometry.gridTemplateRows, /\d+(?:\.\d+)?px|auto|minmax/, `Web grid rows are missing at ${width}px`);
+          // The measured rectangles are in the message on purpose: this assertion
+          // only fails when a layout regression changes the shell's outer box, and
+          // without the numbers the only way to find out what changed is to
+          // reproduce the run.
+          const shell = `root=${JSON.stringify(geometry.root)} sidebar=${JSON.stringify(geometry.sidebar)} main=${JSON.stringify(geometry.main)} viewport=${width}x${height} inner=${geometry.viewportWidth}`;
+          assert.ok(geometry.root?.width >= width - 1 && geometry.root?.height >= height - 1, `Web root geometry is incomplete at ${width}px (${shell})`);
+          assert.ok(geometry.sidebar?.width > 0 && geometry.sidebar?.height >= height - 1, `Web sidebar geometry is incomplete at ${width}px (${shell})`);
+          assert.ok(geometry.main?.width > 0 && geometry.main?.height >= height - 1, `Web main geometry is incomplete at ${width}px (${shell})`);
+          assert.ok(geometry.main?.x > geometry.sidebar?.x + geometry.sidebar?.width - 1, `Web columns collapse at ${width}px (${shell})`);
+          assert.match(geometry.gridTemplateRows, /\d+(?:\.\d+)?px|auto|minmax/, `Web grid rows are missing at ${width}px (${shell})`);
         }
         const screenshotPath = path.join(outputDir, `matrix-round-${round}-${theme}-${width}-${name}.png`);
         // The route-specific screenshots above retain full-page evidence. The 40-cell
