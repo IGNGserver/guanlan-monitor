@@ -874,7 +874,20 @@ async function run() {
             const selected = control.querySelector('[role="tab"][aria-selected="true"]');
             const label = selected?.querySelector(".cds--content-switcher__label");
             const foreground = selected ? getComputedStyle(selected).color : "";
-            const background = selected ? getComputedStyle(selected, "::after").backgroundColor : "";
+            /* The selected fill used to be painted by `::after`. The console now
+             * paints it on the button itself and hides `::after` (see
+             * `workspace-carbon.scss`), but `getComputedStyle` still reports the
+             * hidden pseudo-element's background — so the probe measured a colour
+             * that is never drawn and read the selected control as 1.00 contrast.
+             * Read the element's own fill when it is opaque and fall back to the
+             * pseudo-element only for a control that still uses it. */
+            const opaque = (color) => {
+              const alpha = color.match(/^rgba\([^)]*,\s*([\d.]+)\)$/);
+              return color.startsWith("rgb(") || (alpha ? Number(alpha[1]) === 1 : false);
+            };
+            const ownBackground = selected ? getComputedStyle(selected).backgroundColor : "";
+            const pseudoBackground = selected ? getComputedStyle(selected, "::after").backgroundColor : "";
+            const background = opaque(ownBackground) ? ownBackground : pseudoBackground;
             const labelStyle = label ? getComputedStyle(label) : null;
             const labelBounds = label?.getBoundingClientRect();
             const alphaMatch = background.match(/^rgba\([^)]*,\s*([\d.]+)\)$/);
