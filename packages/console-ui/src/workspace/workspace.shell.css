@@ -557,7 +557,7 @@ kbd {
   min-height: 390px;
 }
 
-/* `.workspace-metric-value*` was the pre-Carbon NumberView; `formatters.tsx`
+/* `.workspace-metric-value*` was the pre-Carbon NumberView; `formatters.ts`
    exports `MetricValue`/`CapacityMetricValue` but no page renders them, so these
    four rules had nothing to match. */
 

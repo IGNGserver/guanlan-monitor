@@ -46,6 +46,13 @@ export type DeviceFormFactor = "phone" | "tablet" | "desktop";
 /**
  * Detect device form factor combining User Agent heuristics, screen width,
  * orientation and touch capabilities.
+ *
+ * Not consumed by any render path today. It was added for a tablet split view
+ * that is not mounted, and `data-dsc-form-factor` is written but read by no
+ * stylesheet, so the layout has a single source of truth in `getResponsiveTier`
+ * and the drawer breakpoint. Retained because the phone/tablet/desktop split is
+ * a real product distinction still being decided; it should be deleted rather
+ * than wired up speculatively if that decision lands the other way.
  */
 export function detectDeviceFormFactor(width?: number, hasTouch?: boolean): DeviceFormFactor {
   if (typeof window === "undefined" && width === undefined) return "desktop";

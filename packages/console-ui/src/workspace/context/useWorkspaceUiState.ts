@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MetricWindow, TrafficCalendarMode } from "@dsc/shared";
 import type { ConsoleAdapter } from "../../services/adapter";
 import { detectTouchSupport, type InteractionScaleSetting, type PointerType } from "../../helpers/density";
-import { detectDeviceFormFactor, getResponsiveTier, getScreenOrientation, usesSidebarDrawer, type DeviceFormFactor, type ResponsiveTier, type ScreenOrientation } from "../../helpers/layout";
+import { getResponsiveTier, getScreenOrientation, usesSidebarDrawer, type ResponsiveTier, type ScreenOrientation } from "../../helpers/layout";
 import { confirmDiscardDeviceOrderDraft } from "../deviceOrderDraft";
 import { defaultRoute, routeFromLocation, serializeWorkspaceRoute, type SettingsSection, type WorkspaceRoute } from "../routes";
 import { getStoredDensity, getStoredRefreshInterval, getStoredTheme } from "./WorkspaceTypes";
@@ -38,7 +38,6 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
   const [isTouch, setIsTouch] = useState(false);
   const [inputMode, setInputMode] = useState<PointerType>("mouse");
   const [layoutTier, setLayoutTier] = useState<ResponsiveTier>("lg");
-  const [formFactor, setFormFactor] = useState<DeviceFormFactor>(() => detectDeviceFormFactor());
   const [pointerSeen, setPointerSeen] = useState(false);
 
   useEffect(() => {
@@ -61,11 +60,9 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
       const nextOrientation = getScreenOrientation(width, height);
       const nextTier = getResponsiveTier(width);
       const nextTouch = detectTouchSupport();
-      const nextFormFactor = detectDeviceFormFactor(width, nextTouch);
       setOrientation(nextOrientation);
       setLayoutTier(nextTier);
       setIsTouch(nextTouch);
-      setFormFactor(nextFormFactor);
       if (!pointerSeen) setInputMode(nextTouch ? "touch" : "mouse");
       // Crossing into drawer mode closes the drawer without touching the stored
       // preference: "expanded" describes the inline rail, and a modal drawer that
@@ -84,7 +81,6 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
       document.documentElement.dataset.dscOrientation = nextOrientation;
       document.documentElement.dataset.dscTier = nextTier;
       document.documentElement.dataset.dscTouchSupport = nextTouch ? "true" : "false";
-      document.documentElement.dataset.dscFormFactor = nextFormFactor;
     };
     handleResize();
     window.addEventListener("resize", handleResize);
@@ -179,7 +175,6 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
     orientation,
     isTouch,
     inputMode,
-    layoutTier,
-    formFactor
+    layoutTier
   };
 }

@@ -16,6 +16,16 @@
 .workspace-telemetry-empty { display: grid; min-height: 228px; place-items: center; padding: 20px; border: 1px dashed var(--workspace-border-strong); border-radius: var(--workspace-radius-md); color: var(--workspace-text-muted); background: var(--workspace-surface-subtle); font-size: 12px; text-align: center; }
 
 .workspace-settings-stack { display: flex; max-width: 780px; flex-direction: column; gap: 16px; }
+/* Runtime history and upload progress are two short fact lists. They fit side by
+   side on a desktop window and stack before they would ever squeeze a value. */
+.workspace-diagnostics-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 28px; }
+@media (max-width: 719px) {
+  .workspace-diagnostics-columns { grid-template-columns: minmax(0, 1fr); }
+}
+/* File paths are long and unbreakable; `anywhere` keeps them inside the row
+   instead of pushing the label column to zero width. */
+.workspace-agent-diagnostics .workspace-summary-row strong { min-width: 0; overflow-wrap: anywhere; }
+.workspace-agent-diagnostics .workspace-form__hint { margin-top: 4px; }
 .workspace-web-settings { max-width: 980px; }
 .workspace-web-settings__status { display: grid; grid-template-columns: minmax(0, 1.45fr) repeat(3, minmax(120px, .55fr)); gap: 1px; overflow: hidden; border: 1px solid var(--workspace-border); border-radius: var(--workspace-radius-md); background: var(--workspace-border); box-shadow: var(--workspace-shadow-soft); }
 .workspace-web-settings__status-main,

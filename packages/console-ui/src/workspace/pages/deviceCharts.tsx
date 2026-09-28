@@ -143,7 +143,7 @@ export interface DeviceChartContext {
   canConfigureConnection: boolean;
 }
 
-// Unit spellings come from `formatters.tsx` so a table cell and the chart of the
+// Unit spellings come from `formatters.ts` so a table cell and the chart of the
 // same metric can never disagree: `percent` rounds the way the directory now
 // does, and a value that is not a number shows as a dash instead of "NaN%".
 const percent = (value: number) => formatPercent(value);

@@ -16,6 +16,5 @@ export type {
   ConsoleLocalAgentPort,
   ConsoleReadPort,
   ConsoleSessionPort
-} from "./services/ports";
-export type { ConsoleSnapshot, ConsoleSnapshotRequest } from "@dsc/shared";
+} from "./services/ports";export type { ConsoleSnapshot, ConsoleSnapshotRequest } from "@dsc/shared";
 export { DESKTOP_CAPABILITIES, WEB_CAPABILITIES, emptyConsoleSnapshot, fallbackRuntimeProfile, fallbackWindowMaterialCapabilities } from "./services/adapter";

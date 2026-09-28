@@ -44,6 +44,7 @@ jobs:
       - name: Verify shared UI boundaries and helpers
         run: |
           pnpm check:desktop-ui-boundaries
+          pnpm check:desktop-agent-state
           pnpm check:web-ui-boundary
           pnpm check:adapter-contracts
           pnpm test:adapter-contracts
@@ -318,7 +319,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/dsc-visual"
-          pnpm --filter @dsc/web start > "$RUNNER_TEMP/dsc-visual/web.log" 2>&1 &
+          DSC_RELEASE_CHANNEL=test pnpm --filter @dsc/web start > "$RUNNER_TEMP/dsc-visual/web.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/dsc-visual/web.pid"
           for attempt in $(seq 1 30); do
             if curl --fail --silent --show-error http://127.0.0.1:3000/ >/dev/null; then

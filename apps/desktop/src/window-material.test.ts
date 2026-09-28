@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createFallbackWindowMaterialCapabilities, resolveWindowMaterial } from "./window-material.ts";
+import { createFallbackWindowMaterialCapabilities, parseWindowMaterialArgument, resolveWindowMaterial } from "./window-material.ts";
 
 test("Windows 11 resolves to native Mica when transparency is available", () => {
   assert.equal(resolveWindowMaterial({
@@ -51,4 +51,20 @@ test("fallback capabilities never expose a user-selectable material", () => {
     prefersReducedTransparency: false,
     activeMaterial: "opaque"
   });
+});
+
+/**
+ * The renderer reads the material from a launch switch so its first paint is
+ * already correct. The switch has to be parsed strictly: defaulting to "mica"
+ * on an unparseable value would leave a transparent window on a system with no
+ * backdrop behind it, which is worse than a one-frame opaque paint.
+ */
+test("the launch switch only ever yields opaque or mica", () => {
+  assert.equal(parseWindowMaterialArgument(["--dsc-window-material=mica"]), "mica");
+  assert.equal(parseWindowMaterialArgument(["--dsc-window-material=opaque"]), "opaque");
+  assert.equal(parseWindowMaterialArgument([]), "opaque", "a missing switch means opaque");
+  assert.equal(parseWindowMaterialArgument(["--dsc-window-material="]), "opaque");
+  assert.equal(parseWindowMaterialArgument(["--dsc-window-material=MICA"]), "opaque", "the value is case-sensitive");
+  assert.equal(parseWindowMaterialArgument(["--other=mica"]), "opaque", "an unrelated switch must not be read as the material");
+  assert.equal(parseWindowMaterialArgument(["--dsc-window-material=mica", "--dsc-window-material=opaque"]), "mica", "the first match wins");
 });

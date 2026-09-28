@@ -74,7 +74,6 @@ export class DesktopController {
       refresh: (request?: DesktopSnapshotRequest) => this.refresh(request),
       updateLocalConfig: (patch: DesktopConfigPatch) => this.updateLocalConfig(patch),
       controlAgent: (action: DesktopAgentControlAction) => this.controlAgent(action),
-      setAgentSecret: (secret: string) => this.setAgentSecret(secret),
       saveHubConnection: (serverUrl: string, accessKey: string) => this.saveHubConnection(serverUrl, accessKey),
       login: (accessKey: string) => this.login(accessKey),
       logout: () => this.logout(),
@@ -206,19 +205,6 @@ export class DesktopController {
 
   async controlAgent(action: DesktopAgentControlAction): Promise<DesktopSnapshot> {
     await this.agent.control(action);
-    return this.refresh();
-  }
-
-  async setAgentSecret(secret: string): Promise<DesktopSnapshot> {
-    const rawState = await this.agent.start();
-    const nextConfig: AgentBackendConfig = {
-      ...rawState.config,
-      connection: {
-        ...rawState.config.connection,
-        secret: secret.trim()
-      }
-    };
-    await this.agent.updateConfig(nextConfig);
     return this.refresh();
   }
 
@@ -414,7 +400,7 @@ export class DesktopController {
       source: "live",
       cache: { available: false, savedAt: null, ageSeconds: null },
       session: { authenticated: true, accessKeyConfigured: true },
-      localBackend: null,
+      localBackend: this.visualFixtureBackend(),
       devices,
       selectedDeviceId,
       metrics: null,
@@ -422,6 +408,75 @@ export class DesktopController {
       trafficCalendar: null,
       update: { available: false, currentVersion: currentDesktopVersion(), currentChannel: "test", latestVersion: currentDesktopVersion(), latestChannel: "test", releaseTag: null, releaseUrl: null, notesUrl: null, publishedAt: null, assetName: null, assetUrl: null, assetSize: null, sha256: null, installMode: "none", platform: process.platform === "win32" ? "windows-gui" : "linux-gui", arch: process.arch },
       startup: this.startup
+    };
+  }
+
+  /**
+   * A representative local Agent for the visual fixture.
+   *
+   * `localBackend: null` made the "本机 Agent" page render its "not started"
+   * empty state, so the desktop-only diagnostic surface had no visual evidence
+   * and the smoke test could not assert it. Every diagnostic field is populated
+   * with a plausible Windows install; the values carry no credential, matching
+   * the redacted shape the renderer actually receives.
+   */
+  private visualFixtureBackend(): NonNullable<DesktopSnapshot["localBackend"]> {
+    const configDir = "C:\\Users\\visual\\AppData\\Roaming\\guanlan";
+    return {
+      running: true,
+      backendStartedAt: "2026-09-13T09:40:00.000Z",
+      frontendParentPid: 8124,
+      childStartedAt: "2026-09-13T09:40:04.000Z",
+      connectionStatus: "已连接",
+      lastChildLog: "[collector] sampled cpu=28% mem=48% disks=3 fans=2",
+      lastUploadAt: "2026-09-13T09:59:30.000Z",
+      lastCloudSyncAt: "2026-09-13T09:55:00.000Z",
+      cloudConfigPending: false,
+      lastDetectAt: "2026-09-13T09:41:00.000Z",
+      lastExitAt: "2026-09-13T09:38:00.000Z",
+      lastRestartAt: "2026-09-13T09:40:04.000Z",
+      restartCount: 1,
+      lastExitCode: 0,
+      autoRestartPending: false,
+      effectiveUploadIntervalSeconds: 30,
+      lastIssueCategory: "network",
+      lastIssueDetail: "中枢连接短暂中断，已自动恢复。",
+      lastIssueAt: "2026-09-13T09:45:00.000Z",
+      lastIssueCount: 1,
+      lastIssueRecoveredAt: "2026-09-13T09:46:00.000Z",
+      configPath: `${configDir}\\agent-ui.config.json`,
+      configFileExists: true,
+      syncStatePath: `${configDir}\\agent-ui.sync-state.json`,
+      syncStateFileExists: true,
+      diagnosticsPath: `${configDir}\\agent-ui.backend.log`,
+      diagnosticsFileExists: true,
+      pendingStatePath: `${configDir}\\agent-ui.pending.jsonl`,
+      pendingStateFileExists: false,
+      pendingSampleCount: 0,
+      pendingBytes: 0,
+      config: {
+        configVersion: 1,
+        connection: {
+          serverUrl: "https://hub.example.com",
+          secretConfigured: true,
+          deviceId: "visual-host",
+          hostname: "视觉验收主机"
+        },
+        sampling: { normalIntervalSeconds: 30, slowIntervalSeconds: 120 },
+        enabledMetrics: ["cpuUsage", "memoryUsage", "diskUsage"],
+        enabledDeviceIds: {},
+        instanceMetricConfig: {},
+        probeSelections: [],
+        cloudSyncEnabled: true,
+        dataRecordingEnabled: true,
+        autoRestartCollector: true,
+        autoStartCollector: true
+      },
+      supportedProbePlans: [],
+      detectedTargets: [],
+      temperatureSources: [],
+      temperatureSensorBackends: [],
+      agentMode: "service"
     };
   }
 

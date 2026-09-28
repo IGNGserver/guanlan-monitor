@@ -638,6 +638,22 @@ async function run() {
   assert.ok(drawerEvidence.left >= 0 && drawerEvidence.width > 200, `the drawer must sit on canvas (left ${drawerEvidence.left}, width ${drawerEvidence.width})`);
   assert.ok(drawerEvidence.labelWidths.length > 0 && drawerEvidence.labelWidths.every((label) => label > 16), `the open drawer must show its labels (${drawerEvidence.labelWidths.join(",")})`);
   await page.screenshot({ path: path.join(outputDir, "web-drawer-open-mobile.png"), animations: "disabled" });
+  // The keyboard reference must name this client's keys: F5, no Command key, and
+  // no tray shortcut, which the browser console cannot have.
+  await page.goto(`${baseUrl}#settings/shortcuts`, { waitUntil: "domcontentloaded" });
+  await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
+  const shortcutKeys = (await page.locator(".workspace-shortcut-row kbd").allTextContents()).map((key) => key.trim());
+  assert.ok(shortcutKeys.some((key) => key.startsWith("F5")), `the browser console's reload key must be listed as F5 (${shortcutKeys.join(",")})`);
+  assert.ok(shortcutKeys.every((key) => !key.includes("⌘")), `the browser console must not advertise the macOS Command key (${shortcutKeys.join(",")})`);
+  const shortcutDescriptions = (await page.locator(".workspace-shortcut-row span").allTextContents()).map((text) => text.trim());
+  assert.ok(shortcutDescriptions.every((text) => !text.includes("托盘")), `the browser console has no tray to hide into (${shortcutDescriptions.join(",")})`);
+  assert.equal(await page.locator(".workspace-shortcut-row").count(), 5, "the browser reference lists the five console shortcuts");
+  await page.screenshot({ path: path.join(outputDir, "web-settings-shortcuts.png"), fullPage: true, animations: "disabled" });
+  // The browser console is the push client: live data may be called 实时 here.
+  await page.goto(`${baseUrl}#settings/general`, { waitUntil: "domcontentloaded" });
+  await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
+  assert.ok((await page.locator(".workspace-page--settings").innerText()).includes("实时连接"), "the push client must label live data 实时连接");
+  assert.ok(!(await page.locator(".workspace-page--settings").innerText()).includes("定时刷新"), "the push client must not describe itself as polling");
   // Leaving drawer mode restores the stored preference.
   await page.setViewportSize({ width: 1024, height: 900 });
   await page.waitForTimeout(400);
@@ -858,7 +874,20 @@ async function run() {
             const selected = control.querySelector('[role="tab"][aria-selected="true"]');
             const label = selected?.querySelector(".cds--content-switcher__label");
             const foreground = selected ? getComputedStyle(selected).color : "";
-            const background = selected ? getComputedStyle(selected, "::after").backgroundColor : "";
+            /* The selected fill used to be painted by `::after`. The console now
+             * paints it on the button itself and hides `::after` (see
+             * `workspace-carbon.scss`), but `getComputedStyle` still reports the
+             * hidden pseudo-element's background — so the probe measured a colour
+             * that is never drawn and read the selected control as 1.00 contrast.
+             * Read the element's own fill when it is opaque and fall back to the
+             * pseudo-element only for a control that still uses it. */
+            const opaque = (color) => {
+              const alpha = color.match(/^rgba\([^)]*,\s*([\d.]+)\)$/);
+              return color.startsWith("rgb(") || (alpha ? Number(alpha[1]) === 1 : false);
+            };
+            const ownBackground = selected ? getComputedStyle(selected).backgroundColor : "";
+            const pseudoBackground = selected ? getComputedStyle(selected, "::after").backgroundColor : "";
+            const background = opaque(ownBackground) ? ownBackground : pseudoBackground;
             const labelStyle = label ? getComputedStyle(label) : null;
             const labelBounds = label?.getBoundingClientRect();
             const alphaMatch = background.match(/^rgba\([^)]*,\s*([\d.]+)\)$/);
@@ -918,11 +947,16 @@ async function run() {
           }
         }
         if (round === 1 && name === "overview" && [840, 1024, 1440].includes(width)) {
-          assert.ok(geometry.root?.width >= width - 1 && geometry.root?.height >= height - 1, `Web root geometry is incomplete at ${width}px`);
-          assert.ok(geometry.sidebar?.width > 0 && geometry.sidebar?.height >= height - 1, `Web sidebar geometry is incomplete at ${width}px`);
-          assert.ok(geometry.main?.width > 0 && geometry.main?.height >= height - 1, `Web main geometry is incomplete at ${width}px`);
-          assert.ok(geometry.main?.x > geometry.sidebar?.x + geometry.sidebar?.width - 1, `Web columns collapse at ${width}px`);
-          assert.match(geometry.gridTemplateRows, /\d+(?:\.\d+)?px|auto|minmax/, `Web grid rows are missing at ${width}px`);
+          // The measured rectangles are in the message on purpose: this assertion
+          // only fails when a layout regression changes the shell's outer box, and
+          // without the numbers the only way to find out what changed is to
+          // reproduce the run.
+          const shell = `root=${JSON.stringify(geometry.root)} sidebar=${JSON.stringify(geometry.sidebar)} main=${JSON.stringify(geometry.main)} viewport=${width}x${height} inner=${geometry.viewportWidth}`;
+          assert.ok(geometry.root?.width >= width - 1 && geometry.root?.height >= height - 1, `Web root geometry is incomplete at ${width}px (${shell})`);
+          assert.ok(geometry.sidebar?.width > 0 && geometry.sidebar?.height >= height - 1, `Web sidebar geometry is incomplete at ${width}px (${shell})`);
+          assert.ok(geometry.main?.width > 0 && geometry.main?.height >= height - 1, `Web main geometry is incomplete at ${width}px (${shell})`);
+          assert.ok(geometry.main?.x > geometry.sidebar?.x + geometry.sidebar?.width - 1, `Web columns collapse at ${width}px (${shell})`);
+          assert.match(geometry.gridTemplateRows, /\d+(?:\.\d+)?px|auto|minmax/, `Web grid rows are missing at ${width}px (${shell})`);
         }
         const screenshotPath = path.join(outputDir, `matrix-round-${round}-${theme}-${width}-${name}.png`);
         // The route-specific screenshots above retain full-page evidence. The 40-cell

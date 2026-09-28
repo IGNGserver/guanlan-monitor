@@ -9,10 +9,22 @@ body {
   min-height: 100%;
   margin: 0;
   padding: 0;
-  scrollbar-gutter: stable;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* No `scrollbar-gutter` on `html`/`body`, and that is deliberate.
+ *
+ * The console is a fixed, full-viewport frame (`.workspace-root { position:
+ * fixed; inset: 0 }`), so the document itself never scrolls and has no gutter to
+ * stabilise. Declaring `scrollbar-gutter: stable` here made the browser reserve a
+ * ~10px strip anyway, which shrank `body` — and therefore the fixed root — to
+ * 1430px on a 1440px viewport, leaving the reserved band visibly lighter down the
+ * right edge. The scrollers that actually need a stable gutter own it locally:
+ * `.workspace-content` and `.workspace-main` in the shared stylesheet.
+ *
+ * The login page is unaffected: it is a separate route with its own styles and
+ * scrolls only on short viewports, where an unstable gutter is not the defect. */
 
 body {
   min-height: 100dvh;
