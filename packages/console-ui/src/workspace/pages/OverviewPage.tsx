@@ -7,8 +7,7 @@ import { CarbonTimeSeriesChart } from "../CarbonCharts";
 import { ChartTile, DashboardCell, DashboardGrid, DashboardSection } from "../dashboard";
 import { OnboardingGuide } from "../shell/OnboardingGuide";
 import { formatBytes, formatDate, formatPercent } from "../formatters";
-import { selectAttentionDevices, selectHealthSummary } from "../selectors";
-import { CarbonDeviceTable, DeviceCardGrid, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints } from "./shared";
+import { selectAttentionDevices, selectHealthSummary } from "../selectors";import { CarbonDeviceTable, DeviceCardGrid, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints } from "./shared";
 
 type ObservationMetric = "cpu" | "memory" | "disk" | "network";
 
@@ -48,7 +47,7 @@ export function OverviewPage() {
   if (loading && !snapshot) return <LoadingSurface />;
   if (!snapshot) return <ErrorSurface title="无法读取设备状态" detail={error ?? failureGuide(capabilities.canControlNativeWindow)} onRetry={() => void refresh()} />;
 
-  const health = selectHealthSummary(snapshot, allDevices, formatDate);
+  const health = selectHealthSummary(snapshot, allDevices, formatDate, capabilities.liveDataTransport);
   const cached = health.source === "cache";
   const noData = health.total === 0;
   const hubAbnormal = health.source === "cache" || health.source === "unknown";

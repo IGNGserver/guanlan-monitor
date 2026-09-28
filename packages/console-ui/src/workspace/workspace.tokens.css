@@ -210,11 +210,15 @@ html[data-dsc-density="compact"] {
   --workspace-content-pad: 26px;
 }
 
+/* No `scrollbar-gutter` on `html`/`body`/`#root`: the console is a fixed,
+ * full-viewport frame and these elements never scroll, so the declaration only
+ * made the browser reserve a ~10px band that shrank the app and left a lighter
+ * strip down the right edge (measured: a 1440px viewport produced a 1430px root).
+ * The scroll containers below declare their own gutter. */
 html,
 body,
 #root {
   background: var(--workspace-bg);
-  scrollbar-gutter: stable;
 }
 
 .workspace-content {

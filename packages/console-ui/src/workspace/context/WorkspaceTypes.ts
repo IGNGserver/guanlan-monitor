@@ -13,19 +13,11 @@ import type { InteractionScaleSetting, PointerType } from "../../helpers/density
 import type { ResponsiveTier, ScreenOrientation } from "../../helpers/layout";
 import type { SettingsSection, WorkspaceRoute } from "../routes";
 
-export interface HubViewModel {
-  id: string;
-  name: string;
-  endpoint: string;
-  devices: DeviceSummary[];
-  state: "online" | "offline" | "cached" | "unknown";
-}
 export interface WorkspaceContextValue {
   route: WorkspaceRoute;
   navigate: (route: WorkspaceRoute) => void;
   openSettings: (section?: SettingsSection) => void;
   closeSettings: () => void;
-  canGoBack: boolean;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean) => void;
   snapshot: ConsoleSnapshot | null;
@@ -34,10 +26,8 @@ export interface WorkspaceContextValue {
   mutationPending: boolean;
   error: string | null;
   notice: { tone: "success" | "error" | "info"; text: string } | null;
-  hubs: HubViewModel[];
   allDevices: DeviceSummary[];
   devices: DeviceSummary[];
-  filteredDevices: DeviceSummary[];
   selectedDevice: DeviceSummary | null;
   metricsWindow: MetricWindow;
   setMetricsWindow: (window: MetricWindow) => void;
@@ -77,17 +67,15 @@ export interface WorkspaceContextValue {
   adapterDragStart: (screenX: number, screenY: number) => void;
   adapterDragMove: (screenX: number, screenY: number) => void;
   adapterDragEnd: () => void;
-  login: (accessKey: string) => Promise<void>;
+  login: (accessKey: string) => Promise<boolean>;
   logout: () => Promise<void>;
   disconnectAgent: () => Promise<boolean>;
   openExternal: (url: string) => Promise<void>;
-  isPreview: boolean;
   capabilities: ConsoleAdapter["capabilities"];
   orientation: "portrait" | "landscape";
   isTouch: boolean;
   inputMode: PointerType;
   layoutTier: ResponsiveTier;
-  formFactor: "phone" | "tablet" | "desktop";
   runtimeProfile: DesktopRuntimeProfile;
   lowResourceMode: boolean;
   chartPointLimit: number;

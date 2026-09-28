@@ -1,16 +1,20 @@
 import type {
-  DesktopAgentBackendState,
-  DesktopAgentControlAction,
-  DesktopConfigPatch,
   ConsoleSnapshot,
   ConsoleSnapshotRequest,
+  DesktopAgentControlAction,
+  DesktopConfigPatch,
   DesktopStartupSettings
 } from "@dsc/shared";
-import type { ConsoleAdapter, WindowMaterialCapabilities } from "@dsc/console-ui";
+import type { ConsoleAdapter, ConsoleLocalAgentPort, WindowMaterialCapabilities } from "@dsc/console-ui";
 import { DESKTOP_CAPABILITIES, emptyConsoleSnapshot, fallbackRuntimeProfile, fallbackWindowMaterialCapabilities } from "@dsc/console-ui";
 import { dscBridge } from "./dscBridge";
 
-export class DesktopConsoleAdapter implements ConsoleAdapter {
+/**
+ * The Electron adapter. `ConsoleLocalAgentPort` is implemented explicitly rather
+ * than declared optional, so dropping one of the desktop-only operations fails
+ * `pnpm check:adapter-contracts` at the source that forgot it.
+ */
+export class DesktopConsoleAdapter implements ConsoleAdapter, ConsoleLocalAgentPort {
   readonly capabilities = DESKTOP_CAPABILITIES;
 
   getSnapshot(request?: ConsoleSnapshotRequest): Promise<ConsoleSnapshot> { return dscBridge.getSnapshot(request); }
@@ -36,7 +40,6 @@ export class DesktopConsoleAdapter implements ConsoleAdapter {
   windowDragEnd(): void { dscBridge.windowDragEnd(); }
   getWindowMaterialCapabilities(): Promise<WindowMaterialCapabilities> { return dscBridge.getWindowMaterialCapabilities(); }
   getRuntimeProfile() { return dscBridge.getRuntimeProfile(); }
-  getLocalBackend(): Promise<DesktopAgentBackendState | null> { return dscBridge.getSnapshot().then((snapshot) => snapshot.localBackend); }
 }
 
 export const desktopConsoleAdapter = new DesktopConsoleAdapter();
@@ -62,7 +65,6 @@ export function createDesktopFallbackAdapter(): ConsoleAdapter {
     controlAgent: notReady,
     updateStartupSettings: notReady,
     cloudPush: notReady,
-    getLocalBackend: async () => null,
     windowMinimize: async () => undefined,
     windowToggleMaximize: async () => false,
     windowClose: async () => undefined,

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ConsoleSnapshot, DeviceSummary } from "@dsc/shared";
-import { selectAttentionDevices, selectDeviceDirectory, selectHealthSummary, selectResourceRanking, selectSnapshotSource } from "./selectors.ts";
+import { liveLinkLabel, selectAttentionDevices, selectDeviceDirectory, selectHealthSummary, selectLinkLabel, selectResourceRanking, selectSnapshotSource } from "./selectors.ts";
 import { mergeDeviceOrder, registerDeviceOrderDraftGuard, confirmDiscardDeviceOrderDraft } from "./deviceOrderDraft.ts";
 
 const device = (overrides: Partial<DeviceSummary>): DeviceSummary => ({
@@ -48,6 +48,29 @@ test("health summary counts offline devices and leaves cached status unknown", (
     sourceDetail: "同步于 10:00"
   });
   assert.equal(selectHealthSummary({ ...snapshot, source: "cache", session: { ...snapshot.session, authenticated: false } }, devices, () => "09:58").pending, null);
+});
+
+/**
+ * The desktop shell polls through its host bridge while the browser subscribes
+ * to `device:update`, yet both used to be labelled "实时". "实时" is a claim
+ * about refresh latency, so the wording now follows the declared transport and
+ * the same label is reused by the overview, the device facts row and both
+ * connection cards.
+ */
+test("the data link label follows the declared transport, not the page", () => {
+  const live = { ...snapshot, source: "live" as const, session: { authenticated: true, accessKeyConfigured: true } };
+  const devices = [device({})];
+  assert.equal(selectHealthSummary(live, devices, () => "10:00", "push").sourceLabel, "实时连接");
+  assert.equal(selectHealthSummary(live, devices, () => "10:00", "poll").sourceLabel, "定时刷新");
+  assert.equal(liveLinkLabel("push"), "实时连接");
+  assert.equal(liveLinkLabel("poll"), "定时刷新");
+  for (const transport of ["push", "poll"] as const) {
+    assert.equal(selectLinkLabel("live", transport), liveLinkLabel(transport));
+    assert.equal(selectLinkLabel("cache", transport), "离线缓存");
+    assert.equal(selectLinkLabel("empty", transport), "等待数据");
+    assert.equal(selectLinkLabel("unknown", transport), "连接异常");
+  }
+  assert.notEqual(selectLinkLabel("live", "push"), selectLinkLabel("live", "poll"), "the two transports must not read as the same fact");
 });
 
 test("directory filters and resource ranking are deterministic", () => {

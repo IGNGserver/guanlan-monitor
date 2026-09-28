@@ -31,7 +31,7 @@ until those names can be migrated without widening the desktop boundary.
 
 The implementation is intentionally split by responsibility:
 
-- `workspace/ui.tsx` and `workspace/formatters.tsx` contain reusable presentation
+- `workspace/ui.tsx` and `workspace/formatters.ts` contain reusable presentation
   primitives and display formatting.
 - `workspace/TelemetryCards.tsx` owns the chart, trend, tooltip, and detail-card
   visualizations.

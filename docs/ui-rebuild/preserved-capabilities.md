@@ -28,14 +28,16 @@
     dataRecordingEnabled?: boolean;
   }
   ```
-- **密钥安全脱敏**: 从 `snapshot.localBackend.config.connection.secretConfigured` 读取密钥就绪状态。通信 Secret 仅允许通过 `dscBridge.setAgentSecret(secret)` 进行写操作，绝对不在前台界面或日志中回显。
+- **密钥安全脱敏**: 从 `snapshot.localBackend.config.connection.secretConfigured` 读取密钥就绪状态。通信 Secret 不在前台界面或日志中回显；唯一的写入路径是 `saveHubConnection(serverUrl, accessKey)`（"连接"页的"保存并连接"），它先写地址再用同一凭据完成认证。`DesktopConfigPatch` 显式拒绝 `connection.secret`（`secret_must_use_dedicated_channel`）。
+  - 曾经存在 `dscBridge.setAgentSecret` 与 `dsc:set-agent-secret` 通道，但没有任何界面调用它，已删除而不是留下一条无人使用的写凭据路径。
 
 ### 1.4 DesktopAgentControlAction 动作与复合重启
 - **规范动作**: `"start" | "stop" | "check-connection" | "detect-probes"`
 - **重启实现**: UI 的「重启服务」按钮采用明确标注的复合操作，先后发起 `controlAgent("stop")` 与 `controlAgent("start")`，避免在 shared contract 中引入非法 `"restart"` 字面量。
 
 ### 1.5 DesktopAgentBackendState 完整状态规格
-- **呈现字段**: `running`, `backendStartedAt`, `frontendParentPid`, `connectionStatus`, `cloudConfigPending`, `pendingSampleCount`, `pendingBytes`, `restartCount`, `effectiveUploadIntervalSeconds`, `configPath`, `configFileExists`, `diagnosticsPath`, `supportedProbePlans`, `detectedTargets` 等。
+- **呈现字段**: `running`, `backendStartedAt`, `childStartedAt`, `connectionStatus`, `cloudConfigPending`, `pendingSampleCount`, `pendingBytes`, `oldestPendingAt`, `restartCount`, `lastRestartAt`, `lastExitAt`, `lastExitCode`, `autoRestartPending`, `lastDetectAt`, `lastUploadAt`, `lastCloudSyncAt`, `lastCloudSyncError`, `lastUploadError`, `lastIssue*`, `effectiveUploadIntervalSeconds`, `configPath`/`configFileExists`, `syncStatePath`/`syncStateFileExists`, `pendingStatePath`/`pendingStateFileExists`, `diagnosticsPath`/`diagnosticsFileExists`, `supportedProbePlans`, `detectedTargets`。
+  - 这些字段由"本机 Agent"页的运行历史 / 上传积压 / 文件路径三块呈现，并可导出脱敏文本；`pnpm check:desktop-agent-state` 保证它们不会再次脱离界面。
 
 ### 1.6 TrafficCalendarResponse 流量日历
 - **结构对齐**: 使用 `mode` ("day" | "week" | "month"), `anchor`, `title`, `rangeStart`, `rangeEnd`, `cells`, `records`, `totalRxBytes`, `totalTxBytes`。

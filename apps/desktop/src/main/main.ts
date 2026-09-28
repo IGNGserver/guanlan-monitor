@@ -328,7 +328,11 @@ if (!hasSingleInstanceLock) {
         // and context isolation enabled; the unsandboxed preload is required for
         // Electron to load its typed ESM bridge on both supported platforms.
         sandbox: false,
-        spellcheck: false
+        spellcheck: false,
+        // The renderer must know the native material before its first paint.
+        // Reading it over IPC would mean one frame of the opaque token set on a
+        // Mica window; a launch switch is available synchronously in preload.
+        additionalArguments: [`--dsc-window-material=${nativeWindowMaterial}`]
       }
     });
     mainWindow = window;
@@ -426,6 +430,16 @@ if (!hasSingleInstanceLock) {
     tray.setToolTip("观澜 · 设备状态控制台");
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: "打开观澜", click: showWindow },
+      {
+        label: "立即同步状态",
+        click: () => {
+          // The window may be hidden; refreshing through the controller keeps the
+          // cached snapshot and any open page current without forcing it open.
+          void controller?.refresh().catch((error) => {
+            reportProcessEvent("tray-refresh-failed", { error });
+          });
+        }
+      },
       { type: "separator" },
       {
         label: "退出",

@@ -40,7 +40,6 @@ export function registerIpc(
   handle(IPC_CHANNELS.refresh, (_event, request?: DesktopSnapshotRequest) => controller.refresh(asSnapshotRequest(request)));
   handle(IPC_CHANNELS.updateLocalConfig, (_event, patch: DesktopConfigPatch) => controller.updateLocalConfig(asConfigPatch(patch)));
   handle(IPC_CHANNELS.controlAgent, (_event, action: DesktopAgentControlAction) => controller.controlAgent(asControlAction(action)));
-  handle(IPC_CHANNELS.setAgentSecret, (_event, secret: string) => controller.setAgentSecret(asString(secret, "agent_secret")));
   handle(IPC_CHANNELS.saveHubConnection, (_event, serverUrl: string, accessKey: string) => controller.saveHubConnection(asString(serverUrl, "server_url"), asString(accessKey, "access_key")));
   handle(IPC_CHANNELS.login, (_event, accessKey: string) => controller.login(asString(accessKey, "access_key")));
   handle(IPC_CHANNELS.logout, () => controller.logout());
@@ -59,9 +58,16 @@ export function registerIpc(
   handle(IPC_CHANNELS.windowToggleMaximize, () => {
     const window = getWindow();
     if (!window || window.isDestroyed()) return false;
-    if (window.isMaximized()) window.unmaximize();
-    else window.maximize();
-    return window.isMaximized();
+    // Report the intended state, not `isMaximized()` read straight after the
+    // call: on Windows the restored/maximized flag is not settled synchronously,
+    // so the renderer's toggle icon could disagree with the real window until the
+    // next unrelated click.
+    if (window.isMaximized()) {
+      window.unmaximize();
+      return false;
+    }
+    window.maximize();
+    return true;
   });
   ipcMain.on(IPC_CHANNELS.windowDragStart, (event, screenX: unknown, screenY: unknown) => {
     if (!isTrustedIpcSender(event, getWindow)) return;

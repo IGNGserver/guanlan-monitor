@@ -1,5 +1,4 @@
 import type {
-  DesktopAgentBackendState,
   DesktopAgentControlAction,
   DesktopConfigPatch,
   DesktopStartupSettings,
@@ -15,6 +14,17 @@ export interface ConsoleCapabilities {
   canControlNativeWindow: boolean;
   canConfigureConnection: boolean;
   requiresAuthentication: boolean;
+  /**
+   * How a live snapshot reaches this client.
+   *
+   * `push` is a realtime channel (the browser console subscribes to
+   * `device:update` over socket.io); `poll` is a visibility-aware timer (the
+   * Electron shell refreshes through the host bridge). Both are "live" data, but
+   * "实时" is a claim about refresh latency that only the push client can make,
+   * so every data-link label is derived from this value instead of guessing from
+   * the source alone.
+   */
+  liveDataTransport: "push" | "poll";
 }
 
 export interface ConsoleAdapter extends ConsoleReadPort, ConsoleSessionPort, ConsoleFleetPort {
@@ -23,7 +33,6 @@ export interface ConsoleAdapter extends ConsoleReadPort, ConsoleSessionPort, Con
   controlAgent?(action: DesktopAgentControlAction): Promise<ConsoleSnapshot>;
   updateStartupSettings?(settings: Partial<DesktopStartupSettings>): Promise<ConsoleSnapshot>;
   cloudPush?(): Promise<ConsoleSnapshot>;
-  getLocalBackend?(): Promise<DesktopAgentBackendState | null>;
   windowMinimize?(): Promise<void>;
   windowToggleMaximize?(): Promise<boolean>;
   windowClose?(): Promise<void>;
@@ -31,6 +40,11 @@ export interface ConsoleAdapter extends ConsoleReadPort, ConsoleSessionPort, Con
   windowDragMove?(screenX: number, screenY: number): void;
   windowDragEnd?(): void;
   getWindowMaterialCapabilities?(): Promise<WindowMaterialCapabilities>;
+  /**
+   * The material the native window was created with. Read synchronously so the
+   * first paint uses the right token set; absent on the web shell.
+   */
+  readonly initialWindowMaterial?: WindowMaterial;
   getRuntimeProfile?(): Promise<DesktopRuntimeProfile>;
 }
 
@@ -50,7 +64,8 @@ export const WEB_CAPABILITIES: ConsoleCapabilities = {
   canChangeStartupSettings: false,
   canControlNativeWindow: false,
   canConfigureConnection: false,
-  requiresAuthentication: true
+  requiresAuthentication: true,
+  liveDataTransport: "push"
 };
 
 export const DESKTOP_CAPABILITIES: ConsoleCapabilities = {
@@ -59,7 +74,8 @@ export const DESKTOP_CAPABILITIES: ConsoleCapabilities = {
   canChangeStartupSettings: true,
   canControlNativeWindow: true,
   canConfigureConnection: true,
-  requiresAuthentication: false
+  requiresAuthentication: false,
+  liveDataTransport: "poll"
 };
 
 export function fallbackWindowMaterialCapabilities(): WindowMaterialCapabilities {

@@ -261,35 +261,11 @@
   border: 1px solid var(--workspace-border);
 }
 
-/* Tablet landscape split-view styling */
-.guanlan-tablet-split-view {
-  display: grid;
-  grid-template-columns: minmax(320px, 380px) 1fr;
-  height: 100%;
-  min-height: calc(100vh - 56px);
-  gap: 1px;
-  background: var(--workspace-border);
-}
-
-.guanlan-tablet-split-master {
-  background: var(--workspace-bg);
-  overflow-y: auto;
-  border-right: 1px solid var(--workspace-border);
-}
-
-.guanlan-tablet-split-detail {
-  background: var(--workspace-surface);
-  overflow-y: auto;
-}
-
-.guanlan-tablet-empty-detail {
-  display: flex;
-  height: 100%;
-  align-items: center;
-  justify-content: center;
-  color: var(--workspace-text-muted);
-  font-size: 14px;
-}
+/* Tablet/desktop master-detail is not a separate component. The device
+   directory and the device detail page are both full pages; a split view was
+   prototyped but never mounted, so its rules were removed with it rather than
+   left as dead selectors. The reachable adaptation is the input-aware density
+   and sidebar-drawer pass in workspace.responsive.css. */
 
 
 

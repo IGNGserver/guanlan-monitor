@@ -3,7 +3,6 @@ import test from "node:test";
 import type { ConsoleAdapter } from "./adapter.ts";
 import { DESKTOP_CAPABILITIES, WEB_CAPABILITIES, emptyConsoleSnapshot } from "./adapter.ts";
 import { MockConsoleAdapter } from "./mockAdapter.ts";
-
 function assertSnapshotContract(snapshot: Awaited<ReturnType<ConsoleAdapter["getSnapshot"]>>) {
   assert.equal(typeof snapshot.generatedAt, "string");
   assert.ok(["empty", "live", "cache"].includes(snapshot.source));
@@ -25,6 +24,10 @@ test("platform capabilities keep Web and Electron responsibilities explicit", ()
   assert.equal(DESKTOP_CAPABILITIES.canManageLocalAgent, true);
   assert.equal(DESKTOP_CAPABILITIES.canControlNativeWindow, true);
   assert.equal(DESKTOP_CAPABILITIES.requiresAuthentication, false);
+  // The two shells must not claim the same freshness: only the browser has a
+  // realtime channel, so only it may label live data "实时".
+  assert.equal(WEB_CAPABILITIES.liveDataTransport, "push");
+  assert.equal(DESKTOP_CAPABILITIES.liveDataTransport, "poll");
   assertSnapshotContract(emptyConsoleSnapshot());
 });
 
