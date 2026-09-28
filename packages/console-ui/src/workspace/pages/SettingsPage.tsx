@@ -1,12 +1,23 @@
 import React, { useEffect, useRef, useState } from "react";
-import type { AgentProbeProvider, AgentProbeTarget, DeviceBlockKey, DeviceMetricKey, DesktopDetectedTargetGroup } from "@dsc/shared";
+import type { AgentProbeProvider, AgentProbeTarget, DeviceBlockKey, DeviceMetricKey, DesktopAgentBackendState, DesktopDetectedTargetGroup } from "@dsc/shared";
 import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
 import { M3Checkbox, M3SegmentedControl, M3Select, M3Switch, M3TextField } from "../m3";
 import { Button, CopyButton, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
-import { formatBytes, formatDate, formatPreciseDateTime } from "../formatters";
+import { formatDate, formatPreciseDateTime } from "../formatters";
 import { selectSnapshotSource } from "../selectors";
 import { formatWorkspaceError } from "../context/WorkspaceTypes";
 import { visibleSettingsNavigation } from "../shell/PrimaryNavigation";
+import { PlatformShortcuts } from "../shell/PlatformShortcuts";
+import {
+  buildAgentDiagnosticsReport,
+  describeAgentCloudSyncError,
+  describeAgentRuntime,
+  describeAgentStorage,
+  describeAgentUpload,
+  describeAgentUploadError,
+  pendingSampleSummary,
+  selectAgentIssue
+} from "../diagnostics";
 import {
   AgentTemperatureSourcesPanel,
   InstanceMetricOverride,
@@ -37,7 +48,7 @@ export function SettingsPage() {
     connections: capabilities.canConfigureConnection ? <ConnectionSettings /> : <WebConnectionSettings />,
     agent: <AgentSettings />,
     data: <DataSettings />,
-    shortcuts: <ShortcutSettings />,
+    shortcuts: <PlatformShortcuts />,
     about: <AboutSettings />
   };
   const heading = visibleSettings.find((item) => item.id === section);
@@ -411,15 +422,32 @@ function AgentSettings() {
       sampling: { normalIntervalSeconds, slowIntervalSeconds }
     });
   };
+  /* Optimistic toggle with a rollback.
+   *
+   * The metric list is saved by a serial queue, so a burst of clicks is not
+   * reordered. It used to end in `.catch(() => undefined)`: a rejected save left
+   * the checkbox ticked and said nothing, so the on-screen selection and the
+   * Agent config could disagree until the next snapshot quietly snapped back.
+   * A failure now restores the last acknowledged selection and leaves the notice
+   * to `updateLocalConfig`, which owns the "保存失败" wording.
+   */
   const toggleMetric = (key: DeviceMetricKey) => {
-    const current = selectedMetricsRef.current;
-    const next = current.includes(key) ? current.filter((item) => item !== key) : [...current, key];
+    const previous = selectedMetricsRef.current;
+    const next = previous.includes(key) ? previous.filter((item) => item !== key) : [...previous, key];
     selectedMetricsRef.current = next;
     setSelectedMetrics(next);
     metricSaveQueueRef.current = metricSaveQueueRef.current
       .catch(() => undefined)
-      .then(() => updateLocalConfig({ enabledMetrics: next }))
-      .catch(() => undefined);
+      .then(async () => {
+        const saved = await updateLocalConfig({ enabledMetrics: next });
+        if (saved) return;
+        // Only roll back while this draft is still the pending one. A newer
+        // click has already superseded it, and must not be undone by this
+        // failure.
+        if (selectedMetricsRef.current !== next) return;
+        selectedMetricsRef.current = previous;
+        setSelectedMetrics(previous);
+      });
   };
   const updateProbe = (target: AgentProbeTarget, patch: { provider?: AgentProbeProvider; enabled?: boolean }) => {
     const current = probeSelectionsRef.current;
@@ -432,6 +460,8 @@ function AgentSettings() {
     void updateLocalConfig({ probeSelections: next });
   };
   const detectedInstanceCount = detectedGroups.reduce((count, group) => count + group.instances.length, 0);
+  const uploadError = describeAgentUploadError(backend);
+  const cloudSyncError = describeAgentCloudSyncError(backend);
   return (
     <div className="workspace-settings-stack">
       <Surface>
@@ -439,8 +469,9 @@ function AgentSettings() {
         {agentReadOnly && <p className="workspace-surface__description">本机 Agent 由系统级服务运行（开机自启、无需登录），当前用户没有修改权限。请在管理员终端执行 <code>guanlan-agent config set --hub &lt;中枢地址&gt; --key-stdin</code>，或以管理员身份重新打开本应用后再修改设置。</p>}
         {agentMode === "service" && <p className="workspace-surface__description">本机 Agent 由系统级服务运行，关闭本应用或注销登录后仍会继续采集与上报。</p>}
         <div className="workspace-agent-actions"><Button variant="primary" onClick={() => void controlAgent(backend.running ? "stop" : "start")} disabled={refreshing || mutationPending || agentReadOnly}>{backend.running ? "停止服务" : "启动服务"}</Button><Button variant="quiet" onClick={() => void controlAgent("restart")} disabled={refreshing || mutationPending || agentReadOnly}>重启服务</Button><Button variant="quiet" onClick={() => void controlAgent("check-connection")} disabled={refreshing || mutationPending || agentReadOnly}>检查连接</Button><Button variant="quiet" onClick={() => void controlAgent("detect-probes")} disabled={refreshing || mutationPending || agentReadOnly}>重新检测硬件</Button></div>
-        <div className="workspace-detail-list"><SummaryRow label="运行方式" value={agentModeLabel} /><SummaryRow label="连接状态" value={backend.connectionStatus} /><SummaryRow label="上传间隔" value={`${backend.effectiveUploadIntervalSeconds} 秒`} /><SummaryRow label="待上传样本" value={backend.pendingSampleCount ? `${backend.pendingSampleCount} 条 · ${formatBytes(backend.pendingBytes)}` : "0 条"} /><SummaryRow label="配置文件" value={backend.configFileExists ? "已找到" : "未找到"} />{backend.lastUploadError && <SummaryRow label="最近上传问题" value={formatWorkspaceError(new Error(backend.lastUploadError), "本机 Agent 上报失败，请检查连接和配置")}/>}</div>
+        <div className="workspace-detail-list"><SummaryRow label="运行方式" value={agentModeLabel} /><SummaryRow label="连接状态" value={backend.connectionStatus} /><SummaryRow label="上传间隔" value={`${backend.effectiveUploadIntervalSeconds} 秒`} /><SummaryRow label="待上传样本" value={pendingSampleSummary(backend)} /><SummaryRow label="配置文件" value={backend.configFileExists ? "已找到" : "未找到"} />{uploadError && <SummaryRow label="最近上传问题" value={uploadError} />}{cloudSyncError && <SummaryRow label="最近云同步问题" value={cloudSyncError} />}</div>
       </Surface>
+      <AgentDiagnosticsSurface backend={backend} appVersion={snapshot?.update?.currentVersion ?? CURRENT_VERSION_FALLBACK} />
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">这台设备</span><h3>显示名与上报内容</h3></div></div>
         <div className="workspace-form workspace-agent-runtime-form">
@@ -487,34 +518,58 @@ function DataSettings() {
   return <div className="workspace-settings-stack"><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">同步状态</span><h3>数据与更新</h3></div></div><div className="workspace-detail-list"><SummaryRow label="数据来源" value={sourceLabel} /><SummaryRow label={capabilities.canUseOfflineCache ? "缓存时间" : "最近同步"} value={capabilities.canUseOfflineCache ? formatDate(snapshot?.cache.savedAt) : formatPreciseDateTime(snapshot?.generatedAt)} />{capabilities.canUseOfflineCache && <SummaryRow label="缓存年龄" value={snapshot?.cache.ageSeconds == null ? "无" : `${snapshot.cache.ageSeconds} 秒`} />}<SummaryRow label="当前版本" value={update?.currentVersion ?? "未知"} /></div></Surface><Surface><div className="workspace-surface__header"><div><span className="workspace-section-kicker">版本</span><h3>{update?.available ? `可用更新：${update.latestVersion}` : "当前已是最新版本"}</h3></div>{update?.available && <StatusLabel state="warning" />}</div>{update?.message && <p className="workspace-surface__description">{update.message}</p>}{update?.releaseUrl && <Button variant="quiet" onClick={() => void openExternal(update.releaseUrl!)}>查看更新说明<Icon name="external" size={15} /></Button>}</Surface></div>;
 }
 
-const shortcutRows: Array<{ keys: string; description: string }> = [
-  { keys: "/ 或 Ctrl/⌘ + K", description: "打开搜索和命令面板" },
-  { keys: "F5 或 Ctrl/⌘ + R", description: "刷新设备状态" },
-  { keys: "Esc", description: "关闭当前弹层" },
-  { keys: "Ctrl/⌘ + B", description: "折叠侧边栏" },
-  { keys: "Ctrl/⌘ + ,", description: "打开设置" }
-];
+const CURRENT_VERSION_FALLBACK = "开发版本";
 
 /**
- * The keys cannot be rebound yet, so the page calls itself a reference instead
- * of implying an editor, and hands the list over as text for anyone who wants
- * it beside them while they learn the console.
+ * The runtime, upload and file facts that answer "why did collection stop".
+ *
+ * They used to exist only inside the Electron main process: the fields were
+ * collected on every snapshot and no page read them, so restart counts, the last
+ * exit, backlog age and the four log/config paths were invisible. This surface
+ * is desktop-only by construction — its caller lives on the Agent settings page,
+ * which the browser console does not expose.
+ *
+ * The export is plain text and redacted; `buildAgentDiagnosticsReport` explains
+ * that the Agent credential was removed before the snapshot ever reached here.
  */
-function ShortcutSettings() {
-  const shortcutText = shortcutRows.map(({ keys, description }) => `${keys}\t${description}`).join("\n");
+function AgentDiagnosticsSurface({ backend, appVersion }: { backend: DesktopAgentBackendState; appVersion: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const runtime = describeAgentRuntime(backend);
+  const upload = describeAgentUpload(backend);
+  const storage = describeAgentStorage(backend);
+  const issue = selectAgentIssue(backend);
+  const uploadError = describeAgentUploadError(backend);
+  const cloudSyncError = describeAgentCloudSyncError(backend);
+  const report = buildAgentDiagnosticsReport(backend, { appVersion, generatedAt: new Date().toISOString() });
   return (
-    <div className="workspace-settings-stack">
-      <Surface>
-        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">键盘操作</span><h3>快捷键参考</h3></div><CopyButton text={shortcutText} label="复制全部快捷键" /></div>
-        <div className="workspace-shortcut-list">{shortcutRows.map(({ keys, description }) => <div className="workspace-shortcut-row" key={keys}><kbd>{keys}</kbd><span>{description}</span></div>)}</div>
-      </Surface>
-    </div>
+    <Surface className="workspace-agent-diagnostics">
+      <div className="workspace-surface__header">
+        <div><span className="workspace-section-kicker">运行历史</span><h3>启动、重启与上报进度</h3></div>
+        <StatusLabel state={uploadError || cloudSyncError ? "warning" : backend.running ? "online" : "offline"} />
+      </div>
+      <div className="workspace-diagnostics-columns">
+        <div className="workspace-detail-list">{runtime.map((item) => <SummaryRow key={item.label} label={item.label} value={item.value} />)}</div>
+        <div className="workspace-detail-list">{upload.map((item) => <SummaryRow key={item.label} label={item.label} value={item.value} />)}</div>
+      </div>
+      {issue && <div className="workspace-inline-note" role="status"><Icon name="warning" size={15} />{issue.label}：{issue.detail}{issue.at ? `（${formatDate(issue.at)}）` : ""}{issue.recoveredAt ? ` · 已恢复于 ${formatDate(issue.recoveredAt)}` : ""}</div>}
+      <details className="workspace-advanced" onToggle={(event) => setExpanded(event.currentTarget.open)}>
+        <summary className="workspace-advanced__summary">
+          <span className="workspace-advanced__copy"><strong>日志与配置文件</strong><small>诊断导出包含这四处的路径与是否存在。</small></span>
+          <Icon name={expanded ? "chevronUp" : "chevron"} size={16} />
+        </summary>
+        <div className="workspace-settings-stack workspace-advanced__body">
+          <div className="workspace-detail-list">{storage.map((item) => <SummaryRow key={item.label} label={item.label} value={item.value} />)}</div>
+          <div className="workspace-form__actions"><CopyButton className="workspace-diagnostics-copy" text={report} label="复制诊断信息" /></div>
+          <p className="workspace-form__hint">诊断信息不含访问密钥或上报凭据；桌面主进程在生成快照时已将其移除。</p>
+        </div>
+      </details>
+    </Surface>
   );
 }
 
 function AboutSettings() {
   const { snapshot, openExternal, refresh, refreshing } = useWorkspace();
-  const version = snapshot?.update?.currentVersion ?? "开发版本";
+  const version = snapshot?.update?.currentVersion ?? CURRENT_VERSION_FALLBACK;
   const channel = snapshot?.update?.currentChannel ?? "测试";
   const versionText = `观澜 ${version}（${channel} 通道）`;
   return <div className="workspace-settings-stack"><Surface><div className="workspace-about"><div className="workspace-about__mark-wrap"><img className="workspace-about__mark-img" src={appIconSrc} alt="观澜" /></div><h3>观澜设备状态控制台</h3><p>面向本机 Agent 与中枢连接的状态工作区。</p><div className="workspace-detail-list"><SummaryRow label="版本" value={version} /><SummaryRow label="发布通道" value={channel} /></div><div className="workspace-form__actions"><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}><Icon name="refresh" size={15} />{refreshing ? "正在检查" : "重新检查更新"}</Button><CopyButton text={versionText} label="复制版本信息" /><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor")}><Icon name="external" size={15} />项目主页</Button><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor/issues")}><Icon name="external" size={15} />报告问题</Button></div></div></Surface></div>;

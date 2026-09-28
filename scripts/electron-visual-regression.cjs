@@ -121,6 +121,34 @@ async function run() {
     );
     await page.screenshot({ path: path.join(outputDir, "electron-settings-desktop.png"), fullPage: true, animations: "disabled" });
 
+    // The keyboard reference must name this client's keys: no F5 (there is no
+    // browser reload), and the hide-to-tray shortcut only exists here.
+    await page.evaluate(() => { window.location.hash = "#settings/shortcuts"; });
+    await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
+    const desktopShortcutKeys = (await page.locator(".workspace-shortcut-row kbd").allTextContents()).map((key) => key.trim());
+    assert.ok(desktopShortcutKeys.every((key) => !key.startsWith("F5")), `the native client must not advertise a browser reload key (${desktopShortcutKeys.join(",")})`);
+    assert.ok(desktopShortcutKeys.some((key) => key.includes("W")), `the native client owns a hide-to-tray shortcut (${desktopShortcutKeys.join(",")})`);
+    assert.equal(await page.locator(".workspace-shortcut-row").count(), 6, "the desktop reference lists the five console shortcuts plus hide-to-tray");
+    await page.screenshot({ path: path.join(outputDir, "electron-settings-shortcuts.png"), fullPage: true, animations: "disabled" });
+
+    // The diagnostics surface is the one thing the browser console cannot have.
+    // It exists because these fields used to be collected by the main process and
+    // rendered nowhere; the assertion is on the *rendered rows*, so a field that
+    // stops reaching the page fails here rather than silently disappearing.
+    await page.evaluate(() => { window.location.hash = "#settings/agent"; });
+    await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
+    assert.equal(await page.locator(".workspace-agent-diagnostics").count(), 1, "the desktop Agent page must expose the diagnostics surface");
+    const diagnosticLabels = (await page.locator(".workspace-agent-diagnostics .workspace-summary-row span").allTextContents()).map((label) => label.trim());
+    for (const label of ["Agent 启动于", "采集进程启动于", "自动重启", "最近退出", "最近重启", "自动重启挂起", "最近硬件检测", "最近成功上传", "最近同步到中枢", "云配置同步", "最老待上传样本"]) {
+      assert.ok(diagnosticLabels.includes(label), `the desktop diagnostics surface is missing the "${label}" row (${diagnosticLabels.join(",")})`);
+    }
+    await page.locator(".workspace-agent-diagnostics .workspace-advanced__summary").click();
+    assert.ok(await page.locator(".workspace-agent-diagnostics .workspace-summary-row").count() >= 15, "the storage section must expose every file path");
+    assert.equal(await page.getByRole("button", { name: "复制诊断信息" }).count(), 1, "the diagnostics surface must offer the redacted export");
+    await page.screenshot({ path: path.join(outputDir, "electron-agent-diagnostics.png"), fullPage: true, animations: "disabled" });
+    await page.evaluate(() => { window.location.hash = "#settings/general"; });
+    await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
+
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(300);
     const mobileMetrics = await page.evaluate(() => {

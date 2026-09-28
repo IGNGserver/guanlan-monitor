@@ -36,8 +36,12 @@ This inventory describes behavior, not old visual structure. The source of truth
 - Show local backend/collector state, last upload, restart count, last issue category/detail, pending cloud sync, configuration paths, and diagnostic log location.
 - Offer redacted diagnostics export suitable for support; never export the access key.
 - Show update channel/version and use the existing update API semantics.
-- Single-instance activation: a second launch focuses the existing window.
-- Tray menu: Open and Exit. Closing the window hides it; Exit performs the full drain and process shutdown.
+
+The diagnostics half of this list is now rendered: the desktop Agent settings
+page owns a 运行历史 surface (start/restart/exit/last-detect), an upload backlog
+surface, an issue window, and the four config/state/log paths, plus a plain-text
+redacted export. `pnpm check:desktop-agent-state` asserts those fields stay
+reachable from the settings page so they cannot quietly fall off the UI again.
 
 ## Required state variants
 
