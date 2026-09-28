@@ -759,6 +759,9 @@
 .telemetry-carbon-chart {
   width: 100%;
   min-height: 220px;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .telemetry-carbon-chart .cds--chart-holder,

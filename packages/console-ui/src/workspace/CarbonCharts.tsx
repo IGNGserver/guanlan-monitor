@@ -9,6 +9,7 @@ import type {
   MeterChartOptions
 } from "@carbon/charts-react";
 import type { SamplePoint } from "@dsc/shared";
+import { ChartTouchGestureOverlay } from "./ChartTouchGestureOverlay";
 
 export type CarbonSeries = {
   label: string;
@@ -158,13 +159,22 @@ export function CarbonTimeSeriesChart({
 
   const wrapperClassName = `telemetry-carbon-chart${compact ? " telemetry-carbon-chart--compact" : ""}${className ? ` ${className}` : ""}`;
 
+  let chartElement: React.ReactNode;
   if (visualization === "area") {
-    return <div className={wrapperClassName}><AreaChart data={data} options={options as AreaChartOptions} /></div>;
+    chartElement = <AreaChart data={data} options={options as AreaChartOptions} />;
+  } else if (visualization === "bar") {
+    chartElement = <SimpleBarChart data={data} options={options as BarChartOptions} />;
+  } else {
+    chartElement = <LineChart data={data} options={options as LineChartOptions} />;
   }
-  if (visualization === "bar") {
-    return <div className={wrapperClassName}><SimpleBarChart data={data} options={options as BarChartOptions} /></div>;
-  }
-  return <div className={wrapperClassName}><LineChart data={data} options={options as LineChartOptions} /></div>;
+
+  return (
+    <div className={wrapperClassName}>
+      <ChartTouchGestureOverlay>
+        {chartElement}
+      </ChartTouchGestureOverlay>
+    </div>
+  );
 }
 
 /** 占比图的一个分片。value 必须是同单位的绝对量，比例由图表自行计算。 */

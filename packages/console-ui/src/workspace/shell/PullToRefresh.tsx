@@ -11,34 +11,70 @@ export function PullToRefresh({ onRefresh, disabled = false, children }: PullToR
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const startYRef = useRef<number | null>(null);
-  const isAtTopRef = useRef<boolean>(true);
+  const startXRef = useRef<number | null>(null);
+  const isPullingRef = useRef<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const threshold = 64;
-  const maxPull = 100;
+  const maxPull = 90;
 
   useEffect(() => {
+    const el = containerRef.current;
+    if (!el || disabled) return;
+
+    const getScrollParent = (node: HTMLElement | null): HTMLElement => {
+      let curr = node;
+      while (curr && curr !== document.body && curr !== document.documentElement) {
+        const style = getComputedStyle(curr);
+        if (style.overflowY === "auto" || style.overflowY === "scroll") {
+          return curr;
+        }
+        curr = curr.parentElement;
+      }
+      return document.documentElement;
+    };
+
     const handleTouchStart = (e: TouchEvent) => {
-      if (disabled || isRefreshing) return;
-      const scrollable = containerRef.current?.closest(".workspace-content") || document.documentElement;
-      isAtTopRef.current = (scrollable.scrollTop || 0) <= 0;
-      if (isAtTopRef.current && e.touches.length === 1) {
+      if (isRefreshing || e.touches.length !== 1) return;
+      const scrollParent = getScrollParent(el);
+      const isTop = scrollParent.scrollTop <= 0;
+      if (isTop) {
         startYRef.current = e.touches[0].clientY;
+        startXRef.current = e.touches[0].clientX;
+        isPullingRef.current = false;
+      } else {
+        startYRef.current = null;
+        startXRef.current = null;
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (startYRef.current === null || disabled || isRefreshing) return;
+      if (startYRef.current === null || startXRef.current === null || isRefreshing) return;
       const currentY = e.touches[0].clientY;
-      const diff = currentY - startYRef.current;
-      if (diff > 0 && isAtTopRef.current) {
-        // Damped pull effect
-        const damped = Math.min(diff * 0.45, maxPull);
-        setPullDistance(damped);
-        if (e.cancelable && damped > 10) {
-          e.preventDefault();
+      const currentX = e.touches[0].clientX;
+      const diffY = currentY - startYRef.current;
+      const diffX = currentX - startXRef.current;
+
+      // If user is swiping horizontally, cancel pull-to-refresh
+      if (!isPullingRef.current && Math.abs(diffX) > Math.abs(diffY)) {
+        startYRef.current = null;
+        startXRef.current = null;
+        return;
+      }
+
+      if (diffY > 0) {
+        const scrollParent = getScrollParent(el);
+        if (scrollParent.scrollTop <= 0) {
+          isPullingRef.current = true;
+          // Apply cubic dampening
+          const damped = Math.min(diffY * 0.4, maxPull);
+          setPullDistance(damped);
+          if (e.cancelable && damped > 8) {
+            e.preventDefault();
+          }
         }
       } else {
+        isPullingRef.current = false;
         setPullDistance(0);
       }
     };
@@ -46,7 +82,11 @@ export function PullToRefresh({ onRefresh, disabled = false, children }: PullToR
     const handleTouchEnd = async () => {
       if (startYRef.current === null) return;
       startYRef.current = null;
-      if (pullDistance >= threshold && !isRefreshing && !disabled) {
+      startXRef.current = null;
+      const pulling = isPullingRef.current;
+      isPullingRef.current = false;
+
+      if (pulling && pullDistance >= threshold && !isRefreshing) {
         setIsRefreshing(true);
         setPullDistance(threshold * 0.8);
         if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
@@ -63,8 +103,6 @@ export function PullToRefresh({ onRefresh, disabled = false, children }: PullToR
       }
     };
 
-    const el = containerRef.current;
-    if (!el) return;
     el.addEventListener("touchstart", handleTouchStart, { passive: true });
     el.addEventListener("touchmove", handleTouchMove, { passive: false });
     el.addEventListener("touchend", handleTouchEnd);
