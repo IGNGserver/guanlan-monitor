@@ -30,6 +30,7 @@
     "verify:linux-package": "node scripts/verify-linux-package-config.mjs",
     "verify:windows-hardware": "node scripts/verify-windows-hardware-integrity.mjs",
     "verify:web-security-headers": "node scripts/verify-web-security-headers.mjs",
+    "verify:hub-image": "node scripts/verify-hub-image-config.mjs",
     "verify:hub-port": "node scripts/verify-hub-port.mjs"
   }
 }

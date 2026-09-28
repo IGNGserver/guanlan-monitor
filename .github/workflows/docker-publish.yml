@@ -65,6 +65,7 @@ jobs:
           pnpm verify:linux-package
           pnpm verify:windows-hardware
           pnpm verify:web-security-headers
+          pnpm verify:hub-image
           bash scripts/test-compose-env-migration.sh
           pnpm --filter @dsc/shared build
           pnpm --filter @dsc/server test
