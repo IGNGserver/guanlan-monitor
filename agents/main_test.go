@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -532,6 +534,101 @@ func TestProbeSpawnCountersAreConsumedAndReset(t *testing.T) {
 	}
 	if next := takeProbeSpawnCounts(); next != nil {
 		t.Fatalf("counters must reset after being consumed, got %#v", next)
+	}
+}
+
+// The global budget is what stops a sequence of slow probes from running past
+// the sampling interval and making the collector sample back-to-back. An
+// overrun must be reported and must not poison the hardware-inventory cache, so
+// the next cycle still starts from the cache it had.
+func TestSlowCollectionBudgetReportsOverrunAndKeepsAssets(t *testing.T) {
+	assets := hardwareAssetCache{
+		collectedAt:          time.Now(),
+		referenceDeviceCount: 3,
+		metadata:             windowsHardwareMetadata{GpuDrivers: map[string]string{"gpu": "driver"}},
+	}
+	outcome := collectSlowMetricsBudgeted(assets, time.Nanosecond)
+	if !outcome.overtime {
+		t.Fatal("a one-nanosecond budget must report an overrun")
+	}
+	if outcome.assets.collectedAt != assets.collectedAt || outcome.assets.referenceDeviceCount != 3 {
+		t.Fatalf("an abandoned collection must not mutate the inventory cache: %#v", outcome.assets)
+	}
+	if outcome.metrics.hardwareCollected {
+		t.Fatalf("an abandoned collection must return an empty sample: %#v", outcome.metrics)
+	}
+	// A zero collectedAt means "no fresh timestamp", so the merge keeps the
+	// previous sample and the next cycle retries immediately.
+	if !outcome.metrics.collectedAt.IsZero() {
+		t.Fatalf("an abandoned collection must not claim a fresh timestamp: %#v", outcome.metrics)
+	}
+}
+
+func TestSlowCollectionBudgetReturnsMetricsWhenItFits(t *testing.T) {
+	outcome := collectSlowMetricsBudgeted(hardwareAssetCache{}, 60*time.Second)
+	if outcome.overtime {
+		t.Fatal("a one-minute budget must not report an overrun")
+	}
+	if outcome.metrics.collectedAt.IsZero() {
+		t.Fatal("a completed collection must carry a timestamp")
+	}
+}
+
+// The hardware sensors are read from the SYSTEM helper's cache when it is fresh;
+// this is the seam that removes a duplicate PowerShell probe per cycle. A missing
+// or stale cache must report not-ok so the collector falls back to its own probe.
+func TestCachedHardwareSnapshotsHonoursFreshness(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "hardware-sensors.json")
+	temperature := 71.0
+	if err := writeHardwareSensorCache(path, []hardwareSensorSnapshot{{
+		HardwareType: "Cpu",
+		Name:         "Intel CPU",
+		Sensors:      []hardwareSensor{{SensorType: "Temperature", Name: "CPU Package", Value: &temperature}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	snapshots, updatedAt, ok := cachedHardwareSnapshots(path)
+	if !ok || len(snapshots) != 1 || snapshots[0].Name != "Intel CPU" || updatedAt == "" {
+		t.Fatalf("a fresh cache must be reused: ok=%v snapshots=%#v updatedAt=%q", ok, snapshots, updatedAt)
+	}
+
+	if _, _, ok := cachedHardwareSnapshots(filepath.Join(root, "missing.json")); ok {
+		t.Fatal("a missing cache must report not-ok")
+	}
+
+	stalePath := filepath.Join(root, "stale.json")
+	if err := os.WriteFile(stalePath, []byte(`{"updatedAt":"2000-01-01T00:00:00Z","snapshots":[{"hardwareType":"Cpu","name":"old"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := cachedHardwareSnapshots(stalePath); ok {
+		t.Fatal("a stale cache must report not-ok")
+	}
+}
+
+// The whole point of the slow cadence is that the fast path stays free of
+// external processes. This stubs the probe runner and proves a cycle inside the
+// slow interval starts no PowerShell/netsh/smartctl/dmidecode process at all.
+func TestSteadyStateFastCycleSpawnsNoProbes(t *testing.T) {
+	original := probeRunner
+	var spawns int
+	probeRunner = func(context.Context, string, ...string) ([]byte, error) {
+		spawns++
+		return nil, errors.New("probe disabled for this test")
+	}
+	defer func() { probeRunner = original }()
+
+	state := &agentState{baseIdentity: agentIdentity{DeviceID: "test-device", Hostname: "test-host"}}
+	cfg := newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "http://127.0.0.1:1"})
+	cfg.Sampling.NormalIntervalSeconds = defaultNormalIntervalSeconds
+	cfg.Sampling.SlowIntervalSeconds = defaultSlowIntervalSeconds
+
+	state.collectPayload(cfg)
+	afterFirst := spawns
+
+	state.collectPayload(cfg)
+	if spawns != afterFirst {
+		t.Fatalf("a fast cycle spawned %d probes; it must spawn none", spawns-afterFirst)
 	}
 }
 
