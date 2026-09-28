@@ -641,10 +641,12 @@ async function run() {
   // The keyboard reference must name this client's keys: F5, no Command key, and
   // no tray shortcut, which the browser console cannot have.
   await page.goto(`${baseUrl}#settings/shortcuts`, { waitUntil: "domcontentloaded" });
-  await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });  const shortcutKeys = (await page.locator(".workspace-shortcut-row kbd").allTextContents()).map((key) => key.trim());
+  await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
+  const shortcutKeys = (await page.locator(".workspace-shortcut-row kbd").allTextContents()).map((key) => key.trim());
   assert.ok(shortcutKeys.some((key) => key.startsWith("F5")), `the browser console's reload key must be listed as F5 (${shortcutKeys.join(",")})`);
   assert.ok(shortcutKeys.every((key) => !key.includes("⌘")), `the browser console must not advertise the macOS Command key (${shortcutKeys.join(",")})`);
-  assert.ok(shortcutKeys.every((key) => !key.includes("W")), `the browser console has no hide-to-tray shortcut (${shortcutKeys.join(",")})`);
+  const shortcutDescriptions = (await page.locator(".workspace-shortcut-row span").allTextContents()).map((text) => text.trim());
+  assert.ok(shortcutDescriptions.every((text) => !text.includes("托盘")), `the browser console has no tray to hide into (${shortcutDescriptions.join(",")})`);
   assert.equal(await page.locator(".workspace-shortcut-row").count(), 5, "the browser reference lists the five console shortcuts");
   await page.screenshot({ path: path.join(outputDir, "web-settings-shortcuts.png"), fullPage: true, animations: "disabled" });
   // The browser console is the push client: live data may be called 实时 here.

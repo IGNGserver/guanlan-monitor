@@ -364,6 +364,25 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     await closeWindow();
   }, [closeWindow]);
 
+  /* The native client hides to the tray on close, and the shortcut reference
+   * promises Ctrl/⌘+W does the same. It runs through the same confirm-discard
+   * guard as the titlebar's close button, and is declared after that guard so the
+   * dependency is initialised. The browser console has no window to hide, so the
+   * binding is capability-gated. */
+  useEffect(() => {
+    if (!adapter.capabilities.canControlNativeWindow) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "w") {
+        event.preventDefault();
+        void closeWindowSafely();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [adapter.capabilities.canControlNativeWindow, closeWindowSafely]);
+
   const openExternal = useCallback((url: string) => adapter.openExternal(url), [adapter]);
 
   /* Memoised on purpose.

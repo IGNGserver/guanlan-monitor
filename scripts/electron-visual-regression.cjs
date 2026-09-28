@@ -126,8 +126,9 @@ async function run() {
     await page.evaluate(() => { window.location.hash = "#settings/shortcuts"; });
     await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
     const desktopShortcutKeys = (await page.locator(".workspace-shortcut-row kbd").allTextContents()).map((key) => key.trim());
+    const desktopShortcutDescriptions = (await page.locator(".workspace-shortcut-row span").allTextContents()).map((text) => text.trim());
     assert.ok(desktopShortcutKeys.every((key) => !key.startsWith("F5")), `the native client must not advertise a browser reload key (${desktopShortcutKeys.join(",")})`);
-    assert.ok(desktopShortcutKeys.some((key) => key.includes("W")), `the native client owns a hide-to-tray shortcut (${desktopShortcutKeys.join(",")})`);
+    assert.ok(desktopShortcutDescriptions.some((text) => text.includes("托盘")), `the native client owns a hide-to-tray shortcut (${desktopShortcutDescriptions.join(",")})`);
     assert.equal(await page.locator(".workspace-shortcut-row").count(), 6, "the desktop reference lists the five console shortcuts plus hide-to-tray");
     await page.screenshot({ path: path.join(outputDir, "electron-settings-shortcuts.png"), fullPage: true, animations: "disabled" });
 
@@ -142,17 +143,27 @@ async function run() {
     for (const label of ["Agent 启动于", "采集进程启动于", "自动重启", "最近退出", "最近重启", "自动重启挂起", "最近硬件检测", "最近成功上传", "最近同步到中枢", "云配置同步", "最老待上传样本"]) {
       assert.ok(diagnosticLabels.includes(label), `the desktop diagnostics surface is missing the "${label}" row (${diagnosticLabels.join(",")})`);
     }
+    // The storage paths live in a collapsed <details>. `count()` sees hidden DOM,
+    // so assert they become visible only after the summary is opened — that is
+    // what proves the disclosure actually works.
+    const storageRow = page.locator(".workspace-agent-diagnostics .workspace-summary-row").filter({ hasText: "采集日志" });
+    assert.equal(await storageRow.count(), 1, "the storage section must expose the diagnostics log path");
     await page.locator(".workspace-agent-diagnostics .workspace-advanced__summary").click();
-    assert.ok(await page.locator(".workspace-agent-diagnostics .workspace-summary-row").count() >= 15, "the storage section must expose every file path");
+    await storageRow.waitFor({ state: "visible", timeout: 5_000 });
+    const storageLabels = (await page.locator(".workspace-agent-diagnostics .workspace-summary-row span").allTextContents()).map((label) => label.trim());
+    for (const label of ["配置文件", "同步状态", "待上传队列", "采集日志"]) {
+      assert.ok(storageLabels.includes(label), `the storage section is missing the "${label}" row (${storageLabels.join(",")})`);
+    }
     assert.equal(await page.getByRole("button", { name: "复制诊断信息" }).count(), 1, "the diagnostics surface must offer the redacted export");
     await page.screenshot({ path: path.join(outputDir, "electron-agent-diagnostics.png"), fullPage: true, animations: "disabled" });
-    await page.evaluate(() => { window.location.hash = "#settings/general"; });
+    await page.evaluate(() => { window.location.hash = "#settings/data"; });
     await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
-    const generalText = await page.locator(".workspace-page--settings").innerText();
+    const dataSettingsText = await page.locator(".workspace-page--settings").innerText();
     // The desktop shell polls through the host bridge; it must not borrow the
-    // browser's 实时 claim for the same live snapshot.
-    assert.ok(generalText.includes("定时刷新"), `the polling client must label live data 定时刷新 (${generalText})`);
-    assert.ok(!generalText.includes("实时连接"), "the polling client must not describe itself as realtime");
+    // browser's 实时 claim for the same live snapshot. 数据来源 lives on the
+    // 数据与更新 page for the native client (the browser also shows it on 通用).
+    assert.ok(dataSettingsText.includes("定时刷新"), `the polling client must label live data 定时刷新 (${dataSettingsText})`);
+    assert.ok(!dataSettingsText.includes("实时连接"), "the polling client must not describe itself as realtime");
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(300);
