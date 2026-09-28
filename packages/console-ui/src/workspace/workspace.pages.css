@@ -91,6 +91,7 @@
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
+    scrollbar-gutter: auto;
   }
   .workspace-search-trigger { width: 40px; min-width: 40px; justify-content: center; padding: 0; border: 0; background: transparent; }
   .workspace-search-trigger .m3-button__icon { display: inline-flex; }

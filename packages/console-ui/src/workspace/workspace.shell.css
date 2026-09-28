@@ -483,8 +483,10 @@ kbd {
   min-width: 0;
   min-height: 0;
   flex: 1;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: var(--workspace-content-pad);
+  scrollbar-gutter: stable;
 }
 
 .workspace-page-intro h2 {
