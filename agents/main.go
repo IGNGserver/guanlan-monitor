@@ -521,12 +521,9 @@ func deviceReferenceCount(metrics slowMetrics) int {
 // ran past its budget. They are cheap in-process counters, exported into the
 // metrics payload so "the collector got slower" is measurable.
 type slowCollectionStats struct {
-	runs            int64
-	overruns        int64
-	lastMillis      int64
-	assetsRefreshed int64
-	hardwareProbes  int64
-	hardwareReused  int64
+	runs       int64
+	overruns   int64
+	lastMillis int64
 }
 
 // probeSpawnCounts counts external probe processes started since the last time
@@ -1033,6 +1030,10 @@ func runHardwareSensorProbe() error {
 
 func sampleID(payload metricsPayload) string {
 	payload.SampleID = ""
+	// The self-observed probe counters are diagnostics, not telemetry: exclude
+	// them so they cannot change the identity of an otherwise identical sample.
+	payload.ProbeSpawns = nil
+	payload.CollectorStats = nil
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return payload.Timestamp
@@ -1357,8 +1358,11 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	}
 
 	applyRuntimeConfig(&payload, cfg)
-	payload = sanitizePendingPayload(payload)
+	// Take the spawn counters before sanitizing so the sample id is computed from
+	// telemetry alone; the probe counters are diagnostic and must not make an
+	// otherwise identical sample look new to the pending-spool dedupe.
 	payload.ProbeSpawns = takeProbeSpawnCounts()
+	payload = sanitizePendingPayload(payload)
 	payload.SampleID = sampleID(payload)
 	return payload
 }
