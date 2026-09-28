@@ -57,10 +57,6 @@ class SafeDscBridge implements DesktopRendererBridge, WindowMaterialBridge {
     return this.requireBridge().controlAgent(action);
   }
 
-  async setAgentSecret(secret: string): Promise<DesktopSnapshot> {
-    return this.requireBridge().setAgentSecret(secret);
-  }
-
   async saveHubConnection(serverUrl: string, accessKey: string): Promise<DesktopSnapshot> {
     return this.requireBridge().saveHubConnection(serverUrl, accessKey);
   }

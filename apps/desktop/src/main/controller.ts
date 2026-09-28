@@ -74,7 +74,6 @@ export class DesktopController {
       refresh: (request?: DesktopSnapshotRequest) => this.refresh(request),
       updateLocalConfig: (patch: DesktopConfigPatch) => this.updateLocalConfig(patch),
       controlAgent: (action: DesktopAgentControlAction) => this.controlAgent(action),
-      setAgentSecret: (secret: string) => this.setAgentSecret(secret),
       saveHubConnection: (serverUrl: string, accessKey: string) => this.saveHubConnection(serverUrl, accessKey),
       login: (accessKey: string) => this.login(accessKey),
       logout: () => this.logout(),
@@ -206,19 +205,6 @@ export class DesktopController {
 
   async controlAgent(action: DesktopAgentControlAction): Promise<DesktopSnapshot> {
     await this.agent.control(action);
-    return this.refresh();
-  }
-
-  async setAgentSecret(secret: string): Promise<DesktopSnapshot> {
-    const rawState = await this.agent.start();
-    const nextConfig: AgentBackendConfig = {
-      ...rawState.config,
-      connection: {
-        ...rawState.config.connection,
-        secret: secret.trim()
-      }
-    };
-    await this.agent.updateConfig(nextConfig);
     return this.refresh();
   }
 

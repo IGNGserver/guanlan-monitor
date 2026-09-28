@@ -3,7 +3,6 @@ export const IPC_CHANNELS = {
   refresh: "dsc:refresh",
   updateLocalConfig: "dsc:update-local-config",
   controlAgent: "dsc:control-agent",
-  setAgentSecret: "dsc:set-agent-secret",
   saveHubConnection: "dsc:save-hub-connection",
   login: "dsc:login",
   logout: "dsc:logout",

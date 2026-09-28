@@ -1,5 +1,4 @@
 import type {
-  DesktopAgentBackendState,
   DesktopAgentControlAction,
   DesktopConfigPatch,
   DesktopStartupSettings,
@@ -34,7 +33,6 @@ export interface ConsoleAdapter extends ConsoleReadPort, ConsoleSessionPort, Con
   controlAgent?(action: DesktopAgentControlAction): Promise<ConsoleSnapshot>;
   updateStartupSettings?(settings: Partial<DesktopStartupSettings>): Promise<ConsoleSnapshot>;
   cloudPush?(): Promise<ConsoleSnapshot>;
-  getLocalBackend?(): Promise<DesktopAgentBackendState | null>;
   windowMinimize?(): Promise<void>;
   windowToggleMaximize?(): Promise<boolean>;
   windowClose?(): Promise<void>;

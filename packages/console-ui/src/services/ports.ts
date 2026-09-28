@@ -1,7 +1,6 @@
 import type {
   ConsoleSnapshot,
   ConsoleSnapshotRequest,
-  DesktopAgentBackendState,
   DesktopAgentControlAction,
   DesktopConfigPatch,
   DesktopStartupSettings
@@ -36,5 +35,4 @@ export interface ConsoleLocalAgentPort {
   controlAgent(action: DesktopAgentControlAction): Promise<ConsoleSnapshot>;
   updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<ConsoleSnapshot>;
   cloudPush(): Promise<ConsoleSnapshot>;
-  getLocalBackend(): Promise<DesktopAgentBackendState | null>;
 }

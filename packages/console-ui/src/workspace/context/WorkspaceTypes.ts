@@ -87,7 +87,6 @@ export interface WorkspaceContextValue {
   isTouch: boolean;
   inputMode: PointerType;
   layoutTier: ResponsiveTier;
-  formFactor: "phone" | "tablet" | "desktop";
   runtimeProfile: DesktopRuntimeProfile;
   lowResourceMode: boolean;
   chartPointLimit: number;

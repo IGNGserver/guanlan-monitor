@@ -16,7 +16,6 @@ const bridge: DesktopRendererBridge & WindowMaterialBridge = {
   refresh: (request?: DesktopSnapshotRequest) => ipcRenderer.invoke(IPC_CHANNELS.refresh, request),
   updateLocalConfig: (patch: DesktopConfigPatch) => ipcRenderer.invoke(IPC_CHANNELS.updateLocalConfig, patch),
   controlAgent: (action: DesktopAgentControlAction) => ipcRenderer.invoke(IPC_CHANNELS.controlAgent, action),
-  setAgentSecret: (secret: string) => ipcRenderer.invoke(IPC_CHANNELS.setAgentSecret, secret),
   saveHubConnection: (serverUrl: string, accessKey: string) => ipcRenderer.invoke(IPC_CHANNELS.saveHubConnection, serverUrl, accessKey),
   login: (accessKey: string) => ipcRenderer.invoke(IPC_CHANNELS.login, accessKey),
   logout: () => ipcRenderer.invoke(IPC_CHANNELS.logout),

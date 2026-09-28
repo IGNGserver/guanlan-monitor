@@ -30,7 +30,7 @@ The renderer has two top-level areas:
 
 ## IPC design principles
 
-- Methods are capability-shaped (`getSnapshot`, `refresh`, `updateLocalConfig`, `controlAgent`, `setAgentSecret`, `login`, `logout`, `cloudPush`, `saveFanNote`, `updateStartupSettings`, `openExternal`, `exit`) rather than generic `invoke(channel, args)`.
+- Methods are capability-shaped (`getSnapshot`, `refresh`, `updateLocalConfig`, `controlAgent`, `login`, `logout`, `cloudPush`, `saveFanNote`, `updateStartupSettings`, `openExternal`, `exit`) rather than generic `invoke(channel, args)`.
 - Main validates every argument before side effects and allowlists all IPC channels. Fan-note writes are a dedicated endpoint, not a generic remote configuration update.
 - IPC responses never contain the plaintext Hub access key or Agent secret. A local config read returns `secretConfigured: boolean`; a controlled secret save accepts the new value only in the main process.
 

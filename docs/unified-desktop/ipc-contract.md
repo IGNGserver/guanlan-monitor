@@ -9,7 +9,6 @@ type DesktopApi = {
   getSnapshot(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot>;
   refresh(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot>;
   updateLocalConfig(patch: DesktopConfigPatch): Promise<DesktopSnapshot>;
-  setAgentSecret(secret: string): Promise<DesktopSnapshot>;
   controlAgent(action: "start" | "stop" | "check-connection" | "detect-probes"): Promise<DesktopSnapshot>;
   login(accessKey: string): Promise<DesktopSnapshot>;
   logout(): Promise<DesktopSnapshot>;
