@@ -1,6 +1,9 @@
 import type { DesktopAgentBackendState } from "@dsc/shared";
-import { formatBytes, formatDate, formatPreciseDateTime } from "./formatters";
-import { formatWorkspaceError } from "./context/WorkspaceTypes";
+// Explicit `.ts` extensions: the plain-node test suites load these modules
+// through Node's type stripping, which does not resolve extensionless relative
+// specifiers the way the bundler does.
+import { formatBytes, formatDate, formatPreciseDateTime } from "./formatters.ts";
+import { formatWorkspaceError } from "./context/WorkspaceTypes.ts";
 
 /**
  * Presentation model for the desktop Agent's diagnostic state.
