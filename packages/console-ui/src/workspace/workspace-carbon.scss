@@ -140,6 +140,9 @@
 .workspace-content {
   padding: 0;
   background: var(--cds-background, #f4f4f4);
+  scrollbar-gutter: stable;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .workspace-page {
