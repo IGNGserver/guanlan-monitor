@@ -14,6 +14,20 @@ export function PullToRefresh({ onRefresh, disabled = false, children }: PullToR
   const startXRef = useRef<number | null>(null);
   const isPullingRef = useRef<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Mirror the render state into refs so the gesture effect can keep a stable
+  // subscription. Depending on `pullDistance` re-added and removed all four
+  // touch listeners on every move event, which is exactly when the browser is
+  // busiest; the handlers now read the latest values without re-subscribing.
+  const pullDistanceRef = useRef(0);
+  const isRefreshingRef = useRef(false);
+  const onRefreshRef = useRef(onRefresh);
+  // Resolving the scroll parent calls getComputedStyle along the ancestor chain.
+  // It cannot change during a single gesture, so resolve it once per touchstart
+  // and reuse it for the moves.
+  const scrollParentRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => { onRefreshRef.current = onRefresh; }, [onRefresh]);
+  useEffect(() => { isRefreshingRef.current = isRefreshing; }, [isRefreshing]);
 
   const threshold = 64;
   const maxPull = 90;
@@ -35,8 +49,9 @@ export function PullToRefresh({ onRefresh, disabled = false, children }: PullToR
     };
 
     const handleTouchStart = (e: TouchEvent) => {
-      if (isRefreshing || e.touches.length !== 1) return;
+      if (isRefreshingRef.current || e.touches.length !== 1) return;
       const scrollParent = getScrollParent(el);
+      scrollParentRef.current = scrollParent;
       const isTop = scrollParent.scrollTop <= 0;
       if (isTop) {
         startYRef.current = e.touches[0].clientY;
@@ -49,7 +64,7 @@ export function PullToRefresh({ onRefresh, disabled = false, children }: PullToR
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (startYRef.current === null || startXRef.current === null || isRefreshing) return;
+      if (startYRef.current === null || startXRef.current === null || isRefreshingRef.current) return;
       const currentY = e.touches[0].clientY;
       const currentX = e.touches[0].clientX;
       const diffY = currentY - startYRef.current;
@@ -63,11 +78,12 @@ export function PullToRefresh({ onRefresh, disabled = false, children }: PullToR
       }
 
       if (diffY > 0) {
-        const scrollParent = getScrollParent(el);
+        const scrollParent = scrollParentRef.current ?? getScrollParent(el);
         if (scrollParent.scrollTop <= 0) {
           isPullingRef.current = true;
           // Apply cubic dampening
           const damped = Math.min(diffY * 0.4, maxPull);
+          pullDistanceRef.current = damped;
           setPullDistance(damped);
           if (e.cancelable && damped > 8) {
             e.preventDefault();
@@ -75,6 +91,7 @@ export function PullToRefresh({ onRefresh, disabled = false, children }: PullToR
         }
       } else {
         isPullingRef.current = false;
+        pullDistanceRef.current = 0;
         setPullDistance(0);
       }
     };
@@ -86,19 +103,23 @@ export function PullToRefresh({ onRefresh, disabled = false, children }: PullToR
       const pulling = isPullingRef.current;
       isPullingRef.current = false;
 
-      if (pulling && pullDistance >= threshold && !isRefreshing) {
+      if (pulling && pullDistanceRef.current >= threshold && !isRefreshingRef.current) {
+        isRefreshingRef.current = true;
         setIsRefreshing(true);
         setPullDistance(threshold * 0.8);
         if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
           try { navigator.vibrate(12); } catch {}
         }
         try {
-          await onRefresh();
+          await onRefreshRef.current();
         } finally {
+          isRefreshingRef.current = false;
           setIsRefreshing(false);
+          pullDistanceRef.current = 0;
           setPullDistance(0);
         }
       } else {
+        pullDistanceRef.current = 0;
         setPullDistance(0);
       }
     };
@@ -114,7 +135,7 @@ export function PullToRefresh({ onRefresh, disabled = false, children }: PullToR
       el.removeEventListener("touchend", handleTouchEnd);
       el.removeEventListener("touchcancel", handleTouchEnd);
     };
-  }, [disabled, isRefreshing, onRefresh, pullDistance]);
+  }, [disabled]);
 
   const rotation = Math.min((pullDistance / threshold) * 360, 360);
   const opacity = Math.min(pullDistance / (threshold * 0.6), 1);

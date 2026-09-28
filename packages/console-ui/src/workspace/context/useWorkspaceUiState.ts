@@ -38,7 +38,7 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
   const [isTouch, setIsTouch] = useState(false);
   const [inputMode, setInputMode] = useState<PointerType>("mouse");
   const [layoutTier, setLayoutTier] = useState<ResponsiveTier>("lg");
-  const [pointerSeen, setPointerSeen] = useState(false);
+  const pointerSeenRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -63,7 +63,7 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
       setOrientation(nextOrientation);
       setLayoutTier(nextTier);
       setIsTouch(nextTouch);
-      if (!pointerSeen) setInputMode(nextTouch ? "touch" : "mouse");
+      if (!pointerSeenRef.current) setInputMode(nextTouch ? "touch" : "mouse");
       // Crossing into drawer mode closes the drawer without touching the stored
       // preference: "expanded" describes the inline rail, and a modal drawer that
       // reopened on every page would cover the content. Crossing back out
@@ -82,22 +82,37 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
       document.documentElement.dataset.dscTier = nextTier;
       document.documentElement.dataset.dscTouchSupport = nextTouch ? "true" : "false";
     };
+    // A drag-resize fires this faster than the compositor can lay out. Coalesce
+    // to one update per frame; the final size still lands because the trailing
+    // frame runs after the last event.
+    let resizeFrame = 0;
+    const scheduleResize = () => {
+      if (resizeFrame) return;
+      resizeFrame = window.requestAnimationFrame(() => {
+        resizeFrame = 0;
+        handleResize();
+      });
+    };
     handleResize();
-    window.addEventListener("resize", handleResize);
-    window.addEventListener("orientationchange", handleResize);
+    window.addEventListener("resize", scheduleResize);
+    window.addEventListener("orientationchange", scheduleResize);
     const handlePointerDown = (event: PointerEvent) => {
       const nextPointer: PointerType = event.pointerType === "touch" || event.pointerType === "pen" ? event.pointerType : "mouse";
-      setPointerSeen(true);
+      // The first real pointer wins over the touch heuristic and must stick, so
+      // the listener is added once instead of re-subscribing on every change.
+      pointerSeenRef.current = true;
       setInputMode(nextPointer);
       document.documentElement.dataset.dscPointer = nextPointer;
+      document.removeEventListener("pointerdown", handlePointerDown);
     };
     document.addEventListener("pointerdown", handlePointerDown, { passive: true });
     return () => {
-      window.removeEventListener("resize", handleResize);
-      window.removeEventListener("orientationchange", handleResize);
+      if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
+      window.removeEventListener("resize", scheduleResize);
+      window.removeEventListener("orientationchange", scheduleResize);
       document.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [pointerSeen]);
+  }, []);
 
   const navigate = useCallback((nextRoute: WorkspaceRoute) => {
     if (!confirmDiscardDeviceOrderDraft()) return;

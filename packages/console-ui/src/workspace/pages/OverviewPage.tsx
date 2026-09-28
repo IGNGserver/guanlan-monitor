@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { ActionableNotification } from "@carbon/react";
 import { useWorkspace } from "../WorkspaceContext";
 import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
@@ -6,8 +6,9 @@ import { M3SegmentedControl } from "../m3";
 import { CarbonTimeSeriesChart } from "../CarbonCharts";
 import { ChartTile, DashboardCell, DashboardGrid, DashboardSection } from "../dashboard";
 import { OnboardingGuide } from "../shell/OnboardingGuide";
-import { formatBytes, formatDate, formatPercent } from "../formatters";
-import { selectAttentionDevices, selectHealthSummary } from "../selectors";import { CarbonDeviceTable, DeviceCardGrid, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints } from "./shared";
+import { formatBytes, formatDate, formatRate, formatPercent } from "../formatters";
+import { selectAttentionDevices, selectHealthSummary } from "../selectors";
+import { CarbonDeviceTable, DeviceCardGrid, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints } from "./shared";
 
 type ObservationMetric = "cpu" | "memory" | "disk" | "network";
 
@@ -16,6 +17,12 @@ const observationLabels: Record<ObservationMetric, string> = {
   memory: "内存占用",
   disk: "磁盘已用容量",
   network: "网络吞吐"
+};
+
+const WINDOW_LABELS: Record<string, string> = {
+  "1m": "1 分钟", "5m": "5 分钟", "15m": "15 分钟", "1h": "1 小时", "6h": "6 小时",
+  "24h": "1 天", "1d": "1 天", "7d": "1 周", "1w": "1 周", "30d": "1 个月",
+  "1mo": "1 个月", "90d": "90 天", "1y": "1 年"
 };
 
 /**
@@ -44,17 +51,35 @@ function failureGuide(isDesktopShell: boolean): string {
 export function OverviewPage() {
   const { snapshot, allDevices, metricsWindow, loading, refreshing, error, refresh, openSettings, navigate, capabilities } = useWorkspace();
   const [observationMetric, setObservationMetric] = useState<ObservationMetric>("cpu");
-  if (loading && !snapshot) return <LoadingSurface />;
-  if (!snapshot) return <ErrorSurface title="无法读取设备状态" detail={error ?? failureGuide(capabilities.canControlNativeWindow)} onRetry={() => void refresh()} />;
 
-  const health = selectHealthSummary(snapshot, allDevices, formatDate, capabilities.liveDataTransport);
+  // These run on every poll (the provider re-renders the tree on each snapshot).
+  // Memoising them on their actual inputs keeps a poll that changed nothing on
+  // this page from re-filtering the fleet and rebuilding the observation series.
+  const health = useMemo(
+    () => (snapshot ? selectHealthSummary(snapshot, allDevices, formatDate, capabilities.liveDataTransport) : null),
+    [snapshot, allDevices, capabilities.liveDataTransport]
+  );
+  const attentionDevices = useMemo(() => selectAttentionDevices(allDevices), [allDevices]);
+  const overviewInstances = snapshot?.overviewMetrics?.instances;
+  const observationSeries = useMemo(() => (overviewInstances ?? []).flatMap((instance) => {
+    const unavailable = (key: Parameters<typeof isMetricUnavailable>[1]) => instance.unavailableMetrics?.includes(key) ?? false;
+    if (observationMetric === "cpu") return [{ label: instance.hostname, points: unavailablePoints(instance.cpuUsagePercent, unavailable("cpuUsage")), valueFormatter: formatPercent }];
+    if (observationMetric === "memory") return [{ label: instance.hostname, points: unavailablePoints(instance.memoryUsedBytes, unavailable("memoryUsage")), valueFormatter: formatBytes }];
+    if (observationMetric === "disk") return [{ label: instance.hostname, points: unavailablePoints(instance.diskUsedBytes, unavailable("diskUsage")), valueFormatter: formatBytes }];
+    return [
+      { label: instance.hostname + " · Rx", points: unavailablePoints(instance.networkRxBytesPerSec, unavailable("networkRxRate")), valueFormatter: formatRate },
+      { label: instance.hostname + " · Tx", points: unavailablePoints(instance.networkTxBytesPerSec, unavailable("networkTxRate")), valueFormatter: formatRate }
+    ];
+  }), [overviewInstances, observationMetric]);
+
+  if (loading && !snapshot) return <LoadingSurface />;
+  if (!snapshot || !health) return <ErrorSurface title="无法读取设备状态" detail={error ?? failureGuide(capabilities.canControlNativeWindow)} onRetry={() => void refresh()} />;
+
   const cached = health.source === "cache";
   const noData = health.total === 0;
   const hubAbnormal = health.source === "cache" || health.source === "unknown";
-  const attentionDevices = selectAttentionDevices(allDevices);
   const localIssues = snapshot.localBackend?.lastIssueCount ?? 0;
-  const overviewInstances = snapshot.overviewMetrics?.instances ?? [];
-  const metricWindowLabel = ({ "1m": "1 分钟", "5m": "5 分钟", "15m": "15 分钟", "1h": "1 小时", "6h": "6 小时", "24h": "1 天", "1d": "1 天", "7d": "1 周", "1w": "1 周", "30d": "1 个月", "1mo": "1 个月", "90d": "90 天", "1y": "1 年" } as Record<string, string>)[metricsWindow] ?? metricsWindow;
+  const metricWindowLabel = WINDOW_LABELS[metricsWindow] ?? metricsWindow;
   const attentionCount = health.pending;
   // Spell out what the number is made of so it can be checked, not believed.
   // The device half says 离线 — the same word the directory tags, the filter
@@ -67,18 +92,8 @@ export function OverviewPage() {
       : [health.offline ? `${health.offline} 台设备离线` : "", localIssues ? `${localIssues} 条本机采集问题` : ""].filter(Boolean).join(" · ");
   const tone = hubAbnormal ? "warning" : noData ? "empty" : attentionCount ? "warning" : "normal";
 
-  const observationSeries = overviewInstances.flatMap((instance) => {
-    const unavailable = (key: Parameters<typeof isMetricUnavailable>[1]) => instance.unavailableMetrics?.includes(key) ?? false;
-    if (observationMetric === "cpu") return [{ label: instance.hostname, points: unavailablePoints(instance.cpuUsagePercent, unavailable("cpuUsage")), valueFormatter: formatPercent }];
-    if (observationMetric === "memory") return [{ label: instance.hostname, points: unavailablePoints(instance.memoryUsedBytes, unavailable("memoryUsage")), valueFormatter: formatBytes }];
-    if (observationMetric === "disk") return [{ label: instance.hostname, points: unavailablePoints(instance.diskUsedBytes, unavailable("diskUsage")), valueFormatter: formatBytes }];
-    return [
-      { label: instance.hostname + " · Rx", points: unavailablePoints(instance.networkRxBytesPerSec, unavailable("networkRxRate")), valueFormatter: (value: number) => (Number.isFinite(value) && value > 0 ? formatBytes(value) + "/s" : "0 B/s") },
-      { label: instance.hostname + " · Tx", points: unavailablePoints(instance.networkTxBytesPerSec, unavailable("networkTxRate")), valueFormatter: (value: number) => (Number.isFinite(value) && value > 0 ? formatBytes(value) + "/s" : "0 B/s") }
-    ];
-  });
   const observationHasData = observationSeries.some((series) => series.points.length > 0);
-  const observationEmptyMessage = overviewInstances.length
+  const observationEmptyMessage = (overviewInstances?.length ?? 0)
     ? observationHasData ? undefined : observationLabels[observationMetric] + "暂无可用数据（缺失指标不会被估算）"
     : "当前还没有任何设备的总览样本";
 

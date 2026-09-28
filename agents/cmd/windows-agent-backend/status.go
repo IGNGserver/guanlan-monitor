@@ -59,7 +59,7 @@ func (s *server) handleStatus(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 	s.mu.Lock()
-	pending := readCollectorPendingState(s.pendingStatePath)
+	pending := s.snapshotLockedPending()
 	payload := statusPayload{
 		Running:            s.cmd != nil && s.cmd.Process != nil,
 		ServiceScope:       s.serviceScope,

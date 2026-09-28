@@ -286,7 +286,19 @@ export const agentMetricsPayloadSchema = z.object({
   gpus: z.array(gpuSchema).max(128),
   fans: z.array(fanSchema).max(256),
   temperatureSensors: z.array(temperatureSensorSchema).max(1_024).optional(),
-  sensorBackends: z.array(sensorBackendSchema).max(128).optional()
+  sensorBackends: z.array(sensorBackendSchema).max(128).optional(),
+  // Additive collector self-reporting. `.passthrough()` on the parent already
+  // preserved these, but making them explicit documents the contract the
+  // collector now relies on and bounds an unexpected map/object.
+  probeSpawns: z.record(z.string().max(64), nonNegativeInt).refine(
+    (value) => Object.keys(value).length <= 32,
+    "too many probe spawn entries"
+  ).optional(),
+  collectorStats: z.object({
+    slowRuns: nonNegativeInt,
+    slowOverruns: nonNegativeInt,
+    lastSlowMillis: nonNegativeInt
+  }).passthrough().optional()
 }).passthrough().transform((payload): AgentMetricsPayload => {
   const sanitized = { ...payload } as Record<string, unknown>;
   delete sanitized.virtualization;

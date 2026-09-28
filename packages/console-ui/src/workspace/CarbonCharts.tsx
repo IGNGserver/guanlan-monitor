@@ -10,6 +10,14 @@ import type {
 } from "@carbon/charts-react";
 import type { SamplePoint } from "@dsc/shared";
 import { ChartTouchGestureOverlay } from "./ChartTouchGestureOverlay";
+import { dateValueOf } from "./sampleTime";
+import {
+  chartAnimationsEnabled,
+  partsFingerprint,
+  prefersReducedMotion,
+  seriesFingerprint,
+  seriesTimeSpan
+} from "./chartIdentity";
 
 export type CarbonSeries = {
   label: string;
@@ -49,7 +57,7 @@ function formatAxisTickDate(value: unknown, isShortRange = true): string {
 
 export function carbonChartData(series: CarbonSeries[]): ChartTabularData {
   return series.flatMap((item) => item.points
-    .filter((point) => Number.isFinite(Date.parse(point.timestamp)) && Number.isFinite(point.value))
+    .filter((point) => Number.isFinite(dateValueOf(point.timestamp)) && Number.isFinite(point.value))
     .map((point) => ({
       group: item.label,
       date: new Date(point.timestamp),
@@ -57,24 +65,31 @@ export function carbonChartData(series: CarbonSeries[]): ChartTabularData {
     })));
 }
 
+/**
+ * Charts animate their enter/update transitions. That is the right default for a
+ * first paint, but this dashboard re-supplies data on every status poll, so
+ * leaving it on means a d3 transition per chart per poll for values that moved by
+ * a fraction of a pixel. Under reduced motion the transition is pointless; the
+ * caller decides and the effect is sticky per chart instance so a re-render does
+ * not restart an animation that is already settling.
+ */
+
 function axisOptions(
   height: string,
   series: CarbonSeries[],
   maxValue?: number,
-  valueFormatter?: (value: number) => string
+  valueFormatter?: (value: number) => string,
+  animations = true,
+  ariaLabel?: string
 ) {
   const tickFormatter = valueFormatter ?? series.find((item) => item.valueFormatter)?.valueFormatter
     ?? (maxValue === 100 ? (value: number) => `${Math.round(value)}%` : undefined);
 
   // Compute time range duration to pick tick format
   let isShortRange = true;
-  const allPoints = series.flatMap((s) => s.points);
-  if (allPoints.length >= 2) {
-    const minTime = Math.min(...allPoints.map((p) => Date.parse(p.timestamp)).filter((t) => Number.isFinite(t)));
-    const maxTime = Math.max(...allPoints.map((p) => Date.parse(p.timestamp)).filter((t) => Number.isFinite(t)));
-    if (Number.isFinite(minTime) && Number.isFinite(maxTime) && maxTime - minTime > 3600 * 6 * 1000) {
-      isShortRange = false;
-    }
+  const span = seriesTimeSpan(series);
+  if (span && span.max - span.min > 3600 * 6 * 1000) {
+    isShortRange = false;
   }
 
   const formatTick = (tick: number | Date) => typeof tick === "number" && Number.isFinite(tick)
@@ -84,7 +99,7 @@ function axisOptions(
   return {
     height,
     theme: chartTheme(),
-    animations: true,
+    animations,
     resizable: true,
     axes: {
       bottom: {
@@ -110,7 +125,7 @@ function axisOptions(
     legend: { enabled: series.length > 1 },
     toolbar: { enabled: false },
     tooltip: { enabled: true, valueFormatter: tickFormatter ? (value: unknown) => typeof value === "number" ? tickFormatter(value) : String(value) : undefined },
-    accessibility: { svgAriaLabel: timeSeriesAriaLabel(series) }
+    accessibility: { svgAriaLabel: timeSeriesAriaLabel(series, ariaLabel) }
   };
 }
 
@@ -130,6 +145,14 @@ function timeSeriesAriaLabel(series: CarbonSeries[], ariaLabel?: string): string
     : "硬件指标时间趋势图";
 }
 
+/**
+ * A time-series chart.
+ *
+ * The dashboard rebuilds each chart's `series` on every render, so a memo keyed
+ * on the array identity never hits and every poll re-runs the point filtering and
+ * axis-range scan. `seriesFingerprint` keys the memo on the actual values so a
+ * poll whose data did not change skips that work; see `chartIdentity.ts`.
+ */
 export function CarbonTimeSeriesChart({
   series,
   visualization = "line",
@@ -150,10 +173,16 @@ export function CarbonTimeSeriesChart({
   compact?: boolean;
   className?: string;
 }) {
-  const data = useMemo(() => carbonChartData(series), [series]);
+  // Keyed on content, not identity: a poll that re-supplies identical points must
+  // not rebuild the d3 data or the options object.
+  const fingerprint = useMemo(() => seriesFingerprint(series), [series]);
+  const stableSeries = useMemo(() => series, [fingerprint]); // eslint-disable-line react-hooks/exhaustive-deps
+  const reducedMotion = useMemo(prefersReducedMotion, []);
+  const animations = chartAnimationsEnabled(reducedMotion);
+  const data = useMemo(() => carbonChartData(stableSeries), [stableSeries]);
   const options = useMemo(
-    () => axisOptions(compact ? "128px" : "248px", series, maxValue, valueFormatter),
-    [compact, series, maxValue, valueFormatter]
+    () => axisOptions(compact ? "128px" : "248px", stableSeries, maxValue, valueFormatter, animations, ariaLabel),
+    [compact, stableSeries, maxValue, valueFormatter, animations, ariaLabel]
   );
   if (!data.length) return <div className={`telemetry-empty ${className}`}>当前时间范围没有可用数据</div>;
 
@@ -203,6 +232,9 @@ function chartWrapperClassName(kind: string, compact: boolean, className: string
  *
  * 圆心默认显示第一个分片占总量的百分比；传入 `centerValue` 时改为显示该绝对量，
  * 并用 `valueFormatter` 格式化。
+ *
+ * `partsFingerprint` keys the options memo on the values, so a poll that changed
+ * nothing does not rebuild them.
  */
 export function CarbonDonutChart({
   parts,
@@ -221,30 +253,34 @@ export function CarbonDonutChart({
   className?: string;
   ariaLabel?: string;
 }) {
-  const data = useMemo(() => donutData(parts), [parts]);
-  if (!data.length) return <div className={`telemetry-empty ${className}`.trim()}>{EMPTY_CHART_MESSAGE}</div>;
+  const fingerprint = useMemo(() => partsFingerprint(parts), [parts]);  const stableParts = useMemo(() => parts, [fingerprint]); // eslint-disable-line react-hooks/exhaustive-deps
+  const data = useMemo(() => donutData(stableParts), [stableParts]);
+  const animations = chartAnimationsEnabled(useMemo(prefersReducedMotion, []));
+  const options = useMemo<DonutChartOptions>(() => {
+    const total = data.reduce((sum, item) => sum + (typeof item.value === "number" ? item.value : 0), 0);
+    const firstValue = typeof data[0]?.value === "number" ? data[0].value as number : 0;
+    const showPercentage = centerValue == null;
+    return {
+      height: compact ? "168px" : "208px",
+      theme: chartTheme(),
+      animations,
+      resizable: true,
+      legend: { enabled: data.length > 1, position: "bottom" },
+      toolbar: { enabled: false },
+      tooltip: { enabled: true, valueFormatter: (value: number) => valueFormatter(value) },
+      pie: { alignment: "center" },
+      donut: {
+        center: {
+          label: centerLabel,
+          number: showPercentage ? (total > 0 ? (firstValue / total) * 100 : 0) : centerValue,
+          numberFormatter: showPercentage ? (value) => `${Math.round(value)}%` : (value) => valueFormatter(value)
+        }
+      },
+      accessibility: { svgAriaLabel: ariaLabel }
+    };
+  }, [animations, ariaLabel, centerLabel, centerValue, compact, data, valueFormatter]);
 
-  const total = data.reduce((sum, item) => sum + (typeof item.value === "number" ? item.value : 0), 0);
-  const firstValue = typeof data[0].value === "number" ? data[0].value : 0;
-  const showPercentage = centerValue == null;
-  const options: DonutChartOptions = {
-    height: compact ? "168px" : "208px",
-    theme: chartTheme(),
-    animations: true,
-    resizable: true,
-    legend: { enabled: data.length > 1, position: "bottom" },
-    toolbar: { enabled: false },
-    tooltip: { enabled: true, valueFormatter: (value: number) => valueFormatter(value) },
-    pie: { alignment: "center" },
-    donut: {
-      center: {
-        label: centerLabel,
-        number: showPercentage ? (total > 0 ? (firstValue / total) * 100 : 0) : centerValue,
-        numberFormatter: showPercentage ? (value) => `${Math.round(value)}%` : (value) => valueFormatter(value)
-      }
-    },
-    accessibility: { svgAriaLabel: ariaLabel }
-  };
+  if (!data.length) return <div className={`telemetry-empty ${className}`.trim()}>{EMPTY_CHART_MESSAGE}</div>;
 
   return (
     <div className={chartWrapperClassName("donut", compact, className)}>
@@ -277,13 +313,13 @@ export function CarbonMeterChart({
   className?: string;
   ariaLabel?: string;
 }) {
+  const animations = chartAnimationsEnabled(useMemo(prefersReducedMotion, []));
   const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
   const safeTotal = Number.isFinite(total) && total > 0 ? Math.max(total, safeValue) : Math.max(safeValue, 1);
-  const data: ChartTabularData = [{ group: label, value: safeValue }];
-  const options: MeterChartOptions = {
+  const options = useMemo<MeterChartOptions>(() => ({
     height: compact ? "72px" : "96px",
     theme: chartTheme(),
-    animations: true,
+    animations,
     resizable: true,
     legend: { enabled: false },
     toolbar: { enabled: false },
@@ -297,7 +333,8 @@ export function CarbonMeterChart({
       ...(statusRanges?.length ? { status: { ranges: statusRanges } } : {})
     },
     accessibility: { svgAriaLabel: ariaLabel }
-  };
+  }), [animations, ariaLabel, compact, safeTotal, statusRanges, valueFormatter]);
+  const data: ChartTabularData = useMemo(() => [{ group: label, value: safeValue }], [label, safeValue]);
 
   return (
     <div className={chartWrapperClassName("meter", compact, className)}>

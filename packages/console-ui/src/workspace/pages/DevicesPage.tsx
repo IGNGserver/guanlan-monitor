@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { DeviceSummary } from "@dsc/shared";
 import { useWorkspace } from "../WorkspaceContext";
 import { Button, Icon, Surface } from "../ui";
@@ -14,10 +14,13 @@ export function DevicesPage() {
   const [manageMode, setManageMode] = useState(false);
   const [orderDraft, setOrderDraft] = useState<string[] | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeviceSummary | null>(null);
-  const serverOrder = allDevices.map((device) => device.deviceId);
-  const serverOrderKey = serverOrder.join("\u0000");
-  const effectiveOrder = mergeDeviceOrder(orderDraft ?? serverOrder, serverOrder);
-  const orderDirty = Boolean(orderDraft && JSON.stringify(effectiveOrder) !== JSON.stringify(serverOrder));
+  const serverOrder = useMemo(() => allDevices.map((device) => device.deviceId), [allDevices]);
+  const serverOrderKey = useMemo(() => serverOrder.join("\u0000"), [serverOrder]);
+  const effectiveOrder = useMemo(() => mergeDeviceOrder(orderDraft ?? serverOrder, serverOrder), [orderDraft, serverOrder]);
+  const orderDirty = useMemo(
+    () => Boolean(orderDraft && effectiveOrder.length === serverOrder.length && effectiveOrder.some((id, index) => id !== serverOrder[index])),
+    [orderDraft, effectiveOrder, serverOrder]
+  );
   const orderDirtyRef = useRef(false);
   useEffect(() => {
     const unregisterGuard = registerDeviceOrderDraftGuard(() => orderDirtyRef.current);
@@ -47,12 +50,15 @@ export function DevicesPage() {
   if (!snapshot) return <ErrorSurface title="无法读取设备目录" detail={error ?? "尚未取得设备快照"} onRetry={() => void refresh()} />;
 
   const canManage = snapshot.source === "live" && snapshot.session.authenticated;
-  const orderPosition = new Map(effectiveOrder.map((deviceId, index) => [deviceId, index]));
-  const orderedDevices = allDevices
+  const orderPosition = useMemo(() => new Map(effectiveOrder.map((deviceId, index) => [deviceId, index])), [effectiveOrder]);
+  const orderedDevices = useMemo(() => allDevices
     .slice()
     .sort((left, right) => (orderPosition.get(left.deviceId) ?? Number.MAX_SAFE_INTEGER) - (orderPosition.get(right.deviceId) ?? Number.MAX_SAFE_INTEGER))
-    .map((device, index) => ({ ...device, sortOrder: index }));
-  const visibleDevices = selectDeviceDirectory(orderedDevices, { query, status: statusFilter, sort: manageMode ? "order" : sort });
+    .map((device, index) => ({ ...device, sortOrder: index })), [allDevices, orderPosition]);
+  const visibleDevices = useMemo(
+    () => selectDeviceDirectory(orderedDevices, { query, status: statusFilter, sort: manageMode ? "order" : sort }),
+    [manageMode, orderedDevices, query, sort, statusFilter]
+  );
   const beginManage = () => {
     if (!canManage || mutationPending) return;
     setOrderDraft(serverOrder);

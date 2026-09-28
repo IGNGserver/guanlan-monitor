@@ -2,7 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"device-state-console/agent/internal/agentconfig"
@@ -116,6 +119,63 @@ func TestHardwareProbeResponseDecodesFans(t *testing.T) {
 	}
 	if len(response.Fans) != 1 || response.Fans[0].ID != "fan-board-fan1" || response.Fans[0].Interface != "nct6775" {
 		t.Fatalf("fan probe response was not decoded: %#v", response.Fans)
+	}
+}
+
+// The pending-spool scan is O(spool) and runs on every /api/state request. The
+// size/mtime fingerprint must let an unchanged spool reuse the previous result,
+// while a real change (and a missing spool) must still be reported correctly.
+func TestReadCollectorPendingStateReusesUnchangedSpool(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agent-ui.config.json.pending.jsonl.state.json")
+	spoolPath := filepath.Join(dir, "agent-ui.config.json.pending.jsonl")
+
+	write := func(entries ...string) {
+		t.Helper()
+		body := strings.Join(entries, "\n")
+		if len(entries) > 0 {
+			body += "\n"
+		}
+		if err := os.WriteFile(spoolPath, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(
+		`{"sampledAt":"2026-01-02T00:00:00Z"}`,
+		`{"sampledAt":"2026-01-01T00:00:00Z"}`,
+	)
+
+	firstServer := &server{pendingStatePath: statePath}
+	first := firstServer.readCollectorPendingState()
+	if first.PendingCount != 2 || first.OldestSampledAt != "2026-01-01T00:00:00Z" {
+		t.Fatalf("unexpected first scan: %#v", first)
+	}
+	if first.SpoolSize == 0 || first.SpoolModTime == 0 {
+		t.Fatalf("expected a fingerprint to be recorded: %#v", first)
+	}
+
+	// Touch the spool to a different size; the memo must not hide the change.
+	write(`{"sampledAt":"2026-01-03T00:00:00Z"}`)
+	second := (&server{pendingStatePath: statePath, pendingCache: &first}).readCollectorPendingState()
+	if second.PendingCount != 1 || second.OldestSampledAt != "2026-01-03T00:00:00Z" {
+		t.Fatalf("a changed spool must be rescanned: %#v", second)
+	}
+
+	// A memo whose fingerprint still matches must be reused without a rescan,
+	// even when the state file on disk is absent.
+	cache := second
+	reused := (&server{pendingStatePath: statePath, pendingCache: &cache}).snapshotLockedPending()
+	if reused.PendingCount != 1 || reused.OldestSampledAt != "2026-01-03T00:00:00Z" {
+		t.Fatalf("an unchanged spool must reuse the memo: %#v", reused)
+	}
+
+	// Removing the spool clears the counters.
+	if err := os.Remove(spoolPath); err != nil {
+		t.Fatal(err)
+	}
+	cleared := firstServer.readCollectorPendingState()
+	if cleared.PendingCount != 0 || cleared.PendingBytes != 0 || cleared.OldestSampledAt != "" {
+		t.Fatalf("a missing spool must clear the counters: %#v", cleared)
 	}
 }
 

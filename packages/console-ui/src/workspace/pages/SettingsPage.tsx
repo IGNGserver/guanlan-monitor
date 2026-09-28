@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentProbeProvider, AgentProbeTarget, DeviceBlockKey, DeviceMetricKey, DesktopAgentBackendState, DesktopDetectedTargetGroup } from "@dsc/shared";
 import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
 import { M3Checkbox, M3SegmentedControl, M3Select, M3Switch, M3TextField } from "../m3";
@@ -6,6 +6,7 @@ import { Button, CopyButton, Icon, StatusLabel, Surface, SummaryRow } from "../u
 import { formatDate, formatPreciseDateTime } from "../formatters";
 import { selectLinkLabel, selectSnapshotSource, liveLinkLabel } from "../selectors";
 import { formatWorkspaceError } from "../context/WorkspaceTypes";
+import { stableObjectKey } from "../configKeys";
 import { visibleSettingsNavigation } from "../shell/PrimaryNavigation";
 import { PlatformShortcuts } from "../shell/PlatformShortcuts";
 import {
@@ -333,17 +334,23 @@ function AgentSettings() {
   const [agentHostname, setAgentHostname] = useState(config?.connection.hostname ?? "");
   const [normalSamplingSeconds, setNormalSamplingSeconds] = useState(String(config?.sampling.normalIntervalSeconds ?? 30));
   const [slowSamplingSeconds, setSlowSamplingSeconds] = useState(String(config?.sampling.slowIntervalSeconds ?? 30));
-  const fanSeries = mergeFanMetricSeries(
-    snapshot?.metrics?.latest.fans ?? [],
-    snapshot?.metrics?.series?.fans ?? [],
-    snapshot?.metrics?.latest.hardwareSampledAt ?? snapshot?.metrics?.lastSeenAt ?? new Date().toISOString()
+  const fanSeries = useMemo(
+    () => mergeFanMetricSeries(
+      snapshot?.metrics?.latest.fans ?? [],
+      snapshot?.metrics?.series?.fans ?? [],
+      snapshot?.metrics?.latest.hardwareSampledAt ?? snapshot?.metrics?.lastSeenAt ?? new Date().toISOString()
+    ),
+    [snapshot?.metrics?.latest.fans, snapshot?.metrics?.series?.fans, snapshot?.metrics?.latest.hardwareSampledAt, snapshot?.metrics?.lastSeenAt]
   );
   const temperatureSources = Array.isArray(backend?.temperatureSources) ? backend.temperatureSources : [];
   const temperatureSensorBackends = Array.isArray(backend?.temperatureSensorBackends) ? backend.temperatureSensorBackends : [];
   const metricDraftKey = enabledMetrics.join("|");
   const probeDraftKey = configuredProbes.map((selection) => `${selection.target}:${selection.provider}:${selection.enabled}`).join("|");
-  const deviceDraftKey = JSON.stringify(config?.enabledDeviceIds ?? {});
-  const instanceMetricDraftKey = JSON.stringify(config?.instanceMetricConfig ?? {});
+  // These keys only need to detect a change in the server document, and they run
+  // on every render. A stable structural key avoids re-serialising both objects
+  // on each poll; it keeps the same "did the server config change" semantics.
+  const deviceDraftKey = useMemo(() => stableObjectKey(config?.enabledDeviceIds), [config?.enabledDeviceIds]);
+  const instanceMetricDraftKey = useMemo(() => stableObjectKey(config?.instanceMetricConfig), [config?.instanceMetricConfig]);
   const runtimeDraftKey = `${config?.connection.hostname ?? ""}|${config?.sampling.normalIntervalSeconds ?? 30}|${config?.sampling.slowIntervalSeconds ?? 30}`;
   useEffect(() => {
     selectedMetricsRef.current = enabledMetrics;

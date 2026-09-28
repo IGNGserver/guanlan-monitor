@@ -42,11 +42,11 @@ const (
 // The configuration contract lives in agents/internal/agentconfig so the
 // backend, the helper commands and the collector cannot drift apart.
 type (
-	agentConnectionConfig     = agentconfig.Connection
-	agentSamplingConfig       = agentconfig.Sampling
-	agentProbeSelection       = agentconfig.ProbeSelection
-	agentLocalConfig          = agentconfig.LocalConfig
-	probePlanSupport          = agentconfig.ProbePlan
+	agentConnectionConfig = agentconfig.Connection
+	agentSamplingConfig   = agentconfig.Sampling
+	agentProbeSelection   = agentconfig.ProbeSelection
+	agentLocalConfig      = agentconfig.LocalConfig
+	probePlanSupport      = agentconfig.ProbePlan
 )
 
 type agentCloudConfigSyncPayload struct {
@@ -214,6 +214,10 @@ type server struct {
 	temperatureProbeError     string
 	stopRequested             bool
 	autoRestarting            bool
+	// pendingCache memoises the spool scan keyed on (size, mtime). The scan is
+	// O(spool) and runs on every /api/state and /api/status request while holding
+	// the mutex; the fingerprint lets an unchanged spool reuse the last result.
+	pendingCache *collectorPendingStateFile
 }
 
 type cloudSyncStateFile struct {
@@ -227,6 +231,17 @@ type collectorPendingStateFile struct {
 	PendingBytes    int64  `json:"pendingBytes"`
 	OldestSampledAt string `json:"oldestSampledAt,omitempty"`
 	LastUploadError string `json:"lastUploadError,omitempty"`
+	// SpoolSize/SpoolModTime are the fingerprint of the JSONL spool this result
+	// was computed from. They persist in the collector-written state file so a
+	// restart does not force one extra full scan before the memo can be used.
+	SpoolSize    int64 `json:"spoolSize,omitempty"`
+	SpoolModTime int64 `json:"spoolModTime,omitempty"`
+}
+
+// pendingFingerprint identifies one version of the spool file.
+type pendingFingerprint struct {
+	size    int64
+	modTime int64
 }
 
 const (
@@ -376,7 +391,7 @@ func fileExists(path string) bool {
 }
 
 func (s *server) snapshotLocked() backendState {
-	pending := readCollectorPendingState(s.pendingStatePath)
+	pending := s.snapshotLockedPending()
 	return backendState{
 		Running:                        s.cmd != nil && s.cmd.Process != nil,
 		BackendStartedAt:               s.backendStartedAt.Format(time.RFC3339),
@@ -421,31 +436,59 @@ func (s *server) snapshotLocked() backendState {
 	}
 }
 
-func readCollectorPendingState(path string) collectorPendingStateFile {
+func (s *server) readCollectorPendingState() collectorPendingStateFile {
+	path := s.pendingStatePath
 	var state collectorPendingStateFile
+	haveState := false
 	if raw, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(raw, &state)
-	} else if !os.IsNotExist(err) {
-		return state
+		if json.Unmarshal(raw, &state) == nil {
+			haveState = true
+		}
 	}
 
-	// The state file is only a cache. Reconcile the displayed count with the
-	// JSONL spool so an interrupted collector cannot leave the desktop showing
-	// an old queue such as 7711 after the spool has already been drained.
 	pendingPath := strings.TrimSuffix(path, ".state.json")
-	spool, spoolErr := os.ReadFile(pendingPath)
-	if spoolErr != nil {
-		if os.IsNotExist(spoolErr) {
+	info, statErr := os.Stat(pendingPath)
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
 			state.PendingCount = 0
 			state.PendingBytes = 0
 			state.OldestSampledAt = ""
+			state.SpoolSize = 0
+			state.SpoolModTime = 0
 		}
+		s.pendingCache = &state
+		return state
+	}
+
+	fingerprint := pendingFingerprint{size: info.Size(), modTime: info.ModTime().UnixNano()}
+	// The state file is only a cache. Reconcile the displayed count with the
+	// JSONL spool so an interrupted collector cannot leave the desktop showing
+	// an old queue such as 7711 after the spool has already been drained.
+	//
+	// The spool can hold up to 64 MiB, and this runs several times a minute from
+	// the desktop; the size/mtime fingerprint lets an unchanged spool reuse the
+	// last scan instead of re-reading and JSON-parsing every line under the mutex.
+	if haveState && state.SpoolSize == fingerprint.size && state.SpoolModTime == fingerprint.modTime {
+		s.pendingCache = &state
+		return state
+	}
+	if s.pendingCache != nil && s.pendingCache.SpoolSize == fingerprint.size && s.pendingCache.SpoolModTime == fingerprint.modTime {
+		// The state file was missing or unreadable, but the spool has not changed
+		// since our last scan: the memoised counts are still correct.
+		return *s.pendingCache
+	}
+
+	spool, spoolErr := os.ReadFile(pendingPath)
+	if spoolErr != nil {
+		s.pendingCache = &state
 		return state
 	}
 
 	state.PendingCount = 0
 	state.PendingBytes = int64(len(spool))
 	state.OldestSampledAt = ""
+	state.SpoolSize = fingerprint.size
+	state.SpoolModTime = fingerprint.modTime
 	for _, line := range bytes.Split(spool, []byte{'\n'}) {
 		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
@@ -462,7 +505,20 @@ func readCollectorPendingState(path string) collectorPendingStateFile {
 			state.OldestSampledAt = entry.SampledAt
 		}
 	}
+	s.pendingCache = &state
 	return state
+}
+
+func (s *server) snapshotLockedPending() collectorPendingStateFile {
+	if s.pendingCache != nil {
+		// A cheap stat is enough to know whether the memoised result still applies.
+		if info, err := os.Stat(strings.TrimSuffix(s.pendingStatePath, ".state.json")); err == nil {
+			if s.pendingCache.SpoolSize == info.Size() && s.pendingCache.SpoolModTime == info.ModTime().UnixNano() {
+				return *s.pendingCache
+			}
+		}
+	}
+	return s.readCollectorPendingState()
 }
 
 func validateListenAddress(raw, token string) error {

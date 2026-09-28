@@ -577,6 +577,10 @@ type pendingStateFile struct {
 	OldestSampledAt string `json:"oldestSampledAt,omitempty"`
 	UpdatedAt       string `json:"updatedAt"`
 	LastUploadError string `json:"lastUploadError,omitempty"`
+	// Fingerprint of the JSONL spool these counts were computed from, so the
+	// desktop backend can trust the cache without rescanning the spool.
+	SpoolSize    int64 `json:"spoolSize,omitempty"`
+	SpoolModTime int64 `json:"spoolModTime,omitempty"`
 }
 
 type pendingStore struct {
@@ -989,6 +993,13 @@ func (s *pendingStore) writeState() {
 	}
 	if len(entries) > 0 {
 		state.OldestSampledAt = entries[0].SampledAt
+	}
+	// Record the spool fingerprint so the backend can report pending counts from
+	// the cache file without re-reading and JSON-parsing the whole spool on every
+	// /api/state request. Written after the spool is consistent.
+	if info, statErr := os.Stat(s.path); statErr == nil {
+		state.SpoolSize = info.Size()
+		state.SpoolModTime = info.ModTime().UnixNano()
 	}
 	raw, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {

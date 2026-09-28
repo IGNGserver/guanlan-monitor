@@ -961,6 +961,11 @@ export function DeviceChartCells({ section, context }: { section: DashboardSecti
 
 function limitTileSeries(tile: DeviceChartTile, chartPointLimit: number): DeviceChartTile {
   if (!tile.series?.length) return tile;
+  // `series` is rebuilt on every render, but the point arrays it references come
+  // from the snapshot. When every array is already within the limit — the common
+  // case — the tile needs no clipped copy, so its point arrays keep their
+  // identity and the chart's content-keyed memo survives the poll.
+  if (tile.series.every((item) => item.points.length <= chartPointLimit)) return tile;
   return {
     ...tile,
     series: tile.series.map((item) => ({ ...item, points: limitSamplePoints(item.points, chartPointLimit) }))
