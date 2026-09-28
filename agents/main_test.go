@@ -496,6 +496,45 @@ func TestHardwareSensorCacheRejectsStaleData(t *testing.T) {
 	}
 }
 
+// The inventory cache is what removes a per-cycle hardware probe. A zero
+// collectedAt must read as expired so the first cycle fills it, and a fingerprint
+// change must invalidate it so a hot-plug is not reported stale for a full TTL.
+func TestHardwareAssetCacheExpiryAndFingerprint(t *testing.T) {
+	cache := hardwareAssetCache{}
+	if !cache.expiredFor(hardwareAssetCacheTTL) {
+		t.Fatal("an empty cache must report as expired")
+	}
+	cache.collectedAt = time.Now()
+	if cache.expiredFor(time.Minute) {
+		t.Fatal("a freshly filled cache must not report as expired")
+	}
+	if cache.expiredFor(time.Nanosecond) == false {
+		t.Fatal("a cache older than its ttl must report as expired")
+	}
+
+	before := slowMetrics{disks: []diskDeviceStats{{ID: "a"}}, networkInterfaces: []networkInterfaceStats{{ID: "b"}}}
+	after := slowMetrics{disks: []diskDeviceStats{{ID: "a"}, {ID: "c"}}, networkInterfaces: []networkInterfaceStats{{ID: "b"}}}
+	if deviceReferenceCount(before) == deviceReferenceCount(after) {
+		t.Fatal("adding a device must change the inventory fingerprint")
+	}
+}
+
+// The collector reports the probes it actually started. Counters are consumed on
+// read so a payload carries this cycle's spawns, not a running total.
+func TestProbeSpawnCountersAreConsumedAndReset(t *testing.T) {
+	takeProbeSpawnCounts()
+	recordProbeSpawn("powershell")
+	recordProbeSpawn("powershell")
+	recordProbeSpawn("netsh.exe")
+	counts := takeProbeSpawnCounts()
+	if counts["powershell"] != 2 || counts["netsh.exe"] != 1 {
+		t.Fatalf("unexpected spawn counts: %#v", counts)
+	}
+	if next := takeProbeSpawnCounts(); next != nil {
+		t.Fatalf("counters must reset after being consumed, got %#v", next)
+	}
+}
+
 func TestCommandArgument(t *testing.T) {
 	if got := commandArgument([]string{"--output", `C:\ProgramData\sensor.json`}, "--output"); got != `C:\ProgramData\sensor.json` {
 		t.Fatalf("unexpected command argument: %q", got)
