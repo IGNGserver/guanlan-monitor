@@ -25,8 +25,8 @@ export function PlatformShortcuts() {
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">键盘操作</span><h3>快捷键参考</h3></div><CopyButton text={rowText} label="复制全部快捷键" /></div>
         <div className="workspace-shortcut-list">{rows.map(({ keys, description }) => <div className="workspace-shortcut-row" key={keys}><kbd>{keys}</kbd><span>{description}</span></div>)}</div>
-        {!nativeWindow && <p className="workspace-surface__description"><Icon name="about" size={15} />浏览器也有自己的刷新快捷键；观澜在聚焦控制台时会接管 <kbd>F5</kbd> 与 <kbd>Ctrl + R</kbd>，避免页面被整页重载。</p>}
-        {nativeWindow && <p className="workspace-surface__description"><Icon name="about" size={15} />此处只列出观澜自有的快捷键；窗口隐藏到托盘后可从托盘图标重新打开。</p>}
+        {!nativeWindow && <div className="workspace-inline-note"><Icon name="about" size={15} />浏览器也有自己的刷新快捷键；观澜在聚焦控制台时会接管 <kbd>F5</kbd> 与 <kbd>Ctrl + R</kbd>，避免页面被整页重载。</div>}
+        {nativeWindow && <div className="workspace-inline-note"><Icon name="about" size={15} />此处只列出观澜自有的快捷键；窗口隐藏到托盘后可从托盘图标重新打开。</div>}
       </Surface>
     </div>
   );
