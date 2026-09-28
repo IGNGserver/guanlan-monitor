@@ -8,7 +8,7 @@ import { M3Checkbox, M3Chip, M3SegmentedControl, M3Select, M3TextField } from ".
 import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
 import { CarbonTimeSeriesChart } from "../CarbonCharts";
 import { UNAVAILABLE_METRIC_LABEL, formatBytes, formatDate, formatPercent, formatTemperature } from "../formatters";
-import { dateValueOf } from "../sampleTime";
+import { dateValueOf } from "../sampleTime.ts";
 
 const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: string }).src;
 

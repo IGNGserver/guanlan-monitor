@@ -9,15 +9,15 @@ import type {
   MeterChartOptions
 } from "@carbon/charts-react";
 import type { SamplePoint } from "@dsc/shared";
-import { ChartTouchGestureOverlay } from "./ChartTouchGestureOverlay";
-import { dateValueOf } from "./sampleTime";
+import { ChartTouchGestureOverlay } from "./ChartTouchGestureOverlay.tsx";
+import { dateValueOf } from "./sampleTime.ts";
 import {
   chartAnimationsEnabled,
   partsFingerprint,
   prefersReducedMotion,
   seriesFingerprint,
   seriesTimeSpan
-} from "./chartIdentity";
+} from "./chartIdentity.ts";
 
 export type CarbonSeries = {
   label: string;

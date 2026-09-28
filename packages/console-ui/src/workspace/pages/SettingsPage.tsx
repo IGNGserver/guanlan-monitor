@@ -6,7 +6,7 @@ import { Button, CopyButton, Icon, StatusLabel, Surface, SummaryRow } from "../u
 import { formatDate, formatPreciseDateTime } from "../formatters";
 import { selectLinkLabel, selectSnapshotSource, liveLinkLabel } from "../selectors";
 import { formatWorkspaceError } from "../context/WorkspaceTypes";
-import { stableObjectKey } from "../configKeys";
+import { stableObjectKey } from "../configKeys.ts";
 import { visibleSettingsNavigation } from "../shell/PrimaryNavigation";
 import { PlatformShortcuts } from "../shell/PlatformShortcuts";
 import {

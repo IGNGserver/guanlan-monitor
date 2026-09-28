@@ -1,4 +1,4 @@
-import { dateValueOf } from "./sampleTime";
+import { dateValueOf } from "./sampleTime.ts";
 
 /**
  * Pure identity/format helpers for the charts.

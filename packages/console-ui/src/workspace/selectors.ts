@@ -1,5 +1,5 @@
 import type { ConsoleSnapshot, DeviceMetricKey, DeviceSummary } from "@dsc/shared";
-import { dateValueOf } from "./sampleTime";
+import { dateValueOf } from "./sampleTime.ts";
 
 export type DeviceDirectoryStatus = "all" | "online" | "offline";
 export type DeviceDirectorySort = "order" | "name" | "cpu" | "memory" | "lastSeen";

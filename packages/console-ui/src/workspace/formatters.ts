@@ -1,5 +1,5 @@
 import type { SamplePoint } from "@dsc/shared";
-import { dateValueOf } from "./sampleTime";
+import { dateValueOf } from "./sampleTime.ts";
 
 export const UNAVAILABLE_METRIC_LABEL = "无法获取数据";
 
