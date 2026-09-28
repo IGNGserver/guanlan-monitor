@@ -533,7 +533,6 @@ const CURRENT_VERSION_FALLBACK = "开发版本";
  * that the Agent credential was removed before the snapshot ever reached here.
  */
 function AgentDiagnosticsSurface({ backend, appVersion }: { backend: DesktopAgentBackendState; appVersion: string }) {
-  const [expanded, setExpanded] = useState(false);
   const runtime = describeAgentRuntime(backend);
   const upload = describeAgentUpload(backend);
   const storage = describeAgentStorage(backend);
@@ -552,10 +551,10 @@ function AgentDiagnosticsSurface({ backend, appVersion }: { backend: DesktopAgen
         <div className="workspace-detail-list">{upload.map((item) => <SummaryRow key={item.label} label={item.label} value={item.value} />)}</div>
       </div>
       {issue && <div className="workspace-inline-note" role="status"><Icon name="warning" size={15} />{issue.label}：{issue.detail}{issue.at ? `（${formatDate(issue.at)}）` : ""}{issue.recoveredAt ? ` · 已恢复于 ${formatDate(issue.recoveredAt)}` : ""}</div>}
-      <details className="workspace-advanced" onToggle={(event) => setExpanded(event.currentTarget.open)}>
+      <details className="workspace-advanced">
         <summary className="workspace-advanced__summary">
           <span className="workspace-advanced__copy"><strong>日志与配置文件</strong><small>诊断导出包含这四处的路径与是否存在。</small></span>
-          <Icon name={expanded ? "chevronUp" : "chevron"} size={16} />
+          <Icon name="chevron" size={16} />
         </summary>
         <div className="workspace-settings-stack workspace-advanced__body">
           <div className="workspace-detail-list">{storage.map((item) => <SummaryRow key={item.label} label={item.label} value={item.value} />)}</div>

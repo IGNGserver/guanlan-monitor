@@ -89,14 +89,16 @@ export function useWorkspaceMutations({
   const adapterDragStart = useCallback((screenX: number, screenY: number) => adapter.windowDragStart?.(screenX, screenY), [adapter]);
   const adapterDragMove = useCallback((screenX: number, screenY: number) => adapter.windowDragMove?.(screenX, screenY), [adapter]);
   const adapterDragEnd = useCallback(() => adapter.windowDragEnd?.(), [adapter]);
-  const login = useCallback(async (accessKey: string) => {
+  const login = useCallback(async (accessKey: string): Promise<boolean> => {
     mutationEpochRef.current += 1;
     try {
       const nextSnapshot = await adapter.login(accessKey);
       setSnapshot(nextSnapshot);
       setNotice({ tone: "success", text: "已连接中枢" });
+      return true;
     } catch (loginError) {
       setNotice({ tone: "error", text: `连接失败：${formatWorkspaceError(loginError, "认证失败")}` });
+      return false;
     }
   }, [adapter, mutationEpochRef, setNotice, setSnapshot]);
   const logout = useCallback(

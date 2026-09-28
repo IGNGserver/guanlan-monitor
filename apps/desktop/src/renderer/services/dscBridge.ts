@@ -9,6 +9,7 @@ import type {
 } from "@dsc/shared";
 import {
   createFallbackWindowMaterialCapabilities,
+  type WindowMaterial,
   type WindowMaterialBridge,
   type WindowMaterialCapabilities
 } from "../../window-material";
@@ -32,6 +33,15 @@ class SafeDscBridge implements DesktopRendererBridge, WindowMaterialBridge {
     }
     return null;
   }
+
+  /**
+   * Seeded from the preload bridge when it is present. The fallback adapter is
+   * only used before the bridge answers, where there is no native window to make
+   * translucent, so "opaque" is the honest default rather than an assumption.
+   */
+  readonly initialWindowMaterial: WindowMaterial = typeof window !== "undefined" && window.dsc
+    ? window.dsc.initialWindowMaterial
+    : "opaque";
 
   async getSnapshot(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot> {
     if (this.bridge) {

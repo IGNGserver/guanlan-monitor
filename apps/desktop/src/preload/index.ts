@@ -9,9 +9,10 @@ import type {
   DesktopStartupSettings
 } from "@dsc/shared";
 import { IPC_CHANNELS } from "../ipc-contract.js";
-import type { WindowMaterialBridge } from "../window-material.js";
+import { parseWindowMaterialArgument, type WindowMaterialBridge } from "../window-material.js";
 
 const bridge: DesktopRendererBridge & WindowMaterialBridge = {
+  initialWindowMaterial: parseWindowMaterialArgument(process.argv),
   getSnapshot: (request?: DesktopSnapshotRequest) => ipcRenderer.invoke(IPC_CHANNELS.getSnapshot, request),
   refresh: (request?: DesktopSnapshotRequest) => ipcRenderer.invoke(IPC_CHANNELS.refresh, request),
   updateLocalConfig: (patch: DesktopConfigPatch) => ipcRenderer.invoke(IPC_CHANNELS.updateLocalConfig, patch),

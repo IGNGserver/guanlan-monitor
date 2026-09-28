@@ -8,19 +8,17 @@ import { fallbackRuntimeProfile, fallbackWindowMaterialCapabilities } from "../s
 import { startVisiblePolling } from "../helpers/visiblePolling";
 import { resolveInteractionScale } from "../helpers/density";
 import { parseWorkspaceHash, serializeWorkspaceRoute, type WorkspaceRoute } from "./routes";
-import { formatWorkspaceError as formatError, type HubViewModel, type WorkspaceContextValue } from "./context/WorkspaceTypes";
+import { formatWorkspaceError as formatError, type WorkspaceContextValue } from "./context/WorkspaceTypes";
 import { useWorkspaceMutations } from "./context/useWorkspaceMutations";
 import { useWorkspaceUiState } from "./context/useWorkspaceUiState";
 import { confirmDiscardDeviceOrderDraft } from "./deviceOrderDraft";
 import { selectSnapshotSource } from "./selectors";
 
 export type { SettingsSection, WorkspaceRoute } from "./routes";
-export type { HubViewModel } from "./context/WorkspaceTypes";
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute?: WorkspaceRoute; children: React.ReactNode }> = ({ adapter, initialRoute, children }) => {
-  const isPreview = false;
   const {
     route,
     setRoute,
@@ -259,10 +257,14 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
 
   useEffect(() => {
     let cancelled = false;
+    // Seed from the material the native window was actually created with, then
+    // refresh it from the capability call. Writing "opaque" first and correcting
+    // it asynchronously repainted the whole token set and flashed on Mica.
+    const seeded = adapter.initialWindowMaterial ?? "opaque";
+    const root = document.documentElement;
+    root.dataset.dscMaterial = seeded;
+    localStorage.removeItem("dsc-window-material");
     const syncWindowMaterial = async () => {
-      const root = document.documentElement;
-      root.dataset.dscMaterial = "opaque";
-      localStorage.removeItem("dsc-window-material");
       try {
         const capabilities = adapter.getWindowMaterialCapabilities
           ? await adapter.getWindowMaterialCapabilities()
@@ -271,7 +273,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
         root.dataset.dscMaterial = capabilities.activeMaterial;
       } catch {
         if (cancelled) return;
-        root.dataset.dscMaterial = "opaque";
+        // Keep the seeded value: a failed probe is not evidence of "opaque".
+        root.dataset.dscMaterial = seeded;
       }
     };
     void syncWindowMaterial();
@@ -354,21 +357,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
 
   const allDevices = snapshot?.devices ?? [];
   const devices = allDevices;
-  const filteredDevices = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return devices;
-    return devices.filter((device) => [device.hostname, device.deviceId, device.os].some((value) => value.toLowerCase().includes(query)));
-  }, [devices, searchQuery]);
-  const endpoint = snapshot?.localBackend?.config.connection.serverUrl || "未配置地址";
   const snapshotSource = snapshot ? selectSnapshotSource(snapshot, allDevices) : "unknown";
-  const hubState: HubViewModel["state"] = snapshotSource === "live"
-    ? "online"
-    : snapshotSource === "cache"
-      ? "cached"
-      : snapshotSource === "unknown"
-        ? "offline"
-        : "unknown";
-  const hubs = useMemo<HubViewModel[]>(() => [{ id: "primary", name: "中枢", endpoint, devices: allDevices, state: hubState }], [allDevices, endpoint, hubState]);
   const selectedDevice = allDevices.find((device) => device.deviceId === selectedDeviceId) ?? null;
   const closeWindowSafely = useCallback(async () => {
     if (!confirmDiscardDeviceOrderDraft()) return;
@@ -389,7 +378,6 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     navigate,
     openSettings,
     closeSettings,
-    canGoBack: route.kind !== "overview",
     sidebarCollapsed,
     setSidebarCollapsed,
     snapshot,
@@ -398,10 +386,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     mutationPending,
     error,
     notice,
-    hubs,
     devices,
     allDevices,
-    filteredDevices,
     selectedDevice,
     metricsWindow,
     setMetricsWindow,
@@ -439,7 +425,6 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     logout,
     disconnectAgent,
     openExternal,
-    isPreview,
     capabilities: adapter.capabilities,
     orientation,
     isTouch,
@@ -461,10 +446,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     mutationPending,
     error,
     notice,
-    hubs,
     devices,
     allDevices,
-    filteredDevices,
     selectedDevice,
     metricsWindow,
     setMetricsWindow,

@@ -40,6 +40,11 @@ export interface ConsoleAdapter extends ConsoleReadPort, ConsoleSessionPort, Con
   windowDragMove?(screenX: number, screenY: number): void;
   windowDragEnd?(): void;
   getWindowMaterialCapabilities?(): Promise<WindowMaterialCapabilities>;
+  /**
+   * The material the native window was created with. Read synchronously so the
+   * first paint uses the right token set; absent on the web shell.
+   */
+  readonly initialWindowMaterial?: WindowMaterial;
   getRuntimeProfile?(): Promise<DesktopRuntimeProfile>;
 }
 

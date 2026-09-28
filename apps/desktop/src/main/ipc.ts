@@ -58,9 +58,16 @@ export function registerIpc(
   handle(IPC_CHANNELS.windowToggleMaximize, () => {
     const window = getWindow();
     if (!window || window.isDestroyed()) return false;
-    if (window.isMaximized()) window.unmaximize();
-    else window.maximize();
-    return window.isMaximized();
+    // Report the intended state, not `isMaximized()` read straight after the
+    // call: on Windows the restored/maximized flag is not settled synchronously,
+    // so the renderer's toggle icon could disagree with the real window until the
+    // next unrelated click.
+    if (window.isMaximized()) {
+      window.unmaximize();
+      return false;
+    }
+    window.maximize();
+    return true;
   });
   ipcMain.on(IPC_CHANNELS.windowDragStart, (event, screenX: unknown, screenY: unknown) => {
     if (!isTrustedIpcSender(event, getWindow)) return;
