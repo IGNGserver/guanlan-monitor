@@ -250,7 +250,7 @@ fi
 # An existing initialized volume may retain a legacy root marker. It is
 # tolerated only when this migration recovered that exact live credential;
 # the migration still refuses unrelated weak credentials.
-mysql_root_password="$(require_strong_secret MYSQL_ROOT_PASSWORD 16 "$legacy_mysql_root_recovered")"
+mysql_root_password="$(require_strong_secret MYSQL_ROOT_PASSWORD "$mysql_password_minimum" "$legacy_mysql_root_recovered")"
 mysql_password="$(require_strong_secret MYSQL_PASSWORD "$mysql_password_minimum")"
 mysql_database="$(unquote "$(read_env MYSQL_DATABASE)")"
 mysql_user="$(unquote "$(read_env MYSQL_USER)")"
