@@ -1,11 +1,29 @@
-import type { NextConfig } from "next";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const releaseVersion = readFileSync(join(process.cwd(), "..", "..", "VERSION"), "utf8").trim();
 const releaseChannel = process.env.DSC_RELEASE_CHANNEL === "stable" ? "stable" : "test";
 
-const nextConfig: NextConfig = {
+/** @type {import("next").NextConfig} */
+const nextConfig = {
+  // Produce a self-contained server under .next/standalone so the deploy image
+  // only ships the traced runtime instead of the whole workspace node_modules.
+  output: "standalone",
+  // The workspace renders plain <img> assets only; Next image optimization
+  // (and its ~16 MB sharp/libvips native payload) is never exercised.
+  images: { unoptimized: true },
+  // Drop build-only tooling and unused native image deps that Next traces into
+  // the standalone runtime. This config is .mjs precisely so the runtime does
+  // not need TypeScript to read it.
+  outputFileTracingExcludes: {
+    "*": [
+      "**/node_modules/typescript/**",
+      "**/node_modules/sass/**",
+      "**/node_modules/caniuse-lite/**",
+      "**/node_modules/sharp/**",
+      "**/node_modules/@img/**"
+    ]
+  },
   typedRoutes: true,
   transpilePackages: ["@dsc/console-ui", "@dsc/shared"],
   async headers() {

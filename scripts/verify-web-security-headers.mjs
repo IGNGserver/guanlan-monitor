@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const config = fs.readFileSync(path.join(root, "apps", "web", "next.config.ts"), "utf8");
+const config = fs.readFileSync(path.join(root, "apps", "web", "next.config.mjs"), "utf8");
 
 for (const header of [
   "Content-Security-Policy",

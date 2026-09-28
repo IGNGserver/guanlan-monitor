@@ -3,8 +3,10 @@ node_modules
 dist
 .turbo
 .git
+.gitignore
 .env
-.env.local
+.env.*
+!.env.example
 coverage
 tmp
 logs
@@ -12,6 +14,17 @@ release
 *.log
 *.tsbuildinfo
 .codex
+.codex-artifacts
 .run
+.nas-backups
+data
+# Non-Hub workspaces and clients are never part of the server/web images.
 android
+ios
 agents
+windows-agent
+apps/desktop
+tools
+docs
+deploy
+.github

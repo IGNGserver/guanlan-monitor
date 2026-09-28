@@ -39,6 +39,7 @@ jobs:
           pnpm verify:linux-package
           pnpm verify:windows-hardware
           pnpm verify:web-security-headers
+          pnpm verify:hub-image
           bash scripts/test-compose-env-migration.sh
 
       - name: Verify shared UI boundaries and helpers
