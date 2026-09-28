@@ -97,8 +97,22 @@ server 走 `pnpm deploy` 自包含导出。
 | server 依赖闭包测试 | — | 109 包 |
 | 运行时启动 | `pnpm … next start` | `node`（无需 pnpm/corepack/TS） |
 
-镜像压缩层预计由 **~188 / ~170 MiB** 降至约 **~90 / ~83 MiB**
-（基础层 58 MiB + standalone/运行时），**降幅约 50%+**；拉取与落地占用同步下降。
+### 发布实测（v3.0.126，从 GHCR 拉取真实 manifest）
+
+| 镜像 | 优化前 | 优化后 | 降幅 |
+| --- | ---: | ---: | ---: |
+| `device-state-console-web` | 187.8 MiB | **63.7 MiB** | **−66%** |
+| `device-state-console-server` | 169.6 MiB | **59.0 MiB** | **−65%** |
+
+拆到应用层（扣除共享的 `node:22-alpine` 基础层约 55 MiB）：
+
+| 应用层 | 优化前 | 优化后 | 降幅 |
+| --- | ---: | ---: | ---: |
+| web | ~140 MiB | **8.6 MiB** | **−94%** |
+| server | ~122 MiB | **3.9 MiB** | **−97%** |
+
+基础层 55.1 MiB（含 Node.js 运行时）为必需项，两个镜像共享同一 digest，
+在 NAS 上只存一份。拉取与落地占用同步下降。
 
 ### 功能回归验证（本地实跑）
 
