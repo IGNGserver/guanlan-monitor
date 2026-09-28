@@ -214,6 +214,11 @@ html,
 body,
 #root {
   background: var(--workspace-bg);
+  scrollbar-gutter: stable;
+}
+
+.workspace-content {
+  scrollbar-gutter: stable;
 }
 
 * {
