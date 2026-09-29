@@ -501,9 +501,15 @@ type agentState struct {
 // hardwareAssetCache holds hardware inventory that only changes on a hot-plug
 // or reboot. It is refreshed on a TTL so a steady-state cycle does not re-query
 // memory module speeds, NIC models and disk model/vendor every 60 seconds.
+//
+// The GPU adapter records ride along because the same PowerShell inventory query
+// produces them: they are what the LHM snapshot alignment, the adapter fallback
+// and the GPU performance fallback all need, and querying them separately cost
+// three extra process spawns per cycle.
 type hardwareAssetCache struct {
 	collectedAt          time.Time
 	metadata             windowsHardwareMetadata
+	gpuAdapters          []windowsGPUAdapterRecord
 	referenceDeviceCount int
 }
 
@@ -2058,18 +2064,28 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 		result.networkInterfaces = networkInterfaces
 	}
 
-	hardware := collectHardwareSensors()
+	// The Windows inventory is one PowerShell run per TTL and feeds three
+	// consumers below (the LHM snapshot alignment, the disk/network metadata and
+	// the GPU adapter projections), so it is resolved once, before them.
+	refreshAssets := runtime.GOOS == "windows" && assets.expiredFor(hardwareAssetCacheTTL)
+	if refreshAssets {
+		metadata, adapters := collectWindowsInventory()
+		assets.metadata = metadata
+		assets.gpuAdapters = adapters
+		assets.collectedAt = time.Now().UTC()
+	}
+
+	hardware := collectHardwareSensors(assets.gpuAdapters)
 	result.hardwareSampledAt = time.Now().UTC()
 	temperatureSensors := append([]temperatureSensorReading{}, hardware.temperatureSensors...)
 	// Static inventory (memory modules, NIC models, disk model/vendor, CPU
 	// frequency helper) is queried from PowerShell only; refresh it on a TTL and
 	// keep the previous maps otherwise, so the per-cycle probe count drops without
 	// losing hot-plug detection beyond the TTL.
-	windowsMetadata := assets.metadata
-	refreshAssets := runtime.GOOS == "windows" && assets.expiredFor(hardwareAssetCacheTTL)
-	if refreshAssets {
-		windowsMetadata = collectWindowsHardwareMetadata()
-	}
+	//
+	// The per-cycle WiFi reading is overlaid here rather than stored in the cache:
+	// it is an observation, not inventory.
+	windowsMetadata := applyWindowsWifiSignals(assets.metadata)
 	memorySpeedMHz := windowsMetadata.MemorySpeedMHz
 	memorySlotCount := windowsMetadata.MemorySlotCount
 	memoryFormFactor := windowsMetadata.MemoryFormFactor
@@ -2117,9 +2133,6 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 	// a re-query.
 	currentDeviceCount := deviceReferenceCount(result)
 	previousDeviceCount := assets.referenceDeviceCount
-	if refreshAssets {
-		assets = hardwareAssetCache{collectedAt: time.Now().UTC(), metadata: windowsMetadata}
-	}
 	if previousDeviceCount != 0 && previousDeviceCount != currentDeviceCount &&
 		time.Since(assets.collectedAt) >= hardwareAssetMinRefreshInterval {
 		assets.collectedAt = time.Time{}
@@ -2128,8 +2141,8 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 
 	var gpus []gpuDeviceStats
 	if runtime.GOOS == "windows" {
-		baseAdapters := collectWindowsGPUAdapters()
-		perfGpus := collectWindowsGPUPerformance()
+		baseAdapters := windowsGPUAdaptersFromRecords(assets.gpuAdapters)
+		perfGpus := collectWindowsGPUPerformance(assets.gpuAdapters)
 		lhmGpus := hardware.gpus
 		nvidiaGpus := collectNvidiaGPUs()
 		appendGPUTemperatureSensors(&temperatureSensors, nvidiaGpus, "nvidia-smi")
@@ -3070,7 +3083,10 @@ type hardwareSensorMetrics struct {
 }
 
 // LibreHardwareMonitor exposes live clocks, including CPU boost clocks, where WMI often reports a nominal value.
-func collectHardwareSensors() hardwareSensorMetrics {
+//
+// `gpuAdapters` is the shared inventory's adapter list, used to stamp the LHM
+// snapshots with PNP ids without a second Win32_VideoController query.
+func collectHardwareSensors(gpuAdapters []windowsGPUAdapterRecord) hardwareSensorMetrics {
 	if runtime.GOOS == "linux" {
 		return collectLinuxHardwareSensors()
 	}
@@ -3107,7 +3123,7 @@ func collectHardwareSensors() hardwareSensorMetrics {
 	// A fresh cache is the same data from the same probe, read from disk instead
 	// of spawned again; an absent or stale cache falls through to the live probe.
 	if snapshots, updatedAt, ok := cachedHardwareSnapshots(hardwareSensorCachePath()); ok {
-		aligned := alignWindowsHardwareGPUIdentifiers(snapshots)
+		aligned := alignWindowsHardwareGPUIdentifiers(snapshots, gpuAdapters)
 		metrics := mapHardwareSensors(aligned)
 		metrics.sensorBackends = []sensorBackendStatus{{
 			ID:     "librehardwaremonitor",
@@ -3126,7 +3142,7 @@ func collectHardwareSensors() hardwareSensorMetrics {
 	// a fallback for future compatible monitor libraries.
 	powerShellSnapshots, powerShellErr := collectWindowsHardwareSnapshotsWithPowerShell(dllPath)
 	if powerShellErr == nil {
-		powerShellSnapshots = alignWindowsHardwareGPUIdentifiers(powerShellSnapshots)
+		powerShellSnapshots = alignWindowsHardwareGPUIdentifiers(powerShellSnapshots, gpuAdapters)
 		metrics := applyPrivilegedHardwareTemperature(mapHardwareSensors(powerShellSnapshots))
 		metrics.sensorBackends = []sensorBackendStatus{{
 			ID:     "librehardwaremonitor",
@@ -3140,7 +3156,7 @@ func collectHardwareSensors() hardwareSensorMetrics {
 	probeDetail := hardwareMonitorLibraryDetail(dllPath) + "；PowerShell 传感器探针读取失败：" + powerShellErr.Error()
 	if probePath := resolveHardwareMonitorProbePath(); probePath != "" {
 		if snapshots, pawnIO, probeErr := collectWindowsHardwareSnapshotsWithDotnetProbe(probePath, dllPath); probeErr == nil {
-			snapshots = alignWindowsHardwareGPUIdentifiers(snapshots)
+			snapshots = alignWindowsHardwareGPUIdentifiers(snapshots, gpuAdapters)
 			metrics := applyPrivilegedHardwareTemperature(mapHardwareSensors(snapshots))
 			metrics.sensorBackends = []sensorBackendStatus{{
 				ID:     "librehardwaremonitor",
@@ -3804,20 +3820,31 @@ func collectWindowsHardwareSnapshotsWithDotnetProbe(probePath, dllPath string) (
 	return decodeHardwareProbeResult(output)
 }
 
-func alignWindowsHardwareGPUIdentifiers(snapshots []hardwareSensorSnapshot) []hardwareSensorSnapshot {
+// alignWindowsHardwareGPUIdentifiers stamps each GPU sensor snapshot with the
+// adapter's PNP device id, which is the stable identity the dashboard uses.
+//
+// `adapters` comes from the shared inventory cache so a steady-state cycle does
+// not query Win32_VideoController again. A nil slice means the caller has no
+// inventory (the one-shot detect path): the query is issued, because returning
+// unaligned snapshots there would silently drop the hardware identity.
+func alignWindowsHardwareGPUIdentifiers(snapshots []hardwareSensorSnapshot, adapters []windowsGPUAdapterRecord) []hardwareSensorSnapshot {
 	if runtime.GOOS != "windows" || len(snapshots) == 0 {
 		return snapshots
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
-	defer cancel()
-	commandText := `$ErrorActionPreference='Stop'; $rows=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ name=[string]$_.Name; pnpDeviceId=[string]$_.PNPDeviceID } }); @($rows) | ConvertTo-Json -Depth 3 -Compress`
-	output, err := runWindowsPowerShell(ctx, commandText)
-	if err != nil {
-		return snapshots
-	}
-	rows, err := decodeJSONList[windowsGPUAdapterRecord](bytes.TrimSpace(output))
-	if err != nil {
-		return snapshots
+	rows := adapters
+	if rows == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
+		defer cancel()
+		commandText := `$ErrorActionPreference='Stop'; $rows=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ name=[string]$_.Name; pnpDeviceId=[string]$_.PNPDeviceID } }); @($rows) | ConvertTo-Json -Depth 3 -Compress`
+		output, err := runWindowsPowerShell(ctx, commandText)
+		if err != nil {
+			return snapshots
+		}
+		decoded, err := decodeJSONList[windowsGPUAdapterRecord](bytes.TrimSpace(output))
+		if err != nil {
+			return snapshots
+		}
+		rows = decoded
 	}
 	for index := range snapshots {
 		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(snapshots[index].HardwareType)), "gpu") {
@@ -4485,33 +4512,60 @@ type windowsHardwareMetadataPayload struct {
 	} `json:"disks"`
 	GPUs []struct {
 		Name          string `json:"name"`
+		PNPDeviceID   string `json:"pnpDeviceId"`
 		DriverVersion string `json:"driverVersion"`
+		AdapterRAM    uint64 `json:"adapterRAM"`
 	} `json:"gpus"`
 }
 
-func collectWindowsHardwareMetadata() windowsHardwareMetadata {
-	result := windowsHardwareMetadata{
+// collectWindowsInventory gathers every piece of slow-changing Windows hardware
+// inventory in a single PowerShell run: memory modules, network adapters (with
+// their model), disks and GPU adapters (with PNP id, driver and adapter RAM).
+//
+// This replaced four separate PowerShell invocations that each queried an
+// overlapping subset — `Win32_VideoController` alone was read by the metadata,
+// the GPU adapter, the GPU performance and the snapshot-alignment queries, and
+// `Get-NetAdapter` by both the metadata and the network-model queries. One run
+// per TTL is what makes the inventory cache actually pay off.
+//
+// WiFi signal strength is deliberately not part of this document: it is a
+// per-cycle observation, not inventory, and folding it into the TTL cache would
+// freeze a live reading for up to the full TTL.
+func collectWindowsInventory() (windowsHardwareMetadata, []windowsGPUAdapterRecord) {
+	if runtime.GOOS != "windows" {
+		return emptyWindowsHardwareMetadata(), []windowsGPUAdapterRecord{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
+	defer cancel()
+	commandText := `$ErrorActionPreference='Stop'; $memory=@(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue | ForEach-Object { $form=switch([int]$_.FormFactor){8{'DIMM'}12{'SODIMM'}default{[string]$_.FormFactor}}; [pscustomobject]@{speedMHz=[double]$_.Speed; configuredClockMHz=[double]$_.ConfiguredClockSpeed; formFactor=$form} }); $adapters=@(Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; model=[string]$_.InterfaceDescription; linkSpeed=[string]$_.LinkSpeed; connectionType=[string]$_.MediaType} }); $disks=@(Get-Partition -ErrorAction SilentlyContinue | ForEach-Object { $disk=Get-Disk -Number $_.DiskNumber -ErrorAction SilentlyContinue; $key=if ($_.DriveLetter) { [string]$_.DriveLetter + ':' } elseif ($_.AccessPaths) { [string]$_.AccessPaths[0] } else { '' }; if ($key -and $disk) { [pscustomobject]@{name=$key; interfaceType=(([string]$disk.BusType) + ' ' + ([string]$disk.MediaType)).Trim(); model=[string]$disk.FriendlyName; vendor=[string]$disk.Manufacturer; physicalDevice=('\\.\PhysicalDrive' + [string]$disk.Number); diskNumber=[int]$disk.Number} } }); $gpus=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; pnpDeviceId=[string]$_.PNPDeviceID; driverVersion=[string]$_.DriverVersion; adapterRAM=[UInt64]([Math]::Max(0,[Int64]$_.AdapterRAM))} }); [pscustomobject]@{memory=@($memory); adapters=@($adapters); disks=@($disks); gpus=@($gpus)} | ConvertTo-Json -Depth 4 -Compress`
+	output, err := probeRunner(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
+	if err != nil {
+		return emptyWindowsHardwareMetadata(), []windowsGPUAdapterRecord{}
+	}
+
+	var payload windowsHardwareMetadataPayload
+	if err := json.Unmarshal(output, &payload); err != nil {
+		return emptyWindowsHardwareMetadata(), []windowsGPUAdapterRecord{}
+	}
+	return parseWindowsInventoryPayload(payload)
+}
+
+func emptyWindowsHardwareMetadata() windowsHardwareMetadata {
+	return windowsHardwareMetadata{
 		GpuDrivers:     map[string]string{},
 		Networks:       map[string]networkHardwareMetadata{},
 		DiskInterfaces: map[string]string{},
 		DiskMetadata:   map[string]diskHardwareMetadata{},
 	}
-	if runtime.GOOS != "windows" {
-		return result
-	}
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
-	defer cancel()
-	commandText := `$ErrorActionPreference='Stop'; $memory=@(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue | ForEach-Object { $form=switch([int]$_.FormFactor){8{'DIMM'}12{'SODIMM'}default{[string]$_.FormFactor}}; [pscustomobject]@{speedMHz=[double]$_.Speed; configuredClockMHz=[double]$_.ConfiguredClockSpeed; formFactor=$form} }); $adapters=@(Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; linkSpeed=[string]$_.LinkSpeed; connectionType=[string]$_.MediaType} }); $disks=@(Get-Partition -ErrorAction SilentlyContinue | ForEach-Object { $disk=Get-Disk -Number $_.DiskNumber -ErrorAction SilentlyContinue; $key=if ($_.DriveLetter) { [string]$_.DriveLetter + ':' } elseif ($_.AccessPaths) { [string]$_.AccessPaths[0] } else { '' }; if ($key -and $disk) { [pscustomobject]@{name=$key; interfaceType=(([string]$disk.BusType) + ' ' + ([string]$disk.MediaType)).Trim(); model=[string]$disk.FriendlyName; vendor=[string]$disk.Manufacturer; physicalDevice=('\\.\PhysicalDrive' + [string]$disk.Number); diskNumber=[int]$disk.Number} } }); $gpus=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; driverVersion=[string]$_.DriverVersion} }); [pscustomobject]@{memory=@($memory); adapters=@($adapters); disks=@($disks); gpus=@($gpus)} | ConvertTo-Json -Depth 4 -Compress`
-	output, err := probeRunner(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
-	if err != nil {
-		return result
-	}
-
-	var payload windowsHardwareMetadataPayload
-	if err := json.Unmarshal(output, &payload); err != nil {
-		return result
-	}
+// parseWindowsInventoryPayload turns the merged inventory JSON into the metadata
+// maps and the adapter records. It is pure so the payload shape can be tested
+// without Windows.
+func parseWindowsInventoryPayload(payload windowsHardwareMetadataPayload) (windowsHardwareMetadata, []windowsGPUAdapterRecord) {
+	result := emptyWindowsHardwareMetadata()
+	adapters := []windowsGPUAdapterRecord{}
 	var speedTotal float64
 	var speedCount int
 	for _, module := range payload.Memory {
@@ -4545,16 +4599,6 @@ func collectWindowsHardwareMetadata() windowsHardwareMetadata {
 			ConnectionType: adapter.ConnectionType,
 		}
 	}
-	for name, model := range collectWindowsNetworkModels() {
-		metadata := result.Networks[name]
-		metadata.Model = model
-		result.Networks[name] = metadata
-	}
-	for name, signal := range collectWindowsWifiSignals() {
-		metadata := result.Networks[name]
-		metadata.SignalStrengthPercent = signal
-		result.Networks[name] = metadata
-	}
 	for _, disk := range payload.Disks {
 		if disk.Name != "" && disk.InterfaceType != "" {
 			result.DiskInterfaces[disk.Name] = disk.InterfaceType
@@ -4573,46 +4617,41 @@ func collectWindowsHardwareMetadata() windowsHardwareMetadata {
 		if gpu.Name != "" && gpu.DriverVersion != "" {
 			result.GpuDrivers[gpu.Name] = gpu.DriverVersion
 		}
+		adapters = append(adapters, windowsGPUAdapterRecord{
+			Name:          gpu.Name,
+			PNPDeviceID:   gpu.PNPDeviceID,
+			DriverVersion: gpu.DriverVersion,
+			AdapterRAM:    gpu.AdapterRAM,
+		})
 	}
-	return result
+	return result, adapters
 }
 
-func collectWindowsNetworkModels() map[string]string {
-	result := map[string]string{}
+// applyWindowsWifiSignals overlays the per-cycle WiFi signal reading onto the
+// cached network metadata. It stays outside the inventory TTL on purpose.
+//
+// The map is copied first: the caller stores the result in the merged slow
+// metrics, and the cache is reused by later cycles, so writing through the
+// cached map would let one cycle's overlay leak into the next.
+func applyWindowsWifiSignals(metadata windowsHardwareMetadata) windowsHardwareMetadata {
 	if runtime.GOOS != "windows" {
-		return result
+		return metadata
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
-	defer cancel()
-	commandText := `$ErrorActionPreference='SilentlyContinue'; $rows=@(Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ name=[string]$_.Name; model=[string]$_.InterfaceDescription } }); @($rows) | ConvertTo-Json -Depth 3 -Compress`
-	output, err := probeRunner(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
-	if err != nil {
-		return result
+	signals := collectWindowsWifiSignals()
+	if len(signals) == 0 {
+		return metadata
 	}
-	type networkModelRow struct {
-		Name  string `json:"name"`
-		Model string `json:"model"`
+	networks := make(map[string]networkHardwareMetadata, len(metadata.Networks)+len(signals))
+	for name, entry := range metadata.Networks {
+		networks[name] = entry
 	}
-	trimmed := bytes.TrimSpace(output)
-	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
-		return result
+	for name, signal := range signals {
+		entry := networks[name]
+		entry.SignalStrengthPercent = signal
+		networks[name] = entry
 	}
-	var rows []networkModelRow
-	if err := json.Unmarshal(trimmed, &rows); err != nil {
-		var single networkModelRow
-		if json.Unmarshal(trimmed, &single) != nil {
-			return result
-		}
-		rows = []networkModelRow{single}
-	}
-	for _, row := range rows {
-		name := strings.TrimSpace(row.Name)
-		model := strings.TrimSpace(row.Model)
-		if name != "" && model != "" {
-			result[name] = model
-		}
-	}
-	return result
+	metadata.Networks = networks
+	return metadata
 }
 
 func collectWindowsWifiSignals() map[string]*float64 {
@@ -5201,9 +5240,8 @@ type windowsGPUEngineRecord struct {
 }
 
 type windowsGPUPerformancePayload struct {
-	Adapters json.RawMessage `json:"adapters"`
-	Memory   json.RawMessage `json:"memory"`
-	Engines  json.RawMessage `json:"engines"`
+	Memory  json.RawMessage `json:"memory"`
+	Engines json.RawMessage `json:"engines"`
 }
 
 type windowsGPUPerformanceAggregate struct {
@@ -5225,24 +5263,23 @@ type windowsGPUPerformanceAggregate struct {
 // nvidia-smi is unavailable. The counter names contain a LUID, so the
 // fallback keeps that identifier unless it can safely associate it with a
 // non-virtual Win32_VideoController adapter.
-func collectWindowsGPUPerformance() []gpuDeviceStats {
+//
+// The adapter records come from the shared inventory cache; only the dynamic
+// performance counters are queried here.
+func collectWindowsGPUPerformance(adapters []windowsGPUAdapterRecord) []gpuDeviceStats {
 	if runtime.GOOS != "windows" {
 		return []gpuDeviceStats{}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
-	commandText := `$ErrorActionPreference='Stop'; $adapters=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; pnpDeviceId=[string]$_.PNPDeviceID; driverVersion=[string]$_.DriverVersion; adapterRAM=[UInt64]([Math]::Max(0,[Int64]$_.AdapterRAM))} }); $memory=@(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; dedicatedUsage=[UInt64]$_.DedicatedUsage; sharedUsage=[UInt64]$_.SharedUsage; totalCommitted=[UInt64]$_.TotalCommitted} }); $engines=@(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; utilizationPercent=[double]$_.UtilizationPercentage} }); ConvertTo-Json -InputObject ([pscustomobject]@{adapters=[array]$adapters; memory=[array]$memory; engines=[array]$engines}) -Depth 5 -Compress`
+	commandText := `$ErrorActionPreference='Stop'; $memory=@(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; dedicatedUsage=[UInt64]$_.DedicatedUsage; sharedUsage=[UInt64]$_.SharedUsage; totalCommitted=[UInt64]$_.TotalCommitted} }); $engines=@(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; utilizationPercent=[double]$_.UtilizationPercentage} }); ConvertTo-Json -InputObject ([pscustomobject]@{memory=[array]$memory; engines=[array]$engines}) -Depth 5 -Compress`
 	output, err := probeRunner(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
 	if err != nil {
 		return []gpuDeviceStats{}
 	}
 	var payload windowsGPUPerformancePayload
 	if err := json.Unmarshal(bytes.TrimSpace(output), &payload); err != nil {
-		return []gpuDeviceStats{}
-	}
-	adapters, err := decodeJSONList[windowsGPUAdapterRecord](payload.Adapters)
-	if err != nil {
 		return []gpuDeviceStats{}
 	}
 	memory, err := decodeJSONList[windowsGPUAdapterMemoryRecord](payload.Memory)
@@ -5289,6 +5326,9 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 		}
 	}
 
+	if adapters == nil {
+		adapters = []windowsGPUAdapterRecord{}
+	}
 	physicalAdapters := make([]windowsGPUAdapterRecord, 0, len(adapters))
 	for _, adapter := range adapters {
 		if strings.TrimSpace(adapter.Name) != "" && !isVirtualGPUAdapter(adapter.Name, adapter.PNPDeviceID) {
@@ -5381,21 +5421,13 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 // Keep a physical adapter visible even when Windows exposes no GPU performance
 // counter samples for the current session. This still provides the stable
 // model, driver, and adapter-memory metadata needed by the device dashboard.
-func collectWindowsGPUAdapters() []gpuDeviceStats {
-	if runtime.GOOS != "windows" {
-		return []gpuDeviceStats{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
-	defer cancel()
-	commandText := `$ErrorActionPreference='Stop'; $rows=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { $ram=[UInt64]([Math]::Max(0,[Int64]$_.AdapterRAM)); [pscustomobject]@{name=[string]$_.Name; pnpDeviceId=[string]$_.PNPDeviceID; driverVersion=[string]$_.DriverVersion; adapterRAM=$ram} }); @($rows) | ConvertTo-Json -Depth 4 -Compress`
-	output, err := runWindowsPowerShell(ctx, commandText)
-	if err != nil {
-		return []gpuDeviceStats{}
-	}
-	records, err := decodeJSONList[windowsGPUAdapterRecord](bytes.TrimSpace(output))
-	if err != nil {
-		return []gpuDeviceStats{}
+//
+// The adapter records come from the shared inventory cache; this function is a
+// pure projection and spawns nothing. It is deliberately not OS-guarded so the
+// projection can be tested off Windows; the caller only reaches it on Windows.
+func windowsGPUAdaptersFromRecords(records []windowsGPUAdapterRecord) []gpuDeviceStats {
+	if records == nil {
+		records = []windowsGPUAdapterRecord{}
 	}
 	filteredRecords := make([]windowsGPUAdapterRecord, 0, len(records))
 	for _, record := range records {
