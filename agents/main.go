@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -39,10 +40,28 @@ import (
 
 const (
 	defaultNormalIntervalSeconds = 30
-	defaultSlowIntervalSeconds   = 30
+	// Hardware metadata, temperatures and sensor backends change slowly. Running
+	// the slow collector at the same 30s cadence as the fast counters meant every
+	// cycle paid for a stack of PowerShell/netsh/smartctl process spawns; 60s
+	// halves that churn with no loss for CPU/memory/disk/network rates, which
+	// stay on the fast path.
+	defaultSlowIntervalSeconds   = 60
 	maxSamplingIntervalSeconds   = 86400
-	hardwareSensorHelperInterval = 10 * time.Second
-	hardwareSensorCacheMaxAge    = 45 * time.Second
+	hardwareSensorHelperInterval = 30 * time.Second
+	// The SYSTEM helper refreshes the privileged sensor cache; the collector
+	// only needs it to be recent enough to avoid its own probe. A 2 minute
+	// window tolerates one missed helper cycle without falling back to a
+	// per-collector PowerShell probe.
+	hardwareSensorCacheMaxAge = 120 * time.Second
+	// Upper bound for one slow collection. Every external probe has its own
+	// timeout, but they run in sequence; without a global budget a set of
+	// individually-timed-out probes can exceed the sampling interval and make
+	// the collector run back-to-back. 15s keeps a cycle shorter than the 30s
+	// fast interval even in the worst case.
+	slowMetricsGlobalBudget = 15 * time.Second
+	// TTL for hardware inventory (memory modules, NIC models, disk model/vendor,
+	// CPU package topology) that only changes on a hot-plug or reboot.
+	hardwareAssetCacheTTL = 10 * time.Minute
 )
 
 const (
@@ -295,6 +314,19 @@ type metricsPayload struct {
 	Fans                    []fanSensorStats           `json:"fans"`
 	TemperatureSensors      []temperatureSensorReading `json:"temperatureSensors,omitempty"`
 	SensorBackends          []sensorBackendStatus      `json:"sensorBackends,omitempty"`
+	// External probe processes started during this cycle, by executable, and the
+	// wall time of the last slow collection. Optional and additive: it makes the
+	// collector's own process churn an observable number for the performance job
+	// instead of something only visible in a process monitor.
+	ProbeSpawns    map[string]int        `json:"probeSpawns,omitempty"`
+	CollectorStats *collectorStatsReport `json:"collectorStats,omitempty"`
+}
+
+// collectorStatsReport is the cumulative, self-observed cost of the collector.
+type collectorStatsReport struct {
+	SlowRuns       int64 `json:"slowRuns"`
+	SlowOverruns   int64 `json:"slowOverruns"`
+	LastSlowMillis int64 `json:"lastSlowMillis"`
 }
 
 // The configuration sub-schema lives in agents/internal/agentconfig so the
@@ -454,6 +486,79 @@ type agentState struct {
 	hasSlow          bool
 	currentCfg       agentRuntimeConfig
 	hasConfig        bool
+	// Slow-changing hardware inventory, refreshed on a TTL instead of every slow
+	// cycle. Populated without any environment probe on platforms that do not
+	// expose one, so the collector never spawns a process just to fill it.
+	assets hardwareAssetCache
+	// Wall-clock accounting for the slow collector, exported so a regression in
+	// probe cost is visible instead of inferred.
+	slowStats slowCollectionStats
+}
+
+// hardwareAssetCache holds hardware inventory that only changes on a hot-plug
+// or reboot. It is refreshed on a TTL so a steady-state cycle does not re-query
+// memory module speeds, NIC models and disk model/vendor every 60 seconds.
+type hardwareAssetCache struct {
+	collectedAt          time.Time
+	metadata             windowsHardwareMetadata
+	referenceDeviceCount int
+}
+
+// expiredFor reports whether the cached inventory is older than ttl. A zero
+// collectedAt is always expired, so the first cycle fills the cache.
+func (c hardwareAssetCache) expiredFor(ttl time.Duration) bool {
+	return c.collectedAt.IsZero() || time.Since(c.collectedAt) >= ttl
+}
+
+// deviceReferenceCount is a cheap fingerprint of the current device set: the
+// number of disks, network interfaces and GPUs the slow collector just saw. A
+// change means the cached inventory may be stale, so it is dropped early.
+func deviceReferenceCount(metrics slowMetrics) int {
+	return len(metrics.disks) + len(metrics.networkInterfaces) + len(metrics.gpus)
+}
+
+// slowCollectionStats records how long a slow collection took and how often it
+// ran past its budget. They are cheap in-process counters, exported into the
+// metrics payload so "the collector got slower" is measurable.
+type slowCollectionStats struct {
+	runs       int64
+	overruns   int64
+	lastMillis int64
+}
+
+// probeSpawnCounts counts external probe processes started since the last time
+// the collector took a reading. The collection loop is a single goroutine, but
+// the counters are still mutex-guarded so a future parallel probe cannot race
+// the metrics payload.
+var (
+	probeSpawnMu     sync.Mutex
+	probeSpawnCounts = map[string]int{}
+)
+
+func recordProbeSpawn(name string) {
+	if name == "" {
+		return
+	}
+	probeSpawnMu.Lock()
+	if probeSpawnCounts == nil {
+		probeSpawnCounts = map[string]int{}
+	}
+	probeSpawnCounts[name]++
+	probeSpawnMu.Unlock()
+}
+
+// takeProbeSpawnCounts returns the spawns accumulated since the previous call
+// and resets the counters. Reporting per-cycle counts keeps the payload small
+// and lets an observer sum them over a minute to get spawns/min.
+func takeProbeSpawnCounts() map[string]int {
+	probeSpawnMu.Lock()
+	defer probeSpawnMu.Unlock()
+	if len(probeSpawnCounts) == 0 {
+		return nil
+	}
+	counts := probeSpawnCounts
+	probeSpawnCounts = map[string]int{}
+	return counts
 }
 
 type pendingSample struct {
@@ -469,6 +574,10 @@ type pendingStateFile struct {
 	OldestSampledAt string `json:"oldestSampledAt,omitempty"`
 	UpdatedAt       string `json:"updatedAt"`
 	LastUploadError string `json:"lastUploadError,omitempty"`
+	// Fingerprint of the JSONL spool these counts were computed from, so the
+	// desktop backend can trust the cache without rescanning the spool.
+	SpoolSize    int64 `json:"spoolSize,omitempty"`
+	SpoolModTime int64 `json:"spoolModTime,omitempty"`
 }
 
 type pendingStore struct {
@@ -882,6 +991,13 @@ func (s *pendingStore) writeState() {
 	if len(entries) > 0 {
 		state.OldestSampledAt = entries[0].SampledAt
 	}
+	// Record the spool fingerprint so the backend can report pending counts from
+	// the cache file without re-reading and JSON-parsing the whole spool on every
+	// /api/state request. Written after the spool is consistent.
+	if info, statErr := os.Stat(s.path); statErr == nil {
+		state.SpoolSize = info.Size()
+		state.SpoolModTime = info.ModTime().UnixNano()
+	}
 	raw, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return
@@ -897,7 +1013,9 @@ func runHardwareSensorProbe() error {
 	// result includes motherboard/CPU/GPU sensors as well as disk SMART and
 	// platform-specific fallbacks. The command is intentionally one-shot: the
 	// desktop backend invokes it only after the user requests hardware detect.
-	metrics := collectSlowMetrics()
+	// A user-triggered detect is exactly the "refresh the inventory" case, so it
+	// starts with an empty cache.
+	metrics, _ := collectSlowMetrics(hardwareAssetCache{})
 	response := struct {
 		TemperatureSensors []temperatureSensorReading `json:"temperatureSources"`
 		SensorBackends     []sensorBackendStatus      `json:"temperatureSensorBackends"`
@@ -912,6 +1030,10 @@ func runHardwareSensorProbe() error {
 
 func sampleID(payload metricsPayload) string {
 	payload.SampleID = ""
+	// The self-observed probe counters are diagnostics, not telemetry: exclude
+	// them so they cannot change the identity of an otherwise identical sample.
+	payload.ProbeSpawns = nil
+	payload.CollectorStats = nil
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return payload.Timestamp
@@ -1082,6 +1204,18 @@ func (s *agentState) currentIdentity(cfg agentRuntimeConfig) agentIdentity {
 	return identity
 }
 
+// collectorStatsPayload snapshots the cumulative counters for the metrics payload.
+func (s *agentState) collectorStatsPayload() *collectorStatsReport {
+	if s.slowStats.runs == 0 {
+		return nil
+	}
+	return &collectorStatsReport{
+		SlowRuns:       s.slowStats.runs,
+		SlowOverruns:   s.slowStats.overruns,
+		LastSlowMillis: s.slowStats.lastMillis,
+	}
+}
+
 func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	now := time.Now().UTC()
 	identity := s.currentIdentity(cfg)
@@ -1090,7 +1224,14 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	diskRate, networkRate := s.sampleFastRates(now, cfg.currentUploadIntervalSeconds())
 
 	if !s.hasSlow || now.Sub(s.lastSlow.collectedAt) >= time.Duration(cfg.slowIntervalSeconds())*time.Second {
-		slow := collectSlowMetrics()
+		outcome := collectSlowMetricsBudgeted(s.assets, slowMetricsGlobalBudget)
+		s.assets = outcome.assets
+		s.slowStats.runs++
+		if outcome.overtime {
+			s.slowStats.overruns++
+		}
+		s.slowStats.lastMillis = outcome.duration.Milliseconds()
+		slow := outcome.metrics
 		if !s.hasSlow {
 			s.lastSlow = slow
 			s.hasSlow = true
@@ -1198,6 +1339,7 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 		HeartbeatAt:             now.Format(time.RFC3339),
 		HardwareSampledAt:       hardwareSampledAt,
 		CPUTemperatureSampledAt: cpuTemperatureSampledAt,
+		CollectorStats:          s.collectorStatsPayload(),
 		System:                  collectSystemStats(),
 		CPUUsagePercent:         cpuUsagePercent,
 		CPUFrequencyMHz:         cpuFrequencyMHz,
@@ -1216,6 +1358,10 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	}
 
 	applyRuntimeConfig(&payload, cfg)
+	// Take the spawn counters before sanitizing so the sample id is computed from
+	// telemetry alone; the probe counters are diagnostic and must not make an
+	// otherwise identical sample look new to the pending-spool dedupe.
+	payload.ProbeSpawns = takeProbeSpawnCounts()
 	payload = sanitizePendingPayload(payload)
 	payload.SampleID = sampleID(payload)
 	return payload
@@ -1806,7 +1952,57 @@ func mergeSlowMetrics(previous slowMetrics, next slowMetrics) slowMetrics {
 	return merged
 }
 
-func collectSlowMetrics() slowMetrics {
+// slowCollectionOutcome carries a finished slow collection plus the wall-clock
+// accounting a caller needs to report its cost.
+type slowCollectionOutcome struct {
+	metrics  slowMetrics
+	assets   hardwareAssetCache
+	duration time.Duration
+	overtime bool
+}
+
+// collectSlowMetricsBudgeted runs one slow collection under a global wall-clock
+// budget. The per-probe timeouts bound each step but the steps run in sequence,
+// so without this a set of individually slow probes could run past the sampling
+// interval and make the collector sample back-to-back. Abandoning the cycle
+// keeps the previous merged values, which mergeSlowMetrics already tolerates.
+//
+// The hardware cache travels in and out by value, so an abandoned attempt can
+// never mutate the cache the next cycle reads.
+func collectSlowMetricsBudgeted(assets hardwareAssetCache, budget time.Duration) slowCollectionOutcome {
+	started := time.Now()
+	type result struct {
+		metrics slowMetrics
+		assets  hardwareAssetCache
+	}
+	done := make(chan result, 1)
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				logCategoryf(logCategoryConfigRead, "slow metrics collector panicked: %v", recovered)
+				done <- result{metrics: emptySlowMetrics(), assets: assets}
+			}
+		}()
+		metrics, nextAssets := collectSlowMetrics(assets)
+		done <- result{metrics: metrics, assets: nextAssets}
+	}()
+	timer := time.NewTimer(budget)
+	defer timer.Stop()
+	select {
+	case finished := <-done:
+		return slowCollectionOutcome{metrics: finished.metrics, assets: finished.assets, duration: time.Since(started)}
+	case <-timer.C:
+		logCategoryf(logCategoryConfigRead, "slow metrics collection overran its %s budget; retaining the previous sample", budget)
+		return slowCollectionOutcome{metrics: emptySlowMetrics(), assets: assets, duration: time.Since(started), overtime: true}
+	}
+}
+
+// collectSlowMetrics gathers the slow-changing half of a sample. Slow-changing
+// hardware inventory (memory modules, NIC models and link speeds, disk
+// model/vendor, CPU topology) is cached for hardwareAssetCacheTTL and refreshed
+// early when the device set changes, so a steady-state cycle does not re-run the
+// same PowerShell inventory every time.
+func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCache) {
 	result := emptySlowMetrics()
 	result.collectedAt = time.Now().UTC()
 
@@ -1839,19 +2035,24 @@ func collectSlowMetrics() slowMetrics {
 	hardware := collectHardwareSensors()
 	result.hardwareSampledAt = time.Now().UTC()
 	temperatureSensors := append([]temperatureSensorReading{}, hardware.temperatureSensors...)
-	windowsMetadata := collectWindowsHardwareMetadata()
+	// Static inventory (memory modules, NIC models, disk model/vendor, CPU
+	// frequency helper) is queried from PowerShell only; refresh it on a TTL and
+	// keep the previous maps otherwise, so the per-cycle probe count drops without
+	// losing hot-plug detection beyond the TTL.
+	windowsMetadata := assets.metadata
+	refreshAssets := runtime.GOOS == "windows" && assets.expiredFor(hardwareAssetCacheTTL)
+	if refreshAssets {
+		windowsMetadata = collectWindowsHardwareMetadata()
+	}
 	memorySpeedMHz := windowsMetadata.MemorySpeedMHz
 	memorySlotCount := windowsMetadata.MemorySlotCount
 	memoryFormFactor := windowsMetadata.MemoryFormFactor
 	if runtime.GOOS == "linux" {
-		linuxSpeed, linuxSlots, linuxFormFactor := collectLinuxMemoryMetadata()
-		if linuxSpeed != nil {
+		// Linux reads this from sysfs/dmidecode, not from the cached Windows
+		// inventory, so it is always fresh and cheap when dmidecode is absent.
+		if linuxSpeed, linuxSlots, linuxFormFactor := collectLinuxMemoryMetadata(); linuxSpeed != nil || linuxSlots != nil || linuxFormFactor != "" {
 			memorySpeedMHz = linuxSpeed
-		}
-		if linuxSlots != nil {
 			memorySlotCount = linuxSlots
-		}
-		if linuxFormFactor != "" {
 			memoryFormFactor = linuxFormFactor
 		}
 	}
@@ -1878,6 +2079,19 @@ func collectSlowMetrics() slowMetrics {
 			}
 		}
 	}
+	// Record the fresh inventory, then decide whether the device set changed.
+	// When it did, clear the timestamp so the next collection re-queries instead
+	// of reporting a stale set for up to a full TTL. The comparison uses the
+	// count carried in from the previous cycle, before it is overwritten.
+	currentDeviceCount := deviceReferenceCount(result)
+	previousDeviceCount := assets.referenceDeviceCount
+	if refreshAssets {
+		assets = hardwareAssetCache{collectedAt: time.Now().UTC(), metadata: windowsMetadata}
+	}
+	if previousDeviceCount != 0 && previousDeviceCount != currentDeviceCount {
+		assets.collectedAt = time.Time{}
+	}
+	assets.referenceDeviceCount = currentDeviceCount
 
 	var gpus []gpuDeviceStats
 	if runtime.GOOS == "windows" {
@@ -1933,7 +2147,7 @@ func collectSlowMetrics() slowMetrics {
 	result.fans = hardware.fans
 	result.sensorBackends = sensorBackends
 	result.temperatureSensors = mergeTemperatureSensors(nil, temperatureSensors)
-	return result
+	return result, assets
 }
 
 func normalizeGPUName(name string) string {
@@ -2413,7 +2627,7 @@ func collectLinuxMemoryMetadata() (*float64, *int, string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
-	output, err := exec.CommandContext(ctx, "dmidecode", "--type", "memory").Output()
+	output, err := probeRunner(ctx, "dmidecode", "--type", "memory")
 	if err != nil {
 		return nil, nil, ""
 	}
@@ -2520,6 +2734,21 @@ func encodePowerShellCommand(script string) string {
 	return base64.StdEncoding.EncodeToString(bytesValue)
 }
 
+// probeCommandRunner runs one probe command and returns its combined output.
+// The production implementation records the spawn and delegates to
+// exec.CommandContext; tests substitute a runner to assert that a warmed cache
+// skips the probe entirely.
+type probeCommandRunner func(ctx context.Context, name string, args ...string) ([]byte, error)
+
+func execProbeCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
+	recordProbeSpawn(name)
+	return exec.CommandContext(ctx, name, args...).Output()
+}
+
+// probeRunner is the runner used by the collector and the sensor helper. It is
+// a variable so a test can prove the cache path removed a real process spawn.
+var probeRunner probeCommandRunner = execProbeCommand
+
 func runWindowsPowerShell(ctx context.Context, script string, environment ...string) ([]byte, error) {
 	normalizedScript := strings.Join([]string{
 		"[Console]::InputEncoding = [System.Text.Encoding]::UTF8",
@@ -2528,6 +2757,8 @@ func runWindowsPowerShell(ctx context.Context, script string, environment ...str
 		"$ProgressPreference = 'SilentlyContinue'",
 		script,
 	}, "; ")
+	recordProbeSpawn("powershell")
+	recordProbeSpawn("powershell")
 	command := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShellCommand(normalizedScript))
 	if len(environment) > 0 {
 		command.Env = append(os.Environ(), environment...)
@@ -2834,6 +3065,26 @@ func collectHardwareSensors() hardwareSensorMetrics {
 		}
 	}
 
+	// Prefer the recent SYSTEM helper snapshot when one exists.
+	//
+	// The machine-scope install registers a scheduled task that runs the exact
+	// same PowerShell LHM probe every hardwareSensorHelperInterval and writes
+	// this cache. Running our own probe on top of that meant the LHM sensor path
+	// executed several times per minute while only the newest result was read.
+	// A fresh cache is the same data from the same probe, read from disk instead
+	// of spawned again; an absent or stale cache falls through to the live probe.
+	if snapshots, updatedAt, ok := cachedHardwareSnapshots(hardwareSensorCachePath()); ok {
+		aligned := alignWindowsHardwareGPUIdentifiers(snapshots)
+		metrics := mapHardwareSensors(aligned)
+		metrics.sensorBackends = []sensorBackendStatus{{
+			ID:     "librehardwaremonitor",
+			Label:  "LibreHardwareMonitor",
+			OK:     true,
+			Detail: hardwareSensorDetail(metrics, "SYSTEM 硬件传感器缓存", dllPath) + "；采样时间 " + updatedAt,
+		}}
+		return metrics
+	}
+
 	// The bundled LibreHardwareMonitor library is the Windows-compatible
 	// build used by the existing PowerShell integration. Its mutex setup uses
 	// the .NET Framework constructor, which is not callable from the .NET 10
@@ -2883,6 +3134,36 @@ func collectHardwareSensors() hardwareSensorMetrics {
 	})
 	return metrics
 }
+
+// cachedHardwareSnapshots returns the SYSTEM helper's fresh sensor snapshots, if
+// any. On non-Windows platforms the privileged helper does not exist, so this is
+// always false there.
+func cachedHardwareSnapshots(path string) (snapshots []hardwareSensorSnapshot, updatedAt string, ok bool) {
+	cache, err := readHardwareSensorCache(path)
+	if err != nil || len(cache.Snapshots) == 0 {
+		return nil, "", false
+	}
+	return cache.Snapshots, cache.UpdatedAt, true
+}
+
+// hardwareSensorHelperCollectionEnabled reports whether the machine currently
+// wants collection. The helper reads the same configuration document the
+// collector does and pauses when recording or upload is switched off.
+func hardwareSensorHelperCollectionEnabled() bool {
+	configPath := strings.TrimSpace(os.Getenv("DSC_AGENT_CONFIG_FILE"))
+	if configPath == "" {
+		configPath = agentconfig.ConfigPath(agentconfig.ResolveDir(""))
+	}
+	config, _, err := agentconfig.Load(configPath)
+	if err != nil {
+		// An unreadable document must not silence the sensors; keep probing.
+		return true
+	}
+	return config.DataRecordingEnabled && config.CloudSyncEnabled
+}
+
+// lowerCurrentProcessPriority is implemented per platform (priority_windows.go
+// lowers the priority; other platforms treat it as a no-op).
 
 func hardwareSensorCachePath() string {
 	if configured := strings.TrimSpace(os.Getenv("DSC_HARDWARE_SENSOR_CACHE")); configured != "" {
@@ -3000,10 +3281,23 @@ func runHardwareSensorHelper(args []string) error {
 	if outputPath == "" {
 		outputPath = hardwareSensorCachePath()
 	}
+	// The helper is a SYSTEM scheduled task and would otherwise keep spawning a
+	// PowerShell LHM probe every interval even when the machine has collection
+	// turned off. Lower its CPU scheduling priority: it keeps the SYSTEM token
+	// needed for the sensors, but yields to interactive work.
+	lowerCurrentProcessPriority()
 	stopContext, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
 	for {
+		if !hardwareSensorHelperCollectionEnabled() {
+			// No collection is being asked for: stop probing entirely and wait
+			// for the loop's own wake-up rather than writing a cache nobody reads.
+			if !waitForNextCycle(stopContext.Done(), hardwareSensorHelperInterval) {
+				return nil
+			}
+			continue
+		}
 		dllPath := resolveHardwareMonitorPath()
 		if dllPath == "" {
 			log.Printf("hardware sensor helper: LibreHardwareMonitorLib.dll not found")
@@ -3461,6 +3755,7 @@ func collectWindowsHardwareSnapshotsWithDotnetProbe(probePath, dllPath string) (
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
+	recordProbeSpawn("dotnet")
 	command := exec.CommandContext(ctx, dotnetPath, probePath, "--dll", dllPath)
 	command.Dir = filepath.Dir(probePath)
 	var stderr bytes.Buffer
@@ -4108,7 +4403,7 @@ func collectWindowsCPUFrequency(nominalMHz *float64) *float64 {
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
 	commandText := `$ErrorActionPreference='Stop'; $samples=(Get-Counter '\Processor Information(*)\% Processor Performance').CounterSamples | Where-Object { $_.InstanceName -notmatch '_Total' }; if($samples.Count -eq 0){exit 1}; [Math]::Round((($samples | Measure-Object -Property CookedValue -Average).Average), 3)`
-	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
+	output, err := probeRunner(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
 	if err != nil {
 		return nil
 	}
@@ -4175,7 +4470,7 @@ func collectWindowsHardwareMetadata() windowsHardwareMetadata {
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
 	commandText := `$ErrorActionPreference='Stop'; $memory=@(Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue | ForEach-Object { $form=switch([int]$_.FormFactor){8{'DIMM'}12{'SODIMM'}default{[string]$_.FormFactor}}; [pscustomobject]@{speedMHz=[double]$_.Speed; configuredClockMHz=[double]$_.ConfiguredClockSpeed; formFactor=$form} }); $adapters=@(Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; linkSpeed=[string]$_.LinkSpeed; connectionType=[string]$_.MediaType} }); $disks=@(Get-Partition -ErrorAction SilentlyContinue | ForEach-Object { $disk=Get-Disk -Number $_.DiskNumber -ErrorAction SilentlyContinue; $key=if ($_.DriveLetter) { [string]$_.DriveLetter + ':' } elseif ($_.AccessPaths) { [string]$_.AccessPaths[0] } else { '' }; if ($key -and $disk) { [pscustomobject]@{name=$key; interfaceType=(([string]$disk.BusType) + ' ' + ([string]$disk.MediaType)).Trim(); model=[string]$disk.FriendlyName; vendor=[string]$disk.Manufacturer; physicalDevice=('\\.\PhysicalDrive' + [string]$disk.Number); diskNumber=[int]$disk.Number} } }); $gpus=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; driverVersion=[string]$_.DriverVersion} }); [pscustomobject]@{memory=@($memory); adapters=@($adapters); disks=@($disks); gpus=@($gpus)} | ConvertTo-Json -Depth 4 -Compress`
-	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
+	output, err := probeRunner(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
 	if err != nil {
 		return result
 	}
@@ -4257,7 +4552,7 @@ func collectWindowsNetworkModels() map[string]string {
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
 	commandText := `$ErrorActionPreference='SilentlyContinue'; $rows=@(Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ name=[string]$_.Name; model=[string]$_.InterfaceDescription } }); @($rows) | ConvertTo-Json -Depth 3 -Compress`
-	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
+	output, err := probeRunner(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
 	if err != nil {
 		return result
 	}
@@ -4294,7 +4589,7 @@ func collectWindowsWifiSignals() map[string]*float64 {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
-	output, err := exec.CommandContext(ctx, "netsh.exe", "wlan", "show", "interfaces").Output()
+	output, err := probeRunner(ctx, "netsh.exe", "wlan", "show", "interfaces")
 	if err != nil {
 		return result
 	}
@@ -4376,6 +4671,7 @@ func collectSmartctlDiskSensor(smartctlPath, devicePath string) (diskSensorMetad
 		args = append(args, "-n", "standby")
 	}
 	args = append(args, devicePath)
+	recordProbeSpawn("smartctl")
 	command := exec.CommandContext(ctx, smartctlPath, args...)
 	command.Stdout = &output
 	command.Stderr = &bytes.Buffer{}
@@ -4511,7 +4807,7 @@ func collectWindowsStorageReliabilityMetadata() map[int]diskSensorMetadata {
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
 	commandText := `$ErrorActionPreference='SilentlyContinue'; $rows=@(Get-Disk -ErrorAction SilentlyContinue | ForEach-Object { $disk=$_; $counter=Get-StorageReliabilityCounter -PhysicalDisk $disk -ErrorAction SilentlyContinue; if($counter){ [pscustomobject]@{diskNumber=[int]$disk.Number; temperature=[double]$counter.Temperature; wear=[double]$counter.Wear} } }); @($rows) | ConvertTo-Json -Depth 4 -Compress`
-	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
+	output, err := probeRunner(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
 	if err != nil || len(bytes.TrimSpace(output)) == 0 {
 		return result
 	}
@@ -4806,12 +5102,12 @@ func collectNvidiaGPUs() []gpuDeviceStats {
 	if runtime.GOOS == "windows" {
 		command = "nvidia-smi.exe"
 	}
-	output, err := exec.CommandContext(
+	output, err := probeRunner(
 		ctx,
 		command,
 		"--query-gpu=name,utilization.gpu,clocks.current.graphics,temperature.gpu,memory.used,memory.total",
 		"--format=csv,noheader,nounits",
-	).Output()
+	)
 	if err != nil {
 		return []gpuDeviceStats{}
 	}
@@ -4904,7 +5200,7 @@ func collectWindowsGPUPerformance() []gpuDeviceStats {
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
 	commandText := `$ErrorActionPreference='Stop'; $adapters=@(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; pnpDeviceId=[string]$_.PNPDeviceID; driverVersion=[string]$_.DriverVersion; adapterRAM=[UInt64]([Math]::Max(0,[Int64]$_.AdapterRAM))} }); $memory=@(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; dedicatedUsage=[UInt64]$_.DedicatedUsage; sharedUsage=[UInt64]$_.SharedUsage; totalCommitted=[UInt64]$_.TotalCommitted} }); $engines=@(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{name=[string]$_.Name; utilizationPercent=[double]$_.UtilizationPercentage} }); ConvertTo-Json -InputObject ([pscustomobject]@{adapters=[array]$adapters; memory=[array]$memory; engines=[array]$engines}) -Depth 5 -Compress`
-	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
+	output, err := probeRunner(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
 	if err != nil {
 		return []gpuDeviceStats{}
 	}
@@ -5525,7 +5821,7 @@ func collectWindowsDiskPartitionRows() ([]windowsDiskPartitionRow, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
 	commandText := `$ErrorActionPreference='Stop'; $rows=@(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | ForEach-Object { $device=[string]$_.DeviceID; [pscustomobject]@{ device=$device; mountPoint=($device + '\'); filesystem=[string]$_.FileSystem } }); @($rows) | ConvertTo-Json -Depth 3 -Compress`
-	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText).Output()
+	output, err := probeRunner(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText)
 	if err != nil {
 		return nil, err
 	}

@@ -100,8 +100,18 @@ export class AgentManager {
   private attached = false;
   private attachedReadOnly = false;
   private machineConfigDir = resolveMachineConfigDir();
+  /**
+   * Cached attach result. `start()` runs on every status refresh, and each run
+   * used to re-probe the loopback service (a fetch that times out at 2.5s when
+   * nothing is listening). The negative and positive results are cached for a
+   * short window so a poll that finds the same service does not pay for the
+   * probe again, while a service that starts or stops is still noticed quickly.
+   */
+  private attachCache: { at: number; state: RawAgentBackendState | null } | null = null;
 
   constructor(private readonly options: AgentManagerOptions) {}
+
+  private static readonly ATTACH_CACHE_MS = 15_000;
 
   get localEndpoint(): string | null {
     return this.baseUrl;
@@ -122,9 +132,19 @@ export class AgentManager {
    * backend process when no service is installed or running.
    */
   async start(): Promise<RawAgentBackendState> {
-    await this.stopChildIfRunning();
+    // A private backend we already own is kept: it is a stateful collector whose
+    // whole job is to sample on its own interval, and `start()` runs on every UI
+    // refresh. The previous unconditional stop-and-respawn restarted the collector
+    // (process, timers and the pending spool) once per poll in portable/development
+    // mode. Attach (the machine-scope service) is still probed first so a service
+    // installing while the app runs is picked up.
     const attachedState = await this.attach();
-    if (attachedState) return attachedState;
+    if (attachedState) {
+      if (this.child) await this.stopChildIfRunning();
+      return attachedState;
+    }
+    if (this.isRunning()) return this.getState();
+    await this.stopChildIfRunning();
     return this.spawn();
   }
 
@@ -138,6 +158,26 @@ export class AgentManager {
    * read-only instead of silently spawning a second collector.
    */
   async attach(): Promise<RawAgentBackendState | null> {
+    const cached = this.attachCache;
+    if (cached && Date.now() - cached.at < AgentManager.ATTACH_CACHE_MS) {
+      if (cached.state) {
+        // Re-apply the cached attachment so the endpoint and mode stay set.
+        this.applyAttached(cached.state);
+      }
+      return cached.state;
+    }
+    const state = await this.probeAndAttach();
+    this.attachCache = { at: Date.now(), state };
+    return state;
+  }
+
+  private applyAttached(state: RawAgentBackendState): void {
+    this.baseUrl = `http://${SERVICE_LISTEN_ADDRESS}`;
+    this.attached = true;
+    this.attachedReadOnly = state.agentMode === "service-readonly";
+  }
+
+  private async probeAndAttach(): Promise<RawAgentBackendState | null> {
     const configDir = resolveMachineConfigDir();
     this.machineConfigDir = configDir;
     const status = await this.fetchServiceStatus();
@@ -330,6 +370,7 @@ export class AgentManager {
    * is what reports this computer while nobody is logged in.
    */
   async stop(): Promise<void> {
+    this.attachCache = null;
     if (this.attached) {
       this.baseUrl = null;
       this.attached = false;

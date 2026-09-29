@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DesktopController } from "./controller.js";
-import { appendDesktopDiagnostic } from "./diagnostics.js";
+import { appendDesktopDiagnostic, flushDesktopDiagnostics } from "./diagnostics.js";
 import { registerIpc } from "./ipc.js";
 import { isTrustedRendererUrl } from "./renderer-security.js";
 import { getDesktopRuntimeProfile, readSystemMemoryInfo } from "./runtime-profile.js";
@@ -461,6 +461,9 @@ if (!hasSingleInstanceLock) {
   });
   app.on("quit", (_event, exitCode) => {
     appendDesktopDiagnostic("app-quit", { exitCode, gpuFallbackActive });
+    // The diagnostic writer is asynchronous; give the last line a chance to land
+    // before the process exits.
+    void flushDesktopDiagnostics();
   });
   app.on("child-process-gone", (_event, details) => {
     reportProcessEvent("child-process-gone", {

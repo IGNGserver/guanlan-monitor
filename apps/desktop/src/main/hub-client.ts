@@ -20,11 +20,15 @@ interface StoredAccessKey {
   value: string;
 }
 
+/** The fleet overview is cached briefly; see `getOverviewMetrics`. */
+const OVERVIEW_CACHE_TTL_MS = 30_000;
+
 export class HubClient {
   private accessKey: string | null = null;
   private sessionCookie: string | null = null;
   private serverUrl = "";
   private updateCache: { key: string; expiresAt: number; value: UpdateInfo } | null = null;
+  private overviewCache: { key: string; expiresAt: number; value: OverviewMetricsResponse } | null = null;
   private sessionInFlight: Promise<void> | null = null;
 
   constructor(private readonly credentialPath: string) {}
@@ -130,8 +134,15 @@ export class HubClient {
   }
 
   async getOverviewMetrics(metricWindow: MetricWindow): Promise<OverviewMetricsResponse> {
+    // The fleet-wide overview moves on the order of minutes, but the device page
+    // polls it every refresh. A short cache keyed on window and hub removes the
+    // redundant request without hiding a real change for long.
+    const key = `${this.serverUrl}|${metricWindow}`;
+    if (this.overviewCache?.key === key && Date.now() < this.overviewCache.expiresAt) return this.overviewCache.value;
     await this.ensureSession();
-    return this.request<OverviewMetricsResponse>(`/api/overview/metrics?window=${encodeURIComponent(metricWindow)}`);
+    const value = await this.request<OverviewMetricsResponse>(`/api/overview/metrics?window=${encodeURIComponent(metricWindow)}`);
+    this.overviewCache = { key, expiresAt: Date.now() + OVERVIEW_CACHE_TTL_MS, value };
+    return value;
   }
 
   async getTrafficCalendar(

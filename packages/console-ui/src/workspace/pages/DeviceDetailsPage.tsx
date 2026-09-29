@@ -182,9 +182,19 @@ export function DeviceDetailsPage() {
   const metricUnavailable = (key: DeviceMetricKey) => isMetricUnavailable(selectedDevice, key, latest);
   const enabledDeviceIds = metrics?.enabledDeviceIds;
   const hasInstanceConfiguration = (block: DeviceBlockKey) => Array.isArray(enabledDeviceIds?.[block]);
+  // Membership over a configured block is O(n) per instance, so filtering a
+  // block was O(n²). One Set per block makes the same check a lookup and the
+  // filter linear; the Set is rebuilt whenever the config changes, not per call.
+  const enabledInstanceSets = useMemo(() => {
+    const sets = new Map<DeviceBlockKey, Set<string>>();
+    for (const [block, ids] of Object.entries(enabledDeviceIds ?? {})) {
+      if (Array.isArray(ids)) sets.set(block as DeviceBlockKey, new Set(ids));
+    }
+    return sets;
+  }, [enabledDeviceIds]);
   const filterEnabledInstances = <T extends { id: string }>(block: DeviceBlockKey, instances: T[]) => {
-    const configuredIds = enabledDeviceIds?.[block];
-    return configuredIds ? instances.filter((instance) => configuredIds.includes(instance.id)) : instances;
+    const configuredIds = enabledInstanceSets.get(block);
+    return configuredIds ? instances.filter((instance) => configuredIds.has(instance.id)) : instances;
   };
   const filteredDiskDetails = latest ? filterEnabledInstances("disk", latest.disks ?? []) : [];
   // One disk without a size must not cost the whole machine its disk total: a
