@@ -65,6 +65,13 @@ const (
 	// Floor between inventory refreshes that were brought forward by a device-set
 	// change. Protects the cache from a fingerprint that oscillates.
 	hardwareAssetMinRefreshInterval = time.Minute
+	// TTL for disk temperature/health sensors. Deliberately much shorter than the
+	// hardware inventory TTL: unlike a DIMM's speed, a disk's temperature is a
+	// live reading the dashboard plots as a trend, so freezing it for ten minutes
+	// would visibly flatten that line. Two minutes still halves the smartctl /
+	// Get-StorageReliabilityCounter probes while keeping a usable resolution on a
+	// quantity whose physical time constant is minutes, not seconds.
+	diskSensorCacheTTL = 2 * time.Minute
 )
 
 const (
@@ -514,8 +521,12 @@ type hardwareAssetCache struct {
 	// Memory module speeds are fixed for the lifetime of a boot (no hot-plug
 	// DIMMs on any supported machine), so this is the same class of inventory as
 	// the Windows metadata: worth a TTL to avoid a root-only process per cycle.
-	linuxMemory          *linuxMemoryMetadata
-	referenceDeviceCount int
+	linuxMemory *linuxMemoryMetadata
+	// diskSensors caches the disk temperature/health metadata on its own, much
+	// shorter TTL; see diskSensorCacheTTL.
+	diskSensors            map[string]diskSensorMetadata
+	diskSensorsCollectedAt time.Time
+	referenceDeviceCount   int
 }
 
 // linuxMemoryMetadata is the static memory inventory dmidecode reports.
@@ -529,6 +540,11 @@ type linuxMemoryMetadata struct {
 // collectedAt is always expired, so the first cycle fills the cache.
 func (c hardwareAssetCache) expiredFor(ttl time.Duration) bool {
 	return c.collectedAt.IsZero() || time.Since(c.collectedAt) >= ttl
+}
+
+// diskSensorsExpired reports whether the cached disk sensors need a re-read.
+func (c hardwareAssetCache) diskSensorsExpired() bool {
+	return c.diskSensorsCollectedAt.IsZero() || time.Since(c.diskSensorsCollectedAt) >= diskSensorCacheTTL
 }
 
 // deviceReferenceCount is a cheap fingerprint of the hot-pluggable device set:
@@ -2123,8 +2139,35 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 		memorySlotCount = assets.linuxMemory.slotCount
 		memoryFormFactor = assets.linuxMemory.formFactor
 	}
-	if runtime.GOOS == "windows" {
+	if !assets.diskSensorsExpired() {
+		// Disk temperature/health was read recently; reuse it and skip the
+		// smartctl / Get-StorageReliabilityCounter probes for this cycle.
+		diskSensors := assets.diskSensors
+		if runtime.GOOS == "windows" {
+			for index := range result.disks {
+				disk := &result.disks[index]
+				metadata := windowsMetadata.DiskMetadata[disk.SourceKey]
+				if metadata.PhysicalDevice != "" {
+					disk.PhysicalDevice = metadata.PhysicalDevice
+				}
+				if sensor, ok := diskSensors[metadata.PhysicalDevice]; ok {
+					applyDiskSensorMetadata(disk, sensor)
+					temperatureSensors = append(temperatureSensors, sensor.TemperatureSensors...)
+				}
+			}
+		} else {
+			for index := range result.disks {
+				disk := &result.disks[index]
+				if sensor, ok := lookupDiskSensorMetadata(diskSensors, disk.SourceKey, disk.Name, disk.Model, disk.MountPoint); ok {
+					applyDiskSensorMetadata(disk, sensor)
+					temperatureSensors = append(temperatureSensors, sensor.TemperatureSensors...)
+				}
+			}
+		}
+	} else if runtime.GOOS == "windows" {
 		windowsDiskSensors := collectWindowsDiskSensorMetadata(windowsMetadata.DiskMetadata)
+		assets.diskSensors = windowsDiskSensors
+		assets.diskSensorsCollectedAt = time.Now().UTC()
 		for index := range result.disks {
 			disk := &result.disks[index]
 			metadata := windowsMetadata.DiskMetadata[disk.SourceKey]
@@ -2136,9 +2179,10 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 				temperatureSensors = append(temperatureSensors, sensor.TemperatureSensors...)
 			}
 		}
-	}
-	if runtime.GOOS == "linux" {
+	} else {
 		linuxDiskSensors := collectLinuxDiskSensorMetadata(result.disks)
+		assets.diskSensors = linuxDiskSensors
+		assets.diskSensorsCollectedAt = time.Now().UTC()
 		for index := range result.disks {
 			if sensor, ok := lookupDiskSensorMetadata(linuxDiskSensors, result.disks[index].SourceKey, result.disks[index].Name, result.disks[index].Model, result.disks[index].MountPoint); ok {
 				applyDiskSensorMetadata(&result.disks[index], sensor)
@@ -2147,7 +2191,7 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 		}
 	}
 	// Record the fresh inventory, then decide whether the device set changed.
-	// When it did, clear the timestamp so the next collection re-queries instead
+	// When it did, clear the timestamps so the next collection re-queries instead
 	// of reporting a stale set for up to a full TTL. The comparison uses the
 	// count carried in from the previous cycle, before it is overwritten.
 	//
@@ -2158,9 +2202,14 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 	// a re-query.
 	currentDeviceCount := deviceReferenceCount(result)
 	previousDeviceCount := assets.referenceDeviceCount
-	if previousDeviceCount != 0 && previousDeviceCount != currentDeviceCount &&
-		time.Since(assets.collectedAt) >= hardwareAssetMinRefreshInterval {
-		assets.collectedAt = time.Time{}
+	if previousDeviceCount != 0 && previousDeviceCount != currentDeviceCount {
+		// The disk sensors are keyed by physical device, so a changed device set
+		// must invalidate them as well: a new disk must not inherit a cached
+		// temperature from a different device.
+		assets.diskSensorsCollectedAt = time.Time{}
+		if time.Since(assets.collectedAt) >= hardwareAssetMinRefreshInterval {
+			assets.collectedAt = time.Time{}
+		}
 	}
 	assets.referenceDeviceCount = currentDeviceCount
 
