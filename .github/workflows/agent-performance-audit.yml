@@ -109,20 +109,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          args=(--capture run/candidate/ingests.jsonl --label candidate --output artifacts/agent-footprint.json)
-          if [ -n "$BASELINE_REF" ]; then args+=(--baseline-capture run/baseline/ingests.jsonl); fi
-          if [ -n "$MAX_SPAWNS" ]; then args+=(--max-spawns-per-minute "$MAX_SPAWNS"); fi
-          node scripts/agent-footprint-report.mjs "${args[@]}"
+          capture_args=(--capture run/candidate/ingests.jsonl --label candidate --output artifacts/agent-footprint.json)
+          if [ -n "$BASELINE_REF" ]; then capture_args+=(--baseline-capture run/baseline/ingests.jsonl); fi
+          if [ -n "$MAX_SPAWNS" ]; then capture_args+=(--max-spawns-per-minute "$MAX_SPAWNS"); fi
+          node scripts/agent-footprint-report.mjs "${capture_args[@]}"
+          test -f artifacts/agent-footprint.json
 
       - name: Report and assert (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $args = @("--capture", "run/candidate/ingests.jsonl", "--label", "candidate", "--output", "artifacts/agent-footprint.json")
-          if ($env:BASELINE_REF) { $args += @("--baseline-capture", "run/baseline/ingests.jsonl") }
-          if ($env:MAX_SPAWNS) { $args += @("--max-spawns-per-minute", $env:MAX_SPAWNS) }
-          node scripts/agent-footprint-report.mjs @args
+          # `$args` is a reserved automatic variable; assigning to it silently
+          # swallowed the invocation. Pass arguments explicitly instead.
+          if ($env:BASELINE_REF) {
+            $captureArgs = @("--capture", "run/candidate/ingests.jsonl", "--label", "candidate", "--output", "artifacts/agent-footprint.json", "--baseline-capture", "run/baseline/ingests.jsonl")
+          } else {
+            $captureArgs = @("--capture", "run/candidate/ingests.jsonl", "--label", "candidate", "--output", "artifacts/agent-footprint.json")
+          }
+          if ($env:MAX_SPAWNS) { $captureArgs += @("--max-spawns-per-minute", $env:MAX_SPAWNS) }
+          node scripts/agent-footprint-report.mjs @captureArgs
           if ($LASTEXITCODE -ne 0) { throw "Agent footprint audit failed" }
+          if (-not (Test-Path -LiteralPath "artifacts/agent-footprint.json")) {
+            throw "The footprint report was not written; the audit did not run"
+          }
 
       - name: Upload footprint report
         if: always()
