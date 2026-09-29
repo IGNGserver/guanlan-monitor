@@ -753,6 +753,109 @@ func TestMapHardwareSensorsIntegratedGPUIgnoresDedicatedAperture(t *testing.T) {
 	}
 }
 
+func TestParseWindowsInventoryPayload(t *testing.T) {
+	var payload windowsHardwareMetadataPayload
+	raw := []byte(`{
+		"memory": [
+			{"speedMHz": 2400, "configuredClockMHz": 3200, "formFactor": "DIMM"},
+			{"speedMHz": 2400, "configuredClockMHz": 0, "formFactor": "DIMM"}
+		],
+		"adapters": [
+			{"name": "Ethernet", "model": "Intel I219-V", "linkSpeed": "1 Gbps", "connectionType": "802.3"},
+			{"name": "", "model": "ignored", "linkSpeed": "1 Gbps", "connectionType": "802.3"}
+		],
+		"disks": [
+			{"name": "C:", "interfaceType": "NVMe SSD", "model": "Samsung 990", "vendor": "Samsung", "physicalDevice": "\\\\.\\PhysicalDrive0", "diskNumber": 0}
+		],
+		"gpus": [
+			{"name": "NVIDIA GeForce RTX 2060", "pnpDeviceId": "PCI\\VEN_10DE", "driverVersion": "31.0.15", "adapterRAM": 8589934592},
+			{"name": "Intel(R) UHD Graphics", "pnpDeviceId": "PCI\\VEN_8086", "driverVersion": "30.0.1", "adapterRAM": 0}
+		]
+	}`)
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	metadata, adapters := parseWindowsInventoryPayload(payload)
+
+	// Memory: the configured clock wins, the average is over the populated modules.
+	if metadata.MemorySpeedMHz == nil || *metadata.MemorySpeedMHz != 2800 {
+		t.Fatalf("unexpected memory speed: %#v", metadata.MemorySpeedMHz)
+	}
+	if metadata.MemorySlotCount == nil || *metadata.MemorySlotCount != 2 {
+		t.Fatalf("unexpected memory slot count: %#v", metadata.MemorySlotCount)
+	}
+	if metadata.MemoryFormFactor != "DIMM" {
+		t.Fatalf("unexpected memory form factor: %q", metadata.MemoryFormFactor)
+	}
+
+	// The adapter model must come out of the merged script, not a second query.
+	ethernet, ok := metadata.Networks["Ethernet"]
+	if !ok {
+		t.Fatalf("expected the Ethernet adapter, got %#v", metadata.Networks)
+	}
+	if ethernet.Model != "Intel I219-V" {
+		t.Fatalf("adapter model must be populated by the merged script, got %q", ethernet.Model)
+	}
+	if ethernet.LinkSpeedMbps == nil || *ethernet.LinkSpeedMbps != 1000 {
+		t.Fatalf("unexpected link speed: %#v", ethernet.LinkSpeedMbps)
+	}
+	if _, exists := metadata.Networks[""]; exists {
+		t.Fatal("an adapter without a name must be skipped")
+	}
+
+	disk, ok := metadata.DiskMetadata["C:"]
+	if !ok || disk.Model != "Samsung 990" || disk.PhysicalDevice != `\\.\PhysicalDrive0` {
+		t.Fatalf("unexpected disk metadata: %#v", metadata.DiskMetadata)
+	}
+	if metadata.DiskInterfaces["C:"] != "NVMe SSD" {
+		t.Fatalf("unexpected disk interface: %#v", metadata.DiskInterfaces)
+	}
+
+	if metadata.GpuDrivers["NVIDIA GeForce RTX 2060"] != "31.0.15" {
+		t.Fatalf("unexpected GPU drivers: %#v", metadata.GpuDrivers)
+	}
+	if len(adapters) != 2 {
+		t.Fatalf("expected both adapters as records, got %#v", adapters)
+	}
+	if adapters[0].PNPDeviceID != `PCI\VEN_10DE` || adapters[0].AdapterRAM != 8589934592 {
+		t.Fatalf("adapter records must carry PNP id and RAM: %#v", adapters[0])
+	}
+}
+
+func TestParseWindowsInventoryPayloadEmpty(t *testing.T) {
+	metadata, adapters := parseWindowsInventoryPayload(windowsHardwareMetadataPayload{})
+	if adapters == nil {
+		t.Fatal("an empty payload must still return a non-nil record slice, so callers can tell 'no adapters' from 'never fetched'")
+	}
+	if len(adapters) != 0 || len(metadata.Networks) != 0 || metadata.MemorySpeedMHz != nil {
+		t.Fatalf("unexpected result for an empty payload: %#v %#v", metadata, adapters)
+	}
+}
+
+// The adapter projection is a pure function of the cached records: it must
+// produce the same ids the GPU merge identity matching relies on.
+func TestWindowsGPUAdaptersFromRecords(t *testing.T) {
+	records := []windowsGPUAdapterRecord{
+		{Name: "NVIDIA GeForce RTX 2060", PNPDeviceID: `PCI\VEN_10DE`, DriverVersion: "31.0.15", AdapterRAM: 8 * 1024 * 1024 * 1024},
+		{Name: "NVIDIA GeForce RTX 2060", PNPDeviceID: `PCI\VEN_10DE`, DriverVersion: "31.0.15"},
+		{Name: "Microsoft Remote Display Adapter", PNPDeviceID: `ROOT\BasicDisplay`},
+	}
+	adapters := windowsGPUAdaptersFromRecords(records)
+	if len(adapters) != 1 {
+		t.Fatalf("duplicate ids must collapse, got %#v", adapters)
+	}
+	if adapters[0].ID != "gpu-"+sanitizeKey(`PCI\VEN_10DE`) {
+		t.Fatalf("unexpected adapter id: %q", adapters[0].ID)
+	}
+	if adapters[0].MemoryKind != "dedicated" {
+		t.Fatalf("unexpected memory kind: %q", adapters[0].MemoryKind)
+	}
+	// A nil cache is the "no inventory yet" case and must not panic.
+	if got := windowsGPUAdaptersFromRecords(nil); len(got) != 0 {
+		t.Fatalf("nil records must project to an empty list, got %#v", got)
+	}
+}
+
 func TestGPUAdapterMemorySemantics(t *testing.T) {
 	tests := []struct {
 		name  string
