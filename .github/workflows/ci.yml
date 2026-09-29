@@ -70,7 +70,7 @@ jobs:
         run: pnpm build
 
       - name: Verify performance regression cases
-        run: node --experimental-test-module-mocks --test scripts/performance-regression.test.mjs
+        run: node --experimental-test-module-mocks --test scripts/performance-regression.test.mjs scripts/agent-footprint-report.test.mjs
 
   go:
     name: Verify Go agents

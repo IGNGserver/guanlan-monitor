@@ -13,6 +13,8 @@ data
 release
 *.log
 *.tsbuildinfo
+# Local output of the agent footprint audit (scripts/audit-agent-footprint.*).
+run
 .run
 .nas-backups
 agents/dev-machine-agent.env

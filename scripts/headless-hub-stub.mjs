@@ -10,13 +10,18 @@
  * Usage:
  *   node scripts/headless-hub-stub.mjs serve --port 3199 --marker /tmp/ingest.json [--key KEY]
  *   node scripts/headless-hub-stub.mjs wait  --marker /tmp/ingest.json --timeout 120
+ *
+ * For the agent footprint audit, `--capture PATH` appends one JSON line per
+ * accepted ingest with the collector's own counters (probeSpawns,
+ * collectorStats). That is what turns "the collector spawns fewer probes" from
+ * an estimate into a measured number.
  */
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 
 function parseArguments(argv) {
-  const options = { command: argv[0] ?? "serve", port: 3199, marker: "", key: "", timeout: 120 };
+  const options = { command: argv[0] ?? "serve", port: 3199, marker: "", key: "", timeout: 120, capture: "" };
   for (let index = 1; index < argv.length; index += 1) {
     const flag = argv[index];
     const value = argv[index + 1];
@@ -24,6 +29,7 @@ function parseArguments(argv) {
     else if (flag === "--marker") options.marker = value;
     else if (flag === "--key") options.key = value;
     else if (flag === "--timeout") options.timeout = Number(value);
+    else if (flag === "--capture") options.capture = value;
     else continue;
     index += 1;
   }
@@ -80,15 +86,28 @@ const server = http.createServer((request, response) => {
       ingested += 1;
       const body = Buffer.concat(chunks).toString("utf8");
       let summary = {};
+      let captured = { bytes: body.length };
       try {
         const payload = JSON.parse(body);
         summary = { deviceId: payload?.identity?.deviceId, timestamp: payload?.timestamp };
+        captured = {
+          at: new Date().toISOString(),
+          deviceId: payload?.identity?.deviceId,
+          sampledAt: payload?.timestamp,
+          bytes: body.length,
+          probeSpawns: payload?.probeSpawns ?? null,
+          collectorStats: payload?.collectorStats ?? null
+        };
       } catch {
         summary = { bytes: body.length };
       }
       if (options.marker) {
         fs.mkdirSync(path.dirname(options.marker), { recursive: true });
         fs.writeFileSync(options.marker, JSON.stringify({ ingested, ...summary }), "utf8");
+      }
+      if (options.capture) {
+        fs.mkdirSync(path.dirname(options.capture), { recursive: true });
+        fs.appendFileSync(options.capture, `${JSON.stringify(captured)}\n`, "utf8");
       }
       console.log(`headless-hub-stub: ingest #${ingested} ${JSON.stringify(summary)}`);
       response.writeHead(200, { "Content-Type": "application/json" });
