@@ -150,4 +150,5 @@ jobs:
             artifacts/
             run/**/agent.log
             run/**/hub.log
+            run/**/ingests.jsonl
           if-no-files-found: warn
