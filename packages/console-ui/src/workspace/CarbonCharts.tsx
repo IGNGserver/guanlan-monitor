@@ -160,7 +160,8 @@ export function CarbonTimeSeriesChart({
   valueFormatter,
   ariaLabel,
   compact = false,
-  className = ""
+  className = "",
+  onHoverPoint
 }: {
   series: CarbonSeries[];
   visualization?: "line" | "area" | "bar";
@@ -172,6 +173,7 @@ export function CarbonTimeSeriesChart({
   ariaLabel?: string;
   compact?: boolean;
   className?: string;
+  onHoverPoint?: (info: { timeText: string; valueText: string } | null) => void;
 }) {
   // Keyed on content, not identity: a poll that re-supplies identical points must
   // not rebuild the d3 data or the options object.
@@ -199,7 +201,7 @@ export function CarbonTimeSeriesChart({
 
   return (
     <div className={wrapperClassName}>
-      <ChartTouchGestureOverlay>
+      <ChartTouchGestureOverlay series={stableSeries} valueFormatter={valueFormatter} onHoverPoint={onHoverPoint}>
         {chartElement}
       </ChartTouchGestureOverlay>
     </div>

@@ -43,6 +43,7 @@ import {
   type CarbonSeries
 } from "../CarbonCharts";
 import { ChartTile, DashboardCell, isChartAvailable } from "../dashboard";
+import { SingleDeviceChartCell } from "./SingleDeviceChartCell";
 import type { ChartSpanName, DashboardChartSpec, DashboardSectionSpec, DeviceChartId, DeviceSectionId } from "../dashboard";
 import {
   UNAVAILABLE_METRIC_LABEL,
@@ -231,7 +232,7 @@ function gpuTemperatureSubtitle(gpu: GpuMetricSeries, hasPoints: boolean): strin
 }
 
 /** Carbon `StructuredList` 版的键值表，取代原来的 `TelemetryInfoCard`。 */
-function ChartInfoRows({ rows, label }: { rows: Array<{ label: string; value: string }>; label: string }) {
+export function ChartInfoRows({ rows, label }: { rows: Array<{ label: string; value: string }>; label: string }) {
   if (!rows.length) return <div className="chart-tile__empty">暂无可展示的信息</div>;
   return (
     <StructuredListWrapper className="chart-info-rows" aria-label={`${label}详情`} isCondensed isFlush>
@@ -248,7 +249,7 @@ function ChartInfoRows({ rows, label }: { rows: Array<{ label: string; value: st
 }
 
 /** 「详细信息」抽屉：每条序列的当前值、峰值与最低值。 */
-function ChartDetails({ series, valueFormatter }: { series: CarbonSeries[]; valueFormatter?: (value: number) => string }) {
+export function ChartDetails({ series, valueFormatter }: { series: CarbonSeries[]; valueFormatter?: (value: number) => string }) {
   const fallback = valueFormatter ?? plainCount;
   return (
     <StructuredListWrapper className="chart-details" aria-label="指标详情" isCondensed isFlush>
@@ -937,20 +938,7 @@ export function DeviceChartCells({ section, context }: { section: DashboardSecti
     return renderer(chart, context).map((tile) => ({
       node: (
         <DashboardCell key={tile.key} span={tile.span ?? chart.span}>
-          <ChartTile
-            title={tile.title ?? chart.title}
-            subtitle={tile.subtitle}
-            heroStat={tile.heroStat}
-            heroBadge={tile.heroBadge}
-            controls={tile.controls}
-            emptyMessage={tile.emptyMessage}
-            footer={tile.footer}
-            details={tile.series?.length
-              ? <ChartDetails series={tile.series} valueFormatter={tile.valueFormatter} />
-              : undefined}
-          >
-            <ChartBody chart={chart} tile={limitTileSeries(tile, chartPointLimit)} />
-          </ChartTile>
+          <SingleDeviceChartCell chart={chart} tile={limitTileSeries(tile, chartPointLimit)} />
         </DashboardCell>
       )
     }));
