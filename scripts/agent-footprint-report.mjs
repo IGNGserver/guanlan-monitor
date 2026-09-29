@@ -30,7 +30,9 @@ export function parseArguments(argv) {
     baselineCapture: "",
     label: "candidate",
     output: "",
-    maxSpawnsPerMinute: null
+    maxSpawnsPerMinute: null,
+    fastIntervalSeconds: null,
+    slowIntervalSeconds: null
   };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
@@ -40,6 +42,8 @@ export function parseArguments(argv) {
     else if (flag === "--label") options.label = value;
     else if (flag === "--output") options.output = value;
     else if (flag === "--max-spawns-per-minute") options.maxSpawnsPerMinute = Number(value);
+    else if (flag === "--fast-interval-seconds") options.fastIntervalSeconds = Number(value);
+    else if (flag === "--slow-interval-seconds") options.slowIntervalSeconds = Number(value);
     else continue;
     index += 1;
   }
@@ -235,9 +239,20 @@ export function buildReport(options) {
       + "Pass a baseline ref that already reports them, or compare absolute candidate numbers instead."
     );
   }
+  const cadence = {
+    fastIntervalSeconds: Number.isFinite(options.fastIntervalSeconds) ? options.fastIntervalSeconds : null,
+    slowIntervalSeconds: Number.isFinite(options.slowIntervalSeconds) ? options.slowIntervalSeconds : null
+  };
   const report = {
     measuredAt: new Date().toISOString(),
-    limitations: "One shared CI runner; intervals shortened so a few minutes contain many cycles. Probe counts are the collector's own counters, not a process-monitor trace. Rates are observations; only the probe-free fast path and payload arrival are asserted.",
+    limitations: [
+      "One shared CI runner; the collect window is compressed so a few minutes contain many cycles.",
+      "Probe counts are the collector's own counters, not an external process-monitor trace.",
+      "The slow collector is designed on a wall-clock interval, so its probes-per-minute rate scales as cadence*speed/intervalSeconds: the reported rate is only valid for the run's (compressed) interval, not for the production default.",
+      "The fast path's probes-per-cycle is interval-independent and is the number to compare across runs.",
+      "Only the probe-free fast path and payload arrival are asserted; rates and wall times are observations."
+    ].join(" "),
+    cadence,
     candidate,
     baseline
   };
@@ -276,10 +291,18 @@ export function formatMarkdown(report) {
   rows.push(line("probes per fast cycle", (summary) => summary.spawnsPerFastCycle ?? "n/a"));
   rows.push(line("fast-cycle spawns (must be 0)", (summary) => summary.steadyFastCycleSpawns));
   rows.push(line("last slow collection (ms)", (summary) => summary.lastSlowMillis ?? "n/a"));
+  const cadenceText = report.cadence && (report.cadence.fastIntervalSeconds != null || report.cadence.slowIntervalSeconds != null)
+    ? [
+        report.cadence.fastIntervalSeconds != null ? `fast=${report.cadence.fastIntervalSeconds}s` : "",
+        report.cadence.slowIntervalSeconds != null ? `slow=${report.cadence.slowIntervalSeconds}s` : ""
+      ].filter(Boolean).join(" ")
+    : "not recorded";
   return [
     `### Agent collector footprint (${process.env.RUNNER_OS ?? process.platform})`,
     "",
     rows.join("\n"),
+    "",
+    `Measured cadence: ${cadenceText}. The per-minute rate is only valid for this cadence; the production default is 30s/60s.`,
     "",
     `Steady-state probes by executable: ${Object.entries(report.candidate.spawnsByExecutable).map(([name, count]) => `\`${name}\`×${count}`).join(", ") || "none"}.`,
     "",
@@ -299,7 +322,15 @@ export function runAudit(options) {
     fs.writeFileSync(options.output, `${JSON.stringify(report, null, 2)}\n`, "utf8");
     console.log(`\nwrote ${options.output}`);
   }
-  // Surface the measurement where a manual audit is actually read.
+  // A rate without its cadence is not reproducible. Surface it in both the text
+  // and the step summary so no reader mistakes the compressed-run rate for the
+  // production one.
+  if (options.fastIntervalSeconds != null || options.slowIntervalSeconds != null) {
+    const parts = [];
+    if (report.cadence.fastIntervalSeconds != null) parts.push(`fast=${report.cadence.fastIntervalSeconds}s`);
+    if (report.cadence.slowIntervalSeconds != null) parts.push(`slow=${report.cadence.slowIntervalSeconds}s`);
+    console.log(`\ncadence: ${parts.join(" ")} — the per-minute rate above is only valid for this cadence`);
+  }
   if (process.env.GITHUB_STEP_SUMMARY) {
     fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${formatMarkdown(report)}\n`, "utf8");
   }

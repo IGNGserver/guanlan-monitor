@@ -39,6 +39,10 @@ jobs:
       MAX_SPAWNS: ${{ inputs.max_spawns_per_minute }}
       HUB_PORT: "3199"
       HUB_KEY: ci-agent-footprint
+      # Compressed so a few minutes contain many cycles. Kept in sync with the
+      # config the audit scripts write, and reported alongside the results.
+      FAST_INTERVAL: "5"
+      SLOW_INTERVAL: "20"
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -109,7 +113,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          capture_args=(--capture run/candidate/ingests.jsonl --label candidate --output artifacts/agent-footprint.json)
+          # The cadence is passed through so the report can state which interval
+          # its per-minute rate belongs to; see the harness script for the values.
+          capture_args=(--capture run/candidate/ingests.jsonl --label candidate --output artifacts/agent-footprint.json
+            --fast-interval-seconds "$FAST_INTERVAL" --slow-interval-seconds "$SLOW_INTERVAL")
           if [ -n "$BASELINE_REF" ]; then capture_args+=(--baseline-capture run/baseline/ingests.jsonl); fi
           if [ -n "$MAX_SPAWNS" ]; then capture_args+=(--max-spawns-per-minute "$MAX_SPAWNS"); fi
           node scripts/agent-footprint-report.mjs "${capture_args[@]}"
@@ -121,10 +128,11 @@ jobs:
         run: |
           # `$args` is a reserved automatic variable; assigning to it silently
           # swallowed the invocation. Pass arguments explicitly instead.
+          $cadence = @("--fast-interval-seconds", $env:FAST_INTERVAL, "--slow-interval-seconds", $env:SLOW_INTERVAL)
           if ($env:BASELINE_REF) {
-            $captureArgs = @("--capture", "run/candidate/ingests.jsonl", "--label", "candidate", "--output", "artifacts/agent-footprint.json", "--baseline-capture", "run/baseline/ingests.jsonl")
+            $captureArgs = @("--capture", "run/candidate/ingests.jsonl", "--label", "candidate", "--output", "artifacts/agent-footprint.json", "--baseline-capture", "run/baseline/ingests.jsonl") + $cadence
           } else {
-            $captureArgs = @("--capture", "run/candidate/ingests.jsonl", "--label", "candidate", "--output", "artifacts/agent-footprint.json")
+            $captureArgs = @("--capture", "run/candidate/ingests.jsonl", "--label", "candidate", "--output", "artifacts/agent-footprint.json") + $cadence
           }
           if ($env:MAX_SPAWNS) { $captureArgs += @("--max-spawns-per-minute", $env:MAX_SPAWNS) }
           node scripts/agent-footprint-report.mjs @captureArgs
