@@ -507,10 +507,22 @@ type agentState struct {
 // and the GPU performance fallback all need, and querying them separately cost
 // three extra process spawns per cycle.
 type hardwareAssetCache struct {
-	collectedAt          time.Time
-	metadata             windowsHardwareMetadata
-	gpuAdapters          []windowsGPUAdapterRecord
+	collectedAt time.Time
+	metadata    windowsHardwareMetadata
+	gpuAdapters []windowsGPUAdapterRecord
+	// linuxMemory is the dmidecode-derived memory speed/slot/form-factor triple.
+	// Memory module speeds are fixed for the lifetime of a boot (no hot-plug
+	// DIMMs on any supported machine), so this is the same class of inventory as
+	// the Windows metadata: worth a TTL to avoid a root-only process per cycle.
+	linuxMemory          *linuxMemoryMetadata
 	referenceDeviceCount int
+}
+
+// linuxMemoryMetadata is the static memory inventory dmidecode reports.
+type linuxMemoryMetadata struct {
+	speedMHz   *float64
+	slotCount  *int
+	formFactor string
 }
 
 // expiredFor reports whether the cached inventory is older than ttl. A zero
@@ -2064,15 +2076,32 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 		result.networkInterfaces = networkInterfaces
 	}
 
-	// The Windows inventory is one PowerShell run per TTL and feeds three
-	// consumers below (the LHM snapshot alignment, the disk/network metadata and
-	// the GPU adapter projections), so it is resolved once, before them.
-	refreshAssets := runtime.GOOS == "windows" && assets.expiredFor(hardwareAssetCacheTTL)
+	// Windows inventory is one PowerShell run per TTL and feeds three consumers
+	// below (the LHM snapshot alignment, the disk/network metadata and the GPU
+	// adapter projections), so it is resolved once, before them. Linux memory
+	// inventory is a root-only dmidecode run whose result never changes while the
+	// machine is up, so it shares the same TTL.
+	refreshAssets := assets.expiredFor(hardwareAssetCacheTTL)
 	if refreshAssets {
-		metadata, adapters := collectWindowsInventory()
-		assets.metadata = metadata
-		assets.gpuAdapters = adapters
-		assets.collectedAt = time.Now().UTC()
+		switch runtime.GOOS {
+		case "windows":
+			metadata, adapters := collectWindowsInventory()
+			assets.metadata = metadata
+			assets.gpuAdapters = adapters
+			assets.collectedAt = time.Now().UTC()
+		case "linux":
+			// Cache the attempt, not just a success. dmidecode needs root: on a
+			// non-root collector run it fails every time, and recording only
+			// successes made the collector spawn a process that could never
+			// succeed once per cycle. A permission or presence problem does not
+			// change while the process runs, so the TTL is the right bound for
+			// retrying it too.
+			memory, ok := collectLinuxMemoryMetadata()
+			if ok {
+				assets.linuxMemory = &memory
+			}
+			assets.collectedAt = time.Now().UTC()
+		}
 	}
 
 	hardware := collectHardwareSensors(assets.gpuAdapters)
@@ -2089,14 +2118,10 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 	memorySpeedMHz := windowsMetadata.MemorySpeedMHz
 	memorySlotCount := windowsMetadata.MemorySlotCount
 	memoryFormFactor := windowsMetadata.MemoryFormFactor
-	if runtime.GOOS == "linux" {
-		// Linux reads this from sysfs/dmidecode, not from the cached Windows
-		// inventory, so it is always fresh and cheap when dmidecode is absent.
-		if linuxSpeed, linuxSlots, linuxFormFactor := collectLinuxMemoryMetadata(); linuxSpeed != nil || linuxSlots != nil || linuxFormFactor != "" {
-			memorySpeedMHz = linuxSpeed
-			memorySlotCount = linuxSlots
-			memoryFormFactor = linuxFormFactor
-		}
+	if runtime.GOOS == "linux" && assets.linuxMemory != nil {
+		memorySpeedMHz = assets.linuxMemory.speedMHz
+		memorySlotCount = assets.linuxMemory.slotCount
+		memoryFormFactor = assets.linuxMemory.formFactor
 	}
 	if runtime.GOOS == "windows" {
 		windowsDiskSensors := collectWindowsDiskSensorMetadata(windowsMetadata.DiskMetadata)
@@ -2664,20 +2689,29 @@ func normalizeGPUMemoryKind(value string) string {
 	}
 }
 
-func collectLinuxMemoryMetadata() (*float64, *int, string) {
+// collectLinuxMemoryMetadata reads the static memory inventory from dmidecode.
+// It is a root-only helper; a missing binary or an unreadable SMBIOS table is a
+// normal, silent "no data" result.
+func collectLinuxMemoryMetadata() (linuxMemoryMetadata, bool) {
 	if runtime.GOOS != "linux" {
-		return nil, nil, ""
+		return linuxMemoryMetadata{}, false
 	}
 	if _, err := exec.LookPath("dmidecode"); err != nil {
-		return nil, nil, ""
+		return linuxMemoryMetadata{}, false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), hardwareSensorsTimeout)
 	defer cancel()
 	output, err := probeRunner(ctx, "dmidecode", "--type", "memory")
 	if err != nil {
-		return nil, nil, ""
+		return linuxMemoryMetadata{}, false
 	}
+	return parseDmidecodeMemory(output)
+}
 
+// parseDmidecodeMemory turns `dmidecode --type memory` output into the static
+// memory inventory. It is pure so the parsing can be tested without dmidecode.
+// A document with no populated modules returns ok=false.
+func parseDmidecodeMemory(output []byte) (linuxMemoryMetadata, bool) {
 	type module struct {
 		populated          bool
 		speedMHz           float64
@@ -2709,7 +2743,7 @@ func collectLinuxMemoryMetadata() (*float64, *int, string) {
 	}
 	flush()
 	if len(modules) == 0 {
-		return nil, nil, ""
+		return linuxMemoryMetadata{}, false
 	}
 	speeds := []float64{}
 	formFactor := ""
@@ -2725,7 +2759,11 @@ func collectLinuxMemoryMetadata() (*float64, *int, string) {
 			formFactor = item.formFactor
 		}
 	}
-	return averagePointer(speeds), intPointer(len(modules)), formFactor
+	return linuxMemoryMetadata{
+		speedMHz:   averagePointer(speeds),
+		slotCount:  intPointer(len(modules)),
+		formFactor: formFactor,
+	}, true
 }
 
 func parseMemorySpeedMHz(line string) float64 {

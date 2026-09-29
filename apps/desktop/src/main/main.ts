@@ -272,6 +272,12 @@ if (!hasSingleInstanceLock) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
+    // While hidden the shell answers refreshes from the current snapshot instead
+    // of driving the hub, so refresh once on the way back up rather than showing
+    // data from whenever the window was hidden.
+    void controller?.refresh().catch((error) => {
+      reportProcessEvent("window-show-refresh-failed", { error });
+    });
   };
 
   const hideWindow = () => {

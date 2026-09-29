@@ -4,15 +4,25 @@ import { createRequire } from 'node:module';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { DesktopCacheStore } from '../apps/desktop/dist/main/cache-store.js';
 import { createRemoteSessionProbe } from '../apps/desktop/dist/main/runtime-profile.js';
 import { startVisiblePolling } from '../packages/console-ui/src/helpers/visiblePolling.ts';
 
 const desktopRequire = createRequire(new URL('../apps/desktop/package.json', import.meta.url));
+// `registerIpc` is exercised below, so the mock also has to satisfy the names
+// ipc.ts imports at module scope. The handlers it registers are captured so a
+// test can invoke them without a real Electron runtime, and the "owning window"
+// is a mutable slot the test fills in.
+let mockedBrowserWindow = null;
+const ipcHandlers = new Map();
 mock.module(desktopRequire.resolve('electron'), { namedExports: {
   safeStorage: { isEncryptionAvailable: () => false },
   app: { getPath: () => tmpdir(), getVersion: () => '3.0.28' },
-  shell: {}
+  shell: {},
+  ipcMain: { handle: (channel, handler) => ipcHandlers.set(channel, handler), on: (channel, handler) => ipcHandlers.set(channel, handler) },
+  nativeTheme: { prefersReducedTransparency: false, on: () => {}, removeListener: () => {} },
+  BrowserWindow: { fromWebContents: () => mockedBrowserWindow }
 } });
 const { HubClient } = await import('../apps/desktop/dist/main/hub-client.js');
 const { DesktopController } = await import('../apps/desktop/dist/main/controller.js');
@@ -154,6 +164,73 @@ test('parallel session requests perform one authentication', async () => {
   const pending = Array.from({ length: 10 }, () => client.ensureSession());
   assert.equal(calls, 1);
   release(); await Promise.all(pending);
+});
+
+test('a hidden window is served from the current snapshot instead of the hub', async () => {
+  const { registerIpc } = await import('../apps/desktop/dist/main/ipc.js');
+  const { IPC_CHANNELS } = await import('../apps/desktop/dist/ipc-contract.js');
+
+  const calls = { refresh: 0, getSnapshot: 0, pushed: 0 };
+  const current = { generatedAt: 'now' };
+  const controller = {
+    refresh: () => { calls.refresh += 1; return Promise.resolve(current); },
+    getSnapshot: () => { calls.getSnapshot += 1; return Promise.resolve(current); },
+    subscribe: (listener) => { controller.emit = listener; return () => undefined; },
+    updateLocalConfig: () => Promise.resolve(current),
+    controlAgent: () => Promise.resolve(current),
+    saveHubConnection: () => Promise.resolve(current),
+    login: () => Promise.resolve(current),
+    logout: () => Promise.resolve(current),
+    disconnectAgent: () => Promise.resolve(current),
+    cloudPush: () => Promise.resolve(current),
+    saveFanNote: () => Promise.resolve(current),
+    deleteInstance: () => Promise.resolve(current),
+    reorderInstances: () => Promise.resolve(current),
+    updateStartupSettings: () => Promise.resolve(current),
+    openExternal: () => Promise.resolve(),
+    shutdown: () => Promise.resolve()
+  };
+
+  const window = {
+    isDestroyed: () => false,
+    isVisible: () => window.visible,
+    isMinimized: () => window.minimized === true,
+    minimized: false,
+    visible: false,
+    webContents: { send: () => { calls.pushed += 1; } },
+    setMenuBarVisibility: () => {},
+    close: () => {}
+  };
+  mockedBrowserWindow = window;
+  ipcHandlers.clear();
+  registerIpc(controller, () => window, () => undefined, false);
+
+  const refreshHandler = ipcHandlers.get(IPC_CHANNELS.refresh);
+  assert.ok(refreshHandler, 'the refresh channel must be registered');
+  // The trusted-sender check requires the sender to be the owning window and to
+  // originate from the packaged renderer root.
+  const rendererPage = pathToFileURL(path.resolve('apps/desktop/dist/renderer/index.html')).href;
+  const event = { sender: { id: 1 }, senderFrame: { url: rendererPage } };
+
+  const result = await refreshHandler(event, undefined);
+  assert.equal(calls.getSnapshot, 1, 'a hidden window must be answered from the current snapshot');
+  assert.equal(calls.refresh, 0, 'a hidden window must not drive a hub refresh');
+  assert.equal(result, current, 'the cached snapshot must be returned unchanged');
+
+  // A push while hidden is dropped; the same push while visible is delivered.
+  controller.emit(current);
+  assert.equal(calls.pushed, 0, 'a hidden window must not receive snapshot pushes');
+  window.visible = true;
+  controller.emit(current);
+  assert.equal(calls.pushed, 1, 'a visible window must receive snapshot pushes');
+
+  // A minimized window is equally unread, even though Electron reports it visible.
+  window.minimized = true;
+  const minimizedResult = await refreshHandler(event, undefined);
+  assert.equal(calls.refresh, 0, 'a minimized window must not drive a hub refresh');
+  assert.equal(minimizedResult, current);
+  controller.emit(current);
+  assert.equal(calls.pushed, 1, 'a minimized window must not receive snapshot pushes');
 });
 
 test('packaged main and preload have no external npm runtime imports', async () => {

@@ -834,6 +834,62 @@ func TestParseWindowsInventoryPayloadEmpty(t *testing.T) {
 
 // The adapter projection is a pure function of the cached records: it must
 // produce the same ids the GPU merge identity matching relies on.
+// dmidecode output is only available on a Linux host with root, so the parsing
+// is split out and exercised here. Memory speed is what the dashboard's memory
+// card shows; a wrong parse silently degrades it.
+func TestParseDmidecodeMemory(t *testing.T) {
+	output := []byte(`# dmidecode 3.5
+Getting SMBIOS data from sysfs.
+Handle 0x0008, DMI type 17, 40 bytes
+Memory Device
+	Size: 16 GB
+	Form Factor: DIMM
+	Speed: 2666 MT/s
+	Configured Memory Speed: 3200 MT/s
+
+Handle 0x0009, DMI type 17, 40 bytes
+Memory Device
+	Size: No Module Installed
+	Form Factor: DIMM
+	Speed: Unknown
+
+Handle 0x000A, DMI type 17, 40 bytes
+Memory Device
+	Size: 16 GB
+	Form Factor: DIMM
+	Speed: 3200 MT/s
+`)
+	memory, ok := parseDmidecodeMemory(output)
+	if !ok {
+		t.Fatal("expected populated modules to parse")
+	}
+	// The configured speed wins where present; 3200 and 3200 average to 3200.
+	if memory.speedMHz == nil || *memory.speedMHz != 3200 {
+		t.Fatalf("unexpected memory speed: %#v", memory.speedMHz)
+	}
+	if memory.slotCount == nil || *memory.slotCount != 2 {
+		t.Fatalf("an unpopulated slot must not be counted: %#v", memory.slotCount)
+	}
+	if memory.formFactor != "DIMM" {
+		t.Fatalf("unexpected form factor: %q", memory.formFactor)
+	}
+}
+
+func TestParseDmidecodeMemoryEmptyAndFallsBackToRawSpeed(t *testing.T) {
+	if _, ok := parseDmidecodeMemory([]byte("Handle 0x0000, DMI type 17\nMemory Device\n\tSize: No Module Installed\n")); ok {
+		t.Fatal("a document with no populated module must report not-ok")
+	}
+	if _, ok := parseDmidecodeMemory(nil); ok {
+		t.Fatal("empty output must report not-ok")
+	}
+
+	// Without a configured speed, the raw Speed field is the fallback.
+	memory, ok := parseDmidecodeMemory([]byte("Memory Device\n\tSize: 8 GB\n\tForm Factor: SODIMM\n\tSpeed: 2400 MT/s\n"))
+	if !ok || memory.speedMHz == nil || *memory.speedMHz != 2400 {
+		t.Fatalf("expected the raw speed to be used: ok=%v %#v", ok, memory)
+	}
+}
+
 func TestWindowsGPUAdaptersFromRecords(t *testing.T) {
 	records := []windowsGPUAdapterRecord{
 		{Name: "NVIDIA GeForce RTX 2060", PNPDeviceID: `PCI\VEN_10DE`, DriverVersion: "31.0.15", AdapterRAM: 8 * 1024 * 1024 * 1024},

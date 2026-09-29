@@ -41,12 +41,17 @@ function Invoke-Variant([string]$label, [string]$binary) {
   $hub = Start-Process -FilePath "node" `
     -ArgumentList @("scripts/headless-hub-stub.mjs", "serve", "--port", $port, "--key", $key, "--capture", $captureArg) `
     -PassThru -WindowStyle Hidden `
-    -RedirectStandardOutput (Join-Path $dir "hub.log")
+    -RedirectStandardOutput (Join-Path $dir "hub.log") `
+    -RedirectStandardError (Join-Path $dir "hub.err.log")
   Start-Sleep -Seconds 3
 
   $env:DSC_AGENT_CONFIG_FILE = (Resolve-Path (Join-Path $dir "agent-ui.config.json")).Path
+  # The collector logs through `log.Printf`, i.e. to stderr. Start-Process cannot
+  # merge the two streams, and capturing only stdout silently produced an empty
+  # agent.log on Windows, so both are redirected and both are uploaded.
   $agent = Start-Process -FilePath $binary -PassThru -WindowStyle Hidden -WorkingDirectory $dir `
-    -RedirectStandardOutput (Join-Path $dir "agent.log")
+    -RedirectStandardOutput (Join-Path $dir "agent.log") `
+    -RedirectStandardError (Join-Path $dir "agent.err.log")
   Start-Sleep -Seconds $duration
 
   Stop-Process -Id $agent.Id -Force -ErrorAction SilentlyContinue
@@ -56,8 +61,11 @@ function Invoke-Variant([string]$label, [string]$binary) {
 
   $count = if (Test-Path -LiteralPath $capture) { (Get-Content -LiteralPath $capture | Measure-Object -Line).Lines } else { 0 }
   if ($count -eq 0) {
-    Write-Output "[$label] no ingests captured; collector log tail:"
-    if (Test-Path -LiteralPath (Join-Path $dir "agent.log")) { Get-Content -LiteralPath (Join-Path $dir "agent.log") -Tail 40 }
+    Write-Output "[$label] no ingests captured; collector stderr tail:"
+    foreach ($log in @("agent.err.log", "agent.log")) {
+      $path = Join-Path $dir $log
+      if (Test-Path -LiteralPath $path) { Write-Output "--- $log ---"; Get-Content -LiteralPath $path -Tail 40 }
+    }
     throw "[$label] the collector never reached the stub hub"
   }
   Write-Output "[$label] captured $count ingests"

@@ -148,7 +148,6 @@ jobs:
           name: agent-footprint-${{ matrix.os }}
           path: |
             artifacts/
-            run/**/agent.log
-            run/**/hub.log
+            run/**/*.log
             run/**/ingests.jsonl
           if-no-files-found: warn

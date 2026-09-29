@@ -37,7 +37,15 @@ export function registerIpc(
   };
 
   handle(IPC_CHANNELS.getSnapshot, (_event, request?: DesktopSnapshotRequest) => controller.getSnapshot(asSnapshotRequest(request)));
-  handle(IPC_CHANNELS.refresh, (_event, request?: DesktopSnapshotRequest) => controller.refresh(asSnapshotRequest(request)));
+  handle(IPC_CHANNELS.refresh, (_event, request?: DesktopSnapshotRequest) => {
+    const snapshotRequest = asSnapshotRequest(request);
+    // With the window hidden the renderer may still be polling (Electron does not
+    // always report a hidden window as document.hidden). Answer from the current
+    // snapshot instead of driving a full hub round trip for a view nobody sees;
+    // the show handler in main refreshes immediately when the window returns.
+    if (!isWindowVisible(getWindow)) return controller.getSnapshot(snapshotRequest);
+    return controller.refresh(snapshotRequest);
+  });
   handle(IPC_CHANNELS.updateLocalConfig, (_event, patch: DesktopConfigPatch) => controller.updateLocalConfig(asConfigPatch(patch)));
   handle(IPC_CHANNELS.controlAgent, (_event, action: DesktopAgentControlAction) => controller.controlAgent(asControlAction(action)));
   handle(IPC_CHANNELS.saveHubConnection, (_event, serverUrl: string, accessKey: string) => controller.saveHubConnection(asString(serverUrl, "server_url"), asString(accessKey, "access_key")));
@@ -100,8 +108,27 @@ export function registerIpc(
   });
 
   controller.subscribe((snapshot) => {
+    // A tray-resident window must not keep paying for a renderer that nobody can
+    // see. Every pushed snapshot re-renders the whole console, including the
+    // chart tiles, so pushing to a hidden or minimized window is pure waste. The
+    // renderer re-reads on the way back up (see the show handler in main).
+    if (!isWindowVisible(getWindow)) return;
     getWindow()?.webContents.send(IPC_CHANNELS.snapshot, snapshot);
   });
+}
+
+/**
+ * Whether the console window is on screen and worth refreshing.
+ *
+ * A minimized or hidden window is not being read, and refreshing it costs a hub
+ * round trip plus a full re-render of the chart tiles. A missing window counts as
+ * not worth refreshing.
+ */
+function isWindowVisible(getWindow: () => BrowserWindow | null): boolean {
+  const window = getWindow();
+  if (!window || window.isDestroyed()) return false;
+  if (window.isMinimized()) return false;
+  return window.isVisible();
 }
 
 type IpcHandler = (event: Electron.IpcMainInvokeEvent, ...args: any[]) => unknown;
