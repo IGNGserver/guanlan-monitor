@@ -687,7 +687,7 @@ func main() {
 		}
 	}
 	defaultConnection := agentConnectionConfig{
-		ServerURL: env("DSC_SERVER_URL", "http://127.0.0.1:3100"),
+		ServerURL: env("DSC_SERVER_URL", "http://127.0.0.1:38472"),
 		Secret:    env("DSC_AGENT_SECRET", "replace-me-agent-secret"),
 		DeviceID:  env("DSC_DEVICE_ID", ""),
 		Hostname:  env("DSC_HOSTNAME", ""),

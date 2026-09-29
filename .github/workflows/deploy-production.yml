@@ -168,7 +168,7 @@ jobs:
           DSC_RELEASE_CHANNEL: ${{ inputs.channel }}
           SERVER_IMAGE_REF: ${{ steps.images.outputs.server_image_ref }}
           WEB_IMAGE_REF: ${{ steps.images.outputs.web_image_ref }}
-          WEB_PORT: "3100"
+          WEB_PORT: "38472"
         run: |
           set -euo pipefail
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$DEPLOY_USER@$DEPLOY_HOST" \

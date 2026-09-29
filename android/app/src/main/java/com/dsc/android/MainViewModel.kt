@@ -141,7 +141,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
           it.copy(
             savingConfig = false,
-            message = "移动端请填写服务端地址，例如 http://your-server-host:3100"
+            message = "移动端请填写服务端地址，例如 http://your-server-host:38472"
           )
         }
         return@launch

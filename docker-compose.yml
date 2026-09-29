@@ -69,7 +69,7 @@ services:
       DSC_RELEASE_CHANNEL: ${DSC_RELEASE_CHANNEL:-test}
       SERVER_API_URL: http://server:4000
     ports:
-      - "${WEB_PORT:-3100}:3000"
+      - "${WEB_PORT:-38472}:3000"
     depends_on:
       - server
 

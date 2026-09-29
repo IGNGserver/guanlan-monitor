@@ -44,7 +44,7 @@ public struct LoginView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
-                    TextField("http://192.168.1.100:3100", text: $baseUrlInput)
+                    TextField("http://192.168.1.100:38472", text: $baseUrlInput)
                         .textFieldStyle(.roundedBorder)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)

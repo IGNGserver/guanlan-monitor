@@ -2,7 +2,7 @@ namespace DeviceStateConsoleAgent.WinUI.Models;
 
 public sealed class AgentConnectionConfig
 {
-    public string ServerUrl { get; set; } = "http://127.0.0.1:3100";
+    public string ServerUrl { get; set; } = "http://127.0.0.1:38472";
     public string Secret { get; set; } = "";
     public string DeviceId { get; set; } = "windows-agent";
     public string Hostname { get; set; } = "Windows Agent";

@@ -428,7 +428,7 @@
                             <StackPanel x:Name="ServerConfigPanel" Spacing="20" Visibility="Collapsed" HorizontalAlignment="Stretch">
                                 <Border Style="{StaticResource DSCPanelStyle}">
                                     <StackPanel Spacing="14">
-                                        <TextBox Header="中枢服务器地址" Text="{Binding ServerUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="http://your-server-host:3100" />
+                                        <TextBox Header="中枢服务器地址" Text="{Binding ServerUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="http://your-server-host:38472" />
                                         <PasswordBox x:Name="SecretBox" Header="访问密钥" PasswordChanged="SecretBox_OnPasswordChanged" />
                                         <ToggleSwitch Header="启用数据记录" IsOn="{Binding DataRecordingEnabled, Mode=TwoWay}" />
                                         <TextBlock Text="关闭后，本机不会注册至中枢，也不会上传监测数据。" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />

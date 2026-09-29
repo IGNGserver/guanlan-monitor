@@ -124,7 +124,7 @@ fun OnboardingScreen(
             value = baseUrl,
             onValueChange = { baseUrl = it },
             label = "中枢地址",
-            supportingText = "例如 http://192.168.1.10:3100 或 https://你的域名",
+            supportingText = "例如 http://192.168.1.10:38472 或 https://你的域名",
             enabled = !busy,
             imeAction = ImeAction.Next
           )

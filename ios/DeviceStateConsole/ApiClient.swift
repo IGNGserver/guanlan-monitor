@@ -20,8 +20,8 @@ public actor ApiClient {
         guard let url = URL(string: withScheme), var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             return trimmed
         }
-        if let port = components.port, (port == 4000 || port == 3101) {
-            components.port = 3100
+        if let port = components.port, (port == 4000 || port == 3101 || port == 3100) {
+            components.port = 38472
             return components.url?.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")) ?? trimmed
         }
         return withScheme.trimmingCharacters(in: CharacterSet(charactersIn: "/"))

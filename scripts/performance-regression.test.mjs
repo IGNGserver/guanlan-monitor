@@ -121,7 +121,7 @@ test('update metadata is cached per Hub/version and failures remain retryable', 
   const client = new HubClient('/unused');
   let calls = 0;
   client.request = async () => ({ available: true, requestNumber: ++calls });
-  client.setServerUrl('http://localhost:3100');
+  client.setServerUrl('http://localhost:38472');
   for (let i = 0; i < 180; i++) assert.equal((await client.getUpdateInfo('3.0.28')).requestNumber, 1);
   await client.getUpdateInfo('3.0.29');
   assert.equal(calls, 2);
@@ -157,7 +157,7 @@ test('desktop optional endpoints run concurrently without dropping successful da
 
 test('parallel session requests perform one authentication', async () => {
   const client = new HubClient('/unused');
-  client.setServerUrl('http://localhost:3100');
+  client.setServerUrl('http://localhost:38472');
   client.accessKey = 'fixture';
   let calls = 0, release;
   client.login = async () => { calls++; await new Promise((resolve) => { release = resolve; }); client.sessionCookie = 'dsc_session=fixture'; };

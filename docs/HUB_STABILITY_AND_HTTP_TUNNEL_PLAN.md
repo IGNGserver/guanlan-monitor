@@ -21,7 +21,7 @@
   }
   ```
   桌面端在校验中枢地址时，**强制要求非私有 IP / 非 localhost 的域名或外网 IP 必须使用 `https:`**。
-  如果用户在外网使用 HTTP 穿透（例如 `http://123.45.67.89:3100` 或 `http://myfrp.domain.com:3100`），`isPrivateNetworkHost` 返回 `false`，导致 `this.serverUrl` 被置空并返回 `false`。
+  如果用户在外网使用 HTTP 穿透（例如 `http://123.45.67.89:38472` 或 `http://myfrp.domain.com:38472`），`isPrivateNetworkHost` 返回 `false`，导致 `this.serverUrl` 被置空并返回 `false`。
 - **后果**: 桌面端在填写或连接外网 HTTP 地址时，直接抛出 `hub_server_url_invalid`，提示“公网地址必须使用 HTTPS，局域网 HTTP 仅支持私有地址”，**完全无法建立连接**。
 
 ### 2.2 【P0 致命】Go 采集 Agent 与 Linux GUI 硬编码强制外网 HTTPS

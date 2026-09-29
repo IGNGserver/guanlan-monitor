@@ -619,7 +619,7 @@ jobs:
           DSC_RELEASE_CHANNEL: ${{ inputs.channel }}
           DSC_ALLOW_HTTP: ${{ inputs.allow_http }}
           DEPLOY_DEFINITION_DIR: ${{ runner.temp }}/dsc-release-definition
-          WEB_PORT: "3100"
+          WEB_PORT: "38472"
         run: |
           set -euo pipefail
           backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -681,7 +681,7 @@ jobs:
           DSC_VERSION: ${{ inputs.version }}
           DSC_RELEASE_CHANNEL: ${{ inputs.channel }}
           DEPLOY_DEFINITION_DIR: ${{ runner.temp }}/dsc-release-definition
-          WEB_PORT: "3100"
+          WEB_PORT: "38472"
         run: |
           set -euo pipefail
           if [[ -z "$DEPLOY_HOST" ]]; then

@@ -222,7 +222,7 @@ public sealed class MainViewModel : ObservableObject
     private string _diskInstanceSummary = "执行组件探测后，这里会列出可单独开关的磁盘实例。";
     private string _networkInstanceSummary = "执行组件探测后，这里会列出可单独开关的网卡实例。";
     private string _gpuInstanceSummary = "执行组件探测后，这里会列出可单独开关的显卡实例。";
-    private string _serverUrl = "http://127.0.0.1:3100";
+    private string _serverUrl = "http://127.0.0.1:38472";
     private string _secret = "";
     private string _deviceId = "windows-agent";
     private string _hostname = "Windows Agent";

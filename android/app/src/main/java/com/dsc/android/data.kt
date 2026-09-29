@@ -193,8 +193,8 @@ class SettingsRepository(private val application: Application) {
     if (trimmed.isBlank()) return ""
     return runCatching {
       val parsed = ServerUrlPolicy.parse(trimmed)
-      val normalized = if (parsed.port in setOf(4000, 3101)) {
-        parsed.newBuilder().port(3100).build()
+      val normalized = if (parsed.port in setOf(4000, 3101, 3100)) {
+        parsed.newBuilder().port(38472).build()
       } else {
         parsed
       }

@@ -158,7 +158,7 @@ func defaultFor(goos string) LocalConfig {
 	return LocalConfig{
 		ConfigVersion: CurrentConfigVersion,
 		Connection: Connection{
-			ServerURL: "http://127.0.0.1:3100",
+			ServerURL: "http://127.0.0.1:38472",
 			Secret:    "",
 			DeviceID:  deviceID,
 			Hostname:  hostname,

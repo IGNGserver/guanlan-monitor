@@ -9,8 +9,8 @@
 
 ## 端口核对
 
-- Hub 对外访问端口统一为 `3100`（`.env.example`、Compose 公网映射、部署 workflow、客户端默认地址均如此）。
-- Compose 中 `server:4000` 是 Docker 内部 API 端口，未暴露到宿主机；web 容器通过 `http://server:4000` 访问它，公网 Hub 仍只有 `3100`。`verify:hub-port` 已通过。
+- Hub 对外访问端口统一为 `38472`（`.env.example`、Compose 公网映射、部署 workflow、客户端默认地址均如此）。
+- Compose 中 `server:4000` 是 Docker 内部 API 端口，未暴露到宿主机；web 容器通过 `http://server:4000` 访问它，公网 Hub 仍只有 `38472`。`verify:hub-port` 已通过。
 
 ## 当前状态
 
