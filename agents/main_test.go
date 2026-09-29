@@ -690,6 +690,33 @@ func TestHardwareAssetCacheChangeDetectionInvalidates(t *testing.T) {
 	}
 }
 
+// The disk sensors have their own, much shorter TTL than the hardware
+// inventory: temperature is a live reading, so a cycle inside the disk TTL must
+// skip the probe while a cycle inside the inventory TTL must not.
+func TestDiskSensorCacheTTL(t *testing.T) {
+	cache := hardwareAssetCache{}
+	if !cache.diskSensorsExpired() {
+		t.Fatal("an empty disk sensor cache must report as expired")
+	}
+	cache.diskSensorsCollectedAt = time.Now()
+	if cache.diskSensorsExpired() {
+		t.Fatal("a freshly read disk sensor cache must not report as expired")
+	}
+	// The disk TTL is deliberately shorter than the inventory TTL, so ageing a
+	// cache past one but not the other must expire the disks and keep the rest.
+	cache.collectedAt = time.Now()
+	cache.diskSensorsCollectedAt = time.Now().Add(-(diskSensorCacheTTL + time.Second))
+	if !cache.diskSensorsExpired() {
+		t.Fatal("disk sensors older than diskSensorCacheTTL must report as expired")
+	}
+	if cache.expiredFor(hardwareAssetCacheTTL) {
+		t.Fatal("the hardware inventory must still be fresh while only the disks expired")
+	}
+	if diskSensorCacheTTL >= hardwareAssetCacheTTL {
+		t.Fatal("the disk sensor TTL must be shorter than the inventory TTL, or temperature freezes as long as a DIMM speed")
+	}
+}
+
 func TestCommandArgument(t *testing.T) {
 	if got := commandArgument([]string{"--output", `C:\ProgramData\sensor.json`}, "--output"); got != `C:\ProgramData\sensor.json` {
 		t.Fatalf("unexpected command argument: %q", got)
