@@ -13,9 +13,9 @@ on:
         default: "3.0.84"
         type: string
       targets:
-        description: "SSH host names or addresses, separated by spaces"
-        required: true
-        default: "192.0.2.8 192.0.2.64 192.0.2.32 nas"
+        description: "SSH host names or addresses, separated by spaces. Leave empty to use repository variable DSC_UPDATE_TARGETS."
+        required: false
+        default: ""
         type: string
       allow_known_http_400_targets:
         description: "Explicitly permit a configured modern Agent with pending samples and the known HTTP 400 rejection; use only after confirming the payload schema cause"
@@ -164,7 +164,7 @@ jobs:
         shell: bash
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
-          TARGETS: ${{ inputs.targets }}
+          TARGETS: ${{ inputs.targets || vars.DSC_UPDATE_TARGETS }}
         run: |
           set -euo pipefail
           [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
@@ -187,7 +187,7 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.TEST_DEPLOY_SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.TEST_DEPLOY_SSH_KNOWN_HOSTS }}
-          TARGETS: ${{ inputs.targets }}
+          TARGETS: ${{ inputs.targets || vars.DSC_UPDATE_TARGETS }}
         run: |
           set -euo pipefail
           needs_ssh=false
@@ -222,6 +222,6 @@ jobs:
           DEPLOY_USER: ${{ secrets.TEST_DEPLOY_USER }}
           DEPLOY_PASSWORD: ${{ secrets.TEST_DEPLOY_PASSWORD }}
           REQUESTED_VERSION: ${{ inputs.version }}
-          TARGETS: ${{ inputs.targets }}
+          TARGETS: ${{ inputs.targets || vars.DSC_UPDATE_TARGETS }}
           ALLOW_KNOWN_400_TARGETS: ${{ inputs.allow_known_http_400_targets }}
         run: bash "$RUNNER_TEMP/dsc-agent-artifact-${GITHUB_RUN_ID}/update-test-agents.sh"

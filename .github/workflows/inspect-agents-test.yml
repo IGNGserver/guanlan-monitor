@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       targets:
-        description: "Legacy test Agents to inspect"
-        required: true
-        default: "192.0.2.8 nas"
+        description: "Legacy test Agents to inspect. Leave empty to use repository variable DSC_TEST_TARGETS."
+        required: false
+        default: ""
         type: string
 
 permissions:
@@ -22,7 +22,8 @@ jobs:
       - name: Inspect service and log locations without changing targets
         shell: bash
         env:
-          TARGETS: ${{ inputs.targets }}
+          TARGETS: ${{ inputs.targets || vars.DSC_TEST_TARGETS }}
+          ALLOWED_TARGETS: ${{ vars.DSC_TEST_TARGETS }}
           DEPLOY_USER: ${{ secrets.TEST_DEPLOY_USER }}
           DEPLOY_PASSWORD: ${{ secrets.TEST_DEPLOY_PASSWORD }}
           SSH_PRIVATE_KEY: ${{ secrets.TEST_DEPLOY_SSH_PRIVATE_KEY }}
@@ -110,8 +111,8 @@ jobs:
           PY
           REMOTE
           for target in $TARGETS; do
-            case "$target" in
-              192.0.2.8|nas) ;;
+            case " ${ALLOWED_TARGETS} " in
+              *" ${target} "*) ;;
               *) echo "Unsupported diagnostic target: $target" >&2; exit 1 ;;
             esac
             printf 'target=%s\n' "$target"

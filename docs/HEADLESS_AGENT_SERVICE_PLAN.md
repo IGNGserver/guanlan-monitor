@@ -427,7 +427,7 @@ Linux（`apps/desktop/package.json` 的 `build.linux` / electron-builder deb）�
 | D5 | 是否保留交互式 TUI | ✅ 删除 | 删 `agents/cmd/dsc/`。 |
 | D6 | 回环引导页是否本期做 | ⏸ 下个补丁再做（本期先打通安装参数 + CLI） | 控制 API 设计需预留该路由，避免二期返工。 |
 | D7 | 改写 `AGENTS.md`/`RELEASE.md` 资产规则 | ✅ **已授权** | Phase 0 先改规则，再改代码。 |
-| D8 | 本机静默安装验证方式 | ✅ **用 `ssh <win-ssh-alias>`（Windows 11 Pro Insider，build 10.0.29639.1000，主机名 `<vm-hostname>`，用户 `lvziw`，SSH 会话已是**提权管理员**；2026-09 核查时该机**尚未安装本应用**，是干净目标）** | Phase 6 可在该 VM 上真实执行静默安装/重装/卸载与 `Get-Service`、`status --json` 断言；虚拟机未开机时先经 `pve1`/`pve3` 启动。**注意该主机此前不在 `known_hosts` 中，本次首次连接已按 TOFU 记录 ED25519 主机键。** |
+| D8 | 本机静默安装验证方式 | ✅ **用 `ssh <win-vm>`（Windows 11 Pro Insider，build 10.0.29639.1000，主机名 `<vm-hostname>`，用户 `<user>`，SSH 会话已是**提权管理员**；2026-09 核查时该机**尚未安装本应用**，是干净目标）** | Phase 6 可在该 VM 上真实执行静默安装/重装/卸载与 `Get-Service`、`status --json` 断言；虚拟机未开机时先经 `<pve-node>` 启动。**注意该主机此前不在 `known_hosts` 中，本次首次连接已按 TOFU 记录 ED25519 主机键。** |
 
 ---
 

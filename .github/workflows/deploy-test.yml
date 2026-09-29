@@ -386,7 +386,7 @@ jobs:
       HTTP_PROXY: http://127.0.0.1:7890
       HTTPS_PROXY: http://127.0.0.1:7890
       ALL_PROXY: http://127.0.0.1:7890
-      NO_PROXY: 127.0.0.1,localhost,::1,192.0.2.17
+      NO_PROXY: 127.0.0.1,localhost,::1,${{ vars.DSC_HUB_IP }}
     steps:
       - name: Validate requested version and channel
         shell: bash
