@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import { buildReport, splitPhases, summarise } from "./agent-footprint-report.mjs";
+import { buildReport, isMainModule, splitPhases, summarise } from "./agent-footprint-report.mjs";
 
 const scriptPath = fileURLToPath(new URL("./agent-footprint-report.mjs", import.meta.url));
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -120,6 +120,22 @@ test("a baseline without probe counters is refused instead of reported as zero",
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("isMainModule decodes the module URL instead of using its raw pathname", () => {
+  // The Windows failure mode was comparing `process.argv[1]` against
+  // `new URL(url).pathname`, which is not a native path (it keeps `/D:/` and
+  // percent-escapes). A percent-encoded space distinguishes the two on every
+  // platform: fileURLToPath decodes it, `.pathname` does not.
+  assert.equal(isMainModule("file:///tmp/a%20b/report.mjs", "/tmp/a b/report.mjs"), true);
+  assert.equal(isMainModule("file:///tmp/a%20b/report.mjs", "/tmp/a%20b/report.mjs"), false);
+  assert.equal(isMainModule("file:///tmp/x/report.mjs", "/tmp/x/report.mjs"), true);
+  assert.equal(isMainModule("file:///tmp/x/report.mjs", "/tmp/x/other.mjs"), false);
+  assert.equal(isMainModule("file:///tmp/x/report.mjs", ""), false);
+});
+
+test("the CLI treats this file as the main module when invoked directly", () => {
+  assert.equal(isMainModule(new URL(import.meta.url).href, fileURLToPath(import.meta.url)), true);
 });
 
 test("the CLI exits non-zero when the fast path spawns a probe", () => {

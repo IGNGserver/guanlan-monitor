@@ -529,11 +529,33 @@ func TestProbeSpawnCountersAreConsumedAndReset(t *testing.T) {
 	recordProbeSpawn("powershell")
 	recordProbeSpawn("netsh.exe")
 	counts := takeProbeSpawnCounts()
-	if counts["powershell"] != 2 || counts["netsh.exe"] != 1 {
+	if counts["powershell"] != 2 || counts["netsh"] != 1 {
 		t.Fatalf("unexpected spawn counts: %#v", counts)
 	}
 	if next := takeProbeSpawnCounts(); next != nil {
 		t.Fatalf("counters must reset after being consumed, got %#v", next)
+	}
+}
+
+// A Windows executable reaches the counter as both `powershell` and
+// `powershell.exe`; one process must not be split into two entries.
+func TestProbeSpawnNamesAreNormalized(t *testing.T) {
+	takeProbeSpawnCounts()
+	recordProbeSpawn("powershell")
+	recordProbeSpawn("powershell.exe")
+	recordProbeSpawn(`C:\Windows\System32\netsh.exe`)
+	counts := takeProbeSpawnCounts()
+	if len(counts) != 2 {
+		t.Fatalf("expected two normalized names, got %#v", counts)
+	}
+	if counts["powershell"] != 2 {
+		t.Fatalf("powershell/powershell.exe must merge, got %#v", counts)
+	}
+	if counts["netsh"] != 1 {
+		t.Fatalf("a full path must reduce to its base name, got %#v", counts)
+	}
+	if normalizeProbeName("") != "" || normalizeProbeName("  ") != "" {
+		t.Fatal("blank names must normalize to empty")
 	}
 }
 
