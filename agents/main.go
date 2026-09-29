@@ -62,6 +62,9 @@ const (
 	// TTL for hardware inventory (memory modules, NIC models, disk model/vendor,
 	// CPU package topology) that only changes on a hot-plug or reboot.
 	hardwareAssetCacheTTL = 10 * time.Minute
+	// Floor between inventory refreshes that were brought forward by a device-set
+	// change. Protects the cache from a fingerprint that oscillates.
+	hardwareAssetMinRefreshInterval = time.Minute
 )
 
 const (
@@ -510,11 +513,17 @@ func (c hardwareAssetCache) expiredFor(ttl time.Duration) bool {
 	return c.collectedAt.IsZero() || time.Since(c.collectedAt) >= ttl
 }
 
-// deviceReferenceCount is a cheap fingerprint of the current device set: the
-// number of disks, network interfaces and GPUs the slow collector just saw. A
+// deviceReferenceCount is a cheap fingerprint of the hot-pluggable device set:
+// the number of disks and network interfaces the slow collector just saw. A
 // change means the cached inventory may be stale, so it is dropped early.
+//
+// GPUs are deliberately excluded. Their detection goes through LHM/WMI and can
+// legitimately return a different count between cycles on a machine with a
+// virtual or flaky adapter, and a fingerprint that oscillates would invalidate
+// the cache every cycle and reintroduce the probe storm this cache removes. An
+// eGPU appearing is left to the TTL.
 func deviceReferenceCount(metrics slowMetrics) int {
-	return len(metrics.disks) + len(metrics.networkInterfaces) + len(metrics.gpus)
+	return len(metrics.disks) + len(metrics.networkInterfaces)
 }
 
 // slowCollectionStats records how long a slow collection took and how often it
@@ -2100,12 +2109,19 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 	// When it did, clear the timestamp so the next collection re-queries instead
 	// of reporting a stale set for up to a full TTL. The comparison uses the
 	// count carried in from the previous cycle, before it is overwritten.
+	//
+	// The change can only bring the next refresh forward, never delay it, and it
+	// is rate-limited: a fingerprint that oscillates (a dock, a flaky virtual
+	// NIC) must not turn every collection into a refresh, which would undo the
+	// cache. hardwareAssetMinRefreshInterval bounds how often a change can force
+	// a re-query.
 	currentDeviceCount := deviceReferenceCount(result)
 	previousDeviceCount := assets.referenceDeviceCount
 	if refreshAssets {
 		assets = hardwareAssetCache{collectedAt: time.Now().UTC(), metadata: windowsMetadata}
 	}
-	if previousDeviceCount != 0 && previousDeviceCount != currentDeviceCount {
+	if previousDeviceCount != 0 && previousDeviceCount != currentDeviceCount &&
+		time.Since(assets.collectedAt) >= hardwareAssetMinRefreshInterval {
 		assets.collectedAt = time.Time{}
 	}
 	assets.referenceDeviceCount = currentDeviceCount

@@ -519,6 +519,14 @@ func TestHardwareAssetCacheExpiryAndFingerprint(t *testing.T) {
 	if deviceReferenceCount(before) == deviceReferenceCount(after) {
 		t.Fatal("adding a device must change the inventory fingerprint")
 	}
+
+	// A flaky GPU probe must not move the fingerprint: it drives an inventory
+	// refresh, and an oscillating count would refresh on every cycle.
+	noGpu := slowMetrics{disks: []diskDeviceStats{{ID: "a"}}}
+	withGpu := slowMetrics{disks: []diskDeviceStats{{ID: "a"}}, gpus: []gpuDeviceStats{{ID: "gpu-0"}}}
+	if deviceReferenceCount(noGpu) != deviceReferenceCount(withGpu) {
+		t.Fatal("the GPU count must not participate in the inventory fingerprint")
+	}
 }
 
 // The collector reports the probes it actually started. Counters are consumed on
