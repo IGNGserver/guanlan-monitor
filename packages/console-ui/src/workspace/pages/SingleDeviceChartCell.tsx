@@ -14,8 +14,9 @@ export function SingleDeviceChartCell({
 }) {
   const [hoveredPoint, setHoveredPoint] = useState<{ timeText: string; valueText: string } | null>(null);
 
-  const displayHeroStat = hoveredPoint ? hoveredPoint.valueText : tile.heroStat;
-  const displayHeroBadge = hoveredPoint ? `时间 ${hoveredPoint.timeText}` : tile.heroBadge;
+  // Keep large heroStat/badge as current latest data
+  // Inspected point appears as a clean informative subtitle below the title/hero
+  const inspectedText = hoveredPoint ? `选中点：${hoveredPoint.valueText} (${hoveredPoint.timeText})` : undefined;
 
   const valueFormatter = tile.valueFormatter ?? ((v: number) => String(v));
 
@@ -71,8 +72,9 @@ export function SingleDeviceChartCell({
     <ChartTile
       title={tile.title ?? chart.title}
       subtitle={tile.subtitle}
-      heroStat={displayHeroStat}
-      heroBadge={displayHeroBadge}
+      heroStat={tile.heroStat}
+      heroBadge={tile.heroBadge}
+      inspectedStat={inspectedText}
       controls={tile.controls}
       emptyMessage={tile.emptyMessage}
       footer={tile.footer}

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import type { CarbonSeries } from "./CarbonCharts";
 
 interface ChartTouchGestureOverlayProps {
@@ -9,9 +9,10 @@ interface ChartTouchGestureOverlayProps {
 }
 
 /**
- * ChartTouchGestureOverlay provides gesture handling and top header info sync.
- * When dragging on the chart, it calculates the closest time point directly from series data,
- * and calls onHoverPoint so the parent ChartTile header displays the exact time and value!
+ * ChartTouchGestureOverlay provides:
+ * 1. An explicit, high-contrast dashed hairline indicator that tracks the user's finger.
+ * 2. Instant calculation of the nearest data point and reporting to onHoverPoint.
+ * 3. Smart gesture separation: vertical drag scrolls the page; horizontal drag inspects data.
  */
 export function ChartTouchGestureOverlay({
   series,
@@ -20,6 +21,7 @@ export function ChartTouchGestureOverlay({
   children
 }: ChartTouchGestureOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [indicatorX, setIndicatorX] = useState<number | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -30,8 +32,12 @@ export function ChartTouchGestureOverlay({
     let gestureDirection: "undecided" | "horizontal" | "vertical" = "undecided";
 
     const updatePointFromX = (clientX: number) => {
-      if (!series || !series.length || !onHoverPoint) return;
       const rect = el.getBoundingClientRect();
+      const relativeX = clientX - rect.left;
+      setIndicatorX(Math.max(0, Math.min(rect.width, relativeX)));
+
+      if (!series || !series.length || !onHoverPoint) return;
+      // Carbon Chart plot area typically has ~42px left offset and ~16px right padding
       const plotLeft = rect.left + 42;
       const plotRight = rect.right - 16;
       const plotWidth = Math.max(1, plotRight - plotLeft);
@@ -118,6 +124,7 @@ export function ChartTouchGestureOverlay({
     };
 
     const handleMouseLeave = () => {
+      setIndicatorX(null);
       onHoverPoint?.(null);
     };
 
@@ -142,8 +149,24 @@ export function ChartTouchGestureOverlay({
     <div
       ref={containerRef}
       className="chart-touch-gesture-overlay"
-      style={{ touchAction: "pan-y", width: "100%", height: "100%" }}
+      style={{ position: "relative", touchAction: "pan-y", width: "100%", height: "100%" }}
     >
+      {indicatorX !== null && (
+        <div
+          className="chart-touch-hairline"
+          style={{
+            position: "absolute",
+            top: 0,
+            bottom: "28px",
+            left: `${indicatorX}px`,
+            width: "1px",
+            borderLeft: "1.5px dashed var(--cds-interactive, #0f62fe)",
+            pointerEvents: "none",
+            zIndex: 5
+          }}
+          aria-hidden="true"
+        />
+      )}
       {children}
     </div>
   );

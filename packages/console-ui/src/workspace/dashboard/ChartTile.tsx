@@ -20,6 +20,8 @@ export interface ChartTileProps {
   heroStat?: string;
   /** 核心指标旁的小徽章/极值统计（如 峰值 78% · 均值 35%）。 */
   heroBadge?: string;
+  /** 查点/选点提示信息，呈现于大字下方（如 选中点 45% (17:38:02)） */
+  inspectedStat?: string;
   /** 图表主体。 */
   children?: React.ReactNode;
   /** 无数据时的提示；给出后主体被替换成提示文本。 */
@@ -41,6 +43,7 @@ export function ChartTile({
   controls,
   heroStat,
   heroBadge,
+  inspectedStat,
   children,
   emptyMessage,
   details,
@@ -64,7 +67,11 @@ export function ChartTile({
               </div>
             ) : null}
           </div>
-          {subtitle ? <p className="chart-tile__subtitle">{subtitle}</p> : null}
+          {inspectedStat ? (
+            <p className="chart-tile__inspected-stat">{inspectedStat}</p>
+          ) : subtitle ? (
+            <p className="chart-tile__subtitle">{subtitle}</p>
+          ) : null}
         </div>
         {controls || details ? (
           <div className="chart-tile__controls">
