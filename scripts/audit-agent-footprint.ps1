@@ -8,6 +8,10 @@ $ErrorActionPreference = "Stop"
 $duration = if ($env:DURATION) { [int]$env:DURATION } else { 180 }
 $port = if ($env:HUB_PORT) { $env:HUB_PORT } else { "3199" }
 $key = if ($env:HUB_KEY) { $env:HUB_KEY } else { "ci-agent-footprint" }
+# Kept in the environment so the report can state the cadence its rate belongs
+# to; the workflow passes the same values. See agent-performance-audit.yml.
+$fastInterval = if ($env:FAST_INTERVAL) { [int]$env:FAST_INTERVAL } else { 5 }
+$slowInterval = if ($env:SLOW_INTERVAL) { [int]$env:SLOW_INTERVAL } else { 20 }
 
 function Write-AgentConfig([string]$dir) {
   $config = @{
@@ -18,7 +22,7 @@ function Write-AgentConfig([string]$dir) {
       deviceId  = "ci-footprint"
       hostname  = "ci-footprint"
     }
-    sampling             = @{ normalIntervalSeconds = 5; slowIntervalSeconds = 20 }
+    sampling             = @{ normalIntervalSeconds = $fastInterval; slowIntervalSeconds = $slowInterval }
     cloudSyncEnabled     = $true
     dataRecordingEnabled = $true
   }

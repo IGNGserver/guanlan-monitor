@@ -138,6 +138,25 @@ test("the CLI treats this file as the main module when invoked directly", () => 
   assert.equal(isMainModule(new URL(import.meta.url).href, fileURLToPath(import.meta.url)), true);
 });
 
+test("the report records the cadence it measured at", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "footprint-"));
+  try {
+    const captureFile = writeCaptureFile(dir, "candidate.jsonl", capture());
+    const report = buildReport({
+      capture: captureFile, label: "candidate", baselineCapture: "", output: "",
+      maxSpawnsPerMinute: null, fastIntervalSeconds: 5, slowIntervalSeconds: 20
+    });
+    assert.deepEqual(report.cadence, { fastIntervalSeconds: 5, slowIntervalSeconds: 20 });
+    // A rate without its cadence must not be silently indistinguishable.
+    assert.match(report.limitations, /only valid for the run's/);
+
+    const without = buildReport({ capture: captureFile, label: "candidate", baselineCapture: "", output: "", maxSpawnsPerMinute: null });
+    assert.deepEqual(without.cadence, { fastIntervalSeconds: null, slowIntervalSeconds: null });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("the CLI exits non-zero when the fast path spawns a probe", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "footprint-"));
   try {

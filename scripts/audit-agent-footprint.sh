@@ -11,6 +11,10 @@ set -euo pipefail
 duration="${DURATION:-180}"
 hub_port="${HUB_PORT:-3199}"
 hub_key="${HUB_KEY:-ci-agent-footprint}"
+# Kept in the environment so the report can state the cadence its rate belongs
+# to; the workflow passes the same values. See agent-performance-audit.yml.
+fast_interval="${FAST_INTERVAL:-5}"
+slow_interval="${SLOW_INTERVAL:-20}"
 
 write_config() {
   local dir="$1"
@@ -18,7 +22,7 @@ write_config() {
 {
   "configVersion": 2,
   "connection": { "serverUrl": "http://127.0.0.1:${hub_port}", "secret": "${hub_key}", "deviceId": "ci-footprint", "hostname": "ci-footprint" },
-  "sampling": { "normalIntervalSeconds": 5, "slowIntervalSeconds": 20 },
+  "sampling": { "normalIntervalSeconds": ${fast_interval}, "slowIntervalSeconds": ${slow_interval} },
   "cloudSyncEnabled": true,
   "dataRecordingEnabled": true
 }
