@@ -22,6 +22,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export function parseArguments(argv) {
   const options = {
@@ -305,7 +306,24 @@ export function runAudit(options) {
   return report;
 }
 
+/**
+ * Whether a module URL denotes the script the runtime was asked to run.
+ *
+ * `new URL(...).pathname` returns `/D:/repo/script.mjs` on Windows, which never
+ * equals the native `process.argv[1]`, so a naive comparison silently skips the
+ * CLI entrypoint (and exits 0). `fileURLToPath` is the platform-correct
+ * conversion; this is exported so the Windows case can be tested on Linux.
+ */
+export function isMainModule(moduleUrl, argvPath) {
+  if (!argvPath) return false;
+  try {
+    return path.resolve(argvPath) === path.resolve(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
+}
+
 // Only run as a CLI; importing this module for its pure helpers must not assert.
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)) {
+if (isMainModule(import.meta.url, process.argv[1])) {
   runAudit(parseArguments(process.argv.slice(2)));
 }
