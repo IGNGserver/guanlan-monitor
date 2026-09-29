@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DesktopController } from "./controller.js";
 import { appendDesktopDiagnostic, flushDesktopDiagnostics } from "./diagnostics.js";
-import { registerIpc } from "./ipc.js";
+import { forwardWindowStateEvents, registerIpc } from "./ipc.js";
 import { isTrustedRendererUrl } from "./renderer-security.js";
 import { getDesktopRuntimeProfile, readSystemMemoryInfo } from "./runtime-profile.js";
 import { resolveWindowMaterial } from "../window-material.js";
@@ -343,6 +343,10 @@ if (!hasSingleInstanceLock) {
     });
     mainWindow = window;
     window.setMenuBarVisibility(false);
+    // Attach here rather than in `registerIpc`: that runs before the first window
+    // exists, so it would have nothing to listen to and the caption buttons would
+    // never hear about a taskbar maximize.
+    forwardWindowStateEvents(window);
     const devServerUrl = process.env.DSC_DEV_SERVER_URL ?? process.env.VITE_DEV_SERVER_URL;
     const rendererRoot = path.resolve(__dirname, "../renderer");
     window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));

@@ -117,31 +117,37 @@ export function registerIpc(
     if (!isWindowVisible(getWindow)) return;
     getWindow()?.webContents.send(IPC_CHANNELS.snapshot, snapshot);
   });
+}
 
-  /* Push native window-state changes so the caption buttons never have to guess.
-   *
-   * The user can maximize, restore, snap, or enter fullscreen from the taskbar,
-   * a keyboard shortcut, or a window-manager gesture — none of which routes
-   * through the renderer's toggle handler. `maximize`/`unmaximize` cover the
-   * Windows and Linux paths; the fullscreen pair covers macOS and any host where
-   * a window can still request fullscreen. */
-  const window = getWindow();
-  if (window && !window.isDestroyed()) {
-    const emitWindowState = () => {
-      if (window.isDestroyed()) return;
-      window.webContents.send(IPC_CHANNELS.windowStateChanged, readWindowState(window));
-    };
-    window.on("maximize", emitWindowState);
-    window.on("unmaximize", emitWindowState);
-    window.on("enter-full-screen", emitWindowState);
-    window.on("leave-full-screen", emitWindowState);
-    window.once("closed", () => {
-      window.removeListener("maximize", emitWindowState);
-      window.removeListener("unmaximize", emitWindowState);
-      window.removeListener("enter-full-screen", emitWindowState);
-      window.removeListener("leave-full-screen", emitWindowState);
-    });
-  }
+/**
+ * Forward native window-state changes so the caption buttons never have to guess.
+ *
+ * Called from `createWindow` once the window exists — not from `registerIpc`,
+ * which runs before the first window is created and would therefore attach
+ * nothing. The user can maximize, restore, snap, or enter fullscreen from the
+ * taskbar, a keyboard shortcut, or a window-manager gesture; none of those route
+ * through the renderer's toggle handler, so the host has to push. The window's
+ * own `closed` event detaches the listeners.
+ *
+ * Guarded on `typeof window.on` because the IPC surface is exercised with window
+ * stubs in the performance regression suite.
+ */
+export function forwardWindowStateEvents(window: BrowserWindow | null | undefined): void {
+  if (!window || typeof window.on !== "function") return;
+  const emitWindowState = () => {
+    if (window.isDestroyed()) return;
+    window.webContents.send(IPC_CHANNELS.windowStateChanged, readWindowState(window));
+  };
+  window.on("maximize", emitWindowState);
+  window.on("unmaximize", emitWindowState);
+  window.on("enter-full-screen", emitWindowState);
+  window.on("leave-full-screen", emitWindowState);
+  window.once("closed", () => {
+    window.removeListener("maximize", emitWindowState);
+    window.removeListener("unmaximize", emitWindowState);
+    window.removeListener("enter-full-screen", emitWindowState);
+    window.removeListener("leave-full-screen", emitWindowState);
+  });
 }
 
 function readWindowState(window: BrowserWindow | null): DesktopWindowState {
