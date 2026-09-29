@@ -1243,21 +1243,36 @@ body {
   }
 
 @media (max-width: 672px) {
+  .workspace-device-context {
+    position: static !important;
+    box-shadow: none;
+    margin-bottom: 12px;
+  }
+
+  .workspace-device-context__caption {
+    display: none;
+  }
+
   .workspace-device-context__controls {
     align-items: stretch;
-    padding: 8px;
+    padding: 6px 8px;
   }
 
   .workspace-device-context__controls .workspace-device-toolbar {
     align-items: stretch;
     flex-direction: column;
+    gap: 8px;
   }
 
   .workspace-device-context__controls .workspace-range-control {
     width: 100%;
   }
 
+  .workspace-device-context .cds--tabs__nav-link {
+    padding-inline: 8px;
+    font-size: 13px;
   }
+}
 
 /* Touch targets. This is the only 44px contract in the bundle.
  *
