@@ -1,10 +1,10 @@
 import React, { useRef, useEffect } from "react";
 
 /**
- * ChartTouchGestureOverlay provides a non-intrusive gesture handler on top of charts
- * so that touch dragging converts into native mousemove/pointermove events
- * recognized by charting libraries (like Carbon Charts tooltip dispatcher),
- * while preventing browser back/forward history navigation swipes.
+ * ChartTouchGestureOverlay provides an intelligent gesture handler on top of charts.
+ * 1. If user swipes vertically (deltaY > deltaX), allow natural page scrolling!
+ * 2. If user drags horizontally (deltaX >= deltaY), lock horizontal swipe to inspect
+ *    time series points while preventing browser back/forward edge gestures.
  */
 export function ChartTouchGestureOverlay({ children }: { children: React.ReactNode }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -13,7 +13,9 @@ export function ChartTouchGestureOverlay({ children }: { children: React.ReactNo
     const el = containerRef.current;
     if (!el) return;
 
-    let isTracking = false;
+    let startX = 0;
+    let startY = 0;
+    let gestureDirection: "undecided" | "horizontal" | "vertical" = "undecided";
 
     const dispatchSimulatedPointer = (touch: Touch, eventType: string) => {
       const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
@@ -33,24 +35,36 @@ export function ChartTouchGestureOverlay({ children }: { children: React.ReactNo
 
     const handleTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 1) {
-        isTracking = true;
-        dispatchSimulatedPointer(e.touches[0], "mousemove");
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        gestureDirection = "undecided";
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (!isTracking || e.touches.length !== 1) return;
+      if (e.touches.length !== 1) return;
       const touch = e.touches[0];
-      // Dispatch simulated mousemove to activate Carbon Chart's tooltip at crosshair
-      dispatchSimulatedPointer(touch, "mousemove");
-      // Prevent browser edge-swipe navigation if swiping horizontally inside the chart
-      if (e.cancelable) {
-        e.preventDefault();
+      const diffX = Math.abs(touch.clientX - startX);
+      const diffY = Math.abs(touch.clientY - startY);
+
+      if (gestureDirection === "undecided") {
+        if (diffX > 6 || diffY > 6) {
+          gestureDirection = diffX > diffY ? "horizontal" : "vertical";
+        }
       }
+
+      // If horizontal gesture, lock browser navigation and dispatch tooltip crosshair
+      if (gestureDirection === "horizontal") {
+        if (e.cancelable) {
+          e.preventDefault();
+        }
+        dispatchSimulatedPointer(touch, "mousemove");
+      }
+      // If vertical, do nothing! Let the event bubble naturally so the user can scroll vertically on top of charts!
     };
 
     const handleTouchEnd = () => {
-      isTracking = false;
+      gestureDirection = "undecided";
     };
 
     el.addEventListener("touchstart", handleTouchStart, { passive: true });
@@ -70,7 +84,7 @@ export function ChartTouchGestureOverlay({ children }: { children: React.ReactNo
     <div
       ref={containerRef}
       className="chart-touch-gesture-overlay"
-      style={{ touchAction: "none" }}
+      style={{ touchAction: "pan-y" }}
     >
       {children}
     </div>

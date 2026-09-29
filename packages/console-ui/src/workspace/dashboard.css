@@ -96,6 +96,17 @@
   min-width: 0;
 }
 
+@media (max-width: 671px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    gap: var(--workspace-space-04);
+  }
+
+  .dashboard-cell {
+    grid-column: 1 / -1 !important;
+  }
+}
+
 @media (min-width: 672px) {
   .dashboard-grid {
     grid-template-columns: repeat(8, minmax(0, 1fr));
@@ -322,10 +333,41 @@
 
 /* 窄屏：卡片头部改为纵向堆叠，避免操作区把标题挤没。 */
 @media (max-width: 671px) {
+  .chart-tile {
+    padding: var(--workspace-space-04);
+  }
+
+  .chart-tile__header {
+    padding-bottom: var(--workspace-space-03);
+    margin-bottom: var(--workspace-space-02);
+  }
+
+  .chart-tile__subtitle {
+    margin-top: 2px;
+    font-size: 0.75rem;
+    line-height: 1.15;
+  }
+
+  .chart-tile__body {
+    padding-top: var(--workspace-space-03);
+  }
+
   .chart-tile__header,
   .dashboard-section__header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .dashboard-section__header {
+    margin-bottom: var(--workspace-space-03);
+    padding-bottom: var(--workspace-space-03);
+    gap: var(--workspace-space-03);
+  }
+
+  .dashboard-section__description {
+    margin-top: 4px;
+    font-size: 0.8125rem;
+    line-height: 1.25;
   }
 
   .chart-tile__controls {
