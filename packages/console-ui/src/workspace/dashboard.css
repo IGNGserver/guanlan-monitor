@@ -16,6 +16,24 @@
   margin-bottom: var(--workspace-space-07);
 }
 
+/**
+ * Off-screen sections still hold a full set of Carbon charts, and this app has no
+ * chart virtualisation. `content-visibility: auto` lets the engine skip layout,
+ * paint and d3 resize work for a section the reader has scrolled past, while
+ * `contain-intrinsic-size` reserves its approximate height so the scrollbar and
+ * the anchor offsets stay stable. Engines without support simply ignore both.
+ */
+.dashboard-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 720px;
+}
+
+/* A section the anchor bar just scrolled to must render immediately; the
+   browser does this on its own, but keep the intent explicit. */
+.dashboard-section:target {
+  content-visibility: visible;
+}
+
 .dashboard-section__header {
   display: flex;
   flex-wrap: wrap;

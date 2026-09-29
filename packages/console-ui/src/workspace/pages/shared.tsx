@@ -8,6 +8,7 @@ import { M3Checkbox, M3Chip, M3SegmentedControl, M3Select, M3TextField } from ".
 import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
 import { CarbonTimeSeriesChart } from "../CarbonCharts";
 import { UNAVAILABLE_METRIC_LABEL, formatBytes, formatDate, formatPercent, formatTemperature } from "../formatters";
+import { dateValueOf } from "../sampleTime.ts";
 
 const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: string }).src;
 
@@ -16,7 +17,11 @@ function isMetricUnavailable(
   key: DeviceMetricKey,
   latest?: { unavailableMetrics?: DeviceMetricKey[] } | null
 ): boolean {
-  return new Set([...(device.unavailableMetrics ?? []), ...(latest?.unavailableMetrics ?? [])]).has(key);
+  // This runs several times per device card per render; building a Set of both
+  // lists each call was pure allocation. The lists are tiny, so a direct scan is
+  // cheaper than constructing one.
+  return (device.unavailableMetrics?.includes(key) ?? false)
+    || (latest?.unavailableMetrics?.includes(key) ?? false);
 }
 
 function unavailablePoints(points: SamplePoint[], unavailable: boolean): SamplePoint[] {
@@ -547,7 +552,7 @@ function mergeFanMetricSeries(latestFans: FanSensorStats[], historicalFans: FanM
       ? { timestamp: fallbackTimestamp, value: latest.rpm } : null;
     const hasCurrentPoint = currentPoint ? fan.rpm.some((point) => point.timestamp === currentPoint.timestamp) : true;
     const rpm = currentPoint && !hasCurrentPoint
-      ? [...fan.rpm, currentPoint].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
+      ? [...fan.rpm, currentPoint].sort((left, right) => dateValueOf(left.timestamp) - dateValueOf(right.timestamp))
       : fan.rpm;
     return {
       ...fan,

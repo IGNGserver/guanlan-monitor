@@ -1,12 +1,28 @@
 import type { SamplePoint } from "@dsc/shared";
+import { dateValueOf } from "./sampleTime.ts";
 
 export const UNAVAILABLE_METRIC_LABEL = "无法获取数据";
+
+// One formatter per style, built once. `new Intl.DateTimeFormat` is a heavy
+// constructor and these run inside per-row and per-poll render paths; creating
+// one per call was measurable churn on every refresh.
+const shortDateTimeFormat = new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+const axisTimeFormat = new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const preciseDateTimeFormat = new Intl.DateTimeFormat("zh-CN", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23"
+});
 
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "暂无记录";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "暂无记录";
-  return new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
+  return shortDateTimeFormat.format(date);
 }
 export function formatBytes(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
@@ -28,6 +44,15 @@ export function formatBytes(value: number | null | undefined): string {
  */
 export function formatPercent(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}%` : "—";
+}
+
+/**
+ * A rate formatter, hoisted so chart options memoisation is not defeated by a
+ * fresh inline arrow on every render. One shared instance also keeps the tooltip
+ * and the hero stat reading the same way.
+ */
+export function formatRate(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? `${formatBytes(value)}/s` : "0 B/s";
 }
 
 /** One place writes temperatures, always as number + space + unit. */
@@ -105,29 +130,21 @@ export function formatCount(value: number | null | undefined): string {
 export function formatAxisTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "暂无时间";
-  return new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
+  return axisTimeFormat.format(date);
 }
 
 export function formatPreciseDateTime(value: string | null | undefined): string {
   if (!value) return "暂无时间";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "暂无时间";
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23"
-  }).format(date);
+  return preciseDateTimeFormat.format(date);
 }
 
 export function averageSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
   const buckets = new Map<number, { timestamp: string; total: number; count: number }>();
   for (const points of groups) {
     for (const point of points) {
-      const timestamp = Date.parse(point.timestamp);
+      const timestamp = dateValueOf(point.timestamp);
       if (!Number.isFinite(timestamp) || !Number.isFinite(point.value)) continue;
       // Different probes can stamp the same collection cycle a few
       // milliseconds apart. Normalize to one-second buckets before merging;
@@ -158,7 +175,7 @@ export function sumSamplePoints(groups: SamplePoint[][]): SamplePoint[] {
   const buckets = new Map<number, { timestamp: string; total: number }>();
   for (const points of groups) {
     for (const point of points) {
-      const timestamp = Date.parse(point.timestamp);
+      const timestamp = dateValueOf(point.timestamp);
       if (!Number.isFinite(timestamp) || !Number.isFinite(point.value)) continue;
       const bucketTimestamp = Math.round(timestamp / 1000) * 1000;
       const current = buckets.get(bucketTimestamp) ?? {
@@ -209,7 +226,7 @@ export function splitPointsIntoSegments(points: SamplePoint[], windowDurationMs:
 
   const deltas: number[] = [];
   for (let i = 1; i < points.length; i++) {
-    const d = Date.parse(points[i].timestamp) - Date.parse(points[i - 1].timestamp);
+    const d = dateValueOf(points[i].timestamp) - dateValueOf(points[i - 1].timestamp);
     if (d > 0) deltas.push(d);
   }
   deltas.sort((a, b) => a - b);
@@ -219,8 +236,8 @@ export function splitPointsIntoSegments(points: SamplePoint[], windowDurationMs:
   const segments: SamplePoint[][] = [];
   let currentSegment: SamplePoint[] = [points[0]];
   for (let i = 1; i < points.length; i++) {
-    const prevT = Date.parse(points[i - 1].timestamp);
-    const currT = Date.parse(points[i].timestamp);
+    const prevT = dateValueOf(points[i - 1].timestamp);
+    const currT = dateValueOf(points[i].timestamp);
     if (currT - prevT > gapThreshold) {
       segments.push(currentSegment);
       currentSegment = [points[i]];

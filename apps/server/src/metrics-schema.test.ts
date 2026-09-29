@@ -39,6 +39,25 @@ test("accepts the collector payload shape", () => {
   assert.equal(result.success, true);
 });
 
+test("accepts and preserves the collector self-reporting fields", () => {
+  const payload = {
+    ...validPayload(),
+    probeSpawns: { powershell: 2, "netsh.exe": 1 },
+    collectorStats: { slowRuns: 4, slowOverruns: 0, lastSlowMillis: 1200 }
+  };
+  const result = agentMetricsPayloadSchema.safeParse(payload);
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.deepEqual(result.data.probeSpawns, { powershell: 2, "netsh.exe": 1 });
+  assert.deepEqual(result.data.collectorStats, { slowRuns: 4, slowOverruns: 0, lastSlowMillis: 1200 });
+});
+
+test("rejects oversized or malformed collector self-reporting fields", () => {
+  const tooManyKeys = Object.fromEntries(Array.from({ length: 40 }, (_, index) => [`probe-${index}`, 1]));
+  assert.equal(agentMetricsPayloadSchema.safeParse({ ...validPayload(), probeSpawns: tooManyKeys }).success, false);
+  assert.equal(agentMetricsPayloadSchema.safeParse({ ...validPayload(), collectorStats: { slowRuns: -1, slowOverruns: 0, lastSlowMillis: 0 } }).success, false);
+});
+
 test("accepts sensor observation times and distinguishes unavailable RPM from zero", () => {
   const payload = validPayload();
   const result = agentMetricsPayloadSchema.safeParse({

@@ -1,4 +1,5 @@
 import type { ConsoleSnapshot, DeviceMetricKey, DeviceSummary } from "@dsc/shared";
+import { dateValueOf } from "./sampleTime.ts";
 
 export type DeviceDirectoryStatus = "all" | "online" | "offline";
 export type DeviceDirectorySort = "order" | "name" | "cpu" | "memory" | "lastSeen";
@@ -106,7 +107,7 @@ export function selectAttentionDevices(allDevices: DeviceSummary[], limit = 6): 
     .filter((device) => device.status !== "online")
     .slice()
     .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
-      || Date.parse(left.lastSeenAt ?? "") - Date.parse(right.lastSeenAt ?? ""))
+      || dateValueOf(left.lastSeenAt ?? "") - dateValueOf(right.lastSeenAt ?? ""))
     .slice(0, limit);
 }
 
@@ -123,7 +124,7 @@ export function selectDeviceDirectory(devices: DeviceSummary[], query: DeviceDir
     if (sort === "name") return left.hostname.localeCompare(right.hostname, "zh-CN");
     if (sort === "cpu") return (right.cpuUsagePercent ?? -1) - (left.cpuUsagePercent ?? -1);
     if (sort === "memory") return (right.memoryUsagePercent ?? -1) - (left.memoryUsagePercent ?? -1);
-    if (sort === "lastSeen") return Date.parse(right.lastSeenAt ?? "") - Date.parse(left.lastSeenAt ?? "");
+    if (sort === "lastSeen") return dateValueOf(right.lastSeenAt ?? "") - dateValueOf(left.lastSeenAt ?? "");
     return (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
   });
 }

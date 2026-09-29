@@ -32,6 +32,11 @@ const (
 	MaxConfigBytes int64 = 256 * 1024
 	// MaxSamplingIntervalSeconds bounds both sampling intervals.
 	MaxSamplingIntervalSeconds = 86400
+	// legacyEqualSlowIntervalSeconds is the slow interval the built-in defaults
+	// used to ship with, equal to the fast interval. A document that still holds
+	// exactly that pair is migrated to the slower default; any other explicit
+	// choice is kept.
+	legacyEqualSlowIntervalSeconds = 30
 )
 
 // AllMetricKeys is the canonical, ordered metric whitelist. It must stay in
@@ -160,7 +165,7 @@ func defaultFor(goos string) LocalConfig {
 		},
 		Sampling: Sampling{
 			NormalIntervalSeconds: 30,
-			SlowIntervalSeconds:   30,
+			SlowIntervalSeconds:   60,
 		},
 		EnabledMetrics: []string{
 			"cpuUsage", "cpuFrequency", "cpuTemperature", "cpuTopology", "systemOverview",
@@ -216,6 +221,15 @@ func Normalize(config LocalConfig, raw []byte) LocalConfig {
 		config.Sampling.NormalIntervalSeconds = defaults.Sampling.NormalIntervalSeconds
 	}
 	if config.Sampling.SlowIntervalSeconds <= 0 || config.Sampling.SlowIntervalSeconds > MaxSamplingIntervalSeconds {
+		config.Sampling.SlowIntervalSeconds = defaults.Sampling.SlowIntervalSeconds
+	}
+	// A legacy document that recorded the old equal cadence (30/30) is migrated
+	// once to the new slow default. Otherwise every existing installation would
+	// keep paying for the hardware inventory every 30 seconds, and the default
+	// change would only help fresh installs. An explicit cadence that differs
+	// from the old default — including a deliberately slower one — is preserved.
+	if config.Sampling.NormalIntervalSeconds == legacyEqualSlowIntervalSeconds &&
+		config.Sampling.SlowIntervalSeconds == legacyEqualSlowIntervalSeconds {
 		config.Sampling.SlowIntervalSeconds = defaults.Sampling.SlowIntervalSeconds
 	}
 	if len(config.ProbeSelections) == 0 {

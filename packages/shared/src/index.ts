@@ -356,6 +356,21 @@ export interface AgentMetricsPayload {
   fans: FanSensorStats[];
   temperatureSensors?: TemperatureSensorReading[];
   sensorBackends?: SensorBackendStatus[];
+  /**
+   * External probe processes the collector started during this sample, keyed by
+   * executable name. Additive and optional: it exists so the collector's own
+   * process churn is observable from the metrics history instead of only from a
+   * process monitor on the reporting machine.
+   */
+  probeSpawns?: Record<string, number>;
+  /** Cumulative self-observed slow-collection cost. Optional and additive. */
+  collectorStats?: CollectorStatsReport;
+}
+
+export interface CollectorStatsReport {
+  slowRuns: number;
+  slowOverruns: number;
+  lastSlowMillis: number;
 }
 
 export interface DeviceSummary {

@@ -293,3 +293,26 @@ func findProbe(selections []ProbeSelection, target string) *ProbeSelection {
 	}
 	return nil
 }
+
+// A document written by an older build holds the old equal cadence (30/30).
+// Migrating it once is what actually reduces probe churn on existing installs;
+// without this only fresh installations would get the slower slow interval.
+func TestNormalizeMigratesLegacyEqualSamplingCadence(t *testing.T) {
+	legacy := Normalize(LocalConfig{
+		Sampling: Sampling{NormalIntervalSeconds: 30, SlowIntervalSeconds: 30},
+	}, []byte(`{"sampling":{"normalIntervalSeconds":30,"slowIntervalSeconds":30}}`))
+	if legacy.Sampling.SlowIntervalSeconds != 60 {
+		t.Fatalf("legacy 30/30 cadence must migrate to slow=60, got %+v", legacy.Sampling)
+	}
+}
+
+// An administrator who deliberately chose a slow cadence keeps it: the migration
+// only targets the exact legacy pair, not "any 30 second fast interval".
+func TestNormalizeKeepsExplicitSamplingCadence(t *testing.T) {
+	custom := Normalize(LocalConfig{
+		Sampling: Sampling{NormalIntervalSeconds: 30, SlowIntervalSeconds: 300},
+	}, []byte(`{"sampling":{"normalIntervalSeconds":30,"slowIntervalSeconds":300}}`))
+	if custom.Sampling.SlowIntervalSeconds != 300 {
+		t.Fatalf("explicit slow interval must be preserved, got %+v", custom.Sampling)
+	}
+}
