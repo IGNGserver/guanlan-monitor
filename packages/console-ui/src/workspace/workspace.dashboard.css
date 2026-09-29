@@ -161,7 +161,9 @@
 @media (max-width: 620px) {
   .workspace-windowbar__subtitle,
   .workspace-windowbar__separator { display: none; }
-  .workspace-window-control { width: 40px; }
+  /* Caption buttons keep their OS height at every viewport; only their width
+     narrows on a phone, matching how Windows compacts its own captions. */
+  .workspace-caption-button { width: 40px; }
   .workspace-content { padding: 18px 14px; }
   .workspace-topbar__actions > .workspace-status-label { display: none; }
   .workspace-page-intro { align-items: flex-start; flex-direction: column; gap: 15px; }

@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, nativeTheme } from "electron";
 import type {
   DesktopAgentControlAction,
   DesktopConfigPatch,
+  DesktopWindowState,
   MetricWindow,
   DesktopSnapshotRequest,
   DesktopStartupSettings,
@@ -60,6 +61,7 @@ export function registerIpc(
   handle(IPC_CHANNELS.openExternal, (_event, url: string) => controller.openExternal(asString(url, "external_url")));
   handle(IPC_CHANNELS.getRuntimeProfile, () => getDesktopRuntimeProfile(gpuFallbackActive));
   handle(IPC_CHANNELS.getWindowMaterialCapabilities, () => getWindowMaterialCapabilities(getWindow(), gpuFallbackActive));
+  handle(IPC_CHANNELS.getWindowState, () => readWindowState(getWindow()));
   handle(IPC_CHANNELS.windowMinimize, () => {
     getWindow()?.minimize();
   });
@@ -115,6 +117,39 @@ export function registerIpc(
     if (!isWindowVisible(getWindow)) return;
     getWindow()?.webContents.send(IPC_CHANNELS.snapshot, snapshot);
   });
+
+  /* Push native window-state changes so the caption buttons never have to guess.
+   *
+   * The user can maximize, restore, snap, or enter fullscreen from the taskbar,
+   * a keyboard shortcut, or a window-manager gesture — none of which routes
+   * through the renderer's toggle handler. `maximize`/`unmaximize` cover the
+   * Windows and Linux paths; the fullscreen pair covers macOS and any host where
+   * a window can still request fullscreen. */
+  const window = getWindow();
+  if (window && !window.isDestroyed()) {
+    const emitWindowState = () => {
+      if (window.isDestroyed()) return;
+      window.webContents.send(IPC_CHANNELS.windowStateChanged, readWindowState(window));
+    };
+    window.on("maximize", emitWindowState);
+    window.on("unmaximize", emitWindowState);
+    window.on("enter-full-screen", emitWindowState);
+    window.on("leave-full-screen", emitWindowState);
+    window.once("closed", () => {
+      window.removeListener("maximize", emitWindowState);
+      window.removeListener("unmaximize", emitWindowState);
+      window.removeListener("enter-full-screen", emitWindowState);
+      window.removeListener("leave-full-screen", emitWindowState);
+    });
+  }
+}
+
+function readWindowState(window: BrowserWindow | null): DesktopWindowState {
+  if (!window || window.isDestroyed()) return { maximized: false, fullscreen: false };
+  return {
+    maximized: window.isMaximized(),
+    fullscreen: window.isFullScreen()
+  };
 }
 
 /**

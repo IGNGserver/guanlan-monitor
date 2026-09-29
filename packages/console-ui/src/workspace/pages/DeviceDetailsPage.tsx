@@ -73,6 +73,7 @@ export function DeviceDetailsPage() {
   const [activeTab, setActiveTab] = useState<DeviceTabId>(DEFAULT_DEVICE_TAB_ID);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const deviceContextRef = useRef<HTMLDivElement>(null);
 
   // 全屏只是一个查看辅助：宿主拒绝 Fullscreen API 时按钮静默失效，页面照常可用。
   const toggleFullscreen = () => {
@@ -124,6 +125,30 @@ export function DeviceDetailsPage() {
     targets.forEach((target) => observer.observe(target));
     return () => observer.disconnect();
   }, [anchors]);
+
+  /* The sticky device-context bar is what `scroll-padding-top` has to clear when
+     an anchor jumps. Its height is content-driven (tabs + controls + an optional
+     caption + the anchor row), so the 76px token in `workspace.tokens.css` was a
+     guess: on a tab that renders a caption *and* an anchor row, the section
+     heading landed underneath the bar after `scrollIntoView`. Publish the
+     measured height to the token the scroller reads instead of keeping a second
+     magic number in sync by hand. */
+  useEffect(() => {
+    const context = deviceContextRef.current;
+    const scroller = document.getElementById("workspace-main-content");
+    if (!context || !scroller || typeof ResizeObserver === "undefined") return;
+    const syncOffset = () => {
+      const height = context.getBoundingClientRect().height;
+      if (height > 0) scroller.style.setProperty("--workspace-sticky-offset", `${Math.round(height)}px`);
+    };
+    syncOffset();
+    const observer = new ResizeObserver(syncOffset);
+    observer.observe(context);
+    return () => {
+      observer.disconnect();
+      scroller.style.removeProperty("--workspace-sticky-offset");
+    };
+  }, [activeTab]);
 
   // 多实例单选状态：切换设备时一并复位，避免把上一台设备的实例 id 带过来。
   const [selectedNetId, setSelectedNetId] = useState("all");
@@ -406,7 +431,7 @@ export function DeviceDetailsPage() {
       )}
 
       {/* 选项卡、时间范围与全屏属于同一个设备上下文，滚动图表时保持可见。 */}
-      <div className="workspace-device-context">
+      <div className="workspace-device-context" ref={deviceContextRef}>
         <Tabs
           selectedIndex={selectedIndex}
           onChange={({ selectedIndex: nextIndex }) => changeTab(DEVICE_DASHBOARD.tabs[nextIndex]?.id ?? DEFAULT_DEVICE_TAB_ID)}

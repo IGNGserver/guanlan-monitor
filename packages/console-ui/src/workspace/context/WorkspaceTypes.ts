@@ -8,7 +8,7 @@ import type {
   MetricWindow,
   TrafficCalendarMode
 } from "@dsc/shared";
-import type { ConsoleAdapter } from "../../services/adapter";
+import type { ConsoleAdapter, WindowState } from "../../services/adapter";
 import type { InteractionScaleSetting, PointerType } from "../../helpers/density";
 import type { ResponsiveTier, ScreenOrientation } from "../../helpers/layout";
 import type { SettingsSection, WorkspaceRoute } from "../routes";
@@ -79,6 +79,8 @@ export interface WorkspaceContextValue {
   runtimeProfile: DesktopRuntimeProfile;
   lowResourceMode: boolean;
   chartPointLimit: number;
+  /** Native window chrome state; the web shell reports the fallback (never maximized). */
+  windowState: WindowState;
 }
 
 export function getStoredTheme(): "system" | "light" | "dark" {

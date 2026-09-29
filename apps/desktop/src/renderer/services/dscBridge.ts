@@ -13,6 +13,7 @@ import {
   type WindowMaterialBridge,
   type WindowMaterialCapabilities
 } from "../../window-material";
+import type { WindowState } from "@dsc/console-ui";
 
 function createFallbackRuntimeProfile(): DesktopRuntimeProfile {
   return {
@@ -115,6 +116,15 @@ class SafeDscBridge implements DesktopRendererBridge, WindowMaterialBridge {
   async getRuntimeProfile(): Promise<DesktopRuntimeProfile> {
     const bridge = this.bridge;
     return bridge ? await bridge.getRuntimeProfile() : createFallbackRuntimeProfile();
+  }
+
+  async getWindowState(): Promise<WindowState> {
+    const bridge = this.bridge;
+    return bridge ? await bridge.getWindowState() : { maximized: false, fullscreen: false };
+  }
+
+  subscribeWindowState(listener: (state: WindowState) => void): () => void {
+    return this.bridge?.subscribeWindowState(listener) ?? (() => undefined);
   }
 
   async windowMinimize(): Promise<void> {

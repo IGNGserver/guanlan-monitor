@@ -30,7 +30,7 @@ type CachedTrafficCalendar = {
 };
 
 export class DesktopController {
-  readonly bridge: Omit<DesktopRendererBridge, "subscribe" | "getRuntimeProfile" | "windowMinimize" | "windowToggleMaximize" | "windowDragStart" | "windowDragMove" | "windowDragEnd" | "windowClose">;
+  readonly bridge: Omit<DesktopRendererBridge, "subscribe" | "getRuntimeProfile" | "getWindowState" | "subscribeWindowState" | "windowMinimize" | "windowToggleMaximize" | "windowDragStart" | "windowDragMove" | "windowDragEnd" | "windowClose">;
   private readonly agent: AgentManager;
   private readonly hub: HubClient;
   private readonly cache: DesktopCacheStore;

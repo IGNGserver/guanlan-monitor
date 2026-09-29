@@ -39,6 +39,13 @@ export interface ConsoleAdapter extends ConsoleReadPort, ConsoleSessionPort, Con
   windowDragStart?(screenX: number, screenY: number): void;
   windowDragMove?(screenX: number, screenY: number): void;
   windowDragEnd?(): void;
+  /**
+   * The native window's maximize/fullscreen state, and a subscription to
+   * changes made outside the renderer (taskbar, keyboard, window manager).
+   * Desktop-only; the web shell leaves both undefined.
+   */
+  getWindowState?(): Promise<WindowState>;
+  subscribeWindowState?(listener: (state: WindowState) => void): () => void;
   getWindowMaterialCapabilities?(): Promise<WindowMaterialCapabilities>;
   /**
    * The material the native window was created with. Read synchronously so the
@@ -49,6 +56,24 @@ export interface ConsoleAdapter extends ConsoleReadPort, ConsoleSessionPort, Con
 }
 
 export type WindowMaterial = "opaque" | "mica";
+
+/**
+ * The native window's chrome state, pushed by the desktop host.
+ *
+ * The renderer cannot derive this: `isMaximized()` is not settled synchronously
+ * after `maximize()` on Windows, and the user can also maximize/restore from
+ * the taskbar or a window-manager shortcut without touching the app. Reading it
+ * once at startup and then tracking host events is the only way the caption
+ * buttons' maximize/restore glyph can agree with the real window.
+ */
+export interface WindowState {
+  maximized: boolean;
+  fullscreen: boolean;
+}
+
+export function fallbackWindowState(): WindowState {
+  return { maximized: false, fullscreen: false };
+}
 
 export interface WindowMaterialCapabilities {
   platform: "windows" | "other";

@@ -323,13 +323,22 @@ async function run() {
     if (!root || !sidebar || !main) return null;
     const rootStyle = getComputedStyle(root);
     const sidebarStyle = getComputedStyle(sidebar);
+    const content = document.querySelector(".workspace-content");
+    const theme = document.querySelector(".guanlan-carbon-theme");
     return {
       display: rootStyle.display,
       sidebarWidth: sidebar.getBoundingClientRect().width,
       sidebarDisplay: sidebarStyle.display,
       mainWidth: main.getBoundingClientRect().width,
       bodyScrollWidth: document.body.scrollWidth,
-      viewportWidth: window.innerWidth
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      // The shared stylesheet is loaded by both clients, and this wrapper is the
+      // only height anchor the desktop branch has. A regression to
+      // `min-height`-only here disables page scrolling in Electron, so the guard
+      // belongs in the suite that runs against both.
+      themeHeight: theme ? Math.round(theme.getBoundingClientRect().height) : null,
+      contentFitsViewport: Boolean(content) && Math.round(content.getBoundingClientRect().height) <= window.innerHeight + 1
     };
   });
   if (!desktopMetrics) {
@@ -350,6 +359,8 @@ async function run() {
   assert.ok(desktopMetrics.sidebarWidth > 0);
   assert.ok(desktopMetrics.mainWidth > 0);
   assert.ok(desktopMetrics.bodyScrollWidth <= desktopMetrics.viewportWidth + 1, "desktop shell overflows horizontally");
+  assert.equal(desktopMetrics.themeHeight, desktopMetrics.viewportHeight, "the themed wrapper must be viewport-height, not content-height");
+  assert.equal(desktopMetrics.contentFitsViewport, true, "the content scroller must fit the viewport, not grow with the page");
   assert.equal(await page.locator(".workspace-device-item").count(), 0, "primary navigation must not contain a device list");
   assert.deepEqual((await page.locator(".workspace-sidebar .m3-navigation-item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "设置"], "sidebar contains destinations only");
   assert.equal(await page.getByRole("button", { name: "中枢状态" }).count(), 0, "the retired hub destination must not come back");

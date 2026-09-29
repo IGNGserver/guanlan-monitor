@@ -9,7 +9,8 @@ export type {
   ConsoleCapabilities,
   IGuanlanDataAdapter,
   WindowMaterial,
-  WindowMaterialCapabilities
+  WindowMaterialCapabilities,
+  WindowState
 } from "./services/adapter";
 export type {
   ConsoleFleetPort,
@@ -17,4 +18,4 @@ export type {
   ConsoleReadPort,
   ConsoleSessionPort
 } from "./services/ports";export type { ConsoleSnapshot, ConsoleSnapshotRequest } from "@dsc/shared";
-export { DESKTOP_CAPABILITIES, WEB_CAPABILITIES, emptyConsoleSnapshot, fallbackRuntimeProfile, fallbackWindowMaterialCapabilities } from "./services/adapter";
+export { DESKTOP_CAPABILITIES, WEB_CAPABILITIES, emptyConsoleSnapshot, fallbackRuntimeProfile, fallbackWindowMaterialCapabilities, fallbackWindowState } from "./services/adapter";

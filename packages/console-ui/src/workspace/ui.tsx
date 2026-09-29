@@ -7,7 +7,6 @@ import {
   Checkmark,
   ChevronDown,
   ChevronUp,
-  Close,
   Cloud,
   CollapseCategories,
   ConnectionSignal,
@@ -19,8 +18,6 @@ import {
   Information,
   Keyboard,
   Launch,
-  Maximize,
-  Minimize,
   OverflowMenuHorizontal,
   Renew,
   Search,
@@ -31,6 +28,7 @@ import {
   WarningAlt
 } from "@carbon/react/icons";
 import { M3Button } from "./m3";
+import { CAPTION_GLYPHS, captionGlyphFor, isCaptionIcon, type CaptionIconName } from "./shell/captionGlyphs";
 
 export type IconName =
   | "overview"
@@ -62,7 +60,7 @@ export type IconName =
   | "chevronUp"
   | "delete";
 
-const carbonIcons: Record<IconName, CarbonIconType> = {
+const carbonIcons: Record<Exclude<IconName, CaptionIconName>, CarbonIconType> = {
   overview: Dashboard,
   hub: Cloud,
   device: Devices,
@@ -85,15 +83,28 @@ const carbonIcons: Record<IconName, CarbonIconType> = {
   keyboard: Keyboard,
   about: Information,
   arrow: ArrowRight,
-  windowMinimize: Minimize,
-  windowMaximize: Maximize,
-  windowRestore: Maximize,
-  windowClose: Close,
   more: OverflowMenuHorizontal,
   delete: TrashCan
 };
 
+/**
+ * The four window-chrome names share one glyph source with the native title bar
+ * (`captionGlyphs.ts`). They used to be Carbon `Minimize`/`Maximize`/`Close` in
+ * this map, which meant `windowRestore` was an alias of `windowMaximize`: the
+ * fullscreen "exit" button on the device page drew the same icon as "enter", for
+ * the same reason the caption button did.
+ */
 export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
+  if (isCaptionIcon(name)) {
+    // Chrome glyphs are authored on a 10x10 grid. Scaling them to the 15/16px
+    // sizes callers pass keeps the geometry (1px hairline becomes ~1.5px) and
+    // avoids the Material weight this map used to substitute.
+    return (
+      <svg className="workspace-icon workspace-caption-glyph" width={size} height={size} viewBox="0 0 10 10" aria-hidden="true" focusable="false">
+        <path d={CAPTION_GLYPHS[captionGlyphFor(name)]} fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="butt" strokeLinejoin="miter" />
+      </svg>
+    );
+  }
   const CarbonIcon = carbonIcons[name];
   return <CarbonIcon className="workspace-icon" size={size} aria-hidden="true" />;
 }

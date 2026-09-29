@@ -30,8 +30,20 @@
   letter-spacing: 0;
 }
 
+/* The theme wrapper is the height anchor for the whole shell.
+ *
+ * `.workspace-root` asks for `height: 100%`, and a percentage only resolves
+ * against a parent with a definite height. This wrapper used to declare only
+ * `min-height: 100dvh`, which is not a definite height, so the percentage fell
+ * back to `auto`, the root grew to its content, and `.workspace-content` lost
+ * the bounded height it needs to become a scroll container. Reproduced against
+ * the compiled stylesheet: `.workspace-content` reported
+ * `clientHeight === scrollHeight` and a maximum `scrollTop` of 0, so the page
+ * could not scroll at all and the `sticky` device-context bar never activated.
+ * Web never hit this because `.workspace-root.is-web` pins its own
+ * `height: 100dvh`; the desktop branch relied on this wrapper instead. */
 .guanlan-carbon-theme {
-  min-height: 100dvh;
+  height: 100dvh;
   background: var(--cds-background, #f4f4f4);
 }
 
@@ -143,6 +155,10 @@
   scrollbar-gutter: stable;
   overflow-y: auto;
   overflow-x: hidden;
+  /* Without this the content scroller hands its overscroll to the document
+     (rubber-band / scroll chaining) even though the document itself is
+     `overflow: hidden`. */
+  overscroll-behavior: contain;
 }
 
 .workspace-page {
@@ -1281,9 +1297,14 @@ body {
  * only breaks ties against rules of equal weight. What actually kept phones at
  * 30x30 and 40px were the `(0,2,0)` composite size declarations in
  * `workspace.m3.css` (`.workspace-icon-button.m3-icon-button`,
- * `.workspace-nav-item.m3-navigation-item`, `.workspace-window-control.m3-icon-button`),
+ * `.workspace-nav-item.m3-navigation-item`, `.workspace-caption-button.m3-icon-button`),
  * which those declarations no longer carry. The Carbon-native classes below are
  * listed explicitly because those controls size themselves, not us.
+ *
+ * The caption buttons are deliberately absent: they are OS chrome with their own
+ * fixed 46x32 geometry, and the desktop shell is the only place they render.
+ * Inflating them to 44px tall would make the title bar taller than the window's
+ * own drag band.
  *
  * If you lower any minimum height in this file, re-check this block: a desktop
  * height declared here at `(0,1,0)` will silently outrank the coarse rules.
@@ -1297,7 +1318,6 @@ body {
   .workspace-anchor-btn,
   .workspace-nav-item,
   .workspace-search-trigger,
-  .workspace-window-control,
   .workspace-command__item,
   .workspace-sidebar-edge-trigger,
   .workspace-settings-mobile-nav__list button,

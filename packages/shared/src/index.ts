@@ -812,6 +812,7 @@ export interface DesktopRendererBridge {
   updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot>;
   openExternal(url: string): Promise<void>;
   getRuntimeProfile(): Promise<DesktopRuntimeProfile>;
+  getWindowState(): Promise<DesktopWindowState>;
   windowMinimize(): Promise<void>;
   windowToggleMaximize(): Promise<boolean>;
   windowDragStart(screenX: number, screenY: number): void;
@@ -820,6 +821,12 @@ export interface DesktopRendererBridge {
   windowClose(): Promise<void>;
   exit(): Promise<void>;
   subscribe(listener: (snapshot: DesktopSnapshot) => void): () => void;
+  subscribeWindowState(listener: (state: DesktopWindowState) => void): () => void;
+}
+
+export interface DesktopWindowState {
+  maximized: boolean;
+  fullscreen: boolean;
 }
 
 export interface AuthLoginPayload {

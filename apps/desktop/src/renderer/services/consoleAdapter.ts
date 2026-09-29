@@ -5,8 +5,8 @@ import type {
   DesktopConfigPatch,
   DesktopStartupSettings
 } from "@dsc/shared";
-import type { ConsoleAdapter, ConsoleLocalAgentPort, WindowMaterialCapabilities } from "@dsc/console-ui";
-import { DESKTOP_CAPABILITIES, emptyConsoleSnapshot, fallbackRuntimeProfile, fallbackWindowMaterialCapabilities } from "@dsc/console-ui";
+import type { ConsoleAdapter, ConsoleLocalAgentPort, WindowMaterialCapabilities, WindowState } from "@dsc/console-ui";
+import { DESKTOP_CAPABILITIES, emptyConsoleSnapshot, fallbackRuntimeProfile, fallbackWindowMaterialCapabilities, fallbackWindowState } from "@dsc/console-ui";
 import { dscBridge } from "./dscBridge";
 
 /**
@@ -38,6 +38,8 @@ export class DesktopConsoleAdapter implements ConsoleAdapter, ConsoleLocalAgentP
   windowDragStart(screenX: number, screenY: number): void { dscBridge.windowDragStart(screenX, screenY); }
   windowDragMove(screenX: number, screenY: number): void { dscBridge.windowDragMove(screenX, screenY); }
   windowDragEnd(): void { dscBridge.windowDragEnd(); }
+  getWindowState(): Promise<WindowState> { return dscBridge.getWindowState(); }
+  subscribeWindowState(listener: (state: WindowState) => void): () => void { return dscBridge.subscribeWindowState(listener); }
   getWindowMaterialCapabilities(): Promise<WindowMaterialCapabilities> { return dscBridge.getWindowMaterialCapabilities(); }
   getRuntimeProfile() { return dscBridge.getRuntimeProfile(); }
 }
@@ -71,6 +73,8 @@ export function createDesktopFallbackAdapter(): ConsoleAdapter {
     windowDragStart: () => undefined,
     windowDragMove: () => undefined,
     windowDragEnd: () => undefined,
+    getWindowState: async () => fallbackWindowState(),
+    subscribeWindowState: () => () => undefined,
     getWindowMaterialCapabilities: async () => fallbackWindowMaterialCapabilities(),
     getRuntimeProfile: async () => fallbackRuntimeProfile()
   };

@@ -22,6 +22,10 @@ async function readShellMetrics(page) {
     if (!root || !sidebar || !main) return null;
     const rootStyle = getComputedStyle(root);
     const sidebarStyle = getComputedStyle(sidebar);
+    const theme = document.querySelector(".guanlan-carbon-theme");
+    const content = document.querySelector(".workspace-content");
+    const windowbar = document.querySelector(".workspace-windowbar");
+    const caption = document.querySelector(".workspace-caption-button");
     return {
       display: rootStyle.display,
       sidebarWidth: sidebar.getBoundingClientRect().width,
@@ -29,7 +33,22 @@ async function readShellMetrics(page) {
       mainWidth: main.getBoundingClientRect().width,
       bodyScrollWidth: document.body.scrollWidth,
       viewportWidth: window.innerWidth,
-      bridgeAvailable: Boolean(window.dsc && typeof window.dsc.getSnapshot === "function")
+      viewportHeight: window.innerHeight,
+      bridgeAvailable: Boolean(window.dsc && typeof window.dsc.getSnapshot === "function"),
+      // The shell must be a bounded frame, not a document that grows with its
+      // content. A `min-height`-only theme wrapper left `.workspace-content` at
+      // `clientHeight === scrollHeight`, which silently disabled page scrolling
+      // and `sticky` positioning.
+      themeHeight: theme ? Math.round(theme.getBoundingClientRect().height) : null,
+      contentScrollable: Boolean(content && content.scrollHeight > content.clientHeight + 1),
+      contentFitsViewport: Boolean(content) && Math.round(content.getBoundingClientRect().height) <= window.innerHeight + 1,
+      windowbarHeight: windowbar ? Math.round(windowbar.getBoundingClientRect().height) : null,
+      captionButton: caption ? {
+        width: Math.round(caption.getBoundingClientRect().width),
+        height: Math.round(caption.getBoundingClientRect().height),
+        glyphPaths: caption.querySelectorAll("svg path").length,
+        glyphData: caption.querySelector("svg path")?.getAttribute("d") ?? ""
+      } : null
     };
   });
 }
@@ -85,6 +104,22 @@ async function run() {
     assert.ok(desktopMetrics.mainWidth > 0);
     assert.equal(desktopMetrics.bridgeAvailable, true, "Electron preload bridge is unavailable");
     assert.ok(desktopMetrics.bodyScrollWidth <= desktopMetrics.viewportWidth + 1, "Electron desktop shell overflows horizontally");
+
+    // Bounded shell frame. If the theme wrapper goes back to `min-height` only,
+    // the root grows to its content and the page scroller is disabled — that was
+    // the "nothing scrolls, and the last row is never reachable" defect.
+    assert.equal(desktopMetrics.themeHeight, desktopMetrics.viewportHeight, "the themed wrapper must be viewport-height, not content-height");
+    assert.equal(desktopMetrics.contentFitsViewport, true, "the content scroller must fit the viewport, not grow with the page");
+    assert.equal(desktopMetrics.contentScrollable, true, "the overview page must produce a real scroll range");
+
+    // Caption buttons: 32px tall (the Windows title bar), and the maximize
+    // button must carry a real glyph rather than an empty <svg>.
+    assert.equal(desktopMetrics.windowbarHeight, 32, `the native title bar must be 32px tall (measured ${desktopMetrics.windowbarHeight})`);
+    assert.ok(desktopMetrics.captionButton, "the native title bar must render caption buttons");
+    assert.equal(desktopMetrics.captionButton.height, 32, `caption buttons must be 32px tall (measured ${desktopMetrics.captionButton.height})`);
+    assert.equal(desktopMetrics.captionButton.width, 46, `caption buttons must be 46px wide (measured ${desktopMetrics.captionButton.width})`);
+    assert.equal(desktopMetrics.captionButton.glyphPaths, 1, "each caption button must draw exactly one glyph path");
+    assert.ok(desktopMetrics.captionButton.glyphData.length > 0, "the minimize glyph path is empty");
     assert.equal(await page.locator(".workspace-device-item").count(), 0, "Electron primary navigation must not contain a device list");
     const desktopNavLabels = (await page.locator(".workspace-sidebar .m3-navigation-item").allTextContents()).map((label) => label.trim());
     const expectedDesktopNav = desktopNavLabels.includes("本机 Agent") ? ["总览", "设备", "本机 Agent", "设置"] : ["总览", "设备", "设置"];

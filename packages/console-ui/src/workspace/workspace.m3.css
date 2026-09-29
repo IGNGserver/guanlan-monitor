@@ -348,13 +348,19 @@
   flex: 0 0 auto;
 }
 
-.workspace-window-control.m3-icon-button {
+/* Caption buttons keep the OS geometry against Carbon's 40px control height.
+   The state layer is the plain hover/active fill declared in `workspace.shell.css`;
+   Carbon's `::before` ring and the Material press transform are suppressed so the
+   button reads like the native one. */
+.workspace-caption-button.m3-icon-button {
   width: 46px;
   min-width: 46px;
-  height: 100%;
-  min-height: 100%;
+  height: 32px;
+  min-height: 32px;
   border-radius: 0;
 }
+.workspace-caption-button.m3-icon-button::before { display: none; }
+.workspace-caption-button.m3-icon-button:active { transform: none; }
 
 /* Size removed entirely, not re-pointed at the control-height token. The
    previous commit swapped `30px` for `var(--workspace-control-height)` and the

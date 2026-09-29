@@ -1,10 +1,14 @@
 .workspace-root {
   display: grid;
   grid-template-columns: var(--workspace-sidebar-width) minmax(0, 1fr);
-  grid-template-rows: 42px minmax(0, 1fr);
+  /* 32px is the Windows title-bar height, and the caption buttons are sized to
+     sit flush in it (see `.workspace-caption-button`). */
+  grid-template-rows: 32px minmax(0, 1fr);
   width: 100%;
+  /* Leave the root height to the wrapper at `height: 100dvh`. A second
+     `min-height: 100dvh` here only added a floor that disagreed with the
+     resolved height on short viewports. */
   height: 100%;
-  min-height: 100dvh;
   overflow: hidden;
   color: var(--workspace-text);
   background: var(--workspace-bg);
@@ -51,10 +55,20 @@
 .workspace-windowbar__separator { width: 1px; height: 14px; margin-inline: 2px; background: var(--workspace-border-strong); }
 .workspace-windowbar__subtitle { overflow: hidden; color: var(--workspace-text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-windowbar__controls { display: flex; height: 100%; align-items: stretch; -webkit-app-region: no-drag; }
-.workspace-window-control { display: grid; width: 46px; height: 100%; place-items: center; color: var(--workspace-text-muted); background: transparent; cursor: pointer; -webkit-app-region: no-drag; transition: color var(--workspace-transition), background var(--workspace-transition); }
-.workspace-window-control:hover { color: var(--workspace-text); background: var(--workspace-surface-hover); }
-.workspace-window-control:active { background: var(--workspace-border); }
-.workspace-window-control--close:hover { color: #fff; background: var(--workspace-red); }
+/* Windows caption buttons: 46x32, the size the OS draws in a 32px title bar.
+   They used to fill the bar's full height (42px, or 36px on a narrow viewport),
+   so the hover fill was a taller block than the user sees anywhere else in
+   Windows and the three buttons towered over the native comparison. */
+.workspace-caption-button { display: grid; width: 46px; height: 32px; place-items: center; color: var(--workspace-text-secondary); background: transparent; cursor: default; -webkit-app-region: no-drag; transition: color var(--workspace-transition), background var(--workspace-transition); }
+.workspace-caption-button:hover { color: var(--workspace-text); background: var(--workspace-surface-hover); }
+.workspace-caption-button:active { background: var(--workspace-border); }
+/* Windows' own close affordance, not a themed danger colour: the hover fill is
+   the literal system red and the glyph goes white. */
+.workspace-caption-button--close:hover { color: #fff; background: #c42b1c; }
+.workspace-caption-button--close:active { color: #fff; background: #b1281a; }
+/* The glyph is a 1px hairline on a 10x10 grid, so it must not inherit the
+   workspace icon stroke used by `.workspace-icon`. */
+.workspace-caption-glyph { display: block; }
 
 .workspace-icon {
   display: block;
@@ -141,7 +155,7 @@
 .workspace-sidebar-edge-trigger {
   position: fixed;
   z-index: var(--workspace-layer-rail);
-  top: var(--workspace-chrome-height, 42px);
+  top: var(--workspace-chrome-height, 32px);
   bottom: 0;
   left: var(--workspace-sidebar-rail-width);
   width: 12px;

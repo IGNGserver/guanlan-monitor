@@ -46,7 +46,7 @@
 
   /* Compact header on portrait display */
   .workspace-windowbar {
-    height: 36px;
+    height: 32px;
   }
 
   /* The 52px / `flex-wrap: wrap` topbar override that used to be here never
@@ -76,7 +76,9 @@ html[data-dsc-density="touch"] {
 }
 
 .workspace-root {
-  --workspace-chrome-height: 42px;
+  /* Web has no title bar, and the variable is only read by the native shell, so
+     it is declared for both and pinned to the caption geometry. */
+  --workspace-chrome-height: 32px;
 }
 
 .workspace-root.is-web {
@@ -171,8 +173,8 @@ html[data-dsc-density="touch"] {
    small window the drawer opened with no backdrop to tap to dismiss it. */
 @media (orientation: portrait), (max-width: 839px) {
   .workspace-root:not(.is-web) {
-    --workspace-chrome-height: 36px;
-    grid-template-rows: 36px minmax(0, 1fr);
+    --workspace-chrome-height: 32px;
+    grid-template-rows: 32px minmax(0, 1fr);
   }
 
   .workspace-root.is-web {

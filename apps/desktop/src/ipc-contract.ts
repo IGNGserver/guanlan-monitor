@@ -17,6 +17,8 @@ export const IPC_CHANNELS = {
   getWindowMaterialCapabilities: "dsc:get-window-material-capabilities",
   windowMinimize: "dsc:window-minimize",
   windowToggleMaximize: "dsc:window-toggle-maximize",
+  getWindowState: "dsc:get-window-state",
+  windowStateChanged: "dsc:window-state-changed",
   windowDragStart: "dsc:window-drag-start",
   windowDragMove: "dsc:window-drag-move",
   windowDragEnd: "dsc:window-drag-end",

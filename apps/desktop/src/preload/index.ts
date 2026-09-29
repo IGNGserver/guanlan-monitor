@@ -6,7 +6,8 @@ import type {
   DesktopSnapshot,
   DesktopSnapshotRequest,
   DesktopRuntimeProfile,
-  DesktopStartupSettings
+  DesktopStartupSettings,
+  DesktopWindowState
 } from "@dsc/shared";
 import { IPC_CHANNELS } from "../ipc-contract.js";
 import { parseWindowMaterialArgument, type WindowMaterialBridge } from "../window-material.js";
@@ -28,6 +29,12 @@ const bridge: DesktopRendererBridge & WindowMaterialBridge = {
   updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => ipcRenderer.invoke(IPC_CHANNELS.updateStartupSettings, settings),
   openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.openExternal, url),
   getRuntimeProfile: (): Promise<DesktopRuntimeProfile> => ipcRenderer.invoke(IPC_CHANNELS.getRuntimeProfile),
+  getWindowState: (): Promise<DesktopWindowState> => ipcRenderer.invoke(IPC_CHANNELS.getWindowState),
+  subscribeWindowState: (listener: (state: DesktopWindowState) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: DesktopWindowState) => listener(state);
+    ipcRenderer.on(IPC_CHANNELS.windowStateChanged, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.windowStateChanged, handler);
+  },
   getWindowMaterialCapabilities: () => ipcRenderer.invoke(IPC_CHANNELS.getWindowMaterialCapabilities),
   windowMinimize: () => ipcRenderer.invoke(IPC_CHANNELS.windowMinimize),
   windowToggleMaximize: () => ipcRenderer.invoke(IPC_CHANNELS.windowToggleMaximize),

@@ -3,8 +3,8 @@ import type {
   ConsoleSnapshot,
   DesktopRuntimeProfile
 } from "@dsc/shared";
-import type { ConsoleAdapter } from "../services/adapter";
-import { fallbackRuntimeProfile, fallbackWindowMaterialCapabilities } from "../services/adapter";
+import type { ConsoleAdapter, WindowState } from "../services/adapter";
+import { fallbackRuntimeProfile, fallbackWindowMaterialCapabilities, fallbackWindowState } from "../services/adapter";
 import { startVisiblePolling } from "../helpers/visiblePolling";
 import { resolveInteractionScale } from "../helpers/density";
 import { parseWorkspaceHash, serializeWorkspaceRoute, type WorkspaceRoute } from "./routes";
@@ -58,6 +58,25 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<WorkspaceContextValue["notice"]>(null);
   const [runtimeProfile, setRuntimeProfile] = useState<DesktopRuntimeProfile>(fallbackRuntimeProfile);
+  const [windowState, setWindowState] = useState<WindowState>(fallbackWindowState);
+
+  /* Native window chrome. The host pushes maximize/restore/fullscreen transitions
+   * (taskbar, keyboard, window manager) and the renderer reads the initial value
+   * once, so the caption buttons reflect the real window instead of assuming a
+   * local toggle is the only way it can change. */
+  useEffect(() => {
+    if (!adapter.getWindowState) return;
+    let cancelled = false;
+    void adapter.getWindowState().then(
+      (state) => { if (!cancelled) setWindowState(state); },
+      () => { if (!cancelled) setWindowState(fallbackWindowState()); }
+    );
+    const unsubscribe = adapter.subscribeWindowState?.((state) => setWindowState(state));
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [adapter]);
 
   useEffect(() => {
     if (!adapter.getRuntimeProfile) return;
@@ -451,7 +470,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     layoutTier,
     runtimeProfile,
     lowResourceMode,
-    chartPointLimit
+    chartPointLimit,
+    windowState
   }), [
     route,
     navigate,
@@ -511,7 +531,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     layoutTier,
     runtimeProfile,
     lowResourceMode,
-    chartPointLimit
+    chartPointLimit,
+    windowState
   ]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
