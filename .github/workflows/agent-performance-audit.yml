@@ -1,0 +1,136 @@
+name: Audit agent collector footprint
+
+# The desktop audit compares two released builds. This one measures the
+# collector's own steady-state cost from source, because that cost is what makes
+# the machine feel slow and it is not visible in the packaged-app comparison.
+#
+# The collector reports its own counters (`probeSpawns`, `collectorStats`) in
+# every sample; a short-interval run against the local stub hub turns those into
+# measured spawns-per-minute and proves the fast path stays probe-free.
+on:
+  workflow_dispatch:
+    inputs:
+      duration_seconds:
+        description: How long to run the collector per variant
+        required: true
+        default: "180"
+      baseline_ref:
+        description: "Optional ref to measure as a baseline. It must already report probeSpawns/collectorStats, i.e. a build from after the probe-counter change; older builds cannot be compared."
+        required: false
+        default: ""
+      max_spawns_per_minute:
+        description: Optional hard ceiling for steady-state probe spawns per minute (empty = report only)
+        required: false
+        default: ""
+permissions:
+  contents: read
+jobs:
+  measure:
+    name: Measure collector footprint (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      DURATION: ${{ inputs.duration_seconds }}
+      BASELINE_REF: ${{ inputs.baseline_ref }}
+      MAX_SPAWNS: ${{ inputs.max_spawns_per_minute }}
+      HUB_PORT: "3199"
+      HUB_KEY: ci-agent-footprint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: "1.24.x"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+
+      - name: Build candidate collector (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p run/candidate-bin
+          go -C agents build -trimpath -ldflags "-s -w" -o ../run/candidate-bin/agent .
+          chmod +x run/candidate-bin/agent
+
+      - name: Build candidate collector (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path run/candidate-bin | Out-Null
+          go -C agents build -trimpath -ldflags "-s -w" -o ..\run\candidate-bin\agent.exe .
+          # Stage the bundled sensor library next to the executable, exactly as
+          # the release bundle does, so the LibreHardwareMonitor path is exercised
+          # instead of silently returning "dll not found".
+          Copy-Item -Path "agents/windows-hardware" -Destination "run/candidate-bin/windows-hardware" -Recurse -Force
+
+      - name: Build baseline collector (Linux)
+        if: runner.os == 'Linux' && inputs.baseline_ref != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/baseline-src
+          git worktree add --detach /tmp/baseline-src "$BASELINE_REF"
+          mkdir -p run/baseline-bin
+          go -C /tmp/baseline-src/agents build -trimpath -ldflags "-s -w" -o "$PWD/run/baseline-bin/agent" .
+          chmod +x run/baseline-bin/agent
+
+      - name: Build baseline collector (Windows)
+        if: runner.os == 'Windows' && inputs.baseline_ref != ''
+        shell: pwsh
+        run: |
+          $baseline = Join-Path $env:RUNNER_TEMP "baseline-src"
+          git worktree add --detach $baseline $env:BASELINE_REF
+          New-Item -ItemType Directory -Force -Path run/baseline-bin | Out-Null
+          go -C "$baseline/agents" build -trimpath -ldflags "-s -w" -o "$PWD/run/baseline-bin/agent.exe" .
+          Copy-Item -Path "$baseline/agents/windows-hardware" -Destination "run/baseline-bin/windows-hardware" -Recurse -Force
+
+      - name: Measure both variants (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash scripts/audit-agent-footprint.sh
+
+      - name: Measure both variants (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: pwsh scripts/audit-agent-footprint.ps1
+
+      - name: Report and assert (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--capture run/candidate/ingests.jsonl --label candidate --output artifacts/agent-footprint.json)
+          if [ -n "$BASELINE_REF" ]; then args+=(--baseline-capture run/baseline/ingests.jsonl); fi
+          if [ -n "$MAX_SPAWNS" ]; then args+=(--max-spawns-per-minute "$MAX_SPAWNS"); fi
+          node scripts/agent-footprint-report.mjs "${args[@]}"
+
+      - name: Report and assert (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $args = @("--capture", "run/candidate/ingests.jsonl", "--label", "candidate", "--output", "artifacts/agent-footprint.json")
+          if ($env:BASELINE_REF) { $args += @("--baseline-capture", "run/baseline/ingests.jsonl") }
+          if ($env:MAX_SPAWNS) { $args += @("--max-spawns-per-minute", $env:MAX_SPAWNS) }
+          node scripts/agent-footprint-report.mjs @args
+          if ($LASTEXITCODE -ne 0) { throw "Agent footprint audit failed" }
+
+      - name: Upload footprint report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: agent-footprint-${{ matrix.os }}
+          path: |
+            artifacts/
+            run/**/agent.log
+            run/**/hub.log
+          if-no-files-found: warn
