@@ -60,7 +60,7 @@
 .m3-switch:active,
 .m3-navigation-item:active,
 .workspace-button:active {
-  transform: translateY(1px) scale(0.98);
+  transform: none;
 }
 
 .m3-button:active::before,
@@ -293,14 +293,20 @@
   min-width: 142px;
   justify-content: flex-start;
   color: var(--workspace-color-on-surface-variant);
-  background: var(--workspace-color-surface-container-low);
+  background: var(--workspace-color-surface-container);
+  border-radius: var(--workspace-shape-full, 9999px);
+  border: 1px solid var(--workspace-color-outline-variant, #c4c9d0);
   font-size: 12px;
   font-weight: 560;
+  transition: transform var(--m3-motion-spring-fast-spatial, 350ms cubic-bezier(0.42, 1.67, 0.21, 0.90)),
+              background var(--m3-motion-spring-fast-effects, 150ms cubic-bezier(0.31, 0.94, 0.34, 1.00)),
+              border-color var(--m3-motion-spring-fast-effects, 150ms cubic-bezier(0.31, 0.94, 0.34, 1.00));
 }
 
 .workspace-search-trigger.m3-button:hover {
   color: var(--workspace-color-on-surface);
-  background: var(--workspace-color-surface-container);
+  background: var(--workspace-color-surface-container-high);
+  border-color: var(--workspace-color-outline, #747980);
 }
 
 .workspace-search-trigger.m3-button .m3-button__label {

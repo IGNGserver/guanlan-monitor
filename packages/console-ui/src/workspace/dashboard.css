@@ -30,7 +30,7 @@
   gap: var(--workspace-space-05);
   padding-bottom: var(--workspace-space-04);
   margin-bottom: var(--workspace-space-05);
-  border-bottom: 1px solid var(--cds-border-subtle-00, #e0e0e0);
+  border-bottom: 1px solid var(--workspace-color-outline-variant, #c4c9d0);
 }
 
 .dashboard-section__copy {
@@ -42,17 +42,19 @@
   display: block;
   font-size: 0.75rem;
   line-height: 1rem;
-  letter-spacing: 0.01rem;
-  color: var(--cds-text-secondary, #525252);
+  letter-spacing: 0.05rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--workspace-color-primary, #3d638f);
   margin-bottom: var(--workspace-space-02);
 }
 
 .dashboard-section__title {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   line-height: 1.75rem;
-  font-weight: 400;
-  color: var(--cds-text-primary, #161616);
+  font-weight: 600;
+  color: var(--workspace-color-on-surface, #1a1c1e);
 }
 
 .dashboard-section__description {
@@ -60,7 +62,7 @@
   max-width: 62ch;
   font-size: 0.875rem;
   line-height: 1.25rem;
-  color: var(--cds-text-secondary, #525252);
+  color: var(--workspace-color-on-surface-variant, #5d6269);
 }
 
 .dashboard-section__controls {

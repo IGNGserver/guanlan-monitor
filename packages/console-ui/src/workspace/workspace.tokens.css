@@ -41,6 +41,13 @@
   --workspace-elevation-3: 0 8px 16px rgb(0 0 0 / 16%);
   --workspace-motion-standard: 180ms cubic-bezier(0.2, 0, 0, 1);
   --workspace-motion-emphasized: 260ms cubic-bezier(0.2, 0, 0, 1);
+  /* Material 3 Expressive motion physics (springs converted to Web cubic-bezier) */
+  --m3-motion-spring-fast-spatial: 350ms cubic-bezier(0.42, 1.67, 0.21, 0.90);
+  --m3-motion-spring-default-spatial: 500ms cubic-bezier(0.38, 1.21, 0.22, 1.00);
+  --m3-motion-spring-slow-spatial: 650ms cubic-bezier(0.39, 1.29, 0.35, 0.98);
+  --m3-motion-spring-fast-effects: 150ms cubic-bezier(0.31, 0.94, 0.34, 1.00);
+  --m3-motion-spring-default-effects: 200ms cubic-bezier(0.34, 0.80, 0.34, 1.00);
+  --m3-motion-spring-slow-effects: 300ms cubic-bezier(0.34, 0.88, 0.34, 1.00);
   --carbon-motion-productive: 120ms cubic-bezier(0.2, 0, 0.38, 0.9);
   --carbon-motion-expressive: 240ms cubic-bezier(0, 0, 0.38, 0.9);
   --workspace-bg: var(--workspace-color-surface);
@@ -204,6 +211,17 @@ html[data-dsc-resolved-theme="dark"] {
   --workspace-shadow-soft: var(--workspace-elevation-1);
 }
 
+html[data-dsc-resolved-theme="dark"] .guanlan-carbon-theme {
+  --workspace-color-surface-container-lowest: #0f1318;
+  --workspace-color-surface-container-low: #171b22;
+  --workspace-color-surface-container: #1e232b;
+  --workspace-color-surface-container-high: #272e38;
+  --workspace-color-surface-container-highest: #333a46;
+  --workspace-elevation-1: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --workspace-elevation-2: 0 3px 6px rgba(0, 0, 0, 0.45);
+  --workspace-elevation-3: 0 8px 16px rgba(0, 0, 0, 0.55);
+}
+
 html[data-dsc-density="compact"] {
   --workspace-control-height: 36px;
   --workspace-sidebar-width: 248px;
@@ -312,14 +330,11 @@ html[data-dsc-resolved-theme="dark"] ::selection {
   --workspace-color-secondary-container: var(--cds-layer-02, #e5e5e5);
   --workspace-color-on-secondary-container: var(--cds-text-primary, #161616);
   --workspace-color-surface: var(--cds-background, #f4f4f4);
-  /* Carbon emits no `--cds-layer-00`, so this used to resolve to its fallback
-     on every element. `layer-01` is what that fallback rendered anyway; naming
-     the real token keeps the behaviour and drops the phantom reference. */
-  --workspace-color-surface-container-lowest: var(--cds-layer-01, #ffffff);
-  --workspace-color-surface-container-low: var(--cds-layer-01, #ffffff);
-  --workspace-color-surface-container: var(--cds-layer-01, #ffffff);
-  --workspace-color-surface-container-high: var(--cds-layer-02, #e5e5e5);
-  --workspace-color-surface-container-highest: var(--cds-layer-03, #cacaca);
+  --workspace-color-surface-container-lowest: #ffffff;
+  --workspace-color-surface-container-low: #f8fafc;
+  --workspace-color-surface-container: #f1f4f9;
+  --workspace-color-surface-container-high: #e9eef5;
+  --workspace-color-surface-container-highest: #e0e7f1;
   --workspace-color-on-surface: var(--cds-text-primary, #161616);
   --workspace-color-on-surface-variant: var(--cds-text-secondary, #525252);
   --workspace-color-outline: var(--cds-border-strong, #8d8d8d);
@@ -371,8 +386,14 @@ html[data-dsc-resolved-theme="dark"] ::selection {
   --workspace-red-soft: var(--workspace-color-error-container);
   --workspace-purple: var(--cds-support-info, #0043ce);
   --workspace-purple-soft: var(--workspace-color-info-container);
-  --workspace-shadow: none;
-  --workspace-shadow-soft: none;
+  /* Material 3 Expressive Elevation shadows */
+  --workspace-elevation-1: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.05);
+  --workspace-elevation-2: 0 3px 6px rgba(0, 0, 0, 0.10), 0 2px 4px rgba(0, 0, 0, 0.06);
+  --workspace-elevation-3: 0 8px 16px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.08);
+  --workspace-elevation-4: 0 12px 24px rgba(0, 0, 0, 0.14), 0 6px 12px rgba(0, 0, 0, 0.10);
+  --workspace-elevation-5: 0 16px 32px rgba(0, 0, 0, 0.16), 0 8px 16px rgba(0, 0, 0, 0.12);
+  --workspace-shadow: var(--workspace-elevation-1);
+  --workspace-shadow-soft: var(--workspace-elevation-1);
 
   /* Inherited, so declaring it on the wrapper colours every scrollbar inside it
      against the current theme. This used to be a `*` rule reading the Material
@@ -380,15 +401,17 @@ html[data-dsc-resolved-theme="dark"] ::selection {
      against Carbon's #262626 layers. */
   scrollbar-color: var(--cds-border-strong, #8d8d8d) transparent;
 
-  /* Carbon geometry is square. Anything that still reads a shape token
-   * therefore lands on the Carbon grid instead of on a Material corner. */
-  --workspace-shape-extra-small: 0px;
-  --workspace-shape-small: 0px;
-  --workspace-shape-medium: 0px;
-  --workspace-shape-large: 0px;
-  --workspace-shape-extra-large: 0px;
-  --workspace-shape-full: 0px;
-  --workspace-radius-sm: 0px;
-  --workspace-radius-md: 0px;
-  --workspace-radius-lg: 0px;
+  /* Material 3 Expressive Shape scale */
+  --workspace-shape-none: 0px;
+  --workspace-shape-extra-small: 4px;
+  --workspace-shape-small: 8px;
+  --workspace-shape-medium: 12px;
+  --workspace-shape-large: 16px;
+  --workspace-shape-extra-large: 24px;
+  --workspace-shape-full: 9999px;
+  --workspace-radius-sm: var(--workspace-shape-small);
+  --workspace-radius-md: var(--workspace-shape-medium);
+  --workspace-radius-lg: var(--workspace-shape-large);
+  --workspace-radius-xl: var(--workspace-shape-extra-large);
+  --workspace-radius-full: var(--workspace-shape-full);
 }

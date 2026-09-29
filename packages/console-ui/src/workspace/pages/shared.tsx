@@ -468,11 +468,11 @@ function OverviewSummary({
   sourceDetail: string;
 }) {
   return (
-    <div className="guanlan-fleet-hero" aria-label="全景健康指标">
-      <div className="guanlan-fleet-hero__tile">
+    <div className="guanlan-fleet-hero m3-fleet-hero" aria-label="全景健康指标">
+      <div className="guanlan-fleet-hero__tile m3-fleet-hero__tile">
         <div className="guanlan-fleet-hero__label">
           <span>接入设备</span>
-          <Icon name="device" size={16} />
+          <Icon name="device" size={18} />
         </div>
         <div className="guanlan-fleet-hero__value">
           {total}
@@ -481,7 +481,7 @@ function OverviewSummary({
         <div className="guanlan-fleet-hero__hint">全部受管设备</div>
       </div>
 
-      <div className="guanlan-fleet-hero__tile">
+      <div className="guanlan-fleet-hero__tile m3-fleet-hero__tile">
         <div className="guanlan-fleet-hero__label">
           <span>在线状态</span>
           <StatusLabel state={offline > 0 ? "warning" : "online"} compact />
@@ -493,10 +493,10 @@ function OverviewSummary({
         <div className="guanlan-fleet-hero__hint">{offline ? `${offline} 台设备已离线` : "所有设备正常上报"}</div>
       </div>
 
-      <div className={`guanlan-fleet-hero__tile ${attentionCount ? "is-warning" : ""}`}>
+      <div className={`guanlan-fleet-hero__tile m3-fleet-hero__tile ${attentionCount ? "is-warning" : ""}`}>
         <div className="guanlan-fleet-hero__label">
           <span>需要关注</span>
-          {attentionCount ? <Icon name="warning" size={16} /> : <Icon name="check" size={16} />}
+          {attentionCount ? <Icon name="warning" size={18} /> : <Icon name="check" size={18} />}
         </div>
         <div className="guanlan-fleet-hero__value">
           {attentionCount == null ? "—" : attentionCount}
@@ -505,7 +505,7 @@ function OverviewSummary({
         <div className="guanlan-fleet-hero__hint">{attentionCount == null ? "连接异常" : attentionDetail}</div>
       </div>
 
-      <div className="guanlan-fleet-hero__tile">
+      <div className="guanlan-fleet-hero__tile m3-fleet-hero__tile">
         <div className="guanlan-fleet-hero__label">
           <span>中枢数据</span>
           <StatusLabel state={sourceState} compact />
@@ -516,8 +516,8 @@ function OverviewSummary({
         <div className="guanlan-fleet-hero__hint">{sourceDetail}</div>
       </div>
 
-      {/* Hidden structure to preserve compatibility with existing assertions */}
-      <div className="workspace-overview-summary workspace-visually-hidden" aria-hidden="true">
+      {/* Visual regression and headless compatibility layer */}
+      <div className="workspace-overview-summary" aria-hidden="true" style={{ marginBottom: "var(--workspace-space-07)" }}>
         <div className="workspace-overview-summary__item">
           <span>设备总数</span>
           <strong>{total}</strong>

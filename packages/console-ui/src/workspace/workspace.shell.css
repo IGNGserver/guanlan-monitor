@@ -400,9 +400,9 @@
   height: var(--workspace-control-height);
   align-items: center;
   gap: 8px;
-  padding: 0 9px;
+  padding: 0 12px;
   border: 1px solid var(--workspace-border);
-  border-radius: var(--workspace-radius-sm);
+  border-radius: var(--workspace-shape-full, 9999px);
   color: var(--workspace-text-secondary);
   background: var(--workspace-surface-control);
   cursor: pointer;
