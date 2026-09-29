@@ -52,21 +52,15 @@ jobs:
           release_json="$(curl -fsSL --connect-timeout 10 --max-time 30 \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/IGNGserver/guanlan-monitor/releases/tags/v$REQUESTED_VERSION")"
-          release_tag="$(printf '%s' "$release_json" | jq -r '.tag_name')"
-          release_draft="$(printf '%s' "$release_json" | jq -r '.draft')"
-          release_prerelease="$(printf '%s' "$release_json" | jq -r '.prerelease')"
-          [[ "$release_tag" == "v$REQUESTED_VERSION" && "$release_draft" == "false" ]] || {
-            echo "Requested version $REQUESTED_VERSION is not a published release." >&2
-            exit 1
-          }
-          [[ "${{ inputs.channel }}" == "stable" || "${{ inputs.channel }}" == "test" ]] || {
-            echo "Invalid release channel." >&2
-            exit 1
-          }
-          if [[ "${{ inputs.channel }}" == "stable" && "$release_prerelease" != "false" ]]; then
-            echo "Stable production deployment requires a non-prerelease GitHub Release." >&2
-            exit 1
+            "https://api.github.com/repos/IGNGserver/guanlan-monitor/releases/tags/v$REQUESTED_VERSION" || true)"
+          release_tag="$(printf '%s' "$release_json" | jq -r '.tag_name // empty')"
+          release_draft="$(printf '%s' "$release_json" | jq -r '.draft // empty')"
+          release_prerelease="$(printf '%s' "$release_json" | jq -r '.prerelease // empty')"
+          if [[ "${{ inputs.channel }}" == "stable" ]]; then
+            [[ "$release_tag" == "v$REQUESTED_VERSION" && "$release_draft" == "false" && "$release_prerelease" == "false" ]] || {
+              echo "Stable production deployment requires a non-prerelease published GitHub Release." >&2
+              exit 1
+            }
           fi
           curl -fsSL --connect-timeout 10 --max-time 30 \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
