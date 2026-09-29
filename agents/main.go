@@ -535,16 +535,33 @@ var (
 	probeSpawnCounts = map[string]int{}
 )
 
+// recordProbeSpawn counts one external probe process. The name is normalized so
+// the platform extension cannot split one executable into two counters: Windows
+// PowerShell arrives as both `powershell` (through runWindowsPowerShell) and
+// `powershell.exe` (through the generic runner), which made the breakdown read
+// as two processes.
 func recordProbeSpawn(name string) {
-	if name == "" {
+	normalized := normalizeProbeName(name)
+	if normalized == "" {
 		return
 	}
 	probeSpawnMu.Lock()
 	if probeSpawnCounts == nil {
 		probeSpawnCounts = map[string]int{}
 	}
-	probeSpawnCounts[name]++
+	probeSpawnCounts[normalized]++
 	probeSpawnMu.Unlock()
+}
+
+func normalizeProbeName(name string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(name))
+	// Callers pass a bare executable name, but trim a path defensively. Both
+	// separators are handled because the collector runs on Windows and the
+	// counters are also exercised by host-platform tests.
+	if index := strings.LastIndexAny(trimmed, `/\`); index >= 0 {
+		trimmed = trimmed[index+1:]
+	}
+	return strings.TrimSuffix(trimmed, ".exe")
 }
 
 // takeProbeSpawnCounts returns the spawns accumulated since the previous call
