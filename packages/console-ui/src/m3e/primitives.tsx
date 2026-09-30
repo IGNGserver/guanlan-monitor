@@ -207,7 +207,7 @@ export interface M3SegmentedControlProps {
 
 export function M3SegmentedControl({ options, value, onChange, className, disabled = false, size = "md", "aria-label": ariaLabel }: M3SegmentedControlProps) {
   return (
-    <div className={joinClasses("m3e-segmented", `m3e-segmented--${size}`, disabled && "is-disabled", className)} role="group" aria-label={ariaLabel}>
+    <div className={joinClasses("m3e-segmented", `m3e-segmented--${size}`, disabled && "is-disabled", className)} role="tablist" aria-label={ariaLabel}>
       {options.map((option) => {
         const active = option.value === value;
         return (
@@ -215,8 +215,8 @@ export function M3SegmentedControl({ options, value, onChange, className, disabl
             key={option.value}
             className={joinClasses("m3e-segmented__segment", active && "is-selected", "m3e-state-host")}
             type="button"
-            role="radio"
-            aria-checked={active}
+            role="tab"
+            aria-selected={active}
             disabled={disabled || option.disabled}
             onClick={() => { if (!disabled && !option.disabled) onChange(option.value); }}
           >
@@ -515,7 +515,7 @@ export function M3Dialog({ open, onClose, headline, icon, children, actions, dan
       <div
         ref={containerRef}
         className={joinClasses("m3e-dialog", danger && "m3e-dialog--danger", className)}
-        role="alertdialog"
+        role="dialog"
         aria-modal="true"
         aria-label={ariaLabel ?? headline}
         onClick={(event) => event.stopPropagation()}

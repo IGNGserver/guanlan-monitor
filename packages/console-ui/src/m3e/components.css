@@ -169,40 +169,46 @@
 .m3e-nav-item__label { position: relative; z-index: 1; display: inline-flex; align-items: center; }
 .m3e-nav-item__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ---- Segmented button ------------------------------------------------------ */
+/* ---- Segmented button ------------------------------------------------------
+ * The container is deliberately bare: no outer border, padding or fill, and it
+ * must never become a scroll container. Each segment draws its own outline and
+ * the selected one paints its own fill, which keeps a horizontally arranged
+ * control readable at any width.
+ * -------------------------------------------------------------------------- */
 
 .m3e-segmented {
   display: inline-flex;
-  min-height: 40px;
+  max-width: 100%;
+  flex-wrap: wrap;
   align-items: stretch;
-  padding: 2px;
-  border: 1px solid var(--md-sys-color-outline);
-  border-radius: var(--md-sys-shape-full);
+  gap: 6px;
+  padding: 0;
+  border: 0;
   background: transparent;
 }
 
-.m3e-segmented--sm { min-height: 32px; }
 .m3e-segmented.is-disabled { opacity: var(--md-sys-state-disabled-opacity); }
 
 .m3e-segmented__segment {
   display: inline-flex;
+  min-height: var(--md-sys-density-control-height);
   align-items: center;
   gap: 6px;
-  padding-inline: 14px;
-  border: 0;
-  border-radius: var(--md-sys-shape-full);
+  padding-inline: 16px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 0;
   color: var(--md-sys-color-on-surface);
   background: transparent;
   cursor: pointer;
   font-size: var(--md-sys-typescale-label-l-size);
   font-weight: var(--md-sys-typescale-label-l-weight);
   white-space: nowrap;
-  transition: background var(--md-sys-motion-effects-default), color var(--md-sys-motion-effects-default);
+  transition: background var(--md-sys-motion-effects-default), color var(--md-sys-motion-effects-default), border-color var(--md-sys-motion-effects-default);
 }
 
-.m3e-segmented__segment + .m3e-segmented__segment { border-inline-start: 1px solid var(--md-sys-color-outline-variant); border-start-start-radius: 0; border-end-start-radius: 0; }
-.m3e-segmented__segment.is-selected { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); border-color: transparent; }
-.m3e-segmented__segment.is-selected + .m3e-segmented__segment { border-inline-start-color: transparent; }
+.m3e-segmented__segment:first-child { border-start-start-radius: var(--md-sys-shape-full); border-end-start-radius: var(--md-sys-shape-full); }
+.m3e-segmented__segment:last-child { border-start-end-radius: var(--md-sys-shape-full); border-end-end-radius: var(--md-sys-shape-full); }
+.m3e-segmented__segment.is-selected { border-color: transparent; color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); }
 .m3e-segmented__check,
 .m3e-segmented__icon { display: inline-flex; align-items: center; }
 .m3e-segmented__label { position: relative; z-index: 1; }

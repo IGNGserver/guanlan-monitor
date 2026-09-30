@@ -150,7 +150,7 @@ async function run() {
     // Same vocabulary as the browser console, plus the one section that only
     // exists where a machine agent can be managed.
     assert.deepEqual(
-      (await page.locator(".workspace-sidebar__nav .workspace-nav-item span").allTextContents()).map((label) => label.trim()),
+      (await page.locator(".workspace-sidebar__nav .workspace-nav-item .m3e-nav-item__label").allTextContents()).map((label) => label.trim()),
       ["通用", "外观", "连接", "本机 Agent", "数据与更新", "快捷键参考", "关于观澜"],
       "desktop settings must use the shared section vocabulary"
     );

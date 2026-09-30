@@ -15,10 +15,46 @@
 
 /* ---- Shell frame ----------------------------------------------------------- */
 
-/* The 12px edge handle is mouse-sized; touch needs the 44px contract the
-   deleted Carbon arbitration layer used to provide. */
+/* ---- Touch contract --------------------------------------------------------
+ * Every interactive control must present a >= 44px target on coarse pointers.
+ * This is the M3E replacement for the 44px contract the deleted Carbon
+ * arbitration layer carried. The switch pill and the checkbox box are not
+ * resized on their own — their rows are, because the row is what a thumb hits.
+ * -------------------------------------------------------------------------- */
+
 @media (pointer: coarse) {
-  .workspace-sidebar-edge-trigger { width: 44px; }
+  .m3e-button,
+  .workspace-button,
+  .workspace-search-trigger,
+  .workspace-settings-mobile-nav__list button,
+  .workspace-brand,
+  .workspace-breadcrumb button,
+  .workspace-anchor-btn,
+  .workspace-command__item,
+  .workspace-temperature-source-row,
+  .guanlan-table-icon-action,
+  .guanlan-table-row-action,
+  .m3e-chip,
+  .m3e-search-bar__clear,
+  .m3e-checkbox,
+  .m3e-checkbox.is-compact,
+  .m3e-tabs__tab,
+  .m3e-segmented__segment {
+    min-width: var(--md-sys-layout-touch-target);
+    min-height: var(--md-sys-layout-touch-target);
+  }
+
+  .m3e-switch-row,
+  .m3e-switch-row.is-compact {
+    min-height: var(--md-sys-layout-touch-target);
+  }
+
+  .m3e-icon-button {
+    min-width: var(--md-sys-layout-touch-target);
+    min-height: var(--md-sys-layout-touch-target);
+  }
+
+  .workspace-sidebar-edge-trigger { width: var(--md-sys-layout-touch-target); }
 }
 
 .workspace-root {
@@ -349,6 +385,10 @@
   .workspace-bottom-nav__item.is-selected { background: transparent; }
   .workspace-bottom-nav__item.is-selected .workspace-bottom-nav__icon-indicator { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
   .workspace-page { padding: 28px 20px 96px; }
+  /* Horizontal control groups wrap instead of overflowing their column. */
+  .workspace-range-control,
+  .workspace-device-toolbar,
+  .workspace-directory-toolbar__actions { flex-wrap: wrap; }
 }
 
 @media (max-width: 620px) {

@@ -206,7 +206,7 @@ const UI_CONTRACT = `(() => {
       open: Boolean(root?.classList.contains("is-sidebar-open")),
       offCanvas: sidebar ? Math.round(sidebar.getBoundingClientRect().right) <= 0 : null,
       width: sidebar ? Math.round(sidebar.getBoundingClientRect().width) : 0,
-      labelWidths: [...document.querySelectorAll(".workspace-sidebar .workspace-nav-item span")].map((s) => Math.round(s.getBoundingClientRect().width)),
+      labelWidths: [...document.querySelectorAll(".workspace-sidebar .workspace-nav-item .m3e-nav-item__label")].map((s) => Math.round(s.getBoundingClientRect().width)),
       collapseButton: clickable(document.querySelector(".workspace-sidebar__collapse")),
       topbarToggle: clickable(document.querySelector(".workspace-topbar__toggle"))
     },
@@ -415,7 +415,7 @@ async function run() {
   // The browser console and the desktop client must offer the same section names;
   // only 本机 Agent is allowed to differ, and that is the desktop's own run.
   assert.deepEqual(
-    (await page.locator(".workspace-sidebar__nav .workspace-nav-item span").allTextContents()).map((label) => label.trim()),
+    (await page.locator(".workspace-sidebar__nav .workspace-nav-item .m3e-nav-item__label").allTextContents()).map((label) => label.trim()),
     ["通用", "外观", "连接", "数据与更新", "快捷键参考", "关于观澜"],
     "web settings must use the shared section vocabulary"
   );
@@ -642,7 +642,7 @@ async function run() {
       open: document.querySelector(".workspace-root")?.classList.contains("is-sidebar-open") ?? false,
       left: Math.round(rect?.left ?? -999),
       width: Math.round(rect?.width ?? 0),
-      labelWidths: [...document.querySelectorAll(".workspace-sidebar .workspace-nav-item span")].map((node) => Math.round(node.getBoundingClientRect().width))
+      labelWidths: [...document.querySelectorAll(".workspace-sidebar .workspace-nav-item .m3e-nav-item__label")].map((node) => Math.round(node.getBoundingClientRect().width))
     };
   });
   assert.ok(drawerEvidence.open, "the topbar toggle must open the sidebar drawer at 390px");
@@ -669,7 +669,7 @@ async function run() {
   await page.setViewportSize({ width: 1024, height: 900 });
   await page.waitForTimeout(400);
   assert.equal(await page.locator(".workspace-root").evaluate((node) => node.classList.contains("is-sidebar-open")), true, "widening past the drawer breakpoint must restore the stored expanded rail preference");
-  const inlineRail = await page.evaluate(() => [...document.querySelectorAll(".workspace-sidebar .workspace-nav-item span")].map((node) => Math.round(node.getBoundingClientRect().width)));
+  const inlineRail = await page.evaluate(() => [...document.querySelectorAll(".workspace-sidebar .workspace-nav-item .m3e-nav-item__label")].map((node) => Math.round(node.getBoundingClientRect().width)));
   assert.ok(inlineRail.length > 0 && inlineRail.every((label) => label > 16), `an expanded sidebar must show its labels between 840 and 1199px (${inlineRail.join(",")})`);
   // Leave the run in the expanded state so the breakpoint matrix exercises the
   // labelled rail rather than the collapsed one.
