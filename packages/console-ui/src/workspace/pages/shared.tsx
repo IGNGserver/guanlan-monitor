@@ -462,25 +462,29 @@ function OverviewSummary({
       <div className="guanlan-fleet-hero__tile m3-fleet-hero__tile">
         <div className="guanlan-fleet-hero__label">
           <span>在线状态</span>
-          <StatusLabel state={offline > 0 ? "warning" : "online"} compact />
+          <StatusLabel state={total === 0 ? "unknown" : offline > 0 ? "warning" : "online"} compact />
         </div>
         <div className="guanlan-fleet-hero__value">
           {online}
           <small>/ {total}</small>
         </div>
-        <div className="guanlan-fleet-hero__hint">{offline ? `${offline} 台设备已离线` : "所有设备正常上报"}</div>
+        {/* "所有设备正常上报" was shown even with zero devices, which reads as a
+            health claim about a fleet that does not exist. */}
+        <div className="guanlan-fleet-hero__hint">{total === 0 ? "还没有设备接入" : offline ? `${offline} 台设备已离线` : "所有设备正常上报"}</div>
       </div>
 
       <div className={`guanlan-fleet-hero__tile m3-fleet-hero__tile ${attentionCount ? "is-warning" : ""}`}>
         <div className="guanlan-fleet-hero__label">
           <span>需要关注</span>
-          {attentionCount ? <Icon name="warning" size={18} /> : <Icon name="check" size={18} />}
+          {attentionCount == null ? <Icon name="warning" size={18} /> : attentionCount ? <Icon name="warning" size={18} /> : <Icon name="check" size={18} />}
         </div>
         <div className="guanlan-fleet-hero__value">
           {attentionCount == null ? "—" : attentionCount}
           <small>项</small>
         </div>
-        <div className="guanlan-fleet-hero__hint">{attentionCount == null ? "连接异常" : attentionDetail}</div>
+        {/* A check mark next to the word "连接异常" said two opposite things in one
+            tile. A null count is an unknown, not a pass. */}
+        <div className="guanlan-fleet-hero__hint">{attentionCount == null ? "连接状态异常，暂无法判断" : attentionDetail}</div>
       </div>
 
       <div className="guanlan-fleet-hero__tile m3-fleet-hero__tile">

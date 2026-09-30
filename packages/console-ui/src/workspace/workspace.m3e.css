@@ -70,6 +70,23 @@
 .workspace-topbar { gap: 12px; }
 .workspace-topbar__brand { font-size: var(--md-sys-typescale-title-m-size); font-weight: 500; }
 
+/* One brand, not two.
+ *
+ * `AppTopBar` renders 观澜 in the header and `PrimaryNavigation` renders it in
+ * the sidebar, both guarded by the same `!canControlNativeWindow` condition — so
+ * on the web console every wide screen showed the word twice within 200px of
+ * each other. Desktop never hit this because its native title bar owns the
+ * header slot. This rule used to live in `workspace-carbon.scss` and was lost
+ * when that layer was deleted, which brought the duplicate back.
+ *
+ * The header copy drops out, and only while the sidebar is inline: below the
+ * drawer breakpoint the sidebar is off canvas, so the header is the only
+ * branding a phone user ever sees.
+ */
+@media (min-width: 840px) {
+  .workspace-root.is-web .workspace-topbar__brand { display: none; }
+}
+
 .workspace-main {
   background: var(--md-sys-color-surface);
 }
@@ -312,7 +329,7 @@
 
 .workspace-directory-toolbar { border-radius: var(--md-sys-shape-lg); background: var(--md-sys-color-surface-container-low); }
 .workspace-directory-surface { border-radius: var(--md-sys-shape-lg); background: transparent; box-shadow: none; overflow: visible; }
-.workspace-directory-scroll-hint { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
+.workspace-directory-scroll-hint { display: none; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
 .guanlan-table-link { color: var(--md-sys-color-primary); font-weight: 500; }
 .guanlan-table-secondary { display: block; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
 .guanlan-table-stale { color: var(--md-sys-color-warning); }

@@ -47,6 +47,11 @@
 
 .dashboard-section__controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--md-sys-space-3); }
 
+/* The overview trend has two independent choices (which metric, which range);
+   grouping them keeps the range control from being mistaken for part of the
+   metric switch when both are pill-shaped. */
+.workspace-overview-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--md-sys-space-4); }
+
 /* Grid: 4 / 8 / 12 columns, spans carried on --cell-* custom properties. */
 .dashboard-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--md-sys-space-4); }
 .dashboard-cell { grid-column: span var(--cell-sm, 4); min-width: 0; }

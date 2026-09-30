@@ -7,7 +7,7 @@ import { ChartTile, DashboardCell, DashboardGrid, DashboardSection } from "../da
 import { OnboardingGuide } from "../shell/OnboardingGuide";
 import { formatBytes, formatDate, formatRate, formatPercent } from "../formatters";
 import { selectAttentionDevices, selectHealthSummary } from "../selectors";
-import { DeviceTable, DeviceCardGrid, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints } from "./shared";
+import { DeviceTable, DeviceCardGrid, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, MetricWindowControl, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints, type DesktopMetricWindowValue } from "./shared";
 
 type ObservationMetric = "cpu" | "memory" | "disk" | "network";
 
@@ -48,7 +48,7 @@ function failureGuide(isDesktopShell: boolean): string {
  * themselves, and says so plainly when there are none.
  */
 export function OverviewPage() {
-  const { snapshot, allDevices, metricsWindow, loading, refreshing, error, refresh, openSettings, navigate, capabilities } = useWorkspace();
+  const { snapshot, allDevices, metricsWindow, setMetricsWindow, loading, refreshing, error, refresh, openSettings, navigate, capabilities } = useWorkspace();
   const [observationMetric, setObservationMetric] = useState<ObservationMetric>("cpu");
 
   // These run on every poll (the provider re-renders the tree on each snapshot).
@@ -83,12 +83,16 @@ export function OverviewPage() {
   // Spell out what the number is made of so it can be checked, not believed.
   // The device half says 离线 — the same word the directory tags, the filter
   // chips and the device page use. "未响应" used to name that identical state
-  // here only, so a reader counted two kinds of trouble.
-  const attentionDetail = attentionCount == null
-    ? "连接状态异常，暂无法判断"
-    : attentionCount === 0
-      ? "当前没有需要关注的项目"
-      : [health.offline ? `${health.offline} 台设备离线` : "", localIssues ? `${localIssues} 条本机采集问题` : ""].filter(Boolean).join(" · ");
+  // here only, so a reader counted two kinds of trouble. An authenticated-but-
+  // empty hub is not a connection fault either: the tile must not answer
+  // "连接状态异常" directly under a page that says 等待设备接入.
+  const attentionDetail = health.source === "empty"
+    ? "还没有设备接入"
+    : attentionCount == null
+      ? "连接状态异常，暂无法判断"
+      : attentionCount === 0
+        ? "当前没有需要关注的项目"
+        : [health.offline ? `${health.offline} 台设备离线` : "", localIssues ? `${localIssues} 条本机采集问题` : ""].filter(Boolean).join(" · ");
   const tone = hubAbnormal ? "warning" : noData ? "empty" : attentionCount ? "warning" : "normal";
 
   const observationHasData = observationSeries.some((series) => series.points.length > 0);
@@ -180,7 +184,17 @@ export function OverviewPage() {
       eyebrow="资源趋势"
       title={`${observationLabels[observationMetric]} · 全部设备`}
       description="一张图只观察一个维度；缺失指标会明确留空，不会用估算值填充。"
-      controls={<M3SegmentedControl options={[{ value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "disk", label: "磁盘" }, { value: "network", label: "网络" }]} value={observationMetric} onChange={(value) => setObservationMetric(value as ObservationMetric)} aria-label="总览观察指标" />}
+      controls={
+        <div className="workspace-overview-controls">
+          <M3SegmentedControl options={[{ value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "disk", label: "磁盘" }, { value: "network", label: "网络" }]} value={observationMetric} onChange={(value) => setObservationMetric(value as ObservationMetric)} aria-label="总览观察指标" />
+          {/* The trend is drawn over a time window, but this page never offered
+              the control for it: the chart silently inherited whatever range was
+              last chosen on a device page, so "最近 5 分钟" could appear here
+              after the user had picked 7 days elsewhere. The control now lives
+              next to the metric switch it belongs to. */}
+          <MetricWindowControl value={metricsWindow as DesktopMetricWindowValue} onChange={(value) => setMetricsWindow(value)} />
+        </div>
+      }
     >
       <DashboardGrid>
         <DashboardCell span="full">
@@ -236,7 +250,7 @@ function HubStatusCard({
         <SummaryRow label="设备范围" value={`${total} 台已接入 · ${online} 台在线`} />
       </div>
       <div className="workspace-form__actions">
-        <Button variant="quiet" onClick={onRefresh} disabled={refreshing}><Icon name="refresh" size={15} />{refreshing ? "正在同步" : "立即同步"}</Button>
+        <Button variant="quiet" onClick={onRefresh} disabled={refreshing}><Icon name="refresh" size={15} />{refreshing ? "正在刷新" : "立即刷新"}</Button>
         <Button variant="quiet" onClick={onOpenSettings}>连接设置<Icon name="arrow" size={15} /></Button>
       </div>
     </Surface>

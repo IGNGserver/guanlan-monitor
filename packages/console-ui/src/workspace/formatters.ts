@@ -209,6 +209,19 @@ export function displayInstanceName(name: string | undefined, fallback: string):
   return value || fallback;
 }
 
+/**
+ * `ReleaseChannel` is `"stable" | "test"` on the wire. Both the device facts
+ * card and the About page used to print the raw value, so users read the English
+ * enum ("test") where every other label on the screen is Chinese. One word for
+ * one channel, everywhere.
+ */
+export function formatReleaseChannel(value: string | null | undefined): string {
+  if (value === "stable") return "稳定版";
+  if (value === "test") return "测试版";
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : "未知";
+}
+
 export function displayModelName(model: string | undefined, name: string | undefined, fallback: string): string {
   return displayInstanceName(model, displayInstanceName(name, fallback));
 }

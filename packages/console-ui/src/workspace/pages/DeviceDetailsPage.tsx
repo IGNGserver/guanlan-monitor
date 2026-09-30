@@ -22,6 +22,7 @@ import {
   formatCapacitySummary,
   formatDate,
   formatGpuMemorySummary,
+  formatReleaseChannel,
   sumSamplePoints
 } from "../formatters";
 import { Button, Icon, StatusDot } from "../ui";
@@ -54,6 +55,7 @@ export function DeviceDetailsPage() {
     openSettings,
     loading,
     refreshing,
+    refresh,
     metricsWindow,
     setMetricsWindow,
     trafficMode,
@@ -348,7 +350,7 @@ export function DeviceDetailsPage() {
         tone: "cached",
         title: "当前显示离线缓存",
         detail: `数据缓存于 ${formatDate(snapshot.cache.savedAt)}，设备和图表可能已经过期。`,
-        action: <span className="workspace-caption">请使用顶部刷新按钮重新获取</span>
+        action: <Button variant="quiet" onClick={() => void refresh()}>{refreshing ? "正在刷新" : "重新获取"}<Icon name="refresh" size={15} /></Button>
       }
     : telemetryState === "pending"
       ? {
@@ -364,15 +366,18 @@ export function DeviceDetailsPage() {
         ? {
             tone: "empty",
             title: `${windowLabel} 范围内还没有读到样本`,
-            detail: "这台设备在本页展示过其他范围的样本，所以更可能是这次读取没有完成；用顶部刷新按钮重试即可。",
-            action: <span className="workspace-caption">硬件与系统信息仍可查看</span>
+            detail: "这台设备在本页展示过其他范围的样本，所以更可能是这次读取没有完成；点“重新读取”重试即可。",
+            action: <Button variant="quiet" onClick={() => void refresh()}>{refreshing ? "正在刷新" : "重新读取"}<Icon name="refresh" size={15} /></Button>
           }
         : telemetryState === "none"
           ? {
               tone: "empty",
               title: "还没有收到遥测样本",
-              detail: "设备已经出现在中枢列表，但中枢还没有它任何一段历史指标；确认 Agent 正在运行并刷新状态。",
-              action: <span className="workspace-caption">请使用顶部刷新按钮重新获取</span>
+              detail: "设备已经出现在中枢列表，但中枢还没有它任何一段历史指标；确认 Agent 正在运行，或点“重新读取”。",
+              // The topbar refresh button is icon-only on phones, so "use the top
+              // refresh button" pointed at no visible label. A real button in the
+              // banner works at every width.
+              action: <Button variant="quiet" onClick={() => void refresh()}>{refreshing ? "正在刷新" : "重新读取"}<Icon name="refresh" size={15} /></Button>
             }
           : selectedDevice.status !== "online"
             ? {
@@ -414,7 +419,7 @@ export function DeviceDetailsPage() {
         <div><span>最后在线</span><strong>{formatDate(selectedDevice.lastSeenAt)} · {selectedDevice.status === "online" ? "刚刚上报" : "已停止上报"}</strong></div>
         <div><span>{snapshotSource === "cache" ? "缓存时间" : "数据时间"}</span><strong>{formatDate(snapshotSource === "cache" ? snapshot?.cache.savedAt : snapshot?.generatedAt)}</strong></div>
         <div><span>Agent 版本</span><strong>{selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</strong></div>
-        <div><span>发布通道</span><strong>{selectedDevice.agentChannel ?? "未知"}</strong></div>
+        <div><span>发布通道</span><strong>{formatReleaseChannel(selectedDevice.agentChannel)}</strong></div>
         <div><span>列表位置</span><strong>{(selectedDevice.sortOrder ?? 0) + 1}</strong></div>
       </div>
 
@@ -466,17 +471,14 @@ export function DeviceDetailsPage() {
         )}
       </div>
 
-      {/* The banner above already states why this range is empty, so the chart
-          area adds a placeholder only while samples are actually on their way
-          (where they will land) or when the device has never reported at all. */}
-      {telemetryMissing && (telemetryState === "pending"
+      {/* The banner above already states why this range is empty; this body
+          placeholder only appears while samples are actually on their way (where
+          they will land). Both the banner and this block used to repeat the same
+          "no telemetry / press refresh" sentence, so the reader read one fact
+          three times. */}
+      {telemetryMissing && telemetryState === "pending"
         ? <MetricsLoadingSurface detail={`正在读取最近 ${windowLabel} 的遥测样本，综合趋势与明细图表会在样本到达后自动补齐。`} />
-        : telemetryState === "range"
-          ? null
-          : <EmptyState
-            title="暂无可用遥测"
-            detail="硬件与系统信息仍可查看；收到第一批样本后，综合趋势和明细图表会自动出现。可使用顶部刷新按钮重新读取。"
-          />)}
+        : null}
 
       <div className="workspace-device-dashboard">
         {tab.sections.map((section) => (

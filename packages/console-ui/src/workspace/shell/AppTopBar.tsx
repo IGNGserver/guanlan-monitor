@@ -7,7 +7,12 @@ import { selectSnapshotSource } from "../selectors";
 export function AppTopBar() {
   const { snapshot, refreshing, mutationPending, refresh, setCommandOpen, sidebarCollapsed, setSidebarCollapsed, openSettings, capabilities } = useWorkspace();
   const source = snapshot ? selectSnapshotSource(snapshot, snapshot.devices) : "unknown";
-  const sourceState = source === "live" ? "online" : source === "cache" ? "cached" : source === "unknown" ? "offline" : "unknown";
+  // The chip reports the *data link*, not the fleet. `selectSnapshotSource`
+  // returns "empty" for a live, authenticated hub with no devices yet; mapping
+  // that to "未连接" told a first-run user their brand-new key had failed, right
+  // above a page explaining that devices simply report in on their own. An
+  // authenticated live link is online whether or not anything has reported.
+  const sourceState = source === "live" || source === "empty" ? "online" : source === "cache" ? "cached" : source === "unknown" ? "offline" : "unknown";
   return <header className="workspace-topbar">
     <div className="workspace-topbar__leading">
       <M3IconButton className="workspace-icon-button workspace-topbar__toggle" label="切换侧边栏" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}><Icon name="collapse" /></M3IconButton>

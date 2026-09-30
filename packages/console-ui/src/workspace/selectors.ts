@@ -58,13 +58,24 @@ export function selectLinkLabel(source: SnapshotDataSource, transport: LiveDataT
   return "连接异常";
 }
 
+/**
+ * Whether the fleet needs attention, and how many items that is.
+ *
+ * `null` means "cannot be determined" — a cached or unauthenticated snapshot.
+ * An authenticated hub with no devices yet is a determinate zero: there is
+ * nothing to attend to, and answering "连接异常" under a page that says
+ * 等待设备接入 counted a working first run as a fault.
+ */
+function selectAttentionCount(snapshot: ConsoleSnapshot, unhealthyDevices: number, source: SnapshotDataSource): number | null {
+  if (source !== "live" && source !== "empty") return null;
+  return unhealthyDevices + (snapshot.localBackend?.lastIssueCount ?? 0);
+}
+
 export function selectHealthSummary(snapshot: ConsoleSnapshot, allDevices: DeviceSummary[], formatDate: (value: string | null | undefined) => string, transport: LiveDataTransport = "push"): HealthSummary {
   const online = allDevices.filter((device) => device.status === "online").length;
   const source = selectSnapshotSource(snapshot, allDevices);
   const unhealthyDevices = allDevices.filter((device) => device.status !== "online").length;
-  const pending = source === "live"
-    ? unhealthyDevices + (snapshot.localBackend?.lastIssueCount ?? 0)
-    : null;
+  const pending = selectAttentionCount(snapshot, unhealthyDevices, source);
   return {
     total: allDevices.length,
     online,

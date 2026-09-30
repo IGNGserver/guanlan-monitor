@@ -3,7 +3,7 @@ import type { AgentProbeProvider, AgentProbeTarget, DeviceBlockKey, DeviceMetric
 import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
 import { M3Checkbox, M3SegmentedControl, M3Select, M3Switch, M3TextField } from "../m3";
 import { Button, CopyButton, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
-import { formatDate, formatPreciseDateTime } from "../formatters";
+import { formatDate, formatPreciseDateTime, formatReleaseChannel } from "../formatters";
 import { selectLinkLabel, selectSnapshotSource, liveLinkLabel } from "../selectors";
 import { formatWorkspaceError } from "../context/WorkspaceTypes";
 import { stableObjectKey } from "../configKeys.ts";
@@ -113,7 +113,7 @@ function WebSyncSummary() {
         <SummaryRow label="最近同步" value={snapshot ? formatPreciseDateTime(snapshot.generatedAt) : "尚未同步"} />
         <SummaryRow label="已接入设备" value={`${allDevices.length} 台 · ${online} 台在线`} />
       </div>
-      <div className="workspace-form__actions"><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}><Icon name="refresh" size={15} />{refreshing ? "正在同步" : "立即同步"}</Button></div>
+      <div className="workspace-form__actions"><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}><Icon name="refresh" size={15} />{refreshing ? "正在刷新" : "立即刷新"}</Button></div>
     </Surface>
   );
 }
@@ -576,8 +576,8 @@ function AgentDiagnosticsSurface({ backend, appVersion }: { backend: DesktopAgen
 function AboutSettings() {
   const { snapshot, openExternal, refresh, refreshing } = useWorkspace();
   const version = snapshot?.update?.currentVersion ?? CURRENT_VERSION_FALLBACK;
-  const channel = snapshot?.update?.currentChannel ?? "测试";
-  const versionText = `观澜 ${version}（${channel} 通道）`;
+  const channel = formatReleaseChannel(snapshot?.update?.currentChannel);
+  const versionText = `观澜 ${version}（${channel}）`;
   return <div className="workspace-settings-stack"><Surface><div className="workspace-about"><div className="workspace-about__mark-wrap"><img className="workspace-about__mark-img" src={appIconSrc} alt="观澜" /></div><h3>观澜设备状态控制台</h3><p>面向本机 Agent 与中枢连接的状态工作区。</p><div className="workspace-detail-list"><SummaryRow label="版本" value={version} /><SummaryRow label="发布通道" value={channel} /></div><div className="workspace-form__actions"><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}><Icon name="refresh" size={15} />{refreshing ? "正在检查" : "重新检查更新"}</Button><CopyButton text={versionText} label="复制版本信息" /><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor")}><Icon name="external" size={15} />项目主页</Button><Button variant="quiet" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor/issues")}><Icon name="external" size={15} />报告问题</Button></div></div></Surface></div>;
 }
 

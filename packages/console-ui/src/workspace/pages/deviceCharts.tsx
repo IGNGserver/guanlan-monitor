@@ -50,6 +50,7 @@ import {
   formatDuration,
   formatGpuMemorySummary,
   formatPercent,
+  formatReleaseChannel,
   formatTemperature,
   gpuMemoryLabel,
   limitSamplePoints
@@ -505,7 +506,7 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
         <div className="chart-agent-note__status">
           <StatusLabel state={context.device.status === "online" ? "online" : "offline"} />
           <span>Agent {context.device.agentVersion ? `v${context.device.agentVersion}` : "版本未知"}</span>
-          <span>通道 {context.device.agentChannel ?? "未知"}</span>
+          <span>{formatReleaseChannel(context.device.agentChannel)}通道</span>
         </div>
         <p>设备状态和遥测均由中枢提供，本页面不直接读取本机采集状态；未上传或中枢离线时，数据会与其他设备一样不完整。</p>
         <Button variant="quiet" onClick={() => context.openSettings(context.settingsSection)}>

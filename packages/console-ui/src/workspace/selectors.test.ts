@@ -48,6 +48,10 @@ test("health summary counts offline devices and leaves cached status unknown", (
     sourceDetail: "同步于 10:00"
   });
   assert.equal(selectHealthSummary({ ...snapshot, source: "cache", session: { ...snapshot.session, authenticated: false } }, devices, () => "09:58").pending, null);
+  // An authenticated hub with nothing on it yet is a clean zero, not "unknown".
+  // The overview used to show a check mark beside "连接异常" here.
+  assert.equal(selectHealthSummary({ ...snapshot, source: "live", session: { authenticated: true, accessKeyConfigured: true } }, [], () => "10:00").pending, 0);
+  assert.equal(selectHealthSummary({ ...snapshot, source: "live", session: { authenticated: false, accessKeyConfigured: false } }, devices, () => "10:00").pending, null, "an unauthenticated snapshot cannot be counted");
 });
 
 /**

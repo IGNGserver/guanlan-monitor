@@ -361,6 +361,11 @@ async function run() {
   assert.deepEqual((await page.locator(".workspace-sidebar .m3e-nav-item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "设置"], "sidebar contains destinations only");
   assert.equal(await page.getByRole("button", { name: "中枢状态" }).count(), 0, "the retired hub destination must not come back");
   assert.equal(await page.locator(".workspace-hub-card").count(), 1, "the overview must own the hub connection facts");
+  // One brand, not two. AppTopBar and PrimaryNavigation each render 观澜 on the
+  // web console; the header copy must stay hidden while the sidebar shows it.
+  // That rule was lost with the Carbon layer and the duplicate came back.
+  assert.equal(await page.locator(".workspace-topbar__brand").isVisible(), false, "a wide web console must show the 观澜 brand once (sidebar), not again in the topbar");
+  assert.equal(await page.locator(".workspace-sidebar .workspace-brand").isVisible(), true, "the sidebar carries the single web brand");
   const overviewHealthTotal = await page.locator(".workspace-overview-summary__item").first().locator("strong").innerText();
   assert.equal(overviewHealthTotal, String(fixtureDevices.length), "overview health must include every registered device");
   // "需要关注" is only defensible if the tile says what it adds up.
@@ -376,6 +381,12 @@ async function run() {
 
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
+  // One fleet, listed once. A `guanlan-fleet-cards-wrap` block used to render a
+  // card grid above the table for the exact same `visibleDevices`, so every
+  // machine appeared twice on the page — at every width, because no stylesheet
+  // ever hid either copy. The table is the ordinary surface; the card grid stays
+  // for the overview's attention list, not here.
+  assert.equal(await page.locator(".workspace-page--devices .guanlan-fleet-card").count(), 0, "the device directory must list each device once, not as a duplicate card grid");
   const deviceTable = page.locator(".workspace-directory-surface .m3e-table");
   const deviceRows = deviceTable.locator("tbody tr");
   assert.equal(await deviceRows.count(), fixtureDevices.length, "M3E device table must render every fixture device");
@@ -702,6 +713,13 @@ async function run() {
   assert.equal((await emptyFleetStates.locator("h3").innerText()).trim(), "还没有设备接入", "an empty fleet must say the hub has no devices, not that the filter failed");
   await page.goto(`${baseUrl}?visual-state=empty#overview`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--overview").waitFor({ state: "visible", timeout: 15_000 });
+  // An authenticated hub with no devices is a clean first run, not a fault. The
+  // attention tile used to pair a check mark with the words 连接异常 and the
+  // topbar chip said 未连接, both contradicting the page under them.
+  const emptyAttention = page.locator(".workspace-overview-summary__item").nth(2);
+  assert.equal((await emptyAttention.locator("strong").innerText()).trim(), "0", "an empty fleet has nothing to attend to, not an unknown");
+  assert.doesNotMatch(await emptyAttention.innerText(), /连接状态异常/, "an empty fleet must not be reported as a connection failure");
+  assert.notEqual((await page.locator(".workspace-topbar .workspace-status-label").innerText()).trim(), "未连接", "an authenticated empty hub is connected");
   await page.screenshot({ path: path.join(outputDir, "web-state-empty.png"), fullPage: true, animations: "disabled" });
   stateEvidence.push({ state: "empty", screenshot: "web-state-empty.png" });
 
