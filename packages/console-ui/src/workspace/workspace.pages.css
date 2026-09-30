@@ -107,8 +107,11 @@
   .workspace-page-intro__actions { width: 100%; }
   .workspace-page-intro__actions > * { flex: 1; }
   .workspace-overview-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .workspace-directory-toolbar { grid-template-columns: 1fr; align-items: stretch; }
-  .workspace-directory-toolbar .m3e-field { grid-column: auto; }
+  .workspace-directory-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; }
+  .workspace-directory-toolbar > .m3e-field { grid-column: 1 / -1; }
+  .workspace-directory-toolbar__chips { grid-column: 1 / -1; flex-wrap: wrap; }
+  .workspace-directory-toolbar__sort { grid-column: 1; min-width: 0; }
+  .workspace-directory-toolbar__actions { grid-column: 2; min-width: 0; justify-content: flex-end; }
   .workspace-hub-card__grid { grid-template-columns: minmax(0, 1fr); }
   .workspace-onboarding__steps { grid-template-columns: minmax(0, 1fr); }
   /* A Carbon footer bar: full-bleed, square, flush to the bottom edge. The

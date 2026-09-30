@@ -35,6 +35,7 @@
   .guanlan-table-icon-action,
   .guanlan-table-row-action,
   .m3e-chip,
+  .m3e-nav-item,
   .m3e-search-bar__clear,
   .m3e-checkbox,
   .m3e-checkbox.is-compact,
@@ -101,6 +102,21 @@
 
 .workspace-sidebar-edge-trigger { background: transparent; }
 .workspace-sidebar-backdrop { background: var(--md-sys-color-scrim); }
+
+/* ---- Topbar search trigger ------------------------------------------------- */
+
+.workspace-search-trigger.m3e-button {
+  min-width: 200px;
+  justify-content: flex-start;
+  gap: 10px;
+  border-color: transparent;
+  border-radius: var(--md-sys-shape-full);
+  color: var(--md-sys-color-on-surface-variant);
+  background: var(--md-sys-color-surface-container-high);
+}
+.workspace-search-trigger.m3e-button:hover { color: var(--md-sys-color-on-surface); background: var(--md-sys-color-surface-container-highest); }
+.workspace-search-trigger.m3e-button .m3e-button__label { display: inline-flex; min-width: 0; flex: 1; align-items: center; justify-content: space-between; gap: 10px; }
+.workspace-search-trigger kbd { border-color: var(--md-sys-color-outline-variant); background: transparent; }
 
 /* ---- Page rhythm ----------------------------------------------------------- */
 
@@ -377,18 +393,95 @@
 
 @media (max-width: 839px) {
   .workspace-sidebar { border-radius: 0 var(--md-sys-shape-xl) var(--md-sys-shape-xl) 0; }
-  .workspace-bottom-nav { border-radius: var(--md-sys-shape-xl) var(--md-sys-shape-xl) 0 0; background: var(--md-sys-color-surface-container); }
-  .workspace-bottom-nav__item { display: flex; min-height: 64px; flex-direction: column; align-items: center; gap: 4px; padding: 4px; border-radius: var(--md-sys-shape-lg); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-s-size); text-align: center; }
+  .workspace-page { padding: 28px 20px 96px; }
+  /* Horizontal control groups wrap instead of overflowing their column. */
+  .workspace-range-control,
+  .workspace-device-toolbar { flex-wrap: wrap; }
+
+  /* The directory table stays readable: it keeps its full column set and the
+     page scrolls it horizontally instead of compressing every field. */
+  .workspace-directory-scroll-hint {
+    display: block;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--md-sys-typescale-body-s-size);
+    line-height: 1.4;
+  }
+  .workspace-directory-table-scroll {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+  .workspace-directory-surface .m3e-table-wrap { width: max-content; max-width: none; overflow: visible; border: 0; }
+  .workspace-directory-surface .m3e-table { width: 1076px; min-width: 1076px; table-layout: fixed; }
+  .workspace-directory-surface .m3e-table th,
+  .workspace-directory-surface .m3e-table td { white-space: nowrap; }
+  .workspace-directory-surface .m3e-table tr > :nth-child(1) { width: 92px; }
+  .workspace-directory-surface .m3e-table tr > :nth-child(2) { width: 248px; }
+  .workspace-directory-surface .m3e-table tr > :nth-child(3) { width: 84px; }
+  .workspace-directory-surface .m3e-table tr > :nth-child(4) { width: 208px; }
+  .workspace-directory-surface .m3e-table tr > :nth-child(5) { width: 208px; }
+  .workspace-directory-surface .m3e-table tr > :nth-child(6) { width: 164px; }
+  .workspace-directory-surface .m3e-table tr > :nth-child(7) { width: 72px; }
+  .workspace-directory-surface .guanlan-table-link,
+  .workspace-directory-surface .guanlan-table-secondary { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* Adaptive navigation. The bar serves phones and portrait tablets alike, so the
+ * query matches orientation as well as width — and `display: grid` is restated
+ * because `workspace.pages.css` only switches the bar on at `max-width: 839px`,
+ * which leaves a portrait tablet wider than that with the bar still hidden. */
+@media (max-width: 839px), (orientation: portrait) {
+  /* On these surfaces the bottom navigation is the way in; the rail handle
+     would otherwise sit over the topbar's drawer toggle and eat its clicks. */
+  .workspace-sidebar-edge-trigger { display: none; }
+
+  .workspace-bottom-nav {
+    position: fixed;
+    z-index: var(--md-sys-layer-nav);
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    justify-content: space-around;
+    gap: 2px;
+    padding: 0 max(8px, env(safe-area-inset-left));
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: var(--md-sys-shape-xl) var(--md-sys-shape-xl) 0 0;
+    background: var(--md-sys-color-surface-container);
+    transform: none;
+  }
+
+  .workspace-bottom-nav__item {
+    display: flex;
+    min-height: 64px;
+    flex: 1 1 0;
+    max-width: 128px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 4px;
+    border-radius: var(--md-sys-shape-lg);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--md-sys-typescale-label-s-size);
+    text-align: center;
+  }
   .workspace-bottom-nav__item .m3e-nav-item__icon { display: inline-flex; }
   .workspace-bottom-nav__item .m3e-nav-item__label { display: inline; }
   .workspace-bottom-nav__icon-indicator { display: inline-flex; min-width: 56px; height: 32px; align-items: center; justify-content: center; border-radius: var(--md-sys-shape-full); transition: background var(--md-sys-motion-effects-default); }
   .workspace-bottom-nav__item.is-selected { background: transparent; }
   .workspace-bottom-nav__item.is-selected .workspace-bottom-nav__icon-indicator { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
-  .workspace-page { padding: 28px 20px 96px; }
-  /* Horizontal control groups wrap instead of overflowing their column. */
-  .workspace-range-control,
-  .workspace-device-toolbar,
-  .workspace-directory-toolbar__actions { flex-wrap: wrap; }
+
+  .workspace-toast { right: 16px; bottom: calc(74px + env(safe-area-inset-bottom)); left: 16px; max-width: none; justify-content: center; }
 }
 
 @media (max-width: 620px) {
