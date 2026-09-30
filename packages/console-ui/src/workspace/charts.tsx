@@ -13,9 +13,8 @@ import {
 /* =============================================================================
  * Material 3 Expressive charts.
  *
- * Pure SVG + React. No Carbon Charts, no d3, no chart runtime. The exported
- * names replace the former `Carbon*Chart` family; the memoisation and reduced
- * motion contracts are unchanged (chartIdentity.ts).
+ * Pure SVG + React with zero external chart runtime.
+ * The memoisation and reduced motion contracts are defined in chartIdentity.ts.
  * ========================================================================== */
 
 export type ChartSeries = {

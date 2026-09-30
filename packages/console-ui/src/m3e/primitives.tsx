@@ -4,7 +4,7 @@ import { Icon, type IconName } from "./icons";
 /* =============================================================================
  * Material 3 Expressive component primitives.
  *
- * Native React + CSS only. No Carbon, no MUI, no headless library. Each control
+ * Native React + CSS only. No external headless library. Each control
  * carries the same prop surface the workspace already used, so pages are rewritten
  * against behaviour, not against a vendor API.
  * ========================================================================== */

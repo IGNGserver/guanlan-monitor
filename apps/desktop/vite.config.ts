@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 /**
  * Split the renderer into stable vendor chunks.
  *
- * The console no longer ships Carbon or d3: charts are drawn with SVG in
+ * Charts and UI primitives are rendered with pure SVG/React in
  * `@dsc/console-ui/src/m3e` + `workspace/charts.tsx`. What remains worth
  * splitting is React itself, so an application-only change never invalidates the
  * React chunk.

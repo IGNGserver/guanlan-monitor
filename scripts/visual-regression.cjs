@@ -177,20 +177,16 @@ function metricFixture(device) {
   };
 }
 
-// Resolves a Carbon token to a computed rgb() string so assertions can compare
-// against the live theme instead of a hardcoded colour. Carbon's --cds-* tokens
-// only exist inside the themed wrapper, so the probe has to live there too.
+// Resolves theme tokens to computed rgb() strings for visual assertions.
 const RESOLVE_TOKENS = `(() => {
   const scope = document.querySelector(".m3e-theme") ?? document.body;
   const probe = document.createElement("span");
   probe.style.display = "none";
-  probe.style.color = "var(--cds-layer-selected-01)";
-  scope.append(probe);
-  const selectedLayer = getComputedStyle(probe).color;
   probe.style.color = "var(--workspace-color-primary-container)";
+  scope.append(probe);
   const m3PrimaryContainer = getComputedStyle(probe).color;
   probe.remove();
-  return { selectedLayer, m3PrimaryContainer };
+  return { m3PrimaryContainer };
 })()`;
 
 // The five shell contracts that regressed in v3.0.106. Every value is measured,
@@ -382,13 +378,13 @@ async function run() {
   await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
   const deviceTable = page.locator(".workspace-directory-surface .m3e-table");
   const deviceRows = deviceTable.locator("tbody tr");
-  assert.equal(await deviceRows.count(), fixtureDevices.length, "Carbon device table must render every fixture device");
+  assert.equal(await deviceRows.count(), fixtureDevices.length, "M3E device table must render every fixture device");
 
-  // Assert Carbon DataTable headers and body cells stay aligned.
+  // Assert M3E DataTable headers and body cells stay aligned.
   const headerColumns = await deviceTable.locator("thead th").allTextContents();
   assert.deepEqual(headerColumns.map((col) => col.trim()), ["状态", "设备", "CPU 使用率", "内存使用", "磁盘使用", "最后在线", "操作"], "directory table header must contain exactly 7 columns in order");
   assert.equal(await deviceTable.locator("thead th").count(), 7, "directory table must have 7 column headers");
-  assert.equal(await deviceRows.first().locator("td").count(), 7, "Carbon device table rows must expose the same 7 columns");
+  assert.equal(await deviceRows.first().locator("td").count(), 7, "M3E device table rows must expose the same 7 columns");
   // One state, one word, on the page that lists the states.
   assert.doesNotMatch(await deviceTable.innerText(), /未响应/, "the directory must not invent a second name for an offline device");
   assert.equal(await deviceTable.getByText("离线", { exact: true }).count(), 1, "an unreachable device is tagged 离线 in the directory");
@@ -441,7 +437,7 @@ async function run() {
   // 切换选项卡必须整体换掉分区，上一个选项卡的图表不能残留在页面上。
   assert.equal(await page.locator(".dashboard-section#section-compute").count(), 1, "compute tab must render its fixed sections");
   assert.equal(await page.locator(".dashboard-section#section-overview").count(), 0, "switching tabs must unmount the previous tab's sections");
-  assert.ok((await page.locator(".dashboard-section .chart-tile").count()) > 0, "fixed sections must render Carbon chart tiles");
+  assert.ok((await page.locator(".dashboard-section .chart-tile").count()) > 0, "fixed sections must render M3E chart tiles");
 
   // 换选项卡时页眉与吸顶设备条必须一动不动，否则整页内容会上下跳一下。
   const tabHeaderHeights = {};
@@ -482,8 +478,7 @@ async function run() {
 
   await page.getByRole("tab", { name: "概览" }).click();
   await page.waitForTimeout(300);
-  // 固定布局的磁贴必须撑满自己声明的栅格跨度。曾经 Carbon css-grid 的行规则
-  // 没有产出，行退化成块级盒子被压进一条隐式轨道，磁贴塌缩成标题的宽度；
+  // 固定布局的磁贴必须撑满自己声明的栅格跨度。
   // 这里把几何记进报告的同时直接断言，防止同类塌缩悄悄回来。
   const deviceChartGeometry = await page.evaluate(() => {
     const box = (el) => {
@@ -623,8 +618,7 @@ async function run() {
   await page.locator(".workspace-settings-mobile-nav").waitFor({ state: "visible", timeout: 2_000 });
   assert.equal(await page.locator(".workspace-root").evaluate((node) => node.classList.contains("is-sidebar-collapsed")), true, "a compact viewport must not open the drawer over the content on arrival");
   assert.equal(await page.evaluate(() => localStorage.getItem("dsc-sidebar-collapsed")), "false", "closing the drawer on arrival must not rewrite the stored rail preference");
-  // Assert on "rendered and hittable", not on a specific display value: Carbon
-  // owns the icon button's own display and it has changed before.
+  // Assert on "rendered and hittable", not on a specific display value.
   const toggleGeometry = await page.evaluate(() => {
     const node = document.querySelector(".workspace-topbar__toggle");
     if (!node) return null;
@@ -1005,8 +999,8 @@ async function run() {
    * an addition has to be a deliberate decision.
    */
   const touchExempt = [
-    // Carbon's chart legend draws its series toggle as a small colour swatch;
-    // the label beside it is the reachable part and the markup is not ours.
+    // Chart legend series toggles use a compact swatch;
+    // the label beside it is the reachable part.
     ".checkbox"
   ];
   const touchPage = await browser.newPage({
@@ -1031,14 +1025,12 @@ async function run() {
       const small = await touchPage.evaluate((exempt) => {
         /* Measure the area a thumb actually hits, not the graphic.
          *
-         * Carbon draws a toggle as a 20px pill and a checkbox as a small box
-         * inside a label row. Requiring 44px of the *graphic* would push the
-         * stylesheet to distort the control, so the CSS deliberately leaves
-         * those alone — what has to clear 44px is the label or row that carries
+         * A switch draws a toggle pill and a checkbox is a small box
+         * inside a label row. What has to clear 44px is the label or row that carries
          * the pointer target. Walking up to the nearest such wrapper and taking
          * the larger box asks the question a user actually asks.
          */
-        const HIT_AREA = 'label, [class*="--checkbox-label"], [class*="--toggle__wrapper"], .m3e-switch-row, .m3e-checkbox, .workspace-setting-row, .workspace-check-row, .m3e-table tr';
+        const HIT_AREA = 'label, .m3e-switch-row, .m3e-checkbox, .workspace-setting-row, .workspace-check-row, .m3e-table tr';
         const rows = [];
         for (const el of document.querySelectorAll('button, a[href], input, select, [role="button"], [role="tab"], [role="option"], [role="checkbox"], [role="switch"]')) {
           const style = getComputedStyle(el);

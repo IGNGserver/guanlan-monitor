@@ -5,8 +5,7 @@ import { M3Button, type M3ButtonVariant } from "../m3e/primitives";
 /**
  * Workspace presentation helpers built on the M3E primitives.
  *
- * `Icon` used to dispatch into two Carbon icon maps plus a caption-glyph table.
- * It is now a thin alias for the M3E icon set, so the whole console draws from
+ * `Icon` is a thin alias for the M3E icon set, so the whole console draws from
  * one geometric source.
  */
 
@@ -16,10 +15,10 @@ export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   return <M3eIcon name={name} size={size} />;
 }
 
-function toM3Variant(variant: "primary" | "secondary" | "quiet" | "danger"): M3ButtonVariant {
+function toM3Variant(variant: "primary" | "secondary" | "quiet" | "text" | "danger"): M3ButtonVariant {
   if (variant === "primary") return "filled";
   if (variant === "secondary") return "tonal";
-  if (variant === "quiet") return "text";
+  if (variant === "quiet" || variant === "text") return "text";
   return "danger";
 }
 
@@ -36,7 +35,7 @@ export function Button({
 }: {
   children: React.ReactNode;
   onClick?: () => void;
-  variant?: "primary" | "secondary" | "quiet" | "danger";
+  variant?: "primary" | "secondary" | "quiet" | "text" | "danger";
   className?: string;
   disabled?: boolean;
   type?: "button" | "submit";

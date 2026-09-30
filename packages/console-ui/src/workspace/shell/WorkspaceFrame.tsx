@@ -27,10 +27,8 @@ const metricsWindowAnnouncements: Record<string, string> = {
 
 export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
   const { sidebarCollapsed, setSidebarCollapsed, capabilities, refreshing, refresh, isTouch, route, selectedDevice, metricsWindow } = useWorkspace();
-  /* One theme resolver lives in the provider (`resolvedTheme`). The frame used
-     to also feed a second, Carbon-specific g10/g100 choice; that second source
-     of truth is gone with Carbon, and the M3E tokens are driven purely by
-     `data-dsc-resolved-theme`. */
+  /* The active theme is resolved by the workspace provider (`resolvedTheme`)
+     and drives M3E tokens via `data-dsc-resolved-theme`. */
   const [sidebarPeek, setSidebarPeek] = useState(false);
   // The backdrop only exists as a scrim while the sidebar is an off-canvas drawer,
   // i.e. exactly at `max-width: ${SIDEBAR_DRAWER_MAX_WIDTH}px` where workspace.pages.css

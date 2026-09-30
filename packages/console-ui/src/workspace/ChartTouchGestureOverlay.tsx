@@ -37,7 +37,7 @@ export function ChartTouchGestureOverlay({
       setIndicatorX(Math.max(0, Math.min(rect.width, relativeX)));
 
       if (!series || !series.length || !onHoverPoint) return;
-      // Carbon Chart plot area typically has ~42px left offset and ~16px right padding
+      // Plot area typically has left offset and right padding
       const plotLeft = rect.left + 42;
       const plotRight = rect.right - 16;
       const plotWidth = Math.max(1, plotRight - plotLeft);

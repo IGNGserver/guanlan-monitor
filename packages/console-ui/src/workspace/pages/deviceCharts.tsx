@@ -224,7 +224,7 @@ function gpuTemperatureSubtitle(gpu: GpuMetricSeries, hasPoints: boolean): strin
   return gpu.integrated ? "未采集 CPU 封装温度" : "未检测到 GPU 温度传感器";
 }
 
-/** M3E 键值表，取代 Carbon `StructuredList` 版的键值表。 */
+/** M3E 键值表。 */
 export function ChartInfoRows({ rows, label }: { rows: Array<{ label: string; value: string }>; label: string }) {
   if (!rows.length) return <div className="m3e-chart-empty">暂无可展示的信息</div>;
   return (

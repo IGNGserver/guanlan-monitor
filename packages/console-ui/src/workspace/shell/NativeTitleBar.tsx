@@ -9,10 +9,8 @@ const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: st
 /**
  * One Windows caption button.
  *
- * The glyph is drawn inline at 10x10 rather than through the shared Carbon
- * `Icon` map: the caption band is chrome owned by the OS, and Carbon's 24px
- * Material glyphs are both the wrong weight and, for the restore state, the
- * wrong shape (see `captionGlyphs.ts`). `stroke-linecap` stays `butt` so the
+ * The glyph is drawn inline on a 10x10 grid with 1px stroke (caption band owned
+ * by the OS chrome, see `captionGlyphs.ts`). `stroke-linecap` stays `butt` so the
  * minimize rule does not grow past the 10px box.
  */
 function CaptionButton({ glyph, label, className = "", onClick }: { glyph: CaptionGlyphName; label: string; className?: string; onClick: () => void }) {

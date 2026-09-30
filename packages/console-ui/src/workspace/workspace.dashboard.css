@@ -121,8 +121,7 @@
 .workspace-skeleton--medium { height: 220px; }
 @keyframes workspace-shimmer { to { transform: translateX(100%); } }
 
-/* The command panel's own box, border and blur were removed: Carbon's modal
-   is the only surface. What is left here is list geometry. */
+/* Command palette list geometry. */
 .workspace-command__list { max-height: 360px; overflow-y: auto; padding: 7px; }
 .workspace-command__item { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 12px; border-radius: var(--md-sys-shape-sm); color: var(--workspace-text-secondary); background: transparent; cursor: pointer; text-align: left; transition: color var(--workspace-transition), background var(--workspace-transition); }
 .workspace-command__item:hover,

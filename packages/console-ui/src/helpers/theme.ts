@@ -1,5 +1,5 @@
 /**
- * Guanlan Spectrum Adaptive Theme Helper
+ * Guanlan M3E Adaptive Theme Helper
  * Handles theme resolution (light, dark, system), contrast mode, and motion preference.
  */
 

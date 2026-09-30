@@ -451,22 +451,13 @@ kbd {
   margin: 0 0 16px;
 }
 
-/* `.workspace-overview-grid` / `.workspace-device-grid` were the two-up overview
-   layout; the merged overview page renders `.workspace-hub-card` and
-   `.workspace-overview-devices` in one column, and neither grid class has a JSX
-   reference any more. The hand-written `.workspace-attention` block went with
-   it: that element is now Carbon's `ActionableNotification`, which draws its
-   own flex layout, tint and status strip, so these rules were fighting it and
-   forcing the warning tint onto `kind="info"` notifications too. Page rhythm
-   lives in `workspace.pages.css`, geometry in `workspace.m3e.css`. */
+/* Overview containers and devices */
 
 .workspace-overview-devices {
   min-height: 390px;
 }
 
-/* `.workspace-metric-value*` was the pre-Carbon NumberView; `formatters.ts`
-   exports `MetricValue`/`CapacityMetricValue` but no page renders them, so these
-   four rules had nothing to match. */
+/* Summary and detail lists */
 
 .workspace-summary-list,
 .workspace-detail-list {

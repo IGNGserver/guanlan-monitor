@@ -4,7 +4,7 @@ import { M3Button } from "../../m3e/primitives";
 /**
  * 固定布局里唯一的卡片实现。
  *
- * 外壳是 M3E 的填充卡片（圆角 16、surface-container-low），不再叠 Carbon `Tile`。
+ * 外壳是 M3E 的填充卡片（圆角 16、surface-container-low）。
  * 视觉细节全部由 `m3e/components.css` 与 `workspace.dashboard.css` 以令牌表达。
  */
 export interface ChartTileProps {

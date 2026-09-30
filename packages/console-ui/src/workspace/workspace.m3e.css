@@ -1,12 +1,11 @@
 /* =============================================================================
  * Workspace visual language — Material 3 Expressive
  *
- * This layer is the last word for shell and page surfaces. It replaces
- * `workspace-carbon.scss` (1730 lines of Carbon arbitration) and
- * `workspace.m3.css`. It is loaded after the layout stylesheets, so it defines
- * the design language for the classes those files position.
+ * This layer is the authoritative style definition for shell and page surfaces.
+ * It is loaded after the layout stylesheets, defining the design language
+ * for the positioned elements.
  *
- * Rules inherited from the design system:
+ * Rules:
  * - containers get the larger radii (12/16/20), inner controls the smaller ones;
  * - hierarchy is surface + elevation, not 1px rules;
  * - state is carried by container colour pairs;
@@ -17,9 +16,8 @@
 
 /* ---- Touch contract --------------------------------------------------------
  * Every interactive control must present a >= 44px target on coarse pointers.
- * This is the M3E replacement for the 44px contract the deleted Carbon
- * arbitration layer carried. The switch pill and the checkbox box are not
- * resized on their own — their rows are, because the row is what a thumb hits.
+ * The switch pill and the checkbox box are not resized on their own — their
+ * rows are, because the row is what a thumb hits.
  * -------------------------------------------------------------------------- */
 
 @media (pointer: coarse) {

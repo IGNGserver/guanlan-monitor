@@ -1,9 +1,8 @@
 /*
  * Shared UI stylesheet entry.
  *
- * The design system now lives in `m3e/`: tokens, base reset, and the component
- * stylesheet. Carbon's Sass theme and chart stylesheet are gone — no
- * `@carbon/react`, no `@ibm/plex`, no `--cds-*` variables are loaded anywhere.
+ * The design system lives in `m3e/`: tokens, base reset, and the component
+ * stylesheet.
  *
  * The `.css` extensions are deliberate: Sass passes a `.css` import through as a
  * plain CSS `@import` and the bundler (Next/webpack, Vite) resolves each file

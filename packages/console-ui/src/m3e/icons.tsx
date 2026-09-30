@@ -8,7 +8,7 @@ import React from "react";
  * `IconName`; every glyph inherits colour, size and stroke from the caller.
  *
  * These approximate Material Symbols (Outlined). They are deliberately geometric
- * and even-weight to match M3E, not Carbon's 32px grid icons.
+ * and even-weight to match M3E.
  */
 export type IconName =
   | "overview"

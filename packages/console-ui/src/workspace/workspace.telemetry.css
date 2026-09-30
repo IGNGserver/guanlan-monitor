@@ -38,10 +38,7 @@
   white-space: nowrap;
 }
 
-/* These read 10px/9px/10px. Carbon's smallest UI step is `helper-text-01` at
-   12px, and a hardware model string like `NVIDIA GeForce RTX 4070 SUPER` at 9px
-   is unreadable on the 4K panel this page is usually opened on. The two lines
-   are told apart by colour and weight, not by shrinking one below the scale. */
+/* The two lines are told apart by colour and weight, keeping 12px for readability. */
 .workspace-telemetry-model-chip strong {
   color: var(--workspace-text-secondary);
   font-size: 12px;

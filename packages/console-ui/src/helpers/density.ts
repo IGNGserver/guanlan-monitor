@@ -1,5 +1,5 @@
 /**
- * Guanlan Spectrum Adaptive Interaction Scale (Density) Helper
+ * Guanlan M3E Adaptive Interaction Scale (Density) Helper
  * Manages interaction density scale:
  * - compact: High information density, tight padding, 28px touch targets
  * - comfortable: Standard desktop tool density, 36px targets

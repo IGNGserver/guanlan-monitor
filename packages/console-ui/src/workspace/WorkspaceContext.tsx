@@ -239,15 +239,10 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     }
   }, [navigate, route, selectedDeviceId, snapshot]);
 
-  /* One resolver for both theme systems.
+  /* Single theme resolver.
    *
-   * `WorkspaceFrame` used to run its own `matchMedia("(prefers-color-scheme:
-   * dark)")` listener to pick the Carbon `g10`/`g100` theme while this effect
-   * ran a second, independent one to write `data-dsc-resolved-theme`. Two
-   * sources of truth for the same question: any change to one left the Material
-   * token layer and the Carbon token layer on different themes, which is what
-   * made dark mode look "half applied". The resolved value is published here and
-   * consumed by the frame.
+   * Resolves the active theme into 'light' | 'dark' and writes to
+   * data-dsc-theme / data-dsc-resolved-theme for M3E token mapping.
    */
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
 

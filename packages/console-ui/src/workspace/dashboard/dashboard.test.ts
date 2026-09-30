@@ -52,8 +52,8 @@ test("fixed layout never declares an empty tab or section", () => {
   }
 });
 
-test("every chart resolves to a responsive Carbon grid span", () => {
-  // 栅格列数与 Carbon 2x Grid 的约定一致：320/672/1056 断点分别 4/8/16 列。
+test("every chart resolves to a responsive M3E grid span", () => {
+  // 栅格列数约定：320/672/1056 断点分别 4/8/16 列。
   // 跨度超出列数会让 grid-column 的 span 溢出到隐式轨道，整行被挤乱。
   const columns = { sm: 4, md: 8, lg: 16 } as const;
   for (const chart of allCharts) {

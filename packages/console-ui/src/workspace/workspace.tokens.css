@@ -2,12 +2,8 @@
  * Workspace token bridge.
  *
  * The design system's single source of truth is `m3e/tokens.css` (--md-sys-*).
- * This file re-points the older `--workspace-*` names at those tokens so the
- * remaining layout stylesheets resolve to the Material 3 Expressive palette.
- *
- * It replaces the previous layer, which did the opposite: it re-pointed the M3
- * names at Carbon's `--cds-*` variables and declared Carbon "the single source
- * of truth for colour". Nothing here reads Carbon.
+ * This file points the older `--workspace-*` names at those tokens so the
+ * layout stylesheets resolve directly to the Material 3 Expressive palette.
  *
  * The shape, elevation and radius aliases have been retired — every declaration
  * now reads `--md-sys-shape-*` / `--md-sys-elevation-*` directly. What remains is

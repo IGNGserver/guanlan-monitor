@@ -1,5 +1,5 @@
 /**
- * Guanlan Spectrum Adaptive Layout Breakpoint Helper
+ * Guanlan M3E Adaptive Layout Breakpoint Helper
  * Classifies window width into explicit layout classes according to Material 3 Adaptive layout guidelines:
  * - compact: < 600px
  * - medium: 600px - 839px

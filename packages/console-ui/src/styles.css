@@ -1,3 +1,3 @@
 /* Kept as a compatibility entry for older consumers. New web and desktop
- * entrypoints import styles.scss so Carbon's Sass theme is bundled once. */
+ * entrypoints import styles.scss directly. */
 @import "./styles.scss";

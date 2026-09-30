@@ -1,9 +1,8 @@
 /**
  * Workspace-facing alias for the Material 3 Expressive primitives.
  *
- * This module used to wrap `@carbon/react` (`CarbonButton`, `ContentSwitcher`,
- * `Toggle`, `TextInput`, …). It now simply re-exports the native M3E controls so
- * the workspace keeps one import path while no Carbon code remains.
+ * This module re-exports the native M3E controls so
+ * the workspace keeps one unified import path.
  */
 export {
   M3Button,

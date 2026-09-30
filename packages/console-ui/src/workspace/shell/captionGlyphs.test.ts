@@ -43,7 +43,7 @@ test("only the four chrome names are treated as caption icons", () => {
     assert.equal(isCaptionIcon(name), true, `${name} should map to a caption glyph`);
   }
   for (const name of ["overview", "settings", "refresh", "chevron", "delete", "constructor", "toString", ""]) {
-    assert.equal(isCaptionIcon(name), false, `${name} must fall through to the Carbon icon map`);
+    assert.equal(isCaptionIcon(name), false, `${name} must fall through to the shared icon map`);
   }
 });
 

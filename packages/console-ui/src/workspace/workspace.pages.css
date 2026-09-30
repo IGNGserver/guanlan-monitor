@@ -19,10 +19,7 @@
 .workspace-overview-summary__label { display: flex; min-height: 28px; align-items: center; justify-content: space-between; gap: 8px; }
 .workspace-overview-summary__item--source > strong { font-size: 20px; }
 
-/* The attention row is a Carbon `ActionableNotification`; it owns its own
-   flex layout, tint and close button. Only the page rhythm belongs here — the
-   hand-written rules this used to carry targeted a DOM that no longer renders
-   and fought Carbon's border and background. */
+/* The attention notification row owns its own flex layout, tint and status strip. */
 .workspace-attention { margin: 0 0 22px; }
 
 .workspace-surface { border: 0; border-radius: var(--md-sys-shape-lg); background: var(--workspace-surface); box-shadow: var(--workspace-shadow-soft); }
@@ -114,9 +111,7 @@
   .workspace-directory-toolbar__actions { grid-column: 2; min-width: 0; justify-content: flex-end; }
   .workspace-hub-card__grid { grid-template-columns: minmax(0, 1fr); }
   .workspace-onboarding__steps { grid-template-columns: minmax(0, 1fr); }
-  /* A Carbon footer bar: full-bleed, square, flush to the bottom edge. The
-     floating rounded pill this replaces was Material geometry, and its
-     `backdrop-filter` re-blurred content behind an opaque Carbon surface. */
+  /* Bottom navigation bar */
   .workspace-bottom-nav { position: fixed; z-index: var(--workspace-layer-nav); right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(3, 1fr); padding-bottom: env(safe-area-inset-bottom); }
   .workspace-bottom-nav__item { min-height: 56px; flex-direction: column; gap: 2px; font-size: 11px; }
   .workspace-bottom-nav__item.is-active { color: var(--workspace-accent-strong); background: transparent; }

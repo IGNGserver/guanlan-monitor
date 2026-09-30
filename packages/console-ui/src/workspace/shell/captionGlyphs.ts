@@ -1,18 +1,12 @@
 /**
  * Windows caption-button glyphs.
  *
- * The desktop shell draws its own title bar (`frame: false`), so it has to
- * render minimize / maximize / restore / close itself. Carbon's `Minimize` and
- * `Maximize` icons are Material-styled glyphs on a 24px grid with a 2px stroke;
- * at the 10px Windows draws them they read noticeably heavier than the rest of
- * the chrome, and Carbon has no "restore down" glyph at all — the two-window
- * icon is the only way to tell a maximized window from a restored one.
+ * The desktop shell draws its own title bar (`frame: false`), so it renders
+ * minimize / maximize / restore / close caption buttons natively.
  *
- * These are single-path approximations of the Segoe Fluent icons on a 10x10
- * grid with a 1px stroke, which is the box Windows uses for its own caption
- * buttons. They are declared as data so the four shapes can be asserted to be
- * distinct (regression: `windowRestore` used to be aliased to `windowMaximize`,
- * so the button never changed appearance when the window was restored).
+ * These are single-path vector glyphs on a 10x10 grid with a 1px stroke,
+ * matching native OS caption control dimensions and weights.
+ * They are declared as data so the four shapes can be asserted to be distinct.
  */
 export type CaptionGlyphName = "minimize" | "maximize" | "restore" | "close";
 

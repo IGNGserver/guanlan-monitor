@@ -11,11 +11,10 @@ import type { DeviceBlockKey, DeviceMetricKey } from "@dsc/shared";
 /**
  * 图表可视化类型。
  *
- * - `line` / `area` 走 Carbon Charts 的笛卡尔时间序列图；
- * - `donut` / `meter` 走 Carbon Charts 的占比与仪表图，替代原先手绘的
- *   `CompositionMeter` 与 `MeterView`；
+ * - `line` / `area` 走 M3E SVG 笛卡尔时间序列图；
+ * - `donut` / `meter` 走 M3E SVG 占比与仪表图；
  * - `number` 是纯数值读数网格，用于「只要当前值、不需要趋势」的静态事实；
- * - `table` 走 Carbon `StructuredList`；
+ * - `table` 走 M3E 键值列表/表格；
  * - `custom` 表示该位置渲染页面自带的复合组件（例如流量日历、温度传感器面板），
  *   仍然由 `ChartTile` 提供统一的卡片外壳。
  *
@@ -32,7 +31,7 @@ export type ChartVisualization =
   | "custom";
 
 /**
- * Carbon 2x Grid 的断点跨度。
+ * M3E 响应式栅格的断点跨度。
  *
  * `sm` 是 4 列、`md` 是 8 列、`lg`（以及 `xlg` / `max`）是 16 列。这里只声明到
  * `lg` 为止：更大的断点沿用 `lg` 的跨度，避免出现 16 列布局里塞不下的组合。
