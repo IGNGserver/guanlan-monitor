@@ -191,6 +191,74 @@
   background: var(--md-sys-color-outline-variant);
 }
 
+/* ---- M3E Expressive Transitions & Keyframes -------------------------------- */
+
+/* 1. 穿透淡入 / 路由转场 (Shared Axis / Fade Through) */
+.m3e-fade-through {
+  animation: m3e-fade-through var(--md-sys-motion-spatial-fast) var(--md-sys-motion-easing-emphasized) forwards;
+}
+
+@keyframes m3e-fade-through {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 2. 卡片与列表交错入场 (Staggered Card Entry) */
+.m3e-card-enter {
+  animation: m3e-card-enter var(--md-sys-motion-spatial-default) var(--md-sys-motion-easing-emphasized) backwards;
+}
+
+@keyframes m3e-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 3. 柔和呼吸态光晕 (Pulse Glow for status/health) */
+.m3e-pulse-glow {
+  animation: m3e-pulse-glow 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes m3e-pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.65;
+    transform: scale(0.92);
+  }
+}
+
+/* 4. 浮起与悬停层级 (Interactive Elevation Lift) */
+.m3e-interactive-lift {
+  transition:
+    transform var(--md-sys-motion-spatial-fast),
+    box-shadow var(--md-sys-motion-effects-default),
+    background-color var(--md-sys-motion-effects-fast);
+}
+
+.m3e-interactive-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--md-sys-elevation-2);
+}
+
+.m3e-interactive-lift:active {
+  transform: translateY(0) scale(0.99);
+  box-shadow: var(--md-sys-elevation-1);
+}
+
 .m3e-spin {
   display: inline-flex;
   animation: m3e-spin 1s linear infinite;

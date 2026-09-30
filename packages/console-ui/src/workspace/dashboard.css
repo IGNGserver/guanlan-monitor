@@ -68,7 +68,23 @@
 
 /* ---- Chart tile ------------------------------------------------------------ */
 
-.chart-tile { display: flex; height: 100%; flex-direction: column; padding: var(--md-sys-space-5); gap: var(--md-sys-space-4); }
+.chart-tile {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  padding: var(--md-sys-space-5);
+  gap: var(--md-sys-space-4);
+  border-radius: var(--md-sys-shape-xl);
+  box-shadow: var(--md-sys-elevation-1);
+  transition:
+    transform var(--md-sys-motion-spatial-fast),
+    box-shadow var(--md-sys-motion-effects-default),
+    background-color var(--md-sys-motion-effects-fast);
+}
+
+.chart-tile:hover {
+  box-shadow: var(--md-sys-elevation-2);
+}
 .chart-tile__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--md-sys-space-4); }
 .chart-tile__titles { min-width: 0; flex: 1 1 auto; }
 .chart-tile__title-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--md-sys-space-3); }
@@ -136,6 +152,46 @@
 .chart-agent-note__status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--md-sys-space-4); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
 .chart-agent-note p { margin: 0; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-m-size); line-height: 1.6; }
 
+/* ---- Bento & Hero enhancements -------------------------------------------- */
+
+.guanlan-fleet-hero__tile {
+  position: relative;
+  overflow: hidden;
+}
+
+.guanlan-fleet-hero__tile::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  content: "";
+  background: transparent;
+  transition: background-color var(--md-sys-motion-effects-default);
+}
+
+.guanlan-fleet-hero__tile:hover::before {
+  background: var(--md-sys-color-primary);
+}
+
+.guanlan-fleet-hero__tile.is-warning::before {
+  background: var(--md-sys-color-warning);
+}
+
+.chart-tile {
+  position: relative;
+  overflow: hidden;
+}
+
+.chart-tile__header {
+  position: relative;
+  z-index: 1;
+}
+
+.chart-tile__hero-value {
+  transition: color var(--md-sys-motion-effects-fast);
+}
+
 .workspace-traffic-calendar__controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--md-sys-space-3); }
 .workspace-traffic-calendar__navigation { display: flex; align-items: center; gap: var(--md-sys-space-1); }
 
@@ -145,10 +201,11 @@
 .workspace-temperature-source-chart__heading strong { overflow-wrap: anywhere; color: var(--md-sys-color-on-surface); font-size: var(--md-sys-typescale-title-s-size); }
 .workspace-temperature-source-chart__heading small { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
 
-.guanlan-fade-in { animation: guanlan-fade-slide-in var(--md-sys-motion-effects-slow); }
+.guanlan-fade-in { animation: guanlan-fade-slide-in var(--md-sys-motion-spatial-fast) var(--md-sys-motion-easing-emphasized); }
 
 @keyframes guanlan-fade-slide-in {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @media (max-width: 671px) {
