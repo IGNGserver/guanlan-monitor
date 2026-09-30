@@ -1,13 +1,18 @@
 /*
- * The shared workspace stylesheet is composed in cascade order.
- * Keep the entrypoint stable for Web and Electron while each surface stays reviewable.
+ * Shared workspace stylesheet, composed in cascade order.
+ *
+ * Layout files first; `workspace.m3e.css` is the Material 3 Expressive visual
+ * language and must stay last so it is the last word on shape, elevation and
+ * colour. The design tokens themselves live in `../m3e/tokens.css`.
+ *
+ * `.css` extensions are deliberate — see the note in `styles.scss`.
  */
 @import "./workspace.tokens.css";
 @import "./workspace.shell.css";
 @import "./workspace.dashboard.css";
 @import "./workspace.telemetry.css";
 @import "./workspace.responsive.css";
-@import "./workspace.m3.css";
 @import "./workspace.pages.css";
 @import "./workspace.details.css";
 @import "./workspace.settings.css";
+@import "./workspace.m3e.css";

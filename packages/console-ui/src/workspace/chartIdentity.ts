@@ -3,7 +3,7 @@ import { dateValueOf } from "./sampleTime.ts";
 /**
  * Pure identity/format helpers for the charts.
  *
- * They live outside `CarbonCharts.tsx` so the Node test runner can exercise them
+ * They live outside `charts.tsx` so the Node test runner can exercise them
  * without importing the Carbon/d3 renderer, which needs a DOM.
  */
 

@@ -22,7 +22,7 @@ async function readShellMetrics(page) {
     if (!root || !sidebar || !main) return null;
     const rootStyle = getComputedStyle(root);
     const sidebarStyle = getComputedStyle(sidebar);
-    const theme = document.querySelector(".guanlan-carbon-theme");
+    const theme = document.querySelector(".m3e-theme");
     const content = document.querySelector(".workspace-content");
     const windowbar = document.querySelector(".workspace-windowbar");
     const caption = document.querySelector(".workspace-caption-button");
@@ -121,14 +121,14 @@ async function run() {
     assert.equal(desktopMetrics.captionButton.glyphPaths, 1, "each caption button must draw exactly one glyph path");
     assert.ok(desktopMetrics.captionButton.glyphData.length > 0, "the minimize glyph path is empty");
     assert.equal(await page.locator(".workspace-device-item").count(), 0, "Electron primary navigation must not contain a device list");
-    const desktopNavLabels = (await page.locator(".workspace-sidebar .m3-navigation-item").allTextContents()).map((label) => label.trim());
+    const desktopNavLabels = (await page.locator(".workspace-sidebar .m3e-nav-item").allTextContents()).map((label) => label.trim());
     const expectedDesktopNav = desktopNavLabels.includes("本机 Agent") ? ["总览", "设备", "本机 Agent", "设置"] : ["总览", "设备", "设置"];
     assert.deepEqual(desktopNavLabels, expectedDesktopNav, "Electron primary navigation contains non-destination commands");
     await page.screenshot({ path: path.join(outputDir, "electron-workspace-desktop.png"), fullPage: true, animations: "disabled" });
 
-    await page.locator(".workspace-sidebar .m3-navigation-item").filter({ hasText: "设备" }).click();
+    await page.locator(".workspace-sidebar .m3e-nav-item").filter({ hasText: "设备" }).click();
     await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
-    const deviceTable = page.locator(".workspace-directory-surface .cds--data-table");
+    const deviceTable = page.locator(".workspace-directory-surface .m3e-table");
     assert.equal(await deviceTable.locator("tbody tr").count(), 2, "Electron fixture must render every device");
     assert.equal(await deviceTable.getByText("刚刚上报", { exact: true }).count(), 1, "online devices must expose their latest report");
     assert.equal(await deviceTable.getByText("已停止上报", { exact: true }).count(), 1, "offline devices must say that reporting stopped");

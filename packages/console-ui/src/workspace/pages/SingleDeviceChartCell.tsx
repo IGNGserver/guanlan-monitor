@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import type { DashboardChartSpec } from "../dashboard";
 import { ChartTile } from "../dashboard";
-import { CarbonTimeSeriesChart, CarbonDonutChart, CarbonMeterChart, CarbonNumberGrid } from "../CarbonCharts";
+import { TimeSeriesChart, DonutChart, MeterChart, NumberGrid } from "../charts";
 import type { DeviceChartTile } from "./deviceCharts";
 import { ChartDetails, ChartInfoRows } from "./deviceCharts";
 
@@ -24,7 +24,7 @@ export function SingleDeviceChartCell({
   switch (chart.visualization) {
     case "donut":
       bodyNode = (
-        <CarbonDonutChart
+        <DonutChart
           parts={tile.donut?.parts ?? []}
           centerLabel={tile.donut?.centerLabel}
           valueFormatter={valueFormatter}
@@ -35,7 +35,7 @@ export function SingleDeviceChartCell({
       break;
     case "meter":
       bodyNode = (
-        <CarbonMeterChart
+        <MeterChart
           value={tile.meter?.value ?? 0}
           total={tile.meter?.total ?? 0}
           label={tile.meter?.label ?? "已用"}
@@ -46,7 +46,7 @@ export function SingleDeviceChartCell({
       );
       break;
     case "number":
-      bodyNode = <CarbonNumberGrid items={tile.numbers ?? []} />;
+      bodyNode = <NumberGrid items={tile.numbers ?? []} />;
       break;
     case "table":
       bodyNode = <ChartInfoRows rows={tile.rows ?? []} label={chart.title} />;
@@ -56,7 +56,7 @@ export function SingleDeviceChartCell({
       break;
     default:
       bodyNode = (
-        <CarbonTimeSeriesChart
+        <TimeSeriesChart
           series={tile.series ?? []}
           visualization={chart.visualization === "area" ? "area" : "line"}
           maxValue={tile.maxValue}

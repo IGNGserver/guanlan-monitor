@@ -1,0 +1,244 @@
+/* =============================================================================
+ * Material 3 Expressive — base layer
+ *
+ * Reset, type-scale utilities, state layers, ripple, focus rings, scrollbars.
+ * Everything here reads --md-sys-* from tokens.css. No Carbon.
+ * ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.m3e-theme {
+  min-width: 0;
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface);
+  font-family: var(--md-sys-font-brand);
+  font-size: var(--md-sys-typescale-body-m-size);
+  line-height: var(--md-sys-typescale-body-m-line);
+  font-weight: var(--md-sys-typescale-body-m-weight);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.m3e-theme button,
+.m3e-theme input,
+.m3e-theme select,
+.m3e-theme textarea {
+  color: inherit;
+  font: inherit;
+}
+
+.m3e-theme button {
+  border: 0;
+  background: transparent;
+}
+
+.m3e-num,
+.m3e-theme [data-numeric] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ---- Type scale utilities ------------------------------------------------- */
+.m3e-display-l { font-size: var(--md-sys-typescale-display-l-size); line-height: var(--md-sys-typescale-display-l-line); font-weight: var(--md-sys-typescale-display-l-weight); letter-spacing: var(--md-sys-typescale-display-l-tracking); }
+.m3e-headline-l { font-size: var(--md-sys-typescale-headline-l-size); line-height: var(--md-sys-typescale-headline-l-line); font-weight: var(--md-sys-typescale-headline-l-weight); letter-spacing: var(--md-sys-typescale-headline-l-tracking); }
+.m3e-headline-m { font-size: var(--md-sys-typescale-headline-m-size); line-height: var(--md-sys-typescale-headline-m-line); font-weight: var(--md-sys-typescale-headline-m-weight); letter-spacing: var(--md-sys-typescale-headline-m-tracking); }
+.m3e-headline-s { font-size: var(--md-sys-typescale-headline-s-size); line-height: var(--md-sys-typescale-headline-s-line); font-weight: var(--md-sys-typescale-headline-s-weight); letter-spacing: var(--md-sys-typescale-headline-s-tracking); }
+.m3e-title-l { font-size: var(--md-sys-typescale-title-l-size); line-height: var(--md-sys-typescale-title-l-line); font-weight: var(--md-sys-typescale-title-l-weight); letter-spacing: var(--md-sys-typescale-title-l-tracking); }
+.m3e-title-m { font-size: var(--md-sys-typescale-title-m-size); line-height: var(--md-sys-typescale-title-m-line); font-weight: var(--md-sys-typescale-title-m-weight); letter-spacing: var(--md-sys-typescale-title-m-tracking); }
+.m3e-title-s { font-size: var(--md-sys-typescale-title-s-size); line-height: var(--md-sys-typescale-title-s-line); font-weight: var(--md-sys-typescale-title-s-weight); letter-spacing: var(--md-sys-typescale-title-s-tracking); }
+.m3e-body-l { font-size: var(--md-sys-typescale-body-l-size); line-height: var(--md-sys-typescale-body-l-line); font-weight: var(--md-sys-typescale-body-l-weight); letter-spacing: var(--md-sys-typescale-body-l-tracking); }
+.m3e-body-m { font-size: var(--md-sys-typescale-body-m-size); line-height: var(--md-sys-typescale-body-m-line); font-weight: var(--md-sys-typescale-body-m-weight); letter-spacing: var(--md-sys-typescale-body-m-tracking); }
+.m3e-body-s { font-size: var(--md-sys-typescale-body-s-size); line-height: var(--md-sys-typescale-body-s-line); font-weight: var(--md-sys-typescale-body-s-weight); letter-spacing: var(--md-sys-typescale-body-s-tracking); }
+.m3e-label-l { font-size: var(--md-sys-typescale-label-l-size); line-height: var(--md-sys-typescale-label-l-line); font-weight: var(--md-sys-typescale-label-l-weight); letter-spacing: var(--md-sys-typescale-label-l-tracking); }
+.m3e-label-m { font-size: var(--md-sys-typescale-label-m-size); line-height: var(--md-sys-typescale-label-m-line); font-weight: var(--md-sys-typescale-label-m-weight); letter-spacing: var(--md-sys-typescale-label-m-tracking); }
+.m3e-label-s { font-size: var(--md-sys-typescale-label-s-size); line-height: var(--md-sys-typescale-label-s-line); font-weight: var(--md-sys-typescale-label-s-weight); letter-spacing: var(--md-sys-typescale-label-s-tracking); }
+
+/* ---- Focus ---------------------------------------------------------------- */
+.m3e-theme :focus-visible {
+  outline: 3px solid var(--md-sys-color-secondary);
+  outline-offset: 2px;
+}
+
+/* Native controls keep the ring inside so tight rows do not clip it. */
+.m3e-theme input:focus-visible,
+.m3e-theme select:focus-visible,
+.m3e-theme textarea:focus-visible {
+  outline-offset: 0;
+}
+
+/* ---- Selection ------------------------------------------------------------ */
+.m3e-theme ::selection {
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+}
+
+/* ---- Scrollbars ----------------------------------------------------------- */
+.m3e-theme {
+  scrollbar-width: thin;
+  scrollbar-color: var(--md-sys-color-outline) transparent;
+}
+
+.m3e-theme ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.m3e-theme ::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: var(--md-sys-shape-full);
+  background: var(--md-sys-color-outline);
+  background-clip: padding-box;
+}
+
+.m3e-theme ::-webkit-scrollbar-thumb:hover {
+  background: var(--md-sys-color-on-surface-variant);
+  background-clip: padding-box;
+}
+
+/* ---- State layer + ripple ------------------------------------------------- */
+.m3e-state-host {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.m3e-state-host::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--md-sys-motion-effects-fast);
+}
+
+.m3e-state-host:hover::before {
+  opacity: var(--md-sys-state-hover-opacity);
+}
+
+.m3e-state-host:focus-visible::before {
+  opacity: var(--md-sys-state-focus-opacity);
+}
+
+.m3e-state-host:active::before {
+  opacity: var(--md-sys-state-pressed-opacity);
+}
+
+.m3e-state-host > * {
+  position: relative;
+  z-index: 1;
+}
+
+.m3e-ripple {
+  position: absolute;
+  z-index: 0;
+  border-radius: var(--md-sys-shape-full);
+  background: currentColor;
+  opacity: var(--md-sys-state-pressed-opacity);
+  pointer-events: none;
+  transform: scale(0);
+  animation: m3e-ripple 500ms var(--md-sys-motion-easing-standard) forwards;
+}
+
+@keyframes m3e-ripple {
+  to {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+/* ---- Surfacing / elevation ------------------------------------------------ */
+.m3e-surface {
+  border-radius: var(--md-sys-shape-lg);
+  background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface);
+}
+
+.m3e-surface--low { background: var(--md-sys-color-surface-container-low); }
+.m3e-surface--base { background: var(--md-sys-color-surface-container); }
+.m3e-surface--high { background: var(--md-sys-color-surface-container-high); }
+.m3e-surface--highest { background: var(--md-sys-color-surface-container-highest); }
+.m3e-surface--lowest { background: var(--md-sys-color-surface-container-lowest); }
+
+.m3e-elevation-1 { box-shadow: var(--md-sys-elevation-1); }
+.m3e-elevation-2 { box-shadow: var(--md-sys-elevation-2); }
+.m3e-elevation-3 { box-shadow: var(--md-sys-elevation-3); }
+.m3e-elevation-4 { box-shadow: var(--md-sys-elevation-4); }
+
+/* ---- Misc ----------------------------------------------------------------- */
+.m3e-visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+}
+
+.m3e-divider {
+  height: 1px;
+  flex: 0 0 auto;
+  background: var(--md-sys-color-outline-variant);
+}
+
+.m3e-spin {
+  display: inline-flex;
+  animation: m3e-spin 1s linear infinite;
+}
+
+@keyframes m3e-spin {
+  to { transform: rotate(360deg); }
+}
+
+.m3e-shimmer {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--md-sys-shape-md);
+  background: var(--md-sys-color-surface-container-high);
+}
+
+.m3e-shimmer::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--md-sys-color-surface-container-highest), transparent);
+  content: "";
+  transform: translateX(-100%);
+  animation: m3e-shimmer 1.3s infinite;
+}
+
+@keyframes m3e-shimmer {
+  to { transform: translateX(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m3e-theme *,
+  .m3e-theme *::before,
+  .m3e-theme *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .m3e-ripple {
+    display: none;
+  }
+}
+
+/* Touch pointers never see hover fills linger, and need the larger target. */
+@media (pointer: coarse) {
+  .m3e-theme {
+    --md-sys-density-control-height: 48px;
+    --md-sys-density-list-height: 64px;
+  }
+}

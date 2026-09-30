@@ -1,7 +1,18 @@
-@use "@carbon/react";
-@import "@carbon/charts-react/styles.css";
-
+/*
+ * Shared UI stylesheet entry.
+ *
+ * The design system now lives in `m3e/`: tokens, base reset, and the component
+ * stylesheet. Carbon's Sass theme and chart stylesheet are gone — no
+ * `@carbon/react`, no `@ibm/plex`, no `--cds-*` variables are loaded anywhere.
+ *
+ * The `.css` extensions are deliberate: Sass passes a `.css` import through as a
+ * plain CSS `@import` and the bundler (Next/webpack, Vite) resolves each file
+ * relative to its own directory. This is how the workspace stylesheet graph has
+ * always been composed.
+ */
+@import "./m3e/tokens.css";
+@import "./m3e/base.css";
+@import "./m3e/components.css";
 @import "./workspace/workspace.css";
-@import "./workspace/workspace-carbon.scss";
 @import "./workspace/dashboard.css";
 @import "./workspace/window-material.css";

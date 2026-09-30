@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Tab, TabList, Tabs } from "@carbon/react";
 import type { DeviceBlockKey, DeviceMetricKey, MetricsLatest } from "@dsc/shared";
+import { M3Tabs } from "../m3";
 import { useWorkspace } from "../WorkspaceContext";
 import { selectLinkLabel, selectSnapshotSource } from "../selectors";
 import {
@@ -383,8 +383,6 @@ export function DeviceDetailsPage() {
               }
             : null;
 
-  const selectedIndex = Math.max(0, DEVICE_DASHBOARD.tabs.findIndex((item) => item.id === activeTab));
-
   return (
     <div ref={rootRef} className={`workspace-page workspace-page--device${isFullscreen ? " workspace-page--fullscreen" : ""}`}>
       <nav className="workspace-breadcrumb" aria-label="面包屑">
@@ -432,14 +430,12 @@ export function DeviceDetailsPage() {
 
       {/* 选项卡、时间范围与全屏属于同一个设备上下文，滚动图表时保持可见。 */}
       <div className="workspace-device-context" ref={deviceContextRef}>
-        <Tabs
-          selectedIndex={selectedIndex}
-          onChange={({ selectedIndex: nextIndex }) => changeTab(DEVICE_DASHBOARD.tabs[nextIndex]?.id ?? DEFAULT_DEVICE_TAB_ID)}
-        >
-          <TabList aria-label="设备面板" activation="manual" contained fullWidth size="md">
-            {DEVICE_DASHBOARD.tabs.map((item) => <Tab key={item.id}>{item.name}</Tab>)}
-          </TabList>
-        </Tabs>
+        <M3Tabs
+          aria-label="设备面板"
+          value={activeTab}
+          onChange={(id) => changeTab(id)}
+          tabs={DEVICE_DASHBOARD.tabs.map((item) => ({ id: item.id, label: item.name }))}
+        />
 
         <div className="workspace-device-context__controls">
           <div className="workspace-device-toolbar">

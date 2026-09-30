@@ -1,20 +1,16 @@
 /*
  * Window-level material policy.
  *
- * Mica belongs to the native window backdrop. Acrylic is intentionally
- * represented by the transient-surface tokens below and is applied only to
- * menus, dialogs, toasts, and drawers. The opaque mode is the Windows 10 and
- * reduced-transparency fallback with the same semantic surface hierarchy.
+ * Mica belongs to the native window backdrop. Acrylic is applied only to
+ * transient surfaces (menus, dialogs, toasts, drawers). Opaque is the Windows 10
+ * and reduced-transparency fallback with the same semantic hierarchy.
  *
- * Material contributes *translucency*, never colour. Every value here is the
- * Carbon token for that role mixed against `transparent`, so switching the
- * window material can no longer repaint one half of the interface with a
- * hand-picked blue-grey ramp while the Carbon half stays neutral.
+ * Material contributes *translucency*, never colour: every value below is an
+ * --md-sys-* surface token mixed against transparent. Switching the window
+ * material can therefore no longer repaint one half of the interface with a
+ * hand-picked ramp.
  *
- * The rules target `.guanlan-carbon-theme` rather than `html` on purpose:
- * `workspace.tokens.css` re-points the `--workspace-*` palette at `--cds-*` on
- * that same element, and a value set on `html` only ever inherits into it.
- * Declaring here keeps this file the last word, as its layer always has been.
+ * The rules target `.m3e-theme` because that is where the theme wrapper sits.
  */
 
 html[data-dsc-material="mica"],
@@ -23,24 +19,25 @@ html[data-dsc-material="mica"] #root {
   background: transparent;
 }
 
-html[data-dsc-material="mica"] .guanlan-carbon-theme {
+html[data-dsc-material="mica"] .m3e-theme {
+  --md-sys-color-surface: transparent;
   --workspace-bg: transparent;
-  --workspace-topbar: color-mix(in srgb, var(--cds-background, #f4f4f4) 72%, transparent);
-  --workspace-sidebar: color-mix(in srgb, var(--cds-layer-01, #ffffff) 80%, transparent);
-  --workspace-surface: color-mix(in srgb, var(--cds-layer-01, #ffffff) 84%, transparent);
-  --workspace-surface-subtle: color-mix(in srgb, var(--cds-layer-01, #ffffff) 64%, transparent);
-  --workspace-surface-hover: color-mix(in srgb, var(--cds-layer-hover-01, #e5e5e5) 78%, transparent);
-  --workspace-surface-control: color-mix(in srgb, var(--cds-field, #f4f4f4) 72%, transparent);
-  --workspace-surface-popover: color-mix(in srgb, var(--cds-layer-02, #e5e5e5) 94%, transparent);
-  --workspace-surface-modal: color-mix(in srgb, var(--cds-layer-01, #ffffff) 95%, transparent);
-  --workspace-surface-foreground: color-mix(in srgb, var(--cds-layer-01, #ffffff) 92%, transparent);
-  --workspace-surface-acrylic: color-mix(in srgb, var(--cds-layer-02, #e5e5e5) 82%, transparent);
+  --workspace-topbar: color-mix(in srgb, var(--md-sys-color-surface-container-low) 72%, transparent);
+  --workspace-sidebar: color-mix(in srgb, var(--md-sys-color-surface-container-low) 80%, transparent);
+  --workspace-surface: color-mix(in srgb, var(--md-sys-color-surface-container-low) 84%, transparent);
+  --workspace-surface-subtle: color-mix(in srgb, var(--md-sys-color-surface-container) 68%, transparent);
+  --workspace-surface-hover: color-mix(in srgb, var(--md-sys-color-surface-container-high) 78%, transparent);
+  --workspace-surface-control: color-mix(in srgb, var(--md-sys-color-surface-container-high) 72%, transparent);
+  --workspace-surface-popover: color-mix(in srgb, var(--md-sys-color-surface-container-high) 94%, transparent);
+  --workspace-surface-modal: color-mix(in srgb, var(--md-sys-color-surface-container-high) 95%, transparent);
+  --workspace-surface-foreground: color-mix(in srgb, var(--md-sys-color-surface-container) 92%, transparent);
+  --workspace-surface-acrylic: color-mix(in srgb, var(--md-sys-color-surface-container-high) 82%, transparent);
   --workspace-acrylic-filter: blur(26px) saturate(125%);
-  --workspace-scrim: color-mix(in srgb, var(--cds-overlay, rgb(0 0 0 / 50%)) 70%, transparent);
+  --workspace-scrim: color-mix(in srgb, var(--md-sys-color-scrim) 70%, transparent);
 }
 
-html[data-dsc-material="opaque"] .guanlan-carbon-theme {
-  --workspace-surface-acrylic: var(--cds-layer-02, #e5e5e5);
+html[data-dsc-material="opaque"] .m3e-theme {
+  --workspace-surface-acrylic: var(--md-sys-color-surface-container-high);
   --workspace-acrylic-filter: none;
 }
 
@@ -49,22 +46,32 @@ html[data-dsc-material="opaque"] .guanlan-carbon-theme {
   html[data-dsc-material="mica"],
   html[data-dsc-material="mica"] body,
   html[data-dsc-material="mica"] #root {
-    background: var(--cds-background, #f4f4f4);
+    background: var(--md-sys-color-surface);
   }
 
-  html[data-dsc-material="mica"] .guanlan-carbon-theme {
-    --workspace-bg: var(--cds-background, #f4f4f4);
-    --workspace-topbar: var(--cds-background, #f4f4f4);
-    --workspace-sidebar: var(--cds-layer-01, #ffffff);
-    --workspace-surface: var(--cds-layer-01, #ffffff);
-    --workspace-surface-subtle: var(--cds-layer-01, #ffffff);
-    --workspace-surface-hover: var(--cds-layer-hover-01, #e5e5e5);
-    --workspace-surface-control: var(--cds-field, #f4f4f4);
-    --workspace-surface-popover: var(--cds-layer-02, #e5e5e5);
-    --workspace-surface-modal: var(--cds-layer-01, #ffffff);
-    --workspace-surface-foreground: var(--cds-layer-01, #ffffff);
-    --workspace-surface-acrylic: var(--cds-layer-02, #e5e5e5);
+  html[data-dsc-material="mica"] .m3e-theme {
+    --md-sys-color-surface: var(--md-ref-palette-neutral-6);
+    --workspace-bg: var(--md-sys-color-surface);
+    --workspace-topbar: var(--md-sys-color-surface);
+    --workspace-sidebar: var(--md-sys-color-surface-container-low);
+    --workspace-surface: var(--md-sys-color-surface-container-low);
+    --workspace-surface-subtle: var(--md-sys-color-surface-container);
+    --workspace-surface-hover: var(--md-sys-color-surface-container-high);
+    --workspace-surface-control: var(--md-sys-color-surface-container-high);
+    --workspace-surface-popover: var(--md-sys-color-surface-container-high);
+    --workspace-surface-modal: var(--md-sys-color-surface-container-high);
+    --workspace-surface-foreground: var(--md-sys-color-surface-container);
+    --workspace-surface-acrylic: var(--md-sys-color-surface-container-high);
     --workspace-acrylic-filter: none;
-    --workspace-scrim: var(--cds-overlay, rgb(0 0 0 / 50%));
+    --workspace-scrim: var(--md-sys-color-scrim);
   }
+}
+
+html[data-dsc-resolved-theme="light"][data-dsc-material="mica"] .m3e-theme {
+  --md-sys-color-surface: transparent;
+}
+
+html[data-dsc-resolved-theme="light"][data-dsc-material="mica"] body,
+html[data-dsc-resolved-theme="light"][data-dsc-material="mica"] #root {
+  background: transparent;
 }

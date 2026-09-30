@@ -1,12 +1,11 @@
 import React, { useState } from "react";
-import { Button, Tile } from "@carbon/react";
+import { M3Button } from "../../m3e/primitives";
 
 /**
  * 固定布局里唯一的卡片实现。
  *
- * 外壳直接用 Carbon 官方 `Tile`，不再叠 `Surface` / `DeviceWidgetFrame` /
- * `.telemetry-chart-card` 三层各自定义圆角、边框和阴影的容器——那正是原先
- * 卡片观感混乱的来源。视觉细节全部由 `dashboard.css` 用 Carbon 令牌覆盖。
+ * 外壳是 M3E 的填充卡片（圆角 16、surface-container-low），不再叠 Carbon `Tile`。
+ * 视觉细节全部由 `m3e/components.css` 与 `workspace.dashboard.css` 以令牌表达。
  */
 export interface ChartTileProps {
   title: string;
@@ -26,10 +25,7 @@ export interface ChartTileProps {
   children?: React.ReactNode;
   /** 无数据时的提示；给出后主体被替换成提示文本。 */
   emptyMessage?: string;
-  /**
-   * 「详细信息」视图。给出后头部自动出现切换按钮，在图表与明细之间切换，
-   * 取代原先散落在各处的 `showDetailsControl`。
-   */
+  /** 「详细信息」视图。给出后头部自动出现切换按钮，在图表与明细之间切换。 */
   details?: React.ReactNode;
   /** 底部附注，例如已采集硬件型号列表。 */
   footer?: React.ReactNode;
@@ -54,7 +50,7 @@ export function ChartTile({
   const detailsVisible = Boolean(details) && !emptyMessage && showDetails;
 
   return (
-    <Tile className={`chart-tile${className ? ` ${className}` : ""}`}>
+    <article className={`m3e-card m3e-card--filled chart-tile${className ? ` ${className}` : ""}`}>
       <div className="chart-tile__header">
         <div className="chart-tile__titles">
           {eyebrow ? <span className="chart-tile__eyebrow">{eyebrow}</span> : null}
@@ -77,15 +73,15 @@ export function ChartTile({
           <div className="chart-tile__controls">
             {controls}
             {details && !emptyMessage ? (
-              <Button
-                kind="ghost"
+              <M3Button
+                variant="text"
                 size="sm"
                 type="button"
                 aria-pressed={detailsVisible}
                 onClick={() => setShowDetails((value) => !value)}
               >
                 {detailsVisible ? "返回图表" : "详细信息"}
-              </Button>
+              </M3Button>
             ) : null}
           </div>
         ) : null}
@@ -94,13 +90,13 @@ export function ChartTile({
       {emptyMessage ? (
         <div className="chart-tile__empty">{emptyMessage}</div>
       ) : detailsVisible ? (
-        <div className="chart-tile__body chart-tile__body--details guanlan-fade-in">{details}</div>
+        <div className="chart-tile__body guanlan-fade-in">{details}</div>
       ) : children ? (
         <div className="chart-tile__body guanlan-fade-in">{children}</div>
       ) : null}
 
       {footer && !detailsVisible ? <div className="chart-tile__footer">{footer}</div> : null}
-    </Tile>
+    </article>
   );
 }
 

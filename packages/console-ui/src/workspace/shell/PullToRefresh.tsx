@@ -152,7 +152,7 @@ export function PullToRefresh({ onRefresh, disabled = false, children }: PullToR
           aria-hidden="true"
         >
           <div
-            className={`workspace-pull-icon ${isRefreshing ? "guanlan-spin" : ""}`}
+            className={`workspace-pull-icon ${isRefreshing ? "m3e-spin" : ""}`}
             style={{ transform: !isRefreshing ? `rotate(${rotation}deg)` : undefined }}
           >
             <Icon name="refresh" size={18} />

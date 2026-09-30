@@ -20,17 +20,8 @@ export function CompactNavigation() {
   };
 
   return <nav className="workspace-bottom-nav" aria-label="主导航">
-    <M3NavigationItem className={`workspace-bottom-nav__item ${route.kind === "overview" ? "is-active" : ""}`} selected={route.kind === "overview"} onClick={() => handleNav("overview")}>
-      <span className="workspace-bottom-nav__icon-indicator"><Icon name="overview" size={20} /></span>
-      <span>总览</span>
-    </M3NavigationItem>
-    <M3NavigationItem className={`workspace-bottom-nav__item ${route.kind === "devices" || route.kind === "device" ? "is-active" : ""}`} selected={route.kind === "devices" || route.kind === "device"} onClick={() => handleNav("devices")}>
-      <span className="workspace-bottom-nav__icon-indicator"><Icon name="device" size={20} /></span>
-      <span>设备</span>
-    </M3NavigationItem>
-    <M3NavigationItem className={`workspace-bottom-nav__item ${route.kind === "settings" ? "is-active" : ""}`} selected={route.kind === "settings"} onClick={() => handleNav("settings")}>
-      <span className="workspace-bottom-nav__icon-indicator"><Icon name="settings" size={20} /></span>
-      <span>设置</span>
-    </M3NavigationItem>
+    <M3NavigationItem className="workspace-bottom-nav__item" icon={<span className="workspace-bottom-nav__icon-indicator"><Icon name="overview" size={24} /></span>} selected={route.kind === "overview"} onClick={() => handleNav("overview")}>总览</M3NavigationItem>
+    <M3NavigationItem className="workspace-bottom-nav__item" icon={<span className="workspace-bottom-nav__icon-indicator"><Icon name="device" size={24} /></span>} selected={route.kind === "devices" || route.kind === "device"} onClick={() => handleNav("devices")}>设备</M3NavigationItem>
+    <M3NavigationItem className="workspace-bottom-nav__item" icon={<span className="workspace-bottom-nav__icon-indicator"><Icon name="settings" size={24} /></span>} selected={route.kind === "settings"} onClick={() => handleNav("settings")}>设置</M3NavigationItem>
   </nav>;
 }

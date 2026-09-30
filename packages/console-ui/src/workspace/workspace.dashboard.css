@@ -4,16 +4,16 @@
   .workspace-agent-temperature-sources__body { grid-template-columns: 1fr; }
 }
 
-.workspace-trend-empty { display: grid; min-height: 150px; place-items: center; border-radius: 0; color: var(--workspace-text-muted); background: color-mix(in srgb, var(--workspace-surface-subtle) 75%, var(--workspace-accent-soft) 25%); font-size: 12px; }
+.workspace-trend-empty { display: grid; min-height: 150px; place-items: center; border-radius: var(--md-sys-shape-md); color: var(--workspace-text-muted); background: color-mix(in srgb, var(--workspace-surface-subtle) 75%, var(--workspace-accent-soft) 25%); font-size: 12px; }
 
 .workspace-traffic-calendar { grid-column: 1 / -1; min-width: 0; }
 .workspace-traffic-calendar__cells { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 7px; margin-bottom: 14px; }
-.workspace-traffic-calendar__cell { display: flex; min-height: 54px; flex-direction: column; justify-content: center; gap: 4px; padding: 8px 9px; border: 1px solid var(--workspace-border); border-radius: var(--workspace-radius-sm); background: var(--workspace-accent-soft); }
+.workspace-traffic-calendar__cell { display: flex; min-height: 54px; flex-direction: column; justify-content: center; gap: 4px; padding: 8px 9px; border: 1px solid var(--workspace-border); border-radius: var(--md-sys-shape-sm); background: var(--workspace-accent-soft); }
 .workspace-traffic-calendar__cell.is-selected { border-color: var(--workspace-accent); box-shadow: inset 0 0 0 1px var(--workspace-accent-soft); }
 .workspace-traffic-calendar__cell strong { overflow: hidden; color: var(--workspace-text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-traffic-calendar__cell small { color: var(--workspace-text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
 .workspace-device-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
-.workspace-telemetry-empty { display: grid; min-height: 228px; place-items: center; padding: 20px; border: 1px dashed var(--workspace-border-strong); border-radius: var(--workspace-radius-md); color: var(--workspace-text-muted); background: var(--workspace-surface-subtle); font-size: 12px; text-align: center; }
+.workspace-telemetry-empty { display: grid; min-height: 228px; place-items: center; padding: 20px; border: 1px dashed var(--workspace-border-strong); border-radius: var(--md-sys-shape-md); color: var(--workspace-text-muted); background: var(--workspace-surface-subtle); font-size: 12px; text-align: center; }
 
 .workspace-settings-stack { display: flex; max-width: 780px; flex-direction: column; gap: 16px; }
 /* Runtime history and upload progress are two short fact lists. They fit side by
@@ -27,37 +27,30 @@
 .workspace-agent-diagnostics .workspace-summary-row strong { min-width: 0; overflow-wrap: anywhere; }
 .workspace-agent-diagnostics .workspace-form__hint { margin-top: 4px; }
 .workspace-web-settings { max-width: 980px; }
-.workspace-web-settings__status { display: grid; grid-template-columns: minmax(0, 1.45fr) repeat(3, minmax(120px, .55fr)); gap: 1px; overflow: hidden; border: 1px solid var(--workspace-border); border-radius: var(--workspace-radius-md); background: var(--workspace-border); box-shadow: var(--workspace-shadow-soft); }
+.workspace-web-settings__status { display: grid; grid-template-columns: minmax(0, 1.45fr) repeat(3, minmax(120px, .55fr)); gap: 1px; overflow: hidden; border: 1px solid var(--workspace-border); border-radius: var(--md-sys-shape-md); background: var(--workspace-border); box-shadow: var(--workspace-shadow-soft); }
 .workspace-web-settings__status-main,
 .workspace-web-settings__stat { min-width: 0; padding: 20px; background: var(--workspace-surface); }
 .workspace-web-settings__status-main { display: flex; min-height: 126px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 7px; }
-.workspace-web-settings__status-main strong { color: var(--workspace-text); font-size: 16px; font-weight: 680; }
+.workspace-web-settings__status-main strong { color: var(--workspace-text); font-size: 16px; font-weight: 600; }
 .workspace-web-settings__status-main p { max-width: 48ch; margin: 0; color: var(--workspace-text-secondary); font-size: 12px; line-height: 1.55; }
 .workspace-web-settings__stat { display: flex; flex-direction: column; justify-content: center; gap: 6px; }
 .workspace-web-settings__stat span { color: var(--workspace-text-muted); font-size: 11px; }
-.workspace-web-settings__stat strong { overflow: hidden; color: var(--workspace-text); font-size: 17px; font-weight: 680; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-web-settings__stat strong { overflow: hidden; color: var(--workspace-text); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-web-settings__grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr); gap: 16px; }
 .workspace-settings-list { display: flex; flex-direction: column; }
 .workspace-setting-row { display: flex; min-height: 67px; align-items: center; justify-content: space-between; gap: 20px; border-top: 1px solid var(--workspace-border); }
 .workspace-setting-row:first-child { border-top: 0; }
 .workspace-setting-row > div:first-child { min-width: 0; }
-.workspace-setting-row strong { display: block; color: var(--workspace-text); font-size: 13px; font-weight: 620; }
+.workspace-setting-row strong { display: block; color: var(--workspace-text); font-size: 13px; font-weight: 500; }
 .workspace-setting-row p { max-width: 52ch; margin: 3px 0 0; color: var(--workspace-text-secondary); font-size: 11px; line-height: 1.5; }
 .workspace-setting-row__control { flex: 0 0 auto; }
 .workspace-setting-note { display: inline-flex; align-items: center; gap: 6px; color: var(--workspace-green); font-size: 12px; }
-/* `selectClassName` lands on Carbon's `.cds--select` wrapper, not on the
-   `<select>`. Painting a border, radius and background here stacked a second
-   Material box around a field that already draws its own underline and fill,
-   so these rules are sizing only. */
-.workspace-select { min-width: 150px; }
-.workspace-select--small { min-width: 104px; }
-.workspace-range-control { display: flex; min-height: 34px; align-items: center; gap: 8px; padding: 3px 4px 3px 10px; border: 1px solid var(--workspace-border-strong); border-radius: 0; background: var(--workspace-surface-control); box-shadow: var(--workspace-shadow-soft); }
-.workspace-range-control__label { display: inline-flex; align-items: center; gap: 5px; color: var(--workspace-text-secondary); font-size: 12px; font-weight: 650; white-space: nowrap; }
+.workspace-range-control { display: flex; min-height: 34px; align-items: center; gap: 8px; padding: 3px 4px 3px 10px; }
+.workspace-range-control__label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .workspace-range-control__options { display: flex; align-items: center; gap: 2px; }
-.workspace-instance-filter { display: inline-flex; align-items: center; gap: 6px; color: var(--workspace-text-muted); font-size: 12px; font-weight: 620; white-space: nowrap; }
-.workspace-instance-filter .workspace-select { min-width: 150px; }
+.workspace-instance-filter { display: inline-flex; min-width: 150px; align-items: center; gap: 6px; color: var(--workspace-text-muted); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .workspace-form { display: flex; max-width: 520px; flex-direction: column; gap: 12px; }
-.workspace-form label { display: flex; flex-direction: column; gap: 6px; color: var(--workspace-text-secondary); font-size: 12px; font-weight: 620; }
+.workspace-form label { display: flex; flex-direction: column; gap: 6px; color: var(--workspace-text-secondary); font-size: 12px; font-weight: 500; }
 .workspace-form__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .workspace-form__actions { flex-wrap: wrap; gap: 8px; }
 .workspace-form__hint { margin: -2px 0 0; font-size: 11px; }
@@ -65,12 +58,12 @@
 .workspace-agent-runtime-form { max-width: 620px; }
 .workspace-connection-form { max-width: 620px; }
 .workspace-connection-note { background: var(--workspace-surface-subtle); }
-.workspace-danger-note { margin-top: 14px; padding: 12px; border: 1px solid color-mix(in srgb, var(--workspace-red) 32%, var(--workspace-border)); border-radius: var(--workspace-radius-sm); background: var(--workspace-red-soft); }
+.workspace-danger-note { margin-top: 14px; padding: 12px; border: 1px solid color-mix(in srgb, var(--workspace-red) 32%, var(--workspace-border)); border-radius: var(--md-sys-shape-sm); background: var(--workspace-red-soft); }
 .workspace-danger-note strong { color: var(--workspace-text); font-size: 12px; }
 .workspace-danger-note p { margin: 5px 0 10px; color: var(--workspace-text-secondary); font-size: 11px; line-height: 1.55; }
 .workspace-metric-option-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.workspace-metric-option-group { display: flex; min-width: 0; flex-direction: column; gap: 7px; padding: 12px; border: 1px solid var(--workspace-border); border-radius: var(--workspace-radius-sm); background: var(--workspace-surface-subtle); }
-.workspace-metric-option-group > strong { color: var(--workspace-text); font-size: 12px; font-weight: 650; }
+.workspace-metric-option-group { display: flex; min-width: 0; flex-direction: column; gap: 7px; padding: 12px; border: 1px solid var(--workspace-border); border-radius: var(--md-sys-shape-sm); background: var(--workspace-surface-subtle); }
+.workspace-metric-option-group > strong { color: var(--workspace-text); font-size: 12px; font-weight: 600; }
 .workspace-check-row { display: flex; min-height: 26px; align-items: center; gap: 8px; color: var(--workspace-text-secondary); font-size: 11px; cursor: pointer; }
 .workspace-check-row input { width: 14px; height: 14px; margin: 0; accent-color: var(--workspace-accent); }
 .workspace-probe-config { display: flex; margin-top: 16px; flex-direction: column; border-top: 1px solid var(--workspace-border); }
@@ -80,15 +73,15 @@
 .workspace-probe-config__header span { color: var(--workspace-text-muted); font-size: 11px; }
 .workspace-probe-row { display: grid; grid-template-columns: minmax(0, 1fr) 190px 38px; min-height: 50px; align-items: center; gap: 12px; border-top: 1px solid var(--workspace-border); }
 .workspace-probe-row > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
-.workspace-probe-row strong { color: var(--workspace-text); font-size: 12px; font-weight: 620; }
+.workspace-probe-row strong { color: var(--workspace-text); font-size: 12px; font-weight: 500; }
 .workspace-probe-row small { color: var(--workspace-text-muted); font-size: 12px; }
 .workspace-detected-list { display: flex; flex-direction: column; gap: 12px; }
 .workspace-detected-group { display: flex; flex-direction: column; gap: 6px; }
 .workspace-detected-group > strong { color: var(--workspace-text-secondary); font-size: 11px; }
-.workspace-detected-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; border: 1px solid var(--workspace-border); border-radius: var(--workspace-radius-sm); background: var(--workspace-surface-subtle); color: var(--workspace-text); font-size: 12px; transition: border-color var(--workspace-transition), background var(--workspace-transition); }
+.workspace-detected-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; border: 1px solid var(--workspace-border); border-radius: var(--md-sys-shape-sm); background: var(--workspace-surface-subtle); color: var(--workspace-text); font-size: 12px; transition: border-color var(--workspace-transition), background var(--workspace-transition); }
 .workspace-detected-row:hover { border-color: var(--workspace-border-strong); background: var(--workspace-surface-hover); }
 .workspace-detected-row__identity { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
-.workspace-detected-row__identity strong { overflow: hidden; color: var(--workspace-text); font-size: 12px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-detected-row__identity strong { overflow: hidden; color: var(--workspace-text); font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-detected-row__identity small { overflow: hidden; color: var(--workspace-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-detected-row__control { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 9px; }
 .workspace-detected-row__control small { color: var(--workspace-text-muted); font-size: 12px; }
@@ -111,17 +104,17 @@
 .workspace-shortcut-row span { text-align: right; }
 .workspace-about { display: flex; max-width: 520px; flex-direction: column; align-items: flex-start; gap: 10px; }
 .workspace-about__mark-wrap { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; flex-shrink: 0; }
-.workspace-about__mark-img { display: block; width: 48px; height: 48px; object-fit: contain; border-radius: 12px; flex-shrink: 0; }
+.workspace-about__mark-img { display: block; width: 48px; height: 48px; object-fit: contain; border-radius: var(--md-sys-shape-md); flex-shrink: 0; }
 .workspace-about h3 { color: var(--workspace-text); font-size: 18px; }
 .workspace-about p { margin: 0 0 10px; color: var(--workspace-text-secondary); }
 
-.workspace-empty { display: flex; min-height: 290px; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 36px; border: 1px dashed var(--workspace-border-strong); border-radius: var(--workspace-radius-md); color: var(--workspace-text-secondary); text-align: center; }
-.workspace-empty__mark { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 0; color: var(--workspace-accent); background: var(--workspace-accent-soft); }
+.workspace-empty { display: flex; min-height: 290px; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 36px; border: 1px dashed var(--workspace-border-strong); border-radius: var(--md-sys-shape-md); color: var(--workspace-text-secondary); text-align: center; }
+.workspace-empty__mark { display: grid; width: 40px; height: 40px; place-items: center; border-radius: var(--md-sys-shape-full); color: var(--workspace-accent); background: var(--workspace-accent-soft); }
 .workspace-empty h3 { color: var(--workspace-text); font-size: 16px; }
 .workspace-empty p { max-width: 44ch; margin: 0 0 10px; line-height: 1.6; }
 .workspace-muted-block { padding: 20px 0; text-align: center; }
 
-.workspace-skeleton { position: relative; overflow: hidden; border-radius: var(--workspace-radius-md); background: var(--workspace-surface); }
+.workspace-skeleton { position: relative; overflow: hidden; border-radius: var(--md-sys-shape-md); background: var(--workspace-surface); }
 .workspace-skeleton::after { position: absolute; inset: 0; content: ""; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--workspace-border) 45%, transparent), transparent); animation: workspace-shimmer 1.2s infinite; transform: translateX(-100%); }
 .workspace-skeleton--hero { height: 120px; margin-bottom: 16px; }
 .workspace-skeleton--large { height: 330px; margin-bottom: 16px; }
@@ -131,17 +124,17 @@
 /* The command panel's own box, border and blur were removed: Carbon's modal
    is the only surface. What is left here is list geometry. */
 .workspace-command__list { max-height: 360px; overflow-y: auto; padding: 7px; }
-.workspace-command__item { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 12px; border-radius: var(--workspace-radius-sm); color: var(--workspace-text-secondary); background: transparent; cursor: pointer; text-align: left; transition: color var(--workspace-transition), background var(--workspace-transition); }
+.workspace-command__item { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 12px; border-radius: var(--md-sys-shape-sm); color: var(--workspace-text-secondary); background: transparent; cursor: pointer; text-align: left; transition: color var(--workspace-transition), background var(--workspace-transition); }
 .workspace-command__item:hover,
 .workspace-command__item.is-active { color: var(--workspace-text); background: var(--workspace-surface-hover); }
 .workspace-command__item > span { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
-.workspace-command__item strong { color: inherit; font-size: 13px; font-weight: 620; }
+.workspace-command__item strong { color: inherit; font-size: 13px; font-weight: 500; }
 .workspace-command__item small { overflow: hidden; color: var(--workspace-text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-command__empty { padding: 30px 12px; color: var(--workspace-text-muted); text-align: center; }
 .workspace-command__footer { display: flex; gap: 14px; padding: 9px 12px; border-top: 1px solid var(--workspace-border); color: var(--workspace-text-muted); font-size: 12px; }
 .workspace-command__footer span { display: inline-flex; align-items: center; gap: 4px; }
 
-.workspace-toast { position: fixed; z-index: var(--workspace-layer-toast); right: 22px; bottom: 22px; max-width: 360px; padding: 11px 14px; border: 1px solid var(--workspace-border-strong); border-radius: var(--workspace-radius-sm); color: var(--workspace-text); background: var(--workspace-surface-acrylic); box-shadow: var(--workspace-shadow), var(--workspace-surface-highlight); backdrop-filter: var(--workspace-acrylic-filter); -webkit-backdrop-filter: var(--workspace-acrylic-filter); font-size: 12px; }
+.workspace-toast { position: fixed; z-index: var(--workspace-layer-toast); right: 22px; bottom: 22px; max-width: 360px; padding: 11px 14px; border: 1px solid var(--workspace-border-strong); border-radius: var(--md-sys-shape-sm); color: var(--workspace-text); background: var(--workspace-surface-acrylic); box-shadow: var(--workspace-shadow), var(--workspace-surface-highlight); backdrop-filter: var(--workspace-acrylic-filter); -webkit-backdrop-filter: var(--workspace-acrylic-filter); font-size: 12px; }
 
 @media (max-width: 1080px) {
   :root { --workspace-content-pad: 24px; }

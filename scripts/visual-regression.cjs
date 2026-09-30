@@ -181,7 +181,7 @@ function metricFixture(device) {
 // against the live theme instead of a hardcoded colour. Carbon's --cds-* tokens
 // only exist inside the themed wrapper, so the probe has to live there too.
 const RESOLVE_TOKENS = `(() => {
-  const scope = document.querySelector(".guanlan-carbon-theme") ?? document.body;
+  const scope = document.querySelector(".m3e-theme") ?? document.body;
   const probe = document.createElement("span");
   probe.style.display = "none";
   probe.style.color = "var(--cds-layer-selected-01)";
@@ -212,7 +212,7 @@ const UI_CONTRACT = `(() => {
     },
     topbar: box(document.querySelector(".workspace-topbar")),
     heading: box(document.querySelector(".workspace-page-intro h2")),
-    segmented: [...document.querySelectorAll(".m3-segmented-control")].map((el) => {
+    segmented: [...document.querySelectorAll(".m3e-segmented")].map((el) => {
       const s = getComputedStyle(el);
       const rect = el.getBoundingClientRect();
       const parent = el.parentElement?.getBoundingClientRect();
@@ -228,7 +228,7 @@ const UI_CONTRACT = `(() => {
         overflow: s.overflowX + "/" + s.overflowY
       };
     }),
-    chips: [...document.querySelectorAll(".m3-chip")].map((el) => {
+    chips: [...document.querySelectorAll(".m3e-chip")].map((el) => {
       const s = getComputedStyle(el);
       return { selected: el.classList.contains("is-selected"), height: Math.round(el.getBoundingClientRect().height), background: s.backgroundColor, borderWidth: s.borderTopWidth };
     }),
@@ -324,7 +324,7 @@ async function run() {
     const rootStyle = getComputedStyle(root);
     const sidebarStyle = getComputedStyle(sidebar);
     const content = document.querySelector(".workspace-content");
-    const theme = document.querySelector(".guanlan-carbon-theme");
+    const theme = document.querySelector(".m3e-theme");
     return {
       display: rootStyle.display,
       sidebarWidth: sidebar.getBoundingClientRect().width,
@@ -362,7 +362,7 @@ async function run() {
   assert.equal(desktopMetrics.themeHeight, desktopMetrics.viewportHeight, "the themed wrapper must be viewport-height, not content-height");
   assert.equal(desktopMetrics.contentFitsViewport, true, "the content scroller must fit the viewport, not grow with the page");
   assert.equal(await page.locator(".workspace-device-item").count(), 0, "primary navigation must not contain a device list");
-  assert.deepEqual((await page.locator(".workspace-sidebar .m3-navigation-item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "设置"], "sidebar contains destinations only");
+  assert.deepEqual((await page.locator(".workspace-sidebar .m3e-nav-item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "设置"], "sidebar contains destinations only");
   assert.equal(await page.getByRole("button", { name: "中枢状态" }).count(), 0, "the retired hub destination must not come back");
   assert.equal(await page.locator(".workspace-hub-card").count(), 1, "the overview must own the hub connection facts");
   const overviewHealthTotal = await page.locator(".workspace-overview-summary__item").first().locator("strong").innerText();
@@ -380,7 +380,7 @@ async function run() {
 
   await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--devices").waitFor({ state: "visible", timeout: 15_000 });
-  const deviceTable = page.locator(".workspace-directory-surface .cds--data-table");
+  const deviceTable = page.locator(".workspace-directory-surface .m3e-table");
   const deviceRows = deviceTable.locator("tbody tr");
   assert.equal(await deviceRows.count(), fixtureDevices.length, "Carbon device table must render every fixture device");
 
@@ -427,9 +427,9 @@ async function run() {
   assert.equal(await page.locator(".workspace-breadcrumb").getByText("设备", { exact: true }).count(), 1, "device detail must expose a device breadcrumb");
   assert.equal(await page.locator(".workspace-device-facts").count(), 1, "device detail must expose stable facts");
   // 设备详情页现在完全由 DEVICE_DASHBOARD 常量驱动，选项卡集合本身就是布局契约。
-  // 用 .cds--tabs 限定范围：同一个上下文条里还有时间范围的 ContentSwitcher，它同样
+  // 用 .m3e-tabs 限定范围：同一个上下文条里还有时间范围的 ContentSwitcher，它同样
   // 暴露 role="tab"，不限定会连它一起数进来。
-  const deviceTabs = page.locator(".workspace-device-context .cds--tabs");
+  const deviceTabs = page.locator(".workspace-device-context .m3e-tabs");
   assert.deepEqual(
     (await deviceTabs.getByRole("tab").allTextContents()).map((label) => label.trim()),
     ["概览", "计算与系统", "存储", "网络", "硬件与环境"],
@@ -455,7 +455,7 @@ async function run() {
         topbar: box(document.querySelector(".workspace-topbar")),
         headingTop: Math.round(document.querySelector(".workspace-page-intro h2")?.getBoundingClientRect().top ?? 0),
         context: box(context),
-        tabs: box(context?.querySelector(".cds--tabs")),
+        tabs: box(context?.querySelector(".m3e-tabs")),
         controls: box(context?.querySelector(".workspace-device-context__controls"))
       };
     });
@@ -552,7 +552,7 @@ async function run() {
     await dialog.dismiss();
   };
   page.once("dialog", dismissDialog);
-  await page.locator(".workspace-sidebar .m3-navigation-item").filter({ hasText: "总览" }).click();
+  await page.locator(".workspace-sidebar .m3e-nav-item").filter({ hasText: "总览" }).click();
   await page.waitForTimeout(200);
   assert.ok(dialogDismissed, "navigating away with dirty device order must prompt confirmation");
   assert.match(dialogMessage ?? "", /设备顺序修改尚未保存/, "confirm message must warn about device order draft");
@@ -585,12 +585,12 @@ async function run() {
   await page.locator(".workspace-root").waitFor({ state: "visible", timeout: 15_000 });
   await page.waitForTimeout(300);
 
-  // Assert 390px search button contains .m3-button__icon and accessible name is "查找设备、页面或设置"
+  // Assert 390px search button contains .m3e-button__icon and accessible name is "查找设备、页面或设置"
   const mobileSearchTrigger = page.locator(".workspace-topbar .workspace-search-trigger");
   assert.equal(await mobileSearchTrigger.count(), 1, "390px topbar must have search trigger");
   assert.equal(await mobileSearchTrigger.getAttribute("aria-label"), "查找设备、页面或设置", "search trigger accessible name must be '查找设备、页面或设置'");
-  assert.equal(await mobileSearchTrigger.locator(".m3-button__icon").isVisible(), true, "390px search trigger icon must be visible");
-  assert.equal(await mobileSearchTrigger.locator(".m3-button__label").isVisible(), false, "390px search trigger text label must be hidden");
+  assert.equal(await mobileSearchTrigger.locator(".m3e-button__icon").isVisible(), true, "390px search trigger icon must be visible");
+  assert.equal(await mobileSearchTrigger.locator(".m3e-button__label").isVisible(), false, "390px search trigger text label must be hidden");
 
   const mobileMetrics = await page.evaluate(() => {
     const root = document.querySelector(".workspace-root");
@@ -871,7 +871,7 @@ async function run() {
         }
         uiContracts.push({ round, theme, width, name, contract, tokens });
 
-        const segmentedControls = await page.locator(".m3-segmented-control").evaluateAll((controls) => {
+        const segmentedControls = await page.locator(".m3e-segmented").evaluateAll((controls) => {
           const luminance = (color) => {
             const channels = color.match(/[\d.]+/g)?.slice(0, 3).map(Number);
             if (!channels || channels.length !== 3) return null;
@@ -883,11 +883,11 @@ async function run() {
           };
           return controls.map((control) => {
             const selected = control.querySelector('[role="tab"][aria-selected="true"]');
-            const label = selected?.querySelector(".cds--content-switcher__label");
+            const label = selected?.querySelector(".m3e-segmented__label");
             const foreground = selected ? getComputedStyle(selected).color : "";
             /* The selected fill used to be painted by `::after`. The console now
              * paints it on the button itself and hides `::after` (see
-             * `workspace-carbon.scss`), but `getComputedStyle` still reports the
+             * `workspace.m3e.css`), but `getComputedStyle` still reports the
              * hidden pseudo-element's background — so the probe measured a colour
              * that is never drawn and read the selected control as 1.00 contrast.
              * Read the element's own fill when it is opaque and fall back to the
@@ -928,7 +928,7 @@ async function run() {
         if (width <= 839 && name === "devices") {
           mobileDirectory = await page.evaluate(() => {
             const scrollViewport = document.querySelector(".workspace-directory-table-scroll");
-            const table = scrollViewport?.querySelector(".cds--data-table");
+            const table = scrollViewport?.querySelector(".m3e-table");
             const hint = document.querySelector(".workspace-directory-scroll-hint");
             const hintBounds = hint?.getBoundingClientRect();
             const hintStyle = hint ? getComputedStyle(hint) : null;
@@ -1038,7 +1038,7 @@ async function run() {
          * the pointer target. Walking up to the nearest such wrapper and taking
          * the larger box asks the question a user actually asks.
          */
-        const HIT_AREA = 'label, [class*="--checkbox-label"], [class*="--toggle__wrapper"], .m3-switch-row, .m3-checkbox, .workspace-setting-row, .workspace-check-row, .cds--data-table tr';
+        const HIT_AREA = 'label, [class*="--checkbox-label"], [class*="--toggle__wrapper"], .m3e-switch-row, .m3e-checkbox, .workspace-setting-row, .workspace-check-row, .m3e-table tr';
         const rows = [];
         for (const el of document.querySelectorAll('button, a[href], input, select, [role="button"], [role="tab"], [role="option"], [role="checkbox"], [role="switch"]')) {
           const style = getComputedStyle(el);

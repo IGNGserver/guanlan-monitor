@@ -1,18 +1,18 @@
 /* v3 shared information architecture: destinations, quiet surfaces, and progressive disclosure. */
 .workspace-page { width: min(100%, 1440px); margin: 0 auto; padding: 44px var(--workspace-content-pad) 72px; }
 .workspace-page-intro { display: flex; min-width: 0; align-items: flex-end; justify-content: space-between; gap: 24px; margin: 0 0 34px; padding: 0; }
-.workspace-page-intro__eyebrow { margin-bottom: 9px; color: var(--workspace-text-muted); font-size: 12px; font-weight: 650; letter-spacing: .03em; }
+.workspace-page-intro__eyebrow { margin-bottom: 9px; color: var(--workspace-text-muted); font-size: 12px; font-weight: 600; letter-spacing: .03em; }
 .workspace-page-intro h2 { margin: 0; font-size: clamp(28px, 3vw, 36px); line-height: 1.1; letter-spacing: -0.045em; }
 .workspace-page-intro p { max-width: 66ch; margin: 12px 0 0; color: var(--workspace-text-secondary); font-size: 14px; line-height: 1.65; }
 .workspace-page-intro__actions { align-items: center; }
 .workspace-settings-mobile-nav { display: none; }
 
 .workspace-overview-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin: 0 0 34px; padding: 0 0 22px; border-bottom: 1px solid var(--workspace-border); }
-.workspace-overview-summary__item { min-width: 0; padding: 0 22px; border: 0; border-left: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.workspace-overview-summary__item { min-width: 0; padding: 0 22px; border: 0; border-left: 0; border-radius: var(--md-sys-shape-lg); background: transparent; box-shadow: none; }
 .workspace-overview-summary__item:first-child { padding-left: 0; border-left: 0; }
 .workspace-overview-summary__item > span,
 .workspace-overview-summary__label span { color: var(--workspace-text-muted); font-size: 12px; }
-.workspace-overview-summary__item > strong { display: block; margin-top: 5px; color: var(--workspace-text); font-size: 28px; font-weight: 680; line-height: 1; font-variant-numeric: tabular-nums; }
+.workspace-overview-summary__item > strong { display: block; margin-top: 5px; color: var(--workspace-text); font-size: 28px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
 .workspace-overview-summary__item > strong small { color: var(--workspace-text-muted); font-size: 14px; font-weight: 500; }
 .workspace-overview-summary__item > small { display: block; margin-top: 8px; color: var(--workspace-text-secondary); font-size: 12px; }
 .workspace-overview-summary__item.is-warning > strong { color: var(--workspace-amber); }
@@ -25,14 +25,14 @@
    and fought Carbon's border and background. */
 .workspace-attention { margin: 0 0 22px; }
 
-.workspace-surface { border: 0; border-radius: 0; background: var(--workspace-surface); box-shadow: var(--workspace-shadow-soft); }
+.workspace-surface { border: 0; border-radius: var(--md-sys-shape-lg); background: var(--workspace-surface); box-shadow: var(--workspace-shadow-soft); }
 .workspace-surface__header { gap: 16px; padding: 22px 24px 16px; }
 .workspace-surface__header h3 { font-size: 19px; letter-spacing: -0.025em; }
 
 /* Layout only. Surface colour, border and radius are arbitrated by
-   `workspace-carbon.scss`, which is the last word for shell components. */
+   `workspace.m3e.css`, which is the last word for shell components. */
 .workspace-directory-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto auto; align-items: end; gap: 10px; margin: 0 0 18px; padding: 16px; }
-.workspace-directory-toolbar .m3-field { min-width: 220px; }
+.workspace-directory-toolbar .m3e-field { min-width: 220px; }
 .workspace-directory-toolbar__chips { display: flex; align-items: center; gap: 4px; min-height: 40px; }
 .workspace-directory-surface { overflow: visible; }
 .workspace-inline-note { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; padding: 11px 14px; color: var(--workspace-text-secondary); background: var(--workspace-surface-subtle); font-size: 12px; }
@@ -57,7 +57,7 @@
      collapse affordance, so an "expanded" preference could not be honoured. */
   .workspace-page { padding-inline: 26px; }
   .workspace-directory-toolbar { grid-template-columns: minmax(180px, 1fr) auto auto; }
-  .workspace-directory-toolbar .m3-field { grid-column: 1 / -1; }
+  .workspace-directory-toolbar .m3e-field { grid-column: 1 / -1; }
 }
 
 @media (max-width: 839px) {
@@ -97,9 +97,9 @@
     scrollbar-gutter: auto;
   }
   .workspace-search-trigger { width: 40px; min-width: 40px; justify-content: center; padding: 0; border: 0; background: transparent; }
-  .workspace-search-trigger .m3-button__icon { display: inline-flex; }
-  .workspace-search-trigger.m3-button .m3-button__label,
-  .workspace-search-trigger .m3-button__label { display: none !important; }
+  .workspace-search-trigger .m3e-button__icon { display: inline-flex; }
+  .workspace-search-trigger.m3e-button .m3e-button__label,
+  .workspace-search-trigger .m3e-button__label { display: none !important; }
   .workspace-search-trigger kbd { display: none; }
   .workspace-topbar__actions > .workspace-status-label { display: none; }
   .workspace-page { padding: 30px 20px 92px; }
@@ -108,7 +108,7 @@
   .workspace-page-intro__actions > * { flex: 1; }
   .workspace-overview-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-directory-toolbar { grid-template-columns: 1fr; align-items: stretch; }
-  .workspace-directory-toolbar .m3-field { grid-column: auto; }
+  .workspace-directory-toolbar .m3e-field { grid-column: auto; }
   .workspace-hub-card__grid { grid-template-columns: minmax(0, 1fr); }
   .workspace-onboarding__steps { grid-template-columns: minmax(0, 1fr); }
   /* A Carbon footer bar: full-bleed, square, flush to the bottom edge. The
@@ -132,12 +132,12 @@
   .workspace-topbar__brand { font-size: 16px; }
   .workspace-topbar__actions { gap: 2px; }
   /* 44px, not 40px. This `(0,2,1)` rule outranks the `(0,1,0)` coarse contract
-     in `workspace-carbon.scss` on specificity alone, so layer order does not
+     in `workspace.m3e.css` on specificity alone, so layer order does not
      save it: the header's icon-only actions measured 40x44 on a phone, which is
      exactly the silent-under-rank failure the coarse pass now catches. Using the
      touch token also removes one more bare pixel from the shell. */
   .workspace-topbar__actions > .workspace-button { min-width: var(--workspace-min-touch-target); padding-inline: 8px; }
-  .workspace-topbar__actions > .workspace-button .m3-button__label { display: none; }
+  .workspace-topbar__actions > .workspace-button .m3e-button__label { display: none; }
   .workspace-page { padding-inline: 16px; }
   .workspace-page-intro h2 { font-size: 28px; }
   .workspace-surface__header { padding-inline: 18px; }
@@ -172,10 +172,10 @@
 /* Hub facts, folded in from the retired 中枢状态 page. */
 .workspace-hub-card {
   margin: 0 0 26px;
-  border-radius: var(--workspace-shape-large, 16px);
+  border-radius: var(--md-sys-shape-lg);
   background: var(--workspace-color-surface-container, #f1f4f9);
   border: 1px solid var(--workspace-color-outline-variant, #c4c9d0);
-  box-shadow: var(--workspace-elevation-1);
+  box-shadow: var(--md-sys-elevation-1);
   overflow: hidden;
 }
 .workspace-hub-card__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 28px; padding: 4px 24px 8px; }
@@ -191,15 +191,15 @@
   margin: 0 0 26px;
   padding: 20px 22px;
   border: 1px solid var(--workspace-color-outline-variant, #c4c9d0);
-  border-radius: var(--workspace-shape-large, 16px);
+  border-radius: var(--md-sys-shape-lg);
   background: var(--workspace-color-surface-container, #f1f4f9);
-  box-shadow: var(--workspace-elevation-1);
+  box-shadow: var(--md-sys-elevation-1);
 }
 .workspace-onboarding__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.workspace-onboarding__lead { margin: 6px 0 0; color: var(--workspace-text); font-size: 15px; font-weight: 620; }
+.workspace-onboarding__lead { margin: 6px 0 0; color: var(--workspace-text); font-size: 15px; font-weight: 500; }
 .workspace-onboarding__steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 18px 0 0; padding: 0; list-style: none; }
 .workspace-onboarding__steps > li { display: flex; min-width: 0; gap: 12px; }
-.workspace-onboarding__index { display: grid; width: 22px; height: 22px; flex-shrink: 0; place-items: center; border-radius: 50%; color: var(--cds-text-on-color, #fff); background: var(--workspace-accent); font-size: 12px; font-weight: 650; }
+.workspace-onboarding__index { display: grid; width: 22px; height: 22px; flex-shrink: 0; place-items: center; border-radius: 50%; color: var(--md-sys-color-on-primary); background: var(--workspace-accent); font-size: 12px; font-weight: 600; }
 .workspace-onboarding__body { min-width: 0; }
 .workspace-onboarding__body strong { display: block; color: var(--workspace-text); font-size: 13px; }
 .workspace-onboarding__body p { margin: 4px 0 8px; color: var(--workspace-text-secondary); font-size: 12px; line-height: 1.6; }
@@ -209,9 +209,9 @@
 /* Advanced settings: collapsed by default, still saved on change. */
 .workspace-advanced {
   border: 1px solid var(--workspace-color-outline-variant, #c4c9d0);
-  border-radius: var(--workspace-shape-large, 16px);
+  border-radius: var(--md-sys-shape-lg);
   background: var(--workspace-color-surface-container, #f1f4f9);
-  box-shadow: var(--workspace-elevation-1);
+  box-shadow: var(--md-sys-elevation-1);
 }
 .workspace-advanced__summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 16px 20px; cursor: pointer; list-style: none; }
 .workspace-advanced__summary::-webkit-details-marker { display: none; }
@@ -223,7 +223,7 @@
 .workspace-advanced__body .workspace-surface { box-shadow: none; border: 1px solid var(--workspace-border); }
 
 /* Command panel groups. */
-.workspace-command__group { padding: 14px 16px 6px; color: var(--workspace-text-muted); font-size: 11px; font-weight: 680; letter-spacing: .04em; }
+.workspace-command__group { padding: 14px 16px 6px; color: var(--workspace-text-muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
 .workspace-command__list > .workspace-command__group:first-child { padding-top: 4px; }
 
 /* Copy feedback, so a clipboard failure is not indistinguishable from success. */
@@ -239,7 +239,7 @@
   place-items: center;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: var(--workspace-shape-full, 9999px);
+  border-radius: var(--md-sys-shape-full);
   color: var(--workspace-color-on-surface-variant);
   background: transparent;
   cursor: pointer;
@@ -294,7 +294,7 @@
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: var(--md-sys-shape-full);
   background: var(--workspace-surface, #ffffff);
   color: var(--workspace-accent, #3d638f);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);

@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Theme } from "@carbon/react";
 import { SIDEBAR_DRAWER_MAX_WIDTH } from "../../helpers/layout";
 import { useWorkspace } from "../WorkspaceContext";
 import { AppTopBar, SessionRecoveryBanner, ShellNotice } from "./AppTopBar";
@@ -27,13 +26,11 @@ const metricsWindowAnnouncements: Record<string, string> = {
 };
 
 export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
-  const { sidebarCollapsed, setSidebarCollapsed, capabilities, refreshing, refresh, isTouch, route, selectedDevice, metricsWindow, resolvedTheme } = useWorkspace();
-  /* The Carbon theme now comes from the provider's single
-     `prefers-color-scheme` resolver. This component used to run a second,
-     independent listener to derive `g10`/`g100`, so the two theme systems could
-     disagree: the Material token layer follows `data-dsc-resolved-theme` and
-     Carbon follows this one, which is what made dark mode look half applied. */
-  const carbonTheme = resolvedTheme === "dark" ? "g100" : "g10";
+  const { sidebarCollapsed, setSidebarCollapsed, capabilities, refreshing, refresh, isTouch, route, selectedDevice, metricsWindow } = useWorkspace();
+  /* One theme resolver lives in the provider (`resolvedTheme`). The frame used
+     to also feed a second, Carbon-specific g10/g100 choice; that second source
+     of truth is gone with Carbon, and the M3E tokens are driven purely by
+     `data-dsc-resolved-theme`. */
   const [sidebarPeek, setSidebarPeek] = useState(false);
   // The backdrop only exists as a scrim while the sidebar is an off-canvas drawer,
   // i.e. exactly at `max-width: ${SIDEBAR_DRAWER_MAX_WIDTH}px` where workspace.pages.css
@@ -109,7 +106,7 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
     if (edgeSwipeRef.current?.pointerId === event.pointerId) edgeSwipeRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
-  return <Theme theme={carbonTheme} className="guanlan-carbon-theme"><div className={`workspace-root ${!capabilities.canControlNativeWindow ? "is-web" : ""} ${sidebarCollapsed ? "is-sidebar-collapsed" : "is-sidebar-open"} ${sidebarPeek ? "is-sidebar-peek" : ""}`}>
+  return <div className={`m3e-theme workspace-root ${!capabilities.canControlNativeWindow ? "is-web" : ""} ${sidebarCollapsed ? "is-sidebar-collapsed" : "is-sidebar-open"} ${sidebarPeek ? "is-sidebar-peek" : ""}`}>
     <NativeTitleBar />
     <PrimaryNavigation sidebarPeek={sidebarPeek} onSidebarLeave={() => setSidebarPeek(false)} />
     {!sidebarCollapsed && <div className="workspace-sidebar-backdrop" onPointerDown={() => setSidebarCollapsed(true)} aria-hidden="true" />}
@@ -130,5 +127,5 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
         word inside the refresh button, which nobody looks at while waiting. */}
     {refreshing && <div className="workspace-refresh-bar" role="status" aria-label="正在刷新设备状态" />}
     <div className="workspace-visually-hidden" aria-live="polite" aria-atomic="true">{dataViewAnnouncement}</div>
-  </div></Theme>;
+  </div>;
 }

@@ -11,13 +11,6 @@
  * `DashboardCell`，栅格跨度始终由布局常量决定。
  */
 import React from "react";
-import {
-  StructuredListBody,
-  StructuredListCell,
-  StructuredListHead,
-  StructuredListRow,
-  StructuredListWrapper
-} from "@carbon/react";
 import type {
   CpuMetricSeries,
   DeviceBlockKey,
@@ -34,14 +27,14 @@ import type {
   TrafficCalendarResponse
 } from "@dsc/shared";
 import {
-  CarbonDonutChart,
-  CarbonMeterChart,
-  CarbonNumberGrid,
-  CarbonTimeSeriesChart,
-  type CarbonDonutPart,
-  type CarbonNumberItem,
-  type CarbonSeries
-} from "../CarbonCharts";
+  DonutChart,
+  MeterChart,
+  NumberGrid,
+  TimeSeriesChart,
+  type ChartPart,
+  type ChartNumberItem,
+  type ChartSeries
+} from "../charts";
 import { ChartTile, DashboardCell, isChartAvailable } from "../dashboard";
 import { SingleDeviceChartCell } from "./SingleDeviceChartCell";
 import type { ChartSpanName, DashboardChartSpec, DashboardSectionSpec, DeviceChartId, DeviceSectionId } from "../dashboard";
@@ -79,10 +72,10 @@ export interface DeviceChartTile {
   /** 核心统计徽章（如 峰值 / 均值） */
   heroBadge?: string;
   /** 时间序列数据，`line` / `area` 与「详细信息」表都读它。 */
-  series?: CarbonSeries[];
-  donut?: { parts: CarbonDonutPart[]; centerLabel?: string };
+  series?: ChartSeries[];
+  donut?: { parts: ChartPart[]; centerLabel?: string };
   meter?: { value: number; total: number; label?: string };
-  numbers?: CarbonNumberItem[];
+  numbers?: ChartNumberItem[];
   rows?: Array<{ label: string; value: string }>;
   /** `custom` 可视化时渲染的页面自带组件。 */
   node?: React.ReactNode;
@@ -172,7 +165,7 @@ const INSTANCE_BLOCK_LABELS: Record<DeviceBlockKey, string> = {
 };
 
 /** 容量环形图的两个分片；总量非法时返回空数组，图表自己渲染空态。 */
-function capacityParts(used: number, total: number, usedLabel = "已用", freeLabel = "空闲"): CarbonDonutPart[] {
+function capacityParts(used: number, total: number, usedLabel = "已用", freeLabel = "空闲"): ChartPart[] {
   if (!Number.isFinite(used) || !Number.isFinite(total) || total <= 0) return [];
   const clamped = Math.min(Math.max(used, 0), total);
   return [
@@ -231,37 +224,35 @@ function gpuTemperatureSubtitle(gpu: GpuMetricSeries, hasPoints: boolean): strin
   return gpu.integrated ? "未采集 CPU 封装温度" : "未检测到 GPU 温度传感器";
 }
 
-/** Carbon `StructuredList` 版的键值表，取代原来的 `TelemetryInfoCard`。 */
+/** M3E 键值表，取代 Carbon `StructuredList` 版的键值表。 */
 export function ChartInfoRows({ rows, label }: { rows: Array<{ label: string; value: string }>; label: string }) {
-  if (!rows.length) return <div className="chart-tile__empty">暂无可展示的信息</div>;
+  if (!rows.length) return <div className="m3e-chart-empty">暂无可展示的信息</div>;
   return (
-    <StructuredListWrapper className="chart-info-rows" aria-label={`${label}详情`} isCondensed isFlush>
-      <StructuredListBody>
-        {rows.map((row) => (
-          <StructuredListRow key={row.label}>
-            <StructuredListCell head>{row.label}</StructuredListCell>
-            <StructuredListCell>{row.value}</StructuredListCell>
-          </StructuredListRow>
-        ))}
-      </StructuredListBody>
-    </StructuredListWrapper>
+    <dl className="chart-info-rows" aria-label={`${label}详情`}>
+      {rows.map((row) => (
+        <div className="chart-info-rows__row" key={row.label}>
+          <dt>{row.label}</dt>
+          <dd>{row.value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
 /** 「详细信息」抽屉：每条序列的当前值、峰值与最低值。 */
-export function ChartDetails({ series, valueFormatter }: { series: CarbonSeries[]; valueFormatter?: (value: number) => string }) {
+export function ChartDetails({ series, valueFormatter }: { series: ChartSeries[]; valueFormatter?: (value: number) => string }) {
   const fallback = valueFormatter ?? plainCount;
   return (
-    <StructuredListWrapper className="chart-details" aria-label="指标详情" isCondensed isFlush>
-      <StructuredListHead>
-        <StructuredListRow>
-          <StructuredListCell head>序列</StructuredListCell>
-          <StructuredListCell head>当前</StructuredListCell>
-          <StructuredListCell head>峰值</StructuredListCell>
-          <StructuredListCell head>最低</StructuredListCell>
-        </StructuredListRow>
-      </StructuredListHead>
-      <StructuredListBody>
+    <table className="m3e-table chart-details" aria-label="指标详情">
+      <thead>
+        <tr>
+          <th scope="col">序列</th>
+          <th scope="col">当前</th>
+          <th scope="col">峰值</th>
+          <th scope="col">最低</th>
+        </tr>
+      </thead>
+      <tbody>
         {series.map((item) => {
           const format = item.valueFormatter ?? fallback;
           const values = item.points.map((point) => point.value).filter((value) => Number.isFinite(value));
@@ -269,26 +260,26 @@ export function ChartDetails({ series, valueFormatter }: { series: CarbonSeries[
           const peak = values.length ? Math.max(...values) : undefined;
           const minimum = values.length ? Math.min(...values) : undefined;
           return (
-            <StructuredListRow key={item.label}>
-              <StructuredListCell head>{item.label}</StructuredListCell>
-              <StructuredListCell>{current == null ? "—" : format(current)}</StructuredListCell>
-              <StructuredListCell>{peak == null ? "—" : `峰值 ${format(peak)}`}</StructuredListCell>
-              <StructuredListCell>{minimum == null ? "—" : `最低 ${format(minimum)}`}</StructuredListCell>
-            </StructuredListRow>
+            <tr key={item.label}>
+              <th scope="row">{item.label}</th>
+              <td>{current == null ? "—" : format(current)}</td>
+              <td>{peak == null ? "—" : `峰值 ${format(peak)}`}</td>
+              <td>{minimum == null ? "—" : `最低 ${format(minimum)}`}</td>
+            </tr>
           );
         })}
-      </StructuredListBody>
-    </StructuredListWrapper>
+      </tbody>
+    </table>
   );
 }
 
-/** 按常量里声明的 `visualization` 分派到对应的 Carbon 图表组件。 */
+/** 按常量里声明的 `visualization` 分派到对应的 M3E 图表组件。 */
 function ChartBody({ chart, tile }: { chart: DashboardChartSpec; tile: DeviceChartTile }) {
   const valueFormatter = tile.valueFormatter ?? plainCount;
   switch (chart.visualization) {
     case "donut":
       return (
-        <CarbonDonutChart
+        <DonutChart
           parts={tile.donut?.parts ?? []}
           centerLabel={tile.donut?.centerLabel}
           valueFormatter={valueFormatter}
@@ -298,7 +289,7 @@ function ChartBody({ chart, tile }: { chart: DashboardChartSpec; tile: DeviceCha
       );
     case "meter":
       return (
-        <CarbonMeterChart
+        <MeterChart
           value={tile.meter?.value ?? 0}
           total={tile.meter?.total ?? 0}
           label={tile.meter?.label ?? "已用"}
@@ -308,14 +299,14 @@ function ChartBody({ chart, tile }: { chart: DashboardChartSpec; tile: DeviceCha
         />
       );
     case "number":
-      return <CarbonNumberGrid items={tile.numbers ?? []} />;
+      return <NumberGrid items={tile.numbers ?? []} />;
     case "table":
       return <ChartInfoRows rows={tile.rows ?? []} label={chart.title} />;
     case "custom":
       return <>{tile.node}</>;
     default:
       return (
-        <CarbonTimeSeriesChart
+        <TimeSeriesChart
           series={tile.series ?? []}
           visualization={chart.visualization === "area" ? "area" : "line"}
           maxValue={tile.maxValue}
@@ -344,7 +335,7 @@ function hardwareRows(context: DeviceChartContext): Array<{ label: string; value
   ];
 }
 
-function cpuFactItems(context: DeviceChartContext): CarbonNumberItem[] {
+function cpuFactItems(context: DeviceChartContext): ChartNumberItem[] {
   const latest = context.filteredLatest;
   const packages = latest?.cpuPackages ?? [];
   const system = latest?.system;

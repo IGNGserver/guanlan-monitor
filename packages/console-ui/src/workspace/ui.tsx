@@ -1,112 +1,26 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Layer } from "@carbon/react";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Bot,
-  Checkmark,
-  ChevronDown,
-  ChevronUp,
-  Cloud,
-  CollapseCategories,
-  ConnectionSignal,
-  Copy,
-  Dashboard,
-  DataBase,
-  Devices,
-  Grid,
-  Information,
-  Keyboard,
-  Launch,
-  OverflowMenuHorizontal,
-  Renew,
-  Search,
-  Settings,
-  TrashCan,
-  Time,
-  type CarbonIconType,
-  WarningAlt
-} from "@carbon/react/icons";
-import { M3Button } from "./m3";
-import { CAPTION_GLYPHS, captionGlyphFor, isCaptionIcon, type CaptionIconName } from "./shell/captionGlyphs";
-
-export type IconName =
-  | "overview"
-  | "hub"
-  | "device"
-  | "settings"
-  | "back"
-  | "search"
-  | "refresh"
-  | "collapse"
-  | "chevron"
-  | "external"
-  | "copy"
-  | "warning"
-  | "check"
-  | "clock"
-  | "agent"
-  | "appearance"
-  | "connection"
-  | "data"
-  | "keyboard"
-  | "about"
-  | "arrow"
-  | "windowMinimize"
-  | "windowMaximize"
-  | "windowRestore"
-  | "windowClose"
-  | "more"
-  | "chevronUp"
-  | "delete";
-
-const carbonIcons: Record<Exclude<IconName, CaptionIconName>, CarbonIconType> = {
-  overview: Dashboard,
-  hub: Cloud,
-  device: Devices,
-  settings: Settings,
-  back: ArrowLeft,
-  search: Search,
-  refresh: Renew,
-  collapse: CollapseCategories,
-  chevron: ChevronDown,
-  chevronUp: ChevronUp,
-  external: Launch,
-  copy: Copy,
-  warning: WarningAlt,
-  check: Checkmark,
-  clock: Time,
-  agent: Bot,
-  appearance: Grid,
-  connection: ConnectionSignal,
-  data: DataBase,
-  keyboard: Keyboard,
-  about: Information,
-  arrow: ArrowRight,
-  more: OverflowMenuHorizontal,
-  delete: TrashCan
-};
+import { Icon as M3eIcon, type IconName } from "../m3e/icons";
+import { M3Button, type M3ButtonVariant } from "../m3e/primitives";
 
 /**
- * The four window-chrome names share one glyph source with the native title bar
- * (`captionGlyphs.ts`). They used to be Carbon `Minimize`/`Maximize`/`Close` in
- * this map, which meant `windowRestore` was an alias of `windowMaximize`: the
- * fullscreen "exit" button on the device page drew the same icon as "enter", for
- * the same reason the caption button did.
+ * Workspace presentation helpers built on the M3E primitives.
+ *
+ * `Icon` used to dispatch into two Carbon icon maps plus a caption-glyph table.
+ * It is now a thin alias for the M3E icon set, so the whole console draws from
+ * one geometric source.
  */
-export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
-  if (isCaptionIcon(name)) {
-    // Chrome glyphs are authored on a 10x10 grid. Scaling them to the 15/16px
-    // sizes callers pass keeps the geometry (1px hairline becomes ~1.5px) and
-    // avoids the Material weight this map used to substitute.
-    return (
-      <svg className="workspace-icon workspace-caption-glyph" width={size} height={size} viewBox="0 0 10 10" aria-hidden="true" focusable="false">
-        <path d={CAPTION_GLYPHS[captionGlyphFor(name)]} fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="butt" strokeLinejoin="miter" />
-      </svg>
-    );
-  }
-  const CarbonIcon = carbonIcons[name];
-  return <CarbonIcon className="workspace-icon" size={size} aria-hidden="true" />;
+
+export type { IconName };
+
+export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
+  return <M3eIcon name={name} size={size} />;
+}
+
+function toM3Variant(variant: "primary" | "secondary" | "quiet" | "danger"): M3ButtonVariant {
+  if (variant === "primary") return "filled";
+  if (variant === "secondary") return "tonal";
+  if (variant === "quiet") return "text";
+  return "danger";
 }
 
 export function Button({
@@ -128,16 +42,19 @@ export function Button({
   type?: "button" | "submit";
   title?: string;
   autoFocus?: boolean;
-  /**
-   * TypeScript lets any hyphenated JSX attribute through, so a caller could
-   * already write `aria-label` here - but it used to be dropped on the floor,
-   * which left icon-only buttons with no accessible name at all.
-   */
   "aria-label"?: string;
 }) {
-  const m3Variant = variant === "primary" ? "filled" : variant === "secondary" ? "outlined" : variant === "quiet" ? "text" : "danger";
   return (
-    <M3Button className={`workspace-button workspace-button--${variant} ${className}`} autoFocus={autoFocus} disabled={disabled} onClick={onClick} type={type} title={title} variant={m3Variant} {...props}>
+    <M3Button
+      className={`workspace-button workspace-button--${variant} ${className}`}
+      autoFocus={autoFocus}
+      disabled={disabled}
+      onClick={onClick}
+      type={type}
+      title={title}
+      variant={toM3Variant(variant)}
+      {...props}
+    >
       {children}
     </M3Button>
   );
@@ -147,34 +64,29 @@ export function StatusDot({ state }: { state: "online" | "offline" | "cached" | 
   return <span className={`workspace-status-dot workspace-status-dot--${state}`} aria-hidden="true" />;
 }
 
-/**
- * `compact` drops the visible word and the dot is decorative, so on its own the
- * label was an unnamed colour chip (the overview "数据来源" tile rendered exactly
- * that). A compact label keeps the same vocabulary as the full one, exposed as
- * the name of an image rather than as forced visible text.
- */
+const STATUS_LABELS = { online: "在线", offline: "离线", cached: "缓存", warning: "异常", unknown: "未连接" } as const;
+
 export function StatusLabel({ state, compact = false }: { state: "online" | "offline" | "cached" | "warning" | "unknown"; compact?: boolean }) {
-  const labels = { online: "在线", offline: "离线", cached: "缓存", warning: "异常", unknown: "未连接" };
   return (
-    <span className={`workspace-status-label workspace-status-label--${state} ${compact ? "is-compact" : ""}`} role={compact ? "img" : undefined} aria-label={compact ? labels[state] : undefined}>
+    <span className={`workspace-status-label workspace-status-label--${state} ${compact ? "is-compact" : ""}`} role={compact ? "img" : undefined} aria-label={compact ? STATUS_LABELS[state] : undefined}>
       <StatusDot state={state} />
-      {!compact && labels[state]}
+      {!compact && STATUS_LABELS[state]}
     </span>
   );
 }
 
 export function Surface({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <Layer as="section" className={`workspace-surface ${className}`}>{children}</Layer>;
+  return <section className={`workspace-surface ${className}`}>{children}</section>;
 }
+
 export function SummaryRow({ label, value, tone }: { label: string; value: string; tone?: "success" | "warning" }) {
   return <div className="workspace-summary-row"><span>{label}</span><strong className={tone ? `is-${tone}` : ""}>{value}</strong></div>;
 }
 
 /**
  * A copy control that answers back. `navigator.clipboard` is unavailable over
- * plain http and can be refused by the desktop shell, and the previous
- * fire-and-forget buttons looked identical whether the text landed or not, so
- * the outcome is announced next to a stable button name.
+ * plain http and can be refused by the desktop shell, so the outcome is
+ * announced next to a stable button name.
  */
 export function CopyButton({ text, label, className = "" }: { text: string; label: string; className?: string }) {
   const [result, setResult] = useState<"copied" | "failed" | null>(null);
@@ -200,9 +112,8 @@ export function CopyButton({ text, label, className = "" }: { text: string; labe
   };
   return (
     <span className={`workspace-copy ${className}`}>
-      <Button variant="quiet" onClick={copy} title={label}><Icon name="copy" size={15} />{label}</Button>
+      <Button variant="quiet" onClick={copy} title={label}><Icon name="copy" size={18} />{label}</Button>
       <span className="workspace-copy__state" role="status" aria-live="polite">{result === "copied" ? "已复制" : result === "failed" ? "复制失败，请手动选中复制" : ""}</span>
     </span>
   );
 }
-

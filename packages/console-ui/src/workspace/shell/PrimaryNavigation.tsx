@@ -34,10 +34,7 @@ export function settingsNavigation(capabilities: ReturnType<typeof useWorkspace>
   return capabilities.canControlNativeWindow ? desktopSettingsNav : webSettingsNav;
 }
 
-/**
- * One place decides which sections a client exposes, so the sidebar, the
- * compact settings switcher and the command panel can never disagree.
- */
+/** One place decides which sections a client exposes. */
 export function visibleSettingsNavigation(capabilities: ReturnType<typeof useWorkspace>["capabilities"]) {
   return settingsNavigation(capabilities).filter((item) => (item.id === "agent" ? capabilities.canManageLocalAgent : true));
 }
@@ -49,8 +46,8 @@ export function SettingsNavigation() {
     <nav className="workspace-sidebar__nav" aria-label="设置导航">
       <div className="workspace-sidebar__section-title">设置</div>
       {visibleSettings.map((item) => (
-        <M3NavigationItem className="workspace-nav-item" selected={route.kind === "settings" && route.section === item.id} key={item.id} onClick={() => navigate({ kind: "settings", section: item.id })} title={item.label}>
-          <Icon name={item.icon} /><span>{item.label}</span>
+        <M3NavigationItem className="workspace-nav-item" icon={<Icon name={item.icon} />} selected={route.kind === "settings" && route.section === item.id} key={item.id} onClick={() => navigate({ kind: "settings", section: item.id })} title={item.label}>
+          {item.label}
         </M3NavigationItem>
       ))}
     </nav>
@@ -73,15 +70,15 @@ export function PrimaryNavigation({ sidebarPeek, onSidebarLeave }: { sidebarPeek
       </div>
       {inSettings ? <SettingsNavigation /> : (
         <nav className="workspace-sidebar__nav" aria-label="设备控制台导航">
-          <M3NavigationItem className="workspace-nav-item" selected={route.kind === "overview"} onClick={() => navigate({ kind: "overview" })} title="总览"><Icon name="overview" /><span>总览</span></M3NavigationItem>
-          <M3NavigationItem className="workspace-nav-item" selected={route.kind === "devices" || route.kind === "device"} onClick={() => navigate({ kind: "devices" })} title="设备"><Icon name="device" /><span>设备</span></M3NavigationItem>
+          <M3NavigationItem className="workspace-nav-item" icon={<Icon name="overview" />} selected={route.kind === "overview"} onClick={() => navigate({ kind: "overview" })} title="总览">总览</M3NavigationItem>
+          <M3NavigationItem className="workspace-nav-item" icon={<Icon name="device" />} selected={route.kind === "devices" || route.kind === "device"} onClick={() => navigate({ kind: "devices" })} title="设备">设备</M3NavigationItem>
           <div className="workspace-sidebar__spacer" />
-          {capabilities.canManageLocalAgent && <M3NavigationItem className="workspace-nav-item" onClick={() => navigate({ kind: "settings", section: "agent" })} title="本机 Agent"><Icon name="agent" /><span>本机 Agent</span></M3NavigationItem>}
+          {capabilities.canManageLocalAgent && <M3NavigationItem className="workspace-nav-item" icon={<Icon name="agent" />} onClick={() => navigate({ kind: "settings", section: "agent" })} title="本机 Agent">本机 Agent</M3NavigationItem>}
         </nav>
       )}
       <div className="workspace-sidebar__footer">
-        {inSettings ? <M3NavigationItem className="workspace-nav-item" onClick={closeSettings} title="返回设备控制台"><Icon name="back" /><span>返回控制台</span></M3NavigationItem> : <M3NavigationItem className="workspace-nav-item" onClick={() => openSettings()} title="设置"><Icon name="settings" /><span>设置</span></M3NavigationItem>}
-        <M3Button className="workspace-sidebar__support" variant="text" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor/issues")} title="打开帮助与反馈"><span>帮助与反馈</span><Icon name="external" size={14} /></M3Button>
+        {inSettings ? <M3NavigationItem className="workspace-nav-item" icon={<Icon name="back" />} onClick={closeSettings} title="返回设备控制台">返回控制台</M3NavigationItem> : <M3NavigationItem className="workspace-nav-item" icon={<Icon name="settings" />} onClick={() => openSettings()} title="设置">设置</M3NavigationItem>}
+        <M3Button className="workspace-sidebar__support" variant="text" onClick={() => void openExternal("https://github.com/IGNGserver/guanlan-monitor/issues")} title="打开帮助与反馈"><span>帮助与反馈</span><Icon name="external" size={18} /></M3Button>
       </div>
     </aside>
   );

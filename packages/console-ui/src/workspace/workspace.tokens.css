@@ -1,115 +1,96 @@
+/* =============================================================================
+ * Workspace token bridge.
+ *
+ * The design system's single source of truth is `m3e/tokens.css` (--md-sys-*).
+ * This file re-points the older `--workspace-*` names at those tokens so the
+ * remaining layout stylesheets resolve to the Material 3 Expressive palette.
+ *
+ * It replaces the previous layer, which did the opposite: it re-pointed the M3
+ * names at Carbon's `--cds-*` variables and declared Carbon "the single source
+ * of truth for colour". Nothing here reads Carbon.
+ *
+ * The shape, elevation and radius aliases have been retired — every declaration
+ * now reads `--md-sys-shape-*` / `--md-sys-elevation-*` directly. What remains is
+ * still load-bearing: `window-material.css` overrides the `--workspace-surface*`
+ * family on `.m3e-theme` for Mica, and the density / breakpoint media queries
+ * override `--workspace-sidebar-width`, `--workspace-content-pad` and
+ * `--workspace-control-height`. Do not inline those without moving the override.
+ * ========================================================================== */
+
 :root {
-  /* Material 3 semantic roles. Existing workspace tokens below remain as compatibility aliases. */
-  --workspace-color-primary: #3d638f;
-  --workspace-color-on-primary: #ffffff;
-  --workspace-color-primary-container: #d4e4f8;
-  --workspace-color-on-primary-container: #244a74;
-  --workspace-color-secondary-container: #dce4ee;
-  --workspace-color-on-secondary-container: #3d4a5b;
-  --workspace-color-surface: #f4f4f4;
-  --workspace-color-surface-container-lowest: #ffffff;
-  --workspace-color-surface-container-low: #f3f6fa;
-  --workspace-color-surface-container: #edf1f6;
-  --workspace-color-surface-container-high: #e7ecf2;
-  --workspace-color-surface-container-highest: #e1e7ee;
-  --workspace-color-on-surface: #1a1c1e;
-  --workspace-color-on-surface-variant: #5d6269;
-  --workspace-color-outline: #747980;
-  --workspace-color-outline-variant: #c4c9d0;
-  --workspace-color-error: #ba1a1a;
-  --workspace-color-on-error: #ffffff;
-  --workspace-color-error-container: #ffdad6;
-  --workspace-color-success: #2f6a4f;
-  --workspace-color-success-container: #bceecf;
-  --workspace-color-warning: #765b00;
-  --workspace-color-warning-container: #ffe08b;
-  --workspace-color-info: #35618c;
-  --workspace-color-info-container: #d2e4ff;
-  --workspace-state-hover: 8%;
-  --workspace-state-pressed: 12%;
-  --workspace-min-touch-target: 44px;
-  --workspace-shape-extra-small: 4px;
-  --workspace-shape-small: 8px;
-  --workspace-shape-medium: 12px;
-  --workspace-shape-large: 16px;
-  --workspace-shape-extra-large: 28px;
-  --workspace-shape-full: 999px;
-  --workspace-elevation-1: 0 1px 3px rgb(30 48 67 / 10%);
-  /* Only floating layers (toasts, popovers) get a shadow. Carbon deliberately
-   * keeps tiles flat, so these are never applied to a card. */
-  --workspace-elevation-2: 0 4px 8px rgb(0 0 0 / 12%);
-  --workspace-elevation-3: 0 8px 16px rgb(0 0 0 / 16%);
-  --workspace-motion-standard: 180ms cubic-bezier(0.2, 0, 0, 1);
-  --workspace-motion-emphasized: 260ms cubic-bezier(0.2, 0, 0, 1);
-  /* Material 3 Expressive motion physics (springs converted to Web cubic-bezier) */
-  --m3-motion-spring-fast-spatial: 350ms cubic-bezier(0.42, 1.67, 0.21, 0.90);
-  --m3-motion-spring-default-spatial: 500ms cubic-bezier(0.38, 1.21, 0.22, 1.00);
-  --m3-motion-spring-slow-spatial: 650ms cubic-bezier(0.39, 1.29, 0.35, 0.98);
-  --m3-motion-spring-fast-effects: 150ms cubic-bezier(0.31, 0.94, 0.34, 1.00);
-  --m3-motion-spring-default-effects: 200ms cubic-bezier(0.34, 0.80, 0.34, 1.00);
-  --m3-motion-spring-slow-effects: 300ms cubic-bezier(0.34, 0.88, 0.34, 1.00);
-  --carbon-motion-productive: 120ms cubic-bezier(0.2, 0, 0.38, 0.9);
-  --carbon-motion-expressive: 240ms cubic-bezier(0, 0, 0.38, 0.9);
-  --workspace-bg: var(--workspace-color-surface);
-  --workspace-topbar: var(--workspace-color-surface);
-  --workspace-sidebar: var(--workspace-color-surface-container-low);
-  --workspace-surface: #ffffff;
-  --workspace-surface-subtle: #f4f4f4;
-  --workspace-surface-hover: #e5e5e5;
-  --workspace-surface-control: #ffffff;
-  --workspace-surface-popover: #ffffff;
-  --workspace-surface-modal: #ffffff;
-  --workspace-surface-foreground: #f4f4f4;
-  --workspace-surface-acrylic: #ffffff;
+  /* Colour roles */
+  --workspace-color-primary: var(--md-sys-color-primary);
+  --workspace-color-on-primary: var(--md-sys-color-on-primary);
+  --workspace-color-primary-container: var(--md-sys-color-primary-container);
+  --workspace-color-on-primary-container: var(--md-sys-color-on-primary-container);
+  --workspace-color-secondary-container: var(--md-sys-color-secondary-container);
+  --workspace-color-on-secondary-container: var(--md-sys-color-on-secondary-container);
+  --workspace-color-surface: var(--md-sys-color-surface);
+  --workspace-color-surface-container-lowest: var(--md-sys-color-surface-container-lowest);
+  --workspace-color-surface-container-low: var(--md-sys-color-surface-container-low);
+  --workspace-color-surface-container: var(--md-sys-color-surface-container);
+  --workspace-color-surface-container-high: var(--md-sys-color-surface-container-high);
+  --workspace-color-surface-container-highest: var(--md-sys-color-surface-container-highest);
+  --workspace-color-on-surface: var(--md-sys-color-on-surface);
+  --workspace-color-on-surface-variant: var(--md-sys-color-on-surface-variant);
+  --workspace-color-outline: var(--md-sys-color-outline);
+  --workspace-color-outline-variant: var(--md-sys-color-outline-variant);
+  --workspace-color-error: var(--md-sys-color-error);
+  --workspace-color-on-error: var(--md-sys-color-on-error);
+  --workspace-color-error-container: var(--md-sys-color-error-container);
+  --workspace-color-success: var(--md-sys-color-success);
+  --workspace-color-success-container: var(--md-sys-color-success-container);
+  --workspace-color-warning: var(--md-sys-color-warning);
+  --workspace-color-warning-container: var(--md-sys-color-warning-container);
+  --workspace-color-info: var(--md-sys-color-info);
+  --workspace-color-info-container: var(--md-sys-color-info-container);
+
+  --workspace-state-hover: var(--md-sys-state-hover-opacity);
+  --workspace-state-pressed: var(--md-sys-state-pressed-opacity);
+  --workspace-min-touch-target: var(--md-sys-layout-touch-target);
+
+  --workspace-motion-standard: var(--md-sys-motion-effects-default);
+  --workspace-motion-emphasized: var(--md-sys-motion-spatial-default);
+  --workspace-transition: var(--md-sys-motion-effects-default);
+
+  --workspace-bg: var(--md-sys-color-surface);
+  --workspace-topbar: var(--md-sys-color-surface);
+  --workspace-sidebar: var(--md-sys-color-surface-container-low);
+  --workspace-surface: var(--md-sys-color-surface-container-low);
+  --workspace-surface-subtle: var(--md-sys-color-surface-container);
+  --workspace-surface-hover: var(--md-sys-color-surface-container-high);
+  --workspace-surface-control: var(--md-sys-color-surface-container-high);
+  --workspace-surface-popover: var(--md-sys-color-surface-container-high);
+  --workspace-surface-modal: var(--md-sys-color-surface-container-high);
+  --workspace-surface-foreground: var(--md-sys-color-surface-container);
+  --workspace-surface-acrylic: var(--md-sys-color-surface-container);
   --workspace-acrylic-filter: none;
-  --workspace-surface-highlight: inset 0 1px 0 rgb(255 255 255 / 78%);
-  --workspace-scrim: rgb(0 0 0 / 50%);
-  --workspace-text: var(--workspace-color-on-surface);
-  --workspace-text-secondary: var(--workspace-color-on-surface-variant);
-  --workspace-text-muted: color-mix(in srgb, var(--workspace-color-on-surface-variant) 78%, var(--workspace-color-surface));
-  --workspace-border: var(--workspace-color-outline-variant);
-  --workspace-border-strong: var(--workspace-color-outline);
-  --workspace-accent: var(--workspace-color-primary);
-  --workspace-accent-strong: var(--workspace-color-on-primary-container);
-  --workspace-accent-soft: var(--workspace-color-primary-container);
-  --workspace-green: var(--workspace-color-success);
-  --workspace-green-soft: var(--workspace-color-success-container);
-  --workspace-amber: var(--workspace-color-warning);
-  --workspace-amber-soft: var(--workspace-color-warning-container);
-  --workspace-red: var(--workspace-color-error);
-  --workspace-red-soft: var(--workspace-color-error-container);
-  --workspace-purple: var(--workspace-color-info);
-  --workspace-purple-soft: var(--workspace-color-info-container);
-  --workspace-shadow: 0 4px 16px rgb(30 48 67 / 8%);
-  --workspace-shadow-soft: var(--workspace-elevation-1);
-  --workspace-radius-sm: var(--workspace-shape-small);
-  --workspace-radius-md: var(--workspace-shape-medium);
-  --workspace-radius-lg: var(--workspace-shape-large);
-  --workspace-sidebar-width: 262px;
-  --workspace-sidebar-rail-width: 76px;
-  --workspace-content-pad: 34px;
-  --workspace-control-height: 40px;
-  --workspace-transition: var(--workspace-motion-standard);
-  /* Height reserved for the sticky device-context bar. Three places need this
-   * number — the scroll-padding that keeps an anchored section below the bar,
-   * the IntersectionObserver root margin that decides which section is "current",
-   * and the bar's own rendered height. It used to be three separate magic
-   * numbers (76px / -72px / implicit) that had to be edited in lockstep. Named
-   * here so at least the CSS half has one owner; the observer reads the bar's
-   * measured height instead of a literal. */
-  --workspace-sticky-offset: 76px;
-  /* Spacing scale, owned here.
-   *
-   * 58 declarations used to read `var(--cds-spacing-02, 4px)` and friends.
-   * `@carbon/react`'s <Theme> emits *colour* roles as `--cds-*` custom
-   * properties; the layout spacing scale is not part of that emitted set, so
-   * every one of those references silently fell through to its hand-written
-   * pixel fallback. The values happened to match Carbon's published scale, so
-   * nothing looked wrong — but the indirection was decorative, and a future
-   * `--cds-spacing-04` appearing with a different value would have shifted 17
-   * declarations with no warning. Declaring the scale ourselves makes the
-   * number traceable to one place.
-   */
+  --workspace-surface-highlight: 0 0 0 0 transparent;
+  --workspace-scrim: var(--md-sys-color-scrim);
+  --workspace-text: var(--md-sys-color-on-surface);
+  --workspace-text-secondary: var(--md-sys-color-on-surface-variant);
+  --workspace-text-muted: var(--md-sys-color-on-surface-variant);
+  --workspace-border: var(--md-sys-color-outline-variant);
+  --workspace-border-strong: var(--md-sys-color-outline);
+  --workspace-accent: var(--md-sys-color-primary);
+  --workspace-accent-strong: var(--md-sys-color-primary);
+  --workspace-accent-soft: var(--md-sys-color-primary-container);
+  --workspace-green: var(--md-sys-color-success);
+  --workspace-green-soft: var(--md-sys-color-success-container);
+  --workspace-amber: var(--md-sys-color-warning);
+  --workspace-amber-soft: var(--md-sys-color-warning-container);
+  --workspace-red: var(--md-sys-color-error);
+  --workspace-red-soft: var(--md-sys-color-error-container);
+  --workspace-purple: var(--md-sys-color-info);
+  --workspace-purple-soft: var(--md-sys-color-info-container);
+  --workspace-shadow: var(--md-sys-elevation-1);
+  --workspace-shadow-soft: var(--md-sys-elevation-1);
+
+  --workspace-sidebar-width: var(--md-sys-layout-sidebar-expanded);
+  --workspace-sidebar-rail-width: var(--md-sys-layout-sidebar-rail);
+  --workspace-content-pad: var(--md-sys-layout-content-pad);
+  --workspace-control-height: var(--md-sys-density-control-height);
+
   --workspace-space-01: 2px;
   --workspace-space-02: 4px;
   --workspace-space-03: 8px;
@@ -117,301 +98,38 @@
   --workspace-space-05: 16px;
   --workspace-space-06: 24px;
   --workspace-space-07: 32px;
-  /* Stacking order, named. These used to be twelve bare integers spread over
-   * five files, which is how the drawer, its scrim and the bottom navigation
-   * ended up in a state where one of them could be visible and unclickable:
-   * the numbers were the only documentation of who covers whom, and they
-   * disagreed between breakpoints. Values are unchanged from before — this is
-   * a naming pass, not a re-order.
-   *
-   *   shell   <  window controls, edge swipe target
-   *   rail    <  sidebar peek overlay
-   *   anchor  <  in-page sticky jump bar
-   *   sticky  <  sticky device context bar
-   *   nav     <  fixed bottom navigation (phones)
-   *   scrim   <  drawer backdrop, resting
-   *   drawer  <  the drawer itself, resting
-   *   drawer-scrim / drawer-top  <  the same pair while `.is-sidebar-open`
-   *   toast   <  transient notices
-   *   progress <  the page-wide refresh line, always on top
-   */
-  --workspace-layer-shell: 5;
+
+  --workspace-sticky-offset: 76px;
+
+  --workspace-layer-shell: var(--md-sys-layer-shell);
   --workspace-layer-rail: 9;
   --workspace-layer-anchor: 10;
-  --workspace-layer-sticky: 12;
+  --workspace-layer-sticky: var(--md-sys-layer-sticky);
   --workspace-layer-nav: 22;
-  --workspace-layer-scrim: 18;
-  --workspace-layer-drawer: 25;
-  --workspace-layer-scrim-open: 28;
-  --workspace-layer-drawer-open: 30;
-  --workspace-layer-toast: 40;
-  --workspace-layer-progress: 45;
-}
-html[data-dsc-resolved-theme="dark"] {
-  color-scheme: dark;
-  --workspace-color-primary: #a8c9f5;
-  --workspace-color-on-primary: #123453;
-  --workspace-color-primary-container: #2d4b6b;
-  --workspace-color-on-primary-container: #d3e5ff;
-  --workspace-color-secondary-container: #3d4856;
-  --workspace-color-on-secondary-container: #dbe3ef;
-  --workspace-color-surface: #161616;
-  --workspace-color-surface-container-lowest: #000000;
-  --workspace-color-surface-container-low: #1c1c1c;
-  --workspace-color-surface-container: #262626;
-  --workspace-color-surface-container-high: #393939;
-  --workspace-color-surface-container-highest: #4c4c4c;
-  --workspace-color-on-surface: #f4f4f4;
-  --workspace-color-on-surface-variant: #c6c6c6;
-  --workspace-color-outline: #8d8d8d;
-  --workspace-color-outline-variant: #525252;
-  --workspace-color-error: #ffb4ab;
-  --workspace-color-on-error: #690005;
-  --workspace-color-error-container: #93000a;
-  --workspace-color-success: #9fd5b3;
-  --workspace-color-success-container: #214d36;
-  --workspace-color-warning: #e9c349;
-  --workspace-color-warning-container: #574600;
-  --workspace-color-info: #a8c8f4;
-  --workspace-color-info-container: #294a70;
-  --workspace-elevation-1: 0 2px 8px rgb(0 0 0 / 22%);
-  --workspace-elevation-2: 0 4px 10px rgb(0 0 0 / 34%);
-  --workspace-elevation-3: 0 10px 20px rgb(0 0 0 / 42%);
-  --workspace-bg: var(--workspace-color-surface);
-  --workspace-topbar: var(--workspace-color-surface);
-  --workspace-sidebar: var(--workspace-color-surface-container-low);
-  --workspace-surface: var(--workspace-color-surface-container);
-  --workspace-surface-subtle: var(--workspace-color-surface-container-low);
-  --workspace-surface-hover: #353535;
-  --workspace-surface-control: var(--workspace-color-surface-container-high);
-  --workspace-surface-popover: var(--workspace-color-surface-container);
-  --workspace-surface-modal: var(--workspace-color-surface-container);
-  --workspace-surface-foreground: var(--workspace-color-surface-container-low);
-  --workspace-surface-acrylic: var(--workspace-color-surface-container);
-  --workspace-acrylic-filter: none;
-  --workspace-surface-highlight: inset 0 1px 0 rgb(228 228 228 / 12%);
-  --workspace-scrim: rgb(0 0 0 / 60%);
-  --workspace-text: var(--workspace-color-on-surface);
-  --workspace-text-secondary: var(--workspace-color-on-surface-variant);
-  --workspace-text-muted: color-mix(in srgb, var(--workspace-color-on-surface-variant) 72%, var(--workspace-color-surface));
-  --workspace-border: var(--workspace-color-outline-variant);
-  --workspace-border-strong: var(--workspace-color-outline);
-  --workspace-accent: var(--workspace-color-primary);
-  --workspace-accent-strong: var(--workspace-color-on-primary-container);
-  --workspace-accent-soft: var(--workspace-color-primary-container);
-  --workspace-green: var(--workspace-color-success);
-  --workspace-green-soft: var(--workspace-color-success-container);
-  --workspace-amber: var(--workspace-color-warning);
-  --workspace-amber-soft: var(--workspace-color-warning-container);
-  --workspace-red: var(--workspace-color-error);
-  --workspace-red-soft: var(--workspace-color-error-container);
-  --workspace-purple: var(--workspace-color-info);
-  --workspace-purple-soft: var(--workspace-color-info-container);
-  --workspace-shadow: 0 8px 22px rgb(0 0 0 / 25%);
-  --workspace-shadow-soft: var(--workspace-elevation-1);
-}
-
-html[data-dsc-resolved-theme="dark"] .guanlan-carbon-theme {
-  --workspace-color-surface-container-lowest: #0f1318;
-  --workspace-color-surface-container-low: #171b22;
-  --workspace-color-surface-container: #1e232b;
-  --workspace-color-surface-container-high: #272e38;
-  --workspace-color-surface-container-highest: #333a46;
-  --workspace-elevation-1: 0 1px 3px rgba(0, 0, 0, 0.35);
-  --workspace-elevation-2: 0 3px 6px rgba(0, 0, 0, 0.45);
-  --workspace-elevation-3: 0 8px 16px rgba(0, 0, 0, 0.55);
+  --workspace-layer-scrim: var(--md-sys-layer-scrim);
+  --workspace-layer-drawer: var(--md-sys-layer-drawer);
+  --workspace-layer-scrim-open: var(--md-sys-layer-scrim-open);
+  --workspace-layer-drawer-open: var(--md-sys-layer-drawer-open);
+  --workspace-layer-toast: var(--md-sys-layer-toast);
+  --workspace-layer-progress: var(--md-sys-layer-progress);
 }
 
 html[data-dsc-density="compact"] {
   --workspace-control-height: 36px;
-  --workspace-sidebar-width: 248px;
-  --workspace-content-pad: 26px;
+  --workspace-sidebar-width: var(--md-sys-layout-sidebar-expanded);
+  --workspace-content-pad: var(--md-sys-layout-content-pad);
 }
 
-/* No `scrollbar-gutter` on `html`/`body`/`#root`: the console is a fixed,
- * full-viewport frame and these elements never scroll, so the declaration only
- * made the browser reserve a ~10px band that shrank the app and left a lighter
- * strip down the right edge (measured: a 1440px viewport produced a 1430px root).
- * The scroll containers below declare their own gutter. */
 html,
 body,
 #root {
-  background: var(--workspace-bg);
+  background: var(--md-sys-color-surface);
+}
+
+.m3e-theme {
+  min-height: 100%;
 }
 
 .workspace-content {
   scrollbar-gutter: stable;
-}
-
-* {
-  scrollbar-width: thin;
-}
-
-button,
-input,
-select {
-  color: inherit;
-}
-
-button {
-  border: 0;
-}
-
-/* Focus rings: keep this low-specificity on purpose.
- *
- * Carbon's own controls declare focus at class level (`.cds--btn:focus` is
- * `(0,2,0)`), so this `(0,1,1)` element rule loses to them wherever Carbon has
- * a focus style and only reaches the bare `<button>`/`<a>`/`<input>` the design
- * system does not cover — which is exactly the split we want.
- *
- * Do not "fix" a missing ring by escalating this to a class or `:is(...)`
- * selector: at `(0,2,1)` it starts outranking Carbon's own focus rules again
- * and you get two nested rings on every Carbon control. The colour used to be
- * `--workspace-accent` from the Material palette, which is why focused Carbon
- * buttons ringed in a different blue than the rest of the control; the palette
- * mapping at the bottom of this file now resolves it to `--cds-interactive`.
- */
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-a[href]:focus-visible,
-[role="button"]:focus-visible,
-[role="option"]:focus-visible {
-  outline: 2px solid var(--workspace-accent);
-  outline-offset: 2px;
-}
-
-/* Text selection.
- *
- * Carbon's `$selection` is a Sass colour, not one of the custom properties its
- * <Theme> component emits, so `var(--cds-selection, …)` would always have used
- * the fallback. The literals are Carbon's published values for each theme —
- * g10 `$selection` and g100 `$selection` — written directly rather than behind
- * a name that never resolves.
- */
-::selection {
-  background: #a6c8ff;
-  color: #161616;
-}
-
-html[data-dsc-resolved-theme="dark"] ::selection {
-  background: #0043ce;
-  color: #f4f4f4;
-}
-
-/* ---------------------------------------------------------------------------
- * Carbon is the single source of truth for colour inside the console.
-
- * The `--workspace-*` names above are kept only because ~450 declarations in
- * the older stylesheets still read them. This block re-points them at the
- * `--cds-*` tokens that Carbon's <Theme> puts on `.guanlan-carbon-theme`, so a
- * rule written against the Material palette and a rule written against Carbon
- * now resolve to the same colour in both themes.
- *
- * The aliases have to be re-declared here, not just the `--workspace-color-*`
- * base roles: a `var()` inside a custom-property declaration is substituted at
- * computed-value time on the element that declares it, so `--workspace-text`
- * would otherwise keep the value it computed on `:root` and inherit that into
- * the wrapper. Without this the palette swap would be invisible to everything
- * that matters.
- *
- * `--workspace-surface-subtle` and `--workspace-surface-hover` are deliberately
- * absent: they are the two roles `window-material.css` owns so the desktop
- * Mica/Acrylic settings can make surfaces translucent. `window-material.css` is
- * the last layer and now re-declares them on this same element, so anything set
- * here would be dead weight — and setting them would have silently disabled
- * material on the desktop build.
- * ------------------------------------------------------------------------ */
-.guanlan-carbon-theme {
-  --workspace-color-primary: var(--cds-link-primary, #0f62fe);
-  --workspace-color-on-primary: var(--cds-text-on-color, #ffffff);
-  --workspace-color-primary-container: var(--cds-highlight, #d0e2ff);
-  --workspace-color-on-primary-container: var(--cds-link-primary, #0f62fe);
-  --workspace-color-secondary-container: var(--cds-layer-02, #e5e5e5);
-  --workspace-color-on-secondary-container: var(--cds-text-primary, #161616);
-  --workspace-color-surface: var(--cds-background, #f4f4f4);
-  --workspace-color-surface-container-lowest: #ffffff;
-  --workspace-color-surface-container-low: #f8fafc;
-  --workspace-color-surface-container: #f1f4f9;
-  --workspace-color-surface-container-high: #e9eef5;
-  --workspace-color-surface-container-highest: #e0e7f1;
-  --workspace-color-on-surface: var(--cds-text-primary, #161616);
-  --workspace-color-on-surface-variant: var(--cds-text-secondary, #525252);
-  --workspace-color-outline: var(--cds-border-strong, #8d8d8d);
-  --workspace-color-outline-variant: var(--cds-border-subtle-00, #e0e0e0);
-  --workspace-color-error: var(--cds-support-error, #da1e28);
-  --workspace-color-on-error: var(--cds-text-on-color, #ffffff);
-  --workspace-color-success: var(--cds-support-success, #24a148);
-  --workspace-color-warning: var(--cds-support-warning, #f1c21b);
-  --workspace-color-info: var(--cds-support-info, #0043ce);
-  /* Tinted containers are mixed from the Carbon support colour over the
-   * current layer, so they follow the theme instead of a hand-picked hex. */
-  --workspace-color-error-container: color-mix(in srgb, var(--cds-support-error, #da1e28) 12%, var(--cds-layer-01, #ffffff));
-  --workspace-color-success-container: color-mix(in srgb, var(--cds-support-success, #24a148) 14%, var(--cds-layer-01, #ffffff));
-  --workspace-color-warning-container: color-mix(in srgb, var(--cds-support-warning, #f1c21b) 22%, var(--cds-layer-01, #ffffff));
-  --workspace-color-info-container: color-mix(in srgb, var(--cds-support-info, #0043ce) 12%, var(--cds-layer-01, #ffffff));
-
-  --workspace-bg: var(--cds-background, #f4f4f4);
-  --workspace-topbar: var(--cds-background, #f4f4f4);
-  --workspace-sidebar: var(--cds-layer-01, #ffffff);
-  --workspace-surface: var(--cds-layer-01, #ffffff);
-  --workspace-surface-control: var(--cds-field, #f4f4f4);
-  --workspace-surface-popover: var(--cds-layer-02, #e5e5e5);
-  --workspace-surface-modal: var(--cds-layer-01, #ffffff);
-  --workspace-surface-foreground: var(--cds-layer-01, #ffffff);
-  --workspace-surface-acrylic: var(--cds-background, #f4f4f4);
-  /* A literal `none` here breaks every rule that composes the two, e.g.
-     `box-shadow: var(--workspace-shadow), var(--workspace-surface-highlight)` —
-     `none` is only legal as a whole value, so the entire declaration would go
-     invalid at computed-value time and the element would lose the shadow it was
-     meant to keep. A transparent zero-offset shadow composes and still paints
-     nothing. */
-  --workspace-shadow: 0 0 0 0 transparent;
-  --workspace-shadow-soft: 0 0 0 0 transparent;
-  --workspace-surface-highlight: 0 0 0 0 transparent;
-  --workspace-scrim: var(--cds-overlay, rgb(0 0 0 / 50%));
-  --workspace-text: var(--cds-text-primary, #161616);
-  --workspace-text-secondary: var(--cds-text-secondary, #525252);
-  --workspace-text-muted: var(--cds-text-helper, #6f6f6f);
-  --workspace-border: var(--cds-border-subtle-00, #e0e0e0);
-  --workspace-border-strong: var(--cds-border-strong, #8d8d8d);
-  --workspace-accent: var(--cds-interactive, #0f62fe);
-  --workspace-accent-strong: var(--cds-link-primary, #0f62fe);
-  --workspace-accent-soft: var(--cds-highlight, #d0e2ff);
-  --workspace-green: var(--cds-support-success, #24a148);
-  --workspace-green-soft: var(--workspace-color-success-container);
-  --workspace-amber: var(--cds-support-warning, #f1c21b);
-  --workspace-amber-soft: var(--workspace-color-warning-container);
-  --workspace-red: var(--cds-support-error, #da1e28);
-  --workspace-red-soft: var(--workspace-color-error-container);
-  --workspace-purple: var(--cds-support-info, #0043ce);
-  --workspace-purple-soft: var(--workspace-color-info-container);
-  /* Material 3 Expressive Elevation shadows */
-  --workspace-elevation-1: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.05);
-  --workspace-elevation-2: 0 3px 6px rgba(0, 0, 0, 0.10), 0 2px 4px rgba(0, 0, 0, 0.06);
-  --workspace-elevation-3: 0 8px 16px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.08);
-  --workspace-elevation-4: 0 12px 24px rgba(0, 0, 0, 0.14), 0 6px 12px rgba(0, 0, 0, 0.10);
-  --workspace-elevation-5: 0 16px 32px rgba(0, 0, 0, 0.16), 0 8px 16px rgba(0, 0, 0, 0.12);
-  --workspace-shadow: var(--workspace-elevation-1);
-  --workspace-shadow-soft: var(--workspace-elevation-1);
-
-  /* Inherited, so declaring it on the wrapper colours every scrollbar inside it
-     against the current theme. This used to be a `*` rule reading the Material
-     outline token, which in the dark theme was a mid-grey that disappeared
-     against Carbon's #262626 layers. */
-  scrollbar-color: var(--cds-border-strong, #8d8d8d) transparent;
-
-  /* Material 3 Expressive Shape scale */
-  --workspace-shape-none: 0px;
-  --workspace-shape-extra-small: 4px;
-  --workspace-shape-small: 8px;
-  --workspace-shape-medium: 12px;
-  --workspace-shape-large: 16px;
-  --workspace-shape-extra-large: 24px;
-  --workspace-shape-full: 9999px;
-  --workspace-radius-sm: var(--workspace-shape-small);
-  --workspace-radius-md: var(--workspace-shape-medium);
-  --workspace-radius-lg: var(--workspace-shape-large);
-  --workspace-radius-xl: var(--workspace-shape-extra-large);
-  --workspace-radius-full: var(--workspace-shape-full);
 }

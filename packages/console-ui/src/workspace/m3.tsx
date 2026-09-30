@@ -1,277 +1,56 @@
-import React, { useId } from "react";
-import {
-  Button as CarbonButton,
-  Checkbox,
-  ContentSwitcher,
-  IconButton as CarbonIconButton,
-  Select,
-  SelectItem,
-  Switch as CarbonSwitch,
-  TextInput,
-  Toggle
-} from "@carbon/react";
+/**
+ * Workspace-facing alias for the Material 3 Expressive primitives.
+ *
+ * This module used to wrap `@carbon/react` (`CarbonButton`, `ContentSwitcher`,
+ * `Toggle`, `TextInput`, …). It now simply re-exports the native M3E controls so
+ * the workspace keeps one import path while no Carbon code remains.
+ */
+export {
+  M3Button,
+  M3Fab,
+  M3IconButton,
+  M3Chip,
+  M3NavigationItem,
+  M3SegmentedControl,
+  M3Switch,
+  M3Checkbox,
+  M3TextField,
+  M3Select,
+  M3SearchBar,
+  M3Tabs,
+  M3Card,
+  M3List,
+  M3ListItem,
+  M3LinearProgress,
+  M3Badge,
+  M3Dialog,
+  M3Banner,
+  M3Snackbar,
+  M3DataTable,
+  useRipple
+} from "../m3e/primitives";
 
-function joinClasses(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
-}
-
-export type M3ButtonVariant = "filled" | "tonal" | "outlined" | "text" | "danger";
-
-export interface M3ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: M3ButtonVariant;
-  leadingIcon?: React.ReactNode;
-  trailingIcon?: React.ReactNode;
-}
-
-function buttonKind(variant: M3ButtonVariant): "primary" | "secondary" | "danger" | "ghost" | "tertiary" {
-  switch (variant) {
-    case "tonal":
-      return "secondary";
-    case "outlined":
-      return "tertiary";
-    case "text":
-      return "ghost";
-    case "danger":
-      return "danger";
-    default:
-      return "primary";
-  }
-}
-
-export function M3Button({
-  children,
-  className,
-  variant = "filled",
-  leadingIcon,
-  trailingIcon,
-  type = "button",
-  ...props
-}: M3ButtonProps) {
-  return (
-    <CarbonButton className={joinClasses("m3-button", `m3-button--${variant}`, className)} kind={buttonKind(variant)} type={type} {...props}>
-      {leadingIcon && <span className="m3-button__icon" aria-hidden="true">{leadingIcon}</span>}
-      <span className="m3-button__label">{children}</span>
-      {trailingIcon && <span className="m3-button__icon" aria-hidden="true">{trailingIcon}</span>}
-    </CarbonButton>
-  );
-}
-
-export interface M3IconButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children" | "aria-label" | "aria-pressed" | "title"> {
-  label: string;
-  children: React.ReactNode;
-  selected?: boolean;
-  variant?: "standard" | "tonal" | "filled";
-}
-
-export function M3IconButton({ label, children, className, selected, variant = "standard", type = "button", ...props }: M3IconButtonProps) {
-  const kind = variant === "filled" ? "primary" : variant === "tonal" ? "secondary" : "ghost";
-  return (
-    <CarbonIconButton
-      className={joinClasses("m3-icon-button", `m3-icon-button--${variant}`, className)}
-      kind={kind}
-      type={type}
-      label={label}
-      {...(selected === undefined ? {} : { isSelected: selected })}
-      {...props}
-    >
-      {children}
-    </CarbonIconButton>
-  );
-}
-
-export interface M3NavigationItemProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children" | "aria-current"> {
-  children: React.ReactNode;
-  selected?: boolean;
-}
-
-export function M3NavigationItem({ children, className, selected = false, type = "button", ...props }: M3NavigationItemProps) {
-  return (
-    <CarbonButton
-      className={joinClasses("m3-navigation-item", selected && "is-selected", className)}
-      kind="ghost"
-      size="md"
-      type={type}
-      aria-current={selected ? "page" : undefined}
-      {...props}
-    >
-      {children}
-    </CarbonButton>
-  );
-}
-
-export interface M3ChipProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "aria-pressed"> {
-  leadingIcon?: React.ReactNode;
-  selected?: boolean;
-}
-
-export function M3Chip({ children, className, leadingIcon, selected, type = "button", ...props }: M3ChipProps) {
-  return (
-    <CarbonButton
-      className={joinClasses("m3-chip", selected && "is-selected", className)}
-      kind={selected ? "secondary" : "ghost"}
-      size="sm"
-      type={type}
-      aria-pressed={selected}
-      {...props}
-    >
-      {leadingIcon && <span className="m3-chip__icon" aria-hidden="true">{leadingIcon}</span>}
-      <span>{children}</span>
-    </CarbonButton>
-  );
-}
-
-export interface M3SegmentedOption {
-  value: string;
-  label: React.ReactNode;
-  disabled?: boolean;
-}
-
-export interface M3SegmentedControlProps {
-  options: M3SegmentedOption[];
-  value: string;
-  onChange: (value: string) => void;
-  "aria-label": string;
-  disabled?: boolean;
-  className?: string;
-}
-
-export function M3SegmentedControl({ options, value, onChange, className, disabled = false, "aria-label": ariaLabel }: M3SegmentedControlProps) {
-  const selectedIndex = Math.max(0, options.findIndex((option) => option.value === value));
-  return (
-    <ContentSwitcher
-      className={joinClasses("m3-segmented-control", className)}
-      aria-label={ariaLabel}
-      selectedIndex={selectedIndex}
-      selectionMode="manual"
-      size="sm"
-      onChange={({ index }) => {
-        if (index == null || options[index]?.disabled || disabled) return;
-        onChange(options[index].value);
-      }}
-    >
-      {options.map((option) => (
-        <CarbonSwitch
-          key={option.value}
-          disabled={disabled || option.disabled}
-          text={typeof option.label === "string" ? option.label : option.value}
-        />
-      ))}
-    </ContentSwitcher>
-  );
-}
-
-export interface M3TextFieldProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "defaultValue" | "id" | "onClick" | "size" | "value"> {
-  label: string;
-  supportingText?: React.ReactNode;
-  errorText?: React.ReactNode;
-  id?: string;
-  defaultValue?: string | number;
-  value?: string | number;
-  onClick?: React.MouseEventHandler<HTMLElement>;
-}
-
-export function M3TextField({ label, supportingText, errorText, id, className, defaultValue, value, ...props }: M3TextFieldProps) {
-  const generatedId = useId();
-  const inputId = id ?? generatedId;
-  const hasError = Boolean(errorText);
-  return (
-    <TextInput
-      {...props}
-      defaultValue={defaultValue}
-      value={value}
-      id={inputId}
-      className={joinClasses("m3-field", className)}
-      labelText={label}
-      helperText={supportingText}
-      invalid={hasError}
-      invalidText={errorText}
-      size="md"
-    />
-  );
-}
-
-export interface M3SelectOption {
-  value: string;
-  label: React.ReactNode;
-  disabled?: boolean;
-}
-
-export interface M3SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, "size"> {
-  label: string;
-  options: M3SelectOption[];
-  hideLabel?: boolean;
-  selectClassName?: string;
-}
-
-export function M3Select({ label, options, hideLabel = false, selectClassName, id, className, ...props }: M3SelectProps) {
-  const generatedId = useId();
-  const selectId = id ?? generatedId;
-  return (
-    <Select
-      {...props}
-      id={selectId}
-      className={joinClasses("m3-select", className, selectClassName)}
-      labelText={label}
-      hideLabel={hideLabel}
-      size="md"
-    >
-      {options.map((option) => <SelectItem key={option.value} value={option.value} text={typeof option.label === "string" ? option.label : option.value} disabled={option.disabled} />)}
-    </Select>
-  );
-}
-
-export interface M3CheckboxProps {
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
-  label: string;
-  description?: React.ReactNode;
-  disabled?: boolean;
-  compact?: boolean;
-  className?: string;
-  title?: string;
-}
-
-export function M3Checkbox({ checked, onCheckedChange, label, description, disabled = false, compact = false, className, title }: M3CheckboxProps) {
-  const id = useId();
-  return (
-    <Checkbox
-      id={id}
-      className={joinClasses("m3-checkbox", compact && "m3-checkbox--compact", className)}
-      checked={checked}
-      disabled={disabled}
-      labelText={label}
-      helperText={description}
-      title={title}
-      onChange={(_, data) => onCheckedChange(data.checked)}
-    />
-  );
-}
-
-export interface M3SwitchProps {
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
-  label: string;
-  description?: React.ReactNode;
-  disabled?: boolean;
-  compact?: boolean;
-  className?: string;
-}
-
-export function M3Switch({ checked, onCheckedChange, label, description, disabled = false, compact = false, className }: M3SwitchProps) {
-  const id = useId();
-  return (
-    <div className={joinClasses("m3-switch-row", compact && "m3-switch-row--compact", disabled && "is-disabled", className)}>
-      {!compact && <div className="m3-switch-row__copy"><span className="m3-switch-row__label">{label}</span>{description && <span className="m3-switch-row__description">{description}</span>}</div>}
-      <Toggle
-        id={id}
-        className="m3-switch"
-        labelText={label}
-        hideLabel={compact}
-        size={compact ? "sm" : "md"}
-        toggled={checked}
-        disabled={disabled}
-        onToggle={onCheckedChange}
-      />
-    </div>
-  );
-}
+export type {
+  M3ButtonProps,
+  M3ButtonVariant,
+  M3ButtonSize,
+  M3FabProps,
+  M3IconButtonProps,
+  M3ChipProps,
+  M3NavigationItemProps,
+  M3SegmentedControlProps,
+  M3SegmentedOption,
+  M3SwitchProps,
+  M3CheckboxProps,
+  M3TextFieldProps,
+  M3SelectProps,
+  M3SelectOption,
+  M3SearchBarProps,
+  M3TabsProps,
+  M3TabItem,
+  M3CardProps,
+  M3ListItemProps,
+  M3DialogProps,
+  M3DataTableProps,
+  M3DataTableColumn
+} from "../m3e/primitives";

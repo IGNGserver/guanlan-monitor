@@ -40,14 +40,25 @@ const forbiddenPatterns = [
   { pattern: /--accent-cyan\b/, reason: "Reference to old CSS token --accent-cyan" },
   { pattern: /--accent-purple\b/, reason: "Reference to old CSS token --accent-purple" },
   { pattern: /--bg-card\b/, reason: "Reference to old CSS token --bg-card" },
-  { pattern: /--bg-sidebar\b/, reason: "Reference to old CSS token --bg-sidebar" }
+  { pattern: /--bg-sidebar\b/, reason: "Reference to old CSS token --bg-sidebar" },
+
+  // The frontend is Material 3 Expressive only. Carbon must not return.
+  { pattern: /@carbon\b/, reason: "Carbon import remains in the M3E frontend" },
+  { pattern: /cds--/, reason: "Carbon class name remains in the M3E frontend" },
+  { pattern: /--cds-/, reason: "Carbon token remains in the M3E frontend" },
+  { pattern: /guanlan-carbon/, reason: "Carbon theme wrapper remains in the M3E frontend" }
 ];
 
 const activeRendererPatterns = [
   { pattern: /LegacyApp|isLegacyModeRequested|dsc_legacy_ui|legacy-active/, reason: "Legacy renderer switch remains reachable" },
   { pattern: /ConsoleProvider|useConsole|OverviewCards|TrafficCalendarView|InstanceDetailView|LocalConfigView/, reason: "Old renderer surface remains reachable" },
   // Emoji belong in content, not in the desktop control surface. Icons are inline SVG paths.
-  { pattern: /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, reason: "Emoji found in active desktop UI" }
+  { pattern: /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, reason: "Emoji found in active desktop UI" },
+  // Carbon must not return to the workspace either.
+  { pattern: /@carbon\b/, reason: "Carbon import remains in the M3E frontend" },
+  { pattern: /cds--/, reason: "Carbon class name remains in the M3E frontend" },
+  { pattern: /--cds-/, reason: "Carbon token remains in the M3E frontend" },
+  { pattern: /guanlan-carbon/, reason: "Carbon theme wrapper remains in the M3E frontend" }
 ];
 
 let scannedCount = 0;

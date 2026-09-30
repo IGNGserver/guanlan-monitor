@@ -22,8 +22,6 @@
     "test:ui-helpers": "node --test src/helpers/layout.test.ts"
   },
   "dependencies": {
-    "@carbon/charts-react": "1.27.20",
-    "@carbon/react": "1.116.0",
     "@dsc/shared": "workspace:*",
     "clsx": "^2.1.1",
     "react": "19.1.1",

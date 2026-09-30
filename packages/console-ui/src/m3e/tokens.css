@@ -1,0 +1,389 @@
+/* =============================================================================
+ * 观澜 Material 3 Expressive — 设计令牌（唯一来源）
+ *
+ * 这里没有 Carbon。色彩来自源色生成的 tonal palette，形状/海拔/动效/排版全部
+ * 按 Material 3 Expressive 规范取值。组件不得自带颜色、圆角、时长或字号，
+ * 只能消费下面这些 --md-sys-* 角色。
+ *
+ * 主题由 html[data-dsc-resolved-theme="light|dark"] 驱动；
+ * 指针密度由 html[data-dsc-density="compact|comfortable|touch"] 驱动；
+ * 窗口材质由 html[data-dsc-material="opaque|mica"] 驱动（见 window-material.css）。
+ * ========================================================================== */
+
+:root {
+  /* ---- Shape scale ------------------------------------------------------ */
+  --md-sys-shape-none: 0;
+  --md-sys-shape-xs: 4px;
+  --md-sys-shape-sm: 8px;
+  --md-sys-shape-md: 12px;
+  --md-sys-shape-lg: 16px;
+  --md-sys-shape-lg-increased: 20px;
+  --md-sys-shape-xl: 28px;
+  --md-sys-shape-xxl: 32px;
+  --md-sys-shape-full: 9999px;
+
+  /* ---- Elevation -------------------------------------------------------- */
+  --md-sys-elevation-0: none;
+  --md-sys-elevation-1: 0 1px 2px rgb(0 0 0 / 30%), 0 1px 3px 1px rgb(0 0 0 / 15%);
+  --md-sys-elevation-2: 0 1px 2px rgb(0 0 0 / 30%), 0 2px 6px 2px rgb(0 0 0 / 15%);
+  --md-sys-elevation-3: 0 1px 3px rgb(0 0 0 / 30%), 0 4px 8px 3px rgb(0 0 0 / 15%);
+  --md-sys-elevation-4: 0 2px 3px rgb(0 0 0 / 30%), 0 6px 10px 4px rgb(0 0 0 / 15%);
+  --md-sys-elevation-5: 0 4px 4px rgb(0 0 0 / 30%), 0 8px 12px 6px rgb(0 0 0 / 15%);
+
+  /* ---- Motion (spring physics expressed as web timing) ------------------ */
+  --md-sys-motion-spatial-fast: 350ms cubic-bezier(0.42, 1.67, 0.21, 0.9);
+  --md-sys-motion-spatial-default: 500ms cubic-bezier(0.38, 1.21, 0.22, 1);
+  --md-sys-motion-spatial-slow: 650ms cubic-bezier(0.39, 1.29, 0.35, 0.98);
+  --md-sys-motion-effects-fast: 150ms cubic-bezier(0.31, 0.94, 0.34, 1);
+  --md-sys-motion-effects-default: 200ms cubic-bezier(0.34, 0.8, 0.34, 1);
+  --md-sys-motion-effects-slow: 300ms cubic-bezier(0.34, 0.88, 0.34, 1);
+  --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --md-sys-motion-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---- State layer ------------------------------------------------------ */
+  --md-sys-state-hover-opacity: 0.08;
+  --md-sys-state-focus-opacity: 0.1;
+  --md-sys-state-pressed-opacity: 0.1;
+  --md-sys-state-dragged-opacity: 0.16;
+  --md-sys-state-disabled-opacity: 0.38;
+  --md-sys-state-disabled-container-opacity: 0.12;
+
+  /* ---- Spacing (4dp rhythm) -------------------------------------------- */
+  --md-sys-space-0: 0;
+  --md-sys-space-1: 4px;
+  --md-sys-space-2: 8px;
+  --md-sys-space-3: 12px;
+  --md-sys-space-4: 16px;
+  --md-sys-space-5: 20px;
+  --md-sys-space-6: 24px;
+  --md-sys-space-7: 32px;
+  --md-sys-space-8: 40px;
+  --md-sys-space-9: 48px;
+  --md-sys-space-10: 56px;
+  --md-sys-space-12: 72px;
+
+  /* ---- Type scale ------------------------------------------------------- */
+  --md-sys-typescale-display-l-size: 57px;
+  --md-sys-typescale-display-l-line: 64px;
+  --md-sys-typescale-display-l-weight: 400;
+  --md-sys-typescale-display-l-tracking: -0.25px;
+  --md-sys-typescale-headline-l-size: 32px;
+  --md-sys-typescale-headline-l-line: 40px;
+  --md-sys-typescale-headline-l-weight: 400;
+  --md-sys-typescale-headline-l-tracking: 0;
+  --md-sys-typescale-headline-m-size: 28px;
+  --md-sys-typescale-headline-m-line: 36px;
+  --md-sys-typescale-headline-m-weight: 400;
+  --md-sys-typescale-headline-m-tracking: 0;
+  --md-sys-typescale-headline-s-size: 24px;
+  --md-sys-typescale-headline-s-line: 32px;
+  --md-sys-typescale-headline-s-weight: 400;
+  --md-sys-typescale-headline-s-tracking: 0;
+  --md-sys-typescale-title-l-size: 22px;
+  --md-sys-typescale-title-l-line: 28px;
+  --md-sys-typescale-title-l-weight: 400;
+  --md-sys-typescale-title-l-tracking: 0;
+  --md-sys-typescale-title-m-size: 16px;
+  --md-sys-typescale-title-m-line: 24px;
+  --md-sys-typescale-title-m-weight: 500;
+  --md-sys-typescale-title-m-tracking: 0.15px;
+  --md-sys-typescale-title-s-size: 14px;
+  --md-sys-typescale-title-s-line: 20px;
+  --md-sys-typescale-title-s-weight: 500;
+  --md-sys-typescale-title-s-tracking: 0.1px;
+  --md-sys-typescale-body-l-size: 16px;
+  --md-sys-typescale-body-l-line: 24px;
+  --md-sys-typescale-body-l-weight: 400;
+  --md-sys-typescale-body-l-tracking: 0.5px;
+  --md-sys-typescale-body-m-size: 14px;
+  --md-sys-typescale-body-m-line: 20px;
+  --md-sys-typescale-body-m-weight: 400;
+  --md-sys-typescale-body-m-tracking: 0.25px;
+  --md-sys-typescale-body-s-size: 12px;
+  --md-sys-typescale-body-s-line: 16px;
+  --md-sys-typescale-body-s-weight: 400;
+  --md-sys-typescale-body-s-tracking: 0.4px;
+  --md-sys-typescale-label-l-size: 14px;
+  --md-sys-typescale-label-l-line: 20px;
+  --md-sys-typescale-label-l-weight: 500;
+  --md-sys-typescale-label-l-tracking: 0.1px;
+  --md-sys-typescale-label-m-size: 12px;
+  --md-sys-typescale-label-m-line: 16px;
+  --md-sys-typescale-label-m-weight: 500;
+  --md-sys-typescale-label-m-tracking: 0.5px;
+  --md-sys-typescale-label-s-size: 11px;
+  --md-sys-typescale-label-s-line: 16px;
+  --md-sys-typescale-label-s-weight: 500;
+  --md-sys-typescale-label-s-tracking: 0.5px;
+
+  /* ---- Font families ---------------------------------------------------- */
+  --md-sys-font-brand: "Roboto Flex", "Roboto", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
+  --md-sys-font-mono: "Roboto Mono", "SFMono-Regular", "Cascadia Mono", Consolas, "Noto Sans Mono CJK SC", monospace;
+
+  /* ---- Layout metrics --------------------------------------------------- */
+  --md-sys-layout-sidebar-expanded: 320px;
+  --md-sys-layout-sidebar-rail: 88px;
+  --md-sys-layout-content-max: 1440px;
+  --md-sys-layout-content-pad: 32px;
+  --md-sys-layout-touch-target: 48px;
+  --md-sys-layout-chrome-height: 40px;
+
+  /* ---- Stacking order, named ------------------------------------------- */
+  --md-sys-layer-shell: 5;
+  --md-sys-layer-sticky: 12;
+  --md-sys-layer-drawer: 25;
+  --md-sys-layer-scrim: 18;
+  --md-sys-layer-scrim-open: 28;
+  --md-sys-layer-drawer-open: 30;
+  --md-sys-layer-toast: 40;
+  --md-sys-layer-progress: 45;
+  --md-sys-layer-dialog: 50;
+}
+
+/* =============================================================================
+ * Light scheme — tonal palette derived from seed #3B6088 (观澜蓝)
+ * ========================================================================== */
+:root,
+html[data-dsc-resolved-theme="light"] {
+  color-scheme: light;
+
+  --md-ref-palette-primary-0: #000000;
+  --md-ref-palette-primary-10: #001c38;
+  --md-ref-palette-primary-20: #00315b;
+  --md-ref-palette-primary-30: #00497f;
+  --md-ref-palette-primary-40: #1a61a4;
+  --md-ref-palette-primary-50: #3b7abe;
+  --md-ref-palette-primary-60: #5794d8;
+  --md-ref-palette-primary-70: #76afef;
+  --md-ref-palette-primary-80: #a3c9ff;
+  --md-ref-palette-primary-90: #d3e4ff;
+  --md-ref-palette-primary-95: #eaf1ff;
+  --md-ref-palette-primary-99: #fcfcff;
+  --md-ref-palette-primary-100: #ffffff;
+
+  --md-ref-palette-secondary-10: #111c28;
+  --md-ref-palette-secondary-20: #26313d;
+  --md-ref-palette-secondary-30: #3d4854;
+  --md-ref-palette-secondary-40: #54606c;
+  --md-ref-palette-secondary-80: #bcc8d6;
+  --md-ref-palette-secondary-90: #d8e4f2;
+  --md-ref-palette-secondary-100: #ffffff;
+
+  --md-ref-palette-tertiary-10: #1c1a30;
+  --md-ref-palette-tertiary-20: #322f46;
+  --md-ref-palette-tertiary-30: #48455e;
+  --md-ref-palette-tertiary-40: #605d76;
+  --md-ref-palette-tertiary-80: #cac4dd;
+  --md-ref-palette-tertiary-90: #e6e0f9;
+  --md-ref-palette-tertiary-100: #ffffff;
+
+  --md-ref-palette-neutral-0: #000000;
+  --md-ref-palette-neutral-4: #0b0f14;
+  --md-ref-palette-neutral-6: #101418;
+  --md-ref-palette-neutral-10: #191c20;
+  --md-ref-palette-neutral-12: #1d2024;
+  --md-ref-palette-neutral-17: #272a2f;
+  --md-ref-palette-neutral-20: #2f3033;
+  --md-ref-palette-neutral-22: #33363b;
+  --md-ref-palette-neutral-24: #373a3f;
+  --md-ref-palette-neutral-30: #44474e;
+  --md-ref-palette-neutral-40: #5c5f66;
+  --md-ref-palette-neutral-50: #74777f;
+  --md-ref-palette-neutral-60: #8e9098;
+  --md-ref-palette-neutral-70: #a9aab2;
+  --md-ref-palette-neutral-80: #c4c6cf;
+  --md-ref-palette-neutral-87: #d9dbe3;
+  --md-ref-palette-neutral-90: #e1e2e9;
+  --md-ref-palette-neutral-92: #e6e8ee;
+  --md-ref-palette-neutral-94: #ecedf3;
+  --md-ref-palette-neutral-96: #f1f3f9;
+  --md-ref-palette-neutral-98: #f8f9ff;
+  --md-ref-palette-neutral-99: #fcfcff;
+  --md-ref-palette-neutral-100: #ffffff;
+
+  --md-ref-palette-neutral-variant-30: #45474c;
+  --md-ref-palette-neutral-variant-50: #76787d;
+  --md-ref-palette-neutral-variant-60: #8f9196;
+  --md-ref-palette-neutral-variant-80: #c7c6cb;
+  --md-ref-palette-neutral-variant-90: #e3e2e8;
+
+  --md-ref-palette-error-10: #410002;
+  --md-ref-palette-error-20: #690005;
+  --md-ref-palette-error-30: #93000a;
+  --md-ref-palette-error-40: #ba1a1a;
+  --md-ref-palette-error-80: #ffb4ab;
+  --md-ref-palette-error-90: #ffdad6;
+  --md-ref-palette-error-100: #ffffff;
+
+  /* Success / warning / info: product extensions, paired for both themes. */
+  --md-ref-palette-success-10: #002111;
+  --md-ref-palette-success-20: #003921;
+  --md-ref-palette-success-30: #005230;
+  --md-ref-palette-success-40: #1c6b42;
+  --md-ref-palette-success-80: #97d5ad;
+  --md-ref-palette-success-90: #b3f1c8;
+  --md-ref-palette-warning-10: #261900;
+  --md-ref-palette-warning-20: #3f2e00;
+  --md-ref-palette-warning-30: #5a4300;
+  --md-ref-palette-warning-40: #775a00;
+  --md-ref-palette-warning-80: #e9c349;
+  --md-ref-palette-warning-90: #ffdf90;
+  --md-ref-palette-info-10: #001c38;
+  --md-ref-palette-info-20: #00315b;
+  --md-ref-palette-info-30: #00497f;
+  --md-ref-palette-info-40: #1a61a4;
+  --md-ref-palette-info-80: #a3c9ff;
+  --md-ref-palette-info-90: #d3e4ff;
+
+  /* Semantic roles */
+  --md-sys-color-primary: var(--md-ref-palette-primary-40);
+  --md-sys-color-on-primary: var(--md-ref-palette-primary-100);
+  --md-sys-color-primary-container: var(--md-ref-palette-primary-90);
+  --md-sys-color-on-primary-container: var(--md-ref-palette-primary-10);
+  --md-sys-color-secondary: var(--md-ref-palette-secondary-40);
+  --md-sys-color-on-secondary: var(--md-ref-palette-secondary-100);
+  --md-sys-color-secondary-container: var(--md-ref-palette-secondary-90);
+  --md-sys-color-on-secondary-container: var(--md-ref-palette-secondary-10);
+  --md-sys-color-tertiary: var(--md-ref-palette-tertiary-40);
+  --md-sys-color-on-tertiary: var(--md-ref-palette-tertiary-100);
+  --md-sys-color-tertiary-container: var(--md-ref-palette-tertiary-90);
+  --md-sys-color-on-tertiary-container: var(--md-ref-palette-tertiary-10);
+
+  --md-sys-color-surface: var(--md-ref-palette-neutral-99);
+  --md-sys-color-surface-dim: var(--md-ref-palette-neutral-87);
+  --md-sys-color-surface-bright: var(--md-ref-palette-neutral-98);
+  --md-sys-color-surface-container-lowest: var(--md-ref-palette-neutral-100);
+  --md-sys-color-surface-container-low: var(--md-ref-palette-neutral-96);
+  --md-sys-color-surface-container: var(--md-ref-palette-neutral-94);
+  --md-sys-color-surface-container-high: var(--md-ref-palette-neutral-92);
+  --md-sys-color-surface-container-highest: var(--md-ref-palette-neutral-90);
+  --md-sys-color-on-surface: var(--md-ref-palette-neutral-10);
+  --md-sys-color-on-surface-variant: var(--md-ref-palette-neutral-variant-30);
+  --md-sys-color-surface-tint: var(--md-sys-color-primary);
+  --md-sys-color-inverse-surface: var(--md-ref-palette-neutral-20);
+  --md-sys-color-inverse-on-surface: var(--md-ref-palette-neutral-96);
+  --md-sys-color-inverse-primary: var(--md-ref-palette-primary-80);
+
+  --md-sys-color-outline: var(--md-ref-palette-neutral-variant-50);
+  --md-sys-color-outline-variant: var(--md-ref-palette-neutral-variant-80);
+  --md-sys-color-scrim: rgb(0 0 0 / 40%);
+
+  --md-sys-color-error: var(--md-ref-palette-error-40);
+  --md-sys-color-on-error: var(--md-ref-palette-error-100);
+  --md-sys-color-error-container: var(--md-ref-palette-error-90);
+  --md-sys-color-on-error-container: var(--md-ref-palette-error-10);
+  --md-sys-color-success: var(--md-ref-palette-success-40);
+  --md-sys-color-on-success: #ffffff;
+  --md-sys-color-success-container: var(--md-ref-palette-success-90);
+  --md-sys-color-on-success-container: var(--md-ref-palette-success-10);
+  --md-sys-color-warning: var(--md-ref-palette-warning-40);
+  --md-sys-color-on-warning: #ffffff;
+  --md-sys-color-warning-container: var(--md-ref-palette-warning-90);
+  --md-sys-color-on-warning-container: var(--md-ref-palette-warning-10);
+  --md-sys-color-info: var(--md-ref-palette-info-40);
+  --md-sys-color-on-info: #ffffff;
+  --md-sys-color-info-container: var(--md-ref-palette-info-90);
+  --md-sys-color-on-info-container: var(--md-ref-palette-info-10);
+
+  /* Chart series accents — M3E expressive multi-hue set. */
+  --md-sys-color-accent-1: #1a61a4;
+  --md-sys-color-accent-2: #605d76;
+  --md-sys-color-accent-3: #1c6b42;
+  --md-sys-color-accent-4: #775a00;
+  --md-sys-color-accent-5: #8a4a6b;
+}
+
+/* =============================================================================
+ * Dark scheme
+ * ========================================================================== */
+html[data-dsc-resolved-theme="dark"] {
+  color-scheme: dark;
+
+  --md-sys-color-primary: var(--md-ref-palette-primary-80);
+  --md-sys-color-on-primary: var(--md-ref-palette-primary-20);
+  --md-sys-color-primary-container: var(--md-ref-palette-primary-30);
+  --md-sys-color-on-primary-container: var(--md-ref-palette-primary-90);
+  --md-sys-color-secondary: var(--md-ref-palette-secondary-80);
+  --md-sys-color-on-secondary: var(--md-ref-palette-secondary-20);
+  --md-sys-color-secondary-container: var(--md-ref-palette-secondary-30);
+  --md-sys-color-on-secondary-container: var(--md-ref-palette-secondary-90);
+  --md-sys-color-tertiary: var(--md-ref-palette-tertiary-80);
+  --md-sys-color-on-tertiary: var(--md-ref-palette-tertiary-20);
+  --md-sys-color-tertiary-container: var(--md-ref-palette-tertiary-30);
+  --md-sys-color-on-tertiary-container: var(--md-ref-palette-tertiary-90);
+
+  --md-sys-color-surface: var(--md-ref-palette-neutral-6);
+  --md-sys-color-surface-dim: var(--md-ref-palette-neutral-6);
+  --md-sys-color-surface-bright: var(--md-ref-palette-neutral-24);
+  --md-sys-color-surface-container-lowest: var(--md-ref-palette-neutral-4);
+  --md-sys-color-surface-container-low: var(--md-ref-palette-neutral-10);
+  --md-sys-color-surface-container: var(--md-ref-palette-neutral-12);
+  --md-sys-color-surface-container-high: var(--md-ref-palette-neutral-17);
+  --md-sys-color-surface-container-highest: var(--md-ref-palette-neutral-22);
+  --md-sys-color-on-surface: var(--md-ref-palette-neutral-90);
+  --md-sys-color-on-surface-variant: var(--md-ref-palette-neutral-variant-80);
+  --md-sys-color-inverse-surface: var(--md-ref-palette-neutral-90);
+  --md-sys-color-inverse-on-surface: var(--md-ref-palette-neutral-20);
+  --md-sys-color-inverse-primary: var(--md-ref-palette-primary-40);
+
+  --md-sys-color-outline: var(--md-ref-palette-neutral-variant-60);
+  --md-sys-color-outline-variant: var(--md-ref-palette-neutral-variant-30);
+  --md-sys-color-scrim: rgb(0 0 0 / 60%);
+
+  --md-sys-color-error: var(--md-ref-palette-error-80);
+  --md-sys-color-on-error: var(--md-ref-palette-error-20);
+  --md-sys-color-error-container: var(--md-ref-palette-error-30);
+  --md-sys-color-on-error-container: var(--md-ref-palette-error-90);
+  --md-sys-color-success: var(--md-ref-palette-success-80);
+  --md-sys-color-on-success: var(--md-ref-palette-success-20);
+  --md-sys-color-success-container: var(--md-ref-palette-success-30);
+  --md-sys-color-on-success-container: var(--md-ref-palette-success-90);
+  --md-sys-color-warning: var(--md-ref-palette-warning-80);
+  --md-sys-color-on-warning: var(--md-ref-palette-warning-20);
+  --md-sys-color-warning-container: var(--md-ref-palette-warning-30);
+  --md-sys-color-on-warning-container: var(--md-ref-palette-warning-90);
+  --md-sys-color-info: var(--md-ref-palette-info-80);
+  --md-sys-color-on-info: var(--md-ref-palette-info-20);
+  --md-sys-color-info-container: var(--md-ref-palette-info-30);
+  --md-sys-color-on-info-container: var(--md-ref-palette-info-90);
+
+  --md-sys-color-accent-1: #a3c9ff;
+  --md-sys-color-accent-2: #cac4dd;
+  --md-sys-color-accent-3: #97d5ad;
+  --md-sys-color-accent-4: #e9c349;
+  --md-sys-color-accent-5: #f4b0d1;
+}
+
+/* =============================================================================
+ * Density — pointer-aware control sizing
+ * ========================================================================== */
+:root {
+  --md-sys-density-control-height: 40px;
+  --md-sys-density-list-height: 56px;
+  --md-sys-density-gap: 8px;
+}
+
+html[data-dsc-density="compact"] {
+  --md-sys-density-control-height: 32px;
+  --md-sys-density-list-height: 48px;
+  --md-sys-density-gap: 6px;
+  --md-sys-layout-content-pad: 24px;
+  --md-sys-layout-sidebar-expanded: 288px;
+  --md-sys-layout-sidebar-rail: 72px;
+}
+
+html[data-dsc-density="touch"] {
+  --md-sys-density-control-height: 48px;
+  --md-sys-density-list-height: 64px;
+  --md-sys-density-gap: 10px;
+  --md-sys-layout-content-pad: 20px;
+  --md-sys-layout-sidebar-expanded: 300px;
+  --md-sys-layout-sidebar-rail: 80px;
+}
+
+/* Low-resource / remote-session mode trims non-essential motion. */
+:root[data-dsc-runtime-mode="low-resource"] {
+  --md-sys-motion-spatial-fast: 180ms var(--md-sys-motion-easing-standard);
+  --md-sys-motion-spatial-default: 220ms var(--md-sys-motion-easing-standard);
+  --md-sys-motion-spatial-slow: 260ms var(--md-sys-motion-easing-standard);
+}

@@ -1,7 +1,7 @@
-/* Application-level reset. The shared console stylesheet owns the Carbon
- * theme and all workspace surfaces; this file intentionally stays neutral. */
+/* Application-level reset. The shared console stylesheet owns the M3E theme and
+ * all workspace surfaces; this file intentionally stays neutral. */
 :root {
-  font-family: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: "Roboto Flex", "Roboto", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
 }
 
 html,
@@ -35,7 +35,7 @@ body {
  *
  * This file used to carry `background: var(--cds-background, #f4f4f4)` and
  * `color: var(--cds-text-primary, #161616)` on `html, body`. Carbon's <Theme>
- * emits its custom properties on `.guanlan-carbon-theme`, a descendant of
+ * emits its custom properties on `.m3e-theme`, a descendant of
  * `body`, and custom properties do not inherit upward — so on `html` and
  * `body` those references were always undefined and always fell through to
  * their literals. The same trap as the `--cds-spacing-*` scale.
@@ -46,7 +46,7 @@ body {
  * decided the pre-hydration flash.
  *
  * Theme colour for these elements belongs to `workspace.tokens.css` and the
- * arbiter in `workspace-carbon.scss`, which are ordered after Carbon's own
+ * arbiter in `workspace.m3e.css`, which are ordered after Carbon's own
  * global `body` rule and can therefore actually win. */
 
 *,

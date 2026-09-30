@@ -2,14 +2,10 @@
   display: none;
 }
 
-/* `.workspace-bottom-nav { display: none }` also lived here; `workspace.pages.css`
-   declares the same base and is ordered after this file within the bundle, so
-   this copy could never be the one in effect.
-   `@keyframes workspace-spin` was unreferenced, and the `@media (pointer:
-   coarse)` block that followed it was `(0,1,0)` in this, the first layer — it
-   could not outrank the arbiter, and it named `.workspace-btn`, `.workspace-tab`,
-   `.m3-tab` and `.workspace-layout-actions__button`, none of which render. The
-   44px contract now lives only at the end of `workspace-carbon.scss`. */
+/* A duplicate `.workspace-bottom-nav { display: none }` and an unreferenced
+   `@keyframes workspace-spin` used to live here. The bottom-nav base is owned by
+   `workspace.pages.css`, which is ordered after this file; the coarse-pointer
+   contract is owned by `workspace.m3e.css`. */
 
 /* 839px to match the drawer, not 768px — see the note on the block below. */
 @media (orientation: portrait), (max-width: 839px) {
@@ -50,7 +46,7 @@
   }
 
   /* The 52px / `flex-wrap: wrap` topbar override that used to be here never
-     took effect: `workspace-carbon.scss` fixes the topbar at 56px with
+     took effect: `workspace.m3e.css` fixes the topbar at 56px with
      `flex-wrap: nowrap`, and a media query adds no specificity to break that
      tie. The compact layout is reachable on its own terms — the status label,
      the search label and the `<kbd>` all drop out at 839px and the action
@@ -138,12 +134,8 @@ html[data-dsc-density="touch"] {
   background: var(--workspace-accent-soft);
 }
 
-/* The second `@media (pointer: coarse)` block in this file is gone for the same
-   reason as the first: `(0,1,0)` in the first layer cannot outrank the arbiter,
-   and it listed `.workspace-btn`, `.workspace-tab`, `.m3-tab` and
-   `.workspace-row-action`, which do not render. `.workspace-sidebar-edge-trigger`
-   was the only rule here with no equivalent in the arbiter; it moved to the
-   coarse block at the end of `workspace-carbon.scss`. */
+/* The coarse-pointer contract for the shell moved into `workspace.m3e.css`; this
+   file keeps only the input-aware layout breakpoints. */
 
 @media (max-width: 839px) {
   .workspace-root {

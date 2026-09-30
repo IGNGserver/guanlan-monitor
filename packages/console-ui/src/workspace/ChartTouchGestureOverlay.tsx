@@ -1,8 +1,8 @@
 import React, { useRef, useEffect, useState } from "react";
-import type { CarbonSeries } from "./CarbonCharts";
+import type { ChartSeries } from "./charts";
 
 interface ChartTouchGestureOverlayProps {
-  series?: CarbonSeries[];
+  series?: ChartSeries[];
   valueFormatter?: (value: number) => string;
   onHoverPoint?: (info: { timeText: string; valueText: string } | null) => void;
   children: React.ReactNode;
@@ -160,7 +160,7 @@ export function ChartTouchGestureOverlay({
             bottom: "28px",
             left: `${indicatorX}px`,
             width: "1px",
-            borderLeft: "1.5px dashed var(--cds-interactive, #0f62fe)",
+            borderLeft: "1.5px dashed var(--md-sys-color-primary)",
             pointerEvents: "none",
             zIndex: 5
           }}

@@ -1,536 +1,164 @@
-/* Guanlan 固定图表布局层
+/* =============================================================================
+ * Fixed chart layout — Material 3 Expressive
  *
- * 只服务于 workspace/dashboard 下的组件：ChartTile、DashboardSection、
- * DashboardGrid / DashboardCell，以及 CarbonCharts 里的数值读数网格。
+ * Serves workspace/dashboard (ChartTile, DashboardSection, DashboardGrid/Cell)
+ * and the chart components in workspace/charts.tsx.
  *
- * 设计约定：
- * - 颜色一律取 Carbon 原生 --cds-* 令牌，不引入第四套令牌，也不写死色值。
- *   WorkspaceFrame 用 Carbon <Theme theme="g10|g100"> 包裹整个工作区，
- *   因此深浅色切换由令牌自动完成。
- * - 形状遵循 Carbon：直角、1px 细线、靠 layer 层级而非阴影区分卡片。
- * - 字号对齐 Carbon 排版比例（label-01 / helper-01 / body-compact-01 /
- *   heading-02 / heading-03），数值一律启用等宽数字。
- */
+ * Conventions:
+ * - colours come from --md-sys-* only (no --cds-*, no literal hex);
+ * - shape follows M3E: containers get the larger radii, inner controls smaller;
+ * - cards use surface + elevation, not 1px rules;
+ * - numbers are tabular for a stable refresh.
+ * ========================================================================== */
 
-.dashboard-section {
-  margin-bottom: var(--workspace-space-07);
-}
-
-/* A section the anchor bar just scrolled to must render immediately; the
-   browser does this on its own, but keep the intent explicit. */
-.dashboard-section:target {
-  content-visibility: visible;
-}
+.dashboard-section { margin-bottom: var(--md-sys-space-7); }
+.dashboard-section:target { content-visibility: visible; }
 
 .dashboard-section__header {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
-  gap: var(--workspace-space-05);
-  padding-bottom: var(--workspace-space-04);
-  margin-bottom: var(--workspace-space-05);
-  border-bottom: 1px solid var(--workspace-color-outline-variant, #c4c9d0);
+  gap: var(--md-sys-space-5);
+  margin-bottom: var(--md-sys-space-5);
 }
 
-.dashboard-section__copy {
-  min-width: 0;
-  flex: 1 1 320px;
-}
+.dashboard-section__copy { min-width: 0; flex: 1 1 320px; }
 
 .dashboard-section__eyebrow {
   display: block;
-  font-size: 0.75rem;
-  line-height: 1rem;
-  letter-spacing: 0.05rem;
-  font-weight: 600;
+  margin-bottom: var(--md-sys-space-2);
+  color: var(--md-sys-color-primary);
+  font-size: var(--md-sys-typescale-label-m-size);
+  font-weight: var(--md-sys-typescale-label-m-weight);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--workspace-color-primary, #3d638f);
-  margin-bottom: var(--workspace-space-02);
 }
 
-.dashboard-section__title {
-  margin: 0;
-  font-size: 1.35rem;
-  line-height: 1.75rem;
-  font-weight: 600;
-  color: var(--workspace-color-on-surface, #1a1c1e);
-}
+.dashboard-section__title { margin: 0; font-size: var(--md-sys-typescale-headline-s-size); line-height: var(--md-sys-typescale-headline-s-line); font-weight: 500; }
 
 .dashboard-section__description {
-  margin: var(--workspace-space-03) 0 0;
   max-width: 62ch;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  color: var(--workspace-color-on-surface-variant, #5d6269);
+  margin: var(--md-sys-space-3) 0 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-m-size);
+  line-height: 1.6;
 }
 
-.dashboard-section__controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--workspace-space-03);
-}
+.dashboard-section__controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--md-sys-space-3); }
 
-/* 固定布局栅格：列数与断点对齐 Carbon 2x Grid（4/8/16 @ 320/672/1056），
-   间距取 Carbon 令牌。跨度由 .dashboard-cell 上的 --cell-* 自定义属性决定。 */
-.dashboard-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--workspace-space-05);
-  padding-inline: 0;
-}
-
-.dashboard-cell {
-  grid-column: span var(--cell-sm, 4);
-  min-width: 0;
-}
+/* Grid: 4 / 8 / 12 columns, spans carried on --cell-* custom properties. */
+.dashboard-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--md-sys-space-4); }
+.dashboard-cell { grid-column: span var(--cell-sm, 4); min-width: 0; }
 
 @media (max-width: 671px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-    gap: var(--workspace-space-04);
-  }
-
-  .dashboard-cell {
-    grid-column: 1 / -1 !important;
-  }
+  .dashboard-grid { grid-template-columns: 1fr; gap: var(--md-sys-space-3); }
+  .dashboard-cell { grid-column: 1 / -1 !important; }
 }
 
 @media (min-width: 672px) {
-  .dashboard-grid {
-    grid-template-columns: repeat(8, minmax(0, 1fr));
-    column-gap: var(--workspace-space-06);
-  }
-
-  .dashboard-cell {
-    grid-column: span var(--cell-md, var(--cell-sm, 4));
-  }
+  .dashboard-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); column-gap: var(--md-sys-space-5); }
+  .dashboard-cell { grid-column: span var(--cell-md, var(--cell-sm, 4)); }
 }
 
 @media (min-width: 1056px) {
-  .dashboard-grid {
-    grid-template-columns: repeat(16, minmax(0, 1fr));
-    column-gap: var(--workspace-space-07);
-  }
-
-  .dashboard-cell {
-    grid-column: span var(--cell-lg, var(--cell-md, var(--cell-sm, 4)));
-  }
+  .dashboard-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--md-sys-space-5); }
+  .dashboard-cell { grid-column: span var(--cell-lg, var(--cell-md, var(--cell-sm, 4))); }
 }
 
-/* 卡片：Carbon Tile 提供背景与内边距，这里只补排版与分隔线。 */
-.chart-tile {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: var(--workspace-space-05);
-  background: var(--cds-layer-01, #ffffff);
-  border: 1px solid var(--cds-border-subtle-00, #e0e0e0);
-  border-radius: 0;
-  box-shadow: none;
+/* ---- Chart tile ------------------------------------------------------------ */
+
+.chart-tile { display: flex; height: 100%; flex-direction: column; padding: var(--md-sys-space-5); gap: var(--md-sys-space-4); }
+.chart-tile__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--md-sys-space-4); }
+.chart-tile__titles { min-width: 0; flex: 1 1 auto; }
+.chart-tile__title-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--md-sys-space-3); }
+.chart-tile__eyebrow { display: block; margin-bottom: var(--md-sys-space-2); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-m-size); }
+.chart-tile__title { margin: 0; overflow-wrap: anywhere; font-size: var(--md-sys-typescale-title-m-size); font-weight: var(--md-sys-typescale-title-m-weight); }
+.chart-tile__subtitle { margin: var(--md-sys-space-1) 0 0; overflow-wrap: anywhere; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
+.chart-tile__inspected-stat { margin: var(--md-sys-space-1) 0 0; overflow-wrap: anywhere; color: var(--md-sys-color-primary); font-size: var(--md-sys-typescale-body-s-size); font-variant-numeric: tabular-nums; }
+.chart-tile__hero-stat { display: inline-flex; align-items: baseline; gap: var(--md-sys-space-3); }
+.chart-tile__hero-value { color: var(--md-sys-color-on-surface); font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.chart-tile__hero-badge { padding: 2px 8px; border-radius: var(--md-sys-shape-sm); color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-high); font-size: var(--md-sys-typescale-label-s-size); font-variant-numeric: tabular-nums; }
+.chart-tile__controls { display: flex; flex-shrink: 0; align-items: center; gap: var(--md-sys-space-2); }
+.chart-tile__body { min-width: 0; flex: 1 1 auto; }
+.chart-tile__empty { display: flex; min-height: 8rem; flex: 1 1 auto; align-items: center; justify-content: center; padding: var(--md-sys-space-5); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-m-size); text-align: center; }
+.chart-tile__footer { margin-top: var(--md-sys-space-2); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
+
+/* ---- Chart primitives ------------------------------------------------------ */
+
+.m3e-chart { display: flex; min-width: 0; flex-direction: column; gap: var(--md-sys-space-2); }
+.m3e-chart__svg { display: block; overflow: visible; }
+.m3e-chart__grid { stroke: var(--md-sys-color-outline-variant); stroke-width: 1; }
+.m3e-chart__axis { fill: var(--md-sys-color-on-surface-variant); font-size: 11px; font-variant-numeric: tabular-nums; }
+.m3e-chart__series { fill: none; }
+.m3e-chart__hover line { stroke: var(--md-sys-color-outline); stroke-width: 1; stroke-dasharray: 3 3; }
+.m3e-chart__legend { display: flex; flex-wrap: wrap; gap: var(--md-sys-space-2) var(--md-sys-space-4); margin: 0; padding: 0; list-style: none; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
+.m3e-chart__legend li { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.m3e-chart__legend strong { margin-left: auto; color: var(--md-sys-color-on-surface); font-variant-numeric: tabular-nums; }
+.m3e-chart__legend--stacked { display: grid; gap: var(--md-sys-space-1); }
+.m3e-chart__legend--stacked li { display: grid; grid-template-columns: auto 1fr auto; align-items: center; }
+.m3e-chart__swatch { width: 12px; height: 12px; flex: 0 0 auto; border-radius: var(--md-sys-shape-full); }
+.m3e-chart__donut-value { fill: var(--md-sys-color-on-surface); font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.m3e-chart__donut-label { fill: var(--md-sys-color-on-surface-variant); font-size: 12px; }
+.m3e-chart__meter-value { fill: var(--md-sys-color-on-surface); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.m3e-chart__meter-caption { display: flex; align-items: center; justify-content: space-between; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
+.m3e-chart__meter-caption strong { color: var(--md-sys-color-on-surface); font-variant-numeric: tabular-nums; }
+.m3e-chart--donut { align-items: center; }
+.m3e-chart--meter { justify-content: center; }
+.m3e-chart-empty { display: grid; min-height: 140px; place-items: center; padding: var(--md-sys-space-5); border-radius: var(--md-sys-shape-md); color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container); font-size: var(--md-sys-typescale-body-s-size); text-align: center; }
+
+/* Numeric read-out grid */
+.m3e-number-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--md-sys-space-4); }
+.m3e-number-grid__cell { min-width: 0; padding: var(--md-sys-space-4); border-radius: var(--md-sys-shape-md); background: var(--md-sys-color-surface-container); }
+.m3e-number-grid__label { display: block; overflow-wrap: anywhere; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-m-size); }
+.m3e-number-grid__value { display: block; margin-top: var(--md-sys-space-2); overflow-wrap: anywhere; color: var(--md-sys-color-on-surface); font-size: 1.5rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.m3e-number-grid__hint { display: block; margin-top: var(--md-sys-space-1); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
+
+/* ---- Chart detail / key-value surfaces ------------------------------------ */
+
+.chart-info-rows { display: flex; margin: 0; flex-direction: column; }
+.chart-info-rows__row { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: var(--md-sys-space-4); padding: var(--md-sys-space-3) 0; }
+.chart-info-rows__row + .chart-info-rows__row { border-top: 1px solid var(--md-sys-color-outline-variant); }
+.chart-info-rows dt { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
+.chart-info-rows dd { margin: 0; overflow-wrap: anywhere; color: var(--md-sys-color-on-surface); font-size: var(--md-sys-typescale-body-m-size); font-variant-numeric: tabular-nums; }
+.chart-details { font-size: var(--md-sys-typescale-body-s-size); }
+.chart-details th[scope="row"] { color: var(--md-sys-color-on-surface-variant); font-weight: 500; }
+
+/* ---- Device detail shell --------------------------------------------------- */
+
+.workspace-device-dashboard { min-width: 0; }
+.workspace-device-context__caption { margin: 0; padding: var(--md-sys-space-3) var(--md-sys-space-4); border-top: 1px solid var(--md-sys-color-outline-variant); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
+.workspace-page--fullscreen { height: 100%; overflow: auto; padding: var(--md-sys-space-6); background: var(--md-sys-color-surface); }
+
+/* ---- Agent note + traffic/temperature controls ---------------------------- */
+
+.chart-agent-note { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: var(--md-sys-space-4); }
+.chart-agent-note__status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--md-sys-space-4); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
+.chart-agent-note p { margin: 0; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-m-size); line-height: 1.6; }
+
+.workspace-traffic-calendar__controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--md-sys-space-3); }
+.workspace-traffic-calendar__navigation { display: flex; align-items: center; gap: var(--md-sys-space-1); }
+
+.workspace-temperature-sources__toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--md-sys-space-4); margin-bottom: var(--md-sys-space-4); }
+.workspace-temperature-sources__toolbar p { min-width: 0; flex: 1 1 20rem; margin: 0; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); line-height: 1.6; }
+.workspace-temperature-source-chart__heading { display: flex; min-width: 0; flex-direction: column; gap: var(--md-sys-space-1); margin-bottom: var(--md-sys-space-3); }
+.workspace-temperature-source-chart__heading strong { overflow-wrap: anywhere; color: var(--md-sys-color-on-surface); font-size: var(--md-sys-typescale-title-s-size); }
+.workspace-temperature-source-chart__heading small { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
+
+.guanlan-fade-in { animation: guanlan-fade-slide-in var(--md-sys-motion-effects-slow); }
+
+@keyframes guanlan-fade-slide-in {
+  from { opacity: 0; transform: translateY(6px); }
 }
 
-.chart-tile__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--workspace-space-04);
-  padding-bottom: var(--workspace-space-04);
-  border-bottom: 1px solid var(--cds-border-subtle-00, #e0e0e0);
-}
-
-.chart-tile__titles {
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.chart-tile__title-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--workspace-space-03);
-}
-
-.chart-tile__hero-stat {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--workspace-space-03);
-}
-
-.chart-tile__hero-value {
-  font-size: 1.25rem;
-  line-height: 1.5rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--cds-text-primary, #161616);
-  letter-spacing: -0.01em;
-}
-
-.chart-tile__hero-badge {
-  font-size: 0.75rem;
-  line-height: 1rem;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  color: var(--cds-text-secondary, #525252);
-  background: var(--cds-layer-02, rgba(0, 0, 0, 0.04));
-  padding: 1px 6px;
-  border-radius: 2px;
-}
-
-.chart-tile__eyebrow {
-  display: block;
-  font-size: 0.75rem;
-  line-height: 1rem;
-  letter-spacing: 0.01rem;
-  color: var(--cds-text-secondary, #525252);
-  margin-bottom: var(--workspace-space-02);
-}
-
-.chart-tile__title {
-  margin: 0;
-  font-size: 1rem;
-  line-height: 1.375rem;
-  font-weight: 400;
-  color: var(--cds-text-primary, #161616);
-  overflow-wrap: anywhere;
-}
-
-.chart-tile__subtitle {
-  margin: var(--workspace-space-02) 0 0;
-  font-size: 0.75rem;
-  line-height: 1rem;
-  color: var(--cds-text-secondary, #525252);
-  overflow-wrap: anywhere;
-}
-
-.chart-tile__inspected-stat {
-  margin: var(--workspace-space-02) 0 0;
-  font-size: 0.8125rem;
-  line-height: 1.15rem;
-  font-weight: 550;
-  color: var(--cds-interactive, #0f62fe);
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
-}
-
-.chart-tile__controls {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: var(--workspace-space-02);
-}
-
-/* 卡片操作区里的 Carbon 按钮不需要自带的大内边距。 */
-.chart-tile__controls .cds--btn {
-  min-height: 2rem;
-  padding-block: 0;
-}
-
-/* This file is the last layer in the bundle, so the 2rem above outranks the
-   44px `@media (pointer: coarse)` contract in `workspace-carbon.scss` — the one
-   inversion where a desktop height beat a touch height from underneath. The
-   coarse branch therefore has to be restated here rather than fixed upstream. */
-@media (pointer: coarse) {
-  .chart-tile__controls .cds--btn {
-    min-height: var(--workspace-min-touch-target, 44px);
-  }
-}
-
-.chart-tile__controls .cds--btn--ghost {
-  color: var(--cds-link-primary, #0f62fe);
-}
-
-.chart-tile__body {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding-top: var(--workspace-space-05);
-}
-
-.chart-tile__empty {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 8rem;
-  padding: var(--workspace-space-05);
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  color: var(--cds-text-placeholder, #6f6f6f);
-  text-align: center;
-}
-
-.chart-tile__footer {
-  padding-top: var(--workspace-space-04);
-  margin-top: var(--workspace-space-04);
-  border-top: 1px solid var(--cds-border-subtle-00, #e0e0e0);
-  font-size: 0.75rem;
-  line-height: 1rem;
-  color: var(--cds-text-secondary, #525252);
-}
-
-/* 环形图与仪表图：给一个稳定的最小高度，避免同一行卡片高低不齐。 */
-.telemetry-carbon-chart--donut {
-  min-height: 208px;
-}
-
-.telemetry-carbon-chart--donut.telemetry-carbon-chart--compact {
-  min-height: 168px;
-}
-
-.telemetry-carbon-chart--meter {
-  min-height: 96px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.telemetry-carbon-chart--meter.telemetry-carbon-chart--compact {
-  min-height: 72px;
-}
-
-/* 数值读数网格 */
-.carbon-number-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  gap: var(--workspace-space-05);
-}
-
-.carbon-number-grid__cell {
-  min-width: 0;
-  padding-left: var(--workspace-space-04);
-  border-left: 2px solid var(--cds-border-subtle-01, #c6c6c6);
-}
-
-.carbon-number-grid__label {
-  display: block;
-  font-size: 0.75rem;
-  line-height: 1rem;
-  letter-spacing: 0.01rem;
-  color: var(--cds-text-secondary, #525252);
-  overflow-wrap: anywhere;
-}
-
-.carbon-number-grid__value {
-  display: block;
-  margin-top: var(--workspace-space-02);
-  font-size: 1.5rem;
-  line-height: 2rem;
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-  color: var(--cds-text-primary, #161616);
-  overflow-wrap: anywhere;
-}
-
-.carbon-number-grid__hint {
-  display: block;
-  margin-top: var(--workspace-space-02);
-  font-size: 0.75rem;
-  line-height: 1rem;
-  color: var(--cds-text-placeholder, #6f6f6f);
-}
-
-/* 窄屏：卡片头部改为纵向堆叠，避免操作区把标题挤没。 */
 @media (max-width: 671px) {
-  .chart-tile {
-    padding: var(--workspace-space-04);
-  }
-
-  .chart-tile__header {
-    padding-bottom: var(--workspace-space-03);
-    margin-bottom: var(--workspace-space-02);
-  }
-
-  .chart-tile__subtitle {
-    margin-top: 2px;
-    font-size: 0.75rem;
-    line-height: 1.15;
-  }
-
-  .chart-tile__body {
-    padding-top: var(--workspace-space-03);
-  }
-
+  .chart-tile { padding: var(--md-sys-space-4); gap: var(--md-sys-space-3); }
   .chart-tile__header,
-  .dashboard-section__header {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .dashboard-section__header {
-    margin-bottom: var(--workspace-space-03);
-    padding-bottom: var(--workspace-space-03);
-    gap: var(--workspace-space-03);
-  }
-
-  .dashboard-section__description {
-    margin-top: 4px;
-    font-size: 0.8125rem;
-    line-height: 1.25;
-  }
-
-  .chart-tile__controls {
-    justify-content: flex-start;
-  }
-
-  .carbon-number-grid {
-    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
-  }
+  .dashboard-section__header { flex-direction: column; align-items: stretch; }
+  .chart-tile__controls { justify-content: flex-start; }
+  .m3e-number-grid { grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); }
 }
 
-/* ---------------------------------------------------------------------------
- * 设备详情页外壳
- * ------------------------------------------------------------------------- */
-
-.workspace-device-dashboard {
-  min-width: 0;
-}
-
-/* 选项卡说明放在吸顶条内部，跟随选项卡切换而不是散落在分区标题里。 */
-.workspace-device-context__caption {
-  margin: 0;
-  padding: var(--workspace-space-03) var(--workspace-space-04);
-  border-top: 1px solid var(--cds-border-subtle-00, #e0e0e0);
-  font-size: 0.75rem;
-  line-height: 1rem;
-  color: var(--cds-text-secondary, #525252);
-}
-
-/* Carbon Tabs 自带背景，塞进吸顶条后只需要撑满宽度。 */
-.workspace-device-context .cds--tabs {
-  width: 100%;
-}
-
-.workspace-device-context .cds--tabs .cds--tabs__nav-item {
-  box-shadow: none !important;
-}
-
-.workspace-device-context .cds--tabs .cds--tabs__nav-item + .cds--tabs__nav-item {
-  border-left: 1px solid var(--cds-border-subtle-00, #e0e0e0);
-}
-
-.workspace-device-context .cds--tabs .cds--tabs__nav-item.cds--tabs__nav-item--selected {
-  box-shadow: inset 0 2px 0 0 var(--cds-interactive, #0f62fe) !important;
-}
-
-/* 整页全屏：宿主授予 Fullscreen API 时，页面自己成为滚动容器。 */
-.workspace-page--fullscreen {
-  height: 100%;
-  overflow: auto;
-  padding: var(--workspace-space-06);
-  background: var(--cds-background, #f4f4f4);
-}
-
-/* ---------------------------------------------------------------------------
- * 卡片内部构件
- * ------------------------------------------------------------------------- */
-
-/* 「详细信息」与键值表都建在 Carbon StructuredList 上，这里只压缩默认留白，
- * 并让数值列启用等宽数字，避免刷新时数字左右跳动。 */
-.chart-details,
-.chart-info-rows {
-  min-width: 0;
-  background: transparent;
-}
-
-.chart-details .cds--structured-list-row,
-.chart-info-rows .cds--structured-list-row {
-  border-bottom: 1px solid var(--cds-border-subtle-00, #e0e0e0);
-}
-
-.chart-details .cds--structured-list-cell,
-.chart-info-rows .cds--structured-list-cell {
-  padding: var(--workspace-space-03) var(--workspace-space-04) var(--workspace-space-03) 0;
-  font-size: 0.75rem;
-  line-height: 1rem;
-  color: var(--cds-text-primary, #161616);
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
-}
-
-.chart-details .cds--structured-list-cell:first-child,
-.chart-info-rows .cds--structured-list-cell:first-child {
-  color: var(--cds-text-secondary, #525252);
-}
-
-/* 设备 Agent 卡片：一段说明加一个入口，不再套一层 Surface。 */
-.chart-agent-note {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--workspace-space-04);
-}
-
-.chart-agent-note__status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--workspace-space-04);
-  font-size: 0.75rem;
-  line-height: 1rem;
-  color: var(--cds-text-secondary, #525252);
-}
-
-.chart-agent-note p {
-  margin: 0;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  color: var(--cds-text-secondary, #525252);
-}
-
-/* 流量日历的周期切换与前后的翻页按钮，落在卡片头部的操作区里。 */
-.workspace-traffic-calendar__controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--workspace-space-03);
-}
-
-.workspace-traffic-calendar__navigation {
-  display: flex;
-  align-items: center;
-  gap: var(--workspace-space-02);
-}
-
-/* 温度传感器面板：筛选工具条与图表标题。 */
-.workspace-temperature-sources__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--workspace-space-04);
-  margin-bottom: var(--workspace-space-04);
-}
-
-.workspace-temperature-sources__toolbar p {
-  margin: 0;
-  flex: 1 1 20rem;
-  min-width: 0;
-  font-size: 0.75rem;
-  line-height: 1rem;
-  color: var(--cds-text-secondary, #525252);
-}
-
-.workspace-temperature-source-chart__heading {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: var(--workspace-space-02);
-  margin-bottom: var(--workspace-space-03);
-}
-
-.workspace-temperature-source-chart__heading strong {
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  font-weight: 400;
-  color: var(--cds-text-primary, #161616);
-  overflow-wrap: anywhere;
-}
-
-.workspace-temperature-source-chart__heading small {
-  font-size: 0.75rem;
-  line-height: 1rem;
-  color: var(--cds-text-secondary, #525252);
+@media (prefers-reduced-motion: reduce) {
+  .guanlan-fade-in { animation: none; }
 }

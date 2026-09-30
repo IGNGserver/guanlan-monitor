@@ -4,7 +4,7 @@ import { useWorkspace } from "../WorkspaceContext";
 import { Button, Icon, Surface } from "../ui";
 import { selectDeviceDirectory, type DeviceDirectorySort, type DeviceDirectoryStatus } from "../selectors";
 import { mergeDeviceOrder, registerDeviceOrderDraftGuard } from "../deviceOrderDraft";
-import { CarbonDeviceTable, ConfirmDialog, DeviceCardGrid, DeviceDirectoryFilterBar, EmptyState, ErrorSurface, LoadingSurface, PageIntro, SnapshotFreshnessNotice } from "./shared";
+import { DeviceTable, ConfirmDialog, DeviceCardGrid, DeviceDirectoryFilterBar, EmptyState, ErrorSurface, LoadingSurface, PageIntro, SnapshotFreshnessNotice } from "./shared";
 
 export function DevicesPage() {
   const { snapshot, allDevices, loading, error, refresh, deleteInstance, reorderInstances, mutationPending, openSettings } = useWorkspace();
@@ -133,7 +133,7 @@ export function DevicesPage() {
       )}
       {visibleDevices.length > 0 && <div className="workspace-directory-scroll-hint" role="note">左右滑动查看更多字段 · 点按设备行查看详情</div>}
       <div className="workspace-directory-table-scroll">
-        <CarbonDeviceTable
+        <DeviceTable
           devices={visibleDevices}
           order={effectiveOrder}
           manageMode={manageMode && canManage && !mutationPending}

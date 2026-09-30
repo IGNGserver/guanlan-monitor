@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ActionableNotification, Modal, Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow, Tag } from "@carbon/react";
 import type { AgentProbeProvider, AgentProbeTarget, DeviceMetricKey, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import appIcon from "../../assets/app-icon.png";
 import { useWorkspace } from "../WorkspaceContext";
 import type { DeviceDirectorySort, DeviceDirectoryStatus } from "../selectors";
-import { M3Checkbox, M3Chip, M3SegmentedControl, M3Select, M3TextField } from "../m3";
+import { M3Badge, M3Banner, M3Checkbox, M3Chip, M3DataTable, M3Dialog, M3SegmentedControl, M3Select, M3TextField } from "../m3";
 import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
-import { CarbonTimeSeriesChart } from "../CarbonCharts";
+import { TimeSeriesChart } from "../charts";
 import { UNAVAILABLE_METRIC_LABEL, formatBytes, formatDate, formatPercent, formatTemperature } from "../formatters";
 import { dateValueOf } from "../sampleTime.ts";
 
@@ -187,20 +186,20 @@ function ConfirmDialog({
   onCancel: () => void;
   disabled?: boolean;
 }) {
-  return <Modal
+  return <M3Dialog
     open
     danger
-    modalLabel="请确认操作"
-    modalHeading={title}
-    primaryButtonText={disabled ? "处理中…" : confirmLabel}
-    secondaryButtonText="取消"
-    primaryButtonDisabled={disabled}
-    onRequestClose={(event) => { event.preventDefault(); if (!disabled) onCancel(); }}
-    onSecondarySubmit={(event) => { event.preventDefault(); if (!disabled) onCancel(); }}
-    onRequestSubmit={(event) => { event.preventDefault(); if (!disabled) onConfirm(); }}
+    icon="warning"
+    aria-label="请确认操作"
+    headline={title}
+    onClose={() => { if (!disabled) onCancel(); }}
+    actions={<>
+      <Button variant="quiet" onClick={onCancel} disabled={disabled}>取消</Button>
+      <Button variant="danger" onClick={onConfirm} disabled={disabled}>{disabled ? "处理中…" : confirmLabel}</Button>
+    </>}
   >
     <p>{detail}</p>
-  </Modal>;
+  </M3Dialog>;
 }
 
 function PromptDialog({
@@ -227,20 +226,19 @@ function PromptDialog({
     if (!nextValue || disabled) return;
     onConfirm(nextValue);
   };
-  return <Modal
+  return <M3Dialog
     open
-    modalLabel="编辑名称"
-    modalHeading={title}
-    primaryButtonText={disabled ? "处理中…" : confirmLabel}
-    secondaryButtonText="取消"
-    primaryButtonDisabled={disabled || !value.trim()}
-    onRequestClose={(event) => { event.preventDefault(); if (!disabled) onCancel(); }}
-    onSecondarySubmit={(event) => { event.preventDefault(); if (!disabled) onCancel(); }}
-    onRequestSubmit={(event) => { event.preventDefault(); submit(); }}
+    aria-label="编辑名称"
+    headline={title}
+    onClose={() => { if (!disabled) onCancel(); }}
+    actions={<>
+      <Button variant="quiet" onClick={onCancel} disabled={disabled}>取消</Button>
+      <Button variant="primary" onClick={submit} disabled={disabled || !value.trim()}>{disabled ? "处理中…" : confirmLabel}</Button>
+    </>}
   >
     <p>{detail}</p>
     <M3TextField label="名称" autoFocus value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submit(); } }} maxLength={80} />
-  </Modal>;
+  </M3Dialog>;
 }
 
 function directoryCapacityText(device: DeviceSummary, kind: "memory" | "disk", unavailable: boolean): string {
@@ -334,7 +332,7 @@ function DeviceCardGrid({ devices }: { devices: DeviceSummary[] }) {
 }
 
 function directoryStatusTag(device: DeviceSummary) {
-  return <Tag type={device.status === "online" ? "green" : "gray"}>{device.status === "online" ? "在线" : "离线"}</Tag>;
+  return <M3Badge tone={device.status === "online" ? "success" : "neutral"}>{device.status === "online" ? "在线" : "离线"}</M3Badge>;
 }
 
 /**
@@ -352,7 +350,7 @@ interface DirectoryColumn {
   cell: (device: DeviceSummary) => React.ReactNode;
 }
 
-function CarbonDeviceTable({
+function DeviceTable({
   devices,
   order,
   manageMode = false,
@@ -406,36 +404,16 @@ function CarbonDeviceTable({
   if (!devices.length) return <>{emptyState ?? <EmptyState title="没有匹配设备" detail="尝试清空搜索或调整筛选条件。" />}</>;
 
   return (
-    <TableContainer>
-      <Table size="md" aria-label="设备列表">
-        <TableHead>
-          <TableRow>{columns.map((column) => <TableHeader key={column.header}>{column.header}</TableHeader>)}</TableRow>
-        </TableHead>
-        <TableBody>
-          {devices.map((device) => {
-            const rowIsActionable = !manageMode;
-            return <TableRow
-              className={rowIsActionable ? "guanlan-data-table-row--actionable" : undefined}
-              tabIndex={rowIsActionable ? 0 : undefined}
-              aria-label={rowIsActionable ? `打开 ${device.hostname}` : undefined}
-              key={device.deviceId}
-              onClick={rowIsActionable ? (event) => {
-                if (event.target instanceof Element && event.target.closest("button, a, [role=menuitem]")) return;
-                openDevice(device);
-              } : undefined}
-              onKeyDown={rowIsActionable ? (event) => {
-                if (event.key !== "Enter" && event.key !== " ") return;
-                if (event.target instanceof Element && event.target.closest("button, a, [role=menuitem]")) return;
-                event.preventDefault();
-                openDevice(device);
-              } : undefined}
-            >
-              {columns.map((column) => <TableCell key={column.key}>{column.cell(device)}</TableCell>)}
-            </TableRow>;
-          })}
-        </TableBody>
-      </Table>
-    </TableContainer>
+    <M3DataTable
+      aria-label="设备列表"
+      rows={devices}
+      columns={columns}
+      rowKey={(device) => device.deviceId}
+      rowClassName={(device) => (manageMode ? undefined : "guanlan-data-table-row--actionable")}
+      onRowClick={manageMode ? undefined : openDevice}
+      onRowActivate={manageMode ? undefined : openDevice}
+      emptyState={emptyState}
+    />
   );
 }
 
@@ -642,7 +620,6 @@ function InstanceFilter({
   return (
     <M3Select
       className="workspace-instance-filter"
-      selectClassName="workspace-select workspace-select--small"
       label={label}
       value={value}
       onChange={(event) => onChange(event.target.value)}
@@ -922,7 +899,7 @@ function TemperatureSourcesPanel({
                 <small>{temperatureRoleLabels[selectedSeries.role] ?? selectedSeries.role} · {temperatureSourceLabel(selectedSeries.source)}</small>
                 {!sensors.some((sensor) => sensor.id === selectedSeries.id) && <small>当前未检测到，仅显示历史记录</small>}
               </div>
-              <CarbonTimeSeriesChart
+              <TimeSeriesChart
                 series={[{ label: "温度", points: selectedSeries.currentC, valueFormatter: (value) => formatTemperature(value, 1) }]}
                 compact
               />
@@ -1009,18 +986,14 @@ function SnapshotFreshnessNotice() {
   // through their own connection and first-run surfaces.
   if (!failure || !snapshot || !snapshot.devices.length) return null;
   const retrying = Boolean(loading || refreshing);
-  return <ActionableNotification
-    inline
+  return <M3Banner
+    tone="warning"
     className="workspace-attention"
-    kind="warning"
-    lowContrast
-    hasFocus={false}
-    hideCloseButton
     title="自动刷新失败，页面数据已停止更新"
-    subtitle={`${failure} 当前显示的是 ${formatDate(snapshot.generatedAt)} 读取的 ${snapshot.devices.length} 台设备状态。${retrying ? "正在重试。" : "到点的自动刷新会继续尝试。"}`}
-    actionButtonLabel={retrying ? "正在重试" : "立即重试"}
-    onActionButtonClick={() => void refresh()}
-  />;
+    action={<Button variant="quiet" onClick={() => void refresh()}>{retrying ? "正在重试" : "立即重试"}</Button>}
+  >
+    {`${failure} 当前显示的是 ${formatDate(snapshot.generatedAt)} 读取的 ${snapshot.devices.length} 台设备状态。${retrying ? "正在重试。" : "到点的自动刷新会继续尝试。"}`}
+  </M3Banner>;
 }
 
 function LoadingSurface() {
@@ -1062,7 +1035,7 @@ export {
   probeProviderLabels,
   PageIntro,
   DeviceDirectoryFilterBar,
-  CarbonDeviceTable,
+  DeviceTable,
   ConfirmDialog,
   PromptDialog,
   OverviewSummary,

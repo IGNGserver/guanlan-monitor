@@ -9,7 +9,7 @@
 .workspace-telemetry-models__label {
   color: var(--workspace-text-muted);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0.04em;
 }
 
@@ -27,7 +27,7 @@
   gap: 2px;
   padding: 6px 8px;
   border: 1px solid var(--workspace-border);
-  border-radius: 0;
+  border-radius: var(--md-sys-shape-sm);
   background: var(--workspace-surface-subtle);
 }
 
@@ -45,7 +45,7 @@
 .workspace-telemetry-model-chip strong {
   color: var(--workspace-text-secondary);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .workspace-telemetry-model-chip small {
@@ -67,16 +67,16 @@
   padding: 8px 12px;
   margin-bottom: 14px;
   border: 1px solid var(--workspace-border);
-  border-radius: 0;
+  border-radius: var(--md-sys-shape-full);
   background: var(--workspace-surface-subtle);
   scrollbar-width: none;
 }
 
 /* Collapsible / compact details summary for hardware models */
 .workspace-telemetry-models-details {
-  border: 1px solid var(--cds-border-subtle-00, #e0e0e0);
-  background: var(--cds-layer-01, #ffffff);
-  border-radius: 0;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container-low);
+  border-radius: var(--md-sys-shape-md);
 }
 
 .workspace-telemetry-models-summary {
@@ -86,14 +86,14 @@
   padding: 6px 10px;
   cursor: pointer;
   font-size: 0.75rem;
-  font-weight: 550;
-  color: var(--cds-text-secondary, #525252);
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface-variant);
   user-select: none;
 }
 
 .workspace-telemetry-models-summary:hover {
-  color: var(--cds-text-primary, #161616);
-  background: var(--cds-layer-hover-01, rgba(0, 0, 0, 0.04));
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-container-high);
 }
 
 .workspace-telemetry-models-summary::-webkit-details-marker {
@@ -102,7 +102,7 @@
 
 .workspace-telemetry-models-details .workspace-telemetry-models__list {
   padding: 8px 10px 10px;
-  border-top: 1px solid var(--cds-border-subtle-00, #e0e0e0);
+  border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .workspace-anchor-bar::-webkit-scrollbar {
@@ -117,12 +117,12 @@
   justify-content: center;
   padding: 6px 14px;
   border: 1px solid var(--workspace-border);
-  border-radius: 0;
+  border-radius: var(--md-sys-shape-full);
   background: var(--workspace-surface);
   color: var(--workspace-text-secondary);
   cursor: pointer;
   font-size: 12px;
-  font-weight: 550;
+  font-weight: 500;
   white-space: nowrap;
   transition: color var(--workspace-transition), background var(--workspace-transition), border-color var(--workspace-transition);
 }

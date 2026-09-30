@@ -50,8 +50,8 @@
   touch-action: none;
 }
 
-.workspace-windowbar__drag > strong { color: var(--workspace-text); font-size: 12px; font-weight: 680; letter-spacing: -0.01em; }
-.workspace-windowbar__mark-img { display: block; width: 21px; height: 21px; object-fit: contain; border-radius: 0; flex-shrink: 0; }
+.workspace-windowbar__drag > strong { color: var(--workspace-text); font-size: 12px; font-weight: 600; letter-spacing: -0.01em; }
+.workspace-windowbar__mark-img { display: block; width: 21px; height: 21px; object-fit: contain; border-radius: var(--md-sys-shape-xs); flex-shrink: 0; }
 .workspace-windowbar__separator { width: 1px; height: 14px; margin-inline: 2px; background: var(--workspace-border-strong); }
 .workspace-windowbar__subtitle { overflow: hidden; color: var(--workspace-text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-windowbar__controls { display: flex; height: 100%; align-items: stretch; -webkit-app-region: no-drag; }
@@ -194,14 +194,14 @@
   width: 30px;
   height: 30px;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: var(--md-sys-shape-sm);
   flex-shrink: 0;
 }
 
 .workspace-brand__name {
   overflow: hidden;
   font-size: 15px;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: -0.02em;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -223,7 +223,7 @@
   height: 30px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: var(--workspace-radius-sm);
+  border-radius: var(--md-sys-shape-sm);
   color: var(--workspace-text-muted);
   background: transparent;
   cursor: pointer;
@@ -268,7 +268,7 @@
   gap: 10px;
   width: 100%;
   padding: 0 10px;
-  border-radius: var(--workspace-radius-sm);
+  border-radius: var(--md-sys-shape-sm);
   color: var(--workspace-text-secondary);
   background: transparent;
   cursor: pointer;
@@ -286,7 +286,7 @@
 .workspace-nav-item.is-active {
   color: var(--workspace-accent-strong);
   background: var(--workspace-accent-soft);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .workspace-sidebar.is-collapsed .workspace-nav-item {
@@ -302,7 +302,7 @@
   padding: 20px 10px 6px;
   color: var(--workspace-text-muted);
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0.04em;
 }
 
@@ -377,7 +377,7 @@
   display: block;
   color: var(--workspace-text-muted);
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0.04em;
 }
 
@@ -402,7 +402,7 @@
   gap: 8px;
   padding: 0 12px;
   border: 1px solid var(--workspace-border);
-  border-radius: var(--workspace-shape-full, 9999px);
+  border-radius: var(--md-sys-shape-full);
   color: var(--workspace-text-secondary);
   background: var(--workspace-surface-control);
   cursor: pointer;
@@ -424,7 +424,7 @@ kbd {
   padding: 0 6px;
   border: 1px solid var(--workspace-border);
   border-bottom-color: var(--workspace-border-strong);
-  border-radius: 4px;
+  border-radius: var(--md-sys-shape-xs);
   color: var(--workspace-text-muted);
   background: var(--workspace-surface-control);
   font-family: inherit;
@@ -438,14 +438,14 @@ kbd {
   align-items: center;
   gap: 6px;
   padding: 0 8px;
-  border-radius: 0;
+  border-radius: var(--md-sys-shape-full);
   font-size: 11px;
-  font-weight: 620;
+  font-weight: 500;
   white-space: nowrap;
 }
 
 /* The five `.workspace-status-label--*` role colours are declared once, in
-   `workspace.m3.css`. They used to be duplicated here against a different token
+   `workspace.m3e.css`. They used to be duplicated here against a different token
    family (`--workspace-green` aliases vs `--workspace-color-success` roles),
    both `(0,1,0)` in the same layer, so whichever file the bundle ordered last
    won and the other five lines were inert. */
@@ -457,7 +457,7 @@ kbd {
   width: 7px;
   height: 7px;
   flex: 0 0 auto;
-  border-radius: 50%;
+  border-radius: var(--md-sys-shape-full);
   background: var(--workspace-text-muted);
 }
 
@@ -475,10 +475,10 @@ kbd {
   gap: 7px;
   padding: 0 12px;
   border: 1px solid transparent;
-  border-radius: var(--workspace-radius-sm);
+  border-radius: var(--md-sys-shape-sm);
   cursor: pointer;
   font-size: 12px;
-  font-weight: 620;
+  font-weight: 500;
   white-space: nowrap;
   transition: color var(--workspace-transition), background var(--workspace-transition), border-color var(--workspace-transition), transform var(--workspace-transition), opacity var(--workspace-transition);
 }
@@ -505,7 +505,7 @@ kbd {
 
 .workspace-page-intro h2 {
   color: var(--workspace-text);
-  font-weight: 680;
+  font-weight: 600;
   text-wrap: balance;
 }
 
@@ -526,7 +526,7 @@ kbd {
   min-width: 0;
   padding: 20px;
   border: 1px solid var(--workspace-border);
-  border-radius: var(--workspace-radius-md);
+  border-radius: var(--md-sys-shape-md);
   background: var(--workspace-surface);
   box-shadow: var(--workspace-shadow-soft), var(--workspace-surface-highlight);
 }
@@ -542,7 +542,7 @@ kbd {
   margin-top: 3px;
   color: var(--workspace-text);
   font-size: 15px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .workspace-surface__description,
@@ -565,7 +565,7 @@ kbd {
    it: that element is now Carbon's `ActionableNotification`, which draws its
    own flex layout, tint and status strip, so these rules were fighting it and
    forcing the warning tint onto `kind="info"` notifications too. Page rhythm
-   lives in `workspace.pages.css`, geometry in `workspace-carbon.scss`. */
+   lives in `workspace.pages.css`, geometry in `workspace.m3e.css`. */
 
 .workspace-overview-devices {
   min-height: 390px;
@@ -592,7 +592,7 @@ kbd {
 }
 
 .workspace-summary-row:first-child { border-top: 0; }
-.workspace-summary-row strong { color: var(--workspace-text); font-weight: 620; font-variant-numeric: tabular-nums; text-align: right; }
+.workspace-summary-row strong { color: var(--workspace-text); font-weight: 500; font-variant-numeric: tabular-nums; text-align: right; }
 .workspace-summary-row strong.is-success { color: var(--workspace-green); }
 .workspace-summary-row strong.is-warning { color: var(--workspace-amber); }
 
@@ -600,13 +600,13 @@ kbd {
 .workspace-temperature-toggle input { accent-color: var(--workspace-accent); }
 .workspace-temperature-sources__body { display: grid; min-width: 0; grid-template-columns: minmax(250px, 0.85fr) minmax(0, 1.15fr); gap: 14px; }
 .workspace-temperature-source-list { display: flex; min-width: 0; max-height: 360px; flex-direction: column; gap: 5px; overflow: auto; padding-right: 2px; }
-.workspace-temperature-source-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid var(--workspace-border); border-radius: var(--workspace-radius-sm); color: var(--workspace-text-secondary); background: var(--workspace-surface-subtle); cursor: pointer; text-align: left; transition: border-color var(--workspace-transition), background var(--workspace-transition); }
+.workspace-temperature-source-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid var(--workspace-border); border-radius: var(--md-sys-shape-sm); color: var(--workspace-text-secondary); background: var(--workspace-surface-subtle); cursor: pointer; text-align: left; transition: border-color var(--workspace-transition), background var(--workspace-transition); }
 .workspace-temperature-source-row:hover,
 .workspace-temperature-source-row.is-selected { border-color: var(--workspace-accent); background: var(--workspace-surface-hover); }
 .workspace-temperature-source-row__identity,
 .workspace-temperature-source-row__value { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .workspace-temperature-source-row__identity { overflow: hidden; }
-.workspace-temperature-source-row__identity strong { overflow: hidden; color: var(--workspace-text); font-size: 11px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-temperature-source-row__identity strong { overflow: hidden; color: var(--workspace-text); font-size: 11px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-temperature-source-row__identity small,
 .workspace-temperature-source-row__value small { color: var(--workspace-text-muted); font-size: 12px; }
 .workspace-temperature-source-row__value { flex: 0 0 auto; align-items: flex-end; text-align: right; }
@@ -617,7 +617,7 @@ kbd {
 .workspace-temperature-source-chart { min-width: 0; }
 .workspace-agent-temperature-sources__body { display: grid; min-width: 0; grid-template-columns: minmax(0, 1.35fr) minmax(220px, .65fr); gap: 14px; }
 .workspace-agent-temperature-sources .workspace-temperature-source-row { cursor: default; }
-.workspace-agent-temperature-backends { display: flex; min-width: 0; flex-direction: column; gap: 7px; padding: 10px 12px; border: 1px solid var(--workspace-border); border-radius: var(--workspace-radius-sm); background: var(--workspace-surface-subtle); }
+.workspace-agent-temperature-backends { display: flex; min-width: 0; flex-direction: column; gap: 7px; padding: 10px 12px; border: 1px solid var(--workspace-border); border-radius: var(--md-sys-shape-sm); background: var(--workspace-surface-subtle); }
 .workspace-agent-temperature-backends > strong { color: var(--workspace-text-secondary); font-size: 11px; }
 .workspace-agent-temperature-backend { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 8px; align-items: start; padding-top: 7px; border-top: 1px solid var(--workspace-border); }
 .workspace-agent-temperature-backend > span { font-size: 12px; }

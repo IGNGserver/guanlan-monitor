@@ -1,14 +1,13 @@
 import React, { useMemo, useState } from "react";
-import { ActionableNotification } from "@carbon/react";
 import { useWorkspace } from "../WorkspaceContext";
 import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
-import { M3SegmentedControl } from "../m3";
-import { CarbonTimeSeriesChart } from "../CarbonCharts";
+import { M3Banner, M3SegmentedControl } from "../m3";
+import { TimeSeriesChart } from "../charts";
 import { ChartTile, DashboardCell, DashboardGrid, DashboardSection } from "../dashboard";
 import { OnboardingGuide } from "../shell/OnboardingGuide";
 import { formatBytes, formatDate, formatRate, formatPercent } from "../formatters";
 import { selectAttentionDevices, selectHealthSummary } from "../selectors";
-import { CarbonDeviceTable, DeviceCardGrid, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints } from "./shared";
+import { DeviceTable, DeviceCardGrid, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints } from "./shared";
 
 type ObservationMetric = "cpu" | "memory" | "disk" | "network";
 
@@ -126,29 +125,21 @@ export function OverviewPage() {
       sourceDetail={health.sourceDetail}
     />
 
-    {hubAbnormal ? <ActionableNotification
-      inline
+    {hubAbnormal ? <M3Banner
+      tone="warning"
       className="workspace-attention"
-      kind="warning"
-      lowContrast
-      hasFocus={false}
-      hideCloseButton
       title="中枢连接异常"
-      subtitle={cached ? "无法取得最新数据，页面中的设备信息可能已经过期。" : "无法连接到中枢，请检查中枢地址与访问密钥后重试。"}
-      actionButtonLabel="连接设置"
-      onActionButtonClick={() => openSettings("connections")}
-    /> : (health.source === "empty" || (attentionCount ?? 0) > 0) ? <ActionableNotification
-      inline
+      action={<Button variant="quiet" onClick={() => openSettings("connections")}>连接设置</Button>}
+    >
+      {cached ? "无法取得最新数据，页面中的设备信息可能已经过期。" : "无法连接到中枢，请检查中枢地址与访问密钥后重试。"}
+    </M3Banner> : (health.source === "empty" || (attentionCount ?? 0) > 0) ? <M3Banner
+      tone={noData ? "info" : "warning"}
       className="workspace-attention"
-      kind={noData ? "info" : "warning"}
-      lowContrast
-      hasFocus={false}
-      hideCloseButton
       title={noData ? "还没有可用设备" : "设备状态存在异常"}
-      subtitle={noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : attentionDetail + "。"}
-      actionButtonLabel={noData ? "配置数据来源" : "查看设备"}
-      onActionButtonClick={() => noData ? openSettings("connections") : navigate({ kind: "devices" })}
-    /> : null}
+      action={<Button variant="quiet" onClick={() => noData ? openSettings("connections") : navigate({ kind: "devices" })}>{noData ? "配置数据来源" : "查看设备"}</Button>}
+    >
+      {noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : attentionDetail + "。"}
+    </M3Banner> : null}
 
     <OnboardingGuide />
 
@@ -177,7 +168,7 @@ export function OverviewPage() {
               <DeviceCardGrid devices={attentionDevices} />
             </div>
             <div className="workspace-visually-hidden" aria-hidden="true">
-              <CarbonDeviceTable devices={attentionDevices} />
+              <DeviceTable devices={attentionDevices} />
             </div>
           </div>
         )
@@ -198,7 +189,7 @@ export function OverviewPage() {
             subtitle={`每台设备一条数据线 · 最近 ${metricWindowLabel}`}
             emptyMessage={observationEmptyMessage}
           >
-            <CarbonTimeSeriesChart series={observationSeries} maxValue={observationMetric === "cpu" ? 100 : undefined} />
+            <TimeSeriesChart series={observationSeries} maxValue={observationMetric === "cpu" ? 100 : undefined} />
           </ChartTile>
         </DashboardCell>
       </DashboardGrid>
