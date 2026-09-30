@@ -66,9 +66,10 @@
 
 **修复**：
 - `selectors.ts` 抽出 `selectAttentionCount`：`live` 与 `empty` 都给出确定数字，只有 `cache` / `unknown` 才是 `null`（确实无法判断）。
+- `selectors.ts` 同时收紧 `selectSnapshotSource`：**`empty` 只表示「已认证的中枢确实没有设备」**。适配器在会话失效时会写入 `emptyConsoleSnapshot()`（`source:"empty"` + 未认证，见 `apps/web/src/lib/console-adapter.ts` 的 `markSessionExpired`），这属于连接故障，归入 `unknown`。两者此前被合并，正是「首次使用被报成故障」的根因；若不拆开，上面的「空集=0」还会把**已死的会话**报成一切正常。
 - `OverviewSummary`：`null` 时用警告图标（不再用勾）；`total === 0` 时在线状态用 `unknown`，提示文案由「所有设备正常上报」改为「还没有设备接入」。
 - `OverviewPage`：`empty` 时关注项文案为「还没有设备接入」，不再冒充连接故障。
-- `AppTopBar`：`empty` 与 `live` 同为「在线」——顶栏芯片表达的是**数据链路**，不是机群健康。
+- `AppTopBar`：`empty` 与 `live` 同为「在线」——顶栏芯片表达的是**数据链路**，不是机群健康；链路消失统一读作「未连接」，不再借用设备状态词「离线」。
 
 **回归防线**：`selectors.test.ts` 新增「已认证空中枢 pending === 0、未认证为 null」；`visual-regression.cjs` 在 empty 态断言关注项为 `0`、不含「连接状态异常」、顶栏不是「未连接」。
 
@@ -189,7 +190,7 @@
 | `pages/deviceCharts.tsx` | 通道中文化 |
 | `pages/SettingsPage.tsx` | 「同步」→「刷新」；关于页通道中文化 |
 | `shell/AppTopBar.tsx` | 已认证空中枢不再显示「未连接」 |
-| `selectors.ts` / `selectors.test.ts` | 关注计数语义修正 + 断言 |
+| `selectors.ts` / `selectors.test.ts` | 关注计数语义修正；`empty` 与会话失效拆分；断言 |
 | `formatters.ts` | 新增 `formatReleaseChannel` |
 | `dashboard.css` | 总览控件分组样式 |
 | `scripts/visual-regression.cjs` | 4 条回归断言（无重复卡片、单一品牌、空集关注为 0、空集顶部非未连接） |

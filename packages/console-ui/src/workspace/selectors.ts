@@ -29,7 +29,13 @@ export function selectSnapshotSource(snapshot: ConsoleSnapshot, allDevices: Devi
   if (snapshot.source === "cache") return "cache";
   const hasData = allDevices.length > 0 || (snapshot.overviewMetrics?.instances.length ?? 0) > 0;
   if (snapshot.source === "live" && snapshot.session.authenticated) return hasData ? "live" : "empty";
-  if (snapshot.source === "empty") return "empty";
+  // "empty" must mean exactly one thing: an authenticated hub that simply has no
+  // devices yet. A snapshot carrying `source: "empty"` *without* a session is the
+  // adapter's expired-session reset (see `markSessionExpired`), which is a
+  // connection fault and belongs to "unknown". Collapsing the two made the shell
+  // report a working first run as 未连接 / 连接异常 — and, once the overview
+  // treated "empty" as a clean zero, would have reported a dead session as fine.
+  if (snapshot.source === "empty" && snapshot.session.authenticated) return "empty";
   return "unknown";
 }
 

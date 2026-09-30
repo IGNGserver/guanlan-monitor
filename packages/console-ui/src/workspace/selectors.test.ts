@@ -118,6 +118,10 @@ test("selectSnapshotSource handles live, cache, empty, and unknown correctly", (
   assert.equal(selectSnapshotSource({ ...snapshot, source: "live", session: { authenticated: false, accessKeyConfigured: false } }, devices), "unknown");
   assert.equal(selectSnapshotSource({ ...snapshot, source: "empty" }, []), "empty");
   assert.equal(selectSnapshotSource({ ...snapshot, source: "empty" }, devices), "empty");
+  // The adapter's expired-session reset is `emptyConsoleSnapshot()`: source
+  // "empty" with no session. That is a connection fault, not an empty fleet, and
+  // must not be reported as a healthy first run.
+  assert.equal(selectSnapshotSource({ ...snapshot, source: "empty", session: { authenticated: false, accessKeyConfigured: false } }, []), "unknown");
 });
 
 test("mergeDeviceOrder handles conflict, additions, and deletions", () => {
