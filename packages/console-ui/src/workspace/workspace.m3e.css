@@ -307,10 +307,30 @@
 .workspace-device-facts span { display: block; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
 .workspace-device-facts strong { display: flex; min-width: 0; align-items: center; gap: 7px; margin-top: 3px; overflow: hidden; font-size: var(--md-sys-typescale-title-s-size); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 
-.workspace-device-state-banner { border: 0; border-radius: var(--md-sys-shape-md); background: var(--md-sys-color-surface-container); }
-.workspace-device-state-banner__icon { border-radius: var(--md-sys-shape-full); background: var(--md-sys-color-surface-container-high); }
-.workspace-device-state-banner__copy strong { font-size: var(--md-sys-typescale-title-s-size); }
-.workspace-device-state-banner__copy p { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
+.workspace-device-state-banner {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--md-sys-space-3);
+  margin: -4px 0 var(--md-sys-space-5);
+  padding: var(--md-sys-space-3) var(--md-sys-space-4);
+  border: 0;
+  border-radius: var(--md-sys-shape-md);
+  background: var(--md-sys-color-surface-container);
+}
+.workspace-device-state-banner__icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--md-sys-shape-full);
+  background: var(--md-sys-color-surface-container-high);
+}
+.workspace-device-state-banner__copy { min-width: 0; flex: 1; }
+.workspace-device-state-banner__copy strong { display: block; font-size: var(--md-sys-typescale-title-s-size); }
+.workspace-device-state-banner__copy p { margin: var(--md-sys-space-1) 0 0; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); line-height: 1.5; }
+.workspace-device-state-banner > .workspace-button { flex: 0 0 auto; }
 .workspace-device-state-banner--cached { background: var(--md-sys-color-info-container); color: var(--md-sys-color-on-info-container); }
 .workspace-device-state-banner--cached .workspace-device-state-banner__icon { color: var(--md-sys-color-on-info-container); background: transparent; }
 .workspace-device-state-banner--offline,
@@ -577,6 +597,9 @@
   .workspace-caption-button { width: 40px; }
   .workspace-page-intro { align-items: flex-start; flex-direction: column; }
   .workspace-overview-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspace-device-state-banner { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: start; }
+  .workspace-device-state-banner > .workspace-button,
+  .workspace-device-state-banner > .workspace-caption { grid-column: 2; justify-self: start; margin-top: var(--md-sys-space-1); }
 }
 
 /* ---- Telemetry, traffic calendar and empty placeholders ------------------- */
