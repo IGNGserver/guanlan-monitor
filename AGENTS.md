@@ -3,8 +3,8 @@
 只写本仓库与设备级规范的差异。Git 纪律、worktree、冲突处理见 `~/.qoder/coder-rules/global-rules.md`。
 
 Collaboration: solo
+Baseline: main
 Default branch: main
-Integration: direct-after-validation
 Release: manual-on-explicit-request（不再每次开发自动发测试版）
 Validation: `pnpm lint`、`pnpm typecheck`、`pnpm verify:version` + 下方测试清单
 Worktree: `~/项目/.wt/设备状态控制台/<slug>`
