@@ -53,6 +53,7 @@ export type {
   M3DataTableColumn
 } from "./m3e";
 
+export { hasDeviceOrderDraft } from "./workspace/deviceOrderDraft";
 export { MockConsoleAdapter } from "./services/mockAdapter";
 export type { WorkspaceRoute } from "./workspace/WorkspaceContext";
 export type {

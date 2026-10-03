@@ -28,13 +28,67 @@ import {
   saveFanNote
 } from "./api";
 
+import { OfflineSnapshotCache } from "./offline-cache";
+
 export class WebConsoleAdapter implements ConsoleAdapter {
   readonly capabilities = WEB_CAPABILITIES;
   private snapshot: ConsoleSnapshot = emptyConsoleSnapshot();
   private listeners = new Set<(snapshot: ConsoleSnapshot) => void>();
   private socket: Socket | null = null;
+  private cache = new OfflineSnapshotCache();
+  private sessionScope: string | null = null;
+  private generation = 0;
+  private sessionGeneration = 0;
+  private lastRequest: ConsoleSnapshotRequest = {};
+  private removeLifecycle: (() => void) | null = null;
+
+  async establishSession(): Promise<void> {
+    const generation = this.generation;
+    const sessionGeneration = ++this.sessionGeneration;
+    const current = () => generation === this.generation && sessionGeneration === this.sessionGeneration;
+    try {
+      const session = await getSession();
+      if (!current()) throw new Error("session_changed");
+      await this.cache.activate(session.issuedAt, current);
+      if (!current()) throw new Error("session_changed");
+      this.sessionScope = session.issuedAt;
+    } catch (error) {
+      if (current() && (isUnauthorized(error) || (error instanceof ApiError && error.status === 403))) await this.markSessionExpired();
+      throw error;
+    }
+  }
+
+  async restoreOffline(request: ConsoleSnapshotRequest = {}, current: () => boolean = () => true): Promise<boolean> {
+    const generation = this.generation;
+    const cached = await this.cache.restore(request);
+    if (!cached || generation !== this.generation || !current()) return false;
+    this.sessionScope = null;
+    this.socket?.close();
+    this.socket = null;
+    this.snapshot = cached;
+    this.notify();
+    return true;
+  }
+
+  async forgetOfflineData(): Promise<void> {
+    await this.markSessionExpired();
+  }
 
   async getSnapshot(request?: ConsoleSnapshotRequest): Promise<ConsoleSnapshot> {
+    // Bootstrap has already confirmed connectivity failed. Serve the cached
+    // view immediately; refresh, foregrounding and online recovery revalidate.
+    if (this.snapshot.source === "cache" && this.sessionScope === null) {
+      const generation = ++this.generation;
+      const query = request ?? {};
+      this.lastRequest = query;
+      const cached = await this.cache.restore(query);
+      if (generation !== this.generation || this.sessionScope !== null) return this.snapshot;
+      if (cached) {
+        this.snapshot = cached;
+        this.notify();
+        return cached;
+      }
+    }
     return this.loadSnapshot(request);
   }
 
@@ -43,17 +97,18 @@ export class WebConsoleAdapter implements ConsoleAdapter {
   }
 
   async login(accessKey: string): Promise<ConsoleSnapshot> {
+    await this.forgetOfflineData();
     await login({ accessKey });
-    await getSession();
+    await this.establishSession();
     return this.loadSnapshot();
   }
 
   async logout(): Promise<ConsoleSnapshot> {
     this.socket?.close();
     this.socket = null;
+    // Local data is forgotten even if the network cannot complete logout.
+    await this.markSessionExpired();
     await logout();
-    this.snapshot = { ...emptyConsoleSnapshot(), generatedAt: new Date().toISOString() };
-    this.notify();
     return this.snapshot;
   }
 
@@ -86,10 +141,35 @@ export class WebConsoleAdapter implements ConsoleAdapter {
 
   subscribe(listener: (snapshot: ConsoleSnapshot) => void): () => void {
     this.listeners.add(listener);
+    if (!this.removeLifecycle && typeof window !== "undefined") {
+      const recover = () => {
+        if (document.hidden) { this.socket?.close(); this.socket = null; return; }
+        // The visible poller also refreshes on foregrounding; this listener
+        // restores connectivity immediately when the network comes back.
+        if (navigator.onLine) void this.loadSnapshot(this.lastRequest).catch(() => undefined);
+      };
+      const disconnect = () => { this.sessionScope = null; this.socket?.close(); this.socket = null; void this.restoreOffline(this.lastRequest); };
+      const resetSession = (event: StorageEvent) => {
+        if (event.key === "dsc-web-session-reset") void this.markSessionExpired(false);
+      };
+      window.addEventListener("storage", resetSession);
+      window.addEventListener("online", recover);
+      window.addEventListener("offline", disconnect);
+      const visibility = () => { if (document.hidden) { this.socket?.close(); this.socket = null; } };
+      document.addEventListener("visibilitychange", visibility);
+      this.removeLifecycle = () => {
+        window.removeEventListener("storage", resetSession);
+        window.removeEventListener("online", recover);
+        window.removeEventListener("offline", disconnect);
+        document.removeEventListener("visibilitychange", visibility);
+      };
+    }
     this.connectSocket();
     return () => {
       this.listeners.delete(listener);
       if (!this.listeners.size) {
+        this.removeLifecycle?.();
+        this.removeLifecycle = null;
         this.socket?.close();
         this.socket = null;
       }
@@ -97,7 +177,11 @@ export class WebConsoleAdapter implements ConsoleAdapter {
   }
 
   private async loadSnapshot(request: ConsoleSnapshotRequest = {}): Promise<ConsoleSnapshot> {
+    const generation = ++this.generation;
+    this.lastRequest = request;
     try {
+      await this.establishSession();
+      const scope = this.sessionScope!;
       const devices = await listDevices();
       const selectedDeviceId = request.selectedDeviceId !== undefined
         ? request.selectedDeviceId
@@ -116,7 +200,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
           : Promise.resolve(null)
       ]);
 
-      this.snapshot = {
+      const nextSnapshot: ConsoleSnapshot = {
         generatedAt: dataTimestamp(devices, metrics),
         source: "live",
         cache: { available: false, savedAt: null, ageSeconds: null },
@@ -130,16 +214,43 @@ export class WebConsoleAdapter implements ConsoleAdapter {
         update,
         startup: { openAtLogin: false, startMinimized: false }
       };
+      // A slow previous selection cannot replace the latest intent, and a
+      // request started before logout cannot repopulate a cleared cache.
+      if (generation !== this.generation || scope !== this.sessionScope) return this.snapshot;
+      this.snapshot = nextSnapshot;
+      const cached = await this.cache.save(scope, nextSnapshot, request, () => generation === this.generation && scope === this.sessionScope);
+      if (generation !== this.generation || scope !== this.sessionScope) return this.snapshot;
+      this.snapshot = { ...nextSnapshot, cache: { available: cached, savedAt: cached ? new Date().toISOString() : null, ageSeconds: cached ? 0 : null } };
       this.notify();
       if (this.listeners.size) this.connectSocket();
       return this.snapshot;
     } catch (error) {
-      if (isUnauthorized(error)) this.markSessionExpired();
+      if (generation !== this.generation) {
+        if ((isUnauthorized(error) || (error instanceof ApiError && error.status === 403)) && this.snapshot.source === "empty" && !this.snapshot.session.authenticated) throw error;
+        return this.snapshot;
+      }
+      if (isUnauthorized(error) || (error instanceof ApiError && error.status === 403)) { await this.markSessionExpired(); throw error; }
+      this.sessionScope = null;
+      const cached = await this.cache.restore(request);
+      if (generation !== this.generation) return this.snapshot;
+      if (cached) {
+        this.socket?.close(); this.socket = null;
+        this.snapshot = cached;
+        this.notify();
+        return cached;
+      }
       throw error;
     }
   }
 
-  private markSessionExpired(): void {
+  private async markSessionExpired(broadcast = true): Promise<void> {
+    const generation = ++this.generation;
+    this.sessionScope = null;
+    await this.cache.clear();
+    if (generation !== this.generation) return;
+    if (broadcast && typeof window !== "undefined") {
+      try { localStorage.setItem("dsc-web-session-reset", `${Date.now()}:${Math.random()}`); } catch { /* Storage can be denied. */ }
+    }
     this.socket?.close();
     this.socket = null;
     this.snapshot = { ...emptyConsoleSnapshot(), generatedAt: new Date().toISOString() };
@@ -147,13 +258,14 @@ export class WebConsoleAdapter implements ConsoleAdapter {
   }
 
   private connectSocket(): void {
-    if (this.socket || typeof window === "undefined") return;
+    if (this.socket || typeof window === "undefined" || document.hidden || !this.listeners.size || !this.sessionScope || this.snapshot.source !== "live" || !this.snapshot.session.authenticated) return;
     this.socket = io({
       path: "/socket.io",
       transports: ["websocket"],
       withCredentials: true
     });
     this.socket.on("device:update", (event: DeviceRealtimeEvent) => {
+      if (this.snapshot.source !== "live" || !this.sessionScope) return;
       if (event.removed) {
         const devices = this.snapshot.devices.filter((device) => device.deviceId !== event.deviceId);
         this.snapshot = { ...this.snapshot, generatedAt: dataTimestamp(devices, this.snapshot.metrics), devices };
@@ -182,7 +294,7 @@ function isUnauthorized(error: unknown): error is ApiError {
 }
 
 function optionalWebRequest<T>(error: unknown): T | null {
-  if (isUnauthorized(error)) throw error;
+  if (isUnauthorized(error) || (error instanceof ApiError && error.status === 403)) throw error;
   return null;
 }
 

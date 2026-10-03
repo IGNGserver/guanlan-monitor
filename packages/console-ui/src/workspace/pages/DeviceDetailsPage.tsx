@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { DeviceBlockKey, DeviceMetricKey, MetricsLatest } from "@dsc/shared";
-import { M3Tabs } from "../m3";
+import { M3Tabs, M3Select } from "../m3";
+import type { TouchPanel } from "../touch/TouchState";
+import { touchPercent } from "../touch/TouchDeviceRow";
 import { useWorkspace } from "../WorkspaceContext";
 import { selectLinkLabel, selectSnapshotSource } from "../selectors";
 import {
@@ -47,7 +49,14 @@ import {
  * 编译期字面量，运行期不再从服务端读取布局文档，也没有拖拽编辑与自定义面板。
  * 这里只保留三件与布局无关的事情：时间范围、实例筛选、整页全屏。
  */
-export function DeviceDetailsPage() {
+export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "status", onTouchPanelChange, touchTab = DEFAULT_DEVICE_TAB_ID, onTouchTabChange }: {
+  presentation?: "desktop" | "touch";
+  touchPanel?: TouchPanel;
+  onTouchPanelChange?: (panel: TouchPanel) => void;
+  touchTab?: DeviceTabId;
+  onTouchTabChange?: (tab: DeviceTabId) => void;
+} = {}) {
+  const touch = presentation === "touch";
   const {
     selectedDevice,
     snapshot,
@@ -72,7 +81,9 @@ export function DeviceDetailsPage() {
         ? "unknown"
         : "warning";
 
-  const [activeTab, setActiveTab] = useState<DeviceTabId>(DEFAULT_DEVICE_TAB_ID);
+  const [desktopTab, setDesktopTab] = useState<DeviceTabId>(DEFAULT_DEVICE_TAB_ID);
+  const activeTab = touch ? (touchPanel === "trends" ? touchTab : "overview") : desktopTab;
+  const setActiveTab = (id: DeviceTabId) => touch ? onTouchTabChange?.(id) : setDesktopTab(id);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const deviceContextRef = useRef<HTMLDivElement>(null);
@@ -108,7 +119,7 @@ export function DeviceDetailsPage() {
     const target = document.getElementById(anchorId);
     if (!target) return;
     setActiveAnchor(anchorId);
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    target.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
   };
 
   useEffect(() => {
@@ -162,8 +173,8 @@ export function DeviceDetailsPage() {
     setSelectedNetId("all");
     setSelectedDiskId("all");
     setSelectedGpuId("all");
-    setActiveTab(DEFAULT_DEVICE_TAB_ID);
-  }, [deviceId]);
+    if (!touch) setDesktopTab(DEFAULT_DEVICE_TAB_ID);
+  }, [deviceId, touch]);
 
   // Devices this page has already served a telemetry payload for, this session.
   // Keyed by id, so one machine's history cannot excuse another one's charts.
@@ -211,14 +222,14 @@ export function DeviceDetailsPage() {
   const hasInstanceConfiguration = (block: DeviceBlockKey) => Array.isArray(enabledDeviceIds?.[block]);
   // Membership over a configured block is O(n) per instance, so filtering a
   // block was O(n²). One Set per block makes the same check a lookup and the
-  // filter linear; the Set is rebuilt whenever the config changes, not per call.
-  const enabledInstanceSets = useMemo(() => {
+  // filter linear; build once per render and reuse across every filter call.
+  const enabledInstanceSets = (() => {
     const sets = new Map<DeviceBlockKey, Set<string>>();
     for (const [block, ids] of Object.entries(enabledDeviceIds ?? {})) {
       if (Array.isArray(ids)) sets.set(block as DeviceBlockKey, new Set(ids));
     }
     return sets;
-  }, [enabledDeviceIds]);
+  })();
   const filterEnabledInstances = <T extends { id: string }>(block: DeviceBlockKey, instances: T[]) => {
     const configuredIds = enabledInstanceSets.get(block);
     return configuredIds ? instances.filter((instance) => configuredIds.has(instance.id)) : instances;
@@ -390,7 +401,7 @@ export function DeviceDetailsPage() {
 
   return (
     <div ref={rootRef} className={`workspace-page workspace-page--device${isFullscreen ? " workspace-page--fullscreen" : ""}`}>
-      <nav className="workspace-breadcrumb" aria-label="面包屑">
+      {!touch && <><nav className="workspace-breadcrumb" aria-label="面包屑">
         <button type="button" onClick={() => navigate({ kind: "overview" })}>总览</button>
         <span aria-hidden="true">/</span>
         <button type="button" onClick={() => navigate({ kind: "devices" })}>设备</button>
@@ -403,12 +414,13 @@ export function DeviceDetailsPage() {
         description={`${selectedDevice.os} · ${selectedDevice.deviceId}`}
         actions={<Button variant="quiet" onClick={() => navigate({ kind: "devices" })}><Icon name="back" size={16} />返回设备目录</Button>}
       />
-      <SnapshotFreshnessNotice />
+      <SnapshotFreshnessNotice /></>}
+      {touch && <header className="touch-device-heading"><h1>{selectedDevice.hostname}</h1><p>{selectedDevice.os} · {snapshotSource === "cache" ? "缓存中的状态" : selectedDevice.status === "online" ? "在线" : "离线"}</p></header>}
 
       {/* One card carries every state fact. They used to be split across a
           status line and a facts strip that repeated the same two things, so
           answering "is this device live?" meant reading three places. */}
-      <div className="workspace-device-facts" aria-label="设备事实">
+      <details className="touch-device-facts" open={touch ? undefined : true}><summary>设备信息与数据时间</summary><div className="workspace-device-facts" aria-label="设备事实">
         {/* The visible word already names the state, so the dot is decoration
             here and must stay out of the accessibility tree. `StatusLabel
             compact` carries its own accessible name (it is the only indicator on
@@ -423,6 +435,8 @@ export function DeviceDetailsPage() {
         <div><span>列表位置</span><strong>{(selectedDevice.sortOrder ?? 0) + 1}</strong></div>
       </div>
 
+      </details>
+      {touch && touchPanel === "status" && <div className="touch-current-metrics" aria-label="最近上报指标">{([ ["CPU", "cpuUsage", selectedDevice.cpuUsagePercent], ["内存", "memoryUsage", selectedDevice.memoryUsagePercent], ["磁盘", "diskUsage", selectedDevice.diskUsagePercent] ] as const).map(([label, key, value]) => <div key={key}><span>{label}</span><strong>{touchPercent(selectedDevice, key, value)}</strong><small>最近一次上报</small></div>)}</div>}
       {selectedDevice.unavailableMetrics?.length ? <div className="workspace-inline-note" role="status"><Icon name="about" size={15} />本机不适用指标：{selectedDevice.unavailableMetrics.join("、")}；对应图表会留空而不是估算。</div> : null}
 
       {deviceStateBanner && (
@@ -435,14 +449,16 @@ export function DeviceDetailsPage() {
 
       {/* 选项卡、时间范围与全屏属于同一个设备上下文，滚动图表时保持可见。 */}
       <div className="workspace-device-context" ref={deviceContextRef}>
-        <M3Tabs
+        {touch && <M3Tabs aria-label="设备详情" value={touchPanel} onChange={(id) => onTouchPanelChange?.(id as TouchPanel)} tabs={[{ id: "status", label: "状态" }, { id: "trends", label: "趋势" }, { id: "hardware", label: "硬件" }]} />}
+        {!touch && <M3Tabs
           aria-label="设备面板"
           value={activeTab}
           onChange={(id) => changeTab(id)}
           tabs={DEVICE_DASHBOARD.tabs.map((item) => ({ id: item.id, label: item.name }))}
-        />
+        />}
+        {touch && touchPanel === "trends" && <M3Select label="趋势分类" value={activeTab} onChange={(event) => changeTab(event.target.value)} options={DEVICE_DASHBOARD.tabs.map((item) => ({ value: item.id, label: item.name }))} />}
 
-        <div className="workspace-device-context__controls">
+        {(!touch || touchPanel === "trends") && <div className="workspace-device-context__controls">
           <div className="workspace-device-toolbar">
             <MetricWindowControl value={metricsWindow as DesktopMetricWindowValue} onChange={(value) => setMetricsWindow(value)} />
             <Button variant="quiet" title={isFullscreen ? "退出全屏" : "全屏查看"} onClick={toggleFullscreen}>
@@ -450,11 +466,11 @@ export function DeviceDetailsPage() {
               {isFullscreen ? "退出全屏" : "全屏"}
             </Button>
           </div>
-        </div>
+        </div>}
 
-        {tab.caption ? <p className="workspace-device-context__caption">{tab.caption}</p> : null}
+        {!touch && tab.caption ? <p className="workspace-device-context__caption">{tab.caption}</p> : null}
 
-        {anchors.length > 1 && (
+        {!touch && anchors.length > 1 && (
           <div className="workspace-anchor-bar" role="navigation" aria-label="分区跳转">
             {anchors.map((anchor) => (
               <button
@@ -481,7 +497,7 @@ export function DeviceDetailsPage() {
         : null}
 
       <div className="workspace-device-dashboard">
-        {tab.sections.map((section) => (
+        {(touch ? (touchPanel === "trends" ? tab.sections : findDeviceTab("overview").sections.filter((section) => touchPanel === "hardware" ? section.id === "section-info" : section.id === "section-overview-capacity")) : tab.sections).map((section) => (
           <DashboardSection
             key={section.id}
             id={section.id}

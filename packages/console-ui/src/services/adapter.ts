@@ -85,7 +85,7 @@ export interface WindowMaterialCapabilities {
 
 export const WEB_CAPABILITIES: ConsoleCapabilities = {
   canManageLocalAgent: false,
-  canUseOfflineCache: false,
+  canUseOfflineCache: true,
   canChangeStartupSettings: false,
   canControlNativeWindow: false,
   canConfigureConnection: false,

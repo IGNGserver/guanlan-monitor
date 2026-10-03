@@ -144,6 +144,7 @@ export function TimeSeriesChart({
   const reducedMotion = useMemo(prefersReducedMotion, []);
   const animations = chartAnimationsEnabled(reducedMotion);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const touchStart = useRef<{ x: number; y: number; horizontal: boolean } | null>(null);
 
   const height = compact ? 132 : 248;
   const hasData = stableSeries.some((item) => item.points.length > 0);
@@ -165,6 +166,13 @@ export function TimeSeriesChart({
 
   const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     if (!primary?.points.length || !onHoverPoint) return;
+    if (event.pointerType === "touch" && touchStart.current) {
+      const dx = Math.abs(event.clientX - touchStart.current.x);
+      const dy = Math.abs(event.clientY - touchStart.current.y);
+      if (!touchStart.current.horizontal && dy > dx && dy > 6) { clearHover(); return; }
+      if (dx < 6 && !touchStart.current.horizontal) return;
+      touchStart.current.horizontal = true;
+    }
     const bounds = event.currentTarget.getBoundingClientRect();
     const ratio = (event.clientX - bounds.left - padding.left) / plotWidth;
     const target = time.min + Math.max(0, Math.min(1, ratio)) * time.span;
@@ -199,7 +207,19 @@ export function TimeSeriesChart({
         role="img"
         aria-label={ariaLabel ?? `指标时间趋势图：${stableSeries.map((item) => item.label).join("、")}`}
         onPointerMove={onHoverPoint ? handlePointerMove : undefined}
+        onPointerDown={(event) => { if (event.pointerType === "touch") touchStart.current = { x: event.clientX, y: event.clientY, horizontal: false }; }}
+        onPointerUp={(event) => { if (event.pointerType === "touch") { touchStart.current = null; handlePointerMove(event); } }}
+        onPointerCancel={() => { touchStart.current = null; clearHover(); }}
         onPointerLeave={onHoverPoint ? clearHover : undefined}
+        tabIndex={onHoverPoint ? 0 : undefined}
+        onKeyDown={(event) => {
+          if (!onHoverPoint || !primary?.points.length || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+          event.preventDefault();
+          const index = event.key === "Home" ? 0 : event.key === "End" ? primary.points.length - 1 : Math.max(0, Math.min(primary.points.length - 1, (hoverIndex ?? primary.points.length - 1) + (event.key === "ArrowLeft" ? -1 : 1)));
+          setHoverIndex(index);
+          const point = primary.points[index];
+          onHoverPoint({ timeText: formatClock(point.timestamp), valueText: (primary.valueFormatter ?? tickFormatter ?? String)(point.value) });
+        }}
       >
         {/* horizontal grid + value axis */}
         {yTicks.map((tick) => {

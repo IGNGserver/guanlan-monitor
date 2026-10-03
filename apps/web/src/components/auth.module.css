@@ -104,3 +104,9 @@
 @media (prefers-reduced-motion: reduce) {
   .loginLoadingBar::after { animation-duration: 0.01ms; }
 }
+
+/* Allow safe-area chrome and iOS keyboard entry without zooming the password. */
+.loginTop { padding-top: max(20px, env(safe-area-inset-top, 0px)); }
+.loginField :global(.m3e-field__input) { font-size: var(--md-sys-typescale-body-l-size); }
+.loginReveal, .loginHelpLink, .loginSubmit { min-height: 48px; }
+.loginHelpLink { display: inline-flex; align-items: center; }

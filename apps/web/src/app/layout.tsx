@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: "观澜 / Guanlan · 设备状态工作区",
   description: "面向硬件监控与可观测性的设备状态工作区",
   manifest: "/manifest.json",
+  other: { "guanlan-pwa-revision": process.env.NEXT_PUBLIC_DSC_PWA_REVISION ?? "development" },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -21,8 +22,6 @@ export const viewport = {
   themeColor: "#3d638f",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: "cover"
 };
 

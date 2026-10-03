@@ -13,7 +13,7 @@ export function RouteView() {
   if (loading && !snapshot) return <LoadingSurface />;
   if (route.kind === "devices") return <DevicesPage />;
   if (route.kind === "device") return <DeviceDetailsPage />;
-  if (error) return <ErrorSurface title="无法同步设备状态" detail={error} onRetry={() => void refresh()} />;
+  if (error && !snapshot?.devices.length) return <ErrorSurface title="无法同步设备状态" detail={error} onRetry={() => void refresh()} />;
   return <OverviewPage />;
 }
 

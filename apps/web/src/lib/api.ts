@@ -5,7 +5,6 @@ import type {
   DeviceMetricConfigResponse,
   DeviceSummary,
   FanNotePayload,
-  MetricSeries,
   MetricWindow,
   MetricsResponse,
   ReleaseChannel,
@@ -43,21 +42,35 @@ export class ApiError extends Error {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${getServerUrl()}${path}`, {
-    ...init,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {})
-    },
-    cache: "no-store"
+  const controller = new AbortController();
+  let onAbort!: () => void;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(controller.signal.reason ?? new Error("request_cancelled"));
+    controller.signal.addEventListener("abort", onAbort, { once: true });
   });
-
-  if (!response.ok) {
-    throw new ApiError(response.status);
+  const cancel = () => controller.abort(init?.signal?.reason);
+  if (init?.signal?.aborted) cancel();
+  else init?.signal?.addEventListener("abort", cancel, { once: true });
+  const timeout = setTimeout(() => controller.abort(new Error("request_timeout")), 12_000);
+  try {
+    const request = (async () => {
+      const response = await fetch(`${getServerUrl()}${path}`, {
+        ...init,
+        signal: controller.signal,
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+        cache: "no-store"
+      });
+      if (!response.ok) throw new ApiError(response.status);
+      return await response.json() as T;
+    })();
+    // Bound both the response and its body even when a transport ignores abort.
+    return await Promise.race([request, aborted]);
+  } finally {
+    clearTimeout(timeout);
+    init?.signal?.removeEventListener("abort", cancel);
+    controller.signal.removeEventListener("abort", onAbort);
   }
-
-  return response.json() as Promise<T>;
 }
 
 export function login(payload: AuthLoginPayload) {

@@ -29,6 +29,13 @@ body {
 body {
   min-height: 100dvh;
 }
+.pwa-update-notice { position: fixed; bottom: calc(88px + env(safe-area-inset-bottom, 0px)); left: 16px; right: 16px; max-width: 480px; margin: 0 auto; padding: var(--md-sys-space-4); border-radius: var(--md-sys-shape-xl); color: var(--md-sys-color-on-surface); background: var(--md-sys-color-surface-container-high); box-shadow: var(--md-sys-elevation-3); z-index: var(--md-sys-layer-toast); }
+.pwa-update-notice > span { display: flex; gap: var(--md-sys-space-3); align-items: center; }
+.pwa-update-notice > div { display: flex; justify-content: flex-end; gap: var(--md-sys-space-2); margin-top: var(--md-sys-space-3); }
+.pwa-update-notice button, .pwa-dialog button { min-height: 48px; }
+.pwa-help { display: flex; flex-direction: column; gap: var(--md-sys-space-4); }
+.pwa-help p { margin: 0; line-height: 1.7; color: var(--md-sys-color-on-surface-variant); }
+
 
 /* Theme colours for html and body are driven by `workspace.tokens.css` and
  * `workspace.m3e.css`. The resolved `color-scheme` is set dynamically by

@@ -50,6 +50,10 @@ export function PullToRefresh({ onRefresh, disabled = false, children }: PullToR
 
     const handleTouchStart = (e: TouchEvent) => {
       if (isRefreshingRef.current || e.touches.length !== 1) return;
+      const target = e.target instanceof Element ? e.target : null;
+      // Let charts, controls, editable fields and nested scrollers own their
+      // gestures; screen-edge Back remains the browser's gesture as well.
+      if (e.touches[0].clientX < 24 || target?.closest("button, input, select, textarea, [contenteditable], .m3e-chart, [data-touch-scroll]")) return;
       const scrollParent = getScrollParent(el);
       scrollParentRef.current = scrollParent;
       const isTop = scrollParent.scrollTop <= 0;
@@ -64,6 +68,7 @@ export function PullToRefresh({ onRefresh, disabled = false, children }: PullToR
     };
 
     const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1) { handleTouchCancel(); return; }
       if (startYRef.current === null || startXRef.current === null || isRefreshingRef.current) return;
       const currentY = e.touches[0].clientY;
       const currentX = e.touches[0].clientX;
@@ -124,16 +129,24 @@ export function PullToRefresh({ onRefresh, disabled = false, children }: PullToR
       }
     };
 
+    const handleTouchCancel = () => {
+      startYRef.current = null;
+      startXRef.current = null;
+      isPullingRef.current = false;
+      pullDistanceRef.current = 0;
+      setPullDistance(0);
+    };
+
     el.addEventListener("touchstart", handleTouchStart, { passive: true });
     el.addEventListener("touchmove", handleTouchMove, { passive: false });
     el.addEventListener("touchend", handleTouchEnd);
-    el.addEventListener("touchcancel", handleTouchEnd);
+    el.addEventListener("touchcancel", handleTouchCancel);
 
     return () => {
       el.removeEventListener("touchstart", handleTouchStart);
       el.removeEventListener("touchmove", handleTouchMove);
       el.removeEventListener("touchend", handleTouchEnd);
-      el.removeEventListener("touchcancel", handleTouchEnd);
+      el.removeEventListener("touchcancel", handleTouchCancel);
     };
   }, [disabled]);
 
@@ -163,7 +176,7 @@ export function PullToRefresh({ onRefresh, disabled = false, children }: PullToR
         className="workspace-pull-content"
         style={{
           transform: pullDistance > 0 ? `translateY(${pullDistance}px)` : undefined,
-          transition: pullDistance === 0 ? "transform 200ms ease" : "none"
+          transition: pullDistance === 0 ? "transform var(--md-sys-motion-effects-default)" : "none"
         }}
       >
         {children}
