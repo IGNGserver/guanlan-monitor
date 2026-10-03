@@ -18,10 +18,8 @@ export type IdentifiedSeries = {
  * The dashboard rebuilds each chart's `series` on every render, so a memo keyed
  * on the array identity never hits and every poll re-runs the point filtering and
  * axis-range scan. Fingerprinting the actual values lets the memo survive a poll
- * whose data did not change, while still invalidating the moment a timestamp or
- * value does. Length plus the first/last timestamp and a cheap rolling hash of the
- * labels and last values is enough to distinguish a real update from a re-render;
- * it is not a security boundary.
+ * whose data did not change, while invalidating corrected historical samples as
+ * well as newly appended ones. This is a content key, not a security boundary.
  */
 export function seriesFingerprint(series: IdentifiedSeries[]): string {
   let hash = 2166136261;
@@ -33,11 +31,10 @@ export function seriesFingerprint(series: IdentifiedSeries[]): string {
     const points = item.points;
     mix(points.length);
     for (let index = 0; index < item.label.length; index++) mix(item.label.charCodeAt(index));
-    if (points.length) {
-      mix(dateValueOf(points[0].timestamp) % 2147483647);
-      const last = points[points.length - 1];
-      mix(dateValueOf(last.timestamp) % 2147483647);
-      mix(Math.round(last.value * 1000));
+    for (const point of points) {
+      mix(dateValueOf(point.timestamp) % 2147483647);
+      const value = String(point.value);
+      for (let index = 0; index < value.length; index++) mix(value.charCodeAt(index));
     }
   }
   return `${series.length}:${hash >>> 0}`;

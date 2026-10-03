@@ -339,6 +339,13 @@ jobs:
           set -euo pipefail
           NODE_PATH="$RUNNER_TEMP/dsc-playwright/node_modules" node scripts/visual-regression.cjs http://127.0.0.1:3000 "$RUNNER_TEMP/dsc-visual"
 
+      - name: Test chart interaction and themed controls in Chromium and WebKit
+        shell: bash
+        run: |
+          set -euo pipefail
+          NODE_PATH="$RUNNER_TEMP/dsc-playwright/node_modules" node scripts/chart-interaction-regression.cjs http://127.0.0.1:3000 "$RUNNER_TEMP/dsc-visual/charts-chromium"
+          NODE_PATH="$RUNNER_TEMP/dsc-playwright/node_modules" node scripts/chart-interaction-regression.cjs http://127.0.0.1:3000 "$RUNNER_TEMP/dsc-visual/charts-webkit" --webkit
+
       - name: Test mobile, tablet and offline PWA in Chromium
         shell: bash
         run: |

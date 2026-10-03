@@ -5,11 +5,11 @@ import { CHART_SPANS, DEFAULT_CHART_SPAN, type ChartSpanName } from "./types";
  * 固定布局的栅格容器。
  *
  * 自建 CSS Grid：跨度完全由 `DEVICE_DASHBOARD` 的常量声明，`dashboard.css`
- * 在 4 / 8 / 12 列三个断点上用 `grid-column: span var(--cell-*)` 取值。
+ * 依据容器宽度在 4 / 8 / 16 列之间用 `grid-column: span var(--cell-*)` 取值。
  * 这里只提供一个确定性的网格，不依赖任何第三方栅格或断点系统。
  */
 export function DashboardGrid({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`dashboard-grid${className ? ` ${className}` : ""}`}>{children}</div>;
+  return <div className="dashboard-grid-container"><div className={`dashboard-grid${className ? ` ${className}` : ""}`}>{children}</div></div>;
 }
 
 /**

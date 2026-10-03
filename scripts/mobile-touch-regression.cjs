@@ -100,6 +100,16 @@ async function cacheViewCount(page) {
     };
   }));
 }
+async function selectValue(page, label, value) {
+  const control = page.getByRole("combobox", { name: label, exact: true });
+  const text = await control.locator("..").locator(`select option[value="${value}"]`).textContent();
+  await control.tap();
+  await page.getByRole("listbox", { name: label, exact: true }).getByRole("option", { name: text, exact: true }).tap();
+  await page.waitForFunction(({ label, value }) => [...document.querySelectorAll('.m3e-select')].some((el) => el.querySelector('label')?.textContent === label && el.querySelector('select')?.value === value), { label, value });
+}
+async function selectedValue(page, label) {
+  return page.getByRole("combobox", { name: label, exact: true }).locator("..").locator("select").inputValue();
+}
 async function phoneFlow() {
   const { page, context, scenario, errors } = await setup();
   assert.equal(await page.getByText("1 台设备需要关注", { exact: true }).count(), 1);
@@ -126,13 +136,13 @@ async function phoneFlow() {
   await page.locator(".touch-directory-pane [data-device-id=nas-01]").tap();
   assert.equal(await page.evaluate(() => window.__dscNavigationMotion.at(-1)), "translateX(16px)", "closing a sheet must not reverse the next forward navigation");
   await page.getByRole("tab", { name: "趋势", exact: true }).tap();
-  await page.getByLabel("趋势分类", { exact: true }).selectOption("network");
+  await selectValue(page, "趋势分类", "network");
   await page.getByRole("button", { name: "返回上一页" }).tap();
   await page.locator(".touch-directory-pane").waitFor({ state: "visible" });
   assert.equal(await search.inputValue(), "归档");
   await page.locator(".touch-directory-pane [data-device-id=nas-01]").tap();
   assert.equal(await page.getByRole("tab", { name: "趋势", exact: true }).getAttribute("aria-selected"), "true");
-  assert.equal(await page.getByLabel("趋势分类", { exact: true }).inputValue(), "network");
+  assert.equal(await selectedValue(page, "趋势分类"), "network");
   await page.getByRole("tab", { name: "硬件", exact: true }).tap();
   await dimensions(page);
   const headingBox = await page.locator(".touch-main-pane .dashboard-section__header").boundingBox();
@@ -222,13 +232,13 @@ async function tabletFlow() {
   await nav(page, "设备").tap();
   await page.locator(".touch-directory-pane [data-device-id=workstation-01]").tap();
   await page.getByRole("tab", { name: "趋势", exact: true }).tap();
-  await page.getByLabel("趋势分类", { exact: true }).selectOption("compute");
+  await selectValue(page, "趋势分类", "compute");
   for (const [width, height] of [[768, 1024], [834, 1112], [1024, 768], [1366, 1024], [430, 1024]]) {
     await page.setViewportSize({ width, height });
     await page.waitForFunction((split) => document.querySelector(".touch-workspace")?.classList.contains("is-split") === split, width >= 840);
     assert.equal(await page.locator(".touch-workspace").getAttribute("data-presentation"), "tablet", JSON.stringify(await page.evaluate(() => ({ width: innerWidth, screen: [screen.width, screen.height], touch: navigator.maxTouchPoints, coarse: matchMedia("(pointer: coarse)").matches, ua: navigator.userAgent }))));
     assert.equal(await page.locator(".touch-directory-pane").isVisible(), width >= 840);
-    assert.equal(await page.getByLabel("趋势分类", { exact: true }).inputValue(), "compute");
+    assert.equal(await selectedValue(page, "趋势分类"), "compute");
     await dimensions(page);
     await shot(page, `tablet-${width}-detail`);
   }
@@ -236,7 +246,7 @@ async function tabletFlow() {
   await page.locator(".touch-directory-pane [data-device-id=nas-01]").tap();
   await page.waitForFunction(() => document.querySelector(".touch-device-heading h1")?.textContent === "归档 NAS");
   await page.locator(".touch-directory-pane [data-device-id=workstation-01]").tap();
-  assert.equal(await page.getByLabel("趋势分类", { exact: true }).inputValue(), "compute");
+  assert.equal(await selectedValue(page, "趋势分类"), "compute");
   await page.evaluate(() => { document.documentElement.style.setProperty("--md-sys-typescale-body-m-size", "21px"); document.documentElement.style.setProperty("--md-sys-typescale-title-m-size", "24px"); });
   await dimensions(page);
   await shot(page, "tablet-large-text");

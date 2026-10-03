@@ -68,7 +68,7 @@ const STATUS_LABELS = { online: "在线", offline: "离线", cached: "缓存", w
 export function StatusLabel({ state, compact = false }: { state: "online" | "offline" | "cached" | "warning" | "unknown"; compact?: boolean }) {
   return (
     <span className={`workspace-status-label workspace-status-label--${state} ${compact ? "is-compact" : ""}`} role={compact ? "img" : undefined} aria-label={compact ? STATUS_LABELS[state] : undefined}>
-      <StatusDot state={state} />
+      {compact ? <StatusDot state={state} /> : <span className="workspace-status-label__icon" aria-hidden="true"><Icon name={state === "online" ? "check" : state === "warning" ? "warning" : state === "cached" ? "clock" : "connection"} size={16} /></span>}
       {!compact && STATUS_LABELS[state]}
     </span>
   );

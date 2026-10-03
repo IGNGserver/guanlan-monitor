@@ -42,7 +42,7 @@ async function createFixtureProxy(upstreamUrl) {
           const id = decodeURIComponent(pathname.split("/")[3]);
           const device = scenario.devices.find((item) => item.deviceId === id);
           if (scenario.delayId === id) await new Promise((resolve) => setTimeout(resolve, 600));
-          payload = { ...metricFixture(device ?? fixtureDevices[0]), window: url.searchParams.get("window") ?? "5m" };
+          payload = { ...(scenario.metricFixture ?? metricFixture)(device ?? fixtureDevices[0]), window: url.searchParams.get("window") ?? "5m" };
         }
         if (pathname.endsWith("/traffic-calendar")) payload = null;
         if (request.method !== "GET") {
