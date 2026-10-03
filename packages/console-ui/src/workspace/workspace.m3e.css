@@ -187,17 +187,15 @@
 
 /* ---- Status ---------------------------------------------------------------- */
 
-.workspace-status-label { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--md-sys-shape-full); font-size: var(--md-sys-typescale-label-m-size); font-weight: 500; }
-.workspace-status-label.is-compact { padding: 0; background: transparent; }
+.workspace-status-label { display: inline-flex; min-height: 28px; align-items: center; gap: 6px; padding: 4px 10px; line-height: 20px; white-space: nowrap; border-radius: var(--md-sys-shape-full); font-size: var(--md-sys-typescale-label-m-size); font-weight: 500; }
+.workspace-status-label.is-compact { min-height: 0; padding: 0; background: transparent; }
+.workspace-status-label__icon { display: inline-flex; flex: 0 0 auto; }
 .workspace-status-dot {
   width: 8px;
   height: 8px;
   flex: 0 0 auto;
   border-radius: var(--md-sys-shape-full);
   background: currentColor;
-}
-.workspace-status-label--online .workspace-status-dot {
-  animation: m3e-pulse-glow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 .workspace-status-label--online { color: var(--md-sys-color-on-success-container); background: var(--md-sys-color-success-container); }
 .workspace-status-label--offline { color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-high); }

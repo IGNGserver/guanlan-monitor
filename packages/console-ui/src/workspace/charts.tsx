@@ -1,13 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { SamplePoint } from "@dsc/shared";
 import { Icon } from "../m3e/icons";
 import { dateValueOf } from "./sampleTime.ts";
+import { chartGestureDirection, chartTimeAtClientX, indexChartSamples, inspectChartTime, latestChartValues, nearestChartTime, type ChartGestureDirection, type ChartInspection } from "./chartInspection.ts";
+export type { ChartInspection } from "./chartInspection.ts";
 import {
   chartAnimationsEnabled,
   partsFingerprint,
   prefersReducedMotion,
-  seriesFingerprint,
-  seriesTimeSpan
+  seriesFingerprint
 } from "./chartIdentity.ts";
 
 /* =============================================================================
@@ -77,10 +78,11 @@ function linearScale(values: number[], pinnedMax?: number): Scale {
 }
 
 function timeScale(span: { min: number; max: number } | null): Scale {
-  if (!span || !Number.isFinite(span.min) || !Number.isFinite(span.max) || span.max <= span.min) {
+  if (!span || !Number.isFinite(span.min) || !Number.isFinite(span.max)) {
     const now = Date.now();
     return { min: now - 60_000, max: now, span: 60_000 };
   }
+  if (span.max <= span.min) return { min: span.min - 30_000, max: span.min + 30_000, span: 60_000 };
   return { min: span.min, max: span.max, span: span.max - span.min };
 }
 
@@ -125,7 +127,35 @@ export interface TimeSeriesChartProps {
   ariaLabel?: string;
   compact?: boolean;
   className?: string;
-  onHoverPoint?: (info: { timeText: string; valueText: string } | null) => void;
+  onHoverPoint?: (info: ChartInspection | null) => void;
+  /** Device cards place the same readout in their header. */
+  hideReadout?: boolean;
+  readoutId?: string;
+}
+
+function ChartReadingValue({ text }: { text: string }) {
+  const parts = /^(-?[\d.,]+)(\s*[%°℃A-Za-z].*)$/.exec(text);
+  return parts ? <>{parts[1]}<span className="m3e-chart-readout__unit">{parts[2]}</span></> : <>{text}</>;
+}
+
+export function ChartReadout({ info, inspecting = false, id }: { info: ChartInspection | null; inspecting?: boolean; id?: string }) {
+  if (!info) return null;
+  return (
+    <div className={`m3e-chart-readout${inspecting ? " is-inspecting" : ""}`} id={id}>
+      <div className="m3e-chart-readout__time">
+        <span>{inspecting ? "查点" : "最新"}</span>
+        <time dateTime={new Date(info.timestamp).toISOString()}>{new Date(info.timestamp).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}</time>
+      </div>
+      <dl className="m3e-chart-readout__values">
+        {info.values.map((item, index) => (
+          <div key={`${index}-${item.label}`}>
+            <dt><span className="m3e-chart__swatch" style={{ background: CHART_COLORS[index % CHART_COLORS.length] }} aria-hidden="true" />{item.label}</dt>
+            <dd><ChartReadingValue text={item.valueText} /></dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
 }
 
 export function TimeSeriesChart({
@@ -136,162 +166,147 @@ export function TimeSeriesChart({
   ariaLabel,
   compact = false,
   className = "",
-  onHoverPoint
+  onHoverPoint,
+  hideReadout = false,
+  readoutId
 }: TimeSeriesChartProps) {
   const { ref, width } = useElementWidth<HTMLDivElement>();
+  const generatedReadoutId = useId();
   const fingerprint = useMemo(() => seriesFingerprint(series), [series]);
   const stableSeries = useMemo(() => series, [fingerprint]); // eslint-disable-line react-hooks/exhaustive-deps
+  const index = useMemo(() => indexChartSamples(stableSeries), [stableSeries]);
   const reducedMotion = useMemo(prefersReducedMotion, []);
   const animations = chartAnimationsEnabled(reducedMotion);
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  const touchStart = useRef<{ x: number; y: number; horizontal: boolean } | null>(null);
+  const [selectedTime, setSelectedTime] = useState<number | null>(null);
+  const [keyboardFocus, setKeyboardFocus] = useState(false);
+  const gesture = useRef<{ pointerId: number; x: number; y: number; direction: ChartGestureDirection } | null>(null);
+  const callback = useRef(onHoverPoint);
+  callback.current = onHoverPoint;
 
-  const height = compact ? 132 : 248;
-  const hasData = stableSeries.some((item) => item.points.length > 0);
+  const inspection = useMemo(() => selectedTime != null && index.timeline.includes(selectedTime)
+    ? inspectChartTime(series, index, selectedTime, valueFormatter) : null, [series, index, selectedTime, valueFormatter]);
+  const latest = useMemo(() => latestChartValues(series, index, valueFormatter), [series, index, valueFormatter]);
+  useEffect(() => { callback.current?.(inspection); }, [inspection]);
+  useEffect(() => {
+    if (selectedTime != null && !index.timeline.includes(selectedTime)) setSelectedTime(null);
+  }, [index, selectedTime]);
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && !ref.current?.contains(event.target)) setSelectedTime(null);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    return () => { document.removeEventListener("pointerdown", dismiss); callback.current?.(null); };
+  }, [ref]);
+
+  const height = compact ? 168 : 208;
+  const hasData = index.timeline.length > 0;
   const svgWidth = Math.max(width, 240);
-  const padding = { top: 12, right: 14, bottom: 26, left: 46 };
+  const time = useMemo(() => timeScale(index.timeline.length ? { min: index.timeline[0], max: index.timeline[index.timeline.length - 1] } : null), [index]);
+  const value = useMemo(() => linearScale(stableSeries.flatMap((item) => item.points.map((point) => point.value)), maxValue), [stableSeries, maxValue]);
+  const tickFormatter = valueFormatter ?? series.find((item) => item.valueFormatter)?.valueFormatter;
+  const xTicks = useMemo(() => niceTicks(time, svgWidth < 360 ? 2 : 3), [time, svgWidth]);
+  const yTicks = useMemo(() => niceTicks(value, 3), [value]);
+  const tickText = (tick: number) => tickFormatter ? tickFormatter(tick) : String(Math.round(tick));
+  const padding = { top: 12, right: 14, bottom: 26, left: Math.max(44, Math.min(112, Math.max(...yTicks.map((tick) => tickText(tick).length)) * 6 + 12)) };
   const plotWidth = Math.max(1, svgWidth - padding.left - padding.right);
   const plotHeight = Math.max(1, height - padding.top - padding.bottom);
-
-  const time = useMemo(() => timeScale(seriesTimeSpan(stableSeries)), [stableSeries]);
-  const value = useMemo(() => linearScale(stableSeries.flatMap((item) => item.points.map((point) => point.value)), maxValue), [stableSeries, maxValue]);
-  const tickFormatter = valueFormatter ?? stableSeries.find((item) => item.valueFormatter)?.valueFormatter;
-
   const toX = (timestamp: number) => padding.left + ((timestamp - time.min) / time.span) * plotWidth;
-  const toY = (value01: number) => padding.top + plotHeight - ((value01 - value.min) / value.span) * plotHeight;
+  const toY = (sample: number) => padding.top + plotHeight - ((sample - value.min) / value.span) * plotHeight;
 
-  const xTicks = useMemo(() => niceTicks(time, 3), [time]);
-  const yTicks = useMemo(() => niceTicks(value, 3), [value]);
-  const primary = stableSeries.find((item) => item.points.length) ?? stableSeries[0];
-
-  const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (!primary?.points.length || !onHoverPoint) return;
-    if (event.pointerType === "touch" && touchStart.current) {
-      const dx = Math.abs(event.clientX - touchStart.current.x);
-      const dy = Math.abs(event.clientY - touchStart.current.y);
-      if (!touchStart.current.horizontal && dy > dx && dy > 6) { clearHover(); return; }
-      if (dx < 6 && !touchStart.current.horizontal) return;
-      touchStart.current.horizontal = true;
-    }
+  const inspectPointer = (event: React.PointerEvent<SVGSVGElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
-    const ratio = (event.clientX - bounds.left - padding.left) / plotWidth;
-    const target = time.min + Math.max(0, Math.min(1, ratio)) * time.span;
-    let best = 0;
-    let bestDelta = Infinity;
-    primary.points.forEach((point, index) => {
-      const delta = Math.abs(dateValueOf(point.timestamp) - target);
-      if (delta < bestDelta) { bestDelta = delta; best = index; }
-    });
-    setHoverIndex(best);
-    const point = primary.points[best];
-    onHoverPoint({ timeText: formatClock(point.timestamp), valueText: (primary.valueFormatter ?? tickFormatter ?? String)(point.value) });
+    const target = chartTimeAtClientX(event.clientX, bounds, svgWidth, padding.left, padding.right, time.min, time.max);
+    setSelectedTime(nearestChartTime(index.timeline, target));
   };
+  const clearInspection = () => setSelectedTime(null);
+  const hoverX = inspection ? toX(inspection.timestamp) : 0;
 
-  const clearHover = () => {
-    setHoverIndex(null);
-    onHoverPoint?.(null);
-  };
-
-  if (!hasData) return <div className={`m3e-chart-empty ${className}`.trim()}>{EMPTY_CHART_MESSAGE}</div>;
-
-  const hoverPoint = hoverIndex != null ? primary?.points[hoverIndex] : undefined;
-  const hoverX = hoverPoint ? toX(dateValueOf(hoverPoint.timestamp)) : 0;
-
+  // The measured host stays mounted while data is empty or loading. Its observer
+  // therefore also measures the first SVG after an asynchronous response.
   return (
     <div ref={ref} className={`m3e-chart m3e-chart--${visualization}${compact ? " is-compact" : ""}${className ? ` ${className}` : ""}`}>
-      <svg
-        className="m3e-chart__svg"
-        width="100%"
-        height={height}
-        viewBox={`0 0 ${svgWidth} ${height}`}
-        role="img"
-        aria-label={ariaLabel ?? `指标时间趋势图：${stableSeries.map((item) => item.label).join("、")}`}
-        onPointerMove={onHoverPoint ? handlePointerMove : undefined}
-        onPointerDown={(event) => { if (event.pointerType === "touch") touchStart.current = { x: event.clientX, y: event.clientY, horizontal: false }; }}
-        onPointerUp={(event) => { if (event.pointerType === "touch") { touchStart.current = null; handlePointerMove(event); } }}
-        onPointerCancel={() => { touchStart.current = null; clearHover(); }}
-        onPointerLeave={onHoverPoint ? clearHover : undefined}
-        tabIndex={onHoverPoint ? 0 : undefined}
-        onKeyDown={(event) => {
-          if (!onHoverPoint || !primary?.points.length || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-          event.preventDefault();
-          const index = event.key === "Home" ? 0 : event.key === "End" ? primary.points.length - 1 : Math.max(0, Math.min(primary.points.length - 1, (hoverIndex ?? primary.points.length - 1) + (event.key === "ArrowLeft" ? -1 : 1)));
-          setHoverIndex(index);
-          const point = primary.points[index];
-          onHoverPoint({ timeText: formatClock(point.timestamp), valueText: (primary.valueFormatter ?? tickFormatter ?? String)(point.value) });
-        }}
-      >
-        {/* horizontal grid + value axis */}
-        {yTicks.map((tick) => {
-          const y = toY(tick);
-          return (
-            <g key={`y-${tick}`}>
+      {!hasData ? <div className="m3e-chart-empty">{EMPTY_CHART_MESSAGE}</div> : <>
+        {!hideReadout && <ChartReadout info={inspection ?? latest} inspecting={Boolean(inspection)} id={generatedReadoutId} />}
+        <svg
+          className={`m3e-chart__svg${keyboardFocus ? " is-keyboard-focus" : ""}`}
+          width="100%"
+          height={height}
+          viewBox={`0 0 ${svgWidth} ${height}`}
+          role="img"
+          aria-label={ariaLabel ?? `指标时间趋势图：${stableSeries.map((item) => item.label).join("、")}`}
+          aria-describedby={readoutId ?? (!hideReadout ? generatedReadoutId : undefined)}
+          aria-keyshortcuts="ArrowLeft ArrowRight Home End Escape"
+          tabIndex={0}
+          onFocus={(event) => setKeyboardFocus(event.currentTarget.matches(":focus-visible"))}
+          onBlur={() => { setKeyboardFocus(false); clearInspection(); }}
+          onPointerMove={(event) => {
+            if (event.pointerType === "mouse") { inspectPointer(event); return; }
+            const active = gesture.current;
+            if (!active || active.pointerId !== event.pointerId) return;
+            active.direction = chartGestureDirection(active.direction, event.clientX - active.x, event.clientY - active.y);
+            if (active.direction === "vertical") { clearInspection(); return; }
+            if (active.direction === "horizontal") {
+              event.preventDefault();
+              if (!event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.setPointerCapture(event.pointerId);
+              inspectPointer(event);
+            }
+          }}
+          onPointerDown={(event) => {
+            setKeyboardFocus(false);
+            if (event.pointerType === "mouse") return;
+            // A second finger belongs to pinch zoom, not chart inspection.
+            if (gesture.current) { gesture.current = null; clearInspection(); return; }
+            gesture.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, direction: "pending" };
+          }}
+          onPointerUp={(event) => {
+            const active = gesture.current;
+            if (active?.pointerId !== event.pointerId) return;
+            if (active.direction !== "vertical") inspectPointer(event);
+            gesture.current = null;
+          }}
+          onPointerCancel={() => { gesture.current = null; clearInspection(); }}
+          onPointerLeave={(event) => { if (event.pointerType === "mouse") clearInspection(); }}
+          onKeyDown={(event) => {
+            setKeyboardFocus(true);
+            if (event.key === "Escape") { clearInspection(); return; }
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            const position = selectedTime == null ? index.timeline.length - 1 : index.timeline.indexOf(selectedTime);
+            const next = event.key === "Home" ? 0 : event.key === "End" ? index.timeline.length - 1
+              : Math.max(0, Math.min(index.timeline.length - 1, position + (event.key === "ArrowLeft" ? -1 : 1)));
+            setSelectedTime(index.timeline[next]);
+          }}
+        >
+          {yTicks.map((tick) => {
+            const y = toY(tick);
+            return <g key={`y-${tick}`}>
               <line className="m3e-chart__grid" x1={padding.left} y1={y} x2={svgWidth - padding.right} y2={y} />
-              <text className="m3e-chart__axis" x={padding.left - 8} y={y + 4} textAnchor="end">{tickFormatter ? tickFormatter(tick) : Math.round(tick)}</text>
-            </g>
-          );
-        })}
-        {/* time axis */}
-        {xTicks.map((tick, index) => {
-          const x = toX(tick);
-          return (
-            <text key={`x-${index}`} className="m3e-chart__axis" x={x} y={height - 6} textAnchor={index === 0 ? "start" : index === xTicks.length - 1 ? "end" : "middle"}>
-              {formatClock(tick)}
-            </text>
-          );
-        })}
-        {/* series */}
-        {stableSeries.map((item, index) => {
-          const color = CHART_COLORS[index % CHART_COLORS.length];
-          const points = item.points
-            .filter((point) => Number.isFinite(dateValueOf(point.timestamp)) && Number.isFinite(point.value))
-            .map((point) => ({ x: toX(dateValueOf(point.timestamp)), y: toY(point.value) }));
-          if (!points.length) return null;
-          if (visualization === "bar") {
-            const barWidth = Math.max(2, Math.min(18, plotWidth / Math.max(1, points.length) - 3));
-            return (
-              <g key={item.label} fill={color}>
-                {points.map((point, barIndex) => (
-                  <rect
-                    key={barIndex}
-                    x={point.x - barWidth / 2}
-                    y={point.y}
-                    width={barWidth}
-                    height={Math.max(0, padding.top + plotHeight - point.y)}
-                    rx={Math.min(barWidth / 2, 4)}
-                  >
-                    {animations ? <animate attributeName="opacity" from="0" to="1" dur="220ms" fill="freeze" /> : null}
-                  </rect>
-                ))}
-              </g>
-            );
-          }
-          return (
-            <g key={item.label} className="m3e-chart__series" fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-              {visualization === "area" ? <path d={buildAreaPath(points, padding.top + plotHeight)} fill={color} opacity="0.16" stroke="none" /> : null}
+              <text className="m3e-chart__axis" x={padding.left - 8} y={y + 4} textAnchor="end">{tickText(tick)}</text>
+            </g>;
+          })}
+          {xTicks.map((tick, position) => <text key={`x-${position}`} className="m3e-chart__axis" x={toX(tick)} y={height - 6} textAnchor={position === 0 ? "start" : position === xTicks.length - 1 ? "end" : "middle"}>{formatClock(tick)}</text>)}
+          {stableSeries.map((item, position) => {
+            const color = CHART_COLORS[position % CHART_COLORS.length];
+            const points = [...index.points[position]].sort(([a], [b]) => a - b).map(([timestamp, point]) => ({ x: toX(timestamp), y: toY(point.value) }));
+            if (!points.length) return null;
+            if (visualization === "bar") {
+              const barWidth = Math.max(2, Math.min(18, plotWidth / points.length - 3));
+              return <g key={item.label} fill={color}>{points.map((point, barIndex) => <rect key={barIndex} x={point.x - barWidth / 2} y={point.y} width={barWidth} height={Math.max(0, padding.top + plotHeight - point.y)} rx={Math.min(barWidth / 2, 4)}>
+                {animations && <animate attributeName="opacity" from="0" to="1" dur="220ms" fill="freeze" />}
+              </rect>)}</g>;
+            }
+            return <g key={item.label} className="m3e-chart__series" fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              {visualization === "area" && <path d={buildAreaPath(points, padding.top + plotHeight)} fill={color} opacity="0.16" stroke="none" />}
               <path d={buildLinePath(points)} />
-            </g>
-          );
-        })}
-        {/* hover */}
-        {hoverPoint ? (
-          <g className="m3e-chart__hover">
+              {points.length === 1 && <circle cx={points[0].x} cy={points[0].y} r="3" fill={color} stroke="none" />}
+            </g>;
+          })}
+          {inspection && <g className="m3e-chart__hover" aria-hidden="true">
             <line x1={hoverX} y1={padding.top} x2={hoverX} y2={padding.top + plotHeight} />
-            {stableSeries.map((item, index) => {
-              const point = item.points[hoverIndex ?? -1];
-              if (!point) return null;
-              return <circle key={item.label} cx={toX(dateValueOf(point.timestamp))} cy={toY(point.value)} r="4" fill={CHART_COLORS[index % CHART_COLORS.length]} />;
-            })}
-          </g>
-        ) : null}
-      </svg>
-      {stableSeries.length > 1 ? (
-        <ul className="m3e-chart__legend">
-          {stableSeries.map((item, index) => (
-            <li key={item.label}><span className="m3e-chart__swatch" style={{ background: CHART_COLORS[index % CHART_COLORS.length] }} aria-hidden="true" />{item.label}</li>
-          ))}
-        </ul>
-      ) : null}
+            {inspection.values.map((item, position) => item.point ? <circle key={`${position}-${item.label}`} cx={hoverX} cy={toY(item.point.value)} r="4" fill={CHART_COLORS[position % CHART_COLORS.length]} /> : null)}
+          </g>}
+        </svg>
+      </>}
     </div>
   );
 }
@@ -319,7 +334,7 @@ export function DonutChart({
 }: DonutChartProps) {
   const fingerprint = useMemo(() => partsFingerprint(parts), [parts]);
   const stable = useMemo(() => parts, [fingerprint]); // eslint-disable-line react-hooks/exhaustive-deps
-  const size = compact ? 168 : 200;
+  const size = compact ? 144 : 160;
   const radius = 76;
   const circumference = 2 * Math.PI * radius;
   const valid = stable.filter((part) => Number.isFinite(part.value) && part.value >= 0);
@@ -391,15 +406,15 @@ export function MeterChart({
   const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
   const safeTotal = Number.isFinite(total) && total > 0 ? Math.max(total, safeValue) : Math.max(safeValue, 1);
   const percent = Math.min(1, safeValue / safeTotal);
-  const width = compact ? 180 : 240;
-  const height = compact ? 84 : 108;
+  const width = 240;
+  const height = 138;
   const radius = 84;
   const circumference = Math.PI * radius;
   const color = statusRanges?.find((range) => safeValue >= range.range[0] && safeValue <= range.range[1])?.status;
 
   return (
     <div className={`m3e-chart m3e-chart--meter${className ? ` ${className}` : ""}`}>
-      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel}>
+      <svg width={compact ? 168 : 192} height={compact ? 97 : 110} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel}>
         <path d={`M${width / 2 - radius} ${height - 12} A ${radius} ${radius} 0 0 1 ${width / 2 + radius} ${height - 12}`} fill="none" stroke="var(--md-sys-color-surface-container-highest)" strokeWidth="16" strokeLinecap="round" />
         <path
           d={`M${width / 2 - radius} ${height - 12} A ${radius} ${radius} 0 0 1 ${width / 2 + radius} ${height - 12}`}

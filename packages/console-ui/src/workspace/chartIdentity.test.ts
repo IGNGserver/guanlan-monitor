@@ -71,3 +71,10 @@ test("dateValueOf caches and stays correct across eviction", () => {
   assert.equal(dateValueOf(iso), Date.parse(iso));
   assert.equal(dateValueOf("nonsense"), Date.parse("nonsense"));
 });
+
+test("corrected historical readings invalidate the chart content key", () => {
+  const original = [series("cpu", [["2026-01-01T00:00:00Z", 10], ["2026-01-01T00:00:05Z", 12], ["2026-01-01T00:00:10Z", 20]])];
+  const corrected = structuredClone(original);
+  corrected[0].points[1].value = 12.0001;
+  assert.notEqual(seriesFingerprint(original), seriesFingerprint(corrected));
+});

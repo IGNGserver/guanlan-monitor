@@ -344,17 +344,182 @@ export interface M3SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelec
   hideLabel?: boolean;
 }
 
+function selectOptionText(node: React.ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (React.isValidElement<{ children?: React.ReactNode }>(node)) return selectOptionText(node.props.children);
+  return React.Children.toArray(node).map(selectOptionText).join("");
+}
+
 export function M3Select({ label, options, hideLabel = false, id, className, ...props }: M3SelectProps) {
   const generatedId = useId();
   const selectId = id ?? generatedId;
+  const labelId = `${selectId}-label`;
+  const listId = `${selectId}-list`;
+  const native = useRef<HTMLSelectElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const initialValue = String(props.defaultValue ?? options.find((option) => !option.disabled)?.value ?? "");
+  const [uncontrolledValue, setUncontrolledValue] = useState(initialValue);
+  const selectedValue = props.value === undefined ? uncontrolledValue : String(props.value);
+  const selected = options.findIndex((option) => option.value === selectedValue);
+  const enabled = options.map((option, position) => option.disabled ? -1 : position).filter((position) => position >= 0);
+  const typeahead = useRef({ text: "", time: 0 });
+
+  const closeMenu = () => { menu.current?.hidePopover(); setOpen(false); };
+  const placeMenu = () => {
+    if (!trigger.current || !menu.current) return;
+    const bounds = trigger.current.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const viewLeft = viewport?.offsetLeft ?? 0;
+    const viewTop = viewport?.offsetTop ?? 0;
+    const viewWidth = viewport?.width ?? window.innerWidth;
+    const viewBottom = viewTop + (viewport?.height ?? window.innerHeight);
+    const width = Math.min(Math.max(200, bounds.width), viewWidth - 16);
+    const below = viewBottom - bounds.bottom - 8;
+    const above = bounds.top - viewTop - 8;
+    menu.current.style.width = `${width}px`;
+    const naturalHeight = menu.current.scrollHeight || options.length * 48 + 16;
+    const down = below >= Math.min(256, naturalHeight) || below >= above;
+    const maxHeight = Math.min(320, Math.max(48, down ? below : above));
+    const height = Math.min(naturalHeight, maxHeight);
+    Object.assign(menu.current.style, {
+      width: `${width}px`, maxHeight: `${maxHeight}px`,
+      left: `${Math.max(viewLeft + 8, Math.min(bounds.left, viewLeft + viewWidth - width - 8))}px`,
+      top: `${down ? bounds.bottom + 6 : Math.max(viewTop + 8, bounds.top - height - 6)}px`
+    });
+  };
+  const openMenu = (position = selected >= 0 && !options[selected].disabled ? selected : enabled[0]) => {
+    if (props.disabled || !enabled.length) return;
+    setActive(position);
+    placeMenu();
+    menu.current?.showPopover();
+    placeMenu();
+    setOpen(true);
+  };
+  const commit = (position: number, restoreFocus = true) => {
+    const option = options[position];
+    if (!option || option.disabled || !native.current) return;
+    // Dispatch a real native select change so existing onChange handlers and
+    // form serialization keep the same HTMLSelectElement event contract.
+    if (native.current.value !== option.value) {
+      native.current.value = option.value;
+      native.current.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    closeMenu();
+    if (restoreFocus) trigger.current?.focus({ preventScroll: true });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const place = () => placeMenu();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    window.visualViewport?.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+      window.visualViewport?.removeEventListener("resize", place);
+    };
+  });
+  useEffect(() => {
+    if (props.disabled && open) closeMenu();
+    if (open) menu.current?.querySelector(`[data-option-index="${active}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [active, open, props.disabled]);
+  useEffect(() => {
+    const form = native.current?.form;
+    const reset = () => setUncontrolledValue(initialValue);
+    form?.addEventListener("reset", reset);
+    return () => form?.removeEventListener("reset", reset);
+  }, [initialValue, props.form]);
+
   return (
     <div className={joinClasses("m3e-select", hideLabel && "is-label-hidden", className)}>
-      <label className="m3e-select__label" htmlFor={selectId}>{label}</label>
+      <label className="m3e-select__label" id={labelId} htmlFor={props.multiple ? selectId : `${selectId}-trigger`}>{label}</label>
       <div className="m3e-select__container">
-        <select {...props} id={selectId} className="m3e-select__control">
-          {options.map((option) => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}
+        <select
+          {...props}
+          ref={native}
+          id={selectId}
+          className={props.multiple ? "m3e-select__control" : "m3e-select__native"}
+          hidden={!props.multiple}
+          aria-hidden={props.multiple ? undefined : true}
+          tabIndex={props.multiple ? props.tabIndex : -1}
+          autoFocus={props.multiple ? props.autoFocus : false}
+          onChange={(event) => { setUncontrolledValue(event.target.value); props.onChange?.(event); }}
+          onInvalid={(event) => { if (!props.multiple) { event.preventDefault(); trigger.current?.focus(); } props.onInvalid?.(event); }}
+        >
+          {options.map((option) => <option key={option.value} value={option.value} disabled={option.disabled}>{selectOptionText(option.label)}</option>)}
         </select>
-        <span className="m3e-select__chevron" aria-hidden="true"><Icon name="chevron" size={20} /></span>
+        {!props.multiple && <>
+          <button
+            ref={trigger}
+            id={`${selectId}-trigger`}
+            type="button"
+            className="m3e-select__control"
+            role="combobox"
+            aria-label={props["aria-label"]}
+            aria-labelledby={props["aria-label"] ? undefined : labelId}
+            aria-describedby={props["aria-describedby"]}
+            aria-invalid={props["aria-invalid"]}
+            aria-required={props.required || undefined}
+            aria-expanded={open}
+            aria-controls={listId}
+            aria-haspopup="listbox"
+            aria-activedescendant={open && active >= 0 ? `${listId}-${active}` : undefined}
+            disabled={props.disabled || !enabled.length}
+            autoFocus={props.autoFocus}
+            tabIndex={props.tabIndex}
+            title={props.title}
+            onClick={() => open ? closeMenu() : openMenu()}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") { if (open) { event.preventDefault(); closeMenu(); } return; }
+              if (event.key === "Tab") { if (open) commit(active, false); return; }
+              if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+                event.preventDefault();
+                if (event.key === "Home" || event.key === "End") {
+                  const next = event.key === "Home" ? enabled[0] : enabled[enabled.length - 1];
+                  if (open) setActive(next); else openMenu(next);
+                } else if (!open) openMenu();
+                else {
+                  const current = enabled.indexOf(active);
+                  setActive(enabled[Math.max(0, Math.min(enabled.length - 1, current + (event.key === "ArrowDown" ? 1 : -1)))]);
+                }
+                return;
+              }
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                if (open) commit(active); else openMenu();
+                return;
+              }
+              if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                const now = performance.now();
+                typeahead.current.text = (now - typeahead.current.time > 700 ? "" : typeahead.current.text) + event.key.toLocaleLowerCase();
+                typeahead.current.time = now;
+                const next = enabled.find((position) => selectOptionText(options[position].label).toLocaleLowerCase().startsWith(typeahead.current.text));
+                if (next != null) { if (open) setActive(next); else openMenu(next); }
+              }
+            }}
+          >
+            <span className="m3e-select__value">{options[selected]?.label ?? "请选择"}</span>
+            <span className="m3e-select__chevron" aria-hidden="true"><Icon name="chevron" size={20} /></span>
+          </button>
+          <div ref={menu} id={listId} className="m3e-select__menu" popover="auto" role="listbox" aria-labelledby={labelId} onToggle={(event) => setOpen((event.nativeEvent as ToggleEvent).newState === "open")}>
+            {options.map((option, position) => <div
+              key={option.value}
+              id={`${listId}-${position}`}
+              role="option"
+              aria-selected={option.value === selectedValue}
+              aria-disabled={option.disabled || undefined}
+              data-option-index={position}
+              className={joinClasses("m3e-select__option", active === position && "is-active")}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => commit(position)}
+              onPointerMove={(event) => { if (event.pointerType === "mouse" && !option.disabled) setActive(position); }}
+            ><span>{option.label}</span>{option.value === selectedValue && <Icon name="check" size={18} />}</div>)}
+          </div>
+        </>}
       </div>
     </div>
   );

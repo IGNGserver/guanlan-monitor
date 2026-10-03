@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useId, useMemo, useState } from "react";
 import type { DashboardChartSpec } from "../dashboard";
 import { ChartTile } from "../dashboard";
-import { TimeSeriesChart, DonutChart, MeterChart, NumberGrid } from "../charts";
+import { TimeSeriesChart, ChartReadout, DonutChart, MeterChart, NumberGrid, type ChartInspection } from "../charts";
+import { indexChartSamples, latestChartValues } from "../chartInspection.ts";
 import type { DeviceChartTile } from "./deviceCharts";
 import { ChartDetails, ChartInfoRows } from "./deviceCharts";
 
@@ -12,11 +13,10 @@ export function SingleDeviceChartCell({
   chart: DashboardChartSpec;
   tile: DeviceChartTile;
 }) {
-  const [hoveredPoint, setHoveredPoint] = useState<{ timeText: string; valueText: string } | null>(null);
-
-  // Keep large heroStat/badge as current latest data
-  // Inspected point appears as a clean informative subtitle below the title/hero
-  const inspectedText = hoveredPoint ? `选中点：${hoveredPoint.valueText} (${hoveredPoint.timeText})` : undefined;
+  const [hoveredPoint, setHoveredPoint] = useState<ChartInspection | null>(null);
+  const readoutId = useId();
+  const isTrend = chart.visualization === "line" || chart.visualization === "area";
+  const latest = useMemo(() => latestChartValues(tile.series ?? [], indexChartSamples(tile.series ?? []), tile.valueFormatter), [tile.series, tile.valueFormatter]);
 
   const valueFormatter = tile.valueFormatter ?? ((v: number) => String(v));
 
@@ -63,6 +63,8 @@ export function SingleDeviceChartCell({
           valueFormatter={tile.valueFormatter}
           compact={chart.compact}
           onHoverPoint={setHoveredPoint}
+          hideReadout
+          readoutId={readoutId}
         />
       );
       break;
@@ -72,9 +74,9 @@ export function SingleDeviceChartCell({
     <ChartTile
       title={tile.title ?? chart.title}
       subtitle={tile.subtitle}
-      heroStat={tile.heroStat}
-      heroBadge={tile.heroBadge}
-      inspectedStat={inspectedText}
+      heroStat={isTrend ? undefined : tile.heroStat}
+      heroBadge={isTrend ? undefined : tile.heroBadge}
+      readout={isTrend && !tile.emptyMessage ? <ChartReadout info={hoveredPoint ?? latest} inspecting={Boolean(hoveredPoint)} id={readoutId} /> : undefined}
       controls={tile.controls}
       emptyMessage={tile.emptyMessage}
       footer={tile.footer}

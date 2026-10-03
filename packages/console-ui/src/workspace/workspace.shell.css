@@ -120,10 +120,10 @@
 }
 
 .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-brand__name,
-.workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-nav-item span,
+.workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-nav-item .m3e-nav-item__label,
 .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-sidebar__label,
 .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-device-item__copy,
-.workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-sidebar__support span,
+.workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-sidebar__support .m3e-button__label > span,
 .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-sidebar__section-title {
   display: initial;
 }
@@ -133,8 +133,8 @@
   display: flex;
 }
 
-.workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-nav-item span,
-.workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-sidebar__support span,
+.workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-nav-item .m3e-nav-item__label,
+.workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-sidebar__support .m3e-button__label > span,
 .workspace-root.is-sidebar-peek .workspace-sidebar.is-collapsed .workspace-brand__name {
   display: inline;
 }
@@ -208,10 +208,10 @@
 }
 
 .workspace-sidebar.is-collapsed .workspace-brand__name,
-.workspace-sidebar.is-collapsed .workspace-nav-item span,
+.workspace-sidebar.is-collapsed .workspace-nav-item .m3e-nav-item__label,
 .workspace-sidebar.is-collapsed .workspace-sidebar__label,
 .workspace-sidebar.is-collapsed .workspace-device-item__copy,
-.workspace-sidebar.is-collapsed .workspace-sidebar__support span,
+.workspace-sidebar.is-collapsed .workspace-sidebar__support .m3e-button__label > span,
 .workspace-sidebar.is-collapsed .workspace-sidebar__section-title {
   display: none;
 }
