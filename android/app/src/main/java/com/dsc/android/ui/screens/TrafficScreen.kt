@@ -146,7 +146,8 @@ fun TrafficScreen(
         contentPadding = oneUiListContentPadding(),
         verticalArrangement = Arrangement.spacedBy(metrics.groupGap)
       ) {
-        if (state.dataSource == RemoteDataSource.Cache) {
+        // 连接尝试进行中不急着喊"离线"：先自动连一次，连不上再展示缓存（交）
+        if (state.dataSource == RemoteDataSource.Cache && !state.loggingIn && !state.refreshing) {
           item(key = "offline-cache") {
             OneUiNotice(
               title = "当前显示离线缓存",

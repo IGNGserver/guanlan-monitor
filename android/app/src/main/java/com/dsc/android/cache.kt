@@ -19,7 +19,10 @@ data class CachedRemoteSnapshot(
   val selectedWindow: String = "5m",
   val metrics: MetricsDto? = null,
   val overviewMetrics: OverviewMetricsDto? = null,
-  val trafficCalendar: TrafficCalendarDto? = null
+  val trafficCalendar: TrafficCalendarDto? = null,
+  // 按设备缓存指标与流量：离线浏览任一设备页时都能拿到最近一次成功读到的数据（交）
+  val deviceMetrics: Map<String, MetricsDto> = emptyMap(),
+  val deviceTraffic: Map<String, TrafficCalendarDto> = emptyMap()
 )
 
 /**

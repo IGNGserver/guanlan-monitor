@@ -33,6 +33,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private val settingsRepository = SettingsRepository(application)
   private val apiFactory = ApiFactory(application)
   private val remoteSnapshotCache = RemoteSnapshotCache(application)
+  // 按设备缓存指标与流量：离线切换设备时，设备页/流量页仍能展示最近一次成功读到的数据（交）
+  private val deviceMetricsCache = mutableMapOf<String, MetricsDto>()
+  private val deviceTrafficCache = mutableMapOf<String, TrafficCalendarDto>()
   private val refreshMutex = Mutex()
 
   private val _state = MutableStateFlow(AppState())
@@ -70,10 +73,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       settingsRepository.settings().collectLatest { config ->
         _state.update { current ->
+          val targetScreen = when {
+            current.authenticated -> current.currentScreen
+            config.baseUrl.isNotBlank() && (current.dataSource == RemoteDataSource.Cache || current.devices.isNotEmpty()) -> {
+              if (current.currentScreen != AppScreen.Login) current.currentScreen else AppScreen.DeviceList
+            }
+            config.baseUrl.isNotBlank() -> AppScreen.DeviceList
+            else -> AppScreen.Login
+          }
           current.copy(
             serverConfig = config,
             loading = false,
-            currentScreen = if (current.authenticated) current.currentScreen else AppScreen.Login
+            currentScreen = targetScreen
           )
         }
         if (config.baseUrl.isNotBlank()) {
@@ -103,7 +114,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   fun onAppForeground() {
     appInForeground = true
-    if (_state.value.authenticated) {
+    if (_state.value.serverConfig.baseUrl.isNotBlank() && _state.value.serverConfig.accessKey.isNotBlank()) {
+      if (!_state.value.loggingIn && !_state.value.refreshing) {
+        login()
+      }
+    } else if (_state.value.authenticated) {
       startRefreshLoop()
       refresh()
     }
@@ -242,7 +257,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
         val selectedDeviceId = current.selectedDeviceId?.takeIf { id -> visibleDevices.any { it.deviceId == id } }
           ?: visibleDevices.firstOrNull()?.deviceId
-        screenBackStack.clear()
+        val hasCache = _state.value.devices.isNotEmpty() || _state.value.dataSource == RemoteDataSource.Cache
+        if (!hasCache) {
+          screenBackStack.clear()
+        }
         _state.update {
           it.copy(
             authenticated = true,
@@ -251,7 +269,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cacheSavedAt = Instant.now().toString(),
             devices = devices,
             selectedDeviceId = selectedDeviceId,
-            currentScreen = AppScreen.DeviceList,
+            currentScreen = if (it.currentScreen != AppScreen.Login) it.currentScreen else AppScreen.DeviceList,
             transitionDirection = ScreenTransitionDirection.None,
             message = null
           )
@@ -265,13 +283,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         startRefreshLoop()
         persistRemoteSnapshot()
       }.onFailure { error ->
-        screenBackStack.clear()
+        val hasCache = _state.value.devices.isNotEmpty() || _state.value.dataSource == RemoteDataSource.Cache
+        if (!hasCache) {
+          screenBackStack.clear()
+        }
         _state.update {
           it.copy(
             loggingIn = false,
             authenticated = false,
             dataSource = if (it.devices.isEmpty()) RemoteDataSource.Empty else RemoteDataSource.Cache,
-            currentScreen = AppScreen.Login,
+            currentScreen = if (hasCache) it.currentScreen else AppScreen.Login,
             transitionDirection = ScreenTransitionDirection.None,
             message = loginErrorMessage(error)
           )
@@ -375,6 +396,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   fun openDevice(deviceId: String, focusBlock: DeviceBlockKey? = null) {
     pushCurrentScreen()
     val switchingDevice = _state.value.selectedDeviceId != deviceId
+    // 换设备时优先展示这台设备的按设备缓存，读取失败也不会退回骨架屏（交）
+    val cachedMetrics = deviceMetricsCache[deviceId]
     _state.update {
       it.copy(
         selectedDeviceId = deviceId,
@@ -382,7 +405,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         currentScreen = AppScreen.DeviceDetail,
         transitionDirection = ScreenTransitionDirection.Forward,
         // 顶栏标题取自已加载的快照，换设备时必须先清掉，否则会短暂显示上一台的名字（交）
-        metrics = if (switchingDevice) null else it.metrics,
+        metrics = if (switchingDevice) cachedMetrics else it.metrics,
         metricsError = if (switchingDevice) null else it.metricsError,
         message = null
       )
@@ -394,14 +417,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   fun openTraffic(deviceId: String) {
     pushCurrentScreen()
     val switchingDevice = _state.value.selectedDeviceId != deviceId
+    val cachedTraffic = deviceTrafficCache[deviceId]
     _state.update {
       it.copy(
         selectedDeviceId = deviceId,
         currentScreen = AppScreen.Traffic,
         transitionDirection = ScreenTransitionDirection.Forward,
         // 换设备时不能把上一台的日历留在屏幕上，否则标题与数字对不上（交）
-        trafficCalendar = if (switchingDevice) null else it.trafficCalendar,
-        metrics = if (switchingDevice) null else it.metrics,
+        trafficCalendar = if (switchingDevice) cachedTraffic else it.trafficCalendar,
+        metrics = if (switchingDevice) deviceMetricsCache[deviceId] else it.metrics,
         trafficError = if (switchingDevice) null else it.trafficError,
         message = null
       )
@@ -445,6 +469,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
           it.copy(
             currentScreen = previous,
+            transitionDirection = ScreenTransitionDirection.Backward,
+            message = null
+          )
+        }
+      }
+      current.currentScreen != AppScreen.DeviceList && current.currentScreen != AppScreen.Login -> {
+        _state.update {
+          it.copy(
+            currentScreen = AppScreen.DeviceList,
             transitionDirection = ScreenTransitionDirection.Backward,
             message = null
           )
@@ -687,6 +720,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       _state.update { it.copy(loadingMetrics = true, message = null, metricsError = null) }
       try {
         val metrics = executeWithAuthRetry { it.metrics(deviceId, window.value) }
+        // 记入按设备缓存：离线浏览这台设备时仍能展示最近一次成功的数据（交）
+        deviceMetricsCache[deviceId] = metrics
         val isCurrentRequest = _state.value.selectedDeviceId == deviceId && _state.value.selectedWindow == window
         if (isCurrentRequest) {
           _state.update {
@@ -706,8 +741,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_state.value.selectedDeviceId == deviceId && _state.value.selectedWindow == window) {
           val reason = userFacingError(error, "读取指标失败，请稍后重试")
           // 失败原因要留在页面上（而不是只闪一条 3 秒的消息条），否则页面会停在骨架屏上
-          // 让人以为还在加载（交：错误态必须带重试出口）。
-          _state.update { it.copy(loadingMetrics = false, metricsError = reason, message = reason) }
+          // 让人以为还在加载（交：错误态必须带重试出口）。有缓存就展示缓存，只在
+          // 没有缓存时才把错误态铺满页面，否则离线换设备会退回骨架屏。
+          val cached = deviceMetricsCache[deviceId]
+          _state.update {
+            it.copy(
+              loadingMetrics = false,
+              metrics = it.metrics ?: cached,
+              metricsError = if (it.metrics != null || cached != null) null else reason,
+              message = reason
+            )
+          }
         }
       }
     }
@@ -721,6 +765,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       _state.update { it.copy(loadingTraffic = true, message = null, trafficError = null) }
       try {
         val traffic = executeWithAuthRetry { it.trafficCalendar(deviceId, mode.value, requestedAnchor, requestedSelectedStart) }
+        // 记入按设备缓存：离线浏览这台设备时仍能展示最近一次成功的数据（交）
+        deviceTrafficCache[deviceId] = traffic
         val isCurrentRequest =
           _state.value.selectedDeviceId == deviceId &&
             _state.value.trafficMode == mode &&
@@ -744,7 +790,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (error is CancellationException) throw error
         if (_state.value.selectedDeviceId == deviceId && _state.value.trafficMode == mode) {
           val reason = userFacingError(error, "读取流量失败，请稍后重试")
-          _state.update { it.copy(loadingTraffic = false, trafficError = reason, message = reason) }
+          // 与指标同理：有缓存就展示缓存，只在没有缓存时才把错误态铺满页面（交）
+          val cached = deviceTrafficCache[deviceId]
+          _state.update {
+            it.copy(
+              loadingTraffic = false,
+              trafficCalendar = it.trafficCalendar ?: cached,
+              trafficError = if (it.trafficCalendar != null || cached != null) null else reason,
+              message = reason
+            )
+          }
         }
       }
     }
@@ -840,6 +895,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       } else {
         trafficAnchor = cached.trafficCalendar?.anchor ?: todayAnchor()
         trafficSelectedStart = cached.trafficCalendar?.cells?.firstOrNull { it.isSelected }?.rangeStart
+        deviceMetricsCache.clear()
+        deviceMetricsCache.putAll(cached.deviceMetrics)
+        deviceTrafficCache.clear()
+        deviceTrafficCache.putAll(cached.deviceTraffic)
         current.copy(
           dataSource = RemoteDataSource.Cache,
           cacheSavedAt = cached.savedAt,
@@ -850,7 +909,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           metrics = cached.metrics,
           overviewMetrics = cached.overviewMetrics,
           trafficCalendar = cached.trafficCalendar,
-          trafficMode = trafficModeFor(cached.trafficCalendar?.mode)
+          trafficMode = trafficModeFor(cached.trafficCalendar?.mode),
+          currentScreen = if (current.currentScreen == AppScreen.Login && cached.devices.isNotEmpty()) AppScreen.DeviceList else current.currentScreen
         )
       }
     }
@@ -870,7 +930,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           selectedWindow = _state.value.selectedWindow.value,
           metrics = _state.value.metrics,
           overviewMetrics = _state.value.overviewMetrics,
-          trafficCalendar = _state.value.trafficCalendar
+          trafficCalendar = _state.value.trafficCalendar,
+          deviceMetrics = deviceMetricsCache.toMap(),
+          deviceTraffic = deviceTrafficCache.toMap()
         )
       )
     }

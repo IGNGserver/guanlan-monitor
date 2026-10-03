@@ -121,7 +121,7 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
   val screen = state.resolvedScreen()
   val canHandleBack = pendingLogout ||
     state.editingDeviceId != null ||
-    (state.authenticated && screen != AppScreen.DeviceList)
+    (screen != AppScreen.DeviceList && screen != AppScreen.Login)
 
   val destinations = remember { oneUiDestinations() }
 
@@ -441,12 +441,18 @@ private fun oneUiDestinations(): List<OneUiDestination> = listOf(
   OneUiDestination(key = DestinationSettings, label = "设置", icon = Icons.Rounded.Tune)
 )
 
-/** 与旧实现一致的状态推导：未认证但已有配置时仍显示列表，用于呈现连接过程与失败原因。 */
+/**
+ * 屏幕路由推导：
+ * 1. loading 时显示 Login（开屏）；
+ * 2. 未配置中枢地址且未认证时进入 Login；
+ * 3. 有离线缓存或已认证时，用户自由浏览当前屏幕；
+ * 4. 其它未认证态显示设备列表（用于呈现连接过程或失败状态与重试）。
+ */
 private fun AppState.resolvedScreen(): AppScreen = when {
   loading -> AppScreen.Login
   !authenticated && serverConfig.baseUrl.isBlank() -> AppScreen.Login
-  !authenticated || currentScreen == AppScreen.DeviceList -> AppScreen.DeviceList
-  else -> currentScreen
+  currentScreen != AppScreen.Login -> currentScreen
+  else -> AppScreen.Login
 }
 
 /** 常驻状态播报给读屏；即时反馈由 Snackbar 承担，两者不重复（适）。 */
