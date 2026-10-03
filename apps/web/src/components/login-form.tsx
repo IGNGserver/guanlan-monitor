@@ -5,7 +5,7 @@ import { M3Button, M3TextField } from "@dsc/console-ui";
 import { ApiError, getSession, login } from "../lib/api";
 import styles from "./auth.module.css";
 
-export function LoginForm({ onAuthenticated }: { onAuthenticated: () => Promise<void> }) {
+export function LoginForm({ onAuthenticated, onStartLogin }: { onAuthenticated: () => Promise<void>; onStartLogin?: () => Promise<void> }) {
   const [accessKey, setAccessKey] = useState("");
   const [revealKey, setRevealKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,6 +17,7 @@ export function LoginForm({ onAuthenticated }: { onAuthenticated: () => Promise<
     setError(null);
     let phase: "login" | "session" | "snapshot" = "login";
     try {
+      await onStartLogin?.();
       await login({ accessKey });
       phase = "session";
       await getSession();
@@ -25,7 +26,7 @@ export function LoginForm({ onAuthenticated }: { onAuthenticated: () => Promise<
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         setError(phase === "snapshot" ? "认证已通过，但设备快照仍拒绝访问。请重新登录，或联系中枢管理员确认这台设备的授权。" : "访问密钥不正确。请核对后重新输入。");
-      } else if (error instanceof TypeError) {
+      } else if (error instanceof TypeError || (error instanceof Error && error.message === "request_timeout")) {
         setError("无法连接到中枢。请检查网络或本站点地址后重试。");
       } else if (phase === "snapshot") {
         setError("登录成功，但设备快照读取失败。请稍后刷新重试。");

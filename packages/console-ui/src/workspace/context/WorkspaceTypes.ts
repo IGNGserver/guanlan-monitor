@@ -12,6 +12,7 @@ import type { ConsoleAdapter, WindowState } from "../../services/adapter";
 import type { InteractionScaleSetting, PointerType } from "../../helpers/density";
 import type { ResponsiveTier, ScreenOrientation } from "../../helpers/layout";
 import type { SettingsSection, WorkspaceRoute } from "../routes";
+import type { WebLayoutPreference } from "../../helpers/presentation";
 
 export interface WorkspaceContextValue {
   route: WorkspaceRoute;
@@ -47,6 +48,8 @@ export interface WorkspaceContextValue {
    * their own `prefers-color-scheme` listener.
    */
   resolvedTheme: "light" | "dark";
+  webLayout: WebLayoutPreference;
+  setWebLayout: (layout: WebLayoutPreference) => void;
   density: InteractionScaleSetting;
   setDensity: (density: InteractionScaleSetting) => void;
   refreshInterval: 5 | 10 | 30;

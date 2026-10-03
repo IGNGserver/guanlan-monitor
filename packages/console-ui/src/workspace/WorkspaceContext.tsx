@@ -39,6 +39,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     setCommandOpen,
     theme,
     setTheme,
+    webLayout,
+    setWebLayout,
     density,
     setDensity,
     refreshInterval,
@@ -111,7 +113,11 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
 
   const selectedDeviceId = route.kind === "device" ? route.deviceId : snapshot?.selectedDeviceId ?? null;
   const currentRequestKeyRef = useRef<string>("");
-  const queuedRequestRef = useRef<{ forceRefresh: boolean; announce: boolean } | null>(null);
+  const queuedRequestRef = useRef<{
+    forceRefresh: boolean;
+    announce: boolean;
+    run: (forceRefresh: boolean, announce?: boolean) => Promise<void>;
+  } | null>(null);
 
   const fetchSnapshot = useCallback(
     async (forceRefresh: boolean, announce = forceRefresh) => {
@@ -132,7 +138,9 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
       if (refreshInFlightRef.current) {
         queuedRequestRef.current = {
           forceRefresh: forceRefresh || (queuedRequestRef.current?.forceRefresh ?? false),
-          announce: announce || (queuedRequestRef.current?.announce ?? false)
+          announce: announce || (queuedRequestRef.current?.announce ?? false),
+          // This callback captures the latest device and metric range.
+          run: fetchSnapshot
         };
         return refreshInFlightRef.current;
       }
@@ -150,7 +158,9 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
           if (currentRequestKeyRef.current === requestKey) {
             setSnapshot(nextSnapshot);
             if (announce) {
-              setNotice({ tone: "success", text: "状态已更新" });
+              setNotice(nextSnapshot.source === "cache"
+                ? { tone: "info", text: "连接尚未恢复，正在显示离线缓存" }
+                : nextSnapshot.session.authenticated ? { tone: "success", text: "状态已更新" } : { tone: "error", text: "会话已失效，请重新连接" });
             }
           }
         } catch (nextError) {
@@ -172,7 +182,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
           if (queuedRequestRef.current) {
             const queued = queuedRequestRef.current;
             queuedRequestRef.current = null;
-            void fetchSnapshot(queued.forceRefresh, queued.announce);
+            void queued.run(queued.forceRefresh, queued.announce);
           }
         }
       }
@@ -207,6 +217,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   useEffect(() => {
     const handleLocationChange = () => {
       const targetRoute = parseWorkspaceHash(window.location.hash);
+      if (serializeWorkspaceRoute(targetRoute) === serializeWorkspaceRoute(currentRouteRef.current)) return;
       if (!confirmDiscardDeviceOrderDraft()) {
         const currentHash = serializeWorkspaceRoute(currentRouteRef.current);
         if (window.location.hash !== currentHash) {
@@ -435,6 +446,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     theme,
     setTheme,
     resolvedTheme,
+    webLayout,
+    setWebLayout,
     density,
     setDensity,
     refreshInterval,
@@ -496,6 +509,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     theme,
     setTheme,
     resolvedTheme,
+    webLayout,
+    setWebLayout,
     density,
     setDensity,
     refreshInterval,

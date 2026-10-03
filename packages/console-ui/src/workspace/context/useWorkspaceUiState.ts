@@ -7,6 +7,8 @@ import { confirmDiscardDeviceOrderDraft } from "../deviceOrderDraft";
 import { defaultRoute, routeFromLocation, serializeWorkspaceRoute, type SettingsSection, type WorkspaceRoute } from "../routes";
 import { getStoredDensity, getStoredRefreshInterval, getStoredTheme } from "./WorkspaceTypes";
 
+import type { WebLayoutPreference } from "../../helpers/presentation";
+
 const SIDEBAR_COLLAPSED_KEY = "dsc-sidebar-collapsed";
 
 /** The stored choice for the inline rail. Missing means "show the rail". */
@@ -32,6 +34,16 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
   const [searchQuery, setSearchQuery] = useState("");
   const [commandOpen, setCommandOpen] = useState(false);
   const [theme, setThemeState] = useState<"system" | "light" | "dark">(getStoredTheme);
+  const [webLayout, setWebLayoutState] = useState<WebLayoutPreference>(() => {
+    try {
+      const saved = typeof window !== "undefined" ? localStorage.getItem("dsc-web-layout") : null;
+      return saved === "touch" || saved === "desktop" ? saved : "auto";
+    } catch { return "auto"; }
+  });
+  const setWebLayout = useCallback((next: WebLayoutPreference) => {
+    setWebLayoutState(next);
+    try { localStorage.setItem("dsc-web-layout", next); } catch { /* Optional preference. */ }
+  }, []);
   const [density, setDensityState] = useState<InteractionScaleSetting>(getStoredDensity);
   const [refreshInterval, setRefreshIntervalState] = useState<5 | 10 | 30>(getStoredRefreshInterval);
   const [orientation, setOrientation] = useState<ScreenOrientation>("landscape");
@@ -98,12 +110,11 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
     window.addEventListener("orientationchange", scheduleResize);
     const handlePointerDown = (event: PointerEvent) => {
       const nextPointer: PointerType = event.pointerType === "touch" || event.pointerType === "pen" ? event.pointerType : "mouse";
-      // The first real pointer wins over the touch heuristic and must stick, so
-      // the listener is added once instead of re-subscribing on every change.
+      // Hybrid tablets can switch between a finger, pen and trackpad at any
+      // time. Input feedback changes without changing the chosen presentation.
       pointerSeenRef.current = true;
       setInputMode(nextPointer);
       document.documentElement.dataset.dscPointer = nextPointer;
-      document.removeEventListener("pointerdown", handlePointerDown);
     };
     document.addEventListener("pointerdown", handlePointerDown, { passive: true });
     return () => {
@@ -118,7 +129,7 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
     if (!confirmDiscardDeviceOrderDraft()) return;
     setRoute(nextRoute);
     if (typeof window !== "undefined" && window.location.hash !== serializeWorkspaceRoute(nextRoute)) {
-      window.history.pushState({ route: nextRoute }, "", serializeWorkspaceRoute(nextRoute));
+      window.history.pushState({ route: nextRoute, dscWorkspace: true, fromRoute: routeFromLocation() }, "", serializeWorkspaceRoute(nextRoute));
     }
   }, []);
 
@@ -183,6 +194,8 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
     setCommandOpen,
     theme,
     setTheme,
+    webLayout,
+    setWebLayout,
     density,
     setDensity,
     refreshInterval,

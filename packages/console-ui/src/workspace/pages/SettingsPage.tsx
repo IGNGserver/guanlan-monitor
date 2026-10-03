@@ -30,7 +30,7 @@ import {
   probeTargetLabels
 } from "./shared";
 
-export function SettingsPage() {
+export function SettingsPage({ presentation = "desktop" }: { presentation?: "desktop" | "touch" } = {}) {
   const { route, capabilities, closeSettings, navigate } = useWorkspace();
   const visibleSettings = visibleSettingsNavigation(capabilities);
   const defaultSection: SettingsSection = "general";
@@ -64,14 +64,14 @@ export function SettingsPage() {
     about: "版本信息与项目链接。"
   };
   return <div className="workspace-page workspace-page--settings">
-    <div className="workspace-settings-mobile-nav" aria-label="设置分类">
+    {presentation === "desktop" && <div className="workspace-settings-mobile-nav" aria-label="设置分类">
       <Button variant="quiet" onClick={closeSettings}><Icon name="back" size={16} />返回控制台</Button>
       <div className="workspace-settings-mobile-nav__list">
         {/* The class is a paint; without aria-current a screen reader cannot tell which section is open. */}
         {visibleSettings.map((item) => <button type="button" aria-current={item.id === section ? "page" : undefined} className={item.id === section ? "is-selected" : ""} key={item.id} onClick={() => navigate({ kind: "settings", section: item.id })}>{item.label}</button>)}
       </div>
-    </div>
-    <PageIntro eyebrow="设置" title={heading?.label ?? "设置"} description={descriptions[section]} />{pages[section]}
+    </div>}
+    <PageIntro eyebrow={presentation === "touch" ? undefined : "设置"} title={heading?.label ?? "设置"} description={descriptions[section]} />{pages[section]}
   </div>;
 }
 
@@ -92,6 +92,7 @@ function GeneralSettings() {
         <div className="workspace-settings-list">
           {canControlStartup && <M3Switch label="开机启动" description="登录系统后自动启动观澜。" checked={startup.openAtLogin} onCheckedChange={(checked) => void updateStartupSettings({ openAtLogin: checked })} disabled={mutationPending} />}
           {canControlStartup && <M3Switch label="启动时最小化" description="启动后保持在系统托盘，不打断当前工作。" checked={startup.startMinimized} onCheckedChange={(checked) => void updateStartupSettings({ startMinimized: checked })} disabled={mutationPending} />}
+          {!capabilities.canControlNativeWindow && <SettingRow label="安装与离线使用" description="添加到主屏幕、查看离线说明或清除本地数据。"><Button variant="quiet" onClick={() => window.dispatchEvent(new Event("dsc-pwa-settings"))}>查看<Icon name="chevronRight" size={16} /></Button></SettingRow>}
           <SettingRow label="状态刷新频率" description="界面多久读取一次状态；不影响 Agent 的采集间隔。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "5", label: "5 秒" }, { value: "10", label: "10 秒" }, { value: "30", label: "30 秒" }]} value={String(refreshInterval)} onChange={(value) => setRefreshInterval(Number(value) as typeof refreshInterval)} aria-label="状态刷新频率" disabled={mutationPending} /></SettingRow>
         </div>
       </Surface>
@@ -111,7 +112,7 @@ function WebSyncSummary() {
       <div className="workspace-detail-list">
         <SummaryRow label="数据来源" value={selectLinkLabel(source, capabilities.liveDataTransport)} />
         <SummaryRow label="最近同步" value={snapshot ? formatPreciseDateTime(snapshot.generatedAt) : "尚未同步"} />
-        <SummaryRow label="已接入设备" value={`${allDevices.length} 台 · ${online} 台在线`} />
+        <SummaryRow label="已接入设备" value={source === "cache" ? `${allDevices.length} 台已缓存 · 当前在线状态待确认` : `${allDevices.length} 台 · ${online} 台在线`} />
       </div>
       <div className="workspace-form__actions"><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}><Icon name="refresh" size={15} />{refreshing ? "正在刷新" : "立即刷新"}</Button></div>
     </Surface>
@@ -144,7 +145,7 @@ function AdvancedSettings({ summary, detail, children }: { summary: string; deta
 }
 
 function AppearanceSettings() {
-  const { theme, setTheme, density, setDensity } = useWorkspace();
+  const { theme, setTheme, density, setDensity, webLayout, setWebLayout, capabilities } = useWorkspace();
   return (
     <Surface>
       <div className="workspace-settings-list">
@@ -152,6 +153,7 @@ function AppearanceSettings() {
         {/* "界面密度" was design vocabulary and its options were not ordered by
             the size they produce. The row now names what it changes: controls. */}
         <SettingRow label="控件大小" description="用手机或远程桌面时选“触控”，按钮更好点中。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "auto", label: "自动" }, { value: "compact", label: "紧凑" }, { value: "comfortable", label: "标准" }, { value: "touch", label: "触控" }]} value={density} onChange={(value) => setDensity(value as typeof density)} aria-label="控件大小" /></SettingRow>
+        {!capabilities.canControlNativeWindow && <SettingRow label="网页布局" description="自动适配手机和平板；也可以固定使用触屏或桌面布局。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "auto", label: "自动" }, { value: "touch", label: "触屏" }, { value: "desktop", label: "桌面" }]} value={webLayout} onChange={(value) => setWebLayout(value as typeof webLayout)} aria-label="网页布局" /></SettingRow>}
         <SettingRow label="动画" description="尊重系统的减少动态效果设置。"><span className="workspace-setting-note"><Icon name="check" size={15} />已启用可访问性适配</span></SettingRow>
       </div>
     </Surface>
@@ -281,6 +283,7 @@ function WebConnectionSettings() {
   const { snapshot, allDevices, logout, mutationPending, refresh, refreshing, capabilities } = useWorkspace();
   const authenticated = snapshot?.session.authenticated ?? false;
   const source = snapshot ? selectSnapshotSource(snapshot, allDevices) : "unknown";
+  const cached = source === "cache";
   const signOut = async () => {
     await logout();
     if (typeof window !== "undefined") window.location.reload();
@@ -291,9 +294,10 @@ function WebConnectionSettings() {
   return (
     <div className="workspace-settings-stack">
       <Surface>
-        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">当前会话</span><h3>{authenticated ? "浏览器会话已认证" : "会话需要重新认证"}</h3></div><StatusLabel state={authenticated ? "online" : "warning"} /></div>
+        <div className="workspace-surface__header"><div><span className="workspace-section-kicker">当前会话</span><h3>{cached ? "正在查看离线缓存" : authenticated ? "浏览器会话已认证" : "会话需要重新认证"}</h3></div><StatusLabel state={cached ? "cached" : authenticated ? "online" : "warning"} /></div>
         <div className="workspace-detail-list"><SummaryRow label="认证方式" value="中枢访问密钥" /><SummaryRow label="会话范围" value="当前浏览器" /><SummaryRow label="访问权限" value="已授权设备与指标" /><SummaryRow label="数据链路" value={selectLinkLabel(source, capabilities.liveDataTransport)} /></div>
-        {!authenticated && <div className="workspace-session-recovery m3-inline-banner" role="alert"><div className="workspace-session-recovery__copy"><strong>当前会话不可用</strong><p>站点认证可能已过期，重新认证会保留当前页面地址。</p></div><div className="workspace-form__actions"><Button variant="primary" onClick={reloadForAuthentication}>重新认证</Button><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? "正在检查" : "重新检查"}</Button></div></div>}
+        {cached && <p className="workspace-surface__description">离线时无法检查会话，恢复连接后会自动重新检查并同步设备状态。</p>}
+        {!authenticated && !cached && <div className="workspace-session-recovery m3-inline-banner" role="alert"><div className="workspace-session-recovery__copy"><strong>当前会话不可用</strong><p>站点认证可能已过期，重新认证会保留当前页面地址。</p></div><div className="workspace-form__actions"><Button variant="primary" onClick={reloadForAuthentication}>重新认证</Button><Button variant="quiet" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? "正在检查" : "重新检查"}</Button></div></div>}
         <div className="workspace-form__actions"><Button variant="danger" onClick={() => void signOut()} disabled={!authenticated || mutationPending}>{mutationPending ? "正在退出" : "退出当前会话"}</Button></div>
       </Surface>
       <Surface className="workspace-connection-note">

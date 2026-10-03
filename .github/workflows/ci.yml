@@ -53,6 +53,8 @@ jobs:
           pnpm test:workspace-contracts
           pnpm test:renderer-security
           pnpm test:window-material
+          pnpm test:web-pwa
+          pnpm lint
 
       - name: Test server payload compatibility and storage
         env:
@@ -313,7 +315,7 @@ jobs:
           mkdir -p "$playwright_dir"
           npm init -y --prefix "$playwright_dir" >/dev/null
           npm install --prefix "$playwright_dir" --no-save playwright@1.55.0 >/dev/null
-          "$playwright_dir/node_modules/.bin/playwright" install --with-deps chromium
+          "$playwright_dir/node_modules/.bin/playwright" install --with-deps chromium webkit
 
       - name: Start Web app
         shell: bash
@@ -336,6 +338,18 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$RUNNER_TEMP/dsc-playwright/node_modules" node scripts/visual-regression.cjs http://127.0.0.1:3000 "$RUNNER_TEMP/dsc-visual"
+
+      - name: Test mobile, tablet and offline PWA in Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          NODE_PATH="$RUNNER_TEMP/dsc-playwright/node_modules" node scripts/mobile-touch-regression.cjs http://127.0.0.1:3000 "$RUNNER_TEMP/dsc-visual/mobile-chromium" --pwa
+
+      - name: Test touch navigation and offline PWA in WebKit
+        shell: bash
+        run: |
+          set -euo pipefail
+          NODE_PATH="$RUNNER_TEMP/dsc-playwright/node_modules" node scripts/mobile-touch-regression.cjs http://127.0.0.1:3000 "$RUNNER_TEMP/dsc-visual/mobile-webkit" --pwa --webkit
 
       - name: Upload visual regression evidence
         if: ${{ always() }}
