@@ -138,22 +138,44 @@ function ChartReadingValue({ text }: { text: string }) {
   return parts ? <>{parts[1]}<span className="m3e-chart-readout__unit">{parts[2]}</span></> : <>{text}</>;
 }
 
-export function ChartReadout({ info, inspecting = false, id }: { info: ChartInspection | null; inspecting?: boolean; id?: string }) {
+const sampleTimeFormatter = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+
+/** The one spelling of a sample instant, shared by the readout and the card's detail sheet. */
+export function formatSampleTime(timestamp: number): string {
+  return sampleTimeFormatter.format(new Date(timestamp));
+}
+
+/** Curve colours by series position, so a detail table can echo the chart's swatches. */
+export function chartSeriesColor(index: number): string {
+  return CHART_COLORS[index % CHART_COLORS.length];
+}
+
+/**
+ * Latest or inspected reading. `compact` is the device-card form: the numbers lead
+ * and the sample time trails on the same row; a lone curve drops its visible label
+ * because the card title already names it.
+ */
+export function ChartReadout({ info, inspecting = false, id, compact = false }: { info: ChartInspection | null; inspecting?: boolean; id?: string; compact?: boolean }) {
   if (!info) return null;
+  const hideLabel = compact && info.values.length === 1;
+  const time = (
+    <div className="m3e-chart-readout__time">
+      <span>{inspecting ? "查点" : "最新"}</span>
+      <time dateTime={new Date(info.timestamp).toISOString()}>{formatSampleTime(info.timestamp)}</time>
+    </div>
+  );
   return (
-    <div className={`m3e-chart-readout${inspecting ? " is-inspecting" : ""}`} id={id}>
-      <div className="m3e-chart-readout__time">
-        <span>{inspecting ? "查点" : "最新"}</span>
-        <time dateTime={new Date(info.timestamp).toISOString()}>{new Date(info.timestamp).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}</time>
-      </div>
+    <div className={`m3e-chart-readout${compact ? " is-compact" : ""}${inspecting ? " is-inspecting" : ""}`} id={id}>
+      {compact ? null : time}
       <dl className="m3e-chart-readout__values">
         {info.values.map((item, index) => (
           <div key={`${index}-${item.label}`}>
-            <dt><span className="m3e-chart__swatch" style={{ background: CHART_COLORS[index % CHART_COLORS.length] }} aria-hidden="true" />{item.label}</dt>
+            <dt className={hideLabel ? "m3e-visually-hidden" : undefined}><span className="m3e-chart__swatch" style={{ background: CHART_COLORS[index % CHART_COLORS.length] }} aria-hidden="true" />{item.label}</dt>
             <dd><ChartReadingValue text={item.valueText} /></dd>
           </div>
         ))}
       </dl>
+      {compact ? time : null}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { M3Banner, M3SegmentedControl } from "../m3";
 import { TimeSeriesChart } from "../charts";
 import { ChartTile, DashboardCell, DashboardGrid, DashboardSection } from "../dashboard";
 import { OnboardingGuide } from "../shell/OnboardingGuide";
+import { DeviceChartSheet } from "./DeviceChartSheet";
 import { formatBytes, formatDate, formatRate, formatPercent } from "../formatters";
 import { selectAttentionDevices, selectHealthSummary } from "../selectors";
 import { DeviceTable, DeviceCardGrid, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, MetricWindowControl, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints, type DesktopMetricWindowValue } from "./shared";
@@ -202,6 +203,16 @@ export function OverviewPage() {
             title={`${observationLabels[observationMetric]}趋势`}
             subtitle={`每台设备一条数据线 · 最近 ${metricWindowLabel}`}
             emptyMessage={observationEmptyMessage}
+            sheet={
+              <DeviceChartSheet
+                tile={{
+                  key: "overview-observation",
+                  title: `${observationLabels[observationMetric]}趋势`,
+                  subtitle: `每台设备一条数据线 · 最近 ${metricWindowLabel}`,
+                  series: observationSeries
+                }}
+              />
+            }
           >
             <TimeSeriesChart series={observationSeries} maxValue={observationMetric === "cpu" ? 100 : undefined} />
           </ChartTile>

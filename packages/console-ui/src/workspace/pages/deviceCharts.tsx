@@ -57,7 +57,7 @@ import {
 } from "../formatters";
 import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
 import { Button, CopyButton, Icon, StatusLabel } from "../ui";
-import { TemperatureSourcesPanel, TelemetryModelList, TrafficCalendar, TrafficCalendarControls, unavailablePoints } from "./shared";
+import { TemperatureSourcesPanel, TrafficCalendar, TrafficCalendarControls, unavailablePoints } from "./shared";
 
 /** 一张磁贴的描述。字段与 `ChartTile` 的插槽一一对应。 */
 export interface DeviceChartTile {
@@ -72,7 +72,7 @@ export interface DeviceChartTile {
   heroStat?: string;
   /** 核心统计徽章（如 峰值 / 均值） */
   heroBadge?: string;
-  /** 时间序列数据，`line` / `area` 与「详细信息」表都读它。 */
+  /** 时间序列数据，`line` / `area` 与半屏详情里的时段统计都读它。 */
   series?: ChartSeries[];
   donut?: { parts: ChartPart[]; centerLabel?: string };
   meter?: { value: number; total: number; label?: string };
@@ -84,7 +84,10 @@ export interface DeviceChartTile {
   /** 钉住纵轴上界；百分比图表统一用 `PERCENT_TILE` 带上。 */
   maxValue?: number;
   controls?: React.ReactNode;
-  footer?: React.ReactNode;
+  /** 半屏详情里的「说明」键值行，用于把多段容量拆开显示，而不是挤成一句。 */
+  facts?: Array<{ label: string; value: string }>;
+  /** 半屏详情里的已采集硬件型号。 */
+  models?: { label: string; items: Array<{ id: string; name: string; detail?: string }> };
   /** 有值时只渲染提示，不渲染图表体。 */
   emptyMessage?: string;
 }
@@ -240,40 +243,6 @@ export function ChartInfoRows({ rows, label }: { rows: Array<{ label: string; va
   );
 }
 
-/** 「详细信息」抽屉：每条序列的当前值、峰值与最低值。 */
-export function ChartDetails({ series, valueFormatter }: { series: ChartSeries[]; valueFormatter?: (value: number) => string }) {
-  const fallback = valueFormatter ?? plainCount;
-  return (
-    <table className="m3e-table chart-details" aria-label="指标详情">
-      <thead>
-        <tr>
-          <th scope="col">序列</th>
-          <th scope="col">当前</th>
-          <th scope="col">峰值</th>
-          <th scope="col">最低</th>
-        </tr>
-      </thead>
-      <tbody>
-        {series.map((item) => {
-          const format = item.valueFormatter ?? fallback;
-          const values = item.points.map((point) => point.value).filter((value) => Number.isFinite(value));
-          const current = values.at(-1);
-          const peak = values.length ? Math.max(...values) : undefined;
-          const minimum = values.length ? Math.min(...values) : undefined;
-          return (
-            <tr key={item.label}>
-              <th scope="row">{item.label}</th>
-              <td>{current == null ? "—" : format(current)}</td>
-              <td>{peak == null ? "—" : `峰值 ${format(peak)}`}</td>
-              <td>{minimum == null ? "—" : `最低 ${format(minimum)}`}</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
-}
-
 /** 按常量里声明的 `visualization` 分派到对应的 M3E 图表组件。 */
 function ChartBody({ chart, tile }: { chart: DashboardChartSpec; tile: DeviceChartTile }) {
   const valueFormatter = tile.valueFormatter ?? plainCount;
@@ -364,6 +333,22 @@ function gpuCapacityTotals(context: DeviceChartContext): { used: number; total: 
   };
 }
 
+/** 内存三项容量各占一行；`compute-memory-capacity` 的环形图已画出物理内存，只取后两行。 */
+function memoryFacts(context: DeviceChartContext): Array<{ label: string; value: string }> {
+  return [
+    { label: "物理内存", value: context.summaries.memory },
+    { label: "已提交", value: context.summaries.committed },
+    { label: "页面文件", value: context.summaries.pagefile }
+  ];
+}
+
+function diskIdentityFacts(disk: DiskMetricSeries): Array<{ label: string; value: string }> {
+  return [
+    disk.mountPoint ? { label: "挂载点", value: disk.mountPoint } : null,
+    disk.filesystem ? { label: "文件系统", value: disk.filesystem } : null
+  ].filter((fact): fact is { label: string; value: string } => fact != null);
+}
+
 /**
  * 布局常量里每个图表 id 的渲染器。
  *
@@ -382,7 +367,7 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
       subtitle: `全部 ${context.cpuInstances.length} 个 CPU 实例的平均值`,
       series: [{ label: "全部 CPU 平均", points: context.aggregates.cpuUsage }],
       ...PERCENT_TILE,
-      footer: <TelemetryModelList label="已采集 CPU 型号" items={context.modelItems.cpu} />
+      models: { label: "已采集 CPU 型号", items: context.modelItems.cpu }
     }];
   },
 
@@ -394,7 +379,7 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
       key: chart.id,
       heroStat: usedBytes != null ? formatBytes(usedBytes) : undefined,
       heroBadge: pct != null ? `${pct}% 占用` : undefined,
-      subtitle: `物理 ${context.summaries.memory} · 已提交 ${context.summaries.committed} · 页面文件 ${context.summaries.pagefile}`,
+      facts: memoryFacts(context),
       series: [
         { label: "已用物理内存", points: unavailablePoints(context.series?.memoryUsedBytes ?? [], context.unavailable("memoryUsage")), valueFormatter: formatBytes },
         { label: "已提交", points: unavailablePoints(context.series?.memoryCommittedBytes ?? [], context.unavailable("memoryCommitted")), valueFormatter: formatBytes }
@@ -411,10 +396,11 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
       key: chart.id,
       heroStat: usedBytes != null ? formatBytes(usedBytes) : undefined,
       heroBadge: pct != null ? `${pct}% 已用` : undefined,
-      subtitle: `全部 ${context.diskInstances.length} 个硬盘实例的总量 · ${context.summaries.disk}`,
+      subtitle: `全部 ${context.diskInstances.length} 个硬盘实例的总量`,
+      facts: [{ label: "容量", value: context.summaries.disk }],
       series: [{ label: "全部硬盘总已用", points: context.aggregates.diskUsedBytes, valueFormatter: formatBytes }],
       valueFormatter: formatBytes,
-      footer: <TelemetryModelList label="已采集硬盘型号" items={context.modelItems.disk} />
+      models: { label: "已采集硬盘型号", items: context.modelItems.disk }
     }];
   },
 
@@ -433,7 +419,7 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
         { label: "平均发送 (Tx)", points: context.aggregates.networkTx, valueFormatter: bytesPerSecond }
       ],
       valueFormatter: bytesPerSecond,
-      footer: <TelemetryModelList label="已采集网卡型号" items={context.modelItems.network} />
+      models: { label: "已采集网卡型号", items: context.modelItems.network }
     }];
   },
 
@@ -585,7 +571,7 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
 
   "compute-memory": (chart, context) => [{
     key: chart.id,
-    subtitle: `物理 ${context.summaries.memory} · 已提交 ${context.summaries.committed} · 页面文件 ${context.summaries.pagefile}`,
+    facts: memoryFacts(context),
     series: [
       { label: "已用物理内存", points: unavailablePoints(context.series?.memoryUsedBytes ?? [], context.unavailable("memoryUsage")), valueFormatter: formatBytes },
       { label: "已提交", points: unavailablePoints(context.series?.memoryCommittedBytes ?? [], context.unavailable("memoryCommitted")), valueFormatter: formatBytes },
@@ -599,7 +585,7 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
     const latest = context.filteredLatest;
     return [{
       key: chart.id,
-      subtitle: `已提交 ${context.summaries.committed} · 页面文件 ${context.summaries.pagefile}`,
+      facts: memoryFacts(context).slice(1),
       donut: { parts: capacityParts(latest?.memoryUsedBytes ?? 0, latest?.memoryTotalBytes ?? 0, "已用", "可用"), centerLabel: "物理内存" },
       valueFormatter: formatBytes,
       emptyMessage: latest && latest.memoryTotalBytes > 0 ? undefined : "尚未采集到内存容量"
@@ -667,13 +653,16 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
     tile: (disk) => {
       const diskLatest = context.filteredLatest?.disks.find((item) => item.id === disk.id);
       return {
-        subtitle: [disk.mountPoint, disk.filesystem, formatCapacitySummary(diskLatest?.usedBytes, diskLatest?.totalBytes, context.unavailable("diskUsage"))].filter(Boolean).join(" · "),
+        facts: [
+          ...diskIdentityFacts(disk),
+          { label: "容量", value: formatCapacitySummary(diskLatest?.usedBytes, diskLatest?.totalBytes, context.unavailable("diskUsage")) }
+        ],
         series: [{ label: "已用容量", points: unavailablePoints(disk.usedBytes, context.unavailable("diskUsage")), valueFormatter: formatBytes }],
         valueFormatter: formatBytes
       };
     },
     fallback: () => ({
-      subtitle: context.summaries.disk,
+      facts: [{ label: "容量", value: context.summaries.disk }],
       series: [{ label: "已用容量", points: unavailablePoints(context.series?.diskUsedBytes ?? [], context.unavailable("diskUsage")), valueFormatter: formatBytes }],
       valueFormatter: formatBytes
     })
@@ -687,7 +676,7 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
       const lastRead = disk.readBytesPerSec.length ? disk.readBytesPerSec[disk.readBytesPerSec.length - 1].value : undefined;
       const lastWrite = disk.writeBytesPerSec.length ? disk.writeBytesPerSec[disk.writeBytesPerSec.length - 1].value : undefined;
       return {
-        subtitle: [disk.mountPoint, disk.filesystem].filter(Boolean).join(" · ") || "当前硬盘 I/O",
+        facts: diskIdentityFacts(disk),
         heroStat: lastRead != null && lastWrite != null ? `读 ${bytesPerSecond(lastRead)} · 写 ${bytesPerSecond(lastWrite)}` : undefined,
         series: [
           { label: "读取", points: unavailablePoints(disk.readBytesPerSec, context.unavailable("diskRead")), valueFormatter: bytesPerSecond },
@@ -885,7 +874,10 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
       return {
         key: `${chart.id}:${fan.id}`,
         title: `${fan.name} · ${chart.title}`,
-        subtitle: [fan.interface || "风扇接口", rpmLabel].join(" · "),
+        facts: [
+          { label: "接口", value: fan.interface || "风扇接口" },
+          { label: "转速", value: rpmLabel }
+        ],
         heroStat: displayRpm != null ? `${Math.round(displayRpm)} RPM` : undefined,
         series: [{ label: "转速", points: fan.rpm, valueFormatter: revolutions }],
         valueFormatter: revolutions
@@ -930,7 +922,8 @@ export function DeviceChartCells({ section, context }: { section: DashboardSecti
     return renderer(chart, context).map((tile) => ({
       node: (
         <DashboardCell key={tile.key} span={tile.span ?? chart.span}>
-          <SingleDeviceChartCell chart={chart} tile={limitTileSeries(tile, chartPointLimit)} />
+          {/* 换设备时重新挂载，展开中的详情与查点不会带到另一台设备上。 */}
+          <SingleDeviceChartCell key={context.device.deviceId} chart={chart} tile={limitTileSeries(tile, chartPointLimit)} />
         </DashboardCell>
       )
     }));

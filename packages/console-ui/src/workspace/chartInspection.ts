@@ -91,3 +91,40 @@ export function chartGestureDirection(direction: ChartGestureDirection, dx: numb
   if (direction !== "pending" || Math.max(Math.abs(dx), Math.abs(dy)) < 6) return direction;
   return Math.abs(dx) > Math.abs(dy) ? "horizontal" : "vertical";
 }
+
+export type SeriesSummary = {
+  label: string;
+  latest: SamplePoint | null;
+  average: number | null;
+  /** The most recent sample that reached the maximum, so its time reads as "last seen". */
+  peak: SamplePoint | null;
+  minimum: SamplePoint | null;
+};
+
+/** Window statistics for one curve; malformed samples are ignored like the chart ignores them. */
+export function summarizeSeries(series: InspectableSeries): SeriesSummary {
+  let latest: SamplePoint | null = null;
+  let peak: SamplePoint | null = null;
+  let minimum: SamplePoint | null = null;
+  let latestTime = -Infinity;
+  let peakTime = -Infinity;
+  let minimumTime = -Infinity;
+  let total = 0;
+  let count = 0;
+  for (const point of series.points) {
+    const time = dateValueOf(point.timestamp);
+    if (!Number.isFinite(time) || !Number.isFinite(point.value)) continue;
+    total += point.value;
+    count += 1;
+    if (time > latestTime) { latestTime = time; latest = point; }
+    if (!peak || point.value > peak.value || (point.value === peak.value && time > peakTime)) { peak = point; peakTime = time; }
+    if (!minimum || point.value < minimum.value || (point.value === minimum.value && time > minimumTime)) { minimum = point; minimumTime = time; }
+  }
+  return { label: series.label, latest, average: count ? total / count : null, peak, minimum };
+}
+
+/** The span every curve of a chart covers together, for the "sample window" line. */
+export function chartSampleWindow(index: ChartInspectionIndex): { start: number; end: number; count: number } | null {
+  if (!index.timeline.length) return null;
+  return { start: index.timeline[0], end: index.timeline[index.timeline.length - 1], count: index.timeline.length };
+}

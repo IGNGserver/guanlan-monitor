@@ -100,6 +100,72 @@
 .chart-tile__empty { display: flex; min-height: 8rem; flex: 1 1 auto; align-items: center; justify-content: center; padding: var(--md-sys-space-5); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-m-size); text-align: center; }
 .chart-tile__footer { margin-top: var(--md-sys-space-2); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
 
+/* ---- Half sheet ------------------------------------------------------------ */
+
+/*
+ * 详情从卡片底边升起，盖住下半张卡；标题行与「收回」永远露在上面
+ * （`--chart-sheet-top` 由 ChartTile 按头部实际高度写入）。
+ * 弹簧令牌会冲过终点，所以面板比看上去长出一截藏在卡片底边以下，
+ * 回弹时底边不会把图表漏出来。
+ */
+.chart-tile--sheet { --chart-sheet-tail: 32px; }
+.chart-tile__sheet {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: calc(var(--chart-sheet-tail) * -1);
+  left: 0;
+  display: flex;
+  height: calc(max(50%, 13rem) + var(--chart-sheet-tail));
+  max-height: calc(100% - var(--chart-sheet-top, 4.5rem) + var(--chart-sheet-tail));
+  flex-direction: column;
+  padding-bottom: var(--chart-sheet-tail);
+  border-radius: var(--md-sys-shape-lg) var(--md-sys-shape-lg) 0 0;
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-container-high);
+  box-shadow: var(--md-sys-elevation-2);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform var(--md-sys-motion-effects-slow), visibility 0s linear 300ms;
+}
+.chart-tile__sheet[data-open="true"] {
+  transform: translateY(0);
+  visibility: visible;
+  transition: transform var(--md-sys-motion-spatial-default), visibility 0s;
+}
+.chart-tile__sheet-content {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--md-sys-space-5);
+  scrollbar-width: thin;
+}
+.chart-tile__sheet-toggle .m3e-icon { transition: transform var(--md-sys-motion-effects-default); }
+
+.chart-sheet { display: grid; gap: var(--md-sys-space-5); }
+.chart-sheet__section { display: grid; min-width: 0; gap: var(--md-sys-space-2); }
+.chart-sheet__heading { margin: 0; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-m-size); font-weight: 600; letter-spacing: 0.04em; }
+.chart-sheet__text { margin: 0; overflow-wrap: anywhere; color: var(--md-sys-color-on-surface); font-size: var(--md-sys-typescale-body-m-size); line-height: 1.5; }
+.chart-sheet__caption { margin: 0; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); font-variant-numeric: tabular-nums; }
+.chart-sheet__stats { display: grid; margin: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--md-sys-space-2); }
+.chart-sheet__stats > div { min-width: 0; padding: var(--md-sys-space-3); border-radius: var(--md-sys-shape-md); background: var(--md-sys-color-surface-container-highest); }
+.chart-sheet__stats dt { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-m-size); }
+.chart-sheet__stats dd { display: grid; margin: var(--md-sys-space-1) 0 0; gap: 2px; }
+.chart-sheet__value { overflow-wrap: anywhere; color: var(--md-sys-color-on-surface); font-size: var(--md-sys-typescale-title-m-size); font-weight: 500; font-variant-numeric: tabular-nums; }
+.chart-sheet__when { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-s-size); font-variant-numeric: tabular-nums; }
+.chart-sheet__table-scroll { min-width: 0; overflow-x: auto; }
+.chart-sheet__table { font-size: var(--md-sys-typescale-body-s-size); }
+.chart-sheet__table th,
+.chart-sheet__table td { padding: var(--md-sys-space-2) var(--md-sys-space-3); }
+.chart-sheet__table th { font-size: var(--md-sys-typescale-label-m-size); }
+.chart-sheet__table th[scope="row"] { color: var(--md-sys-color-on-surface); font-weight: 500; white-space: normal; }
+.chart-sheet__table .m3e-chart__swatch { display: inline-block; margin-right: 6px; vertical-align: -1px; }
+.chart-sheet__table .chart-sheet__value { font-size: var(--md-sys-typescale-body-m-size); }
+.chart-sheet__table .chart-sheet__when { display: block; }
+.chart-sheet .chart-info-rows__row { padding: var(--md-sys-space-2) 0; }
+.chart-sheet .workspace-telemetry-model-chip { background: var(--md-sys-color-surface-container-highest); }
+
 /* ---- Chart primitives ------------------------------------------------------ */
 
 .m3e-chart { display: flex; min-width: 0; flex-direction: column; gap: var(--md-sys-space-2); }
@@ -113,6 +179,9 @@
 .m3e-chart-readout__values > div { min-width: 0; }
 .m3e-chart-readout__values dt { display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-m-size); }
 .m3e-chart-readout__unit { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); font-weight: 400; }
+.m3e-chart-readout.is-compact { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--md-sys-space-2) var(--md-sys-space-4); }
+.m3e-chart-readout.is-compact .m3e-chart-readout__time { margin-left: auto; padding-bottom: 4px; }
+.m3e-chart-readout__values .m3e-visually-hidden + dd { margin-top: 0; }
 .m3e-chart-readout__values dd { margin: var(--md-sys-space-1) 0 0; color: var(--md-sys-color-on-surface); font-size: var(--md-sys-typescale-title-l-size); font-weight: 500; line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .m3e-chart__grid { stroke: var(--md-sys-color-outline-variant); stroke-width: 1; }
 .m3e-chart__axis { fill: var(--md-sys-color-on-surface-variant); font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -147,8 +216,6 @@
 .chart-info-rows__row + .chart-info-rows__row { border-top: 1px solid var(--md-sys-color-outline-variant); }
 .chart-info-rows dt { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
 .chart-info-rows dd { margin: 0; overflow-wrap: anywhere; color: var(--md-sys-color-on-surface); font-size: var(--md-sys-typescale-body-m-size); font-variant-numeric: tabular-nums; }
-.chart-details { font-size: var(--md-sys-typescale-body-s-size); }
-.chart-details th[scope="row"] { color: var(--md-sys-color-on-surface-variant); font-weight: 500; }
 
 /* ---- Device detail shell --------------------------------------------------- */
 
@@ -224,8 +291,13 @@
   .dashboard-section__header { flex-direction: column; align-items: stretch; }
   .chart-tile__controls { justify-content: flex-start; }
   .m3e-number-grid { grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); }
+  .chart-tile__sheet-content { padding: var(--md-sys-space-4); }
+  /* 只有「展开」一个控件时，按钮跟标题同行，不再为它单独让出一行。 */
+  .chart-tile--toggle-only .chart-tile__header { flex-direction: row; align-items: flex-start; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .guanlan-fade-in { animation: none; }
+  .chart-tile__sheet { opacity: 0; transform: none; transition: opacity var(--md-sys-motion-effects-fast), visibility 0s linear 150ms; }
+  .chart-tile__sheet[data-open="true"] { opacity: 1; transform: none; transition: opacity var(--md-sys-motion-effects-fast), visibility 0s; }
 }

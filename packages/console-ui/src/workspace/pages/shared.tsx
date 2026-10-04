@@ -564,7 +564,7 @@ type TelemetryInstanceSummary = {
   detail?: string;
 };
 
-function TelemetryModelList({ label, items }: { label: string; items: TelemetryInstanceSummary[] }) {
+function TelemetryModelList({ label, items, collapsible = true }: { label: string; items: TelemetryInstanceSummary[]; collapsible?: boolean }) {
   if (!items.length) {
     return (
       <div className="workspace-telemetry-models">
@@ -575,7 +575,9 @@ function TelemetryModelList({ label, items }: { label: string; items: TelemetryI
 
   // If there are more than 4 items (like many virtual network interfaces or disks),
   // collapse them inside a details disclosure to preserve balanced tile heights.
-  if (items.length > 4) {
+  // Inside a chart's detail sheet the list is already behind a disclosure; a second
+  // one would make the user expand twice, so the sheet asks for the flat list.
+  if (collapsible && items.length > 4) {
     return (
       <details className="workspace-telemetry-models-details">
         <summary className="workspace-telemetry-models-summary">
