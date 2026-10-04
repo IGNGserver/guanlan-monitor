@@ -71,9 +71,11 @@ export function SingleDeviceChartCell({
       break;
   }
 
-  // 自定义面板（Agent、流量日历、温度源）的主体本身就是明细，不再套一层详情。
+  // 自定义面板（Agent、流量日历、温度源）的主体本身就是明细，不再套一层详情；
+  // 曲线一个有效样本都没有时统计区为空，不能只凭「有 series」就给出一个空详情。
+  const hasSamples = tile.series?.some((item) => item.points.some((point) => Number.isFinite(point.value))) ?? false;
   const hasSheetContent = chart.visualization !== "custom"
-    && Boolean(tile.subtitle || tile.facts?.length || tile.models || tile.series?.length);
+    && Boolean(tile.subtitle || tile.facts?.length || tile.models || hasSamples);
 
   return (
     <ChartTile
