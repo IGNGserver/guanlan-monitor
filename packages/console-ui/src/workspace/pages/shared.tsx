@@ -264,22 +264,15 @@ function DeviceCard({ device }: { device: DeviceSummary }) {
   const isOnline = device.status === "online";
 
   return (
-    <div
-      className="guanlan-fleet-card"
-      role="button"
-      tabIndex={0}
-      onClick={openDevice}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          openDevice();
-        }
-      }}
-      aria-label={`查看设备 ${device.hostname}`}
-    >
+    // A real button carries the activation; its ::after stretches over the card so
+    // the whole surface stays clickable without faking a button out of a div
+    // (which also could not legally hold the heading).
+    <article className="guanlan-fleet-card">
       <div className="guanlan-fleet-card__header">
         <div className="guanlan-fleet-card__identity">
-          <h4 className="guanlan-fleet-card__title" title={device.hostname}>{device.hostname}</h4>
+          <h4 className="guanlan-fleet-card__title" title={device.hostname}>
+            <button type="button" className="guanlan-fleet-card__link" onClick={openDevice} aria-label={`查看设备 ${device.hostname}`}>{device.hostname}</button>
+          </h4>
           <span className="guanlan-fleet-card__meta">{device.os} · {device.deviceId}</span>
         </div>
         <StatusLabel state={isOnline ? "online" : "offline"} compact />
@@ -317,7 +310,7 @@ function DeviceCard({ device }: { device: DeviceSummary }) {
         <span>{isOnline ? "刚刚上报" : "停止上报"}</span>
         <span>{formatDate(device.lastSeenAt)}</span>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -492,35 +485,12 @@ function OverviewSummary({
           <span>中枢数据</span>
           <StatusLabel state={sourceState} compact />
         </div>
-        <div className="guanlan-fleet-hero__value" style={{ fontSize: "1.25rem", lineHeight: "1.5" }}>
+        <div className="guanlan-fleet-hero__value guanlan-fleet-hero__value--text">
           {sourceLabel}
         </div>
         <div className="guanlan-fleet-hero__hint">{sourceDetail}</div>
       </div>
 
-      {/* Visual regression and headless compatibility layer */}
-      <div className="workspace-overview-summary" aria-hidden="true" style={{ marginBottom: "var(--workspace-space-07)" }}>
-        <div className="workspace-overview-summary__item">
-          <span>设备总数</span>
-          <strong>{total}</strong>
-          <small>接入当前中枢的设备</small>
-        </div>
-        <div className="workspace-overview-summary__item">
-          <span>在线</span>
-          <strong>{online}<small> / {total}</small></strong>
-          <small>{offline ? `${offline} 台设备离线` : "全部设备在线"}</small>
-        </div>
-        <div className={`workspace-overview-summary__item${attentionCount ? " is-warning" : ""}`}>
-          <span>需要关注</span>
-          <strong>{attentionCount == null ? "无法判断" : attentionCount}</strong>
-          <small>{attentionCount == null ? "连接状态异常，暂无法判断" : attentionDetail}</small>
-        </div>
-        <div className="workspace-overview-summary__item workspace-overview-summary__item--source">
-          <div className="workspace-overview-summary__label"><span>数据来源</span><StatusLabel state={sourceState} compact /></div>
-          <strong>{sourceLabel}</strong>
-          <small>{sourceDetail}</small>
-        </div>
-      </div>
     </div>
   );
 }

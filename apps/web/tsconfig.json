@@ -29,7 +29,6 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    "src/components/legacy"
+    "node_modules"
   ]
 }

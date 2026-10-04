@@ -7,6 +7,8 @@ import { CompactNavigation } from "./CompactNavigation";
 import { NativeTitleBar } from "./NativeTitleBar";
 import { PrimaryNavigation } from "./PrimaryNavigation";
 import { PullToRefresh } from "./PullToRefresh";
+import { RenderBoundary } from "../RenderBoundary";
+import { serializeWorkspaceRoute } from "../routes";
 
 /** Same calendar vocabulary the metric-window controls show to sighted users. */
 const metricsWindowAnnouncements: Record<string, string> = {
@@ -113,7 +115,7 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
       <SessionRecoveryBanner />
       <main className="workspace-content" id="workspace-main-content">
         <PullToRefresh onRefresh={refresh} disabled={!isTouch || Boolean(sidebarDrawerOpen)}>
-          {children}
+          <RenderBoundary scope="page" resetKey={serializeWorkspaceRoute(route)}>{children}</RenderBoundary>
         </PullToRefresh>
       </main>
     </div>

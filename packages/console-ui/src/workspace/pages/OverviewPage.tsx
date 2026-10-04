@@ -8,7 +8,8 @@ import { OnboardingGuide } from "../shell/OnboardingGuide";
 import { DeviceChartSheet } from "./DeviceChartSheet";
 import { formatBytes, formatDate, formatRate, formatPercent } from "../formatters";
 import { selectAttentionDevices, selectHealthSummary } from "../selectors";
-import { DeviceTable, DeviceCardGrid, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, MetricWindowControl, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints, type DesktopMetricWindowValue } from "./shared";
+import { RenderBoundary } from "../RenderBoundary";
+import { DeviceCardGrid, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, MetricWindowControl, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints, type DesktopMetricWindowValue } from "./shared";
 
 type ObservationMetric = "cpu" | "memory" | "disk" | "network";
 
@@ -172,9 +173,6 @@ export function OverviewPage() {
             <div className="workspace-attention-cards">
               <DeviceCardGrid devices={attentionDevices} />
             </div>
-            <div className="workspace-visually-hidden" aria-hidden="true">
-              <DeviceTable devices={attentionDevices} />
-            </div>
           </div>
         )
         : <div className="workspace-muted-block">{noData ? "还没有设备接入；Agent 上报一次后就会出现在这里。" : `${health.total} 台设备全部在线，无需处理。到“设备”页可以搜索、筛选和管理。`}</div>}
@@ -199,6 +197,7 @@ export function OverviewPage() {
     >
       <DashboardGrid>
         <DashboardCell span="full">
+          <RenderBoundary scope="tile" title={`${observationLabels[observationMetric]}趋势`} resetKey={observationMetric}>
           <ChartTile
             title={`${observationLabels[observationMetric]}趋势`}
             subtitle={`每台设备一条数据线 · 最近 ${metricWindowLabel}`}
@@ -216,6 +215,7 @@ export function OverviewPage() {
           >
             <TimeSeriesChart series={observationSeries} maxValue={observationMetric === "cpu" ? 100 : undefined} />
           </ChartTile>
+          </RenderBoundary>
         </DashboardCell>
       </DashboardGrid>
     </DashboardSection>

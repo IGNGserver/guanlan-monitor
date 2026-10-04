@@ -7,17 +7,6 @@
 .workspace-page-intro__actions { align-items: center; }
 .workspace-settings-mobile-nav { display: none; }
 
-.workspace-overview-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin: 0 0 34px; padding: 0 0 22px; border-bottom: 1px solid var(--workspace-border); }
-.workspace-overview-summary__item { min-width: 0; padding: 0 22px; border: 0; border-left: 0; border-radius: var(--md-sys-shape-lg); background: transparent; box-shadow: none; }
-.workspace-overview-summary__item:first-child { padding-left: 0; border-left: 0; }
-.workspace-overview-summary__item > span,
-.workspace-overview-summary__label span { color: var(--workspace-text-muted); font-size: 12px; }
-.workspace-overview-summary__item > strong { display: block; margin-top: 5px; color: var(--workspace-text); font-size: 28px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
-.workspace-overview-summary__item > strong small { color: var(--workspace-text-muted); font-size: 14px; font-weight: 500; }
-.workspace-overview-summary__item > small { display: block; margin-top: 8px; color: var(--workspace-text-secondary); font-size: 12px; }
-.workspace-overview-summary__item.is-warning > strong { color: var(--workspace-amber); }
-.workspace-overview-summary__label { display: flex; min-height: 28px; align-items: center; justify-content: space-between; gap: 8px; }
-.workspace-overview-summary__item--source > strong { font-size: 20px; }
 
 /* The attention notification row owns its own flex layout, tint and status strip. */
 .workspace-attention { margin: 0 0 22px; }
@@ -47,6 +36,11 @@
 
 .workspace-bottom-nav { display: none; }
 .workspace-visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important; clip: rect(1px, 1px, 1px, 1px) !important; white-space: nowrap !important; }
+
+/* Render-failure fallbacks (RenderBoundary). */
+.render-boundary__details { max-width: 560px; margin-top: var(--md-sys-space-3); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); text-align: left; }
+.render-boundary__details pre { overflow: auto; margin: var(--md-sys-space-2) 0 0; white-space: pre-wrap; word-break: break-word; }
+.render-boundary--tile .chart-tile__empty { display: flex; align-items: center; justify-content: center; gap: var(--md-sys-space-2); }
 
 @media (max-width: 1199px) {
   /* The sidebar keeps its expanded/collapsed contract at every desktop width.
@@ -103,7 +97,6 @@
   .workspace-page-intro { align-items: flex-start; flex-direction: column; gap: 16px; margin-bottom: 26px; }
   .workspace-page-intro__actions { width: 100%; }
   .workspace-page-intro__actions > * { flex: 1; }
-  .workspace-overview-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-directory-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; }
   .workspace-directory-toolbar > .m3e-field { grid-column: 1 / -1; }
   .workspace-directory-toolbar__chips { grid-column: 1 / -1; flex-wrap: wrap; }

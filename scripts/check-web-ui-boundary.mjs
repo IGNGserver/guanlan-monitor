@@ -10,7 +10,10 @@ const componentRoot = path.join(projectRoot, "apps/web/src/components");
 const legacyComponentRoot = path.join(componentRoot, "legacy");
 const homeRoute = path.join(appRoot, "page.tsx");
 const deviceRoute = path.join(appRoot, "devices/[deviceId]/page.tsx");
-const archivedLegacyFiles = [
+// The pre-unification dashboard was kept under components/legacy for rollback.
+// It is retired now; recover it from git history (tag v3.0.146 still has it)
+// instead of resurrecting the tree, so these names must not exist anywhere.
+const retiredLegacyFiles = [
   "chart-card.tsx",
   "dashboard.tsx",
   "device-sidebar.tsx",
@@ -84,25 +87,19 @@ if (!/from\s+["']@dsc\/console-ui["']/.test(unifiedConsoleSource)) {
   console.error("❌ Web UI boundary: UnifiedConsole must render the shared @dsc/console-ui package.");
 }
 
-if (!fs.existsSync(legacyComponentRoot)) {
+if (fs.existsSync(legacyComponentRoot)) {
   violationCount++;
-  console.error("❌ Web UI boundary: legacy Web component archive is missing.");
-} else {
-  for (const fileName of archivedLegacyFiles) {
-    const archivedPath = path.join(legacyComponentRoot, fileName);
-    if (!fs.existsSync(archivedPath)) {
-      violationCount++;
-      console.error(`❌ Web UI boundary: archived legacy component is missing ${path.relative(projectRoot, archivedPath)}.`);
-    }
-    const activePath = path.join(componentRoot, fileName);
-    if (fs.existsSync(activePath)) {
-      violationCount++;
-      console.error(`❌ Web UI boundary: legacy component remains in the active component root ${path.relative(projectRoot, activePath)}.`);
-    }
+  console.error(`❌ Web UI boundary: the retired legacy archive ${path.relative(projectRoot, legacyComponentRoot)} came back; recover old code from git history instead.`);
+}
+for (const fileName of retiredLegacyFiles) {
+  const activePath = path.join(componentRoot, fileName);
+  if (fs.existsSync(activePath)) {
+    violationCount++;
+    console.error(`❌ Web UI boundary: retired legacy component reappeared at ${path.relative(projectRoot, activePath)}.`);
   }
 }
 
-console.log(`[check:web-ui-boundary] Scanned active Web routes under ${path.relative(projectRoot, appRoot)} and archived legacy components.`);
+console.log(`[check:web-ui-boundary] Scanned active Web routes under ${path.relative(projectRoot, appRoot)} and the retired legacy component names.`);
 
 if (violationCount > 0) {
   console.error(`[check:web-ui-boundary] FAILED: ${violationCount} boundary violation(s) detected.`);
