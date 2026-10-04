@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chartGestureDirection, chartTimeAtClientX, indexChartSamples, inspectChartTime, latestChartValues, nearestChartTime } from "./chartInspection.ts";
+import { chartGestureDirection, chartSampleWindow, chartTimeAtClientX, indexChartSamples, inspectChartTime, latestChartValues, nearestChartTime, summarizeSeries } from "./chartInspection.ts";
 
 const time = (seconds: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, seconds)).toISOString();
 const point = (seconds: number, value: number) => ({ timestamp: time(seconds), value });
@@ -49,4 +49,18 @@ test("touch direction locks for the whole gesture so vertical releases cannot in
   assert.equal(chartGestureDirection("pending", 2, 10), "vertical");
   assert.equal(chartGestureDirection("vertical", 100, 12), "vertical");
   assert.equal(chartGestureDirection("horizontal", 10, 100), "horizontal");
+});
+
+test("series summary reports latest, average and the most recent extremes", () => {
+  const summary = summarizeSeries({ label: "下载", points: [point(10, 12), point(0, 4), point(5, 12), point(7, 4), { timestamp: "invalid", value: 99 }, point(12, NaN)] });
+  assert.equal(summary.latest?.timestamp, time(10));
+  assert.equal(summary.average, 8);
+  assert.equal(summary.peak?.timestamp, time(10));
+  assert.equal(summary.minimum?.timestamp, time(7));
+  assert.deepEqual(summarizeSeries({ label: "空", points: [] }), { label: "空", latest: null, average: null, peak: null, minimum: null });
+});
+
+test("sample window spans the shared timeline", () => {
+  assert.deepEqual(chartSampleWindow(indexChartSamples(series)), { start: Date.parse(time(0)), end: Date.parse(time(10)), count: 3 });
+  assert.equal(chartSampleWindow(indexChartSamples([])), null);
 });

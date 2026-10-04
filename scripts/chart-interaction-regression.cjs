@@ -118,10 +118,41 @@ async function chartChecks(page, cell) {
   await page.mouse.move(5, 5);
   await cell.locator(".m3e-chart-readout.is-inspecting").waitFor({ state: "detached" });
   assert.equal(await cell.locator(".m3e-chart-readout.is-inspecting").count(), 0);
-  await cell.getByRole("button", { name: "详细信息", exact: true }).click();
-  assert.equal(await cell.locator(".m3e-chart-readout").count(), 0);
-  await page.getByRole("button", { name: "返回图表", exact: true }).click();
+  await sheetChecks(page, cell);
   await measuredCharts(page);
+}
+async function sheetChecks(page, cell) {
+  // Supporting text lives in the half sheet; the card itself keeps title, reading and chart.
+  assert.equal(await cell.locator(".chart-tile__subtitle, .chart-tile__footer").count(), 0, "supporting text must move into the detail sheet");
+  const sheet = cell.locator(".chart-tile__sheet");
+  assert.equal(await sheet.evaluate((el) => el.inert), true, "a closed sheet must stay out of the tab order");
+  await cell.getByRole("button", { name: "展开", exact: true }).click();
+  const collapse = cell.getByRole("button", { name: "收回", exact: true });
+  assert.equal(await collapse.getAttribute("aria-expanded"), "true");
+  await sheet.locator(".chart-sheet").waitFor();
+  await page.waitForFunction((el) => getComputedStyle(el).visibility === "visible" && getComputedStyle(el).opacity === "1", await sheet.elementHandle());
+  assert.equal(await sheet.evaluate((el) => el.inert), false);
+  const geometry = await cell.evaluate((tile) => {
+    const box = tile.getBoundingClientRect();
+    const header = tile.querySelector(".chart-tile__header").getBoundingClientRect();
+    const sheetBox = tile.querySelector(".chart-tile__sheet").getBoundingClientRect();
+    return { tileTop: box.top, tileBottom: box.bottom, headerBottom: header.bottom, sheetTop: sheetBox.top };
+  });
+  const covered = (geometry.tileBottom - geometry.sheetTop) / (geometry.tileBottom - geometry.tileTop);
+  assert.ok(geometry.sheetTop >= geometry.headerBottom - 1, "the sheet must leave the title and collapse button visible: " + JSON.stringify(geometry));
+  assert.ok(covered >= 0.45, "the sheet must cover about half of the card: " + JSON.stringify({ covered, ...geometry }));
+  assert.equal(await cell.locator(".m3e-chart-readout").count(), 1, "the reading stays on the card while the sheet is open");
+  await page.screenshot({ path: path.join(output, "chart-sheet-" + report.checks.length + ".png") });
+  report.checks.push({ sheet: { covered: Number(covered.toFixed(3)), ...geometry } });
+  // Escape from the toggle closes the sheet and keeps focus on the toggle.
+  await collapse.focus();
+  await page.keyboard.press("Escape");
+  await cell.locator('.chart-tile__sheet[data-open="false"]').waitFor({ state: "attached" });
+  assert.equal(await cell.getByRole("button", { name: "展开", exact: true }).evaluate((el) => el === document.activeElement), true);
+  assert.equal(await sheet.evaluate((el) => el.inert), true);
+  await cell.getByRole("button", { name: "展开", exact: true }).click();
+  await cell.getByRole("button", { name: "收回", exact: true }).click();
+  await cell.locator('.chart-tile__sheet[data-open="false"]').waitFor({ state: "attached" });
 }
 async function desktopFlow() {
   const { page, context, errors } = await setup();
@@ -214,7 +245,7 @@ async function desktopFlow() {
     await page.waitForFunction(() => document.querySelector('[role="combobox"][aria-controls]')?.getAttribute("aria-expanded") === "false");
   }
   assert.deepEqual(errors, []);
-  report.checks.push("empty/loading mount, responsive SVG, 4/8/16 container grid, sidebar space reclamation and restored width, actual two-column cards at 840/1024/1280, rail icons and names, all-curve timestamp inspection, mouse and keyboard focus, details remount, native select change contract, light/dark popup");
+  report.checks.push("empty/loading mount, responsive SVG, 4/8/16 container grid, sidebar space reclamation and restored width, actual two-column cards at 840/1024/1280, rail icons and names, all-curve timestamp inspection, mouse and keyboard focus, half detail sheet open/Escape/collapse, native select change contract, light/dark popup");
   await context.close();
 }
 async function swipe(page, svg, horizontal) {
@@ -255,6 +286,11 @@ async function touchFlow() {
   await page.locator(".touch-device-heading h1").tap();
   await cell.locator(".m3e-chart-readout.is-inspecting").waitFor({ state: "detached" });
   assert.equal(await cell.locator(".m3e-chart-readout.is-inspecting").count(), 0);
+  await cell.getByRole("button", { name: "展开", exact: true }).tap();
+  await cell.locator(".chart-sheet").waitFor();
+  await page.screenshot({ path: path.join(output, "phone-chart-sheet.png") });
+  await cell.getByRole("button", { name: "收回", exact: true }).tap();
+  await cell.locator('.chart-tile__sheet[data-open="false"]').waitFor({ state: "attached" });
   await svg.scrollIntoViewIfNeeded();
   if (engine === "chromium") {
     const pane = page.locator(".touch-main-pane");
