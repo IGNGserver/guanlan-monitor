@@ -85,7 +85,7 @@ export function ChartTile({
   };
 
   return (
-    <article ref={tileRef} className={`m3e-card m3e-card--filled chart-tile${hasSheet ? " chart-tile--sheet" : ""}${open ? " is-sheet-open" : ""}${className ? ` ${className}` : ""}`}>
+    <article ref={tileRef} className={`m3e-card m3e-card--filled chart-tile${hasSheet ? ` chart-tile--sheet${controls ? "" : " chart-tile--toggle-only"}` : ""}${open ? " is-sheet-open" : ""}${className ? ` ${className}` : ""}`}>
       <div className="chart-tile__header">
         <div className="chart-tile__titles">
           {eyebrow ? <span className="chart-tile__eyebrow">{eyebrow}</span> : null}

@@ -292,6 +292,8 @@
   .chart-tile__controls { justify-content: flex-start; }
   .m3e-number-grid { grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); }
   .chart-tile__sheet-content { padding: var(--md-sys-space-4); }
+  /* 只有「展开」一个控件时，按钮跟标题同行，不再为它单独让出一行。 */
+  .chart-tile--toggle-only .chart-tile__header { flex-direction: row; align-items: flex-start; }
 }
 
 @media (prefers-reduced-motion: reduce) {
