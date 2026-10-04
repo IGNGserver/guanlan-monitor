@@ -39,7 +39,13 @@ async function setup(touch = false) {
   await page.locator(touch ? ".touch-device-heading" : ".workspace-device-facts").waitFor();
   return { page, context, errors };
 }
+async function waitForLayout(page) {
+  // React classes can be visible to the test before container layout and resize
+  // observers reach the next rendered frame. Sample after those frames settle.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+}
 async function measuredCharts(page) {
+  await waitForLayout(page);
   await page.waitForFunction(() => [...document.querySelectorAll(".m3e-chart__svg")].every((svg) => Math.abs(svg.viewBox.baseVal.width - svg.getBoundingClientRect().width) < 2));
   const layout = await page.evaluate(() => [...document.querySelectorAll(".dashboard-grid")].map((grid) => ({
     width: grid.clientWidth, scrollWidth: grid.scrollWidth,
@@ -52,6 +58,29 @@ async function measuredCharts(page) {
     assert.ok(grid.cells.every((cell) => cell.width <= grid.width + 2), JSON.stringify(grid));
   }
   return layout;
+}
+async function measuredShell(page) {
+  await waitForLayout(page);
+  return page.evaluate(() => {
+    const root = document.querySelector(".workspace-root");
+    const sidebar = document.querySelector(".workspace-sidebar").getBoundingClientRect();
+    const main = document.querySelector(".workspace-main").getBoundingClientRect();
+    return { viewportWidth: window.innerWidth, classes: root.className, tracks: getComputedStyle(root).gridTemplateColumns, sidebar: { width: sidebar.width, right: sidebar.right }, main: { width: main.width, left: main.left } };
+  });
+}
+function assertChartColumns(layout, columns) {
+  const ordinary = layout.filter((grid) => grid.cells.length > 1);
+  assert.ok(ordinary.length > 0, "the fixture must include multiple ordinary charts");
+  for (const grid of ordinary) {
+    const [first, second] = grid.cells;
+    if (columns === 2) {
+      assert.ok(Math.abs(first.top - second.top) < 2, "ordinary charts must share a row: " + JSON.stringify(grid));
+      assert.ok(second.left >= first.left + first.width, "ordinary charts must sit beside each other: " + JSON.stringify(grid));
+    } else {
+      assert.ok(Math.abs(first.left - second.left) < 2 && second.top > first.top, "phone charts must stack: " + JSON.stringify(grid));
+      assert.ok(grid.cells.every((cell) => Math.abs(cell.width - grid.width) < 2), "phone charts must fill their single column: " + JSON.stringify(grid));
+    }
+  }
 }
 async function chartChecks(page, cell) {
   const svg = cell.locator(".m3e-chart__svg");
@@ -99,7 +128,7 @@ async function desktopFlow() {
   console.log("Checking desktop layout, chart measurements and collapsed navigation");
   await page.getByRole("tab", { name: "计算与系统", exact: true }).click();
   await page.locator('.m3e-chart__svg[aria-label*="使用率"]').first().waitFor();
-  for (const width of [1280, 1024, 840, 390]) {
+  for (const width of [1920, 1280, 1024, 840, 390]) {
     await page.setViewportSize({ width, height: 900 });
     report.layouts.push({ width, layout: await measuredCharts(page) });
   }
@@ -107,13 +136,46 @@ async function desktopFlow() {
   const collapse = page.locator(".workspace-sidebar__collapse");
   await collapse.waitFor();
   await page.waitForFunction(() => document.querySelector('.workspace-sidebar__collapse')?.getAttribute('aria-label') === '折叠侧边栏');
+  const expandedShell = await measuredShell(page);
+  const expandedLayout = await measuredCharts(page);
+  report.layouts.push({ width: 1024, collapsed: false, shell: expandedShell, layout: expandedLayout });
   await collapse.click();
-  await page.locator('.workspace-sidebar.is-collapsed').waitFor();
+  await page.locator('.workspace-root.is-sidebar-collapsed').waitFor();
   await page.mouse.move(600, 20);
   assert.equal(await page.locator(".workspace-sidebar .workspace-nav-item .m3e-nav-item__icon").first().isVisible(), true);
   await page.locator(".workspace-sidebar .workspace-nav-item .m3e-nav-item__label").first().waitFor({ state: "hidden" });
   assert.equal(await page.locator(".workspace-sidebar").getByRole("button", { name: "设备", exact: true }).count(), 1);
-  report.layouts.push({ width: 1024, collapsed: true, layout: await measuredCharts(page) });
+  const collapsedShell = await measuredShell(page);
+  const collapsedLayout = await measuredCharts(page);
+  const releasedWidth = expandedShell.sidebar.width - collapsedShell.sidebar.width;
+  assert.ok(releasedWidth > 100, "collapsing the sidebar must release useful space");
+  assert.ok(Math.abs(collapsedShell.main.left - collapsedShell.sidebar.right) < 2, "content must start at the rail edge: " + JSON.stringify(collapsedShell));
+  assert.ok(Math.abs(collapsedShell.main.width - expandedShell.main.width - releasedWidth) < 2, "content must receive the width released by the sidebar");
+  assert.ok(Math.abs(collapsedLayout[0].width - expandedLayout[0].width - releasedWidth) < 2, "charts must receive the width released by the sidebar");
+  assertChartColumns(collapsedLayout, 2);
+  report.layouts.push({ width: 1024, collapsed: true, shell: collapsedShell, layout: collapsedLayout });
+  for (const width of [1280, 840]) {
+    await page.setViewportSize({ width, height: 900 });
+    const layout = await measuredCharts(page);
+    assertChartColumns(layout, 2);
+    report.layouts.push({ width, collapsed: true, shell: await measuredShell(page), layout });
+  }
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await collapse.click();
+  await page.locator('.workspace-root.is-sidebar-open').waitFor();
+  const restoredShell = await measuredShell(page);
+  assert.ok(Math.abs(restoredShell.main.width - expandedShell.main.width) < 2, "expanding must restore the original content width: " + JSON.stringify({ expandedShell, restoredShell }));
+  const restoredLayout = await measuredCharts(page);
+  assertChartColumns(restoredLayout, 1);
+  report.layouts.push({ width: 1024, collapsed: false, restored: true, shell: restoredShell, layout: restoredLayout });
+  await collapse.click();
+  await page.locator('.workspace-root.is-sidebar-collapsed').waitFor();
+  assertChartColumns(await measuredCharts(page), 2);
+  // Show the ordinary trend cards themselves, below the static processor facts.
+  await page.locator('.dashboard-grid').nth(1).evaluate((grid) => {
+    const pane = grid.closest('.workspace-content');
+    pane.scrollTop += grid.getBoundingClientRect().top - pane.getBoundingClientRect().top - 140;
+  });
   await page.screenshot({ path: path.join(output, "desktop-two-columns.png") });
   await page.getByRole("tab", { name: "网络", exact: true }).click();
   const network = page.locator('.chart-tile').filter({ has: page.locator('.m3e-chart__svg[aria-label*="接收 (Rx)"]') }).first();
@@ -152,7 +214,7 @@ async function desktopFlow() {
     await page.waitForFunction(() => document.querySelector('[role="combobox"][aria-controls]')?.getAttribute("aria-expanded") === "false");
   }
   assert.deepEqual(errors, []);
-  report.checks.push("empty/loading mount, responsive SVG, 4/8/16 container grid, rail icons and names, all-curve timestamp inspection, mouse and keyboard focus, details remount, native select change contract, light/dark popup");
+  report.checks.push("empty/loading mount, responsive SVG, 4/8/16 container grid, sidebar space reclamation and restored width, actual two-column cards at 840/1024/1280, rail icons and names, all-curve timestamp inspection, mouse and keyboard focus, details remount, native select change contract, light/dark popup");
   await context.close();
 }
 async function swipe(page, svg, horizontal) {
@@ -181,7 +243,9 @@ async function touchFlow() {
   const cell = page.locator('.chart-tile').filter({ has: page.locator('.m3e-chart__svg[aria-label*="使用率"]') }).first();
   const svg = cell.locator(".m3e-chart__svg");
   await svg.waitFor();
-  await measuredCharts(page);
+  const phoneLayout = await measuredCharts(page);
+  assertChartColumns(phoneLayout, 1);
+  report.layouts.push({ width: 390, touch: true, layout: phoneLayout });
   await svg.scrollIntoViewIfNeeded();
   assert.match(await svg.evaluate((el) => getComputedStyle(el).touchAction), /pan-y/);
   const bounds = await svg.boundingBox();
@@ -221,6 +285,7 @@ async function touchFlow() {
       await activePage.screenshot({ path: path.join(output, "failure.png") }).catch(() => {});
       fs.writeFileSync(path.join(output, "failure.html"), await activePage.content().catch(() => ""));
     }
+    fs.writeFileSync(path.join(output, "failure-report.json"), JSON.stringify(report, null, 2));
     console.error(error);
     process.exitCode = 1;
   } finally { await browser?.close(); await proxy?.close(); }
