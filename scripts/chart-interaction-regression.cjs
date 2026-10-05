@@ -61,6 +61,19 @@ async function measuredCharts(page) {
 }
 async function measuredShell(page) {
   await waitForLayout(page);
+  // The rail's width transition (0.01 ms under reduced motion) still settles a
+  // frame after the root class flips: the class can read "open" while the grid
+  // track is the rail's 88px. Measure only once the shell geometry has held for
+  // two consecutive frames, instead of after a fixed number of frames.
+  await page.waitForFunction(() => new Promise((resolve) => {
+    const read = () => {
+      const root = document.querySelector(".workspace-root");
+      const sidebar = document.querySelector(".workspace-sidebar");
+      return `${getComputedStyle(root).gridTemplateColumns}|${Math.round(sidebar.getBoundingClientRect().width)}`;
+    };
+    const first = read();
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve(read() === first)));
+  }));
   return page.evaluate(() => {
     const root = document.querySelector(".workspace-root");
     const sidebar = document.querySelector(".workspace-sidebar").getBoundingClientRect();
