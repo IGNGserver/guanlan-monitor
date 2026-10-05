@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useWorkspace } from "../WorkspaceContext";
+import { useWorkspaceUi } from "../WorkspaceContext";
 import { Button, CopyButton, Icon, Surface } from "../ui";
 import { detectPlatform, platformShortcutRows, type NavigatorPlatform } from "../shortcuts";
 
@@ -14,7 +14,7 @@ import { detectPlatform, platformShortcutRows, type NavigatorPlatform } from "..
  * than touching `navigator`, and the effect corrects it before paint.
  */
 export function PlatformShortcuts() {
-  const { capabilities } = useWorkspace();
+  const { capabilities } = useWorkspaceUi();
   const [platform, setPlatform] = useState<NavigatorPlatform>("other");
   useEffect(() => setPlatform(detectPlatform()), []);
   const nativeWindow = capabilities.canControlNativeWindow;

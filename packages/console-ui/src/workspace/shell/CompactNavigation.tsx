@@ -1,5 +1,5 @@
 import React from "react";
-import { useWorkspace } from "../WorkspaceContext";
+import { useWorkspaceUi } from "../WorkspaceContext";
 import { M3NavigationItem } from "../m3";
 import { Icon } from "../ui";
 
@@ -9,7 +9,7 @@ import { Icon } from "../ui";
  * duplicated the settings entry one row below it.
  */
 export function CompactNavigation() {
-  const { route, navigate, openSettings } = useWorkspace();
+  const { route, navigate, openSettings } = useWorkspaceUi();
   const handleNav = (target: "overview" | "devices" | "settings") => {
     if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
       try { navigator.vibrate(10); } catch {}

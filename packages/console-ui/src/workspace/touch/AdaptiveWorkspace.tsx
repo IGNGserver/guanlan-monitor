@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveWebPresentation, supportsTouchSplit, type WebPresentation } from "../../helpers/presentation";
-import { useWorkspace } from "../WorkspaceContext";
+import { useWorkspace, useWorkspaceUi } from "../WorkspaceContext";
 import { WorkspaceFrame } from "../shell/WorkspaceFrame";
 import { RouteView } from "../WorkspacePages";
 import { SettingsPage } from "../pages/SettingsPage";
@@ -20,7 +20,7 @@ import { parseWorkspaceHash, serializeWorkspaceRoute, type SettingsSection, type
 import { RenderBoundary } from "../RenderBoundary";
 
 function usePresentation() {
-  const { webLayout, capabilities } = useWorkspace();
+  const { webLayout, capabilities } = useWorkspaceUi();
   const [view, setView] = useState<{ presentation: WebPresentation; split: boolean }>({ presentation: "desktop", split: false });
   useLayoutEffect(() => {
     const coarse = window.matchMedia("(pointer: coarse)");
@@ -58,7 +58,7 @@ const categoryDetails: Partial<Record<SettingsSection, string>> = {
   general: "刷新频率与状态同步", appearance: "主题、控件与网页布局", connections: "当前中枢与会话", data: "数据来源与更新", shortcuts: "键盘操作", about: "版本与帮助"
 };
 function TouchSettings({ split }: { split: boolean }) {
-  const { route, capabilities, navigate } = useWorkspace();
+  const { route, capabilities, navigate } = useWorkspaceUi();
   const { settingsCategory, setSettingsCategory } = useTouchState();
   const items = visibleSettingsNavigation(capabilities);
   const category = route.kind === "settings" && route.section !== "general" ? route.section : settingsCategory;

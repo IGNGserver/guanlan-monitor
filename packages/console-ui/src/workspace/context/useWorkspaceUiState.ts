@@ -10,6 +10,19 @@ import { getStoredDensity, getStoredRefreshInterval, getStoredTheme } from "./Wo
 import type { WebLayoutPreference } from "../../helpers/presentation";
 
 const SIDEBAR_COLLAPSED_KEY = "dsc-sidebar-collapsed";
+const METRICS_WINDOW_KEY = "dsc-metrics-window";
+/** The ranges the window control offers; anything else falls back to 5 minutes. */
+const STORED_METRIC_WINDOWS: readonly MetricWindow[] = ["5m", "1h", "6h", "24h", "7d"];
+
+/** The range survives a reload: someone watching a day of history wants a day again. */
+function readStoredMetricsWindow(): MetricWindow {
+  try {
+    const value = typeof window === "undefined" ? null : window.localStorage.getItem(METRICS_WINDOW_KEY);
+    return value && (STORED_METRIC_WINDOWS as readonly string[]).includes(value) ? value as MetricWindow : "5m";
+  } catch {
+    return "5m";
+  }
+}
 
 /** The stored choice for the inline rail. Missing means "show the rail". */
 function readStoredSidebarCollapsed(): boolean {
@@ -28,7 +41,11 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
     return readStoredSidebarCollapsed();
   });
   const drawerModeRef = useRef<boolean | null>(null);
-  const [metricsWindow, setMetricsWindow] = useState<MetricWindow>("5m");
+  const [metricsWindow, setMetricsWindowState] = useState<MetricWindow>(readStoredMetricsWindow);
+  const setMetricsWindow = useCallback((next: MetricWindow) => {
+    setMetricsWindowState(next);
+    try { window.localStorage.setItem(METRICS_WINDOW_KEY, next); } catch { /* Optional preference. */ }
+  }, []);
   const [trafficMode, setTrafficModeState] = useState<TrafficCalendarMode>("day");
   const [trafficAnchor, setTrafficAnchor] = useState(() => new Date().toISOString());
   const [searchQuery, setSearchQuery] = useState("");

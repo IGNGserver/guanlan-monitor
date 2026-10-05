@@ -1,6 +1,6 @@
 import React, { useRef } from "react";
 import appIcon from "../../assets/app-icon.png";
-import { useWorkspace } from "../WorkspaceContext";
+import { useWorkspaceActions, useWorkspaceUi } from "../WorkspaceContext";
 import { M3IconButton } from "../m3";
 import { CAPTION_GLYPHS, type CaptionGlyphName } from "./captionGlyphs";
 
@@ -22,7 +22,8 @@ function CaptionButton({ glyph, label, className = "", onClick }: { glyph: Capti
 }
 
 export function NativeTitleBar() {
-  const { minimizeWindow, toggleMaximizeWindow, closeWindow, capabilities, adapterDragStart, adapterDragMove, adapterDragEnd, windowState } = useWorkspace();
+  const { capabilities, windowState } = useWorkspaceUi();
+  const { minimizeWindow, toggleMaximizeWindow, closeWindow, adapterDragStart, adapterDragMove, adapterDragEnd } = useWorkspaceActions();
   const dragPointerId = useRef<number | null>(null);
   /* The maximized flag is the host's, not a local guess. `toggleMaximizeWindow`
    * returns the intended state for the click that changed it, but the window can

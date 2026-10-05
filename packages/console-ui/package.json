@@ -10,6 +10,10 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts"
     },
+    "./services/adapter": {
+      "types": "./src/services/adapter.ts",
+      "import": "./src/services/adapter.ts"
+    },
     "./assets/*": "./src/assets/*",
     "./styles.css": "./src/styles.scss",
     "./styles.scss": "./src/styles.scss",

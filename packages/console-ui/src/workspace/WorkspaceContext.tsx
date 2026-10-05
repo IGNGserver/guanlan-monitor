@@ -1,7 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConsoleSnapshot,
-  DesktopRuntimeProfile
+  ConsoleSnapshotInclude,
+  DesktopRuntimeProfile,
+  DeviceSummary
 } from "@dsc/shared";
 import type { ConsoleAdapter, WindowState } from "../services/adapter";
 import { fallbackRuntimeProfile, fallbackWindowMaterialCapabilities, fallbackWindowState } from "../services/adapter";
@@ -16,7 +18,35 @@ import { selectSnapshotSource } from "./selectors";
 
 export type { SettingsSection, WorkspaceRoute } from "./routes";
 
-const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
+/**
+ * The workspace state is published as three contexts that change at different
+ * rates: preferences and layout (rare), data (every poll and every Agent push),
+ * and actions (stable callbacks). A component that only navigates or reads
+ * preferences subscribes to the first and no longer re-renders on every poll.
+ * `useWorkspace()` still returns the merged view for components that need all
+ * of it.
+ */
+type WorkspaceDataKeys = "snapshot" | "loading" | "refreshing" | "mutationPending" | "error" | "notice" | "devices" | "allDevices" | "selectedDevice";
+type WorkspaceActionKeys =
+  | "refresh" | "updateLocalConfig" | "controlAgent" | "saveHubConnection" | "updateStartupSettings" | "cloudPush"
+  | "saveFanNote" | "deleteInstance" | "reorderInstances" | "minimizeWindow" | "toggleMaximizeWindow" | "closeWindow"
+  | "adapterDragStart" | "adapterDragMove" | "adapterDragEnd" | "login" | "logout" | "disconnectAgent" | "openExternal";
+export type WorkspaceDataValue = Pick<WorkspaceContextValue, WorkspaceDataKeys>;
+export type WorkspaceActionsValue = Pick<WorkspaceContextValue, WorkspaceActionKeys>;
+export type WorkspaceUiValue = Omit<WorkspaceContextValue, WorkspaceDataKeys | WorkspaceActionKeys>;
+
+const WorkspaceUiContext = createContext<WorkspaceUiValue | null>(null);
+const WorkspaceDataContext = createContext<WorkspaceDataValue | null>(null);
+const WorkspaceActionsContext = createContext<WorkspaceActionsValue | null>(null);
+
+const NO_DEVICES: DeviceSummary[] = [];
+
+/** What each route actually draws; the transport may skip the rest. */
+function includeForRoute(kind: WorkspaceRoute["kind"]): ConsoleSnapshotInclude {
+  if (kind === "device") return { deviceMetrics: true, trafficCalendar: true };
+  if (kind === "overview") return { overviewMetrics: true };
+  return {};
+}
 
 export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute?: WorkspaceRoute; children: React.ReactNode }> = ({ adapter, initialRoute, children }) => {
   const {
@@ -112,6 +142,11 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   ));
 
   const selectedDeviceId = route.kind === "device" ? route.deviceId : snapshot?.selectedDeviceId ?? null;
+  // Only the device page asks for one device; elsewhere the request leaves the
+  // choice to the transport, so a snapshot naming a different default device
+  // does not re-key (and re-fetch) the request.
+  const requestDeviceId = route.kind === "device" ? route.deviceId : undefined;
+  const include = useMemo(() => includeForRoute(route.kind), [route.kind]);
   const currentRequestKeyRef = useRef<string>("");
   const queuedRequestRef = useRef<{
     forceRefresh: boolean;
@@ -127,12 +162,17 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
       // the mutation result.
       if (pendingMutationsRef.current > 0) return;
       const request = {
-        selectedDeviceId: selectedDeviceId ?? undefined,
+        selectedDeviceId: requestDeviceId,
         metricWindow: metricsWindow,
         trafficMode,
-        trafficAnchor
+        trafficAnchor,
+        include,
+        // The visible poller is the only caller that refreshes without announcing.
+        background: forceRefresh && !announce
       };
-      const requestKey = `${selectedDeviceId ?? ""}:${metricsWindow}:${trafficMode}:${trafficAnchor}`;
+      const requestKey = include.trafficCalendar
+        ? `${route.kind}:${requestDeviceId ?? ""}:${metricsWindow}:${trafficMode}:${trafficAnchor}`
+        : `${route.kind}:${requestDeviceId ?? ""}:${metricsWindow}`;
       currentRequestKeyRef.current = requestKey;
 
       if (refreshInFlightRef.current) {
@@ -187,7 +227,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
         }
       }
     },
-    [adapter, metricsWindow, selectedDeviceId, trafficAnchor, trafficMode]
+    [adapter, include, metricsWindow, requestDeviceId, route.kind, trafficAnchor, trafficMode]
   );
 
   /* Subscribe once per adapter.
@@ -349,7 +389,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [fetchSnapshot, openSettings, setSidebarCollapsed, sidebarCollapsed]);
+  }, [fetchSnapshot, openSettings, setCommandOpen, setSidebarCollapsed, sidebarCollapsed]);
 
   const {
     updateLocalConfig,
@@ -380,7 +420,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
 
   const refresh = useCallback(() => fetchSnapshot(true), [fetchSnapshot]);
 
-  const allDevices = snapshot?.devices ?? [];
+  const allDevices = snapshot?.devices ?? NO_DEVICES;
   const devices = allDevices;
   const snapshotSource = snapshot ? selectSnapshotSource(snapshot, allDevices) : "unknown";
   const selectedDevice = allDevices.find((device) => device.deviceId === selectedDeviceId) ?? null;
@@ -410,29 +450,19 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
 
   const openExternal = useCallback((url: string) => adapter.openExternal(url), [adapter]);
 
-  /* Memoised on purpose.
+  /* Memoised on purpose, per context.
    *
-   * The object used to be rebuilt on every render along with a fresh
-   * `openExternal` arrow, so every consumer of `useWorkspace()` re-rendered on
-   * every tick of the poll — navigation, the device table and every chart tile
-   * on the device page, including renders where nothing they read had changed.
+   * One object used to carry everything, so every consumer re-rendered on every
+   * poll — navigation and preference controls included. Each context below only
+   * changes when one of its own fields does.
    */
-  const value = useMemo<WorkspaceContextValue>(() => ({
+  const ui = useMemo<WorkspaceUiValue>(() => ({
     route,
     navigate,
     openSettings,
     closeSettings,
     sidebarCollapsed,
     setSidebarCollapsed,
-    snapshot,
-    loading,
-    refreshing,
-    mutationPending,
-    error,
-    notice,
-    devices,
-    allDevices,
-    selectedDevice,
     metricsWindow,
     setMetricsWindow,
     trafficMode,
@@ -452,6 +482,65 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     setDensity,
     refreshInterval,
     setRefreshInterval,
+    capabilities: adapter.capabilities,
+    orientation,
+    isTouch,
+    inputMode,
+    layoutTier,
+    runtimeProfile,
+    lowResourceMode,
+    chartPointLimit,
+    windowState
+  }), [
+    route,
+    navigate,
+    openSettings,
+    closeSettings,
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    metricsWindow,
+    setMetricsWindow,
+    trafficMode,
+    setTrafficMode,
+    trafficAnchor,
+    shiftTrafficAnchor,
+    searchQuery,
+    setSearchQuery,
+    commandOpen,
+    setCommandOpen,
+    theme,
+    setTheme,
+    resolvedTheme,
+    webLayout,
+    setWebLayout,
+    density,
+    setDensity,
+    refreshInterval,
+    setRefreshInterval,
+    adapter.capabilities,
+    orientation,
+    isTouch,
+    inputMode,
+    layoutTier,
+    runtimeProfile,
+    lowResourceMode,
+    chartPointLimit,
+    windowState
+  ]);
+
+  const data = useMemo<WorkspaceDataValue>(() => ({
+    snapshot,
+    loading,
+    refreshing,
+    mutationPending,
+    error,
+    notice,
+    devices,
+    allDevices,
+    selectedDevice
+  }), [snapshot, loading, refreshing, mutationPending, error, notice, devices, allDevices, selectedDevice]);
+
+  const actions = useMemo<WorkspaceActionsValue>(() => ({
     refresh,
     updateLocalConfig,
     controlAgent,
@@ -470,51 +559,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     login,
     logout,
     disconnectAgent,
-    openExternal,
-    capabilities: adapter.capabilities,
-    orientation,
-    isTouch,
-    inputMode,
-    layoutTier,
-    runtimeProfile,
-    lowResourceMode,
-    chartPointLimit,
-    windowState
+    openExternal
   }), [
-    route,
-    navigate,
-    openSettings,
-    closeSettings,
-    sidebarCollapsed,
-    setSidebarCollapsed,
-    snapshot,
-    loading,
-    refreshing,
-    mutationPending,
-    error,
-    notice,
-    devices,
-    allDevices,
-    selectedDevice,
-    metricsWindow,
-    setMetricsWindow,
-    trafficMode,
-    setTrafficMode,
-    trafficAnchor,
-    shiftTrafficAnchor,
-    searchQuery,
-    setSearchQuery,
-    commandOpen,
-    setCommandOpen,
-    theme,
-    setTheme,
-    resolvedTheme,
-    webLayout,
-    setWebLayout,
-    density,
-    setDensity,
-    refreshInterval,
-    setRefreshInterval,
     refresh,
     updateLocalConfig,
     controlAgent,
@@ -533,23 +579,42 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     login,
     logout,
     disconnectAgent,
-    openExternal,
-    adapter.capabilities,
-    orientation,
-    isTouch,
-    inputMode,
-    layoutTier,
-    runtimeProfile,
-    lowResourceMode,
-    chartPointLimit,
-    windowState
+    openExternal
   ]);
 
-  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
+  return (
+    <WorkspaceUiContext.Provider value={ui}>
+      <WorkspaceActionsContext.Provider value={actions}>
+        <WorkspaceDataContext.Provider value={data}>{children}</WorkspaceDataContext.Provider>
+      </WorkspaceActionsContext.Provider>
+    </WorkspaceUiContext.Provider>
+  );
 };
 
-export function useWorkspace(): WorkspaceContextValue {
-  const value = useContext(WorkspaceContext);
-  if (!value) throw new Error("useWorkspace must be used inside WorkspaceProvider");
+function required<T>(value: T | null, hook: string): T {
+  if (!value) throw new Error(`${hook} must be used inside WorkspaceProvider`);
   return value;
+}
+
+/** Preferences, layout, route and platform facts. Unaffected by polling. */
+export function useWorkspaceUi(): WorkspaceUiValue {
+  return required(useContext(WorkspaceUiContext), "useWorkspaceUi");
+}
+
+/** Snapshot and request state. Changes on every poll and Agent push. */
+export function useWorkspaceData(): WorkspaceDataValue {
+  return required(useContext(WorkspaceDataContext), "useWorkspaceData");
+}
+
+/** Stable callbacks: refresh, mutations and window controls. */
+export function useWorkspaceActions(): WorkspaceActionsValue {
+  return required(useContext(WorkspaceActionsContext), "useWorkspaceActions");
+}
+
+/** The merged view. Re-renders whenever any part of the workspace changes. */
+export function useWorkspace(): WorkspaceContextValue {
+  const ui = useWorkspaceUi();
+  const data = useWorkspaceData();
+  const actions = useWorkspaceActions();
+  return useMemo(() => ({ ...ui, ...data, ...actions }), [ui, data, actions]);
 }

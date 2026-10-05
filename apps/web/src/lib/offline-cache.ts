@@ -1,5 +1,5 @@
 import type { ConsoleSnapshot, ConsoleSnapshotRequest } from "@dsc/shared";
-import { restoreSnapshotView, saveSnapshotView, type SnapshotRecord } from "./offline-snapshot";
+import { restoreSnapshotView, saveSnapshotView, type SnapshotRecord } from "./offline-snapshot.ts";
 
 const DATABASE = "guanlan-web-offline-v1";
 const STORE = "snapshots";
