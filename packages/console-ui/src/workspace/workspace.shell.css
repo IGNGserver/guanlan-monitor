@@ -50,10 +50,10 @@
   touch-action: none;
 }
 
-.workspace-windowbar__drag > strong { color: var(--workspace-text); font-size: 12px; font-weight: 600; letter-spacing: -0.01em; }
+.workspace-windowbar__drag > strong { color: var(--workspace-text); font-size: var(--md-sys-typescale-body-s-size); font-weight: 600; letter-spacing: -0.01em; }
 .workspace-windowbar__mark-img { display: block; width: 21px; height: 21px; object-fit: contain; border-radius: var(--md-sys-shape-xs); flex-shrink: 0; }
 .workspace-windowbar__separator { width: 1px; height: 14px; margin-inline: 2px; background: var(--workspace-border-strong); }
-.workspace-windowbar__subtitle { overflow: hidden; color: var(--workspace-text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-windowbar__subtitle { overflow: hidden; color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-label-s-size); text-overflow: ellipsis; white-space: nowrap; }
 .workspace-windowbar__controls { display: flex; height: 100%; align-items: stretch; -webkit-app-region: no-drag; }
 /* Windows caption buttons: 46x32, the size the OS draws in a 32px title bar.
    They used to fill the bar's full height (42px, or 36px on a narrow viewport),
@@ -152,21 +152,6 @@
   padding-inline: 14px;
 }
 
-.workspace-sidebar-edge-trigger {
-  position: fixed;
-  z-index: var(--workspace-layer-rail);
-  top: var(--workspace-chrome-height, 32px);
-  bottom: 0;
-  left: var(--workspace-sidebar-rail-width);
-  width: 12px;
-  border: 0;
-  background: transparent;
-  cursor: e-resize;
-}
-
-.workspace-root.is-sidebar-peek .workspace-sidebar-edge-trigger {
-  pointer-events: none;
-}
 
 .workspace-sidebar__topline {
   display: flex;
@@ -249,7 +234,7 @@
   justify-content: space-between;
   padding: 20px 10px 6px;
   color: var(--workspace-text-muted);
-  font-size: 11px;
+  font-size: var(--md-sys-typescale-label-s-size);
   font-weight: 600;
   letter-spacing: 0.04em;
 }
@@ -316,7 +301,7 @@
 .workspace-section-kicker {
   display: block;
   color: var(--workspace-text-muted);
-  font-size: 11px;
+  font-size: var(--md-sys-typescale-label-s-size);
   font-weight: 600;
   letter-spacing: 0.04em;
 }
@@ -347,7 +332,7 @@ kbd {
   color: var(--workspace-text-muted);
   background: var(--workspace-surface-control);
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--md-sys-typescale-label-s-size);
   line-height: 1;
 }
 
@@ -358,7 +343,7 @@ kbd {
   gap: 6px;
   padding: 0 8px;
   border-radius: var(--md-sys-shape-full);
-  font-size: 11px;
+  font-size: var(--md-sys-typescale-label-s-size);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -480,7 +465,7 @@ kbd {
 .workspace-summary-row strong.is-success { color: var(--workspace-green); }
 .workspace-summary-row strong.is-warning { color: var(--workspace-amber); }
 
-.workspace-temperature-toggle { display: inline-flex; align-items: center; gap: 7px; color: var(--workspace-text-secondary); font-size: 11px; white-space: nowrap; }
+.workspace-temperature-toggle { display: inline-flex; align-items: center; gap: 7px; color: var(--workspace-text-secondary); font-size: var(--md-sys-typescale-label-s-size); white-space: nowrap; }
 .workspace-temperature-toggle input { accent-color: var(--workspace-accent); }
 .workspace-temperature-sources__body { display: grid; min-width: 0; grid-template-columns: minmax(250px, 0.85fr) minmax(0, 1.15fr); gap: 14px; }
 .workspace-temperature-source-list { display: flex; min-width: 0; max-height: 360px; flex-direction: column; gap: 5px; overflow: auto; padding-right: 2px; }
@@ -490,11 +475,11 @@ kbd {
 .workspace-temperature-source-row__identity,
 .workspace-temperature-source-row__value { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .workspace-temperature-source-row__identity { overflow: hidden; }
-.workspace-temperature-source-row__identity strong { overflow: hidden; color: var(--workspace-text); font-size: 11px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-temperature-source-row__identity strong { overflow: hidden; color: var(--workspace-text); font-size: var(--md-sys-typescale-label-s-size); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-temperature-source-row__identity small,
-.workspace-temperature-source-row__value small { color: var(--workspace-text-muted); font-size: 12px; }
+.workspace-temperature-source-row__value small { color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); }
 .workspace-temperature-source-row__value { flex: 0 0 auto; align-items: flex-end; text-align: right; }
-.workspace-temperature-source-row__value strong { color: var(--workspace-text); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.workspace-temperature-source-row__value strong { color: var(--workspace-text); font-size: var(--md-sys-typescale-body-s-size); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .workspace-temperature-status--valid { color: var(--workspace-green) !important; }
 .workspace-temperature-status--threshold { color: var(--workspace-amber) !important; }
 .workspace-temperature-status--invalid { color: var(--workspace-red) !important; }
@@ -502,12 +487,12 @@ kbd {
 .workspace-agent-temperature-sources__body { display: grid; min-width: 0; grid-template-columns: minmax(0, 1.35fr) minmax(220px, .65fr); gap: 14px; }
 .workspace-agent-temperature-sources .workspace-temperature-source-row { cursor: default; }
 .workspace-agent-temperature-backends { display: flex; min-width: 0; flex-direction: column; gap: 7px; padding: 10px 12px; border: 1px solid var(--workspace-border); border-radius: var(--md-sys-shape-sm); background: var(--workspace-surface-subtle); }
-.workspace-agent-temperature-backends > strong { color: var(--workspace-text-secondary); font-size: 11px; }
+.workspace-agent-temperature-backends > strong { color: var(--workspace-text-secondary); font-size: var(--md-sys-typescale-label-s-size); }
 .workspace-agent-temperature-backend { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 8px; align-items: start; padding-top: 7px; border-top: 1px solid var(--workspace-border); }
-.workspace-agent-temperature-backend > span { font-size: 12px; }
+.workspace-agent-temperature-backend > span { font-size: var(--md-sys-typescale-body-s-size); }
 .workspace-agent-temperature-backend > div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
-.workspace-agent-temperature-backend strong { overflow: hidden; color: var(--workspace-text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.workspace-agent-temperature-backend small { color: var(--workspace-text-muted); font-size: 12px; line-height: 1.35; }
+.workspace-agent-temperature-backend strong { overflow: hidden; color: var(--workspace-text); font-size: var(--md-sys-typescale-label-s-size); text-overflow: ellipsis; white-space: nowrap; }
+.workspace-agent-temperature-backend small { color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); line-height: 1.35; }
 
 :root[data-dsc-runtime-mode="low-resource"] *,
 :root[data-dsc-runtime-mode="low-resource"] *::before,

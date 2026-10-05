@@ -48,6 +48,17 @@ export function SessionRecoveryBanner() {
   </section>;
 }
 
+/**
+ * Page-wide "data is on its way" signal, shared by both shells. The only one
+ * before it was the word inside the refresh button, which nobody looks at while
+ * waiting.
+ */
+export function RefreshProgress({ className }: { className: string }) {
+  const { refreshing } = useWorkspace();
+  if (!refreshing) return null;
+  return <div className={className} role="status" aria-label="正在刷新设备状态" />;
+}
+
 export function ShellNotice() {
   const { notice } = useWorkspace();
   if (!notice) return null;

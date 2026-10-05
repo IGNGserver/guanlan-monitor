@@ -1,64 +1,16 @@
-.workspace-sidebar-backdrop {
-  display: none;
-}
-
-/* A duplicate `.workspace-bottom-nav { display: none }` and an unreferenced
-   `@keyframes workspace-spin` used to live here. The bottom-nav base is owned by
-   `workspace.pages.css`, which is ordered after this file; the coarse-pointer
-   contract is owned by `workspace.m3e.css`. */
-
-/* 839px to match the drawer, not 768px — see the note on the block below. */
+/* Content rules for compact and portrait viewports. The desktop shell's own
+   phone mode (drawer, scrim, bottom bar, edge swipe) is gone: below 840px every
+   client renders the touch shell, so only page content is styled here. */
 @media (orientation: portrait), (max-width: 839px) {
-  .workspace-sidebar-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: var(--workspace-layer-scrim);
-    background: var(--workspace-scrim);
-  }
-
-  .workspace-sidebar {
-    z-index: var(--workspace-layer-drawer);
-    background: var(--workspace-surface-acrylic);
-    box-shadow: var(--workspace-shadow), var(--workspace-surface-highlight);
-    backdrop-filter: var(--workspace-acrylic-filter);
-    -webkit-backdrop-filter: var(--workspace-acrylic-filter);
-    isolation: isolate;
-  }
-
-  .workspace-root.is-sidebar-open .workspace-sidebar-backdrop {
-    z-index: var(--workspace-layer-scrim-open);
-  }
-
-  .workspace-root.is-sidebar-open .workspace-sidebar {
-    z-index: var(--workspace-layer-drawer-open);
-  }
-
-  .workspace-root.is-sidebar-open .workspace-bottom-nav {
-    visibility: hidden;
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  /* Compact header on portrait display */
-  .workspace-windowbar {
-    height: 32px;
-  }
-
-  /* The 52px / `flex-wrap: wrap` topbar override that used to be here never
-     took effect: `workspace.m3e.css` fixes the topbar at 56px with
-     `flex-wrap: nowrap`, and a media query adds no specificity to break that
-     tie. The compact layout is reachable on its own terms — the status label,
-     the search label and the `<kbd>` all drop out at 839px and the action
-     buttons collapse to icons at 599px — so the dead declaration is removed
-     rather than escalated into another `!important`. */
-
   .workspace-device-toolbar {
     flex-wrap: wrap;
     gap: 8px;
     width: 100%;
   }
 
+  .workspace-range-control {
+    width: 100%;
+  }
 }
 
 /* ==========================================================================
@@ -97,21 +49,12 @@ html[data-dsc-density="touch"] {
 .workspace-root.is-web .workspace-sidebar { grid-column: 1; }
 .workspace-root.is-web .workspace-main { grid-column: 2; }
 
-.workspace-root.is-web .workspace-sidebar,
-.workspace-root.is-web .workspace-sidebar-edge-trigger {
+.workspace-root.is-web .workspace-sidebar {
   top: 0;
 }
 
 .workspace-content {
   scroll-padding-top: var(--workspace-sticky-offset);
-}
-
-.workspace-sidebar-backdrop {
-  pointer-events: auto;
-}
-
-.workspace-sidebar-edge-trigger {
-  touch-action: pan-y;
 }
 
 .workspace-command {
@@ -134,66 +77,4 @@ html[data-dsc-density="touch"] {
   background: var(--workspace-accent-soft);
 }
 
-/* The coarse-pointer contract for the shell moved into `workspace.m3e.css`; this
-   file keeps only the input-aware layout breakpoints. */
-
-@media (max-width: 839px) {
-  .workspace-root {
-    grid-template-columns: 1fr;
-  }
-
-  .workspace-root:not(.is-web) .workspace-sidebar,
-  .workspace-root:not(.is-web) .workspace-main,
-  .workspace-root.is-web .workspace-sidebar,
-  .workspace-root.is-web .workspace-main {
-    grid-column: 1;
-  }
-
-  .workspace-sidebar {
-    top: var(--workspace-chrome-height);
-    max-height: calc(100dvh - var(--workspace-chrome-height));
-  }
-
-  .workspace-sidebar-edge-trigger {
-    left: 0;
-    width: 44px;
-  }
-}
-
-/* 839px, not 768px. The drawer itself turns on at `max-width: 839px` in
-   `workspace.pages.css`, so between 769 and 839 on a landscape phone or a
-   small window the drawer opened with no backdrop to tap to dismiss it. */
-@media (orientation: portrait), (max-width: 839px) {
-  .workspace-root:not(.is-web) {
-    --workspace-chrome-height: 32px;
-    grid-template-rows: 32px minmax(0, 1fr);
-  }
-
-  .workspace-root.is-web {
-    --workspace-chrome-height: 0px;
-    grid-template-rows: minmax(0, 1fr);
-  }
-
-  .workspace-sidebar {
-    top: var(--workspace-chrome-height);
-  }
-
-  .workspace-sidebar-backdrop {
-    top: var(--workspace-chrome-height);
-    right: 0;
-    bottom: 0;
-    left: 0;
-  }
-
-  /* No bottom padding here. `.workspace-page` already reserves 92px for the
-     fixed navigation bar at `max-width: 839px`; this `!important` rule stacked
-     a further 74px on the content wrapper, so every phone page ended in about
-     166px of dead space. */
-  .workspace-device-toolbar {
-    width: 100%;
-  }
-
-  .workspace-range-control {
-    width: 100%;
-  }
-}
+/* The coarse-pointer contract for the shell moved into `workspace.m3e.css`. */

@@ -1,11 +1,10 @@
 /* v3 shared information architecture: destinations, quiet surfaces, and progressive disclosure. */
 .workspace-page { width: min(100%, 1440px); margin: 0 auto; padding: 44px var(--workspace-content-pad) 72px; }
 .workspace-page-intro { display: flex; min-width: 0; align-items: flex-end; justify-content: space-between; gap: 24px; margin: 0 0 34px; padding: 0; }
-.workspace-page-intro__eyebrow { margin-bottom: 9px; color: var(--workspace-text-muted); font-size: 12px; font-weight: 600; letter-spacing: .03em; }
+.workspace-page-intro__eyebrow { margin-bottom: 9px; color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); font-weight: 600; letter-spacing: .03em; }
 .workspace-page-intro h2 { margin: 0; font-size: clamp(28px, 3vw, 36px); line-height: 1.1; letter-spacing: -0.045em; }
-.workspace-page-intro p { max-width: 66ch; margin: 12px 0 0; color: var(--workspace-text-secondary); font-size: 14px; line-height: 1.65; }
+.workspace-page-intro p { max-width: 66ch; margin: 12px 0 0; color: var(--workspace-text-secondary); font-size: var(--md-sys-typescale-body-m-size); line-height: 1.65; }
 .workspace-page-intro__actions { align-items: center; }
-.workspace-settings-mobile-nav { display: none; }
 
 
 /* The attention notification row owns its own flex layout, tint and status strip. */
@@ -21,7 +20,7 @@
 .workspace-directory-toolbar .m3e-field { min-width: 220px; }
 .workspace-directory-toolbar__chips { display: flex; align-items: center; gap: 4px; min-height: 40px; }
 .workspace-directory-surface { overflow: visible; }
-.workspace-inline-note { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; padding: 11px 14px; color: var(--workspace-text-secondary); background: var(--workspace-surface-subtle); font-size: 12px; }
+.workspace-inline-note { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; padding: 11px 14px; color: var(--workspace-text-secondary); background: var(--workspace-surface-subtle); font-size: var(--md-sys-typescale-body-s-size); }
 
 .workspace-directory-toolbar__actions { display: flex; min-height: 40px; align-items: center; justify-content: flex-end; gap: 8px; }
 
@@ -34,7 +33,6 @@
 .workspace-setting-row { min-height: 72px; }
 .workspace-settings-list .workspace-setting-row { border-color: var(--workspace-border); }
 
-.workspace-bottom-nav { display: none; }
 .workspace-visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important; clip: rect(1px, 1px, 1px, 1px) !important; white-space: nowrap !important; }
 
 /* Render-failure fallbacks (RenderBoundary). */
@@ -52,47 +50,8 @@
 }
 
 @media (max-width: 839px) {
-  /* Height comes from the grid row (`--workspace-chrome-height`); the old
-     `min-height: 100dvh` sat outside that row and pushed the drawer and the
-     backdrop past the viewport on short screens. */
-  .workspace-root { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
-  .workspace-root:has(.workspace-windowbar) { display: grid; grid-template-columns: 1fr; grid-template-rows: var(--workspace-chrome-height) minmax(0, 1fr); }
-  /* `visibility` is part of the transition so the drawer still slides out
-     before it leaves the a11y tree. Without it, an off-canvas sidebar kept its
-     buttons in the tab order at `max-width: 839px`: keyboard users tabbed into a
-     panel they could not see. `transition-delay` on the hidden step waits for
-     the slide, and the visible step applies immediately so nothing flashes. */
-  .workspace-root .workspace-sidebar { position: fixed; z-index: var(--workspace-layer-drawer); inset: 0 auto 0 0; width: min(280px, 88vw); transform: translateX(-105%); visibility: hidden; box-shadow: var(--workspace-shadow); transition: transform var(--workspace-transition), visibility 0s linear var(--workspace-transition); }
-  .workspace-root.is-sidebar-open .workspace-sidebar { transform: translateX(0); visibility: visible; transition: transform var(--workspace-transition), visibility 0s; }
-  .workspace-root .workspace-sidebar .workspace-brand__name,
-  .workspace-root .workspace-sidebar .workspace-nav-item span,
-  .workspace-root .workspace-sidebar .workspace-sidebar__support span,
-  .workspace-root .workspace-sidebar .workspace-sidebar__section-title { display: inline; }
-  .workspace-root .workspace-sidebar .workspace-nav-item { justify-content: flex-start; padding-inline: 12px; }
-  .workspace-root .workspace-sidebar .workspace-sidebar__support { justify-content: flex-start; padding-inline: 12px; }
-  .workspace-main {
-    flex: 1 1 0%;
-    min-height: 0;
-    max-height: 100%;
-    overflow: hidden;
-  }
-  .workspace-root:has(.workspace-windowbar) .workspace-main { grid-column: 1; grid-row: 2; min-height: 0; }
-  .workspace-content {
-    flex: 1 1 0%;
-    min-height: 0;
-    height: 100%;
-    overflow-y: auto !important;
-    overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
-    touch-action: pan-y;
-    scrollbar-gutter: auto;
-  }
-  .workspace-search-trigger { width: 40px; min-width: 40px; justify-content: center; padding: 0; border: 0; background: transparent; }
-  .workspace-search-trigger .m3e-button__icon { display: inline-flex; }
-  .workspace-search-trigger.m3e-button .m3e-button__label,
-  .workspace-search-trigger .m3e-button__label { display: none !important; }
-  .workspace-search-trigger kbd { display: none; }
-  .workspace-topbar__actions > .workspace-status-label { display: none; }
+  /* Page content in the touch shell. The desktop shell never renders below
+     840px any more, so its drawer, scroller and bottom-bar rules are gone. */
   .workspace-page { padding: 30px 20px 92px; }
   .workspace-page-intro { align-items: flex-start; flex-direction: column; gap: 16px; margin-bottom: 26px; }
   .workspace-page-intro__actions { width: 100%; }
@@ -104,12 +63,6 @@
   .workspace-directory-toolbar__actions { grid-column: 2; min-width: 0; justify-content: flex-end; }
   .workspace-hub-card__grid { grid-template-columns: minmax(0, 1fr); }
   .workspace-onboarding__steps { grid-template-columns: minmax(0, 1fr); }
-  /* Bottom navigation bar */
-  .workspace-bottom-nav { position: fixed; z-index: var(--workspace-layer-nav); right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(3, 1fr); padding-bottom: env(safe-area-inset-bottom); }
-  .workspace-bottom-nav__item { min-height: 56px; flex-direction: column; gap: 2px; font-size: 11px; }
-  .workspace-bottom-nav__item.is-active { color: var(--workspace-accent-strong); background: transparent; }
-  
-  /* Touch screen & mobile card adjustments */
   .guanlan-device-grid {
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 12px;
@@ -117,20 +70,8 @@
 }
 
 @media (max-width: 599px) {
-  /* The topbar toggle stays reachable: it is the only affordance that opens the
-     sidebar drawer on phones. */
-  .workspace-topbar__leading { flex: 1; }
-  .workspace-topbar__brand { font-size: 16px; }
-  .workspace-topbar__actions { gap: 2px; }
-  /* 44px, not 40px. This `(0,2,1)` rule outranks the `(0,1,0)` coarse contract
-     in `workspace.m3e.css` on specificity alone, so layer order does not
-     save it: the header's icon-only actions measured 40x44 on a phone, which is
-     exactly the silent-under-rank failure the coarse pass now catches. Using the
-     touch token also removes one more bare pixel from the shell. */
-  .workspace-topbar__actions > .workspace-button { min-width: var(--workspace-min-touch-target); padding-inline: 8px; }
-  .workspace-topbar__actions > .workspace-button .m3e-button__label { display: none; }
   .workspace-page { padding-inline: 16px; }
-  .workspace-page-intro h2 { font-size: 28px; }
+  .workspace-page-intro h2 { font-size: var(--md-sys-typescale-headline-m-size); }
   .workspace-surface__header { padding-inline: 18px; }
   
   /* Phone card optimizations */
@@ -190,12 +131,12 @@
 .workspace-onboarding__lead { margin: 6px 0 0; color: var(--workspace-text); font-size: 15px; font-weight: 500; }
 .workspace-onboarding__steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 18px 0 0; padding: 0; list-style: none; }
 .workspace-onboarding__steps > li { display: flex; min-width: 0; gap: 12px; }
-.workspace-onboarding__index { display: grid; width: 22px; height: 22px; flex-shrink: 0; place-items: center; border-radius: 50%; color: var(--md-sys-color-on-primary); background: var(--workspace-accent); font-size: 12px; font-weight: 600; }
+.workspace-onboarding__index { display: grid; width: 22px; height: 22px; flex-shrink: 0; place-items: center; border-radius: 50%; color: var(--md-sys-color-on-primary); background: var(--workspace-accent); font-size: var(--md-sys-typescale-body-s-size); font-weight: 600; }
 .workspace-onboarding__body { min-width: 0; }
 .workspace-onboarding__body strong { display: block; color: var(--workspace-text); font-size: 13px; }
-.workspace-onboarding__body p { margin: 4px 0 8px; color: var(--workspace-text-secondary); font-size: 12px; line-height: 1.6; }
+.workspace-onboarding__body p { margin: 4px 0 8px; color: var(--workspace-text-secondary); font-size: var(--md-sys-typescale-body-s-size); line-height: 1.6; }
 .workspace-onboarding__footer { display: flex; align-items: center; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--workspace-border); }
-.workspace-onboarding__footer p { margin: 0; color: var(--workspace-text-muted); font-size: 12px; }
+.workspace-onboarding__footer p { margin: 0; color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); }
 
 /* Advanced settings: collapsed by default, still saved on change. */
 .workspace-advanced {
@@ -208,18 +149,18 @@
 .workspace-advanced__summary::-webkit-details-marker { display: none; }
 .workspace-advanced__summary > svg { color: var(--workspace-text-muted); transition: transform var(--workspace-transition); }
 .workspace-advanced[open] > .workspace-advanced__summary > svg { transform: rotate(180deg); }
-.workspace-advanced__copy strong { display: block; color: var(--workspace-text); font-size: 14px; }
-.workspace-advanced__copy small { display: block; margin-top: 3px; color: var(--workspace-text-muted); font-size: 12px; }
+.workspace-advanced__copy strong { display: block; color: var(--workspace-text); font-size: var(--md-sys-typescale-body-m-size); }
+.workspace-advanced__copy small { display: block; margin-top: 3px; color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); }
 .workspace-advanced__body { padding: 4px 20px 20px; border-top: 1px solid var(--workspace-border); }
 .workspace-advanced__body .workspace-surface { box-shadow: none; border: 1px solid var(--workspace-border); }
 
 /* Command panel groups. */
-.workspace-command__group { padding: 14px 16px 6px; color: var(--workspace-text-muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.workspace-command__group { padding: 14px 16px 6px; color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-label-s-size); font-weight: 600; letter-spacing: .04em; }
 .workspace-command__list > .workspace-command__group:first-child { padding-top: 4px; }
 
 /* Copy feedback, so a clipboard failure is not indistinguishable from success. */
 .workspace-copy { display: inline-flex; align-items: center; gap: 8px; }
-.workspace-copy__state { color: var(--workspace-text-muted); font-size: 12px; }
+.workspace-copy__state { color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); }
 
 /* Directory row actions in management mode: one click, no menu to discover. */
 .guanlan-table-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }

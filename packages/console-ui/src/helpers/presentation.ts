@@ -11,12 +11,21 @@ export interface PresentationInput {
   preference: WebLayoutPreference;
   native: boolean;
 }
+/**
+ * Below this width every client uses the touch shell. The desktop shell used to
+ * carry a second phone layout of its own (drawer, bottom bar, edge swipe,
+ * pull-to-refresh) for the browser's "desktop" choice and narrow native
+ * windows; one compact layout now serves all of them.
+ */
+export const COMPACT_PRESENTATION_MAX_WIDTH = 839;
+
 export function resolveWebPresentation(input: PresentationInput): WebPresentation {
-  if (input.native || input.preference === "desktop") return "desktop";
+  const compact = input.width <= COMPACT_PRESENTATION_MAX_WIDTH;
+  if (!compact && (input.native || input.preference === "desktop")) return "desktop";
   const phoneHint = /iphone|ipod|android.*mobile|windows phone/i.test(input.userAgent);
   const tabletHint = /ipad|tablet|android(?!.*mobile)/i.test(input.userAgent)
     || (/macintosh/i.test(input.userAgent) && (input.hasTouch || /mobile\//i.test(input.userAgent)));
-  const useTouch = input.preference === "touch" || input.width < 840
+  const useTouch = compact || input.preference === "touch"
     || input.coarsePointer || phoneHint || tabletHint;
   if (!useTouch) return "desktop";
   // A rotated phone keeps its navigation; a tablet in split-screen keeps its

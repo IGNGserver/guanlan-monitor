@@ -8,7 +8,7 @@
 
 .workspace-telemetry-models__label {
   color: var(--workspace-text-muted);
-  font-size: 12px;
+  font-size: var(--md-sys-typescale-body-s-size);
   font-weight: 600;
   letter-spacing: 0.04em;
 }
@@ -41,18 +41,18 @@
 /* The two lines are told apart by colour and weight, keeping 12px for readability. */
 .workspace-telemetry-model-chip strong {
   color: var(--workspace-text-secondary);
-  font-size: 12px;
+  font-size: var(--md-sys-typescale-body-s-size);
   font-weight: 600;
 }
 
 .workspace-telemetry-model-chip small {
   color: var(--workspace-text-muted);
-  font-size: 12px;
+  font-size: var(--md-sys-typescale-body-s-size);
 }
 
 .workspace-telemetry-models__empty {
   color: var(--workspace-text-muted);
-  font-size: 12px;
+  font-size: var(--md-sys-typescale-body-s-size);
 }
 
 /* Hardware Module Anchor Navigation Bar */
@@ -118,7 +118,7 @@
   background: var(--workspace-surface);
   color: var(--workspace-text-secondary);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--md-sys-typescale-body-s-size);
   font-weight: 500;
   white-space: nowrap;
   transition: color var(--workspace-transition), background var(--workspace-transition), border-color var(--workspace-transition);

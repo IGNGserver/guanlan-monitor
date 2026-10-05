@@ -31,7 +31,7 @@ import {
 } from "./shared";
 
 export function SettingsPage({ presentation = "desktop" }: { presentation?: "desktop" | "touch" } = {}) {
-  const { route, capabilities, closeSettings, navigate } = useWorkspace();
+  const { route, capabilities, navigate } = useWorkspace();
   const visibleSettings = visibleSettingsNavigation(capabilities);
   const defaultSection: SettingsSection = "general";
   const requestedSection: SettingsSection = route.kind === "settings" ? route.section : defaultSection;
@@ -64,13 +64,6 @@ export function SettingsPage({ presentation = "desktop" }: { presentation?: "des
     about: "版本信息与项目链接。"
   };
   return <div className="workspace-page workspace-page--settings">
-    {presentation === "desktop" && <div className="workspace-settings-mobile-nav" aria-label="设置分类">
-      <Button variant="quiet" onClick={closeSettings}><Icon name="back" size={16} />返回控制台</Button>
-      <div className="workspace-settings-mobile-nav__list">
-        {/* The class is a paint; without aria-current a screen reader cannot tell which section is open. */}
-        {visibleSettings.map((item) => <button type="button" aria-current={item.id === section ? "page" : undefined} className={item.id === section ? "is-selected" : ""} key={item.id} onClick={() => navigate({ kind: "settings", section: item.id })}>{item.label}</button>)}
-      </div>
-    </div>}
     <PageIntro eyebrow={presentation === "touch" ? undefined : "设置"} title={heading?.label ?? "设置"} description={descriptions[section]} />{pages[section]}
   </div>;
 }
