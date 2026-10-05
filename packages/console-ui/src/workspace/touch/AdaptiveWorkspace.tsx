@@ -16,7 +16,8 @@ import { formatDate } from "../formatters";
 import { TouchStateProvider, useTouchDetail, useTouchState } from "./TouchState";
 import { TouchOverview } from "./TouchOverview";
 import { TouchDevices } from "./TouchDevices";
-import { parseWorkspaceHash, type SettingsSection, type WorkspaceRoute } from "../routes";
+import { parseWorkspaceHash, serializeWorkspaceRoute, type SettingsSection, type WorkspaceRoute } from "../routes";
+import { RenderBoundary } from "../RenderBoundary";
 
 function usePresentation() {
   const { webLayout, capabilities } = useWorkspace();
@@ -182,11 +183,13 @@ function TouchWorkspace({ presentation, split }: { presentation: WebPresentation
           <PullToRefresh onRefresh={refresh} disabled={!isTouch || mutationPending}><TouchDevices /></PullToRefresh>
         </section>
         <main ref={main} id="workspace-main-content" className="touch-main-pane" aria-label={title} hidden={!showMain} tabIndex={-1}>
+          <RenderBoundary scope="page" resetKey={serializeWorkspaceRoute(route)}>
           {loading && !snapshot ? <LoadingSurface /> : !snapshot ? <ErrorSurface title="暂时无法读取状态" detail={error ?? "请检查网络后重试"} onRetry={() => void refresh()} />
             : route.kind === "device" ? <TouchDetail deviceId={route.deviceId} />
             : route.kind === "settings" ? <TouchSettings split={split} />
             : route.kind === "devices" ? emptyDetails
             : <PullToRefresh onRefresh={refresh} disabled={!isTouch || mutationPending}><TouchOverview /></PullToRefresh>}
+          </RenderBoundary>
         </main>
       </div>
     </div>

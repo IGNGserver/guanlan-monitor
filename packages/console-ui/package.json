@@ -17,7 +17,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
-    "lint": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit && eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:ui-helpers": "node --test src/helpers/layout.test.ts"
   },
@@ -30,6 +30,10 @@
   "devDependencies": {
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
+    "@typescript-eslint/parser": "8.71.0",
+    "eslint": "9.39.1",
+    "eslint-plugin-jsx-a11y": "6.10.2",
+    "eslint-plugin-react-hooks": "5.2.0",
     "sass": "^1.93.2",
     "typescript": "^5.9.2"
   }

@@ -37,6 +37,7 @@ import {
 } from "../charts";
 import { ChartTile, DashboardCell, isChartAvailable } from "../dashboard";
 import { SingleDeviceChartCell } from "./SingleDeviceChartCell";
+import { RenderBoundary } from "../RenderBoundary";
 import type { ChartSpanName, DashboardChartSpec, DashboardSectionSpec, DeviceChartId, DeviceSectionId } from "../dashboard";
 import {
   UNAVAILABLE_METRIC_LABEL,
@@ -919,11 +920,28 @@ export function DeviceChartCells({ section, context }: { section: DashboardSecti
         )
       }];
     }
-    return renderer(chart, context).map((tile) => ({
+    // A renderer that throws on an unexpected payload costs its own card, not
+    // the section: the remaining charts keep drawing.
+    let tiles: DeviceChartTile[];
+    try {
+      tiles = renderer(chart, context);
+    } catch (error) {
+      console.error(`[guanlan] chart ${chart.id} failed to build`, error);
+      return [{
+        node: (
+          <DashboardCell key={chart.id} span={chart.span}>
+            <ChartTile title={chart.title} emptyMessage="这张图暂时无法显示" />
+          </DashboardCell>
+        )
+      }];
+    }
+    return tiles.map((tile) => ({
       node: (
         <DashboardCell key={tile.key} span={tile.span ?? chart.span}>
-          {/* 换设备时重新挂载，展开中的详情与查点不会带到另一台设备上。 */}
-          <SingleDeviceChartCell key={context.device.deviceId} chart={chart} tile={limitTileSeries(tile, chartPointLimit)} />
+          <RenderBoundary scope="tile" title={tile.title ?? chart.title} resetKey={context.device.deviceId}>
+            {/* 换设备时重新挂载，展开中的详情与查点不会带到另一台设备上。 */}
+            <SingleDeviceChartCell key={context.device.deviceId} chart={chart} tile={limitTileSeries(tile, chartPointLimit)} />
+          </RenderBoundary>
         </DashboardCell>
       )
     }));

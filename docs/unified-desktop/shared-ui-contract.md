@@ -50,10 +50,10 @@ The implementation is intentionally split by responsibility:
 
 ## Web archive boundary
 
-The former Dashboard/SaaS component tree is preserved under
-`apps/web/src/components/legacy/` for rollback and comparison only. It is
-excluded from the Web TypeScript project and has no route import. The active Web
-route graph is:
+The former Dashboard/SaaS component tree was archived under
+`apps/web/src/components/legacy/` and has since been retired from the tree;
+recover it from git history (tag `v3.0.146` is the last that contains it). The
+active Web route graph is:
 
 ```text
 apps/web/src/app/page.tsx
@@ -67,7 +67,7 @@ archived dashboard.
 
 ## Verification gates
 
-- `check:web-ui-boundary` verifies active routes and the legacy archive boundary.
+- `check:web-ui-boundary` verifies active routes and that the retired legacy components stay out of the tree.
 - `check:desktop-ui-boundaries` rejects Web/Electron boundary leakage in shared UI.
 - `check:adapter-contracts` and `test:adapter-contracts` cover adapter shape and
   the platform-neutral snapshot fixture.

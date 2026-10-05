@@ -221,10 +221,6 @@
 
 /* ---- Overview -------------------------------------------------------------- */
 
-.workspace-overview-summary { border-bottom: 0; }
-.workspace-overview-summary__item { padding: 16px; border-radius: var(--md-sys-shape-lg); background: var(--md-sys-color-surface-container-low); }
-.workspace-overview-summary__item > strong { font-size: 1.75rem; font-weight: 600; }
-.workspace-overview-summary__item.is-warning > strong { color: var(--md-sys-color-warning); }
 .workspace-hub-card { border: 0; border-radius: var(--md-sys-shape-xl); background: var(--md-sys-color-surface-container-low); box-shadow: none; }
 .workspace-overview-devices {
   border-radius: var(--md-sys-shape-xl);
@@ -252,16 +248,18 @@
 }
 .guanlan-fleet-hero__tile.is-warning { background: var(--md-sys-color-warning-container); color: var(--md-sys-color-on-warning-container); }
 .guanlan-fleet-hero__tile.is-warning:hover { background: color-mix(in srgb, var(--md-sys-color-warning-container) 92%, var(--md-sys-color-on-warning-container)); }
-.guanlan-fleet-hero__label { display: flex; align-items: center; justify-content: space-between; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-m-size); }
+.guanlan-fleet-hero__label { display: flex; min-height: 28px; align-items: center; justify-content: space-between; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-m-size); }
 .guanlan-fleet-hero__value { color: var(--md-sys-color-on-surface); font-size: 2.25rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .guanlan-fleet-hero__value small { margin-left: 4px; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-title-s-size); font-weight: 400; }
+/* A word in the value row (中枢数据) keeps the numeric row's line box, so the
+ * hint rows of all four tiles stay on one baseline. */
+.guanlan-fleet-hero__value--text { overflow: hidden; font-size: var(--md-sys-typescale-title-l-size); line-height: calc(2.25rem * 1.1); text-overflow: ellipsis; white-space: nowrap; }
 .guanlan-fleet-hero__hint { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
 .guanlan-fleet-hero__tile.is-warning .guanlan-fleet-hero__label,
 .guanlan-fleet-hero__tile.is-warning .guanlan-fleet-hero__value,
 .guanlan-fleet-hero__tile.is-warning .guanlan-fleet-hero__value small,
 .guanlan-fleet-hero__tile.is-warning .guanlan-fleet-hero__hint { color: var(--md-sys-color-on-warning-container); }
 /* The headless compatibility block is duplicate content for a11y; keep it hidden. */
-.workspace-overview-summary[aria-hidden="true"] { display: none; }
 
 .guanlan-device-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; padding: 16px 0; }
 .guanlan-fleet-card {
@@ -285,6 +283,11 @@
   box-shadow: var(--md-sys-elevation-3);
 }
 .guanlan-fleet-card:active { transform: translateY(-1px) scale(0.99); }
+.guanlan-fleet-card { position: relative; }
+.guanlan-fleet-card__link { display: block; max-width: 100%; padding: 0; overflow: hidden; border: 0; color: inherit; background: none; font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.guanlan-fleet-card__link::after { position: absolute; inset: 0; border-radius: inherit; content: ""; }
+.guanlan-fleet-card__link:focus-visible { outline: none; }
+.guanlan-fleet-card:has(.guanlan-fleet-card__link:focus-visible) { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
 .guanlan-fleet-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .guanlan-fleet-card__title { margin: 0; overflow: hidden; font-size: var(--md-sys-typescale-title-m-size); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .guanlan-fleet-card__meta { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
@@ -594,7 +597,6 @@
   .guanlan-fleet-hero { grid-template-columns: 1fr; }
   .workspace-caption-button { width: 40px; }
   .workspace-page-intro { align-items: flex-start; flex-direction: column; }
-  .workspace-overview-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-device-state-banner { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: start; }
   .workspace-device-state-banner > .workspace-button,
   .workspace-device-state-banner > .workspace-caption { grid-column: 2; justify-self: start; margin-top: var(--md-sys-space-1); }

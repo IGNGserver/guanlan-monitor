@@ -71,11 +71,13 @@ const UI_CONTRACT = `(() => {
       return { selected: el.classList.contains("is-selected"), height: Math.round(el.getBoundingClientRect().height), background: s.backgroundColor, borderWidth: s.borderTopWidth };
     }),
     summary: (() => {
-      const grid = document.querySelector(".workspace-overview-summary");
+      // The visible tiles. A visually-hidden copy of this strip used to exist only
+      // so this probe had something to measure; it measured a 1px box.
+      const grid = document.querySelector(".guanlan-fleet-hero");
       if (!grid) return null;
       return {
         grid: box(grid),
-        items: [...grid.children].map((item) => ({
+        items: [...grid.querySelectorAll(":scope > .guanlan-fleet-hero__tile")].map((item) => ({
           box: box(item),
           rowTops: [...item.children].map((child) => Math.round(child.getBoundingClientRect().top)),
           paddingLeft: getComputedStyle(item).paddingLeft,
@@ -209,12 +211,13 @@ async function run() {
   // That rule was lost with the Carbon layer and the duplicate came back.
   assert.equal(await page.locator(".workspace-topbar__brand").isVisible(), false, "a wide web console must show the 观澜 brand once (sidebar), not again in the topbar");
   assert.equal(await page.locator(".workspace-sidebar .workspace-brand").isVisible(), true, "the sidebar carries the single web brand");
-  const overviewHealthTotal = await page.locator(".workspace-overview-summary__item").first().locator("strong").innerText();
-  assert.equal(overviewHealthTotal, String(fixtureDevices.length), "overview health must include every registered device");
+  const heroTiles = page.locator(".guanlan-fleet-hero > .guanlan-fleet-hero__tile");
+  const overviewHealthTotal = (await heroTiles.first().locator(".guanlan-fleet-hero__value").innerText()).trim();
+  assert.match(overviewHealthTotal, new RegExp(`^${fixtureDevices.length}\\b`), "overview health must include every registered device");
   // "需要关注" is only defensible if the tile says what it adds up.
-  const attentionTile = page.locator(".workspace-overview-summary__item").nth(2);
-  assert.equal((await attentionTile.locator("span").first().innerText()).trim(), "需要关注", "the attention tile must be labelled by what it counts");
-  const attentionComposition = (await attentionTile.locator("small").innerText()).trim();
+  const attentionTile = heroTiles.nth(2);
+  assert.equal((await attentionTile.locator(".guanlan-fleet-hero__label span").first().innerText()).trim(), "需要关注", "the attention tile must be labelled by what it counts");
+  const attentionComposition = (await attentionTile.locator(".guanlan-fleet-hero__hint").innerText()).trim();
   assert.match(attentionComposition, /\d+ 台设备离线/, "the attention tile must expose its composition");
   // One state, one word. The tile used to count "未响应" devices while the
   // directory tagged those same machines "离线", which reads as two different
@@ -559,8 +562,8 @@ async function run() {
   // An authenticated hub with no devices is a clean first run, not a fault. The
   // attention tile used to pair a check mark with the words 连接异常 and the
   // topbar chip said 未连接, both contradicting the page under them.
-  const emptyAttention = page.locator(".workspace-overview-summary__item").nth(2);
-  assert.equal((await emptyAttention.locator("strong").innerText()).trim(), "0", "an empty fleet has nothing to attend to, not an unknown");
+  const emptyAttention = page.locator(".guanlan-fleet-hero > .guanlan-fleet-hero__tile").nth(2);
+  assert.match((await emptyAttention.locator(".guanlan-fleet-hero__value").innerText()).trim(), /^0\b/, "an empty fleet has nothing to attend to, not an unknown");
   assert.doesNotMatch(await emptyAttention.innerText(), /连接状态异常/, "an empty fleet must not be reported as a connection failure");
   assert.notEqual((await page.locator(".workspace-topbar .workspace-status-label").innerText()).trim(), "未连接", "an authenticated empty hub is connected");
   await page.screenshot({ path: path.join(outputDir, "web-state-empty.png"), fullPage: true, animations: "disabled" });

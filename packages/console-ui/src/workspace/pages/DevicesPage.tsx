@@ -46,10 +46,6 @@ export function DevicesPage() {
     setOrderDraft((current) => current ? mergeDeviceOrder(current, serverOrder) : current);
   }, [manageMode, serverOrderKey]);
   orderDirtyRef.current = orderDirty;
-  if (loading && !snapshot) return <LoadingSurface />;
-  if (!snapshot) return <ErrorSurface title="无法读取设备目录" detail={error ?? "尚未取得设备快照"} onRetry={() => void refresh()} />;
-
-  const canManage = snapshot.source === "live" && snapshot.session.authenticated;
   const orderPosition = useMemo(() => new Map(effectiveOrder.map((deviceId, index) => [deviceId, index])), [effectiveOrder]);
   const orderedDevices = useMemo(() => allDevices
     .slice()
@@ -59,6 +55,13 @@ export function DevicesPage() {
     () => selectDeviceDirectory(orderedDevices, { query, status: statusFilter, sort: manageMode ? "order" : sort }),
     [manageMode, orderedDevices, query, sort, statusFilter]
   );
+  // Every hook above runs on every render. The early returns used to sit before
+  // the three memos, so a failed first read followed by a successful retry
+  // rendered more hooks than the previous pass and React tore the page down.
+  if (loading && !snapshot) return <LoadingSurface />;
+  if (!snapshot) return <ErrorSurface title="无法读取设备目录" detail={error ?? "尚未取得设备快照"} onRetry={() => void refresh()} />;
+
+  const canManage = snapshot.source === "live" && snapshot.session.authenticated;
   const beginManage = () => {
     if (!canManage || mutationPending) return;
     setOrderDraft(serverOrder);
