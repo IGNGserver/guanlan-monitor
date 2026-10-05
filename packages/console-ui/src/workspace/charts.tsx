@@ -4,6 +4,7 @@ import { Icon } from "../m3e/icons";
 import { dateValueOf } from "./sampleTime.ts";
 import { chartGestureDirection, chartTimeAtClientX, indexChartSamples, inspectChartTime, latestChartValues, nearestChartTime, type ChartGestureDirection, type ChartInspection } from "./chartInspection.ts";
 export type { ChartInspection } from "./chartInspection.ts";
+import { DAY, formatsBytes, gapThreshold, monotonePath, niceLinearAxis, niceTimeAxis, silentSpans, splitAtGaps } from "./chartGeometry.ts";
 import {
   chartAnimationsEnabled,
   partsFingerprint,
@@ -30,13 +31,27 @@ export type ChartMeterStatusRange = { range: [number, number]; status: "success"
 
 export type ChartVisualization = "line" | "area" | "bar";
 
+/**
+ * Eight categorical slots, validated for colour-vision deficiency and contrast
+ * on both chart surfaces (see the accent tokens). Hues are assigned by series
+ * position and never cycled: a ninth series and beyond share one neutral
+ * "other" ink rather than repeating a colour that already names a device.
+ */
 const CHART_COLORS = [
   "var(--md-sys-color-accent-1)",
   "var(--md-sys-color-accent-2)",
   "var(--md-sys-color-accent-3)",
   "var(--md-sys-color-accent-4)",
-  "var(--md-sys-color-accent-5)"
+  "var(--md-sys-color-accent-5)",
+  "var(--md-sys-color-accent-6)",
+  "var(--md-sys-color-accent-7)",
+  "var(--md-sys-color-accent-8)"
 ];
+const CHART_OTHER_COLOR = "var(--md-sys-color-outline)";
+
+function seriesColor(index: number): string {
+  return CHART_COLORS[index] ?? CHART_OTHER_COLOR;
+}
 
 const EMPTY_CHART_MESSAGE = "当前时间范围没有可用数据";
 
@@ -62,21 +77,6 @@ function useElementWidth<T extends HTMLElement>() {
 
 type Scale = { min: number; max: number; span: number };
 
-function linearScale(values: number[], pinnedMax?: number): Scale {
-  let min = Infinity;
-  let max = -Infinity;
-  for (const value of values) {
-    if (!Number.isFinite(value)) continue;
-    if (value < min) min = value;
-    if (value > max) max = value;
-  }
-  if (!Number.isFinite(min)) { min = 0; max = pinnedMax ?? 1; }
-  min = Math.min(0, min);
-  if (pinnedMax != null) max = pinnedMax;
-  if (max <= min) max = min + 1;
-  return { min, max, span: max - min };
-}
-
 function timeScale(span: { min: number; max: number } | null): Scale {
   if (!span || !Number.isFinite(span.min) || !Number.isFinite(span.max)) {
     const now = Date.now();
@@ -88,33 +88,9 @@ function timeScale(span: { min: number; max: number } | null): Scale {
 
 /* ---- Path helpers ---------------------------------------------------------- */
 
-function buildLinePath(points: Array<{ x: number; y: number }>): string {
-  if (!points.length) return "";
-  if (points.length === 1) return `M${points[0].x} ${points[0].y}`;
-  // Catmull-Rom → cubic Bézier, clamped so the curve stays near the samples.
-  let d = `M${points[0].x} ${points[0].y}`;
-  for (let index = 0; index < points.length - 1; index++) {
-    const p0 = points[index - 1] ?? points[index];
-    const p1 = points[index];
-    const p2 = points[index + 1];
-    const p3 = points[index + 2] ?? p2;
-    const c1x = p1.x + (p2.x - p0.x) / 6;
-    const c1y = p1.y + (p2.y - p0.y) / 6;
-    const c2x = p2.x - (p3.x - p1.x) / 6;
-    const c2y = p2.y - (p3.y - p1.y) / 6;
-    d += `C${c1x} ${c1y} ${c2x} ${c2y} ${p2.x} ${p2.y}`;
-  }
-  return d;
-}
-
 function buildAreaPath(points: Array<{ x: number; y: number }>, baseline: number): string {
   if (!points.length) return "";
-  return `${buildLinePath(points)}L${points[points.length - 1].x} ${baseline}L${points[0].x} ${baseline}Z`;
-}
-
-function niceTicks(scale: Scale, count: number): number[] {
-  const step = scale.span / count;
-  return Array.from({ length: count + 1 }, (_, index) => scale.min + step * index);
+  return `${monotonePath(points)}L${points[points.length - 1].x} ${baseline}L${points[0].x} ${baseline}Z`;
 }
 
 /* ---- Time series ----------------------------------------------------------- */
@@ -147,7 +123,7 @@ export function formatSampleTime(timestamp: number): string {
 
 /** Curve colours by series position, so a detail table can echo the chart's swatches. */
 export function chartSeriesColor(index: number): string {
-  return CHART_COLORS[index % CHART_COLORS.length];
+  return seriesColor(index);
 }
 
 /**
@@ -170,7 +146,7 @@ export function ChartReadout({ info, inspecting = false, id, compact = false }: 
       <dl className="m3e-chart-readout__values">
         {info.values.map((item, index) => (
           <div key={`${index}-${item.label}`}>
-            <dt className={hideLabel ? "m3e-visually-hidden" : undefined}><span className="m3e-chart__swatch" style={{ background: CHART_COLORS[index % CHART_COLORS.length] }} aria-hidden="true" />{item.label}</dt>
+            <dt className={hideLabel ? "m3e-visually-hidden" : undefined}><span className="m3e-chart__swatch" style={{ background: seriesColor(index) }} aria-hidden="true" />{item.label}</dt>
             <dd><ChartReadingValue text={item.valueText} /></dd>
           </div>
         ))}
@@ -200,6 +176,18 @@ export function TimeSeriesChart({
   const reducedMotion = useMemo(prefersReducedMotion, []);
   const animations = chartAnimationsEnabled(reducedMotion);
   const [selectedTime, setSelectedTime] = useState<number | null>(null);
+  // Series the reader switched off in the legend, by label. Colours stay bound
+  // to series position, so hiding one never repaints the others.
+  const [hiddenLabels, setHiddenLabels] = useState<ReadonlySet<string>>(() => new Set());
+  const showLegend = stableSeries.length >= 3;
+  const isHidden = (label: string) => showLegend && hiddenLabels.has(label);
+  const toggleSeries = (label: string) => setHiddenLabels((current) => {
+    const next = new Set(current);
+    if (next.has(label)) next.delete(label);
+    // Never switch the last visible curve off; an empty plot answers nothing.
+    else if (stableSeries.filter((item) => !next.has(item.label)).length > 1) next.add(label);
+    return next;
+  });
   const [keyboardFocus, setKeyboardFocus] = useState(false);
   const gesture = useRef<{ pointerId: number; x: number; y: number; direction: ChartGestureDirection } | null>(null);
   const callback = useRef(onHoverPoint);
@@ -224,10 +212,20 @@ export function TimeSeriesChart({
   const hasData = index.timeline.length > 0;
   const svgWidth = Math.max(width, 240);
   const time = useMemo(() => timeScale(index.timeline.length ? { min: index.timeline[0], max: index.timeline[index.timeline.length - 1] } : null), [index]);
-  const value = useMemo(() => linearScale(stableSeries.flatMap((item) => item.points.map((point) => point.value)), maxValue), [stableSeries, maxValue]);
   const tickFormatter = valueFormatter ?? series.find((item) => item.valueFormatter)?.valueFormatter;
-  const xTicks = useMemo(() => niceTicks(time, svgWidth < 360 ? 2 : 3), [time, svgWidth]);
-  const yTicks = useMemo(() => niceTicks(value, 3), [value]);
+  const binaryAxis = formatsBytes(tickFormatter);
+  const valueAxis = useMemo(
+    // Hidden curves leave the scale too, so a quiet device can be read once a
+    // busy one is switched off.
+    () => niceLinearAxis(stableSeries.filter((item) => !(showLegend && hiddenLabels.has(item.label))).flatMap((item) => item.points.map((point) => point.value)), { pinnedMax: maxValue, binary: binaryAxis, tickCount: compact ? 3 : 4 }),
+    [stableSeries, maxValue, binaryAxis, compact, showLegend, hiddenLabels]
+  );
+  const value: Scale = { min: valueAxis.min, max: valueAxis.max, span: valueAxis.max - valueAxis.min || 1 };
+  const yTicks = valueAxis.ticks;
+  const timeAxis = useMemo(() => niceTimeAxis(time.min, time.max, svgWidth < 360 ? 3 : svgWidth < 640 ? 4 : 6), [time, svgWidth]);
+  const xTicks = timeAxis.ticks;
+  // An outage is a span of the merged timeline where nobody reported.
+  const silent = useMemo(() => silentSpans(index.timeline, gapThreshold(index.timeline)), [index]);
   const tickText = (tick: number) => tickFormatter ? tickFormatter(tick) : String(Math.round(tick));
   const padding = { top: 12, right: 14, bottom: 26, left: Math.max(44, Math.min(112, Math.max(...yTicks.map((tick) => tickText(tick).length)) * 6 + 12)) };
   const plotWidth = Math.max(1, svgWidth - padding.left - padding.right);
@@ -299,6 +297,9 @@ export function TimeSeriesChart({
             setSelectedTime(index.timeline[next]);
           }}
         >
+          {silent.map(([start, end]) => <rect key={`gap-${start}`} className="m3e-chart__gap" x={toX(start)} y={padding.top} width={Math.max(0, toX(end) - toX(start))} height={plotHeight}>
+            <title>{`${formatAxisTimeLabel(start)} – ${formatAxisTimeLabel(end)} 没有上报`}</title>
+          </rect>)}
           {yTicks.map((tick) => {
             const y = toY(tick);
             return <g key={`y-${tick}`}>
@@ -306,28 +307,49 @@ export function TimeSeriesChart({
               <text className="m3e-chart__axis" x={padding.left - 8} y={y + 4} textAnchor="end">{tickText(tick)}</text>
             </g>;
           })}
-          {xTicks.map((tick, position) => <text key={`x-${position}`} className="m3e-chart__axis" x={toX(tick)} y={height - 6} textAnchor={position === 0 ? "start" : position === xTicks.length - 1 ? "end" : "middle"}>{formatClock(tick)}</text>)}
+          {xTicks.map((tick) => {
+            const x = toX(tick);
+            // Keep edge labels inside the plot instead of clipping them.
+            const anchor = x - padding.left < 28 ? "start" : svgWidth - padding.right - x < 28 ? "end" : "middle";
+            return <text key={`x-${tick}`} className="m3e-chart__axis" x={x} y={height - 6} textAnchor={anchor}>{formatTimeTick(tick, timeAxis.step, time.span)}</text>;
+          })}
           {stableSeries.map((item, position) => {
-            const color = CHART_COLORS[position % CHART_COLORS.length];
-            const points = [...index.points[position]].sort(([a], [b]) => a - b).map(([timestamp, point]) => ({ x: toX(timestamp), y: toY(point.value) }));
-            if (!points.length) return null;
+            const color = seriesColor(position);
+            const samples = [...index.points[position]].sort(([a], [b]) => a - b);
+            const points = samples.map(([timestamp, point]) => ({ t: timestamp, x: toX(timestamp), y: toY(point.value) }));
+            if (!points.length || isHidden(item.label)) return null;
+            // Each run of consecutive samples is its own path: an outage stays a gap.
+            const runs = splitAtGaps(points, (point) => point.t, gapThreshold(samples.map(([timestamp]) => timestamp)));
             if (visualization === "bar") {
               const barWidth = Math.max(2, Math.min(18, plotWidth / points.length - 3));
               return <g key={item.label} fill={color}>{points.map((point, barIndex) => <rect key={barIndex} x={point.x - barWidth / 2} y={point.y} width={barWidth} height={Math.max(0, padding.top + plotHeight - point.y)} rx={Math.min(barWidth / 2, 4)}>
                 {animations && <animate attributeName="opacity" from="0" to="1" dur="220ms" fill="freeze" />}
               </rect>)}</g>;
             }
-            return <g key={item.label} className="m3e-chart__series" fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-              {visualization === "area" && <path d={buildAreaPath(points, padding.top + plotHeight)} fill={color} opacity="0.16" stroke="none" />}
-              <path d={buildLinePath(points)} />
-              {points.length === 1 && <circle cx={points[0].x} cy={points[0].y} r="3" fill={color} stroke="none" />}
+            return <g key={item.label} className="m3e-chart__series" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {visualization === "area" && runs.map((run) => <path key={`area-${run[0].t}`} d={buildAreaPath(run, padding.top + plotHeight)} fill={color} opacity="0.16" stroke="none" />)}
+              {runs.map((run) => run.length === 1
+                // A lone sample between outages is still a reading; draw it as a dot.
+                ? <circle key={`dot-${run[0].t}`} cx={run[0].x} cy={run[0].y} r="3" fill={color} stroke="none" />
+                : <path key={`line-${run[0].t}`} d={monotonePath(run)} />)}
             </g>;
           })}
           {inspection && <g className="m3e-chart__hover" aria-hidden="true">
             <line x1={hoverX} y1={padding.top} x2={hoverX} y2={padding.top + plotHeight} />
-            {inspection.values.map((item, position) => item.point ? <circle key={`${position}-${item.label}`} cx={hoverX} cy={toY(item.point.value)} r="4" fill={CHART_COLORS[position % CHART_COLORS.length]} /> : null)}
+            {inspection.values.map((item, position) => item.point && !isHidden(item.label) ? <circle key={`${position}-${item.label}`} cx={hoverX} cy={toY(item.point.value)} r="4" fill={seriesColor(position)} /> : null)}
           </g>}
         </svg>
+        {showLegend && <div className="m3e-chart__legend-toggles" role="group" aria-label="显示或隐藏数据线">
+          {stableSeries.map((item, position) => <button
+            key={item.label}
+            type="button"
+            className="m3e-chart__legend-toggle"
+            aria-pressed={!hiddenLabels.has(item.label)}
+            onClick={() => toggleSeries(item.label)}
+          >
+            <span className="m3e-chart__swatch" style={{ background: seriesColor(position) }} aria-hidden="true" />{item.label}
+          </button>)}
+        </div>}
       </>}
     </div>
   );
@@ -379,7 +401,7 @@ export function DonutChart({
               cy="100"
               r={radius}
               fill="none"
-              stroke={CHART_COLORS[index % CHART_COLORS.length]}
+              stroke={seriesColor(index)}
               strokeWidth="22"
               strokeDasharray={`${dash} ${circumference - dash}`}
               strokeDashoffset={-offset}
@@ -395,7 +417,7 @@ export function DonutChart({
       </svg>
       <ul className="m3e-chart__legend m3e-chart__legend--stacked">
         {valid.map((part, index) => (
-          <li key={part.label}><span className="m3e-chart__swatch" style={{ background: CHART_COLORS[index % CHART_COLORS.length] }} aria-hidden="true" />{part.label}<strong>{valueFormatter(part.value)}</strong></li>
+          <li key={part.label}><span className="m3e-chart__swatch" style={{ background: seriesColor(index) }} aria-hidden="true" />{part.label}<strong>{valueFormatter(part.value)}</strong></li>
         ))}
       </ul>
     </div>
@@ -479,12 +501,21 @@ export function ChartEmpty({ className = "" }: { className?: string }) {
 /* ---- Formatting ------------------------------------------------------------ */
 
 const clockFormatter = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const secondClockFormatter = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+const dateFormatter = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" });
 const dayClockFormatter = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
-function formatClock(value: number | string): string {
-  const date = typeof value === "number" ? new Date(value) : new Date(value);
+/**
+ * A tick says as much as its step needs: seconds for sub-minute steps, a date
+ * for day steps, and on multi-day ranges the date at each local midnight so a
+ * 7-day chart no longer shows seven unlabelled "00:00"s.
+ */
+function formatTimeTick(tick: number, step: number, span: number): string {
+  const date = new Date(tick);
   if (Number.isNaN(date.getTime())) return "";
-  return clockFormatter.format(date);
+  if (step >= DAY) return dateFormatter.format(date);
+  if (span > DAY && date.getHours() === 0 && date.getMinutes() === 0) return dateFormatter.format(date);
+  return step < 60_000 ? secondClockFormatter.format(date) : clockFormatter.format(date);
 }
 
 export function formatAxisTimeLabel(value: number | string): string {
