@@ -26,6 +26,15 @@ test("capabilities, native boundary and explicit layout choice override UA hints
   assert.equal(resolveWebPresentation({ ...desktop, coarsePointer: true }), "tablet");
   assert.equal(resolveWebPresentation({ ...desktop, width: 360, screenShortSide: 360 }), "phone");
   assert.equal(resolveWebPresentation({ ...desktop, preference: "touch" }), "tablet");
-  assert.equal(resolveWebPresentation({ ...desktop, width: 360, userAgent: "iPhone", preference: "desktop" }), "desktop");
-  assert.equal(resolveWebPresentation({ ...desktop, width: 360, userAgent: "iPhone", preference: "touch", native: true }), "desktop");
+  assert.equal(resolveWebPresentation({ ...desktop, preference: "desktop", coarsePointer: true }), "desktop");
+  assert.equal(resolveWebPresentation({ ...desktop, native: true, coarsePointer: true, preference: "touch" }), "desktop");
+});
+test("a compact width has one layout for every client", () => {
+  // The browser's "desktop" choice and narrow native windows used to get the
+  // desktop shell's own phone mode; compact widths now always use the touch shell.
+  assert.equal(resolveWebPresentation({ ...desktop, width: 360, userAgent: "iPhone", preference: "desktop" }), "phone");
+  assert.equal(resolveWebPresentation({ ...desktop, width: 390, screenShortSide: 1080, native: true }), "phone");
+  assert.equal(resolveWebPresentation({ ...desktop, width: 700, screenShortSide: 1080, native: true }), "tablet");
+  assert.equal(resolveWebPresentation({ ...desktop, width: 839, native: true }), "tablet");
+  assert.equal(resolveWebPresentation({ ...desktop, width: 840, native: true }), "desktop");
 });

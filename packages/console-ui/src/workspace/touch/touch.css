@@ -132,8 +132,21 @@
 .touch-sheet__stack { display: flex; flex-direction: column; gap: var(--md-sys-space-4); }
 .touch-sheet__stack p { color: var(--md-sys-color-on-surface-variant); margin: 0; line-height: 1.6; }
 @keyframes touch-sheet-enter { from { transform: translateY(32px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+/* A narrow native window renders this shell with its caption bar on top. The
+   caption keeps the OS geometry (46x32 buttons in a 32px band) instead of the
+   48px touch targets everything else in this shell gets. */
+.touch-workspace.has-windowbar { grid-template-rows: 32px minmax(0, 1fr) auto; }
+.touch-workspace.has-windowbar > .workspace-windowbar { grid-row: 1; grid-column: 1 / -1; height: 32px; }
+.touch-workspace.has-windowbar .touch-workspace__body { grid-row: 2; }
+.touch-workspace.has-windowbar .touch-navigation { grid-row: 3; }
+.touch-workspace .workspace-caption-button { flex: 0 0 auto; width: 46px; height: 32px; min-width: 0; min-height: 0; }
+/* Windows compacts its captions on a narrow window; so does the shell. */
+@media (max-width: 620px) { .touch-workspace .workspace-caption-button { width: 40px; } }
 @media (min-width: 600px) {
   .touch-workspace.is-tablet { grid-template-columns: 88px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .touch-workspace.is-tablet.has-windowbar { grid-template-rows: 32px minmax(0, 1fr); }
+  .touch-workspace.is-tablet.has-windowbar .touch-navigation,
+  .touch-workspace.is-tablet.has-windowbar .touch-workspace__body { grid-row: 2; }
   .touch-workspace.is-tablet .touch-navigation { grid-row: 1; grid-column: 1; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; padding-top: max(var(--md-sys-space-5), env(safe-area-inset-top, 0px)); gap: var(--md-sys-space-5); }
   .touch-workspace.is-tablet .touch-navigation__brand { display: grid; place-items: center; height: 48px; color: var(--md-sys-color-primary); font-size: var(--md-sys-typescale-title-l-size); }
   .touch-workspace.is-tablet .touch-workspace__body { grid-column: 2; }

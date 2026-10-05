@@ -111,7 +111,9 @@
   --md-sys-typescale-label-m-line: 16px;
   --md-sys-typescale-label-m-weight: 500;
   --md-sys-typescale-label-m-tracking: 0.5px;
-  --md-sys-typescale-label-s-size: 11px;
+  /* 12px, not the M3 baseline 11px: the smallest size at which CJK glyphs keep
+     their strokes apart on a standard-density screen. */
+  --md-sys-typescale-label-s-size: 12px;
   --md-sys-typescale-label-s-line: 16px;
   --md-sys-typescale-label-s-weight: 500;
   --md-sys-typescale-label-s-tracking: 0.5px;

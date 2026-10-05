@@ -432,74 +432,29 @@ async function run() {
   await page.locator(".workspace-command__item").filter({ hasText: "工作站" }).click();
   await page.locator(".workspace-page--device").waitFor({ state: "visible", timeout: 15_000 });
 
+  // One compact layout for every client. The browser's "desktop" choice used to
+  // keep the desktop shell at phone widths, with its own drawer, bottom bar and
+  // settings jump list; below 840px that is now the touch shell.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}#overview`, { waitUntil: "domcontentloaded" });
-  await page.locator(".workspace-root").waitFor({ state: "visible", timeout: 15_000 });
+  await page.locator(".touch-workspace").waitFor({ state: "visible", timeout: 15_000 });
   await page.waitForTimeout(300);
-
-  // Assert 390px search button contains .m3e-button__icon and accessible name is "查找设备、页面或设置"
-  const mobileSearchTrigger = page.locator(".workspace-topbar .workspace-search-trigger");
-  assert.equal(await mobileSearchTrigger.count(), 1, "390px topbar must have search trigger");
-  assert.equal(await mobileSearchTrigger.getAttribute("aria-label"), "查找设备、页面或设置", "search trigger accessible name must be '查找设备、页面或设置'");
-  assert.equal(await mobileSearchTrigger.locator(".m3e-button__icon").isVisible(), true, "390px search trigger icon must be visible");
-  assert.equal(await mobileSearchTrigger.locator(".m3e-button__label").isVisible(), false, "390px search trigger text label must be hidden");
-
-  const mobileMetrics = await page.evaluate(() => {
-    const root = document.querySelector(".workspace-root");
-    const bottomNav = document.querySelector(".workspace-bottom-nav");
-    return {
-      rootWidth: root?.getBoundingClientRect().width ?? 0,
-      bottomNavDisplay: bottomNav ? getComputedStyle(bottomNav).display : "missing",
-      bodyScrollWidth: document.body.scrollWidth,
-      viewportWidth: window.innerWidth
-    };
-  });
-  assert.equal(mobileMetrics.bottomNavDisplay, "grid");
-  assert.deepEqual((await page.locator(".workspace-bottom-nav__item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "设置"], "compact destinations must match the rail one-for-one");
-  assert.equal(await page.locator(".workspace-bottom-nav").getByText("刷新", { exact: true }).count(), 0, "compact navigation must not contain refresh");
-  assert.equal(await page.locator(".workspace-bottom-nav").getByText("搜索", { exact: true }).count(), 0, "compact navigation must not contain search");
+  assert.equal(await page.locator(".touch-workspace").getAttribute("data-presentation"), "phone", "a 390px window renders the phone layout even with the desktop preference");
+  assert.equal(await page.locator(".workspace-root").count(), 0, "the desktop shell must not render below 840px");
+  const mobileMetrics = await page.evaluate(() => ({
+    rootWidth: document.querySelector(".touch-workspace")?.getBoundingClientRect().width ?? 0,
+    bodyScrollWidth: document.body.scrollWidth,
+    viewportWidth: window.innerWidth
+  }));
+  assert.deepEqual((await page.locator(".touch-navigation button").allTextContents()).map((label) => label.trim()), ["总览", "设备", "设置"], "compact destinations must match the rail one-for-one");
   assert.ok(mobileMetrics.rootWidth > 0);
   assert.ok(mobileMetrics.bodyScrollWidth <= mobileMetrics.viewportWidth + 1, "mobile shell overflows horizontally");
   await page.screenshot({ path: path.join(outputDir, "web-workspace-mobile.png"), fullPage: true, animations: "disabled" });
 
   await page.goto(`${baseUrl}#settings/appearance`, { waitUntil: "domcontentloaded" });
-  await page.locator(".workspace-settings-mobile-nav").waitFor({ state: "visible", timeout: 2_000 });
-  assert.equal(await page.locator(".workspace-settings-mobile-nav").getByRole("button", { name: "返回控制台" }).count(), 1, "compact settings must expose a back action");
-  assert.ok(await page.locator(".workspace-settings-mobile-nav__list button").count() >= 2, "compact settings must expose category navigation");
-  // The drawer is never shown on arrival, but the topbar must always be able to
-  // open it, and an open drawer must carry its labels. It used to be impossible:
-  // the toggle was hidden below 600px and a one-time migration overwrote the
-  // stored rail preference.
-  await page.evaluate(() => localStorage.setItem("dsc-sidebar-collapsed", "false"));
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.locator(".workspace-settings-mobile-nav").waitFor({ state: "visible", timeout: 2_000 });
-  assert.equal(await page.locator(".workspace-root").evaluate((node) => node.classList.contains("is-sidebar-collapsed")), true, "a compact viewport must not open the drawer over the content on arrival");
-  assert.equal(await page.evaluate(() => localStorage.getItem("dsc-sidebar-collapsed")), "false", "closing the drawer on arrival must not rewrite the stored rail preference");
-  // Assert on "rendered and hittable", not on a specific display value.
-  const toggleGeometry = await page.evaluate(() => {
-    const node = document.querySelector(".workspace-topbar__toggle");
-    if (!node) return null;
-    const style = getComputedStyle(node);
-    const rect = node.getBoundingClientRect();
-    return { display: style.display, visibility: style.visibility, width: Math.round(rect.width), height: Math.round(rect.height) };
-  });
-  assert.ok(toggleGeometry && toggleGeometry.display !== "none" && toggleGeometry.visibility !== "hidden" && toggleGeometry.width >= 24 && toggleGeometry.height >= 24, `the topbar must keep a hittable sidebar toggle while the sidebar is a drawer (${JSON.stringify(toggleGeometry)})`);
-  await page.locator(".workspace-topbar__toggle").click();
-  await page.waitForTimeout(320);
-  const drawerEvidence = await page.evaluate(() => {
-    const sidebar = document.querySelector(".workspace-sidebar");
-    const rect = sidebar?.getBoundingClientRect();
-    return {
-      open: document.querySelector(".workspace-root")?.classList.contains("is-sidebar-open") ?? false,
-      left: Math.round(rect?.left ?? -999),
-      width: Math.round(rect?.width ?? 0),
-      labelWidths: [...document.querySelectorAll(".workspace-sidebar .workspace-nav-item .m3e-nav-item__label")].map((node) => Math.round(node.getBoundingClientRect().width))
-    };
-  });
-  assert.ok(drawerEvidence.open, "the topbar toggle must open the sidebar drawer at 390px");
-  assert.ok(drawerEvidence.left >= 0 && drawerEvidence.width > 200, `the drawer must sit on canvas (left ${drawerEvidence.left}, width ${drawerEvidence.width})`);
-  assert.ok(drawerEvidence.labelWidths.length > 0 && drawerEvidence.labelWidths.every((label) => label > 16), `the open drawer must show its labels (${drawerEvidence.labelWidths.join(",")})`);
-  await page.screenshot({ path: path.join(outputDir, "web-drawer-open-mobile.png"), animations: "disabled" });
+  await page.locator(".touch-settings").waitFor({ state: "visible", timeout: 15_000 });
+  assert.equal(await page.locator(".workspace-settings-mobile-nav").count(), 0, "the desktop shell's compact settings jump list is retired");
+  assert.equal(await page.getByRole("button", { name: "返回设置分类" }).count(), 1, "compact settings must expose a way back to the category list");
   // The keyboard reference must name this client's keys: F5, no Command key, and
   // no tray shortcut, which the browser console cannot have.
   await page.goto(`${baseUrl}#settings/shortcuts`, { waitUntil: "domcontentloaded" });
@@ -511,17 +466,19 @@ async function run() {
   assert.ok(shortcutDescriptions.every((text) => !text.includes("托盘")), `the browser console has no tray to hide into (${shortcutDescriptions.join(",")})`);
   assert.equal(await page.locator(".workspace-shortcut-row").count(), 5, "the browser reference lists the five console shortcuts");
   await page.screenshot({ path: path.join(outputDir, "web-settings-shortcuts.png"), fullPage: true, animations: "disabled" });
+  // Widening back past the compact breakpoint restores the stored rail preference.
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await page.waitForTimeout(400);
+  assert.equal(await page.locator(".workspace-root").evaluate((node) => node.classList.contains("is-sidebar-open")), true, "widening past the compact breakpoint must restore the stored expanded rail preference");
+  const inlineRail = await page.evaluate(() => [...document.querySelectorAll(".workspace-sidebar .workspace-nav-item .m3e-nav-item__label")].map((node) => Math.round(node.getBoundingClientRect().width)));
+  assert.ok(inlineRail.length > 0 && inlineRail.every((label) => label > 16), `an expanded sidebar must show its labels between 840 and 1199px (${inlineRail.join(",")})`);
   // The browser console is the push client: live data may be called 实时 here.
+  // (On the touch shell `#settings/general` is the category list itself, so the
+  // page is read on the desktop shell.)
   await page.goto(`${baseUrl}#settings/general`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
   assert.ok((await page.locator(".workspace-page--settings").innerText()).includes("实时连接"), "the push client must label live data 实时连接");
   assert.ok(!(await page.locator(".workspace-page--settings").innerText()).includes("定时刷新"), "the push client must not describe itself as polling");
-  // Leaving drawer mode restores the stored preference.
-  await page.setViewportSize({ width: 1024, height: 900 });
-  await page.waitForTimeout(400);
-  assert.equal(await page.locator(".workspace-root").evaluate((node) => node.classList.contains("is-sidebar-open")), true, "widening past the drawer breakpoint must restore the stored expanded rail preference");
-  const inlineRail = await page.evaluate(() => [...document.querySelectorAll(".workspace-sidebar .workspace-nav-item .m3e-nav-item__label")].map((node) => Math.round(node.getBoundingClientRect().width)));
-  assert.ok(inlineRail.length > 0 && inlineRail.every((label) => label > 16), `an expanded sidebar must show its labels between 840 and 1199px (${inlineRail.join(",")})`);
   // Leave the run in the expanded state so the breakpoint matrix exercises the
   // labelled rail rather than the collapsed one.
   await page.locator(".workspace-root").waitFor({ state: "visible", timeout: 15_000 });
@@ -602,7 +559,17 @@ async function run() {
     // round (which ends on settings at 390px) cannot hide the overview gate.
     await page.goto(`${baseUrl}?visual-round=${round}#overview`, { waitUntil: "domcontentloaded" });
     await page.locator(".workspace-page--overview").waitFor({ state: "visible", timeout: 15_000 });
-    for (const [width, height] of [[1440, 900], [1024, 768], [840, 900], [820, 900], [390, 844]]) {
+    // Compact widths render the touch shell (covered route by route in
+    // mobile-touch-regression); here they only have to land there cleanly.
+    for (const [width, height, presentation] of [[820, 900, "tablet"], [390, 844, "phone"]]) {
+      await page.setViewportSize({ width, height });
+      await page.goto(`${baseUrl}#overview`, { waitUntil: "domcontentloaded" });
+      await page.locator(".touch-workspace").waitFor({ state: "visible", timeout: 15_000 });
+      assert.equal(await page.locator(".touch-workspace").getAttribute("data-presentation"), presentation, `the compact shell must present as ${presentation} at ${width}px/${theme}`);
+      assert.ok(await page.evaluate(() => document.body.scrollWidth) <= width + 1, `the compact shell overflows horizontally at ${width}px/${theme}`);
+      await page.screenshot({ path: path.join(outputDir, `matrix-round-${round}-${theme}-${width}-compact.png`), animations: "disabled" });
+    }
+    for (const [width, height] of [[1440, 900], [1024, 768], [840, 900]]) {
       await page.setViewportSize({ width, height });
       // Crossing the drawer breakpoint animates the sidebar, and a hash-only
       // navigation does not outlast that transition. Measure once it settles.
@@ -653,24 +620,12 @@ async function run() {
 
         // 1. The sidebar must be able to show its labels at every width.
         assert.ok(contract.sidebar.topbarToggle || contract.sidebar.collapseButton, at("has no way to open the sidebar"));
-        if (width <= 839) {
-          // Drawer mode: the rail is always full width, so labels render even
-          // while the drawer is parked off canvas.
-          assert.ok(contract.sidebar.topbarToggle, at("the drawer needs a topbar toggle on a compact viewport"));
-          if (contract.sidebar.open) {
-            assert.ok(!contract.sidebar.offCanvas, at("an open drawer is still off canvas"));
-            assert.ok(contract.sidebar.labelWidths.every((label) => label > 16), at(`the open drawer hides its labels (${contract.sidebar.labelWidths.join(",")})`));
-          } else {
-            assert.equal(contract.sidebar.offCanvas, true, at("a closed drawer must sit off canvas rather than over the content"));
-          }
+        assert.ok(contract.sidebar.collapseButton, at("the inline sidebar needs its own collapse toggle"));
+        if (contract.sidebar.open) {
+          assert.ok(contract.sidebar.width >= 200, at(`an expanded sidebar collapsed to ${contract.sidebar.width}px`));
+          assert.ok(contract.sidebar.labelWidths.length > 0 && contract.sidebar.labelWidths.every((label) => label > 16), at(`an expanded sidebar hides its labels (${contract.sidebar.labelWidths.join(",")})`));
         } else {
-          assert.ok(contract.sidebar.collapseButton, at("the inline sidebar needs its own collapse toggle"));
-          if (contract.sidebar.open) {
-            assert.ok(contract.sidebar.width >= 200, at(`an expanded sidebar collapsed to ${contract.sidebar.width}px`));
-            assert.ok(contract.sidebar.labelWidths.length > 0 && contract.sidebar.labelWidths.every((label) => label > 16), at(`an expanded sidebar hides its labels (${contract.sidebar.labelWidths.join(",")})`));
-          } else {
-            assert.ok(contract.sidebar.labelWidths.every((label) => label === 0), at("a collapsed sidebar must not render labels"));
-          }
+          assert.ok(contract.sidebar.labelWidths.every((label) => label === 0), at("a collapsed sidebar must not render labels"));
         }
 
         // 2. The header is a fixed band: same height on every route at a width.
@@ -782,39 +737,9 @@ async function run() {
           assert.equal(segment.backgroundAlpha, 1, `${name} selected segment fill is transparent at ${width}px (${segment.name})`);
           assert.ok(segment.contrast >= 4.5, `${name} selected segment text contrast is ${segment.contrast?.toFixed(2) ?? "unknown"} at ${width}px (${segment.name}: ${segment.foreground} on ${segment.background})`);
         }
-        let mobileDirectory = null;
-        if (width <= 839 && name === "devices") {
-          mobileDirectory = await page.evaluate(() => {
-            const scrollViewport = document.querySelector(".workspace-directory-table-scroll");
-            const table = scrollViewport?.querySelector(".m3e-table");
-            const hint = document.querySelector(".workspace-directory-scroll-hint");
-            const hintBounds = hint?.getBoundingClientRect();
-            const hintStyle = hint ? getComputedStyle(hint) : null;
-            const sortBounds = document.querySelector(".workspace-directory-toolbar__sort")?.getBoundingClientRect();
-            const actionsBounds = document.querySelector(".workspace-directory-toolbar__actions")?.getBoundingClientRect();
-            return {
-              scrollViewportClientWidth: scrollViewport?.clientWidth ?? 0,
-              scrollViewportWidth: scrollViewport?.scrollWidth ?? 0,
-              tableWidth: table?.getBoundingClientRect().width ?? 0,
-              hintVisible: Boolean(hint && hintStyle?.display !== "none" && hintStyle?.visibility !== "hidden" && hintBounds?.width > 0 && hintBounds?.height > 0),
-              sortWidth: sortBounds?.width ?? 0,
-              actionsWidth: actionsBounds?.width ?? 0,
-              sortTop: sortBounds?.top ?? null,
-              sortBottom: sortBounds?.bottom ?? null,
-              actionsTop: actionsBounds?.top ?? null,
-              actionsBottom: actionsBounds?.bottom ?? null
-            };
-          });
-          assert.ok(mobileDirectory.scrollViewportClientWidth > 0, `devices table scroll viewport is missing at ${width}px`);
-          assert.ok(mobileDirectory.tableWidth >= 1076, `devices table was compressed below its readable width at ${width}px (${mobileDirectory.tableWidth}px)`);
-          assert.ok(mobileDirectory.scrollViewportWidth > mobileDirectory.scrollViewportClientWidth, `devices table does not scroll inside its viewport at ${width}px (scroll ${mobileDirectory.scrollViewportWidth}px, viewport ${mobileDirectory.scrollViewportClientWidth}px)`);
-          assert.ok(mobileDirectory.hintVisible, `devices table scroll hint is not visible at ${width}px`);
-          assert.ok(mobileDirectory.sortWidth > 0 && mobileDirectory.actionsWidth > 0, `devices sort or management control is missing at ${width}px`);
-          if (width === 390) {
-            assert.ok(Math.abs(mobileDirectory.sortTop - mobileDirectory.actionsTop) < 2, "mobile sort and management controls must share a row at 390px");
-            assert.ok(mobileDirectory.sortBottom > mobileDirectory.sortTop && mobileDirectory.actionsBottom > mobileDirectory.actionsTop, "mobile sort and management controls must remain visible at 390px");
-          }
-        }
+        // The phone directory used to be the desktop table scrolled sideways; at
+        // compact widths it is now the touch shell's device list.
+        const mobileDirectory = null;
         if (round === 1 && name === "overview" && [840, 1024, 1440].includes(width)) {
           // The measured rectangles are in the message on purpose: this assertion
           // only fails when a layout regression changes the shell's outer box, and
@@ -869,7 +794,10 @@ async function run() {
   ];
   const touchPage = await browser.newPage({
     locale: "en-US",
-    viewport: { width: 390, height: 844 },
+    // The desktop shell with a coarse pointer: a tablet that chose the desktop
+    // layout. Phone widths render the touch shell, whose 48px targets are owned
+    // by touch.css and checked in mobile-touch-regression.
+    viewport: { width: 1024, height: 768 },
     deviceScaleFactor: 1,
     hasTouch: true,
     isMobile: true
@@ -923,31 +851,6 @@ async function run() {
       }, touchExempt);
       for (const row of small) touchViolations.push({ route: routeHash, ...row });
     }
-    /* The drawer, open. Every sidebar control is `visibility: hidden` at phone
-       widths until the drawer is pulled out, so a pass that only samples the
-       closed state cannot see the support link or the nav rows — which is
-       exactly where a `(0,2,0)` `min-height` in the first layer used to survive
-       the coarse contract. */
-    await touchPage.goto(`${baseUrl}?visual-state=live#overview`, { waitUntil: "domcontentloaded" });
-    await touchPage.locator(".workspace-root").waitFor({ state: "visible", timeout: 15_000 });
-    await touchPage.locator(".workspace-topbar__toggle").click();
-    await touchPage.locator(".workspace-root.is-sidebar-open .workspace-sidebar").waitFor({ state: "visible", timeout: 5_000 });
-    const drawerSmall = await touchPage.evaluate((exempt) => {
-      const rows = [];
-      for (const el of document.querySelectorAll(".workspace-sidebar button, .workspace-sidebar a[href]")) {
-        const style = getComputedStyle(el);
-        const rect = el.getBoundingClientRect();
-        if (style.display === "none" || style.visibility === "hidden" || rect.width < 1 || rect.height < 1) continue;
-        if (rect.width >= 44 && rect.height >= 44) continue;
-        if (exempt.some((selector) => el.matches(selector))) continue;
-        const cls = typeof el.className === "string" ? el.className.trim().split(/\s+/).slice(0, 3).join(".") : el.tagName.toLowerCase();
-        rows.push({ cls, w: Math.round(rect.width), h: Math.round(rect.height), label: (el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 24) });
-      }
-      const seen = new Map();
-      for (const row of rows) seen.set(`${row.cls} ${row.w}x${row.h}`, row);
-      return [...seen.values()];
-    }, touchExempt);
-    for (const row of drawerSmall) touchViolations.push({ route: "drawer-open", ...row });
   } finally {
     await touchPage.close();
     fixtureMode = "live";

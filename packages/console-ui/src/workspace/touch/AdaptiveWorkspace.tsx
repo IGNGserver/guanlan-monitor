@@ -7,7 +7,8 @@ import { SettingsPage } from "../pages/SettingsPage";
 import { DeviceDetailsPage } from "../pages/DeviceDetailsPage";
 import { LoadingSurface, ErrorSurface, EmptyState } from "../pages/shared";
 import { visibleSettingsNavigation } from "../shell/PrimaryNavigation";
-import { SessionRecoveryBanner, ShellNotice } from "../shell/AppTopBar";
+import { RefreshProgress, SessionRecoveryBanner, ShellNotice } from "../shell/AppTopBar";
+import { NativeTitleBar } from "../shell/NativeTitleBar";
 import { CommandPalette } from "../shell/CommandPalette";
 import { PullToRefresh } from "../shell/PullToRefresh";
 import { Button, Icon } from "../ui";
@@ -80,7 +81,7 @@ function TouchSettings({ split }: { split: boolean }) {
   </div>;
 }
 function TouchWorkspace({ presentation, split }: { presentation: WebPresentation; split: boolean }) {
-  const { route, navigate, snapshot, selectedDevice, refresh, refreshing, mutationPending, loading, error, isTouch } = useWorkspace();
+  const { route, navigate, snapshot, selectedDevice, refresh, refreshing, mutationPending, loading, error, isTouch, capabilities } = useWorkspace();
   const { settingsCategory, setSettingsCategory, scroll } = useTouchState();
   const inDevices = route.kind === "devices" || route.kind === "device";
   const showDirectory = route.kind === "devices" || (split && inDevices);
@@ -165,7 +166,11 @@ function TouchWorkspace({ presentation, split }: { presentation: WebPresentation
   const title = route.kind === "device" ? selectedDevice?.hostname ?? "设备详情" : route.kind === "settings" ? "设置" : "观澜";
   const hasBack = route.kind === "device" || (route.kind === "settings" && (!!settingsCategory || route.section !== "general"));
   const emptyDetails = <EmptyState title="选择一台设备" detail="从左侧目录选择设备，查看它的状态、趋势和硬件。" />;
-  return <div className={`m3e-theme touch-workspace is-${presentation}${split ? " is-split" : ""}${keyboard ? " is-keyboard-open" : ""}`} data-presentation={presentation}>
+  // A narrow native window is a touch-shell window too; it keeps its caption
+  // bar so it can still be moved, maximised and hidden to the tray.
+  const native = capabilities.canControlNativeWindow;
+  return <div className={`m3e-theme touch-workspace is-${presentation}${split ? " is-split" : ""}${keyboard ? " is-keyboard-open" : ""}${native ? " has-windowbar" : ""}`} data-presentation={presentation}>
+    <NativeTitleBar />
     <nav className="touch-navigation" aria-label="主导航">
       <span className="touch-navigation__brand" aria-hidden="true">澜</span>
       {destinations.map((item) => <button type="button" key={item.icon} className={item.active ? "is-selected" : ""} aria-current={item.active ? "page" : undefined}
@@ -194,7 +199,7 @@ function TouchWorkspace({ presentation, split }: { presentation: WebPresentation
       </div>
     </div>
     <CommandPalette /><ShellNotice />
-    {refreshing && <div className="touch-refresh-progress" role="status" aria-label="正在刷新设备状态" />}
+    <RefreshProgress className="touch-refresh-progress" />
     <div className="workspace-visually-hidden" aria-live="polite" aria-atomic="true">{route.kind === "device" && selectedDevice ? `正在查看 ${selectedDevice.hostname}` : ""}</div>
   </div>;
 }

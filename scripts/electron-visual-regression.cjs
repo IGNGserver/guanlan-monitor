@@ -200,25 +200,39 @@ async function run() {
     assert.ok(dataSettingsText.includes("定时刷新"), `the polling client must label live data 定时刷新 (${dataSettingsText})`);
     assert.ok(!dataSettingsText.includes("实时连接"), "the polling client must not describe itself as realtime");
 
+    // A narrow native window renders the touch shell, keeping its caption bar.
+    // The desktop shell's own phone mode (drawer, bottom bar, settings jump list)
+    // is gone.
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.waitForTimeout(300);
+    await page.locator(".touch-workspace").waitFor({ state: "visible", timeout: 15_000 });
     const mobileMetrics = await page.evaluate(() => {
-      const root = document.querySelector(".workspace-root");
-      const bottomNav = document.querySelector(".workspace-bottom-nav");
+      const root = document.querySelector(".touch-workspace");
+      const caption = document.querySelector(".touch-workspace .workspace-windowbar");
+      const buttons = [...document.querySelectorAll(".touch-workspace .workspace-caption-button")].map((node) => {
+        const rect = node.getBoundingClientRect();
+        return { width: Math.round(rect.width), height: Math.round(rect.height) };
+      });
       return {
         rootWidth: root?.getBoundingClientRect().width ?? 0,
-        bottomNavDisplay: bottomNav ? getComputedStyle(bottomNav).display : "missing",
+        presentation: root?.getAttribute("data-presentation") ?? "",
+        captionHeight: Math.round(caption?.getBoundingClientRect().height ?? 0),
+        captionButtons: buttons,
         bodyScrollWidth: document.body.scrollWidth,
         viewportWidth: window.innerWidth
       };
     });
-    assert.equal(mobileMetrics.bottomNavDisplay, "grid");
-    assert.deepEqual((await page.locator(".workspace-bottom-nav__item").allTextContents()).map((label) => label.trim()), ["总览", "设备", "设置"], "compact destinations must match the desktop rail");
+    assert.equal(mobileMetrics.presentation, "phone", "a 390px native window must use the phone layout");
+    assert.equal(mobileMetrics.captionHeight, 32, "the narrow window keeps its 32px caption bar");
+    assert.equal(mobileMetrics.captionButtons.length, 3, "minimize, maximize and hide stay reachable in a narrow window");
+    assert.ok(mobileMetrics.captionButtons.every((button) => button.height === 32 && button.width <= 46), `caption buttons keep the OS geometry (${JSON.stringify(mobileMetrics.captionButtons)})`);
+    assert.deepEqual((await page.locator(".touch-navigation button").allTextContents()).map((label) => label.trim()), ["总览", "设备", "设置"], "compact destinations must match the desktop rail");
+    assert.equal(await page.locator(".workspace-root").count(), 0, "the desktop shell must not render in a narrow window");
     assert.ok(mobileMetrics.rootWidth > 0);
     assert.ok(mobileMetrics.bodyScrollWidth <= mobileMetrics.viewportWidth + 1, "Electron narrow shell overflows horizontally");
     await page.evaluate(() => { window.location.hash = "#settings/appearance"; });
-    await page.locator(".workspace-settings-mobile-nav").waitFor({ state: "visible", timeout: 5_000 });
-    assert.ok(await page.locator(".workspace-settings-mobile-nav__list button").count() >= 2, "Electron compact settings must expose category navigation");
+    await page.locator(".touch-settings").waitFor({ state: "visible", timeout: 5_000 });
+    await page.getByRole("button", { name: "返回设置分类" }).click();
+    assert.ok(await page.locator(".touch-category-list button").count() >= 2, "Electron compact settings must expose category navigation");
     await page.screenshot({ path: path.join(outputDir, "electron-workspace-mobile.png"), fullPage: true, animations: "disabled" });
 
     assert.deepEqual(pageErrors, [], `Electron renderer page errors: ${pageErrors.join("; ")}`);

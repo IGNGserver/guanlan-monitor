@@ -172,7 +172,9 @@ async function desktopFlow() {
   console.log("Checking desktop layout, chart measurements and collapsed navigation");
   await page.getByRole("tab", { name: "计算与系统", exact: true }).click();
   await page.locator('.m3e-chart__svg[aria-label*="使用率"]').first().waitFor();
-  for (const width of [1920, 1280, 1024, 840, 390]) {
+  // 390px renders the touch shell for every client now; the phone chart layout
+  // is measured in touchFlow below rather than by shrinking this desktop page.
+  for (const width of [1920, 1280, 1024, 840]) {
     await page.setViewportSize({ width, height: 900 });
     report.layouts.push({ width, layout: await measuredCharts(page) });
   }
