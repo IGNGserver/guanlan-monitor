@@ -285,12 +285,23 @@ html[data-dsc-resolved-theme="light"] {
   --md-sys-color-info-container: var(--md-ref-palette-info-90);
   --md-sys-color-on-info-container: var(--md-ref-palette-info-10);
 
-  /* Chart series accents — M3E expressive multi-hue set. */
-  --md-sys-color-accent-1: #1a61a4;
-  --md-sys-color-accent-2: #605d76;
-  --md-sys-color-accent-3: #1c6b42;
-  --md-sys-color-accent-4: #775a00;
-  --md-sys-color-accent-5: #8a4a6b;
+  /* Chart series accents — eight categorical slots in fixed order.
+   *
+   * Validated (dataviz palette checks) against surface-container-low, the chart
+   * card surface: lightness band, chroma floor, adjacent-pair CVD separation
+   * (worst ΔE 9.1) and normal-vision separation (worst ΔE 19.6). Four light
+   * slots sit under 3:1 against the card, so every chart keeps a labelled
+   * readout and a table in its detail sheet. The previous set failed chroma,
+   * CVD and normal-vision separation: slot 2 read as grey and slots 1/2 were
+   * indistinguishable in dark mode. */
+  --md-sys-color-accent-1: #2a78d6;
+  --md-sys-color-accent-2: #eb6834;
+  --md-sys-color-accent-3: #1baf7a;
+  --md-sys-color-accent-4: #eda100;
+  --md-sys-color-accent-5: #e87ba4;
+  --md-sys-color-accent-6: #008300;
+  --md-sys-color-accent-7: #4a3aa7;
+  --md-sys-color-accent-8: #e34948;
 }
 
 /* =============================================================================
@@ -347,11 +358,16 @@ html[data-dsc-resolved-theme="dark"] {
   --md-sys-color-info-container: var(--md-ref-palette-info-30);
   --md-sys-color-on-info-container: var(--md-ref-palette-info-90);
 
-  --md-sys-color-accent-1: #a3c9ff;
-  --md-sys-color-accent-2: #cac4dd;
-  --md-sys-color-accent-3: #97d5ad;
-  --md-sys-color-accent-4: #e9c349;
-  --md-sys-color-accent-5: #f4b0d1;
+  /* The same eight hues stepped for the dark card surface; all eight pass,
+   * including 3:1 contrast (worst adjacent CVD ΔE 8.4, normal-vision 19.3). */
+  --md-sys-color-accent-1: #3987e5;
+  --md-sys-color-accent-2: #d95926;
+  --md-sys-color-accent-3: #199e70;
+  --md-sys-color-accent-4: #c98500;
+  --md-sys-color-accent-5: #d55181;
+  --md-sys-color-accent-6: #008300;
+  --md-sys-color-accent-7: #9085e9;
+  --md-sys-color-accent-8: #e66767;
 }
 
 /* =============================================================================

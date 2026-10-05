@@ -186,6 +186,17 @@
 .m3e-chart__grid { stroke: var(--md-sys-color-outline-variant); stroke-width: 1; }
 .m3e-chart__axis { fill: var(--md-sys-color-on-surface-variant); font-size: 11px; font-variant-numeric: tabular-nums; }
 .m3e-chart__series { fill: none; }
+/* Spans where no series reported: a quiet band, so an outage reads as absence
+   rather than as a flat line. */
+.m3e-chart__gap { fill: var(--md-sys-color-on-surface); opacity: 0.06; }
+/* Legend with toggles for charts of three or more curves. Text stays in ink
+   tokens; the swatch alone carries the series colour. */
+.m3e-chart__legend-toggles { display: flex; flex-wrap: wrap; gap: var(--md-sys-space-1) var(--md-sys-space-2); margin-top: var(--md-sys-space-2); }
+.m3e-chart__legend-toggle { display: inline-flex; min-height: 32px; align-items: center; gap: 6px; padding: 0 var(--md-sys-space-2); border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-full); color: var(--md-sys-color-on-surface); background: transparent; font: inherit; font-size: var(--md-sys-typescale-label-m-size); cursor: pointer; }
+.m3e-chart__legend-toggle[aria-pressed="false"] { color: var(--md-sys-color-on-surface-variant); text-decoration: line-through; }
+.m3e-chart__legend-toggle[aria-pressed="false"] .m3e-chart__swatch { opacity: 0.3; }
+.m3e-chart__legend-toggle:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+@media (pointer: coarse) { .m3e-chart__legend-toggle { min-height: var(--md-sys-layout-touch-target); } }
 .m3e-chart__hover line { stroke: var(--md-sys-color-outline); stroke-width: 1; stroke-dasharray: 3 3; }
 .m3e-chart__legend { display: flex; flex-wrap: wrap; gap: var(--md-sys-space-2) var(--md-sys-space-4); margin: 0; padding: 0; list-style: none; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
 .m3e-chart__legend li { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
