@@ -761,12 +761,27 @@ export interface DesktopStartupSettings {
   startMinimized: boolean;
 }
 
+/**
+ * Which optional resources the current view actually reads. A shell may skip
+ * the rest and carry their last values forward. Omitted means "everything",
+ * so a transport that predates the hint keeps working unchanged.
+ */
+export interface ConsoleSnapshotInclude {
+  /** The selected device's telemetry history (device page). */
+  deviceMetrics?: boolean;
+  /** One series per device for the overview trend. */
+  overviewMetrics?: boolean;
+  /** The selected device's traffic calendar (device page). */
+  trafficCalendar?: boolean;
+}
+
 export interface ConsoleSnapshotRequest {
   metricWindow?: MetricWindow;
   selectedDeviceId?: string | null;
   trafficMode?: TrafficCalendarMode;
   trafficAnchor?: string;
   preferCache?: boolean;
+  include?: ConsoleSnapshotInclude;
 }
 export type DesktopSnapshotRequest = ConsoleSnapshotRequest;
 

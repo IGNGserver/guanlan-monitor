@@ -1,6 +1,7 @@
 import React from "react";
 import appIcon from "../../assets/app-icon.png";
-import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
+import { useWorkspaceActions, useWorkspaceUi, type WorkspaceUiValue } from "../WorkspaceContext";
+import type { SettingsSection } from "../routes";
 import { M3Button, M3IconButton, M3NavigationItem } from "../m3";
 import { Icon, type IconName } from "../ui";
 
@@ -30,17 +31,17 @@ const webSettingsNav: Array<{ id: SettingsSection; label: string; icon: IconName
   { id: "about", label: "关于观澜", icon: "about" }
 ];
 
-export function settingsNavigation(capabilities: ReturnType<typeof useWorkspace>["capabilities"]) {
+export function settingsNavigation(capabilities: WorkspaceUiValue["capabilities"]) {
   return capabilities.canControlNativeWindow ? desktopSettingsNav : webSettingsNav;
 }
 
 /** One place decides which sections a client exposes. */
-export function visibleSettingsNavigation(capabilities: ReturnType<typeof useWorkspace>["capabilities"]) {
+export function visibleSettingsNavigation(capabilities: WorkspaceUiValue["capabilities"]) {
   return settingsNavigation(capabilities).filter((item) => (item.id === "agent" ? capabilities.canManageLocalAgent : true));
 }
 
 export function SettingsNavigation() {
-  const { route, navigate, capabilities } = useWorkspace();
+  const { route, navigate, capabilities } = useWorkspaceUi();
   const visibleSettings = visibleSettingsNavigation(capabilities);
   return (
     <nav className="workspace-sidebar__nav" aria-label="设置导航">
@@ -55,7 +56,9 @@ export function SettingsNavigation() {
 }
 
 export function PrimaryNavigation({ sidebarPeek, onSidebarLeave }: { sidebarPeek: boolean; onSidebarLeave: () => void }) {
-  const { capabilities, route, sidebarCollapsed, setSidebarCollapsed, navigate, openSettings, closeSettings, openExternal } = useWorkspace();
+  // Preferences and actions only: the rail no longer re-renders on every poll.
+  const { capabilities, route, sidebarCollapsed, setSidebarCollapsed, navigate, openSettings, closeSettings } = useWorkspaceUi();
+  const { openExternal } = useWorkspaceActions();
   const inSettings = route.kind === "settings";
   return (
     <aside className={`workspace-sidebar ${sidebarCollapsed ? "is-collapsed" : ""} ${inSettings ? "is-settings" : ""}`} onMouseLeave={() => { if (sidebarCollapsed && sidebarPeek) onSidebarLeave(); }}>

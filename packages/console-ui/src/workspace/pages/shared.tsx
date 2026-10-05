@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentProbeProvider, AgentProbeTarget, DeviceMetricKey, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import appIcon from "../../assets/app-icon.png";
-import { useWorkspace } from "../WorkspaceContext";
+import { useWorkspace, useWorkspaceUi } from "../WorkspaceContext";
 import type { DeviceDirectorySort, DeviceDirectoryStatus } from "../selectors";
 import { M3Badge, M3Banner, M3Checkbox, M3Chip, M3DataTable, M3Dialog, M3SegmentedControl, M3Select, M3TextField } from "../m3";
 import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
@@ -257,7 +257,7 @@ function directoryCapacityText(device: DeviceSummary, kind: "memory" | "disk", u
  * kinds of trouble.
  */
 function DeviceCard({ device }: { device: DeviceSummary }) {
-  const { navigate } = useWorkspace();
+  const { navigate } = useWorkspaceUi();
   const openDevice = () => navigate({ kind: "device", deviceId: device.deviceId });
   const cpuPercent = isMetricUnavailable(device, "cpuUsage") ? null : device.cpuUsagePercent ?? null;
   const memoryPercent = isMetricUnavailable(device, "memoryUsage") ? null : device.memoryUsagePercent ?? null;
@@ -358,7 +358,7 @@ function DeviceTable({
   onDelete?: (device: DeviceSummary) => void;
   emptyState?: React.ReactNode;
 }) {
-  const { navigate } = useWorkspace();
+  const { navigate } = useWorkspaceUi();
   const openDevice = (device: DeviceSummary) => navigate({ kind: "device", deviceId: device.deviceId });
   const deviceIndex = (device: DeviceSummary) => order?.indexOf(device.deviceId) ?? -1;
   const columns: DirectoryColumn[] = [

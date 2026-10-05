@@ -56,7 +56,7 @@ import {
   gpuMemoryLabel,
   limitSamplePoints
 } from "../formatters";
-import { useWorkspace, type SettingsSection } from "../WorkspaceContext";
+import { useWorkspaceUi, type SettingsSection } from "../WorkspaceContext";
 import { Button, CopyButton, Icon, StatusLabel } from "../ui";
 import { TemperatureSourcesPanel, TrafficCalendar, TrafficCalendarControls, unavailablePoints } from "./shared";
 
@@ -896,7 +896,7 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
 export function DeviceChartCells({ section, context }: { section: DashboardSectionSpec; context: DeviceChartContext }) {
   // 图表点数上限由运行时画像决定（远程会话与内存吃紧时会下调），
   // 这里统一裁剪，避免每张图各自实现一遍。
-  const { chartPointLimit } = useWorkspace();
+  const { chartPointLimit } = useWorkspaceUi();
 
   const cells = section.charts.flatMap((chart) => {
     if (!isChartAvailable(chart, context.unavailable)) {
