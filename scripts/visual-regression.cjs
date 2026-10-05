@@ -565,6 +565,13 @@ async function run() {
       await page.setViewportSize({ width, height });
       await page.goto(`${baseUrl}#overview`, { waitUntil: "domcontentloaded" });
       await page.locator(".touch-workspace").waitFor({ state: "visible", timeout: 15_000 });
+      // The presentation resolves in a resize listener and a same-URL navigation
+      // may not reload the document, so the attribute can still carry the
+      // previous viewport's value when read immediately. Wait for it to settle.
+      await page.waitForFunction((expected) => {
+        const node = document.querySelector(".touch-workspace");
+        return node && node.getAttribute("data-presentation") === expected;
+      }, presentation, { timeout: 15_000 });
       assert.equal(await page.locator(".touch-workspace").getAttribute("data-presentation"), presentation, `the compact shell must present as ${presentation} at ${width}px/${theme}`);
       assert.ok(await page.evaluate(() => document.body.scrollWidth) <= width + 1, `the compact shell overflows horizontally at ${width}px/${theme}`);
       await page.screenshot({ path: path.join(outputDir, `matrix-round-${round}-${theme}-${width}-compact.png`), animations: "disabled" });
