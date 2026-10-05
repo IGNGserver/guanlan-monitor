@@ -256,45 +256,6 @@
 .guanlan-fleet-hero__tile.is-warning .guanlan-fleet-hero__hint { color: var(--md-sys-color-on-warning-container); }
 /* The headless compatibility block is duplicate content for a11y; keep it hidden. */
 
-.guanlan-device-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; padding: 16px 0; }
-.guanlan-fleet-card {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 20px;
-  border: 0;
-  border-radius: var(--md-sys-shape-xl);
-  background: var(--md-sys-color-surface-container-low);
-  box-shadow: var(--md-sys-elevation-1);
-  cursor: pointer;
-  transition:
-    background-color var(--md-sys-motion-effects-fast),
-    box-shadow var(--md-sys-motion-effects-fast),
-    transform var(--md-sys-motion-spatial-fast);
-}
-.guanlan-fleet-card:hover {
-  background: var(--md-sys-color-surface-container);
-  transform: translateY(-3px);
-  box-shadow: var(--md-sys-elevation-3);
-}
-.guanlan-fleet-card:active { transform: translateY(-1px) scale(0.99); }
-.guanlan-fleet-card { position: relative; }
-.guanlan-fleet-card__link { display: block; max-width: 100%; padding: 0; overflow: hidden; border: 0; color: inherit; background: none; font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-.guanlan-fleet-card__link::after { position: absolute; inset: 0; border-radius: inherit; content: ""; }
-.guanlan-fleet-card__link:focus-visible { outline: none; }
-.guanlan-fleet-card:has(.guanlan-fleet-card__link:focus-visible) { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
-.guanlan-fleet-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.guanlan-fleet-card__title { margin: 0; overflow: hidden; font-size: var(--md-sys-typescale-title-m-size); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.guanlan-fleet-card__meta { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
-.guanlan-fleet-card__metrics { display: grid; gap: 10px; }
-.guanlan-fleet-card__footer { display: flex; justify-content: space-between; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
-.guanlan-fleet-metric-bar__labels { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
-.guanlan-fleet-metric-bar__name { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-s-size); }
-.guanlan-fleet-metric-bar__value { font-size: var(--md-sys-typescale-label-m-size); font-weight: 500; font-variant-numeric: tabular-nums; }
-.guanlan-fleet-metric-bar__track { height: 8px; overflow: hidden; border-radius: var(--md-sys-shape-full); background: var(--md-sys-color-surface-container-highest); }
-.guanlan-fleet-metric-bar__fill { height: 100%; border-radius: inherit; background: var(--md-sys-color-primary); transition: width var(--md-sys-motion-spatial-default); }
-.guanlan-fleet-metric-bar__fill.is-warning { background: var(--md-sys-color-warning); }
-.guanlan-fleet-metric-bar__fill.is-danger { background: var(--md-sys-color-error); }
 
 /* ---- Device facts ---------------------------------------------------------- */
 

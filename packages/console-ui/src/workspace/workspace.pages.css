@@ -63,10 +63,6 @@
   .workspace-directory-toolbar__actions { grid-column: 2; min-width: 0; justify-content: flex-end; }
   .workspace-hub-card__grid { grid-template-columns: minmax(0, 1fr); }
   .workspace-onboarding__steps { grid-template-columns: minmax(0, 1fr); }
-  .guanlan-device-grid {
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 12px;
-  }
 }
 
 @media (max-width: 599px) {
@@ -75,12 +71,6 @@
   .workspace-surface__header { padding-inline: 18px; }
   
   /* Phone card optimizations */
-  .guanlan-fleet-card {
-    padding: 12px;
-  }
-  .guanlan-fleet-card:active {
-    transform: scale(0.98);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -241,3 +231,37 @@
 
 
 
+
+/* Fleet issues (DeviceIssueList). Severity is an icon, a word and a container
+   tone; the text itself stays in the ink tokens. */
+.workspace-issues { padding: 0 24px 20px; }
+.workspace-issue-list { display: flex; flex-direction: column; gap: var(--md-sys-space-2); margin: 0; padding: 0; list-style: none; }
+.workspace-issue { display: grid; width: 100%; grid-template-columns: 32px minmax(0, 1fr) auto 20px; align-items: center; gap: var(--md-sys-space-3); padding: var(--md-sys-space-3) var(--md-sys-space-4); border: 0; border-radius: var(--md-sys-shape-lg); color: var(--md-sys-color-on-surface); background: var(--md-sys-color-surface-container); font: inherit; text-align: left; cursor: pointer; transition: background-color var(--md-sys-motion-effects-fast); }
+.workspace-issue:hover { background: var(--md-sys-color-surface-container-high); }
+.workspace-issue:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+.workspace-issue__icon { display: grid; width: 32px; height: 32px; place-items: center; border-radius: var(--md-sys-shape-md); }
+.workspace-issue--critical .workspace-issue__icon { color: var(--md-sys-color-on-error-container); background: var(--md-sys-color-error-container); }
+.workspace-issue--warning .workspace-issue__icon { color: var(--md-sys-color-on-warning-container); background: var(--md-sys-color-warning-container); }
+.workspace-issue__copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.workspace-issue__copy strong { overflow: hidden; font-size: var(--md-sys-typescale-title-s-size); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-issue__copy span { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); font-variant-numeric: tabular-nums; }
+.workspace-issue__severity { padding: 2px 10px; border-radius: var(--md-sys-shape-full); font-size: var(--md-sys-typescale-label-m-size); font-weight: 500; }
+.workspace-issue--critical .workspace-issue__severity { color: var(--md-sys-color-on-error-container); background: var(--md-sys-color-error-container); }
+.workspace-issue--warning .workspace-issue__severity { color: var(--md-sys-color-on-warning-container); background: var(--md-sys-color-warning-container); }
+.workspace-issue__chevron { color: var(--md-sys-color-on-surface-variant); }
+.workspace-issues__more { margin: var(--md-sys-space-3) 0 0; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
+.touch-workspace .workspace-issues { padding: 0; }
+
+/* A reading past its threshold, wherever a device's numbers are listed. */
+.guanlan-metric--warning { color: var(--md-sys-color-warning); font-weight: 600; }
+.guanlan-metric--critical { color: var(--md-sys-color-error); font-weight: 600; }
+.guanlan-metric--warning::before, .guanlan-metric--critical::before { display: inline-block; width: 6px; height: 6px; margin: 0 6px 1px 0; border-radius: 50%; background: currentColor; content: ""; vertical-align: middle; }
+
+/* Resource issues on the device page, from the same thresholds as the overview. */
+.workspace-device-issues { display: flex; flex-wrap: wrap; gap: var(--md-sys-space-2); margin: 0 0 var(--md-sys-space-4); padding: 0; list-style: none; }
+.workspace-device-issue { display: inline-flex; align-items: center; gap: var(--md-sys-space-2); padding: 6px 12px; border-radius: var(--md-sys-shape-full); font-size: var(--md-sys-typescale-body-s-size); font-variant-numeric: tabular-nums; }
+.workspace-device-issue--critical { color: var(--md-sys-color-on-error-container); background: var(--md-sys-color-error-container); }
+.workspace-device-issue--warning { color: var(--md-sys-color-on-warning-container); background: var(--md-sys-color-warning-container); }
+
+/* Two compact numeric fields per resource threshold. */
+.workspace-threshold-inputs { display: grid; grid-template-columns: repeat(2, minmax(96px, 120px)); gap: var(--md-sys-space-2); }

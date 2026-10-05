@@ -38,10 +38,13 @@ const snapshot: ConsoleSnapshot = {
 
 test("health summary counts offline devices and leaves cached status unknown", () => {
   const devices = [device({}), device({ deviceId: "device-2", hostname: "NAS", status: "offline" })];
-  assert.deepEqual(selectHealthSummary(snapshot, devices, () => "10:00"), {
+  const { issues, ...summary } = selectHealthSummary(snapshot, devices, () => "10:00");
+  assert.deepEqual(issues.map((issue) => [issue.deviceId, issue.kind]), [["device-2", "offline"]]);
+  assert.deepEqual(summary, {
     total: 2,
     online: 1,
     offline: 1,
+    overThreshold: 0,
     pending: 1,
     source: "live",
     sourceLabel: "实时连接",
@@ -52,6 +55,14 @@ test("health summary counts offline devices and leaves cached status unknown", (
   // The overview used to show a check mark beside "连接异常" here.
   assert.equal(selectHealthSummary({ ...snapshot, source: "live", session: { authenticated: true, accessKeyConfigured: true } }, [], () => "10:00").pending, 0);
   assert.equal(selectHealthSummary({ ...snapshot, source: "live", session: { authenticated: false, accessKeyConfigured: false } }, devices, () => "10:00").pending, null, "an unauthenticated snapshot cannot be counted");
+});
+
+test("an online device past a threshold needs attention too, counted once", () => {
+  const devices = [device({ diskUsagePercent: 97, cpuUsagePercent: 99 }), device({ deviceId: "device-2", hostname: "NAS", status: "offline" })];
+  const summary = selectHealthSummary(snapshot, devices, () => "10:00");
+  assert.equal(summary.pending, 2, "two devices, however many resources are over");
+  assert.equal(summary.overThreshold, 1);
+  assert.deepEqual(selectAttentionDevices(devices).map((item) => item.deviceId), ["device-2", devices[0].deviceId]);
 });
 
 /**

@@ -1,5 +1,6 @@
 import type { ConsoleSnapshot, DeviceMetricKey, DeviceSummary } from "@dsc/shared";
 import { dateValueOf } from "./sampleTime.ts";
+import { DEFAULT_HEALTH_THRESHOLDS, devicesNeedingAttention, evaluateFleet, type DeviceIssue, type HealthThresholds } from "./health.ts";
 
 export type DeviceDirectoryStatus = "all" | "online" | "offline";
 export type DeviceDirectorySort = "order" | "name" | "cpu" | "memory" | "lastSeen";
@@ -8,6 +9,10 @@ export interface HealthSummary {
   total: number;
   online: number;
   offline: number;
+  /** Online devices with at least one resource past its threshold. */
+  overThreshold: number;
+  /** Every issue in the fleet, most urgent first. */
+  issues: DeviceIssue[];
   pending: number | null;
   source: "live" | "cache" | "empty" | "unknown";
   sourceLabel: string;
@@ -77,15 +82,21 @@ function selectAttentionCount(snapshot: ConsoleSnapshot, unhealthyDevices: numbe
   return unhealthyDevices + (snapshot.localBackend?.lastIssueCount ?? 0);
 }
 
-export function selectHealthSummary(snapshot: ConsoleSnapshot, allDevices: DeviceSummary[], formatDate: (value: string | null | undefined) => string, transport: LiveDataTransport = "push"): HealthSummary {
+export function selectHealthSummary(snapshot: ConsoleSnapshot, allDevices: DeviceSummary[], formatDate: (value: string | null | undefined) => string, transport: LiveDataTransport = "push", thresholds: HealthThresholds = DEFAULT_HEALTH_THRESHOLDS): HealthSummary {
   const online = allDevices.filter((device) => device.status === "online").length;
   const source = selectSnapshotSource(snapshot, allDevices);
-  const unhealthyDevices = allDevices.filter((device) => device.status !== "online").length;
+  // An offline device and a device past a threshold both need someone; each is
+  // counted once however many of its resources are over.
+  const issues = evaluateFleet(allDevices, thresholds);
+  const unhealthyDevices = devicesNeedingAttention(issues).length;
+  const overThreshold = devicesNeedingAttention(issues.filter((issue) => issue.kind !== "offline")).length;
   const pending = selectAttentionCount(snapshot, unhealthyDevices, source);
   return {
     total: allDevices.length,
     online,
     offline: allDevices.length - online,
+    overThreshold,
+    issues,
     pending,
     source,
     sourceLabel: selectLinkLabel(source, transport),
@@ -119,12 +130,12 @@ export function selectResourceRanking(devices: DeviceSummary[], metric: "cpu" | 
  * It now surfaces only what cannot answer for itself, so a healthy fleet leaves
  * nothing to read here and the directory keeps its role as the device list.
  */
-export function selectAttentionDevices(allDevices: DeviceSummary[], limit = 6): DeviceSummary[] {
-  return allDevices
-    .filter((device) => device.status !== "online")
-    .slice()
-    .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
-      || dateValueOf(left.lastSeenAt ?? "") - dateValueOf(right.lastSeenAt ?? ""))
+export function selectAttentionDevices(allDevices: DeviceSummary[], limit = 6, thresholds: HealthThresholds = DEFAULT_HEALTH_THRESHOLDS): DeviceSummary[] {
+  // Most urgent first: the order of each device's worst issue.
+  const byId = new Map(allDevices.map((device) => [device.deviceId, device]));
+  return devicesNeedingAttention(evaluateFleet(allDevices, thresholds))
+    .map((deviceId) => byId.get(deviceId))
+    .filter((device): device is DeviceSummary => Boolean(device))
     .slice(0, limit);
 }
 

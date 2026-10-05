@@ -56,7 +56,7 @@ function TouchDetail({ deviceId }: { deviceId: string }) {
   return <DeviceDetailsPage presentation="touch" touchPanel={view.panel} onTouchPanelChange={(panel) => update({ panel })} touchTab={view.tab} onTouchTabChange={(tab) => update({ tab })} />;
 }
 const categoryDetails: Partial<Record<SettingsSection, string>> = {
-  general: "刷新频率与状态同步", appearance: "主题、控件与网页布局", connections: "当前中枢与会话", data: "数据来源与更新", shortcuts: "键盘操作", about: "版本与帮助"
+  general: "刷新频率与资源阈值", appearance: "主题、控件与网页布局", connections: "当前中枢与会话", data: "数据来源与更新", shortcuts: "键盘操作", about: "版本与帮助"
 };
 function TouchSettings({ split }: { split: boolean }) {
   const { route, capabilities, navigate } = useWorkspaceUi();
