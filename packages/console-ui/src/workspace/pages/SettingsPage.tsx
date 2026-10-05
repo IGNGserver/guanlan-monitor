@@ -7,6 +7,7 @@ import { formatDate, formatPreciseDateTime, formatReleaseChannel } from "../form
 import { selectLinkLabel, selectSnapshotSource, liveLinkLabel } from "../selectors";
 import { formatWorkspaceError } from "../context/WorkspaceTypes";
 import { stableObjectKey } from "../configKeys.ts";
+import { DEFAULT_HEALTH_THRESHOLDS, THRESHOLD_LABELS, THRESHOLD_METRICS, isValidThresholdRule, type HealthThresholds, type ThresholdMetric } from "../health";
 import { visibleSettingsNavigation } from "../shell/PrimaryNavigation";
 import { PlatformShortcuts } from "../shell/PlatformShortcuts";
 import {
@@ -55,7 +56,7 @@ export function SettingsPage({ presentation = "desktop" }: { presentation?: "des
   const heading = visibleSettings.find((item) => item.id === section);
   // One line each: long enough to orient, short enough to read in one pass.
   const descriptions: Partial<Record<SettingsSection, string>> = {
-    general: "启动方式与刷新频率。",
+    general: "启动方式、刷新频率与资源阈值。",
     appearance: "主题、控件大小与动画。",
     connections: "中枢地址、访问密钥与本机上报。",
     agent: "本机采集服务与上报内容。",
@@ -89,9 +90,54 @@ function GeneralSettings() {
           <SettingRow label="状态刷新频率" description="界面多久读取一次状态；不影响 Agent 的采集间隔。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "5", label: "5 秒" }, { value: "10", label: "10 秒" }, { value: "30", label: "30 秒" }]} value={String(refreshInterval)} onChange={(value) => setRefreshInterval(Number(value) as typeof refreshInterval)} aria-label="状态刷新频率" disabled={mutationPending} /></SettingRow>
         </div>
       </Surface>
+      <HealthThresholdSettings />
       {!canControlStartup && <WebSyncSummary />}
     </div>
   );
+}
+
+/**
+ * The lines the overview, the directory and the device page judge resources
+ * against. Each value saves as soon as the pair is valid; an invalid pair keeps
+ * the last saved rule and says why, instead of silently snapping a number.
+ */
+function HealthThresholdSettings() {
+  const { healthThresholds, setHealthThresholds, capabilities } = useWorkspace();
+  const [draft, setDraft] = useState<Record<ThresholdMetric, { warning: string; critical: string }>>(() => toDraft(healthThresholds));
+  useEffect(() => { setDraft(toDraft(healthThresholds)); }, [healthThresholds]);
+  const update = (metric: ThresholdMetric, field: "warning" | "critical", value: string) => {
+    const next = { ...draft, [metric]: { ...draft[metric], [field]: value } };
+    setDraft(next);
+    const rule = { warning: Number(next[metric].warning), critical: Number(next[metric].critical) };
+    if (next[metric].warning !== "" && next[metric].critical !== "" && isValidThresholdRule(rule)) {
+      setHealthThresholds({ ...healthThresholds, [metric]: rule });
+    }
+  };
+  const isDefault = THRESHOLD_METRICS.every((metric) => healthThresholds[metric].warning === DEFAULT_HEALTH_THRESHOLDS[metric].warning && healthThresholds[metric].critical === DEFAULT_HEALTH_THRESHOLDS[metric].critical);
+  return (
+    <Surface>
+      <div className="workspace-surface__header"><div><span className="workspace-section-kicker">设备健康</span><h3>资源阈值</h3><p className="workspace-surface__description">使用率达到警告值的在线设备会出现在“需要关注”里，达到严重值的排在最前。{capabilities.canControlNativeWindow ? "阈值保存在这台电脑上。" : "阈值保存在当前浏览器中。"}</p></div></div>
+      <div className="workspace-settings-list">
+        {THRESHOLD_METRICS.map((metric) => {
+          const rule = { warning: Number(draft[metric].warning), critical: Number(draft[metric].critical) };
+          const invalid = draft[metric].warning === "" || draft[metric].critical === "" || !isValidThresholdRule(rule);
+          return <SettingRow key={metric} label={`${THRESHOLD_LABELS[metric]} 使用率`} description={invalid ? "警告值需小于严重值，范围 1–100%；未保存。" : `警告 ${healthThresholds[metric].warning}% · 严重 ${healthThresholds[metric].critical}%`}>
+            <div className="workspace-threshold-inputs">
+              <M3TextField label="警告 %" type="number" inputMode="numeric" min={1} max={99} value={draft[metric].warning} aria-invalid={invalid || undefined} onChange={(event) => update(metric, "warning", event.target.value)} />
+              <M3TextField label="严重 %" type="number" inputMode="numeric" min={2} max={100} value={draft[metric].critical} aria-invalid={invalid || undefined} onChange={(event) => update(metric, "critical", event.target.value)} />
+            </div>
+          </SettingRow>;
+        })}
+      </div>
+      <div className="workspace-form__actions"><Button variant="quiet" disabled={isDefault} onClick={() => setHealthThresholds(DEFAULT_HEALTH_THRESHOLDS)}>恢复默认阈值</Button></div>
+    </Surface>
+  );
+}
+
+function toDraft(thresholds: HealthThresholds): Record<ThresholdMetric, { warning: string; critical: string }> {
+  const draft = {} as Record<ThresholdMetric, { warning: string; critical: string }>;
+  for (const metric of THRESHOLD_METRICS) draft[metric] = { warning: String(thresholds[metric].warning), critical: String(thresholds[metric].critical) };
+  return draft;
 }
 
 function WebSyncSummary() {

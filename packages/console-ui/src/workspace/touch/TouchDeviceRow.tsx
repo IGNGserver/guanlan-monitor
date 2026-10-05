@@ -4,6 +4,7 @@ import { M3IconButton } from "../m3";
 import { Icon, StatusDot } from "../ui";
 import { formatDate } from "../formatters";
 import { useWorkspace } from "../WorkspaceContext";
+import { metricSeverity, metricValue, type ThresholdMetric } from "../health";
 
 export function touchPercent(device: DeviceSummary, key: DeviceMetricKey, value: number | null | undefined): string {
   if (device.unavailableMetrics?.includes(key)) return "不适用";
@@ -12,7 +13,12 @@ export function touchPercent(device: DeviceSummary, key: DeviceMetricKey, value:
 export function TouchDeviceRow({ device, onMore, selected = false, disabled = false }: {
   device: DeviceSummary; onMore?: () => void; selected?: boolean; disabled?: boolean;
 }) {
-  const { navigate, snapshot } = useWorkspace();
+  const { navigate, snapshot, healthThresholds } = useWorkspace();
+  // Same thresholds as the overview, so a row and the attention list agree.
+  const tone = (metric: ThresholdMetric) => {
+    const severity = device.status === "online" ? metricSeverity(metricValue(device, metric), healthThresholds[metric]) : null;
+    return severity ? `guanlan-metric guanlan-metric--${severity}` : undefined;
+  };
   const cached = snapshot?.source === "cache";
   const online = device.status === "online";
   return <div className={`touch-device-row${selected ? " is-selected" : ""}`}>
@@ -24,7 +30,7 @@ export function TouchDeviceRow({ device, onMore, selected = false, disabled = fa
           {cached ? `缓存中${online ? "在线" : "离线"}` : online ? "在线" : "离线"} · {device.os}
         </span>
         <span className="touch-device-row__metrics">{online || cached
-          ? <>CPU {touchPercent(device, "cpuUsage", device.cpuUsagePercent)}<span>内存 {touchPercent(device, "memoryUsage", device.memoryUsagePercent)}</span></>
+          ? <><span className={tone("cpu")}>CPU {touchPercent(device, "cpuUsage", device.cpuUsagePercent)}</span><span className={tone("memory")}>内存 {touchPercent(device, "memoryUsage", device.memoryUsagePercent)}</span><span className={tone("disk")}>磁盘 {touchPercent(device, "diskUsage", device.diskUsagePercent)}</span></>
           : <>最后在线 {formatDate(device.lastSeenAt)}</>}
         </span>
       </span>

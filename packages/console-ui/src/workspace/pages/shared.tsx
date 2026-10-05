@@ -8,6 +8,7 @@ import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
 import { TimeSeriesChart } from "../charts";
 import { UNAVAILABLE_METRIC_LABEL, formatBytes, formatDate, formatPercent, formatTemperature } from "../formatters";
 import { dateValueOf } from "../sampleTime.ts";
+import { evaluateDevice, metricSeverity, metricValue, type DeviceIssue, type ThresholdMetric } from "../health";
 
 const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: string }).src;
 
@@ -256,76 +257,27 @@ function directoryCapacityText(device: DeviceSummary, kind: "memory" | "disk", u
  * to name the same fact in the aggregate tiles only, so a reader counted two
  * kinds of trouble.
  */
-function DeviceCard({ device }: { device: DeviceSummary }) {
-  const { navigate } = useWorkspaceUi();
-  const openDevice = () => navigate({ kind: "device", deviceId: device.deviceId });
-  const cpuPercent = isMetricUnavailable(device, "cpuUsage") ? null : device.cpuUsagePercent ?? null;
-  const memoryPercent = isMetricUnavailable(device, "memoryUsage") ? null : device.memoryUsagePercent ?? null;
-  const isOnline = device.status === "online";
-
-  return (
-    // A real button carries the activation; its ::after stretches over the card so
-    // the whole surface stays clickable without faking a button out of a div
-    // (which also could not legally hold the heading).
-    <article className="guanlan-fleet-card">
-      <div className="guanlan-fleet-card__header">
-        <div className="guanlan-fleet-card__identity">
-          <h4 className="guanlan-fleet-card__title" title={device.hostname}>
-            <button type="button" className="guanlan-fleet-card__link" onClick={openDevice} aria-label={`查看设备 ${device.hostname}`}>{device.hostname}</button>
-          </h4>
-          <span className="guanlan-fleet-card__meta">{device.os} · {device.deviceId}</span>
-        </div>
-        <StatusLabel state={isOnline ? "online" : "offline"} compact />
-      </div>
-
-      <div className="guanlan-fleet-card__metrics">
-        <div className="guanlan-fleet-metric-bar">
-          <div className="guanlan-fleet-metric-bar__labels">
-            <span className="guanlan-fleet-metric-bar__name">CPU</span>
-            <span className="guanlan-fleet-metric-bar__value">{cpuPercent != null ? `${Math.round(cpuPercent)}%` : "—"}</span>
-          </div>
-          <div className="guanlan-fleet-metric-bar__track">
-            <div
-              className={`guanlan-fleet-metric-bar__fill ${cpuPercent && cpuPercent > 85 ? "is-danger" : cpuPercent && cpuPercent > 70 ? "is-warning" : ""}`}
-              style={{ width: `${Math.min(100, Math.max(0, cpuPercent ?? 0))}%` }}
-            />
-          </div>
-        </div>
-
-        <div className="guanlan-fleet-metric-bar">
-          <div className="guanlan-fleet-metric-bar__labels">
-            <span className="guanlan-fleet-metric-bar__name">内存</span>
-            <span className="guanlan-fleet-metric-bar__value">{memoryPercent != null ? `${Math.round(memoryPercent)}%` : "—"}</span>
-          </div>
-          <div className="guanlan-fleet-metric-bar__track">
-            <div
-              className={`guanlan-fleet-metric-bar__fill ${memoryPercent && memoryPercent > 85 ? "is-danger" : memoryPercent && memoryPercent > 70 ? "is-warning" : ""}`}
-              style={{ width: `${Math.min(100, Math.max(0, memoryPercent ?? 0))}%` }}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="guanlan-fleet-card__footer">
-        <span>{isOnline ? "刚刚上报" : "停止上报"}</span>
-        <span>{formatDate(device.lastSeenAt)}</span>
-      </div>
-    </article>
-  );
+function directoryStatusTag(device: DeviceSummary, issues: DeviceIssue[]) {
+  const resourceIssues = issues.filter((issue) => issue.kind !== "offline");
+  const worst = resourceIssues.some((issue) => issue.severity === "critical") ? "error" : "warning";
+  return <span className="guanlan-table-status">
+    <M3Badge tone={device.status === "online" ? "success" : "neutral"}>{device.status === "online" ? "在线" : "离线"}</M3Badge>
+    {resourceIssues.length ? <M3Badge tone={worst}>{`${resourceIssues.length} 项超限`}</M3Badge> : null}
+  </span>;
 }
 
-function DeviceCardGrid({ devices }: { devices: DeviceSummary[] }) {
-  return (
-    <div className="guanlan-device-grid">
-      {devices.map((device) => (
-        <DeviceCard key={device.deviceId} device={device} />
-      ))}
-    </div>
-  );
-}
-
-function directoryStatusTag(device: DeviceSummary) {
-  return <M3Badge tone={device.status === "online" ? "success" : "neutral"}>{device.status === "online" ? "在线" : "离线"}</M3Badge>;
+/**
+ * A reading in the directory, toned by the same thresholds the overview uses.
+ * The tone is backed by text in the cell's title and accessible name, so the
+ * state does not depend on colour.
+ */
+function ThresholdValue({ device, metric, children }: { device: DeviceSummary; metric: ThresholdMetric; children: React.ReactNode }) {
+  const { healthThresholds } = useWorkspaceUi();
+  const rule = healthThresholds[metric];
+  const severity = device.status === "online" ? metricSeverity(metricValue(device, metric), rule) : null;
+  if (!severity) return <>{children}</>;
+  const note = severity === "critical" ? `超过严重阈值 ${rule.critical}%` : `超过警告阈值 ${rule.warning}%`;
+  return <span className={`guanlan-metric guanlan-metric--${severity}`} title={note}>{children}<span className="workspace-visually-hidden">（{note}）</span></span>;
 }
 
 /**
@@ -358,11 +310,11 @@ function DeviceTable({
   onDelete?: (device: DeviceSummary) => void;
   emptyState?: React.ReactNode;
 }) {
-  const { navigate } = useWorkspaceUi();
+  const { navigate, healthThresholds } = useWorkspaceUi();
   const openDevice = (device: DeviceSummary) => navigate({ kind: "device", deviceId: device.deviceId });
   const deviceIndex = (device: DeviceSummary) => order?.indexOf(device.deviceId) ?? -1;
   const columns: DirectoryColumn[] = [
-    { key: "status", header: "状态", cell: (device) => directoryStatusTag(device) },
+    { key: "status", header: "状态", cell: (device) => directoryStatusTag(device, evaluateDevice(device, healthThresholds)) },
     {
       key: "device",
       header: "设备",
@@ -371,9 +323,9 @@ function DeviceTable({
         <small className="guanlan-table-secondary">{`${device.os} · ID ${device.deviceId}`}</small>
       </>
     },
-    { key: "cpu", header: "CPU 使用率", cell: (device) => isMetricUnavailable(device, "cpuUsage") ? "—" : formatPercent(device.cpuUsagePercent) },
-    { key: "memory", header: "内存使用", cell: (device) => directoryCapacityText(device, "memory", isMetricUnavailable(device, "memoryUsage")) },
-    { key: "disk", header: "磁盘使用", cell: (device) => directoryCapacityText(device, "disk", isMetricUnavailable(device, "diskUsage")) },
+    { key: "cpu", header: "CPU 使用率", cell: (device) => isMetricUnavailable(device, "cpuUsage") ? "—" : <ThresholdValue device={device} metric="cpu">{formatPercent(device.cpuUsagePercent)}</ThresholdValue> },
+    { key: "memory", header: "内存使用", cell: (device) => <ThresholdValue device={device} metric="memory">{directoryCapacityText(device, "memory", isMetricUnavailable(device, "memoryUsage"))}</ThresholdValue> },
+    { key: "disk", header: "磁盘使用", cell: (device) => <ThresholdValue device={device} metric="disk">{directoryCapacityText(device, "disk", isMetricUnavailable(device, "diskUsage"))}</ThresholdValue> },
     {
       key: "lastSeen",
       header: "最后在线",
@@ -1033,7 +985,5 @@ export {
   MetricsLoadingSurface,
   SnapshotFreshnessNotice,
   EmptyState,
-  ErrorSurface,
-  DeviceCard,
-  DeviceCardGrid
+  ErrorSurface
 };

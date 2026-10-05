@@ -29,6 +29,7 @@ import {
 } from "../formatters";
 import { Button, Icon, StatusDot } from "../ui";
 import { DeviceChartCells, type DeviceChartContext, type DeviceSectionControls } from "./deviceCharts";
+import { describeIssue, evaluateDevice } from "../health";
 import {
   EmptyState,
   InstanceFilter,
@@ -70,7 +71,8 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
     trafficMode,
     setTrafficMode,
     shiftTrafficAnchor,
-    capabilities
+    capabilities,
+    healthThresholds
   } = useWorkspace();
   const snapshotSource = snapshot ? selectSnapshotSource(snapshot, snapshot.devices) : "unknown";
   const deviceSourceState: "online" | "offline" | "cached" | "warning" | "unknown" = snapshotSource === "cache"
@@ -438,6 +440,18 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
       </details>
       {touch && touchPanel === "status" && <div className="touch-current-metrics" aria-label="最近上报指标">{([ ["CPU", "cpuUsage", selectedDevice.cpuUsagePercent], ["内存", "memoryUsage", selectedDevice.memoryUsagePercent], ["磁盘", "diskUsage", selectedDevice.diskUsagePercent] ] as const).map(([label, key, value]) => <div key={key}><span>{label}</span><strong>{touchPercent(selectedDevice, key, value)}</strong><small>最近一次上报</small></div>)}</div>}
       {selectedDevice.unavailableMetrics?.length ? <div className="workspace-inline-note" role="status"><Icon name="about" size={15} />本机不适用指标：{selectedDevice.unavailableMetrics.join("、")}；对应图表会留空而不是估算。</div> : null}
+
+      {/* The same verdict the overview lists, on the machine it is about. Offline
+          is already the state banner below, so only resource issues show here. */}
+      {(() => {
+        const resourceIssues = evaluateDevice(selectedDevice, healthThresholds).filter((issue) => issue.kind !== "offline");
+        if (!resourceIssues.length) return null;
+        return <ul className="workspace-device-issues" aria-label="超过阈值的资源">
+          {resourceIssues.map((issue) => <li key={issue.kind} className={`workspace-device-issue workspace-device-issue--${issue.severity}`}>
+            <Icon name="warning" size={16} /><span>{describeIssue(issue, formatDate)}</span>
+          </li>)}
+        </ul>;
+      })()}
 
       {deviceStateBanner && (
         <div className={`workspace-device-state-banner workspace-device-state-banner--${deviceStateBanner.tone}`} role={deviceStateBanner.tone === "offline" ? "alert" : "status"}>

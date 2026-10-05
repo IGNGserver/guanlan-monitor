@@ -8,6 +8,7 @@ import { defaultRoute, routeFromLocation, serializeWorkspaceRoute, type Settings
 import { getStoredDensity, getStoredRefreshInterval, getStoredTheme } from "./WorkspaceTypes";
 
 import type { WebLayoutPreference } from "../../helpers/presentation";
+import { readStoredThresholds, storeThresholds, type HealthThresholds } from "../health";
 
 const SIDEBAR_COLLAPSED_KEY = "dsc-sidebar-collapsed";
 const METRICS_WINDOW_KEY = "dsc-metrics-window";
@@ -62,6 +63,11 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
     try { localStorage.setItem("dsc-web-layout", next); } catch { /* Optional preference. */ }
   }, []);
   const [density, setDensityState] = useState<InteractionScaleSetting>(getStoredDensity);
+  const [healthThresholds, setHealthThresholdsState] = useState<HealthThresholds>(readStoredThresholds);
+  const setHealthThresholds = useCallback((next: HealthThresholds) => {
+    setHealthThresholdsState(next);
+    storeThresholds(next);
+  }, []);
   const [refreshInterval, setRefreshIntervalState] = useState<5 | 10 | 30>(getStoredRefreshInterval);
   const [orientation, setOrientation] = useState<ScreenOrientation>("landscape");
   const [isTouch, setIsTouch] = useState(false);
@@ -215,6 +221,8 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
     setWebLayout,
     density,
     setDensity,
+    healthThresholds,
+    setHealthThresholds,
     refreshInterval,
     setRefreshInterval,
     orientation,

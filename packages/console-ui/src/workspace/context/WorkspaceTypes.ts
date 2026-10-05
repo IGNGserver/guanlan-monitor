@@ -13,6 +13,7 @@ import type { InteractionScaleSetting, PointerType } from "../../helpers/density
 import type { ResponsiveTier, ScreenOrientation } from "../../helpers/layout";
 import type { SettingsSection, WorkspaceRoute } from "../routes";
 import type { WebLayoutPreference } from "../../helpers/presentation";
+import type { HealthThresholds } from "../health";
 
 export interface WorkspaceContextValue {
   route: WorkspaceRoute;
@@ -52,6 +53,9 @@ export interface WorkspaceContextValue {
   setWebLayout: (layout: WebLayoutPreference) => void;
   density: InteractionScaleSetting;
   setDensity: (density: InteractionScaleSetting) => void;
+  /** Resource thresholds every surface judges device health against. */
+  healthThresholds: HealthThresholds;
+  setHealthThresholds: (thresholds: HealthThresholds) => void;
   refreshInterval: 5 | 10 | 30;
   setRefreshInterval: (interval: 5 | 10 | 30) => void;
   refresh: () => Promise<void>;

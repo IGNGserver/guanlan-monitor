@@ -8,14 +8,17 @@ import { EmptyState } from "../pages/shared";
 import { TouchDeviceRow } from "./TouchDeviceRow";
 
 export function TouchOverview() {
-  const { snapshot, allDevices, navigate, openSettings, capabilities } = useWorkspace();
+  const { snapshot, allDevices, navigate, openSettings, capabilities, healthThresholds } = useWorkspace();
   const { pins, setStatus, setQuery } = useTouchState();
   if (!snapshot) return null;
-  const health = selectHealthSummary(snapshot, allDevices, formatDate, capabilities.liveDataTransport);
-  const attention = health.source === "live" ? selectAttentionDevices(allDevices, 3) : [];
+  const health = selectHealthSummary(snapshot, allDevices, formatDate, capabilities.liveDataTransport, healthThresholds);
+  const attention = health.source === "live" ? selectAttentionDevices(allDevices, 3, healthThresholds) : [];
+  const onlyOffline = health.overThreshold === 0;
   const pinned = allDevices.filter((device) => pins.includes(device.deviceId));
   const frequent = pinned.length ? pinned : allDevices.slice(0, 4);
-  const openAttention = () => { setStatus("offline"); setQuery(""); navigate({ kind: "devices" }); };
+  // The offline filter is the right destination only when offline devices are
+  // the whole story; a resource issue lives on an online device.
+  const openAttention = () => { setStatus(onlyOffline ? "offline" : "all"); setQuery(""); navigate({ kind: "devices" }); };
   return <div className="touch-page touch-overview">
     <header className="touch-page-title"><p>设备状态</p><h1>总览</h1></header>
     <section className={`touch-health${health.pending ? " has-attention" : ""}`} aria-label="中枢概况">
@@ -27,7 +30,7 @@ export function TouchOverview() {
       <small>{health.sourceDetail}</small>
     </section>
     {!!attention.length && <section className="touch-section"><header><h2>需要关注</h2><Button variant="text" onClick={openAttention}>查看全部<Icon name="chevronRight" size={16} /></Button></header>
-      <p className="touch-section__hint">离线设备保留最近一次上报，请查看最后在线时间。</p>
+      <p className="touch-section__hint">{onlyOffline ? "离线设备保留最近一次上报，请查看最后在线时间。" : "离线设备和资源超过阈值的设备，最紧急的在前。"}</p>
       <div className="touch-device-list">{attention.map((device) => <TouchDeviceRow key={device.deviceId} device={device} />)}</div>
     </section>}
     {!!frequent.length && <section className="touch-section"><header><h2>{pinned.length ? "常用设备" : "设备速览"}</h2><Button variant="text" onClick={() => { setStatus("all"); setQuery(""); navigate({ kind: "devices" }); }}>全部设备<Icon name="chevronRight" size={16} /></Button></header>

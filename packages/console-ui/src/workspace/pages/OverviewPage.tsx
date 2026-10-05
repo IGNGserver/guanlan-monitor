@@ -7,9 +7,10 @@ import { ChartTile, DashboardCell, DashboardGrid, DashboardSection } from "../da
 import { OnboardingGuide } from "../shell/OnboardingGuide";
 import { DeviceChartSheet } from "./DeviceChartSheet";
 import { formatBytes, formatDate, formatRate, formatPercent } from "../formatters";
-import { selectAttentionDevices, selectHealthSummary } from "../selectors";
+import { selectHealthSummary } from "../selectors";
 import { RenderBoundary } from "../RenderBoundary";
-import { DeviceCardGrid, EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, MetricWindowControl, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints, type DesktopMetricWindowValue } from "./shared";
+import { DeviceIssueList } from "./DeviceIssueList";
+import { EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, MetricWindowControl, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints, type DesktopMetricWindowValue } from "./shared";
 
 type ObservationMetric = "cpu" | "memory" | "disk" | "network";
 
@@ -50,17 +51,16 @@ function failureGuide(isDesktopShell: boolean): string {
  * themselves, and says so plainly when there are none.
  */
 export function OverviewPage() {
-  const { snapshot, allDevices, metricsWindow, setMetricsWindow, loading, refreshing, error, refresh, openSettings, navigate, capabilities } = useWorkspace();
+  const { snapshot, allDevices, metricsWindow, setMetricsWindow, loading, refreshing, error, refresh, openSettings, navigate, capabilities, healthThresholds } = useWorkspace();
   const [observationMetric, setObservationMetric] = useState<ObservationMetric>("cpu");
 
   // These run on every poll (the provider re-renders the tree on each snapshot).
   // Memoising them on their actual inputs keeps a poll that changed nothing on
   // this page from re-filtering the fleet and rebuilding the observation series.
   const health = useMemo(
-    () => (snapshot ? selectHealthSummary(snapshot, allDevices, formatDate, capabilities.liveDataTransport) : null),
-    [snapshot, allDevices, capabilities.liveDataTransport]
+    () => (snapshot ? selectHealthSummary(snapshot, allDevices, formatDate, capabilities.liveDataTransport, healthThresholds) : null),
+    [snapshot, allDevices, capabilities.liveDataTransport, healthThresholds]
   );
-  const attentionDevices = useMemo(() => selectAttentionDevices(allDevices), [allDevices]);
   const overviewInstances = snapshot?.overviewMetrics?.instances;
   const observationSeries = useMemo(() => (overviewInstances ?? []).flatMap((instance) => {
     const unavailable = (key: Parameters<typeof isMetricUnavailable>[1]) => instance.unavailableMetrics?.includes(key) ?? false;
@@ -94,7 +94,11 @@ export function OverviewPage() {
       ? "连接状态异常，暂无法判断"
       : attentionCount === 0
         ? "当前没有需要关注的项目"
-        : [health.offline ? `${health.offline} 台设备离线` : "", localIssues ? `${localIssues} 条本机采集问题` : ""].filter(Boolean).join(" · ");
+        : [
+          health.offline ? `${health.offline} 台设备离线` : "",
+          health.overThreshold ? `${health.overThreshold} 台资源超过阈值` : "",
+          localIssues ? `${localIssues} 条本机采集问题` : ""
+        ].filter(Boolean).join(" · ");
   const tone = hubAbnormal ? "warning" : noData ? "empty" : attentionCount ? "warning" : "normal";
 
   const observationHasData = observationSeries.some((series) => series.points.length > 0);
@@ -138,44 +142,30 @@ export function OverviewPage() {
       action={<Button variant="quiet" onClick={() => openSettings("connections")}>连接设置</Button>}
     >
       {cached ? "无法取得最新数据，页面中的设备信息可能已经过期。" : "无法连接到中枢，请检查中枢地址与访问密钥后重试。"}
-    </M3Banner> : (health.source === "empty" || (attentionCount ?? 0) > 0) ? <M3Banner
-      tone={noData ? "info" : "warning"}
+    </M3Banner> : health.source === "empty" ? <M3Banner
+      tone="info"
       className="workspace-attention"
-      title={noData ? "还没有可用设备" : "设备状态存在异常"}
-      action={<Button variant="quiet" onClick={() => noData ? openSettings("connections") : navigate({ kind: "devices" })}>{noData ? "配置数据来源" : "查看设备"}</Button>}
+      title="还没有可用设备"
+      action={<Button variant="quiet" onClick={() => openSettings("connections")}>配置数据来源</Button>}
     >
-      {noData ? "连接中枢并等待设备上报后，这里会显示实时状态。" : attentionDetail + "。"}
+      连接中枢并等待设备上报后，这里会显示实时状态。
     </M3Banner> : null}
+    {/* A fleet with issues used to get a fourth copy of the same fact here: the
+        page title, the attention tile and the device list below already say
+        it, so the "设备状态存在异常" banner is gone. */}
 
     <OnboardingGuide />
 
-    <HubStatusCard
-      state={health.source === "live" ? "online" : health.source === "cache" ? "cached" : health.source === "unknown" ? "warning" : "unknown"}
-      stateLabel={health.sourceLabel}
-      endpoint={snapshot.localBackend?.config.connection.serverUrl ?? "由当前站点提供"}
-      syncedAt={snapshot ? formatDate(snapshot.generatedAt) : "尚未同步"}
-      total={health.total}
-      online={health.online}
-      refreshing={refreshing}
-      onRefresh={() => void refresh()}
-      onOpenSettings={() => openSettings("connections")}
-    />
 
     <Surface className="workspace-overview-devices">
       <div className="workspace-surface__header">
-        <div><span className="workspace-section-kicker">需要关注</span><h3>{attentionDevices.length ? `${attentionDevices.length} 台设备离线` : "没有需要处理的设备"}</h3></div>
-        <Button variant="quiet" onClick={() => navigate({ kind: "devices" })}>查看全部设备</Button>
+        <div><span className="workspace-section-kicker">需要关注</span><h3>{health.issues.length ? `${health.issues.length} 项问题 · ${attentionCount ?? 0} 台设备` : "没有需要处理的设备"}</h3></div>
+        <Button variant="quiet" onClick={() => openSettings("general")}>调整阈值</Button>
       </div>
-      {cached && <div className="workspace-inline-note">当前为缓存快照，设备列表只读。</div>}
-      {attentionDevices.length
-        ? (
-          <div className="workspace-attention-content">
-            <div className="workspace-attention-cards">
-              <DeviceCardGrid devices={attentionDevices} />
-            </div>
-          </div>
-        )
-        : <div className="workspace-muted-block">{noData ? "还没有设备接入；Agent 上报一次后就会出现在这里。" : `${health.total} 台设备全部在线，无需处理。到“设备”页可以搜索、筛选和管理。`}</div>}
+      {cached && <div className="workspace-inline-note">当前为缓存快照，设备状态可能已经变化。</div>}
+      {health.issues.length
+        ? <DeviceIssueList issues={health.issues} onOpen={(deviceId) => navigate({ kind: "device", deviceId })} />
+        : <div className="workspace-muted-block">{noData ? "还没有设备接入；Agent 上报一次后就会出现在这里。" : `${health.total} 台设备全部在线，资源都在阈值以内。`}</div>}
     </Surface>
 
     <DashboardSection
@@ -219,6 +209,21 @@ export function OverviewPage() {
         </DashboardCell>
       </DashboardGrid>
     </DashboardSection>
+
+    {/* Connection facts answer "is the hub reachable", which the source tile
+        already summarises; the full card sits below the issues and the trend
+        instead of pushing them down. */}
+    <HubStatusCard
+      state={health.source === "live" ? "online" : health.source === "cache" ? "cached" : health.source === "unknown" ? "warning" : "unknown"}
+      stateLabel={health.sourceLabel}
+      endpoint={snapshot.localBackend?.config.connection.serverUrl ?? "由当前站点提供"}
+      syncedAt={snapshot ? formatDate(snapshot.generatedAt) : "尚未同步"}
+      total={health.total}
+      online={health.online}
+      refreshing={refreshing}
+      onRefresh={() => void refresh()}
+      onOpenSettings={() => openSettings("connections")}
+    />
   </div>;
 }
 
