@@ -782,6 +782,12 @@ export interface ConsoleSnapshotRequest {
   trafficAnchor?: string;
   preferCache?: boolean;
   include?: ConsoleSnapshotInclude;
+  /**
+   * A periodic refresh nobody asked for. The transport may lean on what it
+   * confirmed recently (the session, slow resources); a user refresh, a
+   * navigation or a reconnect never sets it and always re-confirms.
+   */
+  background?: boolean;
 }
 export type DesktopSnapshotRequest = ConsoleSnapshotRequest;
 

@@ -250,7 +250,9 @@ async function tabletFlow() {
   await page.evaluate(() => { document.documentElement.style.setProperty("--md-sys-typescale-body-m-size", "21px"); document.documentElement.style.setProperty("--md-sys-typescale-title-m-size", "24px"); });
   await dimensions(page);
   await shot(page, "tablet-large-text");
-  scenario.deniedPath = "/api/overview/metrics";
+  // An auxiliary read the open device page actually makes. The overview trend
+  // used to be fetched on every page; it is now read only where it is drawn.
+  scenario.deniedPath = "/api/devices/workstation-01/metrics";
   await page.getByRole("button", { name: "刷新状态", exact: true }).tap();
   await page.getByText("浏览器会话已失效", { exact: true }).waitFor();
   assert.equal(await cacheViewCount(page), 0, "403 from an auxiliary read also evicts the authenticated cache");

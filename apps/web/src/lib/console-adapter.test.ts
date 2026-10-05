@@ -61,6 +61,7 @@ test("a poll inside the budget skips the session check and slow resources", asyn
   try {
     const adapter = adapterAt(clock);
     const request = { selectedDeviceId: "nas", include: { deviceMetrics: true, trafficCalendar: true } };
+    const poll = { ...request, background: true };
     await adapter.refresh(request);
     const first = hub.calls.splice(0);
     assert.deepEqual(first.filter((path) => path === "/api/auth/session").length, 1);
@@ -69,15 +70,28 @@ test("a poll inside the budget skips the session check and slow resources", asyn
     assert.ok(first.includes("/api/updates"));
 
     clock.now += 10_000;
-    await adapter.refresh(request);
+    await adapter.refresh(poll);
     assert.deepEqual(hub.calls.splice(0).sort(), ["/api/devices/nas/metrics", "/api/instances"], "a 10 s poll reads only what changes that fast");
 
     clock.now += 60_000;
-    await adapter.refresh(request);
+    await adapter.refresh(poll);
     const later = hub.calls.splice(0);
     assert.ok(later.includes("/api/auth/session"), "the session is re-confirmed once its budget lapses");
     assert.ok(later.includes("/api/devices/nas/traffic-calendar"), "the calendar is re-read after its TTL");
     assert.ok(!later.includes("/api/updates"), "update info keeps its longer TTL");
+  } finally { hub.restore(); }
+});
+
+test("a user refresh always re-confirms the session, even inside the budget", async () => {
+  const hub = installHub();
+  const clock = { now: 1_000_000 };
+  try {
+    const adapter = adapterAt(clock);
+    await adapter.refresh({ include: {} });
+    hub.calls.splice(0);
+    clock.now += 2_000;
+    await adapter.refresh({ include: {} });
+    assert.ok(hub.calls.includes("/api/auth/session"), "only background polls may skip the session check");
   } finally { hub.restore(); }
 });
 
@@ -102,6 +116,6 @@ test("a 401 on a data read still expires the session at once", async () => {
       ? new Response("{}", { status: 401 })
       : original(input)) as typeof fetch;
     clock.now += 5_000;
-    await assert.rejects(adapter.refresh({ include: {} }), (error: unknown) => (error as { status?: number }).status === 401);
+    await assert.rejects(adapter.refresh({ include: {}, background: true }), (error: unknown) => (error as { status?: number }).status === 401);
   } finally { hub.restore(); }
 });

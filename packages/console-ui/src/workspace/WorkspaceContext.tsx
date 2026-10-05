@@ -166,7 +166,9 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
         metricWindow: metricsWindow,
         trafficMode,
         trafficAnchor,
-        include
+        include,
+        // The visible poller is the only caller that refreshes without announcing.
+        background: forceRefresh && !announce
       };
       const requestKey = include.trafficCalendar
         ? `${route.kind}:${requestDeviceId ?? ""}:${metricsWindow}:${trafficMode}:${trafficAnchor}`
