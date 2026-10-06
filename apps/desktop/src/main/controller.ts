@@ -12,12 +12,13 @@ import type {
   MetricWindow,
   TrafficCalendarMode
 } from "@dsc/shared";
+import { mergeAgentConfig, saveHubConnectionResiliently } from "./agent-connection.js";
 import { AgentManager } from "./agent-manager.js";
 import { readJsonFile, writeJsonAtomically } from "./atomic-json.js";
 import { DesktopCacheStore } from "./cache-store.js";
 import { credentialFilePath, HubClient } from "./hub-client.js";
 import { LocalConfigStore } from "./local-config.js";
-import type { AgentBackendConfig, RawAgentBackendState } from "./types.js";
+import type { RawAgentBackendState } from "./types.js";
 
 const DEFAULT_METRIC_WINDOW: MetricWindow = "5m";
 const DEFAULT_TRAFFIC_MODE: TrafficCalendarMode = "day";
@@ -216,14 +217,11 @@ export class DesktopController {
     const unifiedCredential = normalizedAccessKey || this.hub.credentialForAgent;
     if (!unifiedCredential) throw new Error("hub_access_key_required");
 
-    const rawState = await this.agent.start();
     // The Hub ACCESS_KEY is the single credential for web, desktop and Agent uploads.
     // Keep the Agent's internal runtime config in sync without exposing a second secret field.
-    await this.hub.login(unifiedCredential);
-
-    const nextConfig = mergeAgentConfig(rawState.config, { connection: { serverUrl: normalizedUrl } });
-    nextConfig.connection.secret = unifiedCredential;
-    await this.agent.updateConfig(nextConfig);
+    // The address is written before the login attempt on purpose: a Hub outage
+    // or a rejected key must not lock the user out of correcting the address.
+    await saveHubConnectionResiliently(this.agent, this.hub, normalizedUrl, unifiedCredential);
     return this.refresh();
   }
 
@@ -655,33 +653,6 @@ function redactBackendState(state: RawAgentBackendState): DesktopAgentBackendSta
     temperatureProbeError: scrub(state.temperatureProbeError),
     agentMode: state.agentMode ?? "child"
   };
-}
-
-function mergeAgentConfig(current: AgentBackendConfig, patch: DesktopConfigPatch): AgentBackendConfig {
-  const connectionPatch = patch.connection ?? {};
-  const merged = {
-    ...current,
-    configVersion: patch.configVersion ?? current.configVersion ?? 1,
-    // Renderer patches never carry the Agent credential. The combined Hub
-    // connection action is the only user-facing path that synchronizes it.
-    connection: {
-      ...current.connection,
-      serverUrl: connectionPatch.serverUrl ?? current.connection.serverUrl,
-      deviceId: connectionPatch.deviceId ?? current.connection.deviceId,
-      hostname: connectionPatch.hostname ?? current.connection.hostname
-    },
-    sampling: { ...current.sampling, ...(patch.sampling ?? {}) },
-    enabledMetrics: patch.enabledMetrics ?? current.enabledMetrics,
-    enabledDeviceIds: patch.enabledDeviceIds ?? current.enabledDeviceIds,
-    instanceMetricConfig: patch.instanceMetricConfig ?? current.instanceMetricConfig,
-    probeSelections: patch.probeSelections ?? current.probeSelections,
-    cloudSyncEnabled: patch.cloudSyncEnabled ?? current.cloudSyncEnabled,
-    dataRecordingEnabled: patch.dataRecordingEnabled ?? current.dataRecordingEnabled,
-    autoRestartCollector: patch.autoRestartCollector ?? current.autoRestartCollector,
-    autoStartCollector: patch.autoStartCollector ?? current.autoStartCollector
-  };
-  delete (merged as typeof merged & Record<string, unknown>).virtualization;
-  return merged;
 }
 
 function cacheState(snapshot: DesktopSnapshot | null): DesktopSnapshot["cache"] {

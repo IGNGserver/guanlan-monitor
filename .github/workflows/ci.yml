@@ -52,6 +52,7 @@ jobs:
           pnpm test:ui-helpers
           pnpm test:workspace-contracts
           pnpm test:renderer-security
+          pnpm test:hub-connection
           pnpm test:window-material
           pnpm test:web-pwa
           pnpm lint

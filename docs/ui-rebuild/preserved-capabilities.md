@@ -28,7 +28,7 @@
     dataRecordingEnabled?: boolean;
   }
   ```
-- **密钥安全脱敏**: 从 `snapshot.localBackend.config.connection.secretConfigured` 读取密钥就绪状态。通信 Secret 不在前台界面或日志中回显；唯一的写入路径是 `saveHubConnection(serverUrl, accessKey)`（"连接"页的"保存并连接"），它先写地址再用同一凭据完成认证。`DesktopConfigPatch` 显式拒绝 `connection.secret`（`secret_must_use_dedicated_channel`）。
+- **密钥安全脱敏**: 从 `snapshot.localBackend.config.connection.secretConfigured` 读取密钥就绪状态。通信 Secret 不在前台界面或日志中回显；唯一的写入路径是 `saveHubConnection(serverUrl, accessKey)`（"连接"页的"保存并连接"），它先把地址写入本机配置，再用同一凭据完成认证；认证失败时地址保留，界面明确报告"地址已保存、认证未通过"。`DesktopConfigPatch` 显式拒绝 `connection.secret`（`secret_must_use_dedicated_channel`）。
   - 曾经存在 `dscBridge.setAgentSecret` 与 `dsc:set-agent-secret` 通道，但没有任何界面调用它，已删除而不是留下一条无人使用的写凭据路径。
 
 ### 1.4 DesktopAgentControlAction 动作与复合重启

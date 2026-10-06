@@ -7,7 +7,7 @@ import type {
 } from "@dsc/shared";
 import type { ConsoleAdapter } from "../../services/adapter";
 import type { WorkspaceContextValue } from "./WorkspaceTypes";
-import { formatWorkspaceError } from "./WorkspaceTypes";
+import { formatWorkspaceError, isHubAddressSavedLoginFailure, type HubConnectionSaveResult } from "./WorkspaceTypes";
 
 type Notice = WorkspaceContextValue["notice"];
 
@@ -57,10 +57,33 @@ export function useWorkspaceMutations({
     action === "restart" ? "Agent 已重启" : "Agent 操作已完成",
     action === "restart" ? "Agent 重启失败" : "Agent 操作失败"
   ), [adapter, runMutation]);
-  const saveHubConnection = useCallback(
-    (serverUrl: string, accessKey: string) => runMutation(() => adapter.saveHubConnection(serverUrl, accessKey), "中枢已连接，设备状态正在同步", "连接保存失败"),
-    [adapter, runMutation]
-  );
+  /**
+   * "Save and connect" has three honest outcomes: connected, address saved but
+   * the Hub did not accept the credential, or nothing saved. The connection
+   * page shows a different sentence for each instead of collapsing them into a
+   * boolean that would report a saved address as lost.
+   */
+  const saveHubConnection = useCallback(async (serverUrl: string, accessKey: string): Promise<HubConnectionSaveResult> => {
+    pendingMutationsRef.current += 1;
+    mutationEpochRef.current += 1;
+    setMutationPending(true);
+    try {
+      const nextSnapshot = await adapter.saveHubConnection(serverUrl, accessKey);
+      setSnapshot(nextSnapshot);
+      setNotice({ tone: "success", text: "中枢已连接，设备状态正在同步" });
+      return "connected";
+    } catch (mutationError) {
+      if (isHubAddressSavedLoginFailure(mutationError)) {
+        setNotice({ tone: "error", text: "中枢地址已保存，但认证未通过。请核对访问密钥与中枢服务状态后重试。" });
+        return "saved-unauthenticated";
+      }
+      setNotice({ tone: "error", text: `连接保存失败: ${formatWorkspaceError(mutationError, "未知错误")}` });
+      return "failed";
+    } finally {
+      pendingMutationsRef.current = Math.max(0, pendingMutationsRef.current - 1);
+      if (pendingMutationsRef.current === 0) setMutationPending(false);
+    }
+  }, [adapter, mutationEpochRef, pendingMutationsRef, setMutationPending, setNotice, setSnapshot]);
   const updateStartupSettings = useCallback((settings: Partial<DesktopStartupSettings>) => runMutation(
     () => adapter.updateStartupSettings ? adapter.updateStartupSettings(settings) : Promise.reject(new Error("startup_settings_unavailable")),
     "启动设置已保存",

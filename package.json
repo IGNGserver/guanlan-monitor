@@ -22,6 +22,7 @@
     "test:ui-helpers": "node --test packages/console-ui/src/helpers/layout.test.ts packages/console-ui/src/helpers/presentation.test.ts",
     "test:workspace-contracts": "node --test packages/console-ui/src/workspace/routes.test.ts packages/console-ui/src/workspace/selectors.test.ts packages/console-ui/src/workspace/dashboard/dashboard.test.ts packages/console-ui/src/workspace/diagnostics.test.ts packages/console-ui/src/workspace/health.test.ts packages/console-ui/src/workspace/chartIdentity.test.ts packages/console-ui/src/workspace/chartInspection.test.ts packages/console-ui/src/workspace/chartGeometry.test.ts packages/console-ui/src/workspace/configKeys.test.ts packages/console-ui/src/workspace/shell/captionGlyphs.test.ts",
     "test:renderer-security": "node --test apps/desktop/src/main/renderer-security.test.ts",
+    "test:hub-connection": "node --test apps/desktop/src/main/agent-connection.test.ts",
     "test:web-pwa": "node --test apps/web/src/lib/api.test.ts apps/web/src/lib/console-adapter.test.ts apps/web/src/lib/offline-snapshot.test.ts scripts/web-pwa.test.cjs",
     "test:window-material": "node --test apps/desktop/src/window-material.test.ts",
     "test:electron-visual": "node scripts/electron-visual-regression.cjs",
