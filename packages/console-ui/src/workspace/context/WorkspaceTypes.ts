@@ -15,6 +15,12 @@ import type { SettingsSection, WorkspaceRoute } from "../routes";
 import type { WebLayoutPreference } from "../../helpers/presentation";
 import type { HealthThresholds } from "../health";
 
+/**
+ * Outcome of the desktop "save and connect" action. `saved-unauthenticated`
+ * means the address is on disk but the Hub did not accept the credential.
+ */
+export type HubConnectionSaveResult = "connected" | "saved-unauthenticated" | "failed";
+
 export interface WorkspaceContextValue {
   route: WorkspaceRoute;
   navigate: (route: WorkspaceRoute) => void;
@@ -61,7 +67,7 @@ export interface WorkspaceContextValue {
   refresh: () => Promise<void>;
   updateLocalConfig: (patch: DesktopConfigPatch) => Promise<boolean>;
   controlAgent: (action: DesktopAgentControlAction) => Promise<boolean>;
-  saveHubConnection: (serverUrl: string, accessKey: string) => Promise<boolean>;
+  saveHubConnection: (serverUrl: string, accessKey: string) => Promise<HubConnectionSaveResult>;
   updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => Promise<boolean>;
   cloudPush: () => Promise<boolean>;
   saveFanNote: (deviceId: string, fanId: string, note: string) => Promise<boolean>;
@@ -121,6 +127,7 @@ export function formatWorkspaceError(error: unknown, fallback: string): string {
       hub_server_url_required: "缺少中枢地址。请输入完整地址，例如 https://hub.example.com。",
       hub_access_key_required: "缺少访问密钥。请输入中枢的访问密钥。",
       access_key_required: "缺少访问密钥。请输入中枢的访问密钥。",
+      hub_address_saved_login_failed: "中枢地址已保存，但认证未通过。请核对访问密钥与中枢服务状态后重试。",
       hub_login_required: "当前连接尚未认证。请在连接页重新连接中枢。",
       login_failed: "访问密钥不正确。请核对后重新输入。",
       unauthorized: "当前会话已失效。请重新认证后再查看设备。",
@@ -133,6 +140,9 @@ export function formatWorkspaceError(error: unknown, fallback: string): string {
       startup_settings_unavailable: "当前环境不支持修改启动设置。请在桌面端修改。"
     };
     if (messages[code]) return messages[code];
+    // IPC wraps a rejection as "Error invoking remote method …: Error: <code>",
+    // so the address-saved outcome also has to match by substring.
+    if (code.includes("hub_address_saved_login_failed")) return messages.hub_address_saved_login_failed;
     const status = code.match(/(?:hub|agent_backend)_(401|403|404|408|429|500|502|503|504)(?::|$)/)?.[1];
     if (status === "401" || status === "403") return "认证未被接受。请检查访问密钥或重新完成当前会话认证。";
     if (status === "404") return "找不到目标服务。请核对中枢地址与端口。";
@@ -145,3 +155,11 @@ export function formatWorkspaceError(error: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * True when a save rejected because the Hub did not accept the credential
+ * after the address had already been persisted. Electron wraps the IPC
+ * rejection message, so the code is matched by substring.
+ */
+export function isHubAddressSavedLoginFailure(error: unknown): boolean {
+  return error instanceof Error && error.message.toLowerCase().includes("hub_address_saved_login_failed");
+}

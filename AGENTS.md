@@ -18,7 +18,7 @@ Worktree: `~/项目/.wt/设备状态控制台/<slug>`
 - 安装：`pnpm install`
 - 静态：`pnpm lint`、`pnpm typecheck`、`pnpm verify:version`
 - 边界：`pnpm check:desktop-ui-boundaries`、`pnpm check:web-ui-boundary`、`pnpm check:adapter-contracts`
-- 测试：`pnpm test:adapter-contracts`、`pnpm test:ui-helpers`、`pnpm test:workspace-contracts`、`pnpm test:renderer-security`、`pnpm test:electron-visual`、`pnpm test:window-material`
+- 测试：`pnpm test:adapter-contracts`、`pnpm test:ui-helpers`、`pnpm test:workspace-contracts`、`pnpm test:renderer-security`、`pnpm test:hub-connection`、`pnpm test:electron-visual`、`pnpm test:window-material`
 - 完整：`pnpm build`（**只在 CI 跑，见下方限制**）
 
 ## 与全局规范的差异（本仓库特有约束）

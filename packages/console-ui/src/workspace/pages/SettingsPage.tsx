@@ -242,10 +242,14 @@ function ConnectionSettings() {
     if (!validateConnection()) return;
     setSaving(true);
     try {
-      const saved = await saveHubConnection(serverUrl, accessKey);
-      if (saved) {
+      const result = await saveHubConnection(serverUrl, accessKey);
+      if (result === "connected") {
         setAccessKey("");
         setFieldErrors({});
+      } else if (result === "saved-unauthenticated") {
+        // The address is on disk; only the credential check failed, so the
+        // page must not claim the save was lost.
+        setFormError("中枢地址已保存，但认证未通过。请核对访问密钥与中枢服务状态后重试。");
       } else {
         setFormError("连接未保存。请核对中枢地址、访问密钥与中枢服务状态后重试。");
       }
@@ -288,7 +292,7 @@ function ConnectionSettings() {
             required={!snapshot?.session.accessKeyConfigured}
           />
           {formError && <div className="workspace-form__error" role="alert">{formError}</div>}
-          <p className="workspace-form__hint">地址和访问密钥会在同一次保存中提交；保存按钮会先写入地址，再用同一地址完成认证。</p>
+          <p className="workspace-form__hint">保存按钮会先把地址写入本机，再用同一地址完成认证；认证失败时地址仍然保留。</p>
           <div className="workspace-form__actions">
             <Button variant="primary" type="submit" disabled={saving || mutationPending}>{saving ? "正在保存…" : authenticated ? "保存连接" : "保存并连接"}</Button>
             {authenticated && <Button variant="quiet" onClick={() => void logout()} disabled={saving || mutationPending}>退出桌面查看</Button>}
@@ -306,7 +310,7 @@ function ConnectionSettings() {
       </Surface>
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">连接诊断</span><h3>如果连接失败</h3></div></div>
-        <p className="workspace-surface__description">请确认地址包含协议（例如 https://），中枢服务已启动，并使用中枢访问密钥。保存按钮会先写入地址，再用同一地址完成认证；如果地址未保存，页面会直接提示需要补充中枢地址。</p>
+        <p className="workspace-surface__description">请确认地址包含协议（例如 https://），中枢服务已启动，并使用中枢访问密钥。保存按钮会先把地址写入本机，再用同一地址完成认证；认证失败时地址仍然保留，修正密钥或中枢状态后重试即可。</p>
       </Surface>
     </div>
   );
