@@ -1093,7 +1093,9 @@ func runHardwareSensorProbe() error {
 	// desktop backend invokes it only after the user requests hardware detect.
 	// A user-triggered detect is exactly the "refresh the inventory" case, so it
 	// starts with an empty cache.
-	metrics, _ := collectSlowMetrics(hardwareAssetCache{})
+	// A user-triggered detect wants every sensor regardless of the telemetry
+	// metric switches, so it runs with a full plan.
+	metrics, _ := collectSlowMetrics(hardwareAssetCache{}, collectionPlan{systemStats: true, linuxCPUFast: true, gpu: true, diskSensors: true})
 	response := struct {
 		TemperatureSensors []temperatureSensorReading `json:"temperatureSources"`
 		SensorBackends     []sensorBackendStatus      `json:"temperatureSensorBackends"`
@@ -1296,13 +1298,14 @@ func (s *agentState) collectorStatsPayload() *collectorStatsReport {
 
 func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	now := time.Now().UTC()
+	plan := resolveCollectionPlan(cfg)
 	identity := s.currentIdentity(cfg)
-	cpuUsagePercent, cpuRuntime := s.sampleCPURuntime()
+	cpuUsagePercent, cpuRuntime := s.sampleCPURuntime(plan)
 	memory := sampleMemory()
 	diskRate, networkRate := s.sampleFastRates(now, cfg.currentUploadIntervalSeconds())
 
 	if !s.hasSlow || now.Sub(s.lastSlow.collectedAt) >= time.Duration(cfg.slowIntervalSeconds())*time.Second {
-		outcome := collectSlowMetricsBudgeted(s.assets, slowMetricsGlobalBudget)
+		outcome := collectSlowMetricsBudgeted(s.assets, plan, slowMetricsGlobalBudget)
 		s.assets = outcome.assets
 		s.slowStats.runs++
 		if outcome.overtime {
@@ -1411,7 +1414,7 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 		}
 	}
 
-	system := s.currentSystemStats(cfg, now)
+	system := s.currentSystemStats(cfg, plan, now)
 	payload := metricsPayload{
 		Identity:                identity,
 		Timestamp:               now.Format(time.RFC3339),
@@ -1446,14 +1449,18 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	return payload
 }
 
-func (s *agentState) sampleCPURuntime() (float64, cpuRuntimeMetrics) {
+// sampleCPURuntime collects the per-cycle CPU counters. The Linux sysfs
+// frequency/temperature sweep is skipped when the configuration disables both
+// metrics (and has no instance override), because applyRuntimeConfig would
+// discard the values anyway.
+func (s *agentState) sampleCPURuntime(plan collectionPlan) (float64, cpuRuntimeMetrics) {
 	cpuUsagePercent := s.sampleCPUUsage()
 	runtimeMetrics := cpuRuntimeMetrics{packages: map[string]cpuPackageRuntimeMetrics{}}
 	for id, usage := range s.currentCPUUsage {
 		runtimeMetrics.packages[id] = cpuPackageRuntimeMetrics{usagePercent: usage}
 	}
 
-	if runtime.GOOS == "linux" {
+	if runtime.GOOS == "linux" && plan.linuxCPUFast {
 		infoCtx, cancel := context.WithTimeout(context.Background(), cpuPackagesTimeout)
 		info, _ := cpu.InfoWithContext(infoCtx)
 		cancel()
@@ -1923,7 +1930,10 @@ var systemStatsCollector = collectSystemStats
 // enough for a monitor that the slow interval is the right freshness. Windows
 // reads the same numbers from a single syscall, so it keeps the per-cycle
 // refresh.
-func (s *agentState) currentSystemStats(cfg agentRuntimeConfig, now time.Time) systemStats {
+func (s *agentState) currentSystemStats(cfg agentRuntimeConfig, plan collectionPlan, now time.Time) systemStats {
+	if !plan.systemStats {
+		return systemStats{}
+	}
 	if runtime.GOOS == "windows" {
 		return systemStatsCollector()
 	}
@@ -2072,7 +2082,7 @@ type slowCollectionOutcome struct {
 //
 // The hardware cache travels in and out by value, so an abandoned attempt can
 // never mutate the cache the next cycle reads.
-func collectSlowMetricsBudgeted(assets hardwareAssetCache, budget time.Duration) slowCollectionOutcome {
+func collectSlowMetricsBudgeted(assets hardwareAssetCache, plan collectionPlan, budget time.Duration) slowCollectionOutcome {
 	started := time.Now()
 	type result struct {
 		metrics slowMetrics
@@ -2086,7 +2096,7 @@ func collectSlowMetricsBudgeted(assets hardwareAssetCache, budget time.Duration)
 				done <- result{metrics: emptySlowMetrics(), assets: assets}
 			}
 		}()
-		metrics, nextAssets := collectSlowMetrics(assets)
+		metrics, nextAssets := collectSlowMetrics(assets, plan)
 		done <- result{metrics: metrics, assets: nextAssets}
 	}()
 	timer := time.NewTimer(budget)
@@ -2105,7 +2115,7 @@ func collectSlowMetricsBudgeted(assets hardwareAssetCache, budget time.Duration)
 // model/vendor, CPU topology) is cached for hardwareAssetCacheTTL and refreshed
 // early when the device set changes, so a steady-state cycle does not re-run the
 // same PowerShell inventory every time.
-func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCache) {
+func collectSlowMetrics(assets hardwareAssetCache, plan collectionPlan) (slowMetrics, hardwareAssetCache) {
 	result := emptySlowMetrics()
 	result.collectedAt = time.Now().UTC()
 
@@ -2154,14 +2164,15 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 	// disk collection so the smartctl fallback can reuse the cache instead of
 	// spawning per physical disk on every slow cycle.
 	refreshDiskSensors := assets.diskSensorsExpired()
-	disks, diskUsage, linuxDiskTemperatures, diskErr := collectDisks(assets.linuxDiskTemperatures, refreshDiskSensors)
+	refreshDiskTemperatures := refreshDiskSensors && plan.diskSensors
+	disks, diskUsage, linuxDiskTemperatures, diskErr := collectDisks(assets.linuxDiskTemperatures, refreshDiskTemperatures)
 	if diskErr != nil {
 		logSlowMetricsError(logCategoryDiskSlow, diskErr)
 	} else {
 		result.diskCollected = true
 		result.diskUsage = diskUsage
 		result.disks = disks
-		if runtime.GOOS == "linux" && refreshDiskSensors {
+		if runtime.GOOS == "linux" && refreshDiskTemperatures {
 			assets.linuxDiskTemperatures = linuxDiskTemperatures
 		}
 	}
@@ -2193,7 +2204,12 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 		memorySlotCount = assets.linuxMemory.slotCount
 		memoryFormFactor = assets.linuxMemory.formFactor
 	}
-	if !refreshDiskSensors {
+	switch {
+	case !plan.diskSensors:
+		// The disk block or every disk-sensor metric is disabled; the runtime
+		// filter would discard these values, so skip the smartctl /
+		// Get-StorageReliabilityCounter probes entirely.
+	case !refreshDiskSensors:
 		// Disk temperature/health was read recently; reuse it and skip the
 		// smartctl / Get-StorageReliabilityCounter probes for this cycle.
 		diskSensors := assets.diskSensors
@@ -2218,7 +2234,7 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 				}
 			}
 		}
-	} else if runtime.GOOS == "windows" {
+	case runtime.GOOS == "windows":
 		windowsDiskSensors := collectWindowsDiskSensorMetadata(windowsMetadata.DiskMetadata)
 		assets.diskSensors = windowsDiskSensors
 		assets.diskSensorsCollectedAt = time.Now().UTC()
@@ -2233,7 +2249,7 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 				temperatureSensors = append(temperatureSensors, sensor.TemperatureSensors...)
 			}
 		}
-	} else {
+	default:
 		linuxDiskSensors := collectLinuxDiskSensorMetadata(result.disks)
 		assets.diskSensors = linuxDiskSensors
 		assets.diskSensorsCollectedAt = time.Now().UTC()
@@ -2270,9 +2286,13 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 	var gpus []gpuDeviceStats
 	if runtime.GOOS == "windows" {
 		baseAdapters := windowsGPUAdaptersFromRecords(assets.gpuAdapters)
-		perfGpus := collectWindowsGPUPerformance(assets.gpuAdapters)
+		var perfGpus []gpuDeviceStats
+		var nvidiaGpus []gpuDeviceStats
+		if plan.gpu {
+			perfGpus = collectWindowsGPUPerformance(assets.gpuAdapters)
+			nvidiaGpus = collectNvidiaGPUs()
+		}
 		lhmGpus := hardware.gpus
-		nvidiaGpus := collectNvidiaGPUs()
 		appendGPUTemperatureSensors(&temperatureSensors, nvidiaGpus, "nvidia-smi")
 		// GPU performance counters are useful as a fallback, but may report a
 		// virtual or aggregated engine value instead of the physical adapter's
@@ -2283,7 +2303,10 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 			gpus = mergeGPUStats(perfGpus, lhmGpus, nvidiaGpus)
 		}
 	} else {
-		nvidiaGpus := collectNvidiaGPUs()
+		var nvidiaGpus []gpuDeviceStats
+		if plan.gpu {
+			nvidiaGpus = collectNvidiaGPUs()
+		}
 		appendGPUTemperatureSensors(&temperatureSensors, nvidiaGpus, "nvidia-smi")
 		gpus = mergeGPUStats(hardware.gpus, nvidiaGpus)
 	}
@@ -6886,6 +6909,30 @@ func makeEnabledBlockSet(selections []agentProbeSelection) map[string]bool {
 		result[target] = selection.Enabled && !strings.EqualFold(selection.Provider, "disabled")
 	}
 	return result
+}
+
+// collectionPlan mirrors the conditions applyRuntimeConfig uses to zero whole
+// metric groups, so an expensive collector can be skipped when the
+// configuration would discard its output anyway. It is conservative: any
+// per-instance override keeps the collection path enabled, because an instance
+// entry can re-enable a metric the global list disables.
+type collectionPlan struct {
+	systemStats  bool
+	linuxCPUFast bool
+	gpu          bool
+	diskSensors  bool
+}
+
+func resolveCollectionPlan(cfg agentRuntimeConfig) collectionPlan {
+	blocks := makeEnabledBlockSet(cfg.ProbeSelections)
+	metrics := makeEnabledMetricSet(cfg.EnabledMetrics)
+	hasInstanceOverrides := len(cfg.InstanceMetricConfig) > 0
+	return collectionPlan{
+		systemStats:  metrics["systemOverview"],
+		linuxCPUFast: blocks["cpu"] && (metrics["cpuFrequency"] || metrics["cpuTemperature"] || hasInstanceOverrides),
+		gpu:          blocks["gpu"],
+		diskSensors:  blocks["disk"] && (metrics["diskHealth"] || metrics["temperatureSources"] || hasInstanceOverrides),
+	}
 }
 
 func makeStringSet(items []string) map[string]bool {

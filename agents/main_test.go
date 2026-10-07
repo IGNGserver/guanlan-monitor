@@ -13,6 +13,12 @@ import (
 	"time"
 )
 
+// testFullPlan is the permissive collection plan used by tests that exercise
+// collection mechanics rather than metric gating.
+func testFullPlan() collectionPlan {
+	return collectionPlan{systemStats: true, linuxCPUFast: true, gpu: true, diskSensors: true}
+}
+
 func TestPendingStoreEvictsOldestSamplesWithinByteLimit(t *testing.T) {
 	root := t.TempDir()
 	store := &pendingStore{
@@ -553,14 +559,14 @@ func TestWindowsCPUFallbackRefreshUsesInventoryTTL(t *testing.T) {
 	}()
 
 	assets := hardwareAssetCache{}
-	_, assets = collectSlowMetrics(assets)
+	_, assets = collectSlowMetrics(assets, testFullPlan())
 	if calls != 1 {
 		t.Fatalf("the first slow cycle must refresh the cached CPU fallback once, got %d", calls)
 	}
 	// A zero reference count disables the device-change invalidation so the
 	// second call deterministically stays inside the TTL.
 	assets.referenceDeviceCount = 0
-	_, _ = collectSlowMetrics(assets)
+	_, _ = collectSlowMetrics(assets, testFullPlan())
 	if calls != 1 {
 		t.Fatalf("a slow cycle inside the TTL must reuse the cached fallback, got %d calls", calls)
 	}
@@ -645,7 +651,7 @@ func TestSlowCollectionBudgetReportsOverrunAndKeepsAssets(t *testing.T) {
 		referenceDeviceCount: 3,
 		metadata:             windowsHardwareMetadata{GpuDrivers: map[string]string{"gpu": "driver"}},
 	}
-	outcome := collectSlowMetricsBudgeted(assets, time.Nanosecond)
+	outcome := collectSlowMetricsBudgeted(assets, testFullPlan(), time.Nanosecond)
 	if !outcome.overtime {
 		t.Fatal("a one-nanosecond budget must report an overrun")
 	}
@@ -663,7 +669,7 @@ func TestSlowCollectionBudgetReportsOverrunAndKeepsAssets(t *testing.T) {
 }
 
 func TestSlowCollectionBudgetReturnsMetricsWhenItFits(t *testing.T) {
-	outcome := collectSlowMetricsBudgeted(hardwareAssetCache{}, 60*time.Second)
+	outcome := collectSlowMetricsBudgeted(hardwareAssetCache{}, testFullPlan(), 60*time.Second)
 	if outcome.overtime {
 		t.Fatal("a one-minute budget must not report an overrun")
 	}
@@ -794,7 +800,7 @@ func TestSlowCycleInsideDiskSensorTTLDoesNotSpawnSmartctl(t *testing.T) {
 		diskSensorsCollectedAt: time.Now(),
 		linuxDiskTemperatures:  map[string]*float64{},
 	}
-	_, _ = collectSlowMetrics(assets)
+	_, _ = collectSlowMetrics(assets, testFullPlan())
 	if smartctlCalls != 0 {
 		t.Fatalf("a slow cycle inside the disk-sensor TTL spawned smartctl %d times", smartctlCalls)
 	}
@@ -811,9 +817,148 @@ func TestDiskSensorRefreshCachesLinuxTemperatureFallback(t *testing.T) {
 	}
 	defer func() { probeRunner = original }()
 
-	_, assets := collectSlowMetrics(hardwareAssetCache{})
+	_, assets := collectSlowMetrics(hardwareAssetCache{}, testFullPlan())
 	if assets.linuxDiskTemperatures == nil {
 		t.Fatal("a refresh cycle must cache the smartctl fallback map for the TTL")
+	}
+}
+
+func withoutMetrics(cfg agentRuntimeConfig, drop ...string) agentRuntimeConfig {
+	dropSet := map[string]bool{}
+	for _, key := range drop {
+		dropSet[key] = true
+	}
+	kept := make([]string, 0, len(cfg.EnabledMetrics))
+	for _, key := range cfg.EnabledMetrics {
+		if !dropSet[key] {
+			kept = append(kept, key)
+		}
+	}
+	cfg.EnabledMetrics = kept
+	return cfg
+}
+
+// The collection plan must mirror the runtime filter: a group the filter would
+// zero must be skippable, and an instance override must keep it collected.
+func TestResolveCollectionPlan(t *testing.T) {
+	base := newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "http://127.0.0.1:1"})
+	plan := resolveCollectionPlan(base)
+	if !plan.systemStats || !plan.linuxCPUFast || !plan.diskSensors {
+		t.Fatalf("a default config must collect every group, got %#v", plan)
+	}
+	if plan.gpu {
+		t.Fatal("the test default disables the GPU block")
+	}
+
+	if resolveCollectionPlan(withoutMetrics(base, "systemOverview")).systemStats {
+		t.Fatal("systemOverview off must skip the system stats collection")
+	}
+	if resolveCollectionPlan(withoutMetrics(base, "cpuFrequency", "cpuTemperature")).linuxCPUFast {
+		t.Fatal("both CPU fast-path metrics off must skip the Linux sysfs sweep")
+	}
+	if !resolveCollectionPlan(withoutMetrics(base, "cpuFrequency", "cpuTemperature")).systemStats {
+		t.Fatal("skipping one group must not affect the others")
+	}
+	if resolveCollectionPlan(withoutMetrics(base, "diskHealth", "temperatureSources")).diskSensors {
+		t.Fatal("both disk-sensor metrics off must skip the smartctl probes")
+	}
+
+	overrides := withoutMetrics(base, "cpuFrequency", "cpuTemperature", "diskHealth", "temperatureSources")
+	overrides.InstanceMetricConfig = map[string][]string{"disk-0": {"diskHealth"}}
+	plan = resolveCollectionPlan(overrides)
+	if !plan.linuxCPUFast || !plan.diskSensors {
+		t.Fatalf("instance overrides must keep the collection path enabled, got %#v", plan)
+	}
+
+	noCPU := base
+	noCPU.ProbeSelections = append([]agentProbeSelection{}, base.ProbeSelections...)
+	for index := range noCPU.ProbeSelections {
+		if noCPU.ProbeSelections[index].Target == "cpu" {
+			noCPU.ProbeSelections[index].Enabled = false
+		}
+	}
+	if resolveCollectionPlan(noCPU).linuxCPUFast {
+		t.Fatal("a disabled CPU block must skip the Linux sysfs sweep")
+	}
+}
+
+// Disabling systemOverview must stop the Linux process walk entirely, not just
+// zero the payload after the walk.
+func TestDisabledSystemOverviewSkipsEnumeration(t *testing.T) {
+	originalRunner := probeRunner
+	probeRunner = func(context.Context, string, ...string) ([]byte, error) {
+		return nil, errors.New("probe disabled for this test")
+	}
+	defer func() { probeRunner = originalRunner }()
+
+	originalCollector := systemStatsCollector
+	var calls int
+	systemStatsCollector = func() systemStats {
+		calls++
+		return systemStats{ProcessCount: 99}
+	}
+	defer func() { systemStatsCollector = originalCollector }()
+
+	state := &agentState{baseIdentity: agentIdentity{DeviceID: "test-device", Hostname: "test-host"}}
+	cfg := withoutMetrics(newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "http://127.0.0.1:1"}), "systemOverview")
+	payload := state.collectPayload(cfg)
+	if calls != 0 {
+		t.Fatalf("systemOverview off must skip the enumeration, got %d calls", calls)
+	}
+	if payload.System.ProcessCount != 0 {
+		t.Fatalf("the filtered payload must not carry system counters: %#v", payload.System)
+	}
+}
+
+// The Linux test default disables the GPU block, so the collector must not even
+// attempt the nvidia-smi probe.
+func TestDisabledGPUBlockSkipsNvidiaProbe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the Windows test default enables the GPU block")
+	}
+	original := probeRunner
+	var nvidiaCalls int
+	probeRunner = func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		if name == "nvidia-smi" {
+			nvidiaCalls++
+		}
+		return nil, errors.New("probe disabled for this test")
+	}
+	defer func() { probeRunner = original }()
+
+	cfg := newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "http://127.0.0.1:1"})
+	_, _ = collectSlowMetrics(hardwareAssetCache{}, resolveCollectionPlan(cfg))
+	if nvidiaCalls != 0 {
+		t.Fatalf("a disabled GPU block attempted %d nvidia-smi probes", nvidiaCalls)
+	}
+}
+
+// Disabling both disk-sensor metrics must skip the smartctl fallback even when
+// the disk-sensor TTL has expired.
+func TestDisabledDiskSensorsSkipSmartctl(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the smartctl -A fallback only exists on Linux")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "smartctl"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	original := probeRunner
+	var smartctlCalls int
+	probeRunner = func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		if name == "smartctl" {
+			smartctlCalls++
+		}
+		return nil, errors.New("probe disabled for this test")
+	}
+	defer func() { probeRunner = original }()
+
+	cfg := withoutMetrics(newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "http://127.0.0.1:1"}), "diskHealth", "temperatureSources")
+	_, _ = collectSlowMetrics(hardwareAssetCache{}, resolveCollectionPlan(cfg))
+	if smartctlCalls != 0 {
+		t.Fatalf("disabled disk sensors spawned smartctl %d times", smartctlCalls)
 	}
 }
 
