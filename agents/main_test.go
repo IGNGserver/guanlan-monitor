@@ -567,6 +567,37 @@ func TestProbeSpawnNamesAreNormalized(t *testing.T) {
 	}
 }
 
+// A probe that never starts must not be counted. The old implementation
+// recorded the spawn before exec, so a missing optional tool (nvidia-smi on a
+// machine without one) inflated the audit's spawn rate with processes that
+// never existed.
+func TestProbeCountDoesNotCountMissingBinary(t *testing.T) {
+	takeProbeSpawnCounts()
+	if _, err := execProbeCommand(context.Background(), "device-state-console-definitely-missing-binary"); err == nil {
+		t.Fatal("expected the missing binary to fail")
+	}
+	if counts := takeProbeSpawnCounts(); counts != nil {
+		t.Fatalf("a missing binary must not be counted as a probe spawn, got %#v", counts)
+	}
+}
+
+// One PowerShell process must produce one counted spawn. The previous
+// implementation recorded it twice, which halved the apparent effect of every
+// change that removes a PowerShell probe.
+func TestWindowsPowerShellCountsOneSpawn(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("powershell.exe only exists on Windows")
+	}
+	takeProbeSpawnCounts()
+	if _, err := runWindowsPowerShell(context.Background(), "Write-Output ok"); err != nil {
+		t.Fatalf("powershell probe failed: %v", err)
+	}
+	counts := takeProbeSpawnCounts()
+	if counts["powershell"] != 1 {
+		t.Fatalf("expected exactly one powershell spawn, got %#v", counts)
+	}
+}
+
 // The global budget is what stops a sequence of slow probes from running past
 // the sampling interval and making the collector sample back-to-back. An
 // overrun must be reported and must not poison the hardware-inventory cache, so

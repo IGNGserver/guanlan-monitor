@@ -2873,9 +2873,25 @@ func encodePowerShellCommand(script string) string {
 // skips the probe entirely.
 type probeCommandRunner func(ctx context.Context, name string, args ...string) ([]byte, error)
 
-func execProbeCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
+// startCountedProbe starts command and records the spawn only after the OS
+// confirmed that the process exists. A missing binary or an already-cancelled
+// context never creates a probe process, so counting before Start reported
+// probes that never ran and inflated the audit counters.
+func startCountedProbe(command *exec.Cmd, name string) ([]byte, error) {
+	var stdout bytes.Buffer
+	command.Stdout = &stdout
+	if err := command.Start(); err != nil {
+		return nil, err
+	}
 	recordProbeSpawn(name)
-	return exec.CommandContext(ctx, name, args...).Output()
+	if err := command.Wait(); err != nil {
+		return stdout.Bytes(), err
+	}
+	return stdout.Bytes(), nil
+}
+
+func execProbeCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return startCountedProbe(exec.CommandContext(ctx, name, args...), name)
 }
 
 // probeRunner is the runner used by the collector and the sensor helper. It is
@@ -2890,15 +2906,13 @@ func runWindowsPowerShell(ctx context.Context, script string, environment ...str
 		"$ProgressPreference = 'SilentlyContinue'",
 		script,
 	}, "; ")
-	recordProbeSpawn("powershell")
-	recordProbeSpawn("powershell")
 	command := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShellCommand(normalizedScript))
 	if len(environment) > 0 {
 		command.Env = append(os.Environ(), environment...)
 	}
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
-	output, err := command.Output()
+	output, err := startCountedProbe(command, "powershell")
 	if err == nil {
 		return output, nil
 	}
@@ -5683,7 +5697,7 @@ func collectLinuxDiskTemperatures(partitions []disk.PartitionStat) map[string]*f
 			remaining = 3 * time.Second
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), remaining)
-		output, commandErr := exec.CommandContext(ctx, smartctlPath, "-A", "-n", "standby", "/dev/"+device).CombinedOutput()
+		output, commandErr := probeRunner(ctx, smartctlPath, "-A", "-n", "standby", "/dev/"+device)
 		cancel()
 		if commandErr != nil && len(output) == 0 {
 			continue
