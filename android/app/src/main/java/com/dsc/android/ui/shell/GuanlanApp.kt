@@ -38,6 +38,8 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -223,6 +225,15 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
         modifier = Modifier
           .fillMaxSize()
           .clearAndSetSemantics { }
+          .pointerInput("predictive-back-preview") {
+            awaitPointerEventScope {
+              while (true) {
+                awaitPointerEvent(PointerEventPass.Initial).changes.forEach { change ->
+                  change.consume()
+                }
+              }
+            }
+          }
       )
     }
 
