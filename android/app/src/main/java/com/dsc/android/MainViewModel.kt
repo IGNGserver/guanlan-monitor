@@ -52,7 +52,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private var trafficSelectedStart: String? = null
   private var lastAutoLoginSignature: String? = null
   private var appInForeground = false
-  private val screenBackStack = mutableListOf<AppScreen>()
 
   private val blockMetrics = mapOf(
     DeviceBlockKey.Cpu to listOf("cpuUsage", "cpuFrequency", "cpuTemperature"),
@@ -106,7 +105,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           api = null
           httpClient = null
           lastAutoLoginSignature = null
-          screenBackStack.clear()
+          clearScreenBackStack()
         }
       }
     }
@@ -207,7 +206,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       runCatching { api?.logout() }
       stopRemoteActivity(clearCache = true)
       settingsRepository.clear()
-      screenBackStack.clear()
+      clearScreenBackStack()
       api = null
       httpClient = null
       _state.update {
@@ -259,7 +258,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           ?: visibleDevices.firstOrNull()?.deviceId
         val hasCache = _state.value.devices.isNotEmpty() || _state.value.dataSource == RemoteDataSource.Cache
         if (!hasCache) {
-          screenBackStack.clear()
+          clearScreenBackStack()
         }
         _state.update {
           it.copy(
@@ -285,7 +284,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       }.onFailure { error ->
         val hasCache = _state.value.devices.isNotEmpty() || _state.value.dataSource == RemoteDataSource.Cache
         if (!hasCache) {
-          screenBackStack.clear()
+          clearScreenBackStack()
         }
         _state.update {
           it.copy(
@@ -464,11 +463,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val current = _state.value
     when {
       current.editingDeviceId != null -> closeMetricConfigEditor()
-      screenBackStack.isNotEmpty() -> {
-        val previous = screenBackStack.removeAt(screenBackStack.lastIndex)
+      current.screenBackStack.isNotEmpty() -> {
+        val previous = current.screenBackStack.last()
         _state.update {
           it.copy(
             currentScreen = previous,
+            screenBackStack = it.screenBackStack.dropLast(1),
             transitionDirection = ScreenTransitionDirection.Backward,
             message = null
           )
@@ -939,33 +939,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   private fun pushCurrentScreen() {
-    val currentScreen = _state.value.currentScreen
-    if (screenBackStack.lastOrNull() != currentScreen) {
-      screenBackStack += currentScreen
+    _state.update { current ->
+      if (current.screenBackStack.lastOrNull() == current.currentScreen) {
+        current
+      } else {
+        current.copy(screenBackStack = current.screenBackStack + current.currentScreen)
+      }
     }
   }
 
   private fun navigateBackTo(screen: AppScreen) {
-    if (_state.value.currentScreen == screen) return
-    while (screenBackStack.isNotEmpty()) {
-      val previous = screenBackStack.removeAt(screenBackStack.lastIndex)
-      if (previous == screen) {
-        _state.update {
-          it.copy(
-            currentScreen = previous,
-            transitionDirection = ScreenTransitionDirection.Backward,
-            message = null
-          )
-        }
-        return
-      }
+    val current = _state.value
+    if (current.currentScreen == screen) return
+    val targetIndex = current.screenBackStack.indexOfLast { it == screen }
+    val remainingStack = if (targetIndex >= 0) {
+      current.screenBackStack.take(targetIndex)
+    } else {
+      emptyList()
     }
     _state.update {
       it.copy(
         currentScreen = screen,
+        screenBackStack = remainingStack,
         transitionDirection = ScreenTransitionDirection.Backward,
         message = null
       )
+    }
+  }
+
+  private fun clearScreenBackStack() {
+    _state.update { current ->
+      if (current.screenBackStack.isEmpty()) current else current.copy(screenBackStack = emptyList())
     }
   }
 

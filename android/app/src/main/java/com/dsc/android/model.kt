@@ -548,6 +548,11 @@ data class AppState(
   val updateProgress: Float = 0f,
   val updateInstallerUri: String? = null,
   val currentScreen: AppScreen = AppScreen.Login,
+  /**
+   * 页面返回栈：预见式返回期间需要先把上一页作为实时底层页面绘制出来，
+   * 因此不能只把它保存在 ViewModel 的私有变量里。
+   */
+  val screenBackStack: List<AppScreen> = emptyList(),
   val transitionDirection: ScreenTransitionDirection = ScreenTransitionDirection.None,
   val message: String? = null
 )

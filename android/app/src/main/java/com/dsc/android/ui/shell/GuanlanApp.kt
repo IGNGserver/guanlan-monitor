@@ -33,10 +33,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.SaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -53,6 +56,7 @@ import com.dsc.android.ui.oneui.OneUiDestination
 import com.dsc.android.ui.oneui.OneUiDialog
 import com.dsc.android.ui.oneui.OneUiEmptyState
 import com.dsc.android.ui.oneui.OneUiNavigationRail
+import com.dsc.android.ui.oneui.OneUiPredictiveBackProgress
 import com.dsc.android.ui.oneui.OneUiSpinner
 import com.dsc.android.ui.oneui.OneUiText
 import com.dsc.android.ui.oneui.OneUiTextRole
@@ -102,6 +106,7 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
   val metrics = OneUiTheme.metrics
   val window = OneUiTheme.window
   val snackbarHostState = remember { SnackbarHostState() }
+  val saveableStateHolder = rememberSaveableStateHolder()
   var pendingLogout by remember { mutableStateOf(false) }
 
   // 边到边下状态栏图标必须由应用决定明暗：用户在应用内选了深色而系统仍是浅色时，
@@ -122,6 +127,11 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
   val canHandleBack = pendingLogout ||
     state.editingDeviceId != null ||
     (screen != AppScreen.DeviceList && screen != AppScreen.Login)
+  val predictiveBackPreview = when {
+    pendingLogout || state.editingDeviceId != null || window.useTwoPane -> null
+    screen == AppScreen.Login || screen == AppScreen.DeviceList -> null
+    else -> state.screenBackStack.lastOrNull() ?: AppScreen.DeviceList
+  }
 
   val destinations = remember { oneUiDestinations() }
 
@@ -146,7 +156,6 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
     }
   }
 
-  val predictiveAnimScope = rememberCoroutineScope()
   var gestureProgress by remember { mutableStateOf(0f) }
   var gestureSwipeEdge by remember { mutableStateOf(0) }
   val motion = OneUiTheme.motion
@@ -172,77 +181,69 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
     }
   }
 
+  val predictive = OneUiPredictiveBackProgress(
+    progress = gestureProgress,
+    swipeEdge = gestureSwipeEdge
+  )
   val animatedScale by androidx.compose.animation.core.animateFloatAsState(
-    targetValue = (1f - gestureProgress * 0.08f).coerceIn(0.92f, 1f),
+    targetValue = predictive.scale,
     animationSpec = motion.spring(dampingRatio = 0.82f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
     label = "predictive_scale"
   )
   val animatedTranslationX by androidx.compose.animation.core.animateFloatAsState(
-    targetValue = (if (gestureSwipeEdge == 0) 1f else -1f) * gestureProgress * 48f,
+    targetValue = predictive.translationX,
     animationSpec = motion.spring(dampingRatio = 0.82f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
     label = "predictive_tx"
+  )
+  val animatedAlpha by androidx.compose.animation.core.animateFloatAsState(
+    targetValue = predictive.contentAlpha,
+    animationSpec = motion.spring(dampingRatio = 0.82f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
+    label = "predictive_alpha"
   )
 
   Box(
     modifier = Modifier
       .fillMaxSize()
       .background(colors.canvas)
-      .graphicsLayer {
-        scaleX = animatedScale
-        scaleY = animatedScale
-        translationX = animatedTranslationX
-      }
   ) {
-    if (window.useNavigationRail) {
-      Row(modifier = Modifier.fillMaxSize()) {
-        OneUiNavigationRail(
-          destinations = destinations,
-          selectedKey = screen.navigationKey(),
-          onSelect = { key ->
-            if (key == DestinationSettings) actions.onShowSettings() else actions.onShowDeviceList()
-          },
-          modifier = Modifier.fillMaxHeight()
-        )
-        Box(
-          modifier = Modifier
-            .weight(1f)
-            .fillMaxHeight()
-        ) {
-          ScreenStack(
-            state = state,
-            actions = actions,
-            screen = screen,
-            twoPane = window.useTwoPane,
-            appearance = appearance
-          )
-        }
-      }
-    } else {
-      Column(modifier = Modifier.fillMaxSize()) {
-        Box(
-          modifier = Modifier
-            .weight(1f)
-            .fillMaxHeight()
-        ) {
-          ScreenStack(
-            state = state,
-            actions = actions,
-            screen = screen,
-            twoPane = false,
-            appearance = appearance
-          )
-        }
-        if (screen.showsTopLevelNavigation) {
-          OneUiBottomBar(
-            destinations = destinations,
-            selectedKey = screen.navigationKey(),
-            onSelect = { key ->
-              if (key == DestinationSettings) actions.onShowSettings() else actions.onShowDeviceList()
-            }
-          )
-        }
-      }
+    // 单 Activity 内的页面切换不会自动提供系统级的“上一页”表面。
+    // 预见式返回期间先绘制上一条路由，再让当前路由带透明度缩放离开，
+    // 底层页面因此仍由同一个实时 AppState 驱动，而不是静态截图（交）。
+    predictiveBackPreview?.let { preview ->
+      ShellLayer(
+        state = state,
+        actions = actions,
+        screen = preview,
+        twoPane = false,
+        appearance = appearance,
+        destinations = destinations,
+        saveableStateHolder = saveableStateHolder,
+        animateTransitions = false,
+        // 预览层只负责视觉，不应在正常状态下重复出现在 TalkBack 节点树里（适）。
+        modifier = Modifier
+          .fillMaxSize()
+          .clearAndSetSemantics { }
+      )
     }
+
+    ShellLayer(
+      state = state,
+      actions = actions,
+      screen = screen,
+      twoPane = window.useTwoPane,
+      appearance = appearance,
+      destinations = destinations,
+      saveableStateHolder = saveableStateHolder,
+      animateTransitions = true,
+      modifier = Modifier
+        .fillMaxSize()
+        .graphicsLayer {
+          alpha = animatedAlpha
+          scaleX = animatedScale
+          scaleY = animatedScale
+          translationX = animatedTranslationX
+        }
+    )
 
     // 消息条落在拇指区、贴着底部导航上方，并且不吃掉系统手势条（构 + 适）
     Box(
@@ -295,15 +296,107 @@ private val DestinationDevices = "devices"
 private val DestinationSettings = "settings"
 
 @Composable
+private fun ShellLayer(
+  state: AppState,
+  actions: GuanlanActions,
+  screen: AppScreen,
+  twoPane: Boolean,
+  appearance: GuanlanAppearance,
+  destinations: List<OneUiDestination>,
+  saveableStateHolder: SaveableStateHolder,
+  animateTransitions: Boolean,
+  modifier: Modifier = Modifier
+) {
+  val colors = OneUiTheme.colors
+  val window = OneUiTheme.window
+
+  Box(
+    modifier = modifier.background(colors.canvas)
+  ) {
+    if (window.useNavigationRail) {
+      Row(modifier = Modifier.fillMaxSize()) {
+        OneUiNavigationRail(
+          destinations = destinations,
+          selectedKey = screen.navigationKey(),
+          onSelect = { key ->
+            if (key == DestinationSettings) actions.onShowSettings() else actions.onShowDeviceList()
+          },
+          modifier = Modifier.fillMaxHeight()
+        )
+        Box(
+          modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+        ) {
+          ScreenStack(
+            state = state,
+            actions = actions,
+            screen = screen,
+            twoPane = twoPane,
+            appearance = appearance,
+            saveableStateHolder = saveableStateHolder,
+            animateTransitions = animateTransitions
+          )
+        }
+      }
+    } else {
+      Column(modifier = Modifier.fillMaxSize()) {
+        Box(
+          modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+        ) {
+          ScreenStack(
+            state = state,
+            actions = actions,
+            screen = screen,
+            twoPane = false,
+            appearance = appearance,
+            saveableStateHolder = saveableStateHolder,
+            animateTransitions = animateTransitions
+          )
+        }
+        if (screen.showsTopLevelNavigation) {
+          OneUiBottomBar(
+            destinations = destinations,
+            selectedKey = screen.navigationKey(),
+            onSelect = { key ->
+              if (key == DestinationSettings) actions.onShowSettings() else actions.onShowDeviceList()
+            }
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
 private fun ScreenStack(
   state: AppState,
   actions: GuanlanActions,
   screen: AppScreen,
   twoPane: Boolean,
-  appearance: GuanlanAppearance
+  appearance: GuanlanAppearance,
+  saveableStateHolder: SaveableStateHolder,
+  animateTransitions: Boolean
 ) {
   val colors = OneUiTheme.colors
   val motion = OneUiTheme.motion
+
+  @Composable
+  fun SavedScreenContent(target: AppScreen, embedded: Boolean) {
+    saveableStateHolder.SaveableStateProvider(
+      key = screenStateKey(target, state)
+    ) {
+      ScreenContent(
+        state = state,
+        actions = actions,
+        screen = target,
+        embedded = embedded,
+        appearance = appearance
+      )
+    }
+  }
 
   if (twoPane && screen != AppScreen.Login) {
     Row(modifier = Modifier.fillMaxSize()) {
@@ -313,7 +406,11 @@ private fun ScreenStack(
           .fillMaxHeight()
           .background(colors.canvas)
       ) {
-        DeviceListScreen(state = state, actions = actions, embedded = true)
+        saveableStateHolder.SaveableStateProvider(
+          key = screenStateKey(AppScreen.DeviceList, state)
+        ) {
+          DeviceListScreen(state = state, actions = actions, embedded = true)
+        }
       }
       Box(
         modifier = Modifier
@@ -322,20 +419,9 @@ private fun ScreenStack(
           .background(colors.canvas)
       ) {
         when {
-          screen.showsDetail -> ScreenContent(
-            state = state,
-            actions = actions,
-            screen = screen,
-            embedded = true,
-            appearance = appearance
-          )
+          screen.showsDetail -> SavedScreenContent(screen, embedded = true)
 
-          screen == AppScreen.Settings -> SettingsScreen(
-            state = state,
-            actions = actions,
-            appearance = appearance,
-            embedded = true
-          )
+          screen == AppScreen.Settings -> SavedScreenContent(screen, embedded = true)
 
           else -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             OneUiEmptyState(
@@ -350,24 +436,28 @@ private fun ScreenStack(
     return
   }
 
-  AnimatedContent(
-    targetState = screen,
-    transitionSpec = {
-      oneUiScreenTransition(
-        forward = state.transitionDirection != ScreenTransitionDirection.Backward,
-        motion = motion
-      )
-    },
-    label = "screen_stack"
-  ) { target ->
-    ScreenContent(
-      state = state,
-      actions = actions,
-      screen = target,
-      embedded = false,
-      appearance = appearance
-    )
+  if (animateTransitions) {
+    AnimatedContent(
+      targetState = screen,
+      transitionSpec = {
+        oneUiScreenTransition(
+          forward = state.transitionDirection != ScreenTransitionDirection.Backward,
+          motion = motion
+        )
+      },
+      label = "screen_stack"
+    ) { target ->
+      SavedScreenContent(target, embedded = false)
+    }
+  } else {
+    SavedScreenContent(screen, embedded = false)
   }
+}
+
+private fun screenStateKey(screen: AppScreen, state: AppState): String = when (screen) {
+  AppScreen.DeviceDetail -> "device-detail:${state.selectedDeviceId ?: "none"}"
+  AppScreen.Traffic -> "traffic:${state.selectedDeviceId ?: "none"}"
+  else -> "screen:${screen.name}"
 }
 
 @Composable

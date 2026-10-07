@@ -3,6 +3,7 @@ package com.dsc.android.ui.screens
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,14 +33,19 @@ import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VideogameAsset
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.dsc.android.AppState
@@ -59,7 +65,12 @@ import com.dsc.android.TemperatureMetricSeriesDto
 import com.dsc.android.TemperatureSensorDto
 import com.dsc.android.ui.oneui.*
 import com.dsc.android.ui.shell.GuanlanActions
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.roundToInt
 
 /**
  * 设备详情（构）。
@@ -86,8 +97,12 @@ fun DeviceDetailScreen(
   val topBarScope = rememberCoroutineScope()
   val data = state.metrics
 
-  var openBlock by remember(state.selectedDeviceId) { mutableStateOf<DeviceBlockKey?>(null) }
-  var openTabId by remember(state.selectedDeviceId) { mutableStateOf("total") }
+  var openBlock by rememberSaveable(state.selectedDeviceId) { mutableStateOf<DeviceBlockKey?>(null) }
+  var openTabId by rememberSaveable(state.selectedDeviceId) { mutableStateOf("total") }
+  // 类别卡片都在同一个 LazyColumn item 中，展开/收起会改变前面内容的高度。
+  // 记录每个标题在根坐标系的位置，切换时用它作为视觉锚点（交）。
+  val blockPositions = remember { mutableStateMapOf<DeviceBlockKey, Int>() }
+  var anchorCorrectionJob by remember { mutableStateOf<Job?>(null) }
 
   LaunchedEffect(state.focusedBlock, state.loadingMetrics, data?.device?.deviceId) {
     val blockKey = state.focusedBlock ?: return@LaunchedEffect
@@ -264,13 +279,29 @@ fun DeviceDetailScreen(
                 effectiveTab = effectiveTab,
                 onSelectTab = { openTabId = it },
                 onToggleBlock = { block ->
+                  val anchorY = blockPositions[block]
+                  anchorCorrectionJob?.cancel()
                   openBlock = if (openBlock == block) null else block
+                  if (anchorY != null) {
+                    anchorCorrectionJob = topBarScope.launch {
+                      preserveBlockAnchor(
+                        listState = listState,
+                        positions = blockPositions,
+                        blockKey = block,
+                        anchorY = anchorY,
+                        durationMillis = motion.duration(OneUiDuration.Content).toLong() + 120L
+                      )
+                    }
+                  }
                 },
                 onOpenTraffic = { actions.onOpenTraffic(snapshot.device.deviceId) },
                 onEditDeviceMetrics = { actions.onOpenDeviceEditor(snapshot.device.deviceId) },
                 onEditBlock = { block -> actions.onOpenBlockEditor(snapshot.device.deviceId, block) },
                 onEditInstance = { block, instanceId ->
                   actions.onOpenInstanceEditor(snapshot.device.deviceId, block, instanceId)
+                },
+                onBlockPositioned = { block, y ->
+                  blockPositions[block] = y
                 }
               )
             }
@@ -370,7 +401,8 @@ private fun BlockGroup(
   onOpenTraffic: () -> Unit,
   onEditDeviceMetrics: () -> Unit,
   onEditBlock: (DeviceBlockKey) -> Unit,
-  onEditInstance: (DeviceBlockKey, String) -> Unit
+  onEditInstance: (DeviceBlockKey, String) -> Unit,
+  onBlockPositioned: (DeviceBlockKey, Int) -> Unit
 ) {
   val colors = OneUiTheme.colors
   val capsules = remember(data, selectedWindow) { buildOverviewCapsules(data, selectedWindow) }
@@ -380,6 +412,9 @@ private fun BlockGroup(
       val isExpanded = openBlock == capsule.blockKey
       OneUiExpandableGroup(
         expanded = isExpanded,
+        modifier = Modifier.onGloballyPositioned { coordinates ->
+          onBlockPositioned(capsule.blockKey, coordinates.positionInRoot().y.roundToInt())
+        },
         onToggle = { if (!loading) onToggleBlock(capsule.blockKey) },
         title = capsule.title,
         subtitle = capsule.subtitle,
@@ -450,6 +485,37 @@ private fun BlockGroup(
         }
       )
     }
+  }
+}
+
+/**
+ * 展开/收起动画期间锁住目标类别的屏幕位置。
+ *
+ * 只在点击类别后的短窗口内补偿布局变化，不改变真实列表内容顺序；
+ * 因此目标类别上方的旧面板收起时，目标标题也不会被一起推走（交）。
+ */
+private suspend fun preserveBlockAnchor(
+  listState: androidx.compose.foundation.lazy.LazyListState,
+  positions: Map<DeviceBlockKey, Int>,
+  blockKey: DeviceBlockKey,
+  anchorY: Int,
+  durationMillis: Long
+) {
+  withTimeoutOrNull(durationMillis.coerceAtLeast(16L)) {
+    while (currentCoroutineContext().isActive) {
+      withFrameNanos { }
+      val currentY = positions[blockKey] ?: continue
+      val correction = currentY - anchorY
+      if (correction != 0) {
+        listState.scrollBy(correction.toFloat())
+      }
+    }
+  }
+
+  val finalY = positions[blockKey] ?: return
+  val finalCorrection = finalY - anchorY
+  if (finalCorrection != 0) {
+    listState.scrollBy(finalCorrection.toFloat())
   }
 }
 
