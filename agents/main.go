@@ -45,13 +45,16 @@ const (
 	// cycle paid for a stack of PowerShell/netsh/smartctl process spawns; 60s
 	// halves that churn with no loss for CPU/memory/disk/network rates, which
 	// stay on the fast path.
-	defaultSlowIntervalSeconds   = 60
-	maxSamplingIntervalSeconds   = 86400
-	hardwareSensorHelperInterval = 30 * time.Second
-	// The SYSTEM helper refreshes the privileged sensor cache; the collector
-	// only needs it to be recent enough to avoid its own probe. A 2 minute
-	// window tolerates one missed helper cycle without falling back to a
-	// per-collector PowerShell probe.
+	defaultSlowIntervalSeconds = 60
+	maxSamplingIntervalSeconds = 86400
+	// The SYSTEM helper refreshes the privileged sensor cache once per slow
+	// interval: 30s made it the most expensive recurring probe on a Windows
+	// machine (a PowerShell LHM run twice a minute) while the collector accepts
+	// the cache for hardwareSensorCacheMaxAge. One probe per minute keeps every
+	// slow cycle supplied from cache and still tolerates one missed cycle.
+	hardwareSensorHelperInterval = 60 * time.Second
+	// The 2 minute acceptance window tolerates one missed helper cycle without
+	// falling back to a per-collector PowerShell probe.
 	hardwareSensorCacheMaxAge = 120 * time.Second
 	// Upper bound for one slow collection. Every external probe has its own
 	// timeout, but they run in sequence; without a global budget a set of
@@ -494,8 +497,14 @@ type agentState struct {
 	lastNetIO        *ioSnapshot
 	lastSlow         slowMetrics
 	hasSlow          bool
-	currentCfg       agentRuntimeConfig
-	hasConfig        bool
+	// System overview counters are refreshed on the slow cadence. Enumerating
+	// every process and its file descriptors is the most expensive fast-path
+	// step on Linux; Windows reads the same numbers from one syscall and keeps
+	// the per-cycle refresh.
+	lastSystem   systemStats
+	lastSystemAt time.Time
+	currentCfg   agentRuntimeConfig
+	hasConfig    bool
 	// Slow-changing hardware inventory, refreshed on a TTL instead of every slow
 	// cycle. Populated without any environment probe on platforms that do not
 	// expose one, so the collector never spawns a process just to fill it.
@@ -526,7 +535,16 @@ type hardwareAssetCache struct {
 	// shorter TTL; see diskSensorCacheTTL.
 	diskSensors            map[string]diskSensorMetadata
 	diskSensorsCollectedAt time.Time
-	referenceDeviceCount   int
+	// linuxDiskTemperatures caches the smartctl -A fallback for disks without an
+	// hwmon temperature on the same TTL as the other disk sensors. Without the
+	// cache it spawned smartctl for every physical disk on every slow cycle.
+	linuxDiskTemperatures map[string]*float64
+	// windowsCPUFallback is the Win32_Processor projection used to fill L3
+	// cache sizes that gopsutil cannot read. L3 is fixed for the lifetime of
+	// the machine, so it is refreshed with the rest of the Windows inventory
+	// instead of spawning PowerShell on every slow cycle.
+	windowsCPUFallback   []cpuPackageStats
+	referenceDeviceCount int
 }
 
 // linuxMemoryMetadata is the static memory inventory dmidecode reports.
@@ -1075,7 +1093,9 @@ func runHardwareSensorProbe() error {
 	// desktop backend invokes it only after the user requests hardware detect.
 	// A user-triggered detect is exactly the "refresh the inventory" case, so it
 	// starts with an empty cache.
-	metrics, _ := collectSlowMetrics(hardwareAssetCache{})
+	// A user-triggered detect wants every sensor regardless of the telemetry
+	// metric switches, so it runs with a full plan.
+	metrics, _ := collectSlowMetrics(hardwareAssetCache{}, collectionPlan{systemStats: true, linuxCPUFast: true, gpu: true, diskSensors: true})
 	response := struct {
 		TemperatureSensors []temperatureSensorReading `json:"temperatureSources"`
 		SensorBackends     []sensorBackendStatus      `json:"temperatureSensorBackends"`
@@ -1278,13 +1298,14 @@ func (s *agentState) collectorStatsPayload() *collectorStatsReport {
 
 func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	now := time.Now().UTC()
+	plan := resolveCollectionPlan(cfg)
 	identity := s.currentIdentity(cfg)
-	cpuUsagePercent, cpuRuntime := s.sampleCPURuntime()
+	cpuUsagePercent, cpuRuntime := s.sampleCPURuntime(plan)
 	memory := sampleMemory()
 	diskRate, networkRate := s.sampleFastRates(now, cfg.currentUploadIntervalSeconds())
 
 	if !s.hasSlow || now.Sub(s.lastSlow.collectedAt) >= time.Duration(cfg.slowIntervalSeconds())*time.Second {
-		outcome := collectSlowMetricsBudgeted(s.assets, slowMetricsGlobalBudget)
+		outcome := collectSlowMetricsBudgeted(s.assets, plan, slowMetricsGlobalBudget)
 		s.assets = outcome.assets
 		s.slowStats.runs++
 		if outcome.overtime {
@@ -1393,6 +1414,7 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 		}
 	}
 
+	system := s.currentSystemStats(cfg, plan, now)
 	payload := metricsPayload{
 		Identity:                identity,
 		Timestamp:               now.Format(time.RFC3339),
@@ -1400,7 +1422,7 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 		HardwareSampledAt:       hardwareSampledAt,
 		CPUTemperatureSampledAt: cpuTemperatureSampledAt,
 		CollectorStats:          s.collectorStatsPayload(),
-		System:                  collectSystemStats(),
+		System:                  system,
 		CPUUsagePercent:         cpuUsagePercent,
 		CPUFrequencyMHz:         cpuFrequencyMHz,
 		CPUTemperatureC:         cpuTemperatureC,
@@ -1427,14 +1449,18 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	return payload
 }
 
-func (s *agentState) sampleCPURuntime() (float64, cpuRuntimeMetrics) {
+// sampleCPURuntime collects the per-cycle CPU counters. The Linux sysfs
+// frequency/temperature sweep is skipped when the configuration disables both
+// metrics (and has no instance override), because applyRuntimeConfig would
+// discard the values anyway.
+func (s *agentState) sampleCPURuntime(plan collectionPlan) (float64, cpuRuntimeMetrics) {
 	cpuUsagePercent := s.sampleCPUUsage()
 	runtimeMetrics := cpuRuntimeMetrics{packages: map[string]cpuPackageRuntimeMetrics{}}
 	for id, usage := range s.currentCPUUsage {
 		runtimeMetrics.packages[id] = cpuPackageRuntimeMetrics{usagePercent: usage}
 	}
 
-	if runtime.GOOS == "linux" {
+	if runtime.GOOS == "linux" && plan.linuxCPUFast {
 		infoCtx, cancel := context.WithTimeout(context.Background(), cpuPackagesTimeout)
 		info, _ := cpu.InfoWithContext(infoCtx)
 		cancel()
@@ -1894,6 +1920,33 @@ func collectSystemStats() systemStats {
 	return result
 }
 
+// systemStatsCollector is the process/thread/fd enumeration. It is a variable
+// so a test can prove the fast path no longer walks every process on Linux.
+var systemStatsCollector = collectSystemStats
+
+// currentSystemStats refreshes the system overview counters on the slow
+// cadence. Walking every process and its file descriptors is the most
+// expensive fast-path step on Linux, and these overview counts change slowly
+// enough for a monitor that the slow interval is the right freshness. Windows
+// reads the same numbers from a single syscall, so it keeps the per-cycle
+// refresh.
+func (s *agentState) currentSystemStats(cfg agentRuntimeConfig, plan collectionPlan, now time.Time) systemStats {
+	if !plan.systemStats {
+		return systemStats{}
+	}
+	if runtime.GOOS == "windows" {
+		return systemStatsCollector()
+	}
+	interval := time.Duration(cfg.slowIntervalSeconds()) * time.Second
+	if !s.lastSystemAt.IsZero() && now.Sub(s.lastSystemAt) < interval {
+		return s.lastSystem
+	}
+	stats := systemStatsCollector()
+	s.lastSystem = stats
+	s.lastSystemAt = now
+	return stats
+}
+
 func (s *agentState) sampleFastRates(now time.Time, fallbackSeconds int) (rateStats, networkTrafficStats) {
 	diskCounters, diskErr := disk.IOCounters()
 	netCounters, netErr := gnet.IOCounters(true)
@@ -2029,7 +2082,7 @@ type slowCollectionOutcome struct {
 //
 // The hardware cache travels in and out by value, so an abandoned attempt can
 // never mutate the cache the next cycle reads.
-func collectSlowMetricsBudgeted(assets hardwareAssetCache, budget time.Duration) slowCollectionOutcome {
+func collectSlowMetricsBudgeted(assets hardwareAssetCache, plan collectionPlan, budget time.Duration) slowCollectionOutcome {
 	started := time.Now()
 	type result struct {
 		metrics slowMetrics
@@ -2043,7 +2096,7 @@ func collectSlowMetricsBudgeted(assets hardwareAssetCache, budget time.Duration)
 				done <- result{metrics: emptySlowMetrics(), assets: assets}
 			}
 		}()
-		metrics, nextAssets := collectSlowMetrics(assets)
+		metrics, nextAssets := collectSlowMetrics(assets, plan)
 		done <- result{metrics: metrics, assets: nextAssets}
 	}()
 	timer := time.NewTimer(budget)
@@ -2062,41 +2115,16 @@ func collectSlowMetricsBudgeted(assets hardwareAssetCache, budget time.Duration)
 // model/vendor, CPU topology) is cached for hardwareAssetCacheTTL and refreshed
 // early when the device set changes, so a steady-state cycle does not re-run the
 // same PowerShell inventory every time.
-func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCache) {
+func collectSlowMetrics(assets hardwareAssetCache, plan collectionPlan) (slowMetrics, hardwareAssetCache) {
 	result := emptySlowMetrics()
 	result.collectedAt = time.Now().UTC()
 
-	cpuFrequencyMHz, cpuPackages, cpuErr := collectCPUPackages()
-	if cpuErr != nil {
-		logSlowMetricsError(logCategoryCPUSlow, cpuErr)
-	} else {
-		result.cpuCollected = true
-		result.cpuFrequencyMHz = cpuFrequencyMHz
-		result.cpuPackages = cpuPackages
-	}
-
-	disks, diskUsage, diskErr := collectDisks()
-	if diskErr != nil {
-		logSlowMetricsError(logCategoryDiskSlow, diskErr)
-	} else {
-		result.diskCollected = true
-		result.diskUsage = diskUsage
-		result.disks = disks
-	}
-
-	networkInterfaces, networkErr := collectNetworkInterfaces()
-	if networkErr != nil {
-		logSlowMetricsError(logCategoryNetworkSlow, networkErr)
-	} else {
-		result.networkCollected = true
-		result.networkInterfaces = networkInterfaces
-	}
-
-	// Windows inventory is one PowerShell run per TTL and feeds three consumers
-	// below (the LHM snapshot alignment, the disk/network metadata and the GPU
-	// adapter projections), so it is resolved once, before them. Linux memory
-	// inventory is a root-only dmidecode run whose result never changes while the
-	// machine is up, so it shares the same TTL.
+	// Windows inventory is one PowerShell run per TTL and feeds the consumers
+	// below (the LHM snapshot alignment, the disk/network metadata, the GPU
+	// adapter projections and the CPU L3-cache fallback), so it is resolved
+	// once, before them. Linux memory inventory is a root-only dmidecode run
+	// whose result never changes while the machine is up, so it shares the same
+	// TTL.
 	refreshAssets := assets.expiredFor(hardwareAssetCacheTTL)
 	if refreshAssets {
 		switch runtime.GOOS {
@@ -2104,6 +2132,9 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 			metadata, adapters := collectWindowsInventory()
 			assets.metadata = metadata
 			assets.gpuAdapters = adapters
+			if _, fallbackPackages, fallbackErr := windowsCPUFallbackProbe(); fallbackErr == nil {
+				assets.windowsCPUFallback = fallbackPackages
+			}
 			assets.collectedAt = time.Now().UTC()
 		case "linux":
 			// Cache the attempt, not just a success. dmidecode needs root: on a
@@ -2118,6 +2149,40 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 			}
 			assets.collectedAt = time.Now().UTC()
 		}
+	}
+
+	cpuFrequencyMHz, cpuPackages, cpuErr := collectCPUPackages(assets.windowsCPUFallback)
+	if cpuErr != nil {
+		logSlowMetricsError(logCategoryCPUSlow, cpuErr)
+	} else {
+		result.cpuCollected = true
+		result.cpuFrequencyMHz = cpuFrequencyMHz
+		result.cpuPackages = cpuPackages
+	}
+
+	// Disk temperatures/health have their own shorter TTL; resolve it before the
+	// disk collection so the smartctl fallback can reuse the cache instead of
+	// spawning per physical disk on every slow cycle.
+	refreshDiskSensors := assets.diskSensorsExpired()
+	refreshDiskTemperatures := refreshDiskSensors && plan.diskSensors
+	disks, diskUsage, linuxDiskTemperatures, diskErr := collectDisks(assets.linuxDiskTemperatures, refreshDiskTemperatures)
+	if diskErr != nil {
+		logSlowMetricsError(logCategoryDiskSlow, diskErr)
+	} else {
+		result.diskCollected = true
+		result.diskUsage = diskUsage
+		result.disks = disks
+		if runtime.GOOS == "linux" && refreshDiskTemperatures {
+			assets.linuxDiskTemperatures = linuxDiskTemperatures
+		}
+	}
+
+	networkInterfaces, networkErr := collectNetworkInterfaces()
+	if networkErr != nil {
+		logSlowMetricsError(logCategoryNetworkSlow, networkErr)
+	} else {
+		result.networkCollected = true
+		result.networkInterfaces = networkInterfaces
 	}
 
 	hardware := collectHardwareSensors(assets.gpuAdapters)
@@ -2139,7 +2204,12 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 		memorySlotCount = assets.linuxMemory.slotCount
 		memoryFormFactor = assets.linuxMemory.formFactor
 	}
-	if !assets.diskSensorsExpired() {
+	switch {
+	case !plan.diskSensors:
+		// The disk block or every disk-sensor metric is disabled; the runtime
+		// filter would discard these values, so skip the smartctl /
+		// Get-StorageReliabilityCounter probes entirely.
+	case !refreshDiskSensors:
 		// Disk temperature/health was read recently; reuse it and skip the
 		// smartctl / Get-StorageReliabilityCounter probes for this cycle.
 		diskSensors := assets.diskSensors
@@ -2164,7 +2234,7 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 				}
 			}
 		}
-	} else if runtime.GOOS == "windows" {
+	case runtime.GOOS == "windows":
 		windowsDiskSensors := collectWindowsDiskSensorMetadata(windowsMetadata.DiskMetadata)
 		assets.diskSensors = windowsDiskSensors
 		assets.diskSensorsCollectedAt = time.Now().UTC()
@@ -2179,7 +2249,7 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 				temperatureSensors = append(temperatureSensors, sensor.TemperatureSensors...)
 			}
 		}
-	} else {
+	default:
 		linuxDiskSensors := collectLinuxDiskSensorMetadata(result.disks)
 		assets.diskSensors = linuxDiskSensors
 		assets.diskSensorsCollectedAt = time.Now().UTC()
@@ -2216,9 +2286,13 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 	var gpus []gpuDeviceStats
 	if runtime.GOOS == "windows" {
 		baseAdapters := windowsGPUAdaptersFromRecords(assets.gpuAdapters)
-		perfGpus := collectWindowsGPUPerformance(assets.gpuAdapters)
+		var perfGpus []gpuDeviceStats
+		var nvidiaGpus []gpuDeviceStats
+		if plan.gpu {
+			perfGpus = collectWindowsGPUPerformance(assets.gpuAdapters)
+			nvidiaGpus = collectNvidiaGPUs()
+		}
 		lhmGpus := hardware.gpus
-		nvidiaGpus := collectNvidiaGPUs()
 		appendGPUTemperatureSensors(&temperatureSensors, nvidiaGpus, "nvidia-smi")
 		// GPU performance counters are useful as a fallback, but may report a
 		// virtual or aggregated engine value instead of the physical adapter's
@@ -2229,7 +2303,10 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 			gpus = mergeGPUStats(perfGpus, lhmGpus, nvidiaGpus)
 		}
 	} else {
-		nvidiaGpus := collectNvidiaGPUs()
+		var nvidiaGpus []gpuDeviceStats
+		if plan.gpu {
+			nvidiaGpus = collectNvidiaGPUs()
+		}
 		appendGPUTemperatureSensors(&temperatureSensors, nvidiaGpus, "nvidia-smi")
 		gpus = mergeGPUStats(hardware.gpus, nvidiaGpus)
 	}
@@ -2873,14 +2950,35 @@ func encodePowerShellCommand(script string) string {
 // skips the probe entirely.
 type probeCommandRunner func(ctx context.Context, name string, args ...string) ([]byte, error)
 
-func execProbeCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
+// startCountedProbe starts command and records the spawn only after the OS
+// confirmed that the process exists. A missing binary or an already-cancelled
+// context never creates a probe process, so counting before Start reported
+// probes that never ran and inflated the audit counters.
+func startCountedProbe(command *exec.Cmd, name string) ([]byte, error) {
+	var stdout bytes.Buffer
+	command.Stdout = &stdout
+	if err := command.Start(); err != nil {
+		return nil, err
+	}
 	recordProbeSpawn(name)
-	return exec.CommandContext(ctx, name, args...).Output()
+	if err := command.Wait(); err != nil {
+		return stdout.Bytes(), err
+	}
+	return stdout.Bytes(), nil
+}
+
+func execProbeCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return startCountedProbe(exec.CommandContext(ctx, name, args...), name)
 }
 
 // probeRunner is the runner used by the collector and the sensor helper. It is
 // a variable so a test can prove the cache path removed a real process spawn.
 var probeRunner probeCommandRunner = execProbeCommand
+
+// windowsCPUFallbackProbe is the Win32_Processor projection that fills L3
+// cache sizes gopsutil cannot read. It is a variable so a test can prove the
+// inventory TTL removed the per-cycle PowerShell spawn.
+var windowsCPUFallbackProbe = collectWindowsCPUPackagesFallback
 
 func runWindowsPowerShell(ctx context.Context, script string, environment ...string) ([]byte, error) {
 	normalizedScript := strings.Join([]string{
@@ -2890,15 +2988,13 @@ func runWindowsPowerShell(ctx context.Context, script string, environment ...str
 		"$ProgressPreference = 'SilentlyContinue'",
 		script,
 	}, "; ")
-	recordProbeSpawn("powershell")
-	recordProbeSpawn("powershell")
 	command := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShellCommand(normalizedScript))
 	if len(environment) > 0 {
 		command.Env = append(os.Environ(), environment...)
 	}
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
-	output, err := command.Output()
+	output, err := startCountedProbe(command, "powershell")
 	if err == nil {
 		return output, nil
 	}
@@ -2908,13 +3004,13 @@ func runWindowsPowerShell(ctx context.Context, script string, environment ...str
 	return output, err
 }
 
-func collectCPUPackages() (*float64, []cpuPackageStats, error) {
+func collectCPUPackages(cachedFallback []cpuPackageStats) (*float64, []cpuPackageStats, error) {
 	infoCtx, infoCancel := context.WithTimeout(context.Background(), cpuPackagesTimeout)
 	defer infoCancel()
 	info, err := cpu.InfoWithContext(infoCtx)
 	if err != nil {
 		if runtime.GOOS == "windows" {
-			if frequency, packages, fallbackErr := collectWindowsCPUPackagesFallback(); fallbackErr == nil {
+			if frequency, packages, fallbackErr := windowsCPUFallbackProbe(); fallbackErr == nil {
 				return frequency, packages, nil
 			}
 		}
@@ -2979,7 +3075,7 @@ func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 
 	if len(packages) == 0 {
 		if runtime.GOOS == "windows" {
-			if frequency, fallbackPackages, fallbackErr := collectWindowsCPUPackagesFallback(); fallbackErr == nil {
+			if frequency, fallbackPackages, fallbackErr := windowsCPUFallbackProbe(); fallbackErr == nil {
 				return frequency, fallbackPackages, nil
 			}
 		}
@@ -3029,12 +3125,14 @@ func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 		})
 	}
 
-	if runtime.GOOS == "windows" {
-		if _, fallbackPackages, fallbackErr := collectWindowsCPUPackagesFallback(); fallbackErr == nil {
-			for index := range result {
-				if result[index].L3CacheBytes == 0 && index < len(fallbackPackages) {
-					result[index].L3CacheBytes = fallbackPackages[index].L3CacheBytes
-				}
+	// L3 cache sizes come from the Win32_Processor fallback that the Windows
+	// inventory refresh runs once per TTL. A failed or missing refresh simply
+	// leaves the field at zero until the next one, instead of spawning
+	// PowerShell on every slow cycle for a value that never changes.
+	if runtime.GOOS == "windows" && len(cachedFallback) > 0 {
+		for index := range result {
+			if result[index].L3CacheBytes == 0 && index < len(cachedFallback) {
+				result[index].L3CacheBytes = cachedFallback[index].L3CacheBytes
 			}
 		}
 	}
@@ -5683,7 +5781,7 @@ func collectLinuxDiskTemperatures(partitions []disk.PartitionStat) map[string]*f
 			remaining = 3 * time.Second
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), remaining)
-		output, commandErr := exec.CommandContext(ctx, smartctlPath, "-A", "-n", "standby", "/dev/"+device).CombinedOutput()
+		output, commandErr := probeRunner(ctx, smartctlPath, "-A", "-n", "standby", "/dev/"+device)
 		cancel()
 		if commandErr != nil && len(output) == 0 {
 			continue
@@ -5836,15 +5934,22 @@ func maxSensorValue(current, candidate *float64) *float64 {
 	return current
 }
 
-func collectDisks() ([]diskDeviceStats, storageUsage, error) {
+// collectDisks returns the mounted disks plus the Linux smartctl -A fallback
+// map it used. When refreshTemperatures is false the cached map is reused and
+// no smartctl process is spawned; the caller stores the returned map back into
+// the asset cache when it was refreshed.
+func collectDisks(cachedTemperatures map[string]*float64, refreshTemperatures bool) ([]diskDeviceStats, storageUsage, map[string]*float64, error) {
 	partitions, err := collectDiskPartitions()
 	if err != nil {
-		return nil, storageUsage{}, err
+		return nil, storageUsage{}, cachedTemperatures, err
 	}
 
 	disks := make([]diskDeviceStats, 0, len(partitions))
 	seen := map[string]struct{}{}
-	diskTemperatures := collectLinuxDiskTemperatures(partitions)
+	diskTemperatures := cachedTemperatures
+	if refreshTemperatures {
+		diskTemperatures = collectLinuxDiskTemperatures(partitions)
+	}
 	var totalBytes uint64
 	var usedBytes uint64
 
@@ -5902,7 +6007,7 @@ func collectDisks() ([]diskDeviceStats, storageUsage, error) {
 	return disks, storageUsage{
 		TotalBytes: totalBytes,
 		UsedBytes:  usedBytes,
-	}, nil
+	}, diskTemperatures, nil
 }
 
 type windowsDiskPartitionRow struct {
@@ -6804,6 +6909,30 @@ func makeEnabledBlockSet(selections []agentProbeSelection) map[string]bool {
 		result[target] = selection.Enabled && !strings.EqualFold(selection.Provider, "disabled")
 	}
 	return result
+}
+
+// collectionPlan mirrors the conditions applyRuntimeConfig uses to zero whole
+// metric groups, so an expensive collector can be skipped when the
+// configuration would discard its output anyway. It is conservative: any
+// per-instance override keeps the collection path enabled, because an instance
+// entry can re-enable a metric the global list disables.
+type collectionPlan struct {
+	systemStats  bool
+	linuxCPUFast bool
+	gpu          bool
+	diskSensors  bool
+}
+
+func resolveCollectionPlan(cfg agentRuntimeConfig) collectionPlan {
+	blocks := makeEnabledBlockSet(cfg.ProbeSelections)
+	metrics := makeEnabledMetricSet(cfg.EnabledMetrics)
+	hasInstanceOverrides := len(cfg.InstanceMetricConfig) > 0
+	return collectionPlan{
+		systemStats:  metrics["systemOverview"],
+		linuxCPUFast: blocks["cpu"] && (metrics["cpuFrequency"] || metrics["cpuTemperature"] || hasInstanceOverrides),
+		gpu:          blocks["gpu"],
+		diskSensors:  blocks["disk"] && (metrics["diskHealth"] || metrics["temperatureSources"] || hasInstanceOverrides),
+	}
 }
 
 func makeStringSet(items []string) map[string]bool {

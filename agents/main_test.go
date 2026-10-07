@@ -13,6 +13,12 @@ import (
 	"time"
 )
 
+// testFullPlan is the permissive collection plan used by tests that exercise
+// collection mechanics rather than metric gating.
+func testFullPlan() collectionPlan {
+	return collectionPlan{systemStats: true, linuxCPUFast: true, gpu: true, diskSensors: true}
+}
+
 func TestPendingStoreEvictsOldestSamplesWithinByteLimit(t *testing.T) {
 	root := t.TempDir()
 	store := &pendingStore{
@@ -529,6 +535,43 @@ func TestHardwareAssetCacheExpiryAndFingerprint(t *testing.T) {
 	}
 }
 
+// The Win32_Processor fallback exists only to fill L3 cache sizes, which do not
+// change while the machine runs. It must run once per inventory TTL, not once
+// per slow cycle: that per-cycle PowerShell probe was the single largest
+// steady-state cost on Windows.
+func TestWindowsCPUFallbackRefreshUsesInventoryTTL(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("the Win32_Processor fallback only exists on Windows")
+	}
+	originalProbe := windowsCPUFallbackProbe
+	originalRunner := probeRunner
+	var calls int
+	windowsCPUFallbackProbe = func() (*float64, []cpuPackageStats, error) {
+		calls++
+		return nil, []cpuPackageStats{{ID: "cpu-0", L3CacheBytes: 4096}}, nil
+	}
+	probeRunner = func(context.Context, string, ...string) ([]byte, error) {
+		return []byte("[]"), nil
+	}
+	defer func() {
+		windowsCPUFallbackProbe = originalProbe
+		probeRunner = originalRunner
+	}()
+
+	assets := hardwareAssetCache{}
+	_, assets = collectSlowMetrics(assets, testFullPlan())
+	if calls != 1 {
+		t.Fatalf("the first slow cycle must refresh the cached CPU fallback once, got %d", calls)
+	}
+	// A zero reference count disables the device-change invalidation so the
+	// second call deterministically stays inside the TTL.
+	assets.referenceDeviceCount = 0
+	_, _ = collectSlowMetrics(assets, testFullPlan())
+	if calls != 1 {
+		t.Fatalf("a slow cycle inside the TTL must reuse the cached fallback, got %d calls", calls)
+	}
+}
+
 // The collector reports the probes it actually started. Counters are consumed on
 // read so a payload carries this cycle's spawns, not a running total.
 func TestProbeSpawnCountersAreConsumedAndReset(t *testing.T) {
@@ -567,6 +610,37 @@ func TestProbeSpawnNamesAreNormalized(t *testing.T) {
 	}
 }
 
+// A probe that never starts must not be counted. The old implementation
+// recorded the spawn before exec, so a missing optional tool (nvidia-smi on a
+// machine without one) inflated the audit's spawn rate with processes that
+// never existed.
+func TestProbeCountDoesNotCountMissingBinary(t *testing.T) {
+	takeProbeSpawnCounts()
+	if _, err := execProbeCommand(context.Background(), "device-state-console-definitely-missing-binary"); err == nil {
+		t.Fatal("expected the missing binary to fail")
+	}
+	if counts := takeProbeSpawnCounts(); counts != nil {
+		t.Fatalf("a missing binary must not be counted as a probe spawn, got %#v", counts)
+	}
+}
+
+// One PowerShell process must produce one counted spawn. The previous
+// implementation recorded it twice, which halved the apparent effect of every
+// change that removes a PowerShell probe.
+func TestWindowsPowerShellCountsOneSpawn(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("powershell.exe only exists on Windows")
+	}
+	takeProbeSpawnCounts()
+	if _, err := runWindowsPowerShell(context.Background(), "Write-Output ok"); err != nil {
+		t.Fatalf("powershell probe failed: %v", err)
+	}
+	counts := takeProbeSpawnCounts()
+	if counts["powershell"] != 1 {
+		t.Fatalf("expected exactly one powershell spawn, got %#v", counts)
+	}
+}
+
 // The global budget is what stops a sequence of slow probes from running past
 // the sampling interval and making the collector sample back-to-back. An
 // overrun must be reported and must not poison the hardware-inventory cache, so
@@ -577,7 +651,7 @@ func TestSlowCollectionBudgetReportsOverrunAndKeepsAssets(t *testing.T) {
 		referenceDeviceCount: 3,
 		metadata:             windowsHardwareMetadata{GpuDrivers: map[string]string{"gpu": "driver"}},
 	}
-	outcome := collectSlowMetricsBudgeted(assets, time.Nanosecond)
+	outcome := collectSlowMetricsBudgeted(assets, testFullPlan(), time.Nanosecond)
 	if !outcome.overtime {
 		t.Fatal("a one-nanosecond budget must report an overrun")
 	}
@@ -595,7 +669,7 @@ func TestSlowCollectionBudgetReportsOverrunAndKeepsAssets(t *testing.T) {
 }
 
 func TestSlowCollectionBudgetReturnsMetricsWhenItFits(t *testing.T) {
-	outcome := collectSlowMetricsBudgeted(hardwareAssetCache{}, 60*time.Second)
+	outcome := collectSlowMetricsBudgeted(hardwareAssetCache{}, testFullPlan(), 60*time.Second)
 	if outcome.overtime {
 		t.Fatal("a one-minute budget must not report an overrun")
 	}
@@ -659,6 +733,232 @@ func TestSteadyStateFastCycleSpawnsNoProbes(t *testing.T) {
 	state.collectPayload(cfg)
 	if spawns != afterFirst {
 		t.Fatalf("a fast cycle spawned %d probes; it must spawn none", spawns-afterFirst)
+	}
+}
+
+// System overview counters no longer walk every process on every fast cycle.
+// On Linux they refresh on the slow cadence; the test proves the enumeration
+// runs once and the second fast payload reuses the same numbers.
+func TestSystemStatsRefreshFollowsSlowInterval(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reads the counters from one syscall and refreshes per cycle")
+	}
+	originalRunner := probeRunner
+	probeRunner = func(context.Context, string, ...string) ([]byte, error) {
+		return nil, errors.New("probe disabled for this test")
+	}
+	defer func() { probeRunner = originalRunner }()
+
+	originalCollector := systemStatsCollector
+	var calls int
+	systemStatsCollector = func() systemStats {
+		calls++
+		return systemStats{ProcessCount: calls, ThreadCount: calls * 2}
+	}
+	defer func() { systemStatsCollector = originalCollector }()
+
+	state := &agentState{baseIdentity: agentIdentity{DeviceID: "test-device", Hostname: "test-host"}}
+	cfg := newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "http://127.0.0.1:1"})
+	cfg.Sampling.NormalIntervalSeconds = 1
+	cfg.Sampling.SlowIntervalSeconds = 3600
+
+	first := state.collectPayload(cfg)
+	second := state.collectPayload(cfg)
+	if calls != 1 {
+		t.Fatalf("two cycles inside the slow interval must enumerate once, got %d", calls)
+	}
+	if first.System != second.System {
+		t.Fatalf("the cached system counters must be reused: %#v vs %#v", first.System, second.System)
+	}
+}
+
+// The smartctl -A fallback for disks without an hwmon temperature used to run
+// for every physical disk on every slow cycle. It now shares the disk-sensor
+// TTL, so a cycle inside the TTL must not start a single smartctl process even
+// when the binary is on PATH.
+func TestSlowCycleInsideDiskSensorTTLDoesNotSpawnSmartctl(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the smartctl -A fallback only exists on Linux")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "smartctl"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	original := probeRunner
+	var smartctlCalls int
+	probeRunner = func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		if name == "smartctl" {
+			smartctlCalls++
+		}
+		return nil, errors.New("probe disabled for this test")
+	}
+	defer func() { probeRunner = original }()
+
+	assets := hardwareAssetCache{
+		diskSensorsCollectedAt: time.Now(),
+		linuxDiskTemperatures:  map[string]*float64{},
+	}
+	_, _ = collectSlowMetrics(assets, testFullPlan())
+	if smartctlCalls != 0 {
+		t.Fatalf("a slow cycle inside the disk-sensor TTL spawned smartctl %d times", smartctlCalls)
+	}
+}
+
+// A refresh cycle must store the fallback map so the next cycles can reuse it.
+func TestDiskSensorRefreshCachesLinuxTemperatureFallback(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the smartctl -A fallback only exists on Linux")
+	}
+	original := probeRunner
+	probeRunner = func(context.Context, string, ...string) ([]byte, error) {
+		return nil, errors.New("probe disabled for this test")
+	}
+	defer func() { probeRunner = original }()
+
+	_, assets := collectSlowMetrics(hardwareAssetCache{}, testFullPlan())
+	if assets.linuxDiskTemperatures == nil {
+		t.Fatal("a refresh cycle must cache the smartctl fallback map for the TTL")
+	}
+}
+
+func withoutMetrics(cfg agentRuntimeConfig, drop ...string) agentRuntimeConfig {
+	dropSet := map[string]bool{}
+	for _, key := range drop {
+		dropSet[key] = true
+	}
+	kept := make([]string, 0, len(cfg.EnabledMetrics))
+	for _, key := range cfg.EnabledMetrics {
+		if !dropSet[key] {
+			kept = append(kept, key)
+		}
+	}
+	cfg.EnabledMetrics = kept
+	return cfg
+}
+
+// The collection plan must mirror the runtime filter: a group the filter would
+// zero must be skippable, and an instance override must keep it collected.
+func TestResolveCollectionPlan(t *testing.T) {
+	base := newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "http://127.0.0.1:1"})
+	plan := resolveCollectionPlan(base)
+	if !plan.systemStats || !plan.linuxCPUFast || !plan.diskSensors {
+		t.Fatalf("a default config must collect every group, got %#v", plan)
+	}
+	if plan.gpu {
+		t.Fatal("the test default disables the GPU block")
+	}
+
+	if resolveCollectionPlan(withoutMetrics(base, "systemOverview")).systemStats {
+		t.Fatal("systemOverview off must skip the system stats collection")
+	}
+	if resolveCollectionPlan(withoutMetrics(base, "cpuFrequency", "cpuTemperature")).linuxCPUFast {
+		t.Fatal("both CPU fast-path metrics off must skip the Linux sysfs sweep")
+	}
+	if !resolveCollectionPlan(withoutMetrics(base, "cpuFrequency", "cpuTemperature")).systemStats {
+		t.Fatal("skipping one group must not affect the others")
+	}
+	if resolveCollectionPlan(withoutMetrics(base, "diskHealth", "temperatureSources")).diskSensors {
+		t.Fatal("both disk-sensor metrics off must skip the smartctl probes")
+	}
+
+	overrides := withoutMetrics(base, "cpuFrequency", "cpuTemperature", "diskHealth", "temperatureSources")
+	overrides.InstanceMetricConfig = map[string][]string{"disk-0": {"diskHealth"}}
+	plan = resolveCollectionPlan(overrides)
+	if !plan.linuxCPUFast || !plan.diskSensors {
+		t.Fatalf("instance overrides must keep the collection path enabled, got %#v", plan)
+	}
+
+	noCPU := base
+	noCPU.ProbeSelections = append([]agentProbeSelection{}, base.ProbeSelections...)
+	for index := range noCPU.ProbeSelections {
+		if noCPU.ProbeSelections[index].Target == "cpu" {
+			noCPU.ProbeSelections[index].Enabled = false
+		}
+	}
+	if resolveCollectionPlan(noCPU).linuxCPUFast {
+		t.Fatal("a disabled CPU block must skip the Linux sysfs sweep")
+	}
+}
+
+// Disabling systemOverview must stop the Linux process walk entirely, not just
+// zero the payload after the walk.
+func TestDisabledSystemOverviewSkipsEnumeration(t *testing.T) {
+	originalRunner := probeRunner
+	probeRunner = func(context.Context, string, ...string) ([]byte, error) {
+		return nil, errors.New("probe disabled for this test")
+	}
+	defer func() { probeRunner = originalRunner }()
+
+	originalCollector := systemStatsCollector
+	var calls int
+	systemStatsCollector = func() systemStats {
+		calls++
+		return systemStats{ProcessCount: 99}
+	}
+	defer func() { systemStatsCollector = originalCollector }()
+
+	state := &agentState{baseIdentity: agentIdentity{DeviceID: "test-device", Hostname: "test-host"}}
+	cfg := withoutMetrics(newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "http://127.0.0.1:1"}), "systemOverview")
+	payload := state.collectPayload(cfg)
+	if calls != 0 {
+		t.Fatalf("systemOverview off must skip the enumeration, got %d calls", calls)
+	}
+	if payload.System.ProcessCount != 0 {
+		t.Fatalf("the filtered payload must not carry system counters: %#v", payload.System)
+	}
+}
+
+// The Linux test default disables the GPU block, so the collector must not even
+// attempt the nvidia-smi probe.
+func TestDisabledGPUBlockSkipsNvidiaProbe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the Windows test default enables the GPU block")
+	}
+	original := probeRunner
+	var nvidiaCalls int
+	probeRunner = func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		if name == "nvidia-smi" {
+			nvidiaCalls++
+		}
+		return nil, errors.New("probe disabled for this test")
+	}
+	defer func() { probeRunner = original }()
+
+	cfg := newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "http://127.0.0.1:1"})
+	_, _ = collectSlowMetrics(hardwareAssetCache{}, resolveCollectionPlan(cfg))
+	if nvidiaCalls != 0 {
+		t.Fatalf("a disabled GPU block attempted %d nvidia-smi probes", nvidiaCalls)
+	}
+}
+
+// Disabling both disk-sensor metrics must skip the smartctl fallback even when
+// the disk-sensor TTL has expired.
+func TestDisabledDiskSensorsSkipSmartctl(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the smartctl -A fallback only exists on Linux")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "smartctl"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	original := probeRunner
+	var smartctlCalls int
+	probeRunner = func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		if name == "smartctl" {
+			smartctlCalls++
+		}
+		return nil, errors.New("probe disabled for this test")
+	}
+	defer func() { probeRunner = original }()
+
+	cfg := withoutMetrics(newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "http://127.0.0.1:1"}), "diskHealth", "temperatureSources")
+	_, _ = collectSlowMetrics(hardwareAssetCache{}, resolveCollectionPlan(cfg))
+	if smartctlCalls != 0 {
+		t.Fatalf("disabled disk sensors spawned smartctl %d times", smartctlCalls)
 	}
 }
 
