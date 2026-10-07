@@ -3,15 +3,14 @@
  * always means the same page, so a user who learned the desktop settings can
  * find their way around the browser console without re-learning names.
  *
- * `workspace` and `session` were browser-only section ids and `connections` was
- * desktop-only. They stay parseable as aliases (see `legacySettingsSections`)
- * because bookmarks and chat screenshots still carry the old hashes.
+ * `workspace`, `session` and `agent` were retired section ids. They stay
+ * parseable as aliases (see `legacySettingsSections`) because bookmarks and
+ * chat screenshots still carry the old hashes.
  */
 export type SettingsSection =
   | "general"
   | "appearance"
   | "connections"
-  | "agent"
   | "data"
   | "shortcuts"
   | "about";
@@ -28,7 +27,6 @@ const settingsSections = new Set<SettingsSection>([
   "general",
   "appearance",
   "connections",
-  "agent",
   "data",
   "shortcuts",
   "about"
@@ -37,7 +35,8 @@ const settingsSections = new Set<SettingsSection>([
 /** Retired section ids mapped onto the section that replaced them. */
 const legacySettingsSections: Record<string, SettingsSection> = {
   workspace: "general",
-  session: "connections"
+  session: "connections",
+  agent: "connections"
 };
 
 function decodeSegment(value: string): string | null {

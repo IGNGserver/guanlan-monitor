@@ -668,6 +668,20 @@ func TestSlowCollectionBudgetReportsOverrunAndKeepsAssets(t *testing.T) {
 	}
 }
 
+func TestCurrentIdentityUsesDeviceNameWhenDisplayNameIsUnset(t *testing.T) {
+	state := &agentState{baseIdentity: agentIdentity{DeviceID: "device-1", Hostname: "windows-host"}}
+	config := agentRuntimeConfig{Connection: agentConnectionConfig{DeviceID: "device-1"}}
+
+	if got := state.currentIdentity(config); got.Hostname != "windows-host" {
+		t.Fatalf("empty display name produced %q, want the device name", got.Hostname)
+	}
+
+	config.Connection.Hostname = "Office workstation"
+	if got := state.currentIdentity(config); got.Hostname != "Office workstation" {
+		t.Fatalf("custom display name produced %q", got.Hostname)
+	}
+}
+
 func TestSlowCollectionBudgetReturnsMetricsWhenItFits(t *testing.T) {
 	outcome := collectSlowMetricsBudgeted(hardwareAssetCache{}, testFullPlan(), 60*time.Second)
 	if outcome.overtime {

@@ -124,7 +124,7 @@ export function formatWorkspaceError(error: unknown, fallback: string): string {
     const messages: Record<string, string> = {
       hub_server_url_invalid: "中枢地址无效。请使用以 http:// 或 https:// 开头的完整地址。",
       hub_server_url_missing: "还没有配置中枢地址。请在连接页填写中枢地址。",
-      hub_server_url_required: "缺少中枢地址。请输入完整地址，例如 https://hub.example.com。",
+      hub_server_url_required: "缺少中枢地址。请输入完整地址，例如 http://服务器IP:38472。",
       hub_access_key_required: "缺少访问密钥。请输入中枢的访问密钥。",
       access_key_required: "缺少访问密钥。请输入中枢的访问密钥。",
       hub_address_saved_login_failed: "中枢地址已保存，但认证未通过。请核对访问密钥与中枢服务状态后重试。",

@@ -36,10 +36,10 @@ export function SettingsPage({ presentation = "desktop" }: { presentation?: "des
   const visibleSettings = visibleSettingsNavigation(capabilities);
   const defaultSection: SettingsSection = "general";
   const requestedSection: SettingsSection = route.kind === "settings" ? route.section : defaultSection;
-  // Sections carry client-scoped content: the machine-agent page only exists
-  // where an agent can be managed. Reaching such a section by URL must not
-  // render someone else's page under a label that is not even in the
-  // navigation, so fall back to the shared default and correct the address.
+  // Sections carry client-scoped content. Reaching a section that is not
+  // available in this client by URL must not render a page under a label that
+  // is not even in the navigation, so fall back to the shared default and
+  // correct the address.
   const section = visibleSettings.some((item) => item.id === requestedSection) ? requestedSection : defaultSection;
   useEffect(() => {
     if (route.kind === "settings" && route.section !== section) navigate({ kind: "settings", section });
@@ -48,7 +48,6 @@ export function SettingsPage({ presentation = "desktop" }: { presentation?: "des
     general: <GeneralSettings />,
     appearance: <AppearanceSettings />,
     connections: capabilities.canConfigureConnection ? <ConnectionSettings /> : <WebConnectionSettings />,
-    agent: <AgentSettings />,
     data: <DataSettings />,
     shortcuts: <PlatformShortcuts />,
     about: <AboutSettings />
@@ -58,8 +57,7 @@ export function SettingsPage({ presentation = "desktop" }: { presentation?: "des
   const descriptions: Partial<Record<SettingsSection, string>> = {
     general: "启动方式、刷新频率与资源阈值。",
     appearance: "主题、控件大小与动画。",
-    connections: "中枢地址、访问密钥与本机上报。",
-    agent: "本机采集服务与上报内容。",
+    connections: "中枢连接、本机 Agent 与设备名称。",
     data: "数据来源与版本信息。",
     shortcuts: "键盘操作一览。",
     about: "版本信息与项目链接。"
@@ -200,16 +198,13 @@ function AppearanceSettings() {
 }
 
 function ConnectionSettings() {
-  const { snapshot, saveHubConnection, logout, disconnectAgent, mutationPending } = useWorkspace();
+  const { snapshot, saveHubConnection, logout, mutationPending } = useWorkspace();
   const [serverUrl, setServerUrl] = useState(snapshot?.localBackend?.config.connection.serverUrl ?? "");
   const [accessKey, setAccessKey] = useState("");
   const [saving, setSaving] = useState(false);
-  const [disconnectConfirmOpen, setDisconnectConfirmOpen] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ serverUrl?: string; accessKey?: string }>({});
   const [formError, setFormError] = useState("");
   const authenticated = snapshot?.session.authenticated ?? false;
-  const agentConfigured = Boolean(snapshot?.localBackend?.config.connection.secretConfigured);
-  const agentRunning = snapshot?.localBackend?.running ?? false;
   useEffect(() => {
     setServerUrl(snapshot?.localBackend?.config.connection.serverUrl ?? "");
   }, [snapshot?.localBackend?.config.connection.serverUrl]);
@@ -219,7 +214,7 @@ function ConnectionSettings() {
     const nextErrors: { serverUrl?: string; accessKey?: string } = {};
     const nextServerUrl = serverUrl.trim();
     if (!nextServerUrl) {
-      nextErrors.serverUrl = "未填写中枢地址。请输入完整地址，例如 https://hub.example.com。";
+      nextErrors.serverUrl = "未填写中枢地址。请输入完整地址，例如 http://服务器IP:38472。";
     } else {
       try {
         const parsed = new URL(nextServerUrl);
@@ -227,7 +222,7 @@ function ConnectionSettings() {
           nextErrors.serverUrl = "地址协议不支持。请使用以 http:// 或 https:// 开头的地址。";
         }
       } catch {
-        nextErrors.serverUrl = "地址格式不正确。请包含协议和主机名，例如 https://hub.example.com。";
+        nextErrors.serverUrl = "地址格式不正确。请包含协议和主机名，例如 http://服务器IP:38472。";
       }
     }
     if (!accessKey.trim() && !snapshot?.session.accessKeyConfigured) {
@@ -257,10 +252,6 @@ function ConnectionSettings() {
       setSaving(false);
     }
   };
-  const disconnect = async () => {
-    const stopped = await disconnectAgent();
-    if (stopped) setDisconnectConfirmOpen(false);
-  };
   return (
     <div className="workspace-settings-stack">
       <Surface>
@@ -274,7 +265,7 @@ function ConnectionSettings() {
             type="url"
             value={serverUrl}
             onChange={(event) => { setServerUrl(event.target.value); setFieldErrors((current) => ({ ...current, serverUrl: undefined })); setFormError(""); }}
-            placeholder="https://hub.example.com"
+            placeholder="http://服务器IP:38472"
             autoComplete="url"
             errorText={fieldErrors.serverUrl}
             supportingText="必须包含 http:// 或 https:// 协议。"
@@ -299,18 +290,10 @@ function ConnectionSettings() {
           </div>
         </form>
       </Surface>
-      <Surface className="workspace-connection-note">
-        <div className="workspace-surface__header">
-          <div><span className="workspace-section-kicker">本机上报</span><h3>{agentRunning ? "Agent 正在采集" : agentConfigured ? "Agent 已配置但未运行" : "Agent 未配置"}</h3></div>
-          <StatusLabel state={agentRunning ? "online" : agentConfigured ? "warning" : "unknown"} />
-        </div>
-        <p className="workspace-surface__description">退出桌面查看只会结束当前界面的中枢认证，本机 Agent 仍可能继续采集和上报。如果要停止本机上报，会停止采集、关闭云同步并清除本机保存的上报凭据。</p>
-        {agentConfigured && <div className="workspace-form__actions"><Button variant="danger" onClick={() => setDisconnectConfirmOpen(true)} disabled={mutationPending}>停止本机上报</Button></div>}
-        {disconnectConfirmOpen && <div className="workspace-danger-note" role="alert"><strong>确认停止本机上报？</strong><p>这会停止 Agent、关闭云同步并清除上报凭据；之后需要重新配置连接才能恢复。</p><div className="workspace-form__actions"><Button variant="danger" onClick={() => void disconnect()} disabled={mutationPending}>{mutationPending ? "正在停止…" : "停止并清除凭据"}</Button><Button variant="quiet" onClick={() => setDisconnectConfirmOpen(false)} disabled={mutationPending}>取消</Button></div></div>}
-      </Surface>
+      <AgentSettings />
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">连接诊断</span><h3>如果连接失败</h3></div></div>
-        <p className="workspace-surface__description">请确认地址包含协议（例如 https://），中枢服务已启动，并使用中枢访问密钥。保存按钮会先把地址写入本机，再用同一地址完成认证；认证失败时地址仍然保留，修正密钥或中枢状态后重试即可。</p>
+        <p className="workspace-surface__description">请确认地址包含协议（例如 http://服务器IP:38472），中枢服务已启动，并使用中枢访问密钥。保存按钮会先把地址写入本机，再用同一地址完成认证；认证失败时地址仍然保留，修正密钥或中枢状态后重试即可。</p>
       </Surface>
     </div>
   );
@@ -352,7 +335,7 @@ function WebConnectionSettings() {
 }
 
 function AgentSettings() {
-  const { snapshot, controlAgent, updateLocalConfig, cloudPush, refreshing, mutationPending } = useWorkspace();
+  const { snapshot, controlAgent, updateLocalConfig, cloudPush, disconnectAgent, refreshing, mutationPending } = useWorkspace();
   const backend = snapshot?.localBackend;
   const config = backend?.config;
   // "service-readonly" means the machine-scope service owns the configuration
@@ -379,8 +362,11 @@ function AgentSettings() {
   const [instanceMetricConfig, setInstanceMetricConfig] = useState<Record<string, DeviceMetricKey[]>>(config?.instanceMetricConfig ?? {});
   const instanceMetricConfigRef = useRef(instanceMetricConfig);
   const [agentHostname, setAgentHostname] = useState(config?.connection.hostname ?? "");
+  const [agentHostnameDirty, setAgentHostnameDirty] = useState(false);
+  const [savingDeviceName, setSavingDeviceName] = useState(false);
   const [normalSamplingSeconds, setNormalSamplingSeconds] = useState(String(config?.sampling.normalIntervalSeconds ?? 30));
   const [slowSamplingSeconds, setSlowSamplingSeconds] = useState(String(config?.sampling.slowIntervalSeconds ?? 30));
+  const [disconnectConfirmOpen, setDisconnectConfirmOpen] = useState(false);
   const fanSeries = useMemo(
     () => mergeFanMetricSeries(
       snapshot?.metrics?.latest.fans ?? [],
@@ -391,6 +377,7 @@ function AgentSettings() {
   );
   const temperatureSources = Array.isArray(backend?.temperatureSources) ? backend.temperatureSources : [];
   const temperatureSensorBackends = Array.isArray(backend?.temperatureSensorBackends) ? backend.temperatureSensorBackends : [];
+  const agentConfigured = Boolean(config?.connection.secretConfigured);
   const metricDraftKey = enabledMetrics.join("|");
   const probeDraftKey = configuredProbes.map((selection) => `${selection.target}:${selection.provider}:${selection.enabled}`).join("|");
   // These keys only need to detect a change in the server document, and they run
@@ -416,10 +403,10 @@ function AgentSettings() {
     instanceMetricConfigRef.current = config?.instanceMetricConfig ?? {};
   }, [instanceMetricDraftKey]);
   useEffect(() => {
-    setAgentHostname(config?.connection.hostname ?? "");
+    if (!agentHostnameDirty) setAgentHostname(config?.connection.hostname ?? "");
     setNormalSamplingSeconds(String(config?.sampling.normalIntervalSeconds ?? 30));
     setSlowSamplingSeconds(String(config?.sampling.slowIntervalSeconds ?? 30));
-  }, [runtimeDraftKey]);
+  }, [runtimeDraftKey, agentHostnameDirty]);
   if (!backend || !config) return <EmptyState title="本机 Agent 尚未启动" detail="启动本机服务后才能查看和修改采集设置。" action={<Button variant="primary" onClick={() => void controlAgent("start")}>启动服务</Button>} />;
 
   const detectedGroups: DesktopDetectedTargetGroup[] = (() => {
@@ -466,15 +453,32 @@ function AgentSettings() {
     setInstanceMetricConfig(next);
     void updateLocalConfig({ instanceMetricConfig: next });
   };
+  const saveDeviceName = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSavingDeviceName(true);
+    const hostname = agentHostname.trim();
+    try {
+      const saved = await updateLocalConfig({ connection: { hostname } });
+      if (saved) {
+        setAgentHostname(hostname);
+        setAgentHostnameDirty(false);
+      }
+    } finally {
+      setSavingDeviceName(false);
+    }
+  };
   const saveRuntimeConfig = () => {
     const normalIntervalSeconds = Math.max(1, Number.parseInt(normalSamplingSeconds, 10) || 30);
     const slowIntervalSeconds = Math.max(1, Number.parseInt(slowSamplingSeconds, 10) || normalIntervalSeconds);
     setNormalSamplingSeconds(String(normalIntervalSeconds));
     setSlowSamplingSeconds(String(slowIntervalSeconds));
     void updateLocalConfig({
-      connection: { hostname: agentHostname.trim() },
       sampling: { normalIntervalSeconds, slowIntervalSeconds }
     });
+  };
+  const disconnect = async () => {
+    const stopped = await disconnectAgent();
+    if (stopped) setDisconnectConfirmOpen(false);
   };
   /* Optimistic toggle with a rollback.
    *
@@ -524,13 +528,16 @@ function AgentSettings() {
         {agentMode === "service" && <p className="workspace-surface__description">本机 Agent 由系统级服务运行，关闭本应用或注销登录后仍会继续采集与上报。</p>}
         <div className="workspace-agent-actions"><Button variant="primary" onClick={() => void controlAgent(backend.running ? "stop" : "start")} disabled={refreshing || mutationPending || agentReadOnly}>{backend.running ? "停止服务" : "启动服务"}</Button><Button variant="quiet" onClick={() => void controlAgent("restart")} disabled={refreshing || mutationPending || agentReadOnly}>重启服务</Button><Button variant="quiet" onClick={() => void controlAgent("check-connection")} disabled={refreshing || mutationPending || agentReadOnly}>检查连接</Button><Button variant="quiet" onClick={() => void controlAgent("detect-probes")} disabled={refreshing || mutationPending || agentReadOnly}>重新检测硬件</Button></div>
         <div className="workspace-detail-list"><SummaryRow label="运行方式" value={agentModeLabel} /><SummaryRow label="连接状态" value={backend.connectionStatus} /><SummaryRow label="上传间隔" value={`${backend.effectiveUploadIntervalSeconds} 秒`} /><SummaryRow label="待上传样本" value={pendingSampleSummary(backend)} /><SummaryRow label="配置文件" value={backend.configFileExists ? "已找到" : "未找到"} />{uploadError && <SummaryRow label="最近上传问题" value={uploadError} />}{cloudSyncError && <SummaryRow label="最近云同步问题" value={cloudSyncError} />}</div>
+        {agentConfigured && <div className="workspace-form__actions"><Button variant="danger" onClick={() => setDisconnectConfirmOpen(true)} disabled={mutationPending || agentReadOnly}>停止并清除凭据</Button></div>}
+        {disconnectConfirmOpen && <div className="workspace-danger-note" role="alert"><strong>确认停止本机上报？</strong><p>这会停止 Agent、关闭云同步并清除本机保存的上报凭据；之后需要重新配置连接才能恢复。</p><div className="workspace-form__actions"><Button variant="danger" onClick={() => void disconnect()} disabled={mutationPending}>{mutationPending ? "正在停止…" : "停止并清除凭据"}</Button><Button variant="quiet" onClick={() => setDisconnectConfirmOpen(false)} disabled={mutationPending}>取消</Button></div></div>}
       </Surface>
       <AgentDiagnosticsSurface backend={backend} appVersion={snapshot?.update?.currentVersion ?? CURRENT_VERSION_FALLBACK} />
       <Surface>
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">这台设备</span><h3>显示名与上报内容</h3></div></div>
-        <div className="workspace-form workspace-agent-runtime-form">
-          <M3TextField label="设备显示名" value={agentHostname} onChange={(event) => setAgentHostname(event.target.value)} placeholder="例如：办公室主机" maxLength={120} supportingText="这台设备在设备目录里显示的名字。" />
-        </div>
+        <form className="workspace-form workspace-agent-runtime-form" onSubmit={saveDeviceName}>
+          <M3TextField label="设备显示名" value={agentHostname} onChange={(event) => { setAgentHostname(event.target.value); setAgentHostnameDirty(true); }} placeholder="例如：办公室主机" maxLength={120} supportingText="留空时使用本机设备名称，不会使用默认的“Windows Agent”。" />
+          <div className="workspace-form__actions"><Button variant="primary" type="submit" disabled={savingDeviceName || mutationPending || agentReadOnly}>{savingDeviceName ? "正在保存…" : "保存设备名称"}</Button></div>
+        </form>
         <div className="workspace-settings-list">
           <SettingRow label="正在上报的指标" description={`已选 ${selectedMetrics.length} 项；逐项调整在下方“高级设置”里。`}><span className="workspace-setting-note">{config.cloudSyncEnabled ? "已开启上传到中枢" : "仅本机记录，不上传"}</span></SettingRow>
           <div className="workspace-form__actions"><Button variant="quiet" onClick={() => void cloudPush()} disabled={refreshing || mutationPending || agentReadOnly}><Icon name="connection" size={15} />同步到中枢</Button></div>
@@ -580,8 +587,8 @@ const CURRENT_VERSION_FALLBACK = "开发版本";
  * They used to exist only inside the Electron main process: the fields were
  * collected on every snapshot and no page read them, so restart counts, the last
  * exit, backlog age and the four log/config paths were invisible. This surface
- * is desktop-only by construction — its caller lives on the Agent settings page,
- * which the browser console does not expose.
+ * is desktop-only by construction — its caller lives on the combined connection
+ * page, which the browser console does not expose.
  *
  * The export is plain text and redacted; `buildAgentDiagnosticsReport` explains
  * that the Agent credential was removed before the snapshot ever reached here.

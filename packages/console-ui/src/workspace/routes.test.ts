@@ -19,14 +19,14 @@ test("unknown or malformed workspace hashes fall back to overview", () => {
 test("retired section and hub hashes resolve to their replacements", () => {
   assert.deepEqual(parseWorkspaceHash("#settings/workspace"), { kind: "settings", section: "general" });
   assert.deepEqual(parseWorkspaceHash("#settings/session"), { kind: "settings", section: "connections" });
+  assert.deepEqual(parseWorkspaceHash("#settings/agent"), { kind: "settings", section: "connections" });
   assert.deepEqual(parseWorkspaceHash("#settings"), { kind: "settings", section: "general" });
   assert.deepEqual(parseWorkspaceHash("#hub/primary"), { kind: "overview" });
 });
 
 test("every settings section round-trips through the hash", () => {
-  for (const section of ["general", "appearance", "connections", "agent", "data", "shortcuts", "about"] as const) {
+  for (const section of ["general", "appearance", "connections", "data", "shortcuts", "about"] as const) {
     const route = { kind: "settings", section } as const;
     assert.deepEqual(parseWorkspaceHash(serializeWorkspaceRoute(route)), route, `#${section} must parse back to itself`);
   }
 });
-

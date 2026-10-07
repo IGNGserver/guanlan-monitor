@@ -8,15 +8,13 @@ import { Icon, type IconName } from "../ui";
 const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: string }).src;
 
 /**
- * Both clients share one settings vocabulary. A section only appears where it
- * can actually be used, and the machine-agent entry is the single exception
- * that exists on the desktop client alone.
+ * Both clients share one settings vocabulary. Desktop-only Agent controls live
+ * inside the combined connection page, so there is no second Agent section.
  */
 const desktopSettingsNav: Array<{ id: SettingsSection; label: string; icon: IconName }> = [
   { id: "general", label: "通用", icon: "settings" },
   { id: "appearance", label: "外观", icon: "appearance" },
-  { id: "connections", label: "连接", icon: "connection" },
-  { id: "agent", label: "本机 Agent", icon: "agent" },
+  { id: "connections", label: "连接与本机", icon: "connection" },
   { id: "data", label: "数据与更新", icon: "data" },
   { id: "shortcuts", label: "快捷键参考", icon: "keyboard" },
   { id: "about", label: "关于观澜", icon: "about" }
@@ -37,7 +35,7 @@ export function settingsNavigation(capabilities: WorkspaceUiValue["capabilities"
 
 /** One place decides which sections a client exposes. */
 export function visibleSettingsNavigation(capabilities: WorkspaceUiValue["capabilities"]) {
-  return settingsNavigation(capabilities).filter((item) => (item.id === "agent" ? capabilities.canManageLocalAgent : true));
+  return settingsNavigation(capabilities);
 }
 
 export function SettingsNavigation() {
@@ -76,7 +74,7 @@ export function PrimaryNavigation({ sidebarPeek, onSidebarLeave }: { sidebarPeek
           <M3NavigationItem className="workspace-nav-item" icon={<Icon name="overview" />} selected={route.kind === "overview"} onClick={() => navigate({ kind: "overview" })} title="总览" aria-label="总览">总览</M3NavigationItem>
           <M3NavigationItem className="workspace-nav-item" icon={<Icon name="device" />} selected={route.kind === "devices" || route.kind === "device"} onClick={() => navigate({ kind: "devices" })} title="设备" aria-label="设备">设备</M3NavigationItem>
           <div className="workspace-sidebar__spacer" />
-          {capabilities.canManageLocalAgent && <M3NavigationItem className="workspace-nav-item" icon={<Icon name="agent" />} onClick={() => navigate({ kind: "settings", section: "agent" })} title="本机 Agent" aria-label="本机 Agent">本机 Agent</M3NavigationItem>}
+          {capabilities.canManageLocalAgent && <M3NavigationItem className="workspace-nav-item" icon={<Icon name="connection" />} onClick={() => navigate({ kind: "settings", section: "connections" })} title="连接与本机" aria-label="连接与本机">连接与本机</M3NavigationItem>}
         </nav>
       )}
       <div className="workspace-sidebar__footer">

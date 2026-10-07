@@ -51,7 +51,7 @@ export function CommandPalette() {
     { group: "页面", label: "打开设备目录", detail: "搜索、筛选和管理全部设备", keywords: ["设备", "列表", "目录"], action: () => navigate({ kind: "devices" }) },
     { group: "操作", label: "刷新设备状态", detail: "重新读取中枢和设备数据", keywords: ["刷新", "同步", "reload"], action: () => void refresh() },
     { group: "操作", label: "打开连接设置", detail: capabilities.canConfigureConnection ? "填写中枢地址与访问密钥" : "查看当前会话与数据链路", keywords: ["中枢", "地址", "密钥", "连接", "会话"], action: () => openSettings("connections") },
-    ...(capabilities.canManageLocalAgent ? [{ group: "操作" as const, label: "控制本机 Agent", detail: "启动、停止或重新检测硬件", keywords: ["采集", "上报", "agent"], action: () => openSettings("agent") }] : []),
+    ...(capabilities.canManageLocalAgent ? [{ group: "操作" as const, label: "控制本机 Agent", detail: "启动、停止或重新检测硬件", keywords: ["采集", "上报", "agent"], action: () => openSettings("connections") }] : []),
     ...visibleSettingsNavigation(capabilities)
       .map((item) => ({ group: "设置" as const, label: `设置 · ${item.label}`, detail: "打开对应设置页", action: () => openSettings(item.id) })),
     ...allDevices.map((device): Command => ({ group: "设备", label: device.hostname, detail: `${device.os} · ${device.deviceId}`, action: () => navigate({ kind: "device", deviceId: device.deviceId }) }))

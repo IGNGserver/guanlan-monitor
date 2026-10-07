@@ -122,7 +122,7 @@ async function run() {
     assert.ok(desktopMetrics.captionButton.glyphData.length > 0, "the minimize glyph path is empty");
     assert.equal(await page.locator(".workspace-device-item").count(), 0, "Electron primary navigation must not contain a device list");
     const desktopNavLabels = (await page.locator(".workspace-sidebar .m3e-nav-item").allTextContents()).map((label) => label.trim());
-    const expectedDesktopNav = desktopNavLabels.includes("本机 Agent") ? ["总览", "设备", "本机 Agent", "设置"] : ["总览", "设备", "设置"];
+    const expectedDesktopNav = desktopNavLabels.includes("连接与本机") ? ["总览", "设备", "连接与本机", "设置"] : ["总览", "设备", "设置"];
     assert.deepEqual(desktopNavLabels, expectedDesktopNav, "Electron primary navigation contains non-destination commands");
     await page.screenshot({ path: path.join(outputDir, "electron-workspace-desktop.png"), fullPage: true, animations: "disabled" });
 
@@ -147,11 +147,10 @@ async function run() {
 
     await page.evaluate(() => { window.location.hash = "#settings/general"; });
     await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
-    // Same vocabulary as the browser console, plus the one section that only
-    // exists where a machine agent can be managed.
+    // The desktop-only connection page also owns the local Agent controls.
     assert.deepEqual(
       (await page.locator(".workspace-sidebar__nav .workspace-nav-item .m3e-nav-item__label").allTextContents()).map((label) => label.trim()),
-      ["通用", "外观", "连接", "本机 Agent", "数据与更新", "快捷键参考", "关于观澜"],
+      ["通用", "外观", "连接与本机", "数据与更新", "快捷键参考", "关于观澜"],
       "desktop settings must use the shared section vocabulary"
     );
     await page.screenshot({ path: path.join(outputDir, "electron-settings-desktop.png"), fullPage: true, animations: "disabled" });
@@ -173,7 +172,8 @@ async function run() {
     // stops reaching the page fails here rather than silently disappearing.
     await page.evaluate(() => { window.location.hash = "#settings/agent"; });
     await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
-    assert.equal(await page.locator(".workspace-agent-diagnostics").count(), 1, "the desktop Agent page must expose the diagnostics surface");
+    assert.equal(await page.locator(".workspace-agent-diagnostics").count(), 1, "the legacy Agent hash must open the combined page with diagnostics");
+    assert.equal(await page.getByRole("button", { name: "保存设备名称" }).count(), 1, "the combined page must expose an explicit device-name save button");
     const diagnosticLabels = (await page.locator(".workspace-agent-diagnostics .workspace-summary-row span").allTextContents()).map((label) => label.trim());
     for (const label of ["Agent 启动于", "采集进程启动于", "自动重启", "最近退出", "最近重启", "自动重启挂起", "最近硬件检测", "最近成功上传", "最近同步到中枢", "云配置同步", "最老待上传样本"]) {
       assert.ok(diagnosticLabels.includes(label), `the desktop diagnostics surface is missing the "${label}" row (${diagnosticLabels.join(",")})`);

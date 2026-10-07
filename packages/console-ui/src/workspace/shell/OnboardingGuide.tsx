@@ -41,7 +41,7 @@ export function OnboardingGuide() {
   const steps: GuideStep[] = capabilities.canControlNativeWindow
     ? [
       { title: "连接中枢", detail: "填写中枢地址和访问密钥；密钥由中枢管理员提供。", actionLabel: "打开连接设置", actionSection: "connections" },
-      { title: "启动本机 Agent", detail: "Agent 负责采集这台机器的硬件数据。", actionLabel: "打开本机 Agent", actionSection: "agent" },
+      { title: "启动本机 Agent", detail: "Agent 负责采集这台机器的硬件数据。", actionLabel: "打开连接与本机", actionSection: "connections" },
       { title: "等待第一批数据", detail: "上报一次后，这台设备就会出现在设备目录里。" }
     ]
     : [
