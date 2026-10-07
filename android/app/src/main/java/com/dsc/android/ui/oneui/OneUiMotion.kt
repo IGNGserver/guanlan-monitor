@@ -226,4 +226,8 @@ data class OneUiPredictiveBackProgress(
 
   val translationX: Float
     get() = (if (swipeEdge == 0) 1f else -1f) * progress * 48f
+
+  /** 当前页面略微透出，让应用内实时绘制的上一页可见（交）。 */
+  val contentAlpha: Float
+    get() = (1f - progress * 0.18f).coerceIn(0.82f, 1f)
 }

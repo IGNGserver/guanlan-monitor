@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -422,7 +423,7 @@ private fun TrafficRecords(records: List<TrafficRangeRecordDto>) {
     return
   }
   // 记录最多 36 条：先给最近 6 条，其余用“更多信息”纵向展开，而不是把面板拉成一列长跑（构 + 动）
-  var expanded by remember(records) { mutableStateOf(false) }
+  var expanded by rememberSaveable(records) { mutableStateOf(false) }
   val row: @Composable (TrafficRangeRecordDto) -> Unit = { record ->
     OneUiListItem(
       title = formatTime(record.timestamp),

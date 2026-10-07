@@ -478,6 +478,7 @@ fun OneUiListDivider(
 @Composable
 fun OneUiExpandableGroup(
   expanded: Boolean,
+  modifier: Modifier = Modifier,
   onToggle: () -> Unit,
   title: String,
   subtitle: String? = null,
@@ -490,7 +491,7 @@ fun OneUiExpandableGroup(
   content: @Composable ColumnScope.() -> Unit
 ) {
   OneUiGroup(
-    modifier = Modifier
+    modifier = modifier
       .fillMaxWidth()
       .animateContentSize(
         animationSpec = motion.tween(OneUiDuration.Content, OneUiEasing.EmphasizedDecelerate)
