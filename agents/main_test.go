@@ -730,6 +730,93 @@ func TestSteadyStateFastCycleSpawnsNoProbes(t *testing.T) {
 	}
 }
 
+// System overview counters no longer walk every process on every fast cycle.
+// On Linux they refresh on the slow cadence; the test proves the enumeration
+// runs once and the second fast payload reuses the same numbers.
+func TestSystemStatsRefreshFollowsSlowInterval(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reads the counters from one syscall and refreshes per cycle")
+	}
+	originalRunner := probeRunner
+	probeRunner = func(context.Context, string, ...string) ([]byte, error) {
+		return nil, errors.New("probe disabled for this test")
+	}
+	defer func() { probeRunner = originalRunner }()
+
+	originalCollector := systemStatsCollector
+	var calls int
+	systemStatsCollector = func() systemStats {
+		calls++
+		return systemStats{ProcessCount: calls, ThreadCount: calls * 2}
+	}
+	defer func() { systemStatsCollector = originalCollector }()
+
+	state := &agentState{baseIdentity: agentIdentity{DeviceID: "test-device", Hostname: "test-host"}}
+	cfg := newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "http://127.0.0.1:1"})
+	cfg.Sampling.NormalIntervalSeconds = 1
+	cfg.Sampling.SlowIntervalSeconds = 3600
+
+	first := state.collectPayload(cfg)
+	second := state.collectPayload(cfg)
+	if calls != 1 {
+		t.Fatalf("two cycles inside the slow interval must enumerate once, got %d", calls)
+	}
+	if first.System != second.System {
+		t.Fatalf("the cached system counters must be reused: %#v vs %#v", first.System, second.System)
+	}
+}
+
+// The smartctl -A fallback for disks without an hwmon temperature used to run
+// for every physical disk on every slow cycle. It now shares the disk-sensor
+// TTL, so a cycle inside the TTL must not start a single smartctl process even
+// when the binary is on PATH.
+func TestSlowCycleInsideDiskSensorTTLDoesNotSpawnSmartctl(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the smartctl -A fallback only exists on Linux")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "smartctl"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	original := probeRunner
+	var smartctlCalls int
+	probeRunner = func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		if name == "smartctl" {
+			smartctlCalls++
+		}
+		return nil, errors.New("probe disabled for this test")
+	}
+	defer func() { probeRunner = original }()
+
+	assets := hardwareAssetCache{
+		diskSensorsCollectedAt: time.Now(),
+		linuxDiskTemperatures:  map[string]*float64{},
+	}
+	_, _ = collectSlowMetrics(assets)
+	if smartctlCalls != 0 {
+		t.Fatalf("a slow cycle inside the disk-sensor TTL spawned smartctl %d times", smartctlCalls)
+	}
+}
+
+// A refresh cycle must store the fallback map so the next cycles can reuse it.
+func TestDiskSensorRefreshCachesLinuxTemperatureFallback(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the smartctl -A fallback only exists on Linux")
+	}
+	original := probeRunner
+	probeRunner = func(context.Context, string, ...string) ([]byte, error) {
+		return nil, errors.New("probe disabled for this test")
+	}
+	defer func() { probeRunner = original }()
+
+	_, assets := collectSlowMetrics(hardwareAssetCache{})
+	if assets.linuxDiskTemperatures == nil {
+		t.Fatal("a refresh cycle must cache the smartctl fallback map for the TTL")
+	}
+}
+
 // The inventory cache is what removes a per-cycle hardware probe. A change in
 // the device set must clear its timestamp so the next cycle re-queries, and a
 // refresh rebuilds the struct, so the previous count has to be read first.
