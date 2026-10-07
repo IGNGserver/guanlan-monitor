@@ -45,13 +45,16 @@ const (
 	// cycle paid for a stack of PowerShell/netsh/smartctl process spawns; 60s
 	// halves that churn with no loss for CPU/memory/disk/network rates, which
 	// stay on the fast path.
-	defaultSlowIntervalSeconds   = 60
-	maxSamplingIntervalSeconds   = 86400
-	hardwareSensorHelperInterval = 30 * time.Second
-	// The SYSTEM helper refreshes the privileged sensor cache; the collector
-	// only needs it to be recent enough to avoid its own probe. A 2 minute
-	// window tolerates one missed helper cycle without falling back to a
-	// per-collector PowerShell probe.
+	defaultSlowIntervalSeconds = 60
+	maxSamplingIntervalSeconds = 86400
+	// The SYSTEM helper refreshes the privileged sensor cache once per slow
+	// interval: 30s made it the most expensive recurring probe on a Windows
+	// machine (a PowerShell LHM run twice a minute) while the collector accepts
+	// the cache for hardwareSensorCacheMaxAge. One probe per minute keeps every
+	// slow cycle supplied from cache and still tolerates one missed cycle.
+	hardwareSensorHelperInterval = 60 * time.Second
+	// The 2 minute acceptance window tolerates one missed helper cycle without
+	// falling back to a per-collector PowerShell probe.
 	hardwareSensorCacheMaxAge = 120 * time.Second
 	// Upper bound for one slow collection. Every external probe has its own
 	// timeout, but they run in sequence; without a global budget a set of
@@ -526,7 +529,12 @@ type hardwareAssetCache struct {
 	// shorter TTL; see diskSensorCacheTTL.
 	diskSensors            map[string]diskSensorMetadata
 	diskSensorsCollectedAt time.Time
-	referenceDeviceCount   int
+	// windowsCPUFallback is the Win32_Processor projection used to fill L3
+	// cache sizes that gopsutil cannot read. L3 is fixed for the lifetime of
+	// the machine, so it is refreshed with the rest of the Windows inventory
+	// instead of spawning PowerShell on every slow cycle.
+	windowsCPUFallback   []cpuPackageStats
+	referenceDeviceCount int
 }
 
 // linuxMemoryMetadata is the static memory inventory dmidecode reports.
@@ -2066,7 +2074,39 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 	result := emptySlowMetrics()
 	result.collectedAt = time.Now().UTC()
 
-	cpuFrequencyMHz, cpuPackages, cpuErr := collectCPUPackages()
+	// Windows inventory is one PowerShell run per TTL and feeds the consumers
+	// below (the LHM snapshot alignment, the disk/network metadata, the GPU
+	// adapter projections and the CPU L3-cache fallback), so it is resolved
+	// once, before them. Linux memory inventory is a root-only dmidecode run
+	// whose result never changes while the machine is up, so it shares the same
+	// TTL.
+	refreshAssets := assets.expiredFor(hardwareAssetCacheTTL)
+	if refreshAssets {
+		switch runtime.GOOS {
+		case "windows":
+			metadata, adapters := collectWindowsInventory()
+			assets.metadata = metadata
+			assets.gpuAdapters = adapters
+			if _, fallbackPackages, fallbackErr := windowsCPUFallbackProbe(); fallbackErr == nil {
+				assets.windowsCPUFallback = fallbackPackages
+			}
+			assets.collectedAt = time.Now().UTC()
+		case "linux":
+			// Cache the attempt, not just a success. dmidecode needs root: on a
+			// non-root collector run it fails every time, and recording only
+			// successes made the collector spawn a process that could never
+			// succeed once per cycle. A permission or presence problem does not
+			// change while the process runs, so the TTL is the right bound for
+			// retrying it too.
+			memory, ok := collectLinuxMemoryMetadata()
+			if ok {
+				assets.linuxMemory = &memory
+			}
+			assets.collectedAt = time.Now().UTC()
+		}
+	}
+
+	cpuFrequencyMHz, cpuPackages, cpuErr := collectCPUPackages(assets.windowsCPUFallback)
 	if cpuErr != nil {
 		logSlowMetricsError(logCategoryCPUSlow, cpuErr)
 	} else {
@@ -2090,34 +2130,6 @@ func collectSlowMetrics(assets hardwareAssetCache) (slowMetrics, hardwareAssetCa
 	} else {
 		result.networkCollected = true
 		result.networkInterfaces = networkInterfaces
-	}
-
-	// Windows inventory is one PowerShell run per TTL and feeds three consumers
-	// below (the LHM snapshot alignment, the disk/network metadata and the GPU
-	// adapter projections), so it is resolved once, before them. Linux memory
-	// inventory is a root-only dmidecode run whose result never changes while the
-	// machine is up, so it shares the same TTL.
-	refreshAssets := assets.expiredFor(hardwareAssetCacheTTL)
-	if refreshAssets {
-		switch runtime.GOOS {
-		case "windows":
-			metadata, adapters := collectWindowsInventory()
-			assets.metadata = metadata
-			assets.gpuAdapters = adapters
-			assets.collectedAt = time.Now().UTC()
-		case "linux":
-			// Cache the attempt, not just a success. dmidecode needs root: on a
-			// non-root collector run it fails every time, and recording only
-			// successes made the collector spawn a process that could never
-			// succeed once per cycle. A permission or presence problem does not
-			// change while the process runs, so the TTL is the right bound for
-			// retrying it too.
-			memory, ok := collectLinuxMemoryMetadata()
-			if ok {
-				assets.linuxMemory = &memory
-			}
-			assets.collectedAt = time.Now().UTC()
-		}
 	}
 
 	hardware := collectHardwareSensors(assets.gpuAdapters)
@@ -2898,6 +2910,11 @@ func execProbeCommand(ctx context.Context, name string, args ...string) ([]byte,
 // a variable so a test can prove the cache path removed a real process spawn.
 var probeRunner probeCommandRunner = execProbeCommand
 
+// windowsCPUFallbackProbe is the Win32_Processor projection that fills L3
+// cache sizes gopsutil cannot read. It is a variable so a test can prove the
+// inventory TTL removed the per-cycle PowerShell spawn.
+var windowsCPUFallbackProbe = collectWindowsCPUPackagesFallback
+
 func runWindowsPowerShell(ctx context.Context, script string, environment ...string) ([]byte, error) {
 	normalizedScript := strings.Join([]string{
 		"[Console]::InputEncoding = [System.Text.Encoding]::UTF8",
@@ -2922,13 +2939,13 @@ func runWindowsPowerShell(ctx context.Context, script string, environment ...str
 	return output, err
 }
 
-func collectCPUPackages() (*float64, []cpuPackageStats, error) {
+func collectCPUPackages(cachedFallback []cpuPackageStats) (*float64, []cpuPackageStats, error) {
 	infoCtx, infoCancel := context.WithTimeout(context.Background(), cpuPackagesTimeout)
 	defer infoCancel()
 	info, err := cpu.InfoWithContext(infoCtx)
 	if err != nil {
 		if runtime.GOOS == "windows" {
-			if frequency, packages, fallbackErr := collectWindowsCPUPackagesFallback(); fallbackErr == nil {
+			if frequency, packages, fallbackErr := windowsCPUFallbackProbe(); fallbackErr == nil {
 				return frequency, packages, nil
 			}
 		}
@@ -2993,7 +3010,7 @@ func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 
 	if len(packages) == 0 {
 		if runtime.GOOS == "windows" {
-			if frequency, fallbackPackages, fallbackErr := collectWindowsCPUPackagesFallback(); fallbackErr == nil {
+			if frequency, fallbackPackages, fallbackErr := windowsCPUFallbackProbe(); fallbackErr == nil {
 				return frequency, fallbackPackages, nil
 			}
 		}
@@ -3043,12 +3060,14 @@ func collectCPUPackages() (*float64, []cpuPackageStats, error) {
 		})
 	}
 
-	if runtime.GOOS == "windows" {
-		if _, fallbackPackages, fallbackErr := collectWindowsCPUPackagesFallback(); fallbackErr == nil {
-			for index := range result {
-				if result[index].L3CacheBytes == 0 && index < len(fallbackPackages) {
-					result[index].L3CacheBytes = fallbackPackages[index].L3CacheBytes
-				}
+	// L3 cache sizes come from the Win32_Processor fallback that the Windows
+	// inventory refresh runs once per TTL. A failed or missing refresh simply
+	// leaves the field at zero until the next one, instead of spawning
+	// PowerShell on every slow cycle for a value that never changes.
+	if runtime.GOOS == "windows" && len(cachedFallback) > 0 {
+		for index := range result {
+			if result[index].L3CacheBytes == 0 && index < len(cachedFallback) {
+				result[index].L3CacheBytes = cachedFallback[index].L3CacheBytes
 			}
 		}
 	}

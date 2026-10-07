@@ -529,6 +529,43 @@ func TestHardwareAssetCacheExpiryAndFingerprint(t *testing.T) {
 	}
 }
 
+// The Win32_Processor fallback exists only to fill L3 cache sizes, which do not
+// change while the machine runs. It must run once per inventory TTL, not once
+// per slow cycle: that per-cycle PowerShell probe was the single largest
+// steady-state cost on Windows.
+func TestWindowsCPUFallbackRefreshUsesInventoryTTL(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("the Win32_Processor fallback only exists on Windows")
+	}
+	originalProbe := windowsCPUFallbackProbe
+	originalRunner := probeRunner
+	var calls int
+	windowsCPUFallbackProbe = func() (*float64, []cpuPackageStats, error) {
+		calls++
+		return nil, []cpuPackageStats{{ID: "cpu-0", L3CacheBytes: 4096}}, nil
+	}
+	probeRunner = func(context.Context, string, ...string) ([]byte, error) {
+		return []byte("[]"), nil
+	}
+	defer func() {
+		windowsCPUFallbackProbe = originalProbe
+		probeRunner = originalRunner
+	}()
+
+	assets := hardwareAssetCache{}
+	_, assets = collectSlowMetrics(assets)
+	if calls != 1 {
+		t.Fatalf("the first slow cycle must refresh the cached CPU fallback once, got %d", calls)
+	}
+	// A zero reference count disables the device-change invalidation so the
+	// second call deterministically stays inside the TTL.
+	assets.referenceDeviceCount = 0
+	_, _ = collectSlowMetrics(assets)
+	if calls != 1 {
+		t.Fatalf("a slow cycle inside the TTL must reuse the cached fallback, got %d calls", calls)
+	}
+}
+
 // The collector reports the probes it actually started. Counters are consumed on
 // read so a payload carries this cycle's spawns, not a running total.
 func TestProbeSpawnCountersAreConsumedAndReset(t *testing.T) {
