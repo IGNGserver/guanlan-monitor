@@ -196,3 +196,37 @@ func TestDecorateDetectedFanTargetsUsesProbeIDsAndSelections(t *testing.T) {
 		t.Fatalf("fan interface was not preserved: %#v", targets[0].Instances[0])
 	}
 }
+
+// The diagnostics log must stay bounded on a long-lived machine-scope service.
+func TestTrimDiagnosticLogKeepsTailWithinCap(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent-ui.backend.log")
+	line := strings.Repeat("x", 1024) + "\n"
+	content := strings.Repeat(line, (diagnosticsLogMaxBytes/1024)+64)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	trimDiagnosticLog(path)
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() > diagnosticsLogMaxBytes {
+		t.Fatalf("trimmed log is still %d bytes", info.Size())
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) == 0 || !strings.HasSuffix(string(data), "x\n") {
+		t.Fatal("the trimmed log must keep the most recent lines")
+	}
+	// A log inside the cap must not be rewritten.
+	trimDiagnosticLog(path)
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Size() != info.Size() {
+		t.Fatal("a log inside the cap must not be rewritten")
+	}
+}

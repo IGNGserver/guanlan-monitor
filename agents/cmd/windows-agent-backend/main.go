@@ -1918,6 +1918,7 @@ func (s *server) appendDiagnosticLocked(format string, values ...any) {
 	}
 	_ = os.Chmod(filepath.Dir(s.diagnosticsPath), 0o700)
 	line := fmt.Sprintf("%s %s\n", time.Now().UTC().Format(time.RFC3339), redactSensitiveText(fmt.Sprintf(format, values...), s.config.Connection.Secret))
+	trimDiagnosticLog(s.diagnosticsPath)
 	file, err := os.OpenFile(s.diagnosticsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
@@ -1925,6 +1926,29 @@ func (s *server) appendDiagnosticLocked(format string, values ...any) {
 	defer file.Close()
 	_ = file.Chmod(0o600)
 	_, _ = file.WriteString(line)
+}
+
+// diagnosticsLogMaxBytes bounds the backend diagnostics file. The desktop
+// diagnostics log already trims itself; without a bound the machine-scope
+// service log could grow for the lifetime of the machine.
+const diagnosticsLogMaxBytes = 2 << 20
+
+// trimDiagnosticLog halves the diagnostics file when it exceeds the cap,
+// keeping the tail so the most recent events survive.
+func trimDiagnosticLog(path string) {
+	info, err := os.Stat(path)
+	if err != nil || info.Size() <= diagnosticsLogMaxBytes {
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	keep := data[len(data)-diagnosticsLogMaxBytes/2:]
+	if index := bytes.IndexByte(keep, '\n'); index >= 0 && index+1 < len(keep) {
+		keep = keep[index+1:]
+	}
+	_ = os.WriteFile(path, keep, 0o600)
 }
 
 func redactSensitiveText(value, secret string) string {
