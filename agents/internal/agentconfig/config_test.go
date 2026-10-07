@@ -13,8 +13,11 @@ func TestNormalizeFillsMissingDefaults(t *testing.T) {
 	if config.ConfigVersion != CurrentConfigVersion {
 		t.Fatalf("configVersion = %d, want %d", config.ConfigVersion, CurrentConfigVersion)
 	}
-	if config.Connection.ServerURL == "" || config.Connection.DeviceID == "" || config.Connection.Hostname == "" {
+	if config.Connection.ServerURL == "" || config.Connection.DeviceID == "" {
 		t.Fatalf("connection defaults were not applied: %+v", config.Connection)
+	}
+	if config.Connection.Hostname != "" {
+		t.Fatalf("a new config must leave hostname empty for device-name fallback: %+v", config.Connection)
 	}
 	if config.Sampling.NormalIntervalSeconds <= 0 || config.Sampling.SlowIntervalSeconds <= 0 {
 		t.Fatalf("sampling defaults were not applied: %+v", config.Sampling)
@@ -27,6 +30,18 @@ func TestNormalizeFillsMissingDefaults(t *testing.T) {
 	}
 	if !config.CloudSyncEnabled || !config.DataRecordingEnabled || !config.AutoRestartCollector {
 		t.Fatalf("feature defaults were not applied: %+v", config)
+	}
+}
+
+func TestNormalizeUsesDeviceNameWhenHostnameIsEmpty(t *testing.T) {
+	config := Normalize(LocalConfig{}, []byte(`{"connection":{"hostname":""}}`))
+	if config.Connection.Hostname != "" {
+		t.Fatalf("empty hostname was replaced with %q", config.Connection.Hostname)
+	}
+
+	legacy := Normalize(LocalConfig{Connection: Connection{Hostname: "Windows Agent"}}, []byte(`{"configVersion":2,"connection":{"hostname":"Windows Agent"}}`))
+	if legacy.Connection.Hostname != "" {
+		t.Fatalf("legacy placeholder hostname was not migrated: %q", legacy.Connection.Hostname)
 	}
 }
 

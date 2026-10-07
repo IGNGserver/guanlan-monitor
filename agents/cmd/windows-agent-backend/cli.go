@@ -47,7 +47,7 @@ Usage:
   guanlan-agent wait-for-upload          block until the first upload is confirmed
 
 Configuration options for "config set":
-  --hub URL               Hub address, for example https://hub.example.com
+  --hub URL               Hub address, for example http://服务器IP:38472
   --key-stdin             read the access key from stdin (never from argv)
   --key-file PATH         read the access key from a file (used by installers)
   --device-id ID          device id shown in the console

@@ -129,7 +129,10 @@ func Default() LocalConfig {
 
 func defaultFor(goos string) LocalConfig {
 	deviceID := "windows-agent"
-	hostname := "Windows Agent"
+	// An empty hostname means that the collector should report the operating
+	// system's device name. Keep the editable display-name field empty until a
+	// user explicitly chooses a custom name.
+	hostname := ""
 	probeSelections := []ProbeSelection{
 		{Target: "cpu", Provider: "gopsutil", Enabled: true},
 		{Target: "memory", Provider: "gopsutil", Enabled: true},
@@ -140,10 +143,8 @@ func defaultFor(goos string) LocalConfig {
 	}
 	if goos == "linux" {
 		deviceID = "linux-agent"
-		hostname = "Linux Agent"
 		if detectedHostname, err := os.Hostname(); err == nil && strings.TrimSpace(detectedHostname) != "" {
 			deviceID = strings.TrimSpace(detectedHostname)
-			hostname = strings.TrimSpace(detectedHostname)
 		}
 		probeSelections = []ProbeSelection{
 			{Target: "cpu", Provider: "gopsutil", Enabled: true},
@@ -213,8 +214,12 @@ func Normalize(config LocalConfig, raw []byte) LocalConfig {
 	if strings.TrimSpace(config.Connection.DeviceID) == "" {
 		config.Connection.DeviceID = defaults.Connection.DeviceID
 	}
-	if strings.TrimSpace(config.Connection.Hostname) == "" {
-		config.Connection.Hostname = defaults.Connection.Hostname
+	// Releases before the editable display-name behaviour persisted this built-in
+	// placeholder. Treat that exact legacy value as unset so upgraded devices use
+	// their real operating-system name instead of continuing to appear as the
+	// generic Windows Agent. A custom non-empty name is always preserved.
+	if strings.TrimSpace(config.Connection.Hostname) == "Windows Agent" {
+		config.Connection.Hostname = ""
 	}
 
 	if config.Sampling.NormalIntervalSeconds <= 0 || config.Sampling.NormalIntervalSeconds > MaxSamplingIntervalSeconds {
