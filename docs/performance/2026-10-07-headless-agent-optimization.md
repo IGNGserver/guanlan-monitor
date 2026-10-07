@@ -4,8 +4,10 @@ Round 1 of the headless collector optimization, from the client headless-mode
 analysis. The headless data plane is the machine-scope service: the local
 backend (`guanlan-agent`, built from `agents/cmd/windows-agent-backend`) plus
 the collector (`device-state-console-agent`, built from `agents/main.go`). This
-round changes only the Go agent; sampling defaults (30s/60s), the payload
-schema and the service lifecycle are unchanged.
+round changes the Go agent and fixes the audit workflow's `baseline_ref` input
+(the shallow checkout made `git worktree add` fail for every baseline build).
+Sampling defaults (30s/60s), the payload schema and the service lifecycle are
+unchanged.
 
 ## Changes
 
@@ -52,8 +54,25 @@ on `main` (v3.0.148), compressed cadence 5s/20s:
 | ubuntu-latest | 1.0 | 0 | 2.743 | nvidia-smi×8 |
 
 The Windows PowerShell count is inflated by the double-count defect (~2×) and
-the nvidia-smi entries are failed attempts, both fixed by the first commit; the
-after-merge run with `baseline_ref` is the comparable measurement.
+the nvidia-smi entries are failed attempts, both fixed by the first commit.
+
+Same-runner comparison: run
+[37582553365](https://github.com/IGNGserver/guanlan-monitor/actions/runs/37582553365)
+measured the branch as candidate and `main` (`a10f579a`) as baseline in one
+job, compressed cadence 5s/20s:
+
+| Runner | spawns per slow cycle | spawns/min | by executable (baseline → candidate) |
+| --- | --- | --- | --- |
+| windows-latest | 8.143 → 3.0 | 20.0 → 7.412 | powershell 43 → 14, netsh 7 → 7, nvidia-smi 7 → 0 |
+| ubuntu-latest | 1.0 → 0 | 2.743 → 0 | nvidia-smi 8 → 0 |
+
+Reading the Windows numbers: the PowerShell drop is partly the double-count
+correction (real processes ≈ 21.5 → 14) and partly the L3 fallback moving to
+the inventory TTL; the nvidia-smi drop on both runners is the ENOENT
+correction (the runners have no NVIDIA tool), while the Linux zero also
+reflects the default-disabled GPU block no longer attempting the probe. On a
+machine that actually has `nvidia-smi`, a Windows default config still uses it
+(GPU block enabled) and only the counter correction applies.
 
 **The SYSTEM helper is not visible to this harness**: the helper's own probe
 counters live in its process and are never uploaded. Its interval change can
