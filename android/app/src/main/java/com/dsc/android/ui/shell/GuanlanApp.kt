@@ -466,8 +466,7 @@ private fun ScreenStack(
           forward = state.transitionDirection != ScreenTransitionDirection.Backward,
           motion = motion
         )
-      },
-      label = "screen_stack"
+      }
     ) { target ->
       SavedScreenContent(target, embedded = false)
     }
