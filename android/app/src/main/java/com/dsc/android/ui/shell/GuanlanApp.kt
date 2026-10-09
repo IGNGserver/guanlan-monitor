@@ -3,6 +3,8 @@ package com.dsc.android.ui.shell
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Transition
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -126,14 +128,20 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
   }
 
   val screen = state.resolvedScreen()
+  val screenTransition = updateTransition(targetState = screen, label = "screen_stack")
+  var gestureProgress by remember { mutableStateOf(0f) }
+  var gestureSwipeEdge by remember { mutableStateOf(0) }
   val canHandleBack = pendingLogout ||
     state.editingDeviceId != null ||
     (screen != AppScreen.DeviceList && screen != AppScreen.Login)
-  val predictiveBackPreview = when {
-    pendingLogout || state.editingDeviceId != null || window.useTwoPane -> null
-    screen == AppScreen.Login || screen == AppScreen.DeviceList -> null
-    else -> state.screenBackStack.lastOrNull() ?: AppScreen.DeviceList
-  }
+  val predictiveBackPreview = resolvePredictiveBackPreviewScreen(
+    screen = screen,
+    backStack = state.screenBackStack,
+    gestureProgress = gestureProgress,
+    blockingUiVisible = pendingLogout || state.editingDeviceId != null,
+    useTwoPane = window.useTwoPane,
+    screenTransitionRunning = screenTransition.isRunning
+  )
 
   val destinations = remember { oneUiDestinations() }
 
@@ -158,8 +166,6 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
     }
   }
 
-  var gestureProgress by remember { mutableStateOf(0f) }
-  var gestureSwipeEdge by remember { mutableStateOf(0) }
   val motion = OneUiTheme.motion
 
   PredictiveBackHandler(enabled = canHandleBack) { progressFlow ->
@@ -216,6 +222,7 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
         state = state,
         actions = actions,
         screen = preview,
+        screenTransition = screenTransition,
         twoPane = false,
         appearance = appearance,
         destinations = destinations,
@@ -241,6 +248,7 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
       state = state,
       actions = actions,
       screen = screen,
+      screenTransition = screenTransition,
       twoPane = window.useTwoPane,
       appearance = appearance,
       destinations = destinations,
@@ -311,6 +319,7 @@ private fun ShellLayer(
   state: AppState,
   actions: GuanlanActions,
   screen: AppScreen,
+  screenTransition: Transition<AppScreen>,
   twoPane: Boolean,
   appearance: GuanlanAppearance,
   destinations: List<OneUiDestination>,
@@ -343,6 +352,7 @@ private fun ShellLayer(
             state = state,
             actions = actions,
             screen = screen,
+            screenTransition = screenTransition,
             twoPane = twoPane,
             appearance = appearance,
             saveableStateHolder = saveableStateHolder,
@@ -361,6 +371,7 @@ private fun ShellLayer(
             state = state,
             actions = actions,
             screen = screen,
+            screenTransition = screenTransition,
             twoPane = false,
             appearance = appearance,
             saveableStateHolder = saveableStateHolder,
@@ -386,6 +397,7 @@ private fun ScreenStack(
   state: AppState,
   actions: GuanlanActions,
   screen: AppScreen,
+  screenTransition: Transition<AppScreen>,
   twoPane: Boolean,
   appearance: GuanlanAppearance,
   saveableStateHolder: SaveableStateHolder,
@@ -448,15 +460,13 @@ private fun ScreenStack(
   }
 
   if (animateTransitions) {
-    AnimatedContent(
-      targetState = screen,
+    screenTransition.AnimatedContent(
       transitionSpec = {
         oneUiScreenTransition(
           forward = state.transitionDirection != ScreenTransitionDirection.Backward,
           motion = motion
         )
-      },
-      label = "screen_stack"
+      }
     ) { target ->
       SavedScreenContent(target, embedded = false)
     }
