@@ -1389,6 +1389,10 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 			response := rate.AverageResponseMs
 			slow.disks[index].ActivePercent = &active
 			slow.disks[index].AverageResponseMs = &response
+			if runtime.GOOS == "darwin" {
+				slow.disks[index].ActivePercent = nil
+				slow.disks[index].AverageResponseMs = nil
+			}
 			if diskRate.Instances == nil {
 				diskRate.Instances = map[string]rateStats{}
 			}
@@ -1997,6 +2001,10 @@ func (s *agentState) sampleFastRates(now time.Time, fallbackSeconds int) (rateSt
 	}
 
 	current := snapshotIO(diskCounters, netCounters, now)
+	if runtime.GOOS == "darwin" {
+		s.diskCountersObserved = s.diskCountersObserved && darwinDiskCounterWindowReady(s.lastDiskIO, current)
+		s.networkRatesObserved = s.networkRatesObserved && darwinNetworkCounterWindowReady(s.lastNetIO, current)
+	}
 	var diskRate rateStats
 	if diskErr == nil {
 		diskRate, _ = computeRates(s.lastDiskIO, current, fallbackSeconds)
@@ -2083,6 +2091,9 @@ func mergeSlowMetrics(previous slowMetrics, next slowMetrics) slowMetrics {
 		merged.memorySlotCount = next.memorySlotCount
 		merged.memoryFormFactor = next.memoryFormFactor
 		merged.gpus = mergeMissingGPUMemory(previous.gpus, next.gpus)
+		if runtime.GOOS == "darwin" {
+			merged.gpus = next.gpus
+		}
 		if merged.cpuTemperatureC != nil && runtime.GOOS != "darwin" {
 			// The historical-memory merge may bring back a previous GPU
 			// temperature. Integrated GPUs have no independent sensor, so
@@ -2353,6 +2364,8 @@ func collectSlowMetrics(assets hardwareAssetCache, plan collectionPlan) (slowMet
 		if len(gpus) == 0 {
 			gpus = mergeGPUStats(perfGpus, lhmGpus, nvidiaGpus)
 		}
+	} else if runtime.GOOS == "darwin" {
+		gpus = hardware.gpus
 	} else {
 		var nvidiaGpus []gpuDeviceStats
 		if plan.gpu {
@@ -2859,6 +2872,8 @@ func normalizeGPUMemoryKind(value string) string {
 		return "dedicated"
 	case "shared":
 		return "shared"
+	case "unified":
+		return "unified"
 	case "unknown":
 		return "unknown"
 	default:
@@ -6350,8 +6365,10 @@ func snapshotIO(diskCounters map[string]disk.IOCountersStat, netCounters []gnet.
 	var txBytes uint64
 	netByKey := map[string]netSnapshot{}
 	for _, counter := range netCounters {
-		rxBytes += counter.BytesRecv
-		txBytes += counter.BytesSent
+		if runtime.GOOS != "darwin" || darwinAggregateInterface(counter.Name) {
+			rxBytes += counter.BytesRecv
+			txBytes += counter.BytesSent
+		}
 		netByKey[counter.Name] = netSnapshot{rx: counter.BytesRecv, tx: counter.BytesSent}
 	}
 

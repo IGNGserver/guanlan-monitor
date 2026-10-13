@@ -52,6 +52,31 @@ func TestDarwinCounterFailureOverridesARealLookingZero(t *testing.T) {
 	}
 }
 
+func TestDarwinCounterResetAndHotplugStartANewWindow(t *testing.T) {
+	previous := &ioSnapshot{at: time.Now(), diskByKey: map[string]rateSnapshot{"disk0": {read: 100}}, netByKey: map[string]netSnapshot{"en0": {rx: 100}}}
+	current := &ioSnapshot{at: previous.at.Add(time.Second), diskByKey: map[string]rateSnapshot{"disk0": {read: 100}}, netByKey: map[string]netSnapshot{"en0": {rx: 100}}}
+	if !darwinDiskCounterWindowReady(previous, current) || !darwinNetworkCounterWindowReady(previous, current) {
+		t.Fatal("idle counters rejected")
+	}
+	current.diskByKey["disk0"] = rateSnapshot{read: 0}
+	current.netByKey["en0"] = netSnapshot{rx: 0}
+	if darwinDiskCounterWindowReady(previous, current) || darwinNetworkCounterWindowReady(previous, current) {
+		t.Fatal("counter reset accepted as a valid window")
+	}
+	current.diskByKey = map[string]rateSnapshot{"disk1": {read: 1000}}
+	if darwinDiskCounterWindowReady(previous, current) {
+		t.Fatal("hotplug accepted as continuous IO")
+	}
+	for _, name := range []string{"lo0", "utun3", "awdl0", "llw0", "bridge0"} {
+		if darwinAggregateInterface(name) {
+			t.Fatalf("double-counted virtual interface %s", name)
+		}
+	}
+	if !darwinAggregateInterface("en0") {
+		t.Fatal("physical interface excluded")
+	}
+}
+
 func TestNormalizeOSNeverClassifiesDarwinOrUnknownAsLinux(t *testing.T) {
 	if normalizeOS("darwin") != "macos" || normalizeOS("freebsd") != "unknown" || normalizeOS("linux") != "linux" {
 		t.Fatal("incorrect OS classification")

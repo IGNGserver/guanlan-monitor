@@ -54,6 +54,29 @@ test("macOS installer selection matches architecture and refuses missing/unknown
   assert.equal(assetNameFor("macos-gui", "3.0.151", "i386"), null);
 });
 
+test("explicit unavailable metrics stay out of historical charts while observed zero remains", () => {
+  const payload = stateWith({ metricQuality: { cpuUsage: { state: "direct" }, swapUsage: { state: "direct" }, memoryCommitted: { state: "not_applicable" }, gpuUsage: { state: "unavailable" } } }).latest;
+  payload.cpuUsagePercent = 0;
+  const record = payloadToTimeSeries(payload);
+  const series = timeSeriesToMetricSeries([record]);
+  assert.deepEqual(series.cpuUsagePercent.map((point) => point.value), [0]);
+  assert.deepEqual(series.swapUsagePercent.map((point) => point.value), [0]);
+  assert.equal(series.memoryCommittedBytes.length, 0);
+  assert.equal(series.gpuUsagePercent.length, 0);
+  assert.equal(record.recordedDetails?.metricQuality?.memoryCommitted?.state, "not_applicable");
+});
+
+test("unified GPU allocation without a driver budget is not a zero-percent VRAM sample", () => {
+  const payload = stateWith({
+    metricQuality: { gpuMemory: { state: "direct" } },
+    gpus: [{ id: "agx", name: "Apple GPU", utilizationPercent: 0, memoryKind: "unified", memoryUsedBytes: 1024, memoryTotalBytes: 0 }]
+  }).latest;
+  const series = timeSeriesToMetricSeries([payloadToTimeSeries(payload)]);
+  assert.equal(series.gpuMemoryUsagePercent.length, 0);
+  assert.equal(series.gpus[0].memoryUsagePercent.length, 0);
+  assert.deepEqual(series.gpuMemoryUsedBytes.map((point) => point.value), [1024]);
+});
+
 /** What Redis Lua `cjson` leaves behind after an offline sweep touches a device. */
 function cjsonMangled() {
   const state = stateWith({

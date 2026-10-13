@@ -6,6 +6,10 @@ permissions:
 on:
   workflow_dispatch:
 
+concurrency:
+  group: macos-signing-${{ github.ref }}
+  cancel-in-progress: true
+
 # Prepares signed artifacts only. Does not create a Release or deploy. The
 # macos-signing environment must be provisioned with protected credentials.
 jobs:
@@ -61,6 +65,7 @@ jobs:
           : "${APP_CERT:?missing Application certificate}" "${INSTALLER_CERT:?missing Installer certificate}" "${NOTARY_KEY:?missing notary key}"
           : "${MACOS_APPLICATION_IDENTITY:?missing Application identity}" "${MACOS_INSTALLER_IDENTITY:?missing Installer identity}"
           keychain="$RUNNER_TEMP/guanlan-signing.keychain-db"
+          export MACOS_NOTARY_KEYCHAIN="$keychain"
           password="$(openssl rand -hex 24)"
           echo "::add-mask::$password"
           printf '%s' "$APP_CERT" | base64 -D > "$RUNNER_TEMP/application.p12"
@@ -93,3 +98,4 @@ jobs:
           name: macos-${{ matrix.arch }}-signed-delivery
           path: ${{ runner.temp }}/guanlan-signed-artifacts
           if-no-files-found: error
+          retention-days: 3

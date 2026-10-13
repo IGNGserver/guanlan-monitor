@@ -5,9 +5,15 @@ permissions:
 
 on:
   pull_request:
+    paths: ['agents/**', 'apps/**', 'packages/**', 'scripts/**', 'deploy/**', '.github/workflows/macos-*.yml', 'package.json', 'pnpm-lock.yaml', 'VERSION']
   push:
     branches: [main]
+    paths: ['agents/**', 'apps/**', 'packages/**', 'scripts/**', 'deploy/**', '.github/workflows/macos-*.yml', 'package.json', 'pnpm-lock.yaml', 'VERSION']
   workflow_dispatch:
+
+concurrency:
+  group: macos-native-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   native:
@@ -48,6 +54,7 @@ jobs:
           go -C agents test ./...
           go -C agents vet ./...
           CGO_ENABLED=0 go -C agents test ./internal/macos ./internal/agentconfig ./internal/agentservice
+          bash scripts/test-macos-packaging.sh "$RUNNER_TEMP/guanlan-packaging-contract"
       - name: Install and validate UI
         run: |
           pnpm install --frozen-lockfile
@@ -96,6 +103,7 @@ jobs:
           name: macos-${{ matrix.arch }}-UNSIGNED-validation
           path: ${{ runner.temp }}/guanlan-macos-artifacts
           if-no-files-found: error
+          retention-days: 3
 
 # Signing is deliberately not automatic. macos-signing.yml requires a protected
 # environment, Developer ID Application + Installer and a notarytool profile; never

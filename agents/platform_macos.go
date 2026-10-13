@@ -107,6 +107,41 @@ func collectDarwinHardwareSensors() hardwareSensorMetrics {
 var darwinDiskIdentifier = regexp.MustCompile(`^disk[0-9]+(s[0-9]+)*$`)
 var regexpDarwinWholeDisk = regexp.MustCompile(`^disk[0-9]+`)
 
+func darwinAggregateInterface(name string) bool {
+	for _, prefix := range []string{"lo", "utun", "awdl", "llw", "gif", "stf", "bridge"} {
+		if strings.HasPrefix(name, prefix) {
+			return false
+		}
+	}
+	return true
+}
+
+func darwinDiskCounterWindowReady(previous, current *ioSnapshot) bool {
+	if previous == nil || current == nil || !current.at.After(previous.at) || len(previous.diskByKey) != len(current.diskByKey) {
+		return false
+	}
+	for key, value := range current.diskByKey {
+		before, ok := previous.diskByKey[key]
+		if !ok || value.read < before.read || value.write < before.write {
+			return false
+		}
+	}
+	return true
+}
+
+func darwinNetworkCounterWindowReady(previous, current *ioSnapshot) bool {
+	if previous == nil || current == nil || !current.at.After(previous.at) || len(previous.netByKey) != len(current.netByKey) {
+		return false
+	}
+	for key, value := range current.netByKey {
+		before, ok := previous.netByKey[key]
+		if !ok || value.rx < before.rx || value.tx < before.tx {
+			return false
+		}
+	}
+	return true
+}
+
 func collectDarwinDisks(cached map[string]*float64) ([]diskDeviceStats, storageUsage, map[string]*float64, error) {
 	containers, err := macos.ReadAPFS()
 	if err != nil {
@@ -266,7 +301,7 @@ func applyDarwinMetricQuality(payload *metricsPayload, maxHardwareAge time.Durat
 	}
 	set("fanChannelState", len(payload.Fans) > 0, "AppleSMC observation")
 	set("fanNote", len(payload.Fans) > 0, "user configuration")
-	hardwareKeys := []string{"cpuFrequency", "cpuTemperature", "gpuUsage", "gpuMemory", "gpuFrequency", "gpuTemperature", "gpuDriverInfo", "temperatureSources", "fanRpm", "fanChannelState"}
+	hardwareKeys := []string{"cpuFrequency", "cpuTemperature", "gpuUsage", "gpuMemory", "gpuFrequency", "gpuTemperature", "gpuDriverInfo", "temperatureSources", "fanRpm", "fanControl", "fanChannelState"}
 	sampledAt, err := time.Parse(time.RFC3339, payload.HardwareSampledAt)
 	for _, key := range hardwareKeys {
 		q := quality[key]

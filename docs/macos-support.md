@@ -17,6 +17,10 @@
 `agents/platform_macos.go`（指标投影/质量）、`service_darwin.go`（launchd）、
 `macos-native.yml`（unsigned 验证）、`macos-signing.yml`（仅手动签名交付）。
 静态与快速测试通过不代表上表全部完成；native CI、实机及签名证据须分别登记。
+本地检查在本机无 `.git` scratch 快照运行，源码提交仍只从任务 worktree 产生。
+在采集源拒绝权限、首帧无采样窗口、计数器重置或热插拔时，历史图表也保留缺口，
+不把不可用或过期读数补成真实零值。网络汇总排除 loopback、VPN 与系统虚拟接口，
+各接口自身计数仍保留以供诊断。
 
 当前机器是 x86_64 PVE macOS 26.7.1 虚拟机。没有 IOAccelerator 节点；存在模拟
 AppleSMC，不能据此验证物理温度/风扇。用户有 Intel Mac，暂不接入；暂无 Apple
