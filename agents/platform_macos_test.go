@@ -44,6 +44,14 @@ func TestDarwinDiskAliasesDoNotTruncateDiskNameAtLetterS(t *testing.T) {
 	}
 }
 
+func TestDarwinCounterFailureOverridesARealLookingZero(t *testing.T) {
+	payload := metricsPayload{UnavailableMetrics: []string{"cpuUsage", "diskRead"}, Disks: []diskDeviceStats{{TotalBytes: 100}}}
+	applyDarwinMetricQuality(&payload, time.Minute)
+	if payload.MetricQuality["cpuUsage"].State != "unavailable" || payload.MetricQuality["diskRead"].State != "unavailable" {
+		t.Fatal("unreadable counters were advertised as zero")
+	}
+}
+
 func TestNormalizeOSNeverClassifiesDarwinOrUnknownAsLinux(t *testing.T) {
 	if normalizeOS("darwin") != "macos" || normalizeOS("freebsd") != "unknown" || normalizeOS("linux") != "linux" {
 		t.Fatal("incorrect OS classification")

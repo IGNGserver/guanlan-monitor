@@ -76,7 +76,7 @@ jobs:
           test -n "$app_bundle"
           test -x "$app_bundle/Contents/Resources/agent/guanlan-agent"
           test -x "$app_bundle/Contents/Resources/agent/device-state-console-agent"
-          lipo -verify_arch '${{ matrix.goarch == 'amd64' && 'x86_64' || 'arm64' }}' "$app_bundle/Contents/Resources/agent/guanlan-agent"
+          lipo "$app_bundle/Contents/Resources/agent/guanlan-agent" -verify_arch '${{ matrix.goarch == 'amd64' && 'x86_64' || 'arm64' }}'
           bash deploy/build-macos-package.sh "$app_bundle" '${{ matrix.arch }}' "$RUNNER_TEMP/guanlan-macos-artifacts" unsigned
           bash deploy/verify-macos-host.sh "$RUNNER_TEMP/guanlan-macos-artifacts/ci-inventory.json"
       - name: Run Electron visual regression on macOS

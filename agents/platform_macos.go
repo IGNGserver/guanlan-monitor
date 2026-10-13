@@ -278,10 +278,17 @@ func applyDarwinMetricQuality(payload *metricsPayload, maxHardwareAge time.Durat
 		quality[key] = q
 	}
 	payload.MetricQuality = quality
+	for _, key := range payload.UnavailableMetrics {
+		q := quality[key]
+		q.State = "unavailable"
+		q.Reason = "counter source unreadable or sampling window not ready"
+		quality[key] = q
+	}
 	for _, key := range allMetricKeys {
 		state := quality[key].State
 		if state == "unavailable" || state == "not_applicable" || state == "stale" {
 			payload.UnavailableMetrics = append(payload.UnavailableMetrics, key)
 		}
 	}
+	payload.UnavailableMetrics = uniqueStrings(payload.UnavailableMetrics)
 }

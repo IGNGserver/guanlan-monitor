@@ -489,17 +489,21 @@ type slowMetrics struct {
 }
 
 type agentState struct {
-	baseIdentity     agentIdentity
-	configPath       string
-	client           *http.Client
-	lastCPU          cpuSnapshot
-	hasLastCPU       bool
-	lastCPUByPackage map[string]cpuSnapshot
-	currentCPUUsage  map[string]*float64
-	lastDiskIO       *ioSnapshot
-	lastNetIO        *ioSnapshot
-	lastSlow         slowMetrics
-	hasSlow          bool
+	baseIdentity            agentIdentity
+	configPath              string
+	client                  *http.Client
+	lastCPU                 cpuSnapshot
+	hasLastCPU              bool
+	lastCPUByPackage        map[string]cpuSnapshot
+	currentCPUUsage         map[string]*float64
+	lastDiskIO              *ioSnapshot
+	lastNetIO               *ioSnapshot
+	cpuUsageObserved        bool
+	diskCountersObserved    bool
+	networkCountersObserved bool
+	networkRatesObserved    bool
+	lastSlow                slowMetrics
+	hasSlow                 bool
 	// System overview counters are refreshed on the slow cadence. Enumerating
 	// every process and its file descriptors is the most expensive fast-path
 	// step on Linux; Windows reads the same numbers from one syscall and keeps
@@ -1445,6 +1449,18 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	}
 
 	if runtime.GOOS == "darwin" {
+		if !s.cpuUsageObserved {
+			payload.UnavailableMetrics = append(payload.UnavailableMetrics, "cpuUsage")
+		}
+		if !s.diskCountersObserved {
+			payload.UnavailableMetrics = append(payload.UnavailableMetrics, "diskRead", "diskWrite")
+		}
+		if !s.networkCountersObserved {
+			payload.UnavailableMetrics = append(payload.UnavailableMetrics, "networkTraffic")
+		}
+		if !s.networkRatesObserved {
+			payload.UnavailableMetrics = append(payload.UnavailableMetrics, "networkRxRate", "networkTxRate")
+		}
 		applyDarwinMetricQuality(&payload, time.Duration(cfg.slowIntervalSeconds()*2+10)*time.Second)
 	}
 	applyRuntimeConfig(&payload, cfg)
@@ -1493,6 +1509,7 @@ func (s *agentState) sampleCPURuntime(plan collectionPlan) (float64, cpuRuntimeM
 }
 
 func (s *agentState) sampleCPUUsage() float64 {
+	s.cpuUsageObserved = false
 	sample, err := collectCPUTimesSample()
 	if err != nil || len(sample.packages) == 0 {
 		s.currentCPUUsage = map[string]*float64{}
@@ -1519,6 +1536,7 @@ func (s *agentState) sampleCPUUsage() float64 {
 		}
 	}
 	aggregateUsage, aggregateOK := cpuUsagePercentBetween(s.lastCPU, sample.aggregate)
+	s.cpuUsageObserved = aggregateOK
 	s.lastCPU = sample.aggregate
 	s.lastCPUByPackage = sample.packages
 	s.currentCPUUsage = currentUsage
@@ -1968,6 +1986,9 @@ func (s *agentState) currentSystemStats(cfg agentRuntimeConfig, plan collectionP
 func (s *agentState) sampleFastRates(now time.Time, fallbackSeconds int) (rateStats, networkTrafficStats) {
 	diskCounters, diskErr := disk.IOCounters()
 	netCounters, netErr := gnet.IOCounters(true)
+	s.diskCountersObserved = diskErr == nil && len(diskCounters) > 0 && s.lastDiskIO != nil
+	s.networkCountersObserved = netErr == nil && len(netCounters) > 0
+	s.networkRatesObserved = s.networkCountersObserved && s.lastNetIO != nil
 	if diskErr != nil {
 		logCategoryf(logCategoryDiskFast, "disk counters failed: %v", diskErr)
 	}
