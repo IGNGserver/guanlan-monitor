@@ -1,4 +1,4 @@
-//go:build !windows && !linux
+//go:build !windows && !linux && !darwin
 
 package agentservice
 
@@ -10,7 +10,7 @@ import (
 // Name returns the service identity used in messages and JSON output.
 func Name() string { return "guanlan-agent" }
 
-var errUnsupported = errors.New("the machine-scope agent service is only supported on Windows and Linux")
+var errUnsupported = errors.New("the machine-scope agent service is only supported on Windows, Linux and macOS")
 
 // Install is unavailable on this platform.
 func Install(Spec) (Status, error) { return Status{Kind: KindNone}, errUnsupported }

@@ -916,7 +916,11 @@ export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOpt
     ["fanNote", hasFanNote]
   ];
   const availability = new Map<DeviceMetricKey, boolean>(
-    availabilityEntries.map(([key, available]) => [key, unavailable.has(key) ? false : available])
+    availabilityEntries.map(([key, available]) => {
+      const quality = latest.metricQuality?.[key]?.state;
+      return [key, unavailable.has(key) || quality === "unavailable" || quality === "not_applicable" || quality === "stale"
+        ? false : quality === "direct" || quality === "derived" ? true : available];
+    })
   );
 
   return ALL_DEVICE_METRIC_KEYS.map((key) => ({

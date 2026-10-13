@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMetricsPayload } from "@dsc/shared";
 import type { DeviceRealtimeState } from "./types.js";
-import { normalizeRealtimeState, payloadToTimeSeries, timeSeriesToMetricSeries, toSummary } from "./utils.js";
+import { getAvailableMetrics, normalizeRealtimeState, payloadToTimeSeries, timeSeriesToMetricSeries, toSummary } from "./utils.js";
+import { assetNameFor } from "./update-assets.js";
 
 function stateWith(latest: Partial<AgentMetricsPayload>): DeviceRealtimeState {
   const payload: AgentMetricsPayload = {
@@ -35,6 +36,23 @@ function stateWith(latest: Partial<AgentMetricsPayload>): DeviceRealtimeState {
     latest: payload
   };
 }
+
+test("explicit metric quality distinguishes valid zero from absent and stale readings", () => {
+  const state = stateWith({ metricQuality: { swapUsage: { state: "direct" }, memoryCached: { state: "direct" }, cpuUsage: { state: "stale" }, memoryCommitted: { state: "not_applicable" } } });
+  const availability = new Map(getAvailableMetrics(state).map((item) => [item.key, item.available]));
+  assert.equal(availability.get("swapUsage"), true);
+  assert.equal(availability.get("memoryCached"), true);
+  assert.equal(availability.get("cpuUsage"), false);
+  assert.equal(availability.get("memoryCommitted"), false);
+});
+
+test("macOS installer selection matches architecture and refuses missing/unknown arch", () => {
+  assert.equal(assetNameFor("macos-gui", "3.0.151", "arm64"), "DeviceStateConsole-macOS-arm64-Install-v3.0.151.pkg");
+  assert.equal(assetNameFor("macos-gui", "3.0.151", "amd64"), "DeviceStateConsole-macOS-x64-Install-v3.0.151.pkg");
+  assert.equal(assetNameFor("macos-gui", "3.0.151", "x64"), "DeviceStateConsole-macOS-x64-Install-v3.0.151.pkg");
+  assert.equal(assetNameFor("macos-gui", "3.0.151"), null);
+  assert.equal(assetNameFor("macos-gui", "3.0.151", "i386"), null);
+});
 
 /** What Redis Lua `cjson` leaves behind after an offline sweep touches a device. */
 function cjsonMangled() {

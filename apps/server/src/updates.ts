@@ -5,6 +5,7 @@ import type {
   UpdatePlatform
 } from "@dsc/shared";
 import { env } from "./config.js";
+import { assetNameFor } from "./update-assets.js";
 
 interface GitHubAsset {
   name: string;
@@ -109,7 +110,7 @@ export async function getUpdateInfo(input: {
   }
 
   const candidateVersion = normalizeVersion(candidate.tag_name);
-  const assetName = assetNameFor(input.platform, candidateVersion);
+  const assetName = assetNameFor(input.platform, candidateVersion, input.arch);
   const asset = assetName ? candidate.assets.find((item) => item.name === assetName) : undefined;
   const sha256 = asset ? await resolveSha256(candidate, asset) : null;
   const releaseChannel: ReleaseChannel = candidate.prerelease ? "test" : "stable";
@@ -180,24 +181,12 @@ function releaseApiUrl() {
     `https://api.github.com/repos/${env.DSC_RELEASE_REPOSITORY}/releases?per_page=100`;
 }
 
-function assetNameFor(platform: UpdatePlatform, version: string) {
-  switch (platform) {
-    case "windows-gui":
-      return `DeviceStateConsole-Windows-Setup-v${version}.exe`;
-    case "linux-gui":
-      return `DeviceStateConsole-Linux-Install-v${version}.deb`;
-    case "android":
-      return `DeviceStateConsole-Android-v${version}.apk`;
-    default:
-      return null;
-  }
-}
-
 function installModeFor(platform: UpdatePlatform): UpdateInfo["installMode"] {
   switch (platform) {
     case "windows-gui":
       return "installer";
     case "linux-gui":
+    case "macos-gui":
       return "package";
     case "android":
       return "apk";

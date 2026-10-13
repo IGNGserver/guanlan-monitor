@@ -18,6 +18,7 @@ import { readJsonFile, writeJsonAtomically } from "./atomic-json.js";
 import { DesktopCacheStore } from "./cache-store.js";
 import { credentialFilePath, HubClient } from "./hub-client.js";
 import { LocalConfigStore } from "./local-config.js";
+import { desktopUpdatePlatform } from "./platform.js";
 import type { RawAgentBackendState } from "./types.js";
 
 const DEFAULT_METRIC_WINDOW: MetricWindow = "5m";
@@ -404,7 +405,7 @@ export class DesktopController {
       metrics: null,
       overviewMetrics: null,
       trafficCalendar: null,
-      update: { available: false, currentVersion: currentDesktopVersion(), currentChannel: "test", latestVersion: currentDesktopVersion(), latestChannel: "test", releaseTag: null, releaseUrl: null, notesUrl: null, publishedAt: null, assetName: null, assetUrl: null, assetSize: null, sha256: null, installMode: "none", platform: process.platform === "win32" ? "windows-gui" : "linux-gui", arch: process.arch },
+      update: { available: false, currentVersion: currentDesktopVersion(), currentChannel: "test", latestVersion: currentDesktopVersion(), latestChannel: "test", releaseTag: null, releaseUrl: null, notesUrl: null, publishedAt: null, assetName: null, assetUrl: null, assetSize: null, sha256: null, installMode: "none", platform: desktopUpdatePlatform(), arch: process.arch },
       startup: this.startup
     };
   }
@@ -548,7 +549,7 @@ export class DesktopController {
       metrics: null,
       overviewMetrics: null,
       trafficCalendar: null,
-      update: { currentVersion: currentDesktopVersion(), currentChannel: "test", platform: process.platform === "win32" ? "windows-gui" : "linux-gui", arch: process.arch, available: false, latestVersion: null, latestChannel: null, releaseTag: null, releaseUrl: null, notesUrl: null, publishedAt: null, assetName: null, assetUrl: null, assetSize: null, sha256: null, installMode: "none", message: "local_backend_unavailable" },
+      update: { currentVersion: currentDesktopVersion(), currentChannel: "test", platform: desktopUpdatePlatform(), arch: process.arch, available: false, latestVersion: null, latestChannel: null, releaseTag: null, releaseUrl: null, notesUrl: null, publishedAt: null, assetName: null, assetUrl: null, assetSize: null, sha256: null, installMode: "none", message: "local_backend_unavailable" },
       startup: this.startup
     };
   }

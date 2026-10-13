@@ -22,18 +22,20 @@ export type UpdatePlatform =
   | "web"
   | "windows-gui"
   | "linux-gui"
+  | "macos-gui"
   | "android"
   | "ios";
 
 export type DeviceBlockKey = "cpu" | "gpu" | "memory" | "disk" | "network" | "fan";
 
-export type GpuMemoryKind = "dedicated" | "shared" | "unknown";
+export type GpuMemoryKind = "dedicated" | "shared" | "unified" | "unknown";
 
 export type AgentProbeTarget = DeviceBlockKey | "connection";
 
 export type AgentProbeProvider =
   | "builtin"
   | "gopsutil"
+  | "darwin"
   | "hwmon"
   | "wmi"
   | "librehardwaremonitor"
@@ -82,7 +84,7 @@ export type DeviceMetricKey =
 export interface AgentIdentity {
   deviceId: string;
   hostname: string;
-  os: "windows" | "linux" | "unknown";
+  os: "windows" | "linux" | "macos" | "unknown";
   platform: string;
   arch: string;
   cpuModel?: string;
@@ -341,6 +343,7 @@ export interface AgentMetricsPayload {
   cpuTemperatureSampledAt?: string;
   /** Metrics that the collector knows are unavailable, kept separate from real zero values. */
   unavailableMetrics?: DeviceMetricKey[];
+  metricQuality?: Partial<Record<DeviceMetricKey, MetricQuality>>;
   system: SystemStats;
   cpuUsagePercent: number;
   cpuFrequencyMHz?: number | null;
@@ -367,6 +370,13 @@ export interface AgentMetricsPayload {
   collectorStats?: CollectorStatsReport;
 }
 
+export interface MetricQuality {
+  state: "direct" | "derived" | "unavailable" | "not_applicable" | "stale";
+  source?: string;
+  reason?: string;
+  observedAt?: string;
+}
+
 export interface CollectorStatsReport {
   slowRuns: number;
   slowOverruns: number;
@@ -376,7 +386,7 @@ export interface CollectorStatsReport {
 export interface DeviceSummary {
   deviceId: string;
   hostname: string;
-  os: "windows" | "linux" | "unknown";
+  os: "windows" | "linux" | "macos" | "unknown";
   agentVersion: string | null;
   agentChannel: ReleaseChannel | null;
   status: DeviceStatus;

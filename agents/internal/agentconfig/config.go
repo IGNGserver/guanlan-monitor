@@ -95,6 +95,17 @@ type ProbePlan struct {
 
 // SupportedProbePlans returns the probe targets and providers for the host OS.
 func SupportedProbePlans() []ProbePlan {
+	if runtime.GOOS == "darwin" {
+		return []ProbePlan{
+			{Target: "connection", Providers: []string{"gopsutil"}, Default: "gopsutil"},
+			{Target: "cpu", Providers: []string{"disabled", "darwin"}, Default: "darwin"},
+			{Target: "memory", Providers: []string{"disabled", "darwin"}, Default: "darwin"},
+			{Target: "disk", Providers: []string{"disabled", "darwin"}, Default: "darwin"},
+			{Target: "network", Providers: []string{"disabled", "gopsutil"}, Default: "gopsutil"},
+			{Target: "gpu", Providers: []string{"disabled", "darwin"}, Default: "darwin"},
+			{Target: "fan", Providers: []string{"disabled", "darwin"}, Default: "darwin"},
+		}
+	}
 	if runtime.GOOS == "linux" {
 		return []ProbePlan{
 			{Target: "connection", Providers: []string{"gopsutil"}, Default: "gopsutil"},
@@ -156,6 +167,20 @@ func defaultFor(goos string) LocalConfig {
 		}
 	}
 
+	if goos == "darwin" {
+		deviceID = "macos-agent"
+		if name, err := os.Hostname(); err == nil && strings.TrimSpace(name) != "" {
+			deviceID = strings.TrimSpace(name)
+		}
+		probeSelections = []ProbeSelection{
+			{Target: "cpu", Provider: "darwin", Enabled: true},
+			{Target: "memory", Provider: "darwin", Enabled: true},
+			{Target: "disk", Provider: "darwin", Enabled: true},
+			{Target: "network", Provider: "gopsutil", Enabled: true},
+			{Target: "gpu", Provider: "darwin", Enabled: true},
+			{Target: "fan", Provider: "darwin", Enabled: true},
+		}
+	}
 	return LocalConfig{
 		ConfigVersion: CurrentConfigVersion,
 		Connection: Connection{

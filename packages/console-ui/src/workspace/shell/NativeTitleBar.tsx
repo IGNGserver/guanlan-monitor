@@ -3,6 +3,7 @@ import appIcon from "../../assets/app-icon.png";
 import { useWorkspaceActions, useWorkspaceUi } from "../WorkspaceContext";
 import { M3IconButton } from "../m3";
 import { CAPTION_GLYPHS, type CaptionGlyphName } from "./captionGlyphs";
+import { detectPlatform } from "../shortcuts";
 
 const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: string }).src;
 
@@ -47,14 +48,15 @@ export function NativeTitleBar() {
   };
   if (!capabilities.canControlNativeWindow) return null;
   const restoreAvailable = windowState.maximized || windowState.fullscreen;
-  return <header className="workspace-windowbar">
+  const nativeMac = detectPlatform() === "mac";
+  return <header className={`workspace-windowbar ${nativeMac ? "workspace-windowbar--mac" : ""}`}>
     <div className="workspace-windowbar__drag" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onLostPointerCapture={handlePointerUp} onDoubleClick={toggleMaximize}>
       <img className="workspace-windowbar__mark-img" src={appIconSrc} alt="观澜" /><strong>观澜</strong><span className="workspace-windowbar__separator" aria-hidden="true" /><span className="workspace-windowbar__subtitle">设备状态控制台</span>
     </div>
-    <div className="workspace-windowbar__controls" role="group" aria-label="窗口控制">
+    {!nativeMac && <div className="workspace-windowbar__controls" role="group" aria-label="窗口控制">
       <CaptionButton glyph="minimize" label="最小化" onClick={() => void minimizeWindow()} />
       <CaptionButton glyph={restoreAvailable ? "restore" : "maximize"} label={restoreAvailable ? "还原窗口" : "最大化"} onClick={toggleMaximize} />
       <CaptionButton glyph="close" label="隐藏到托盘" className="workspace-caption-button--close" onClick={() => void closeWindow()} />
-    </div>
+    </div>}
   </header>;
 }

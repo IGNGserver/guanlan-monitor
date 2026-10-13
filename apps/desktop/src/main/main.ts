@@ -82,6 +82,10 @@ crashReporter.start({
 if (gpuFallbackActive) app.disableHardwareAcceleration();
 
 function resolveAppIconPath(): string {
+  if (process.platform === "darwin") {
+    const icon = path.join(process.resourcesPath, "app-icon.png");
+    return fs.existsSync(icon) ? icon : path.resolve(__dirname, "../../../../packages/console-ui/src/assets/app-icon.png");
+  }
   const resourceIcon = path.join(process.resourcesPath, "app-icon.ico");
   if (fs.existsSync(resourceIcon)) return resourceIcon;
   const devIcon = path.join(__dirname, "../../../windows-agent/DeviceStateConsoleAgent.WinUI/Assets/app-icon.ico");
@@ -317,7 +321,9 @@ if (!hasSingleInstanceLock) {
       minWidth,
       minHeight,
       show: false,
-      frame: false,
+      frame: process.platform === "darwin",
+      titleBarStyle: process.platform === "darwin" ? "hiddenInset" : undefined,
+      trafficLightPosition: process.platform === "darwin" ? { x: 12, y: 9 } : undefined,
       icon: appIcon.isEmpty() ? undefined : appIcon,
       // Windows 11 uses native Mica as the window-level backdrop. Windows 10,
       // reduced-transparency systems, and other platforms stay opaque; the
@@ -436,6 +442,9 @@ if (!hasSingleInstanceLock) {
   const createTray = () => {
     const iconPath = resolveAppIconPath();
     const icon = nativeImage.createFromPath(iconPath);
+    if (process.platform === "darwin" && !icon.isEmpty()) {
+      icon.setTemplateImage(false);
+    }
     tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
     tray.setToolTip("观澜 · 设备状态控制台");
     tray.setContextMenu(Menu.buildFromTemplate([
@@ -514,6 +523,9 @@ if (!hasSingleInstanceLock) {
     registerIpc(controller, () => mainWindow, () => { quitting = true; }, gpuFallbackActive);
     createWindow();
     createTray();
+    if (process.platform === "darwin") {
+      Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }, { role: "windowMenu" }]));
+    }
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
       else showWindow();

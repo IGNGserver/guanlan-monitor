@@ -2,6 +2,7 @@ import { safeStorage } from "electron";
 import { isIP } from "node:net";
 import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
+import { desktopUpdatePlatform } from "./platform.js";
 import type {
   AuthLoginResponse,
   DeviceSummary,
@@ -168,7 +169,7 @@ export class HubClient {
   async getUpdateInfo(currentVersion: string): Promise<UpdateInfo> {
     const key = `${this.serverUrl}|${currentVersion}`;
     if (this.updateCache?.key === key && Date.now() < this.updateCache.expiresAt) return this.updateCache.value;
-    const platform = process.platform === "win32" ? "windows-gui" : "linux-gui";
+    const platform = desktopUpdatePlatform();
     const params = new URLSearchParams({
       platform,
       currentVersion,

@@ -120,6 +120,7 @@ const probeTargetLabels: Record<AgentProbeTarget, string> = {
 const probeProviderLabels: Record<AgentProbeProvider, string> = {
   builtin: "内置采集",
   gopsutil: "系统采集（gopsutil）",
+  darwin: "macOS 原生采集（Mach / IOKit / SMC）",
   hwmon: "Linux hwmon",
   wmi: "Windows WMI",
   librehardwaremonitor: "LibreHardwareMonitor",

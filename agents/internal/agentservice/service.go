@@ -34,6 +34,8 @@ const (
 	KindScheduledTask Kind = "scheduled-task"
 	// KindSystemd is a system-level systemd unit.
 	KindSystemd Kind = "systemd"
+	// KindLaunchd is a system LaunchDaemon (independent of user login).
+	KindLaunchd Kind = "launchd"
 )
 
 // Spec describes the service to install.

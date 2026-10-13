@@ -3,7 +3,7 @@
   "version": "3.0.151",
   "private": true,
   "type": "module",
-  "description": "Unified Windows and Linux Electron desktop client for Device State Console.",
+  "description": "Unified Windows, Linux and macOS Electron desktop client for Device State Console.",
   "author": {
     "name": "Device State Console contributors",
     "email": "github-actions@github.com"
@@ -18,7 +18,8 @@
     "check:desktop-ui-boundaries": "node ../../scripts/check-desktop-ui-boundaries.mjs",
     "test:ui-helpers": "node --test ../../packages/console-ui/src/helpers/layout.test.ts",
     "package:windows": "pnpm build && electron-builder --win nsis portable",
-    "package:linux": "pnpm build && electron-builder --linux deb"
+    "package:linux": "pnpm build && electron-builder --linux deb",
+    "package:macos": "pnpm build && electron-builder --mac dir --publish never"
   },
   "devDependencies": {
     "@dsc/shared": "workspace:*",
@@ -55,10 +56,22 @@
         ]
       },
       {
+        "from": "../../packages/console-ui/src/assets/app-icon.png",
+        "to": "app-icon.png"
+      },
+      {
         "from": "../../windows-agent/DeviceStateConsoleAgent.WinUI/Assets/app-icon.ico",
         "to": "app-icon.ico"
       }
     ],
+    "mac": {
+      "target": ["dir"],
+      "category": "public.app-category.utilities",
+      "minimumSystemVersion": "13.0",
+      "hardenedRuntime": true,
+      "entitlements": "build/macos/entitlements.plist",
+      "entitlementsInherit": "build/macos/entitlements.plist"
+    },
     "win": {
       "icon": "../../windows-agent/DeviceStateConsoleAgent.WinUI/Assets/app-icon.ico",
       "target": [

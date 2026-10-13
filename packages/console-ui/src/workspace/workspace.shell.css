@@ -55,6 +55,7 @@
 .workspace-windowbar__separator { width: 1px; height: 14px; margin-inline: 2px; background: var(--workspace-border-strong); }
 .workspace-windowbar__subtitle { overflow: hidden; color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-label-s-size); text-overflow: ellipsis; white-space: nowrap; }
 .workspace-windowbar__controls { display: flex; height: 100%; align-items: stretch; -webkit-app-region: no-drag; }
+.workspace-windowbar--mac { padding-inline-start: 80px; }
 /* Windows caption buttons: 46x32, the size the OS draws in a 32px title bar.
    They used to fill the bar's full height (42px, or 36px on a narrow viewport),
    so the hover fill was a taller block than the user sees anywhere else in

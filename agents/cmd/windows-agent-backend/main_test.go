@@ -95,7 +95,13 @@ func TestNormalizeProbeSelectionsFallsBackFromUnsupportedProvider(t *testing.T) 
 			break
 		}
 	}
-	if !found || cpu.Provider != "gopsutil" || !cpu.Enabled {
+	expected := ""
+	for _, selection := range defaults.ProbeSelections {
+		if selection.Target == "cpu" {
+			expected = selection.Provider
+		}
+	}
+	if !found || cpu.Provider != expected || !cpu.Enabled {
 		t.Fatalf("unexpected normalized probe selection: %#v", normalized)
 	}
 }

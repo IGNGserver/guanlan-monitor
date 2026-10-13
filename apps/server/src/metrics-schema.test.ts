@@ -39,6 +39,13 @@ test("accepts the collector payload shape", () => {
   assert.equal(result.success, true);
 });
 
+test("accepts macOS identity and bounded explicit metric quality", () => {
+  const payload = { ...validPayload(), identity: { deviceId: "mac", hostname: "mac", os: "macos", platform: "darwin", arch: "arm64" }, metricQuality: { swapUsage: { state: "direct" }, memoryCommitted: { state: "not_applicable", reason: "no Darwin equivalent" } } };
+  assert.equal(agentMetricsPayloadSchema.safeParse(payload).success, true);
+  assert.equal(agentMetricsPayloadSchema.safeParse({ ...payload, metricQuality: { typo: { state: "direct" } } }).success, false);
+  assert.equal(agentMetricsPayloadSchema.safeParse({ ...payload, metricQuality: { cpuUsage: { state: "invented" } } }).success, false);
+});
+
 test("accepts and preserves the collector self-reporting fields", () => {
   const payload = {
     ...validPayload(),

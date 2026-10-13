@@ -11,6 +11,7 @@ fs.mkdirSync(outputDir, { recursive: true });
 function resolveElectronExecutable() {
   const electronManifest = require.resolve("electron/package.json", { paths: [desktopRoot] });
   const electronRoot = path.dirname(electronManifest);
+  if (process.platform === "darwin") return path.join(electronRoot, "dist", "Electron.app", "Contents", "MacOS", "Electron");
   return path.join(electronRoot, "dist", process.platform === "win32" ? "electron.exe" : "electron");
 }
 
@@ -115,11 +116,15 @@ async function run() {
     // Caption buttons: 32px tall (the Windows title bar), and the maximize
     // button must carry a real glyph rather than an empty <svg>.
     assert.equal(desktopMetrics.windowbarHeight, 32, `the native title bar must be 32px tall (measured ${desktopMetrics.windowbarHeight})`);
-    assert.ok(desktopMetrics.captionButton, "the native title bar must render caption buttons");
-    assert.equal(desktopMetrics.captionButton.height, 32, `caption buttons must be 32px tall (measured ${desktopMetrics.captionButton.height})`);
-    assert.equal(desktopMetrics.captionButton.width, 46, `caption buttons must be 46px wide (measured ${desktopMetrics.captionButton.width})`);
-    assert.equal(desktopMetrics.captionButton.glyphPaths, 1, "each caption button must draw exactly one glyph path");
-    assert.ok(desktopMetrics.captionButton.glyphData.length > 0, "the minimize glyph path is empty");
+    if (process.platform === "darwin") {
+      assert.equal(desktopMetrics.captionButton, null, "macOS must use native traffic lights, not Windows caption buttons");
+    } else {
+      assert.ok(desktopMetrics.captionButton, "the native title bar must render caption buttons");
+      assert.equal(desktopMetrics.captionButton.height, 32, `caption buttons must be 32px tall (measured ${desktopMetrics.captionButton.height})`);
+      assert.equal(desktopMetrics.captionButton.width, 46, `caption buttons must be 46px wide (measured ${desktopMetrics.captionButton.width})`);
+      assert.equal(desktopMetrics.captionButton.glyphPaths, 1, "each caption button must draw exactly one glyph path");
+      assert.ok(desktopMetrics.captionButton.glyphData.length > 0, "the minimize glyph path is empty");
+    }
     assert.equal(await page.locator(".workspace-device-item").count(), 0, "Electron primary navigation must not contain a device list");
     const desktopNavLabels = (await page.locator(".workspace-sidebar .m3e-nav-item").allTextContents()).map((label) => label.trim());
     const expectedDesktopNav = desktopNavLabels.includes("连接与本机") ? ["总览", "设备", "连接与本机", "设置"] : ["总览", "设备", "设置"];
@@ -223,7 +228,7 @@ async function run() {
     });
     assert.equal(mobileMetrics.presentation, "phone", "a 390px native window must use the phone layout");
     assert.equal(mobileMetrics.captionHeight, 32, "the narrow window keeps its 32px caption bar");
-    assert.equal(mobileMetrics.captionButtons.length, 3, "minimize, maximize and hide stay reachable in a narrow window");
+    assert.equal(mobileMetrics.captionButtons.length, process.platform === "darwin" ? 0 : 3, "macOS uses native traffic lights; other platforms keep three caption buttons");
     assert.ok(mobileMetrics.captionButtons.every((button) => button.height === 32 && button.width <= 46), `caption buttons keep the OS geometry (${JSON.stringify(mobileMetrics.captionButtons)})`);
     assert.deepEqual((await page.locator(".touch-navigation button").allTextContents()).map((label) => label.trim()), ["总览", "设备", "设置"], "compact destinations must match the desktop rail");
     assert.equal(await page.locator(".workspace-root").count(), 0, "the desktop shell must not render in a narrow window");

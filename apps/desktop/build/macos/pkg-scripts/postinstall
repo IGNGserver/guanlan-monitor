@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+# The installer runs this fixed script as root; no user-controlled shell text.
+target="${3:-/}"
+if [ "$target" != / ]; then
+  echo 'Guanlan only installs its LaunchDaemon on the active startup volume.' >&2
+  exit 1
+fi
+bundle='/Library/PrivilegedHelperTools/Guanlan'
+chmod 0755 "$bundle/guanlan-agent" "$bundle/device-state-console-agent"
+"$bundle/guanlan-agent" service install --bundle-root "$bundle" --config-root '/Library/Application Support/Guanlan'

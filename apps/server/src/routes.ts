@@ -147,6 +147,7 @@ const updateQuerySchema = z.object({
     "web",
     "windows-gui",
     "linux-gui",
+    "macos-gui",
     "android",
     "ios"
   ]),

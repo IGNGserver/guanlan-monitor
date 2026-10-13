@@ -53,6 +53,7 @@ export function resolveMachineConfigDir(): string {
     const programData = process.env.ProgramData?.trim() || "C:\\ProgramData";
     return path.join(programData, "Guanlan");
   }
+  if (process.platform === "darwin") return "/Library/Application Support/Guanlan";
   return "/etc/guanlan";
 }
 
@@ -520,6 +521,7 @@ export class AgentManager {
 
 /** The exact command a user can run to change machine-scope settings. */
 function serviceCommandHint(): string {
+  if (process.platform === "darwin") return "sudo /Library/PrivilegedHelperTools/Guanlan/guanlan-agent config set";
   if (process.platform === "win32") {
     const executable = path.join(process.env.ProgramFiles || "C:\\Program Files", "DeviceStateConsoleAgent", "bin", "guanlan-agent.exe");
     return `"${executable}" config set --hub <中枢地址> --key-stdin`;

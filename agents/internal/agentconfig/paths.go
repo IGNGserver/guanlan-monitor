@@ -53,6 +53,9 @@ func MachineDir() string {
 		}
 		return filepath.Join(base, "Guanlan")
 	}
+	if runtime.GOOS == "darwin" {
+		return "/Library/Application Support/Guanlan"
+	}
 	return "/etc/guanlan"
 }
 

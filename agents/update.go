@@ -32,6 +32,9 @@ type cliUpdateInfo struct {
 }
 
 func runUpdateCommand(args []string) error {
+	if runtime.GOOS == "darwin" {
+		return errors.New("macOS updates require the complete signed installer package; use the desktop update link, not binary replacement")
+	}
 	installDir := defaultInstallDir()
 	flags := flag.NewFlagSet("update", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -253,6 +256,9 @@ func extractZipSafely(archivePath, destination string) error {
 }
 
 func replaceInstalledBinary(installDir, newBinary, binaryName, version string) error {
+	if runtime.GOOS == "darwin" {
+		return errors.New("refusing to replace a binary inside a signed macOS installation")
+	}
 	if runtime.GOOS == "windows" {
 		return scheduleWindowsBinaryReplacement(installDir, newBinary, binaryName, version)
 	}
@@ -559,6 +565,9 @@ func defaultInstallDir() string {
 func updatePlatform() string {
 	if runtime.GOOS == "windows" {
 		return "windows-gui"
+	}
+	if runtime.GOOS == "darwin" {
+		return "macos-gui"
 	}
 	return "linux-gui"
 }
