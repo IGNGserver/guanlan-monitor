@@ -1210,10 +1210,14 @@ func detectTargets(cfg agentLocalConfig) ([]probeTargetState, error) {
 		Label:     "显卡实例",
 		Instances: gpuInstances,
 	})
+	fanInstances := []probeDetectedTarget{}
+	if runtime.GOOS == "darwin" {
+		fanInstances = detectDarwinFans(cfg)
+	}
 	targets = append(targets, probeTargetState{
 		Target:    "fan",
 		Label:     "风扇实例",
-		Instances: []probeDetectedTarget{},
+		Instances: fanInstances,
 	})
 
 	return targets, nil
@@ -1226,6 +1230,9 @@ type windowsDiskPartitionRow struct {
 }
 
 func detectDiskInstances(enabled map[string]struct{}, explicit bool) []probeDetectedTarget {
+	if runtime.GOOS == "darwin" {
+		return detectDarwinDisks(enabled, explicit)
+	}
 	partitions, err := disk.Partitions(false)
 	if err != nil || !hasUsableDiskPartitions(partitions) {
 		if fallback, fallbackErr := disk.Partitions(true); fallbackErr == nil && hasUsableDiskPartitions(fallback) {
@@ -1507,6 +1514,9 @@ func detectSanitizeKey(value string) string {
 }
 
 func detectGPUAdapters(enabled map[string]struct{}, explicit bool) ([]probeDetectedTarget, error) {
+	if runtime.GOOS == "darwin" {
+		return detectDarwinGPUs(enabled, explicit)
+	}
 	if runtime.GOOS != "windows" {
 		return []probeDetectedTarget{}, nil
 	}

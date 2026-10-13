@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+target="${3:-/}"
+if [ "$target" != / ]; then
+  echo 'Guanlan only installs on the active startup volume.' >&2
+  exit 1
+fi
+# Stop the old service before the package replaces its helper/collector pair.
+# This is a fixed system tool/label, not code from a writable app or shell input.
+if /bin/launchctl print system/org.igng.guanlan.agent >/dev/null 2>&1; then
+  /bin/launchctl bootout system/org.igng.guanlan.agent
+fi

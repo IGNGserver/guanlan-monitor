@@ -83,6 +83,7 @@ export function formatCapacitySummary(usedBytes: number | null | undefined, tota
 
 export function gpuMemoryLabel(memoryKind: string | null | undefined): string {
   if (memoryKind === "shared") return "共享显存";
+  if (memoryKind === "unified") return "统一内存";
   if (memoryKind === "dedicated") return "独立显存";
   return "GPU 内存";
 }

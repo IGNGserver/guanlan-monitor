@@ -1,0 +1,101 @@
+name: macOS signed delivery (manual)
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: macos-signing-${{ github.ref }}
+  cancel-in-progress: true
+
+# Prepares signed artifacts only. Does not create a Release or deploy. The
+# macos-signing environment must be provisioned with protected credentials.
+jobs:
+  signed:
+    if: github.ref == 'refs/heads/main'
+    environment: macos-signing
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x64
+          - runner: macos-15
+            arch: arm64
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+      CGO_CFLAGS: '-mmacosx-version-min=13.0'
+      CGO_LDFLAGS: '-mmacosx-version-min=13.0'
+      MACOS_APPLICATION_IDENTITY: ${{ vars.MACOS_APPLICATION_IDENTITY }}
+      MACOS_INSTALLER_IDENTITY: ${{ vars.MACOS_INSTALLER_IDENTITY }}
+      MACOS_NOTARY_PROFILE: guanlan-ci-notary
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.24.x'
+      - name: Validate before delivery build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm verify:version
+          pnpm lint
+          pnpm typecheck
+          go -C agents test ./...
+      - name: Build and sign in temporary keychain
+        env:
+          APP_CERT: ${{ secrets.MACOS_APP_CERT_P12_BASE64 }}
+          INSTALLER_CERT: ${{ secrets.MACOS_INSTALLER_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY_P8_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
+        run: |
+          set -euo pipefail
+          : "${APP_CERT:?missing Application certificate}" "${INSTALLER_CERT:?missing Installer certificate}" "${NOTARY_KEY:?missing notary key}"
+          : "${MACOS_APPLICATION_IDENTITY:?missing Application identity}" "${MACOS_INSTALLER_IDENTITY:?missing Installer identity}"
+          keychain="$RUNNER_TEMP/guanlan-signing.keychain-db"
+          export MACOS_NOTARY_KEYCHAIN="$keychain"
+          password="$(openssl rand -hex 24)"
+          echo "::add-mask::$password"
+          printf '%s' "$APP_CERT" | base64 -D > "$RUNNER_TEMP/application.p12"
+          printf '%s' "$INSTALLER_CERT" | base64 -D > "$RUNNER_TEMP/installer.p12"
+          printf '%s' "$NOTARY_KEY" | base64 -D > "$RUNNER_TEMP/notary.p8"
+          chmod 600 "$RUNNER_TEMP/application.p12" "$RUNNER_TEMP/installer.p12" "$RUNNER_TEMP/notary.p8"
+          trap 'security delete-keychain "$keychain" >/dev/null 2>&1 || true; rm -f "$RUNNER_TEMP/application.p12" "$RUNNER_TEMP/installer.p12" "$RUNNER_TEMP/notary.p8"' EXIT
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/application.p12" -k "$keychain" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security import "$RUNNER_TEMP/installer.p12" -k "$keychain" -P "$CERT_PASSWORD" -T /usr/bin/productsign -T /usr/bin/pkgbuild
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+          xcrun notarytool store-credentials "$MACOS_NOTARY_PROFILE" --keychain "$keychain" --key "$RUNNER_TEMP/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER"
+          version="$(tr -d '[:space:]' < VERSION)"
+          mkdir -p release/desktop-agent
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ../release/desktop-agent/device-state-console-agent .
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ../release/desktop-agent/guanlan-agent ./cmd/windows-agent-backend
+          cp release/desktop-agent/guanlan-agent release/desktop-agent/device-state-console-agent-backend
+          for file in release/desktop-agent/*; do codesign --force --options runtime --timestamp --keychain "$keychain" --sign "$MACOS_APPLICATION_IDENTITY" "$file"; done
+          pnpm --filter @dsc/shared build
+          pnpm --filter @dsc/desktop build
+          CSC_NAME="$MACOS_APPLICATION_IDENTITY" CSC_KEYCHAIN="$keychain" pnpm --filter @dsc/desktop exec electron-builder --mac dir --${{ matrix.arch }} --publish never "--config.directories.output=$RUNNER_TEMP/guanlan-macos"
+          app_bundle="$(find "$RUNNER_TEMP/guanlan-macos" -maxdepth 2 -name '*.app' -type d -print -quit)"
+          bash deploy/build-macos-package.sh "$app_bundle" '${{ matrix.arch }}' "$RUNNER_TEMP/guanlan-signed-artifacts" signed
+      - name: Upload signed delivery and notarization evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: macos-${{ matrix.arch }}-signed-delivery
+          path: ${{ runner.temp }}/guanlan-signed-artifacts
+          if-no-files-found: error
+          retention-days: 3

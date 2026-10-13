@@ -52,6 +52,8 @@ export interface TimeSeriesRecord {
   gpus?: InstanceMetricRecord[];
   fans?: InstanceMetricRecord[];
   recordedDetails?: {
+    metricQuality?: AgentMetricsPayload["metricQuality"];
+    unavailableMetrics?: AgentMetricsPayload["unavailableMetrics"];
     hardwareSampledAt?: string;
     cpuTemperatureSampledAt?: string;
     aggregatedInstances?: {

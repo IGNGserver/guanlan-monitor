@@ -1,0 +1,110 @@
+name: macOS native validation
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths: ['agents/**', 'apps/**', 'packages/**', 'scripts/**', 'deploy/**', '.github/workflows/macos-*.yml', 'package.json', 'pnpm-lock.yaml', 'VERSION']
+  push:
+    branches: [main]
+    paths: ['agents/**', 'apps/**', 'packages/**', 'scripts/**', 'deploy/**', '.github/workflows/macos-*.yml', 'package.json', 'pnpm-lock.yaml', 'VERSION']
+  workflow_dispatch:
+
+concurrency:
+  group: macos-native-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: macOS ${{ matrix.arch }} native tests and unsigned package
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x64
+            goarch: amd64
+          - runner: macos-15
+            arch: arm64
+            goarch: arm64
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+      CGO_CFLAGS: '-mmacosx-version-min=13.0'
+      CGO_LDFLAGS: '-mmacosx-version-min=13.0'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.24.x'
+      - name: Native architecture and Go tests
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = '${{ matrix.goarch }}'
+          go -C agents test ./...
+          go -C agents vet ./...
+          CGO_ENABLED=0 go -C agents test ./internal/macos ./internal/agentconfig ./internal/agentservice
+          bash scripts/test-macos-packaging.sh "$RUNNER_TEMP/guanlan-packaging-contract"
+      - name: Install and validate UI
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm lint
+          pnpm typecheck
+          pnpm verify:version
+          pnpm test:adapter-contracts
+          pnpm test:workspace-contracts
+          pnpm test:renderer-security
+          pnpm test:hub-connection
+      - name: Build native agent and desktop
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          mkdir -p release/desktop-agent
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ../release/desktop-agent/device-state-console-agent .
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ../release/desktop-agent/guanlan-agent ./cmd/windows-agent-backend
+          cp release/desktop-agent/guanlan-agent release/desktop-agent/device-state-console-agent-backend
+          pnpm --filter @dsc/shared build
+          pnpm --filter @dsc/desktop build
+          pnpm --filter @dsc/desktop exec electron-builder --mac dir --${{ matrix.arch }} --publish never "--config.directories.output=$RUNNER_TEMP/guanlan-macos"
+      - name: Package unsigned installation unit
+        run: |
+          set -euo pipefail
+          app_bundle="$(find "$RUNNER_TEMP/guanlan-macos" -maxdepth 2 -name '*.app' -type d -print -quit)"
+          test -n "$app_bundle"
+          test -x "$app_bundle/Contents/Resources/agent/guanlan-agent"
+          test -x "$app_bundle/Contents/Resources/agent/device-state-console-agent"
+          lipo "$app_bundle/Contents/Resources/agent/guanlan-agent" -verify_arch '${{ matrix.goarch == 'amd64' && 'x86_64' || 'arm64' }}'
+          bash deploy/build-macos-package.sh "$app_bundle" '${{ matrix.arch }}' "$RUNNER_TEMP/guanlan-macos-artifacts" unsigned
+          bash deploy/verify-macos-host.sh "$RUNNER_TEMP/guanlan-macos-artifacts/ci-inventory.json"
+      - name: Run Electron visual regression on macOS
+        run: |
+          mkdir -p "$RUNNER_TEMP/guanlan-playwright"
+          npm install --prefix "$RUNNER_TEMP/guanlan-playwright" --no-save playwright@1.55.0
+          NODE_PATH="$RUNNER_TEMP/guanlan-playwright/node_modules" pnpm test:electron-visual "$RUNNER_TEMP/guanlan-macos-artifacts/visual"
+      - name: Install and verify LaunchDaemon lifecycle on ephemeral runner
+        run: |
+          set -euo pipefail
+          package="$(find "$RUNNER_TEMP/guanlan-macos-artifacts" -name '*-UNSIGNED.pkg' -print -quit)"
+          bash deploy/verify-macos-package-lifecycle.sh "$package" "$RUNNER_TEMP/guanlan-macos-artifacts/lifecycle"
+      - name: Upload unsigned validation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: macos-${{ matrix.arch }}-UNSIGNED-validation
+          path: ${{ runner.temp }}/guanlan-macos-artifacts
+          if-no-files-found: error
+          retention-days: 3
+
+# Signing is deliberately not automatic. macos-signing.yml requires a protected
+# environment, Developer ID Application + Installer and a notarytool profile; never
+# publish these unsigned artifacts under the normal Release asset names.

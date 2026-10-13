@@ -131,7 +131,7 @@ func TestNormalizeProbeSelectionsRepairsUnsupportedProvider(t *testing.T) {
 	if cpu == nil {
 		t.Fatalf("cpu selection missing from %+v", got)
 	}
-	if cpu.Provider != "gopsutil" {
+	if cpu.Provider != findProbe(Default().ProbeSelections, "cpu").Provider {
 		t.Fatalf("cpu provider = %q, want the platform default", cpu.Provider)
 	}
 	if findProbe(got, "unknown") != nil {

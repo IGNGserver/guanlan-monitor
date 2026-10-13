@@ -11,6 +11,7 @@ import type {
   GpuMetricSeries,
   MetricSeries,
   NetworkMetricSeries,
+  SamplePoint,
   TemperatureMetricSeries
 } from "@dsc/shared";
 import type { DeviceMetricConfigValue, DeviceRealtimeState, InstanceMetricRecord, TimeSeriesRecord } from "./types.js";
@@ -327,6 +328,8 @@ export function payloadToTimeSeries(
     gpus,
     fans,
     recordedDetails: {
+      metricQuality: payload.metricQuality,
+      unavailableMetrics: payload.unavailableMetrics,
       hardwareSampledAt: payload.hardwareSampledAt,
       cpuTemperatureSampledAt: payload.cpuTemperatureSampledAt,
       system: payload.system,
@@ -416,7 +419,7 @@ export function timeSeriesToMetricSeries(
   const fans = buildFanMetricSeries(points, config);
   const temperatureSensors = buildTemperatureMetricSeries(points, config);
 
-  return {
+  const series: MetricSeries = {
     cpuUsagePercent: mapPoint("cpuUsagePercent"),
     cpuFrequencyMHz: mapPoint("cpuFrequencyMHz"),
     cpuTemperatureC: mapPoint("cpuTemperatureC"),
@@ -471,6 +474,62 @@ export function timeSeriesToMetricSeries(
     fans,
     temperatureSensors
   };
+  // Keep old numeric storage compatible, but never turn an explicitly absent
+  // or expired observation into an idle zero or carry-forward chart reading.
+  const gate = (samples: SamplePoint[], key: DeviceMetricKey): SamplePoint[] => {
+    const unavailable = new Set<string>();
+    const validObservations = new Set(points.flatMap((point) => {
+      const quality = point.recordedDetails?.metricQuality?.[key];
+      return quality?.observedAt && (quality.state === "direct" || quality.state === "derived") ? [quality.observedAt] : [];
+    }));
+    for (const point of points) {
+      const details = point.recordedDetails;
+      const state = details?.metricQuality?.[key]?.state;
+      if (details?.unavailableMetrics?.includes(key) || state === "unavailable" || state === "not_applicable" || state === "stale") {
+        unavailable.add(new Date(point.timestamp).toISOString());
+        // Hardware series use their original observation timestamp.
+        const observed = details?.metricQuality?.[key]?.observedAt;
+        if (observed && !validObservations.has(observed)) unavailable.add(observed);
+      }
+    }
+    return samples.filter((sample) => !unavailable.has(sample.timestamp));
+  };
+  const keys: Partial<Record<keyof MetricSeries, DeviceMetricKey>> = {
+    cpuUsagePercent: "cpuUsage", cpuFrequencyMHz: "cpuFrequency", cpuTemperatureC: "cpuTemperature",
+    gpuUsagePercent: "gpuUsage", gpuEncodePercent: "gpuEncode", gpuDecodePercent: "gpuDecode", gpuFrequencyMHz: "gpuFrequency",
+    gpuMemoryUsagePercent: "gpuMemory", gpuMemoryUsedBytes: "gpuMemory", gpuTemperatureC: "gpuTemperature",
+    memoryUsagePercent: "memoryUsage", memoryUsedBytes: "memoryUsage", swapUsagePercent: "swapUsage", swapUsedBytes: "swapUsage",
+    memoryAvailableBytes: "memoryAvailable", memoryCachedBytes: "memoryCached", memoryCommittedBytes: "memoryCommitted", memoryCommitLimitBytes: "memoryCommitted",
+    systemProcessCount: "systemOverview", systemThreadCount: "systemOverview", systemHandleCount: "systemOverview",
+    diskUsagePercent: "diskUsage", diskUsedBytes: "diskUsage", diskReadBytesPerSec: "diskRead", diskWriteBytesPerSec: "diskWrite",
+    networkRxBytesPerSec: "networkRxRate", networkTxBytesPerSec: "networkTxRate", trafficRxBytes: "networkTraffic", trafficTxBytes: "networkTraffic"
+  };
+  for (const [field, metric] of Object.entries(keys)) {
+    const target = series as unknown as Record<string, SamplePoint[]>;
+    target[field] = gate(target[field], metric);
+  }
+  for (const cpu of series.cpus) {
+    cpu.usagePercent = gate(cpu.usagePercent, "cpuUsage"); cpu.frequencyMHz = gate(cpu.frequencyMHz, "cpuFrequency"); cpu.temperatureC = gate(cpu.temperatureC, "cpuTemperature");
+  }
+  for (const gpu of series.gpus) {
+    gpu.usagePercent = gate(gpu.usagePercent, "gpuUsage"); gpu.encodePercent = gate(gpu.encodePercent, "gpuEncode"); gpu.decodePercent = gate(gpu.decodePercent, "gpuDecode");
+    gpu.frequencyMHz = gate(gpu.frequencyMHz, "gpuFrequency"); gpu.memoryUsagePercent = gate(gpu.memoryUsagePercent, "gpuMemory"); gpu.memoryUsedBytes = gate(gpu.memoryUsedBytes, "gpuMemory"); gpu.temperatureC = gate(gpu.temperatureC, "gpuTemperature");
+    const noBudget = new Set(points.filter((point) => point.recordedDetails?.metricQuality && !(point.recordedDetails.gpus.find((entry) => entry.id === gpu.id)?.memoryTotalBytes ?? 0))
+      .map((point) => new Date(point.timestamp).toISOString()));
+    gpu.memoryUsagePercent = gpu.memoryUsagePercent.filter((sample) => !noBudget.has(sample.timestamp));
+  }
+  const noGpuBudget = new Set(points.filter((point) => point.recordedDetails?.metricQuality && !point.recordedDetails.gpus.some((gpu) => gpu.memoryTotalBytes > 0))
+    .map((point) => new Date(point.timestamp).toISOString()));
+  series.gpuMemoryUsagePercent = series.gpuMemoryUsagePercent.filter((sample) => !noGpuBudget.has(sample.timestamp));
+  for (const disk of series.disks) {
+    disk.readBytesPerSec = gate(disk.readBytesPerSec, "diskRead"); disk.writeBytesPerSec = gate(disk.writeBytesPerSec, "diskWrite"); disk.activePercent = gate(disk.activePercent, "diskActivity");
+  }
+  for (const network of series.networks) {
+    network.rxBytesPerSec = gate(network.rxBytesPerSec, "networkRxRate"); network.txBytesPerSec = gate(network.txBytesPerSec, "networkTxRate");
+    network.trafficRxBytes = gate(network.trafficRxBytes, "networkTraffic"); network.trafficTxBytes = gate(network.trafficTxBytes, "networkTraffic");
+  }
+  for (const fan of series.fans) fan.rpm = gate(fan.rpm, "fanRpm");
+  return series;
 }
 
 function detailSeries(points: TimeSeriesRecord[], selector: (point: TimeSeriesRecord) => number | undefined) {
@@ -916,7 +975,11 @@ export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOpt
     ["fanNote", hasFanNote]
   ];
   const availability = new Map<DeviceMetricKey, boolean>(
-    availabilityEntries.map(([key, available]) => [key, unavailable.has(key) ? false : available])
+    availabilityEntries.map(([key, available]) => {
+      const quality = latest.metricQuality?.[key]?.state;
+      return [key, unavailable.has(key) || quality === "unavailable" || quality === "not_applicable" || quality === "stale"
+        ? false : quality === "direct" || quality === "derived" ? true : available];
+    })
   );
 
   return ALL_DEVICE_METRIC_KEYS.map((key) => ({

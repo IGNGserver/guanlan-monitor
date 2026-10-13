@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMetricsPayload } from "@dsc/shared";
 import type { DeviceRealtimeState } from "./types.js";
-import { normalizeRealtimeState, payloadToTimeSeries, timeSeriesToMetricSeries, toSummary } from "./utils.js";
+import { getAvailableMetrics, normalizeRealtimeState, payloadToTimeSeries, timeSeriesToMetricSeries, toSummary } from "./utils.js";
+import { assetNameFor } from "./update-assets.js";
 
 function stateWith(latest: Partial<AgentMetricsPayload>): DeviceRealtimeState {
   const payload: AgentMetricsPayload = {
@@ -35,6 +36,46 @@ function stateWith(latest: Partial<AgentMetricsPayload>): DeviceRealtimeState {
     latest: payload
   };
 }
+
+test("explicit metric quality distinguishes valid zero from absent and stale readings", () => {
+  const state = stateWith({ metricQuality: { swapUsage: { state: "direct" }, memoryCached: { state: "direct" }, cpuUsage: { state: "stale" }, memoryCommitted: { state: "not_applicable" } } });
+  const availability = new Map(getAvailableMetrics(state).map((item) => [item.key, item.available]));
+  assert.equal(availability.get("swapUsage"), true);
+  assert.equal(availability.get("memoryCached"), true);
+  assert.equal(availability.get("cpuUsage"), false);
+  assert.equal(availability.get("memoryCommitted"), false);
+});
+
+test("macOS installer selection matches architecture and refuses missing/unknown arch", () => {
+  assert.equal(assetNameFor("macos-gui", "3.0.151", "arm64"), "DeviceStateConsole-macOS-arm64-Install-v3.0.151.pkg");
+  assert.equal(assetNameFor("macos-gui", "3.0.151", "amd64"), "DeviceStateConsole-macOS-x64-Install-v3.0.151.pkg");
+  assert.equal(assetNameFor("macos-gui", "3.0.151", "x64"), "DeviceStateConsole-macOS-x64-Install-v3.0.151.pkg");
+  assert.equal(assetNameFor("macos-gui", "3.0.151"), null);
+  assert.equal(assetNameFor("macos-gui", "3.0.151", "i386"), null);
+});
+
+test("explicit unavailable metrics stay out of historical charts while observed zero remains", () => {
+  const payload = stateWith({ metricQuality: { cpuUsage: { state: "direct" }, swapUsage: { state: "direct" }, memoryCommitted: { state: "not_applicable" }, gpuUsage: { state: "unavailable" } } }).latest;
+  payload.cpuUsagePercent = 0;
+  const record = payloadToTimeSeries(payload);
+  const series = timeSeriesToMetricSeries([record]);
+  assert.deepEqual(series.cpuUsagePercent.map((point) => point.value), [0]);
+  assert.deepEqual(series.swapUsagePercent.map((point) => point.value), [0]);
+  assert.equal(series.memoryCommittedBytes.length, 0);
+  assert.equal(series.gpuUsagePercent.length, 0);
+  assert.equal(record.recordedDetails?.metricQuality?.memoryCommitted?.state, "not_applicable");
+});
+
+test("unified GPU allocation without a driver budget is not a zero-percent VRAM sample", () => {
+  const payload = stateWith({
+    metricQuality: { gpuMemory: { state: "direct" } },
+    gpus: [{ id: "agx", name: "Apple GPU", utilizationPercent: 0, memoryKind: "unified", memoryUsedBytes: 1024, memoryTotalBytes: 0 }]
+  }).latest;
+  const series = timeSeriesToMetricSeries([payloadToTimeSeries(payload)]);
+  assert.equal(series.gpuMemoryUsagePercent.length, 0);
+  assert.equal(series.gpus[0].memoryUsagePercent.length, 0);
+  assert.deepEqual(series.gpuMemoryUsedBytes.map((point) => point.value), [1024]);
+});
 
 /** What Redis Lua `cjson` leaves behind after an offline sweep touches a device. */
 function cjsonMangled() {

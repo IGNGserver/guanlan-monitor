@@ -3,7 +3,8 @@ import test from "node:test";
 import { AuthFailureRateLimiter } from "../auth.js";
 import { LocalRealtimeRepository, LocalHistoryRepository, LocalDeviceRepository, createLocalStore } from "../repositories/local.js";
 import { mapHistoryRow } from "../repositories/history.js";
-import { MetricsService } from "./metrics.js";
+import { averageRecord, MetricsService } from "./metrics.js";
+import { payloadToTimeSeries, timeSeriesToMetricSeries } from "../utils.js";
 import type { TimeSeriesRecord } from "../types.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -125,4 +126,25 @@ test("MySQL history rows recover averaged CPU, network, and fan instances", () =
   assert.equal(row.networks?.[0]?.rxBytesPerSec, 100);
   assert.equal(row.fans?.[0]?.rpm, 500);
   assert.equal(row.hardwareSampledAt, "2026-09-27T00:00:00.123Z");
+});
+
+test("aggregation does not disguise a missing counter as a lower average", () => {
+  const now = new Date().toISOString();
+  const payload: AgentMetricsPayload = {
+    identity: { deviceId: "mac", hostname: "mac", os: "macos", platform: "darwin", arch: "arm64" }, timestamp: now, heartbeatAt: now,
+    system: { processCount: 1, threadCount: 1, handleCount: 1 }, cpuUsagePercent: 80,
+    memory: { totalBytes: 100, usedBytes: 50, availableBytes: 50, cachedBytes: 0, committedBytes: 0, commitLimitBytes: 0, swapTotalBytes: 0, swapUsedBytes: 0 },
+    diskUsage: { totalBytes: 100, usedBytes: 50 }, diskRate: { readBytesPerSec: 0, writeBytesPerSec: 0 },
+    networkRate: { rxBytesPerSec: 0, txBytesPerSec: 0, totalRxBytes: 0, totalTxBytes: 0 }, gpus: [], fans: [],
+    metricQuality: { cpuUsage: { state: "direct" }, memoryUsage: { state: "direct" } }
+  };
+  const missing = payloadToTimeSeries({ ...payload, cpuUsagePercent: 0, metricQuality: { cpuUsage: { state: "unavailable" } } });
+  const present = payloadToTimeSeries(payload);
+  for (const samples of [[missing, present], [present, missing]]) {
+    const record = averageRecord(samples);
+    assert.equal(record.recordedDetails?.metricQuality?.cpuUsage?.state, "unavailable");
+    const series = timeSeriesToMetricSeries([record]);
+    assert.equal(series.cpuUsagePercent.length, 0);
+    assert.deepEqual(series.memoryUsagePercent.map((point) => point.value), [50]);
+  }
 });

@@ -365,9 +365,24 @@ function hasIdentityBoundaryChanged(previous: AgentMetricsPayload["identity"], n
   );
 }
 
-function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[], timestamp = samples[samples.length - 1]?.timestamp ?? Date.now()) {
+export function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[], timestamp = samples[samples.length - 1]?.timestamp ?? Date.now()) {
   const lastSample = samples[samples.length - 1];
   const recordedDetails = lastSample?.recordedDetails;
+  const metricQuality = { ...recordedDetails?.metricQuality };
+  const unavailableMetrics = new Set(recordedDetails?.unavailableMetrics ?? []);
+  // A bucket with a missing observation must not publish an average diluted
+  // by its legacy numeric placeholder. Conservatively gap the affected metric
+  // for that bucket while leaving complete metrics and old agents unchanged.
+  for (const sample of samples) {
+    const details = sample.recordedDetails;
+    for (const [key, quality] of Object.entries(details?.metricQuality ?? {})) {
+      if (quality.state === "unavailable" || quality.state === "not_applicable" || quality.state === "stale") {
+        metricQuality[key as keyof typeof metricQuality] = { ...quality, reason: "aggregate contains missing or expired observations" };
+        unavailableMetrics.add(key as keyof typeof metricQuality);
+      }
+    }
+    for (const key of details?.unavailableMetrics ?? []) unavailableMetrics.add(key);
+  }
   const temperatureSensors = mergeTemperatureSensorDetails(samples);
   const total = samples.reduce(
     (acc, sample) => ({
@@ -469,6 +484,8 @@ function averageRecord(samples: ReturnType<typeof payloadToTimeSeries>[], timest
     recordedDetails: recordedDetails
       ? {
           ...recordedDetails,
+          metricQuality: Object.keys(metricQuality).length ? metricQuality : undefined,
+          unavailableMetrics: unavailableMetrics.size ? [...unavailableMetrics] : undefined,
           aggregatedInstances: { cpus, networks, fans },
           temperatureSensors
         }

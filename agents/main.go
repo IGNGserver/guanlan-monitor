@@ -29,6 +29,7 @@ import (
 	"unicode/utf8"
 
 	"device-state-console/agent/internal/agentconfig"
+	"device-state-console/agent/internal/macos"
 
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -327,6 +328,8 @@ type metricsPayload struct {
 	Fans                    []fanSensorStats           `json:"fans"`
 	TemperatureSensors      []temperatureSensorReading `json:"temperatureSensors,omitempty"`
 	SensorBackends          []sensorBackendStatus      `json:"sensorBackends,omitempty"`
+	UnavailableMetrics      []string                   `json:"unavailableMetrics,omitempty"`
+	MetricQuality           map[string]metricQuality   `json:"metricQuality,omitempty"`
 	// External probe processes started during this cycle, by executable, and the
 	// wall time of the last slow collection. Optional and additive: it makes the
 	// collector's own process churn an observable number for the performance job
@@ -486,17 +489,21 @@ type slowMetrics struct {
 }
 
 type agentState struct {
-	baseIdentity     agentIdentity
-	configPath       string
-	client           *http.Client
-	lastCPU          cpuSnapshot
-	hasLastCPU       bool
-	lastCPUByPackage map[string]cpuSnapshot
-	currentCPUUsage  map[string]*float64
-	lastDiskIO       *ioSnapshot
-	lastNetIO        *ioSnapshot
-	lastSlow         slowMetrics
-	hasSlow          bool
+	baseIdentity            agentIdentity
+	configPath              string
+	client                  *http.Client
+	lastCPU                 cpuSnapshot
+	hasLastCPU              bool
+	lastCPUByPackage        map[string]cpuSnapshot
+	currentCPUUsage         map[string]*float64
+	lastDiskIO              *ioSnapshot
+	lastNetIO               *ioSnapshot
+	cpuUsageObserved        bool
+	diskCountersObserved    bool
+	networkCountersObserved bool
+	networkRatesObserved    bool
+	lastSlow                slowMetrics
+	hasSlow                 bool
 	// System overview counters are refreshed on the slow cadence. Enumerating
 	// every process and its file descriptors is the most expensive fast-path
 	// step on Linux; Windows reads the same numbers from one syscall and keeps
@@ -1184,6 +1191,8 @@ func defaultFanProbeSelection(goos string) agentProbeSelection {
 		return agentProbeSelection{Target: "fan", Provider: "hwmon", Enabled: true}
 	case "windows":
 		return agentProbeSelection{Target: "fan", Provider: "librehardwaremonitor", Enabled: true}
+	case "darwin":
+		return agentProbeSelection{Target: "fan", Provider: "darwin", Enabled: true}
 	default:
 		return agentProbeSelection{Target: "fan", Provider: "disabled", Enabled: false}
 	}
@@ -1380,6 +1389,10 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 			response := rate.AverageResponseMs
 			slow.disks[index].ActivePercent = &active
 			slow.disks[index].AverageResponseMs = &response
+			if runtime.GOOS == "darwin" {
+				slow.disks[index].ActivePercent = nil
+				slow.disks[index].AverageResponseMs = nil
+			}
 			if diskRate.Instances == nil {
 				diskRate.Instances = map[string]rateStats{}
 			}
@@ -1439,6 +1452,21 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 		SensorBackends:          slow.sensorBackends,
 	}
 
+	if runtime.GOOS == "darwin" {
+		if !s.cpuUsageObserved {
+			payload.UnavailableMetrics = append(payload.UnavailableMetrics, "cpuUsage")
+		}
+		if !s.diskCountersObserved {
+			payload.UnavailableMetrics = append(payload.UnavailableMetrics, "diskRead", "diskWrite")
+		}
+		if !s.networkCountersObserved {
+			payload.UnavailableMetrics = append(payload.UnavailableMetrics, "networkTraffic")
+		}
+		if !s.networkRatesObserved {
+			payload.UnavailableMetrics = append(payload.UnavailableMetrics, "networkRxRate", "networkTxRate")
+		}
+		applyDarwinMetricQuality(&payload, time.Duration(cfg.slowIntervalSeconds()*2+10)*time.Second)
+	}
 	applyRuntimeConfig(&payload, cfg)
 	// Take the spawn counters before sanitizing so the sample id is computed from
 	// telemetry alone; the probe counters are diagnostic and must not make an
@@ -1485,6 +1513,7 @@ func (s *agentState) sampleCPURuntime(plan collectionPlan) (float64, cpuRuntimeM
 }
 
 func (s *agentState) sampleCPUUsage() float64 {
+	s.cpuUsageObserved = false
 	sample, err := collectCPUTimesSample()
 	if err != nil || len(sample.packages) == 0 {
 		s.currentCPUUsage = map[string]*float64{}
@@ -1511,6 +1540,7 @@ func (s *agentState) sampleCPUUsage() float64 {
 		}
 	}
 	aggregateUsage, aggregateOK := cpuUsagePercentBetween(s.lastCPU, sample.aggregate)
+	s.cpuUsageObserved = aggregateOK
 	s.lastCPU = sample.aggregate
 	s.lastCPUByPackage = sample.packages
 	s.currentCPUUsage = currentUsage
@@ -1863,11 +1893,21 @@ func averagePointerMap(values map[string]*float64) *float64 {
 }
 
 func sampleMemory() memoryStats {
+	if runtime.GOOS == "darwin" {
+		value, err := macos.ReadMemory()
+		if err != nil {
+			return memoryStats{}
+		}
+		return memoryStats{TotalBytes: value.Total, UsedBytes: value.Used, AvailableBytes: value.Available, CachedBytes: value.Cached, SwapTotalBytes: value.SwapTotal, SwapUsedBytes: value.SwapUsed}
+	}
 	virtualMemory, err := mem.VirtualMemory()
 	if err != nil {
 		return memoryStats{}
 	}
 	swapMemory, _ := mem.SwapMemory()
+	if swapMemory == nil {
+		swapMemory = &mem.SwapMemoryStat{}
+	}
 	committedBytes := virtualMemory.CommittedAS
 	commitLimitBytes := uint64(0)
 	if runtime.GOOS == "windows" {
@@ -1950,6 +1990,9 @@ func (s *agentState) currentSystemStats(cfg agentRuntimeConfig, plan collectionP
 func (s *agentState) sampleFastRates(now time.Time, fallbackSeconds int) (rateStats, networkTrafficStats) {
 	diskCounters, diskErr := disk.IOCounters()
 	netCounters, netErr := gnet.IOCounters(true)
+	s.diskCountersObserved = diskErr == nil && len(diskCounters) > 0 && s.lastDiskIO != nil
+	s.networkCountersObserved = netErr == nil && len(netCounters) > 0
+	s.networkRatesObserved = s.networkCountersObserved && s.lastNetIO != nil
 	if diskErr != nil {
 		logCategoryf(logCategoryDiskFast, "disk counters failed: %v", diskErr)
 	}
@@ -1958,6 +2001,10 @@ func (s *agentState) sampleFastRates(now time.Time, fallbackSeconds int) (rateSt
 	}
 
 	current := snapshotIO(diskCounters, netCounters, now)
+	if runtime.GOOS == "darwin" {
+		s.diskCountersObserved = s.diskCountersObserved && darwinDiskCounterWindowReady(s.lastDiskIO, current)
+		s.networkRatesObserved = s.networkRatesObserved && darwinNetworkCounterWindowReady(s.lastNetIO, current)
+	}
 	var diskRate rateStats
 	if diskErr == nil {
 		diskRate, _ = computeRates(s.lastDiskIO, current, fallbackSeconds)
@@ -2014,6 +2061,9 @@ func mergeSlowMetrics(previous slowMetrics, next slowMetrics) slowMetrics {
 		if next.cpuFrequencyMHz != nil {
 			merged.cpuFrequencyMHz = next.cpuFrequencyMHz
 		}
+		if runtime.GOOS == "darwin" {
+			merged.cpuFrequencyMHz = next.cpuFrequencyMHz
+		}
 	}
 	if next.diskCollected {
 		merged.diskCollected = true
@@ -2041,7 +2091,10 @@ func mergeSlowMetrics(previous slowMetrics, next slowMetrics) slowMetrics {
 		merged.memorySlotCount = next.memorySlotCount
 		merged.memoryFormFactor = next.memoryFormFactor
 		merged.gpus = mergeMissingGPUMemory(previous.gpus, next.gpus)
-		if merged.cpuTemperatureC != nil {
+		if runtime.GOOS == "darwin" {
+			merged.gpus = next.gpus
+		}
+		if merged.cpuTemperatureC != nil && runtime.GOOS != "darwin" {
 			// The historical-memory merge may bring back a previous GPU
 			// temperature. Integrated GPUs have no independent sensor, so
 			// restore the invariant after merging: their temperature always
@@ -2249,6 +2302,15 @@ func collectSlowMetrics(assets hardwareAssetCache, plan collectionPlan) (slowMet
 				temperatureSensors = append(temperatureSensors, sensor.TemperatureSensors...)
 			}
 		}
+	case runtime.GOOS == "darwin":
+		assets.diskSensors = collectDarwinDiskSensors(result.disks)
+		assets.diskSensorsCollectedAt = time.Now().UTC()
+		for index := range result.disks {
+			if sensor, ok := assets.diskSensors[result.disks[index].SourceKey]; ok {
+				applyDiskSensorMetadata(&result.disks[index], sensor)
+				temperatureSensors = append(temperatureSensors, sensor.TemperatureSensors...)
+			}
+		}
 	default:
 		linuxDiskSensors := collectLinuxDiskSensorMetadata(result.disks)
 		assets.diskSensors = linuxDiskSensors
@@ -2302,6 +2364,8 @@ func collectSlowMetrics(assets hardwareAssetCache, plan collectionPlan) (slowMet
 		if len(gpus) == 0 {
 			gpus = mergeGPUStats(perfGpus, lhmGpus, nvidiaGpus)
 		}
+	} else if runtime.GOOS == "darwin" {
+		gpus = hardware.gpus
 	} else {
 		var nvidiaGpus []gpuDeviceStats
 		if plan.gpu {
@@ -2310,7 +2374,7 @@ func collectSlowMetrics(assets hardwareAssetCache, plan collectionPlan) (slowMet
 		appendGPUTemperatureSensors(&temperatureSensors, nvidiaGpus, "nvidia-smi")
 		gpus = mergeGPUStats(hardware.gpus, nvidiaGpus)
 	}
-	if hardware.cpuTemperatureC != nil {
+	if hardware.cpuTemperatureC != nil && runtime.GOOS != "darwin" {
 		applyIntegratedGPUTemperature(gpus, *hardware.cpuTemperatureC)
 		appendIntegratedGPUTemperatureSensors(&temperatureSensors, gpus, *hardware.cpuTemperatureC)
 	}
@@ -2808,6 +2872,8 @@ func normalizeGPUMemoryKind(value string) string {
 		return "dedicated"
 	case "shared":
 		return "shared"
+	case "unified":
+		return "unified"
 	case "unknown":
 		return "unknown"
 	default:
@@ -2911,6 +2977,12 @@ func intPointer(value int) *int {
 }
 
 func collectPlatformSensorBackends() []sensorBackendStatus {
+	if runtime.GOOS == "darwin" {
+		return []sensorBackendStatus{
+			{ID: "darwin-mach", Label: "Darwin Mach / sysctl", OK: true, Detail: "CPU 时间、内存及系统枚举；单项可用性以 metricQuality 为准"},
+			optionalCommandBackend("smartmontools", "smartctl", "smartctl", "磁盘温度与健康，按设备/权限暴露"),
+		}
+	}
 	if runtime.GOOS == "linux" {
 		return []sensorBackendStatus{
 			{ID: "linux-procfs-gopsutil", Label: "Linux procfs / gopsutil", OK: true, Detail: "CPU、内存、进程、磁盘 IO 和网络计数可用"},
@@ -3052,7 +3124,7 @@ func collectCPUPackages(cachedFallback []cpuPackageStats) (*float64, []cpuPackag
 		}
 		current := packages[key]
 		current.coreCount += int(entry.Cores)
-		if entry.Mhz > 0 {
+		if entry.Mhz > 0 && runtime.GOOS != "darwin" {
 			current.frequencies = append(current.frequencies, entry.Mhz)
 			allFrequencies = append(allFrequencies, entry.Mhz)
 		}
@@ -3272,6 +3344,9 @@ type hardwareSensorMetrics struct {
 // `gpuAdapters` is the shared inventory's adapter list, used to stamp the LHM
 // snapshots with PNP ids without a second Win32_VideoController query.
 func collectHardwareSensors(gpuAdapters []windowsGPUAdapterRecord) hardwareSensorMetrics {
+	if runtime.GOOS == "darwin" {
+		return collectDarwinHardwareSensors()
+	}
 	if runtime.GOOS == "linux" {
 		return collectLinuxHardwareSensors()
 	}
@@ -5939,6 +6014,9 @@ func maxSensorValue(current, candidate *float64) *float64 {
 // no smartctl process is spawned; the caller stores the returned map back into
 // the asset cache when it was refreshed.
 func collectDisks(cachedTemperatures map[string]*float64, refreshTemperatures bool) ([]diskDeviceStats, storageUsage, map[string]*float64, error) {
+	if runtime.GOOS == "darwin" {
+		return collectDarwinDisks(cachedTemperatures)
+	}
 	partitions, err := collectDiskPartitions()
 	if err != nil {
 		return nil, storageUsage{}, cachedTemperatures, err
@@ -6287,8 +6365,10 @@ func snapshotIO(diskCounters map[string]disk.IOCountersStat, netCounters []gnet.
 	var txBytes uint64
 	netByKey := map[string]netSnapshot{}
 	for _, counter := range netCounters {
-		rxBytes += counter.BytesRecv
-		txBytes += counter.BytesSent
+		if runtime.GOOS != "darwin" || darwinAggregateInterface(counter.Name) {
+			rxBytes += counter.BytesRecv
+			txBytes += counter.BytesSent
+		}
 		netByKey[counter.Name] = netSnapshot{rx: counter.BytesRecv, tx: counter.BytesSent}
 	}
 
@@ -6370,7 +6450,10 @@ func diskRateCandidates(name string) []string {
 	if strings.HasPrefix(trimmed, "/dev/") {
 		candidates = append(candidates, strings.TrimPrefix(trimmed, "/dev/"))
 	}
-	if runtime.GOOS == "linux" {
+	// Canonical device aliases are portable (also used by fixture/replay data).
+	if darwinDiskIdentifier.MatchString(base) {
+		candidates = append(candidates, regexpDarwinWholeDisk.FindString(base))
+	} else {
 		candidates = append(candidates, linuxBlockDeviceName(trimmed))
 	}
 	if strings.HasSuffix(trimmed, ":") {
@@ -7156,8 +7239,12 @@ func normalizeOS(goos string) string {
 	switch goos {
 	case "windows":
 		return "windows"
-	default:
+	case "linux":
 		return "linux"
+	case "darwin":
+		return "macos"
+	default:
+		return "unknown"
 	}
 }
 

@@ -69,7 +69,7 @@ const metricKey = z.enum([
 const identitySchema = z.object({
   deviceId: identifier,
   hostname: text(255),
-  os: z.enum(["windows", "linux", "unknown"]),
+  os: z.enum(["windows", "linux", "macos", "unknown"]),
   platform: text(128),
   arch: text(64),
   cpuModel: optionalText(256),
@@ -192,7 +192,7 @@ const gpuSchema = z.object({
   decodeUtilizationPercent: percentage.nullable().optional(),
   frequencyMHz: nonNegative.nullable().optional(),
   integrated: z.boolean().optional(),
-  memoryKind: z.enum(["dedicated", "shared", "unknown"]).nullable().optional(),
+  memoryKind: z.enum(["dedicated", "shared", "unified", "unknown"]).nullable().optional(),
   memoryUsedBytes: nonNegative,
   memoryTotalBytes: nonNegative,
   temperatureC: temperature,
@@ -265,6 +265,12 @@ export const agentMetricsPayloadSchema = z.object({
   hardwareSampledAt: timestamp.optional(),
   cpuTemperatureSampledAt: timestamp.optional(),
   unavailableMetrics: z.array(metricKey).max(64).optional(),
+  metricQuality: z.partialRecord(metricKey, z.object({
+    state: z.enum(["direct", "derived", "unavailable", "not_applicable", "stale"]),
+    source: optionalText(256),
+    reason: optionalText(1_024),
+    observedAt: timestamp.optional()
+  })).optional(),
   system: systemSchema.default({
     processCount: 0,
     threadCount: 0,
