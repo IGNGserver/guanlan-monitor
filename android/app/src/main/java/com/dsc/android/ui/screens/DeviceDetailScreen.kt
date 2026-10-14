@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Timeline
 import androidx.compose.material.icons.rounded.Air
 import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Tune
@@ -556,6 +557,7 @@ private fun blockIcon(block: DeviceBlockKey) = when (block) {
   DeviceBlockKey.Gpu -> Icons.Rounded.VideogameAsset
   DeviceBlockKey.Memory -> Icons.Rounded.Storage
   DeviceBlockKey.Disk -> Icons.Rounded.Dns
+  DeviceBlockKey.Storage -> Icons.Rounded.Layers
   DeviceBlockKey.Network -> Icons.Rounded.Router
   DeviceBlockKey.Temperature -> Icons.Rounded.Thermostat
   DeviceBlockKey.Fan -> Icons.Rounded.Air
@@ -672,6 +674,7 @@ private fun BlockTabContent(
     DeviceBlockKey.Cpu -> CpuTab(data, tabId, selectedWindow, chartWindow, onEditInstance)
     DeviceBlockKey.Memory -> MemoryTab(data, selectedWindow, chartWindow)
     DeviceBlockKey.Disk -> DiskTab(data, tabId, selectedWindow, chartWindow, onEditInstance)
+    DeviceBlockKey.Storage -> StorageTab(data, selectedWindow, chartWindow)
     DeviceBlockKey.Network -> NetworkTab(data, tabId, selectedWindow, chartWindow, onEditInstance)
     DeviceBlockKey.Gpu -> GpuTab(data, tabId, selectedWindow, chartWindow, onEditInstance)
     DeviceBlockKey.Temperature -> TemperatureTab(data, selectedWindow, chartWindow)
@@ -852,6 +855,106 @@ private fun DiskTiles(disk: DiskDto, series: DiskMetricSeriesDto?, chartWindow: 
     ),
     chartWindow = chartWindow
   )
+}
+
+@Composable
+private fun StorageTab(
+  data: MetricsDto,
+  selectedWindow: MetricWindow,
+  chartWindow: ChartWindow
+) {
+  val colors = OneUiTheme.colors
+  val metrics = OneUiTheme.metrics
+  val pools = data.latest.storagePools
+  if (pools.isEmpty()) {
+    OneUiText(
+      text = "未检测到存储池；Proxmox 存储、LVM 精简池、ZFS 池与网络共享会显示在这里。",
+      role = OneUiTextRole.RowSubtitle,
+      color = colors.textSecondary
+    )
+    return
+  }
+  val seriesById = data.series.storagePools.associateBy { it.id }
+  val activePools = pools.filter { it.active != false && it.totalBytes > 0 }
+  val fullest = activePools.maxByOrNull { it.usedBytes.toDouble() / it.totalBytes.coerceAtLeast(1) }
+  Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceM)) {
+    OneUiMetricTileGrid(
+      cards = listOf(
+        MetricCardModel(
+          "最高占用",
+          fullest?.let { "${it.name} ${formatPercent(it.usedBytes.toDouble() / it.totalBytes * 100)}" } ?: "暂无",
+          fullest?.let { seriesById[it.id]?.usagePercent.orEmpty() } ?: emptyList(),
+          ::formatPercent,
+          100.0
+        ),
+        MetricCardModel(
+          "总容量",
+          formatBytes(pools.sumOf { it.totalBytes }.toDouble()),
+          emptyList(),
+          { formatBytes(it ?: 0.0) }
+        ),
+        MetricCardModel(
+          "已用",
+          formatBytes(pools.sumOf { it.usedBytes }.toDouble()),
+          emptyList(),
+          { formatBytes(it ?: 0.0) }
+        )
+      ),
+      chartWindow = chartWindow
+    )
+    pools.forEach { pool ->
+      val poolSeries = seriesById[pool.id]
+      val subtitle = listOfNotNull(
+        storagePoolKindLabel(pool.kind),
+        pool.node?.takeIf { it.isNotBlank() },
+        pool.mountPoint?.takeIf { it.isNotBlank() } ?: pool.device?.takeIf { it.isNotBlank() }
+      ).joinToString(" · ")
+      InstanceGroup(title = pool.name, subtitle = subtitle, onEdit = null) {
+        OneUiMetricTileGrid(
+          cards = listOf(
+            MetricCardModel(
+              "容量",
+              buildUsage(pool.usedBytes, pool.totalBytes),
+              poolSeries?.usagePercent.orEmpty(),
+              ::formatPercent,
+              100.0
+            ),
+            MetricCardModel(
+              "可用",
+              formatOptionalBytes(pool.availableBytes),
+              poolSeries?.availableBytes.orEmpty(),
+              ::formatOptionalBytes
+            )
+          ),
+          chartWindow = chartWindow
+        )
+        OneUiMetaTable(
+          items = buildList {
+            add("类型" to storagePoolKindLabel(pool.kind))
+            pool.node?.takeIf { it.isNotBlank() }?.let { add("节点" to it) }
+            pool.mountPoint?.takeIf { it.isNotBlank() }?.let { add("挂载点" to it) }
+            pool.device?.takeIf { it.isNotBlank() }?.let { add("设备" to it) }
+            pool.volumeGroup?.takeIf { it.isNotBlank() }?.let { add("卷组" to it) }
+            pool.thinPool?.takeIf { it.isNotBlank() }?.let { add("精简池" to it) }
+            pool.physicalDevices.takeIf { it.isNotEmpty() }?.let { add("所在磁盘" to it.joinToString("、")) }
+            pool.content.takeIf { it.isNotEmpty() }?.let { add("用途" to it.joinToString(" / ", transform = ::storagePoolContentLabel)) }
+            pool.dataPercent?.let { add("精简池分配" to formatPercent(it)) }
+            pool.metadataPercent?.let { add("精简池元数据" to formatPercent(it)) }
+            add(
+              "状态" to when {
+                pool.active == false || pool.enabled == false -> "未启用"
+                pool.shared == true -> "共享存储"
+                else -> "活动"
+              }
+            )
+            pool.health?.takeIf { it.isNotBlank() }?.let { add("健康" to it) }
+          },
+          collapsible = true,
+          defaultExpanded = false
+        )
+      }
+    }
+  }
 }
 
 @Composable

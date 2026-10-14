@@ -136,6 +136,23 @@ internal fun buildOverviewCapsules(metrics: MetricsDto, selectedWindow: MetricWi
         )
       )
     )
+    val storagePools = metrics.latest.storagePools
+    if (storagePools.isNotEmpty()) {
+      val activePools = storagePools.filter { it.active != false && it.totalBytes > 0 }
+      val fullest = activePools.maxByOrNull { it.usedBytes.toDouble() / it.totalBytes.coerceAtLeast(1) }
+      add(
+        OverviewCapsuleModel(
+          blockKey = DeviceBlockKey.Storage,
+          title = "存储池",
+          subtitle = "${storagePools.size} 个虚拟机存储分区",
+          metrics = listOf(
+            "最高占用" to (fullest?.let { "${it.name} ${formatPercent(it.usedBytes.toDouble() / it.totalBytes * 100)}" } ?: "暂无"),
+            "总容量" to formatBytes(storagePools.sumOf { it.totalBytes }.toDouble()),
+            "已用" to formatBytes(storagePools.sumOf { it.usedBytes }.toDouble())
+          )
+        )
+      )
+    }
     add(
       OverviewCapsuleModel(
         blockKey = DeviceBlockKey.Network,
@@ -213,6 +230,7 @@ internal fun buildBlockSheetTabs(metrics: MetricsDto, blockKey: DeviceBlockKey):
     DeviceBlockKey.Disk -> {
       metrics.latest.disks.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
     }
+    DeviceBlockKey.Storage -> Unit
     DeviceBlockKey.Network -> metrics.latest.networkInterfaces.forEach { tabs += BlockSheetTabModel(it.id, it.name) }
     DeviceBlockKey.Temperature -> Unit
     DeviceBlockKey.Fan -> fanInstancesForDisplay(metrics).forEach { tabs += BlockSheetTabModel(it.id, it.label) }
@@ -595,6 +613,7 @@ internal fun blockMetricKeys(block: DeviceBlockKey): List<String> = when (block)
   DeviceBlockKey.Gpu -> listOf("gpuUsage", "gpuEncode", "gpuDecode", "gpuFrequency", "gpuMemory", "gpuTemperature")
   DeviceBlockKey.Memory -> listOf("memoryUsage", "swapUsage")
   DeviceBlockKey.Disk -> listOf("diskUsage", "diskRead", "diskWrite")
+  DeviceBlockKey.Storage -> listOf("storagePools")
   DeviceBlockKey.Network -> listOf("networkRxRate", "networkTxRate", "networkTraffic")
   DeviceBlockKey.Temperature -> listOf("temperatureSources")
   DeviceBlockKey.Fan -> emptyList()
@@ -615,11 +634,37 @@ internal fun metricLabel(metric: String): String = when (metric) {
   "diskUsage" -> "硬盘占用"
   "diskRead" -> "硬盘读取"
   "diskWrite" -> "硬盘写入"
+  "storagePools" -> "存储池"
   "networkRxRate" -> "网络接收"
   "networkTxRate" -> "网络发送"
   "networkTraffic" -> "网络流量"
   "temperatureSources" -> "温度源"
   else -> metric
+}
+
+/** 存储池类型的中文名；类型来自采集端（Proxmox 存储类型 / LVM / ZFS / 挂载文件系统）。 */
+internal fun storagePoolKindLabel(kind: String): String = when (kind) {
+  "lvmthin" -> "LVM 精简池"
+  "lvm" -> "LVM 卷"
+  "zfs" -> "ZFS 池"
+  "btrfs" -> "Btrfs"
+  "dir" -> "目录存储"
+  "nfs" -> "NFS 共享"
+  "cifs" -> "SMB 共享"
+  "pbs" -> "Proxmox 备份"
+  "filesystem" -> "挂载文件系统"
+  else -> "存储池"
+}
+
+/** Proxmox content 字段（images/rootdir/backup/iso…）的用途说明。 */
+internal fun storagePoolContentLabel(content: String): String = when (content) {
+  "images" -> "虚拟机磁盘"
+  "rootdir" -> "容器根目录"
+  "backup" -> "备份"
+  "iso" -> "安装镜像"
+  "vztmpl" -> "容器模板"
+  "snippets" -> "片段文件"
+  else -> content
 }
 
 internal fun blockInstances(state: AppState, block: DeviceBlockKey): List<InstanceOption> {
@@ -637,7 +682,7 @@ internal fun blockInstances(state: AppState, block: DeviceBlockKey): List<Instan
     DeviceBlockKey.Network -> metrics.latest.networkInterfaces.map {
       InstanceOption(it.id, it.name, it.ipv4.firstOrNull() ?: it.macAddress.orEmpty())
     }
-    DeviceBlockKey.Memory, DeviceBlockKey.Temperature, DeviceBlockKey.Fan -> emptyList()
+    DeviceBlockKey.Memory, DeviceBlockKey.Storage, DeviceBlockKey.Temperature, DeviceBlockKey.Fan -> emptyList()
   }
 }
 

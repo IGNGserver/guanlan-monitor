@@ -191,6 +191,45 @@ data class DiskMetricSeriesDto(
 )
 
 @Serializable
+data class StoragePoolDto(
+  val id: String,
+  val name: String,
+  val kind: String,
+  val source: String? = null,
+  val node: String? = null,
+  val mountPoint: String? = null,
+  val device: String? = null,
+  val volumeGroup: String? = null,
+  val thinPool: String? = null,
+  val physicalDevices: List<String> = emptyList(),
+  val content: List<String> = emptyList(),
+  val active: Boolean? = null,
+  val enabled: Boolean? = null,
+  val shared: Boolean? = null,
+  val totalBytes: Long = 0,
+  val usedBytes: Long = 0,
+  val availableBytes: Long? = null,
+  val dataPercent: Double? = null,
+  val metadataPercent: Double? = null,
+  val health: String? = null
+)
+
+@Serializable
+data class StoragePoolMetricSeriesDto(
+  val id: String,
+  val name: String,
+  val kind: String,
+  val node: String? = null,
+  val mountPoint: String? = null,
+  val active: Boolean = true,
+  val shared: Boolean = false,
+  val totalBytes: List<SamplePointDto> = emptyList(),
+  val usedBytes: List<SamplePointDto> = emptyList(),
+  val availableBytes: List<SamplePointDto> = emptyList(),
+  val usagePercent: List<SamplePointDto> = emptyList()
+)
+
+@Serializable
 data class NetworkMetricSeriesDto(
   val id: String,
   val name: String,
@@ -258,6 +297,7 @@ data class DeviceMetricSeriesDto(
   val trafficTxBytes: List<SamplePointDto> = emptyList(),
   val cpus: List<CpuMetricSeriesDto> = emptyList(),
   val disks: List<DiskMetricSeriesDto> = emptyList(),
+  val storagePools: List<StoragePoolMetricSeriesDto> = emptyList(),
   val networks: List<NetworkMetricSeriesDto> = emptyList(),
   val gpus: List<GpuMetricSeriesDto> = emptyList(),
   val fans: List<FanMetricSeriesDto> = emptyList(),
@@ -328,6 +368,7 @@ data class DeviceLatestDto(
   val networkTxBytesPerSec: Double = 0.0,
   val cpuPackages: List<CpuPackageDto> = emptyList(),
   val disks: List<DiskDto> = emptyList(),
+  val storagePools: List<StoragePoolDto> = emptyList(),
   val networkInterfaces: List<NetworkInterfaceDto> = emptyList(),
   val gpus: List<GpuDto> = emptyList(),
   val sensorBackends: List<SensorBackendDto> = emptyList(),
@@ -475,6 +516,7 @@ enum class DeviceBlockKey(val value: String, val label: String) {
   Gpu("gpu", "显卡"),
   Memory("memory", "内存"),
   Disk("disk", "硬盘"),
+  Storage("storage", "存储池"),
   Network("network", "网络"),
   Temperature("temperature", "温度"),
   Fan("fan", "风扇转速")

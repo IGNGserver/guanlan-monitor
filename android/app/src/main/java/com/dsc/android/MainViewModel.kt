@@ -58,6 +58,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     DeviceBlockKey.Gpu to listOf("gpuUsage", "gpuEncode", "gpuDecode", "gpuFrequency", "gpuMemory", "gpuTemperature"),
     DeviceBlockKey.Memory to listOf("memoryUsage", "swapUsage"),
     DeviceBlockKey.Disk to listOf("diskUsage", "diskRead", "diskWrite"),
+    DeviceBlockKey.Storage to listOf("storagePools"),
     DeviceBlockKey.Network to listOf("networkRxRate", "networkTxRate", "networkTraffic"),
     DeviceBlockKey.Temperature to listOf("temperatureSources"),
     DeviceBlockKey.Fan to emptyList()
@@ -994,7 +995,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       DeviceBlockKey.Gpu -> metrics.latest.gpus.map { it.id }
       DeviceBlockKey.Disk -> metrics.latest.disks.map { it.id }
       DeviceBlockKey.Network -> metrics.latest.networkInterfaces.map { it.id }
-      DeviceBlockKey.Memory, DeviceBlockKey.Temperature, DeviceBlockKey.Fan -> emptyList()
+      DeviceBlockKey.Memory, DeviceBlockKey.Storage, DeviceBlockKey.Temperature, DeviceBlockKey.Fan -> emptyList()
     }
   }
 

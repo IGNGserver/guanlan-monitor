@@ -61,6 +61,7 @@ public struct MetricConfigSheet: View {
         case "diskUsage": return "磁盘活动率"
         case "diskRead": return "磁盘读取"
         case "diskWrite": return "磁盘写入"
+        case "storagePools": return "存储池"
         case "networkRxRate": return "网络接收"
         case "networkTxRate": return "网络发送"
         case "networkTraffic": return "网络累计流量"
