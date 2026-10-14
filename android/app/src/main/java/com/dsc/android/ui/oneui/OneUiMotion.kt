@@ -56,6 +56,8 @@ object OneUiDuration {
   const val SpinnerCycle = 820
   const val SpinFrame = 900
   const val ProgressSlide = 1_100
+  /** 陈旧图表的扫光周期：比骨架屏更慢，避免同屏多图一起闪 */
+  const val StaleSweep = 1_600
 }
 
 object OneUiEasing {

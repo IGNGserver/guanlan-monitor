@@ -96,6 +96,10 @@ fun DeviceDetailScreen(
   // 折叠后点紧凑标题回到大标题：滚动动画需要协程作用域（交）
   val topBarScope = rememberCoroutineScope()
   val data = state.metrics
+  // 可见加载进行中且屏上仍有快照：进入陈旧态——交互照常，只有数据本身降存在感（交）
+  val stale = state.loadingMetrics && data != null
+  val displayWindow = displayWindowFor(data?.window, state.selectedWindow, state.loadingMetrics)
+  val syncing = state.refreshing || state.loadingMetrics
 
   var openBlock by rememberSaveable(state.selectedDeviceId) { mutableStateOf<DeviceBlockKey?>(null) }
   var openTabId by rememberSaveable(state.selectedDeviceId) { mutableStateOf("total") }
@@ -106,7 +110,8 @@ fun DeviceDetailScreen(
 
   LaunchedEffect(state.focusedBlock, state.loadingMetrics, data?.device?.deviceId) {
     val blockKey = state.focusedBlock ?: return@LaunchedEffect
-    if (state.loadingMetrics) return@LaunchedEffect
+    // 有这台设备的快照（含离线缓存）就立即展开，不再等加载结束；还没有数据时才等（交）
+    if (data?.device?.deviceId != state.selectedDeviceId && state.loadingMetrics) return@LaunchedEffect
     openBlock = blockKey
     openTabId = "total"
     actions.onClearFocusedBlock()
@@ -148,38 +153,45 @@ fun DeviceDetailScreen(
       // 宽屏上正文按可读行长居中，紧凑态不受影响（适）
       horizontalAlignment = Alignment.CenterHorizontally
     ) {
-      OneUiTopBar(
-        title = inlineBlock?.label ?: (data?.device?.hostname ?: "设备"),
-        subtitle = when {
-          inlineBlock != null -> if (state.selectedWindow == MetricWindow.OneMinute) {
-            "当前显示实时值"
-          } else {
-            "当前显示 ${state.selectedWindow.label} 区间平均值"
-          }
+      Box {
+        OneUiTopBar(
+          title = inlineBlock?.label ?: (data?.device?.hostname ?: "设备"),
+          subtitle = when {
+            inlineBlock != null -> {
+              val base = if (displayWindow == MetricWindow.OneMinute) {
+                "当前显示实时值"
+              } else {
+                "当前显示 ${displayWindow.label} 区间平均值"
+              }
+              if (stale) "$base · 同步中" else base
+            }
 
-          data == null -> "正在读取指标"
-          else -> "${data.device.os} · ${data.device.platform} · ${if (data.status == "online") "在线" else "离线"}"
-        },
-        collapse = collapse,
-        onCollapsedTitleClick = { topBarScope.launch { listState.animateScrollToItem(0) } },
-        large = !embedded,
-        navigationIcon = when {
-          inlineBlock != null -> blockBackIcon
-          embedded -> null
-          else -> backIcon
-        },
-        actions = {
-          OneUiIconButton(
-            contentDescription = "刷新",
-            onClick = { if (!state.refreshing) actions.onRefresh() },
-            enabled = !state.refreshing,
-            spinning = state.refreshing
-          ) {
-            OneUiIcon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textPrimary)
+            data == null -> "正在读取指标"
+            else -> "${data.device.os} · ${data.device.platform} · ${if (data.status == "online") "在线" else "离线"}"
+          },
+          collapse = collapse,
+          onCollapsedTitleClick = { topBarScope.launch { listState.animateScrollToItem(0) } },
+          large = !embedded,
+          navigationIcon = when {
+            inlineBlock != null -> blockBackIcon
+            embedded -> null
+            else -> backIcon
+          },
+          actions = {
+            OneUiIconButton(
+              contentDescription = "刷新",
+              onClick = { if (!state.refreshing) actions.onRefresh() },
+              enabled = !state.refreshing,
+              spinning = state.refreshing
+            ) {
+              OneUiIcon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textPrimary)
+            }
+            // 流量在类别列表里已经是一行，顶栏不再放第二个入口（构）
           }
-          // 流量在类别列表里已经是一行，顶栏不再放第二个入口（构）
-        }
-      )
+        )
+        // 顶栏下缘的同步进度线：覆盖式、不占布局，同步期间照常滚动、展开（交）
+        OneUiSyncProgress(visible = syncing, modifier = Modifier.align(Alignment.BottomCenter))
+      }
 
       LazyColumn(
         state = listState,
@@ -193,21 +205,18 @@ fun DeviceDetailScreen(
         val snapshot = data
         if (inlineBlock != null && snapshot != null) {
           item(key = "block-detail") {
-            BlockDetail(
-              data = snapshot,
-              blockKey = inlineBlock,
-              tabs = tabs,
-              tabId = effectiveTab,
-              selectedWindow = state.selectedWindow,
-              onSelectTab = { openTabId = it },
-              onEditInstance = { instanceId ->
-                actions.onOpenInstanceEditor(snapshot.device.deviceId, inlineBlock, instanceId)
-              }
-            )
-          }
-          if (state.loadingMetrics) {
-            item(key = "metrics-loading") {
-              OneUiLoadingRow("正在切换 ${state.selectedWindow.label} 粒度")
+            OneUiStaleGroup(stale = stale) {
+              BlockDetail(
+                data = snapshot,
+                blockKey = inlineBlock,
+                tabs = tabs,
+                tabId = effectiveTab,
+                selectedWindow = displayWindow,
+                onSelectTab = { openTabId = it },
+                onEditInstance = { instanceId ->
+                  actions.onOpenInstanceEditor(snapshot.device.deviceId, inlineBlock, instanceId)
+                }
+              )
             }
           }
         }
@@ -257,7 +266,7 @@ fun DeviceDetailScreen(
         if (inlineBlock == null) {
           snapshot?.let { current ->
             item(key = "overview") {
-              OverviewGroup(data = current, state = state)
+              OverviewGroup(data = current, window = displayWindow, stale = stale)
             }
           }
 
@@ -270,55 +279,50 @@ fun DeviceDetailScreen(
 
           snapshot?.let { current ->
             item(key = "blocks") {
-              BlockGroup(
-                data = snapshot,
-                selectedWindow = state.selectedWindow,
-                loading = state.loadingMetrics,
-                openBlock = openBlock,
-                tabs = tabs,
-                effectiveTab = effectiveTab,
-                onSelectTab = { openTabId = it },
-                onToggleBlock = { block ->
-                  val anchorY = blockPositions[block]
-                  anchorCorrectionJob?.cancel()
-                  openBlock = if (openBlock == block) null else block
-                  if (anchorY != null) {
-                    anchorCorrectionJob = topBarScope.launch {
-                      preserveBlockAnchor(
-                        listState = listState,
-                        positions = blockPositions,
-                        blockKey = block,
-                        anchorY = anchorY,
-                        durationMillis = motion.duration(OneUiDuration.Content).toLong() + 120L
-                      )
+              OneUiStaleGroup(stale = stale) {
+                BlockGroup(
+                  data = snapshot,
+                  selectedWindow = displayWindow,
+                  openBlock = openBlock,
+                  tabs = tabs,
+                  effectiveTab = effectiveTab,
+                  onSelectTab = { openTabId = it },
+                  onToggleBlock = { block ->
+                    val anchorY = blockPositions[block]
+                    anchorCorrectionJob?.cancel()
+                    openBlock = if (openBlock == block) null else block
+                    if (anchorY != null) {
+                      anchorCorrectionJob = topBarScope.launch {
+                        preserveBlockAnchor(
+                          listState = listState,
+                          positions = blockPositions,
+                          blockKey = block,
+                          anchorY = anchorY,
+                          durationMillis = motion.duration(OneUiDuration.Content).toLong() + 120L
+                        )
+                      }
                     }
+                  },
+                  onOpenTraffic = { actions.onOpenTraffic(snapshot.device.deviceId) },
+                  onEditDeviceMetrics = { actions.onOpenDeviceEditor(snapshot.device.deviceId) },
+                  onEditBlock = { block -> actions.onOpenBlockEditor(snapshot.device.deviceId, block) },
+                  onEditInstance = { block, instanceId ->
+                    actions.onOpenInstanceEditor(snapshot.device.deviceId, block, instanceId)
+                  },
+                  onBlockPositioned = { block, y ->
+                    blockPositions[block] = y
                   }
-                },
-                onOpenTraffic = { actions.onOpenTraffic(snapshot.device.deviceId) },
-                onEditDeviceMetrics = { actions.onOpenDeviceEditor(snapshot.device.deviceId) },
-                onEditBlock = { block -> actions.onOpenBlockEditor(snapshot.device.deviceId, block) },
-                onEditInstance = { block, instanceId ->
-                  actions.onOpenInstanceEditor(snapshot.device.deviceId, block, instanceId)
-                },
-                onBlockPositioned = { block, y ->
-                  blockPositions[block] = y
-                }
-              )
-            }
-          }
-
-          if (state.loadingMetrics) {
-            item(key = "metrics-loading") {
-              OneUiLoadingRow("正在切换 ${state.selectedWindow.label} 粒度")
+                )
+              }
             }
           }
         }
       }
 
-      // 底部工具坞：时间粒度属于高频切换，放在拇指区（构 + 交）
+      // 底部工具坞：时间粒度属于高频切换，放在拇指区（构 + 交）；同步期间照常可切换
       WindowDock(
         selected = state.selectedWindow,
-        enabled = !state.loadingMetrics,
+        loading = state.loadingMetrics,
         onSelect = actions.onSelectWindow
       )
     }
@@ -331,7 +335,7 @@ fun DeviceDetailScreen(
 
 /** 概览组：设备身份与在线状态（保留旧 OverviewCard 的全部字段）。 */
 @Composable
-private fun OverviewGroup(data: MetricsDto, state: AppState) {
+private fun OverviewGroup(data: MetricsDto, window: MetricWindow, stale: Boolean) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
   val online = data.status == "online"
@@ -364,9 +368,9 @@ private fun OverviewGroup(data: MetricsDto, state: AppState) {
             }
           }
           OneUiReading(
-            value = metricPoint(data.series.cpuUsagePercent, state.selectedWindow, ::formatPercent),
+            value = metricPoint(data.series.cpuUsagePercent, window, ::formatPercent),
             unit = "CPU 占用",
-            label = "当前粒度 ${state.selectedWindow.label}",
+            label = if (stale) "当前粒度 ${window.label} · 同步中" else "当前粒度 ${window.label}",
             color = if (online) colors.accent else colors.textSecondary
           )
       }
@@ -392,7 +396,6 @@ private fun OverviewGroup(data: MetricsDto, state: AppState) {
 private fun BlockGroup(
   data: MetricsDto,
   selectedWindow: MetricWindow,
-  loading: Boolean,
   openBlock: DeviceBlockKey?,
   tabs: List<BlockSheetTabModel>,
   effectiveTab: String,
@@ -415,7 +418,7 @@ private fun BlockGroup(
         modifier = Modifier.onGloballyPositioned { coordinates ->
           onBlockPositioned(capsule.blockKey, coordinates.positionInRoot().y.roundToInt())
         },
-        onToggle = { if (!loading) onToggleBlock(capsule.blockKey) },
+        onToggle = { onToggleBlock(capsule.blockKey) },
         title = capsule.title,
         subtitle = capsule.subtitle,
         leading = {
@@ -430,6 +433,7 @@ private fun BlockGroup(
             modifier = Modifier
               .fillMaxWidth()
               .padding(top = 8.dp)
+              .oneUiStaleDim()
               .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
           ) {
@@ -520,7 +524,7 @@ private suspend fun preserveBlockAnchor(
 }
 
 @Composable
-private fun WindowDock(selected: MetricWindow, enabled: Boolean, onSelect: (MetricWindow) -> Unit) {
+private fun WindowDock(selected: MetricWindow, loading: Boolean, onSelect: (MetricWindow) -> Unit) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
   Column(
@@ -543,7 +547,7 @@ private fun WindowDock(selected: MetricWindow, enabled: Boolean, onSelect: (Metr
       color = colors.textTertiary,
       weight = FontWeight.SemiBold
     )
-    OneUiWindowSelector(selected = selected, onSelect = onSelect, enabled = enabled)
+    OneUiWindowSelector(selected = selected, onSelect = onSelect, loading = loading)
   }
 }
 

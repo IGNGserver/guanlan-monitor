@@ -456,7 +456,12 @@ enum class MetricWindow(val value: String, val label: String) {
   OneHour("1h", "1 小时"),
   SixHours("6h", "6 小时"),
   OneDay("24h", "24 小时"),
-  SevenDays("7d", "7 天")
+  SevenDays("7d", "7 天");
+
+  companion object {
+    /** 服务端快照里的粒度值 → 枚举；未知值返回 null，由调用方决定回落策略。 */
+    fun fromValue(value: String?): MetricWindow? = entries.firstOrNull { it.value == value }
+  }
 }
 
 enum class TrafficCalendarMode(val value: String, val label: String) {

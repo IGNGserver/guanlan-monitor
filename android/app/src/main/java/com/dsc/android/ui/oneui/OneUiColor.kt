@@ -58,6 +58,8 @@ data class OneUiColors(
   val chartGrid: Color,
   val chartTrack: Color,
   val chartCrosshair: Color,
+  /** 陈旧图表上的扫光：低透明度强调色，只做“正在更新”的动态提示。 */
+  val chartSweep: Color,
   /** 0=接收/主指标，1=发送/次指标，其余用于多实例序列。 */
   val chartSeries: List<Color>,
   // ---- 交互叠加（实测取值）----
@@ -110,6 +112,7 @@ val OneUiLightColors = OneUiColors(
   chartGrid = hex(0xE4E6EA),
   chartTrack = hex(0xF2F3F6),
   chartCrosshair = hex(0xB5BAC3),
+  chartSweep = Color(0x1F1B76FD),
   chartSeries = listOf(
     hex(0x1B76FD),
     hex(0x7B4DDB),
@@ -158,6 +161,7 @@ val OneUiDarkColors = OneUiColors(
   chartGrid = hex(0x2C2E33),
   chartTrack = hex(0x17181B),
   chartCrosshair = hex(0x5C626B),
+  chartSweep = Color(0x264D9BF7),
   chartSeries = listOf(
     hex(0x4D9BF7),
     hex(0xA98BF5),

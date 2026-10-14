@@ -675,8 +675,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       persistRemoteSnapshot()
       val screen = _state.value.currentScreen
       if (selectedDeviceId != null) {
-        if (screen == AppScreen.DeviceDetail) loadMetrics(selectedDeviceId, window, showScreen = false)
-        if (screen == AppScreen.Traffic) loadTraffic(selectedDeviceId, _state.value.trafficMode, showScreen = false)
+        // 后台轮询走静默路径：数据到了直接换，不让页面进加载态；手动刷新才给可见反馈（交）
+        if (screen == AppScreen.DeviceDetail) {
+          loadMetrics(selectedDeviceId, window, showScreen = false, silent = !showIndicator)
+        }
+        if (screen == AppScreen.Traffic) {
+          loadTraffic(selectedDeviceId, _state.value.trafficMode, showScreen = false, silent = !showIndicator)
+        }
       }
     } catch (error: Throwable) {
       if (error is CancellationException) throw error
@@ -684,7 +689,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         it.copy(
           dataSource = if (it.devices.isEmpty()) RemoteDataSource.Empty else RemoteDataSource.Cache,
           refreshing = false,
-          message = userFacingError(error, "刷新失败，请检查中枢连接")
+          // 后台轮询失败不反复弹提示（页面上的离线缓存通知已经说明状态）；手动刷新才播报（交）
+          message = if (showIndicator) userFacingError(error, "刷新失败，请检查中枢连接") else it.message
         )
       }
     }
@@ -714,10 +720,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
-  private fun loadMetrics(deviceId: String, window: MetricWindow, showScreen: Boolean) {
+  private fun loadMetrics(deviceId: String, window: MetricWindow, showScreen: Boolean, silent: Boolean = false) {
     metricsLoadJob?.cancel()
     metricsLoadJob = viewModelScope.launch {
-      _state.update { it.copy(loadingMetrics = true, message = null, metricsError = null) }
+      // 静默路径（15 秒自动轮询）不进入可见加载态：页面不灰化、不挡交互（交）
+      if (!silent) {
+        _state.update { it.copy(loadingMetrics = true, message = null, metricsError = null) }
+      }
       try {
         val metrics = executeWithAuthRetry { it.metrics(deviceId, window.value) }
         // 记入按设备缓存：离线浏览这台设备时仍能展示最近一次成功的数据（交）
@@ -749,7 +758,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
               loadingMetrics = false,
               metrics = it.metrics ?: cached,
               metricsError = if (it.metrics != null || cached != null) null else reason,
-              message = reason
+              // 静默刷新失败不弹提示：页面上的离线缓存通知已经说明了状态（交）
+              message = if (silent) it.message else reason
             )
           }
         }
@@ -757,12 +767,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
-  private fun loadTraffic(deviceId: String, mode: TrafficCalendarMode, showScreen: Boolean) {
+  private fun loadTraffic(deviceId: String, mode: TrafficCalendarMode, showScreen: Boolean, silent: Boolean = false) {
     val requestedAnchor = trafficAnchor
     val requestedSelectedStart = trafficSelectedStart
     trafficLoadJob?.cancel()
     trafficLoadJob = viewModelScope.launch {
-      _state.update { it.copy(loadingTraffic = true, message = null, trafficError = null) }
+      // 静默路径（15 秒自动轮询）不进入可见加载态（交）
+      if (!silent) {
+        _state.update { it.copy(loadingTraffic = true, message = null, trafficError = null) }
+      }
       try {
         val traffic = executeWithAuthRetry { it.trafficCalendar(deviceId, mode.value, requestedAnchor, requestedSelectedStart) }
         // 记入按设备缓存：离线浏览这台设备时仍能展示最近一次成功的数据（交）
@@ -797,7 +810,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
               loadingTraffic = false,
               trafficCalendar = it.trafficCalendar ?: cached,
               trafficError = if (it.trafficCalendar != null || cached != null) null else reason,
-              message = reason
+              // 静默刷新失败不弹提示：页面上的离线缓存通知已经说明了状态（交）
+              message = if (silent) it.message else reason
             )
           }
         }
@@ -988,7 +1002,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private const val AUTO_REFRESH_INTERVAL_MS = 15_000L
 
     private fun metricWindowFor(value: String): MetricWindow =
-      MetricWindow.entries.firstOrNull { it.value == value } ?: MetricWindow.FiveMinutes
+      MetricWindow.fromValue(value) ?: MetricWindow.FiveMinutes
 
     private fun trafficModeFor(value: String?): TrafficCalendarMode =
       TrafficCalendarMode.entries.firstOrNull { it.value == value } ?: TrafficCalendarMode.Day

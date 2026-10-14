@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.dsc.android.ui.oneui.OneUiAppearanceSetting
 import com.dsc.android.ui.oneui.OneUiDarkColors
+import com.dsc.android.ui.oneui.OneUiDuration
 import com.dsc.android.ui.oneui.OneUiExtraDarkColors
 import com.dsc.android.ui.oneui.OneUiHeightClass
 import com.dsc.android.ui.oneui.OneUiLightColors
@@ -105,6 +106,21 @@ class OneUiDesignContractTest {
     val standard = OneUiMotion.Standard
     assertEquals(340, standard.duration(340))
     assertTrue("正常动效必须有位移", standard.offset(400) > 0)
+  }
+
+  @Test
+  fun staleTreatmentStaysSubtleAndRegistered() {
+    val metrics = oneUiMetrics(windowLayout(OneUiWidthClass.Compact), 1f)
+    assertTrue("陈旧内容必须仍然可读", metrics.staleContent in 0.5f..0.8f)
+    assertTrue(
+      "陈旧内容必须比禁用态更亮，避免被当成不可点",
+      metrics.staleContent > metrics.disabledContent
+    )
+    assertTrue("扫光周期必须够慢，不制造闪烁", OneUiDuration.StaleSweep >= 1_000)
+    assertEquals("减少动画下扫光时长归零", 0, OneUiMotion.Reduced.duration(OneUiDuration.StaleSweep))
+    listOf(OneUiLightColors, OneUiDarkColors, OneUiExtraDarkColors).forEach { palette ->
+      assertNotEquals("扫光必须与图表底可区分", palette.chartTrack, palette.chartSweep)
+    }
   }
 
   private fun windowLayout(
