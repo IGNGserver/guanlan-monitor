@@ -110,6 +110,8 @@ data class OneUiMetrics(
   val pressedOverlay: Float = 0.11f,
   val selectedOverlay: Float = 0.08f,
   val disabledContent: Float = 0.38f,
+  /** 陈旧数据（可见加载期间屏上的旧快照）的存在感：仍要可读，但一眼看出不是当前数据 */
+  val staleContent: Float = 0.62f,
   /** 底部导航/侧栏选中态那枚浅色胶囊的透明度 */
   val navIndicatorAlpha: Float = 0.16f,
   /** 日历格高度：非月视图要放下「标签 + 总量」两行 */

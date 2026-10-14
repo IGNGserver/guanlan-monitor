@@ -66,7 +66,7 @@ Samsung 不公开 One UI 的设计 token（其设计规范不对第三方开放�
 
 `OneUiInteraction.kt`（状态层）→ `OneUiControls.kt`（文本角色、按钮、图标按钮、开关、勾选、筛选胶囊、
 分段选择、输入框）→ `OneUiContainers.kt`（顶栏、底部导航、侧栏、分组、列表行、通知条、胶囊读数、
-对话框、面板、操作面板、加载/骨架/空/错、读屏播报区）→ `OneUiDataViews.kt`（折线图、指标块、指标网格、
+对话框、面板、操作面板、加载/骨架/空/错、同步进度线、陈旧数据态、读屏播报区）→ `OneUiDataViews.kt`（折线图、指标块、指标网格、
 元信息表、粒度选择器）。
 
 映射关系：One UI 官方组件语义 `AppBar / BottomNavigationBar / ContainedButton / FlatButton /
@@ -92,6 +92,9 @@ OneUiSwitch / OneUiDialog / OneUiActionSheet / oneUiPressable`。
 不使用 Material 的触点水波（`indication = null`），改为整面墨色，符合 One UI 的实际观感。
 触觉分级：轻触 `VirtualPress`、开关 `VirtualRelease`、长按 `LongPress`。
 加载态保留文案宽度（按钮内嵌 `OneUiSpinner`）；错误态必须带重试出口；空态必须给出下一步。
+同步不锁交互：可见加载期间展开/收起、时间粒度、日/周/月始终可点（新请求取消旧请求）；
+屏上旧快照进入陈旧态——数据降至 `staleContent`、图表叠 `chartSweep` 扫光、顶栏下缘走
+`OneUiSyncProgress` 进度线；15 秒自动刷新走静默路径，不进入陈旧态、不弹提示。
 
 ## 5. 动（Motion System）
 
@@ -106,7 +109,7 @@ OneUiSwitch / OneUiDialog / OneUiActionSheet / oneUiPressable`。
 设备详情页由弹窗转为就地展开折叠卡片（`OneUiExpandableGroup`），配合 `animateContentSize` 呈现流畅的模块升降；
 离场统一淡出；分段选择器指示器与进度条数值都走同一支补间（`oneUiAnimatedValue`）；
 开关滑块与轨道色同步动画；图表首次出现或切换粒度时描线一次（15 秒自动刷新不重播，
-准线选中位置也不因刷新复位）。常驻指示器周期（加载环 820ms、旋转 900ms、不确定进度 1100ms）
+准线选中位置也不因刷新复位）。常驻指示器周期（加载环 820ms、旋转 900ms、不确定进度 1100ms、陈旧扫光 1600ms）
 同样登记在 `OneUiDuration` 里，页面与组件不得再写裸 `tween(...)`。系统动画缩放为 0（含三星「减少动画」）或用户在设置里开启「减少动画」时，
 整套体系降级为瞬时切换，位移量归零。
 

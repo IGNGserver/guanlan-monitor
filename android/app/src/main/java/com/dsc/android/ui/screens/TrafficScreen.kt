@@ -52,13 +52,13 @@ import com.dsc.android.ui.oneui.OneUiIcon
 import com.dsc.android.ui.oneui.OneUiIconButton
 import com.dsc.android.ui.oneui.OneUiListDivider
 import com.dsc.android.ui.oneui.OneUiListItem
-import com.dsc.android.ui.oneui.OneUiLoadingRow
 import com.dsc.android.ui.oneui.OneUiNotice
 import com.dsc.android.ui.oneui.OneUiNoticeTone
 import com.dsc.android.ui.oneui.OneUiPill
 import com.dsc.android.ui.oneui.OneUiReading
 import com.dsc.android.ui.oneui.OneUiSegmentedRow
 import com.dsc.android.ui.oneui.OneUiSkeleton
+import com.dsc.android.ui.oneui.OneUiSyncProgress
 import com.dsc.android.ui.oneui.OneUiText
 import com.dsc.android.ui.oneui.OneUiTextRole
 import com.dsc.android.ui.oneui.OneUiTheme
@@ -70,6 +70,7 @@ import com.dsc.android.ui.oneui.formatTime
 import com.dsc.android.ui.oneui.oneUiContentWidth
 import com.dsc.android.ui.oneui.oneUiListContentPadding
 import com.dsc.android.ui.oneui.oneUiPressable
+import com.dsc.android.ui.oneui.oneUiStaleDim
 import com.dsc.android.ui.oneui.rememberOneUiCollapse
 import com.dsc.android.ui.oneui.trafficCalendarColumns
 import com.dsc.android.ui.oneui.trafficCellAnnouncement
@@ -98,6 +99,9 @@ fun TrafficScreen(
   val topBarScope = rememberCoroutineScope()
   val selectedDevice = state.devices.find { it.deviceId == state.selectedDeviceId }
   val traffic = state.trafficCalendar
+  // 可见加载进行中且屏上仍有日历：进入陈旧态——交互照常，数据降存在感（交）
+  val stale = state.loadingTraffic && traffic != null
+  val syncing = state.refreshing || state.loadingTraffic
   val modes = TrafficCalendarMode.entries.map { it.label }
   val modeIndex = TrafficCalendarMode.entries.indexOf(state.trafficMode).coerceAtLeast(0)
   // transitionSpec 不在组合上下文里，动效必须先在这里取好
@@ -119,24 +123,28 @@ fun TrafficScreen(
       // 宽屏上正文按可读行长居中，紧凑态不受影响（适）
       horizontalAlignment = Alignment.CenterHorizontally
     ) {
-      OneUiTopBar(
-        title = selectedDevice?.hostname ?: "流量记录",
-        subtitle = "流量日历",
-        collapse = collapse,
-        onCollapsedTitleClick = { topBarScope.launch { listState.animateScrollToItem(0) } },
-        large = !embedded,
-        navigationIcon = if (embedded) null else backIcon,
-        actions = {
-          OneUiIconButton(
-            contentDescription = "刷新",
-            onClick = { if (!state.loadingTraffic) actions.onRefresh() },
-            enabled = !state.loadingTraffic,
-            spinning = state.loadingTraffic
-          ) {
-            OneUiIcon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textPrimary)
+      Box {
+        OneUiTopBar(
+          title = selectedDevice?.hostname ?: "流量记录",
+          subtitle = "流量日历",
+          collapse = collapse,
+          onCollapsedTitleClick = { topBarScope.launch { listState.animateScrollToItem(0) } },
+          large = !embedded,
+          navigationIcon = if (embedded) null else backIcon,
+          actions = {
+            OneUiIconButton(
+              contentDescription = "刷新",
+              onClick = { if (!state.refreshing) actions.onRefresh() },
+              enabled = !state.refreshing,
+              spinning = state.refreshing
+            ) {
+              OneUiIcon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textPrimary)
+            }
           }
-        }
-      )
+        )
+        // 顶栏下缘的同步进度线：覆盖式、不占布局，同步期间照常滚动、切换周期（交）
+        OneUiSyncProgress(visible = syncing, modifier = Modifier.align(Alignment.BottomCenter))
+      }
 
       LazyColumn(
         state = listState,
@@ -159,9 +167,6 @@ fun TrafficScreen(
         }
 
         if (traffic == null) {
-          if (state.loadingTraffic) {
-            item(key = "traffic-loading") { OneUiLoadingRow("正在读取流量数据") }
-          }
           val error = state.trafficError
           if (error == null || state.loadingTraffic) {
             item(key = "traffic-skeleton") {
@@ -182,7 +187,14 @@ fun TrafficScreen(
           }
         } else {
           item(key = "traffic-header") {
-            TrafficHeader(traffic.title, traffic.rangeStart, traffic.rangeEnd, traffic, actions.onShiftTrafficAnchor)
+            TrafficHeader(
+              traffic.title,
+              traffic.rangeStart,
+              traffic.rangeEnd,
+              traffic,
+              stale,
+              actions.onShiftTrafficAnchor
+            )
           }
           item(key = "traffic-calendar") {
             // 日/周/月是同一页的内容切换：横向轻推 + 淡入淡出（动）
@@ -197,14 +209,18 @@ fun TrafficScreen(
               },
               label = "oneui_traffic_mode"
             ) { mode ->
-              TrafficCalendar(traffic.cells, mode, actions.onSelectTrafficCell)
+              Box(modifier = Modifier.oneUiStaleDim(stale)) {
+                TrafficCalendar(traffic.cells, mode, actions.onSelectTrafficCell)
+              }
             }
           }
           item(key = "traffic-records-header") {
             OneUiGroupHeader(label = "范围记录", description = "最多展示最近 36 条上报记录")
           }
           item(key = "traffic-records") {
-            TrafficRecords(traffic.records.asReversed().take(36))
+            Box(modifier = Modifier.oneUiStaleDim(stale)) {
+              TrafficRecords(traffic.records.asReversed().take(36))
+            }
           }
         }
       }
@@ -232,8 +248,7 @@ fun TrafficScreen(
         OneUiSegmentedRow(
           options = modes,
           selectedIndex = modeIndex,
-          onSelect = { index -> actions.onSelectTrafficMode(TrafficCalendarMode.entries[index]) },
-          enabled = !state.loadingTraffic
+          onSelect = { index -> actions.onSelectTrafficMode(TrafficCalendarMode.entries[index]) }
         )
       }
     }
@@ -246,6 +261,7 @@ private fun TrafficHeader(
   rangeStart: String,
   rangeEnd: String,
   traffic: com.dsc.android.TrafficCalendarDto,
+  stale: Boolean,
   onShiftAnchor: (Int) -> Unit
 ) {
   val colors = OneUiTheme.colors
@@ -278,7 +294,9 @@ private fun TrafficHeader(
       }
     }
     Row(
-      modifier = Modifier.fillMaxWidth(),
+      modifier = Modifier
+        .fillMaxWidth()
+        .oneUiStaleDim(stale),
       horizontalArrangement = Arrangement.spacedBy(metrics.spaceL),
       verticalAlignment = Alignment.Bottom
     ) {

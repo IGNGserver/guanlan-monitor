@@ -48,6 +48,18 @@ internal fun chartWindowFor(metrics: MetricsDto, selectedWindow: MetricWindow): 
   )
 }
 
+/**
+ * 陈旧快照的显示粒度（交）。
+ *
+ * 可见加载进行中时屏上仍是上一份快照：按快照自己的粒度渲染，
+ * 才能把它原样呈现（否则旧样本会被塞进新时间窗、窗外点被夹到边缘）；
+ * 新数据到达后自然切回请求的粒度。
+ */
+internal fun displayWindowFor(snapshotWindow: String?, selectedWindow: MetricWindow, loading: Boolean): MetricWindow {
+  if (!loading) return selectedWindow
+  return MetricWindow.fromValue(snapshotWindow) ?: selectedWindow
+}
+
 internal fun fanInstancesForDisplay(metrics: MetricsDto): List<FanDto> {
   val fans = metrics.latest.fans.toMutableList()
   val latestIds = fans.map { it.id }.toMutableSet()

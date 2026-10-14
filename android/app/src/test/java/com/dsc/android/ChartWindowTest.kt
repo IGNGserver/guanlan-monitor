@@ -1,5 +1,6 @@
 package com.dsc.android
 
+import com.dsc.android.ui.oneui.displayWindowFor
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -34,5 +35,25 @@ class ChartWindowTest {
     val segments = splitSamplePointSegments(points, window)
 
     assertEquals(listOf(3, 1), segments.map { it.size })
+  }
+
+  @Test
+  fun keepsTheSnapshotWindowWhileAVisibleLoadRuns() {
+    // 可见加载中：屏上旧快照按自己的粒度渲染，避免把旧样本塞进新时间窗（交）
+    assertEquals(MetricWindow.FiveMinutes, displayWindowFor("5m", MetricWindow.OneHour, loading = true))
+    // 加载结束后回到请求的粒度
+    assertEquals(MetricWindow.OneHour, displayWindowFor("5m", MetricWindow.OneHour, loading = false))
+    // 快照粒度缺失或未知时回落请求粒度
+    assertEquals(MetricWindow.OneHour, displayWindowFor(null, MetricWindow.OneHour, loading = true))
+    assertEquals(MetricWindow.OneHour, displayWindowFor("nope", MetricWindow.OneHour, loading = true))
+  }
+
+  @Test
+  fun mapsServerWindowValues() {
+    MetricWindow.entries.forEach { window ->
+      assertEquals(window, MetricWindow.fromValue(window.value))
+    }
+    assertEquals(null, MetricWindow.fromValue("30s"))
+    assertEquals(null, MetricWindow.fromValue(null))
   }
 }

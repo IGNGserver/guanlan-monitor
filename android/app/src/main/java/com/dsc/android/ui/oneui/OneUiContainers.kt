@@ -46,8 +46,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ProvidableCompositionLocal
+import androidx.compose.runtime.State
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.Role
@@ -916,6 +921,30 @@ fun OneUiLinearProgress(
   }
 }
 
+/**
+ * 顶栏下的同步进度线（交）：可见加载时覆盖在内容顶部。
+ *
+ * 覆盖式、不占布局、不挡触摸——同步期间页面照常滚动、展开与切换粒度（交）。
+ */
+@Composable
+fun OneUiSyncProgress(visible: Boolean, modifier: Modifier = Modifier) {
+  val motion = OneUiTheme.motion
+  AnimatedVisibility(
+    visible = visible,
+    enter = fadeIn(motion.tween(OneUiDuration.Exit)),
+    exit = fadeOut(motion.tween(OneUiDuration.Exit)),
+    modifier = modifier
+  ) {
+    OneUiLinearProgress(
+      fraction = 0f,
+      modifier = Modifier.semantics { contentDescription = "正在同步数据" },
+      track = Color.Transparent,
+      indeterminate = true,
+      height = 3.dp
+    )
+  }
+}
+
 /** 行内加载：替代旧的一次性卡片。 */
 @Composable
 fun OneUiLoadingRow(
@@ -962,6 +991,72 @@ fun OneUiSkeleton(
       .height(height)
       .background(colors.sunken.copy(alpha = pulse), shape)
   )
+}
+
+/**
+ * 陈旧数据态（交 + 动）。
+ *
+ * 可见加载进行中时，屏上仍是上一份完整快照：结构与交互全部保持可用，
+ * 只有数据本身降存在感（[oneUiStaleDim]）并在图表里叠一条同步扫光。
+ * 扫光相位与降存在感由整屏共享（[OneUiStaleGroup] 一次动画），
+ * 所有图表同步扫描，而不是每张图各转一套动画。
+ */
+@Immutable
+data class OneUiStaleState(
+  val active: Boolean,
+  val phase: State<Float>,
+  val dim: State<Float>
+)
+
+val LocalOneUiStaleState: ProvidableCompositionLocal<OneUiStaleState> =
+  compositionLocalOf {
+    OneUiStaleState(active = false, phase = mutableStateOf(0f), dim = mutableStateOf(1f))
+  }
+
+@Composable
+fun OneUiStaleGroup(stale: Boolean, content: @Composable () -> Unit) {
+  val motion = OneUiTheme.motion
+  // 减少动画只停扫光；灰化照常生效，否则“这是旧数据”的信号在无动画模式下会整个消失（适）
+  val animate = stale && !motion.isReduced
+  val transition = rememberInfiniteTransition(label = "oneui_stale_sweep")
+  val phase = transition.animateFloat(
+    initialValue = 0f,
+    targetValue = if (animate) 1f else 0f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(if (animate) motion.duration(OneUiDuration.StaleSweep) else 1, easing = LinearEasing),
+      repeatMode = RepeatMode.Restart
+    ),
+    label = "oneui_stale_phase"
+  )
+  // 降存在感与扫光共用一个状态对象：只在陈旧态翻转时重建，动画值在绘制阶段读取（动）
+  val dim = animateFloatAsState(
+    targetValue = if (stale) OneUiTheme.metrics.staleContent else 1f,
+    animationSpec = motion.tween(OneUiDuration.Content),
+    label = "oneui_stale_dim"
+  )
+  val state = remember(stale, motion.isReduced) {
+    OneUiStaleState(active = stale, phase = phase, dim = dim)
+  }
+  CompositionLocalProvider(LocalOneUiStaleState provides state) { content() }
+}
+
+/** 把当前陈旧态应用到任意内容：只降存在感，不改可交互性（图表仍可点、可拖准线）。 */
+@Composable
+fun Modifier.oneUiStaleDim(): Modifier {
+  val stale = LocalOneUiStaleState.current
+  return this.graphicsLayer { alpha = stale.dim.value }
+}
+
+/** 显式陈旧标记的降存在感：给没有图表、不需要共享扫光相位的区域用。 */
+@Composable
+fun Modifier.oneUiStaleDim(stale: Boolean): Modifier {
+  val motion = OneUiTheme.motion
+  val animatedAlpha = animateFloatAsState(
+    targetValue = if (stale) OneUiTheme.metrics.staleContent else 1f,
+    animationSpec = motion.tween(OneUiDuration.Content),
+    label = "oneui_stale_alpha"
+  )
+  return this.graphicsLayer { alpha = animatedAlpha.value }
 }
 
 /** 空态：One UI 把说明写清楚并给出下一步动作，而不是只留一行小字。 */

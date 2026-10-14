@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -79,6 +80,7 @@ internal fun OneUiLineChart(
   val metrics = OneUiTheme.metrics
   val motion = OneUiTheme.motion
   val lineColor = colors.seriesColor(seriesIndex)
+  val stale = LocalOneUiStaleState.current
 
   val chartPoints = remember(points) {
     points.sortedBy { parseTimestampMillis(it.timestamp) ?: Long.MIN_VALUE }
@@ -111,6 +113,7 @@ internal fun OneUiLineChart(
 
   Column(
     modifier = modifier
+      .oneUiStaleDim()
       .semantics(mergeDescendants = true) {
         contentDescription = buildString {
           append(title)
@@ -234,6 +237,24 @@ internal fun OneUiLineChart(
           }
         }
 
+        // 陈旧扫光：与整屏共享相位，所有图表同步扫过（动 + 交）
+        if (stale.active) {
+          val sweepPhase = stale.phase.value
+          val bandWidth = size.width * 0.38f
+          val bandX = (size.width + bandWidth) * sweepPhase - bandWidth
+          clipRect(left = 0f, top = 0f, right = size.width, bottom = size.height) {
+            drawRect(
+              brush = Brush.horizontalGradient(
+                colors = listOf(Color.Transparent, colors.chartSweep, Color.Transparent),
+                startX = bandX,
+                endX = bandX + bandWidth
+              ),
+              topLeft = Offset(bandX, 0f),
+              size = Size(bandWidth, size.height)
+            )
+          }
+        }
+
         // 准线与游标：十字线 + 空心点，One UI 在读数时把上下文留住（交）
         val point = chartPoints[effectiveIndex.coerceAtLeast(0)]
         val x = chartWindow.xFor(point.timestamp, size.width)
@@ -335,7 +356,8 @@ internal fun OneUiMetricTile(
             text = card.value,
             role = OneUiTextRole.Metric,
             color = colors.textPrimary,
-            maxLines = 1
+            maxLines = 1,
+            modifier = Modifier.oneUiStaleDim()
           )
         }
       }
@@ -529,9 +551,11 @@ fun OneUiWindowSelector(
   onSelect: (MetricWindow) -> Unit,
   modifier: Modifier = Modifier,
   enabled: Boolean = true,
+  loading: Boolean = false,
   labels: List<Pair<MetricWindow, String>> = MetricWindow.entries.map { it to it.chipLabel }
 ) {
   val metrics = OneUiTheme.metrics
+  val colors = OneUiTheme.colors
   val window = OneUiTheme.window
   val keys = labels.map { it.second }
   val index = labels.indexOfFirst { it.first == selected }.coerceAtLeast(0)
@@ -555,11 +579,18 @@ fun OneUiWindowSelector(
     horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
   ) {
     labels.forEach { (window, label) ->
+      // 正在加载的粒度在手指落点处给出反馈：选中胶囊内嵌小加载环（交）
+      val chipLeadingIcon: (@Composable () -> Unit)? = if (loading && window == selected) {
+        { OneUiSpinner(size = 14.dp, strokeWidth = 2.dp, color = colors.textOnAccent) }
+      } else {
+        null
+      }
       OneUiFilterChip(
         label = label,
         selected = window == selected,
         onClick = { onSelect(window) },
-        enabled = enabled
+        enabled = enabled,
+        leadingIcon = chipLeadingIcon
       )
     }
   }
