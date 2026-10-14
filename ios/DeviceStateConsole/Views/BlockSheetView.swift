@@ -31,6 +31,8 @@ public struct BlockSheetView: View {
                                 MemoryTabContent(metrics: metrics)
                             case .disk:
                                 DiskTabContent(metrics: metrics, tabId: selectedTabId, window: viewModel.selectedWindow)
+                            case .storage:
+                                StoragePoolTabContent(metrics: metrics)
                             case .network:
                                 NetworkTabContent(metrics: metrics, tabId: selectedTabId, window: viewModel.selectedWindow)
                             case .gpu:
@@ -206,6 +208,51 @@ struct DiskTabContent: View {
             MiniLineChartView(title: "温度 (°C)", points: seriesMap.temperatureC, valueFormatter: { String(format: "%.1f°C", $0) }, lineColor: .red)
         } else {
             Text("无磁盘历史序列")
+        }
+    }
+}
+
+struct StoragePoolTabContent: View {
+    let metrics: MetricsDto
+
+    var body: some View {
+        if metrics.storagePools.isEmpty {
+            Text("未检测到存储池；Proxmox 存储、LVM 精简池、ZFS 池与网络共享会显示在这里。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            ForEach(metrics.storagePools) { pool in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("\(pool.name) · \(storagePoolKindLabel(pool.kind))")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    if let series = metrics.storagePoolSeries[pool.id] {
+                        MiniLineChartView(
+                            title: "使用率 (%)",
+                            points: series.usagePercent,
+                            valueFormatter: { String(format: "%.1f%%", $0) },
+                            fixedMaxValue: 100,
+                            lineColor: .orange
+                        )
+                        MiniLineChartView(
+                            title: "已用容量 (GB)",
+                            points: series.usedBytes,
+                            valueFormatter: { String(format: "%.1f GB", $0 / 1024 / 1024 / 1024) },
+                            lineColor: .blue
+                        )
+                    } else {
+                        Text("无历史序列")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(storagePoolDetail(pool))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(8)
+                .background(Color(uiColor: .tertiarySystemGroupedBackground))
+                .cornerRadius(8)
+            }
         }
     }
 }

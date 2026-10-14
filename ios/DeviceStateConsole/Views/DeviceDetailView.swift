@@ -43,6 +43,12 @@ public struct DeviceDetailView: View {
                                 Task { await viewModel.openMetricConfigEditor(block: .disk) }
                             }
                             
+                            StoragePoolSectionView(metrics: metrics) {
+                                viewModel.openBlockSheet(.storage)
+                            } onEdit: {
+                                Task { await viewModel.openMetricConfigEditor(block: .storage) }
+                            }
+                            
                             NetworkSectionView(metrics: metrics) {
                                 viewModel.openBlockSheet(.network)
                             } onEdit: {
@@ -213,6 +219,8 @@ struct OverviewCapsuleView: View {
             return "正常"
         case .disk:
             return "\(metrics.disks.count) 块磁盘"
+        case .storage:
+            return "\(metrics.storagePools.count) 个存储池"
         case .network:
             return "\(metrics.networkInterfaces.count) 网卡"
         case .gpu:
@@ -354,6 +362,106 @@ struct DiskSectionView: View {
             }
         }
     }
+}
+
+struct StoragePoolSectionView: View {
+    let metrics: MetricsDto
+    let onOpenBlock: () -> Void
+    let onEdit: () -> Void
+
+    var body: some View {
+        SectionContainer(title: "存储池 (\(metrics.storagePools.count))", onOpenBlock: onOpenBlock, onEdit: onEdit) {
+            if metrics.storagePools.isEmpty {
+                Text("未检测到存储池；Proxmox 存储、LVM 精简池、ZFS 池与网络共享会显示在这里。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(metrics.storagePools) { pool in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(pool.name)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("\(storagePoolKindLabel(pool.kind)) · \(formatBytes(pool.usedBytes)) / \(formatBytes(pool.totalBytes))")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if pool.active == false || pool.enabled == false {
+                            Text("未启用")
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text(String(format: "%.0f%%", storagePoolPercent(pool)))
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    Text(storagePoolDetail(pool))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(8)
+                .background(Color(uiColor: .tertiarySystemGroupedBackground))
+                .cornerRadius(8)
+            }
+        }
+    }
+}
+
+/// 存储池类型的显示名；类型来自采集端（Proxmox 存储类型 / LVM / ZFS / 挂载文件系统）。
+func storagePoolKindLabel(_ kind: String) -> String {
+    switch kind {
+    case "lvmthin": return "LVM 精简池"
+    case "lvm": return "LVM 卷"
+    case "zfs": return "ZFS 池"
+    case "btrfs": return "Btrfs"
+    case "dir": return "目录存储"
+    case "nfs": return "NFS 共享"
+    case "cifs": return "SMB 共享"
+    case "pbs": return "Proxmox 备份"
+    case "filesystem": return "挂载文件系统"
+    default: return "存储池"
+    }
+}
+
+/// Proxmox content 字段（images/rootdir/backup/iso…）的用途说明。
+func storagePoolContentLabel(_ content: String) -> String {
+    switch content {
+    case "images": return "虚拟机磁盘"
+    case "rootdir": return "容器根目录"
+    case "backup": return "备份"
+    case "iso": return "安装镜像"
+    case "vztmpl": return "容器模板"
+    case "snippets": return "片段文件"
+    default: return content
+    }
+}
+
+private func storagePoolPercent(_ pool: StoragePoolDto) -> Double {
+    guard pool.totalBytes > 0 else { return 0 }
+    return Double(pool.usedBytes) / Double(pool.totalBytes) * 100
+}
+
+func storagePoolDetail(_ pool: StoragePoolDto) -> String {
+    var parts: [String] = []
+    if let node = pool.node, !node.isEmpty { parts.append("节点 \(node)") }
+    if let mountPoint = pool.mountPoint, !mountPoint.isEmpty { parts.append("挂载点 \(mountPoint)") }
+    if let device = pool.device, !device.isEmpty { parts.append("设备 \(device)") }
+    if let volumeGroup = pool.volumeGroup, !volumeGroup.isEmpty { parts.append("卷组 \(volumeGroup)") }
+    if let thinPool = pool.thinPool, !thinPool.isEmpty { parts.append("精简池 \(thinPool)") }
+    if let physical = pool.physicalDevices, !physical.isEmpty { parts.append("所在磁盘 \(physical.joined(separator: "、"))") }
+    if let content = pool.content, !content.isEmpty {
+        parts.append("用途 \(content.map(storagePoolContentLabel).joined(separator: " / "))")
+    }
+    if let dataPercent = pool.dataPercent { parts.append("分配 \(String(format: "%.1f%%", dataPercent))") }
+    if let metadataPercent = pool.metadataPercent { parts.append("元数据 \(String(format: "%.1f%%", metadataPercent))") }
+    parts.append(pool.shared == true ? "共享存储" : "活动")
+    if let health = pool.health, !health.isEmpty { parts.append("健康 \(health)") }
+    return parts.joined(separator: " · ")
 }
 
 struct NetworkSectionView: View {

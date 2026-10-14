@@ -106,6 +106,43 @@ public struct CpuPackageDto: Codable, Identifiable, Equatable, Sendable {
     public let temperatureC: Double?
 }
 
+public struct StoragePoolDto: Codable, Identifiable, Equatable, Sendable {
+    public let id: String
+    public let name: String
+    public let kind: String
+    public let source: String?
+    public let node: String?
+    public let mountPoint: String?
+    public let device: String?
+    public let volumeGroup: String?
+    public let thinPool: String?
+    public let physicalDevices: [String]?
+    public let content: [String]?
+    public let active: Bool?
+    public let enabled: Bool?
+    public let shared: Bool?
+    public let totalBytes: Int64
+    public let usedBytes: Int64
+    public let availableBytes: Int64?
+    public let dataPercent: Double?
+    public let metadataPercent: Double?
+    public let health: String?
+}
+
+public struct StoragePoolMetricSeriesDto: Codable, Equatable, Sendable {
+    public let id: String
+    public let name: String
+    public let kind: String
+    public let node: String?
+    public let mountPoint: String?
+    public let active: Bool?
+    public let shared: Bool?
+    public let totalBytes: [SamplePointDto]
+    public let usedBytes: [SamplePointDto]
+    public let availableBytes: [SamplePointDto]
+    public let usagePercent: [SamplePointDto]
+}
+
 public struct DiskSmartAttributeDto: Codable, Identifiable, Equatable, Sendable {
     public var id: Int
     public let name: String
@@ -276,6 +313,7 @@ private struct ServerLatestDto: Codable, Equatable, Sendable {
     let networkRxBytesPerSec: Double
     let networkTxBytesPerSec: Double
     let disks: [DiskDto]
+    let storagePools: [StoragePoolDto]?
     let networkInterfaces: [NetworkInterfaceDto]
     let gpus: [GpuDto]
     let sensorBackends: [SensorBackendDto]
@@ -342,6 +380,7 @@ private struct ServerMetricSeriesDto: Codable, Equatable, Sendable {
     let systemHandleCount: [SamplePointDto]
     let cpus: [ServerCpuSeriesDto]
     let disks: [ServerDiskSeriesDto]
+    let storagePools: [StoragePoolMetricSeriesDto]?
     let networks: [ServerNetworkSeriesDto]
     let gpus: [ServerGpuSeriesDto]
     let fans: [ServerFanSeriesDto]
@@ -353,6 +392,7 @@ public struct MetricsDto: Decodable, Equatable, Sendable {
     public let window: String
     public let cpus: [CpuPackageDto]
     public let disks: [DiskDto]
+    public let storagePools: [StoragePoolDto]
     public let networkInterfaces: [NetworkInterfaceDto]
     public let gpus: [GpuDto]
     public let fans: [FanDto]
@@ -369,6 +409,7 @@ public struct MetricsDto: Decodable, Equatable, Sendable {
     public let threadSeries: [SamplePointDto]
     public let handleSeries: [SamplePointDto]
     public let diskSeries: [String: DiskMetricSeriesDto]
+    public let storagePoolSeries: [String: StoragePoolMetricSeriesDto]
     public let networkSeries: [String: NetworkMetricSeriesDto]
     public let gpuSeries: [String: GpuMetricSeriesDto]
     public let fanSeries: [String: [SamplePointDto]]
@@ -423,6 +464,7 @@ public struct MetricsDto: Decodable, Equatable, Sendable {
         cpuModel = device.cpuModel
         cpus = latest.cpuPackages
         disks = latest.disks
+        storagePools = latest.storagePools ?? []
         networkInterfaces = latest.networkInterfaces
         gpus = latest.gpus
         fans = latest.fans
@@ -438,6 +480,7 @@ public struct MetricsDto: Decodable, Equatable, Sendable {
         threadSeries = series.systemThreadCount
         handleSeries = series.systemHandleCount
         diskSeries = Dictionary(uniqueKeysWithValues: series.disks.map { ($0.id, DiskMetricSeriesDto(usedPercent: $0.usagePercent, readBytesPerSec: $0.readBytesPerSec, writeBytesPerSec: $0.writeBytesPerSec, activePercent: $0.activePercent, usedBytes: $0.usedBytes, temperatureC: $0.temperatureC)) })
+        storagePoolSeries = Dictionary(uniqueKeysWithValues: (series.storagePools ?? []).map { ($0.id, $0) })
         networkSeries = Dictionary(uniqueKeysWithValues: series.networks.map { ($0.id, NetworkMetricSeriesDto(rxBytesPerSec: $0.rxBytesPerSec, txBytesPerSec: $0.txBytesPerSec, trafficRxBytes: $0.trafficRxBytes, trafficTxBytes: $0.trafficTxBytes)) })
         gpuSeries = Dictionary(uniqueKeysWithValues: series.gpus.map { ($0.id, GpuMetricSeriesDto(utilization: $0.usagePercent, encode: $0.encodePercent, decode: $0.decodePercent, frequencyMHz: $0.frequencyMHz, memoryUsedPercent: $0.memoryUsagePercent, memoryUsedBytes: $0.memoryUsedBytes, temperature: $0.temperatureC)) })
         fanSeries = Dictionary(uniqueKeysWithValues: series.fans.map { ($0.id, $0.rpm) })
@@ -534,6 +577,7 @@ public enum DeviceBlockKey: String, CaseIterable, Codable, Sendable {
     case cpu = "cpu"
     case memory = "memory"
     case disk = "disk"
+    case storage = "storage"
     case network = "network"
     case gpu = "gpu"
     case fan = "fan"
@@ -543,6 +587,7 @@ public enum DeviceBlockKey: String, CaseIterable, Codable, Sendable {
         case .cpu: return "CPU"
         case .memory: return "内存"
         case .disk: return "磁盘"
+        case .storage: return "存储池"
         case .network: return "网络"
         case .gpu: return "GPU"
         case .fan: return "风扇"
