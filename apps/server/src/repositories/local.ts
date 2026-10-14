@@ -116,7 +116,6 @@ class LocalJsonStore {
       return value.instanceType === "virtual_machine"
         || "virtualMachine" in value
         || "virtualization" in value
-        || "storagePools" in value
         || "hostDeviceId" in value
         || "hostName" in value;
     };
@@ -183,13 +182,10 @@ class LocalJsonStore {
         delete identity.virtualMachine;
         delete identity.virtualization;
         delete (state.latest as DeviceRealtimeState["latest"] & Record<string, unknown>).virtualization;
-        delete (state.latest as DeviceRealtimeState["latest"] & Record<string, unknown>).storagePools;
       }
       const stripPoint = (point: TimeSeriesRecord) => {
         delete (point.recordedDetails as (TimeSeriesRecord["recordedDetails"] & Record<string, unknown>) | undefined)?.virtualization;
-        delete (point.recordedDetails as (TimeSeriesRecord["recordedDetails"] & Record<string, unknown>) | undefined)?.storagePools;
         delete (point as TimeSeriesRecord & Record<string, unknown>).virtualization;
-        delete (point as TimeSeriesRecord & Record<string, unknown>).storagePools;
       };
       for (const buckets of Object.values(current.series)) for (const points of Object.values(buckets)) points.forEach(stripPoint);
       for (const points of [...Object.values(current.minuteHistory), ...Object.values(current.history)]) points.forEach(stripPoint);

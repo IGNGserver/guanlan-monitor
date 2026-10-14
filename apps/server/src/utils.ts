@@ -12,6 +12,7 @@ import type {
   MetricSeries,
   NetworkMetricSeries,
   SamplePoint,
+  StoragePoolMetricSeries,
   TemperatureMetricSeries
 } from "@dsc/shared";
 import type { DeviceMetricConfigValue, DeviceRealtimeState, InstanceMetricRecord, TimeSeriesRecord } from "./types.js";
@@ -46,6 +47,7 @@ export const ALL_DEVICE_METRIC_KEYS: DeviceMetricKey[] = [
   "diskMetadata",
   "diskActivity",
   "diskHealth",
+  "storagePools",
   "networkRxRate",
   "networkTxRate",
   "networkTraffic",
@@ -78,6 +80,7 @@ const REALTIME_ARRAY_FIELDS = [
   "unavailableMetrics",
   "cpuPackages",
   "disks",
+  "storagePools",
   "networkInterfaces",
   "gpus",
   "fans",
@@ -336,6 +339,7 @@ export function payloadToTimeSeries(
       memory: payload.memory,
       cpuPackages: payload.cpuPackages ?? [],
       disks: payload.disks ?? [],
+      storagePools: enabled.has("storagePools") ? payload.storagePools ?? [] : [],
       networkInterfaces: payload.networkInterfaces ?? [],
       gpus: payload.gpus,
       fans: payload.fans ?? [],
@@ -414,6 +418,7 @@ export function timeSeriesToMetricSeries(
 
   const cpus = buildCpuMetricSeries(points, config);
   const disks = buildDiskMetricSeries(points, config);
+  const storagePools = buildStoragePoolMetricSeries(points, config);
   const networks = buildNetworkMetricSeries(points, config);
   const gpus = buildGpuMetricSeries(points, config);
   const fans = buildFanMetricSeries(points, config);
@@ -469,6 +474,7 @@ export function timeSeriesToMetricSeries(
     })),
     cpus,
     disks,
+    storagePools,
     networks,
     gpus,
     fans,
@@ -523,6 +529,10 @@ export function timeSeriesToMetricSeries(
   series.gpuMemoryUsagePercent = series.gpuMemoryUsagePercent.filter((sample) => !noGpuBudget.has(sample.timestamp));
   for (const disk of series.disks) {
     disk.readBytesPerSec = gate(disk.readBytesPerSec, "diskRead"); disk.writeBytesPerSec = gate(disk.writeBytesPerSec, "diskWrite"); disk.activePercent = gate(disk.activePercent, "diskActivity");
+  }
+  for (const pool of series.storagePools) {
+    pool.totalBytes = gate(pool.totalBytes, "storagePools"); pool.usedBytes = gate(pool.usedBytes, "storagePools");
+    pool.availableBytes = gate(pool.availableBytes, "storagePools"); pool.usagePercent = gate(pool.usagePercent, "storagePools");
   }
   for (const network of series.networks) {
     network.rxBytesPerSec = gate(network.rxBytesPerSec, "networkRxRate"); network.txBytesPerSec = gate(network.txBytesPerSec, "networkTxRate");
@@ -742,6 +752,55 @@ function buildDiskMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricC
   return [...grouped.values()];
 }
 
+function buildStoragePoolMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricConfigValue): StoragePoolMetricSeries[] {
+  if (!config.enabledMetrics.includes("storagePools")) return [];
+  const grouped = new Map<string, StoragePoolMetricSeries>();
+  for (const point of points) {
+    for (const pool of point.recordedDetails?.storagePools ?? []) {
+      if (!grouped.has(pool.id)) {
+        grouped.set(pool.id, {
+          id: pool.id,
+          name: pool.name,
+          kind: pool.kind,
+          node: pool.node,
+          mountPoint: pool.mountPoint,
+          active: pool.active !== false,
+          shared: pool.shared === true,
+          totalBytes: [],
+          usedBytes: [],
+          availableBytes: [],
+          usagePercent: []
+        });
+      }
+      const target = grouped.get(pool.id)!;
+      // Descriptive fields follow the newest observation, so a pool that was
+      // renamed, mounted or disabled keeps the current label on the chart.
+      if (pool.name) target.name = pool.name;
+      if (pool.kind) target.kind = pool.kind;
+      if (pool.node != null) target.node = pool.node;
+      if (pool.mountPoint != null) target.mountPoint = pool.mountPoint;
+      if (pool.active != null) target.active = pool.active;
+      if (pool.shared != null) target.shared = pool.shared;
+
+      const timestamp = new Date(point.timestamp).toISOString();
+      const append = (samples: SamplePoint[], value: number | null | undefined) => {
+        if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+          samples.push({ timestamp, value });
+        }
+      };
+      append(target.totalBytes, pool.totalBytes);
+      append(target.usedBytes, pool.usedBytes);
+      append(target.availableBytes, pool.availableBytes);
+      // A disabled storage reports a zero capacity; it must not draw a 0%
+      // usage point that reads like an empty pool.
+      if (typeof pool.totalBytes === "number" && pool.totalBytes > 0 && typeof pool.usedBytes === "number" && pool.usedBytes >= 0) {
+        append(target.usagePercent, percent(pool.usedBytes, pool.totalBytes));
+      }
+    }
+  }
+  return [...grouped.values()];
+}
+
 function buildNetworkMetricSeries(points: TimeSeriesRecord[], config: DeviceMetricConfigValue): NetworkMetricSeries[] {
   const grouped = new Map<string, NetworkMetricSeries>();
   for (const point of points) {
@@ -926,6 +985,7 @@ export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOpt
   const hasDiskHealth = (latest.disks ?? []).some((disk) =>
     disk.temperatureC != null || disk.healthStatus != null || disk.healthPercent != null || (disk.smartAttributes?.length ?? 0) > 0
   );
+  const hasStoragePools = (latest.storagePools ?? []).length > 0;
   const hasNetworkInterfaces = (latest.networkInterfaces?.length ?? 0) > 0;
   const hasNetworkIdentity = (latest.networkInterfaces ?? []).some((network) =>
     Boolean(network.macAddress || network.ipv4?.length || network.ipv6?.length || network.linkSpeedMbps != null || network.connectionType)
@@ -963,6 +1023,7 @@ export function getAvailableMetrics(state: DeviceRealtimeState): DeviceMetricOpt
     ["diskMetadata", hasDiskMetadata],
     ["diskActivity", hasDiskActivity],
     ["diskHealth", hasDiskHealth],
+    ["storagePools", hasStoragePools],
     ["networkRxRate", hasNetworkInterfaces],
     ["networkTxRate", hasNetworkInterfaces],
     ["networkTraffic", hasNetworkInterfaces],

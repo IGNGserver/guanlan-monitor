@@ -23,6 +23,8 @@ import type {
   MetricsLatest,
   NetworkMetricSeries,
   SamplePoint,
+  StoragePoolMetricSeries,
+  StoragePoolStats,
   TrafficCalendarMode,
   TrafficCalendarResponse
 } from "@dsc/shared";
@@ -102,6 +104,10 @@ export interface DeviceChartContext {
   hasInstanceConfiguration: (block: DeviceBlockKey) => boolean;
   cpuInstances: CpuMetricSeries[];
   diskInstances: DiskMetricSeries[];
+  /** 全部存储池实例（Proxmox 存储 / LVM / ZFS / 网络共享），不做实例筛选。 */
+  storagePools: StoragePoolMetricSeries[];
+  /** 存储池的最新观测，用于容量与状态。 */
+  storagePoolLatest: StoragePoolStats[];
   networkInstances: NetworkMetricSeries[];
   gpuInstances: GpuMetricSeries[];
   fanInstances: FanMetricSeries[];
@@ -348,6 +354,71 @@ function diskIdentityFacts(disk: DiskMetricSeries): Array<{ label: string; value
     disk.mountPoint ? { label: "挂载点", value: disk.mountPoint } : null,
     disk.filesystem ? { label: "文件系统", value: disk.filesystem } : null
   ].filter((fact): fact is { label: string; value: string } => fact != null);
+}
+
+/**
+ * 存储池的类型名。类型来自采集端：Proxmox 存储类型、LVM/ZFS 拓扑与挂载文件系统。
+ */
+function storagePoolKindLabel(kind: StoragePoolMetricSeries["kind"]): string {
+  switch (kind) {
+    case "lvmthin": return "LVM 精简池";
+    case "lvm": return "LVM 卷";
+    case "zfs": return "ZFS 池";
+    case "btrfs": return "Btrfs";
+    case "dir": return "目录存储";
+    case "nfs": return "NFS 共享";
+    case "cifs": return "SMB 共享";
+    case "pbs": return "Proxmox 备份";
+    case "filesystem": return "挂载文件系统";
+    default: return "存储池";
+  }
+}
+
+/** Proxmox 的 content 字段（images/rootdir/backup/iso…）翻成用途说明。 */
+function storagePoolContentLabel(content: string[]): string {
+  const labels = content.map((entry) => {
+    switch (entry) {
+      case "images": return "虚拟机磁盘";
+      case "rootdir": return "容器根目录";
+      case "backup": return "备份";
+      case "iso": return "安装镜像";
+      case "vztmpl": return "容器模板";
+      case "snippets": return "片段文件";
+      default: return entry;
+    }
+  });
+  return labels.join(" · ");
+}
+
+function lastPointValue(points: SamplePoint[] | undefined): number | undefined {
+  const point = points?.length ? points[points.length - 1] : undefined;
+  return point && Number.isFinite(point.value) ? point.value : undefined;
+}
+
+function storagePoolFacts(pool: StoragePoolMetricSeries, latest: StoragePoolStats | undefined, unavailable: boolean): Array<{ label: string; value: string }> {
+  const facts: Array<{ label: string; value: string } | null> = [
+    { label: "类型", value: storagePoolKindLabel(pool.kind) },
+    pool.node ? { label: "节点", value: pool.node } : null,
+    latest?.mountPoint ? { label: "挂载点", value: latest.mountPoint } : null,
+    latest?.device ? { label: "设备", value: latest.device } : null,
+    latest?.volumeGroup ? { label: "卷组", value: latest.volumeGroup } : null,
+    latest?.thinPool ? { label: "精简池", value: latest.thinPool } : null,
+    latest?.physicalDevices?.length ? { label: "所在磁盘", value: latest.physicalDevices.join("、") } : null,
+    latest?.content?.length ? { label: "用途", value: storagePoolContentLabel(latest.content) } : null,
+    latest?.dataPercent != null ? { label: "精简池分配", value: formatPercent(latest.dataPercent) } : null,
+    latest?.metadataPercent != null ? { label: "精简池元数据", value: formatPercent(latest.metadataPercent) } : null,
+    latest?.shared ? { label: "共享", value: "是（多节点共用）" } : null,
+    latest?.health ? { label: "健康", value: latest.health } : null,
+    {
+      label: "容量",
+      value: formatCapacitySummary(
+        latest?.usedBytes ?? lastPointValue(pool.usedBytes),
+        latest?.totalBytes ?? lastPointValue(pool.totalBytes),
+        unavailable
+      )
+    }
+  ];
+  return facts.filter((fact): fact is { label: string; value: string } => fact != null);
 }
 
 /**
@@ -694,6 +765,67 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
       valueFormatter: bytesPerSecond
     })
   }),
+
+  "storage-pool-capacity": (chart, context) => {
+    if (!context.storagePools.length) {
+      return [{
+        key: `${chart.id}:empty`,
+        title: chart.title,
+        emptyMessage: "未检测到存储池；Proxmox 存储、LVM 精简池、ZFS 池与网络共享会显示在这里"
+      }];
+    }
+    return context.storagePools.map((pool) => {
+      const latest = context.storagePoolLatest.find((item) => item.id === pool.id);
+      const total = latest?.totalBytes ?? lastPointValue(pool.totalBytes) ?? 0;
+      const used = latest?.usedBytes ?? lastPointValue(pool.usedBytes) ?? 0;
+      const active = latest?.active ?? pool.active;
+      const enabled = latest?.enabled ?? true;
+      const unavailable = context.unavailable("storagePools");
+      const usagePercent = total > 0 ? Number(((used / total) * 100).toFixed(2)) : null;
+      const facts = storagePoolFacts(pool, latest, unavailable);
+      if (!active || !enabled || total <= 0) {
+        // A storage listed by Proxmox but not active on this node reports a zero
+        // capacity; an empty meter would read as an empty pool.
+        return {
+          key: `${chart.id}:${pool.id}`,
+          title: `${pool.name} · ${chart.title}`,
+          subtitle: storagePoolKindLabel(pool.kind),
+          facts,
+          emptyMessage: "该存储在当前节点未启用"
+        } satisfies DeviceChartTile;
+      }
+      return {
+        key: `${chart.id}:${pool.id}`,
+        title: `${pool.name} · ${chart.title}`,
+        subtitle: `${storagePoolKindLabel(pool.kind)}${latest?.shared ? " · 共享存储" : ""}`,
+        heroStat: usagePercent != null ? formatPercent(usagePercent) : undefined,
+        meter: { value: used, total, label: "已用" },
+        facts,
+        valueFormatter: formatBytes
+      } satisfies DeviceChartTile;
+    });
+  },
+
+  "storage-pool-usage": (chart, context) => {
+    const activePools = context.storagePools.filter((pool) => pool.active);
+    if (!activePools.length) {
+      return [{
+        key: `${chart.id}:empty`,
+        title: chart.title,
+        emptyMessage: "未检测到启用的存储池"
+      }];
+    }
+    return [{
+      key: chart.id,
+      subtitle: `${activePools.length} 个启用存储池的使用率`,
+      series: activePools.map((pool) => ({
+        label: pool.name,
+        points: pool.usagePercent,
+        valueFormatter: percent
+      })),
+      ...PERCENT_TILE
+    }];
+  },
 
   "gpu-load": (chart, context) => {
     if (!context.visibleGpuInstances.length && !context.gpuInstances.length) {

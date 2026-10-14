@@ -271,6 +271,10 @@ func applyDarwinMetricQuality(payload *metricsPayload, maxHardwareAge time.Durat
 		health = health || entry.HealthStatus != "" || entry.TemperatureC != nil
 	}
 	set("diskHealth", health, "SMART")
+	// Storage pools (Proxmox storages, LVM thin pools, ZFS pools) are a Linux
+	// host concept. macOS reports none rather than an empty list, so the console
+	// hides the section instead of drawing an empty one.
+	quality["storagePools"] = metricQuality{State: "not_applicable", Reason: "no Proxmox/LVM/ZFS pool source on macOS"}
 	for _, key := range []string{"networkRxRate", "networkTxRate", "networkTraffic", "networkIdentity"} {
 		set(key, len(payload.NetworkIfaces) > 0, "Darwin interface counters")
 	}

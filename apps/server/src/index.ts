@@ -138,7 +138,9 @@ async function removeLegacyVirtualMachineData(pool: mysql.Pool, log: FastifyBase
     }
     const [bounds] = await pool.query(`SELECT COALESCE(MIN(id), 0) AS lowest, COALESCE(MAX(id), 0) AS highest FROM ${table}`);
     const { lowest, highest } = (bounds as Array<{ lowest: number; highest: number }>)[0];
-    for (const key of ["virtualization", "storagePools"]) {
+    // Only the retired virtual machine payload is purged; `storagePools` is a
+    // first-class host metric again and must survive hub restarts.
+    for (const key of ["virtualization"]) {
       for (let start = lowest; start <= highest; start += LEGACY_CLEANUP_ID_SPAN) {
         await pool.query(
           `UPDATE ${table} SET recorded_details_json = JSON_REMOVE(recorded_details_json, '$.${key}') WHERE id BETWEEN ? AND ? AND JSON_CONTAINS_PATH(recorded_details_json, 'one', '$.${key}')`,

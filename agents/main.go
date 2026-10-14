@@ -98,6 +98,7 @@ const (
 	logCategoryCPUSlow     = "cpu_slow"
 	logCategoryDiskSlow    = "disk_slow"
 	logCategoryDiskFast    = "disk_fast"
+	logCategoryStorageSlow = "storage_slow"
 	logCategoryNetworkSlow = "network_slow"
 	logCategoryNetworkFast = "network_fast"
 )
@@ -321,6 +322,7 @@ type metricsPayload struct {
 	Memory                  memoryStats                `json:"memory"`
 	DiskUsage               storageUsage               `json:"diskUsage"`
 	Disks                   []diskDeviceStats          `json:"disks,omitempty"`
+	StoragePools            []storagePoolStats         `json:"storagePools,omitempty"`
 	DiskRate                rateStats                  `json:"diskRate"`
 	NetworkRate             networkTrafficStats        `json:"networkRate"`
 	NetworkIfaces           []networkInterfaceStats    `json:"networkInterfaces,omitempty"`
@@ -465,6 +467,7 @@ type slowMetrics struct {
 	hardwareSampledAt       time.Time
 	cpuCollected            bool
 	diskCollected           bool
+	storagePoolCollected    bool
 	networkCollected        bool
 	hardwareCollected       bool
 	cpuFrequencyMHz         *float64
@@ -476,6 +479,7 @@ type slowMetrics struct {
 	cpuPackages             []cpuPackageStats
 	diskUsage               storageUsage
 	disks                   []diskDeviceStats
+	storagePools            []storagePoolStats
 	networkInterfaces       []networkInterfaceStats
 	gpus                    []gpuDeviceStats
 	gpuDrivers              map[string]string
@@ -1443,6 +1447,7 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 		Memory:                  memory,
 		DiskUsage:               slow.diskUsage,
 		Disks:                   slow.disks,
+		StoragePools:            slow.storagePools,
 		DiskRate:                diskRate,
 		NetworkRate:             networkRate,
 		NetworkIfaces:           slow.networkInterfaces,
@@ -2025,6 +2030,7 @@ func emptySlowMetrics() slowMetrics {
 	return slowMetrics{
 		cpuPackages:        []cpuPackageStats{},
 		disks:              []diskDeviceStats{},
+		storagePools:       []storagePoolStats{},
 		networkInterfaces:  []networkInterfaceStats{},
 		gpus:               []gpuDeviceStats{},
 		gpuDrivers:         map[string]string{},
@@ -2069,6 +2075,10 @@ func mergeSlowMetrics(previous slowMetrics, next slowMetrics) slowMetrics {
 		merged.diskCollected = true
 		merged.diskUsage = next.diskUsage
 		merged.disks = next.disks
+	}
+	if next.storagePoolCollected {
+		merged.storagePoolCollected = true
+		merged.storagePools = next.storagePools
 	}
 	if next.networkCollected {
 		merged.networkCollected = true
@@ -2227,6 +2237,20 @@ func collectSlowMetrics(assets hardwareAssetCache, plan collectionPlan) (slowMet
 		result.disks = disks
 		if runtime.GOOS == "linux" && refreshDiskTemperatures {
 			assets.linuxDiskTemperatures = linuxDiskTemperatures
+		}
+	}
+
+	if plan.storagePools {
+		pools, poolErr := collectStoragePools()
+		if poolErr != nil {
+			// A partial result still counts: the Proxmox source may be down
+			// while the OS view succeeded, and hiding the pools would be worse
+			// than showing the ones that were observed.
+			logSlowMetricsError(logCategoryStorageSlow, poolErr)
+		}
+		if len(pools) > 0 || poolErr == nil {
+			result.storagePoolCollected = true
+			result.storagePools = pools
 		}
 	}
 
@@ -6621,6 +6645,10 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 		}
 	}
 
+	if !enabledMetricSet["storagePools"] {
+		payload.StoragePools = []storagePoolStats{}
+	}
+
 	if !enabledBlocks["disk"] {
 		payload.DiskUsage = storageUsage{}
 		payload.Disks = []diskDeviceStats{}
@@ -7004,6 +7032,7 @@ type collectionPlan struct {
 	linuxCPUFast bool
 	gpu          bool
 	diskSensors  bool
+	storagePools bool
 }
 
 func resolveCollectionPlan(cfg agentRuntimeConfig) collectionPlan {
@@ -7015,6 +7044,7 @@ func resolveCollectionPlan(cfg agentRuntimeConfig) collectionPlan {
 		linuxCPUFast: blocks["cpu"] && (metrics["cpuFrequency"] || metrics["cpuTemperature"] || hasInstanceOverrides),
 		gpu:          blocks["gpu"],
 		diskSensors:  blocks["disk"] && (metrics["diskHealth"] || metrics["temperatureSources"] || hasInstanceOverrides),
+		storagePools: metrics["storagePools"],
 	}
 }
 

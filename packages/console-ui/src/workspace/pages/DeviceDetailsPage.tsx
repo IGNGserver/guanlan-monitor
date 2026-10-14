@@ -251,6 +251,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
         ...latest,
         cpuPackages: filterEnabledInstances("cpu", latest.cpuPackages ?? []),
         disks: filteredDiskDetails,
+        storagePools: latest.storagePools ?? [],
         networkInterfaces: filterEnabledInstances("network", latest.networkInterfaces ?? []),
         gpus: filteredGpuDetails,
         fans: filterEnabledInstances("fan", latest.fans ?? []),
@@ -260,6 +261,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
     : undefined;
   const cpuInstances = filterEnabledInstances("cpu", series?.cpus ?? []);
   const diskInstances = filterEnabledInstances("disk", series?.disks ?? []);
+  const storagePools = series?.storagePools ?? [];
   const networkInstances = filterEnabledInstances("network", series?.networks ?? []);
   const gpuInstances = filterEnabledInstances("gpu", series?.gpus ?? []);
   const latestFanInstances = latest ? filterEnabledInstances("fan", latest.fans ?? []) : [];
@@ -299,6 +301,8 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
     hasInstanceConfiguration,
     cpuInstances,
     diskInstances,
+    storagePools,
+    storagePoolLatest: filteredLatest?.storagePools ?? [],
     networkInstances,
     gpuInstances,
     fanInstances,

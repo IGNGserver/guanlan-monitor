@@ -65,6 +65,7 @@ export interface TimeSeriesRecord {
     memory: AgentMetricsPayload["memory"];
     cpuPackages: AgentMetricsPayload["cpuPackages"];
     disks: AgentMetricsPayload["disks"];
+    storagePools: AgentMetricsPayload["storagePools"];
     networkInterfaces: AgentMetricsPayload["networkInterfaces"];
     gpus: AgentMetricsPayload["gpus"];
     fans: AgentMetricsPayload["fans"];

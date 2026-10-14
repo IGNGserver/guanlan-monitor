@@ -54,6 +54,7 @@ const metricKey = z.enum([
   "diskMetadata",
   "diskActivity",
   "diskHealth",
+  "storagePools",
   "networkRxRate",
   "networkTxRate",
   "networkTraffic",
@@ -82,7 +83,6 @@ const identitySchema = z.object({
   delete sanitized.hostName;
   delete sanitized.virtualMachine;
   delete sanitized.virtualization;
-  delete sanitized.storagePools;
   return sanitized as unknown as AgentIdentity;
 });
 
@@ -257,6 +257,29 @@ const sensorBackendSchema = z.object({
   detail: optionalText(1_024)
 }).passthrough();
 
+const storagePoolSchema = z.object({
+  id: identifier,
+  name: text(256),
+  kind: z.enum(["lvmthin", "lvm", "zfs", "btrfs", "dir", "nfs", "cifs", "pbs", "filesystem", "unknown"]),
+  source: optionalText(64),
+  node: optionalText(128),
+  mountPoint: optionalText(1_024),
+  device: optionalText(512),
+  volumeGroup: optionalText(256),
+  thinPool: optionalText(256),
+  physicalDevices: z.array(text(128)).max(16).optional(),
+  content: z.array(text(32)).max(16).optional(),
+  active: z.boolean().nullable().optional(),
+  enabled: z.boolean().nullable().optional(),
+  shared: z.boolean().nullable().optional(),
+  totalBytes: nonNegative,
+  usedBytes: nonNegative,
+  availableBytes: nonNegative.nullable().optional(),
+  dataPercent: percentage.nullable().optional(),
+  metadataPercent: percentage.nullable().optional(),
+  health: optionalText(64).nullable()
+}).passthrough();
+
 export const agentMetricsPayloadSchema = z.object({
   sampleId: optionalText(128),
   identity: identitySchema,
@@ -286,6 +309,7 @@ export const agentMetricsPayloadSchema = z.object({
     usedBytes: nonNegative
   }).passthrough(),
   disks: z.array(diskSchema).max(2_048).optional(),
+  storagePools: z.array(storagePoolSchema).max(256).optional(),
   diskRate: rateSchema,
   networkRate: networkRateSchema,
   networkInterfaces: z.array(networkSchema).max(256).optional(),
@@ -307,7 +331,9 @@ export const agentMetricsPayloadSchema = z.object({
   }).passthrough().optional()
 }).passthrough().transform((payload): AgentMetricsPayload => {
   const sanitized = { ...payload } as Record<string, unknown>;
+  // `storagePools` used to be purged here as part of the retired virtual
+  // machine feature; it is a first-class host metric again, so only the
+  // virtual machine payload survives as a legacy deletion.
   delete sanitized.virtualization;
-  delete sanitized.storagePools;
   return sanitized as unknown as AgentMetricsPayload;
 });
