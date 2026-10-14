@@ -70,7 +70,8 @@ const metricGroups: Array<{ label: string; items: Array<{ key: DeviceMetricKey; 
       { key: "diskWrite", label: "写入速率" },
       { key: "diskMetadata", label: "磁盘信息" },
       { key: "diskActivity", label: "活动状态" },
-      { key: "diskHealth", label: "健康状态" }
+      { key: "diskHealth", label: "健康状态" },
+      { key: "storagePools", label: "存储池（虚拟机分区）" }
     ]
   },
   {

@@ -80,7 +80,6 @@ export class RedisRealtimeRepository implements RealtimeRepository {
       delete identity.virtualMachine;
       delete identity.virtualization;
       delete (state.latest as typeof state.latest & Record<string, unknown>).virtualization;
-      delete (state.latest as typeof state.latest & Record<string, unknown>).storagePools;
       await this.upsert(state);
     }
 
@@ -105,17 +104,9 @@ export class RedisRealtimeRepository implements RealtimeRepository {
                 delete mutableDetails.virtualization;
                 changed = true;
               }
-              if ("storagePools" in mutableDetails) {
-                delete mutableDetails.storagePools;
-                changed = true;
-              }
             }
             if ("virtualization" in point) {
               delete point.virtualization;
-              changed = true;
-            }
-            if ("storagePools" in point) {
-              delete point.storagePools;
               changed = true;
             }
             return JSON.stringify(point);

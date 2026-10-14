@@ -65,6 +65,43 @@ The command reads `DSC_SERVER_URL` and `DSC_AGENT_SECRET` (or the installed
 Linux/Windows `agent.env`). Use `--server-url`, `--secret`, or `--install-dir`
 when the installed environment is not available.
 
+## Storage pools (virtual machine partitions)
+
+The `storagePools` metric reports the whole host storage entities that can hold
+virtual machine disks, separately from the mounted-filesystem disk list: Proxmox
+storages (`local-lvm`, `pve3-hdd`, NFS/CIFS shares, PBS datastores), LVM thin
+pools and volumes, ZFS pools, and mounted filesystems including network shares.
+Individual virtual machine volumes (`vm-100-disk-1`, snapshots, cloud-init
+disks) and loop-mounted images are deliberately excluded.
+
+Two sources are merged. The OS source reads `/proc/self/mountinfo` plus statfs,
+`/sys/block/*/dm/*` for device-mapper names/sizes/topology, `lvs` when the
+collector runs as root, and `zpool` when `/dev/zfs` exists. The Proxmox source
+calls the node's own REST API and wins on conflicts, because its names are the
+ones an operator sees in the Proxmox UI; the OS observations then fill in the
+mount point, device, LVM topology and physical disks. A Proxmox failure degrades
+to the OS view instead of blanking the list.
+
+The Proxmox source is enabled by configuring a read-only API token. It stays in
+the service environment, never in the JSON config. `DSC_STORAGE_PVE_*` names are
+preferred and the retired `DSC_VIRTUALIZATION_*` names keep working, so the
+`/etc/guanlan/virtualization.env` already present on the Proxmox nodes needs no
+change:
+
+```text
+DSC_STORAGE_PVE_ENDPOINT=https://127.0.0.1:8006/api2/json
+DSC_STORAGE_PVE_TOKEN_ID=dsc-agent@pam!dsc-readonly
+DSC_STORAGE_PVE_TOKEN_SECRET=replace-with-the-token-secret
+DSC_STORAGE_PVE_NODE=pve1
+DSC_STORAGE_PVE_INSECURE_TLS=true
+```
+
+`DSC_STORAGE_PVE_NODE` defaults to the hostname, and TLS verification is skipped
+by default only for loopback endpoints (Proxmox ships a self-signed certificate
+that cannot match `127.0.0.1`); a remote endpoint must opt in explicitly. The
+metric is collected only while `storagePools` is in `enabledMetrics`, so a
+disabled metric costs no API call or probe.
+
 The Linux desktop package is named
 `DeviceStateConsole-Linux-Install-vX.Y.Z.deb`; it is built and installed by
 GitHub Actions on Ubuntu 24.04. The desktop package is the recommended Linux desktop

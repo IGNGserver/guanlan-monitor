@@ -93,17 +93,76 @@ test("strips virtualization fields from legacy agent payloads", () => {
     virtualMachine: { vmId: "vm:old", platform: "proxmox" }
   } as typeof payload.identity;
   payload.virtualization = { platform: "proxmox", vms: [{ id: "vm-1" }] };
-  payload.storagePools = [{ id: "legacy-pool" }];
 
   const result = agentMetricsPayloadSchema.safeParse(payload);
   assert.equal(result.success, true);
   if (!result.success) return;
   assert.equal("virtualization" in result.data, false);
-  assert.equal("storagePools" in result.data, false);
   assert.equal("instanceType" in result.data.identity, false);
   assert.equal("hostDeviceId" in result.data.identity, false);
   assert.equal("hostName" in result.data.identity, false);
   assert.equal("virtualMachine" in result.data.identity, false);
+});
+
+test("accepts and preserves storage pool telemetry", () => {
+  const payload = {
+    ...validPayload(),
+    storagePools: [
+      {
+        id: "proxmox:pve1/local-lvm",
+        name: "local-lvm",
+        kind: "lvmthin",
+        source: "proxmox",
+        node: "pve1",
+        mountPoint: "",
+        device: "/dev/mapper/pve-data",
+        volumeGroup: "pve",
+        thinPool: "data",
+        physicalDevices: ["nvme0n1"],
+        content: ["images", "rootdir"],
+        active: true,
+        enabled: true,
+        shared: false,
+        totalBytes: 865_763_065_856,
+        usedBytes: 824_119_862_388,
+        availableBytes: 41_643_203_468,
+        dataPercent: 95.18,
+        metadataPercent: 3.07,
+        health: "ok"
+      },
+      {
+        id: "mount:/mnt/pve/NAS-VM",
+        name: "/mnt/pve/NAS-VM",
+        kind: "nfs",
+        source: "mount",
+        mountPoint: "/mnt/pve/NAS-VM",
+        totalBytes: 4_000_648_790_016,
+        usedBytes: 3_783_181_467_648
+      }
+    ]
+  };
+  const result = agentMetricsPayloadSchema.safeParse(payload);
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(result.data.storagePools?.length, 2);
+  assert.equal(result.data.storagePools?.[0].kind, "lvmthin");
+  assert.equal(result.data.storagePools?.[0].thinPool, "data");
+});
+
+test("rejects malformed storage pool telemetry", () => {
+  const payload = validPayload() as ReturnType<typeof validPayload> & Record<string, unknown>;
+  assert.equal(agentMetricsPayloadSchema.safeParse({
+    ...payload,
+    storagePools: [{ id: "pool", name: "pool", kind: "invented", totalBytes: 1, usedBytes: 0 }]
+  }).success, false);
+  assert.equal(agentMetricsPayloadSchema.safeParse({
+    ...payload,
+    storagePools: [{ id: "pool", name: "pool", kind: "lvm", totalBytes: -1, usedBytes: 0 }]
+  }).success, false);
+  assert.equal(agentMetricsPayloadSchema.safeParse({
+    ...payload,
+    storagePools: [{ id: "pool", name: "pool", kind: "lvm", totalBytes: 1, usedBytes: 0, dataPercent: 120 }]
+  }).success, false);
 });
 
 test("accepts legacy agent payloads without system counters", () => {

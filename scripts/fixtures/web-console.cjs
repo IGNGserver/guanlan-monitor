@@ -99,6 +99,20 @@ function metricFixture(device) {
     networkRxBytesPerSec: 3_100_000,
     networkTxBytesPerSec: 1_700_000,
     disks: [{ id: "disk-0", name: "系统盘", mountPoint: "/", filesystem: "ext4", totalBytes: device.diskTotalBytes ?? 1_000_000_000_000, usedBytes: device.diskUsedBytes ?? 0, activePercent: 12, temperatureC: 39, healthStatus: "良好" }],
+    storagePools: [
+      {
+        id: "proxmox:fixture/local-lvm", name: "local-lvm", kind: "lvmthin", source: "proxmox", node: "fixture",
+        device: "/dev/mapper/pve-data", volumeGroup: "pve", thinPool: "data", physicalDevices: ["nvme0n1"],
+        content: ["images", "rootdir"], active: true, enabled: true, shared: false,
+        totalBytes: 865_763_065_856, usedBytes: 824_119_862_388, availableBytes: 41_643_203_468,
+        dataPercent: 95.18, metadataPercent: 3.07
+      },
+      {
+        id: "proxmox:fixture/NAS-VM", name: "NAS-VM", kind: "nfs", source: "proxmox", node: "fixture",
+        mountPoint: "/mnt/pve/NAS-VM", content: ["iso", "images"], active: true, enabled: true, shared: true,
+        totalBytes: 4_000_648_790_016, usedBytes: 3_783_181_467_648, availableBytes: 215_757_094_912
+      }
+    ],
     networkInterfaces: [{ id: "eth0", name: "以太网", model: "10 GbE", ipv4: ["192.0.2.24"], rxBytesPerSec: 3_100_000, txBytesPerSec: 1_700_000, totalRxBytes: 12_000_000_000, totalTxBytes: 4_000_000_000, linkSpeedMbps: 1_000 }],
     gpus: [{ id: "gpu-0", name: "集成显卡", utilizationPercent: 18, encodeUtilizationPercent: 2, decodeUtilizationPercent: 4, frequencyMHz: 1_200, integrated: true, memoryKind: "shared", memoryUsedBytes: 2_000_000_000, memoryTotalBytes: 8_000_000_000, temperatureC: 48, driverVersion: "31.0" }],
     temperatureSensors: [{ id: "temp-0", source: "acpi", rawName: "Package", displayName: "CPU 封装", role: "cpu_package", currentC: 52, status: "valid", confidence: "direct" }],
@@ -113,7 +127,7 @@ function metricFixture(device) {
     window: "5m",
     rangeStart: new Date(Date.parse(now) - 5 * 60_000).toISOString(),
     rangeEnd: now,
-    enabledMetrics: ["cpuUsage", "cpuFrequency", "cpuTemperature", "memoryUsage", "diskUsage", "diskRead", "diskWrite", "networkRxRate", "networkTxRate", "gpuUsage", "gpuMemory", "gpuTemperature", "fanRpm", "temperatureSources"],
+    enabledMetrics: ["cpuUsage", "cpuFrequency", "cpuTemperature", "memoryUsage", "diskUsage", "diskRead", "diskWrite", "storagePools", "networkRxRate", "networkTxRate", "gpuUsage", "gpuMemory", "gpuTemperature", "fanRpm", "temperatureSources"],
     enabledDeviceIds: {},
     instanceMetricConfig: {},
     availableMetrics: [],
@@ -150,6 +164,23 @@ function metricFixture(device) {
       trafficTxBytes: points([3_000_000_000, 3_500_000_000, 4_000_000_000]),
       cpus: [{ id: "cpu-0", name: "AMD Ryzen 7", usagePercent: points([40, 55, device.cpuUsagePercent ?? 0]), frequencyMHz: points([3_900, 4_100, 4_200]), temperatureC: points([48, 50, 52]) }],
       disks: [{ id: "disk-0", name: "系统盘", mountPoint: "/", totalBytes: points([latest.diskTotalBytes, latest.diskTotalBytes, latest.diskTotalBytes]), usagePercent: points([58, 60, device.diskUsagePercent ?? 0]), activePercent: points([10, 15, 12]), usedBytes: points([latest.diskUsedBytes * .98, latest.diskUsedBytes * .99, latest.diskUsedBytes]), readBytesPerSec: points([800_000, 1_200_000, 1_600_000]), writeBytesPerSec: points([400_000, 600_000, 900_000]), temperatureC: points([37, 38, 39]) }],
+      storagePools: latest.storagePools.map((pool) => ({
+        id: pool.id,
+        name: pool.name,
+        kind: pool.kind,
+        node: pool.node,
+        mountPoint: pool.mountPoint,
+        active: pool.active !== false,
+        shared: pool.shared === true,
+        totalBytes: points([pool.totalBytes, pool.totalBytes, pool.totalBytes]),
+        usedBytes: points([pool.usedBytes * .98, pool.usedBytes * .99, pool.usedBytes]),
+        availableBytes: points([pool.availableBytes ?? 0, pool.availableBytes ?? 0, pool.availableBytes ?? 0]),
+        usagePercent: points([
+          Number(((pool.usedBytes * .98 / pool.totalBytes) * 100).toFixed(2)),
+          Number(((pool.usedBytes * .99 / pool.totalBytes) * 100).toFixed(2)),
+          Number(((pool.usedBytes / pool.totalBytes) * 100).toFixed(2))
+        ])
+      })),
       networks: [{ id: "eth0", name: "以太网", rxBytesPerSec: points([2_000_000, 2_600_000, 3_100_000]), txBytesPerSec: points([800_000, 1_200_000, 1_700_000]), trafficRxBytes: points([10_000_000_000, 11_000_000_000, 12_000_000_000]), trafficTxBytes: points([3_000_000_000, 3_500_000_000, 4_000_000_000]) }],
       gpus: [],
       fans: [{ id: "fan-0", name: "系统风扇", interface: "hwmon", rpm: points([700, 820, 860]) }],

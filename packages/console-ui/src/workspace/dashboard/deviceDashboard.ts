@@ -119,6 +119,16 @@ export const DEVICE_DASHBOARD = {
           charts: [
             { id: "storage-disk-capacity-donut", title: "磁盘占用", visualization: "donut", span: "half", requires: ["diskUsage"] }
           ]
+        },
+        {
+          id: "section-storage-pools",
+          eyebrow: "存储池",
+          title: "虚拟机存储分区",
+          description: "承载虚拟机磁盘的整块存储：Proxmox 存储、LVM 精简池、ZFS 池与网络共享。单个虚拟机的磁盘文件不计入这里。",
+          charts: [
+            { id: "storage-pool-capacity", title: "容量占用", visualization: "meter", span: "half", requires: ["storagePools"] },
+            { id: "storage-pool-usage", title: "使用率走势", visualization: "line", span: "half", requires: ["storagePools"] }
+          ]
         }
       ]
     },

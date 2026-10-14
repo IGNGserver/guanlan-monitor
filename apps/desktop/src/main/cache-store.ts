@@ -91,8 +91,6 @@ function sanitizeCachedSnapshot(snapshot: DesktopSnapshot): DesktopSnapshot {
       delete device.virtualMachine;
       delete (metrics as typeof metrics & Record<string, unknown>).virtualization;
       delete (metrics.latest as typeof metrics.latest & Record<string, unknown>).virtualization;
-      delete (metrics.latest as typeof metrics.latest & Record<string, unknown>).storagePools;
-      delete (metrics.series as typeof metrics.series & Record<string, unknown>).storagePools;
     }
   }
   if (cleaned.overviewMetrics) {

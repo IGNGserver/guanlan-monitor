@@ -68,6 +68,7 @@ const metricConfigSchema = z.object({
       "diskMetadata",
       "diskActivity",
       "diskHealth",
+      "storagePools",
       "networkRxRate",
       "networkTxRate",
       "networkTraffic",
@@ -387,6 +388,7 @@ export async function registerRoutes(
           networkRxBytesPerSec: latest.networkRate.rxBytesPerSec,
           networkTxBytesPerSec: latest.networkRate.txBytesPerSec,
           disks: latest.disks ?? [],
+          storagePools: enabledMetrics.includes("storagePools") ? latest.storagePools ?? [] : [],
           networkInterfaces: latest.networkInterfaces ?? [],
           gpus: latest.gpus,
           temperatureSensors: latest.temperatureSensors ?? [],
@@ -735,6 +737,13 @@ function alignMetricSeriesToWindow(series: MetricSeries, window: MetricWindow) {
       readBytesPerSec: alignSamplePoints(disk.readBytesPerSec, bucketMs),
       writeBytesPerSec: alignSamplePoints(disk.writeBytesPerSec, bucketMs),
       temperatureC: alignSamplePoints(disk.temperatureC, bucketMs)
+    })),
+    storagePools: series.storagePools.map((pool) => ({
+      ...pool,
+      totalBytes: alignSamplePoints(pool.totalBytes, bucketMs),
+      usedBytes: alignSamplePoints(pool.usedBytes, bucketMs),
+      availableBytes: alignSamplePoints(pool.availableBytes, bucketMs),
+      usagePercent: alignSamplePoints(pool.usagePercent, bucketMs)
     })),
     networks: series.networks.map((network) => ({
       ...network,

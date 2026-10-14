@@ -70,6 +70,7 @@ export type DeviceMetricKey =
   | "diskMetadata"
   | "diskActivity"
   | "diskHealth"
+  | "storagePools"
   | "networkRxRate"
   | "networkTxRate"
   | "networkTraffic"
@@ -134,6 +135,72 @@ export interface DiskSmartAttribute {
   name: string;
   value: number;
   threshold: number;
+}
+
+/**
+ * What kind of host storage entity a pool is. The kinds come from the
+ * collectors: Proxmox storage types, LVM/ZFS topology, and mounted filesystem
+ * families.
+ */
+export type StoragePoolKind =
+  | "lvmthin"
+  | "lvm"
+  | "zfs"
+  | "btrfs"
+  | "dir"
+  | "nfs"
+  | "cifs"
+  | "pbs"
+  | "filesystem"
+  | "unknown";
+
+/**
+ * One host storage entity that can hold virtual machine disks: a Proxmox
+ * storage, an LVM thin pool or volume, a ZFS pool, or a mounted filesystem
+ * including network shares. Deliberately separate from `DiskDeviceStats`: a
+ * pool has no mount point, and its `usedBytes` can mean thin-provisioned
+ * allocation rather than filesystem usage.
+ */
+export interface StoragePoolStats {
+  id: string;
+  name: string;
+  kind: StoragePoolKind;
+  /** Which collector observed the entity: proxmox | mount | lvm | zfs. */
+  source?: string;
+  node?: string;
+  mountPoint?: string;
+  device?: string;
+  volumeGroup?: string;
+  thinPool?: string;
+  physicalDevices?: string[];
+  /** Proxmox content types (images, rootdir, backup, iso, ...). */
+  content?: string[];
+  active?: boolean | null;
+  enabled?: boolean | null;
+  shared?: boolean | null;
+  totalBytes: number;
+  usedBytes: number;
+  availableBytes?: number | null;
+  /** Thin pool allocation percentage (data), when the source exposes it. */
+  dataPercent?: number | null;
+  /** Thin pool metadata percentage, when the source exposes it. */
+  metadataPercent?: number | null;
+  health?: string | null;
+}
+
+/** One storage pool's history. */
+export interface StoragePoolMetricSeries {
+  id: string;
+  name: string;
+  kind: StoragePoolKind;
+  node?: string;
+  mountPoint?: string;
+  active: boolean;
+  shared: boolean;
+  totalBytes: SamplePoint[];
+  usedBytes: SamplePoint[];
+  availableBytes: SamplePoint[];
+  usagePercent: SamplePoint[];
 }
 
 export interface MemoryStats {
@@ -352,6 +419,7 @@ export interface AgentMetricsPayload {
   memory: MemoryStats;
   diskUsage: StorageUsage;
   disks?: DiskDeviceStats[];
+  storagePools?: StoragePoolStats[];
   diskRate: DiskRateStats;
   networkRate: NetworkTrafficStats;
   networkInterfaces?: NetworkInterfaceStats[];
@@ -528,6 +596,7 @@ export interface MetricSeries {
   trafficTxBytes: SamplePoint[];
   cpus: CpuMetricSeries[];
   disks: DiskMetricSeries[];
+  storagePools: StoragePoolMetricSeries[];
   networks: NetworkMetricSeries[];
   gpus: GpuMetricSeries[];
   fans: FanMetricSeries[];
@@ -595,6 +664,7 @@ export interface MetricsLatest {
   networkRxBytesPerSec: number;
   networkTxBytesPerSec: number;
   disks: DiskDeviceStats[];
+  storagePools: StoragePoolStats[];
   networkInterfaces: NetworkInterfaceStats[];
   gpus: GpuDeviceStats[];
   temperatureSensors: TemperatureSensorReading[];

@@ -45,7 +45,7 @@ var AllMetricKeys = []string{
 	"cpuUsage", "cpuFrequency", "cpuTemperature", "cpuTopology", "systemOverview",
 	"gpuUsage", "gpuEncode", "gpuDecode", "gpuFrequency", "gpuMemory", "gpuTemperature", "gpuDriverInfo", "temperatureSources",
 	"memoryUsage", "swapUsage", "memoryAvailable", "memoryCached", "memoryCommitted", "memoryHardware",
-	"diskUsage", "diskRead", "diskWrite", "diskMetadata", "diskActivity", "diskHealth",
+	"diskUsage", "diskRead", "diskWrite", "diskMetadata", "diskActivity", "diskHealth", "storagePools",
 	"networkRxRate", "networkTxRate", "networkTraffic", "networkIdentity",
 	"fanRpm", "fanControl", "fanTargetTemperature", "fanPwm", "fanChannelState", "fanNote",
 }
@@ -196,7 +196,7 @@ func defaultFor(goos string) LocalConfig {
 		EnabledMetrics: []string{
 			"cpuUsage", "cpuFrequency", "cpuTemperature", "cpuTopology", "systemOverview",
 			"memoryUsage", "swapUsage", "memoryAvailable", "memoryCached", "memoryCommitted", "memoryHardware",
-			"diskUsage", "diskRead", "diskWrite", "diskMetadata", "diskActivity", "diskHealth",
+			"diskUsage", "diskRead", "diskWrite", "diskMetadata", "diskActivity", "diskHealth", "storagePools",
 			"networkRxRate", "networkTxRate", "networkTraffic", "networkIdentity",
 		},
 		EnabledDeviceIDs:     map[string][]string{},
@@ -288,7 +288,7 @@ func Normalize(config LocalConfig, raw []byte) LocalConfig {
 			config.EnabledMetrics = AppendMissingMetricKeys(config.EnabledMetrics, []string{"memoryAvailable", "memoryCached", "memoryCommitted", "memoryHardware"})
 		}
 		if IsProbeSelectionEnabled(config.ProbeSelections, "disk") && ContainsMetricPrefix(config.EnabledMetrics, "disk") {
-			config.EnabledMetrics = AppendMissingMetricKeys(config.EnabledMetrics, []string{"diskMetadata", "diskActivity", "diskHealth"})
+			config.EnabledMetrics = AppendMissingMetricKeys(config.EnabledMetrics, []string{"diskMetadata", "diskActivity", "diskHealth", "storagePools"})
 		}
 		if IsProbeSelectionEnabled(config.ProbeSelections, "network") && ContainsMetricPrefix(config.EnabledMetrics, "network") {
 			config.EnabledMetrics = AppendMissingMetricKeys(config.EnabledMetrics, []string{"networkIdentity"})
