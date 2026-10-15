@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConsoleSnapshot,
+  ConsoleLivePort,
   ConsoleSnapshotInclude,
   DesktopRuntimeProfile,
   DeviceSummary
@@ -36,6 +37,7 @@ export type WorkspaceActionsValue = Pick<WorkspaceContextValue, WorkspaceActionK
 export type WorkspaceUiValue = Omit<WorkspaceContextValue, WorkspaceDataKeys | WorkspaceActionKeys>;
 
 const WorkspaceUiContext = createContext<WorkspaceUiValue | null>(null);
+const WorkspaceLiveContext = createContext<ConsoleLivePort | null>(null);
 const WorkspaceDataContext = createContext<WorkspaceDataValue | null>(null);
 const WorkspaceActionsContext = createContext<WorkspaceActionsValue | null>(null);
 
@@ -591,7 +593,9 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   return (
     <WorkspaceUiContext.Provider value={ui}>
       <WorkspaceActionsContext.Provider value={actions}>
-        <WorkspaceDataContext.Provider value={data}>{children}</WorkspaceDataContext.Provider>
+        <WorkspaceLiveContext.Provider value={adapter.live ?? null}>
+          <WorkspaceDataContext.Provider value={data}>{children}</WorkspaceDataContext.Provider>
+        </WorkspaceLiveContext.Provider>
       </WorkspaceActionsContext.Provider>
     </WorkspaceUiContext.Provider>
   );
@@ -601,6 +605,8 @@ function required<T>(value: T | null, hook: string): T {
   if (!value) throw new Error(`${hook} must be used inside WorkspaceProvider`);
   return value;
 }
+
+export function useLivePort(): ConsoleLivePort | null { return useContext(WorkspaceLiveContext); }
 
 /** Preferences, layout, route and platform facts. Unaffected by polling. */
 export function useWorkspaceUi(): WorkspaceUiValue {

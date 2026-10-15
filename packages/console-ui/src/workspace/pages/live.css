@@ -1,0 +1,26 @@
+.workspace-live {
+  margin-block: 16px;
+  padding: 16px;
+  border: 1px solid var(--workspace-border);
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--workspace-surface);
+  color: var(--workspace-text);
+}
+.workspace-live > summary { cursor: pointer; font-weight: 600; min-height: 28px; }
+.workspace-live p { color: var(--workspace-text-secondary); font-size: 13px; line-height: 1.6; }
+.workspace-live__toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-block: 12px; }
+.workspace-live__toolbar label { display: grid; gap: 4px; }
+.workspace-live__toolbar input { color: inherit; background: var(--workspace-surface-control); border: 1px solid var(--workspace-border); padding: 8px; border-radius: 8px; }
+.workspace-live__metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+.workspace-live__metrics > div { display: grid; gap: 6px; padding: 12px; background: var(--workspace-surface-subtle); border-radius: 12px; }
+.workspace-live__metrics span { color: var(--workspace-text-secondary); font-size: 12px; }
+.workspace-live__charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }
+.workspace-live__charts figure { margin: 12px 0; padding: 12px; background: var(--workspace-surface-subtle); border-radius: 12px; }
+.workspace-live__charts figcaption { font-size: 12px; color: var(--workspace-text-secondary); }
+.workspace-live__charts svg { display: block; width: 100%; height: 100px; color: var(--workspace-accent); }
+.workspace-live__table { overflow-x: auto; max-height: 560px; }
+.workspace-live table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.workspace-live th, .workspace-live td { padding: 10px; border-bottom: 1px solid var(--workspace-border); text-align: left; white-space: nowrap; }
+.workspace-live th { position: sticky; top: 0; background: var(--workspace-surface); }
+.workspace-live td small { display: block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; color: var(--workspace-text-secondary); }
+.workspace-live__raw { max-height: 400px; overflow: auto; font-size: 12px; }

@@ -6,6 +6,9 @@ import { desktopUpdatePlatform } from "./platform.js";
 import type {
   AuthLoginResponse,
   DeviceSummary,
+  LiveConnection,
+  LiveSnapshot,
+  LiveTopic,
   MetricsResponse,
   MetricWindow,
   OverviewMetricsResponse,
@@ -31,6 +34,7 @@ export class HubClient {
   private updateCache: { key: string; expiresAt: number; value: UpdateInfo } | null = null;
   private overviewCache: { key: string; expiresAt: number; value: OverviewMetricsResponse } | null = null;
   private sessionInFlight: Promise<void> | null = null;
+  private connectionEpoch = 0;
 
   constructor(private readonly credentialPath: string) {}
 
@@ -48,6 +52,7 @@ export class HubClient {
 
   setServerUrl(value: string): boolean {
     const normalized = value.trim().replace(/\/$/, "");
+    const previous = this.serverUrl;
     try {
       const parsed = new URL(normalized);
       if (parsed.username || parsed.password) {
@@ -67,6 +72,14 @@ export class HubClient {
     } catch {
       this.serverUrl = "";
       return false;
+    } finally {
+      if (previous !== this.serverUrl) {
+        this.connectionEpoch++;
+        this.sessionCookie = null;
+        this.sessionInFlight = null;
+        this.overviewCache = null;
+        this.updateCache = null;
+      }
     }
   }
 
@@ -80,19 +93,33 @@ export class HubClient {
   }
 
   async login(accessKey: string): Promise<void> {
+    return this.authenticate(accessKey, true);
+  }
+
+  private async authenticate(accessKey: string, replaceSession: boolean): Promise<void> {
     const value = accessKey.trim();
     if (!value) throw new Error("access_key_required");
+    if (replaceSession) {
+      this.connectionEpoch++;
+      this.sessionCookie = null;
+      this.sessionInFlight = null;
+    }
+    const epoch = this.connectionEpoch;
     const payload = await this.request<AuthLoginResponse>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ accessKey: value }),
       includeSession: false
-    }, value);
+    });
+    if (epoch !== this.connectionEpoch) throw new Error("hub_session_changed");
     if (!payload.ok) throw new Error("login_failed");
     this.accessKey = value;
     await this.persistAccessKey(value);
   }
 
   async logout(): Promise<void> {
+    const epoch = ++this.connectionEpoch;
+    this.accessKey = null;
+    this.sessionInFlight = null;
     if (this.sessionCookie && this.serverUrl) {
       try {
         await this.request("/api/auth/logout", { method: "POST" });
@@ -100,7 +127,7 @@ export class HubClient {
         // Local sign-out still succeeds when the Hub is offline.
       }
     }
-    this.accessKey = null;
+    if (epoch !== this.connectionEpoch) return;
     this.sessionCookie = null;
     try {
       await unlink(this.credentialPath);
@@ -112,6 +139,18 @@ export class HubClient {
   async listDevices(): Promise<DeviceSummary[]> {
     await this.ensureSession();
     return this.request<DeviceSummary[]>("/api/instances");
+  }
+
+  async getLiveConnection(deviceId: string): Promise<LiveConnection> {
+    if (!this.accessKey) throw new Error("hub_login_required");
+    await this.ensureSession();
+    return this.request<LiveConnection>(`/api/devices/${encodeURIComponent(deviceId)}/live`);
+  }
+
+  async readLive<T extends LiveTopic>(deviceId: string, topic: T): Promise<LiveSnapshot<T>> {
+    if (!this.accessKey) throw new Error("hub_login_required");
+    await this.ensureSession();
+    return this.request<LiveSnapshot<T>>(`/api/devices/${encodeURIComponent(deviceId)}/live/${topic}`);
   }
 
   async deleteDevice(deviceId: string): Promise<void> {
@@ -184,7 +223,7 @@ export class HubClient {
     if (!this.serverUrl) throw new Error("hub_server_url_missing");
     if (this.sessionCookie) return;
     if (!this.accessKey) throw new Error("hub_login_required");
-    this.sessionInFlight ??= this.login(this.accessKey);
+    this.sessionInFlight ??= this.authenticate(this.accessKey, false);
     const pending = this.sessionInFlight;
     try {
       await pending;
@@ -205,10 +244,12 @@ export class HubClient {
 
   private async request<T = unknown>(
     endpoint: string,
-    init: RequestInit & { includeSession?: boolean } = {},
-    loginKey?: string
+    init: RequestInit & { includeSession?: boolean } = {}
   ): Promise<T> {
     if (!this.serverUrl) throw new Error("hub_server_url_missing");
+    const serverUrl = this.serverUrl;
+    const epoch = this.connectionEpoch;
+    const assertCurrent = () => { if (epoch !== this.connectionEpoch) throw new Error("hub_session_changed"); };
     const { includeSession = true, ...requestInit } = init;
     const headers: Record<string, string> = {
       Accept: "application/json",
@@ -223,11 +264,12 @@ export class HubClient {
       headers["Cookie"] = this.sessionCookie;
     }
     const timeoutSignal = AbortSignal.timeout(15000);
-    let response = await fetch(`${this.serverUrl}${endpoint}`, {
+    let response = await fetch(`${serverUrl}${endpoint}`, {
       ...requestInit,
       headers,
       signal: requestInit.signal ?? timeoutSignal
     });
+    assertCurrent();
     this.captureSessionCookie(response);
 
     // If 401 Unauthorized occurs on an authenticated request and we have an accessKey,
@@ -236,22 +278,26 @@ export class HubClient {
       if (this.sessionCookie === headers.Cookie) this.sessionCookie = null;
       try {
         await this.ensureSession();
+        assertCurrent();
         if (this.sessionCookie) {
           headers["Cookie"] = this.sessionCookie;
         }
         const retryTimeoutSignal = AbortSignal.timeout(15000);
-        response = await fetch(`${this.serverUrl}${endpoint}`, {
+        response = await fetch(`${serverUrl}${endpoint}`, {
           ...requestInit,
           headers,
           signal: requestInit.signal ?? retryTimeoutSignal
         });
+        assertCurrent();
         this.captureSessionCookie(response);
       } catch {
+        assertCurrent();
         // If re-login fails, fall through to normal error handling
       }
     }
 
     const text = await response.text();
+    assertCurrent();
     let payload: unknown = null;
     if (text.trim()) {
       try {
@@ -264,7 +310,6 @@ export class HubClient {
       const detail = typeof payload === "object" && payload && "error" in payload ? String(payload.error) : response.statusText;
       throw new Error(`hub_${response.status}:${detail}`);
     }
-    if (loginKey && response.status === 200) this.accessKey = loginKey;
     return payload as T;
   }
 

@@ -1,6 +1,10 @@
 import { io, type Socket } from "socket.io-client";
 import type {
   ConsoleSnapshot,
+  ConsoleLivePort,
+  LiveConnection,
+  LiveSnapshot,
+  LiveTopic,
   ConsoleSnapshotInclude,
   ConsoleSnapshotRequest,
   DeviceRealtimeEvent,
@@ -19,6 +23,7 @@ import type { ConsoleAdapter } from "@dsc/console-ui/services/adapter";
 import { WEB_CAPABILITIES, emptyConsoleSnapshot } from "@dsc/console-ui/services/adapter";
 import {
   ApiError,
+  apiFetch,
   deleteDevice,
   getMetrics,
   getOverviewMetrics,
@@ -67,6 +72,27 @@ export function resolveInclude(include: ConsoleSnapshotInclude | undefined): Req
 interface TimedValue<T> { value: T; fetchedAt: number; ttl: number }
 
 export class WebConsoleAdapter implements ConsoleAdapter {
+  readonly live: ConsoleLivePort = {
+    getLiveConnection: (deviceId) => this.liveRequest<LiveConnection>(deviceId),
+    readLive: <T extends LiveTopic>(deviceId: string, topic: T) => this.liveRequest<LiveSnapshot<T>>(deviceId, topic)
+  };
+
+  private async liveRequest<T>(deviceId: string, topic?: LiveTopic): Promise<T> {
+    if (!this.sessionScope || this.snapshot.source !== "live") throw new Error("live_session_required");
+    const scope = this.sessionScope;
+    const sessionGeneration = this.sessionGeneration;
+    const current = () => scope === this.sessionScope && sessionGeneration === this.sessionGeneration;
+    try {
+      const result = await apiFetch<T>(`/api/devices/${encodeURIComponent(deviceId)}/live${topic ? `/${topic}` : ""}`);
+      if (!current()) throw new Error("session_changed");
+      return result;
+    } catch (error) {
+      if (current() && isUnauthorized(error)) await this.markSessionExpired();
+      if (error instanceof ApiError && error.code) throw new Error(error.code);
+      throw error;
+    }
+  }
+
   readonly capabilities = WEB_CAPABILITIES;
   private snapshot: ConsoleSnapshot = emptyConsoleSnapshot();
   private listeners = new Set<(snapshot: ConsoleSnapshot) => void>();

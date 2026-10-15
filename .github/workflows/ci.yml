@@ -8,7 +8,13 @@ on:
     branches:
       - main
       - master
+    paths: ['agents/**', 'apps/**', 'packages/**', 'scripts/**', 'deploy/**', 'android/**', 'windows-agent/**', 'tools/**', '.github/workflows/ci.yml', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.base.json', 'VERSION']
   pull_request:
+    paths: ['agents/**', 'apps/**', 'packages/**', 'scripts/**', 'deploy/**', 'android/**', 'windows-agent/**', 'tools/**', '.github/workflows/ci.yml', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.base.json', 'VERSION']
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
@@ -90,7 +96,7 @@ jobs:
 
       - name: Test Go agents
         working-directory: agents
-        run: go test ./...
+        run: go test -race ./...
 
       - name: Build Go agents
         working-directory: agents
@@ -157,6 +163,10 @@ jobs:
             -r win-x64 `
             --self-contained false `
             -o $probeDir
+
+      - name: Test native Windows read-only realtime providers
+        working-directory: agents
+        run: go test ./internal/live
 
       - name: Build Windows GUI portable bundle
         shell: powershell
@@ -339,6 +349,7 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$RUNNER_TEMP/dsc-playwright/node_modules" node scripts/visual-regression.cjs http://127.0.0.1:3000 "$RUNNER_TEMP/dsc-visual"
+          NODE_PATH="$RUNNER_TEMP/dsc-playwright/node_modules" node scripts/live-view-regression.cjs http://127.0.0.1:3000 "$RUNNER_TEMP/dsc-visual/live"
 
       - name: Test chart interaction and themed controls in Chromium and WebKit
         shell: bash

@@ -30,6 +30,7 @@ import {
 import { Button, Icon, StatusDot } from "../ui";
 import { DeviceChartCells, type DeviceChartContext, type DeviceSectionControls } from "./deviceCharts";
 import { describeIssue, evaluateDevice } from "../health";
+import { LiveDevicePanel } from "./LiveDevicePanel";
 import {
   EmptyState,
   InstanceFilter,
@@ -442,6 +443,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
       </div>
 
       </details>
+      <LiveDevicePanel key={selectedDevice.deviceId} deviceId={selectedDevice.deviceId} authenticated={snapshotSource === "live" && snapshot?.session.authenticated === true} />
       {touch && touchPanel === "status" && <div className="touch-current-metrics" aria-label="最近上报指标">{([ ["CPU", "cpuUsage", selectedDevice.cpuUsagePercent], ["内存", "memoryUsage", selectedDevice.memoryUsagePercent], ["磁盘", "diskUsage", selectedDevice.diskUsagePercent] ] as const).map(([label, key, value]) => <div key={key}><span>{label}</span><strong>{touchPercent(selectedDevice, key, value)}</strong><small>最近一次上报</small></div>)}</div>}
       {selectedDevice.unavailableMetrics?.length ? <div className="workspace-inline-note" role="status"><Icon name="about" size={15} />本机不适用指标：{selectedDevice.unavailableMetrics.join("、")}；对应图表会留空而不是估算。</div> : null}
 

@@ -20,6 +20,10 @@ import {
 } from "./repositories/local.js";
 import { MetricsService } from "./services/metrics.js";
 import { registerRoutes } from "./routes.js";
+import { resolve } from "node:path";
+import { AgentCredentials } from "./live/credentials.js";
+import { LiveRegistry } from "./live/registry.js";
+import { registerLiveRoutes } from "./live/routes.js";
 import type { AgentMetricsPayload, DeviceRealtimeEvent } from "@dsc/shared";
 import type { Repositories } from "./types.js";
 
@@ -160,9 +164,17 @@ const metricsService = new MetricsService(
   deviceMetricConfigs
 );
 
+const liveRegistry = new LiveRegistry();
+const agentCredentials = new AgentCredentials(resolve("data", "agent-credentials.json"), env.ACCESS_KEY);
+await agentCredentials.load();
+await registerLiveRoutes(app, { accessKey: env.ACCESS_KEY, requireHttps: env.AGENT_REQUIRE_HTTPS, credentials: agentCredentials, registry: liveRegistry });
 await registerRoutes(app, repositories, metricsService, {
   fanNotes,
-  metricConfigs: deviceMetricConfigs
+  metricConfigs: deviceMetricConfigs,
+  revokeLiveDevice: async (deviceId) => {
+    await agentCredentials.revoke(deviceId);
+    liveRegistry.closeDevice(deviceId);
+  }
 });
 
 app.post<{ Body: AgentMetricsPayload }>("/api/agent/ingest", async (request, reply) => {
@@ -208,6 +220,7 @@ void (async () => {
 })();
 
 io = new SocketIOServer(app.server, {
+  destroyUpgrade: false,
   path: "/socket.io",
   addTrailingSlash: false,
   cors: {
@@ -269,6 +282,7 @@ const shutdown = async (signal: string) => {
   clearInterval(offlineTimer);
   clearInterval(aggregateFlushTimer);
   clearInterval(retentionTimer);
+  liveRegistry.close();
   try {
     await metricsService.flushAggregates();
   } catch (error) {

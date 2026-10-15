@@ -31,6 +31,33 @@ const snapshot = (n) => ({ generatedAt: String(n), devices: [{ deviceId: 'a' }],
   authenticated: true, accessKeyConfigured: true, secret: 'must-not-persist'
 } });
 
+test('live desktop responses cannot cross a Hub change or resurrect a signed-out session', async () => {
+  const original = globalThis.fetch;
+  let release;
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+    if (String(url).endsWith('/api/auth/login')) return new Response('{"ok":true}', { headers: { 'set-cookie': 'dsc_session=fixture; Path=/' } });
+    if (String(url).endsWith('/api/auth/logout')) return new Response('{"ok":true}');
+    return new Promise((resolve) => { release = resolve; });
+  };
+  try {
+    const hub = new HubClient(path.join(tmpdir(), 'absent-live-credential.json'));
+    hub.setServerUrl('https://first.example'); await hub.login('fixture-admin');
+    const first = hub.readLive('node', 'processes'); await settle();
+    hub.setServerUrl('https://second.example');
+    release(new Response('{}', { status: 401 }));
+    await assert.rejects(first, /hub_session_changed/);
+    assert.ok(!calls.some((url) => url.startsWith('https://second.example')), 'an old query must not silently replay against another Hub');
+    await hub.login('fixture-admin');
+    const next = hub.getLiveConnection('node'); await settle();
+    await hub.logout();
+    release(new Response('{}', { headers: { 'set-cookie': 'dsc_session=stale; Path=/' } }));
+    await assert.rejects(next, /hub_session_changed/);
+    await assert.rejects(hub.getLiveConnection('node'), /hub_login_required/);
+  } finally { globalThis.fetch = original; }
+});
+
 test('cache loads once, coalesces 12 refreshes, preserves latest offline data and flushes on exit', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'dsc-cache-test-'));
   try {

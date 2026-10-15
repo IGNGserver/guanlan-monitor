@@ -72,6 +72,10 @@ export class DesktopController {
     this.cache = new DesktopCacheStore(userDataPath);
     this.localConfig = new LocalConfigStore(userDataPath, legacyPaths);
     this.bridge = {
+      live: {
+        getLiveConnection: (deviceId) => this.hub.getLiveConnection(deviceId),
+        readLive: (deviceId, topic) => this.hub.readLive(deviceId, topic)
+      },
       getSnapshot: (request?: DesktopSnapshotRequest) => this.getSnapshot(request),
       refresh: (request?: DesktopSnapshotRequest) => this.refresh(request),
       updateLocalConfig: (patch: DesktopConfigPatch) => this.updateLocalConfig(patch),
