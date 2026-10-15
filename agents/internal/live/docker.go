@@ -87,7 +87,7 @@ func dockerGet(ctx context.Context, client *http.Client, endpoint string, target
 	}
 	response, err := client.Do(req)
 	if err != nil {
-		if os.IsPermission(err) {
+		if errors.Is(err, os.ErrPermission) {
 			return errors.New("docker_permission_denied")
 		}
 		return errors.New("docker_unavailable")

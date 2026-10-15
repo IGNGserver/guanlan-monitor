@@ -3,10 +3,13 @@ package live
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 )
 
@@ -31,6 +34,16 @@ func TestDockerSeparatesPermissionDeniedFromEmptyEngine(t *testing.T) {
 	if _, err := collectDocker(context.Background(), client); err == nil || err.Error() != "docker_permission_denied" {
 		t.Fatal("permission denial disguised as no containers", err)
 	}
+	client.Transport = deniedSocketTransport{}
+	if _, err := collectDocker(context.Background(), client); err == nil || err.Error() != "docker_permission_denied" {
+		t.Fatal("a wrapped socket EACCES must remain distinguishable from an absent engine", err)
+	}
+}
+
+type deniedSocketTransport struct{}
+
+func (deniedSocketTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, &net.OpError{Op: "dial", Net: "unix", Err: &os.SyscallError{Syscall: "connect", Err: syscall.EACCES}}
 }
 
 type redirectTransport struct {
