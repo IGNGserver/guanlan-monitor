@@ -50,6 +50,11 @@ test('live desktop responses cannot cross a Hub change or resurrect a signed-out
     await assert.rejects(first, /hub_session_changed/);
     assert.ok(!calls.some((url) => url.startsWith('https://second.example')), 'an old query must not silently replay against another Hub');
     await hub.login('fixture-admin');
+    const beforeDispatch = hub.getLiveConnection('node');
+    hub.setServerUrl('https://third.example');
+    await assert.rejects(beforeDispatch, /hub_session_changed/);
+    assert.ok(!calls.some((url) => url.startsWith('https://third.example')), 'session changes before dispatch must not retarget an old query');
+    await hub.login('fixture-admin');
     const next = hub.getLiveConnection('node'); await settle();
     await hub.logout();
     release(new Response('{}', { headers: { 'set-cookie': 'dsc_session=stale; Path=/' } }));
@@ -186,11 +191,21 @@ test('parallel session requests perform one authentication', async () => {
   const client = new HubClient('/unused');
   client.setServerUrl('http://localhost:38472');
   client.accessKey = 'fixture';
+  const original = globalThis.fetch;
   let calls = 0, release;
-  client.login = async () => { calls++; await new Promise((resolve) => { release = resolve; }); client.sessionCookie = 'dsc_session=fixture'; };
+  const gate = new Promise((resolve) => { release = resolve; });
+  globalThis.fetch = async (url) => {
+    assert.ok(String(url).endsWith('/api/auth/login'));
+    calls++;
+    await gate;
+    return new Response('{"ok":true}', { headers: { 'set-cookie': 'dsc_session=fixture; Path=/' } });
+  };
   const pending = Array.from({ length: 10 }, () => client.ensureSession());
-  assert.equal(calls, 1);
-  release(); await Promise.all(pending);
+  try {
+    assert.equal(calls, 1);
+    release(); await Promise.all(pending);
+    assert.equal(client.sessionCookie, 'dsc_session=fixture');
+  } finally { release(); await Promise.allSettled(pending); globalThis.fetch = original; }
 });
 
 test('a hidden window is served from the current snapshot instead of the hub', async () => {

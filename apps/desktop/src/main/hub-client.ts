@@ -142,15 +142,19 @@ export class HubClient {
   }
 
   async getLiveConnection(deviceId: string): Promise<LiveConnection> {
-    if (!this.accessKey) throw new Error("hub_login_required");
-    await this.ensureSession();
-    return this.request<LiveConnection>(`/api/devices/${encodeURIComponent(deviceId)}/live`);
+    return this.liveRequest<LiveConnection>(`/api/devices/${encodeURIComponent(deviceId)}/live`);
   }
 
   async readLive<T extends LiveTopic>(deviceId: string, topic: T): Promise<LiveSnapshot<T>> {
+    return this.liveRequest<LiveSnapshot<T>>(`/api/devices/${encodeURIComponent(deviceId)}/live/${topic}`);
+  }
+
+  private async liveRequest<T>(endpoint: string): Promise<T> {
     if (!this.accessKey) throw new Error("hub_login_required");
+    const epoch = this.connectionEpoch;
     await this.ensureSession();
-    return this.request<LiveSnapshot<T>>(`/api/devices/${encodeURIComponent(deviceId)}/live/${topic}`);
+    if (epoch !== this.connectionEpoch || !this.accessKey) throw new Error("hub_session_changed");
+    return this.request<T>(endpoint);
   }
 
   async deleteDevice(deviceId: string): Promise<void> {
