@@ -433,8 +433,8 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
             compact` carries its own accessible name (it is the only indicator on
             the overview tile), which read these two cells as "在线 在线" — and on
             the data-link row as "在线 实时中枢", two different names for one fact. */}
-        <div><span>设备状态</span><strong><StatusDot state={selectedDevice.status === "online" ? "online" : "offline"} />{selectedDevice.status === "online" ? "在线" : "离线"}</strong></div>
-        <div><span>数据链路</span><strong><StatusDot state={deviceSourceState} />{selectLinkLabel(snapshotSource, capabilities.liveDataTransport)}</strong></div>
+        <div><span>最近上报状态</span><strong><StatusDot state={selectedDevice.status === "online" ? "online" : "offline"} />{selectedDevice.status === "online" ? "在线" : "离线"}</strong></div>
+        <div><span>与中枢链路</span><strong><StatusDot state={deviceSourceState} />{selectLinkLabel(snapshotSource, capabilities.liveDataTransport)}</strong></div>
         <div><span>最后在线</span><strong>{formatDate(selectedDevice.lastSeenAt)} · {selectedDevice.status === "online" ? "刚刚上报" : "已停止上报"}</strong></div>
         <div><span>{snapshotSource === "cache" ? "缓存时间" : "数据时间"}</span><strong>{formatDate(snapshotSource === "cache" ? snapshot?.cache.savedAt : snapshot?.generatedAt)}</strong></div>
         <div><span>Agent 版本</span><strong>{selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</strong></div>

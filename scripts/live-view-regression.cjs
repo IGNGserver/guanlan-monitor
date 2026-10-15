@@ -49,6 +49,8 @@ async function run() {
     await page.goto(`${baseUrl}#device/${fixtureDevices[0].deviceId}`, { waitUntil: "domcontentloaded" });
     const panel = page.locator(".workspace-live");
     await panel.waitFor({ timeout: 30000 });
+    await page.getByText("最近上报状态", { exact: true }).waitFor();
+    await page.getByText("与中枢链路", { exact: true }).waitFor();
     await page.waitForTimeout(1300);
     assert.equal(calls, 0, "collapsed panel must not request a device");
     await panel.locator(":scope > summary").click();
