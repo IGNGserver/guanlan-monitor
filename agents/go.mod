@@ -3,12 +3,14 @@ module device-state-console/agent
 go 1.24.4
 
 require (
+	github.com/Microsoft/go-winio v0.6.2
+	github.com/coder/websocket v1.8.14
+	github.com/ebitengine/purego v0.8.4
 	github.com/shirou/gopsutil/v4 v4.25.7
 	golang.org/x/sys v0.34.0
 )
 
 require (
-	github.com/ebitengine/purego v0.8.4 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect

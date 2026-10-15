@@ -15,6 +15,7 @@ import { dscBridge } from "./dscBridge";
  * `pnpm check:adapter-contracts` at the source that forgot it.
  */
 export class DesktopConsoleAdapter implements ConsoleAdapter, ConsoleLocalAgentPort {
+  readonly live = dscBridge.live;
   readonly capabilities = DESKTOP_CAPABILITIES;
 
   getSnapshot(request?: ConsoleSnapshotRequest): Promise<ConsoleSnapshot> { return dscBridge.getSnapshot(request); }

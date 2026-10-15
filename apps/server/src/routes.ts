@@ -164,6 +164,7 @@ const hubUpdateRequestSchema = z.object({
 export interface RouteStores {
   fanNotes: FanNoteStore;
   metricConfigs: DeviceMetricConfigStore;
+  revokeLiveDevice?: (deviceId: string) => Promise<void>;
 }
 
 export async function registerRoutes(
@@ -302,6 +303,7 @@ export async function registerRoutes(
   app.delete<{ Params: { deviceId: string } }>("/api/devices/:deviceId", { preHandler: requireAuth }, async (request, reply) => {
     const { deviceId } = request.params;
     if (isLegacyVirtualMachineId(deviceId)) return reply.code(404).send({ error: "device_not_found" });
+    await stores.revokeLiveDevice?.(deviceId);
     await repositories.devices.deleteDevice(deviceId);
     await metricsService.removeDevice(deviceId);
     return { ok: true };
@@ -813,7 +815,7 @@ function getSession(request: FastifyRequest): SessionValue | null {
   }
 }
 
-async function requireAuth(request: FastifyRequest, reply: FastifyReply) {
+export async function requireAuth(request: FastifyRequest, reply: FastifyReply) {
   const session = getSession(request);
   if (!session) return reply.code(401).send({ error: "unauthorized" });
 }

@@ -898,6 +898,7 @@ export interface DesktopRuntimeProfile {
 }
 
 export interface DesktopRendererBridge {
+  readonly live?: import("./live.js").ConsoleLivePort;
   getSnapshot(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot>;
   refresh(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot>;
   updateLocalConfig(patch: DesktopConfigPatch): Promise<DesktopSnapshot>;
@@ -981,3 +982,4 @@ export interface TrafficCalendarResponse {
 export interface FanNotePayload {
   note: string;
 }
+export type { LiveTopic, LiveConnection, LiveProcess, LiveProcesses, LiveContainer, LiveDocker, LiveDataMap, LiveSnapshot, ConsoleLivePort } from "./live.js";

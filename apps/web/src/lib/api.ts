@@ -33,11 +33,13 @@ function getServerUrl() {
 
 export class ApiError extends Error {
   status: number;
+  code: string | null;
 
-  constructor(status: number) {
+  constructor(status: number, code: string | null = null) {
     super(`api_error:${status}`);
     this.name = "ApiError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -61,7 +63,14 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
         headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
         cache: "no-store"
       });
-      if (!response.ok) throw new ApiError(response.status);
+      if (!response.ok) {
+        let code: string | null = null;
+        try {
+          const body = await response.json() as { error?: unknown };
+          if (typeof body.error === "string" && /^[a-z_]{1,80}$/.test(body.error)) code = body.error;
+        } catch { /* Error bodies need not be JSON. */ }
+        throw new ApiError(response.status, code);
+      }
       return await response.json() as T;
     })();
     // Bound both the response and its body even when a transport ignores abort.

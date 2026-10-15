@@ -5,6 +5,7 @@ import type {
   DesktopRuntimeProfile,
   ConsoleSnapshot
 } from "@dsc/shared";
+import type { ConsoleLivePort } from "@dsc/shared";
 import type { ConsoleFleetPort, ConsoleReadPort, ConsoleSessionPort } from "./ports.ts";
 
 export interface ConsoleCapabilities {
@@ -28,6 +29,7 @@ export interface ConsoleCapabilities {
 }
 
 export interface ConsoleAdapter extends ConsoleReadPort, ConsoleSessionPort, ConsoleFleetPort {
+  readonly live?: ConsoleLivePort;
   readonly capabilities: ConsoleCapabilities;
   updateLocalConfig?(patch: DesktopConfigPatch): Promise<ConsoleSnapshot>;
   controlAgent?(action: DesktopAgentControlAction): Promise<ConsoleSnapshot>;

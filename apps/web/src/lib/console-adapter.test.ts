@@ -119,3 +119,24 @@ test("a 401 on a data read still expires the session at once", async () => {
     await assert.rejects(adapter.refresh({ include: {}, background: true }), (error: unknown) => (error as { status?: number }).status === 401);
   } finally { hub.restore(); }
 });
+
+test("live reads survive normal background refresh but are fenced by logout", async () => {
+  const hub = installHub();
+  try {
+    const adapter = adapterAt({ now: 1_000_000 });
+    await adapter.refresh({ include: {} });
+    const original = globalThis.fetch;
+    let release!: (response: Response) => void;
+    globalThis.fetch = (async (input: RequestInfo | URL) => String(input).includes("/live")
+      ? new Promise<Response>((resolve) => { release = resolve; }) : original(input)) as typeof fetch;
+    const first = adapter.live.getLiveConnection("nas");
+    await adapter.refresh({ include: {}, background: true });
+    release(new Response(JSON.stringify({ state: "ready", sessionId: "current", capabilities: [], connectedAt: null })));
+    assert.equal((await first).state, "ready");
+    const stale = adapter.live.getLiveConnection("nas");
+    await adapter.logout();
+    release(new Response(JSON.stringify({ state: "ready", sessionId: "stale", capabilities: [], connectedAt: null })));
+    await assert.rejects(stale, /session_changed/);
+    await assert.rejects(adapter.live.getLiveConnection("nas"), /live_session_required/);
+  } finally { hub.restore(); }
+});

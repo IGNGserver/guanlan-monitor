@@ -38,6 +38,15 @@ export function registerIpc(
   };
 
   handle(IPC_CHANNELS.getSnapshot, (_event, request?: DesktopSnapshotRequest) => controller.getSnapshot(asSnapshotRequest(request)));
+  handle(IPC_CHANNELS.getLiveConnection, (_event, deviceId: unknown) => {
+    if (!isWindowVisible(getWindow)) throw new Error("live_view_hidden");
+    return controller.bridge.live!.getLiveConnection(asString(deviceId, "device_id"));
+  });
+  handle(IPC_CHANNELS.readLive, (_event, deviceId: unknown, topic: unknown) => {
+    if (!isWindowVisible(getWindow)) throw new Error("live_view_hidden");
+    if (topic !== "metrics" && topic !== "processes" && topic !== "docker") throw new Error("invalid_live_topic");
+    return controller.bridge.live!.readLive(asString(deviceId, "device_id"), topic);
+  });
   handle(IPC_CHANNELS.refresh, (_event, request?: DesktopSnapshotRequest) => {
     const snapshotRequest = asSnapshotRequest(request);
     // With the window hidden the renderer may still be polling (Electron does not

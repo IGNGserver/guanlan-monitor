@@ -1,5 +1,6 @@
 import type {
   DesktopRendererBridge,
+  ConsoleLivePort,
   DesktopSnapshot,
   DesktopSnapshotRequest,
   DesktopRuntimeProfile,
@@ -26,6 +27,18 @@ function createFallbackRuntimeProfile(): DesktopRuntimeProfile {
 }
 
 class SafeDscBridge implements DesktopRendererBridge, WindowMaterialBridge {
+  readonly live: ConsoleLivePort = {
+    getLiveConnection: (deviceId) => {
+      const port = this.requireBridge().live;
+      if (!port) return Promise.reject(new Error("live_agent_upgrade_required"));
+      return port.getLiveConnection(deviceId);
+    },
+    readLive: (deviceId, topic) => {
+      const port = this.requireBridge().live;
+      if (!port) return Promise.reject(new Error("live_agent_upgrade_required"));
+      return port.readLive(deviceId, topic);
+    }
+  };
   private fallbackSnapshot: DesktopSnapshot = createEmptySnapshot();
 
   private get bridge(): (DesktopRendererBridge & WindowMaterialBridge) | null {

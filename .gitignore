@@ -11,6 +11,7 @@ bin
 .codex
 logs
 data
+**/realtime/live-*.json
 release
 *.log
 *.tsbuildinfo

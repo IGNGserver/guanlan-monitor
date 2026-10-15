@@ -493,6 +493,11 @@ type slowMetrics struct {
 }
 
 type agentState struct {
+	asyncSlow               bool
+	slowPending             bool
+	nextSlowAt              time.Time
+	slowResults             chan slowCollectionOutcome
+	slowCollector           func(hardwareAssetCache, collectionPlan) slowCollectionOutcome
 	baseIdentity            agentIdentity
 	configPath              string
 	client                  *http.Client
@@ -732,6 +737,7 @@ func main() {
 	}
 
 	state := &agentState{
+		asyncSlow:    true,
 		baseIdentity: baseIdentity,
 		configPath:   env("DSC_AGENT_CONFIG_FILE", ""),
 		client:       &http.Client{Timeout: 10 * time.Second},
@@ -741,11 +747,15 @@ func main() {
 	defer stop()
 
 	defaultConfig := newDefaultRuntimeConfig(defaultConnection)
+	var stateMu sync.Mutex
+	startLiveClient(runContext, state, &stateMu, defaultConfig, filepath.Dir(pending.path))
 	log.Printf("go agent v%s started for %s -> %s", BuildVersion, baseIdentity.DeviceID, defaultConnection.ServerURL)
 
 	for {
 		cycleStartedAt := time.Now()
+		stateMu.Lock()
 		cfg := state.loadRuntimeConfig(defaultConfig)
+		stateMu.Unlock()
 		if !cfg.DataRecordingEnabled {
 			log.Printf("data recording is disabled; collector remains unregistered")
 			if !waitForNextCycle(runContext.Done(), time.Duration(cfg.currentUploadIntervalSeconds())*time.Second) {
@@ -762,7 +772,17 @@ func main() {
 			}
 			continue
 		}
-		payload := state.collectPayload(cfg)
+		stateMu.Lock()
+		payload, sampleErr := freezeMetricsPayload(state.collectPayload(cfg))
+		stateMu.Unlock()
+		if sampleErr != nil {
+			logCategoryf(logCategoryUpload, "sample serialization failed; skipping invalid sample")
+			if !waitForNextCycle(runContext.Done(), time.Duration(cfg.currentUploadIntervalSeconds())*time.Second) {
+				pending.close()
+				return
+			}
+			continue
+		}
 		if err := pending.drain(runContext, state.client, cfg.Connection.ServerURL, cfg.Connection.Secret); err != nil {
 			logCategoryf(logCategoryUpload, "pending upload drain stopped: %v", err)
 		}
@@ -1317,7 +1337,9 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	memory := sampleMemory()
 	diskRate, networkRate := s.sampleFastRates(now, cfg.currentUploadIntervalSeconds())
 
-	if !s.hasSlow || now.Sub(s.lastSlow.collectedAt) >= time.Duration(cfg.slowIntervalSeconds())*time.Second {
+	if s.asyncSlow {
+		s.refreshSlowAsync(cfg, plan, now)
+	} else if !s.hasSlow || now.Sub(s.lastSlow.collectedAt) >= time.Duration(cfg.slowIntervalSeconds())*time.Second {
 		outcome := collectSlowMetricsBudgeted(s.assets, plan, slowMetricsGlobalBudget)
 		s.assets = outcome.assets
 		s.slowStats.runs++
@@ -1434,8 +1456,8 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	system := s.currentSystemStats(cfg, plan, now)
 	payload := metricsPayload{
 		Identity:                identity,
-		Timestamp:               now.Format(time.RFC3339),
-		HeartbeatAt:             now.Format(time.RFC3339),
+		Timestamp:               now.Format(time.RFC3339Nano),
+		HeartbeatAt:             now.Format(time.RFC3339Nano),
 		HardwareSampledAt:       hardwareSampledAt,
 		CPUTemperatureSampledAt: cpuTemperatureSampledAt,
 		CollectorStats:          s.collectorStatsPayload(),
@@ -1473,6 +1495,18 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 		applyDarwinMetricQuality(&payload, time.Duration(cfg.slowIntervalSeconds()*2+10)*time.Second)
 	}
 	applyRuntimeConfig(&payload, cfg)
+	if s.asyncSlow {
+		if !s.cpuUsageObserved {
+			payload.UnavailableMetrics = append(payload.UnavailableMetrics, "cpuUsage")
+		}
+		if !s.diskCountersObserved {
+			payload.UnavailableMetrics = append(payload.UnavailableMetrics, "diskRead", "diskWrite")
+		}
+		if !s.networkRatesObserved {
+			payload.UnavailableMetrics = append(payload.UnavailableMetrics, "networkRxRate", "networkTxRate")
+		}
+		payload.UnavailableMetrics = uniqueStrings(payload.UnavailableMetrics)
+	}
 	// Take the spawn counters before sanitizing so the sample id is computed from
 	// telemetry alone; the probe counters are diagnostic and must not make an
 	// otherwise identical sample look new to the pending-spool dedupe.
@@ -1979,6 +2013,9 @@ func (s *agentState) currentSystemStats(cfg agentRuntimeConfig, plan collectionP
 	if !plan.systemStats {
 		return systemStats{}
 	}
+	if s.asyncSlow && runtime.GOOS != "windows" {
+		return s.lastSystem
+	}
 	if runtime.GOOS == "windows" {
 		return systemStatsCollector()
 	}
@@ -2131,6 +2168,7 @@ func mergeSlowMetrics(previous slowMetrics, next slowMetrics) slowMetrics {
 // slowCollectionOutcome carries a finished slow collection plus the wall-clock
 // accounting a caller needs to report its cost.
 type slowCollectionOutcome struct {
+	system   *systemStats
 	metrics  slowMetrics
 	assets   hardwareAssetCache
 	duration time.Duration

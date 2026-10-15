@@ -30,6 +30,7 @@ import {
 import { Button, Icon, StatusDot } from "../ui";
 import { DeviceChartCells, type DeviceChartContext, type DeviceSectionControls } from "./deviceCharts";
 import { describeIssue, evaluateDevice } from "../health";
+import { LiveDevicePanel } from "./LiveDevicePanel";
 import {
   EmptyState,
   InstanceFilter,
@@ -432,8 +433,8 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
             compact` carries its own accessible name (it is the only indicator on
             the overview tile), which read these two cells as "在线 在线" — and on
             the data-link row as "在线 实时中枢", two different names for one fact. */}
-        <div><span>设备状态</span><strong><StatusDot state={selectedDevice.status === "online" ? "online" : "offline"} />{selectedDevice.status === "online" ? "在线" : "离线"}</strong></div>
-        <div><span>数据链路</span><strong><StatusDot state={deviceSourceState} />{selectLinkLabel(snapshotSource, capabilities.liveDataTransport)}</strong></div>
+        <div><span>最近上报状态</span><strong><StatusDot state={selectedDevice.status === "online" ? "online" : "offline"} />{selectedDevice.status === "online" ? "在线" : "离线"}</strong></div>
+        <div><span>与中枢链路</span><strong><StatusDot state={deviceSourceState} />{selectLinkLabel(snapshotSource, capabilities.liveDataTransport)}</strong></div>
         <div><span>最后在线</span><strong>{formatDate(selectedDevice.lastSeenAt)} · {selectedDevice.status === "online" ? "刚刚上报" : "已停止上报"}</strong></div>
         <div><span>{snapshotSource === "cache" ? "缓存时间" : "数据时间"}</span><strong>{formatDate(snapshotSource === "cache" ? snapshot?.cache.savedAt : snapshot?.generatedAt)}</strong></div>
         <div><span>Agent 版本</span><strong>{selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</strong></div>
@@ -442,6 +443,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
       </div>
 
       </details>
+      <LiveDevicePanel key={selectedDevice.deviceId} deviceId={selectedDevice.deviceId} authenticated={snapshotSource === "live" && snapshot?.session.authenticated === true} />
       {touch && touchPanel === "status" && <div className="touch-current-metrics" aria-label="最近上报指标">{([ ["CPU", "cpuUsage", selectedDevice.cpuUsagePercent], ["内存", "memoryUsage", selectedDevice.memoryUsagePercent], ["磁盘", "diskUsage", selectedDevice.diskUsagePercent] ] as const).map(([label, key, value]) => <div key={key}><span>{label}</span><strong>{touchPercent(selectedDevice, key, value)}</strong><small>最近一次上报</small></div>)}</div>}
       {selectedDevice.unavailableMetrics?.length ? <div className="workspace-inline-note" role="status"><Icon name="about" size={15} />本机不适用指标：{selectedDevice.unavailableMetrics.join("、")}；对应图表会留空而不是估算。</div> : null}
 
