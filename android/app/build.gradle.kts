@@ -43,6 +43,7 @@ android {
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     vectorDrawables.useSupportLibrary = true
+    resourceConfigurations += setOf("zh", "zh-rCN", "en")
   }
 
   val releaseStoreFile = project.stringProperty("DSC_UPLOAD_STORE_FILE")
@@ -71,7 +72,8 @@ android {
       manifestPlaceholders["usesCleartextTraffic"] = "true"
     }
     release {
-      isMinifyEnabled = false
+      isMinifyEnabled = true
+      isShrinkResources = true
       manifestPlaceholders["usesCleartextTraffic"] = "true"
       signingConfig = signingConfigs.findByName("release")
       proguardFiles(
