@@ -200,10 +200,10 @@ async function run() {
     await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
     const dataSettingsText = await page.locator(".workspace-page--settings").innerText();
     // The desktop shell polls through the host bridge; it must not borrow the
-    // browser's 实时 claim for the same live snapshot. 数据来源 lives on the
+    // browser's 推送更新 claim for the same live snapshot. 数据来源 lives on the
     // 数据与更新 page for the native client (the browser also shows it on 通用).
     assert.ok(dataSettingsText.includes("定时刷新"), `the polling client must label live data 定时刷新 (${dataSettingsText})`);
-    assert.ok(!dataSettingsText.includes("实时连接"), "the polling client must not describe itself as realtime");
+    assert.ok(!dataSettingsText.includes("推送更新"), "the polling client must not describe itself as pushed");
 
     // A narrow native window renders the touch shell, keeping its caption bar.
     // The desktop shell's own phone mode (drawer, bottom bar, settings jump list)

@@ -21,8 +21,8 @@ export interface ConsoleCapabilities {
    * `push` is a realtime channel (the browser console subscribes to
    * `device:update` over socket.io); `poll` is a visibility-aware timer (the
    * Electron shell refreshes through the host bridge). Both are "live" data, but
-   * "实时" is a claim about refresh latency that only the push client can make,
-   * so every data-link label is derived from this value instead of guessing from
+   * only the push client may claim the Hub pushes its updates ("推送更新"), so
+   * every data-link label is derived from this value instead of guessing from
    * the source alone.
    */
   liveDataTransport: "push" | "poll";

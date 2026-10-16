@@ -328,7 +328,7 @@ function WebConnectionSettings() {
       </Surface>
       <Surface className="workspace-connection-note">
         <div className="workspace-surface__header"><div><span className="workspace-section-kicker">网页端边界</span><h3>中枢地址由站点提供</h3></div></div>
-        <p className="workspace-surface__description">浏览器端不保存桌面连接地址，也不管理本机 Agent。页面只使用当前站点的认证会话访问中枢，并通过实时通道接收设备更新。</p>
+        <p className="workspace-surface__description">浏览器端不保存桌面连接地址，也不管理本机 Agent。页面只使用当前站点的认证会话访问中枢，并通过推送通道接收设备更新。</p>
       </Surface>
     </div>
   );
