@@ -35,7 +35,14 @@ type Identity struct {
 	InstanceID string `json:"instanceId"`
 	Token      string `json:"token"`
 }
-type Handler func(context.Context, string) (any, error)
+
+// Request is one live query. HubRevision is what the Hub announced in welcome:
+// 1 (or absent) only accepts the original result shapes, so newer shapes are opt-in.
+type Request struct {
+	Topic       string
+	HubRevision int
+}
+type Handler func(context.Context, Request) (any, error)
 type Client struct {
 	Config    func() Config
 	Directory string
@@ -48,6 +55,7 @@ type Client struct {
 type frame struct {
 	Type            string `json:"type"`
 	ProtocolVersion int    `json:"protocolVersion,omitempty"`
+	Revision        int    `json:"revision,omitempty"`
 	SessionID       string `json:"sessionId,omitempty"`
 	RequestID       string `json:"requestId,omitempty"`
 	Topic           string `json:"topic,omitempty"`
@@ -202,6 +210,7 @@ func (c *Client) connect(ctx context.Context, cfg Config) error {
 		return err
 	}
 	var sessionID string
+	hubRevision := 1
 	for {
 		readCtx, readCancel := context.WithTimeout(sessionCtx, 20*time.Second)
 		kind, raw, err := conn.Read(readCtx)
@@ -219,6 +228,9 @@ func (c *Client) connect(ctx context.Context, cfg Config) error {
 		}
 		if message.Type == "welcome" && sessionID == "" && message.ProtocolVersion == 1 && len(message.SessionID) == 36 {
 			sessionID = message.SessionID
+			if message.Revision > 1 {
+				hubRevision = message.Revision
+			}
 			if err := write(frame{Type: "ready", SessionID: sessionID}); err != nil {
 				return err
 			}
@@ -233,8 +245,20 @@ func (c *Client) connect(ctx context.Context, cfg Config) error {
 			}
 			continue
 		}
-		if message.Type != "request" || len(message.RequestID) != 36 || message.TimeoutMs <= 0 || message.TimeoutMs > 5000 || (message.Topic != "metrics" && message.Topic != "processes" && message.Topic != "docker") {
+		// Frame types from a newer Hub are not a protocol violation; ignoring them
+		// keeps an older Agent connected instead of reconnecting in a loop.
+		if message.Type != "request" {
+			continue
+		}
+		if len(message.RequestID) != 36 {
 			return errors.New("invalid_realtime_request")
+		}
+		// A well-addressed request this Agent cannot serve fails alone.
+		if message.TimeoutMs <= 0 || message.TimeoutMs > 5000 || (message.Topic != "metrics" && message.Topic != "processes" && message.Topic != "docker") {
+			if err := write(map[string]any{"type": "error", "sessionId": sessionID, "requestId": message.RequestID, "code": "collection_failed"}); err != nil {
+				return err
+			}
+			continue
 		}
 		if err := write(frame{Type: "ack", SessionID: sessionID, RequestID: message.RequestID}); err != nil {
 			return err
@@ -255,10 +279,10 @@ func (c *Client) connect(ctx context.Context, cfg Config) error {
 			continue
 		}
 		jobCtx, jobCancel := context.WithTimeout(sessionCtx, time.Duration(message.TimeoutMs)*time.Millisecond)
-		go func(message frame, sid string) {
+		go func(message frame, sid string, revision int) {
 			defer func() { c.jobsMu.Lock(); delete(c.busy, message.Topic); c.jobsMu.Unlock() }()
 			defer jobCancel()
-			data, err := safeHandle(jobCtx, c.Handle, message.Topic)
+			data, err := safeHandle(jobCtx, c.Handle, Request{Topic: message.Topic, HubRevision: revision})
 			if sessionCtx.Err() != nil {
 				return
 			}
@@ -287,16 +311,16 @@ func (c *Client) connect(ctx context.Context, cfg Config) error {
 				stop()
 				_ = conn.CloseNow()
 			}
-		}(message, sessionID)
+		}(message, sessionID, hubRevision)
 	}
 }
 
-func safeHandle(ctx context.Context, handler Handler, topic string) (data any, err error) {
+func safeHandle(ctx context.Context, handler Handler, request Request) (data any, err error) {
 	defer func() {
 		if recover() != nil {
 			data = nil
 			err = errors.New("collection_failed")
 		}
 	}()
-	return handler(ctx, topic)
+	return handler(ctx, request)
 }

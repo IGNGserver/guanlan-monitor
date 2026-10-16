@@ -42,3 +42,26 @@ func TestProcessSnapshotTracksOwnPIDByStartTimeAndDoesNotInventFirstCPU(t *testi
 	}
 	t.Fatal("current process disappeared from second snapshot")
 }
+
+func TestProcessRankingKeepsTheBusiestAndPutsUnknownLast(t *testing.T) {
+	cpu := func(value float64) *float64 { return &value }
+	memory := func(value uint64) *uint64 { return &value }
+	items := []Process{
+		{PID: 1, CPUPercent: nil, MemoryBytes: memory(900)},
+		{PID: 2, CPUPercent: cpu(5), MemoryBytes: memory(10)},
+		{PID: 3, CPUPercent: cpu(50), MemoryBytes: nil},
+		{PID: 4, CPUPercent: cpu(5), MemoryBytes: memory(20)},
+		{PID: 5, CPUPercent: nil, MemoryBytes: nil},
+	}
+	rankProcesses(items)
+	var order []int32
+	for _, item := range items {
+		order = append(order, item.PID)
+	}
+	want := []int32{3, 4, 2, 1, 5}
+	for index := range want {
+		if order[index] != want[index] {
+			t.Fatal("unexpected ranking", order)
+		}
+	}
+}

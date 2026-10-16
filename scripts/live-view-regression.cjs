@@ -31,7 +31,7 @@ async function run() {
         else {
           topics.push(topic);
           let data;
-          if (topic === "metrics") data = { timestamp: new Date().toISOString(), cpuUsagePercent: 12.5, memory: { usedBytes: 2048, totalBytes: 4096 }, diskRate: { readBytesPerSec: 100, writeBytesPerSec: 200 }, networkRate: { rxBytesPerSec: 300, txBytesPerSec: 400 } };
+          if (topic === "metrics") data = { observedAt: new Date().toISOString(), cpuPercent: 12.5, memoryUsedBytes: 2048, memoryTotalBytes: 4096, diskReadBytesPerSec: 100, diskWriteBytesPerSec: null, networkRxBytesPerSec: 300, networkTxBytesPerSec: 400 };
           if (topic === "processes") data = { observedAt: new Date().toISOString(), cpuScale: "host", memoryKind: "rss", totalCount: 1, truncated: false, items: [{ id: "fixture:42:100", pid: 42, parentPid: 1, name: "fixture-process", startedAt: new Date().toISOString(), cpuPercent: null, memoryBytes: null, threads: null, status: null }] };
           if (topic === "docker" && dockerDenied) { status = 502; body = { error: "docker_permission_denied" }; }
           else {

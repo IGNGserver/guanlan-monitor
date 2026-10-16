@@ -1,4 +1,4 @@
-//go:build !darwin
+//go:build !darwin && !windows
 
 package live
 
@@ -19,8 +19,8 @@ func readProcesses(ctx context.Context, epoch string) ([]processObservation, int
 	}
 	count := len(pids)
 	sort.Slice(pids, func(i, j int) bool { return pids[i] < pids[j] })
-	if len(pids) > 4096 {
-		pids = pids[:4096]
+	if len(pids) > processReadLimit {
+		pids = pids[:processReadLimit]
 	}
 	result := make([]processObservation, 0, len(pids))
 	for _, pid := range pids {

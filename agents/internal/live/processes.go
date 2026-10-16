@@ -3,9 +3,17 @@ package live
 import (
 	"context"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
+)
+
+const (
+	// Reading is bounded separately from what is returned: the busiest
+	// processes must survive truncation, so they are chosen after sampling.
+	processReadLimit   = 16384
+	processReturnLimit = 4096
 )
 
 type Process struct {
@@ -64,7 +72,7 @@ func (c *ProcessCollector) Collect(ctx context.Context) (Processes, error) {
 	if err != nil {
 		return result, err
 	}
-	result.TotalCount, result.Truncated = count, count > 4096
+	result.TotalCount = count
 	next := make(map[int32]processSample, len(observations))
 	for _, observation := range observations {
 		item := observation.item
@@ -82,7 +90,35 @@ func (c *ProcessCollector) Collect(ctx context.Context) (Processes, error) {
 		result.Items = append(result.Items, item)
 	}
 	c.previous = next
+	rankProcesses(result.Items)
+	// Exited or protected processes also make count exceed the item list; only
+	// the limits themselves count as truncation.
+	result.Truncated = count > processReadLimit || len(result.Items) > processReturnLimit
+	if len(result.Items) > processReturnLimit {
+		result.Items = result.Items[:processReturnLimit]
+	}
 	return result, nil
+}
+
+// rankProcesses orders by CPU, then resident memory, then PID. Unknown values
+// sort after every known value instead of being treated as zero.
+func rankProcesses(items []Process) {
+	sort.SliceStable(items, func(i, j int) bool {
+		left, right := items[i], items[j]
+		if (left.CPUPercent == nil) != (right.CPUPercent == nil) {
+			return left.CPUPercent != nil
+		}
+		if left.CPUPercent != nil && *left.CPUPercent != *right.CPUPercent {
+			return *left.CPUPercent > *right.CPUPercent
+		}
+		if (left.MemoryBytes == nil) != (right.MemoryBytes == nil) {
+			return left.MemoryBytes != nil
+		}
+		if left.MemoryBytes != nil && *left.MemoryBytes != *right.MemoryBytes {
+			return *left.MemoryBytes > *right.MemoryBytes
+		}
+		return left.PID < right.PID
+	})
 }
 
 type processObservation struct {
