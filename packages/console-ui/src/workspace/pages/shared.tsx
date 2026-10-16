@@ -345,7 +345,12 @@ function DeviceTable({
           <button className="guanlan-table-icon-action" type="button" aria-label="下移" title="下移" disabled={deviceIndex(device) < 0 || deviceIndex(device) >= (order?.length ?? 1) - 1} onClick={() => onMove?.(device.deviceId, 1)}><Icon name="chevron" size={15} /></button>
           <button className="guanlan-table-icon-action is-danger" type="button" aria-label="删除" title="删除" onClick={() => onDelete?.(device)}><Icon name="delete" size={15} /></button>
         </div>
-        : <button className="guanlan-table-row-action" type="button" aria-label={`打开 ${device.hostname}`} onClick={() => openDevice(device)}><Icon name="arrow" size={14} /></button>
+        : <div className="guanlan-table-row-actions">
+          {/* Shortcuts to the device's live tabs, where a row's "what is it doing now?" is answered. */}
+          <button className="guanlan-table-live-action" type="button" aria-label={`查看 ${device.hostname} 的进程`} onClick={() => navigate({ kind: "device", deviceId: device.deviceId, view: "processes" })}>进程</button>
+          <button className="guanlan-table-live-action" type="button" aria-label={`查看 ${device.hostname} 的容器`} onClick={() => navigate({ kind: "device", deviceId: device.deviceId, view: "containers" })}>容器</button>
+          <button className="guanlan-table-row-action" type="button" aria-label={`打开 ${device.hostname}`} onClick={() => openDevice(device)}><Icon name="arrow" size={14} /></button>
+        </div>
     }
   ];
   if (!devices.length) return <>{emptyState ?? <EmptyState title="没有匹配设备" detail="尝试清空搜索或调整筛选条件。" />}</>;

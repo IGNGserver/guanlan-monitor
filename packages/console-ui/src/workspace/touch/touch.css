@@ -106,6 +106,10 @@
 .touch-current-metrics > div { min-width: 0; padding: var(--md-sys-space-3); border-radius: var(--md-sys-shape-lg); background: var(--md-sys-color-surface-container-low); }
 .touch-current-metrics span, .touch-current-metrics small { color: var(--md-sys-color-on-surface-variant); display: block; font-size: var(--md-sys-typescale-label-m-size); }
 .touch-current-metrics strong { display: block; margin: var(--md-sys-space-2) 0; font-size: var(--md-sys-typescale-title-l-size); font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.touch-metrics-source { margin-top: var(--md-sys-space-4); }
+.touch-metrics-source + .touch-current-metrics, .touch-metrics-source + .workspace-live__body { margin-top: var(--md-sys-space-3); }
+.workspace-live__body .live-numbers { margin-top: 0; }
+.live-numbers { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 0; }
 .touch-workspace .workspace-device-context { top: 0; padding: var(--md-sys-space-2) 0; background: var(--md-sys-color-surface); margin-bottom: var(--md-sys-space-5); border-radius: 0; box-shadow: none; display: flex; flex-direction: column; gap: var(--md-sys-space-3); }
 .touch-workspace .workspace-device-context .m3e-tabs { width: 100%; }
 .touch-workspace .workspace-device-context .m3e-tabs__tab { flex: 1; min-height: 48px; }

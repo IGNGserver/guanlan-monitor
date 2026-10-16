@@ -39,19 +39,19 @@ const defaultInterval: Record<LiveTopic, number> = { metrics: 1, processes: 2, d
  * One live view of one device. Nothing is requested until this is mounted, and
  * unmounting it (switching tab or range) stops every request.
  */
-export function LiveTopicPanel({ deviceId, topic, authenticated }: { deviceId: string; topic: LiveTopic; authenticated: boolean }) {
+export function LiveTopicPanel({ deviceId, topic, authenticated, compact = false }: { deviceId: string; topic: LiveTopic; authenticated: boolean; compact?: boolean }) {
   const port = useLivePort();
   const [interval, setIntervalSeconds] = useState(defaultInterval[topic]);
   const [paused, setPaused] = useState(false);
   if (!port) return <M3Banner tone="info" title="当前客户端不支持实时查看">升级到最新版本的观澜客户端后即可使用。</M3Banner>;
   if (!authenticated) return <M3Banner tone="info" title="需要登录中枢">实时数据直接来自设备，离线缓存不能提供；连接并登录中枢后自动开始。</M3Banner>;
   // The interval is not part of the key: changing it must not discard the two-minute curve.
-  return <LiveTopicView key={`${deviceId}:${topic}`} deviceId={deviceId} port={port} topic={topic} interval={interval} onIntervalChange={setIntervalSeconds} paused={paused} onPausedChange={setPaused} />;
+  return <LiveTopicView key={`${deviceId}:${topic}`} deviceId={deviceId} port={port} topic={topic} interval={interval} onIntervalChange={setIntervalSeconds} paused={paused} onPausedChange={setPaused} compact={compact} />;
 }
 
 const intervalOptions = [{ value: "1", label: "每 1 秒" }, { value: "2", label: "每 2 秒" }, { value: "5", label: "每 5 秒" }];
 
-function LiveTopicView({ deviceId, port, topic, interval, onIntervalChange, paused, onPausedChange }: { deviceId: string; port: ConsoleLivePort; topic: LiveTopic; interval: number; onIntervalChange: (seconds: number) => void; paused: boolean; onPausedChange: (paused: boolean) => void }) {
+function LiveTopicView({ deviceId, port, topic, interval, onIntervalChange, paused, onPausedChange, compact }: { deviceId: string; port: ConsoleLivePort; topic: LiveTopic; interval: number; onIntervalChange: (seconds: number) => void; paused: boolean; onPausedChange: (paused: boolean) => void; compact: boolean }) {
   const [snapshot, setSnapshot] = useState<LiveSnapshot | null>(null);
   const [failure, setFailure] = useState<LiveFailure | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -152,7 +152,7 @@ function LiveTopicView({ deviceId, port, topic, interval, onIntervalChange, paus
     {resetState === "done" && !snapshot && <M3Banner tone="success" title="已重置实时凭据">设备会在 30 秒内重新登记并连接。</M3Banner>}
     {failure && !fresh && !conflictAt && <M3Banner tone="warning" title={failure.title}>{failure.detail}</M3Banner>}
     {failure && fresh && <p className="workspace-live__stale-note">{failure.detail}</p>}
-    {fresh && topic === "metrics" && <LiveMetrics data={snapshot.data as LiveMetricsData} samples={samples} />}
+    {fresh && topic === "metrics" && (compact ? <LiveNumbers data={snapshot.data as LiveMetricsData} /> : <LiveMetrics data={snapshot.data as LiveMetricsData} samples={samples} />)}
     {fresh && topic === "processes" && <ProcessTable data={snapshot.data as LiveProcesses} />}
     {fresh && topic === "docker" && <DockerTable data={snapshot.data as LiveDocker} rates={rates} />}
   </div>;
@@ -210,6 +210,18 @@ function LiveMetrics({ data, samples }: { data: LiveMetricsData; samples: LiveSa
     </DashboardGrid>
     <LiveNote>只保留最近两分钟，不写入历史；快速指标与历史上报使用各自的采样窗口，查看不会改变历史数据。数值第一次出现前需要一个完整的采样窗口。温度、风扇、GPU 与硬件信息只在历史范围中按原有频率采集。</LiveNote>
   </>;
+}
+
+/** The phone's status panel: the same four answers as numbers, in the tiles it already uses. */
+function LiveNumbers({ data }: { data: LiveMetricsData }) {
+  const memory = memoryPercent(data);
+  const tile = (label: string, value: string, detail: string) => <div key={label}><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>;
+  return <div className="touch-current-metrics live-numbers" aria-label="实时指标">
+    {tile("CPU", data.cpuPercent === null ? "—" : percent(data.cpuPercent), "整机平均")}
+    {tile("内存", memory === null ? "—" : percent(memory), data.memoryUsedBytes !== null && data.memoryTotalBytes !== null ? `${formatBytes(data.memoryUsedBytes)} / ${formatBytes(data.memoryTotalBytes)}` : "容量不可用")}
+    {tile("磁盘读取", data.diskReadBytesPerSec === null ? "—" : rate(data.diskReadBytesPerSec), `写入 ${data.diskWriteBytesPerSec === null ? "—" : rate(data.diskWriteBytesPerSec)}`)}
+    {tile("网络接收", data.networkRxBytesPerSec === null ? "—" : rate(data.networkRxBytesPerSec), `发送 ${data.networkTxBytesPerSec === null ? "—" : rate(data.networkTxBytesPerSec)}`)}
+  </div>;
 }
 
 function LiveTrendTile({ title, subtitle, series, maxValue }: { title: string; subtitle: string; series: ChartSeries[]; maxValue?: number }) {

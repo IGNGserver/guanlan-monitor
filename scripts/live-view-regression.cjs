@@ -124,9 +124,20 @@ async function run() {
     assert.equal(topics.length, stopped, "leaving every live view must release polling");
     await page.goto(`${baseUrl}#device/${fixtureDevices[0].deviceId}/processes`, { waitUntil: "domcontentloaded" });
     await page.locator(".workspace-live").getByText("fixture-process", { exact: true }).waitFor();
+    // The other ways in: the command palette and the device directory.
+    await page.keyboard.press("/");
+    await page.locator(".workspace-command input").fill(`${fixtureDevices[1].hostname} 容器`);
+    await page.locator(".workspace-command__item").filter({ hasText: "· 容器" }).first().click();
+    await page.waitForURL(new RegExp(`#device/${fixtureDevices[1].deviceId}/containers$`));
+    await page.goto(`${baseUrl}#devices`, { waitUntil: "domcontentloaded" });
+    const firstRow = page.locator(".guanlan-data-table-row--actionable").first();
+    await firstRow.hover();
+    await firstRow.getByRole("button", { name: /的进程$/ }).click();
+    await page.waitForURL(/\/processes$/);
+    await page.locator(".workspace-live").getByText("fixture-process", { exact: true }).waitFor();
     assert.deepEqual(errors, []);
-    fs.writeFileSync(path.join(output, "report.json"), JSON.stringify({ passed: true, calls, topics, checks: ["page open idle", "live overview range", "pause and resume", "linkable live tabs", "sortable process columns", "process null semantics", "Docker denied vs empty", "disconnected refusal", "reconnect resumes", "identity conflict reset", "collapse cleanup"] }, null, 2));
-    console.log("Live view regression: 12 checks passed");
+    fs.writeFileSync(path.join(output, "report.json"), JSON.stringify({ passed: true, calls, topics, checks: ["page open idle", "live overview range", "pause and resume", "linkable live tabs", "sortable process columns", "palette and directory shortcuts", "process null semantics", "Docker denied vs empty", "disconnected refusal", "reconnect resumes", "identity conflict reset", "collapse cleanup"] }, null, 2));
+    console.log("Live view regression: 13 checks passed");
   } finally { await browser.close(); }
 }
 run().catch((error) => { console.error(error); process.exitCode = 1; });

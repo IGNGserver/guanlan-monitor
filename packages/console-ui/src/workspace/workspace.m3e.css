@@ -315,6 +315,13 @@
 .guanlan-table-icon-action:hover:not(:disabled) { background: var(--md-sys-color-surface-container-high); }
 .guanlan-table-icon-action.is-danger { color: var(--md-sys-color-error); }
 .guanlan-table-row-actions { display: flex; justify-content: flex-end; gap: 4px; }
+/* Live shortcuts appear with the row's hover or keyboard focus; a touch screen
+   has no hover, so there they always show. */
+.guanlan-table-live-action { min-height: 32px; padding: 0 10px; align-self: center; border-radius: var(--md-sys-shape-full); color: var(--md-sys-color-primary); font-size: var(--md-sys-typescale-label-l-size, 13px); font-weight: 500; white-space: nowrap; cursor: pointer; opacity: 0; transition: opacity var(--md-sys-motion-effects-fast), background var(--md-sys-motion-effects-fast); }
+.guanlan-data-table-row--actionable:hover .guanlan-table-live-action,
+.guanlan-data-table-row--actionable:focus-within .guanlan-table-live-action { opacity: 1; }
+.guanlan-table-live-action:hover { background: var(--md-sys-color-surface-container-highest); }
+@media (hover: none) { .guanlan-table-live-action { opacity: 1; } }
 .guanlan-data-table-row--actionable:hover,
 .guanlan-data-table-row--actionable:focus-visible { background: var(--md-sys-color-surface-container-high); }
 

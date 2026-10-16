@@ -4,16 +4,18 @@ import { useWorkspace } from "../WorkspaceContext";
 import { Icon } from "../ui";
 import { visibleSettingsNavigation } from "./PrimaryNavigation";
 
-type CommandGroup = "页面" | "操作" | "设置" | "设备";
+type CommandGroup = "页面" | "操作" | "设置" | "设备" | "实时查看";
 
 /** Group order doubles as result rank: destinations, then actions, then settings. */
-const commandGroupOrder: CommandGroup[] = ["页面", "操作", "设置", "设备"];
+const commandGroupOrder: CommandGroup[] = ["页面", "操作", "设置", "设备", "实时查看"];
 
 interface Command {
   group: CommandGroup;
   label: string;
   detail: string;
   keywords?: string[];
+  /** Listed only once the reader types: one entry per device and view would bury everything else. */
+  searchOnly?: boolean;
   action: () => void;
 }
 
@@ -54,12 +56,22 @@ export function CommandPalette() {
     ...(capabilities.canManageLocalAgent ? [{ group: "操作" as const, label: "控制本机 Agent", detail: "启动、停止或重新检测硬件", keywords: ["采集", "上报", "agent"], action: () => openSettings("connections") }] : []),
     ...visibleSettingsNavigation(capabilities)
       .map((item) => ({ group: "设置" as const, label: `设置 · ${item.label}`, detail: "打开对应设置页", action: () => openSettings(item.id) })),
-    ...allDevices.map((device): Command => ({ group: "设备", label: device.hostname, detail: `${device.os} · ${device.deviceId}`, action: () => navigate({ kind: "device", deviceId: device.deviceId }) }))
+    ...allDevices.map((device): Command => ({ group: "设备", label: device.hostname, detail: `${device.os} · ${device.deviceId}`, action: () => navigate({ kind: "device", deviceId: device.deviceId }) })),
+    // "nas 进程" is how people ask for a machine's task manager; both words match here.
+    ...allDevices.flatMap((device): Command[] => [
+      { group: "实时查看", label: `${device.hostname} · 进程`, detail: "查看这台设备正在运行的进程", keywords: ["进程", "任务管理器", "process", "top", device.deviceId], searchOnly: true, action: () => navigate({ kind: "device", deviceId: device.deviceId, view: "processes" }) },
+      { group: "实时查看", label: `${device.hostname} · 容器`, detail: "查看这台设备的 Docker 容器", keywords: ["容器", "docker", "container", "compose", device.deviceId], searchOnly: true, action: () => navigate({ kind: "device", deviceId: device.deviceId, view: "containers" }) }
+    ])
   ], [allDevices, capabilities, navigate, openSettings, refresh]);
 
   const filtered = React.useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    const matched = query ? commands.filter((command) => `${command.label} ${command.detail} ${(command.keywords ?? []).join(" ")}`.toLowerCase().includes(query)) : commands;
+    // Every word must appear somewhere, so "nas 进程" finds "归档 NAS · 进程".
+    const words = query.split(/\s+/).filter(Boolean);
+    const matched = words.length ? commands.filter((command) => {
+      const text = `${command.label} ${command.detail} ${(command.keywords ?? []).join(" ")}`.toLowerCase();
+      return words.every((word) => text.includes(word));
+    }) : commands.filter((command) => !command.searchOnly);
     return matched.slice().sort((left, right) => commandGroupOrder.indexOf(left.group) - commandGroupOrder.indexOf(right.group));
   }, [commands, searchQuery]);
 
