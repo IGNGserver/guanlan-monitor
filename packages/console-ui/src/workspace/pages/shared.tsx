@@ -683,15 +683,22 @@ function metricWindowLabel(value: string): string {
   return metricWindowOptions.find((option) => option.value === value)?.label ?? value;
 }
 
-function MetricWindowControl({ value, onChange }: { value: DesktopMetricWindowValue; onChange: (value: DesktopMetricWindowValue) => void }) {
+/**
+ * `live` adds a first "实时" segment: the last two minutes read from the device
+ * itself. It is a range in the reader's terms ("how far back am I looking?"),
+ * so it sits where ranges are chosen, but it is never stored as the history
+ * window — picking any other range leaves it.
+ */
+function MetricWindowControl({ value, onChange, live }: { value: DesktopMetricWindowValue; onChange: (value: DesktopMetricWindowValue) => void; live?: { selected: boolean; onSelect: () => void } }) {
+  const options = live ? [{ value: "live", label: <span className="workspace-range-control__live"><span className="workspace-live-dot" aria-hidden="true" />实时</span> }, ...metricWindowOptions] : metricWindowOptions;
   return (
     <div className="workspace-range-control" role="group" aria-label="遥测时间范围">
       <span className="workspace-range-control__label"><Icon name="clock" size={14} />时间范围</span>
       <M3SegmentedControl
         className="workspace-range-control__options"
-        options={metricWindowOptions}
-        value={value}
-        onChange={(nextValue) => onChange(nextValue as DesktopMetricWindowValue)}
+        options={options}
+        value={live?.selected ? "live" : value}
+        onChange={(nextValue) => nextValue === "live" ? live?.onSelect() : onChange(nextValue as DesktopMetricWindowValue)}
         aria-label="遥测时间范围"
       />
     </div>

@@ -30,7 +30,8 @@ import {
 import { Button, Icon, StatusDot } from "../ui";
 import { DeviceChartCells, type DeviceChartContext, type DeviceSectionControls } from "./deviceCharts";
 import { describeIssue, evaluateDevice } from "../health";
-import { LiveDevicePanel } from "./LiveDevicePanel";
+import { LiveTopicPanel, useLiveCapabilities } from "./LiveDevicePanel";
+import type { DeviceLiveView } from "../routes";
 import {
   EmptyState,
   InstanceFilter,
@@ -73,7 +74,8 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
     setTrafficMode,
     shiftTrafficAnchor,
     capabilities,
-    healthThresholds
+    healthThresholds,
+    route
   } = useWorkspace();
   const snapshotSource = snapshot ? selectSnapshotSource(snapshot, snapshot.devices) : "unknown";
   const deviceSourceState: "online" | "offline" | "cached" | "warning" | "unknown" = snapshotSource === "cache"
@@ -87,6 +89,17 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
   const [desktopTab, setDesktopTab] = useState<DeviceTabId>(DEFAULT_DEVICE_TAB_ID);
   const activeTab = touch ? (touchPanel === "trends" ? touchTab : "overview") : desktopTab;
   const setActiveTab = (id: DeviceTabId) => touch ? onTouchTabChange?.(id) : setDesktopTab(id);
+  /* Live views read the device itself, on demand. Processes and containers are
+     tabs (and part of the link, so they can be bookmarked); live metrics are a
+     range of the overview. None of them starts a request until it is shown. */
+  const routeLiveView: DeviceLiveView | null = route.kind === "device" ? route.view ?? null : null;
+  const liveView: DeviceLiveView | null = touch ? (touchPanel === "processes" || touchPanel === "containers" ? touchPanel : null) : routeLiveView;
+  const [liveOverview, setLiveOverview] = useState(false);
+  const liveAuthenticated = snapshotSource === "live" && snapshot?.session.authenticated === true;
+  const liveCapabilities = useLiveCapabilities(selectedDevice?.deviceId ?? "", Boolean(selectedDevice) && liveAuthenticated);
+  // Hidden only once the Hub has confirmed a ready session without Docker; an
+  // offline device keeps the tab where the reader expects it.
+  const showContainers = liveView === "containers" || liveCapabilities === null || liveCapabilities.includes("docker");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const deviceContextRef = useRef<HTMLDivElement>(null);
@@ -177,7 +190,15 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
     setSelectedDiskId("all");
     setSelectedGpuId("all");
     if (!touch) setDesktopTab(DEFAULT_DEVICE_TAB_ID);
+    setLiveOverview(false);
   }, [deviceId, touch]);
+
+  // A link to a live view opens the same view in the touch layout.
+  useEffect(() => {
+    if (touch && routeLiveView) onTouchPanelChange?.(routeLiveView);
+    // Only on arrival: afterwards the touch tabs own the panel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [touch, routeLiveView, deviceId]);
 
   // Devices this page has already served a telemetry payload for, this session.
   // Keyed by id, so one machine's history cannot excuse another one's charts.
@@ -293,6 +314,8 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
     ? filteredLatest.memoryCommitLimitBytes || filteredLatest.memoryTotalBytes + filteredLatest.swapTotalBytes
     : 0;
   const settingsSection = "connections" as const;
+  const liveOverviewActive = !touch && !liveView && liveOverview && activeTab === "overview";
+  const caption = liveView ? liveViewCaptions[liveView] : liveOverviewActive ? "最近两分钟的设备实时数据，直接来自设备，不写入历史" : tab.caption;
 
   const chartContext: DeviceChartContext = {
     device: selectedDevice,
@@ -443,7 +466,6 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
       </div>
 
       </details>
-      <LiveDevicePanel key={selectedDevice.deviceId} deviceId={selectedDevice.deviceId} authenticated={snapshotSource === "live" && snapshot?.session.authenticated === true} />
       {touch && touchPanel === "status" && <div className="touch-current-metrics" aria-label="最近上报指标">{([ ["CPU", "cpuUsage", selectedDevice.cpuUsagePercent], ["内存", "memoryUsage", selectedDevice.memoryUsagePercent], ["磁盘", "diskUsage", selectedDevice.diskUsagePercent] ] as const).map(([label, key, value]) => <div key={key}><span>{label}</span><strong>{touchPercent(selectedDevice, key, value)}</strong><small>最近一次上报</small></div>)}</div>}
       {selectedDevice.unavailableMetrics?.length ? <div className="workspace-inline-note" role="status"><Icon name="about" size={15} />本机不适用指标：{selectedDevice.unavailableMetrics.join("、")}；对应图表会留空而不是估算。</div> : null}
 
@@ -459,7 +481,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
         </ul>;
       })()}
 
-      {deviceStateBanner && (
+      {deviceStateBanner && (!liveView || deviceStateBanner.tone === "offline") && (
         <div className={`workspace-device-state-banner workspace-device-state-banner--${deviceStateBanner.tone}`} role={deviceStateBanner.tone === "offline" ? "alert" : "status"}>
           <div className="workspace-device-state-banner__icon"><Icon name={deviceStateBanner.tone === "empty" ? "data" : deviceStateBanner.tone === "cached" ? "clock" : "warning"} size={18} /></div>
           <div className="workspace-device-state-banner__copy"><strong>{deviceStateBanner.title}</strong><p>{deviceStateBanner.detail}</p></div>
@@ -469,18 +491,37 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
 
       {/* 选项卡、时间范围与全屏属于同一个设备上下文，滚动图表时保持可见。 */}
       <div className="workspace-device-context" ref={deviceContextRef}>
-        {touch && <M3Tabs aria-label="设备详情" value={touchPanel} onChange={(id) => onTouchPanelChange?.(id as TouchPanel)} tabs={[{ id: "status", label: "状态" }, { id: "trends", label: "趋势" }, { id: "hardware", label: "硬件" }]} />}
+        {touch && <M3Tabs aria-label="设备详情" value={touchPanel} onChange={(id) => onTouchPanelChange?.(id as TouchPanel)} tabs={[
+          { id: "status", label: "状态" },
+          { id: "trends", label: "趋势" },
+          { id: "processes", label: <LiveTabLabel>进程</LiveTabLabel> },
+          ...(showContainers ? [{ id: "containers", label: <LiveTabLabel>容器</LiveTabLabel> }] : []),
+          { id: "hardware", label: "硬件" }
+        ]} />}
         {!touch && <M3Tabs
           aria-label="设备面板"
-          value={activeTab}
-          onChange={(id) => changeTab(id)}
-          tabs={DEVICE_DASHBOARD.tabs.map((item) => ({ id: item.id, label: item.name }))}
+          className="workspace-device-tabs"
+          value={liveView ?? activeTab}
+          onChange={(id) => {
+            if (id === "processes" || id === "containers") { navigate({ kind: "device", deviceId: selectedDevice.deviceId, view: id }); return; }
+            if (liveView) navigate({ kind: "device", deviceId: selectedDevice.deviceId });
+            changeTab(id);
+          }}
+          tabs={[
+            ...DEVICE_DASHBOARD.tabs.map((item) => ({ id: item.id, label: item.name })),
+            { id: "processes", label: <LiveTabLabel>进程</LiveTabLabel>, className: "workspace-device-tab--live workspace-device-tab--live-first" },
+            ...(showContainers ? [{ id: "containers", label: <LiveTabLabel>容器</LiveTabLabel>, className: "workspace-device-tab--live" }] : [])
+          ]}
         />}
         {touch && touchPanel === "trends" && <M3Select label="趋势分类" value={activeTab} onChange={(event) => changeTab(event.target.value)} options={DEVICE_DASHBOARD.tabs.map((item) => ({ value: item.id, label: item.name }))} />}
 
-        {(!touch || touchPanel === "trends") && <div className="workspace-device-context__controls">
+        {!liveView && (!touch || touchPanel === "trends") && <div className="workspace-device-context__controls">
           <div className="workspace-device-toolbar">
-            <MetricWindowControl value={metricsWindow as DesktopMetricWindowValue} onChange={(value) => setMetricsWindow(value)} />
+            <MetricWindowControl
+              value={metricsWindow as DesktopMetricWindowValue}
+              onChange={(value) => { setLiveOverview(false); setMetricsWindow(value); }}
+              live={!touch && activeTab === "overview" ? { selected: liveOverview, onSelect: () => setLiveOverview(true) } : undefined}
+            />
             <Button variant="quiet" title={isFullscreen ? "退出全屏" : "全屏查看"} onClick={toggleFullscreen}>
               <Icon name={isFullscreen ? "windowRestore" : "windowMaximize"} size={16} />
               {isFullscreen ? "退出全屏" : "全屏"}
@@ -488,9 +529,9 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
           </div>
         </div>}
 
-        {!touch && tab.caption ? <p className="workspace-device-context__caption">{tab.caption}</p> : null}
+        {!touch && caption ? <p className="workspace-device-context__caption">{caption}</p> : null}
 
-        {!touch && anchors.length > 1 && (
+        {!touch && !liveView && anchors.length > 1 && (
           <div className="workspace-anchor-bar" role="navigation" aria-label="分区跳转">
             {anchors.map((anchor) => (
               <button
@@ -512,12 +553,18 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
           they will land). Both the banner and this block used to repeat the same
           "no telemetry / press refresh" sentence, so the reader read one fact
           three times. */}
-      {telemetryMissing && telemetryState === "pending"
+      {!liveView && telemetryMissing && telemetryState === "pending"
         ? <MetricsLoadingSurface detail={`正在读取最近 ${windowLabel} 的遥测样本，综合趋势与明细图表会在样本到达后自动补齐。`} />
         : null}
 
-      <div className="workspace-device-dashboard">
-        {(touch ? (touchPanel === "trends" ? tab.sections : findDeviceTab("overview").sections.filter((section) => touchPanel === "hardware" ? section.id === "section-info" : section.id === "section-overview-capacity")) : tab.sections).map((section) => (
+      {liveView ? <section className="workspace-live" aria-label={liveView === "processes" ? "进程" : "容器"}>
+        <LiveTopicPanel deviceId={selectedDevice.deviceId} topic={liveView === "processes" ? "processes" : "docker"} authenticated={liveAuthenticated} />
+      </section> : <div className="workspace-device-dashboard">
+        {(touch ? (touchPanel === "trends" ? tab.sections : findDeviceTab("overview").sections.filter((section) => touchPanel === "hardware" ? section.id === "section-info" : section.id === "section-overview-capacity")) : tab.sections).map((section) => liveOverviewActive && section.id === "section-overview" ? (
+          <DashboardSection key={section.id} id={section.id} eyebrow="实时" title="核心性能 · 实时" description="每次刷新都直接询问设备，只保留最近两分钟。">
+            <LiveTopicPanel deviceId={selectedDevice.deviceId} topic="metrics" authenticated={liveAuthenticated} />
+          </DashboardSection>
+        ) : (
           <DashboardSection
             key={section.id}
             id={section.id}
@@ -531,7 +578,17 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
             </DashboardGrid>
           </DashboardSection>
         ))}
-      </div>
+      </div>}
     </div>
   );
+}
+
+const liveViewCaptions: Record<DeviceLiveView, string> = {
+  processes: "设备上正在运行的进程 · 打开时才向设备查询，不写入历史",
+  containers: "Docker 容器的状态与资源占用 · 打开时才向设备查询，不写入历史"
+};
+
+/** Live tabs carry the same dot as the 实时 range: "this reads the device now". */
+function LiveTabLabel({ children }: { children: React.ReactNode }) {
+  return <span className="workspace-live-tab"><span className="workspace-live-dot" aria-hidden="true" />{children}</span>;
 }

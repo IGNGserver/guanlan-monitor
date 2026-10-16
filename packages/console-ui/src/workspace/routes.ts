@@ -15,10 +15,18 @@ export type SettingsSection =
   | "shortcuts"
   | "about";
 
+/**
+ * The device views that read the device on demand instead of history. They are
+ * part of the route so "this machine's processes" can be bookmarked, shared and
+ * opened from the command palette; history tabs stay page state.
+ */
+export type DeviceLiveView = "processes" | "containers";
+const deviceLiveViews = new Set<string>(["processes", "containers"]);
+
 export type WorkspaceRoute =
   | { kind: "overview" }
   | { kind: "devices" }
-  | { kind: "device"; deviceId: string }
+  | { kind: "device"; deviceId: string; view?: DeviceLiveView }
   | { kind: "settings"; section: SettingsSection };
 
 export const defaultRoute: WorkspaceRoute = { kind: "overview" };
@@ -49,9 +57,10 @@ function decodeSegment(value: string): string | null {
 export function parseWorkspaceHash(hash: string): WorkspaceRoute {
   const value = hash.replace(/^#/, "").replace(/^\//, "");
   if (value === "devices") return { kind: "devices" };
-  const [kind, rawId] = value.split("/");
+  const [kind, rawId, rawView] = value.split("/");
   const id = rawId ? decodeSegment(rawId) : null;
-  if (kind === "device" && id) return { kind: "device", deviceId: id };
+  // An unknown view keeps the device: the machine is what the link was about.
+  if (kind === "device" && id) return rawView && deviceLiveViews.has(rawView) ? { kind: "device", deviceId: id, view: rawView as DeviceLiveView } : { kind: "device", deviceId: id };
   // The standalone hub page was folded into the overview: the connection facts
   // it used to own are now a card there, and its settings live under 连接.
   if (kind === "hub") return defaultRoute;
@@ -76,7 +85,7 @@ export function serializeWorkspaceRoute(route: WorkspaceRoute): string {
     case "devices":
       return "#devices";
     case "device":
-      return `#device/${encodeURIComponent(route.deviceId)}`;
+      return `#device/${encodeURIComponent(route.deviceId)}${route.view ? `/${route.view}` : ""}`;
     case "settings":
       return `#settings/${route.section}`;
     default:

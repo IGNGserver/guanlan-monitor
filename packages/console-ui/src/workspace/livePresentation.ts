@@ -99,15 +99,3 @@ export function containerRates(previous: LiveDocker | null, current: LiveDocker)
   }
   return result;
 }
-
-export function percentPath(points: Array<{ at: number; value: number | null }>, end: number): string {
-  let connected = false;
-  return points.filter((point) => point.at >= end - 120_000).map((point) => {
-    if (point.value === null || !Number.isFinite(point.value)) { connected = false; return ""; }
-    const x = Math.max(0, Math.min(600, (point.at - (end - 120_000)) / 200));
-    const y = 80 - Math.max(0, Math.min(100, point.value)) * 0.8;
-    const command = connected ? "L" : "M";
-    connected = true;
-    return `${command}${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ");
-}
