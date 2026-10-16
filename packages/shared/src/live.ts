@@ -6,6 +6,8 @@ export interface LiveConnection {
   sessionId: string | null;
   capabilities: LiveTopic[];
   connectedAt: string | null;
+  /** When the Hub last refused this device's enrollment because its installation identity changed. Absent from older Hubs. */
+  identityConflictAt?: string | null;
 }
 
 export interface LiveProcess {
@@ -87,4 +89,6 @@ export interface LiveSnapshot<T extends LiveTopic = LiveTopic> {
 export interface ConsoleLivePort {
   getLiveConnection(deviceId: string): Promise<LiveConnection>;
   readLive<T extends LiveTopic>(deviceId: string, topic: T): Promise<LiveSnapshot<T>>;
+  /** Drops the device's live enrollment so a reinstalled Agent can enroll again. */
+  resetLiveCredentials?(deviceId: string): Promise<void>;
 }

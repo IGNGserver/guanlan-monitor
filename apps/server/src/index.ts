@@ -171,8 +171,8 @@ await registerLiveRoutes(app, { accessKey: env.ACCESS_KEY, requireHttps: env.AGE
 await registerRoutes(app, repositories, metricsService, {
   fanNotes,
   metricConfigs: deviceMetricConfigs,
-  revokeLiveDevice: async (deviceId) => {
-    await agentCredentials.revoke(deviceId);
+  removeLiveDevice: async (deviceId) => {
+    await agentCredentials.remove(deviceId);
     liveRegistry.closeDevice(deviceId);
   }
 });

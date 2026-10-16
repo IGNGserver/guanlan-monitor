@@ -9,6 +9,8 @@ const digest = (value: string) => createHash("sha256").update(value).digest("hex
 /** Device keys are only hashed on the Hub. Single writer, fail closed on corrupt storage. */
 export class AgentCredentials {
   private records: Record<string, Credential> = Object.create(null) as Record<string, Credential>;
+  /** Last refused enrollment per device, in memory only: lets the console explain a dead live channel. */
+  private readonly conflicts = new Map<string, string>();
   private queue = Promise.resolve();
   constructor(private readonly file: string, private readonly accessKey: string) {}
 
@@ -27,9 +29,16 @@ export class AgentCredentials {
 
   enroll(deviceId: string, instanceId: string, token: string): Promise<boolean> {
     return this.update(async () => {
-      const previous = this.records[deviceId];
+      // Records revoked by older Hub versions behave like removed ones: the device
+      // keeps reporting over HTTP and reappears, so a tombstone only left its
+      // live channel permanently dead with no way to recover it from the console.
+      const previous = this.records[deviceId]?.revoked ? undefined : this.records[deviceId];
       const hash = digest(token);
-      if (previous && (previous.revoked || previous.instanceId !== instanceId || !safeEqual(previous.digest, hash))) return false;
+      if (previous && (previous.instanceId !== instanceId || !safeEqual(previous.digest, hash))) {
+        this.conflicts.set(deviceId, new Date().toISOString());
+        return false;
+      }
+      this.conflicts.delete(deviceId);
       if (previous?.credentialVersion === digest(this.accessKey)) return true;
       const record = { instanceId, digest: hash, credentialVersion: digest(this.accessKey), revoked: false };
       await this.persist({ ...this.records, [deviceId]: record });
@@ -42,11 +51,19 @@ export class AgentCredentials {
     return Boolean(record && !record.revoked && record.instanceId === instanceId && safeEqual(record.credentialVersion, digest(this.accessKey)) && safeEqual(record.digest, digest(token)));
   }
 
-  revoke(deviceId: string): Promise<void> {
+  /** Forget a device's enrollment; the next enrollment binds whichever installation presents itself. */
+  remove(deviceId: string): Promise<void> {
     return this.update(async () => {
-      const record = this.records[deviceId];
-      if (record) await this.persist({ ...this.records, [deviceId]: { ...record, revoked: true } });
+      this.conflicts.delete(deviceId);
+      if (!(deviceId in this.records)) return;
+      const records = Object.assign(Object.create(null) as Record<string, Credential>, this.records);
+      delete records[deviceId];
+      await this.persist(records);
     });
+  }
+
+  conflictAt(deviceId: string): string | null {
+    return this.conflicts.get(deviceId) ?? null;
   }
 
   private update<T>(operation: () => Promise<T>): Promise<T> {

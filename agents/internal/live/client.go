@@ -78,21 +78,40 @@ func newIdentity() (Identity, error) {
 	return Identity{InstanceID: id[:8] + "-" + id[8:12] + "-" + id[12:16] + "-" + id[16:20] + "-" + id[20:], Token: hex.EncodeToString(token[:])}, nil
 }
 
-func (c *Client) identity(cfg Config) (Identity, error) {
-	scope := sha256.Sum256([]byte(cfg.ServerURL + "\x00" + cfg.DeviceID))
-	file := filepath.Join(c.Directory, "live-"+hex.EncodeToString(scope[:8])+".json")
-	if raw, err := agentconfig.ReadFileLimited(file); err == nil {
-		var id Identity
-		if json.Unmarshal(raw, &id) != nil || len(id.InstanceID) != 36 || len(id.Token) != 64 {
-			return Identity{}, errors.New("invalid_realtime_identity")
-		}
-		return id, nil
-	} else if !os.IsNotExist(err) {
-		return Identity{}, errors.New("realtime_identity_unreadable")
+func readIdentity(file string) (Identity, bool, error) {
+	raw, err := agentconfig.ReadFileLimited(file)
+	if os.IsNotExist(err) {
+		return Identity{}, false, nil
 	}
-	id, err := newIdentity()
+	if err != nil {
+		return Identity{}, false, errors.New("realtime_identity_unreadable")
+	}
+	var id Identity
+	if json.Unmarshal(raw, &id) != nil || len(id.InstanceID) != 36 || len(id.Token) != 64 {
+		return Identity{}, false, errors.New("invalid_realtime_identity")
+	}
+	return id, true, nil
+}
+
+// identity is keyed by device only. Keying it by Hub URL too meant that merely
+// re-typing the Hub address (http→https, a trailing slash, a new domain) made a
+// new installation identity that the Hub then refused as a conflict, forever.
+func (c *Client) identity(cfg Config) (Identity, error) {
+	scope := sha256.Sum256([]byte(cfg.DeviceID))
+	file := filepath.Join(c.Directory, "live-device-"+hex.EncodeToString(scope[:8])+".json")
+	if id, ok, err := readIdentity(file); err != nil || ok {
+		return id, err
+	}
+	// Adopt the identity an earlier version stored for this Hub URL + device.
+	legacyScope := sha256.Sum256([]byte(cfg.ServerURL + "\x00" + cfg.DeviceID))
+	id, ok, err := readIdentity(filepath.Join(c.Directory, "live-"+hex.EncodeToString(legacyScope[:8])+".json"))
 	if err != nil {
 		return Identity{}, err
+	}
+	if !ok {
+		if id, err = newIdentity(); err != nil {
+			return Identity{}, err
+		}
 	}
 	raw, err := json.Marshal(id)
 	if err != nil {

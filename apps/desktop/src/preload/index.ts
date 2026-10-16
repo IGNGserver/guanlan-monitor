@@ -16,7 +16,8 @@ import { parseWindowMaterialArgument, type WindowMaterialBridge } from "../windo
 const bridge: DesktopRendererBridge & WindowMaterialBridge = {
   live: {
     getLiveConnection: (deviceId: string) => ipcRenderer.invoke(IPC_CHANNELS.getLiveConnection, deviceId),
-    readLive: (deviceId: string, topic: LiveTopic) => ipcRenderer.invoke(IPC_CHANNELS.readLive, deviceId, topic)
+    readLive: (deviceId: string, topic: LiveTopic) => ipcRenderer.invoke(IPC_CHANNELS.readLive, deviceId, topic),
+    resetLiveCredentials: (deviceId: string) => ipcRenderer.invoke(IPC_CHANNELS.resetLiveCredentials, deviceId)
   },
   initialWindowMaterial: parseWindowMaterialArgument(process.argv),
   getSnapshot: (request?: DesktopSnapshotRequest) => ipcRenderer.invoke(IPC_CHANNELS.getSnapshot, request),

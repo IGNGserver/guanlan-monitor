@@ -74,16 +74,19 @@ interface TimedValue<T> { value: T; fetchedAt: number; ttl: number }
 export class WebConsoleAdapter implements ConsoleAdapter {
   readonly live: ConsoleLivePort = {
     getLiveConnection: (deviceId) => this.liveRequest<LiveConnection>(deviceId),
-    readLive: <T extends LiveTopic>(deviceId: string, topic: T) => this.liveRequest<LiveSnapshot<T>>(deviceId, topic)
+    readLive: <T extends LiveTopic>(deviceId: string, topic: T) => this.liveRequest<LiveSnapshot<T>>(deviceId, topic),
+    resetLiveCredentials: async (deviceId: string) => {
+      await this.liveRequest<{ ok: boolean }>(deviceId, undefined, { method: "POST", body: "{}" }, "/reset");
+    }
   };
 
-  private async liveRequest<T>(deviceId: string, topic?: LiveTopic): Promise<T> {
+  private async liveRequest<T>(deviceId: string, topic?: LiveTopic, init?: RequestInit, suffix = ""): Promise<T> {
     if (!this.sessionScope || this.snapshot.source !== "live") throw new Error("live_session_required");
     const scope = this.sessionScope;
     const sessionGeneration = this.sessionGeneration;
     const current = () => scope === this.sessionScope && sessionGeneration === this.sessionGeneration;
     try {
-      const result = await apiFetch<T>(`/api/devices/${encodeURIComponent(deviceId)}/live${topic ? `/${topic}` : ""}`);
+      const result = await apiFetch<T>(`/api/devices/${encodeURIComponent(deviceId)}/live${topic ? `/${topic}` : suffix}`, init);
       if (!current()) throw new Error("session_changed");
       return result;
     } catch (error) {

@@ -35,6 +35,8 @@ function LiveTopicView({ deviceId, port, topic, interval }: { deviceId: string; 
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const [lastConfirmed, setLastConfirmed] = useState(0);
+  const [conflictAt, setConflictAt] = useState<string | null>(null);
+  const [resetState, setResetState] = useState<"idle" | "pending" | "done" | "failed">("idle");
   const [points, setPoints] = useState<Array<{ at: number; cpu: number | null; memory: number | null }>>([]);
   const session = useRef<string | null>(null);
   useEffect(() => {
@@ -44,6 +46,7 @@ function LiveTopicView({ deviceId, port, topic, interval }: { deviceId: string; 
         const started = performance.now();
         const connection = await port.getLiveConnection(deviceId);
         if (stopped) return;
+        setConflictAt(connection.state === "ready" ? null : connection.identityConflictAt ?? null);
         if (connection.state !== "ready") throw new Error("device_not_connected");
         if (!connection.capabilities.includes(topic)) throw new Error("device_capability_unavailable");
         const result = await port.readLive(deviceId, topic);
@@ -72,7 +75,19 @@ function LiveTopicView({ deviceId, port, topic, interval }: { deviceId: string; 
   }, [deviceId, interval, port, topic]);
   const expired = lastConfirmed > 0 && now - lastConfirmed > Math.max(6000, interval * 2000);
   const fresh = snapshot !== null && !expired && !error;
+  const reset = async () => {
+    if (!port.resetLiveCredentials || !window.confirm("重置后，中枢会接受这台设备下一次以新身份登记的实时连接。仅在确认是你自己重装了 Agent 或丢失了密钥文件时操作。继续？")) return;
+    setResetState("pending");
+    try { await port.resetLiveCredentials(deviceId); setResetState("done"); }
+    catch { setResetState("failed"); }
+  };
   return <div>
+    {conflictAt && <div className="workspace-live__notice" role="alert">
+      <p>中枢在 {formatDate(conflictAt)} 拒绝了这台设备的实时登记：它的安装身份与已登记的不一致，常见原因是重装了 Agent 或删除了 Agent 配置目录。历史上报不受影响。</p>
+      {port.resetLiveCredentials && <Button variant="quiet" disabled={resetState === "pending"} onClick={() => void reset()}>{resetState === "pending" ? "正在重置……" : "重置实时凭据"}</Button>}
+      {resetState === "done" && <p>已重置。设备会在 30 秒内重新登记并连接。</p>}
+      {resetState === "failed" && <p>重置失败，请检查登录状态后重试。</p>}
+    </div>}
     <p role="status">{error ?? (expired ? "上次结果已过期，正在等待设备重新确认。" : snapshot ? `设备已确认返回 · ${formatDate(snapshot.receivedAt)} · ${Math.max(0, Math.floor((now - lastConfirmed) / 1000))} 秒前` : "正在确认设备连接并请求采集……")}</p>
     {fresh && topic === "metrics" && <LiveMetrics data={snapshot.data as LiveMetricsData} points={points} now={now} />}
     {fresh && topic === "processes" && <ProcessTable data={snapshot.data as LiveProcesses} />}

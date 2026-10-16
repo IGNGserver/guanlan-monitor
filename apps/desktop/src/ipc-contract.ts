@@ -1,6 +1,7 @@
 export const IPC_CHANNELS = {
   getLiveConnection: "dsc:get-live-connection",
   readLive: "dsc:read-live",
+  resetLiveCredentials: "dsc:reset-live-credentials",
   getSnapshot: "dsc:get-snapshot",
   refresh: "dsc:refresh",
   updateLocalConfig: "dsc:update-local-config",

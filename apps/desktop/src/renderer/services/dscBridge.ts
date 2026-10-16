@@ -37,6 +37,11 @@ class SafeDscBridge implements DesktopRendererBridge, WindowMaterialBridge {
       const port = this.requireBridge().live;
       if (!port) return Promise.reject(new Error("live_agent_upgrade_required"));
       return port.readLive(deviceId, topic);
+    },
+    resetLiveCredentials: (deviceId) => {
+      const port = this.requireBridge().live;
+      if (!port?.resetLiveCredentials) return Promise.reject(new Error("live_agent_upgrade_required"));
+      return port.resetLiveCredentials(deviceId);
     }
   };
   private fallbackSnapshot: DesktopSnapshot = createEmptySnapshot();

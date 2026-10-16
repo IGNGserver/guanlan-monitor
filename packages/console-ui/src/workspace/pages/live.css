@@ -24,3 +24,6 @@
 .workspace-live th { position: sticky; top: 0; background: var(--workspace-surface); }
 .workspace-live td small { display: block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; color: var(--workspace-text-secondary); }
 .workspace-live__raw { max-height: 400px; overflow: auto; font-size: 12px; }
+
+.workspace-live__notice { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+.workspace-live__notice p { margin: 0; }
