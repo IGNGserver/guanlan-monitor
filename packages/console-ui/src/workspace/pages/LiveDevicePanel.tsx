@@ -8,6 +8,7 @@ import { Button, Icon } from "../ui";
 import { ChartReadout, TimeSeriesChart, type ChartInspection, type ChartSeries } from "../charts";
 import { indexChartSamples, latestChartValues } from "../chartInspection.ts";
 import { ChartTile, DashboardCell, DashboardGrid } from "../dashboard";
+import { DockerTable, LiveNote, ProcessTable } from "./LiveTables";
 import { acceptsLiveSnapshot, containerRates, describeLiveError, isDisconnectedLiveError, isTransientLiveError, liveStatus, type ContainerRates, type LiveFailure, type LiveStatusTone } from "../livePresentation";
 import "./live.css";
 
@@ -176,11 +177,6 @@ function LiveStatusBar({ tone, label, detail, paused, onPausedChange, interval, 
 
 const toneNames: Record<LiveStatusTone, string> = { connecting: "正在连接设备", live: "实时数据", stale: "结果未更新", paused: "已暂停", unavailable: "实时数据不可用" };
 
-/** Measurement caveats are reference material: one click away, never in front of the numbers. */
-function LiveNote({ children }: { children: React.ReactNode }) {
-  return <details className="workspace-live__note"><summary><Icon name="info" size={15} />口径说明</summary><div>{children}</div></details>;
-}
-
 const LIVE_WINDOW_MS = 120_000;
 const LIVE_SAMPLE_LIMIT = 150;
 interface LiveSample { at: number; data: LiveMetricsData }
@@ -230,40 +226,4 @@ function LiveTrendTile({ title, subtitle, series, maxValue }: { title: string; s
   >
     <TimeSeriesChart series={series} visualization="line" maxValue={maxValue} valueFormatter={formatter} onHoverPoint={setHovered} hideReadout readoutId={readoutId} ariaLabel={`${title}，最近两分钟`} />
   </ChartTile>;
-}
-
-function ProcessTable({ data }: { data: LiveProcesses }) {
-  const [query, setQuery] = useState("");
-  const [sort, setSort] = useState("cpu");
-  const [page, setPage] = useState(0);
-  const items = useMemo(() => data.items.filter((item) => `${item.name} ${item.pid}`.toLowerCase().includes(query.toLowerCase())).sort((left, right) => sort === "memory" ? (right.memoryBytes ?? -1) - (left.memoryBytes ?? -1) : sort === "pid" ? left.pid - right.pid : (right.cpuPercent ?? -1) - (left.cpuPercent ?? -1)), [data, query, sort]);
-  const current = Math.min(page, Math.max(0, Math.ceil(items.length / 50) - 1));
-  return <>
-    <div className="workspace-live__toolbar">
-      <label>搜索进程<input value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} placeholder="名称或 PID" /></label>
-      <M3Select label="排序" value={sort} onChange={(event) => { setSort(event.target.value); setPage(0); }} options={[{ value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "pid", label: "PID" }]} />
-      <span className="workspace-live__summary">系统共 {data.totalCount} 个进程，读取到 {data.items.length} 个{data.truncated ? "（已达采集上限）" : ""}</span>
-    </div>
-    <div className="workspace-live__table"><table><thead><tr><th>进程</th><th>PID / 父 PID</th><th>CPU</th><th>内存</th><th>线程</th><th>状态</th></tr></thead><tbody>{items.slice(current * 50, current * 50 + 50).map((item) => <tr key={item.id}><td>{item.name}</td><td>{item.pid} / {item.parentPid ?? "—"}</td><td>{item.cpuPercent === null ? "—" : `${item.cpuPercent.toFixed(1)}%`}</td><td>{item.memoryBytes === null ? "—" : formatBytes(item.memoryBytes)}</td><td>{item.threads ?? "—"}</td><td>{item.status ?? "—"}</td></tr>)}</tbody></table></div>
-    {!items.length && <p>本次快照中没有可显示的匹配进程。</p>}
-    <div className="workspace-live__toolbar"><Button variant="quiet" disabled={current === 0} onClick={() => setPage(current - 1)}>上一页</Button><span>{current + 1} / {Math.max(1, Math.ceil(items.length / 50))} 页</span><Button variant="quiet" disabled={(current + 1) * 50 >= items.length} onClick={() => setPage(current + 1)}>下一页</Button></div>
-    <LiveNote>“—”表示没有读到，不是零：受保护或采集中退出的进程可能无法读取。CPU 按整机容量归一化（满载为 100%），内存为 RSS / 工作集。</LiveNote>
-  </>;
-}
-
-function DockerTable({ data, rates }: { data: LiveDocker; rates: Map<string, ContainerRates> }) {
-  const pair = (first: number | null | undefined, second: number | null | undefined) => `${first === null || first === undefined ? "—" : `${formatBytes(first)}/s`} / ${second === null || second === undefined ? "—" : `${formatBytes(second)}/s`}`;
-  const coverage = data.statsCandidates !== undefined && data.statsRead !== undefined ? ` · 资源统计 ${data.statsRead} / ${data.statsCandidates}` : "";
-  return <>
-    <p className="workspace-live__summary">Engine {data.engineId} · {data.totalCount} 个容器{data.truncated ? "（已达 512 个上限）" : ""}{coverage}</p>
-    <div className="workspace-live__table"><table><thead><tr><th>容器 / 镜像</th><th>状态</th><th>Compose 项目</th><th>CPU</th><th>内存 / 限额</th><th>网络收 / 发</th><th>块设备读 / 写</th></tr></thead><tbody>{data.items.map((item) => {
-      const rate = rates.get(item.id);
-      return <tr key={item.id}><td>{item.name}<small>{item.image}</small></td><td>{item.state}<small>{item.status}</small></td><td>{item.project ?? "—"}</td><td>{item.cpuPercent === null ? "—" : `${item.cpuPercent.toFixed(1)}%`}</td><td>{item.memoryBytes === null ? "—" : formatBytes(item.memoryBytes)} / {item.memoryLimitBytes === null ? "—" : formatBytes(item.memoryLimitBytes)}</td><td title={item.networkRxBytes === null ? undefined : `累计 ${formatBytes(item.networkRxBytes)} / ${item.networkTxBytes === null ? "—" : formatBytes(item.networkTxBytes)}`}>{pair(rate?.networkRx, rate?.networkTx)}</td><td>{pair(rate?.blockRead, rate?.blockWrite)}</td></tr>;
-    })}</tbody></table></div>
-    {!data.items.length && <p>已连接 Docker Engine，本次查询确实没有容器。</p>}
-    <LiveNote>
-      <p>“—”表示没有取到。Docker CPU 按单核计数，可超过 100%。网络与块设备是相邻两次查询之间的速率，所以第一次查询总是“—”。</p>
-      <p>{data.statsCandidates !== undefined ? "每次最多为 32 个运行中容器读取资源统计，优先最忙的并轮换其余；内存与 docker stats 口径一致，不含可回收的文件缓存。" : "每次最多为 32 个运行中容器读取资源统计；内存是 Engine 原始使用量，升级设备端后与 docker stats 口径一致。"}</p>
-    </LiveNote>
-  </>;
 }
