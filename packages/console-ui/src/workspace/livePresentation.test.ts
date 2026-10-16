@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { acceptsLiveSnapshot, containerRates, isDisconnectedLiveError, isTransientLiveError, liveErrorCode, liveErrorMessage, percentPath } from "./livePresentation.ts";
+import { acceptsLiveSnapshot, containerRates, describeLiveError, isDisconnectedLiveError, isTransientLiveError, liveErrorCode, liveErrorMessage, liveStatus, percentPath } from "./livePresentation.ts";
 import type { LiveContainer, LiveDocker, LiveSnapshot } from "@dsc/shared";
 
 test("live view refuses an answer for another device, topic or without a session", () => {
@@ -49,4 +49,27 @@ test("live curves preserve observed zero and gaps without joining across missing
   assert.equal((path.match(/L/g) ?? []).length, 1);
   assert.ok(path.includes(",80.0"));
   assert.equal(percentPath([{ at: 0, value: 100 }], 121000), "");
+});
+
+test("every failure has a short title and keeps the sentence that says what it does not mean", () => {
+  const denied = describeLiveError(new Error("hub_502:docker_permission_denied"));
+  assert.equal(denied.title, "没有 Docker 读取权限");
+  assert.match(denied.detail, /不代表没有容器/);
+  assert.equal(denied.transient, false);
+  assert.equal(describeLiveError(new Error("collection_busy")).transient, true);
+  const unknown = describeLiveError(new Error("api_error:500"));
+  assert.equal(unknown.title, "查询未完成");
+  assert.match(unknown.detail, /不会用历史缓存替代/);
+});
+
+test("the status pill only claims live for a confirmed, unexpired result", () => {
+  const busy = describeLiveError(new Error("collection_busy"));
+  const gone = describeLiveError(new Error("device_not_connected"));
+  assert.deepEqual(liveStatus({ paused: false, hasResult: false, expired: false, failure: null, ageSeconds: 0 }), { tone: "connecting", label: "正在连接设备" });
+  assert.deepEqual(liveStatus({ paused: false, hasResult: true, expired: false, failure: null, ageSeconds: 0 }), { tone: "live", label: "实时 · 刚刚" });
+  assert.deepEqual(liveStatus({ paused: false, hasResult: true, expired: false, failure: null, ageSeconds: 4 }), { tone: "live", label: "实时 · 4 秒前" });
+  assert.deepEqual(liveStatus({ paused: false, hasResult: true, expired: false, failure: busy, ageSeconds: 3 }), { tone: "stale", label: "设备繁忙 · 显示 3 秒前的结果" });
+  assert.equal(liveStatus({ paused: false, hasResult: true, expired: true, failure: null, ageSeconds: 9 }).tone, "stale", "an expired result is never live");
+  assert.deepEqual(liveStatus({ paused: false, hasResult: false, expired: false, failure: gone, ageSeconds: 0 }), { tone: "unavailable", label: "设备未连接" });
+  assert.equal(liveStatus({ paused: true, hasResult: true, expired: false, failure: null, ageSeconds: 30 }).tone, "paused", "pausing wins over every other state");
 });

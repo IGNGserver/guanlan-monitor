@@ -47,7 +47,7 @@ test("health summary counts offline devices and leaves cached status unknown", (
     overThreshold: 0,
     pending: 1,
     source: "live",
-    sourceLabel: "实时连接",
+    sourceLabel: "推送更新",
     sourceDetail: "同步于 10:00"
   });
   assert.equal(selectHealthSummary({ ...snapshot, source: "cache", session: { ...snapshot.session, authenticated: false } }, devices, () => "09:58").pending, null);
@@ -75,9 +75,9 @@ test("an online device past a threshold needs attention too, counted once", () =
 test("the data link label follows the declared transport, not the page", () => {
   const live = { ...snapshot, source: "live" as const, session: { authenticated: true, accessKeyConfigured: true } };
   const devices = [device({})];
-  assert.equal(selectHealthSummary(live, devices, () => "10:00", "push").sourceLabel, "实时连接");
+  assert.equal(selectHealthSummary(live, devices, () => "10:00", "push").sourceLabel, "推送更新");
   assert.equal(selectHealthSummary(live, devices, () => "10:00", "poll").sourceLabel, "定时刷新");
-  assert.equal(liveLinkLabel("push"), "实时连接");
+  assert.equal(liveLinkLabel("push"), "推送更新");
   assert.equal(liveLinkLabel("poll"), "定时刷新");
   for (const transport of ["push", "poll"] as const) {
     assert.equal(selectLinkLabel("live", transport), liveLinkLabel(transport));

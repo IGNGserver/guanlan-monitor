@@ -127,7 +127,7 @@ export function DevicesPage() {
       actions={!manageMode ? <Button variant="secondary" onClick={beginManage} disabled={!canManage}><Icon name="device" size={15} />管理顺序</Button> : <div className="workspace-order-actions"><Button variant="primary" onClick={() => void saveManage()} disabled={!orderDirty || mutationPending}>保存顺序</Button><Button variant="quiet" onClick={cancelManage} disabled={mutationPending}>取消</Button></div>}
     />
     {manageMode && <div className="workspace-inline-note" role="status">调整只生成草稿，点“保存顺序”才会写入中枢；未保存就离开会被提示。</div>}
-    {!canManage && <div className="workspace-inline-note" role="status">{snapshot.source === "cache" ? "离线缓存为只读快照。" : "需要实时连接并完成认证后才能删除或调整设备顺序。"}</div>}
+    {!canManage && <div className="workspace-inline-note" role="status">{snapshot.source === "cache" ? "离线缓存为只读快照。" : "需要连接中枢并完成认证后才能删除或调整设备顺序。"}</div>}
     <Surface className="workspace-directory-surface guanlan-data-table-surface">
       <div className="workspace-directory-table-scroll">
         <DeviceTable

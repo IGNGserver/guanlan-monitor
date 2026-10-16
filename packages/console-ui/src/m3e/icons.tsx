@@ -49,6 +49,7 @@ export type IconName =
   | "sort"
   | "play"
   | "stop"
+  | "pause"
   | "fullscreen"
   | "fullscreenExit"
   | "sun"
@@ -189,6 +190,7 @@ const ICONS: Record<IconName, React.ReactNode> = {
   sort: <path d="M7 4v16M7 20l-3-3M17 20V4M17 4l3 3" />,
   play: <path d="M8 5.5 18.5 12 8 18.5v-13Z" />,
   stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
+  pause: <path d="M8.5 5.5v13M15.5 5.5v13" />,
   fullscreen: <path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15" />,
   fullscreenExit: <path d="M9 4v3.5A1.5 1.5 0 0 1 7.5 9H4M20 9h-3.5A1.5 1.5 0 0 1 15 7.5V4M15 20v-3.5a1.5 1.5 0 0 1 1.5-1.5H20M4 15h3.5A1.5 1.5 0 0 1 9 16.5V20" />,
   sun: (

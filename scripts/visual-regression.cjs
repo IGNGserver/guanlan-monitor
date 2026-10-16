@@ -477,7 +477,7 @@ async function run() {
   // page is read on the desktop shell.)
   await page.goto(`${baseUrl}#settings/general`, { waitUntil: "domcontentloaded" });
   await page.locator(".workspace-page--settings").waitFor({ state: "visible", timeout: 15_000 });
-  assert.ok((await page.locator(".workspace-page--settings").innerText()).includes("实时连接"), "the push client must label live data 实时连接");
+  assert.ok((await page.locator(".workspace-page--settings").innerText()).includes("推送更新"), "the push client must label live data 推送更新");
   assert.ok(!(await page.locator(".workspace-page--settings").innerText()).includes("定时刷新"), "the push client must not describe itself as polling");
   // Leave the run in the expanded state so the breakpoint matrix exercises the
   // labelled rail rather than the collapsed one.

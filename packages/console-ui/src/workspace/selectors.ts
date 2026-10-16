@@ -57,9 +57,14 @@ export type LiveDataTransport = ConsoleSnapshot["source"] extends never ? never 
  * card said "实时中枢" for the same fact, and both said "实时" even on the
  * desktop shell, which polls. The transport is a capability, so the wording is
  * derived from it rather than restated per page.
+ *
+ * "实时" itself now belongs to the on-demand device view (high-frequency
+ * metrics, processes, containers). Calling the Hub link "实时连接" too put
+ * "与中枢链路：实时连接" next to "设备没有可用的实时连接" on one page, so the
+ * push transport is named for what it does: the Hub pushes updates.
  */
 export function liveLinkLabel(transport: LiveDataTransport): string {
-  return transport === "push" ? "实时连接" : "定时刷新";
+  return transport === "push" ? "推送更新" : "定时刷新";
 }
 
 export function selectLinkLabel(source: SnapshotDataSource, transport: LiveDataTransport): string {

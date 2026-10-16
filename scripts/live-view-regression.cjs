@@ -60,6 +60,17 @@ async function run() {
     await panel.locator(":scope > summary").click();
     await panel.locator(".workspace-live__metrics strong").first().waitFor();
     assert.ok(topics.includes("metrics"));
+    await panel.locator(".workspace-live__pill--live").waitFor();
+    assert.match(await panel.locator(".workspace-live__pill").innerText(), /^实时/, "a confirmed result is labelled live");
+    await panel.getByRole("button", { name: "暂停", exact: true }).click();
+    await panel.locator(".workspace-live__pill--paused").waitFor();
+    const pausedAt = topics.length;
+    await page.waitForTimeout(1600);
+    assert.equal(topics.length, pausedAt, "a paused view must not query the device");
+    assert.equal(await panel.locator(".workspace-live__metrics").count(), 1, "pausing keeps the last result on screen");
+    await panel.getByRole("button", { name: "继续", exact: true }).click();
+    await panel.locator(".workspace-live__pill--live").waitFor();
+    assert.ok(topics.length > pausedAt, "resuming queries again");
     await panel.getByRole("tab", { name: "进程", exact: true }).click();
     await panel.getByText("fixture-process", { exact: true }).waitFor();
     assert.equal(await panel.locator("tbody tr").first().locator("td").nth(2).innerText(), "—", "missing process CPU must not become zero");
@@ -98,8 +109,8 @@ async function run() {
     await page.waitForTimeout(1600);
     assert.equal(calls, stopped, "collapsing the panel must release polling");
     assert.deepEqual(errors, []);
-    fs.writeFileSync(path.join(output, "report.json"), JSON.stringify({ passed: true, calls, topics, checks: ["collapsed idle", "metrics", "process null semantics", "Docker denied vs empty", "disconnected refusal", "reconnect resumes", "identity conflict reset", "collapse cleanup"] }, null, 2));
-    console.log("Live view regression: 8 checks passed");
+    fs.writeFileSync(path.join(output, "report.json"), JSON.stringify({ passed: true, calls, topics, checks: ["collapsed idle", "metrics", "pause and resume", "process null semantics", "Docker denied vs empty", "disconnected refusal", "reconnect resumes", "identity conflict reset", "collapse cleanup"] }, null, 2));
+    console.log("Live view regression: 9 checks passed");
   } finally { await browser.close(); }
 }
 run().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -25,7 +25,7 @@ test("platform capabilities keep Web and Electron responsibilities explicit", ()
   assert.equal(DESKTOP_CAPABILITIES.canControlNativeWindow, true);
   assert.equal(DESKTOP_CAPABILITIES.requiresAuthentication, false);
   // The two shells must not claim the same freshness: only the browser has a
-  // realtime channel, so only it may label live data "实时".
+  // push channel, so only it may label live data "推送更新".
   assert.equal(WEB_CAPABILITIES.liveDataTransport, "push");
   assert.equal(DESKTOP_CAPABILITIES.liveDataTransport, "poll");
   assertSnapshotContract(emptyConsoleSnapshot());
