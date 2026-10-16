@@ -9,6 +9,15 @@ test("workspace routes support the device directory and encoded deep links", () 
   assert.deepEqual(parseWorkspaceHash("#settings/appearance"), { kind: "settings", section: "appearance" });
 });
 
+test("live device views are part of the device link", () => {
+  const route = { kind: "device", deviceId: "nas/primary", view: "processes" } as const;
+  assert.equal(serializeWorkspaceRoute(route), "#device/nas%2Fprimary/processes");
+  assert.deepEqual(parseWorkspaceHash(serializeWorkspaceRoute(route)), route);
+  assert.deepEqual(parseWorkspaceHash("#device/nas/containers"), { kind: "device", deviceId: "nas", view: "containers" });
+  assert.deepEqual(parseWorkspaceHash("#device/nas/bogus"), { kind: "device", deviceId: "nas" }, "an unknown view still opens the device");
+  assert.equal(serializeWorkspaceRoute({ kind: "device", deviceId: "nas" }), "#device/nas");
+});
+
 test("unknown or malformed workspace hashes fall back to overview", () => {
   assert.deepEqual(parseWorkspaceHash("#not-a-route"), { kind: "overview" });
   assert.deepEqual(parseWorkspaceHash("#device/%E0%A4%A"), { kind: "overview" });

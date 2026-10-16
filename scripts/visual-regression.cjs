@@ -285,8 +285,8 @@ async function run() {
   const deviceTabs = page.locator(".workspace-device-context .m3e-tabs");
   assert.deepEqual(
     (await deviceTabs.getByRole("tab").allTextContents()).map((label) => label.trim()),
-    ["概览", "计算与系统", "存储", "网络", "硬件与环境"],
-    "device detail must render exactly the five fixed layout tabs in order"
+    ["概览", "计算与系统", "存储", "网络", "硬件与环境", "进程", "容器"],
+    "device detail must render the five fixed history tabs, then the two live tabs"
   );
 
   await page.getByRole("tab", { name: "计算与系统" }).click();

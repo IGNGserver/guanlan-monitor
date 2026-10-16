@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { acceptsLiveSnapshot, containerRates, describeLiveError, isDisconnectedLiveError, isTransientLiveError, liveErrorCode, liveErrorMessage, liveStatus, percentPath } from "./livePresentation.ts";
+import { acceptsLiveSnapshot, containerRates, describeLiveError, isDisconnectedLiveError, isTransientLiveError, liveErrorCode, liveErrorMessage, liveStatus } from "./livePresentation.ts";
 import type { LiveContainer, LiveDocker, LiveSnapshot } from "@dsc/shared";
 
 test("live view refuses an answer for another device, topic or without a session", () => {
@@ -41,14 +41,6 @@ test("unavailable Docker is not presented as an empty container list", () => {
   assert.match(liveErrorMessage(new Error("hub_502:docker_permission_denied")), /不代表没有容器/);
   assert.match(liveErrorMessage(new Error("device_ack_timeout")), /未确认收到/);
   assert.match(liveErrorMessage(new Error("device_response_timeout")), /已接收/);
-});
-
-test("live curves preserve observed zero and gaps without joining across missing samples", () => {
-  const path = percentPath([{ at: 1000, value: 0 }, { at: 2000, value: null }, { at: 3000, value: 10 }, { at: 4000, value: 20 }], 120000);
-  assert.equal((path.match(/M/g) ?? []).length, 2);
-  assert.equal((path.match(/L/g) ?? []).length, 1);
-  assert.ok(path.includes(",80.0"));
-  assert.equal(percentPath([{ at: 0, value: 100 }], 121000), "");
 });
 
 test("every failure has a short title and keeps the sentence that says what it does not mean", () => {

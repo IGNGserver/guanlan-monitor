@@ -1,20 +1,23 @@
 .workspace-live {
   margin-block: 16px;
   padding: 16px;
-  border: 1px solid var(--workspace-border);
   border-radius: var(--md-sys-shape-lg);
   background: var(--workspace-surface);
   color: var(--workspace-text);
 }
-.workspace-live > summary { cursor: pointer; font-weight: 600; min-height: 28px; }
-.workspace-live p { color: var(--workspace-text-secondary); font-size: 13px; line-height: 1.6; }
-.workspace-live__lead { margin: 4px 0 12px; }
-.workspace-live__body { display: grid; gap: 12px; }
+.workspace-live__body p { color: var(--workspace-text-secondary); font-size: 13px; line-height: 1.6; }
+.workspace-live__body { display: grid; gap: 12px; min-width: 0; }
 .workspace-live__body > p { margin: 0; }
 /* Numbers that change every second must not shift their neighbours. */
-.workspace-live strong, .workspace-live td, .workspace-live__status { font-variant-numeric: tabular-nums; }
+.workspace-live__body strong, .workspace-live__body td, .workspace-live__status, .workspace-live__body .chart-tile__readout { font-variant-numeric: tabular-nums; }
 
-.workspace-live__status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding-top: 12px; }
+/* "This reads the device now": the same dot on the 实时 range and the live tabs. */
+.workspace-live-dot { display: inline-block; width: 7px; height: 7px; border-radius: var(--md-sys-shape-full); background: var(--workspace-green); flex: 0 0 auto; }
+.workspace-live-tab, .workspace-range-control__live { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.workspace-device-tabs .workspace-device-tab--live-first { margin-left: 12px; position: relative; }
+.workspace-device-tabs .workspace-device-tab--live-first::before { content: ""; position: absolute; left: -7px; top: 25%; bottom: 25%; width: 1px; background: var(--workspace-border-strong); }
+
+.workspace-live__status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .workspace-live__status-detail { color: var(--workspace-text-secondary); font-size: 13px; }
 .workspace-live__status-actions { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
 .workspace-live__interval { min-width: 120px; }
@@ -63,8 +66,8 @@
 .workspace-live__charts figcaption { font-size: 12px; color: var(--workspace-text-secondary); }
 .workspace-live__charts svg { display: block; width: 100%; height: 100px; color: var(--workspace-accent); }
 .workspace-live__table { overflow-x: auto; max-height: 560px; }
-.workspace-live table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.workspace-live th, .workspace-live td { padding: 10px; border-bottom: 1px solid var(--workspace-border); text-align: left; white-space: nowrap; }
-.workspace-live th { position: sticky; top: 0; background: var(--workspace-surface); }
-.workspace-live td small { display: block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; color: var(--workspace-text-secondary); }
-.workspace-live .m3e-banner p { margin: 0; color: inherit; }
+.workspace-live__body table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.workspace-live__body th, .workspace-live__body td { padding: 10px; border-bottom: 1px solid var(--workspace-border); text-align: left; white-space: nowrap; }
+.workspace-live__body th { position: sticky; top: 0; background: var(--workspace-surface); }
+.workspace-live__body td small { display: block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; color: var(--workspace-text-secondary); }
+.workspace-live__body .m3e-banner p { margin: 0; color: inherit; }

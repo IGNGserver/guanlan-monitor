@@ -1,35 +1,54 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import type { ConsoleLivePort, LiveDocker, LiveMetrics as LiveMetricsData, LiveProcesses, LiveSnapshot, LiveTopic } from "@dsc/shared";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import type { ConsoleLivePort, LiveDocker, LiveMetrics as LiveMetricsData, LiveProcesses, LiveSnapshot, LiveTopic, SamplePoint } from "@dsc/shared";
 import { startVisiblePolling } from "../../helpers/visiblePolling";
 import { useLivePort } from "../WorkspaceContext";
 import { formatBytes, formatDate } from "../formatters";
-import { M3Banner, M3Tabs, M3Select } from "../m3";
+import { M3Banner, M3Select } from "../m3";
 import { Button, Icon } from "../ui";
-import { acceptsLiveSnapshot, containerRates, describeLiveError, isDisconnectedLiveError, isTransientLiveError, liveStatus, percentPath, type ContainerRates, type LiveFailure, type LiveStatusTone } from "../livePresentation";
+import { ChartReadout, TimeSeriesChart, type ChartInspection, type ChartSeries } from "../charts";
+import { indexChartSamples, latestChartValues } from "../chartInspection.ts";
+import { ChartTile, DashboardCell, DashboardGrid } from "../dashboard";
+import { acceptsLiveSnapshot, containerRates, describeLiveError, isDisconnectedLiveError, isTransientLiveError, liveStatus, type ContainerRates, type LiveFailure, type LiveStatusTone } from "../livePresentation";
 import "./live.css";
 
-export function LiveDevicePanel({ deviceId, authenticated }: { deviceId: string; authenticated: boolean }) {
+/**
+ * What the device can answer live, read from the Hub's session table (never
+ * from the device). `null` means "not known right now" — no session, no port,
+ * not signed in — and callers must not hide a view on that basis alone.
+ */
+export function useLiveCapabilities(deviceId: string, enabled: boolean): LiveTopic[] | null {
   const port = useLivePort();
-  const [open, setOpen] = useState(false);
-  return <details className="workspace-live" onToggle={(event) => setOpen(event.currentTarget.open)}>
-    <summary>实时查看 · 高频指标 / 进程 / Docker</summary>
-    <p className="workspace-live__lead">展开时才向设备查询，结果不写入历史；下方图表仍是历史上报数据。</p>
-    {!port ? <p>当前客户端尚不支持实时查看。</p> : !authenticated ? <p>请先连接并登录中枢，离线缓存不能提供实时能力。</p> : open ? <LiveView key={deviceId} deviceId={deviceId} port={port} /> : null}
-  </details>;
+  const [capabilities, setCapabilities] = useState<LiveTopic[] | null>(null);
+  useEffect(() => {
+    setCapabilities(null);
+    if (!port || !enabled) return;
+    let stopped = false;
+    port.getLiveConnection(deviceId)
+      .then((connection) => { if (!stopped && connection.state === "ready") setCapabilities(connection.capabilities); })
+      .catch(() => undefined);
+    return () => { stopped = true; };
+  }, [deviceId, enabled, port]);
+  return capabilities;
+}
+
+/** Processes and containers are read every 2 s by default: a table needs a moment to be read between reorders. */
+const defaultInterval: Record<LiveTopic, number> = { metrics: 1, processes: 2, docker: 2 };
+
+/**
+ * One live view of one device. Nothing is requested until this is mounted, and
+ * unmounting it (switching tab or range) stops every request.
+ */
+export function LiveTopicPanel({ deviceId, topic, authenticated }: { deviceId: string; topic: LiveTopic; authenticated: boolean }) {
+  const port = useLivePort();
+  const [interval, setIntervalSeconds] = useState(defaultInterval[topic]);
+  const [paused, setPaused] = useState(false);
+  if (!port) return <M3Banner tone="info" title="当前客户端不支持实时查看">升级到最新版本的观澜客户端后即可使用。</M3Banner>;
+  if (!authenticated) return <M3Banner tone="info" title="需要登录中枢">实时数据直接来自设备，离线缓存不能提供；连接并登录中枢后自动开始。</M3Banner>;
+  // The interval is not part of the key: changing it must not discard the two-minute curve.
+  return <LiveTopicView key={`${deviceId}:${topic}`} deviceId={deviceId} port={port} topic={topic} interval={interval} onIntervalChange={setIntervalSeconds} paused={paused} onPausedChange={setPaused} />;
 }
 
 const intervalOptions = [{ value: "1", label: "每 1 秒" }, { value: "2", label: "每 2 秒" }, { value: "5", label: "每 5 秒" }];
-
-function LiveView({ deviceId, port }: { deviceId: string; port: ConsoleLivePort }) {
-  const [topic, setTopic] = useState<LiveTopic>("metrics");
-  const [interval, setIntervalSeconds] = useState(1);
-  const [paused, setPaused] = useState(false);
-  return <>
-    <M3Tabs aria-label="实时查看内容" value={topic} onChange={(id) => setTopic(id as LiveTopic)} tabs={[{ id: "metrics", label: "高频指标" }, { id: "processes", label: "进程" }, { id: "docker", label: "Docker" }]} />
-    {/* The interval is not part of the key: changing it must not discard the two-minute curve. */}
-    <LiveTopicView key={`${deviceId}:${topic}`} deviceId={deviceId} port={port} topic={topic} interval={interval} onIntervalChange={setIntervalSeconds} paused={paused} onPausedChange={setPaused} />
-  </>;
-}
 
 function LiveTopicView({ deviceId, port, topic, interval, onIntervalChange, paused, onPausedChange }: { deviceId: string; port: ConsoleLivePort; topic: LiveTopic; interval: number; onIntervalChange: (seconds: number) => void; paused: boolean; onPausedChange: (paused: boolean) => void }) {
   const [snapshot, setSnapshot] = useState<LiveSnapshot | null>(null);
@@ -38,7 +57,7 @@ function LiveTopicView({ deviceId, port, topic, interval, onIntervalChange, paus
   const [lastConfirmed, setLastConfirmed] = useState(0);
   const [conflictAt, setConflictAt] = useState<string | null>(null);
   const [resetState, setResetState] = useState<"idle" | "pending" | "done" | "failed">("idle");
-  const [points, setPoints] = useState<Array<{ at: number; cpu: number | null; memory: number | null }>>([]);
+  const [samples, setSamples] = useState<LiveSample[]>([]);
   const [rates, setRates] = useState<Map<string, ContainerRates>>(new Map());
   const session = useRef<string | null>(null);
   const previousDocker = useRef<LiveDocker | null>(null);
@@ -50,9 +69,6 @@ function LiveTopicView({ deviceId, port, topic, interval, onIntervalChange, paus
     // labelled as paused, until the reader resumes.
     if (paused) return;
     let stopped = false;
-    const gap = (at: number) => setPoints((previous) => [...previous.filter((point) => point.at >= at - 120_000), { at, cpu: null, memory: null }].slice(-120));
-    // A pause or interval change must not draw a line across the time nobody asked.
-    gap(Date.now());
     const refreshConnection = async () => {
       const connection = await port.getLiveConnection(deviceId);
       if (stopped) return null;
@@ -78,10 +94,10 @@ function LiveTopicView({ deviceId, port, topic, interval, onIntervalChange, paus
         session.current = result.sessionId;
         setSnapshot(result); setLastConfirmed(at); setNow(at); setFailure(null); setConflictAt(null);
         if (topic === "metrics") {
-          const metrics = result.data as LiveMetricsData;
-          const cpu = metrics.cpuPercent;
-          const memory = metrics.memoryUsedBytes !== null && metrics.memoryTotalBytes ? metrics.memoryUsedBytes / metrics.memoryTotalBytes * 100 : null;
-          setPoints((previous) => [...(changedSession ? [] : previous.filter((point) => point.at >= at - 120_000)), { at, cpu, memory }].slice(-120));
+          // A failed or paused stretch simply has no samples; the chart breaks
+          // the curve there instead of joining across time nobody observed.
+          const data = result.data as LiveMetricsData;
+          setSamples((previous) => [...(changedSession ? [] : previous.filter((sample) => sample.at >= at - LIVE_WINDOW_MS)), { at, data }].slice(-LIVE_SAMPLE_LIMIT));
         }
         if (topic === "docker") {
           const docker = result.data as LiveDocker;
@@ -98,7 +114,6 @@ function LiveTopicView({ deviceId, port, topic, interval, onIntervalChange, paus
           disconnected.current = true;
           await refreshConnection().catch(() => null);
         }
-        gap(Date.now());
       }
     }, interval * 1000, true);
     const stopClock = startVisiblePolling(async () => { setNow(Date.now()); }, 1000);
@@ -136,7 +151,7 @@ function LiveTopicView({ deviceId, port, topic, interval, onIntervalChange, paus
     {resetState === "done" && !snapshot && <M3Banner tone="success" title="已重置实时凭据">设备会在 30 秒内重新登记并连接。</M3Banner>}
     {failure && !fresh && !conflictAt && <M3Banner tone="warning" title={failure.title}>{failure.detail}</M3Banner>}
     {failure && fresh && <p className="workspace-live__stale-note">{failure.detail}</p>}
-    {fresh && topic === "metrics" && <LiveMetrics data={snapshot.data as LiveMetricsData} points={points} now={now} />}
+    {fresh && topic === "metrics" && <LiveMetrics data={snapshot.data as LiveMetricsData} samples={samples} />}
     {fresh && topic === "processes" && <ProcessTable data={snapshot.data as LiveProcesses} />}
     {fresh && topic === "docker" && <DockerTable data={snapshot.data as LiveDocker} rates={rates} />}
   </div>;
@@ -166,21 +181,55 @@ function LiveNote({ children }: { children: React.ReactNode }) {
   return <details className="workspace-live__note"><summary><Icon name="info" size={15} />口径说明</summary><div>{children}</div></details>;
 }
 
-function LiveMetrics({ data, points, now }: { data: LiveMetricsData; points: Array<{ at: number; cpu: number | null; memory: number | null }>; now: number }) {
-  const rate = (value: number | null) => value === null ? "待有效采样" : `${formatBytes(value)}/s`;
-  const values = [
-    ["CPU", data.cpuPercent === null ? "待有效采样" : `${data.cpuPercent.toFixed(1)}%`],
-    ["内存", data.memoryUsedBytes === null || data.memoryTotalBytes === null ? "不可用" : `${formatBytes(data.memoryUsedBytes)} / ${formatBytes(data.memoryTotalBytes)}`],
-    ["磁盘读取", rate(data.diskReadBytesPerSec)],
-    ["磁盘写入", rate(data.diskWriteBytesPerSec)],
-    ["网络接收", rate(data.networkRxBytesPerSec)],
-    ["网络发送", rate(data.networkTxBytesPerSec)]
-  ];
+const LIVE_WINDOW_MS = 120_000;
+const LIVE_SAMPLE_LIMIT = 150;
+interface LiveSample { at: number; data: LiveMetricsData }
+
+function liveSeries(samples: LiveSample[], label: string, pick: (data: LiveMetricsData) => number | null, valueFormatter: (value: number) => string): ChartSeries {
+  const points: SamplePoint[] = [];
+  for (const sample of samples) {
+    const value = pick(sample.data);
+    if (value !== null && Number.isFinite(value)) points.push({ timestamp: new Date(sample.at).toISOString(), value });
+  }
+  return { label, points, valueFormatter };
+}
+
+const percent = (value: number) => `${value.toFixed(1)}%`;
+const rate = (value: number) => `${formatBytes(value)}/s`;
+const memoryPercent = (data: LiveMetricsData) => data.memoryUsedBytes !== null && data.memoryTotalBytes ? data.memoryUsedBytes / data.memoryTotalBytes * 100 : null;
+
+/**
+ * The same four questions the history overview answers (CPU, memory, disk,
+ * network), on the same card, so switching the range to 实时 changes the
+ * time scale and nothing else the reader has to re-learn.
+ */
+function LiveMetrics({ data, samples }: { data: LiveMetricsData; samples: LiveSample[] }) {
+  const memory = data.memoryUsedBytes !== null && data.memoryTotalBytes !== null ? `${formatBytes(data.memoryUsedBytes)} / ${formatBytes(data.memoryTotalBytes)}` : "容量不可用";
   return <>
-    <div className="workspace-live__metrics">{values.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
-    <div className="workspace-live__charts">{(["cpu", "memory"] as const).map((key) => <figure key={key}><figcaption>{key === "cpu" ? "CPU" : "内存"} · 最近两分钟 · 0–100%</figcaption><svg viewBox="0 0 600 80" role="img" aria-label={`${key === "cpu" ? "CPU" : "内存"}实时趋势`}><path d={percentPath(points.map((point) => ({ at: point.at, value: point[key] })), now)} fill="none" stroke="currentColor" strokeWidth="2" /></svg></figure>)}</div>
-    <LiveNote>快速指标与历史上报使用各自的采样窗口，查看不会改变历史数据。温度、风扇、GPU 与硬件信息只在历史图表中按原有频率采集。</LiveNote>
+    <DashboardGrid>
+      <DashboardCell span="half"><LiveTrendTile title="CPU 使用率" subtitle="整机平均" maxValue={100} series={[liveSeries(samples, "CPU", (item) => item.cpuPercent, percent)]} /></DashboardCell>
+      <DashboardCell span="half"><LiveTrendTile title="内存占用" subtitle={memory} maxValue={100} series={[liveSeries(samples, "已用内存", memoryPercent, percent)]} /></DashboardCell>
+      <DashboardCell span="half"><LiveTrendTile title="磁盘读写" subtitle="所有磁盘合计" series={[liveSeries(samples, "读取", (item) => item.diskReadBytesPerSec, rate), liveSeries(samples, "写入", (item) => item.diskWriteBytesPerSec, rate)]} /></DashboardCell>
+      <DashboardCell span="half"><LiveTrendTile title="网络收发" subtitle="所有网卡合计" series={[liveSeries(samples, "接收", (item) => item.networkRxBytesPerSec, rate), liveSeries(samples, "发送", (item) => item.networkTxBytesPerSec, rate)]} /></DashboardCell>
+    </DashboardGrid>
+    <LiveNote>只保留最近两分钟，不写入历史；快速指标与历史上报使用各自的采样窗口，查看不会改变历史数据。数值第一次出现前需要一个完整的采样窗口。温度、风扇、GPU 与硬件信息只在历史范围中按原有频率采集。</LiveNote>
   </>;
+}
+
+function LiveTrendTile({ title, subtitle, series, maxValue }: { title: string; subtitle: string; series: ChartSeries[]; maxValue?: number }) {
+  const [hovered, setHovered] = useState<ChartInspection | null>(null);
+  const readoutId = useId();
+  const formatter = series[0]?.valueFormatter;
+  const latest = useMemo(() => latestChartValues(series, indexChartSamples(series), formatter), [series, formatter]);
+  const empty = !series.some((item) => item.points.length);
+  return <ChartTile
+    title={title}
+    subtitle={subtitle}
+    readout={<ChartReadout info={hovered ?? latest} inspecting={Boolean(hovered)} id={readoutId} compact />}
+    emptyMessage={empty ? "等待第一个有效采样" : undefined}
+  >
+    <TimeSeriesChart series={series} visualization="line" maxValue={maxValue} valueFormatter={formatter} onHoverPoint={setHovered} hideReadout readoutId={readoutId} ariaLabel={`${title}，最近两分钟`} />
+  </ChartTile>;
 }
 
 function ProcessTable({ data }: { data: LiveProcesses }) {

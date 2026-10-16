@@ -554,6 +554,7 @@ export interface M3TabItem {
   id: string;
   label: React.ReactNode;
   disabled?: boolean;
+  className?: string;
 }
 
 export interface M3TabsProps {
@@ -570,7 +571,7 @@ export function M3Tabs({ tabs, value, onChange, className, "aria-label": ariaLab
       {tabs.map((tab) => (
         <button
           key={tab.id}
-          className={joinClasses("m3e-tabs__tab", "m3e-state-host", tab.id === value && "is-selected")}
+          className={joinClasses("m3e-tabs__tab", "m3e-state-host", tab.id === value && "is-selected", tab.className)}
           type="button"
           role="tab"
           aria-selected={tab.id === value}

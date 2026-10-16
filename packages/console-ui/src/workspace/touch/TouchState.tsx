@@ -3,7 +3,7 @@ import type { DeviceDirectorySort, DeviceDirectoryStatus } from "../selectors";
 import type { SettingsSection } from "../routes";
 import type { DeviceTabId } from "../dashboard";
 
-export type TouchPanel = "status" | "trends" | "hardware";
+export type TouchPanel = "status" | "trends" | "processes" | "containers" | "hardware";
 export interface TouchDetailState { panel: TouchPanel; tab: DeviceTabId; }
 function useTouchStateValue() {
   const [query, setQuery] = useState("");
