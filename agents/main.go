@@ -521,6 +521,7 @@ type agentState struct {
 	lastSystemAt time.Time
 	currentCfg   agentRuntimeConfig
 	hasConfig    bool
+	config       *configSource
 	// Slow-changing hardware inventory, refreshed on a TTL instead of every slow
 	// cycle. Populated without any environment probe on platforms that do not
 	// expose one, so the collector never spawns a process just to fill it.
@@ -1223,21 +1224,10 @@ func defaultFanProbeSelection(goos string) agentProbeSelection {
 }
 
 func (s *agentState) loadRuntimeConfig(defaults agentRuntimeConfig) agentRuntimeConfig {
-	cfg := defaults
-	if s.configPath != "" {
-		raw, err := os.ReadFile(s.configPath)
-		if err == nil && len(raw) > 0 {
-			raw = trimUTF8BOM(raw)
-			var fileCfg agentConfigFile
-			if unmarshalErr := json.Unmarshal(raw, &fileCfg); unmarshalErr != nil {
-				logCategoryf(logCategoryConfigParse, "agent config parse failed: %v", unmarshalErr)
-			} else {
-				cfg = mergeConfig(defaults, fileCfg)
-			}
-		} else if err != nil && !os.IsNotExist(err) {
-			logCategoryf(logCategoryConfigRead, "agent config read failed: %v", err)
-		}
+	if s.config == nil || s.config.path != s.configPath {
+		s.config = newConfigSource(s.configPath)
 	}
+	cfg := s.config.load(defaults)
 	s.currentCfg = cfg
 	s.hasConfig = true
 	return cfg

@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -20,10 +18,11 @@ import (
 func startLiveClient(ctx context.Context, state *agentState, mu *sync.Mutex, defaults agentRuntimeConfig, directory string) {
 	// Configuration checks must not wait for a metric probe, or that probe could
 	// block the socket reader's heartbeat. This reader never touches sampling state.
-	source := &liveConfigSource{path: state.configPath, defaults: defaults}
+	// Its own source: the upload loop's lives on state and is read under the state lock.
+	source := newConfigSource(state.configPath)
 	identity := state.baseIdentity
 	config := func() live.Config {
-		cfg := source.load()
+		cfg := source.load(defaults)
 		id := (&agentState{baseIdentity: identity}).currentIdentity(cfg)
 		return live.Config{ServerURL: cfg.Connection.ServerURL, AccessKey: cfg.Connection.Secret, DeviceID: id.DeviceID, Enabled: cfg.CloudSyncEnabled && cfg.DataRecordingEnabled}
 	}
@@ -31,7 +30,7 @@ func startLiveClient(ctx context.Context, state *agentState, mu *sync.Mutex, def
 	go client.Run(ctx)
 }
 
-func newLiveHandler(state *agentState, mu *sync.Mutex, defaults agentRuntimeConfig, source *liveConfigSource, enabled func() bool) live.Handler {
+func newLiveHandler(state *agentState, mu *sync.Mutex, defaults agentRuntimeConfig, source *configSource, enabled func() bool) live.Handler {
 	var processMu sync.Mutex
 	processes := &live.ProcessCollector{}
 	docker := &live.DockerCollector{}
@@ -46,7 +45,7 @@ func newLiveHandler(state *agentState, mu *sync.Mutex, defaults agentRuntimeConf
 		switch request.Topic {
 		case "metrics":
 			if request.HubRevision >= 2 {
-				return fast.sample(ctx, source.load()), nil
+				return fast.sample(ctx, source.load(defaults)), nil
 			}
 			// A revision-1 Hub only accepts the full upload payload. Keep serving
 			// it until that Hub is upgraded; this path shares the upload sampler.
@@ -70,65 +69,6 @@ func newLiveHandler(state *agentState, mu *sync.Mutex, defaults agentRuntimeConf
 			return nil, errors.New("collection_failed")
 		}
 	}
-}
-
-// liveConfigSource re-reads the config file only when it changes and keeps the
-// last good configuration while the file is unreadable, empty or half-written:
-// a transient read must not look like a Hub/credential change and drop the session.
-type liveConfigSource struct {
-	mu       sync.Mutex
-	path     string
-	defaults agentRuntimeConfig
-	have     bool
-	cfg      agentRuntimeConfig
-	modTime  time.Time
-	size     int64
-	exists   bool
-	readAt   time.Time
-}
-
-const liveConfigRecheck = 30 * time.Second
-
-func (s *liveConfigSource) load() agentRuntimeConfig {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.path == "" {
-		return s.defaults
-	}
-	now := time.Now()
-	info, err := os.Stat(s.path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			s.have, s.exists, s.cfg = true, false, s.defaults
-			return s.cfg
-		}
-		return s.fallback()
-	}
-	if s.have && s.exists && info.ModTime().Equal(s.modTime) && info.Size() == s.size && now.Sub(s.readAt) < liveConfigRecheck {
-		return s.cfg
-	}
-	raw, err := os.ReadFile(s.path)
-	if err != nil {
-		return s.fallback()
-	}
-	raw = trimUTF8BOM(raw)
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return s.fallback()
-	}
-	var fileCfg agentConfigFile
-	if json.Unmarshal(raw, &fileCfg) != nil {
-		return s.fallback()
-	}
-	s.cfg = mergeConfig(s.defaults, fileCfg)
-	s.have, s.exists, s.modTime, s.size, s.readAt = true, true, info.ModTime(), info.Size(), now
-	return s.cfg
-}
-
-func (s *liveConfigSource) fallback() agentRuntimeConfig {
-	if s.have {
-		return s.cfg
-	}
-	return s.defaults
 }
 
 // liveMetrics is the revision-2 live payload: only values the live panel shows,

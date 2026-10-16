@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -67,7 +65,7 @@ func TestRevisionTwoLiveMetricsNeverTouchTheUploadSampler(t *testing.T) {
 	state := &agentState{}
 	var mu sync.Mutex
 	defaults := newDefaultRuntimeConfig(agentConnectionConfig{})
-	handle := newLiveHandler(state, &mu, defaults, &liveConfigSource{defaults: defaults}, func() bool { return true })
+	handle := newLiveHandler(state, &mu, defaults, newConfigSource(""), func() bool { return true })
 	// The upload loop may hold its lock for a whole slow cycle; live metrics must not wait for it.
 	mu.Lock()
 	defer mu.Unlock()
@@ -113,40 +111,5 @@ func TestLiveMetricsHonourDisabledMetricKeys(t *testing.T) {
 	sample := sampler.sample(context.Background(), cfg)
 	if sample.CPUPercent != nil || sample.DiskReadBytesPerSec != nil || sample.NetworkTxBytesPerSec != nil || sample.MemoryUsedBytes == nil {
 		t.Fatal("disabled metrics leaked into live view", sample)
-	}
-}
-
-func TestLiveConfigKeepsLastGoodConfigurationThroughPartialWrites(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "agent.json")
-	defaults := newDefaultRuntimeConfig(agentConnectionConfig{ServerURL: "http://default.invalid", Secret: "default-secret"})
-	source := &liveConfigSource{path: path, defaults: defaults}
-	if got := source.load(); got.Connection.ServerURL != "http://default.invalid" {
-		t.Fatal("absent file must use defaults", got.Connection.ServerURL)
-	}
-	write := func(content string) {
-		t.Helper()
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write(`{"connection":{"serverUrl":"https://hub.example","secret":"good-secret"}}`)
-	if got := source.load(); got.Connection.ServerURL != "https://hub.example" || got.Connection.Secret != "good-secret" {
-		t.Fatal("valid config not adopted", got.Connection)
-	}
-	for _, broken := range []string{"", "   ", `{"connection":{"serverUrl":"https://other`} {
-		write(broken)
-		if got := source.load(); got.Connection.ServerURL != "https://hub.example" || got.Connection.Secret != "good-secret" {
-			t.Fatalf("partial write %q replaced the last good config with %v", broken, got.Connection)
-		}
-	}
-	write(`{"connection":{"serverUrl":"https://moved.example","secret":"rotated-secret-value"}}`)
-	if got := source.load(); got.Connection.ServerURL != "https://moved.example" {
-		t.Fatal("a real change was not picked up", got.Connection)
-	}
-	if err := os.Remove(path); err != nil {
-		t.Fatal(err)
-	}
-	if got := source.load(); got.Connection.ServerURL != "http://default.invalid" {
-		t.Fatal("deleting the file must return to defaults", got.Connection)
 	}
 }
