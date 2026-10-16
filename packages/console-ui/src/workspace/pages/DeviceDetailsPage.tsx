@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { DeviceBlockKey, DeviceMetricKey, MetricsLatest } from "@dsc/shared";
-import { M3Tabs, M3Select } from "../m3";
+import { M3SegmentedControl, M3Tabs, M3Select } from "../m3";
 import type { TouchPanel } from "../touch/TouchState";
 import { touchPercent } from "../touch/TouchDeviceRow";
 import { useWorkspace } from "../WorkspaceContext";
@@ -95,6 +95,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
   const routeLiveView: DeviceLiveView | null = route.kind === "device" ? route.view ?? null : null;
   const liveView: DeviceLiveView | null = touch ? (touchPanel === "processes" || touchPanel === "containers" ? touchPanel : null) : routeLiveView;
   const [liveOverview, setLiveOverview] = useState(false);
+  const [touchLive, setTouchLive] = useState(false);
   const liveAuthenticated = snapshotSource === "live" && snapshot?.session.authenticated === true;
   const liveCapabilities = useLiveCapabilities(selectedDevice?.deviceId ?? "", Boolean(selectedDevice) && liveAuthenticated);
   // Hidden only once the Hub has confirmed a ready session without Docker; an
@@ -191,6 +192,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
     setSelectedGpuId("all");
     if (!touch) setDesktopTab(DEFAULT_DEVICE_TAB_ID);
     setLiveOverview(false);
+    setTouchLive(false);
   }, [deviceId, touch]);
 
   // A link to a live view opens the same view in the touch layout.
@@ -466,7 +468,17 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
       </div>
 
       </details>
-      {touch && touchPanel === "status" && <div className="touch-current-metrics" aria-label="最近上报指标">{([ ["CPU", "cpuUsage", selectedDevice.cpuUsagePercent], ["内存", "memoryUsage", selectedDevice.memoryUsagePercent], ["磁盘", "diskUsage", selectedDevice.diskUsagePercent] ] as const).map(([label, key, value]) => <div key={key}><span>{label}</span><strong>{touchPercent(selectedDevice, key, value)}</strong><small>最近一次上报</small></div>)}</div>}
+      {/* The phone's counterpart of the desktop 实时 range: the same tiles, read from the device. */}
+      {touch && touchPanel === "status" && <M3SegmentedControl
+        className="touch-metrics-source"
+        size="sm"
+        aria-label="指标来源"
+        value={touchLive ? "live" : "report"}
+        onChange={(value) => setTouchLive(value === "live")}
+        options={[{ value: "report", label: "最近上报" }, { value: "live", label: <LiveTabLabel>实时</LiveTabLabel> }]}
+      />}
+      {touch && touchPanel === "status" && touchLive && <LiveTopicPanel deviceId={selectedDevice.deviceId} topic="metrics" authenticated={liveAuthenticated} compact />}
+      {touch && touchPanel === "status" && !touchLive && <div className="touch-current-metrics" aria-label="最近上报指标">{([ ["CPU", "cpuUsage", selectedDevice.cpuUsagePercent], ["内存", "memoryUsage", selectedDevice.memoryUsagePercent], ["磁盘", "diskUsage", selectedDevice.diskUsagePercent] ] as const).map(([label, key, value]) => <div key={key}><span>{label}</span><strong>{touchPercent(selectedDevice, key, value)}</strong><small>最近一次上报</small></div>)}</div>}
       {selectedDevice.unavailableMetrics?.length ? <div className="workspace-inline-note" role="status"><Icon name="about" size={15} />本机不适用指标：{selectedDevice.unavailableMetrics.join("、")}；对应图表会留空而不是估算。</div> : null}
 
       {/* The same verdict the overview lists, on the machine it is about. Offline

@@ -429,7 +429,8 @@ async function run() {
   await page.keyboard.press("/");
   const commandInput = page.locator(".workspace-command input");
   await commandInput.fill("工作站");
-  await page.locator(".workspace-command__item").filter({ hasText: "工作站" }).click();
+  // The device itself ranks before its live views (进程 / 容器) under the same name.
+  await page.locator(".workspace-command__item").filter({ hasText: "工作站" }).first().click();
   await page.locator(".workspace-page--device").waitFor({ state: "visible", timeout: 15_000 });
 
   // One compact layout for every client. The browser's "desktop" choice used to
