@@ -185,7 +185,9 @@ func (c *Client) connect(ctx context.Context, cfg Config) error {
 		u.Scheme = "ws"
 	}
 	dialCtx, dialCancel := context.WithTimeout(ctx, 8*time.Second)
-	conn, _, err := websocket.Dial(dialCtx, u.String(), &websocket.DialOptions{HTTPClient: &noRedirect, HTTPHeader: http.Header{"Authorization": []string{"Bearer " + id.Token}, "X-Device-Id": []string{cfg.DeviceID}, "X-Instance-Id": []string{id.InstanceID}}})
+	// Process and container lists compress well; this matters on slow uplinks
+	// where an uncompressed list could exceed the write deadline.
+	conn, _, err := websocket.Dial(dialCtx, u.String(), &websocket.DialOptions{HTTPClient: &noRedirect, HTTPHeader: http.Header{"Authorization": []string{"Bearer " + id.Token}, "X-Device-Id": []string{cfg.DeviceID}, "X-Instance-Id": []string{id.InstanceID}}, CompressionMode: websocket.CompressionNoContextTakeover, CompressionThreshold: 4096})
 	dialCancel()
 	if err != nil {
 		return errors.New("realtime_connect_failed")
@@ -202,7 +204,7 @@ func (c *Client) connect(ctx context.Context, cfg Config) error {
 		}
 		writeMu.Lock()
 		defer writeMu.Unlock()
-		writeCtx, done := context.WithTimeout(sessionCtx, 2*time.Second)
+		writeCtx, done := context.WithTimeout(sessionCtx, writeTimeout(len(raw)))
 		defer done()
 		return conn.Write(writeCtx, websocket.MessageText, raw)
 	}
@@ -323,4 +325,14 @@ func safeHandle(ctx context.Context, handler Handler, request Request) (data any
 		}
 	}()
 	return handler(ctx, request)
+}
+
+// writeTimeout gives large results time to cross a slow uplink (about 64 KiB/s
+// before compression) instead of failing the write and with it the session.
+func writeTimeout(size int) time.Duration {
+	timeout := 2*time.Second + time.Duration(size/(64*1024))*time.Second
+	if timeout > 10*time.Second {
+		timeout = 10 * time.Second
+	}
+	return timeout
 }

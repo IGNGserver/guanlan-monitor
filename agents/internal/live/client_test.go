@@ -246,3 +246,15 @@ func TestClientForwardsHubRevisionAndFailsUnknownTopicsAlone(t *testing.T) {
 	cancel()
 	<-done
 }
+
+func TestWriteTimeoutGrowsWithPayloadButStaysBounded(t *testing.T) {
+	if writeTimeout(1024) != 2*time.Second {
+		t.Fatal("small frames keep the short deadline")
+	}
+	if got := writeTimeout(256 * 1024); got != 6*time.Second {
+		t.Fatal("unexpected large-frame deadline", got)
+	}
+	if writeTimeout(4*1024*1024) != 10*time.Second {
+		t.Fatal("deadline must stay bounded")
+	}
+}
