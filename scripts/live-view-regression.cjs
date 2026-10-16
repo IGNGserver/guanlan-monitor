@@ -19,6 +19,8 @@ async function run() {
     let connected = true;
     let dockerDenied = true;
     let calls = 0;
+    let resets = 0;
+    let conflictAt = null;
     const topics = [];
     await context.route("**/socket.io/**", (route) => route.abort());
     await context.route("**/api/**", async (route) => {
@@ -27,7 +29,9 @@ async function run() {
       if (pathname.includes("/live")) {
         calls++;
         const topic = pathname.split("/")[5];
-        if (!topic) body = { state: connected ? "ready" : "disconnected", sessionId: connected ? "fixture-session" : null, capabilities: ["metrics", "processes", "docker"], connectedAt: new Date().toISOString() };
+        if (topic === "reset" && route.request().method() === "POST") { resets++; conflictAt = null; body = { ok: true }; }
+        else if (!topic) body = { state: connected ? "ready" : "disconnected", sessionId: connected ? "fixture-session" : null, capabilities: ["metrics", "processes", "docker"], connectedAt: new Date().toISOString(), identityConflictAt: connected ? null : conflictAt };
+        else if (!connected) { status = 503; body = { error: "device_not_connected" }; }
         else {
           topics.push(topic);
           let data;
@@ -70,6 +74,23 @@ async function run() {
     const deviceQueries = topics.length;
     await page.waitForTimeout(1300);
     assert.equal(topics.length, deviceQueries, "disconnected device must not receive a query");
+    connected = true;
+    await panel.getByText(/本次查询确实没有容器/).waitFor();
+    assert.ok(topics.length > deviceQueries, "the view resumes querying once the channel is ready again");
+    connected = false;
+    await panel.getByText(/设备没有可用的实时连接/).waitFor();
+    conflictAt = new Date().toISOString();
+    const resetButton = panel.getByRole("button", { name: "重置实时凭据", exact: true });
+    await resetButton.waitFor();
+    assert.ok(await panel.getByText(/安装身份与已登记的不一致/).isVisible(), "a refused enrollment is explained");
+    await page.screenshot({ path: path.join(output, "live-identity-conflict.png"), fullPage: true });
+    page.once("dialog", (dialog) => dialog.accept());
+    await resetButton.click();
+    await panel.getByText(/已重置/).waitFor();
+    assert.equal(resets, 1, "reset is sent once, after confirmation");
+    await page.waitForTimeout(1500);
+    assert.ok(await panel.getByText(/已重置/).isVisible(), "the confirmation outlives the cleared conflict");
+    assert.equal(await resetButton.count(), 0, "the reset action disappears once the Hub no longer reports a conflict");
     await page.screenshot({ path: path.join(output, "live-disconnected.png"), fullPage: true });
     await panel.locator(":scope > summary").click();
     await page.waitForTimeout(500);
@@ -77,8 +98,8 @@ async function run() {
     await page.waitForTimeout(1600);
     assert.equal(calls, stopped, "collapsing the panel must release polling");
     assert.deepEqual(errors, []);
-    fs.writeFileSync(path.join(output, "report.json"), JSON.stringify({ passed: true, calls, topics, checks: ["collapsed idle", "metrics", "process null semantics", "Docker denied vs empty", "disconnected refusal", "collapse cleanup"] }, null, 2));
-    console.log("Live view regression: 6 checks passed");
+    fs.writeFileSync(path.join(output, "report.json"), JSON.stringify({ passed: true, calls, topics, checks: ["collapsed idle", "metrics", "process null semantics", "Docker denied vs empty", "disconnected refusal", "reconnect resumes", "identity conflict reset", "collapse cleanup"] }, null, 2));
+    console.log("Live view regression: 8 checks passed");
   } finally { await browser.close(); }
 }
 run().catch((error) => { console.error(error); process.exitCode = 1; });
