@@ -74,7 +74,8 @@ export class DesktopController {
     this.bridge = {
       live: {
         getLiveConnection: (deviceId) => this.hub.getLiveConnection(deviceId),
-        readLive: (deviceId, topic) => this.hub.readLive(deviceId, topic)
+        readLive: (deviceId, topic) => this.hub.readLive(deviceId, topic),
+        resetLiveCredentials: (deviceId) => this.hub.resetLiveCredentials(deviceId)
       },
       getSnapshot: (request?: DesktopSnapshotRequest) => this.getSnapshot(request),
       refresh: (request?: DesktopSnapshotRequest) => this.refresh(request),

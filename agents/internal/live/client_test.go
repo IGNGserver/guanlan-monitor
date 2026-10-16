@@ -2,12 +2,15 @@ package live
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -36,6 +39,32 @@ func TestIdentityPersistsAndEndpointRejectsEmbeddedCredentials(t *testing.T) {
 	files, _ := os.ReadDir(c.Directory)
 	if len(files) != 1 {
 		t.Fatal("identity not persisted")
+	}
+	moved, err := c.identity(Config{ServerURL: "http://192.0.2.10:38472/", DeviceID: "node"})
+	if err != nil || moved != first {
+		t.Fatal("changing the Hub address must not create a new installation identity", err)
+	}
+}
+
+func TestIdentityAdoptsTheFileAnEarlierVersionKeyedByHubURL(t *testing.T) {
+	directory := t.TempDir()
+	cfg := Config{ServerURL: "https://hub.example", DeviceID: "node"}
+	legacy, err := newIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := sha256.Sum256([]byte(cfg.ServerURL + "\x00" + cfg.DeviceID))
+	raw, _ := json.Marshal(legacy)
+	if err := os.WriteFile(filepath.Join(directory, "live-"+hex.EncodeToString(scope[:8])+".json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := Client{Directory: directory}
+	adopted, err := c.identity(cfg)
+	if err != nil || adopted != legacy {
+		t.Fatal("upgrading the Agent must keep its enrolled identity", err)
+	}
+	if again, err := c.identity(Config{ServerURL: "https://elsewhere.example", DeviceID: "node"}); err != nil || again != legacy {
+		t.Fatal("the adopted identity must now be independent of the Hub URL", err)
 	}
 }
 

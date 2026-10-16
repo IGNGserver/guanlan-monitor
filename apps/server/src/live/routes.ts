@@ -134,7 +134,17 @@ export async function registerLiveRoutes(app: FastifyInstance, options: Options)
   app.get<{ Params: { deviceId: string } }>("/api/devices/:deviceId/live", { preHandler: requireAuth }, async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     if (!deviceIdSchema.safeParse(request.params.deviceId).success) return reply.code(400).send({ error: "invalid_device_id" });
-    return registry.describe(request.params.deviceId);
+    return { ...registry.describe(request.params.deviceId), identityConflictAt: credentials.conflictAt(request.params.deviceId) };
+  });
+  // Recovery for a reinstalled Agent or a lost key file: drop the binding so the
+  // next enrollment from that device is accepted. Same privilege as deleting it.
+  app.post<{ Params: { deviceId: string } }>("/api/devices/:deviceId/live/reset", { preHandler: requireAuth }, async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    if (!deviceIdSchema.safeParse(request.params.deviceId).success) return reply.code(400).send({ error: "invalid_device_id" });
+    await credentials.remove(request.params.deviceId);
+    registry.closeDevice(request.params.deviceId);
+    request.log.info({ deviceId: request.params.deviceId }, "live credentials reset");
+    return { ok: true };
   });
   app.get<{ Params: { deviceId: string; topic: string } }>("/api/devices/:deviceId/live/:topic", { preHandler: requireAuth }, async (request, reply) => {
     reply.header("Cache-Control", "no-store");

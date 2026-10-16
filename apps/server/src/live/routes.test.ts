@@ -36,6 +36,8 @@ test("authenticated live HTTP/WS round trip, identity conflicts, payload validat
   const enrollment = { method: "POST" as const, url: "/api/agent/enroll", headers: { authorization: `Bearer ${env.ACCESS_KEY}` } };
   assert.equal((await app.inject({ ...enrollment, payload: identity })).statusCode, 200);
   assert.equal((await app.inject({ ...enrollment, payload: { ...identity, instanceId: "bd172f20-21cc-4db5-bd67-02e83088b417" } })).statusCode, 409);
+  assert.ok((await app.inject({ url: "/api/devices/node/live", headers: viewer })).json().identityConflictAt, "the console can see why the device has no live channel");
+  assert.equal((await app.inject({ method: "POST", url: "/api/devices/node/live/reset", payload: {} })).statusCode, 401);
   const agent = await app.injectWS("/api/agent/realtime", { headers: { authorization: `Bearer ${identity.token}`, "x-device-id": identity.deviceId, "x-instance-id": identity.instanceId } });
   const welcome = once(agent, "message");
   agent.send(JSON.stringify({ type: "hello", protocolVersion: 1, capabilities: ["processes"] }));
@@ -105,4 +107,30 @@ test("the raw agent upgrade router does not hijack the existing Socket.IO transp
   t.after(() => agentSocket.destroy());
   assert.equal(registry.describe(identity.deviceId).state, "connecting", "real agent upgrades also reach their independent authenticated handler");
   assert.match(extensions ?? "", /permessage-deflate/, "large process/container lists are compressed on the wire");
+});
+
+test("resetting live credentials lets a reinstalled Agent enroll and drops the old session", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "live-reset-"));
+  const app = Fastify();
+  const credentials = new AgentCredentials(join(directory, "keys.json"), env.ACCESS_KEY); await credentials.load();
+  const registry = new LiveRegistry();
+  await app.register(cookie, { secret: env.SESSION_SECRET });
+  await registerLiveRoutes(app, { accessKey: env.ACCESS_KEY, requireHttps: false, credentials, registry });
+  await app.ready();
+  t.after(async () => { registry.close(); await app.close(); await rm(directory, { recursive: true, force: true }); });
+  const signed = app.signCookie(Buffer.from(JSON.stringify(createSession(env.ACCESS_KEY))).toString("base64url"));
+  const viewer = { cookie: `dsc_session=${encodeURIComponent(signed)}` };
+  const enrollment = { method: "POST" as const, url: "/api/agent/enroll", headers: { authorization: `Bearer ${env.ACCESS_KEY}` } };
+  const original = { deviceId: "node", instanceId: "bd172f20-21cc-4db5-bd67-02e83088b416", token: "c".repeat(64) };
+  const reinstalled = { ...original, instanceId: "bd172f20-21cc-4db5-bd67-02e83088b418", token: "d".repeat(64) };
+  assert.equal((await app.inject({ ...enrollment, payload: original })).statusCode, 200);
+  const agent = await app.injectWS("/api/agent/realtime", { headers: { authorization: `Bearer ${original.token}`, "x-device-id": original.deviceId, "x-instance-id": original.instanceId } });
+  const closed = once(agent, "close");
+  assert.equal((await app.inject({ ...enrollment, payload: reinstalled })).statusCode, 409);
+  const reset = await app.inject({ method: "POST", url: "/api/devices/node/live/reset", headers: viewer, payload: {} });
+  assert.equal(reset.statusCode, 200);
+  await closed;
+  assert.equal((await app.inject({ url: "/api/devices/node/live", headers: viewer })).json().identityConflictAt, null);
+  assert.equal((await app.inject({ ...enrollment, payload: reinstalled })).statusCode, 200);
+  assert.equal(credentials.verify("node", original.instanceId, original.token), false, "the replaced installation can no longer connect");
 });
