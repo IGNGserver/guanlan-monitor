@@ -80,6 +80,9 @@ async function run() {
     assert.match(page.url(), /#device\/[^/]+\/processes$/, "the processes view is linkable");
     assert.equal(await page.locator("#section-overview").count(), 0, "a live tab replaces the history dashboard");
     assert.equal(await panel.locator("tbody tr").first().locator("td").nth(2).innerText(), "—", "missing process CPU must not become zero");
+    const pidHeader = panel.locator("th", { has: page.getByRole("button", { name: /^PID/ }) });
+    await pidHeader.getByRole("button").click();
+    assert.equal(await pidHeader.getAttribute("aria-sort"), "ascending", "a column header sorts the table");
     await page.getByRole("tab", { name: "容器", exact: true }).click();
     await panel.getByText(/没有读取 Docker 的权限/).waitFor();
     assert.equal(await panel.getByText(/本次查询确实没有容器/).count(), 0, "permission denial is not an empty engine");
@@ -122,8 +125,8 @@ async function run() {
     await page.goto(`${baseUrl}#device/${fixtureDevices[0].deviceId}/processes`, { waitUntil: "domcontentloaded" });
     await page.locator(".workspace-live").getByText("fixture-process", { exact: true }).waitFor();
     assert.deepEqual(errors, []);
-    fs.writeFileSync(path.join(output, "report.json"), JSON.stringify({ passed: true, calls, topics, checks: ["page open idle", "live overview range", "pause and resume", "linkable live tabs", "process null semantics", "Docker denied vs empty", "disconnected refusal", "reconnect resumes", "identity conflict reset", "collapse cleanup"] }, null, 2));
-    console.log("Live view regression: 11 checks passed");
+    fs.writeFileSync(path.join(output, "report.json"), JSON.stringify({ passed: true, calls, topics, checks: ["page open idle", "live overview range", "pause and resume", "linkable live tabs", "sortable process columns", "process null semantics", "Docker denied vs empty", "disconnected refusal", "reconnect resumes", "identity conflict reset", "collapse cleanup"] }, null, 2));
+    console.log("Live view regression: 12 checks passed");
   } finally { await browser.close(); }
 }
 run().catch((error) => { console.error(error); process.exitCode = 1; });

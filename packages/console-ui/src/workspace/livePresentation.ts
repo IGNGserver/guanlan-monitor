@@ -1,4 +1,4 @@
-import type { LiveDocker, LiveSnapshot, LiveTopic } from "@dsc/shared";
+import type { LiveContainer, LiveDocker, LiveProcess, LiveSnapshot, LiveTopic } from "@dsc/shared";
 
 /**
  * Every failure has a short title for the status pill and banner heading, and
@@ -98,4 +98,63 @@ export function containerRates(previous: LiveDocker | null, current: LiveDocker)
     });
   }
   return result;
+}
+
+export type ContainerHealth = "running" | "problem" | "stopped";
+
+/**
+ * Three answers a reader scans for: fine, needs attention, not running. A
+ * container that reports "(unhealthy)" or keeps restarting is running in
+ * Docker's terms but is the one the reader came looking for.
+ */
+export function containerHealth(container: Pick<LiveContainer, "state" | "status">): ContainerHealth {
+  const state = container.state.toLowerCase();
+  if (state === "restarting" || state === "dead" || state === "removing" || /\(unhealthy\)/i.test(container.status)) return "problem";
+  if (state === "running") return "running";
+  return "stopped";
+}
+
+const containerStateNames: Record<string, string> = { running: "运行中", exited: "已停止", restarting: "重启中", paused: "已暂停", created: "已创建", dead: "已失效", removing: "删除中" };
+
+export function containerStateLabel(container: Pick<LiveContainer, "state" | "status">): string {
+  if (/\(unhealthy\)/i.test(container.status)) return "不健康";
+  return containerStateNames[container.state.toLowerCase()] ?? container.state;
+}
+
+export interface ContainerGroup { project: string | null; items: LiveContainer[]; cpuPercent: number | null; memoryBytes: number | null }
+
+const sumKnown = (values: Array<number | null>) => values.some((value) => value !== null) ? values.reduce<number>((total, value) => total + (value ?? 0), 0) : null;
+
+/** Compose projects in name order, containers without one last; totals only count what was read. */
+export function groupContainers(items: LiveContainer[]): ContainerGroup[] {
+  const groups = new Map<string | null, LiveContainer[]>();
+  for (const item of items) groups.set(item.project, [...(groups.get(item.project) ?? []), item]);
+  return [...groups.entries()]
+    .sort(([left], [right]) => left === null ? 1 : right === null ? -1 : left.localeCompare(right))
+    .map(([project, members]) => ({ project, items: members, cpuPercent: sumKnown(members.map((item) => item.cpuPercent)), memoryBytes: sumKnown(members.map((item) => item.memoryBytes)) }));
+}
+
+export type ProcessSortKey = "name" | "pid" | "cpu" | "memory" | "threads";
+
+/** Unknown values ("—") sort after every known one in either direction: missing is not small. */
+export function sortProcesses(items: LiveProcess[], key: ProcessSortKey, descending: boolean): LiveProcess[] {
+  const value = (item: LiveProcess): number | string | null => key === "name" ? item.name.toLowerCase() : key === "pid" ? item.pid : key === "cpu" ? item.cpuPercent : key === "memory" ? item.memoryBytes : item.threads;
+  return [...items].sort((left, right) => {
+    const a = value(left), b = value(right);
+    if (a === null || b === null) return a === b ? left.pid - right.pid : a === null ? 1 : -1;
+    const order = typeof a === "string" ? a.localeCompare(b as string) : a - (b as number);
+    return (descending ? -order : order) || left.pid - right.pid;
+  });
+}
+
+/**
+ * Rows that jump while someone is reading them cannot be read. While the order
+ * is held, rows keep their previous positions and new ones join at the end;
+ * rows that went away drop out.
+ */
+export function holdOrder(previous: readonly string[], next: readonly string[]): string[] {
+  const present = new Set(next);
+  const kept = previous.filter((id) => present.has(id));
+  const known = new Set(kept);
+  return [...kept, ...next.filter((id) => !known.has(id))];
 }

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { acceptsLiveSnapshot, containerRates, describeLiveError, isDisconnectedLiveError, isTransientLiveError, liveErrorCode, liveErrorMessage, liveStatus } from "./livePresentation.ts";
-import type { LiveContainer, LiveDocker, LiveSnapshot } from "@dsc/shared";
+import { acceptsLiveSnapshot, containerHealth, containerRates, containerStateLabel, describeLiveError, groupContainers, holdOrder, sortProcesses, isDisconnectedLiveError, isTransientLiveError, liveErrorCode, liveErrorMessage, liveStatus } from "./livePresentation.ts";
+import type { LiveContainer, LiveDocker, LiveProcess, LiveSnapshot } from "@dsc/shared";
 
 test("live view refuses an answer for another device, topic or without a session", () => {
   const result: LiveSnapshot = { deviceId: "node", sessionId: "current", requestId: "request", receivedAt: new Date().toISOString(), topic: "processes", data: { observedAt: new Date().toISOString(), cpuScale: "host", memoryKind: "rss", totalCount: 0, truncated: false, items: [] } };
@@ -64,4 +64,36 @@ test("the status pill only claims live for a confirmed, unexpired result", () =>
   assert.equal(liveStatus({ paused: false, hasResult: true, expired: true, failure: null, ageSeconds: 9 }).tone, "stale", "an expired result is never live");
   assert.deepEqual(liveStatus({ paused: false, hasResult: false, expired: false, failure: gone, ageSeconds: 0 }), { tone: "unavailable", label: "设备未连接" });
   assert.equal(liveStatus({ paused: true, hasResult: true, expired: false, failure: null, ageSeconds: 30 }).tone, "paused", "pausing wins over every other state");
+});
+
+test("containers are read as fine, needing attention, or not running", () => {
+  assert.equal(containerHealth({ state: "running", status: "Up 3 days (healthy)" }), "running");
+  assert.equal(containerHealth({ state: "running", status: "Up 3 days (unhealthy)" }), "problem", "unhealthy is running but is what the reader came for");
+  assert.equal(containerHealth({ state: "restarting", status: "Restarting (1) 5 seconds ago" }), "problem");
+  assert.equal(containerHealth({ state: "exited", status: "Exited (0) 2 days ago" }), "stopped");
+  assert.equal(containerStateLabel({ state: "running", status: "Up (unhealthy)" }), "不健康");
+  assert.equal(containerStateLabel({ state: "exited", status: "Exited (0)" }), "已停止");
+  assert.equal(containerStateLabel({ state: "weird", status: "" }), "weird", "an unknown Engine state is shown as reported");
+});
+
+test("containers group by Compose project with totals of what was read", () => {
+  const container = (id: string, project: string | null, cpuPercent: number | null, memoryBytes: number | null): LiveContainer => ({ id, name: id, image: "i", state: "running", status: "Up", project, cpuPercent, memoryBytes, memoryLimitBytes: null, networkRxBytes: null, networkTxBytes: null, blockReadBytes: null, blockWriteBytes: null });
+  const groups = groupContainers([container("a", null, 1, 10), container("b", "web", 2, null), container("c", "app", null, null), container("d", "web", 3, 5)]);
+  assert.deepEqual(groups.map((group) => group.project), ["app", "web", null], "named projects first, unassigned last");
+  assert.equal(groups[0].cpuPercent, null, "nothing read is not zero");
+  assert.equal(groups[1].cpuPercent, 5);
+  assert.equal(groups[1].memoryBytes, 5);
+});
+
+test("process sorting keeps unknown values last and ties stable", () => {
+  const process = (pid: number, cpuPercent: number | null): LiveProcess => ({ id: String(pid), pid, parentPid: null, name: `p${pid}`, startedAt: null, cpuPercent, memoryBytes: null, threads: null, status: null });
+  const items = [process(3, null), process(1, 5), process(2, 9), process(4, 5)];
+  assert.deepEqual(sortProcesses(items, "cpu", true).map((item) => item.pid), [2, 1, 4, 3]);
+  assert.deepEqual(sortProcesses(items, "cpu", false).map((item) => item.pid), [1, 4, 2, 3], "missing CPU is not the smallest");
+  assert.deepEqual(sortProcesses(items, "pid", false).map((item) => item.pid), [1, 2, 3, 4]);
+});
+
+test("a held order keeps positions, appends newcomers and drops what left", () => {
+  assert.deepEqual(holdOrder(["a", "b", "c"], ["c", "d", "a"]), ["a", "c", "d"]);
+  assert.deepEqual(holdOrder([], ["x", "y"]), ["x", "y"]);
 });
