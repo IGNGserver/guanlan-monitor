@@ -1,4 +1,4 @@
-import type { LiveConnection, LiveSnapshot, LiveTopic } from "@dsc/shared";
+import type { LiveDocker, LiveSnapshot, LiveTopic } from "@dsc/shared";
 
 const messages: Record<string, string> = {
   device_not_connected: "设备没有可用的实时连接；历史在线状态不会用于下发请求。",
@@ -14,17 +14,62 @@ const messages: Record<string, string> = {
   query_expired: "本次采集已超时；过期结果不会补发。",
   invalid_result: "设备返回的数据未通过校验（可能是设备端与中枢版本不一致），本次结果已丢弃。",
   live_query_capacity_exceeded: "中枢实时查询已达到并发上限。",
-  live_agent_upgrade_required: "当前桌面桥接不支持实时查看，请升级客户端。"
+  live_agent_upgrade_required: "当前桌面桥接不支持实时查看，请升级客户端。",
+  live_view_hidden: "窗口隐藏时暂停实时查询，回到窗口后自动继续。",
+  live_session_required: "请先连接并登录中枢，离线缓存不能提供实时能力。",
+  hub_login_required: "请先连接并登录中枢，离线缓存不能提供实时能力。",
+  request_timeout: "中枢没有在时限内响应本次查询。"
 };
 
-export function liveErrorMessage(error: unknown): string {
+/** Failures after which the last result may stay on screen, marked stale, until it expires. */
+const transientCodes = new Set(["collection_busy", "query_expired", "device_response_timeout", "invalid_result", "live_query_capacity_exceeded", "request_timeout"]);
+/** Failures meaning there is no usable channel: poll the connection, not the device. */
+const disconnectedCodes = new Set(["device_not_connected", "device_disconnected", "device_capability_unavailable"]);
+
+export function liveErrorCode(error: unknown): string | null {
   const text = error instanceof Error ? error.message : "";
-  for (const [code, message] of Object.entries(messages)) if (text.includes(code)) return message;
-  return "实时查询未完成，请检查中枢连接和登录状态；这里不会用历史缓存替代实时结果。";
+  return text.match(/[a-z]+(?:_[a-z]+)+/g)?.find((code) => code in messages) ?? null;
 }
 
-export function acceptsLiveSnapshot(connection: LiveConnection, result: LiveSnapshot, deviceId: string, topic: LiveTopic): boolean {
-  return connection.state === "ready" && connection.sessionId === result.sessionId && result.deviceId === deviceId && result.topic === topic;
+export function isTransientLiveError(error: unknown): boolean {
+  const code = liveErrorCode(error);
+  return code !== null && transientCodes.has(code);
+}
+
+export function isDisconnectedLiveError(error: unknown): boolean {
+  const code = liveErrorCode(error);
+  return code !== null && disconnectedCodes.has(code);
+}
+
+export function liveErrorMessage(error: unknown): string {
+  const code = liveErrorCode(error);
+  return code ? messages[code] : "实时查询未完成，请检查中枢连接和登录状态；这里不会用历史缓存替代实时结果。";
+}
+
+/** The Hub only answers from a ready session; the view still refuses an answer for another device or topic. */
+export function acceptsLiveSnapshot(result: LiveSnapshot, deviceId: string, topic: LiveTopic): boolean {
+  return result.deviceId === deviceId && result.topic === topic && typeof result.sessionId === "string" && result.sessionId.length > 0;
+}
+
+export interface ContainerRates { networkRx: number | null; networkTx: number | null; blockRead: number | null; blockWrite: number | null }
+
+/**
+ * Per-second rates between two Docker snapshots of the same Engine. Counters
+ * that are missing or went backwards (container restarted) stay null.
+ */
+export function containerRates(previous: LiveDocker | null, current: LiveDocker): Map<string, ContainerRates> {
+  const result = new Map<string, ContainerRates>();
+  const seconds = previous ? (Date.parse(current.observedAt) - Date.parse(previous.observedAt)) / 1000 : 0;
+  const before = new Map(previous && previous.engineId === current.engineId && seconds > 0 ? previous.items.map((item) => [item.id, item]) : []);
+  const rate = (from: number | null | undefined, to: number | null) => from === null || from === undefined || to === null || to < from ? null : (to - from) / seconds;
+  for (const item of current.items) {
+    const old = before.get(item.id);
+    result.set(item.id, {
+      networkRx: rate(old?.networkRxBytes, item.networkRxBytes), networkTx: rate(old?.networkTxBytes, item.networkTxBytes),
+      blockRead: rate(old?.blockReadBytes, item.blockReadBytes), blockWrite: rate(old?.blockWriteBytes, item.blockWriteBytes)
+    });
+  }
+  return result;
 }
 
 export function percentPath(points: Array<{ at: number; value: number | null }>, end: number): string {

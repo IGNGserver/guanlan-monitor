@@ -27,3 +27,4 @@
 
 .workspace-live__notice { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
 .workspace-live__notice p { margin: 0; }
+.workspace-live__notice > button { justify-self: start; }

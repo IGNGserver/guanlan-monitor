@@ -5,7 +5,7 @@ import { useLivePort } from "../WorkspaceContext";
 import { formatBytes, formatDate } from "../formatters";
 import { M3Tabs, M3Select } from "../m3";
 import { Button } from "../ui";
-import { acceptsLiveSnapshot, liveErrorMessage, percentPath } from "../livePresentation";
+import { acceptsLiveSnapshot, containerRates, isDisconnectedLiveError, isTransientLiveError, liveErrorMessage, percentPath, type ContainerRates } from "../livePresentation";
 import "./live.css";
 
 export function LiveDevicePanel({ deviceId, authenticated }: { deviceId: string; authenticated: boolean }) {
@@ -26,7 +26,8 @@ function LiveView({ deviceId, port }: { deviceId: string; port: ConsoleLivePort 
       <M3Tabs aria-label="实时查看内容" value={topic} onChange={(id) => setTopic(id as LiveTopic)} tabs={[{ id: "metrics", label: "高频指标" }, { id: "processes", label: "进程" }, { id: "docker", label: "Docker" }]} />
       <M3Select label="查询间隔" value={String(interval)} onChange={(event) => setIntervalSeconds(Number(event.target.value))} options={[{ value: "1", label: "1 秒" }, { value: "2", label: "2 秒" }, { value: "5", label: "5 秒" }]} />
     </div>
-    <LiveTopicView key={`${deviceId}:${topic}:${interval}`} deviceId={deviceId} port={port} topic={topic} interval={interval} />
+    {/* The interval is not part of the key: changing it must not discard the two-minute curve. */}
+    <LiveTopicView key={`${deviceId}:${topic}`} deviceId={deviceId} port={port} topic={topic} interval={interval} />
   </>;
 }
 
@@ -38,34 +39,59 @@ function LiveTopicView({ deviceId, port, topic, interval }: { deviceId: string; 
   const [conflictAt, setConflictAt] = useState<string | null>(null);
   const [resetState, setResetState] = useState<"idle" | "pending" | "done" | "failed">("idle");
   const [points, setPoints] = useState<Array<{ at: number; cpu: number | null; memory: number | null }>>([]);
+  const [rates, setRates] = useState<Map<string, ContainerRates>>(new Map());
   const session = useRef<string | null>(null);
+  const previousDocker = useRef<LiveDocker | null>(null);
+  // While the device has no channel, poll only the connection state; ask for
+  // data again once it is ready. One request per tick either way.
+  const disconnected = useRef(false);
   useEffect(() => {
     let stopped = false;
+    const refreshConnection = async () => {
+      const connection = await port.getLiveConnection(deviceId);
+      if (stopped) return null;
+      setConflictAt(connection.state === "ready" ? null : connection.identityConflictAt ?? null);
+      return connection;
+    };
     const stop = startVisiblePolling(async () => {
       try {
+        if (disconnected.current) {
+          const connection = await refreshConnection();
+          if (!connection) return;
+          if (connection.state !== "ready") throw new Error("device_not_connected");
+          if (!connection.capabilities.includes(topic)) throw new Error("device_capability_unavailable");
+          disconnected.current = false;
+        }
         const started = performance.now();
-        const connection = await port.getLiveConnection(deviceId);
-        if (stopped) return;
-        setConflictAt(connection.state === "ready" ? null : connection.identityConflictAt ?? null);
-        if (connection.state !== "ready") throw new Error("device_not_connected");
-        if (!connection.capabilities.includes(topic)) throw new Error("device_capability_unavailable");
         const result = await port.readLive(deviceId, topic);
         if (stopped) return;
         if (performance.now() - started > 6000) throw new Error("query_expired");
-        if (!acceptsLiveSnapshot(connection, result, deviceId, topic)) throw new Error("device_disconnected");
+        if (!acceptsLiveSnapshot(result, deviceId, topic)) throw new Error("device_disconnected");
         const at = Date.now();
         const changedSession = session.current !== result.sessionId;
         session.current = result.sessionId;
-        setSnapshot(result); setLastConfirmed(at); setNow(at); setError(null);
+        setSnapshot(result); setLastConfirmed(at); setNow(at); setError(null); setConflictAt(null);
         if (topic === "metrics") {
           const metrics = result.data as LiveMetricsData;
           const cpu = metrics.cpuPercent;
           const memory = metrics.memoryUsedBytes !== null && metrics.memoryTotalBytes ? metrics.memoryUsedBytes / metrics.memoryTotalBytes * 100 : null;
           setPoints((previous) => [...(changedSession ? [] : previous.filter((point) => point.at >= at - 120_000)), { at, cpu, memory }].slice(-120));
         }
+        if (topic === "docker") {
+          const docker = result.data as LiveDocker;
+          setRates(containerRates(changedSession ? null : previousDocker.current, docker));
+          previousDocker.current = docker;
+        }
       } catch (nextError) {
         if (stopped) return;
-        setSnapshot(null); setError(liveErrorMessage(nextError));
+        setError(liveErrorMessage(nextError));
+        // A busy or slow collection keeps the last result on screen, marked
+        // stale, until it expires; anything else removes it immediately.
+        if (!isTransientLiveError(nextError)) { setSnapshot(null); previousDocker.current = null; }
+        if (isDisconnectedLiveError(nextError) && !disconnected.current) {
+          disconnected.current = true;
+          await refreshConnection().catch(() => null);
+        }
         const at = Date.now();
         setPoints((previous) => [...previous.filter((point) => point.at >= at - 120_000), { at, cpu: null, memory: null }].slice(-120));
       }
@@ -74,7 +100,8 @@ function LiveTopicView({ deviceId, port, topic, interval }: { deviceId: string; 
     return () => { stopped = true; stop(); stopClock(); };
   }, [deviceId, interval, port, topic]);
   const expired = lastConfirmed > 0 && now - lastConfirmed > Math.max(6000, interval * 2000);
-  const fresh = snapshot !== null && !expired && !error;
+  const fresh = snapshot !== null && !expired;
+  const age = Math.max(0, Math.floor((now - lastConfirmed) / 1000));
   const reset = async () => {
     if (!port.resetLiveCredentials || !window.confirm("重置后，中枢会接受这台设备下一次以新身份登记的实时连接。仅在确认是你自己重装了 Agent 或丢失了密钥文件时操作。继续？")) return;
     setResetState("pending");
@@ -85,13 +112,16 @@ function LiveTopicView({ deviceId, port, topic, interval }: { deviceId: string; 
     {conflictAt && <div className="workspace-live__notice" role="alert">
       <p>中枢在 {formatDate(conflictAt)} 拒绝了这台设备的实时登记：它的安装身份与已登记的不一致，常见原因是重装了 Agent 或删除了 Agent 配置目录。历史上报不受影响。</p>
       {port.resetLiveCredentials && <Button variant="quiet" disabled={resetState === "pending"} onClick={() => void reset()}>{resetState === "pending" ? "正在重置……" : "重置实时凭据"}</Button>}
-      {resetState === "done" && <p>已重置。设备会在 30 秒内重新登记并连接。</p>}
       {resetState === "failed" && <p>重置失败，请检查登录状态后重试。</p>}
     </div>}
-    <p role="status">{error ?? (expired ? "上次结果已过期，正在等待设备重新确认。" : snapshot ? `设备已确认返回 · ${formatDate(snapshot.receivedAt)} · ${Math.max(0, Math.floor((now - lastConfirmed) / 1000))} 秒前` : "正在确认设备连接并请求采集……")}</p>
+    {/* Outside the notice: the conflict clears on the next poll, the confirmation must stay readable. */}
+    {resetState === "done" && !snapshot && <p>已重置实时凭据。设备会在 30 秒内重新登记并连接。</p>}
+    <p role="status">{error
+      ? (fresh ? `${error} 下方仍是 ${age} 秒前的结果。` : error)
+      : (expired ? "上次结果已过期，正在等待设备重新确认。" : snapshot ? `设备已确认返回 · ${formatDate(snapshot.receivedAt)} · ${age} 秒前` : "正在确认设备连接并请求采集……")}</p>
     {fresh && topic === "metrics" && <LiveMetrics data={snapshot.data as LiveMetricsData} points={points} now={now} />}
     {fresh && topic === "processes" && <ProcessTable data={snapshot.data as LiveProcesses} />}
-    {fresh && topic === "docker" && <DockerTable data={snapshot.data as LiveDocker} />}
+    {fresh && topic === "docker" && <DockerTable data={snapshot.data as LiveDocker} rates={rates} />}
   </div>;
 }
 
@@ -127,10 +157,14 @@ function ProcessTable({ data }: { data: LiveProcesses }) {
   </>;
 }
 
-function DockerTable({ data }: { data: LiveDocker }) {
+function DockerTable({ data, rates }: { data: LiveDocker; rates: Map<string, ContainerRates> }) {
+  const pair = (first: number | null | undefined, second: number | null | undefined) => `${first === null || first === undefined ? "—" : `${formatBytes(first)}/s`} / ${second === null || second === undefined ? "—" : `${formatBytes(second)}/s`}`;
   return <>
-    <p>采集于 {formatDate(data.observedAt)}。Engine {data.engineId} · {data.totalCount} 个容器{data.truncated ? "（列表达到 512 个上限）" : ""}。{data.statsCandidates !== undefined && data.statsRead !== undefined ? `本次为 ${data.statsCandidates} 个运行中容器中的 ${data.statsRead} 个读取了资源统计（每次最多 32 个，优先最忙的并轮换其余），内存与 docker stats 口径一致，不含可回收的文件缓存` : "资源统计每次最多读取 32 个运行中容器，内存是 Engine 原始使用量（升级设备端后与 docker stats 口径一致）"}。“—”表示未取得；Docker CPU 按单核计数，可超过 100%。</p>
-    <div className="workspace-live__table"><table><thead><tr><th>容器 / 镜像</th><th>状态</th><th>Compose 项目</th><th>CPU</th><th>内存 / 限额</th><th>网络收 / 发累计</th></tr></thead><tbody>{data.items.map((item) => <tr key={item.id}><td>{item.name}<small>{item.image}</small></td><td>{item.state}<small>{item.status}</small></td><td>{item.project ?? "—"}</td><td>{item.cpuPercent === null ? "—" : `${item.cpuPercent.toFixed(1)}%`}</td><td>{item.memoryBytes === null ? "—" : formatBytes(item.memoryBytes)} / {item.memoryLimitBytes === null ? "—" : formatBytes(item.memoryLimitBytes)}</td><td>{item.networkRxBytes === null ? "—" : formatBytes(item.networkRxBytes)} / {item.networkTxBytes === null ? "—" : formatBytes(item.networkTxBytes)}</td></tr>)}</tbody></table></div>
+    <p>采集于 {formatDate(data.observedAt)}。Engine {data.engineId} · {data.totalCount} 个容器{data.truncated ? "（列表达到 512 个上限）" : ""}。{data.statsCandidates !== undefined && data.statsRead !== undefined ? `本次为 ${data.statsCandidates} 个运行中容器中的 ${data.statsRead} 个读取了资源统计（每次最多 32 个，优先最忙的并轮换其余），内存与 docker stats 口径一致，不含可回收的文件缓存` : "资源统计每次最多读取 32 个运行中容器，内存是 Engine 原始使用量（升级设备端后与 docker stats 口径一致）"}。“—”表示未取得；Docker CPU 按单核计数，可超过 100%；网络与块设备是相邻两次查询之间的速率，首次查询为“—”。</p>
+    <div className="workspace-live__table"><table><thead><tr><th>容器 / 镜像</th><th>状态</th><th>Compose 项目</th><th>CPU</th><th>内存 / 限额</th><th>网络收 / 发</th><th>块设备读 / 写</th></tr></thead><tbody>{data.items.map((item) => {
+      const rate = rates.get(item.id);
+      return <tr key={item.id}><td>{item.name}<small>{item.image}</small></td><td>{item.state}<small>{item.status}</small></td><td>{item.project ?? "—"}</td><td>{item.cpuPercent === null ? "—" : `${item.cpuPercent.toFixed(1)}%`}</td><td>{item.memoryBytes === null ? "—" : formatBytes(item.memoryBytes)} / {item.memoryLimitBytes === null ? "—" : formatBytes(item.memoryLimitBytes)}</td><td title={item.networkRxBytes === null ? undefined : `累计 ${formatBytes(item.networkRxBytes)} / ${item.networkTxBytes === null ? "—" : formatBytes(item.networkTxBytes)}`}>{pair(rate?.networkRx, rate?.networkTx)}</td><td>{pair(rate?.blockRead, rate?.blockWrite)}</td></tr>;
+    })}</tbody></table></div>
     {!data.items.length && <p>已连接 Docker Engine，本次查询确实没有容器。</p>}
   </>;
 }
