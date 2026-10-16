@@ -982,4 +982,4 @@ export interface TrafficCalendarResponse {
 export interface FanNotePayload {
   note: string;
 }
-export type { LiveTopic, LiveConnection, LiveProcess, LiveProcesses, LiveContainer, LiveDocker, LiveDataMap, LiveSnapshot, ConsoleLivePort } from "./live.js";
+export type { LiveTopic, LiveConnection, LiveMetrics, LiveProcess, LiveProcesses, LiveContainer, LiveDocker, LiveDataMap, LiveSnapshot, ConsoleLivePort } from "./live.js";

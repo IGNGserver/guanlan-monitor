@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -129,7 +130,7 @@ func TestClientAcknowledgesBeforeCollectingAndAnswersHeartbeatDuringCollection(t
 	defer server.Close()
 	c := Client{Directory: t.TempDir(), Config: func() Config {
 		return Config{Enabled: true, ServerURL: server.URL, AccessKey: "fixture-admin", DeviceID: "node"}
-	}, Handle: func(ctx context.Context, _ string) (any, error) {
+	}, Handle: func(ctx context.Context, _ Request) (any, error) {
 		close(started)
 		select {
 		case <-ctx.Done():
@@ -169,4 +170,79 @@ func TestEnrollmentDoesNotFollowRedirects(t *testing.T) {
 	if leaks.Load() != 0 {
 		t.Fatal("enrollment credentials followed redirect")
 	}
+}
+
+func TestClientForwardsHubRevisionAndFailsUnknownTopicsAlone(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	const sid = "bfe51be2-7239-46d5-bcdc-c0752fa32a11"
+	const unknown = "0b7c5a7e-04a1-4a77-9d4e-3f0f7c2a9b11"
+	const rid = "e303572e-9e2c-44fc-a30c-13c19f306d90"
+	verified := make(chan error, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/agent/enroll" {
+			w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			verified <- err
+			return
+		}
+		defer conn.CloseNow()
+		var incoming map[string]any
+		steps := []func() error{
+			func() error { return wsjson.Read(ctx, conn, &incoming) },
+			func() error {
+				return wsjson.Write(ctx, conn, map[string]any{"type": "welcome", "sessionId": sid, "protocolVersion": 1, "revision": 2})
+			},
+			func() error { return wsjson.Read(ctx, conn, &incoming) },
+			func() error {
+				return wsjson.Write(ctx, conn, map[string]any{"type": "notice-from-a-newer-hub", "sessionId": sid})
+			},
+			func() error {
+				return wsjson.Write(ctx, conn, map[string]any{"type": "request", "sessionId": sid, "requestId": unknown, "topic": "gpu", "timeoutMs": 4000})
+			},
+			func() error { return wsjson.Read(ctx, conn, &incoming) },
+			func() error {
+				if incoming["type"] != "error" || incoming["requestId"] != unknown || incoming["code"] != "collection_failed" {
+					return fmt.Errorf("unknown topic not failed alone: %v", incoming)
+				}
+				return wsjson.Write(ctx, conn, map[string]any{"type": "request", "sessionId": sid, "requestId": rid, "topic": "metrics", "timeoutMs": 4000})
+			},
+			func() error { return wsjson.Read(ctx, conn, &incoming) },
+			func() error { return wsjson.Read(ctx, conn, &incoming) },
+			func() error {
+				if incoming["type"] != "result" || incoming["requestId"] != rid {
+					return fmt.Errorf("session did not survive: %v", incoming)
+				}
+				return nil
+			},
+		}
+		for _, step := range steps {
+			if err := step(); err != nil {
+				verified <- err
+				return
+			}
+		}
+		verified <- nil
+	}))
+	defer server.Close()
+	revisions := make(chan int, 1)
+	c := Client{Directory: t.TempDir(), Config: func() Config {
+		return Config{Enabled: true, ServerURL: server.URL, AccessKey: "fixture-admin", DeviceID: "node"}
+	}, Handle: func(_ context.Context, request Request) (any, error) {
+		revisions <- request.HubRevision
+		return map[string]any{}, nil
+	}}
+	done := make(chan struct{})
+	go func() { defer close(done); _ = c.connect(ctx, c.Config()) }()
+	if err := <-verified; err != nil {
+		t.Fatal(err)
+	}
+	if revision := <-revisions; revision != 2 {
+		t.Fatal("hub revision not forwarded", revision)
+	}
+	cancel()
+	<-done
 }

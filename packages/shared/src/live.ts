@@ -52,10 +52,25 @@ export interface LiveDocker {
   totalCount: number;
   truncated: boolean;
   items: LiveContainer[];
+  /** Running containers that wanted resource stats, and how many were read. Absent from older Agents. */
+  statsCandidates?: number;
+  statsRead?: number;
+}
+
+/** Fast values only; each is null until its own sampling window exists. Hardware probes stay on the history path. */
+export interface LiveMetrics {
+  observedAt: string;
+  cpuPercent: number | null;
+  memoryUsedBytes: number | null;
+  memoryTotalBytes: number | null;
+  diskReadBytesPerSec: number | null;
+  diskWriteBytesPerSec: number | null;
+  networkRxBytesPerSec: number | null;
+  networkTxBytesPerSec: number | null;
 }
 
 export interface LiveDataMap {
-  metrics: import("./index.js").AgentMetricsPayload;
+  metrics: LiveMetrics;
   processes: LiveProcesses;
   docker: LiveDocker;
 }

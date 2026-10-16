@@ -1,5 +1,12 @@
 import { z } from "zod";
+import type { LiveMetrics } from "@dsc/shared";
 import { agentMetricsPayloadSchema } from "../metrics-schema.js";
+
+/**
+ * Announced in welcome. Revision 1 Agents/Hubs only know the original shapes;
+ * an Agent sends newer shapes only after a Hub announces support for them.
+ */
+export const LIVE_HUB_REVISION = 2;
 
 const text = z.string().max(1024);
 const counter = z.number().finite().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -16,8 +23,37 @@ export const agentFrameSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("error"), sessionId: z.uuid(), requestId: z.uuid(), code: z.enum(["collection_failed", "collection_disabled", "collection_busy", "docker_unavailable", "docker_permission_denied", "query_expired"]) }).strict()
 ]);
 
+const rate = z.number().finite().nonnegative().nullable();
+export const liveMetricsSchema = z.object({
+  observedAt: timestamp,
+  cpuPercent: z.number().finite().min(0).max(100).nullable(),
+  memoryUsedBytes: counter.nullable(), memoryTotalBytes: counter.nullable(),
+  diskReadBytesPerSec: rate, diskWriteBytesPerSec: rate,
+  networkRxBytesPerSec: rate, networkTxBytesPerSec: rate
+}).strict();
+
+/** Revision-1 Agents answer with the full upload payload; viewers only ever receive LiveMetrics. */
+export function parseLiveMetrics(data: unknown, deviceId: string): LiveMetrics {
+  const current = liveMetricsSchema.safeParse(data);
+  if (current.success) return current.data;
+  const legacy = agentMetricsPayloadSchema.parse(data);
+  if (legacy.identity.deviceId !== deviceId) throw new Error("identity_mismatch");
+  const unavailable = new Set<string>(legacy.unavailableMetrics ?? []);
+  const value = (key: string, reading: number) => unavailable.has(key) ? null : reading;
+  const memory = !unavailable.has("memoryUsage") && legacy.memory.totalBytes > 0;
+  return {
+    observedAt: legacy.timestamp,
+    cpuPercent: value("cpuUsage", legacy.cpuUsagePercent),
+    memoryUsedBytes: memory ? legacy.memory.usedBytes : null,
+    memoryTotalBytes: memory ? legacy.memory.totalBytes : null,
+    diskReadBytesPerSec: value("diskRead", legacy.diskRate.readBytesPerSec),
+    diskWriteBytesPerSec: value("diskWrite", legacy.diskRate.writeBytesPerSec),
+    networkRxBytesPerSec: value("networkRxRate", legacy.networkRate.rxBytesPerSec),
+    networkTxBytesPerSec: value("networkTxRate", legacy.networkRate.txBytesPerSec)
+  };
+}
+
 export const liveDataSchemas = {
-  metrics: agentMetricsPayloadSchema,
   processes: z.object({
     observedAt: timestamp, cpuScale: z.literal("host"), memoryKind: z.literal("rss"),
     totalCount: counter, truncated: z.boolean(),
@@ -34,6 +70,7 @@ export const liveDataSchemas = {
       cpuPercent: counter.nullable(), memoryBytes: counter.nullable(), memoryLimitBytes: counter.nullable(),
       networkRxBytes: counter.nullable(), networkTxBytes: counter.nullable(),
       blockReadBytes: counter.nullable(), blockWriteBytes: counter.nullable()
-    }).strict()).max(512)
+    }).strict()).max(512),
+    statsCandidates: counter.optional(), statsRead: counter.optional()
   }).strict()
 };

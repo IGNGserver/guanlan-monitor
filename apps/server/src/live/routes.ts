@@ -2,12 +2,12 @@ import websocket from "@fastify/websocket";
 import { createServer, type IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import type { FastifyInstance } from "fastify";
-import type { LiveSnapshot, LiveTopic } from "@dsc/shared";
+import type { LiveTopic } from "@dsc/shared";
 import { authRateLimiter, getBearerToken, safeEqual } from "../auth.js";
 import { requireAuth } from "../routes.js";
 import { AgentCredentials } from "./credentials.js";
 import { LiveError, LiveRegistry } from "./registry.js";
-import { agentFrameSchema, deviceIdSchema, enrollmentSchema, liveDataSchemas, liveTopicSchema } from "./schema.js";
+import { agentFrameSchema, deviceIdSchema, enrollmentSchema, LIVE_HUB_REVISION, liveDataSchemas, liveTopicSchema, parseLiveMetrics } from "./schema.js";
 
 interface Options { accessKey: string; requireHttps: boolean; credentials: AgentCredentials; registry: LiveRegistry }
 
@@ -90,7 +90,7 @@ export async function registerLiveRoutes(app: FastifyInstance, options: Options)
         if (frame.type === "hello") {
           if (capabilities) throw new Error("duplicate_hello");
           capabilities = frame.capabilities;
-          socket.send(JSON.stringify({ type: "welcome", sessionId: current.id, protocolVersion: 1 }));
+          socket.send(JSON.stringify({ type: "welcome", sessionId: current.id, protocolVersion: 1, revision: LIVE_HUB_REVISION }));
           return;
         }
         if (frame.sessionId !== current.id || !capabilities) throw new Error("invalid_session");
@@ -99,8 +99,7 @@ export async function registerLiveRoutes(app: FastifyInstance, options: Options)
         else if (frame.type === "ack") registry.acknowledge(current, frame.requestId);
         else if (frame.type === "error") registry.fail(current, frame.requestId, frame.code);
         else if (frame.type === "result") {
-          const data = liveDataSchemas[frame.topic].parse(frame.data);
-          if (frame.topic === "metrics" && (data as LiveSnapshot<"metrics">["data"]).identity.deviceId !== deviceId) throw new Error("identity_mismatch");
+          const data = frame.topic === "metrics" ? parseLiveMetrics(frame.data, deviceId) : liveDataSchemas[frame.topic].parse(frame.data);
           registry.result(current, frame.requestId, frame.topic, data);
         }
       } catch { registry.detach(current); }

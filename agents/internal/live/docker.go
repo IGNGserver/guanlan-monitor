@@ -37,7 +37,18 @@ type Docker struct {
 	TotalCount int         `json:"totalCount"`
 	Truncated  bool        `json:"truncated"`
 	Items      []Container `json:"items"`
+	// Hub revision 2+: how many running containers wanted stats and how many
+	// were actually read, so missing values are explained instead of guessed.
+	StatsCandidates *int `json:"statsCandidates,omitempty"`
+	StatsRead       *int `json:"statsRead,omitempty"`
 }
+
+const (
+	dockerStatsLimit = 32
+	// Slots reserved for containers not sampled recently, so a host with more
+	// running containers than the limit rotates instead of starving the tail.
+	dockerStatsRotation = 8
+)
 
 type dockerRow struct {
 	ID     string `json:"Id"`
@@ -61,6 +72,7 @@ type dockerStats struct {
 	Memory      struct {
 		Usage uint64
 		Limit uint64
+		Stats map[string]uint64
 	} `json:"memory_stats"`
 	Networks map[string]struct {
 		Rx uint64 `json:"rx_bytes"`
@@ -77,7 +89,11 @@ type dockerStats struct {
 var containerID = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
 
 // One owner per live topic; keys include the Engine identity, not container names.
-type DockerCollector struct{ previous map[string]dockerCPU }
+type DockerCollector struct {
+	previous  map[string]dockerCPU
+	percent   map[string]float64
+	sampledAt map[string]time.Time
+}
 
 // Only fixed GET endpoints on a local engine. Never expose an arbitrary Docker API proxy.
 func dockerGet(ctx context.Context, client *http.Client, endpoint string, target any) error {
@@ -109,21 +125,21 @@ func dockerGet(ctx context.Context, client *http.Client, endpoint string, target
 	return nil
 }
 
-func (c *DockerCollector) Collect(ctx context.Context) (Docker, error) {
+func (c *DockerCollector) Collect(ctx context.Context, extended bool) (Docker, error) {
 	transport, err := dockerTransport()
 	if err != nil {
 		return Docker{}, err
 	}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 3 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
-	return c.collect(ctx, client)
+	return c.collect(ctx, client, extended)
 }
 
 func collectDocker(ctx context.Context, client *http.Client) (Docker, error) {
-	return (&DockerCollector{}).collect(ctx, client)
+	return (&DockerCollector{}).collect(ctx, client, false)
 }
 
-func (c *DockerCollector) collect(ctx context.Context, client *http.Client) (Docker, error) {
+func (c *DockerCollector) collect(ctx context.Context, client *http.Client, extended bool) (Docker, error) {
 	var info struct{ ID string }
 	if err := dockerGet(ctx, client, "/info", &info); err != nil {
 		return Docker{}, err
@@ -143,7 +159,7 @@ func (c *DockerCollector) collect(ctx context.Context, client *http.Client) (Doc
 	if len(rows) > 512 {
 		rows = rows[:512]
 	}
-	var jobs []int
+	var running []int
 	for _, row := range rows {
 		if !containerID.MatchString(row.ID) {
 			return Docker{}, errors.New("docker_unavailable")
@@ -158,11 +174,12 @@ func (c *DockerCollector) collect(ctx context.Context, client *http.Client) (Doc
 			item.Project = &value
 		}
 		result.Items = append(result.Items, item)
-		// Bound expensive stats calls independently of list size; unavailable fields stay null.
-		if row.State == "running" && len(jobs) < 32 {
-			jobs = append(jobs, len(result.Items)-1)
+		if row.State == "running" {
+			running = append(running, len(result.Items)-1)
 		}
 	}
+	// Bound expensive stats calls independently of list size; unavailable fields stay null.
+	jobs := c.statsJobs(info.ID, result.Items, running)
 	statsCtx, cancel := context.WithTimeout(ctx, 2500*time.Millisecond)
 	defer cancel()
 	queue := make(chan int, len(jobs))
@@ -173,6 +190,8 @@ func (c *DockerCollector) collect(ctx context.Context, client *http.Client) (Doc
 	var workers sync.WaitGroup
 	var samplesMu sync.Mutex
 	next := make(map[string]dockerCPU)
+	percent := make(map[string]float64)
+	read := 0
 	for worker := 0; worker < 4; worker++ {
 		workers.Add(1)
 		go func() {
@@ -189,10 +208,14 @@ func (c *DockerCollector) collect(ctx context.Context, client *http.Client) (Doc
 				if stats.PreviousCPU.SystemCPUUsage == 0 {
 					stats.PreviousCPU = c.previous[key]
 				}
+				applyDockerStats(&result.Items[index], stats)
 				samplesMu.Lock()
 				next[key] = stats.CPU
+				read++
+				if result.Items[index].CPUPercent != nil {
+					percent[key] = *result.Items[index].CPUPercent
+				}
 				samplesMu.Unlock()
-				applyDockerStats(&result.Items[index], stats)
 			}
 		}()
 	}
@@ -201,7 +224,73 @@ func (c *DockerCollector) collect(ctx context.Context, client *http.Client) (Doc
 		return Docker{}, ctx.Err()
 	}
 	c.previous = next
+	if c.sampledAt == nil {
+		c.sampledAt = make(map[string]time.Time)
+	}
+	now := time.Now()
+	live := make(map[string]time.Time, len(running))
+	for _, index := range running {
+		key := info.ID + ":" + result.Items[index].ID
+		if at, ok := c.sampledAt[key]; ok {
+			live[key] = at
+		}
+	}
+	for key := range next {
+		live[key] = now
+	}
+	c.sampledAt = live
+	c.percent = percent
+	if extended {
+		candidates := len(running)
+		result.StatsCandidates = &candidates
+		result.StatsRead = &read
+	}
 	return result, nil
+}
+
+// statsJobs picks which running containers get a stats call: the busiest by
+// last observed CPU first, plus rotation slots for the least recently sampled.
+func (c *DockerCollector) statsJobs(engine string, items []Container, running []int) []int {
+	if len(running) <= dockerStatsLimit {
+		return running
+	}
+	key := func(index int) string { return engine + ":" + items[index].ID }
+	busiest := append([]int(nil), running...)
+	sort.SliceStable(busiest, func(i, j int) bool {
+		left, leftOK := c.percent[key(busiest[i])]
+		right, rightOK := c.percent[key(busiest[j])]
+		if leftOK != rightOK {
+			return leftOK
+		}
+		return left > right
+	})
+	chosen := make(map[int]bool, dockerStatsLimit)
+	var jobs []int
+	for _, index := range busiest {
+		if len(jobs) >= dockerStatsLimit-dockerStatsRotation {
+			break
+		}
+		if _, known := c.percent[key(index)]; !known {
+			break
+		}
+		chosen[index] = true
+		jobs = append(jobs, index)
+	}
+	stale := append([]int(nil), running...)
+	sort.SliceStable(stale, func(i, j int) bool {
+		left, right := c.sampledAt[key(stale[i])], c.sampledAt[key(stale[j])]
+		return left.Before(right)
+	})
+	for _, index := range stale {
+		if len(jobs) >= dockerStatsLimit {
+			break
+		}
+		if !chosen[index] {
+			chosen[index] = true
+			jobs = append(jobs, index)
+		}
+	}
+	return jobs
 }
 
 func applyDockerStats(item *Container, stats dockerStats) {
@@ -216,8 +305,10 @@ func applyDockerStats(item *Container, stats dockerStats) {
 		}
 	}
 	if stats.Memory.Limit > 0 {
-		item.MemoryBytes = &stats.Memory.Usage
-		item.MemoryLimitBytes = &stats.Memory.Limit
+		usage := dockerMemoryUsage(stats.Memory.Usage, stats.Memory.Stats)
+		limit := stats.Memory.Limit
+		item.MemoryBytes = &usage
+		item.MemoryLimitBytes = &limit
 	}
 	if stats.Networks != nil {
 		var rx, tx uint64
@@ -241,4 +332,16 @@ func applyDockerStats(item *Container, stats dockerStats) {
 		item.BlockReadBytes = &read
 		item.BlockWriteBytes = &write
 	}
+}
+
+// dockerMemoryUsage matches `docker stats`: reclaimable inactive file cache is
+// not reported as container memory (cgroup v1 total_inactive_file, v2 inactive_file).
+func dockerMemoryUsage(usage uint64, stats map[string]uint64) uint64 {
+	if value, ok := stats["total_inactive_file"]; ok && value < usage {
+		return usage - value
+	}
+	if value, ok := stats["inactive_file"]; ok && value < usage {
+		return usage - value
+	}
+	return usage
 }

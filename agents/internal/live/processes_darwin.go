@@ -23,8 +23,8 @@ func readProcesses(ctx context.Context, epoch string) ([]processObservation, int
 	}
 	count := len(rows)
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Proc.P_pid < rows[j].Proc.P_pid })
-	if len(rows) > 4096 {
-		rows = rows[:4096]
+	if len(rows) > processReadLimit {
+		rows = rows[:processReadLimit]
 	}
 	library, err := purego.Dlopen("/usr/lib/libSystem.B.dylib", purego.RTLD_LAZY|purego.RTLD_LOCAL)
 	if err != nil {
