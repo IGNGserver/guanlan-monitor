@@ -4,6 +4,15 @@ import type { LiveConnection, LiveSnapshot, LiveTopic } from "@dsc/shared";
 
 export const LIVE_LEASE_MS = 15_000;
 export const LIVE_REQUEST_MS = 5_000;
+/**
+ * A completed result is served to every viewer for this long. It bounds device
+ * collection to about one run per topic per second however many viewers poll,
+ * and however fast a misbehaving client loops.
+ */
+export const LIVE_RESULT_TTL_MS = 900;
+/** Same-identity reconnects replace a stale session; this many within the window means two live copies of one identity. */
+export const LIVE_TAKEOVER_LIMIT = 3;
+export const LIVE_TAKEOVER_WINDOW_MS = 60_000;
 
 export class LiveError extends Error {
   constructor(public readonly code: string, public readonly statusCode = 503) { super(code); }
@@ -36,23 +45,37 @@ export interface AgentSession {
   challenge: string | null;
   pending: Map<string, Pending>;
   requests: Map<LiveTopic, Promise<LiveSnapshot>>;
+  results: Map<LiveTopic, { snapshot: LiveSnapshot; at: number }>;
 }
 
 /** Single-Hub connection ownership. Durable device status is deliberately never consulted. */
 export class LiveRegistry {
   private readonly sessions = new Map<string, AgentSession>();
+  private readonly takeovers = new Map<string, number[]>();
   private closed = false;
   constructor(private readonly now = () => performance.now(), private readonly requestMs = LIVE_REQUEST_MS) {}
 
   attach(deviceId: string, transport: LiveTransport): AgentSession {
     if (this.closed) throw new LiveError("hub_shutting_down");
     const previous = this.sessions.get(deviceId);
-    if (previous && this.valid(previous)) throw new LiveError("device_session_conflict", 409);
+    if (previous && this.valid(previous)) {
+      // Only the enrolled installation can authenticate, so a second connection
+      // is normally that installation reconnecting after a silent network drop
+      // the Hub has not noticed yet. Repeated takeovers mean a copied identity
+      // is running twice: refuse instead of letting the two flip-flop.
+      const now = this.now();
+      const recent = (this.takeovers.get(deviceId) ?? []).filter((at) => now - at < LIVE_TAKEOVER_WINDOW_MS);
+      if (recent.length >= LIVE_TAKEOVER_LIMIT) {
+        this.takeovers.set(deviceId, recent);
+        throw new LiveError("device_session_conflict", 409);
+      }
+      this.takeovers.set(deviceId, [...recent, now]);
+    }
     if (previous) this.detach(previous);
     const session: AgentSession = {
       deviceId, id: randomUUID(), transport, connectedAt: new Date().toISOString(),
       capabilities: [], ready: false, expiresAt: this.now() + 5_000, challenge: null,
-      pending: new Map(), requests: new Map()
+      pending: new Map(), requests: new Map(), results: new Map()
     };
     this.sessions.set(deviceId, session);
     return session;
@@ -98,6 +121,8 @@ export class LiveRegistry {
       return Promise.reject(new LiveError("device_not_connected"));
     }
     if (!session.capabilities.includes(topic)) return Promise.reject(new LiveError("device_capability_unavailable", 422));
+    const cached = session.results.get(topic);
+    if (cached && this.now() - cached.at < LIVE_RESULT_TTL_MS) return Promise.resolve(cached.snapshot);
     const inFlight = session.requests.get(topic);
     if (inFlight) return inFlight;
     if ([...this.sessions.values()].reduce((total, item) => total + item.pending.size, 0) >= 256) {
@@ -141,7 +166,9 @@ export class LiveRegistry {
     }
     clearTimeout(pending.timer);
     session.pending.delete(id);
-    pending.resolve({ deviceId: session.deviceId, sessionId: session.id, requestId: id, topic, receivedAt: new Date().toISOString(), data });
+    const snapshot: LiveSnapshot = { deviceId: session.deviceId, sessionId: session.id, requestId: id, topic, receivedAt: new Date().toISOString(), data };
+    session.results.set(topic, { snapshot, at: this.now() });
+    pending.resolve(snapshot);
   }
 
   fail(session: AgentSession, id: string, code: string): void {

@@ -9,13 +9,21 @@ import { AgentCredentials } from "./credentials.js";
 import { LiveError, LiveRegistry } from "./registry.js";
 import { agentFrameSchema, deviceIdSchema, enrollmentSchema, LIVE_HUB_REVISION, liveDataSchemas, liveTopicSchema, parseLiveMetrics } from "./schema.js";
 
+const knownAgentFrames = new Set(["hello", "ready", "pong", "ack", "result", "error"]);
+
 interface Options { accessKey: string; requireHttps: boolean; credentials: AgentCredentials; registry: LiveRegistry }
 
 export async function registerLiveRoutes(app: FastifyInstance, options: Options): Promise<void> {
   const { credentials, registry } = options;
   // Socket.IO and raw WebSocket must not both attempt to upgrade the same socket.
   const upgrades = createServer();
-  await app.register(websocket, { options: { server: upgrades, maxPayload: 4 * 1024 * 1024 } });
+  // Process and container lists are repetitive JSON; deflate keeps them small on
+  // slow uplinks. maxPayload applies to the inflated size. No context takeover
+  // keeps per-connection zlib memory flat.
+  await app.register(websocket, { options: {
+    server: upgrades, maxPayload: 4 * 1024 * 1024,
+    perMessageDeflate: { threshold: 4096, serverNoContextTakeover: true, clientNoContextTakeover: true, zlibDeflateOptions: { level: 3 } }
+  } });
   const routeUpgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
     const pathname = request.url?.split("?", 1)[0];
     if (pathname === "/api/agent/realtime") upgrades.emit("upgrade", request, socket, head);
@@ -86,7 +94,15 @@ export async function registerLiveRoutes(app: FastifyInstance, options: Options)
     socket.on("message", (raw, binary) => {
       try {
         if (binary) throw new Error("binary_frame");
-        const frame = agentFrameSchema.parse(JSON.parse(raw.toString()));
+        const message: unknown = JSON.parse(raw.toString());
+        const parsed = agentFrameSchema.safeParse(message);
+        if (!parsed.success) {
+          // Frame types from a newer Agent are ignored; a malformed known frame is a protocol violation.
+          const type = (message as { type?: unknown } | null)?.type;
+          if (typeof type === "string" && !knownAgentFrames.has(type)) return;
+          throw parsed.error;
+        }
+        const frame = parsed.data;
         if (frame.type === "hello") {
           if (capabilities) throw new Error("duplicate_hello");
           capabilities = frame.capabilities;
@@ -99,7 +115,16 @@ export async function registerLiveRoutes(app: FastifyInstance, options: Options)
         else if (frame.type === "ack") registry.acknowledge(current, frame.requestId);
         else if (frame.type === "error") registry.fail(current, frame.requestId, frame.code);
         else if (frame.type === "result") {
-          const data = frame.topic === "metrics" ? parseLiveMetrics(frame.data, deviceId) : liveDataSchemas[frame.topic].parse(frame.data);
+          // A result that fails validation (e.g. Agent/Hub version skew) fails
+          // that request only; tearing down the session would turn every such
+          // query into a reconnect.
+          let data;
+          try { data = frame.topic === "metrics" ? parseLiveMetrics(frame.data, deviceId) : liveDataSchemas[frame.topic].parse(frame.data); }
+          catch {
+            request.log.warn({ deviceId, topic: frame.topic }, "live result rejected by schema");
+            registry.fail(current, frame.requestId, "invalid_result");
+            return;
+          }
           registry.result(current, frame.requestId, frame.topic, data);
         }
       } catch { registry.detach(current); }

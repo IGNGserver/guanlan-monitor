@@ -12,6 +12,7 @@ const messages: Record<string, string> = {
   collection_disabled: "设备已关闭采集或云同步。",
   collection_failed: "设备采集失败，不能将失败当作空列表。",
   query_expired: "本次采集已超时；过期结果不会补发。",
+  invalid_result: "设备返回的数据未通过校验（可能是设备端与中枢版本不一致），本次结果已丢弃。",
   live_query_capacity_exceeded: "中枢实时查询已达到并发上限。",
   live_agent_upgrade_required: "当前桌面桥接不支持实时查看，请升级客户端。"
 };
