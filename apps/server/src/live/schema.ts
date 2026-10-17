@@ -3,13 +3,15 @@ import type { LiveMetrics } from "@dsc/shared";
 import { agentMetricsPayloadSchema } from "../metrics-schema.js";
 
 /**
- * Announced in welcome. Revision 1 Agents/Hubs only know the original shapes;
- * an Agent sends newer shapes only after a Hub announces support for them.
+ * Announced in welcome. Revision 1/2 Agents/Hubs only know the original
+ * process item shape; an Agent sends newer shapes only after a Hub announces
+ * support for them.
  */
-export const LIVE_HUB_REVISION = 2;
+export const LIVE_HUB_REVISION = 3;
 
 const text = z.string().max(1024);
 const counter = z.number().finite().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const percent = z.number().finite().min(0).max(100).nullable();
 const timestamp = z.string().datetime({ offset: true });
 export const liveTopicSchema = z.enum(["metrics", "processes", "docker"]);
 export const deviceIdSchema = z.string().trim().min(1).max(128).refine((id) => !id.startsWith("vm:") && !/[\u0000-\u001f]/.test(id));
@@ -57,11 +59,20 @@ export const liveDataSchemas = {
   processes: z.object({
     observedAt: timestamp, cpuScale: z.literal("host"), memoryKind: z.literal("rss"),
     totalCount: counter, truncated: z.boolean(),
-    items: z.array(z.object({
-      id: text, pid: counter, parentPid: counter.nullable(), name: text,
-      startedAt: timestamp.nullable(), cpuPercent: counter.nullable(), memoryBytes: counter.nullable(),
-      threads: counter.nullable(), status: text.nullable()
-    }).strict()).max(4096)
+    items: z.array(z.union([
+      z.object({
+        id: text, pid: counter, parentPid: counter.nullable(), name: text,
+        startedAt: timestamp.nullable(), cpuPercent: percent, gpuPercent: percent, memoryBytes: counter.nullable(),
+        threads: counter.nullable(), status: text.nullable()
+      }).strict(),
+      // A revision-2 Agent may remain connected to this revision-3 Hub. Add
+      // the new field at the boundary instead of rejecting its old result.
+      z.object({
+        id: text, pid: counter, parentPid: counter.nullable(), name: text,
+        startedAt: timestamp.nullable(), cpuPercent: percent, memoryBytes: counter.nullable(),
+        threads: counter.nullable(), status: text.nullable()
+      }).strict().transform((item) => ({ ...item, gpuPercent: null }))
+    ])).max(4096)
   }).strict(),
   docker: z.object({
     observedAt: timestamp, engineId: text, totalCount: counter, truncated: z.boolean(),

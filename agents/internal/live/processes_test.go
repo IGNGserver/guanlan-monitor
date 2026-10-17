@@ -2,6 +2,7 @@ package live
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -25,8 +26,8 @@ func TestProcessSnapshotTracksOwnPIDByStartTimeAndDoesNotInventFirstCPU(t *testi
 	if own == nil {
 		t.Fatal("current process absent from snapshot")
 	}
-	if own.ID == "" || own.StartedAt == nil || own.CPUPercent != nil {
-		t.Fatal("unreliable first process identity or CPU baseline", own)
+	if own.ID == "" || own.StartedAt == nil || own.CPUPercent != nil || own.GPUPercent != nil {
+		t.Fatal("unreliable first process identity or metric baseline", own)
 	}
 	second, err := collector.Collect(ctx)
 	if err != nil {
@@ -64,4 +65,29 @@ func TestProcessRankingKeepsTheBusiestAndPutsUnknownLast(t *testing.T) {
 			t.Fatal("unexpected ranking", order)
 		}
 	}
+}
+
+func TestLegacyProcessResultOmitsGPUField(t *testing.T) {
+	value := 37.5
+	legacy := (Processes{ObservedAt: "2026-10-17T00:00:00Z", CPUScale: "host", MemoryKind: "rss", Items: []Process{{ID: "p", PID: 42, Name: "renderer", GPUPercent: &value}}}).withoutGPU()
+	raw, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) == "" || containsJSONField(raw, "gpuPercent") {
+		t.Fatal("legacy process result leaked gpuPercent", string(raw))
+	}
+}
+
+func containsJSONField(raw []byte, field string) bool {
+	var value map[string]any
+	if json.Unmarshal(raw, &value) != nil {
+		return false
+	}
+	items, ok := value["items"].([]any)
+	if !ok || len(items) == 0 {
+		return false
+	}
+	_, ok = items[0].(map[string]any)[field]
+	return ok
 }

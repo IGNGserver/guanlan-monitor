@@ -62,7 +62,7 @@ func newLiveHandler(state *agentState, mu *sync.Mutex, defaults agentRuntimeConf
 		case "processes":
 			processMu.Lock()
 			defer processMu.Unlock()
-			return processes.Collect(ctx)
+			return processes.CollectForRevision(ctx, request.HubRevision)
 		case "docker":
 			return docker.Collect(ctx, request.HubRevision >= 2)
 		default:

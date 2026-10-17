@@ -23,6 +23,7 @@ type Process struct {
 	Name        string   `json:"name"`
 	StartedAt   *string  `json:"startedAt"`
 	CPUPercent  *float64 `json:"cpuPercent"`
+	GPUPercent  *float64 `json:"gpuPercent"`
 	MemoryBytes *uint64  `json:"memoryBytes"`
 	Threads     *int32   `json:"threads"`
 	Status      *string  `json:"status"`
@@ -47,6 +48,12 @@ type processSample struct {
 type ProcessCollector struct {
 	previous map[int32]processSample
 	epoch    string
+	gpu      gpuProcessSampler
+	// The first GPU query establishes a provider-specific baseline. Keep its
+	// values null even when a provider (for example NVML or powermetrics) can
+	// return a value immediately, so every platform has the same first-sample
+	// contract as CPU and counter-based providers.
+	gpuSampled bool
 }
 
 func bounded(value string) string {
@@ -60,6 +67,21 @@ func bounded(value string) string {
 }
 
 func (c *ProcessCollector) Collect(ctx context.Context) (Processes, error) {
+	return c.collect(ctx, true)
+}
+
+// CollectForRevision keeps the process result compatible with older Hubs. Hub
+// revision 3 understands gpuPercent; revisions 1 and 2 use the original
+// process item shape and reject unknown fields.
+func (c *ProcessCollector) CollectForRevision(ctx context.Context, hubRevision int) (any, error) {
+	result, err := c.collect(ctx, hubRevision >= 3)
+	if err != nil || hubRevision >= 3 {
+		return result, err
+	}
+	return result.withoutGPU(), nil
+}
+
+func (c *ProcessCollector) collect(ctx context.Context, includeGPU bool) (Processes, error) {
 	result := Processes{ObservedAt: time.Now().UTC().Format(time.RFC3339Nano), CPUScale: "host", MemoryKind: "rss", Items: []Process{}}
 	if c.epoch == "" {
 		id, err := newIdentity()
@@ -90,6 +112,25 @@ func (c *ProcessCollector) Collect(ctx context.Context) (Processes, error) {
 		result.Items = append(result.Items, item)
 	}
 	c.previous = next
+	if includeGPU {
+		if c.gpu == nil {
+			c.gpu = newGPUProcessSampler()
+		}
+		usage := c.gpu.sample(ctx, observations)
+		if c.gpuSampled {
+			for index, observation := range observations {
+				value, ok := usage[processGPUKey{pid: observation.item.PID, started: observation.started}]
+				if !ok {
+					continue
+				}
+				value, ok = validGPUPercent(value)
+				if ok {
+					result.Items[index].GPUPercent = &value
+				}
+			}
+		}
+		c.gpuSampled = true
+	}
 	rankProcesses(result.Items)
 	// Exited or protected processes also make count exceed the item list; only
 	// the limits themselves count as truncation.
@@ -98,6 +139,39 @@ func (c *ProcessCollector) Collect(ctx context.Context) (Processes, error) {
 		result.Items = result.Items[:processReturnLimit]
 	}
 	return result, nil
+}
+
+type legacyProcess struct {
+	ID          string   `json:"id"`
+	PID         int32    `json:"pid"`
+	ParentPID   *int32   `json:"parentPid"`
+	Name        string   `json:"name"`
+	StartedAt   *string  `json:"startedAt"`
+	CPUPercent  *float64 `json:"cpuPercent"`
+	MemoryBytes *uint64  `json:"memoryBytes"`
+	Threads     *int32   `json:"threads"`
+	Status      *string  `json:"status"`
+}
+
+type legacyProcesses struct {
+	ObservedAt string          `json:"observedAt"`
+	CPUScale   string          `json:"cpuScale"`
+	MemoryKind string          `json:"memoryKind"`
+	TotalCount int             `json:"totalCount"`
+	Truncated  bool            `json:"truncated"`
+	Items      []legacyProcess `json:"items"`
+}
+
+func (p Processes) withoutGPU() legacyProcesses {
+	items := make([]legacyProcess, 0, len(p.Items))
+	for _, item := range p.Items {
+		items = append(items, legacyProcess{
+			ID: item.ID, PID: item.PID, ParentPID: item.ParentPID, Name: item.Name,
+			StartedAt: item.StartedAt, CPUPercent: item.CPUPercent, MemoryBytes: item.MemoryBytes,
+			Threads: item.Threads, Status: item.Status,
+		})
+	}
+	return legacyProcesses{ObservedAt: p.ObservedAt, CPUScale: p.CPUScale, MemoryKind: p.MemoryKind, TotalCount: p.TotalCount, Truncated: p.Truncated, Items: items}
 }
 
 // rankProcesses orders by CPU, then resident memory, then PID. Unknown values
