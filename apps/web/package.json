@@ -1,6 +1,6 @@
 {
   "name": "@dsc/web",
-  "version": "3.0.157",
+  "version": "3.0.158",
   "private": true,
   "scripts": {
     "build": "next build && node scripts/generate-pwa-assets.mjs",
