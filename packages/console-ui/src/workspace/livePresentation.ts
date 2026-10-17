@@ -134,14 +134,14 @@ export function groupContainers(items: LiveContainer[]): ContainerGroup[] {
     .map(([project, members]) => ({ project, items: members, cpuPercent: sumKnown(members.map((item) => item.cpuPercent)), memoryBytes: sumKnown(members.map((item) => item.memoryBytes)) }));
 }
 
-export type ProcessSortKey = "name" | "pid" | "cpu" | "memory" | "threads";
+export type ProcessSortKey = "name" | "pid" | "cpu" | "gpu" | "memory" | "threads";
 
 /** Unknown values ("—") sort after every known one in either direction: missing is not small. */
 export function sortProcesses(items: LiveProcess[], key: ProcessSortKey, descending: boolean): LiveProcess[] {
-  const value = (item: LiveProcess): number | string | null => key === "name" ? item.name.toLowerCase() : key === "pid" ? item.pid : key === "cpu" ? item.cpuPercent : key === "memory" ? item.memoryBytes : item.threads;
+  const value = (item: LiveProcess): number | string | null | undefined => key === "name" ? item.name.toLowerCase() : key === "pid" ? item.pid : key === "cpu" ? item.cpuPercent : key === "gpu" ? item.gpuPercent : key === "memory" ? item.memoryBytes : item.threads;
   return [...items].sort((left, right) => {
     const a = value(left), b = value(right);
-    if (a === null || b === null) return a === b ? left.pid - right.pid : a === null ? 1 : -1;
+    if (a == null || b == null) return a == null && b == null ? left.pid - right.pid : a == null ? 1 : -1;
     const order = typeof a === "string" ? a.localeCompare(b as string) : a - (b as number);
     return (descending ? -order : order) || left.pid - right.pid;
   });

@@ -86,11 +86,12 @@ test("containers group by Compose project with totals of what was read", () => {
 });
 
 test("process sorting keeps unknown values last and ties stable", () => {
-  const process = (pid: number, cpuPercent: number | null): LiveProcess => ({ id: String(pid), pid, parentPid: null, name: `p${pid}`, startedAt: null, cpuPercent, memoryBytes: null, threads: null, status: null });
+  const process = (pid: number, cpuPercent: number | null, gpuPercent: number | null = null): LiveProcess => ({ id: String(pid), pid, parentPid: null, name: `p${pid}`, startedAt: null, cpuPercent, gpuPercent, memoryBytes: null, threads: null, status: null });
   const items = [process(3, null), process(1, 5), process(2, 9), process(4, 5)];
   assert.deepEqual(sortProcesses(items, "cpu", true).map((item) => item.pid), [2, 1, 4, 3]);
   assert.deepEqual(sortProcesses(items, "cpu", false).map((item) => item.pid), [1, 4, 2, 3], "missing CPU is not the smallest");
   assert.deepEqual(sortProcesses(items, "pid", false).map((item) => item.pid), [1, 2, 3, 4]);
+  assert.deepEqual(sortProcesses([process(1, null, null), process(2, null, 60), process(3, null, 10)], "gpu", true).map((item) => item.pid), [2, 3, 1]);
 });
 
 test("a held order keeps positions, appends newcomers and drops what left", () => {

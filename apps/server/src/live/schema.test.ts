@@ -42,3 +42,13 @@ test("Docker coverage fields are optional so revision-1 Agents still validate", 
   assert.equal(liveDataSchemas.docker.safeParse(base).success, true);
   assert.equal(liveDataSchemas.docker.safeParse({ ...base, statsCandidates: 40, statsRead: 32 }).success, true);
 });
+
+test("process GPU values are nullable and old Agent rows are normalized", () => {
+  const base = { observedAt: new Date().toISOString(), cpuScale: "host", memoryKind: "rss", totalCount: 1, truncated: false };
+  const item = { id: "epoch:1:2", pid: 1, parentPid: null, name: "worker", startedAt: new Date().toISOString(), cpuPercent: null, memoryBytes: null, threads: null, status: null };
+  const old = liveDataSchemas.processes.parse({ ...base, items: [item] });
+  assert.equal(old.items[0].gpuPercent, null);
+  const current = liveDataSchemas.processes.parse({ ...base, items: [{ ...item, gpuPercent: 12.5 }] });
+  assert.equal(current.items[0].gpuPercent, 12.5);
+  assert.equal(liveDataSchemas.processes.safeParse({ ...base, items: [{ ...item, gpuPercent: 101 }] }).success, false);
+});

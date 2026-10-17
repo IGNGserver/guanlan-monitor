@@ -17,6 +17,8 @@ export interface LiveProcess {
   name: string;
   startedAt: string | null;
   cpuPercent: number | null;
+  /** The busiest GPU engine for this process, or null when the platform/provider cannot report it. */
+  gpuPercent: number | null;
   memoryBytes: number | null;
   threads: number | null;
   status: string | null;

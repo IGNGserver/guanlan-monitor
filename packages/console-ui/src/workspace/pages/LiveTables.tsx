@@ -73,6 +73,7 @@ export function ProcessTable({ data }: { data: LiveProcesses }) {
           <SortHeader label="进程" sortKey="name" sort={sort} onSort={changeSort} />
           <SortHeader label="PID" sortKey="pid" sort={sort} onSort={changeSort} numeric />
           <SortHeader label="CPU" sortKey="cpu" sort={sort} onSort={changeSort} numeric info="按整机容量归一化，满载为 100%" />
+          <SortHeader label="GPU" sortKey="gpu" sort={sort} onSort={changeSort} numeric info="进程最繁忙的 GPU 引擎；不支持或无权限时显示为 —" />
           <SortHeader label="内存" sortKey="memory" sort={sort} onSort={changeSort} numeric info="RSS / 工作集；横条相对本次列表中占用最多的进程" />
           <SortHeader label="线程" sortKey="threads" sort={sort} onSort={changeSort} numeric />
         </tr></thead>
@@ -83,10 +84,11 @@ export function ProcessTable({ data }: { data: LiveProcesses }) {
               <td><button type="button" className="live-table__expand" aria-expanded={open} onClick={() => setExpanded(open ? null : item.id)}><Icon name={open ? "chevron" : "chevronRight"} size={14} /><span>{item.name}</span></button></td>
               <td data-align="end" className="live-table__mono">{item.pid}</td>
               <td data-align="end">{item.cpuPercent === null ? "—" : <BarValue text={`${item.cpuPercent.toFixed(1)}%`} ratio={item.cpuPercent / 100} />}</td>
+              <td data-align="end">{item.gpuPercent == null ? "—" : <BarValue text={`${item.gpuPercent.toFixed(1)}%`} ratio={item.gpuPercent / 100} />}</td>
               <td data-align="end">{item.memoryBytes === null ? "—" : <BarValue text={formatBytes(item.memoryBytes)} ratio={maxMemory ? item.memoryBytes / maxMemory : null} />}</td>
               <td data-align="end">{item.threads ?? "—"}</td>
             </tr>
-            {open && <tr className="live-table__detail"><td colSpan={5}>
+            {open && <tr className="live-table__detail"><td colSpan={6}>
               <dl>
                 <div><dt>父进程 PID</dt><dd className="live-table__mono">{item.parentPid ?? "—"}</dd></div>
                 <div><dt>状态</dt><dd>{item.status ?? "—"}</dd></div>
@@ -99,7 +101,7 @@ export function ProcessTable({ data }: { data: LiveProcesses }) {
     </div>
     {!rows.length && <p className="workspace-live__empty">{needle ? `没有名称或 PID 包含“${query.trim()}”的进程。` : "本次快照中没有可显示的进程。"}</p>}
     {rows.length > limit && <div className="workspace-live__more"><Button variant="quiet" onClick={() => setLimit(limit + PAGE)}>再显示 {Math.min(PAGE, rows.length - limit)} 个</Button><span>已显示 {limit} / {rows.length}</span></div>}
-    <LiveNote>“—”表示没有读到，不是零：受保护或采集中退出的进程可能无法读取。CPU 按整机容量归一化（满载为 100%），内存为 RSS / 工作集。鼠标停在表格上或展开某一行时，行的顺序保持不动；否则最多每 5 秒按排序重新排列一次。</LiveNote>
+    <LiveNote>“—”表示没有读到，不是零：受保护或采集中退出的进程可能无法读取。CPU 按整机容量归一化（满载为 100%），GPU 是该进程最繁忙引擎的占用率；内存为 RSS / 工作集。鼠标停在表格上或展开某一行时，行的顺序保持不动；否则最多每 5 秒按排序重新排列一次。</LiveNote>
   </>;
 }
 

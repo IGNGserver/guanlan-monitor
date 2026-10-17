@@ -42,7 +42,7 @@ test("authenticated live HTTP/WS round trip, identity conflicts, payload validat
   const welcome = once(agent, "message");
   agent.send(JSON.stringify({ type: "hello", protocolVersion: 1, capabilities: ["processes"] }));
   const hello = JSON.parse((await welcome)[0].toString()) as { sessionId: string; revision: number };
-  assert.equal(hello.revision, 2, "Agents only send revision-2 shapes after the Hub announces them");
+  assert.equal(hello.revision, 3, "Agents only send revision-3 shapes after the Hub announces them");
   agent.send(JSON.stringify({ type: "ready", sessionId: hello.sessionId }));
   await setImmediate(); await setImmediate();
   assert.equal(registry.describe("node").state, "ready");
