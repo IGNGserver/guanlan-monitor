@@ -212,7 +212,9 @@ async function desktopFlow() {
   const restoredShell = await measuredShell(page);
   assert.ok(Math.abs(restoredShell.main.width - expandedShell.main.width) < 2, "expanding must restore the original content width: " + JSON.stringify({ expandedShell, restoredShell }));
   const restoredLayout = await measuredCharts(page);
-  assertChartColumns(restoredLayout, 1);
+  // The column count follows the grid's own width (the 8-track breakpoint is
+  // 656px), not the window: a narrower rail can leave room for two charts.
+  assertChartColumns(restoredLayout, restoredLayout.every((grid) => grid.width >= 656) ? 2 : 1);
   report.layouts.push({ width: 1024, collapsed: false, restored: true, shell: restoredShell, layout: restoredLayout });
   await collapse.click();
   await page.locator('.workspace-root.is-sidebar-collapsed').waitFor();

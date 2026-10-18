@@ -36,15 +36,19 @@ export type ChartVisualization = "line" | "area" | "bar";
  * on both chart surfaces (see the accent tokens). Hues are assigned by series
  * position and never cycled: a ninth series and beyond share one neutral
  * "other" ink rather than repeating a colour that already names a device.
+ *
+ * Orange, amber and red come last. They are also the warning and critical
+ * colours of threshold lines and status tags, so a chart with two or three
+ * curves — nearly every chart here — must not paint a healthy series in them.
  */
 const CHART_COLORS = [
   "var(--md-sys-color-accent-1)",
-  "var(--md-sys-color-accent-2)",
   "var(--md-sys-color-accent-3)",
-  "var(--md-sys-color-accent-4)",
+  "var(--md-sys-color-accent-7)",
   "var(--md-sys-color-accent-5)",
   "var(--md-sys-color-accent-6)",
-  "var(--md-sys-color-accent-7)",
+  "var(--md-sys-color-accent-2)",
+  "var(--md-sys-color-accent-4)",
   "var(--md-sys-color-accent-8)"
 ];
 const CHART_OTHER_COLOR = "var(--md-sys-color-outline)";

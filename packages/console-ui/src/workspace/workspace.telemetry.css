@@ -3,7 +3,7 @@
 .workspace-telemetry-models {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--md-sys-space-2);
 }
 
 .workspace-telemetry-models__label {
@@ -16,7 +16,7 @@
 .workspace-telemetry-models__list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--md-sys-space-2);
 }
 
 .workspace-telemetry-model-chip {
@@ -25,7 +25,7 @@
   max-width: 100%;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 8px;
+  padding: var(--md-sys-space-2) var(--md-sys-space-2);
   border: 1px solid var(--workspace-border);
   border-radius: var(--md-sys-shape-sm);
   background: var(--workspace-surface-subtle);
@@ -59,10 +59,10 @@
 .workspace-anchor-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--md-sys-space-2);
   overflow-x: auto;
-  padding: 8px 12px;
-  margin-bottom: 14px;
+  padding: var(--md-sys-space-2) var(--md-sys-space-3);
+  margin-bottom: var(--md-sys-space-4);
   border: 1px solid var(--workspace-border);
   border-radius: var(--md-sys-shape-full);
   background: var(--workspace-surface-subtle);
@@ -80,7 +80,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
+  padding: var(--md-sys-space-2) var(--md-sys-space-3);
   cursor: pointer;
   font-size: 0.75rem;
   font-weight: 500;
@@ -98,7 +98,7 @@
 }
 
 .workspace-telemetry-models-details .workspace-telemetry-models__list {
-  padding: 8px 10px 10px;
+  padding: var(--md-sys-space-2) var(--md-sys-space-3) var(--md-sys-space-3);
   border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 
@@ -112,7 +112,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 14px;
+  padding: var(--md-sys-space-2) var(--md-sys-space-4);
   border: 1px solid var(--workspace-border);
   border-radius: var(--md-sys-shape-full);
   background: var(--workspace-surface);

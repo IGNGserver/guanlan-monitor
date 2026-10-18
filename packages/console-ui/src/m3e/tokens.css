@@ -62,6 +62,13 @@
   --md-sys-space-10: 56px;
   --md-sys-space-12: 72px;
 
+  /* Layout rhythm. Pages compose from these four roles instead of picking a
+     step per component, so blocks, cards and rows line up across pages. */
+  --ui-page-gap: var(--md-sys-space-6);      /* between blocks on a page */
+  --ui-section-gap: var(--md-sys-space-7);   /* between titled sections */
+  --ui-card-gap: var(--md-sys-space-4);      /* between cards in a grid */
+  --ui-card-pad: var(--md-sys-space-4);      /* inside a card */
+
   /* ---- Type scale ------------------------------------------------------- */
   --md-sys-typescale-display-l-size: 57px;
   --md-sys-typescale-display-l-line: 64px;
@@ -99,16 +106,18 @@
   --md-sys-typescale-body-m-line: 20px;
   --md-sys-typescale-body-m-weight: 400;
   --md-sys-typescale-body-m-tracking: 0.25px;
-  --md-sys-typescale-body-s-size: 12px;
-  --md-sys-typescale-body-s-line: 16px;
+  /* 13px, not the M3 baseline 12px: supporting copy in this console is mostly
+     CJK next to numbers, and 12px was the most common text size on data pages. */
+  --md-sys-typescale-body-s-size: 13px;
+  --md-sys-typescale-body-s-line: 18px;
   --md-sys-typescale-body-s-weight: 400;
   --md-sys-typescale-body-s-tracking: 0.4px;
   --md-sys-typescale-label-l-size: 14px;
   --md-sys-typescale-label-l-line: 20px;
   --md-sys-typescale-label-l-weight: 500;
   --md-sys-typescale-label-l-tracking: 0.1px;
-  --md-sys-typescale-label-m-size: 12px;
-  --md-sys-typescale-label-m-line: 16px;
+  --md-sys-typescale-label-m-size: 13px;
+  --md-sys-typescale-label-m-line: 18px;
   --md-sys-typescale-label-m-weight: 500;
   --md-sys-typescale-label-m-tracking: 0.5px;
   /* 12px, not the M3 baseline 11px: the smallest size at which CJK glyphs keep
@@ -123,10 +132,12 @@
   --md-sys-font-mono: "Roboto Mono", "SFMono-Regular", "Cascadia Mono", Consolas, "Noto Sans Mono CJK SC", monospace;
 
   /* ---- Layout metrics --------------------------------------------------- */
-  --md-sys-layout-sidebar-expanded: 320px;
+  /* The rail holds three destinations; every pixel past their labels is taken
+     from the charts. */
+  --md-sys-layout-sidebar-expanded: 248px;
   --md-sys-layout-sidebar-rail: 88px;
   --md-sys-layout-content-max: 1440px;
-  --md-sys-layout-content-pad: 32px;
+  --md-sys-layout-content-pad: 24px;
   --md-sys-layout-touch-target: 48px;
   --md-sys-layout-chrome-height: 40px;
 
@@ -385,8 +396,8 @@ html[data-dsc-density="compact"] {
   --md-sys-density-control-height: 32px;
   --md-sys-density-list-height: 48px;
   --md-sys-density-gap: 6px;
-  --md-sys-layout-content-pad: 24px;
-  --md-sys-layout-sidebar-expanded: 288px;
+  --md-sys-layout-content-pad: 20px;
+  --md-sys-layout-sidebar-expanded: 232px;
   --md-sys-layout-sidebar-rail: 72px;
 }
 
@@ -395,7 +406,7 @@ html[data-dsc-density="touch"] {
   --md-sys-density-list-height: 64px;
   --md-sys-density-gap: 10px;
   --md-sys-layout-content-pad: 20px;
-  --md-sys-layout-sidebar-expanded: 300px;
+  --md-sys-layout-sidebar-expanded: 256px;
   --md-sys-layout-sidebar-rail: 80px;
 }
 

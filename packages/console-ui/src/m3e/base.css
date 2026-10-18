@@ -19,6 +19,9 @@
   font-size: var(--md-sys-typescale-body-m-size);
   line-height: var(--md-sys-typescale-body-m-line);
   font-weight: var(--md-sys-typescale-body-m-weight);
+  /* Every figure in a monitoring console is compared with the one above or
+     beside it; proportional digits made columns and readouts wobble. */
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

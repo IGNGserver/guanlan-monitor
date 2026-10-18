@@ -94,7 +94,7 @@
 .chart-tile__subtitle { margin: var(--md-sys-space-1) 0 0; overflow-wrap: anywhere; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
 .chart-tile__hero-stat { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: var(--md-sys-space-3); }
 .chart-tile__hero-value { color: var(--md-sys-color-on-surface); font-size: var(--md-sys-typescale-title-l-size); font-weight: 500; letter-spacing: 0; font-variant-numeric: tabular-nums; }
-.chart-tile__hero-badge { padding: 2px 8px; border-radius: var(--md-sys-shape-sm); color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-high); font-size: var(--md-sys-typescale-label-s-size); font-variant-numeric: tabular-nums; }
+.chart-tile__hero-badge { padding: 2px var(--md-sys-space-2); border-radius: var(--md-sys-shape-sm); color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-high); font-size: var(--md-sys-typescale-label-s-size); font-variant-numeric: tabular-nums; }
 .chart-tile__controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--md-sys-space-2); }
 .chart-tile__body { min-width: 0; flex: 1 1 auto; }
 .chart-tile__empty { display: flex; min-height: 8rem; flex: 1 1 auto; align-items: center; justify-content: center; padding: var(--md-sys-space-5); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-m-size); text-align: center; }
@@ -160,7 +160,7 @@
 .chart-sheet__table td { padding: var(--md-sys-space-2) var(--md-sys-space-3); }
 .chart-sheet__table th { font-size: var(--md-sys-typescale-label-m-size); }
 .chart-sheet__table th[scope="row"] { color: var(--md-sys-color-on-surface); font-weight: 500; white-space: normal; }
-.chart-sheet__table .m3e-chart__swatch { display: inline-block; margin-right: 6px; vertical-align: -1px; }
+.chart-sheet__table .m3e-chart__swatch { display: inline-block; margin-right: var(--md-sys-space-2); vertical-align: -1px; }
 .chart-sheet__table .chart-sheet__value { font-size: var(--md-sys-typescale-body-m-size); }
 .chart-sheet__table .chart-sheet__when { display: block; }
 .chart-sheet .chart-info-rows__row { padding: var(--md-sys-space-2) 0; }
@@ -177,10 +177,10 @@
 .m3e-chart-readout.is-inspecting .m3e-chart-readout__time { color: var(--md-sys-color-primary); }
 .m3e-chart-readout__values { display: flex; flex-wrap: wrap; gap: var(--md-sys-space-3) var(--md-sys-space-6); margin: 0; }
 .m3e-chart-readout__values > div { min-width: 0; }
-.m3e-chart-readout__values dt { display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-m-size); }
+.m3e-chart-readout__values dt { display: flex; align-items: center; gap: var(--md-sys-space-2); overflow-wrap: anywhere; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-m-size); }
 .m3e-chart-readout__unit { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); font-weight: 400; }
 .m3e-chart-readout.is-compact { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--md-sys-space-2) var(--md-sys-space-4); }
-.m3e-chart-readout.is-compact .m3e-chart-readout__time { margin-left: auto; padding-bottom: 4px; }
+.m3e-chart-readout.is-compact .m3e-chart-readout__time { margin-left: auto; padding-bottom: var(--md-sys-space-1); }
 .m3e-chart-readout__values .m3e-visually-hidden + dd { margin-top: 0; }
 .m3e-chart-readout__values dd { margin: var(--md-sys-space-1) 0 0; color: var(--md-sys-color-on-surface); font-size: var(--md-sys-typescale-title-l-size); font-weight: 500; line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .m3e-chart__grid { stroke: var(--md-sys-color-outline-variant); stroke-width: 1; }
@@ -192,14 +192,14 @@
 /* Legend with toggles for charts of three or more curves. Text stays in ink
    tokens; the swatch alone carries the series colour. */
 .m3e-chart__legend-toggles { display: flex; flex-wrap: wrap; gap: var(--md-sys-space-1) var(--md-sys-space-2); margin-top: var(--md-sys-space-2); }
-.m3e-chart__legend-toggle { display: inline-flex; min-height: 32px; align-items: center; gap: 6px; padding: 0 var(--md-sys-space-2); border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-full); color: var(--md-sys-color-on-surface); background: transparent; font: inherit; font-size: var(--md-sys-typescale-label-m-size); cursor: pointer; }
+.m3e-chart__legend-toggle { display: inline-flex; min-height: 32px; align-items: center; gap: var(--md-sys-space-2); padding: 0 var(--md-sys-space-2); border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-full); color: var(--md-sys-color-on-surface); background: transparent; font: inherit; font-size: var(--md-sys-typescale-label-m-size); cursor: pointer; }
 .m3e-chart__legend-toggle[aria-pressed="false"] { color: var(--md-sys-color-on-surface-variant); text-decoration: line-through; }
 .m3e-chart__legend-toggle[aria-pressed="false"] .m3e-chart__swatch { opacity: 0.3; }
 .m3e-chart__legend-toggle:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
 @media (pointer: coarse) { .m3e-chart__legend-toggle { min-height: var(--md-sys-layout-touch-target); } }
 .m3e-chart__hover line { stroke: var(--md-sys-color-outline); stroke-width: 1; stroke-dasharray: 3 3; }
 .m3e-chart__legend { display: flex; flex-wrap: wrap; gap: var(--md-sys-space-2) var(--md-sys-space-4); margin: 0; padding: 0; list-style: none; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
-.m3e-chart__legend li { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.m3e-chart__legend li { display: inline-flex; align-items: center; gap: var(--md-sys-space-2); min-width: 0; }
 .m3e-chart__legend strong { margin-left: auto; color: var(--md-sys-color-on-surface); font-variant-numeric: tabular-nums; }
 .m3e-chart__legend--stacked { display: grid; gap: var(--md-sys-space-1); }
 .m3e-chart__legend--stacked li { display: grid; grid-template-columns: auto 1fr auto; align-items: center; }
