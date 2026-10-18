@@ -4,10 +4,10 @@ import { agentMetricsPayloadSchema } from "../metrics-schema.js";
 
 /**
  * Announced in welcome. Revision 1/2 Agents/Hubs only know the original
- * process item shape; an Agent sends newer shapes only after a Hub announces
- * support for them.
+ * process item shape, revision 3 adds gpuPercent and revision 4 per-process
+ * disk rates; an Agent sends newer shapes only after a Hub announces support.
  */
-export const LIVE_HUB_REVISION = 3;
+export const LIVE_HUB_REVISION = 4;
 
 const text = z.string().max(1024);
 const counter = z.number().finite().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -63,15 +63,21 @@ export const liveDataSchemas = {
       z.object({
         id: text, pid: counter, parentPid: counter.nullable(), name: text,
         startedAt: timestamp.nullable(), cpuPercent: percent, gpuPercent: percent, memoryBytes: counter.nullable(),
-        threads: counter.nullable(), status: text.nullable()
+        threads: counter.nullable(), status: text.nullable(),
+        diskReadBytesPerSec: counter.nullable(), diskWriteBytesPerSec: counter.nullable()
       }).strict(),
-      // A revision-2 Agent may remain connected to this revision-3 Hub. Add
-      // the new field at the boundary instead of rejecting its old result.
+      // Older Agents may remain connected to this Hub. Add the newer fields
+      // at the boundary instead of rejecting their results.
+      z.object({
+        id: text, pid: counter, parentPid: counter.nullable(), name: text,
+        startedAt: timestamp.nullable(), cpuPercent: percent, gpuPercent: percent, memoryBytes: counter.nullable(),
+        threads: counter.nullable(), status: text.nullable()
+      }).strict().transform((item) => ({ ...item, diskReadBytesPerSec: null, diskWriteBytesPerSec: null })),
       z.object({
         id: text, pid: counter, parentPid: counter.nullable(), name: text,
         startedAt: timestamp.nullable(), cpuPercent: percent, memoryBytes: counter.nullable(),
         threads: counter.nullable(), status: text.nullable()
-      }).strict().transform((item) => ({ ...item, gpuPercent: null }))
+      }).strict().transform((item) => ({ ...item, gpuPercent: null, diskReadBytesPerSec: null, diskWriteBytesPerSec: null }))
     ])).max(4096)
   }).strict(),
   docker: z.object({

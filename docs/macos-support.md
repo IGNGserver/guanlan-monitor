@@ -35,15 +35,15 @@ Silicon 实机和 Developer ID 证书。CI/样本通过不等于物理硬件或�
 | --- | --- | --- |
 | cpuUsage | Mach/gopsutil CPU 时间差 | 空闲确实可以为 0；采样窗口明确 |
 | cpuFrequency | IOReport 驻留时间加权、明确频率标签 | 不把 sysctl 标称频率或 DVFM 最大档当实时频率；Intel 按暴露 |
-| cpuTemperature | AppleSMC 已知 CPU 封装键 | 不把温区假冒逐核；未知键只列诊断 |
-| cpuTopology | sysctl/gopsutil | 物理核/逻辑核不混淆；Rosetta 不代表机器架构 |
-| systemOverview | 进程/线程枚举 | 权限受限计数不冒充完整系统句柄数 |
+| cpuTemperature | AppleSMC TCAD（Intel 直读）；Apple Silicon 取 HID 片上簇/裸片监测点均值，再退回 SMC 温区均值 | 均值标为派生，不假冒逐核；未知键只列诊断 |
+| cpuTopology | sysctl/gopsutil；`hw.perflevelN.*` 给出性能/能效集群核数与缓存，`hw.l2/l3cachesize` | 物理核/逻辑核不混淆；单一性能级别（Intel/虚拟机）不拆集群 |
+| systemOverview | `proc_listallpids` + `proc_pidinfo` 线程数；句柄数取 `kern.num_files`（系统打开文件表） | Darwin 无 Windows 句柄表；非 root 时线程只计可读进程 |
 | gpuUsage | IOKit PerformanceStatistics | 每块 GPU 独立；无计数器不能填 0 |
 | gpuEncode | 驱动显式计数器 | 按暴露，不用总利用率替代 |
 | gpuDecode | 驱动显式计数器 | 按暴露，不用总利用率替代 |
-| gpuFrequency | 驱动时钟或 IOReport 明确频率 | 未识别标签不可猜测 |
+| gpuFrequency | 驱动 Core Clock；Apple Silicon 取 IOReport `GPU Performance States` 驻留加权 + pmgr `voltage-states9` 表 | 活跃档数与频率表长度不一致即不可用 |
 | gpuMemory | 驱动内存计数 | Apple unified / Intel shared 与独显 dedicated 区分；系统 RAM 不是 VRAM |
-| gpuTemperature | 驱动温度 | 不能用 CPU 温度替代 GPU 温度 |
+| gpuTemperature | 驱动温度；Apple Silicon 取 HID `GPU MTR` 监测点均值 | 不能用 CPU 温度替代 GPU 温度 |
 | gpuDriverInfo | 驱动显式版本 | 内核/系统版本不是驱动版本 |
 | temperatureSources | SMC 键及来源、置信度 | 保留原始键；异常值和诊断键不作主温度 |
 | memoryUsage | Mach VM statistics64 | 已用 = 内部应用页 - 可清除页 + wired + 物理压缩页 |
@@ -51,17 +51,17 @@ Silicon 实机和 Developer ID 证书。CI/样本通过不等于物理硬件或�
 | memoryAvailable | 总量减上述已用 | 派生可回收估计，不宣称 Linux MemAvailable |
 | memoryCached | 外部文件页 + 可清除页 | 保留口径，不与压缩逻辑页相加 |
 | memoryCommitted | 不适用 | Darwin 无等价 Windows commit limit；不拿 RAM+swap 伪造 |
-| memoryHardware | 按暴露 | 统一内存无可更换 DIMM 槽；不伪造 DDR 频率/槽数 |
+| memoryHardware | `system_profiler SPMemoryDataType`（按资产 TTL 缓存） | Intel 给频率/已插条数/类型；Apple Silicon 只有类型与厂商，形态记为 On-package，不伪造频率/槽数 |
 | diskUsage | diskutil APFS 容器容量 | 多卷去重；隐藏辅助卷不重复统计；非 APFS 独立文件系统 |
 | diskRead | IOKit/gopsutil 字节增量 | 物理盘与 APFS 容器/卷标识不能混用 |
 | diskWrite | IOKit/gopsutil 字节增量 | 计数器重置、热插拔后的第一帧不产生尖峰 |
-| diskMetadata | diskutil / IOKit | 映射 physical store；多盘容器不能随意归到第一块盘 |
-| diskActivity | 请求累计耗时/请求数用于平均响应 | 累计请求耗时不是设备忙碌率；忙碌率无来源则不可用 |
-| diskHealth | SMART 显式报告 | 不把无法读取视作健康；NVMe/外接桥接按暴露 |
+| diskMetadata | IOKit `Device Characteristics` / `Protocol Characteristics` | 映射 physical store 所在整盘；虚拟盘（APFS 合成盘、镜像）不计硬件 |
+| diskActivity | IOBlockStorageDriver 累计耗时 ÷ 操作数 = 平均响应时间（派生） | 忙碌率无 Darwin 来源，不上报 |
+| diskHealth | IOKit NVMe/ATA SMART 用户客户端（只读），缺失时退回 smartctl | 不把无法读取视作健康；USB 外接盘无 SAT 直通，不可用 |
 | networkRxRate | gopsutil 计数器增量 | 排除 loopback，不随 VPN 重复相加 |
 | networkTxRate | gopsutil 计数器增量 | 保留网卡实例、重置处理 |
 | networkTraffic | gopsutil 累计计数 | 重启后累计口径明确 |
-| networkIdentity | 接口地址及按暴露链路元数据 | Wi-Fi 权限拒绝不伪造信号/速度 |
+| networkIdentity | 接口地址；IONetworkController 链路速率/型号；SystemConfiguration 接口类型；CoreWLAN RSSI/噪声/PHY 速率 | 链路未激活不给速率；SSID/BSSID 受位置权限限制，从不读取 |
 | fanRpm | SMC F<n>Ac | 0 RPM 可有效；无风扇机型不伪造风扇 |
 | fanControl | SMC 明确模式只读 | 本期不写 SMC、不调整风扇 |
 | fanTargetTemperature | 无通用等价键 | 不适用/按暴露，不由目标转速反推 |
@@ -69,14 +69,33 @@ Silicon 实机和 Developer ID 证书。CI/样本通过不等于物理硬件或�
 | fanChannelState | 实际读数/模式状态 | 按暴露 |
 | fanNote | 现有用户备注 | 与平台无关，保留已有功能 |
 
-电池、功耗、ANE、内存带宽不属于这 35 项，本任务不扩展其产品契约。
+### 指标白名单之外的附加观测
+
+以下字段不进入指标白名单与 `metricQuality`（旧 Hub 会严格拒收未知指标键，已有设备的指标选择也是显式列表），
+而是作为可选顶层字段上报，没有来源时整段省略：
+
+| 字段 | Darwin 来源 | 说明 |
+| --- | --- | --- |
+| `power` | IOReport `Energy Model`（CPU/GPU/ANE/DRAM/媒体引擎）+ AppleSMC `PSTR`/`PDTR`/`PCPC`/`PG0R` + 适配器额定功率 | 上一硬件窗口的平均瓦数；适配器功率是额定值不是读数 |
+| `battery` | IOPowerSources + AppleSmartBattery | 电量、充放电、剩余时间、最大容量/设计容量、循环、温度、电压、电流（带符号） |
+| `thermal` | `com.apple.system.thermalpressurelevel` | nominal/moderate/heavy/trapping/sleeping |
+| `memory.compressedBytes` / `pressureLevel` / `memoryType` | Mach VM 压缩页、`kern.memorystatus_vm_pressure_level`、system_profiler | 压缩内存已包含在 usedBytes 内 |
+| 实时进程磁盘读写（Hub revision 4） | `proc_pid_rusage` diskio 计数（Linux 为 `/proc/<pid>/io`） | Windows 无只计磁盘的进程计数，保持 null |
+| 实时进程 GPU | IOAccelerator 用户客户端 `AppUsage.accumulatedGPUTime` 累计值，读不到时退回 powermetrics | 不再每周期起 powermetrics 子进程 |
+
+### 已修复的既有缺陷（macOS 采集扩展）
+
+- `guanlan_hardware` 把 `AppleSilicon` 装箱成数字，Go 以 bool 解码失败，导致 SMC 温度/风扇、IOKit GPU、IOReport 频率在所有 Mac 上整体缺失。
+- `diskutil apfs list -plist` 不含挂载点，APFS 容器全部被丢弃，Mac 磁盘列表恒为空（桌面端探测同样为空）；现以 getfsstat 解析挂载点，系统卷只读快照计入其卷。
 
 ### 当前保守降级
 
 - Intel 实时频率仅在 IOReport 明确提供频率标签时可用；不使用退役驱动或标称频率顶替。
 - Apple Silicon DVFM 只接受已知 cluster/property 和完整一一对应的 V-state 表；新芯片映射不符时不可用。
 - Apple SMC CPU 温区平均值标为派生，不标为真实封装/逐核读数；SMC 未映射键保留诊断身份。
-- GPU 编解码、驱动版本、DIMM 硬件信息、Wi-Fi 信号、原生 NVMe SMART 插件仍未实现；SMART 现阶段是可选 smartctl 路径，system service 默认安全 PATH 不包含 Homebrew。
+- GPU 编解码利用率与驱动版本仍不可用：没有公开或私有的利用率计数器，IOReport 只有媒体引擎能耗（已作为 `power.mediaWatts` 上报，不当作利用率）。
+- Wi-Fi SSID/BSSID 在 macOS 14+ 需要定位权限，LaunchDaemon 无法获得，不读取；信号强度按 RSSI -100 dBm→0%、-50 dBm→100% 线性换算。
+- 风扇 PWM 与目标温度没有 SMC 等价键，保持不适用。
 - 多 physical-store 容器不会错误地继承单盘 IO/健康数据；其逐盘合成尚待实施与实机验证。
 - GUI 无机器配置权限时沿用只读服务模式，受限提权控制通道/SMAppService 尚待实现与签名条件验证。
 

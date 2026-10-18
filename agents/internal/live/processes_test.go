@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -90,4 +91,24 @@ func containsJSONField(raw []byte, field string) bool {
 	}
 	_, ok = items[0].(map[string]any)[field]
 	return ok
+}
+
+func TestProcessDiskRatesAndRevisionShapes(t *testing.T) {
+	read, write := uint64(1000), uint64(4000)
+	if rate := counterRate(&read, &write, 2); rate == nil || *rate != 1500 {
+		t.Fatalf("rate=%v", rate)
+	}
+	if counterRate(&write, &read, 2) != nil || counterRate(nil, &read, 1) != nil || counterRate(&read, &read, 0) != nil {
+		t.Fatal("invented a rate from a reset, missing reading or empty window")
+	}
+	value := 12.5
+	result := Processes{Items: []Process{{ID: "p", PID: 1, Name: "x", GPUPercent: &value, DiskReadBytesPerSec: &value}}}
+	raw, _ := json.Marshal(result.withoutDisk())
+	if strings.Contains(string(raw), "diskRead") || !strings.Contains(string(raw), "gpuPercent") {
+		t.Fatalf("revision-3 shape: %s", raw)
+	}
+	raw, _ = json.Marshal(result)
+	if !strings.Contains(string(raw), `"diskReadBytesPerSec":12.5`) || !strings.Contains(string(raw), `"diskWriteBytesPerSec":null`) {
+		t.Fatalf("revision-4 shape: %s", raw)
+	}
 }

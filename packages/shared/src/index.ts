@@ -215,7 +215,15 @@ export interface MemoryStats {
   speedMHz?: number | null;
   slotCount?: number | null;
   formFactor?: string | null;
+  /** Darwin: physical memory held by the compressor (already inside usedBytes). */
+  compressedBytes?: number;
+  /** Kernel memory-pressure level where the platform publishes one (macOS). */
+  pressureLevel?: MemoryPressureLevel;
+  /** Module technology, e.g. DDR4 or LPDDR5. */
+  memoryType?: string;
 }
+
+export type MemoryPressureLevel = "normal" | "warning" | "critical";
 
 export interface SystemStats {
   processCount: number;
@@ -235,6 +243,18 @@ export interface CpuPackageStats {
   frequencyMHz?: number | null;
   usagePercent?: number | null;
   temperatureC?: number | null;
+  l2CacheBytes?: number | null;
+  /** Heterogeneous core clusters (Apple performance/efficiency levels). */
+  clusters?: CpuClusterStats[];
+}
+
+export interface CpuClusterStats {
+  name: string;
+  coreCount: number;
+  logicalCount?: number;
+  l2CacheBytes?: number;
+  l3CacheBytes?: number;
+  frequencyMHz?: number | null;
 }
 
 export interface RateStats {
@@ -268,6 +288,51 @@ export interface NetworkInterfaceStats {
   linkSpeedMbps?: number | null;
   connectionType?: string | null;
   signalStrengthPercent?: number | null;
+  rssiDbm?: number | null;
+  noiseDbm?: number | null;
+}
+
+/** Average power over the collector's last hardware window; absent fields had no source. */
+export interface PowerStats {
+  observedAt: string;
+  source: string;
+  systemWatts?: number;
+  inputWatts?: number;
+  cpuWatts?: number;
+  gpuWatts?: number;
+  aneWatts?: number;
+  dramWatts?: number;
+  mediaWatts?: number;
+  adapterRatedWatts?: number;
+  externalPower?: boolean;
+}
+
+export interface BatteryStats {
+  observedAt: string;
+  source: string;
+  chargePercent?: number;
+  healthPercent?: number;
+  cycleCount?: number;
+  designCapacityMAh?: number;
+  fullChargeCapacityMAh?: number;
+  temperatureC?: number;
+  voltageV?: number;
+  /** Signed: positive while charging, negative while discharging. */
+  amperageMA?: number;
+  netPowerWatts?: number;
+  timeRemainingMinutes?: number;
+  charging?: boolean;
+  externalPower?: boolean;
+  fullyCharged?: boolean;
+  condition?: string;
+}
+
+export type ThermalPressureLevel = "nominal" | "moderate" | "heavy" | "trapping" | "sleeping";
+
+export interface ThermalStats {
+  observedAt: string;
+  source: string;
+  pressureLevel: ThermalPressureLevel;
 }
 
 export interface GpuDeviceStats {
@@ -436,6 +501,10 @@ export interface AgentMetricsPayload {
   probeSpawns?: Record<string, number>;
   /** Cumulative self-observed slow-collection cost. Optional and additive. */
   collectorStats?: CollectorStatsReport;
+  /** Optional observations outside the metric whitelist; omitted when the machine has no source. */
+  power?: PowerStats;
+  battery?: BatteryStats;
+  thermal?: ThermalStats;
 }
 
 export interface MetricQuality {
@@ -657,6 +726,12 @@ export interface MetricsLatest {
   memorySpeedMHz: number | null;
   memorySlotCount: number | null;
   memoryFormFactor: string | null;
+  memoryType?: string | null;
+  memoryCompressedBytes?: number | null;
+  memoryPressureLevel?: MemoryPressureLevel | null;
+  power?: PowerStats | null;
+  battery?: BatteryStats | null;
+  thermal?: ThermalStats | null;
   swapUsedBytes: number;
   swapTotalBytes: number;
   diskUsedBytes: number;

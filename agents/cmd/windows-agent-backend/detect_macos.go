@@ -10,9 +10,13 @@ func detectDarwinDisks(enabled map[string]struct{}, explicit bool) []probeDetect
 	if err != nil {
 		return []probeDetectedTarget{}
 	}
+	mounts, err := macos.ReadMounts()
+	if err != nil {
+		return []probeDetectedTarget{}
+	}
 	result := []probeDetectedTarget{}
 	for _, container := range containers {
-		id, name, mount := macos.APFSIdentity(container)
+		id, name, mount := macos.APFSIdentity(container, mounts)
 		if mount == "" {
 			continue
 		}

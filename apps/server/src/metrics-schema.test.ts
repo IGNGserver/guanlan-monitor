@@ -59,6 +59,38 @@ test("accepts and preserves the collector self-reporting fields", () => {
   assert.deepEqual(result.data.collectorStats, { slowRuns: 4, slowOverruns: 0, lastSlowMillis: 1200 });
 });
 
+test("accepts and preserves macOS power, battery, thermal and memory observations", () => {
+  const observedAt = new Date().toISOString();
+  const base = validPayload();
+  const payload = {
+    ...base,
+    identity: { ...base.identity, os: "macos", platform: "darwin", arch: "arm64" },
+    memory: { ...base.memory, compressedBytes: 7, pressureLevel: "warning", memoryType: "LPDDR5", formFactor: "On-package" },
+    cpuPackages: [{ id: "cpu-0", name: "Apple M3", coreCount: 12, l2CacheBytes: 16_777_216, clusters: [{ name: "Performance", coreCount: 6, frequencyMHz: 3_200 }, { name: "Efficiency", coreCount: 6, frequencyMHz: null }] }],
+    networkInterfaces: [{ id: "nic-en0", name: "en0", connectionType: "Wi-Fi", signalStrengthPercent: 78, rssiDbm: -61, noiseDbm: -92 }],
+    power: { observedAt, source: "IOReport Energy Model + AppleSMC", systemWatts: 18.2, cpuWatts: 4.1, gpuWatts: 1.2, aneWatts: 0, dramWatts: 0.4, externalPower: true },
+    battery: { observedAt, source: "IOPowerSources / AppleSmartBattery", chargePercent: 80, healthPercent: 92, cycleCount: 312, amperageMA: -1_200, netPowerWatts: -14.9, charging: false, condition: "Good" },
+    thermal: { observedAt, source: "OSThermalPressureLevel notification", pressureLevel: "nominal" }
+  };
+  const result = agentMetricsPayloadSchema.safeParse(payload);
+  assert.equal(result.success, true, JSON.stringify(result.error?.issues));
+  if (!result.success) return;
+  assert.equal(result.data.power?.cpuWatts, 4.1);
+  assert.equal(result.data.battery?.amperageMA, -1_200);
+  assert.equal(result.data.thermal?.pressureLevel, "nominal");
+  assert.equal(result.data.memory.pressureLevel, "warning");
+  assert.equal(result.data.cpuPackages?.[0].clusters?.[0].frequencyMHz, 3_200);
+  for (const broken of [
+    { ...payload, power: { ...payload.power, cpuWatts: -1 } },
+    { ...payload, battery: { ...payload.battery, chargePercent: 101 } },
+    { ...payload, thermal: { ...payload.thermal, pressureLevel: "toasty" } },
+    { ...payload, memory: { ...payload.memory, pressureLevel: "urgent" } },
+    { ...payload, networkInterfaces: [{ ...payload.networkInterfaces[0], rssiDbm: 12 }] }
+  ]) {
+    assert.equal(agentMetricsPayloadSchema.safeParse(broken).success, false);
+  }
+});
+
 test("rejects oversized or malformed collector self-reporting fields", () => {
   const tooManyKeys = Object.fromEntries(Array.from({ length: 40 }, (_, index) => [`probe-${index}`, 1]));
   assert.equal(agentMetricsPayloadSchema.safeParse({ ...validPayload(), probeSpawns: tooManyKeys }).success, false);

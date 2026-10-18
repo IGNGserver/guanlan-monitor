@@ -3,7 +3,7 @@ import type { LiveContainer, LiveDocker, LiveProcess, LiveProcesses } from "@dsc
 import { formatBytes, formatDate } from "../formatters";
 import { M3Chip, M3SearchBar } from "../m3";
 import { Button, Icon } from "../ui";
-import { containerHealth, containerStateLabel, groupContainers, holdOrder, sortProcesses, type ContainerHealth, type ContainerRates, type ProcessSortKey } from "../livePresentation";
+import { containerHealth, containerStateLabel, groupContainers, holdOrder, processDiskRate, sortProcesses, type ContainerHealth, type ContainerRates, type ProcessSortKey } from "../livePresentation";
 
 /** Measurement caveats are reference material: one click away, never in front of the numbers. */
 export function LiveNote({ children }: { children: React.ReactNode }) {
@@ -56,6 +56,7 @@ export function ProcessTable({ data }: { data: LiveProcesses }) {
   const byId = new Map(matching.map((item) => [item.id, item]));
   const rows = order.current.ids.map((id) => byId.get(id)).filter((item): item is LiveProcess => item !== undefined);
   const maxMemory = Math.max(0, ...data.items.map((item) => item.memoryBytes ?? 0));
+  const maxDisk = Math.max(0, ...data.items.map((item) => processDiskRate(item) ?? 0));
   const changeSort = (key: ProcessSortKey) => setSort((current) => current.key === key ? { key, descending: !current.descending } : { key, descending: key !== "name" && key !== "pid" });
   return <>
     <div className="workspace-live__toolbar">
@@ -74,6 +75,7 @@ export function ProcessTable({ data }: { data: LiveProcesses }) {
           <SortHeader label="PID" sortKey="pid" sort={sort} onSort={changeSort} numeric />
           <SortHeader label="CPU" sortKey="cpu" sort={sort} onSort={changeSort} numeric info="按整机容量归一化，满载为 100%" />
           <SortHeader label="GPU" sortKey="gpu" sort={sort} onSort={changeSort} numeric info="进程最繁忙的 GPU 引擎；不支持或无权限时显示为 —" />
+          <SortHeader label="磁盘" sortKey="disk" sort={sort} onSort={changeSort} numeric info="读 + 写字节/秒，只计实际到达存储的 I/O；第一次查询和没有磁盘专用计数的平台显示为 —" />
           <SortHeader label="内存" sortKey="memory" sort={sort} onSort={changeSort} numeric info="RSS / 工作集；横条相对本次列表中占用最多的进程" />
           <SortHeader label="线程" sortKey="threads" sort={sort} onSort={changeSort} numeric />
         </tr></thead>
@@ -85,12 +87,14 @@ export function ProcessTable({ data }: { data: LiveProcesses }) {
               <td data-align="end" className="live-table__mono">{item.pid}</td>
               <td data-align="end">{item.cpuPercent === null ? "—" : <BarValue text={`${item.cpuPercent.toFixed(1)}%`} ratio={item.cpuPercent / 100} />}</td>
               <td data-align="end">{item.gpuPercent == null ? "—" : <BarValue text={`${item.gpuPercent.toFixed(1)}%`} ratio={item.gpuPercent / 100} />}</td>
+              <td data-align="end">{processDiskRate(item) == null ? "—" : <BarValue text={`${formatBytes(processDiskRate(item))}/s`} ratio={maxDisk ? (processDiskRate(item) ?? 0) / maxDisk : null} />}</td>
               <td data-align="end">{item.memoryBytes === null ? "—" : <BarValue text={formatBytes(item.memoryBytes)} ratio={maxMemory ? item.memoryBytes / maxMemory : null} />}</td>
               <td data-align="end">{item.threads ?? "—"}</td>
             </tr>
-            {open && <tr className="live-table__detail"><td colSpan={6}>
+            {open && <tr className="live-table__detail"><td colSpan={7}>
               <dl>
                 <div><dt>父进程 PID</dt><dd className="live-table__mono">{item.parentPid ?? "—"}</dd></div>
+                <div><dt>磁盘读 / 写</dt><dd>{item.diskReadBytesPerSec == null ? "—" : `${formatBytes(item.diskReadBytesPerSec)}/s`} / {item.diskWriteBytesPerSec == null ? "—" : `${formatBytes(item.diskWriteBytesPerSec)}/s`}</dd></div>
                 <div><dt>状态</dt><dd>{item.status ?? "—"}</dd></div>
                 <div><dt>启动时间</dt><dd>{item.startedAt ? formatDate(item.startedAt) : "—"}</dd></div>
               </dl>
@@ -101,7 +105,7 @@ export function ProcessTable({ data }: { data: LiveProcesses }) {
     </div>
     {!rows.length && <p className="workspace-live__empty">{needle ? `没有名称或 PID 包含“${query.trim()}”的进程。` : "本次快照中没有可显示的进程。"}</p>}
     {rows.length > limit && <div className="workspace-live__more"><Button variant="quiet" onClick={() => setLimit(limit + PAGE)}>再显示 {Math.min(PAGE, rows.length - limit)} 个</Button><span>已显示 {limit} / {rows.length}</span></div>}
-    <LiveNote>“—”表示没有读到，不是零：受保护或采集中退出的进程可能无法读取。CPU 按整机容量归一化（满载为 100%），GPU 是该进程最繁忙引擎的占用率；内存为 RSS / 工作集。鼠标停在表格上或展开某一行时，行的顺序保持不动；否则最多每 5 秒按排序重新排列一次。</LiveNote>
+    <LiveNote>“—”表示没有读到，不是零：受保护或采集中退出的进程可能无法读取。CPU 按整机容量归一化（满载为 100%），GPU 是该进程最繁忙引擎的占用率；磁盘是相邻两次查询之间实际读写存储的速率（Windows 没有只计磁盘的进程计数，显示为 —）；内存为 RSS / 工作集。鼠标停在表格上或展开某一行时，行的顺序保持不动；否则最多每 5 秒按排序重新排列一次。</LiveNote>
   </>;
 }
 

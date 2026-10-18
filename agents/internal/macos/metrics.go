@@ -14,6 +14,8 @@ import (
 
 type Memory struct {
 	Total, Used, Available, Cached, Compressed, SwapTotal, SwapUsed uint64
+	// Pressure is the kernel memory-pressure level name, empty when unknown.
+	Pressure string
 }
 
 // MemoryFromPages follows Activity Monitor physical memory accounting. The
@@ -178,22 +180,74 @@ type Hardware struct {
 	SMCError, GPUError, FrequencyError string
 }
 
-func APFSIdentity(container APFSContainer) (id, name, mount string) {
+// APFSIdentity names a container by its system/data volume (the boot disk,
+// reported as "/") or by its first volume mounted under /Volumes. diskutil's
+// plist carries no mount points, so mounts maps BSD device identifiers
+// (disk3s1) to mount points from getfsstat; a sealed system snapshot
+// (disk3s4s1 on "/") counts for its volume (disk3s4).
+func APFSIdentity(container APFSContainer, mounts map[string]string) (id, name, mount string) {
 	id = container.APFSContainerUUID
 	if id == "" {
 		id = container.ContainerReference
 	}
 	id = "apfs-" + id
-	for _, volume := range container.Volumes {
-		if volume.MountPoint == "/" || volume.MountPoint == "/System/Volumes/Data" {
-			return id, volume.Name, "/"
+	mountOf := func(device, explicit string) string {
+		if explicit != "" {
+			return explicit
 		}
-		if strings.HasPrefix(volume.MountPoint, "/Volumes/") {
+		if value := mounts[device]; value != "" {
+			return value
+		}
+		for candidate, value := range mounts {
+			if strings.HasPrefix(candidate, device+"s") && apfsSnapshotSuffix(strings.TrimPrefix(candidate, device+"s")) {
+				return value
+			}
+		}
+		return ""
+	}
+	system := ""
+	boot := false
+	for _, volume := range container.Volumes {
+		point := mountOf(volume.DeviceIdentifier, volume.MountPoint)
+		if point == "/" || point == "/System/Volumes/Data" {
+			boot = true
+			if hasRole(volume.Roles, "System") || point == "/" {
+				system = volume.Name
+			} else if system == "" {
+				system = strings.TrimSuffix(volume.Name, " - Data")
+			}
+			continue
+		}
+		if !boot && mount == "" && strings.HasPrefix(point, "/Volumes/") {
 			name = volume.Name
-			mount = volume.MountPoint
+			mount = point
 		}
 	}
+	if boot {
+		return id, system, "/"
+	}
 	return
+}
+
+func apfsSnapshotSuffix(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func hasRole(roles []string, role string) bool {
+	for _, item := range roles {
+		if item == role {
+			return true
+		}
+	}
+	return false
 }
 
 type APFSContainer struct {

@@ -345,7 +345,10 @@ export function payloadToTimeSeries(
       fans: payload.fans ?? [],
       temperatureSensors: enabled.has("temperatureSources") ? payload.temperatureSensors ?? [] : [],
       diskRate: payload.diskRate,
-      networkRate: payload.networkRate
+      networkRate: payload.networkRate,
+      power: payload.power,
+      battery: payload.battery,
+      thermal: payload.thermal
     }
   };
 }

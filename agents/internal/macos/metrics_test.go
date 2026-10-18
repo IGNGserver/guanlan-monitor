@@ -69,7 +69,7 @@ func TestAPFSContainersDoNotMultiplySiblingVolumeCapacity(t *testing.T) {
 	if err != nil || len(containers) != 1 {
 		t.Fatalf("containers=%v err=%v", containers, err)
 	}
-	id, _, mount := APFSIdentity(containers[0])
+	id, _, mount := APFSIdentity(containers[0], nil)
 	if id != "apfs-pool-1" || mount != "/" {
 		t.Fatalf("wrong identity: %s %s", id, mount)
 	}

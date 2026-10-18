@@ -52,3 +52,17 @@ test("process GPU values are nullable and old Agent rows are normalized", () => 
   assert.equal(current.items[0].gpuPercent, 12.5);
   assert.equal(liveDataSchemas.processes.safeParse({ ...base, items: [{ ...item, gpuPercent: 101 }] }).success, false);
 });
+
+test("process disk rates are nullable and revision-2/3 rows are normalized to null", () => {
+  const base = { observedAt: new Date().toISOString(), cpuScale: "host", memoryKind: "rss", totalCount: 1, truncated: false };
+  const item = { id: "epoch:1:2", pid: 1, parentPid: null, name: "worker", startedAt: new Date().toISOString(), cpuPercent: null, memoryBytes: null, threads: null, status: null };
+  for (const row of [item, { ...item, gpuPercent: 3 }]) {
+    const parsed = liveDataSchemas.processes.parse({ ...base, items: [row] });
+    assert.equal(parsed.items[0].diskReadBytesPerSec, null);
+    assert.equal(parsed.items[0].diskWriteBytesPerSec, null);
+  }
+  const current = liveDataSchemas.processes.parse({ ...base, items: [{ ...item, gpuPercent: null, diskReadBytesPerSec: 2048, diskWriteBytesPerSec: null }] });
+  assert.equal(current.items[0].diskReadBytesPerSec, 2048);
+  assert.equal(current.items[0].diskWriteBytesPerSec, null);
+  assert.equal(liveDataSchemas.processes.safeParse({ ...base, items: [{ ...item, gpuPercent: null, diskReadBytesPerSec: -1, diskWriteBytesPerSec: 0 }] }).success, false);
+});
