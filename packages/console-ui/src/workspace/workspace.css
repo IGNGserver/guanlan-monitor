@@ -2,8 +2,9 @@
  * Shared workspace stylesheet, composed in cascade order.
  *
  * Layout files first; `workspace.m3e.css` is the Material 3 Expressive visual
- * language and must stay last so it is the last word on shape, elevation and
- * colour. The design tokens themselves live in `../m3e/tokens.css`.
+ * language and comes after them so it is the last word on shape, elevation and
+ * colour. `workspace.readability.css` follows it and owns page rhythm and the
+ * data-first layouts. The design tokens themselves live in `../m3e/tokens.css`.
  *
  * `.css` extensions are deliberate — see the note in `styles.scss`.
  */
@@ -16,3 +17,4 @@
 @import "./workspace.details.css";
 @import "./workspace.settings.css";
 @import "./workspace.m3e.css";
+@import "./workspace.readability.css";

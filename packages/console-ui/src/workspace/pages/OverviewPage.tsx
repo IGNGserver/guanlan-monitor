@@ -2,23 +2,24 @@ import React, { useMemo, useState } from "react";
 import { useWorkspace } from "../WorkspaceContext";
 import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
 import { M3Banner, M3SegmentedControl } from "../m3";
-import { TimeSeriesChart } from "../charts";
-import { ChartTile, DashboardCell, DashboardGrid, DashboardSection } from "../dashboard";
+import { TimeSeriesChart, type ChartSeries } from "../charts";
+import { ChartTile } from "../dashboard";
 import { OnboardingGuide } from "../shell/OnboardingGuide";
 import { DeviceChartSheet } from "./DeviceChartSheet";
-import { formatBytes, formatDate, formatRate, formatPercent } from "../formatters";
+import { formatDate, formatRate, formatPercent } from "../formatters";
 import { selectHealthSummary } from "../selectors";
+import { thresholdLines } from "../health";
+import { selectFleetTrends, type FleetMetric } from "../fleetTrends";
 import { RenderBoundary } from "../RenderBoundary";
 import { DeviceIssueList } from "./DeviceIssueList";
-import { EmptyState, ErrorSurface, isMetricUnavailable, LoadingSurface, MetricWindowControl, PageIntro, OverviewSummary, SnapshotFreshnessNotice, unavailablePoints, type DesktopMetricWindowValue } from "./shared";
+import { FleetGrid } from "./FleetGrid";
+import { ErrorSurface, LoadingSurface, MetricWindowControl, PageIntro, OverviewSummary, SnapshotFreshnessNotice, type DesktopMetricWindowValue } from "./shared";
 
-type ObservationMetric = "cpu" | "memory" | "disk" | "network";
-
-const observationLabels: Record<ObservationMetric, string> = {
+const observationLabels: Record<FleetMetric, string> = {
   cpu: "CPU 使用率",
-  memory: "内存占用",
-  disk: "磁盘已用容量",
-  network: "网络吞吐"
+  memory: "内存占用率",
+  disk: "磁盘占用率",
+  network: "网络收发"
 };
 
 const WINDOW_LABELS: Record<string, string> = {
@@ -52,7 +53,7 @@ function failureGuide(isDesktopShell: boolean): string {
  */
 export function OverviewPage() {
   const { snapshot, allDevices, metricsWindow, setMetricsWindow, loading, refreshing, error, refresh, openSettings, navigate, capabilities, healthThresholds } = useWorkspace();
-  const [observationMetric, setObservationMetric] = useState<ObservationMetric>("cpu");
+  const [observationMetric, setObservationMetric] = useState<FleetMetric>("cpu");
 
   // These run on every poll (the provider re-renders the tree on each snapshot).
   // Memoising them on their actual inputs keeps a poll that changed nothing on
@@ -62,16 +63,14 @@ export function OverviewPage() {
     [snapshot, allDevices, capabilities.liveDataTransport, healthThresholds]
   );
   const overviewInstances = snapshot?.overviewMetrics?.instances;
-  const observationSeries = useMemo(() => (overviewInstances ?? []).flatMap((instance) => {
-    const unavailable = (key: Parameters<typeof isMetricUnavailable>[1]) => instance.unavailableMetrics?.includes(key) ?? false;
-    if (observationMetric === "cpu") return [{ label: instance.hostname, points: unavailablePoints(instance.cpuUsagePercent, unavailable("cpuUsage")), valueFormatter: formatPercent }];
-    if (observationMetric === "memory") return [{ label: instance.hostname, points: unavailablePoints(instance.memoryUsedBytes, unavailable("memoryUsage")), valueFormatter: formatBytes }];
-    if (observationMetric === "disk") return [{ label: instance.hostname, points: unavailablePoints(instance.diskUsedBytes, unavailable("diskUsage")), valueFormatter: formatBytes }];
-    return [
-      { label: instance.hostname + " · Rx", points: unavailablePoints(instance.networkRxBytesPerSec, unavailable("networkRxRate")), valueFormatter: formatRate },
-      { label: instance.hostname + " · Tx", points: unavailablePoints(instance.networkTxBytesPerSec, unavailable("networkTxRate")), valueFormatter: formatRate }
-    ];
-  }), [overviewInstances, observationMetric]);
+  const fleet = useMemo(() => selectFleetTrends(overviewInstances ?? [], allDevices, observationMetric), [overviewInstances, allDevices, observationMetric]);
+  const observationSeries = useMemo<ChartSeries[]>(() => fleet.trends.map((trend) => ({
+    label: trend.offline ? `${trend.hostname}（离线）` : trend.hostname,
+    points: trend.points,
+    valueFormatter: fleet.percent ? formatPercent : formatRate,
+    dashed: trend.offline
+  })), [fleet]);
+  const trendsByDevice = useMemo(() => new Map(fleet.trends.map((trend) => [trend.deviceId, trend.points])), [fleet]);
 
   if (loading && !snapshot) return <LoadingSurface />;
   if (!snapshot || !health) return <ErrorSurface title="无法读取设备状态" detail={error ?? failureGuide(capabilities.canControlNativeWindow)} onRetry={() => void refresh()} />;
@@ -105,6 +104,12 @@ export function OverviewPage() {
   const observationEmptyMessage = (overviewInstances?.length ?? 0)
     ? observationHasData ? undefined : observationLabels[observationMetric] + "暂无可用数据（缺失指标不会被估算）"
     : "当前还没有任何设备的总览样本";
+  const observationNote = [
+    fleet.percent && observationMetric !== "cpu" ? "按每台设备自身容量的占比绘制" : observationMetric === "network" ? "每台设备一条线：接收与发送之和" : "",
+    fleet.missingCapacity.length ? `${fleet.missingCapacity.join("、")} 未上报容量，未绘制` : "",
+    observationSeries.some((series) => series.dashed) ? "虚线为离线设备的历史" : ""
+  ].filter(Boolean).join(" · ");
+  const thresholdMetric = observationMetric === "network" ? null : observationMetric;
 
   return <div className="workspace-page workspace-page--overview">
     <PageIntro
@@ -116,7 +121,7 @@ export function OverviewPage() {
         : hubAbnormal
           ? cached ? "当前显示的是离线缓存，" + health.sourceDetail + "；无法确认中枢现在的状态。" : "无法连接到中枢。请检查中枢地址与访问密钥。"
           : health.sourceDetail + "。统计覆盖全部已接入设备。"}
-      actions={<><Button variant="quiet" onClick={() => openSettings("connections")}><Icon name="connection" size={16} />连接设置</Button><Button variant="primary" onClick={() => navigate({ kind: "devices" })}>查看全部设备<Icon name="arrow" size={16} /></Button></>}
+      actions={<Button variant="quiet" onClick={() => navigate({ kind: "devices" })}>全部设备<Icon name="arrow" size={16} /></Button>}
     />
 
     {/* When the hub itself is unreachable the notification below already says the
@@ -150,65 +155,72 @@ export function OverviewPage() {
     >
       连接中枢并等待设备上报后，这里会显示实时状态。
     </M3Banner> : null}
-    {/* A fleet with issues used to get a fourth copy of the same fact here: the
-        page title, the attention tile and the device list below already say
-        it, so the "设备状态存在异常" banner is gone. */}
 
     <OnboardingGuide />
 
+    {/* One toolbar drives the whole page: the metric and range chosen here are
+        what the large chart and every device card's trend line show. The range
+        used to be inherited silently from the last device page. */}
+    <div className="workspace-overview-toolbar" role="group" aria-label="总览图表设置">
+      <M3SegmentedControl options={[{ value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "disk", label: "磁盘" }, { value: "network", label: "网络" }]} value={observationMetric} onChange={(value) => setObservationMetric(value as FleetMetric)} aria-label="总览观察指标" />
+      <MetricWindowControl value={metricsWindow as DesktopMetricWindowValue} onChange={(value) => setMetricsWindow(value)} />
+    </div>
 
-    <Surface className="workspace-overview-devices">
-      <div className="workspace-surface__header">
-        <div><span className="workspace-section-kicker">需要关注</span><h3>{health.issues.length ? `${health.issues.length} 项问题 · ${attentionCount ?? 0} 台设备` : "没有需要处理的设备"}</h3></div>
-        <Button variant="quiet" onClick={() => openSettings("general")}>调整阈值</Button>
-      </div>
-      {cached && <div className="workspace-inline-note">当前为缓存快照，设备状态可能已经变化。</div>}
-      {health.issues.length
-        ? <DeviceIssueList issues={health.issues} onOpen={(deviceId) => navigate({ kind: "device", deviceId })} />
-        : <div className="workspace-muted-block">{noData ? "还没有设备接入；Agent 上报一次后就会出现在这里。" : `${health.total} 台设备全部在线，资源都在阈值以内。`}</div>}
-    </Surface>
-
-    <DashboardSection
-      id="section-observation"
-      eyebrow="资源趋势"
-      title={`${observationLabels[observationMetric]} · 全部设备`}
-      description="一张图只观察一个维度；缺失指标会明确留空，不会用估算值填充。"
-      controls={
-        <div className="workspace-overview-controls">
-          <M3SegmentedControl options={[{ value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "disk", label: "磁盘" }, { value: "network", label: "网络" }]} value={observationMetric} onChange={(value) => setObservationMetric(value as ObservationMetric)} aria-label="总览观察指标" />
-          {/* The trend is drawn over a time window, but this page never offered
-              the control for it: the chart silently inherited whatever range was
-              last chosen on a device page, so "最近 5 分钟" could appear here
-              after the user had picked 7 days elsewhere. The control now lives
-              next to the metric switch it belongs to. */}
-          <MetricWindowControl value={metricsWindow as DesktopMetricWindowValue} onChange={(value) => setMetricsWindow(value)} />
-        </div>
-      }
-    >
-      <DashboardGrid>
-        <DashboardCell span="full">
-          <RenderBoundary scope="tile" title={`${observationLabels[observationMetric]}趋势`} resetKey={observationMetric}>
+    <div className="workspace-overview-main">
+      <section id="section-observation" className="workspace-overview-trend" aria-label="资源趋势">
+        <RenderBoundary scope="tile" title={`${observationLabels[observationMetric]}趋势`} resetKey={observationMetric}>
           <ChartTile
-            title={`${observationLabels[observationMetric]}趋势`}
-            subtitle={`每台设备一条数据线 · 最近 ${metricWindowLabel}`}
+            title={`${observationLabels[observationMetric]} · 全部设备`}
+            subtitle={`最近 ${metricWindowLabel}`}
             emptyMessage={observationEmptyMessage}
             sheet={
               <DeviceChartSheet
                 tile={{
                   key: "overview-observation",
                   title: `${observationLabels[observationMetric]}趋势`,
-                  subtitle: `每台设备一条数据线 · 最近 ${metricWindowLabel}`,
+                  subtitle: `每台设备一条数据线 · 最近 ${metricWindowLabel}${observationNote ? ` · ${observationNote}` : ""}`,
                   series: observationSeries
                 }}
               />
             }
           >
-            <TimeSeriesChart series={observationSeries} maxValue={observationMetric === "cpu" ? 100 : undefined} />
+            <TimeSeriesChart
+              series={observationSeries}
+              maxValue={fleet.percent ? 100 : undefined}
+              height={300}
+              thresholds={thresholdMetric ? thresholdLines(healthThresholds[thresholdMetric]) : undefined}
+            />
+            {observationNote ? <p className="chart-tile__note">{observationNote}</p> : null}
           </ChartTile>
-          </RenderBoundary>
-        </DashboardCell>
-      </DashboardGrid>
-    </DashboardSection>
+        </RenderBoundary>
+      </section>
+
+      <Surface className="workspace-overview-devices">
+        <div className="workspace-surface__header">
+          <div><span className="workspace-section-kicker">需要关注</span><h3>{health.issues.length ? `${health.issues.length} 项问题 · ${attentionCount ?? 0} 台设备` : "没有需要处理的设备"}</h3></div>
+          <Button variant="quiet" onClick={() => openSettings("general")}>调整阈值</Button>
+        </div>
+        {cached && <div className="workspace-inline-note">当前为缓存快照，设备状态可能已经变化。</div>}
+        {health.issues.length
+          ? <DeviceIssueList issues={health.issues} onOpen={(deviceId) => navigate({ kind: "device", deviceId })} />
+          : <div className="workspace-muted-block">{noData ? "还没有设备接入；Agent 上报一次后就会出现在这里。" : `${health.total} 台设备全部在线，资源都在阈值以内。`}</div>}
+      </Surface>
+    </div>
+
+    {allDevices.length ? <section className="workspace-fleet" aria-labelledby="workspace-fleet-title">
+      <header className="workspace-fleet__header">
+        <h3 id="workspace-fleet-title">设备一览</h3>
+        <span>需要关注的排在前面 · 条上的刻度是警告与严重阈值</span>
+      </header>
+      <FleetGrid
+        devices={allDevices}
+        trends={trendsByDevice}
+        metric={observationMetric}
+        windowLabel={metricWindowLabel}
+        thresholds={healthThresholds}
+        onOpen={(deviceId) => navigate({ kind: "device", deviceId })}
+      />
+    </section> : null}
 
     {/* Connection facts answer "is the hub reachable", which the source tile
         already summarises; the full card sits below the issues and the trend

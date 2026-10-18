@@ -437,12 +437,6 @@ kbd {
   margin: 0 0 var(--md-sys-space-4);
 }
 
-/* Overview containers and devices */
-
-.workspace-overview-devices {
-  min-height: 390px;
-}
-
 /* Summary and detail lists */
 
 .workspace-summary-list,
