@@ -81,7 +81,7 @@ import kotlinx.coroutines.launch
  * - 进程 / 容器：此刻是谁在占资源（实时查询，只在页面可见时轮询）。
  * 时间范围是图表的属性，吸附在标签页下方，切换后图表就地重绘。
  */
-internal enum class DetailTab(val label: String) {
+enum class DetailTab(val label: String) {
   Overview("概览"),
   Hardware("硬件"),
   Processes("进程"),
@@ -92,7 +92,8 @@ internal enum class DetailTab(val label: String) {
 fun DeviceDetailScreen(
   state: AppState,
   actions: GuanlanActions,
-  embedded: Boolean
+  embedded: Boolean,
+  initialTab: DetailTab = DetailTab.Overview
 ) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
@@ -108,7 +109,7 @@ fun DeviceDetailScreen(
   val displayWindow = displayWindowFor(data?.window, state.selectedWindow, state.loadingMetrics)
   val syncing = state.refreshing || state.loadingMetrics
 
-  var tabName by rememberSaveable(deviceId) { mutableStateOf(DetailTab.Overview.name) }
+  var tabName by rememberSaveable(deviceId) { mutableStateOf(initialTab.name) }
   val tab = DetailTab.entries.firstOrNull { it.name == tabName } ?: DetailTab.Overview
   var openBlock by rememberSaveable(deviceId) { mutableStateOf<DeviceBlockKey?>(null) }
   var openTabId by rememberSaveable(deviceId) { mutableStateOf("total") }
@@ -638,7 +639,7 @@ private fun LazyListScope.hardwareItems(
             if (index > 0) OneUiListDivider()
             OneUiListItem(
               title = capsule.title,
-              subtitle = capsule.metrics.joinToString(" · ") { (label, value) -> "$label $value" },
+              subtitle = capsule.metrics.joinToString(" · ") { (label, value) -> if (value.startsWith(label)) value else "$label $value" },
               overline = capsule.subtitle,
               onClick = { onOpenBlock(capsule.blockKey) },
               leading = { OneUiLeadingIcon(icon = blockIcon(capsule.blockKey), contentDescription = null, tone = OneUiIconTone.Neutral) },
@@ -743,14 +744,17 @@ private fun BlockDetail(
       },
       label = "oneui_block_tab"
     ) { currentTab ->
-      BlockTabContent(
-        data = data,
-        blockKey = blockKey,
-        tabId = currentTab,
-        selectedWindow = selectedWindow,
-        chartWindow = chartWindow,
-        onEditInstance = onEditInstance
-      )
+      // AnimatedContent 的内容是 Box：图表网格与参数表必须包进 Column，否则会叠在一起
+      Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceM)) {
+        BlockTabContent(
+          data = data,
+          blockKey = blockKey,
+          tabId = currentTab,
+          selectedWindow = selectedWindow,
+          chartWindow = chartWindow,
+          onEditInstance = onEditInstance
+        )
+      }
     }
   }
 }

@@ -125,8 +125,17 @@ internal fun niceAxis(
   dataMax: Double,
   fixedMax: Double? = null,
   includeZero: Boolean = true,
-  tickCount: Int = 3
+  tickCount: Int = 3,
+  /** 字节类数值按 1024 进位显示，刻度也要按 1024 的整倍取，否则会出现「47.7 MB/s」这种刻度。 */
+  binary: Boolean = false
 ): ChartAxis {
+  if (binary && fixedMax == null) {
+    val magnitude = maxOf(kotlin.math.abs(dataMax), kotlin.math.abs(dataMin))
+    var scale = 1.0
+    while (magnitude / scale >= 1024.0) scale *= 1024.0
+    val scaled = niceAxis(dataMin / scale, dataMax / scale, null, includeZero, tickCount, binary = false)
+    return ChartAxis(scaled.min * scale, scaled.max * scale, scaled.ticks.map { it * scale })
+  }
   if (fixedMax != null) {
     val step = fixedMax / (tickCount - 1).coerceAtLeast(1)
     return ChartAxis(0.0, fixedMax, List(tickCount) { it * step })

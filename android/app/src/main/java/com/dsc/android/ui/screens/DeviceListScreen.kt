@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -609,6 +611,7 @@ private fun DeviceTrendCard(
       Row(
         modifier = Modifier
           .fillMaxWidth()
+          .height(IntrinsicSize.Min)
           .padding(end = metrics.spaceXs),
         horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
       ) {
@@ -622,7 +625,7 @@ private fun DeviceTrendCard(
           fixedMax = 100.0,
           color = colors.seriesColor(0),
           onClick = { onOpenBlock(DeviceBlockKey.Cpu) },
-          modifier = Modifier.weight(1f)
+          modifier = Modifier.weight(1f).fillMaxHeight()
         )
         MetricCell(
           label = "内存",
@@ -633,7 +636,7 @@ private fun DeviceTrendCard(
           fixedMax = 100.0,
           color = colors.seriesColor(1),
           onClick = { onOpenBlock(DeviceBlockKey.Memory) },
-          modifier = Modifier.weight(1f)
+          modifier = Modifier.weight(1f).fillMaxHeight()
         )
         val rx = overview?.networkRxBytesPerSec.orEmpty()
         val tx = overview?.networkTxBytesPerSec.orEmpty()
@@ -649,7 +652,7 @@ private fun DeviceTrendCard(
           color = colors.seriesColor(0),
           secondaryColor = colors.seriesColor(2),
           onClick = { onOpenBlock(DeviceBlockKey.Network) },
-          modifier = Modifier.weight(1f)
+          modifier = Modifier.weight(1f).fillMaxHeight()
         )
       }
       CapacityLine(device = device, onClick = { onOpenBlock(DeviceBlockKey.Disk) }, onGpu = { onOpenBlock(DeviceBlockKey.Gpu) })
@@ -729,6 +732,8 @@ private fun MetricCell(
     if (secondary != null) {
       OneUiText(text = secondary, role = OneUiTextRole.ChartLabel, color = colors.textSecondary, maxLines = 1)
     }
+    // 三格等高、曲线贴底对齐：横向比较三条曲线时基线一致
+    Spacer(Modifier.weight(1f))
     Box(modifier = Modifier.fillMaxWidth().padding(top = 2.dp)) {
       val sharedMax = fixedMax ?: (points + secondaryPoints).maxOfOrNull { it.value }?.let { it * 1.1 }
       if (secondaryPoints.isNotEmpty()) {

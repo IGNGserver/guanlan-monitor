@@ -301,6 +301,7 @@ private fun ProcessTable(data: com.dsc.android.LiveProcessesDto) {
   val byId = matching.associateBy { it.id }
   val rows = order.ids.mapNotNull { byId[it] }
   val maxMemory = data.items.maxOfOrNull { it.memoryBytes ?: 0.0 } ?: 0.0
+  val maxThreads = data.items.maxOfOrNull { it.threads ?: 0 } ?: 0
   val gpuKnown = data.items.any { it.gpuPercent != null }
 
   Column(verticalArrangement = Arrangement.spacedBy(metrics.cardGap)) {
@@ -342,7 +343,7 @@ private fun ProcessTable(data: com.dsc.android.LiveProcessesDto) {
         append("共 ${data.totalCount} 个进程")
         if (data.truncated) append("（设备只返回了占用最高的 ${data.items.size} 个）")
         if (query.isNotBlank()) append(" · 匹配 ${matching.size} 个")
-        append(" · CPU 按整机容量计，满载 100%；内存为常驻内存（RSS）")
+        append(" · CPU 按整机容量计，满载 100%；内存为常驻内存（RSS）；横条表示当前排序指标")
         if (!gpuKnown) append(" · 该设备不提供进程 GPU 占用")
       },
       role = OneUiTextRole.ChartLabel,
@@ -359,7 +360,9 @@ private fun ProcessTable(data: com.dsc.android.LiveProcessesDto) {
           if (index > 0) OneUiListDivider(indent = false)
           ProcessRow(
             process = process,
+            sortKey = sortKey,
             maxMemory = maxMemory,
+            maxThreads = maxThreads,
             showGpu = gpuKnown,
             expanded = expanded == process.id,
             onToggle = { expanded = if (expanded == process.id) null else process.id }
@@ -379,10 +382,25 @@ private fun ProcessTable(data: com.dsc.android.LiveProcessesDto) {
 }
 
 @Composable
-private fun ProcessRow(process: LiveProcessDto, maxMemory: Double, showGpu: Boolean, expanded: Boolean, onToggle: () -> Unit) {
+private fun ProcessRow(
+  process: LiveProcessDto,
+  sortKey: ProcessSortKey,
+  maxMemory: Double,
+  maxThreads: Int,
+  showGpu: Boolean,
+  expanded: Boolean,
+  onToggle: () -> Unit
+) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
   val cpu = process.cpuPercent
+  // 行尾读数与横条跟随排序指标：按什么排，就最醒目地显示什么（名称 / PID 排序时看 CPU）
+  val focus = when (sortKey) {
+    ProcessSortKey.Gpu -> Triple("GPU ${process.gpuPercent?.let(::formatPercent) ?: "—"}", process.gpuPercent?.let { (it / 100).toFloat() }, process.gpuPercent?.let { it >= 50 } ?: false)
+    ProcessSortKey.Memory -> Triple("内存 ${process.memoryBytes?.let(::formatBytes) ?: "—"}", process.memoryBytes?.takeIf { maxMemory > 0 }?.let { (it / maxMemory).toFloat() }, false)
+    ProcessSortKey.Threads -> Triple("线程 ${process.threads ?: "—"}", process.threads?.takeIf { maxThreads > 0 }?.let { it.toFloat() / maxThreads }, false)
+    else -> Triple("CPU ${cpu?.let(::formatPercent) ?: "—"}", cpu?.let { (it / 100).toFloat() }, (cpu ?: 0.0) >= 50)
+  }
   Column(
     modifier = Modifier
       .fillMaxWidth()
@@ -393,11 +411,11 @@ private fun ProcessRow(process: LiveProcessDto, maxMemory: Double, showGpu: Bool
     Row(verticalAlignment = Alignment.CenterVertically) {
       OneUiText(text = process.name, role = OneUiTextRole.RowTitle, maxLines = 1, modifier = Modifier.weight(1f))
       OneUiText(
-        text = "CPU ${cpu?.let(::formatPercent) ?: "—"}",
+        text = focus.first,
         role = OneUiTextRole.RowSubtitle,
         color = when {
-          cpu == null -> colors.textTertiary
-          cpu >= 50 -> colors.warningContent
+          focus.second == null -> colors.textTertiary
+          focus.third -> colors.warningContent
           else -> colors.textPrimary
         },
         weight = FontWeight.SemiBold
@@ -406,18 +424,18 @@ private fun ProcessRow(process: LiveProcessDto, maxMemory: Double, showGpu: Bool
     Row(horizontalArrangement = Arrangement.spacedBy(metrics.spaceS), verticalAlignment = Alignment.CenterVertically) {
       Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         OneUiText(
-          text = buildString {
-            append("PID ${process.pid}")
-            append(" · 内存 ${process.memoryBytes?.let(::formatBytes) ?: "—"}")
-            if (showGpu) append(" · GPU ${process.gpuPercent?.let(::formatPercent) ?: "—"}")
-          },
+          text = buildList {
+            add("PID ${process.pid}")
+            if (sortKey != ProcessSortKey.Cpu && sortKey != ProcessSortKey.Name && sortKey != ProcessSortKey.Pid) add("CPU ${cpu?.let(::formatPercent) ?: "—"}")
+            if (sortKey != ProcessSortKey.Memory) add("内存 ${process.memoryBytes?.let(::formatBytes) ?: "—"}")
+            if (showGpu && sortKey != ProcessSortKey.Gpu) add("GPU ${process.gpuPercent?.let(::formatPercent) ?: "—"}")
+          }.joinToString(" · "),
           role = OneUiTextRole.ChartLabel,
           color = colors.textSecondary,
           maxLines = 1
         )
-        // 两条细条：CPU（满载 100%）与内存（相对本次占用最多的进程）
-        BarTrack(fraction = ((cpu ?: 0.0) / 100.0).toFloat(), color = colors.seriesColor(0), visible = cpu != null)
-        BarTrack(fraction = if (maxMemory > 0) ((process.memoryBytes ?: 0.0) / maxMemory).toFloat() else 0f, color = colors.seriesColor(1), visible = process.memoryBytes != null)
+        // CPU / GPU 按满载 100%；内存与线程相对本次列表里最多的那个进程
+        BarTrack(fraction = focus.second ?: 0f, color = colors.seriesColor(if (sortKey == ProcessSortKey.Memory) 1 else 0), visible = focus.second != null)
       }
     }
     AnimatedVisibility(visible = expanded) {

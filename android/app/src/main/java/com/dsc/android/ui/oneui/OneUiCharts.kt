@@ -123,7 +123,7 @@ internal fun OneUiTrendChart(
     val reachable = thresholds.map { it.value }.filter { it <= max(dataMax, 1.0) * 1.35 }
     val top = (reachable + dataMax).max()
     val bottom = if (includeZero) dataMin else (reachable + dataMin).min()
-    niceAxis(bottom, top, fixedMaxValue, includeZero)
+    niceAxis(bottom, top, fixedMaxValue, includeZero, binary = usesBinaryUnits(valueFormatter))
   }
 
   var selectedIndex by remember(chartWindow) { mutableIntStateOf(-1) }
@@ -220,11 +220,11 @@ internal fun OneUiTrendChart(
           val y = yFor(tick)
           drawLine(colors.chartGrid, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
           if (showAxis) {
-            drawAxisLabel(textMeasurer, axisFormatter(tick), labelStyle, x = 6.dp.toPx(), baselineY = y, top = plotTop)
+            drawAxisLabel(textMeasurer, axisFormatter(tick), labelStyle, x = 6.dp.toPx(), baselineY = y, top = plotTop, backdrop = colors.chartTrack)
           }
         }
 
-        thresholds.filter { it.value in axis.min..axis.max }.forEach { threshold ->
+        thresholds.filter { it.value in axis.min..axis.max }.sortedByDescending { it.value }.forEachIndexed { thresholdIndex, threshold ->
           val y = yFor(threshold.value)
           val color = if (threshold.tone == ChartThresholdTone.Critical) colors.critical else colors.warning
           drawLine(
@@ -236,10 +236,11 @@ internal fun OneUiTrendChart(
           )
           if (showAxis) {
             val measured = textMeasurer.measure(threshold.label, labelStyle.copy(color = color, fontWeight = FontWeight.SemiBold))
-            drawText(
-              measured,
-              topLeft = Offset(size.width - measured.size.width - 6.dp.toPx(), (y - measured.size.height - 2.dp.toPx()).coerceAtLeast(0f))
-            )
+            // 最高的阈值标在线上方，其余标在线下方：85% 与 95% 这种相邻阈值的标签不会叠在一起
+            val labelY = if (thresholdIndex == 0) y - measured.size.height - 2.dp.toPx() else y + 2.dp.toPx()
+            val left = size.width - measured.size.width - 6.dp.toPx()
+            drawRect(colors.chartTrack.copy(alpha = 0.85f), topLeft = Offset(left - 3.dp.toPx(), labelY), size = Size(measured.size.width + 6.dp.toPx(), measured.size.height.toFloat()))
+            drawText(measured, topLeft = Offset(left, labelY.coerceIn(0f, size.height - measured.size.height)))
           }
         }
 
@@ -384,12 +385,18 @@ private fun DrawScope.drawAxisLabel(
   style: TextStyle,
   x: Float,
   baselineY: Float,
-  top: Float
+  top: Float,
+  backdrop: Color
 ) {
   val measured = measurer.measure(text, style)
   val y = (baselineY - measured.size.height - 1.dp.toPx()).coerceAtLeast(top - 6.dp.toPx()).coerceAtLeast(0f)
+  // 刻度值压在曲线上时也要读得清：垫一层与图底同色的半透明底
+  drawRect(backdrop.copy(alpha = 0.8f), topLeft = Offset(x - 2.dp.toPx(), y), size = Size(measured.size.width + 4.dp.toPx(), measured.size.height.toFloat()))
   drawText(measured, topLeft = Offset(x, y))
 }
+
+/** 格式化器把 1024 写成「1.0 KB」即说明它按 1024 进位。 */
+internal fun usesBinaryUnits(formatter: (Double?) -> String): Boolean = formatter(1024.0).contains("KB")
 
 private fun nearestValue(points: List<SamplePointDto>, millis: Long?): Double? {
   if (points.isEmpty()) return null
@@ -534,11 +541,19 @@ internal fun ChartStatsRow(series: List<ChartSeriesModel>, valueFormatter: (Doub
   val colors = OneUiTheme.colors
   val stats: List<Pair<ChartSeriesModel, SeriesStats>> = series.mapNotNull { item -> seriesStats(item.points)?.let { item to it } }
   if (stats.isEmpty()) return
-  FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+  // 每条序列一行：「接收  均值 3.1 MB/s  峰值 9.8 MB/s」，多序列时不再折成一团
+  Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
     stats.forEach { (item, value) ->
-      val prefix = if (series.size > 1) "${item.label} " else ""
-      StatChip(label = "${prefix}均值", value = valueFormatter(value.average), color = colors.textSecondary)
-      StatChip(label = "${prefix}峰值", value = valueFormatter(value.peak), color = colors.textSecondary)
+      Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (series.size > 1) {
+          Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.width(64.dp)) {
+            Box(modifier = Modifier.size(width = 8.dp, height = 3.dp).background(colors.seriesColor(item.colorIndex), ChartSwatchShape))
+            OneUiText(text = item.label, role = OneUiTextRole.ChartLabel, color = colors.textSecondary, maxLines = 1)
+          }
+        }
+        StatChip(label = "均值", value = valueFormatter(value.average), color = colors.textSecondary)
+        StatChip(label = "峰值", value = valueFormatter(value.peak), color = colors.textSecondary)
+      }
     }
   }
 }

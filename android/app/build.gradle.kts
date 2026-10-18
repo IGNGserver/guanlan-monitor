@@ -102,6 +102,11 @@ android {
       excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
   }
+
+  testOptions {
+    // ScreenRenderTest 用 Robolectric 原生图形渲染页面，需要合并后的资源
+    unitTests.isIncludeAndroidResources = true
+  }
 }
 
 dependencies {
@@ -135,6 +140,9 @@ dependencies {
   implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
 
   testImplementation("junit:junit:4.13.2")
+  testImplementation(composeBom)
+  testImplementation("androidx.compose.ui:ui-test-junit4")
+  testImplementation("org.robolectric:robolectric:4.14.1")
   androidTestImplementation("androidx.test.ext:junit:1.2.1")
   androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
   androidTestImplementation("androidx.compose.ui:ui-test-junit4")

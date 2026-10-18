@@ -152,6 +152,7 @@ fun AttentionScreen(state: AppState, actions: GuanlanActions, embedded: Boolean)
             },
             role = OneUiTextRole.ChartLabel,
             color = colors.textTertiary,
+            maxLines = 6,
             modifier = Modifier.padding(horizontal = metrics.spaceXs)
           )
         }
