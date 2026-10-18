@@ -472,7 +472,8 @@ internal fun OneUiChartCard(
   chartWindow: ChartWindow,
   modifier: Modifier = Modifier,
   onClick: (() -> Unit)? = null,
-  actionLabel: String = "详情"
+  actionLabel: String = "详情",
+  animationKey: Any? = chartWindow
 ) {
   val colors = OneUiTheme.colors
   val shapes = OneUiTheme.shapes
@@ -519,6 +520,7 @@ internal fun OneUiChartCard(
       includeZero = card.includeZero,
       thresholds = card.thresholds,
       axisFormatter = card.axisFormatter ?: { compactAxisLabel(it, card.valueFormatter) },
+      animationKey = animationKey,
       modifier = Modifier.fillMaxWidth()
     )
     ChartStatsRow(series = card.series, valueFormatter = card.valueFormatter)
@@ -559,7 +561,9 @@ internal fun OneUiChartCardGrid(
   cards: List<ChartCardModel>,
   chartWindow: ChartWindow,
   modifier: Modifier = Modifier,
-  onCardClick: ((Int) -> Unit)? = null
+  onCardClick: ((Int) -> Unit)? = null,
+  /** 实时曲线每秒换一次时间窗，描线动画不能跟着每秒重播。 */
+  animationKey: Any? = chartWindow
 ) {
   if (cards.isEmpty()) return
   val metrics = OneUiTheme.metrics
@@ -577,6 +581,7 @@ internal fun OneUiChartCardGrid(
           card = card,
           chartWindow = chartWindow,
           onClick = onCardClick?.let { callback -> { callback(index) } },
+          animationKey = animationKey,
           modifier = Modifier.width(cellWidth)
         )
       }

@@ -1,6 +1,7 @@
 package com.dsc.android.ui.shell
 
 import com.dsc.android.DeviceBlockKey
+import com.dsc.android.LiveTopic
 import com.dsc.android.MetricWindow
 import com.dsc.android.TrafficCalendarMode
 import androidx.compose.runtime.Immutable
@@ -44,5 +45,10 @@ data class GuanlanActions(
   val onDownloadUpdate: () -> Unit,
   val onLaunchUpdateInstaller: (String) -> Unit,
   val onUpdateInstallerLaunched: () -> Unit,
-  val onConsumeMessage: () -> Unit
+  val onConsumeMessage: () -> Unit,
+  val onStartLive: (String, LiveTopic) -> Unit = { _, _ -> },
+  val onStopLive: () -> Unit = {},
+  val onSetLivePaused: (Boolean) -> Unit = {},
+  val onSetLiveInterval: (Int) -> Unit = {},
+  val onResetLiveCredentials: () -> Unit = {}
 )

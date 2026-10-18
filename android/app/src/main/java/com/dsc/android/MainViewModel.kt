@@ -51,6 +51,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private var overviewLoadJob: Job? = null
   private var attentionLoadJob: Job? = null
   private var refreshTicks = 0
+  private var liveJob: Job? = null
+  private var livePreviousDocker: LiveDockerDto? = null
   private var cacheWriteJob: Job? = null
   private var trafficAnchor: String = todayAnchor()
   private var trafficSelectedStart: String? = null
@@ -118,6 +120,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   fun onAppForeground() {
     appInForeground = true
+    if (_state.value.live?.paused == false) launchLiveLoop()
     if (_state.value.serverConfig.baseUrl.isNotBlank() && _state.value.serverConfig.accessKey.isNotBlank()) {
       if (!_state.value.loggingIn && !_state.value.refreshing) {
         login()
@@ -131,6 +134,150 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   fun onAppBackground() {
     appInForeground = false
     stopRemoteActivity(clearCache = false)
+  }
+
+  /* ---------- 实时查看：只在对应页面可见、应用在前台时轮询 ---------- */
+
+  fun startLive(deviceId: String, topic: LiveTopic) {
+    val current = _state.value.live
+    if (current != null && current.deviceId == deviceId && current.topic == topic && liveJob?.isActive == true) return
+    val interval = if (current?.topic == topic) current.intervalSeconds else defaultLiveInterval(topic)
+    livePreviousDocker = null
+    _state.update { it.copy(live = LiveUiState(deviceId = deviceId, topic = topic, intervalSeconds = interval)) }
+    launchLiveLoop()
+  }
+
+  fun stopLive() {
+    liveJob?.cancel()
+    liveJob = null
+    livePreviousDocker = null
+    _state.update { it.copy(live = null) }
+  }
+
+  fun setLivePaused(paused: Boolean) {
+    val live = _state.value.live ?: return
+    _state.update { it.copy(live = live.copy(paused = paused)) }
+    if (paused) {
+      // 暂停就是不发请求，而不是发得慢：最后一次结果留在屏上并标为已暂停
+      liveJob?.cancel()
+      liveJob = null
+    } else {
+      launchLiveLoop()
+    }
+  }
+
+  fun setLiveInterval(seconds: Int) {
+    val live = _state.value.live ?: return
+    // 改刷新频率不丢已有的两分钟曲线
+    _state.update { it.copy(live = live.copy(intervalSeconds = seconds)) }
+    if (!live.paused) launchLiveLoop()
+  }
+
+  fun resetLiveCredentials() {
+    val live = _state.value.live ?: return
+    viewModelScope.launch {
+      _state.update { state -> state.copy(live = state.live?.copy(resetState = LiveResetState.Pending)) }
+      val ok = runCatching { executeWithAuthRetry { it.resetLiveCredentials(live.deviceId) } }.isSuccess
+      _state.update { state ->
+        state.copy(
+          live = state.live?.copy(resetState = if (ok) LiveResetState.Done else LiveResetState.Failed),
+          message = if (ok) "已重置实时凭据，设备会在 30 秒内重新登记" else "重置失败，请检查登录状态后重试"
+        )
+      }
+    }
+  }
+
+  private fun launchLiveLoop() {
+    liveJob?.cancel()
+    val initial = _state.value.live ?: return
+    if (!appInForeground || initial.paused) return
+    liveJob = viewModelScope.launch {
+      var disconnected = false
+      while (isActive) {
+        val live = _state.value.live ?: break
+        if (live.deviceId != initial.deviceId || live.topic != initial.topic || live.paused) break
+        try {
+          if (!_state.value.authenticated) throw LiveQueryException("hub_login_required")
+          if (disconnected) {
+            val connection = executeWithAuthRetry { it.liveConnection(live.deviceId) }
+            updateLive(live) { it.copy(conflictAt = if (connection.state == "ready") null else connection.identityConflictAt) }
+            if (connection.state != "ready") throw LiveQueryException("device_not_connected")
+            if (live.topic.value !in connection.capabilities) throw LiveQueryException("device_capability_unavailable")
+            disconnected = false
+          }
+          val snapshot = kotlinx.coroutines.withTimeoutOrNull(LIVE_QUERY_TIMEOUT_MS) {
+            executeWithAuthRetry { api ->
+              when (live.topic) {
+                LiveTopic.Metrics -> api.liveMetrics(live.deviceId)
+                LiveTopic.Processes -> api.liveProcesses(live.deviceId)
+                LiveTopic.Docker -> api.liveDocker(live.deviceId)
+              }
+            }
+          } ?: throw LiveQueryException("query_expired")
+          if (!acceptsLiveSnapshot(snapshot, live.deviceId, live.topic)) throw LiveQueryException("device_disconnected")
+          val at = System.currentTimeMillis()
+          updateLive(live) { current ->
+            val sessionChanged = current.sessionId != snapshot.sessionId
+            val base = current.copy(
+              sessionId = snapshot.sessionId,
+              receivedAt = snapshot.receivedAt,
+              lastConfirmedMillis = at,
+              failure = null,
+              conflictAt = null
+            )
+            when (val data = snapshot.data) {
+              is LiveMetricsDto -> base.copy(metrics = data, samples = appendLiveSample(current.samples, LiveSample(at, data), sessionChanged))
+              is LiveProcessesDto -> base.copy(processes = data)
+              is LiveDockerDto -> {
+                val rates = containerRates(if (sessionChanged) null else livePreviousDocker, data)
+                livePreviousDocker = data
+                base.copy(docker = data, dockerRates = rates)
+              }
+              else -> base
+            }
+          }
+        } catch (error: Throwable) {
+          if (error is CancellationException) throw error
+          val code = liveErrorCode(error)
+          val failure = describeLiveFailure(code)
+          updateLive(live) { current ->
+            // 设备繁忙/超时这类一过性失败保留上次结果（标为未更新）；其它失败立即移除，不拿旧数当新数
+            if (failure.transient) current.copy(failure = failure)
+            else current.copy(failure = failure, metrics = null, processes = null, docker = null, dockerRates = emptyMap())
+          }
+          if (!failure.transient) livePreviousDocker = null
+          if (code in disconnectedLiveCodes && !disconnected) {
+            disconnected = true
+            runCatching { executeWithAuthRetry { it.liveConnection(live.deviceId) } }.getOrNull()?.let { connection ->
+              updateLive(live) { it.copy(conflictAt = if (connection.state == "ready") null else connection.identityConflictAt) }
+            }
+          }
+        }
+        delay((_state.value.live?.intervalSeconds ?: live.intervalSeconds) * 1000L)
+      }
+    }
+  }
+
+  private inline fun updateLive(target: LiveUiState, crossinline transform: (LiveUiState) -> LiveUiState) {
+    _state.update { state ->
+      val live = state.live
+      if (live == null || live.deviceId != target.deviceId || live.topic != target.topic) state else state.copy(live = transform(live))
+    }
+  }
+
+  private fun liveErrorCode(error: Throwable): String? = when (error) {
+    is LiveQueryException -> error.code
+    is HttpException -> {
+      val body = runCatching { error.response()?.errorBody()?.string() }.getOrNull()
+      liveErrorCodeFromBody(body) ?: when (error.code()) {
+        401, 403 -> "hub_login_required"
+        404 -> "live_hub_upgrade_required"
+        408, 504 -> "request_timeout"
+        else -> null
+      }
+    }
+    is java.net.SocketTimeoutException -> "request_timeout"
+    else -> null
   }
 
   override fun onCleared() {
@@ -226,6 +373,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           overviewMetrics = null,
           attentionMetrics = emptyMap(),
           attentionCheckedAt = null,
+          live = null,
           trafficCalendar = null,
           metricConfig = null,
           loadingMetrics = false,
@@ -957,6 +1105,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     overviewLoadJob = null
     attentionLoadJob?.cancel()
     attentionLoadJob = null
+    liveJob?.cancel()
+    liveJob = null
     _state.update {
       it.copy(
         refreshing = false,
@@ -1070,9 +1220,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   companion object {
     private const val AUTO_REFRESH_INTERVAL_MS = 15_000L
     private const val ATTENTION_REFRESH_TICKS = 4
+    /** 与 Web 端一致：超过 6 秒才回来的结果视为过期，不显示。 */
+    private const val LIVE_QUERY_TIMEOUT_MS = 6_000L
 
+    /** 曲线每秒一点；进程与容器表每 2 秒一次，排序变化之间要留出读的时间。 */
+    private fun defaultLiveInterval(topic: LiveTopic): Int = if (topic == LiveTopic.Metrics) 1 else 2
+
+    // 「1 分钟」已由设备页的「实时」取代；旧缓存里存的 1m 落到最短的历史粒度
     private fun metricWindowFor(value: String): MetricWindow =
-      MetricWindow.fromValue(value) ?: MetricWindow.FiveMinutes
+      MetricWindow.fromValue(value)?.takeIf { it != MetricWindow.OneMinute } ?: MetricWindow.FiveMinutes
 
     private fun trafficModeFor(value: String?): TrafficCalendarMode =
       TrafficCalendarMode.entries.firstOrNull { it.value == value } ?: TrafficCalendarMode.Day
@@ -1121,3 +1277,5 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 }
+
+private class LiveQueryException(val code: String) : IllegalStateException(code)

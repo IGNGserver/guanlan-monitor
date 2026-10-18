@@ -3,7 +3,6 @@ package com.dsc.android.ui.screens
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,75 +13,81 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Router
-import androidx.compose.material.icons.rounded.Storage
-import androidx.compose.material.icons.rounded.Timeline
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Air
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.ReportProblem
+import androidx.compose.material.icons.rounded.Router
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Thermostat
+import androidx.compose.material.icons.rounded.Timeline
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VideogameAsset
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.dsc.android.AppState
+import com.dsc.android.AttentionItem
+import com.dsc.android.AttentionSeverity
+import com.dsc.android.AttentionThresholds
 import com.dsc.android.ChartWindow
 import com.dsc.android.DeviceBlockKey
 import com.dsc.android.DiskDto
 import com.dsc.android.DiskMetricSeriesDto
-import com.dsc.android.FanDto
 import com.dsc.android.GpuDto
 import com.dsc.android.GpuMetricSeriesDto
+import com.dsc.android.LiveTopic
 import com.dsc.android.MetricWindow
 import com.dsc.android.MetricsDto
-import com.dsc.android.NetworkInterfaceDto
-import com.dsc.android.NetworkMetricSeriesDto
 import com.dsc.android.RemoteDataSource
+import com.dsc.android.SamplePointDto
 import com.dsc.android.TemperatureMetricSeriesDto
 import com.dsc.android.TemperatureSensorDto
+import com.dsc.android.metricsAttention
+import com.dsc.android.percentOf
+import com.dsc.android.summaryAttention
 import com.dsc.android.ui.oneui.*
 import com.dsc.android.ui.shell.GuanlanActions
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.math.roundToInt
 
 /**
- * 设备详情（构）。
+ * 设备页（构）。
  *
- * One UI 的组织方式：身份与健康度先说清（概览组），
- * 再按硬件类别列出可下钻的行（点一行看一类指标），
- * 高频切换的时间粒度下沉到底部工具坞（拇指区），
- * 类别内的图表与元信息放在面板里，而不是塞满一屏卡片。
- *
- * 数据语义保持原样：同一套 capsule 构造、同一套实例 tab、同一套缺测与温度匹配规则。
+ * 四个标签页对应读者来这里的四个问题：
+ * - 概览：它现在怎么样、最近怎么走——核心图表常驻，不用先点开某一类；
+ * - 硬件：某一类（CPU/显卡/内存/硬盘/存储池/网络/温度/风扇）的实例级明细；
+ * - 进程 / 容器：此刻是谁在占资源（实时查询，只在页面可见时轮询）。
+ * 时间范围是图表的属性，吸附在标签页下方，切换后图表就地重绘。
  */
+internal enum class DetailTab(val label: String) {
+  Overview("概览"),
+  Hardware("硬件"),
+  Processes("进程"),
+  Containers("容器")
+}
+
 @Composable
 fun DeviceDetailScreen(
   state: AppState,
@@ -91,94 +96,96 @@ fun DeviceDetailScreen(
 ) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
-  val motion = OneUiTheme.motion
   val listState = rememberLazyListState()
   val collapse = rememberOneUiCollapse(listState)
-  // 折叠后点紧凑标题回到大标题：滚动动画需要协程作用域（交）
   val topBarScope = rememberCoroutineScope()
-  val data = state.metrics
+  val now = rememberNowMillis()
+  val data = state.metrics?.takeIf { it.device.deviceId == state.selectedDeviceId }
+  val summary = state.devices.firstOrNull { it.deviceId == state.selectedDeviceId }
+  val deviceId = state.selectedDeviceId
   // 可见加载进行中且屏上仍有快照：进入陈旧态——交互照常，只有数据本身降存在感（交）
   val stale = state.loadingMetrics && data != null
   val displayWindow = displayWindowFor(data?.window, state.selectedWindow, state.loadingMetrics)
   val syncing = state.refreshing || state.loadingMetrics
 
-  var openBlock by rememberSaveable(state.selectedDeviceId) { mutableStateOf<DeviceBlockKey?>(null) }
-  var openTabId by rememberSaveable(state.selectedDeviceId) { mutableStateOf("total") }
-  // 类别卡片都在同一个 LazyColumn item 中，展开/收起会改变前面内容的高度。
-  // 记录每个标题在根坐标系的位置，切换时用它作为视觉锚点（交）。
-  val blockPositions = remember { mutableStateMapOf<DeviceBlockKey, Int>() }
-  var anchorCorrectionJob by remember { mutableStateOf<Job?>(null) }
+  var tabName by rememberSaveable(deviceId) { mutableStateOf(DetailTab.Overview.name) }
+  val tab = DetailTab.entries.firstOrNull { it.name == tabName } ?: DetailTab.Overview
+  var openBlock by rememberSaveable(deviceId) { mutableStateOf<DeviceBlockKey?>(null) }
+  var openTabId by rememberSaveable(deviceId) { mutableStateOf("total") }
+  var liveRange by rememberSaveable(deviceId) { mutableStateOf(false) }
+  var switcherOpen by remember { mutableStateOf(false) }
 
+  // 从首页点某个读数进来：直接落到「硬件」里那一类，不让人再找一次（交）
   LaunchedEffect(state.focusedBlock, state.loadingMetrics, data?.device?.deviceId) {
     val blockKey = state.focusedBlock ?: return@LaunchedEffect
-    // 有这台设备的快照（含离线缓存）就立即展开，不再等加载结束；还没有数据时才等（交）
-    if (data?.device?.deviceId != state.selectedDeviceId && state.loadingMetrics) return@LaunchedEffect
+    if (data == null && state.loadingMetrics) return@LaunchedEffect
+    tabName = DetailTab.Hardware.name
     openBlock = blockKey
     openTabId = "total"
     actions.onClearFocusedBlock()
+    listState.scrollToItem(0)
   }
 
-  // 双栏的右栏不提供「返回设备列表」：换设备回到左栏点选（构）
-  val backIcon: @Composable () -> Unit = {
-    OneUiIconButton(
-      contentDescription = "返回设备列表",
-      onClick = actions.onShowDeviceList
-    ) {
-      OneUiIcon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
-    }
+  // 实时查询只在对应内容可见时进行；切走或离开页面立即停（交 + 省电）
+  val liveTopic = when {
+    tab == DetailTab.Processes -> LiveTopic.Processes
+    tab == DetailTab.Containers -> LiveTopic.Docker
+    tab == DetailTab.Overview && liveRange -> LiveTopic.Metrics
+    else -> null
+  }
+  DisposableEffect(deviceId, liveTopic) {
+    if (deviceId != null && liveTopic != null) actions.onStartLive(deviceId, liveTopic)
+    onDispose { if (liveTopic != null) actions.onStopLive() }
+  }
+  val live = state.live?.takeIf { it.deviceId == deviceId && it.topic == liveTopic }
+
+  val issues = remember(summary, data, now / 60_000) {
+    buildList {
+      summary?.let { addAll(summaryAttention(it, now)) }
+      data?.let { snapshot -> addAll(metricsAttention(snapshot).filter { item -> none { it.key == item.key } }) }
+    }.sortedBy { it.severity.rank }
   }
 
-  // 类别明细的实例 tab 与选中项：底部面板与双栏内联正文共用同一份推导（件）
-  val focusedBlockKey = openBlock
-  val tabs = remember(data, focusedBlockKey) {
-    if (data != null && focusedBlockKey != null) buildBlockSheetTabs(data, focusedBlockKey) else emptyList()
+  val tabs = remember(data, openBlock) {
+    val block = openBlock
+    if (data != null && block != null) buildBlockSheetTabs(data, block) else emptyList()
   }
   val tabIds = tabs.map { it.id }
   val effectiveTab = if (openTabId in tabIds) openTabId else (tabIds.firstOrNull() ?: "total")
-  // 双栏（平板 / DeX / 折叠屏外屏）：类别明细直接铺在右栏正文里。
-  // 全屏底部面板会横向盖住左栏、用 scrim 挡住列表，还把粒度坞压在下面切不动（构 + 适）
-  val inlineBlock: DeviceBlockKey? = if (embedded) openBlock else null
-  val blockBackIcon: @Composable () -> Unit = {
-    OneUiIconButton(contentDescription = "返回设备概览", onClick = { openBlock = null }) {
-      OneUiIcon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
-    }
-  }
+  val online = (data?.status ?: summary?.status) == "online"
 
   Box(
     modifier = Modifier
       .fillMaxSize()
       .background(colors.canvas)
   ) {
-    Column(
-      modifier = Modifier.fillMaxSize(),
-      // 宽屏上正文按可读行长居中，紧凑态不受影响（适）
-      horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+    Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
       Box {
         OneUiTopBar(
-          title = inlineBlock?.label ?: (data?.device?.hostname ?: "设备"),
-          subtitle = when {
-            inlineBlock != null -> {
-              val base = if (displayWindow == MetricWindow.OneMinute) {
-                "当前显示实时值"
-              } else {
-                "当前显示 ${displayWindow.label} 区间平均值"
-              }
-              if (stale) "$base · 同步中" else base
-            }
-
-            data == null -> "正在读取指标"
-            else -> "${data.device.os} · ${data.device.platform} · ${if (data.status == "online") "在线" else "离线"}"
+          title = data?.device?.hostname ?: summary?.hostname ?: "设备",
+          subtitle = buildString {
+            append(if (online) "在线" else "离线")
+            append(" · ")
+            append(relativeTimeLabel(data?.lastSeenAt ?: summary?.lastSeenAt, now))
+            append("上报")
+            (data?.device?.os ?: summary?.os)?.let { append(" · ${osLabel(it)}") }
           },
           collapse = collapse,
           onCollapsedTitleClick = { topBarScope.launch { listState.animateScrollToItem(0) } },
           large = !embedded,
-          navigationIcon = when {
-            inlineBlock != null -> blockBackIcon
-            embedded -> null
-            else -> backIcon
+          navigationIcon = if (embedded) null else {
+            {
+              OneUiIconButton(contentDescription = "返回总览", onClick = actions.onShowDeviceList) {
+                OneUiIcon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
+              }
+            }
           },
           actions = {
+            if (state.devices.size > 1) {
+              OneUiIconButton(contentDescription = "切换设备", onClick = { switcherOpen = true }) {
+                OneUiIcon(Icons.Rounded.SwapHoriz, contentDescription = null, tint = colors.textPrimary)
+              }
+            }
             OneUiIconButton(
               contentDescription = "刷新",
               onClick = { if (!state.refreshing) actions.onRefresh() },
@@ -187,11 +194,46 @@ fun DeviceDetailScreen(
             ) {
               OneUiIcon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textPrimary)
             }
-            // 流量在类别列表里已经是一行，顶栏不再放第二个入口（构）
+            deviceId?.let { id ->
+              OneUiIconButton(contentDescription = "编辑记录项", onClick = { actions.onOpenDeviceEditor(id) }) {
+                OneUiIcon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textPrimary)
+              }
+            }
           }
         )
-        // 顶栏下缘的同步进度线：覆盖式、不占布局，同步期间照常滚动、展开（交）
         OneUiSyncProgress(visible = syncing, modifier = Modifier.align(Alignment.BottomCenter))
+      }
+
+      // 吸附区：标签页 + 时间范围。它们决定下面所有内容的口径，所以不随列表滚走（构）
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .oneUiContentWidth(metrics)
+          .padding(horizontal = metrics.screenMargin)
+          .padding(bottom = metrics.spaceXs),
+        verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+      ) {
+        OneUiSegmentedRow(
+          options = DetailTab.entries.map { it.label },
+          selectedIndex = tab.ordinal,
+          onSelect = { index ->
+            tabName = DetailTab.entries[index].name
+            topBarScope.launch { listState.scrollToItem(0) }
+          }
+        )
+        if (tab == DetailTab.Overview || tab == DetailTab.Hardware) {
+          RangeChips(
+            selected = displayWindow,
+            live = liveRange && tab == DetailTab.Overview,
+            allowLive = tab == DetailTab.Overview,
+            loading = state.loadingMetrics,
+            onSelectLive = { liveRange = true },
+            onSelect = { window ->
+              liveRange = false
+              actions.onSelectWindow(window)
+            }
+          )
+        }
       }
 
       LazyColumn(
@@ -203,352 +245,441 @@ fun DeviceDetailScreen(
         contentPadding = oneUiListContentPadding(),
         verticalArrangement = Arrangement.spacedBy(metrics.groupGap)
       ) {
-        val snapshot = data
-        if (inlineBlock != null && snapshot != null) {
-          item(key = "block-detail") {
-            OneUiStaleGroup(stale = stale) {
-              BlockDetail(
-                data = snapshot,
-                blockKey = inlineBlock,
-                tabs = tabs,
-                tabId = effectiveTab,
-                selectedWindow = displayWindow,
-                onSelectTab = { openTabId = it },
-                onEditInstance = { instanceId ->
-                  actions.onOpenInstanceEditor(snapshot.device.deviceId, inlineBlock, instanceId)
-                }
-              )
-            }
-          }
-        }
-
-        // 连接尝试进行中不急着喊"离线"：先自动连一次，连不上再展示缓存（交）
         if (state.dataSource == RemoteDataSource.Cache && !state.loggingIn && !state.refreshing) {
           item(key = "offline-cache") {
             OneUiNotice(
               title = "当前显示离线缓存",
-              description = "缓存于 ${formatTime(state.cacheSavedAt)}；数据可能已经过期。",
+              description = "缓存于 ${formatTime(state.cacheSavedAt)}；数据可能已经过期，进程与容器需要连接中枢才能查看。",
               tone = OneUiNoticeTone.Warning,
               action = {
-                OneUiButton(
-                  label = if (state.refreshing) "刷新中" else "重试",
-                  onClick = actions.onRefresh,
-                  variant = OneUiButtonVariant.Tonal,
-                  size = OneUiButtonSize.Compact,
-                  loading = state.refreshing
-                )
+                OneUiButton(label = "重试", onClick = actions.onRefresh, variant = OneUiButtonVariant.Tonal, size = OneUiButtonSize.Compact)
               }
             )
           }
         }
 
-        if (data == null) {
-          val error = state.metricsError
-          if (error == null || state.loadingMetrics) {
-            item(key = "detail-skeleton") {
-              Column(verticalArrangement = Arrangement.spacedBy(metrics.cardGap)) {
-                OneUiSkeleton(height = 132.dp)
-                OneUiSkeleton(height = 96.dp)
-                OneUiSkeleton(height = 96.dp)
-              }
+        when (tab) {
+          DetailTab.Overview -> overviewItems(
+            data = data,
+            state = state,
+            actions = actions,
+            stale = stale,
+            displayWindow = displayWindow,
+            liveRange = liveRange,
+            live = live,
+            nowMillis = now,
+            issues = issues,
+            onOpenBlock = { block ->
+              tabName = DetailTab.Hardware.name
+              openBlock = block
+              openTabId = "total"
+              topBarScope.launch { listState.scrollToItem(0) }
             }
-          } else {
-            // 读不到指标时不能永远停在骨架屏上（交：错误态必须带重试出口）
-            item(key = "detail-error") {
-              OneUiErrorState(
-                title = "没能读取这台设备的指标",
-                description = error,
-                onRetry = actions.onRefresh
-              )
-            }
-          }
-        }
-
-        if (inlineBlock == null) {
-          snapshot?.let { current ->
-            item(key = "overview") {
-              OverviewGroup(data = current, window = displayWindow, stale = stale)
-            }
-          }
-
-          item(key = "blocks-header") {
-            OneUiGroupHeader(
-              label = "硬件类别",
-              description = "点按任一类查看图表与实例明细；采集哪些记录项用底部「编辑记录项」"
-            )
-          }
-
-          snapshot?.let { current ->
-            item(key = "blocks") {
-              OneUiStaleGroup(stale = stale) {
-                BlockGroup(
-                  data = snapshot,
-                  selectedWindow = displayWindow,
-                  openBlock = openBlock,
-                  tabs = tabs,
-                  effectiveTab = effectiveTab,
-                  onSelectTab = { openTabId = it },
-                  onToggleBlock = { block ->
-                    val anchorY = blockPositions[block]
-                    anchorCorrectionJob?.cancel()
-                    openBlock = if (openBlock == block) null else block
-                    if (anchorY != null) {
-                      anchorCorrectionJob = topBarScope.launch {
-                        preserveBlockAnchor(
-                          listState = listState,
-                          positions = blockPositions,
-                          blockKey = block,
-                          anchorY = anchorY,
-                          durationMillis = motion.duration(OneUiDuration.Content).toLong() + 120L
-                        )
-                      }
-                    }
-                  },
-                  onOpenTraffic = { actions.onOpenTraffic(snapshot.device.deviceId) },
-                  onEditDeviceMetrics = { actions.onOpenDeviceEditor(snapshot.device.deviceId) },
-                  onEditBlock = { block -> actions.onOpenBlockEditor(snapshot.device.deviceId, block) },
-                  onEditInstance = { block, instanceId ->
-                    actions.onOpenInstanceEditor(snapshot.device.deviceId, block, instanceId)
-                  },
-                  onBlockPositioned = { block, y ->
-                    blockPositions[block] = y
-                  }
-                )
-              }
-            }
-          }
-        }
-      }
-
-      // 底部工具坞：时间粒度属于高频切换，放在拇指区（构 + 交）；同步期间照常可切换
-      WindowDock(
-        selected = state.selectedWindow,
-        loading = state.loadingMetrics,
-        onSelect = actions.onSelectWindow
-      )
-    }
-  }
-
-  if (!embedded) {
-    // 手机端已采用平滑就地展开卡片流，保留兜底能力
-  }
-}
-
-/** 概览组：设备身份与在线状态（保留旧 OverviewCard 的全部字段）。 */
-@Composable
-private fun OverviewGroup(data: MetricsDto, window: MetricWindow, stale: Boolean) {
-  val colors = OneUiTheme.colors
-  val metrics = OneUiTheme.metrics
-  val online = data.status == "online"
-  Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
-    OneUiGroup {
-      Column(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = metrics.groupPadding, vertical = metrics.spaceS),
-        verticalArrangement = Arrangement.spacedBy(metrics.spaceS)
-      ) {
-          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Column(modifier = Modifier.weight(1f)) {
-              OneUiText(text = data.device.hostname, role = OneUiTextRole.Headline)
-              OneUiText(
-                text = data.device.cpuModel ?: "处理器信息未上报",
-                role = OneUiTextRole.RowSubtitle,
-                color = colors.textSecondary,
-                modifier = Modifier.padding(top = 2.dp)
-              )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-              OneUiStatusDot(color = if (online) colors.online else colors.offline)
-              OneUiText(
-                text = if (online) "在线" else "离线",
-                role = OneUiTextRole.ChartLabel,
-                color = if (online) colors.onlineContent else colors.offlineContent,
-                weight = FontWeight.SemiBold
-              )
-            }
-          }
-          OneUiReading(
-            value = metricPoint(data.series.cpuUsagePercent, window, ::formatPercent),
-            unit = "CPU 占用",
-            label = if (stale) "当前粒度 ${window.label} · 同步中" else "当前粒度 ${window.label}",
-            color = if (online) colors.accent else colors.textSecondary
           )
+
+          DetailTab.Hardware -> hardwareItems(
+            data = data,
+            state = state,
+            actions = actions,
+            stale = stale,
+            displayWindow = displayWindow,
+            openBlock = openBlock,
+            tabs = tabs,
+            effectiveTab = effectiveTab,
+            onSelectTab = { openTabId = it },
+            onOpenBlock = { block ->
+              openBlock = block
+              openTabId = "total"
+              topBarScope.launch { listState.scrollToItem(0) }
+            },
+            onCloseBlock = { openBlock = null }
+          )
+
+          DetailTab.Processes -> liveProcessItems(live = live, nowMillis = now, actions = actions, authenticated = state.authenticated)
+          DetailTab.Containers -> liveDockerItems(live = live, nowMillis = now, actions = actions, authenticated = state.authenticated)
+        }
+
+        item(key = "bottom-spacer") { Spacer(Modifier.height(metrics.thumbZone)) }
       }
     }
-    OneUiMetaTable(
-      items = buildList {
-        add("设备 ID" to data.device.deviceId)
-        add("系统" to data.device.os)
-        add("平台" to "${data.device.platform} / ${data.device.arch}")
-        add("上次更新" to formatTime(data.lastSeenAt))
-        add("agent" to (data.device.agentVersion ?: "未知"))
-        data.device.agentChannel?.takeIf { it.isNotBlank() }?.let { add("渠道" to it) }
-      },
-      selectable = true,
-      collapsible = true,
-      defaultExpanded = false
+  }
+
+  if (switcherOpen) {
+    OneUiActionSheet(
+      onDismissRequest = { switcherOpen = false },
+      title = "切换设备",
+      actions = state.devices
+        .sortedWith(compareBy<com.dsc.android.DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
+        .map { device ->
+          OneUiActionModel(
+            label = if (device.deviceId == deviceId) "${device.hostname}（当前）" else device.hostname,
+            description = "${if (device.status == "online") "在线" else "离线"} · CPU ${formatPercent(device.cpuUsagePercent)} · 内存 ${formatPercent(device.memoryUsagePercent)}",
+            icon = deviceIcon(device.os),
+            onClick = {
+              switcherOpen = false
+              // 换设备时保留当前标签页：对比两台机器的进程最常见（交）
+              if (device.deviceId != deviceId) actions.onOpenDevice(device.deviceId, null)
+            }
+          )
+        }
     )
   }
 }
 
-/** 硬件类别看板（构 + 动）：每个类别为独立可展开模块，就地展开图表，无需频繁弹窗 */
+/** 时间范围胶囊：「实时」只在概览可选（硬件明细只有历史序列）。 */
 @Composable
-private fun BlockGroup(
-  data: MetricsDto,
-  selectedWindow: MetricWindow,
+private fun RangeChips(
+  selected: MetricWindow,
+  live: Boolean,
+  allowLive: Boolean,
+  loading: Boolean,
+  onSelectLive: () -> Unit,
+  onSelect: (MetricWindow) -> Unit
+) {
+  val metrics = OneUiTheme.metrics
+  val colors = OneUiTheme.colors
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .horizontalScroll(rememberScrollState()),
+    horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+  ) {
+    if (allowLive) {
+      OneUiFilterChip(label = "实时", selected = live, onClick = onSelectLive)
+    }
+    RangeOptions.forEach { (window, label) ->
+      val isSelected = !live && window == selected
+      OneUiFilterChip(
+        label = label,
+        selected = isSelected,
+        onClick = { onSelect(window) },
+        leadingIcon = if (loading && isSelected) {
+          { OneUiSpinner(size = 14.dp, strokeWidth = 2.dp, color = colors.textOnAccent) }
+        } else null
+      )
+    }
+  }
+}
+
+/** 「1 分钟」被「实时」取代：两者都是看此刻，实时每秒一点、更直观。 */
+private val RangeOptions = listOf(
+  MetricWindow.FiveMinutes to "5 分钟",
+  MetricWindow.OneHour to "1 小时",
+  MetricWindow.SixHours to "6 小时",
+  MetricWindow.OneDay to "24 小时",
+  MetricWindow.SevenDays to "7 天"
+)
+
+private fun LazyListScope.loadingOrError(data: MetricsDto?, state: AppState, actions: GuanlanActions): Boolean {
+  if (data != null) return false
+  val error = state.metricsError
+  if (error == null || state.loadingMetrics) {
+    item(key = "detail-skeleton") {
+      Column(verticalArrangement = Arrangement.spacedBy(OneUiTheme.metrics.cardGap)) {
+        OneUiSkeleton(height = 220.dp)
+        OneUiSkeleton(height = 220.dp)
+      }
+    }
+  } else {
+    item(key = "detail-error") {
+      OneUiErrorState(title = "没能读取这台设备的指标", description = error, onRetry = actions.onRefresh)
+    }
+  }
+  return true
+}
+
+/* ---------------- 概览 ---------------- */
+
+private fun LazyListScope.overviewItems(
+  data: MetricsDto?,
+  state: AppState,
+  actions: GuanlanActions,
+  stale: Boolean,
+  displayWindow: MetricWindow,
+  liveRange: Boolean,
+  live: com.dsc.android.LiveUiState?,
+  nowMillis: Long,
+  issues: List<AttentionItem>,
+  onOpenBlock: (DeviceBlockKey) -> Unit
+) {
+  if (issues.isNotEmpty()) {
+    item(key = "issues") { DeviceIssues(issues = issues, onOpenBlock = onOpenBlock) }
+  }
+
+  if (liveRange) {
+    liveMetricItems(live = live, nowMillis = nowMillis, actions = actions, authenticated = state.authenticated)
+  } else {
+    if (loadingOrError(data, state, actions)) return
+    val snapshot = data ?: return
+    item(key = "overview-charts") {
+      OneUiStaleGroup(stale = stale) {
+        val chartWindow = remember(snapshot, displayWindow) { chartWindowFor(snapshot, displayWindow) }
+        val cards = remember(snapshot) { buildOverviewCards(snapshot) }
+        OneUiChartCardGrid(
+          cards = cards.map { it.first },
+          chartWindow = chartWindow,
+          onCardClick = { index -> onOpenBlock(cards[index].second) }
+        )
+      }
+    }
+  }
+
+  data?.let { snapshot ->
+    item(key = "overview-more") {
+      Column(verticalArrangement = Arrangement.spacedBy(OneUiTheme.metrics.cardGap)) {
+        OneUiGroup {
+          OneUiListItem(
+            title = "流量日历",
+            subtitle = "按日 / 周 / 月查看接收、发送与明细记录",
+            onClick = { actions.onOpenTraffic(snapshot.device.deviceId) },
+            leading = { OneUiLeadingIcon(icon = Icons.Rounded.Timeline, contentDescription = null, tone = OneUiIconTone.Accent) },
+            trailing = { OneUiIcon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = OneUiTheme.colors.textTertiary) }
+          )
+        }
+        OneUiMetaTable(
+          title = "设备信息",
+          items = buildList {
+            add("设备 ID" to snapshot.device.deviceId)
+            add("处理器" to (snapshot.device.cpuModel ?: "未上报"))
+            add("系统" to snapshot.device.os)
+            add("平台" to "${snapshot.device.platform} / ${snapshot.device.arch}")
+            add("上次更新" to formatTime(snapshot.lastSeenAt))
+            add("agent" to (snapshot.device.agentVersion ?: "未知"))
+            snapshot.device.agentChannel?.takeIf { it.isNotBlank() }?.let { add("渠道" to it) }
+          },
+          selectable = true,
+          collapsible = true,
+          defaultExpanded = false
+        )
+      }
+    }
+  }
+}
+
+/** 这台设备的问题：最多列 3 条，点一条直达对应类别。 */
+@Composable
+private fun DeviceIssues(issues: List<AttentionItem>, onOpenBlock: (DeviceBlockKey) -> Unit) {
+  val colors = OneUiTheme.colors
+  val metrics = OneUiTheme.metrics
+  OneUiGroup {
+    issues.take(3).forEachIndexed { index, issue ->
+      if (index > 0) OneUiListDivider()
+      OneUiListItem(
+        title = issue.title,
+        subtitle = issue.detail,
+        onClick = issue.block?.let { block -> { onOpenBlock(block) } },
+        leading = {
+          OneUiLeadingIcon(
+            icon = Icons.Rounded.ReportProblem,
+            contentDescription = issue.severity.label,
+            tone = when (issue.severity) {
+              AttentionSeverity.Critical -> OneUiIconTone.Critical
+              AttentionSeverity.Warning -> OneUiIconTone.Warning
+              AttentionSeverity.Offline -> OneUiIconTone.Offline
+            }
+          )
+        },
+        trailing = if (issue.block != null) {
+          { OneUiIcon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary, size = metrics.iconFilledSize) }
+        } else null
+      )
+    }
+    if (issues.size > 3) {
+      OneUiListDivider()
+      OneUiText(
+        text = "另有 ${issues.size - 3} 项，完整清单见「关注」",
+        role = OneUiTextRole.ChartLabel,
+        color = colors.textTertiary,
+        modifier = Modifier.padding(horizontal = metrics.groupPadding, vertical = metrics.spaceS)
+      )
+    }
+  }
+}
+
+private val percentAxis: (Double) -> String = { "${it.toInt()}%" }
+
+private fun usageThresholds(warning: Double, critical: Double) = listOf(
+  ChartThreshold(warning, "${warning.toInt()}%", ChartThresholdTone.Warning),
+  ChartThreshold(critical, "${critical.toInt()}%", ChartThresholdTone.Critical)
+)
+
+private fun temperatureThresholds(warning: Double, critical: Double) = listOf(
+  ChartThreshold(warning, "${warning.toInt()} °C", ChartThresholdTone.Warning),
+  ChartThreshold(critical, "${critical.toInt()} °C", ChartThresholdTone.Critical)
+)
+
+private fun toneFor(value: Double?, warning: Double, critical: Double): OneUiPillTone = when {
+  value == null -> OneUiPillTone.Neutral
+  value >= critical -> OneUiPillTone.Critical
+  value >= warning -> OneUiPillTone.Warning
+  else -> OneUiPillTone.Neutral
+}
+
+/** 概览的核心图：CPU、内存、硬盘读写、网络收发，有显卡/温度时再加两张。 */
+internal fun buildOverviewCards(data: MetricsDto): List<Pair<ChartCardModel, DeviceBlockKey>> = buildList {
+  val series = data.series
+  val latest = data.latest
+  val cpuNow = com.dsc.android.seriesStats(series.cpuUsagePercent)?.latest
+  add(
+    ChartCardModel(
+      title = "CPU 占用",
+      series = listOf(ChartSeriesModel("CPU", series.cpuUsagePercent, 0)),
+      valueFormatter = ::formatPercent,
+      fixedMaxValue = 100.0,
+      thresholds = usageThresholds(AttentionThresholds.CPU_WARNING, AttentionThresholds.CPU_CRITICAL),
+      tone = toneFor(cpuNow, AttentionThresholds.CPU_WARNING, AttentionThresholds.CPU_CRITICAL),
+      note = listOfNotNull(
+        latest.cpuFrequencyMHz?.let { "频率 ${formatMHz(it)}" },
+        cpuLatestTemperature(data)?.let { "温度 ${formatCelsius(it)}" },
+        "进程 ${latest.system.processCount}"
+      ).joinToString(" · "),
+      axisFormatter = percentAxis
+    ) to DeviceBlockKey.Cpu
+  )
+  val memNow = com.dsc.android.seriesStats(series.memoryUsagePercent)?.latest
+  add(
+    ChartCardModel(
+      title = "内存占用",
+      series = buildList {
+        add(ChartSeriesModel("物理", series.memoryUsagePercent, 1))
+        if (latest.swapTotalBytes > 0 && series.swapUsagePercent.isNotEmpty()) add(ChartSeriesModel("Swap", series.swapUsagePercent, 3))
+      },
+      valueFormatter = ::formatPercent,
+      fixedMaxValue = 100.0,
+      headlineCaption = "当前 · ${buildUsage(latest.memoryUsedBytes, latest.memoryTotalBytes)}",
+      thresholds = usageThresholds(AttentionThresholds.MEMORY_WARNING, AttentionThresholds.MEMORY_CRITICAL),
+      tone = toneFor(memNow, AttentionThresholds.MEMORY_WARNING, AttentionThresholds.MEMORY_CRITICAL),
+      axisFormatter = percentAxis
+    ) to DeviceBlockKey.Memory
+  )
+  val writeNow = com.dsc.android.seriesStats(series.diskWriteBytesPerSec)?.latest
+  add(
+    ChartCardModel(
+      title = "硬盘读写",
+      series = listOf(
+        ChartSeriesModel("读取", series.diskReadBytesPerSec, 0),
+        ChartSeriesModel("写入", series.diskWriteBytesPerSec, 2)
+      ),
+      valueFormatter = ::formatSpeed,
+      headlineCaption = "当前读取 · 写入 ${formatSpeed(writeNow)}",
+      note = "容量 ${buildUsage(latest.diskUsedBytes, latest.diskTotalBytes)}"
+    ) to DeviceBlockKey.Disk
+  )
+  val txNow = com.dsc.android.seriesStats(series.networkTxBytesPerSec)?.latest
+  add(
+    ChartCardModel(
+      title = "网络",
+      series = listOf(
+        ChartSeriesModel("接收", series.networkRxBytesPerSec, 0),
+        ChartSeriesModel("发送", series.networkTxBytesPerSec, 2)
+      ),
+      valueFormatter = ::formatSpeed,
+      headlineCaption = "当前接收 · 发送 ${formatSpeed(txNow)}"
+    ) to DeviceBlockKey.Network
+  )
+  if (latest.gpus.isNotEmpty() || series.gpuUsagePercent.isNotEmpty()) {
+    add(
+      ChartCardModel(
+        title = "显卡",
+        series = buildList {
+          add(ChartSeriesModel("占用", series.gpuUsagePercent, 1))
+          if (series.gpuMemoryUsagePercent.isNotEmpty()) add(ChartSeriesModel("显存", series.gpuMemoryUsagePercent, 2))
+        },
+        valueFormatter = ::formatPercent,
+        fixedMaxValue = 100.0,
+        note = formatGpuMemorySummary(latest.gpus),
+        axisFormatter = percentAxis
+      ) to DeviceBlockKey.Gpu
+    )
+  }
+  val cpuTemp = cpuTemperaturePoints(data)
+  val gpuTemp = gpuTemperaturePoints(data)
+  if (cpuTemp.isNotEmpty() || gpuTemp.isNotEmpty()) {
+    add(
+      ChartCardModel(
+        title = "温度",
+        series = buildList {
+          if (cpuTemp.isNotEmpty()) add(ChartSeriesModel("CPU", cpuTemp, 3))
+          if (gpuTemp.isNotEmpty()) add(ChartSeriesModel("显卡", gpuTemp, 1))
+        },
+        valueFormatter = ::formatCelsius,
+        includeZero = false,
+        thresholds = temperatureThresholds(AttentionThresholds.CPU_TEMP_WARNING, AttentionThresholds.CPU_TEMP_CRITICAL),
+        tone = toneFor(cpuLatestTemperature(data), AttentionThresholds.CPU_TEMP_WARNING, AttentionThresholds.CPU_TEMP_CRITICAL),
+        note = "全部温度源见「硬件 › 温度」"
+      ) to DeviceBlockKey.Temperature
+    )
+  }
+}
+
+/* ---------------- 硬件 ---------------- */
+
+private fun LazyListScope.hardwareItems(
+  data: MetricsDto?,
+  state: AppState,
+  actions: GuanlanActions,
+  stale: Boolean,
+  displayWindow: MetricWindow,
   openBlock: DeviceBlockKey?,
   tabs: List<BlockSheetTabModel>,
   effectiveTab: String,
   onSelectTab: (String) -> Unit,
-  onToggleBlock: (DeviceBlockKey) -> Unit,
-  onOpenTraffic: () -> Unit,
-  onEditDeviceMetrics: () -> Unit,
-  onEditBlock: (DeviceBlockKey) -> Unit,
-  onEditInstance: (DeviceBlockKey, String) -> Unit,
-  onBlockPositioned: (DeviceBlockKey, Int) -> Unit
+  onOpenBlock: (DeviceBlockKey) -> Unit,
+  onCloseBlock: () -> Unit
 ) {
-  val colors = OneUiTheme.colors
-  val capsules = remember(data, selectedWindow) { buildOverviewCapsules(data, selectedWindow) }
-
-  Column(verticalArrangement = Arrangement.spacedBy(OneUiTheme.metrics.spaceM)) {
-    capsules.forEach { capsule ->
-      val isExpanded = openBlock == capsule.blockKey
-      OneUiExpandableGroup(
-        expanded = isExpanded,
-        modifier = Modifier.onGloballyPositioned { coordinates ->
-          onBlockPositioned(capsule.blockKey, coordinates.positionInRoot().y.roundToInt())
-        },
-        onToggle = { onToggleBlock(capsule.blockKey) },
-        title = capsule.title,
-        subtitle = capsule.subtitle,
-        leading = {
-          OneUiLeadingIcon(
-            icon = blockIcon(capsule.blockKey),
-            contentDescription = null,
-            tone = if (capsule.blockKey == DeviceBlockKey.Temperature) OneUiIconTone.Warning else OneUiIconTone.Neutral
-          )
-        },
-        supporting = {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(top = 8.dp)
-              .oneUiStaleDim()
-              .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-          ) {
-            capsule.metrics.forEach { (label, value) ->
-              OneUiPill(label = label, value = value)
-            }
+  if (loadingOrError(data, state, actions)) return
+  val snapshot = data ?: return
+  if (openBlock == null) {
+    item(key = "categories") {
+      val capsules = remember(snapshot, displayWindow) { buildOverviewCapsules(snapshot, displayWindow) }
+      OneUiStaleGroup(stale = stale) {
+        OneUiGroup {
+          capsules.forEachIndexed { index, capsule ->
+            if (index > 0) OneUiListDivider()
+            OneUiListItem(
+              title = capsule.title,
+              subtitle = capsule.metrics.joinToString(" · ") { (label, value) -> "$label $value" },
+              overline = capsule.subtitle,
+              onClick = { onOpenBlock(capsule.blockKey) },
+              leading = { OneUiLeadingIcon(icon = blockIcon(capsule.blockKey), contentDescription = null, tone = OneUiIconTone.Neutral) },
+              trailing = { OneUiIcon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = OneUiTheme.colors.textTertiary) }
+            )
           }
-        },
-        actions = if (isExpanded && capsule.blockKey != DeviceBlockKey.Fan) {
-          {
-            OneUiIconButton(
-              contentDescription = "编辑记录项",
-              onClick = { onEditBlock(capsule.blockKey) }
-            ) {
-              OneUiIcon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textPrimary)
-            }
-          }
-        } else null
-      ) {
-        BlockDetail(
-          data = data,
-          blockKey = capsule.blockKey,
-          tabs = tabs,
-          tabId = effectiveTab,
-          selectedWindow = selectedWindow,
-          onSelectTab = onSelectTab,
-          onEditInstance = { instanceId ->
-            onEditInstance(capsule.blockKey, instanceId)
-          }
-        )
+        }
       }
     }
-
-    OneUiGroup {
-      OneUiListItem(
-        title = "流量日历",
-        subtitle = "按日/周/月查看接收、发送与明细记录",
-        onClick = onOpenTraffic,
-        leading = {
-          OneUiLeadingIcon(icon = Icons.Rounded.Timeline, contentDescription = null, tone = OneUiIconTone.Accent)
-        },
-        trailing = {
-          OneUiText(text = "查看", role = OneUiTextRole.ChartLabel, color = colors.accent, weight = FontWeight.SemiBold)
-        }
-      )
-      OneUiListDivider()
-      OneUiListItem(
-        title = "编辑记录项",
-        subtitle = "选择这台设备要采集的指标与实例",
-        onClick = onEditDeviceMetrics,
-        leading = {
-          OneUiLeadingIcon(icon = Icons.Rounded.Tune, contentDescription = null, tone = OneUiIconTone.Neutral)
-        }
-      )
-    }
+    return
   }
-}
 
-/**
- * 展开/收起动画期间锁住目标类别的屏幕位置。
- *
- * 只在点击类别后的短窗口内补偿布局变化，不改变真实列表内容顺序；
- * 因此目标类别上方的旧面板收起时，目标标题也不会被一起推走（交）。
- */
-private suspend fun preserveBlockAnchor(
-  listState: androidx.compose.foundation.lazy.LazyListState,
-  positions: Map<DeviceBlockKey, Int>,
-  blockKey: DeviceBlockKey,
-  anchorY: Int,
-  durationMillis: Long
-) {
-  withTimeoutOrNull(durationMillis.coerceAtLeast(16L)) {
-    while (currentCoroutineContext().isActive) {
-      withFrameNanos { }
-      val currentY = positions[blockKey] ?: continue
-      val correction = currentY - anchorY
-      if (correction != 0) {
-        listState.scrollBy(correction.toFloat())
+  item(key = "block-header:${openBlock.name}") {
+    val colors = OneUiTheme.colors
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      OneUiIconButton(contentDescription = "返回全部类别", onClick = onCloseBlock) {
+        OneUiIcon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
+      }
+      Column(modifier = Modifier.weight(1f)) {
+        OneUiText(text = openBlock.label, role = OneUiTextRole.Title)
+        OneUiText(text = "读数为当前值；图下为所选时间范围内的均值与峰值", role = OneUiTextRole.ChartLabel, color = colors.textTertiary)
+      }
+      if (openBlock != DeviceBlockKey.Fan) {
+        OneUiIconButton(contentDescription = "编辑${openBlock.label}的记录项", onClick = { actions.onOpenBlockEditor(snapshot.device.deviceId, openBlock) }) {
+          OneUiIcon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textSecondary, size = OneUiTheme.metrics.iconFilledSize)
+        }
       }
     }
   }
-
-  val finalY = positions[blockKey] ?: return
-  val finalCorrection = finalY - anchorY
-  if (finalCorrection != 0) {
-    listState.scrollBy(finalCorrection.toFloat())
-  }
-}
-
-@Composable
-private fun WindowDock(selected: MetricWindow, loading: Boolean, onSelect: (MetricWindow) -> Unit) {
-  val colors = OneUiTheme.colors
-  val metrics = OneUiTheme.metrics
-  Column(
-    modifier = Modifier
-      .fillMaxWidth()
-      .oneUiSurface(
-        colors.raised,
-        OneUiTheme.shapes.dock,
-        colors = colors,
-        level = OneUiSurfaceLevel.Raised
+  item(key = "block-detail:${openBlock.name}") {
+    OneUiStaleGroup(stale = stale) {
+      BlockDetail(
+        data = snapshot,
+        blockKey = openBlock,
+        tabs = tabs,
+        tabId = effectiveTab,
+        selectedWindow = displayWindow,
+        onSelectTab = onSelectTab,
+        onEditInstance = { instanceId -> actions.onOpenInstanceEditor(snapshot.device.deviceId, openBlock, instanceId) }
       )
-      // 工具坞贴在屏幕下沿，必须自己让开手势条/三键栏（适）
-      .navigationBarsPadding()
-      .padding(horizontal = metrics.screenMargin, vertical = metrics.spaceS),
-    verticalArrangement = Arrangement.spacedBy(6.dp)
-  ) {
-    OneUiText(
-      text = "时间粒度",
-      role = OneUiTextRole.ChartLabel,
-      color = colors.textTertiary,
-      weight = FontWeight.SemiBold
-    )
-    OneUiWindowSelector(selected = selected, onSelect = onSelect, loading = loading)
+    }
   }
 }
 
@@ -563,43 +694,6 @@ private fun blockIcon(block: DeviceBlockKey) = when (block) {
   DeviceBlockKey.Fan -> Icons.Rounded.Air
 }
 
-/** 类别面板（件 + 动）：实例切换用胶囊行，图表与元信息按 One UI 的层级重排。 */
-@Composable
-private fun BlockSheet(
-  data: MetricsDto,
-  blockKey: DeviceBlockKey,
-  selectedWindow: MetricWindow,
-  tabs: List<BlockSheetTabModel>,
-  selectedTabId: String,
-  onSelectTab: (String) -> Unit,
-  onDismiss: () -> Unit,
-  onEditBlock: () -> Unit,
-  onEditInstance: (String) -> Unit
-) {
-  val colors = OneUiTheme.colors
-  val editAction: @Composable () -> Unit = {
-    OneUiIconButton(contentDescription = "编辑记录项", onClick = onEditBlock) {
-      OneUiIcon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textPrimary)
-    }
-  }
-
-  OneUiSheet(
-    onDismissRequest = onDismiss,
-    title = blockKey.label,
-    subtitle = if (selectedWindow == MetricWindow.OneMinute) "当前显示实时值" else "当前显示 ${selectedWindow.label} 区间平均值",
-    headerAction = if (blockKey == DeviceBlockKey.Fan) null else editAction
-  ) {
-    BlockDetail(
-      data = data,
-      blockKey = blockKey,
-      tabs = tabs,
-      tabId = selectedTabId,
-      selectedWindow = selectedWindow,
-      onSelectTab = onSelectTab,
-      onEditInstance = onEditInstance
-    )
-  }
-}
 
 /**
  * 类别明细本体（件）：实例胶囊行 + 图表与元信息。
@@ -692,34 +786,24 @@ private fun CpuTab(
 ) {
   val colors = OneUiTheme.colors
   if (tabId == "total") {
-    if (!isMetricAvailable(data, "cpuTemperature")) {
-      OneUiText(
-        text = "当前设备未提供 CPU 温度传感器。",
-        role = OneUiTextRole.RowSubtitle,
-        color = colors.textSecondary
-      )
-    }
-    OneUiMetricTileGrid(
-      cards = listOf(
-        MetricCardModel("CPU 占用", metricPoint(data.series.cpuUsagePercent, selectedWindow, ::formatPercent), data.series.cpuUsagePercent, ::formatPercent, 100.0),
-        MetricCardModel("CPU 频率", metricPoint(data.series.cpuFrequencyMHz, selectedWindow, ::formatMHz), data.series.cpuFrequencyMHz, ::formatMHz),
-        MetricCardModel(
-          "CPU 温度",
-          metricPoint(cpuTemperaturePoints(data), selectedWindow, ::formatCelsius, zeroMeansMissing = true),
-          cpuTemperaturePoints(data),
-          ::formatCelsius
-        )
-      ),
+    val temperature = cpuTemperaturePoints(data)
+    OneUiChartCardGrid(
+      cards = buildList {
+        add(cpuUsageCard("CPU 占用", data.series.cpuUsagePercent))
+        add(ChartCardModel(title = "CPU 频率", series = listOf(ChartSeriesModel("频率", data.series.cpuFrequencyMHz, 1)), valueFormatter = ::formatMHz, includeZero = false))
+        if (temperature.isNotEmpty()) add(cpuTemperatureCard("CPU 温度", temperature))
+      },
       chartWindow = chartWindow
     )
+    if (!isMetricAvailable(data, "cpuTemperature")) {
+      OneUiText(text = "当前设备未提供 CPU 温度传感器。", role = OneUiTextRole.RowSubtitle, color = colors.textSecondary)
+    }
     OneUiMetaTable(
       items = listOf(
         "处理器" to (data.device.cpuModel ?: "未知"),
         "包数量" to data.latest.cpuPackages.size.toString(),
         "L3 缓存" to formatOptionalBytes(data.latest.cpuPackages.mapNotNull { it.l3CacheBytes }.takeIf { it.isNotEmpty() }?.sum()),
-        "进程" to data.latest.system.processCount.toString(),
-        "线程" to data.latest.system.threadCount.toString(),
-        "句柄" to data.latest.system.handleCount.toString(),
+        "进程 / 线程 / 句柄" to "${data.latest.system.processCount} / ${data.latest.system.threadCount} / ${data.latest.system.handleCount}",
         "平台" to "${data.device.platform} / ${data.device.arch}"
       ),
       collapsible = true,
@@ -731,24 +815,15 @@ private fun CpuTab(
   val cpu = data.series.cpus.firstOrNull { it.id == tabId } ?: return
   InstanceGroup(
     title = cpu.name,
-    subtitle = listOfNotNull(
-      cpu.model,
-      cpu.coreCount?.let { "$it 核" },
-      cpu.logicalCount?.let { "$it 线程" }
-    ).joinToString(" · "),
+    subtitle = listOfNotNull(cpu.model, cpu.coreCount?.let { "$it 核" }, cpu.logicalCount?.let { "$it 线程" }).joinToString(" · "),
     onEdit = { onEditInstance(cpu.id) }
   ) {
-    OneUiMetricTileGrid(
-      cards = listOf(
-        MetricCardModel("占用", metricPoint(cpu.usagePercent, selectedWindow, ::formatPercent), cpu.usagePercent, ::formatPercent, 100.0),
-        MetricCardModel("频率", metricPoint(cpu.frequencyMHz, selectedWindow, ::formatMHz), cpu.frequencyMHz, ::formatMHz),
-        MetricCardModel(
-          "温度",
-          metricPoint(cpu.temperatureC, selectedWindow, ::formatCelsius, zeroMeansMissing = true),
-          cpu.temperatureC,
-          ::formatCelsius
-        )
-      ),
+    OneUiChartCardGrid(
+      cards = buildList {
+        add(cpuUsageCard("占用", cpu.usagePercent))
+        add(ChartCardModel(title = "频率", series = listOf(ChartSeriesModel("频率", cpu.frequencyMHz, 1)), valueFormatter = ::formatMHz, includeZero = false))
+        validTemperaturePoints(cpu.temperatureC).takeIf { it.isNotEmpty() }?.let { add(cpuTemperatureCard("温度", it)) }
+      },
       chartWindow = chartWindow
     )
     OneUiMetaTable(
@@ -763,37 +838,129 @@ private fun CpuTab(
   }
 }
 
+private fun cpuUsageCard(title: String, points: List<SamplePointDto>): ChartCardModel = ChartCardModel(
+  title = title,
+  series = listOf(ChartSeriesModel(title, points, 0)),
+  valueFormatter = ::formatPercent,
+  fixedMaxValue = 100.0,
+  thresholds = usageThresholds(AttentionThresholds.CPU_WARNING, AttentionThresholds.CPU_CRITICAL),
+  tone = toneFor(com.dsc.android.seriesStats(points)?.latest, AttentionThresholds.CPU_WARNING, AttentionThresholds.CPU_CRITICAL),
+  axisFormatter = percentAxis
+)
+
+private fun cpuTemperatureCard(title: String, points: List<SamplePointDto>): ChartCardModel = ChartCardModel(
+  title = title,
+  series = listOf(ChartSeriesModel(title, points, 3)),
+  valueFormatter = ::formatCelsius,
+  includeZero = false,
+  thresholds = temperatureThresholds(AttentionThresholds.CPU_TEMP_WARNING, AttentionThresholds.CPU_TEMP_CRITICAL),
+  tone = toneFor(com.dsc.android.seriesStats(points)?.latest, AttentionThresholds.CPU_TEMP_WARNING, AttentionThresholds.CPU_TEMP_CRITICAL)
+)
+
+/**
+ * 内存：旧版 11 张同质小图（物理/虚拟/可用/缓存/已提交/上限/已用/Swap/进程/线程/句柄）合并成三个问题——
+ * 占用多少（物理 + Swap 同图）、被谁占（已用 / 缓存 / 可用同图）、会不会提交满（已提交 vs 上限）。
+ */
 @Composable
 private fun MemoryTab(data: MetricsDto, selectedWindow: MetricWindow, chartWindow: ChartWindow) {
-  OneUiMetricTileGrid(
-    cards = listOf(
-      MetricCardModel("物理内存", buildUsage(data.latest.memoryUsedBytes, data.latest.memoryTotalBytes), data.series.memoryUsagePercent, ::formatPercent, 100.0),
-      MetricCardModel("虚拟内存", buildUsage(data.latest.swapUsedBytes, data.latest.swapTotalBytes), data.series.swapUsagePercent, ::formatPercent, 100.0),
-      MetricCardModel("可用内存", formatBytes(data.latest.memoryAvailableBytes.toDouble()), data.series.memoryAvailableBytes, { formatBytes(it ?: 0.0) }),
-      MetricCardModel("缓存内存", formatBytes(data.latest.memoryCachedBytes.toDouble()), data.series.memoryCachedBytes, { formatBytes(it ?: 0.0) }),
-      MetricCardModel("已提交", formatBytes(data.latest.memoryCommittedBytes.toDouble()), data.series.memoryCommittedBytes, { formatBytes(it ?: 0.0) }),
-      MetricCardModel("提交上限", formatOptionalBytes(data.latest.memoryCommitLimitBytes), data.series.memoryCommitLimitBytes, ::formatOptionalBytes),
-      MetricCardModel("已用字节", formatBytes(data.latest.memoryUsedBytes.toDouble()), data.series.memoryUsedBytes, { formatBytes(it ?: 0.0) }),
-      MetricCardModel("Swap 已用", formatBytes(data.latest.swapUsedBytes.toDouble()), data.series.swapUsedBytes, { formatBytes(it ?: 0.0) }),
-      MetricCardModel("进程数", data.latest.system.processCount.toString(), data.series.systemProcessCount, { it?.toInt()?.toString() ?: "--" }),
-      MetricCardModel("线程数", data.latest.system.threadCount.toString(), data.series.systemThreadCount, { it?.toInt()?.toString() ?: "--" }),
-      MetricCardModel("句柄数", data.latest.system.handleCount.toString(), data.series.systemHandleCount, { it?.toInt()?.toString() ?: "--" })
-    ),
+  val latest = data.latest
+  val series = data.series
+  val bytes: (Double?) -> String = { formatBytes(it ?: 0.0) }
+  val memNow = com.dsc.android.seriesStats(series.memoryUsagePercent)?.latest
+  OneUiChartCardGrid(
+    cards = buildList {
+      add(
+        ChartCardModel(
+          title = "占用率",
+          series = buildList {
+            add(ChartSeriesModel("物理", series.memoryUsagePercent, 1))
+            if (latest.swapTotalBytes > 0) add(ChartSeriesModel("Swap", series.swapUsagePercent, 3))
+          },
+          valueFormatter = ::formatPercent,
+          fixedMaxValue = 100.0,
+          headlineCaption = "当前 · ${buildUsage(latest.memoryUsedBytes, latest.memoryTotalBytes)}",
+          thresholds = usageThresholds(AttentionThresholds.MEMORY_WARNING, AttentionThresholds.MEMORY_CRITICAL),
+          tone = toneFor(memNow, AttentionThresholds.MEMORY_WARNING, AttentionThresholds.MEMORY_CRITICAL),
+          axisFormatter = percentAxis,
+          note = if (latest.swapTotalBytes > 0) "Swap ${buildUsage(latest.swapUsedBytes, latest.swapTotalBytes)}" else "未配置 Swap"
+        )
+      )
+      if (series.memoryAvailableBytes.isNotEmpty() || series.memoryCachedBytes.isNotEmpty()) {
+        add(
+          ChartCardModel(
+            title = "构成",
+            series = listOf(
+              ChartSeriesModel("已用", series.memoryUsedBytes, 1),
+              ChartSeriesModel("缓存", series.memoryCachedBytes, 2),
+              ChartSeriesModel("可用", series.memoryAvailableBytes, 5)
+            ),
+            valueFormatter = bytes,
+            headline = formatBytes(latest.memoryAvailableBytes.toDouble()),
+            headlineCaption = "当前可用",
+            fixedMaxValue = latest.memoryTotalBytes.takeIf { it > 0 }?.toDouble()
+          )
+        )
+      }
+      if (series.memoryCommittedBytes.isNotEmpty() && latest.memoryCommitLimitBytes > 0) {
+        val limit = latest.memoryCommitLimitBytes.toDouble()
+        add(
+          ChartCardModel(
+            title = "已提交",
+            series = listOf(ChartSeriesModel("已提交", series.memoryCommittedBytes, 0)),
+            valueFormatter = bytes,
+            headlineCaption = "当前 · 上限 ${formatBytes(limit)}",
+            thresholds = listOf(ChartThreshold(limit, "上限", ChartThresholdTone.Critical)),
+            note = "提交量逼近上限时新的内存申请会失败"
+          )
+        )
+      }
+      if (series.systemProcessCount.isNotEmpty()) {
+        add(
+          ChartCardModel(
+            title = "进程数",
+            series = listOf(ChartSeriesModel("进程", series.systemProcessCount, 4)),
+            valueFormatter = { it?.toInt()?.toString() ?: "--" },
+            includeZero = false,
+            note = "线程 ${latest.system.threadCount} · 句柄 ${latest.system.handleCount}"
+          )
+        )
+      }
+    },
     chartWindow = chartWindow
   )
   OneUiMetaTable(
     items = listOf(
-      "物理内存" to buildUsage(data.latest.memoryUsedBytes, data.latest.memoryTotalBytes),
-      "虚拟内存" to buildUsage(data.latest.swapUsedBytes, data.latest.swapTotalBytes),
-      "提交上限" to formatOptionalBytes(data.latest.memoryCommitLimitBytes),
-      "频率" to (data.latest.memorySpeedMHz?.let { formatMHz(it) } ?: "未知"),
-      "插槽" to (data.latest.memorySlotCount?.toString() ?: "未知"),
-      "形态" to (data.latest.memoryFormFactor ?: "未知")
+      "物理内存" to buildUsage(latest.memoryUsedBytes, latest.memoryTotalBytes),
+      "可用" to formatBytes(latest.memoryAvailableBytes.toDouble()),
+      "缓存" to formatBytes(latest.memoryCachedBytes.toDouble()),
+      "Swap" to buildUsage(latest.swapUsedBytes, latest.swapTotalBytes),
+      "已提交 / 上限" to "${formatBytes(latest.memoryCommittedBytes.toDouble())} / ${formatOptionalBytes(latest.memoryCommitLimitBytes)}",
+      "频率" to (latest.memorySpeedMHz?.let { formatMHz(it) } ?: "未知"),
+      "插槽" to (latest.memorySlotCount?.toString() ?: "未知"),
+      "形态" to (latest.memoryFormFactor ?: "未知")
     ),
     collapsible = true,
     defaultExpanded = false
   )
 }
+
+private fun ioCard(title: String, read: List<SamplePointDto>, write: List<SamplePointDto>): ChartCardModel = ChartCardModel(
+  title = title,
+  series = listOf(ChartSeriesModel("读取", read, 0), ChartSeriesModel("写入", write, 2)),
+  valueFormatter = ::formatSpeed,
+  headlineCaption = "当前读取 · 写入 ${formatSpeed(com.dsc.android.seriesStats(write)?.latest)}"
+)
+
+private fun capacityCard(title: String, points: List<SamplePointDto>, usage: String): ChartCardModel = ChartCardModel(
+  title = title,
+  series = listOf(ChartSeriesModel("占用", points, 2)),
+  valueFormatter = ::formatPercent,
+  fixedMaxValue = 100.0,
+  headlineCaption = "当前 · $usage",
+  thresholds = usageThresholds(AttentionThresholds.DISK_WARNING, AttentionThresholds.DISK_CRITICAL),
+  tone = toneFor(com.dsc.android.seriesStats(points)?.latest, AttentionThresholds.DISK_WARNING, AttentionThresholds.DISK_CRITICAL),
+  axisFormatter = percentAxis
+)
 
 @Composable
 private fun DiskTab(
@@ -804,15 +971,22 @@ private fun DiskTab(
   onEditInstance: (String) -> Unit
 ) {
   if (tabId == "total") {
-    OneUiMetricTileGrid(
+    OneUiChartCardGrid(
       cards = listOf(
-        MetricCardModel("总占用", buildUsage(data.latest.diskUsedBytes, data.latest.diskTotalBytes), data.series.diskUsagePercent, ::formatPercent, 100.0),
-        MetricCardModel("总读取", metricPoint(data.series.diskReadBytesPerSec, selectedWindow, ::formatSpeed), data.series.diskReadBytesPerSec, ::formatSpeed),
-        MetricCardModel("总写入", metricPoint(data.series.diskWriteBytesPerSec, selectedWindow, ::formatSpeed), data.series.diskWriteBytesPerSec, ::formatSpeed)
+        capacityCard("总占用", data.series.diskUsagePercent, buildUsage(data.latest.diskUsedBytes, data.latest.diskTotalBytes)),
+        ioCard("总读写", data.series.diskReadBytesPerSec, data.series.diskWriteBytesPerSec)
       ),
       chartWindow = chartWindow
     )
-    OneUiMetaTable(items = listOf("总容量" to buildUsage(data.latest.diskUsedBytes, data.latest.diskTotalBytes)))
+    if (data.latest.disks.isNotEmpty()) {
+      OneUiMetaTable(
+        title = "各分区",
+        items = data.latest.disks.map { disk ->
+          val percent = if (disk.totalBytes > 0) disk.usedBytes.toDouble() / disk.totalBytes * 100 else null
+          "${disk.name} ${disk.mountPoint}".trim() to "${formatPercent(percent)} · ${buildUsage(disk.usedBytes, disk.totalBytes)}"
+        }
+      )
+    }
     return
   }
 
@@ -846,13 +1020,23 @@ private fun DiskTab(
 @Composable
 private fun DiskTiles(disk: DiskDto, series: DiskMetricSeriesDto?, chartWindow: ChartWindow) {
   val temperaturePoints = series?.temperatureC.orEmpty().filter { validDiskTemperature(it.value) != null }
-  OneUiMetricTileGrid(
-    cards = listOf(
-      MetricCardModel("容量", buildUsage(disk.usedBytes, disk.totalBytes), series?.usagePercent.orEmpty(), ::formatPercent, 100.0),
-      MetricCardModel("读取", formatSpeed(series?.readBytesPerSec?.lastOrNull()?.value), series?.readBytesPerSec.orEmpty(), ::formatSpeed),
-      MetricCardModel("写入", formatSpeed(series?.writeBytesPerSec?.lastOrNull()?.value), series?.writeBytesPerSec.orEmpty(), ::formatSpeed),
-      MetricCardModel("温度", formatCelsius(validDiskTemperature(disk.temperatureC)), temperaturePoints, ::formatCelsius)
-    ),
+  OneUiChartCardGrid(
+    cards = buildList {
+      add(capacityCard("容量", series?.usagePercent.orEmpty(), buildUsage(disk.usedBytes, disk.totalBytes)))
+      add(ioCard("读写", series?.readBytesPerSec.orEmpty(), series?.writeBytesPerSec.orEmpty()))
+      if (temperaturePoints.isNotEmpty()) {
+        add(
+          ChartCardModel(
+            title = "温度",
+            series = listOf(ChartSeriesModel("温度", temperaturePoints, 3)),
+            valueFormatter = ::formatCelsius,
+            includeZero = false,
+            thresholds = temperatureThresholds(AttentionThresholds.DISK_TEMP_WARNING, AttentionThresholds.DISK_TEMP_CRITICAL),
+            tone = toneFor(validDiskTemperature(disk.temperatureC), AttentionThresholds.DISK_TEMP_WARNING, AttentionThresholds.DISK_TEMP_CRITICAL)
+          )
+        )
+      }
+    },
     chartWindow = chartWindow
   )
 }
@@ -965,22 +1149,20 @@ private fun NetworkTab(
   chartWindow: ChartWindow,
   onEditInstance: (String) -> Unit
 ) {
+  val bytes: (Double?) -> String = { formatBytes(it ?: 0.0) }
   if (tabId == "total") {
-    OneUiMetricTileGrid(
+    OneUiChartCardGrid(
       cards = listOf(
-        MetricCardModel("总接收", metricPoint(data.series.networkRxBytesPerSec, selectedWindow, ::formatSpeed), data.series.networkRxBytesPerSec, ::formatSpeed),
-        MetricCardModel("总发送", metricPoint(data.series.networkTxBytesPerSec, selectedWindow, ::formatSpeed), data.series.networkTxBytesPerSec, ::formatSpeed),
-        MetricCardModel(
-          "累计接收",
-          formatBytes(data.series.trafficRxBytes.lastOrNull()?.value ?: 0.0),
-          data.series.trafficRxBytes,
-          { formatBytes(it ?: 0.0) }
-        ),
-        MetricCardModel(
-          "累计发送",
-          formatBytes(data.series.trafficTxBytes.lastOrNull()?.value ?: 0.0),
-          data.series.trafficTxBytes,
-          { formatBytes(it ?: 0.0) }
+        rateCard("速率", data.series.networkRxBytesPerSec, data.series.networkTxBytesPerSec),
+        ChartCardModel(
+          title = "累计流量",
+          series = listOf(
+            ChartSeriesModel("接收", data.series.trafficRxBytes, 0),
+            ChartSeriesModel("发送", data.series.trafficTxBytes, 2)
+          ),
+          valueFormatter = bytes,
+          headlineCaption = "累计接收 · 发送 ${bytes(data.series.trafficTxBytes.lastOrNull()?.value)}",
+          includeZero = false
         )
       ),
       chartWindow = chartWindow
@@ -995,12 +1177,20 @@ private fun NetworkTab(
     subtitle = listOfNotNull(nic.ipv4.firstOrNull(), nic.macAddress?.takeIf { it.isNotBlank() }).joinToString(" · "),
     onEdit = { onEditInstance(nic.id) }
   ) {
-    OneUiMetricTileGrid(
+    OneUiChartCardGrid(
       cards = listOf(
-        MetricCardModel("接收速率", formatSpeed(nic.rxBytesPerSec), series?.rxBytesPerSec.orEmpty(), ::formatSpeed),
-        MetricCardModel("发送速率", formatSpeed(nic.txBytesPerSec), series?.txBytesPerSec.orEmpty(), ::formatSpeed),
-        MetricCardModel("累计接收", formatBytes(nic.totalRxBytes?.toDouble() ?: 0.0), series?.trafficRxBytes.orEmpty(), { formatBytes(it ?: 0.0) }),
-        MetricCardModel("累计发送", formatBytes(nic.totalTxBytes?.toDouble() ?: 0.0), series?.trafficTxBytes.orEmpty(), { formatBytes(it ?: 0.0) })
+        rateCard("速率", series?.rxBytesPerSec.orEmpty(), series?.txBytesPerSec.orEmpty(), nic.linkSpeedMbps),
+        ChartCardModel(
+          title = "累计流量",
+          series = listOf(
+            ChartSeriesModel("接收", series?.trafficRxBytes.orEmpty(), 0),
+            ChartSeriesModel("发送", series?.trafficTxBytes.orEmpty(), 2)
+          ),
+          valueFormatter = bytes,
+          headline = formatBytes(nic.totalRxBytes?.toDouble() ?: 0.0),
+          headlineCaption = "累计接收 · 发送 ${formatBytes(nic.totalTxBytes?.toDouble() ?: 0.0)}",
+          includeZero = false
+        )
       ),
       chartWindow = chartWindow
     )
@@ -1010,13 +1200,20 @@ private fun NetworkTab(
         "IPv6" to nic.ipv6.joinToString(", ").ifBlank { "未知" },
         "链路" to (nic.linkSpeedMbps?.let { String.format("%.0f Mbps", it) } ?: "未知"),
         "连接" to (nic.connectionType ?: "未知"),
-        "信号" to (nic.signalStrengthPercent?.let { formatPercent(it) } ?: "未知"),
-        "累计接收" to formatBytes((nic.totalRxBytes ?: 0L).toDouble()),
-        "累计发送" to formatBytes((nic.totalTxBytes ?: 0L).toDouble())
+        "信号" to (nic.signalStrengthPercent?.let { formatPercent(it) } ?: "未知")
       )
     )
   }
 }
+
+/** 收发同图；已知链路速率时注明占满带宽是多少，读者才知道 80 MB/s 算不算快。 */
+private fun rateCard(title: String, rx: List<SamplePointDto>, tx: List<SamplePointDto>, linkMbps: Double? = null): ChartCardModel = ChartCardModel(
+  title = title,
+  series = listOf(ChartSeriesModel("接收", rx, 0), ChartSeriesModel("发送", tx, 2)),
+  valueFormatter = ::formatSpeed,
+  headlineCaption = "当前接收 · 发送 ${formatSpeed(com.dsc.android.seriesStats(tx)?.latest)}",
+  note = linkMbps?.takeIf { it > 0 }?.let { "链路 ${String.format("%.0f", it)} Mbps，满速约 ${formatSpeed(it * 1_000_000 / 8)}" }
+)
 
 @Composable
 private fun GpuTab(
@@ -1028,25 +1225,31 @@ private fun GpuTab(
 ) {
   if (tabId == "total") {
     val temperaturePoints = gpuTemperaturePoints(data)
-    OneUiMetricTileGrid(
-      cards = listOf(
-        MetricCardModel("总占用", metricPoint(data.series.gpuUsagePercent, selectedWindow, ::formatPercent), data.series.gpuUsagePercent, ::formatPercent, 100.0),
-        MetricCardModel("总 GPU 内存", formatGpuMemorySummary(data.latest.gpus), data.series.gpuMemoryUsagePercent, ::formatPercent, 100.0),
-        MetricCardModel("总温度", metricPoint(temperaturePoints, selectedWindow, ::formatCelsius), temperaturePoints, ::formatCelsius)
-      ),
+    OneUiChartCardGrid(
+      cards = buildList {
+        add(
+          ChartCardModel(
+            title = "占用与显存",
+            series = listOf(
+              ChartSeriesModel("占用", data.series.gpuUsagePercent, 1),
+              ChartSeriesModel("显存", data.series.gpuMemoryUsagePercent, 2)
+            ),
+            valueFormatter = ::formatPercent,
+            fixedMaxValue = 100.0,
+            note = formatGpuMemorySummary(data.latest.gpus),
+            axisFormatter = percentAxis
+          )
+        )
+        if (temperaturePoints.isNotEmpty()) add(gpuTemperatureCard("温度", temperaturePoints))
+      },
       chartWindow = chartWindow
     )
-    OneUiMetaTable(items = listOf("总 GPU 内存" to formatGpuMemorySummary(data.latest.gpus)))
     return
   }
 
   val gpu = data.latest.gpus.firstOrNull { it.id == tabId } ?: return
   val series = data.series.gpus.firstOrNull { it.id == tabId }
-  InstanceGroup(
-    title = gpu.name,
-    subtitle = gpu.id,
-    onEdit = { onEditInstance(gpu.id) }
-  ) {
+  InstanceGroup(title = gpu.name, subtitle = if (gpu.integrated) "集成显卡" else "独立显卡", onEdit = { onEditInstance(gpu.id) }) {
     GpuTiles(gpu, series, chartWindow, selectedWindow)
     OneUiMetaTable(
       items = listOfNotNull(
@@ -1054,11 +1257,23 @@ private fun GpuTab(
         "类型" to if (gpu.integrated) "集成显卡" else "独立显卡",
         "显存类型" to gpuMemoryLabel(gpu.memoryKind ?: series?.memoryKind),
         "温度源" to gpuTemperatureSourceLabel(gpu.temperatureSource ?: series?.temperatureSource),
-        gpuMemoryLabel(gpu.memoryKind) to buildGpuUsage(gpu.memoryUsedBytes, gpu.memoryTotalBytes)
-      )
+        gpuMemoryLabel(gpu.memoryKind) to buildGpuUsage(gpu.memoryUsedBytes, gpu.memoryTotalBytes),
+        "设备 ID" to gpu.id
+      ),
+      collapsible = true,
+      defaultExpanded = false
     )
   }
 }
+
+private fun gpuTemperatureCard(title: String, points: List<SamplePointDto>): ChartCardModel = ChartCardModel(
+  title = title,
+  series = listOf(ChartSeriesModel(title, points, 3)),
+  valueFormatter = ::formatCelsius,
+  includeZero = false,
+  thresholds = temperatureThresholds(AttentionThresholds.GPU_TEMP_WARNING, AttentionThresholds.GPU_TEMP_CRITICAL),
+  tone = toneFor(com.dsc.android.seriesStats(points)?.latest, AttentionThresholds.GPU_TEMP_WARNING, AttentionThresholds.GPU_TEMP_CRITICAL)
+)
 
 @Composable
 private fun GpuTiles(
@@ -1067,32 +1282,42 @@ private fun GpuTiles(
   chartWindow: ChartWindow,
   selectedWindow: MetricWindow
 ) {
-  OneUiMetricTileGrid(
-    cards = listOf(
-      MetricCardModel("占用", formatPercent(gpu.utilizationPercent), series?.usagePercent.orEmpty(), ::formatPercent, 100.0),
-      MetricCardModel("编码", formatPercent(gpu.encodeUtilizationPercent), series?.encodePercent.orEmpty(), ::formatPercent, 100.0),
-      MetricCardModel("解码", formatPercent(gpu.decodeUtilizationPercent), series?.decodePercent.orEmpty(), ::formatPercent, 100.0),
-      MetricCardModel("频率", formatMHz(gpu.frequencyMHz), series?.frequencyMHz.orEmpty(), ::formatMHz),
-      MetricCardModel(
-        gpuMemoryLabel(gpu.memoryKind),
-        buildGpuUsage(gpu.memoryUsedBytes, gpu.memoryTotalBytes),
-        series?.memoryUsagePercent.orEmpty(),
-        ::formatPercent,
-        100.0
-      ),
-      MetricCardModel(
-        "${gpuMemoryLabel(gpu.memoryKind)}已用",
-        formatBytes(gpu.memoryUsedBytes.toDouble()),
-        series?.memoryUsedBytes.orEmpty(),
-        { formatBytes(it ?: 0.0) }
-      ),
-      MetricCardModel(
-        if ((gpu.temperatureSource ?: series?.temperatureSource) == "cpuPackageShared") "温度（随 CPU）" else "温度",
-        formatCelsius(gpu.temperatureC),
-        series?.temperatureC.orEmpty(),
-        ::formatCelsius
+  val memoryLabel = gpuMemoryLabel(gpu.memoryKind)
+  OneUiChartCardGrid(
+    cards = buildList {
+      add(
+        ChartCardModel(
+          title = "引擎占用",
+          series = buildList {
+            add(ChartSeriesModel("3D/计算", series?.usagePercent.orEmpty(), 1))
+            if (series?.encodePercent?.isNotEmpty() == true) add(ChartSeriesModel("编码", series.encodePercent, 0))
+            if (series?.decodePercent?.isNotEmpty() == true) add(ChartSeriesModel("解码", series.decodePercent, 2))
+          },
+          valueFormatter = ::formatPercent,
+          fixedMaxValue = 100.0,
+          headline = formatPercent(gpu.utilizationPercent),
+          axisFormatter = percentAxis
+        )
       )
-    ),
+      add(
+        ChartCardModel(
+          title = memoryLabel,
+          series = listOf(ChartSeriesModel(memoryLabel, series?.memoryUsagePercent.orEmpty(), 2)),
+          valueFormatter = ::formatPercent,
+          fixedMaxValue = 100.0,
+          headlineCaption = "当前 · ${buildGpuUsage(gpu.memoryUsedBytes, gpu.memoryTotalBytes)}",
+          thresholds = listOf(ChartThreshold(AttentionThresholds.GPU_MEMORY_WARNING, "${AttentionThresholds.GPU_MEMORY_WARNING.toInt()}%", ChartThresholdTone.Warning)),
+          axisFormatter = percentAxis
+        )
+      )
+      if (series?.frequencyMHz?.isNotEmpty() == true) {
+        add(ChartCardModel(title = "频率", series = listOf(ChartSeriesModel("频率", series.frequencyMHz, 4)), valueFormatter = ::formatMHz, includeZero = false))
+      }
+      val temperature = validTemperaturePoints(series?.temperatureC.orEmpty())
+      if (temperature.isNotEmpty()) {
+        add(gpuTemperatureCard(if ((gpu.temperatureSource ?: series?.temperatureSource) == "cpuPackageShared") "温度（随 CPU）" else "温度", temperature))
+      }
+    },
     chartWindow = chartWindow
   )
 }
