@@ -86,6 +86,22 @@ interface DeviceStateApi {
   @GET("/api/devices/{deviceId}/metric-config")
   suspend fun metricConfig(@Path("deviceId") deviceId: String): DeviceMetricConfigDto
 
+  @GET("/api/devices/{deviceId}/live")
+  suspend fun liveConnection(@Path("deviceId") deviceId: String): LiveConnectionDto
+
+  @GET("/api/devices/{deviceId}/live/metrics")
+  suspend fun liveMetrics(@Path("deviceId") deviceId: String): LiveSnapshotDto<LiveMetricsDto>
+
+  @GET("/api/devices/{deviceId}/live/processes")
+  suspend fun liveProcesses(@Path("deviceId") deviceId: String): LiveSnapshotDto<LiveProcessesDto>
+
+  @GET("/api/devices/{deviceId}/live/docker")
+  suspend fun liveDocker(@Path("deviceId") deviceId: String): LiveSnapshotDto<LiveDockerDto>
+
+  /** 与删除设备同权限：丢弃该设备的实时登记，让重装后的 Agent 能重新登记。 */
+  @POST("/api/devices/{deviceId}/live/reset")
+  suspend fun resetLiveCredentials(@Path("deviceId") deviceId: String): LoginResponseDto
+
   @retrofit2.http.PUT("/api/devices/{deviceId}/metric-config")
   suspend fun saveMetricConfig(
     @Path("deviceId") deviceId: String,

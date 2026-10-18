@@ -545,7 +545,10 @@ enum class AppScreen {
   Traffic,
 
   /** One UI 重构新增的一级目的地：登出、外观、版本与更新从设备列表顶栏迁出。 */
-  Settings
+  Settings,
+
+  /** 一级目的地：所有设备「需要关注」的问题按严重程度汇总。 */
+  Attention
 }
 
 enum class RemoteDataSource {
@@ -578,7 +581,15 @@ data class AppState(
   val selectedDeviceId: String? = null,
   val focusedBlock: DeviceBlockKey? = null,
   val selectedWindow: MetricWindow = MetricWindow.FiveMinutes,
+  /** 首页趋势小图的时间范围：与设备页粒度分开，首页看大势、设备页看细节。 */
+  val overviewWindow: MetricWindow = MetricWindow.OneHour,
   val metrics: MetricsDto? = null,
+  /**
+   * 关注规则用的各设备指标快照（温度、硬盘健康、存储池只在指标里有）。
+   * 每分钟后台拉一次，也复用打开设备页时读到的快照。
+   */
+  val attentionMetrics: Map<String, MetricsDto> = emptyMap(),
+  val attentionCheckedAt: String? = null,
   val overviewMetrics: OverviewMetricsDto? = null,
   val trafficCalendar: TrafficCalendarDto? = null,
   val trafficMode: TrafficCalendarMode = TrafficCalendarMode.Day,
@@ -601,5 +612,132 @@ data class AppState(
    */
   val screenBackStack: List<AppScreen> = emptyList(),
   val transitionDirection: ScreenTransitionDirection = ScreenTransitionDirection.None,
+  /** 当前可见的实时视图（进程 / 容器 / 实时曲线）；离开页面即清空，不在后台轮询。 */
+  val live: LiveUiState? = null,
   val message: String? = null
+)
+
+/* ---------- 实时查询（只读、临时，不进历史时间序列；与 packages/shared/src/live.ts 对齐） ---------- */
+
+enum class LiveTopic(val value: String) {
+  Metrics("metrics"),
+  Processes("processes"),
+  Docker("docker")
+}
+
+@Serializable
+data class LiveConnectionDto(
+  val state: String = "disconnected",
+  val sessionId: String? = null,
+  val capabilities: List<String> = emptyList(),
+  val connectedAt: String? = null,
+  val identityConflictAt: String? = null
+)
+
+@Serializable
+data class LiveMetricsDto(
+  val observedAt: String,
+  val cpuPercent: Double? = null,
+  val memoryUsedBytes: Double? = null,
+  val memoryTotalBytes: Double? = null,
+  val diskReadBytesPerSec: Double? = null,
+  val diskWriteBytesPerSec: Double? = null,
+  val networkRxBytesPerSec: Double? = null,
+  val networkTxBytesPerSec: Double? = null
+)
+
+@Serializable
+data class LiveProcessDto(
+  val id: String,
+  val pid: Long,
+  val parentPid: Long? = null,
+  val name: String,
+  val startedAt: String? = null,
+  /** 按整机逻辑 CPU 总量归一化，满载为 100%，不是 top 的单核刻度。 */
+  val cpuPercent: Double? = null,
+  /** 该进程最繁忙的 GPU 引擎占用；平台读不到时为 null，不等于空闲。 */
+  val gpuPercent: Double? = null,
+  val memoryBytes: Double? = null,
+  val threads: Int? = null,
+  val status: String? = null
+)
+
+@Serializable
+data class LiveProcessesDto(
+  val observedAt: String,
+  val cpuScale: String = "host",
+  val memoryKind: String = "rss",
+  val totalCount: Int = 0,
+  val truncated: Boolean = false,
+  val items: List<LiveProcessDto> = emptyList()
+)
+
+@Serializable
+data class LiveContainerDto(
+  val id: String,
+  val name: String,
+  val image: String = "",
+  val state: String = "",
+  val status: String = "",
+  val project: String? = null,
+  val cpuPercent: Double? = null,
+  val memoryBytes: Double? = null,
+  val memoryLimitBytes: Double? = null,
+  val networkRxBytes: Double? = null,
+  val networkTxBytes: Double? = null,
+  val blockReadBytes: Double? = null,
+  val blockWriteBytes: Double? = null
+)
+
+@Serializable
+data class LiveDockerDto(
+  val observedAt: String,
+  val engineId: String = "",
+  val totalCount: Int = 0,
+  val truncated: Boolean = false,
+  val items: List<LiveContainerDto> = emptyList(),
+  val statsCandidates: Int? = null,
+  val statsRead: Int? = null
+)
+
+@Serializable
+data class LiveSnapshotDto<T>(
+  val deviceId: String,
+  val sessionId: String,
+  val requestId: String = "",
+  val topic: String,
+  val receivedAt: String,
+  val data: T
+)
+
+data class LiveSample(val atMillis: Long, val data: LiveMetricsDto)
+
+data class LiveFailure(val code: String?, val title: String, val detail: String, val transient: Boolean)
+
+enum class LiveResetState { Idle, Pending, Done, Failed }
+
+/** 一个设备、一个主题的实时视图状态；只在对应页面可见时存在。 */
+data class LiveUiState(
+  val deviceId: String,
+  val topic: LiveTopic,
+  val intervalSeconds: Int,
+  val paused: Boolean = false,
+  val sessionId: String? = null,
+  val receivedAt: String? = null,
+  val lastConfirmedMillis: Long = 0L,
+  val metrics: LiveMetricsDto? = null,
+  val samples: List<LiveSample> = emptyList(),
+  val processes: LiveProcessesDto? = null,
+  val docker: LiveDockerDto? = null,
+  val dockerRates: Map<String, ContainerRates> = emptyMap(),
+  val failure: LiveFailure? = null,
+  val conflictAt: String? = null,
+  val resetState: LiveResetState = LiveResetState.Idle
+)
+
+data class ContainerRates(
+  val networkRx: Double? = null,
+  val networkTx: Double? = null,
+  val blockRead: Double? = null,
+  val blockWrite: Double? = null
 )

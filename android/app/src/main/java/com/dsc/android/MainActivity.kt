@@ -43,6 +43,8 @@ class MainActivity : ComponentActivity() {
           onOpenDeviceEditor = appViewModel::openDeviceEditor,
           onShowDeviceList = appViewModel::showDeviceList,
           onShowSettings = appViewModel::showSettings,
+          onShowAttention = appViewModel::showAttention,
+          onSelectOverviewWindow = appViewModel::selectOverviewWindow,
           onSelectWindow = appViewModel::selectWindow,
           onSelectTrafficMode = appViewModel::selectTrafficMode,
           onSelectTrafficCell = appViewModel::selectTrafficCell,
@@ -60,7 +62,12 @@ class MainActivity : ComponentActivity() {
           onDownloadUpdate = appViewModel::downloadUpdate,
           onLaunchUpdateInstaller = ::launchUpdateInstaller,
           onUpdateInstallerLaunched = appViewModel::clearUpdateInstallerUri,
-          onConsumeMessage = appViewModel::clearMessage
+          onConsumeMessage = appViewModel::clearMessage,
+          onStartLive = appViewModel::startLive,
+          onStopLive = appViewModel::stopLive,
+          onSetLivePaused = appViewModel::setLivePaused,
+          onSetLiveInterval = appViewModel::setLiveInterval,
+          onResetLiveCredentials = appViewModel::resetLiveCredentials
         )
       )
     }
