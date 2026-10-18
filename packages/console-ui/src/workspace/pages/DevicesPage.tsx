@@ -8,6 +8,8 @@ import { DeviceTable, ConfirmDialog, DeviceDirectoryFilterBar, EmptyState, Error
 
 export function DevicesPage() {
   const { snapshot, allDevices, loading, error, refresh, deleteInstance, reorderInstances, mutationPending, openSettings } = useWorkspace();
+  const overviewInstances = snapshot?.overviewMetrics?.instances;
+  const cpuTrends = useMemo(() => new Map((overviewInstances ?? []).map((instance) => [instance.deviceId, instance.cpuUsagePercent])), [overviewInstances]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<DeviceDirectoryStatus>("all");
   const [sort, setSort] = useState<DeviceDirectorySort>("order");
@@ -137,6 +139,7 @@ export function DevicesPage() {
           onMove={moveInstance}
           onDelete={setDeleteTarget}
           emptyState={emptyDirectory}
+          cpuTrends={cpuTrends}
         />
       </div>
     </Surface>

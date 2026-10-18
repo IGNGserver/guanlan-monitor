@@ -46,7 +46,8 @@ const NO_DEVICES: DeviceSummary[] = [];
 /** What each route actually draws; the transport may skip the rest. */
 function includeForRoute(kind: WorkspaceRoute["kind"]): ConsoleSnapshotInclude {
   if (kind === "device") return { deviceMetrics: true, trafficCalendar: true };
-  if (kind === "overview") return { overviewMetrics: true };
+  // The directory draws each device's recent CPU next to its current figure.
+  if (kind === "overview" || kind === "devices") return { overviewMetrics: true };
   return {};
 }
 

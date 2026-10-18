@@ -252,3 +252,22 @@
 .workspace-status-dot--warning { background: var(--md-sys-color-warning); }
 .workspace-status-dot--cached { background: var(--md-sys-color-info); }
 .workspace-status-dot--unknown { background: var(--md-sys-color-outline-variant); }
+
+/* ---- Device directory ----------------------------------------------------- */
+
+.workspace-directory-toolbar { margin: 0; padding: var(--md-sys-space-3) var(--ui-card-pad); }
+.workspace-directory-surface { overflow: hidden; }
+.guanlan-metric-cell { display: grid; min-width: 112px; max-width: 180px; gap: var(--md-sys-space-1); }
+.guanlan-metric-cell__value { font-size: var(--md-sys-typescale-body-m-size); font-weight: 600; }
+.guanlan-metric-cell.is-stale { opacity: 0.55; }
+.guanlan-metric-cell .guanlan-table-secondary { font-size: var(--md-sys-typescale-label-s-size); }
+.guanlan-metric-cell__trend { margin-top: var(--md-sys-space-1); }
+/* The bar under the figure already carries the tone; no extra bullet. */
+.guanlan-metric-cell .guanlan-metric--warning::before,
+.guanlan-metric-cell .guanlan-metric--critical::before { display: none; }
+/* The card is the frame; the table inside it needs no second border. */
+.workspace-directory-surface { padding: 0; }
+.workspace-directory-surface .m3e-table-wrap { border: 0; border-radius: 0; }
+.workspace-directory-surface .m3e-table th { padding-block: var(--md-sys-space-3); }
+.workspace-directory-surface .m3e-table td { padding-block: var(--md-sys-space-3); }
+.workspace-directory-surface .guanlan-table-link { padding: 0; text-align: left; }
