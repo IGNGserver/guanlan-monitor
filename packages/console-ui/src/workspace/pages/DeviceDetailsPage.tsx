@@ -378,7 +378,8 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
     },
     settingsSection,
     openSettings,
-    canConfigureConnection: capabilities.canConfigureConnection
+    canConfigureConnection: capabilities.canConfigureConnection,
+    thresholds: healthThresholds
   };
 
   // 分区级筛选控件。键用 DeviceSectionId，锚点写错会直接编译失败。

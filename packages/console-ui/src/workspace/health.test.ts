@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { DeviceSummary } from "@dsc/shared";
-import { DEFAULT_HEALTH_THRESHOLDS, describeIssue, devicesNeedingAttention, evaluateDevice, evaluateFleet, metricSeverity, parseThresholds } from "./health.ts";
+import { DEFAULT_HEALTH_THRESHOLDS, describeIssue, devicesNeedingAttention, evaluateDevice, evaluateFleet, metricSeverity, metricTone, parseThresholds, thresholdLines } from "./health.ts";
 
 function device(overrides: Partial<DeviceSummary>): DeviceSummary {
   return {
@@ -59,4 +59,19 @@ test("stored thresholds are validated per metric", () => {
   assert.deepEqual(parsed.cpu, DEFAULT_HEALTH_THRESHOLDS.cpu, "warning must stay below critical");
   assert.deepEqual(parsed.gpu, DEFAULT_HEALTH_THRESHOLDS.gpu);
   assert.deepEqual(parseThresholds("{broken"), DEFAULT_HEALTH_THRESHOLDS);
+});
+
+test("bars, sparklines and figures share one tone per reading", () => {
+  const rule = DEFAULT_HEALTH_THRESHOLDS.disk;
+  assert.equal(metricTone(84.9, rule), "normal");
+  assert.equal(metricTone(85, rule), "warning");
+  assert.equal(metricTone(95, rule), "critical");
+  assert.equal(metricTone(null, rule), "normal", "a missing reading is not an alarm");
+});
+
+test("a rule draws as a warning line below a critical line", () => {
+  assert.deepEqual(thresholdLines({ warning: 85, critical: 95 }), [
+    { value: 85, tone: "warning", label: "警告 85%" },
+    { value: 95, tone: "critical", label: "严重 95%" }
+  ]);
 });

@@ -40,12 +40,10 @@ export const DEVICE_DASHBOARD = {
           id: "section-overview-capacity",
           eyebrow: "容量",
           title: "资源水位总览",
-          description: "关键硬件资源当前占用比例与容量分布。",
+          description: "当前占用，最满的排在最前；条上的刻度是警告与严重阈值。",
           charts: [
-            { id: "overview-capacity-memory", title: "物理内存占用", visualization: "donut", span: "quarter", requires: ["memoryUsage"] },
-            { id: "overview-capacity-disk", title: "磁盘占用", visualization: "donut", span: "quarter", requires: ["diskUsage"] },
-            { id: "overview-capacity-gpu", title: "显存占用", visualization: "donut", span: "quarter", requires: ["gpuMemory"] },
-            { id: "overview-capacity-swap", title: "页面文件占用", visualization: "meter", span: "quarter", requires: ["swapUsage"] }
+            { id: "overview-capacity-memory", title: "内存与显存", visualization: "capacity", span: "half" },
+            { id: "overview-capacity-disk", title: "磁盘分区", visualization: "capacity", span: "half" }
           ]
         },
         {
@@ -90,7 +88,7 @@ export const DEVICE_DASHBOARD = {
           title: "内存层级与系统进程",
           charts: [
             { id: "compute-memory", title: "内存容量明细", visualization: "area", span: "half", requires: ["memoryUsage", "memoryCommitted", "memoryCached", "swapUsage"] },
-            { id: "compute-memory-capacity", title: "物理内存占用", visualization: "donut", span: "half", requires: ["memoryUsage"] },
+            { id: "compute-memory-capacity", title: "内存容量水位", visualization: "capacity", span: "half" },
             { id: "compute-system", title: "系统进程、线程与句柄", visualization: "line", span: "half", requires: ["systemOverview"] }
           ]
         }
@@ -115,9 +113,9 @@ export const DEVICE_DASHBOARD = {
           id: "section-storage-summary",
           eyebrow: "容量统计",
           title: "分区水位总览",
-          description: "磁盘分区已用空间与系统文件层级分布。",
+          description: "每块磁盘当前已用空间，最满的排在最前。",
           charts: [
-            { id: "storage-disk-capacity-donut", title: "磁盘占用", visualization: "donut", span: "half", requires: ["diskUsage"] }
+            { id: "storage-disk-capacity-donut", title: "各磁盘占用", visualization: "capacity", span: "half", requires: ["diskUsage"] }
           ]
         },
         {
@@ -126,7 +124,7 @@ export const DEVICE_DASHBOARD = {
           title: "虚拟机存储分区",
           description: "承载虚拟机磁盘的整块存储：Proxmox 存储、LVM 精简池、ZFS 池与网络共享。单个虚拟机的磁盘文件不计入这里。",
           charts: [
-            { id: "storage-pool-capacity", title: "容量占用", visualization: "meter", span: "half", requires: ["storagePools"] },
+            { id: "storage-pool-capacity", title: "容量占用", visualization: "capacity", span: "half", requires: ["storagePools"] },
             { id: "storage-pool-usage", title: "使用率走势", visualization: "line", span: "half", requires: ["storagePools"] }
           ]
         }

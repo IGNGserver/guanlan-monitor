@@ -24,8 +24,7 @@ import type { DeviceBlockKey, DeviceMetricKey } from "@dsc/shared";
 export type ChartVisualization =
   | "line"
   | "area"
-  | "donut"
-  | "meter"
+  | "capacity"
   | "number"
   | "table"
   | "custom";
