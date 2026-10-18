@@ -82,7 +82,7 @@
   justify-content: space-between;
   padding: var(--md-sys-space-2) var(--md-sys-space-3);
   cursor: pointer;
-  font-size: 0.75rem;
+  font-size: var(--md-sys-typescale-label-s-size);
   font-weight: 500;
   color: var(--md-sys-color-on-surface-variant);
   user-select: none;

@@ -13,7 +13,7 @@
   color: var(--workspace-text);
   background: var(--workspace-bg);
   font-family: "Geist", "Segoe UI Variable", "PingFang SC", "Microsoft YaHei UI", sans-serif;
-  font-size: 13px;
+  font-size: var(--md-sys-typescale-body-s-size);
   line-height: 1.45;
 }
 
@@ -186,7 +186,7 @@
 
 .workspace-brand__name {
   overflow: hidden;
-  font-size: 15px;
+  font-size: var(--md-sys-typescale-title-m-size);
   font-weight: 600;
   letter-spacing: -0.02em;
   text-overflow: ellipsis;
@@ -420,7 +420,7 @@ kbd {
 .workspace-surface__header h3 {
   margin-top: var(--md-sys-space-1);
   color: var(--workspace-text);
-  font-size: 15px;
+  font-size: var(--md-sys-typescale-title-m-size);
   font-weight: 600;
 }
 

@@ -168,3 +168,35 @@
 @media (prefers-reduced-motion: reduce) {
   .touch-workspace *, .touch-sheet[open] { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Fleet trend on the phone overview, right under the status card. */
+.touch-trend { display: grid; gap: var(--md-sys-space-3); margin-top: var(--md-sys-space-4); padding: var(--md-sys-space-4); border-radius: var(--md-sys-shape-lg); background: var(--md-sys-color-surface-container-low); }
+.touch-trend > header { display: flex; align-items: center; justify-content: space-between; gap: var(--md-sys-space-2); }
+.touch-trend h2 { margin: 0; font-size: var(--md-sys-typescale-title-m-size); font-weight: 600; }
+.touch-trend .m3e-segmented { width: 100%; }
+/* Each reading in a device row carries its own bar, so a full disk shows at a glance. */
+.touch-device-row__metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--md-sys-space-3); margin-top: var(--md-sys-space-1); }
+.touch-device-row__metric { display: grid; min-width: 0; gap: var(--md-sys-space-1); }
+.touch-device-row__metrics.is-note { display: block; }
+.touch-device-row__metric > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A compact status card: the icon sits beside the sentence and the counts
+   share one short row, so the trend chart starts on the first screen. */
+.touch-overview > .touch-page-title { margin-bottom: var(--md-sys-space-3); }
+.touch-health { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: var(--md-sys-space-3); padding: var(--md-sys-space-4); border-radius: var(--md-sys-shape-lg); }
+.touch-health__mark { grid-row: span 2; width: 40px; height: 40px; margin: 0; }
+.touch-health p { margin: 0; font-size: var(--md-sys-typescale-title-m-size); font-weight: 600; }
+.touch-health > span { font-size: var(--md-sys-typescale-body-s-size); }
+.touch-health__counts, .touch-health small { grid-column: 1 / -1; }
+.touch-health__counts { margin: var(--md-sys-space-3) 0 var(--md-sys-space-2); }
+.touch-health__counts div { flex-direction: row; align-items: baseline; gap: var(--md-sys-space-2); }
+.touch-health__counts strong { font-size: var(--md-sys-typescale-headline-s-size); }
+.touch-trend .m3e-chart-readout__values { gap: var(--md-sys-space-2) var(--md-sys-space-4); }
+.touch-trend .m3e-chart-readout__values dd { font-size: var(--md-sys-typescale-title-m-size); }
+
+/* One rhythm on touch pages too: blocks are spaced by the page gap only. */
+.touch-workspace .workspace-page { gap: var(--md-sys-space-4); }
+.touch-workspace .workspace-page > * { margin-top: 0; margin-bottom: 0; }
+.touch-current-metrics .m3e-capacity { margin-top: var(--md-sys-space-1); }
+.touch-current-metrics .is-warning strong { color: var(--md-sys-color-warning); }
+.touch-current-metrics .is-critical strong { color: var(--md-sys-color-error); }

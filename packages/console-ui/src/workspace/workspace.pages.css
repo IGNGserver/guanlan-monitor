@@ -12,7 +12,7 @@
 
 .workspace-surface { border: 0; border-radius: var(--md-sys-shape-lg); background: var(--workspace-surface); box-shadow: var(--workspace-shadow-soft); }
 .workspace-surface__header { gap: var(--md-sys-space-4); padding: var(--md-sys-space-6) var(--md-sys-space-6) var(--md-sys-space-4); }
-.workspace-surface__header h3 { font-size: 19px; letter-spacing: -0.025em; }
+.workspace-surface__header h3 { font-size: var(--md-sys-typescale-title-m-size); letter-spacing: -0.025em; }
 
 /* Layout only. Surface colour, border and radius are arbitrated by
    `workspace.m3e.css`, which is the last word for shell components. */
@@ -118,12 +118,12 @@
   box-shadow: var(--md-sys-elevation-1);
 }
 .workspace-onboarding__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--md-sys-space-4); }
-.workspace-onboarding__lead { margin: var(--md-sys-space-2) 0 0; color: var(--workspace-text); font-size: 15px; font-weight: 500; }
+.workspace-onboarding__lead { margin: var(--md-sys-space-2) 0 0; color: var(--workspace-text); font-size: var(--md-sys-typescale-title-m-size); font-weight: 500; }
 .workspace-onboarding__steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--md-sys-space-5); margin: var(--md-sys-space-5) 0 0; padding: 0; list-style: none; }
 .workspace-onboarding__steps > li { display: flex; min-width: 0; gap: var(--md-sys-space-3); }
 .workspace-onboarding__index { display: grid; width: 22px; height: 22px; flex-shrink: 0; place-items: center; border-radius: 50%; color: var(--md-sys-color-on-primary); background: var(--workspace-accent); font-size: var(--md-sys-typescale-body-s-size); font-weight: 600; }
 .workspace-onboarding__body { min-width: 0; }
-.workspace-onboarding__body strong { display: block; color: var(--workspace-text); font-size: 13px; }
+.workspace-onboarding__body strong { display: block; color: var(--workspace-text); font-size: var(--md-sys-typescale-body-s-size); }
 .workspace-onboarding__body p { margin: var(--md-sys-space-1) 0 var(--md-sys-space-2); color: var(--workspace-text-secondary); font-size: var(--md-sys-typescale-body-s-size); line-height: 1.6; }
 .workspace-onboarding__footer { display: flex; align-items: center; gap: var(--md-sys-space-3); margin-top: var(--md-sys-space-5); padding-top: var(--md-sys-space-4); border-top: 1px solid var(--workspace-border); }
 .workspace-onboarding__footer p { margin: 0; color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); }

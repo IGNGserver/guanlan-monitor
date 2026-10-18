@@ -979,6 +979,7 @@ function ErrorSurface({ title, detail, onRetry }: { title: string; detail: strin
 
 export {
   appIconSrc,
+  metricWindowOptions,
   isMetricUnavailable,
   unavailablePoints,
   metricGroups,

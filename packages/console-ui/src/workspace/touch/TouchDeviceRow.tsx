@@ -2,9 +2,10 @@ import React from "react";
 import type { DeviceMetricKey, DeviceSummary } from "@dsc/shared";
 import { M3IconButton } from "../m3";
 import { Icon, StatusDot } from "../ui";
+import { CapacityBar } from "../charts";
 import { formatDate } from "../formatters";
 import { useWorkspace } from "../WorkspaceContext";
-import { metricSeverity, metricValue, type ThresholdMetric } from "../health";
+import { metricSeverity, metricTone, metricValue, type ThresholdMetric } from "../health";
 
 export function touchPercent(device: DeviceSummary, key: DeviceMetricKey, value: number | null | undefined): string {
   if (device.unavailableMetrics?.includes(key)) return "不适用";
@@ -29,8 +30,11 @@ export function TouchDeviceRow({ device, onMore, selected = false, disabled = fa
         <span className="touch-device-row__state"><StatusDot state={cached ? "cached" : online ? "online" : "offline"} />
           {cached ? `缓存中${online ? "在线" : "离线"}` : online ? "在线" : "离线"} · {device.os}
         </span>
-        <span className="touch-device-row__metrics">{online || cached
-          ? <><span className={tone("cpu")}>CPU {touchPercent(device, "cpuUsage", device.cpuUsagePercent)}</span><span className={tone("memory")}>内存 {touchPercent(device, "memoryUsage", device.memoryUsagePercent)}</span><span className={tone("disk")}>磁盘 {touchPercent(device, "diskUsage", device.diskUsagePercent)}</span></>
+        <span className={`touch-device-row__metrics${online || cached ? "" : " is-note"}`}>{online || cached
+          ? ([["cpu", "CPU", "cpuUsage", device.cpuUsagePercent], ["memory", "内存", "memoryUsage", device.memoryUsagePercent], ["disk", "磁盘", "diskUsage", device.diskUsagePercent]] as const).map(([metric, label, key, value]) => <span className="touch-device-row__metric" key={metric}>
+            <span className={tone(metric)}>{label} {touchPercent(device, key, value)}</span>
+            <CapacityBar percent={device.unavailableMetrics?.includes(key) ? null : metricValue(device, metric)} tone={online ? metricTone(metricValue(device, metric), healthThresholds[metric]) : "normal"} size="sm" />
+          </span>)
           : <>最后在线 {formatDate(device.lastSeenAt)}</>}
         </span>
       </span>

@@ -29,7 +29,8 @@ import {
 } from "../formatters";
 import { Button, Icon, StatusDot } from "../ui";
 import { DeviceChartCells, type DeviceChartContext, type DeviceSectionControls } from "./deviceCharts";
-import { describeIssue, evaluateDevice } from "../health";
+import { describeIssue, evaluateDevice, metricTone } from "../health";
+import { CapacityBar } from "../charts";
 import { DeviceKpiStrip, capacityCaption, shareOf } from "./DeviceKpiStrip";
 import { LiveTopicPanel, useLiveCapabilities } from "./LiveDevicePanel";
 import type { DeviceLiveView } from "../routes";
@@ -480,7 +481,11 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
         options={[{ value: "report", label: "最近上报" }, { value: "live", label: <LiveTabLabel>实时</LiveTabLabel> }]}
       />}
       {touch && touchPanel === "status" && touchLive && <LiveTopicPanel deviceId={selectedDevice.deviceId} topic="metrics" authenticated={liveAuthenticated} compact />}
-      {touch && touchPanel === "status" && !touchLive && <div className="touch-current-metrics" aria-label="最近上报指标">{([ ["CPU", "cpuUsage", selectedDevice.cpuUsagePercent], ["内存", "memoryUsage", selectedDevice.memoryUsagePercent], ["磁盘", "diskUsage", selectedDevice.diskUsagePercent] ] as const).map(([label, key, value]) => <div key={key}><span>{label}</span><strong>{touchPercent(selectedDevice, key, value)}</strong><small>最近一次上报</small></div>)}</div>}
+      {touch && touchPanel === "status" && !touchLive && <div className="touch-current-metrics" aria-label="最近上报指标">{([ ["CPU", "cpuUsage", "cpu", selectedDevice.cpuUsagePercent], ["内存", "memoryUsage", "memory", selectedDevice.memoryUsagePercent], ["磁盘", "diskUsage", "disk", selectedDevice.diskUsagePercent] ] as const).map(([label, key, metric, value]) => {
+        const reading = selectedDevice.unavailableMetrics?.includes(key) ? null : value;
+        const tone = selectedDevice.status === "online" ? metricTone(reading, healthThresholds[metric]) : "normal";
+        return <div key={key} className={`is-${tone}`}><span>{label}</span><strong>{touchPercent(selectedDevice, key, value)}</strong><CapacityBar percent={reading} tone={tone} marks={healthThresholds[metric]} size="sm" /><small>最近一次上报</small></div>;
+      })}</div>}
       {selectedDevice.unavailableMetrics?.length ? <div className="workspace-inline-note" role="status"><Icon name="about" size={15} />本机不适用指标：{selectedDevice.unavailableMetrics.join("、")}；对应图表会留空而不是估算。</div> : null}
 
       {/* The same verdict the overview lists, on the machine it is about. Offline

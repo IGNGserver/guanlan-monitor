@@ -35,13 +35,13 @@
 .workspace-web-settings__status-main p { max-width: 48ch; margin: 0; color: var(--workspace-text-secondary); font-size: var(--md-sys-typescale-body-s-size); line-height: 1.55; }
 .workspace-web-settings__stat { display: flex; flex-direction: column; justify-content: center; gap: var(--md-sys-space-2); }
 .workspace-web-settings__stat span { color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-label-s-size); }
-.workspace-web-settings__stat strong { overflow: hidden; color: var(--workspace-text); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-web-settings__stat strong { overflow: hidden; color: var(--workspace-text); font-size: var(--md-sys-typescale-title-m-size); font-weight: 600; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-web-settings__grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr); gap: var(--md-sys-space-4); }
 .workspace-settings-list { display: flex; flex-direction: column; }
 .workspace-setting-row { display: flex; min-height: 67px; align-items: center; justify-content: space-between; gap: var(--md-sys-space-5); border-top: 1px solid var(--workspace-border); }
 .workspace-setting-row:first-child { border-top: 0; }
 .workspace-setting-row > div:first-child { min-width: 0; }
-.workspace-setting-row strong { display: block; color: var(--workspace-text); font-size: 13px; font-weight: 500; }
+.workspace-setting-row strong { display: block; color: var(--workspace-text); font-size: var(--md-sys-typescale-body-s-size); font-weight: 500; }
 .workspace-setting-row p { max-width: 52ch; margin: var(--md-sys-space-1) 0 0; color: var(--workspace-text-secondary); font-size: var(--md-sys-typescale-label-s-size); line-height: 1.5; }
 .workspace-setting-row__control { flex: 0 0 auto; }
 .workspace-setting-note { display: inline-flex; align-items: center; gap: var(--md-sys-space-2); color: var(--workspace-green); font-size: var(--md-sys-typescale-body-s-size); }
@@ -105,7 +105,7 @@
 .workspace-about { display: flex; max-width: 520px; flex-direction: column; align-items: flex-start; gap: var(--md-sys-space-3); }
 .workspace-about__mark-wrap { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; flex-shrink: 0; }
 .workspace-about__mark-img { display: block; width: 48px; height: 48px; object-fit: contain; border-radius: var(--md-sys-shape-md); flex-shrink: 0; }
-.workspace-about h3 { color: var(--workspace-text); font-size: 18px; }
+.workspace-about h3 { color: var(--workspace-text); font-size: var(--md-sys-typescale-title-m-size); }
 .workspace-about p { margin: 0 0 var(--md-sys-space-3); color: var(--workspace-text-secondary); }
 
 .workspace-empty { display: flex; min-height: 290px; flex-direction: column; align-items: center; justify-content: center; gap: var(--md-sys-space-2); padding: var(--md-sys-space-8); border: 1px dashed var(--workspace-border-strong); border-radius: var(--md-sys-shape-md); color: var(--workspace-text-secondary); text-align: center; }
@@ -127,7 +127,7 @@
 .workspace-command__item:hover,
 .workspace-command__item.is-active { color: var(--workspace-text); background: var(--workspace-surface-hover); }
 .workspace-command__item > span { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
-.workspace-command__item strong { color: inherit; font-size: 13px; font-weight: 500; }
+.workspace-command__item strong { color: inherit; font-size: var(--md-sys-typescale-body-s-size); font-weight: 500; }
 .workspace-command__item small { overflow: hidden; color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-label-s-size); text-overflow: ellipsis; white-space: nowrap; }
 .workspace-command__empty { padding: var(--md-sys-space-7) var(--md-sys-space-3); color: var(--workspace-text-muted); text-align: center; }
 .workspace-command__footer { display: flex; gap: var(--md-sys-space-4); padding: var(--md-sys-space-2) var(--md-sys-space-3); border-top: 1px solid var(--workspace-border); color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); }

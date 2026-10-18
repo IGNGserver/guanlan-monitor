@@ -271,3 +271,10 @@
 .workspace-directory-surface .m3e-table th { padding-block: var(--md-sys-space-3); }
 .workspace-directory-surface .m3e-table td { padding-block: var(--md-sys-space-3); }
 .workspace-directory-surface .guanlan-table-link { padding: 0; text-align: left; }
+
+/* ---- Settings ------------------------------------------------------------- */
+
+.workspace-page > .workspace-page-intro { margin: 0; }
+.workspace-settings-stack { gap: var(--ui-card-gap); }
+.workspace-settings-stack .workspace-surface { padding: var(--ui-card-pad) var(--md-sys-space-5) var(--md-sys-space-2); }
+.workspace-settings-stack .workspace-surface__header { margin-bottom: 0; padding-top: 0; }
