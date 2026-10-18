@@ -54,6 +54,7 @@ jobs:
           pnpm check:desktop-agent-state
           pnpm check:web-ui-boundary
           pnpm check:adapter-contracts
+          pnpm check:ui-scale
           pnpm test:adapter-contracts
           pnpm test:ui-helpers
           pnpm test:workspace-contracts

@@ -29,14 +29,15 @@ import type {
   TrafficCalendarResponse
 } from "@dsc/shared";
 import {
-  DonutChart,
-  MeterChart,
+  CapacityList,
   NumberGrid,
   TimeSeriesChart,
-  type ChartPart,
+  type CapacityRow,
   type ChartNumberItem,
-  type ChartSeries
+  type ChartSeries,
+  type ChartThreshold
 } from "../charts";
+import { metricTone, thresholdLines, type HealthThresholds, type ThresholdRule } from "../health";
 import { ChartTile, DashboardCell, isChartAvailable } from "../dashboard";
 import { SingleDeviceChartCell } from "./SingleDeviceChartCell";
 import { RenderBoundary } from "../RenderBoundary";
@@ -78,8 +79,8 @@ export interface DeviceChartTile {
   heroBadge?: string;
   /** 时间序列数据，`line` / `area` 与半屏详情里的时段统计都读它。 */
   series?: ChartSeries[];
-  donut?: { parts: ChartPart[]; centerLabel?: string };
-  meter?: { value: number; total: number; label?: string };
+  /** `capacity` 可视化的行：每行一条容量条，最满的排在最前。 */
+  capacity?: CapacityRow[];
   numbers?: ChartNumberItem[];
   rows?: Array<{ label: string; value: string }>;
   /** `custom` 可视化时渲染的页面自带组件。 */
@@ -87,6 +88,8 @@ export interface DeviceChartTile {
   valueFormatter?: (value: number) => string;
   /** 钉住纵轴上界；百分比图表统一用 `PERCENT_TILE` 带上。 */
   maxValue?: number;
+  /** 警告与严重阈值参考线，与状态标签同色。 */
+  thresholds?: ChartThreshold[];
   controls?: React.ReactNode;
   /** 半屏详情里的「说明」键值行，用于把多段容量拆开显示，而不是挤成一句。 */
   facts?: Array<{ label: string; value: string }>;
@@ -147,6 +150,8 @@ export interface DeviceChartContext {
   settingsSection: SettingsSection;
   openSettings: (section: SettingsSection) => void;
   canConfigureConnection: boolean;
+  /** 用户在设置里调整的资源阈值；图表参考线与容量条刻度都读它。 */
+  thresholds: HealthThresholds;
 }
 
 // Unit spellings come from `formatters.ts` so a table cell and the chart of the
@@ -176,15 +181,38 @@ const INSTANCE_BLOCK_LABELS: Record<DeviceBlockKey, string> = {
   fan: "风扇"
 };
 
-/** 容量环形图的两个分片；总量非法时返回空数组，图表自己渲染空态。 */
-function capacityParts(used: number, total: number, usedLabel = "已用", freeLabel = "空闲"): ChartPart[] {
-  if (!Number.isFinite(used) || !Number.isFinite(total) || total <= 0) return [];
-  const clamped = Math.min(Math.max(used, 0), total);
-  return [
-    { label: usedLabel, value: clamped },
-    { label: freeLabel, value: total - clamped }
-  ];
+/**
+ * 一行容量条。总量非法时返回 null，由调用方决定是跳过还是给空态，
+ * 而不是画一条 0% 的条让人以为是空盘。
+ */
+function capacityRow(key: string, label: string, used: number | null | undefined, total: number | null | undefined, rule: ThresholdRule | null, detail?: string): CapacityRow | null {
+  if (typeof used !== "number" || typeof total !== "number" || !Number.isFinite(used) || !Number.isFinite(total) || total <= 0) return null;
+  const percentUsed = Math.min(100, Math.max(0, (used / total) * 100));
+  return {
+    key,
+    label,
+    detail,
+    value: `${formatBytes(Math.max(0, used))} / ${formatBytes(total)}`,
+    percent: percentUsed,
+    tone: rule ? metricTone(percentUsed, rule) : "normal",
+    marks: rule ?? undefined
+  };
 }
+
+/**
+ * 字节曲线的纵轴钉在总容量上，阈值按百分比换算成同一纵轴上的参考线：
+ * 「离满还有多远」直接读得出来，而不是被自动缩放放大成满屏起伏。
+ */
+function capacityAxis(total: number | null | undefined, points: readonly SamplePoint[][], rule: ThresholdRule): Pick<DeviceChartTile, "maxValue" | "thresholds"> {
+  if (typeof total !== "number" || !Number.isFinite(total) || total <= 0) return {};
+  const observed = Math.max(0, ...points.flat().map((point) => point.value).filter(Number.isFinite));
+  return {
+    maxValue: Math.max(total, observed),
+    thresholds: thresholdLines(rule).map((line) => ({ ...line, value: (total * line.value) / 100 }))
+  };
+}
+
+const compact = <T,>(items: Array<T | null>): T[] => items.filter((item): item is T => item != null);
 
 interface InstanceExpansion<T extends { id: string }> {
   instances: T[];
@@ -249,49 +277,6 @@ export function ChartInfoRows({ rows, label }: { rows: Array<{ label: string; va
       ))}
     </dl>
   );
-}
-
-/** 按常量里声明的 `visualization` 分派到对应的 M3E 图表组件。 */
-function ChartBody({ chart, tile }: { chart: DashboardChartSpec; tile: DeviceChartTile }) {
-  const valueFormatter = tile.valueFormatter ?? plainCount;
-  switch (chart.visualization) {
-    case "donut":
-      return (
-        <DonutChart
-          parts={tile.donut?.parts ?? []}
-          centerLabel={tile.donut?.centerLabel}
-          valueFormatter={valueFormatter}
-          compact={chart.compact}
-          ariaLabel={`${chart.title}占比环形图`}
-        />
-      );
-    case "meter":
-      return (
-        <MeterChart
-          value={tile.meter?.value ?? 0}
-          total={tile.meter?.total ?? 0}
-          label={tile.meter?.label ?? "已用"}
-          valueFormatter={valueFormatter}
-          compact={chart.compact}
-          ariaLabel={`${chart.title}占用仪表图`}
-        />
-      );
-    case "number":
-      return <NumberGrid items={tile.numbers ?? []} />;
-    case "table":
-      return <ChartInfoRows rows={tile.rows ?? []} label={chart.title} />;
-    case "custom":
-      return <>{tile.node}</>;
-    default:
-      return (
-        <TimeSeriesChart
-          series={tile.series ?? []}
-          visualization={chart.visualization === "area" ? "area" : "line"}
-          maxValue={tile.maxValue}
-          compact={chart.compact}
-        />
-      );
-  }
 }
 
 type ChartRenderer = (chart: DashboardChartSpec, context: DeviceChartContext) => DeviceChartTile[];
@@ -425,6 +410,29 @@ function storagePoolFacts(pool: StoragePoolMetricSeries, latest: StoragePoolStat
   return facts.filter((fact): fact is { label: string; value: string } => fact != null);
 }
 
+/** 每块磁盘一行容量条；`overview` 与 `storage` 两个选项卡共用。 */
+function diskPartitionsTile(chart: DashboardChartSpec, context: DeviceChartContext): DeviceChartTile {
+  const latest = context.filteredLatest;
+  if (context.unavailable("diskUsage")) return { key: chart.id, emptyMessage: UNAVAILABLE_METRIC_LABEL };
+  const disks = latest?.disks ?? [];
+  const rows = compact(disks.map((disk) => capacityRow(
+    disk.id,
+    displayModelName(disk.model, disk.name, "磁盘"),
+    disk.usedBytes,
+    disk.totalBytes,
+    context.thresholds.disk,
+    [disk.mountPoint, disk.filesystem].filter(Boolean).join(" · ") || undefined
+  )));
+  // A device that reports only a total keeps one row for it.
+  const fallback = rows.length ? rows : compact([capacityRow("disk", "全部磁盘", latest?.diskUsedBytes, latest?.diskTotalBytes, context.thresholds.disk)]);
+  return {
+    key: chart.id,
+    subtitle: context.summaries.disk,
+    capacity: fallback,
+    emptyMessage: fallback.length ? undefined : "尚未采集到磁盘容量"
+  };
+}
+
 /**
  * 布局常量里每个图表 id 的渲染器。
  *
@@ -443,6 +451,7 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
       subtitle: `全部 ${context.cpuInstances.length} 个 CPU 实例的平均值`,
       series: [{ label: "全部 CPU 平均", points: context.aggregates.cpuUsage }],
       ...PERCENT_TILE,
+      thresholds: thresholdLines(context.thresholds.cpu),
       models: { label: "已采集 CPU 型号", items: context.modelItems.cpu }
     }];
   },
@@ -460,7 +469,8 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
         { label: "已用物理内存", points: unavailablePoints(context.series?.memoryUsedBytes ?? [], context.unavailable("memoryUsage")), valueFormatter: formatBytes },
         { label: "已提交", points: unavailablePoints(context.series?.memoryCommittedBytes ?? [], context.unavailable("memoryCommitted")), valueFormatter: formatBytes }
       ],
-      valueFormatter: formatBytes
+      valueFormatter: formatBytes,
+      ...capacityAxis(totalBytes, [context.series?.memoryUsedBytes ?? []], context.thresholds.memory)
     }];
   },
 
@@ -476,6 +486,7 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
       facts: [{ label: "容量", value: context.summaries.disk }],
       series: [{ label: "全部硬盘总已用", points: context.aggregates.diskUsedBytes, valueFormatter: formatBytes }],
       valueFormatter: formatBytes,
+      ...capacityAxis(totalBytes, [context.aggregates.diskUsedBytes], context.thresholds.disk),
       models: { label: "已采集硬盘型号", items: context.modelItems.disk }
     }];
   },
@@ -501,58 +512,23 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
 
   "overview-capacity-memory": (chart, context) => {
     const latest = context.filteredLatest;
+    const gpu = gpuCapacityTotals(context);
+    const rows = compact([
+      context.unavailable("memoryUsage") ? null : capacityRow("memory", "物理内存", latest?.memoryUsedBytes, latest?.memoryTotalBytes, context.thresholds.memory),
+      context.unavailable("memoryCommitted") ? null : capacityRow("committed", "已提交", latest?.memoryCommittedBytes, latest ? latest.memoryCommitLimitBytes || latest.memoryTotalBytes + latest.swapTotalBytes : null, null, "提交上限含页面文件"),
+      context.unavailable("swapUsage") ? null : capacityRow("swap", "页面文件", latest?.swapUsedBytes, latest?.swapTotalBytes, null),
+      context.unavailable("gpuMemory") ? null : capacityRow("gpu", gpuMemoryLabel(latest?.gpus[0]?.memoryKind), gpu.used, gpu.total, null)
+    ]);
     return [{
       key: chart.id,
-      subtitle: context.summaries.memory,
-      donut: { parts: capacityParts(latest?.memoryUsedBytes ?? 0, latest?.memoryTotalBytes ?? 0), centerLabel: "物理内存" },
-      valueFormatter: formatBytes,
-      emptyMessage: latest && latest.memoryTotalBytes > 0 ? undefined : "尚未采集到内存容量"
+      capacity: rows,
+      emptyMessage: rows.length ? undefined : "尚未采集到内存容量"
     }];
   },
 
-  "overview-capacity-disk": (chart, context) => {
-    const latest = context.filteredLatest;
-    return [{
-      key: chart.id,
-      subtitle: context.summaries.disk,
-      donut: { parts: capacityParts(latest?.diskUsedBytes ?? 0, latest?.diskTotalBytes ?? 0), centerLabel: "磁盘" },
-      valueFormatter: formatBytes,
-      emptyMessage: latest && latest.diskTotalBytes > 0 ? undefined : "尚未采集到磁盘容量"
-    }];
-  },
+  "overview-capacity-disk": (chart, context) => [diskPartitionsTile(chart, context)],
 
-  "storage-disk-capacity-donut": (chart, context) => {
-    const latest = context.filteredLatest;
-    return [{
-      key: chart.id,
-      subtitle: context.summaries.disk,
-      donut: { parts: capacityParts(latest?.diskUsedBytes ?? 0, latest?.diskTotalBytes ?? 0), centerLabel: "磁盘" },
-      valueFormatter: formatBytes,
-      emptyMessage: latest && latest.diskTotalBytes > 0 ? undefined : "尚未采集到磁盘容量"
-    }];
-  },
-
-  "overview-capacity-gpu": (chart, context) => {
-    const { used, total } = gpuCapacityTotals(context);
-    return [{
-      key: chart.id,
-      subtitle: context.summaries.gpuMemory,
-      donut: { parts: capacityParts(used, total, "已用显存", "空闲显存"), centerLabel: "显存" },
-      valueFormatter: formatBytes,
-      emptyMessage: total > 0 ? undefined : "尚未采集到显存容量"
-    }];
-  },
-
-  "overview-capacity-swap": (chart, context) => {
-    const latest = context.filteredLatest;
-    return [{
-      key: chart.id,
-      subtitle: context.summaries.pagefile,
-      meter: { value: latest?.swapUsedBytes ?? 0, total: latest?.swapTotalBytes ?? 0, label: "页面文件" },
-      valueFormatter: formatBytes,
-      emptyMessage: latest && latest.swapTotalBytes > 0 ? undefined : "本机没有可用的页面文件"
-    }];
-  },
+  "storage-disk-capacity-donut": (chart, context) => [diskPartitionsTile(chart, context)],
 
   "device-hardware-system": (chart, context) => [{
     key: chart.id,
@@ -595,13 +571,15 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
         subtitle: `${cpu.coreCount ?? "未知"} 核 · ${cpu.logicalCount ?? "未知"} 线程`,
         heroStat: lastUsage != null ? formatPercent(lastUsage) : undefined,
         series: [{ label: `${label} 使用率`, points: unavailablePoints(cpu.usagePercent, context.unavailable("cpuUsage")) }],
-        ...PERCENT_TILE
+        ...PERCENT_TILE,
+        thresholds: thresholdLines(context.thresholds.cpu)
       };
     },
     fallback: () => ({
       subtitle: "未拆分出独立 CPU 实例",
       series: [{ label: "CPU 占用", points: unavailablePoints(context.series?.cpuUsagePercent ?? [], context.unavailable("cpuUsage")) }],
-      ...PERCENT_TILE
+      ...PERCENT_TILE,
+      thresholds: thresholdLines(context.thresholds.cpu)
     })
   }),
 
@@ -659,12 +637,15 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
 
   "compute-memory-capacity": (chart, context) => {
     const latest = context.filteredLatest;
+    const rows = compact([
+      context.unavailable("memoryUsage") ? null : capacityRow("memory", "物理内存", latest?.memoryUsedBytes, latest?.memoryTotalBytes, context.thresholds.memory),
+      context.unavailable("memoryCommitted") ? null : capacityRow("committed", "已提交", latest?.memoryCommittedBytes, latest ? latest.memoryCommitLimitBytes || latest.memoryTotalBytes + latest.swapTotalBytes : null, null, "提交上限含页面文件"),
+      context.unavailable("swapUsage") ? null : capacityRow("swap", "页面文件", latest?.swapUsedBytes, latest?.swapTotalBytes, null)
+    ]);
     return [{
       key: chart.id,
-      facts: memoryFacts(context).slice(1),
-      donut: { parts: capacityParts(latest?.memoryUsedBytes ?? 0, latest?.memoryTotalBytes ?? 0, "已用", "可用"), centerLabel: "物理内存" },
-      valueFormatter: formatBytes,
-      emptyMessage: latest && latest.memoryTotalBytes > 0 ? undefined : "尚未采集到内存容量"
+      capacity: rows,
+      emptyMessage: rows.length ? undefined : "尚未采集到内存容量"
     }];
   },
 
@@ -734,7 +715,8 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
           { label: "容量", value: formatCapacitySummary(diskLatest?.usedBytes, diskLatest?.totalBytes, context.unavailable("diskUsage")) }
         ],
         series: [{ label: "已用容量", points: unavailablePoints(disk.usedBytes, context.unavailable("diskUsage")), valueFormatter: formatBytes }],
-        valueFormatter: formatBytes
+        valueFormatter: formatBytes,
+        ...capacityAxis(diskLatest?.totalBytes, [disk.usedBytes], context.thresholds.disk)
       };
     },
     fallback: () => ({
@@ -778,36 +760,27 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
         emptyMessage: "未检测到存储池；Proxmox 存储、LVM 精简池、ZFS 池与网络共享会显示在这里"
       }];
     }
-    return context.storagePools.map((pool) => {
+    const unavailable = context.unavailable("storagePools");
+    const rows: CapacityRow[] = [];
+    const facts: Array<{ label: string; value: string }> = [];
+    for (const pool of context.storagePools) {
       const latest = context.storagePoolLatest.find((item) => item.id === pool.id);
       const total = latest?.totalBytes ?? lastPointValue(pool.totalBytes) ?? 0;
       const used = latest?.usedBytes ?? lastPointValue(pool.usedBytes) ?? 0;
-      const active = latest?.active ?? pool.active;
-      const enabled = latest?.enabled ?? true;
-      const unavailable = context.unavailable("storagePools");
-      const usagePercent = total > 0 ? Number(((used / total) * 100).toFixed(2)) : null;
-      const facts = storagePoolFacts(pool, latest, unavailable);
-      if (!active || !enabled || total <= 0) {
-        // A storage listed by Proxmox but not active on this node reports a zero
-        // capacity; an empty meter would read as an empty pool.
-        return {
-          key: `${chart.id}:${pool.id}`,
-          title: `${pool.name} · ${chart.title}`,
-          subtitle: storagePoolKindLabel(pool.kind),
-          facts,
-          emptyMessage: "该存储在当前节点未启用"
-        } satisfies DeviceChartTile;
-      }
-      return {
-        key: `${chart.id}:${pool.id}`,
-        title: `${pool.name} · ${chart.title}`,
-        subtitle: `${storagePoolKindLabel(pool.kind)}${latest?.shared ? " · 共享存储" : ""}`,
-        heroStat: usagePercent != null ? formatPercent(usagePercent) : undefined,
-        meter: { value: used, total, label: "已用" },
-        facts,
-        valueFormatter: formatBytes
-      } satisfies DeviceChartTile;
-    });
+      const active = (latest?.active ?? pool.active) && (latest?.enabled ?? true);
+      const detail = `${storagePoolKindLabel(pool.kind)}${latest?.shared ? " · 共享存储" : ""}`;
+      facts.push({ label: pool.name, value: active ? storagePoolFacts(pool, latest, unavailable).map((fact) => `${fact.label} ${fact.value}`).join(" · ") : "该存储在当前节点未启用" });
+      // A storage listed by Proxmox but not active on this node reports a zero
+      // capacity; an empty bar would read as an empty pool.
+      const row = active && !unavailable ? capacityRow(pool.id, pool.name, used, total, context.thresholds.disk, detail) : null;
+      rows.push(row ?? { key: pool.id, label: pool.name, detail: `${detail} · 当前节点未启用`, value: "—", percent: null });
+    }
+    return [{
+      key: chart.id,
+      subtitle: `${context.storagePools.length} 个存储池`,
+      capacity: rows,
+      facts
+    }];
   },
 
   "storage-pool-usage": (chart, context) => {
@@ -827,7 +800,8 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
         points: pool.usagePercent,
         valueFormatter: percent
       })),
-      ...PERCENT_TILE
+      ...PERCENT_TILE,
+      thresholds: thresholdLines(context.thresholds.disk)
     }];
   },
 
@@ -849,7 +823,8 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
           subtitle: "GPU 核心引擎",
           heroStat: lastUsage != null ? formatPercent(lastUsage) : undefined,
           series: [{ label: "核心", points: gpu.usagePercent }],
-          ...PERCENT_TILE
+          ...PERCENT_TILE,
+          thresholds: thresholdLines(context.thresholds.gpu)
         };
       },
       fallback: () => ({

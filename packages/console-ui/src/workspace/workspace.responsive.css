@@ -4,7 +4,7 @@
 @media (orientation: portrait), (max-width: 839px) {
   .workspace-device-toolbar {
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--md-sys-space-2);
     width: 100%;
   }
 

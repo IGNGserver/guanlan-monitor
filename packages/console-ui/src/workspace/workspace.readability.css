@@ -1,0 +1,280 @@
+/* =============================================================================
+ * Readability layer — data first, attention second.
+ *
+ * Loaded after `workspace.m3e.css` and therefore the last word on page rhythm.
+ * Three rules shape every page here:
+ *
+ * 1. One rhythm. A page is a column of blocks separated by `--ui-page-gap`;
+ *    blocks carry no outer margins of their own, so two pages never disagree
+ *    about the space between a header and the first card.
+ * 2. Charts lead. Headers, status tiles and notices are compact so the first
+ *    screen of the overview and of a device holds a chart.
+ * 3. Colour means state. Warning and critical colours appear on readings and
+ *    issues only, never as decoration.
+ * ========================================================================== */
+
+/* ---- Page rhythm ---------------------------------------------------------- */
+
+.workspace-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-page-gap);
+  padding-top: var(--md-sys-space-6);
+}
+.workspace-page > * { margin-top: 0; margin-bottom: 0; }
+.workspace-page > .workspace-breadcrumb + .workspace-page-intro { margin-top: calc(var(--ui-page-gap) * -1 + var(--md-sys-space-2)); }
+
+/* ---- Page header ---------------------------------------------------------- */
+
+.workspace-page-intro { align-items: center; gap: var(--md-sys-space-4); }
+.workspace-page-intro__eyebrow { margin-bottom: var(--md-sys-space-1); }
+.workspace-page-intro h2,
+.workspace-page-intro__title { font-size: var(--md-sys-typescale-headline-s-size); line-height: var(--md-sys-typescale-headline-s-line); }
+.workspace-page-intro p { margin-top: var(--md-sys-space-1); font-size: var(--md-sys-typescale-body-s-size); line-height: var(--md-sys-typescale-body-s-line); }
+
+/* ---- Fleet summary tiles -------------------------------------------------- */
+
+/* Four compact tiles stay on one row until the content column is genuinely
+   narrow; folding them two by two at 1199px pushed the chart off the screen. */
+.guanlan-fleet-hero { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--ui-card-gap); }
+@container overview (max-width: 720px) { .guanlan-fleet-hero { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.guanlan-fleet-hero__tile {
+  gap: var(--md-sys-space-1);
+  padding: var(--md-sys-space-3) var(--ui-card-pad);
+  border-radius: var(--md-sys-shape-lg);
+  box-shadow: none;
+}
+/* The tiles are read, not clicked; a lift on hover promised an action. */
+.guanlan-fleet-hero__tile:hover { transform: none; box-shadow: none; background: var(--md-sys-color-surface-container-low); }
+.guanlan-fleet-hero__tile.is-warning:hover { background: var(--md-sys-color-warning-container); }
+.guanlan-fleet-hero__tile:hover::before { background: transparent; }
+.guanlan-fleet-hero__label { min-height: 24px; }
+/* A fixed line box: the unit beside a figure must not make one tile's value row
+   taller than its neighbour's text value, or the notes below stop lining up. */
+.guanlan-fleet-hero__value { height: var(--md-sys-typescale-headline-m-line); font-size: var(--md-sys-typescale-headline-m-size); line-height: var(--md-sys-typescale-headline-m-line); white-space: nowrap; }
+.guanlan-fleet-hero__value small { line-height: 1; }
+.guanlan-fleet-hero__value--text { font-size: var(--md-sys-typescale-title-l-size); line-height: var(--md-sys-typescale-headline-m-line); }
+
+/* ---- Cards and section headers ------------------------------------------- */
+
+.workspace-surface__header { padding: var(--ui-card-pad) var(--ui-card-pad) var(--md-sys-space-3); }
+.workspace-surface__header h3 { font-size: var(--md-sys-typescale-title-m-size); line-height: var(--md-sys-typescale-title-m-line); font-weight: 600; }
+.chart-tile { gap: var(--md-sys-space-3); padding: var(--ui-card-pad); }
+.chart-tile__note { margin: var(--md-sys-space-2) 0 0; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
+
+.dashboard-section { margin: 0; }
+.workspace-device-dashboard { display: flex; flex-direction: column; gap: var(--ui-section-gap); }
+.dashboard-section__header { align-items: flex-end; gap: var(--md-sys-space-3); margin-bottom: var(--md-sys-space-3); }
+.dashboard-section__eyebrow { margin-bottom: var(--md-sys-space-1); font-size: var(--md-sys-typescale-label-s-size); }
+.dashboard-section__title { font-size: var(--md-sys-typescale-title-l-size); line-height: var(--md-sys-typescale-title-l-line); font-weight: 600; }
+.dashboard-section__description { margin-top: var(--md-sys-space-1); font-size: var(--md-sys-typescale-body-s-size); line-height: var(--md-sys-typescale-body-s-line); }
+.dashboard-grid { gap: var(--ui-card-gap); }
+
+/* ---- Overview ------------------------------------------------------------- */
+
+.workspace-page--overview { container: overview / inline-size; }
+.workspace-overview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--md-sys-space-3);
+}
+.workspace-overview-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  align-items: start;
+  gap: var(--ui-card-gap);
+}
+.workspace-overview-trend { min-width: 0; }
+.workspace-overview-devices { min-height: 0; margin: 0; overflow: hidden; }
+.workspace-overview-devices .workspace-issues { padding: 0 var(--md-sys-space-2) var(--md-sys-space-2); }
+.workspace-overview-devices .workspace-muted-block { margin: 0 var(--ui-card-pad) var(--ui-card-pad); }
+.workspace-overview-devices .workspace-issue { padding: var(--md-sys-space-2) var(--md-sys-space-3); grid-template-columns: 32px minmax(0, 1fr) auto; }
+.workspace-overview-devices .workspace-issue__chevron { display: none; }
+@container overview (max-width: 1040px) {
+  .workspace-overview-main { grid-template-columns: minmax(0, 1fr); }
+}
+
+.workspace-fleet { display: flex; min-width: 0; flex-direction: column; gap: var(--md-sys-space-3); }
+.workspace-fleet__header { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--md-sys-space-2) var(--md-sys-space-4); }
+.workspace-fleet__header h3 { margin: 0; font-size: var(--md-sys-typescale-title-l-size); line-height: var(--md-sys-typescale-title-l-line); font-weight: 600; }
+.workspace-fleet__header span { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
+.workspace-fleet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(264px, 1fr));
+  gap: var(--ui-card-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.workspace-fleet-grid > li { display: flex; min-width: 0; }
+.workspace-fleet-grid .workspace-fleet-card {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--md-sys-space-3);
+  padding: var(--ui-card-pad);
+  border: 1px solid transparent;
+  border-radius: var(--md-sys-shape-lg);
+  background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--md-sys-motion-effects-fast), border-color var(--md-sys-motion-effects-fast);
+}
+.workspace-fleet-grid .workspace-fleet-card:hover { background: var(--md-sys-color-surface-container); border-color: var(--md-sys-color-outline-variant); }
+.workspace-fleet-grid .workspace-fleet-card:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+.workspace-fleet-grid .workspace-fleet-card.is-critical { box-shadow: inset 3px 0 0 var(--md-sys-color-error); }
+.workspace-fleet-grid .workspace-fleet-card.is-warning { box-shadow: inset 3px 0 0 var(--md-sys-color-warning); }
+.workspace-fleet-grid .workspace-fleet-card.is-offline { box-shadow: inset 3px 0 0 var(--md-sys-color-outline); }
+.workspace-fleet-grid .workspace-fleet-card.is-offline .workspace-fleet-card__metrics,
+.workspace-fleet-grid .workspace-fleet-card.is-offline .workspace-fleet-card__trend { opacity: 0.6; }
+.workspace-fleet-card__head { display: flex; min-width: 0; align-items: center; gap: var(--md-sys-space-2); }
+.workspace-fleet-card__head strong { min-width: 0; flex: 1; overflow: hidden; font-size: var(--md-sys-typescale-title-s-size); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-fleet-card__state { flex: 0 0 auto; padding: 0 var(--md-sys-space-2); border-radius: var(--md-sys-shape-full); color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-high); font-size: var(--md-sys-typescale-label-s-size); font-weight: 500; line-height: 20px; }
+.workspace-fleet-card__state.is-critical { color: var(--md-sys-color-on-error-container); background: var(--md-sys-color-error-container); }
+.workspace-fleet-card__state.is-warning { color: var(--md-sys-color-on-warning-container); background: var(--md-sys-color-warning-container); }
+.workspace-fleet-card__metrics { display: grid; gap: var(--md-sys-space-2); }
+.workspace-fleet-card__metric { display: grid; grid-template-columns: 32px minmax(0, 1fr) 40px; align-items: center; gap: var(--md-sys-space-2); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); }
+.workspace-fleet-card__metric strong { color: var(--md-sys-color-on-surface); font-size: var(--md-sys-typescale-body-m-size); font-weight: 600; text-align: right; }
+.workspace-fleet-card__metric.is-warning strong { color: var(--md-sys-color-warning); }
+.workspace-fleet-card__metric.is-critical strong { color: var(--md-sys-color-error); }
+.workspace-fleet-card__trend { display: grid; gap: var(--md-sys-space-1); padding-top: var(--md-sys-space-2); border-top: 1px solid var(--md-sys-color-outline-variant); }
+.workspace-fleet-card__trend-label { display: flex; align-items: baseline; justify-content: space-between; gap: var(--md-sys-space-2); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-s-size); }
+.workspace-fleet-card__trend-label strong { color: var(--md-sys-color-on-surface); font-size: var(--md-sys-typescale-body-s-size); font-weight: 600; }
+.workspace-fleet-card__note { display: inline-flex; align-items: center; gap: var(--md-sys-space-1); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-s-size); }
+
+/* ---- One card look -------------------------------------------------------- */
+
+/* Every container on a data page is the same flat, filled card: same surface,
+   same radius, no outline or shadow. Different borders and elevations used to
+   make neighbouring cards look like they belonged to different products. */
+.workspace-surface,
+.workspace-overview-devices,
+.workspace-hub-card,
+.chart-tile {
+  border: 0;
+  border-radius: var(--md-sys-shape-lg);
+  background: var(--md-sys-color-surface-container-low);
+  box-shadow: none;
+}
+.chart-tile:hover { box-shadow: none; background: var(--md-sys-color-surface-container-low); }
+.workspace-hub-card__grid { column-gap: var(--md-sys-space-6); padding: var(--md-sys-space-1) var(--ui-card-pad) var(--md-sys-space-2); }
+.workspace-hub-card .workspace-form__actions { padding: var(--md-sys-space-2) var(--ui-card-pad) var(--ui-card-pad); }
+.workspace-inline-note { margin: 0; }
+
+/* ---- Device page ---------------------------------------------------------- */
+
+/* Facts as one quiet line of label/value pairs. The old grid gave seven facts
+   six columns and painted the empty eighth cell grey. */
+.workspace-root .workspace-device-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--md-sys-space-2) var(--md-sys-space-6);
+  margin: 0;
+  padding: var(--md-sys-space-3) var(--ui-card-pad);
+  overflow: visible;
+  border: 0;
+  border-radius: var(--md-sys-shape-lg);
+  background: var(--md-sys-color-surface-container-low);
+  box-shadow: none;
+}
+.workspace-root .workspace-device-facts > div { min-width: 0; padding: 0; background: transparent; box-shadow: none; }
+.workspace-root .workspace-device-facts span { font-size: var(--md-sys-typescale-label-s-size); }
+.workspace-root .workspace-device-facts strong { margin-top: 0; overflow: visible; font-size: var(--md-sys-typescale-body-m-size); font-weight: 500; }
+
+.workspace-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
+  gap: var(--ui-card-gap);
+}
+.workspace-kpi-strip .workspace-kpi {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: var(--md-sys-space-2);
+  padding: var(--md-sys-space-3) var(--ui-card-pad);
+  border: 1px solid transparent;
+  border-radius: var(--md-sys-shape-lg);
+  background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--md-sys-motion-effects-fast), border-color var(--md-sys-motion-effects-fast);
+}
+.workspace-kpi-strip .workspace-kpi:hover { background: var(--md-sys-color-surface-container); border-color: var(--md-sys-color-outline-variant); }
+.workspace-kpi-strip .workspace-kpi:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+.workspace-kpi-strip .workspace-kpi.is-warning { box-shadow: inset 3px 0 0 var(--md-sys-color-warning); }
+.workspace-kpi-strip .workspace-kpi.is-critical { box-shadow: inset 3px 0 0 var(--md-sys-color-error); }
+.workspace-kpi__label { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-m-size); font-weight: 500; }
+.workspace-kpi__value { font-size: var(--md-sys-typescale-headline-s-size); line-height: var(--md-sys-typescale-headline-s-line); font-weight: 600; }
+.workspace-kpi-strip .workspace-kpi.is-warning .workspace-kpi__value { color: var(--md-sys-color-warning); }
+.workspace-kpi-strip .workspace-kpi.is-critical .workspace-kpi__value { color: var(--md-sys-color-error); }
+.workspace-kpi__value--pair { display: flex; flex-wrap: wrap; gap: 0 var(--md-sys-space-3); font-size: var(--md-sys-typescale-title-m-size); }
+.workspace-kpi__note { overflow: hidden; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-s-size); text-overflow: ellipsis; white-space: nowrap; }
+.workspace-kpi-strip .workspace-kpi.is-warning .workspace-kpi__note { color: var(--md-sys-color-warning); }
+.workspace-kpi-strip .workspace-kpi.is-critical .workspace-kpi__note { color: var(--md-sys-color-error); }
+
+/* Tabs and the range they apply to share one row. */
+.workspace-root .workspace-device-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--md-sys-space-2) var(--md-sys-space-4);
+}
+.workspace-root .workspace-device-context > .m3e-tabs { width: auto; min-width: 0; flex: 0 1 auto; }
+.workspace-root .workspace-device-context > .workspace-device-context__controls { flex: 0 0 auto; }
+.workspace-root .workspace-device-context > .workspace-device-context__caption,
+.workspace-root .workspace-device-context > .workspace-anchor-bar { flex: 1 1 100%; }
+.workspace-device-context__caption { border-top: 0; padding: 0; }
+.workspace-anchor-bar { margin-bottom: 0; padding: var(--md-sys-space-1); }
+.workspace-anchor-btn { padding: var(--md-sys-space-1) var(--md-sys-space-3); }
+.workspace-root .workspace-device-context .m3e-tabs__tab { padding-inline: var(--md-sys-space-3); }
+/* The breadcrumb already says "设备", and section eyebrows ("驾驶舱", "容量")
+   restated the title under them; both cost a line above every chart group. */
+.workspace-page--device .workspace-page-intro__eyebrow,
+.dashboard-section__eyebrow { display: none; }
+.dashboard-section__header { margin-bottom: var(--md-sys-space-3); }
+.dashboard-section__copy { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--md-sys-space-1) var(--md-sys-space-3); }
+.dashboard-section__description { max-width: none; margin: 0; }
+
+/* Overview cards pad their own rows; the generic surface padding doubled it. */
+.workspace-overview-devices,
+.workspace-hub-card { padding: 0; }
+.workspace-page--overview .workspace-surface__header { margin-bottom: 0; }
+
+/* A dot outside a status label takes the state colour, not the text colour. */
+.workspace-status-dot--online { background: var(--md-sys-color-success); }
+.workspace-status-dot--offline { background: var(--md-sys-color-outline); }
+.workspace-status-dot--warning { background: var(--md-sys-color-warning); }
+.workspace-status-dot--cached { background: var(--md-sys-color-info); }
+.workspace-status-dot--unknown { background: var(--md-sys-color-outline-variant); }
+
+/* ---- Device directory ----------------------------------------------------- */
+
+.workspace-directory-toolbar { margin: 0; padding: var(--md-sys-space-3) var(--ui-card-pad); }
+.workspace-directory-surface { overflow: hidden; }
+.guanlan-metric-cell { display: grid; min-width: 112px; max-width: 180px; gap: var(--md-sys-space-1); }
+.guanlan-metric-cell__value { font-size: var(--md-sys-typescale-body-m-size); font-weight: 600; }
+.guanlan-metric-cell.is-stale { opacity: 0.55; }
+.guanlan-metric-cell .guanlan-table-secondary { font-size: var(--md-sys-typescale-label-s-size); }
+.guanlan-metric-cell__trend { margin-top: var(--md-sys-space-1); }
+/* The bar under the figure already carries the tone; no extra bullet. */
+.guanlan-metric-cell .guanlan-metric--warning::before,
+.guanlan-metric-cell .guanlan-metric--critical::before { display: none; }
+/* The card is the frame; the table inside it needs no second border. */
+.workspace-directory-surface { padding: 0; }
+.workspace-directory-surface .m3e-table-wrap { border: 0; border-radius: 0; }
+.workspace-directory-surface .m3e-table th { padding-block: var(--md-sys-space-3); }
+.workspace-directory-surface .m3e-table td { padding-block: var(--md-sys-space-3); }
+.workspace-directory-surface .guanlan-table-link { padding: 0; text-align: left; }
+
+/* ---- Settings ------------------------------------------------------------- */
+
+.workspace-page > .workspace-page-intro { margin: 0; }
+.workspace-settings-stack { gap: var(--ui-card-gap); }
+.workspace-settings-stack .workspace-surface { padding: var(--ui-card-pad) var(--md-sys-space-5) var(--md-sys-space-2); }
+.workspace-settings-stack .workspace-surface__header { margin-bottom: 0; padding-top: 0; }

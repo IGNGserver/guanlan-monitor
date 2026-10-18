@@ -5,10 +5,10 @@ import { useWorkspace, useWorkspaceUi } from "../WorkspaceContext";
 import type { DeviceDirectorySort, DeviceDirectoryStatus } from "../selectors";
 import { M3Badge, M3Banner, M3Checkbox, M3Chip, M3DataTable, M3Dialog, M3SegmentedControl, M3Select, M3TextField } from "../m3";
 import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
-import { TimeSeriesChart } from "../charts";
+import { CapacityBar, Sparkline, TimeSeriesChart } from "../charts";
 import { UNAVAILABLE_METRIC_LABEL, formatBytes, formatDate, formatPercent, formatTemperature } from "../formatters";
 import { dateValueOf } from "../sampleTime.ts";
-import { evaluateDevice, metricSeverity, metricValue, type DeviceIssue, type ThresholdMetric } from "../health";
+import { evaluateDevice, metricSeverity, metricTone, metricValue, type DeviceIssue, type ThresholdMetric } from "../health";
 
 const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: string }).src;
 
@@ -244,13 +244,10 @@ function PromptDialog({
   </M3Dialog>;
 }
 
-function directoryCapacityText(device: DeviceSummary, kind: "memory" | "disk", unavailable: boolean): string {
-  if (unavailable) return UNAVAILABLE_METRIC_LABEL;
+function directoryCapacityDetail(device: DeviceSummary, kind: "memory" | "disk"): string | null {
   const used = kind === "memory" ? device.memoryUsedBytes : device.diskUsedBytes;
   const total = kind === "memory" ? device.memoryTotalBytes : device.diskTotalBytes;
-  const percentText = formatPercent(kind === "memory" ? device.memoryUsagePercent : device.diskUsagePercent);
-  if (Number.isFinite(used) && Number.isFinite(total) && (total ?? 0) > 0) return `${formatBytes(used)} / ${formatBytes(total)}${percentText === "—" ? "" : ` · ${percentText}`}`;
-  return percentText;
+  return Number.isFinite(used) && Number.isFinite(total) && (total ?? 0) > 0 ? `${formatBytes(used)} / ${formatBytes(total)}` : null;
 }
 
 /**
@@ -269,17 +266,25 @@ function directoryStatusTag(device: DeviceSummary, issues: DeviceIssue[]) {
 }
 
 /**
- * A reading in the directory, toned by the same thresholds the overview uses.
- * The tone is backed by text in the cell's title and accessible name, so the
- * state does not depend on colour.
+ * A reading in the directory: the figure, a bar with the warning and critical
+ * ticks, and optionally the recent trend. The figure is toned by the same
+ * thresholds the overview uses, and the tone is backed by text in the cell's
+ * title and accessible name, so the state does not depend on colour.
  */
-function ThresholdValue({ device, metric, children }: { device: DeviceSummary; metric: ThresholdMetric; children: React.ReactNode }) {
+function MetricCell({ device, metric, detail, trend }: { device: DeviceSummary; metric: ThresholdMetric; detail?: string | null; trend?: readonly SamplePoint[] }) {
   const { healthThresholds } = useWorkspaceUi();
   const rule = healthThresholds[metric];
-  const severity = device.status === "online" ? metricSeverity(metricValue(device, metric), rule) : null;
-  if (!severity) return <>{children}</>;
-  const note = severity === "critical" ? `超过严重阈值 ${rule.critical}%` : `超过警告阈值 ${rule.warning}%`;
-  return <span className={`guanlan-metric guanlan-metric--${severity}`} title={note}>{children}<span className="workspace-visually-hidden">（{note}）</span></span>;
+  const value = metricValue(device, metric);
+  const online = device.status === "online";
+  const severity = online ? metricSeverity(value, rule) : null;
+  const note = severity === "critical" ? `超过严重阈值 ${rule.critical}%` : severity === "warning" ? `超过警告阈值 ${rule.warning}%` : undefined;
+  const tone = online ? metricTone(value, rule) : "normal";
+  return <span className={`guanlan-metric-cell is-${tone}${online ? "" : " is-stale"}`} title={note}>
+    <span className={`guanlan-metric-cell__value${severity ? ` guanlan-metric guanlan-metric--${severity}` : ""}`}>{formatPercent(value)}{note ? <span className="workspace-visually-hidden">（{note}）</span> : null}</span>
+    <CapacityBar percent={value} tone={tone} marks={rule} size="sm" />
+    {detail ? <small className="guanlan-table-secondary">{detail}</small> : null}
+    {trend && trend.length > 1 ? <Sparkline points={trend} maxValue={100} tone={tone} height={20} className="guanlan-metric-cell__trend" /> : null}
+  </span>;
 }
 
 /**
@@ -303,7 +308,8 @@ function DeviceTable({
   manageMode = false,
   onMove,
   onDelete,
-  emptyState
+  emptyState,
+  cpuTrends
 }: {
   devices: DeviceSummary[];
   order?: string[];
@@ -311,6 +317,8 @@ function DeviceTable({
   onMove?: (deviceId: string, direction: -1 | 1) => void;
   onDelete?: (device: DeviceSummary) => void;
   emptyState?: React.ReactNode;
+  /** Recent CPU samples by device id, drawn under each CPU figure. */
+  cpuTrends?: ReadonlyMap<string, readonly SamplePoint[]>;
 }) {
   const { navigate, healthThresholds } = useWorkspaceUi();
   const openDevice = (device: DeviceSummary) => navigate({ kind: "device", deviceId: device.deviceId });
@@ -325,9 +333,9 @@ function DeviceTable({
         <small className="guanlan-table-secondary">{`${device.os} · ID ${device.deviceId}`}</small>
       </>
     },
-    { key: "cpu", header: "CPU 使用率", cell: (device) => isMetricUnavailable(device, "cpuUsage") ? "—" : <ThresholdValue device={device} metric="cpu">{formatPercent(device.cpuUsagePercent)}</ThresholdValue> },
-    { key: "memory", header: "内存使用", cell: (device) => <ThresholdValue device={device} metric="memory">{directoryCapacityText(device, "memory", isMetricUnavailable(device, "memoryUsage"))}</ThresholdValue> },
-    { key: "disk", header: "磁盘使用", cell: (device) => <ThresholdValue device={device} metric="disk">{directoryCapacityText(device, "disk", isMetricUnavailable(device, "diskUsage"))}</ThresholdValue> },
+    { key: "cpu", header: "CPU 使用率", cell: (device) => isMetricUnavailable(device, "cpuUsage") ? "—" : <MetricCell device={device} metric="cpu" trend={cpuTrends?.get(device.deviceId)} /> },
+    { key: "memory", header: "内存使用", cell: (device) => isMetricUnavailable(device, "memoryUsage") ? UNAVAILABLE_METRIC_LABEL : <MetricCell device={device} metric="memory" detail={directoryCapacityDetail(device, "memory")} /> },
+    { key: "disk", header: "磁盘使用", cell: (device) => isMetricUnavailable(device, "diskUsage") ? UNAVAILABLE_METRIC_LABEL : <MetricCell device={device} metric="disk" detail={directoryCapacityDetail(device, "disk")} /> },
     {
       key: "lastSeen",
       header: "最后在线",
@@ -694,11 +702,13 @@ function metricWindowLabel(value: string): string {
  * so it sits where ranges are chosen, but it is never stored as the history
  * window — picking any other range leaves it.
  */
-function MetricWindowControl({ value, onChange, live }: { value: DesktopMetricWindowValue; onChange: (value: DesktopMetricWindowValue) => void; live?: { selected: boolean; onSelect: () => void } }) {
+function MetricWindowControl({ value, onChange, live, compact = false }: { value: DesktopMetricWindowValue; onChange: (value: DesktopMetricWindowValue) => void; live?: { selected: boolean; onSelect: () => void }; compact?: boolean }) {
   const options = live ? [{ value: "live", label: <span className="workspace-range-control__live"><span className="workspace-live-dot" aria-hidden="true" />实时</span> }, ...metricWindowOptions] : metricWindowOptions;
   return (
     <div className="workspace-range-control" role="group" aria-label="遥测时间范围">
-      <span className="workspace-range-control__label"><Icon name="clock" size={14} />时间范围</span>
+      {/* `compact` keeps the clock and leaves the words to assistive technology,
+          so the range fits on the same row as the tabs it applies to. */}
+      <span className="workspace-range-control__label" title="时间范围"><Icon name="clock" size={14} />{compact ? <span className="m3e-visually-hidden">时间范围</span> : "时间范围"}</span>
       <M3SegmentedControl
         className="workspace-range-control__options"
         options={options}
@@ -969,6 +979,7 @@ function ErrorSurface({ title, detail, onRetry }: { title: string; detail: strin
 
 export {
   appIconSrc,
+  metricWindowOptions,
   isMetricUnavailable,
   unavailablePoints,
   metricGroups,

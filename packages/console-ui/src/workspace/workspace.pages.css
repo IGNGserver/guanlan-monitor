@@ -1,32 +1,32 @@
 /* v3 shared information architecture: destinations, quiet surfaces, and progressive disclosure. */
-.workspace-page { width: min(100%, 1440px); margin: 0 auto; padding: 44px var(--workspace-content-pad) 72px; }
-.workspace-page-intro { display: flex; min-width: 0; align-items: flex-end; justify-content: space-between; gap: 24px; margin: 0 0 34px; padding: 0; }
-.workspace-page-intro__eyebrow { margin-bottom: 9px; color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); font-weight: 600; letter-spacing: .03em; }
+.workspace-page { width: min(100%, 1440px); margin: 0 auto; padding: var(--md-sys-space-9) var(--workspace-content-pad) var(--md-sys-space-12); }
+.workspace-page-intro { display: flex; min-width: 0; align-items: flex-end; justify-content: space-between; gap: var(--md-sys-space-6); margin: 0 0 var(--md-sys-space-7); padding: 0; }
+.workspace-page-intro__eyebrow { margin-bottom: var(--md-sys-space-2); color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); font-weight: 600; letter-spacing: .03em; }
 .workspace-page-intro h2 { margin: 0; font-size: clamp(28px, 3vw, 36px); line-height: 1.1; letter-spacing: -0.045em; }
-.workspace-page-intro p { max-width: 66ch; margin: 12px 0 0; color: var(--workspace-text-secondary); font-size: var(--md-sys-typescale-body-m-size); line-height: 1.65; }
+.workspace-page-intro p { max-width: 66ch; margin: var(--md-sys-space-3) 0 0; color: var(--workspace-text-secondary); font-size: var(--md-sys-typescale-body-m-size); line-height: 1.65; }
 .workspace-page-intro__actions { align-items: center; }
 
 
 /* The attention notification row owns its own flex layout, tint and status strip. */
-.workspace-attention { margin: 0 0 22px; }
+.workspace-attention { margin: 0 0 var(--md-sys-space-6); }
 
 .workspace-surface { border: 0; border-radius: var(--md-sys-shape-lg); background: var(--workspace-surface); box-shadow: var(--workspace-shadow-soft); }
-.workspace-surface__header { gap: 16px; padding: 22px 24px 16px; }
-.workspace-surface__header h3 { font-size: 19px; letter-spacing: -0.025em; }
+.workspace-surface__header { gap: var(--md-sys-space-4); padding: var(--md-sys-space-6) var(--md-sys-space-6) var(--md-sys-space-4); }
+.workspace-surface__header h3 { font-size: var(--md-sys-typescale-title-m-size); letter-spacing: -0.025em; }
 
 /* Layout only. Surface colour, border and radius are arbitrated by
    `workspace.m3e.css`, which is the last word for shell components. */
-.workspace-directory-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto auto; align-items: end; gap: 10px; margin: 0 0 18px; padding: 16px; }
+.workspace-directory-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto auto; align-items: end; gap: var(--md-sys-space-3); margin: 0 0 var(--md-sys-space-5); padding: var(--md-sys-space-4); }
 .workspace-directory-toolbar .m3e-field { min-width: 220px; }
-.workspace-directory-toolbar__chips { display: flex; align-items: center; gap: 4px; min-height: 40px; }
+.workspace-directory-toolbar__chips { display: flex; align-items: center; gap: var(--md-sys-space-1); min-height: 40px; }
 .workspace-directory-surface { overflow: visible; }
-.workspace-inline-note { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; padding: 11px 14px; color: var(--workspace-text-secondary); background: var(--workspace-surface-subtle); font-size: var(--md-sys-typescale-body-s-size); }
+.workspace-inline-note { display: flex; align-items: center; gap: var(--md-sys-space-2); margin: 0 0 var(--md-sys-space-5); padding: var(--md-sys-space-3) var(--md-sys-space-4); color: var(--workspace-text-secondary); background: var(--workspace-surface-subtle); font-size: var(--md-sys-typescale-body-s-size); }
 
-.workspace-directory-toolbar__actions { display: flex; min-height: 40px; align-items: center; justify-content: flex-end; gap: 8px; }
+.workspace-directory-toolbar__actions { display: flex; min-height: 40px; align-items: center; justify-content: flex-end; gap: var(--md-sys-space-2); }
 
 .workspace-page--settings { max-width: 1120px; }
-.workspace-page--settings .workspace-page-intro { margin-bottom: 28px; }
-.workspace-settings-stack { max-width: 860px; gap: 26px; }
+.workspace-page--settings .workspace-page-intro { margin-bottom: var(--md-sys-space-7); }
+.workspace-settings-stack { max-width: 860px; gap: var(--md-sys-space-6); }
 .workspace-settings-stack .workspace-surface { background: transparent; box-shadow: none; }
 .workspace-settings-stack .workspace-surface__header { padding-inline: 0; border-bottom: 1px solid var(--workspace-border); }
 .workspace-settings-stack .workspace-surface > :not(.workspace-surface__header) { padding-inline: 0; }
@@ -44,7 +44,7 @@
   /* The sidebar keeps its expanded/collapsed contract at every desktop width.
      A forced 84px icon rail used to live here and hid both the labels and the
      collapse affordance, so an "expanded" preference could not be honoured. */
-  .workspace-page { padding-inline: 26px; }
+  .workspace-page { padding-inline: var(--md-sys-space-6); }
   .workspace-directory-toolbar { grid-template-columns: minmax(180px, 1fr) auto auto; }
   .workspace-directory-toolbar .m3e-field { grid-column: 1 / -1; }
 }
@@ -52,8 +52,8 @@
 @media (max-width: 839px) {
   /* Page content in the touch shell. The desktop shell never renders below
      840px any more, so its drawer, scroller and bottom-bar rules are gone. */
-  .workspace-page { padding: 30px 20px 92px; }
-  .workspace-page-intro { align-items: flex-start; flex-direction: column; gap: 16px; margin-bottom: 26px; }
+  .workspace-page { padding: var(--md-sys-space-7) var(--md-sys-space-5) var(--md-sys-space-12); }
+  .workspace-page-intro { align-items: flex-start; flex-direction: column; gap: var(--md-sys-space-4); margin-bottom: var(--md-sys-space-6); }
   .workspace-page-intro__actions { width: 100%; }
   .workspace-page-intro__actions > * { flex: 1; }
   .workspace-directory-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; }
@@ -66,9 +66,9 @@
 }
 
 @media (max-width: 599px) {
-  .workspace-page { padding-inline: 16px; }
+  .workspace-page { padding-inline: var(--md-sys-space-4); }
   .workspace-page-intro h2 { font-size: var(--md-sys-typescale-headline-m-size); }
-  .workspace-surface__header { padding-inline: 18px; }
+  .workspace-surface__header { padding-inline: var(--md-sys-space-5); }
   
   /* Phone card optimizations */
 }
@@ -86,46 +86,46 @@
 
 /* The page title carries the health tone, so "异常" no longer reads like a
    second caption on an otherwise normal page. */
-.workspace-page-intro__title { display: flex; align-items: center; gap: 10px; }
+.workspace-page-intro__title { display: flex; align-items: center; gap: var(--md-sys-space-3); }
 .workspace-page-intro__title > svg { flex-shrink: 0; }
 .workspace-page-intro--warning .workspace-page-intro__title { color: var(--workspace-amber); }
 .workspace-page-intro--warning .workspace-page-intro__title > svg { color: var(--workspace-amber); }
 
 /* Hub facts, folded in from the retired 中枢状态 page. */
 .workspace-hub-card {
-  margin: 0 0 26px;
+  margin: 0 0 var(--md-sys-space-6);
   border-radius: var(--md-sys-shape-lg);
   background: var(--workspace-color-surface-container, #f1f4f9);
   border: 1px solid var(--workspace-color-outline-variant, #c4c9d0);
   box-shadow: var(--md-sys-elevation-1);
   overflow: hidden;
 }
-.workspace-hub-card__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 28px; padding: 4px 24px 8px; }
-.workspace-hub-card .workspace-form__actions { padding: 8px 24px 22px; }
+.workspace-hub-card__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--md-sys-space-1) var(--md-sys-space-7); padding: var(--md-sys-space-1) var(--md-sys-space-6) var(--md-sys-space-2); }
+.workspace-hub-card .workspace-form__actions { padding: var(--md-sys-space-2) var(--md-sys-space-6) var(--md-sys-space-6); }
 
 /* The attention list sits directly in the page column now that the old
    two-up overview grid is gone, so it carries its own bottom rhythm. */
-.workspace-overview-devices { margin: 0 0 26px; }
-.workspace-overview-devices .workspace-muted-block { margin: 0 24px 22px; }
+.workspace-overview-devices { margin: 0 0 var(--md-sys-space-6); }
+.workspace-overview-devices .workspace-muted-block { margin: 0 var(--md-sys-space-6) var(--md-sys-space-6); }
 
 /* First-run guide. Deliberately quiet: it is a card, not a modal. */
 .workspace-onboarding {
-  margin: 0 0 26px;
-  padding: 20px 22px;
+  margin: 0 0 var(--md-sys-space-6);
+  padding: var(--md-sys-space-5) var(--md-sys-space-6);
   border: 1px solid var(--workspace-color-outline-variant, #c4c9d0);
   border-radius: var(--md-sys-shape-lg);
   background: var(--workspace-color-surface-container, #f1f4f9);
   box-shadow: var(--md-sys-elevation-1);
 }
-.workspace-onboarding__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.workspace-onboarding__lead { margin: 6px 0 0; color: var(--workspace-text); font-size: 15px; font-weight: 500; }
-.workspace-onboarding__steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 18px 0 0; padding: 0; list-style: none; }
-.workspace-onboarding__steps > li { display: flex; min-width: 0; gap: 12px; }
+.workspace-onboarding__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--md-sys-space-4); }
+.workspace-onboarding__lead { margin: var(--md-sys-space-2) 0 0; color: var(--workspace-text); font-size: var(--md-sys-typescale-title-m-size); font-weight: 500; }
+.workspace-onboarding__steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--md-sys-space-5); margin: var(--md-sys-space-5) 0 0; padding: 0; list-style: none; }
+.workspace-onboarding__steps > li { display: flex; min-width: 0; gap: var(--md-sys-space-3); }
 .workspace-onboarding__index { display: grid; width: 22px; height: 22px; flex-shrink: 0; place-items: center; border-radius: 50%; color: var(--md-sys-color-on-primary); background: var(--workspace-accent); font-size: var(--md-sys-typescale-body-s-size); font-weight: 600; }
 .workspace-onboarding__body { min-width: 0; }
-.workspace-onboarding__body strong { display: block; color: var(--workspace-text); font-size: 13px; }
-.workspace-onboarding__body p { margin: 4px 0 8px; color: var(--workspace-text-secondary); font-size: var(--md-sys-typescale-body-s-size); line-height: 1.6; }
-.workspace-onboarding__footer { display: flex; align-items: center; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--workspace-border); }
+.workspace-onboarding__body strong { display: block; color: var(--workspace-text); font-size: var(--md-sys-typescale-body-s-size); }
+.workspace-onboarding__body p { margin: var(--md-sys-space-1) 0 var(--md-sys-space-2); color: var(--workspace-text-secondary); font-size: var(--md-sys-typescale-body-s-size); line-height: 1.6; }
+.workspace-onboarding__footer { display: flex; align-items: center; gap: var(--md-sys-space-3); margin-top: var(--md-sys-space-5); padding-top: var(--md-sys-space-4); border-top: 1px solid var(--workspace-border); }
 .workspace-onboarding__footer p { margin: 0; color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); }
 
 /* Advanced settings: collapsed by default, still saved on change. */
@@ -135,21 +135,21 @@
   background: var(--workspace-color-surface-container, #f1f4f9);
   box-shadow: var(--md-sys-elevation-1);
 }
-.workspace-advanced__summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 16px 20px; cursor: pointer; list-style: none; }
+.workspace-advanced__summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--md-sys-space-3); padding: var(--md-sys-space-4) var(--md-sys-space-5); cursor: pointer; list-style: none; }
 .workspace-advanced__summary::-webkit-details-marker { display: none; }
 .workspace-advanced__summary > svg { color: var(--workspace-text-muted); transition: transform var(--workspace-transition); }
 .workspace-advanced[open] > .workspace-advanced__summary > svg { transform: rotate(180deg); }
 .workspace-advanced__copy strong { display: block; color: var(--workspace-text); font-size: var(--md-sys-typescale-body-m-size); }
-.workspace-advanced__copy small { display: block; margin-top: 3px; color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); }
-.workspace-advanced__body { padding: 4px 20px 20px; border-top: 1px solid var(--workspace-border); }
+.workspace-advanced__copy small { display: block; margin-top: var(--md-sys-space-1); color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); }
+.workspace-advanced__body { padding: var(--md-sys-space-1) var(--md-sys-space-5) var(--md-sys-space-5); border-top: 1px solid var(--workspace-border); }
 .workspace-advanced__body .workspace-surface { box-shadow: none; border: 1px solid var(--workspace-border); }
 
 /* Command panel groups. */
-.workspace-command__group { padding: 14px 16px 6px; color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-label-s-size); font-weight: 600; letter-spacing: .04em; }
-.workspace-command__list > .workspace-command__group:first-child { padding-top: 4px; }
+.workspace-command__group { padding: var(--md-sys-space-4) var(--md-sys-space-4) var(--md-sys-space-2); color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-label-s-size); font-weight: 600; letter-spacing: .04em; }
+.workspace-command__list > .workspace-command__group:first-child { padding-top: var(--md-sys-space-1); }
 
 /* Copy feedback, so a clipboard failure is not indistinguishable from success. */
-.workspace-copy { display: inline-flex; align-items: center; gap: 8px; }
+.workspace-copy { display: inline-flex; align-items: center; gap: var(--md-sys-space-2); }
 .workspace-copy__state { color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); }
 
 /* Directory row actions in management mode: one click, no menu to discover. */
@@ -179,7 +179,7 @@
 .guanlan-table-icon-action.is-danger:hover:not(:disabled) { color: var(--workspace-red); background: color-mix(in srgb, var(--workspace-red) 12%, transparent); }
 
 /* Traffic calendar paging as icon buttons. */
-.workspace-traffic-calendar__nav-button { min-width: 34px; padding-inline: 6px; }
+.workspace-traffic-calendar__nav-button { min-width: 34px; padding-inline: var(--md-sys-space-2); }
 
 /* Refresh progress. The topbar already had a spinner inside a button label;
    this is the page-level signal that data is on its way. */
@@ -234,7 +234,7 @@
 
 /* Fleet issues (DeviceIssueList). Severity is an icon, a word and a container
    tone; the text itself stays in the ink tokens. */
-.workspace-issues { padding: 0 24px 20px; }
+.workspace-issues { padding: 0 var(--md-sys-space-6) var(--md-sys-space-5); }
 .workspace-issue-list { display: flex; flex-direction: column; gap: var(--md-sys-space-2); margin: 0; padding: 0; list-style: none; }
 .workspace-issue { display: grid; width: 100%; grid-template-columns: 32px minmax(0, 1fr) auto 20px; align-items: center; gap: var(--md-sys-space-3); padding: var(--md-sys-space-3) var(--md-sys-space-4); border: 0; border-radius: var(--md-sys-shape-lg); color: var(--md-sys-color-on-surface); background: var(--md-sys-color-surface-container); font: inherit; text-align: left; cursor: pointer; transition: background-color var(--md-sys-motion-effects-fast); }
 .workspace-issue:hover { background: var(--md-sys-color-surface-container-high); }
@@ -245,7 +245,7 @@
 .workspace-issue__copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .workspace-issue__copy strong { overflow: hidden; font-size: var(--md-sys-typescale-title-s-size); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-issue__copy span { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); font-variant-numeric: tabular-nums; }
-.workspace-issue__severity { padding: 2px 10px; border-radius: var(--md-sys-shape-full); font-size: var(--md-sys-typescale-label-m-size); font-weight: 500; }
+.workspace-issue__severity { padding: 2px var(--md-sys-space-3); border-radius: var(--md-sys-shape-full); font-size: var(--md-sys-typescale-label-m-size); font-weight: 500; }
 .workspace-issue--critical .workspace-issue__severity { color: var(--md-sys-color-on-error-container); background: var(--md-sys-color-error-container); }
 .workspace-issue--warning .workspace-issue__severity { color: var(--md-sys-color-on-warning-container); background: var(--md-sys-color-warning-container); }
 .workspace-issue__chevron { color: var(--md-sys-color-on-surface-variant); }
@@ -255,11 +255,11 @@
 /* A reading past its threshold, wherever a device's numbers are listed. */
 .guanlan-metric--warning { color: var(--md-sys-color-warning); font-weight: 600; }
 .guanlan-metric--critical { color: var(--md-sys-color-error); font-weight: 600; }
-.guanlan-metric--warning::before, .guanlan-metric--critical::before { display: inline-block; width: 6px; height: 6px; margin: 0 6px 1px 0; border-radius: 50%; background: currentColor; content: ""; vertical-align: middle; }
+.guanlan-metric--warning::before, .guanlan-metric--critical::before { display: inline-block; width: 6px; height: 6px; margin: 0 var(--md-sys-space-2) 1px 0; border-radius: 50%; background: currentColor; content: ""; vertical-align: middle; }
 
 /* Resource issues on the device page, from the same thresholds as the overview. */
 .workspace-device-issues { display: flex; flex-wrap: wrap; gap: var(--md-sys-space-2); margin: 0 0 var(--md-sys-space-4); padding: 0; list-style: none; }
-.workspace-device-issue { display: inline-flex; align-items: center; gap: var(--md-sys-space-2); padding: 6px 12px; border-radius: var(--md-sys-shape-full); font-size: var(--md-sys-typescale-body-s-size); font-variant-numeric: tabular-nums; }
+.workspace-device-issue { display: inline-flex; align-items: center; gap: var(--md-sys-space-2); padding: var(--md-sys-space-2) var(--md-sys-space-3); border-radius: var(--md-sys-shape-full); font-size: var(--md-sys-typescale-body-s-size); font-variant-numeric: tabular-nums; }
 .workspace-device-issue--critical { color: var(--md-sys-color-on-error-container); background: var(--md-sys-color-error-container); }
 .workspace-device-issue--warning { color: var(--md-sys-color-on-warning-container); background: var(--md-sys-color-warning-container); }
 

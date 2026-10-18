@@ -83,6 +83,19 @@ export function metricSeverity(value: number | null | undefined, rule: Threshold
   return null;
 }
 
+/** The display tone of a reading: the same three steps on bars, sparklines and figures. */
+export function metricTone(value: number | null | undefined, rule: ThresholdRule): "normal" | "warning" | "critical" {
+  return metricSeverity(value, rule) ?? "normal";
+}
+
+/** A rule as the two reference lines drawn on a percentage chart. */
+export function thresholdLines(rule: ThresholdRule): Array<{ value: number; tone: "warning" | "critical"; label: string }> {
+  return [
+    { value: rule.warning, tone: "warning", label: `警告 ${rule.warning}%` },
+    { value: rule.critical, tone: "critical", label: `严重 ${rule.critical}%` }
+  ];
+}
+
 /**
  * Every issue on one device. An offline device reports only that it is
  * offline: its last readings are history, and calling a powered-off machine's

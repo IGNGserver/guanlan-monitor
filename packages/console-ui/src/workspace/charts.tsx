@@ -7,7 +7,6 @@ export type { ChartInspection } from "./chartInspection.ts";
 import { DAY, formatsBytes, gapThreshold, monotonePath, niceLinearAxis, niceTimeAxis, silentSpans, splitAtGaps } from "./chartGeometry.ts";
 import {
   chartAnimationsEnabled,
-  partsFingerprint,
   prefersReducedMotion,
   seriesFingerprint
 } from "./chartIdentity.ts";
@@ -23,11 +22,18 @@ export type ChartSeries = {
   label: string;
   points: SamplePoint[];
   valueFormatter?: (value: number) => string;
+  /** Drawn dashed: the series is history that is no longer being added to (an offline device). */
+  dashed?: boolean;
 };
 
-export type ChartPart = { label: string; value: number };
+/**
+ * A horizontal reference drawn across the plot, such as the warning and critical
+ * thresholds of a percentage. The same two tones colour status tags and issue
+ * rows, so a curve crossing the line reads as the issue listed beside it.
+ */
+export type ChartThreshold = { value: number; tone: "warning" | "critical"; label?: string };
+
 export type ChartNumberItem = { label: string; value: string; hint?: string };
-export type ChartMeterStatusRange = { range: [number, number]; status: "success" | "warning" | "danger" | "info" };
 
 export type ChartVisualization = "line" | "area" | "bar";
 
@@ -36,15 +42,19 @@ export type ChartVisualization = "line" | "area" | "bar";
  * on both chart surfaces (see the accent tokens). Hues are assigned by series
  * position and never cycled: a ninth series and beyond share one neutral
  * "other" ink rather than repeating a colour that already names a device.
+ *
+ * Orange, amber and red come last. They are also the warning and critical
+ * colours of threshold lines and status tags, so a chart with two or three
+ * curves — nearly every chart here — must not paint a healthy series in them.
  */
 const CHART_COLORS = [
   "var(--md-sys-color-accent-1)",
-  "var(--md-sys-color-accent-2)",
   "var(--md-sys-color-accent-3)",
-  "var(--md-sys-color-accent-4)",
+  "var(--md-sys-color-accent-7)",
   "var(--md-sys-color-accent-5)",
   "var(--md-sys-color-accent-6)",
-  "var(--md-sys-color-accent-7)",
+  "var(--md-sys-color-accent-2)",
+  "var(--md-sys-color-accent-4)",
   "var(--md-sys-color-accent-8)"
 ];
 const CHART_OTHER_COLOR = "var(--md-sys-color-outline)";
@@ -107,6 +117,9 @@ export interface TimeSeriesChartProps {
   /** Device cards place the same readout in their header. */
   hideReadout?: boolean;
   readoutId?: string;
+  /** Plot height in px. Defaults to 232, or 168 when `compact`. */
+  height?: number;
+  thresholds?: readonly ChartThreshold[];
 }
 
 function ChartReadingValue({ text }: { text: string }) {
@@ -131,7 +144,18 @@ export function chartSeriesColor(index: number): string {
  * and the sample time trails on the same row; a lone curve drops its visible label
  * because the card title already names it.
  */
-export function ChartReadout({ info, inspecting = false, id, compact = false }: { info: ChartInspection | null; inspecting?: boolean; id?: string; compact?: boolean }) {
+export function ChartReadout({ info, inspecting = false, id, compact = false, toggle }: {
+  info: ChartInspection | null;
+  inspecting?: boolean;
+  id?: string;
+  compact?: boolean;
+  /**
+   * Turns each reading into the series' legend switch. A chart with three or
+   * more curves used to print every label twice — once with its value above the
+   * plot and again as a switch below it.
+   */
+  toggle?: { hidden: ReadonlySet<string>; onToggle: (label: string) => void };
+}) {
   if (!info) return null;
   const hideLabel = compact && info.values.length === 1;
   const time = (
@@ -144,12 +168,20 @@ export function ChartReadout({ info, inspecting = false, id, compact = false }: 
     <div className={`m3e-chart-readout${compact ? " is-compact" : ""}${inspecting ? " is-inspecting" : ""}`} id={id}>
       {compact ? null : time}
       <dl className="m3e-chart-readout__values">
-        {info.values.map((item, index) => (
-          <div key={`${index}-${item.label}`}>
-            <dt className={hideLabel ? "m3e-visually-hidden" : undefined}><span className="m3e-chart__swatch" style={{ background: seriesColor(index) }} aria-hidden="true" />{item.label}</dt>
-            <dd><ChartReadingValue text={item.valueText} /></dd>
-          </div>
-        ))}
+        {info.values.map((item, index) => {
+          const swatch = <span className="m3e-chart__swatch" style={{ background: seriesColor(index) }} aria-hidden="true" />;
+          const hidden = toggle?.hidden.has(item.label) ?? false;
+          return (
+            <div key={`${index}-${item.label}`} className={hidden ? "is-series-hidden" : undefined}>
+              <dt className={hideLabel ? "m3e-visually-hidden" : undefined}>
+                {toggle
+                  ? <button type="button" className="m3e-chart-readout__toggle" aria-pressed={!hidden} title={hidden ? "显示这条数据线" : "隐藏这条数据线"} onClick={() => toggle.onToggle(item.label)}>{swatch}{item.label}</button>
+                  : <>{swatch}{item.label}</>}
+              </dt>
+              <dd><ChartReadingValue text={item.valueText} /></dd>
+            </div>
+          );
+        })}
       </dl>
       {compact ? time : null}
     </div>
@@ -166,7 +198,9 @@ export function TimeSeriesChart({
   className = "",
   onHoverPoint,
   hideReadout = false,
-  readoutId
+  readoutId,
+  height: heightOverride,
+  thresholds
 }: TimeSeriesChartProps) {
   const { ref, width } = useElementWidth<HTMLDivElement>();
   const generatedReadoutId = useId();
@@ -208,7 +242,9 @@ export function TimeSeriesChart({
     return () => { document.removeEventListener("pointerdown", dismiss); callback.current?.(null); };
   }, [ref]);
 
-  const height = compact ? 168 : 208;
+  const height = heightOverride ?? (compact ? 168 : 232);
+  // Many curves on one plot read better thin; two or three stay bold.
+  const strokeWidth = stableSeries.length > 4 ? 1.5 : 2;
   const hasData = index.timeline.length > 0;
   const svgWidth = Math.max(width, 240);
   const time = useMemo(() => timeScale(index.timeline.length ? { min: index.timeline[0], max: index.timeline[index.timeline.length - 1] } : null), [index]);
@@ -246,7 +282,7 @@ export function TimeSeriesChart({
   return (
     <div ref={ref} className={`m3e-chart m3e-chart--${visualization}${compact ? " is-compact" : ""}${className ? ` ${className}` : ""}`}>
       {!hasData ? <div className="m3e-chart-empty">{EMPTY_CHART_MESSAGE}</div> : <>
-        {!hideReadout && <ChartReadout info={inspection ?? latest} inspecting={Boolean(inspection)} id={generatedReadoutId} />}
+        {!hideReadout && <ChartReadout info={inspection ?? latest} inspecting={Boolean(inspection)} id={generatedReadoutId} toggle={showLegend ? { hidden: hiddenLabels, onToggle: toggleSeries } : undefined} />}
         <svg
           className={`m3e-chart__svg${keyboardFocus ? " is-keyboard-focus" : ""}`}
           width="100%"
@@ -307,6 +343,16 @@ export function TimeSeriesChart({
               <text className="m3e-chart__axis" x={padding.left - 8} y={y + 4} textAnchor="end">{tickText(tick)}</text>
             </g>;
           })}
+          {(thresholds ?? []).filter((line) => line.value > value.min && line.value <= value.max).sort((a, b) => b.value - a.value).map((line, order, visible) => {
+            const y = toY(line.value);
+            // Two close lines (90 % and 98 %) would stack their labels; the lower
+            // one then labels itself underneath.
+            const crowded = order > 0 && y - toY(visible[order - 1].value) < 16;
+            return <g key={`threshold-${line.tone}-${line.value}`} className={`m3e-chart__threshold m3e-chart__threshold--${line.tone}`} aria-hidden="true">
+              <line x1={padding.left} y1={y} x2={svgWidth - padding.right} y2={y} />
+              <text x={svgWidth - padding.right - 4} y={crowded ? y + 13 : y - 4} textAnchor="end">{line.label ?? tickText(line.value)}</text>
+            </g>;
+          })}
           {xTicks.map((tick) => {
             const x = toX(tick);
             // Keep edge labels inside the plot instead of clipping them.
@@ -326,7 +372,7 @@ export function TimeSeriesChart({
                 {animations && <animate attributeName="opacity" from="0" to="1" dur="220ms" fill="freeze" />}
               </rect>)}</g>;
             }
-            return <g key={item.label} className="m3e-chart__series" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            return <g key={item.label} className="m3e-chart__series" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={item.dashed ? "5 4" : undefined}>
               {visualization === "area" && runs.map((run) => <path key={`area-${run[0].t}`} d={buildAreaPath(run, padding.top + plotHeight)} fill={color} opacity="0.16" stroke="none" />)}
               {runs.map((run) => run.length === 1
                 // A lone sample between outages is still a reading; draw it as a dot.
@@ -339,7 +385,7 @@ export function TimeSeriesChart({
             {inspection.values.map((item, position) => item.point && !isHidden(item.label) ? <circle key={`${position}-${item.label}`} cx={hoverX} cy={toY(item.point.value)} r="4" fill={seriesColor(position)} /> : null)}
           </g>}
         </svg>
-        {showLegend && <div className="m3e-chart__legend-toggles" role="group" aria-label="显示或隐藏数据线">
+        {showLegend && hideReadout && <div className="m3e-chart__legend-toggles" role="group" aria-label="显示或隐藏数据线">
           {stableSeries.map((item, position) => <button
             key={item.label}
             type="button"
@@ -355,123 +401,110 @@ export function TimeSeriesChart({
   );
 }
 
-/* ---- Donut ----------------------------------------------------------------- */
+/* ---- Sparkline ------------------------------------------------------------- */
 
-export interface DonutChartProps {
-  parts: ChartPart[];
-  centerLabel?: string;
-  centerValue?: number;
-  valueFormatter?: (value: number) => string;
-  compact?: boolean;
+export type MetricTone = "normal" | "warning" | "critical";
+
+/**
+ * A trend without axes, for rows and tiles where the full chart is one click
+ * away. It answers only "rising, falling or flat, and how high" — the value
+ * itself is always printed next to it.
+ */
+export function Sparkline({ points, maxValue, tone = "normal", height = 32, className = "", ariaLabel }: {
+  points: readonly SamplePoint[];
+  /** Pins the top of the scale (100 for a percentage) so a quiet line stays low. */
+  maxValue?: number;
+  tone?: MetricTone;
+  height?: number;
   className?: string;
   ariaLabel?: string;
-}
-
-export function DonutChart({
-  parts,
-  centerLabel,
-  centerValue,
-  valueFormatter = (value) => String(Math.round(value)),
-  compact = false,
-  className = "",
-  ariaLabel = "容量占比环形图"
-}: DonutChartProps) {
-  const fingerprint = useMemo(() => partsFingerprint(parts), [parts]);
-  const stable = useMemo(() => parts, [fingerprint]); // eslint-disable-line react-hooks/exhaustive-deps
-  const size = compact ? 144 : 160;
-  const radius = 76;
-  const circumference = 2 * Math.PI * radius;
-  const valid = stable.filter((part) => Number.isFinite(part.value) && part.value >= 0);
-  const total = valid.reduce((sum, part) => sum + part.value, 0);
-  if (!valid.length || total <= 0) return <div className={`m3e-chart-empty ${className}`.trim()}>{EMPTY_CHART_MESSAGE}</div>;
-  const showPercent = centerValue == null;
-
-  let offset = 0;
+}) {
+  const samples = useMemo(() => points
+    .map((point) => ({ t: dateValueOf(point.timestamp), v: point.value }))
+    .filter((point) => Number.isFinite(point.t) && Number.isFinite(point.v))
+    .sort((left, right) => left.t - right.t), [points]);
+  if (samples.length < 2) return <span className={`m3e-sparkline is-empty${className ? ` ${className}` : ""}`} style={{ height }} aria-hidden="true" />;
+  const width = 100;
+  const top = maxValue ?? Math.max(...samples.map((sample) => sample.v));
+  const bottom = maxValue != null ? 0 : Math.min(...samples.map((sample) => sample.v));
+  const span = top - bottom || 1;
+  const first = samples[0].t;
+  const duration = samples[samples.length - 1].t - first || 1;
+  const xy = samples.map((sample) => ({ x: ((sample.t - first) / duration) * width, y: 2 + (height - 4) * (1 - (Math.min(sample.v, top) - bottom) / span) }));
+  const line = monotonePath(xy);
   return (
-    <div className={`m3e-chart m3e-chart--donut${className ? ` ${className}` : ""}`}>
-      <svg width={size} height={size} viewBox="0 0 200 200" role="img" aria-label={ariaLabel}>
-        <circle cx="100" cy="100" r={radius} fill="none" stroke="var(--md-sys-color-surface-container-highest)" strokeWidth="22" />
-        {valid.map((part, index) => {
-          const fraction = part.value / total;
-          const dash = fraction * circumference;
-          const segment = (
-            <circle
-              key={part.label}
-              cx="100"
-              cy="100"
-              r={radius}
-              fill="none"
-              stroke={seriesColor(index)}
-              strokeWidth="22"
-              strokeDasharray={`${dash} ${circumference - dash}`}
-              strokeDashoffset={-offset}
-              transform="rotate(-90 100 100)"
-              strokeLinecap="butt"
-            />
-          );
-          offset += dash;
-          return segment;
-        })}
-        <text className="m3e-chart__donut-value" x="100" y="98" textAnchor="middle">{showPercent ? `${Math.round((valid[0].value / total) * 100)}%` : valueFormatter(centerValue as number)}</text>
-        {centerLabel ? <text className="m3e-chart__donut-label" x="100" y="122" textAnchor="middle">{centerLabel}</text> : null}
-      </svg>
-      <ul className="m3e-chart__legend m3e-chart__legend--stacked">
-        {valid.map((part, index) => (
-          <li key={part.label}><span className="m3e-chart__swatch" style={{ background: seriesColor(index) }} aria-hidden="true" />{part.label}<strong>{valueFormatter(part.value)}</strong></li>
-        ))}
-      </ul>
-    </div>
+    <svg className={`m3e-sparkline m3e-sparkline--${tone}${className ? ` ${className}` : ""}`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" height={height} role={ariaLabel ? "img" : undefined} aria-label={ariaLabel} aria-hidden={ariaLabel ? undefined : true}>
+      <path className="m3e-sparkline__area" d={`${line}L${width} ${height}L0 ${height}Z`} />
+      <path className="m3e-sparkline__line" d={line} vectorEffect="non-scaling-stroke" />
+    </svg>
   );
 }
 
-/* ---- Meter ----------------------------------------------------------------- */
+/* ---- Capacity bar ---------------------------------------------------------- */
 
-export interface MeterChartProps {
-  value: number;
-  total: number;
+/**
+ * A filled bar with tick marks at the warning and critical thresholds. Replaces
+ * donut and gauge charts for "how full is it": bars of the same length can be
+ * compared down a column, and the distance to the next threshold is visible
+ * before the colour changes.
+ */
+export function CapacityBar({ percent, tone = "normal", marks, label, size = "md", className = "" }: {
+  percent: number | null | undefined;
+  tone?: MetricTone;
+  marks?: { warning: number; critical: number };
   label?: string;
-  valueFormatter?: (value: number) => string;
-  statusRanges?: ChartMeterStatusRange[];
-  compact?: boolean;
+  size?: "sm" | "md";
   className?: string;
-  ariaLabel?: string;
+}) {
+  const valid = typeof percent === "number" && Number.isFinite(percent);
+  const width = valid ? Math.min(100, Math.max(0, percent)) : 0;
+  return (
+    <span
+      className={`m3e-capacity m3e-capacity--${size} m3e-capacity--${valid ? tone : "unknown"}${className ? ` ${className}` : ""}`}
+      role={label ? "img" : undefined}
+      aria-label={label ? `${label} ${valid ? `${Math.round(width)}%` : "无数据"}` : undefined}
+      aria-hidden={label ? undefined : true}
+    >
+      <span className="m3e-capacity__fill" style={{ width: `${width}%` }} />
+      {marks ? <>
+        <span className="m3e-capacity__mark m3e-capacity__mark--warning" style={{ left: `${marks.warning}%` }} />
+        <span className="m3e-capacity__mark m3e-capacity__mark--critical" style={{ left: `${marks.critical}%` }} />
+      </> : null}
+    </span>
+  );
 }
 
-export function MeterChart({
-  value,
-  total,
-  label = "已用",
-  valueFormatter = (item) => String(Math.round(item)),
-  statusRanges,
-  compact = false,
-  className = "",
-  ariaLabel = "容量占用仪表图"
-}: MeterChartProps) {
-  const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
-  const safeTotal = Number.isFinite(total) && total > 0 ? Math.max(total, safeValue) : Math.max(safeValue, 1);
-  const percent = Math.min(1, safeValue / safeTotal);
-  const width = 240;
-  const height = 138;
-  const radius = 84;
-  const circumference = Math.PI * radius;
-  const color = statusRanges?.find((range) => safeValue >= range.range[0] && safeValue <= range.range[1])?.status;
+export interface CapacityRow {
+  key: string;
+  label: string;
+  /** Secondary line under the label, such as a mount point. */
+  detail?: string;
+  /** Right-aligned figure, such as "40.5 / 59.6 GB". */
+  value: string;
+  percent: number | null;
+  tone?: MetricTone;
+  marks?: { warning: number; critical: number };
+}
 
+/** Several capacities on one card, fullest first, so the one to act on leads. */
+export function CapacityList({ rows, ariaLabel, sort = true }: { rows: readonly CapacityRow[]; ariaLabel: string; sort?: boolean }) {
+  if (!rows.length) return <div className="m3e-chart-empty">{EMPTY_CHART_MESSAGE}</div>;
+  const ordered = sort ? [...rows].sort((left, right) => (right.percent ?? -1) - (left.percent ?? -1)) : rows;
   return (
-    <div className={`m3e-chart m3e-chart--meter${className ? ` ${className}` : ""}`}>
-      <svg width={compact ? 168 : 192} height={compact ? 97 : 110} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel}>
-        <path d={`M${width / 2 - radius} ${height - 12} A ${radius} ${radius} 0 0 1 ${width / 2 + radius} ${height - 12}`} fill="none" stroke="var(--md-sys-color-surface-container-highest)" strokeWidth="16" strokeLinecap="round" />
-        <path
-          d={`M${width / 2 - radius} ${height - 12} A ${radius} ${radius} 0 0 1 ${width / 2 + radius} ${height - 12}`}
-          fill="none"
-          stroke={color === "danger" ? "var(--md-sys-color-error)" : color === "warning" ? "var(--md-sys-color-warning)" : "var(--md-sys-color-primary)"}
-          strokeWidth="16"
-          strokeLinecap="round"
-          strokeDasharray={`${percent * circumference} ${circumference}`}
-        />
-        <text className="m3e-chart__meter-value" x={width / 2} y={height - 24} textAnchor="middle">{valueFormatter(safeValue)}</text>
-      </svg>
-      <div className="m3e-chart__meter-caption"><span>{label}</span><strong>{Math.round(percent * 100)}%</strong></div>
-    </div>
+    <ul className="m3e-capacity-list" aria-label={ariaLabel}>
+      {ordered.map((row) => {
+        const known = row.percent != null && Number.isFinite(row.percent);
+        return (
+          <li key={row.key} className={`m3e-capacity-list__row is-${known ? row.tone ?? "normal" : "unknown"}`}>
+            <div className="m3e-capacity-list__head">
+              <span className="m3e-capacity-list__label"><strong>{row.label}</strong>{row.detail ? <small>{row.detail}</small> : null}</span>
+              <span className="m3e-capacity-list__value"><strong>{known ? `${Math.round(row.percent as number)}%` : "—"}</strong><small>{row.value}</small></span>
+            </div>
+            <CapacityBar percent={row.percent} tone={row.tone} marks={row.marks} />
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
