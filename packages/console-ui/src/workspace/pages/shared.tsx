@@ -694,11 +694,13 @@ function metricWindowLabel(value: string): string {
  * so it sits where ranges are chosen, but it is never stored as the history
  * window — picking any other range leaves it.
  */
-function MetricWindowControl({ value, onChange, live }: { value: DesktopMetricWindowValue; onChange: (value: DesktopMetricWindowValue) => void; live?: { selected: boolean; onSelect: () => void } }) {
+function MetricWindowControl({ value, onChange, live, compact = false }: { value: DesktopMetricWindowValue; onChange: (value: DesktopMetricWindowValue) => void; live?: { selected: boolean; onSelect: () => void }; compact?: boolean }) {
   const options = live ? [{ value: "live", label: <span className="workspace-range-control__live"><span className="workspace-live-dot" aria-hidden="true" />实时</span> }, ...metricWindowOptions] : metricWindowOptions;
   return (
     <div className="workspace-range-control" role="group" aria-label="遥测时间范围">
-      <span className="workspace-range-control__label"><Icon name="clock" size={14} />时间范围</span>
+      {/* `compact` keeps the clock and leaves the words to assistive technology,
+          so the range fits on the same row as the tabs it applies to. */}
+      <span className="workspace-range-control__label" title="时间范围"><Icon name="clock" size={14} />{compact ? <span className="m3e-visually-hidden">时间范围</span> : "时间范围"}</span>
       <M3SegmentedControl
         className="workspace-range-control__options"
         options={options}

@@ -109,7 +109,7 @@
   list-style: none;
 }
 .workspace-fleet-grid > li { display: flex; min-width: 0; }
-.workspace-fleet-card {
+.workspace-fleet-grid .workspace-fleet-card {
   display: flex;
   width: 100%;
   min-width: 0;
@@ -124,13 +124,13 @@
   cursor: pointer;
   transition: background-color var(--md-sys-motion-effects-fast), border-color var(--md-sys-motion-effects-fast);
 }
-.workspace-fleet-card:hover { background: var(--md-sys-color-surface-container); border-color: var(--md-sys-color-outline-variant); }
-.workspace-fleet-card:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
-.workspace-fleet-card.is-critical { box-shadow: inset 3px 0 0 var(--md-sys-color-error); }
-.workspace-fleet-card.is-warning { box-shadow: inset 3px 0 0 var(--md-sys-color-warning); }
-.workspace-fleet-card.is-offline { box-shadow: inset 3px 0 0 var(--md-sys-color-outline); }
-.workspace-fleet-card.is-offline .workspace-fleet-card__metrics,
-.workspace-fleet-card.is-offline .workspace-fleet-card__trend { opacity: 0.6; }
+.workspace-fleet-grid .workspace-fleet-card:hover { background: var(--md-sys-color-surface-container); border-color: var(--md-sys-color-outline-variant); }
+.workspace-fleet-grid .workspace-fleet-card:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+.workspace-fleet-grid .workspace-fleet-card.is-critical { box-shadow: inset 3px 0 0 var(--md-sys-color-error); }
+.workspace-fleet-grid .workspace-fleet-card.is-warning { box-shadow: inset 3px 0 0 var(--md-sys-color-warning); }
+.workspace-fleet-grid .workspace-fleet-card.is-offline { box-shadow: inset 3px 0 0 var(--md-sys-color-outline); }
+.workspace-fleet-grid .workspace-fleet-card.is-offline .workspace-fleet-card__metrics,
+.workspace-fleet-grid .workspace-fleet-card.is-offline .workspace-fleet-card__trend { opacity: 0.6; }
 .workspace-fleet-card__head { display: flex; min-width: 0; align-items: center; gap: var(--md-sys-space-2); }
 .workspace-fleet-card__head strong { min-width: 0; flex: 1; overflow: hidden; font-size: var(--md-sys-typescale-title-s-size); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-fleet-card__state { flex: 0 0 auto; padding: 0 var(--md-sys-space-2); border-radius: var(--md-sys-shape-full); color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-high); font-size: var(--md-sys-typescale-label-s-size); font-weight: 500; line-height: 20px; }
@@ -164,3 +164,91 @@
 .workspace-hub-card__grid { column-gap: var(--md-sys-space-6); padding: var(--md-sys-space-1) var(--ui-card-pad) var(--md-sys-space-2); }
 .workspace-hub-card .workspace-form__actions { padding: var(--md-sys-space-2) var(--ui-card-pad) var(--ui-card-pad); }
 .workspace-inline-note { margin: 0; }
+
+/* ---- Device page ---------------------------------------------------------- */
+
+/* Facts as one quiet line of label/value pairs. The old grid gave seven facts
+   six columns and painted the empty eighth cell grey. */
+.workspace-root .workspace-device-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--md-sys-space-2) var(--md-sys-space-6);
+  margin: 0;
+  padding: var(--md-sys-space-3) var(--ui-card-pad);
+  overflow: visible;
+  border: 0;
+  border-radius: var(--md-sys-shape-lg);
+  background: var(--md-sys-color-surface-container-low);
+  box-shadow: none;
+}
+.workspace-root .workspace-device-facts > div { min-width: 0; padding: 0; background: transparent; box-shadow: none; }
+.workspace-root .workspace-device-facts span { font-size: var(--md-sys-typescale-label-s-size); }
+.workspace-root .workspace-device-facts strong { margin-top: 0; overflow: visible; font-size: var(--md-sys-typescale-body-m-size); font-weight: 500; }
+
+.workspace-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
+  gap: var(--ui-card-gap);
+}
+.workspace-kpi-strip .workspace-kpi {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: var(--md-sys-space-2);
+  padding: var(--md-sys-space-3) var(--ui-card-pad);
+  border: 1px solid transparent;
+  border-radius: var(--md-sys-shape-lg);
+  background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--md-sys-motion-effects-fast), border-color var(--md-sys-motion-effects-fast);
+}
+.workspace-kpi-strip .workspace-kpi:hover { background: var(--md-sys-color-surface-container); border-color: var(--md-sys-color-outline-variant); }
+.workspace-kpi-strip .workspace-kpi:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+.workspace-kpi-strip .workspace-kpi.is-warning { box-shadow: inset 3px 0 0 var(--md-sys-color-warning); }
+.workspace-kpi-strip .workspace-kpi.is-critical { box-shadow: inset 3px 0 0 var(--md-sys-color-error); }
+.workspace-kpi__label { color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-m-size); font-weight: 500; }
+.workspace-kpi__value { font-size: var(--md-sys-typescale-headline-s-size); line-height: var(--md-sys-typescale-headline-s-line); font-weight: 600; }
+.workspace-kpi-strip .workspace-kpi.is-warning .workspace-kpi__value { color: var(--md-sys-color-warning); }
+.workspace-kpi-strip .workspace-kpi.is-critical .workspace-kpi__value { color: var(--md-sys-color-error); }
+.workspace-kpi__value--pair { display: flex; flex-wrap: wrap; gap: 0 var(--md-sys-space-3); font-size: var(--md-sys-typescale-title-m-size); }
+.workspace-kpi__note { overflow: hidden; color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-s-size); text-overflow: ellipsis; white-space: nowrap; }
+.workspace-kpi-strip .workspace-kpi.is-warning .workspace-kpi__note { color: var(--md-sys-color-warning); }
+.workspace-kpi-strip .workspace-kpi.is-critical .workspace-kpi__note { color: var(--md-sys-color-error); }
+
+/* Tabs and the range they apply to share one row. */
+.workspace-root .workspace-device-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--md-sys-space-2) var(--md-sys-space-4);
+}
+.workspace-root .workspace-device-context > .m3e-tabs { width: auto; min-width: 0; flex: 0 1 auto; }
+.workspace-root .workspace-device-context > .workspace-device-context__controls { flex: 0 0 auto; }
+.workspace-root .workspace-device-context > .workspace-device-context__caption,
+.workspace-root .workspace-device-context > .workspace-anchor-bar { flex: 1 1 100%; }
+.workspace-device-context__caption { border-top: 0; padding: 0; }
+.workspace-anchor-bar { margin-bottom: 0; padding: var(--md-sys-space-1); }
+.workspace-anchor-btn { padding: var(--md-sys-space-1) var(--md-sys-space-3); }
+.workspace-root .workspace-device-context .m3e-tabs__tab { padding-inline: var(--md-sys-space-3); }
+/* The breadcrumb already says "设备", and section eyebrows ("驾驶舱", "容量")
+   restated the title under them; both cost a line above every chart group. */
+.workspace-page--device .workspace-page-intro__eyebrow,
+.dashboard-section__eyebrow { display: none; }
+.dashboard-section__header { margin-bottom: var(--md-sys-space-3); }
+.dashboard-section__copy { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--md-sys-space-1) var(--md-sys-space-3); }
+.dashboard-section__description { max-width: none; margin: 0; }
+
+/* Overview cards pad their own rows; the generic surface padding doubled it. */
+.workspace-overview-devices,
+.workspace-hub-card { padding: 0; }
+.workspace-page--overview .workspace-surface__header { margin-bottom: 0; }
+
+/* A dot outside a status label takes the state colour, not the text colour. */
+.workspace-status-dot--online { background: var(--md-sys-color-success); }
+.workspace-status-dot--offline { background: var(--md-sys-color-outline); }
+.workspace-status-dot--warning { background: var(--md-sys-color-warning); }
+.workspace-status-dot--cached { background: var(--md-sys-color-info); }
+.workspace-status-dot--unknown { background: var(--md-sys-color-outline-variant); }

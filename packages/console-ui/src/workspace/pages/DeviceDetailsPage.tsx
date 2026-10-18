@@ -30,6 +30,7 @@ import {
 import { Button, Icon, StatusDot } from "../ui";
 import { DeviceChartCells, type DeviceChartContext, type DeviceSectionControls } from "./deviceCharts";
 import { describeIssue, evaluateDevice } from "../health";
+import { DeviceKpiStrip, capacityCaption, shareOf } from "./DeviceKpiStrip";
 import { LiveTopicPanel, useLiveCapabilities } from "./LiveDevicePanel";
 import type { DeviceLiveView } from "../routes";
 import {
@@ -317,7 +318,9 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
     : 0;
   const settingsSection = "connections" as const;
   const liveOverviewActive = !touch && !liveView && liveOverview && activeTab === "overview";
-  const caption = liveView ? liveViewCaptions[liveView] : liveOverviewActive ? "最近两分钟的设备实时数据，直接来自设备，不写入历史" : tab.caption;
+  // Tab captions repeated the section headings right below them; only the live
+  // views, which read the device instead of history, still need to say so.
+  const caption = liveView ? liveViewCaptions[liveView] : liveOverviewActive ? "最近两分钟的设备实时数据，直接来自设备，不写入历史" : null;
 
   const chartContext: DeviceChartContext = {
     device: selectedDevice,
@@ -445,7 +448,6 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
         eyebrow="设备"
         title={selectedDevice.hostname}
         description={`${selectedDevice.os} · ${selectedDevice.deviceId}`}
-        actions={<Button variant="quiet" onClick={() => navigate({ kind: "devices" })}><Icon name="back" size={16} />返回设备目录</Button>}
       />
       <SnapshotFreshnessNotice /></>}
       {touch && <header className="touch-device-heading"><h1>{selectedDevice.hostname}</h1><p>{selectedDevice.os} · {snapshotSource === "cache" ? "缓存中的状态" : selectedDevice.status === "online" ? "在线" : "离线"}</p></header>}
@@ -465,7 +467,6 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
         <div><span>{snapshotSource === "cache" ? "缓存时间" : "数据时间"}</span><strong>{formatDate(snapshotSource === "cache" ? snapshot?.cache.savedAt : snapshot?.generatedAt)}</strong></div>
         <div><span>Agent 版本</span><strong>{selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</strong></div>
         <div><span>发布通道</span><strong>{formatReleaseChannel(selectedDevice.agentChannel)}</strong></div>
-        <div><span>列表位置</span><strong>{(selectedDevice.sortOrder ?? 0) + 1}</strong></div>
       </div>
 
       </details>
@@ -484,7 +485,33 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
 
       {/* The same verdict the overview lists, on the machine it is about. Offline
           is already the state banner below, so only resource issues show here. */}
-      {(() => {
+      {!touch && <DeviceKpiStrip
+        device={selectedDevice}
+        thresholds={healthThresholds}
+        windowLabel={windowLabel}
+        cpu={cpuAverageUsage}
+        memory={shareOf(series?.memoryUsedBytes, filteredLatest?.memoryTotalBytes ?? selectedDevice.memoryTotalBytes)}
+        disk={shareOf(diskTotalUsedBytes, filteredLatest?.diskTotalBytes ?? selectedDevice.diskTotalBytes)}
+        gpu={gpuInstances.length || selectedDevice.gpuUsagePercent != null ? gpuAverageUsage : null}
+        networkRx={networkAverageRx}
+        networkTx={networkAverageTx}
+        memoryCaption={capacityCaption(filteredLatest?.memoryUsedBytes ?? selectedDevice.memoryUsedBytes, filteredLatest?.memoryTotalBytes ?? selectedDevice.memoryTotalBytes) ?? "容量暂无"}
+        diskCaption={capacityCaption(filteredLatest?.diskUsedBytes ?? selectedDevice.diskUsedBytes, filteredLatest?.diskTotalBytes ?? selectedDevice.diskTotalBytes) ?? "容量暂无"}
+        unavailable={(metric) => metric === "cpu" ? metricUnavailable("cpuUsage")
+          : metric === "memory" ? metricUnavailable("memoryUsage")
+            : metric === "disk" ? metricUnavailable("diskUsage")
+              : metric === "gpu" ? metricUnavailable("gpuUsage")
+                : metricUnavailable("networkRxRate") && metricUnavailable("networkTxRate")}
+        onOpen={(id) => {
+          if (liveView) navigate({ kind: "device", deviceId: selectedDevice.deviceId });
+          setLiveOverview(false);
+          if (id !== activeTab) setActiveTab(id);
+          // Bring the charts that tile summarises into view, below the tabs.
+          requestAnimationFrame(() => deviceContextRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }));
+        }}
+      />}
+
+      {touch && (() => {
         const resourceIssues = evaluateDevice(selectedDevice, healthThresholds).filter((issue) => issue.kind !== "offline");
         if (!resourceIssues.length) return null;
         return <ul className="workspace-device-issues" aria-label="超过阈值的资源">
@@ -534,10 +561,11 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
               value={metricsWindow as DesktopMetricWindowValue}
               onChange={(value) => { setLiveOverview(false); setMetricsWindow(value); }}
               live={!touch && activeTab === "overview" ? { selected: liveOverview, onSelect: () => setLiveOverview(true) } : undefined}
+              compact={!touch}
             />
-            <Button variant="quiet" title={isFullscreen ? "退出全屏" : "全屏查看"} onClick={toggleFullscreen}>
+            <Button variant="quiet" title={isFullscreen ? "退出全屏" : "全屏查看"} aria-label={isFullscreen ? "退出全屏" : "全屏查看"} onClick={toggleFullscreen}>
               <Icon name={isFullscreen ? "windowRestore" : "windowMaximize"} size={16} />
-              {isFullscreen ? "退出全屏" : "全屏"}
+              {touch ? (isFullscreen ? "退出全屏" : "全屏") : null}
             </Button>
           </div>
         </div>}
