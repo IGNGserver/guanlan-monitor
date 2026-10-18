@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -328,9 +329,10 @@ private fun OneUiBottomBarItem(
       )
       OneUiIcon(
         imageVector = if (selected && destination.selectedIcon != null) destination.selectedIcon else destination.icon,
-        contentDescription = destination.label,
+        contentDescription = destination.badge?.let { "${destination.label}，$it 项" } ?: destination.label,
         tint = iconTint
       )
+      destination.badge?.let { OneUiNavBadge(it, Modifier.align(Alignment.TopEnd)) }
     }
     OneUiText(
       text = destination.label,
@@ -340,6 +342,21 @@ private fun OneUiBottomBarItem(
       maxLines = 1,
       textAlign = TextAlign.Center
     )
+  }
+}
+
+/** 导航徽标：只承载数量，用临界色——它的意思就是「有事要看」。 */
+@Composable
+private fun OneUiNavBadge(text: String, modifier: Modifier = Modifier) {
+  val colors = OneUiTheme.colors
+  Box(
+    modifier = modifier
+      .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
+      .background(colors.critical, OneUiTheme.shapes.pill)
+      .padding(horizontal = 5.dp),
+    contentAlignment = Alignment.Center
+  ) {
+    OneUiText(text = text, role = OneUiTextRole.ChartLabel, color = colors.textOnAccent, weight = FontWeight.Bold, maxLines = 1)
   }
 }
 
@@ -382,11 +399,14 @@ fun OneUiNavigationRail(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
       ) {
-        OneUiIcon(
-          imageVector = if (selected && destination.selectedIcon != null) destination.selectedIcon else destination.icon,
-          contentDescription = destination.label,
-          tint = if (selected) colors.accent else colors.textTertiary
-        )
+        Box {
+          OneUiIcon(
+            imageVector = if (selected && destination.selectedIcon != null) destination.selectedIcon else destination.icon,
+            contentDescription = destination.badge?.let { "${destination.label}，$it 项" } ?: destination.label,
+            tint = if (selected) colors.accent else colors.textTertiary
+          )
+          destination.badge?.let { OneUiNavBadge(it, Modifier.align(Alignment.TopEnd).offset(x = 10.dp, y = (-6).dp)) }
+        }
         OneUiText(
           text = destination.label,
           role = OneUiTextRole.Caption,

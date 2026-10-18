@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Hub
+import androidx.compose.material.icons.rounded.ReportProblem
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -52,6 +54,8 @@ import com.dsc.android.AppScreen
 import com.dsc.android.AppState
 import com.dsc.android.RemoteDataSource
 import com.dsc.android.ScreenTransitionDirection
+import com.dsc.android.AttentionSeverity
+import com.dsc.android.collectAttention
 import com.dsc.android.ui.oneui.GuanlanTheme
 import com.dsc.android.ui.oneui.OneUiAnnouncer
 import com.dsc.android.ui.oneui.OneUiAppearanceSetting
@@ -68,6 +72,7 @@ import com.dsc.android.ui.oneui.OneUiTheme
 import com.dsc.android.ui.oneui.rememberOneUiAppearanceController
 import com.dsc.android.ui.oneui.oneUiScreenTransition
 import com.dsc.android.ui.screens.DeviceDetailScreen
+import com.dsc.android.ui.screens.AttentionScreen
 import com.dsc.android.ui.screens.DeviceListScreen
 import com.dsc.android.ui.screens.GuanlanAppearance
 import com.dsc.android.ui.screens.MetricConfigSheet
@@ -143,7 +148,11 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
     screenTransitionRunning = screenTransition.isRunning
   )
 
-  val destinations = remember { oneUiDestinations() }
+  // 关注徽标只数「严重 + 警告」：离线设备在首页已经是灰卡，不重复催人
+  val attentionCount = remember(state.devices, state.attentionMetrics) {
+    collectAttention(state.devices, state.attentionMetrics).count { it.severity != AttentionSeverity.Offline }
+  }
+  val destinations = remember(attentionCount) { oneUiDestinations(attentionCount) }
 
   LaunchedEffect(state.message) {
     val message = state.message ?: return@LaunchedEffect
@@ -312,7 +321,14 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
 }
 
 private val DestinationDevices = "devices"
+private val DestinationAttention = "attention"
 private val DestinationSettings = "settings"
+
+private fun selectDestination(key: String, actions: GuanlanActions) = when (key) {
+  DestinationSettings -> actions.onShowSettings()
+  DestinationAttention -> actions.onShowAttention()
+  else -> actions.onShowDeviceList()
+}
 
 @Composable
 private fun ShellLayer(
@@ -339,7 +355,7 @@ private fun ShellLayer(
           destinations = destinations,
           selectedKey = screen.navigationKey(),
           onSelect = { key ->
-            if (key == DestinationSettings) actions.onShowSettings() else actions.onShowDeviceList()
+            selectDestination(key, actions)
           },
           modifier = Modifier.fillMaxHeight()
         )
@@ -383,7 +399,7 @@ private fun ShellLayer(
             destinations = destinations,
             selectedKey = screen.navigationKey(),
             onSelect = { key ->
-              if (key == DestinationSettings) actions.onShowSettings() else actions.onShowDeviceList()
+              selectDestination(key, actions)
             }
           )
         }
@@ -444,7 +460,7 @@ private fun ScreenStack(
         when {
           screen.showsDetail -> SavedScreenContent(screen, embedded = true)
 
-          screen == AppScreen.Settings -> SavedScreenContent(screen, embedded = true)
+          screen == AppScreen.Settings || screen == AppScreen.Attention -> SavedScreenContent(screen, embedded = true)
 
           else -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             OneUiEmptyState(
@@ -499,6 +515,7 @@ private fun ScreenContent(
     AppScreen.DeviceList -> DeviceListScreen(state = state, actions = actions, embedded = embedded)
     AppScreen.DeviceDetail -> DeviceDetailScreen(state = state, actions = actions, embedded = embedded)
     AppScreen.Traffic -> TrafficScreen(state = state, actions = actions, embedded = embedded)
+    AppScreen.Attention -> AttentionScreen(state = state, actions = actions, embedded = embedded)
     AppScreen.Settings -> SettingsScreen(
       state = state,
       actions = actions,
@@ -543,12 +560,22 @@ private val AppScreen.showsDetail: Boolean
   get() = this == AppScreen.DeviceDetail || this == AppScreen.Traffic
 
 private val AppScreen.showsTopLevelNavigation: Boolean
-  get() = this == AppScreen.DeviceList || this == AppScreen.Settings
+  get() = this == AppScreen.DeviceList || this == AppScreen.Settings || this == AppScreen.Attention
 
-private fun AppScreen.navigationKey(): String = if (this == AppScreen.Settings) DestinationSettings else DestinationDevices
+private fun AppScreen.navigationKey(): String = when (this) {
+  AppScreen.Settings -> DestinationSettings
+  AppScreen.Attention -> DestinationAttention
+  else -> DestinationDevices
+}
 
-private fun oneUiDestinations(): List<OneUiDestination> = listOf(
-  OneUiDestination(key = DestinationDevices, label = "设备", icon = Icons.Rounded.Hub),
+private fun oneUiDestinations(attentionCount: Int): List<OneUiDestination> = listOf(
+  OneUiDestination(key = DestinationDevices, label = "总览", icon = Icons.Rounded.Dashboard),
+  OneUiDestination(
+    key = DestinationAttention,
+    label = "关注",
+    icon = Icons.Rounded.ReportProblem,
+    badge = attentionCount.takeIf { it > 0 }?.let { if (it > 99) "99+" else it.toString() }
+  ),
   OneUiDestination(key = DestinationSettings, label = "设置", icon = Icons.Rounded.Tune)
 )
 

@@ -545,7 +545,10 @@ enum class AppScreen {
   Traffic,
 
   /** One UI 重构新增的一级目的地：登出、外观、版本与更新从设备列表顶栏迁出。 */
-  Settings
+  Settings,
+
+  /** 一级目的地：所有设备「需要关注」的问题按严重程度汇总。 */
+  Attention
 }
 
 enum class RemoteDataSource {
@@ -578,7 +581,15 @@ data class AppState(
   val selectedDeviceId: String? = null,
   val focusedBlock: DeviceBlockKey? = null,
   val selectedWindow: MetricWindow = MetricWindow.FiveMinutes,
+  /** 首页趋势小图的时间范围：与设备页粒度分开，首页看大势、设备页看细节。 */
+  val overviewWindow: MetricWindow = MetricWindow.OneHour,
   val metrics: MetricsDto? = null,
+  /**
+   * 关注规则用的各设备指标快照（温度、硬盘健康、存储池只在指标里有）。
+   * 每分钟后台拉一次，也复用打开设备页时读到的快照。
+   */
+  val attentionMetrics: Map<String, MetricsDto> = emptyMap(),
+  val attentionCheckedAt: String? = null,
   val overviewMetrics: OverviewMetricsDto? = null,
   val trafficCalendar: TrafficCalendarDto? = null,
   val trafficMode: TrafficCalendarMode = TrafficCalendarMode.Day,

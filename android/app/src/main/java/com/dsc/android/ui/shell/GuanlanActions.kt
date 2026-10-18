@@ -25,6 +25,8 @@ data class GuanlanActions(
   val onOpenDeviceEditor: (String) -> Unit,
   val onShowDeviceList: () -> Unit,
   val onShowSettings: () -> Unit,
+  val onShowAttention: () -> Unit,
+  val onSelectOverviewWindow: (MetricWindow) -> Unit,
   val onSelectWindow: (MetricWindow) -> Unit,
   val onSelectTrafficMode: (TrafficCalendarMode) -> Unit,
   val onSelectTrafficCell: (String) -> Unit,

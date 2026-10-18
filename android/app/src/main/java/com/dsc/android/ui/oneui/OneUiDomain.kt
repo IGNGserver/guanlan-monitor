@@ -710,11 +710,14 @@ internal fun metricPoint(
   return formatter(selectedPointValue(points, window))
 }
 
-internal fun selectedPointValue(points: List<SamplePointDto>, window: MetricWindow): Double? = when {
-  points.isEmpty() -> null
-  window == MetricWindow.OneMinute -> points.lastOrNull()?.value
-  else -> points.map { it.value }.average()
-}
+/**
+ * 标题位读数一律取「当前」（时间上最新的样本）。
+ * 旧实现在 1 分钟以外的粒度取区间均值，同一张卡里大数字是均值、图上游标是最新值、
+ * 内存卡又是最新字节数，读者无法判断自己在看哪一种口径；区间均值与峰值改由图下统计行给出。
+ */
+@Suppress("UNUSED_PARAMETER")
+internal fun selectedPointValue(points: List<SamplePointDto>, window: MetricWindow): Double? =
+  com.dsc.android.seriesStats(points)?.latest
 
 internal fun temperatureRoleLabel(role: String): String = when (role) {
   "cpu_package" -> "CPU 封装"

@@ -43,6 +43,8 @@ class MainActivity : ComponentActivity() {
           onOpenDeviceEditor = appViewModel::openDeviceEditor,
           onShowDeviceList = appViewModel::showDeviceList,
           onShowSettings = appViewModel::showSettings,
+          onShowAttention = appViewModel::showAttention,
+          onSelectOverviewWindow = appViewModel::selectOverviewWindow,
           onSelectWindow = appViewModel::selectWindow,
           onSelectTrafficMode = appViewModel::selectTrafficMode,
           onSelectTrafficCell = appViewModel::selectTrafficCell,

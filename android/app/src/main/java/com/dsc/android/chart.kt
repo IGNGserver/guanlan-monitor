@@ -110,3 +110,87 @@ internal fun splitSamplePointSegments(
   segments += current
   return segments
 }
+
+/**
+ * 纵轴刻度：图表必须能直接读出量级，所以刻度取 1/2/2.5/5×10ⁿ 的整齐值，
+ * 而不是把数据最大值原样写在轴上。
+ */
+internal data class ChartAxis(val min: Double, val max: Double, val ticks: List<Double>) {
+  val span: Double get() = (max - min).takeIf { it > 0.0 } ?: 1.0
+  fun fraction(value: Double): Double = ((value - min) / span).coerceIn(0.0, 1.0)
+}
+
+internal fun niceAxis(
+  dataMin: Double,
+  dataMax: Double,
+  fixedMax: Double? = null,
+  includeZero: Boolean = true,
+  tickCount: Int = 3
+): ChartAxis {
+  if (fixedMax != null) {
+    val step = fixedMax / (tickCount - 1).coerceAtLeast(1)
+    return ChartAxis(0.0, fixedMax, List(tickCount) { it * step })
+  }
+  val low = if (includeZero) minOf(0.0, dataMin) else dataMin
+  val high = if (dataMax > low) dataMax else low + 1.0
+  val rawStep = (high - low) / (tickCount - 1).coerceAtLeast(1)
+  val step = niceStep(rawStep)
+  val start = if (includeZero && low >= 0.0) 0.0 else kotlin.math.floor(low / step) * step
+  var end = kotlin.math.ceil(high / step) * step
+  if (end <= start) end = start + step
+  val ticks = buildList {
+    var tick = start
+    while (tick <= end + step * 1e-6) {
+      add(tick)
+      tick += step
+    }
+  }
+  return ChartAxis(start, end, ticks)
+}
+
+private fun niceStep(raw: Double): Double {
+  if (raw <= 0.0 || !raw.isFinite()) return 1.0
+  val exponent = kotlin.math.floor(kotlin.math.log10(raw))
+  val base = Math.pow(10.0, exponent)
+  val fraction = raw / base
+  val nice = when {
+    fraction <= 1.0 -> 1.0
+    fraction <= 2.0 -> 2.0
+    fraction <= 2.5 -> 2.5
+    fraction <= 5.0 -> 5.0
+    else -> 10.0
+  }
+  return nice * base
+}
+
+/**
+ * 区间统计：标题位的大数字是「当前」，区间均值和峰值放在图下，
+ * 均值单独做标题会把尖峰抹平（24 小时均值 8% 的机器可能每小时都打满过）。
+ */
+internal data class SeriesStats(
+  val latest: Double,
+  val average: Double,
+  val peak: Double,
+  val low: Double,
+  val count: Int
+)
+
+internal fun seriesStats(points: List<SamplePointDto>): SeriesStats? {
+  val values = points.map { it.value }.filter { it.isFinite() }
+  if (values.isEmpty()) return null
+  val latest = points
+    .filter { it.value.isFinite() }
+    .maxByOrNull { parseTimestampMillis(it.timestamp) ?: Long.MIN_VALUE }
+    ?.value ?: values.last()
+  return SeriesStats(
+    latest = latest,
+    average = values.average(),
+    peak = values.max(),
+    low = values.min(),
+    count = values.size
+  )
+}
+
+/** 把一组按时间对齐的点换算成百分比（用于把「已用字节」配合总量画成占用率）。 */
+internal fun percentOf(points: List<SamplePointDto>, total: Double): List<SamplePointDto> =
+  if (total <= 0.0) emptyList() else points.map { SamplePointDto(it.timestamp, it.value / total * 100.0) }
