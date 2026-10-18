@@ -59,6 +59,11 @@ func readProcesses(ctx context.Context, epoch string) ([]processObservation, int
 			total := value.User + value.System
 			observation.total = &total
 		}
+		// /proc/<pid>/io read_bytes/write_bytes: bytes that reached storage.
+		if value, err := p.IOCountersWithContext(ctx); err == nil && value != nil {
+			read, write := value.ReadBytes, value.WriteBytes
+			observation.diskRead, observation.diskWrite = &read, &write
+		}
 		result = append(result, observation)
 	}
 	return result, count, nil

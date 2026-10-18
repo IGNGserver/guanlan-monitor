@@ -61,6 +61,7 @@ import {
 import { useWorkspaceUi, type SettingsSection } from "../WorkspaceContext";
 import { Button, CopyButton, Icon, StatusLabel } from "../ui";
 import { TemperatureSourcesPanel, TrafficCalendar, TrafficCalendarControls, unavailablePoints } from "./shared";
+import { clusterLabel, describeCluster, describeNetworkLink, extraHardwareRows } from "../hardwareFacts";
 
 /** 一张磁贴的描述。字段与 `ChartTile` 的插槽一一对应。 */
 export interface DeviceChartTile {
@@ -308,7 +309,8 @@ function hardwareRows(context: DeviceChartContext): Array<{ label: string; value
     { label: "L3 缓存", value: formatBytes(packages.reduce((total, cpu) => total + (cpu.l3CacheBytes ?? 0), 0)) },
     { label: "进程 / 系统线程 / 句柄", value: context.unavailable("systemOverview") ? UNAVAILABLE_METRIC_LABEL : `${formatCount(latest?.system.processCount)} / ${formatCount(latest?.system.threadCount)} / ${formatCount(latest?.system.handleCount)}` },
     { label: "内存容量", value: latest ? formatCapacitySummary(latest.memoryUsedBytes, latest.memoryTotalBytes, context.unavailable("memoryUsage")) : "未采集" },
-    { label: "磁盘容量", value: latest ? formatCapacitySummary(latest.diskUsedBytes, latest.diskTotalBytes, context.unavailable("diskUsage")) : "未采集" }
+    { label: "磁盘容量", value: latest ? formatCapacitySummary(latest.diskUsedBytes, latest.diskTotalBytes, context.unavailable("diskUsage")) : "未采集" },
+    ...extraHardwareRows(latest)
   ];
 }
 
@@ -328,7 +330,9 @@ function cpuFactItems(context: DeviceChartContext): ChartNumberItem[] {
     { label: "L3 缓存", value: formatBytes(sum(packages.map((cpu) => cpu.l3CacheBytes))) },
     { label: "系统线程", value: overviewUnavailable ? UNAVAILABLE_METRIC_LABEL : formatCount(system?.threadCount) },
     { label: "进程数", value: overviewUnavailable ? UNAVAILABLE_METRIC_LABEL : formatCount(system?.processCount) },
-    { label: "句柄数", value: overviewUnavailable ? UNAVAILABLE_METRIC_LABEL : formatCount(system?.handleCount) }
+    { label: "句柄数", value: overviewUnavailable ? UNAVAILABLE_METRIC_LABEL : formatCount(system?.handleCount) },
+    // Heterogeneous clusters only exist on some CPUs; nothing is shown otherwise.
+    ...(packages.length === 1 ? packages[0].clusters ?? [] : []).map((cluster) => ({ label: clusterLabel(cluster.name), value: describeCluster(cluster) }))
   ];
 }
 
@@ -700,7 +704,7 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
       const lastRx = network.rxBytesPerSec.length ? network.rxBytesPerSec[network.rxBytesPerSec.length - 1].value : undefined;
       const lastTx = network.txBytesPerSec.length ? network.txBytesPerSec[network.txBytesPerSec.length - 1].value : undefined;
       return {
-        subtitle: describeNetworkIdentity(network) || "独立网卡实例",
+        subtitle: [describeNetworkIdentity(network), describeNetworkLink(context.filteredLatest?.networkInterfaces.find((item) => item.id === network.id))].filter(Boolean).join(" · ") || "独立网卡实例",
         heroStat: lastRx != null && lastTx != null ? `↓ ${bytesPerSecond(lastRx)} · ↑ ${bytesPerSecond(lastTx)}` : undefined,
         series: [
           { label: "接收 (Rx)", points: unavailablePoints(network.rxBytesPerSec, context.unavailable("networkRxRate")), valueFormatter: bytesPerSecond },

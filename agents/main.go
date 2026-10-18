@@ -159,6 +159,11 @@ type memoryStats struct {
 	SpeedMHz         *float64 `json:"speedMHz,omitempty"`
 	SlotCount        *int     `json:"slotCount,omitempty"`
 	FormFactor       string   `json:"formFactor,omitempty"`
+	// Darwin additions. Compressed is the physical memory the compressor
+	// occupies (already inside usedBytes); pressure is the kernel's own level.
+	CompressedBytes uint64 `json:"compressedBytes,omitempty"`
+	PressureLevel   string `json:"pressureLevel,omitempty"`
+	MemoryType      string `json:"memoryType,omitempty"`
 }
 
 type systemStats struct {
@@ -212,6 +217,18 @@ type cpuPackageStats struct {
 	FrequencyMHz *float64 `json:"frequencyMHz,omitempty"`
 	UsagePercent *float64 `json:"usagePercent,omitempty"`
 	TemperatureC *float64 `json:"temperatureC,omitempty"`
+	// Heterogeneous core clusters (Apple performance/efficiency levels).
+	L2CacheBytes uint64            `json:"l2CacheBytes,omitempty"`
+	Clusters     []cpuClusterStats `json:"clusters,omitempty"`
+}
+
+type cpuClusterStats struct {
+	Name         string   `json:"name"`
+	CoreCount    int      `json:"coreCount"`
+	LogicalCount int      `json:"logicalCount,omitempty"`
+	L2CacheBytes uint64   `json:"l2CacheBytes,omitempty"`
+	L3CacheBytes uint64   `json:"l3CacheBytes,omitempty"`
+	FrequencyMHz *float64 `json:"frequencyMHz,omitempty"`
 }
 
 type rateStats struct {
@@ -244,6 +261,8 @@ type networkInterfaceStats struct {
 	LinkSpeedMbps         *float64 `json:"linkSpeedMbps,omitempty"`
 	ConnectionType        string   `json:"connectionType,omitempty"`
 	SignalStrengthPercent *float64 `json:"signalStrengthPercent,omitempty"`
+	RSSIdBm               *float64 `json:"rssiDbm,omitempty"`
+	NoiseDbm              *float64 `json:"noiseDbm,omitempty"`
 }
 
 type gpuDeviceStats struct {
@@ -338,6 +357,12 @@ type metricsPayload struct {
 	// instead of something only visible in a process monitor.
 	ProbeSpawns    map[string]int        `json:"probeSpawns,omitempty"`
 	CollectorStats *collectorStatsReport `json:"collectorStats,omitempty"`
+	// Optional observations outside the metric whitelist. They are omitted
+	// when the machine has no source, so older Hubs pass them through and
+	// existing per-device metric selections are unaffected.
+	Power   *powerStats   `json:"power,omitempty"`
+	Battery *batteryStats `json:"battery,omitempty"`
+	Thermal *thermalStats `json:"thermal,omitempty"`
 }
 
 // collectorStatsReport is the cumulative, self-observed cost of the collector.
@@ -432,6 +457,8 @@ type networkHardwareMetadata struct {
 	LinkSpeedMbps         *float64
 	ConnectionType        string
 	SignalStrengthPercent *float64
+	RSSIdBm               *float64
+	NoiseDbm              *float64
 }
 
 type diskHardwareMetadata struct {
@@ -463,6 +490,10 @@ type windowsHardwareMetadata struct {
 }
 
 type slowMetrics struct {
+	power                   *powerStats
+	battery                 *batteryStats
+	thermal                 *thermalStats
+	memoryType              string
 	collectedAt             time.Time
 	hardwareSampledAt       time.Time
 	cpuCollected            bool
@@ -562,6 +593,9 @@ type hardwareAssetCache struct {
 	// instead of spawning PowerShell on every slow cycle.
 	windowsCPUFallback   []cpuPackageStats
 	referenceDeviceCount int
+	// darwinMemory is the system_profiler module inventory, refreshed on the
+	// same TTL as the other platforms' memory inventory.
+	darwinMemory *darwinMemoryMetadata
 }
 
 // linuxMemoryMetadata is the static memory inventory dmidecode reports.
@@ -1353,6 +1387,7 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 	memory.SpeedMHz = slow.memorySpeedMHz
 	memory.SlotCount = slow.memorySlotCount
 	memory.FormFactor = slow.memoryFormFactor
+	memory.MemoryType = slow.memoryType
 	cpuFrequencyMHz := slow.cpuFrequencyMHz
 	if cpuRuntime.aggregateFrequencyMHz != nil {
 		cpuFrequencyMHz = cpuRuntime.aggregateFrequencyMHz
@@ -1406,8 +1441,8 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 			slow.disks[index].ActivePercent = &active
 			slow.disks[index].AverageResponseMs = &response
 			if runtime.GOOS == "darwin" {
+				// No busy-time counter on Darwin; response time is kept.
 				slow.disks[index].ActivePercent = nil
-				slow.disks[index].AverageResponseMs = nil
 			}
 			if diskRate.Instances == nil {
 				diskRate.Instances = map[string]rateStats{}
@@ -1433,6 +1468,8 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 			slow.networkInterfaces[index].LinkSpeedMbps = metadata.LinkSpeedMbps
 			slow.networkInterfaces[index].ConnectionType = metadata.ConnectionType
 			slow.networkInterfaces[index].SignalStrengthPercent = metadata.SignalStrengthPercent
+			slow.networkInterfaces[index].RSSIdBm = metadata.RSSIdBm
+			slow.networkInterfaces[index].NoiseDbm = metadata.NoiseDbm
 		}
 	}
 	for index := range slow.gpus {
@@ -1467,6 +1504,9 @@ func (s *agentState) collectPayload(cfg agentRuntimeConfig) metricsPayload {
 		Fans:                    ensureFans(slow.fans),
 		TemperatureSensors:      append([]temperatureSensorReading{}, slow.temperatureSensors...),
 		SensorBackends:          slow.sensorBackends,
+		Power:                   slow.power,
+		Battery:                 slow.battery,
+		Thermal:                 slow.thermal,
 	}
 
 	if runtime.GOOS == "darwin" {
@@ -1927,7 +1967,7 @@ func sampleMemory() memoryStats {
 		if err != nil {
 			return memoryStats{}
 		}
-		return memoryStats{TotalBytes: value.Total, UsedBytes: value.Used, AvailableBytes: value.Available, CachedBytes: value.Cached, SwapTotalBytes: value.SwapTotal, SwapUsedBytes: value.SwapUsed}
+		return memoryStats{TotalBytes: value.Total, UsedBytes: value.Used, AvailableBytes: value.Available, CachedBytes: value.Cached, SwapTotalBytes: value.SwapTotal, SwapUsedBytes: value.SwapUsed, CompressedBytes: value.Compressed, PressureLevel: value.Pressure}
 	}
 	virtualMemory, err := mem.VirtualMemory()
 	if err != nil {
@@ -1965,6 +2005,11 @@ func collectSystemStats() systemStats {
 	if runtime.GOOS == "windows" {
 		if result, ok := collectWindowsSystemStats(); ok {
 			result.UptimeSeconds = uptimeSeconds
+			return result
+		}
+	}
+	if runtime.GOOS == "darwin" {
+		if result, ok := collectDarwinSystemStats(uptimeSeconds); ok {
 			return result
 		}
 	}
@@ -2041,6 +2086,9 @@ func (s *agentState) sampleFastRates(now time.Time, fallbackSeconds int) (rateSt
 	if diskErr == nil {
 		diskRate, _ = computeRates(s.lastDiskIO, current, fallbackSeconds)
 		s.lastDiskIO = current
+		if runtime.GOOS == "darwin" {
+			diskRate = darwinDiskRates(diskRate)
+		}
 	}
 	var networkRate networkTrafficStats
 	if netErr == nil {
@@ -2127,6 +2175,12 @@ func mergeSlowMetrics(previous slowMetrics, next slowMetrics) slowMetrics {
 		merged.memorySpeedMHz = next.memorySpeedMHz
 		merged.memorySlotCount = next.memorySlotCount
 		merged.memoryFormFactor = next.memoryFormFactor
+		merged.memoryType = next.memoryType
+		// A hardware scan is the current observation: a battery that is
+		// removed or a source that stops reporting disappears with it.
+		merged.power = next.power
+		merged.battery = next.battery
+		merged.thermal = next.thermal
 		merged.gpus = mergeMissingGPUMemory(previous.gpus, next.gpus)
 		if runtime.GOOS == "darwin" {
 			merged.gpus = next.gpus
@@ -2239,6 +2293,13 @@ func collectSlowMetrics(assets hardwareAssetCache, plan collectionPlan) (slowMet
 				assets.linuxMemory = &memory
 			}
 			assets.collectedAt = time.Now().UTC()
+		case "darwin":
+			// One system_profiler run per TTL; a failure is cached the same
+			// way as the Linux dmidecode attempt.
+			if memory := collectDarwinMemoryMetadata(); memory != nil {
+				assets.darwinMemory = memory
+			}
+			assets.collectedAt = time.Now().UTC()
 		}
 	}
 
@@ -2308,6 +2369,13 @@ func collectSlowMetrics(assets hardwareAssetCache, plan collectionPlan) (slowMet
 		memorySpeedMHz = assets.linuxMemory.speedMHz
 		memorySlotCount = assets.linuxMemory.slotCount
 		memoryFormFactor = assets.linuxMemory.formFactor
+	}
+	memoryType := ""
+	if runtime.GOOS == "darwin" && assets.darwinMemory != nil {
+		memorySpeedMHz = assets.darwinMemory.speedMHz
+		memorySlotCount = assets.darwinMemory.slotCount
+		memoryFormFactor = assets.darwinMemory.formFactor
+		memoryType = assets.darwinMemory.memoryType
 	}
 	switch {
 	case !plan.diskSensors:
@@ -2442,6 +2510,9 @@ func collectSlowMetrics(assets hardwareAssetCache, plan collectionPlan) (slowMet
 	}
 	applyCPUPackageTemperatures(result.cpuPackages, hardware.cpuPackageTemperatures)
 	applyCPUPackageTemperature(result.cpuPackages, hardware.cpuTemperatureC)
+	if runtime.GOOS == "darwin" {
+		applyDarwinCPUTopology(result.cpuPackages, hardware)
+	}
 	sensorBackends := append([]sensorBackendStatus{}, hardware.sensorBackends...)
 	sensorBackends = append(sensorBackends, collectPlatformSensorBackends()...)
 
@@ -2451,11 +2522,21 @@ func collectSlowMetrics(assets hardwareAssetCache, plan collectionPlan) (slowMet
 	result.memorySpeedMHz = memorySpeedMHz
 	result.memorySlotCount = memorySlotCount
 	result.memoryFormFactor = memoryFormFactor
+	result.memoryType = memoryType
+	result.power = hardware.power
+	result.battery = hardware.battery
+	result.thermal = hardware.thermal
 	result.gpus = hardware.gpus
 	result.gpuDrivers = windowsMetadata.GpuDrivers
 	result.networkMetadata = windowsMetadata.Networks
 	result.diskInterfaces = windowsMetadata.DiskInterfaces
 	result.diskMetadata = windowsMetadata.DiskMetadata
+	if runtime.GOOS == "darwin" {
+		// IOKit inventory without SMART: device characteristics and link
+		// state are cheap registry reads, unlike the SMART queries above.
+		result.diskMetadata = darwinDiskMetadata(result.disks, readDarwinStorageInventory(false))
+		result.networkMetadata = collectDarwinNetworkMetadata()
+	}
 	result.diskSensorMetadata = hardware.diskSensorMetadata
 	result.fans = hardware.fans
 	result.sensorBackends = sensorBackends
@@ -3379,6 +3460,12 @@ type hardwareSmartAttribute struct {
 }
 
 type hardwareSensorMetrics struct {
+	power                   *powerStats
+	battery                 *batteryStats
+	thermal                 *thermalStats
+	cpuClusters             []cpuClusterStats
+	cpuL2CacheBytes         uint64
+	cpuL3CacheBytes         uint64
 	cpuFrequencyMHz         *float64
 	cpuTemperatureC         *float64
 	cpuPackageTemperatures  map[string]*float64
@@ -6604,6 +6691,8 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 				payload.CPUPackages[index].CoreCount = 0
 				payload.CPUPackages[index].LogicalCount = 0
 				payload.CPUPackages[index].L3CacheBytes = 0
+				payload.CPUPackages[index].L2CacheBytes = 0
+				payload.CPUPackages[index].Clusters = nil
 			}
 			if metricEnabled(enabledMetricSet, instanceEnabled, hasOverride, "cpuUsage") {
 				cpuUsageEnabled = true
@@ -6614,6 +6703,9 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 				cpuFrequencyEnabled = true
 			} else {
 				payload.CPUPackages[index].FrequencyMHz = nil
+				for cluster := range payload.CPUPackages[index].Clusters {
+					payload.CPUPackages[index].Clusters[cluster].FrequencyMHz = nil
+				}
 			}
 			if metricEnabled(enabledMetricSet, instanceEnabled, hasOverride, "cpuTemperature") {
 				cpuTemperatureEnabled = true
@@ -6651,6 +6743,8 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 		if !enabledMetricSet["memoryUsage"] {
 			payload.Memory.TotalBytes = 0
 			payload.Memory.UsedBytes = 0
+			payload.Memory.CompressedBytes = 0
+			payload.Memory.PressureLevel = ""
 		}
 		if !enabledMetricSet["swapUsage"] {
 			payload.Memory.SwapTotalBytes = 0
@@ -6670,6 +6764,7 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 			payload.Memory.SpeedMHz = nil
 			payload.Memory.SlotCount = nil
 			payload.Memory.FormFactor = ""
+			payload.Memory.MemoryType = ""
 		}
 	}
 
@@ -6817,6 +6912,8 @@ func applyRuntimeConfig(payload *metricsPayload, cfg agentRuntimeConfig) {
 				payload.NetworkIfaces[index].LinkSpeedMbps = nil
 				payload.NetworkIfaces[index].ConnectionType = ""
 				payload.NetworkIfaces[index].SignalStrengthPercent = nil
+				payload.NetworkIfaces[index].RSSIdBm = nil
+				payload.NetworkIfaces[index].NoiseDbm = nil
 			}
 		}
 		if !enabledMetricSet["networkRxRate"] {

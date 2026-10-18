@@ -86,12 +86,14 @@ test("containers group by Compose project with totals of what was read", () => {
 });
 
 test("process sorting keeps unknown values last and ties stable", () => {
-  const process = (pid: number, cpuPercent: number | null, gpuPercent: number | null = null): LiveProcess => ({ id: String(pid), pid, parentPid: null, name: `p${pid}`, startedAt: null, cpuPercent, gpuPercent, memoryBytes: null, threads: null, status: null });
+  const process = (pid: number, cpuPercent: number | null, gpuPercent: number | null = null, diskRead: number | null = null, diskWrite: number | null = null): LiveProcess => ({ id: String(pid), pid, parentPid: null, name: `p${pid}`, startedAt: null, cpuPercent, gpuPercent, memoryBytes: null, threads: null, status: null, diskReadBytesPerSec: diskRead, diskWriteBytesPerSec: diskWrite });
   const items = [process(3, null), process(1, 5), process(2, 9), process(4, 5)];
   assert.deepEqual(sortProcesses(items, "cpu", true).map((item) => item.pid), [2, 1, 4, 3]);
   assert.deepEqual(sortProcesses(items, "cpu", false).map((item) => item.pid), [1, 4, 2, 3], "missing CPU is not the smallest");
   assert.deepEqual(sortProcesses(items, "pid", false).map((item) => item.pid), [1, 2, 3, 4]);
   assert.deepEqual(sortProcesses([process(1, null, null), process(2, null, 60), process(3, null, 10)], "gpu", true).map((item) => item.pid), [2, 3, 1]);
+  // Disk sorts by read + write; a process with neither direction read is unknown, not idle.
+  assert.deepEqual(sortProcesses([process(1, null, null), process(2, null, null, 100, null), process(3, null, null, 0, 0), process(4, null, null, 50, 80)], "disk", true).map((item) => item.pid), [4, 2, 3, 1]);
 });
 
 test("a held order keeps positions, appends newcomers and drops what left", () => {

@@ -22,6 +22,9 @@ export interface LiveProcess {
   memoryBytes: number | null;
   threads: number | null;
   status: string | null;
+  /** Bytes per second reaching storage; null where the platform has no disk-only counter, and on the first sample. */
+  diskReadBytesPerSec: number | null;
+  diskWriteBytesPerSec: number | null;
 }
 
 export interface LiveProcesses {

@@ -134,11 +134,17 @@ export function groupContainers(items: LiveContainer[]): ContainerGroup[] {
     .map(([project, members]) => ({ project, items: members, cpuPercent: sumKnown(members.map((item) => item.cpuPercent)), memoryBytes: sumKnown(members.map((item) => item.memoryBytes)) }));
 }
 
-export type ProcessSortKey = "name" | "pid" | "cpu" | "gpu" | "memory" | "threads";
+export type ProcessSortKey = "name" | "pid" | "cpu" | "gpu" | "disk" | "memory" | "threads";
+
+/** Combined storage throughput; null only when neither direction was read. */
+export function processDiskRate(item: LiveProcess): number | null {
+  const read = item.diskReadBytesPerSec ?? null, write = item.diskWriteBytesPerSec ?? null;
+  return read == null && write == null ? null : (read ?? 0) + (write ?? 0);
+}
 
 /** Unknown values ("—") sort after every known one in either direction: missing is not small. */
 export function sortProcesses(items: LiveProcess[], key: ProcessSortKey, descending: boolean): LiveProcess[] {
-  const value = (item: LiveProcess): number | string | null | undefined => key === "name" ? item.name.toLowerCase() : key === "pid" ? item.pid : key === "cpu" ? item.cpuPercent : key === "gpu" ? item.gpuPercent : key === "memory" ? item.memoryBytes : item.threads;
+  const value = (item: LiveProcess): number | string | null | undefined => key === "name" ? item.name.toLowerCase() : key === "pid" ? item.pid : key === "cpu" ? item.cpuPercent : key === "gpu" ? item.gpuPercent : key === "disk" ? processDiskRate(item) : key === "memory" ? item.memoryBytes : item.threads;
   return [...items].sort((left, right) => {
     const a = value(left), b = value(right);
     if (a == null || b == null) return a == null && b == null ? left.pid - right.pid : a == null ? 1 : -1;

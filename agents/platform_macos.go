@@ -56,9 +56,14 @@ func collectDarwinHardwareSensors() hardwareSensorMetrics {
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	var cpuZones []float64
+	smcPower := map[string]float64{}
 	for _, entry := range readings.SMC {
 		value, decodeErr := macos.DecodeSMC(entry.Type, entry.Data)
 		if decodeErr != nil {
+			continue
+		}
+		if entry.Key[0] == 'P' {
+			smcPower[entry.Key] = *value
 			continue
 		}
 		if strings.HasPrefix(entry.Key, "T") {
@@ -83,6 +88,9 @@ func collectDarwinHardwareSensors() hardwareSensorMetrics {
 			result.fans = append(result.fans, fanSensorStats{ID: "smc-" + entry.Key[:2], Label: "SMC " + entry.Key[:2], Interface: "AppleSMC", RPM: int(*value), RPMStatus: "valid", ChannelState: "observed"})
 		}
 	}
+	// Apple HID die sensors come before the SMC zone mean: their names are
+	// stable across SoC generations, SMC zone keys are not.
+	collectDarwinExtendedHardware(&result, readings, smcPower, now)
 	if result.cpuTemperatureC == nil && len(cpuZones) > 0 {
 		result.cpuTemperatureC = averagePointer(cpuZones)
 		result.cpuTemperatureSource = "AppleSMC CPU thermal zones (derived mean)"
@@ -147,10 +155,14 @@ func collectDarwinDisks(cached map[string]*float64) ([]diskDeviceStats, storageU
 	if err != nil {
 		return nil, storageUsage{}, cached, fmt.Errorf("APFS container inventory: %w", err)
 	}
+	mounts, mountErr := macos.ReadMounts()
+	if mountErr != nil {
+		return nil, storageUsage{}, cached, fmt.Errorf("mount table: %w", mountErr)
+	}
 	result := []diskDeviceStats{}
 	aggregate := storageUsage{}
 	for _, container := range containers {
-		id, name, mount := macos.APFSIdentity(container)
+		id, name, mount := macos.APFSIdentity(container, mounts)
 		if mount == "" || container.CapacityCeiling == 0 {
 			continue
 		}
@@ -193,26 +205,6 @@ func collectDarwinDisks(cached map[string]*float64) ([]diskDeviceStats, storageU
 	return result, aggregate, cached, nil
 }
 
-func collectDarwinDiskSensors(disks []diskDeviceStats) map[string]diskSensorMetadata {
-	result := map[string]diskSensorMetadata{}
-	command := resolveSmartctlPath()
-	if command == "" {
-		return result
-	}
-	for _, entry := range disks {
-		if entry.SourceKey == "" {
-			continue
-		}
-		if _, exists := result[entry.SourceKey]; exists {
-			continue
-		}
-		if sensor, ok := collectSmartctlDiskSensor(command, entry.SourceKey); ok {
-			result[entry.SourceKey] = sensor
-		}
-	}
-	return result
-}
-
 func applyDarwinMetricQuality(payload *metricsPayload, maxHardwareAge time.Duration) {
 	quality := map[string]metricQuality{}
 	set := func(key string, available bool, source string) {
@@ -231,10 +223,13 @@ func applyDarwinMetricQuality(payload *metricsPayload, maxHardwareAge time.Durat
 	}
 	set("cpuTemperature", payload.CPUTemperatureC != nil, "AppleSMC TCAD")
 	if payload.CPUTemperatureC != nil {
-		direct := false
+		direct, hid := false, false
 		for _, sensor := range payload.TemperatureSensors {
 			if sensor.RawName == "TCAD" && sensor.CurrentC != nil {
 				direct = true
+			}
+			if sensor.Backend == "darwin-hid" && sensor.Role == "cpu_package" {
+				hid = true
 			}
 		}
 		if !direct {
@@ -242,11 +237,15 @@ func applyDarwinMetricQuality(payload *metricsPayload, maxHardwareAge time.Durat
 			q.State = "derived"
 			q.Source = "AppleSMC CPU thermal zones mean"
 			q.Reason = "aggregate zones, not a physical per-core/package sensor"
+			if hid {
+				q.Source = "Apple HID die/cluster sensors mean"
+				q.Reason = "mean of on-die monitors, not a per-core reading"
+			}
 			quality["cpuTemperature"] = q
 		}
 	}
 	set("cpuTopology", len(payload.CPUPackages) > 0, "sysctl")
-	set("systemOverview", payload.System.ProcessCount > 0, "accessible process enumeration")
+	set("systemOverview", payload.System.ProcessCount > 0, "proc_listallpids / proc_pidinfo / kern.num_files")
 	set("memoryUsage", payload.Memory.TotalBytes > 0, "Mach VM statistics64")
 	set("swapUsage", payload.Memory.TotalBytes > 0, "sysctl vm.swapusage")
 	set("memoryCached", payload.Memory.TotalBytes > 0, "external + purgeable physical pages")
@@ -258,26 +257,46 @@ func applyDarwinMetricQuality(payload *metricsPayload, maxHardwareAge time.Durat
 		quality["memoryAvailable"] = q
 	}
 	quality["memoryCommitted"] = metricQuality{State: "not_applicable", Reason: "Darwin has no equivalent Windows commit limit"}
-	quality["memoryHardware"] = metricQuality{State: "unavailable", Reason: "DIMM metadata not exposed by this collector"}
+	set("memoryHardware", payload.Memory.SlotCount != nil || payload.Memory.FormFactor != "" || payload.Memory.MemoryType != "", "system_profiler SPMemoryDataType")
+	if payload.Memory.FormFactor == "On-package" {
+		q := quality["memoryHardware"]
+		q.Reason = "unified on-package memory: no slots or published speed"
+		quality["memoryHardware"] = q
+	}
 	set("diskUsage", len(payload.Disks) > 0, "APFS containers / mounted filesystems")
-	set("diskMetadata", len(payload.Disks) > 0, "diskutil physical stores")
+	set("diskMetadata", len(payload.Disks) > 0, "diskutil physical stores / IOKit device characteristics")
 	// Rates have a legitimate zero at baseline/idle. Busy percent is not
 	// derived from cumulative request latency (parallel requests overlap).
 	set("diskRead", len(payload.Disks) > 0, "IOKit IO counters")
 	set("diskWrite", len(payload.Disks) > 0, "IOKit IO counters")
-	set("diskActivity", false, "no device busy-time counter")
-	health := false
+	response, health, nativeHealth := false, false, false
 	for _, entry := range payload.Disks {
+		response = response || entry.AverageResponseMs != nil
 		health = health || entry.HealthStatus != "" || entry.TemperatureC != nil
 	}
-	set("diskHealth", health, "SMART")
+	for _, sensor := range payload.TemperatureSensors {
+		nativeHealth = nativeHealth || sensor.Backend == "darwin-smart"
+	}
+	set("diskActivity", response, "IOKit block storage total time / operations")
+	if response {
+		q := quality["diskActivity"]
+		q.State = "derived"
+		q.Reason = "average response time only; Darwin has no device busy-time counter"
+		quality["diskActivity"] = q
+	}
+	healthSource := "smartctl"
+	if nativeHealth {
+		healthSource = "IOKit NVMe/ATA SMART user client"
+	}
+	set("diskHealth", health, healthSource)
 	// Storage pools (Proxmox storages, LVM thin pools, ZFS pools) are a Linux
 	// host concept. macOS reports none rather than an empty list, so the console
 	// hides the section instead of drawing an empty one.
 	quality["storagePools"] = metricQuality{State: "not_applicable", Reason: "no Proxmox/LVM/ZFS pool source on macOS"}
-	for _, key := range []string{"networkRxRate", "networkTxRate", "networkTraffic", "networkIdentity"} {
+	for _, key := range []string{"networkRxRate", "networkTxRate", "networkTraffic"} {
 		set(key, len(payload.NetworkIfaces) > 0, "Darwin interface counters")
 	}
+	set("networkIdentity", len(payload.NetworkIfaces) > 0, "interface addresses / IONetworkController / CoreWLAN signal")
 	usage, memory, frequency, temperature, driver := false, false, false, false, false
 	for _, gpu := range payload.GPUs {
 		usage = usage || gpu.utilizationObserved
@@ -288,12 +307,12 @@ func applyDarwinMetricQuality(payload *metricsPayload, maxHardwareAge time.Durat
 	}
 	set("gpuUsage", usage, "IOKit PerformanceStatistics")
 	set("gpuMemory", memory, "driver allocation counters")
-	set("gpuFrequency", frequency, "IOKit Core Clock")
-	set("gpuTemperature", temperature, "IOKit GPU temperature")
+	set("gpuFrequency", frequency, "IOKit Core Clock / IOReport GPU performance states")
+	set("gpuTemperature", temperature, "IOKit GPU temperature / Apple HID GPU sensors")
 	set("gpuDriverInfo", driver, "driver version")
 	set("gpuEncode", false, "no encoder counter")
 	set("gpuDecode", false, "no decoder counter")
-	set("temperatureSources", len(payload.TemperatureSensors) > 0, "AppleSMC")
+	set("temperatureSources", len(payload.TemperatureSensors) > 0, "AppleSMC / Apple HID / SMART")
 	set("fanRpm", len(payload.Fans) > 0, "AppleSMC F<n>Ac")
 	mode := false
 	for _, fan := range payload.Fans {

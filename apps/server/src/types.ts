@@ -72,6 +72,9 @@ export interface TimeSeriesRecord {
     temperatureSensors: AgentMetricsPayload["temperatureSensors"];
     diskRate: AgentMetricsPayload["diskRate"];
     networkRate: AgentMetricsPayload["networkRate"];
+    power?: AgentMetricsPayload["power"];
+    battery?: AgentMetricsPayload["battery"];
+    thermal?: AgentMetricsPayload["thermal"];
   };
   sampleCount?: number;
 }

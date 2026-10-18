@@ -97,7 +97,10 @@ const memorySchema = z.object({
   swapUsedBytes: nonNegative,
   speedMHz: nullableFinite,
   slotCount: nonNegativeInt.nullable().optional(),
-  formFactor: optionalText(128).nullable()
+  formFactor: optionalText(128).nullable(),
+  compressedBytes: nonNegative.optional(),
+  pressureLevel: z.enum(["normal", "warning", "critical"]).optional(),
+  memoryType: optionalText(64)
 }).passthrough();
 
 const systemSchema = z.object({
@@ -145,7 +148,16 @@ const cpuPackageSchema = z.object({
   l3CacheBytes: nonNegative.optional(),
   frequencyMHz: nonNegative.nullable().optional(),
   usagePercent: percentage.nullable().optional(),
-  temperatureC: temperature
+  temperatureC: temperature,
+  l2CacheBytes: nonNegative.nullable().optional(),
+  clusters: z.array(z.object({
+    name: text(64),
+    coreCount: nonNegativeInt.max(1_000_000),
+    logicalCount: nonNegativeInt.max(1_000_000).optional(),
+    l2CacheBytes: nonNegative.optional(),
+    l3CacheBytes: nonNegative.optional(),
+    frequencyMHz: nonNegative.nullable().optional()
+  }).passthrough()).max(16).optional()
 }).passthrough();
 
 const rateSchema = z.object({
@@ -181,7 +193,9 @@ const networkSchema = z.object({
   totalTxBytes: nonNegative.optional(),
   linkSpeedMbps: nullableFinite,
   connectionType: optionalText(128).nullable(),
-  signalStrengthPercent: percentage.nullable().optional()
+  signalStrengthPercent: percentage.nullable().optional(),
+  rssiDbm: finite.min(-150).max(0).nullable().optional(),
+  noiseDbm: finite.min(-150).max(0).nullable().optional()
 }).passthrough();
 
 const gpuSchema = z.object({
@@ -280,6 +294,46 @@ const storagePoolSchema = z.object({
   health: optionalText(64).nullable()
 }).passthrough();
 
+const watts = finite.min(0).max(10_000).optional();
+const powerSchema = z.object({
+  observedAt: timestamp,
+  source: text(256),
+  systemWatts: watts,
+  inputWatts: watts,
+  cpuWatts: watts,
+  gpuWatts: watts,
+  aneWatts: watts,
+  dramWatts: watts,
+  mediaWatts: watts,
+  adapterRatedWatts: watts,
+  externalPower: z.boolean().optional()
+}).passthrough();
+
+const batterySchema = z.object({
+  observedAt: timestamp,
+  source: text(256),
+  chargePercent: percentage.optional(),
+  healthPercent: percentage.optional(),
+  cycleCount: nonNegativeInt.max(1_000_000).optional(),
+  designCapacityMAh: nonNegative.optional(),
+  fullChargeCapacityMAh: nonNegative.optional(),
+  temperatureC: finite.min(-100).max(250).optional(),
+  voltageV: finite.min(0).max(1_000).optional(),
+  amperageMA: finite.min(-1_000_000).max(1_000_000).optional(),
+  netPowerWatts: finite.min(-10_000).max(10_000).optional(),
+  timeRemainingMinutes: nonNegative.optional(),
+  charging: z.boolean().optional(),
+  externalPower: z.boolean().optional(),
+  fullyCharged: z.boolean().optional(),
+  condition: optionalText(128)
+}).passthrough();
+
+const thermalSchema = z.object({
+  observedAt: timestamp,
+  source: text(256),
+  pressureLevel: z.enum(["nominal", "moderate", "heavy", "trapping", "sleeping"])
+}).passthrough();
+
 export const agentMetricsPayloadSchema = z.object({
   sampleId: optionalText(128),
   identity: identitySchema,
@@ -328,7 +382,10 @@ export const agentMetricsPayloadSchema = z.object({
     slowRuns: nonNegativeInt,
     slowOverruns: nonNegativeInt,
     lastSlowMillis: nonNegativeInt
-  }).passthrough().optional()
+  }).passthrough().optional(),
+  power: powerSchema.optional(),
+  battery: batterySchema.optional(),
+  thermal: thermalSchema.optional()
 }).passthrough().transform((payload): AgentMetricsPayload => {
   const sanitized = { ...payload } as Record<string, unknown>;
   // `storagePools` used to be purged here as part of the retired virtual

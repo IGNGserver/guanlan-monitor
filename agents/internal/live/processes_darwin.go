@@ -13,6 +13,21 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// rusageInfoV2 mirrors struct rusage_info_v2 from <sys/resource.h>; only the
+// trailing disk counters are read.
+type rusageInfoV2 struct {
+	UUID                                   [16]byte
+	UserTime, SystemTime                   uint64
+	PkgIdleWkups, InterruptWkups           uint64
+	Pageins, WiredSize, ResidentSize       uint64
+	PhysFootprint                          uint64
+	ProcStartAbstime, ProcExitAbstime      uint64
+	ChildUserTime, ChildSystemTime         uint64
+	ChildPkgIdleWkups, ChildInterruptWkups uint64
+	ChildPageins, ChildElapsedAbstime      uint64
+	DiskioBytesRead, DiskioBytesWritten    uint64
+}
+
 // Darwin's gopsutil Status() spawns `ps` per PID, and its task-info helpers
 // discard proc_pidinfo failures. Read native snapshots directly: no subprocess
 // storm, and protected task statistics stay null instead of becoming zero.
@@ -37,6 +52,8 @@ func readProcesses(ctx context.Context, epoch string) ([]processObservation, int
 	purego.RegisterLibFunc(&pidInfo, library, "proc_pidinfo")
 	purego.RegisterLibFunc(&pidPath, library, "proc_pidpath")
 	purego.RegisterLibFunc(&timeBase, library, "mach_timebase_info")
+	var pidRusage func(int32, int32, unsafe.Pointer) int32
+	purego.RegisterLibFunc(&pidRusage, library, "proc_pid_rusage")
 	var scale struct{ numerator, denominator uint32 }
 	if timeBase(unsafe.Pointer(&scale)) != 0 || scale.denominator == 0 {
 		return nil, count, fmt.Errorf("unavailable_process_timebase")
@@ -72,6 +89,11 @@ func readProcesses(ctx context.Context, epoch string) ([]processObservation, int
 			if threads > 0 {
 				observation.item.Threads = &threads
 			}
+		}
+		var usage rusageInfoV2
+		if pidRusage(pid, 2 /* RUSAGE_INFO_V2 */, unsafe.Pointer(&usage)) == 0 {
+			read, write := usage.DiskioBytesRead, usage.DiskioBytesWritten
+			observation.diskRead, observation.diskWrite = &read, &write
 		}
 		result = append(result, observation)
 	}

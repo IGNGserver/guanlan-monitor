@@ -35,7 +35,12 @@ char *guanlan_memory(void) {
         struct xsw_usage swap={0}; size=sizeof(swap);
         // Do not turn an unreadable swap statistic into a valid zero.
         if (sysctlbyname("vm.swapusage",&swap,&size,NULL,0)) return NULL;
-        return jsonCopy(@{@"Total":@(total),@"Page":@(page),@"Internal":@(vm.internal_page_count),@"Purgeable":@(vm.purgeable_count),@"Wired":@(vm.wire_count),@"Compressor":@(vm.compressor_page_count),@"External":@(vm.external_page_count),@"SwapTotal":@(swap.xsu_total),@"SwapUsed":@(swap.xsu_used)});
+        NSMutableDictionary *report=[@{@"Total":@(total),@"Page":@(page),@"Internal":@(vm.internal_page_count),@"Purgeable":@(vm.purgeable_count),@"Wired":@(vm.wire_count),@"Compressor":@(vm.compressor_page_count),@"External":@(vm.external_page_count),@"SwapTotal":@(swap.xsu_total),@"SwapUsed":@(swap.xsu_used)} mutableCopy];
+        // Kernel memory-pressure kevent level (1 normal, 2 warn, 4 critical);
+        // optional, an unreadable value is simply omitted.
+        int pressure=0; size=sizeof(pressure);
+        if (!sysctlbyname("kern.memorystatus_vm_pressure_level",&pressure,&size,NULL,0)) report[@"Pressure"]=@(pressure);
+        return jsonCopy(report);
     }
 }
 
@@ -73,7 +78,9 @@ static NSArray *readSMC(NSMutableDictionary *report) {
         SMCData input={0},entry={0},value={0}; input.command=8; input.index=index;
         if (!smcCall(connection,&input,&entry)) continue;
         char key[5]; keyString(entry.key,key);
-        if (key[0]!='T' && !(key[0]=='F' && (key[2]=='A'||key[2]=='M') && (key[3]=='c'||key[3]=='d'))) continue;
+        // Power keys are read-only rail/system power sensors (W, flt).
+        BOOL power=!strcmp(key,"PSTR")||!strcmp(key,"PCPC")||!strcmp(key,"PCPT")||!strcmp(key,"PG0R")||!strcmp(key,"PDTR")||!strcmp(key,"PPBR");
+        if (key[0]!='T' && !power && !(key[0]=='F' && (key[2]=='A'||key[2]=='M') && (key[3]=='c'||key[3]=='d'))) continue;
         if (!smcRead(connection,entry.key,&value)) continue;
         char type[5]; keyString(value.info.type,type);
         NSString *name=[NSString stringWithUTF8String:key], *kind=[NSString stringWithUTF8String:type];
@@ -213,7 +220,8 @@ char *guanlan_hardware(void) {
         NSMutableDictionary *report=[NSMutableDictionary dictionary];
         int arm64=0; size_t size=sizeof(arm64);
         sysctlbyname("hw.optional.arm64",&arm64,&size,NULL,0);
-        report[@"AppleSilicon"]=@(arm64==1);
+        // A C comparison boxes as a number (0/1), not a JSON boolean.
+        report[@"AppleSilicon"]=arm64==1 ? @YES : @NO;
         report[@"GPUs"]=readGPUs(report); report[@"SMC"]=readSMC(report);
         report[@"CPUChannels"]=readFrequency(report);
         return jsonCopy(report);

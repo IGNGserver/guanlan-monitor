@@ -27,6 +27,11 @@ type Process struct {
 	MemoryBytes *uint64  `json:"memoryBytes"`
 	Threads     *int32   `json:"threads"`
 	Status      *string  `json:"status"`
+	// Revision 4: storage bytes per second from the kernel's per-process disk
+	// counters (Linux read_bytes/write_bytes, Darwin rusage diskio). Null where
+	// the platform has no disk-only counter or on the first sample.
+	DiskReadBytesPerSec  *float64 `json:"diskReadBytesPerSec"`
+	DiskWriteBytesPerSec *float64 `json:"diskWriteBytesPerSec"`
 }
 
 type Processes struct {
@@ -42,6 +47,8 @@ type processSample struct {
 	started int64
 	total   float64
 	at      time.Time
+	// Cumulative disk bytes; nil when the platform could not read them.
+	read, write *uint64
 }
 
 // One owner per Agent installation/topic. No samples cross installation restarts.
@@ -71,12 +78,16 @@ func (c *ProcessCollector) Collect(ctx context.Context) (Processes, error) {
 }
 
 // CollectForRevision keeps the process result compatible with older Hubs. Hub
-// revision 3 understands gpuPercent; revisions 1 and 2 use the original
-// process item shape and reject unknown fields.
+// revision 4 understands per-process disk rates, revision 3 gpuPercent;
+// revisions 1 and 2 use the original process item shape. Every older shape
+// rejects unknown fields.
 func (c *ProcessCollector) CollectForRevision(ctx context.Context, hubRevision int) (any, error) {
 	result, err := c.collect(ctx, hubRevision >= 3)
-	if err != nil || hubRevision >= 3 {
+	switch {
+	case err != nil || hubRevision >= 4:
 		return result, err
+	case hubRevision == 3:
+		return result.withoutDisk(), nil
 	}
 	return result.withoutGPU(), nil
 }
@@ -100,14 +111,21 @@ func (c *ProcessCollector) collect(ctx context.Context, includeGPU bool) (Proces
 		item := observation.item
 		if observation.total != nil {
 			total := *observation.total
-			if old, ok := c.previous[item.PID]; ok && old.started == observation.started && total >= old.total && observation.at.After(old.at) {
+			old, ok := c.previous[item.PID]
+			same := ok && old.started == observation.started && observation.at.After(old.at)
+			if same && total >= old.total {
 				usage := (total - old.total) / observation.at.Sub(old.at).Seconds() / float64(runtime.NumCPU()) * 100
 				if usage > 100 {
 					usage = 100
 				}
 				item.CPUPercent = &usage
 			}
-			next[item.PID] = processSample{started: observation.started, total: total, at: observation.at}
+			if same {
+				seconds := observation.at.Sub(old.at).Seconds()
+				item.DiskReadBytesPerSec = counterRate(old.read, observation.diskRead, seconds)
+				item.DiskWriteBytesPerSec = counterRate(old.write, observation.diskWrite, seconds)
+			}
+			next[item.PID] = processSample{started: observation.started, total: total, at: observation.at, read: observation.diskRead, write: observation.diskWrite}
 		}
 		result.Items = append(result.Items, item)
 	}
@@ -200,4 +218,49 @@ type processObservation struct {
 	started int64
 	total   *float64
 	at      time.Time
+	// Cumulative storage bytes read/written, nil when unreadable.
+	diskRead, diskWrite *uint64
+}
+
+// counterRate is a per-second rate between two cumulative readings. A missing
+// reading or a counter that went backwards yields null, never a zero.
+func counterRate(previous, current *uint64, seconds float64) *float64 {
+	if previous == nil || current == nil || *current < *previous || seconds <= 0 {
+		return nil
+	}
+	rate := float64(*current-*previous) / seconds
+	return &rate
+}
+
+type rev3Process struct {
+	ID          string   `json:"id"`
+	PID         int32    `json:"pid"`
+	ParentPID   *int32   `json:"parentPid"`
+	Name        string   `json:"name"`
+	StartedAt   *string  `json:"startedAt"`
+	CPUPercent  *float64 `json:"cpuPercent"`
+	GPUPercent  *float64 `json:"gpuPercent"`
+	MemoryBytes *uint64  `json:"memoryBytes"`
+	Threads     *int32   `json:"threads"`
+	Status      *string  `json:"status"`
+}
+
+type rev3Processes struct {
+	ObservedAt string        `json:"observedAt"`
+	CPUScale   string        `json:"cpuScale"`
+	MemoryKind string        `json:"memoryKind"`
+	TotalCount int           `json:"totalCount"`
+	Truncated  bool          `json:"truncated"`
+	Items      []rev3Process `json:"items"`
+}
+
+func (p Processes) withoutDisk() rev3Processes {
+	items := make([]rev3Process, 0, len(p.Items))
+	for _, item := range p.Items {
+		items = append(items, rev3Process{
+			ID: item.ID, PID: item.PID, ParentPID: item.ParentPID, Name: item.Name, StartedAt: item.StartedAt,
+			CPUPercent: item.CPUPercent, GPUPercent: item.GPUPercent, MemoryBytes: item.MemoryBytes, Threads: item.Threads, Status: item.Status,
+		})
+	}
+	return rev3Processes{ObservedAt: p.ObservedAt, CPUScale: p.CPUScale, MemoryKind: p.MemoryKind, TotalCount: p.TotalCount, Truncated: p.Truncated, Items: items}
 }
