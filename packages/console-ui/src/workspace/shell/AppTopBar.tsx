@@ -1,8 +1,11 @@
 import React from "react";
+import appIcon from "../../assets/app-icon.png";
 import { useWorkspace } from "../WorkspaceContext";
 import { M3Button, M3IconButton } from "../m3";
 import { Button, Icon, StatusLabel } from "../ui";
 import { selectSnapshotSource } from "../selectors";
+
+const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: string }).src;
 
 export function AppTopBar() {
   const { snapshot, refreshing, mutationPending, refresh, setCommandOpen, sidebarCollapsed, setSidebarCollapsed, openSettings, capabilities } = useWorkspace();
@@ -18,7 +21,12 @@ export function AppTopBar() {
   return <header className="workspace-topbar">
     <div className="workspace-topbar__leading">
       <M3IconButton className="workspace-icon-button workspace-topbar__toggle" label="切换侧边栏" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}><Icon name="collapse" /></M3IconButton>
-      {!capabilities.canControlNativeWindow && <strong className="workspace-topbar__brand">观澜</strong>}
+      {!capabilities.canControlNativeWindow && (
+        <span className="workspace-topbar__brand">
+          <img className="workspace-topbar__brand-img" src={appIconSrc} alt="观澜" />
+          <strong>观澜</strong>
+        </span>
+      )}
     </div>
     <div className="workspace-topbar__actions">
       <StatusLabel state={sourceState} />
