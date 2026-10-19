@@ -65,7 +65,20 @@
 }
 
 .workspace-topbar { gap: var(--md-sys-space-3); }
-.workspace-topbar__brand { font-size: var(--md-sys-typescale-title-m-size); font-weight: 500; }
+.workspace-topbar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--md-sys-space-2);
+  font-size: var(--md-sys-typescale-title-m-size);
+  font-weight: 500;
+}
+.workspace-topbar__brand-img {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--md-sys-shape-xs);
+  object-fit: contain;
+  flex-shrink: 0;
+}
 
 /* One brand, not two.
  *
