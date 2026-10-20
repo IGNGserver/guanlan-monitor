@@ -20,6 +20,7 @@ import {
 } from "./repositories/local.js";
 import { MetricsService } from "./services/metrics.js";
 import { registerRoutes } from "./routes.js";
+import { registerRequestTiming } from "./request-timing.js";
 import { resolve } from "node:path";
 import { AgentCredentials } from "./live/credentials.js";
 import { LiveRegistry } from "./live/registry.js";
@@ -53,6 +54,7 @@ const app = Fastify({
   bodyLimit: 4 * 1024 * 1024,
   trustProxy: env.TRUST_PROXY
 });
+registerRequestTiming(app);
 await app.register(cors, {
   origin: corsOrigins,
   credentials: true,

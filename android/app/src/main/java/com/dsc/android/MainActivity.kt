@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dsc.android.ui.oneui.GuanlanTheme
@@ -19,6 +20,7 @@ import com.dsc.android.ui.shell.GuanlanApp
 
 class MainActivity : ComponentActivity() {
   private val appViewModel: MainViewModel by viewModels { MainViewModel.Factory }
+  private val loadingPerformance = LoadingPerformance()
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -27,6 +29,16 @@ class MainActivity : ComponentActivity() {
 
     setContent {
       val state by appViewModel.state.collectAsStateWithLifecycle()
+
+      LaunchedEffect(state.dataSource, state.metrics != null || state.overviewMetrics != null) {
+        loadingPerformance.mark(LoadingMilestone.Shell)
+        if (state.dataSource == RemoteDataSource.Cache) loadingPerformance.mark(LoadingMilestone.Cache)
+        if (state.dataSource == RemoteDataSource.Live) {
+          loadingPerformance.mark(LoadingMilestone.Summary)
+          if (state.metrics != null || state.overviewMetrics != null) loadingPerformance.mark(LoadingMilestone.Charts)
+        }
+        if (state.dataSource != RemoteDataSource.Empty) reportFullyDrawn()
+      }
 
       GuanlanApp(
         state = state,

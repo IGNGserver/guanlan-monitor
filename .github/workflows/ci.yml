@@ -62,6 +62,7 @@ jobs:
           pnpm test:hub-connection
           pnpm test:window-material
           pnpm test:web-pwa
+          pnpm test:loading-performance
           pnpm lint
 
       - name: Test server payload compatibility and storage

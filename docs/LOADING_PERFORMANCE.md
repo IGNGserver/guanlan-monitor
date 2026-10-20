@@ -1,0 +1,100 @@
+# 四端加载与弱网优化
+
+## 范围与实施顺序
+
+基线：`507bde99` / 3.0.160。优化不自动发布、部署或修改公网入口。
+
+| 阶段 | 交付与验收门槛 | 当前状态 |
+| --- | --- | --- |
+| 1 基线 | 四端本地时间标记、Hub Server-Timing、可重复的链路采样 | 已实现，快速检查通过；CI、原生设备和认证链路基线待验收 |
+| 2 首屏 | 摘要先显示；更新检查与缓存写入不阻塞；消除启动重复请求 | 待开发 |
+| 3 服务端 | 列表脱离历史发现、范围日历、轻量摘要、点数预算 | 待开发 |
+| 4 弱网 | 自动/标准/省流；有界并发、取消、去重、认证合并、退避 | 待开发 |
+| 5 Web/PWA | 首屏分包、最小核心缓存、快速公共壳、跨版本哈希资源复用 | 待开发 |
+| 6 原生 | 安卓启动/缓存与桌面缓存/IPC/Agent 探测解耦 | 待开发 |
+| 7 联合验收 | CI 弱网回归与真实设备/公网线路对照，验证回退路径 | 待开发 |
+
+阶段按顺序交付；实现、自动化验证、真实线路验收分别记录，不将源码推断记为性能提升。
+
+## 已采集的基线（2026-10-20）
+
+测量版本为 NAS 当前生产版本对应的提交，**没有部署本任务代码**。
+macos-dev 上以 `curl --compressed` 顺序采样未认证首页，每条路径 5 次：
+
+| 路径 | HTTP | TTFB P50 | 限制 |
+| --- | --- | --- | --- |
+| NAS 内网 | 1.1 | 8.23 ms | 小 HTML、已运行服务，不是冷启动 |
+| VPS TCP 穿透 | 1.1 | 30.05 ms | HTTP 非安全上下文，不能启用 Service Worker |
+| Cloudflare 域名 | 2 | 1317.54 ms | 本机 fake-IP 解析到 198.18/16，经 utun 与 SJC；不能归因为穿透自身 |
+
+同一浏览器工具新标签首次打开的单次观测：VPS DOMContentLoaded 125 ms、load 270 ms；
+Cloudflare DOMContentLoaded 2764 ms、load 3158 ms。没有控制浏览器缓存、带宽、代理和 CPU，
+**不是弱网验收，也不是有统计意义的跨线路排名**。两条路径均下载约 230 KB 的 `logo.png`。
+Python 与 curl 的路由/请求行为不同，Python 对 Cloudflare 的失败样本没有混入上述统计。
+
+## 测量方法
+
+### 未认证入口
+
+在本地 scratch 或 CI 副本执行，报告不要写回 NAS 源码卷：
+
+```sh
+pnpm performance:baseline --samples 5 --vantage 'client/network; proxy/TUN route' \
+  --out "$BUILD_SCRATCH_ROOT/guanlan-monitor/loading-baseline.json" \
+  http://nas-host:38472 https://public-hub.example
+```
+
+工具仅允许无凭据、无 query 的 HTTP(S) origin；串行、有超时、最多 20 次采样。
+只导出白名单状态、时延和公共响应头，不导出 Cookie、响应体、证书或 curl 原始错误。
+非 200 和失败请求单独计数，不能用其快速失败美化百分位数。小样本百分位仅供排查。
+工具无法自动识别透明代理或 TUN，必须记录测量视角；不要为了测量更改全局代理策略。
+
+### Web / PWA / Electron renderer
+
+浏览器 Performance 面板或本地 DevTools：
+
+```js
+performance.getEntriesByType('mark').filter(x => x.name.startsWith('guanlan:'))
+```
+
+- `shell-committed`：工作区 React effect 首次提交，**不是像素绘制完成或登录页显示**。
+- `cache-committed`：首次提交缓存快照。
+- `hub-summary-committed`：首次提交 Hub 快照，不保证 Agent 数据刚刚采集。
+- `hub-charts-committed`：首次提交含图表的 Hub 快照。
+
+标签在一次页面生命周期内只记录一次，无远程上报和设备 ID。
+同时采集 Navigation/Resource Timing、FCP/LCP、请求数和压缩传输量；标签不代替浏览器绘制指标。
+PWA 区分新安装、已受控启动、版本更新；无 HTTPS 的公网入口单列为不支持离线启动。
+
+### Hub
+
+`Server-Timing: hub;dur=...` 是收到请求至响应序列化后、发送前的服务端耗时。
+不包含客户端 DNS/TLS、隧道传输、响应体下载或渲染。
+Next/入口代理是否保留此头须线上验证；不能用 TTFB 直接替代数据库时间。
+后续服务端阶段补充热点查询分项与扫描行数。
+
+### Android / Electron 主进程
+
+Android 本地 `adb logcat -s GuanlanLoading`：固定里程碑和自 Activity 实例创建后的单调时钟耗时。
+Activity 首次提交缓存/Hub 数据时调用 `reportFullyDrawn`；冷启动仍以 Macrobenchmark/Perfetto
+系统启动指标为准，不能把 Activity 内时间冒充进程冷启动时间。
+Electron 既有本地诊断事件新增 `processElapsedMs`，与 renderer User Timing 分开记录。
+日志不包含密钥、设备 ID、会话或遥测正文。
+
+## 最终测试矩阵与初始预算
+
+- 参考弱网：下行 1 Mbps、上行 256 Kbps、RTT 300 ms；另外测试超时、断网与恢复。
+- 路径：内网、VPS、Cloudflare；记录运营商、代理/TUN、客户端及服务端版本。
+- 场景：首次访问、重复启动、PWA 更新、安卓进程冷启动、Electron 冷启动、前台恢复。
+- 设备规模：小/中/大固定夹具；真实设备测试标注实际规模。
+- 目标：有效缓存可见 P75 ≤ 1 s；网页首次可操作 P75 ≤ 6 s；有效会话摘要 P75 ≤ 3 s。
+- 更新与日历延迟 30 s 不得阻塞摘要；隐藏页无非必要轮询；旧响应不可跨设备/身份覆盖。
+- 核心验收场景至少 20 次独立重复，报告失败率、样本量与 P50/P75；不承诺小样本 P95。
+- 对比请求与字节预算，争取弱网典型场景下降 50%，保持缺失值、峰值和流量总计语义。
+- CI 夹具结果与真实国内线路结果分别记录；未取得真实端点/设备证据时保留“待验收”。
+
+## 安全与回退
+
+公共壳可以边缘缓存，认证、RSC、Socket 与私有遥测不可公共缓存。
+缓存绑定 Hub/身份/设备/时间窗口，有 TTL/容量上限；退出、401/403 和身份切换不得恢复旧缓存。
+离线管理操作不排队重放。新接口向后兼容，省流、增量和 PWA 缓存策略独立保留回退路径。
