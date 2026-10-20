@@ -17,7 +17,7 @@ export default function RouteError({ error, reset }: { error: Error & { digest?:
     <main className={styles.loginShell}>
       <header className={styles.loginTop}>
         <div className={styles.loginBrand}>
-          <img src="/logo.png" alt="观澜" className={styles.brandLogoImage} />
+          <img src="/favicon.png" alt="观澜" className={styles.brandLogoImage} />
           <div><strong>观澜</strong><span>设备状态中枢</span></div>
         </div>
       </header>

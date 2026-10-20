@@ -11,7 +11,37 @@ function isPublicAsset(path) {
 }
 function isPrivateRequest(url, request) {
   return url.pathname.startsWith("/api/") || url.pathname === "/api" || url.pathname.startsWith("/socket.io")
-    || url.searchParams.has("_rsc") || request.headers.has("RSC") || request.method !== "GET";
+    || url.search || request.headers.has("RSC") || request.headers.has("Authorization") || request.method !== "GET";
+}
+function isHashedAsset(path) {
+  if (!path.startsWith("/_next/static/")) return false;
+  const file = path.slice(path.lastIndexOf("/") + 1);
+  const hashes = file.match(/(?:^|[-.])[a-f0-9]{8,}(?=[-.])/gi) || [];
+  return /\.(js|css|woff2?|png|webp|svg)$/.test(file) && hashes.some((hash) => /[a-f]/i.test(hash));
+}
+function validAsset(asset) {
+  return typeof asset === "string" && asset.startsWith("/") && !asset.startsWith("//")
+    && !/[?#\\]/.test(asset) && new URL(asset, self.location.origin).pathname === asset && isPublicAsset(asset);
+}
+function usableAsset(path, response) {
+  if (!response.ok || response.type === "opaque" || response.redirected) return false;
+  if (path.startsWith("/_next/static/")) {
+    const type = response.headers.get("Content-Type") || "";
+    if (path.endsWith(".js") && !/(?:javascript|ecmascript)/i.test(type)) return false;
+    if (path.endsWith(".css") && !/text\/css/i.test(type)) return false;
+  }
+  return true;
+}
+async function previousAsset(path) {
+  if (!isHashedAsset(path)) return null;
+  for (const key of (await caches.keys()).filter((key) => key.startsWith(PREFIX) && key !== CACHE).reverse()) {
+    const previous = await caches.open(key);
+    const manifest = await readManifest(previous);
+    if (![...(manifest?.assets || []), ...(manifest?.runtimeAssets || [])].includes(path)) continue;
+    const response = await previous.match(path);
+    if (response && usableAsset(path, response)) return response;
+  }
+  return null;
 }
 async function readManifest(cache) {
   const response = await cache.match(ASSET_MANIFEST);
@@ -24,15 +54,16 @@ self.addEventListener("install", (event) => {
     if (!response.ok) throw new Error("pwa_manifest_unavailable");
     const manifest = await response.json();
     if (manifest.revision !== REVISION || !Array.isArray(manifest.assets) || !manifest.assets.includes("/")
-      || manifest.assets.some((asset) => typeof asset !== "string" || !asset.startsWith("/") || asset.startsWith("//") || asset.includes("?") || !isPublicAsset(asset))) throw new Error("pwa_manifest_mismatch");
+      || manifest.assets.some((asset) => !validAsset(asset))
+      || (manifest.runtimeAssets !== undefined && (!Array.isArray(manifest.runtimeAssets) || manifest.runtimeAssets.some((asset) => !validAsset(asset))))) throw new Error("pwa_manifest_mismatch");
     const cache = await caches.open(CACHE);
     try {
       // A failed asset rejects the entire candidate. The active worker/cache
       // stays in place; installation never switches to a partial shell.
       for (let offset = 0; offset < manifest.assets.length; offset += 6) {
         await Promise.all(manifest.assets.slice(offset, offset + 6).map(async (asset) => {
-          const resource = await fetch(asset, { cache: "reload", credentials: "omit" });
-          if (!resource.ok || resource.type === "opaque") throw new Error("pwa_asset_unavailable");
+          const resource = (await previousAsset(asset)) || await fetch(asset, { cache: "reload", credentials: "omit" });
+          if (!usableAsset(asset, resource)) throw new Error("pwa_asset_unavailable");
           if (asset === "/") {
             const html = await resource.clone().text();
             if (!html.includes(`name="guanlan-pwa-revision" content="${REVISION}"`)) throw new Error("pwa_shell_mismatch");
@@ -61,10 +92,15 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin || isPrivateRequest(url, request)) return;
   if (request.mode === "navigate") {
-    event.respondWith(fetch(request).then((response) => { if (!response.ok) throw new Error("navigation_unavailable"); return response; }).catch(async () => {
+    // These routes contain only the public client/session gate. Never wait for
+    // a stalled tunnel, nor silently mix a new HTML build with the active worker.
+    if (url.pathname !== "/" && !/^\/devices\/[^/]+\/?$/.test(url.pathname)) return;
+    event.respondWith((async () => {
       const cache = await caches.open(CACHE);
-      return (await cache.match("/")) || Response.error();
-    }));
+      const shell = await cache.match("/");
+      if (shell) return shell;
+      try { return await fetch(request); } catch { return Response.error(); }
+    })());
     return;
   }
   if (!isPublicAsset(url.pathname) || url.pathname === "/") return;
@@ -76,11 +112,15 @@ self.addEventListener("fetch", (event) => {
       if (saved) return saved;
     }
     // A controlled old tab can still request a chunk from the previous build.
-    if (url.pathname.startsWith("/_next/static/")) {
-      for (const key of (await caches.keys()).filter((key) => key.startsWith(PREFIX) && key !== CACHE)) {
-        const saved = await (await caches.open(key)).match(url.pathname);
-        if (saved) return saved;
-      }
+    const previous = await previousAsset(url.pathname);
+    if (previous) return previous;
+    // Only explicitly declared public runtime assets can enter this generation.
+    if (manifest?.runtimeAssets?.includes(url.pathname)) {
+      const saved = await cache.match(url.pathname);
+      if (saved) return saved;
+      const response = await fetch(request, { credentials: "omit" });
+      if (usableAsset(url.pathname, response)) await cache.put(url.pathname, response.clone());
+      return response;
     }
     return fetch(request);
   })());

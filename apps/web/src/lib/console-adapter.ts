@@ -163,9 +163,9 @@ export class WebConsoleAdapter implements ConsoleAdapter {
     try {
       const session = await getSession();
       if (!current()) throw new Error("session_changed");
-      await this.cache.activate(session.issuedAt, current);
+      const changedCacheScope = await this.cache.activate(session.issuedAt, current);
       if (!current()) throw new Error("session_changed");
-      if (this.identityScope && this.identityScope !== session.issuedAt) {
+      if (changedCacheScope || (this.identityScope && this.identityScope !== session.issuedAt)) {
         this.identityAbort.abort(new Error("session_changed"));
         this.identityAbort = new AbortController();
         this.updateInfo = null;
@@ -221,6 +221,12 @@ export class WebConsoleAdapter implements ConsoleAdapter {
 
   async refresh(request?: ConsoleSnapshotRequest): Promise<ConsoleSnapshot> {
     return this.loadSnapshot(request);
+  }
+
+  resumeCachedSession(): void {
+    if (this.snapshot.source === "cache" && this.sessionScope && this.listeners.size) {
+      void this.loadSnapshot(this.lastRequest, true).catch(() => undefined);
+    }
   }
 
   async login(accessKey: string): Promise<ConsoleSnapshot> {

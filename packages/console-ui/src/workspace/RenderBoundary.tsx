@@ -20,6 +20,7 @@ interface RenderBoundaryProps {
   /** Card title shown in the tile-scoped fallback. */
   title?: string;
   resetKey?: string;
+  onRetry?: () => void;
 }
 
 interface RenderBoundaryState {
@@ -43,7 +44,7 @@ export class RenderBoundary extends React.Component<RenderBoundaryProps, RenderB
     console.error(`[guanlan] ${this.props.scope} render failed`, error, info.componentStack);
   }
 
-  private retry = () => this.setState({ error: null });
+  private retry = () => { this.props.onRetry?.(); this.setState({ error: null }); };
 
   render() {
     const { error } = this.state;

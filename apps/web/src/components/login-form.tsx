@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { M3Button, M3TextField } from "@dsc/console-ui";
+import { M3Button, M3TextField } from "@dsc/console-ui/primitives";
 import { ApiError, getSession, login } from "../lib/api";
 import styles from "./auth.module.css";
 
@@ -42,7 +42,7 @@ export function LoginForm({ onAuthenticated, onStartLogin }: { onAuthenticated: 
     <main className={styles.loginShell}>
       <header className={styles.loginTop}>
         <div className={styles.loginBrand}>
-          <img src="/logo.png" alt="观澜" className={styles.brandLogoImage} />
+          <img src="/favicon.png" alt="观澜" className={styles.brandLogoImage} />
           <div><strong>观澜</strong><span>设备状态中枢</span></div>
         </div>
         <span className={styles.loginTopNote}>浏览器工作台</span>

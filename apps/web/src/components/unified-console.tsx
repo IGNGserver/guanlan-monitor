@@ -1,13 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import WorkspaceApp, { M3Button } from "@dsc/console-ui";
+import dynamic from "next/dynamic";
+import { M3Button } from "@dsc/console-ui/primitives";
 import type { WorkspaceRoute } from "@dsc/console-ui";
-import { ApiError } from "../lib/api";
+import { bootstrapConsole } from "../lib/bootstrap-console";
 import { webConsoleAdapter } from "../lib/console-adapter";
 import { LoginForm } from "./login-form";
 import { PwaControls } from "./pwa-controls";
 import styles from "./auth.module.css";
+
+const WorkspaceApp = dynamic(() => import("@dsc/console-ui/workspace"), {
+  ssr: false,
+  loading: () => <main className={styles.loginShell} role="status"><section className={styles.loginPanel}><h1>正在打开工作台</h1></section></main>
+});
 
 export function UnifiedConsole({ initialDeviceId = null }: { initialDeviceId?: string | null }) {
   const [state, setState] = useState<"loading" | "authenticated" | "anonymous" | "unavailable">("loading");
@@ -18,17 +24,11 @@ export function UnifiedConsole({ initialDeviceId = null }: { initialDeviceId?: s
   const check = useCallback(async (supersede = false) => {
     const version = ++checkVersion.current;
     const current = () => version === checkVersion.current;
-    try {
-      await webConsoleAdapter.establishSession(supersede);
-      if (current()) setState("authenticated");
-    } catch (error) {
-      if (!current()) return;
-      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) setState("anonymous");
-      else {
-        const restored = await webConsoleAdapter.restoreOffline({}, current);
-        if (current()) setState(restored ? "authenticated" : "unavailable");
-      }
-    }
+    await bootstrapConsole({
+      establishSession: (replace) => webConsoleAdapter.establishSession(replace),
+      restoreOffline: (cacheCurrent) => webConsoleAdapter.restoreOffline({}, cacheCurrent),
+      current, show: setState, onLive: () => webConsoleAdapter.resumeCachedSession()
+    }, supersede);
   }, []);
   useEffect(() => {
     void check();
@@ -49,7 +49,7 @@ export function UnifiedConsole({ initialDeviceId = null }: { initialDeviceId?: s
   const forget = async () => { invalidateCheck(); await webConsoleAdapter.forgetOfflineData(); setState(navigator.onLine ? "anonymous" : "unavailable"); };
   let content;
   if (state === "loading" || state === "unavailable") {
-    content = <main className={styles.loginShell}><header className={styles.loginTop}><div className={styles.loginBrand}><img src="/logo.png" alt="观澜" className={styles.brandLogoImage} /><div><strong>观澜</strong><span>设备状态中枢</span></div></div></header>
+    content = <main className={styles.loginShell}><header className={styles.loginTop}><div className={styles.loginBrand}><img src="/favicon.png" alt="观澜" className={styles.brandLogoImage} /><div><strong>观澜</strong><span>设备状态中枢</span></div></div></header>
       <section className={styles.loginPanel} aria-live="polite"><div className={styles.loginFormShell}>
         {state === "loading" ? <><div className={styles.loginLoadingBar} aria-hidden="true" /><h1>正在连接中枢</h1><p>正在检查会话和可用的设备状态。</p></>
           : <><h1>暂时无法连接</h1><p>请检查网络与中枢服务。此浏览器没有可用的离线数据，恢复连接后会自动重试。</p><M3Button onClick={() => { setState("loading"); void check(); }}>重新连接</M3Button></>}

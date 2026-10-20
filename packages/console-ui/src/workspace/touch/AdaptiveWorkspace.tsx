@@ -3,8 +3,7 @@ import { resolveWebPresentation, supportsTouchSplit, type WebPresentation } from
 import { useWorkspace, useWorkspaceUi } from "../WorkspaceContext";
 import { WorkspaceFrame } from "../shell/WorkspaceFrame";
 import { RouteView } from "../WorkspacePages";
-import { SettingsPage } from "../pages/SettingsPage";
-import { DeviceDetailsPage } from "../pages/DeviceDetailsPage";
+import { LazyDeviceDetailsPage as DeviceDetailsPage, LazySettingsPage as SettingsPage } from "../LazyPages";
 import { LoadingSurface, ErrorSurface, EmptyState } from "../pages/shared";
 import { visibleSettingsNavigation } from "../shell/PrimaryNavigation";
 import { RefreshProgress, SessionRecoveryBanner, ShellNotice } from "../shell/AppTopBar";

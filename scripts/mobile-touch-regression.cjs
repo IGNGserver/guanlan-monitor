@@ -57,6 +57,9 @@ async function setup({ tablet = false, storageDenied = false, empty = false, del
     await page.evaluate(() => window.dispatchEvent(new Event("online")));
   }
   await page.locator(".touch-health").waitFor();
+  // The shell can now mount before its summary read completes. Wait for the
+  // fixture's data, not merely the empty health container, before assertions.
+  await page.getByText(empty ? "等待第一台设备" : "1 台设备需要关注", { exact: true }).waitFor();
   if (delayedSession) {
     await page.waitForTimeout(1700);
     assert.equal(await page.locator(".touch-health").count(), 1, "a stale bootstrap response must not replace an authenticated workspace");
@@ -293,15 +296,26 @@ async function coldOfflineAndStorage() {
   const readsBeforeStall = stalled.scenario.sessionReads;
   stalled.scenario.mode = "hang";
   await stalled.page.reload({ waitUntil: "domcontentloaded" });
-  // One bounded authentication attempt can fall back to cached telemetry;
-  // mounting the workspace must not wait through a second 12-second probe.
-  await stalled.page.getByText(/离线缓存 ·/).waitFor({ timeout: 18_000 });
+  // Cached telemetry must paint while the sole 12-second authentication
+  // attempt is still pending, not merely after that deadline has elapsed.
+  await stalled.page.getByText(/离线缓存 ·/).waitFor({ timeout: 3_000 });
   await nav(stalled.page, "设备").tap();
   assert.equal(stalled.scenario.sessionReads, readsBeforeStall + 1);
   assert.equal(await stalled.page.locator(".touch-directory-pane .touch-device-row__open").count(), stalled.scenario.devices.length);
   assert.deepEqual(stalled.errors, []);
   await stalled.context.close();
-  report.checks.push("stalled authentication falls back once and cached navigation does not repeat the network probe");
+  report.checks.push("cached startup is visible before the stalled authentication deadline, with one probe and read-only navigation");
+  const denied = await setup();
+  await denied.page.waitForTimeout(250);
+  denied.scenario.sessionDelay = { milliseconds: 5000, status: 401 };
+  await denied.page.reload({ waitUntil: "domcontentloaded" });
+  await denied.page.getByText(/离线缓存 ·/).waitFor({ timeout: 3_000 });
+  await denied.page.locator("#access-key").waitFor({ timeout: 10_000 });
+  assert.equal(await cacheViewCount(denied.page), 0);
+  assert.equal(await denied.page.locator(".touch-workspace").count(), 0, "a late denial removes the cached workspace, not only its write controls");
+  assert.deepEqual(denied.errors, []);
+  await denied.context.close();
+  report.checks.push("late bootstrap denial replaces the read-only cached workspace with login and evicts persisted telemetry");
   const recovered = await setup({ delayedSession: true });
   assert.deepEqual(recovered.errors, []);
   await recovered.context.close();

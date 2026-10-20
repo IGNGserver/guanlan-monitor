@@ -82,9 +82,9 @@ scanRouteDirectory(appRoot);
 
 const unifiedConsolePath = path.join(projectRoot, "apps/web/src/components/unified-console.tsx");
 const unifiedConsoleSource = readRequired(unifiedConsolePath);
-if (!/from\s+["']@dsc\/console-ui["']/.test(unifiedConsoleSource)) {
+if (!/import\(["']@dsc\/console-ui\/workspace["']\)/.test(unifiedConsoleSource)) {
   violationCount++;
-  console.error("❌ Web UI boundary: UnifiedConsole must render the shared @dsc/console-ui package.");
+  console.error("❌ Web UI boundary: UnifiedConsole must load the shared @dsc/console-ui/workspace package entry.");
 }
 
 if (fs.existsSync(legacyComponentRoot)) {
