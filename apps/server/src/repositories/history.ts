@@ -1,6 +1,6 @@
 import mysql, { type RowDataPacket } from "mysql2/promise";
 import type { MetricWindow, TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
-import type { HistoryRepository, TimeSeriesRecord } from "../types.js";
+import type { HistoryRepository, TimeSeriesRecord, TrafficHistoryPoint } from "../types.js";
 import { buildTrafficCalendar } from "../traffic-calendar.js";
 
 const WINDOW_RANGES: Record<Extract<MetricWindow, "1d" | "7d" | "1w" | "30d" | "1mo" | "90d" | "1y">, number> = {
@@ -109,6 +109,7 @@ export class MysqlHistoryRepository implements HistoryRepository {
     await this.ensureColumn("device_hourly_metrics", "sample_count", "INT NOT NULL DEFAULT 1");
     await this.ensureIndex("device_minute_metrics", "idx_minute_recorded_at", "(recorded_at)");
     await this.ensureIndex("device_hourly_metrics", "idx_hourly_recorded_at", "(recorded_at)");
+    await this.ensureIndex("device_hourly_metrics", "idx_hourly_traffic_cover", "(device_id, recorded_at, traffic_rx_bytes, traffic_tx_bytes)");
   }
 
   async ensureIndex(tableName: string, indexName: string, indexDef: string) {
@@ -362,13 +363,26 @@ export class MysqlHistoryRepository implements HistoryRepository {
     const [rows] = await this.pool.query<(RowDataPacket & { deviceId: string; lastSeenAt: string })[]>(`
       SELECT device_id AS deviceId, DATE_FORMAT(MAX(recorded_at), '%Y-%m-%dT%H:%i:%s.000Z') AS lastSeenAt
       FROM (
-        SELECT device_id, recorded_at FROM device_minute_metrics
+        SELECT device_id, MAX(recorded_at) AS recorded_at FROM device_minute_metrics GROUP BY device_id
         UNION ALL
-        SELECT device_id, recorded_at FROM device_hourly_metrics
+        SELECT device_id, MAX(recorded_at) AS recorded_at FROM device_hourly_metrics GROUP BY device_id
       ) AS history
       GROUP BY device_id
     `);
     return rows;
+  }
+
+  async getTrafficSeries(deviceId: string, start: number, end: number): Promise<TrafficHistoryPoint[]> {
+    const [rows] = await this.pool.query<(RowDataPacket & TrafficHistoryPoint)[]>(`
+      SELECT UNIX_TIMESTAMP(recorded_at) * 1000 AS timestamp,
+             traffic_rx_bytes AS trafficRxBytes, traffic_tx_bytes AS trafficTxBytes
+      FROM device_hourly_metrics
+      WHERE device_id = ? AND recorded_at >= FROM_UNIXTIME(? / 1000)
+        AND recorded_at < FROM_UNIXTIME(? / 1000)
+        AND recorded_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 366 DAY)
+      ORDER BY recorded_at ASC
+    `, [deviceId, start, end]);
+    return rows.map((row) => ({ timestamp: Number(row.timestamp), trafficRxBytes: Number(row.trafficRxBytes), trafficTxBytes: Number(row.trafficTxBytes) }));
   }
 
   async getTrafficCalendar(

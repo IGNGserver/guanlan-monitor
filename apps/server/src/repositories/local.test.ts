@@ -72,6 +72,19 @@ test("local history retention removes expired points", async () => {
   });
 });
 
+test("local traffic projection has exclusive bounds, one-year horizon and no hardware detail", async () => {
+  await withTempStore(async (filePath) => {
+    const now = Date.now();
+    const hour = 3600_000;
+    const point = (timestamp: number) => ({ timestamp, trafficRxBytes: 100, trafficTxBytes: 200, recordedDetails: { private: "unused" } });
+    await writeFile(filePath, JSON.stringify({ history: { node: [point(now - 400 * 24 * hour), point(now - 2 * hour), point(now - hour), point(now)] } }), "utf8");
+    const history = new LocalHistoryRepository(createLocalStore(filePath));
+    assert.deepEqual(await history.getTrafficSeries("node", now - 2 * hour, now), [now - 2 * hour, now - hour].map((timestamp) => ({ timestamp, trafficRxBytes: 100, trafficTxBytes: 200 })));
+    assert.equal((await history.getTrafficSeries("node", now - 401 * 24 * hour, now)).length, 2);
+    assert.deepEqual(await history.getTrafficSeries("missing", now - hour, now), []);
+  });
+});
+
 /**
  * Registry ids on disk, with a missing file meaning nothing was ever written.
  *

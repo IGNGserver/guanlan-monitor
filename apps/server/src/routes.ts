@@ -1,4 +1,5 @@
-import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { buildDeviceSummaries } from "./inventory-recovery.js";
 import type {
   AgentCloudConfigSyncPayload,
   AuthLoginPayload,
@@ -580,63 +581,6 @@ export async function registerRoutes(
     };
   });
 
-}
-
-async function buildDeviceSummaries(repositories: Repositories, log: FastifyBaseLogger) {
-  const openDevices = await repositories.devices.listOpenDevices();
-  const realtimeDevices = await repositories.realtime.listDevices();
-  const realtimeMap = new Map(realtimeDevices.map((state) => [state.identity.deviceId, state]));
-  const knownDevices = await repositories.history.listKnownDevices();
-  const registeredIds = new Set(openDevices.map((device) => device.deviceId));
-
-  for (const realtimeState of realtimeDevices) {
-    if (!registeredIds.has(realtimeState.identity.deviceId)) {
-      const record = await repositories.devices.registerOrUpdateDevice(
-        realtimeState.identity.deviceId,
-        realtimeState.identity.hostname
-      );
-      if (record.status === "open") {
-        openDevices.push(record);
-        registeredIds.add(record.deviceId);
-      }
-    }
-  }
-
-  for (const known of knownDevices) {
-    if (!registeredIds.has(known.deviceId)) {
-      const record = await repositories.devices.registerOrUpdateDevice(known.deviceId, known.deviceId);
-      if (record.status === "open") {
-        openDevices.push(record);
-        registeredIds.add(record.deviceId);
-      }
-    }
-  }
-
-  return openDevices.map((record) => {
-    const realtimeState = realtimeMap.get(record.deviceId);
-    if (realtimeState) {
-      try {
-        return { ...toSummary(realtimeState), sortOrder: record.sortOrder };
-      } catch (error) {
-        log.error({ error, deviceId: record.deviceId }, "failed to summarize device state");
-      }
-    }
-    return {
-      deviceId: record.deviceId,
-      hostname: record.name || record.deviceId,
-      os: "unknown" as const,
-      agentVersion: null,
-      agentChannel: null,
-      status: "offline" as const,
-      lastSeenAt: realtimeState?.lastSeenAt ?? record.updatedAt,
-      cpuUsagePercent: null,
-      gpuUsagePercent: null,
-      gpuMemoryUsagePercent: null,
-      memoryUsagePercent: null,
-      diskUsagePercent: null,
-      sortOrder: record.sortOrder
-    };
-  }).sort((a, b) => ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.deviceId.localeCompare(b.deviceId));
 }
 
 function rejectInsecureAgentTransport(request: FastifyRequest, reply: FastifyReply): boolean {

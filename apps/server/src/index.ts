@@ -21,6 +21,7 @@ import {
 import { MetricsService } from "./services/metrics.js";
 import { registerRoutes } from "./routes.js";
 import { registerRequestTiming } from "./request-timing.js";
+import { registerInventoryRecovery } from "./inventory-recovery.js";
 import { resolve } from "node:path";
 import { AgentCredentials } from "./live/credentials.js";
 import { LiveRegistry } from "./live/registry.js";
@@ -207,6 +208,7 @@ app.post<{ Body: AgentMetricsPayload }>("/api/agent/ingest", async (request, rep
   return { ok: true };
 });
 
+registerInventoryRecovery(app, repositories);
 const server = await app.listen({ host: env.SERVER_HOST, port: env.SERVER_PORT });
 
 // Deliberately after listen(): these sweeps outlive the data they target, and awaiting them

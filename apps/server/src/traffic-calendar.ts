@@ -4,13 +4,13 @@ import type {
   TrafficCalendarResponse,
   TrafficRangeRecord
 } from "@dsc/shared";
-import type { TimeSeriesRecord } from "./types.js";
+import type { TrafficHistoryPoint } from "./types.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LOCAL_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 export function buildTrafficCalendar(
-  points: TimeSeriesRecord[],
+  points: TrafficHistoryPoint[],
   mode: TrafficCalendarMode,
   anchorDate: string,
   selectedStart?: string
@@ -60,6 +60,12 @@ export function buildTrafficCalendar(
     totalRxBytes: selectedTotals.rx,
     totalTxBytes: selectedTotals.tx
   };
+}
+
+/** Complete visible grid, including the adjacent-month days. End is exclusive. */
+export function trafficCalendarBounds(mode: TrafficCalendarMode, anchorDate: string) {
+  const { periods } = buildPeriods(mode, startOfDay(parseDate(anchorDate)));
+  return { start: periods[0].start.getTime(), end: periods[periods.length - 1].end.getTime() };
 }
 
 function buildPeriods(mode: TrafficCalendarMode, anchor: Date) {
@@ -123,13 +129,13 @@ function buildPeriods(mode: TrafficCalendarMode, anchor: Date) {
   };
 }
 
-function collectPeriodRecords(points: TimeSeriesRecord[], start: Date, end: Date) {
+function collectPeriodRecords(points: TrafficHistoryPoint[], start: Date, end: Date) {
   const inRange = points.filter((point) => point.timestamp >= start.getTime() && point.timestamp < end.getTime());
   if (!inRange.length) return [];
 
   let baselineRx = inRange[0]?.trafficRxBytes ?? 0;
   let baselineTx = inRange[0]?.trafficTxBytes ?? 0;
-  const records: TimeSeriesRecord[] = [];
+  const records: TrafficHistoryPoint[] = [];
 
   for (const point of inRange) {
     if (point.trafficRxBytes < baselineRx) baselineRx = point.trafficRxBytes;
@@ -144,7 +150,7 @@ function collectPeriodRecords(points: TimeSeriesRecord[], start: Date, end: Date
   return records;
 }
 
-function sumRecords(records: TimeSeriesRecord[]) {
+function sumRecords(records: TrafficHistoryPoint[]) {
   const last = records.at(-1);
   return {
     rx: last?.trafficRxBytes ?? 0,

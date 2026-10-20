@@ -169,6 +169,7 @@ export interface RealtimeRepository {
 }
 
 export interface HistoryRepository {
+  getTrafficSeries(deviceId: string, start: number, end: number): Promise<TrafficHistoryPoint[]>;
   insertMinutePoint(deviceId: string, point: TimeSeriesRecord): Promise<void>;
   insertHourlyPoint(deviceId: string, point: TimeSeriesRecord): Promise<void>;
   getHistoricalSeries(deviceId: string, bucket: MetricWindow): Promise<TimeSeriesRecord[]>;
@@ -181,6 +182,12 @@ export interface HistoryRepository {
   ): Promise<TrafficCalendarResponse>;
   listKnownDevices(): Promise<Array<{ deviceId: string; lastSeenAt: string }>>;
   runRetentionCleanup?(): Promise<void>;
+}
+
+export interface TrafficHistoryPoint {
+  timestamp: number;
+  trafficRxBytes: number;
+  trafficTxBytes: number;
 }
 
 export interface DeviceQueryResult {

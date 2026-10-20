@@ -10,7 +10,7 @@ import type {
   MetricAccumulator,
   Repositories
 } from "../types.js";
-import { buildTrafficCalendar } from "../traffic-calendar.js";
+import { buildTrafficCalendar, trafficCalendarBounds } from "../traffic-calendar.js";
 import { ALL_DEVICE_METRIC_KEYS, HEARTBEAT_TIMEOUT_MS, payloadToTimeSeries, toSummary } from "../utils.js";
 
 const LIVE_WINDOWS: AggregatedWindowConfig[] = [
@@ -166,8 +166,18 @@ export class MetricsService {
     anchorDate: string,
     selectedStart?: string
   ): Promise<TrafficCalendarResponse> {
-    const allHistoryPoints = await this.repositories.history.getHistoricalSeries(deviceId, "1y");
-    const points = this.withCurrentMinuteAggregate(deviceId, this.withCurrentHourlyAggregate(deviceId, allHistoryPoints));
+    const { start, end } = trafficCalendarBounds(mode, anchorDate);
+    let points = await this.repositories.history.getTrafficSeries(deviceId, start, end);
+    // Traffic counters are the last observation of each aggregate, not its
+    // average. Preserve the existing hour + minute overlay without building
+    // or reading unrelated hardware/CPU/memory detail payloads.
+    for (const aggregate of [this.hourlyAccumulators.get(deviceId), this.minuteAccumulators.get(deviceId)]) {
+      const last = aggregate?.samples.at(-1);
+      if (!aggregate || !last || aggregate.bucketStartedAt < start || aggregate.bucketStartedAt >= end) continue;
+      points = points.filter((point) => point.timestamp !== aggregate.bucketStartedAt);
+      points.push({ timestamp: aggregate.bucketStartedAt, trafficRxBytes: last.trafficRxBytes, trafficTxBytes: last.trafficTxBytes });
+    }
+    points.sort((a, b) => a.timestamp - b.timestamp);
     return buildTrafficCalendar(points, mode, anchorDate, selectedStart);
   }
 
