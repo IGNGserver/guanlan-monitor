@@ -1,6 +1,5 @@
 package com.dsc.android
 
-import android.app.Application
 import androidx.lifecycle.ViewModelStore
 import java.io.File
 import java.lang.reflect.Proxy
@@ -58,7 +57,7 @@ class RemoteViewModelTest {
       else -> error("unexpected call: $name")
     } }
     try {
-      val vm = MainViewModel(RuntimeEnvironment.getApplication<Application>(), Settings(config), RemoteSnapshotCache(File(dir, "cache.json"))) { Triple(fake, InMemoryCookieJar(), OkHttpClient()) }
+      val vm = MainViewModel(RuntimeEnvironment.getApplication(), Settings(config), RemoteSnapshotCache(File(dir, "cache.json"))) { Triple(fake, InMemoryCookieJar(), OkHttpClient()) }
       store.put("vm", vm); vm.onAppForeground(); runCurrent()
       assertTrue(vm.state.value.authenticated); assertEquals("a", vm.state.value.devices.single().deviceId)
       assertEquals(1, logins); assertEquals(0, metrics); assertEquals(0, calendars); assertEquals(1, overviews)
@@ -84,7 +83,7 @@ class RemoteViewModelTest {
       else -> error("unexpected: $name")
     } }
     try {
-      val vm = MainViewModel(RuntimeEnvironment.getApplication<Application>(), settings, RemoteSnapshotCache(File(dir, "cache.json"))) { Triple(fake, InMemoryCookieJar(), OkHttpClient()) }
+      val vm = MainViewModel(RuntimeEnvironment.getApplication(), settings, RemoteSnapshotCache(File(dir, "cache.json"))) { Triple(fake, InMemoryCookieJar(), OkHttpClient()) }
       store.put("vm", vm); runCurrent()
       settings.save(config.copy(accessKey = "new-fixture-account")); runCurrent()
       repeat(100) { runCurrent(); withContext(Dispatchers.Default) { delay(1) } }
@@ -112,7 +111,7 @@ class RemoteViewModelTest {
       else -> error("unexpected: $name")
     } }
     try {
-      val vm = MainViewModel(RuntimeEnvironment.getApplication<Application>(), Settings(config.copy(networkMode = "saver")), RemoteSnapshotCache(File(dir, "cache.json"))) { Triple(fake, InMemoryCookieJar(), OkHttpClient()) }
+      val vm = MainViewModel(RuntimeEnvironment.getApplication(), Settings(config.copy(networkMode = "saver")), RemoteSnapshotCache(File(dir, "cache.json"))) { Triple(fake, InMemoryCookieJar(), OkHttpClient()) }
       store.put("vm", vm); vm.onAppForeground(); runCurrent(); assertEquals(0, calls)
       vm.showAttention(); runCurrent(); assertEquals(1, calls)
       vm.showSettings(); runCurrent(); release.complete(Unit); runCurrent()
