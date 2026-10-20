@@ -107,6 +107,8 @@ export class WebConsoleAdapter implements ConsoleAdapter {
   private lastRequest: ConsoleSnapshotRequest = {};
   private removeLifecycle: (() => void) | null = null;
   private sessionCheckedAt = 0;
+  private sessionInFlight: Promise<void> | null = null;
+  private cacheSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private updateInfo: TimedValue<UpdateInfo | null> | null = null;
   private calendars = new Map<string, TimedValue<TrafficCalendarResponse | null>>();
   private cacheSavedAt = new Map<string, number>();
@@ -115,15 +117,32 @@ export class WebConsoleAdapter implements ConsoleAdapter {
   /** Injectable clock so request budgeting can be tested without real waits. */
   now: () => number = () => Date.now();
 
-  async establishSession(): Promise<void> {
-    const generation = this.generation;
+  establishSession(): Promise<void> {
+    if (this.sessionInFlight) return this.sessionInFlight;
+    const operation = this.checkSession();
+    this.sessionInFlight = operation;
+    void operation.finally(() => {
+      if (this.sessionInFlight === operation) this.sessionInFlight = null;
+    }).catch(() => undefined);
+    return operation;
+  }
+
+  private async checkSession(): Promise<void> {
     const sessionGeneration = ++this.sessionGeneration;
-    const current = () => generation === this.generation && sessionGeneration === this.sessionGeneration;
+    const current = () => sessionGeneration === this.sessionGeneration;
     try {
       const session = await getSession();
       if (!current()) throw new Error("session_changed");
       await this.cache.activate(session.issuedAt, current);
       if (!current()) throw new Error("session_changed");
+      if (this.sessionScope && this.sessionScope !== session.issuedAt) {
+        this.updateInfo = null;
+        this.calendars.clear();
+        this.cacheSavedAt.clear();
+        this.snapshot = emptyConsoleSnapshot();
+        this.socket?.close();
+        this.socket = null;
+      }
       this.sessionScope = session.issuedAt;
       this.sessionCheckedAt = this.now();
     } catch (error) {
@@ -163,7 +182,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
         return cached;
       }
     }
-    return this.loadSnapshot(request);
+    return this.loadSnapshot(request, true);
   }
 
   async refresh(request?: ConsoleSnapshotRequest): Promise<ConsoleSnapshot> {
@@ -174,7 +193,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
     await this.forgetOfflineData();
     await login({ accessKey });
     await this.establishSession();
-    return this.loadSnapshot();
+    return this.loadSnapshot({}, true);
   }
 
   async logout(): Promise<ConsoleSnapshot> {
@@ -263,8 +282,9 @@ export class WebConsoleAdapter implements ConsoleAdapter {
   private async readUpdateInfo(): Promise<UpdateInfo | null> {
     const cached = this.updateInfo;
     if (cached && this.now() - cached.fetchedAt < cached.ttl) return cached.value;
+    const sessionGeneration = this.sessionGeneration;
     const value = await getUpdateInfo("web").catch((error) => optionalWebRequest<UpdateInfo>(error));
-    this.updateInfo = { value, fetchedAt: this.now(), ttl: value ? UPDATE_TTL_MS : UPDATE_FAILURE_TTL_MS };
+    if (sessionGeneration === this.sessionGeneration) this.updateInfo = { value, fetchedAt: this.now(), ttl: value ? UPDATE_TTL_MS : UPDATE_FAILURE_TTL_MS };
     return value;
   }
 
@@ -273,18 +293,23 @@ export class WebConsoleAdapter implements ConsoleAdapter {
     const key = `${deviceId}\u0000${mode}\u0000${anchor.slice(0, 10)}`;
     const cached = this.calendars.get(key);
     if (cached && this.now() - cached.fetchedAt < cached.ttl) return cached.value;
+    const sessionGeneration = this.sessionGeneration;
     const value = await getTrafficCalendar(deviceId, mode, anchor).catch((error) => optionalWebRequest<TrafficCalendarResponse>(error));
+    if (sessionGeneration !== this.sessionGeneration) return value;
     this.calendars.set(key, { value, fetchedAt: this.now(), ttl: CALENDAR_TTL_MS });
     if (this.calendars.size > 24) this.calendars.delete(this.calendars.keys().next().value!);
     return value;
   }
 
-  private async loadSnapshot(request: ConsoleSnapshotRequest = {}): Promise<ConsoleSnapshot> {
+  private async loadSnapshot(request: ConsoleSnapshotRequest = {}, reuseSession = false): Promise<ConsoleSnapshot> {
     const generation = ++this.generation;
     this.lastRequest = request;
     try {
-      await this.ensureSession(request.background === true);
+      await this.ensureSession(reuseSession || request.background === true);
+      if (generation !== this.generation) return this.snapshot;
       const scope = this.sessionScope!;
+      const sessionGeneration = this.sessionGeneration;
+      const current = () => generation === this.generation && scope === this.sessionScope && sessionGeneration === this.sessionGeneration;
       const include = resolveInclude(request.include);
       const metricWindow: MetricWindow = request.metricWindow ?? "5m";
       const trafficMode: TrafficCalendarMode = request.trafficMode ?? "day";
@@ -305,56 +330,58 @@ export class WebConsoleAdapter implements ConsoleAdapter {
           ? this.snapshot.selectedDeviceId
           : devices[0]?.deviceId ?? null;
       const previous = this.snapshot;
-
-      const [metrics, overviewMetrics, update, trafficCalendar] = await Promise.all([
-        include.deviceMetrics && selectedDeviceId
-          ? earlyMetrics ?? getMetrics(selectedDeviceId, metricWindow).catch((error) => optionalWebRequest<MetricsResponse>(error))
-          // Views that do not draw it keep the last payload; pages match it by
-          // device and window before using it.
-          : Promise.resolve(previous.metrics),
-        include.overviewMetrics
-          ? getOverviewMetrics(metricWindow).catch((error) => optionalWebRequest<OverviewMetricsResponse>(error))
-          : Promise.resolve(previous.overviewMetrics),
-        this.readUpdateInfo(),
-        include.trafficCalendar && selectedDeviceId
-          ? this.readTrafficCalendar(selectedDeviceId, trafficMode, request.trafficAnchor ?? new Date(this.now()).toISOString())
-          : Promise.resolve(previous.trafficCalendar)
-      ]);
-
+      if (!current()) return this.snapshot;
+      // The fleet summary is independently useful. Do not gate its publication
+      // on histories, a year-backed calendar, GitHub or IndexedDB.
       const nextSnapshot: ConsoleSnapshot = {
-        generatedAt: dataTimestamp(devices, metrics),
+        generatedAt: dataTimestamp(devices, null),
         source: "live",
-        cache: { available: false, savedAt: null, ageSeconds: null },
+        cache: previous.source === "live" ? {
+          ...previous.cache,
+          ageSeconds: previous.cache.savedAt ? Math.max(0, Math.floor((this.now() - Date.parse(previous.cache.savedAt)) / 1000)) : null
+        } : { available: false, savedAt: null, ageSeconds: null },
         session: { authenticated: true, accessKeyConfigured: true },
         localBackend: null,
         devices,
         selectedDeviceId,
-        metrics,
-        overviewMetrics,
-        trafficCalendar,
-        update,
+        metrics: previous.source === "live" ? previous.metrics : null,
+        overviewMetrics: previous.source === "live" ? previous.overviewMetrics : null,
+        trafficCalendar: previous.source === "live" ? previous.trafficCalendar : null,
+        update: previous.source === "live" ? previous.update : null,
         startup: { openAtLogin: false, startMinimized: false }
       };
-      // A slow previous selection cannot replace the latest intent, and a
-      // request started before logout cannot repopulate a cleared cache.
-      if (generation !== this.generation || scope !== this.sessionScope) return this.snapshot;
       this.snapshot = nextSnapshot;
-      // Serialising the offline copy measures the whole record (up to 4 MB) on
-      // the main thread. A view whose copy was written moments ago keeps it.
-      const saveKey = JSON.stringify([selectedDeviceId, metricWindow, include, trafficMode, request.trafficAnchor?.slice(0, 10) ?? ""]);
-      const lastSaved = this.cacheSavedAt.get(saveKey) ?? 0;
-      let cacheState = previous.cache;
-      if (this.now() - lastSaved >= CACHE_SAVE_INTERVAL_MS || !previous.cache.available) {
-        const cached = await this.cache.save(scope, nextSnapshot, request, () => generation === this.generation && scope === this.sessionScope);
-        if (generation !== this.generation || scope !== this.sessionScope) return this.snapshot;
-        if (cached) this.cacheSavedAt.set(saveKey, this.now());
-        cacheState = { available: cached, savedAt: cached ? new Date(this.now()).toISOString() : null, ageSeconds: cached ? 0 : null };
-      } else if (cacheState.savedAt) {
-        cacheState = { ...cacheState, ageSeconds: Math.max(0, Math.floor((this.now() - Date.parse(cacheState.savedAt)) / 1000)) };
-      }
-      this.snapshot = { ...nextSnapshot, cache: cacheState };
       this.notify();
       if (this.listeners.size) this.connectSocket();
+
+      const apply = async <K extends "metrics" | "overviewMetrics" | "trafficCalendar" | "update">(key: K, read: Promise<ConsoleSnapshot[K]>) => {
+        try {
+          const value = await read;
+          if (!current()) return;
+          // Merge into the current snapshot, not the captured summary: another
+          // optional read or a WebSocket may already have updated it.
+          this.snapshot = { ...this.snapshot, [key]: value };
+          if (key === "metrics") this.snapshot.generatedAt = dataTimestamp(this.snapshot.devices, this.snapshot.metrics);
+          this.notify();
+          this.scheduleCacheSave(scope, request, generation, sessionGeneration);
+        } catch (error) {
+          if (current() && (isUnauthorized(error) || (error instanceof ApiError && error.status === 403))) {
+            await this.markSessionExpired();
+            throw error;
+          }
+        }
+      };
+      this.scheduleCacheSave(scope, request, generation, sessionGeneration);
+      // Update discovery is never on the interactive or refresh critical path.
+      void apply("update", this.readUpdateInfo()).catch(() => undefined);
+      await Promise.all([
+        include.deviceMetrics && selectedDeviceId
+          ? apply("metrics", earlyMetrics ?? getMetrics(selectedDeviceId, metricWindow).catch((error) => optionalWebRequest<MetricsResponse>(error))) : null,
+        include.overviewMetrics
+          ? apply("overviewMetrics", getOverviewMetrics(metricWindow).catch((error) => optionalWebRequest<OverviewMetricsResponse>(error))) : null,
+        include.trafficCalendar && selectedDeviceId
+          ? apply("trafficCalendar", this.readTrafficCalendar(selectedDeviceId, trafficMode, request.trafficAnchor ?? new Date(this.now()).toISOString())) : null
+      ]);
       return this.snapshot;
     } catch (error) {
       if (generation !== this.generation) {
@@ -375,8 +402,33 @@ export class WebConsoleAdapter implements ConsoleAdapter {
     }
   }
 
+  private scheduleCacheSave(scope: string, request: ConsoleSnapshotRequest, generation: number, sessionGeneration: number): void {
+    if (this.cacheSaveTimer) clearTimeout(this.cacheSaveTimer);
+    const current = () => generation === this.generation && scope === this.sessionScope && sessionGeneration === this.sessionGeneration;
+    this.cacheSaveTimer = setTimeout(() => {
+      this.cacheSaveTimer = null;
+      if (!current()) return;
+      // An enriched view must replace its summary-only copy even inside the
+      // normal save budget, without rewriting unchanged telemetry every poll.
+      const saveKey = JSON.stringify([this.snapshot.selectedDeviceId, request.metricWindow ?? "5m", resolveInclude(request.include), request.trafficMode ?? "day", request.trafficAnchor?.slice(0, 10) ?? "", !!this.snapshot.metrics, !!this.snapshot.overviewMetrics, !!this.snapshot.trafficCalendar]);
+      const lastSaved = this.cacheSavedAt.get(saveKey) ?? 0;
+      if (this.now() - lastSaved < CACHE_SAVE_INTERVAL_MS && this.snapshot.cache.available) return;
+      void this.cache.save(scope, this.snapshot, request, current).then((cached) => {
+        if (!current()) return;
+        if (cached) this.cacheSavedAt.set(saveKey, this.now());
+        if (this.cacheSavedAt.size > 24) this.cacheSavedAt.delete(this.cacheSavedAt.keys().next().value!);
+        this.snapshot = { ...this.snapshot, cache: { available: cached, savedAt: cached ? new Date(this.now()).toISOString() : null, ageSeconds: cached ? 0 : null } };
+        this.notify();
+      }).catch(() => undefined);
+    }, 0);
+  }
+
   private async markSessionExpired(broadcast = true): Promise<void> {
     const generation = ++this.generation;
+    ++this.sessionGeneration;
+    this.sessionInFlight = null;
+    if (this.cacheSaveTimer) clearTimeout(this.cacheSaveTimer);
+    this.cacheSaveTimer = null;
     this.sessionScope = null;
     this.sessionCheckedAt = 0;
     this.updateInfo = null;

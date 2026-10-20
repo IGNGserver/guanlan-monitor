@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { WebConsoleAdapter, resolveInclude } from "./console-adapter.ts";
+import type { ConsoleSnapshot } from "@dsc/shared";
 
 const device = {
   deviceId: "nas", hostname: "nas", os: "linux", agentVersion: "1.0.0", agentChannel: "test", status: "online",
@@ -138,5 +139,158 @@ test("live reads survive normal background refresh but are fenced by logout", as
     release(new Response(JSON.stringify({ state: "ready", sessionId: "stale", capabilities: [], connectedAt: null })));
     await assert.rejects(stale, /session_changed/);
     await assert.rejects(adapter.live.getLiveConnection("nas"), /live_session_required/);
+  } finally { hub.restore(); }
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+
+test("bootstrap shares session validation and does not check it again for the first view", async () => {
+  const hub = installHub();
+  try {
+    const adapter = adapterAt({ now: 1_000_000 });
+    await Promise.all([adapter.establishSession(), adapter.establishSession()]);
+    await adapter.getSnapshot({ include: {} });
+    assert.equal(hub.calls.filter((path) => path === "/api/auth/session").length, 1);
+    await adapter.refresh({ include: {} });
+    assert.equal(hub.calls.filter((path) => path === "/api/auth/session").length, 2, "manual refresh still validates the session");
+  } finally { hub.restore(); }
+});
+
+test("summary and charts publish independently while calendar and update discovery are stalled", async () => {
+  const hub = installHub();
+  const metricsRead = deferred<Response>(), calendarRead = deferred<Response>(), updateRead = deferred<Response>();
+  const summarySeen = deferred<ConsoleSnapshot>(), metricsSeen = deferred<ConsoleSnapshot>();
+  const snapshots: ConsoleSnapshot[] = [];
+  let stop = () => {};
+  try {
+    const canned = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://hub.invalid").pathname;
+      if (path === "/api/updates") return updateRead.promise;
+      if (path.endsWith("/traffic-calendar")) return calendarRead.promise;
+      if (path.endsWith("/metrics")) return metricsRead.promise;
+      return canned(input);
+    }) as typeof fetch;
+    const adapter = adapterAt({ now: 1_000_000 });
+    stop = adapter.subscribe((snapshot) => {
+      snapshots.push(snapshot);
+      if (snapshot.source === "live") summarySeen.resolve(snapshot);
+      if (snapshot.metrics) metricsSeen.resolve(snapshot);
+    });
+    const loading = adapter.getSnapshot({ selectedDeviceId: "nas", include: { deviceMetrics: true, trafficCalendar: true } });
+    const summary = await summarySeen.promise;
+    assert.equal(summary.devices.length, 1);
+    assert.equal(summary.metrics, null);
+    assert.equal(summary.trafficCalendar, null);
+    metricsRead.resolve(json(metrics));
+    assert.equal((await metricsSeen.promise).metrics?.device.deviceId, "nas");
+    calendarRead.resolve(json({ cells: [] }));
+    const complete = await loading;
+    assert.ok(complete.trafficCalendar);
+    assert.equal(complete.update, null, "a stalled update endpoint cannot block refresh completion");
+    assert.ok(snapshots.length >= 3);
+  } finally {
+    metricsRead.resolve(json(metrics)); calendarRead.resolve(json({ cells: [] })); updateRead.resolve(json({ available: false }));
+    stop(); hub.restore();
+  }
+});
+
+test("a stalled cache write cannot hold back live data or a completed refresh", async () => {
+  const hub = installHub();
+  const saving = deferred<boolean>(), started = deferred<void>();
+  try {
+    const adapter = adapterAt({ now: 1_000_000 });
+    const internals = adapter as unknown as { cache: { save: () => Promise<boolean> } };
+    internals.cache.save = () => { started.resolve(); return saving.promise; };
+    const result = await adapter.refresh({ include: {} });
+    assert.equal(result.source, "live");
+    assert.equal(result.devices.length, 1);
+    await started.promise;
+    await adapter.logout();
+    saving.resolve(true);
+    await new Promise((done) => setImmediate(done));
+    await assert.rejects(adapter.live.getLiveConnection("nas"), /live_session_required/);
+  } finally { saving.resolve(false); hub.restore(); }
+});
+
+test("late optional results cannot overwrite a newer selection or revive a logged-out session", async () => {
+  const hub = installHub();
+  const slow = deferred<Response>(), begun = deferred<void>();
+  let stop = () => {};
+  try {
+    const canned = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input).includes("/devices/old/metrics")) { begun.resolve(); return slow.promise; }
+      return canned(input);
+    }) as typeof fetch;
+    const adapter = adapterAt({ now: 1_000_000 });
+    let latest: ConsoleSnapshot | null = null;
+    stop = adapter.subscribe((snapshot) => { latest = snapshot; });
+    const old = adapter.getSnapshot({ selectedDeviceId: "old", include: { deviceMetrics: true } });
+    await begun.promise;
+    await adapter.getSnapshot({ selectedDeviceId: "nas", include: { deviceMetrics: true } });
+    await adapter.logout();
+    slow.resolve(json({ ...metrics, device: { ...device, deviceId: "old" } }));
+    await old;
+    assert.equal((latest as ConsoleSnapshot | null)?.source, "empty");
+    assert.equal((latest as ConsoleSnapshot | null)?.metrics, null);
+  } finally { slow.resolve(json(metrics)); stop(); hub.restore(); }
+});
+
+test("an optional endpoint 403 clears an already-published summary", async () => {
+  const hub = installHub();
+  try {
+    const canned = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => String(input).includes("/traffic-calendar")
+      ? json({}, 403) : canned(input)) as typeof fetch;
+    const adapter = adapterAt({ now: 1_000_000 });
+    await assert.rejects(adapter.getSnapshot({ selectedDeviceId: "nas", include: { trafficCalendar: true } }), (error: unknown) => (error as { status?: number }).status === 403);
+    await assert.rejects(adapter.live.getLiveConnection("nas"), /live_session_required/);
+  } finally { hub.restore(); }
+});
+
+test("an in-flight bootstrap validation cannot survive logout", async () => {
+  const hub = installHub();
+  const session = deferred<Response>(), begun = deferred<void>();
+  try {
+    const canned = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/api/auth/session")) { begun.resolve(); return session.promise; }
+      return canned(input);
+    }) as typeof fetch;
+    const adapter = adapterAt({ now: 1_000_000 });
+    const validating = adapter.establishSession();
+    const rejected = assert.rejects(validating, /session_changed/);
+    await begun.promise;
+    await adapter.logout();
+    session.resolve(json({ ok: true, issuedAt: "old-scope" }));
+    await rejected;
+    await assert.rejects(adapter.live.getLiveConnection("nas"), /live_session_required/);
+  } finally { session.resolve(json({ ok: true, issuedAt: "old-scope" })); hub.restore(); }
+});
+
+test("successful deferred cache writes remain throttled on unchanged polls", async () => {
+  const hub = installHub();
+  try {
+    const adapter = adapterAt({ now: 1_000_000 });
+    let writes = 0;
+    const saved = deferred<void>();
+    const internals = adapter as unknown as { cache: { save: () => Promise<boolean> } };
+    internals.cache.save = async () => { writes++; return true; };
+    const stop = adapter.subscribe((snapshot) => { if (snapshot.cache.available) saved.resolve(); });
+    try {
+      await adapter.refresh({ include: {} });
+      await saved.promise;
+      assert.equal(writes, 1);
+      await adapter.refresh({ include: {}, background: true });
+      // Drain the deferred cache timer, not a latency assertion.
+      await new Promise((done) => setTimeout(done, 10));
+      assert.equal(writes, 1);
+    } finally { stop(); }
   } finally { hub.restore(); }
 });
