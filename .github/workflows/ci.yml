@@ -8,9 +8,9 @@ on:
     branches:
       - main
       - master
-    paths: ['agents/**', 'apps/**', 'packages/**', 'scripts/**', 'deploy/**', 'android/**', 'windows-agent/**', 'tools/**', '.github/workflows/ci.yml', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.base.json', 'VERSION']
+    paths: ['agents/**', 'apps/**', 'packages/**', 'scripts/**', 'deploy/**', 'android/**', 'windows-agent/**', 'tools/**', '.github/workflows/ci.yml', '.github/workflows/deploy-production.yml', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.base.json', 'VERSION']
   pull_request:
-    paths: ['agents/**', 'apps/**', 'packages/**', 'scripts/**', 'deploy/**', 'android/**', 'windows-agent/**', 'tools/**', '.github/workflows/ci.yml', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.base.json', 'VERSION']
+    paths: ['agents/**', 'apps/**', 'packages/**', 'scripts/**', 'deploy/**', 'android/**', 'windows-agent/**', 'tools/**', '.github/workflows/ci.yml', '.github/workflows/deploy-production.yml', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.base.json', 'VERSION']
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
