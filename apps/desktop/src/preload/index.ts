@@ -22,6 +22,7 @@ const bridge: DesktopRendererBridge & WindowMaterialBridge = {
   initialWindowMaterial: parseWindowMaterialArgument(process.argv),
   getSnapshot: (request?: DesktopSnapshotRequest) => ipcRenderer.invoke(IPC_CHANNELS.getSnapshot, request),
   refresh: (request?: DesktopSnapshotRequest) => ipcRenderer.invoke(IPC_CHANNELS.refresh, request),
+  cancelSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.cancelSnapshot),
   updateLocalConfig: (patch: DesktopConfigPatch) => ipcRenderer.invoke(IPC_CHANNELS.updateLocalConfig, patch),
   controlAgent: (action: DesktopAgentControlAction) => ipcRenderer.invoke(IPC_CHANNELS.controlAgent, action),
   saveHubConnection: (serverUrl: string, accessKey: string) => ipcRenderer.invoke(IPC_CHANNELS.saveHubConnection, serverUrl, accessKey),

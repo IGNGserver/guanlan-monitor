@@ -30,6 +30,7 @@ type CachedTrafficCalendar = {
   value: NonNullable<DesktopSnapshot["trafficCalendar"]>;
   savedAt: number;
 };
+type LiveData = Pick<DesktopSnapshot, "localBackend" | "devices" | "selectedDeviceId" | "metrics" | "overviewMetrics" | "trafficCalendar" | "update"> & { authenticated: boolean };
 
 export class DesktopController {
   readonly bridge: Omit<DesktopRendererBridge, "subscribe" | "getRuntimeProfile" | "getWindowState" | "subscribeWindowState" | "windowMinimize" | "windowToggleMaximize" | "windowDragStart" | "windowDragMove" | "windowDragEnd" | "windowClose">;
@@ -47,6 +48,16 @@ export class DesktopController {
   private trafficAnchor = new Date().toISOString();
   private trafficCalendarCache: CachedTrafficCalendar | null = null;
   private startup: DesktopStartupSettings = { openAtLogin: false, startMinimized: false };
+  private request: DesktopSnapshotRequest = {};
+  private snapshotAbort = new AbortController();
+  private generation = 0;
+  private localBackend: DesktopSnapshot["localBackend"] = null;
+  private agentRead: Promise<void> | null = null;
+  private failures = 0;
+  private summaryDurationMs = 0;
+  private nextAutoReadAt = 0;
+  private started = false;
+  private connectionChanging = false;
   // Release acceptance launches the installed executable directly and passes
   // an explicit marker. Keep the fixture opt-in even if the packaged process
   // normalizes NODE_ENV or does not inherit the test environment.
@@ -71,6 +82,12 @@ export class DesktopController {
     this.hub = new HubClient(credentialFilePath(userDataPath));
     this.cache = new DesktopCacheStore(userDataPath);
     this.localConfig = new LocalConfigStore(userDataPath, legacyPaths);
+    this.hub.onSessionDenied = () => {
+      this.hub.invalidateSession();
+      void this.clearRemote().catch(() => {});
+      this.failures = 1;
+      this.scheduleNextRead();
+    };
     this.bridge = {
       live: {
         getLiveConnection: (deviceId) => this.hub.getLiveConnection(deviceId),
@@ -97,6 +114,8 @@ export class DesktopController {
 
   async initialize(): Promise<void> {
     await Promise.all([this.hub.initialize(), this.localConfig.migrateIfNeeded()]);
+    const config = await this.localConfig.read().catch(() => null);
+    if (!this.hub.configuredUrl && config?.connection.serverUrl) this.hub.setServerUrl(config.connection.serverUrl);
     let preferences: Partial<DesktopStartupSettings> | null = null;
     try {
       preferences = await readJsonFile<Partial<DesktopStartupSettings>>(
@@ -121,13 +140,20 @@ export class DesktopController {
     return () => this.listeners.delete(listener);
   }
 
-  async getSnapshot(request: DesktopSnapshotRequest = {}): Promise<DesktopSnapshot> {
+  async getSnapshot(request: DesktopSnapshotRequest = {}, allowRefresh = true): Promise<DesktopSnapshot> {
     if (this.visualFixtureEnabled) return this.visualFixtureSnapshot(request);
+    if (this.connectionChanging) return this.currentSnapshot ?? this.emptySnapshot();
+    if (!allowRefresh) return this.currentSnapshot ?? this.emptySnapshot();
+    this.started = true;
     const requestChanged = this.hasRequestChanges(request);
-    if (request.preferCache) {
+    if (request.preferCache || !this.currentSnapshot) {
       try {
-        const cached = await this.cache.read();
-        if (cached) return this.asCachedSnapshot(cached);
+        const cached = await this.cache.read(this.hub.cacheScope);
+        if (cached) {
+          this.currentSnapshot = this.asCachedSnapshot(cached, undefined, request);
+          void this.refresh(request);
+          return this.currentSnapshot;
+        }
       } catch {
         // A corrupt cache falls through to the live refresh path.
       }
@@ -138,12 +164,15 @@ export class DesktopController {
 
   async refresh(request: DesktopSnapshotRequest = {}): Promise<DesktopSnapshot> {
     if (this.visualFixtureEnabled) return this.visualFixtureSnapshot(request);
+    if (this.connectionChanging) return this.currentSnapshot ?? this.emptySnapshot();
     if (this.refreshInFlight) {
       if (this.hasRequestChanges(request)) {
+        this.cancelSnapshot();
         this.queuedRefreshRequest = mergeSnapshotRequests(this.queuedRefreshRequest, request);
       }
       return this.refreshInFlight;
     }
+    if (request.background && !this.hasRequestChanges(request) && this.currentSnapshot && Date.now() < this.nextAutoReadAt) return this.currentSnapshot;
     this.queuedRefreshRequest = mergeSnapshotRequests(this.queuedRefreshRequest, request);
 
     const refresh = this.drainRefreshQueue();
@@ -167,32 +196,118 @@ export class DesktopController {
 
   private async refreshOnce(request: DesktopSnapshotRequest): Promise<DesktopSnapshot> {
     this.applyRequest(request);
+    this.snapshotAbort.abort(new Error("snapshot_superseded"));
+    this.snapshotAbort = new AbortController();
+    const signal = this.snapshotAbort.signal;
+    const generation = ++this.generation;
+    const current = () => !signal.aborted && generation === this.generation;
+    this.readLocalBackend();
     let cached: DesktopSnapshot | null = null;
     try {
-      cached = await this.cache.read();
+      cached = await this.cache.read(this.hub.cacheScope);
     } catch {
       // A corrupt cache should degrade to live/empty state, never block refresh.
     }
     try {
-      const rawState = await this.agent.start();
-      this.hub.setServerUrl(rawState.config.connection.serverUrl);
-      const live = await this.readLiveData(rawState);
+      const live = await this.readLiveData(null, signal, current);
+      if (!current()) return this.currentSnapshot ?? this.emptySnapshot();
       const snapshot = this.createSnapshot("live", live, cached);
       this.currentSnapshot = snapshot;
       if (snapshot.source === "live") {
-        try {
-          await this.cache.write(snapshot);
-        } catch {
-          // Cache persistence is best-effort; it must not hide live telemetry.
-        }
+        void this.cache.write(snapshot, this.hub.cacheScope).catch(() => {});
       }
+      this.scheduleNextRead();
       this.notify(snapshot);
       return snapshot;
     } catch (error) {
+      if (!current()) return this.currentSnapshot ?? this.emptySnapshot();
+      const denied = isHubDenied(error);
+      if (denied) {
+        cached = null; this.cancelSnapshot(); this.hub.invalidateSession(); this.trafficCalendarCache = null;
+        void this.cache.clear().catch(() => {});
+      }
+      this.failures = Math.min(4, this.failures + 1);
+      this.scheduleNextRead();
       const fallback = cached ? this.asCachedSnapshot(cached, error) : this.emptySnapshot(error);
+      fallback.localBackend = this.localBackend;
       this.currentSnapshot = fallback;
       this.notify(fallback);
       return fallback;
+    }
+  }
+
+  cancelSnapshot(): void {
+    ++this.generation;
+    this.snapshotAbort.abort(new Error("snapshot_superseded"));
+  }
+
+  refreshVisible(): Promise<DesktopSnapshot | void> {
+    // Let the first renderer request supply its route budget instead of doing
+    // a legacy full read before the window's first page is even known.
+    return this.started ? this.refresh() : Promise.resolve();
+  }
+
+  private readLocalBackend(): void {
+    if (this.agentRead) return;
+    const expectedUrl = this.hub.configuredUrl;
+    const pending = this.agent.start().then((state) => {
+      this.localBackend = redactBackendState(state);
+      // Agent discovery can fill a missing address, but cannot overwrite a Hub
+      // changed by the user while the Agent was starting.
+      if (!expectedUrl && !this.hub.configuredUrl && state.config.connection.serverUrl) {
+        this.hub.setServerUrl(state.config.connection.serverUrl);
+        if (this.listeners.size) {
+          if (this.refreshInFlight) this.queuedRefreshRequest = mergeSnapshotRequests(this.queuedRefreshRequest, this.request);
+          else void this.refresh(this.request);
+        }
+      }
+      if (this.currentSnapshot) {
+        this.currentSnapshot = { ...this.currentSnapshot, localBackend: this.localBackend };
+        this.notify(this.currentSnapshot);
+      }
+    }).catch(() => {}).finally(() => { if (this.agentRead === pending) this.agentRead = null; });
+    this.agentRead = pending;
+  }
+
+  private constrained(): boolean {
+    return this.request.networkMode === "saver" || (this.request.networkMode !== "standard" && this.summaryDurationMs >= 1500);
+  }
+
+  private scheduleNextRead(): void {
+    this.nextAutoReadAt = Date.now() + Math.min(120_000, (this.constrained() ? 30_000 : 10_000) * 2 ** this.failures);
+  }
+
+  private async clearRemote(): Promise<void> {
+    this.cancelSnapshot();
+    this.queuedRefreshRequest = null;
+    this.trafficCalendarCache = null;
+    this.currentSnapshot = this.emptySnapshot();
+    this.currentSnapshot.localBackend = this.localBackend;
+    this.failures = 0; this.summaryDurationMs = 0; this.nextAutoReadAt = 0;
+    this.notify(this.currentSnapshot);
+    await this.cache.clear();
+  }
+
+  private refreshAfterMutation(request: DesktopSnapshotRequest = {}): Promise<DesktopSnapshot> {
+    this.cancelSnapshot();
+    // Even an unchanged selection must be reread after a successful write;
+    // joining a pre-mutation request could otherwise return stale device data.
+    this.queuedRefreshRequest = mergeSnapshotRequests(this.queuedRefreshRequest, request);
+    return this.refresh(request);
+  }
+
+  private async changeConnection(change: () => Promise<void>, preserveLogoutCookie = false): Promise<void> {
+    if (this.connectionChanging) throw new Error("hub_connection_change_in_progress");
+    this.connectionChanging = true;
+    this.hub.invalidateSession(preserveLogoutCookie);
+    try {
+      await this.clearRemote();
+      await change();
+    } catch (error) {
+      await this.hub.logout();
+      throw error;
+    } finally {
+      this.connectionChanging = false;
     }
   }
 
@@ -200,6 +315,10 @@ export class DesktopController {
     const rawState = await this.agent.start();
     const nextConfig = mergeAgentConfig(rawState.config, patch);
     await this.agent.updateConfig(nextConfig);
+    if (nextConfig.connection.serverUrl !== this.hub.configuredUrl) {
+      await this.clearRemote();
+      this.hub.setServerUrl(nextConfig.connection.serverUrl);
+    }
     if (nextConfig.cloudSyncEnabled && (patch.enabledDeviceIds || patch.enabledMetrics || patch.probeSelections || patch.instanceMetricConfig)) {
       try {
         await this.agent.cloudPush();
@@ -219,43 +338,49 @@ export class DesktopController {
     const normalizedUrl = serverUrl.trim();
     const normalizedAccessKey = accessKey.trim();
     if (!normalizedUrl) throw new Error("hub_server_url_required");
-    if (!this.hub.setServerUrl(normalizedUrl)) throw new Error("hub_server_url_invalid");
-    const unifiedCredential = normalizedAccessKey || this.hub.credentialForAgent;
-    if (!unifiedCredential) throw new Error("hub_access_key_required");
+    await this.changeConnection(async () => {
+      if (!this.hub.setServerUrl(normalizedUrl)) throw new Error("hub_server_url_invalid");
+      const unifiedCredential = normalizedAccessKey || this.hub.credentialForAgent;
+      if (!unifiedCredential) throw new Error("hub_access_key_required");
 
     // The Hub ACCESS_KEY is the single credential for web, desktop and Agent uploads.
     // Keep the Agent's internal runtime config in sync without exposing a second secret field.
     // The address is written before the login attempt on purpose: a Hub outage
     // or a rejected key must not lock the user out of correcting the address.
-    await saveHubConnectionResiliently(this.agent, this.hub, normalizedUrl, unifiedCredential);
+      await saveHubConnectionResiliently(this.agent, this.hub, normalizedUrl, unifiedCredential);
+    });
     return this.refresh();
   }
 
   async login(accessKey: string): Promise<DesktopSnapshot> {
-    const rawState = await this.agent.start();
-    if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
-    const normalizedAccessKey = accessKey.trim();
-    await this.hub.login(normalizedAccessKey);
-    const nextConfig = mergeAgentConfig(rawState.config, {});
-    nextConfig.connection.secret = normalizedAccessKey;
-    await this.agent.updateConfig(nextConfig);
+    await this.changeConnection(async () => {
+      const rawState = await this.agent.start();
+      if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
+      const normalizedAccessKey = accessKey.trim();
+      await this.hub.login(normalizedAccessKey);
+      const nextConfig = mergeAgentConfig(rawState.config, {});
+      nextConfig.connection.secret = normalizedAccessKey;
+      await this.agent.updateConfig(nextConfig);
+    });
     return this.refresh();
   }
 
   async logout(): Promise<DesktopSnapshot> {
-    await this.hub.logout();
-    return this.refresh();
+    await this.changeConnection(() => this.hub.logout(), true);
+    this.currentSnapshot = { ...this.emptySnapshot(), localBackend: this.localBackend };
+    this.notify(this.currentSnapshot);
+    return this.currentSnapshot;
   }
 
   async disconnectAgent(): Promise<DesktopSnapshot> {
-    const rawState = await this.agent.start();
-    await this.agent.control("stop");
-    const nextConfig = mergeAgentConfig(rawState.config, {
-      cloudSyncEnabled: false
+    await this.changeConnection(async () => {
+      const rawState = await this.agent.start();
+      await this.agent.control("stop");
+      const nextConfig = mergeAgentConfig(rawState.config, { cloudSyncEnabled: false });
+      nextConfig.connection.secret = "";
+      await this.agent.updateConfig(nextConfig);
+      await this.hub.logout();
     });
-    nextConfig.connection.secret = "";
-    await this.agent.updateConfig(nextConfig);
-    await this.hub.logout();
     return this.refresh();
   }
 
@@ -265,24 +390,18 @@ export class DesktopController {
   }
 
   async saveFanNote(deviceId: string, fanId: string, note: string): Promise<DesktopSnapshot> {
-    const rawState = await this.agent.start();
-    this.hub.setServerUrl(rawState.config.connection.serverUrl);
     await this.hub.saveFanNote(deviceId, fanId, note);
-    return this.refresh({ selectedDeviceId: deviceId });
+    return this.refreshAfterMutation({ selectedDeviceId: deviceId });
   }
 
   async deleteInstance(deviceId: string): Promise<DesktopSnapshot> {
-    const rawState = await this.agent.start();
-    if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
     await this.hub.deleteDevice(deviceId);
-    return this.refresh({ selectedDeviceId: this.selectedDeviceId === deviceId ? null : this.selectedDeviceId });
+    return this.refreshAfterMutation({ selectedDeviceId: this.selectedDeviceId === deviceId ? null : this.selectedDeviceId });
   }
 
   async reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot> {
-    const rawState = await this.agent.start();
-    if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
     await this.hub.reorderDevices(deviceIds);
-    return this.refresh({ selectedDeviceId: this.selectedDeviceId });
+    return this.refreshAfterMutation({ selectedDeviceId: this.selectedDeviceId });
   }
 
   async updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot> {
@@ -302,12 +421,13 @@ export class DesktopController {
   }
 
   async shutdown(): Promise<void> {
+    this.cancelSnapshot();
     await this.agent.stop();
     await this.cache.flush().catch(() => { /* Offline persistence is best-effort. */ });
   }
 
-  private async readLiveData(rawState: RawAgentBackendState) {
-    const localBackend = redactBackendState(rawState);
+  private async readLiveData(rawState: RawAgentBackendState | null, signal?: AbortSignal, current: () => boolean = () => true): Promise<LiveData> {
+    const localBackend = rawState ? redactBackendState(rawState) : this.localBackend;
     let devices = [] as DesktopSnapshot["devices"];
     // Device pages are hub-backed. Never synthesize a local device entry when
     // the hub is unavailable or the agent has not uploaded its latest data.
@@ -318,41 +438,53 @@ export class DesktopController {
     let update: DesktopSnapshot["update"] = null;
     let authenticated = false;
 
-    try {
-      devices = await this.hub.listDevices();
-      authenticated = true;
-      if (!selectedDeviceId && devices.length > 0) selectedDeviceId = devices[0].deviceId;
-    } catch {
-      // The caller may fall back to the same cached hub snapshot used for any
-      // other device, but local agent telemetry must never become a device page.
-    }
+    const startedAt = Date.now();
+    devices = await this.hub.listDevices(signal);
+    authenticated = true;
+    if (!current()) throw new Error("snapshot_superseded");
+    this.summaryDurationMs = this.summaryDurationMs ? this.summaryDurationMs * 0.7 + (Date.now() - startedAt) * 0.3 : Date.now() - startedAt;
+    if (!devices.some((device) => device.deviceId === selectedDeviceId)) selectedDeviceId = devices[0]?.deviceId ?? null;
 
     // These reads depend on device selection, but not on each other. Isolate
     // failures so a slow optional endpoint does not serialize every request.
-    [metrics, trafficCalendar, overviewMetrics, update] = await Promise.all([
-      selectedDeviceId && this.hub.isConfigured
-        ? this.hub.getMetrics(selectedDeviceId, this.metricWindow).catch(() => null)
-        : Promise.resolve(null),
-      selectedDeviceId && this.hub.isConfigured
-        ? this.readTrafficCalendar(selectedDeviceId)
-        : Promise.resolve(null),
-      this.hub.isConfigured
-        ? this.hub.getOverviewMetrics(this.metricWindow).catch(() => null)
-        : Promise.resolve(null),
-      this.hub.getUpdateInfo(currentDesktopVersion()).catch(() => null)
-    ]);
-
     this.selectedDeviceId = selectedDeviceId;
-    return {
-      localBackend,
-      devices,
-      selectedDeviceId,
-      metrics,
-      overviewMetrics,
-      trafficCalendar,
-      update,
-      authenticated
+    const previous = this.currentSnapshot;
+    if (previous?.source === "live") {
+      metrics = previous.metrics?.device.deviceId === selectedDeviceId && previous.metrics.window === this.metricWindow ? previous.metrics : null;
+      overviewMetrics = previous.overviewMetrics?.window === this.metricWindow ? previous.overviewMetrics : null;
+      trafficCalendar = previous.selectedDeviceId === selectedDeviceId && previous.trafficCalendar?.mode === this.trafficMode && previous.trafficCalendar.anchor === this.trafficAnchor ? previous.trafficCalendar : null;
+      update = previous.update;
+    }
+    const state = () => ({ localBackend: this.localBackend ?? localBackend, devices, selectedDeviceId, metrics, overviewMetrics, trafficCalendar, update, authenticated });
+    const publish = () => {
+      if (!current()) return;
+      this.currentSnapshot = this.createSnapshot("live", state(), null);
+      this.notify(this.currentSnapshot);
+      void this.cache.write(this.currentSnapshot, this.hub.cacheScope).catch(() => {});
     };
+    publish();
+    const include = this.request.include ?? { deviceMetrics: true, overviewMetrics: true, trafficCalendar: true };
+    const budget = this.constrained() ? 120 : undefined;
+    let optionalFailed = false;
+    const optional = async <T,>(read: () => Promise<T>, apply: (value: T) => void) => {
+      try { const value = await read(); if (current()) { apply(value); publish(); } }
+      catch (error) { if (isHubDenied(error)) throw error; if (current()) optionalFailed = true; }
+    };
+    const jobs: Array<() => Promise<void>> = [];
+    if (include.deviceMetrics && selectedDeviceId) jobs.push(() => optional(() => this.hub.getMetrics(selectedDeviceId!, this.metricWindow, signal, budget), (value) => { metrics = value; }));
+    if (include.overviewMetrics) jobs.push(() => optional(() => this.hub.getOverviewMetrics(this.metricWindow, signal, budget), (value) => { overviewMetrics = value; }));
+    if (include.trafficCalendar && selectedDeviceId) jobs.push(() => optional(() => this.readTrafficCalendar(selectedDeviceId!, signal), (value) => { trafficCalendar = value; }));
+    // Bounded workers, not an unbounded fan-out. Auth/summary never queue behind
+    // optional reads. Updates run last and never hold refresh completion open.
+    const concurrency = this.constrained() ? 1 : 2;
+    const worker = async () => { while (jobs.length && current()) await jobs.shift()!(); };
+    await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker));
+    if (current()) {
+      this.failures = optionalFailed ? Math.min(4, this.failures + 1) : 0;
+      void optional(() => this.hub.getUpdateInfo(currentDesktopVersion(), signal), (value) => { update = value; })
+        .catch(() => {});
+    }
+    return state();
   }
 
   private visualFixtureSnapshot(request: DesktopSnapshotRequest = {}): DesktopSnapshot {
@@ -484,23 +616,19 @@ export class DesktopController {
     };
   }
 
-  private async readTrafficCalendar(deviceId: string): Promise<DesktopSnapshot["trafficCalendar"]> {
-    const key = [deviceId, this.trafficMode, this.trafficAnchor].join("\u001f");
+  private async readTrafficCalendar(deviceId: string, signal?: AbortSignal): Promise<DesktopSnapshot["trafficCalendar"]> {
+    const key = [this.hub.cacheScope, deviceId, this.trafficMode, this.trafficAnchor].join("\u001f");
     const cached = this.trafficCalendarCache;
     if (cached?.key === key && Date.now() - cached.savedAt < TRAFFIC_CALENDAR_CACHE_TTL_MS) {
       return cached.value;
     }
 
-    try {
-      const value = await this.hub.getTrafficCalendar(deviceId, this.trafficMode, this.trafficAnchor);
-      this.trafficCalendarCache = { key, value, savedAt: Date.now() };
-      return value;
-    } catch {
-      return cached?.key === key ? cached.value : null;
-    }
+    const value = await this.hub.getTrafficCalendar(deviceId, this.trafficMode, this.trafficAnchor, signal);
+    if (!signal?.aborted) this.trafficCalendarCache = { key, value, savedAt: Date.now() };
+    return value;
   }
 
-  private createSnapshot(source: "live" | "empty", live: Awaited<ReturnType<DesktopController["readLiveData"]>>, cached: DesktopSnapshot | null): DesktopSnapshot {
+  private createSnapshot(source: "live" | "empty", live: LiveData, cached: DesktopSnapshot | null): DesktopSnapshot {
     const now = new Date().toISOString();
     const cachedRemote = !live.authenticated ? cached : null;
     const usingCachedRemote = Boolean(cachedRemote && live.devices.length === 0 && live.metrics === null && live.trafficCalendar === null);
@@ -524,9 +652,18 @@ export class DesktopController {
     return snapshot;
   }
 
-  private asCachedSnapshot(cached: DesktopSnapshot, error?: unknown): DesktopSnapshot {
+  private asCachedSnapshot(cached: DesktopSnapshot, error?: unknown, request = this.request): DesktopSnapshot {
+    const selectedDeviceId = request.selectedDeviceId !== undefined ? request.selectedDeviceId : this.selectedDeviceId ?? cached.selectedDeviceId;
+    const metricWindow = request.metricWindow ?? this.metricWindow;
+    const calendarMatches = cached.selectedDeviceId === selectedDeviceId
+      && (!request.trafficMode || cached.trafficCalendar?.mode === request.trafficMode)
+      && (!request.trafficAnchor || cached.trafficCalendar?.anchor === request.trafficAnchor);
     return {
       ...cached,
+      selectedDeviceId,
+      metrics: cached.metrics?.device.deviceId === selectedDeviceId && cached.metrics.window === metricWindow ? cached.metrics : null,
+      overviewMetrics: cached.overviewMetrics?.window === metricWindow ? cached.overviewMetrics : null,
+      trafficCalendar: calendarMatches ? cached.trafficCalendar : null,
       // Keep the timestamp of the last successful live snapshot. The renderer
       // uses cache.savedAt for the cache age and must not confuse the moment
       // this fallback was rendered with the moment telemetry was collected.
@@ -560,6 +697,7 @@ export class DesktopController {
   }
 
   private applyRequest(request: DesktopSnapshotRequest): boolean {
+    this.request = mergeSnapshotRequests(this.request, request);
     let changed = false;
     if (request.metricWindow && request.metricWindow !== this.metricWindow) {
       this.metricWindow = request.metricWindow;
@@ -587,7 +725,9 @@ export class DesktopController {
     return (request.metricWindow !== undefined && request.metricWindow !== this.metricWindow)
       || (request.selectedDeviceId !== undefined && request.selectedDeviceId !== this.selectedDeviceId)
       || (request.trafficMode !== undefined && request.trafficMode !== this.trafficMode)
-      || (request.trafficAnchor !== undefined && request.trafficAnchor !== this.trafficAnchor);
+      || (request.trafficAnchor !== undefined && request.trafficAnchor !== this.trafficAnchor)
+      || (request.networkMode !== undefined && request.networkMode !== this.request.networkMode)
+      || (request.include !== undefined && JSON.stringify(request.include) !== JSON.stringify(this.request.include));
   }
 
   private notify(snapshot: DesktopSnapshot): void {
@@ -605,8 +745,13 @@ function mergeSnapshotRequests(
   if (next.trafficMode !== undefined) merged.trafficMode = next.trafficMode;
   if (next.trafficAnchor !== undefined) merged.trafficAnchor = next.trafficAnchor;
   if (next.preferCache !== undefined) merged.preferCache = next.preferCache;
+  if (next.include !== undefined) merged.include = next.include;
+  if (next.networkMode !== undefined) merged.networkMode = next.networkMode;
+  if (next.background !== undefined) merged.background = next.background;
   return merged;
 }
+
+function isHubDenied(error: unknown): boolean { return error instanceof Error && /^hub_(?:401|403):/.test(error.message); }
 
 function redactBackendState(state: RawAgentBackendState): DesktopAgentBackendState {
   const secret = state.config.connection.secret.trim();
