@@ -280,7 +280,7 @@ if (!hasSingleInstanceLock) {
     // While hidden the shell answers refreshes from the current snapshot instead
     // of driving the hub, so refresh once on the way back up rather than showing
     // data from whenever the window was hidden.
-    void controller?.refresh().catch((error) => {
+    void controller?.refreshVisible().catch((error) => {
       reportProcessEvent("window-show-refresh-failed", { error });
     });
   };
@@ -377,12 +377,15 @@ if (!hasSingleInstanceLock) {
     };
     nativeTheme.on("updated", updateNativeWindowMaterial);
     window.once("closed", () => {
+      controller?.cancelSnapshot();
       nativeTheme.removeListener("updated", updateNativeWindowMaterial);
       if (rendererUnresponsiveTimer) {
         clearTimeout(rendererUnresponsiveTimer);
         rendererUnresponsiveTimer = null;
       }
     });
+    window.on("hide", () => controller?.cancelSnapshot());
+    window.on("minimize", () => controller?.cancelSnapshot());
     window.webContents.on("render-process-gone", (_event, details) => {
       reportProcessEvent("render-process-gone", {
         reason: details.reason,
@@ -420,7 +423,7 @@ if (!hasSingleInstanceLock) {
       rendererRecoveryCount = 0;
       rendererRecoveryWindowStartedAt = Date.now();
       reportProcessEvent("renderer-ready", {});
-      void controller?.refresh();
+      // Workspace's first IPC request names its route and restores cache.
     });
     window.on("close", (event) => {
       if (quitting) return;

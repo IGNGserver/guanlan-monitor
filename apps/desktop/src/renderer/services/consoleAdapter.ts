@@ -20,7 +20,21 @@ export class DesktopConsoleAdapter implements ConsoleAdapter, ConsoleLocalAgentP
 
   getSnapshot(request?: ConsoleSnapshotRequest): Promise<ConsoleSnapshot> { return dscBridge.getSnapshot(request); }
   refresh(request?: ConsoleSnapshotRequest): Promise<ConsoleSnapshot> { return dscBridge.refresh(request); }
-  subscribe(listener: (snapshot: ConsoleSnapshot) => void): () => void { return dscBridge.subscribe(listener); }
+  cancelSnapshot(): void { void dscBridge.cancelSnapshot().catch(() => {}); }
+  subscribe(listener: (snapshot: ConsoleSnapshot) => void): () => void {
+    const unsubscribe = dscBridge.subscribe(listener);
+    const pause = () => { if (document.hidden || !navigator.onLine) this.cancelSnapshot(); };
+    const resume = () => { if (!document.hidden) void this.refresh().catch(() => {}); };
+    document.addEventListener("visibilitychange", pause);
+    window.addEventListener("offline", pause);
+    window.addEventListener("online", resume);
+    return () => {
+      unsubscribe(); this.cancelSnapshot();
+      document.removeEventListener("visibilitychange", pause);
+      window.removeEventListener("offline", pause);
+      window.removeEventListener("online", resume);
+    };
+  }
   login(accessKey: string): Promise<ConsoleSnapshot> { return dscBridge.login(accessKey); }
   logout(): Promise<ConsoleSnapshot> { return dscBridge.logout(); }
   disconnectAgent(): Promise<ConsoleSnapshot> { return dscBridge.disconnectAgent(); }

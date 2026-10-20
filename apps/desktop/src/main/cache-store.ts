@@ -1,73 +1,88 @@
 import path from "node:path";
+import { stat } from "node:fs/promises";
 import type { DesktopSnapshot } from "@dsc/shared";
 import { readJsonFile, writeJsonAtomically } from "./atomic-json.js";
 
 interface CacheEnvelope {
-  version: 1;
+  version: 2;
+  scope: string;
   savedAt: string;
   snapshot: DesktopSnapshot;
 }
 
 export class DesktopCacheStore {
   private readonly filePath: string;
-  private loaded: Promise<DesktopSnapshot | null> | null = null;
-  private pending: DesktopSnapshot | null = null;
-  private writing: Promise<void> | null = null;
+  private loaded: { scope: string; value: Promise<DesktopSnapshot | null> } | null = null;
+  private pending: CacheEnvelope | null = null;
+  private writes: Promise<void> = Promise.resolve();
+  private epoch = 0;
+  private blocked = false;
   private savedAt = -Infinity;
 
   constructor(userDataPath: string) {
     this.filePath = path.join(userDataPath, "desktop-cache.json");
   }
 
-  async read(): Promise<DesktopSnapshot | null> {
-    this.loaded ??= readJsonFile<CacheEnvelope>(this.filePath)
-      .then(async (envelope) => {
-        if (envelope?.version !== 1 || !envelope.snapshot) return null;
-        const snapshot = sanitizeCachedSnapshot(envelope.snapshot);
-        if (JSON.stringify(snapshot) !== JSON.stringify(envelope.snapshot)) {
-          await writeJsonAtomically(this.filePath, { ...envelope, snapshot }, false);
-        }
-        return snapshot;
-      })
-      .catch(() => null);
-    return this.loaded;
+  async read(scope: string | null = null): Promise<DesktopSnapshot | null> {
+    if (!scope || this.blocked) return null;
+    const readEpoch = this.epoch;
+    if (this.loaded?.scope !== scope) {
+      const epoch = this.epoch;
+      const value = stat(this.filePath).then((info) => info.size <= 4_000_000 ? readJsonFile<CacheEnvelope>(this.filePath) : null).then((envelope) => {
+        if (epoch !== this.epoch || envelope?.version !== 2 || envelope.scope !== scope || !envelope.snapshot) return null;
+        const age = Date.now() - Date.parse(envelope.savedAt);
+        if (!Number.isFinite(age) || age < 0 || age > 24 * 60 * 60_000) return null;
+        return sanitizeCachedSnapshot(envelope.snapshot);
+      }).catch(() => null);
+      this.loaded = { scope, value };
+    }
+    const result = await this.loaded.value;
+    if (readEpoch !== this.epoch || this.blocked) return null;
+    const age = result ? Date.now() - Date.parse(result.generatedAt) : Infinity;
+    return age >= 0 && age <= 24 * 60 * 60_000 ? result : null;
   }
 
-  async write(snapshot: DesktopSnapshot): Promise<void> {
-    const safeSnapshot: DesktopSnapshot = {
-      ...snapshot,
-      session: {
-        authenticated: snapshot.session.authenticated,
-        accessKeyConfigured: snapshot.session.accessKeyConfigured
-      }
-    };
-    this.loaded = Promise.resolve(safeSnapshot);
-    this.pending = safeSnapshot;
+  async write(snapshot: DesktopSnapshot, scope: string | null = null): Promise<void> {
+    if (!scope || snapshot.source !== "live" || !snapshot.session.authenticated) return;
+    const safeSnapshot = sanitizeCachedSnapshot({ ...snapshot, localBackend: null, update: null,
+      session: { authenticated: false, accessKeyConfigured: false } });
+    if (Buffer.byteLength(JSON.stringify(safeSnapshot), "utf8") > 3_990_000) {
+      safeSnapshot.metrics = null; safeSnapshot.overviewMetrics = null; safeSnapshot.trafficCalendar = null;
+      if (Buffer.byteLength(JSON.stringify(safeSnapshot), "utf8") > 3_990_000) return;
+    }
+    this.loaded = { scope, value: Promise.resolve(safeSnapshot) };
+    this.blocked = false;
+    this.pending = { version: 2, scope, savedAt: new Date().toISOString(), snapshot: safeSnapshot };
     // Keep the latest offline snapshot in memory. Persist at most once per
     // minute during polling, and flush the latest state on orderly shutdown.
     if (Date.now() - this.savedAt >= 60_000) await this.flush();
   }
 
   async flush(): Promise<void> {
-    if (this.writing) await this.writing;
-    if (!this.pending) return;
-    const snapshot = this.pending;
-    this.pending = null;
-    const writing = writeJsonAtomically(this.filePath, {
-      version: 1,
-      savedAt: new Date().toISOString(),
-      snapshot
-    } satisfies CacheEnvelope, false);
-    this.writing = writing;
-    try {
-      await writing;
-      this.savedAt = Date.now();
-    } catch (error) {
-      this.pending ??= snapshot;
-      throw error;
-    } finally {
-      if (this.writing === writing) this.writing = null;
-    }
+    const epoch = this.epoch;
+    const writing = this.writes.catch(() => {}).then(async () => {
+      if (epoch !== this.epoch || !this.pending) return;
+      const envelope = this.pending; this.pending = null;
+      try {
+        await writeJsonAtomically(this.filePath, envelope, false);
+        if (epoch === this.epoch) this.savedAt = Date.now();
+      } catch (error) {
+        if (epoch === this.epoch) this.pending ??= envelope;
+        throw error;
+      }
+    });
+    this.writes = writing;
+    await writing;
+  }
+
+  async clear(): Promise<void> {
+    ++this.epoch;
+    this.blocked = true;
+    this.loaded = null; this.pending = null; this.savedAt = -Infinity;
+    // Serialize after any old write so it cannot recreate signed-out telemetry.
+    const clear = this.writes.catch(() => {}).then(() => writeJsonAtomically(this.filePath, null, false));
+    this.writes = clear;
+    await clear;
   }
 }
 

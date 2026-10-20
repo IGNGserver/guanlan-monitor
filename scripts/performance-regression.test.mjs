@@ -5,11 +5,11 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { DesktopCacheStore } from '../apps/desktop/dist/main/cache-store.js';
-import { createRemoteSessionProbe } from '../apps/desktop/dist/main/runtime-profile.js';
 import { startVisiblePolling } from '../packages/console-ui/src/helpers/visiblePolling.ts';
 
 const desktopRequire = createRequire(new URL('../apps/desktop/package.json', import.meta.url));
+const sourceMode = process.env.DSC_DESKTOP_TEST_SOURCE === '1';
+const desktopModule = (file) => import(new URL(`../apps/desktop/${sourceMode ? 'src' : 'dist'}/${sourceMode ? file.replace(/\.js$/, '.ts') : file}`, import.meta.url));
 // `registerIpc` is exercised below, so the mock also has to satisfy the names
 // ipc.ts imports at module scope. The handlers it registers are captured so a
 // test can invoke them without a real Electron runtime, and the "owning window"
@@ -24,10 +24,12 @@ mock.module(desktopRequire.resolve('electron'), { namedExports: {
   nativeTheme: { prefersReducedTransparency: false, on: () => {}, removeListener: () => {} },
   BrowserWindow: { fromWebContents: () => mockedBrowserWindow }
 } });
-const { HubClient } = await import('../apps/desktop/dist/main/hub-client.js');
-const { DesktopController } = await import('../apps/desktop/dist/main/controller.js');
+const { DesktopCacheStore } = await desktopModule('main/cache-store.js');
+const { createRemoteSessionProbe } = await desktopModule('main/runtime-profile.js');
+const { HubClient } = await desktopModule('main/hub-client.js');
+const { DesktopController } = await desktopModule('main/controller.js');
 const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
-const snapshot = (n) => ({ generatedAt: String(n), devices: [{ deviceId: 'a' }], session: {
+const snapshot = (n) => ({ generatedAt: new Date(Date.now() - 1000 + n).toISOString(), source: 'live', devices: [{ deviceId: 'a', hostname: String(n) }], session: {
   authenticated: true, accessKeyConfigured: true, secret: 'must-not-persist'
 } });
 
@@ -56,9 +58,10 @@ test('live desktop responses cannot cross a Hub change or resurrect a signed-out
     assert.ok(!calls.some((url) => url.startsWith('https://third.example')), 'session changes before dispatch must not retarget an old query');
     await hub.login('fixture-admin');
     const next = hub.getLiveConnection('node'); await settle();
+    const denied = assert.rejects(next, /hub_session_changed/);
     await hub.logout();
     release(new Response('{}', { headers: { 'set-cookie': 'dsc_session=stale; Path=/' } }));
-    await assert.rejects(next, /hub_session_changed/);
+    await denied;
     await assert.rejects(hub.getLiveConnection('node'), /hub_login_required/);
   } finally { globalThis.fetch = original; }
 });
@@ -68,21 +71,21 @@ test('cache loads once, coalesces 12 refreshes, preserves latest offline data an
   try {
     const file = path.join(dir, 'desktop-cache.json');
     const cache = new DesktopCacheStore(dir);
-    assert.equal(await cache.read(), null);
-    await cache.write(snapshot(0));
+    assert.equal(await cache.read('fixture-scope'), null);
+    await cache.write(snapshot(0), 'fixture-scope');
     const first = await readFile(file, 'utf8');
-    for (let i = 1; i <= 12; i++) await cache.write(snapshot(i));
+    for (let i = 1; i <= 12; i++) await cache.write(snapshot(i), 'fixture-scope');
     assert.equal(await readFile(file, 'utf8'), first, 'refreshes within a minute must not rewrite disk');
-    assert.equal((await cache.read()).generatedAt, '12');
-    assert.equal((await cache.read()).session.secret, undefined);
+    assert.equal((await cache.read('fixture-scope')).devices[0].hostname, '12');
+    assert.equal((await cache.read('fixture-scope')).session.secret, undefined);
     await cache.flush();
-    assert.equal(JSON.parse(await readFile(file, 'utf8')).snapshot.generatedAt, '12');
+    assert.equal(JSON.parse(await readFile(file, 'utf8')).snapshot.devices[0].hostname, '12');
     await writeFile(file, 'invalid JSON');
-    assert.equal((await cache.read()).generatedAt, '12', 'hot reads must not reparse disk');
+    assert.equal((await cache.read('fixture-scope')).devices[0].hostname, '12', 'hot reads must not reparse disk');
     const corrupt = new DesktopCacheStore(dir);
-    assert.equal(await corrupt.read(), null);
-    await corrupt.write(snapshot(13));
-    assert.equal((await new DesktopCacheStore(dir).read()).generatedAt, '13');
+    assert.equal(await corrupt.read('fixture-scope'), null);
+    await corrupt.write(snapshot(13), 'fixture-scope');
+    assert.equal((await new DesktopCacheStore(dir).read('fixture-scope')).devices[0].hostname, '13');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -92,10 +95,10 @@ test('cache retries a failed write and preserves the newest snapshot', async () 
   try {
     await writeFile(blocker, 'x');
     const cache = new DesktopCacheStore(blocker);
-    await assert.rejects(cache.write(snapshot(1)));
+    await assert.rejects(cache.write(snapshot(1), 'fixture-scope'));
     await rm(blocker);
-    await cache.write(snapshot(2));
-    assert.equal((await new DesktopCacheStore(blocker).read()).generatedAt, '2');
+    await cache.write(snapshot(2), 'fixture-scope');
+    assert.equal((await new DesktopCacheStore(blocker).read('fixture-scope')).devices[0].hostname, '2');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -166,7 +169,7 @@ test('update metadata is cached per Hub/version and failures remain retryable', 
   assert.equal((await client.getUpdateInfo('3.0.30')).available, false);
 });
 
-test('desktop optional endpoints run concurrently without dropping successful data', async () => {
+test('desktop optional endpoints run with bounded concurrency without dropping successful data', async () => {
   const controller = new DesktopController();
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
@@ -179,9 +182,11 @@ test('desktop optional endpoints run concurrently without dropping successful da
   controller.readTrafficCalendar = async () => { called.push('calendar'); await gate; return null; };
   const pending = controller.readLiveData({ config: { connection: { secret: "" } } });
   await settle();
-  assert.equal(called.length, 4);
+  assert.equal(called.length, 2, 'only two optional reads may occupy the network at once');
   release();
   const result = await pending;
+  await settle();
+  assert.equal(called.length, 4, 'update metadata runs after interactive chart reads');
   assert.equal(result.metrics, null);
   assert.equal(result.overviewMetrics.endpoint, 'getOverviewMetrics');
   assert.equal(result.authenticated, true);
@@ -209,13 +214,13 @@ test('parallel session requests perform one authentication', async () => {
 });
 
 test('a hidden window is served from the current snapshot instead of the hub', async () => {
-  const { registerIpc } = await import('../apps/desktop/dist/main/ipc.js');
-  const { IPC_CHANNELS } = await import('../apps/desktop/dist/ipc-contract.js');
+  const { registerIpc } = await desktopModule('main/ipc.js');
+  const { IPC_CHANNELS } = await desktopModule('ipc-contract.js');
 
   const calls = { refresh: 0, getSnapshot: 0, pushed: 0 };
   const current = { generatedAt: 'now' };
   const controller = {
-    refresh: () => { calls.refresh += 1; return Promise.resolve(current); },
+    refresh: (request) => { calls.refresh += 1; calls.request = request; return Promise.resolve(current); },
     getSnapshot: () => { calls.getSnapshot += 1; return Promise.resolve(current); },
     subscribe: (listener) => { controller.emit = listener; return () => undefined; },
     updateLocalConfig: () => Promise.resolve(current),
@@ -251,7 +256,7 @@ test('a hidden window is served from the current snapshot instead of the hub', a
   assert.ok(refreshHandler, 'the refresh channel must be registered');
   // The trusted-sender check requires the sender to be the owning window and to
   // originate from the packaged renderer root.
-  const rendererPage = pathToFileURL(path.resolve('apps/desktop/dist/renderer/index.html')).href;
+  const rendererPage = pathToFileURL(path.resolve(`apps/desktop/${sourceMode ? 'src' : 'dist'}/renderer/index.html`)).href;
   const event = { sender: { id: 1 }, senderFrame: { url: rendererPage } };
 
   const result = await refreshHandler(event, undefined);
@@ -273,9 +278,15 @@ test('a hidden window is served from the current snapshot instead of the hub', a
   assert.equal(minimizedResult, current);
   controller.emit(current);
   assert.equal(calls.pushed, 1, 'a minimized window must not receive snapshot pushes');
+  window.minimized = false;
+  const request = { include: { overviewMetrics: true, deviceMetrics: false }, networkMode: 'saver', background: true };
+  await refreshHandler(event, request);
+  assert.deepEqual(calls.request, request, 'IPC must preserve the route budget and network policy');
+  assert.throws(() => refreshHandler(event, { include: { deviceMetrics: 'yes' } }), /invalid_include/);
+  assert.throws(() => refreshHandler(event, { networkMode: 'guess' }), /invalid_network_mode/);
 });
 
-test('packaged main and preload have no external npm runtime imports', async () => {
+test('packaged main and preload have no external npm runtime imports', { skip: sourceMode ? 'artifact assertion runs against CI-produced dist, not the source graph' : false }, async () => {
   const { readdir } = await import('node:fs/promises');
   const { builtinModules } = await import('node:module');
   const inspect = async (dir) => {

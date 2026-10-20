@@ -1,5 +1,6 @@
 import { safeStorage } from "electron";
 import { isIP } from "node:net";
+import { randomUUID } from "node:crypto";
 import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { desktopUpdatePlatform } from "./platform.js";
@@ -17,9 +18,10 @@ import type {
   UpdateInfo
 } from "@dsc/shared";
 import { writeJsonAtomically } from "./atomic-json.js";
+import { withReadDeadline } from "./read-deadline.js";
 
 interface StoredAccessKey {
-  version: 1;
+  version: 1 | 2;
   encrypted: boolean;
   value: string;
 }
@@ -28,6 +30,7 @@ interface StoredAccessKey {
 const OVERVIEW_CACHE_TTL_MS = 30_000;
 
 export class HubClient {
+  onSessionDenied?: () => void;
   private accessKey: string | null = null;
   private sessionCookie: string | null = null;
   private serverUrl = "";
@@ -35,15 +38,24 @@ export class HubClient {
   private overviewCache: { key: string; expiresAt: number; value: OverviewMetricsResponse } | null = null;
   private sessionInFlight: Promise<void> | null = null;
   private connectionEpoch = 0;
+  private identity: string = randomUUID();
+  private identityAbort = new AbortController();
+  private credentialWrites: Promise<void> = Promise.resolve();
 
   constructor(private readonly credentialPath: string) {}
 
   async initialize(): Promise<void> {
     try {
       const stored = JSON.parse(await readFile(this.credentialPath, "utf8")) as StoredAccessKey;
-      if (stored.version !== 1 || !stored.value) return;
+      if (![1, 2].includes(stored.version) || !stored.value) return;
       if (stored.encrypted && safeStorage.isEncryptionAvailable()) {
-        this.accessKey = safeStorage.decryptString(Buffer.from(stored.value, "base64"));
+        const decoded = safeStorage.decryptString(Buffer.from(stored.value, "base64"));
+        if (stored.version === 1) this.accessKey = decoded;
+        else {
+          const payload = JSON.parse(decoded) as { accessKey: string; identity: string };
+          if (typeof payload.accessKey !== "string" || !payload.accessKey || typeof payload.identity !== "string" || !/^[a-f0-9-]{36}$/.test(payload.identity)) return;
+          this.accessKey = payload.accessKey; this.identity = payload.identity;
+        }
       }
     } catch {
       // A missing or unreadable credential is the normal signed-out state.
@@ -74,6 +86,8 @@ export class HubClient {
       return false;
     } finally {
       if (previous !== this.serverUrl) {
+        this.identityAbort.abort(new Error("hub_session_changed"));
+        this.identityAbort = new AbortController();
         this.connectionEpoch++;
         this.sessionCookie = null;
         this.sessionInFlight = null;
@@ -85,6 +99,17 @@ export class HubClient {
 
   get isConfigured(): boolean {
     return Boolean(this.accessKey);
+  }
+
+  get cacheScope(): string | null { return this.accessKey && this.serverUrl ? `${this.serverUrl}\u001f${this.identity}` : null; }
+  get configuredUrl(): string { return this.serverUrl; }
+
+  invalidateSession(): void {
+    this.identityAbort.abort(new Error("hub_session_changed"));
+    this.identityAbort = new AbortController();
+    ++this.connectionEpoch;
+    this.sessionCookie = null; this.sessionInFlight = null;
+    this.overviewCache = null; this.updateCache = null;
   }
 
   /** The unified Hub credential is also the Agent upload credential. */
@@ -100,9 +125,14 @@ export class HubClient {
     const value = accessKey.trim();
     if (!value) throw new Error("access_key_required");
     if (replaceSession) {
+      this.identityAbort.abort(new Error("hub_session_changed"));
+      this.identityAbort = new AbortController();
       this.connectionEpoch++;
       this.sessionCookie = null;
       this.sessionInFlight = null;
+      this.overviewCache = null;
+      this.updateCache = null;
+      if (this.accessKey !== value) this.identity = randomUUID();
     }
     const epoch = this.connectionEpoch;
     const payload = await this.request<AuthLoginResponse>("/api/auth/login", {
@@ -113,12 +143,17 @@ export class HubClient {
     if (epoch !== this.connectionEpoch) throw new Error("hub_session_changed");
     if (!payload.ok) throw new Error("login_failed");
     this.accessKey = value;
-    await this.persistAccessKey(value);
+    await this.persistAccessKey(value, epoch);
   }
 
   async logout(): Promise<void> {
+    this.identityAbort.abort(new Error("hub_session_changed"));
+    this.identityAbort = new AbortController();
     const epoch = ++this.connectionEpoch;
     this.accessKey = null;
+    this.identity = randomUUID();
+    this.overviewCache = null;
+    this.updateCache = null;
     this.sessionInFlight = null;
     if (this.sessionCookie && this.serverUrl) {
       try {
@@ -129,16 +164,16 @@ export class HubClient {
     }
     if (epoch !== this.connectionEpoch) return;
     this.sessionCookie = null;
-    try {
-      await unlink(this.credentialPath);
-    } catch {
-      // The credential file may not exist.
-    }
+    const remove = this.credentialWrites.catch(() => {}).then(async () => {
+      if (epoch !== this.connectionEpoch) return;
+      await unlink(this.credentialPath).catch(() => {});
+    });
+    this.credentialWrites = remove;
+    await remove;
   }
 
-  async listDevices(): Promise<DeviceSummary[]> {
-    await this.ensureSession();
-    return this.request<DeviceSummary[]>("/api/instances");
+  async listDevices(signal?: AbortSignal): Promise<DeviceSummary[]> {
+    return this.authorized<DeviceSummary[]>("/api/instances", { signal });
   }
 
   async getLiveConnection(deviceId: string): Promise<LiveConnection> {
@@ -162,59 +197,56 @@ export class HubClient {
   }
 
   async deleteDevice(deviceId: string): Promise<void> {
-    await this.ensureSession();
-    await this.request<{ ok: boolean }>(`/api/devices/${encodeURIComponent(deviceId)}`, {
+    await this.authorized<{ ok: boolean }>(`/api/devices/${encodeURIComponent(deviceId)}`, {
       method: "DELETE"
     });
   }
 
   async reorderDevices(deviceIds: string[]): Promise<void> {
-    await this.ensureSession();
-    await this.request<{ ok: boolean }>("/api/devices/reorder", {
+    await this.authorized<{ ok: boolean }>("/api/devices/reorder", {
       method: "PUT",
       body: JSON.stringify({ deviceIds })
     });
   }
 
-  async getMetrics(deviceId: string, metricWindow: MetricWindow): Promise<MetricsResponse> {
-    await this.ensureSession();
-    return this.request<MetricsResponse>(`/api/devices/${encodeURIComponent(deviceId)}/metrics?window=${encodeURIComponent(metricWindow)}`);
+  async getMetrics(deviceId: string, metricWindow: MetricWindow, signal?: AbortSignal, pointBudget?: number): Promise<MetricsResponse> {
+    return this.authorized<MetricsResponse>(`/api/devices/${encodeURIComponent(deviceId)}/metrics?window=${encodeURIComponent(metricWindow)}${pointBudget ? `&pointBudget=${pointBudget}` : ""}`, { signal });
   }
 
-  async getOverviewMetrics(metricWindow: MetricWindow): Promise<OverviewMetricsResponse> {
+  async getOverviewMetrics(metricWindow: MetricWindow, signal?: AbortSignal, pointBudget?: number): Promise<OverviewMetricsResponse> {
     // The fleet-wide overview moves on the order of minutes, but the device page
     // polls it every refresh. A short cache keyed on window and hub removes the
     // redundant request without hiding a real change for long.
-    const key = `${this.serverUrl}|${metricWindow}`;
+    const key = `${this.cacheScope}|${metricWindow}|${pointBudget}`;
+    const epoch = this.connectionEpoch;
     if (this.overviewCache?.key === key && Date.now() < this.overviewCache.expiresAt) return this.overviewCache.value;
-    await this.ensureSession();
-    const value = await this.request<OverviewMetricsResponse>(`/api/overview/metrics?window=${encodeURIComponent(metricWindow)}`);
-    this.overviewCache = { key, expiresAt: Date.now() + OVERVIEW_CACHE_TTL_MS, value };
+    const value = await this.authorized<OverviewMetricsResponse>(`/api/overview/metrics?window=${encodeURIComponent(metricWindow)}${pointBudget ? `&pointBudget=${pointBudget}` : ""}`, { signal });
+    if (epoch === this.connectionEpoch && !signal?.aborted) this.overviewCache = { key, expiresAt: Date.now() + OVERVIEW_CACHE_TTL_MS, value };
     return value;
   }
 
   async getTrafficCalendar(
     deviceId: string,
     mode: TrafficCalendarMode,
-    anchor: string
+    anchor: string,
+    signal?: AbortSignal
   ): Promise<TrafficCalendarResponse> {
-    await this.ensureSession();
     const params = new URLSearchParams({ mode, anchor });
-    return this.request<TrafficCalendarResponse>(
-      `/api/devices/${encodeURIComponent(deviceId)}/traffic-calendar?${params.toString()}`
+    return this.authorized<TrafficCalendarResponse>(
+      `/api/devices/${encodeURIComponent(deviceId)}/traffic-calendar?${params.toString()}`, { signal }
     );
   }
 
   async saveFanNote(deviceId: string, fanId: string, note: string): Promise<void> {
-    await this.ensureSession();
-    await this.request(`/api/devices/${encodeURIComponent(deviceId)}/fans/${encodeURIComponent(fanId)}/note`, {
+    await this.authorized(`/api/devices/${encodeURIComponent(deviceId)}/fans/${encodeURIComponent(fanId)}/note`, {
       method: "PUT",
       body: JSON.stringify({ note: note.slice(0, 100) })
     });
   }
 
-  async getUpdateInfo(currentVersion: string): Promise<UpdateInfo> {
+  async getUpdateInfo(currentVersion: string, signal?: AbortSignal): Promise<UpdateInfo> {
     const key = `${this.serverUrl}|${currentVersion}`;
+    const epoch = this.connectionEpoch;
     if (this.updateCache?.key === key && Date.now() < this.updateCache.expiresAt) return this.updateCache.value;
     const platform = desktopUpdatePlatform();
     const params = new URLSearchParams({
@@ -222,8 +254,8 @@ export class HubClient {
       currentVersion,
       currentChannel: "test"
     });
-    const value = await this.request<UpdateInfo>(`/api/updates?${params.toString()}`, { includeSession: false });
-    this.updateCache = { key, expiresAt: Date.now() + 15 * 60_000, value };
+    const value = await this.request<UpdateInfo>(`/api/updates?${params.toString()}`, { includeSession: false, signal });
+    if (epoch === this.connectionEpoch && !signal?.aborted) this.updateCache = { key, expiresAt: Date.now() + 15 * 60_000, value };
     return value;
   }
 
@@ -240,14 +272,23 @@ export class HubClient {
     }
   }
 
-  private async persistAccessKey(value: string): Promise<void> {
+  private async authorized<T>(endpoint: string, init: RequestInit = {}): Promise<T> {
+    const epoch = this.connectionEpoch;
+    if (init.signal?.aborted) throw new Error("hub_request_cancelled");
+    await withReadDeadline(() => this.ensureSession(), [init.signal, this.identityAbort.signal]);
+    if (epoch !== this.connectionEpoch || init.signal?.aborted) throw new Error("hub_session_changed");
+    return this.request<T>(endpoint, init);
+  }
+
+  private async persistAccessKey(value: string, epoch: number): Promise<void> {
     if (!safeStorage.isEncryptionAvailable()) return;
-    const encrypted = safeStorage.encryptString(value).toString("base64");
-    await writeJsonAtomically(this.credentialPath, {
-      version: 1,
-      encrypted: true,
-      value: encrypted
-    } satisfies StoredAccessKey);
+    const encrypted = safeStorage.encryptString(JSON.stringify({ accessKey: value, identity: this.identity })).toString("base64");
+    const operation = this.credentialWrites.catch(() => {}).then(async () => {
+      if (epoch !== this.connectionEpoch) return;
+      await writeJsonAtomically(this.credentialPath, { version: 2, encrypted: true, value: encrypted } satisfies StoredAccessKey);
+    });
+    this.credentialWrites = operation;
+    await operation;
   }
 
   private async request<T = unknown>(
@@ -257,7 +298,7 @@ export class HubClient {
     if (!this.serverUrl) throw new Error("hub_server_url_missing");
     const serverUrl = this.serverUrl;
     const epoch = this.connectionEpoch;
-    const assertCurrent = () => { if (epoch !== this.connectionEpoch) throw new Error("hub_session_changed"); };
+    const assertCurrent = () => { if (epoch !== this.connectionEpoch || init.signal?.aborted) throw new Error("hub_session_changed"); };
     const { includeSession = true, ...requestInit } = init;
     const headers: Record<string, string> = {
       Accept: "application/json",
@@ -271,31 +312,25 @@ export class HubClient {
     if (includeSession && this.sessionCookie) {
       headers["Cookie"] = this.sessionCookie;
     }
-    const timeoutSignal = AbortSignal.timeout(15000);
-    let response = await fetch(`${serverUrl}${endpoint}`, {
-      ...requestInit,
-      headers,
-      signal: requestInit.signal ?? timeoutSignal
-    });
+    const send = () => withReadDeadline(async (signal) => {
+      const response = await fetch(`${serverUrl}${endpoint}`, { ...requestInit, headers, signal });
+      const text = await response.text();
+      return { response, text };
+    }, [requestInit.signal, this.identityAbort.signal]);
+    let { response, text } = await send();
     assertCurrent();
     this.captureSessionCookie(response);
 
-    // If 401 Unauthorized occurs on an authenticated request and we have an accessKey,
-    // attempt silent re-login once and replay the request.
-    if (response.status === 401 && includeSession && this.accessKey && endpoint !== "/api/auth/login") {
+    // Only idempotent GETs may reauthenticate and retry. Never replay a write.
+    if (response.status === 401 && includeSession && this.accessKey && (requestInit.method ?? "GET") === "GET") {
       if (this.sessionCookie === headers.Cookie) this.sessionCookie = null;
       try {
-        await this.ensureSession();
+        await withReadDeadline(() => this.ensureSession(), [requestInit.signal, this.identityAbort.signal]);
         assertCurrent();
         if (this.sessionCookie) {
           headers["Cookie"] = this.sessionCookie;
         }
-        const retryTimeoutSignal = AbortSignal.timeout(15000);
-        response = await fetch(`${serverUrl}${endpoint}`, {
-          ...requestInit,
-          headers,
-          signal: requestInit.signal ?? retryTimeoutSignal
-        });
+        ({ response, text } = await send());
         assertCurrent();
         this.captureSessionCookie(response);
       } catch {
@@ -304,7 +339,6 @@ export class HubClient {
       }
     }
 
-    const text = await response.text();
     assertCurrent();
     let payload: unknown = null;
     if (text.trim()) {
@@ -316,6 +350,7 @@ export class HubClient {
     }
     if (!response.ok) {
       const detail = typeof payload === "object" && payload && "error" in payload ? String(payload.error) : response.statusText;
+      if (includeSession && (response.status === 401 || response.status === 403)) this.onSessionDenied?.();
       throw new Error(`hub_${response.status}:${detail}`);
     }
     return payload as T;

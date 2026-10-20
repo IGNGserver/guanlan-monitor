@@ -38,6 +38,7 @@ export function registerIpc(
   };
 
   handle(IPC_CHANNELS.getSnapshot, (_event, request?: DesktopSnapshotRequest) => controller.getSnapshot(asSnapshotRequest(request)));
+  handle(IPC_CHANNELS.cancelSnapshot, () => controller.cancelSnapshot());
   handle(IPC_CHANNELS.getLiveConnection, (_event, deviceId: unknown) => {
     if (!isWindowVisible(getWindow)) throw new Error("live_view_hidden");
     return controller.bridge.live!.getLiveConnection(asString(deviceId, "device_id"));
@@ -57,7 +58,7 @@ export function registerIpc(
     // always report a hidden window as document.hidden). Answer from the current
     // snapshot instead of driving a full hub round trip for a view nobody sees;
     // the show handler in main refreshes immediately when the window returns.
-    if (!isWindowVisible(getWindow)) return controller.getSnapshot(snapshotRequest);
+    if (!isWindowVisible(getWindow)) { controller.cancelSnapshot?.(); return controller.getSnapshot(snapshotRequest, false); }
     return controller.refresh(snapshotRequest);
   });
   handle(IPC_CHANNELS.updateLocalConfig, (_event, patch: DesktopConfigPatch) => controller.updateLocalConfig(asConfigPatch(patch)));
@@ -283,6 +284,23 @@ function asSnapshotRequest(value: unknown): DesktopSnapshotRequest {
   if (record.preferCache !== undefined) {
     if (typeof record.preferCache !== "boolean") throw new Error("invalid_prefer_cache");
     request.preferCache = record.preferCache;
+  }
+  if (record.background !== undefined) {
+    if (typeof record.background !== "boolean") throw new Error("invalid_background");
+    request.background = record.background;
+  }
+  if (record.networkMode !== undefined) {
+    if (!["auto", "standard", "saver"].includes(record.networkMode as string)) throw new Error("invalid_network_mode");
+    request.networkMode = record.networkMode as DesktopSnapshotRequest["networkMode"];
+  }
+  if (record.include !== undefined) {
+    if (!record.include || typeof record.include !== "object" || Array.isArray(record.include)) throw new Error("invalid_include");
+    request.include = {};
+    for (const key of ["deviceMetrics", "overviewMetrics", "trafficCalendar"] as const) {
+      const value = (record.include as Record<string, unknown>)[key];
+      if (value !== undefined && typeof value !== "boolean") throw new Error("invalid_include");
+      if (typeof value === "boolean") request.include[key] = value;
+    }
   }
   return request;
 }

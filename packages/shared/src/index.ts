@@ -979,6 +979,7 @@ export interface DesktopRendererBridge {
   readonly live?: import("./live.js").ConsoleLivePort;
   getSnapshot(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot>;
   refresh(request?: DesktopSnapshotRequest): Promise<DesktopSnapshot>;
+  cancelSnapshot?(): Promise<void>;
   updateLocalConfig(patch: DesktopConfigPatch): Promise<DesktopSnapshot>;
   controlAgent(action: DesktopAgentControlAction): Promise<DesktopSnapshot>;
   saveHubConnection(serverUrl: string, accessKey: string): Promise<DesktopSnapshot>;

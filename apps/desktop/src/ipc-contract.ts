@@ -4,6 +4,7 @@ export const IPC_CHANNELS = {
   resetLiveCredentials: "dsc:reset-live-credentials",
   getSnapshot: "dsc:get-snapshot",
   refresh: "dsc:refresh",
+  cancelSnapshot: "dsc:cancel-snapshot",
   updateLocalConfig: "dsc:update-local-config",
   controlAgent: "dsc:control-agent",
   saveHubConnection: "dsc:save-hub-connection",

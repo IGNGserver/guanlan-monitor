@@ -65,6 +65,7 @@ jobs:
           pnpm test:workspace-contracts
           pnpm test:renderer-security
           pnpm test:hub-connection
+          pnpm test:desktop-loading
       - name: Build native agent and desktop
         run: |
           set -euo pipefail

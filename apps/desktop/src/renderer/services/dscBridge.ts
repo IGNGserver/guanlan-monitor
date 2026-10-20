@@ -78,6 +78,8 @@ class SafeDscBridge implements DesktopRendererBridge, WindowMaterialBridge {
     return this.fallbackSnapshot;
   }
 
+  async cancelSnapshot(): Promise<void> { await this.bridge?.cancelSnapshot?.(); }
+
   async updateLocalConfig(patch: DesktopConfigPatch): Promise<DesktopSnapshot> {
     return this.requireBridge().updateLocalConfig(patch);
   }
