@@ -117,8 +117,8 @@ export class WebConsoleAdapter implements ConsoleAdapter {
   /** Injectable clock so request budgeting can be tested without real waits. */
   now: () => number = () => Date.now();
 
-  establishSession(): Promise<void> {
-    if (this.sessionInFlight) return this.sessionInFlight;
+  establishSession(supersede = false): Promise<void> {
+    if (!supersede && this.sessionInFlight) return this.sessionInFlight;
     const operation = this.checkSession();
     this.sessionInFlight = operation;
     void operation.finally(() => {
@@ -239,7 +239,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
         if (document.hidden) { this.socket?.close(); this.socket = null; return; }
         // The visible poller also refreshes on foregrounding; this listener
         // restores connectivity immediately when the network comes back.
-        if (navigator.onLine) void this.loadSnapshot({ ...this.lastRequest, background: false }).catch(() => undefined);
+        if (navigator.onLine) void this.loadSnapshot({ ...this.lastRequest, background: false }, false, true).catch(() => undefined);
       };
       const disconnect = () => { this.sessionScope = null; this.socket?.close(); this.socket = null; void this.restoreOffline(this.lastRequest); };
       const resetSession = (event: StorageEvent) => {
@@ -274,9 +274,11 @@ export class WebConsoleAdapter implements ConsoleAdapter {
    * Background polls re-confirm the session only when it has gone unchecked for
    * a while; anything the user or the network triggered confirms it every time.
    */
-  private async ensureSession(background: boolean): Promise<void> {
-    if (background && this.sessionScope && this.now() - this.sessionCheckedAt < SESSION_RECHECK_MS) return;
-    await this.establishSession();
+  private async ensureSession(background: boolean, supersede = false): Promise<void> {
+    if (!supersede && background && this.sessionScope && this.now() - this.sessionCheckedAt < SESSION_RECHECK_MS) return;
+    // An explicit online transition is a new connectivity epoch, not another
+    // bootstrap consumer. A pre-recovery 401 must not invalidate its session.
+    await this.establishSession(supersede);
   }
 
   private async readUpdateInfo(): Promise<UpdateInfo | null> {
@@ -301,11 +303,11 @@ export class WebConsoleAdapter implements ConsoleAdapter {
     return value;
   }
 
-  private async loadSnapshot(request: ConsoleSnapshotRequest = {}, reuseSession = false): Promise<ConsoleSnapshot> {
+  private async loadSnapshot(request: ConsoleSnapshotRequest = {}, reuseSession = false, supersedeSession = false): Promise<ConsoleSnapshot> {
     const generation = ++this.generation;
     this.lastRequest = request;
     try {
-      await this.ensureSession(reuseSession || request.background === true);
+      await this.ensureSession(reuseSession || request.background === true, supersedeSession);
       if (generation !== this.generation) return this.snapshot;
       const scope = this.sessionScope!;
       const sessionGeneration = this.sessionGeneration;

@@ -294,3 +294,26 @@ test("successful deferred cache writes remain throttled on unchanged polls", asy
     } finally { stop(); }
   } finally { hub.restore(); }
 });
+
+test("explicit network recovery supersedes a pending session validation and ignores its stale 401", async () => {
+  const hub = installHub();
+  const stale = deferred<Response>();
+  try {
+    const canned = globalThis.fetch;
+    let sessions = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/api/auth/session") && ++sessions === 1) return stale.promise;
+      return canned(input);
+    }) as typeof fetch;
+    const adapter = adapterAt({ now: 1_000_000 });
+    const old = adapter.establishSession();
+    const rejected = assert.rejects(old, (error: unknown) => (error as { status?: number }).status === 401);
+    await adapter.establishSession(true);
+    await adapter.getSnapshot({ include: {} });
+    stale.resolve(json({}, 401));
+    await rejected;
+    assert.equal(sessions, 2, "recovery must dispatch a newer validation, not share pre-recovery work");
+    assert.equal((await adapter.getSnapshot({ include: {} })).source, "live");
+    assert.equal((await adapter.live.getLiveConnection("nas")) != null, true);
+  } finally { stale.resolve(json({}, 401)); hub.restore(); }
+});
