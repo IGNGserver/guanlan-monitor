@@ -253,6 +253,11 @@ fun DeviceListScreen(
         }
 
         if (!editMode && persisted.isNotEmpty()) {
+          if (state.overviewMetrics?.sampling != null) {
+            item(key = "sampled-overview") {
+              OneUiNotice(title = "省流趋势", description = "曲线保留分桶极值；均值仅基于展示点，流量总计不受影响。", tone = OneUiNoticeTone.Info)
+            }
+          }
           item(key = "fleet-status") {
             FleetStatusStrip(
               devices = persisted,
