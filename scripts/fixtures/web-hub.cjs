@@ -14,6 +14,7 @@ async function createFixtureProxy(upstreamUrl) {
       const id = request.headers.cookie?.match(/(?:^|;\s*)dsc-fixture=([^;]+)/)?.[1];
       const scenario = scenarios.get(id);
       if (!scenario) { response.writeHead(401); response.end("{}"); return; }
+      if (scenario.reads) scenario.reads.push({ path: url.pathname, at: Date.now() });
       if (url.pathname === "/api/auth/session") scenario.sessionReads = (scenario.sessionReads ?? 0) + 1;
       if (scenario.mode === "hang") return;
       if (scenario.mode === "network") { response.destroy(); return; }
@@ -22,6 +23,15 @@ async function createFixtureProxy(upstreamUrl) {
         response.end("{}"); return;
       }
       try {
+        const delayMs = scenario.delayPaths?.[url.pathname];
+        if (delayMs) {
+          const disconnected = await new Promise((resolve) => {
+            const timer = setTimeout(() => { response.removeListener("close", closed); resolve(false); }, delayMs);
+            const closed = () => { clearTimeout(timer); resolve(true); };
+            response.once("close", closed);
+          });
+          if (disconnected) return;
+        }
         if (url.pathname === "/api/auth/session" && scenario.sessionDelay) {
           const delayed = scenario.sessionDelay;
           delete scenario.sessionDelay;
