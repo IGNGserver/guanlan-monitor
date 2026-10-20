@@ -6,7 +6,9 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ServerConfig(
   val baseUrl: String = "",
-  val accessKey: String = ""
+  val accessKey: String = "",
+  val cacheIdentity: String = "",
+  val networkMode: String = "auto"
 )
 
 @Serializable
@@ -427,7 +429,8 @@ data class MetricsDto(
   val instanceMetricConfig: Map<String, List<String>> = emptyMap(),
   val availableMetrics: List<DeviceMetricOptionDto> = emptyList(),
   val latest: DeviceLatestDto,
-  val series: DeviceMetricSeriesDto
+  val series: DeviceMetricSeriesDto,
+  val sampling: SamplingDto? = null
 )
 
 @Serializable
@@ -444,8 +447,12 @@ data class OverviewInstanceSeriesDto(
 @Serializable
 data class OverviewMetricsDto(
   val window: String,
-  val instances: List<OverviewInstanceSeriesDto> = emptyList()
+  val instances: List<OverviewInstanceSeriesDto> = emptyList(),
+  val sampling: SamplingDto? = null
 )
+
+@Serializable
+data class SamplingDto(val method: String, val targetPoints: Int)
 
 @Serializable
 data class TrafficCalendarCellDto(

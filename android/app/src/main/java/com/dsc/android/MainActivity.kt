@@ -79,7 +79,8 @@ class MainActivity : ComponentActivity() {
           onStopLive = appViewModel::stopLive,
           onSetLivePaused = appViewModel::setLivePaused,
           onSetLiveInterval = appViewModel::setLiveInterval,
-          onResetLiveCredentials = appViewModel::resetLiveCredentials
+          onResetLiveCredentials = appViewModel::resetLiveCredentials,
+          onSetNetworkMode = appViewModel::setNetworkMode
         )
       )
     }

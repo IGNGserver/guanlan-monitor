@@ -196,12 +196,20 @@ fun SettingsScreen(
           OneUiGroup {
             OneUiListItem(
               title = "自动同步",
-              subtitle = "应用在前台时每 15 秒读取一次中枢数据",
+              subtitle = "仅前台同步；标准约 15 秒，省流至少 30 秒，失败退避最多 120 秒",
               leading = {
                 OneUiLeadingIcon(icon = Icons.Rounded.Timer, contentDescription = null, tone = OneUiIconTone.Neutral)
               }
             )
             OneUiListDivider()
+            for ((mode, label) in listOf("auto" to "自动", "standard" to "标准", "saver" to "省流")) {
+              OneUiListItem(
+                title = "网络模式 · $label",
+                subtitle = if (state.serverConfig.networkMode == mode) "当前模式" else "点按切换",
+                onClick = { actions.onSetNetworkMode(mode) }
+              )
+              OneUiListDivider()
+            }
             OneUiListItem(
               title = "立即刷新",
               subtitle = if (state.refreshing) "正在同步…" else "手动向中枢请求一次最新数据",

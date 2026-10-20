@@ -15,26 +15,33 @@ import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
+import android.os.SystemClock
 import okhttp3.OkHttpClient
 import retrofit2.HttpException
 
-class MainViewModel(application: Application) : AndroidViewModel(application) {
-  private val settingsRepository = SettingsRepository(application)
+class MainViewModel(
+  application: Application,
+  private val settingsRepository: ConnectionSettings = SettingsRepository(application),
+  private val remoteSnapshotCache: RemoteSnapshotCache = RemoteSnapshotCache(application),
+  private val createApi: (String) -> Triple<DeviceStateApi, InMemoryCookieJar, OkHttpClient> = ApiFactory(application)::create
+) : AndroidViewModel(application) {
   private val apiFactory = ApiFactory(application)
-  private val remoteSnapshotCache = RemoteSnapshotCache(application)
   // 按设备缓存指标与流量：离线切换设备时，设备页/流量页仍能展示最近一次成功读到的数据（交）
   private val deviceMetricsCache = mutableMapOf<String, MetricsDto>()
   private val deviceTrafficCache = mutableMapOf<String, TrafficCalendarDto>()
@@ -50,14 +57,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private var trafficLoadJob: Job? = null
   private var overviewLoadJob: Job? = null
   private var attentionLoadJob: Job? = null
-  private var refreshTicks = 0
   private var liveJob: Job? = null
   private var livePreviousDocker: LiveDockerDto? = null
   private var cacheWriteJob: Job? = null
   private var trafficAnchor: String = todayAnchor()
   private var trafficSelectedStart: String? = null
-  private var lastAutoLoginSignature: String? = null
   private var appInForeground = false
+  private var connectionGeneration = 0L
+  private var remoteSession = RemoteSession()
+  private var loginJob: Job? = null
+  private var summaryJob: Job? = null
+  private var cacheReadJob: Job? = null
+  private var liveAccepted = false
+  private var summaryDurationMs = 0.0
+  private var readFailures = 0
+  private val optionalFailures = mutableMapOf<String, Int>()
+  private var optionalReads = Semaphore(2)
+  private fun readPolicy() = remoteReadPolicy(_state.value.serverConfig.networkMode, summaryDurationMs)
+  private fun optionalFailed(key: String) { optionalFailures[key] = ((optionalFailures[key] ?: 0) + 1).coerceAtMost(4) }
 
   private val blockMetrics = mapOf(
     DeviceBlockKey.Cpu to listOf("cpuUsage", "cpuFrequency", "cpuTemperature"),
@@ -72,47 +89,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   init {
     viewModelScope.launch {
-      remoteSnapshotCache.read()?.let { cached ->
-        applyCachedSnapshot(cached)
-      }
-    }
-    viewModelScope.launch {
-      settingsRepository.settings().collectLatest { config ->
-        _state.update { current ->
-          val targetScreen = when {
-            current.authenticated -> current.currentScreen
-            config.baseUrl.isNotBlank() && (current.dataSource == RemoteDataSource.Cache || current.devices.isNotEmpty()) -> {
-              if (current.currentScreen != AppScreen.Login) current.currentScreen else AppScreen.DeviceList
-            }
-            config.baseUrl.isNotBlank() -> AppScreen.DeviceList
-            else -> AppScreen.Login
+      settingsRepository.settings().catch {
+        _state.update { it.copy(loading = false, message = "无法读取安全连接配置，请重新打开应用后重试") }
+      }.collectLatest { config ->
+        val previous = _state.value.serverConfig
+        val changed = previous.baseUrl != config.baseUrl || previous.accessKey != config.accessKey || previous.cacheIdentity != config.cacheIdentity
+        if (!changed && api != null) {
+          _state.update { it.copy(serverConfig = config, loading = false) }
+          if (previous.networkMode != config.networkMode) {
+            cancelOptionalReads()
+            optionalReads = Semaphore(readPolicy().concurrency)
+            loadForCurrentScreen()
           }
-          current.copy(
-            serverConfig = config,
-            loading = false,
-            currentScreen = targetScreen
-          )
+          return@collectLatest
         }
-        if (config.baseUrl.isNotBlank()) {
-          if (configureApiClient(config.baseUrl)) {
-            val signature = "${config.baseUrl}\n${config.accessKey}"
-            val shouldAutoLogin =
-              config.accessKey.isNotBlank() &&
-                signature != lastAutoLoginSignature &&
-                !_state.value.savingConfig &&
-                !_state.value.loggingIn &&
-                !_state.value.authenticated
-            if (shouldAutoLogin) {
-              lastAutoLoginSignature = signature
-              login()
+        ++connectionGeneration
+        stopRemoteActivity(clearCache = false)
+        cacheReadJob?.cancel()
+        deviceMetricsCache.clear(); deviceTrafficCache.clear()
+        remoteSession = RemoteSession(); liveAccepted = false
+        summaryDurationMs = 0.0; readFailures = 0; optionalFailures.clear()
+        clearScreenBackStack()
+        _state.value = AppState(serverConfig = config, loading = false, currentScreen = if (config.baseUrl.isBlank()) AppScreen.Login else AppScreen.DeviceList)
+        api = null; httpClient = null
+        if (previous.baseUrl.isNotBlank() && cacheScope(previous) != cacheScope(config)) {
+          remoteResult { remoteSnapshotCache.clear() }
+        }
+        optionalReads = Semaphore(readPolicy().concurrency)
+        if (config.baseUrl.isNotBlank() && configureApiClient(config.baseUrl)) {
+          val generation = connectionGeneration
+          cacheReadJob = viewModelScope.launch {
+            remoteSnapshotCache.read(cacheScope(config))?.let { cached ->
+              if (generation == connectionGeneration && !liveAccepted) applyCachedSnapshot(cached)
             }
           }
-        } else {
-          stopRemoteActivity(clearCache = false)
-          api = null
-          httpClient = null
-          lastAutoLoginSignature = null
-          clearScreenBackStack()
+          if (config.accessKey.isNotBlank()) login()
         }
       }
     }
@@ -121,13 +132,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   fun onAppForeground() {
     appInForeground = true
     if (_state.value.live?.paused == false) launchLiveLoop()
-    if (_state.value.serverConfig.baseUrl.isNotBlank() && _state.value.serverConfig.accessKey.isNotBlank()) {
-      if (!_state.value.loggingIn && !_state.value.refreshing) {
-        login()
-      }
-    } else if (_state.value.authenticated) {
+    if (_state.value.authenticated) {
       startRefreshLoop()
       refresh()
+    } else if (_state.value.serverConfig.accessKey.isNotBlank()) {
+      login()
     }
   }
 
@@ -177,7 +186,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val live = _state.value.live ?: return
     viewModelScope.launch {
       _state.update { state -> state.copy(live = state.live?.copy(resetState = LiveResetState.Pending)) }
-      val ok = runCatching { executeWithAuthRetry { it.resetLiveCredentials(live.deviceId) } }.isSuccess
+      val ok = remoteResult { executeWithAuthRetry { it.resetLiveCredentials(live.deviceId) } }.isSuccess
       _state.update { state ->
         state.copy(
           live = state.live?.copy(resetState = if (ok) LiveResetState.Done else LiveResetState.Failed),
@@ -199,14 +208,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         try {
           if (!_state.value.authenticated) throw LiveQueryException("hub_login_required")
           if (disconnected) {
-            val connection = executeWithAuthRetry { it.liveConnection(live.deviceId) }
+            val connection = executeRead { it.liveConnection(live.deviceId) }
             updateLive(live) { it.copy(conflictAt = if (connection.state == "ready") null else connection.identityConflictAt) }
             if (connection.state != "ready") throw LiveQueryException("device_not_connected")
             if (live.topic.value !in connection.capabilities) throw LiveQueryException("device_capability_unavailable")
             disconnected = false
           }
           val snapshot = kotlinx.coroutines.withTimeoutOrNull(LIVE_QUERY_TIMEOUT_MS) {
-            executeWithAuthRetry { api ->
+            executeRead { api ->
               when (live.topic) {
                 LiveTopic.Metrics -> api.liveMetrics(live.deviceId)
                 LiveTopic.Processes -> api.liveProcesses(live.deviceId)
@@ -248,7 +257,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           if (!failure.transient) livePreviousDocker = null
           if (code in disconnectedLiveCodes && !disconnected) {
             disconnected = true
-            runCatching { executeWithAuthRetry { it.liveConnection(live.deviceId) } }.getOrNull()?.let { connection ->
+            remoteResult { executeRead { it.liveConnection(live.deviceId) } }.getOrNull()?.let { connection ->
               updateLive(live) { it.copy(conflictAt = if (connection.state == "ready") null else connection.identityConflictAt) }
             }
           }
@@ -314,27 +323,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       }
 
       val canonicalBaseUrl = resolvedBaseUrl.removeSuffix("/")
-      if (runCatching { settingsRepository.save(ServerConfig(baseUrl = canonicalBaseUrl, accessKey = accessKey)) }.isFailure) {
+      if (remoteResult { settingsRepository.save(_state.value.serverConfig.copy(baseUrl = canonicalBaseUrl, accessKey = accessKey)) }.isFailure) {
         _state.update { it.copy(savingConfig = false, message = "保存配置失败") }
-        return@launch
-      }
-
-      if (!configureApiClient(canonicalBaseUrl)) {
-        _state.update { it.copy(savingConfig = false) }
         return@launch
       }
 
       // Login is the meaningful result of this form; a separate saved message
       // made a successful connection look like two unrelated steps.
       _state.update { it.copy(savingConfig = false, message = null) }
-      lastAutoLoginSignature = "${canonicalBaseUrl}\n${accessKey}"
-      login()
+      // The atomic settings emission owns client replacement and login.
     }
   }
 
   private fun configureApiClient(baseUrl: String): Boolean {
     stopRemoteActivity(clearCache = false)
-    return runCatching { apiFactory.create(baseUrl) }
+    return runCatching { createApi(baseUrl) }
       .onSuccess { created ->
         api = created.first
         httpClient = created.third
@@ -354,38 +357,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun logout() {
+    val previousApi = api
+    ++connectionGeneration
+    stopRemoteActivity(clearCache = true)
+    cacheReadJob?.cancel()
+    remoteSession = RemoteSession(); liveAccepted = true
+    api = null; httpClient = null
+    _state.value = AppState(loading = false, currentScreen = AppScreen.Login, message = "已登出")
     viewModelScope.launch {
-      runCatching { api?.logout() }
-      stopRemoteActivity(clearCache = true)
-      settingsRepository.clear()
-      clearScreenBackStack()
-      api = null
-      httpClient = null
-      _state.update {
-        it.copy(
-          serverConfig = ServerConfig(),
-          authenticated = false,
-          dataSource = RemoteDataSource.Empty,
-          cacheSavedAt = null,
-          devices = emptyList(),
-          selectedDeviceId = null,
-          metrics = null,
-          overviewMetrics = null,
-          attentionMetrics = emptyMap(),
-          attentionCheckedAt = null,
-          live = null,
-          trafficCalendar = null,
-          metricConfig = null,
-          loadingMetrics = false,
-          loadingTraffic = false,
-          metricsError = null,
-          trafficError = null,
-          loggingIn = false,
-          currentScreen = AppScreen.Login,
-          transitionDirection = ScreenTransitionDirection.None,
-          message = "已登出"
-        )
+      remoteResult { settingsRepository.clear() }.onFailure {
+        _state.update { it.copy(message = "本机会话已退出，但安全配置清除失败，请重试登出") }
       }
+      remoteResult { previousApi?.logout() }
     }
   }
 
@@ -401,12 +384,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       return
     }
 
-    viewModelScope.launch {
+    if (loginJob?.isActive == true) return
+    val generation = connectionGeneration
+    val session = remoteSession
+    loginJob = viewModelScope.launch {
       _state.update { it.copy(loggingIn = true, message = null) }
-      runCatching {
-        currentApi.login(LoginRequestDto(current.serverConfig.accessKey))
-        currentApi.devices()
+      remoteResult {
+        val started = SystemClock.elapsedRealtime()
+        session.ensure({ generation == connectionGeneration && api === currentApi }) {
+          currentApi.login(LoginRequestDto(current.serverConfig.accessKey))
+        }
+        val devices = executeRead { it.devices() }
+        summaryDurationMs = (SystemClock.elapsedRealtime() - started).toDouble()
+        devices
       }.onSuccess { devices ->
+        currentCoroutineContext().ensureActive()
+        if (generation != connectionGeneration) return@onSuccess
+        liveAccepted = true
         val visibleDevices = devices
           .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
         val selectedDeviceId = current.selectedDeviceId?.takeIf { id -> visibleDevices.any { it.deviceId == id } }
@@ -429,15 +423,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           )
         }
         checkForUpdate()
-        loadOverviewMetrics(_state.value.overviewWindow)
-        loadAttentionMetrics()
-        selectedDeviceId?.let {
-          loadMetrics(it, current.selectedWindow, showScreen = false)
-          loadTraffic(it, _state.value.trafficMode, showScreen = false)
-        }
+        loadForCurrentScreen()
         startRefreshLoop()
         persistRemoteSnapshot()
       }.onFailure { error ->
+        if (generation != connectionGeneration) return@onFailure
+        if (isDenied(error)) { denyRemote(); return@onFailure }
         val hasCache = _state.value.devices.isNotEmpty() || _state.value.dataSource == RemoteDataSource.Cache
         if (!hasCache) {
           clearScreenBackStack()
@@ -467,7 +458,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val client = httpClient ?: return
     viewModelScope.launch {
       _state.update { it.copy(updateDownloading = true, updateProgress = 0f, message = null) }
-      runCatching {
+      remoteResult {
         withContext(Dispatchers.IO) {
           val request = okhttp3.Request.Builder().url(assetUrl).get().build()
           client.newCall(request).execute().use { response ->
@@ -524,7 +515,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val config = _state.value.serverConfig
     if (config.baseUrl.isBlank()) return
     viewModelScope.launch {
-      val result = runCatching {
+      val result = remoteResult {
         currentApi.updateInfo(
           platform = "android",
           currentVersion = BuildConfig.RELEASE_VERSION,
@@ -552,7 +543,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     pushCurrentScreen()
     val switchingDevice = _state.value.selectedDeviceId != deviceId
     // 换设备时优先展示这台设备的按设备缓存，读取失败也不会退回骨架屏（交）
-    val cachedMetrics = deviceMetricsCache[deviceId]
+    val cachedMetrics = deviceMetricsCache[deviceId]?.takeIf { it.window == _state.value.selectedWindow.value }
     _state.update {
       it.copy(
         selectedDeviceId = deviceId,
@@ -572,7 +563,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   fun openTraffic(deviceId: String) {
     pushCurrentScreen()
     val switchingDevice = _state.value.selectedDeviceId != deviceId
-    val cachedTraffic = deviceTrafficCache[deviceId]
+    val cachedTraffic = deviceTrafficCache[deviceId]?.takeIf { it.mode == _state.value.trafficMode.value && it.anchor == trafficAnchor }
     _state.update {
       it.copy(
         selectedDeviceId = deviceId,
@@ -580,7 +571,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         transitionDirection = ScreenTransitionDirection.Forward,
         // 换设备时不能把上一台的日历留在屏幕上，否则标题与数字对不上（交）
         trafficCalendar = if (switchingDevice) cachedTraffic else it.trafficCalendar,
-        metrics = if (switchingDevice) deviceMetricsCache[deviceId] else it.metrics,
+        metrics = if (switchingDevice) deviceMetricsCache[deviceId]?.takeIf { cached -> cached.window == it.selectedWindow.value } else it.metrics,
         trafficError = if (switchingDevice) null else it.trafficError,
         message = null
       )
@@ -640,6 +631,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
       }
     }
+    loadForCurrentScreen()
   }
 
   fun openDeviceEditor(deviceId: String) {
@@ -710,7 +702,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val currentApi = api ?: return
     viewModelScope.launch {
       _state.update { it.copy(savingMetricConfig = true, message = null) }
-      runCatching {
+      remoteResult {
         executeWithAuthRetry {
           it.saveMetricConfig(
             editingDeviceId,
@@ -750,7 +742,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun selectWindow(window: MetricWindow) {
-    _state.update { it.copy(selectedWindow = window) }
+    _state.update { it.copy(selectedWindow = window, metrics = it.selectedDeviceId?.let { id -> deviceMetricsCache[id] }?.takeIf { cached -> cached.window == window.value }) }
     _state.value.selectedDeviceId?.let { loadMetrics(it, window, showScreen = false) }
   }
 
@@ -778,7 +770,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   fun selectTrafficMode(mode: TrafficCalendarMode) {
     trafficSelectedStart = null
     trafficAnchor = todayAnchor()
-    _state.update { it.copy(trafficMode = mode) }
+    _state.update { it.copy(trafficMode = mode, trafficCalendar = null) }
     _state.value.selectedDeviceId?.let { loadTraffic(it, mode, showScreen = false) }
   }
 
@@ -789,33 +781,56 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   fun shiftTrafficAnchor(direction: Int) {
     trafficAnchor = shiftAnchor(trafficAnchor, _state.value.trafficMode, direction)
+    _state.update { it.copy(trafficCalendar = null) }
     _state.value.selectedDeviceId?.let { loadTraffic(it, _state.value.trafficMode, showScreen = false) }
   }
 
   fun refresh() {
-    viewModelScope.launch { refreshOnce(showIndicator = true) }
+    if (summaryJob?.isActive == true) return
+    summaryJob = viewModelScope.launch { refreshOnce(showIndicator = true) }
+  }
+
+  private fun refreshAfterWrite() {
+    summaryJob?.cancel(); summaryJob = null
+    refreshLoopJob?.cancel(); refreshLoopJob = null
+    cancelOptionalReads()
+    refresh()
+    startRefreshLoop()
   }
 
   private suspend fun <T> executeWithAuthRetry(block: suspend (DeviceStateApi) -> T): T {
+    return executeRemote(read = false, block = block)
+  }
+
+  private suspend fun <T> executeRead(block: suspend (DeviceStateApi) -> T): T = executeRemote(read = true, block = block)
+
+  private suspend fun <T> executeRemote(read: Boolean, block: suspend (DeviceStateApi) -> T): T {
     val currentApi = api ?: throw IllegalStateException("api_not_configured")
-    return try {
-      block(currentApi)
+    val generation = connectionGeneration
+    val config = _state.value.serverConfig
+    val session = remoteSession
+    val current = { generation == connectionGeneration && currentApi === api }
+    try {
+      return session.execute(read, current, { (it as? HttpException)?.code() == 401 }, {
+        currentApi.login(LoginRequestDto(config.accessKey))
+      }) { block(currentApi) }
     } catch (error: Throwable) {
       if (error is CancellationException) throw error
-      val isUnauthorized = (error as? HttpException)?.code() == 401
-      val accessKey = _state.value.serverConfig.accessKey
-      if (isUnauthorized && accessKey.isNotBlank()) {
-        try {
-          currentApi.login(LoginRequestDto(accessKey))
-          block(currentApi)
-        } catch (retryError: Throwable) {
-          if (retryError is CancellationException) throw retryError
-          throw retryError
-        }
-      } else {
-        throw error
-      }
+      if (!current()) throw CancellationException("remote_identity_changed")
+      if (isDenied(error)) denyRemote()
+      throw error
     }
+  }
+
+  private fun isDenied(error: Throwable) = (error as? HttpException)?.code() in setOf(401, 403)
+
+  private fun denyRemote() {
+    val config = _state.value.serverConfig
+    ++connectionGeneration
+    remoteSession = RemoteSession(); liveAccepted = true
+    stopRemoteActivity(clearCache = true)
+    cacheReadJob?.cancel()
+    _state.value = AppState(serverConfig = config, loading = false, currentScreen = AppScreen.DeviceList, message = "会话已失效，请重新连接")
   }
 
   private suspend fun refreshOnce(showIndicator: Boolean) = refreshMutex.withLock {
@@ -824,15 +839,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       _state.update { it.copy(refreshing = true, message = null) }
     }
     try {
-      val devices = executeWithAuthRetry { it.devices() }
-      val window = _state.value.selectedWindow
-      val overviewWindow = _state.value.overviewWindow
-      val overview = try {
-        executeWithAuthRetry { it.overviewMetrics(overviewWindow.value) }
-      } catch (error: Throwable) {
-        if (error is CancellationException) throw error
-        null
-      }
+      val started = SystemClock.elapsedRealtime()
+      val devices = executeRead { it.devices() }
+      val duration = (SystemClock.elapsedRealtime() - started).toDouble()
+      summaryDurationMs = if (summaryDurationMs == 0.0) duration else summaryDurationMs * 0.7 + duration * 0.3
+      readFailures = 0
+      liveAccepted = true
       val visibleDevices = devices
         .sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
       val selectedDeviceId = _state.value.selectedDeviceId?.takeIf { id -> visibleDevices.any { it.deviceId == id } }
@@ -844,25 +856,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           cacheSavedAt = savedAt,
           devices = devices,
           selectedDeviceId = selectedDeviceId,
-          overviewMetrics = overview ?: it.overviewMetrics.takeIf { cached -> cached?.window == overviewWindow.value },
           refreshing = false,
           message = null
         )
       }
       persistRemoteSnapshot()
-      if (showIndicator) loadAttentionMetrics()
-      val screen = _state.value.currentScreen
-      if (selectedDeviceId != null) {
-        // 后台轮询走静默路径：数据到了直接换，不让页面进加载态；手动刷新才给可见反馈（交）
-        if (screen == AppScreen.DeviceDetail) {
-          loadMetrics(selectedDeviceId, window, showScreen = false, silent = !showIndicator)
-        }
-        if (screen == AppScreen.Traffic) {
-          loadTraffic(selectedDeviceId, _state.value.trafficMode, showScreen = false, silent = !showIndicator)
-        }
-      }
+      loadForCurrentScreen(silent = !showIndicator)
     } catch (error: Throwable) {
       if (error is CancellationException) throw error
+      if (isDenied(error)) return@withLock
+      readFailures = (readFailures + 1).coerceAtMost(4)
       _state.update {
         it.copy(
           dataSource = if (it.devices.isEmpty()) RemoteDataSource.Empty else RemoteDataSource.Cache,
@@ -876,9 +879,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   fun deleteDevice(deviceId: String) {
     viewModelScope.launch {
-      runCatching { executeWithAuthRetry { it.deleteDevice(deviceId) } }
+      remoteResult { executeWithAuthRetry { it.deleteDevice(deviceId) } }
         .onSuccess {
-          refresh()
+          refreshAfterWrite()
         }
         .onFailure { error ->
           _state.update { it.copy(message = userFacingError(error, "删除失败，请稍后重试")) }
@@ -888,9 +891,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   fun reorderDevices(deviceIds: List<String>) {
     viewModelScope.launch {
-      runCatching { executeWithAuthRetry { it.reorderDevices(DeviceReorderPayloadDto(deviceIds)) } }
+      remoteResult { executeWithAuthRetry { it.reorderDevices(DeviceReorderPayloadDto(deviceIds)) } }
         .onSuccess {
-          refresh()
+          refreshAfterWrite()
         }
         .onFailure { error ->
           _state.update { it.copy(message = userFacingError(error, "设备顺序保存失败，请稍后重试")) }
@@ -900,16 +903,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   private fun loadMetrics(deviceId: String, window: MetricWindow, showScreen: Boolean, silent: Boolean = false) {
     metricsLoadJob?.cancel()
+    if (!_state.value.authenticated || !appInForeground) return
     metricsLoadJob = viewModelScope.launch {
       // 静默路径（15 秒自动轮询）不进入可见加载态：页面不灰化、不挡交互（交）
       if (!silent) {
         _state.update { it.copy(loadingMetrics = true, message = null, metricsError = null) }
       }
       try {
-        val metrics = executeWithAuthRetry { it.metrics(deviceId, window.value) }
+        val metrics = optionalReads.withPermit { executeRead { it.metrics(deviceId, window.value, readPolicy().pointBudget) } }
+        optionalFailures.remove("metrics")
         // 记入按设备缓存：离线浏览这台设备时仍能展示最近一次成功的数据（交）
         deviceMetricsCache[deviceId] = metrics
-        _state.update { it.copy(attentionMetrics = it.attentionMetrics + (deviceId to metrics)) }
+        while (deviceMetricsCache.size > 8) deviceMetricsCache.remove(deviceMetricsCache.keys.first())
         val isCurrentRequest = _state.value.selectedDeviceId == deviceId && _state.value.selectedWindow == window
         if (isCurrentRequest) {
           _state.update {
@@ -926,12 +931,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
       } catch (error: Throwable) {
         if (error is CancellationException) throw error
+        if (isDenied(error)) return@launch
+        optionalFailed("metrics")
         if (_state.value.selectedDeviceId == deviceId && _state.value.selectedWindow == window) {
           val reason = userFacingError(error, "读取指标失败，请稍后重试")
           // 失败原因要留在页面上（而不是只闪一条 3 秒的消息条），否则页面会停在骨架屏上
           // 让人以为还在加载（交：错误态必须带重试出口）。有缓存就展示缓存，只在
           // 没有缓存时才把错误态铺满页面，否则离线换设备会退回骨架屏。
-          val cached = deviceMetricsCache[deviceId]
+          val cached = deviceMetricsCache[deviceId]?.takeIf { it.window == window.value }
           _state.update {
             it.copy(
               loadingMetrics = false,
@@ -950,15 +957,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val requestedAnchor = trafficAnchor
     val requestedSelectedStart = trafficSelectedStart
     trafficLoadJob?.cancel()
+    if (!_state.value.authenticated || !appInForeground) return
     trafficLoadJob = viewModelScope.launch {
       // 静默路径（15 秒自动轮询）不进入可见加载态（交）
       if (!silent) {
         _state.update { it.copy(loadingTraffic = true, message = null, trafficError = null) }
       }
       try {
-        val traffic = executeWithAuthRetry { it.trafficCalendar(deviceId, mode.value, requestedAnchor, requestedSelectedStart) }
+        val traffic = optionalReads.withPermit { executeRead { it.trafficCalendar(deviceId, mode.value, requestedAnchor, requestedSelectedStart) } }
+        optionalFailures.remove("traffic")
         // 记入按设备缓存：离线浏览这台设备时仍能展示最近一次成功的数据（交）
         deviceTrafficCache[deviceId] = traffic
+        while (deviceTrafficCache.size > 8) deviceTrafficCache.remove(deviceTrafficCache.keys.first())
         val isCurrentRequest =
           _state.value.selectedDeviceId == deviceId &&
             _state.value.trafficMode == mode &&
@@ -980,10 +990,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
       } catch (error: Throwable) {
         if (error is CancellationException) throw error
+        if (isDenied(error)) return@launch
+        optionalFailed("traffic")
         if (_state.value.selectedDeviceId == deviceId && _state.value.trafficMode == mode) {
           val reason = userFacingError(error, "读取流量失败，请稍后重试")
           // 与指标同理：有缓存就展示缓存，只在没有缓存时才把错误态铺满页面（交）
-          val cached = deviceTrafficCache[deviceId]
+          val cached = deviceTrafficCache[deviceId]?.takeIf { it.mode == mode.value && it.anchor == requestedAnchor && it.cells.any { cell -> cell.isSelected && cell.rangeStart == requestedSelectedStart } }
           _state.update {
             it.copy(
               loadingTraffic = false,
@@ -1000,9 +1012,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   private fun loadOverviewMetrics(window: MetricWindow) {
     overviewLoadJob?.cancel()
+    if (!_state.value.authenticated || !appInForeground) return
     overviewLoadJob = viewModelScope.launch {
       try {
-        val overview = executeWithAuthRetry { it.overviewMetrics(window.value) }
+        val overview = optionalReads.withPermit { executeRead { it.overviewMetrics(window.value, readPolicy().pointBudget) } }
+        optionalFailures.remove("overview")
         if (_state.value.overviewWindow == window) {
           _state.update {
             it.copy(
@@ -1015,6 +1029,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
       } catch (error: Throwable) {
         if (error is CancellationException) throw error
+        if (isDenied(error)) return@launch
+        optionalFailed("overview")
       }
     }
   }
@@ -1024,22 +1040,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
    * 失败的设备保留上一次的快照，规则宁可用稍旧的数据也不凭空清零。
    */
   private fun loadAttentionMetrics() {
+    if (_state.value.currentScreen != AppScreen.Attention || !_state.value.authenticated || !appInForeground) return
     if (attentionLoadJob?.isActive == true) return
     val online = _state.value.devices.filter { it.status == "online" }.map { it.deviceId }
     if (online.isEmpty()) return
     attentionLoadJob = viewModelScope.launch {
-      val results = kotlinx.coroutines.coroutineScope {
-        online.map { deviceId ->
-          async {
-            try {
-              deviceId to executeWithAuthRetry { it.metrics(deviceId, MetricWindow.FiveMinutes.value) }
-            } catch (error: Throwable) {
-              if (error is CancellationException) throw error
-              null
+      val results = mutableListOf<Pair<String, MetricsDto>>()
+      val remaining = java.util.ArrayDeque(online)
+      var failed = false
+      kotlinx.coroutines.coroutineScope {
+        repeat(minOf(readPolicy().concurrency, online.size)) {
+          launch {
+            while (remaining.isNotEmpty()) {
+              val deviceId = remaining.removeFirst()
+              try {
+                // Rules need full fidelity, never compute averages from extrema sampling.
+                results += optionalReads.withPermit { deviceId to executeRead { it.metrics(deviceId, MetricWindow.FiveMinutes.value) } }
+              } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                if (isDenied(error)) return@launch
+                failed = true
+              }
             }
           }
-        }.awaitAll().filterNotNull()
+        }
       }
+      if (failed) optionalFailed("attention") else optionalFailures.remove("attention")
       if (results.isEmpty()) return@launch
       _state.update { current ->
         val alive = current.devices.map { it.deviceId }.toSet()
@@ -1058,7 +1084,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     showMessage: Boolean
   ) {
     viewModelScope.launch {
-      runCatching { executeWithAuthRetry { it.metricConfig(deviceId) } }
+      remoteResult { executeRead { it.metricConfig(deviceId) } }
         .onSuccess { config ->
           _state.update {
             it.copy(
@@ -1079,22 +1105,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
+  private fun cancelOptionalReads() {
+    metricsLoadJob?.cancel(); metricsLoadJob = null
+    trafficLoadJob?.cancel(); trafficLoadJob = null
+    overviewLoadJob?.cancel(); overviewLoadJob = null
+    attentionLoadJob?.cancel(); attentionLoadJob = null
+    _state.update { it.copy(loadingMetrics = false, loadingTraffic = false) }
+  }
+
+  private fun loadForCurrentScreen(silent: Boolean = false) {
+    cancelOptionalReads()
+    optionalReads = Semaphore(readPolicy().concurrency)
+    if (!appInForeground || !_state.value.authenticated) return
+    val current = _state.value
+    when (current.currentScreen) {
+      AppScreen.DeviceList -> loadOverviewMetrics(current.overviewWindow)
+      AppScreen.DeviceDetail -> current.selectedDeviceId?.let { loadMetrics(it, current.selectedWindow, false, silent) }
+      AppScreen.Traffic -> current.selectedDeviceId?.let {
+        loadMetrics(it, current.selectedWindow, false, silent)
+        loadTraffic(it, current.trafficMode, false, silent)
+      }
+      AppScreen.Attention -> loadAttentionMetrics()
+      else -> Unit
+    }
+  }
+
+  fun setNetworkMode(mode: String) {
+    if (mode !in setOf("auto", "standard", "saver")) return
+    viewModelScope.launch { remoteResult { settingsRepository.save(_state.value.serverConfig.copy(networkMode = mode)) } }
+  }
+
   private fun startRefreshLoop() {
     if (!appInForeground || !_state.value.authenticated || refreshLoopJob?.isActive == true) return
     refreshLoopJob = viewModelScope.launch {
       while (isActive) {
-        delay(AUTO_REFRESH_INTERVAL_MS)
+        delay(readPolicy().pollDelay(maxOf(readFailures, optionalFailures.values.maxOrNull() ?: 0)))
         if (appInForeground && _state.value.authenticated) {
           refreshOnce(showIndicator = false)
-          refreshTicks += 1
-          // 15 秒一轮摘要；各设备指标每 4 轮（约 1 分钟）一次，关注页打开时也是这个节奏
-          if (refreshTicks % ATTENTION_REFRESH_TICKS == 0) loadAttentionMetrics()
         }
       }
     }
   }
 
   private fun stopRemoteActivity(clearCache: Boolean) {
+    loginJob?.cancel(); loginJob = null
+    summaryJob?.cancel(); summaryJob = null
     refreshLoopJob?.cancel()
     refreshLoopJob = null
     metricsLoadJob?.cancel()
@@ -1115,8 +1170,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       )
     }
     if (clearCache) {
+      remoteSnapshotCache.invalidate()
+      deviceMetricsCache.clear(); deviceTrafficCache.clear()
       cacheWriteJob?.cancel()
-      cacheWriteJob = viewModelScope.launch { remoteSnapshotCache.clear() }
+      cacheWriteJob = viewModelScope.launch { remoteResult { remoteSnapshotCache.clear() } }
     }
   }
 
@@ -1140,7 +1197,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           selectedWindow = metricWindowFor(cached.selectedWindow),
           metrics = cached.metrics,
           overviewMetrics = cached.overviewMetrics,
-          attentionMetrics = cached.deviceMetrics,
+          attentionMetrics = cached.deviceMetrics.filterValues { it.sampling == null && it.window == MetricWindow.FiveMinutes.value },
           trafficCalendar = cached.trafficCalendar,
           trafficMode = trafficModeFor(cached.trafficCalendar?.mode),
           currentScreen = if (current.currentScreen == AppScreen.Login && cached.devices.isNotEmpty()) AppScreen.DeviceList else current.currentScreen
@@ -1153,25 +1210,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val current = _state.value
     if (current.dataSource != RemoteDataSource.Live || current.devices.isEmpty()) return
     val savedAt = current.cacheSavedAt ?: Instant.now().toString()
+    val scope = cacheScope(current.serverConfig) ?: return
+    val epoch = remoteSnapshotCache.generation()
+    val snapshot = CachedRemoteSnapshot(version = 2, scope = scope, savedAt = savedAt,
+      devices = current.devices, selectedDeviceId = current.selectedDeviceId,
+      selectedWindow = current.selectedWindow.value, metrics = current.metrics,
+      overviewMetrics = current.overviewMetrics, trafficCalendar = current.trafficCalendar,
+      deviceMetrics = deviceMetricsCache.toMap(), deviceTraffic = deviceTrafficCache.toMap())
     cacheWriteJob?.cancel()
     cacheWriteJob = viewModelScope.launch {
-      remoteSnapshotCache.write(
-        CachedRemoteSnapshot(
-          savedAt = savedAt,
-          devices = _state.value.devices,
-          selectedDeviceId = _state.value.selectedDeviceId,
-          selectedWindow = _state.value.selectedWindow.value,
-          metrics = _state.value.metrics,
-          overviewMetrics = _state.value.overviewMetrics,
-          trafficCalendar = _state.value.trafficCalendar,
-          deviceMetrics = deviceMetricsCache.toMap(),
-          deviceTraffic = deviceTrafficCache.toMap()
-        )
-      )
+      remoteResult { remoteSnapshotCache.write(snapshot, epoch) }
     }
   }
 
   private fun pushCurrentScreen() {
+    cancelOptionalReads()
     _state.update { current ->
       if (current.screenBackStack.lastOrNull() == current.currentScreen) {
         current
@@ -1198,6 +1251,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         message = null
       )
     }
+    loadForCurrentScreen()
   }
 
   private fun clearScreenBackStack() {

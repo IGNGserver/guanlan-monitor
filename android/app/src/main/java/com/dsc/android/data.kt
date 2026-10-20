@@ -19,8 +19,14 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.Cookie
@@ -61,7 +67,7 @@ interface DeviceStateApi {
   suspend fun devices(): List<DeviceSummaryDto>
 
   @GET("/api/overview/metrics")
-  suspend fun overviewMetrics(@Query("window") window: String): OverviewMetricsDto
+  suspend fun overviewMetrics(@Query("window") window: String, @Query("pointBudget") pointBudget: Int? = null): OverviewMetricsDto
 
   @retrofit2.http.DELETE("/api/devices/{deviceId}")
   suspend fun deleteDevice(@Path("deviceId") deviceId: String): Map<String, Boolean>
@@ -72,7 +78,8 @@ interface DeviceStateApi {
   @GET("/api/devices/{deviceId}/metrics")
   suspend fun metrics(
     @Path("deviceId") deviceId: String,
-    @Query("window") window: String
+    @Query("window") window: String,
+    @Query("pointBudget") pointBudget: Int? = null
   ): MetricsDto
 
   @GET("/api/devices/{deviceId}/traffic-calendar")
@@ -113,11 +120,11 @@ interface DeviceStateApi {
 class InMemoryCookieJar : CookieJar {
   private val cookies = mutableMapOf<String, List<Cookie>>()
 
-  override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+  @Synchronized override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
     this.cookies[url.host] = cookies
   }
 
-  override fun loadForRequest(url: HttpUrl): List<Cookie> = cookies[url.host].orEmpty()
+  @Synchronized override fun loadForRequest(url: HttpUrl): List<Cookie> = cookies[url.host].orEmpty().filter { it.matches(url) }
 
 }
 
@@ -148,7 +155,13 @@ internal object ServerUrlPolicy {
 
 }
 
-class SettingsRepository(private val application: Application) {
+interface ConnectionSettings {
+  fun settings(): Flow<ServerConfig>
+  suspend fun save(config: ServerConfig)
+  suspend fun clear()
+}
+
+class SettingsRepository(private val application: Application) : ConnectionSettings {
   private val baseUrlKey = stringPreferencesKey("base_url")
   private val encryptedPreferences: SharedPreferences by lazy {
     val masterKey = MasterKey.Builder(application)
@@ -163,45 +176,40 @@ class SettingsRepository(private val application: Application) {
     )
   }
   private val accessKeyKey = "access_key"
+  private val connectionKey = "connection_v2"
+  private val lock = Mutex()
+  private val json = Json { ignoreUnknownKeys = true }
 
-  fun settings(): Flow<ServerConfig> =
-    application.dataStore.data
-      .catch { error ->
-        if (error is IOException) emit(emptyPreferences()) else throw error
-      }
-      .map { preferences -> normalizeServerUrl(preferences[baseUrlKey].orEmpty()) }
-      .combine(accessKeyFlow()) { baseUrl, accessKey ->
-        ServerConfig(
-          baseUrl = baseUrl,
-          accessKey = accessKey
-        )
-      }
-
-  suspend fun save(config: ServerConfig) {
-    application.dataStore.edit { prefs ->
-      prefs[baseUrlKey] = normalizeServerUrl(config.baseUrl)
-    }
-    encryptedPreferences.edit().putString(accessKeyKey, config.accessKey).apply()
-  }
-
-  suspend fun clear() {
-    application.dataStore.edit { prefs ->
-      prefs.remove(baseUrlKey)
-    }
-    encryptedPreferences.edit().remove(accessKeyKey).apply()
-  }
-
-  private fun accessKeyFlow(): Flow<String> = callbackFlow {
+  override fun settings(): Flow<ServerConfig> = callbackFlow {
+    lock.withLock { migrateIfNeeded() }
     val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-      if (key == accessKeyKey) {
-        trySend(encryptedPreferences.getString(accessKeyKey, "").orEmpty())
-      }
+      if (key == connectionKey) trySend(readRecord())
     }
-    trySend(encryptedPreferences.getString(accessKeyKey, "").orEmpty())
     encryptedPreferences.registerOnSharedPreferenceChangeListener(listener)
-    awaitClose {
-      encryptedPreferences.unregisterOnSharedPreferenceChangeListener(listener)
-    }
+    trySend(readRecord())
+    awaitClose { encryptedPreferences.unregisterOnSharedPreferenceChangeListener(listener) }
+  }.distinctUntilChanged().flowOn(Dispatchers.IO)
+
+  override suspend fun save(config: ServerConfig) = withContext(Dispatchers.IO) { lock.withLock {
+    migrateIfNeeded()
+    val next = connectionRecord(readRecord(), config.copy(baseUrl = normalizeServerUrl(config.baseUrl)))
+    check(encryptedPreferences.edit().putString(connectionKey, json.encodeToString(next)).remove(accessKeyKey).commit()) { "settings_write_failed" }
+  } }
+
+  override suspend fun clear() = save(ServerConfig())
+
+  private fun readRecord(): ServerConfig = runCatching {
+    json.decodeFromString<ServerConfig>(encryptedPreferences.getString(connectionKey, "{}").orEmpty())
+  }.getOrDefault(ServerConfig())
+
+  private suspend fun migrateIfNeeded() {
+    if (encryptedPreferences.contains(connectionKey)) return
+    val preferences = application.dataStore.data.catch { error ->
+      if (error is IOException) emit(emptyPreferences()) else throw error
+    }.first()
+    val legacy = ServerConfig(normalizeServerUrl(preferences[baseUrlKey].orEmpty()), encryptedPreferences.getString(accessKeyKey, "").orEmpty())
+    check(encryptedPreferences.edit().putString(connectionKey, json.encodeToString(connectionRecord(ServerConfig(), legacy))).remove(accessKeyKey).commit()) { "settings_write_failed" }
+    application.dataStore.edit { it.remove(baseUrlKey) }
   }
 
   private fun normalizeServerUrl(value: String): String {
@@ -235,7 +243,8 @@ class ApiFactory(private val application: Application) {
       .connectTimeout(15, TimeUnit.SECONDS)
       .readTimeout(15, TimeUnit.SECONDS)
       .writeTimeout(15, TimeUnit.SECONDS)
-      .retryOnConnectionFailure(true)
+      .callTimeout(15, TimeUnit.SECONDS)
+      .retryOnConnectionFailure(false)
     if (isDebuggable) {
       clientBuilder.addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
     }

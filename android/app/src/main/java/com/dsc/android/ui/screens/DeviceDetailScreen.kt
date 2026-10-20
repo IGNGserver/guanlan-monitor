@@ -259,6 +259,11 @@ fun DeviceDetailScreen(
           }
         }
 
+        if (data?.sampling != null && !liveRange) {
+          item(key = "sampled-trend") {
+            OneUiNotice(title = "省流趋势", description = "曲线保留分桶极值；均值与趋势仅基于展示点，流量总计不受影响。", tone = OneUiNoticeTone.Info)
+          }
+        }
         when (tab) {
           DetailTab.Overview -> overviewItems(
             data = data,
