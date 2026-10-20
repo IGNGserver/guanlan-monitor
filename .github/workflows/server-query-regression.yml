@@ -1,0 +1,41 @@
+name: Server query regression
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths: ['apps/server/**', 'packages/shared/**', 'pnpm-lock.yaml', '.github/workflows/server-query-regression.yml']
+
+concurrency:
+  group: server-query-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mysql-query-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      mysql:
+        image: mysql:8.4.8
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+          MYSQL_DATABASE: guanlan_query_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @dsc/server...
+      - name: Verify real SQL against connection-scoped temporary fixtures
+        run: pnpm --filter @dsc/server test:mysql-queries
+        env:
+          MYSQL_TEST_URL: mysql://root@127.0.0.1:3306/guanlan_query_test

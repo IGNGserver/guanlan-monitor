@@ -351,6 +351,13 @@ export class LocalHistoryRepository implements HistoryRepository {
     return points.filter((point) => point.timestamp >= threshold);
   }
 
+  async getTrafficSeries(deviceId: string, start: number, end: number) {
+    const db = await this.store.read();
+    const threshold = Math.max(start, Date.now() - 366 * 24 * 60 * 60 * 1000);
+    return (db.history[deviceId] ?? []).filter((point) => point.timestamp >= threshold && point.timestamp < end)
+      .map(({ timestamp, trafficRxBytes, trafficTxBytes }) => ({ timestamp, trafficRxBytes, trafficTxBytes }));
+  }
+
   async clearDeviceHistory(deviceId: string) {
     await this.store.update((db) => {
       delete db.minuteHistory[deviceId];
