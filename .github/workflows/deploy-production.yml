@@ -54,8 +54,10 @@ jobs:
             -H 'Accept: application/vnd.github+json' \
             "https://api.github.com/repos/IGNGserver/guanlan-monitor/releases/tags/v$REQUESTED_VERSION" || true)"
           release_tag="$(printf '%s' "$release_json" | jq -r '.tag_name // empty')"
-          release_draft="$(printf '%s' "$release_json" | jq -r '.draft // empty')"
-          release_prerelease="$(printf '%s' "$release_json" | jq -r '.prerelease // empty')"
+          # jq treats boolean false as empty for the `//` operator, so
+          # preserve explicit false values before comparing release state.
+          release_draft="$(printf '%s' "$release_json" | jq -er '.draft | tostring')"
+          release_prerelease="$(printf '%s' "$release_json" | jq -er '.prerelease | tostring')"
           if [[ "${{ inputs.channel }}" == "stable" ]]; then
             [[ "$release_tag" == "v$REQUESTED_VERSION" && "$release_draft" == "false" && "$release_prerelease" == "false" ]] || {
               echo "Stable production deployment requires a non-prerelease published GitHub Release." >&2
