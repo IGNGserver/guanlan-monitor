@@ -38,7 +38,7 @@ Worktree: `~/项目/.wt/设备状态控制台/<slug>`
 ## 发布（2026-09-27 起：取消"每次开发自动发测试版"）
 
 - **默认不发版。** 完成开发只做到：提交并推送 `main` → `ci.yml` 跑校验。**不** bump 版本号、**不**建 tag、**不**创建 GitHub Release、**不**下载资产。旧规范里"每次开发后自动递增 patch 并触发测试版 Release、必须等 workflow 完成才算结束"的要求已废止，不要再据此结束任务。
-- 只有你明确说"发布"时，才执行一次 `RELEASE.md` 的 Release Steps：更新根 `VERSION` → 同步 `package.json` 等所有 manifest → 提交发布准备改动 → `git tag vX.Y.Z` → `git push origin main --follow-tags` → 等 tag 触发的 `release-test.yml` 与 `docker-publish.yml` 跑完 → 核对 Release 与资产。
+- 只有你明确说"发布"时，才执行一次 `RELEASE.md` 的 Release Steps：更新根 `VERSION` → 同步所有 manifest → 按仓库集成流程经 PR 合并 → 在合并后的版本提交上创建并推送 `vX.Y.Z` tag → 等 tag 触发的测试版 `release-test.yml` 与 `docker-publish.yml` 跑完并核对 Release/资产。明确要求正式发布时，再按 `RELEASE.md` 的 Formal Stable Release 流程手动重建 stable 渠道资产与镜像；生产部署仍需明确授权。
 - 说"发布 release"默认仍指测试版（prerelease）；测试版不得被当作稳定安装源或生产部署依据。只有明确要求"正式发布"才允许覆盖 `latest`、上传正式安装包或部署生产。
 - 版本号未经明确允许只递增第三位（patch），前两位保持不变；`VERSION` 与所有 package manifest 必须同步（`pnpm verify:version` 会检查一致性）。
 - 发布链任一环节失败（workflow 失败、Release 未生成、资产缺失、sha256 不匹配）不得宣称完成，应继续排查或明确报告阻塞原因；Windows setup 资产需下载并校验 sha256 后才算交付。
@@ -49,4 +49,4 @@ Worktree: `~/项目/.wt/设备状态控制台/<slug>`
 ## 环境事实（不含凭据）
 
 - 运行位置：NAS 上的 Docker Compose（Hub 服务端）+ Windows/Linux 桌面端与机器级 agent；入口与端口见部署文档，凭据只在受控 environment 与本机配置里。
-- CI/发布触发器：`ci.yml` 由 push main/master 与所有 PR 触发；`release-test.yml`、`docker-publish.yml` **只由 `v*.*.*` tag 触发**（docker-publish 另支持手动 dispatch）；`deploy-production.yml`、`deploy-test.yml`、`update-agents-test.yml`、`inspect-agents-test.yml`、`performance-audit.yml` 全部是 `workflow_dispatch` 手动触发。
+- CI/发布触发器：`ci.yml` 由 push main/master 与所有 PR 触发；`release-test.yml` 由 `v*.*.*` tag 触发测试版，也支持在版本 tag 上手动 dispatch 指定 `test`/`stable` 渠道；`docker-publish.yml` 由 tag 触发测试镜像，也支持手动 dispatch 发布固定版本的指定渠道镜像；`deploy-production.yml`、`deploy-test.yml`、`update-agents-test.yml`、`inspect-agents-test.yml`、`performance-audit.yml` 全部是 `workflow_dispatch` 手动触发。

@@ -54,6 +54,25 @@ It pulls and starts the selected fixed version through the remote host's
 existing Docker Compose deployment; it does not build from source and it does
 not deploy `latest`.
 
+## Formal Stable Release
+
+A formal stable release is a separate, explicit operation after the version-tagged test release has completed successfully. The tag push builds test-channel assets and a test-channel image first. To publish stable-channel client assets for the same version, dispatch the release workflow at that tag:
+
+```bash
+gh workflow run "Build and publish release" --ref vX.Y.Z -f channel=stable
+```
+
+This rebuilds Windows, Linux, and Android assets with the stable channel, then updates the same GitHub Release to a non-prerelease and marks it as the latest GitHub release. Wait for the workflow to finish successfully and verify all assets and checksums before continuing.
+
+Then publish the stable-channel Docker image from that tag. Keep the moving Docker `latest` tag disabled unless the user explicitly requests it:
+
+```bash
+gh workflow run "Publish Docker images" --ref main \
+  -f ref=vX.Y.Z -f version=X.Y.Z -f publish_latest=false -f channel=stable
+```
+
+Production deployment remains a separate `deploy-production.yml` dispatch using the fixed version, `channel=stable`, and the existing network-policy choice. Verify the deployment record, image digests, container health, and rollback point. Never use a test-channel image or the moving Docker `latest` tag for production.
+
 ## User Installation Sources
 
 - Windows setup, Windows update ZIP, Linux Debian package, and Android APK must

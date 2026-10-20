@@ -1,12 +1,25 @@
-name: Build and publish test release
+name: Build and publish release
 
 on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Release channel; test publishes a prerelease, stable publishes a formal release"
+        required: true
+        type: choice
+        options:
+          - test
+          - stable
+        default: test
 
 permissions:
   contents: write
+
+env:
+  DSC_RELEASE_CHANNEL: ${{ github.event.inputs.channel || 'test' }}
 
 jobs:
   verify:
@@ -15,6 +28,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Validate release ref and channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          [[ "$GITHUB_REF_TYPE" == "tag" ]] || { echo "Release builds must run from a version tag." >&2; exit 1; }
+          [[ "$GITHUB_REF_NAME" == "v${version}" ]] || { echo "Tag $GITHUB_REF_NAME does not match VERSION $version." >&2; exit 1; }
+          [[ "$DSC_RELEASE_CHANNEL" == "test" || "$DSC_RELEASE_CHANNEL" == "stable" ]] || { echo "Invalid release channel: $DSC_RELEASE_CHANNEL" >&2; exit 1; }
 
       - name: Setup pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
@@ -124,8 +146,8 @@ jobs:
         run: |
           $version = (Get-Content VERSION -Raw).Trim()
           New-Item -ItemType Directory -Force -Path release/desktop-agent | Out-Null
-          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ..\release\desktop-agent\device-state-console-agent.exe .
-          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=test" -o ..\release\desktop-agent\device-state-console-agent-backend.exe ./cmd/windows-agent-backend
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=$env:DSC_RELEASE_CHANNEL" -o ..\release\desktop-agent\device-state-console-agent.exe .
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=$version -X main.BuildChannel=$env:DSC_RELEASE_CHANNEL" -o ..\release\desktop-agent\device-state-console-agent-backend.exe ./cmd/windows-agent-backend
           # Ship the backend under its product name. The historical name is kept
           # for one release cycle so an in-place upgrade keeps working.
           Copy-Item -LiteralPath "release/desktop-agent/device-state-console-agent-backend.exe" -Destination "release/desktop-agent/guanlan-agent.exe" -Force
@@ -424,8 +446,8 @@ jobs:
           set -euo pipefail
           version="$(tr -d '[:space:]' < VERSION)"
           mkdir -p release/desktop-agent
-          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=${version} -X main.BuildChannel=test" -o ../release/desktop-agent/device-state-console-agent .
-          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=${version} -X main.BuildChannel=test" -o ../release/desktop-agent/device-state-console-agent-backend ./cmd/windows-agent-backend
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=${version} -X main.BuildChannel=${DSC_RELEASE_CHANNEL}" -o ../release/desktop-agent/device-state-console-agent .
+          go -C agents build -trimpath -ldflags "-s -w -X main.BuildVersion=${version} -X main.BuildChannel=${DSC_RELEASE_CHANNEL}" -o ../release/desktop-agent/device-state-console-agent-backend ./cmd/windows-agent-backend
           # Ship the backend under its product name. The historical name is kept
           # for one release cycle so an in-place upgrade keeps working.
           # "install" runs from the repository root, not from agents/.
@@ -648,7 +670,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publish GitHub test release
+    name: Publish GitHub release
     runs-on: ubuntu-latest
     needs:
       - windows
@@ -697,11 +719,28 @@ jobs:
           test "$(find release-assets -type f -name 'DeviceStateConsole-Windows-Setup-v*.exe.sha256' | wc -l)" -eq 1
           test "$(find release-assets -type f -name 'DeviceStateConsole-Android-v*.apk.sha256' | wc -l)" -eq 1
 
-      - name: Publish prerelease
+      - name: Resolve GitHub release metadata
+        id: release_metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$DSC_RELEASE_CHANNEL" == "stable" ]]; then
+            echo "name=Device State Console ${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "make_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=Device State Console ${GITHUB_REF_NAME} (测试版)" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "make_latest=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish GitHub release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           tag_name: ${{ github.ref_name }}
-          name: Device State Console ${{ github.ref_name }} (测试版)
+          name: ${{ steps.release_metadata.outputs.name }}
           body_path: ${{ format('release-notes-{0}.md', github.ref_name) }}
-          prerelease: true
+          prerelease: ${{ steps.release_metadata.outputs.prerelease }}
+          make_latest: ${{ steps.release_metadata.outputs.make_latest }}
+          overwrite_files: true
           files: release-assets/**/*
