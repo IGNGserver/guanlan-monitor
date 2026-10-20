@@ -15,11 +15,11 @@ export function UnifiedConsole({ initialDeviceId = null }: { initialDeviceId?: s
   const checkVersion = useRef(0);
   stateRef.current = state;
   const invalidateCheck = useCallback(() => { ++checkVersion.current; }, []);
-  const check = useCallback(async () => {
+  const check = useCallback(async (supersede = false) => {
     const version = ++checkVersion.current;
     const current = () => version === checkVersion.current;
     try {
-      await webConsoleAdapter.establishSession();
+      await webConsoleAdapter.establishSession(supersede);
       if (current()) setState("authenticated");
     } catch (error) {
       if (!current()) return;
@@ -32,7 +32,7 @@ export function UnifiedConsole({ initialDeviceId = null }: { initialDeviceId?: s
   }, []);
   useEffect(() => {
     void check();
-    const recover = () => { if (stateRef.current !== "authenticated") void check(); };
+    const recover = () => { if (stateRef.current !== "authenticated") void check(true); };
     window.addEventListener("online", recover);
     return () => { invalidateCheck(); window.removeEventListener("online", recover); };
   }, [check, invalidateCheck]);
