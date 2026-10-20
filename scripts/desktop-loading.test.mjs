@@ -287,3 +287,29 @@ test("a successful mutation rereads even the same selection rather than joining 
     assert.equal(reads, 2); assert.equal(result.metrics.device.deviceId, "a");
   } finally { stale.resolve(Response.json(metrics)); controller.cancelSnapshot(); globalThis.fetch = original; }
 });
+
+test("connection changes suspend polling and cached first paint while waiting for local work", async () => {
+  const { controller, calls } = fixture();
+  const local = deferred();
+  controller.agent.start = () => local.promise;
+  controller.cache.read = async () => { throw new Error("cache must not reopen during identity change"); };
+  const login = controller.login("replacement");
+  const failed = assert.rejects(login, /local_unavailable/);
+  await settle();
+  assert.deepEqual((await controller.refresh({ background: true })).devices, []);
+  assert.deepEqual((await controller.getSnapshot({ preferCache: true })).devices, []);
+  assert.equal(calls.length, 0);
+  await assert.rejects(controller.logout(), /connection_change_in_progress/);
+  local.reject(new Error("local_unavailable")); await failed;
+  assert.equal(controller.connectionChanging, false);
+});
+
+test("a rejected explicit login cannot silently reuse the preceding credential", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({}, { status: 401 });
+  try {
+    const hub = new HubClient("/unused"); hub.setServerUrl("https://hub.example"); hub.accessKey = "old-account";
+    await assert.rejects(hub.login("new-account"), /hub_401/);
+    assert.equal(hub.credentialForAgent, null); assert.equal(hub.cacheScope, null);
+  } finally { globalThis.fetch = original; }
+});

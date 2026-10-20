@@ -57,6 +57,7 @@ export class DesktopController {
   private summaryDurationMs = 0;
   private nextAutoReadAt = 0;
   private started = false;
+  private connectionChanging = false;
   // Release acceptance launches the installed executable directly and passes
   // an explicit marker. Keep the fixture opt-in even if the packaged process
   // normalizes NODE_ENV or does not inherit the test environment.
@@ -141,6 +142,7 @@ export class DesktopController {
 
   async getSnapshot(request: DesktopSnapshotRequest = {}, allowRefresh = true): Promise<DesktopSnapshot> {
     if (this.visualFixtureEnabled) return this.visualFixtureSnapshot(request);
+    if (this.connectionChanging) return this.currentSnapshot ?? this.emptySnapshot();
     if (!allowRefresh) return this.currentSnapshot ?? this.emptySnapshot();
     this.started = true;
     const requestChanged = this.hasRequestChanges(request);
@@ -162,6 +164,7 @@ export class DesktopController {
 
   async refresh(request: DesktopSnapshotRequest = {}): Promise<DesktopSnapshot> {
     if (this.visualFixtureEnabled) return this.visualFixtureSnapshot(request);
+    if (this.connectionChanging) return this.currentSnapshot ?? this.emptySnapshot();
     if (this.refreshInFlight) {
       if (this.hasRequestChanges(request)) {
         this.cancelSnapshot();
@@ -293,6 +296,21 @@ export class DesktopController {
     return this.refresh(request);
   }
 
+  private async changeConnection(change: () => Promise<void>, preserveLogoutCookie = false): Promise<void> {
+    if (this.connectionChanging) throw new Error("hub_connection_change_in_progress");
+    this.connectionChanging = true;
+    this.hub.invalidateSession(preserveLogoutCookie);
+    try {
+      await this.clearRemote();
+      await change();
+    } catch (error) {
+      await this.hub.logout();
+      throw error;
+    } finally {
+      this.connectionChanging = false;
+    }
+  }
+
   async updateLocalConfig(patch: DesktopConfigPatch): Promise<DesktopSnapshot> {
     const rawState = await this.agent.start();
     const nextConfig = mergeAgentConfig(rawState.config, patch);
@@ -320,49 +338,49 @@ export class DesktopController {
     const normalizedUrl = serverUrl.trim();
     const normalizedAccessKey = accessKey.trim();
     if (!normalizedUrl) throw new Error("hub_server_url_required");
-    await this.clearRemote();
-    if (!this.hub.setServerUrl(normalizedUrl)) throw new Error("hub_server_url_invalid");
-    const unifiedCredential = normalizedAccessKey || this.hub.credentialForAgent;
-    if (!unifiedCredential) throw new Error("hub_access_key_required");
+    await this.changeConnection(async () => {
+      if (!this.hub.setServerUrl(normalizedUrl)) throw new Error("hub_server_url_invalid");
+      const unifiedCredential = normalizedAccessKey || this.hub.credentialForAgent;
+      if (!unifiedCredential) throw new Error("hub_access_key_required");
 
     // The Hub ACCESS_KEY is the single credential for web, desktop and Agent uploads.
     // Keep the Agent's internal runtime config in sync without exposing a second secret field.
     // The address is written before the login attempt on purpose: a Hub outage
     // or a rejected key must not lock the user out of correcting the address.
-    await saveHubConnectionResiliently(this.agent, this.hub, normalizedUrl, unifiedCredential);
+      await saveHubConnectionResiliently(this.agent, this.hub, normalizedUrl, unifiedCredential);
+    });
     return this.refresh();
   }
 
   async login(accessKey: string): Promise<DesktopSnapshot> {
-    await this.clearRemote();
-    const rawState = await this.agent.start();
-    if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
-    const normalizedAccessKey = accessKey.trim();
-    await this.hub.login(normalizedAccessKey);
-    const nextConfig = mergeAgentConfig(rawState.config, {});
-    nextConfig.connection.secret = normalizedAccessKey;
-    await this.agent.updateConfig(nextConfig);
+    await this.changeConnection(async () => {
+      const rawState = await this.agent.start();
+      if (!this.hub.setServerUrl(rawState.config.connection.serverUrl)) throw new Error("hub_server_url_missing");
+      const normalizedAccessKey = accessKey.trim();
+      await this.hub.login(normalizedAccessKey);
+      const nextConfig = mergeAgentConfig(rawState.config, {});
+      nextConfig.connection.secret = normalizedAccessKey;
+      await this.agent.updateConfig(nextConfig);
+    });
     return this.refresh();
   }
 
   async logout(): Promise<DesktopSnapshot> {
-    await this.clearRemote();
-    await this.hub.logout();
+    await this.changeConnection(() => this.hub.logout(), true);
     this.currentSnapshot = { ...this.emptySnapshot(), localBackend: this.localBackend };
     this.notify(this.currentSnapshot);
     return this.currentSnapshot;
   }
 
   async disconnectAgent(): Promise<DesktopSnapshot> {
-    await this.clearRemote();
-    const rawState = await this.agent.start();
-    await this.agent.control("stop");
-    const nextConfig = mergeAgentConfig(rawState.config, {
-      cloudSyncEnabled: false
+    await this.changeConnection(async () => {
+      const rawState = await this.agent.start();
+      await this.agent.control("stop");
+      const nextConfig = mergeAgentConfig(rawState.config, { cloudSyncEnabled: false });
+      nextConfig.connection.secret = "";
+      await this.agent.updateConfig(nextConfig);
+      await this.hub.logout();
     });
-    nextConfig.connection.secret = "";
-    await this.agent.updateConfig(nextConfig);
-    await this.hub.logout();
     return this.refresh();
   }
 

@@ -105,11 +105,12 @@ export class HubClient {
   get cacheScope(): string | null { return this.accessKey && this.serverUrl ? `${this.serverUrl}\u001f${this.identity}` : null; }
   get configuredUrl(): string { return this.serverUrl; }
 
-  invalidateSession(): void {
+  invalidateSession(preserveLogoutCookie = false): void {
     this.identityAbort.abort(new Error("hub_session_changed"));
     this.identityAbort = new AbortController();
     ++this.connectionEpoch;
-    this.sessionCookie = null; this.sessionInFlight = null;
+    if (!preserveLogoutCookie) this.sessionCookie = null;
+    this.sessionInFlight = null;
     this.overviewCache = null; this.updateCache = null;
   }
 
@@ -134,6 +135,9 @@ export class HubClient {
       this.overviewCache = null;
       this.updateCache = null;
       if (this.accessKey !== value) this.identity = randomUUID();
+      // An explicit rejected replacement must not silently log back in with
+      // the previous account on the next timer tick.
+      this.accessKey = null;
     }
     const epoch = this.connectionEpoch;
     const payload = await this.request<AuthLoginResponse>("/api/auth/login", {
