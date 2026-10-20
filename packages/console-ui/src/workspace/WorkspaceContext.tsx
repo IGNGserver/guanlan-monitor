@@ -9,6 +9,7 @@ import type {
 import type { ConsoleAdapter, WindowState } from "../services/adapter";
 import { fallbackRuntimeProfile, fallbackWindowMaterialCapabilities, fallbackWindowState } from "../services/adapter";
 import { startVisiblePolling } from "../helpers/visiblePolling";
+import { markLoadingMilestone } from "../helpers/loadingPerformance";
 import { resolveInteractionScale } from "../helpers/density";
 import { parseWorkspaceHash, serializeWorkspaceRoute, type WorkspaceRoute } from "./routes";
 import { formatWorkspaceError as formatError, type WorkspaceContextValue } from "./context/WorkspaceTypes";
@@ -96,6 +97,15 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   const [notice, setNotice] = useState<WorkspaceContextValue["notice"]>(null);
   const [runtimeProfile, setRuntimeProfile] = useState<DesktopRuntimeProfile>(fallbackRuntimeProfile);
   const [windowState, setWindowState] = useState<WindowState>(fallbackWindowState);
+
+  useEffect(() => { markLoadingMilestone("shell-committed"); }, []);
+  useEffect(() => {
+    if (snapshot?.source === "cache") markLoadingMilestone("cache-committed");
+    if (snapshot?.source === "live") {
+      markLoadingMilestone("hub-summary-committed");
+      if (snapshot.metrics || snapshot.overviewMetrics) markLoadingMilestone("hub-charts-committed");
+    }
+  }, [snapshot]);
 
   /* Native window chrome. The host pushes maximize/restore/fullscreen transitions
    * (taskbar, keyboard, window manager) and the renderer reads the initial value

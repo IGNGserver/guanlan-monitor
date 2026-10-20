@@ -144,6 +144,7 @@ if (!hasSingleInstanceLock) {
   const reportProcessEvent = (event: string, details: Record<string, unknown>) => {
     appendDesktopDiagnostic(event, {
       ...details,
+      processElapsedMs: Math.round(process.uptime() * 1000),
       systemMemory: readSystemMemoryInfo(),
       runtimeProfile: getDesktopRuntimeProfile(gpuFallbackActive),
       appMetrics: (() => {
