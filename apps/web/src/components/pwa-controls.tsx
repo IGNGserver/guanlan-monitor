@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
-import { Icon, M3Button, M3Dialog, hasDeviceOrderDraft } from "@dsc/console-ui";
+import { Icon, M3Button, M3Dialog } from "@dsc/console-ui/primitives";
+import { hasDeviceOrderDraft } from "@dsc/console-ui/device-order-draft";
 
 interface InstallPrompt extends Event {
   prompt: () => Promise<void>;

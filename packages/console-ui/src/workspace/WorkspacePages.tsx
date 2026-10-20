@@ -2,8 +2,7 @@ import React from "react";
 import { useWorkspace } from "./WorkspaceContext";
 import { OverviewPage } from "./pages/OverviewPage";
 import { DevicesPage } from "./pages/DevicesPage";
-import { DeviceDetailsPage } from "./pages/DeviceDetailsPage";
-import { SettingsPage } from "./pages/SettingsPage";
+import { LazyDeviceDetailsPage as DeviceDetailsPage, LazySettingsPage as SettingsPage } from "./LazyPages";
 import { EmptyState, ErrorSurface, LoadingSurface } from "./pages/shared";
 
 /** Route-only assembly. Pages own their data view and interaction state. */
@@ -18,4 +17,3 @@ export function RouteView() {
 }
 
 export { EmptyState };
-

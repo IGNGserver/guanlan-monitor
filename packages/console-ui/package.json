@@ -14,6 +14,9 @@
       "types": "./src/services/adapter.ts",
       "import": "./src/services/adapter.ts"
     },
+    "./workspace": "./src/workspace/WorkspaceApp.tsx",
+    "./primitives": "./src/m3e/index.ts",
+    "./device-order-draft": "./src/workspace/deviceOrderDraft.ts",
     "./assets/*": "./src/assets/*",
     "./styles.css": "./src/styles.scss",
     "./styles.scss": "./src/styles.scss",

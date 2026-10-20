@@ -403,3 +403,17 @@ test("optional chart failures back off without discarding the live summary and r
     assert.equal(adapter.getRefreshDelay(10000), 10000);
   } finally { hub.restore(); }
 });
+
+test("a changed persisted scope clears an early restored view before the new Hub summary arrives", async () => {
+  const hub = installHub();
+  try {
+    const adapter = adapterAt({ now: 1_000_000 });
+    const internal = adapter as unknown as { cache: { activate: () => Promise<boolean> }; snapshot: ConsoleSnapshot };
+    internal.snapshot = { ...internal.snapshot, source: "cache", devices: [{ ...device, hostname: "previous account" }] } as ConsoleSnapshot;
+    internal.cache.activate = async () => true;
+    await adapter.establishSession();
+    assert.deepEqual(internal.snapshot.devices, []);
+    assert.equal(internal.snapshot.source, "empty");
+    assert.equal(internal.snapshot.session.authenticated, true);
+  } finally { hub.restore(); }
+});
