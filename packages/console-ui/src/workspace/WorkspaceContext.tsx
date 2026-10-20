@@ -81,6 +81,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     setHealthThresholds,
     refreshInterval,
     setRefreshInterval,
+    networkMode,
+    setNetworkMode,
     orientation,
     isTouch,
     inputMode,
@@ -182,12 +184,14 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
         trafficMode,
         trafficAnchor,
         include,
+        networkMode,
         // The visible poller is the only caller that refreshes without announcing.
         background: forceRefresh && !announce
       };
       const requestKey = include.trafficCalendar
-        ? `${route.kind}:${requestDeviceId ?? ""}:${metricsWindow}:${trafficMode}:${trafficAnchor}`
-        : `${route.kind}:${requestDeviceId ?? ""}:${metricsWindow}`;
+        ? `${route.kind}:${requestDeviceId ?? ""}:${metricsWindow}:${trafficMode}:${trafficAnchor}:${networkMode}`
+        : `${route.kind}:${requestDeviceId ?? ""}:${metricsWindow}:${networkMode}`;
+      if (currentRequestKeyRef.current && currentRequestKeyRef.current !== requestKey) adapter.cancelSnapshot?.();
       currentRequestKeyRef.current = requestKey;
 
       if (refreshInFlightRef.current) {
@@ -242,7 +246,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
         }
       }
     },
-    [adapter, include, metricsWindow, requestDeviceId, route.kind, trafficAnchor, trafficMode]
+    [adapter, include, metricsWindow, requestDeviceId, route.kind, trafficAnchor, trafficMode, networkMode]
   );
 
   /* Subscribe once per adapter.
@@ -294,9 +298,9 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     const effectiveRefreshInterval = lowResourceMode
       ? Math.max(30, refreshInterval)
       : Math.max(refreshInterval, runtimeProfile.recommendedRefreshInterval);
-    return startVisiblePolling(() => fetchSnapshot(true, false), effectiveRefreshInterval * 1000);
+    return startVisiblePolling(() => fetchSnapshot(true, false), () => adapter.getRefreshDelay?.(effectiveRefreshInterval * 1000) ?? (networkMode === "saver" ? Math.max(30_000, effectiveRefreshInterval * 1000) : effectiveRefreshInterval * 1000));
 
-  }, [fetchSnapshot, lowResourceMode, refreshInterval, runtimeProfile.recommendedRefreshInterval]);
+  }, [adapter, fetchSnapshot, lowResourceMode, refreshInterval, runtimeProfile.recommendedRefreshInterval, networkMode]);
 
   useEffect(() => {
     const currentDevice = snapshot?.devices.find((device) => device.deviceId === selectedDeviceId);
@@ -500,6 +504,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     refreshInterval,
     setRefreshInterval,
     capabilities: adapter.capabilities,
+    networkMode,
+    setNetworkMode,
     orientation,
     isTouch,
     inputMode,
@@ -537,6 +543,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     refreshInterval,
     setRefreshInterval,
     adapter.capabilities,
+    networkMode,
+    setNetworkMode,
     orientation,
     isTouch,
     inputMode,

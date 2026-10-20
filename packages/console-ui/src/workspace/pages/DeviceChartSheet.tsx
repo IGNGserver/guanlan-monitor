@@ -4,6 +4,7 @@ import { chartSampleWindow, indexChartSamples, summarizeSeries, type SeriesSumma
 import type { DeviceChartTile } from "./deviceCharts";
 import { ChartInfoRows } from "./deviceCharts";
 import { TelemetryModelList } from "./shared";
+import { useWorkspaceData } from "../WorkspaceContext";
 
 /**
  * 设备图表卡片的半屏详情。
@@ -12,6 +13,7 @@ import { TelemetryModelList } from "./shared";
  * 时间窗统计 → 说明与容量 → 已采集型号。所有内容都来自磁贴已有的数据，不额外取数。
  */
 export function DeviceChartSheet({ tile }: { tile: DeviceChartTile }) {
+  const { snapshot } = useWorkspaceData();
   const series = useMemo(() => tile.series ?? [], [tile.series]);
   const summaries = useMemo(() => series.map(summarizeSeries), [series]);
   const sampleWindow = useMemo(() => chartSampleWindow(indexChartSamples(series)), [series]);
@@ -24,6 +26,7 @@ export function DeviceChartSheet({ tile }: { tile: DeviceChartTile }) {
       {hasStats ? (
         <section className="chart-sheet__section">
           <h4 className="chart-sheet__heading">本时段统计</h4>
+          {snapshot?.metrics?.sampling && <p className="chart-sheet__caption">省流趋势保留分桶极值；平均值及组合曲线极值为抽样统计，不代表完整窗口统计。流量累计不抽稀。</p>}
           {summaries.length === 1
             ? <SingleSeriesStats summary={summaries[0]} format={format(0)} />
             : <SeriesStatsTable summaries={summaries} format={format} label={title} />}

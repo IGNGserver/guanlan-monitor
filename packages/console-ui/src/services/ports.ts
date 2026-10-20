@@ -8,6 +8,8 @@ import type {
 
 /** Read-only state access shared by the Web and Electron shells. */
 export interface ConsoleReadPort {
+  cancelSnapshot?(): void;
+  getRefreshDelay?(baseMs: number): number;
   getSnapshot(request?: ConsoleSnapshotRequest): Promise<ConsoleSnapshot>;
   refresh(request?: ConsoleSnapshotRequest): Promise<ConsoleSnapshot>;
   subscribe(listener: (snapshot: ConsoleSnapshot) => void): () => void;

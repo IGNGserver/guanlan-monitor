@@ -9,6 +9,7 @@ import { getStoredDensity, getStoredRefreshInterval, getStoredTheme } from "./Wo
 
 import type { WebLayoutPreference } from "../../helpers/presentation";
 import { readStoredThresholds, storeThresholds, type HealthThresholds } from "../health";
+import { storedNetworkMode, type NetworkMode } from "../../helpers/networkPolicy";
 
 const SIDEBAR_COLLAPSED_KEY = "dsc-sidebar-collapsed";
 const METRICS_WINDOW_KEY = "dsc-metrics-window";
@@ -69,6 +70,11 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
     storeThresholds(next);
   }, []);
   const [refreshInterval, setRefreshIntervalState] = useState<5 | 10 | 30>(getStoredRefreshInterval);
+  const [networkMode, setNetworkModeState] = useState<NetworkMode>(storedNetworkMode);
+  const setNetworkMode = useCallback((next: NetworkMode) => {
+    setNetworkModeState(next);
+    try { localStorage.setItem("dsc-network-mode", next); } catch { /* Optional preference. */ }
+  }, []);
   const [orientation, setOrientation] = useState<ScreenOrientation>("landscape");
   const [isTouch, setIsTouch] = useState(false);
   const [inputMode, setInputMode] = useState<PointerType>("mouse");
@@ -224,6 +230,8 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
     healthThresholds,
     setHealthThresholds,
     refreshInterval,
+    networkMode,
+    setNetworkMode,
     setRefreshInterval,
     orientation,
     isTouch,

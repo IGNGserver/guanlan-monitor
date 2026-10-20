@@ -749,6 +749,7 @@ export interface MetricsLatest {
 }
 
 export interface MetricsResponse {
+  sampling?: { method: "minmax-v1"; targetPoints: number };
   device: DeviceDetail;
   status: DeviceStatus;
   lastSeenAt: string | null;
@@ -777,6 +778,7 @@ export interface OverviewInstanceSeries {
 
 /** All-instance metrics for the overview page charts. */
 export interface OverviewMetricsResponse {
+  sampling?: { method: "minmax-v1"; targetPoints: number };
   window: MetricWindow;
   instances: OverviewInstanceSeries[];
 }
@@ -931,6 +933,7 @@ export interface ConsoleSnapshotInclude {
 }
 
 export interface ConsoleSnapshotRequest {
+  networkMode?: "auto" | "standard" | "saver";
   metricWindow?: MetricWindow;
   selectedDeviceId?: string | null;
   trafficMode?: TrafficCalendarMode;

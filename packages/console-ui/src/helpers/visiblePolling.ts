@@ -1,7 +1,7 @@
 /** Pause UI-only work while hidden; resume immediately without overlapping runs. */
 export function startVisiblePolling(
   task: () => Promise<unknown>,
-  intervalMs: number,
+  intervalMs: number | (() => number),
   immediate = false,
   visibility: Pick<Document, "hidden" | "addEventListener" | "removeEventListener"> = document
 ): () => void {
@@ -14,7 +14,7 @@ export function startVisiblePolling(
   };
   const schedule = () => {
     clear();
-    if (!stopped && !visibility.hidden) timer = setTimeout(() => void tick(), intervalMs);
+    if (!stopped && !visibility.hidden) timer = setTimeout(() => void tick(), typeof intervalMs === "function" ? intervalMs() : intervalMs);
   };
   const tick = async () => {
     clear();

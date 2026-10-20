@@ -9,7 +9,7 @@
     "dev": "tsx watch src/index.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test src/auth.test.ts src/metrics-schema.test.ts src/utils.test.ts src/request-timing.test.ts src/loading-queries.test.ts src/repositories/local.test.ts src/repositories/realtime.test.ts src/services/metrics-audit.test.ts src/live/*.test.ts",
+    "test": "node --import tsx --test src/auth.test.ts src/metrics-schema.test.ts src/utils.test.ts src/request-timing.test.ts src/loading-queries.test.ts src/series-budget*.test.ts src/repositories/local.test.ts src/repositories/realtime.test.ts src/services/metrics-audit.test.ts src/live/*.test.ts",
     "test:mysql-queries": "node --import tsx --test src/repositories/history.mysql.test.ts"
   },
   "dependencies": {
