@@ -220,7 +220,8 @@ test("random cache identity survives encrypted credential restore, but changes o
     await hub.login("fixture-account-a");
     const scope = hub.cacheScope;
     assert.ok(scope && !scope.includes("fixture-account-a"));
-    const restored = new HubClient(file); await restored.initialize(); restored.setServerUrl("https://hub.example");
+    const restored = new HubClient(file); await restored.initialize();
+    assert.equal(restored.configuredUrl, "https://hub.example", "machine-service startup can find the proven Hub without waiting for Agent discovery");
     assert.equal(restored.cacheScope, scope);
     await hub.login("fixture-account-a"); assert.equal(hub.cacheScope, scope, "session renewal keeps the same identity");
     await hub.login("fixture-account-b"); assert.notEqual(hub.cacheScope, scope);

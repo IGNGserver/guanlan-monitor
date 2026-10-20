@@ -114,7 +114,7 @@ export class DesktopController {
   async initialize(): Promise<void> {
     await Promise.all([this.hub.initialize(), this.localConfig.migrateIfNeeded()]);
     const config = await this.localConfig.read().catch(() => null);
-    if (config?.connection.serverUrl) this.hub.setServerUrl(config.connection.serverUrl);
+    if (!this.hub.configuredUrl && config?.connection.serverUrl) this.hub.setServerUrl(config.connection.serverUrl);
     let preferences: Partial<DesktopStartupSettings> | null = null;
     try {
       preferences = await readJsonFile<Partial<DesktopStartupSettings>>(

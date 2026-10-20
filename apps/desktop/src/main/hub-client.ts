@@ -52,9 +52,10 @@ export class HubClient {
         const decoded = safeStorage.decryptString(Buffer.from(stored.value, "base64"));
         if (stored.version === 1) this.accessKey = decoded;
         else {
-          const payload = JSON.parse(decoded) as { accessKey: string; identity: string };
+          const payload = JSON.parse(decoded) as { accessKey: string; identity: string; serverUrl?: string };
           if (typeof payload.accessKey !== "string" || !payload.accessKey || typeof payload.identity !== "string" || !/^[a-f0-9-]{36}$/.test(payload.identity)) return;
           this.accessKey = payload.accessKey; this.identity = payload.identity;
+          if (typeof payload.serverUrl === "string") this.setServerUrl(payload.serverUrl);
         }
       }
     } catch {
@@ -282,7 +283,7 @@ export class HubClient {
 
   private async persistAccessKey(value: string, epoch: number): Promise<void> {
     if (!safeStorage.isEncryptionAvailable()) return;
-    const encrypted = safeStorage.encryptString(JSON.stringify({ accessKey: value, identity: this.identity })).toString("base64");
+    const encrypted = safeStorage.encryptString(JSON.stringify({ accessKey: value, identity: this.identity, serverUrl: this.serverUrl })).toString("base64");
     const operation = this.credentialWrites.catch(() => {}).then(async () => {
       if (epoch !== this.connectionEpoch) return;
       await writeJsonAtomically(this.credentialPath, { version: 2, encrypted: true, value: encrypted } satisfies StoredAccessKey);
