@@ -317,3 +317,89 @@ test("explicit network recovery supersedes a pending session validation and igno
     assert.equal((await adapter.live.getLiveConnection("nas")) != null, true);
   } finally { stale.resolve(json({}, 401)); hub.restore(); }
 });
+
+test("a new selection aborts obsolete reads without waiting for their transport or timeout", async () => {
+  const hub = installHub();
+  const held = deferred<Response>(), begun = deferred<void>();
+  let obsoleteSignal: AbortSignal | null = null;
+  try {
+    const canned = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/devices/old/metrics")) { obsoleteSignal = init?.signal ?? null; begun.resolve(); return held.promise; }
+      return canned(input, init);
+    }) as typeof fetch;
+    const adapter = adapterAt({ now: 1_000_000 });
+    const old = adapter.getSnapshot({ selectedDeviceId: "old", include: { deviceMetrics: true } });
+    await begun.promise;
+    const next = await adapter.getSnapshot({ selectedDeviceId: "nas", include: { deviceMetrics: true } });
+    assert.equal((obsoleteSignal as AbortSignal | null)?.aborted, true);
+    assert.equal(next.metrics?.device.deviceId, "nas");
+    await old;
+  } finally { held.resolve(json(metrics)); hub.restore(); }
+});
+
+test("saver requests a point target, standard opts out, and summary failure backoff recovers", async () => {
+  const hub = installHub();
+  try {
+    const canned = globalThis.fetch;
+    const urls: URL[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => { urls.push(new URL(String(input))); return canned(input, init); }) as typeof fetch;
+    const adapter = adapterAt({ now: 1_000_000 });
+    await adapter.getSnapshot({ selectedDeviceId: "nas", include: { deviceMetrics: true }, networkMode: "saver" });
+    assert.equal(urls.find((url) => url.pathname === "/api/devices/nas/metrics")?.searchParams.get("pointBudget"), "120");
+    assert.equal(adapter.getRefreshDelay(10000), 30000);
+    urls.splice(0);
+    await adapter.getSnapshot({ selectedDeviceId: "nas", include: { deviceMetrics: true }, networkMode: "standard" });
+    assert.equal(urls.find((url) => url.pathname === "/api/devices/nas/metrics")?.searchParams.has("pointBudget"), false);
+    globalThis.fetch = (async (input: RequestInfo | URL) => String(input).endsWith("/api/instances") ? json({}, 503) : canned(input)) as typeof fetch;
+    for (let i = 0; i < 3; i++) await assert.rejects(adapter.refresh({ include: {}, networkMode: "standard" }));
+    assert.equal(adapter.getRefreshDelay(10000), 80000);
+    globalThis.fetch = canned;
+    await adapter.refresh({ include: {}, networkMode: "standard" });
+    assert.equal(adapter.getRefreshDelay(10000), 10000);
+  } finally { hub.restore(); }
+});
+
+test("push chart reads coalesce and an old unauthorized result cannot expire a newer identity", async () => {
+  const hub = installHub();
+  const held = deferred<Response>(), begun = deferred<void>();
+  try {
+    const adapter = adapterAt({ now: 1_000_000 });
+    await adapter.getSnapshot({ include: {} });
+    const canned = globalThis.fetch;
+    let reads = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input).includes("/devices/nas/metrics")) { reads++; begun.resolve(); return held.promise; }
+      return canned(input);
+    }) as typeof fetch;
+    const internal = adapter as unknown as { pullSelectedMetrics: (deviceId: string) => Promise<void> };
+    const first = internal.pullSelectedMetrics("nas"), second = internal.pullSelectedMetrics("nas");
+    await begun.promise;
+    assert.equal(reads, 1);
+    await adapter.logout();
+    globalThis.fetch = canned;
+    await adapter.getSnapshot({ include: {} });
+    held.resolve(json({}, 401));
+    await Promise.all([first, second]);
+    assert.ok(await adapter.live.getLiveConnection("nas"));
+  } finally { held.resolve(json({}, 401)); hub.restore(); }
+});
+
+test("optional chart failures back off without discarding the live summary and recover on manual refresh", async () => {
+  const hub = installHub();
+  try {
+    const canned = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => String(input).includes("/devices/nas/metrics") ? json({}, 503) : canned(input, init)) as typeof fetch;
+    const adapter = adapterAt({ now: 1_000_000 });
+    for (let i = 0; i < 3; i++) {
+      const snapshot = await adapter.refresh({ selectedDeviceId: "nas", include: { deviceMetrics: true } });
+      assert.equal(snapshot.source, "live");
+      assert.equal(snapshot.devices[0].deviceId, "nas");
+    }
+    assert.equal(adapter.getRefreshDelay(10000), 80000);
+    globalThis.fetch = canned;
+    const recovered = await adapter.refresh({ selectedDeviceId: "nas", include: { deviceMetrics: true } });
+    assert.equal(recovered.metrics?.device.deviceId, "nas");
+    assert.equal(adapter.getRefreshDelay(10000), 10000);
+  } finally { hub.restore(); }
+});

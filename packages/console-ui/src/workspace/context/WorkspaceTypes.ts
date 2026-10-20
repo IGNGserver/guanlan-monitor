@@ -14,6 +14,7 @@ import type { ResponsiveTier, ScreenOrientation } from "../../helpers/layout";
 import type { SettingsSection, WorkspaceRoute } from "../routes";
 import type { WebLayoutPreference } from "../../helpers/presentation";
 import type { HealthThresholds } from "../health";
+import type { NetworkMode } from "../../helpers/networkPolicy";
 
 /**
  * Outcome of the desktop "save and connect" action. `saved-unauthenticated`
@@ -63,6 +64,8 @@ export interface WorkspaceContextValue {
   healthThresholds: HealthThresholds;
   setHealthThresholds: (thresholds: HealthThresholds) => void;
   refreshInterval: 5 | 10 | 30;
+  networkMode: NetworkMode;
+  setNetworkMode: (mode: NetworkMode) => void;
   setRefreshInterval: (interval: 5 | 10 | 30) => void;
   refresh: () => Promise<void>;
   updateLocalConfig: (patch: DesktopConfigPatch) => Promise<boolean>;

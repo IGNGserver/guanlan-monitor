@@ -7,6 +7,7 @@ import type {
 } from "@dsc/shared";
 import type { ConsoleLivePort } from "@dsc/shared";
 import type { ConsoleFleetPort, ConsoleReadPort, ConsoleSessionPort } from "./ports.ts";
+export { networkPolicy, pollDelay } from "../helpers/networkPolicy.ts";
 
 export interface ConsoleCapabilities {
   canManageLocalAgent: boolean;

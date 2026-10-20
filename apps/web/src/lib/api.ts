@@ -97,13 +97,13 @@ export function getSession() {
   return apiFetch<{ ok: true; issuedAt: string }>("/api/auth/session");
 }
 
-export function getUpdateInfo(platform: "hub" | "web" = "web") {
+export function getUpdateInfo(platform: "hub" | "web" = "web", init?: RequestInit) {
   const params = new URLSearchParams({
     platform,
     currentVersion: process.env.NEXT_PUBLIC_DSC_VERSION ?? "dev",
     currentChannel: (process.env.NEXT_PUBLIC_DSC_RELEASE_CHANNEL as ReleaseChannel | undefined) ?? "test"
   });
-  return apiFetch<UpdateInfo>(`/api/updates?${params.toString()}`);
+  return apiFetch<UpdateInfo>(`/api/updates?${params.toString()}`, init);
 }
 
 export function getSystemVersionInfo() {
@@ -121,8 +121,8 @@ export function getHubUpdateStatus() {
   return apiFetch<HubUpdateStatus>("/api/admin/hub-update-status");
 }
 
-export function listDevices() {
-  return apiFetch<DeviceSummary[]>("/api/instances").then((devices) =>
+export function listDevices(init?: RequestInit) {
+  return apiFetch<DeviceSummary[]>("/api/instances", init).then((devices) =>
     devices.map((device) => ({
       ...device,
       gpuUsagePercent: device.gpuUsagePercent ?? null,
@@ -158,8 +158,10 @@ export function reorderDevices(deviceIds: string[]) {
   });
 }
 
-export function getMetrics(deviceId: string, window: MetricWindow) {
-  return apiFetch<MetricsResponse>(devicePath(deviceId, `/metrics?window=${encodeURIComponent(window)}`)).then((payload) => ({
+export function getMetrics(deviceId: string, window: MetricWindow, init?: RequestInit, pointBudget?: number) {
+  const params = new URLSearchParams({ window });
+  if (pointBudget !== undefined) params.set("pointBudget", String(pointBudget));
+  return apiFetch<MetricsResponse>(devicePath(deviceId, `/metrics?${params}`), init).then((payload) => ({
     ...payload,
     latest: {
       ...payload.latest,
@@ -191,8 +193,10 @@ export function saveFanNote(deviceId: string, fanId: string, payload: FanNotePay
   );
 }
 
-export function getOverviewMetrics(window: MetricWindow) {
-  return apiFetch<{ window: MetricWindow; instances: import("@dsc/shared").OverviewInstanceSeries[] }>(`/api/overview/metrics?window=${encodeURIComponent(window)}`);
+export function getOverviewMetrics(window: MetricWindow, init?: RequestInit, pointBudget?: number) {
+  const params = new URLSearchParams({ window });
+  if (pointBudget !== undefined) params.set("pointBudget", String(pointBudget));
+  return apiFetch<{ window: MetricWindow; instances: import("@dsc/shared").OverviewInstanceSeries[] }>(`/api/overview/metrics?${params}`, init);
 }
 
 export function getDeviceMetricConfig(deviceId: string) {
@@ -210,14 +214,15 @@ export function getTrafficCalendar(
   deviceId: string,
   mode: TrafficCalendarMode,
   anchor: string,
-  selectedStart?: string
+  selectedStart?: string,
+  init?: RequestInit
 ) {
   const params = new URLSearchParams({
     mode,
     anchor
   });
   if (selectedStart) params.set("selectedStart", selectedStart);
-  return apiFetch<TrafficCalendarResponse>(devicePath(deviceId, `/traffic-calendar?${params.toString()}`));
+  return apiFetch<TrafficCalendarResponse>(devicePath(deviceId, `/traffic-calendar?${params.toString()}`), init);
 }
 
 export { getServerUrl };

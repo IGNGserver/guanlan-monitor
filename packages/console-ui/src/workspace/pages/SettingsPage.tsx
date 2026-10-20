@@ -74,7 +74,7 @@ export function SettingsPage({ presentation = "desktop" }: { presentation?: "des
  * refresh row plus the link facts that its old "中枢状态" section used to own.
  */
 function GeneralSettings() {
-  const { snapshot, updateStartupSettings, mutationPending, refreshInterval, setRefreshInterval, capabilities } = useWorkspace();
+  const { snapshot, updateStartupSettings, mutationPending, refreshInterval, setRefreshInterval, capabilities, networkMode, setNetworkMode } = useWorkspace();
   const startup = snapshot?.startup ?? { openAtLogin: false, startMinimized: false };
   const canControlStartup = capabilities.canChangeStartupSettings;
   return (
@@ -86,6 +86,7 @@ function GeneralSettings() {
           {canControlStartup && <M3Switch label="启动时最小化" description="启动后保持在系统托盘，不打断当前工作。" checked={startup.startMinimized} onCheckedChange={(checked) => void updateStartupSettings({ startMinimized: checked })} disabled={mutationPending} />}
           {!capabilities.canControlNativeWindow && <SettingRow label="安装与离线使用" description="添加到主屏幕、查看离线说明或清除本地数据。"><Button variant="quiet" onClick={() => window.dispatchEvent(new Event("dsc-pwa-settings"))}>查看<Icon name="chevronRight" size={16} /></Button></SettingRow>}
           <SettingRow label="状态刷新频率" description="界面多久读取一次状态；不影响 Agent 的采集间隔。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "5", label: "5 秒" }, { value: "10", label: "10 秒" }, { value: "30", label: "30 秒" }]} value={String(refreshInterval)} onChange={(value) => setRefreshInterval(Number(value) as typeof refreshInterval)} aria-label="状态刷新频率" disabled={mutationPending} /></SettingRow>
+          <SettingRow label="网络策略" description="自动按连接提示与响应时间调整；省流减少趋势点与自动读取，至少间隔 30 秒。手动刷新始终可用，不改变 Agent 采集。"><M3SegmentedControl className="workspace-setting-segmented" options={[{ value: "auto", label: "自动" }, { value: "standard", label: "标准" }, { value: "saver", label: "省流" }]} value={networkMode} onChange={(value) => setNetworkMode(value as typeof networkMode)} aria-label="网络策略" disabled={mutationPending} /></SettingRow>
         </div>
       </Surface>
       <HealthThresholdSettings />

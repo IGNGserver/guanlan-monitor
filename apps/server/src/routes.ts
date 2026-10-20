@@ -22,13 +22,15 @@ import { ALL_DEVICE_METRIC_KEYS, filterAgentPayloadInstances, getAvailableMetric
 import { getSystemVersionInfo, getUpdateInfo } from "./updates.js";
 import { getHubUpdateStatus, HubUpdateError, requestHubUpdate } from "./hub-update.js";
 import { isLegacyVirtualMachineId } from "./legacy-devices.js";
+import { budgetSeries } from "./series-budget.js";
 
 const loginSchema = z.object({
   accessKey: z.string().min(1).max(512)
 });
 
 const metricsQuerySchema = z.object({
-  window: z.enum(["1m", "5m", "15m", "1h", "6h", "24h", "1d", "7d", "1w", "30d", "1mo", "90d", "1y"]).default("5m")
+  window: z.enum(["1m", "5m", "15m", "1h", "6h", "24h", "1d", "7d", "1w", "30d", "1mo", "90d", "1y"]).default("5m"),
+  pointBudget: z.coerce.number().int().min(16).max(2000).optional()
 });
 
 const trafficCalendarSchema = z.object({
@@ -297,7 +299,8 @@ export async function registerRoutes(
           };
         })
       );
-      return { window: query.window, instances };
+      return { window: query.window, instances: budgetSeries(instances, query.pointBudget),
+        sampling: query.pointBudget ? { method: "minmax-v1", targetPoints: query.pointBudget } : undefined };
     }
   );
 
@@ -414,7 +417,8 @@ export async function registerRoutes(
             };
           })
         },
-        series
+        series: budgetSeries(series, query.pointBudget),
+        sampling: query.pointBudget ? { method: "minmax-v1", targetPoints: query.pointBudget } : undefined
       };
     }
   );
