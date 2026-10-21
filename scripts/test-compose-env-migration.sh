@@ -50,6 +50,30 @@ grep -Fxq 'SESSION_COOKIE_SECURE=false' "$stable_env"
 grep -Fxq 'AGENT_REQUIRE_HTTPS=false' "$stable_env"
 grep -Fxq 'TRUST_PROXY=true' "$stable_env"
 
+weak_stable_env="$test_root/weak-stable.env"
+printf '%s\n' \
+  'SESSION_SECRET=stable-session-secret-for-compose-migration-test-1234567890' \
+  'ACCESS_KEY=stableabc123' \
+  'MYSQL_ROOT_PASSWORD=StableRootSecret_1234567890' \
+  'MYSQL_DATABASE=device_state_console' \
+  'MYSQL_USER=dsc' \
+  'MYSQL_PASSWORD=shortdb' \
+  > "$weak_stable_env"
+cp "$weak_stable_env" "$weak_stable_env.before"
+if preflight_output="$(DSC_RELEASE_CHANNEL=stable bash "$root/scripts/prepare-compose-env.sh" "$weak_stable_env" 2>&1)"; then
+  echo "Weak MYSQL_PASSWORD unexpectedly passed the stable Compose environment preflight." >&2
+  exit 1
+fi
+printf '%s\n' "$preflight_output" | grep -Fq 'MYSQL_PASSWORD must be an existing non-placeholder secret with at least 16 characters' || {
+  echo "Stable preflight failed for an unexpected reason." >&2
+  exit 1
+}
+cmp "$weak_stable_env.before" "$weak_stable_env"
+if compgen -G "$weak_stable_env.pre-compose-security.*" >/dev/null; then
+  echo "Stable preflight created a backup despite rejecting a weak database password." >&2
+  exit 1
+fi
+
 weak_env="$test_root/weak.env"
 printf '%s\n' \
   'SESSION_SECRET=session-secret-for-compose-migration-test-1234567890' \
@@ -69,5 +93,41 @@ if compgen -G "$weak_env.pre-compose-security.*" >/dev/null; then
   echo "Preflight created a backup even though validation failed before mutation." >&2
   exit 1
 fi
+
+python3 - "$root/.github/workflows/deploy-production.yml" <<'PY'
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+workflow = Path(sys.argv[1]).read_text()
+wrappers = re.findall(
+    r"(?ms)^ {10}(run_ssh|run_scp)\(\) \{\n(.*?)^ {10}\}", workflow
+)
+wrapper_names = [name for name, _ in wrappers]
+if wrapper_names.count("run_ssh") != 4 or wrapper_names.count("run_scp") != 1:
+    raise SystemExit("Expected four SSH and one SCP retry wrappers in the production workflow.")
+
+for name, indented_body in wrappers:
+    body = "\n".join(
+        line[10:] if line.startswith(" " * 10) else line
+        for line in indented_body.splitlines()
+    )
+    body = body.replace("local max_attempts=5", "local max_attempts=1")
+    status = 37 if name == "run_ssh" else 43
+    command = f"""
+ssh() {{ return 37; }}
+scp() {{ return 43; }}
+sleep() {{ :; }}
+{name}() {{
+{body}
+}}
+{name} regression-destination
+"""
+    result = subprocess.run(["bash", "-c", command], check=False)
+    if result.returncode != status:
+        raise SystemExit(f"{name} converted a failed command into exit {result.returncode}; expected {status}.")
+print("Production SSH/SCP failure propagation checks: PASS")
+PY
 
 echo "Compose environment migration tests: PASS"
