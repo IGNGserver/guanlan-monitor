@@ -72,7 +72,7 @@ if (process.env.NODE_ENV === "production") {
     throw new Error("SESSION_SECRET must be a strong, non-placeholder secret in production.");
   }
   const productionAccessKeyMinimum = minimumAccessKeyLength;
-  const productionMysqlPasswordMinimum = env.DSC_RELEASE_CHANNEL === "test" ? 6 : 16;
+  const productionMysqlPasswordMinimum = 6;
   if (env.ACCESS_KEY.length < productionAccessKeyMinimum || hasWeakMarker(env.ACCESS_KEY)) {
     throw new Error(`ACCESS_KEY must be a strong, non-placeholder secret with at least ${productionAccessKeyMinimum} characters.`);
   }
@@ -82,7 +82,7 @@ if (process.env.NODE_ENV === "production") {
   }
   const mysqlPassword = urlPassword(env.MYSQL_URL);
   if (!env.MYSQL_URL || !mysqlPassword || mysqlPassword.length < productionMysqlPasswordMinimum || hasWeakMarker(mysqlPassword)) {
-    throw new Error(`MYSQL_URL must contain a strong, non-placeholder password with at least ${productionMysqlPasswordMinimum} characters.`);
+    throw new Error(`MYSQL_URL must contain a non-placeholder password with at least ${productionMysqlPasswordMinimum} characters.`);
   }
 }
 

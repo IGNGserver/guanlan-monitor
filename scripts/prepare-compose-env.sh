@@ -104,6 +104,7 @@ set_env() {
 }
 
 legacy_mysql_root_recovered=false
+recovered_mysql_password=""
 
 recover_existing_mysql_values() {
   [[ "${DSC_RECOVER_EXISTING_MYSQL:-false}" == "true" ]] || return 0
@@ -188,15 +189,20 @@ PY
   set_if_missing MYSQL_USER "${legacy_mysql_user:-$(container_env_value MYSQL_USER)}"
   # The URL credential is the one proven to work with an already initialized
   # volume; MYSQL_PASSWORD is otherwise only used for first-time initialization.
-  set_if_missing MYSQL_PASSWORD "${legacy_mysql_password:-$(container_env_value MYSQL_PASSWORD)}"
+  if [[ -n "$legacy_mysql_password" ]]; then
+    recovered_mysql_password="$legacy_mysql_password"
+  else
+    set_if_missing MYSQL_PASSWORD "$(container_env_value MYSQL_PASSWORD)"
+  fi
 }
 
 recover_existing_mysql_values
 
 access_key_minimum=6
-mysql_password_minimum=16
+mysql_root_password_minimum=16
+mysql_password_minimum=6
 if [[ "${DSC_RELEASE_CHANNEL:-}" == "test" ]]; then
-  mysql_password_minimum=6
+  mysql_root_password_minimum=6
 fi
 
 session_secret="$(require_strong_secret SESSION_SECRET 32)"
@@ -250,8 +256,16 @@ fi
 # An existing initialized volume may retain a legacy root marker. It is
 # tolerated only when this migration recovered that exact live credential;
 # the migration still refuses unrelated weak credentials.
-mysql_root_password="$(require_strong_secret MYSQL_ROOT_PASSWORD "$mysql_password_minimum" "$legacy_mysql_root_recovered")"
-mysql_password="$(require_strong_secret MYSQL_PASSWORD "$mysql_password_minimum")"
+mysql_root_password="$(require_strong_secret MYSQL_ROOT_PASSWORD "$mysql_root_password_minimum" "$legacy_mysql_root_recovered")"
+if [[ -n "$recovered_mysql_password" ]]; then
+  if is_weak_secret "$recovered_mysql_password" "$mysql_password_minimum"; then
+    echo "Existing MYSQL_URL password must be a non-placeholder secret with at least $mysql_password_minimum characters." >&2
+    exit 1
+  fi
+  mysql_password="$recovered_mysql_password"
+else
+  mysql_password="$(require_strong_secret MYSQL_PASSWORD "$mysql_password_minimum")"
+fi
 mysql_database="$(unquote "$(read_env MYSQL_DATABASE)")"
 mysql_user="$(unquote "$(read_env MYSQL_USER)")"
 

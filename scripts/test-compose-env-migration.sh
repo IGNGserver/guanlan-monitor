@@ -38,7 +38,7 @@ printf '%s\n' \
   'MYSQL_ROOT_PASSWORD=StableRootSecret_1234567890' \
   'MYSQL_DATABASE=device_state_console' \
   'MYSQL_USER=dsc' \
-  'MYSQL_PASSWORD=StableDatabaseSecret_1234567890' \
+  'MYSQL_PASSWORD=654321' \
   'SESSION_COOKIE_SECURE=true' \
   'AGENT_REQUIRE_HTTPS=true' \
   'TRUST_PROXY=false' \
@@ -46,31 +46,87 @@ printf '%s\n' \
   > "$stable_env"
 
 DSC_RELEASE_CHANNEL=stable DSC_ALLOW_HTTP=true bash "$root/scripts/prepare-compose-env.sh" "$stable_env"
+grep -Fxq 'MYSQL_URL=mysql://dsc:654321@mysql:3306/device_state_console' "$stable_env"
 grep -Fxq 'SESSION_COOKIE_SECURE=false' "$stable_env"
 grep -Fxq 'AGENT_REQUIRE_HTTPS=false' "$stable_env"
 grep -Fxq 'TRUST_PROXY=true' "$stable_env"
 
-weak_stable_env="$test_root/weak-stable.env"
+mock_bin="$test_root/mock-bin"
+mkdir -p "$mock_bin"
+cat > "$mock_bin/docker" <<'MOCK'
+#!/usr/bin/env bash
+if [[ "${1:-}" != "inspect" ]]; then
+  exit 1
+fi
+cat <<'ENV'
+MYSQL_ROOT_PASSWORD=StableRootSecret_1234567890
+MYSQL_DATABASE=device_state_console
+MYSQL_USER=dsc
+MYSQL_PASSWORD=StaleInitSecret_123456
+ENV
+MOCK
+chmod +x "$mock_bin/docker"
+
+recovered_stable_env="$test_root/recovered-stable.env"
 printf '%s\n' \
   'SESSION_SECRET=stable-session-secret-for-compose-migration-test-1234567890' \
   'ACCESS_KEY=stableabc123' \
   'MYSQL_ROOT_PASSWORD=StableRootSecret_1234567890' \
   'MYSQL_DATABASE=device_state_console' \
   'MYSQL_USER=dsc' \
-  'MYSQL_PASSWORD=shortdb' \
-  > "$weak_stable_env"
-cp "$weak_stable_env" "$weak_stable_env.before"
-if preflight_output="$(DSC_RELEASE_CHANNEL=stable bash "$root/scripts/prepare-compose-env.sh" "$weak_stable_env" 2>&1)"; then
-  echo "Weak MYSQL_PASSWORD unexpectedly passed the stable Compose environment preflight." >&2
+  'MYSQL_PASSWORD=StaleInitSecret_123456' \
+  'MYSQL_URL=mysql://dsc:654321@127.0.0.1:3306/device_state_console' \
+  > "$recovered_stable_env"
+PATH="$mock_bin:$PATH" DSC_RECOVER_EXISTING_MYSQL=true DSC_RELEASE_CHANNEL=stable \
+  bash "$root/scripts/prepare-compose-env.sh" "$recovered_stable_env"
+grep -Fxq 'MYSQL_URL=mysql://dsc:654321@mysql:3306/device_state_console' "$recovered_stable_env"
+grep -Fxq 'MYSQL_PASSWORD=StaleInitSecret_123456' "$recovered_stable_env"
+
+placeholder_stable_env="$test_root/placeholder-stable.env"
+printf '%s\n' \
+  'SESSION_SECRET=stable-session-secret-for-compose-migration-test-1234567890' \
+  'ACCESS_KEY=stableabc123' \
+  'MYSQL_ROOT_PASSWORD=StableRootSecret_1234567890' \
+  'MYSQL_DATABASE=device_state_console' \
+  'MYSQL_USER=dsc' \
+  'MYSQL_PASSWORD=change-me' \
+  > "$placeholder_stable_env"
+cp "$placeholder_stable_env" "$placeholder_stable_env.before"
+if preflight_output="$(DSC_RELEASE_CHANNEL=stable bash "$root/scripts/prepare-compose-env.sh" "$placeholder_stable_env" 2>&1)"; then
+  echo "Placeholder MYSQL_PASSWORD unexpectedly passed the stable Compose environment preflight." >&2
   exit 1
 fi
-printf '%s\n' "$preflight_output" | grep -Fq 'MYSQL_PASSWORD must be an existing non-placeholder secret with at least 16 characters' || {
+printf '%s\n' "$preflight_output" | grep -Fq 'MYSQL_PASSWORD must be an existing non-placeholder secret with at least 6 characters' || {
   echo "Stable preflight failed for an unexpected reason." >&2
   exit 1
 }
-cmp "$weak_stable_env.before" "$weak_stable_env"
-if compgen -G "$weak_stable_env.pre-compose-security.*" >/dev/null; then
-  echo "Stable preflight created a backup despite rejecting a weak database password." >&2
+cmp "$placeholder_stable_env.before" "$placeholder_stable_env"
+if compgen -G "$placeholder_stable_env.pre-compose-security.*" >/dev/null; then
+  echo "Stable preflight created a backup despite rejecting a placeholder database password." >&2
+  exit 1
+fi
+
+weak_root_env="$test_root/weak-root.env"
+printf '%s\n' \
+  'SESSION_SECRET=stable-session-secret-for-compose-migration-test-1234567890' \
+  'ACCESS_KEY=stableabc123' \
+  'MYSQL_ROOT_PASSWORD=shortroot' \
+  'MYSQL_DATABASE=device_state_console' \
+  'MYSQL_USER=dsc' \
+  'MYSQL_PASSWORD=654321' \
+  > "$weak_root_env"
+cp "$weak_root_env" "$weak_root_env.before"
+if preflight_output="$(DSC_RELEASE_CHANNEL=stable bash "$root/scripts/prepare-compose-env.sh" "$weak_root_env" 2>&1)"; then
+  echo "Weak MYSQL_ROOT_PASSWORD unexpectedly passed the stable Compose environment preflight." >&2
+  exit 1
+fi
+printf '%s\n' "$preflight_output" | grep -Fq 'MYSQL_ROOT_PASSWORD must be an existing non-placeholder secret with at least 16 characters' || {
+  echo "Stable preflight did not retain the strong database root password requirement." >&2
+  exit 1
+}
+cmp "$weak_root_env.before" "$weak_root_env"
+if compgen -G "$weak_root_env.pre-compose-security.*" >/dev/null; then
+  echo "Stable preflight created a backup despite rejecting a weak database root password." >&2
   exit 1
 fi
 
