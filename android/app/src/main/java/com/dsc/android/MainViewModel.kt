@@ -32,6 +32,10 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.currentCoroutineContext
 import android.os.SystemClock
+import com.dsc.android.widget.WidgetDestination
+import com.dsc.android.widget.WidgetRefreshScheduler
+import com.dsc.android.widget.WidgetSnapshotStore
+import com.dsc.android.widget.WidgetUpdater
 import okhttp3.OkHttpClient
 import retrofit2.HttpException
 
@@ -62,6 +66,7 @@ class MainViewModel(
   private var cacheWriteJob: Job? = null
   private var trafficAnchor: String = todayAnchor()
   private var trafficSelectedStart: String? = null
+  private var pendingWidgetDestination: WidgetDestination? = null
   private var appInForeground = false
   private var connectionGeneration = 0L
   private var remoteSession = RemoteSession()
@@ -323,9 +328,14 @@ class MainViewModel(
       }
 
       val canonicalBaseUrl = resolvedBaseUrl.removeSuffix("/")
+      val previousBaseUrl = _state.value.serverConfig.baseUrl
       if (remoteResult { settingsRepository.save(_state.value.serverConfig.copy(baseUrl = canonicalBaseUrl, accessKey = accessKey)) }.isFailure) {
         _state.update { it.copy(savingConfig = false, message = "保存配置失败") }
         return@launch
+      }
+      // 中枢变了，旧组件的读数就不再属于当前账号；清掉而不是让桌面继续显示上一台中枢的主机名。
+      if (canonicalBaseUrl != previousBaseUrl) {
+        clearWidgetData()
       }
 
       // Login is the meaningful result of this form; a separate saved message
@@ -358,12 +368,14 @@ class MainViewModel(
 
   fun logout() {
     val previousApi = api
+    pendingWidgetDestination = null
     ++connectionGeneration
     stopRemoteActivity(clearCache = true)
     cacheReadJob?.cancel()
     remoteSession = RemoteSession(); liveAccepted = true
     api = null; httpClient = null
     _state.value = AppState(loading = false, currentScreen = AppScreen.Login, message = "已登出")
+    clearWidgetData()
     viewModelScope.launch {
       remoteResult { settingsRepository.clear() }.onFailure {
         _state.update { it.copy(message = "本机会话已退出，但安全配置清除失败，请重试登出") }
@@ -423,8 +435,16 @@ class MainViewModel(
           )
         }
         checkForUpdate()
-        loadForCurrentScreen()
+        WidgetRefreshScheduler.ensurePeriodic(getApplication())
+        WidgetRefreshScheduler.requestImmediate(getApplication(), manual = false)
         startRefreshLoop()
+        val destination = pendingWidgetDestination
+        pendingWidgetDestination = null
+        if (destination != null) {
+          applyWidgetDestination(destination)
+        } else {
+          loadForCurrentScreen()
+        }
         persistRemoteSnapshot()
       }.onFailure { error ->
         if (generation != connectionGeneration) return@onFailure
@@ -578,6 +598,52 @@ class MainViewModel(
     }
     loadMetrics(deviceId, _state.value.selectedWindow, showScreen = false)
     loadTraffic(deviceId, _state.value.trafficMode, showScreen = true)
+  }
+
+  /**
+   * 组件点击的延迟目的地。
+   *
+   * 桌面组件可以在未登录时启动 App，此时不能直接打开设备页；先记住目的地，
+   * 等自动登录成功并拿到设备列表后再应用。已在登录态时则立即跳转。
+   */
+  fun handleWidgetDestination(destination: WidgetDestination?) {
+    if (destination == null) return
+    if (_state.value.authenticated) {
+      applyWidgetDestination(destination)
+    } else {
+      pendingWidgetDestination = destination
+    }
+  }
+
+  private fun applyWidgetDestination(destination: WidgetDestination) {
+    val deviceId = destination.deviceId
+    when (destination.target) {
+      WidgetDestination.TARGET_FLEET -> {
+        val alreadyOnList = _state.value.currentScreen == AppScreen.DeviceList
+        showDeviceList()
+        if (alreadyOnList) loadForCurrentScreen()
+      }
+      WidgetDestination.TARGET_DEVICE -> {
+        if (deviceId != null && _state.value.devices.any { it.deviceId == deviceId }) {
+          openDevice(deviceId)
+        } else {
+          showDeviceList()
+          _state.update {
+            it.copy(message = if (it.devices.isEmpty()) "设备列表尚未加载，请稍后刷新" else "设备已不存在")
+          }
+        }
+      }
+      WidgetDestination.TARGET_TRAFFIC -> {
+        if (deviceId != null && _state.value.devices.any { it.deviceId == deviceId }) {
+          openTraffic(deviceId)
+        } else {
+          showDeviceList()
+          _state.update {
+            it.copy(message = if (it.devices.isEmpty()) "设备列表尚未加载，请稍后刷新" else "设备已不存在")
+          }
+        }
+      }
+    }
   }
 
   fun showDeviceList() {
@@ -861,6 +927,7 @@ class MainViewModel(
         )
       }
       persistRemoteSnapshot()
+      WidgetRefreshScheduler.requestImmediateIfStale(getApplication())
       loadForCurrentScreen(silent = !showIndicator)
     } catch (error: Throwable) {
       if (error is CancellationException) throw error
@@ -1203,6 +1270,16 @@ class MainViewModel(
           currentScreen = if (current.currentScreen == AppScreen.Login && cached.devices.isNotEmpty()) AppScreen.DeviceList else current.currentScreen
         )
       }
+    }
+  }
+
+  /** 登出或换中枢时清空桌面快照，避免把上一账号的主机名留在桌面上。 */
+  private fun clearWidgetData() {
+    val app = getApplication<Application>()
+    WidgetRefreshScheduler.cancelAll(app)
+    viewModelScope.launch {
+      WidgetSnapshotStore(app).clear()
+      WidgetUpdater.updateAll(app)
     }
   }
 

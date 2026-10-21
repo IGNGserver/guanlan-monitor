@@ -2,4 +2,22 @@
 <resources>
     <!-- 与 OneUiLightColors.canvas 对齐：Compose 首帧之前的窗口底色，避免深色模式下启动闪白。 -->
     <color name="guanlan_window_background">#F2F3F6</color>
+
+    <!-- 桌面组件配色：与 OneUiLightColors 同源；OneUiWidgetColorContractTest 守住漂移。 -->
+    <color name="widget_surface">#FFFFFF</color>
+    <color name="widget_canvas">#F2F3F6</color>
+    <color name="widget_hairline">#E4E6EA</color>
+    <color name="widget_text_primary">#191B1F</color>
+    <color name="widget_text_secondary">#5B6069</color>
+    <color name="widget_text_tertiary">#838993</color>
+    <color name="widget_accent">#1B76FD</color>
+    <color name="widget_accent_soft">#E6F0FE</color>
+    <color name="widget_online">#1AA35A</color>
+    <color name="widget_online_soft">#E3F6EA</color>
+    <color name="widget_offline">#838993</color>
+    <color name="widget_warn">#C87100</color>
+    <color name="widget_critical">#D93B3B</color>
+    <color name="widget_track">#F2F3F6</color>
+    <color name="widget_violet">#7B4DDB</color>
+    <color name="widget_ripple">#1A191B1F</color>
 </resources>
