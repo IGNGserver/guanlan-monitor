@@ -139,8 +139,9 @@ jobs:
             while true; do
               if ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$@"; then
                 return 0
+              else
+                local exit_code=$?
               fi
-              local exit_code=$?
               if [ "$attempt" -ge "$max_attempts" ]; then
                 return "$exit_code"
               fi
@@ -157,8 +158,9 @@ jobs:
             while true; do
               if scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$@"; then
                 return 0
+              else
+                local exit_code=$?
               fi
-              local exit_code=$?
               if [ "$attempt" -ge "$max_attempts" ]; then
                 return "$exit_code"
               fi
@@ -200,8 +202,9 @@ jobs:
             while true; do
               if ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$@"; then
                 return 0
+              else
+                local exit_code=$?
               fi
-              local exit_code=$?
               if [ "$attempt" -ge "$max_attempts" ]; then
                 return "$exit_code"
               fi
@@ -234,8 +237,9 @@ jobs:
             while true; do
               if ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$@"; then
                 return 0
+              else
+                local exit_code=$?
               fi
-              local exit_code=$?
               if [ "$attempt" -ge "$max_attempts" ]; then
                 return "$exit_code"
               fi
@@ -318,8 +322,9 @@ jobs:
             while true; do
               if ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$@"; then
                 return 0
+              else
+                local exit_code=$?
               fi
-              local exit_code=$?
               if [ "$attempt" -ge "$max_attempts" ]; then
                 return "$exit_code"
               fi
