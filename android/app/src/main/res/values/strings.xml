@@ -1,4 +1,50 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">观澜</string>
+
+    <string name="widget_fleet_label">观澜 · 全景</string>
+    <string name="widget_fleet_description">所有设备的在线状态与 CPU、内存、磁盘负载，一屏扫完。</string>
+    <string name="widget_device_label">观澜 · 单机</string>
+    <string name="widget_device_description">把一台设备钉在桌面：CPU 仪表盘、内存与磁盘占用，宽版含 6 小时走势。</string>
+    <string name="widget_traffic_label">观澜 · 流量</string>
+    <string name="widget_traffic_description">今日接收与发送、本月合计，以及按天走势。</string>
+    <string name="widget_traffic_title">流量</string>
+
+    <string name="widget_refresh">刷新小组件</string>
+    <string name="widget_choose_device">选择设备</string>
+    <string name="widget_choose_device_description">这个组件会持续显示所选设备的读数。</string>
+    <string name="widget_save">保存</string>
+    <string name="widget_cancel">取消</string>
+    <string name="widget_retry">重试</string>
+    <string name="widget_open_app">打开观澜</string>
+    <string name="widget_empty_connect_title">尚未连接中枢</string>
+    <string name="widget_empty_connect_description">打开观澜完成连接后，桌面组件会自动读取数据。</string>
+    <string name="widget_empty_devices_title">暂无设备</string>
+    <string name="widget_empty_devices_description">中枢还没有收到设备上报，点按刷新重试。</string>
+    <string name="widget_no_data">暂无数据</string>
+    <string name="widget_loading">正在读取设备</string>
+    <string name="widget_error_retry">读取失败，请重试</string>
+    <string name="widget_selected">已选择</string>
+    <string name="widget_online">在线</string>
+    <string name="widget_offline">离线</string>
+    <string name="widget_cpu">CPU</string>
+    <string name="widget_memory">内存</string>
+    <string name="widget_disk">磁盘</string>
+    <string name="widget_device">设备</string>
+    <string name="widget_month">本月</string>
+    <string name="widget_today">今日</string>
+    <string name="widget_today_rx">今日接收</string>
+    <string name="widget_today_tx">今日发送</string>
+    <string name="widget_cpu_six_hours">6 小时 CPU</string>
+    <string name="widget_peak">峰值</string>
+    <string name="widget_live_rate">实时速率</string>
+    <string name="widget_updated">更新</string>
+    <string name="widget_refresh_failed">刷新失败，已保留上次数据</string>
+    <string name="widget_stale">数据可能已过期</string>
+    <string name="widget_change_device_hint">长按更换设备</string>
+    <string name="widget_tap_settings">点按选择设备</string>
+    <string name="widget_unknown_device">设备已不存在</string>
+    <string name="widget_daily_total">每日总量</string>
+    <string name="widget_rx">接收</string>
+    <string name="widget_tx">发送</string>
 </resources>

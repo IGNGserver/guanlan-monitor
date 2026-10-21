@@ -17,6 +17,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dsc.android.ui.oneui.GuanlanTheme
 import com.dsc.android.ui.shell.GuanlanActions
 import com.dsc.android.ui.shell.GuanlanApp
+import com.dsc.android.widget.WidgetDestination
+import com.dsc.android.widget.WidgetIntents
 
 class MainActivity : ComponentActivity() {
   private val appViewModel: MainViewModel by viewModels { MainViewModel.Factory }
@@ -24,6 +26,7 @@ class MainActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    if (savedInstanceState == null) handleWidgetIntent(intent)
     enableEdgeToEdge()
     applyThemedTaskDescription()
 
@@ -86,6 +89,12 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    handleWidgetIntent(intent)
+  }
+
   override fun onStart() {
     super.onStart()
     appViewModel.onAppForeground()
@@ -94,6 +103,20 @@ class MainActivity : ComponentActivity() {
   override fun onStop() {
     appViewModel.onAppBackground()
     super.onStop()
+  }
+
+  /**
+   * 组件点击与普通启动共用 MainActivity；未认证时先记下目的地，登录成功后再跳。
+   * 处理完就移除 extras，配置变更重建时不会再次触发同一次跳转。
+   */
+  private fun handleWidgetIntent(intent: Intent?) {
+    if (intent == null) return
+    val target = intent.getStringExtra(WidgetIntents.EXTRA_TARGET)
+    val deviceId = intent.getStringExtra(WidgetIntents.EXTRA_DEVICE_ID)
+    val destination = WidgetDestination.from(target, deviceId) ?: return
+    intent.removeExtra(WidgetIntents.EXTRA_TARGET)
+    intent.removeExtra(WidgetIntents.EXTRA_DEVICE_ID)
+    appViewModel.handleWidgetDestination(destination)
   }
 
   private fun launchUpdateInstaller(uriString: String) {

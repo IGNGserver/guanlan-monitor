@@ -1,0 +1,503 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:orientation="vertical"
+    android:paddingStart="@dimen/widget_padding"
+    android:paddingTop="13dp"
+    android:paddingEnd="@dimen/widget_padding"
+    android:paddingBottom="12dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="26dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="14dp"
+            android:contentDescription="@null"
+            android:src="@drawable/widget_brand_wave" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="5dp"
+            android:fontFamily="sans-serif-medium"
+            android:includeFontPadding="false"
+            android:letterSpacing="0.08"
+            android:text="@string/app_name"
+            android:textColor="@color/widget_text_primary"
+            android:textSize="11.5sp" />
+
+        <LinearLayout
+            android:id="@+id/fleet_online_pill"
+            android:layout_width="wrap_content"
+            android:layout_height="22dp"
+            android:layout_marginStart="9dp"
+            android:background="@drawable/widget_pill_online"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="6dp"
+            android:paddingEnd="8dp">
+
+            <ImageView
+                android:id="@+id/fleet_online_dot"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:contentDescription="@null"
+                android:src="@drawable/widget_dot_online" />
+
+            <TextView
+                android:id="@+id/fleet_online"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="3dp"
+                android:fontFamily="sans-serif-medium"
+                android:includeFontPadding="false"
+                android:text="3/4 在线"
+                android:textColor="@color/widget_online"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <ImageButton
+            android:id="@+id/fleet_refresh"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:background="@drawable/widget_icon_button_bg"
+            android:contentDescription="@string/widget_refresh"
+            android:padding="5dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/widget_ic_refresh" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/fleet_state"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:text="1 台离线 · 12 分钟前"
+            android:textColor="@color/widget_warn"
+            android:textSize="10.5sp" />
+
+        <TextView
+            android:id="@+id/fleet_updated"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:text="更新 20:42"
+            android:textColor="@color/widget_text_tertiary"
+            android:textSize="9.5sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="5dp"
+        android:orientation="horizontal"
+        android:paddingStart="19dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:includeFontPadding="false"
+            android:text="@string/widget_device"
+            android:textColor="@color/widget_text_tertiary"
+            android:textSize="8.5sp" />
+
+        <TextView
+            android:layout_width="46dp"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:includeFontPadding="false"
+            android:text="@string/widget_cpu"
+            android:textColor="@color/widget_text_tertiary"
+            android:textSize="8.5sp" />
+
+        <TextView
+            android:layout_width="46dp"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:includeFontPadding="false"
+            android:text="@string/widget_memory"
+            android:textColor="@color/widget_text_tertiary"
+            android:textSize="8.5sp" />
+
+        <TextView
+            android:layout_width="46dp"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:includeFontPadding="false"
+            android:text="@string/widget_disk"
+            android:textColor="@color/widget_text_tertiary"
+            android:textSize="8.5sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:id="@+id/fleet_row_1"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_row_ripple"
+            android:gravity="center_vertical"
+            android:minHeight="26dp"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/fleet_dot_1"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_marginStart="2dp"
+                android:layout_marginEnd="7dp"
+                android:contentDescription="@null"
+                android:src="@drawable/widget_dot_online" />
+
+            <TextView
+                android:id="@+id/fleet_name_1"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="NAS"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="12.5sp" />
+
+            <TextView
+                android:id="@+id/fleet_cpu_1"
+                android:layout_width="46dp"
+                android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:text="8%"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="12.5sp" />
+
+            <TextView
+                android:id="@+id/fleet_mem_1"
+                android:layout_width="46dp"
+                android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:text="63%"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="12.5sp" />
+
+            <TextView
+                android:id="@+id/fleet_disk_1"
+                android:layout_width="46dp"
+                android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:text="82%"
+                android:textColor="@color/widget_warn"
+                android:textSize="12.5sp" />
+
+            <TextView
+                android:id="@+id/fleet_offline_1"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_text_tertiary"
+                android:textSize="9.5sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:id="@+id/fleet_divider_2"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginStart="19dp"
+            android:background="@drawable/widget_divider" />
+
+        <LinearLayout
+            android:id="@+id/fleet_row_2"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_row_ripple"
+            android:gravity="center_vertical"
+            android:minHeight="26dp"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/fleet_dot_2"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_marginStart="2dp"
+                android:layout_marginEnd="7dp"
+                android:contentDescription="@null"
+                android:src="@drawable/widget_dot_online" />
+
+            <TextView
+                android:id="@+id/fleet_name_2"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="工作站"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="12.5sp" />
+
+            <TextView
+                android:id="@+id/fleet_cpu_2"
+                android:layout_width="46dp"
+                android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:text="42%"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="12.5sp" />
+
+            <TextView
+                android:id="@+id/fleet_mem_2"
+                android:layout_width="46dp"
+                android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:text="71%"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="12.5sp" />
+
+            <TextView
+                android:id="@+id/fleet_disk_2"
+                android:layout_width="46dp"
+                android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:text="54%"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="12.5sp" />
+
+            <TextView
+                android:id="@+id/fleet_offline_2"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_text_tertiary"
+                android:textSize="9.5sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:id="@+id/fleet_divider_3"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginStart="19dp"
+            android:background="@drawable/widget_divider" />
+
+        <LinearLayout
+            android:id="@+id/fleet_row_3"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_row_ripple"
+            android:gravity="center_vertical"
+            android:minHeight="26dp"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/fleet_dot_3"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_marginStart="2dp"
+                android:layout_marginEnd="7dp"
+                android:contentDescription="@null"
+                android:src="@drawable/widget_dot_online" />
+
+            <TextView
+                android:id="@+id/fleet_name_3"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="Mac mini"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="12.5sp" />
+
+            <TextView
+                android:id="@+id/fleet_cpu_3"
+                android:layout_width="46dp"
+                android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:text="3%"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="12.5sp" />
+
+            <TextView
+                android:id="@+id/fleet_mem_3"
+                android:layout_width="46dp"
+                android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:text="38%"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="12.5sp" />
+
+            <TextView
+                android:id="@+id/fleet_disk_3"
+                android:layout_width="46dp"
+                android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:text="22%"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="12.5sp" />
+
+            <TextView
+                android:id="@+id/fleet_offline_3"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="@color/widget_text_tertiary"
+                android:textSize="9.5sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:id="@+id/fleet_divider_4"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginStart="19dp"
+            android:background="@drawable/widget_divider" />
+
+        <LinearLayout
+            android:id="@+id/fleet_row_4"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_row_ripple"
+            android:gravity="center_vertical"
+            android:minHeight="26dp"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/fleet_dot_4"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_marginStart="2dp"
+                android:layout_marginEnd="7dp"
+                android:contentDescription="@null"
+                android:src="@drawable/widget_dot_offline" />
+
+            <TextView
+                android:id="@+id/fleet_name_4"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="Windows-dev"
+                android:textColor="@color/widget_text_secondary"
+                android:textSize="12.5sp" />
+
+            <TextView
+                android:id="@+id/fleet_cpu_4"
+                android:layout_width="46dp"
+                android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:text="—"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="12.5sp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/fleet_mem_4"
+                android:layout_width="46dp"
+                android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:text="—"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="12.5sp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/fleet_disk_4"
+                android:layout_width="46dp"
+                android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:text="—"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="12.5sp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/fleet_offline_4"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:gravity="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="离线 · 12 分钟前"
+                android:textColor="@color/widget_text_tertiary"
+                android:textSize="9.5sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+</LinearLayout>

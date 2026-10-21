@@ -2,4 +2,22 @@
 <resources>
     <!-- 与 OneUiDarkColors/OneUiExtraDarkColors.canvas 对齐（深色启动不闪白）。 -->
     <color name="guanlan_window_background">#000000</color>
+
+    <!-- 桌面组件深色：与 OneUiDarkColors 同源。 -->
+    <color name="widget_surface">#1B1C1F</color>
+    <color name="widget_canvas">#000000</color>
+    <color name="widget_hairline">#2C2E33</color>
+    <color name="widget_text_primary">#EDEFF2</color>
+    <color name="widget_text_secondary">#A7ACB5</color>
+    <color name="widget_text_tertiary">#7F858F</color>
+    <color name="widget_accent">#4D9BF7</color>
+    <color name="widget_accent_soft">#17304C</color>
+    <color name="widget_online">#37D07A</color>
+    <color name="widget_online_soft">#11311F</color>
+    <color name="widget_offline">#868C96</color>
+    <color name="widget_warn">#F0A73C</color>
+    <color name="widget_critical">#F56B66</color>
+    <color name="widget_track">#2C2E33</color>
+    <color name="widget_violet">#A98BF5</color>
+    <color name="widget_ripple">#33FFFFFF</color>
 </resources>

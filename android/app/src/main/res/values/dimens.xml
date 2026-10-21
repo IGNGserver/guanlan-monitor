@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12 起 launcher 会按系统组件半径裁切；老系统回落到 One UI 的 24dp。 -->
+    <dimen name="widget_corner_radius">24dp</dimen>
+    <dimen name="widget_padding">14dp</dimen>
+    <dimen name="widget_wide_padding">16dp</dimen>
+</resources>

@@ -51,3 +51,11 @@
 -keep class androidx.compose.material3.** { *; }
 -keep class androidx.navigation.** { *; }
 
+# 7. App widgets & WorkManager
+# WorkManager instantiates the worker by class name; providers are manifest components
+# and the snapshot models are serialized by reflection-generated serializers.
+-keep class com.dsc.android.widget.** { *; }
+-keep class * extends androidx.work.ListenableWorker {
+    <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+
