@@ -76,6 +76,7 @@ class OneUiSourceContractTest {
     mapOf(
       "groupGap" to "组与组之间的大留白，One UI 的分组节奏（形）",
       "oneUiContentWidth" to "宽屏限制正文行长（适）",
+      "OneUiEmbeddedPane" to "双栏内嵌态统一收敛单栏留白，保证顶栏与列表对齐（构 + 适）",
       "touchTarget" to "最小命中区（适）",
       "shapes.dock" to "底部工具坞只圆上沿两角（形）",
       "iconFilledSize" to "行内图标尺寸（形）",

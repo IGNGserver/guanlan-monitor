@@ -61,21 +61,27 @@ fun OnboardingScreen(
   val busy = state.savingConfig || state.loggingIn
   val canSubmit = baseUrl.isNotBlank() && accessKey.isNotBlank() && !busy
 
+  val topSpacer = if (window.useCompactTopBar) metrics.spaceL else metrics.spaceXxxl
+  val formMaxWidth = if (window.isWide) 540.dp else metrics.contentMaxWidth
+
   Column(
     modifier = Modifier
       .fillMaxSize()
       .background(colors.canvas)
       .statusBarsPadding()
-      .imePadding()
+      .imePadding(),
+    horizontalAlignment = Alignment.CenterHorizontally
   ) {
     Column(
       modifier = Modifier
         .weight(1f)
+        .fillMaxWidth()
+        .widthIn(max = formMaxWidth)
         .verticalScroll(rememberScrollState())
         .padding(horizontal = metrics.screenMargin),
       verticalArrangement = Arrangement.Top
     ) {
-      Spacer(Modifier.height(metrics.spaceXxxl))
+      Spacer(Modifier.height(topSpacer))
       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         OneUiLeadingIcon(icon = Icons.Rounded.Hub, contentDescription = null, tone = OneUiIconTone.Accent)
         OneUiText(
@@ -147,6 +153,7 @@ fun OnboardingScreen(
     Column(
       modifier = Modifier
         .fillMaxWidth()
+        .widthIn(max = formMaxWidth)
         .background(colors.canvas)
         .navigationBarsPadding()
         .padding(horizontal = metrics.screenMargin, vertical = metrics.spaceM),

@@ -439,7 +439,13 @@ fun OneUiGroup(
   ) { content() }
 }
 
-/** 组标题：写在容器上方，而不是容器内部（One UI 设置的分组方式）。 */
+/**
+ * 组标题：写在容器上方，而不是容器内部（One UI 设置的分组方式）。
+ *
+ * 当位于 LazyColumn 的 item 内时，外层列表已通过 [oneUiListContentPadding] 提供了
+ * `screenMargin` 留白，此时这里只留 `4.dp` 的光学缩进以与卡片内标题对齐，
+ * 避免 `screenMargin` 叠加两次导致组标题缩进到卡片内部（适）。
+ */
 @Composable
 fun OneUiGroupHeader(
   label: String,
@@ -453,8 +459,8 @@ fun OneUiGroupHeader(
     modifier = modifier
       .fillMaxWidth()
       .padding(
-        start = metrics.screenMargin + 4.dp,
-        end = metrics.screenMargin,
+        start = metrics.spaceXxs,
+        end = metrics.spaceXxs,
         top = metrics.spaceXs,
         bottom = metrics.spaceXs
       )
@@ -1253,6 +1259,7 @@ fun OneUiSheet(
   ModalBottomSheet(
     onDismissRequest = onDismissRequest,
     modifier = modifier,
+    sheetMaxWidth = metrics.sheetMaxWidth,
     sheetState = sheetState,
     shape = shapes.sheet,
     containerColor = colors.group,
@@ -1270,9 +1277,10 @@ fun OneUiSheet(
     }
   ) {
     Column(
-      modifier = Modifier.padding(
-        bottom = if (confirmBar == null) metrics.spaceXxl else 0.dp
-      )
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(bottom = if (confirmBar == null) metrics.spaceXxl else 0.dp),
+      horizontalAlignment = Alignment.CenterHorizontally
     ) {
       Row(
         modifier = Modifier
@@ -1435,6 +1443,32 @@ fun oneUiListContentPadding(): PaddingValues {
     top = metrics.spaceXs,
     bottom = metrics.spaceXxl + bottom.calculateBottomPadding() + metrics.thumbZone
   )
+}
+
+/**
+ * 双栏内嵌容器（构 + 适）：
+ * 当页面作为主从双栏的左栏或右栏（`embedded = true`）渲染时，将该栏内的 `screenMargin` 与
+ * `groupGap` 收敛到分栏专用的紧凑值，并解除单栏 `contentMaxWidth` 居中限流，
+ * 确保分栏内的 `OneUiTopBar`、`OneUiGroupHeader` 与 `LazyColumn` 卡片列表严丝合缝对齐。
+ */
+@Composable
+fun OneUiEmbeddedPane(
+  embedded: Boolean,
+  content: @Composable () -> Unit
+) {
+  if (!embedded) {
+    content()
+    return
+  }
+  val base = OneUiTheme.metrics
+  val embeddedMetrics = remember(base) {
+    base.copy(
+      screenMargin = base.paneMargin,
+      groupGap = base.paneGroupGap,
+      contentMaxWidth = Dp.Unspecified
+    )
+  }
+  CompositionLocalProvider(LocalOneUiMetrics provides embeddedMetrics, content = content)
 }
 
 /** 让组件在禁用时统一降透明度的工具。 */

@@ -3,7 +3,10 @@ package com.dsc.android.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -59,10 +63,12 @@ import kotlinx.coroutines.launch
  * 关注（构）：把散在各设备里的问题按「严重 → 警告 → 离线」排成一张清单。
  * 每一行回答三件事：哪台、什么、离阈值多远；点一下直达对应类别的图表。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AttentionScreen(state: AppState, actions: GuanlanActions, embedded: Boolean) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
+  val window = OneUiTheme.window
   val listState = rememberLazyListState()
   val collapse = rememberOneUiCollapse(listState)
   val scope = rememberCoroutineScope()
@@ -103,7 +109,7 @@ fun AttentionScreen(state: AppState, actions: GuanlanActions, embedded: Boolean)
           .weight(1f)
           .fillMaxWidth()
           .oneUiContentWidth(metrics),
-        contentPadding = if (embedded) PaddingValues(metrics.spaceS) else oneUiListContentPadding(),
+        contentPadding = oneUiListContentPadding(),
         verticalArrangement = Arrangement.spacedBy(metrics.groupGap)
       ) {
         item(key = "counts") {
@@ -128,16 +134,47 @@ fun AttentionScreen(state: AppState, actions: GuanlanActions, embedded: Boolean)
           }
         }
 
-        AttentionSeverity.entries.forEach { severity ->
-          val group = groups[severity].orEmpty()
-          if (group.isEmpty()) return@forEach
-          item(key = "group:${severity.name}") {
-            Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
-              OneUiGroupHeader(label = "${severity.label} · ${group.size}", description = severityHint(severity))
-              OneUiGroup {
-                group.forEachIndexed { index, issue ->
-                  if (index > 0) OneUiListDivider()
-                  AttentionRow(issue = issue, onClick = { actions.onOpenDevice(issue.deviceId, issue.block) })
+        val nonEmptyGroups = AttentionSeverity.entries.mapNotNull { severity ->
+          groups[severity]?.takeIf { it.isNotEmpty() }?.let { severity to it }
+        }
+        if (window.isWide && nonEmptyGroups.size > 1) {
+          item(key = "groups-grid") {
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+              val spacing = metrics.cardGap
+              val columns = if (maxWidth >= 680.dp) 2 else 1
+              val cellWidth = (maxWidth - spacing * (columns - 1)) / columns
+              FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing),
+                verticalArrangement = Arrangement.spacedBy(metrics.groupGap)
+              ) {
+                nonEmptyGroups.forEach { (severity, group) ->
+                  Column(
+                    modifier = Modifier.width(cellWidth),
+                    verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+                  ) {
+                    OneUiGroupHeader(label = "${severity.label} · ${group.size}", description = severityHint(severity))
+                    OneUiGroup {
+                      group.forEachIndexed { index, issue ->
+                        if (index > 0) OneUiListDivider()
+                        AttentionRow(issue = issue, onClick = { actions.onOpenDevice(issue.deviceId, issue.block) })
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } else {
+          nonEmptyGroups.forEach { (severity, group) ->
+            item(key = "group:${severity.name}") {
+              Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
+                OneUiGroupHeader(label = "${severity.label} · ${group.size}", description = severityHint(severity))
+                OneUiGroup {
+                  group.forEachIndexed { index, issue ->
+                    if (index > 0) OneUiListDivider()
+                    AttentionRow(issue = issue, onClick = { actions.onOpenDevice(issue.deviceId, issue.block) })
+                  }
                 }
               }
             }

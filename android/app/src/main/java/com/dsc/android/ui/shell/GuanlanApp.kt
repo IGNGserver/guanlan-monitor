@@ -62,6 +62,7 @@ import com.dsc.android.ui.oneui.OneUiAppearanceSetting
 import com.dsc.android.ui.oneui.OneUiBottomBar
 import com.dsc.android.ui.oneui.OneUiDestination
 import com.dsc.android.ui.oneui.OneUiDialog
+import com.dsc.android.ui.oneui.OneUiEmbeddedPane
 import com.dsc.android.ui.oneui.OneUiEmptyState
 import com.dsc.android.ui.oneui.OneUiNavigationRail
 import com.dsc.android.ui.oneui.OneUiPredictiveBackProgress
@@ -147,6 +148,10 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
     useTwoPane = window.useTwoPane,
     screenTransitionRunning = screenTransition.isRunning
   )
+
+  LaunchedEffect(window.useTwoPane, screen, state.selectedDeviceId) {
+    actions.onSetTwoPaneActive(window.useTwoPane)
+  }
 
   // 关注徽标只数「严重 + 警告」：离线设备在首页已经是灰卡，不重复催人
   val attentionCount = remember(state.devices, state.attentionMetrics) {
@@ -281,7 +286,7 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
         .padding(
           start = metrics.screenMargin,
           end = metrics.screenMargin,
-          bottom = if (screen.showsTopLevelNavigation) {
+          bottom = if (!window.useNavigationRail && screen.showsTopLevelNavigation) {
             metrics.bottomBarHeight + metrics.spaceM
           } else {
             metrics.spaceXl
@@ -437,37 +442,50 @@ private fun ScreenStack(
     }
   }
 
-  if (twoPane && screen != AppScreen.Login) {
+  if (twoPane && screen.isOverviewMasterDetail) {
+    val window = OneUiTheme.window
+    val metrics = OneUiTheme.metrics
+    val masterWidth = (window.widthDp * 0.35f).coerceIn(336.dp, 408.dp)
     Row(modifier = Modifier.fillMaxSize()) {
       Box(
         modifier = Modifier
-          .width(380.dp)
+          .width(masterWidth)
           .fillMaxHeight()
           .background(colors.canvas)
       ) {
-        saveableStateHolder.SaveableStateProvider(
-          key = screenStateKey(AppScreen.DeviceList, state)
-        ) {
-          DeviceListScreen(state = state, actions = actions, embedded = true)
+        OneUiEmbeddedPane(embedded = true) {
+          saveableStateHolder.SaveableStateProvider(
+            key = screenStateKey(AppScreen.DeviceList, state)
+          ) {
+            DeviceListScreen(state = state, actions = actions, embedded = true)
+          }
         }
       }
+      Box(
+        modifier = Modifier
+          .width(metrics.hairline)
+          .fillMaxHeight()
+          .background(colors.hairline)
+      )
       Box(
         modifier = Modifier
           .weight(1f)
           .fillMaxHeight()
           .background(colors.canvas)
       ) {
-        when {
-          screen.showsDetail -> SavedScreenContent(screen, embedded = true)
+        OneUiEmbeddedPane(embedded = true) {
+          when {
+            screen == AppScreen.Traffic -> SavedScreenContent(AppScreen.Traffic, embedded = true)
 
-          screen == AppScreen.Settings || screen == AppScreen.Attention -> SavedScreenContent(screen, embedded = true)
+            state.selectedDeviceId != null -> SavedScreenContent(AppScreen.DeviceDetail, embedded = true)
 
-          else -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            OneUiEmptyState(
-              title = "选择一台设备",
-              description = "在左侧选择设备，即可查看 CPU、显卡、内存、硬盘、网络、温度与风扇指标。",
-              icon = Icons.Rounded.Hub
-            )
+            else -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+              OneUiEmptyState(
+                title = "选择一台设备",
+                description = "在左侧选择设备，即可查看 CPU、显卡、内存、硬盘、网络、温度与风扇指标。",
+                icon = Icons.Rounded.Hub
+              )
+            }
           }
         }
       }
@@ -556,8 +574,8 @@ private fun OneUiSnackbar(data: SnackbarData) {
   }
 }
 
-private val AppScreen.showsDetail: Boolean
-  get() = this == AppScreen.DeviceDetail || this == AppScreen.Traffic
+private val AppScreen.isOverviewMasterDetail: Boolean
+  get() = this == AppScreen.DeviceList || this == AppScreen.DeviceDetail || this == AppScreen.Traffic
 
 private val AppScreen.showsTopLevelNavigation: Boolean
   get() = this == AppScreen.DeviceList || this == AppScreen.Settings || this == AppScreen.Attention

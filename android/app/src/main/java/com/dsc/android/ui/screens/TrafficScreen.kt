@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -106,7 +107,7 @@ fun TrafficScreen(
   val modeIndex = TrafficCalendarMode.entries.indexOf(state.trafficMode).coerceAtLeast(0)
   // transitionSpec 不在组合上下文里，动效必须先在这里取好
   val motion = OneUiTheme.motion
-  // 双栏的右栏没有「返回」这一说：换设备永远回到左栏点选（构）
+  // 双栏的右栏也有显式返回出口：从设备详情进入流量日历后，点返回直接回到该设备的详情页（交）
   val backIcon: @Composable () -> Unit = {
     OneUiIconButton(contentDescription = "返回上一页", onClick = actions.onSystemBack) {
       OneUiIcon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
@@ -130,7 +131,7 @@ fun TrafficScreen(
           collapse = collapse,
           onCollapsedTitleClick = { topBarScope.launch { listState.animateScrollToItem(0) } },
           large = !embedded,
-          navigationIcon = if (embedded) null else backIcon,
+          navigationIcon = backIcon,
           actions = {
             OneUiIconButton(
               contentDescription = "刷新",
@@ -146,110 +147,170 @@ fun TrafficScreen(
         OneUiSyncProgress(visible = syncing, modifier = Modifier.align(Alignment.BottomCenter))
       }
 
-      LazyColumn(
-        state = listState,
+      BoxWithConstraints(
         modifier = Modifier
           .weight(1f)
           .fillMaxWidth()
-          .oneUiContentWidth(metrics),
-        contentPadding = oneUiListContentPadding(),
-        verticalArrangement = Arrangement.spacedBy(metrics.groupGap)
+          .oneUiContentWidth(metrics)
       ) {
-        // 连接尝试进行中不急着喊"离线"：先自动连一次，连不上再展示缓存（交）
-        if (state.dataSource == RemoteDataSource.Cache && !state.loggingIn && !state.refreshing) {
-          item(key = "offline-cache") {
-            OneUiNotice(
-              title = "当前显示离线缓存",
-              description = "缓存于 ${formatTime(state.cacheSavedAt)}；流量数字可能落后于中枢。",
-              tone = OneUiNoticeTone.Warning
-            )
-          }
-        }
-
-        if (traffic == null) {
-          val error = state.trafficError
-          if (error == null || state.loadingTraffic) {
-            item(key = "traffic-skeleton") {
-              Column(verticalArrangement = Arrangement.spacedBy(metrics.cardGap)) {
-                OneUiSkeleton(height = 108.dp)
-                OneUiSkeleton(height = 188.dp)
+        val wideSplit = maxWidth >= 600.dp
+        Column(modifier = Modifier.fillMaxSize()) {
+          LazyColumn(
+            state = listState,
+            modifier = Modifier
+              .weight(1f)
+              .fillMaxWidth(),
+            contentPadding = oneUiListContentPadding(),
+            verticalArrangement = Arrangement.spacedBy(metrics.groupGap)
+          ) {
+            // 连接尝试进行中不急着喊"离线"：先自动连一次，连不上再展示缓存（交）
+            if (state.dataSource == RemoteDataSource.Cache && !state.loggingIn && !state.refreshing) {
+              item(key = "offline-cache") {
+                OneUiNotice(
+                  title = "当前显示离线缓存",
+                  description = "缓存于 ${formatTime(state.cacheSavedAt)}；流量数字可能落后于中枢。",
+                  tone = OneUiNoticeTone.Warning
+                )
               }
             }
-          } else {
-            // 失败不能停在骨架屏上假装还在加载：错误要留在页面上并给出重试（交）
-            item(key = "traffic-error") {
-              OneUiErrorState(
-                title = "没能读取流量数据",
-                description = error,
-                onRetry = actions.onRefresh
+
+            if (traffic == null) {
+              val error = state.trafficError
+              if (error == null || state.loadingTraffic) {
+                item(key = "traffic-skeleton") {
+                  Column(verticalArrangement = Arrangement.spacedBy(metrics.cardGap)) {
+                    OneUiSkeleton(height = 108.dp)
+                    OneUiSkeleton(height = 188.dp)
+                  }
+                }
+              } else {
+                // 失败不能停在骨架屏上假装还在加载：错误要留在页面上并给出重试（交）
+                item(key = "traffic-error") {
+                  OneUiErrorState(
+                    title = "没能读取流量数据",
+                    description = error,
+                    onRetry = actions.onRefresh
+                  )
+                }
+              }
+            } else if (wideSplit) {
+              item(key = "traffic-wide-split") {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(metrics.cardGap),
+                  verticalAlignment = Alignment.Top
+                ) {
+                  Column(
+                    modifier = Modifier.weight(1.08f),
+                    verticalArrangement = Arrangement.spacedBy(metrics.cardGap)
+                  ) {
+                    TrafficHeader(
+                      title = traffic.title,
+                      rangeStart = traffic.rangeStart,
+                      rangeEnd = traffic.rangeEnd,
+                      traffic = traffic,
+                      stale = stale,
+                      onShiftAnchor = actions.onShiftTrafficAnchor,
+                      modes = modes,
+                      selectedModeIndex = modeIndex,
+                      onSelectMode = { index -> actions.onSelectTrafficMode(TrafficCalendarMode.entries[index]) }
+                    )
+                    AnimatedContent(
+                      targetState = state.trafficMode,
+                      transitionSpec = {
+                        oneUiSlideSwitch(
+                          forwardToRight = TrafficCalendarMode.entries.indexOf(targetState) >=
+                            TrafficCalendarMode.entries.indexOf(initialState),
+                          motion = motion
+                        )
+                      },
+                      label = "oneui_traffic_mode"
+                    ) { mode ->
+                      Box(modifier = Modifier.oneUiStaleDim(stale)) {
+                        TrafficCalendar(traffic.cells, mode, actions.onSelectTrafficCell)
+                      }
+                    }
+                  }
+                  Column(
+                    modifier = Modifier.weight(0.92f),
+                    verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+                  ) {
+                    OneUiGroupHeader(label = "范围记录", description = "最多展示最近 36 条上报记录")
+                    Box(modifier = Modifier.oneUiStaleDim(stale)) {
+                      TrafficRecords(traffic.records.asReversed().take(36))
+                    }
+                  }
+                }
+              }
+            } else {
+              item(key = "traffic-header") {
+                TrafficHeader(
+                  title = traffic.title,
+                  rangeStart = traffic.rangeStart,
+                  rangeEnd = traffic.rangeEnd,
+                  traffic = traffic,
+                  stale = stale,
+                  onShiftAnchor = actions.onShiftTrafficAnchor
+                )
+              }
+              item(key = "traffic-calendar") {
+                // 日/周/月是同一页的内容切换：横向轻推 + 淡入淡出（动）
+                AnimatedContent(
+                  targetState = state.trafficMode,
+                  transitionSpec = {
+                    oneUiSlideSwitch(
+                      forwardToRight = TrafficCalendarMode.entries.indexOf(targetState) >=
+                        TrafficCalendarMode.entries.indexOf(initialState),
+                      motion = motion
+                    )
+                  },
+                  label = "oneui_traffic_mode"
+                ) { mode ->
+                  Box(modifier = Modifier.oneUiStaleDim(stale)) {
+                    TrafficCalendar(traffic.cells, mode, actions.onSelectTrafficCell)
+                  }
+                }
+              }
+              item(key = "traffic-records-header") {
+                OneUiGroupHeader(label = "范围记录", description = "最多展示最近 36 条上报记录")
+              }
+              item(key = "traffic-records") {
+                Box(modifier = Modifier.oneUiStaleDim(stale)) {
+                  TrafficRecords(traffic.records.asReversed().take(36))
+                }
+              }
+            }
+          }
+
+          if (!wideSplit) {
+            // 紧凑宽度下统计周期切换放在底部拇指区（构 + 交），并且不吃在手势条下面
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .oneUiSurface(
+                  colors.raised,
+                  OneUiTheme.shapes.dock,
+                  colors = colors,
+                  level = OneUiSurfaceLevel.Raised
+                )
+                .navigationBarsPadding()
+                .padding(horizontal = metrics.screenMargin, vertical = metrics.spaceS),
+              verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+              OneUiText(
+                text = "统计周期",
+                role = OneUiTextRole.ChartLabel,
+                color = colors.textTertiary,
+                weight = FontWeight.SemiBold
+              )
+              OneUiSegmentedRow(
+                options = modes,
+                selectedIndex = modeIndex,
+                onSelect = { index -> actions.onSelectTrafficMode(TrafficCalendarMode.entries[index]) }
               )
             }
           }
-        } else {
-          item(key = "traffic-header") {
-            TrafficHeader(
-              traffic.title,
-              traffic.rangeStart,
-              traffic.rangeEnd,
-              traffic,
-              stale,
-              actions.onShiftTrafficAnchor
-            )
-          }
-          item(key = "traffic-calendar") {
-            // 日/周/月是同一页的内容切换：横向轻推 + 淡入淡出（动）
-            AnimatedContent(
-              targetState = state.trafficMode,
-              transitionSpec = {
-                oneUiSlideSwitch(
-                  forwardToRight = TrafficCalendarMode.entries.indexOf(targetState) >=
-                    TrafficCalendarMode.entries.indexOf(initialState),
-                  motion = motion
-                )
-              },
-              label = "oneui_traffic_mode"
-            ) { mode ->
-              Box(modifier = Modifier.oneUiStaleDim(stale)) {
-                TrafficCalendar(traffic.cells, mode, actions.onSelectTrafficCell)
-              }
-            }
-          }
-          item(key = "traffic-records-header") {
-            OneUiGroupHeader(label = "范围记录", description = "最多展示最近 36 条上报记录")
-          }
-          item(key = "traffic-records") {
-            Box(modifier = Modifier.oneUiStaleDim(stale)) {
-              TrafficRecords(traffic.records.asReversed().take(36))
-            }
-          }
         }
-      }
-
-      // 统计周期切换属于高频操作，放在底部（构 + 交），并且不吃在手势条下面
-      Column(
-        modifier = Modifier
-          .fillMaxWidth()
-          .oneUiSurface(
-            colors.raised,
-            OneUiTheme.shapes.dock,
-            colors = colors,
-            level = OneUiSurfaceLevel.Raised
-          )
-          .navigationBarsPadding()
-          .padding(horizontal = metrics.screenMargin, vertical = metrics.spaceS),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-      ) {
-        OneUiText(
-          text = "统计周期",
-          role = OneUiTextRole.ChartLabel,
-          color = colors.textTertiary,
-          weight = FontWeight.SemiBold
-        )
-        OneUiSegmentedRow(
-          options = modes,
-          selectedIndex = modeIndex,
-          onSelect = { index -> actions.onSelectTrafficMode(TrafficCalendarMode.entries[index]) }
-        )
       }
     }
   }
@@ -262,7 +323,10 @@ private fun TrafficHeader(
   rangeEnd: String,
   traffic: com.dsc.android.TrafficCalendarDto,
   stale: Boolean,
-  onShiftAnchor: (Int) -> Unit
+  onShiftAnchor: (Int) -> Unit,
+  modes: List<String>? = null,
+  selectedModeIndex: Int = 0,
+  onSelectMode: ((Int) -> Unit)? = null
 ) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
@@ -273,37 +337,44 @@ private fun TrafficHeader(
         .padding(horizontal = metrics.groupPadding, vertical = metrics.spaceM),
       verticalArrangement = Arrangement.spacedBy(metrics.spaceM)
     ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      Column(modifier = Modifier.weight(1f)) {
-        OneUiText(text = title, role = OneUiTextRole.Title)
-        OneUiText(
-          text = "${formatDate(rangeStart)} 至 ${formatDateInclusive(rangeEnd)}",
-          role = OneUiTextRole.RowSubtitle,
-          color = colors.textSecondary,
-          modifier = Modifier.padding(top = 2.dp)
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(metrics.spaceS)) {
+        Column(modifier = Modifier.weight(1f)) {
+          OneUiText(text = title, role = OneUiTextRole.Title)
+          OneUiText(
+            text = "${formatDate(rangeStart)} 至 ${formatDateInclusive(rangeEnd)}",
+            role = OneUiTextRole.RowSubtitle,
+            color = colors.textSecondary,
+            modifier = Modifier.padding(top = 2.dp)
+          )
+        }
+        // 翻页箭头贴着读数区：One UI 日历的换月操作就在标题右侧（件）
+        Row(horizontalArrangement = Arrangement.spacedBy(metrics.spaceXxs)) {
+          OneUiIconButton(contentDescription = "上一个区间", onClick = { onShiftAnchor(-1) }) {
+            OneUiIcon(Icons.Rounded.KeyboardArrowLeft, contentDescription = null, size = metrics.iconFilledSize)
+          }
+          OneUiIconButton(contentDescription = "下一个区间", onClick = { onShiftAnchor(1) }) {
+            OneUiIcon(Icons.Rounded.KeyboardArrowRight, contentDescription = null, size = metrics.iconFilledSize)
+          }
+        }
+      }
+      if (modes != null && onSelectMode != null) {
+        OneUiSegmentedRow(
+          options = modes,
+          selectedIndex = selectedModeIndex,
+          onSelect = onSelectMode
         )
       }
-      // 翻页箭头贴着读数区：One UI 日历的换月操作就在标题右侧（件）
-      Row(horizontalArrangement = Arrangement.spacedBy(metrics.spaceXxs)) {
-        OneUiIconButton(contentDescription = "上一个区间", onClick = { onShiftAnchor(-1) }) {
-          OneUiIcon(Icons.Rounded.KeyboardArrowLeft, contentDescription = null, size = metrics.iconFilledSize)
-        }
-        OneUiIconButton(contentDescription = "下一个区间", onClick = { onShiftAnchor(1) }) {
-          OneUiIcon(Icons.Rounded.KeyboardArrowRight, contentDescription = null, size = metrics.iconFilledSize)
-        }
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .oneUiStaleDim(stale),
+        horizontalArrangement = Arrangement.spacedBy(metrics.spaceL),
+        verticalAlignment = Alignment.Bottom
+      ) {
+        OneUiReading(value = formatBytes(traffic.totalRxBytes + traffic.totalTxBytes), unit = "合计", label = "区间总量")
+        OneUiReading(value = formatBytes(traffic.totalRxBytes), unit = "接收", label = "下行")
+        OneUiReading(value = formatBytes(traffic.totalTxBytes), unit = "发送", label = "上行")
       }
-    }
-    Row(
-      modifier = Modifier
-        .fillMaxWidth()
-        .oneUiStaleDim(stale),
-      horizontalArrangement = Arrangement.spacedBy(metrics.spaceL),
-      verticalAlignment = Alignment.Bottom
-    ) {
-      OneUiReading(value = formatBytes(traffic.totalRxBytes + traffic.totalTxBytes), unit = "合计", label = "区间总量")
-      OneUiReading(value = formatBytes(traffic.totalRxBytes), unit = "接收", label = "下行")
-      OneUiReading(value = formatBytes(traffic.totalTxBytes), unit = "发送", label = "上行")
-    }
     }
   }
 }

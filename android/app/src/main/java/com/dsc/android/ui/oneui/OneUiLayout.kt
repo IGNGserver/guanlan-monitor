@@ -98,10 +98,14 @@ data class OneUiMetrics(
   val dockHeight: Dp = 64.dp,
   val navigationRailWidth: Dp = 88.dp,
   val navigationRailWidthWithLabel: Dp = 108.dp,
+  /** 双栏内嵌态下的单栏左右留白，保证顶栏、组标题与卡片列表严丝合缝左对齐 */
+  val paneMargin: Dp = 16.dp,
+  val paneGroupGap: Dp = 16.dp,
   /** 展开态限制正文行宽，避免 4K/平板上一行文字拉到边 */
   val contentMaxWidth: Dp = Dp.Unspecified,
-  /** 对话框在中/展开窗口里仍然是一张小卡片，不跟着屏幕变宽（One UI 的对话框尺寸） */
+  /** 对话框与底部面板在中/展开窗口里保持受控宽度，不跟着屏幕无限变宽 */
   val dialogMaxWidth: Dp = 520.dp,
+  val sheetMaxWidth: Dp = 560.dp,
   /** One UI 的核心：底部保留拇指区，正文不铺到屏幕最下沿 */
   val thumbZone: Dp = 24.dp,
   val focusStroke: Dp = 3.dp,
@@ -182,20 +186,22 @@ fun oneUiMetrics(window: OneUiWindowLayout, fontScale: Float): OneUiMetrics {
     )
 
     OneUiWidthClass.Medium -> OneUiMetrics(
-      screenMargin = 28.dp,
-      groupGap = 28.dp,
-      contentMaxWidth = 720.dp,
-      thumbZone = 28.dp,
-      cardGap = 16.dp
+      screenMargin = 24.dp,
+      groupGap = 20.dp,
+      navigationRailWidth = 80.dp,
+      contentMaxWidth = 760.dp,
+      thumbZone = 20.dp,
+      cardGap = 12.dp
     )
 
     OneUiWidthClass.Expanded -> OneUiMetrics(
-      screenMargin = 40.dp,
-      groupGap = 32.dp,
-      contentMaxWidth = 840.dp,
-      thumbZone = 32.dp,
+      screenMargin = 32.dp,
+      groupGap = 24.dp,
+      navigationRailWidth = 88.dp,
+      contentMaxWidth = 1040.dp,
+      thumbZone = 24.dp,
       cardGap = 16.dp,
-      topBarLargeHeight = 136.dp
+      topBarLargeHeight = 132.dp
     )
   }
   // 适：字号放大后行高与留白同步放宽，避免文字被固定高度裁掉

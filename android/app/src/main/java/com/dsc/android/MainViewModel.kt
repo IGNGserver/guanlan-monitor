@@ -68,6 +68,7 @@ class MainViewModel(
   private var trafficSelectedStart: String? = null
   private var pendingWidgetDestination: WidgetDestination? = null
   private var appInForeground = false
+  private var twoPaneActive = false
   private var connectionGeneration = 0L
   private var remoteSession = RemoteSession()
   private var loginJob: Job? = null
@@ -1186,14 +1187,39 @@ class MainViewModel(
     if (!appInForeground || !_state.value.authenticated) return
     val current = _state.value
     when (current.currentScreen) {
-      AppScreen.DeviceList -> loadOverviewMetrics(current.overviewWindow)
-      AppScreen.DeviceDetail -> current.selectedDeviceId?.let { loadMetrics(it, current.selectedWindow, false, silent) }
-      AppScreen.Traffic -> current.selectedDeviceId?.let {
-        loadMetrics(it, current.selectedWindow, false, silent)
-        loadTraffic(it, current.trafficMode, false, silent)
+      AppScreen.DeviceList -> {
+        loadOverviewMetrics(current.overviewWindow)
+        if (twoPaneActive) {
+          current.selectedDeviceId?.let { loadMetrics(it, current.selectedWindow, false, silent) }
+        }
+      }
+      AppScreen.DeviceDetail -> {
+        if (twoPaneActive) loadOverviewMetrics(current.overviewWindow)
+        current.selectedDeviceId?.let { loadMetrics(it, current.selectedWindow, false, silent) }
+      }
+      AppScreen.Traffic -> {
+        if (twoPaneActive) loadOverviewMetrics(current.overviewWindow)
+        current.selectedDeviceId?.let {
+          loadMetrics(it, current.selectedWindow, false, silent)
+          loadTraffic(it, current.trafficMode, false, silent)
+        }
       }
       AppScreen.Attention -> loadAttentionMetrics()
       else -> Unit
+    }
+  }
+
+  /** 双栏主从模式（平板横屏）切换时，补齐左右两栏同屏所需的并发数据读取。 */
+  fun setTwoPaneActive(active: Boolean) {
+    if (twoPaneActive == active) return
+    twoPaneActive = active
+    if (!appInForeground || !_state.value.authenticated) return
+    val current = _state.value
+    if (active && current.currentScreen in setOf(AppScreen.DeviceList, AppScreen.DeviceDetail, AppScreen.Traffic)) {
+      if (current.overviewMetrics == null) loadOverviewMetrics(current.overviewWindow)
+      if (current.currentScreen == AppScreen.DeviceList && current.metrics == null) {
+        current.selectedDeviceId?.let { loadMetrics(it, current.selectedWindow, false, silent = true) }
+      }
     }
   }
 

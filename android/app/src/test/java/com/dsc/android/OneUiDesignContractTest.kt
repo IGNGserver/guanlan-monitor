@@ -81,8 +81,10 @@ class OneUiDesignContractTest {
     assertTrue(medium.screenMargin < expanded.screenMargin)
     assertTrue("紧凑态不限行宽", compact.contentMaxWidth == androidx.compose.ui.unit.Dp.Unspecified)
     assertTrue("宽屏必须限制正文行长", expanded.contentMaxWidth > 0.dp)
+    assertTrue("中等与展开态用侧栏释放纵向高度", windowLayout(OneUiWidthClass.Medium).useNavigationRail)
     assertTrue("展开态用侧栏", windowLayout(OneUiWidthClass.Expanded).useNavigationRail)
     assertTrue("紧凑态用底部导航", !windowLayout(OneUiWidthClass.Compact).useNavigationRail)
+    assertTrue("双栏内嵌留白比全屏留白更紧凑", expanded.paneMargin < expanded.screenMargin)
     assertTrue("矮窗降级大标题", windowLayout(OneUiWidthClass.Compact, OneUiHeightClass.Short).useCompactTopBar)
     assertTrue("常规竖屏保留大标题", !compactTopBarOf(OneUiHeightClass.Tall))
   }

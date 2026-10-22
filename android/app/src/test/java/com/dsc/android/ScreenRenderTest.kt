@@ -10,7 +10,9 @@ import com.dsc.android.ui.screens.AttentionScreen
 import com.dsc.android.ui.screens.DetailTab
 import com.dsc.android.ui.screens.DeviceDetailScreen
 import com.dsc.android.ui.screens.DeviceListScreen
+import com.dsc.android.ui.screens.TrafficScreen
 import com.dsc.android.ui.shell.GuanlanActions
+import com.dsc.android.ui.shell.GuanlanApp
 import java.io.File
 import java.time.Instant
 import org.junit.Rule
@@ -189,5 +191,55 @@ class ScreenRenderTest {
   @Test
   fun deviceHardware() = render("07-device-hardware") {
     DeviceDetailScreen(state = baseState.copy(currentScreen = AppScreen.DeviceDetail), actions = actions, embedded = false, initialTab = DetailTab.Hardware)
+  }
+
+  @Test
+  @Config(sdk = [34], qualifiers = "w1024dp-h768dp-xhdpi")
+  fun tabletLandscapeTwoPaneShell() = render("08-tablet-landscape-shell") {
+    GuanlanApp(state = baseState.copy(currentScreen = AppScreen.DeviceList), actions = actions)
+  }
+
+  @Test
+  @Config(sdk = [34], qualifiers = "w1024dp-h768dp-xhdpi")
+  fun tabletLandscapeSettings() = render("09-tablet-landscape-settings") {
+    GuanlanApp(state = baseState.copy(currentScreen = AppScreen.Settings), actions = actions)
+  }
+
+  @Test
+  @Config(sdk = [34], qualifiers = "w1024dp-h768dp-xhdpi")
+  fun tabletLandscapeTraffic() {
+    val traffic = TrafficCalendarDto(
+      mode = "day",
+      anchor = ago(0),
+      title = "2026 年 10 月",
+      rangeStart = ago(86400 * 30),
+      rangeEnd = ago(0),
+      totalRxBytes = 128_000_000_000.0,
+      totalTxBytes = 42_000_000_000.0,
+      cells = (1..30).map { day ->
+        TrafficCalendarCellDto(
+          key = "day-$day",
+          label = "%02d".format(day),
+          rangeStart = ago((30 - day) * 86400L),
+          rangeEnd = ago((29 - day) * 86400L),
+          totalRxBytes = day * 2_000_000_000.0,
+          totalTxBytes = day * 500_000_000.0,
+          isInPrimaryScope = true,
+          isCurrentPeriod = day == 30,
+          isSelected = day == 29
+        )
+      },
+      records = listOf(
+        TrafficRangeRecordDto(ago(3600), 1_200_000_000.0, 300_000_000.0, 1_500_000_000.0),
+        TrafficRangeRecordDto(ago(7200), 900_000_000.0, 210_000_000.0, 1_110_000_000.0)
+      )
+    )
+    render("10-tablet-landscape-traffic") {
+      TrafficScreen(
+        state = baseState.copy(currentScreen = AppScreen.Traffic, trafficCalendar = traffic),
+        actions = actions,
+        embedded = true
+      )
+    }
   }
 }
