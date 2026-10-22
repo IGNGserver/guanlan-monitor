@@ -15,7 +15,7 @@ import type {
 } from "@dsc/shared";
 import { z } from "zod";
 import { env } from "./config.js";
-import { authRateLimiter, createSession, getBearerToken, parseSessionValue, safeEqual, SESSION_TTL_MS } from "./auth.js";
+import { authRateLimiter, createSession, getBearerToken, parseSessionValue, renewSession, safeEqual } from "./auth.js";
 import type { MetricsService } from "./services/metrics.js";
 import type { DeviceMetricConfigStore, FanNoteStore, Repositories, SessionValue } from "./types.js";
 import { ALL_DEVICE_METRIC_KEYS, filterAgentPayloadInstances, getAvailableMetrics, resolveCpuFrequencyMHz, resolveCpuTemperatureC, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
@@ -252,6 +252,9 @@ export async function registerRoutes(
   app.get("/api/auth/session", async (request, reply) => {
     const session = getSession(request);
     if (!session) return reply.code(401).send({ error: "unauthorized" });
+    // Opening the console or a background poll is activity too; keep the
+    // browser's expiry sliding without changing the cache scope (issuedAt).
+    refreshSession(reply, session);
     return { ok: true, issuedAt: session.issuedAt };
   });
 
@@ -746,15 +749,23 @@ function alignSamplePoints(points: Array<{ timestamp: string; value: number }>, 
 }
 
 function setSession(reply: FastifyReply, session: SessionValue) {
+  const expiresAt = Date.parse(session.expiresAt);
+  if (!Number.isFinite(expiresAt)) return;
   reply.setCookie("dsc_session", Buffer.from(JSON.stringify(session)).toString("base64url"), {
     path: "/",
     httpOnly: true,
     sameSite: "lax",
     secure: env.SESSION_COOKIE_SECURE,
-    maxAge: Math.floor(SESSION_TTL_MS / 1000),
-    expires: new Date(session.expiresAt),
+    maxAge: Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)),
+    expires: new Date(expiresAt),
     signed: true
   });
+}
+
+function refreshSession(reply: FastifyReply, session: SessionValue): SessionValue {
+  const renewed = renewSession(session);
+  if (renewed) setSession(reply, renewed);
+  return renewed ?? session;
 }
 
 function getSession(request: FastifyRequest): SessionValue | null {
@@ -772,4 +783,5 @@ function getSession(request: FastifyRequest): SessionValue | null {
 export async function requireAuth(request: FastifyRequest, reply: FastifyReply) {
   const session = getSession(request);
   if (!session) return reply.code(401).send({ error: "unauthorized" });
+  refreshSession(reply, session);
 }

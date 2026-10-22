@@ -1,7 +1,19 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { SessionValue } from "./types.js";
 
-export const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A browser session is valid for 90 days. Requests made near the end of that
+ * window slide the expiry forward, so an actively used console does not force
+ * a login every 8 hours. The original issuedAt remains stable: the web client
+ * keys its offline snapshot on it, and changing it on every renewal would
+ * discard the open view. One year after the original login the session stops
+ * being renewable even if it is still active.
+ */
+export const SESSION_IDLE_TTL_MS = 90 * DAY_MS;
+export const SESSION_ABSOLUTE_TTL_MS = 365 * DAY_MS;
+export const SESSION_RENEW_BEFORE_MS = SESSION_IDLE_TTL_MS / 2;
 
 export function credentialVersion(accessKey: string): string {
   return createHash("sha256").update(accessKey, "utf8").digest("hex");
@@ -11,7 +23,7 @@ export function createSession(accessKey: string, now = new Date()): SessionValue
   const issuedAt = now.toISOString();
   return {
     issuedAt,
-    expiresAt: new Date(now.getTime() + SESSION_TTL_MS).toISOString(),
+    expiresAt: new Date(now.getTime() + SESSION_IDLE_TTL_MS).toISOString(),
     credentialVersion: credentialVersion(accessKey)
   };
 }
@@ -34,7 +46,8 @@ export function parseSessionValue(
     const issuedAt = Date.parse(session.issuedAt);
     const expiresAt = Date.parse(session.expiresAt);
     if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt)) return null;
-    if (issuedAt > now || expiresAt <= now || expiresAt - issuedAt > SESSION_TTL_MS) return null;
+    if (issuedAt > now || expiresAt <= now) return null;
+    if (expiresAt - issuedAt > SESSION_ABSOLUTE_TTL_MS) return null;
     if (!safeEqual(session.credentialVersion, credentialVersion(accessKey))) return null;
 
     return {
@@ -45,6 +58,27 @@ export function parseSessionValue(
   } catch {
     return null;
   }
+}
+
+/**
+ * Returns a session with a later expiry when the current one is inside the
+ * renewal window, or null when no extension is needed or possible. Validation
+ * happens in `parseSessionValue`; this function only computes the next value.
+ */
+export function renewSession(session: SessionValue, now = Date.now()): SessionValue | null {
+  const issuedAt = Date.parse(session.issuedAt);
+  const expiresAt = Date.parse(session.expiresAt);
+  if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt)) return null;
+  if (issuedAt > now || expiresAt <= now) return null;
+  if (expiresAt - now > SESSION_RENEW_BEFORE_MS) return null;
+
+  const nextExpiresAt = Math.min(now + SESSION_IDLE_TTL_MS, issuedAt + SESSION_ABSOLUTE_TTL_MS);
+  if (nextExpiresAt <= expiresAt) return null;
+
+  return {
+    ...session,
+    expiresAt: new Date(nextExpiresAt).toISOString()
+  };
 }
 
 export function millisecondsUntilSessionExpiry(session: SessionValue, now = Date.now()): number {
