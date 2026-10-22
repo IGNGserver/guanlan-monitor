@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -206,34 +208,69 @@ fun DeviceDetailScreen(
       }
 
       // 吸附区：标签页 + 时间范围。它们决定下面所有内容的口径，所以不随列表滚走（构）
-      Column(
+      val showRangeChips = tab == DetailTab.Overview || tab == DetailTab.Hardware
+      BoxWithConstraints(
         modifier = Modifier
           .fillMaxWidth()
           .oneUiContentWidth(metrics)
           .padding(horizontal = metrics.screenMargin)
-          .padding(bottom = metrics.spaceXs),
-        verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+          .padding(bottom = metrics.spaceXs)
       ) {
-        OneUiSegmentedRow(
-          options = DetailTab.entries.map { it.label },
-          selectedIndex = tab.ordinal,
-          onSelect = { index ->
-            tabName = DetailTab.entries[index].name
-            topBarScope.launch { listState.scrollToItem(0) }
+        if (maxWidth >= 600.dp && showRangeChips) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(metrics.spaceM)
+          ) {
+            OneUiSegmentedRow(
+              options = DetailTab.entries.map { it.label },
+              selectedIndex = tab.ordinal,
+              onSelect = { index ->
+                tabName = DetailTab.entries[index].name
+                topBarScope.launch { listState.scrollToItem(0) }
+              },
+              modifier = Modifier.width(300.dp)
+            )
+            RangeChips(
+              selected = displayWindow,
+              live = liveRange && tab == DetailTab.Overview,
+              allowLive = tab == DetailTab.Overview,
+              loading = state.loadingMetrics,
+              onSelectLive = { liveRange = true },
+              onSelect = { window ->
+                liveRange = false
+                actions.onSelectWindow(window)
+              },
+              modifier = Modifier.weight(1f)
+            )
           }
-        )
-        if (tab == DetailTab.Overview || tab == DetailTab.Hardware) {
-          RangeChips(
-            selected = displayWindow,
-            live = liveRange && tab == DetailTab.Overview,
-            allowLive = tab == DetailTab.Overview,
-            loading = state.loadingMetrics,
-            onSelectLive = { liveRange = true },
-            onSelect = { window ->
-              liveRange = false
-              actions.onSelectWindow(window)
+        } else {
+          Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+          ) {
+            OneUiSegmentedRow(
+              options = DetailTab.entries.map { it.label },
+              selectedIndex = tab.ordinal,
+              onSelect = { index ->
+                tabName = DetailTab.entries[index].name
+                topBarScope.launch { listState.scrollToItem(0) }
+              }
+            )
+            if (showRangeChips) {
+              RangeChips(
+                selected = displayWindow,
+                live = liveRange && tab == DetailTab.Overview,
+                allowLive = tab == DetailTab.Overview,
+                loading = state.loadingMetrics,
+                onSelectLive = { liveRange = true },
+                onSelect = { window ->
+                  liveRange = false
+                  actions.onSelectWindow(window)
+                }
+              )
             }
-          )
+          }
         }
       }
 
@@ -340,12 +377,13 @@ private fun RangeChips(
   allowLive: Boolean,
   loading: Boolean,
   onSelectLive: () -> Unit,
-  onSelect: (MetricWindow) -> Unit
+  onSelect: (MetricWindow) -> Unit,
+  modifier: Modifier = Modifier
 ) {
   val metrics = OneUiTheme.metrics
   val colors = OneUiTheme.colors
   Row(
-    modifier = Modifier
+    modifier = modifier
       .fillMaxWidth()
       .horizontalScroll(rememberScrollState()),
     horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
@@ -432,31 +470,64 @@ private fun LazyListScope.overviewItems(
 
   data?.let { snapshot ->
     item(key = "overview-more") {
-      Column(verticalArrangement = Arrangement.spacedBy(OneUiTheme.metrics.cardGap)) {
-        OneUiGroup {
-          OneUiListItem(
-            title = "流量日历",
-            subtitle = "按日 / 周 / 月查看接收、发送与明细记录",
-            onClick = { actions.onOpenTraffic(snapshot.device.deviceId) },
-            leading = { OneUiLeadingIcon(icon = Icons.Rounded.Timeline, contentDescription = null, tone = OneUiIconTone.Accent) },
-            trailing = { OneUiIcon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = OneUiTheme.colors.textTertiary) }
-          )
+      val window = OneUiTheme.window
+      val metrics = OneUiTheme.metrics
+      val metaItems = remember(snapshot) {
+        buildList {
+          add("设备 ID" to snapshot.device.deviceId)
+          add("处理器" to (snapshot.device.cpuModel ?: "未上报"))
+          add("系统" to snapshot.device.os)
+          add("平台" to "${snapshot.device.platform} / ${snapshot.device.arch}")
+          add("上次更新" to formatTime(snapshot.lastSeenAt))
+          add("agent" to (snapshot.device.agentVersion ?: "未知"))
+          snapshot.device.agentChannel?.takeIf { it.isNotBlank() }?.let { add("渠道" to it) }
         }
-        OneUiMetaTable(
-          title = "设备信息",
-          items = buildList {
-            add("设备 ID" to snapshot.device.deviceId)
-            add("处理器" to (snapshot.device.cpuModel ?: "未上报"))
-            add("系统" to snapshot.device.os)
-            add("平台" to "${snapshot.device.platform} / ${snapshot.device.arch}")
-            add("上次更新" to formatTime(snapshot.lastSeenAt))
-            add("agent" to (snapshot.device.agentVersion ?: "未知"))
-            snapshot.device.agentChannel?.takeIf { it.isNotBlank() }?.let { add("渠道" to it) }
-          },
-          selectable = true,
-          collapsible = true,
-          defaultExpanded = false
-        )
+      }
+      BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        if (maxWidth >= 600.dp) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(metrics.cardGap),
+            verticalAlignment = Alignment.Top
+          ) {
+            OneUiGroup(modifier = Modifier.weight(0.9f)) {
+              OneUiListItem(
+                title = "流量日历",
+                subtitle = "按日 / 周 / 月查看接收、发送与明细记录",
+                onClick = { actions.onOpenTraffic(snapshot.device.deviceId) },
+                leading = { OneUiLeadingIcon(icon = Icons.Rounded.Timeline, contentDescription = null, tone = OneUiIconTone.Accent) },
+                trailing = { OneUiIcon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = OneUiTheme.colors.textTertiary) }
+              )
+            }
+            OneUiMetaTable(
+              title = "设备信息",
+              items = metaItems,
+              selectable = true,
+              collapsible = true,
+              defaultExpanded = window.isWide,
+              modifier = Modifier.weight(1.1f)
+            )
+          }
+        } else {
+          Column(verticalArrangement = Arrangement.spacedBy(metrics.cardGap)) {
+            OneUiGroup {
+              OneUiListItem(
+                title = "流量日历",
+                subtitle = "按日 / 周 / 月查看接收、发送与明细记录",
+                onClick = { actions.onOpenTraffic(snapshot.device.deviceId) },
+                leading = { OneUiLeadingIcon(icon = Icons.Rounded.Timeline, contentDescription = null, tone = OneUiIconTone.Accent) },
+                trailing = { OneUiIcon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = OneUiTheme.colors.textTertiary) }
+              )
+            }
+            OneUiMetaTable(
+              title = "设备信息",
+              items = metaItems,
+              selectable = true,
+              collapsible = true,
+              defaultExpanded = window.isWide
+            )
+          }
+        }
       }
     }
   }
@@ -659,17 +730,39 @@ private fun LazyListScope.hardwareItems(
 
   item(key = "block-header:${openBlock.name}") {
     val colors = OneUiTheme.colors
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      OneUiIconButton(contentDescription = "返回全部类别", onClick = onCloseBlock) {
-        OneUiIcon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
+    val metrics = OneUiTheme.metrics
+    val window = OneUiTheme.window
+    val capsules = remember(snapshot, displayWindow) { buildOverviewCapsules(snapshot, displayWindow) }
+    Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
+      if (window.isWide && capsules.size > 1) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          capsules.forEach { capsule ->
+            OneUiFilterChip(
+              label = capsule.title,
+              selected = capsule.blockKey == openBlock,
+              onClick = { onOpenBlock(capsule.blockKey) }
+            )
+          }
+        }
       }
-      Column(modifier = Modifier.weight(1f)) {
-        OneUiText(text = openBlock.label, role = OneUiTextRole.Title)
-        OneUiText(text = "读数为当前值；图下为所选时间范围内的均值与峰值", role = OneUiTextRole.ChartLabel, color = colors.textTertiary)
-      }
-      if (openBlock != DeviceBlockKey.Fan) {
-        OneUiIconButton(contentDescription = "编辑${openBlock.label}的记录项", onClick = { actions.onOpenBlockEditor(snapshot.device.deviceId, openBlock) }) {
-          OneUiIcon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textSecondary, size = OneUiTheme.metrics.iconFilledSize)
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        OneUiIconButton(contentDescription = "返回全部类别", onClick = onCloseBlock) {
+          OneUiIcon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textPrimary)
+        }
+        Column(modifier = Modifier.weight(1f)) {
+          OneUiText(text = openBlock.label, role = OneUiTextRole.Title)
+          OneUiText(text = "读数为当前值；图下为所选时间范围内的均值与峰值", role = OneUiTextRole.ChartLabel, color = colors.textTertiary)
+        }
+        if (openBlock != DeviceBlockKey.Fan) {
+          OneUiIconButton(contentDescription = "编辑${openBlock.label}的记录项", onClick = { actions.onOpenBlockEditor(snapshot.device.deviceId, openBlock) }) {
+            OneUiIcon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textSecondary, size = OneUiTheme.metrics.iconFilledSize)
+          }
         }
       }
     }

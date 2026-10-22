@@ -42,8 +42,8 @@ data class OneUiWindowLayout(
 ) {
   val isWide: Boolean get() = widthClass != OneUiWidthClass.Compact
 
-  /** 展开态：一级导航用侧栏，且列表-详情双栏（One UI 平板/DeX 的实际布局） */
-  val useNavigationRail: Boolean get() = widthClass == OneUiWidthClass.Expanded
+  /** 中等与展开态（横屏、折叠屏、平板、DeX）：一级导航用侧栏，释放纵向高度；展开态启用列表-详情双栏 */
+  val useNavigationRail: Boolean get() = widthClass != OneUiWidthClass.Compact
   val useTwoPane: Boolean get() = widthClass == OneUiWidthClass.Expanded && heightClass != OneUiHeightClass.Short
 
   /** 横屏矮窗（折叠屏外层、分屏）：大标题退化为小标题，避免吃掉正文空间 */

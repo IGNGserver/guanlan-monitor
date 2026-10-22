@@ -1,10 +1,13 @@
 package com.dsc.android.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -112,6 +117,7 @@ import kotlinx.coroutines.launch
  * 2. 需要关注——顶部一条汇总，卡片内一行问题提示，详情交给「关注」页；
  * 其余（排序、编辑、隐藏）都收进图标按钮与操作面板，不占读数的位置。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DeviceListScreen(
   state: AppState,
@@ -120,6 +126,7 @@ fun DeviceListScreen(
 ) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
+  val window = OneUiTheme.window
   val listState = rememberLazyListState()
   val collapse = rememberOneUiCollapse(listState)
   val topBarScope = rememberCoroutineScope()
@@ -203,11 +210,7 @@ fun DeviceListScreen(
           .weight(1f)
           .fillMaxWidth()
           .oneUiContentWidth(metrics),
-        contentPadding = if (embedded) {
-          PaddingValues(start = metrics.spaceS, end = metrics.spaceS, top = metrics.spaceXs, bottom = metrics.spaceXxl)
-        } else {
-          oneUiListContentPadding()
-        },
+        contentPadding = oneUiListContentPadding(),
         verticalArrangement = Arrangement.spacedBy(metrics.cardGap)
       ) {
         if (!state.authenticated && state.serverConfig.baseUrl.isNotBlank()) {
@@ -270,15 +273,34 @@ fun DeviceListScreen(
               modifier = Modifier.padding(top = metrics.spaceXs),
               verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
             ) {
-              OneUiGroupHeader(
-                label = "设备 · ${sort.label}",
-                action = {
-                  OneUiIconButton(contentDescription = "排序方式：${sort.label}", onClick = { sortSheet = true }) {
-                    OneUiIcon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize)
-                  }
+              if (!embedded && window.isWide) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(metrics.spaceM)
+                ) {
+                  OneUiGroupHeader(
+                    label = "设备 · ${sort.label}",
+                    modifier = Modifier.weight(1f),
+                    action = {
+                      OneUiIconButton(contentDescription = "排序方式：${sort.label}", onClick = { sortSheet = true }) {
+                        OneUiIcon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize)
+                      }
+                    }
+                  )
+                  TrendWindowRow(selected = state.overviewWindow, onSelect = actions.onSelectOverviewWindow)
                 }
-              )
-              TrendWindowRow(selected = state.overviewWindow, onSelect = actions.onSelectOverviewWindow)
+              } else {
+                OneUiGroupHeader(
+                  label = "设备 · ${sort.label}",
+                  action = {
+                    OneUiIconButton(contentDescription = "排序方式：${sort.label}", onClick = { sortSheet = true }) {
+                      OneUiIcon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize)
+                    }
+                  }
+                )
+                TrendWindowRow(selected = state.overviewWindow, onSelect = actions.onSelectOverviewWindow, modifier = Modifier.fillMaxWidth())
+              }
               if (showSearch) {
                 OneUiTextField(
                   value = query,
@@ -329,6 +351,34 @@ fun DeviceListScreen(
               onRequestDelete = { pendingDelete = device }
             )
           }
+        } else if (!embedded && window.isWide && visible.size > 1) {
+          item(key = "devices-grid") {
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+              val spacing = metrics.cardGap
+              val columns = if (maxWidth >= 660.dp) 2 else 1
+              val cellWidth = (maxWidth - spacing * (columns - 1)) / columns
+              FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing),
+                verticalArrangement = Arrangement.spacedBy(spacing)
+              ) {
+                visible.forEach { device ->
+                  DeviceTrendCard(
+                    device = device,
+                    overview = overviewById[device.deviceId],
+                    chartWindow = chartWindow,
+                    issues = issuesByDevice[device.deviceId].orEmpty(),
+                    nowMillis = now,
+                    selected = false,
+                    onOpen = { actions.onOpenDevice(device.deviceId, null) },
+                    onOpenBlock = { block -> actions.onOpenDevice(device.deviceId, block) },
+                    onMore = { actionTarget = device },
+                    modifier = Modifier.width(cellWidth)
+                  )
+                }
+              }
+            }
+          }
         } else {
           items(visible, key = { it.deviceId }) { device ->
             DeviceTrendCard(
@@ -337,6 +387,7 @@ fun DeviceListScreen(
               chartWindow = chartWindow,
               issues = issuesByDevice[device.deviceId].orEmpty(),
               nowMillis = now,
+              selected = embedded && device.deviceId == state.selectedDeviceId,
               onOpen = { actions.onOpenDevice(device.deviceId, null) },
               onOpenBlock = { block -> actions.onOpenDevice(device.deviceId, block) },
               onMore = { actionTarget = device }
@@ -522,13 +573,15 @@ private fun FleetStatusStrip(devices: List<DeviceSummaryDto>, attention: List<At
 }
 
 @Composable
-private fun TrendWindowRow(selected: MetricWindow, onSelect: (MetricWindow) -> Unit) {
+private fun TrendWindowRow(
+  selected: MetricWindow,
+  onSelect: (MetricWindow) -> Unit,
+  modifier: Modifier = Modifier
+) {
   val metrics = OneUiTheme.metrics
   val colors = OneUiTheme.colors
   Row(
-    modifier = Modifier
-      .fillMaxWidth()
-      .horizontalScroll(rememberScrollState()),
+    modifier = modifier.horizontalScroll(rememberScrollState()),
     horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
     verticalAlignment = Alignment.CenterVertically
   ) {
@@ -554,9 +607,11 @@ private fun DeviceTrendCard(
   chartWindow: ChartWindow,
   issues: List<AttentionItem>,
   nowMillis: Long,
+  selected: Boolean = false,
   onOpen: () -> Unit,
   onOpenBlock: (DeviceBlockKey) -> Unit,
-  onMore: () -> Unit
+  onMore: () -> Unit,
+  modifier: Modifier = Modifier
 ) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
@@ -565,10 +620,17 @@ private fun DeviceTrendCard(
   val issueSeverity = issues.minByOrNull { it.severity.rank }?.severity
 
   Column(
-    modifier = Modifier
+    modifier = modifier
       .fillMaxWidth()
       .oneUiSurface(colors.group, shapes.card, colors = colors, level = OneUiSurfaceLevel.Group)
-      .oneUiPressable(onClick = onOpen, onLongClick = onMore, shape = shapes.card, minHeight = null)
+      .then(
+        if (selected) {
+          Modifier.border(width = 2.dp, color = colors.accent, shape = shapes.card)
+        } else {
+          Modifier
+        }
+      )
+      .oneUiPressable(onClick = onOpen, onLongClick = onMore, selected = selected, shape = shapes.card, minHeight = null)
       .padding(start = metrics.spaceM, end = metrics.spaceXs, top = metrics.spaceS, bottom = metrics.spaceM),
     verticalArrangement = Arrangement.spacedBy(metrics.spaceS)
   ) {

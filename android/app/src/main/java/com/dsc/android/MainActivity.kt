@@ -83,7 +83,8 @@ class MainActivity : ComponentActivity() {
           onSetLivePaused = appViewModel::setLivePaused,
           onSetLiveInterval = appViewModel::setLiveInterval,
           onResetLiveCredentials = appViewModel::resetLiveCredentials,
-          onSetNetworkMode = appViewModel::setNetworkMode
+          onSetNetworkMode = appViewModel::setNetworkMode,
+          onSetTwoPaneActive = appViewModel::setTwoPaneActive
         )
       )
     }

@@ -5,12 +5,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -305,37 +307,62 @@ private fun ProcessTable(data: com.dsc.android.LiveProcessesDto) {
   val gpuKnown = data.items.any { it.gpuPercent != null }
 
   Column(verticalArrangement = Arrangement.spacedBy(metrics.cardGap)) {
-    OneUiTextField(
-      value = query,
-      onValueChange = {
-        query = it
-        limit = PROCESS_PAGE
-      },
-      label = "搜索名称或 PID",
-      imeAction = androidx.compose.ui.text.input.ImeAction.Search
-    )
-    Row(
-      modifier = Modifier
-        .fillMaxWidth()
-        .horizontalScroll(rememberScrollState()),
-      horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
-      verticalAlignment = Alignment.CenterVertically
-    ) {
-      OneUiText(text = "排序", role = OneUiTextRole.ChartLabel, color = colors.textTertiary)
-      ProcessSortKey.entries.filter { it != ProcessSortKey.Gpu || gpuKnown }.forEach { key ->
-        val active = key == sortKey
-        OneUiFilterChip(
-          label = if (active) "${key.label} ${if (descending) "↓" else "↑"}" else key.label,
-          selected = active,
-          onClick = {
-            if (active) {
-              descending = !descending
-            } else {
-              sortKeyName = key.name
-              descending = key.descendingByDefault
-            }
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+      val sortRow: @Composable (Modifier) -> Unit = { rowModifier ->
+        Row(
+          modifier = rowModifier.horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          OneUiText(text = "排序", role = OneUiTextRole.ChartLabel, color = colors.textTertiary)
+          ProcessSortKey.entries.filter { it != ProcessSortKey.Gpu || gpuKnown }.forEach { key ->
+            val active = key == sortKey
+            OneUiFilterChip(
+              label = if (active) "${key.label} ${if (descending) "↓" else "↑"}" else key.label,
+              selected = active,
+              onClick = {
+                if (active) {
+                  descending = !descending
+                } else {
+                  sortKeyName = key.name
+                  descending = key.descendingByDefault
+                }
+              }
+            )
           }
-        )
+        }
+      }
+      if (maxWidth >= 600.dp) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(metrics.spaceM),
+          verticalAlignment = Alignment.Bottom
+        ) {
+          OneUiTextField(
+            value = query,
+            onValueChange = {
+              query = it
+              limit = PROCESS_PAGE
+            },
+            label = "搜索名称或 PID",
+            imeAction = androidx.compose.ui.text.input.ImeAction.Search,
+            modifier = Modifier.width(260.dp)
+          )
+          sortRow(Modifier.weight(1f).padding(bottom = 4.dp))
+        }
+      } else {
+        Column(verticalArrangement = Arrangement.spacedBy(metrics.cardGap)) {
+          OneUiTextField(
+            value = query,
+            onValueChange = {
+              query = it
+              limit = PROCESS_PAGE
+            },
+            label = "搜索名称或 PID",
+            imeAction = androidx.compose.ui.text.input.ImeAction.Search
+          )
+          sortRow(Modifier.fillMaxWidth())
+        }
       }
     }
     OneUiText(

@@ -95,6 +95,7 @@ fun SettingsScreen(
 ) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
+  val window = OneUiTheme.window
   val listState = rememberLazyListState()
   val collapse = rememberOneUiCollapse(listState)
   // 折叠后点紧凑标题回到大标题：滚动动画需要协程作用域（交）
@@ -129,258 +130,45 @@ fun SettingsScreen(
         contentPadding = oneUiListContentPadding(),
         verticalArrangement = Arrangement.spacedBy(metrics.groupGap)
       ) {
-        item(key = "hub-header") {
-          OneUiGroupHeader(label = "中枢连接", description = state.serverConfig.baseUrl.ifBlank { "尚未配置中枢" })
-        }
-
-        item(key = "hub") {
-          OneUiGroup {
-            OneUiListItem(
-              title = "会话状态",
-              subtitle = sessionSubtitle(state),
-              leading = {
-                OneUiLeadingIcon(
-                  icon = Icons.Rounded.Refresh,
-                  contentDescription = null,
-                  tone = when {
-                    state.authenticated -> OneUiIconTone.Online
-                    state.loading -> OneUiIconTone.Neutral
-                    else -> OneUiIconTone.Offline
-                  }
-                )
-              },
-              trailing = {
-                OneUiStatusDot(
-                  color = if (state.authenticated) colors.online else colors.offline,
-                  description = if (state.authenticated) "已连接" else "未连接"
-                )
+        if (window.widthDp >= 840.dp && !embedded) {
+          item(key = "settings-two-column") {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(metrics.cardGap),
+              verticalAlignment = Alignment.Top
+            ) {
+              Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(metrics.groupGap)
+              ) {
+                HubSection(state = state, onRequestLogout = { confirmLogout = true })
+                SyncSection(state = state, actions = actions)
               }
-            )
-            OneUiListDivider()
-            OneUiListItem(
-              title = "访问密钥",
-              subtitle = if (state.serverConfig.accessKey.isNotBlank()) "已保存在本机加密存储，不显示明文" else "未设置",
-              leading = {
-                OneUiLeadingIcon(
-                  icon = Icons.Rounded.Key,
-                  contentDescription = null,
-                  tone = OneUiIconTone.Neutral
-                )
+              Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(metrics.groupGap)
+              ) {
+                AppearanceSection(appearance = appearance)
+                UpdateSection(state = state, actions = actions)
+                HelpSection(state = state, actions = actions)
               }
-            )
-            OneUiListDivider()
-            OneUiListItem(
-              title = "登出并清除配置",
-              subtitle = "清空本地缓存与中枢地址，需要重新输入",
-              leading = {
-                OneUiLeadingIcon(icon = Icons.Rounded.Logout, contentDescription = null, tone = OneUiIconTone.Critical)
-              },
-              onClick = { confirmLogout = true },
-              trailing = {
-                OneUiText(
-                  text = "登出",
-                  role = OneUiTextRole.ChartLabel,
-                  color = colors.criticalContent,
-                  weight = FontWeight.SemiBold
-                )
-              }
-            )
-          }
-        }
-
-        item(key = "sync-header") {
-          OneUiGroupHeader(label = "同步与缓存")
-        }
-
-        item(key = "sync") {
-          OneUiGroup {
-            OneUiListItem(
-              title = "自动同步",
-              subtitle = "仅前台同步；标准约 15 秒，省流至少 30 秒，失败退避最多 120 秒",
-              leading = {
-                OneUiLeadingIcon(icon = Icons.Rounded.Timer, contentDescription = null, tone = OneUiIconTone.Neutral)
-              }
-            )
-            OneUiListDivider()
-            for ((mode, label) in listOf("auto" to "自动", "standard" to "标准", "saver" to "省流")) {
-              OneUiListItem(
-                title = "网络模式 · $label",
-                subtitle = if (state.serverConfig.networkMode == mode) "当前模式" else "点按切换",
-                onClick = { actions.onSetNetworkMode(mode) }
-              )
-              OneUiListDivider()
-            }
-            OneUiListItem(
-              title = "立即刷新",
-              subtitle = if (state.refreshing) "正在同步…" else "手动向中枢请求一次最新数据",
-              leading = {
-                OneUiLeadingIcon(icon = Icons.Rounded.Sync, contentDescription = null, tone = OneUiIconTone.Neutral)
-              },
-              onClick = { if (!state.refreshing) actions.onRefresh() },
-              trailing = {
-                OneUiButton(
-                  label = if (state.refreshing) "同步中" else "刷新",
-                  onClick = if (state.refreshing) null else actions.onRefresh,
-                  variant = OneUiButtonVariant.Tonal,
-                  size = OneUiButtonSize.Compact,
-                  loading = state.refreshing
-                )
-              }
-            )
-            OneUiListDivider()
-            OneUiListItem(
-              title = "离线缓存",
-              leading = {
-                OneUiLeadingIcon(icon = Icons.Rounded.Storage, contentDescription = null, tone = OneUiIconTone.Neutral)
-              },
-              subtitle = when (state.dataSource) {
-                RemoteDataSource.Cache -> "当前正在展示缓存：${formatTime(state.cacheSavedAt)}"
-                RemoteDataSource.Live -> "缓存于 ${formatTime(state.cacheSavedAt)}"
-                RemoteDataSource.Empty -> "本机暂无缓存数据"
-              }
-            )
-          }
-        }
-
-        item(key = "appearance-header") {
-          OneUiGroupHeader(label = "外观", description = "深浅色、投影层级与动效强度")
-        }
-
-        item(key = "appearance") {
-          OneUiGroup {
-            OneUiAppearanceSetting.entries.forEachIndexed { index, setting ->
-              if (index > 0) OneUiListDivider()
-              val selected = appearance.setting == setting
-              OneUiListItem(
-                title = setting.label,
-                subtitle = setting.description,
-                onClick = { appearance.onSetting(setting) },
-                selected = selected,
-                role = Role.RadioButton,
-                leading = {
-                  OneUiLeadingIcon(
-                    icon = setting.icon,
-                    contentDescription = null,
-                    tone = if (selected) OneUiIconTone.Accent else OneUiIconTone.Neutral
-                  )
-                },
-                trailing = {
-                  if (selected) {
-                    OneUiIcon(
-                      imageVector = Icons.Rounded.Check,
-                      contentDescription = "已选择",
-                      size = metrics.iconSize,
-                      tint = colors.accent
-                    )
-                  }
-                },
-                colors = colors,
-                metrics = metrics
-              )
-            }
-            OneUiListDivider()
-            OneUiListItem(
-              title = "减少动画",
-              subtitle = "页面转场、图表描线与状态过渡改为直接切换",
-              onClick = { appearance.onReduceMotion(!appearance.reduceMotion) },
-              trailing = {
-                OneUiSwitch(
-                  checked = appearance.reduceMotion,
-                  onCheckedChange = appearance.onReduceMotion,
-                  label = "减少动画"
-                )
-              }
-            )
-          }
-        }
-
-        item(key = "update-header") {
-          OneUiGroupHeader(label = "版本与更新")
-        }
-
-        item(key = "update") {
-          val update = state.updateInfo
-          OneUiGroup {
-            OneUiListItem(
-              title = "客户端版本",
-              subtitle = "v${BuildConfig.RELEASE_VERSION} · ${channelLabel(BuildConfig.RELEASE_CHANNEL)}",
-              leading = {
-                OneUiLeadingIcon(icon = Icons.Rounded.PhoneAndroid, contentDescription = null, tone = OneUiIconTone.Neutral)
-              }
-            )
-            if (update?.available == true) {
-              OneUiListDivider()
-              Column(modifier = Modifier.padding(horizontal = metrics.rowPadding, vertical = 12.dp)) {
-                OneUiNotice(
-                  title = "发现新版本 v${update.latestVersion ?: ""}",
-                  description = updateInfoDescription(update),
-                  tone = OneUiNoticeTone.Info,
-                  icon = Icons.Rounded.Download
-                )
-                if (state.updateDownloading) {
-                  Spacer(Modifier.height(metrics.spaceS))
-                  OneUiLinearProgress(fraction = state.updateProgress)
-                  OneUiText(
-                    text = "下载进度 ${(state.updateProgress * 100).toInt()}%",
-                    role = OneUiTextRole.ChartLabel,
-                    color = colors.textSecondary,
-                    modifier = Modifier.padding(top = 4.dp)
-                  )
-                }
-                Spacer(Modifier.height(metrics.spaceS))
-                OneUiButton(
-                  label = if (state.updateDownloading) "下载中" else "下载并安装",
-                  onClick = if (state.updateDownloading) null else actions.onDownloadUpdate,
-                  fillWidth = true,
-                  loading = state.updateDownloading
-                )
-              }
-            } else {
-              OneUiListDivider()
-              OneUiListItem(
-                title = "检查更新",
-                subtitle = "向中枢确认是否有新的安装包",
-                leading = {
-                  OneUiLeadingIcon(icon = Icons.Rounded.Refresh, contentDescription = null, tone = OneUiIconTone.Neutral)
-                },
-                onClick = actions.onCheckUpdate,
-                trailing = {
-                  OneUiText(
-                    text = "检查",
-                    role = OneUiTextRole.ChartLabel,
-                    color = colors.accent,
-                    weight = FontWeight.SemiBold
-                  )
-                }
-              )
             }
           }
-        }
-
-        item(key = "help-header") {
-          OneUiGroupHeader(label = "使用说明")
-        }
-
-        item(key = "help") {
-          OneUiGroup {
-            OneUiListItem(
-              title = "编辑记录项",
-              subtitle = "在设备行长按，或在设备详情底部进入，可勾选要采集的指标与实例",
-              leading = {
-                OneUiLeadingIcon(icon = Icons.Rounded.Tune, contentDescription = null, tone = OneUiIconTone.Neutral)
-              },
-              onClick = {
-                state.selectedDeviceId?.let { actions.onOpenDeviceEditor(it) }
-              }
-            )
-            OneUiListDivider()
-            OneUiListItem(
-              title = "数据来源",
-              subtitle = "客户端只读取中枢已有的数据，不会向设备下发任何配置",
-              leading = {
-                OneUiLeadingIcon(icon = Icons.Rounded.Info, contentDescription = null, tone = OneUiIconTone.Neutral)
-              }
-            )
+        } else {
+          item(key = "hub") {
+            HubSection(state = state, onRequestLogout = { confirmLogout = true })
+          }
+          item(key = "sync") {
+            SyncSection(state = state, actions = actions)
+          }
+          item(key = "appearance") {
+            AppearanceSection(appearance = appearance)
+          }
+          item(key = "update") {
+            UpdateSection(state = state, actions = actions)
+          }
+          item(key = "help") {
+            HelpSection(state = state, actions = actions)
           }
         }
       }
@@ -401,6 +189,269 @@ fun SettingsScreen(
       onDismiss = { confirmLogout = false },
       destructive = true
     )
+  }
+}
+
+@Composable
+private fun HubSection(state: AppState, onRequestLogout: () -> Unit) {
+  val colors = OneUiTheme.colors
+  val metrics = OneUiTheme.metrics
+  Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
+    OneUiGroupHeader(label = "中枢连接", description = state.serverConfig.baseUrl.ifBlank { "尚未配置中枢" })
+    OneUiGroup {
+      OneUiListItem(
+        title = "会话状态",
+        subtitle = sessionSubtitle(state),
+        leading = {
+          OneUiLeadingIcon(
+            icon = Icons.Rounded.Refresh,
+            contentDescription = null,
+            tone = when {
+              state.authenticated -> OneUiIconTone.Online
+              state.loading -> OneUiIconTone.Neutral
+              else -> OneUiIconTone.Offline
+            }
+          )
+        },
+        trailing = {
+          OneUiStatusDot(
+            color = if (state.authenticated) colors.online else colors.offline,
+            description = if (state.authenticated) "已连接" else "未连接"
+          )
+        }
+      )
+      OneUiListDivider()
+      OneUiListItem(
+        title = "访问密钥",
+        subtitle = if (state.serverConfig.accessKey.isNotBlank()) "已保存在本机加密存储，不显示明文" else "未设置",
+        leading = {
+          OneUiLeadingIcon(
+            icon = Icons.Rounded.Key,
+            contentDescription = null,
+            tone = OneUiIconTone.Neutral
+          )
+        }
+      )
+      OneUiListDivider()
+      OneUiListItem(
+        title = "登出并清除配置",
+        subtitle = "清空本地缓存与中枢地址，需要重新输入",
+        leading = {
+          OneUiLeadingIcon(icon = Icons.Rounded.Logout, contentDescription = null, tone = OneUiIconTone.Critical)
+        },
+        onClick = onRequestLogout,
+        trailing = {
+          OneUiText(
+            text = "登出",
+            role = OneUiTextRole.ChartLabel,
+            color = colors.criticalContent,
+            weight = FontWeight.SemiBold
+          )
+        }
+      )
+    }
+  }
+}
+
+@Composable
+private fun SyncSection(state: AppState, actions: GuanlanActions) {
+  val metrics = OneUiTheme.metrics
+  Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
+    OneUiGroupHeader(label = "同步与缓存")
+    OneUiGroup {
+      OneUiListItem(
+        title = "自动同步",
+        subtitle = "仅前台同步；标准约 15 秒，省流至少 30 秒，失败退避最多 120 秒",
+        leading = {
+          OneUiLeadingIcon(icon = Icons.Rounded.Timer, contentDescription = null, tone = OneUiIconTone.Neutral)
+        }
+      )
+      OneUiListDivider()
+      for ((mode, label) in listOf("auto" to "自动", "standard" to "标准", "saver" to "省流")) {
+        OneUiListItem(
+          title = "网络模式 · $label",
+          subtitle = if (state.serverConfig.networkMode == mode) "当前模式" else "点按切换",
+          onClick = { actions.onSetNetworkMode(mode) }
+        )
+        OneUiListDivider()
+      }
+      OneUiListItem(
+        title = "立即刷新",
+        subtitle = if (state.refreshing) "正在同步…" else "手动向中枢请求一次最新数据",
+        leading = {
+          OneUiLeadingIcon(icon = Icons.Rounded.Sync, contentDescription = null, tone = OneUiIconTone.Neutral)
+        },
+        onClick = { if (!state.refreshing) actions.onRefresh() },
+        trailing = {
+          OneUiButton(
+            label = if (state.refreshing) "同步中" else "刷新",
+            onClick = if (state.refreshing) null else actions.onRefresh,
+            variant = OneUiButtonVariant.Tonal,
+            size = OneUiButtonSize.Compact,
+            loading = state.refreshing
+          )
+        }
+      )
+      OneUiListDivider()
+      OneUiListItem(
+        title = "离线缓存",
+        leading = {
+          OneUiLeadingIcon(icon = Icons.Rounded.Storage, contentDescription = null, tone = OneUiIconTone.Neutral)
+        },
+        subtitle = when (state.dataSource) {
+          RemoteDataSource.Cache -> "当前正在展示缓存：${formatTime(state.cacheSavedAt)}"
+          RemoteDataSource.Live -> "缓存于 ${formatTime(state.cacheSavedAt)}"
+          RemoteDataSource.Empty -> "本机暂无缓存数据"
+        }
+      )
+    }
+  }
+}
+
+@Composable
+private fun AppearanceSection(appearance: GuanlanAppearance) {
+  val colors = OneUiTheme.colors
+  val metrics = OneUiTheme.metrics
+  Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
+    OneUiGroupHeader(label = "外观", description = "深浅色、投影层级与动效强度")
+    OneUiGroup {
+      OneUiAppearanceSetting.entries.forEachIndexed { index, setting ->
+        if (index > 0) OneUiListDivider()
+        val selected = appearance.setting == setting
+        OneUiListItem(
+          title = setting.label,
+          subtitle = setting.description,
+          onClick = { appearance.onSetting(setting) },
+          selected = selected,
+          role = Role.RadioButton,
+          leading = {
+            OneUiLeadingIcon(
+              icon = setting.icon,
+              contentDescription = null,
+              tone = if (selected) OneUiIconTone.Accent else OneUiIconTone.Neutral
+            )
+          },
+          trailing = {
+            if (selected) {
+              OneUiIcon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = "已选择",
+                size = metrics.iconSize,
+                tint = colors.accent
+              )
+            }
+          },
+          colors = colors,
+          metrics = metrics
+        )
+      }
+      OneUiListDivider()
+      OneUiListItem(
+        title = "减少动画",
+        subtitle = "页面转场、图表描线与状态过渡改为直接切换",
+        onClick = { appearance.onReduceMotion(!appearance.reduceMotion) },
+        trailing = {
+          OneUiSwitch(
+            checked = appearance.reduceMotion,
+            onCheckedChange = appearance.onReduceMotion,
+            label = "减少动画"
+          )
+        }
+      )
+    }
+  }
+}
+
+@Composable
+private fun UpdateSection(state: AppState, actions: GuanlanActions) {
+  val colors = OneUiTheme.colors
+  val metrics = OneUiTheme.metrics
+  val update = state.updateInfo
+  Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
+    OneUiGroupHeader(label = "版本与更新")
+    OneUiGroup {
+      OneUiListItem(
+        title = "客户端版本",
+        subtitle = "v${BuildConfig.RELEASE_VERSION} · ${channelLabel(BuildConfig.RELEASE_CHANNEL)}",
+        leading = {
+          OneUiLeadingIcon(icon = Icons.Rounded.PhoneAndroid, contentDescription = null, tone = OneUiIconTone.Neutral)
+        }
+      )
+      if (update?.available == true) {
+        OneUiListDivider()
+        Column(modifier = Modifier.padding(horizontal = metrics.rowPadding, vertical = 12.dp)) {
+          OneUiNotice(
+            title = "发现新版本 v${update.latestVersion ?: ""}",
+            description = updateInfoDescription(update),
+            tone = OneUiNoticeTone.Info,
+            icon = Icons.Rounded.Download
+          )
+          if (state.updateDownloading) {
+            Spacer(Modifier.height(metrics.spaceS))
+            OneUiLinearProgress(fraction = state.updateProgress)
+            OneUiText(
+              text = "下载进度 ${(state.updateProgress * 100).toInt()}%",
+              role = OneUiTextRole.ChartLabel,
+              color = colors.textSecondary,
+              modifier = Modifier.padding(top = 4.dp)
+            )
+          }
+          Spacer(Modifier.height(metrics.spaceS))
+          OneUiButton(
+            label = if (state.updateDownloading) "下载中" else "下载并安装",
+            onClick = if (state.updateDownloading) null else actions.onDownloadUpdate,
+            fillWidth = true,
+            loading = state.updateDownloading
+          )
+        }
+      } else {
+        OneUiListDivider()
+        OneUiListItem(
+          title = "检查更新",
+          subtitle = "向中枢确认是否有新的安装包",
+          leading = {
+            OneUiLeadingIcon(icon = Icons.Rounded.Refresh, contentDescription = null, tone = OneUiIconTone.Neutral)
+          },
+          onClick = actions.onCheckUpdate,
+          trailing = {
+            OneUiText(
+              text = "检查",
+              role = OneUiTextRole.ChartLabel,
+              color = colors.accent,
+              weight = FontWeight.SemiBold
+            )
+          }
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun HelpSection(state: AppState, actions: GuanlanActions) {
+  val metrics = OneUiTheme.metrics
+  Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
+    OneUiGroupHeader(label = "使用说明")
+    OneUiGroup {
+      OneUiListItem(
+        title = "编辑记录项",
+        subtitle = "在设备行长按，或在设备详情底部进入，可勾选要采集的指标与实例",
+        leading = {
+          OneUiLeadingIcon(icon = Icons.Rounded.Tune, contentDescription = null, tone = OneUiIconTone.Neutral)
+        },
+        onClick = {
+          state.selectedDeviceId?.let { actions.onOpenDeviceEditor(it) }
+        }
+      )
+      OneUiListDivider()
+      OneUiListItem(
+        title = "数据来源",
+        subtitle = "客户端只读取中枢已有的数据，不会向设备下发任何配置",
+        leading = {
+          OneUiLeadingIcon(icon = Icons.Rounded.Info, contentDescription = null, tone = OneUiIconTone.Neutral)
+        }
+      )
+    }
   }
 }
 
