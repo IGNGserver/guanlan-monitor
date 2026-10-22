@@ -113,7 +113,7 @@ DSC_VERSION=latest docker compose pull
 DSC_VERSION=latest docker compose up -d
 ```
 
-至少修改 `.env` 内的 `SESSION_SECRET`、`ACCESS_KEY`、`MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD` 与 `REDIS_PASSWORD`，并为 `REDIS_URL` 配置相同的认证密码。稳定版应用数据库账号密码 `MYSQL_PASSWORD` 最少为 6 个非占位符字符，但较短密码抗猜测能力弱，应优先使用更长的随机值；`MYSQL_ROOT_PASSWORD` 在稳定版仍要求至少 16 个字符。生产环境默认应通过 TLS 反向代理访问控制台；只有当 server 仅能从该受信代理访问时才设置 `TRUST_PROXY=true`，否则保持 `false`。`SESSION_COOKIE_SECURE` 与 `AGENT_REQUIRE_HTTPS` 默认保持 `true`，但稳定和测试渠道都允许在明确受信的 HTTP 网络中将对应值设置为 `false`，Compose 预检会保留用户配置。`ACCESS_KEY` 是网页、Windows/Android 客户端和所有 agent 共用的唯一访问密钥；升级时即使旧 `.env` 仍有 `AGENT_SHARED_SECRET`，也会以 `ACCESS_KEY` 为准。
+至少修改 `.env` 内的 `SESSION_SECRET`、`ACCESS_KEY`、`MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD` 与 `REDIS_PASSWORD`，并为 `REDIS_URL` 配置相同的认证密码。稳定版应用数据库账号密码 `MYSQL_PASSWORD` 最少为 6 个非占位符字符，但较短密码抗猜测能力弱，应优先使用更长的随机值；`MYSQL_ROOT_PASSWORD` 在稳定版仍要求至少 16 个字符。生产环境默认应通过 TLS 反向代理访问控制台；只有当 server 仅能从该受信代理访问时才设置 `TRUST_PROXY=true`，否则保持 `false`。`SESSION_COOKIE_SECURE` 与 `AGENT_REQUIRE_HTTPS` 默认保持 `true`，但稳定和测试渠道都允许在明确受信的 HTTP 网络中将对应值设置为 `false`，Compose 预检会保留用户配置。`ACCESS_KEY` 是网页、Windows/Android 客户端和所有 agent 共用的唯一访问密钥；升级时即使旧 `.env` 仍有 `AGENT_SHARED_SECRET`，也会以 `ACCESS_KEY` 为准。Web 登录会话默认有效期为 90 天；持续使用会在接近到期时自动续期，但不会超过首次登录后的 365 天，长期不访问后需要重新登录。修改 `SESSION_SECRET` 会立即使所有 Web 会话失效而不影响 Agent；修改 `ACCESS_KEY` 会使所有客户端和 Agent 的现有凭据失效。
 
 Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 的专项说明见下方“开发与维护”。
 

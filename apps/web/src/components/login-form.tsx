@@ -66,7 +66,7 @@ export function LoginForm({ onAuthenticated, onStartLogin }: { onAuthenticated: 
               onChange={(event) => setAccessKey(event.target.value)}
               autoComplete="current-password"
               errorText={error ?? undefined}
-              supportingText={error ? undefined : "密钥只用于当前浏览器会话认证。"}
+              supportingText={error ? undefined : "登录状态会在此浏览器保留；公用电脑请在使用后退出。"}
               required
             />
 
@@ -93,7 +93,7 @@ export function LoginForm({ onAuthenticated, onStartLogin }: { onAuthenticated: 
             <a className={styles.loginHelpLink} href="https://github.com/IGNGserver/guanlan-monitor#readme" target="_blank" rel="noreferrer">查看中枢部署与 Agent 安装说明</a>
           </div>
 
-          <p className={styles.loginSecurityNote}>登录请求通过当前站点发送。访问密钥只用于当前浏览器会话，不会写入 URL 或本地存储。</p>
+          <p className={styles.loginSecurityNote}>登录请求通过当前站点发送；会话保存在 HttpOnly Cookie 中，不写入 URL 或页面可读存储。持续使用会滑动保留，长时间不使用则需要重新登录。</p>
         </div>
       </section>
     </main>

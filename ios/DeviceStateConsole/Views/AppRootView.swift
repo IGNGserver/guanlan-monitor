@@ -19,5 +19,8 @@ public struct AppRootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: viewModel.activeScreen)
+        .task {
+            await viewModel.restoreSessionIfPossible()
+        }
     }
 }

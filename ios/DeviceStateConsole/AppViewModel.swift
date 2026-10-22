@@ -95,6 +95,7 @@ public final class AppViewModel {
     
     private let apiClient = ApiClient()
     private var refreshTimer: Timer? = nil
+    private var didAttemptAutomaticSessionRestore = false
     
     private static let baseUrlStorageKey = "dsc_server_base_url"
     private static let accessKeyStorageKey = "dsc_server_access_key"
@@ -149,6 +150,29 @@ public final class AppViewModel {
         isLoading = false
     }
     
+    /// Cold launches used to stop at the login screen even when Keychain still
+    /// held the address and key. Reuse the persisted cookie when the Hub still
+    /// accepts it; otherwise sign in with the stored key. Network failures stay
+    /// on the login screen so the user can correct the address or retry.
+    public func restoreSessionIfPossible() async {
+        guard !didAttemptAutomaticSessionRestore else { return }
+        didAttemptAutomaticSessionRestore = true
+        guard activeScreen == .login else { return }
+        guard !serverConfig.baseUrl.isEmpty, !serverConfig.accessKey.isEmpty else { return }
+
+        isLoading = true
+        errorMessage = nil
+        do {
+            _ = try await apiClient.fetchSession(baseUrl: serverConfig.baseUrl)
+            await refreshDevicesAndNavigate()
+        } catch let error as NSError where error.domain == "ApiClient" && (error.code == 401 || error.code == 403) {
+            await login()
+        } catch {
+            errorMessage = "连接失败: \(error.localizedDescription)"
+        }
+        isLoading = false
+    }
+
     public func logout() async {
         isLoading = true
         do {
