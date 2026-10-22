@@ -196,30 +196,29 @@ jobs:
           GHCR_USER: ${{ github.actor }}
         run: |
           set -euo pipefail
-          run_ssh_login() {
-            local max_attempts=6
-            local delay=10
-            local attempt=1
-            while true; do
-              # Keep the token feed inside the retry loop. Piping into run_ssh
-              # once leaves later attempts with EOF, which Docker reports as
-              # "Cannot perform an interactive login from a non TTY device".
-              if printf '%s' "$GHCR_TOKEN" | ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$@"; then
-                return 0
-              else
-                local exit_code=$?
-              fi
-              if [ "$attempt" -ge "$max_attempts" ]; then
-                return "$exit_code"
-              fi
-              echo "GHCR login attempt $attempt/$max_attempts failed (exit $exit_code); retrying in ${delay}s..." >&2
-              sleep "$delay"
-              attempt=$((attempt + 1))
-              delay=$((delay * 2))
-            done
+          run_ssh() {
+            # One SSH attempt per outer login retry. The token pipe must be
+            # recreated for each attempt; piping once leaves later attempts
+            # with EOF and Docker reports a non-TTY login error.
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$@"
           }
-          run_ssh_login "$DEPLOY_USER@$DEPLOY_HOST" \
-            "docker login ghcr.io --username '$GHCR_USER' --password-stdin"
+          attempt=1
+          delay=10
+          while true; do
+            if printf '%s' "$GHCR_TOKEN" | run_ssh "$DEPLOY_USER@$DEPLOY_HOST" \
+              "docker login ghcr.io --username '$GHCR_USER' --password-stdin"; then
+              exit 0
+            else
+              exit_code=$?
+            fi
+            if [ "$attempt" -ge 6 ]; then
+              exit "$exit_code"
+            fi
+            echo "GHCR login attempt $attempt/6 failed (exit $exit_code); retrying in ${delay}s..." >&2
+            sleep "$delay"
+            attempt=$((attempt + 1))
+            delay=$((delay * 2))
+          done
 
       - name: Pull and restart published images
         shell: bash
