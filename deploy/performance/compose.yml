@@ -1,0 +1,75 @@
+# CI-only synthetic Hub. Never inherit production names, .env, ports or volumes.
+services:
+  redis:
+    image: redis:7.4-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    command: [redis-server, --appendonly, 'yes', --requirepass, '${PERF_REDIS_PASSWORD:?}']
+    environment:
+      REDIS_PASSWORD: ${PERF_REDIS_PASSWORD:?}
+    volumes: ['redis-data:/data']
+    networks: [isolated]
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli --no-auth-warning ping | grep -q PONG']
+      interval: 2s
+      timeout: 2s
+      retries: 60
+  mysql:
+    image: mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
+    command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${PERF_MYSQL_ROOT_PASSWORD:?}
+      MYSQL_DATABASE: guanlan_perf
+      MYSQL_USER: guanlan_perf
+      MYSQL_PASSWORD: ${PERF_MYSQL_PASSWORD:?}
+    volumes: ['mysql-data:/var/lib/mysql']
+    networks: [isolated]
+    healthcheck:
+      test: [CMD-SHELL, 'MYSQL_PWD="$${MYSQL_ROOT_PASSWORD}" mysqladmin ping -h 127.0.0.1 --silent']
+      interval: 2s
+      timeout: 2s
+      retries: 60
+  server:
+    image: ${PERF_SERVER_IMAGE:?}
+    pull_policy: never
+    environment:
+      NODE_ENV: production
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: '4000'
+      DSC_VERSION: ${PERF_APP_VERSION:?}
+      DSC_RELEASE_CHANNEL: test
+      DSC_HUB_UPDATE_ENABLED: 'false'
+      SESSION_SECRET: ${PERF_SESSION_SECRET:?}
+      ACCESS_KEY: ${PERF_ACCESS_KEY:?}
+      SESSION_COOKIE_SECURE: 'false'
+      AGENT_REQUIRE_HTTPS: 'false'
+      TRUST_PROXY: 'true'
+      MYSQL_URL: mysql://guanlan_perf:${PERF_MYSQL_PASSWORD:?}@mysql:3306/guanlan_perf
+      REDIS_URL: redis://:${PERF_REDIS_PASSWORD:?}@redis:6379/0
+    volumes: ['server-data:/app/data']
+    networks: [isolated]
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+  web:
+    image: ${PERF_WEB_IMAGE:?}
+    pull_policy: never
+    environment:
+      NODE_ENV: production
+      SERVER_API_URL: http://server:4000
+      DSC_VERSION: ${PERF_APP_VERSION:?}
+      DSC_RELEASE_CHANNEL: test
+    ports:
+      - target: 3000
+        published: '0'
+        host_ip: 127.0.0.1
+        protocol: tcp
+    networks: [isolated]
+    depends_on: [server]
+networks:
+  isolated:
+    internal: true
+volumes:
+  redis-data:
+  mysql-data:
+  server-data:

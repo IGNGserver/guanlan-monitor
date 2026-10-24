@@ -27,6 +27,7 @@
     "test:macos-contracts": "node --test apps/desktop/src/main/platform.test.ts",
     "test:web-pwa": "node --test apps/web/src/lib/api.test.ts apps/web/src/lib/bootstrap-console.test.ts apps/web/src/lib/console-adapter.test.ts apps/web/src/lib/read-queue.test.ts apps/web/src/lib/offline-cache.test.ts apps/web/src/lib/offline-snapshot.test.ts apps/web/scripts/pwa-assets.test.mjs apps/web/scripts/pwa-icons.test.mjs scripts/web-pwa.test.cjs",
     "test:loading-performance": "node --test packages/console-ui/src/helpers/loadingPerformance.test.ts packages/console-ui/src/helpers/networkPolicy.test.ts packages/console-ui/src/helpers/visiblePolling.test.ts scripts/loading-baseline.test.mjs scripts/loading-acceptance.test.cjs",
+    "test:hub-performance": "node --experimental-strip-types --test scripts/hub-performance/*.test.mjs",
     "test:desktop-loading": "node --experimental-transform-types --experimental-test-module-mocks --import ./scripts/desktop-source-hooks.mjs --test scripts/desktop-loading.test.mjs scripts/performance-regression.test.mjs",
     "performance:baseline": "node scripts/loading-baseline.mjs",
     "test:window-material": "node --test apps/desktop/src/window-material.test.ts",
