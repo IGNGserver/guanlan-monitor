@@ -102,8 +102,13 @@ export async function browserSmoke({ origin, accessKey, modulePath, pauseOrigin,
       else await context.setOffline(true);
       const offlineDocument = await page.reload({ waitUntil: 'domcontentloaded' });
       assert.equal(offlineDocument.fromServiceWorker(), true, 'offline_document_not_from_worker');
+      onStage(`${name}-offline-device`);
       await page.locator('.workspace-page--device').waitFor({ timeout: 30000 });
-      await page.getByText(/离线缓存 ·/).first().waitFor({ timeout: 30000 });
+      onStage(`${name}-offline-cache-indicator`);
+      // This is a desktop viewport; the dotted notice exists only in the touch
+      // layout. Assert the actual desktop detail banner, not a phone selector.
+      await page.getByText('当前显示离线缓存', { exact: true }).first().waitFor({ timeout: 30000 });
+      onStage(`${name}-cache-boundary`);
       const cachedPaths = await page.evaluate(async () => {
         const paths = [];
         for (const key of await caches.keys()) if (key.startsWith('guanlan-shell-')) {

@@ -18,6 +18,7 @@ on:
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - 'tsconfig.base.json'
+      - '.dockerignore'
       - 'VERSION'
 
 concurrency:

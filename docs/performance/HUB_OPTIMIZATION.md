@@ -279,6 +279,10 @@ production storage engine. Do not switch language and storage in one cutover.
   gates restart API/Redis/MySQL and check accepted latest/persisted historical
   buckets; API is SIGKILLed. This is not a power-loss, unflushed-hour recovery or
   24–72h soak claim.
+- The added same-volume old-image rollback/re-upgrade gate also verifies an old
+  writer's accepted sample survives after disposable projections/certifications
+  are reset with both writers stopped. It is not yet a successful CI result.
+  Operational boundaries are in [HUB_ROLLBACK.md](HUB_ROLLBACK.md).
 - Stage 6 reuses exact aggregate snapshots after measurement, invalidated at
   every minute/hour append or replacement, with weak ownership of retired
   buckets and clone-isolated callers. The existing average oracle preserves
@@ -297,6 +301,8 @@ production storage engine. Do not switch language and storage in one cutover.
   tests passed; **195 server tests passed / 15 real-Redis skipped**, **13/13**
   aggregation prototype, **10/10** static export, **50/50** PWA and **34/34**
   accounting/HTTP/browser-target tests passed. Existing lint warnings remain.
+  After snapshot reuse integration, the server suite passed **197 / 15 skipped**;
+  the two new regressions cover invalidation and response/repository mutation.
   Node/Go prototype unit tests **2 + 2 passed**, Python durability/runner tests
   **10 passed**. Builds and benchmarks remain CI-only; Electron visual is CI.
 
@@ -329,3 +335,12 @@ failed at Docker COPY because the existing `.dockerignore` excluded `deploy/`.
 Only the four runtime nginx/entrypoint files are now explicitly included;
 source-contract tests guard these COPY inputs. No successful static-runtime
 measurement is claimed for this failed run.
+
+Follow-up [40094612146](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40094612146)
+built and ran the actual static image: no Node executable, `nginx -t`, public
+headers/cache/MIME/404/API-auth/deep-link contracts, authenticated native upgrade,
+and Chromium login/worker/Socket.IO/deep-link steps passed. Its offline step
+failed; the smoke incorrectly looked for a touch-only dotted cache notice in a
+desktop viewport. The test now checks the desktop cached-detail banner and
+records substeps/redacted diagnostics. **The complete gate remains unpassed**;
+do not use this failed run's resource numbers as an accepted comparison.

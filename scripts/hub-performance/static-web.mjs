@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 
 /** HTTP contracts against the actual exported nginx image, not source regexes. */
-export async function verifyStaticWeb(origin, accessKey) {
+export async function verifyStaticWeb(origin, accessKey, onStage = () => {}) {
   const target = new URL(origin);
   assert.equal(target.protocol, 'http:');
   assert.equal(target.hostname, '127.0.0.1');
   assert.ok(Number(target.port) >= 1024 && !target.username && !target.password);
   const request = (path, init = {}) => fetch(`${origin}${path}`, { ...init,
     redirect: 'manual', signal: AbortSignal.timeout(5000) });
+  onStage('root-security-headers');
   const root = await request('/');
   assert.equal(root.status, 200);
   const html = await root.text();
@@ -21,6 +22,7 @@ export async function verifyStaticWeb(origin, accessKey) {
   assert.doesNotMatch(root.headers.get('content-security-policy') ?? '', /unsafe-eval/);
   assert.match(root.headers.get('strict-transport-security') ?? '', /max-age=31536000/);
   for (const path of ['/sw.js', '/pwa-assets.json', '/manifest.json']) {
+    onStage(`public-file-${path.slice(1)}`);
     const response = await request(path);
     assert.equal(response.status, 200);
     assert.match(response.headers.get('cache-control') ?? '', /no-store/);
@@ -32,24 +34,29 @@ export async function verifyStaticWeb(origin, accessKey) {
   const asset = [...manifest.assets, ...(manifest.runtimeAssets ?? [])]
     .find((path) => /\.[a-f0-9]{8,}\.js$|[-/][a-f0-9]{8,}[^/]*\.js$/.test(path));
   assert.ok(asset, 'hashed_asset_missing');
+  onStage('hashed-asset-cache');
   const hashed = await request(asset);
   assert.equal(hashed.status, 200);
   assert.match(hashed.headers.get('content-type') ?? '', /javascript/);
   assert.match(hashed.headers.get('cache-control') ?? '', /immutable/);
   await hashed.arrayBuffer();
   for (const path of ['/not-a-public-route', '/.env', '/_next/static/not-real-abcdef0123456789.js', '/index.txt', '/source.map', '/?_rsc=fixture']) {
+    onStage(`reject-route-${['/not-a-public-route', '/.env', '/_next/static/not-real-abcdef0123456789.js', '/index.txt', '/source.map', '/?_rsc=fixture'].indexOf(path)}`);
     const response = await request(path);
     assert.equal(response.status, 404, 'private_or_unknown_route_exposed');
     assert.doesNotMatch(response.headers.get('cache-control') ?? '', /immutable/);
     await response.arrayBuffer();
   }
+  onStage('rsc-header');
   const rsc = await request('/', { headers: { RSC: '1' } });
   assert.equal(rsc.status, 404);
   await rsc.arrayBuffer();
+  onStage('api-auth');
   const denied = await request('/api/devices');
   assert.equal(denied.status, 401);
   assert.match(denied.headers.get('cache-control') ?? '', /no-store/);
   await denied.arrayBuffer();
+  onStage('deep-link-and-canonical-slash');
   const deep = await request('/devices/perf-0');
   assert.equal(deep.status, 200);
   assert.equal(await deep.text(), html, 'deep_link_not_public_shell');
@@ -59,6 +66,7 @@ export async function verifyStaticWeb(origin, accessKey) {
   assert.equal(canonical.pathname, '/devices/perf-0');
   assert.equal(canonical.search, '?window=5m');
   await trailing.arrayBuffer();
+  onStage('forwarded-protocol-cookie');
   const spoof = await request('/api/auth/login', { method: 'POST',
     headers: { 'content-type': 'application/json', 'x-forwarded-proto': 'https', forwarded: 'proto=https' },
     body: JSON.stringify({ accessKey }) });

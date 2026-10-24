@@ -239,8 +239,10 @@ async function run(input) {
     await waitForReadiness(request);
     if (report.evidence.webRuntime === 'static-nginx') {
       report.evidence.acceptanceStage = 'static-http';
+      if (options.side === 'head') assert.ok(process.env.GLPERF_PLAYWRIGHT_MODULE, 'image_browser_gate_required');
       await compose('exec', '-T', 'web', 'sh', '-c', '! command -v node && nginx -t');
-      report.evidence.staticWeb = await verifyStaticWeb(origin, accessKey);
+      report.evidence.staticWeb = await verifyStaticWeb(origin, accessKey,
+        (stage) => { (report.evidence.staticProgress ??= []).push(stage); });
     }
     const login = await request('/api/auth/login', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ accessKey })
@@ -328,7 +330,7 @@ async function run(input) {
         pauseOrigin: () => compose('stop', 'web'), resumeOrigin: () => compose('start', 'web'),
         onStage: (stage) => { (report.evidence.browserProgress ??= []).push(stage); } });
     }
-    if (report.evidence.webRuntime === 'static-nginx') {
+    if (options.side === 'head' && report.evidence.webRuntime === 'static-nginx') {
       report.evidence.acceptanceStage = 'trusted-tls';
       // Separate post-measurement TLS boundary exercise. Trust only container
       // loopback, not the runner's public-port peer, and enable the real HTTPS
@@ -337,7 +339,7 @@ async function run(input) {
       variables.PERF_TRUSTED_TLS_PROXY_CIDRS = '127.0.0.1/32';
       await writeFile(envFile, Object.entries(variables).map(([key, value]) => `${key}=${value}`).join('\n'), { mode: 0o600 });
       await compose('up', '-d', '--no-build', '--force-recreate', 'server', 'web');
-      const tlsOrigin = publicOrigin(await compose('port', 'web', '3000'));
+      let tlsOrigin = publicOrigin(await compose('port', 'web', '3000'));
       await waitForReadiness(async (path, init, timeoutMs) => {
         const response = await fetch(`${tlsOrigin}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs) });
         return { body: await response.text() };
@@ -382,6 +384,51 @@ async function run(input) {
           acceptedLatestPreserved: true, oldHistoricalBucketPreserved: true });
       }
       report.evidence.recovery = recoveries;
+      report.evidence.acceptanceStage = 'rollback-baseline';
+      assert.match(process.env.BASE_SHA ?? '', /^[a-f0-9]{40}$/, 'invalid_rollback_baseline');
+      const selectImages = async (side, sha) => {
+        variables.PERF_SERVER_IMAGE = `glperf-server-${side}:${sha}`;
+        variables.PERF_WEB_IMAGE = `glperf-web-${side}:${sha}`;
+        variables.PERF_REQUIRE_HTTPS = 'false';
+        variables.PERF_TRUSTED_TLS_PROXY_CIDRS = '';
+        await writeFile(envFile, Object.entries(variables).map(([key, value]) => `${key}=${value}`).join('\n'), { mode: 0o600 });
+        await compose('up', '-d', '--no-build', '--force-recreate', 'server', 'web');
+        tlsOrigin = publicOrigin(await compose('port', 'web', '3000'));
+        await waitForReadiness(recoveredRead);
+      };
+      // Same isolated persistent volumes, one writer at a time. Prove the old
+      // image can read and accept data, rather than merely documenting rollback.
+      await compose('stop', 'web', 'server');
+      await selectImages('base', process.env.BASE_SHA);
+      const oldRead = JSON.parse((await recoveredRead('/api/devices/perf-0/metrics?window=5m')).body);
+      assert.deepEqual(oldRead.latest, acceptedSnapshot.latest, 'rollback_old_image_cannot_read_latest');
+      validateQueryResponse('/api/devices/perf-0/metrics?window=1h',
+        (await recoveredRead('/api/devices/perf-0/metrics?window=1h')).body, { oldBucket });
+      const rollbackSample = payload(0, 601, Date.now() + 1000);
+      const rollbackAck = await recoveredRead('/api/agent/ingest', { method: 'POST',
+        headers: { authorization: `Bearer ${accessKey}`, 'content-type': 'application/json' },
+        body: JSON.stringify(rollbackSample) });
+      assert.equal(JSON.parse(rollbackAck.body).ok, true, 'rollback_old_image_cannot_accept');
+      const oldAccepted = JSON.parse((await recoveredRead('/api/devices/perf-0/metrics?window=5m')).body);
+      assert.equal(oldAccepted.latest.cpuUsagePercent, rollbackSample.cpuUsagePercent, 'rollback_old_image_ignored_new_reading');
+      assert.equal(oldAccepted.latest.hardwareSampledAt, rollbackSample.hardwareSampledAt, 'rollback_old_image_ignored_new_observation');
+      await compose('stop', 'web', 'server');
+      // Old writers do not maintain new derived state. Reset only disposable
+      // projections/certifications while every Hub writer is stopped; never
+      // delete authoritative device, raw-series, history or credential data.
+      const derivedKeys = ['dsc:device-summary:v1', 'dsc:device-last-seen:v1', 'dsc:realtime-model:v1',
+        ...Array.from({ length: 12 }, (_, index) => ['1m', '5m', '15m'].map((bucket) => `dsc:series-order-v2:perf-${index}:${bucket}`)).flat()];
+      await compose('exec', '-T', 'redis', 'sh', '-c',
+        'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli --no-auth-warning DEL "$@"', 'glperf-derived-only', ...derivedKeys);
+      report.evidence.acceptanceStage = 'reupgrade-candidate';
+      await selectImages('head', options.sha);
+      const upgraded = JSON.parse((await recoveredRead('/api/devices/perf-0/metrics?window=5m')).body);
+      assert.deepEqual(upgraded.latest, oldAccepted.latest, 'reupgrade_old_writer_sample_lost');
+      const inventory = JSON.parse((await recoveredRead('/api/devices')).body);
+      assert.ok(inventory.some((device) => device.deviceId === 'perf-0'), 'reupgrade_inventory_backfill_failed');
+      report.evidence.rollback = { oldImageReads: true, oldImageAccepts: true,
+        reupgradePreservesOldWriterSample: true, projectionsRebuiltWithWritersStopped: true };
+      for (const service of ['web', 'server']) containers[service] = await compose('ps', '-q', service);
     }
     report.evidence.acceptanceStage = 'complete';
     for (const service of services) {
@@ -396,7 +443,7 @@ async function run(input) {
       'business_request_failed', 'invalid_business_response', 'compose_command_failed', 'container_unhealthy', 'session_cookie_missing', 'required_stats_unavailable',
       'native_upgrade_failed', 'native_upgrade_auth_boundary_failed', 'native_upgrade_protocol_failed']);
     report.failures.push(safeCodes.has(error.message) ? error.message : 'functional_or_measurement_failure');
-    if (error.diagnostic) report.diagnostic = error.diagnostic;
+    report.diagnostic = error.diagnostic ?? sanitizeDiagnostic(error.message, Object.values(variables));
     if (Number.isInteger(error.statusCode) && error.statusCode >= 100 && error.statusCode <= 599) report.failureStatus = error.statusCode;
   } finally {
     try {
