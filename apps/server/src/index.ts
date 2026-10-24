@@ -5,7 +5,9 @@ import { Server as SocketIOServer } from "socket.io";
 import Redis from "ioredis";
 import mysql from "mysql2/promise";
 import { env } from "./config.js";
-import { authRateLimiter, getBearerToken, millisecondsUntilSessionExpiry, parseSessionValue, safeEqual } from "./auth.js";
+import { authRateLimiter, getBearerToken, parseSessionValue, safeEqual } from "./auth.js";
+import { nonOverlappingTask, scheduleSessionExpiry } from "./lifecycle.js";
+import { QueueCapacityError } from "./serial-queue.js";
 import { agentMetricsPayloadSchema } from "./metrics-schema.js";
 import { RedisRealtimeRepository } from "./repositories/realtime.js";
 import { MysqlHistoryRepository } from "./repositories/history.js";
@@ -93,7 +95,7 @@ if (env.MYSQL_URL) {
     uri: env.MYSQL_URL,
     waitForConnections: true,
     connectionLimit: 10,
-    queueLimit: 0,
+    queueLimit: 128,
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000
   });
@@ -181,6 +183,7 @@ await registerRoutes(app, repositories, metricsService, {
 });
 
 app.post<{ Body: AgentMetricsPayload }>("/api/agent/ingest", async (request, reply) => {
+  if (shuttingDown) return reply.header("Retry-After", "1").code(503).send({ error: "hub_shutting_down" });
   if (env.AGENT_REQUIRE_HTTPS && request.protocol !== "https") {
     return reply.code(400).send({ error: "https_required", message: "Agent endpoint requires HTTPS when AGENT_REQUIRE_HTTPS=true." });
   }
@@ -204,7 +207,12 @@ app.post<{ Body: AgentMetricsPayload }>("/api/agent/ingest", async (request, rep
     return reply.code(400).send({ error: "invalid_agent_payload" });
   }
 
-  await metricsService.ingest(parsed.data);
+  try {
+    await metricsService.ingest(parsed.data);
+  } catch (error) {
+    if (!(error instanceof QueueCapacityError)) throw error;
+    return reply.header("Retry-After", "1").code(503).send({ error: "hub_queue_capacity" });
+  }
   return { ok: true };
 });
 
@@ -252,10 +260,10 @@ io.use((socket, next) => {
 });
 
 io.on("connection", (socket) => {
-  const expiryTimer = setTimeout(() => {
+  const cancelExpiry = scheduleSessionExpiry(socket.data.session, () => {
     socket.disconnect(true);
-  }, millisecondsUntilSessionExpiry(socket.data.session));
-  socket.once("disconnect", () => clearTimeout(expiryTimer));
+  });
+  socket.once("disconnect", cancelExpiry);
 });
 
 const offlineTimer = setInterval(() => {
@@ -270,10 +278,13 @@ const aggregateFlushTimer = setInterval(() => {
   });
 }, 60_000);
 
-const retentionTimer = setInterval(() => {
+const runRetentionCleanup = nonOverlappingTask(async () => {
   const cleanup = repositories.history.runRetentionCleanup;
   if (!cleanup) return;
-  void cleanup.call(repositories.history).catch((error) => {
+  await cleanup.call(repositories.history);
+});
+const retentionTimer = setInterval(() => {
+  void runRetentionCleanup().catch((error) => {
     app.log.error({ error }, "history retention cleanup failed");
   });
 }, 6 * 60 * 60 * 1000);
@@ -287,12 +298,16 @@ const shutdown = async (signal: string) => {
   clearInterval(aggregateFlushTimer);
   clearInterval(retentionTimer);
   liveRegistry.close();
+  io?.disconnectSockets(true);
+  // Drain accepted HTTP ingests before the final aggregate snapshot. Flushing
+  // first could miss samples that were already queued when shutdown began.
+  await app.close();
   try {
-    await metricsService.flushAggregates();
+    await metricsService.flushAfterDrain();
   } catch (error) {
     app.log.error({ error }, "aggregate flush failed during shutdown");
   }
-  await app.close();
+  await runRetentionCleanup.drain().catch((error) => app.log.error({ error }, "retention shutdown failed"));
   if (mysqlPool) {
     await mysqlPool.end().catch((error) => app.log.error({ error }, "mysql shutdown failed"));
   }

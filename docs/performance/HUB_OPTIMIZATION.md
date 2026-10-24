@@ -21,7 +21,7 @@ being marked verified.
 | Stage | Deliverable | State |
 | --- | --- | --- |
 | 0 | Isolated baseline, reusable payload/golden contracts, resource accounting | in progress |
-| 1 | Session expiry, timeout ownership, queue/timer lifecycle and scan reentry | pending |
+| 1 | Session expiry, timeout ownership, queue/timer lifecycle and scan reentry | local tests passed; CI pending |
 | 2 | Configuration snapshots, registration fast path, dirty aggregate flush | pending |
 | 3 | Atomic bounded Redis append, narrow summary and expiry read models | pending |
 | 4 | Overview projection, bounded query concurrency and shared historical reads | pending |
@@ -126,3 +126,39 @@ production storage engine. Do not switch language and storage in one cutover.
   explicit unavailable reasons. Missing required CPU/memory evidence fails;
   unavailable block counters produce partial evidence, not zero IO. One paired
   run is descriptive and has no uncalibrated performance regression threshold.
+
+### CI evidence and open gates
+
+- [CI 40089367490](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40089367490)
+  passed all jobs, including `verify` (1m45s, build/typecheck/server tests), Web
+  visual/PWA/loading (5m39s) and Electron visual (55s), for `5b439435`.
+- [Hub baseline 40089367503](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40089367503)
+  built all four application images but **failed** before either workload:
+  `compose_command_failed`; both scoped cleanups succeeded. Runtime performance
+  remains unmeasured. The follow-up retains bounded, credential-redacted startup
+  diagnostics rather than retrying the same opaque failure.
+- PR repository is public: these GitHub-hosted runs consume no private monthly
+  Actions minute allowance. Builds remain in CI; local scratch grew to 1.8 GiB
+  including baseline/candidate dependencies, with 102 GiB still available.
+
+### Stage 1 local correctness work (not yet CI-verified)
+
+- Added chunked long-session timers and joined maintenance operations.
+- Queue ownership now lasts until the underlying database operation settles;
+  no uncancelled ten-second timeout can release it early. Settled keys are
+  removed; admission is bounded to 32 per key / 1,024 total per queue. Rejected
+  ingests receive retryable HTTP 503, not a success acknowledgement.
+- Flush/offline work uses at most eight workers; MySQL waiting is bounded at
+  128. Concurrent flush callers join the actual operation.
+- Registration, ingest and administrative removal share the device ingest
+  ordering boundary. Already admitted work finishes before removal; later
+  authoritative ingest may reopen the device as before.
+- Local candidate server typecheck and **120 tests passed**, including removal,
+  overload-before-side-effects and final-flush device-set race regressions.
+  Whole-workspace lint/typecheck passed with existing warnings; new baseline
+  harness tests are **30/30**. CI for the production-path changes is still
+  pending; later stages remain pending.
+- Queue admission precedes registration, realtime writes and credential
+  revocation. Shutdown drains HTTP, waits existing scans/retention, and takes a
+  fresh aggregate snapshot after any old periodic flush. No operation is
+  reported cancelled while it still owns the database/queue slot.

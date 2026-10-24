@@ -310,9 +310,7 @@ export async function registerRoutes(
   app.delete<{ Params: { deviceId: string } }>("/api/devices/:deviceId", { preHandler: requireAuth }, async (request, reply) => {
     const { deviceId } = request.params;
     if (isLegacyVirtualMachineId(deviceId)) return reply.code(404).send({ error: "device_not_found" });
-    await stores.removeLiveDevice?.(deviceId);
-    await repositories.devices.deleteDevice(deviceId);
-    await metricsService.removeDevice(deviceId);
+    await metricsService.removeDevice(deviceId, () => stores.removeLiveDevice?.(deviceId) ?? Promise.resolve());
     return { ok: true };
   });
 

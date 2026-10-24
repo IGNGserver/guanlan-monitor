@@ -12,6 +12,8 @@ import type {
 } from "../types.js";
 import { buildTrafficCalendar, trafficCalendarBounds } from "../traffic-calendar.js";
 import { ALL_DEVICE_METRIC_KEYS, HEARTBEAT_TIMEOUT_MS, payloadToTimeSeries, toSummary } from "../utils.js";
+import { forEachBounded, KeyedSerialQueue } from "../serial-queue.js";
+import { nonOverlappingTask } from "../lifecycle.js";
 
 const LIVE_WINDOWS: AggregatedWindowConfig[] = [
   { bucket: "1m", maxPoints: 30 },
@@ -31,9 +33,10 @@ const LIVE_WINDOW_DURATION_MS = {
 export class MetricsService {
   private readonly minuteAccumulators = new Map<string, MetricAccumulator>();
   private readonly hourlyAccumulators = new Map<string, MetricAccumulator>();
-  private readonly deviceQueues = new Map<string, Promise<void>>();
-  private readonly ingestQueues = new Map<string, Promise<void>>();
-  private flushInFlight = false;
+  private readonly deviceQueues = new KeyedSerialQueue();
+  private readonly ingestQueues = new KeyedSerialQueue();
+  private readonly flushTask = nonOverlappingTask(() => this.performAggregateFlush());
+  private readonly offlineTask = nonOverlappingTask(() => this.performOfflineScan());
 
   constructor(
     private readonly repositories: Repositories,
@@ -43,13 +46,15 @@ export class MetricsService {
 
   async ingest(payload: AgentMetricsPayload) {
     const receivedAt = new Date().toISOString();
-    const device = await this.repositories.devices.registerOrUpdateDevice(
-      payload.identity.deviceId,
-      payload.identity.hostname,
-      { reopenClosed: true }
-    );
-    if (device.status === "closed") return;
-    await this.runDeviceIngestOperation(payload.identity.deviceId, () => this.persistPayload(payload, receivedAt));
+    await this.runDeviceIngestOperation(payload.identity.deviceId, () => this.runDeviceAggregateOperation(payload.identity.deviceId, async () => {
+      const device = await this.repositories.devices.registerOrUpdateDevice(
+        payload.identity.deviceId,
+        payload.identity.hostname,
+        { reopenClosed: true }
+      );
+      if (device.status === "closed") return;
+      await this.persistPayload(payload, receivedAt);
+    }));
   }
 
   private async persistPayload(
@@ -83,10 +88,8 @@ export class MetricsService {
     const point = payloadToTimeSeries(payload, config);
     await this.repositories.realtime.appendSeries(payload.identity.deviceId, "1m", point, 30);
     await this.repositories.realtime.appendSeries(payload.identity.deviceId, "5m", point, 150);
-    await this.runDeviceAggregateOperation(payload.identity.deviceId, async () => {
-      await this.addMinuteAggregate(payload.identity.deviceId, point);
-      await this.addHourlyAggregate(payload.identity.deviceId, point);
-    });
+    await this.addMinuteAggregate(payload.identity.deviceId, point);
+    await this.addHourlyAggregate(payload.identity.deviceId, point);
 
     const event: DeviceRealtimeEvent = {
       deviceId: payload.identity.deviceId,
@@ -98,13 +101,18 @@ export class MetricsService {
     this.emitDeviceEvent(event);
   }
 
-  async removeDevice(deviceId: string) {
+  async removeDevice(deviceId: string, revokeLive?: () => Promise<void>) {
+    return this.runDeviceIngestOperation(deviceId, () => this.runDeviceAggregateOperation(deviceId,
+      () => this.performRemoveDevice(deviceId, revokeLive)));
+  }
+
+  private async performRemoveDevice(deviceId: string, revokeLive?: () => Promise<void>) {
+    await revokeLive?.();
+    await this.repositories.devices.deleteDevice(deviceId);
     const state = await this.repositories.realtime.getDevice(deviceId);
-    await this.runDeviceAggregateOperation(deviceId, async () => {
-      this.minuteAccumulators.delete(deviceId);
-      this.hourlyAccumulators.delete(deviceId);
-      await this.repositories.realtime.remove(deviceId);
-    });
+    this.minuteAccumulators.delete(deviceId);
+    this.hourlyAccumulators.delete(deviceId);
+    await this.repositories.realtime.remove(deviceId);
     if (!state) return;
 
     const offlineState = { ...state, status: "offline" as const };
@@ -115,28 +123,30 @@ export class MetricsService {
     });
   }
 
-  async markOfflineDevices() {
+  markOfflineDevices(): Promise<void> {
+    return this.offlineTask();
+  }
+
+  private async performOfflineScan() {
     const devices = await this.repositories.realtime.listDevices();
     const now = Date.now();
 
-    await Promise.all(
-      devices.map(async (device) => {
-        if (device.status === "offline") return;
-        if (now - Date.parse(device.lastSeenAt) < HEARTBEAT_TIMEOUT_MS) return;
-        const offlineState = { ...device, status: "offline" as const };
-        const marked = await this.repositories.realtime.markOfflineIfMatch(
-          device.identity.deviceId,
-          device.lastSeenAt,
-          offlineState
-        );
-        if (marked) {
-          this.emitDeviceEvent({
-            deviceId: offlineState.identity.deviceId,
-            summary: toSummary(offlineState)
-          });
-        }
-      })
-    );
+    await forEachBounded(devices, async (device) => {
+      if (device.status === "offline") return;
+      if (now - Date.parse(device.lastSeenAt) < HEARTBEAT_TIMEOUT_MS) return;
+      const offlineState = { ...device, status: "offline" as const };
+      const marked = await this.repositories.realtime.markOfflineIfMatch(
+        device.identity.deviceId,
+        device.lastSeenAt,
+        offlineState
+      );
+      if (marked) {
+        this.emitDeviceEvent({
+          deviceId: offlineState.identity.deviceId,
+          summary: toSummary(offlineState)
+        });
+      }
+    });
   }
 
   async getSeries(deviceId: string, window: MetricWindow) {
@@ -203,56 +213,51 @@ export class MetricsService {
     await this.deviceMetricConfigs.set(deviceId, config);
   }
 
-  async flushAggregates(): Promise<void> {
-    if (this.flushInFlight) return;
-    this.flushInFlight = true;
-    try {
-      const failures: unknown[] = [];
-      const deviceIds = new Set([...this.minuteAccumulators.keys(), ...this.hourlyAccumulators.keys()]);
-      
-      await Promise.all(
-        [...deviceIds].map((deviceId) =>
-          this.runDeviceAggregateOperation(deviceId, async () => {
-            const minAcc = this.minuteAccumulators.get(deviceId);
-            if (minAcc?.samples.length) {
-              try {
-                await this.repositories.history.insertMinutePoint(
-                  deviceId,
-                  averageRecord(minAcc.samples, minAcc.bucketStartedAt)
-                );
-                await this.flushAggregate(
-                  deviceId,
-                  "15m",
-                  minAcc.samples,
-                  15,
-                  minAcc.bucketStartedAt
-                );
-              } catch (error) {
-                failures.push(error);
-              }
-            }
+  flushAggregates(): Promise<void> {
+    return this.flushTask();
+  }
 
-            const hrAcc = this.hourlyAccumulators.get(deviceId);
-            if (hrAcc?.samples.length) {
-              try {
-                await this.repositories.history.insertHourlyPoint(
-                  deviceId,
-                  averageRecord(hrAcc.samples, hrAcc.bucketStartedAt)
-                );
-              } catch (error) {
-                failures.push(error);
-              }
-            }
-          })
-        )
-      );
+  async flushAfterDrain(): Promise<void> {
+    // An existing periodic flush may have captured its device set before the
+    // last admitted request. Wait, then take a fresh snapshot after HTTP drain.
+    await this.flushTask.drain().catch(() => undefined);
+    await this.offlineTask.drain();
+    await this.flushTask();
+  }
 
-      if (failures.length) {
-        throw new AggregateError(failures, "one or more metric aggregate flushes failed");
-      }
-    } finally {
-      this.flushInFlight = false;
-    }
+  private async performAggregateFlush(): Promise<void> {
+    const failures: unknown[] = [];
+    const deviceIds = new Set([...this.minuteAccumulators.keys(), ...this.hourlyAccumulators.keys()]);
+    await forEachBounded(deviceIds, (deviceId) =>
+      this.runDeviceAggregateOperation(deviceId, async () => {
+        const minAcc = this.minuteAccumulators.get(deviceId);
+        if (minAcc?.samples.length) {
+          try {
+            await this.repositories.history.insertMinutePoint(
+              deviceId,
+              averageRecord(minAcc.samples, minAcc.bucketStartedAt)
+            );
+            await this.flushAggregate(deviceId, "15m", minAcc.samples, 15, minAcc.bucketStartedAt);
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+
+        const hrAcc = this.hourlyAccumulators.get(deviceId);
+        if (hrAcc?.samples.length) {
+          try {
+            await this.repositories.history.insertHourlyPoint(
+              deviceId,
+              averageRecord(hrAcc.samples, hrAcc.bucketStartedAt)
+            );
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+      })
+    );
+
+    if (failures.length) throw new AggregateError(failures, "one or more metric aggregate flushes failed");
   }
 
   private async addMinuteAggregate(deviceId: string, point: ReturnType<typeof payloadToTimeSeries>) {
@@ -342,27 +347,11 @@ export class MetricsService {
   }
 
   private runDeviceIngestOperation(deviceId: string, operation: () => Promise<void>): Promise<void> {
-    const queue = this.ingestQueues.get(deviceId) ?? Promise.resolve();
-    const next = queue.then(operation, operation);
-    this.ingestQueues.set(deviceId, next.then(() => undefined, () => undefined));
-    return next;
+    return this.ingestQueues.run(deviceId, operation);
   }
 
   private runDeviceAggregateOperation<T>(deviceId: string, operation: () => Promise<T>): Promise<T> {
-    const queue = this.deviceQueues.get(deviceId) ?? Promise.resolve();
-    const withTimeout = () =>
-      Promise.race([
-        operation(),
-        new Promise<T>((_, reject) =>
-          setTimeout(() => reject(new Error(`aggregate operation timed out for device ${deviceId}`)), 10_000)
-        )
-      ]);
-    const next = queue.then(withTimeout, withTimeout);
-    this.deviceQueues.set(
-      deviceId,
-      next.then(() => undefined, () => undefined)
-    );
-    return next;
+    return this.deviceQueues.run(deviceId, operation);
   }
 }
 
