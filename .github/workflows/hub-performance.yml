@@ -31,7 +31,6 @@ jobs:
     env:
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      REPORT_DIR: ${{ runner.temp }}/hub-performance-reports
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -94,13 +93,13 @@ jobs:
           cache-from: type=gha,scope=hub-perf-web
           cache-to: type=gha,mode=min,scope=hub-perf-web
       - name: Measure baseline through its public Web entry
-        run: node --experimental-strip-types head/scripts/hub-performance/run.mjs --side base --sha "$BASE_SHA" --output "$REPORT_DIR/base.json"
+        run: node --experimental-strip-types head/scripts/hub-performance/run.mjs --side base --sha "$BASE_SHA" --output "$RUNNER_TEMP/hub-performance-reports/base.json"
       - name: Measure candidate with fresh isolated volumes
         if: ${{ !cancelled() }}
-        run: node --experimental-strip-types head/scripts/hub-performance/run.mjs --side head --sha "$HEAD_SHA" --output "$REPORT_DIR/head.json"
+        run: node --experimental-strip-types head/scripts/hub-performance/run.mjs --side head --sha "$HEAD_SHA" --output "$RUNNER_TEMP/hub-performance-reports/head.json"
       - name: Report descriptive comparisons without invented measurements
         if: ${{ !cancelled() }}
-        run: node head/scripts/hub-performance/report.mjs "$REPORT_DIR/base.json" "$REPORT_DIR/head.json" "$REPORT_DIR/comparison.json"
+        run: node head/scripts/hub-performance/report.mjs "$RUNNER_TEMP/hub-performance-reports/base.json" "$RUNNER_TEMP/hub-performance-reports/head.json" "$RUNNER_TEMP/hub-performance-reports/comparison.json"
       - name: Remove only this run's isolated resources
         if: always()
         shell: bash
