@@ -18,6 +18,11 @@ const HOURLY_RETENTION_DAYS = 370;
 export class MysqlHistoryRepository implements HistoryRepository {
   constructor(private readonly pool: mysql.Pool) {}
 
+  async checkReadiness(): Promise<void> {
+    // Exercise the same pool as history, without scanning any telemetry rows.
+    await this.pool.query({ sql: "SELECT 1", timeout: 2000 });
+  }
+
   async init() {
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS device_minute_metrics (

@@ -180,6 +180,7 @@ export interface RealtimeDeviceSummary extends DeviceSummary {
 }
 
 export interface HistoryRepository {
+  checkReadiness?(): Promise<void>;
   getTrafficSeries(deviceId: string, start: number, end: number): Promise<TrafficHistoryPoint[]>;
   insertMinutePoint(deviceId: string, point: TimeSeriesRecord): Promise<void>;
   insertHourlyPoint(deviceId: string, point: TimeSeriesRecord): Promise<void>;

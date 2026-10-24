@@ -115,6 +115,51 @@ test("concurrent identical history reads share SQL only until settlement, with n
   assert.equal(calls, 2);
 });
 
+test("MySQL readiness uses a bounded SELECT 1, never history or hardware scans", async () => {
+  const queries: unknown[] = [];
+  let fail = true;
+  const repository = new MysqlHistoryRepository({ query: async (query: unknown) => {
+    queries.push(query);
+    if (fail) throw new Error("synthetic mysql unavailable");
+    return [[{ 1: 1 }], []];
+  } } as unknown as mysql.Pool);
+  await assert.rejects(repository.checkReadiness(), /synthetic mysql unavailable/);
+  fail = false;
+  await repository.checkReadiness();
+  assert.deepEqual(queries, [{ sql: "SELECT 1", timeout: 2000 }, { sql: "SELECT 1", timeout: 2000 }]);
+});
+
+test("public readiness stays unavailable until Redis and SQL recover and never leaks backend errors", async () => {
+  const { registerRoutes } = await import("./routes.js");
+  const app = Fastify();
+  let sqlReady = false, redisReady = true, probes = 0;
+  const repositories = {
+    realtime: {
+      checkReadiness: async () => { if (!redisReady) throw new Error("private redis error"); },
+      listDevices: async () => { throw new Error("must not scan full device hardware"); }
+    },
+    history: { checkReadiness: async () => { probes++; if (!sqlReady) throw new Error("private mysql error"); } }
+  } as unknown as Repositories;
+  const configs = { get: async () => null, set: async () => {} };
+  await registerRoutes(app, repositories, new MetricsService(repositories, () => {}, configs),
+    { metricConfigs: configs, fanNotes: { get: async () => ({}), set: async () => {} } });
+  try {
+    let response = await app.inject({ url: "/api/health/readiness" });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { status: "not_ready" });
+    sqlReady = true;
+    response = await app.inject({ url: "/api/health/readiness" });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json(), { status: "ready" });
+    assert.equal(probes, 2);
+    redisReady = false;
+    response = await app.inject({ url: "/api/health/readiness" });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { status: "not_ready" });
+    assert.equal(probes, 2);
+  } finally { await app.close(); }
+});
+
 test("background history discovery does not hold listen or lists and never reopens closed records", async () => {
   const app = Fastify();
   const history = deferred<Array<{ deviceId: string; lastSeenAt: string }>>();

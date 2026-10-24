@@ -362,11 +362,12 @@ async function run(input) {
       const recoveredRead = async (path, init = {}, timeoutMs = 5000) => {
         const response = await fetch(`${tlsOrigin}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs),
           headers: { cookie, ...init.headers } });
-        assert.ok(response.ok, 'recovery_request_failed');
+        if (!response.ok) throw Object.assign(new Error('recovery_request_failed'), { statusCode: response.status });
         return { body: await response.text() };
       };
       const acceptedSnapshot = JSON.parse((await recoveredRead('/api/devices/perf-0/metrics?window=5m')).body);
       const recoveries = [];
+      report.evidence.recovery = recoveries;
       for (const service of ['server', 'redis', 'mysql']) {
         report.evidence.acceptanceStage = `recovery-${service}`;
         const started = performance.now();
@@ -383,7 +384,6 @@ async function run(input) {
         recoveries.push({ service, elapsedMs: performance.now() - started,
           acceptedLatestPreserved: true, oldHistoricalBucketPreserved: true });
       }
-      report.evidence.recovery = recoveries;
       report.evidence.acceptanceStage = 'rollback-baseline';
       assert.match(process.env.BASE_SHA ?? '', /^[a-f0-9]{40}$/, 'invalid_rollback_baseline');
       const selectImages = async (side, sha) => {

@@ -25,7 +25,7 @@ being marked verified.
 | 2 | Configuration snapshots, registration fast path, dirty aggregate flush | local + CI + paired smoke passed |
 | 3 | Atomic bounded Redis append, narrow summary and expiry read models | real Redis + CI + paired smoke passed |
 | 4 | Overview projection, bounded query concurrency and shared historical reads | real SQL + CI passed; image browser gate not yet passed |
-| 5 | Static Web, fixed-upstream proxy, security/PWA/deep-link parity | local contracts passed; actual image CI pending |
+| 5 | Static Web, fixed-upstream proxy, security/PWA/deep-link parity | actual image + Chromium/WebKit + TLS contracts passed; whole gate still open |
 | 6 | Incremental aggregation, versioned hardware storage and bounded maintenance | exact snapshot reuse implemented; metadata prototype only; CI pending |
 | 7 | Failure/recovery, rollback, resource comparisons and long-running soak | isolated restart gates added; long-running soak pending |
 | Go decision | Fixed-input prototype and whole-stack benefit gate | measured kernel has higher Go CPU/latency; retain Node/MySQL |
@@ -344,3 +344,14 @@ failed; the smoke incorrectly looked for a touch-only dotted cache notice in a
 desktop viewport. The test now checks the desktop cached-detail banner and
 records substeps/redacted diagnostics. **The complete gate remains unpassed**;
 do not use this failed run's resource numbers as an accepted comparison.
+
+[40095224905](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40095224905)
+then passed all actual static HTTP, Chromium **and** WebKit login/worker/
+Socket.IO/deep-link/offline/cache-boundary gates, plus native HTTP401/101 and
+trusted-TLS enforcement. API SIGKILL and Redis restart checks completed before
+the run failed during MySQL recovery. Inspection found readiness checked only
+Redis, so it returned ready before history SQL was usable. Readiness now probes
+the same MySQL pool with timeout-bounded `SELECT 1`, returns 503 until recovery,
+and does not expose backend exception text. Two regressions cover failed/recovered
+SQL and Redis independently without scanning history/hardware. The restart and
+same-volume rollback/re-upgrade chain still needs a complete successful run.

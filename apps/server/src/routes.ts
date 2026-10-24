@@ -190,9 +190,10 @@ export async function registerRoutes(
     try {
       if (repositories.realtime.checkReadiness) await repositories.realtime.checkReadiness();
       else await repositories.realtime.listDevices();
+      await repositories.history?.checkReadiness?.();
       return { status: "ready" };
-    } catch (error) {
-      return reply.code(503).send({ status: "not_ready", error: String(error) });
+    } catch {
+      return reply.code(503).send({ status: "not_ready" });
     }
   });
 
