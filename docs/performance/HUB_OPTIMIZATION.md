@@ -24,10 +24,10 @@ being marked verified.
 | 1 | Session expiry, timeout ownership, queue/timer lifecycle and scan reentry | local + CI verify + paired functional smoke passed |
 | 2 | Configuration snapshots, registration fast path, dirty aggregate flush | local + CI + paired smoke passed |
 | 3 | Atomic bounded Redis append, narrow summary and expiry read models | real Redis + CI + paired smoke passed |
-| 4 | Overview projection, bounded query concurrency and shared historical reads | real SQL + CI passed; image browser gate not yet passed |
+| 4 | Overview projection, bounded query concurrency and shared historical reads | real SQL + CI + actual image browser contracts passed |
 | 5 | Static Web, fixed-upstream proxy, security/PWA/deep-link parity | actual image + Chromium/WebKit + TLS contracts passed; whole gate still open |
-| 6 | Incremental aggregation, versioned hardware storage and bounded maintenance | exact snapshot reuse implemented; metadata prototype only; CI pending |
-| 7 | Failure/recovery, rollback, resource comparisons and long-running soak | isolated restart gates added; long-running soak pending |
+| 6 | Incremental aggregation, versioned hardware storage and bounded maintenance | exact snapshot reuse verified; metadata migration rejected pending durability gates |
+| 7 | Failure/recovery, rollback, resource comparisons and long-running soak | isolated restart + rollback passed; full scale/long-running soak still pending |
 | Go decision | Fixed-input prototype and whole-stack benefit gate | measured kernel has higher Go CPU/latency; retain Node/MySQL |
 | Storage decision | Embedded transactional storage prototype and recovery gate | pending |
 
@@ -355,3 +355,44 @@ the same MySQL pool with timeout-bounded `SELECT 1`, returns 503 until recovery,
 and does not expose backend exception text. Two regressions cover failed/recovered
 SQL and Redis independently without scanning history/hardware. The restart and
 same-volume rollback/re-upgrade chain still needs a complete successful run.
+
+### Latest complete isolated gate: `e55c8abe`
+
+[40095982727](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40095982727)
+passed (`baseline`, **6m24s**). Both fresh stacks completed all **240 ingests and
+200 queries, zero failed/skipped**, validated seeded history and cleaned up their
+own volumes. Actual static HTTP contracts, native HTTP401/authenticated101,
+Chromium/WebKit login/Socket.IO/deep-link/offline/private-cache isolation, and
+untrusted-TLS-spoof rejection/trusted ingress acceptance all passed. Recovery
+preserved accepted latest values and old historical buckets after API SIGKILL,
+Redis restart and MySQL restart (about 1.8s / 1.1s / 4.2s respectively in this
+run). The old image read existing values, accepted a distinct new observation,
+and re-upgrade preserved that observation after the derived-model reset.
+
+| Phase | Stack CPU base → candidate | Change | Aligned sampled peak base → candidate |
+| --- | --- | --- | --- |
+| Idle with reporting devices | 0.141s → 0.138s | -1.51% | 676.66MB → 588.54MB |
+| Ingest | 4.240s → 1.741s | -58.94% | 686.75MB → 594.06MB |
+| Queries | 4.252s → 2.923s | -31.27% | 678.96MB → 591.95MB |
+
+These are **single sequential synthetic smoke observations**, not production
+or statistically stable savings. Overall evidence is correctly
+`partial-resource-evidence`: some block-IO counters remain unavailable. No IO
+saving is inferred. No scale matrix, full-year history, real live-RPC workload,
+power-loss/raw-series continuity or 24–72h soak has been substituted by this gate.
+Consequently PR #95 remains **draft**, no release/deployment/migration occurs,
+and the task worktree is retained rather than cleaned as if fully accepted.
+
+Latest local backend validation: **199 passed / 15 real Redis skipped**, plus
+typecheck and **34/34** harness tests. The skipped database cases are covered by
+the actual [SQL/Redis CI](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40095982831).
+[Latest prototype research](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40095982728)
+also passed. The full [platform CI](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40095982800)
+passed **all eight jobs** on `e55c8abe`, including `verify` (1m57s), Electron
+visual (1m05s) and Web visual (5m23s). Follow-up ledger commits change only
+Markdown and are checked for scope, structure and credential patterns.
+
+Builds/benchmarks ran only in GitHub Actions. This public repository consumes
+**0 private monthly Actions minutes**. Local APFS scratch remains 1.8GiB plus
+4.1MiB independent prototype fixtures (shared Go cache retained); `df` showed
+101GiB available. No other worktrees or caches were deleted.
