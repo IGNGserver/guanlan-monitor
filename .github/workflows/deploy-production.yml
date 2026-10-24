@@ -21,6 +21,7 @@ on:
         type: boolean
 
 permissions:
+  actions: read
   contents: read
   packages: read
 
@@ -29,54 +30,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Deploy fixed version
-    runs-on: [self-hosted, linux, x64, nas]
-    timeout-minutes: 45
-    environment: production
+  stage-images:
+    name: Stage immutable production images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - name: Validate and download requested Compose definition
+      - name: Validate release and deployment channel
         shell: bash
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_CHANNEL: ${{ inputs.channel }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          [[ "$REQUESTED_VERSION" != "latest" ]] || {
-            echo "Production deployment requires a fixed version." >&2
+          [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Production deployment requires a fixed semantic version." >&2
             exit 1
           }
-          [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-            echo "Production deployment requires a semantic version without the v prefix." >&2
+          [[ "$REQUESTED_CHANNEL" == stable || "$REQUESTED_CHANNEL" == test ]] || {
+            echo "Unsupported production deployment channel." >&2
             exit 1
           }
           release_json="$(curl -fsSL --connect-timeout 10 --max-time 30 \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/IGNGserver/guanlan-monitor/releases/tags/v$REQUESTED_VERSION" || true)"
-          release_tag="$(printf '%s' "$release_json" | jq -r '.tag_name // empty')"
-          # jq treats boolean false as empty for the `//` operator, so
-          # preserve explicit false values before comparing release state.
-          release_draft="$(printf '%s' "$release_json" | jq -er '.draft | tostring')"
-          release_prerelease="$(printf '%s' "$release_json" | jq -er '.prerelease | tostring')"
-          if [[ "${{ inputs.channel }}" == "stable" ]]; then
-            [[ "$release_tag" == "v$REQUESTED_VERSION" && "$release_draft" == "false" && "$release_prerelease" == "false" ]] || {
-              echo "Stable production deployment requires a non-prerelease published GitHub Release." >&2
-              exit 1
-            }
+            "${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/releases/tags/v$REQUESTED_VERSION")"
+          release_tag="$(jq -er '.tag_name' <<< "$release_json")"
+          release_draft="$(jq -er '.draft | tostring' <<< "$release_json")"
+          release_prerelease="$(jq -er '.prerelease | tostring' <<< "$release_json")"
+          [[ "$release_tag" == "v$REQUESTED_VERSION" && "$release_draft" == false ]] || {
+            echo "Requested deployment requires a published GitHub Release." >&2
+            exit 1
+          }
+          if [[ "$REQUESTED_CHANNEL" == stable && "$release_prerelease" != false ]]; then
+            echo "Stable production deployment requires a non-prerelease GitHub Release." >&2
+            exit 1
           fi
-          curl -fsSL --connect-timeout 10 --max-time 30 \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H 'Accept: application/vnd.github.raw' \
-            "https://api.github.com/repos/IGNGserver/guanlan-monitor/contents/docker-compose.yml?ref=v$REQUESTED_VERSION" \
-            -o "$GITHUB_WORKSPACE/docker-compose.yml"
-          curl -fsSL --connect-timeout 10 --max-time 30 \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H 'Accept: application/vnd.github.raw' \
-            "https://api.github.com/repos/IGNGserver/guanlan-monitor/contents/scripts/prepare-compose-env.sh?ref=v$REQUESTED_VERSION" \
-            -o "$RUNNER_TEMP/prepare-compose-env.sh"
-          grep -q 'ghcr.io/igngserver/device-state-console-server' "$GITHUB_WORKSPACE/docker-compose.yml"
-          grep -Fq 'Compose environment preflight' "$RUNNER_TEMP/prepare-compose-env.sh"
+          if [[ "$REQUESTED_CHANNEL" == test && "$release_prerelease" != true ]]; then
+            echo "Test-channel deployment requires a prerelease GitHub Release." >&2
+            exit 1
+          fi
 
       - name: Resolve immutable GHCR image references
         id: images
@@ -110,6 +103,114 @@ jobs:
             echo "web_image_ref=$(resolve_image_ref igngserver/device-state-console-web)"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Log in to GitHub Container Registry
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Pull, verify and archive fixed images
+        shell: bash
+        env:
+          DSC_VERSION: ${{ inputs.version }}
+          SERVER_IMAGE_REF: ${{ steps.images.outputs.server_image_ref }}
+          WEB_IMAGE_REF: ${{ steps.images.outputs.web_image_ref }}
+        run: |
+          set -euo pipefail
+          server_tag="ghcr.io/igngserver/device-state-console-server:${DSC_VERSION}"
+          web_tag="ghcr.io/igngserver/device-state-console-web:${DSC_VERSION}"
+          [[ "$SERVER_IMAGE_REF" =~ ^ghcr\.io/igngserver/device-state-console-server@sha256:[0-9a-f]{64}$ ]]
+          [[ "$WEB_IMAGE_REF" =~ ^ghcr\.io/igngserver/device-state-console-web@sha256:[0-9a-f]{64}$ ]]
+          docker pull "$SERVER_IMAGE_REF"
+          docker pull "$WEB_IMAGE_REF"
+          docker tag "$SERVER_IMAGE_REF" "$server_tag"
+          docker tag "$WEB_IMAGE_REF" "$web_tag"
+          server_image_id="$(docker image inspect --format '{{.Id}}' "$server_tag")"
+          web_image_id="$(docker image inspect --format '{{.Id}}' "$web_tag")"
+          [[ "$server_image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$web_image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+          mkdir -p image-bundle
+          docker save "$server_tag" "$web_tag" | gzip -1 > image-bundle/dsc-production-images.tar.gz
+          archive_size="$(stat -c '%s' image-bundle/dsc-production-images.tar.gz)"
+          if (( archive_size > 400000000 )); then
+            echo "Compressed production images exceed the 400 MB single-artifact safety limit (${archive_size} bytes)." >&2
+            exit 1
+          fi
+          archive_sha256="$(sha256sum image-bundle/dsc-production-images.tar.gz | awk '{print $1}')"
+          cat > image-bundle/dsc-production-images.manifest <<EOF
+          version=$DSC_VERSION
+          archive_sha256=$archive_sha256
+          archive_size_bytes=$archive_size
+          part_count=1
+          server_image_ref=$SERVER_IMAGE_REF
+          web_image_ref=$WEB_IMAGE_REF
+          server_image_id=$server_image_id
+          web_image_id=$web_image_id
+          EOF
+          chmod 600 image-bundle/dsc-production-images.manifest
+          ls -lh image-bundle/dsc-production-images.tar.gz image-bundle/dsc-production-images.manifest
+
+      - name: Upload short-lived image bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsc-production-images-${{ inputs.version }}
+          path: |
+            image-bundle/dsc-production-images.tar.gz
+            image-bundle/dsc-production-images.manifest
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  deploy:
+    name: Deploy fixed version
+    needs: stage-images
+    runs-on: [self-hosted, linux, x64, nas]
+    timeout-minutes: 360
+    environment: production
+    env:
+      # The NAS runner uses its local Clash proxy for GitHub API and artifact traffic.
+      HTTP_PROXY: http://127.0.0.1:7890
+      HTTPS_PROXY: http://127.0.0.1:7890
+      ALL_PROXY: http://127.0.0.1:7890
+      NO_PROXY: 127.0.0.1,localhost,::1,${{ vars.DSC_HUB_IP }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+    steps:
+      - name: Validate deployment inputs
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Production deployment requires a fixed semantic version." >&2
+            exit 1
+          }
+          [[ "$REQUESTED_CHANNEL" == stable || "$REQUESTED_CHANNEL" == test ]] || {
+            echo "Unsupported production deployment channel." >&2
+            exit 1
+          }
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9._-]+$ && "$DEPLOY_USER" =~ ^[A-Za-z0-9._-]+$ ]] || {
+            echo "Production SSH host/user secrets are missing or invalid." >&2
+            exit 1
+          }
+          [[ "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ && "$DEPLOY_PATH" != / ]] || {
+            echo "Production deploy path must be an absolute, shell-safe non-root path." >&2
+            exit 1
+          }
+          case "$DEPLOY_PATH" in
+            */../*|*/./*|*/..|*/.) echo "Production deploy path must not contain dot segments." >&2; exit 1 ;;
+          esac
+          curl --proxy "$HTTPS_PROXY" --connect-timeout 10 --max-time 30 \
+            --fail --silent --show-error "${GITHUB_API_URL:-https://api.github.com}/rate_limit" \
+            -o "$RUNNER_TEMP/production-proxy-probe.json"
+          test -s "$RUNNER_TEMP/production-proxy-probe.json"
+          echo "NAS Clash proxy is reachable through $HTTPS_PROXY."
+
       - name: Configure SSH
         shell: bash
         env:
@@ -124,222 +225,263 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
 
-      - name: Sync fixed-version Compose definition
+      - name: Download staged image bundle and release-pinned deployment files
+        id: bundle
         shell: bash
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-          ALLOW_HTTP: ${{ inputs.allow_http }}
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
+          command -v curl >/dev/null
+          command -v jq >/dev/null
+          command -v unzip >/dev/null
+          command -v sha256sum >/dev/null
+
+          bundle_dir="$RUNNER_TEMP/dsc-production-bundle"
+          download_dir="$RUNNER_TEMP/dsc-production-download"
+          api_url="${GITHUB_API_URL:-https://api.github.com}"
+          artifact_name="dsc-production-images-${REQUESTED_VERSION}"
+          mkdir -p "$bundle_dir" "$download_dir"
+          curl --proxy "$HTTPS_PROXY" --fail --silent --show-error \
+            --connect-timeout 30 --max-time 120 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "$api_url/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" \
+            -o "$download_dir/artifacts.json"
+          artifact_url="$(jq -er --arg name "$artifact_name" '
+            [.artifacts[] | select(.expired == false and .name == $name) | .archive_download_url]
+            | if length == 1 then .[0] else error("expected exactly one staged production image artifact") end
+          ' "$download_dir/artifacts.json")"
+
+          archive_zip="$download_dir/production-images.zip"
+          headers_file="$download_dir/artifact.headers"
+          download_complete=0
+          for attempt in $(seq 1 12); do
+            rm -f "$headers_file"
+            if ! curl --proxy "$HTTPS_PROXY" --fail --silent --show-error \
+              --connect-timeout 30 --max-time 120 \
+              -D "$headers_file" -o /dev/null \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              "$artifact_url"; then
+              echo "Unable to resolve the image artifact URL (attempt $attempt/12)." >&2
+              sleep 10
+              continue
+            fi
+            location="$(sed -n 's/^location: //Ip' "$headers_file" | tr -d '\r' | tail -n 1)"
+            if [[ -z "$location" ]]; then
+              echo "Image artifact redirect was empty (attempt $attempt/12)." >&2
+              sleep 10
+              continue
+            fi
+            if curl --proxy "$HTTPS_PROXY" --fail --silent --show-error \
+              --connect-timeout 30 --max-time 1800 \
+              --retry 5 --retry-all-errors --retry-delay 5 --retry-max-time 1800 \
+              --continue-at - "$location" -o "$archive_zip"; then
+              download_complete=1
+              break
+            fi
+            echo "Image artifact download interrupted; resuming (attempt $attempt/12)." >&2
+            sleep 10
+          done
+          [[ "$download_complete" == 1 && -s "$archive_zip" ]] || {
+            echo "Unable to download the staged production image artifact." >&2
+            exit 1
+          }
+
+          entries=()
+          while IFS= read -r entry; do entries+=("$entry"); done < <(unzip -Z1 "$archive_zip" | LC_ALL=C sort)
+          [[ ${#entries[@]} -eq 2 \
+            && "${entries[0]}" == dsc-production-images.manifest \
+            && "${entries[1]}" == dsc-production-images.tar.gz ]] || {
+            echo "Unexpected files in the staged production image artifact." >&2
+            exit 1
+          }
+          unzip -p "$archive_zip" dsc-production-images.manifest > "$bundle_dir/dsc-production-images.manifest"
+          unzip -p "$archive_zip" dsc-production-images.tar.gz > "$bundle_dir/dsc-production-images.tar.gz"
+          rm -f "$archive_zip" "$headers_file"
+
+          manifest_value() {
+            local key="$1"
+            awk -v key="$key" '
+              index($0, key "=") == 1 { value = substr($0, length(key) + 2); count++ }
+              END { if (count != 1) exit 1; print value }
+            ' "$bundle_dir/dsc-production-images.manifest"
+          }
+          manifest_version="$(manifest_value version)"
+          EXPECTED_ARCHIVE_SHA256="$(manifest_value archive_sha256)"
+          archive_size="$(manifest_value archive_size_bytes)"
+          EXPECTED_PART_COUNT="$(manifest_value part_count)"
+          SERVER_IMAGE_REF="$(manifest_value server_image_ref)"
+          WEB_IMAGE_REF="$(manifest_value web_image_ref)"
+          EXPECTED_SERVER_IMAGE_ID="$(manifest_value server_image_id)"
+          EXPECTED_WEB_IMAGE_ID="$(manifest_value web_image_id)"
+          [[ "$manifest_version" == "$REQUESTED_VERSION" ]]
+          [[ "$EXPECTED_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$archive_size" =~ ^[1-9][0-9]*$ && "$archive_size" -le 400000000 ]]
+          [[ "$EXPECTED_PART_COUNT" == 1 ]]
+          [[ "$SERVER_IMAGE_REF" =~ ^ghcr\.io/igngserver/device-state-console-server@sha256:[0-9a-f]{64}$ ]]
+          [[ "$WEB_IMAGE_REF" =~ ^ghcr\.io/igngserver/device-state-console-web@sha256:[0-9a-f]{64}$ ]]
+          [[ "$EXPECTED_SERVER_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$EXPECTED_WEB_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$(stat -c '%s' "$bundle_dir/dsc-production-images.tar.gz")" == "$archive_size" ]]
+          [[ "$(sha256sum "$bundle_dir/dsc-production-images.tar.gz" | awk '{print $1}')" == "$EXPECTED_ARCHIVE_SHA256" ]]
+          gzip -t "$bundle_dir/dsc-production-images.tar.gz"
+
+          definition_dir="$RUNNER_TEMP/dsc-production-definition"
+          mkdir -p "$definition_dir"
+          fetch_repo_file() {
+            local path="$1"
+            local ref="$2"
+            local destination_name="${3:-${path##*/}}"
+            local destination="$definition_dir/$destination_name"
+            curl --proxy "$HTTPS_PROXY" --fail --silent --show-error \
+              --connect-timeout 30 --max-time 120 \
+              --retry 3 --retry-all-errors --retry-delay 3 --retry-max-time 60 \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github.raw' \
+              "$api_url/repos/$GITHUB_REPOSITORY/contents/$path?ref=$ref" \
+              -o "$destination.tmp"
+            test -s "$destination.tmp"
+            mv "$destination.tmp" "$destination"
+          }
+          target="$DEPLOY_USER@$DEPLOY_HOST"
+          previous_state="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" \
+            "$target" "set -euo pipefail; container=\$(docker ps -q --filter name=device-state-console-server-1 | head -n 1); test -n \"\$container\"; docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \"\$container\" | grep -E '^DSC_(VERSION|RELEASE_CHANNEL)='")"
+          PREVIOUS_VERSION="$(awk -F= '$1 == "DSC_VERSION" { print substr($0, index($0, "=") + 1); exit }' <<< "$previous_state")"
+          PREVIOUS_CHANNEL="$(awk -F= '$1 == "DSC_RELEASE_CHANNEL" { print substr($0, index($0, "=") + 1); exit }' <<< "$previous_state")"
+          [[ "$PREVIOUS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$PREVIOUS_CHANNEL" == stable || "$PREVIOUS_CHANNEL" == test ]]
+
+          fetch_repo_file docker-compose.yml "v$REQUESTED_VERSION" docker-compose.yml
+          fetch_repo_file scripts/prepare-compose-env.sh "v$REQUESTED_VERSION" prepare-compose-env.sh
+          fetch_repo_file docker-compose.yml "v$PREVIOUS_VERSION" rollback-compose.yml
+          fetch_repo_file scripts/deploy-production-images.sh "$GITHUB_SHA"
+          mv "$definition_dir/deploy-production-images.sh" "$bundle_dir/deploy-production-images.sh"
+          chmod 700 "$bundle_dir/deploy-production-images.sh"
+          grep -Fq './data:/app/data' "$definition_dir/docker-compose.yml"
+          grep -Fq './data:/app/data' "$definition_dir/rollback-compose.yml"
+          grep -Fq 'ghcr.io/igngserver/device-state-console-server' "$definition_dir/docker-compose.yml"
+          bash -n "$definition_dir/prepare-compose-env.sh"
+          bash -n "$bundle_dir/deploy-production-images.sh"
+          mkdir -p "$bundle_dir/deployment"
+          cp "$definition_dir/docker-compose.yml" "$bundle_dir/deployment/docker-compose.yml"
+          cp "$definition_dir/prepare-compose-env.sh" "$bundle_dir/deployment/prepare-compose-env.sh"
+          cp "$definition_dir/rollback-compose.yml" "$bundle_dir/deployment/rollback-compose.yml"
+          cp "$bundle_dir/deploy-production-images.sh" "$bundle_dir/deployment/deploy-production-images.sh"
+
+          {
+            printf 'EXPECTED_ARCHIVE_SHA256=%s\n' "$EXPECTED_ARCHIVE_SHA256"
+            printf 'EXPECTED_PART_COUNT=%s\n' "$EXPECTED_PART_COUNT"
+            printf 'SERVER_IMAGE_REF=%s\n' "$SERVER_IMAGE_REF"
+            printf 'WEB_IMAGE_REF=%s\n' "$WEB_IMAGE_REF"
+            printf 'EXPECTED_SERVER_IMAGE_ID=%s\n' "$EXPECTED_SERVER_IMAGE_ID"
+            printf 'EXPECTED_WEB_IMAGE_ID=%s\n' "$EXPECTED_WEB_IMAGE_ID"
+            printf 'PREVIOUS_VERSION=%s\n' "$PREVIOUS_VERSION"
+            printf 'PREVIOUS_CHANNEL=%s\n' "$PREVIOUS_CHANNEL"
+            printf 'IMAGE_BUNDLE_DIR=%s\n' "$bundle_dir"
+            printf 'DEPLOY_DEFINITION_DIR=%s\n' "$definition_dir"
+            printf 'IMAGE_STAGE_DIR=%s/.deploy-staging-%s\n' "$DEPLOY_PATH" "$GITHUB_RUN_ID"
+          } >> "$GITHUB_ENV"
+          echo "Downloaded v$REQUESTED_VERSION images and deployment files; rollback uses the currently running v$PREVIOUS_VERSION Compose definition."
+
+      - name: Import and deploy staged immutable images
+        shell: bash
+        env:
+          DSC_VERSION: ${{ inputs.version }}
+          DSC_RELEASE_CHANNEL: ${{ inputs.channel }}
+          DSC_ALLOW_HTTP: ${{ inputs.allow_http }}
+          WEB_PORT: "38472"
+        run: |
+          set -euo pipefail
+          target="$DEPLOY_USER@$DEPLOY_HOST"
+          [[ "$IMAGE_STAGE_DIR" == "$DEPLOY_PATH/.deploy-staging-$GITHUB_RUN_ID" ]]
+          remote_helper="$IMAGE_STAGE_DIR/deploy-production-images.sh"
+          helper_env="DEPLOY_PATH='$DEPLOY_PATH' IMAGE_STAGE_DIR='$IMAGE_STAGE_DIR' GITHUB_RUN_ID='$GITHUB_RUN_ID' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' DSC_ALLOW_HTTP='$DSC_ALLOW_HTTP' PREVIOUS_VERSION='$PREVIOUS_VERSION' PREVIOUS_CHANNEL='$PREVIOUS_CHANNEL' ROLLBACK_COMPOSE_FILE='$IMAGE_STAGE_DIR/rollback-compose.yml' EXPECTED_ARCHIVE_SHA256='$EXPECTED_ARCHIVE_SHA256' EXPECTED_PART_COUNT='$EXPECTED_PART_COUNT' EXPECTED_SERVER_IMAGE_ID='$EXPECTED_SERVER_IMAGE_ID' EXPECTED_WEB_IMAGE_ID='$EXPECTED_WEB_IMAGE_ID' SERVER_IMAGE_REF='$SERVER_IMAGE_REF' WEB_IMAGE_REF='$WEB_IMAGE_REF'"
+
           run_ssh() {
-            local max_attempts=5
-            local delay=2
-            local attempt=1
+            local max_attempts=5 delay=2 attempt=1 exit_code
             while true; do
-              if ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$@"; then
+              if ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+                -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" \
+                "$target" "$@"; then
                 return 0
               else
-                local exit_code=$?
+                exit_code=$?
               fi
-              if [ "$attempt" -ge "$max_attempts" ]; then
-                return "$exit_code"
-              fi
-              echo "SSH connection attempt $attempt/$max_attempts failed (exit $exit_code); retrying in ${delay}s..." >&2
+              if (( attempt >= max_attempts )); then return "$exit_code"; fi
+              echo "SSH setup attempt $attempt/$max_attempts failed (exit $exit_code); retrying in ${delay}s..." >&2
               sleep "$delay"
               attempt=$((attempt + 1))
               delay=$((delay * 2))
             done
           }
           run_scp() {
-            local max_attempts=5
-            local delay=2
-            local attempt=1
+            local source="$1" destination="$2"
+            local max_attempts=3 delay=5 attempt=1 exit_code
             while true; do
-              if scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$@"; then
+              if scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+                -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" \
+                "$source" "$destination"; then
                 return 0
               else
-                local exit_code=$?
+                exit_code=$?
               fi
-              if [ "$attempt" -ge "$max_attempts" ]; then
-                return "$exit_code"
-              fi
-              echo "SCP transfer attempt $attempt/$max_attempts failed (exit $exit_code); retrying in ${delay}s..." >&2
+              if (( attempt >= max_attempts )); then return "$exit_code"; fi
+              echo "Staging transfer attempt $attempt/$max_attempts failed (exit $exit_code); retrying in ${delay}s..." >&2
               sleep "$delay"
               attempt=$((attempt + 1))
               delay=$((delay * 2))
             done
           }
-          backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-          run_ssh "$DEPLOY_USER@$DEPLOY_HOST" \
-            "set -euo pipefail; \
-             mkdir -p '$DEPLOY_PATH/data' '$DEPLOY_PATH/backups'; \
-             server_container=\$(docker ps -aq --filter name=device-state-console-server-1 | head -n 1 || true); \
-             if [ -n \"\$server_container\" ]; then docker cp \"\$server_container:/app/data/local-db.json\" '$DEPLOY_PATH/backups/local-db.json.$backup_stamp' 2>/dev/null || true; fi; \
-             backup_file='$DEPLOY_PATH/backups/local-db.json.$backup_stamp'; \
-             if [ ! -s '$DEPLOY_PATH/data/local-db.json' ] && [ -s \"\$backup_file\" ]; then cp \"\$backup_file\" '$DEPLOY_PATH/data/local-db.json.tmp'; mv '$DEPLOY_PATH/data/local-db.json.tmp' '$DEPLOY_PATH/data/local-db.json'; fi"
-          remote_compose="$DEPLOY_PATH/.docker-compose.yml.codex.tmp"
-          remote_prepare="$DEPLOY_PATH/.prepare-compose-env.codex.tmp"
-          run_scp docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:$remote_compose"
-          run_scp "$RUNNER_TEMP/prepare-compose-env.sh" "$DEPLOY_USER@$DEPLOY_HOST:$remote_prepare"
-          run_ssh "$DEPLOY_USER@$DEPLOY_HOST" \
-            "set -euo pipefail; cleanup() { rm -f '$remote_compose' '$remote_prepare'; }; trap cleanup EXIT; DSC_RECOVER_EXISTING_MYSQL=true DSC_ALLOW_HTTP='$ALLOW_HTTP' DSC_RELEASE_CHANNEL='${{ inputs.channel }}' DSC_VERSION='${{ inputs.version }}' bash '$remote_prepare' '$DEPLOY_PATH/.env'; mv '$remote_compose' '$DEPLOY_PATH/docker-compose.yml'; grep -Fq './data:/app/data' '$DEPLOY_PATH/docker-compose.yml'; rm -f '$remote_prepare'; trap - EXIT"
 
-      - name: Authenticate NAS to GHCR for stable deployment
-        if: ${{ inputs.channel == 'stable' }}
+          run_ssh "set -euo pipefail; test -d '$DEPLOY_PATH'; mkdir -m 700 -p '$IMAGE_STAGE_DIR'; chmod 700 '$IMAGE_STAGE_DIR'"
+          run_scp "$IMAGE_BUNDLE_DIR/dsc-production-images.tar.gz" "$target:$IMAGE_STAGE_DIR/dsc-production-images.tar.gz"
+          run_scp "$IMAGE_BUNDLE_DIR/dsc-production-images.manifest" "$target:$IMAGE_STAGE_DIR/dsc-production-images.manifest"
+          run_scp "$DEPLOY_DEFINITION_DIR/docker-compose.yml" "$target:$IMAGE_STAGE_DIR/docker-compose.yml"
+          run_scp "$DEPLOY_DEFINITION_DIR/prepare-compose-env.sh" "$target:$IMAGE_STAGE_DIR/prepare-compose-env.sh"
+          run_scp "$DEPLOY_DEFINITION_DIR/rollback-compose.yml" "$target:$IMAGE_STAGE_DIR/rollback-compose.yml"
+          run_scp "$IMAGE_BUNDLE_DIR/deploy-production-images.sh" "$target:$remote_helper"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" \
+            "$target" "set -euo pipefail; chmod 700 '$remote_helper'; env $helper_env bash '$remote_helper' load; env $helper_env bash '$remote_helper' sync; env $helper_env WEB_PORT='$WEB_PORT' bash '$remote_helper' deploy"
+
+      - name: Clean production image staging
+        if: ${{ always() }}
+        continue-on-error: true
         shell: bash
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          GHCR_TOKEN: ${{ github.token }}
-          GHCR_USER: ${{ github.actor }}
-        run: |
-          set -euo pipefail
-          run_ssh() {
-            # One SSH attempt per outer login retry. The token pipe must be
-            # recreated for each attempt; piping once leaves later attempts
-            # with EOF and Docker reports a non-TTY login error.
-            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$@"
-          }
-          attempt=1
-          delay=10
-          while true; do
-            if printf '%s' "$GHCR_TOKEN" | run_ssh "$DEPLOY_USER@$DEPLOY_HOST" \
-              "docker login ghcr.io --username '$GHCR_USER' --password-stdin"; then
-              exit 0
-            else
-              exit_code=$?
-            fi
-            if [ "$attempt" -ge 6 ]; then
-              exit "$exit_code"
-            fi
-            echo "GHCR login attempt $attempt/6 failed (exit $exit_code); retrying in ${delay}s..." >&2
-            sleep "$delay"
-            attempt=$((attempt + 1))
-            delay=$((delay * 2))
-          done
-
-      - name: Pull and restart published images
-        shell: bash
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           DSC_VERSION: ${{ inputs.version }}
           DSC_RELEASE_CHANNEL: ${{ inputs.channel }}
-          SERVER_IMAGE_REF: ${{ steps.images.outputs.server_image_ref }}
-          WEB_IMAGE_REF: ${{ steps.images.outputs.web_image_ref }}
+          DSC_ALLOW_HTTP: ${{ inputs.allow_http }}
           WEB_PORT: "38472"
         run: |
           set -euo pipefail
-          run_ssh() {
-            local max_attempts=5
-            local delay=2
-            local attempt=1
-            while true; do
-              if ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$@"; then
-                return 0
-              else
-                local exit_code=$?
-              fi
-              if [ "$attempt" -ge "$max_attempts" ]; then
-                return "$exit_code"
-              fi
-              echo "SSH connection attempt $attempt/$max_attempts failed (exit $exit_code); retrying in ${delay}s..." >&2
-              sleep "$delay"
-              attempt=$((attempt + 1))
-              delay=$((delay * 2))
-            done
+          cleanup_local() {
+            rm -rf -- \
+              "$RUNNER_TEMP/dsc-production-bundle" \
+              "$RUNNER_TEMP/dsc-production-download" \
+              "$RUNNER_TEMP/dsc-production-definition" \
+              "$RUNNER_TEMP/production-proxy-probe.json"
           }
-          run_ssh "$DEPLOY_USER@$DEPLOY_HOST" \
-            "set -euo pipefail; cd '$DEPLOY_PATH' && \
-             export WEB_PORT='$WEB_PORT' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' \
-               DSC_SERVER_IMAGE_REF='$SERVER_IMAGE_REF' \
-               DSC_WEB_IMAGE_REF='$WEB_IMAGE_REF' \
-               SERVER_IMAGE_REF='$SERVER_IMAGE_REF' \
-               WEB_IMAGE_REF='$WEB_IMAGE_REF' && \
-             if [ -f .env ]; then \
-               legacy_mysql_url=\$(sed -n 's/^MYSQL_URL=//p' .env | head -n 1 | tr -d '\r'); \
-               if [ -n \"\$legacy_mysql_url\" ]; then \
-                 legacy_mysql_url=\${legacy_mysql_url/@127.0.0.1:/@mysql:}; \
-                 legacy_mysql_url=\${legacy_mysql_url/@localhost:/@mysql:}; \
-                 export MYSQL_URL=\"\$legacy_mysql_url\"; \
-               fi; \
-             fi && \
-             previous_server=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server) 2>/dev/null || true); \
-             previous_web=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q web) 2>/dev/null || true); \
-             echo 'Pulling fixed-version server and web images.'; \
-             pull_ok=0; for pull_attempt in \$(seq 1 6); do \
-               if timeout 120 docker compose pull server web; then pull_ok=1; break; fi; \
-               echo \"Published image pull attempt \${pull_attempt}/6 failed; retrying.\" >&2; \
-               sleep 10; \
-             done; \
-             if [ \"\$pull_ok\" -ne 1 ]; then \
-               echo 'Published image pull failed; keeping the current deployment.' >&2; \
-               exit 1; \
-             fi; \
-             echo 'Starting Redis and MySQL containers.'; \
-             timeout 180 docker compose up -d --no-build redis mysql; \
-             infra_healthy=0; for attempt in \$(seq 1 30); do \
-               if docker compose exec -T redis sh -c 'redis-cli --no-auth-warning -a "\$REDIS_PASSWORD" ping | grep -q PONG' && docker compose exec -T mysql sh -c 'mysqladmin ping -h 127.0.0.1 -uroot -p"\$MYSQL_ROOT_PASSWORD" --silent'; then infra_healthy=1; break; fi; \
-               sleep 5; \
-             done; \
-             if [ \"\$infra_healthy\" -ne 1 ]; then echo 'Redis/MySQL migration health check failed; keeping the current application containers.' >&2; exit 1; fi; \
-             echo 'Starting server and web containers.'; \
-             if ! timeout 180 docker compose up -d --no-build --no-deps server web; then \
-               echo 'Deployment restart failed; attempting rollback.' >&2; \
-               if [ -n \"\$previous_server\" ] && [ -n \"\$previous_web\" ]; then timeout 180 env DSC_SERVER_IMAGE_REF=\"\$previous_server\" DSC_WEB_IMAGE_REF=\"\$previous_web\" docker compose up -d --no-build --no-deps server web; fi; \
-               exit 1; \
-             fi; \
-             server_image=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q server)); \
-             web_image=\$(docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q web)); \
-             expected_server=\"\$SERVER_IMAGE_REF\"; \
-             expected_web=\"\$WEB_IMAGE_REF\"; \
-             if [ \"\$server_image\" != \"\$expected_server\" ] || [ \"\$web_image\" != \"\$expected_web\" ]; then \
-               echo \"Deployment image mismatch: server=\$server_image web=\$web_image expected=\$expected_server / \$expected_web\" >&2; \
-               echo 'Deployment image mismatch; attempting rollback.' >&2; \
-               if [ -n \"\$previous_server\" ] && [ -n \"\$previous_web\" ]; then timeout 180 env DSC_SERVER_IMAGE_REF=\"\$previous_server\" DSC_WEB_IMAGE_REF=\"\$previous_web\" docker compose up -d --no-build --no-deps server web; fi; \
-               exit 1; \
-             fi; \
-             healthy=0; for attempt in \$(seq 1 30); do \
-               if docker compose exec -T server node -e \"fetch('http://127.0.0.1:4000/api/health/readiness').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"; then healthy=1; break; fi; \
-               sleep 5; \
-             done; \
-             if [ \"\$healthy\" -ne 1 ]; then \
-               echo 'Deployment health check failed; attempting rollback.' >&2; \
-               if [ -n \"\$previous_server\" ] && [ -n \"\$previous_web\" ]; then timeout 180 env DSC_SERVER_IMAGE_REF=\"\$previous_server\" DSC_WEB_IMAGE_REF=\"\$previous_web\" docker compose up -d --no-build --no-deps server web; fi; \
-               exit 1; \
-             fi; \
-             echo 'Deployment completed; reporting container status.'; \
-             docker compose ps"
-
-      - name: Clear NAS registry credentials
-        if: always()
-        shell: bash
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-        run: |
-          set -euo pipefail
-          run_ssh() {
-            local max_attempts=5
-            local delay=2
-            local attempt=1
-            while true; do
-              if ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" "$@"; then
-                return 0
-              else
-                local exit_code=$?
-              fi
-              if [ "$attempt" -ge "$max_attempts" ]; then
-                return "$exit_code"
-              fi
-              echo "SSH connection attempt $attempt/$max_attempts failed (exit $exit_code); retrying in ${delay}s..." >&2
-              sleep "$delay"
-              attempt=$((attempt + 1))
-              delay=$((delay * 2))
-            done
-          }
-          run_ssh "$DEPLOY_USER@$DEPLOY_HOST" \
-            "docker logout ghcr.io >/dev/null 2>&1 || true"
+          trap cleanup_local EXIT
+          if [[ ! -s "$HOME/.ssh/id_ed25519" || -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" \
+            || -z "$DEPLOY_PATH" || -z "${IMAGE_STAGE_DIR:-}" ]]; then
+            echo "Production staging was not created; nothing to clean."
+            exit 0
+          fi
+          target="$DEPLOY_USER@$DEPLOY_HOST"
+          if [[ -n "${EXPECTED_ARCHIVE_SHA256:-}" && -n "${EXPECTED_PART_COUNT:-}" \
+            && -n "${EXPECTED_SERVER_IMAGE_ID:-}" && -n "${EXPECTED_WEB_IMAGE_ID:-}" \
+            && -n "${SERVER_IMAGE_REF:-}" && -n "${WEB_IMAGE_REF:-}" \
+            && -n "${PREVIOUS_VERSION:-}" && -n "${PREVIOUS_CHANNEL:-}" ]]; then
+            remote_cleanup="if [[ -x '$IMAGE_STAGE_DIR/deploy-production-images.sh' ]]; then env DEPLOY_PATH='$DEPLOY_PATH' IMAGE_STAGE_DIR='$IMAGE_STAGE_DIR' GITHUB_RUN_ID='$GITHUB_RUN_ID' DSC_VERSION='$DSC_VERSION' DSC_RELEASE_CHANNEL='$DSC_RELEASE_CHANNEL' DSC_ALLOW_HTTP='$DSC_ALLOW_HTTP' PREVIOUS_VERSION='$PREVIOUS_VERSION' PREVIOUS_CHANNEL='$PREVIOUS_CHANNEL' ROLLBACK_COMPOSE_FILE='$IMAGE_STAGE_DIR/rollback-compose.yml' EXPECTED_ARCHIVE_SHA256='$EXPECTED_ARCHIVE_SHA256' EXPECTED_PART_COUNT='$EXPECTED_PART_COUNT' EXPECTED_SERVER_IMAGE_ID='$EXPECTED_SERVER_IMAGE_ID' EXPECTED_WEB_IMAGE_ID='$EXPECTED_WEB_IMAGE_ID' SERVER_IMAGE_REF='$SERVER_IMAGE_REF' WEB_IMAGE_REF='$WEB_IMAGE_REF' WEB_PORT='$WEB_PORT' bash '$IMAGE_STAGE_DIR/deploy-production-images.sh' cleanup; else rm -rf -- '$IMAGE_STAGE_DIR'; fi"
+          else
+            remote_cleanup="rm -rf -- '$IMAGE_STAGE_DIR'"
+          fi
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -i "$HOME/.ssh/id_ed25519" \
+            "$target" "$remote_cleanup"

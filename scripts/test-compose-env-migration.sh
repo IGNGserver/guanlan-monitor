@@ -150,19 +150,38 @@ if compgen -G "$weak_env.pre-compose-security.*" >/dev/null; then
   exit 1
 fi
 
-python3 - "$root/.github/workflows/deploy-production.yml" <<'PY'
+python3 - "$root/.github/workflows/deploy-production.yml" "$root/scripts/deploy-production-images.sh" <<'PY'
 from pathlib import Path
 import re
 import subprocess
 import sys
 
 workflow = Path(sys.argv[1]).read_text()
+helper = Path(sys.argv[2]).read_text()
 wrappers = re.findall(
     r"(?ms)^ {10}(run_ssh|run_scp)\(\) \{\n(.*?)^ {10}\}", workflow
 )
 wrapper_names = [name for name, _ in wrappers]
-if wrapper_names.count("run_ssh") != 4 or wrapper_names.count("run_scp") != 1:
-    raise SystemExit("Expected four SSH and one SCP retry wrappers in the production workflow.")
+if wrapper_names.count("run_ssh") != 1 or wrapper_names.count("run_scp") != 1:
+    raise SystemExit("Expected one SSH setup and one SCP retry wrapper in the production workflow.")
+
+required_contracts = {
+    "production environment gate": "environment: production",
+    "immutable image staging": "Stage immutable production images",
+    "short-lived artifact": "retention-days: 1",
+    "NAS proxy artifact transfer": "http://127.0.0.1:7890",
+    "image ID verification": "EXPECTED_SERVER_IMAGE_ID",
+    "pinned release Compose": 'fetch_repo_file docker-compose.yml "v$REQUESTED_VERSION"',
+    "previous runtime rollback Compose": 'fetch_repo_file docker-compose.yml "v$PREVIOUS_VERSION" rollback-compose.yml',
+    "workflow-commit deployment helper": 'fetch_repo_file scripts/deploy-production-images.sh "$GITHUB_SHA"',
+}
+for label, text in required_contracts.items():
+    if text not in workflow:
+        raise SystemExit(f"Missing production deployment contract: {label}.")
+if "docker compose pull" in workflow:
+    raise SystemExit("Production deployment must not pull images directly on the NAS.")
+if "rollback_deployment" not in helper or "EXPECTED_ARCHIVE_SHA256" not in helper or "--pull never" not in helper:
+    raise SystemExit("Production deployment helper must verify the staged archive, avoid remote pulls, and provide rollback.")
 
 for name, indented_body in wrappers:
     body = "\n".join(
@@ -170,7 +189,9 @@ for name, indented_body in wrappers:
         for line in indented_body.splitlines()
     )
     body = body.replace("local max_attempts=5", "local max_attempts=1")
+    body = body.replace("local max_attempts=3", "local max_attempts=1")
     status = 37 if name == "run_ssh" else 43
+    arguments = "regression-source regression-destination" if name == "run_scp" else "regression-destination"
     command = f"""
 ssh() {{ return 37; }}
 scp() {{ return 43; }}
@@ -178,12 +199,14 @@ sleep() {{ :; }}
 {name}() {{
 {body}
 }}
-{name} regression-destination
+{name} {arguments}
 """
     result = subprocess.run(["bash", "-c", command], check=False)
     if result.returncode != status:
         raise SystemExit(f"{name} converted a failed command into exit {result.returncode}; expected {status}.")
-print("Production SSH/SCP failure propagation checks: PASS")
+print("Production staged deployment and SSH/SCP failure propagation checks: PASS")
 PY
+
+bash "$root/scripts/test-production-image-staging.sh"
 
 echo "Compose environment migration tests: PASS"
