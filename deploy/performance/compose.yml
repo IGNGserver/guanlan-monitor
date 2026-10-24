@@ -64,11 +64,17 @@ services:
         published: '0'
         host_ip: 127.0.0.1
         protocol: tcp
-    networks: [isolated]
+    # Docker does not publish ports for a container connected only to internal
+    # bridges. An ingress-only bridge exposes this random loopback binding;
+    # API/databases still have no host ports or externally routed network.
+    networks: [isolated, ingress]
     depends_on: [server]
 networks:
   isolated:
     internal: true
+  ingress:
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: 'false'
 volumes:
   redis-data:
   mysql-data:

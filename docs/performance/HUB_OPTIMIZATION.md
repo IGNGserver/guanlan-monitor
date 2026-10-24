@@ -137,6 +137,12 @@ production storage engine. Do not switch language and storage in one cutover.
   `compose_command_failed`; both scoped cleanups succeeded. Runtime performance
   remains unmeasured. The follow-up retains bounded, credential-redacted startup
   diagnostics rather than retrying the same opaque failure.
+- Follow-up [40090060653](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40090060653)
+  identified the exact startup blocker: Docker does not publish the Web port
+  when it is connected only to an internal bridge. The dedicated Compose now
+  adds a Web-only ingress bridge (outbound masquerading disabled); API, Redis
+  and MySQL remain internal-only and unpublished. This is a benchmark network
+  correction, not a production Compose change. Measurements still pending.
 - PR repository is public: these GitHub-hosted runs consume no private monthly
   Actions minute allowance. Builds remain in CI; local scratch grew to 1.8 GiB
   including baseline/candidate dependencies, with 102 GiB still available.
