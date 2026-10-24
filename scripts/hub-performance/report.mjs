@@ -7,10 +7,30 @@ export function relativeChange(before, after) {
     && typeof after === 'number' && Number.isFinite(after) ? (after - before) / before * 100 : null;
 }
 
+export function resourceEvidenceStatus(phases) {
+  if (!phases?.length) return 'incomplete';
+  let partial = false;
+  for (const phase of phases) for (const service of ['web', 'server', 'redis', 'mysql']) {
+    const resource = phase.resources?.[service];
+    if (![resource?.cpuNs, resource?.sampledMemoryMeanBytes, resource?.sampledMemoryMaxBytes]
+      .every((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0)
+      || !Number.isSafeInteger(resource?.cpuNs) || !Number.isSafeInteger(resource?.sampledMemoryMaxBytes)
+      || !Array.isArray(resource?.incomplete)
+      || resource.incomplete.some((reason) => !/^(readBytes|writeBytes):(missing|empty|unavailable)$/.test(reason))) return 'incomplete';
+    if ([resource.readBytes, resource.writeBytes].some((value) => value != null
+      && (!Number.isSafeInteger(value) || value < 0))) return 'incomplete';
+    if (resource.incomplete.length || [resource.readBytes, resource.writeBytes]
+      .some((value) => !Number.isSafeInteger(value) || value < 0)) partial = true;
+  }
+  return partial ? 'partial-resource-evidence' : 'complete';
+}
+
 export function comparison(base, head) {
   const failures = [];
   for (const [side, report] of [['base', base], ['head', head]]) {
-    if (!report || report.side !== side || report.failures?.length || !report.cleanup || !report.phases?.length) failures.push(`${side}_incomplete`);
+    if (!report || report.side !== side || report.failures?.length || !report.cleanup || !report.phases?.length
+      || !['complete', 'partial-resource-evidence'].includes(report.status)) failures.push(`${side}_incomplete`);
+    if (resourceEvidenceStatus(report?.phases) === 'incomplete') failures.push('missing_required_resources');
   }
   if (base?.harnessSha256 !== head?.harnessSha256) failures.push('different_harness');
   if (base?.phases?.length !== head?.phases?.length) failures.push('different_phase_count');
@@ -34,7 +54,8 @@ export function comparison(base, head) {
       stackSampledMemoryPeak: { base: original.sampledStackMemoryMaxBytes, head: candidate.sampledStackMemoryMaxBytes,
         changePercent: relativeChange(original.sampledStackMemoryMaxBytes, candidate.sampledStackMemoryMaxBytes) } });
   }
-  return { status: failures.length ? 'incomplete' : base?.status === 'complete' && head?.status === 'complete' ? 'complete' : 'partial-resource-evidence',
+  return { status: failures.length ? 'incomplete'
+    : resourceEvidenceStatus([...(base?.phases ?? []), ...(head?.phases ?? [])]),
     failures: [...new Set(failures)], phases };
 }
 
