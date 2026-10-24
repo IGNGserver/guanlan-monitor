@@ -23,8 +23,8 @@ fail() {
 
 # Whitespace-separated IPs/CIDRs only. Explicit IFS plus noglob prevents tokens
 # such as '*' from expanding to a legitimate-looking local filename.
-IFS='
- 	'
+IFS=$(printf ' \t\n_')
+IFS=${IFS%_}
 entries=''
 count=0
 for token in ${DSC_TRUSTED_TLS_PROXY_CIDRS:-}; do

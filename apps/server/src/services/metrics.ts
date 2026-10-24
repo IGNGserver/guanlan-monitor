@@ -15,6 +15,7 @@ import { forEachBounded, KeyedSerialQueue } from "../serial-queue.js";
 import { nonOverlappingTask } from "../lifecycle.js";
 import { projectOverviewRecord } from "../overview.js";
 import { SharedQueryWork } from "../query-work.js";
+import { AggregateSnapshots } from "../aggregate-snapshots.js";
 
 const HOURLY_WINDOW_MS = 60 * 60 * 1000;
 const MINUTE_WINDOW_MS = 60 * 1000;
@@ -26,6 +27,7 @@ const LIVE_WINDOW_DURATION_MS = {
 } as const;
 
 export class MetricsService {
+  private readonly aggregateSnapshots = new AggregateSnapshots(averageRecord);
   private readonly queryWork = new SharedQueryWork();
   private readonly minuteAccumulators = new Map<string, MetricAccumulator>();
   private readonly hourlyAccumulators = new Map<string, MetricAccumulator>();
@@ -185,7 +187,7 @@ export class MetricsService {
     if (!current?.samples.length) return history;
     // Retain the exact existing aggregate/quality rules and current-bucket
     // replacement. Only the read projection changes, never stored history.
-    const aggregate = projectOverviewRecord(averageRecord(current.samples, current.bucketStartedAt));
+    const aggregate = projectOverviewRecord(this.aggregateSnapshots.read(current));
     const next = history.filter((point) => point.timestamp !== aggregate.timestamp);
     next.push(aggregate);
     next.sort((a, b) => a.timestamp - b.timestamp);
@@ -302,6 +304,7 @@ export class MetricsService {
       if (current.samples.length >= MAX_MINUTE_SAMPLES) current.samples.shift();
       current.samples.push(point);
     }
+    this.aggregateSnapshots.invalidate(current);
     this.dirtyAccumulators.add(current);
   }
 
@@ -324,19 +327,20 @@ export class MetricsService {
       if (current.samples.length >= MAX_HOURLY_SAMPLES) current.samples.shift();
       current.samples.push(point);
     }
+    this.aggregateSnapshots.invalidate(current);
     this.dirtyAccumulators.add(current);
   }
 
   private async persistMinuteAccumulator(deviceId: string, current: MetricAccumulator) {
     if (!this.dirtyAccumulators.has(current)) return;
-    await this.repositories.history.insertMinutePoint(deviceId, averageRecord(current.samples, current.bucketStartedAt));
+    await this.repositories.history.insertMinutePoint(deviceId, this.aggregateSnapshots.read(current));
     // Clear only after every required write succeeds, under the device lock.
     this.dirtyAccumulators.delete(current);
   }
 
   private async persistHourlyAccumulator(deviceId: string, current: MetricAccumulator) {
     if (!this.dirtyAccumulators.has(current)) return;
-    await this.repositories.history.insertHourlyPoint(deviceId, averageRecord(current.samples, current.bucketStartedAt));
+    await this.repositories.history.insertHourlyPoint(deviceId, this.aggregateSnapshots.read(current));
     this.dirtyAccumulators.delete(current);
   }
 
@@ -344,7 +348,7 @@ export class MetricsService {
     const current = this.hourlyAccumulators.get(deviceId);
     if (!current?.samples.length) return history;
 
-    const aggregate = averageRecord(current.samples, current.bucketStartedAt);
+    const aggregate = this.aggregateSnapshots.read(current);
     const next = history.filter((point) => point.timestamp !== aggregate.timestamp);
     next.push(aggregate);
     next.sort((a, b) => a.timestamp - b.timestamp);
@@ -355,7 +359,7 @@ export class MetricsService {
     const current = this.minuteAccumulators.get(deviceId);
     if (!current?.samples.length) return history;
 
-    const aggregate = averageRecord(current.samples, current.bucketStartedAt);
+    const aggregate = this.aggregateSnapshots.read(current);
     const next = history.filter((point) => point.timestamp !== aggregate.timestamp);
     next.push(aggregate);
     next.sort((a, b) => a.timestamp - b.timestamp);

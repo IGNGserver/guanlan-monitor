@@ -26,9 +26,9 @@ being marked verified.
 | 3 | Atomic bounded Redis append, narrow summary and expiry read models | real Redis + CI + paired smoke passed |
 | 4 | Overview projection, bounded query concurrency and shared historical reads | real SQL + CI passed; image browser gate not yet passed |
 | 5 | Static Web, fixed-upstream proxy, security/PWA/deep-link parity | local contracts passed; actual image CI pending |
-| 6 | Incremental aggregation, versioned hardware storage and bounded maintenance | off-path snapshot/metadata prototypes only; no production replacement |
+| 6 | Incremental aggregation, versioned hardware storage and bounded maintenance | exact snapshot reuse implemented; metadata prototype only; CI pending |
 | 7 | Failure/recovery, rollback, resource comparisons and long-running soak | isolated restart gates added; long-running soak pending |
-| Go decision | Fixed-input prototype and whole-stack benefit gate | Node/Go and separate SQLite prototypes; measured decision pending |
+| Go decision | Fixed-input prototype and whole-stack benefit gate | measured kernel has higher Go CPU/latency; retain Node/MySQL |
 | Storage decision | Embedded transactional storage prototype and recovery gate | pending |
 
 ## Acceptance matrix
@@ -279,9 +279,12 @@ production storage engine. Do not switch language and storage in one cutover.
   gates restart API/Redis/MySQL and check accepted latest/persisted historical
   buckets; API is SIGKILLed. This is not a power-loss, unflushed-hour recovery or
   24–72h soak claim.
-- Stage 6 remains **off production**: bounded memo snapshots preserve the entire
-  average oracle, including floating-point reduction order and observation
-  winners. Metadata split/hydrate is reversible, versioned and bounded, but has
+- Stage 6 reuses exact aggregate snapshots after measurement, invalidated at
+  every minute/hour append or replacement, with weak ownership of retired
+  buckets and clone-isolated callers. The existing average oracle preserves
+  floating-point reduction order and observation winners; this is not an
+  approximate incremental sum. Metadata split/hydrate remains **off production**,
+  reversible, versioned and bounded, but has
   no durable dictionary/transactional reference GC. A full incremental sum or
   schema migration is not silently substituted based on unit tests.
 - `scripts/hub-prototypes/` independently measures equal-input Node/Go kernels,
@@ -296,3 +299,33 @@ production storage engine. Do not switch language and storage in one cutover.
   accounting/HTTP/browser-target tests passed. Existing lint warnings remain.
   Node/Go prototype unit tests **2 + 2 passed**, Python durability/runner tests
   **10 passed**. Builds and benchmarks remain CI-only; Electron visual is CI.
+
+### Research decision evidence
+
+[Prototype CI 40094231810](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40094231810)
+passed (`independent-research`, 52s), including actual Linux kill/recovery tests.
+Five alternating rounds on the same 1,218,060-byte JSON batch, 100 iterations:
+Node median wall time about 1.205s, Go about 2.696s; Node CPU about 1.255s,
+Go about 3.517s. Go process peaks were 26.7–28.1MB vs Node 195.1–196.0MB.
+Despite lower standalone RSS, this generic Go prototype trades CPU/latency for
+memory and implements no full auth/live/retention Hub; **do not migrate**.
+
+The independent SQLite WAL prototype committed 256 unique rows, survived its
+kill/replay/rollback/backup tests, and measured 117.3ms cold insert batch,
+28.8ms median replay batch. There is no equivalent whole-Hub MySQL measurement
+in this experiment, so it establishes feasibility, **not net benefit**. Keep
+MySQL/Redis, especially where NAS-backed SQLite files would be unsafe.
+
+For unchanged 128-point aggregates, the exact memo's 50-read rounds took
+9.8–10.7ms vs oracle recomputation 70.1–73.5ms, supporting the narrowly scoped
+snapshot reuse above (not a whole-stack percentage). Reversible metadata split
+encoded 1,990,697 bytes including its dictionary vs original 3,487,085 bytes;
+JSON byte reduction is not disk IO or durable migration evidence. Keep the
+metadata schema unchanged until transactional reference lifetime and rollback
+reconstruction are demonstrated.
+
+Static image run [40094231688](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40094231688)
+failed at Docker COPY because the existing `.dockerignore` excluded `deploy/`.
+Only the four runtime nginx/entrypoint files are now explicitly included;
+source-contract tests guard these COPY inputs. No successful static-runtime
+measurement is claimed for this failed run.

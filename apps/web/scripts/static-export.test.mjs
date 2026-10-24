@@ -163,6 +163,11 @@ test("official entrypoint installs an empty allowlist then validates runtime CID
   assert.match(renderer, /output=\/etc\/nginx\/web-trusted-tls-proxies\.conf/);
   assert.match(renderer, /if \[ "\$test_only" -eq 0 \]; then[\s\S]*nginx -t\s*fi/);
   assert.ok(!/\b(?:node|python|eval|envsubst)\b/.test(renderer));
+  const dockerignore = read(".dockerignore");
+  assert.ok(dockerignore.includes("!deploy/docker"), "Web runtime files must enter the Docker build context");
+  for (const file of ["web.nginx.conf", "web-proxy.conf", "web-security-headers.conf", "40-render-trusted-tls-proxies.sh"]) {
+    assert.ok(dockerignore.includes(`!deploy/docker/${file}`), `Runtime COPY must not be ignored: ${file}`);
+  }
 });
 
 test("post-export manifest is copied into out after public was exported", () => {

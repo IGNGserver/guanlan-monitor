@@ -238,6 +238,7 @@ async function run(input) {
     };
     await waitForReadiness(request);
     if (report.evidence.webRuntime === 'static-nginx') {
+      report.evidence.acceptanceStage = 'static-http';
       await compose('exec', '-T', 'web', 'sh', '-c', '! command -v node && nginx -t');
       report.evidence.staticWeb = await verifyStaticWeb(origin, accessKey);
     }
@@ -322,11 +323,13 @@ async function run(input) {
     // has the known long-session timer bug, so this is a candidate correctness
     // gate, not an extra asymmetric performance workload.
     if (options.side === 'head' && process.env.GLPERF_PLAYWRIGHT_MODULE) {
+      report.evidence.acceptanceStage = 'browser';
       report.evidence.browser = await browserSmoke({ origin, accessKey, modulePath: process.env.GLPERF_PLAYWRIGHT_MODULE,
         pauseOrigin: () => compose('stop', 'web'), resumeOrigin: () => compose('start', 'web'),
         onStage: (stage) => { (report.evidence.browserProgress ??= []).push(stage); } });
     }
     if (report.evidence.webRuntime === 'static-nginx') {
+      report.evidence.acceptanceStage = 'trusted-tls';
       // Separate post-measurement TLS boundary exercise. Trust only container
       // loopback, not the runner's public-port peer, and enable the real HTTPS
       // guard. Cookie Secure is a separate explicit setting, not protocol proof.
@@ -360,9 +363,10 @@ async function run(input) {
         assert.ok(response.ok, 'recovery_request_failed');
         return { body: await response.text() };
       };
-      const acceptedTimestamp = JSON.parse(sample).timestamp;
+      const acceptedSnapshot = JSON.parse((await recoveredRead('/api/devices/perf-0/metrics?window=5m')).body);
       const recoveries = [];
       for (const service of ['server', 'redis', 'mysql']) {
+        report.evidence.acceptanceStage = `recovery-${service}`;
         const started = performance.now();
         if (service === 'server') {
           await compose('kill', '-s', 'SIGKILL', 'server');
@@ -370,7 +374,8 @@ async function run(input) {
         } else await compose('restart', service);
         await waitForReadiness(recoveredRead);
         const metrics = JSON.parse((await recoveredRead('/api/devices/perf-0/metrics?window=5m')).body);
-        assert.equal(metrics.lastSeenAt, acceptedTimestamp, 'accepted_latest_lost_after_restart');
+        assert.equal(metrics.lastSeenAt, acceptedSnapshot.lastSeenAt, 'accepted_receipt_time_lost_after_restart');
+        assert.deepEqual(metrics.latest, acceptedSnapshot.latest, 'accepted_latest_lost_after_restart');
         validateQueryResponse('/api/devices/perf-0/metrics?window=1h',
           (await recoveredRead('/api/devices/perf-0/metrics?window=1h')).body, { oldBucket });
         recoveries.push({ service, elapsedMs: performance.now() - started,
@@ -378,6 +383,7 @@ async function run(input) {
       }
       report.evidence.recovery = recoveries;
     }
+    report.evidence.acceptanceStage = 'complete';
     for (const service of services) {
       const { stdout } = await exec('docker', ['inspect', '--format', '{{json .State}}', containers[service]]);
       const state = JSON.parse(stdout);
