@@ -9,6 +9,7 @@ import type {
   FanNotePayload,
   MetricSeries,
   MetricWindow,
+  OverviewMetricsResponse,
   ReleaseChannel,
   SamplePoint,
   TrafficCalendarMode
@@ -23,6 +24,8 @@ import { getSystemVersionInfo, getUpdateInfo } from "./updates.js";
 import { getHubUpdateStatus, HubUpdateError, requestHubUpdate } from "./hub-update.js";
 import { isLegacyVirtualMachineId } from "./legacy-devices.js";
 import { budgetSeries } from "./series-budget.js";
+import { overviewToMetricSeries } from "./overview.js";
+import { forEachBounded } from "./serial-queue.js";
 
 const loginSchema = z.object({
   accessKey: z.string().min(1).max(512)
@@ -278,31 +281,26 @@ export async function registerRoutes(
       const parsed = metricsQuerySchema.safeParse(request.query);
       if (!parsed.success) return reply.code(400).send({ error: "invalid_metrics_query" });
       const query = parsed.data;
-      const states = await repositories.realtime.listDevices();
-      const instances = await Promise.all(
-        states.map(async (state) => {
-          const series = sanitizeUnsupportedMetricSeries(
-            alignMetricSeriesToWindow(
-              timeSeriesToMetricSeries(
-                await metricsService.getSeries(state.identity.deviceId, query.window),
-                await metricsService.getMetricConfig(state.identity.deviceId)
-              ),
-              query.window
-            ),
-            getAvailableMetrics(state)
+      const states = repositories.realtime.listSummaries
+        ? await repositories.realtime.listSummaries()
+        : (await repositories.realtime.listDevices()).map(toSummary);
+      const instances: OverviewMetricsResponse["instances"] = [];
+      await forEachBounded(states.entries(), async ([index, state]) => {
+          const series = overviewToMetricSeries(
+            await metricsService.getOverviewSeries(state.deviceId, query.window),
+            query.window
           );
-          return {
-            deviceId: state.identity.deviceId,
-            hostname: toSummary(state).hostname,
+          instances[index] = {
+            deviceId: state.deviceId,
+            hostname: state.hostname,
             cpuUsagePercent: series.cpuUsagePercent,
             memoryUsedBytes: series.memoryUsedBytes,
             diskUsedBytes: series.diskUsedBytes,
             networkRxBytesPerSec: series.networkRxBytesPerSec,
             networkTxBytesPerSec: series.networkTxBytesPerSec,
-            unavailableMetrics: state.latest.unavailableMetrics ?? []
+            unavailableMetrics: state.unavailableMetrics ?? []
           };
-        })
-      );
+      }, 4);
       return { window: query.window, instances: budgetSeries(instances, query.pointBudget),
         sampling: query.pointBudget ? { method: "minmax-v1", targetPoints: query.pointBudget } : undefined };
     }

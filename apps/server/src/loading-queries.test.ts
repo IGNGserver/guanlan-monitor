@@ -8,6 +8,7 @@ import { buildTrafficCalendar, trafficCalendarBounds } from "./traffic-calendar.
 import { MetricsService } from "./services/metrics.js";
 import { createHubContractPayload } from "./hub-contract-fixtures.js";
 import { toSummary } from "./utils.js";
+import { overviewToMetricSeries } from "./overview.js";
 import type { DeviceRecord, MetricAccumulator, Repositories, TrafficHistoryPoint, TimeSeriesRecord } from "./types.js";
 
 function deferred<T>() {
@@ -96,6 +97,22 @@ test("offline scans drain bounded expiry pages in one sweep and never scan all h
   assert.equal(marked, 257);
   assert.equal(scans, 4);
   assert.ok(maximum <= 8);
+});
+
+test("concurrent identical history reads share SQL only until settlement, with no stale TTL cache", async () => {
+  const read = deferred<TimeSeriesRecord[]>();
+  let calls = 0;
+  const service = new MetricsService({ history: {
+    getHistoricalSeries: async () => { calls++; return calls === 1 ? read.promise : []; }
+  } } as unknown as Repositories, () => {}, { get: async () => null, set: async () => {} });
+  const first = service.getSeries("node", "1h");
+  const second = service.getSeries("node", "1h");
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  read.resolve([]);
+  assert.deepEqual(await Promise.all([first, second]), [[], []]);
+  await service.getSeries("node", "1h");
+  assert.equal(calls, 2);
 });
 
 test("background history discovery does not hold listen or lists and never reopens closed records", async () => {
@@ -220,4 +237,59 @@ test("calendar service uses projection and preserves current hour/minute counter
   const expected = [{ timestamp: hour, trafficRxBytes: 100, trafficTxBytes: 200 }].filter((point) => point.timestamp !== minute);
   expected.push({ timestamp: minute, trafficRxBytes: 120, trafficTxBytes: 240 });
   assert.deepEqual(await service.getTrafficCalendar("node", "day", anchor), buildTrafficCalendar(expected, "day", anchor));
+});
+
+test("MySQL overview selects only numeric fields and JSON paths with the original table/range for every window", async () => {
+  const calls: Array<{ sql: string; params: unknown }> = [];
+  const pool = { query: async (sql: string, params: unknown) => {
+    calls.push({ sql, params });
+    return [[{ timestamp: "1000", cpuUsagePercent: "0", networkRxBytesPerSec: "12", networkTxBytesPerSec: "0",
+      memoryUsedJson: "1024", diskUsedValuesJson: "[0,7,null,11]",
+      metricQualityJson: '{"cpuUsage":{"state":"direct"},"networkRxRate":{"state":"stale"}}',
+      unavailableMetricsJson: '["diskUsage"]' }]];
+  } } as unknown as mysql.Pool;
+  const history = new MysqlHistoryRepository(pool);
+  for (const window of ["1m", "5m"] as const) assert.deepEqual(await history.getOverviewSeries("node", window), []);
+  assert.equal(calls.length, 0);
+  const cases = [
+    ["15m", "minute", "MINUTE", 15], ["1h", "minute", "MINUTE", 60], ["6h", "minute", "MINUTE", 360],
+    ["24h", "minute", "MINUTE", 1440], ["1d", "minute", "MINUTE", 1440],
+    ["7d", "hourly", "HOUR", 168], ["1w", "hourly", "HOUR", 168],
+    ["30d", "hourly", "HOUR", 744], ["1mo", "hourly", "HOUR", 744],
+    ["90d", "hourly", "HOUR", 2160], ["1y", "hourly", "HOUR", 8784]
+  ] as const;
+  for (const [window, table, unit, range] of cases) {
+    const points = await history.getOverviewSeries("node", window);
+    const call = calls.at(-1)!;
+    assert.deepEqual(call.params, ["node", range]);
+    assert.match(call.sql, new RegExp(`FROM device_${table}_metrics`));
+    assert.match(call.sql, new RegExp(`recorded_at >= DATE_SUB\\(UTC_TIMESTAMP\\(\\), INTERVAL \\? ${unit}\\)`));
+    assert.match(call.sql, /ORDER BY recorded_at ASC/);
+    assert.match(call.sql, /JSON_EXTRACT\(recorded_details_json, '\$\.memory\.usedBytes'\)/);
+    assert.match(call.sql, /JSON_TYPE\(disk_instances_json\) = 'ARRAY' AND JSON_LENGTH\(disk_instances_json\) > 0/);
+    assert.match(call.sql, /JSON_EXTRACT\(disk_instances_json, '\$\[\*\]\.usedBytes'\)/);
+    assert.match(call.sql, /JSON_EXTRACT\(recorded_details_json, '\$\.disks\[\*\]\.usedBytes'\)/);
+    assert.doesNotMatch(call.sql, /SELECT\s+\*|(?:recorded_details_json|disk_instances_json|gpu_instances_json)\s+AS\b|\bLIMIT\b|\bAVG\s*\(/i);
+    assert.equal(points[0].memoryUsedBytes, 1024);
+    assert.equal(points[0].diskUsedBytes, 18);
+    assert.equal("recordedDetails" in points[0], false);
+    assert.deepEqual(overviewToMetricSeries(points).cpuUsagePercent, [{ timestamp: "1970-01-01T00:00:01.000Z", value: 0 }]);
+    assert.deepEqual(overviewToMetricSeries(points).diskUsedBytes, []);
+    assert.deepEqual(overviewToMetricSeries(points).networkRxBytesPerSec, []);
+  }
+});
+
+test("MySQL overview normalizes native and serialized JSON scalars, arrays and old missing paths", async () => {
+  const variants = [
+    { memoryUsedJson: null, diskUsedValuesJson: null, metricQualityJson: null, unavailableMetricsJson: null },
+    { memoryUsedJson: "null", diskUsedValuesJson: "[]", metricQualityJson: "{}", unavailableMetricsJson: "[]" },
+    { memoryUsedJson: 0, diskUsedValuesJson: [0, null], metricQualityJson: { cpuUsage: { state: "derived" } }, unavailableMetricsJson: [] },
+    { memoryUsedJson: '"1024"', diskUsedValuesJson: '["3",0,4]', metricQualityJson: "{}", unavailableMetricsJson: "[]" }
+  ];
+  const pool = { query: async () => [variants.map((variant, index) => ({ timestamp: index * 1000, cpuUsagePercent: 0,
+    networkRxBytesPerSec: 0, networkTxBytesPerSec: 0, ...variant }))] } as unknown as mysql.Pool;
+  const points = await new MysqlHistoryRepository(pool).getOverviewSeries("node", "1h");
+  assert.deepEqual(points.map((point) => point.memoryUsedBytes), [0, 0, 0, 1024]);
+  assert.deepEqual(points.map((point) => point.diskUsedBytes), [0, 0, 0, 7]);
+  assert.equal(overviewToMetricSeries(points).cpuUsagePercent.length, 4);
 });

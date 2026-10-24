@@ -25,6 +25,18 @@ export function resourceEvidenceStatus(phases) {
   return partial ? 'partial-resource-evidence' : 'complete';
 }
 
+export function stackTotals(phase) {
+  const totals = {};
+  for (const key of ['cpuNs', 'readBytes', 'writeBytes', 'sampledMemoryMeanBytes']) {
+    const values = ['web', 'server', 'redis', 'mysql'].map((service) => phase?.resources?.[service]?.[key]);
+    // Even one unavailable component makes the whole-stack quantity unknown.
+    totals[key] = values.every((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0)
+      ? values.reduce((sum, value) => sum + value, 0) : null;
+  }
+  totals.sampledMemoryMaxBytes = phase?.sampledStackMemoryMaxBytes ?? null;
+  return totals;
+}
+
 export function comparison(base, head) {
   const failures = [];
   for (const [side, report] of [['base', base], ['head', head]]) {
@@ -50,7 +62,11 @@ export function comparison(base, head) {
           changePercent: relativeChange(before?.[key], after?.[key]) };
       }
     }
-    phases.push({ name: original.name, resources,
+    const baseTotal = stackTotals(original), headTotal = stackTotals(candidate);
+    const stack = Object.fromEntries(Object.keys(baseTotal).map((key) => [key, {
+      base: baseTotal[key], head: headTotal[key], changePercent: relativeChange(baseTotal[key], headTotal[key])
+    }]));
+    phases.push({ name: original.name, resources, stack,
       stackSampledMemoryPeak: { base: original.sampledStackMemoryMaxBytes, head: candidate.sampledStackMemoryMaxBytes,
         changePercent: relativeChange(original.sampledStackMemoryMaxBytes, candidate.sampledStackMemoryMaxBytes) } });
   }
@@ -70,6 +86,12 @@ export function markdown(base, head, result = comparison(base, head)) {
     '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |'];
   for (const phase of result.phases) for (const [service, metrics] of Object.entries(phase.resources)) {
     lines.push(`| ${phase.name} | ${service} | ${value(metrics.cpuNs.base)} | ${value(metrics.cpuNs.head)} | ${value(metrics.cpuNs.changePercent)} | ${value(metrics.sampledMemoryMeanBytes.base)} | ${value(metrics.sampledMemoryMeanBytes.head)} | ${value(metrics.sampledMemoryMeanBytes.changePercent)} |`);
+  }
+  lines.push('', '## Whole-stack totals', '',
+    '| Phase | CPU ns base | CPU ns head | Change % | Aligned sampled peak base (B) | Head (B) | Change % |',
+    '| --- | ---: | ---: | ---: | ---: | ---: | ---: |');
+  for (const phase of result.phases) {
+    lines.push(`| ${phase.name} | ${value(phase.stack.cpuNs.base)} | ${value(phase.stack.cpuNs.head)} | ${value(phase.stack.cpuNs.changePercent)} | ${value(phase.stack.sampledMemoryMaxBytes.base)} | ${value(phase.stack.sampledMemoryMaxBytes.head)} | ${value(phase.stack.sampledMemoryMaxBytes.changePercent)} |`);
   }
   if (result.failures.length) lines.push('', `Incomplete: ${result.failures.join(', ')}`);
   lines.push('', 'See JSON for block IO, aligned stack memory peaks, workload counts, latency, failures and cleanup evidence.', '');

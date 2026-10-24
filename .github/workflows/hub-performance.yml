@@ -92,6 +92,14 @@ jobs:
           tags: glperf-web-head:${{ env.HEAD_SHA }}
           cache-from: type=gha,scope=hub-perf-web
           cache-to: type=gha,mode=min,scope=hub-perf-web
+      - name: Prepare isolated image browser parity checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_dir="$RUNNER_TEMP/hub-image-browser"
+          npm install --prefix "$browser_dir" --no-save playwright@1.55.0 >/dev/null
+          "$browser_dir/node_modules/.bin/playwright" install --with-deps chromium webkit
+          echo "GLPERF_PLAYWRIGHT_MODULE=$browser_dir/node_modules/playwright/index.mjs" >> "$GITHUB_ENV"
       - name: Measure baseline through its public Web entry
         run: node --experimental-strip-types head/scripts/hub-performance/run.mjs --side base --sha "$BASE_SHA" --output "$RUNNER_TEMP/hub-performance-reports/base.json"
       - name: Measure candidate with fresh isolated volumes

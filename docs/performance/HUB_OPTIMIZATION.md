@@ -23,8 +23,8 @@ being marked verified.
 | 0 | Isolated baseline, reusable payload/golden contracts, resource accounting | paired smoke verified; some block IO unavailable |
 | 1 | Session expiry, timeout ownership, queue/timer lifecycle and scan reentry | local + CI verify + paired functional smoke passed |
 | 2 | Configuration snapshots, registration fast path, dirty aggregate flush | local + CI + paired smoke passed |
-| 3 | Atomic bounded Redis append, narrow summary and expiry read models | local unit tests passed; real Redis CI pending |
-| 4 | Overview projection, bounded query concurrency and shared historical reads | pending |
+| 3 | Atomic bounded Redis append, narrow summary and expiry read models | real Redis + CI + paired smoke passed |
+| 4 | Overview projection, bounded query concurrency and shared historical reads | local 194 tests passed; SQL/CI pending |
 | 5 | Static Web, fixed-upstream proxy, security/PWA/deep-link parity | pending |
 | 6 | Incremental aggregation, versioned hardware storage and bounded maintenance | pending |
 | 7 | Failure/recovery, rollback, resource comparisons and long-running soak | pending |
@@ -212,7 +212,7 @@ production storage engine. Do not switch language and storage in one cutover.
   These are descriptive short-run observations, not a stable percentage promise;
   some block IO remains unavailable and full-scale/soak gates are still open.
 
-### Stage 3 local work (real Redis CI pending)
+### Stage 3 verification
 
 - Ordered raw Redis lists use tail-only decode/append or replacement after an
   independent strict-order certification. Preexisting unordered/duplicate or
@@ -230,3 +230,28 @@ production storage engine. Do not switch language and storage in one cutover.
   Dedicated Redis contract invocation: **7 passed / 26 skipped**, because no
   Redis runs locally. PR query-regression now supplies an isolated Redis service
   and loopback database `/15`; fixtures only delete their own known keys.
+- [Real Redis/SQL 40091932662](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40091932662)
+  passed **33/33 Redis contracts, none skipped**. [CI 40091932657](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40091932657)
+  passed all jobs, and [paired stack 40091932655](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40091932655)
+  passed (`baseline`, 4m55s), both scoped cleanups successful. Total stack CPU
+  during measured ingestion was 3.074s vs 3.559s base (-13.64%), aligned sampled
+  memory peak 678,600,704 vs 693,755,904 bytes. Queries used 3.973s vs 4.078s
+  (-2.59%). These remain single short-run observations, with partial block IO.
+
+### Stage 4 local work (SQL/CI pending)
+
+- MySQL overview reads five numeric series and selected JSON paths, not entire
+  hardware documents. Full detail APIs are unchanged. Legacy local adapters use
+  a compatible fallback; current minute/hour overlays retain their old rules.
+- Golden comparisons cover valid zero, missing/quality gaps, legacy memory and
+  disk fallback, empty versus all-zero disks, aliases/windows and current buckets.
+  MySQL still accesses JSON internally: this is a transfer/allocation reduction,
+  not a covering-index claim.
+- Overview uses at most four workers and the narrow realtime inventory. Distinct
+  telemetry queries share a four-worker, 128-admission pool; concurrent identical
+  reads coalesce, but no settled TTL cache hides later writes.
+- Candidate server typecheck and **194 tests passed / 15 real-Redis skipped**;
+  accounting/browser-target/upgrade safety tests **33/33 passed**. An additional
+  overview worker-order regression passed after the full-suite run. Real SQL projection
+  equivalence and the newly added candidate-image browser/PWA tests still need
+  CI. Browser work runs after resource measurements and does not bias them.

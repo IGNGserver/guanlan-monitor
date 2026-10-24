@@ -60,5 +60,8 @@ export async function forEachBounded<T>(items: Iterable<T>, operation: (item: T)
       try { await operation(next.value); } catch (error) { failures.push(error); }
     }
   }));
-  if (failures.length) throw new AggregateError(failures, "bounded operations failed");
+  if (failures.length) {
+    if (failures.every((error) => error instanceof QueueCapacityError)) throw new QueueCapacityError();
+    throw new AggregateError(failures, "bounded operations failed");
+  }
 }

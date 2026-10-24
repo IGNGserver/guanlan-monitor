@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { counterDelta, normalizeStats, readContainerStats } from './engine-stats.mjs';
 import { sanitizeDiagnostic } from './diagnostics.mjs';
+import { browserSmoke } from './browser-smoke.mjs';
 import { resourceEvidenceStatus } from './report.mjs';
 import { createHubContractPayload } from '../../apps/server/src/hub-contract-fixtures.ts';
 
@@ -201,6 +202,7 @@ async function run(input) {
     harnessSha256: createHash('sha256').update(await readFile(fileURLToPath(import.meta.url)))
       .update(await readFile(composeFile)).update(await readFile(new URL('./engine-stats.mjs', import.meta.url)))
       .update(await readFile(new URL('./report.mjs', import.meta.url)))
+      .update(await readFile(new URL('./browser-smoke.mjs', import.meta.url)))
       .update(await readFile(new URL('../../apps/server/src/hub-contract-fixtures.ts', import.meta.url))).digest('hex'),
     environment: { platform: process.platform, arch: process.arch, logicalCpus: cpus().length, node: process.version },
     phases: [], evidence: {}, failures: [], cleanup: false
@@ -309,6 +311,13 @@ async function run(input) {
     const numbers = counts.split(/\s+/).map(Number);
     assert.ok(numbers.length === 2 && numbers.every((value) => Number.isSafeInteger(value) && value > 0), 'history_persistence_missing');
     Object.assign(report.evidence, { minuteRows: numbers[0], hourlyRows: numbers[1], devices: 12, seededSamples: 228 });
+    // UI parity is deliberately after resource measurement. The old baseline
+    // has the known long-session timer bug, so this is a candidate correctness
+    // gate, not an extra asymmetric performance workload.
+    if (options.side === 'head' && process.env.GLPERF_PLAYWRIGHT_MODULE) {
+      report.evidence.browser = await browserSmoke({ origin, accessKey, modulePath: process.env.GLPERF_PLAYWRIGHT_MODULE,
+        pauseOrigin: () => compose('stop', 'web'), resumeOrigin: () => compose('start', 'web') });
+    }
     for (const service of services) {
       const { stdout } = await exec('docker', ['inspect', '--format', '{{json .State}}', containers[service]]);
       const state = JSON.parse(stdout);

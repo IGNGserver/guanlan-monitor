@@ -184,6 +184,8 @@ export interface HistoryRepository {
   insertMinutePoint(deviceId: string, point: TimeSeriesRecord): Promise<void>;
   insertHourlyPoint(deviceId: string, point: TimeSeriesRecord): Promise<void>;
   getHistoricalSeries(deviceId: string, bucket: MetricWindow): Promise<TimeSeriesRecord[]>;
+  /** Narrow overview read; local/older adapters can keep the full-series fallback. */
+  getOverviewSeries?(deviceId: string, bucket: MetricWindow): Promise<OverviewRecord[]>;
   clearDeviceHistory(deviceId: string): Promise<void>;
   getTrafficCalendar(
     deviceId: string,
@@ -193,6 +195,18 @@ export interface HistoryRepository {
   ): Promise<TrafficCalendarResponse>;
   listKnownDevices(): Promise<Array<{ deviceId: string; lastSeenAt: string }>>;
   runRetentionCleanup?(): Promise<void>;
+}
+
+/** Resolved legacy capacity fallbacks, without hardware detail/instance payloads. */
+export interface OverviewRecord {
+  timestamp: number;
+  cpuUsagePercent: number;
+  memoryUsedBytes: number;
+  diskUsedBytes: number;
+  networkRxBytesPerSec: number;
+  networkTxBytesPerSec: number;
+  metricQuality?: AgentMetricsPayload["metricQuality"];
+  unavailableMetrics?: AgentMetricsPayload["unavailableMetrics"];
 }
 
 export interface TrafficHistoryPoint {

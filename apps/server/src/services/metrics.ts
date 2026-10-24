@@ -13,6 +13,8 @@ import { buildTrafficCalendar, trafficCalendarBounds } from "../traffic-calendar
 import { ALL_DEVICE_METRIC_KEYS, HEARTBEAT_TIMEOUT_MS, payloadToTimeSeries, toSummary } from "../utils.js";
 import { forEachBounded, KeyedSerialQueue } from "../serial-queue.js";
 import { nonOverlappingTask } from "../lifecycle.js";
+import { projectOverviewRecord } from "../overview.js";
+import { SharedQueryWork } from "../query-work.js";
 
 const HOURLY_WINDOW_MS = 60 * 60 * 1000;
 const MINUTE_WINDOW_MS = 60 * 1000;
@@ -24,6 +26,7 @@ const LIVE_WINDOW_DURATION_MS = {
 } as const;
 
 export class MetricsService {
+  private readonly queryWork = new SharedQueryWork();
   private readonly minuteAccumulators = new Map<string, MetricAccumulator>();
   private readonly hourlyAccumulators = new Map<string, MetricAccumulator>();
   private readonly dirtyAccumulators = new WeakSet<MetricAccumulator>();
@@ -162,16 +165,37 @@ export class MetricsService {
       return this.readLiveSeries(deviceId, "5m");
     }
     if (window === "15m" || window === "1h" || window === "6h" || window === "24h" || window === "1d") {
-      const history = await this.repositories.history.getHistoricalSeries(deviceId, window);
+      const history = await this.queryWork.run(JSON.stringify(["history", deviceId, window]),
+        () => this.repositories.history.getHistoricalSeries(deviceId, window));
       return this.withCurrentMinuteAggregate(deviceId, history);
     }
-    const history = await this.repositories.history.getHistoricalSeries(deviceId, window);
+    const history = await this.queryWork.run(JSON.stringify(["history", deviceId, window]),
+      () => this.repositories.history.getHistoricalSeries(deviceId, window));
     return this.withCurrentHourlyAggregate(deviceId, history);
+  }
+
+  async getOverviewSeries(deviceId: string, window: MetricWindow) {
+    if (window === "1m" || window === "5m" || !this.repositories.history.getOverviewSeries) {
+      return (await this.getSeries(deviceId, window)).map(projectOverviewRecord);
+    }
+    const history = await this.queryWork.run(JSON.stringify(["overview", deviceId, window]),
+      () => this.repositories.history.getOverviewSeries!(deviceId, window));
+    const minute = window === "15m" || window === "1h" || window === "6h" || window === "24h" || window === "1d";
+    const current = (minute ? this.minuteAccumulators : this.hourlyAccumulators).get(deviceId);
+    if (!current?.samples.length) return history;
+    // Retain the exact existing aggregate/quality rules and current-bucket
+    // replacement. Only the read projection changes, never stored history.
+    const aggregate = projectOverviewRecord(averageRecord(current.samples, current.bucketStartedAt));
+    const next = history.filter((point) => point.timestamp !== aggregate.timestamp);
+    next.push(aggregate);
+    next.sort((a, b) => a.timestamp - b.timestamp);
+    return next;
   }
 
   private async readLiveSeries(deviceId: string, window: "1m" | "5m") {
     const rangeStart = Date.now() - LIVE_WINDOW_DURATION_MS[window];
-    const points = await this.repositories.realtime.readSeries(deviceId, window);
+    const points = await this.queryWork.run(JSON.stringify(["realtime", deviceId, window]),
+      () => this.repositories.realtime.readSeries(deviceId, window));
     return points.filter((point) => point.timestamp >= rangeStart);
   }
 
@@ -182,7 +206,8 @@ export class MetricsService {
     selectedStart?: string
   ): Promise<TrafficCalendarResponse> {
     const { start, end } = trafficCalendarBounds(mode, anchorDate);
-    let points = await this.repositories.history.getTrafficSeries(deviceId, start, end);
+    let points = await this.queryWork.run(JSON.stringify(["traffic", deviceId, start, end]),
+      () => this.repositories.history.getTrafficSeries(deviceId, start, end));
     // Traffic counters are the last observation of each aggregate, not its
     // average. Preserve the existing hour + minute overlay without building
     // or reading unrelated hardware/CPU/memory detail payloads.
