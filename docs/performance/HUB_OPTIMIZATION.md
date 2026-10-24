@@ -20,9 +20,9 @@ being marked verified.
 
 | Stage | Deliverable | State |
 | --- | --- | --- |
-| 0 | Isolated baseline, reusable payload/golden contracts, resource accounting | in progress |
-| 1 | Session expiry, timeout ownership, queue/timer lifecycle and scan reentry | local tests passed; CI pending |
-| 2 | Configuration snapshots, registration fast path, dirty aggregate flush | pending |
+| 0 | Isolated baseline, reusable payload/golden contracts, resource accounting | paired smoke verified; some block IO unavailable |
+| 1 | Session expiry, timeout ownership, queue/timer lifecycle and scan reentry | local + CI verify + paired functional smoke passed |
+| 2 | Configuration snapshots, registration fast path, dirty aggregate flush | local 156 tests passed; CI pending |
 | 3 | Atomic bounded Redis append, narrow summary and expiry read models | pending |
 | 4 | Overview projection, bounded query concurrency and shared historical reads | pending |
 | 5 | Static Web, fixed-upstream proxy, security/PWA/deep-link parity | pending |
@@ -143,11 +143,23 @@ production storage engine. Do not switch language and storage in one cutover.
   adds a Web-only ingress bridge (outbound masquerading disabled); API, Redis
   and MySQL remain internal-only and unpublished. This is a benchmark network
   correction, not a production Compose change. Measurements still pending.
+- [Hub baseline 40090468775](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40090468775)
+  **passed** (`baseline`, 5m45s) for `f363632f`. Both sides completed all 240
+  measured ingests and 200 queries, no failed/skipped requests, and verified
+  the known old historical bucket, 216 minute rows and 12 hour rows. Scoped
+  cleanup succeeded on both sides. CPU/memory were available for all services;
+  candidate Web/API block counters were unavailable, so the report correctly
+  labels overall resource evidence partial. No IO savings are inferred there.
+- Same revision's [CI verify job](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40090468773)
+  passed (1m54s), including complete workspace build and required server/static
+  checks. Other platform jobs were passing; Web smoke was still running when
+  this evidence was recorded. Stage 1 query p95 was 55.16ms vs base 53.68ms;
+  this small single-run difference is descriptive, not a regression conclusion.
 - PR repository is public: these GitHub-hosted runs consume no private monthly
   Actions minute allowance. Builds remain in CI; local scratch grew to 1.8 GiB
   including baseline/candidate dependencies, with 102 GiB still available.
 
-### Stage 1 local correctness work (not yet CI-verified)
+### Stage 1 correctness work
 
 - Added chunked long-session timers and joined maintenance operations.
 - Queue ownership now lasts until the underlying database operation settles;
@@ -162,9 +174,32 @@ production storage engine. Do not switch language and storage in one cutover.
 - Local candidate server typecheck and **120 tests passed**, including removal,
   overload-before-side-effects and final-flush device-set race regressions.
   Whole-workspace lint/typecheck passed with existing warnings; new baseline
-  harness tests are **30/30**. CI for the production-path changes is still
-  pending; later stages remain pending.
+  harness tests are **30/30**. The production-path changes subsequently passed
+  CI verify and the paired functional smoke linked above.
 - Queue admission precedes registration, realtime writes and credential
   revocation. Shutdown drains HTTP, waits existing scans/retention, and takes a
   fresh aggregate snapshot after any old periodic flush. No operation is
   reported cancelled while it still owns the database/queue slot.
+
+### Stage 2 local work (CI pending)
+
+- Configuration/note reads use a single lazily loaded committed snapshot and
+  clone only their selected value. Successful copy-on-write persistence alone
+  publishes updates; failed loads/writes/mutations do not poison the queue or
+  publish a draft. This is a single-process/single-store ownership model, not
+  a coherent cache for external file writers or multiple Hub processes.
+- Authoritative unchanged registration skips SQL (MySQL) or disk writes
+  (local). MySQL's successful-record cache is capped at 4,096 FIFO entries;
+  delete/reorder invalidate within the same device queue. Non-ingest calls
+  retain their original registry touch behavior. `updatedAt` no longer acts
+  as a heartbeat for steady ingest; realtime `lastSeenAt` is unchanged.
+- Dirty accumulator tracking submits only changed minute/hour buckets, clears
+  only after required writes succeed, and retries a failed partner without
+  rewriting the successful partner. Rollover skips already-flushed old buckets.
+  This does not evict raw accumulator samples prematurely: delayed valid
+  reports still need the existing bucket's observations for an exact average.
+- Accepted latest timestamps are published after required ingest stages, so a
+  storage error cannot cause a retry to be silently discarded as already done.
+- Candidate server typecheck and **156/156 tests passed** in local scratch,
+  including 100 unchanged registrations with zero registry SQL/disk writes,
+  snapshot read-count/rollback tests and storage-failure retry tests.

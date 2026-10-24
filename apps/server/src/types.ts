@@ -133,6 +133,8 @@ export interface DeviceRecord {
 
 export interface DeviceRegistrationOptions {
   reopenClosed?: boolean;
+  /** Authoritative steady ingest may skip an unchanged registry touch. */
+  skipUnchanged?: boolean;
 }
 
 export interface DeviceRepository {

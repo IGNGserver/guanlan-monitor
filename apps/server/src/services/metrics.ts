@@ -33,6 +33,7 @@ const LIVE_WINDOW_DURATION_MS = {
 export class MetricsService {
   private readonly minuteAccumulators = new Map<string, MetricAccumulator>();
   private readonly hourlyAccumulators = new Map<string, MetricAccumulator>();
+  private readonly dirtyAccumulators = new WeakSet<MetricAccumulator>();
   private readonly deviceQueues = new KeyedSerialQueue();
   private readonly ingestQueues = new KeyedSerialQueue();
   private readonly flushTask = nonOverlappingTask(() => this.performAggregateFlush());
@@ -50,7 +51,7 @@ export class MetricsService {
       const device = await this.repositories.devices.registerOrUpdateDevice(
         payload.identity.deviceId,
         payload.identity.hostname,
-        { reopenClosed: true }
+        { reopenClosed: true, skipUnchanged: true }
       );
       if (device.status === "closed") return;
       await this.persistPayload(payload, receivedAt);
@@ -82,14 +83,16 @@ export class MetricsService {
       latest: payload
     };
 
-    await this.repositories.realtime.upsert(state);
-
     const config = await this.getMetricConfig(payload.identity.deviceId);
     const point = payloadToTimeSeries(payload, config);
     await this.repositories.realtime.appendSeries(payload.identity.deviceId, "1m", point, 30);
     await this.repositories.realtime.appendSeries(payload.identity.deviceId, "5m", point, 150);
     await this.addMinuteAggregate(payload.identity.deviceId, point);
     await this.addHourlyAggregate(payload.identity.deviceId, point);
+    // Publish the accepted timestamp only after all required stages succeed.
+    // Otherwise an append/history error followed by retry hits the stale-sample
+    // fast exit and falsely acknowledges work that never reached aggregation.
+    await this.repositories.realtime.upsert(state);
 
     const event: DeviceRealtimeEvent = {
       deviceId: payload.identity.deviceId,
@@ -231,25 +234,18 @@ export class MetricsService {
     await forEachBounded(deviceIds, (deviceId) =>
       this.runDeviceAggregateOperation(deviceId, async () => {
         const minAcc = this.minuteAccumulators.get(deviceId);
-        if (minAcc?.samples.length) {
+        if (minAcc?.samples.length && this.dirtyAccumulators.has(minAcc)) {
           try {
-            await this.repositories.history.insertMinutePoint(
-              deviceId,
-              averageRecord(minAcc.samples, minAcc.bucketStartedAt)
-            );
-            await this.flushAggregate(deviceId, "15m", minAcc.samples, 15, minAcc.bucketStartedAt);
+            await this.persistMinuteAccumulator(deviceId, minAcc);
           } catch (error) {
             failures.push(error);
           }
         }
 
         const hrAcc = this.hourlyAccumulators.get(deviceId);
-        if (hrAcc?.samples.length) {
+        if (hrAcc?.samples.length && this.dirtyAccumulators.has(hrAcc)) {
           try {
-            await this.repositories.history.insertHourlyPoint(
-              deviceId,
-              averageRecord(hrAcc.samples, hrAcc.bucketStartedAt)
-            );
+            await this.persistHourlyAccumulator(deviceId, hrAcc);
           } catch (error) {
             failures.push(error);
           }
@@ -265,11 +261,11 @@ export class MetricsService {
     const current = this.minuteAccumulators.get(deviceId);
     if (!current || current.bucketStartedAt !== bucketStartedAt) {
       if (current?.samples.length) {
-        const aggregate = averageRecord(current.samples, current.bucketStartedAt);
-        await this.repositories.history.insertMinutePoint(deviceId, aggregate);
-        await this.flushAggregate(deviceId, "15m", current.samples, 15);
+        await this.persistMinuteAccumulator(deviceId, current);
       }
-      this.minuteAccumulators.set(deviceId, { bucketStartedAt, samples: [point] });
+      const next = { bucketStartedAt, samples: [point] };
+      this.minuteAccumulators.set(deviceId, next);
+      this.dirtyAccumulators.add(next);
       return;
     }
     const existingIndex = current.samples.findIndex((sample) => sample.timestamp === point.timestamp);
@@ -279,6 +275,7 @@ export class MetricsService {
       if (current.samples.length >= MAX_MINUTE_SAMPLES) current.samples.shift();
       current.samples.push(point);
     }
+    this.dirtyAccumulators.add(current);
   }
 
   private async addHourlyAggregate(deviceId: string, point: ReturnType<typeof payloadToTimeSeries>) {
@@ -286,10 +283,11 @@ export class MetricsService {
     const current = this.hourlyAccumulators.get(deviceId);
     if (!current || current.bucketStartedAt !== bucketStartedAt) {
       if (current?.samples.length) {
-        const aggregate = averageRecord(current.samples, current.bucketStartedAt);
-        await this.repositories.history.insertHourlyPoint(deviceId, aggregate);
+        await this.persistHourlyAccumulator(deviceId, current);
       }
-      this.hourlyAccumulators.set(deviceId, { bucketStartedAt, samples: [point] });
+      const next = { bucketStartedAt, samples: [point] };
+      this.hourlyAccumulators.set(deviceId, next);
+      this.dirtyAccumulators.add(next);
       return;
     }
     const existingIndex = current.samples.findIndex((sample) => sample.timestamp === point.timestamp);
@@ -299,6 +297,21 @@ export class MetricsService {
       if (current.samples.length >= MAX_HOURLY_SAMPLES) current.samples.shift();
       current.samples.push(point);
     }
+    this.dirtyAccumulators.add(current);
+  }
+
+  private async persistMinuteAccumulator(deviceId: string, current: MetricAccumulator) {
+    if (!this.dirtyAccumulators.has(current)) return;
+    await this.repositories.history.insertMinutePoint(deviceId, averageRecord(current.samples, current.bucketStartedAt));
+    await this.flushAggregate(deviceId, "15m", current.samples, 15, current.bucketStartedAt);
+    // Clear only after every required write succeeds, under the device lock.
+    this.dirtyAccumulators.delete(current);
+  }
+
+  private async persistHourlyAccumulator(deviceId: string, current: MetricAccumulator) {
+    if (!this.dirtyAccumulators.has(current)) return;
+    await this.repositories.history.insertHourlyPoint(deviceId, averageRecord(current.samples, current.bucketStartedAt));
+    this.dirtyAccumulators.delete(current);
   }
 
   private async flushAggregate(
