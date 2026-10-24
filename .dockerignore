@@ -26,5 +26,11 @@ windows-agent
 apps/desktop
 tools
 docs
-deploy
+deploy/*
+!deploy/docker
+deploy/docker/*
+!deploy/docker/web.nginx.conf
+!deploy/docker/web-proxy.conf
+!deploy/docker/web-security-headers.conf
+!deploy/docker/40-render-trusted-tls-proxies.sh
 .github

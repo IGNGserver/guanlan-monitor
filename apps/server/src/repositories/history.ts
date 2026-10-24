@@ -1,6 +1,6 @@
 import mysql, { type RowDataPacket } from "mysql2/promise";
 import type { MetricWindow, TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
-import type { HistoryRepository, TimeSeriesRecord, TrafficHistoryPoint } from "../types.js";
+import type { HistoryRepository, OverviewRecord, TimeSeriesRecord, TrafficHistoryPoint } from "../types.js";
 import { buildTrafficCalendar } from "../traffic-calendar.js";
 
 const WINDOW_RANGES: Record<Extract<MetricWindow, "1d" | "7d" | "1w" | "30d" | "1mo" | "90d" | "1y">, number> = {
@@ -17,6 +17,11 @@ const HOURLY_RETENTION_DAYS = 370;
 
 export class MysqlHistoryRepository implements HistoryRepository {
   constructor(private readonly pool: mysql.Pool) {}
+
+  async checkReadiness(): Promise<void> {
+    // Exercise the same pool as history, without scanning any telemetry rows.
+    await this.pool.query({ sql: "SELECT 1", timeout: 2000 });
+  }
 
   async init() {
     await this.pool.query(`
@@ -354,6 +359,44 @@ export class MysqlHistoryRepository implements HistoryRepository {
     return rows.map(mapHistoryRow) as TimeSeriesRecord[];
   }
 
+  async getOverviewSeries(deviceId: string, bucket: MetricWindow): Promise<OverviewRecord[]> {
+    if (bucket === "1m" || bucket === "5m") return [];
+    const minute = bucket === "15m" || bucket === "1h" || bucket === "6h" || bucket === "24h" || bucket === "1d";
+    const range = minute ? (bucket === "15m" ? 15 : bucket === "1h" ? 60 : bucket === "6h" ? 360 : 1440)
+      : WINDOW_RANGES[bucket as keyof typeof WINDOW_RANGES] ?? WINDOW_RANGES["1y"];
+    // Table/unit are internal constants, never user-provided identifiers. Extract
+    // only needed JSON paths: no hardware detail or instance objects leave MySQL.
+    // Nonempty instances win even if every usedBytes is zero/missing; testing
+    // their sum for truthiness would incorrectly select older detail disks.
+    const [rows] = await this.pool.query<any[]>(`
+      SELECT UNIX_TIMESTAMP(recorded_at) * 1000 AS timestamp,
+             cpu_usage_percent AS cpuUsagePercent,
+             network_rx_bytes_per_sec AS networkRxBytesPerSec,
+             network_tx_bytes_per_sec AS networkTxBytesPerSec,
+             JSON_EXTRACT(recorded_details_json, '$.memory.usedBytes') AS memoryUsedJson,
+             CASE WHEN JSON_TYPE(disk_instances_json) = 'ARRAY' AND JSON_LENGTH(disk_instances_json) > 0
+               THEN JSON_EXTRACT(disk_instances_json, '$[*].usedBytes')
+               ELSE JSON_EXTRACT(recorded_details_json, '$.disks[*].usedBytes')
+             END AS diskUsedValuesJson,
+             JSON_EXTRACT(recorded_details_json, '$.metricQuality') AS metricQualityJson,
+             JSON_EXTRACT(recorded_details_json, '$.unavailableMetrics') AS unavailableMetricsJson
+      FROM ${minute ? "device_minute_metrics" : "device_hourly_metrics"}
+      WHERE device_id = ?
+        AND recorded_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? ${minute ? "MINUTE" : "HOUR"})
+      ORDER BY recorded_at ASC
+    `, [deviceId, range]);
+    return rows.map((row) => ({
+      timestamp: Number(row.timestamp),
+      cpuUsagePercent: Number(row.cpuUsagePercent),
+      memoryUsedBytes: parseJsonNumber(row.memoryUsedJson),
+      diskUsedBytes: parseJsonArray(row.diskUsedValuesJson).reduce((total, value) => total + Number(value ?? 0), 0),
+      networkRxBytesPerSec: Number(row.networkRxBytesPerSec),
+      networkTxBytesPerSec: Number(row.networkTxBytesPerSec),
+      metricQuality: parseJsonObject(row.metricQualityJson),
+      unavailableMetrics: parseJsonArray(row.unavailableMetricsJson)
+    }));
+  }
+
   async clearDeviceHistory(deviceId: string) {
     await this.pool.query(`DELETE FROM device_minute_metrics WHERE device_id = ?`, [deviceId]);
     await this.pool.query(`DELETE FROM device_hourly_metrics WHERE device_id = ?`, [deviceId]);
@@ -480,6 +523,13 @@ export function mapHistoryRow(row: any): TimeSeriesRecord {
     gpus: parseJsonArray(row.gpuInstancesJson),
     recordedDetails
   };
+}
+
+function parseJsonNumber(value: unknown): number {
+  if (typeof value === "string") {
+    try { return Number(JSON.parse(value) ?? 0); } catch { return Number(value); }
+  }
+  return Number(value ?? 0);
 }
 
 function parseJsonArray(value: unknown) {

@@ -1,0 +1,136 @@
+name: Hub resource baseline
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - 'apps/server/**'
+      - 'apps/web/**'
+      - 'packages/shared/**'
+      - 'packages/console-ui/**'
+      - 'deploy/docker/**'
+      - 'deploy/performance/**'
+      - 'scripts/hub-performance/**'
+      - '.github/workflows/hub-performance.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig.base.json'
+      - '.dockerignore'
+      - 'VERSION'
+
+concurrency:
+  group: hub-performance-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: head
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Test safe accounting and synthetic workload
+        run: node --experimental-strip-types --test head/scripts/hub-performance/*.test.mjs
+      - name: Test static export and fixed proxy contracts
+        run: node --test head/apps/web/scripts/static-export.test.mjs
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - name: Build baseline API locally
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: base
+          file: base/deploy/docker/server.Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: glperf-server-base:${{ env.BASE_SHA }}
+          cache-from: type=gha,scope=hub-perf-server
+          cache-to: type=gha,mode=min,scope=hub-perf-server
+      - name: Build baseline Web locally
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: base
+          file: base/deploy/docker/web.Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: glperf-web-base:${{ env.BASE_SHA }}
+          cache-from: type=gha,scope=hub-perf-web
+          cache-to: type=gha,mode=min,scope=hub-perf-web
+      - name: Build candidate API locally
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: head
+          file: head/deploy/docker/server.Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: glperf-server-head:${{ env.HEAD_SHA }}
+          cache-from: type=gha,scope=hub-perf-server
+          cache-to: type=gha,mode=min,scope=hub-perf-server
+      - name: Build candidate Web locally
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: head
+          file: head/deploy/docker/web.Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: glperf-web-head:${{ env.HEAD_SHA }}
+          cache-from: type=gha,scope=hub-perf-web
+          cache-to: type=gha,mode=min,scope=hub-perf-web
+      - name: Prepare isolated image browser parity checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_dir="$RUNNER_TEMP/hub-image-browser"
+          npm install --prefix "$browser_dir" --no-save playwright@1.55.0 >/dev/null
+          "$browser_dir/node_modules/.bin/playwright" install --with-deps chromium webkit
+          echo "GLPERF_PLAYWRIGHT_MODULE=$browser_dir/node_modules/playwright/index.mjs" >> "$GITHUB_ENV"
+      - name: Measure baseline through its public Web entry
+        run: node --experimental-strip-types head/scripts/hub-performance/run.mjs --side base --sha "$BASE_SHA" --output "$RUNNER_TEMP/hub-performance-reports/base.json"
+      - name: Measure candidate with fresh isolated volumes
+        if: ${{ !cancelled() }}
+        run: node --experimental-strip-types head/scripts/hub-performance/run.mjs --side head --sha "$HEAD_SHA" --output "$RUNNER_TEMP/hub-performance-reports/head.json"
+      - name: Report descriptive comparisons without invented measurements
+        if: ${{ !cancelled() }}
+        run: node head/scripts/hub-performance/report.mjs "$RUNNER_TEMP/hub-performance-reports/base.json" "$RUNNER_TEMP/hub-performance-reports/head.json" "$RUNNER_TEMP/hub-performance-reports/comparison.json"
+      - name: Remove only this run's isolated resources
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          for side in base head; do
+            project="glperf-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${side}"
+            [[ "$project" =~ ^glperf-[0-9]+-[0-9]+-(base|head)$ ]]
+            mapfile -t containers < <(docker ps -aq --filter "label=com.docker.compose.project=$project")
+            if ((${#containers[@]})); then docker rm -f "${containers[@]}" >/dev/null; fi
+            mapfile -t volumes < <(docker volume ls -q --filter "label=com.docker.compose.project=$project")
+            if ((${#volumes[@]})); then docker volume rm "${volumes[@]}" >/dev/null; fi
+            mapfile -t networks < <(docker network ls -q --filter "label=com.docker.compose.project=$project")
+            if ((${#networks[@]})); then docker network rm "${networks[@]}" >/dev/null; fi
+          done
+      - name: Preserve numeric synthetic evidence only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hub-resource-baseline-${{ github.run_id }}
+          path: ${{ runner.temp }}/hub-performance-reports/*.json*
+          if-no-files-found: warn
+          retention-days: 3

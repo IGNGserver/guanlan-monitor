@@ -82,10 +82,17 @@ function stubRedis(stored: Record<string, string>, series: Record<string, string
       };
       return chain;
     },
-    async eval(_script: string, _numKeys: number, _hash: string, field: string, expected: string, replacement: string) {
-      evalArgs.push(field, expected, replacement);
-      if (JSON.parse(stored[field]).lastSeenAt !== expected) return 0;
-      stored[field] = replacement;
+    async eval(script: string, numKeys: number, ...args: string[]) {
+      const [field, expected, replacement] = args.slice(numKeys);
+      if (script.includes("state.lastSeenAt")) {
+        evalArgs.push(field, expected, replacement);
+        if (JSON.parse(stored[field]).lastSeenAt !== expected) return 0;
+        stored[field] = replacement;
+      } else if (script.includes("redis.call('hdel'")) {
+        delete stored[field];
+      } else {
+        stored[field] = expected;
+      }
       return 1;
     }
   };

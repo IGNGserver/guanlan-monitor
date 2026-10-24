@@ -68,6 +68,8 @@ services:
       DSC_VERSION: ${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
       DSC_RELEASE_CHANNEL: ${DSC_RELEASE_CHANNEL:-test}
       SERVER_API_URL: http://server:4000
+      # Only the TLS terminator's source CIDR(s), never an untrusted client subnet.
+      DSC_TRUSTED_TLS_PROXY_CIDRS: '${DSC_TRUSTED_TLS_PROXY_CIDRS:-}'
     ports:
       - "${WEB_PORT:-38472}:3000"
     depends_on:

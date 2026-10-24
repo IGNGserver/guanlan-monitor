@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import type { DeviceBlockKey, DeviceMetricKey, MetricWindow } from "@dsc/shared";
@@ -63,18 +63,31 @@ function readRecordField<T>(parsed: Record<string, unknown>, key: string): T {
 
 class LocalJsonStore {
   private readonly filePath: string;
-  private writeQueue = Promise.resolve();
+  private operationQueue = Promise.resolve();
+  // Single-process, single-store ownership per file. External writers are not observed;
+  // use a new store to reload. No filesystem polling occurs on the read path.
+  private committedDb?: LocalDbShape;
+  private hasLegacyVirtualMachines = false;
 
   constructor(filePath = resolve(process.cwd(), "data", "local-db.json")) {
     this.filePath = filePath;
   }
 
-  async read() {
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.operationQueue.then(operation);
+    this.operationQueue = next.then(() => undefined, () => undefined);
+    return next;
+  }
+
+  // Called only within the operation queue: concurrent first reads/writes share one load.
+  // Failed loads leave the cache unset so the next queued operation can retry.
+  private async load(): Promise<LocalDbShape> {
+    if (this.committedDb) return this.committedDb;
     try {
-      const raw = await readFile(this.filePath, "utf8");
+      const raw = await fs.readFile(this.filePath, "utf8");
       const parsed = JSON.parse(raw) as unknown;
       if (!isRecord(parsed)) throw new Error("local database root must be an object");
-      return {
+      const db: LocalDbShape = {
         ...structuredClone(EMPTY_DB),
         devices: readRecordField<LocalDbShape["devices"]>(parsed, "devices"),
         deviceRegistry: readRecordField<NonNullable<LocalDbShape["deviceRegistry"]>>(parsed, "deviceRegistry"),
@@ -84,32 +97,65 @@ class LocalJsonStore {
         fanNotes: readRecordField<LocalDbShape["fanNotes"]>(parsed, "fanNotes"),
         deviceMetricConfigs: readRecordField<LocalDbShape["deviceMetricConfigs"]>(parsed, "deviceMetricConfigs")
       };
+      this.hasLegacyVirtualMachines = Object.hasOwn(parsed, "virtualMachines");
+      this.committedDb = db;
+      return db;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return structuredClone(EMPTY_DB);
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        this.committedDb = structuredClone(EMPTY_DB);
+        return this.committedDb;
+      }
       throw error;
     }
   }
 
-  async update(mutator: (db: LocalDbShape) => void | Promise<void>) {
-    const operation = this.writeQueue.then(async () => {
-      const db = await this.read();
-      await mutator(db);
-      await mkdir(dirname(this.filePath), { recursive: true });
-      const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
-      try {
-        await writeFile(temporaryPath, JSON.stringify(db, null, 2), { encoding: "utf8", mode: 0o600 });
-        await rename(temporaryPath, this.filePath);
-      } catch (error) {
-        await unlink(temporaryPath).catch(() => undefined);
-        throw error;
-      }
-    });
-    this.writeQueue = operation.then(() => undefined, () => undefined);
-    return operation;
+  read() {
+    return this.select((db) => db);
   }
 
-  async removeLegacyVirtualMachineData() {
-    const db = await this.read();
+  // Selectors are synchronous, read-only projections; clone only their result, not the database.
+  select<T>(selector: (db: Readonly<LocalDbShape>) => T): Promise<T> {
+    return this.enqueue(async () => structuredClone(selector(await this.load())));
+  }
+
+  update(mutator: (db: LocalDbShape) => void | Promise<void>) {
+    return this.enqueue(() => this.commit(mutator));
+  }
+
+  updateWhen(needed: (db: Readonly<LocalDbShape>) => boolean, mutator: (db: LocalDbShape) => void | Promise<void>) {
+    return this.enqueue(async () => {
+      // Test the committed snapshot under the same queue before copying it.
+      // A steady registration must not copy ninety days of fallback history.
+      if (needed(await this.load())) await this.commit(mutator);
+    });
+  }
+
+  // Queue-internal only. Mutators must not re-enter this store's queued public methods.
+  private async commit(mutator: (db: LocalDbShape) => void | Promise<void>) {
+    const draft = structuredClone(await this.load());
+    await mutator(draft);
+    const serialized = JSON.stringify(draft, null, 2);
+    // Detach retained draft/input references and publish exactly the JSON persisted on disk.
+    const committed = JSON.parse(serialized) as LocalDbShape;
+    await fs.mkdir(dirname(this.filePath), { recursive: true });
+    const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
+    try {
+      await fs.writeFile(temporaryPath, serialized, { encoding: "utf8", mode: 0o600 });
+      await fs.rename(temporaryPath, this.filePath);
+    } catch (error) {
+      await fs.unlink(temporaryPath).catch(() => undefined);
+      throw error;
+    }
+    this.committedDb = committed;
+    this.hasLegacyVirtualMachines = false;
+  }
+
+  removeLegacyVirtualMachineData() {
+    return this.enqueue(() => this.removeLegacyVirtualMachineDataInQueue());
+  }
+
+  private async removeLegacyVirtualMachineDataInQueue() {
+    const db = await this.load();
     const isLegacyId = (id: string) => id.startsWith("vm:");
     const hasLegacyMetadata = (value: unknown) => {
       if (!isRecord(value)) return false;
@@ -130,7 +176,7 @@ class LocalJsonStore {
       || hasLegacyMetadata(state.latest);
     const hasLegacyDetails = (point: TimeSeriesRecord) => hasLegacyMetadata(point)
       || hasLegacyMetadata(point.recordedDetails);
-    let hasLegacyData = false;
+    let hasLegacyData = this.hasLegacyVirtualMachines;
     for (const [deviceId, state] of Object.entries(db.devices)) {
       if (isLegacyId(deviceId) || hasLegacyState(state)) hasLegacyData = true;
     }
@@ -149,14 +195,9 @@ class LocalJsonStore {
       if (isLegacyId(deviceId) || Object.keys(config.instanceMetricConfig ?? {}).some(isLegacyId)) hasLegacyData = true;
     }
     if (Object.keys(db.fanNotes).some(isLegacyId)) hasLegacyData = true;
-    const raw = await readFile(this.filePath, "utf8").catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? null : Promise.reject(error));
-    if (raw) {
-      const parsed = JSON.parse(raw) as unknown;
-      if (isRecord(parsed) && Object.hasOwn(parsed, "virtualMachines")) hasLegacyData = true;
-    }
     if (!hasLegacyData) return;
 
-    await this.update((current) => {
+    await this.commit((current) => {
       const vmIds = new Set<string>();
       for (const [deviceId, state] of Object.entries(current.devices)) {
         if (isLegacyId(deviceId) || isVirtualMachineState(state)) vmIds.add(deviceId);
@@ -225,15 +266,13 @@ export class LocalRealtimeRepository implements RealtimeRepository {
   }
 
   async getDevice(deviceId: string) {
-    const db = await this.store.read();
-    return db.devices[deviceId] ?? null;
+    return this.store.select((db) => db.devices[deviceId] ?? null);
   }
 
   async listDevices() {
-    const db = await this.store.read();
     // The store-level sweep reads `db.devices` directly, so filtering here cannot hide anything
     // from it.
-    return Object.values(db.devices).filter((state) => !isLegacyVirtualMachineId(state.identity.deviceId));
+    return this.store.select((db) => Object.values(db.devices).filter((state) => !isLegacyVirtualMachineId(state.identity.deviceId)));
   }
 
   async remove(deviceId: string) {
@@ -258,8 +297,7 @@ export class LocalRealtimeRepository implements RealtimeRepository {
   }
 
   async readSeries(deviceId: string, bucket: MetricWindow) {
-    const db = await this.store.read();
-    return db.series[deviceId]?.[bucket] ?? [];
+    return this.store.select((db) => db.series[deviceId]?.[bucket] ?? []);
   }
 
   async clearSeries(deviceId: string) {
@@ -329,33 +367,36 @@ export class LocalHistoryRepository implements HistoryRepository {
   }
 
   async getHistoricalSeries(deviceId: string, bucket: MetricWindow) {
-    const db = await this.store.read();
-    if (bucket === "1m" || bucket === "5m") {
-      return [];
-    }
-    if (bucket === "15m" || bucket === "1h" || bucket === "6h" || bucket === "24h" || bucket === "1d") {
-      const points = db.minuteHistory[deviceId] ?? [];
-      const durationMs =
-        bucket === "15m" ? 15 * 60 * 1000 :
-        bucket === "1h" ? 60 * 60 * 1000 :
-        bucket === "6h" ? 6 * 60 * 60 * 1000 :
-        24 * 60 * 60 * 1000;
-      const threshold = Date.now() - durationMs;
+    return this.store.select((db) => {
+      if (bucket === "1m" || bucket === "5m") {
+        return [];
+      }
+      if (bucket === "15m" || bucket === "1h" || bucket === "6h" || bucket === "24h" || bucket === "1d") {
+        const points = db.minuteHistory[deviceId] ?? [];
+        const durationMs =
+          bucket === "15m" ? 15 * 60 * 1000 :
+          bucket === "1h" ? 60 * 60 * 1000 :
+          bucket === "6h" ? 6 * 60 * 60 * 1000 :
+          24 * 60 * 60 * 1000;
+        const threshold = Date.now() - durationMs;
+        return points.filter((point) => point.timestamp >= threshold);
+      }
+      const points = db.history[deviceId] ?? [];
+      const hours = bucket === "7d" || bucket === "1w" ? 24 * 7 :
+        bucket === "30d" || bucket === "1mo" ? 24 * 31 :
+        bucket === "90d" ? 24 * 90 : 24 * 366;
+      const threshold = Date.now() - hours * 60 * 60 * 1000;
       return points.filter((point) => point.timestamp >= threshold);
-    }
-    const points = db.history[deviceId] ?? [];
-    const hours = bucket === "7d" || bucket === "1w" ? 24 * 7 :
-      bucket === "30d" || bucket === "1mo" ? 24 * 31 :
-      bucket === "90d" ? 24 * 90 : 24 * 366;
-    const threshold = Date.now() - hours * 60 * 60 * 1000;
-    return points.filter((point) => point.timestamp >= threshold);
+    });
   }
 
   async getTrafficSeries(deviceId: string, start: number, end: number) {
-    const db = await this.store.read();
-    const threshold = Math.max(start, Date.now() - 366 * 24 * 60 * 60 * 1000);
-    return (db.history[deviceId] ?? []).filter((point) => point.timestamp >= threshold && point.timestamp < end)
-      .map(({ timestamp, trafficRxBytes, trafficTxBytes }) => ({ timestamp, trafficRxBytes, trafficTxBytes }));
+    return this.store.select((db) => {
+      const threshold = Math.max(start, Date.now() - 366 * 24 * 60 * 60 * 1000);
+      return (db.history[deviceId] ?? [])
+        .filter((point) => point.timestamp >= threshold && point.timestamp < end)
+        .map(({ timestamp, trafficRxBytes, trafficTxBytes }) => ({ timestamp, trafficRxBytes, trafficTxBytes }));
+    });
   }
 
   async clearDeviceHistory(deviceId: string) {
@@ -366,18 +407,19 @@ export class LocalHistoryRepository implements HistoryRepository {
   }
 
   async listKnownDevices() {
-    const db = await this.store.read();
-    const all = new Map<string, TimeSeriesRecord[]>();
-    for (const [deviceId, points] of Object.entries(db.minuteHistory)) all.set(deviceId, [...points]);
-    for (const [deviceId, points] of Object.entries(db.history)) {
-      all.set(deviceId, [...(all.get(deviceId) ?? []), ...points]);
-    }
-    return [...all.entries()]
-      .filter(([, points]) => points.length > 0)
-      .map(([deviceId, points]) => ({
-        deviceId,
-        lastSeenAt: new Date(Math.max(...points.map((point) => point.timestamp))).toISOString()
-      }));
+    return this.store.select((db) => {
+      const all = new Map<string, TimeSeriesRecord[]>();
+      for (const [deviceId, points] of Object.entries(db.minuteHistory)) all.set(deviceId, [...points]);
+      for (const [deviceId, points] of Object.entries(db.history)) {
+        all.set(deviceId, [...(all.get(deviceId) ?? []), ...points]);
+      }
+      return [...all.entries()]
+        .filter(([, points]) => points.length > 0)
+        .map(([deviceId, points]) => ({
+          deviceId,
+          lastSeenAt: new Date(Math.max(...points.map((point) => point.timestamp))).toISOString()
+        }));
+    });
   }
 
   async getTrafficCalendar(
@@ -386,14 +428,15 @@ export class LocalHistoryRepository implements HistoryRepository {
     anchorDate: string,
     selectedStart?: string
   ): Promise<TrafficCalendarResponse> {
-    const db = await this.store.read();
-    const realtimePoints = [
-      ...(db.minuteHistory[deviceId] ?? []),
-      ...(db.series[deviceId]?.["1m"] ?? []),
-      ...(db.series[deviceId]?.["15m"] ?? []),
-      ...(db.history[deviceId] ?? [])
-    ].sort((a, b) => a.timestamp - b.timestamp);
-    return buildTrafficCalendar(realtimePoints, mode, anchorDate, selectedStart);
+    return this.store.select((db) => {
+      const realtimePoints = [
+        ...(db.minuteHistory[deviceId] ?? []),
+        ...(db.series[deviceId]?.["1m"] ?? []),
+        ...(db.series[deviceId]?.["15m"] ?? []),
+        ...(db.history[deviceId] ?? [])
+      ].sort((a, b) => a.timestamp - b.timestamp);
+      return buildTrafficCalendar(realtimePoints, mode, anchorDate, selectedStart);
+    });
   }
 }
 
@@ -401,8 +444,7 @@ export class LocalFanNoteStore implements FanNoteStore {
   constructor(private readonly store: LocalJsonStore) {}
 
   async get(deviceId: string) {
-    const db = await this.store.read();
-    return db.fanNotes[deviceId] ?? {};
+    return this.store.select((db) => db.fanNotes[deviceId] ?? {});
   }
 
   async set(deviceId: string, fanId: string, note: string) {
@@ -417,8 +459,7 @@ export class LocalDeviceMetricConfigStore implements DeviceMetricConfigStore {
   constructor(private readonly store: LocalJsonStore) {}
 
   async get(deviceId: string) {
-    const db = await this.store.read();
-    return db.deviceMetricConfigs[deviceId] ?? null;
+    return this.store.select((db) => db.deviceMetricConfigs[deviceId] ?? null);
   }
 
   async set(deviceId: string, value: DeviceMetricConfigValue) {
@@ -448,16 +489,20 @@ export class LocalDeviceRepository implements DeviceRepository {
     if (isLegacyVirtualMachineId(deviceId)) return legacyVirtualMachineRecord(deviceId);
 
     let resultRecord!: DeviceRecord;
-    await this.store.update((db) => {
+    await this.store.updateWhen((db) => {
+      const existing = db.deviceRegistry?.[deviceId];
+      if (existing && (existing.status === "closed" && !options?.reopenClosed
+        || options?.skipUnchanged && existing.status === "open" && (!name || name === existing.name))) {
+        resultRecord = { ...existing };
+        return false;
+      }
+      return true;
+    }, (db) => {
       const registry = (db.deviceRegistry ??= {});
       const now = new Date().toISOString();
       const existing = registry[deviceId];
 
       if (existing) {
-        if (existing.status === "closed" && !options?.reopenClosed) {
-          resultRecord = { ...existing };
-          return;
-        }
         existing.status = "open";
         existing.updatedAt = now;
         if (name) existing.name = name;
@@ -481,11 +526,9 @@ export class LocalDeviceRepository implements DeviceRepository {
   }
 
   async listOpenDevices(): Promise<DeviceRecord[]> {
-    const db = await this.store.read();
-    const registry = db.deviceRegistry ?? {};
-    return Object.values(registry)
+    return this.store.select((db) => Object.values(db.deviceRegistry ?? {})
       .filter((d) => d.status === "open" && !isLegacyVirtualMachineId(d.deviceId))
-      .sort((a, b) => (a.sortOrder - b.sortOrder) || a.deviceId.localeCompare(b.deviceId));
+      .sort((a, b) => (a.sortOrder - b.sortOrder) || a.deviceId.localeCompare(b.deviceId)));
   }
 
   async deleteDevice(deviceId: string): Promise<void> {

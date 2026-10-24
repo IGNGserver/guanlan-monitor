@@ -5,8 +5,15 @@ import {
   legacyVirtualMachineRecord
 } from "../legacy-devices.js";
 import type { DeviceRecord, DeviceRegistrationOptions, DeviceRepository } from "../types.js";
+import { KeyedSerialQueue } from "../serial-queue.js";
 
 export class MysqlDeviceRepository implements DeviceRepository {
+  private readonly deviceQueues = new KeyedSerialQueue();
+  // FIFO: only successful registry reads/writes enter the cache. Hits do not
+  // refresh insertion order, and callers never receive the stored object.
+  private readonly registeredDevices = new Map<string, DeviceRecord>();
+  private readonly registrationCacheLimit = 4_096;
+
   constructor(private readonly pool: mysql.Pool) {}
 
   async init() {
@@ -32,6 +39,28 @@ export class MysqlDeviceRepository implements DeviceRepository {
     // not reached yet, leaving rows nothing would ever clean again.
     if (isLegacyVirtualMachineId(deviceId)) return legacyVirtualMachineRecord(deviceId);
 
+    return this.deviceQueues.run(deviceId, async () => {
+      const cached = this.registeredDevices.get(deviceId);
+      if (options?.skipUnchanged && cached?.status === "open" && (!name || name === cached.name)) {
+        return { ...cached };
+      }
+
+      // A failed/ambiguous write must never leave an old successful fast path.
+      this.registeredDevices.delete(deviceId);
+      const record = await this.registerDeviceUncached(deviceId, name, options);
+      this.registeredDevices.set(deviceId, { ...record });
+      if (this.registeredDevices.size > this.registrationCacheLimit) {
+        this.registeredDevices.delete(this.registeredDevices.keys().next().value!);
+      }
+      return { ...record };
+    });
+  }
+
+  private async registerDeviceUncached(
+    deviceId: string,
+    name?: string,
+    options?: DeviceRegistrationOptions
+  ): Promise<DeviceRecord> {
     const now = new Date();
     const formattedNow = now.toISOString().slice(0, 19).replace("T", " ");
 
@@ -103,24 +132,32 @@ export class MysqlDeviceRepository implements DeviceRepository {
     // A soft delete is an INSERT here, so it is the one other path that could resurrect a legacy
     // row the sweep just removed.
     if (isLegacyVirtualMachineId(deviceId)) return;
-    const formattedNow = new Date().toISOString().slice(0, 19).replace("T", " ");
-    await this.pool.query(
-      `
-        INSERT INTO devices (device_id, name, status, sort_order, registered_at, updated_at)
-        VALUES (?, ?, 'closed', 0, ?, ?)
-        ON DUPLICATE KEY UPDATE status = 'closed', updated_at = ?
-      `,
-      [deviceId, deviceId, formattedNow, formattedNow, formattedNow]
-    );
+    await this.deviceQueues.run(deviceId, async () => {
+      this.registeredDevices.delete(deviceId);
+      const formattedNow = new Date().toISOString().slice(0, 19).replace("T", " ");
+      await this.pool.query(
+        `
+          INSERT INTO devices (device_id, name, status, sort_order, registered_at, updated_at)
+          VALUES (?, ?, 'closed', 0, ?, ?)
+          ON DUPLICATE KEY UPDATE status = 'closed', updated_at = ?
+        `,
+        [deviceId, deviceId, formattedNow, formattedNow, formattedNow]
+      );
+    });
   }
 
   async reorderDevices(deviceIds: string[]): Promise<void> {
     const formattedNow = new Date().toISOString().slice(0, 19).replace("T", " ");
     for (let i = 0; i < deviceIds.length; i++) {
-      await this.pool.query(
-        `UPDATE devices SET sort_order = ?, updated_at = ? WHERE device_id = ?`,
-        [i, formattedNow, deviceIds[i]]
-      );
+      const deviceId = deviceIds[i];
+      if (isLegacyVirtualMachineId(deviceId)) continue;
+      await this.deviceQueues.run(deviceId, async () => {
+        this.registeredDevices.delete(deviceId);
+        await this.pool.query(
+          `UPDATE devices SET sort_order = ?, updated_at = ? WHERE device_id = ?`,
+          [i, formattedNow, deviceId]
+        );
+      });
     }
   }
 }

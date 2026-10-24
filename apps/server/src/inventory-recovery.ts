@@ -1,24 +1,32 @@
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
-import type { Repositories } from "./types.js";
+import type { Repositories, RealtimeDeviceSummary } from "./types.js";
 import { toSummary } from "./utils.js";
 
 /** Hot path: registry + realtime only, never historical telemetry. */
 export async function buildDeviceSummaries(repositories: Repositories, log: FastifyBaseLogger) {
   const [openDevices, realtimeDevices] = await Promise.all([
-    repositories.devices.listOpenDevices(), repositories.realtime.listDevices()
+    repositories.devices.listOpenDevices(),
+    repositories.realtime.listSummaries
+      ? repositories.realtime.listSummaries()
+      : repositories.realtime.listDevices().then((states): RealtimeDeviceSummary[] => states.map((state) => ({
+        ...toSummary(state), registrationHostname: state.identity.hostname
+      })))
   ]);
-  const realtimeMap = new Map(realtimeDevices.map((state) => [state.identity.deviceId, state]));
+  const realtimeMap = new Map(realtimeDevices.map((state) => [state.deviceId, state]));
   const registeredIds = new Set(openDevices.map((device) => device.deviceId));
   for (const realtimeState of realtimeDevices) {
-    if (!registeredIds.has(realtimeState.identity.deviceId)) {
-      const record = await repositories.devices.registerOrUpdateDevice(realtimeState.identity.deviceId, realtimeState.identity.hostname);
+    if (!registeredIds.has(realtimeState.deviceId)) {
+      const record = await repositories.devices.registerOrUpdateDevice(realtimeState.deviceId, realtimeState.registrationHostname ?? realtimeState.hostname);
       if (record.status === "open") { openDevices.push(record); registeredIds.add(record.deviceId); }
     }
   }
   return openDevices.map((record) => {
     const realtimeState = realtimeMap.get(record.deviceId);
     if (realtimeState) {
-      try { return { ...toSummary(realtimeState), sortOrder: record.sortOrder }; }
+      try {
+        const { registrationHostname: _hostname, ...publicSummary } = realtimeState;
+        return { ...publicSummary, sortOrder: record.sortOrder };
+      }
       catch (error) { log.error({ error, deviceId: record.deviceId }, "failed to summarize device state"); }
     }
     return {

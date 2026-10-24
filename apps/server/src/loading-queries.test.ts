@@ -6,6 +6,9 @@ import { buildDeviceSummaries, registerInventoryRecovery } from "./inventory-rec
 import { MysqlHistoryRepository } from "./repositories/history.js";
 import { buildTrafficCalendar, trafficCalendarBounds } from "./traffic-calendar.js";
 import { MetricsService } from "./services/metrics.js";
+import { createHubContractPayload } from "./hub-contract-fixtures.js";
+import { toSummary } from "./utils.js";
+import { overviewToMetricSeries } from "./overview.js";
 import type { DeviceRecord, MetricAccumulator, Repositories, TrafficHistoryPoint, TimeSeriesRecord } from "./types.js";
 
 function deferred<T>() {
@@ -29,6 +32,131 @@ test("device lists never read historical discovery and retain offline registry o
       assert.equal(devices[0].status, "offline");
       assert.equal(devices[0].cpuUsagePercent, null);
     }
+  } finally { await app.close(); }
+});
+
+test("narrow device lists never deserialize full realtime hardware states", async () => {
+  const app = Fastify();
+  const payload = createHubContractPayload({ deviceId: "narrow", timestamp: Date.now() });
+  const summary = toSummary({ identity: payload.identity, latest: payload, status: "online", lastSeenAt: payload.timestamp });
+  const repositories = {
+    devices: { listOpenDevices: async () => [record("narrow", 3)] },
+    realtime: {
+      listSummaries: async () => [summary],
+      listDevices: async () => { throw new Error("full hardware scan is forbidden"); }
+    }
+  } as unknown as Repositories;
+  try {
+    assert.deepEqual(await buildDeviceSummaries(repositories, app.log), [{ ...summary, sortOrder: 3 }]);
+  } finally { await app.close(); }
+});
+
+test("inventory projection preserves the original registration hostname without exposing its private field", async () => {
+  const app = Fastify();
+  const payload = createHubContractPayload({ deviceId: "workstation", timestamp: Date.now() });
+  const state = { identity: payload.identity, latest: payload, status: "online" as const, lastSeenAt: payload.timestamp };
+  const summary = { ...toSummary(state), registrationHostname: "original-host" };
+  const repositories = {
+    devices: {
+      listOpenDevices: async () => [],
+      registerOrUpdateDevice: async (_id: string, name: string) => {
+        assert.equal(name, "original-host");
+        return record("workstation");
+      }
+    }, realtime: { listSummaries: async () => [summary] }
+  } as unknown as Repositories;
+  try {
+    const [result] = await buildDeviceSummaries(repositories, app.log);
+    assert.equal(result.hostname, "工作站");
+    assert.equal("registrationHostname" in result, false);
+  } finally { await app.close(); }
+});
+
+test("offline scans drain bounded expiry pages in one sweep and never scan all hardware", async () => {
+  const payload = createHubContractPayload({ timestamp: Date.now() });
+  const lastSeenAt = new Date(Date.now() - 60_000).toISOString();
+  const states = Array.from({ length: 257 }, (_, index) => ({
+    identity: { ...payload.identity, deviceId: `expired-${index}` }, latest: payload, status: "online" as const, lastSeenAt
+  }));
+  let scans = 0, marked = 0, active = 0, maximum = 0;
+  const service = new MetricsService({ realtime: {
+    listDevices: async () => { throw new Error("full hardware scan is forbidden"); },
+    listExpiredDevices: async (cutoff: number) => {
+      assert.ok(cutoff >= Date.parse(lastSeenAt));
+      const page = states.slice(scans * 128, ++scans * 128);
+      return page;
+    },
+    markOfflineIfMatch: async () => {
+      active++; maximum = Math.max(maximum, active);
+      await Promise.resolve();
+      active--; marked++;
+      return true;
+    }
+  } } as unknown as Repositories, () => {}, { get: async () => null, set: async () => {} });
+  await service.markOfflineDevices();
+  assert.equal(marked, 257);
+  assert.equal(scans, 4);
+  assert.ok(maximum <= 8);
+});
+
+test("concurrent identical history reads share SQL only until settlement, with no stale TTL cache", async () => {
+  const read = deferred<TimeSeriesRecord[]>();
+  let calls = 0;
+  const service = new MetricsService({ history: {
+    getHistoricalSeries: async () => { calls++; return calls === 1 ? read.promise : []; }
+  } } as unknown as Repositories, () => {}, { get: async () => null, set: async () => {} });
+  const first = service.getSeries("node", "1h");
+  const second = service.getSeries("node", "1h");
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  read.resolve([]);
+  assert.deepEqual(await Promise.all([first, second]), [[], []]);
+  await service.getSeries("node", "1h");
+  assert.equal(calls, 2);
+});
+
+test("MySQL readiness uses a bounded SELECT 1, never history or hardware scans", async () => {
+  const queries: unknown[] = [];
+  let fail = true;
+  const repository = new MysqlHistoryRepository({ query: async (query: unknown) => {
+    queries.push(query);
+    if (fail) throw new Error("synthetic mysql unavailable");
+    return [[{ 1: 1 }], []];
+  } } as unknown as mysql.Pool);
+  await assert.rejects(repository.checkReadiness(), /synthetic mysql unavailable/);
+  fail = false;
+  await repository.checkReadiness();
+  assert.deepEqual(queries, [{ sql: "SELECT 1", timeout: 2000 }, { sql: "SELECT 1", timeout: 2000 }]);
+});
+
+test("public readiness stays unavailable until Redis and SQL recover and never leaks backend errors", async () => {
+  const { registerRoutes } = await import("./routes.js");
+  const app = Fastify();
+  let sqlReady = false, redisReady = true, probes = 0;
+  const repositories = {
+    realtime: {
+      checkReadiness: async () => { if (!redisReady) throw new Error("private redis error"); },
+      listDevices: async () => { throw new Error("must not scan full device hardware"); }
+    },
+    history: { checkReadiness: async () => { probes++; if (!sqlReady) throw new Error("private mysql error"); } }
+  } as unknown as Repositories;
+  const configs = { get: async () => null, set: async () => {} };
+  await registerRoutes(app, repositories, new MetricsService(repositories, () => {}, configs),
+    { metricConfigs: configs, fanNotes: { get: async () => ({}), set: async () => {} } });
+  try {
+    let response = await app.inject({ url: "/api/health/readiness" });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { status: "not_ready" });
+    sqlReady = true;
+    response = await app.inject({ url: "/api/health/readiness" });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json(), { status: "ready" });
+    assert.equal(probes, 2);
+    redisReady = false;
+    response = await app.inject({ url: "/api/health/readiness" });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { status: "not_ready" });
+    assert.equal(probes, 2);
   } finally { await app.close(); }
 });
 
@@ -154,4 +282,59 @@ test("calendar service uses projection and preserves current hour/minute counter
   const expected = [{ timestamp: hour, trafficRxBytes: 100, trafficTxBytes: 200 }].filter((point) => point.timestamp !== minute);
   expected.push({ timestamp: minute, trafficRxBytes: 120, trafficTxBytes: 240 });
   assert.deepEqual(await service.getTrafficCalendar("node", "day", anchor), buildTrafficCalendar(expected, "day", anchor));
+});
+
+test("MySQL overview selects only numeric fields and JSON paths with the original table/range for every window", async () => {
+  const calls: Array<{ sql: string; params: unknown }> = [];
+  const pool = { query: async (sql: string, params: unknown) => {
+    calls.push({ sql, params });
+    return [[{ timestamp: "1000", cpuUsagePercent: "0", networkRxBytesPerSec: "12", networkTxBytesPerSec: "0",
+      memoryUsedJson: "1024", diskUsedValuesJson: "[0,7,null,11]",
+      metricQualityJson: '{"cpuUsage":{"state":"direct"},"networkRxRate":{"state":"stale"}}',
+      unavailableMetricsJson: '["diskUsage"]' }]];
+  } } as unknown as mysql.Pool;
+  const history = new MysqlHistoryRepository(pool);
+  for (const window of ["1m", "5m"] as const) assert.deepEqual(await history.getOverviewSeries("node", window), []);
+  assert.equal(calls.length, 0);
+  const cases = [
+    ["15m", "minute", "MINUTE", 15], ["1h", "minute", "MINUTE", 60], ["6h", "minute", "MINUTE", 360],
+    ["24h", "minute", "MINUTE", 1440], ["1d", "minute", "MINUTE", 1440],
+    ["7d", "hourly", "HOUR", 168], ["1w", "hourly", "HOUR", 168],
+    ["30d", "hourly", "HOUR", 744], ["1mo", "hourly", "HOUR", 744],
+    ["90d", "hourly", "HOUR", 2160], ["1y", "hourly", "HOUR", 8784]
+  ] as const;
+  for (const [window, table, unit, range] of cases) {
+    const points = await history.getOverviewSeries("node", window);
+    const call = calls.at(-1)!;
+    assert.deepEqual(call.params, ["node", range]);
+    assert.match(call.sql, new RegExp(`FROM device_${table}_metrics`));
+    assert.match(call.sql, new RegExp(`recorded_at >= DATE_SUB\\(UTC_TIMESTAMP\\(\\), INTERVAL \\? ${unit}\\)`));
+    assert.match(call.sql, /ORDER BY recorded_at ASC/);
+    assert.match(call.sql, /JSON_EXTRACT\(recorded_details_json, '\$\.memory\.usedBytes'\)/);
+    assert.match(call.sql, /JSON_TYPE\(disk_instances_json\) = 'ARRAY' AND JSON_LENGTH\(disk_instances_json\) > 0/);
+    assert.match(call.sql, /JSON_EXTRACT\(disk_instances_json, '\$\[\*\]\.usedBytes'\)/);
+    assert.match(call.sql, /JSON_EXTRACT\(recorded_details_json, '\$\.disks\[\*\]\.usedBytes'\)/);
+    assert.doesNotMatch(call.sql, /SELECT\s+\*|(?:recorded_details_json|disk_instances_json|gpu_instances_json)\s+AS\b|\bLIMIT\b|\bAVG\s*\(/i);
+    assert.equal(points[0].memoryUsedBytes, 1024);
+    assert.equal(points[0].diskUsedBytes, 18);
+    assert.equal("recordedDetails" in points[0], false);
+    assert.deepEqual(overviewToMetricSeries(points).cpuUsagePercent, [{ timestamp: "1970-01-01T00:00:01.000Z", value: 0 }]);
+    assert.deepEqual(overviewToMetricSeries(points).diskUsedBytes, []);
+    assert.deepEqual(overviewToMetricSeries(points).networkRxBytesPerSec, []);
+  }
+});
+
+test("MySQL overview normalizes native and serialized JSON scalars, arrays and old missing paths", async () => {
+  const variants = [
+    { memoryUsedJson: null, diskUsedValuesJson: null, metricQualityJson: null, unavailableMetricsJson: null },
+    { memoryUsedJson: "null", diskUsedValuesJson: "[]", metricQualityJson: "{}", unavailableMetricsJson: "[]" },
+    { memoryUsedJson: 0, diskUsedValuesJson: [0, null], metricQualityJson: { cpuUsage: { state: "derived" } }, unavailableMetricsJson: [] },
+    { memoryUsedJson: '"1024"', diskUsedValuesJson: '["3",0,4]', metricQualityJson: "{}", unavailableMetricsJson: "[]" }
+  ];
+  const pool = { query: async () => [variants.map((variant, index) => ({ timestamp: index * 1000, cpuUsagePercent: 0,
+    networkRxBytesPerSec: 0, networkTxBytesPerSec: 0, ...variant }))] } as unknown as mysql.Pool;
+  const points = await new MysqlHistoryRepository(pool).getOverviewSeries("node", "1h");
+  assert.deepEqual(points.map((point) => point.memoryUsedBytes), [0, 0, 0, 1024]);
+  assert.deepEqual(points.map((point) => point.diskUsedBytes), [0, 0, 0, 7]);
+  assert.equal(overviewToMetricSeries(points).cpuUsagePercent.length, 4);
 });

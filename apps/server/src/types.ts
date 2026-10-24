@@ -133,6 +133,8 @@ export interface DeviceRecord {
 
 export interface DeviceRegistrationOptions {
   reopenClosed?: boolean;
+  /** Authoritative steady ingest may skip an unchanged registry touch. */
+  skipUnchanged?: boolean;
 }
 
 export interface DeviceRepository {
@@ -162,17 +164,29 @@ export interface RealtimeRepository {
   ): Promise<boolean>;
   getDevice(deviceId: string): Promise<DeviceRealtimeState | null>;
   listDevices(): Promise<DeviceRealtimeState[]>;
+  /** Narrow read models; older/local adapters may retain the compatible fallback. */
+  listSummaries?(): Promise<RealtimeDeviceSummary[]>;
+  listExpiredDevices?(cutoff: number, limit?: number): Promise<DeviceRealtimeState[]>;
+  checkReadiness?(): Promise<void>;
   remove(deviceId: string): Promise<void>;
   appendSeries(deviceId: string, bucket: MetricWindow, point: TimeSeriesRecord, maxPoints: number): Promise<void>;
   readSeries(deviceId: string, bucket: MetricWindow): Promise<TimeSeriesRecord[]>;
   clearSeries(deviceId: string): Promise<void>;
 }
 
+/** Internal inventory projection: display aliases must not rename registry records. */
+export interface RealtimeDeviceSummary extends DeviceSummary {
+  registrationHostname?: string;
+}
+
 export interface HistoryRepository {
+  checkReadiness?(): Promise<void>;
   getTrafficSeries(deviceId: string, start: number, end: number): Promise<TrafficHistoryPoint[]>;
   insertMinutePoint(deviceId: string, point: TimeSeriesRecord): Promise<void>;
   insertHourlyPoint(deviceId: string, point: TimeSeriesRecord): Promise<void>;
   getHistoricalSeries(deviceId: string, bucket: MetricWindow): Promise<TimeSeriesRecord[]>;
+  /** Narrow overview read; local/older adapters can keep the full-series fallback. */
+  getOverviewSeries?(deviceId: string, bucket: MetricWindow): Promise<OverviewRecord[]>;
   clearDeviceHistory(deviceId: string): Promise<void>;
   getTrafficCalendar(
     deviceId: string,
@@ -182,6 +196,18 @@ export interface HistoryRepository {
   ): Promise<TrafficCalendarResponse>;
   listKnownDevices(): Promise<Array<{ deviceId: string; lastSeenAt: string }>>;
   runRetentionCleanup?(): Promise<void>;
+}
+
+/** Resolved legacy capacity fallbacks, without hardware detail/instance payloads. */
+export interface OverviewRecord {
+  timestamp: number;
+  cpuUsagePercent: number;
+  memoryUsedBytes: number;
+  diskUsedBytes: number;
+  networkRxBytesPerSec: number;
+  networkTxBytesPerSec: number;
+  metricQuality?: AgentMetricsPayload["metricQuality"];
+  unavailableMetrics?: AgentMetricsPayload["unavailableMetrics"];
 }
 
 export interface TrafficHistoryPoint {

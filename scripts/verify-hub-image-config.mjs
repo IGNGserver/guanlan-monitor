@@ -10,15 +10,15 @@ const read = (relativePath) => {
 };
 
 // Guards the Hub deployment footprint: the published server/web images must
-// ship only the traced runtime, never the full workspace node_modules (which
-// also drags in the desktop/Electron dependency closure).
+// ship only the server production closure / web public export, never the full
+// workspace node_modules (including the desktop/Electron dependency closure).
 const config = read(path.join("apps", "web", "next.config.mjs"));
 
 if (fs.existsSync(path.join(root, "apps", "web", "next.config.ts"))) {
   throw new Error("next.config.ts must not exist: the standalone runtime loader cannot read TypeScript config.");
 }
-if (!config.includes('output: "standalone"')) {
-  throw new Error("Web config must enable the standalone output for a minimal runtime image.");
+if (!config.includes('output: staticExport ? "export" : "standalone"') || !config.includes('process.env.DSC_STATIC_EXPORT === "true"')) {
+  throw new Error("Web config must enable opt-in export and retain standalone for non-delivery tests.");
 }
 if (!/images:\s*\{\s*unoptimized:\s*true/.test(config)) {
   throw new Error("Web config must disable Next image optimization (the workspace uses plain <img> assets).");
@@ -28,11 +28,18 @@ if (!config.includes("outputFileTracingExcludes")) {
 }
 
 const webDockerfile = read(path.join("deploy", "docker", "web.Dockerfile"));
-if (!webDockerfile.includes(".next/standalone")) {
-  throw new Error("Web Dockerfile must copy the Next standalone output.");
+const runner = webDockerfile.split(/^FROM .* AS runner\s*$/m)[1];
+if (!runner || !webDockerfile.includes('FROM ${NGINX_IMAGE} AS runner') || !/ARG NGINX_IMAGE=nginx:\d+\.\d+\.\d+-alpine[\d.]+@sha256:[a-f0-9]{64}\n/.test(webDockerfile)) {
+  throw new Error("Web runtime must use an official version-and-digest-pinned nginx image.");
 }
-if (!webDockerfile.includes('CMD ["node", "apps/web/server.js"]')) {
-  throw new Error("Web Dockerfile must start the standalone server directly with node.");
+if (!webDockerfile.includes("ARG DSC_STATIC_EXPORT=true") || !webDockerfile.includes('test "$DSC_STATIC_EXPORT" = true') || !runner.includes("/app/apps/web/out/ /srv/guanlan/")) {
+  throw new Error("Web Dockerfile must require and copy the static export.");
+}
+if (!runner.includes('CMD ["nginx", "-g", "daemon off;"]') || /node|pnpm|\.next|standalone|packages\/|apps\/web\/public/.test(runner.replace("/app/apps/web/out/", ""))) {
+  throw new Error("Web runtime must not ship Node, Next, dependencies or workspace sources.");
+}
+for (const filename of ["web.nginx.conf", "web-proxy.conf", "web-security-headers.conf"]) {
+  if (!runner.includes(`deploy/docker/${filename} /etc/nginx/`)) throw new Error(`Web runtime must install ${filename}.`);
 }
 if (!webDockerfile.includes("--filter @dsc/web...")) {
   throw new Error("Web Dockerfile must install only the @dsc/web dependency closure.");
