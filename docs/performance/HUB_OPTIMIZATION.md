@@ -22,8 +22,8 @@ being marked verified.
 | --- | --- | --- |
 | 0 | Isolated baseline, reusable payload/golden contracts, resource accounting | paired smoke verified; some block IO unavailable |
 | 1 | Session expiry, timeout ownership, queue/timer lifecycle and scan reentry | local + CI verify + paired functional smoke passed |
-| 2 | Configuration snapshots, registration fast path, dirty aggregate flush | local 156 tests passed; CI pending |
-| 3 | Atomic bounded Redis append, narrow summary and expiry read models | pending |
+| 2 | Configuration snapshots, registration fast path, dirty aggregate flush | local + CI + paired smoke passed |
+| 3 | Atomic bounded Redis append, narrow summary and expiry read models | local unit tests passed; real Redis CI pending |
 | 4 | Overview projection, bounded query concurrency and shared historical reads | pending |
 | 5 | Static Web, fixed-upstream proxy, security/PWA/deep-link parity | pending |
 | 6 | Incremental aggregation, versioned hardware storage and bounded maintenance | pending |
@@ -181,7 +181,7 @@ production storage engine. Do not switch language and storage in one cutover.
   fresh aggregate snapshot after any old periodic flush. No operation is
   reported cancelled while it still owns the database/queue slot.
 
-### Stage 2 local work (CI pending)
+### Stage 2 verification
 
 - Configuration/note reads use a single lazily loaded committed snapshot and
   clone only their selected value. Successful copy-on-write persistence alone
@@ -203,3 +203,30 @@ production storage engine. Do not switch language and storage in one cutover.
 - Candidate server typecheck and **156/156 tests passed** in local scratch,
   including 100 unchanged registrations with zero registry SQL/disk writes,
   snapshot read-count/rollback tests and storage-failure retry tests.
+- [Paired smoke 40091041709](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40091041709)
+  passed (`baseline`, 5m35s) for `45c6432f`; [CI 40091041667](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40091041667)
+  passed all jobs. [Real SQL](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40091041650)
+  and [macOS](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40091041659)
+  also passed. Single paired ingest CPU: API 1.108s vs 1.465s base (-24.37%),
+  MySQL 0.544s vs 0.941s (-42.16%). API mean memory 69.7MB vs 74.1MB (-6%).
+  These are descriptive short-run observations, not a stable percentage promise;
+  some block IO remains unavailable and full-scale/soak gates are still open.
+
+### Stage 3 local work (real Redis CI pending)
+
+- Ordered raw Redis lists use tail-only decode/append or replacement after an
+  independent strict-order certification. Preexisting unordered/duplicate or
+  corrupt lists retain first-match legacy behavior. JSON bytes are not encoded
+  through Lua, preserving empty arrays. Certification assumes one Hub writer;
+  old/new mixed writers are not supported with the marker retained.
+- Atomic state/summary/online-expiry updates support narrow inventory reads,
+  bounded expiry pages and PING-only readiness, instead of full hardware HVALS.
+  Startup backfill uses HSCAN plus compare-before-write and a durable completion
+  marker; interrupted migrations retry. A heartbeat accepted between expiry
+  selection and state lookup is rechecked before offline CAS.
+- The unused Redis 15m aggregate write is retired; public 15m queries continue
+  using minute history plus the current accumulator, with unchanged retention.
+- Candidate typecheck passed; server suite: **180 passed / 15 real-Redis skipped**.
+  Dedicated Redis contract invocation: **7 passed / 26 skipped**, because no
+  Redis runs locally. PR query-regression now supplies an isolated Redis service
+  and loopback database `/15`; fixtures only delete their own known keys.

@@ -6,6 +6,8 @@ import { buildDeviceSummaries, registerInventoryRecovery } from "./inventory-rec
 import { MysqlHistoryRepository } from "./repositories/history.js";
 import { buildTrafficCalendar, trafficCalendarBounds } from "./traffic-calendar.js";
 import { MetricsService } from "./services/metrics.js";
+import { createHubContractPayload } from "./hub-contract-fixtures.js";
+import { toSummary } from "./utils.js";
 import type { DeviceRecord, MetricAccumulator, Repositories, TrafficHistoryPoint, TimeSeriesRecord } from "./types.js";
 
 function deferred<T>() {
@@ -30,6 +32,70 @@ test("device lists never read historical discovery and retain offline registry o
       assert.equal(devices[0].cpuUsagePercent, null);
     }
   } finally { await app.close(); }
+});
+
+test("narrow device lists never deserialize full realtime hardware states", async () => {
+  const app = Fastify();
+  const payload = createHubContractPayload({ deviceId: "narrow", timestamp: Date.now() });
+  const summary = toSummary({ identity: payload.identity, latest: payload, status: "online", lastSeenAt: payload.timestamp });
+  const repositories = {
+    devices: { listOpenDevices: async () => [record("narrow", 3)] },
+    realtime: {
+      listSummaries: async () => [summary],
+      listDevices: async () => { throw new Error("full hardware scan is forbidden"); }
+    }
+  } as unknown as Repositories;
+  try {
+    assert.deepEqual(await buildDeviceSummaries(repositories, app.log), [{ ...summary, sortOrder: 3 }]);
+  } finally { await app.close(); }
+});
+
+test("inventory projection preserves the original registration hostname without exposing its private field", async () => {
+  const app = Fastify();
+  const payload = createHubContractPayload({ deviceId: "workstation", timestamp: Date.now() });
+  const state = { identity: payload.identity, latest: payload, status: "online" as const, lastSeenAt: payload.timestamp };
+  const summary = { ...toSummary(state), registrationHostname: "original-host" };
+  const repositories = {
+    devices: {
+      listOpenDevices: async () => [],
+      registerOrUpdateDevice: async (_id: string, name: string) => {
+        assert.equal(name, "original-host");
+        return record("workstation");
+      }
+    }, realtime: { listSummaries: async () => [summary] }
+  } as unknown as Repositories;
+  try {
+    const [result] = await buildDeviceSummaries(repositories, app.log);
+    assert.equal(result.hostname, "工作站");
+    assert.equal("registrationHostname" in result, false);
+  } finally { await app.close(); }
+});
+
+test("offline scans drain bounded expiry pages in one sweep and never scan all hardware", async () => {
+  const payload = createHubContractPayload({ timestamp: Date.now() });
+  const lastSeenAt = new Date(Date.now() - 60_000).toISOString();
+  const states = Array.from({ length: 257 }, (_, index) => ({
+    identity: { ...payload.identity, deviceId: `expired-${index}` }, latest: payload, status: "online" as const, lastSeenAt
+  }));
+  let scans = 0, marked = 0, active = 0, maximum = 0;
+  const service = new MetricsService({ realtime: {
+    listDevices: async () => { throw new Error("full hardware scan is forbidden"); },
+    listExpiredDevices: async (cutoff: number) => {
+      assert.ok(cutoff >= Date.parse(lastSeenAt));
+      const page = states.slice(scans * 128, ++scans * 128);
+      return page;
+    },
+    markOfflineIfMatch: async () => {
+      active++; maximum = Math.max(maximum, active);
+      await Promise.resolve();
+      active--; marked++;
+      return true;
+    }
+  } } as unknown as Repositories, () => {}, { get: async () => null, set: async () => {} });
+  await service.markOfflineDevices();
+  assert.equal(marked, 257);
+  assert.equal(scans, 4);
+  assert.ok(maximum <= 8);
 });
 
 test("background history discovery does not hold listen or lists and never reopens closed records", async () => {

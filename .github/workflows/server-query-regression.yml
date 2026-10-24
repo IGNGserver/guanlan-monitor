@@ -25,6 +25,12 @@ jobs:
         options: >-
           --health-cmd="mysqladmin ping --silent"
           --health-interval=5s --health-timeout=5s --health-retries=30
+      redis:
+        image: redis:7.4-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+        ports: ['127.0.0.1:6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=2s --health-timeout=2s --health-retries=30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
@@ -39,3 +45,7 @@ jobs:
         run: pnpm --filter @dsc/server test:mysql-queries
         env:
           MYSQL_TEST_URL: mysql://root@127.0.0.1:3306/guanlan_query_test
+      - name: Verify atomic Redis append and narrow read models in isolated fixtures
+        run: pnpm --filter @dsc/server test:redis-contracts
+        env:
+          REDIS_TEST_URL: redis://127.0.0.1:6379/15

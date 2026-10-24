@@ -164,10 +164,19 @@ export interface RealtimeRepository {
   ): Promise<boolean>;
   getDevice(deviceId: string): Promise<DeviceRealtimeState | null>;
   listDevices(): Promise<DeviceRealtimeState[]>;
+  /** Narrow read models; older/local adapters may retain the compatible fallback. */
+  listSummaries?(): Promise<RealtimeDeviceSummary[]>;
+  listExpiredDevices?(cutoff: number, limit?: number): Promise<DeviceRealtimeState[]>;
+  checkReadiness?(): Promise<void>;
   remove(deviceId: string): Promise<void>;
   appendSeries(deviceId: string, bucket: MetricWindow, point: TimeSeriesRecord, maxPoints: number): Promise<void>;
   readSeries(deviceId: string, bucket: MetricWindow): Promise<TimeSeriesRecord[]>;
   clearSeries(deviceId: string): Promise<void>;
+}
+
+/** Internal inventory projection: display aliases must not rename registry records. */
+export interface RealtimeDeviceSummary extends DeviceSummary {
+  registrationHostname?: string;
 }
 
 export interface HistoryRepository {

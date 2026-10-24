@@ -3,15 +3,87 @@ import type { MetricWindow } from "@dsc/shared";
 import { normalizeRealtimeState } from "../utils.js";
 import { isLegacyVirtualMachineId } from "../legacy-devices.js";
 import type { DeviceRealtimeState, RealtimeRepository, TimeSeriesRecord } from "../types.js";
+import { RedisRealtimeReadModels } from "./realtime-read-models.js";
 
 const DEVICE_KEY = "dsc:device";
 const SERIES_KEY = "dsc:series";
+const SERIES_ORDER_KEY = "dsc:series-order-v2";
+
+const MAX_SERIES_POINTS = 1_000_000;
+// Keep the original JSON bytes: cjson.encode would turn nested empty arrays into {}.
+// Certification assumes a single Hub owner: mixed old/new writers or external list
+// mutations must not bypass this script while retaining its order marker.
+const APPEND_SERIES_SCRIPT = `
+  local function timestamp(raw)
+    local ok, decoded = pcall(cjson.decode, raw)
+    if ok and type(decoded) == 'table' and type(decoded.timestamp) == 'number'
+        and decoded.timestamp == decoded.timestamp
+        and decoded.timestamp > -math.huge and decoded.timestamp < math.huge then
+      return decoded.timestamp
+    end
+    return nil
+  end
+  local targetTime = tonumber(ARGV[1])
+  local maxP = tonumber(ARGV[3])
+  local tail = redis.call('lindex', KEYS[1], -1)
+  if not tail then
+    redis.call('rpush', KEYS[1], ARGV[2])
+    redis.call('ltrim', KEYS[1], -maxP, -1)
+    redis.call('set', KEYS[2], '1')
+    return 1
+  end
+  local order = redis.call('get', KEYS[2])
+  local tailTime = timestamp(tail)
+  if order == '1' and tailTime then
+    if targetTime > tailTime then
+      redis.call('rpush', KEYS[1], ARGV[2])
+      redis.call('ltrim', KEYS[1], -maxP, -1)
+      return 1
+    elseif targetTime == tailTime then
+      redis.call('lset', KEYS[1], -1, ARGV[2])
+      redis.call('ltrim', KEYS[1], -maxP, -1)
+      return 1
+    end
+  end
+
+  -- Uncertified lists and older arrivals use legacy first-match/append order.
+  -- A missing marker requires a full strict-order check, even after a match.
+  local list = redis.call('lrange', KEYS[1], 0, -1)
+  local found = -1
+  local ordered = order ~= '0'
+  local previous = nil
+  for i, item in ipairs(list) do
+    local itemTime = timestamp(item)
+    if found < 0 and itemTime == targetTime then
+      found = i - 1
+    end
+    if not itemTime or (previous and itemTime <= previous) then ordered = false end
+    previous = itemTime
+  end
+  if found >= 0 then
+    redis.call('lset', KEYS[1], found, ARGV[2])
+  else
+    redis.call('rpush', KEYS[1], ARGV[2])
+    if not tailTime or targetTime <= tailTime then ordered = false end
+  end
+  redis.call('ltrim', KEYS[1], -maxP, -1)
+  redis.call('set', KEYS[2], ordered and '1' or '0')
+  return 1
+`;
 
 export class RedisRealtimeRepository implements RealtimeRepository {
-  constructor(private readonly redis: Redis) {}
+  private readonly models: RedisRealtimeReadModels;
+  constructor(private readonly redis: Redis) {
+    this.models = new RedisRealtimeReadModels(redis);
+  }
+
+  initializeReadModels() { return this.models.initialize(); }
+  listSummaries() { return this.models.listSummaries(); }
+  listExpiredDevices(cutoff: number, limit?: number) { return this.models.listExpiredDevices(cutoff, limit); }
+  checkReadiness() { return this.models.checkReadiness(); }
 
   async upsert(state: DeviceRealtimeState) {
-    await this.redis.hset(DEVICE_KEY, state.identity.deviceId, JSON.stringify(state));
+    await this.models.upsert(state);
   }
 
   async markOfflineIfMatch(
@@ -19,28 +91,7 @@ export class RedisRealtimeRepository implements RealtimeRepository {
     expectedLastSeenAt: string,
     offlineState: DeviceRealtimeState
   ): Promise<boolean> {
-    // The script only compares lastSeenAt; the state that gets written back is serialized by Node.
-    // Round-tripping the stored JSON through `cjson` turned every empty array into `{}`.
-    const script = `
-      local raw = redis.call('hget', KEYS[1], ARGV[1])
-      if not raw then return 0 end
-      local ok, state = pcall(cjson.decode, raw)
-      if not ok then return 0 end
-      if state.lastSeenAt == ARGV[2] then
-        redis.call('hset', KEYS[1], ARGV[1], ARGV[3])
-        return 1
-      end
-      return 0
-    `;
-    const result = await this.redis.eval(
-      script,
-      1,
-      DEVICE_KEY,
-      deviceId,
-      expectedLastSeenAt,
-      JSON.stringify(offlineState)
-    );
-    return result === 1;
+    return this.models.markOfflineIfMatch(deviceId, expectedLastSeenAt, offlineState);
   }
 
   async getDevice(deviceId: string) {
@@ -124,34 +175,21 @@ export class RedisRealtimeRepository implements RealtimeRepository {
   }
 
   async remove(deviceId: string) {
-    await this.redis.hdel(DEVICE_KEY, deviceId);
+    await this.models.remove(deviceId);
     await this.clearSeries(deviceId);
   }
 
   async appendSeries(deviceId: string, bucket: MetricWindow, point: TimeSeriesRecord, maxPoints: number) {
+    if (!Number.isSafeInteger(maxPoints) || maxPoints <= 0 || maxPoints > MAX_SERIES_POINTS) {
+      throw new RangeError(`maxPoints must be a positive safe integer no greater than ${MAX_SERIES_POINTS}`);
+    }
+    if (!Number.isFinite(point.timestamp)) {
+      throw new RangeError("point.timestamp must be finite");
+    }
     const key = `${SERIES_KEY}:${deviceId}:${bucket}`;
+    const orderKey = `${SERIES_ORDER_KEY}:${deviceId}:${bucket}`;
     const pointJson = JSON.stringify(point);
-    const script = `
-      local list = redis.call('lrange', KEYS[1], 0, -1)
-      local targetTime = tonumber(ARGV[1])
-      local found = -1
-      for i, item in ipairs(list) do
-        local ok, decoded = pcall(cjson.decode, item)
-        if ok and decoded.timestamp == targetTime then
-          found = i - 1
-          break
-        end
-      end
-      if found >= 0 then
-        redis.call('lset', KEYS[1], found, ARGV[2])
-      else
-        redis.call('rpush', KEYS[1], ARGV[2])
-      end
-      local maxP = tonumber(ARGV[3])
-      redis.call('ltrim', KEYS[1], -maxP, -1)
-      return 1
-    `;
-    await this.redis.eval(script, 1, key, point.timestamp, pointJson, maxPoints);
+    await this.redis.eval(APPEND_SERIES_SCRIPT, 2, key, orderKey, point.timestamp, pointJson, maxPoints);
   }
 
   async readSeries(deviceId: string, bucket: MetricWindow) {
@@ -161,6 +199,9 @@ export class RedisRealtimeRepository implements RealtimeRepository {
   }
 
   async clearSeries(deviceId: string) {
-    await this.redis.del(`${SERIES_KEY}:${deviceId}:1m`, `${SERIES_KEY}:${deviceId}:5m`, `${SERIES_KEY}:${deviceId}:15m`);
+    await this.redis.del(
+      `${SERIES_KEY}:${deviceId}:1m`, `${SERIES_KEY}:${deviceId}:5m`, `${SERIES_KEY}:${deviceId}:15m`,
+      `${SERIES_ORDER_KEY}:${deviceId}:1m`, `${SERIES_ORDER_KEY}:${deviceId}:5m`, `${SERIES_ORDER_KEY}:${deviceId}:15m`
+    );
   }
 }

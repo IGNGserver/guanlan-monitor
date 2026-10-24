@@ -185,7 +185,8 @@ export async function registerRoutes(
   app.get("/api/health/readiness", async (_request, reply) => {
     // Check repositories / stores readiness
     try {
-      await repositories.realtime.listDevices();
+      if (repositories.realtime.checkReadiness) await repositories.realtime.checkReadiness();
+      else await repositories.realtime.listDevices();
       return { status: "ready" };
     } catch (error) {
       return reply.code(503).send({ status: "not_ready", error: String(error) });

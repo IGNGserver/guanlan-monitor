@@ -64,7 +64,7 @@ test("a fresh sample marks both buckets dirty and retains exact cumulative avera
   assert.deepEqual(hour.map((point) => [point.cpuUsagePercent, point.sampleCount]), [[20, 1], [40, 2]]);
 });
 
-for (const kind of ["minute", "hour", "redis"] as const) {
+for (const kind of ["minute", "hour"] as const) {
   test(`a ${kind} write failure stays dirty and retries without resubmitting a successful partner`, async () => {
     const { service, minute, hour, at, failure } = fixture();
     await service.ingest(at(start + 1_000));
@@ -72,7 +72,7 @@ for (const kind of ["minute", "hour", "redis"] as const) {
     await assert.rejects(service.flushAggregates(), AggregateError);
     failure(kind, false);
     await service.flushAggregates();
-    assert.equal(minute.length, kind === "redis" ? 2 : 1);
+    assert.equal(minute.length, 1);
     assert.equal(hour.length, 1);
     const count = minute.length;
     await service.flushAggregates();
@@ -80,6 +80,17 @@ for (const kind of ["minute", "hour", "redis"] as const) {
     assert.equal(hour.length, 1);
   });
 }
+
+test("minute/hour flush does not write the retired Redis 15m aggregate cache", async () => {
+  const { service, minute, hour, at, failure } = fixture();
+  await service.ingest(at(start + 1_000));
+  failure("redis", true);
+  await service.flushAggregates();
+  await service.ingest(at(start + 61_000));
+  await service.flushAggregates();
+  assert.equal(minute.length, 2);
+  assert.equal(hour.length, 2);
+});
 
 test("rollover never resubmits a bucket that was successfully flushed unchanged", async () => {
   const { service, minute, hour, at } = fixture();

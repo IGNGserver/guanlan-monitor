@@ -87,7 +87,10 @@ if (env.REDIS_URL) {
 const realtime = redisClient
   ? new RedisRealtimeRepository(redisClient)
   : new LocalRealtimeRepository(store);
-if (realtime instanceof RedisRealtimeRepository) legacyCleanupSteps.push(() => realtime.removeLegacyVirtualMachineData());
+if (realtime instanceof RedisRealtimeRepository) {
+  await realtime.initializeReadModels();
+  legacyCleanupSteps.push(() => realtime.removeLegacyVirtualMachineData());
+}
 
 let mysqlPool: mysql.Pool | null = null;
 if (env.MYSQL_URL) {

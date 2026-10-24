@@ -1,7 +1,6 @@
 import type { AgentMetricsPayload, DeviceMetricConfigPayload, DeviceMetricKey, DeviceRealtimeEvent, MetricWindow, TemperatureSensorReading } from "@dsc/shared";
 import type { TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import type {
-  AggregatedWindowConfig,
   DeviceMetricConfigValue,
   DeviceMetricConfigStore,
   DeviceEventEmitter,
@@ -14,12 +13,6 @@ import { buildTrafficCalendar, trafficCalendarBounds } from "../traffic-calendar
 import { ALL_DEVICE_METRIC_KEYS, HEARTBEAT_TIMEOUT_MS, payloadToTimeSeries, toSummary } from "../utils.js";
 import { forEachBounded, KeyedSerialQueue } from "../serial-queue.js";
 import { nonOverlappingTask } from "../lifecycle.js";
-
-const LIVE_WINDOWS: AggregatedWindowConfig[] = [
-  { bucket: "1m", maxPoints: 30 },
-  { bucket: "5m", maxPoints: 150 },
-  { bucket: "15m", maxPoints: 15 }
-];
 
 const HOURLY_WINDOW_MS = 60 * 60 * 1000;
 const MINUTE_WINDOW_MS = 60 * 1000;
@@ -131,10 +124,8 @@ export class MetricsService {
   }
 
   private async performOfflineScan() {
-    const devices = await this.repositories.realtime.listDevices();
     const now = Date.now();
-
-    await forEachBounded(devices, async (device) => {
+    const scanBatch = (devices: DeviceRealtimeState[]) => forEachBounded(devices, async (device) => {
       if (device.status === "offline") return;
       if (now - Date.parse(device.lastSeenAt) < HEARTBEAT_TIMEOUT_MS) return;
       const offlineState = { ...device, status: "offline" as const };
@@ -150,6 +141,17 @@ export class MetricsService {
         });
       }
     });
+    if (!this.repositories.realtime.listExpiredDevices) {
+      await scanBatch(await this.repositories.realtime.listDevices());
+      return;
+    }
+    // Drain bounded pages in this sweep, not one page per five-second tick:
+    // the number of devices must not add artificial offline-detection delay.
+    for (;;) {
+      const devices = await this.repositories.realtime.listExpiredDevices(now - HEARTBEAT_TIMEOUT_MS);
+      if (!devices.length) return;
+      await scanBatch(devices);
+    }
   }
 
   async getSeries(deviceId: string, window: MetricWindow) {
@@ -303,7 +305,6 @@ export class MetricsService {
   private async persistMinuteAccumulator(deviceId: string, current: MetricAccumulator) {
     if (!this.dirtyAccumulators.has(current)) return;
     await this.repositories.history.insertMinutePoint(deviceId, averageRecord(current.samples, current.bucketStartedAt));
-    await this.flushAggregate(deviceId, "15m", current.samples, 15, current.bucketStartedAt);
     // Clear only after every required write succeeds, under the device lock.
     this.dirtyAccumulators.delete(current);
   }
@@ -312,22 +313,6 @@ export class MetricsService {
     if (!this.dirtyAccumulators.has(current)) return;
     await this.repositories.history.insertHourlyPoint(deviceId, averageRecord(current.samples, current.bucketStartedAt));
     this.dirtyAccumulators.delete(current);
-  }
-
-  private async flushAggregate(
-    deviceId: string,
-    bucket: MetricWindow,
-    samples: ReturnType<typeof payloadToTimeSeries>[],
-    maxPoints: number,
-    bucketStartedAt?: number
-  ) {
-    const resolvedBucketStartedAt = bucketStartedAt ?? (
-      bucket === "15m"
-        ? Math.floor((samples[samples.length - 1]?.timestamp ?? Date.now()) / MINUTE_WINDOW_MS) * MINUTE_WINDOW_MS
-        : Math.floor((samples[samples.length - 1]?.timestamp ?? Date.now()) / HOURLY_WINDOW_MS) * HOURLY_WINDOW_MS
-    );
-    const aggregate = averageRecord(samples, resolvedBucketStartedAt);
-    await this.repositories.realtime.appendSeries(deviceId, bucket, aggregate, maxPoints);
   }
 
   private withCurrentHourlyAggregate(deviceId: string, history: ReturnType<typeof payloadToTimeSeries>[]) {
