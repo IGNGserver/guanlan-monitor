@@ -4,12 +4,13 @@ import { WEB_PWA_REVISION } from "./pwa-build.mjs";
 
 const releaseVersion = readFileSync(join(process.cwd(), "..", "..", "VERSION"), "utf8").trim();
 const releaseChannel = process.env.DSC_RELEASE_CHANNEL === "stable" ? "stable" : "test";
+const staticExport = process.env.DSC_STATIC_EXPORT === "true";
 
 /** @type {import("next").NextConfig} */
 const nextConfig = {
-  // Produce a self-contained server under .next/standalone so the deploy image
-  // only ships the traced runtime instead of the whole workspace node_modules.
-  output: "standalone",
+  // Docker serves a public export with nginx. Keep the standalone output for
+  // existing next start / visual-test consumers outside the delivery image.
+  output: staticExport ? "export" : "standalone",
   // The workspace renders plain <img> assets only; Next image optimization
   // (and its ~16 MB sharp/libvips native payload) is never exercised.
   images: { unoptimized: true },
@@ -27,7 +28,8 @@ const nextConfig = {
   },
   typedRoutes: true,
   transpilePackages: ["@dsc/console-ui", "@dsc/shared"],
-  async headers() {
+  // Export has no Next server: the delivery image owns these same headers.
+  ...(!staticExport && { async headers() {
     return [
       {
         source: "/manifest.json",
@@ -49,7 +51,7 @@ const nextConfig = {
       { source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }, { key: "Service-Worker-Allowed", value: "/" }] },
       { source: "/pwa-assets.json", headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }] }
     ];
-  },
+  } }),
   env: {
     NEXT_PUBLIC_DSC_PWA_REVISION: WEB_PWA_REVISION,
     NEXT_PUBLIC_DSC_VERSION: releaseVersion,

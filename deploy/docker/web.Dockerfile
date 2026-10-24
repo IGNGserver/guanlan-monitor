@@ -2,12 +2,12 @@
 #
 # Web (Hub UI) runtime image.
 #
-# The build is split into three stages so the published image carries only the
-# traced Next.js standalone server instead of the whole workspace node_modules
-# (which also contained the desktop/Electron dependency closure). Runtime uses
-# plain `node` — no pnpm/corepack needed to start the server.
+# Next.js runs only at build time. The runtime contains the public export and
+# nginx: no Node, Next server, pnpm, workspace sources or application secrets.
 
 ARG NODE_IMAGE=node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
+# Official library/nginx multi-platform index, verified via Docker Hub 2026-10-24.
+ARG NGINX_IMAGE=nginx:1.30.6-alpine3.24@sha256:47928bf67eb62a1863cb08d9ecb52d3e704304ba614eaee17884204677702951
 
 # --- base -------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS base
@@ -31,18 +31,20 @@ COPY packages/shared packages/shared
 COPY packages/console-ui packages/console-ui
 COPY apps/web apps/web
 ARG DSC_RELEASE_CHANNEL=test
+ARG DSC_STATIC_EXPORT=true
 ENV DSC_RELEASE_CHANNEL=${DSC_RELEASE_CHANNEL}
+ENV DSC_STATIC_EXPORT=${DSC_STATIC_EXPORT}
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm --filter @dsc/shared build && pnpm --filter @dsc/web build
+RUN test "$DSC_STATIC_EXPORT" = true && pnpm --filter @dsc/shared build && pnpm --filter @dsc/web build
 
 # --- runtime ----------------------------------------------------------------
-FROM base AS runner
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3000
-ENV HOSTNAME=0.0.0.0
-COPY --from=build /app/apps/web/.next/standalone ./
-COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=build /app/apps/web/public ./apps/web/public
+FROM ${NGINX_IMAGE} AS runner
+LABEL io.guanlan.web-runtime="static-nginx"
+COPY deploy/docker/web.nginx.conf /etc/nginx/nginx.conf
+COPY deploy/docker/web-security-headers.conf /etc/nginx/web-security-headers.conf
+COPY deploy/docker/web-proxy.conf /etc/nginx/web-proxy.conf
+RUN touch /etc/nginx/web-trusted-tls-proxies.conf
+COPY --chmod=755 deploy/docker/40-render-trusted-tls-proxies.sh /docker-entrypoint.d/40-render-trusted-tls-proxies.sh
+COPY --from=build /app/apps/web/out/ /srv/guanlan/
 EXPOSE 3000
-CMD ["node", "apps/web/server.js"]
+CMD ["nginx", "-g", "daemon off;"]

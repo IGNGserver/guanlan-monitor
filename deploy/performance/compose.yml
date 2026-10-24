@@ -40,7 +40,7 @@ services:
       SESSION_SECRET: ${PERF_SESSION_SECRET:?}
       ACCESS_KEY: ${PERF_ACCESS_KEY:?}
       SESSION_COOKIE_SECURE: 'false'
-      AGENT_REQUIRE_HTTPS: 'false'
+      AGENT_REQUIRE_HTTPS: '${PERF_REQUIRE_HTTPS:-false}'
       TRUST_PROXY: 'true'
       MYSQL_URL: mysql://guanlan_perf:${PERF_MYSQL_PASSWORD:?}@mysql:3306/guanlan_perf
       REDIS_URL: redis://:${PERF_REDIS_PASSWORD:?}@redis:6379/0
@@ -57,6 +57,7 @@ services:
     environment:
       NODE_ENV: production
       SERVER_API_URL: http://server:4000
+      DSC_TRUSTED_TLS_PROXY_CIDRS: '${PERF_TRUSTED_TLS_PROXY_CIDRS:-}'
       DSC_VERSION: ${PERF_APP_VERSION:?}
       DSC_RELEASE_CHANNEL: test
     ports:

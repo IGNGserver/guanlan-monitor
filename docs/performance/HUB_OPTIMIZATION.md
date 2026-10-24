@@ -24,11 +24,11 @@ being marked verified.
 | 1 | Session expiry, timeout ownership, queue/timer lifecycle and scan reentry | local + CI verify + paired functional smoke passed |
 | 2 | Configuration snapshots, registration fast path, dirty aggregate flush | local + CI + paired smoke passed |
 | 3 | Atomic bounded Redis append, narrow summary and expiry read models | real Redis + CI + paired smoke passed |
-| 4 | Overview projection, bounded query concurrency and shared historical reads | local 194 tests passed; SQL/CI pending |
-| 5 | Static Web, fixed-upstream proxy, security/PWA/deep-link parity | pending |
-| 6 | Incremental aggregation, versioned hardware storage and bounded maintenance | pending |
-| 7 | Failure/recovery, rollback, resource comparisons and long-running soak | pending |
-| Go decision | Fixed-input prototype and whole-stack benefit gate | pending |
+| 4 | Overview projection, bounded query concurrency and shared historical reads | real SQL + CI passed; image browser gate not yet passed |
+| 5 | Static Web, fixed-upstream proxy, security/PWA/deep-link parity | local contracts passed; actual image CI pending |
+| 6 | Incremental aggregation, versioned hardware storage and bounded maintenance | off-path snapshot/metadata prototypes only; no production replacement |
+| 7 | Failure/recovery, rollback, resource comparisons and long-running soak | isolated restart gates added; long-running soak pending |
+| Go decision | Fixed-input prototype and whole-stack benefit gate | Node/Go and separate SQLite prototypes; measured decision pending |
 | Storage decision | Embedded transactional storage prototype and recovery gate | pending |
 
 ## Acceptance matrix
@@ -238,7 +238,7 @@ production storage engine. Do not switch language and storage in one cutover.
   memory peak 678,600,704 vs 693,755,904 bytes. Queries used 3.973s vs 4.078s
   (-2.59%). These remain single short-run observations, with partial block IO.
 
-### Stage 4 local work (SQL/CI pending)
+### Stage 4 verification
 
 - MySQL overview reads five numeric series and selected JSON paths, not entire
   hardware documents. Full detail APIs are unchanged. Legacy local adapters use
@@ -255,3 +255,44 @@ production storage engine. Do not switch language and storage in one cutover.
   overview worker-order regression passed after the full-suite run. Real SQL projection
   equivalence and the newly added candidate-image browser/PWA tests still need
   CI. Browser work runs after resource measurements and does not bias them.
+- [Real SQL/Redis 40092769516](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40092769516)
+  passed **2 SQL + 33 Redis tests, none skipped**. [CI 40092769437](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40092769437)
+  passed all eight jobs, including Electron/Web visual checks. Candidate image
+  run [40092769538](https://github.com/IGNGserver/guanlan-monitor/actions/runs/40092769538)
+  completed its ingest/query workload and cleanup but failed the new browser
+  gate, so it is **not** a successful acceptance or performance comparison.
+  Review corrected the test's native-WebSocket assumption: unauthenticated
+  agent upgrades return HTTP 401 before upgrading, not a WebSocket 4001 close.
+
+### Stages 5–7 and independent research (CI pending)
+
+- Delivery Web exports the public shell and runs nginx without Node/Next. The
+  development/old visual-test standalone path is unchanged. Proxy targets are
+  fixed to `server:4000`; TLS origin is asserted only by explicitly allowlisted
+  TCP peers (`DSC_TRUSTED_TLS_PROXY_CIDRS`), otherwise forwarding headers are
+  ignored. Existing TLS deployments must configure this new fail-closed setting
+  before installing a future image; this task does not deploy one.
+- Actual-image CI gates cover static headers, cache/MIME/404 contracts, native
+  agent HTTP-401/authenticated-101 upgrades, Socket.IO, Chromium/WebKit deep links
+  and offline shell. Post-measurement tests enable the real HTTPS guard to reject
+  an untrusted protocol spoof and accept a loopback trusted TLS ingress. Recovery
+  gates restart API/Redis/MySQL and check accepted latest/persisted historical
+  buckets; API is SIGKILLed. This is not a power-loss, unflushed-hour recovery or
+  24–72h soak claim.
+- Stage 6 remains **off production**: bounded memo snapshots preserve the entire
+  average oracle, including floating-point reduction order and observation
+  winners. Metadata split/hydrate is reversible, versioned and bounded, but has
+  no durable dictionary/transactional reference GC. A full incremental sum or
+  schema migration is not silently substituted based on unit tests.
+- `scripts/hub-prototypes/` independently measures equal-input Node/Go kernels,
+  SQLite WAL commit/kill/replay/backup recovery, and aggregation/metadata research
+  in CI. None implements the complete Hub or is linked to production adapters.
+  No whole-stack Go/storage benefit has been established; retain Node/MySQL
+  unless the gate is actually met. Benchmarks reject non-CI/network filesystems.
+- Local APFS candidate checks: workspace lint/typecheck and all three boundaries,
+  adapter/UI-helper/workspace/renderer-security/hub-connection/window-material
+  tests passed; **195 server tests passed / 15 real-Redis skipped**, **13/13**
+  aggregation prototype, **10/10** static export, **50/50** PWA and **34/34**
+  accounting/HTTP/browser-target tests passed. Existing lint warnings remain.
+  Node/Go prototype unit tests **2 + 2 passed**, Python durability/runner tests
+  **10 passed**. Builds and benchmarks remain CI-only; Electron visual is CI.

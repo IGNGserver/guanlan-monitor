@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { counterDelta, normalizeStats, readContainerStats } from './engine-stats.mjs';
 import { sanitizeDiagnostic } from './diagnostics.mjs';
 import { browserSmoke } from './browser-smoke.mjs';
+import { verifyStaticWeb } from './static-web.mjs';
 import { resourceEvidenceStatus } from './report.mjs';
 import { createHubContractPayload } from '../../apps/server/src/hub-contract-fixtures.ts';
 
@@ -203,6 +204,7 @@ async function run(input) {
       .update(await readFile(composeFile)).update(await readFile(new URL('./engine-stats.mjs', import.meta.url)))
       .update(await readFile(new URL('./report.mjs', import.meta.url)))
       .update(await readFile(new URL('./browser-smoke.mjs', import.meta.url)))
+      .update(await readFile(new URL('./static-web.mjs', import.meta.url)))
       .update(await readFile(new URL('../../apps/server/src/hub-contract-fixtures.ts', import.meta.url))).digest('hex'),
     environment: { platform: process.platform, arch: process.arch, logicalCpus: cpus().length, node: process.version },
     phases: [], evidence: {}, failures: [], cleanup: false
@@ -221,6 +223,7 @@ async function run(input) {
       const labels = JSON.parse(stdout);
       assert.equal(labels['com.docker.compose.project'], options.project, 'foreign_container');
       assert.equal(labels['com.docker.compose.service'], service, 'foreign_service');
+      if (service === 'web') report.evidence.webRuntime = labels['io.guanlan.web-runtime'] ?? 'next-standalone';
       containers[service] = id;
       report.evidence[`${service}ImageId`] = (await exec('docker', ['inspect', '--format', '{{.Image}}', id])).stdout.trim();
     }
@@ -234,6 +237,10 @@ async function run(input) {
       return { response, body, bytes: Buffer.byteLength(body) };
     };
     await waitForReadiness(request);
+    if (report.evidence.webRuntime === 'static-nginx') {
+      await compose('exec', '-T', 'web', 'sh', '-c', '! command -v node && nginx -t');
+      report.evidence.staticWeb = await verifyStaticWeb(origin, accessKey);
+    }
     const login = await request('/api/auth/login', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ accessKey })
     });
@@ -316,7 +323,60 @@ async function run(input) {
     // gate, not an extra asymmetric performance workload.
     if (options.side === 'head' && process.env.GLPERF_PLAYWRIGHT_MODULE) {
       report.evidence.browser = await browserSmoke({ origin, accessKey, modulePath: process.env.GLPERF_PLAYWRIGHT_MODULE,
-        pauseOrigin: () => compose('stop', 'web'), resumeOrigin: () => compose('start', 'web') });
+        pauseOrigin: () => compose('stop', 'web'), resumeOrigin: () => compose('start', 'web'),
+        onStage: (stage) => { (report.evidence.browserProgress ??= []).push(stage); } });
+    }
+    if (report.evidence.webRuntime === 'static-nginx') {
+      // Separate post-measurement TLS boundary exercise. Trust only container
+      // loopback, not the runner's public-port peer, and enable the real HTTPS
+      // guard. Cookie Secure is a separate explicit setting, not protocol proof.
+      variables.PERF_REQUIRE_HTTPS = 'true';
+      variables.PERF_TRUSTED_TLS_PROXY_CIDRS = '127.0.0.1/32';
+      await writeFile(envFile, Object.entries(variables).map(([key, value]) => `${key}=${value}`).join('\n'), { mode: 0o600 });
+      await compose('up', '-d', '--no-build', '--force-recreate', 'server', 'web');
+      const tlsOrigin = publicOrigin(await compose('port', 'web', '3000'));
+      await waitForReadiness(async (path, init, timeoutMs) => {
+        const response = await fetch(`${tlsOrigin}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+        return { body: await response.text() };
+      });
+      const sample = JSON.stringify(payload(0, 600, Date.now()));
+      const spoofed = await fetch(`${tlsOrigin}/api/agent/ingest`, { method: 'POST', signal: AbortSignal.timeout(5000),
+        headers: { authorization: `Bearer ${accessKey}`, 'content-type': 'application/json',
+          'x-forwarded-proto': 'https', forwarded: 'proto=https' }, body: sample });
+      assert.equal(spoofed.status, 400, 'untrusted_https_spoof_accepted');
+      assert.equal((await spoofed.json()).error, 'https_required', 'wrong_https_boundary_rejection');
+      const accepted = await compose('exec', '-T', 'web', 'wget', '-qO-',
+        '--header=Content-Type: application/json', `--header=Authorization: Bearer ${accessKey}`,
+        '--header=X-Forwarded-Proto: https', `--post-data=${sample}`, 'http://127.0.0.1:3000/api/agent/ingest');
+      assert.equal(JSON.parse(accepted).ok, true, 'trusted_tls_ingress_rejected');
+      report.evidence.tlsBoundary = { httpsRequired: true, untrustedSpoofRejected: true, trustedIngressAccepted: true };
+      for (const service of ['web', 'server']) containers[service] = await compose('ps', '-q', service);
+      // Recovery assertions apply only to already persisted historical buckets
+      // and accepted latest/raw data; this is not a power-loss or full-hour
+      // unflushed aggregate durability claim, nor a long-running soak.
+      const recoveredRead = async (path, init = {}, timeoutMs = 5000) => {
+        const response = await fetch(`${tlsOrigin}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs),
+          headers: { cookie, ...init.headers } });
+        assert.ok(response.ok, 'recovery_request_failed');
+        return { body: await response.text() };
+      };
+      const acceptedTimestamp = JSON.parse(sample).timestamp;
+      const recoveries = [];
+      for (const service of ['server', 'redis', 'mysql']) {
+        const started = performance.now();
+        if (service === 'server') {
+          await compose('kill', '-s', 'SIGKILL', 'server');
+          await compose('start', 'server');
+        } else await compose('restart', service);
+        await waitForReadiness(recoveredRead);
+        const metrics = JSON.parse((await recoveredRead('/api/devices/perf-0/metrics?window=5m')).body);
+        assert.equal(metrics.lastSeenAt, acceptedTimestamp, 'accepted_latest_lost_after_restart');
+        validateQueryResponse('/api/devices/perf-0/metrics?window=1h',
+          (await recoveredRead('/api/devices/perf-0/metrics?window=1h')).body, { oldBucket });
+        recoveries.push({ service, elapsedMs: performance.now() - started,
+          acceptedLatestPreserved: true, oldHistoricalBucketPreserved: true });
+      }
+      report.evidence.recovery = recoveries;
     }
     for (const service of services) {
       const { stdout } = await exec('docker', ['inspect', '--format', '{{json .State}}', containers[service]]);
@@ -327,9 +387,11 @@ async function run(input) {
     if (report.status === 'incomplete') throw new Error('required_stats_unavailable');
   } catch (error) {
     const safeCodes = new Set(['readiness_timeout', 'workload_incomplete', 'history_persistence_missing',
-      'business_request_failed', 'invalid_business_response', 'compose_command_failed', 'container_unhealthy', 'session_cookie_missing', 'required_stats_unavailable']);
+      'business_request_failed', 'invalid_business_response', 'compose_command_failed', 'container_unhealthy', 'session_cookie_missing', 'required_stats_unavailable',
+      'native_upgrade_failed', 'native_upgrade_auth_boundary_failed', 'native_upgrade_protocol_failed']);
     report.failures.push(safeCodes.has(error.message) ? error.message : 'functional_or_measurement_failure');
     if (error.diagnostic) report.diagnostic = error.diagnostic;
+    if (Number.isInteger(error.statusCode) && error.statusCode >= 100 && error.statusCode <= 599) report.failureStatus = error.statusCode;
   } finally {
     try {
       await compose('down', '--volumes', '--remove-orphans');

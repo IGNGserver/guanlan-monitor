@@ -11,6 +11,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test src/auth.test.ts src/auth.routes.test.ts src/config.test.ts src/metrics-schema.test.ts src/hub-contract-fixtures.test.ts src/lifecycle.test.ts src/serial-queue.test.ts src/query-work.test.ts src/overview.test.ts src/utils.test.ts src/request-timing.test.ts src/loading-queries.test.ts src/series-budget*.test.ts src/repositories/local.test.ts src/repositories/devices.test.ts src/repositories/realtime.test.ts src/repositories/realtime-read-models.test.ts src/repositories/realtime.redis.test.ts src/services/metrics-*.test.ts src/live/*.test.ts",
     "test:mysql-queries": "node --import tsx --test src/repositories/history.mysql.test.ts",
+    "test:aggregation-prototype": "node --import tsx --test src/aggregation-prototype.test.ts",
     "test:redis-contracts": "node --import tsx --test src/repositories/realtime.redis.test.ts src/repositories/realtime-read-models.redis.test.ts"
   },
   "dependencies": {

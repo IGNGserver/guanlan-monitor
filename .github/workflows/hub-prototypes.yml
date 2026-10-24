@@ -1,0 +1,71 @@
+name: Hub research prototypes
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/hub-prototypes/**'
+      - 'apps/server/src/aggregation-prototype*.ts'
+      - 'apps/server/src/hub-contract-fixtures.ts'
+      - 'apps/server/src/services/metrics.ts'
+      - '.github/workflows/hub-prototypes.yml'
+
+concurrency:
+  group: hub-prototypes-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  independent-research:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 10.33.0
+      - name: Check independent golden and durability contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export TMPDIR="$RUNNER_TEMP" GOCACHE="$RUNNER_TEMP/hub-prototype-gocache" GOMODCACHE="$RUNNER_TEMP/hub-prototype-gomodcache"
+          node --test scripts/hub-prototypes/language.test.mjs
+          (cd scripts/hub-prototypes/go && GOTOOLCHAIN=local go test -count=1 ./...)
+          python3 -W error::ResourceWarning -m unittest discover -s scripts/hub-prototypes -p 'test_*.py' -v
+          pnpm install --frozen-lockfile --filter @dsc/server...
+          pnpm --filter @dsc/server test:aggregation-prototype
+        env:
+          NODE_ENV: test
+          SESSION_SECRET: hub-prototype-synthetic-session-only
+          ACCESS_KEY: hub-prototype-synthetic-access-only
+      - name: Measure equal-input language kernel independently
+        run: python3 scripts/hub-prototypes/run_language.py --out "$RUNNER_TEMP/hub-prototype-reports/language.json"
+      - name: Measure independent SQLite WAL durability prototype
+        run: python3 scripts/hub-prototypes/run_storage.py --out "$RUNNER_TEMP/hub-prototype-reports/sqlite.json"
+      - name: Measure aggregation snapshots and reversible metadata independently
+        working-directory: apps/server
+        run: node --import tsx ../../scripts/hub-prototypes/aggregation.mts "$RUNNER_TEMP/hub-prototype-reports/aggregation.json"
+        env:
+          NODE_ENV: test
+          SESSION_SECRET: hub-prototype-synthetic-session-only
+          ACCESS_KEY: hub-prototype-synthetic-access-only
+      - name: Preserve numeric research evidence, never candidate telemetry
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hub-prototype-research-${{ github.run_id }}
+          path: ${{ runner.temp }}/hub-prototype-reports/*.json
+          if-no-files-found: warn
+          retention-days: 3

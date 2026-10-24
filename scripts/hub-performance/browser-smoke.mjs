@@ -4,11 +4,12 @@ import { pathToFileURL } from 'node:url';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
 
-export async function nativeUpgrade(origin, accessKey) {
+export async function nativeUpgrade(origin, accessKey, onStage = () => {}) {
   const target = new URL(origin);
   assert.equal(target.hostname, '127.0.0.1');
   assert.equal(target.protocol, 'http:');
   const deviceId = `perf-live-${randomUUID()}`, instanceId = randomUUID(), token = randomBytes(32).toString('hex');
+  onStage('native-enroll');
   const enrolled = await fetch(`${origin}/api/agent/enroll`, {
     method: 'POST', signal: AbortSignal.timeout(5000),
     headers: { 'content-type': 'application/json', authorization: `Bearer ${accessKey}` },
@@ -18,6 +19,7 @@ export async function nativeUpgrade(origin, accessKey) {
   // Agent authentication uses headers, which the browser WebSocket constructor
   // cannot supply. Exercise the actual HTTP Upgrade at the same public origin.
   for (const authorized of [false, true]) await new Promise((resolve, reject) => {
+    onStage(authorized ? 'native-upgrade-authorized' : 'native-upgrade-unauthorized');
     const key = randomBytes(16).toString('base64');
     const request = httpRequest(`${origin}/api/agent/realtime`, {
       headers: { connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-key': key, 'sec-websocket-version': '13',
@@ -28,7 +30,8 @@ export async function nativeUpgrade(origin, accessKey) {
     request.once('error', () => finish(new Error('native_upgrade_failed')));
     request.once('response', (response) => {
       response.resume();
-      finish(!authorized && response.statusCode === 401 ? null : new Error('native_upgrade_auth_boundary_failed'));
+      finish(!authorized && response.statusCode === 401 ? null
+        : Object.assign(new Error('native_upgrade_auth_boundary_failed'), { statusCode: response.statusCode }));
     });
     request.once('upgrade', (response, socket) => {
       const expected = createHash('sha1').update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64');
@@ -55,12 +58,13 @@ export function validateBrowserTarget(origin, modulePath, environment = process.
 }
 
 /** Browser parity against the actual isolated image, never a mocked API server. */
-export async function browserSmoke({ origin, accessKey, modulePath, pauseOrigin, resumeOrigin }) {
+export async function browserSmoke({ origin, accessKey, modulePath, pauseOrigin, resumeOrigin, onStage = () => {} }) {
   validateBrowserTarget(origin, modulePath);
   const { chromium, webkit } = await import(pathToFileURL(modulePath).href);
-  await nativeUpgrade(origin, accessKey);
+  await nativeUpgrade(origin, accessKey, onStage);
   const results = {};
   for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
+    onStage(`${name}-launch`);
     const browser = await engine.launch({ headless: true });
     let originPaused = false;
     try {
@@ -73,15 +77,19 @@ export async function browserSmoke({ origin, accessKey, modulePath, pauseOrigin,
           if (String(payload).startsWith('40')) socketAccepted = true;
         });
       });
+      onStage(`${name}-login`);
       await page.goto(origin, { waitUntil: 'domcontentloaded' });
       await page.locator('#access-key').fill(accessKey);
       await page.getByRole('button', { name: '登录', exact: true }).click();
       await page.locator('.workspace-page--overview').waitFor({ timeout: 30000 });
+      onStage(`${name}-worker-install`);
       await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller), null, { timeout: 30000 });
       // Wait for the actual authenticated Socket.IO upgrade, not just a 101.
+      onStage(`${name}-socket-io`);
       const socketDeadline = Date.now() + 10000;
       while (!socketAccepted && Date.now() < socketDeadline) await page.waitForTimeout(50);
       assert.ok(socketAccepted, 'socket_io_handshake_missing');
+      onStage(`${name}-deep-link`);
       await page.goto(`${origin}/devices/perf-0`, { waitUntil: 'domcontentloaded' });
       await page.locator('.workspace-page--device').waitFor({ timeout: 30000 });
       assert.ok(!page.url().includes('__shell'), 'deep_link_rewritten');
@@ -89,6 +97,7 @@ export async function browserSmoke({ origin, accessKey, modulePath, pauseOrigin,
       // telemetry when neither the proxy nor the API can be reached.
       // WebKit's automation offline flag also blocks worker-only navigation
       // (Playwright #42775). Use an actual isolated-origin outage there.
+      onStage(`${name}-offline`);
       if (name === 'webkit') { await pauseOrigin(); originPaused = true; }
       else await context.setOffline(true);
       const offlineDocument = await page.reload({ waitUntil: 'domcontentloaded' });
