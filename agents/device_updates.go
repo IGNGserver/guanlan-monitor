@@ -18,6 +18,7 @@ import (
 
 var deviceUpdateFeedURL = "https://raw.githubusercontent.com/IGNGserver/guanlan-monitor/updates/updates.json"
 var deviceUpdateMu sync.Mutex
+var deviceUpdateCacheRoot = os.UserCacheDir
 var updateSemverPattern = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
 
 func parseUpdateSemver(value string) ([4]string, bool) {
@@ -72,7 +73,7 @@ type deviceFeedCache struct {
 }
 
 func deviceUpdateCacheFile() string {
-	dir, err := os.UserCacheDir()
+	dir, err := deviceUpdateCacheRoot()
 	if err != nil {
 		return ""
 	}
@@ -215,12 +216,17 @@ func fetchDeviceUpdate(current, channel string) (*cliUpdateInfo, error) {
 	if state.Feed == nil {
 		return nil, fmt.Errorf("update service unavailable; request cooling down")
 	}
-	info := &cliUpdateInfo{CurrentVersion: current, CurrentChannel: state.Channel}
+	info := selectDeviceRelease(state.Feed.Releases, current, state.Channel, runtime.GOOS, runtime.GOARCH)
 	if state.Failures > 0 {
 		info.Message = "Update service unavailable; using the last verified feed during cooldown."
 	}
-	releases := make([]deviceRelease, 0, len(state.Feed.Releases))
-	for _, r := range state.Feed.Releases {
+	return info, nil
+}
+
+func selectDeviceRelease(source []deviceRelease, current, channel, goos, goarch string) *cliUpdateInfo {
+	info := &cliUpdateInfo{CurrentVersion: current, CurrentChannel: channel}
+	releases := make([]deviceRelease, 0, len(source))
+	for _, r := range source {
 		if validReleaseVersion(r.Tag) {
 			releases = append(releases, r)
 		}
@@ -232,15 +238,15 @@ func fetchDeviceUpdate(current, channel string) (*cliUpdateInfo, error) {
 		if release.Draft == nil || *release.Draft || release.Prerelease == nil || !validReleaseVersion(release.Tag) || compareReleaseVersions(release.Tag, current) <= 0 {
 			continue
 		}
-		if state.Channel == "stable" && (*release.Prerelease || strings.Contains(strings.Split(release.Tag, "+")[0], "-")) {
+		if channel == "stable" && (*release.Prerelease || strings.Contains(strings.Split(release.Tag, "+")[0], "-")) {
 			continue
 		}
 		version := strings.TrimPrefix(release.Tag, "v")
 		name := ""
-		if runtime.GOOS == "windows" && runtime.GOARCH == "amd64" {
+		if goos == "windows" && goarch == "amd64" {
 			name = "DeviceStateConsole-Windows-Setup-v" + version + ".exe"
 		}
-		if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
+		if goos == "linux" && goarch == "amd64" {
 			name = "DeviceStateConsole-Linux-Install-v" + version + ".deb"
 		}
 		for _, asset := range release.Assets {
@@ -254,8 +260,8 @@ func fetchDeviceUpdate(current, channel string) (*cliUpdateInfo, error) {
 			info.AssetName = &asset.Name
 			info.AssetSize = asset.Size
 			info.Sha256 = &sha
-			return info, nil
+			return info
 		}
 	}
-	return info, nil
+	return info
 }

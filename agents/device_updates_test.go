@@ -7,10 +7,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
+
+func isolateDeviceFeedCache(t *testing.T) {
+	t.Helper()
+	directory := t.TempDir()
+	previous := deviceUpdateCacheRoot
+	deviceUpdateCacheRoot = func() (string, error) { return directory, nil }
+	t.Cleanup(func() { deviceUpdateCacheRoot = previous })
+}
 
 type updateRoundTrip func(*http.Request) (*http.Response, error)
 
@@ -45,7 +54,7 @@ func TestDeviceDownloadBoundsAndRedirects(t *testing.T) {
 }
 
 func TestDeviceFeedDirectSelectionAndCooldown(t *testing.T) {
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	isolateDeviceFeedCache(t)
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -57,7 +66,7 @@ func TestDeviceFeedDirectSelectionAndCooldown(t *testing.T) {
 	deviceUpdateFeedURL = server.URL
 	defer func() { deviceUpdateFeedURL = old }()
 	preview, err := fetchAgentUpdate("http://unused-hub.invalid", "unused-secret", "1.0.0", "preview")
-	if err != nil || !preview.Available {
+	if err != nil || preview.CurrentVersion != "1.0.0" || preview.Available != (runtime.GOOS == "linux" && runtime.GOARCH == "amd64") {
 		t.Fatalf("direct update: %+v %v", preview, err)
 	}
 	stable, err := fetchDeviceUpdate("1.0.0", "stable")
@@ -74,7 +83,7 @@ func TestDeviceFeedDirectSelectionAndCooldown(t *testing.T) {
 }
 
 func TestDeviceFeedRateLimitPersists(t *testing.T) {
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	isolateDeviceFeedCache(t)
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -96,6 +105,36 @@ func TestDeviceFeedRateLimitPersists(t *testing.T) {
 	}
 }
 
+func TestDeviceReleaseSelectionIsIndependentOfRunnerPlatform(t *testing.T) {
+	preview, draft := true, false
+	releases := []deviceRelease{{Tag: "v9.0.0", Prerelease: &preview, Draft: &draft, Assets: []deviceReleaseAsset{
+		{Name: "DeviceStateConsole-Linux-Install-v9.0.0.deb", State: "uploaded", Size: 100, URL: "https://github.com/IGNGserver/guanlan-monitor/releases/download/v9.0.0/DeviceStateConsole-Linux-Install-v9.0.0.deb", Digest: "sha256:" + strings.Repeat("a", 64)},
+		{Name: "DeviceStateConsole-Windows-Setup-v9.0.0.exe", State: "uploaded", Size: 100, URL: "https://github.com/IGNGserver/guanlan-monitor/releases/download/v9.0.0/DeviceStateConsole-Windows-Setup-v9.0.0.exe", Digest: "sha256:" + strings.Repeat("a", 64)},
+	}}}
+	for _, target := range []struct {
+		os, arch, extension string
+		available           bool
+	}{
+		{"linux", "amd64", ".deb", true}, {"windows", "amd64", ".exe", true},
+		{"linux", "arm64", "", false}, {"windows", "arm64", "", false},
+		{"darwin", "amd64", "", false}, {"darwin", "arm64", "", false},
+	} {
+		selected := selectDeviceRelease(releases, "1.0.0", "preview", target.os, target.arch)
+		if selected.Available != target.available {
+			t.Fatalf("wrong platform selection for %+v: %+v", target, selected)
+		}
+		if target.available && (selected.AssetName == nil || !strings.HasSuffix(*selected.AssetName, target.extension)) {
+			t.Fatalf("wrong delivery unit for %+v", target)
+		}
+		if selectDeviceRelease(releases, "1.0.0", "stable", target.os, target.arch).Available {
+			t.Fatalf("stable accepted a preview for %+v", target)
+		}
+		if selectDeviceRelease(releases, "9.0.0", "preview", target.os, target.arch).Available {
+			t.Fatalf("same-version reinstall offered for %+v", target)
+		}
+	}
+}
+
 func TestUpdateSemver(t *testing.T) {
 	for _, pair := range [][2]string{{"1.0.0-beta.10", "1.0.0-beta.2"}, {"1.0.0", "1.0.0-rc.9"}, {"1.1.0", "1.0.999"}} {
 		if compareReleaseVersions(pair[0], pair[1]) != 1 {
@@ -109,7 +148,7 @@ func TestUpdateSemver(t *testing.T) {
 
 func TestDeviceFeedRejectsOversizedAndMalformedMetadata(t *testing.T) {
 	for _, body := range []string{strings.Repeat(" ", 4*1024*1024+1), `{"schemaVersion":1,"repository":"IGNGserver/guanlan-monitor","generatedAt":"invalid","releases":[]}`} {
-		t.Setenv("XDG_CACHE_HOME", t.TempDir())
+		isolateDeviceFeedCache(t)
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) }))
 		old := deviceUpdateFeedURL
 		deviceUpdateFeedURL = server.URL
