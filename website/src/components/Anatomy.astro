@@ -1,0 +1,358 @@
+---
+import { Picture } from 'astro:assets';
+import exploded from '../assets/renders/exploded.webp';
+import { LAYERS } from '../data/product';
+---
+
+<section id="anatomy" class="ana" aria-labelledby="ana-title" style={`--n:${LAYERS.length}`}>
+  <div class="ana__sticky">
+    <header class="ana__head">
+      <p class="eyebrow">§ 01 · 剖面</p>
+      <h2 id="ana-title" class="display">七层结构，<br />对应六类硬件。</h2>
+      <p class="lede">
+        观测单元 GL-01 是为观澜设计的一件虚构仪器：每一层对应观澜实际采集的一类硬件，最上层是观测窗。向下滚动，逐层剖开。
+      </p>
+    </header>
+
+    <figure class="ana__static">
+      <Picture src={exploded} formats={['avif', 'webp']} widths={[600, 1000, 1400]} sizes="(max-width: 900px) 100vw, 50vw" alt="观测单元 GL-01 的爆炸视图：自上而下为观测窗、风扇、显卡、处理器、内存、磁盘、网络七层" quality={70} />
+    </figure>
+
+    <div class="ana__panel" data-panel>
+      {
+        LAYERS.map((l, i) => (
+          <article class="step" data-step={i} aria-labelledby={`step-${l.id}`}>
+            <p class="step__idx mono">
+              <span class="amber">{l.index}</span>
+              <span class="faint"> / 06 · {l.code}</span>
+            </p>
+            <h3 id={`step-${l.id}`} class="step__name">
+              {l.name}
+            </h3>
+            <p class="step__lead">{l.lead}</p>
+            <ul class="step__metrics">
+              {l.metrics.map((m) => (
+                <li>{m}</li>
+              ))}
+            </ul>
+            {l.note && <p class="step__note">{l.note}</p>}
+          </article>
+        ))
+      }
+    </div>
+
+    <nav class="ana__rail" aria-label="剖面层级">
+      {
+        LAYERS.map((l, i) => (
+          <button type="button" data-rail={i} aria-current="false">
+            <span class="mono">{l.index}</span>
+            <span class="ana__rail-name">{l.name}</span>
+          </button>
+        ))
+      }
+    </nav>
+
+  </div>
+</section>
+
+<style>
+  .ana {
+    position: relative;
+    z-index: 1;
+    height: calc(100vh + var(--n) * 88vh);
+  }
+
+  .ana__sticky {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    height: 100svh;
+    max-width: var(--max);
+    margin: 0 auto;
+    padding: calc(var(--header) + 28px) var(--gutter) 32px;
+    display: grid;
+    grid-template-columns: minmax(0, 480px) 1fr;
+    grid-template-rows: 1fr auto;
+  }
+
+  .ana__head,
+  .ana__panel {
+    grid-area: 1 / 1;
+    align-self: center;
+  }
+
+  .ana__head {
+    transition:
+      opacity 0.7s var(--ease),
+      transform 0.7s var(--ease);
+  }
+
+  .ana__head .display {
+    font-size: clamp(2.6rem, 4.4vw, 4.2rem);
+  }
+
+  .ana__head .lede {
+    margin-top: 28px;
+    font-size: 1.02rem;
+  }
+
+  .ana.is-stepping .ana__head {
+    opacity: 0;
+    transform: translateY(-24px);
+    pointer-events: none;
+  }
+
+  .ana__panel {
+    position: relative;
+    min-height: 420px;
+  }
+
+  .step {
+    position: absolute;
+    inset: 0 0 auto;
+    padding: 28px 0 28px 28px;
+    border-left: 1px solid var(--line-2);
+    opacity: 0;
+    transform: translateY(28px);
+    pointer-events: none;
+    transition:
+      opacity 0.6s var(--ease),
+      transform 0.6s var(--ease);
+  }
+
+  .step::before {
+    content: '';
+    position: absolute;
+    left: -1px;
+    top: 28px;
+    width: 1px;
+    height: 56px;
+    background: var(--amber);
+  }
+
+  .step.is-active {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    transition-delay: 0.12s;
+  }
+
+  .step__idx {
+    font-size: 12px;
+    letter-spacing: 0.12em;
+  }
+
+  .step__name {
+    margin-top: 14px;
+    font-family: var(--font-cjk);
+    font-weight: 200;
+    font-size: clamp(3rem, 5.4vw, 4.8rem);
+    line-height: 1;
+    letter-spacing: 0.02em;
+  }
+
+  .step__lead {
+    margin-top: 18px;
+    font-size: 1.12rem;
+    color: var(--bone);
+  }
+
+  .step__metrics {
+    list-style: none;
+    margin: 26px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 0;
+  }
+
+  .step__metrics li {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 11px 0;
+    border-top: 1px solid var(--line);
+    font-size: 14.5px;
+    color: var(--bone-2);
+  }
+
+  .step__metrics li::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border: 1px solid var(--amber);
+    transform: rotate(45deg);
+    flex: none;
+  }
+
+  .step__note {
+    margin-top: 18px;
+    font-size: 13px;
+    color: var(--bone-3);
+    line-height: 1.7;
+  }
+
+  .ana__rail {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+    gap: 6px;
+    max-width: 760px;
+  }
+
+  .ana__rail button {
+    display: grid;
+    gap: 6px;
+    padding: 10px 0 0;
+    border: 0;
+    border-top: 1px solid var(--line-2);
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    color: var(--bone-3);
+    font-size: 12px;
+    transition:
+      color 0.3s,
+      border-color 0.3s;
+  }
+
+  .ana__rail button .mono {
+    font-size: 10px;
+  }
+
+  .ana__rail button:hover {
+    color: var(--bone);
+  }
+
+  .ana__rail button[aria-current='true'] {
+    color: var(--amber);
+    border-top-color: var(--amber);
+  }
+
+  .ana__static {
+    display: none;
+  }
+
+  @media (max-width: 899px) {
+    .ana {
+      height: calc(100vh + var(--n) * 80vh);
+    }
+
+    .ana__sticky {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr auto auto;
+      padding-top: var(--header);
+      padding-bottom: 20px;
+    }
+
+    .ana__head,
+    .ana__panel {
+      grid-area: 2 / 1;
+      align-self: end;
+    }
+
+    .ana__head .display {
+      font-size: 2.4rem;
+    }
+
+    .ana__panel {
+      min-height: 0;
+      height: 300px;
+    }
+
+    .step {
+      padding: 18px 0 0 18px;
+      background: linear-gradient(to top, rgb(6 8 11 / 0.9) 60%, transparent);
+    }
+
+    .step::before {
+      top: 18px;
+      height: 40px;
+    }
+
+    .step__name {
+      font-size: 2.6rem;
+    }
+
+    .step__lead {
+      margin-top: 10px;
+      font-size: 1rem;
+    }
+
+    .step__metrics {
+      margin-top: 14px;
+      grid-template-columns: 1fr 1fr;
+      column-gap: 16px;
+    }
+
+    .step__metrics li {
+      padding: 8px 0;
+      font-size: 13px;
+    }
+
+    .step__note {
+      display: none;
+    }
+
+    .ana__rail {
+      grid-area: 3 / 1;
+      margin-top: 14px;
+    }
+
+    .ana__rail-name {
+      display: none;
+    }
+  }
+
+  /* 无 WebGL / 减少动态：不粘滞，列出全部层级并配爆炸视图静帧 */
+  :global(html.no-gl) .ana {
+    height: auto;
+    background: var(--void);
+  }
+
+  :global(html.no-gl) .ana__sticky {
+    position: static;
+    height: auto;
+    display: block;
+    padding-top: 120px;
+  }
+
+  :global(html.no-gl) .ana__head {
+    opacity: 1;
+    transform: none;
+  }
+
+  :global(html.no-gl) .ana__static {
+    display: block;
+    margin: 48px 0;
+  }
+
+  :global(html.no-gl) .ana__static img {
+    width: 100%;
+    max-width: 880px;
+    height: auto;
+    margin: 0 auto;
+  }
+
+  :global(html.no-gl) .ana__panel {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 32px;
+    min-height: 0;
+    height: auto;
+  }
+
+  :global(html.no-gl) .step {
+    position: relative;
+    opacity: 1;
+    transform: none;
+    background: none;
+  }
+
+  :global(html.no-gl) .step__note {
+    display: block;
+  }
+
+  :global(html.no-gl) .ana__rail {
+    display: none;
+  }
+</style>

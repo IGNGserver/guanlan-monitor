@@ -1,0 +1,118 @@
+---
+import Mark from './Mark.astro';
+import { README_URL, RELEASES_URL, REPO_URL, SITE_REPO_URL, SUMMARY } from '../data/product';
+const year = 2026;
+---
+
+<footer class="foot">
+  <div class="wrap foot__grid">
+    <div class="foot__brand">
+      <div class="foot__mark"><Mark size={34} /><span>观澜</span></div>
+      <p class="dim">{SUMMARY}</p>
+      <p class="foot__quote faint">观水有术，必观其澜。<span class="mono">——《孟子·尽心上》</span></p>
+    </div>
+    <nav class="foot__col" aria-label="站内">
+      <p class="label">站内</p>
+      <a href="/#anatomy">观测对象</a>
+      <a href="/#flow">数据流</a>
+      <a href="/#live">实时查看</a>
+      <a href="/deploy/">部署中枢</a>
+      <a href="/download/">下载</a>
+    </nav>
+    <nav class="foot__col" aria-label="产品仓库">
+      <p class="label">产品仓库</p>
+      <a href={REPO_URL} rel="noopener">GitHub ↗</a>
+      <a href={RELEASES_URL} rel="noopener">Releases ↗</a>
+      <a href={README_URL} rel="noopener">README ↗</a>
+      <a href={SITE_REPO_URL} rel="noopener">官网源码 ↗</a>
+    </nav>
+  </div>
+  <div class="wrap foot__base">
+    <span class="mono faint">© {year} IGNGserver · MIT License</span>
+    <span class="mono faint">安装包只通过产品仓库的 GitHub Releases 分发</span>
+  </div>
+</footer>
+
+<style>
+  .foot {
+    position: relative;
+    z-index: 2;
+    border-top: 1px solid var(--line);
+    background: var(--void);
+    padding: 72px 0 28px;
+  }
+
+  .foot__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 48px;
+  }
+
+  .foot__mark {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    font-family: var(--font-cjk);
+    font-size: 22px;
+    letter-spacing: 0.08em;
+  }
+
+  .foot__brand p {
+    max-width: 36em;
+    font-size: 14px;
+  }
+
+  .foot__quote {
+    margin-top: 20px;
+    font-family: var(--font-cjk);
+    letter-spacing: 0.06em;
+  }
+
+  .foot__quote span {
+    margin-left: 8px;
+    font-size: 11px;
+  }
+
+  .foot__col {
+    display: grid;
+    align-content: start;
+    gap: 10px;
+    font-size: 14px;
+  }
+
+  .foot__col a {
+    color: var(--bone-2);
+    transition: color 0.2s;
+    width: fit-content;
+  }
+
+  .foot__col a:hover {
+    color: var(--amber);
+  }
+
+  .foot__col .label {
+    margin-bottom: 6px;
+  }
+
+  .foot__base {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 64px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+  }
+
+  @media (max-width: 760px) {
+    .foot__grid {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .foot__brand {
+      grid-column: 1 / -1;
+    }
+  }
+</style>

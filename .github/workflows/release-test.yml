@@ -744,3 +744,8 @@ jobs:
           make_latest: ${{ steps.release_metadata.outputs.make_latest }}
           overwrite_files: true
           files: release-assets/**/*
+
+      - name: Trigger website deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/${GITHUB_REPOSITORY}/dispatches" -f event_type=release-published

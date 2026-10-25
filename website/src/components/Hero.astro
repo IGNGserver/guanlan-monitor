@@ -1,0 +1,339 @@
+---
+import { HUB_PORT, type ReleaseInfo } from '../data/product';
+import { formatDate } from '../data/release';
+
+interface Props {
+  release: ReleaseInfo;
+}
+const { release } = Astro.props;
+const readouts = [
+  { k: 'cpu', label: 'CPU 使用率', unit: '%', v: '23.4' },
+  { k: 'mem', label: '内存占用', unit: '%', v: '61.0' },
+  { k: 'net', label: '网络 ↓', unit: 'MB/s', v: '4.82' },
+  { k: 'fan', label: '风扇转速', unit: 'RPM', v: '1180' },
+];
+---
+
+<section id="hero" class="hero">
+  <span class="reg" style="left: var(--gutter); top: calc(var(--header) + 20px)"></span>
+  <span class="reg" style="right: var(--gutter); top: calc(var(--header) + 20px)"></span>
+
+  <div class="hero__in">
+    <div class="hero__copy">
+      <p class="eyebrow hero__eyebrow">私有部署 · 运行状态监控</p>
+      <h1 class="hero__title" aria-label="观澜">
+        <span class="hero__char" aria-hidden="true">观</span><span class="hero__char" aria-hidden="true">澜</span>
+      </h1>
+      <p class="hero__lede">
+        看清每一台电脑与服务器的运行状态。<br />
+        设备上的 Agent 采集，自己部署的中枢汇聚，<br class="br-wide" />Web、桌面与手机随处查看。
+      </p>
+      <div class="hero__cta">
+        <a class="btn btn--primary" href="/download/">
+          下载客户端
+          <svg class="arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" stroke="currentColor" stroke-width="1.4" fill="none"></path></svg>
+        </a>
+        <a class="btn" href="/deploy/">部署中枢</a>
+      </div>
+    </div>
+
+    <aside class="hud" aria-label="示意读数">
+      <header class="hud__head">
+        <span class="label">GL-01 · 观测单元</span>
+        <span class="label label--teal"><span class="dot dot--live"></span>在线</span>
+      </header>
+      <dl class="hud__list">
+        {
+          readouts.map((r) => (
+            <div class="hud__row">
+              <dt>{r.label}</dt>
+              <dd>
+                <span class="mono" data-readout={r.k}>
+                  {r.v}
+                </span>
+                <small class="mono">{r.unit}</small>
+              </dd>
+              <svg class="hud__spark" viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden="true">
+                <polyline data-spark={r.k} points="" />
+              </svg>
+            </div>
+          ))
+        }
+      </dl>
+      <footer class="hud__foot">
+        <span class="label">示意数据</span>
+        <span class="label mono" data-clock>--:--:--</span>
+      </footer>
+    </aside>
+  </div>
+
+  <div class="hero__meta">
+    <a class="tag hero__ver" href={release.url} rel="noopener">
+      <span class="dot dot--amber"></span>
+      {release.prerelease ? '测试版' : '正式版'}
+      {release.tag} · {formatDate(release.publishedAt)}
+    </a>
+    <span class="hero__cue label"><i></i>向下滚动 · 剖开观测单元</span>
+    <span class="label hero__port">中枢端口 <span class="mono">{HUB_PORT}</span></span>
+  </div>
+</section>
+
+<script>
+  import { initHud } from '../scripts/hud';
+  initHud();
+</script>
+
+<style>
+  .hero {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    min-height: 100svh;
+    display: grid;
+    grid-template-rows: 1fr auto;
+    padding: calc(var(--header) + 24px) var(--gutter) 28px;
+    max-width: var(--max);
+    margin: 0 auto;
+  }
+
+  .hero__in {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    align-items: end;
+    gap: 40px;
+  }
+
+  .hero__copy {
+    align-self: center;
+    max-width: 640px;
+  }
+
+  .hero__title {
+    display: flex;
+    margin: 24px 0 18px -0.06em;
+    font-family: var(--font-cjk);
+    font-weight: 200;
+    font-size: clamp(6rem, 13.5vw, 12.5rem);
+    line-height: 0.92;
+    letter-spacing: -0.04em;
+    background: linear-gradient(180deg, #f3f0ea 30%, #8f8c86 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .hero__char {
+    display: inline-block;
+    animation: rise 1.6s var(--ease) both;
+  }
+
+  .hero__char + .hero__char {
+    animation-delay: 0.12s;
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(0.18em);
+      filter: blur(12px);
+    }
+  }
+
+  .hero__eyebrow,
+  .hero__lede,
+  .hero__cta {
+    animation: fade 1.4s var(--ease) both;
+  }
+
+  .hero__lede {
+    animation-delay: 0.35s;
+    font-size: clamp(1.02rem, 1.35vw, 1.22rem);
+    line-height: 1.8;
+    color: var(--bone-2);
+  }
+
+  .hero__cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 36px;
+    animation-delay: 0.5s;
+  }
+
+  @keyframes fade {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+  }
+
+  /* HUD：仪表读数面板 */
+  .hud {
+    align-self: center;
+    padding: 16px 18px 14px;
+    border: 1px solid var(--line-2);
+    background: linear-gradient(180deg, rgb(15 19 24 / 0.55), rgb(10 13 17 / 0.35));
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    animation: fade 1.4s 0.8s var(--ease) both;
+  }
+
+  .hud__head,
+  .hud__foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .hud__head .label--teal {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .hud__list {
+    margin: 12px 0;
+    display: grid;
+  }
+
+  .hud__row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 'dt dd' 'spark spark';
+    padding: 10px 0 8px;
+    border-top: 1px solid var(--line);
+  }
+
+  .hud__row dt {
+    grid-area: dt;
+    font-size: 12px;
+    color: var(--bone-2);
+  }
+
+  .hud__row dd {
+    grid-area: dd;
+    margin: 0;
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hud__row dd small {
+    margin-left: 4px;
+    font-size: 10px;
+    color: var(--bone-3);
+  }
+
+  .hud__spark {
+    grid-area: spark;
+    width: 100%;
+    height: 18px;
+    margin-top: 6px;
+  }
+
+  .hud__spark polyline {
+    fill: none;
+    stroke: var(--amber);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+    opacity: 0.85;
+  }
+
+  .hero__meta {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 16px;
+    padding-top: 28px;
+  }
+
+  .hero__ver {
+    justify-self: start;
+    transition: border-color 0.3s;
+  }
+
+  .hero__ver:hover {
+    border-color: var(--amber);
+  }
+
+  .hero__cue {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .hero__cue i {
+    position: relative;
+    width: 1px;
+    height: 28px;
+    background: var(--line-2);
+    overflow: hidden;
+  }
+
+  .hero__cue i::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: -40%;
+    width: 1px;
+    height: 40%;
+    background: var(--amber);
+    animation: cue 2.2s var(--ease) infinite;
+  }
+
+  @keyframes cue {
+    to {
+      top: 100%;
+    }
+  }
+
+  .hero__port {
+    justify-self: end;
+  }
+
+  @media (max-width: 899px) {
+    .hero {
+      grid-template-rows: 1fr auto;
+      padding-top: calc(var(--header) + 12px);
+    }
+
+    .hero__in {
+      grid-template-columns: 1fr;
+      align-items: end;
+    }
+
+    .hero__copy {
+      align-self: end;
+      position: relative;
+    }
+
+    .hero__copy::before {
+      content: '';
+      position: absolute;
+      inset: -40px calc(var(--gutter) * -1) -24px;
+      z-index: -1;
+      background: linear-gradient(to bottom, transparent, rgb(6 8 11 / 0.78) 30%, rgb(6 8 11 / 0.9));
+      pointer-events: none;
+    }
+
+    .hero__title {
+      font-size: clamp(5.2rem, 30vw, 9rem);
+      margin: 14px 0 12px -0.05em;
+    }
+
+    .hud {
+      display: none;
+    }
+
+    .hero__meta {
+      grid-template-columns: 1fr auto;
+    }
+
+    .hero__cue {
+      display: none;
+    }
+
+    .br-wide {
+      display: none;
+    }
+  }
+</style>

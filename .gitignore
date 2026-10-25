@@ -11,6 +11,7 @@ bin
 .codex
 logs
 data
+!website/src/data/
 **/realtime/live-*.json
 release
 *.log
@@ -40,4 +41,7 @@ agents/.codex-artifacts
 **/obj/
 **/.next/
 **/dist/
+website/.astro/
+website/test-results/
+website/playwright-report/
 agents/windows-hardware/librehardwaremonitor/LibreHardwareMonitorLib.xml

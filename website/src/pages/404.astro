@@ -1,0 +1,48 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="未找到" path="/404/">
+  <section class="nf">
+    <div class="wrap nf__in">
+      <p class="label label--amber">404 · 无信号</p>
+      <svg class="nf__line" viewBox="0 0 600 80" preserveAspectRatio="none" aria-hidden="true">
+        <polyline points="0,40 600,40" fill="none" stroke="#ffa64a" stroke-width="1.2" vector-effect="non-scaling-stroke"></polyline>
+      </svg>
+      <h1 class="nf__title">这里没有可观测的东西。</h1>
+      <p class="lede">链接可能已经失效。和观澜对待缺失传感器的方式一样：空就是空，我们不编造一个页面给你。</p>
+      <div class="nf__cta">
+        <a class="btn btn--primary" href="/">回到首页</a>
+        <a class="btn" href="/download/">下载</a>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .nf {
+    min-height: 100vh;
+    display: grid;
+    align-items: center;
+    padding: calc(var(--header) + 40px) 0 80px;
+  }
+
+  .nf__line {
+    width: min(600px, 100%);
+    height: 80px;
+    margin: 28px 0;
+  }
+
+  .nf__title {
+    font-family: var(--font-cjk);
+    font-weight: 200;
+    font-size: clamp(2.4rem, 6vw, 5rem);
+    margin-bottom: 24px;
+  }
+
+  .nf__cta {
+    display: flex;
+    gap: 12px;
+    margin-top: 36px;
+  }
+</style>

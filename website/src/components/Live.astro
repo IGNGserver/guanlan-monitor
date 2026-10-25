@@ -1,0 +1,563 @@
+---
+import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
+---
+
+<section id="live" class="live section" data-idx="03" aria-labelledby="live-title">
+  <div class="wrap">
+    <header class="live__head">
+      <p class="eyebrow" data-reveal>§ 03 · 实时查看 <span class="tag live__tag">测试版</span></p>
+      <h2 id="live-title" class="display" data-reveal style="--d:1">需要看清此刻，<br />就直接问设备。</h2>
+      <p class="lede" data-reveal style="--d:2">
+        设备详情页展开「实时」后，按 1 / 2 / 5 秒间隔查询快速指标、进程与 Docker 容器。它走一条独立的设备双向连接，不把数据库里的「在线」当作可达依据，每秒的数据也不写入历史库。
+      </p>
+    </header>
+
+    <div class="live__grid">
+      <div class="console" data-live data-reveal>
+        <div class="console__bar">
+          <p class="console__crumbs">
+            <span class="faint">设备</span><span class="faint">/</span><span>workstation-01</span><span class="tag">Windows</span>
+          </p>
+          <div class="console__status">
+            <span class="pill" data-pill><span class="dot dot--live"></span><span data-pill-text>实时 · 刚刚</span></span>
+            <span class="mono faint console__at" data-sampled>采集于 --:--:--</span>
+          </div>
+          <div class="console__tools">
+            <button class="ctl" type="button" data-pause aria-pressed="false">暂停</button>
+            <div class="seg" role="radiogroup" aria-label="查询间隔">
+              <button type="button" role="radio" aria-checked="true" data-interval="1">每 1 秒</button>
+              <button type="button" role="radio" aria-checked="false" data-interval="2">每 2 秒</button>
+              <button type="button" role="radio" aria-checked="false" data-interval="5">每 5 秒</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="console__tabs" role="tablist" aria-label="实时视图">
+          <button type="button" role="tab" id="tab-perf" aria-controls="pane-perf" aria-selected="true" data-tab="perf">核心性能</button>
+          <button type="button" role="tab" id="tab-proc" aria-controls="pane-proc" aria-selected="false" data-tab="proc" tabindex="-1">进程</button>
+          <button type="button" role="tab" id="tab-docker" aria-controls="pane-docker" aria-selected="false" data-tab="docker" tabindex="-1">容器</button>
+        </div>
+
+        <div class="console__pane" id="pane-perf" role="tabpanel" aria-labelledby="tab-perf" data-pane="perf">
+          <p class="console__note faint">最近两分钟的设备实时数据，直接来自设备，不写入历史。</p>
+          <div class="charts">
+            <figure class="chart" data-chart="cpu">
+              <figcaption>
+                <span>CPU 使用率<small class="faint">整机平均</small></span>
+                <b class="mono" data-value>—</b>
+              </figcaption>
+              <canvas aria-hidden="true"></canvas>
+            </figure>
+            <figure class="chart" data-chart="mem">
+              <figcaption>
+                <span>内存占用<small class="faint mono">— / 32.0 GB</small></span>
+                <b class="mono" data-value>—</b>
+              </figcaption>
+              <canvas aria-hidden="true"></canvas>
+            </figure>
+          </div>
+          <dl class="rates mono">
+            <div><dt>磁盘读</dt><dd data-rate="dr">—</dd></div>
+            <div><dt>磁盘写</dt><dd data-rate="dw">—</dd></div>
+            <div><dt>网络 ↓</dt><dd data-rate="nr">—</dd></div>
+            <div><dt>网络 ↑</dt><dd data-rate="nt">—</dd></div>
+          </dl>
+        </div>
+
+        <div class="console__pane" id="pane-proc" role="tabpanel" aria-labelledby="tab-proc" data-pane="proc" hidden>
+          <p class="console__note faint" data-proc-meta>—</p>
+          <div class="table-wrap">
+            <table class="tbl mono">
+              <thead>
+                <tr>
+                  <th scope="col">进程</th>
+                  <th scope="col" class="num">PID</th>
+                  <th scope="col" class="num"><button type="button" data-sort="cpu" aria-pressed="true">CPU</button></th>
+                  <th scope="col" class="num"><button type="button" data-sort="mem" aria-pressed="false">内存</button></th>
+                  <th scope="col" class="num"><button type="button" data-sort="gpu" aria-pressed="false">GPU</button></th>
+                  <th scope="col" class="num">线程</th>
+                </tr>
+              </thead>
+              <tbody data-proc></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="console__pane" id="pane-docker" role="tabpanel" aria-labelledby="tab-docker" data-pane="docker" hidden>
+          <p class="console__note faint">只读：本机 Engine API 的容器列表与单次 stats；CPU 按单核口径，可超过 100%。</p>
+          <div class="table-wrap">
+            <table class="tbl mono">
+              <thead>
+                <tr>
+                  <th scope="col">容器</th>
+                  <th scope="col">状态</th>
+                  <th scope="col" class="num">CPU</th>
+                  <th scope="col" class="num">内存</th>
+                  <th scope="col" class="num">网络 ↓ / ↑</th>
+                </tr>
+              </thead>
+              <tbody data-docker></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="console__foot">
+          <span class="label">示意数据 · 官网重绘的界面示意</span>
+          <button class="ctl" type="button" data-fail>模拟一次采集超时</button>
+        </div>
+      </div>
+
+      <aside class="facts" aria-label="实时通道约束">
+        {
+          REALTIME_FACTS.map(([k, v], i) => (
+            <div class="fact" data-reveal style={`--d:${i}`}>
+              <p class="fact__k mono">{k}</p>
+              <p class="fact__v">{v}</p>
+            </div>
+          ))
+        }
+        <a class="facts__more" href={REALTIME_DOC_URL} rel="noopener">完整约束见产品文档 ↗</a>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<script>
+  import { initLive } from '../scripts/live';
+  initLive();
+</script>
+
+<style>
+  .live {
+    z-index: 1;
+    background: var(--void);
+    border-top: 1px solid var(--line);
+  }
+
+  .live__head {
+    max-width: 780px;
+  }
+
+  .live__head .lede {
+    margin-top: 28px;
+  }
+
+  .live__tag {
+    margin-left: 6px;
+    height: 22px;
+    color: var(--amber);
+    border-color: rgb(255 166 74 / 0.4);
+  }
+
+  .live__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: clamp(32px, 4vw, 64px);
+    margin-top: clamp(48px, 7vw, 88px);
+    align-items: start;
+  }
+
+  .console {
+    border: 1px solid var(--line-2);
+    background: linear-gradient(180deg, var(--ink-2), var(--ink-1));
+    box-shadow: 0 40px 120px -40px rgb(0 0 0 / 0.9);
+    min-width: 0;
+  }
+
+  .console__bar {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px 20px;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .console__crumbs {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+  }
+
+  .console__crumbs .tag {
+    height: 20px;
+    font-size: 10px;
+  }
+
+  .console__status {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    grid-column: 1;
+  }
+
+  .console__tools {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: var(--teal-glow);
+    color: var(--teal);
+    font-size: 12.5px;
+    transition:
+      background 0.3s,
+      color 0.3s;
+  }
+
+  .pill[data-state='stale'] {
+    background: var(--amber-glow);
+    color: var(--amber);
+  }
+
+  .pill[data-state='stale'] .dot {
+    background: var(--amber);
+    box-shadow: 0 0 0 3px var(--amber-glow);
+  }
+
+  .pill[data-state='gone'],
+  .pill[data-state='paused'] {
+    background: rgb(233 230 223 / 0.06);
+    color: var(--bone-2);
+  }
+
+  .pill[data-state='gone'] .dot,
+  .pill[data-state='paused'] .dot {
+    background: var(--bone-3);
+    box-shadow: none;
+    animation: none;
+  }
+
+  .console__at {
+    font-size: 11.5px;
+  }
+
+  .ctl {
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+    background: transparent;
+    font-size: 12.5px;
+    color: var(--bone-2);
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      color 0.2s,
+      border-color 0.2s;
+  }
+
+  .ctl:hover,
+  .ctl[aria-pressed='true'] {
+    color: var(--bone);
+    border-color: var(--line-3);
+  }
+
+  .seg {
+    display: flex;
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+  }
+
+  .seg button {
+    height: 30px;
+    padding: 0 10px;
+    border: 0;
+    background: none;
+    font-size: 12px;
+    color: var(--bone-3);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .seg button + button {
+    border-left: 1px solid var(--line);
+  }
+
+  .seg button[aria-checked='true'] {
+    color: var(--amber);
+    background: rgb(255 166 74 / 0.08);
+  }
+
+  .console__tabs {
+    display: flex;
+    gap: 4px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .console__tabs button {
+    position: relative;
+    height: 44px;
+    padding: 0 12px;
+    border: 0;
+    background: none;
+    font-size: 13.5px;
+    color: var(--bone-3);
+    cursor: pointer;
+  }
+
+  .console__tabs button[aria-selected='true'] {
+    color: var(--bone);
+  }
+
+  .console__tabs button[aria-selected='true']::after {
+    content: '';
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: -1px;
+    height: 1px;
+    background: var(--amber);
+  }
+
+  .console__pane {
+    padding: 18px 20px 20px;
+    min-height: 372px;
+  }
+
+  .console__note {
+    font-size: 12.5px;
+    margin-bottom: 14px;
+  }
+
+  .charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .chart {
+    margin: 0;
+    padding: 14px 14px 10px;
+    border: 1px solid var(--line);
+    background: rgb(6 8 11 / 0.5);
+  }
+
+  .chart figcaption {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    font-size: 13px;
+  }
+
+  .chart figcaption small {
+    display: block;
+    margin-top: 2px;
+    font-size: 11px;
+  }
+
+  .chart b {
+    font-size: 26px;
+    font-weight: 400;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .chart b small {
+    font-size: 12px;
+    color: var(--bone-3);
+  }
+
+  .chart canvas {
+    width: 100%;
+    height: 170px;
+    margin-top: 12px;
+  }
+
+  .rates {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    margin: 14px 0 0;
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+
+  .rates div {
+    padding: 12px 14px;
+    background: var(--ink-1);
+  }
+
+  .rates dt {
+    font-size: 11px;
+    color: var(--bone-3);
+    font-family: var(--font-sans);
+  }
+
+  .rates dd {
+    margin: 4px 0 0;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tbl th {
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 400;
+    font-size: 11px;
+    color: var(--bone-3);
+    border-bottom: 1px solid var(--line-2);
+    white-space: nowrap;
+  }
+
+  .tbl th button {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .tbl th button[aria-pressed='true'] {
+    color: var(--amber);
+  }
+
+  .tbl th button[aria-pressed='true']::after {
+    content: ' ↓';
+  }
+
+  .tbl td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+
+  .tbl .num {
+    text-align: right;
+  }
+
+  .tbl :global(.bar) {
+    display: inline-block;
+    width: 44px;
+    height: 3px;
+    margin-right: 8px;
+    vertical-align: middle;
+    background: var(--line-2);
+    position: relative;
+  }
+
+  .tbl :global(.bar i) {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--amber);
+  }
+
+  .tbl :global(.na) {
+    color: var(--bone-3);
+  }
+
+  .tbl :global(.st-up) {
+    color: var(--teal);
+  }
+
+  .tbl :global(.st-down) {
+    color: var(--bone-3);
+  }
+
+  .console__foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 20px;
+    border-top: 1px solid var(--line);
+  }
+
+  .facts {
+    display: grid;
+    gap: 0;
+    border-top: 1px solid var(--line-2);
+  }
+
+  .fact {
+    padding: 18px 0 20px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .fact__k {
+    font-size: 22px;
+    color: var(--amber);
+    letter-spacing: 0;
+  }
+
+  .fact__v {
+    margin-top: 6px;
+    font-size: 13.5px;
+    line-height: 1.7;
+    color: var(--bone-2);
+  }
+
+  .facts__more {
+    margin-top: 18px;
+    font-size: 13px;
+    color: var(--bone-2);
+  }
+
+  .facts__more:hover {
+    color: var(--amber);
+  }
+
+  @media (max-width: 1100px) {
+    .live__grid {
+      grid-template-columns: 1fr;
+    }
+
+    .facts {
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      column-gap: 24px;
+    }
+  }
+
+  @media (max-width: 680px) {
+    .console__bar {
+      grid-template-columns: 1fr;
+    }
+
+    .console__tools {
+      grid-column: 1;
+      grid-row: auto;
+      flex-wrap: wrap;
+    }
+
+    .charts {
+      grid-template-columns: 1fr;
+    }
+
+    .chart canvas {
+      height: 130px;
+    }
+
+    .rates {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .console__pane {
+      padding: 14px;
+    }
+  }
+</style>

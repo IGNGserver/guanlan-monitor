@@ -4,6 +4,8 @@
 
 开发版本号以仓库根目录的 `VERSION` 为准。用户安装请以 [GitHub Releases](https://github.com/IGNGserver/guanlan-monitor/releases/latest) 中的稳定版本为准；`main` 分支不是稳定安装源。
 
+> 官网与下载入口：<https://guanlan.igng.net/>
+
 ## 下载与安装
 
 请从 [GitHub Releases](https://github.com/IGNGserver/guanlan-monitor/releases/latest) 下载与当前版本对应的客户端。
