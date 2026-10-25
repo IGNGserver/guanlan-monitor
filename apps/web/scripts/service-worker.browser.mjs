@@ -89,8 +89,13 @@ try {
   assert.equal(await page.evaluate(async (name) => (await caches.keys()).includes(name), `guanlan-shell-${generations.b}`), false);
   checks.push("same-source rebuild rejects stale HTML without deleting the active generation");
   staleShell = false;
-  await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
-  await page.waitForFunction(async () => !!(await navigator.serviceWorker.getRegistration()).waiting);
+  await page.evaluate(async () => {
+    window.__pwaRegistration = await navigator.serviceWorker.getRegistration();
+    await window.__pwaRegistration.update();
+  });
+  // Keep polling synchronous: older Playwright runners treat a returned Promise
+  // as truthy before its boolean value settles, racing the installing worker.
+  await page.waitForFunction(() => !!window.__pwaRegistration.waiting);
   assert.equal(await page.locator("h1").textContent(), "Shell a");
   checks.push("a complete new graph waits for user activation");
   await page.evaluate(async () => {
