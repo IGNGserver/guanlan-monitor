@@ -19,10 +19,13 @@
 
 ```bash
 cd website
-pnpm install --frozen-lockfile
+pnpm install --frozen-lockfile --ignore-workspace
 pnpm build        # astro check + astro build
 pnpm test         # Playwright；先 build
 ```
+
+`--ignore-workspace` 是必需的：`website/` 位于产品 pnpm workspace 内，但不属于它；不加这个标志
+pnpm 会去安装产品根的 workspace，而不会在 `website/` 生成 `node_modules`。
 
 构建与测试不要落在 NAS 项目卷上；在 `$BUILD_SCRATCH_ROOT` 的副本里安装/构建，步骤见
 [`docs/WORKSPACE.md`](docs/WORKSPACE.md)。部署由 GitHub Actions 自动执行。

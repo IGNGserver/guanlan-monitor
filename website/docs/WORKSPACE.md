@@ -42,7 +42,7 @@ WT=~/项目/.wt/设备状态控制台/<task-slug>
 SCR=${BUILD_SCRATCH_ROOT:-$HOME/.build}/guanlan-monitor/<task-slug>
 mkdir -p "$SCR"
 rsync -a --delete --exclude node_modules --exclude dist --exclude .astro --exclude test-results "$WT/website/" "$SCR/"
-cd "$SCR" && pnpm install --frozen-lockfile
+cd "$SCR" && pnpm install --frozen-lockfile --ignore-workspace
 GITHUB_TOKEN="$(gh auth token)" SITE_URL="https://guanlan.igng.net/" ASTRO_TELEMETRY_DISABLED=1 pnpm build
 pnpm test
 ```

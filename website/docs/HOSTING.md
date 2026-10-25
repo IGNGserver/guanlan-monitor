@@ -11,7 +11,7 @@
 | 部署来源 | `IGNGserver/guanlan-monitor` 的 `website/` |
 | 部署工作流 | `.github/workflows/website.yml` |
 | 生产分支 | `main` |
-| 构建命令 | `pnpm install --frozen-lockfile && pnpm build`（在 `website/` 下） |
+| 构建命令 | `pnpm install --frozen-lockfile --ignore-workspace && pnpm build`（在 `website/` 下） |
 | 发布目录 | `website/dist/` |
 | 自定义域名 | `https://guanlan.igng.net/`（zone `igng.net`） |
 | 默认别名 | `https://guanlan-website-fms.pages.dev/`（保留） |
@@ -48,7 +48,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 安装 | `pnpm install --frozen-lockfile`（Node.js ≥ 22.13，`packageManager: pnpm@10.33.0`） |
+| 安装 | `pnpm install --frozen-lockfile --ignore-workspace`（Node.js ≥ 22.13，`packageManager: pnpm@10.33.0`；`website/` 不属于产品根 workspace） |
 | 构建 | `pnpm build`（`astro check && astro build`） |
 | 输出 | `dist/`（纯静态，含 404.html） |
 | 响应头 | `website/public/_headers`：安全头、CSP、静态资源缓存 |
