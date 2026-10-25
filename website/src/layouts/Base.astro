@@ -1,0 +1,58 @@
+---
+import '../styles/global.css';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import { SUMMARY } from '../data/product';
+
+interface Props {
+  title?: string;
+  description?: string;
+  path?: string;
+  bodyClass?: string;
+}
+
+const { title, description = SUMMARY, path = '/', bodyClass } = Astro.props;
+const fullTitle = title ? `${title} · 观澜` : '观澜 · 私有部署的电脑与服务器运行状态监控';
+const site = Astro.site;
+const canonical = site ? new URL(path, site).href : undefined;
+const og = site ? new URL('/og/og.png', site).href : '/og/og.png';
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#06080b" />
+    <meta name="color-scheme" content="dark" />
+    {canonical && <link rel="canonical" href={canonical} />}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="观澜" />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={og} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script is:inline>
+      document.documentElement.classList.add('js');
+    </script>
+    <slot name="head" />
+  </head>
+  <body class={bodyClass}>
+    <a class="skip" href="#main">跳到正文</a>
+    <Nav path={path} />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer />
+    <script>
+      import { initReveal } from '../scripts/reveal';
+      initReveal();
+    </script>
+  </body>
+</html>

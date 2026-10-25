@@ -1,0 +1,108 @@
+---
+const rules = [
+  {
+    code: 'KEY',
+    title: '密钥不进命令行',
+    body: '访问密钥只通过 --key-stdin 或 --key-file 传入，不会出现在进程参数里；status、export 与诊断输出全部脱敏。',
+  },
+  {
+    code: 'TLS',
+    title: '默认要求 HTTPS',
+    body: 'SESSION_COOKIE_SECURE 与 AGENT_REQUIRE_HTTPS 默认开启。只有在明确受信的网络里，才由部署参数改用 HTTP。',
+  },
+  {
+    code: 'IDENTITY',
+    title: '设备身份不可冒用',
+    body: '实时通道为每台设备登记独立密钥，中枢只保存哈希；另一个安装实例不能覆盖同名设备。',
+  },
+  {
+    code: 'RATE',
+    title: '鉴权失败限流',
+    body: '统一凭证层对所有鉴权失败做频率限制与防爆破，覆盖控制台路由与 Agent 上报入口。',
+  },
+  {
+    code: 'DOCKER',
+    title: '只读的容器视图',
+    body: '只读取本机 Engine API；DOCKER_HOST 只接受本地 unix:// 或 npipe://，不跟随重定向，也不提供启停、日志或 exec。',
+  },
+  {
+    code: 'TRUTH',
+    title: '空就是空',
+    body: '设备、硬件或驱动未提供的传感器显示为空；首次尚无差分基线时标为不可用。观澜不以零冒充测量值。',
+  },
+];
+---
+
+<section id="security" class="sec section" data-idx="07" aria-labelledby="sec-title">
+  <div class="wrap">
+    <header class="sec__head">
+      <p class="eyebrow" data-reveal>§ 07 · 边界</p>
+      <h2 id="sec-title" class="display" data-reveal style="--d:1">可信，<br />先从不越界开始。</h2>
+    </header>
+    <div class="sec__grid">
+      {
+        rules.map((r, i) => (
+          <article class="rule" data-reveal style={`--d:${i % 3}`}>
+            <span class="reg" style="right:14px;top:14px" />
+            <p class="label">{String(i + 1).padStart(2, '0')} · {r.code}</p>
+            <h3>{r.title}</h3>
+            <p>{r.body}</p>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .sec {
+    z-index: 1;
+    background: var(--void);
+    border-top: 1px solid var(--line);
+  }
+
+  .sec__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    margin-top: clamp(48px, 7vw, 88px);
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+
+  .rule {
+    position: relative;
+    padding: 32px 28px 36px;
+    background: var(--void);
+    transition: background 0.4s var(--ease);
+  }
+
+  .rule:hover {
+    background: var(--ink-1);
+  }
+
+  .rule h3 {
+    margin: 22px 0 12px;
+    font-family: var(--font-cjk);
+    font-size: 1.45rem;
+    font-weight: 300;
+  }
+
+  .rule p:last-child {
+    font-size: 14px;
+    line-height: 1.8;
+    color: var(--bone-2);
+  }
+
+  @media (max-width: 960px) {
+    .sec__grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .sec__grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

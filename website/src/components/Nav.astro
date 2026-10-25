@@ -1,0 +1,277 @@
+---
+import Mark from './Mark.astro';
+import { REPO_URL } from '../data/product';
+
+interface Props {
+  path: string;
+}
+const { path } = Astro.props;
+const home = path === '/';
+const links = [
+  { href: home ? '#anatomy' : '/#anatomy', label: '剖面' },
+  { href: home ? '#flow' : '/#flow', label: '数据流' },
+  { href: home ? '#live' : '/#live', label: '实时查看' },
+  { href: home ? '#clients' : '/#clients', label: '终端' },
+  { href: '/deploy/', label: '部署中枢', current: path === '/deploy/' },
+];
+---
+
+<header class="nav" data-nav>
+  <div class="nav__in">
+    <a class="nav__brand" href="/" aria-label="观澜 首页">
+      <Mark size={30} />
+      <span class="nav__name">观澜</span>
+      <span class="nav__code mono">GUANLAN</span>
+    </a>
+    <nav class="nav__links" aria-label="主导航">
+      {
+        links.map((l) => (
+          <a href={l.href} aria-current={l.current ? 'page' : undefined}>
+            {l.label}
+          </a>
+        ))
+      }
+    </nav>
+    <div class="nav__end">
+      <a class="nav__gh" href={REPO_URL} rel="noopener" aria-label="GitHub 产品仓库">
+        <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"
+          ><path
+            fill="currentColor"
+            d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+          ></path></svg
+        >
+      </a>
+      <a class="btn btn--sm btn--primary nav__dl" href="/download/" aria-current={path === '/download/' ? 'page' : undefined}>下载</a>
+      <button class="nav__menu" type="button" aria-expanded="false" aria-controls="nav-sheet" data-menu>
+        <span class="sr-only">打开菜单</span>
+        <span class="nav__bars" aria-hidden="true"><i></i><i></i></span>
+      </button>
+    </div>
+  </div>
+  <div class="nav__sheet" id="nav-sheet" hidden>
+    {
+      links.map((l, i) => (
+        <a href={l.href} data-close>
+          <span class="mono faint">{String(i + 1).padStart(2, '0')}</span>
+          {l.label}
+        </a>
+      ))
+    }
+    <a href="/download/" data-close><span class="mono faint">06</span>下载</a>
+    <a href={REPO_URL} rel="noopener" data-close><span class="mono faint">↗</span>GitHub</a>
+  </div>
+</header>
+
+<script>
+  const nav = document.querySelector<HTMLElement>('[data-nav]')!;
+  const btn = nav.querySelector<HTMLButtonElement>('[data-menu]')!;
+  const sheet = nav.querySelector<HTMLElement>('#nav-sheet')!;
+  const setOpen = (open: boolean) => {
+    btn.setAttribute('aria-expanded', String(open));
+    btn.querySelector('.sr-only')!.textContent = open ? '关闭菜单' : '打开菜单';
+    sheet.hidden = !open;
+    nav.classList.toggle('is-open', open);
+  };
+  btn.addEventListener('click', () => setOpen(btn.getAttribute('aria-expanded') !== 'true'));
+  sheet.querySelectorAll('[data-close]').forEach((a) => a.addEventListener('click', () => setOpen(false)));
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && setOpen(false));
+  let last = 0;
+  const onScroll = () => {
+    const y = window.scrollY;
+    nav.classList.toggle('is-solid', y > 24);
+    nav.classList.toggle('is-hidden', y > 400 && y > last && !nav.classList.contains('is-open'));
+    last = y;
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+</script>
+
+<style>
+  .nav {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 50;
+    transition:
+      transform 0.5s var(--ease),
+      background 0.4s var(--ease),
+      border-color 0.4s var(--ease);
+    border-bottom: 1px solid transparent;
+  }
+
+  .nav.is-solid {
+    background: rgb(6 8 11 / 0.72);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    border-bottom-color: var(--line);
+  }
+
+  .nav.is-hidden {
+    transform: translateY(-100%);
+  }
+
+  .nav__in {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    height: var(--header);
+    max-width: var(--max);
+    margin: 0 auto;
+    padding: 0 var(--gutter);
+  }
+
+  .nav__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--bone);
+  }
+
+  .nav__name {
+    font-family: var(--font-cjk);
+    font-size: 19px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+  }
+
+  .nav__code {
+    font-size: 10px;
+    letter-spacing: 0.24em;
+    color: var(--bone-3);
+    padding-left: 10px;
+    border-left: 1px solid var(--line-2);
+  }
+
+  .nav__links {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+  }
+
+  .nav__links a {
+    position: relative;
+    padding: 8px 12px;
+    font-size: 14px;
+    color: var(--bone-2);
+    transition: color 0.25s;
+  }
+
+  .nav__links a:hover,
+  .nav__links a[aria-current='page'] {
+    color: var(--bone);
+  }
+
+  .nav__links a[aria-current='page']::after {
+    content: '';
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 2px;
+    height: 1px;
+    background: var(--amber);
+  }
+
+  .nav__end {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .nav__gh {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    color: var(--bone-2);
+    transition: color 0.25s;
+  }
+
+  .nav__gh:hover {
+    color: var(--bone);
+  }
+
+  .nav__menu {
+    display: none;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .nav__bars {
+    display: grid;
+    gap: 6px;
+    width: 16px;
+    margin: auto;
+  }
+
+  .nav__bars i {
+    display: block;
+    height: 1px;
+    background: var(--bone);
+    transition: transform 0.3s var(--ease);
+  }
+
+  .is-open .nav__bars i:first-child {
+    transform: translateY(3.5px) rotate(45deg);
+  }
+
+  .is-open .nav__bars i:last-child {
+    transform: translateY(-3.5px) rotate(-45deg);
+  }
+
+  .nav__sheet {
+    display: grid;
+    padding: 8px var(--gutter) 28px;
+    background: rgb(6 8 11 / 0.96);
+    border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .nav__sheet[hidden] {
+    display: none;
+  }
+
+  .nav__sheet a {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--font-cjk);
+    font-size: 22px;
+    font-weight: 300;
+  }
+
+  .nav__sheet a span {
+    font-size: 11px;
+    width: 20px;
+  }
+
+  @media (max-width: 960px) {
+    .nav__links,
+    .nav__code {
+      display: none;
+    }
+
+    .nav__end {
+      margin-left: auto;
+    }
+
+    .nav__menu {
+      display: grid;
+    }
+
+    .nav.is-open {
+      background: rgb(6 8 11 / 0.96);
+    }
+  }
+
+  @media (max-width: 420px) {
+    .nav__gh {
+      display: none;
+    }
+  }
+</style>

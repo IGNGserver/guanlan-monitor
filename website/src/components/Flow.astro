@@ -1,0 +1,373 @@
+---
+import { HUB_PORT } from '../data/product';
+
+const agents = [
+  { id: 'a0', host: 'workstation-01', os: 'Windows' },
+  { id: 'a1', host: 'node-01', os: 'Linux · 无桌面' },
+  { id: 'a2', host: 'build-02', os: 'Linux' },
+  { id: 'a3', host: 'laptop-07', os: 'Windows' },
+];
+const clients = [
+  { id: 'c0', name: 'Web 控制台' },
+  { id: 'c1', name: 'Windows 桌面端' },
+  { id: 'c2', name: 'GNOME Linux 桌面端' },
+  { id: 'c3', name: 'Android' },
+];
+const cards = [
+  {
+    code: 'COLLECT',
+    title: '采集 · Agent',
+    body: '安装包注册机器级 guanlan-agent 服务（Windows 服务，Linux systemd 系统单元），开机即采集，无需登录。快速指标不等待慢探针；温度、风扇、GPU 等慢采集带实际采集时间。',
+  },
+  {
+    code: 'AGGREGATE',
+    title: '汇聚 · 中枢',
+    body: `中枢以 Docker Compose 部署在你的服务器上：Redis 保存短窗口序列，MySQL 保存分钟与小时历史。所有客户端和 Agent 使用同一个公开入口（默认端口 ${HUB_PORT}）。`,
+  },
+  {
+    code: 'VIEW',
+    title: '查看 · 终端',
+    body: 'Web、Windows、GNOME Linux 与 Android 共用一个访问密钥。设备详情可在实时、5 分钟、1 小时、6 小时、24 小时与 7 天之间切换。',
+  },
+];
+---
+
+<section id="flow" class="flow section" data-idx="02" aria-labelledby="flow-title">
+  <div class="wrap">
+    <header class="flow__head">
+      <p class="eyebrow" data-reveal>§ 02 · 数据流</p>
+      <h2 id="flow-title" class="display" data-reveal style="--d:1">从一台机器，<br />到每一块屏幕。</h2>
+      <p class="lede" data-reveal style="--d:2">
+        Agent 在每台设备上采集并上报，中枢负责汇聚与保存，客户端只和中枢对话。链路断开时，样本先留在设备上，恢复后补传。
+      </p>
+    </header>
+
+    <div class="flow__board" data-flow data-reveal>
+      <canvas class="flow__canvas" aria-hidden="true"></canvas>
+      <div class="flow__col flow__col--agents">
+        <p class="label">设备 · Agent</p>
+        {
+          agents.map((a) => (
+            <div class="node node--agent" data-node={a.id}>
+              <span class="dot" data-status />
+              <span class="node__host mono">{a.host}</span>
+              <span class="node__os">{a.os}</span>
+              <span class="node__queue mono" data-queue>
+                队列 <b>0</b>
+              </span>
+            </div>
+          ))
+        }
+      </div>
+
+      <div class="flow__col flow__col--hub">
+        <p class="label">中枢 · Docker Compose</p>
+        <div class="node node--hub" data-node="hub">
+          <div class="hub__top">
+            <span class="mono">HUB</span>
+            <span class="mono faint">:{HUB_PORT}</span>
+          </div>
+          <ul class="hub__svc mono">
+            <li><span>web</span><i>控制台 · /api 代理</i></li>
+            <li><span>server</span><i>上报 · 鉴权 · 实时</i></li>
+            <li><span>redis</span><i>短窗口序列</i></li>
+            <li><span>mysql</span><i>分钟 / 小时历史</i></li>
+          </ul>
+          <div class="hub__link" data-link>
+            <span class="dot" data-link-dot></span><span data-link-text>链路正常</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow__col flow__col--clients">
+        <p class="label">终端</p>
+        {
+          clients.map((c) => (
+            <div class="node node--client" data-node={c.id}>
+              <span class="node__host">{c.name}</span>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+
+    <div class="flow__controls" data-reveal>
+      <button class="btn btn--sm" type="button" data-cut aria-pressed="false">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h4m4 0h4M7 5l2 6" stroke="currentColor" stroke-width="1.4" fill="none"></path></svg>
+        <span data-cut-label>模拟断开中枢链路</span>
+      </button>
+      <p class="faint">示意动画：断开后样本在设备本地排队，恢复后按顺序补传；无法恢复的样本会被隔离，不阻塞队列。</p>
+    </div>
+
+    <div class="flow__cards">
+      {
+        cards.map((c, i) => (
+          <article class="fcard" data-reveal style={`--d:${i}`}>
+            <p class="label label--amber">{c.code}</p>
+            <h3>{c.title}</h3>
+            <p>{c.body}</p>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<script>
+  import { initFlow } from '../scripts/flow';
+  initFlow();
+</script>
+
+<style>
+  .flow {
+    z-index: 1;
+    background: var(--void);
+  }
+
+  .flow__head {
+    max-width: 760px;
+  }
+
+  .flow__head .lede {
+    margin-top: 28px;
+  }
+
+  .flow__board {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: clamp(40px, 9vw, 140px);
+    margin-top: clamp(56px, 8vw, 96px);
+    padding: 40px clamp(20px, 3vw, 40px);
+    border: 1px solid var(--line);
+    background:
+      linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 40px 40px,
+      linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0 / 40px 40px,
+      var(--ink-1);
+    background-blend-mode: normal;
+  }
+
+  .flow__board::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(60% 70% at 50% 50%, transparent, var(--ink-1) 90%);
+    pointer-events: none;
+  }
+
+  .flow__canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .flow__col {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    align-content: center;
+    gap: 12px;
+  }
+
+  .flow__col .label {
+    margin-bottom: 4px;
+  }
+
+  .node {
+    position: relative;
+    border: 1px solid var(--line-2);
+    background: rgb(10 13 17 / 0.92);
+    padding: 12px 14px;
+    font-size: 13px;
+  }
+
+  .node--agent {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: 'dot host queue' 'dot os queue';
+    column-gap: 12px;
+    align-items: center;
+  }
+
+  .node--agent .dot {
+    grid-area: dot;
+    transition: background 0.3s;
+  }
+
+  .node--agent.is-off .dot {
+    background: var(--amber);
+    box-shadow: 0 0 0 3px var(--amber-glow);
+  }
+
+  .node__host {
+    grid-area: host;
+    color: var(--bone);
+  }
+
+  .node__os {
+    grid-area: os;
+    font-size: 12px;
+    color: var(--bone-3);
+  }
+
+  .node__queue {
+    grid-area: queue;
+    font-size: 11px;
+    color: var(--bone-3);
+    transition: color 0.3s;
+  }
+
+  .node__queue b {
+    display: inline-block;
+    min-width: 2ch;
+    text-align: right;
+    font-weight: 500;
+    color: var(--bone-2);
+  }
+
+  .is-off .node__queue,
+  .is-off .node__queue b {
+    color: var(--amber);
+  }
+
+  .node--hub {
+    padding: 0;
+    border-color: var(--line-3);
+    box-shadow:
+      0 0 0 1px rgb(6 8 11),
+      0 30px 80px -30px rgb(255 166 74 / 0.18);
+  }
+
+  .hub__top {
+    display: flex;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line-2);
+    font-size: 13px;
+    letter-spacing: 0.2em;
+  }
+
+  .hub__svc {
+    list-style: none;
+    margin: 0;
+    padding: 6px 0;
+    font-size: 12px;
+  }
+
+  .hub__svc li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 16px;
+  }
+
+  .hub__svc li + li {
+    border-top: 1px dashed var(--line);
+  }
+
+  .hub__svc span {
+    color: var(--amber);
+  }
+
+  .hub__svc i {
+    font-style: normal;
+    color: var(--bone-3);
+    font-family: var(--font-sans);
+  }
+
+  .hub__link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--line-2);
+    font-size: 12px;
+    color: var(--bone-2);
+  }
+
+  .hub__link.is-off .dot {
+    background: var(--danger);
+    box-shadow: 0 0 0 3px rgb(255 107 91 / 0.18);
+  }
+
+  .node--client {
+    font-size: 13.5px;
+    padding: 14px 16px;
+  }
+
+  .flow__controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px 24px;
+    margin-top: 20px;
+    font-size: 13px;
+  }
+
+  .flow__controls [aria-pressed='true'] {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+
+  .flow__cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    margin-top: clamp(56px, 7vw, 88px);
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+
+  .fcard {
+    padding: 32px 28px 36px;
+    background: var(--void);
+  }
+
+  .fcard h3 {
+    margin: 16px 0 14px;
+    font-family: var(--font-cjk);
+    font-size: 1.5rem;
+    font-weight: 300;
+  }
+
+  .fcard p:last-child {
+    color: var(--bone-2);
+    font-size: 14.5px;
+    line-height: 1.8;
+  }
+
+  @media (max-width: 899px) {
+    .flow__board {
+      grid-template-columns: 1fr;
+      gap: 56px;
+      padding: 28px 18px;
+    }
+
+    .flow__col--agents,
+    .flow__col--clients {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .flow__col .label {
+      grid-column: 1 / -1;
+    }
+
+    .node--agent {
+      grid-template-columns: auto 1fr;
+      grid-template-areas: 'dot host' 'dot os' 'dot queue';
+      padding: 10px 12px;
+    }
+
+    .node__host {
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .flow__cards {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

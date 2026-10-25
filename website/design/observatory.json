@@ -1,0 +1,157 @@
+{
+  "$comment": "观澜「观测单元 GL-01」的唯一几何与配色定义。Blender 构建脚本（design/blender/build_observatory.py）与站点 Three.js 场景（src/scripts/observatory/）都读这一份。单位：米。h 为沿竖直轴的层高；Blender 中竖直轴为 Z，导出 glTF 后为 Y。",
+  "palette": {
+    "void": "#07090c",
+    "graphite": "#16191e",
+    "anodized": "#2a2e35",
+    "steel": "#a4abb4",
+    "bone": "#e9e6df",
+    "amber": "#ffa64a",
+    "teal": "#35d8b6",
+    "copper": "#b5764a"
+  },
+  "radius": 1.0,
+  "seam": 0.014,
+  "explode": 0.62,
+  "layers": [
+    {
+      "id": "net",
+      "label": "网络",
+      "h": 0.24
+    },
+    {
+      "id": "disk",
+      "label": "磁盘",
+      "h": 0.16
+    },
+    {
+      "id": "mem",
+      "label": "内存",
+      "h": 0.34
+    },
+    {
+      "id": "cpu",
+      "label": "处理器",
+      "h": 0.14
+    },
+    {
+      "id": "gpu",
+      "label": "显卡",
+      "h": 0.3
+    },
+    {
+      "id": "fan",
+      "label": "风扇",
+      "h": 0.18
+    },
+    {
+      "id": "lens",
+      "label": "观测窗",
+      "h": 0.12
+    }
+  ],
+  "pulse": [
+    [
+      -0.62,
+      0.0
+    ],
+    [
+      -0.2,
+      0.0
+    ],
+    [
+      -0.14,
+      -0.04
+    ],
+    [
+      -0.07,
+      0.2
+    ],
+    [
+      0.0,
+      -0.12
+    ],
+    [
+      0.07,
+      0.06
+    ],
+    [
+      0.13,
+      0.0
+    ],
+    [
+      0.62,
+      0.0
+    ]
+  ],
+  "waves": {
+    "$comment": "海面点阵：h(x,y,t)=Σ amp·sin(k·(dir·p)+speed·t+phase) + 以仪器为圆心的涟漪 ripple.amp·sin(ripple.k·r−ripple.speed·t)·exp(−ripple.decay·r)。Blender 静帧取 t=0。",
+    "size": 32,
+    "res": 220,
+    "z": -1.45,
+    "components": [
+      {
+        "dir": [
+          1.0,
+          0.35
+        ],
+        "k": 0.55,
+        "amp": 0.16,
+        "speed": 0.55,
+        "phase": 0.0
+      },
+      {
+        "dir": [
+          -0.4,
+          1.0
+        ],
+        "k": 0.9,
+        "amp": 0.08,
+        "speed": 0.8,
+        "phase": 1.3
+      },
+      {
+        "dir": [
+          0.7,
+          -0.7
+        ],
+        "k": 1.7,
+        "amp": 0.035,
+        "speed": 1.25,
+        "phase": 2.1
+      }
+    ],
+    "ripple": {
+      "amp": 0.07,
+      "k": 2.4,
+      "speed": 1.6,
+      "decay": 0.18
+    }
+  },
+  "camera": {
+    "$comment": "Blender 坐标（Z 向上）。site 端换算为 Y 向上：(x, z, -y)。shiftX 为物体在画面中的横向偏移（占画面宽度比例，正值向右），Blender 中对应 camera.shift_x = -shiftX。",
+    "hero": {
+      "distance": 8.6,
+      "elevation": 13,
+      "azimuth": -24,
+      "lens": 38,
+      "target": [
+        0,
+        0,
+        0.8
+      ],
+      "shiftX": 0.11
+    },
+    "explode": {
+      "distance": 10.5,
+      "elevation": 24,
+      "azimuth": -32,
+      "lens": 50,
+      "target": [
+        0,
+        0,
+        2.6
+      ]
+    }
+  }
+}

@@ -1,0 +1,29 @@
+---
+import Base from '../layouts/Base.astro';
+import Stage from '../components/Stage.astro';
+import Hero from '../components/Hero.astro';
+import Anatomy from '../components/Anatomy.astro';
+import Flow from '../components/Flow.astro';
+import Live from '../components/Live.astro';
+import Clients from '../components/Clients.astro';
+import Headless from '../components/Headless.astro';
+import Hub from '../components/Hub.astro';
+import Security from '../components/Security.astro';
+import Finale from '../components/Finale.astro';
+import { getRelease } from '../data/release';
+
+const release = await getRelease();
+---
+
+<Base path="/">
+  <Stage />
+  <Hero release={release} />
+  <Anatomy />
+  <Flow />
+  <Live />
+  <Clients />
+  <Headless />
+  <Hub />
+  <Security />
+  <Finale release={release} />
+</Base>

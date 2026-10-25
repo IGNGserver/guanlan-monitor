@@ -1,0 +1,387 @@
+---
+import Base from '../layouts/Base.astro';
+import PageHead from '../components/PageHead.astro';
+import { ASSETS, HUB_ADDRESSES, LINUX_SILENT, RELEASES_URL, WIN_SILENT } from '../data/product';
+import { formatDate, formatSize, getRelease } from '../data/release';
+
+const release = await getRelease();
+const platforms = [
+  {
+    id: 'windows',
+    name: 'Windows',
+    intro: '安装后打开「观澜」，在「配置」页填写中枢地址、访问密钥和设备名称。应用运行后显示在系统托盘：左键打开主界面，右键查看状态或退出。采集与上报由机器级服务负责，关闭窗口或注销登录都不会中断。',
+    silent: WIN_SILENT,
+    lang: 'PowerShell',
+  },
+  {
+    id: 'linux',
+    name: 'Linux',
+    intro: '适用于 Ubuntu / Debian amd64。安装后提供 /usr/bin/guanlan 桌面端与 /usr/bin/guanlan-agent 命令；系统级 guanlan-agent.service 随安装启用，无桌面会话也会持续采集与上报。首次打开桌面端可在「连接」页填写中枢地址和访问密钥。Fedora / RPM、Arch 等发行版目前没有原生包，可用任意进程管理器运行包内的 device-state-console-agent。',
+    silent: LINUX_SILENT,
+    lang: 'bash',
+  },
+  {
+    id: 'android',
+    name: 'Android',
+    intro: '安装后首次打开时填写与 Windows 端相同的中枢地址和查看密钥。客户端支持 http:// 与 https://；未配置 TLS 时仅建议在可信局域网或受控内网穿透中使用 HTTP。Android 提示未知来源安装时，需要由用户确认允许该来源。',
+  },
+] as const;
+const byPlatform = (p: string) => ASSETS.filter((a) => a.platform.toLowerCase() === p);
+---
+
+<Base title="下载" path="/download/" description="从产品仓库的 GitHub Releases 下载观澜的 Windows、Linux 与 Android 客户端。">
+  <PageHead
+    index="DL"
+    eyebrow="下载"
+    title="下载观澜"
+    lede="所有安装包只通过产品仓库的 GitHub Releases 分发，每个文件都附带 .sha256 校验文件。本站不托管任何安装包。"
+  >
+    <div class="rel" slot="aside">
+      <p class="label">{release.prerelease ? '测试版通道' : '正式版'}</p>
+      <p class="rel__tag mono">{release.tag}</p>
+      <p class="rel__date mono faint">发布于 {formatDate(release.publishedAt)}</p>
+      <a class="btn btn--sm" href={release.url} rel="noopener">版本说明 ↗</a>
+      <a class="rel__all" href={RELEASES_URL} rel="noopener">全部版本 ↗</a>
+    </div>
+  </PageHead>
+
+  {
+    release.prerelease && (
+      <div class="wrap">
+        <p class="notice">
+          <span class="dot dot--amber" />
+          观澜目前以 GitHub prerelease（测试版通道）持续发布。版本说明注明测试版不更新 latest、不用于生产部署；请先在非生产环境验证。
+        </p>
+      </div>
+    )
+  }
+
+  <div class="wrap plats">
+    {
+      platforms.map((p) => (
+        <section class="plat" id={p.id} aria-labelledby={`h-${p.id}`}>
+          <header class="plat__head">
+            <h2 id={`h-${p.id}`}>{p.name}</h2>
+          </header>
+          <div class="plat__body">
+            <ul class="assets">
+              {byPlatform(p.id).map((spec) => {
+                const a = release.assets[spec.key];
+                return (
+                  <li class:list={['asset', { 'asset--primary': spec.primary }]}>
+                    <div class="asset__info">
+                      <p class="asset__label">
+                        {spec.label}
+                        {spec.primary && <span class="tag">推荐</span>}
+                      </p>
+                      <p class="asset__name mono">{a?.name ?? spec.pattern.source.replace(/\\/g, '').replace('^', '').replace('$', '')}</p>
+                      <p class="asset__note faint">{spec.note}</p>
+                    </div>
+                    <div class="asset__act">
+                      {a ? (
+                        <>
+                          <a class:list={['btn btn--sm', { 'btn--primary': spec.primary }]} href={a.url} rel="noopener">
+                            下载 · {formatSize(a.size)}
+                          </a>
+                          <a class="asset__sha mono" href={`${a.url}.sha256`} rel="noopener">
+                            .sha256
+                          </a>
+                        </>
+                      ) : (
+                        <a class="btn btn--sm" href={RELEASES_URL} rel="noopener">
+                          前往 Releases
+                        </a>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            <p class="plat__intro">{p.intro}</p>
+            {'silent' in p && (
+              <details class="plat__silent">
+                <summary>无界面安装（{p.lang}）</summary>
+                <pre class="code">
+                  <code>{p.silent}</code>
+                </pre>
+              </details>
+            )}
+          </div>
+        </section>
+      ))
+    }
+  </div>
+
+  <div class="wrap twin">
+    <section class="card" aria-labelledby="h-verify">
+      <p class="label label--amber">校验</p>
+      <h2 id="h-verify">核对 SHA-256</h2>
+      <p class="dim">下载对应的 <code>.sha256</code> 文件，把其中的摘要与本地计算结果比对。</p>
+      <pre class="code"><code><span class="c"># Linux</span>
+sha256sum DeviceStateConsole-Linux-Install-vX.Y.Z.deb
+<span class="c"># Windows PowerShell</span>
+Get-FileHash -Algorithm SHA256 .\DeviceStateConsole-Windows-Setup-vX.Y.Z.exe</code></pre>
+    </section>
+    <section class="card" aria-labelledby="h-connect">
+      <p class="label label--amber">连接</p>
+      <h2 id="h-connect">填写中枢地址</h2>
+      <p class="dim">所有客户端和 Agent 使用同一个公开入口。没有中枢？先 <a href="/deploy/">部署中枢</a>。</p>
+      <dl class="addrs">
+        {
+          HUB_ADDRESSES.map(([k, v]) => (
+            <div>
+              <dt>{k}</dt>
+              <dd class="mono">{v}</dd>
+            </div>
+          ))
+        }
+      </dl>
+    </section>
+  </div>
+</Base>
+
+<style>
+  .rel {
+    display: grid;
+    gap: 6px;
+    justify-items: start;
+    padding: 22px 24px;
+    border: 1px solid var(--line-2);
+    background: var(--ink-1);
+    min-width: 240px;
+  }
+
+  .rel__tag {
+    font-size: 30px;
+    color: var(--amber);
+    letter-spacing: 0;
+  }
+
+  .rel__date {
+    font-size: 12px;
+    margin-bottom: 12px;
+  }
+
+  .rel__all {
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--bone-2);
+  }
+
+  .notice {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 14px 18px;
+    border: 1px solid rgb(255 166 74 / 0.3);
+    background: rgb(255 166 74 / 0.05);
+    font-size: 14px;
+    color: var(--bone-2);
+  }
+
+  .notice .dot {
+    transform: translateY(-2px);
+  }
+
+  .plats {
+    display: grid;
+    gap: 0;
+    margin-top: 56px;
+  }
+
+  .plat {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 40px;
+    padding: 48px 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .plat__head h2 {
+    font-family: var(--font-cjk);
+    font-weight: 200;
+    font-size: clamp(2rem, 3.4vw, 3rem);
+  }
+
+  .assets {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+
+  .asset {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 24px;
+    align-items: center;
+    padding: 20px 22px;
+    background: var(--void);
+  }
+
+  .asset--primary {
+    background: var(--ink-1);
+  }
+
+  .asset__label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+  }
+
+  .asset__label .tag {
+    height: 20px;
+    color: var(--amber);
+    border-color: rgb(255 166 74 / 0.4);
+  }
+
+  .asset__name {
+    margin-top: 6px;
+    font-size: 12.5px;
+    color: var(--bone-2);
+    overflow-wrap: anywhere;
+  }
+
+  .asset__note {
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  .asset__act {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .asset__sha {
+    font-size: 11.5px;
+    color: var(--bone-3);
+  }
+
+  .asset__sha:hover {
+    color: var(--amber);
+  }
+
+  .plat__intro {
+    margin-top: 22px;
+    font-size: 14.5px;
+    line-height: 1.85;
+    color: var(--bone-2);
+    max-width: 62em;
+  }
+
+  .plat__silent {
+    margin-top: 18px;
+  }
+
+  .plat__silent summary {
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--bone);
+    width: fit-content;
+  }
+
+  .plat__silent summary::marker {
+    color: var(--amber);
+  }
+
+  .plat__silent .code {
+    margin-top: 12px;
+  }
+
+  .twin {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    padding-top: 24px;
+    padding-bottom: 120px;
+  }
+
+  .card {
+    padding: 28px;
+    border: 1px solid var(--line);
+    background: var(--ink-1);
+    min-width: 0;
+  }
+
+  .card h2 {
+    margin: 12px 0 10px;
+    font-family: var(--font-cjk);
+    font-weight: 300;
+    font-size: 1.6rem;
+  }
+
+  .card .dim {
+    font-size: 14px;
+    margin-bottom: 18px;
+  }
+
+  .card a {
+    color: var(--amber);
+  }
+
+  .addrs {
+    margin: 0;
+    display: grid;
+    gap: 1px;
+    background: var(--line);
+  }
+
+  .addrs div {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 14px;
+    background: var(--void);
+    font-size: 13px;
+  }
+
+  .addrs dt {
+    color: var(--bone-3);
+  }
+
+  .addrs dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+
+  @media (max-width: 900px) {
+    .plat {
+      grid-template-columns: 1fr;
+      gap: 20px;
+      padding: 36px 0;
+    }
+
+    .twin {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .asset {
+      grid-template-columns: 1fr;
+    }
+
+    .asset__act {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .addrs div {
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .addrs dd {
+      text-align: left;
+    }
+  }
+</style>

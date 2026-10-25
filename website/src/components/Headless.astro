@@ -1,0 +1,286 @@
+---
+import { AGENT_COMMANDS, LINUX_SILENT, WIN_SILENT } from '../data/product';
+
+const points = [
+  ['/S', '静默安装；同一份桌面安装包在无桌面会话的机器上也能完成安装、配置、开机自启与上报。'],
+  ['/VERIFY=<秒>', '安装结束前等待首次上报确认；超时返回退出码 3，便于 Intune / SCCM / Ansible 判定。'],
+  ['机器级服务', 'Windows 注册 guanlan-agent 服务（无法创建时回退为 AtStartup + SYSTEM 计划任务）；Linux 启用 WantedBy=multi-user.target 的系统单元。'],
+  ['--key-stdin', '访问密钥只通过标准输入或密钥文件传入，不出现在进程参数里；status / export / 诊断输出全部脱敏。'],
+];
+---
+
+<section id="headless" class="headless section" data-idx="05" aria-labelledby="headless-title">
+  <div class="wrap">
+    <div class="headless__top">
+      <header>
+        <p class="eyebrow" data-reveal>§ 05 · 无人值守</p>
+        <h2 id="headless-title" class="display" data-reveal style="--d:1">没有桌面，<br />也能装好、<br />配好、报上来。</h2>
+      </header>
+
+      <div class="term" data-term data-reveal style="--d:1">
+        <div class="term__bar">
+          <div class="term__tabs" role="tablist" aria-label="平台">
+            <button type="button" role="tab" aria-selected="true" aria-controls="term-win" id="tt-win" data-term-tab="win">Windows · PowerShell</button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="term-linux" id="tt-linux" data-term-tab="linux" tabindex="-1">Linux · bash</button>
+          </div>
+          <button type="button" class="term__copy" data-copy>复制</button>
+        </div>
+        <pre class="term__body" id="term-win" role="tabpanel" aria-labelledby="tt-win" data-term-pane="win"><code>{WIN_SILENT}</code></pre>
+        <pre class="term__body" id="term-linux" role="tabpanel" aria-labelledby="tt-linux" data-term-pane="linux" hidden><code>{LINUX_SILENT}</code></pre>
+        <p class="term__foot faint">命令取自产品 README；把 <code>X.Y.Z</code> 换成 Releases 中的版本号，<code>hub.example.com</code> 换成你的中枢地址。</p>
+      </div>
+    </div>
+
+    <dl class="hpoints">
+      {
+        points.map(([k, v], i) => (
+          <div data-reveal style={`--d:${i}`}>
+            <dt class="mono">{k}</dt>
+            <dd>{v}</dd>
+          </div>
+        ))
+      }
+    </dl>
+
+    <div class="cmds" data-reveal>
+      <p class="label">随包发布的 guanlan-agent 命令</p>
+      <dl class="cmds__grid">
+        {
+          AGENT_COMMANDS.map(([c, d]) => (
+            <div>
+              <dt class="mono">
+                <span class="faint">guanlan-agent </span>
+                {c}
+              </dt>
+              <dd>{d}</dd>
+            </div>
+          ))
+        }
+      </dl>
+      <p class="cmds__note faint">卸载默认保留机器级配置；只有 <code>--purge</code>（deb）或 <code>/REMOVECONFIG</code>（Windows）才删除。</p>
+    </div>
+  </div>
+</section>
+
+<script>
+  const root = document.querySelector<HTMLElement>('[data-term]');
+  if (root) {
+    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-term-tab]'));
+    const panes = Array.from(root.querySelectorAll<HTMLElement>('[data-term-pane]'));
+    const copy = root.querySelector<HTMLButtonElement>('[data-copy]')!;
+    const select = (t: HTMLButtonElement) => {
+      tabs.forEach((x) => {
+        x.setAttribute('aria-selected', String(x === t));
+        x.tabIndex = x === t ? 0 : -1;
+      });
+      panes.forEach((p) => (p.hidden = p.dataset.termPane !== t.dataset.termTab));
+    };
+    tabs.forEach((t, i) => {
+      t.addEventListener('click', () => select(t));
+      t.addEventListener('keydown', (e) => {
+        const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+        if (!d) return;
+        const n = tabs[(i + d + tabs.length) % tabs.length]!;
+        n.focus();
+        select(n);
+      });
+    });
+    copy.addEventListener('click', async () => {
+      const pane = panes.find((p) => !p.hidden);
+      try {
+        await navigator.clipboard.writeText(pane?.textContent ?? '');
+        copy.textContent = '已复制';
+      } catch {
+        copy.textContent = '请手动选择复制';
+      }
+      setTimeout(() => (copy.textContent = '复制'), 1600);
+    });
+  }
+</script>
+
+<style>
+  .headless {
+    z-index: 1;
+    background: var(--void);
+    border-top: 1px solid var(--line);
+  }
+
+  .headless__top {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: clamp(40px, 6vw, 96px);
+    align-items: end;
+  }
+
+  .term {
+    border: 1px solid var(--line-2);
+    background: #07090c;
+    box-shadow: 0 40px 120px -40px rgb(0 0 0 / 0.9);
+    min-width: 0;
+  }
+
+  .term__bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid var(--line);
+    padding-right: 10px;
+  }
+
+  .term__tabs {
+    display: flex;
+    min-width: 0;
+    overflow-x: auto;
+  }
+
+  .term__tabs button {
+    height: 42px;
+    padding: 0 16px;
+    border: 0;
+    border-right: 1px solid var(--line);
+    background: none;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--bone-3);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .term__tabs button[aria-selected='true'] {
+    color: var(--bone);
+    background: var(--ink-2);
+    box-shadow: inset 0 -1px 0 var(--amber);
+  }
+
+  .term__copy {
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+    background: none;
+    font-size: 12px;
+    color: var(--bone-2);
+    cursor: pointer;
+    flex: none;
+  }
+
+  .term__body {
+    margin: 0;
+    padding: 22px 22px 18px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.85;
+    color: var(--bone);
+    white-space: pre;
+    scrollbar-width: thin;
+  }
+
+  .term__body::before {
+    content: '› ';
+    color: var(--amber);
+  }
+
+  .term__foot {
+    padding: 0 22px 18px;
+    font-size: 12px;
+  }
+
+  .term__foot code,
+  .cmds__note code {
+    color: var(--bone-2);
+  }
+
+  .hpoints {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 32px;
+    margin: clamp(48px, 7vw, 88px) 0 0;
+  }
+
+  .hpoints div {
+    border-top: 1px solid var(--line-2);
+    padding-top: 18px;
+  }
+
+  .hpoints dt {
+    font-size: 15px;
+    color: var(--amber);
+  }
+
+  .hpoints dd {
+    margin: 10px 0 0;
+    font-size: 13.5px;
+    line-height: 1.75;
+    color: var(--bone-2);
+  }
+
+  .cmds {
+    margin-top: clamp(48px, 6vw, 72px);
+    padding: 26px 28px;
+    border: 1px solid var(--line);
+    background: var(--ink-1);
+  }
+
+  .cmds__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 40px;
+    margin: 14px 0 0;
+  }
+
+  .cmds__grid div {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .cmds__grid dt {
+    font-size: 12.5px;
+    overflow-wrap: anywhere;
+  }
+
+  .cmds__grid dd {
+    margin: 0;
+    font-size: 13px;
+    color: var(--bone-2);
+  }
+
+  .cmds__note {
+    margin-top: 16px;
+    font-size: 12.5px;
+  }
+
+  @media (max-width: 1000px) {
+    .headless__top {
+      grid-template-columns: 1fr;
+    }
+
+    .hpoints {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .cmds__grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .hpoints {
+      grid-template-columns: 1fr;
+    }
+
+    .cmds__grid div {
+      grid-template-columns: 1fr;
+      gap: 4px;
+    }
+
+    .term__body {
+      font-size: 12px;
+      padding: 18px 16px;
+    }
+  }
+</style>

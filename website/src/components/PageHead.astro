@@ -1,0 +1,101 @@
+---
+/** 子页面页头：与首页同一套刻印式序号、发丝线与套准标记。 */
+interface Props {
+  index: string;
+  eyebrow: string;
+  title: string;
+  lede: string;
+}
+const { index, eyebrow, title, lede } = Astro.props;
+---
+
+<header class="phead">
+  <div class="wrap phead__in">
+    <span class="phead__idx mono" aria-hidden="true">{index}</span>
+    <div class="phead__copy">
+      <p class="eyebrow">{eyebrow}</p>
+      <h1 class="phead__title">{title}</h1>
+      <p class="lede">{lede}</p>
+    </div>
+    <div class="phead__aside"><slot name="aside" /></div>
+  </div>
+  <svg class="phead__wave" viewBox="0 0 1440 120" preserveAspectRatio="none" aria-hidden="true">
+    <polyline
+      points="0,80 520,80 560,86 600,30 640,104 680,64 712,80 1440,80"
+      fill="none"
+      stroke="#ffa64a"
+      stroke-width="1.2"
+      vector-effect="non-scaling-stroke"
+      stroke-linejoin="round"></polyline>
+  </svg>
+</header>
+
+<style>
+  .phead {
+    position: relative;
+    padding: calc(var(--header) + clamp(56px, 9vw, 120px)) 0 0;
+    overflow: hidden;
+    background:
+      radial-gradient(60% 80% at 80% 0%, rgb(255 166 74 / 0.07), transparent 70%),
+      linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 48px 48px,
+      linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0 / 48px 48px,
+      var(--void);
+  }
+
+  .phead::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom, transparent 40%, var(--void));
+    pointer-events: none;
+  }
+
+  .phead__in {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 40px;
+    align-items: end;
+  }
+
+  .phead__idx {
+    position: absolute;
+    right: var(--gutter);
+    top: -40px;
+    font-weight: 200;
+    font-size: clamp(6rem, 16vw, 15rem);
+    line-height: 0.8;
+    color: transparent;
+    -webkit-text-stroke: 1px rgb(233 230 223 / 0.07);
+    pointer-events: none;
+  }
+
+  .phead__title {
+    margin: 20px 0 22px;
+    font-family: var(--font-cjk);
+    font-weight: 200;
+    font-size: clamp(3rem, 7vw, 6.2rem);
+    line-height: 1;
+  }
+
+  .phead__aside {
+    position: relative;
+  }
+
+  .phead__wave {
+    position: relative;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    height: 90px;
+    margin-top: 40px;
+    opacity: 0.7;
+  }
+
+  @media (max-width: 760px) {
+    .phead__in {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

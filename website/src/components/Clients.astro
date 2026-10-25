@@ -1,0 +1,281 @@
+---
+import { CLIENTS, HUB_ADDRESSES } from '../data/product';
+---
+
+<section id="clients" class="clients section" data-idx="04" aria-labelledby="clients-title">
+  <div class="wrap">
+    <header class="clients__head">
+      <p class="eyebrow" data-reveal>§ 04 · 终端</p>
+      <h2 id="clients-title" class="display" data-reveal style="--d:1">一个中枢，<br />四种终端。</h2>
+    </header>
+
+    <div class="clients__grid">
+      {
+        CLIENTS.map((c, i) => (
+          <article class={`client client--${c.id}`} data-reveal style={`--d:${i}`}>
+            <div class="client__art" aria-hidden="true">
+              {c.id === 'web' && (
+                <svg viewBox="0 0 220 140">
+                  <rect x="10" y="12" width="200" height="118" rx="6" class="ln" />
+                  <path d="M10 30h200" class="ln" />
+                  <circle cx="22" cy="21" r="2.5" class="ln" />
+                  <circle cx="31" cy="21" r="2.5" class="ln" />
+                  <circle cx="40" cy="21" r="2.5" class="ln" />
+                  <rect x="60" y="16" width="100" height="9" rx="4.5" class="ln faint" />
+                  <path d="M10 30v100M48 30v100" class="ln faint" />
+                  <rect x="58" y="40" width="68" height="36" class="ln" />
+                  <rect x="132" y="40" width="68" height="36" class="ln" />
+                  <polyline points="62,66 72,60 80,64 90,52 100,58 110,48 122,54" class="sig" />
+                  <polyline points="136,62 148,62 156,58 166,60 176,56 196,57" class="sig sig--bone" />
+                  <rect x="58" y="84" width="142" height="36" class="ln faint" />
+                  <path d="M16 42h24M16 52h18M16 62h22" class="ln" />
+                </svg>
+              )}
+              {c.id === 'windows' && (
+                <svg viewBox="0 0 220 140">
+                  <rect x="22" y="10" width="176" height="104" rx="4" class="ln" />
+                  <path d="M22 26h176" class="ln" />
+                  <path d="M172 18h6M184 18l5 0M186 15v6" class="ln faint" />
+                  <rect x="32" y="36" width="76" height="68" class="ln faint" />
+                  <polyline points="36,86 46,80 56,84 66,70 76,76 86,64 102,70" class="sig" />
+                  <rect x="116" y="36" width="72" height="30" class="ln faint" />
+                  <rect x="116" y="74" width="72" height="30" class="ln faint" />
+                  <path d="M0 128h220" class="ln faint" />
+                  <rect x="178" y="122" width="12" height="12" rx="2" class="ln" />
+                  <circle cx="187" cy="125" r="1.6" class="dotf" />
+                  <path d="M181 129l2 0 1 -2 1 3 1 -1h2" class="sig" />
+                </svg>
+              )}
+              {c.id === 'linux' && (
+                <svg viewBox="0 0 220 140">
+                  <rect x="22" y="12" width="176" height="108" rx="10" class="ln" />
+                  <path d="M22 34h176" class="ln" />
+                  <rect x="88" y="19" width="44" height="8" rx="4" class="ln faint" />
+                  <circle cx="186" cy="23" r="4" class="ln faint" />
+                  <path d="M184.5 21.5l3 3M187.5 21.5l-3 3" class="ln faint" />
+                  <rect x="34" y="44" width="152" height="18" rx="3" class="ln faint" />
+                  <path d="M40 53h40" class="ln" />
+                  <rect x="34" y="70" width="72" height="40" rx="3" class="ln faint" />
+                  <rect x="114" y="70" width="72" height="40" rx="3" class="ln faint" />
+                  <polyline points="38,100 50,94 60,98 70,86 82,92 102,84" class="sig" />
+                  <polyline points="118,96 132,96 140,92 152,94 164,88 182,90" class="sig sig--bone" />
+                </svg>
+              )}
+              {c.id === 'android' && (
+                <svg viewBox="0 0 220 140">
+                  <rect x="80" y="4" width="60" height="132" rx="10" class="ln" />
+                  <circle cx="110" cy="13" r="2" class="ln faint" />
+                  <rect x="88" y="24" width="44" height="22" rx="2" class="ln faint" />
+                  <polyline points="90,40 98,36 104,39 110,30 116,35 122,28 130,32" class="sig" />
+                  <rect x="88" y="52" width="44" height="12" rx="2" class="ln faint" />
+                  <rect x="88" y="68" width="44" height="12" rx="2" class="ln faint" />
+                  <rect x="88" y="84" width="44" height="12" rx="2" class="ln faint" />
+                  <circle cx="93" cy="58" r="1.6" class="dotf" />
+                  <circle cx="93" cy="74" r="1.6" class="dotf" />
+                  <circle cx="93" cy="90" r="1.6" class="dotf dotf--amber" />
+                  <path d="M80 112h60" class="ln faint" />
+                  <path d="M92 124h6M107 124h6M122 124h6" class="ln" />
+                </svg>
+              )}
+            </div>
+            <p class="label">{c.sys}</p>
+            <h3>{c.name}</h3>
+            <ul>
+              {c.points.map((p) => (
+                <li>{p}</li>
+              ))}
+            </ul>
+          </article>
+        ))
+      }
+    </div>
+
+    <div class="addr" data-reveal>
+      <div class="addr__lead">
+        <p class="label label--amber">同一个公开入口</p>
+        <p class="addr__text">所有客户端和 Agent 都使用同一个中枢地址。默认建议 HTTPS；不要把 Docker 容器内部的 <code>4000</code> 端口填入客户端。</p>
+      </div>
+      <dl class="addr__list">
+        {
+          HUB_ADDRESSES.map(([k, v]) => (
+            <div>
+              <dt>{k}</dt>
+              <dd class="mono">{v}</dd>
+            </div>
+          ))
+        }
+      </dl>
+    </div>
+  </div>
+</section>
+
+<style>
+  .clients {
+    z-index: 1;
+    background: var(--void);
+    border-top: 1px solid var(--line);
+  }
+
+  .clients__grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1px;
+    margin-top: clamp(48px, 7vw, 88px);
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+
+  .client {
+    padding: 28px 24px 32px;
+    background: var(--void);
+    transition: background 0.4s var(--ease);
+  }
+
+  .client:hover {
+    background: var(--ink-1);
+  }
+
+  .client__art {
+    margin: -4px -6px 24px;
+    aspect-ratio: 220 / 140;
+  }
+
+  .client__art svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  .client__art :global(.ln) {
+    fill: none;
+    stroke: var(--bone-2);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .client__art :global(.ln.faint) {
+    stroke: var(--line-3);
+  }
+
+  .client__art :global(.sig) {
+    fill: none;
+    stroke: var(--amber);
+    stroke-width: 1.4;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+    stroke-dasharray: 200;
+    stroke-dashoffset: 0;
+  }
+
+  .client__art :global(.sig--bone) {
+    stroke: var(--bone);
+    opacity: 0.6;
+  }
+
+  .client__art :global(.dotf) {
+    fill: var(--teal);
+  }
+
+  .client__art :global(.dotf--amber) {
+    fill: var(--amber);
+  }
+
+  :global(html.js) .client:not(.in) .client__art :global(.sig) {
+    stroke-dashoffset: 200;
+  }
+
+  .client.in .client__art :global(.sig) {
+    transition: stroke-dashoffset 1.8s 0.3s var(--ease);
+  }
+
+  .client h3 {
+    margin-top: 8px;
+    font-family: var(--font-cjk);
+    font-size: 1.4rem;
+    font-weight: 300;
+  }
+
+  .client ul {
+    list-style: none;
+    margin: 18px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+  }
+
+  .client li {
+    position: relative;
+    padding-left: 16px;
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: var(--bone-2);
+  }
+
+  .client li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.75em;
+    width: 6px;
+    height: 1px;
+    background: var(--amber);
+  }
+
+  .addr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+    gap: 32px 64px;
+    margin-top: 40px;
+    padding: 28px;
+    border: 1px solid var(--line);
+    background: var(--ink-1);
+  }
+
+  .addr__text {
+    margin-top: 12px;
+    color: var(--bone-2);
+    font-size: 14.5px;
+  }
+
+  .addr__text code {
+    color: var(--amber);
+  }
+
+  .addr__list {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--line);
+  }
+
+  .addr__list div {
+    padding: 12px 16px;
+    background: var(--ink-1);
+  }
+
+  .addr__list dt {
+    font-size: 12px;
+    color: var(--bone-3);
+  }
+
+  .addr__list dd {
+    margin: 4px 0 0;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 1100px) {
+    .clients__grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 760px) {
+    .clients__grid,
+    .addr,
+    .addr__list {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

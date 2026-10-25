@@ -1,0 +1,361 @@
+---
+import Base from '../layouts/Base.astro';
+import PageHead from '../components/PageHead.astro';
+import { COMPOSE_URL, ENV_EXAMPLE_URL, HUB_ADDRESSES, HUB_PORT, README_URL, REALTIME_DOC_URL } from '../data/product';
+
+const env = [
+  ['SESSION_SECRET', '控制台会话签名密钥', true],
+  ['ACCESS_KEY', '网页、Windows / Android 客户端和所有 Agent 共用的唯一访问密钥；升级时即使旧 .env 仍有 AGENT_SHARED_SECRET，也以它为准', true],
+  ['MYSQL_ROOT_PASSWORD', 'MySQL root 密码', true],
+  ['MYSQL_PASSWORD', '应用数据库用户密码', true],
+  ['REDIS_PASSWORD', 'Redis 认证密码；REDIS_URL 需配置相同的密码', true],
+  ['TRUST_PROXY', '只有当 server 仅能从受信反向代理访问时才设为 true，否则保持 false', false],
+  ['SESSION_COOKIE_SECURE', '默认 true；仅在明确受信的 HTTP 网络中改为 false', false],
+  ['AGENT_REQUIRE_HTTPS', '默认 true；仅在明确受信的 HTTP 网络中改为 false', false],
+] as const;
+
+const toc = [
+  ['prep', '准备'],
+  ['env', '配置 .env'],
+  ['up', '启动'],
+  ['proxy', '反向代理与 TLS'],
+  ['connect', '接入设备'],
+  ['ops', '升级与备份'],
+];
+---
+
+<Base title="部署中枢" path="/deploy/" description="用 Docker Compose 在自己的服务器上部署观澜中枢：配置、启动、反向代理与接入设备。">
+  <PageHead
+    index="HUB"
+    eyebrow="部署中枢"
+    title="部署中枢"
+    lede={`中枢以 Docker Compose 运行，默认只拉取 GitHub Container Registry 中已发布的镜像。部署完成后，所有客户端与 Agent 都连接同一个公开入口（默认端口 ${HUB_PORT}）。`}
+  >
+    <nav class="toc" slot="aside" aria-label="本页目录">
+      <p class="label">本页</p>
+      {
+        toc.map(([id, t], i) => (
+          <a href={`#${id}`}>
+            <span class="mono faint">{String(i + 1).padStart(2, '0')}</span>
+            {t}
+          </a>
+        ))
+      }
+    </nav>
+  </PageHead>
+
+  <article class="wrap doc">
+    <section id="prep" class="step">
+      <p class="step__n mono">01</p>
+      <div>
+        <h2>准备</h2>
+        <p>一台能运行 Docker 与 Docker Compose 的服务器。从产品仓库取得 <a href={COMPOSE_URL} rel="noopener"><code>docker-compose.yml</code></a> 与 <a href={ENV_EXAMPLE_URL} rel="noopener"><code>.env.example</code></a>，放在同一目录。</p>
+        <div class="svc">
+          <div><span class="mono amber">web</span><span>控制台，映射 <code>{HUB_PORT}:3000</code>，并把 <code>/api/**</code> 代理到 server</span></div>
+          <div><span class="mono amber">server</span><span>中枢服务（容器内 4000 端口，不对外），数据目录挂载 <code>./data</code></span></div>
+          <div><span class="mono amber">redis</span><span>Redis 7.4，开启 AOF 与密码认证</span></div>
+          <div><span class="mono amber">mysql</span><span>MySQL 8.4，utf8mb4</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="env" class="step">
+      <p class="step__n mono">02</p>
+      <div>
+        <h2>配置 .env</h2>
+        <pre class="code"><code>cp .env.example .env</code></pre>
+        <p>至少修改标记为「必须」的五项。生产环境默认通过 TLS 反向代理访问控制台。</p>
+        <div class="envt" role="table" aria-label=".env 关键项">
+          {
+            env.map(([k, v, must]) => (
+              <div role="row">
+                <span role="cell" class="mono">{k}</span>
+                <span role="cell">{v}</span>
+                <span role="cell" class:list={['envt__must', { on: must }]}>{must ? '必须' : '按需'}</span>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <section id="up" class="step">
+      <p class="step__n mono">03</p>
+      <div>
+        <h2>启动</h2>
+        <p>生产环境必须使用固定版本或不可变 digest：</p>
+        <pre class="code"><code><span class="k">DSC_VERSION</span>=&lt;版本号&gt; docker compose pull
+<span class="k">DSC_VERSION</span>=&lt;版本号&gt; docker compose up -d</code></pre>
+        <p>开发或测试环境如果确实需要移动标签，可以显式选择 <code>latest</code>：</p>
+        <pre class="code"><code><span class="k">DSC_VERSION</span>=latest docker compose pull
+<span class="k">DSC_VERSION</span>=latest docker compose up -d</code></pre>
+        <p class="faint">server 提供 <code>/api/health/readiness</code> 与 <code>/api/health/liveness</code> 探测端点。</p>
+      </div>
+    </section>
+
+    <section id="proxy" class="step">
+      <p class="step__n mono">04</p>
+      <div>
+        <h2>反向代理与 TLS</h2>
+        <ul class="list">
+          <li>默认建议 HTTPS。<code>SESSION_COOKIE_SECURE</code> 与 <code>AGENT_REQUIRE_HTTPS</code> 默认开启；只有在明确受信的网络中才改用 HTTP。</li>
+          <li>只有当 server 仅能从受信代理访问时才设置 <code>TRUST_PROXY=true</code>。</li>
+          <li>实时查看依赖 Agent 主动连接 <code>/api/agent/realtime</code>：外部入口、反向代理或 FRP / NPS 需要允许该路径的 WebSocket Upgrade，空闲超时应大于 20 秒。</li>
+          <li>使用 frps 时，把内网与外网端口同时指向 <code>{HUB_PORT}</code>。</li>
+          <li>实时通道首版只支持单个中枢进程 / 副本，不能直接横向复制。</li>
+        </ul>
+        <a class="more" href={REALTIME_DOC_URL} rel="noopener">实时通道的完整约束 ↗</a>
+      </div>
+    </section>
+
+    <section id="connect" class="step">
+      <p class="step__n mono">05</p>
+      <div>
+        <h2>接入设备</h2>
+        <p>在各终端填写同一个公开入口与 <code>ACCESS_KEY</code>。不要把 Docker 容器内部的 <code>4000</code> 端口填入客户端。</p>
+        <dl class="addrs">
+          {
+            HUB_ADDRESSES.map(([k, v]) => (
+              <div>
+                <dt>{k}</dt>
+                <dd class="mono">{v}</dd>
+              </div>
+            ))
+          }
+        </dl>
+        <p>然后 <a href="/download/">下载客户端</a>，或在无桌面的机器上用静默参数安装。</p>
+      </div>
+    </section>
+
+    <section id="ops" class="step">
+      <p class="step__n mono">06</p>
+      <div>
+        <h2>升级与备份</h2>
+        <ul class="list">
+          <li>升级：把 <code>DSC_VERSION</code> 换成新的固定版本，重新 <code>pull</code> 与 <code>up -d</code>。</li>
+          <li>备份：<code>mysql-data</code>、<code>redis-data</code> 两个数据卷与 <code>./data</code> 目录（其中保存实时通道的设备凭据哈希）。</li>
+          <li>Windows 端用 setup / update 包升级，Linux 端用新的 .deb；两种方式都会保留机器级配置。</li>
+        </ul>
+        <a class="more" href={README_URL} rel="noopener">产品 README ↗</a>
+      </div>
+    </section>
+  </article>
+</Base>
+
+<style>
+  .toc {
+    display: grid;
+    gap: 2px;
+    min-width: 200px;
+    padding: 18px 20px;
+    border: 1px solid var(--line-2);
+    background: rgb(10 13 17 / 0.8);
+  }
+
+  .toc .label {
+    margin-bottom: 8px;
+  }
+
+  .toc a {
+    display: flex;
+    gap: 12px;
+    padding: 5px 0;
+    font-size: 14px;
+    color: var(--bone-2);
+  }
+
+  .toc a:hover {
+    color: var(--amber);
+  }
+
+  .doc {
+    padding-top: 40px;
+    padding-bottom: 140px;
+  }
+
+  .step {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: 32px;
+    padding: 56px 0;
+    border-top: 1px solid var(--line);
+    max-width: 1080px;
+  }
+
+  .step__n {
+    font-size: 44px;
+    font-weight: 200;
+    color: var(--amber);
+    line-height: 1;
+  }
+
+  .step h2 {
+    font-family: var(--font-cjk);
+    font-weight: 300;
+    font-size: clamp(1.8rem, 3vw, 2.4rem);
+    margin-bottom: 18px;
+  }
+
+  .step p {
+    color: var(--bone-2);
+    font-size: 15px;
+    line-height: 1.85;
+  }
+
+  .step p + p,
+  .step .code + p,
+  .step p + .code {
+    margin-top: 14px;
+  }
+
+  .step a {
+    color: var(--amber);
+  }
+
+  .step code {
+    color: var(--bone);
+  }
+
+  .step .code {
+    margin: 14px 0;
+  }
+
+  .svc {
+    display: grid;
+    gap: 1px;
+    margin-top: 22px;
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+
+  .svc div {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    gap: 16px;
+    padding: 12px 16px;
+    background: var(--ink-1);
+    font-size: 14px;
+    color: var(--bone-2);
+  }
+
+  .envt {
+    display: grid;
+    gap: 1px;
+    margin-top: 18px;
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+
+  .envt div {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr) 56px;
+    gap: 16px;
+    padding: 12px 16px;
+    background: var(--void);
+    font-size: 13.5px;
+    color: var(--bone-2);
+  }
+
+  .envt .mono {
+    color: var(--bone);
+    font-size: 12.5px;
+    overflow-wrap: anywhere;
+  }
+
+  .envt__must {
+    font-size: 12px;
+    color: var(--bone-3);
+    text-align: right;
+  }
+
+  .envt__must.on {
+    color: var(--amber);
+  }
+
+  .list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 12px;
+  }
+
+  .list li {
+    position: relative;
+    padding-left: 20px;
+    font-size: 15px;
+    line-height: 1.8;
+    color: var(--bone-2);
+  }
+
+  .list li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.8em;
+    width: 8px;
+    height: 1px;
+    background: var(--amber);
+  }
+
+  .more {
+    display: inline-block;
+    margin-top: 18px;
+    font-size: 14px;
+  }
+
+  .addrs {
+    margin: 18px 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+
+  .addrs div {
+    padding: 12px 16px;
+    background: var(--ink-1);
+  }
+
+  .addrs dt {
+    font-size: 12px;
+    color: var(--bone-3);
+  }
+
+  .addrs dd {
+    margin: 4px 0 0;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 760px) {
+    .step {
+      grid-template-columns: 1fr;
+      gap: 12px;
+      padding: 40px 0;
+    }
+
+    .step__n {
+      font-size: 28px;
+    }
+
+    .envt div {
+      grid-template-columns: 1fr auto;
+    }
+
+    .envt div span:nth-child(2) {
+      grid-column: 1 / -1;
+      grid-row: 2;
+    }
+
+    .addrs,
+    .svc div {
+      grid-template-columns: 1fr;
+    }
+
+    .svc div {
+      gap: 4px;
+    }
+  }
+</style>

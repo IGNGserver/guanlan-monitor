@@ -46,6 +46,21 @@ Worktree: `~/项目/.wt/设备状态控制台/<slug>`
 - **Release 资产命名必须明确包含系统与安装/便携属性**：Windows setup（支持 `/S` 静默安装与无界面参数化配置）、Windows portable、Windows update、Linux install（内含系统级 systemd 服务与静默配置）、Android。**不再单独发布 CLI 发行资产**——无桌面场景的安装、配置、自启动与上报能力内建于桌面版安装包、随包的 `guanlan-agent` 命令以及机器级 agent 服务中。
 - 权威流程见 `RELEASE.md`（142 行）与 `CONTRIBUTING.md`。
 
+## 官网（website/）
+
+官网源码在 `website/`，Astro 7 + three.js，使用自己的 `package.json` / `pnpm-lock.yaml`，**不并入**
+本仓库根 pnpm workspace。`.github/workflows/website.yml` 在 `main` 和 `release-published` 的
+repository dispatch 时构建并部署到 Cloudflare Pages 项目 `guanlan-website`
+（<https://guanlan.igng.net/>）。旧的 `guanlan-website` 仓库已归档。
+
+- 站点构建/测试与产品交付物一样优先走 CI；本机只在 `$BUILD_SCRATCH_ROOT` 的副本里做交互构建，
+  不把 `website/node_modules`、`website/dist`、`.astro` 写进项目卷。
+- 站点事实在 `website/src/data/product.ts`（含 `FALLBACK_RELEASE` 和最近核对基线）；发布选择和
+  URL 构造在 `website/src/data/release.ts`；改产品版本/资产命名时同步更新并重跑 `website/tests`。
+- 部署需要 `CLOUDFLARE_API_TOKEN`（Pages:Edit）和 `CLOUDFLARE_ACCOUNT_ID`；回滚见
+  `website/docs/HOSTING.md`。
+- 不要提交 `website/dist/`；产品根 `VERSION` 与站点烘焙值不一致时以产品 Releases 为准。
+
 ## 环境事实（不含凭据）
 
 - 运行位置：NAS 上的 Docker Compose（Hub 服务端）+ Windows/Linux 桌面端与机器级 agent；入口与端口见部署文档，凭据只在受控 environment 与本机配置里。

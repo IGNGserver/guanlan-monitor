@@ -1,0 +1,233 @@
+---
+import { HUB_ENV_KEYS, HUB_PORT, HUB_SERVICES } from '../data/product';
+---
+
+<section id="hub" class="hub section" data-idx="06" aria-labelledby="hub-title">
+  <div class="wrap hub__grid">
+    <div class="hub__copy">
+      <p class="eyebrow" data-reveal>§ 06 · 中枢</p>
+      <h2 id="hub-title" class="display" data-reveal style="--d:1">中枢，<br />部署在你自己的<br />服务器上。</h2>
+      <p class="lede" data-reveal style="--d:2">
+        Docker Compose 默认只拉取 GitHub Container Registry 中已发布的镜像，不从源码构建。生产环境使用固定版本或不可变 digest，并通过 TLS 反向代理访问控制台。
+      </p>
+      <ol class="hub__steps">
+        <li data-reveal>
+          <span class="mono amber">01</span>
+          <div>
+            <p>准备配置</p>
+            <pre class="code"><code>cp .env.example .env</code></pre>
+            <p class="faint hub__keys">
+              至少修改 {HUB_ENV_KEYS.map((k, i) => (<><code>{k}</code>{i < HUB_ENV_KEYS.length - 1 ? '、' : ''}</>))}，并为 <code>REDIS_URL</code> 配置相同的认证密码。
+            </p>
+          </div>
+        </li>
+        <li data-reveal>
+          <span class="mono amber">02</span>
+          <div>
+            <p>拉取并启动</p>
+            <pre class="code"><code><span class="k">DSC_VERSION</span>=&lt;版本号&gt; docker compose pull
+<span class="k">DSC_VERSION</span>=&lt;版本号&gt; docker compose up -d</code></pre>
+          </div>
+        </li>
+        <li data-reveal>
+          <span class="mono amber">03</span>
+          <div>
+            <p>接入设备</p>
+            <p class="faint">在各客户端与 Agent 中填写同一个入口，例如 <code>https://服务器域名:{HUB_PORT}</code>。</p>
+          </div>
+        </li>
+      </ol>
+      <a class="btn" href="/deploy/" data-reveal>
+        完整部署说明
+        <svg class="arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" stroke="currentColor" stroke-width="1.4" fill="none"></path></svg>
+      </a>
+    </div>
+
+    <div class="stack" data-reveal aria-label="中枢服务结构">
+      <div class="stack__port">
+        <span class="label">对外</span>
+        <span class="mono">:{HUB_PORT}</span>
+      </div>
+      {
+        HUB_SERVICES.map((s, i) => (
+          <div class={`slab slab--${s.id}`} style={`--i:${i}`}>
+            <div class="slab__face">
+              <span class="slab__name mono">{s.name}</span>
+              <span class="slab__role">{s.role}</span>
+              <span class="slab__port mono">{s.port}</span>
+            </div>
+          </div>
+        ))
+      }
+      <p class="stack__cap label">docker-compose.yml · 4 services</p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .hub {
+    z-index: 1;
+    background: var(--void);
+    border-top: 1px solid var(--line);
+  }
+
+  .hub__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: clamp(48px, 7vw, 120px);
+    align-items: center;
+  }
+
+  .hub__copy .lede {
+    margin-top: 28px;
+  }
+
+  .hub__steps {
+    list-style: none;
+    margin: 40px 0 36px;
+    padding: 0;
+    display: grid;
+    gap: 22px;
+  }
+
+  .hub__steps li {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .hub__steps li > span {
+    padding-top: 2px;
+    font-size: 12px;
+  }
+
+  .hub__steps p {
+    font-size: 14.5px;
+  }
+
+  .hub__steps .code {
+    margin-top: 10px;
+  }
+
+  .hub__steps .faint,
+  .hub__keys {
+    margin-top: 10px;
+    font-size: 13px;
+    line-height: 1.8;
+  }
+
+  .hub__steps code {
+    color: var(--bone-2);
+  }
+
+  /* 服务分层：等轴测堆叠的四块「板」 */
+  .stack {
+    position: relative;
+    display: grid;
+    gap: 14px;
+    padding: 8px 48px 24px 0;
+    perspective: 1600px;
+  }
+
+  .stack__port {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 14px;
+    margin-bottom: 6px;
+    border-bottom: 1px dashed rgb(255 166 74 / 0.35);
+    font-size: 30px;
+    color: var(--amber);
+  }
+
+  .slab {
+    transform-style: preserve-3d;
+    transform: rotateX(16deg) rotateY(-14deg) translateX(calc(var(--i) * 14px));
+    transform-origin: 50% 0;
+    transition: transform 1.2s var(--ease);
+  }
+
+  .stack:hover .slab {
+    transform: rotateX(10deg) rotateY(-8deg) translateX(calc(var(--i) * 22px));
+  }
+
+  .slab__face {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 18px;
+    padding: 22px 26px;
+    border: 1px solid var(--line-3);
+    background: linear-gradient(135deg, var(--ink-3), var(--ink-1));
+    box-shadow:
+      0 1px 0 rgb(255 255 255 / 0.04) inset,
+      0 24px 48px -24px rgb(0 0 0 / 0.9);
+  }
+
+  .slab--web .slab__face {
+    border-color: rgb(255 166 74 / 0.6);
+    box-shadow:
+      0 0 0 1px rgb(255 166 74 / 0.12),
+      0 0 60px -10px rgb(255 166 74 / 0.25);
+  }
+
+  .slab__name {
+    font-size: 16px;
+    color: var(--amber);
+    min-width: 5ch;
+  }
+
+  .slab__role {
+    font-size: 13.5px;
+    color: var(--bone-2);
+  }
+
+  .slab__port {
+    font-size: 11.5px;
+    color: var(--bone-3);
+  }
+
+  .stack__cap {
+    margin-top: 28px;
+    text-align: center;
+  }
+
+  @media (max-width: 960px) {
+    .hub__grid {
+      grid-template-columns: 1fr;
+    }
+
+    .stack {
+      padding-top: 64px;
+    }
+  }
+
+  @media (max-width: 520px) {
+    .slab {
+      transform: none;
+    }
+
+    .stack:hover .slab {
+      transform: none;
+    }
+
+    .slab__face {
+      grid-template-columns: 1fr auto;
+      padding: 16px;
+    }
+
+    .slab__role {
+      grid-column: 1 / -1;
+      grid-row: 2;
+    }
+
+    .stack__port {
+      position: static;
+      flex-direction: row;
+      align-items: baseline;
+      gap: 12px;
+      font-size: 20px;
+    }
+  }
+</style>

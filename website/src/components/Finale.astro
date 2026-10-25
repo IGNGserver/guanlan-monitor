@@ -1,0 +1,224 @@
+---
+import { RELEASES_URL, type ReleaseInfo } from '../data/product';
+import { formatDate, formatSize } from '../data/release';
+
+interface Props {
+  release: ReleaseInfo;
+}
+const { release } = Astro.props;
+const picks = [
+  { key: 'winSetup', os: 'win', label: 'Windows', kind: '安装程序 .exe' },
+  { key: 'deb', os: 'linux', label: 'Linux', kind: 'Debian / Ubuntu .deb' },
+  { key: 'apk', os: 'android', label: 'Android', kind: 'APK' },
+] as const;
+---
+
+<section id="get" class="get" aria-labelledby="get-title">
+  <div class="get__in wrap">
+    <p class="eyebrow" data-reveal>§ 08 · 开始</p>
+    <h2 id="get-title" class="get__title" data-reveal style="--d:1">开始观测。</h2>
+    <p class="get__rel mono" data-reveal style="--d:2">
+      <span class="dot dot--amber"></span>
+      {release.prerelease ? '测试版通道' : '正式版'} · {release.tag} · {formatDate(release.publishedAt)}
+    </p>
+    <div class="get__picks" data-reveal style="--d:3" data-picks>
+      {
+        picks.map((p) => {
+          const a = release.assets[p.key];
+          return (
+            <a class="pick" data-os={p.os} href={a?.url ?? RELEASES_URL} rel="noopener">
+              <span class="pick__os">{p.label}</span>
+              <span class="pick__kind faint">{p.kind}</span>
+              <span class="pick__size mono faint">{a ? formatSize(a.size) : 'Releases'}</span>
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 2v9M4.5 7.5 8 11l3.5-3.5M3 14h10" stroke="currentColor" stroke-width="1.3" fill="none" />
+              </svg>
+            </a>
+          );
+        })
+      }
+    </div>
+    <p class="get__more" data-reveal style="--d:4">
+      <a href="/download/">全部安装包与校验文件</a>
+      <span class="faint">·</span>
+      <a href="/deploy/">先部署中枢</a>
+      <span class="faint">·</span>
+      <a href={release.url} rel="noopener">版本说明 ↗</a>
+    </p>
+    {release.prerelease && <p class="get__note faint" data-reveal style="--d:5">当前发布均为 GitHub prerelease（测试版通道），产品说明不建议直接用于生产部署。</p>}
+  </div>
+</section>
+
+<script>
+  const ua = navigator.userAgent;
+  const os = /android/i.test(ua) ? 'android' : /Windows/.test(ua) ? 'win' : /Linux|X11/.test(ua) ? 'linux' : null;
+  if (os) document.querySelector(`[data-picks] [data-os="${os}"]`)?.classList.add('is-rec');
+</script>
+
+<style>
+  .get {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    min-height: 100svh;
+    display: flex;
+    align-items: flex-end;
+    padding: 120px 0 96px;
+    background: linear-gradient(to bottom, var(--void), transparent 22%, transparent 55%, rgb(6 8 11 / 0.85));
+  }
+
+  .get__in {
+    text-align: center;
+    display: grid;
+    justify-items: center;
+  }
+
+  .get__title {
+    margin-top: 20px;
+    font-family: var(--font-cjk);
+    font-weight: 200;
+    font-size: clamp(3.4rem, 9vw, 8rem);
+    letter-spacing: 0.02em;
+  }
+
+  .get__rel {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 18px;
+    font-size: 12.5px;
+    color: var(--bone-2);
+  }
+
+  .get__picks {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 220px));
+    gap: 12px;
+    margin-top: 40px;
+  }
+
+  .pick {
+    position: relative;
+    display: grid;
+    gap: 4px;
+    padding: 18px 20px;
+    border: 1px solid var(--line-2);
+    background: rgb(10 13 17 / 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    text-align: left;
+    transition:
+      border-color 0.3s,
+      background 0.3s;
+  }
+
+  .pick:hover {
+    border-color: var(--amber);
+  }
+
+  .pick.is-rec {
+    border-color: rgb(255 166 74 / 0.7);
+    background: rgb(255 166 74 / 0.08);
+  }
+
+  .pick.is-rec::before {
+    content: '推荐';
+    position: absolute;
+    top: -9px;
+    left: 14px;
+    padding: 0 6px;
+    background: var(--amber);
+    color: var(--void);
+    font-size: 10.5px;
+    line-height: 18px;
+  }
+
+  .pick__os {
+    font-size: 17px;
+  }
+
+  .pick__kind,
+  .pick__size {
+    font-size: 12px;
+  }
+
+  .pick svg {
+    position: absolute;
+    right: 18px;
+    top: 20px;
+    width: 16px;
+    height: 16px;
+    color: var(--amber);
+  }
+
+  .get__more {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px 14px;
+    margin-top: 28px;
+    font-size: 14px;
+  }
+
+  .get__more a {
+    color: var(--bone-2);
+    border-bottom: 1px solid var(--line-2);
+    transition:
+      color 0.2s,
+      border-color 0.2s;
+  }
+
+  .get__more a:hover {
+    color: var(--amber);
+    border-color: var(--amber);
+  }
+
+  .get__note {
+    margin-top: 18px;
+    font-size: 12.5px;
+    max-width: 44em;
+  }
+
+  @media (max-width: 720px) {
+    .get {
+      padding-bottom: 64px;
+    }
+
+    .get__in::before {
+      content: '';
+      position: absolute;
+      inset: 30% 0 -64px;
+      z-index: -1;
+      background: linear-gradient(to bottom, transparent, rgb(6 8 11 / 0.85) 30%);
+    }
+
+    .get__in {
+      position: relative;
+    }
+
+    .get__picks {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      width: 100%;
+    }
+
+    .pick {
+      padding: 14px 12px 12px;
+    }
+
+    .pick__os {
+      font-size: 15px;
+    }
+
+    .pick__kind,
+    .pick svg {
+      display: none;
+    }
+  }
+
+  :global(html.no-gl) .get {
+    background:
+      radial-gradient(70% 50% at 50% 30%, rgb(255 166 74 / 0.08), transparent),
+      var(--void);
+  }
+</style>
