@@ -11,6 +11,7 @@ bin
 .codex
 logs
 data
+!website/src/data/
 **/realtime/live-*.json
 release
 *.log
