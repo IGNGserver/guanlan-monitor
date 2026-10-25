@@ -377,6 +377,12 @@ private fun UpdateSection(state: AppState, actions: GuanlanActions) {
           OneUiLeadingIcon(icon = Icons.Rounded.PhoneAndroid, contentDescription = null, tone = OneUiIconTone.Neutral)
         }
       )
+      OneUiListDivider()
+      OneUiListItem(
+        title = "更新通道",
+        subtitle = if (state.updateChannel == "stable") "正式版 · 点击切换预览版" else "预览版（含正式版）· 点击切换正式版",
+        onClick = { actions.onSetUpdateChannel(if (state.updateChannel == "stable") "preview" else "stable") }
+      )
       if (update?.available == true) {
         OneUiListDivider()
         Column(modifier = Modifier.padding(horizontal = metrics.rowPadding, vertical = 12.dp)) {
@@ -408,7 +414,7 @@ private fun UpdateSection(state: AppState, actions: GuanlanActions) {
         OneUiListDivider()
         OneUiListItem(
           title = "检查更新",
-          subtitle = "向中枢确认是否有新的安装包",
+          subtitle = update?.message ?: "直接访问仓库获取安装包",
           leading = {
             OneUiLeadingIcon(icon = Icons.Rounded.Refresh, contentDescription = null, tone = OneUiIconTone.Neutral)
           },

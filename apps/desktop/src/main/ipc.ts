@@ -59,7 +59,7 @@ export function registerIpc(
     // snapshot instead of driving a full hub round trip for a view nobody sees;
     // the show handler in main refreshes immediately when the window returns.
     if (!isWindowVisible(getWindow)) { controller.cancelSnapshot?.(); return controller.getSnapshot(snapshotRequest, false); }
-    return controller.refresh(snapshotRequest);
+    return controller.refresh(snapshotRequest, !snapshotRequest.background);
   });
   handle(IPC_CHANNELS.updateLocalConfig, (_event, patch: DesktopConfigPatch) => controller.updateLocalConfig(asConfigPatch(patch)));
   handle(IPC_CHANNELS.controlAgent, (_event, action: DesktopAgentControlAction) => controller.controlAgent(asControlAction(action)));
@@ -320,6 +320,10 @@ function asStartupSettings(value: unknown): Partial<DesktopStartupSettings> {
     if (settingValue === undefined) continue;
     if (typeof settingValue !== "boolean") throw new Error(`invalid_${key}`);
     settings[key] = settingValue;
+  }
+  if (record.updateChannel !== undefined) {
+    if (record.updateChannel !== "stable" && record.updateChannel !== "preview") throw new Error("invalid_updateChannel");
+    settings.updateChannel = record.updateChannel;
   }
   return settings;
 }

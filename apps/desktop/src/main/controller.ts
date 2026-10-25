@@ -1,4 +1,5 @@
 import { app, shell } from "electron";
+import { DeviceUpdates } from "./device-updates.js";
 import path from "node:path";
 import type {
   DesktopAgentBackendState,
@@ -36,6 +37,8 @@ export class DesktopController {
   readonly bridge: Omit<DesktopRendererBridge, "subscribe" | "getRuntimeProfile" | "getWindowState" | "subscribeWindowState" | "windowMinimize" | "windowToggleMaximize" | "windowDragStart" | "windowDragMove" | "windowDragEnd" | "windowClose">;
   private readonly agent: AgentManager;
   private readonly hub: HubClient;
+  private readonly updates: DeviceUpdates;
+  private updateInfo: DesktopSnapshot["update"] = null;
   private readonly cache: DesktopCacheStore;
   private readonly localConfig: LocalConfigStore;
   private readonly listeners = new Set<(snapshot: DesktopSnapshot) => void>();
@@ -80,6 +83,7 @@ export class DesktopController {
       backendBinary: process.env.DSC_BACKEND_BINARY
     });
     this.hub = new HubClient(credentialFilePath(userDataPath));
+    this.updates = new DeviceUpdates(path.join(userDataPath, "device-updates.json"), currentDesktopVersion(), desktopUpdatePlatform(), process.arch);
     this.cache = new DesktopCacheStore(userDataPath);
     this.localConfig = new LocalConfigStore(userDataPath, legacyPaths);
     this.hub.onSessionDenied = () => {
@@ -95,7 +99,7 @@ export class DesktopController {
         resetLiveCredentials: (deviceId) => this.hub.resetLiveCredentials(deviceId)
       },
       getSnapshot: (request?: DesktopSnapshotRequest) => this.getSnapshot(request),
-      refresh: (request?: DesktopSnapshotRequest) => this.refresh(request),
+      refresh: (request?: DesktopSnapshotRequest) => this.refresh(request, !request?.background),
       updateLocalConfig: (patch: DesktopConfigPatch) => this.updateLocalConfig(patch),
       controlAgent: (action: DesktopAgentControlAction) => this.controlAgent(action),
       saveHubConnection: (serverUrl: string, accessKey: string) => this.saveHubConnection(serverUrl, accessKey),
@@ -126,7 +130,8 @@ export class DesktopController {
     }
     this.startup = {
       openAtLogin: preferences?.openAtLogin ?? app.getLoginItemSettings().openAtLogin,
-      startMinimized: preferences?.startMinimized ?? false
+      startMinimized: preferences?.startMinimized ?? false,
+      updateChannel: preferences?.updateChannel === "stable" ? "stable" : "preview"
     };
     app.setLoginItemSettings({ openAtLogin: this.startup.openAtLogin });
   }
@@ -162,9 +167,10 @@ export class DesktopController {
     return this.refresh(request);
   }
 
-  async refresh(request: DesktopSnapshotRequest = {}): Promise<DesktopSnapshot> {
+  async refresh(request: DesktopSnapshotRequest = {}, manualUpdates = false): Promise<DesktopSnapshot> {
     if (this.visualFixtureEnabled) return this.visualFixtureSnapshot(request);
     if (this.connectionChanging) return this.currentSnapshot ?? this.emptySnapshot();
+    void this.checkDeviceUpdate(manualUpdates).catch(() => {});
     if (this.refreshInFlight) {
       if (this.hasRequestChanges(request)) {
         this.cancelSnapshot();
@@ -230,6 +236,7 @@ export class DesktopController {
       this.scheduleNextRead();
       const fallback = cached ? this.asCachedSnapshot(cached, error) : this.emptySnapshot(error);
       fallback.localBackend = this.localBackend;
+      fallback.update = this.updateInfo;
       this.currentSnapshot = fallback;
       this.notify(fallback);
       return fallback;
@@ -407,11 +414,25 @@ export class DesktopController {
   async updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot> {
     this.startup = {
       openAtLogin: settings.openAtLogin ?? this.startup.openAtLogin,
-      startMinimized: settings.startMinimized ?? this.startup.startMinimized
+      startMinimized: settings.startMinimized ?? this.startup.startMinimized,
+      updateChannel: settings.updateChannel === "stable" || settings.updateChannel === "preview" ? settings.updateChannel : this.startup.updateChannel
     };
+    this.updateInfo = this.updates.cached(this.startup.updateChannel ?? "preview");
+    if (this.currentSnapshot) {
+      this.currentSnapshot = { ...this.currentSnapshot, update: this.updateInfo, startup: this.startup };
+      this.notify(this.currentSnapshot);
+    }
     app.setLoginItemSettings({ openAtLogin: this.startup.openAtLogin });
     await writeJsonAtomically(path.join(app.getPath("userData"), "desktop-preferences.json"), this.startup);
     return this.refresh();
+  }
+
+  private async checkDeviceUpdate(manual: boolean): Promise<void> {
+    const channel = this.startup.updateChannel ?? "preview";
+    const value = await this.updates.check(channel, manual);
+    const selected = this.startup.updateChannel ?? "preview";
+    this.updateInfo = selected === channel ? value : this.updates.cached(selected);
+    if (this.currentSnapshot) { this.currentSnapshot = { ...this.currentSnapshot, update: this.updateInfo }; this.notify(this.currentSnapshot); }
   }
 
   async openExternal(url: string): Promise<void> {
@@ -435,7 +456,7 @@ export class DesktopController {
     let metrics: DesktopSnapshot["metrics"] = null;
     let overviewMetrics: DesktopSnapshot["overviewMetrics"] = null;
     let trafficCalendar: DesktopSnapshot["trafficCalendar"] = null;
-    let update: DesktopSnapshot["update"] = null;
+    let update: DesktopSnapshot["update"] = this.updateInfo;
     let authenticated = false;
 
     const startedAt = Date.now();
@@ -481,7 +502,7 @@ export class DesktopController {
     await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker));
     if (current()) {
       this.failures = optionalFailed ? Math.min(4, this.failures + 1) : 0;
-      void optional(() => this.hub.getUpdateInfo(currentDesktopVersion(), signal), (value) => { update = value; })
+      void optional(async () => this.updateInfo, (value) => { update = value; })
         .catch(() => {});
     }
     return state();
@@ -646,7 +667,7 @@ export class DesktopController {
       metrics: usingCachedRemote ? cachedRemote?.metrics ?? null : live.metrics,
       overviewMetrics: usingCachedRemote ? cachedRemote?.overviewMetrics ?? null : live.overviewMetrics,
       trafficCalendar: usingCachedRemote ? cachedRemote?.trafficCalendar ?? null : live.trafficCalendar,
-      update: usingCachedRemote ? cachedRemote?.update ?? null : live.update,
+      update: this.updateInfo,
       startup: this.startup
     };
     return snapshot;

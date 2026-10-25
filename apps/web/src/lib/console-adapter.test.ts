@@ -26,7 +26,7 @@ function installHub() {
       : path.endsWith("/metrics") ? metrics
       : path === "/api/overview/metrics" ? { window: "5m", instances: [] }
       : path.endsWith("/traffic-calendar") ? { cells: [] }
-      : path === "/api/updates" ? { available: false }
+      : path === "/IGNGserver/guanlan-monitor/updates/updates.json" ? { schemaVersion: 1, repository: "IGNGserver/guanlan-monitor", generatedAt: "2026-10-25T12:00:00Z", releases: [] }
       : {};
     return new Response(JSON.stringify(body), { status: 200 });
   }) as typeof fetch;
@@ -42,6 +42,22 @@ function adapterAt(clock: { now: number }) {
 test("an omitted include still reads everything for older callers", () => {
   assert.deepEqual(resolveInclude(undefined), { deviceMetrics: true, overviewMetrics: true, trafficCalendar: true });
   assert.deepEqual(resolveInclude({ overviewMetrics: true }), { deviceMetrics: false, overviewMetrics: true, trafficCalendar: false });
+});
+
+test("Web release channels are local and never proxy update checks through the Hub", async () => {
+  const hub = installHub();
+  try {
+    const adapter = adapterAt({ now: 1_000_000 });
+    await adapter.refresh({ include: {} });
+    const before = hub.calls.length;
+    const result = await adapter.updateStartupSettings({ updateChannel: "stable" });
+    assert.equal(hub.calls.length, before, "saving the release channel performs no Hub write");
+    assert.equal(result.startup.updateChannel, "stable");
+    assert.equal(result.update?.platform, "web");
+    assert.equal(result.update?.assetUrl, null, "Web release metadata must not pretend to manage native installations");
+    assert.ok(!hub.calls.includes("/api/updates"));
+    assert.ok(hub.calls.includes("/IGNGserver/guanlan-monitor/updates/updates.json"));
+  } finally { hub.restore(); }
 });
 
 test("the overview reads the fleet and its trend, not a device history", async () => {
@@ -68,7 +84,7 @@ test("a poll inside the budget skips the session check and slow resources", asyn
     assert.deepEqual(first.filter((path) => path === "/api/auth/session").length, 1);
     assert.ok(first.includes("/api/devices/nas/metrics"));
     assert.ok(first.includes("/api/devices/nas/traffic-calendar"));
-    assert.ok(first.includes("/api/updates"));
+    assert.ok(first.includes("/IGNGserver/guanlan-monitor/updates/updates.json"));
 
     clock.now += 10_000;
     await adapter.refresh(poll);
@@ -79,7 +95,7 @@ test("a poll inside the budget skips the session check and slow resources", asyn
     const later = hub.calls.splice(0);
     assert.ok(later.includes("/api/auth/session"), "the session is re-confirmed once its budget lapses");
     assert.ok(later.includes("/api/devices/nas/traffic-calendar"), "the calendar is re-read after its TTL");
-    assert.ok(!later.includes("/api/updates"), "update info keeps its longer TTL");
+    assert.ok(!later.includes("/IGNGserver/guanlan-monitor/updates/updates.json"), "update info keeps its longer TTL");
   } finally { hub.restore(); }
 });
 
@@ -171,7 +187,7 @@ test("summary and charts publish independently while calendar and update discove
     const canned = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const path = new URL(String(input), "http://hub.invalid").pathname;
-      if (path === "/api/updates") return updateRead.promise;
+      if (path === "/IGNGserver/guanlan-monitor/updates/updates.json") return updateRead.promise;
       if (path.endsWith("/traffic-calendar")) return calendarRead.promise;
       if (path.endsWith("/metrics")) return metricsRead.promise;
       return canned(input);
@@ -192,7 +208,7 @@ test("summary and charts publish independently while calendar and update discove
     calendarRead.resolve(json({ cells: [] }));
     const complete = await loading;
     assert.ok(complete.trafficCalendar);
-    assert.equal(complete.update, null, "a stalled update endpoint cannot block refresh completion");
+    assert.equal(complete.update?.latestVersion, null, "a stalled repository feed cannot block refresh or claim a newer Web version");
     assert.ok(snapshots.length >= 3);
   } finally {
     metricsRead.resolve(json(metrics)); calendarRead.resolve(json({ cells: [] })); updateRead.resolve(json({ available: false }));

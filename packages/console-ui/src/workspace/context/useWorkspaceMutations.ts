@@ -86,8 +86,8 @@ export function useWorkspaceMutations({
   }, [adapter, mutationEpochRef, pendingMutationsRef, setMutationPending, setNotice, setSnapshot]);
   const updateStartupSettings = useCallback((settings: Partial<DesktopStartupSettings>) => runMutation(
     () => adapter.updateStartupSettings ? adapter.updateStartupSettings(settings) : Promise.reject(new Error("startup_settings_unavailable")),
-    "启动设置已保存",
-    "启动设置保存失败"
+    settings.updateChannel ? "更新通道已保存" : "启动设置已保存",
+    settings.updateChannel ? "更新通道保存失败" : "启动设置保存失败"
   ), [adapter, runMutation]);
   const cloudPush = useCallback(() => runMutation(
     () => adapter.cloudPush ? adapter.cloudPush() : Promise.reject(new Error("cloud_push_unavailable")),

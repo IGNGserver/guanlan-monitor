@@ -3,7 +3,6 @@ import { isIP } from "node:net";
 import { randomUUID } from "node:crypto";
 import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
-import { desktopUpdatePlatform } from "./platform.js";
 import type {
   AuthLoginResponse,
   DeviceSummary,
@@ -14,8 +13,7 @@ import type {
   MetricWindow,
   OverviewMetricsResponse,
   TrafficCalendarMode,
-  TrafficCalendarResponse,
-  UpdateInfo
+  TrafficCalendarResponse
 } from "@dsc/shared";
 import { writeJsonAtomically } from "./atomic-json.js";
 import { withReadDeadline } from "./read-deadline.js";
@@ -34,7 +32,6 @@ export class HubClient {
   private accessKey: string | null = null;
   private sessionCookie: string | null = null;
   private serverUrl = "";
-  private updateCache: { key: string; expiresAt: number; value: UpdateInfo } | null = null;
   private overviewCache: { key: string; expiresAt: number; value: OverviewMetricsResponse } | null = null;
   private sessionInFlight: Promise<void> | null = null;
   private connectionEpoch = 0;
@@ -93,7 +90,6 @@ export class HubClient {
         this.sessionCookie = null;
         this.sessionInFlight = null;
         this.overviewCache = null;
-        this.updateCache = null;
       }
     }
   }
@@ -111,7 +107,7 @@ export class HubClient {
     ++this.connectionEpoch;
     if (!preserveLogoutCookie) this.sessionCookie = null;
     this.sessionInFlight = null;
-    this.overviewCache = null; this.updateCache = null;
+    this.overviewCache = null;
   }
 
   /** The unified Hub credential is also the Agent upload credential. */
@@ -133,7 +129,6 @@ export class HubClient {
       this.sessionCookie = null;
       this.sessionInFlight = null;
       this.overviewCache = null;
-      this.updateCache = null;
       if (this.accessKey !== value) this.identity = randomUUID();
       // An explicit rejected replacement must not silently log back in with
       // the previous account on the next timer tick.
@@ -158,7 +153,6 @@ export class HubClient {
     this.accessKey = null;
     this.identity = randomUUID();
     this.overviewCache = null;
-    this.updateCache = null;
     this.sessionInFlight = null;
     if (this.sessionCookie && this.serverUrl) {
       try {
@@ -249,20 +243,6 @@ export class HubClient {
     });
   }
 
-  async getUpdateInfo(currentVersion: string, signal?: AbortSignal): Promise<UpdateInfo> {
-    const key = `${this.serverUrl}|${currentVersion}`;
-    const epoch = this.connectionEpoch;
-    if (this.updateCache?.key === key && Date.now() < this.updateCache.expiresAt) return this.updateCache.value;
-    const platform = desktopUpdatePlatform();
-    const params = new URLSearchParams({
-      platform,
-      currentVersion,
-      currentChannel: "test"
-    });
-    const value = await this.request<UpdateInfo>(`/api/updates?${params.toString()}`, { includeSession: false, signal });
-    if (epoch === this.connectionEpoch && !signal?.aborted) this.updateCache = { key, expiresAt: Date.now() + 15 * 60_000, value };
-    return value;
-  }
 
   private async ensureSession(): Promise<void> {
     if (!this.serverUrl) throw new Error("hub_server_url_missing");

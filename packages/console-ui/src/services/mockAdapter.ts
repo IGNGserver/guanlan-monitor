@@ -1,4 +1,4 @@
-import type { ConsoleSnapshot, ConsoleSnapshotRequest } from "@dsc/shared";
+import type { ConsoleSnapshot, ConsoleSnapshotRequest, DesktopStartupSettings } from "@dsc/shared";
 import { emptyConsoleSnapshot, WEB_CAPABILITIES, type ConsoleAdapter } from "./adapter.ts";
 
 export class MockConsoleAdapter implements ConsoleAdapter {
@@ -12,6 +12,11 @@ export class MockConsoleAdapter implements ConsoleAdapter {
   async logout() { this.snapshot = { ...this.snapshot, session: { authenticated: false, accessKeyConfigured: false } }; return this.snapshot; }
   async disconnectAgent() { this.snapshot = { ...this.snapshot, session: { authenticated: false, accessKeyConfigured: false } }; return this.snapshot; }
   async saveHubConnection() { return this.snapshot; }
+  async updateStartupSettings(settings: Partial<DesktopStartupSettings>) {
+    this.snapshot = { ...this.snapshot, startup: { ...this.snapshot.startup, updateChannel: settings.updateChannel } };
+    for (const listener of this.listeners) listener(this.snapshot);
+    return this.snapshot;
+  }
   async deleteInstance() { return this.snapshot; }
   async reorderInstances() { return this.snapshot; }
   async saveFanNote() { return this.snapshot; }

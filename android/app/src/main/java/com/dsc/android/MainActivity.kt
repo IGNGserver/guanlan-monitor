@@ -73,6 +73,7 @@ class MainActivity : ComponentActivity() {
           onToggleInstanceMetric = appViewModel::toggleInstanceMetric,
           onSaveMetricConfig = appViewModel::saveMetricConfig,
           onRefresh = appViewModel::refresh,
+          onSetUpdateChannel = appViewModel::setUpdateChannel,
           onCheckUpdate = { appViewModel.checkForUpdate(reportResult = true) },
           onDownloadUpdate = appViewModel::downloadUpdate,
           onLaunchUpdateInstaller = ::launchUpdateInstaller,

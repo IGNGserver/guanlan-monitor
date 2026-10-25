@@ -13,6 +13,7 @@ export interface ConsoleCapabilities {
   canManageLocalAgent: boolean;
   canUseOfflineCache: boolean;
   canChangeStartupSettings: boolean;
+  canChooseUpdateChannel?: boolean;
   canControlNativeWindow: boolean;
   canConfigureConnection: boolean;
   requiresAuthentication: boolean;
@@ -90,6 +91,7 @@ export const WEB_CAPABILITIES: ConsoleCapabilities = {
   canManageLocalAgent: false,
   canUseOfflineCache: true,
   canChangeStartupSettings: false,
+  canChooseUpdateChannel: true,
   canControlNativeWindow: false,
   canConfigureConnection: false,
   requiresAuthentication: true,
@@ -100,6 +102,7 @@ export const DESKTOP_CAPABILITIES: ConsoleCapabilities = {
   canManageLocalAgent: true,
   canUseOfflineCache: true,
   canChangeStartupSettings: true,
+  canChooseUpdateChannel: true,
   canControlNativeWindow: true,
   canConfigureConnection: true,
   requiresAuthentication: false,

@@ -20,6 +20,8 @@ function assertSnapshotContract(snapshot: Awaited<ReturnType<ConsoleAdapter["get
 test("platform capabilities keep Web and Electron responsibilities explicit", () => {
   assert.equal(WEB_CAPABILITIES.canManageLocalAgent, false);
   assert.equal(WEB_CAPABILITIES.canControlNativeWindow, false);
+  assert.equal(WEB_CAPABILITIES.canChangeStartupSettings, false);
+  assert.equal(WEB_CAPABILITIES.canChooseUpdateChannel, true);
   assert.equal(WEB_CAPABILITIES.requiresAuthentication, true);
   assert.equal(DESKTOP_CAPABILITIES.canManageLocalAgent, true);
   assert.equal(DESKTOP_CAPABILITIES.canControlNativeWindow, true);
@@ -43,6 +45,8 @@ test("MockConsoleAdapter satisfies the shared read, session, and fleet contract"
   assertSnapshotContract(loggedIn);
   assert.equal(loggedIn.session.authenticated, true);
   assert.equal(loggedIn.session.accessKeyConfigured, true);
+  const channel = await adapter.updateStartupSettings!({ updateChannel: "stable" });
+  assert.equal(channel.startup.updateChannel, "stable");
 
   const loggedOut = await adapter.logout();
   assertSnapshotContract(loggedOut);
