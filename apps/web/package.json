@@ -3,11 +3,12 @@
   "version": "3.0.167",
   "private": true,
   "scripts": {
-    "build": "next build && node scripts/generate-pwa-assets.mjs",
+    "build": "node scripts/generate-pwa-icons.mjs && next build && node scripts/generate-pwa-assets.mjs",
     "dev": "next dev -p 3000",
     "start": "next start -p 3000",
     "lint": "eslint src next.config.mjs pwa-build.mjs scripts",
-    "typecheck": "next typegen && tsc -p tsconfig.json --noEmit"
+    "typecheck": "next typegen && tsc -p tsconfig.json --noEmit",
+    "pwa:prepare": "node scripts/generate-pwa-icons.mjs"
   },
   "dependencies": {
     "@dsc/console-ui": "workspace:*",
@@ -26,6 +27,10 @@
     "eslint": "9.39.1",
     "eslint-config-next": "15.5.25",
     "sass": "^1.93.2",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "workbox-build": "7.4.1",
+    "workbox-precaching": "7.4.1",
+    "esbuild": "0.28.2",
+    "sharp": "0.35.5"
   }
 }

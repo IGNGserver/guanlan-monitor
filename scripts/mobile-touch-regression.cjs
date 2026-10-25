@@ -366,10 +366,63 @@ async function coldOfflineAndStorage() {
   await context.close();
   report.checks.push(requirePwa ? `${engineName === "webkit" ? "origin outage" : "browser offline"}: Worker-served restart, no-worker negative control, read-only drilldown, API exclusion, storage denial and empty fleet` : "storage denial and empty fleet; production worker tested in CI");
 }
+async function installationFlow() {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, serviceWorkers: "block" });
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
+  const manifestLink = await page.locator('link[rel="manifest"]').getAttribute("href");
+  assert.equal(manifestLink, "/manifest.webmanifest");
+  const manifest = await (await page.request.get(baseUrl + manifestLink)).json();
+  assert.equal(manifest.id, "/"); assert.equal(manifest.scope, "/");
+  const apple = await page.locator('link[rel="apple-touch-icon"]').evaluateAll((links) => links.map((link) => ({ href: link.getAttribute("href"), sizes: link.getAttribute("sizes") })));
+  assert.deepEqual(apple.map((icon) => icon.sizes).sort(), ["152x152", "167x167", "180x180"]);
+  for (const icon of [...manifest.icons, ...apple]) {
+    const href = icon.src ?? icon.href;
+    assert.match(href, /^\/icons\/[a-f0-9]{12}\//);
+    const response = await page.request.get(baseUrl + href);
+    assert.equal(response.status(), 200);
+    assert.match(response.headers()["content-type"], /image\/png/);
+    const bytes = await response.body();
+    assert.equal(bytes.readUInt32BE(16), Number(icon.sizes.split("x")[0]));
+    assert.equal(bytes[25], 2, "Apple and manifest icons must be opaque RGB");
+  }
+  for (const [width, height] of [[320, 640], [600, 400], [1366, 1024]]) {
+    await page.setViewportSize({ width, height });
+    await page.getByRole("button", { name: "安装与离线使用", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "安装与离线使用", exact: true });
+    await dialog.waitFor();
+    const bounds = await dialog.boundingBox();
+    assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width + 1 && bounds.y + bounds.height <= height + 1);
+    await page.getByRole("button", { name: "完成", exact: true }).click();
+    await dialog.waitFor({ state: "detached" });
+  }
+  await page.evaluate(() => {
+    const event = new Event("beforeinstallprompt", { cancelable: true });
+    Object.assign(event, { prompt: async () => { window.__dscInstallRequests = (window.__dscInstallRequests ?? 0) + 1; }, userChoice: Promise.resolve({ outcome: "dismissed" }) });
+    window.dispatchEvent(event);
+  });
+  await page.getByRole("button", { name: "安装与离线使用", exact: true }).click();
+  await page.getByRole("button", { name: "安装观澜", exact: true }).click();
+  assert.equal(await page.evaluate(() => window.__dscInstallRequests), 1);
+  await page.getByRole("button", { name: "完成", exact: true }).click();
+  await context.addInitScript(() => Object.defineProperty(navigator, "standalone", { configurable: true, value: true }));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "离线与更新", exact: true }).click();
+  await page.getByText("当前已在独立应用窗口中打开观澜。", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "安装观澜", exact: true }).count(), 0);
+  assert.deepEqual(errors, []);
+  await context.close();
+  report.checks.push("static content-versioned opaque icons, pre-login installation help, short-window dialog, install-event handling and standalone guidance");
+}
+
 (async () => {
   fixtureProxy = await createFixtureProxy(upstreamUrl);
   baseUrl = fixtureProxy.url;
   browser = await (engineName === "webkit" ? webkit : chromium).launch({ headless: true, ...(process.env.DSC_PLAYWRIGHT_EXECUTABLE ? { executablePath: process.env.DSC_PLAYWRIGHT_EXECUTABLE } : {}), args: engineName === "chromium" ? ["--disable-dev-shm-usage"] : [] });
+  await installationFlow();
+  if (process.argv.includes("--install-only")) { console.log(JSON.stringify(report)); return; }
   await phoneFlow();
   await tabletFlow();
   await rapidDeviceSelection();

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { WEB_PWA_REVISION } from "./pwa-build.mjs";
+import { ICON_VERSION } from "./scripts/pwa-icons.mjs";
 
 const releaseVersion = readFileSync(join(process.cwd(), "..", "..", "VERSION"), "utf8").trim();
 const releaseChannel = process.env.DSC_RELEASE_CHANNEL === "stable" ? "stable" : "test";
@@ -11,6 +12,7 @@ const nextConfig = {
   // Docker serves a public export with nginx. Keep the standalone output for
   // existing next start / visual-test consumers outside the delivery image.
   output: staticExport ? "export" : "standalone",
+  outputFileTracingRoot: join(process.cwd(), "..", ".."),
   // The workspace renders plain <img> assets only; Next image optimization
   // (and its ~16 MB sharp/libvips native payload) is never exercised.
   images: { unoptimized: true },
@@ -34,8 +36,13 @@ const nextConfig = {
       {
         source: "/manifest.json",
         headers: [
-          { key: "Content-Type", value: "application/manifest+json" }
+          { key: "Content-Type", value: "application/manifest+json" },
+          { key: "Cache-Control", value: "no-store, no-cache, max-age=0, must-revalidate" }
         ]
+      },
+      {
+        source: "/manifest.webmanifest",
+        headers: [{ key: "Content-Type", value: "application/manifest+json" }, { key: "Cache-Control", value: "no-store, no-cache, max-age=0, must-revalidate" }]
       },
       {
         source: "/(.*)",
@@ -48,12 +55,14 @@ const nextConfig = {
           { key: "Strict-Transport-Security", value: "max-age=31536000" }
         ]
       },
-      { source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }, { key: "Service-Worker-Allowed", value: "/" }] },
-      { source: "/pwa-assets.json", headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }] }
+      { source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-store, no-cache, max-age=0, must-revalidate" }, { key: "Service-Worker-Allowed", value: "/" }] },
+      { source: "/icons/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] },
+      { source: "/pwa-assets.json", headers: [{ key: "Cache-Control", value: "no-store, no-cache, max-age=0, must-revalidate" }] }
     ];
   } }),
   env: {
     NEXT_PUBLIC_DSC_PWA_REVISION: WEB_PWA_REVISION,
+    NEXT_PUBLIC_DSC_ICON_VERSION: ICON_VERSION,
     NEXT_PUBLIC_DSC_VERSION: releaseVersion,
     NEXT_PUBLIC_DSC_RELEASE_CHANNEL: releaseChannel
   }

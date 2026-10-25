@@ -56,5 +56,5 @@ export function UnifiedConsole({ initialDeviceId = null }: { initialDeviceId?: s
       </div></section></main>;
   } else if (state === "anonymous") content = <LoginForm onAuthenticated={async () => { const version = ++checkVersion.current; await webConsoleAdapter.establishSession(); if (version === checkVersion.current) setState("authenticated"); }} onStartLogin={async () => { invalidateCheck(); await webConsoleAdapter.forgetOfflineData(); }} />;
   else content = <WorkspaceApp adapter={webConsoleAdapter} initialRoute={initialRoute} />;
-  return <>{content}<PwaControls onForget={forget} /></>;
+  return <>{content}<PwaControls onForget={forget} publicLauncher={state !== "authenticated"} /></>;
 }

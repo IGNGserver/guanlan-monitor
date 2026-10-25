@@ -11,10 +11,11 @@ export function pwaRevision() {
     for (const item of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const full = join(directory, item.name);
       if (item.isDirectory()) walk(full);
-      else if (item.isFile() && item.name !== "pwa-assets.json") files.push(full);
+      else if (item.isFile() && !["pwa-assets.json", "sw.js"].includes(item.name)) files.push(full);
     }
   };
   walk(join(webRoot, "src"));
+  walk(join(webRoot, "branding"));
   walk(join(webRoot, "public"));
   walk(join(webRoot, "scripts"));
   walk(resolve(webRoot, "../../packages/shared/src"));
