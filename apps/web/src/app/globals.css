@@ -60,3 +60,12 @@ textarea {
 }
 
 /* Text selection styling is defined per-theme in `workspace.tokens.css`. */
+
+.pwa-public-launcher { position: fixed; inset-inline-end: max(16px, env(safe-area-inset-right, 0px)); bottom: max(12px, env(safe-area-inset-bottom, 0px)); z-index: 20; }
+.pwa-public-launcher button { min-height: 48px; background: var(--md-sys-color-surface-container, #e6eaf0); }
+.pwa-dialog { max-height: calc(100dvh - max(32px, env(safe-area-inset-top, 0px)) - env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
+@media (max-width: 599px) {
+  .pwa-update-notice { left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); }
+}.pwa-public-launcher.is-keyboard-open { display: none; }
+.m3e-scrim:has(> .pwa-dialog) { top: var(--web-visual-top, 0px); bottom: auto; height: var(--web-visual-height, 100dvh); padding-inline: max(var(--md-sys-space-4), env(safe-area-inset-left, 0px)) max(var(--md-sys-space-4), env(safe-area-inset-right, 0px)); }
+.pwa-dialog { max-height: calc(var(--web-visual-height, 100dvh) - 32px); }

@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const fs = require("node:fs");
 const vm = require("node:vm");
-const source = fs.readFileSync("apps/web/public/sw.js", "utf8");
+const source = fs.readFileSync("apps/web/src/service-worker.mjs", "utf8").replace(/^import .*;$/m, "");
 function harness({ failAsset = null, revision = "test", shellRevision = "test", assets = ["/", "/_next/static/app.js", "/logo.png"], runtimeAssets = [], stallNavigation = false } = {}) {
   const events = {};
   const buckets = new Map();
@@ -17,15 +17,38 @@ function harness({ failAsset = null, revision = "test", shellRevision = "test", 
     }
   };
   const fetch = async (url, options) => {
-    calls.push({ url, options });
-    if (stallNavigation && typeof url === "object") return new Promise(() => {});
-    if (url === "/pwa-assets.json") return Response.json({ revision, assets, runtimeAssets });
-    if (url === failAsset) return new Response("missing", { status: 404 });
-    if (url === "/") return new Response(`<meta name="guanlan-pwa-revision" content="${shellRevision}">`);
-    return new Response("public asset", { headers: { "Content-Type": "application/javascript" } });
+    calls.push({ url: typeof url === "object" ? new URL(url.url).pathname : url, options: options ?? { credentials: url.credentials } });
+    if (stallNavigation && typeof url === "object" && url.mode === "navigate") return new Promise(() => {});
+    const pathname = typeof url === "object" ? new URL(url.url).pathname : url;
+    if (pathname === "/pwa-assets.json") return Response.json({ revision, assets, runtimeAssets });
+    if (pathname === failAsset) return new Response("missing", { status: 404 });
+    if (pathname === "/") return new Response(`<meta name="guanlan-pwa-revision" content="${shellRevision}">`);
+    return new Response("public asset", { headers: { "Content-Type": pathname.endsWith(".png") ? "image/png" : "application/javascript" } });
   };
-  const context = vm.createContext({ URL, Response, Set, Promise, fetch, caches,
-    self: { location: new URL("https://hub.example/sw.js?revision=test"), addEventListener: (name, handler) => events[name] = handler, skipWaiting: async () => {}, clients: { claim: async () => {} } } });
+  // Only the wrapper is simulated here. The bundled Workbox implementation is
+  // exercised by the real-browser PWA regression, including update failures.
+  class PrecacheController {
+    constructor({ cacheName, plugins }) { this.name = cacheName; this.plugins = plugins; }
+    addToCacheList(entries) { this.entries = entries; }
+    getCacheKeyForURL(url) { return url; }
+    async install() {
+      const cache = await caches.open(this.name);
+      for (const entry of this.entries) {
+        const path = typeof entry === "string" ? entry : entry.url;
+        if (await cache.match(path)) continue;
+        let request = new Request(new URL(path, "https://hub.example"));
+        for (const plugin of this.plugins) if (plugin.requestWillFetch) request = await plugin.requestWillFetch({ request });
+        let response = await fetch(request);
+        for (const plugin of this.plugins) if (plugin.cacheWillUpdate) response = await plugin.cacheWillUpdate({ request, response });
+        await cache.put(path, response);
+      }
+    }
+    async activate() {}
+    async matchPrecache(path) { return (await caches.open(this.name)).match(path); }
+  }
+  const context = vm.createContext({ URL, Request, Response, Set, Promise, fetch, caches, PrecacheController,
+    __GUANLAN_REVISION__: revision, __GUANLAN_CACHE_GENERATION__: revision, __GUANLAN_RUNTIME_ASSETS__: runtimeAssets,
+    self: { __WB_MANIFEST__: assets, __WB_MANIFEST: assets, location: new URL("https://hub.example/sw.js?revision=test"), addEventListener: (name, handler) => events[name] = handler, skipWaiting: async () => {}, clients: { claim: async () => {}, matchAll: async () => [] } } });
   vm.runInContext(source, context);
   const install = () => new Promise((resolve, reject) => events.install({ waitUntil: (promise) => promise.then(resolve, reject) }));
   return { context, events, buckets, calls, install };
@@ -94,7 +117,7 @@ test("runtime caching is restricted to the candidate's explicit public asset lis
     await response;
   };
   await read(path); await read(path);
-  assert.equal(h.calls.filter((call) => call.url?.url === `https://hub.example${path}`).length, 1);
+  assert.equal(h.calls.filter((call) => call.url === path).length, 1);
   assert.ok(h.buckets.get("guanlan-shell-test").has(path));
   await read("/_next/static/undeclared.js");
   assert.equal(h.buckets.get("guanlan-shell-test").has("/_next/static/undeclared.js"), false);

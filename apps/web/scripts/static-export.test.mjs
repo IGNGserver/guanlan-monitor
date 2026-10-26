@@ -45,7 +45,7 @@ test("static route policy fails closed and retains manifest, worker and immutabl
   assert.match(nginx, /location = \/manifest\.json\s*\{\s*types \{ application\/manifest\+json json;/);
   assert.match(nginx, /gzip on;/);
   assert.match(nginx, /gzip_vary on;/);
-  assert.match(nginx, /default "no-cache, no-store, must-revalidate"/);
+  assert.match(nginx, /default "no-store, no-cache, max-age=0, must-revalidate"/);
   assert.match(nginx, /public, max-age=31536000, immutable/);
   assert.ok(nginx.includes('map "$status:$uri" $web_cache_control'), "Missing assets must not inherit a year-long immutable 404");
   assert.ok(nginx.includes("(?:200|206|304):/_next/static/"));
@@ -170,18 +170,21 @@ test("official entrypoint installs an empty allowlist then validates runtime CID
   }
 });
 
-test("post-export manifest is copied into out after public was exported", () => {
+test("post-export manifest and Workbox worker are copied into out after public was exported", () => {
   // Fixtures stay on the caller's local scratch, never on the source volume.
   assert.ok(!root.includes("/项目/"), "Run static-export tests from the local scratch snapshot");
   const fixture = join(root, ".static-export-test-fixture");
   for (const path of [".next/static/chunks", "public", "out"]) mkdirSync(join(fixture, path), { recursive: true });
   writeFileSync(join(fixture, "public/manifest.json"), "{}");
+  writeFileSync(join(fixture, "public/manifest.webmanifest"), JSON.stringify({ icons: [] }));
+  writeFileSync(join(fixture, "out/index.html"), "<html>fixture</html>");
   writeFileSync(join(fixture, "public/favicon.png"), "fixture");
   writeFileSync(join(fixture, "public/logo.png"), "fixture");
   writeFileSync(join(fixture, ".next/static/chunks/abcd1234.js"), "fixture");
   const result = spawnSync(process.execPath, [join(web, "scripts/generate-pwa-assets.mjs")], { cwd: fixture, env: { ...process.env, DSC_STATIC_EXPORT: "true" }, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   assert.ok(existsSync(join(fixture, "out/pwa-assets.json")));
+  assert.ok(existsSync(join(fixture, "out/sw.js")));
   const manifest = JSON.parse(readFileSync(join(fixture, "out/pwa-assets.json"), "utf8"));
   assert.ok(manifest.assets.includes("/_next/static/chunks/abcd1234.js"));
   assert.equal(readFileSync(join(fixture, "out/pwa-assets.json"), "utf8"), readFileSync(join(fixture, "public/pwa-assets.json"), "utf8"));

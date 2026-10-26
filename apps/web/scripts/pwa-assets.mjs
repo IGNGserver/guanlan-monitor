@@ -4,7 +4,7 @@
  * smaller number is not worth a partially usable offline application.
  */
 export function classifyPwaAssets(paths) {
-  const assets = ["/", "/manifest.json", "/favicon.png"];
+  const assets = ["/", "/manifest.webmanifest", "/favicon.png"];
   const runtimeAssets = ["/logo.png"];
   for (const path of paths) {
     if (!path.startsWith("/_next/static/") || /[?#\\]/.test(path) || new URL(path, "https://pwa.invalid").pathname !== path) throw new Error("invalid_pwa_asset");

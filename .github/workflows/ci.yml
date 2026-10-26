@@ -342,6 +342,13 @@ jobs:
           npm install --prefix "$playwright_dir" --no-save playwright@1.55.0 >/dev/null
           "$playwright_dir/node_modules/.bin/playwright" install --with-deps chromium webkit
 
+      - name: Test atomic Workbox versions and private-request isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          NODE_PATH="$RUNNER_TEMP/dsc-playwright/node_modules" node apps/web/scripts/service-worker.browser.mjs --output="$RUNNER_TEMP/dsc-pwa-chromium"
+          NODE_PATH="$RUNNER_TEMP/dsc-playwright/node_modules" node apps/web/scripts/service-worker.browser.mjs --webkit --output="$RUNNER_TEMP/dsc-pwa-webkit"
+
       - name: Start Web app
         shell: bash
         run: |

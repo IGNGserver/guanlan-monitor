@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-const manifest = JSON.parse(fs.readFileSync(new URL("../public/manifest.json", import.meta.url), "utf8"));
+const manifest = JSON.parse(fs.readFileSync(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"));
 const publicDir = new URL("../public/", import.meta.url);
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -38,4 +38,18 @@ test("manifest icons match their declared dimensions and stay opaque", () => {
 
   const apple = readPng("apple-touch-icon.png");
   assert.deepEqual([apple.width, apple.height, apple.colorType], [180, 180, 2]);
+});
+
+test("the canonical manifest keeps its identity and every Apple size is opaque", () => {
+  assert.equal(manifest.id, "/");
+  assert.equal(manifest.scope, "/");
+  assert.equal(manifest.start_url, "/");
+  for (const size of [180, 167, 152]) {
+    const apple = readPng(`apple-touch-icon-${size}.png`);
+    assert.deepEqual([apple.width, apple.height, apple.colorType], [size, size, 2]);
+  }
+  const ordinary = manifest.icons.find((icon) => icon.sizes === "512x512" && icon.purpose === "any");
+  const maskable = manifest.icons.find((icon) => icon.sizes === "512x512" && icon.purpose === "maskable");
+  assert.match(ordinary.src, /^\/icons\/[a-f0-9]{12}\//);
+  assert.ok(!fs.readFileSync(new URL(ordinary.src.slice(1), publicDir)).equals(fs.readFileSync(new URL(maskable.src.slice(1), publicDir))), "maskable artwork must be generated separately with a safe area");
 });
