@@ -181,6 +181,7 @@ fun OnboardingScreen(
         role = OneUiTextRole.Caption,
         color = colors.textTertiary
       )
+      OneUiButton(label = "应用更新与设置", onClick = actions.onShowSettings, fillWidth = true)
     }
   }
 }

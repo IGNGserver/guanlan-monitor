@@ -39,6 +39,7 @@ data class DeviceReorderPayloadDto(
 
 @Serializable
 data class UpdateInfoDto(
+  val versionCode: Long? = null,
   val currentVersion: String = "dev",
   val currentChannel: String = "test",
   val platform: String = "android",
@@ -609,6 +610,7 @@ data class AppState(
   val editingInstanceId: String? = null,
   val savingMetricConfig: Boolean = false,
   val updateInfo: UpdateInfoDto? = null,
+  val updateChannel: String = if (BuildConfig.RELEASE_CHANNEL == "stable") "stable" else "preview",
   val updateDownloading: Boolean = false,
   val updateProgress: Float = 0f,
   val updateInstallerUri: String? = null,

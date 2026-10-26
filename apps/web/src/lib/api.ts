@@ -7,10 +7,8 @@ import type {
   FanNotePayload,
   MetricWindow,
   MetricsResponse,
-  ReleaseChannel,
   TrafficCalendarMode,
   TrafficCalendarResponse,
-  UpdateInfo,
   HubUpdateStatus,
   SystemVersionInfo
 } from "@dsc/shared";
@@ -95,15 +93,6 @@ export function logout() {
 
 export function getSession() {
   return apiFetch<{ ok: true; issuedAt: string }>("/api/auth/session");
-}
-
-export function getUpdateInfo(platform: "hub" | "web" = "web", init?: RequestInit) {
-  const params = new URLSearchParams({
-    platform,
-    currentVersion: process.env.NEXT_PUBLIC_DSC_VERSION ?? "dev",
-    currentChannel: (process.env.NEXT_PUBLIC_DSC_RELEASE_CHANNEL as ReleaseChannel | undefined) ?? "test"
-  });
-  return apiFetch<UpdateInfo>(`/api/updates?${params.toString()}`, init);
 }
 
 export function getSystemVersionInfo() {

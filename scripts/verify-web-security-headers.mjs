@@ -21,6 +21,9 @@ for (const header of [
 if (!config.includes("frame-ancestors 'none'")) throw new Error("CSP must deny framing.");
 if (!config.includes("object-src 'none'")) throw new Error("CSP must deny plugin content.");
 if (!config.includes("connect-src 'self'")) throw new Error("CSP must restrict network connections.");
+for (const source of [config, nginx]) {
+  if (!source.includes("connect-src 'self' https://raw.githubusercontent.com;")) throw new Error("CSP must allow only the repository feed origin beside self.");
+}
 for (const directive of ["default-src 'self'", "base-uri 'self'", "object-src 'none'", "frame-ancestors 'none'", "form-action 'self'", "script-src 'self' 'unsafe-inline'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:", "font-src 'self' data:", "connect-src 'self'", "worker-src 'self'"]) {
   if (!nginx.includes(directive)) throw new Error(`nginx CSP is missing: ${directive}`);
 }

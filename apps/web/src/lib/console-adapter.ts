@@ -1,6 +1,7 @@
 import { io, type Socket } from "socket.io-client";
 import type {
   ConsoleSnapshot,
+  DesktopStartupSettings,
   ConsoleLivePort,
   LiveConnection,
   LiveSnapshot,
@@ -13,8 +14,7 @@ import type {
   MetricsResponse,
   OverviewMetricsResponse,
   TrafficCalendarMode,
-  TrafficCalendarResponse,
-  UpdateInfo
+  TrafficCalendarResponse
 } from "@dsc/shared";
 // The adapter contract module directly, not the UI barrel: the transport has no
 // business loading React components, and it keeps this file runnable under
@@ -29,7 +29,6 @@ import {
   getOverviewMetrics,
   getSession,
   getTrafficCalendar,
-  getUpdateInfo,
   listDevices,
   login,
   logout,
@@ -39,6 +38,7 @@ import {
 
 import { OfflineSnapshotCache } from "./offline-cache.ts";
 import { ReadQueue } from "./read-queue.ts";
+import { WebDeviceUpdates, WEB_UPDATE_STORAGE } from "./device-updates.ts";
 
 /**
  * Request budget.
@@ -55,8 +55,6 @@ import { ReadQueue } from "./read-queue.ts";
  * once).
  */
 const SESSION_RECHECK_MS = 60_000;
-const UPDATE_TTL_MS = 10 * 60_000;
-const UPDATE_FAILURE_TTL_MS = 60_000;
 const CALENDAR_TTL_MS = 60_000;
 /** The offline copy of an unchanged view is rewritten at most this often. */
 const CACHE_SAVE_INTERVAL_MS = 30_000;
@@ -111,7 +109,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
   private sessionCheckedAt = 0;
   private sessionInFlight: Promise<void> | null = null;
   private cacheSaveTimer: ReturnType<typeof setTimeout> | null = null;
-  private updateInfo: TimedValue<UpdateInfo | null> | null = null;
+  private webUpdates = new WebDeviceUpdates(process.env.NEXT_PUBLIC_DSC_VERSION ?? "dev", () => this.now());
   private calendars = new Map<string, TimedValue<TrafficCalendarResponse | null>>();
   private cacheSavedAt = new Map<string, number>();
   private metricsPullTimer: ReturnType<typeof setTimeout> | null = null;
@@ -168,7 +166,6 @@ export class WebConsoleAdapter implements ConsoleAdapter {
       if (changedCacheScope || (this.identityScope && this.identityScope !== session.issuedAt)) {
         this.identityAbort.abort(new Error("session_changed"));
         this.identityAbort = new AbortController();
-        this.updateInfo = null;
         this.calendars.clear();
         this.cacheSavedAt.clear();
         this.snapshot = { ...emptyConsoleSnapshot(), session: { authenticated: true, accessKeyConfigured: true } };
@@ -192,7 +189,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
     this.sessionScope = null;
     this.socket?.close();
     this.socket = null;
-    this.snapshot = cached;
+    this.snapshot = { ...cached, update: this.webUpdates.cached(), startup: { ...cached.startup, updateChannel: this.webUpdates.channel } };
     this.notify();
     return true;
   }
@@ -211,7 +208,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
       const cached = await this.cache.restore(query);
       if (generation !== this.generation || this.sessionScope !== null) return this.snapshot;
       if (cached) {
-        this.snapshot = cached;
+        this.snapshot = { ...cached, update: this.webUpdates.cached(), startup: { ...cached.startup, updateChannel: this.webUpdates.channel } };
         this.notify();
         return cached;
       }
@@ -220,6 +217,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
   }
 
   async refresh(request?: ConsoleSnapshotRequest): Promise<ConsoleSnapshot> {
+    void this.readWebUpdate(request?.background !== true).catch(() => undefined);
     return this.loadSnapshot(request);
   }
 
@@ -284,6 +282,10 @@ export class WebConsoleAdapter implements ConsoleAdapter {
       const disconnect = () => { this.cancelSnapshot(); this.sessionScope = null; this.socket?.close(); this.socket = null; void this.restoreOffline(this.lastRequest); };
       const resetSession = (event: StorageEvent) => {
         if (event.key === "dsc-web-session-reset") void this.markSessionExpired(false);
+        if (event.key === WEB_UPDATE_STORAGE) {
+          this.snapshot = { ...this.snapshot, update: this.webUpdates.cached(), startup: { ...this.snapshot.startup, updateChannel: this.webUpdates.channel } };
+          this.notify();
+        }
       };
       window.addEventListener("storage", resetSession);
       window.addEventListener("online", recover);
@@ -322,17 +324,21 @@ export class WebConsoleAdapter implements ConsoleAdapter {
     await this.establishSession(supersede);
   }
 
-  private async readUpdateInfo(): Promise<UpdateInfo | null> {
-    const cached = this.updateInfo;
-    if (cached && this.now() - cached.fetchedAt < cached.ttl) return cached.value;
-    const sessionGeneration = this.sessionGeneration;
-    const signal = this.identityAbort.signal;
-    const value = await this.reads.run(`update:${this.sessionScope}`, () => getUpdateInfo("web", { signal }), signal, 3)
-      .catch((error) => { if (signal.aborted) throw error; return optionalWebRequest<UpdateInfo>(error); });
-    if (sessionGeneration === this.sessionGeneration) this.updateInfo = { value, fetchedAt: this.now(), ttl: value ? UPDATE_TTL_MS : UPDATE_FAILURE_TTL_MS };
-    return value;
+  private async readWebUpdate(manual = false): Promise<void> {
+    const value = await this.webUpdates.check(manual);
+    const channel = this.webUpdates.channel;
+    const update = value.currentChannel === (channel === "stable" ? "stable" : "test") ? value : this.webUpdates.cached();
+    this.snapshot = { ...this.snapshot, update, startup: { ...this.snapshot.startup, updateChannel: channel } };
+    this.notify();
   }
 
+  async updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<ConsoleSnapshot> {
+    if (settings.updateChannel !== "stable" && settings.updateChannel !== "preview") throw new Error("invalid_update_channel");
+    const update = this.webUpdates.setChannel(settings.updateChannel);
+    this.snapshot = { ...this.snapshot, update, startup: { ...this.snapshot.startup, updateChannel: settings.updateChannel } };
+    this.notify();
+    return this.snapshot;
+  }
   private async readTrafficCalendar(deviceId: string, mode: TrafficCalendarMode, anchor: string, signal: AbortSignal): Promise<TrafficCalendarResponse | null> {
     // The calendar is bucketed by day, so the anchor's date is the identity.
     const key = `${deviceId}\u0000${mode}\u0000${anchor.slice(0, 10)}`;
@@ -352,6 +358,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
     const signal = this.snapshotAbort.signal;
     const generation = ++this.generation;
     this.lastRequest = request;
+    void this.readWebUpdate().catch(() => undefined);
     this.reads.setLimit(this.policy().concurrency);
     try {
       await this.ensureSession(reuseSession || request.background === true, supersedeSession);
@@ -404,8 +411,8 @@ export class WebConsoleAdapter implements ConsoleAdapter {
         metrics: previous.source === "live" ? previous.metrics : null,
         overviewMetrics: previous.source === "live" ? previous.overviewMetrics : null,
         trafficCalendar: previous.source === "live" ? previous.trafficCalendar : null,
-        update: previous.source === "live" ? previous.update : null,
-        startup: { openAtLogin: false, startMinimized: false }
+        update: this.webUpdates.cached(),
+        startup: { openAtLogin: false, startMinimized: false, updateChannel: this.webUpdates.channel }
       };
       this.snapshot = nextSnapshot;
       this.notify();
@@ -439,7 +446,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
         include.trafficCalendar && selectedDeviceId
           ? apply("trafficCalendar", this.readTrafficCalendar(selectedDeviceId, trafficMode, request.trafficAnchor ?? new Date(this.now()).toISOString(), signal).catch((error) => optional<TrafficCalendarResponse>(error))) : null
       ]);
-      void apply("update", this.readUpdateInfo()).catch(() => undefined);
+
       await required;
       if (current()) this.optionalFailures = optionalFailed ? Math.min(4, this.optionalFailures + 1) : 0;
       return this.snapshot;
@@ -455,7 +462,7 @@ export class WebConsoleAdapter implements ConsoleAdapter {
       if (generation !== this.generation) return this.snapshot;
       if (cached) {
         this.socket?.close(); this.socket = null;
-        this.snapshot = cached;
+        this.snapshot = { ...cached, update: this.webUpdates.cached(), startup: { ...cached.startup, updateChannel: this.webUpdates.channel } };
         this.notify();
         return cached;
       }
@@ -499,7 +506,6 @@ export class WebConsoleAdapter implements ConsoleAdapter {
     this.failures = 0;
     this.optionalFailures = 0;
     this.durationMs = 0;
-    this.updateInfo = null;
     this.calendars.clear();
     this.cacheSavedAt.clear();
     this.cancelMetricsPull();

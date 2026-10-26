@@ -604,8 +604,9 @@ private fun oneUiDestinations(attentionCount: Int): List<OneUiDestination> = lis
  * 3. 有离线缓存或已认证时，用户自由浏览当前屏幕；
  * 4. 其它未认证态显示设备列表（用于呈现连接过程或失败状态与重试）。
  */
-private fun AppState.resolvedScreen(): AppScreen = when {
+internal fun AppState.resolvedScreen(): AppScreen = when {
   loading -> AppScreen.Login
+  currentScreen == AppScreen.Settings -> AppScreen.Settings
   !authenticated && serverConfig.baseUrl.isBlank() -> AppScreen.Login
   currentScreen != AppScreen.Login -> currentScreen
   else -> AppScreen.Login

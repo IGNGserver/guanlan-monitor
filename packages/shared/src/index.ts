@@ -914,6 +914,7 @@ export interface ConsoleSnapshot {
 export type DesktopSnapshot = ConsoleSnapshot;
 
 export interface DesktopStartupSettings {
+  updateChannel?: "stable" | "preview";
   openAtLogin: boolean;
   startMinimized: boolean;
 }

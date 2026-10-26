@@ -18,7 +18,7 @@ let mockedBrowserWindow = null;
 const ipcHandlers = new Map();
 mock.module(desktopRequire.resolve('electron'), { namedExports: {
   safeStorage: { isEncryptionAvailable: () => false },
-  app: { getPath: () => tmpdir(), getVersion: () => '3.0.28' },
+  app: { getPath: () => tmpdir(), getVersion: () => '3.0.28', setLoginItemSettings: () => {} },
   shell: {},
   ipcMain: { handle: (channel, handler) => ipcHandlers.set(channel, handler), on: (channel, handler) => ipcHandlers.set(channel, handler) },
   nativeTheme: { prefersReducedTransparency: false, on: () => {}, removeListener: () => {} },
@@ -152,23 +152,43 @@ test('hidden polling stops, resumes once, avoids overlap and cleans up on dispos
   assert.equal(calls, 2);
 });
 
-test('update metadata is cached per Hub/version and failures remain retryable', async () => {
-  const client = new HubClient('/unused');
-  let calls = 0;
-  client.request = async () => ({ available: true, requestNumber: ++calls });
-  client.setServerUrl('http://localhost:38472');
-  for (let i = 0; i < 180; i++) assert.equal((await client.getUpdateInfo('3.0.28')).requestNumber, 1);
-  await client.getUpdateInfo('3.0.29');
-  assert.equal(calls, 2);
-  client.setServerUrl('http://localhost:3200');
-  await client.getUpdateInfo('3.0.29');
-  assert.equal(calls, 3);
-  client.request = async () => { throw Error('offline'); };
-  await assert.rejects(client.getUpdateInfo('3.0.30'));
-  client.request = async () => ({ available: false });
-  assert.equal((await client.getUpdateInfo('3.0.30')).available, false);
+test('device update checks do not use the Hub transport', async () => {
+  const controller = new DesktopController();
+  let checks = 0;
+  controller.hub.request = async () => { throw Error('update must not use Hub'); };
+  controller.updates.check = async (channel, manual) => { checks++; return { available: false, currentChannel: channel, message: 'fixture' }; };
+  await controller.checkDeviceUpdate(true);
+  assert.equal(checks, 1);
+  assert.equal(controller.updateInfo.message, 'fixture');
+  assert.equal(controller.hub.getUpdateInfo, undefined);
 });
-
+test('a late preview check cannot restore a preview candidate after switching to stable', async () => {
+  const controller = new DesktopController();
+  let release;
+  controller.updates.check = () => new Promise((resolve) => { release = resolve; });
+  controller.updates.cached = (channel) => { assert.equal(channel, 'stable'); return { available: false, currentChannel: 'stable' }; };
+  const pending = controller.checkDeviceUpdate(true);
+  controller.startup.updateChannel = 'stable';
+  release({ available: true, latestVersion: '9.0.0', currentChannel: 'test' });
+  await pending;
+  assert.equal(controller.updateInfo.available, false);
+});
+test('switching update channel immediately clears the old candidate before refresh', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'dsc-update-channel-'));
+  const { app } = await import(desktopRequire.resolve('electron'));
+  const previous = app.getPath;
+  app.getPath = () => dir;
+  try {
+    const controller = new DesktopController();
+    controller.currentSnapshot = { ...snapshot(0), startup: {}, update: { available: true, latestVersion: '9.0.0' } };
+    controller.updates.cached = (channel) => { assert.equal(channel, 'stable'); return { available: false, currentChannel: 'stable' }; };
+    let notified = false;
+    controller.subscribe((next) => { assert.equal(next.update.available, false); assert.equal(next.startup.updateChannel, 'stable'); notified = true; });
+    controller.refresh = async () => { assert.equal(notified, true); return controller.currentSnapshot; };
+    const result = await controller.updateStartupSettings({ updateChannel: 'stable' });
+    assert.equal(result.update.available, false);
+  } finally { app.getPath = previous; await rm(dir, { recursive: true, force: true }); }
+});
 test('desktop optional endpoints run with bounded concurrency without dropping successful data', async () => {
   const controller = new DesktopController();
   let release;
@@ -176,7 +196,7 @@ test('desktop optional endpoints run with bounded concurrency without dropping s
   const called = [];
   controller.hub.accessKey = 'fixture';
   controller.hub.listDevices = async () => [{ deviceId: 'a' }];
-  for (const name of ['getMetrics', 'getOverviewMetrics', 'getUpdateInfo']) {
+  for (const name of ['getMetrics', 'getOverviewMetrics']) {
     controller.hub[name] = async () => { called.push(name); await gate; if (name === 'getMetrics') throw Error('offline'); return { endpoint: name }; };
   }
   controller.readTrafficCalendar = async () => { called.push('calendar'); await gate; return null; };
@@ -186,7 +206,7 @@ test('desktop optional endpoints run with bounded concurrency without dropping s
   release();
   const result = await pending;
   await settle();
-  assert.equal(called.length, 4, 'update metadata runs after interactive chart reads');
+  assert.equal(called.length, 3, 'update feed never shares the Hub chart transport');
   assert.equal(result.metrics, null);
   assert.equal(result.overviewMetrics.endpoint, 'getOverviewMetrics');
   assert.equal(result.authenticated, true);

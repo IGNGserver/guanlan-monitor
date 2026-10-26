@@ -33,6 +33,8 @@ interface CachedReleases {
 const releaseVersionPattern = /^v?(\d+)\.(\d+)\.(\d+)$/;
 let releaseCache: CachedReleases | null = null;
 let releaseRequest: Promise<GitHubRelease[]> | null = null;
+let releaseFailureUntil = 0;
+let releaseFailures = 0;
 
 export function compareVersions(left: string, right: string) {
   const parsedLeft = parseVersion(left);
@@ -149,25 +151,43 @@ async function getReleases() {
   const now = Date.now();
   if (releaseCache && releaseCache.expiresAt > now) return releaseCache.releases;
   if (releaseRequest) return releaseRequest;
+  if (now < releaseFailureUntil) {
+    if (releaseCache) return releaseCache.releases;
+    throw new Error("github_release_api_cooling_down");
+  }
 
   releaseRequest = fetch(releaseApiUrl(), {
+    signal: AbortSignal.timeout(20_000),
     headers: {
       Accept: "application/vnd.github+json",
       "User-Agent": "device-state-console-update-checker"
     }
   })
     .then(async (response) => {
-      if (!response.ok) throw new Error(`github_release_api_${response.status}`);
+      if (!response.ok) {
+        const retry = response.headers.get("Retry-After");
+        const retryAt = retry ? (/^\d+$/.test(retry) ? now + Number(retry) * 1000 : Date.parse(retry)) : 0;
+        releaseFailureUntil = Math.max(releaseFailureUntil, retryAt || 0, Number(response.headers.get("X-RateLimit-Reset") ?? 0) * 1000);
+        throw new Error(`github_release_api_${response.status}`);
+      }
       const body = (await response.json()) as unknown;
       if (!Array.isArray(body)) throw new Error("github_release_api_invalid_response");
       return body as GitHubRelease[];
     })
     .then((releases) => {
+      releaseFailures = 0;
+      releaseFailureUntil = 0;
       releaseCache = {
         releases,
         expiresAt: Date.now() + env.DSC_UPDATE_CACHE_SECONDS * 1000
       };
       return releases;
+    })
+    .catch((error: unknown) => {
+      releaseFailures += 1;
+      releaseFailureUntil = Math.max(releaseFailureUntil, now + Math.min(6 * 3600_000, 60_000 * 2 ** Math.min(releaseFailures, 10)));
+      if (releaseCache) return releaseCache.releases;
+      throw error;
     })
     .finally(() => {
       releaseRequest = null;

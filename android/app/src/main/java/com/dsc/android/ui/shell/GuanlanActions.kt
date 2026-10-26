@@ -51,6 +51,7 @@ data class GuanlanActions(
   val onSetLivePaused: (Boolean) -> Unit = {},
   val onSetLiveInterval: (Int) -> Unit = {},
   val onResetLiveCredentials: () -> Unit = {},
+  val onSetUpdateChannel: (String) -> Unit = {},
   val onSetNetworkMode: (String) -> Unit = {},
   val onSetTwoPaneActive: (Boolean) -> Unit = {}
 )

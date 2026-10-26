@@ -43,8 +43,10 @@ class MainViewModel(
   application: Application,
   private val settingsRepository: ConnectionSettings = SettingsRepository(application),
   private val remoteSnapshotCache: RemoteSnapshotCache = RemoteSnapshotCache(application),
+  private val updateSource: DeviceUpdateSource? = null,
   private val createApi: (String) -> Triple<DeviceStateApi, InMemoryCookieJar, OkHttpClient> = ApiFactory(application)::create
 ) : AndroidViewModel(application) {
+  private val deviceUpdates by lazy { updateSource ?: DeviceUpdates(application) }
   private val apiFactory = ApiFactory(application)
   // 按设备缓存指标与流量：离线切换设备时，设备页/流量页仍能展示最近一次成功读到的数据（交）
   private val deviceMetricsCache = mutableMapOf<String, MetricsDto>()
@@ -135,7 +137,14 @@ class MainViewModel(
     }
   }
 
+  fun setUpdateChannel(value: String) {
+    deviceUpdates.channel = value
+    _state.update { it.copy(updateChannel = value, updateInfo = null) }
+    checkForUpdate(reportResult = true)
+  }
+
   fun onAppForeground() {
+    checkForUpdate()
     appInForeground = true
     if (_state.value.live?.paused == false) launchLiveLoop()
     if (_state.value.authenticated) {
@@ -472,21 +481,22 @@ class MainViewModel(
     val update = _state.value.updateInfo ?: return
     val assetUrl = update.assetUrl
     val expectedSha256 = update.sha256
-    if (!update.available || assetUrl.isNullOrBlank() || expectedSha256.isNullOrBlank()) {
+    val expectedSize = update.assetSize
+    if (!update.available || assetUrl.isNullOrBlank() || expectedSha256.isNullOrBlank() || expectedSize == null || expectedSize <= 0) {
       _state.update { it.copy(message = "更新包校验信息不完整，已阻止安装") }
       return
     }
-    val client = httpClient ?: return
+    if (_state.value.updateDownloading) return
+    val target = File(getApplication<Application>().cacheDir, "device-state-console-update.apk")
     viewModelScope.launch {
       _state.update { it.copy(updateDownloading = true, updateProgress = 0f, message = null) }
       remoteResult {
         withContext(Dispatchers.IO) {
-          val request = okhttp3.Request.Builder().url(assetUrl).get().build()
-          client.newCall(request).execute().use { response ->
+          deviceUpdates.openDownload(assetUrl).use { response ->
             check(response.isSuccessful) { "下载更新失败：HTTP ${response.code}" }
             val body = response.body ?: error("更新响应为空")
             val total = body.contentLength()
-            val target = File(getApplication<Application>().cacheDir, "device-state-console-update.apk")
+            check(total < 0 || total == expectedSize) { "更新包大小与清单不匹配" }
             FileOutputStream(target).use { output ->
               body.byteStream().use { input ->
                 val buffer = ByteArray(128 * 1024)
@@ -494,17 +504,24 @@ class MainViewModel(
                 while (true) {
                   val count = input.read(buffer)
                   if (count <= 0) break
-                  output.write(buffer, 0, count)
                   copied += count
+                  check(copied <= expectedSize) { "更新包超出清单大小" }
+                  output.write(buffer, 0, count)
                   if (total > 0) {
                     _state.update { it.copy(updateProgress = copied.toFloat() / total.toFloat()) }
                   }
                 }
+                check(copied == expectedSize) { "更新包下载不完整" }
               }
             }
-            val digest = MessageDigest.getInstance("SHA-256").digest(target.readBytes())
-              .joinToString("") { byte -> "%02x".format(byte) }
+            val hasher = MessageDigest.getInstance("SHA-256")
+            target.inputStream().use { input ->
+              val buffer = ByteArray(128 * 1024)
+              while (true) { val count = input.read(buffer); if (count < 0) break; hasher.update(buffer, 0, count) }
+            }
+            val digest = hasher.digest().joinToString("") { byte -> "%02x".format(byte) }
             check(digest.equals(expectedSha256, ignoreCase = true)) { "更新包校验失败" }
+            deviceUpdates.validatePackage(target, update)
             val uri = FileProvider.getUriForFile(
               getApplication<Application>(),
               "${getApplication<Application>().packageName}.fileprovider",
@@ -516,6 +533,7 @@ class MainViewModel(
       }.onSuccess { uri ->
         _state.update { it.copy(updateDownloading = false, updateProgress = 1f, updateInstallerUri = uri, message = "更新包已下载，正在打开系统安装器") }
       }.onFailure { error ->
+        target.delete()
         _state.update { it.copy(updateDownloading = false, updateProgress = 0f, message = userFacingError(error, "更新失败")) }
       }
     }
@@ -526,40 +544,22 @@ class MainViewModel(
   }
 
   /**
-   * 检查中枢上的更新。
+   * 设备直接检查仓库更新，不依赖中枢登录。
    *
    * 登录后的自动检查保持静默（`reportResult = false`）；只有用户在「设置 › 版本与更新」
    * 里主动点「检查更新」时，才把「已是最新 / 检查失败」的结论说出来（交）。
    */
   fun checkForUpdate(reportResult: Boolean = false) {
-    val currentApi = api ?: return
-    val config = _state.value.serverConfig
-    if (config.baseUrl.isBlank()) return
     viewModelScope.launch {
-      val result = remoteResult {
-        currentApi.updateInfo(
-          platform = "android",
-          currentVersion = BuildConfig.RELEASE_VERSION,
-          currentChannel = BuildConfig.RELEASE_CHANNEL,
-          arch = "universal"
-        )
-      }
+      val result = runCatching { deviceUpdates.check(reportResult) }
+      result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
       val update = result.getOrNull()
-      val hasInstallableUpdate = update?.available == true && !update.assetUrl.isNullOrBlank()
       _state.update {
-        it.copy(
-          updateInfo = update?.takeIf { item -> item.available && !item.assetUrl.isNullOrBlank() },
-          message = when {
-            !reportResult -> it.message
-            result.isFailure -> "检查更新失败，请确认中枢可达"
-            hasInstallableUpdate -> "发现新版本 v${update?.latestVersion ?: ""}，可在下方下载"
-            else -> "当前已是最新版本（v${BuildConfig.RELEASE_VERSION}）"
-          }
-        )
+        it.copy(updateInfo = update, updateChannel = deviceUpdates.channel,
+          message = if (!reportResult) it.message else update?.message ?: if (update?.available == true) "发现新版本 v${update.latestVersion}" else "更新服务暂不可用，请稍后重试")
       }
     }
   }
-
   fun openDevice(deviceId: String, focusBlock: DeviceBlockKey? = null) {
     pushCurrentScreen()
     val switchingDevice = _state.value.selectedDeviceId != deviceId

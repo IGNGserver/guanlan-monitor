@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -29,186 +28,145 @@ type cliUpdateInfo struct {
 	AssetName      *string `json:"assetName"`
 	Sha256         *string `json:"sha256"`
 	Message        string  `json:"message"`
+	AssetSize      int64   `json:"assetSize"`
 }
 
 func runUpdateCommand(args []string) error {
 	if runtime.GOOS == "darwin" {
-		return errors.New("macOS updates require the complete signed installer package; use the desktop update link, not binary replacement")
+		return errors.New("macOS updates require the complete signed installer package; use the desktop update link")
 	}
-	installDir := defaultInstallDir()
 	flags := flag.NewFlagSet("update", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	serverURL := flags.String("server-url", os.Getenv("DSC_SERVER_URL"), "Device State Console server URL")
-	secret := flags.String("secret", os.Getenv("DSC_AGENT_SECRET"), "shared access key")
+	// Accepted for old automation; update requests never use Hub URLs or credentials.
+	_ = flags.String("server-url", "", "deprecated; unused for updates")
+	_ = flags.String("secret", "", "deprecated; unused for updates")
+	_ = flags.String("install-dir", "", "deprecated; complete package determines installation")
 	currentVersion := flags.String("current-version", BuildVersion, "current release version")
-	channel := flags.String("channel", BuildChannel, "stable or test")
-	installDirFlag := flags.String("install-dir", installDir, "installed agent directory")
+	channel := flags.String("channel", savedUpdateChannel(), "stable or preview (test is a compatibility alias)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	installDir = filepath.Clean(*installDirFlag)
-	loadAgentEnvFile(installDir, serverURL, secret)
-
-	if strings.TrimSpace(*serverURL) == "" {
-		return errors.New("server URL is required; pass --server-url or set DSC_SERVER_URL")
+	if !validChannel(*channel) || !validReleaseVersion(*currentVersion) {
+		return errors.New("invalid current version or update channel")
 	}
-	if !validChannel(*channel) {
-		return fmt.Errorf("invalid channel %q", *channel)
+	if *currentVersion != BuildVersion {
+		return errors.New("current-version must match the running agent build; refusing a downgrade bypass")
 	}
-	if !validReleaseVersion(*currentVersion) || *currentVersion == "dev" {
-		versionPath := filepath.Join(installDir, "VERSION")
-		if data, err := os.ReadFile(versionPath); err == nil && validReleaseVersion(strings.TrimSpace(string(data))) {
-			*currentVersion = strings.TrimSpace(string(data))
-		}
-	}
-	if !validReleaseVersion(*currentVersion) {
-		return fmt.Errorf("current version %q is not a release version", *currentVersion)
-	}
-
-	update, err := fetchAgentUpdate(*serverURL, *secret, *currentVersion, *channel)
+	update, err := fetchDeviceUpdate(*currentVersion, *channel)
 	if err != nil {
 		return err
+	}
+	if update.Message != "" {
+		fmt.Fprintln(os.Stderr, update.Message)
 	}
 	if !update.Available {
-		fmt.Printf("Device State Console CLI is up to date (%s).\n", *currentVersion)
+		fmt.Printf("No newer installable version on the %s channel.\n", *channel)
 		return nil
 	}
-	if update.LatestVersion == nil || update.AssetURL == nil {
-		return errors.New("a newer release exists but its CLI asset is missing")
+	if update.LatestVersion == nil || update.AssetURL == nil || update.Sha256 == nil || compareReleaseVersions(*update.LatestVersion, *currentVersion) <= 0 {
+		return errors.New("refusing invalid or non-newer update")
 	}
-	if compareReleaseVersions(*update.LatestVersion, *currentVersion) <= 0 {
-		return fmt.Errorf("server returned a non-newer version %s; refusing downgrade or reinstall", *update.LatestVersion)
-	}
-	if update.Sha256 == nil || !validSha256(*update.Sha256) {
-		return errors.New("update metadata has no valid SHA-256; refusing an unverified package")
-	}
-
-	archivePath, err := downloadUpdate(*update.AssetURL, *update.Sha256)
+	packagePath, err := downloadUpdate(*update.AssetURL, *update.Sha256, update.AssetSize)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(archivePath)
-
-	tempDir, err := os.MkdirTemp(filepath.Dir(installDir), ".dsc-cli-update-")
-	if err != nil {
-		return fmt.Errorf("create update directory: %w", err)
-	}
-	defer os.RemoveAll(tempDir)
-	if err := extractZipSafely(archivePath, tempDir); err != nil {
-		return err
-	}
-
-	binaryName := "device-state-console-agent"
+	defer os.Remove(packagePath)
 	if runtime.GOOS == "windows" {
-		binaryName += ".exe"
+		exePath := packagePath + ".exe"
+		if err := os.Rename(packagePath, exePath); err != nil {
+			return err
+		}
+		command := exec.Command(exePath, "/S")
+		defer os.Remove(exePath)
+		if err := command.Run(); err != nil {
+			_ = os.Remove(exePath)
+			return err
+		}
+		fmt.Printf("Complete Windows installer finished for %s; it manages the desktop and machine service.\n", *update.LatestVersion)
+		return nil
 	}
-	newBinary, err := findFile(tempDir, binaryName)
-	if err != nil {
+	debPath := packagePath + ".deb"
+	if err := os.Rename(packagePath, debPath); err != nil {
 		return err
 	}
-
-	if err := replaceInstalledBinary(installDir, newBinary, binaryName, *update.LatestVersion); err != nil {
-		return err
-	}
-	if runtime.GOOS == "windows" {
-		fmt.Printf("Device State Console CLI update to %s has been scheduled; the agent will restart after the current command exits.\n", *update.LatestVersion)
-	} else {
-		fmt.Printf("Device State Console CLI updated to %s.\n", *update.LatestVersion)
-	}
-	return nil
+	defer os.Remove(debPath)
+	command := exec.Command("dpkg", "-i", debPath)
+	command.Stdout = os.Stdout
+	command.Stderr = os.Stderr
+	return command.Run()
 }
 
-func fetchAgentUpdate(serverURL, secret, currentVersion, channel string) (*cliUpdateInfo, error) {
-	base := strings.TrimRight(strings.TrimSpace(serverURL), "/")
-	query := url.Values{
-		"platform":       []string{updatePlatform()},
-		"currentVersion": []string{currentVersion},
-		"currentChannel": []string{channel},
-		"arch":           []string{runtime.GOARCH},
+func fetchAgentUpdate(_ string, _ string, currentVersion, channel string) (*cliUpdateInfo, error) {
+	return fetchDeviceUpdate(currentVersion, channel)
+}
+func allowedUpdateDownloadURL(value string) bool {
+	u, err := url.Parse(value)
+	if err != nil || u.Scheme != "https" || u.User != nil || (u.Port() != "" && u.Port() != "443") {
+		return false
 	}
-	request, err := http.NewRequest(http.MethodGet, base+"/api/updates?"+query.Encode(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("create update request: %w", err)
+	switch u.Hostname() {
+	case "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "github-releases.githubusercontent.com":
+		return true
 	}
-	request.Header.Set("Accept", "application/json")
-	if strings.TrimSpace(secret) != "" {
-		request.Header.Set("Authorization", "Bearer "+secret)
-	}
-	client := &http.Client{Timeout: 20 * time.Second}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("check for update: %w", err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode >= http.StatusBadRequest {
-		return nil, fmt.Errorf("update check returned HTTP %d", response.StatusCode)
-	}
-	var info cliUpdateInfo
-	if err := json.NewDecoder(response.Body).Decode(&info); err != nil {
-		return nil, fmt.Errorf("decode update metadata: %w", err)
-	}
-	return &info, nil
+	return false
 }
 
-func downloadUpdate(assetURL, expectedSha256 string) (string, error) {
+var updateDownloadTransport http.RoundTripper = http.DefaultTransport
+
+func downloadUpdate(assetURL, expectedSha256 string, expectedSize int64) (string, error) {
+	if !allowedUpdateDownloadURL(assetURL) || !validSha256(expectedSha256) || expectedSize <= 0 || expectedSize > 9007199254740991 {
+		return "", errors.New("invalid update package metadata")
+	}
 	request, err := http.NewRequest(http.MethodGet, assetURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("create package request: %w", err)
 	}
-	response, err := (&http.Client{Timeout: 30 * time.Minute}).Do(request)
+	client := &http.Client{Transport: updateDownloadTransport, Timeout: 30 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 || !allowedUpdateDownloadURL(req.URL.String()) {
+			return errors.New("update redirect is not an official HTTPS asset URL")
+		}
+		return nil
+	}}
+	response, err := client.Do(request)
 	if err != nil {
 		return "", fmt.Errorf("download update: %w", err)
 	}
 	defer response.Body.Close()
-	if response.StatusCode >= http.StatusBadRequest {
+	if response.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("download returned HTTP %d", response.StatusCode)
 	}
-
-	tempFile, err := os.CreateTemp("", "dsc-cli-update-*.zip")
+	if response.ContentLength >= 0 && response.ContentLength != expectedSize {
+		return "", errors.New("update package content length does not match feed")
+	}
+	file, err := os.CreateTemp("", "guanlan-update-*.package")
 	if err != nil {
 		return "", fmt.Errorf("create package cache: %w", err)
 	}
-	path := tempFile.Name()
-	defer tempFile.Close()
-	var copied int64
-	total := response.ContentLength
-	buffer := make([]byte, 128*1024)
-	for {
-		read, readErr := response.Body.Read(buffer)
-		if read > 0 {
-			if _, err := tempFile.Write(buffer[:read]); err != nil {
-				os.Remove(path)
-				return "", fmt.Errorf("save update: %w", err)
-			}
-			copied += int64(read)
-			if total > 0 {
-				fmt.Printf("\rDownloading update: %d%%", copied*100/total)
-			} else {
-				fmt.Printf("\rDownloading update: %d bytes", copied)
-			}
+	name := file.Name()
+	keep := false
+	defer func() {
+		_ = file.Close()
+		if !keep {
+			_ = os.Remove(name)
 		}
-		if readErr == io.EOF {
-			break
-		}
-		if readErr != nil {
-			os.Remove(path)
-			return "", fmt.Errorf("download update: %w", readErr)
-		}
-	}
-	fmt.Println()
-
-	digest, err := sha256File(path)
+	}()
+	hasher := sha256.New()
+	copied, err := io.Copy(io.MultiWriter(file, hasher), io.LimitReader(response.Body, expectedSize+1))
 	if err != nil {
-		os.Remove(path)
+		return "", fmt.Errorf("save update: %w", err)
+	}
+	if copied != expectedSize {
+		return "", errors.New("update package actual length does not match feed")
+	}
+	if !strings.EqualFold(hex.EncodeToString(hasher.Sum(nil)), expectedSha256) {
+		return "", errors.New("update package SHA-256 mismatch")
+	}
+	if err := file.Close(); err != nil {
 		return "", err
 	}
-	if !strings.EqualFold(digest, expectedSha256) {
-		os.Remove(path)
-		return "", fmt.Errorf("SHA-256 mismatch: expected %s, got %s", expectedSha256, digest)
-	}
-	return path, nil
+	keep = true
+	return name, nil
 }
-
 func extractZipSafely(archivePath, destination string) error {
 	archive, err := zip.OpenReader(archivePath)
 	if err != nil {
@@ -581,43 +539,71 @@ func managedByAgentService() bool {
 }
 
 func validChannel(value string) bool {
-	return value == "stable" || value == "test"
+	return value == "stable" || value == "preview" || value == "test"
 }
 
 func validReleaseVersion(value string) bool {
-	parts := strings.Split(strings.TrimPrefix(strings.TrimSpace(value), "v"), ".")
-	if len(parts) != 3 {
-		return false
-	}
-	for _, part := range parts {
-		if part == "" {
-			return false
-		}
-		for _, char := range part {
-			if char < '0' || char > '9' {
-				return false
-			}
-		}
-	}
-	return true
+	_, ok := parseUpdateSemver(value)
+	return ok
 }
 
 func compareReleaseVersions(left, right string) int {
-	leftParts := strings.Split(strings.TrimPrefix(left, "v"), ".")
-	rightParts := strings.Split(strings.TrimPrefix(right, "v"), ".")
-	for index := 0; index < 3; index++ {
-		leftNumber := parseReleasePart(leftParts[index])
-		rightNumber := parseReleasePart(rightParts[index])
-		if leftNumber > rightNumber {
+	a, aok := parseUpdateSemver(left)
+	b, bok := parseUpdateSemver(right)
+	if !aok || !bok {
+		return 0
+	}
+	for i := 0; i < 3; i++ {
+		x, _ := strconv.ParseUint(a[i], 10, 64)
+		y, _ := strconv.ParseUint(b[i], 10, 64)
+		if x > y {
 			return 1
 		}
-		if leftNumber < rightNumber {
+		if x < y {
 			return -1
 		}
 	}
+	if a[3] == "" || b[3] == "" {
+		if a[3] == b[3] {
+			return 0
+		}
+		if a[3] == "" {
+			return 1
+		}
+		return -1
+	}
+	x, y := strings.Split(a[3], "."), strings.Split(b[3], ".")
+	for i := 0; i < len(x) || i < len(y); i++ {
+		if i >= len(x) {
+			return -1
+		}
+		if i >= len(y) {
+			return 1
+		}
+		if x[i] == y[i] {
+			continue
+		}
+		xn, xe := strconv.ParseUint(x[i], 10, 64)
+		yn, ye := strconv.ParseUint(y[i], 10, 64)
+		if xe == nil && ye == nil {
+			if xn > yn {
+				return 1
+			}
+			return -1
+		}
+		if xe == nil {
+			return -1
+		}
+		if ye == nil {
+			return 1
+		}
+		if x[i] > y[i] {
+			return 1
+		}
+		return -1
+	}
 	return 0
 }
-
 func parseReleasePart(value string) int64 {
 	var result int64
 	for _, char := range value {
