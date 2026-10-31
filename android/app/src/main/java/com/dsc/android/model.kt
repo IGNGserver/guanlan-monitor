@@ -30,11 +30,24 @@ data class DeviceSummaryDto(
   val diskUsedBytes: Long? = null,
   val diskTotalBytes: Long? = null,
   val sortOrder: Int? = null,
+  val group: String? = null,
 )
 
 @Serializable
 data class DeviceReorderPayloadDto(
   val deviceIds: List<String>
+)
+
+@Serializable
+data class DeviceGroupUpdatePayloadDto(
+  val deviceIds: List<String>,
+  val group: String? = null
+)
+
+@Serializable
+data class DeviceGroupUpdateResponseDto(
+  val ok: Boolean = true,
+  val group: String? = null
 )
 
 @Serializable
@@ -344,6 +357,7 @@ data class DeviceDetailDto(
   val diskUsedBytes: Long? = null,
   val diskTotalBytes: Long? = null,
   val sortOrder: Int? = null,
+  val group: String? = null,
 )
 
 @Serializable

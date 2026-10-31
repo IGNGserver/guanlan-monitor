@@ -106,6 +106,17 @@ export function useWorkspaceMutations({
     (deviceIds: string[]) => runMutation(() => adapter.reorderInstances(deviceIds), "实例顺序已保存", "保存排序失败"),
     [adapter, runMutation]
   );
+  const updateDeviceGroup = useCallback(
+    (deviceIds: string[], group: string | null) => {
+      const normalized = group?.trim() ? group.trim() : null;
+      return runMutation(
+        () => adapter.updateDeviceGroup(deviceIds, normalized),
+        normalized ? `已归入“${normalized}”` : "已移出分组",
+        "保存设备分组失败"
+      );
+    },
+    [adapter, runMutation]
+  );
   const minimizeWindow = useCallback(() => adapter.windowMinimize?.() ?? Promise.resolve(), [adapter]);
   const toggleMaximizeWindow = useCallback(() => adapter.windowToggleMaximize?.() ?? Promise.resolve(false), [adapter]);
   const closeWindow = useCallback(() => adapter.windowClose?.() ?? Promise.resolve(), [adapter]);
@@ -142,6 +153,7 @@ export function useWorkspaceMutations({
     saveFanNote,
     deleteInstance,
     reorderInstances,
+    updateDeviceGroup,
     minimizeWindow,
     toggleMaximizeWindow,
     closeWindow,

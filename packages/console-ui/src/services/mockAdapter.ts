@@ -19,6 +19,16 @@ export class MockConsoleAdapter implements ConsoleAdapter {
   }
   async deleteInstance() { return this.snapshot; }
   async reorderInstances() { return this.snapshot; }
+  async updateDeviceGroup(deviceIds: string[], group: string | null) {
+    const normalized = group?.trim() ? group.trim() : null;
+    const idSet = new Set(deviceIds);
+    this.snapshot = {
+      ...this.snapshot,
+      devices: this.snapshot.devices.map((device) => idSet.has(device.deviceId) ? { ...device, group: normalized } : device)
+    };
+    for (const listener of this.listeners) listener(this.snapshot);
+    return this.snapshot;
+  }
   async saveFanNote() { return this.snapshot; }
   async openExternal(url: string) { window.open(url, "_blank", "noopener,noreferrer"); }
   subscribe(listener: (snapshot: ConsoleSnapshot) => void) { this.listeners.add(listener); return () => this.listeners.delete(listener); }

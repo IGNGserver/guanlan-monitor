@@ -27,13 +27,14 @@ function rank(issues: DeviceIssue[]): number {
  * attention come first — a resource past its critical line, then past its
  * warning line, then offline — and keep the directory order within each group.
  */
-export function FleetGrid({ devices, trends, metric, windowLabel, thresholds, onOpen }: {
+export function FleetGrid({ devices, trends, metric, windowLabel, thresholds, showGroupBadge = true, onOpen }: {
   devices: readonly DeviceSummary[];
   /** Points of the selected metric by device id, in that metric's unit. */
   trends: ReadonlyMap<string, readonly SamplePoint[]>;
   metric: FleetMetric;
   windowLabel: string;
   thresholds: HealthThresholds;
+  showGroupBadge?: boolean;
   onOpen: (deviceId: string) => void;
 }) {
   const cards = useMemo(() => devices
@@ -48,12 +49,14 @@ export function FleetGrid({ devices, trends, metric, windowLabel, thresholds, on
         const points = trends.get(device.deviceId) ?? [];
         const latest = latestPointValue(points);
         const trendTone = metric === "network" ? "normal" : metricTone(latest, thresholds[metric]);
+        const groupName = device.group?.trim() || null;
         return (
           <li key={device.deviceId}>
             <button type="button" className={`workspace-fleet-card is-${state}`} onClick={() => onOpen(device.deviceId)} aria-label={`打开 ${device.hostname}`}>
               <span className="workspace-fleet-card__head">
                 <StatusDot state={online ? "online" : "offline"} />
                 <strong>{device.hostname}</strong>
+                {showGroupBadge && groupName && <span className="guanlan-device-group-badge">{groupName}</span>}
                 <span className={`workspace-fleet-card__state is-${state}`}>{!online ? "离线" : state === "critical" ? "严重" : state === "warning" ? "警告" : "正常"}</span>
               </span>
               <span className="workspace-fleet-card__metrics">

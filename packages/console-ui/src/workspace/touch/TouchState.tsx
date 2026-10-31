@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
-import type { DeviceDirectorySort, DeviceDirectoryStatus } from "../selectors";
+import type { DeviceDirectorySort, DeviceDirectoryStatus, DeviceGroupFilter } from "../selectors";
 import type { SettingsSection } from "../routes";
 import type { DeviceTabId } from "../dashboard";
 
@@ -8,6 +8,7 @@ export interface TouchDetailState { panel: TouchPanel; tab: DeviceTabId; }
 function useTouchStateValue() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<DeviceDirectoryStatus>("all");
+  const [group, setGroup] = useState<DeviceGroupFilter>("all");
   const [sort, setSort] = useState<DeviceDirectorySort>("order");
   const [pins, setPins] = useState<string[]>([]);
   const [settingsCategory, setSettingsCategory] = useState<SettingsSection | null>(null);
@@ -24,7 +25,7 @@ function useTouchStateValue() {
     try { localStorage.setItem("dsc-pinned-devices", JSON.stringify(next)); } catch { /* In-memory pins still work. */ }
     return next;
   });
-  return { query, setQuery, status, setStatus, sort, setSort, pins, togglePin, settingsCategory, setSettingsCategory, details, setDetails, scroll };
+  return { query, setQuery, status, setStatus, group, setGroup, sort, setSort, pins, togglePin, settingsCategory, setSettingsCategory, details, setDetails, scroll };
 }
 const TouchState = createContext<ReturnType<typeof useTouchStateValue> | null>(null);
 /** Lives outside the adaptive branches: rotation never discards a user's place. */

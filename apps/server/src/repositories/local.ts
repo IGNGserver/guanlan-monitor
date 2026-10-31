@@ -515,6 +515,7 @@ export class LocalDeviceRepository implements DeviceRepository {
           name: name || deviceId,
           status: "open",
           sortOrder: maxSortOrder + 1,
+          group: null,
           registeredAt: now,
           updatedAt: now
         };
@@ -528,6 +529,7 @@ export class LocalDeviceRepository implements DeviceRepository {
   async listOpenDevices(): Promise<DeviceRecord[]> {
     return this.store.select((db) => Object.values(db.deviceRegistry ?? {})
       .filter((d) => d.status === "open" && !isLegacyVirtualMachineId(d.deviceId))
+      .map((d) => ({ ...d, group: d.group ?? null }))
       .sort((a, b) => (a.sortOrder - b.sortOrder) || a.deviceId.localeCompare(b.deviceId)));
   }
 
@@ -546,6 +548,7 @@ export class LocalDeviceRepository implements DeviceRepository {
           name: deviceId,
           status: "closed",
           sortOrder: 0,
+          group: null,
           registeredAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
@@ -565,6 +568,34 @@ export class LocalDeviceRepository implements DeviceRepository {
           item.updatedAt = now;
         }
       });
+    });
+  }
+
+  async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void> {
+    const normalizedGroup = group?.trim() ? group.trim().slice(0, 64) : null;
+    await this.store.update((db) => {
+      const registry = (db.deviceRegistry ??= {});
+      const now = new Date().toISOString();
+      for (const id of deviceIds) {
+        if (isLegacyVirtualMachineId(id)) continue;
+        const item = registry[id];
+        if (item) {
+          item.group = normalizedGroup;
+          item.updatedAt = now;
+        } else {
+          const allDevices = Object.values(registry);
+          const maxSortOrder = allDevices.reduce((max, d) => Math.max(max, d.sortOrder ?? 0), -1);
+          registry[id] = {
+            deviceId: id,
+            name: db.devices[id]?.identity.hostname || id,
+            status: "open",
+            sortOrder: maxSortOrder + 1,
+            group: normalizedGroup,
+            registeredAt: now,
+            updatedAt: now
+          };
+        }
+      }
     });
   }
 }

@@ -21,6 +21,7 @@ data class GuanlanActions(
   val onOpenDevice: (String, DeviceBlockKey?) -> Unit,
   val onDeleteDevice: (String) -> Unit,
   val onReorderDevices: (List<String>) -> Unit,
+  val onUpdateDeviceGroup: (List<String>, String?) -> Unit = { _, _ -> },
   val onClearFocusedBlock: () -> Unit,
   val onOpenTraffic: (String) -> Unit,
   val onOpenDeviceEditor: (String) -> Unit,

@@ -267,6 +267,15 @@ export async function registerRoutes(
     deviceIds: z.array(z.string())
   });
 
+  const deviceGroupUpdateSchema = z.object({
+    deviceIds: z.array(z.string().min(1)).min(1).max(500),
+    group: z.string().trim().max(64).nullable()
+  });
+
+  const singleDeviceGroupSchema = z.object({
+    group: z.string().trim().max(64).nullable()
+  });
+
   app.get("/api/devices", { preHandler: requireAuth }, async () => {
     return buildDeviceSummaries(repositories, app.log);
   });
@@ -326,10 +335,39 @@ export async function registerRoutes(
     return { ok: true };
   });
 
+  app.put("/api/devices/group", { preHandler: requireAuth }, async (request, reply) => {
+    const parsed = deviceGroupUpdateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_group_payload" });
+    }
+    if (parsed.data.deviceIds.some(isLegacyVirtualMachineId)) {
+      return reply.code(400).send({ error: "invalid_group_payload" });
+    }
+    const normalizedGroup = parsed.data.group?.trim() ? parsed.data.group.trim() : null;
+    await repositories.devices.updateDeviceGroup(parsed.data.deviceIds, normalizedGroup);
+    return { ok: true, group: normalizedGroup };
+  });
+
+  app.put<{ Params: { deviceId: string } }>("/api/devices/:deviceId/group", { preHandler: requireAuth }, async (request, reply) => {
+    const { deviceId } = request.params;
+    if (isLegacyVirtualMachineId(deviceId)) {
+      return reply.code(404).send({ error: "device_not_found" });
+    }
+    const parsed = singleDeviceGroupSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_group_payload" });
+    }
+    const normalizedGroup = parsed.data.group?.trim() ? parsed.data.group.trim() : null;
+    await repositories.devices.updateDeviceGroup([deviceId], normalizedGroup);
+    return { ok: true, deviceId, group: normalizedGroup };
+  });
+
   app.get<{ Params: { deviceId: string } }>("/api/devices/:deviceId", { preHandler: requireAuth }, async (request, reply) => {
     const state = await repositories.realtime.getDevice(request.params.deviceId);
     if (!state) return reply.code(404).send({ error: "device_not_found" });
-    return toDetail(state);
+    const openDevices = await repositories.devices.listOpenDevices();
+    const record = openDevices.find((item) => item.deviceId === request.params.deviceId);
+    return { ...toDetail(state), sortOrder: record?.sortOrder, group: record?.group ?? null };
   });
 
   app.get<{ Params: { deviceId: string }; Querystring: { window: MetricWindow } }>(
@@ -341,7 +379,11 @@ export async function registerRoutes(
       const query = parsed.data;
       const state = await repositories.realtime.getDevice(request.params.deviceId);
       if (!state) return reply.code(404).send({ error: "device_not_found" });
-      const notes = await fanNotes.get(request.params.deviceId);
+      const [notes, openDevices] = await Promise.all([
+        fanNotes.get(request.params.deviceId),
+        repositories.devices.listOpenDevices()
+      ]);
+      const record = openDevices.find((item) => item.deviceId === request.params.deviceId);
       const baseAvailableMetrics = getAvailableMetrics(state);
       const metricConfig = await metricsService.getMetricConfig(request.params.deviceId);
       const enabledMetrics = metricConfig.enabledMetrics;
@@ -361,7 +403,7 @@ export async function registerRoutes(
       const rangeEnd = new Date();
       const rangeStart = new Date(rangeEnd.getTime() - METRIC_WINDOW_DURATION_MS[query.window]);
       return {
-        device: toDetail(state),
+        device: { ...toDetail(state), sortOrder: record?.sortOrder, group: record?.group ?? null },
         status: state.status,
         lastSeenAt: state.lastSeenAt,
         window: query.window,

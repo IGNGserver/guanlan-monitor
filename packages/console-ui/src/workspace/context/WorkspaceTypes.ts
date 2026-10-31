@@ -76,6 +76,7 @@ export interface WorkspaceContextValue {
   saveFanNote: (deviceId: string, fanId: string, note: string) => Promise<boolean>;
   deleteInstance: (deviceId: string) => Promise<boolean>;
   reorderInstances: (deviceIds: string[]) => Promise<boolean>;
+  updateDeviceGroup: (deviceIds: string[], group: string | null) => Promise<boolean>;
   minimizeWindow: () => Promise<void>;
   toggleMaximizeWindow: () => Promise<boolean>;
   closeWindow: () => Promise<void>;

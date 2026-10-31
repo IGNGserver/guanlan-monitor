@@ -23,10 +23,17 @@ export class MysqlDeviceRepository implements DeviceRepository {
         name VARCHAR(128) NOT NULL,
         status VARCHAR(32) NOT NULL DEFAULT 'open',
         sort_order INT NOT NULL DEFAULT 0,
+        group_name VARCHAR(64) NULL DEFAULT NULL,
         registered_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL
       )
     `);
+    const [columns] = await this.pool.query<RowDataPacket[]>(
+      `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'devices' AND COLUMN_NAME = 'group_name'`
+    );
+    if (columns.length === 0) {
+      await this.pool.query(`ALTER TABLE devices ADD COLUMN group_name VARCHAR(64) NULL DEFAULT NULL AFTER sort_order`);
+    }
   }
 
   async registerOrUpdateDevice(
@@ -65,7 +72,7 @@ export class MysqlDeviceRepository implements DeviceRepository {
     const formattedNow = now.toISOString().slice(0, 19).replace("T", " ");
 
     const [rows] = await this.pool.query<RowDataPacket[]>(
-      `SELECT device_id, name, status, sort_order, registered_at, updated_at FROM devices WHERE device_id = ?`,
+      `SELECT device_id, name, status, sort_order, group_name, registered_at, updated_at FROM devices WHERE device_id = ?`,
       [deviceId]
     );
 
@@ -77,6 +84,7 @@ export class MysqlDeviceRepository implements DeviceRepository {
           name: existing.name,
           status: "closed",
           sortOrder: existing.sort_order,
+          group: existing.group_name ?? null,
           registeredAt: String(existing.registered_at),
           updatedAt: String(existing.updated_at)
         };
@@ -91,6 +99,7 @@ export class MysqlDeviceRepository implements DeviceRepository {
         name: deviceName,
         status: "open",
         sortOrder: existing.sort_order,
+        group: existing.group_name ?? null,
         registeredAt: String(existing.registered_at),
         updatedAt: formattedNow
       };
@@ -111,6 +120,7 @@ export class MysqlDeviceRepository implements DeviceRepository {
         name: deviceName,
         status: "open",
         sortOrder: nextSortOrder,
+        group: null,
         registeredAt: formattedNow,
         updatedAt: formattedNow
       };
@@ -122,7 +132,7 @@ export class MysqlDeviceRepository implements DeviceRepository {
     // finished still never surfaces legacy ids, and so every caller shares one definition of the
     // device list.
     const [rows] = await this.pool.query<RowDataPacket[]>(
-      `SELECT device_id AS deviceId, name, status, sort_order AS sortOrder, DATE_FORMAT(registered_at, '%Y-%m-%dT%H:%i:%s.000Z') AS registeredAt, DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s.000Z') AS updatedAt FROM devices WHERE status = 'open' AND device_id NOT LIKE ? ORDER BY sort_order ASC, device_id ASC`,
+      `SELECT device_id AS deviceId, name, status, sort_order AS sortOrder, group_name AS \`group\`, DATE_FORMAT(registered_at, '%Y-%m-%dT%H:%i:%s.000Z') AS registeredAt, DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s.000Z') AS updatedAt FROM devices WHERE status = 'open' AND device_id NOT LIKE ? ORDER BY sort_order ASC, device_id ASC`,
       [LEGACY_VIRTUAL_MACHINE_ID_PATTERN]
     );
     return rows as DeviceRecord[];
@@ -156,6 +166,21 @@ export class MysqlDeviceRepository implements DeviceRepository {
         await this.pool.query(
           `UPDATE devices SET sort_order = ?, updated_at = ? WHERE device_id = ?`,
           [i, formattedNow, deviceId]
+        );
+      });
+    }
+  }
+
+  async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void> {
+    const normalizedGroup = group?.trim() ? group.trim().slice(0, 64) : null;
+    const formattedNow = new Date().toISOString().slice(0, 19).replace("T", " ");
+    for (const deviceId of deviceIds) {
+      if (isLegacyVirtualMachineId(deviceId)) continue;
+      await this.deviceQueues.run(deviceId, async () => {
+        this.registeredDevices.delete(deviceId);
+        await this.pool.query(
+          `UPDATE devices SET group_name = ?, updated_at = ? WHERE device_id = ?`,
+          [normalizedGroup, formattedNow, deviceId]
         );
       });
     }

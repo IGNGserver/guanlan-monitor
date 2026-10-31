@@ -52,14 +52,15 @@ export class MetricsService {
         { reopenClosed: true, skipUnchanged: true }
       );
       if (device.status === "closed") return;
-      await this.persistPayload(payload, receivedAt);
+      await this.persistPayload(payload, receivedAt, device.sortOrder, device.group ?? null);
     }));
   }
 
   private async persistPayload(
     payload: AgentMetricsPayload,
     receivedAt = new Date().toISOString(),
-    sortOrder?: number
+    sortOrder?: number,
+    group?: string | null
   ) {
     const previousState = await this.repositories.realtime.getDevice(payload.identity.deviceId);
     // An offline agent may replay an older pending sample after a newer one
@@ -96,7 +97,8 @@ export class MetricsService {
       deviceId: payload.identity.deviceId,
       summary: {
         ...toSummary(state),
-        ...(sortOrder === undefined ? {} : { sortOrder })
+        ...(sortOrder === undefined ? {} : { sortOrder }),
+        ...(group === undefined ? {} : { group })
       }
     };
     this.emitDeviceEvent(event);

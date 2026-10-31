@@ -56,7 +56,16 @@ export function CommandPalette() {
     ...(capabilities.canManageLocalAgent ? [{ group: "操作" as const, label: "控制本机 Agent", detail: "启动、停止或重新检测硬件", keywords: ["采集", "上报", "agent"], action: () => openSettings("connections") }] : []),
     ...visibleSettingsNavigation(capabilities)
       .map((item) => ({ group: "设置" as const, label: `设置 · ${item.label}`, detail: "打开对应设置页", action: () => openSettings(item.id) })),
-    ...allDevices.map((device): Command => ({ group: "设备", label: device.hostname, detail: `${device.os} · ${device.deviceId}`, action: () => navigate({ kind: "device", deviceId: device.deviceId }) })),
+    ...allDevices.map((device): Command => {
+      const groupName = device.group?.trim();
+      return {
+        group: "设备",
+        label: device.hostname,
+        detail: `${groupName ? `${groupName} · ` : ""}${device.os} · ${device.deviceId}`,
+        keywords: groupName ? [groupName, "分组"] : undefined,
+        action: () => navigate({ kind: "device", deviceId: device.deviceId })
+      };
+    }),
     // "nas 进程" is how people ask for a machine's task manager; both words match here.
     ...allDevices.flatMap((device): Command[] => [
       { group: "实时查看", label: `${device.hostname} · 进程`, detail: "查看这台设备正在运行的进程", keywords: ["进程", "任务管理器", "process", "top", device.deviceId], searchOnly: true, action: () => navigate({ kind: "device", deviceId: device.deviceId, view: "processes" }) },

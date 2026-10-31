@@ -117,6 +117,11 @@ fun DeviceDetailScreen(
   var openTabId by rememberSaveable(deviceId) { mutableStateOf("total") }
   var liveRange by rememberSaveable(deviceId) { mutableStateOf(false) }
   var switcherOpen by remember { mutableStateOf(false) }
+  var groupPickerOpen by remember { mutableStateOf(false) }
+  val currentGroup = (data?.device?.group ?: summary?.group)?.trim()?.takeIf { it.isNotEmpty() }
+  val existingGroups = remember(state.devices) {
+    state.devices.mapNotNull { it.normalizedGroup() }.distinct()
+  }
 
   // 从首页点某个读数进来：直接落到「硬件」里那一类，不让人再找一次（交）
   LaunchedEffect(state.focusedBlock, state.loadingMetrics, data?.device?.deviceId) {
@@ -172,6 +177,7 @@ fun DeviceDetailScreen(
             append(relativeTimeLabel(data?.lastSeenAt ?: summary?.lastSeenAt, now))
             append("上报")
             (data?.device?.os ?: summary?.os)?.let { append(" · ${osLabel(it)}") }
+            currentGroup?.let { append(" · $it") }
           },
           collapse = collapse,
           onCollapsedTitleClick = { topBarScope.launch { listState.animateScrollToItem(0) } },
@@ -312,6 +318,8 @@ fun DeviceDetailScreen(
             live = live,
             nowMillis = now,
             issues = issues,
+            currentGroup = currentGroup,
+            onOpenGroupPicker = { groupPickerOpen = true },
             onOpenBlock = { block ->
               tabName = DetailTab.Hardware.name
               openBlock = block
@@ -356,7 +364,11 @@ fun DeviceDetailScreen(
         .map { device ->
           OneUiActionModel(
             label = if (device.deviceId == deviceId) "${device.hostname}（当前）" else device.hostname,
-            description = "${if (device.status == "online") "在线" else "离线"} · CPU ${formatPercent(device.cpuUsagePercent)} · 内存 ${formatPercent(device.memoryUsagePercent)}",
+            description = buildString {
+              append(if (device.status == "online") "在线" else "离线")
+              device.normalizedGroup()?.let { append(" · $it") }
+              append(" · CPU ${formatPercent(device.cpuUsagePercent)} · 内存 ${formatPercent(device.memoryUsagePercent)}")
+            },
             icon = deviceIcon(device.os),
             onClick = {
               switcherOpen = false
@@ -365,6 +377,20 @@ fun DeviceDetailScreen(
             }
           )
         }
+    )
+  }
+
+  if (groupPickerOpen && deviceId != null) {
+    DeviceGroupPickerSheet(
+      title = "设置「${data?.device?.hostname ?: summary?.hostname ?: deviceId}」的分组",
+      subtitle = "点选已有分组或输入新分组名，留空即可设为未分组",
+      currentGroup = currentGroup,
+      existingGroups = existingGroups,
+      onDismiss = { groupPickerOpen = false },
+      onConfirm = { nextGroup ->
+        groupPickerOpen = false
+        actions.onUpdateDeviceGroup(listOf(deviceId), nextGroup)
+      }
     )
   }
 }
@@ -444,6 +470,8 @@ private fun LazyListScope.overviewItems(
   live: com.dsc.android.LiveUiState?,
   nowMillis: Long,
   issues: List<AttentionItem>,
+  currentGroup: String?,
+  onOpenGroupPicker: () -> Unit,
   onOpenBlock: (DeviceBlockKey) -> Unit
 ) {
   if (issues.isNotEmpty()) {
@@ -472,9 +500,10 @@ private fun LazyListScope.overviewItems(
     item(key = "overview-more") {
       val window = OneUiTheme.window
       val metrics = OneUiTheme.metrics
-      val metaItems = remember(snapshot) {
+      val metaItems = remember(snapshot, currentGroup) {
         buildList {
           add("设备 ID" to snapshot.device.deviceId)
+          add("所属分组" to (currentGroup ?: "未分组"))
           add("处理器" to (snapshot.device.cpuModel ?: "未上报"))
           add("系统" to snapshot.device.os)
           add("平台" to "${snapshot.device.platform} / ${snapshot.device.arch}")
@@ -498,6 +527,14 @@ private fun LazyListScope.overviewItems(
                 leading = { OneUiLeadingIcon(icon = Icons.Rounded.Timeline, contentDescription = null, tone = OneUiIconTone.Accent) },
                 trailing = { OneUiIcon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = OneUiTheme.colors.textTertiary) }
               )
+              OneUiListDivider()
+              OneUiListItem(
+                title = "所属分组",
+                subtitle = currentGroup ?: "未分组 · 点按设置分组",
+                onClick = onOpenGroupPicker,
+                leading = { OneUiLeadingIcon(icon = Icons.Rounded.Dns, contentDescription = null, tone = OneUiIconTone.Neutral) },
+                trailing = { OneUiIcon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = OneUiTheme.colors.textTertiary) }
+              )
             }
             OneUiMetaTable(
               title = "设备信息",
@@ -516,6 +553,14 @@ private fun LazyListScope.overviewItems(
                 subtitle = "按日 / 周 / 月查看接收、发送与明细记录",
                 onClick = { actions.onOpenTraffic(snapshot.device.deviceId) },
                 leading = { OneUiLeadingIcon(icon = Icons.Rounded.Timeline, contentDescription = null, tone = OneUiIconTone.Accent) },
+                trailing = { OneUiIcon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = OneUiTheme.colors.textTertiary) }
+              )
+              OneUiListDivider()
+              OneUiListItem(
+                title = "所属分组",
+                subtitle = currentGroup ?: "未分组 · 点按设置分组",
+                onClick = onOpenGroupPicker,
+                leading = { OneUiLeadingIcon(icon = Icons.Rounded.Dns, contentDescription = null, tone = OneUiIconTone.Neutral) },
                 trailing = { OneUiIcon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = OneUiTheme.colors.textTertiary) }
               )
             }

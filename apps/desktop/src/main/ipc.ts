@@ -71,6 +71,7 @@ export function registerIpc(
   handle(IPC_CHANNELS.saveFanNote, (_event, deviceId: string, fanId: string, note: string) => controller.saveFanNote(asString(deviceId, "device_id"), asString(fanId, "fan_id"), asString(note, "fan_note")));
   handle(IPC_CHANNELS.deleteInstance, (_event, deviceId: string) => controller.deleteInstance(asString(deviceId, "device_id")));
   handle(IPC_CHANNELS.reorderInstances, (_event, deviceIds: unknown) => controller.reorderInstances(asStringArray(deviceIds, "device_ids")));
+  handle(IPC_CHANNELS.updateDeviceGroup, (_event, deviceIds: unknown, group: unknown) => controller.updateDeviceGroup(asStringArray(deviceIds, "device_ids"), asNullableString(group, "device_group")));
   handle(IPC_CHANNELS.updateStartupSettings, (_event, settings) => controller.updateStartupSettings(asStartupSettings(settings)));
   handle(IPC_CHANNELS.openExternal, (_event, url: string) => controller.openExternal(asString(url, "external_url")));
   handle(IPC_CHANNELS.getRuntimeProfile, () => getDesktopRuntimeProfile(gpuFallbackActive));
@@ -257,6 +258,12 @@ function getWindowMaterialCapabilities(window: BrowserWindow | null, gpuFallback
 }
 
 function asString(value: unknown, field: string): string {
+  if (typeof value !== "string") throw new Error(`invalid_${field}`);
+  return value;
+}
+
+function asNullableString(value: unknown, field: string): string | null {
+  if (value === null || value === undefined) return null;
   if (typeof value !== "string") throw new Error(`invalid_${field}`);
   return value;
 }

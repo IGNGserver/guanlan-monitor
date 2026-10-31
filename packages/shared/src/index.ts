@@ -538,12 +538,19 @@ export interface DeviceSummary {
   diskUsedBytes?: number | null;
   diskTotalBytes?: number | null;
   sortOrder?: number;
+  /** User-defined group name; null or omitted means ungrouped. */
+  group?: string | null;
   /** Metrics that are not meaningful for the current instance state. */
   unavailableMetrics?: DeviceMetricKey[];
 }
 
 export interface DeviceReorderPayload {
   deviceIds: string[];
+}
+
+export interface DeviceGroupUpdatePayload {
+  deviceIds: string[];
+  group: string | null;
 }
 
 export interface DeviceDetail extends DeviceSummary {
@@ -991,6 +998,7 @@ export interface DesktopRendererBridge {
   saveFanNote(deviceId: string, fanId: string, note: string): Promise<DesktopSnapshot>;
   deleteInstance(deviceId: string): Promise<DesktopSnapshot>;
   reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot>;
+  updateDeviceGroup(deviceIds: string[], group: string | null): Promise<DesktopSnapshot>;
   updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot>;
   openExternal(url: string): Promise<void>;
   getRuntimeProfile(): Promise<DesktopRuntimeProfile>;

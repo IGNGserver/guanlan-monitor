@@ -127,6 +127,7 @@ export interface DeviceRecord {
   name: string;
   status: "open" | "closed";
   sortOrder: number;
+  group?: string | null;
   registeredAt: string;
   updatedAt: string;
 }
@@ -147,6 +148,7 @@ export interface DeviceRepository {
   listOpenDevices(): Promise<DeviceRecord[]>;
   deleteDevice(deviceId: string): Promise<void>;
   reorderDevices(deviceIds: string[]): Promise<void>;
+  updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void>;
 }
 
 export interface Repositories {

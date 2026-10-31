@@ -67,6 +67,9 @@ interface DeviceStateApi {
   @retrofit2.http.PUT("/api/devices/reorder")
   suspend fun reorderDevices(@retrofit2.http.Body payload: DeviceReorderPayloadDto): Map<String, Boolean>
 
+  @retrofit2.http.PUT("/api/devices/group")
+  suspend fun updateDeviceGroup(@retrofit2.http.Body payload: DeviceGroupUpdatePayloadDto): DeviceGroupUpdateResponseDto
+
   @GET("/api/devices/{deviceId}/metrics")
   suspend fun metrics(
     @Path("deviceId") deviceId: String,
