@@ -110,6 +110,7 @@ export class DesktopController {
       saveFanNote: (deviceId: string, fanId: string, note: string) => this.saveFanNote(deviceId, fanId, note),
       deleteInstance: (deviceId: string) => this.deleteInstance(deviceId),
       reorderInstances: (deviceIds: string[]) => this.reorderInstances(deviceIds),
+      updateDeviceGroup: (deviceIds: string[], group: string | null) => this.updateDeviceGroup(deviceIds, group),
       updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => this.updateStartupSettings(settings),
       openExternal: (url: string) => this.openExternal(url),
       exit: () => this.shutdown()
@@ -408,6 +409,11 @@ export class DesktopController {
 
   async reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot> {
     await this.hub.reorderDevices(deviceIds);
+    return this.refreshAfterMutation({ selectedDeviceId: this.selectedDeviceId });
+  }
+
+  async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<DesktopSnapshot> {
+    await this.hub.updateDeviceGroup(deviceIds, group);
     return this.refreshAfterMutation({ selectedDeviceId: this.selectedDeviceId });
   }
 

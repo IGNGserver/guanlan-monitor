@@ -1,9 +1,99 @@
 import type { ConsoleSnapshot, DeviceMetricKey, DeviceSummary } from "@dsc/shared";
 import { dateValueOf } from "./sampleTime.ts";
-import { DEFAULT_HEALTH_THRESHOLDS, devicesNeedingAttention, evaluateFleet, type DeviceIssue, type HealthThresholds } from "./health.ts";
+import { DEFAULT_HEALTH_THRESHOLDS, devicesNeedingAttention, evaluateDevice, evaluateFleet, type DeviceIssue, type HealthThresholds } from "./health.ts";
 
 export type DeviceDirectoryStatus = "all" | "online" | "offline";
 export type DeviceDirectorySort = "order" | "name" | "cpu" | "memory" | "lastSeen";
+export const UNGROUPED_GROUP_KEY = "__ungrouped__";
+export type DeviceGroupFilter = "all" | typeof UNGROUPED_GROUP_KEY | string;
+
+export const RECOMMENDED_DEVICE_GROUPS = [
+  "宿主机",
+  "虚拟机",
+  "存储与网络",
+  "开发设备",
+  "办公终端"
+] as const;
+
+export interface DeviceGroupSummary {
+  key: string;
+  name: string;
+  isUngrouped: boolean;
+  devices: DeviceSummary[];
+  total: number;
+  online: number;
+  offline: number;
+  overThreshold: number;
+  avgCpuPercent: number | null;
+  avgMemoryPercent: number | null;
+}
+
+export function normalizeDeviceGroup(group: string | null | undefined): string | null {
+  const trimmed = group?.trim();
+  return trimmed ? trimmed : null;
+}
+
+export function selectExistingGroupNames(devices: readonly DeviceSummary[]): string[] {
+  const seen = new Set<string>();
+  const ordered = devices.slice().sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0));
+  for (const device of ordered) {
+    const group = normalizeDeviceGroup(device.group);
+    if (group) seen.add(group);
+  }
+  return [...seen];
+}
+
+export function selectDeviceGroups(
+  devices: readonly DeviceSummary[],
+  thresholds: HealthThresholds = DEFAULT_HEALTH_THRESHOLDS
+): DeviceGroupSummary[] {
+  const buckets = new Map<string, DeviceSummary[]>();
+  for (const device of devices) {
+    const group = normalizeDeviceGroup(device.group);
+    const key = group ?? UNGROUPED_GROUP_KEY;
+    const list = buckets.get(key) ?? [];
+    list.push(device);
+    buckets.set(key, list);
+  }
+
+  const buildSummary = (key: string, groupDevices: DeviceSummary[]): DeviceGroupSummary => {
+    const isUngrouped = key === UNGROUPED_GROUP_KEY;
+    const onlineDevices = groupDevices.filter((device) => device.status === "online");
+    const online = onlineDevices.length;
+    const offline = groupDevices.length - online;
+    const overThreshold = groupDevices.filter((device) =>
+      evaluateDevice(device, thresholds).some((issue) => issue.kind !== "offline")
+    ).length;
+
+    const validCpu = onlineDevices
+      .filter((device) => !metricUnavailable(device, "cpuUsage") && typeof device.cpuUsagePercent === "number" && Number.isFinite(device.cpuUsagePercent))
+      .map((device) => device.cpuUsagePercent as number);
+    const validMemory = onlineDevices
+      .filter((device) => !metricUnavailable(device, "memoryUsage") && typeof device.memoryUsagePercent === "number" && Number.isFinite(device.memoryUsagePercent))
+      .map((device) => device.memoryUsagePercent as number);
+
+    return {
+      key,
+      name: isUngrouped ? "未分组" : key,
+      isUngrouped,
+      devices: groupDevices,
+      total: groupDevices.length,
+      online,
+      offline,
+      overThreshold,
+      avgCpuPercent: validCpu.length ? validCpu.reduce((sum, v) => sum + v, 0) / validCpu.length : null,
+      avgMemoryPercent: validMemory.length ? validMemory.reduce((sum, v) => sum + v, 0) / validMemory.length : null
+    };
+  };
+
+  const namedKeys = [...buckets.keys()].filter((key) => key !== UNGROUPED_GROUP_KEY);
+  const result = namedKeys.map((key) => buildSummary(key, buckets.get(key)!));
+  const ungrouped = buckets.get(UNGROUPED_GROUP_KEY);
+  if (ungrouped?.length) {
+    result.push(buildSummary(UNGROUPED_GROUP_KEY, ungrouped));
+  }
+  return result;
+}
 
 export interface HealthSummary {
   total: number;
@@ -22,6 +112,7 @@ export interface DeviceDirectoryQuery {
   query?: string;
   status?: DeviceDirectoryStatus;
   sort?: DeviceDirectorySort;
+  group?: DeviceGroupFilter;
 }
 
 export type SnapshotDataSource = HealthSummary["source"];
@@ -149,8 +240,14 @@ export function selectDeviceDirectory(devices: DeviceSummary[], query: DeviceDir
   const normalizedQuery = query.query?.trim().toLocaleLowerCase() ?? "";
   const filtered = devices.filter((device) => {
     const statusMatches = !query.status || query.status === "all" || (query.status === "online" ? device.status === "online" : device.status !== "online");
-    const textMatches = !normalizedQuery || `${device.hostname} ${device.deviceId} ${device.os}`.toLocaleLowerCase().includes(normalizedQuery);
-    return statusMatches && textMatches;
+    const deviceGroup = normalizeDeviceGroup(device.group);
+    const groupMatches = !query.group || query.group === "all"
+      ? true
+      : query.group === UNGROUPED_GROUP_KEY
+        ? deviceGroup === null
+        : deviceGroup === query.group;
+    const textMatches = !normalizedQuery || `${device.hostname} ${device.deviceId} ${device.os} ${deviceGroup ?? ""}`.toLocaleLowerCase().includes(normalizedQuery);
+    return statusMatches && groupMatches && textMatches;
   });
   const sort = query.sort ?? "order";
   return filtered.slice().sort((left, right) => {

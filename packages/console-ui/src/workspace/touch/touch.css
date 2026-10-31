@@ -74,6 +74,7 @@
 .touch-directory__heading { display: flex; align-items: center; justify-content: space-between; }
 .touch-search-row { display: flex; align-items: center; gap: var(--md-sys-space-2); }
 .touch-search-row .m3e-search-bar { flex: 1 1 auto; min-width: 0; }
+.touch-group-chips { display: flex; align-items: center; gap: var(--md-sys-space-2); overflow-x: auto; padding: var(--md-sys-space-3) 0 var(--md-sys-space-1); }
 .touch-directory__count { margin: var(--md-sys-space-4) 0 var(--md-sys-space-3); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-m-size); }
 .touch-manage-bar { padding: var(--md-sys-space-4); margin-bottom: var(--md-sys-space-4); border-radius: var(--md-sys-shape-lg); background: var(--md-sys-color-secondary-container); }
 .touch-manage-bar p { margin-top: 0; line-height: 1.6; }

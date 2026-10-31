@@ -2,7 +2,16 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentProbeProvider, AgentProbeTarget, DeviceMetricKey, DeviceSummary, FanMetricSeries, FanSensorStats, SamplePoint, TemperatureMetricSeries, TemperatureSensorReading, TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import appIcon from "../../assets/app-icon.png";
 import { useWorkspace, useWorkspaceUi } from "../WorkspaceContext";
-import type { DeviceDirectorySort, DeviceDirectoryStatus } from "../selectors";
+import {
+  RECOMMENDED_DEVICE_GROUPS,
+  UNGROUPED_GROUP_KEY,
+  normalizeDeviceGroup,
+  selectDeviceGroups,
+  type DeviceDirectorySort,
+  type DeviceDirectoryStatus,
+  type DeviceGroupFilter,
+  type DeviceGroupSummary
+} from "../selectors";
 import { M3Badge, M3Banner, M3Checkbox, M3Chip, M3DataTable, M3Dialog, M3SegmentedControl, M3Select, M3TextField } from "../m3";
 import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
 import { CapacityBar, Sparkline, TimeSeriesChart } from "../charts";
@@ -147,6 +156,9 @@ function DeviceDirectoryFilterBar({
   onQueryChange,
   statusFilter,
   onStatusFilterChange,
+  groupFilter = "all",
+  onGroupFilterChange,
+  groups,
   sort,
   onSortChange,
   sortDisabled = false,
@@ -157,21 +169,54 @@ function DeviceDirectoryFilterBar({
   onQueryChange: (value: string) => void;
   statusFilter: DeviceDirectoryStatus;
   onStatusFilterChange: (value: DeviceDirectoryStatus) => void;
+  groupFilter?: DeviceGroupFilter;
+  onGroupFilterChange?: (value: DeviceGroupFilter) => void;
+  groups?: DeviceGroupSummary[];
   sort: DeviceDirectorySort;
   onSortChange: (value: DeviceDirectorySort) => void;
   sortDisabled?: boolean;
   actions?: React.ReactNode;
 }) {
   const onlineCount = devices.filter((device) => device.status === "online").length;
-  return <div className="workspace-directory-toolbar">
-    <M3TextField label="搜索设备" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="名称、设备 ID 或系统" type="search" />
-    <div className="workspace-directory-toolbar__chips" aria-label="设备状态">
-      <M3Chip selected={statusFilter === "all"} onClick={() => onStatusFilterChange("all")}>全部 {devices.length}</M3Chip>
-      <M3Chip selected={statusFilter === "online"} onClick={() => onStatusFilterChange("online")}>在线 {onlineCount}</M3Chip>
-      <M3Chip selected={statusFilter === "offline"} onClick={() => onStatusFilterChange("offline")}>离线 {devices.length - onlineCount}</M3Chip>
+  const resolvedGroups = groups ?? selectDeviceGroups(devices);
+  const hasNamedGroups = resolvedGroups.some((group) => !group.isUngrouped);
+  return <div className="workspace-directory-toolbar-stack">
+    <div className="workspace-directory-toolbar">
+      <M3TextField label="搜索设备" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="名称、分组、设备 ID 或系统" type="search" />
+      <div className="workspace-directory-toolbar__chips" aria-label="设备状态">
+        <M3Chip selected={statusFilter === "all"} onClick={() => onStatusFilterChange("all")}>全部 {devices.length}</M3Chip>
+        <M3Chip selected={statusFilter === "online"} onClick={() => onStatusFilterChange("online")}>在线 {onlineCount}</M3Chip>
+        <M3Chip selected={statusFilter === "offline"} onClick={() => onStatusFilterChange("offline")}>离线 {devices.length - onlineCount}</M3Chip>
+      </div>
+      <M3Select className="workspace-directory-toolbar__sort" label="排序" hideLabel value={sort} onChange={(event) => onSortChange(event.target.value as DeviceDirectorySort)} disabled={sortDisabled} options={[{ value: "order", label: "自定义顺序" }, { value: "name", label: "名称" }, { value: "cpu", label: "CPU 使用率" }, { value: "memory", label: "内存使用" }, { value: "lastSeen", label: "最后在线" }]} />
+      {actions && <div className="workspace-directory-toolbar__actions">{actions}</div>}
     </div>
-    <M3Select className="workspace-directory-toolbar__sort" label="排序" hideLabel value={sort} onChange={(event) => onSortChange(event.target.value as DeviceDirectorySort)} disabled={sortDisabled} options={[{ value: "order", label: "自定义顺序" }, { value: "name", label: "名称" }, { value: "cpu", label: "CPU 使用率" }, { value: "memory", label: "内存使用" }, { value: "lastSeen", label: "最后在线" }]} />
-    {actions && <div className="workspace-directory-toolbar__actions">{actions}</div>}
+    {hasNamedGroups && onGroupFilterChange && (
+      <div className="workspace-group-filter-bar" role="group" aria-label="按分组筛选">
+        <span className="workspace-group-filter-bar__label"><Icon name="filter" size={14} />分组</span>
+        <div className="workspace-group-filter-bar__chips">
+          <M3Chip selected={groupFilter === "all"} onClick={() => onGroupFilterChange("all")}>
+            全部组 ({devices.length})
+          </M3Chip>
+          {resolvedGroups.map((group) => {
+            const hasAlert = group.offline > 0 || group.overThreshold > 0;
+            return (
+              <M3Chip
+                key={group.key}
+                selected={groupFilter === group.key}
+                onClick={() => onGroupFilterChange(group.key)}
+              >
+                <span className="workspace-group-chip-content">
+                  {hasAlert && <span className={`workspace-group-chip-dot ${group.offline > 0 ? "is-offline" : "is-warning"}`} aria-hidden="true" />}
+                  <span>{group.name}</span>
+                  <small>{group.online}/{group.total}</small>
+                </span>
+              </M3Chip>
+            );
+          })}
+        </div>
+      </div>
+    )}
   </div>;
 }
 function ConfirmDialog({
@@ -244,6 +289,116 @@ function PromptDialog({
   </M3Dialog>;
 }
 
+/**
+ * 轻量设备分组选择器：支持单机或批量分配分组，即选即建，无需预先去单独页面创建分组。
+ */
+function DeviceGroupDialog({
+  title,
+  detail,
+  currentGroup,
+  existingGroups,
+  disabled = false,
+  onConfirm,
+  onCancel
+}: {
+  title: string;
+  detail: string;
+  currentGroup: string | null;
+  existingGroups: readonly string[];
+  disabled?: boolean;
+  onConfirm: (group: string | null) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(currentGroup ?? "");
+  useEffect(() => setValue(currentGroup ?? ""), [currentGroup]);
+
+  const suggestions = useMemo(() => {
+    const existingSet = new Set(existingGroups);
+    const recommended = RECOMMENDED_DEVICE_GROUPS.filter((item) => !existingSet.has(item));
+    return { existing: existingGroups, recommended };
+  }, [existingGroups]);
+
+  const submit = () => {
+    if (disabled) return;
+    const trimmed = value.trim();
+    onConfirm(trimmed ? trimmed.slice(0, 64) : null);
+  };
+
+  return (
+    <M3Dialog
+      open
+      aria-label="设置设备分组"
+      headline={title}
+      onClose={() => { if (!disabled) onCancel(); }}
+      actions={<>
+        {currentGroup ? (
+          <Button
+            variant="quiet"
+            onClick={() => { if (!disabled) onConfirm(null); }}
+            disabled={disabled}
+          >
+            移出分组
+          </Button>
+        ) : null}
+        <Button variant="quiet" onClick={onCancel} disabled={disabled}>取消</Button>
+        <Button variant="primary" onClick={submit} disabled={disabled}>
+          {disabled ? "保存中…" : value.trim() ? "保存分组" : "设为未分组"}
+        </Button>
+      </>}
+    >
+      <div className="workspace-group-dialog">
+        <p className="workspace-group-dialog__detail">{detail}</p>
+        <M3TextField
+          label="分组名称"
+          placeholder="输入新分组名，或点选下方已有分组（留空表示未分组）"
+          autoFocus
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              submit();
+            }
+          }}
+          maxLength={64}
+        />
+        {suggestions.existing.length > 0 && (
+          <div className="workspace-group-dialog__section">
+            <span className="workspace-group-dialog__label">已有分组（点击即选）</span>
+            <div className="workspace-group-dialog__chips">
+              {suggestions.existing.map((group) => (
+                <M3Chip
+                  key={group}
+                  selected={value.trim() === group}
+                  onClick={() => setValue(group)}
+                >
+                  {group}
+                </M3Chip>
+              ))}
+            </div>
+          </div>
+        )}
+        {suggestions.recommended.length > 0 && (
+          <div className="workspace-group-dialog__section">
+            <span className="workspace-group-dialog__label">常用分组推荐</span>
+            <div className="workspace-group-dialog__chips">
+              {suggestions.recommended.map((group) => (
+                <M3Chip
+                  key={group}
+                  selected={value.trim() === group}
+                  onClick={() => setValue(group)}
+                >
+                  + {group}
+                </M3Chip>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </M3Dialog>
+  );
+}
+
 function directoryCapacityDetail(device: DeviceSummary, kind: "memory" | "disk"): string | null {
   const used = kind === "memory" ? device.memoryUsedBytes : device.diskUsedBytes;
   const total = kind === "memory" ? device.memoryTotalBytes : device.diskTotalBytes;
@@ -306,16 +461,24 @@ function DeviceTable({
   devices,
   order,
   manageMode = false,
+  showGroupBadge = true,
+  selectedIds,
+  onToggleSelect,
   onMove,
   onDelete,
+  onEditGroup,
   emptyState,
   cpuTrends
 }: {
   devices: DeviceSummary[];
   order?: string[];
   manageMode?: boolean;
+  showGroupBadge?: boolean;
+  selectedIds?: ReadonlySet<string>;
+  onToggleSelect?: (deviceId: string, checked: boolean) => void;
   onMove?: (deviceId: string, direction: -1 | 1) => void;
   onDelete?: (device: DeviceSummary) => void;
+  onEditGroup?: (device: DeviceSummary) => void;
   emptyState?: React.ReactNode;
   /** Recent CPU samples by device id, drawn under each CPU figure. */
   cpuTrends?: ReadonlyMap<string, readonly SamplePoint[]>;
@@ -328,10 +491,26 @@ function DeviceTable({
     {
       key: "device",
       header: "设备",
-      cell: (device) => <>
-        <button className="guanlan-table-link" type="button" onClick={() => openDevice(device)}>{device.hostname}</button>
-        <small className="guanlan-table-secondary">{`${device.os} · ID ${device.deviceId}`}</small>
-      </>
+      cell: (device) => {
+        const groupName = normalizeDeviceGroup(device.group);
+        return <>
+          <div className="guanlan-table-device-title">
+            {manageMode && onToggleSelect && selectedIds && (
+              <M3Checkbox
+                compact
+                label={`选择 ${device.hostname}`}
+                checked={selectedIds.has(device.deviceId)}
+                onCheckedChange={(checked) => onToggleSelect(device.deviceId, checked)}
+              />
+            )}
+            <button className="guanlan-table-link" type="button" onClick={() => openDevice(device)}>{device.hostname}</button>
+            {showGroupBadge && groupName && (
+              <span className="guanlan-device-group-badge" title={`所属分组：${groupName}`}>{groupName}</span>
+            )}
+          </div>
+          <small className="guanlan-table-secondary">{`${device.os} · ID ${device.deviceId}`}</small>
+        </>;
+      }
     },
     { key: "cpu", header: "CPU 使用率", cell: (device) => isMetricUnavailable(device, "cpuUsage") ? "—" : <MetricCell device={device} metric="cpu" trend={cpuTrends?.get(device.deviceId)} /> },
     { key: "memory", header: "内存使用", cell: (device) => isMetricUnavailable(device, "memoryUsage") ? UNAVAILABLE_METRIC_LABEL : <MetricCell device={device} metric="memory" detail={directoryCapacityDetail(device, "memory")} /> },
@@ -349,11 +528,30 @@ function DeviceTable({
       header: "操作",
       cell: (device) => manageMode
         ? <div className="guanlan-table-row-actions">
+          {onEditGroup && (
+            <button className="guanlan-table-live-action" type="button" aria-label={`设置 ${device.hostname} 的分组`} onClick={() => onEditGroup(device)}>
+              {normalizeDeviceGroup(device.group) ?? "设组"}
+            </button>
+          )}
           <button className="guanlan-table-icon-action" type="button" aria-label="上移" title="上移" disabled={deviceIndex(device) <= 0} onClick={() => onMove?.(device.deviceId, -1)}><Icon name="chevronUp" size={15} /></button>
           <button className="guanlan-table-icon-action" type="button" aria-label="下移" title="下移" disabled={deviceIndex(device) < 0 || deviceIndex(device) >= (order?.length ?? 1) - 1} onClick={() => onMove?.(device.deviceId, 1)}><Icon name="chevron" size={15} /></button>
           <button className="guanlan-table-icon-action is-danger" type="button" aria-label="删除" title="删除" onClick={() => onDelete?.(device)}><Icon name="delete" size={15} /></button>
         </div>
         : <div className="guanlan-table-row-actions">
+          {onEditGroup && (
+            <button
+              className="guanlan-table-live-action"
+              type="button"
+              aria-label={`设置 ${device.hostname} 的分组`}
+              title="设置或修改设备分组"
+              onClick={(event) => {
+                event.stopPropagation();
+                onEditGroup(device);
+              }}
+            >
+              分组
+            </button>
+          )}
           {/* Shortcuts to the device's live tabs, where a row's "what is it doing now?" is answered. */}
           <button className="guanlan-table-live-action" type="button" aria-label={`查看 ${device.hostname} 的进程`} onClick={() => navigate({ kind: "device", deviceId: device.deviceId, view: "processes" })}>进程</button>
           <button className="guanlan-table-live-action" type="button" aria-label={`查看 ${device.hostname} 的容器`} onClick={() => navigate({ kind: "device", deviceId: device.deviceId, view: "containers" })}>容器</button>
@@ -991,6 +1189,7 @@ export {
   DeviceTable,
   ConfirmDialog,
   PromptDialog,
+  DeviceGroupDialog,
   OverviewSummary,
   mergeFanMetricSeries,
   TelemetryModelList,

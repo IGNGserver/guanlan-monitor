@@ -53,6 +53,7 @@ class MainActivity : ComponentActivity() {
           onOpenDevice = appViewModel::openDevice,
           onDeleteDevice = appViewModel::deleteDevice,
           onReorderDevices = appViewModel::reorderDevices,
+          onUpdateDeviceGroup = appViewModel::updateDeviceGroup,
           onClearFocusedBlock = appViewModel::clearFocusedBlock,
           onOpenTraffic = appViewModel::openTraffic,
           onOpenDeviceEditor = appViewModel::openDeviceEditor,

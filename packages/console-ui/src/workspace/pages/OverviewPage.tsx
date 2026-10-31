@@ -1,13 +1,13 @@
 import React, { useMemo, useState } from "react";
 import { useWorkspace } from "../WorkspaceContext";
 import { Button, Icon, StatusLabel, Surface, SummaryRow } from "../ui";
-import { M3Banner, M3SegmentedControl } from "../m3";
+import { M3Banner, M3Chip, M3SegmentedControl } from "../m3";
 import { TimeSeriesChart, type ChartSeries } from "../charts";
 import { ChartTile } from "../dashboard";
 import { OnboardingGuide } from "../shell/OnboardingGuide";
 import { DeviceChartSheet } from "./DeviceChartSheet";
 import { formatDate, formatRate, formatPercent } from "../formatters";
-import { selectHealthSummary } from "../selectors";
+import { selectDeviceDirectory, selectDeviceGroups, selectHealthSummary, type DeviceGroupFilter } from "../selectors";
 import { thresholdLines } from "../health";
 import { selectFleetTrends, type FleetMetric } from "../fleetTrends";
 import { RenderBoundary } from "../RenderBoundary";
@@ -54,6 +54,24 @@ function failureGuide(isDesktopShell: boolean): string {
 export function OverviewPage() {
   const { snapshot, allDevices, metricsWindow, setMetricsWindow, loading, refreshing, error, refresh, openSettings, navigate, capabilities, healthThresholds } = useWorkspace();
   const [observationMetric, setObservationMetric] = useState<FleetMetric>("cpu");
+  const [groupFilter, setGroupFilter] = useState<DeviceGroupFilter>("all");
+
+  const groups = useMemo(() => selectDeviceGroups(allDevices, healthThresholds), [allDevices, healthThresholds]);
+  const hasNamedGroups = useMemo(() => groups.some((group) => !group.isUngrouped), [groups]);
+  const activeGroupFilter = groupFilter !== "all" && !groups.some((group) => group.key === groupFilter) ? "all" : groupFilter;
+  const scopedDevices = useMemo(
+    () => selectDeviceDirectory(allDevices, { group: activeGroupFilter }),
+    [allDevices, activeGroupFilter]
+  );
+  const scopedDeviceIds = useMemo(() => new Set(scopedDevices.map((d) => d.deviceId)), [scopedDevices]);
+  const activeGroupName = useMemo(() => {
+    if (activeGroupFilter === "all") return "全部设备";
+    return groups.find((group) => group.key === activeGroupFilter)?.name ?? "全部设备";
+  }, [activeGroupFilter, groups]);
+  const deviceGroupsById = useMemo(
+    () => new Map(allDevices.map((d) => [d.deviceId, d.group?.trim() || null])),
+    [allDevices]
+  );
 
   // These run on every poll (the provider re-renders the tree on each snapshot).
   // Memoising them on their actual inputs keeps a poll that changed nothing on
@@ -63,7 +81,11 @@ export function OverviewPage() {
     [snapshot, allDevices, capabilities.liveDataTransport, healthThresholds]
   );
   const overviewInstances = snapshot?.overviewMetrics?.instances;
-  const fleet = useMemo(() => selectFleetTrends(overviewInstances ?? [], allDevices, observationMetric), [overviewInstances, allDevices, observationMetric]);
+  const scopedOverviewInstances = useMemo(
+    () => (overviewInstances ?? []).filter((instance) => scopedDeviceIds.has(instance.deviceId)),
+    [overviewInstances, scopedDeviceIds]
+  );
+  const fleet = useMemo(() => selectFleetTrends(scopedOverviewInstances, scopedDevices, observationMetric), [scopedOverviewInstances, scopedDevices, observationMetric]);
   const observationSeries = useMemo<ChartSeries[]>(() => fleet.trends.map((trend) => ({
     label: trend.offline ? `${trend.hostname}（离线）` : trend.hostname,
     points: trend.points,
@@ -166,18 +188,44 @@ export function OverviewPage() {
       <MetricWindowControl value={metricsWindow as DesktopMetricWindowValue} onChange={(value) => setMetricsWindow(value)} />
     </div>
 
+    {hasNamedGroups && (
+      <div className="workspace-group-filter-bar" role="group" aria-label="总览分组范围">
+        <span className="workspace-group-filter-bar__label"><Icon name="filter" size={14} />分组范围</span>
+        <div className="workspace-group-filter-bar__chips">
+          <M3Chip selected={activeGroupFilter === "all"} onClick={() => setGroupFilter("all")}>
+            全部设备 ({allDevices.length})
+          </M3Chip>
+          {groups.map((group) => (
+            <M3Chip
+              key={group.key}
+              selected={activeGroupFilter === group.key}
+              onClick={() => setGroupFilter(group.key)}
+            >
+              <span className="workspace-group-chip-content">
+                {(group.offline > 0 || group.overThreshold > 0) && (
+                  <span className={`workspace-group-chip-dot ${group.offline > 0 ? "is-offline" : "is-warning"}`} aria-hidden="true" />
+                )}
+                <span>{group.name}</span>
+                <small>{group.online}/{group.total}</small>
+              </span>
+            </M3Chip>
+          ))}
+        </div>
+      </div>
+    )}
+
     <div className="workspace-overview-main">
       <section id="section-observation" className="workspace-overview-trend" aria-label="资源趋势">
         <RenderBoundary scope="tile" title={`${observationLabels[observationMetric]}趋势`} resetKey={observationMetric}>
           <ChartTile
-            title={`${observationLabels[observationMetric]} · 全部设备`}
+            title={`${observationLabels[observationMetric]} · ${activeGroupName}`}
             subtitle={`最近 ${metricWindowLabel}`}
             emptyMessage={observationEmptyMessage}
             sheet={
               <DeviceChartSheet
                 tile={{
                   key: "overview-observation",
-                  title: `${observationLabels[observationMetric]}趋势`,
+                  title: `${observationLabels[observationMetric]}趋势 · ${activeGroupName}`,
                   subtitle: `每台设备一条数据线 · 最近 ${metricWindowLabel}${observationNote ? ` · ${observationNote}` : ""}`,
                   series: observationSeries
                 }}
@@ -202,22 +250,23 @@ export function OverviewPage() {
         </div>
         {cached && <div className="workspace-inline-note">当前为缓存快照，设备状态可能已经变化。</div>}
         {health.issues.length
-          ? <DeviceIssueList issues={health.issues} onOpen={(deviceId) => navigate({ kind: "device", deviceId })} />
+          ? <DeviceIssueList issues={health.issues} deviceGroups={deviceGroupsById} onOpen={(deviceId) => navigate({ kind: "device", deviceId })} />
           : <div className="workspace-muted-block">{noData ? "还没有设备接入；Agent 上报一次后就会出现在这里。" : `${health.total} 台设备全部在线，资源都在阈值以内。`}</div>}
       </Surface>
     </div>
 
-    {allDevices.length ? <section className="workspace-fleet" aria-labelledby="workspace-fleet-title">
+    {scopedDevices.length ? <section className="workspace-fleet" aria-labelledby="workspace-fleet-title">
       <header className="workspace-fleet__header">
-        <h3 id="workspace-fleet-title">设备一览</h3>
+        <h3 id="workspace-fleet-title">{activeGroupFilter === "all" ? "设备一览" : `设备一览 · ${activeGroupName}`}</h3>
         <span>需要关注的排在前面 · 条上的刻度是警告与严重阈值</span>
       </header>
       <FleetGrid
-        devices={allDevices}
+        devices={scopedDevices}
         trends={trendsByDevice}
         metric={observationMetric}
         windowLabel={metricWindowLabel}
         thresholds={healthThresholds}
+        showGroupBadge={activeGroupFilter === "all"}
         onOpen={(deviceId) => navigate({ kind: "device", deviceId })}
       />
     </section> : null}

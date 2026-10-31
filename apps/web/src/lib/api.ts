@@ -147,6 +147,13 @@ export function reorderDevices(deviceIds: string[]) {
   });
 }
 
+export function updateDeviceGroup(deviceIds: string[], group: string | null) {
+  return apiFetch<{ ok: true; group: string | null }>("/api/devices/group", {
+    method: "PUT",
+    body: JSON.stringify({ deviceIds, group })
+  });
+}
+
 export function getMetrics(deviceId: string, window: MetricWindow, init?: RequestInit, pointBudget?: number) {
   const params = new URLSearchParams({ window });
   if (pointBudget !== undefined) params.set("pointBudget", String(pointBudget));

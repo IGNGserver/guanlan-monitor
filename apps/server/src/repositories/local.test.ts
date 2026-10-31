@@ -486,3 +486,28 @@ test("legacy cleanup is ordered with writes and retains physical metrics and sto
     assert.deepEqual(await createLocalStore(filePath).read(), db);
   });
 });
+
+test("device group assignment persists across registrations and supports batch rename/clear", async () => {
+  await withTempStore(async (filePath) => {
+    const devices = new LocalDeviceRepository(createLocalStore(filePath));
+    await devices.registerOrUpdateDevice("pve-1", "PVE 1");
+    await devices.registerOrUpdateDevice("pve-2", "PVE 2");
+    await devices.registerOrUpdateDevice("nas-1", "NAS 1");
+
+    await devices.updateDeviceGroup(["pve-1", "pve-2"], "  宿主机  ");
+    let list = await devices.listOpenDevices();
+    assert.equal(list.find((d) => d.deviceId === "pve-1")?.group, "宿主机");
+    assert.equal(list.find((d) => d.deviceId === "pve-2")?.group, "宿主机");
+    assert.equal(list.find((d) => d.deviceId === "nas-1")?.group, null);
+
+    // Subsequent heartbeat registration must preserve the assigned group
+    const updated = await devices.registerOrUpdateDevice("pve-1", "PVE 1 Updated", { reopenClosed: true, skipUnchanged: true });
+    assert.equal(updated.group, "宿主机");
+
+    // Dissolve group
+    await devices.updateDeviceGroup(["pve-1", "pve-2"], "");
+    list = await devices.listOpenDevices();
+    assert.equal(list.find((d) => d.deviceId === "pve-1")?.group, null);
+    assert.equal(list.find((d) => d.deviceId === "pve-2")?.group, null);
+  });
+});

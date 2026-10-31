@@ -27,6 +27,7 @@ const requiredMethods = [
   "saveHubConnection",
   "deleteInstance",
   "reorderInstances",
+  "updateDeviceGroup",
   "saveFanNote",
   "openExternal"
 ];

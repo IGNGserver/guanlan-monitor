@@ -208,6 +208,13 @@ export class HubClient {
     });
   }
 
+  async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void> {
+    await this.authorized<{ ok: boolean }>("/api/devices/group", {
+      method: "PUT",
+      body: JSON.stringify({ deviceIds, group })
+    });
+  }
+
   async getMetrics(deviceId: string, metricWindow: MetricWindow, signal?: AbortSignal, pointBudget?: number): Promise<MetricsResponse> {
     return this.authorized<MetricsResponse>(`/api/devices/${encodeURIComponent(deviceId)}/metrics?window=${encodeURIComponent(metricWindow)}${pointBudget ? `&pointBudget=${pointBudget}` : ""}`, { signal });
   }

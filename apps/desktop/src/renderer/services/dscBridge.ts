@@ -120,6 +120,10 @@ class SafeDscBridge implements DesktopRendererBridge, WindowMaterialBridge {
     return this.requireBridge().reorderInstances(deviceIds);
   }
 
+  async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<DesktopSnapshot> {
+    return this.requireBridge().updateDeviceGroup(deviceIds, group);
+  }
+
   async updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot> {
     return this.requireBridge().updateStartupSettings(settings);
   }

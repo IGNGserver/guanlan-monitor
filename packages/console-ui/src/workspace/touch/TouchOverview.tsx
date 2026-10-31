@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { useWorkspace } from "../WorkspaceContext";
 import { useTouchState } from "./TouchState";
-import { selectAttentionDevices, selectHealthSummary } from "../selectors";
+import { selectAttentionDevices, selectDeviceDirectory, selectDeviceGroups, selectHealthSummary, type DeviceGroupFilter } from "../selectors";
 import { Button, Icon } from "../ui";
-import { M3SegmentedControl, M3Select } from "../m3";
+import { M3Chip, M3SegmentedControl, M3Select } from "../m3";
 import { TimeSeriesChart, type ChartSeries } from "../charts";
 import { thresholdLines } from "../health";
 import { selectFleetTrends, type FleetMetric } from "../fleetTrends";
@@ -21,8 +21,18 @@ const TREND_TITLES: Record<FleetMetric, string> = { cpu: "CPU 使用率", memory
 function TouchFleetTrend() {
   const { snapshot, allDevices, metricsWindow, setMetricsWindow, healthThresholds } = useWorkspace();
   const [metric, setMetric] = useState<FleetMetric>("cpu");
+  const [groupFilter, setGroupFilter] = useState<DeviceGroupFilter>("all");
+  const groups = useMemo(() => selectDeviceGroups(allDevices, healthThresholds), [allDevices, healthThresholds]);
+  const hasNamedGroups = useMemo(() => groups.some((group) => !group.isUngrouped), [groups]);
+  const activeGroup = groupFilter !== "all" && !groups.some((group) => group.key === groupFilter) ? "all" : groupFilter;
+  const scopedDevices = useMemo(() => selectDeviceDirectory(allDevices, { group: activeGroup }), [allDevices, activeGroup]);
+  const scopedDeviceIds = useMemo(() => new Set(scopedDevices.map((d) => d.deviceId)), [scopedDevices]);
   const instances = snapshot?.overviewMetrics?.instances;
-  const fleet = useMemo(() => selectFleetTrends(instances ?? [], allDevices, metric), [instances, allDevices, metric]);
+  const scopedInstances = useMemo(
+    () => (instances ?? []).filter((instance) => scopedDeviceIds.has(instance.deviceId)),
+    [instances, scopedDeviceIds]
+  );
+  const fleet = useMemo(() => selectFleetTrends(scopedInstances, scopedDevices, metric), [scopedInstances, scopedDevices, metric]);
   const series = useMemo<ChartSeries[]>(() => fleet.trends.map((trend) => ({
     label: trend.offline ? `${trend.hostname}（离线）` : trend.hostname,
     points: trend.points,
@@ -35,6 +45,16 @@ function TouchFleetTrend() {
       <h2 id="touch-trend-title">{TREND_TITLES[metric]}</h2>
       <M3Select label="时间范围" hideLabel value={metricsWindow} onChange={(event) => setMetricsWindow(event.target.value as DesktopMetricWindowValue)} options={metricWindowOptions} />
     </header>
+    {hasNamedGroups && (
+      <div className="touch-group-chips" role="group" aria-label="趋势分组范围">
+        <M3Chip selected={activeGroup === "all"} onClick={() => setGroupFilter("all")}>全部 ({allDevices.length})</M3Chip>
+        {groups.map((item) => (
+          <M3Chip key={item.key} selected={activeGroup === item.key} onClick={() => setGroupFilter(item.key)}>
+            {item.name} ({item.online}/{item.total})
+          </M3Chip>
+        ))}
+      </div>
+    )}
     <M3SegmentedControl size="sm" aria-label="趋势指标" value={metric} onChange={(value) => setMetric(value as FleetMetric)} options={[{ value: "cpu", label: "CPU" }, { value: "memory", label: "内存" }, { value: "disk", label: "磁盘" }, { value: "network", label: "网络" }]} />
     <TimeSeriesChart series={series} maxValue={fleet.percent ? 100 : undefined} compact height={200} thresholds={metric === "network" ? undefined : thresholdLines(healthThresholds[metric])} />
     {fleet.missingCapacity.length ? <p className="touch-section__hint">{fleet.missingCapacity.join("、")} 未上报容量，未绘制</p> : null}

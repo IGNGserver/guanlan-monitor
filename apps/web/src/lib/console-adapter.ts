@@ -33,7 +33,8 @@ import {
   login,
   logout,
   reorderDevices,
-  saveFanNote
+  saveFanNote,
+  updateDeviceGroup
 } from "./api.ts";
 
 import { OfflineSnapshotCache } from "./offline-cache.ts";
@@ -258,6 +259,11 @@ export class WebConsoleAdapter implements ConsoleAdapter {
 
   async reorderInstances(deviceIds: string[]): Promise<ConsoleSnapshot> {
     await reorderDevices(deviceIds);
+    return this.loadSnapshot({ ...this.lastRequest, selectedDeviceId: this.snapshot.selectedDeviceId });
+  }
+
+  async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<ConsoleSnapshot> {
+    await updateDeviceGroup(deviceIds, group);
     return this.loadSnapshot({ ...this.lastRequest, selectedDeviceId: this.snapshot.selectedDeviceId });
   }
 
@@ -604,7 +610,12 @@ function optionalWebRequest<T>(error: unknown): T | null {
 function upsertDevice(devices: DeviceSummary[], next: DeviceSummary): DeviceSummary[] {
   const index = devices.findIndex((device) => device.deviceId === next.deviceId);
   if (index < 0) return [...devices, next];
-  return devices.map((device, itemIndex) => itemIndex === index ? { ...device, ...next, sortOrder: next.sortOrder ?? device.sortOrder } : device);
+  return devices.map((device, itemIndex) => itemIndex === index ? {
+    ...device,
+    ...next,
+    sortOrder: next.sortOrder ?? device.sortOrder,
+    group: next.group !== undefined ? next.group : device.group
+  } : device);
 }
 
 /**

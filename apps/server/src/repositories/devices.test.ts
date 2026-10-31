@@ -8,6 +8,7 @@ interface DeviceRow {
   name: string;
   status: "open" | "closed";
   sort_order: number;
+  group_name?: string | null;
   registered_at: string;
   updated_at: string;
 }
@@ -60,6 +61,12 @@ class FakePool {
       const row = this.rows.get(String(params[2]));
       if (row) {
         row.sort_order = Number(params[0]);
+        row.updated_at = String(params[1]);
+      }
+    } else if (sql.startsWith("UPDATE devices SET group_name")) {
+      const row = this.rows.get(String(params[2]));
+      if (row) {
+        row.group_name = params[0] == null ? null : String(params[0]);
         row.updated_at = String(params[1]);
       }
     } else if (sql.startsWith("INSERT INTO devices") && sql.includes("ON DUPLICATE KEY")) {
@@ -277,5 +284,16 @@ test("legacy VM ids are refused before SQL, cache or queue access", async () => 
   assert.equal((await devices.registerOrUpdateDevice("vm:old", "VM", fast)).status, "closed");
   await devices.deleteDevice("vm:old");
   await devices.reorderDevices(["vm:old"]);
+  await devices.updateDeviceGroup(["vm:old"], "宿主机");
   assert.equal(pool.queries.length, 0);
+});
+
+test("updateDeviceGroup invalidates cache and preserves group across subsequent registrations", async () => {
+  const pool = new FakePool();
+  const devices = pool.repository();
+  await devices.registerOrUpdateDevice("host", "Host", fast);
+  await devices.updateDeviceGroup(["host"], "  宿主机  ");
+  assert.equal(pool.rows.get("host")?.group_name, "宿主机");
+  const afterGroup = await devices.registerOrUpdateDevice("host", "Host", fast);
+  assert.equal(afterGroup.group, "宿主机");
 });

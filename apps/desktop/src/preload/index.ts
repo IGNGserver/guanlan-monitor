@@ -33,6 +33,7 @@ const bridge: DesktopRendererBridge & WindowMaterialBridge = {
   saveFanNote: (deviceId: string, fanId: string, note: string) => ipcRenderer.invoke(IPC_CHANNELS.saveFanNote, deviceId, fanId, note),
   deleteInstance: (deviceId: string) => ipcRenderer.invoke(IPC_CHANNELS.deleteInstance, deviceId),
   reorderInstances: (deviceIds: string[]) => ipcRenderer.invoke(IPC_CHANNELS.reorderInstances, deviceIds),
+  updateDeviceGroup: (deviceIds: string[], group: string | null) => ipcRenderer.invoke(IPC_CHANNELS.updateDeviceGroup, deviceIds, group),
   updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => ipcRenderer.invoke(IPC_CHANNELS.updateStartupSettings, settings),
   openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.openExternal, url),
   getRuntimeProfile: (): Promise<DesktopRuntimeProfile> => ipcRenderer.invoke(IPC_CHANNELS.getRuntimeProfile),

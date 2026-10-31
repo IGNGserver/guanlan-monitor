@@ -41,6 +41,7 @@ export class DesktopConsoleAdapter implements ConsoleAdapter, ConsoleLocalAgentP
   saveHubConnection(serverUrl: string, accessKey: string): Promise<ConsoleSnapshot> { return dscBridge.saveHubConnection(serverUrl, accessKey); }
   deleteInstance(deviceId: string): Promise<ConsoleSnapshot> { return dscBridge.deleteInstance(deviceId); }
   reorderInstances(deviceIds: string[]): Promise<ConsoleSnapshot> { return dscBridge.reorderInstances(deviceIds); }
+  updateDeviceGroup(deviceIds: string[], group: string | null): Promise<ConsoleSnapshot> { return dscBridge.updateDeviceGroup(deviceIds, group); }
   saveFanNote(deviceId: string, fanId: string, note: string): Promise<ConsoleSnapshot> { return dscBridge.saveFanNote(deviceId, fanId, note); }
   openExternal(url: string): Promise<void> { return dscBridge.openExternal(url); }
   updateLocalConfig(patch: DesktopConfigPatch): Promise<ConsoleSnapshot> { return dscBridge.updateLocalConfig(patch); }
@@ -76,6 +77,7 @@ export function createDesktopFallbackAdapter(): ConsoleAdapter {
     saveHubConnection: notReady,
     deleteInstance: notReady,
     reorderInstances: notReady,
+    updateDeviceGroup: notReady,
     saveFanNote: notReady,
     openExternal: async () => undefined,
     updateLocalConfig: notReady,

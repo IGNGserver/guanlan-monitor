@@ -31,7 +31,7 @@ export type { SettingsSection, WorkspaceRoute } from "./routes";
 type WorkspaceDataKeys = "snapshot" | "loading" | "refreshing" | "mutationPending" | "error" | "notice" | "devices" | "allDevices" | "selectedDevice";
 type WorkspaceActionKeys =
   | "refresh" | "updateLocalConfig" | "controlAgent" | "saveHubConnection" | "updateStartupSettings" | "cloudPush"
-  | "saveFanNote" | "deleteInstance" | "reorderInstances" | "minimizeWindow" | "toggleMaximizeWindow" | "closeWindow"
+  | "saveFanNote" | "deleteInstance" | "reorderInstances" | "updateDeviceGroup" | "minimizeWindow" | "toggleMaximizeWindow" | "closeWindow"
   | "adapterDragStart" | "adapterDragMove" | "adapterDragEnd" | "login" | "logout" | "disconnectAgent" | "openExternal";
 export type WorkspaceDataValue = Pick<WorkspaceContextValue, WorkspaceDataKeys>;
 export type WorkspaceActionsValue = Pick<WorkspaceContextValue, WorkspaceActionKeys>;
@@ -419,6 +419,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     saveFanNote,
     deleteInstance,
     reorderInstances,
+    updateDeviceGroup,
     minimizeWindow,
     toggleMaximizeWindow,
     closeWindow,
@@ -577,6 +578,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     saveFanNote,
     deleteInstance,
     reorderInstances,
+    updateDeviceGroup,
     minimizeWindow,
     toggleMaximizeWindow,
     closeWindow: closeWindowSafely,
@@ -597,6 +599,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     saveFanNote,
     deleteInstance,
     reorderInstances,
+    updateDeviceGroup,
     minimizeWindow,
     toggleMaximizeWindow,
     closeWindowSafely,

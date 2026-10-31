@@ -969,6 +969,33 @@ class MainViewModel(
     }
   }
 
+  fun updateDeviceGroup(deviceIds: List<String>, group: String?) {
+    if (deviceIds.isEmpty()) return
+    val normalized = group?.trim()?.takeIf { it.isNotEmpty() }?.take(64)
+    viewModelScope.launch {
+      remoteResult {
+        executeWithAuthRetry {
+          it.updateDeviceGroup(DeviceGroupUpdatePayloadDto(deviceIds = deviceIds, group = normalized))
+        }
+      }
+        .onSuccess {
+          _state.update {
+            it.copy(
+              devices = it.devices.map { d -> if (d.deviceId in deviceIds) d.copy(group = normalized) else d },
+              metrics = it.metrics?.let { m ->
+                if (m.device.deviceId in deviceIds) m.copy(device = m.device.copy(group = normalized)) else m
+              },
+              message = if (normalized != null) "已归入「$normalized」" else "已设为未分组"
+            )
+          }
+          refreshAfterWrite()
+        }
+        .onFailure { error ->
+          _state.update { it.copy(message = userFacingError(error, "设备分组保存失败，请稍后重试")) }
+        }
+    }
+  }
+
   private fun loadMetrics(deviceId: String, window: MetricWindow, showScreen: Boolean, silent: Boolean = false) {
     metricsLoadJob?.cancel()
     if (!_state.value.authenticated || !appInForeground) return

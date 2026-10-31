@@ -25,7 +25,7 @@ export async function buildDeviceSummaries(repositories: Repositories, log: Fast
     if (realtimeState) {
       try {
         const { registrationHostname: _hostname, ...publicSummary } = realtimeState;
-        return { ...publicSummary, sortOrder: record.sortOrder };
+        return { ...publicSummary, sortOrder: record.sortOrder, group: record.group ?? null };
       }
       catch (error) { log.error({ error, deviceId: record.deviceId }, "failed to summarize device state"); }
     }
@@ -34,7 +34,8 @@ export async function buildDeviceSummaries(repositories: Repositories, log: Fast
       agentVersion: null, agentChannel: null, status: "offline" as const,
       lastSeenAt: realtimeState?.lastSeenAt ?? record.updatedAt,
       cpuUsagePercent: null, gpuUsagePercent: null, gpuMemoryUsagePercent: null,
-      memoryUsagePercent: null, diskUsagePercent: null, sortOrder: record.sortOrder
+      memoryUsagePercent: null, diskUsagePercent: null, sortOrder: record.sortOrder,
+      group: record.group ?? null
     };
   }).sort((a, b) => ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.deviceId.localeCompare(b.deviceId));
 }

@@ -253,6 +253,7 @@ test('a hidden window is served from the current snapshot instead of the hub', a
     saveFanNote: () => Promise.resolve(current),
     deleteInstance: () => Promise.resolve(current),
     reorderInstances: () => Promise.resolve(current),
+    updateDeviceGroup: () => Promise.resolve(current),
     updateStartupSettings: () => Promise.resolve(current),
     openExternal: () => Promise.resolve(),
     shutdown: () => Promise.resolve()

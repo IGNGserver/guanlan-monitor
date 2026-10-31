@@ -1,7 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ConsoleSnapshot, DeviceSummary } from "@dsc/shared";
-import { liveLinkLabel, selectAttentionDevices, selectDeviceDirectory, selectHealthSummary, selectLinkLabel, selectResourceRanking, selectSnapshotSource } from "./selectors.ts";
+import {
+  UNGROUPED_GROUP_KEY,
+  liveLinkLabel,
+  selectAttentionDevices,
+  selectDeviceDirectory,
+  selectDeviceGroups,
+  selectExistingGroupNames,
+  selectHealthSummary,
+  selectLinkLabel,
+  selectResourceRanking,
+  selectSnapshotSource
+} from "./selectors.ts";
 import { mergeDeviceOrder, registerDeviceOrderDraftGuard, confirmDiscardDeviceOrderDraft } from "./deviceOrderDraft.ts";
 
 const device = (overrides: Partial<DeviceSummary>): DeviceSummary => ({
@@ -90,13 +101,42 @@ test("the data link label follows the declared transport, not the page", () => {
 
 test("directory filters and resource ranking are deterministic", () => {
   const devices = [
-    device({ deviceId: "a", hostname: "工作站", cpuUsagePercent: 20, sortOrder: 1 }),
-    device({ deviceId: "b", hostname: "服务器", cpuUsagePercent: 90, sortOrder: 2 }),
-    device({ deviceId: "c", hostname: "离线 NAS", status: "offline", cpuUsagePercent: 99, sortOrder: 3 })
+    device({ deviceId: "a", hostname: "工作站", group: "办公终端", cpuUsagePercent: 20, sortOrder: 1 }),
+    device({ deviceId: "b", hostname: "服务器", group: "宿主机", cpuUsagePercent: 90, sortOrder: 2 }),
+    device({ deviceId: "c", hostname: "离线 NAS", group: null, status: "offline", cpuUsagePercent: 99, sortOrder: 3 })
   ];
   assert.deepEqual(selectDeviceDirectory(devices, { query: "服务器" }).map((item) => item.deviceId), ["b"]);
+  assert.deepEqual(selectDeviceDirectory(devices, { query: "宿主机" }).map((item) => item.deviceId), ["b"]);
+  assert.deepEqual(selectDeviceDirectory(devices, { group: "办公终端" }).map((item) => item.deviceId), ["a"]);
+  assert.deepEqual(selectDeviceDirectory(devices, { group: UNGROUPED_GROUP_KEY }).map((item) => item.deviceId), ["c"]);
   assert.deepEqual(selectDeviceDirectory(devices, { status: "offline" }).map((item) => item.deviceId), ["c"]);
   assert.deepEqual(selectResourceRanking(devices, "cpu").map((item) => item.deviceId), ["b", "a"]);
+});
+
+test("selectDeviceGroups aggregates group health, averages, and keeps ungrouped last", () => {
+  const devices = [
+    device({ deviceId: "u1", hostname: "未分组机器", group: null, cpuUsagePercent: 10, memoryUsagePercent: 30, sortOrder: 0 }),
+    device({ deviceId: "pve1", hostname: "pve1", group: "宿主机", cpuUsagePercent: 40, memoryUsagePercent: 60, sortOrder: 1 }),
+    device({ deviceId: "pve2", hostname: "pve2", group: "宿主机", cpuUsagePercent: 95, memoryUsagePercent: 80, sortOrder: 2 }),
+    device({ deviceId: "pve3", hostname: "pve3", group: "宿主机", status: "offline", cpuUsagePercent: 99, memoryUsagePercent: 99, sortOrder: 3 })
+  ];
+  assert.deepEqual(selectExistingGroupNames(devices), ["宿主机"]);
+  const groups = selectDeviceGroups(devices);
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].key, "宿主机");
+  assert.equal(groups[0].name, "宿主机");
+  assert.equal(groups[0].isUngrouped, false);
+  assert.equal(groups[0].total, 3);
+  assert.equal(groups[0].online, 2);
+  assert.equal(groups[0].offline, 1);
+  assert.equal(groups[0].overThreshold, 1);
+  assert.equal(groups[0].avgCpuPercent, 67.5);
+  assert.equal(groups[0].avgMemoryPercent, 70);
+
+  assert.equal(groups[1].key, UNGROUPED_GROUP_KEY);
+  assert.equal(groups[1].name, "未分组");
+  assert.equal(groups[1].isUngrouped, true);
+  assert.equal(groups[1].total, 1);
 });
 
 // The overview surfaces only what cannot answer for itself; the device directory

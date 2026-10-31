@@ -47,7 +47,7 @@ test("narrow device lists never deserialize full realtime hardware states", asyn
     }
   } as unknown as Repositories;
   try {
-    assert.deepEqual(await buildDeviceSummaries(repositories, app.log), [{ ...summary, sortOrder: 3 }]);
+    assert.deepEqual(await buildDeviceSummaries(repositories, app.log), [{ ...summary, sortOrder: 3, group: null }]);
   } finally { await app.close(); }
 });
 

@@ -4,7 +4,7 @@ import { M3SegmentedControl, M3Tabs, M3Select } from "../m3";
 import type { TouchPanel } from "../touch/TouchState";
 import { touchPercent } from "../touch/TouchDeviceRow";
 import { useWorkspace } from "../WorkspaceContext";
-import { selectLinkLabel, selectSnapshotSource } from "../selectors";
+import { normalizeDeviceGroup, selectExistingGroupNames, selectLinkLabel, selectSnapshotSource } from "../selectors";
 import {
   DEFAULT_DEVICE_TAB_ID,
   DEVICE_DASHBOARD,
@@ -35,6 +35,7 @@ import { DeviceKpiStrip, capacityCaption, shareOf } from "./DeviceKpiStrip";
 import { LiveTopicPanel, useLiveCapabilities } from "./LiveDevicePanel";
 import type { DeviceLiveView } from "../routes";
 import {
+  DeviceGroupDialog,
   EmptyState,
   InstanceFilter,
   MetricsLoadingSurface,
@@ -64,12 +65,15 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
   const touch = presentation === "touch";
   const {
     selectedDevice,
+    allDevices,
     snapshot,
     navigate,
     openSettings,
     loading,
     refreshing,
+    mutationPending,
     refresh,
+    updateDeviceGroup,
     metricsWindow,
     setMetricsWindow,
     trafficMode,
@@ -79,6 +83,8 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
     healthThresholds,
     route
   } = useWorkspace();
+  const [editingGroup, setEditingGroup] = useState(false);
+  const existingGroups = useMemo(() => selectExistingGroupNames(allDevices), [allDevices]);
   const snapshotSource = snapshot ? selectSnapshotSource(snapshot, snapshot.devices) : "unknown";
   const deviceSourceState: "online" | "offline" | "cached" | "warning" | "unknown" = snapshotSource === "cache"
     ? "cached"
@@ -442,16 +448,22 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
         <button type="button" onClick={() => navigate({ kind: "overview" })}>总览</button>
         <span aria-hidden="true">/</span>
         <button type="button" onClick={() => navigate({ kind: "devices" })}>设备</button>
+        {normalizeDeviceGroup(selectedDevice.group) && (
+          <>
+            <span aria-hidden="true">/</span>
+            <span>{normalizeDeviceGroup(selectedDevice.group)}</span>
+          </>
+        )}
         <span aria-hidden="true">/</span>
         <strong>{selectedDevice.hostname}</strong>
       </nav>
       <PageIntro
-        eyebrow="设备"
+        eyebrow={normalizeDeviceGroup(selectedDevice.group) ? `设备 · ${normalizeDeviceGroup(selectedDevice.group)}` : "设备"}
         title={selectedDevice.hostname}
         description={`${selectedDevice.os} · ${selectedDevice.deviceId}`}
       />
       <SnapshotFreshnessNotice /></>}
-      {touch && <header className="touch-device-heading"><h1>{selectedDevice.hostname}</h1><p>{selectedDevice.os} · {snapshotSource === "cache" ? "缓存中的状态" : selectedDevice.status === "online" ? "在线" : "离线"}</p></header>}
+      {touch && <header className="touch-device-heading"><h1>{selectedDevice.hostname}</h1><p>{selectedDevice.os}{normalizeDeviceGroup(selectedDevice.group) ? ` · ${normalizeDeviceGroup(selectedDevice.group)}` : ""} · {snapshotSource === "cache" ? "缓存中的状态" : selectedDevice.status === "online" ? "在线" : "离线"}</p></header>}
 
       {/* One card carries every state fact. They used to be split across a
           status line and a facts strip that repeated the same two things, so
@@ -464,6 +476,22 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
             the data-link row as "在线 实时中枢", two different names for one fact. */}
         <div><span>最近上报状态</span><strong><StatusDot state={selectedDevice.status === "online" ? "online" : "offline"} />{selectedDevice.status === "online" ? "在线" : "离线"}</strong></div>
         <div><span>与中枢链路</span><strong><StatusDot state={deviceSourceState} />{selectLinkLabel(snapshotSource, capabilities.liveDataTransport)}</strong></div>
+        <div>
+          <span>所属分组</span>
+          <strong className="workspace-device-facts__group">
+            <span>{normalizeDeviceGroup(selectedDevice.group) ?? "未分组"}</span>
+            {liveAuthenticated && (
+              <button
+                type="button"
+                className="guanlan-table-live-action"
+                onClick={() => setEditingGroup(true)}
+                disabled={mutationPending}
+              >
+                {normalizeDeviceGroup(selectedDevice.group) ? "修改" : "设组"}
+              </button>
+            )}
+          </strong>
+        </div>
         <div><span>最后在线</span><strong>{formatDate(selectedDevice.lastSeenAt)} · {selectedDevice.status === "online" ? "刚刚上报" : "已停止上报"}</strong></div>
         <div><span>{snapshotSource === "cache" ? "缓存时间" : "数据时间"}</span><strong>{formatDate(snapshotSource === "cache" ? snapshot?.cache.savedAt : snapshot?.generatedAt)}</strong></div>
         <div><span>Agent 版本</span><strong>{selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</strong></div>
@@ -471,6 +499,20 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
       </div>
 
       </details>
+      {editingGroup && (
+        <DeviceGroupDialog
+          title={`设置“${selectedDevice.hostname}”的分组`}
+          detail="选择已有分组或输入新分组名，保存后在设备目录与总览中生效。"
+          currentGroup={normalizeDeviceGroup(selectedDevice.group)}
+          existingGroups={existingGroups}
+          disabled={mutationPending}
+          onConfirm={(nextGroup) => {
+            setEditingGroup(false);
+            void updateDeviceGroup([selectedDevice.deviceId], nextGroup);
+          }}
+          onCancel={() => setEditingGroup(false)}
+        />
+      )}
       {/* The phone's counterpart of the desktop 实时 range: the same tiles, read from the device. */}
       {touch && touchPanel === "status" && <M3SegmentedControl
         className="touch-metrics-source"

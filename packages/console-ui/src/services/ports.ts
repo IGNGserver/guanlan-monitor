@@ -27,6 +27,7 @@ export interface ConsoleSessionPort {
 export interface ConsoleFleetPort {
   deleteInstance(deviceId: string): Promise<ConsoleSnapshot>;
   reorderInstances(deviceIds: string[]): Promise<ConsoleSnapshot>;
+  updateDeviceGroup(deviceIds: string[], group: string | null): Promise<ConsoleSnapshot>;
   saveFanNote(deviceId: string, fanId: string, note: string): Promise<ConsoleSnapshot>;
   openExternal(url: string): Promise<void>;
 }
