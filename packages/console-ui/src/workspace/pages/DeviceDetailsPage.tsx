@@ -481,14 +481,13 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
           <strong className="workspace-device-facts__group">
             <span>{normalizeDeviceGroup(selectedDevice.group) ?? "未分组"}</span>
             {liveAuthenticated && (
-              <button
-                type="button"
-                className="guanlan-table-live-action"
+              <Button
+                variant="quiet"
                 onClick={() => setEditingGroup(true)}
                 disabled={mutationPending}
               >
                 {normalizeDeviceGroup(selectedDevice.group) ? "修改" : "设组"}
-              </button>
+              </Button>
             )}
           </strong>
         </div>

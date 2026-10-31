@@ -1,6 +1,6 @@
 {
   "name": "@dsc/desktop",
-  "version": "3.0.168",
+  "version": "3.0.169",
   "private": true,
   "type": "module",
   "description": "Unified Windows, Linux and macOS Electron desktop client for Device State Console.",
@@ -65,7 +65,9 @@
       }
     ],
     "mac": {
-      "target": ["dir"],
+      "target": [
+        "dir"
+      ],
       "category": "public.app-category.utilities",
       "minimumSystemVersion": "13.0",
       "hardenedRuntime": true,
