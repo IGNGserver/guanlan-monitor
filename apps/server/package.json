@@ -1,6 +1,6 @@
 {
   "name": "@dsc/server",
-  "version": "3.0.169",
+  "version": "3.0.170",
   "private": true,
   "type": "module",
   "scripts": {
