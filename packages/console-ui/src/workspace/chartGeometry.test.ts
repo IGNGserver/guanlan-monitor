@@ -55,6 +55,13 @@ test("byte axes step in binary units", () => {
   assert.equal(axis.max, 3 * gib);
 });
 
+test("pinnedMax expands when observed values exceed ceiling", () => {
+  const gib = 1024 ** 3;
+  // Physical RAM is 64 GiB, but committed virtual memory reaches 124 GiB.
+  const axis = niceLinearAxis([0, 124 * gib], { pinnedMax: 64 * gib, binary: true, tickCount: 4 });
+  assert.ok(axis.max >= 124 * gib, "axis max expands to accommodate peak value instead of clipping at 64 GiB");
+});
+
 test("an empty or flat series still yields a usable axis", () => {
   assert.deepEqual(niceLinearAxis([]).ticks.slice(0, 2), [0, 0.25]);
   assert.ok(niceLinearAxis([5, 5]).max >= 5);
