@@ -470,7 +470,14 @@ export const DEVICE_CHART_RENDERERS: Record<DeviceChartId, ChartRenderer> = {
         { label: "已提交", points: unavailablePoints(context.series?.memoryCommittedBytes ?? [], context.unavailable("memoryCommitted")), valueFormatter: formatBytes }
       ],
       valueFormatter: formatBytes,
-      ...capacityAxis(totalBytes, [context.series?.memoryUsedBytes ?? []], context.thresholds.memory)
+      ...capacityAxis(
+        totalBytes,
+        [
+          context.series?.memoryUsedBytes ?? [],
+          context.series?.memoryCommittedBytes ?? []
+        ],
+        context.thresholds.memory
+      )
     }];
   },
 

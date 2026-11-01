@@ -137,13 +137,15 @@ export function niceLinearAxis(values: readonly number[], options: { pinnedMax?:
     if (value < low) low = value;
     if (value > high) high = value;
   }
-  // A pinned ceiling is the scale's meaning (percent ends at 100), not a guess.
-  if (options.pinnedMax != null) high = options.pinnedMax;
+  // A pinned ceiling is the scale's baseline (percent ends at 100, memory ends at total),
+  // but if observed data exceeds it (e.g. committed virtual memory > physical RAM),
+  // expand the domain so the peak is visible instead of clipped.
+  if (options.pinnedMax != null) high = Math.max(options.pinnedMax, high);
   if (!Number.isFinite(high) || high <= low) high = low + 1;
   const raw = (high - low) / tickCount;
   const step = options.binary ? niceBinaryStep(raw) : niceDecimalStep(raw);
   const min = Math.floor(low / step) * step;
-  const max = options.pinnedMax != null ? options.pinnedMax : Math.ceil(high / step) * step;
+  const max = options.pinnedMax != null && high <= options.pinnedMax ? options.pinnedMax : Math.ceil(high / step) * step;
   const ticks: number[] = [];
   // Rounding guard: accumulate by index, not by repeated addition.
   for (let index = 0; min + index * step <= max + step * 1e-9; index++) ticks.push(min + index * step);
