@@ -121,6 +121,25 @@ DSC_VERSION=latest docker compose up -d
 
 Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 的专项说明见下方“开发与维护”。
 
+### 使用外部 MySQL/Redis
+
+如果设备上已有供多个项目共用的 MySQL/Redis，不需要为本项目再起一套数据库容器：
+
+```bash
+cp .env.example .env
+# 编辑 .env：
+#   DSC_DB_MODE=external
+#   MYSQL_URL=mysql://guanlan:...@db.internal:3306/guanlan_home
+#   REDIS_URL=rediss://:...@redis.internal:6379/3
+#   DSC_INSTANCE_ID=hub-home
+DSC_VERSION=3.0.170 docker compose -f docker-compose.external.yml pull
+DSC_VERSION=3.0.170 docker compose -f docker-compose.external.yml up -d
+```
+
+这个文件只包含 `server` 和 `web`，不会创建 MySQL/Redis，也不会暴露数据库端口。**每个中枢必须使用独立的 database**；表名是固定的，多个中枢写同一个库会被 `hub_meta` 拒绝。多个项目共用一个 Redis 时，用不同的 `DSC_INSTANCE_ID` 隔离 key；当前架构是单写者，不支持多个中枢同时写同一份数据。
+
+外部 MySQL 需要 8.0+，并允许应用在自己的 database 内建表/改表；Redis 需要认证，建议开启 AOF。完整说明、权限 SQL、从内置数据库迁移和远程延迟参数见 [外部数据库文档](docs/EXTERNAL_DATABASE.md)。
+
 ## 设备采集
 
 - Windows：安装上方的观澜 setup，可在应用内配置；无人值守场景使用上面的静默参数。

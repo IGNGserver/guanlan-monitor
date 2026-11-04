@@ -2,6 +2,13 @@ import mysql, { type RowDataPacket } from "mysql2/promise";
 import type { MetricWindow, TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import type { HistoryRepository, OverviewRecord, TimeSeriesRecord, TrafficHistoryPoint } from "../types.js";
 import { buildTrafficCalendar } from "../traffic-calendar.js";
+import { MysqlHistoryWriteBatcher, type HistoryWriteBatcherOptions } from "../storage/mysql-write-batcher.js";
+import {
+  HISTORY_COLUMNS,
+  HISTORY_INDEXES,
+  createHistoryTableSql,
+  formatRecordedAt
+} from "./history-schema.js";
 
 const WINDOW_RANGES: Record<Extract<MetricWindow, "1d" | "7d" | "1w" | "30d" | "1mo" | "90d" | "1y">, number> = {
   "7d": 24 * 7,
@@ -15,270 +22,129 @@ const WINDOW_RANGES: Record<Extract<MetricWindow, "1d" | "7d" | "1w" | "30d" | "
 const MINUTE_RETENTION_DAYS = 90;
 const HOURLY_RETENTION_DAYS = 370;
 
+export interface MysqlHistoryOptions {
+  queryTimeoutMs?: number;
+  batch?: HistoryWriteBatcherOptions;
+}
+
 export class MysqlHistoryRepository implements HistoryRepository {
-  constructor(private readonly pool: mysql.Pool) {}
+  private readonly writer: MysqlHistoryWriteBatcher;
+  private readonly queryTimeoutMs: number;
+
+  constructor(private readonly pool: mysql.Pool, options: MysqlHistoryOptions = {}) {
+    this.queryTimeoutMs = options.queryTimeoutMs ?? 15_000;
+    this.writer = new MysqlHistoryWriteBatcher(pool, {
+      queryTimeoutMs: this.queryTimeoutMs,
+      ...options.batch
+    });
+  }
+
+  private async queryRows<T extends RowDataPacket = RowDataPacket>(sql: string, values: unknown[] = []): Promise<T[]> {
+    const [rows] = await this.pool.query<T[]>(
+      values.length
+        ? { sql, values, timeout: this.queryTimeoutMs }
+        : { sql, timeout: this.queryTimeoutMs }
+    );
+    return rows;
+  }
 
   async checkReadiness(): Promise<void> {
     // Exercise the same pool as history, without scanning any telemetry rows.
     await this.pool.query({ sql: "SELECT 1", timeout: 2000 });
   }
 
+  /** Create missing tables/columns/indexes in a bounded number of round trips. */
   async init() {
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS device_minute_metrics (
-        id BIGINT PRIMARY KEY AUTO_INCREMENT,
-        device_id VARCHAR(128) NOT NULL,
-        recorded_at DATETIME NOT NULL,
-        cpu_usage_percent DOUBLE NOT NULL,
-        cpu_frequency_mhz DOUBLE NOT NULL DEFAULT 0,
-        cpu_temperature_c DOUBLE NOT NULL DEFAULT 0,
-        gpu_usage_percent DOUBLE NOT NULL DEFAULT 0,
-        gpu_encode_percent DOUBLE NOT NULL DEFAULT 0,
-        gpu_decode_percent DOUBLE NOT NULL DEFAULT 0,
-        gpu_frequency_mhz DOUBLE NOT NULL DEFAULT 0,
-        gpu_memory_usage_percent DOUBLE NOT NULL DEFAULT 0,
-        gpu_temperature_c DOUBLE NOT NULL DEFAULT 0,
-        memory_usage_percent DOUBLE NOT NULL,
-        swap_usage_percent DOUBLE NOT NULL,
-        disk_usage_percent DOUBLE NOT NULL,
-        disk_read_bytes_per_sec DOUBLE NOT NULL,
-        disk_write_bytes_per_sec DOUBLE NOT NULL,
-        network_rx_bytes_per_sec DOUBLE NOT NULL,
-        network_tx_bytes_per_sec DOUBLE NOT NULL,
-        traffic_rx_bytes DOUBLE NOT NULL,
-        traffic_tx_bytes DOUBLE NOT NULL,
-        disk_instances_json JSON NULL,
-        gpu_instances_json JSON NULL,
-        recorded_details_json JSON NULL,
-        sample_count INT NOT NULL DEFAULT 1,
-        UNIQUE KEY uniq_device_minute (device_id, recorded_at),
-        INDEX idx_device_minute_recorded_at (device_id, recorded_at),
-        INDEX idx_minute_recorded_at (recorded_at)
-      )
-    `);
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS device_hourly_metrics (
-        id BIGINT PRIMARY KEY AUTO_INCREMENT,
-        device_id VARCHAR(128) NOT NULL,
-        recorded_at DATETIME NOT NULL,
-        cpu_usage_percent DOUBLE NOT NULL,
-        cpu_frequency_mhz DOUBLE NOT NULL DEFAULT 0,
-        cpu_temperature_c DOUBLE NOT NULL DEFAULT 0,
-        gpu_usage_percent DOUBLE NOT NULL DEFAULT 0,
-        gpu_encode_percent DOUBLE NOT NULL DEFAULT 0,
-        gpu_decode_percent DOUBLE NOT NULL DEFAULT 0,
-        gpu_frequency_mhz DOUBLE NOT NULL DEFAULT 0,
-        gpu_memory_usage_percent DOUBLE NOT NULL DEFAULT 0,
-        gpu_temperature_c DOUBLE NOT NULL DEFAULT 0,
-        memory_usage_percent DOUBLE NOT NULL,
-        swap_usage_percent DOUBLE NOT NULL,
-        disk_usage_percent DOUBLE NOT NULL,
-        disk_read_bytes_per_sec DOUBLE NOT NULL,
-        disk_write_bytes_per_sec DOUBLE NOT NULL,
-        network_rx_bytes_per_sec DOUBLE NOT NULL,
-        network_tx_bytes_per_sec DOUBLE NOT NULL,
-        traffic_rx_bytes DOUBLE NOT NULL,
-        traffic_tx_bytes DOUBLE NOT NULL,
-        disk_instances_json JSON NULL,
-        gpu_instances_json JSON NULL,
-        recorded_details_json JSON NULL,
-        sample_count INT NOT NULL DEFAULT 1,
-        UNIQUE KEY uniq_device_hour (device_id, recorded_at),
-        INDEX idx_device_recorded_at (device_id, recorded_at),
-        INDEX idx_hourly_recorded_at (recorded_at)
-      )
-    `);
-    await this.ensureColumn("device_minute_metrics", "cpu_frequency_mhz", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_minute_metrics", "cpu_temperature_c", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_minute_metrics", "gpu_usage_percent", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_minute_metrics", "gpu_encode_percent", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_minute_metrics", "gpu_decode_percent", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_minute_metrics", "gpu_frequency_mhz", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_minute_metrics", "gpu_memory_usage_percent", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_minute_metrics", "gpu_temperature_c", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_hourly_metrics", "cpu_frequency_mhz", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_hourly_metrics", "cpu_temperature_c", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_hourly_metrics", "gpu_usage_percent", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_hourly_metrics", "gpu_encode_percent", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_hourly_metrics", "gpu_decode_percent", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_hourly_metrics", "gpu_frequency_mhz", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_hourly_metrics", "gpu_memory_usage_percent", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_hourly_metrics", "gpu_temperature_c", "DOUBLE NOT NULL DEFAULT 0");
-    await this.ensureColumn("device_minute_metrics", "disk_instances_json", "JSON NULL");
-    await this.ensureColumn("device_minute_metrics", "gpu_instances_json", "JSON NULL");
-    await this.ensureColumn("device_hourly_metrics", "disk_instances_json", "JSON NULL");
-    await this.ensureColumn("device_hourly_metrics", "gpu_instances_json", "JSON NULL");
-    await this.ensureColumn("device_minute_metrics", "recorded_details_json", "JSON NULL");
-    await this.ensureColumn("device_hourly_metrics", "recorded_details_json", "JSON NULL");
-    await this.ensureColumn("device_minute_metrics", "sample_count", "INT NOT NULL DEFAULT 1");
-    await this.ensureColumn("device_hourly_metrics", "sample_count", "INT NOT NULL DEFAULT 1");
-    await this.ensureIndex("device_minute_metrics", "idx_minute_recorded_at", "(recorded_at)");
-    await this.ensureIndex("device_hourly_metrics", "idx_hourly_recorded_at", "(recorded_at)");
-    await this.ensureIndex("device_hourly_metrics", "idx_hourly_traffic_cover", "(device_id, recorded_at, traffic_rx_bytes, traffic_tx_bytes)");
+    await this.pool.query(createHistoryTableSql("device_minute_metrics", "uniq_device_minute"));
+    await this.pool.query(createHistoryTableSql("device_hourly_metrics", "uniq_device_hour"));
+    await this.ensureSchema();
   }
 
-  async ensureIndex(tableName: string, indexName: string, indexDef: string) {
-    const [rows] = await this.pool.query<any[]>(`SHOW INDEX FROM ${tableName} WHERE Key_name = ?`, [indexName]);
-    if (rows.length > 0) return;
-    await this.pool.query(`ALTER TABLE ${tableName} ADD INDEX ${indexName} ${indexDef}`).catch(() => undefined);
+  /** Flush buffered multi-row writes before the pool is closed. */
+  async flushWrites(): Promise<void> {
+    await this.writer.flush();
   }
 
-  async ensureColumn(tableName: string, columnName: string, definition: string) {
-    const [rows] = await this.pool.query<any[]>(`SHOW COLUMNS FROM ${tableName} LIKE ?`, [columnName]);
-    if (rows.length > 0) return;
-    await this.pool.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  private async ensureSchema() {
+    const [columnRows] = await this.pool.query<RowDataPacket[]>(`
+      SELECT TABLE_NAME AS tableName, COLUMN_NAME AS columnName
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME IN ('device_minute_metrics', 'device_hourly_metrics')
+    `);
+    const columnsByTable = new Map<string, Set<string>>();
+    for (const row of columnRows) {
+      const table = String(row.tableName);
+      const columns = columnsByTable.get(table) ?? new Set<string>();
+      columns.add(String(row.columnName));
+      columnsByTable.set(table, columns);
+    }
+    for (const table of ["device_minute_metrics", "device_hourly_metrics"] as const) {
+      const existing = columnsByTable.get(table) ?? new Set<string>();
+      const missing = HISTORY_COLUMNS.filter((column) => !existing.has(column.name));
+      if (!missing.length) continue;
+      const clauses = missing.map((column) => `ADD COLUMN ${column.name} ${column.definition}`).join(", ");
+      await this.pool.query(`ALTER TABLE ${table} ${clauses}`);
+    }
+
+    const [indexRows] = await this.pool.query<RowDataPacket[]>(`
+      SELECT TABLE_NAME AS tableName, INDEX_NAME AS indexName
+      FROM INFORMATION_SCHEMA.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME IN ('device_minute_metrics', 'device_hourly_metrics')
+    `);
+    const indexesByTable = new Map<string, Set<string>>();
+    for (const row of indexRows) {
+      const table = String(row.tableName);
+      const indexes = indexesByTable.get(table) ?? new Set<string>();
+      indexes.add(String(row.indexName));
+      indexesByTable.set(table, indexes);
+    }
+    for (const table of ["device_minute_metrics", "device_hourly_metrics"] as const) {
+      const existing = indexesByTable.get(table) ?? new Set<string>();
+      const missing = HISTORY_INDEXES[table].filter((index) => !existing.has(index.name));
+      if (!missing.length) continue;
+      const clauses = missing.map((index) => `ADD INDEX ${index.name} ${index.definition}`).join(", ");
+      await this.pool.query(`ALTER TABLE ${table} ${clauses}`).catch((error) => {
+        console.warn(`Could not add history index on ${table}; queries may be slower:`, error instanceof Error ? error.message : error);
+      });
+    }
   }
 
   async runRetentionCleanup(batchSize = 5000) {
     // Bounded batch deletion using index on recorded_at to avoid long table locks
     while (true) {
-      const [result] = await this.pool.query<any>(
-        `
+      const [result] = await this.pool.query<any>({
+        sql: `
           DELETE FROM device_minute_metrics
           WHERE recorded_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${MINUTE_RETENTION_DAYS} DAY)
           LIMIT ?
         `,
-        [batchSize]
-      );
+        values: [batchSize],
+        timeout: Math.max(this.queryTimeoutMs, 60_000)
+      });
       if (!result || result.affectedRows === 0 || result.affectedRows < batchSize) break;
     }
     while (true) {
-      const [result] = await this.pool.query<any>(
-        `
+      const [result] = await this.pool.query<any>({
+        sql: `
           DELETE FROM device_hourly_metrics
           WHERE recorded_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${HOURLY_RETENTION_DAYS} DAY)
           LIMIT ?
         `,
-        [batchSize]
-      );
+        values: [batchSize],
+        timeout: Math.max(this.queryTimeoutMs, 60_000)
+      });
       if (!result || result.affectedRows === 0 || result.affectedRows < batchSize) break;
     }
   }
 
   async insertMinutePoint(deviceId: string, point: TimeSeriesRecord) {
-    const count = point.sampleCount ?? 1;
-    await this.pool.query(
-      `
-        INSERT INTO device_minute_metrics (
-          device_id, recorded_at, cpu_usage_percent, cpu_frequency_mhz, cpu_temperature_c, gpu_usage_percent, gpu_encode_percent, gpu_decode_percent, gpu_frequency_mhz, gpu_memory_usage_percent, gpu_temperature_c, memory_usage_percent, swap_usage_percent,
-          disk_usage_percent, disk_read_bytes_per_sec, disk_write_bytes_per_sec,
-          network_rx_bytes_per_sec, network_tx_bytes_per_sec, traffic_rx_bytes, traffic_tx_bytes,
-          disk_instances_json, gpu_instances_json, recorded_details_json, sample_count
-        ) VALUES (?, FROM_UNIXTIME(? / 1000), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          cpu_usage_percent = IF(sample_count >= VALUES(sample_count), cpu_usage_percent, VALUES(cpu_usage_percent)),
-          cpu_frequency_mhz = IF(sample_count >= VALUES(sample_count), cpu_frequency_mhz, VALUES(cpu_frequency_mhz)),
-          cpu_temperature_c = IF(sample_count >= VALUES(sample_count), cpu_temperature_c, VALUES(cpu_temperature_c)),
-          gpu_usage_percent = IF(sample_count >= VALUES(sample_count), gpu_usage_percent, VALUES(gpu_usage_percent)),
-          gpu_encode_percent = IF(sample_count >= VALUES(sample_count), gpu_encode_percent, VALUES(gpu_encode_percent)),
-          gpu_decode_percent = IF(sample_count >= VALUES(sample_count), gpu_decode_percent, VALUES(gpu_decode_percent)),
-          gpu_frequency_mhz = IF(sample_count >= VALUES(sample_count), gpu_frequency_mhz, VALUES(gpu_frequency_mhz)),
-          gpu_memory_usage_percent = IF(sample_count >= VALUES(sample_count), gpu_memory_usage_percent, VALUES(gpu_memory_usage_percent)),
-          gpu_temperature_c = IF(sample_count >= VALUES(sample_count), gpu_temperature_c, VALUES(gpu_temperature_c)),
-          memory_usage_percent = IF(sample_count >= VALUES(sample_count), memory_usage_percent, VALUES(memory_usage_percent)),
-          swap_usage_percent = IF(sample_count >= VALUES(sample_count), swap_usage_percent, VALUES(swap_usage_percent)),
-          disk_usage_percent = IF(sample_count >= VALUES(sample_count), disk_usage_percent, VALUES(disk_usage_percent)),
-          disk_read_bytes_per_sec = IF(sample_count >= VALUES(sample_count), disk_read_bytes_per_sec, VALUES(disk_read_bytes_per_sec)),
-          disk_write_bytes_per_sec = IF(sample_count >= VALUES(sample_count), disk_write_bytes_per_sec, VALUES(disk_write_bytes_per_sec)),
-          network_rx_bytes_per_sec = IF(sample_count >= VALUES(sample_count), network_rx_bytes_per_sec, VALUES(network_rx_bytes_per_sec)),
-          network_tx_bytes_per_sec = IF(sample_count >= VALUES(sample_count), network_tx_bytes_per_sec, VALUES(network_tx_bytes_per_sec)),
-          traffic_rx_bytes = IF(sample_count >= VALUES(sample_count), traffic_rx_bytes, VALUES(traffic_rx_bytes)),
-          traffic_tx_bytes = IF(sample_count >= VALUES(sample_count), traffic_tx_bytes, VALUES(traffic_tx_bytes)),
-          disk_instances_json = IF(sample_count >= VALUES(sample_count), disk_instances_json, VALUES(disk_instances_json)),
-          gpu_instances_json = IF(sample_count >= VALUES(sample_count), gpu_instances_json, VALUES(gpu_instances_json)),
-          recorded_details_json = IF(sample_count >= VALUES(sample_count), recorded_details_json, VALUES(recorded_details_json)),
-          sample_count = GREATEST(sample_count, VALUES(sample_count))
-      `,
-      [
-        deviceId,
-        point.timestamp,
-        point.cpuUsagePercent,
-        point.cpuFrequencyMHz,
-        point.cpuTemperatureC,
-        point.gpuUsagePercent,
-        point.gpuEncodePercent,
-        point.gpuDecodePercent,
-        point.gpuFrequencyMHz,
-        point.gpuMemoryUsagePercent,
-        point.gpuTemperatureC,
-        point.memoryUsagePercent,
-        point.swapUsagePercent,
-        point.diskUsagePercent,
-        point.diskReadBytesPerSec,
-        point.diskWriteBytesPerSec,
-        point.networkRxBytesPerSec,
-        point.networkTxBytesPerSec,
-        point.trafficRxBytes,
-        point.trafficTxBytes,
-        JSON.stringify(point.disks ?? []),
-        JSON.stringify(point.gpus ?? []),
-        JSON.stringify(point.recordedDetails ?? null),
-        count
-      ]
-    );
+    await this.writer.insertMinutePoint(deviceId, point);
   }
 
   async insertHourlyPoint(deviceId: string, point: TimeSeriesRecord) {
-    const count = point.sampleCount ?? 1;
-    await this.pool.query(
-      `
-        INSERT INTO device_hourly_metrics (
-          device_id, recorded_at, cpu_usage_percent, cpu_frequency_mhz, cpu_temperature_c, gpu_usage_percent, gpu_encode_percent, gpu_decode_percent, gpu_frequency_mhz, gpu_memory_usage_percent, gpu_temperature_c, memory_usage_percent, swap_usage_percent,
-          disk_usage_percent, disk_read_bytes_per_sec, disk_write_bytes_per_sec,
-          network_rx_bytes_per_sec, network_tx_bytes_per_sec, traffic_rx_bytes, traffic_tx_bytes,
-          disk_instances_json, gpu_instances_json, recorded_details_json, sample_count
-        ) VALUES (?, FROM_UNIXTIME(? / 1000), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          cpu_usage_percent = IF(sample_count >= VALUES(sample_count), cpu_usage_percent, VALUES(cpu_usage_percent)),
-          cpu_frequency_mhz = IF(sample_count >= VALUES(sample_count), cpu_frequency_mhz, VALUES(cpu_frequency_mhz)),
-          cpu_temperature_c = IF(sample_count >= VALUES(sample_count), cpu_temperature_c, VALUES(cpu_temperature_c)),
-          gpu_usage_percent = IF(sample_count >= VALUES(sample_count), gpu_usage_percent, VALUES(gpu_usage_percent)),
-          gpu_encode_percent = IF(sample_count >= VALUES(sample_count), gpu_encode_percent, VALUES(gpu_encode_percent)),
-          gpu_decode_percent = IF(sample_count >= VALUES(sample_count), gpu_decode_percent, VALUES(gpu_decode_percent)),
-          gpu_frequency_mhz = IF(sample_count >= VALUES(sample_count), gpu_frequency_mhz, VALUES(gpu_frequency_mhz)),
-          gpu_memory_usage_percent = IF(sample_count >= VALUES(sample_count), gpu_memory_usage_percent, VALUES(gpu_memory_usage_percent)),
-          gpu_temperature_c = IF(sample_count >= VALUES(sample_count), gpu_temperature_c, VALUES(gpu_temperature_c)),
-          memory_usage_percent = IF(sample_count >= VALUES(sample_count), memory_usage_percent, VALUES(memory_usage_percent)),
-          swap_usage_percent = IF(sample_count >= VALUES(sample_count), swap_usage_percent, VALUES(swap_usage_percent)),
-          disk_usage_percent = IF(sample_count >= VALUES(sample_count), disk_usage_percent, VALUES(disk_usage_percent)),
-          disk_read_bytes_per_sec = IF(sample_count >= VALUES(sample_count), disk_read_bytes_per_sec, VALUES(disk_read_bytes_per_sec)),
-          disk_write_bytes_per_sec = IF(sample_count >= VALUES(sample_count), disk_write_bytes_per_sec, VALUES(disk_write_bytes_per_sec)),
-          network_rx_bytes_per_sec = IF(sample_count >= VALUES(sample_count), network_rx_bytes_per_sec, VALUES(network_rx_bytes_per_sec)),
-          network_tx_bytes_per_sec = IF(sample_count >= VALUES(sample_count), network_tx_bytes_per_sec, VALUES(network_tx_bytes_per_sec)),
-          traffic_rx_bytes = IF(sample_count >= VALUES(sample_count), traffic_rx_bytes, VALUES(traffic_rx_bytes)),
-          traffic_tx_bytes = IF(sample_count >= VALUES(sample_count), traffic_tx_bytes, VALUES(traffic_tx_bytes)),
-          disk_instances_json = IF(sample_count >= VALUES(sample_count), disk_instances_json, VALUES(disk_instances_json)),
-          gpu_instances_json = IF(sample_count >= VALUES(sample_count), gpu_instances_json, VALUES(gpu_instances_json)),
-          recorded_details_json = IF(sample_count >= VALUES(sample_count), recorded_details_json, VALUES(recorded_details_json)),
-          sample_count = GREATEST(sample_count, VALUES(sample_count))
-      `,
-      [
-        deviceId,
-        point.timestamp,
-        point.cpuUsagePercent,
-        point.cpuFrequencyMHz,
-        point.cpuTemperatureC,
-        point.gpuUsagePercent,
-        point.gpuEncodePercent,
-        point.gpuDecodePercent,
-        point.gpuFrequencyMHz,
-        point.gpuMemoryUsagePercent,
-        point.gpuTemperatureC,
-        point.memoryUsagePercent,
-        point.swapUsagePercent,
-        point.diskUsagePercent,
-        point.diskReadBytesPerSec,
-        point.diskWriteBytesPerSec,
-        point.networkRxBytesPerSec,
-        point.networkTxBytesPerSec,
-        point.trafficRxBytes,
-        point.trafficTxBytes,
-        JSON.stringify(point.disks ?? []),
-        JSON.stringify(point.gpus ?? []),
-        JSON.stringify(point.recordedDetails ?? null),
-        count
-      ]
-    );
+    await this.writer.insertHourlyPoint(deviceId, point);
   }
 
   async getHistoricalSeries(deviceId: string, bucket: MetricWindow) {
@@ -287,10 +153,10 @@ export class MysqlHistoryRepository implements HistoryRepository {
     }
     if (bucket === "15m" || bucket === "1h" || bucket === "6h" || bucket === "24h" || bucket === "1d") {
       const minutes = bucket === "15m" ? 15 : bucket === "1h" ? 60 : bucket === "6h" ? 360 : 1440;
-      const [rows] = await this.pool.query<any[]>(
+      const rows = await this.queryRows<any>(
         `
           SELECT
-            UNIX_TIMESTAMP(recorded_at) * 1000 AS timestamp,
+            TIMESTAMPDIFF(SECOND, '1970-01-01 00:00:00', recorded_at) * 1000 AS timestamp,
             cpu_usage_percent AS cpuUsagePercent,
             cpu_frequency_mhz AS cpuFrequencyMHz,
             cpu_temperature_c AS cpuTemperatureC,
@@ -323,10 +189,10 @@ export class MysqlHistoryRepository implements HistoryRepository {
       return rows.map(mapHistoryRow) as TimeSeriesRecord[];
     }
     const hours = WINDOW_RANGES[bucket as keyof typeof WINDOW_RANGES] ?? WINDOW_RANGES["1y"];
-    const [rows] = await this.pool.query<any[]>(
+    const rows = await this.queryRows<any>(
       `
         SELECT
-          UNIX_TIMESTAMP(recorded_at) * 1000 AS timestamp,
+          TIMESTAMPDIFF(SECOND, '1970-01-01 00:00:00', recorded_at) * 1000 AS timestamp,
           cpu_usage_percent AS cpuUsagePercent,
           cpu_frequency_mhz AS cpuFrequencyMHz,
           cpu_temperature_c AS cpuTemperatureC,
@@ -368,8 +234,8 @@ export class MysqlHistoryRepository implements HistoryRepository {
     // only needed JSON paths: no hardware detail or instance objects leave MySQL.
     // Nonempty instances win even if every usedBytes is zero/missing; testing
     // their sum for truthiness would incorrectly select older detail disks.
-    const [rows] = await this.pool.query<any[]>(`
-      SELECT UNIX_TIMESTAMP(recorded_at) * 1000 AS timestamp,
+    const rows = await this.queryRows<any>(`
+      SELECT TIMESTAMPDIFF(SECOND, '1970-01-01 00:00:00', recorded_at) * 1000 AS timestamp,
              cpu_usage_percent AS cpuUsagePercent,
              network_rx_bytes_per_sec AS networkRxBytesPerSec,
              network_tx_bytes_per_sec AS networkTxBytesPerSec,
@@ -398,12 +264,20 @@ export class MysqlHistoryRepository implements HistoryRepository {
   }
 
   async clearDeviceHistory(deviceId: string) {
-    await this.pool.query(`DELETE FROM device_minute_metrics WHERE device_id = ?`, [deviceId]);
-    await this.pool.query(`DELETE FROM device_hourly_metrics WHERE device_id = ?`, [deviceId]);
+    await this.pool.query({
+      sql: "DELETE FROM device_minute_metrics WHERE device_id = ?",
+      values: [deviceId],
+      timeout: this.queryTimeoutMs
+    });
+    await this.pool.query({
+      sql: "DELETE FROM device_hourly_metrics WHERE device_id = ?",
+      values: [deviceId],
+      timeout: this.queryTimeoutMs
+    });
   }
 
   async listKnownDevices() {
-    const [rows] = await this.pool.query<(RowDataPacket & { deviceId: string; lastSeenAt: string })[]>(`
+    const rows = await this.queryRows<(RowDataPacket & { deviceId: string; lastSeenAt: string })>(`
       SELECT device_id AS deviceId, DATE_FORMAT(MAX(recorded_at), '%Y-%m-%dT%H:%i:%s.000Z') AS lastSeenAt
       FROM (
         SELECT device_id, MAX(recorded_at) AS recorded_at FROM device_minute_metrics GROUP BY device_id
@@ -416,15 +290,21 @@ export class MysqlHistoryRepository implements HistoryRepository {
   }
 
   async getTrafficSeries(deviceId: string, start: number, end: number): Promise<TrafficHistoryPoint[]> {
-    const [rows] = await this.pool.query<(RowDataPacket & TrafficHistoryPoint)[]>(`
-      SELECT UNIX_TIMESTAMP(recorded_at) * 1000 AS timestamp,
-             traffic_rx_bytes AS trafficRxBytes, traffic_tx_bytes AS trafficTxBytes
-      FROM device_hourly_metrics
-      WHERE device_id = ? AND recorded_at >= FROM_UNIXTIME(? / 1000)
-        AND recorded_at < FROM_UNIXTIME(? / 1000)
-        AND recorded_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 366 DAY)
-      ORDER BY recorded_at ASC
-    `, [deviceId, start, end]);
+    // Compare UTC DATETIME literals rather than session-local FROM_UNIXTIME;
+    // this keeps an external server's default time zone out of the range.
+    const [rows] = await this.pool.query<(RowDataPacket & TrafficHistoryPoint)[]>({
+      sql: `
+        SELECT TIMESTAMPDIFF(SECOND, '1970-01-01 00:00:00', recorded_at) * 1000 AS timestamp,
+               traffic_rx_bytes AS trafficRxBytes, traffic_tx_bytes AS trafficTxBytes
+        FROM device_hourly_metrics
+        WHERE device_id = ? AND recorded_at >= ?
+          AND recorded_at < ?
+          AND recorded_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 366 DAY)
+        ORDER BY recorded_at ASC
+      `,
+      values: [deviceId, formatRecordedAt(Math.ceil(start / 1000) * 1000), formatRecordedAt(Math.ceil(end / 1000) * 1000)],
+      timeout: this.queryTimeoutMs
+    });
     return rows.map((row) => ({ timestamp: Number(row.timestamp), trafficRxBytes: Number(row.trafficRxBytes), trafficTxBytes: Number(row.trafficTxBytes) }));
   }
 
@@ -434,79 +314,47 @@ export class MysqlHistoryRepository implements HistoryRepository {
     anchorDate: string,
     selectedStart?: string
   ): Promise<TrafficCalendarResponse> {
-    const [minuteRows] = await this.pool.query<any[]>(
-      `
-        SELECT
-          UNIX_TIMESTAMP(recorded_at) * 1000 AS timestamp,
-          cpu_usage_percent AS cpuUsagePercent,
-          cpu_frequency_mhz AS cpuFrequencyMHz,
-          cpu_temperature_c AS cpuTemperatureC,
-          gpu_usage_percent AS gpuUsagePercent,
-          gpu_encode_percent AS gpuEncodePercent,
-          gpu_decode_percent AS gpuDecodePercent,
-          gpu_frequency_mhz AS gpuFrequencyMHz,
-          gpu_memory_usage_percent AS gpuMemoryUsagePercent,
-          gpu_temperature_c AS gpuTemperatureC,
-          memory_usage_percent AS memoryUsagePercent,
-          swap_usage_percent AS swapUsagePercent,
-          disk_usage_percent AS diskUsagePercent,
-          disk_read_bytes_per_sec AS diskReadBytesPerSec,
-          disk_write_bytes_per_sec AS diskWriteBytesPerSec,
-          network_rx_bytes_per_sec AS networkRxBytesPerSec,
-          network_tx_bytes_per_sec AS networkTxBytesPerSec,
-          traffic_rx_bytes AS trafficRxBytes,
-          traffic_tx_bytes AS trafficTxBytes,
-          disk_instances_json AS diskInstancesJson,
-          gpu_instances_json AS gpuInstancesJson,
-          recorded_details_json AS recordedDetailsJson
+    // buildTrafficCalendar only consumes counter timestamps. Never select
+    // hardware detail JSON here: 90 days of minute rows would otherwise move
+    // gigabytes per request on a remote database.
+    const [minuteRows] = await this.pool.query<RowDataPacket[]>({
+      sql: `
+        SELECT TIMESTAMPDIFF(SECOND, '1970-01-01 00:00:00', recorded_at) * 1000 AS timestamp,
+               traffic_rx_bytes AS trafficRxBytes,
+               traffic_tx_bytes AS trafficTxBytes
         FROM device_minute_metrics
         WHERE device_id = ?
           AND recorded_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)
         ORDER BY recorded_at ASC
       `,
-      [deviceId, MINUTE_RETENTION_DAYS]
-    );
+      values: [deviceId, MINUTE_RETENTION_DAYS],
+      timeout: this.queryTimeoutMs
+    });
 
-    const [hourlyRows] = await this.pool.query<any[]>(
-      `
-        SELECT
-          UNIX_TIMESTAMP(recorded_at) * 1000 AS timestamp,
-          cpu_usage_percent AS cpuUsagePercent,
-          cpu_frequency_mhz AS cpuFrequencyMHz,
-          cpu_temperature_c AS cpuTemperatureC,
-          gpu_usage_percent AS gpuUsagePercent,
-          gpu_encode_percent AS gpuEncodePercent,
-          gpu_decode_percent AS gpuDecodePercent,
-          gpu_frequency_mhz AS gpuFrequencyMHz,
-          gpu_memory_usage_percent AS gpuMemoryUsagePercent,
-          gpu_temperature_c AS gpuTemperatureC,
-          memory_usage_percent AS memoryUsagePercent,
-          swap_usage_percent AS swapUsagePercent,
-          disk_usage_percent AS diskUsagePercent,
-          disk_read_bytes_per_sec AS diskReadBytesPerSec,
-          disk_write_bytes_per_sec AS diskWriteBytesPerSec,
-          network_rx_bytes_per_sec AS networkRxBytesPerSec,
-          network_tx_bytes_per_sec AS networkTxBytesPerSec,
-          traffic_rx_bytes AS trafficRxBytes,
-          traffic_tx_bytes AS trafficTxBytes,
-          disk_instances_json AS diskInstancesJson,
-          gpu_instances_json AS gpuInstancesJson,
-          recorded_details_json AS recordedDetailsJson
+    const [hourlyRows] = await this.pool.query<RowDataPacket[]>({
+      sql: `
+        SELECT TIMESTAMPDIFF(SECOND, '1970-01-01 00:00:00', recorded_at) * 1000 AS timestamp,
+               traffic_rx_bytes AS trafficRxBytes,
+               traffic_tx_bytes AS trafficTxBytes
         FROM device_hourly_metrics
         WHERE device_id = ?
           AND recorded_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)
           AND recorded_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)
         ORDER BY recorded_at ASC
       `,
-      [deviceId, HOURLY_RETENTION_DAYS, MINUTE_RETENTION_DAYS]
-    );
+      values: [deviceId, HOURLY_RETENTION_DAYS, MINUTE_RETENTION_DAYS],
+      timeout: this.queryTimeoutMs
+    });
 
-    return buildTrafficCalendar(
-      [...hourlyRows.map(mapHistoryRow), ...minuteRows.map(mapHistoryRow)],
-      mode,
-      anchorDate,
-      selectedStart
-    );
+    const points: TrafficHistoryPoint[] = [...hourlyRows, ...minuteRows]
+      .map((row) => ({
+        timestamp: Number(row.timestamp),
+        trafficRxBytes: Number(row.trafficRxBytes),
+        trafficTxBytes: Number(row.trafficTxBytes)
+      }))
+      .sort((left, right) => left.timestamp - right.timestamp);
+
+    return buildTrafficCalendar(points, mode, anchorDate, selectedStart);
   }
 }
 

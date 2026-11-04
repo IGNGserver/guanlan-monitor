@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { RedisRealtimeRepository } from "./realtime.js";
 import type { DeviceRealtimeState } from "../types.js";
+import { createHubContractPayload } from "../hub-contract-fixtures.js";
+import { payloadToTimeSeries } from "../utils.js";
 
 function fixture(): DeviceRealtimeState {
   return {
@@ -151,4 +153,35 @@ test("listings hide legacy virtual machine states without hiding them from the s
   assert.deepEqual(Object.keys(stored), ["node-1"]);
   assert.ok(deletedKeys.includes("dsc:series:vm:05c91cad:5m"));
   assert.ok(!Object.keys(series).some((key) => key.includes("vm:")));
+});
+
+test("custom namespace prefixes raw series and read-model keys", async () => {
+  const evalArgs: string[][] = [];
+  const deletedKeys: string[][] = [];
+  const redis = {
+    async eval(_script: string, _numKeys: number, ...args: string[]) {
+      evalArgs.push(args);
+      return 1;
+    },
+    async del(...keys: string[]) {
+      deletedKeys.push(keys);
+      return keys.length;
+    }
+  };
+  const repo = new RedisRealtimeRepository(redis as never, "dsc:hub-a");
+  const point = payloadToTimeSeries(createHubContractPayload({ deviceId: "node-a" }));
+  await repo.appendSeries("node-a", "1m", point, 30);
+  assert.deepEqual(evalArgs[0].slice(0, 2), [
+    "dsc:hub-a:series:node-a:1m",
+    "dsc:hub-a:series-order-v2:node-a:1m"
+  ]);
+  await repo.clearSeries("node-a");
+  assert.deepEqual(deletedKeys[0], [
+    "dsc:hub-a:series:node-a:1m",
+    "dsc:hub-a:series:node-a:5m",
+    "dsc:hub-a:series:node-a:15m",
+    "dsc:hub-a:series-order-v2:node-a:1m",
+    "dsc:hub-a:series-order-v2:node-a:5m",
+    "dsc:hub-a:series-order-v2:node-a:15m"
+  ]);
 });

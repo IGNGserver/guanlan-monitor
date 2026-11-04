@@ -198,6 +198,8 @@ export interface HistoryRepository {
   ): Promise<TrafficCalendarResponse>;
   listKnownDevices(): Promise<Array<{ deviceId: string; lastSeenAt: string }>>;
   runRetentionCleanup?(): Promise<void>;
+  /** Drain buffered durable writes before shutting the pool down. */
+  flushWrites?(): Promise<void>;
 }
 
 /** Resolved legacy capacity fallbacks, without hardware detail/instance payloads. */

@@ -1,0 +1,51 @@
+# External database mode: no MySQL or Redis containers are created.
+# Use this file only when both MYSQL_URL and REDIS_URL point at servers you
+# manage. Each Hub instance must use its own MySQL database and a unique
+# DSC_INSTANCE_ID when the Redis server is shared with other hubs.
+name: device-state-console
+
+services:
+  server:
+    image: ${DSC_SERVER_IMAGE_REF:-${DSC_SERVER_IMAGE:-ghcr.io/igngserver/device-state-console-server}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}}
+    pull_policy: always
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DSC_DB_MODE: external
+      DSC_VERSION: ${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
+      DSC_RELEASE_CHANNEL: ${DSC_RELEASE_CHANNEL:-test}
+      DSC_INSTANCE_ID: ${DSC_INSTANCE_ID:?Set DSC_INSTANCE_ID to a unique value other than 'default'}
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 4000
+      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-true}"
+      AGENT_REQUIRE_HTTPS: "${AGENT_REQUIRE_HTTPS:-true}"
+      TRUST_PROXY: "true"
+      MYSQL_URL: ${MYSQL_URL:?Set MYSQL_URL to a mysql:// database URL}
+      REDIS_URL: ${REDIS_URL:?Set REDIS_URL to an authenticated redis:// or rediss:// URL}
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health/readiness').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  web:
+    image: ${DSC_WEB_IMAGE_REF:-${DSC_WEB_IMAGE:-ghcr.io/igngserver/device-state-console-web}:${DSC_VERSION:?Set DSC_VERSION to a release version or latest}}
+    pull_policy: always
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DSC_VERSION: ${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
+      DSC_RELEASE_CHANNEL: ${DSC_RELEASE_CHANNEL:-test}
+      SERVER_API_URL: http://server:4000
+      DSC_TRUSTED_TLS_PROXY_CIDRS: '${DSC_TRUSTED_TLS_PROXY_CIDRS:-}'
+    ports:
+      - "${WEB_PORT:-38472}:3000"
+    depends_on:
+      - server

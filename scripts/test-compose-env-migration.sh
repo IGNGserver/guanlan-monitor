@@ -209,4 +209,38 @@ PY
 
 bash "$root/scripts/test-production-image-staging.sh"
 
+external_env="$test_root/external.env"
+printf '%s\n' \
+  'SESSION_SECRET=external-session-secret-for-compose-migration-test-1234567890' \
+  'ACCESS_KEY=externalabc123' \
+  'DSC_DB_MODE=external' \
+  'DSC_INSTANCE_ID=hub-home' \
+  'MYSQL_URL=mysql://guanlan:ExternalDbSecret_123456@db.example.internal:3306/guanlan_home' \
+  'REDIS_URL=rediss://:ExternalRedisSecret_123456@redis.example.internal:6379/3' \
+  'SESSION_COOKIE_SECURE=true' \
+  'AGENT_REQUIRE_HTTPS=true' \
+  'TRUST_PROXY=false' \
+  > "$external_env"
+
+DSC_RELEASE_CHANNEL=stable bash "$root/scripts/prepare-compose-env.sh" "$external_env"
+grep -Fxq 'DSC_DB_MODE=external' "$external_env"
+grep -Fxq 'MYSQL_URL=mysql://guanlan:ExternalDbSecret_123456@db.example.internal:3306/guanlan_home' "$external_env"
+grep -Fxq 'REDIS_URL=rediss://:ExternalRedisSecret_123456@redis.example.internal:6379/3' "$external_env"
+grep -Fxq 'TRUST_PROXY=true' "$external_env"
+! grep -q '^MYSQL_ROOT_PASSWORD=' "$external_env"
+
+missing_external_env="$test_root/missing-external.env"
+printf '%s\n' \
+  'SESSION_SECRET=external-session-secret-for-compose-migration-test-1234567890' \
+  'ACCESS_KEY=externalabc123' \
+  'DSC_DB_MODE=external' \
+  'MYSQL_URL=mysql://guanlan:ExternalDbSecret_123456@db.example.internal:3306/guanlan_home' \
+  > "$missing_external_env"
+cp "$missing_external_env" "$missing_external_env.before"
+if DSC_RELEASE_CHANNEL=stable bash "$root/scripts/prepare-compose-env.sh" "$missing_external_env" >/dev/null 2>&1; then
+  echo "External mode without REDIS_URL unexpectedly passed." >&2
+  exit 1
+fi
+cmp "$missing_external_env.before" "$missing_external_env"
+
 echo "Compose environment migration tests: PASS"

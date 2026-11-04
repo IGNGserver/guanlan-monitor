@@ -4,7 +4,7 @@ import cookie from "@fastify/cookie";
 import { Server as SocketIOServer } from "socket.io";
 import Redis from "ioredis";
 import mysql from "mysql2/promise";
-import { env } from "./config.js";
+import { env, redisNamespace } from "./config.js";
 import { authRateLimiter, getBearerToken, parseSessionValue, safeEqual } from "./auth.js";
 import { nonOverlappingTask, scheduleSessionExpiry } from "./lifecycle.js";
 import { QueueCapacityError } from "./serial-queue.js";
@@ -12,6 +12,10 @@ import { agentMetricsPayloadSchema } from "./metrics-schema.js";
 import { RedisRealtimeRepository } from "./repositories/realtime.js";
 import { MysqlHistoryRepository } from "./repositories/history.js";
 import { MysqlDeviceRepository } from "./repositories/devices.js";
+import { CachedHistoryRepository } from "./repositories/cached-history.js";
+import { createMysqlPool, assertMysqlServerCompatibility } from "./storage/mysql.js";
+import { MysqlStoreMetadata } from "./storage/store-metadata.js";
+import { RedisReadCache } from "./storage/redis-read-cache.js";
 import {
   createLocalStore,
   LocalDeviceMetricConfigStore,
@@ -76,6 +80,8 @@ if (env.REDIS_URL) {
   redisClient = new Redis(env.REDIS_URL, {
     maxRetriesPerRequest: 3,
     enableReadyCheck: false,
+    connectTimeout: env.REDIS_CONNECT_TIMEOUT_MS,
+    commandTimeout: env.REDIS_COMMAND_TIMEOUT_MS,
     retryStrategy(times) {
       return Math.min(times * 1000, 10000);
     }
@@ -85,7 +91,7 @@ if (env.REDIS_URL) {
   });
 }
 const realtime = redisClient
-  ? new RedisRealtimeRepository(redisClient)
+  ? new RedisRealtimeRepository(redisClient, redisNamespace)
   : new LocalRealtimeRepository(store);
 if (realtime instanceof RedisRealtimeRepository) {
   await realtime.initializeReadModels();
@@ -93,30 +99,67 @@ if (realtime instanceof RedisRealtimeRepository) {
 }
 
 let mysqlPool: mysql.Pool | null = null;
+let storeMetadata: MysqlStoreMetadata | undefined;
 if (env.MYSQL_URL) {
-  const pool = mysql.createPool({
-    uri: env.MYSQL_URL,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 128,
-    enableKeepAlive: true,
-    keepAliveInitialDelay: 10000
+  const mysqlDatabaseName = decodeURIComponent(new URL(env.MYSQL_URL).pathname.slice(1));
+  const pool = createMysqlPool(env.MYSQL_URL, {
+    connectionLimit: env.MYSQL_POOL_SIZE,
+    queueLimit: env.MYSQL_QUEUE_LIMIT,
+    connectTimeoutMs: env.MYSQL_CONNECT_TIMEOUT_MS,
+    idleTimeoutMs: env.MYSQL_IDLE_TIMEOUT_MS
   });
   mysqlPool = pool;
   pool.pool.on("error", (err: unknown) => {
     app.log.error({ err }, "MySQL pool error");
   });
-  const history = new MysqlHistoryRepository(pool);
-  const devicesRepo = new MysqlDeviceRepository(pool);
-  await history.init();
-  await devicesRepo.init();
-  // 小组件机制随 v3.0.104 移除：两张布局表已无读写方，线上数据在发布前已导出
-  // 备份，这里沿用 virtual_machines 的先例做幂等删除。
-  await pool.query("DROP TABLE IF EXISTS widget_layout_instances");
-  await pool.query("DROP TABLE IF EXISTS widget_layout_templates");
+  const history = new MysqlHistoryRepository(pool, {
+    queryTimeoutMs: env.MYSQL_QUERY_TIMEOUT_MS
+  });
+  const devicesRepo = new MysqlDeviceRepository(pool, {
+    listCacheTtlMs: env.DSC_DEVICE_CACHE_TTL_MS
+  });
+  // External databases may not be ready when the container starts. Retry the
+  // idempotent setup instead of crashing into a Docker restart backoff loop.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await assertMysqlServerCompatibility(pool);
+      storeMetadata ??= new MysqlStoreMetadata(pool, env.DSC_INSTANCE_ID, {
+        writerLock: env.DSC_DB_WRITER_LOCK || env.DSC_DB_MODE === "external",
+        databaseName: mysqlDatabaseName,
+        connect: () => mysql.createConnection({ uri: env.MYSQL_URL, connectTimeout: env.MYSQL_CONNECT_TIMEOUT_MS })
+      });
+      await storeMetadata.initialize();
+      await storeMetadata.acquireWriterLock();
+      await history.init();
+      await devicesRepo.init();
+      break;
+    } catch (error) {
+      if (attempt >= 5) throw error;
+      const delay = Math.min(1_000 * 2 ** (attempt - 1), 8_000);
+      app.log.warn({ error, attempt, delay }, "MySQL initialization failed; retrying");
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  const sharedCache = redisClient && env.DSC_REDIS_CACHE_ENABLED
+    ? new RedisReadCache(redisClient, redisNamespace)
+    : undefined;
+  const cachedHistory = new CachedHistoryRepository(history, {
+    ttlMs: env.DSC_HISTORY_CACHE_TTL_MS,
+    calendarTtlMs: env.DSC_CALENDAR_CACHE_TTL_MS,
+    maxEntries: env.DSC_CACHE_MAX_ENTRIES,
+    maxBytes: env.DSC_CACHE_MAX_BYTES,
+    shared: sharedCache,
+    onError: (error) => app.log.warn({ error }, "shared read cache unavailable; using MySQL")
+  });
+  legacyCleanupSteps.push(() => removeRetiredTables(pool, app.log));
   legacyCleanupSteps.push(() => removeLegacyVirtualMachineData(pool, app.log));
-  repositories = { realtime, history, devices: devicesRepo };
-  app.log.info(env.REDIS_URL ? "using redis + mysql repositories" : "using local realtime + mysql history repositories");
+  repositories = { realtime, history: cachedHistory, devices: devicesRepo };
+  app.log.info({
+    dbMode: env.DSC_DB_MODE,
+    instanceId: env.DSC_INSTANCE_ID,
+    redisNamespace,
+    cache: { l1: env.DSC_HISTORY_CACHE_TTL_MS > 0, l2: Boolean(sharedCache) }
+  }, env.REDIS_URL ? "using redis + mysql repositories" : "using local realtime + mysql history repositories");
 } else {
   const localHistory = new LocalHistoryRepository(store);
   repositories = {
@@ -133,6 +176,21 @@ if (env.MYSQL_URL) {
 
 const LEGACY_CLEANUP_CHUNK_ROWS = 2_000;
 const LEGACY_CLEANUP_ID_SPAN = 20_000;
+const RETIRED_TABLES = ["widget_layout_instances", "widget_layout_templates"];
+
+async function removeRetiredTables(pool: mysql.Pool, log: FastifyBaseLogger) {
+  const [rows] = await pool.query<any[]>(
+    `SELECT TABLE_NAME AS tableName FROM INFORMATION_SCHEMA.TABLES
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?, ?)`,
+    RETIRED_TABLES
+  );
+  for (const row of rows) {
+    const table = String(row.tableName);
+    if (!RETIRED_TABLES.includes(table)) continue;
+    await pool.query(`DROP TABLE IF EXISTS ${table}`);
+    log.info({ table }, "removed retired hub table");
+  }
+}
 
 async function removeLegacyVirtualMachineData(pool: mysql.Pool, log: FastifyBaseLogger) {
   await pool.query("DROP TABLE IF EXISTS virtual_machines");
@@ -311,7 +369,9 @@ const shutdown = async (signal: string) => {
     app.log.error({ error }, "aggregate flush failed during shutdown");
   }
   await runRetentionCleanup.drain().catch((error) => app.log.error({ error }, "retention shutdown failed"));
-  if (mysqlPool) {
+  if (mysqlPool && repositories) {
+    await repositories.history.flushWrites?.().catch((error) => app.log.error({ error }, "history write flush failed"));
+    await storeMetadata?.releaseWriterLock().catch((error) => app.log.error({ error }, "writer lock release failed"));
     await mysqlPool.end().catch((error) => app.log.error({ error }, "mysql shutdown failed"));
   }
   redisClient?.disconnect();

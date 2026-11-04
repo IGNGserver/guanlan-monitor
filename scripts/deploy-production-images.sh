@@ -290,7 +290,7 @@ sync_definition() {
 
 deploy_images() {
   local server_container web_container actual_server_id actual_web_id actual_server_ref actual_web_ref
-  local infra_healthy healthy attempt legacy_mysql_url
+  local infra_healthy healthy attempt legacy_mysql_url db_mode
 
   read_state || die "Production configuration was not prepared."
   [[ "$STATE_STATUS" == prepared ]] || die "Production configuration is not ready for deployment."
@@ -310,25 +310,29 @@ deploy_images() {
     legacy_mysql_url="${legacy_mysql_url/@localhost:/@mysql:}"
     export MYSQL_URL="$legacy_mysql_url"
   fi
+  db_mode="$(awk -F= '$1 == "DSC_DB_MODE" { print substr($0, index($0, "=") + 1); exit }' "$DEPLOY_PATH/.env")"
+  [[ "$db_mode" == "external" ]] || db_mode=bundled
 
   write_state started "$STATE_CONFIG_CHANGED" 1
-  if ! timeout 180 docker compose -f "$DEPLOY_PATH/docker-compose.yml" -p device-state-console \
-    up -d --no-build --pull never redis mysql; then
-    die "Redis/MySQL did not start using the existing pinned local images."
-  fi
-
-  infra_healthy=0
-  for attempt in $(seq 1 30); do
-    if docker compose -f "$DEPLOY_PATH/docker-compose.yml" -p device-state-console exec -T redis \
-      sh -c 'redis-cli --no-auth-warning -a "$REDIS_PASSWORD" ping | grep -q PONG' \
-      && docker compose -f "$DEPLOY_PATH/docker-compose.yml" -p device-state-console exec -T mysql \
-        sh -c 'mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD" --silent'; then
-      infra_healthy=1
-      break
+  if [[ "$db_mode" == "bundled" ]]; then
+    if ! timeout 180 docker compose -f "$DEPLOY_PATH/docker-compose.yml" -p device-state-console \
+      up -d --no-build --pull never redis mysql; then
+      die "Redis/MySQL did not start using the existing pinned local images."
     fi
-    sleep 5
-  done
-  [[ "$infra_healthy" -eq 1 ]] || die "Redis/MySQL readiness check failed."
+
+    infra_healthy=0
+    for attempt in $(seq 1 30); do
+      if docker compose -f "$DEPLOY_PATH/docker-compose.yml" -p device-state-console exec -T redis \
+        sh -c 'redis-cli --no-auth-warning -a "$REDIS_PASSWORD" ping | grep -q PONG' \
+        && docker compose -f "$DEPLOY_PATH/docker-compose.yml" -p device-state-console exec -T mysql \
+          sh -c 'mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD" --silent'; then
+        infra_healthy=1
+        break
+      fi
+      sleep 5
+    done
+    [[ "$infra_healthy" -eq 1 ]] || die "Redis/MySQL readiness check failed."
+  fi
 
   if ! timeout 180 docker compose -f "$DEPLOY_PATH/docker-compose.yml" -p device-state-console \
     up -d --no-build --pull never --no-deps server web; then

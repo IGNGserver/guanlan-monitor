@@ -396,3 +396,26 @@ Builds/benchmarks ran only in GitHub Actions. This public repository consumes
 **0 private monthly Actions minutes**. Local APFS scratch remains 1.8GiB plus
 4.1MiB independent prototype fixtures (shared Go cache retained); `df` showed
 101GiB available. No other worktrees or caches were deleted.
+
+## External database and read cache
+
+The Hub can now run against operator-managed MySQL and Redis servers instead
+of the bundled Compose services. `MYSQL_URL` and `REDIS_URL` are first-class
+configuration; `docker-compose.external.yml` starts only `server` and `web`.
+Each Hub still requires its own MySQL database. `hub_meta` records the
+`DSC_INSTANCE_ID` and refuses a database owned by another instance. A non-default
+instance id prefixes every Redis key with `dsc:<instance-id>`.
+
+The traffic-calendar read path now selects only counter columns; it no longer
+transfers 90 days of hardware-detail JSON. History reads are bounded by
+`MYSQL_QUERY_TIMEOUT_MS`, and dirty minute/hour buckets are coalesced into
+multi-row UPSERTs by `MysqlHistoryWriteBatcher`. A bounded in-process TTL cache
+(`DSC_HISTORY_CACHE_TTL_MS`, `DSC_CALENDAR_CACHE_TTL_MS`) wraps history reads;
+writes increment a per-device epoch. `DSC_REDIS_CACHE_ENABLED=true` adds an
+optional shared L2 cache with the same namespace isolation, but the L1 cache
+and MySQL remain the fallback when Redis is degraded.
+
+These changes preserve the single-writer assumption. External mode holds a
+MySQL advisory lock and records the instance id in `hub_meta`; it is still not
+leader election. Do not run two Hub processes against one database or one Redis
+namespace.

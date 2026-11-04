@@ -5,9 +5,6 @@ import { isLegacyVirtualMachineId } from "../legacy-devices.js";
 import type { DeviceRealtimeState, RealtimeRepository, TimeSeriesRecord } from "../types.js";
 import { RedisRealtimeReadModels } from "./realtime-read-models.js";
 
-const DEVICE_KEY = "dsc:device";
-const SERIES_KEY = "dsc:series";
-const SERIES_ORDER_KEY = "dsc:series-order-v2";
 
 const MAX_SERIES_POINTS = 1_000_000;
 // Keep the original JSON bytes: cjson.encode would turn nested empty arrays into {}.
@@ -73,8 +70,15 @@ const APPEND_SERIES_SCRIPT = `
 
 export class RedisRealtimeRepository implements RealtimeRepository {
   private readonly models: RedisRealtimeReadModels;
-  constructor(private readonly redis: Redis) {
-    this.models = new RedisRealtimeReadModels(redis);
+  private readonly deviceKey: string;
+  private readonly seriesKey: string;
+  private readonly seriesOrderKey: string;
+
+  constructor(private readonly redis: Redis, namespace = "dsc") {
+    this.models = new RedisRealtimeReadModels(redis, namespace);
+    this.deviceKey = `${namespace}:device`;
+    this.seriesKey = `${namespace}:series`;
+    this.seriesOrderKey = `${namespace}:series-order-v2`;
   }
 
   initializeReadModels() { return this.models.initialize(); }
@@ -95,7 +99,7 @@ export class RedisRealtimeRepository implements RealtimeRepository {
   }
 
   async getDevice(deviceId: string) {
-    const raw = await this.redis.hget(DEVICE_KEY, deviceId);
+    const raw = await this.redis.hget(this.deviceKey, deviceId);
     return raw ? (normalizeRealtimeState(JSON.parse(raw) as DeviceRealtimeState)) : null;
   }
 
@@ -105,7 +109,7 @@ export class RedisRealtimeRepository implements RealtimeRepository {
    * The sweep below has to see those to delete them, so it cannot go through `listDevices()`.
    */
   private async listAllDevices(): Promise<DeviceRealtimeState[]> {
-    const raw = await this.redis.hvals(DEVICE_KEY);
+    const raw = await this.redis.hvals(this.deviceKey);
     return raw.map((item) => normalizeRealtimeState(JSON.parse(item) as DeviceRealtimeState));
   }
 
@@ -136,10 +140,10 @@ export class RedisRealtimeRepository implements RealtimeRepository {
 
     let cursor = "0";
     do {
-      const [nextCursor, keys] = await this.redis.scan(cursor, "MATCH", `${SERIES_KEY}:*`, "COUNT", "250");
+      const [nextCursor, keys] = await this.redis.scan(cursor, "MATCH", `${this.seriesKey}:*`, "COUNT", "250");
       cursor = nextCursor;
       for (const key of keys) {
-        if (key.startsWith(`${SERIES_KEY}:vm:`)) {
+        if (key.startsWith(`${this.seriesKey}:vm:`)) {
           await this.redis.del(key);
           continue;
         }
@@ -186,22 +190,22 @@ export class RedisRealtimeRepository implements RealtimeRepository {
     if (!Number.isFinite(point.timestamp)) {
       throw new RangeError("point.timestamp must be finite");
     }
-    const key = `${SERIES_KEY}:${deviceId}:${bucket}`;
-    const orderKey = `${SERIES_ORDER_KEY}:${deviceId}:${bucket}`;
+    const key = `${this.seriesKey}:${deviceId}:${bucket}`;
+    const orderKey = `${this.seriesOrderKey}:${deviceId}:${bucket}`;
     const pointJson = JSON.stringify(point);
     await this.redis.eval(APPEND_SERIES_SCRIPT, 2, key, orderKey, point.timestamp, pointJson, maxPoints);
   }
 
   async readSeries(deviceId: string, bucket: MetricWindow) {
-    const key = `${SERIES_KEY}:${deviceId}:${bucket}`;
+    const key = `${this.seriesKey}:${deviceId}:${bucket}`;
     const raw = await this.redis.lrange(key, 0, -1);
     return raw.map((item) => JSON.parse(item) as TimeSeriesRecord);
   }
 
   async clearSeries(deviceId: string) {
     await this.redis.del(
-      `${SERIES_KEY}:${deviceId}:1m`, `${SERIES_KEY}:${deviceId}:5m`, `${SERIES_KEY}:${deviceId}:15m`,
-      `${SERIES_ORDER_KEY}:${deviceId}:1m`, `${SERIES_ORDER_KEY}:${deviceId}:5m`, `${SERIES_ORDER_KEY}:${deviceId}:15m`
+      `${this.seriesKey}:${deviceId}:1m`, `${this.seriesKey}:${deviceId}:5m`, `${this.seriesKey}:${deviceId}:15m`,
+      `${this.seriesOrderKey}:${deviceId}:1m`, `${this.seriesOrderKey}:${deviceId}:5m`, `${this.seriesOrderKey}:${deviceId}:15m`
     );
   }
 }

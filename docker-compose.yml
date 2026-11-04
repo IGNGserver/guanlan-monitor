@@ -4,9 +4,9 @@ services:
   redis:
     image: ${DSC_REDIS_IMAGE_REF:-redis:7.4-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf}
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-}"]
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     volumes:
       - redis-data:/data
     healthcheck:
@@ -20,10 +20,10 @@ services:
     restart: unless-stopped
     command: ["mysqld", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:?Set MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-}
+      MYSQL_USER: ${MYSQL_USER:-}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-}
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
@@ -42,6 +42,8 @@ services:
       NODE_ENV: production
       DSC_VERSION: ${DSC_VERSION:?Set DSC_VERSION to a release version or latest}
       DSC_RELEASE_CHANNEL: ${DSC_RELEASE_CHANNEL:-test}
+      DSC_DB_MODE: ${DSC_DB_MODE:-bundled}
+      DSC_INSTANCE_ID: ${DSC_INSTANCE_ID:-default}
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 4000
       SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-true}"

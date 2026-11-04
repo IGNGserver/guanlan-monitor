@@ -62,7 +62,10 @@ export class MetricsService {
     sortOrder?: number,
     group?: string | null
   ) {
-    const previousState = await this.repositories.realtime.getDevice(payload.identity.deviceId);
+    const [previousState, config] = await Promise.all([
+      this.repositories.realtime.getDevice(payload.identity.deviceId),
+      this.getMetricConfig(payload.identity.deviceId)
+    ]);
     // An offline agent may replay an older pending sample after a newer one
     // already reached the Hub. Never let it replace the live reading or roll
     // the active aggregation window backwards.
@@ -82,10 +85,13 @@ export class MetricsService {
       latest: payload
     };
 
-    const config = await this.getMetricConfig(payload.identity.deviceId);
     const point = payloadToTimeSeries(payload, config);
-    await this.repositories.realtime.appendSeries(payload.identity.deviceId, "1m", point, 30);
-    await this.repositories.realtime.appendSeries(payload.identity.deviceId, "5m", point, 150);
+    // The two raw windows are independent; ioredis pipelines commands issued
+    // in the same turn, so concurrent appends save one network round trip.
+    await Promise.all([
+      this.repositories.realtime.appendSeries(payload.identity.deviceId, "1m", point, 30),
+      this.repositories.realtime.appendSeries(payload.identity.deviceId, "5m", point, 150)
+    ]);
     await this.addMinuteAggregate(payload.identity.deviceId, point);
     await this.addHourlyAggregate(payload.identity.deviceId, point);
     // Publish the accepted timestamp only after all required stages succeed.

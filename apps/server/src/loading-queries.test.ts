@@ -248,14 +248,15 @@ test("calendar bounds retain every visible cell across leap days, year edges and
 
 test("MySQL calendar reads only counters with bound range parameters", async () => {
   const calls: Array<{ sql: string; params: unknown }> = [];
-  const pool = { query: async (sql: string, params: unknown) => {
-    calls.push({ sql, params });
+  const pool = { query: async (query: string | { sql: string; values?: unknown[] }, params?: unknown) => {
+    const sql = typeof query === "string" ? query : query.sql;
+    calls.push({ sql, params: typeof query === "string" ? params : query.values });
     return [[{ timestamp: "1000", trafficRxBytes: "20", trafficTxBytes: "30" }]];
   } } as unknown as mysql.Pool;
   const history = new MysqlHistoryRepository(pool);
   assert.deepEqual(await history.getTrafficSeries("node", 1000, 2000), [{ timestamp: 1000, trafficRxBytes: 20, trafficTxBytes: 30 }]);
-  assert.deepEqual(calls[0].params, ["node", 1000, 2000]);
-  assert.match(calls[0].sql, /recorded_at < FROM_UNIXTIME/);
+  assert.deepEqual(calls[0].params, ["node", "1970-01-01 00:00:01", "1970-01-01 00:00:02"]);
+  assert.match(calls[0].sql, /recorded_at < \?/);
   assert.doesNotMatch(calls[0].sql, /json|cpu_|memory_|SELECT\s+\*/i);
   await history.listKnownDevices();
   assert.equal((calls[1].sql.match(/GROUP BY device_id/g) ?? []).length, 3);
@@ -286,7 +287,9 @@ test("calendar service uses projection and preserves current hour/minute counter
 
 test("MySQL overview selects only numeric fields and JSON paths with the original table/range for every window", async () => {
   const calls: Array<{ sql: string; params: unknown }> = [];
-  const pool = { query: async (sql: string, params: unknown) => {
+  const pool = { query: async (query: string | { sql: string; values?: unknown[] }) => {
+    const sql = typeof query === "string" ? query : query.sql;
+    const params = typeof query === "string" ? undefined : query.values;
     calls.push({ sql, params });
     return [[{ timestamp: "1000", cpuUsagePercent: "0", networkRxBytesPerSec: "12", networkTxBytesPerSec: "0",
       memoryUsedJson: "1024", diskUsedValuesJson: "[0,7,null,11]",

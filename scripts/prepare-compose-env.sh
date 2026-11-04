@@ -103,11 +103,51 @@ set_env() {
   mv "$working_file.next" "$working_file"
 }
 
+db_mode="$(unquote "$(read_env DSC_DB_MODE)")"
+if [[ -z "$db_mode" ]]; then
+  db_mode=bundled
+fi
+if [[ "$db_mode" != "bundled" && "$db_mode" != "external" ]]; then
+  echo "DSC_DB_MODE must be bundled or external." >&2
+  exit 1
+fi
+
+validate_external_urls() {
+  local mysql_url redis_url
+  mysql_url="$(unquote "$(read_env MYSQL_URL)")"
+  redis_url="$(unquote "$(read_env REDIS_URL)")"
+  if [[ -z "$mysql_url" || -z "$redis_url" ]]; then
+    echo "DSC_DB_MODE=external requires MYSQL_URL and REDIS_URL." >&2
+    exit 1
+  fi
+  command -v python3 >/dev/null 2>&1 || {
+    echo "python3 is required to validate external MYSQL_URL and REDIS_URL." >&2
+    exit 1
+  }
+  MYSQL_URL="$mysql_url" REDIS_URL="$redis_url" python3 - <<'PY'
+from urllib.parse import urlsplit
+import os
+
+mysql = urlsplit(os.environ["MYSQL_URL"])
+if mysql.scheme != "mysql" or not mysql.hostname or not mysql.username or not mysql.password or not mysql.path.lstrip("/"):
+    raise SystemExit("MYSQL_URL must be a mysql:// URL with user, password, host and database")
+for key in ("multipleStatements", "isServer", "stream", "infileStreamFactory", "localAddress"):
+    if key in mysql.query:
+        raise SystemExit(f"MYSQL_URL must not set {key}")
+redis = urlsplit(os.environ["REDIS_URL"])
+if redis.scheme not in ("redis", "rediss") or not redis.hostname:
+    raise SystemExit("REDIS_URL must use redis:// or rediss:// and include a host")
+if not redis.password:
+    raise SystemExit("REDIS_URL must include an authentication password")
+PY
+}
+
 legacy_mysql_root_recovered=false
 recovered_mysql_password=""
 
 recover_existing_mysql_values() {
   [[ "${DSC_RECOVER_EXISTING_MYSQL:-false}" == "true" ]] || return 0
+  [[ "$db_mode" == "bundled" ]] || return 0
 
   command -v docker >/dev/null 2>&1 || {
     echo "docker is required to recover the existing MySQL Compose credentials." >&2
@@ -256,43 +296,54 @@ fi
 # An existing initialized volume may retain a legacy root marker. It is
 # tolerated only when this migration recovered that exact live credential;
 # the migration still refuses unrelated weak credentials.
-mysql_root_password="$(require_strong_secret MYSQL_ROOT_PASSWORD "$mysql_root_password_minimum" "$legacy_mysql_root_recovered")"
-if [[ -n "$recovered_mysql_password" ]]; then
-  if is_weak_secret "$recovered_mysql_password" "$mysql_password_minimum"; then
-    echo "Existing MYSQL_URL password must be a non-placeholder secret with at least $mysql_password_minimum characters." >&2
+mysql_root_password=""
+redis_password=""
+if [[ "$db_mode" == "bundled" ]]; then
+  mysql_root_password="$(require_strong_secret MYSQL_ROOT_PASSWORD "$mysql_root_password_minimum" "$legacy_mysql_root_recovered")"
+  if [[ -n "$recovered_mysql_password" ]]; then
+    if is_weak_secret "$recovered_mysql_password" "$mysql_password_minimum"; then
+      echo "Existing MYSQL_URL password must be a non-placeholder secret with at least $mysql_password_minimum characters." >&2
+      exit 1
+    fi
+    mysql_password="$recovered_mysql_password"
+  else
+    mysql_password="$(require_strong_secret MYSQL_PASSWORD "$mysql_password_minimum")"
+  fi
+  mysql_database="$(unquote "$(read_env MYSQL_DATABASE)")"
+  mysql_user="$(unquote "$(read_env MYSQL_USER)")"
+
+  if [[ ! "$mysql_database" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+    echo "MYSQL_DATABASE must be present and contain only letters, digits, dot, underscore, or hyphen." >&2
     exit 1
   fi
-  mysql_password="$recovered_mysql_password"
-else
-  mysql_password="$(require_strong_secret MYSQL_PASSWORD "$mysql_password_minimum")"
-fi
-mysql_database="$(unquote "$(read_env MYSQL_DATABASE)")"
-mysql_user="$(unquote "$(read_env MYSQL_USER)")"
-
-if [[ ! "$mysql_database" =~ ^[A-Za-z0-9_.-]+$ ]]; then
-  echo "MYSQL_DATABASE must be present and contain only letters, digits, dot, underscore, or hyphen." >&2
-  exit 1
-fi
-if [[ ! "$mysql_user" =~ ^[A-Za-z0-9_.-]+$ ]]; then
-  echo "MYSQL_USER must be present and contain only letters, digits, dot, underscore, or hyphen." >&2
-  exit 1
-fi
-
-redis_password="$(unquote "$(read_env REDIS_PASSWORD)")"
-if is_weak_secret "$redis_password" 16; then
-  command -v openssl >/dev/null 2>&1 || {
-    echo "openssl is required to generate REDIS_PASSWORD safely." >&2
+  if [[ ! "$mysql_user" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+    echo "MYSQL_USER must be present and contain only letters, digits, dot, underscore, or hyphen." >&2
     exit 1
-  }
-  redis_password="$(openssl rand -hex 32)"
-fi
-if [[ ! "$redis_password" =~ ^[A-Za-z0-9.~_-]+$ ]]; then
-  echo "Existing REDIS_PASSWORD contains characters that cannot be rewritten safely; replace it with a URL-safe secret and retry." >&2
-  exit 1
+  fi
+
+  redis_password="$(unquote "$(read_env REDIS_PASSWORD)")"
+  if is_weak_secret "$redis_password" 16; then
+    command -v openssl >/dev/null 2>&1 || {
+      echo "openssl is required to generate REDIS_PASSWORD safely." >&2
+      exit 1
+    }
+    redis_password="$(openssl rand -hex 32)"
+  fi
+  if [[ ! "$redis_password" =~ ^[A-Za-z0-9.~_-]+$ ]]; then
+    echo "Existing REDIS_PASSWORD contains characters that cannot be rewritten safely; replace it with a URL-safe secret and retry." >&2
+    exit 1
+  fi
+else
+  validate_external_urls
+  instance_id="$(unquote "$(read_env DSC_INSTANCE_ID)")"
+  if [[ -z "$instance_id" || "$instance_id" == "default" ]]; then
+    echo "DSC_DB_MODE=external requires a unique DSC_INSTANCE_ID other than 'default'." >&2
+    exit 1
+  fi
 fi
 
 # Keep these reads so shellcheck and reviewers can see all validated, non-rotatable values.
-[[ -n "$session_secret" && -n "$access_key" && -n "$mysql_root_password" ]]
+[[ -n "$session_secret" && -n "$access_key" ]]
 
 backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 backup_file="$env_file.pre-compose-security.$backup_stamp"
@@ -303,14 +354,21 @@ while [[ -e "$backup_file" ]]; do
 done
 cp -p "$env_file" "$backup_file"
 
-set_env REDIS_PASSWORD "$redis_password"
-set_env REDIS_URL "redis://:$(url_encode "$redis_password")@redis:6379"
-set_env MYSQL_URL "mysql://$(url_encode "$mysql_user"):$(url_encode "$mysql_password")@mysql:3306/$(url_encode "$mysql_database")"
+if [[ "$db_mode" == "bundled" ]]; then
+  set_env REDIS_PASSWORD "$redis_password"
+  set_env REDIS_URL "redis://:$(url_encode "$redis_password")@redis:6379"
+  set_env MYSQL_URL "mysql://$(url_encode "$mysql_user"):$(url_encode "$mysql_password")@mysql:3306/$(url_encode "$mysql_database")"
+  updated_keys="REDIS_PASSWORD REDIS_URL MYSQL_URL DSC_DB_MODE SESSION_COOKIE_SECURE AGENT_REQUIRE_HTTPS TRUST_PROXY"
+else
+  # Preserve the operator-provided URLs exactly; do not rewrite them to the
+  # bundled Compose hostnames.
+  updated_keys="DSC_DB_MODE SESSION_COOKIE_SECURE AGENT_REQUIRE_HTTPS TRUST_PROXY"
+fi
+set_env DSC_DB_MODE "$db_mode"
 set_env SESSION_COOKIE_SECURE "$session_cookie_secure"
 set_env AGENT_REQUIRE_HTTPS "$agent_require_https"
 set_env TRUST_PROXY true
 
-updated_keys="REDIS_PASSWORD REDIS_URL MYSQL_URL SESSION_COOKIE_SECURE AGENT_REQUIRE_HTTPS TRUST_PROXY"
 if [[ -n "$image_version" ]]; then
   set_env DSC_VERSION "$image_version"
   updated_keys="$updated_keys DSC_VERSION"
