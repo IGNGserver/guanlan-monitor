@@ -6,6 +6,7 @@ permissions:
 on:
   pull_request:
     paths: ['apps/server/**', 'packages/shared/**', 'pnpm-lock.yaml', '.github/workflows/server-query-regression.yml']
+  workflow_dispatch:
 
 concurrency:
   group: server-query-${{ github.event.pull_request.number || github.ref }}
