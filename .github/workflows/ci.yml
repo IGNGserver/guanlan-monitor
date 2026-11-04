@@ -298,7 +298,8 @@ jobs:
 
   web-visual:
     name: Web visual regression smoke
-    runs-on: ubuntu-latest
+    # Playwright 1.55 ships browsers for 24.04, not the 26.04 ubuntu-latest image.
+    runs-on: ubuntu-24.04
     needs: verify
 
     steps:
