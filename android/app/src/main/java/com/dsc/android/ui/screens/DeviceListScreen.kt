@@ -71,6 +71,7 @@ import com.dsc.android.ui.oneui.OneUiActionSheet
 import com.dsc.android.ui.oneui.OneUiButton
 import com.dsc.android.ui.oneui.OneUiButtonSize
 import com.dsc.android.ui.oneui.OneUiButtonVariant
+import com.dsc.android.ui.oneui.OneUiCheckbox
 import com.dsc.android.ui.oneui.OneUiDialog
 import com.dsc.android.ui.oneui.OneUiEmptyState
 import com.dsc.android.ui.oneui.OneUiFilterChip
@@ -82,6 +83,7 @@ import com.dsc.android.ui.oneui.OneUiIconButton
 import com.dsc.android.ui.oneui.OneUiIconTone
 import com.dsc.android.ui.oneui.OneUiLeadingIcon
 import com.dsc.android.ui.oneui.OneUiLinearProgress
+import com.dsc.android.ui.oneui.OneUiListDivider
 import com.dsc.android.ui.oneui.OneUiListItem
 import com.dsc.android.ui.oneui.OneUiNotice
 import com.dsc.android.ui.oneui.OneUiNoticeTone
@@ -155,6 +157,8 @@ fun DeviceListScreen(
   var pendingDelete by remember { mutableStateOf<DeviceSummaryDto?>(null) }
   var actionTarget by remember { mutableStateOf<DeviceSummaryDto?>(null) }
   var groupEditTarget by remember { mutableStateOf<DeviceSummaryDto?>(null) }
+  var batchGroupInitial by remember { mutableStateOf<String?>(null) }
+  var batchGroupOpen by remember { mutableStateOf(false) }
   var groupActionTarget by remember { mutableStateOf<DeviceGroupSectionModel?>(null) }
   var groupRenameTarget by remember { mutableStateOf<DeviceGroupSectionModel?>(null) }
   var groupDissolveTarget by remember { mutableStateOf<DeviceGroupSectionModel?>(null) }
@@ -176,6 +180,9 @@ fun DeviceListScreen(
     GROUP_FILTER_ALL
   } else {
     groupFilter
+  }
+  val activeGroupSection = remember(allGroupSections, activeGroupFilter) {
+    if (activeGroupFilter == GROUP_FILTER_ALL) null else allGroupSections.firstOrNull { it.key == activeGroupFilter }
   }
 
   val draft = draftIds
@@ -202,8 +209,14 @@ fun DeviceListScreen(
   ) {
     Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
       OneUiTopBar(
-        title = if (editMode) "编辑设备列表" else "总览",
-        subtitle = if (editMode) "调整顺序或从列表隐藏设备" else connectionSummary(state, persisted),
+        title = if (editMode) "编辑设备列表" else activeGroupSection?.name ?: "总览",
+        subtitle = if (editMode) {
+          "调整顺序或从列表隐藏设备"
+        } else if (activeGroupSection != null) {
+          "${activeGroupSection.online}/${activeGroupSection.total} 台在线 · ${activeGroupSection.glanceSubtitle}"
+        } else {
+          connectionSummary(state, persisted)
+        },
         collapse = collapse,
         onCollapsedTitleClick = { topBarScope.launch { listState.animateScrollToItem(0) } },
         large = !embedded,
@@ -230,6 +243,41 @@ fun DeviceListScreen(
           }
         }
       )
+
+      // 吸附在顶栏下方的设备组快速导航条：滚动长列表时无需滑回顶部即可一键切组或收起分组（构 + 交）
+      if (!editMode && hasNamedGroups && persisted.isNotEmpty()) {
+        val allCollapsed = visibleGroupSections.isNotEmpty() && visibleGroupSections.all { it.key in collapsedGroups }
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .oneUiContentWidth(metrics)
+            .padding(horizontal = metrics.screenMargin)
+            .padding(bottom = metrics.spaceXs)
+        ) {
+          GroupFilterRow(
+            totalCount = persisted.size,
+            groups = allGroupSections,
+            selectedKey = activeGroupFilter,
+            showCollapseToggle = showGroupedSections && visibleGroupSections.size > 1 && activeGroupFilter == GROUP_FILTER_ALL,
+            allCollapsed = allCollapsed,
+            onToggleCollapseAll = {
+              collapsedGroups = if (allCollapsed) {
+                emptySet()
+              } else {
+                visibleGroupSections.map { it.key }.toSet()
+              }
+            },
+            onOpenBatchGroup = {
+              batchGroupInitial = activeGroupSection?.takeUnless { it.isUngrouped }?.name
+              batchGroupOpen = true
+            },
+            onSelect = { nextKey ->
+              groupFilter = nextKey
+              topBarScope.launch { listState.animateScrollToItem(0) }
+            }
+          )
+        }
+      }
 
       LazyColumn(
         state = listState,
@@ -307,11 +355,33 @@ fun DeviceListScreen(
                   horizontalArrangement = Arrangement.spacedBy(metrics.spaceM)
                 ) {
                   OneUiGroupHeader(
-                    label = "设备 · ${sort.label}",
+                    label = if (activeGroupSection != null) "${activeGroupSection.name} · ${sort.label}" else "设备 · ${sort.label}",
                     modifier = Modifier.weight(1f),
                     action = {
-                      OneUiIconButton(contentDescription = "排序方式：${sort.label}", onClick = { sortSheet = true }) {
-                        OneUiIcon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize)
+                      Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+                      ) {
+                        if (!hasNamedGroups && persisted.size > 1) {
+                          OneUiPill(
+                            label = "批量分组",
+                            tone = OneUiPillTone.Accent,
+                            onClick = {
+                              batchGroupInitial = null
+                              batchGroupOpen = true
+                            }
+                          )
+                        }
+                        if (activeGroupSection != null && !activeGroupSection.isUngrouped) {
+                          OneUiPill(
+                            label = "管理组",
+                            tone = OneUiPillTone.Neutral,
+                            onClick = { groupActionTarget = activeGroupSection }
+                          )
+                        }
+                        OneUiIconButton(contentDescription = "排序方式：${sort.label}", onClick = { sortSheet = true }) {
+                          OneUiIcon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize)
+                        }
                       }
                     }
                   )
@@ -319,22 +389,36 @@ fun DeviceListScreen(
                 }
               } else {
                 OneUiGroupHeader(
-                  label = "设备 · ${sort.label}",
+                  label = if (activeGroupSection != null) "${activeGroupSection.name} · ${sort.label}" else "设备 · ${sort.label}",
                   action = {
-                    OneUiIconButton(contentDescription = "排序方式：${sort.label}", onClick = { sortSheet = true }) {
-                      OneUiIcon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize)
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+                    ) {
+                      if (!hasNamedGroups && persisted.size > 1) {
+                        OneUiPill(
+                          label = "批量分组",
+                          tone = OneUiPillTone.Accent,
+                          onClick = {
+                            batchGroupInitial = null
+                            batchGroupOpen = true
+                          }
+                        )
+                      }
+                      if (activeGroupSection != null && !activeGroupSection.isUngrouped) {
+                        OneUiPill(
+                          label = "管理组",
+                          tone = OneUiPillTone.Neutral,
+                          onClick = { groupActionTarget = activeGroupSection }
+                        )
+                      }
+                      OneUiIconButton(contentDescription = "排序方式：${sort.label}", onClick = { sortSheet = true }) {
+                        OneUiIcon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize)
+                      }
                     }
                   }
                 )
                 TrendWindowRow(selected = state.overviewWindow, onSelect = actions.onSelectOverviewWindow, modifier = Modifier.fillMaxWidth())
-              }
-              if (hasNamedGroups) {
-                GroupFilterRow(
-                  totalCount = persisted.size,
-                  groups = allGroupSections,
-                  selectedKey = activeGroupFilter,
-                  onSelect = { groupFilter = it }
-                )
               }
               if (showSearch) {
                 OneUiTextField(
@@ -639,6 +723,16 @@ fun DeviceListScreen(
       title = "分组 · ${groupSection.name}",
       actions = listOf(
         OneUiActionModel(
+          label = "管理组内设备",
+          description = "批量勾选设备归入「${groupSection.name}」或从该组移出",
+          icon = Icons.Rounded.Dns,
+          onClick = {
+            groupActionTarget = null
+            batchGroupInitial = groupSection.name
+            batchGroupOpen = true
+          }
+        ),
+        OneUiActionModel(
           label = "重命名分组",
           description = "将该组内 ${groupSection.total} 台设备统一改为新分组名",
           icon = Icons.Rounded.Tune,
@@ -658,6 +752,19 @@ fun DeviceListScreen(
           }
         )
       )
+    )
+  }
+
+  if (batchGroupOpen) {
+    BatchDeviceGroupSheet(
+      devices = persisted,
+      existingGroups = existingGroupNames,
+      initialGroup = batchGroupInitial,
+      onDismiss = { batchGroupOpen = false },
+      onConfirm = { targetIds, nextGroup ->
+        batchGroupOpen = false
+        actions.onUpdateDeviceGroup(targetIds, nextGroup)
+      }
     )
   }
 
@@ -795,6 +902,10 @@ private fun GroupFilterRow(
   totalCount: Int,
   groups: List<DeviceGroupSectionModel>,
   selectedKey: String,
+  showCollapseToggle: Boolean = false,
+  allCollapsed: Boolean = false,
+  onToggleCollapseAll: (() -> Unit)? = null,
+  onOpenBatchGroup: (() -> Unit)? = null,
   onSelect: (String) -> Unit
 ) {
   val metrics = OneUiTheme.metrics
@@ -806,18 +917,211 @@ private fun GroupFilterRow(
     horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
     verticalAlignment = Alignment.CenterVertically
   ) {
-    OneUiText(text = "分组", role = OneUiTextRole.ChartLabel, color = colors.textTertiary, weight = FontWeight.SemiBold)
     OneUiFilterChip(
       label = "全部 $totalCount",
       selected = selectedKey == GROUP_FILTER_ALL,
       onClick = { onSelect(GROUP_FILTER_ALL) }
     )
     groups.forEach { group ->
+      val isSelected = selectedKey == group.key
+      val dotColor = when {
+        group.offline > 0 -> if (isSelected) colors.textOnAccent else colors.offline
+        group.issueCount > 0 -> if (isSelected) colors.textOnAccent else colors.warning
+        else -> null
+      }
       OneUiFilterChip(
         label = "${group.name} ${group.online}/${group.total}",
-        selected = selectedKey == group.key,
-        onClick = { onSelect(group.key) }
+        selected = isSelected,
+        onClick = { onSelect(group.key) },
+        leadingIcon = dotColor?.let { color ->
+          {
+            OneUiStatusDot(
+              color = color,
+              description = if (group.offline > 0) "含离线设备" else "含超限设备"
+            )
+          }
+        }
       )
+    }
+    if (showCollapseToggle && onToggleCollapseAll != null) {
+      OneUiPill(
+        label = if (allCollapsed) "展开全部" else "收起全部",
+        tone = OneUiPillTone.Neutral,
+        onClick = onToggleCollapseAll
+      )
+    }
+    if (onOpenBatchGroup != null) {
+      OneUiPill(
+        label = "批量分组",
+        tone = OneUiPillTone.Accent,
+        onClick = onOpenBatchGroup
+      )
+    }
+  }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun BatchDeviceGroupSheet(
+  devices: List<DeviceSummaryDto>,
+  existingGroups: List<String>,
+  initialGroup: String?,
+  onDismiss: () -> Unit,
+  onConfirm: (List<String>, String?) -> Unit
+) {
+  val metrics = OneUiTheme.metrics
+  val colors = OneUiTheme.colors
+  var groupText by remember(initialGroup) { mutableStateOf(initialGroup.orEmpty()) }
+  var searchQuery by remember { mutableStateOf("") }
+  var selectedIds by remember(initialGroup, devices) {
+    val initialNormalized = initialGroup?.trim()?.takeIf { it.isNotEmpty() }
+    val preselected = if (initialNormalized != null) {
+      devices.filter { it.normalizedGroup() == initialNormalized }.map { it.deviceId }.toSet()
+    } else {
+      emptySet()
+    }
+    mutableStateOf(preselected)
+  }
+  val recommended = remember(existingGroups) {
+    RECOMMENDED_GROUPS.filterNot { it in existingGroups }
+  }
+  val filteredDevices = remember(devices, searchQuery) {
+    val needle = searchQuery.trim()
+    if (needle.isEmpty()) devices else devices.filter { it.matches(needle) }
+  }
+  val trimmedGroup = groupText.trim().takeIf { it.isNotEmpty() }
+
+  OneUiSheet(
+    onDismissRequest = onDismiss,
+    title = if (!initialGroup.isNullOrBlank()) "管理「$initialGroup」分组设备" else "批量设置设备分组",
+    subtitle = "先选择或输入目标分组，再勾选需要归入该分组的设备；留空分组名可设为未分组",
+    confirmBar = {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(metrics.spaceS),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        OneUiButton(
+          label = "取消",
+          onClick = onDismiss,
+          variant = OneUiButtonVariant.Text,
+          modifier = Modifier.weight(1f)
+        )
+        OneUiButton(
+          label = if (trimmedGroup != null) {
+            "归入分组 (${selectedIds.size})"
+          } else {
+            "设为未分组 (${selectedIds.size})"
+          },
+          enabled = selectedIds.isNotEmpty(),
+          onClick = { onConfirm(selectedIds.toList(), trimmedGroup) },
+          modifier = Modifier.weight(1f)
+        )
+      }
+    }
+  ) {
+    OneUiTextField(
+      value = groupText,
+      onValueChange = { groupText = it.take(64) },
+      label = "目标分组名称",
+      supportingText = "留空保存可将所选设备移出分组"
+    )
+    if (existingGroups.isNotEmpty() || recommended.isNotEmpty()) {
+      Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
+        OneUiText(text = "点按快速选择分组", role = OneUiTextRole.ChartLabel, color = colors.textSecondary, weight = FontWeight.SemiBold)
+        FlowRow(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
+          verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+        ) {
+          existingGroups.forEach { group ->
+            OneUiFilterChip(
+              label = group,
+              selected = groupText.trim() == group,
+              onClick = {
+                groupText = group
+                if (selectedIds.isEmpty()) {
+                  selectedIds = devices.filter { it.normalizedGroup() == group }.map { it.deviceId }.toSet()
+                }
+              }
+            )
+          }
+          recommended.forEach { group ->
+            OneUiFilterChip(
+              label = "+ $group",
+              selected = groupText.trim() == group,
+              onClick = { groupText = group }
+            )
+          }
+        }
+      }
+    }
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+      OneUiText(
+        text = "选择设备（已选 ${selectedIds.size}/${devices.size} 台）",
+        role = OneUiTextRole.ChartLabel,
+        color = colors.textSecondary,
+        weight = FontWeight.SemiBold
+      )
+      Row(horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
+        val allFilteredSelected = filteredDevices.isNotEmpty() && filteredDevices.all { it.deviceId in selectedIds }
+        OneUiPill(
+          label = if (allFilteredSelected) "取消全选" else "全选",
+          tone = OneUiPillTone.Neutral,
+          onClick = {
+            val filteredIds = filteredDevices.map { it.deviceId }.toSet()
+            selectedIds = if (allFilteredSelected) selectedIds - filteredIds else selectedIds + filteredIds
+          }
+        )
+        if (devices.any { it.normalizedGroup() == null }) {
+          OneUiPill(
+            label = "仅未分组",
+            tone = OneUiPillTone.Neutral,
+            onClick = {
+              selectedIds = devices.filter { it.normalizedGroup() == null }.map { it.deviceId }.toSet()
+            }
+          )
+        }
+      }
+    }
+    if (devices.size > SEARCH_THRESHOLD) {
+      OneUiTextField(
+        value = searchQuery,
+        onValueChange = { searchQuery = it },
+        label = "筛选设备名称或原分组"
+      )
+    }
+    OneUiGroup {
+      filteredDevices.forEachIndexed { index, device ->
+        if (index > 0) OneUiListDivider()
+        val isChecked = device.deviceId in selectedIds
+        val currentGroup = device.normalizedGroup()
+        val toggle = {
+          selectedIds = if (isChecked) selectedIds - device.deviceId else selectedIds + device.deviceId
+        }
+        OneUiListItem(
+          title = device.hostname,
+          subtitle = buildString {
+            append(if (device.status == "online") "在线" else "离线")
+            append(" · ")
+            append(osLabel(device.os))
+            append(" · 当前：")
+            append(currentGroup ?: "未分组")
+          },
+          onClick = toggle,
+          leading = {
+            OneUiCheckbox(
+              checked = isChecked,
+              onCheckedChange = { toggle() },
+              label = "选择 ${device.hostname}"
+            )
+          }
+        )
+      }
     }
   }
 }

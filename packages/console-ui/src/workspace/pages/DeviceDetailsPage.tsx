@@ -4,7 +4,7 @@ import { M3SegmentedControl, M3Tabs, M3Select } from "../m3";
 import type { TouchPanel } from "../touch/TouchState";
 import { touchPercent } from "../touch/TouchDeviceRow";
 import { useWorkspace } from "../WorkspaceContext";
-import { normalizeDeviceGroup, selectExistingGroupNames, selectLinkLabel, selectSnapshotSource } from "../selectors";
+import { normalizeDeviceGroup, selectExistingGroupNames, selectLinkLabel, selectPeerDevicesInGroup, selectSnapshotSource } from "../selectors";
 import {
   DEFAULT_DEVICE_TAB_ID,
   DEVICE_DASHBOARD,
@@ -198,7 +198,6 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
     setSelectedNetId("all");
     setSelectedDiskId("all");
     setSelectedGpuId("all");
-    if (!touch) setDesktopTab(DEFAULT_DEVICE_TAB_ID);
     setLiveOverview(false);
     setTouchLive(false);
   }, [deviceId, touch]);
@@ -442,28 +441,95 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
               }
             : null;
 
+  const currentDeviceGroup = normalizeDeviceGroup(selectedDevice.group);
+  const groupPeers = selectPeerDevicesInGroup(allDevices, selectedDevice);
+  const showGroupPeersBar = groupPeers.peers.length > 1 && (currentDeviceGroup !== null || existingGroups.length > 0);
+  const switchPeerDevice = (targetDeviceId: string) => {
+    if (targetDeviceId === selectedDevice.deviceId) return;
+    navigate({ kind: "device", deviceId: targetDeviceId, view: routeLiveView ?? undefined });
+  };
+
   return (
     <div ref={rootRef} className={`workspace-page workspace-page--device${isFullscreen ? " workspace-page--fullscreen" : ""}`}>
       {!touch && <><nav className="workspace-breadcrumb" aria-label="面包屑">
         <button type="button" onClick={() => navigate({ kind: "overview" })}>总览</button>
         <span aria-hidden="true">/</span>
         <button type="button" onClick={() => navigate({ kind: "devices" })}>设备</button>
-        {normalizeDeviceGroup(selectedDevice.group) && (
+        {currentDeviceGroup && (
           <>
             <span aria-hidden="true">/</span>
-            <span>{normalizeDeviceGroup(selectedDevice.group)}</span>
+            <button type="button" onClick={() => navigate({ kind: "devices", group: currentDeviceGroup })}>
+              {currentDeviceGroup}
+            </button>
           </>
         )}
         <span aria-hidden="true">/</span>
         <strong>{selectedDevice.hostname}</strong>
       </nav>
       <PageIntro
-        eyebrow={normalizeDeviceGroup(selectedDevice.group) ? `设备 · ${normalizeDeviceGroup(selectedDevice.group)}` : "设备"}
+        eyebrow={currentDeviceGroup ? `设备 · ${currentDeviceGroup}` : "设备"}
         title={selectedDevice.hostname}
         description={`${selectedDevice.os} · ${selectedDevice.deviceId}`}
       />
       <SnapshotFreshnessNotice /></>}
-      {touch && <header className="touch-device-heading"><h1>{selectedDevice.hostname}</h1><p>{selectedDevice.os}{normalizeDeviceGroup(selectedDevice.group) ? ` · ${normalizeDeviceGroup(selectedDevice.group)}` : ""} · {snapshotSource === "cache" ? "缓存中的状态" : selectedDevice.status === "online" ? "在线" : "离线"}</p></header>}
+      {touch && <header className="touch-device-heading"><h1>{selectedDevice.hostname}</h1><p>{selectedDevice.os}{currentDeviceGroup ? ` · ${currentDeviceGroup}` : ""} · {snapshotSource === "cache" ? "缓存中的状态" : selectedDevice.status === "online" ? "在线" : "离线"}</p></header>}
+
+      {showGroupPeersBar && (
+        <nav className="workspace-group-peers" aria-label={`${groupPeers.groupLabel} 同组设备切换`}>
+          <div className="workspace-group-peers__lead">
+            <button
+              type="button"
+              className="workspace-group-peers__group-link"
+              onClick={() => navigate({ kind: "devices", group: groupPeers.groupKey === "all" ? undefined : groupPeers.groupKey })}
+              title={`查看 ${groupPeers.groupLabel} 全部设备`}
+            >
+              <span>{groupPeers.groupLabel}</span>
+              <small>{groupPeers.currentIndex + 1}/{groupPeers.peers.length}</small>
+            </button>
+          </div>
+          <div className="workspace-group-peers__list" role="group" aria-label="同组设备">
+            {groupPeers.peers.map((peer) => {
+              const isCurrent = peer.deviceId === selectedDevice.deviceId;
+              const online = peer.status === "online";
+              return (
+                <button
+                  key={peer.deviceId}
+                  type="button"
+                  className={`workspace-group-peer-chip ${isCurrent ? "is-current" : ""}`}
+                  aria-current={isCurrent ? "page" : undefined}
+                  onClick={() => switchPeerDevice(peer.deviceId)}
+                >
+                  <StatusDot state={online ? "online" : "offline"} />
+                  <span>{peer.hostname}</span>
+                  {online && typeof peer.cpuUsagePercent === "number" && (
+                    <small>{Math.round(peer.cpuUsagePercent)}%</small>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <div className="workspace-group-peers__step">
+            <Button
+              variant="quiet"
+              disabled={!groupPeers.previousDevice}
+              onClick={() => groupPeers.previousDevice && switchPeerDevice(groupPeers.previousDevice.deviceId)}
+              aria-label={groupPeers.previousDevice ? `上一台同组设备：${groupPeers.previousDevice.hostname}` : "上一台同组设备"}
+              title={groupPeers.previousDevice ? `上一台：${groupPeers.previousDevice.hostname}` : "已是第一台"}
+            >
+              <Icon name="chevronLeft" size={16} />
+            </Button>
+            <Button
+              variant="quiet"
+              disabled={!groupPeers.nextDevice}
+              onClick={() => groupPeers.nextDevice && switchPeerDevice(groupPeers.nextDevice.deviceId)}
+              aria-label={groupPeers.nextDevice ? `下一台同组设备：${groupPeers.nextDevice.hostname}` : "下一台同组设备"}
+              title={groupPeers.nextDevice ? `下一台：${groupPeers.nextDevice.hostname}` : "已是最后一台"}
+            >
+              <Icon name="chevronRight" size={16} />
+            </Button>
+          </div>
+        </nav>
+      )}
 
       {/* One card carries every state fact. They used to be split across a
           status line and a facts strip that repeated the same two things, so

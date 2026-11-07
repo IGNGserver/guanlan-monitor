@@ -20,6 +20,7 @@ import {
   ConfirmDialog,
   PromptDialog,
   DeviceGroupDialog,
+  BatchGroupManageDialog,
   DeviceDirectoryFilterBar,
   EmptyState,
   ErrorSurface,
@@ -53,6 +54,8 @@ function storeCollapsedGroups(groups: ReadonlySet<string>): void {
 
 export function DevicesPage() {
   const {
+    route,
+    navigate,
     snapshot,
     allDevices,
     loading,
@@ -67,9 +70,10 @@ export function DevicesPage() {
   } = useWorkspace();
   const overviewInstances = snapshot?.overviewMetrics?.instances;
   const cpuTrends = useMemo(() => new Map((overviewInstances ?? []).map((instance) => [instance.deviceId, instance.cpuUsagePercent])), [overviewInstances]);
+  const routeGroup = route.kind === "devices" && route.group ? route.group : "all";
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<DeviceDirectoryStatus>("all");
-  const [groupFilter, setGroupFilter] = useState<DeviceGroupFilter>("all");
+  const [groupFilter, setGroupFilter] = useState<DeviceGroupFilter>(routeGroup);
   const [sort, setSort] = useState<DeviceDirectorySort>("order");
   const [manageMode, setManageMode] = useState(false);
   const [orderDraft, setOrderDraft] = useState<string[] | null>(null);
@@ -77,8 +81,23 @@ export function DevicesPage() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(readCollapsedGroups);
   const [deleteTarget, setDeleteTarget] = useState<DeviceSummary | null>(null);
   const [groupTargetIds, setGroupTargetIds] = useState<string[] | null>(null);
+  const [batchGroupInitial, setBatchGroupInitial] = useState<string | null | undefined>(undefined);
   const [renamingGroup, setRenamingGroup] = useState<DeviceGroupSummary | null>(null);
   const [dissolvingGroup, setDissolvingGroup] = useState<DeviceGroupSummary | null>(null);
+
+  useEffect(() => {
+    setGroupFilter(routeGroup);
+  }, [routeGroup]);
+
+  const changeGroupFilter = (nextGroup: DeviceGroupFilter) => {
+    setGroupFilter(nextGroup);
+    if (route.kind === "devices") {
+      const normalized = nextGroup === "all" ? undefined : nextGroup;
+      if (route.group !== normalized) {
+        navigate(normalized ? { kind: "devices", group: normalized } : { kind: "devices" });
+      }
+    }
+  };
 
   const serverOrder = useMemo(() => allDevices.map((device) => device.deviceId), [allDevices]);
   const serverOrderKey = useMemo(() => serverOrder.join("\u0000"), [serverOrder]);
@@ -124,10 +143,18 @@ export function DevicesPage() {
   const hasNamedGroups = existingGroupNames.length > 0;
 
   useEffect(() => {
-    if (groupFilter !== "all" && !allGroups.some((group) => group.key === groupFilter)) {
+    if (groupFilter !== "all" && allDevices.length > 0 && !allGroups.some((group) => group.key === groupFilter)) {
       setGroupFilter("all");
+      if (route.kind === "devices" && route.group) {
+        navigate({ kind: "devices" });
+      }
     }
-  }, [allGroups, groupFilter]);
+  }, [allDevices.length, allGroups, groupFilter, navigate, route]);
+
+  const activeGroupSummary = useMemo(
+    () => (groupFilter === "all" ? null : allGroups.find((group) => group.key === groupFilter) ?? null),
+    [allGroups, groupFilter]
+  );
 
   const visibleDevices = useMemo(
     () => selectDeviceDirectory(orderedDevices, {
@@ -199,6 +226,19 @@ export function DevicesPage() {
       return next;
     });
   };
+  const allVisibleGroupsCollapsed = visibleGroups.length > 0 && visibleGroups.every((group) => collapsedGroups.has(group.key));
+  const toggleAllGroupsCollapse = () => {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (allVisibleGroupsCollapsed) {
+        visibleGroups.forEach((group) => next.delete(group.key));
+      } else {
+        visibleGroups.forEach((group) => next.add(group.key));
+      }
+      storeCollapsedGroups(next);
+      return next;
+    });
+  };
 
   const groupDialogDevices = groupTargetIds
     ? allDevices.filter((device) => groupTargetIds.includes(device.deviceId))
@@ -217,7 +257,7 @@ export function DevicesPage() {
     ? <EmptyState
       title="没有匹配设备"
       detail={`${allDevices.length} 台已接入设备里没有符合当前搜索或筛选的；清除后即可看到全部设备。`}
-      action={<Button variant="quiet" onClick={() => { setQuery(""); setStatusFilter("all"); setGroupFilter("all"); }}>清除筛选</Button>}
+      action={<Button variant="quiet" onClick={() => { setQuery(""); setStatusFilter("all"); changeGroupFilter("all"); }}>清除筛选</Button>}
     />
     : <EmptyState
       title="还没有设备接入"
@@ -229,9 +269,37 @@ export function DevicesPage() {
 
   return <div className="workspace-page workspace-page--devices">
     <PageIntro
-      eyebrow="设备"
-      title="全部设备"
-      description={snapshot.source === "cache" ? "当前显示离线缓存；可以搜索和查看，管理操作已禁用。" : "搜索、按组筛选、排序和管理接入当前中枢的全部设备。"}
+      eyebrow={activeGroupSummary ? "设备 · 设备组" : "设备"}
+      title={activeGroupSummary ? activeGroupSummary.name : "全部设备"}
+      description={snapshot.source === "cache"
+        ? "当前显示离线缓存；可以搜索和查看，管理操作已禁用。"
+        : activeGroupSummary
+          ? [
+              `组内 ${activeGroupSummary.online}/${activeGroupSummary.total} 台在线`,
+              activeGroupSummary.offline > 0 ? `${activeGroupSummary.offline} 台离线` : "",
+              activeGroupSummary.overThreshold > 0 ? `${activeGroupSummary.overThreshold} 台超限` : "",
+              activeGroupSummary.avgCpuPercent != null ? `平均 CPU ${formatPercent(activeGroupSummary.avgCpuPercent)}` : "",
+              activeGroupSummary.avgMemoryPercent != null ? `平均内存 ${formatPercent(activeGroupSummary.avgMemoryPercent)}` : ""
+            ].filter(Boolean).join(" · ")
+          : "搜索、按组筛选、排序和管理接入当前中枢的全部设备。"}
+      actions={activeGroupSummary ? (
+        <>
+          <Button variant="quiet" onClick={() => changeGroupFilter("all")}>全部设备</Button>
+          {canManage && !activeGroupSummary.isUngrouped && (
+            <>
+              <Button variant="secondary" onClick={() => setBatchGroupInitial(activeGroupSummary.name)} disabled={mutationPending}>
+                管理组成员
+              </Button>
+              <Button variant="quiet" onClick={() => setRenamingGroup(activeGroupSummary)} disabled={mutationPending}>
+                重命名
+              </Button>
+              <Button variant="quiet" onClick={() => setDissolvingGroup(activeGroupSummary)} disabled={mutationPending}>
+                解散分组
+              </Button>
+            </>
+          )}
+        </>
+      ) : undefined}
     />
     <SnapshotFreshnessNotice />
     <DeviceDirectoryFilterBar
@@ -241,13 +309,23 @@ export function DevicesPage() {
       statusFilter={statusFilter}
       onStatusFilterChange={setStatusFilter}
       groupFilter={groupFilter}
-      onGroupFilterChange={setGroupFilter}
+      onGroupFilterChange={changeGroupFilter}
       groups={allGroups}
       sort={sort}
       onSortChange={setSort}
       sortDisabled={manageMode}
+      allGroupsCollapsed={allVisibleGroupsCollapsed}
+      onToggleAllGroupsCollapse={showGroupedSections && visibleGroups.length > 1 ? toggleAllGroupsCollapse : undefined}
+      onOpenBatchGroup={canManage && !manageMode && allDevices.length > 0 ? () => setBatchGroupInitial(activeGroupSummary && !activeGroupSummary.isUngrouped ? activeGroupSummary.name : "") : undefined}
       actions={!manageMode
-        ? <Button variant="secondary" onClick={beginManage} disabled={!canManage}><Icon name="device" size={15} />管理顺序</Button>
+        ? <div className="workspace-order-actions">
+            {!hasNamedGroups && canManage && allDevices.length > 0 && (
+              <Button variant="quiet" onClick={() => setBatchGroupInitial("")} disabled={mutationPending}>
+                批量分组
+              </Button>
+            )}
+            <Button variant="secondary" onClick={beginManage} disabled={!canManage}><Icon name="device" size={15} />管理顺序</Button>
+          </div>
         : <div className="workspace-order-actions">
             {selectedIds.size > 0 && (
               <Button variant="secondary" onClick={() => setGroupTargetIds([...selectedIds])} disabled={mutationPending}>
@@ -283,10 +361,11 @@ export function DevicesPage() {
           <DeviceGroupSection
             key={group.key}
             group={group}
-            collapsed={collapsedGroups.has(group.key)}
+            collapsed={groupFilter === "all" && collapsedGroups.has(group.key)}
             onToggleCollapse={() => toggleGroupCollapse(group.key)}
             canManage={canManage && !mutationPending}
             onEditDeviceGroup={canManage ? (device) => setGroupTargetIds([device.deviceId]) : undefined}
+            onManageMembers={canManage ? () => setBatchGroupInitial(group.isUngrouped ? "" : group.name) : undefined}
             onRenameGroup={!group.isUngrouped && canManage ? () => setRenamingGroup(group) : undefined}
             onDissolveGroup={!group.isUngrouped && canManage ? () => setDissolvingGroup(group) : undefined}
             cpuTrends={cpuTrends}
@@ -347,6 +426,20 @@ export function DevicesPage() {
       />
     )}
 
+    {batchGroupInitial !== undefined && (
+      <BatchGroupManageDialog
+        devices={orderedDevices}
+        existingGroups={existingGroupNames}
+        initialGroup={batchGroupInitial}
+        disabled={mutationPending}
+        onConfirm={(targetIds, nextGroup) => {
+          setBatchGroupInitial(undefined);
+          void updateDeviceGroup(targetIds, nextGroup);
+        }}
+        onCancel={() => setBatchGroupInitial(undefined)}
+      />
+    )}
+
     {renamingGroup && (
       <PromptDialog
         title={`重命名分组“${renamingGroup.name}”`}
@@ -356,7 +449,9 @@ export function DevicesPage() {
         disabled={mutationPending}
         onConfirm={(nextName) => {
           const ids = renamingGroup.devices.map((device) => device.deviceId);
+          const wasSelected = groupFilter === renamingGroup.key;
           setRenamingGroup(null);
+          if (wasSelected) changeGroupFilter(nextName);
           void updateDeviceGroup(ids, nextName);
         }}
         onCancel={() => setRenamingGroup(null)}
@@ -371,7 +466,9 @@ export function DevicesPage() {
         disabled={mutationPending}
         onConfirm={() => {
           const ids = dissolvingGroup.devices.map((device) => device.deviceId);
+          const wasSelected = groupFilter === dissolvingGroup.key;
           setDissolvingGroup(null);
+          if (wasSelected) changeGroupFilter("all");
           void updateDeviceGroup(ids, null);
         }}
         onCancel={() => setDissolvingGroup(null)}
@@ -386,6 +483,7 @@ function DeviceGroupSection({
   onToggleCollapse,
   canManage,
   onEditDeviceGroup,
+  onManageMembers,
   onRenameGroup,
   onDissolveGroup,
   cpuTrends
@@ -395,6 +493,7 @@ function DeviceGroupSection({
   onToggleCollapse: () => void;
   canManage: boolean;
   onEditDeviceGroup?: (device: DeviceSummary) => void;
+  onManageMembers?: () => void;
   onRenameGroup?: () => void;
   onDissolveGroup?: () => void;
   cpuTrends?: ReadonlyMap<string, readonly SamplePoint[]>;
@@ -430,14 +529,19 @@ function DeviceGroupSection({
               {group.avgMemoryPercent != null ? `平均内存 ${formatPercent(group.avgMemoryPercent)}` : ""}
             </span>
           )}
-          {canManage && !group.isUngrouped && (
+          {canManage && (
             <div className="workspace-group-section__actions">
-              {onRenameGroup && (
+              {onManageMembers && (
+                <button type="button" className="guanlan-table-live-action" onClick={onManageMembers}>
+                  {group.isUngrouped ? "批量设组" : "管理成员"}
+                </button>
+              )}
+              {!group.isUngrouped && onRenameGroup && (
                 <button type="button" className="guanlan-table-live-action" onClick={onRenameGroup}>
                   重命名
                 </button>
               )}
-              {onDissolveGroup && (
+              {!group.isUngrouped && onDissolveGroup && (
                 <button type="button" className="guanlan-table-live-action" onClick={onDissolveGroup}>
                   解散
                 </button>

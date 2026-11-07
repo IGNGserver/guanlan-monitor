@@ -63,7 +63,9 @@ function TouchFleetTrend() {
 
 export function TouchOverview() {
   const { snapshot, allDevices, navigate, openSettings, capabilities, healthThresholds } = useWorkspace();
-  const { pins, setStatus, setQuery } = useTouchState();
+  const { pins, setStatus, setQuery, setGroup } = useTouchState();
+  const groups = useMemo(() => selectDeviceGroups(allDevices, healthThresholds), [allDevices, healthThresholds]);
+  const hasNamedGroups = useMemo(() => groups.some((group) => !group.isUngrouped), [groups]);
   if (!snapshot) return null;
   const health = selectHealthSummary(snapshot, allDevices, formatDate, capabilities.liveDataTransport, healthThresholds);
   const attention = health.source === "live" ? selectAttentionDevices(allDevices, 3, healthThresholds) : [];
@@ -73,6 +75,12 @@ export function TouchOverview() {
   // The offline filter is the right destination only when offline devices are
   // the whole story; a resource issue lives on an online device.
   const openAttention = () => { setStatus(onlyOffline ? "offline" : "all"); setQuery(""); navigate({ kind: "devices" }); };
+  const openGroup = (groupKey: string) => {
+    setGroup(groupKey);
+    setStatus("all");
+    setQuery("");
+    navigate({ kind: "devices", group: groupKey });
+  };
   return <div className="touch-page touch-overview">
     <header className="touch-page-title"><p>设备状态</p><h1>总览</h1></header>
     <section className={`touch-health${health.pending ? " has-attention" : ""}`} aria-label="中枢概况">
@@ -88,6 +96,34 @@ export function TouchOverview() {
       <p className="touch-section__hint">{onlyOffline ? "离线设备保留最近一次上报，请查看最后在线时间。" : "离线设备和资源超过阈值的设备，最紧急的在前。"}</p>
       <div className="touch-device-list">{attention.map((device) => <TouchDeviceRow key={device.deviceId} device={device} />)}</div>
     </section>}
+    {hasNamedGroups && (
+      <section className="touch-section" aria-label="设备组速览">
+        <header>
+          <h2>设备组</h2>
+          <Button variant="text" onClick={() => { setGroup("all"); setStatus("all"); setQuery(""); navigate({ kind: "devices" }); }}>
+            管理分组<Icon name="chevronRight" size={16} />
+          </Button>
+        </header>
+        <div className="touch-overview-groups">
+          {groups.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              className="touch-overview-group-card"
+              onClick={() => openGroup(item.key)}
+            >
+              <span className="touch-overview-group-card__head">
+                <strong>{item.name}</strong>
+                <small>{item.online}/{item.total} 在线</small>
+              </span>
+              <span className="touch-overview-group-card__meta">
+                {item.offline > 0 ? `${item.offline} 台离线` : item.overThreshold > 0 ? `${item.overThreshold} 台超限` : item.avgCpuPercent != null ? `CPU ${formatPercent(item.avgCpuPercent)}` : "状态正常"}
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+    )}
     {!!frequent.length && <section className="touch-section"><header><h2>{pinned.length ? "常用设备" : "设备速览"}</h2><Button variant="text" onClick={() => { setStatus("all"); setQuery(""); navigate({ kind: "devices" }); }}>全部设备<Icon name="chevronRight" size={16} /></Button></header>
       {!pinned.length && <p className="touch-section__hint">在设备的更多操作中设为常用，下次打开即可查看。</p>}
       <div className="touch-device-list">{frequent.map((device) => <TouchDeviceRow key={device.deviceId} device={device} />)}</div>

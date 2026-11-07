@@ -43,8 +43,8 @@ class ScreenRenderTest {
     }
 
   private val devices = listOf(
-    DeviceSummaryDto("nas", "nas-main", "linux", "3.0.158", status = "online", lastSeenAt = ago(8), cpuUsagePercent = 23.4, memoryUsagePercent = 61.0, memoryUsedBytes = 10_000_000_000, memoryTotalBytes = 16_000_000_000, diskUsagePercent = 72.0, diskUsedBytes = 2_900_000_000_000, diskTotalBytes = 4_000_000_000_000, sortOrder = 0),
-    DeviceSummaryDto("ws", "workstation", "windows", "3.0.158", status = "online", lastSeenAt = ago(4), cpuUsagePercent = 91.2, gpuUsagePercent = 64.0, memoryUsagePercent = 93.5, memoryUsedBytes = 30_000_000_000, memoryTotalBytes = 32_000_000_000, diskUsagePercent = 48.0, sortOrder = 1),
+    DeviceSummaryDto("nas", "nas-main", "linux", "3.0.158", status = "online", lastSeenAt = ago(8), cpuUsagePercent = 23.4, memoryUsagePercent = 61.0, memoryUsedBytes = 10_000_000_000, memoryTotalBytes = 16_000_000_000, diskUsagePercent = 72.0, diskUsedBytes = 2_900_000_000_000, diskTotalBytes = 4_000_000_000_000, sortOrder = 0, group = "存储与网络"),
+    DeviceSummaryDto("ws", "workstation", "windows", "3.0.158", status = "online", lastSeenAt = ago(4), cpuUsagePercent = 91.2, gpuUsagePercent = 64.0, memoryUsagePercent = 93.5, memoryUsedBytes = 30_000_000_000, memoryTotalBytes = 32_000_000_000, diskUsagePercent = 48.0, sortOrder = 1, group = "开发设备"),
     DeviceSummaryDto("pi", "pi-garage", "linux", "3.0.150", status = "offline", lastSeenAt = ago(3 * 3600), sortOrder = 2)
   )
 
