@@ -72,9 +72,107 @@
 .touch-device-row__metrics { display: flex; flex-wrap: wrap; column-gap: var(--md-sys-space-3); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-body-s-size); font-variant-numeric: tabular-nums; line-height: 1.6; }
 .touch-device-row__chevron { flex: 0 0 auto; color: var(--md-sys-color-on-surface-variant); }
 .touch-directory__heading { display: flex; align-items: center; justify-content: space-between; }
+.touch-directory__sticky {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  padding: var(--md-sys-space-2) 0;
+  background: var(--md-sys-color-surface);
+}
 .touch-search-row { display: flex; align-items: center; gap: var(--md-sys-space-2); }
 .touch-search-row .m3e-search-bar { flex: 1 1 auto; min-width: 0; }
-.touch-group-chips { display: flex; align-items: center; gap: var(--md-sys-space-2); overflow-x: auto; padding: var(--md-sys-space-3) 0 var(--md-sys-space-1); }
+.touch-group-chips { display: flex; align-items: center; gap: var(--md-sys-space-2); overflow-x: auto; padding: var(--md-sys-space-3) 0 var(--md-sys-space-1); scrollbar-width: none; }
+.touch-group-chips::-webkit-scrollbar { display: none; }
+.touch-group-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--md-sys-space-2);
+  margin-top: var(--md-sys-space-2);
+  padding: var(--md-sys-space-2) var(--md-sys-space-3);
+  border-radius: var(--md-sys-shape-md);
+  background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-s-size);
+}
+.touch-group-sections { display: flex; flex-direction: column; gap: var(--md-sys-space-4); }
+.touch-group-section { display: flex; flex-direction: column; gap: var(--md-sys-space-2); }
+.touch-group-section__header {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--md-sys-space-2);
+  padding: var(--md-sys-space-2) var(--md-sys-space-3);
+  border: 0;
+  border-radius: var(--md-sys-shape-md);
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.touch-group-section__title {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--md-sys-space-2);
+}
+.touch-group-section__title strong {
+  overflow: hidden;
+  font-size: var(--md-sys-typescale-title-s-size);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.touch-group-section__title small,
+.touch-group-section__meta {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-label-m-size);
+  font-variant-numeric: tabular-nums;
+}
+.touch-overview-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--md-sys-space-2);
+  margin-top: var(--md-sys-space-2);
+}
+.touch-overview-group-card {
+  display: flex;
+  min-width: 0;
+  min-height: 64px;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--md-sys-space-1);
+  padding: var(--md-sys-space-3);
+  border: 0;
+  border-radius: var(--md-sys-shape-lg);
+  background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.touch-overview-group-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--md-sys-space-2);
+}
+.touch-overview-group-card__head strong {
+  overflow: hidden;
+  font-size: var(--md-sys-typescale-title-s-size);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.touch-overview-group-card__head small,
+.touch-overview-group-card__meta {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-s-size);
+  font-variant-numeric: tabular-nums;
+}
 .touch-directory__count { margin: var(--md-sys-space-4) 0 var(--md-sys-space-3); color: var(--md-sys-color-on-surface-variant); font-size: var(--md-sys-typescale-label-m-size); }
 .touch-manage-bar { padding: var(--md-sys-space-4); margin-bottom: var(--md-sys-space-4); border-radius: var(--md-sys-shape-lg); background: var(--md-sys-color-secondary-container); }
 .touch-manage-bar p { margin-top: 0; line-height: 1.6; }

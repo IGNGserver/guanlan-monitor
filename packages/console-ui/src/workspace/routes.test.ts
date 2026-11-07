@@ -4,6 +4,14 @@ import { parseWorkspaceHash, serializeWorkspaceRoute } from "./routes.ts";
 
 test("workspace routes support the device directory and encoded deep links", () => {
   assert.deepEqual(parseWorkspaceHash("#devices"), { kind: "devices" });
+  const groupedDevicesRoute = { kind: "devices", group: "宿主机/PVE" } as const;
+  assert.equal(serializeWorkspaceRoute(groupedDevicesRoute), "#devices/group/%E5%AE%BF%E4%B8%BB%E6%9C%BA%2FPVE");
+  assert.deepEqual(parseWorkspaceHash(serializeWorkspaceRoute(groupedDevicesRoute)), groupedDevicesRoute);
+  assert.deepEqual(parseWorkspaceHash("#devices/%E5%8A%9E%E5%85%AC%E7%BB%88%E7%AB%AF"), { kind: "devices", group: "办公终端" });
+  assert.deepEqual(parseWorkspaceHash("#devices/group/all"), { kind: "devices" });
+  const groupedOverviewRoute = { kind: "overview", group: "宿主机" } as const;
+  assert.equal(serializeWorkspaceRoute(groupedOverviewRoute), "#overview/group/%E5%AE%BF%E4%B8%BB%E6%9C%BA");
+  assert.deepEqual(parseWorkspaceHash(serializeWorkspaceRoute(groupedOverviewRoute)), groupedOverviewRoute);
   const route = { kind: "device", deviceId: "nas/primary" } as const;
   assert.deepEqual(parseWorkspaceHash(serializeWorkspaceRoute(route)), route);
   assert.deepEqual(parseWorkspaceHash("#settings/appearance"), { kind: "settings", section: "appearance" });

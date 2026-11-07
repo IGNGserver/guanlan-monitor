@@ -162,6 +162,9 @@ function DeviceDirectoryFilterBar({
   sort,
   onSortChange,
   sortDisabled = false,
+  allGroupsCollapsed = false,
+  onToggleAllGroupsCollapse,
+  onOpenBatchGroup,
   actions
 }: {
   devices: DeviceSummary[];
@@ -175,6 +178,9 @@ function DeviceDirectoryFilterBar({
   sort: DeviceDirectorySort;
   onSortChange: (value: DeviceDirectorySort) => void;
   sortDisabled?: boolean;
+  allGroupsCollapsed?: boolean;
+  onToggleAllGroupsCollapse?: () => void;
+  onOpenBatchGroup?: () => void;
   actions?: React.ReactNode;
 }) {
   const onlineCount = devices.filter((device) => device.status === "online").length;
@@ -215,6 +221,20 @@ function DeviceDirectoryFilterBar({
             );
           })}
         </div>
+        {(onToggleAllGroupsCollapse || onOpenBatchGroup) && (
+          <div className="workspace-group-filter-bar__actions">
+            {groupFilter === "all" && resolvedGroups.length > 1 && onToggleAllGroupsCollapse && (
+              <Button variant="quiet" onClick={onToggleAllGroupsCollapse}>
+                {allGroupsCollapsed ? "展开全部组" : "收起全部组"}
+              </Button>
+            )}
+            {onOpenBatchGroup && (
+              <Button variant="quiet" onClick={onOpenBatchGroup}>
+                批量分组
+              </Button>
+            )}
+          </div>
+        )}
       </div>
     )}
   </div>;
@@ -394,6 +414,215 @@ function DeviceGroupDialog({
             </div>
           </div>
         )}
+      </div>
+    </M3Dialog>
+  );
+}
+
+/**
+ * 批量分组与组成员管理对话框：支持选择或输入目标分组，并直接勾选多台设备一键归组或移出分组。
+ */
+function BatchGroupManageDialog({
+  devices,
+  existingGroups,
+  initialGroup = "",
+  disabled = false,
+  onConfirm,
+  onCancel
+}: {
+  devices: readonly DeviceSummary[];
+  existingGroups: readonly string[];
+  initialGroup?: string | null;
+  disabled?: boolean;
+  onConfirm: (deviceIds: string[], group: string | null) => void;
+  onCancel: () => void;
+}) {
+  const [groupValue, setGroupValue] = useState(initialGroup ?? "");
+  const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
+    const normalizedInitial = normalizeDeviceGroup(initialGroup);
+    if (!normalizedInitial) return new Set<string>();
+    return new Set(
+      devices
+        .filter((device) => normalizeDeviceGroup(device.group) === normalizedInitial)
+        .map((device) => device.deviceId)
+    );
+  });
+
+  const suggestions = useMemo(() => {
+    const existingSet = new Set(existingGroups);
+    const recommended = RECOMMENDED_DEVICE_GROUPS.filter((item) => !existingSet.has(item));
+    return { existing: existingGroups, recommended };
+  }, [existingGroups]);
+
+  const filteredDevices = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return devices;
+    return devices.filter((device) =>
+      `${device.hostname} ${device.deviceId} ${device.os} ${normalizeDeviceGroup(device.group) ?? "未分组"}`
+        .toLowerCase()
+        .includes(needle)
+    );
+  }, [devices, search]);
+
+  const toggleDevice = (deviceId: string, checked: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(deviceId);
+      else next.delete(deviceId);
+      return next;
+    });
+  };
+
+  const selectGroupPreset = (groupName: string) => {
+    setGroupValue(groupName);
+    if (selectedIds.size === 0) {
+      const inGroup = devices
+        .filter((device) => normalizeDeviceGroup(device.group) === groupName)
+        .map((device) => device.deviceId);
+      if (inGroup.length > 0) setSelectedIds(new Set(inGroup));
+    }
+  };
+
+  const trimmedGroup = groupValue.trim();
+  const canSubmit = !disabled && selectedIds.size > 0;
+
+  const submit = () => {
+    if (!canSubmit) return;
+    onConfirm([...selectedIds], trimmedGroup ? trimmedGroup.slice(0, 64) : null);
+  };
+
+  return (
+    <M3Dialog
+      open
+      aria-label="批量管理设备分组"
+      headline={initialGroup ? `管理“${initialGroup}”分组设备` : "批量设置设备分组"}
+      onClose={() => { if (!disabled) onCancel(); }}
+      actions={<>
+        {selectedIds.size > 0 && trimmedGroup && (
+          <Button
+            variant="quiet"
+            disabled={disabled}
+            onClick={() => { if (!disabled) onConfirm([...selectedIds], null); }}
+          >
+            设为未分组 ({selectedIds.size})
+          </Button>
+        )}
+        <Button variant="quiet" onClick={onCancel} disabled={disabled}>取消</Button>
+        <Button variant="primary" onClick={submit} disabled={!canSubmit}>
+          {disabled
+            ? "保存中…"
+            : trimmedGroup
+              ? `归入“${trimmedGroup}” (${selectedIds.size})`
+              : `移出分组 (${selectedIds.size})`}
+        </Button>
+      </>}
+    >
+      <div className="workspace-group-dialog workspace-batch-group-dialog">
+        <p className="workspace-group-dialog__detail">
+          先确定目标分组名称，再勾选需要归入该分组的设备；留空分组名可将所选设备设为未分组。
+        </p>
+        <M3TextField
+          label="目标分组名称"
+          placeholder="输入分组名，或点选下方分组（留空表示未分组）"
+          value={groupValue}
+          onChange={(event) => setGroupValue(event.target.value)}
+          maxLength={64}
+        />
+        {(suggestions.existing.length > 0 || suggestions.recommended.length > 0) && (
+          <div className="workspace-group-dialog__section">
+            <span className="workspace-group-dialog__label">快速选择分组</span>
+            <div className="workspace-group-dialog__chips">
+              {suggestions.existing.map((group) => (
+                <M3Chip
+                  key={group}
+                  selected={trimmedGroup === group}
+                  onClick={() => selectGroupPreset(group)}
+                >
+                  {group}
+                </M3Chip>
+              ))}
+              {suggestions.recommended.map((group) => (
+                <M3Chip
+                  key={group}
+                  selected={trimmedGroup === group}
+                  onClick={() => setGroupValue(group)}
+                >
+                  + {group}
+                </M3Chip>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="workspace-batch-group__list-header">
+          <span className="workspace-group-dialog__label">
+            选择设备（已选 {selectedIds.size} / {devices.length} 台）
+          </span>
+          <div className="workspace-batch-group__quick-select">
+            <Button
+              variant="quiet"
+              onClick={() => {
+                const allFilteredSelected = filteredDevices.length > 0 && filteredDevices.every((d) => selectedIds.has(d.deviceId));
+                if (allFilteredSelected) {
+                  const next = new Set(selectedIds);
+                  filteredDevices.forEach((d) => next.delete(d.deviceId));
+                  setSelectedIds(next);
+                } else {
+                  const next = new Set(selectedIds);
+                  filteredDevices.forEach((d) => next.add(d.deviceId));
+                  setSelectedIds(next);
+                }
+              }}
+            >
+              {filteredDevices.length > 0 && filteredDevices.every((d) => selectedIds.has(d.deviceId)) ? "取消当前全选" : "全选当前列表"}
+            </Button>
+            {devices.some((d) => !normalizeDeviceGroup(d.group)) && (
+              <Button
+                variant="quiet"
+                onClick={() => {
+                  setSelectedIds(new Set(devices.filter((d) => !normalizeDeviceGroup(d.group)).map((d) => d.deviceId)));
+                }}
+              >
+                仅选未分组
+              </Button>
+            )}
+          </div>
+        </div>
+        {devices.length > 5 && (
+          <M3TextField
+            label="筛选设备"
+            placeholder="搜索主机名、原分组或设备 ID"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            type="search"
+          />
+        )}
+        <div className="workspace-batch-group__devices" role="group" aria-label="可分组设备列表">
+          {filteredDevices.map((device) => {
+            const current = normalizeDeviceGroup(device.group);
+            const checked = selectedIds.has(device.deviceId);
+            return (
+              <div
+                key={device.deviceId}
+                className={`workspace-batch-group__row ${checked ? "is-selected" : ""}`}
+              >
+                <M3Checkbox
+                  compact
+                  label={device.hostname}
+                  checked={checked}
+                  onCheckedChange={(next) => toggleDevice(device.deviceId, next)}
+                />
+                <span className="workspace-batch-group__meta">
+                  <small>{device.status === "online" ? "在线" : "离线"} · {device.os}</small>
+                  <span className="guanlan-device-group-badge">{current ?? "未分组"}</span>
+                </span>
+              </div>
+            );
+          })}
+          {filteredDevices.length === 0 && (
+            <div className="workspace-muted-block">没有匹配的设备</div>
+          )}
+        </div>
       </div>
     </M3Dialog>
   );
@@ -1190,6 +1419,7 @@ export {
   ConfirmDialog,
   PromptDialog,
   DeviceGroupDialog,
+  BatchGroupManageDialog,
   OverviewSummary,
   mergeFanMetricSeries,
   TelemetryModelList,

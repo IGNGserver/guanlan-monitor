@@ -1,6 +1,7 @@
 package com.dsc.android.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -25,8 +27,12 @@ import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.ReportProblem
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +43,7 @@ import com.dsc.android.AttentionSeverity
 import com.dsc.android.DeviceSummaryDto
 import com.dsc.android.collectAttention
 import com.dsc.android.ui.oneui.OneUiEmptyState
+import com.dsc.android.ui.oneui.OneUiFilterChip
 import com.dsc.android.ui.oneui.OneUiGroup
 import com.dsc.android.ui.oneui.OneUiGroupHeader
 import com.dsc.android.ui.oneui.OneUiIcon
@@ -75,7 +82,26 @@ fun AttentionScreen(state: AppState, actions: GuanlanActions, embedded: Boolean)
   val now = rememberNowMillis()
 
   val devices = state.devices.sortedWith(compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
-  val items = remember(state.devices, state.attentionMetrics, now / 30_000) { collectAttention(devices, state.attentionMetrics, now) }
+  val deviceGroupsById = remember(devices) { devices.associate { it.deviceId to it.normalizedGroup() } }
+  val allGroupSections = remember(devices) { buildDeviceGroupSections(devices, emptyMap()) }
+  val hasNamedGroups = remember(allGroupSections) { allGroupSections.any { !it.isUngrouped } }
+  var groupFilter by rememberSaveable { mutableStateOf(GROUP_FILTER_ALL) }
+  val activeGroupFilter = if (groupFilter != GROUP_FILTER_ALL && allGroupSections.none { it.key == groupFilter }) {
+    GROUP_FILTER_ALL
+  } else {
+    groupFilter
+  }
+  val allItems = remember(state.devices, state.attentionMetrics, now / 30_000) { collectAttention(devices, state.attentionMetrics, now) }
+  val items = remember(allItems, activeGroupFilter, deviceGroupsById) {
+    if (activeGroupFilter == GROUP_FILTER_ALL) {
+      allItems
+    } else {
+      allItems.filter { item ->
+        val g = deviceGroupsById[item.deviceId]
+        if (activeGroupFilter == GROUP_KEY_UNGROUPED) g == null else g == activeGroupFilter
+      }
+    }
+  }
   val groups = AttentionSeverity.entries.associateWith { severity -> items.filter { it.severity == severity } }
   val onlineIds = devices.filter { it.status == "online" }.map { it.deviceId }
   val covered = onlineIds.count { it in state.attentionMetrics }
@@ -102,6 +128,41 @@ fun AttentionScreen(state: AppState, actions: GuanlanActions, embedded: Boolean)
           }
         }
       )
+
+      if (hasNamedGroups) {
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .oneUiContentWidth(metrics)
+            .padding(horizontal = metrics.screenMargin)
+            .padding(bottom = metrics.spaceXs)
+        ) {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            OneUiFilterChip(
+              label = "全部 (${allItems.size})",
+              selected = activeGroupFilter == GROUP_FILTER_ALL,
+              onClick = { groupFilter = GROUP_FILTER_ALL }
+            )
+            allGroupSections.forEach { section ->
+              val sectionIssues = allItems.count { item ->
+                val g = deviceGroupsById[item.deviceId]
+                if (section.isUngrouped) g == null else g == section.key
+              }
+              OneUiFilterChip(
+                label = "${section.name} ($sectionIssues)",
+                selected = activeGroupFilter == section.key,
+                onClick = { groupFilter = section.key }
+              )
+            }
+          }
+        }
+      }
 
       LazyColumn(
         state = listState,
@@ -157,7 +218,11 @@ fun AttentionScreen(state: AppState, actions: GuanlanActions, embedded: Boolean)
                     OneUiGroup {
                       group.forEachIndexed { index, issue ->
                         if (index > 0) OneUiListDivider()
-                        AttentionRow(issue = issue, onClick = { actions.onOpenDevice(issue.deviceId, issue.block) })
+                        AttentionRow(
+                          issue = issue,
+                          groupName = if (activeGroupFilter == GROUP_FILTER_ALL) deviceGroupsById[issue.deviceId] else null,
+                          onClick = { actions.onOpenDevice(issue.deviceId, issue.block) }
+                        )
                       }
                     }
                   }
@@ -173,7 +238,11 @@ fun AttentionScreen(state: AppState, actions: GuanlanActions, embedded: Boolean)
                 OneUiGroup {
                   group.forEachIndexed { index, issue ->
                     if (index > 0) OneUiListDivider()
-                    AttentionRow(issue = issue, onClick = { actions.onOpenDevice(issue.deviceId, issue.block) })
+                    AttentionRow(
+                      issue = issue,
+                      groupName = if (activeGroupFilter == GROUP_FILTER_ALL) deviceGroupsById[issue.deviceId] else null,
+                      onClick = { actions.onOpenDevice(issue.deviceId, issue.block) }
+                    )
                   }
                 }
               }
@@ -224,12 +293,20 @@ private fun SeverityCounts(critical: Int, warning: Int, offline: Int) {
 }
 
 @Composable
-private fun AttentionRow(issue: AttentionItem, onClick: () -> Unit) {
+private fun AttentionRow(issue: AttentionItem, groupName: String? = null, onClick: () -> Unit) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
   OneUiListItem(
     title = issue.title,
-    subtitle = "${issue.hostname} · ${issue.detail}",
+    subtitle = buildString {
+      append(issue.hostname)
+      if (!groupName.isNullOrBlank()) {
+        append(" · ")
+        append(groupName)
+      }
+      append(" · ")
+      append(issue.detail)
+    },
     onClick = onClick,
     leading = {
       OneUiLeadingIcon(

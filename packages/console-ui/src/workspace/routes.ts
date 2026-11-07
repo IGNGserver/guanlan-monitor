@@ -24,8 +24,8 @@ export type DeviceLiveView = "processes" | "containers";
 const deviceLiveViews = new Set<string>(["processes", "containers"]);
 
 export type WorkspaceRoute =
-  | { kind: "overview" }
-  | { kind: "devices" }
+  | { kind: "overview"; group?: string }
+  | { kind: "devices"; group?: string }
   | { kind: "device"; deviceId: string; view?: DeviceLiveView }
   | { kind: "settings"; section: SettingsSection };
 
@@ -54,11 +54,28 @@ function decodeSegment(value: string): string | null {
     return null;
   }
 }
+
+function normalizeRouteGroup(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed && trimmed !== "all" ? trimmed : null;
+}
+
 export function parseWorkspaceHash(hash: string): WorkspaceRoute {
   const value = hash.replace(/^#/, "").replace(/^\//, "");
   if (value === "devices") return { kind: "devices" };
+  if (value === "overview" || value === "") return defaultRoute;
   const [kind, rawId, rawView] = value.split("/");
   const id = rawId ? decodeSegment(rawId) : null;
+  if (kind === "devices") {
+    const rawGroup = rawId === "group" ? (rawView ? decodeSegment(rawView) : null) : id;
+    const group = normalizeRouteGroup(rawGroup);
+    return group ? { kind: "devices", group } : { kind: "devices" };
+  }
+  if (kind === "overview") {
+    const rawGroup = rawId === "group" ? (rawView ? decodeSegment(rawView) : null) : null;
+    const group = normalizeRouteGroup(rawGroup);
+    return group ? { kind: "overview", group } : defaultRoute;
+  }
   // An unknown view keeps the device: the machine is what the link was about.
   if (kind === "device" && id) return rawView && deviceLiveViews.has(rawView) ? { kind: "device", deviceId: id, view: rawView as DeviceLiveView } : { kind: "device", deviceId: id };
   // The standalone hub page was folded into the overview: the connection facts
@@ -82,13 +99,17 @@ export function routeFromLocation(): WorkspaceRoute {
 
 export function serializeWorkspaceRoute(route: WorkspaceRoute): string {
   switch (route.kind) {
-    case "devices":
-      return "#devices";
+    case "devices": {
+      const group = normalizeRouteGroup(route.group);
+      return group ? `#devices/group/${encodeURIComponent(group)}` : "#devices";
+    }
     case "device":
       return `#device/${encodeURIComponent(route.deviceId)}${route.view ? `/${route.view}` : ""}`;
     case "settings":
       return `#settings/${route.section}`;
-    default:
-      return "#overview";
+    default: {
+      const group = normalizeRouteGroup(route.group);
+      return group ? `#overview/group/${encodeURIComponent(group)}` : "#overview";
+    }
   }
 }

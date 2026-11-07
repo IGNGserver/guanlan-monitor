@@ -4,12 +4,14 @@ import type { ConsoleSnapshot, DeviceSummary } from "@dsc/shared";
 import {
   UNGROUPED_GROUP_KEY,
   liveLinkLabel,
+  resolveActiveGroupFilter,
   selectAttentionDevices,
   selectDeviceDirectory,
   selectDeviceGroups,
   selectExistingGroupNames,
   selectHealthSummary,
   selectLinkLabel,
+  selectPeerDevicesInGroup,
   selectResourceRanking,
   selectSnapshotSource
 } from "./selectors.ts";
@@ -137,6 +139,20 @@ test("selectDeviceGroups aggregates group health, averages, and keeps ungrouped 
   assert.equal(groups[1].name, "未分组");
   assert.equal(groups[1].isUngrouped, true);
   assert.equal(groups[1].total, 1);
+
+  assert.equal(resolveActiveGroupFilter(groups, "宿主机"), "宿主机");
+  assert.equal(resolveActiveGroupFilter(groups, UNGROUPED_GROUP_KEY), UNGROUPED_GROUP_KEY);
+  assert.equal(resolveActiveGroupFilter(groups, "不存在的分组"), "all");
+  assert.equal(resolveActiveGroupFilter(groups, undefined), "all");
+
+  const pve2Peers = selectPeerDevicesInGroup(devices, devices[2]);
+  assert.equal(pve2Peers.groupKey, "宿主机");
+  assert.equal(pve2Peers.groupLabel, "宿主机");
+  assert.equal(pve2Peers.isUngrouped, false);
+  assert.deepEqual(pve2Peers.peers.map((item) => item.deviceId), ["pve1", "pve2", "pve3"]);
+  assert.equal(pve2Peers.currentIndex, 1);
+  assert.equal(pve2Peers.previousDevice?.deviceId, "pve1");
+  assert.equal(pve2Peers.nextDevice?.deviceId, "pve3");
 });
 
 // The overview surfaces only what cannot answer for itself; the device directory

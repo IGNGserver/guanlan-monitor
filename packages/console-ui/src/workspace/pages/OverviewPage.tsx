@@ -52,13 +52,22 @@ function failureGuide(isDesktopShell: boolean): string {
  * themselves, and says so plainly when there are none.
  */
 export function OverviewPage() {
-  const { snapshot, allDevices, metricsWindow, setMetricsWindow, loading, refreshing, error, refresh, openSettings, navigate, capabilities, healthThresholds } = useWorkspace();
+  const { route, snapshot, allDevices, metricsWindow, setMetricsWindow, loading, refreshing, error, refresh, openSettings, navigate, capabilities, healthThresholds } = useWorkspace();
   const [observationMetric, setObservationMetric] = useState<FleetMetric>("cpu");
-  const [groupFilter, setGroupFilter] = useState<DeviceGroupFilter>("all");
+  const routeGroup = route.kind === "overview" && route.group ? route.group : "all";
+  const [groupFilter, setGroupFilter] = useState<DeviceGroupFilter>(routeGroup);
+
+  React.useEffect(() => {
+    setGroupFilter(routeGroup);
+  }, [routeGroup]);
 
   const groups = useMemo(() => selectDeviceGroups(allDevices, healthThresholds), [allDevices, healthThresholds]);
   const hasNamedGroups = useMemo(() => groups.some((group) => !group.isUngrouped), [groups]);
   const activeGroupFilter = groupFilter !== "all" && !groups.some((group) => group.key === groupFilter) ? "all" : groupFilter;
+  const activeGroupSummary = useMemo(
+    () => (activeGroupFilter === "all" ? null : groups.find((group) => group.key === activeGroupFilter) ?? null),
+    [activeGroupFilter, groups]
+  );
   const scopedDevices = useMemo(
     () => selectDeviceDirectory(allDevices, { group: activeGroupFilter }),
     [allDevices, activeGroupFilter]
@@ -143,7 +152,15 @@ export function OverviewPage() {
         : hubAbnormal
           ? cached ? "当前显示的是离线缓存，" + health.sourceDetail + "；无法确认中枢现在的状态。" : "无法连接到中枢。请检查中枢地址与访问密钥。"
           : health.sourceDetail + "。统计覆盖全部已接入设备。"}
-      actions={<Button variant="quiet" onClick={() => navigate({ kind: "devices" })}>全部设备<Icon name="arrow" size={16} /></Button>}
+      actions={
+        <Button
+          variant="quiet"
+          onClick={() => navigate(activeGroupFilter === "all" ? { kind: "devices" } : { kind: "devices", group: activeGroupFilter })}
+        >
+          {activeGroupFilter === "all" ? "全部设备" : `${activeGroupName} · 设备目录`}
+          <Icon name="arrow" size={16} />
+        </Button>
+      }
     />
 
     {/* When the hub itself is unreachable the notification below already says the
@@ -211,6 +228,13 @@ export function OverviewPage() {
             </M3Chip>
           ))}
         </div>
+        {activeGroupSummary && (
+          <div className="workspace-group-filter-bar__actions">
+            <Button variant="quiet" onClick={() => navigate({ kind: "devices", group: activeGroupSummary.key })}>
+              进入“{activeGroupSummary.name}”目录<Icon name="arrow" size={14} />
+            </Button>
+          </div>
+        )}
       </div>
     )}
 

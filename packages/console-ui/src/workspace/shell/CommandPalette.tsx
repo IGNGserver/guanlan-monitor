@@ -1,13 +1,14 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { M3Dialog, M3SearchBar } from "../m3";
 import { useWorkspace } from "../WorkspaceContext";
+import { selectDeviceGroups } from "../selectors";
 import { Icon } from "../ui";
 import { visibleSettingsNavigation } from "./PrimaryNavigation";
 
-type CommandGroup = "页面" | "操作" | "设置" | "设备" | "实时查看";
+type CommandGroup = "页面" | "分组" | "操作" | "设置" | "设备" | "实时查看";
 
-/** Group order doubles as result rank: destinations, then actions, then settings. */
-const commandGroupOrder: CommandGroup[] = ["页面", "操作", "设置", "设备", "实时查看"];
+/** Group order doubles as result rank: destinations, groups, actions, then settings. */
+const commandGroupOrder: CommandGroup[] = ["页面", "分组", "操作", "设置", "设备", "实时查看"];
 
 interface Command {
   group: CommandGroup;
@@ -20,12 +21,14 @@ interface Command {
 }
 
 export function CommandPalette() {
-  const { commandOpen, setCommandOpen, searchQuery, setSearchQuery, allDevices, navigate, openSettings, refresh, capabilities } = useWorkspace();
+  const { commandOpen, setCommandOpen, searchQuery, setSearchQuery, allDevices, navigate, openSettings, refresh, capabilities, healthThresholds } = useWorkspace();
   const [activeIndex, setActiveIndex] = useState(0);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef(false);
   const commandOpenRef = useRef(commandOpen);
   commandOpenRef.current = commandOpen;
+  const deviceGroups = React.useMemo(() => selectDeviceGroups(allDevices, healthThresholds), [allDevices, healthThresholds]);
+  const hasNamedGroups = React.useMemo(() => deviceGroups.some((group) => !group.isUngrouped), [deviceGroups]);
 
   useLayoutEffect(() => {
     if (!commandOpen || wasOpenRef.current) return;
@@ -51,6 +54,15 @@ export function CommandPalette() {
   const commands = React.useMemo<Command[]>(() => [
     { group: "页面", label: "打开总览", detail: "全部设备的健康状态与中枢连接", keywords: ["首页", "状态", "dashboard", "中枢"], action: () => navigate({ kind: "overview" }) },
     { group: "页面", label: "打开设备目录", detail: "搜索、筛选和管理全部设备", keywords: ["设备", "列表", "目录"], action: () => navigate({ kind: "devices" }) },
+    ...(hasNamedGroups
+      ? deviceGroups.map((group): Command => ({
+          group: "分组",
+          label: `设备组 · ${group.name}`,
+          detail: `${group.online}/${group.total} 台在线${group.offline > 0 ? ` · ${group.offline} 台离线` : ""}${group.overThreshold > 0 ? ` · ${group.overThreshold} 台超限` : ""} · 直达该组设备列表`,
+          keywords: ["分组", "设备组", "group", group.name, ...group.devices.map((d) => d.hostname)],
+          action: () => navigate({ kind: "devices", group: group.key })
+        }))
+      : []),
     { group: "操作", label: "刷新设备状态", detail: "重新读取中枢和设备数据", keywords: ["刷新", "同步", "reload"], action: () => void refresh() },
     { group: "操作", label: "打开连接设置", detail: capabilities.canConfigureConnection ? "填写中枢地址与访问密钥" : "查看当前会话与数据链路", keywords: ["中枢", "地址", "密钥", "连接", "会话"], action: () => openSettings("connections") },
     ...(capabilities.canManageLocalAgent ? [{ group: "操作" as const, label: "控制本机 Agent", detail: "启动、停止或重新检测硬件", keywords: ["采集", "上报", "agent"], action: () => openSettings("connections") }] : []),
@@ -71,7 +83,7 @@ export function CommandPalette() {
       { group: "实时查看", label: `${device.hostname} · 进程`, detail: "查看这台设备正在运行的进程", keywords: ["进程", "任务管理器", "process", "top", device.deviceId], searchOnly: true, action: () => navigate({ kind: "device", deviceId: device.deviceId, view: "processes" }) },
       { group: "实时查看", label: `${device.hostname} · 容器`, detail: "查看这台设备的 Docker 容器", keywords: ["容器", "docker", "container", "compose", device.deviceId], searchOnly: true, action: () => navigate({ kind: "device", deviceId: device.deviceId, view: "containers" }) }
     ])
-  ], [allDevices, capabilities, navigate, openSettings, refresh]);
+  ], [allDevices, capabilities, deviceGroups, hasNamedGroups, navigate, openSettings, refresh]);
 
   const filtered = React.useMemo(() => {
     const query = searchQuery.trim().toLowerCase();

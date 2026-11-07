@@ -236,6 +236,50 @@ export function selectAttentionDevices(allDevices: DeviceSummary[], limit = 6, t
 }
 
 
+export interface DeviceGroupPeers {
+  groupKey: string;
+  groupLabel: string;
+  isUngrouped: boolean;
+  peers: DeviceSummary[];
+  currentIndex: number;
+  previousDevice: DeviceSummary | null;
+  nextDevice: DeviceSummary | null;
+}
+
+export function resolveActiveGroupFilter(
+  groups: readonly DeviceGroupSummary[],
+  groupFilter: DeviceGroupFilter | undefined | null
+): DeviceGroupFilter {
+  if (!groupFilter || groupFilter === "all") return "all";
+  return groups.some((group) => group.key === groupFilter) ? groupFilter : "all";
+}
+
+export function selectPeerDevicesInGroup(
+  devices: readonly DeviceSummary[],
+  currentDevice: DeviceSummary
+): DeviceGroupPeers {
+  const ordered = devices.slice().sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0));
+  const currentGroup = normalizeDeviceGroup(currentDevice.group);
+  const hasAnyNamedGroup = ordered.some((device) => normalizeDeviceGroup(device.group) !== null);
+  const groupKey = currentGroup ?? (hasAnyNamedGroup ? UNGROUPED_GROUP_KEY : "all");
+  const isUngrouped = currentGroup === null;
+  const groupLabel = currentGroup ?? (hasAnyNamedGroup ? "未分组" : "全部设备");
+  const peers = ordered.filter((device) => {
+    if (!hasAnyNamedGroup) return true;
+    return normalizeDeviceGroup(device.group) === currentGroup;
+  });
+  const currentIndex = peers.findIndex((device) => device.deviceId === currentDevice.deviceId);
+  return {
+    groupKey,
+    groupLabel,
+    isUngrouped,
+    peers,
+    currentIndex,
+    previousDevice: currentIndex > 0 ? peers[currentIndex - 1] : null,
+    nextDevice: currentIndex >= 0 && currentIndex < peers.length - 1 ? peers[currentIndex + 1] : null
+  };
+}
+
 export function selectDeviceDirectory(devices: DeviceSummary[], query: DeviceDirectoryQuery = {}): DeviceSummary[] {
   const normalizedQuery = query.query?.trim().toLocaleLowerCase() ?? "";
   const filtered = devices.filter((device) => {

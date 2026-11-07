@@ -111,7 +111,7 @@ fun DeviceDetailScreen(
   val displayWindow = displayWindowFor(data?.window, state.selectedWindow, state.loadingMetrics)
   val syncing = state.refreshing || state.loadingMetrics
 
-  var tabName by rememberSaveable(deviceId) { mutableStateOf(initialTab.name) }
+  var tabName by rememberSaveable { mutableStateOf(initialTab.name) }
   val tab = DetailTab.entries.firstOrNull { it.name == tabName } ?: DetailTab.Overview
   var openBlock by rememberSaveable(deviceId) { mutableStateOf<DeviceBlockKey?>(null) }
   var openTabId by rememberSaveable(deviceId) { mutableStateOf("total") }
@@ -119,8 +119,18 @@ fun DeviceDetailScreen(
   var switcherOpen by remember { mutableStateOf(false) }
   var groupPickerOpen by remember { mutableStateOf(false) }
   val currentGroup = (data?.device?.group ?: summary?.group)?.trim()?.takeIf { it.isNotEmpty() }
-  val existingGroups = remember(state.devices) {
-    state.devices.mapNotNull { it.normalizedGroup() }.distinct()
+  val orderedDevices = remember(state.devices) {
+    state.devices.sortedWith(compareBy<com.dsc.android.DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
+  }
+  val existingGroups = remember(orderedDevices) {
+    orderedDevices.mapNotNull { it.normalizedGroup() }.distinct()
+  }
+  val peerDevices = remember(orderedDevices, currentGroup, existingGroups) {
+    if (existingGroups.isEmpty()) {
+      emptyList()
+    } else {
+      orderedDevices.filter { it.normalizedGroup() == currentGroup }
+    }
   }
 
   // 从首页点某个读数进来：直接落到「硬件」里那一类，不让人再找一次（交）
@@ -280,6 +290,26 @@ fun DeviceDetailScreen(
         }
       }
 
+      if (peerDevices.size > 1) {
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .oneUiContentWidth(metrics)
+            .padding(horizontal = metrics.screenMargin)
+            .padding(bottom = metrics.spaceXs)
+        ) {
+          InGroupPeerSwitcherRow(
+            groupLabel = currentGroup ?: "未分组",
+            peers = peerDevices,
+            currentDeviceId = deviceId,
+            onOpenSwitcher = { switcherOpen = true },
+            onSelectDevice = { targetId ->
+              if (targetId != deviceId) actions.onOpenDevice(targetId, null)
+            }
+          )
+        }
+      }
+
       LazyColumn(
         state = listState,
         modifier = Modifier
@@ -356,27 +386,17 @@ fun DeviceDetailScreen(
   }
 
   if (switcherOpen) {
-    OneUiActionSheet(
-      onDismissRequest = { switcherOpen = false },
-      title = "切换设备",
-      actions = state.devices
-        .sortedWith(compareBy<com.dsc.android.DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
-        .map { device ->
-          OneUiActionModel(
-            label = if (device.deviceId == deviceId) "${device.hostname}（当前）" else device.hostname,
-            description = buildString {
-              append(if (device.status == "online") "在线" else "离线")
-              device.normalizedGroup()?.let { append(" · $it") }
-              append(" · CPU ${formatPercent(device.cpuUsagePercent)} · 内存 ${formatPercent(device.memoryUsagePercent)}")
-            },
-            icon = deviceIcon(device.os),
-            onClick = {
-              switcherOpen = false
-              // 换设备时保留当前标签页：对比两台机器的进程最常见（交）
-              if (device.deviceId != deviceId) actions.onOpenDevice(device.deviceId, null)
-            }
-          )
-        }
+    GroupedDeviceSwitcherSheet(
+      devices = orderedDevices,
+      currentDeviceId = deviceId,
+      currentGroup = currentGroup,
+      hasNamedGroups = existingGroups.isNotEmpty(),
+      onDismiss = { switcherOpen = false },
+      onSelectDevice = { targetId ->
+        switcherOpen = false
+        // 换设备时保留当前标签页：对比两台机器的进程最常见（交）
+        if (targetId != deviceId) actions.onOpenDevice(targetId, null)
+      }
     )
   }
 
@@ -392,6 +412,151 @@ fun DeviceDetailScreen(
         actions.onUpdateDeviceGroup(listOf(deviceId), nextGroup)
       }
     )
+  }
+}
+
+/** 同组设备直达切换条：在设备页无需退回总览即可一键横向切换同组机器，并保留当前标签页（交）。 */
+@Composable
+private fun InGroupPeerSwitcherRow(
+  groupLabel: String,
+  peers: List<com.dsc.android.DeviceSummaryDto>,
+  currentDeviceId: String?,
+  onOpenSwitcher: () -> Unit,
+  onSelectDevice: (String) -> Unit
+) {
+  val metrics = OneUiTheme.metrics
+  val colors = OneUiTheme.colors
+  val currentIndex = peers.indexOfFirst { it.deviceId == currentDeviceId }
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .horizontalScroll(rememberScrollState()),
+    horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    OneUiPill(
+      label = "$groupLabel ${if (currentIndex >= 0) "${currentIndex + 1}/${peers.size}" else "${peers.size}台"}",
+      tone = OneUiPillTone.Accent,
+      onClick = onOpenSwitcher
+    )
+    peers.forEach { peer ->
+      val isCurrent = peer.deviceId == currentDeviceId
+      val online = peer.status == "online"
+      OneUiFilterChip(
+        label = buildString {
+          append(peer.hostname)
+          if (online && peer.cpuUsagePercent != null) {
+            append(" ${formatPercent(peer.cpuUsagePercent)}")
+          }
+        },
+        selected = isCurrent,
+        onClick = { onSelectDevice(peer.deviceId) },
+        leadingIcon = {
+          OneUiStatusDot(
+            color = if (isCurrent) colors.textOnAccent else if (online) colors.online else colors.offline,
+            description = if (online) "在线" else "离线"
+          )
+        }
+      )
+    }
+  }
+}
+
+@Composable
+private fun GroupedDeviceSwitcherSheet(
+  devices: List<com.dsc.android.DeviceSummaryDto>,
+  currentDeviceId: String?,
+  currentGroup: String?,
+  hasNamedGroups: Boolean,
+  onDismiss: () -> Unit,
+  onSelectDevice: (String) -> Unit
+) {
+  val metrics = OneUiTheme.metrics
+  val colors = OneUiTheme.colors
+  val initialFilter = remember(currentGroup, hasNamedGroups) {
+    if (!hasNamedGroups) GROUP_FILTER_ALL else currentGroup ?: GROUP_KEY_UNGROUPED
+  }
+  var selectedGroupFilter by remember(initialFilter) { mutableStateOf(initialFilter) }
+  var searchQuery by remember { mutableStateOf("") }
+  val groupSections = remember(devices) { buildDeviceGroupSections(devices, emptyMap()) }
+  val visibleDevices = remember(devices, selectedGroupFilter, searchQuery) {
+    val needle = searchQuery.trim()
+    devices.filter { device ->
+      device.matchesGroup(selectedGroupFilter) &&
+        (needle.isEmpty() ||
+          device.hostname.contains(needle, ignoreCase = true) ||
+          device.deviceId.contains(needle, ignoreCase = true) ||
+          device.group.orEmpty().contains(needle, ignoreCase = true))
+    }
+  }
+
+  OneUiSheet(
+    onDismissRequest = onDismiss,
+    title = "切换设备",
+    subtitle = if (hasNamedGroups) "默认展示同组设备，可切换分组或搜索直达目标机器" else "点按任意设备立即切换，并保留当前标签页"
+  ) {
+    if (hasNamedGroups) {
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        OneUiFilterChip(
+          label = "全部 ${devices.size}",
+          selected = selectedGroupFilter == GROUP_FILTER_ALL,
+          onClick = { selectedGroupFilter = GROUP_FILTER_ALL }
+        )
+        groupSections.forEach { section ->
+          OneUiFilterChip(
+            label = "${section.name} ${section.online}/${section.total}",
+            selected = selectedGroupFilter == section.key,
+            onClick = { selectedGroupFilter = section.key }
+          )
+        }
+      }
+    }
+    if (devices.size > 5) {
+      OneUiTextField(
+        value = searchQuery,
+        onValueChange = { searchQuery = it },
+        label = "搜索主机名、分组或设备 ID"
+      )
+    }
+    if (visibleDevices.isEmpty()) {
+      OneUiText(
+        text = "当前筛选下没有匹配的设备",
+        role = OneUiTextRole.RowSubtitle,
+        color = colors.textTertiary
+      )
+    } else {
+      OneUiGroup {
+        visibleDevices.forEachIndexed { index, device ->
+          if (index > 0) OneUiListDivider()
+          val isCurrent = device.deviceId == currentDeviceId
+          val online = device.status == "online"
+          OneUiListItem(
+            title = if (isCurrent) "${device.hostname}（当前）" else device.hostname,
+            subtitle = buildString {
+              append(if (online) "在线" else "离线")
+              device.normalizedGroup()?.let { append(" · $it") }
+              if (online) {
+                append(" · CPU ${formatPercent(device.cpuUsagePercent)} · 内存 ${formatPercent(device.memoryUsagePercent)}")
+              }
+            },
+            onClick = { onSelectDevice(device.deviceId) },
+            leading = {
+              OneUiLeadingIcon(
+                icon = deviceIcon(device.os),
+                contentDescription = null,
+                tone = if (isCurrent) OneUiIconTone.Accent else if (online) OneUiIconTone.Online else OneUiIconTone.Offline
+              )
+            }
+          )
+        }
+      }
+    }
   }
 }
 

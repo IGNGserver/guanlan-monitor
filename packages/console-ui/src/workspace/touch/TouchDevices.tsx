@@ -15,17 +15,36 @@ import {
   type DeviceDirectoryStatus
 } from "../selectors";
 import { mergeDeviceOrder, registerDeviceOrderDraftGuard } from "../deviceOrderDraft";
-import { DeviceGroupDialog, EmptyState, ErrorSurface, LoadingSurface } from "../pages/shared";
+import { BatchGroupManageDialog, DeviceGroupDialog, EmptyState, ErrorSurface, LoadingSurface } from "../pages/shared";
+import { formatPercent } from "../formatters";
 
 export function TouchDevices() {
-  const { allDevices, snapshot, loading, error, refresh, route, deleteInstance, reorderInstances, updateDeviceGroup, mutationPending, openSettings, healthThresholds } = useWorkspace();
+  const { allDevices, snapshot, loading, error, refresh, route, navigate, deleteInstance, reorderInstances, updateDeviceGroup, mutationPending, openSettings, healthThresholds } = useWorkspace();
   const { query, setQuery, status, setStatus, group, setGroup, sort, setSort, pins, togglePin } = useTouchState();
   const [sheet, setSheet] = useState<"filter" | "menu" | null>(null);
   const [target, setTarget] = useState<DeviceSummary | null>(null);
   const [groupTarget, setGroupTarget] = useState<DeviceSummary | null>(null);
+  const [batchGroupTarget, setBatchGroupTarget] = useState<string | null | undefined>(undefined);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
   const [manage, setManage] = useState(false);
   const [draft, setDraft] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (route.kind === "devices" && route.group) {
+      setGroup(route.group);
+    }
+  }, [route, setGroup]);
+
+  const selectGroup = (nextGroup: string) => {
+    setGroup(nextGroup);
+    if (route.kind === "devices") {
+      const normalized = nextGroup === "all" ? undefined : nextGroup;
+      if (route.group !== normalized) {
+        navigate(normalized ? { kind: "devices", group: normalized } : { kind: "devices" });
+      }
+    }
+  };
   const serverOrder = allDevices.map((device) => device.deviceId);
   const effectiveOrder = mergeDeviceOrder(draft ?? serverOrder, serverOrder);
   const dirty = Boolean(manage && draft && effectiveOrder.some((id, index) => id !== serverOrder[index]));
@@ -51,12 +70,29 @@ export function TouchDevices() {
   const existingGroupNames = useMemo(() => selectExistingGroupNames(ordered), [ordered]);
   const hasNamedGroups = existingGroupNames.length > 0;
   const activeGroup = group !== "all" && !groups.some((item) => item.key === group) ? "all" : group;
+  const activeGroupSummary = useMemo(
+    () => (activeGroup === "all" ? null : groups.find((item) => item.key === activeGroup) ?? null),
+    [activeGroup, groups]
+  );
   const visible = selectDeviceDirectory(ordered, {
     query: manage ? "" : query,
     status: manage ? "all" : status,
     group: manage ? "all" : activeGroup,
     sort: manage ? "order" : sort
   });
+  const visibleGroups = useMemo(
+    () => selectDeviceGroups(visible, healthThresholds),
+    [visible, healthThresholds]
+  );
+  const showGroupedSections = !manage && hasNamedGroups && activeGroup === "all" && sort === "order" && visibleGroups.length > 0;
+  const toggleCollapseGroup = (groupKey: string) => {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
+  };
   const move = (id: string, direction: number) => {
     const position = effectiveOrder.indexOf(id);
     if (!canManage || mutationPending || position + direction < 0 || position + direction >= effectiveOrder.length) return;
@@ -79,34 +115,102 @@ export function TouchDevices() {
   if (loading && !snapshot) return <LoadingSurface />;
   if (!snapshot) return <ErrorSurface title="暂时无法读取设备" detail={error ?? "请检查网络后重试"} onRetry={() => void refresh()} />;
   return <div className="touch-page touch-directory">
-    <header className="touch-directory__heading"><div><h1>设备</h1><p>{allDevices.length} 台{snapshot?.source === "cache" ? "已缓存" : "已接入"}</p></div>
+    <header className="touch-directory__heading"><div><h1>{activeGroupSummary ? activeGroupSummary.name : "设备"}</h1><p>{activeGroupSummary ? `本组 ${activeGroupSummary.online}/${activeGroupSummary.total} 台在线 · 共 ${allDevices.length} 台` : `${allDevices.length} 台${snapshot?.source === "cache" ? "已缓存" : "已接入"}`}</p></div>
       {!manage && <M3IconButton label="设备目录操作" onClick={() => setSheet("menu")}><Icon name="more" /></M3IconButton>}
     </header>
     {manage ? <div className="touch-manage-bar" role="status"><p>调整列表顺序<br/><small>用上移、下移调整，保存后同步到中枢。</small></p><div><Button variant="text" disabled={mutationPending} onClick={() => { setManage(false); setDraft(null); }}>取消</Button><Button variant="primary" disabled={!dirty || mutationPending} onClick={() => void save()}>{mutationPending ? "保存中" : "保存顺序"}</Button></div></div>
-      : <div className="touch-search-row"><M3SearchBar label="搜索设备" placeholder="搜索名称、分组、系统或标识" value={query} onChange={(event) => setQuery(event.target.value)} onClear={() => setQuery("")} autoComplete="off" enterKeyHint="search" />
-        <M3IconButton label="筛选与排序" selected={status !== "all" || activeGroup !== "all" || sort !== "order"} onClick={() => setSheet("filter")}><Icon name="filter" /></M3IconButton></div>}
-    {!manage && hasNamedGroups && (
-      <div className="touch-group-chips" role="group" aria-label="按分组筛选">
-        <M3Chip selected={activeGroup === "all"} onClick={() => setGroup("all")}>全部 ({ordered.length})</M3Chip>
-        {groups.map((item) => (
-          <M3Chip key={item.key} selected={activeGroup === item.key} onClick={() => setGroup(item.key)}>
-            {item.name} ({item.online}/{item.total})
-          </M3Chip>
-        ))}
+      : <div className="touch-directory__sticky">
+          <div className="touch-search-row"><M3SearchBar label="搜索设备" placeholder="搜索名称、分组、系统或标识" value={query} onChange={(event) => setQuery(event.target.value)} onClear={() => setQuery("")} autoComplete="off" enterKeyHint="search" />
+            <M3IconButton label="筛选与排序" selected={status !== "all" || activeGroup !== "all" || sort !== "order"} onClick={() => setSheet("filter")}><Icon name="filter" /></M3IconButton></div>
+          {hasNamedGroups && (
+            <div className="touch-group-chips" role="group" aria-label="按分组筛选">
+              <M3Chip selected={activeGroup === "all"} onClick={() => selectGroup("all")}>全部 ({ordered.length})</M3Chip>
+              {groups.map((item) => {
+                const hasAlert = item.offline > 0 || item.overThreshold > 0;
+                return (
+                  <M3Chip key={item.key} selected={activeGroup === item.key} onClick={() => selectGroup(item.key)}>
+                    <span className="workspace-group-chip-content">
+                      {hasAlert && <span className={`workspace-group-chip-dot ${item.offline > 0 ? "is-offline" : "is-warning"}`} aria-hidden="true" />}
+                      <span>{item.name} ({item.online}/{item.total})</span>
+                    </span>
+                  </M3Chip>
+                );
+              })}
+            </div>
+          )}
+        </div>}
+    {!manage && activeGroupSummary && (
+      <div className="touch-group-summary-bar">
+        <span>
+          {[
+            activeGroupSummary.avgCpuPercent != null ? `平均 CPU ${formatPercent(activeGroupSummary.avgCpuPercent)}` : "",
+            activeGroupSummary.avgMemoryPercent != null ? `平均内存 ${formatPercent(activeGroupSummary.avgMemoryPercent)}` : "",
+            activeGroupSummary.offline > 0 ? `${activeGroupSummary.offline} 台离线` : "组内状态一览"
+          ].filter(Boolean).join(" · ")}
+        </span>
+        {canManage && (
+          <Button variant="text" onClick={() => setBatchGroupTarget(activeGroupSummary.isUngrouped ? "" : activeGroupSummary.name)}>
+            管理成员
+          </Button>
+        )}
       </div>
     )}
     {!manage && <div className="touch-directory__count" aria-live="polite">{query || status !== "all" || activeGroup !== "all" ? `找到 ${visible.length} 台 · ${status === "online" ? "在线" : status === "offline" ? "离线" : "全部状态"}` : "点击设备查看状态与趋势"}</div>}
-    <div className="touch-device-list">{visible.map((device, index) => <div key={device.deviceId} className="touch-directory__item">
-      <TouchDeviceRow device={device} selected={route.kind === "device" && route.deviceId === device.deviceId} disabled={manage}
-        onMore={!manage ? () => { setTarget(device); setDeleting(false); } : undefined} />
-      {manage && <div className="touch-order-controls"><span>第 {index + 1} 位</span><M3IconButton label={`上移${device.hostname}`} disabled={!canManage || mutationPending || index === 0} onClick={() => move(device.deviceId, -1)}><Icon name="chevronUp" /></M3IconButton><M3IconButton label={`下移${device.hostname}`} disabled={!canManage || mutationPending || index === visible.length - 1} onClick={() => move(device.deviceId, 1)}><Icon name="chevron" /></M3IconButton></div>}
-    </div>)}</div>
-    {!visible.length && <EmptyState title={allDevices.length ? "没有匹配的设备" : "还没有设备接入"} detail={allDevices.length ? "清除搜索或筛选后查看全部设备。" : "设备上的 Agent 首次上报后会自动出现在这里。"} action={allDevices.length ? <Button onClick={() => { setQuery(""); setStatus("all"); setGroup("all"); }}>清除筛选</Button> : <Button onClick={() => openSettings("connections")}>查看连接</Button>} />}
+    {showGroupedSections ? (
+      <div className="touch-group-sections">
+        {visibleGroups.map((groupItem) => {
+          const isCollapsed = collapsedGroups.has(groupItem.key);
+          return (
+            <section key={groupItem.key} className="touch-group-section" aria-label={`分组 ${groupItem.name}`}>
+              <button
+                type="button"
+                className="touch-group-section__header"
+                aria-expanded={!isCollapsed}
+                onClick={() => toggleCollapseGroup(groupItem.key)}
+              >
+                <span className="touch-group-section__title">
+                  <Icon name={isCollapsed ? "chevronRight" : "chevron"} size={18} />
+                  <strong>{groupItem.name}</strong>
+                  <small>{groupItem.online}/{groupItem.total} 在线</small>
+                </span>
+                <span className="touch-group-section__meta">
+                  {groupItem.offline > 0 ? `${groupItem.offline} 离线` : isCollapsed ? "展开" : "收起"}
+                </span>
+              </button>
+              {!isCollapsed && (
+                <div className="touch-device-list">
+                  {groupItem.devices.map((device) => (
+                    <div key={device.deviceId} className="touch-directory__item">
+                      <TouchDeviceRow
+                        device={device}
+                        selected={route.kind === "device" && route.deviceId === device.deviceId}
+                        onMore={() => { setTarget(device); setDeleting(false); }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    ) : (
+      <div className="touch-device-list">{visible.map((device, index) => <div key={device.deviceId} className="touch-directory__item">
+        <TouchDeviceRow device={device} selected={route.kind === "device" && route.deviceId === device.deviceId} disabled={manage}
+          onMore={!manage ? () => { setTarget(device); setDeleting(false); } : undefined} />
+        {manage && <div className="touch-order-controls"><span>第 {index + 1} 位</span><M3IconButton label={`上移${device.hostname}`} disabled={!canManage || mutationPending || index === 0} onClick={() => move(device.deviceId, -1)}><Icon name="chevronUp" /></M3IconButton><M3IconButton label={`下移${device.hostname}`} disabled={!canManage || mutationPending || index === visible.length - 1} onClick={() => move(device.deviceId, 1)}><Icon name="chevron" /></M3IconButton></div>}
+      </div>)}</div>
+    )}
+    {!visible.length && <EmptyState title={allDevices.length ? "没有匹配的设备" : "还没有设备接入"} detail={allDevices.length ? "清除搜索或筛选后查看全部设备。" : "设备上的 Agent 首次上报后会自动出现在这里。"} action={allDevices.length ? <Button onClick={() => { setQuery(""); setStatus("all"); selectGroup("all"); }}>清除筛选</Button> : <Button onClick={() => openSettings("connections")}>查看连接</Button>} />}
     {sheet && <TouchSheet title={sheet === "filter" ? "筛选与排序" : "设备目录"} onClose={closeSheet}>
       {sheet === "filter" ? <div className="touch-sheet__stack"><M3SegmentedControl aria-label="设备状态筛选" options={[{ value: "all", label: "全部" }, { value: "online", label: "在线" }, { value: "offline", label: "离线" }]} value={status} onChange={(value) => setStatus(value as DeviceDirectoryStatus)} />
         <M3Select label="排列方式" value={sort} onChange={(event) => setSort(event.target.value as DeviceDirectorySort)} options={[{ value: "order", label: "中枢顺序" }, { value: "name", label: "设备名称" }, { value: "cpu", label: "CPU 使用率" }, { value: "memory", label: "内存使用率" }, { value: "lastSeen", label: "最近在线" }]} />
-        <Button variant="text" onClick={() => { setStatus("all"); setGroup("all"); setSort("order"); }}>重置筛选与排序</Button><Button variant="primary" onClick={closeSheet}>查看 {visible.length} 台设备</Button></div>
-      : <div className="touch-sheet__stack"><Button disabled={!canManage || mutationPending} onClick={() => { closeSheet(); setDraft(serverOrder); setManage(true); }}>管理设备顺序</Button><p>{canManage ? "设置分组或删除设备请打开该设备的更多操作。" : "离线缓存只能查看，恢复连接后可管理设备。"}</p></div>}
+        <Button variant="text" onClick={() => { setStatus("all"); selectGroup("all"); setSort("order"); }}>重置筛选与排序</Button><Button variant="primary" onClick={closeSheet}>查看 {visible.length} 台设备</Button></div>
+      : <div className="touch-sheet__stack">
+          <Button disabled={!canManage || mutationPending} onClick={() => { closeSheet(); setBatchGroupTarget(activeGroupSummary && !activeGroupSummary.isUngrouped ? activeGroupSummary.name : ""); }}>批量设置设备分组</Button>
+          <Button disabled={!canManage || mutationPending} onClick={() => { closeSheet(); setDraft(serverOrder); setManage(true); }}>管理设备顺序</Button>
+          <p>{canManage ? "可批量勾选多台设备归入分组，或在单台设备的更多操作中修改。" : "离线缓存只能查看，恢复连接后可管理设备。"}</p>
+        </div>}
     </TouchSheet>}
     {target && <TouchSheet title={deleting ? `删除“${target.hostname}”？` : target.hostname} onClose={closeTarget}>
       <div className="touch-sheet__stack">{deleting ? <><p>删除后设备不再出现在中枢列表；宿主机或 Agent 下次上报时，它会重新出现。</p><Button variant="danger" disabled={!canManage || mutationPending} onClick={() => { const id = target.deviceId; closeTarget(); void deleteInstance(id); }}>删除设备</Button><Button variant="text" onClick={() => setDeleting(false)}>取消删除</Button></>
@@ -132,6 +236,19 @@ export function TouchDevices() {
           void updateDeviceGroup([deviceId], nextGroup);
         }}
         onCancel={() => setGroupTarget(null)}
+      />
+    )}
+    {batchGroupTarget !== undefined && (
+      <BatchGroupManageDialog
+        devices={ordered}
+        existingGroups={existingGroupNames}
+        initialGroup={batchGroupTarget}
+        disabled={mutationPending}
+        onConfirm={(targetIds, nextGroup) => {
+          setBatchGroupTarget(undefined);
+          void updateDeviceGroup(targetIds, nextGroup);
+        }}
+        onCancel={() => setBatchGroupTarget(undefined)}
       />
     )}
   </div>;
