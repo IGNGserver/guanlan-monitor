@@ -14,11 +14,12 @@ import type {
   SamplePoint,
   TrafficCalendarMode
 } from "@dsc/shared";
+import { isReservedDeviceGroupName, normalizeDeviceGroupName } from "@dsc/shared";
 import { z } from "zod";
 import { env } from "./config.js";
 import { authRateLimiter, createSession, getBearerToken, parseSessionValue, renewSession, safeEqual } from "./auth.js";
 import type { MetricsService } from "./services/metrics.js";
-import { DeviceNotFoundError, type DeviceMetricConfigStore, type FanNoteStore, type Repositories, type SessionValue } from "./types.js";
+import { DeviceNotFoundError, InvalidDeviceGroupNameError, type DeviceMetricConfigStore, type FanNoteStore, type Repositories, type SessionValue } from "./types.js";
 import { ALL_DEVICE_METRIC_KEYS, filterAgentPayloadInstances, getAvailableMetrics, resolveCpuFrequencyMHz, resolveCpuTemperatureC, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
 import { getSystemVersionInfo, getUpdateInfo } from "./updates.js";
 import { getHubUpdateStatus, HubUpdateError, requestHubUpdate } from "./hub-update.js";
@@ -344,7 +345,10 @@ export async function registerRoutes(
       return reply.code(400).send({ error: "invalid_group_payload" });
     }
     const deviceIds = [...new Set(parsed.data.deviceIds)];
-    const normalizedGroup = parsed.data.group?.trim() ? parsed.data.group.trim() : null;
+    const normalizedGroup = normalizeDeviceGroupName(parsed.data.group);
+    if (normalizedGroup && isReservedDeviceGroupName(normalizedGroup)) {
+      return reply.code(400).send({ error: "invalid_group_name" });
+    }
     const openDevices = await repositories.devices.listOpenDevices();
     const openIds = new Set(openDevices.map((device) => device.deviceId));
     const missing = deviceIds.find((deviceId) => !openIds.has(deviceId));
@@ -352,6 +356,7 @@ export async function registerRoutes(
     try {
       await metricsService.updateDeviceGroup(deviceIds, normalizedGroup);
     } catch (error) {
+      if (error instanceof InvalidDeviceGroupNameError) return reply.code(400).send({ error: "invalid_group_name" });
       if (error instanceof DeviceNotFoundError) return reply.code(404).send({ error: "device_not_found" });
       throw error;
     }
@@ -367,7 +372,10 @@ export async function registerRoutes(
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_group_payload" });
     }
-    const normalizedGroup = parsed.data.group?.trim() ? parsed.data.group.trim() : null;
+    const normalizedGroup = normalizeDeviceGroupName(parsed.data.group);
+    if (normalizedGroup && isReservedDeviceGroupName(normalizedGroup)) {
+      return reply.code(400).send({ error: "invalid_group_name" });
+    }
     const openDevice = await repositories.devices.getOpenDevice?.(deviceId)
       ?? (await repositories.devices.listOpenDevices()).find((device) => device.deviceId === deviceId)
       ?? null;
@@ -375,6 +383,7 @@ export async function registerRoutes(
     try {
       await metricsService.updateDeviceGroup([deviceId], normalizedGroup);
     } catch (error) {
+      if (error instanceof InvalidDeviceGroupNameError) return reply.code(400).send({ error: "invalid_group_name" });
       if (error instanceof DeviceNotFoundError) return reply.code(404).send({ error: "device_not_found" });
       throw error;
     }

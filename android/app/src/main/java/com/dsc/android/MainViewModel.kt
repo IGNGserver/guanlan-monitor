@@ -52,6 +52,7 @@ class MainViewModel(
   private val deviceMetricsCache = mutableMapOf<String, MetricsDto>()
   private val deviceTrafficCache = mutableMapOf<String, TrafficCalendarDto>()
   private val refreshMutex = Mutex()
+  private val groupMutationMutex = Mutex()
 
   private val _state = MutableStateFlow(AppState())
   val state: StateFlow<AppState> = _state.asStateFlow()
@@ -973,26 +974,21 @@ class MainViewModel(
     if (deviceIds.isEmpty()) return
     val normalized = group?.trim()?.takeIf { it.isNotEmpty() }?.take(64)
     viewModelScope.launch {
-      remoteResult {
-        executeWithAuthRetry {
-          it.updateDeviceGroup(DeviceGroupUpdatePayloadDto(deviceIds = deviceIds, group = normalized))
-        }
-      }
-        .onSuccess {
-          _state.update {
-            it.copy(
-              devices = it.devices.map { d -> if (d.deviceId in deviceIds) d.copy(group = normalized) else d },
-              metrics = it.metrics?.let { m ->
-                if (m.device.deviceId in deviceIds) m.copy(device = m.device.copy(group = normalized)) else m
-              },
-              message = if (normalized != null) "已归入「$normalized」" else "已设为未分组"
-            )
+      groupMutationMutex.withLock {
+        remoteResult {
+          executeWithAuthRetry {
+            it.updateDeviceGroup(DeviceGroupUpdatePayloadDto(deviceIds = deviceIds, group = normalized))
           }
-          refreshAfterWrite()
         }
-        .onFailure { error ->
-          _state.update { it.copy(message = userFacingError(error, "设备分组保存失败，请稍后重试")) }
-        }
+          .onSuccess {
+            refreshAfterWrite()
+            _state.update { it.copy(message = if (normalized != null) "已归入「$normalized」" else "已设为未分组") }
+          }
+          .onFailure { error ->
+            _state.update { it.copy(message = userFacingError(error, "设备分组保存失败，请稍后重试")) }
+            refresh()
+          }
+      }
     }
   }
 

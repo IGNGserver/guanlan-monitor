@@ -38,7 +38,8 @@ public struct DeviceSummaryDto: Codable, Identifiable, Equatable, Sendable {
     public let memoryUsagePercent: Double?
     public let diskUsagePercent: Double?
     public let sortOrder: Int?
-    
+    public let group: String?
+
     public var isOnline: Bool {
         status.lowercased() == "online"
     }
@@ -74,6 +75,7 @@ public struct DeviceDetailDto: Codable, Equatable, Sendable {
     public let status: String
     public let lastSeenAt: String?
     public let sortOrder: Int?
+    public let group: String?
 }
 
 public struct SensorBackendDto: Codable, Identifiable, Equatable, Sendable {

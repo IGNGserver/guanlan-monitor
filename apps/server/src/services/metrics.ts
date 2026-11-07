@@ -36,12 +36,29 @@ export class MetricsService {
   private readonly ingestQueues = new KeyedSerialQueue();
   private readonly flushTask = nonOverlappingTask(() => this.performAggregateFlush());
   private readonly offlineTask = nonOverlappingTask(() => this.performOfflineScan());
-
   constructor(
     private readonly repositories: Repositories,
     private readonly emitDeviceEvent: DeviceEventEmitter,
     private readonly deviceMetricConfigs: DeviceMetricConfigStore
   ) {}
+
+  private emitDeviceEventSafely(event: DeviceRealtimeEvent): void {
+    try {
+      this.emitDeviceEvent(event);
+    } catch {
+      // Durable state is authoritative; a realtime listener failure must not fail the write.
+    }
+  }
+
+  private async withDeviceLocks<T>(deviceIds: readonly string[], operation: () => Promise<T>): Promise<T> {
+    const ids = [...new Set(deviceIds)].sort();
+    const acquire = (index: number): Promise<T> => {
+      if (index >= ids.length) return operation();
+      const deviceId = ids[index];
+      return this.ingestQueues.run(deviceId, () => this.deviceQueues.run(deviceId, () => acquire(index + 1)));
+    };
+    return acquire(0);
+  }
 
   private async getOpenDevice(deviceId: string) {
     const devices = this.repositories.devices;
@@ -115,37 +132,39 @@ export class MetricsService {
         ...(group === undefined ? {} : { group })
       }
     };
-    this.emitDeviceEvent(event);
+    this.emitDeviceEventSafely(event);
   }
 
   async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void> {
     const uniqueIds = [...new Set(deviceIds)];
     await this.repositories.devices.updateDeviceGroup(uniqueIds, group);
-    await forEachBounded(uniqueIds, async (deviceId) => {
-      const [state, record] = await Promise.all([
-        this.repositories.realtime.getDevice(deviceId),
-        this.getOpenDevice(deviceId)
-      ]);
-      if (!record) return;
-      const summary = state
-        ? { ...toSummary(state), sortOrder: record.sortOrder, group: record.group ?? null }
-        : {
-            deviceId: record.deviceId,
-            hostname: record.name || record.deviceId,
-            os: "unknown" as const,
-            agentVersion: null,
-            agentChannel: null,
-            status: "offline" as const,
-            lastSeenAt: record.updatedAt,
-            cpuUsagePercent: null,
-            gpuUsagePercent: null,
-            gpuMemoryUsagePercent: null,
-            memoryUsagePercent: null,
-            diskUsagePercent: null,
-            sortOrder: record.sortOrder,
-            group: record.group ?? null
-          };
-      this.emitDeviceEvent({ deviceId, summary });
+    await this.withDeviceLocks(uniqueIds, async () => {
+      await forEachBounded(uniqueIds, async (deviceId) => {
+        const [state, record] = await Promise.all([
+          this.repositories.realtime.getDevice(deviceId),
+          this.getOpenDevice(deviceId)
+        ]);
+        if (!record) return;
+        const summary = state
+          ? { ...toSummary(state), sortOrder: record.sortOrder, group: record.group ?? null }
+          : {
+              deviceId: record.deviceId,
+              hostname: record.name || record.deviceId,
+              os: "unknown" as const,
+              agentVersion: null,
+              agentChannel: null,
+              status: "offline" as const,
+              lastSeenAt: record.updatedAt,
+              cpuUsagePercent: null,
+              gpuUsagePercent: null,
+              gpuMemoryUsagePercent: null,
+              memoryUsagePercent: null,
+              diskUsagePercent: null,
+              sortOrder: record.sortOrder,
+              group: record.group ?? null
+            };
+        this.emitDeviceEventSafely({ deviceId, summary });
+      });
     });
   }
 
@@ -164,7 +183,7 @@ export class MetricsService {
     if (!state) return;
 
     const offlineState = { ...state, status: "offline" as const };
-    this.emitDeviceEvent({
+    this.emitDeviceEventSafely({
       deviceId,
       summary: toSummary(offlineState),
       removed: true
@@ -187,14 +206,18 @@ export class MetricsService {
         offlineState
       );
       if (marked) {
-        const record = await this.getOpenDevice(offlineState.identity.deviceId);
-        this.emitDeviceEvent({
-          deviceId: offlineState.identity.deviceId,
-          summary: {
-            ...toSummary(offlineState),
-            ...(record ? { sortOrder: record.sortOrder, group: record.group ?? null } : {})
-          }
-        });
+        await this.runDeviceIngestOperation(offlineState.identity.deviceId, () => this.runDeviceAggregateOperation(offlineState.identity.deviceId, async () => {
+          const current = await this.repositories.realtime.getDevice(offlineState.identity.deviceId);
+          if (!current || current.status !== "offline" || current.lastSeenAt !== offlineState.lastSeenAt) return;
+          const record = await this.getOpenDevice(offlineState.identity.deviceId);
+          this.emitDeviceEventSafely({
+            deviceId: offlineState.identity.deviceId,
+            summary: {
+              ...toSummary(current),
+              ...(record ? { sortOrder: record.sortOrder, group: record.group ?? null } : {})
+            }
+          });
+        }));
       }
     });
     if (!this.repositories.realtime.listExpiredDevices) {

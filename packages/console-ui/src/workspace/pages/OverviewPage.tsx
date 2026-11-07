@@ -64,6 +64,15 @@ export function OverviewPage() {
   const groups = useMemo(() => selectDeviceGroups(allDevices, healthThresholds), [allDevices, healthThresholds]);
   const hasNamedGroups = useMemo(() => groups.some((group) => !group.isUngrouped), [groups]);
   const activeGroupFilter = groupFilter !== "all" && !groups.some((group) => group.key === groupFilter) ? "all" : groupFilter;
+  const changeGroupFilter = (nextGroup: DeviceGroupFilter) => {
+    setGroupFilter(nextGroup);
+    if (route.kind === "overview") {
+      const normalized = nextGroup === "all" ? undefined : nextGroup;
+      if (route.group !== normalized) {
+        navigate(normalized ? { kind: "overview", group: normalized } : { kind: "overview" });
+      }
+    }
+  };
   const activeGroupSummary = useMemo(
     () => (activeGroupFilter === "all" ? null : groups.find((group) => group.key === activeGroupFilter) ?? null),
     [activeGroupFilter, groups]
@@ -209,14 +218,14 @@ export function OverviewPage() {
       <div className="workspace-group-filter-bar" role="group" aria-label="总览分组范围">
         <span className="workspace-group-filter-bar__label"><Icon name="filter" size={14} />分组范围</span>
         <div className="workspace-group-filter-bar__chips">
-          <M3Chip selected={activeGroupFilter === "all"} onClick={() => setGroupFilter("all")}>
+          <M3Chip selected={activeGroupFilter === "all"} onClick={() => changeGroupFilter("all")}>
             全部设备 ({allDevices.length})
           </M3Chip>
           {groups.map((group) => (
             <M3Chip
               key={group.key}
               selected={activeGroupFilter === group.key}
-              onClick={() => setGroupFilter(group.key)}
+              onClick={() => changeGroupFilter(group.key)}
             >
               <span className="workspace-group-chip-content">
                 {(group.offline > 0 || group.overThreshold > 0) && (

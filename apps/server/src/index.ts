@@ -225,7 +225,11 @@ let io: SocketIOServer | null = null;
 const metricsService = new MetricsService(
   repositories,
   (event: DeviceRealtimeEvent) => {
-    io?.emit("device:update", event);
+    try {
+      io?.emit("device:update", event);
+    } catch (error) {
+      app.log.warn({ error, deviceId: event.deviceId }, "device realtime broadcast failed");
+    }
   },
   deviceMetricConfigs
 );
