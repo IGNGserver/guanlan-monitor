@@ -78,6 +78,7 @@ test("offline scans drain bounded expiry pages in one sweep and never scan all h
   const states = Array.from({ length: 257 }, (_, index) => ({
     identity: { ...payload.identity, deviceId: `expired-${index}` }, latest: payload, status: "online" as const, lastSeenAt
   }));
+  const currentStates = new Map(states.map((state) => [state.identity.deviceId, state]));
   let scans = 0, marked = 0, active = 0, maximum = 0;
   const service = new MetricsService({ realtime: {
     listDevices: async () => { throw new Error("full hardware scan is forbidden"); },
@@ -86,13 +87,16 @@ test("offline scans drain bounded expiry pages in one sweep and never scan all h
       const page = states.slice(scans * 128, ++scans * 128);
       return page;
     },
-    markOfflineIfMatch: async () => {
+    getDevice: async (deviceId: string) => currentStates.get(deviceId) ?? null,
+    markOfflineIfMatch: async (deviceId: string) => {
       active++; maximum = Math.max(maximum, active);
       await Promise.resolve();
       active--; marked++;
+      const state = currentStates.get(deviceId);
+      if (state) currentStates.set(deviceId, { ...state, status: "offline" });
       return true;
     }
-  } } as unknown as Repositories, () => {}, { get: async () => null, set: async () => {} });
+  }, devices: { getOpenDevice: async () => null } } as unknown as Repositories, () => {}, { get: async () => null, set: async () => {} });
   await service.markOfflineDevices();
   assert.equal(marked, 257);
   assert.equal(scans, 4);
