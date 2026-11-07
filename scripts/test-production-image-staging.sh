@@ -23,13 +23,20 @@ case "${1:-}" in
     ;;
   image)
     [[ "${2:-}" == inspect ]] || exit 2
+    format="${4:-}"
     image_ref="${@: -1}"
-    case "$image_ref" in
-      ghcr.io/igngserver/device-state-console-server:3.0.167)
+    case "$format:$image_ref" in
+      '{{.Id}}:ghcr.io/igngserver/device-state-console-server:3.0.167')
         printf '%s\n' "$SERVER_IMAGE_TEST_ID"
         ;;
-      ghcr.io/igngserver/device-state-console-web:3.0.167)
+      '{{.Id}}:ghcr.io/igngserver/device-state-console-web:3.0.167')
         printf '%s\n' "$WEB_IMAGE_TEST_ID"
+        ;;
+      '{{range .RepoDigests}}{{println .}}{{end}}:ghcr.io/igngserver/device-state-console-server:3.0.167')
+        printf 'ghcr.io/igngserver/device-state-console-server@sha256:%s\n' "$(printf 'c%.0s' {1..64})"
+        ;;
+      '{{range .RepoDigests}}{{println .}}{{end}}:ghcr.io/igngserver/device-state-console-web:3.0.167')
+        printf 'ghcr.io/igngserver/device-state-console-web@sha256:%s\n' "$(printf 'd%.0s' {1..64})"
         ;;
       *) exit 3 ;;
     esac
