@@ -132,6 +132,13 @@ export interface DeviceRecord {
   updatedAt: string;
 }
 
+export class InvalidDeviceGroupNameError extends Error {
+  constructor() {
+    super("invalid_group_name");
+    this.name = "InvalidDeviceGroupNameError";
+  }
+}
+
 export class DeviceNotFoundError extends Error {
   readonly deviceId: string;
 

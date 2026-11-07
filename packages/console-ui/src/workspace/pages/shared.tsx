@@ -305,7 +305,7 @@ function PromptDialog({
     </>}
   >
     <p>{detail}</p>
-    <M3TextField label="名称" autoFocus value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submit(); } }} maxLength={80} />
+    <M3TextField label="名称" autoFocus value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submit(); } }} maxLength={64} />
   </M3Dialog>;
 }
 

@@ -1,5 +1,6 @@
 package com.dsc.android
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -41,7 +42,7 @@ data class DeviceReorderPayloadDto(
 @Serializable
 data class DeviceGroupUpdatePayloadDto(
   val deviceIds: List<String>,
-  val group: String? = null
+  @EncodeDefault(EncodeDefault.Mode.ALWAYS) val group: String? = null
 )
 
 @Serializable

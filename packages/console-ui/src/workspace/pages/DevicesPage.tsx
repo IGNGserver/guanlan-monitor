@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { normalizeDeviceGroupName } from "@dsc/shared";
 import type { DeviceSummary, SamplePoint } from "@dsc/shared";
 import { useWorkspace } from "../WorkspaceContext";
 import { M3Badge } from "../m3";
@@ -448,11 +449,13 @@ export function DevicesPage() {
         confirmLabel="保存名称"
         disabled={mutationPending}
         onConfirm={(nextName) => {
+          const canonicalName = normalizeDeviceGroupName(nextName)?.slice(0, 64);
+          if (!canonicalName) return;
           const ids = renamingGroup.devices.map((device) => device.deviceId);
           const wasSelected = groupFilter === renamingGroup.key;
           setRenamingGroup(null);
-          if (wasSelected) changeGroupFilter(nextName);
-          void updateDeviceGroup(ids, nextName);
+          if (wasSelected) changeGroupFilter(canonicalName);
+          void updateDeviceGroup(ids, canonicalName);
         }}
         onCancel={() => setRenamingGroup(null)}
       />

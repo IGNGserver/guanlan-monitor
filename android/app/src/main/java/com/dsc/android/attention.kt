@@ -31,10 +31,10 @@ data class AttentionItem(
 )
 
 object AttentionThresholds {
-  const val CPU_WARNING = 85.0
-  const val CPU_CRITICAL = 95.0
-  const val MEMORY_WARNING = 88.0
-  const val MEMORY_CRITICAL = 95.0
+  const val CPU_WARNING = 90.0
+  const val CPU_CRITICAL = 98.0
+  const val MEMORY_WARNING = 90.0
+  const val MEMORY_CRITICAL = 97.0
   const val DISK_WARNING = 85.0
   const val DISK_CRITICAL = 95.0
   const val GPU_MEMORY_WARNING = 95.0

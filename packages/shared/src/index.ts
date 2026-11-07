@@ -520,6 +520,18 @@ export interface CollectorStatsReport {
   lastSlowMillis: number;
 }
 
+export const RESERVED_DEVICE_GROUP_NAMES = ["all", "__all__", "__ungrouped__"] as const;
+
+export function normalizeDeviceGroupName(group: string | null | undefined): string | null {
+  const normalized = group?.normalize("NFC").trim();
+  return normalized ? Array.from(normalized).slice(0, 64).join("") : null;
+}
+
+export function isReservedDeviceGroupName(group: string): boolean {
+  const normalized = group.normalize("NFC").trim().toLowerCase();
+  return (RESERVED_DEVICE_GROUP_NAMES as readonly string[]).includes(normalized);
+}
+
 export interface DeviceSummary {
   deviceId: string;
   hostname: string;

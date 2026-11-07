@@ -1,10 +1,12 @@
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
+import { isReservedDeviceGroupName, normalizeDeviceGroupName } from "@dsc/shared";
 import type { DeviceBlockKey, DeviceMetricKey, MetricWindow } from "@dsc/shared";
 import type { TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import {
   DeviceNotFoundError,
+  InvalidDeviceGroupNameError,
   type DeviceRecord,
   type DeviceRegistrationOptions,
   type DeviceRepository,
@@ -210,7 +212,12 @@ class LocalJsonStore {
         for (const key of Object.keys(map)) if (isLegacyId(key) || vmIds.has(key)) delete map[key];
       };
       removeIds(current.devices);
-      if (current.deviceRegistry) removeIds(current.deviceRegistry);
+      if (current.deviceRegistry) {
+        for (const record of Object.values(current.deviceRegistry)) {
+          if (isReservedDeviceGroupName(record.group?.trim() ?? "")) record.group = null;
+        }
+        removeIds(current.deviceRegistry);
+      }
       removeIds(current.series);
       removeIds(current.minuteHistory);
       removeIds(current.history);
@@ -530,7 +537,7 @@ export class LocalDeviceRepository implements DeviceRepository {
   async listOpenDevices(): Promise<DeviceRecord[]> {
     return this.store.select((db) => Object.values(db.deviceRegistry ?? {})
       .filter((d) => d.status === "open" && !isLegacyVirtualMachineId(d.deviceId))
-      .map((d) => ({ ...d, group: d.group ?? null }))
+      .map((d) => ({ ...d, group: isReservedDeviceGroupName(d.group?.trim() ?? "") ? null : d.group ?? null }))
       .sort((a, b) => (a.sortOrder - b.sortOrder) || a.deviceId.localeCompare(b.deviceId)));
   }
 
@@ -538,7 +545,7 @@ export class LocalDeviceRepository implements DeviceRepository {
     return this.store.select((db) => {
       const record = db.deviceRegistry?.[deviceId];
       return record?.status === "open" && !isLegacyVirtualMachineId(deviceId)
-        ? { ...record, group: record.group ?? null }
+        ? { ...record, group: isReservedDeviceGroupName(record.group?.trim() ?? "") ? null : record.group ?? null }
         : null;
     });
   }
@@ -582,7 +589,8 @@ export class LocalDeviceRepository implements DeviceRepository {
   }
 
   async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void> {
-    const normalizedGroup = group?.trim() ? group.trim().slice(0, 64) : null;
+    const normalizedGroup = normalizeDeviceGroupName(group)?.slice(0, 64) ?? null;
+    if (normalizedGroup && isReservedDeviceGroupName(normalizedGroup)) throw new InvalidDeviceGroupNameError();
     const uniqueIds = [...new Set(deviceIds)];
     await this.store.update((db) => {
       const registry = (db.deviceRegistry ??= {});

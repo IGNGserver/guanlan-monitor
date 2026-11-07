@@ -4,7 +4,8 @@ import {
   isLegacyVirtualMachineId,
   legacyVirtualMachineRecord
 } from "../legacy-devices.js";
-import { DeviceNotFoundError, type DeviceRecord, type DeviceRegistrationOptions, type DeviceRepository } from "../types.js";
+import { isReservedDeviceGroupName, normalizeDeviceGroupName } from "@dsc/shared";
+import { DeviceNotFoundError, InvalidDeviceGroupNameError, type DeviceRecord, type DeviceRegistrationOptions, type DeviceRepository } from "../types.js";
 import { KeyedSerialQueue } from "../serial-queue.js";
 
 export interface MysqlDeviceRepositoryOptions {
@@ -19,6 +20,7 @@ export class MysqlDeviceRepository implements DeviceRepository {
   private readonly registrationCacheLimit = 4_096;
   private readonly listCacheTtlMs: number;
   private listCache?: { value: DeviceRecord[]; expiresAt: number };
+  private readonly registryQueue = new KeyedSerialQueue();
 
   constructor(private readonly pool: mysql.Pool, options: MysqlDeviceRepositoryOptions = {}) {
     this.listCacheTtlMs = options.listCacheTtlMs ?? 0;
@@ -43,6 +45,10 @@ export class MysqlDeviceRepository implements DeviceRepository {
     if (columns.length === 0) {
       await this.pool.query(`ALTER TABLE devices ADD COLUMN group_name VARCHAR(64) NULL DEFAULT NULL AFTER sort_order`);
     }
+    await this.pool.query(
+      `UPDATE devices SET group_name = NULL WHERE LOWER(TRIM(group_name)) IN (?, ?, ?)`,
+      ["all", "__all__", "__ungrouped__"]
+    );
   }
 
   async registerOrUpdateDevice(
@@ -55,7 +61,7 @@ export class MysqlDeviceRepository implements DeviceRepository {
     // not reached yet, leaving rows nothing would ever clean again.
     if (isLegacyVirtualMachineId(deviceId)) return legacyVirtualMachineRecord(deviceId);
 
-    return this.deviceQueues.run(deviceId, async () => {
+    return this.registryQueue.run("registry", () => this.deviceQueues.run(deviceId, async () => {
       const cached = this.registeredDevices.get(deviceId);
       if (options?.skipUnchanged && cached?.status === "open" && (!name || name === cached.name)) {
         return { ...cached };
@@ -69,7 +75,7 @@ export class MysqlDeviceRepository implements DeviceRepository {
         this.registeredDevices.delete(this.registeredDevices.keys().next().value!);
       }
       return { ...record };
-    });
+    }));
   }
 
   private async registerDeviceUncached(
@@ -139,21 +145,23 @@ export class MysqlDeviceRepository implements DeviceRepository {
   }
 
   async listOpenDevices(): Promise<DeviceRecord[]> {
-    // Filtered in SQL rather than in memory so a deployment upgraded before the startup sweep
-    // finished still never surfaces legacy ids, and so every caller shares one definition of the
-    // device list.
-    if (this.listCache && this.listCache.expiresAt > Date.now()) {
-      return structuredClone(this.listCache.value);
-    }
-    const [rows] = await this.pool.query<RowDataPacket[]>(
-      `SELECT device_id AS deviceId, name, status, sort_order AS sortOrder, group_name AS \`group\`, DATE_FORMAT(registered_at, '%Y-%m-%dT%H:%i:%s.000Z') AS registeredAt, DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s.000Z') AS updatedAt FROM devices WHERE status = 'open' AND device_id NOT LIKE ? ORDER BY sort_order ASC, device_id ASC`,
-      [LEGACY_VIRTUAL_MACHINE_ID_PATTERN]
-    );
-    const records = rows as DeviceRecord[];
-    if (this.listCacheTtlMs > 0) {
-      this.listCache = { value: structuredClone(records), expiresAt: Date.now() + this.listCacheTtlMs };
-    }
-    return records;
+    return this.registryQueue.run("registry", async () => {
+      // Filtered in SQL rather than in memory so a deployment upgraded before the startup sweep
+      // finished still never surfaces legacy ids, and so every caller shares one definition of the
+      // device list.
+      if (this.listCache && this.listCache.expiresAt > Date.now()) {
+        return structuredClone(this.listCache.value);
+      }
+      const [rows] = await this.pool.query<RowDataPacket[]>(
+        `SELECT device_id AS deviceId, name, status, sort_order AS sortOrder, group_name AS \`group\`, DATE_FORMAT(registered_at, '%Y-%m-%dT%H:%i:%s.000Z') AS registeredAt, DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s.000Z') AS updatedAt FROM devices WHERE status = 'open' AND device_id NOT LIKE ? ORDER BY sort_order ASC, device_id ASC`,
+        [LEGACY_VIRTUAL_MACHINE_ID_PATTERN]
+      );
+      const records = rows as DeviceRecord[];
+      if (this.listCacheTtlMs > 0) {
+        this.listCache = { value: structuredClone(records), expiresAt: Date.now() + this.listCacheTtlMs };
+      }
+      return records;
+    });
   }
 
   async getOpenDevice(deviceId: string): Promise<DeviceRecord | null> {
@@ -170,7 +178,7 @@ export class MysqlDeviceRepository implements DeviceRepository {
     // A soft delete is an INSERT here, so it is the one other path that could resurrect a legacy
     // row the sweep just removed.
     if (isLegacyVirtualMachineId(deviceId)) return;
-    await this.deviceQueues.run(deviceId, async () => {
+    await this.registryQueue.run("registry", () => this.deviceQueues.run(deviceId, async () => {
       this.registeredDevices.delete(deviceId);
       this.listCache = undefined;
       const formattedNow = new Date().toISOString().slice(0, 19).replace("T", " ");
@@ -182,7 +190,7 @@ export class MysqlDeviceRepository implements DeviceRepository {
         `,
         [deviceId, deviceId, formattedNow, formattedNow, formattedNow]
       );
-    });
+    }));
   }
 
   async reorderDevices(deviceIds: string[]): Promise<void> {
@@ -190,19 +198,20 @@ export class MysqlDeviceRepository implements DeviceRepository {
     for (let i = 0; i < deviceIds.length; i++) {
       const deviceId = deviceIds[i];
       if (isLegacyVirtualMachineId(deviceId)) continue;
-      await this.deviceQueues.run(deviceId, async () => {
+      await this.registryQueue.run("registry", () => this.deviceQueues.run(deviceId, async () => {
         this.registeredDevices.delete(deviceId);
         this.listCache = undefined;
         await this.pool.query(
           `UPDATE devices SET sort_order = ?, updated_at = ? WHERE device_id = ?`,
           [i, formattedNow, deviceId]
         );
-      });
+      }));
     }
   }
 
   async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void> {
-    const normalizedGroup = group?.trim() ? group.trim().slice(0, 64) : null;
+    const normalizedGroup = normalizeDeviceGroupName(group)?.slice(0, 64) ?? null;
+    if (normalizedGroup && isReservedDeviceGroupName(normalizedGroup)) throw new InvalidDeviceGroupNameError();
     const formattedNow = new Date().toISOString().slice(0, 19).replace("T", " ");
     const uniqueIds = [...new Set(deviceIds)];
     if (!uniqueIds.length) return;
@@ -211,17 +220,17 @@ export class MysqlDeviceRepository implements DeviceRepository {
     const poolWithConnection = this.pool as mysql.Pool & {
       getConnection?: () => Promise<mysql.PoolConnection>;
     };
-    await this.deviceQueues.run("\u0000device-group", async () => {
+    await this.registryQueue.run("registry", async () => {
       this.listCache = undefined;
       for (const deviceId of uniqueIds) this.registeredDevices.delete(deviceId);
       if (!poolWithConnection.getConnection) {
         for (const deviceId of uniqueIds) {
           if (!(await this.getOpenDevice(deviceId))) throw new DeviceNotFoundError(deviceId);
+          await this.pool.query(
+            `UPDATE devices SET group_name = ?, updated_at = ? WHERE status = 'open' AND device_id = ?`,
+            [normalizedGroup, formattedNow, deviceId]
+          );
         }
-        await this.pool.query(
-          `UPDATE devices SET group_name = ?, updated_at = ? WHERE status = 'open' AND device_id IN (${placeholders})`,
-          [normalizedGroup, formattedNow, ...uniqueIds]
-        );
         return;
       }
 

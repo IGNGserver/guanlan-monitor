@@ -31,8 +31,8 @@ export function TouchDevices() {
   const [draft, setDraft] = useState<string[] | null>(null);
 
   useEffect(() => {
-    if (route.kind === "devices" && route.group) {
-      setGroup(route.group);
+    if (route.kind === "devices") {
+      setGroup(route.group ?? "all");
     }
   }, [route, setGroup]);
 

@@ -125,6 +125,11 @@ struct DeviceCardRow: View {
                     .background(device.isOnline ? Color.green.opacity(0.15) : Color.gray.opacity(0.15))
                     .foregroundStyle(device.isOnline ? Color.green : Color.gray)
                     .clipShape(Capsule())
+                if let group = device.group?.trimmingCharacters(in: .whitespacesAndNewlines), !group.isEmpty {
+                    Text(group)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             
             Text("OS: \(device.os) • ID: \(device.deviceId)")

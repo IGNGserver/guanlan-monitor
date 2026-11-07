@@ -29,8 +29,8 @@ export interface DeviceGroupSummary {
 }
 
 export function normalizeDeviceGroup(group: string | null | undefined): string | null {
-  const trimmed = group?.trim();
-  return trimmed ? trimmed : null;
+  const normalized = group?.normalize("NFC").trim();
+  return normalized ? Array.from(normalized).slice(0, 64).join("") : null;
 }
 
 export function selectExistingGroupNames(devices: readonly DeviceSummary[]): string[] {

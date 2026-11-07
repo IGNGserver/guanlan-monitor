@@ -870,12 +870,12 @@ internal fun buildDeviceGroupSections(
     val onlineList = list.filter { it.status == "online" }
     val online = onlineList.size
     val offline = list.size - online
-    val issueCount = list.sumOf { d -> issuesByDevice[d.deviceId].orEmpty().count { it.severity != AttentionSeverity.Offline } }
+    val issueCount = list.count { d -> issuesByDevice[d.deviceId].orEmpty().any { it.severity != AttentionSeverity.Offline } }
     val avgCpu = onlineList.mapNotNull { it.cpuUsagePercent }.takeIf { it.isNotEmpty() }?.average()
     val avgMem = onlineList.mapNotNull { it.memoryUsagePercent }.takeIf { it.isNotEmpty() }?.average()
     val subtitle = buildList {
       if (offline > 0) add("$offline 台离线")
-      if (issueCount > 0) add("$issueCount 项超限")
+      if (issueCount > 0) add("$issueCount 台超限")
       if (avgCpu != null) add("平均 CPU ${formatPercent(avgCpu)}")
       if (avgMem != null) add("平均内存 ${formatPercent(avgMem)}")
       if (isEmpty()) add("全部在线运行正常")

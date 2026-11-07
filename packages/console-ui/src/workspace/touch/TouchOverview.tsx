@@ -19,9 +19,15 @@ const TREND_TITLES: Record<FleetMetric, string> = { cpu: "CPU 使用率", memory
  * how the machines are doing, not only how many there are.
  */
 function TouchFleetTrend() {
-  const { snapshot, allDevices, metricsWindow, setMetricsWindow, healthThresholds } = useWorkspace();
+  const { snapshot, allDevices, metricsWindow, setMetricsWindow, healthThresholds, route, navigate } = useWorkspace();
+  const routeGroup = route.kind === "overview" && route.group ? route.group : "all";
   const [metric, setMetric] = useState<FleetMetric>("cpu");
-  const [groupFilter, setGroupFilter] = useState<DeviceGroupFilter>("all");
+  const groupFilter: DeviceGroupFilter = routeGroup;
+  const changeGroupFilter = (nextGroup: DeviceGroupFilter) => {
+    if (route.kind === "overview") {
+      navigate(nextGroup === "all" ? { kind: "overview" } : { kind: "overview", group: nextGroup });
+    }
+  };
   const groups = useMemo(() => selectDeviceGroups(allDevices, healthThresholds), [allDevices, healthThresholds]);
   const hasNamedGroups = useMemo(() => groups.some((group) => !group.isUngrouped), [groups]);
   const activeGroup = groupFilter !== "all" && !groups.some((group) => group.key === groupFilter) ? "all" : groupFilter;
@@ -47,9 +53,9 @@ function TouchFleetTrend() {
     </header>
     {hasNamedGroups && (
       <div className="touch-group-chips" role="group" aria-label="趋势分组范围">
-        <M3Chip selected={activeGroup === "all"} onClick={() => setGroupFilter("all")}>全部 ({allDevices.length})</M3Chip>
+        <M3Chip selected={activeGroup === "all"} onClick={() => changeGroupFilter("all")}>全部 ({allDevices.length})</M3Chip>
         {groups.map((item) => (
-          <M3Chip key={item.key} selected={activeGroup === item.key} onClick={() => setGroupFilter(item.key)}>
+          <M3Chip key={item.key} selected={activeGroup === item.key} onClick={() => changeGroupFilter(item.key)}>
             {item.name} ({item.online}/{item.total})
           </M3Chip>
         ))}
