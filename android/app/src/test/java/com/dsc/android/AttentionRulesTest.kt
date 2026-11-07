@@ -55,7 +55,7 @@ class AttentionRulesTest {
   @Test
   fun collectOrdersBySeverityThenDeviceOrderAndDeduplicates() {
     val devices = listOf(
-      device(id = "a", cpu = 88.0),
+      device(id = "a", cpu = 90.0),
       device(id = "b", status = "offline"),
       device(id = "c", memory = 99.0)
     )
