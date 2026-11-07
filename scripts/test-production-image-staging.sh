@@ -32,12 +32,6 @@ case "${1:-}" in
       '{{.Id}}:ghcr.io/igngserver/device-state-console-web:3.0.167')
         printf '%s\n' "$WEB_IMAGE_TEST_ID"
         ;;
-      '{{range .RepoDigests}}{{println .}}{{end}}:ghcr.io/igngserver/device-state-console-server:3.0.167')
-        printf 'ghcr.io/igngserver/device-state-console-server@sha256:%s\n' "$(printf 'c%.0s' {1..64})"
-        ;;
-      '{{range .RepoDigests}}{{println .}}{{end}}:ghcr.io/igngserver/device-state-console-web:3.0.167')
-        printf 'ghcr.io/igngserver/device-state-console-web@sha256:%s\n' "$(printf 'd%.0s' {1..64})"
-        ;;
       *) exit 3 ;;
     esac
     ;;
