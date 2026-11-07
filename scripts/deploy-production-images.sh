@@ -54,6 +54,11 @@ image_id() {
   docker image inspect --format '{{.Id}}' "$1"
 }
 
+image_digest() {
+  docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$1" \
+    | awk -v expected="$2" 'index($0, "@" expected) > 0 { found = 1 } END { exit(found ? 0 : 1) }'
+}
+
 read_state() {
   local -a fields=()
   local field
@@ -187,8 +192,8 @@ load_images() {
   gzip -t "$IMAGE_STAGE_DIR/dsc-production-images.tar.gz"
   gzip -dc "$IMAGE_STAGE_DIR/dsc-production-images.tar.gz" | docker load
 
-  [[ "$(image_id "$server_tag")" == "$EXPECTED_SERVER_IMAGE_ID" ]] || die "Loaded server image ID does not match the digest-pinned source."
-  [[ "$(image_id "$web_tag")" == "$EXPECTED_WEB_IMAGE_ID" ]] || die "Loaded web image ID does not match the digest-pinned source."
+  image_digest "$server_tag" "${SERVER_IMAGE_REF##*@}" || die "Loaded server image does not match the digest-pinned source."
+  image_digest "$web_tag" "${WEB_IMAGE_REF##*@}" || die "Loaded web image does not match the digest-pinned source."
   rm -f -- "$IMAGE_STAGE_DIR/dsc-production-images.tar.gz"
   printf 'Loaded and verified digest-pinned production images for v%s.\n' "$DSC_VERSION"
 }
@@ -294,8 +299,8 @@ deploy_images() {
 
   read_state || die "Production configuration was not prepared."
   [[ "$STATE_STATUS" == prepared ]] || die "Production configuration is not ready for deployment."
-  [[ "$(image_id "$server_tag")" == "$EXPECTED_SERVER_IMAGE_ID" ]] || die "Staged server image is missing or changed."
-  [[ "$(image_id "$web_tag")" == "$EXPECTED_WEB_IMAGE_ID" ]] || die "Staged web image is missing or changed."
+  image_digest "$server_tag" "${SERVER_IMAGE_REF##*@}" || die "Staged server image is missing or does not match the digest-pinned source."
+  image_digest "$web_tag" "${WEB_IMAGE_REF##*@}" || die "Staged web image is missing or does not match the digest-pinned source."
 
   export WEB_PORT=38472
   export DSC_VERSION DSC_RELEASE_CHANNEL
@@ -345,10 +350,11 @@ deploy_images() {
   actual_web_ref="$(docker inspect --format '{{.Config.Image}}' "$web_container")"
   actual_server_id="$(docker inspect --format '{{.Image}}' "$server_container")"
   actual_web_id="$(docker inspect --format '{{.Image}}' "$web_container")"
-  if [[ "$actual_server_ref" != "$server_tag" || "$actual_web_ref" != "$web_tag" \
-    || "$actual_server_id" != "$EXPECTED_SERVER_IMAGE_ID" || "$actual_web_id" != "$EXPECTED_WEB_IMAGE_ID" ]]; then
-    die "Running container image reference or image ID does not match the staged release."
+  if [[ "$actual_server_ref" != "$server_tag" || "$actual_web_ref" != "$web_tag" ]]; then
+    die "Running container image reference does not match the staged release."
   fi
+  image_digest "$server_container" "${SERVER_IMAGE_REF##*@}" || die "Running server container does not match the digest-pinned source."
+  image_digest "$web_container" "${WEB_IMAGE_REF##*@}" || die "Running web container does not match the digest-pinned source."
 
   healthy=0
   for attempt in $(seq 1 30); do
