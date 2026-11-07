@@ -192,8 +192,11 @@ load_images() {
   gzip -t "$IMAGE_STAGE_DIR/dsc-production-images.tar.gz"
   gzip -dc "$IMAGE_STAGE_DIR/dsc-production-images.tar.gz" | docker load
 
-  image_digest "$server_tag" "${SERVER_IMAGE_REF##*@}" || die "Loaded server image does not match the digest-pinned source."
-  image_digest "$web_tag" "${WEB_IMAGE_REF##*@}" || die "Loaded web image does not match the digest-pinned source."
+  local loaded_server_id loaded_web_id
+  loaded_server_id="$(image_id "$server_tag")"
+  loaded_web_id="$(image_id "$web_tag")"
+  [[ "$loaded_server_id" =~ ^sha256:[0-9a-f]{64}$ ]] || die "Loaded server image is missing or has an invalid local image ID."
+  [[ "$loaded_web_id" =~ ^sha256:[0-9a-f]{64}$ ]] || die "Loaded web image is missing or has an invalid local image ID."
   rm -f -- "$IMAGE_STAGE_DIR/dsc-production-images.tar.gz"
   printf 'Loaded and verified digest-pinned production images for v%s.\n' "$DSC_VERSION"
 }
@@ -299,8 +302,11 @@ deploy_images() {
 
   read_state || die "Production configuration was not prepared."
   [[ "$STATE_STATUS" == prepared ]] || die "Production configuration is not ready for deployment."
-  image_digest "$server_tag" "${SERVER_IMAGE_REF##*@}" || die "Staged server image is missing or does not match the digest-pinned source."
-  image_digest "$web_tag" "${WEB_IMAGE_REF##*@}" || die "Staged web image is missing or does not match the digest-pinned source."
+  local staged_server_id staged_web_id
+  staged_server_id="$(image_id "$server_tag")"
+  staged_web_id="$(image_id "$web_tag")"
+  [[ "$staged_server_id" =~ ^sha256:[0-9a-f]{64}$ ]] || die "Staged server image is missing or has an invalid local image ID."
+  [[ "$staged_web_id" =~ ^sha256:[0-9a-f]{64}$ ]] || die "Staged web image is missing or has an invalid local image ID."
 
   export WEB_PORT=38472
   export DSC_VERSION DSC_RELEASE_CHANNEL
@@ -353,8 +359,8 @@ deploy_images() {
   if [[ "$actual_server_ref" != "$server_tag" || "$actual_web_ref" != "$web_tag" ]]; then
     die "Running container image reference does not match the staged release."
   fi
-  image_digest "$server_container" "${SERVER_IMAGE_REF##*@}" || die "Running server container does not match the digest-pinned source."
-  image_digest "$web_container" "${WEB_IMAGE_REF##*@}" || die "Running web container does not match the digest-pinned source."
+  [[ "$actual_server_id" == "$staged_server_id" ]] || die "Running server image ID does not match the loaded image."
+  [[ "$actual_web_id" == "$staged_web_id" ]] || die "Running web image ID does not match the loaded image."
 
   healthy=0
   for attempt in $(seq 1 30); do
