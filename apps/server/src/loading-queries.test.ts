@@ -78,7 +78,7 @@ test("offline scans drain bounded expiry pages in one sweep and never scan all h
   const states = Array.from({ length: 257 }, (_, index) => ({
     identity: { ...payload.identity, deviceId: `expired-${index}` }, latest: payload, status: "online" as const, lastSeenAt
   }));
-  const currentStates = new Map(states.map((state) => [state.identity.deviceId, state]));
+  const currentStates = new Map<string, DeviceRealtimeState>(states.map((state) => [state.identity.deviceId, state]));
   let scans = 0, marked = 0, active = 0, maximum = 0;
   const service = new MetricsService({ realtime: {
     listDevices: async () => { throw new Error("full hardware scan is forbidden"); },
