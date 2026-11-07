@@ -119,7 +119,10 @@ export function TouchOverview() {
               onClick={() => openGroup(item.key)}
             >
               <span className="touch-overview-group-card__head">
-                <strong>{item.name}</strong>
+                <span className="workspace-group-chip-content">
+                  <span className={`workspace-group-chip-dot is-${item.state}`} aria-hidden="true" />
+                  <strong>{item.name}</strong>
+                </span>
                 <small>{item.online}/{item.total} 在线</small>
               </span>
               <span className="touch-overview-group-card__meta">

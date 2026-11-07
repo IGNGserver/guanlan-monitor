@@ -99,7 +99,7 @@ export function useWorkspaceMutations({
     [adapter, runMutation]
   );
   const deleteInstance = useCallback(
-    (deviceId: string) => runMutation(() => adapter.deleteInstance(deviceId), "实例已删除；下次上报后会重新显示", "删除实例失败"),
+    (deviceId: string) => runMutation(() => adapter.deleteInstance(deviceId), "设备已从中枢删除；若 Agent 仍在运行，下次上报时会自动加回", "删除设备失败"),
     [adapter, runMutation]
   );
   const reorderInstances = useCallback(

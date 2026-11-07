@@ -7,7 +7,7 @@ import { MysqlHistoryRepository } from "./repositories/history.js";
 import { buildTrafficCalendar, trafficCalendarBounds } from "./traffic-calendar.js";
 import { MetricsService } from "./services/metrics.js";
 import { createHubContractPayload } from "./hub-contract-fixtures.js";
-import { toSummary } from "./utils.js";
+import { HEARTBEAT_TIMEOUT_MS, toSummary } from "./utils.js";
 import { overviewToMetricSeries } from "./overview.js";
 import type { DeviceRealtimeState, DeviceRecord, MetricAccumulator, Repositories, TrafficHistoryPoint, TimeSeriesRecord } from "./types.js";
 
@@ -74,7 +74,7 @@ test("inventory projection preserves the original registration hostname without 
 
 test("offline scans drain bounded expiry pages in one sweep and never scan all hardware", async () => {
   const payload = createHubContractPayload({ timestamp: Date.now() });
-  const lastSeenAt = new Date(Date.now() - 60_000).toISOString();
+  const lastSeenAt = new Date(Date.now() - HEARTBEAT_TIMEOUT_MS - 15_000).toISOString();
   const states = Array.from({ length: 257 }, (_, index) => ({
     identity: { ...payload.identity, deviceId: `expired-${index}` }, latest: payload, status: "online" as const, lastSeenAt
   }));

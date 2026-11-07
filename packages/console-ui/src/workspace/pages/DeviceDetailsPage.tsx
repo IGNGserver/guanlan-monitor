@@ -35,6 +35,7 @@ import { DeviceKpiStrip, capacityCaption, shareOf } from "./DeviceKpiStrip";
 import { LiveTopicPanel, useLiveCapabilities } from "./LiveDevicePanel";
 import type { DeviceLiveView } from "../routes";
 import {
+  ConfirmDialog,
   DeviceGroupDialog,
   EmptyState,
   InstanceFilter,
@@ -73,6 +74,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
     refreshing,
     mutationPending,
     refresh,
+    deleteInstance,
     updateDeviceGroup,
     metricsWindow,
     setMetricsWindow,
@@ -84,6 +86,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
     route
   } = useWorkspace();
   const [editingGroup, setEditingGroup] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const existingGroups = useMemo(() => selectExistingGroupNames(allDevices), [allDevices]);
   const snapshotSource = snapshot ? selectSnapshotSource(snapshot, snapshot.devices) : "unknown";
   const deviceSourceState: "online" | "offline" | "cached" | "warning" | "unknown" = snapshotSource === "cache"
@@ -470,9 +473,42 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
         eyebrow={currentDeviceGroup ? `设备 · ${currentDeviceGroup}` : "设备"}
         title={selectedDevice.hostname}
         description={`${selectedDevice.os} · ${selectedDevice.deviceId}`}
+        actions={liveAuthenticated ? (
+          <Button
+            variant="quiet"
+            className="workspace-device-delete-btn"
+            onClick={() => setConfirmingDelete(true)}
+            disabled={mutationPending}
+            aria-label={`删除设备 ${selectedDevice.hostname}`}
+          >
+            <Icon name="delete" size={16} />
+            删除设备
+          </Button>
+        ) : undefined}
       />
       <SnapshotFreshnessNotice /></>}
-      {touch && <header className="touch-device-heading"><h1>{selectedDevice.hostname}</h1><p>{selectedDevice.os}{currentDeviceGroup ? ` · ${currentDeviceGroup}` : ""} · {snapshotSource === "cache" ? "缓存中的状态" : selectedDevice.status === "online" ? "在线" : "离线"}</p></header>}
+      {touch && (
+        <header className="touch-device-heading">
+          <div className="touch-device-heading__row">
+            <div>
+              <h1>{selectedDevice.hostname}</h1>
+              <p>{selectedDevice.os}{currentDeviceGroup ? ` · ${currentDeviceGroup}` : ""} · {snapshotSource === "cache" ? "缓存中的状态" : selectedDevice.status === "online" ? "在线" : "离线"}</p>
+            </div>
+            {liveAuthenticated && (
+              <Button
+                variant="quiet"
+                className="workspace-device-delete-btn"
+                onClick={() => setConfirmingDelete(true)}
+                disabled={mutationPending}
+                aria-label={`删除设备 ${selectedDevice.hostname}`}
+              >
+                <Icon name="delete" size={16} />
+                删除
+              </Button>
+            )}
+          </div>
+        </header>
+      )}
 
       {showGroupPeersBar && (
         <nav className="workspace-group-peers" aria-label={`${groupPeers.groupLabel} 同组设备切换`}>
@@ -491,6 +527,14 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
             {groupPeers.peers.map((peer) => {
               const isCurrent = peer.deviceId === selectedDevice.deviceId;
               const online = peer.status === "online";
+              const peerIssues = online ? evaluateDevice(peer, healthThresholds).filter((issue) => issue.kind !== "offline") : [];
+              const peerDotState = !online
+                ? "offline"
+                : peerIssues.some((issue) => issue.severity === "critical")
+                  ? "critical"
+                  : peerIssues.length > 0
+                    ? "warning"
+                    : "online";
               return (
                 <button
                   key={peer.deviceId}
@@ -499,7 +543,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
                   aria-current={isCurrent ? "page" : undefined}
                   onClick={() => switchPeerDevice(peer.deviceId)}
                 >
-                  <StatusDot state={online ? "online" : "offline"} />
+                  <StatusDot state={peerDotState} />
                   <span>{peer.hostname}</span>
                   {online && typeof peer.cpuUsagePercent === "number" && (
                     <small>{Math.round(peer.cpuUsagePercent)}%</small>
@@ -576,6 +620,22 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
             void updateDeviceGroup([selectedDevice.deviceId], nextGroup);
           }}
           onCancel={() => setEditingGroup(false)}
+        />
+      )}
+      {confirmingDelete && (
+        <ConfirmDialog
+          title={`删除“${selectedDevice.hostname}”？`}
+          detail="将从中枢移除该采集设备（与设备组无关）。如果该设备上的 Agent 仍在运行，下次上报时会自动重新注册并加回列表。"
+          confirmLabel="删除设备"
+          disabled={mutationPending}
+          onConfirm={() => {
+            const targetId = selectedDevice.deviceId;
+            setConfirmingDelete(false);
+            void deleteInstance(targetId).then((deleted) => {
+              if (deleted) navigate({ kind: "devices" });
+            });
+          }}
+          onCancel={() => setConfirmingDelete(false)}
         />
       )}
       {/* The phone's counterpart of the desktop 实时 range: the same tiles, read from the device. */}

@@ -59,7 +59,9 @@ export function Button({
   );
 }
 
-export function StatusDot({ state }: { state: "online" | "offline" | "cached" | "warning" | "unknown" }) {
+export type StatusDotState = "online" | "offline" | "cached" | "warning" | "critical" | "unknown";
+
+export function StatusDot({ state }: { state: StatusDotState }) {
   return <span className={`workspace-status-dot workspace-status-dot--${state}`} aria-hidden="true" />;
 }
 

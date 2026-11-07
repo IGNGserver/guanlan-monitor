@@ -1,10 +1,12 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import type { DeviceSummary } from "@dsc/shared";
 import appIcon from "../../assets/app-icon.png";
 import { useWorkspaceActions, useWorkspaceData, useWorkspaceUi, type WorkspaceUiValue } from "../WorkspaceContext";
+import { evaluateDevice, type HealthThresholds } from "../health";
 import type { SettingsSection } from "../routes";
-import { UNGROUPED_GROUP_KEY, normalizeDeviceGroup, selectDeviceGroups } from "../selectors";
-import { M3Button, M3IconButton, M3NavigationItem } from "../m3";
-import { Icon, StatusDot, type IconName } from "../ui";
+import { UNGROUPED_GROUP_KEY, normalizeDeviceGroup, selectDeviceGroups, type DeviceGroupSummary } from "../selectors";
+import { M3Button, M3IconButton, M3NavigationItem, useRipple } from "../m3";
+import { Icon, StatusDot, type IconName, type StatusDotState } from "../ui";
 
 const appIconSrc = typeof appIcon === "string" ? appIcon : (appIcon as { src: string }).src;
 
@@ -54,19 +56,209 @@ export function SettingsNavigation() {
   );
 }
 
+function resolveDeviceDotState(device: DeviceSummary, thresholds: HealthThresholds): StatusDotState {
+  if (device.status !== "online") return "offline";
+  const issues = evaluateDevice(device, thresholds).filter((issue) => issue.kind !== "offline");
+  if (issues.some((issue) => issue.severity === "critical")) return "critical";
+  if (issues.length > 0) return "warning";
+  return "online";
+}
+
+function describeGroupState(group: DeviceGroupSummary): string {
+  const parts = [`${group.online}/${group.total} 在线`];
+  if (group.offline > 0) parts.push(`${group.offline} 台离线`);
+  if (group.criticalCount > 0) parts.push(`${group.criticalCount} 台严重超限`);
+  if (group.warningCount > 0) parts.push(`${group.warningCount} 台警告超限`);
+  return `${group.name}（${parts.join(" · ")}）`;
+}
+
+function SidebarAllDevicesButton({
+  selected,
+  onlineTotal,
+  total,
+  state,
+  onClick
+}: {
+  selected: boolean;
+  onlineTotal: number;
+  total: number;
+  state: StatusDotState;
+  onClick: () => void;
+}) {
+  const { onPointerDown, rippleNodes } = useRipple<HTMLButtonElement>();
+  return (
+    <button
+      type="button"
+      className={`workspace-sidebar-group-btn m3e-state-host ${selected ? "is-selected" : ""}`}
+      aria-current={selected ? "page" : undefined}
+      onPointerDown={onPointerDown}
+      onClick={onClick}
+      title={`全部设备 (${onlineTotal}/${total} 在线)`}
+    >
+      <span className="workspace-sidebar-group-btn__lead">
+        <StatusDot state={state} />
+        <span className="workspace-sidebar-group-btn__name">全部设备</span>
+      </span>
+      <span className="workspace-sidebar-group-btn__trail">
+        <span className="workspace-sidebar-group-btn__count">{onlineTotal}/{total}</span>
+      </span>
+      {rippleNodes}
+    </button>
+  );
+}
+
+function SidebarGroupDeviceItem({
+  device,
+  index,
+  expanded,
+  isCurrentDevice,
+  state,
+  onSelect
+}: {
+  device: DeviceSummary;
+  index: number;
+  expanded: boolean;
+  isCurrentDevice: boolean;
+  state: StatusDotState;
+  onSelect: () => void;
+}) {
+  const { onPointerDown, rippleNodes } = useRipple<HTMLButtonElement>();
+  const statusText = device.status !== "online"
+    ? "离线"
+    : state === "critical"
+      ? "在线 · 严重超限"
+      : state === "warning"
+        ? "在线 · 警告超限"
+        : "在线";
+  return (
+    <button
+      type="button"
+      tabIndex={expanded ? 0 : -1}
+      style={{ ["--sidebar-device-index" as string]: String(index) }}
+      className={`workspace-sidebar-group-device m3e-state-host ${isCurrentDevice ? "is-selected" : ""}`}
+      aria-current={isCurrentDevice ? "page" : undefined}
+      onPointerDown={onPointerDown}
+      onClick={onSelect}
+      title={`${device.hostname} (${statusText})`}
+    >
+      <StatusDot state={state} />
+      <span className="workspace-sidebar-group-device__name">{device.hostname}</span>
+      {rippleNodes}
+    </button>
+  );
+}
+
+function SidebarGroupEntry({
+  group,
+  expanded,
+  isSelectedGroup,
+  isParentOfActiveDevice,
+  activeDeviceId,
+  healthThresholds,
+  onSelectGroup,
+  onToggleExpand,
+  onSelectDevice
+}: {
+  group: DeviceGroupSummary;
+  expanded: boolean;
+  isSelectedGroup: boolean;
+  isParentOfActiveDevice: boolean;
+  activeDeviceId: string | null;
+  healthThresholds: HealthThresholds;
+  onSelectGroup: () => void;
+  onToggleExpand: () => void;
+  onSelectDevice: (deviceId: string) => void;
+}) {
+  const { onPointerDown, rippleNodes } = useRipple<HTMLButtonElement>();
+  const { onPointerDown: onTogglePointerDown, rippleNodes: toggleRipples } = useRipple<HTMLButtonElement>();
+  return (
+    <div className={`workspace-sidebar-group-entry ${expanded ? "is-expanded" : ""}`}>
+      <div className="workspace-sidebar-group-row">
+        <button
+          type="button"
+          className={`workspace-sidebar-group-btn m3e-state-host ${isSelectedGroup ? "is-selected" : ""} ${isParentOfActiveDevice ? "is-active-parent" : ""}`}
+          aria-current={isSelectedGroup ? "page" : undefined}
+          onPointerDown={onPointerDown}
+          onClick={onSelectGroup}
+          title={describeGroupState(group)}
+        >
+          <span className="workspace-sidebar-group-btn__lead">
+            <StatusDot state={group.state} />
+            <span className="workspace-sidebar-group-btn__name">{group.name}</span>
+          </span>
+          <span className="workspace-sidebar-group-btn__trail">
+            <span className="workspace-sidebar-group-btn__count">{group.online}/{group.total}</span>
+          </span>
+          {rippleNodes}
+        </button>
+        {group.devices.length > 0 && (
+          <button
+            type="button"
+            className={`workspace-sidebar-group-toggle m3e-state-host ${expanded ? "is-expanded" : ""}`}
+            aria-expanded={expanded}
+            aria-label={`${expanded ? "收起" : "展开"} ${group.name} 组内设备`}
+            title={`${expanded ? "收起" : "展开"} ${group.name}`}
+            onPointerDown={onTogglePointerDown}
+            onClick={onToggleExpand}
+          >
+            <Icon name="chevronRight" size={14} />
+            {toggleRipples}
+          </button>
+        )}
+      </div>
+      {group.devices.length > 0 && (
+        <div
+          className={`workspace-sidebar-group-collapse ${expanded ? "is-expanded" : ""}`}
+          aria-hidden={!expanded}
+        >
+          <div className="workspace-sidebar-group-devices" role="group" aria-label={`${group.name} 组内设备`}>
+            {group.devices.map((device, index) => (
+              <SidebarGroupDeviceItem
+                key={device.deviceId}
+                device={device}
+                index={index}
+                expanded={expanded}
+                isCurrentDevice={activeDeviceId === device.deviceId}
+                state={resolveDeviceDotState(device, healthThresholds)}
+                onSelect={() => onSelectDevice(device.deviceId)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SidebarDeviceGroups() {
   const { route, navigate, healthThresholds } = useWorkspaceUi();
   const { allDevices, selectedDevice } = useWorkspaceData();
   const groups = useMemo(() => selectDeviceGroups(allDevices, healthThresholds), [allDevices, healthThresholds]);
   const hasNamedGroups = useMemo(() => groups.some((group) => !group.isUngrouped), [groups]);
-
-  if (!hasNamedGroups) return null;
+  const [manualExpanded, setManualExpanded] = useState<Record<string, boolean>>({});
 
   const activeDeviceGroupKey = route.kind === "device" && selectedDevice
     ? (normalizeDeviceGroup(selectedDevice.group) ?? UNGROUPED_GROUP_KEY)
     : null;
   const activeRouteGroup = (route.kind === "devices" || route.kind === "overview") ? (route.group ?? "all") : null;
+
+  useEffect(() => {
+    const focusKey = activeDeviceGroupKey ?? (activeRouteGroup && activeRouteGroup !== "all" ? activeRouteGroup : null);
+    if (!focusKey) return;
+    setManualExpanded((current) => (current[focusKey] === false ? { ...current, [focusKey]: true } : current));
+  }, [activeDeviceGroupKey, activeRouteGroup]);
+
+  if (!hasNamedGroups) return null;
+
   const onlineTotal = allDevices.filter((device) => device.status === "online").length;
+  const allDevicesState: StatusDotState = allDevices.length === 0 || onlineTotal === 0
+    ? "offline"
+    : groups.some((g) => g.criticalCount > 0)
+      ? "critical"
+      : groups.some((g) => g.warningCount > 0 || g.offline > 0)
+        ? "warning"
+        : "online";
+  const activeDeviceId = route.kind === "device" ? route.deviceId : null;
 
   return (
     <div className="workspace-sidebar-groups" role="group" aria-label="设备组快捷导航">
@@ -74,64 +266,42 @@ export function SidebarDeviceGroups() {
         <span>设备组</span>
         <small>{groups.filter((g) => !g.isUngrouped).length} 组</small>
       </div>
-      <button
-        type="button"
-        className={`workspace-sidebar-group-btn ${route.kind === "devices" && (!route.group || route.group === "all") ? "is-selected" : ""}`}
+      <SidebarAllDevicesButton
+        selected={route.kind === "devices" && (!route.group || route.group === "all")}
+        onlineTotal={onlineTotal}
+        total={allDevices.length}
+        state={allDevicesState}
         onClick={() => navigate({ kind: "devices" })}
-        title={`全部设备 (${onlineTotal}/${allDevices.length} 在线)`}
-      >
-        <span className="workspace-sidebar-group-btn__name">全部设备</span>
-        <span className="workspace-sidebar-group-btn__count">{onlineTotal}/{allDevices.length}</span>
-      </button>
+      />
       {groups.map((group) => {
         const isSelectedGroup = activeRouteGroup === group.key;
         const isParentOfActiveDevice = activeDeviceGroupKey === group.key;
-        const expanded = isSelectedGroup || isParentOfActiveDevice;
-        const hasOffline = group.offline > 0;
-        const hasWarning = group.overThreshold > 0;
+        const autoExpanded = isSelectedGroup || isParentOfActiveDevice;
+        const expanded = manualExpanded[group.key] ?? autoExpanded;
         return (
-          <div key={group.key} className={`workspace-sidebar-group-entry ${expanded ? "is-expanded" : ""}`}>
-            <button
-              type="button"
-              className={`workspace-sidebar-group-btn ${isSelectedGroup ? "is-selected" : ""} ${isParentOfActiveDevice ? "is-active-parent" : ""}`}
-              aria-current={isSelectedGroup ? "page" : undefined}
-              onClick={() => navigate({ kind: "devices", group: group.key })}
-              title={`${group.name} (${group.online}/${group.total} 在线)`}
-            >
-              <span className="workspace-sidebar-group-btn__lead">
-                {(hasOffline || hasWarning) ? (
-                  <span
-                    className={`workspace-group-chip-dot ${hasOffline ? "is-offline" : "is-warning"}`}
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <span className="workspace-sidebar-group-btn__dot" aria-hidden="true" />
-                )}
-                <span className="workspace-sidebar-group-btn__name">{group.name}</span>
-              </span>
-              <span className="workspace-sidebar-group-btn__count">{group.online}/{group.total}</span>
-            </button>
-            {expanded && group.devices.length > 0 && (
-              <div className="workspace-sidebar-group-devices" role="group" aria-label={`${group.name} 组内设备`}>
-                {group.devices.map((device) => {
-                  const isCurrentDevice = route.kind === "device" && route.deviceId === device.deviceId;
-                  return (
-                    <button
-                      key={device.deviceId}
-                      type="button"
-                      className={`workspace-sidebar-group-device ${isCurrentDevice ? "is-selected" : ""}`}
-                      aria-current={isCurrentDevice ? "page" : undefined}
-                      onClick={() => navigate({ kind: "device", deviceId: device.deviceId, view: route.kind === "device" ? route.view : undefined })}
-                      title={`${device.hostname} (${device.status === "online" ? "在线" : "离线"})`}
-                    >
-                      <StatusDot state={device.status === "online" ? "online" : "offline"} />
-                      <span className="workspace-sidebar-group-device__name">{device.hostname}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <SidebarGroupEntry
+            key={group.key}
+            group={group}
+            expanded={expanded}
+            isSelectedGroup={isSelectedGroup}
+            isParentOfActiveDevice={isParentOfActiveDevice}
+            activeDeviceId={activeDeviceId}
+            healthThresholds={healthThresholds}
+            onSelectGroup={() => {
+              if (route.kind === "devices" && isSelectedGroup) {
+                setManualExpanded((current) => ({ ...current, [group.key]: !expanded }));
+                return;
+              }
+              setManualExpanded((current) => ({ ...current, [group.key]: true }));
+              navigate({ kind: "devices", group: group.key });
+            }}
+            onToggleExpand={() => {
+              setManualExpanded((current) => ({ ...current, [group.key]: !expanded }));
+            }}
+            onSelectDevice={(deviceId) => {
+              navigate({ kind: "device", deviceId, view: route.kind === "device" ? route.view : undefined });
+            }}
+          />
         );
       })}
     </div>

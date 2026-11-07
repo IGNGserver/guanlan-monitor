@@ -132,6 +132,9 @@ test("selectDeviceGroups aggregates group health, averages, and keeps ungrouped 
   assert.equal(groups[0].online, 2);
   assert.equal(groups[0].offline, 1);
   assert.equal(groups[0].overThreshold, 1);
+  assert.equal(groups[0].criticalCount, 0);
+  assert.equal(groups[0].warningCount, 1);
+  assert.equal(groups[0].state, "warning");
   assert.equal(groups[0].avgCpuPercent, 67.5);
   assert.equal(groups[0].avgMemoryPercent, 70);
 
@@ -139,6 +142,15 @@ test("selectDeviceGroups aggregates group health, averages, and keeps ungrouped 
   assert.equal(groups[1].name, "未分组");
   assert.equal(groups[1].isUngrouped, true);
   assert.equal(groups[1].total, 1);
+  assert.equal(groups[1].state, "online");
+
+  const criticalAndOfflineGroups = selectDeviceGroups([
+    device({ deviceId: "c1", hostname: "c1", group: "严重组", cpuUsagePercent: 99, sortOrder: 0 }),
+    device({ deviceId: "o1", hostname: "o1", group: "全离线组", status: "offline", sortOrder: 1 })
+  ]);
+  assert.equal(criticalAndOfflineGroups[0].state, "critical");
+  assert.equal(criticalAndOfflineGroups[0].criticalCount, 1);
+  assert.equal(criticalAndOfflineGroups[1].state, "offline");
 
   assert.equal(resolveActiveGroupFilter(groups, "宿主机"), "宿主机");
   assert.equal(resolveActiveGroupFilter(groups, UNGROUPED_GROUP_KEY), UNGROUPED_GROUP_KEY);

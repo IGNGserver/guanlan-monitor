@@ -204,22 +204,19 @@ function DeviceDirectoryFilterBar({
           <M3Chip selected={groupFilter === "all"} onClick={() => onGroupFilterChange("all")}>
             全部组 ({devices.length})
           </M3Chip>
-          {resolvedGroups.map((group) => {
-            const hasAlert = group.offline > 0 || group.overThreshold > 0;
-            return (
-              <M3Chip
-                key={group.key}
-                selected={groupFilter === group.key}
-                onClick={() => onGroupFilterChange(group.key)}
-              >
-                <span className="workspace-group-chip-content">
-                  {hasAlert && <span className={`workspace-group-chip-dot ${group.offline > 0 ? "is-offline" : "is-warning"}`} aria-hidden="true" />}
-                  <span>{group.name}</span>
-                  <small>{group.online}/{group.total}</small>
-                </span>
-              </M3Chip>
-            );
-          })}
+          {resolvedGroups.map((group) => (
+            <M3Chip
+              key={group.key}
+              selected={groupFilter === group.key}
+              onClick={() => onGroupFilterChange(group.key)}
+            >
+              <span className="workspace-group-chip-content">
+                <span className={`workspace-group-chip-dot is-${group.state}`} aria-hidden="true" />
+                <span>{group.name}</span>
+                <small>{group.online}/{group.total}</small>
+              </span>
+            </M3Chip>
+          ))}
         </div>
         {(onToggleAllGroupsCollapse || onOpenBatchGroup) && (
           <div className="workspace-group-filter-bar__actions">
@@ -784,6 +781,20 @@ function DeviceTable({
           {/* Shortcuts to the device's live tabs, where a row's "what is it doing now?" is answered. */}
           <button className="guanlan-table-live-action" type="button" aria-label={`查看 ${device.hostname} 的进程`} onClick={() => navigate({ kind: "device", deviceId: device.deviceId, view: "processes" })}>进程</button>
           <button className="guanlan-table-live-action" type="button" aria-label={`查看 ${device.hostname} 的容器`} onClick={() => navigate({ kind: "device", deviceId: device.deviceId, view: "containers" })}>容器</button>
+          {onDelete && (
+            <button
+              className="guanlan-table-icon-action is-danger"
+              type="button"
+              aria-label="删除"
+              title={`从中枢删除 ${device.hostname}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onDelete(device);
+              }}
+            >
+              <Icon name="delete" size={15} />
+            </button>
+          )}
           <button className="guanlan-table-row-action" type="button" aria-label={`打开 ${device.hostname}`} onClick={() => openDevice(device)}><Icon name="arrow" size={14} /></button>
         </div>
     }

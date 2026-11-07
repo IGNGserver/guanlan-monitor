@@ -203,8 +203,13 @@
   height: 8px;
   flex: 0 0 auto;
   border-radius: var(--md-sys-shape-full);
-  background: currentColor;
 }
+.workspace-status-dot--online { background: var(--md-sys-color-success); }
+.workspace-status-dot--warning { background: var(--md-sys-color-warning); }
+.workspace-status-dot--critical { background: var(--md-sys-color-error); }
+.workspace-status-dot--cached { background: var(--md-sys-color-info); }
+.workspace-status-dot--offline,
+.workspace-status-dot--unknown { background: var(--md-sys-color-on-surface-variant); }
 .workspace-status-label--online { color: var(--md-sys-color-on-success-container); background: var(--md-sys-color-success-container); }
 .workspace-status-label--offline { color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-high); }
 .workspace-status-label--cached { color: var(--md-sys-color-on-info-container); background: var(--md-sys-color-info-container); }

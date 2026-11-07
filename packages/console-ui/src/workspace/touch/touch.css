@@ -119,6 +119,30 @@
   align-items: center;
   gap: var(--md-sys-space-2);
 }
+.touch-group-section__chevron {
+  display: inline-flex;
+  color: var(--md-sys-color-on-surface-variant);
+  transition: transform var(--md-sys-motion-spatial-fast);
+}
+.touch-group-section.is-collapsed .touch-group-section__chevron {
+  transform: rotate(-90deg);
+}
+.touch-group-section__collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows var(--md-sys-motion-spatial-default),
+    opacity var(--md-sys-motion-effects-default);
+}
+.touch-group-section__collapse.is-collapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+.touch-group-section__body {
+  min-height: 0;
+  overflow: hidden;
+}
 .touch-group-section__title strong {
   overflow: hidden;
   font-size: var(--md-sys-typescale-title-s-size);
@@ -196,6 +220,7 @@
 .touch-workspace .workspace-setting-segmented { flex-wrap: wrap; max-width: 100%; }
 .touch-workspace .workspace-setting-segmented .m3e-segmented__button { min-width: 0; }
 .touch-device-heading { margin-bottom: var(--md-sys-space-4); }
+.touch-device-heading__row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--md-sys-space-2); }
 .touch-device-facts > summary { display: none; }
 .touch-workspace .touch-device-facts { margin: var(--md-sys-space-3) 0 var(--md-sys-space-4); background: var(--md-sys-color-surface-container-low); border-radius: var(--md-sys-shape-lg); }
 .touch-workspace .touch-device-facts > summary { display: list-item; padding: var(--md-sys-space-4); cursor: pointer; min-height: 48px; color: var(--md-sys-color-on-surface-variant); }

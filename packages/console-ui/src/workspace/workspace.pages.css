@@ -292,8 +292,11 @@
 .workspace-group-filter-bar__actions { display: inline-flex; align-items: center; gap: var(--md-sys-space-2); margin-left: auto; flex-shrink: 0; }
 .workspace-group-chip-content { display: inline-flex; align-items: center; gap: var(--md-sys-space-1); }
 .workspace-group-chip-content small { opacity: 0.78; font-variant-numeric: tabular-nums; }
-.workspace-group-chip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--md-sys-color-warning, #d97706); }
-.workspace-group-chip-dot.is-offline { background: var(--md-sys-color-error, #dc2626); }
+.workspace-group-chip-dot { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: var(--md-sys-color-success, #1c6b42); }
+.workspace-group-chip-dot.is-online { background: var(--md-sys-color-success, #1c6b42); }
+.workspace-group-chip-dot.is-warning { background: var(--md-sys-color-warning, #d97706); }
+.workspace-group-chip-dot.is-critical { background: var(--md-sys-color-error, #dc2626); }
+.workspace-group-chip-dot.is-offline { background: var(--md-sys-color-on-surface-variant, #74777f); }
 
 /* In-group peer switcher on DeviceDetailsPage */
 .workspace-group-peers {
@@ -432,8 +435,9 @@
   padding: var(--md-sys-space-4) var(--md-sys-space-5);
   border-bottom: 1px solid var(--workspace-border);
   background: var(--workspace-color-surface-container-low, var(--workspace-surface));
+  transition: border-color var(--md-sys-motion-effects-default);
 }
-.workspace-group-section.is-collapsed .workspace-group-section__header { border-bottom: 0; }
+.workspace-group-section.is-collapsed .workspace-group-section__header { border-bottom-color: transparent; }
 .workspace-group-section__toggle {
   display: inline-flex;
   align-items: center;
@@ -447,6 +451,30 @@
   cursor: pointer;
   text-align: left;
 }
+.workspace-group-section__chevron {
+  display: inline-flex;
+  color: var(--workspace-text-muted);
+  transition: transform var(--md-sys-motion-spatial-fast);
+}
+.workspace-group-section.is-collapsed .workspace-group-section__chevron {
+  transform: rotate(-90deg);
+}
+.workspace-group-section__collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows var(--md-sys-motion-spatial-default),
+    opacity var(--md-sys-motion-effects-default);
+}
+.workspace-group-section__collapse.is-collapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+.workspace-group-section__body {
+  min-height: 0;
+  overflow: hidden;
+}
 .workspace-group-section__title { font-size: var(--md-sys-typescale-title-m-size); font-weight: 600; letter-spacing: -0.015em; }
 .workspace-group-section__meta { display: flex; align-items: center; flex-wrap: wrap; gap: var(--md-sys-space-3); }
 .workspace-group-section__averages {
@@ -455,6 +483,7 @@
   font-variant-numeric: tabular-nums;
 }
 .workspace-group-section__actions { display: inline-flex; align-items: center; gap: var(--md-sys-space-1); }
+.workspace-device-delete-btn { color: var(--md-sys-color-error) !important; }
 
 .guanlan-table-device-title { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--md-sys-space-2); }
 .guanlan-device-group-badge {
