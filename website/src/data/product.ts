@@ -2,7 +2,7 @@
  * 产品事实的唯一来源（站点侧）。每一条都能在产品仓库找到出处：
  *   README.md（安装、连接、部署、发布规则）、docs/TRUSTED_REALTIME_MONITORING.md（实时查看）、
  *   release-notes-v3.*.md（测试版改动）。改文案前先核对产品仓库，不得编造未发布能力。
- * 最近一次核对：2026-10-24，产品 VERSION = 3.0.167。
+ * 最近一次核对：2026-11-07，产品 VERSION = 3.0.172。
  */
 
 export const REPO = 'IGNGserver/guanlan-monitor';
@@ -93,16 +93,16 @@ const dl = (tag: string, name: string) => `${REPO_URL}/releases/download/${tag}/
 
 /**
  * 构建时拿不到 GitHub API（离线构建、限流）时使用的烘焙值。
- * 2026-10-24 核对：最新发布为 v3.0.167（正式版，GitHub Latest）。
+ * 2026-11-07 核对：最新发布为 v3.0.172（正式稳定版，GitHub Latest），包含设备组和一致性修复。
  */
 export const FALLBACK_RELEASE: ReleaseInfo = (() => {
-  const tag = 'v3.0.167';
+  const tag = 'v3.0.172';
   const sizes: Record<AssetKey, [string, number]> = {
-    winSetup: ['DeviceStateConsole-Windows-Setup-v3.0.167.exe', 104924899],
-    winPortable: ['DeviceStateConsole-Windows-Portable-v3.0.167.zip', 149463842],
-    winUpdate: ['DeviceStateConsole-Windows-Update-v3.0.167.zip', 149463842],
-    deb: ['DeviceStateConsole-Linux-Install-v3.0.167.deb', 98682568],
-    apk: ['DeviceStateConsole-Android-v3.0.167.apk', 9337890],
+    winSetup: ['DeviceStateConsole-Windows-Setup-v3.0.172.exe', 0],
+    winPortable: ['DeviceStateConsole-Windows-Portable-v3.0.172.zip', 0],
+    winUpdate: ['DeviceStateConsole-Windows-Update-v3.0.172.zip', 0],
+    deb: ['DeviceStateConsole-Linux-Install-v3.0.172.deb', 0],
+    apk: ['DeviceStateConsole-Android-v3.0.172.apk', 0],
   };
   const assets: ReleaseInfo['assets'] = {};
   for (const [key, [name, size]] of Object.entries(sizes) as [AssetKey, [string, number]][]) {

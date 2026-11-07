@@ -16,11 +16,13 @@ const metrics = {
 /** Route every hub read to a canned body and record which endpoints were hit. */
 function installHub() {
   const calls: string[] = [];
+  const requests: Array<{ path: string; method: string; body: string | null }> = [];
   const original = globalThis.fetch;
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     // Outside a browser the client prefixes the hub origin; match on the path.
     const path = new URL(String(input), "http://hub.invalid").pathname;
     calls.push(path);
+    requests.push({ path, method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : null });
     const body = path === "/api/auth/session" ? { ok: true, issuedAt: "scope-1" }
       : path === "/api/instances" ? [device]
       : path.endsWith("/metrics") ? metrics
@@ -30,7 +32,7 @@ function installHub() {
       : {};
     return new Response(JSON.stringify(body), { status: 200 });
   }) as typeof fetch;
-  return { calls, restore: () => { globalThis.fetch = original; } };
+  return { calls, requests, restore: () => { globalThis.fetch = original; } };
 }
 
 function adapterAt(clock: { now: number }) {
@@ -38,6 +40,37 @@ function adapterAt(clock: { now: number }) {
   adapter.now = () => clock.now;
   return adapter;
 }
+
+test("device group mutations send normalized batch payload and refresh the group state", async () => {
+  const hub = installHub();
+  try {
+    const adapter = adapterAt({ now: 1_000_000 });
+    const calls = hub.calls;
+    await adapter.refresh({ include: {} });
+    calls.splice(0);
+    const snapshot = await adapter.updateDeviceGroup(["nas", "nas"], "  宿主机  ");
+    assert.deepEqual(snapshot.devices[0].group, undefined);
+    const mutation = hub.requests.find((request) => request.path === "/api/devices/group");
+    assert.deepEqual(mutation, {
+      path: "/api/devices/group",
+      method: "PUT",
+      body: JSON.stringify({ deviceIds: ["nas", "nas"], group: "  宿主机  " })
+    });
+    assert.ok(calls.includes("/api/instances"));
+  } finally { hub.restore(); }
+});
+
+test("device:update merges group changes without dropping fields", async () => {
+  const { upsertDevice } = await import("./console-adapter.ts");
+  const current = [{ ...device, group: "旧组" }];
+  const changed = upsertDevice(current, { ...device, status: "offline", group: "新组" });
+  assert.equal(changed[0].group, "新组");
+  assert.equal(changed[0].status, "offline");
+  const partial = upsertDevice(changed, { ...device, status: "online" });
+  assert.equal(partial[0].group, "新组", "partial event must preserve the previously known group");
+  const cleared = upsertDevice(partial, { ...device, group: null });
+  assert.equal(cleared[0].group, null, "explicit null must clear the group");
+});
 
 test("an omitted include still reads everything for older callers", () => {
   assert.deepEqual(resolveInclude(undefined), { deviceMetrics: true, overviewMetrics: true, trafficCalendar: true });

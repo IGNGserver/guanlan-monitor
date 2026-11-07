@@ -94,3 +94,73 @@ test("an expired session is rejected", async (t) => {
 
   assert.equal(response.statusCode, 401);
 });
+
+test("a device group mutation rejects unknown and legacy ids and de-duplicates valid ids", async (t) => {
+  const updates: Array<{ deviceIds: string[]; group: string | null }> = [];
+  const records = new Map([
+    ["host-1", { deviceId: "host-1", name: "Host 1", status: "open" as const, sortOrder: 0, group: null, registeredAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }],
+    ["host-2", { deviceId: "host-2", name: "Host 2", status: "open" as const, sortOrder: 1, group: "旧组", registeredAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }]
+  ]);
+  const repositories = {
+    devices: {
+      listOpenDevices: async () => [...records.values()],
+      getOpenDevice: async (deviceId: string) => records.get(deviceId) ?? null,
+      updateDeviceGroup: async (deviceIds: string[], group: string | null) => {
+        updates.push({ deviceIds, group });
+        for (const id of deviceIds) {
+          const record = records.get(id);
+          if (record) record.group = group;
+        }
+      }
+    },
+    realtime: { listDevices: async () => [], getDevice: async () => null },
+  } as unknown as Repositories;
+  const metricConfigs = { get: async () => null, set: async () => {} };
+  const app = Fastify();
+  await app.register(cookie, { secret: env.SESSION_SECRET });
+  await registerRoutes(app, repositories, new MetricsService(repositories, () => {}, metricConfigs), {
+    metricConfigs,
+    fanNotes: { get: async () => ({}), set: async () => {} }
+  });
+  await app.ready();
+  t.after(async () => app.close());
+  const signed = app.signCookie(Buffer.from(JSON.stringify(createSession(env.ACCESS_KEY))).toString("base64url"));
+  const headers = { cookie: `dsc_session=${encodeURIComponent(signed)}` };
+
+  assert.equal((await app.inject({ method: "PUT", url: "/api/devices/group", headers, payload: { deviceIds: ["host-1"], group: "组" } })).statusCode, 200);
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0], { deviceIds: ["host-1"], group: "组" });
+
+  const duplicate = await app.inject({
+    method: "PUT",
+    url: "/api/devices/group",
+    headers,
+    payload: { deviceIds: ["host-1", "host-1", "host-2", "host-2"], group: "  宿主机  " }
+  });
+  assert.equal(duplicate.statusCode, 200);
+  assert.deepEqual(updates.at(-1), { deviceIds: ["host-1", "host-2"], group: "宿主机" });
+
+  const unknown = await app.inject({
+    method: "PUT",
+    url: "/api/devices/group",
+    headers,
+    payload: { deviceIds: ["host-1", "missing-device"], group: "幽灵组" }
+  });
+  assert.equal(unknown.statusCode, 404);
+  assert.deepEqual(unknown.json(), { error: "device_not_found" });
+  assert.equal(updates.length, 2, "unknown ids must not partially mutate the known device");
+
+  const legacy = await app.inject({
+    method: "PUT",
+    url: "/api/devices/group",
+    headers,
+    payload: { deviceIds: ["vm:old"], group: "宿主机" }
+  });
+  assert.equal(legacy.statusCode, 400);
+  assert.equal((await app.inject({
+    method: "PUT",
+    url: "/api/devices/group",
+    headers,
+    payload: { deviceIds: [], group: null }
+  })).statusCode, 400);
+});

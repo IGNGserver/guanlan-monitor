@@ -132,6 +132,16 @@ export interface DeviceRecord {
   updatedAt: string;
 }
 
+export class DeviceNotFoundError extends Error {
+  readonly deviceId: string;
+
+  constructor(deviceId: string) {
+    super("device_not_found");
+    this.name = "DeviceNotFoundError";
+    this.deviceId = deviceId;
+  }
+}
+
 export interface DeviceRegistrationOptions {
   reopenClosed?: boolean;
   /** Authoritative steady ingest may skip an unchanged registry touch. */
@@ -146,6 +156,7 @@ export interface DeviceRepository {
     options?: DeviceRegistrationOptions
   ): Promise<DeviceRecord>;
   listOpenDevices(): Promise<DeviceRecord[]>;
+  getOpenDevice(deviceId: string): Promise<DeviceRecord | null>;
   deleteDevice(deviceId: string): Promise<void>;
   reorderDevices(deviceIds: string[]): Promise<void>;
   updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void>;

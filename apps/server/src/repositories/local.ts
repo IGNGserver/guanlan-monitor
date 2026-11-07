@@ -3,17 +3,18 @@ import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import type { DeviceBlockKey, DeviceMetricKey, MetricWindow } from "@dsc/shared";
 import type { TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
-import type {
-  DeviceRecord,
-  DeviceRegistrationOptions,
-  DeviceRepository,
-  DeviceMetricConfigValue,
-  DeviceMetricConfigStore,
-  DeviceRealtimeState,
-  FanNoteStore,
-  HistoryRepository,
-  RealtimeRepository,
-  TimeSeriesRecord
+import {
+  DeviceNotFoundError,
+  type DeviceRecord,
+  type DeviceRegistrationOptions,
+  type DeviceRepository,
+  type DeviceMetricConfigValue,
+  type DeviceMetricConfigStore,
+  type DeviceRealtimeState,
+  type FanNoteStore,
+  type HistoryRepository,
+  type RealtimeRepository,
+  type TimeSeriesRecord
 } from "../types.js";
 import { buildTrafficCalendar } from "../traffic-calendar.js";
 import { isLegacyVirtualMachineId, legacyVirtualMachineRecord } from "../legacy-devices.js";
@@ -533,6 +534,15 @@ export class LocalDeviceRepository implements DeviceRepository {
       .sort((a, b) => (a.sortOrder - b.sortOrder) || a.deviceId.localeCompare(b.deviceId)));
   }
 
+  async getOpenDevice(deviceId: string): Promise<DeviceRecord | null> {
+    return this.store.select((db) => {
+      const record = db.deviceRegistry?.[deviceId];
+      return record?.status === "open" && !isLegacyVirtualMachineId(deviceId)
+        ? { ...record, group: record.group ?? null }
+        : null;
+    });
+  }
+
   async deleteDevice(deviceId: string): Promise<void> {
     // The registry write below creates a row when one is missing, so a legacy id would be
     // resurrected by the very call meant to hide it.
@@ -573,28 +583,17 @@ export class LocalDeviceRepository implements DeviceRepository {
 
   async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void> {
     const normalizedGroup = group?.trim() ? group.trim().slice(0, 64) : null;
+    const uniqueIds = [...new Set(deviceIds)];
     await this.store.update((db) => {
       const registry = (db.deviceRegistry ??= {});
+      for (const id of uniqueIds) {
+        if (isLegacyVirtualMachineId(id) || registry[id]?.status !== "open") throw new DeviceNotFoundError(id);
+      }
       const now = new Date().toISOString();
-      for (const id of deviceIds) {
-        if (isLegacyVirtualMachineId(id)) continue;
-        const item = registry[id];
-        if (item) {
-          item.group = normalizedGroup;
-          item.updatedAt = now;
-        } else {
-          const allDevices = Object.values(registry);
-          const maxSortOrder = allDevices.reduce((max, d) => Math.max(max, d.sortOrder ?? 0), -1);
-          registry[id] = {
-            deviceId: id,
-            name: db.devices[id]?.identity.hostname || id,
-            status: "open",
-            sortOrder: maxSortOrder + 1,
-            group: normalizedGroup,
-            registeredAt: now,
-            updatedAt: now
-          };
-        }
+      for (const id of uniqueIds) {
+        const item = registry[id]!;
+        item.group = normalizedGroup;
+        item.updatedAt = now;
       }
     });
   }

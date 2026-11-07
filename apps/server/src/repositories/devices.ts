@@ -4,7 +4,7 @@ import {
   isLegacyVirtualMachineId,
   legacyVirtualMachineRecord
 } from "../legacy-devices.js";
-import type { DeviceRecord, DeviceRegistrationOptions, DeviceRepository } from "../types.js";
+import { DeviceNotFoundError, type DeviceRecord, type DeviceRegistrationOptions, type DeviceRepository } from "../types.js";
 import { KeyedSerialQueue } from "../serial-queue.js";
 
 export interface MysqlDeviceRepositoryOptions {
@@ -156,6 +156,16 @@ export class MysqlDeviceRepository implements DeviceRepository {
     return records;
   }
 
+  async getOpenDevice(deviceId: string): Promise<DeviceRecord | null> {
+    if (isLegacyVirtualMachineId(deviceId)) return null;
+    const [rows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT device_id AS deviceId, name, status, sort_order AS sortOrder, group_name AS \`group\`, DATE_FORMAT(registered_at, '%Y-%m-%dT%H:%i:%s.000Z') AS registeredAt, DATE_FORMAT(updated_at, '%Y-%m-%dT%H:%i:%s.000Z') AS updatedAt FROM devices WHERE device_id = ? AND status = 'open'`,
+      [deviceId]
+    );
+    const record = rows[0] as DeviceRecord | undefined;
+    return record ? { ...record, group: record.group ?? null } : null;
+  }
+
   async deleteDevice(deviceId: string): Promise<void> {
     // A soft delete is an INSERT here, so it is the one other path that could resurrect a legacy
     // row the sweep just removed.
@@ -194,16 +204,48 @@ export class MysqlDeviceRepository implements DeviceRepository {
   async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void> {
     const normalizedGroup = group?.trim() ? group.trim().slice(0, 64) : null;
     const formattedNow = new Date().toISOString().slice(0, 19).replace("T", " ");
-    for (const deviceId of deviceIds) {
-      if (isLegacyVirtualMachineId(deviceId)) continue;
-      await this.deviceQueues.run(deviceId, async () => {
-        this.registeredDevices.delete(deviceId);
-        this.listCache = undefined;
+    const uniqueIds = [...new Set(deviceIds)];
+    if (!uniqueIds.length) return;
+    if (uniqueIds.some(isLegacyVirtualMachineId)) throw new DeviceNotFoundError(uniqueIds.find(isLegacyVirtualMachineId)!);
+    const placeholders = uniqueIds.map(() => "?").join(", ");
+    const poolWithConnection = this.pool as mysql.Pool & {
+      getConnection?: () => Promise<mysql.PoolConnection>;
+    };
+    await this.deviceQueues.run("\u0000device-group", async () => {
+      this.listCache = undefined;
+      for (const deviceId of uniqueIds) this.registeredDevices.delete(deviceId);
+      if (!poolWithConnection.getConnection) {
+        for (const deviceId of uniqueIds) {
+          if (!(await this.getOpenDevice(deviceId))) throw new DeviceNotFoundError(deviceId);
+        }
         await this.pool.query(
-          `UPDATE devices SET group_name = ?, updated_at = ? WHERE device_id = ?`,
-          [normalizedGroup, formattedNow, deviceId]
+          `UPDATE devices SET group_name = ?, updated_at = ? WHERE status = 'open' AND device_id IN (${placeholders})`,
+          [normalizedGroup, formattedNow, ...uniqueIds]
         );
-      });
-    }
+        return;
+      }
+
+      const connection = await poolWithConnection.getConnection();
+      try {
+        await connection.beginTransaction();
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT device_id FROM devices WHERE status = 'open' AND device_id IN (${placeholders}) FOR UPDATE`,
+          uniqueIds
+        );
+        const openIds = new Set(rows.map((row) => String(row.device_id)));
+        const missing = uniqueIds.find((deviceId) => !openIds.has(deviceId));
+        if (missing) throw new DeviceNotFoundError(missing);
+        await connection.query(
+          `UPDATE devices SET group_name = ?, updated_at = ? WHERE status = 'open' AND device_id IN (${placeholders})`,
+          [normalizedGroup, formattedNow, ...uniqueIds]
+        );
+        await connection.commit();
+      } catch (error) {
+        await connection.rollback().catch(() => undefined);
+        throw error;
+      } finally {
+        connection.release();
+      }
+    });
   }
 }

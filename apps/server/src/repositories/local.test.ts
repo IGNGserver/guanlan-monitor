@@ -487,7 +487,16 @@ test("legacy cleanup is ordered with writes and retains physical metrics and sto
   });
 });
 
-test("device group assignment persists across registrations and supports batch rename/clear", async () => {
+test("device group assignment rejects unknown ids without creating ghost devices", async () => {
+  await withTempStore(async (filePath) => {
+    const devices = new LocalDeviceRepository(createLocalStore(filePath));
+    await devices.registerOrUpdateDevice("host", "Host");
+    await assert.rejects(devices.updateDeviceGroup(["host", "missing"], "幽灵组"), /device_not_found/);
+    assert.deepEqual((await devices.listOpenDevices()).map((device) => device.deviceId), ["host"]);
+    assert.equal((await devices.getOpenDevice("host"))?.group, null);
+  });
+});
+
   await withTempStore(async (filePath) => {
     const devices = new LocalDeviceRepository(createLocalStore(filePath));
     await devices.registerOrUpdateDevice("pve-1", "PVE 1");

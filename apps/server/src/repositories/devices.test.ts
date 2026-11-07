@@ -42,6 +42,18 @@ class FakePool {
   }
 
   private execute(sql: string, params: unknown[]) {
+    if (sql.startsWith("SELECT device_id AS deviceId")) {
+      const row = this.rows.get(String(params[0]));
+      return row && row.status === "open" ? [{
+        deviceId: row.device_id,
+        name: row.name,
+        status: row.status,
+        sortOrder: row.sort_order,
+        group: row.group_name ?? null,
+        registeredAt: row.registered_at,
+        updatedAt: row.updated_at
+      }] : [];
+    }
     if (sql.startsWith("SELECT device_id, name")) {
       const row = this.rows.get(String(params[0]));
       return row ? [{ ...row }] : [];
@@ -64,11 +76,16 @@ class FakePool {
         row.updated_at = String(params[1]);
       }
     } else if (sql.startsWith("UPDATE devices SET group_name")) {
-      const row = this.rows.get(String(params[2]));
-      if (row) {
-        row.group_name = params[0] == null ? null : String(params[0]);
-        row.updated_at = String(params[1]);
+      const group = params[0] == null ? null : String(params[0]);
+      const ids = params.slice(2).map(String);
+      for (const id of ids) {
+        const row = this.rows.get(id);
+        if (row?.status === "open") {
+          row.group_name = group;
+          row.updated_at = String(params[1]);
+        }
       }
+      return { affectedRows: ids.filter((id) => this.rows.get(id)?.status === "open").length };
     } else if (sql.startsWith("INSERT INTO devices") && sql.includes("ON DUPLICATE KEY")) {
       const deviceId = String(params[0]);
       const row = this.rows.get(deviceId);
@@ -284,7 +301,7 @@ test("legacy VM ids are refused before SQL, cache or queue access", async () => 
   assert.equal((await devices.registerOrUpdateDevice("vm:old", "VM", fast)).status, "closed");
   await devices.deleteDevice("vm:old");
   await devices.reorderDevices(["vm:old"]);
-  await devices.updateDeviceGroup(["vm:old"], "宿主机");
+  await assert.rejects(devices.updateDeviceGroup(["vm:old"], "宿主机"), /device_not_found/);
   assert.equal(pool.queries.length, 0);
 });
 
@@ -292,8 +309,10 @@ test("updateDeviceGroup invalidates cache and preserves group across subsequent 
   const pool = new FakePool();
   const devices = pool.repository();
   await devices.registerOrUpdateDevice("host", "Host", fast);
-  await devices.updateDeviceGroup(["host"], "  宿主机  ");
+  await devices.updateDeviceGroup(["host", "host"], "  宿主机  ");
   assert.equal(pool.rows.get("host")?.group_name, "宿主机");
   const afterGroup = await devices.registerOrUpdateDevice("host", "Host", fast);
   assert.equal(afterGroup.group, "宿主机");
+  await assert.rejects(devices.updateDeviceGroup(["missing"], "幽灵组"), /device_not_found/);
+  assert.equal(pool.rows.has("missing"), false);
 });
