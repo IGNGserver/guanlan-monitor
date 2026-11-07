@@ -125,17 +125,14 @@ export function TouchDevices() {
           {hasNamedGroups && (
             <div className="touch-group-chips" role="group" aria-label="按分组筛选">
               <M3Chip selected={activeGroup === "all"} onClick={() => selectGroup("all")}>全部 ({ordered.length})</M3Chip>
-              {groups.map((item) => {
-                const hasAlert = item.offline > 0 || item.overThreshold > 0;
-                return (
-                  <M3Chip key={item.key} selected={activeGroup === item.key} onClick={() => selectGroup(item.key)}>
-                    <span className="workspace-group-chip-content">
-                      {hasAlert && <span className={`workspace-group-chip-dot ${item.offline > 0 ? "is-offline" : "is-warning"}`} aria-hidden="true" />}
-                      <span>{item.name} ({item.online}/{item.total})</span>
-                    </span>
-                  </M3Chip>
-                );
-              })}
+              {groups.map((item) => (
+                <M3Chip key={item.key} selected={activeGroup === item.key} onClick={() => selectGroup(item.key)}>
+                  <span className="workspace-group-chip-content">
+                    <span className={`workspace-group-chip-dot is-${item.state}`} aria-hidden="true" />
+                    <span>{item.name} ({item.online}/{item.total})</span>
+                  </span>
+                </M3Chip>
+              ))}
             </div>
           )}
         </div>}
@@ -161,15 +158,18 @@ export function TouchDevices() {
         {visibleGroups.map((groupItem) => {
           const isCollapsed = collapsedGroups.has(groupItem.key);
           return (
-            <section key={groupItem.key} className="touch-group-section" aria-label={`分组 ${groupItem.name}`}>
+            <section key={groupItem.key} className={`touch-group-section${isCollapsed ? " is-collapsed" : ""}`} aria-label={`分组 ${groupItem.name}`}>
               <button
                 type="button"
-                className="touch-group-section__header"
+                className="touch-group-section__header m3e-state-host"
                 aria-expanded={!isCollapsed}
                 onClick={() => toggleCollapseGroup(groupItem.key)}
               >
                 <span className="touch-group-section__title">
-                  <Icon name={isCollapsed ? "chevronRight" : "chevron"} size={18} />
+                  <span className="touch-group-section__chevron" aria-hidden="true">
+                    <Icon name="chevron" size={18} />
+                  </span>
+                  <span className={`workspace-group-chip-dot is-${groupItem.state}`} aria-hidden="true" />
                   <strong>{groupItem.name}</strong>
                   <small>{groupItem.online}/{groupItem.total} 在线</small>
                 </span>
@@ -177,19 +177,21 @@ export function TouchDevices() {
                   {groupItem.offline > 0 ? `${groupItem.offline} 离线` : isCollapsed ? "展开" : "收起"}
                 </span>
               </button>
-              {!isCollapsed && (
-                <div className="touch-device-list">
-                  {groupItem.devices.map((device) => (
-                    <div key={device.deviceId} className="touch-directory__item">
-                      <TouchDeviceRow
-                        device={device}
-                        selected={route.kind === "device" && route.deviceId === device.deviceId}
-                        onMore={() => { setTarget(device); setDeleting(false); }}
-                      />
-                    </div>
-                  ))}
+              <div className={`touch-group-section__collapse${isCollapsed ? " is-collapsed" : ""}`} aria-hidden={isCollapsed}>
+                <div className="touch-group-section__body">
+                  <div className="touch-device-list">
+                    {groupItem.devices.map((device) => (
+                      <div key={device.deviceId} className="touch-directory__item">
+                        <TouchDeviceRow
+                          device={device}
+                          selected={route.kind === "device" && route.deviceId === device.deviceId}
+                          onMore={() => { setTarget(device); setDeleting(false); }}
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              )}
+              </div>
             </section>
           );
         })}
@@ -213,7 +215,7 @@ export function TouchDevices() {
         </div>}
     </TouchSheet>}
     {target && <TouchSheet title={deleting ? `删除“${target.hostname}”？` : target.hostname} onClose={closeTarget}>
-      <div className="touch-sheet__stack">{deleting ? <><p>删除后设备不再出现在中枢列表；宿主机或 Agent 下次上报时，它会重新出现。</p><Button variant="danger" disabled={!canManage || mutationPending} onClick={() => { const id = target.deviceId; closeTarget(); void deleteInstance(id); }}>删除设备</Button><Button variant="text" onClick={() => setDeleting(false)}>取消删除</Button></>
+      <div className="touch-sheet__stack">{deleting ? <><p>将从中枢移除该采集设备（与设备组无关）。如果该设备上的 Agent 仍在运行，下次上报时会自动重新注册并加回列表。</p><Button variant="danger" disabled={!canManage || mutationPending} onClick={() => { const id = target.deviceId; closeTarget(); void deleteInstance(id); }}>删除设备</Button><Button variant="text" onClick={() => setDeleting(false)}>取消删除</Button></>
       : <>
           <Button disabled={!canManage || mutationPending} onClick={() => { const device = target; closeTarget(); setGroupTarget(device); }}>
             {normalizeDeviceGroup(target.group) ? `修改分组（当前：${normalizeDeviceGroup(target.group)}）` : "设置分组"}

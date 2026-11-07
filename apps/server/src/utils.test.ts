@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMetricsPayload } from "@dsc/shared";
 import type { DeviceRealtimeState } from "./types.js";
-import { getAvailableMetrics, normalizeRealtimeState, payloadToTimeSeries, timeSeriesToMetricSeries, toSummary } from "./utils.js";
+import { HEARTBEAT_TIMEOUT_MS, getAvailableMetrics, normalizeRealtimeState, payloadToTimeSeries, resolveHeartbeatTimeoutMs, timeSeriesToMetricSeries, toSummary } from "./utils.js";
 import { assetNameFor } from "./update-assets.js";
 
 function stateWith(latest: Partial<AgentMetricsPayload>): DeviceRealtimeState {
@@ -149,4 +149,12 @@ test("a repeated slow hardware observation produces one temperature and RPM poin
   assert.equal(series.gpus[0]?.temperatureC.length, 1);
   assert.deepEqual(series.fans[0]?.rpm, [{ timestamp: hardwareSampledAt, value: 0 }]);
   assert.equal(series.temperatureSensors[0]?.currentC.length, 1);
+});
+
+test("heartbeat timeout defaults to 120s so a single missed 30s report does not mark a device offline", () => {
+  assert.equal(HEARTBEAT_TIMEOUT_MS, 120_000);
+  assert.equal(resolveHeartbeatTimeoutMs(undefined), 120_000);
+  assert.equal(resolveHeartbeatTimeoutMs("90000"), 90_000);
+  assert.equal(resolveHeartbeatTimeoutMs("5000"), 120_000);
+  assert.equal(resolveHeartbeatTimeoutMs("invalid"), 120_000);
 });

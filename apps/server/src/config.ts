@@ -53,6 +53,8 @@ const schema = z.object({
   MYSQL_IDLE_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(300_000).default(60_000),
   REDIS_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(500).max(120_000).default(5_000),
   REDIS_COMMAND_TIMEOUT_MS: z.coerce.number().int().min(500).max(120_000).default(5_000),
+  // Default 120s tolerates 3 missed 30s agent reports plus collection/network jitter before marking offline.
+  DSC_HEARTBEAT_TIMEOUT_MS: z.coerce.number().int().min(15_000).max(86_400_000).default(120_000),
   // Bounded in-process read cache. Zero disables a tier.
   DSC_DEVICE_CACHE_TTL_MS: z.coerce.number().int().min(0).max(300_000).default(3_000),
   DSC_HISTORY_CACHE_TTL_MS: z.coerce.number().int().min(0).max(300_000).default(15_000),

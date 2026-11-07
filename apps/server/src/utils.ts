@@ -17,7 +17,18 @@ import type {
 } from "@dsc/shared";
 import type { DeviceMetricConfigValue, DeviceRealtimeState, InstanceMetricRecord, TimeSeriesRecord } from "./types.js";
 
-export const HEARTBEAT_TIMEOUT_MS = 45_000;
+const DEFAULT_HEARTBEAT_TIMEOUT_MS = 120_000;
+
+export function resolveHeartbeatTimeoutMs(raw = process.env.DSC_HEARTBEAT_TIMEOUT_MS): number {
+  if (!raw) return DEFAULT_HEARTBEAT_TIMEOUT_MS;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 15_000 || parsed > 86_400_000) {
+    return DEFAULT_HEARTBEAT_TIMEOUT_MS;
+  }
+  return parsed;
+}
+
+export const HEARTBEAT_TIMEOUT_MS = resolveHeartbeatTimeoutMs();
 const DEVICE_DISPLAY_NAMES: Record<string, string> = {
   workstation: "工作站"
 };

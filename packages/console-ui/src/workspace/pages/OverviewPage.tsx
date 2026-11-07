@@ -228,9 +228,7 @@ export function OverviewPage() {
               onClick={() => changeGroupFilter(group.key)}
             >
               <span className="workspace-group-chip-content">
-                {(group.offline > 0 || group.overThreshold > 0) && (
-                  <span className={`workspace-group-chip-dot ${group.offline > 0 ? "is-offline" : "is-warning"}`} aria-hidden="true" />
-                )}
+                <span className={`workspace-group-chip-dot is-${group.state}`} aria-hidden="true" />
                 <span>{group.name}</span>
                 <small>{group.online}/{group.total}</small>
               </span>

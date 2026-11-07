@@ -65,7 +65,7 @@ registerRequestTiming(app);
 await app.register(cors, {
   origin: corsOrigins,
   credentials: true,
-  methods: ["GET", "HEAD", "POST", "PUT", "OPTIONS"]
+  methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"]
 });
 await app.register(cookie, { secret: env.SESSION_SECRET });
 

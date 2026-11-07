@@ -15,6 +15,8 @@ export const RECOMMENDED_DEVICE_GROUPS = [
   "办公终端"
 ] as const;
 
+export type DeviceGroupHealthState = "online" | "critical" | "warning" | "offline";
+
 export interface DeviceGroupSummary {
   key: string;
   name: string;
@@ -24,6 +26,9 @@ export interface DeviceGroupSummary {
   online: number;
   offline: number;
   overThreshold: number;
+  criticalCount: number;
+  warningCount: number;
+  state: DeviceGroupHealthState;
   avgCpuPercent: number | null;
   avgMemoryPercent: number | null;
 }
@@ -61,9 +66,26 @@ export function selectDeviceGroups(
     const onlineDevices = groupDevices.filter((device) => device.status === "online");
     const online = onlineDevices.length;
     const offline = groupDevices.length - online;
-    const overThreshold = groupDevices.filter((device) =>
-      evaluateDevice(device, thresholds).some((issue) => issue.kind !== "offline")
-    ).length;
+    let criticalCount = 0;
+    let warningCount = 0;
+    for (const device of groupDevices) {
+      const resourceIssues = evaluateDevice(device, thresholds).filter((issue) => issue.kind !== "offline");
+      if (!resourceIssues.length) continue;
+      if (resourceIssues.some((issue) => issue.severity === "critical")) {
+        criticalCount += 1;
+      } else {
+        warningCount += 1;
+      }
+    }
+    const overThreshold = criticalCount + warningCount;
+    const state: DeviceGroupHealthState =
+      groupDevices.length === 0 || online === 0
+        ? "offline"
+        : criticalCount > 0
+          ? "critical"
+          : warningCount > 0 || offline > 0
+            ? "warning"
+            : "online";
 
     const validCpu = onlineDevices
       .filter((device) => !metricUnavailable(device, "cpuUsage") && typeof device.cpuUsagePercent === "number" && Number.isFinite(device.cpuUsagePercent))
@@ -81,6 +103,9 @@ export function selectDeviceGroups(
       online,
       offline,
       overThreshold,
+      criticalCount,
+      warningCount,
+      state,
       avgCpuPercent: validCpu.length ? validCpu.reduce((sum, v) => sum + v, 0) / validCpu.length : null,
       avgMemoryPercent: validMemory.length ? validMemory.reduce((sum, v) => sum + v, 0) / validMemory.length : null
     };

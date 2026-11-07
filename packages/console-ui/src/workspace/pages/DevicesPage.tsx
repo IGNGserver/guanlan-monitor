@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { normalizeDeviceGroupName } from "@dsc/shared";
 import type { DeviceSummary, SamplePoint } from "@dsc/shared";
 import { useWorkspace } from "../WorkspaceContext";
-import { M3Badge } from "../m3";
-import { Button, Icon, Surface } from "../ui";
+import { M3Badge, useRipple } from "../m3";
+import { Button, Icon, StatusDot, Surface } from "../ui";
 import { formatPercent } from "../formatters";
 import {
   normalizeDeviceGroup,
@@ -366,6 +366,7 @@ export function DevicesPage() {
             onToggleCollapse={() => toggleGroupCollapse(group.key)}
             canManage={canManage && !mutationPending}
             onEditDeviceGroup={canManage ? (device) => setGroupTargetIds([device.deviceId]) : undefined}
+            onDeleteDevice={canManage ? setDeleteTarget : undefined}
             onManageMembers={canManage ? () => setBatchGroupInitial(group.isUngrouped ? "" : group.name) : undefined}
             onRenameGroup={!group.isUngrouped && canManage ? () => setRenamingGroup(group) : undefined}
             onDissolveGroup={!group.isUngrouped && canManage ? () => setDissolvingGroup(group) : undefined}
@@ -384,7 +385,7 @@ export function DevicesPage() {
             selectedIds={selectedIds}
             onToggleSelect={toggleSelectDevice}
             onMove={moveInstance}
-            onDelete={setDeleteTarget}
+            onDelete={canManage ? setDeleteTarget : undefined}
             onEditGroup={canManage ? (device) => setGroupTargetIds([device.deviceId]) : undefined}
             emptyState={emptyDirectory}
             cpuTrends={cpuTrends}
@@ -396,7 +397,7 @@ export function DevicesPage() {
     {deleteTarget && (
       <ConfirmDialog
         title={`删除“${deleteTarget.hostname}”？`}
-        detail="删除后该设备不再出现在中枢列表；宿主机或 Agent 下次上报时，它会重新出现。"
+        detail="将从中枢移除该采集设备（与设备组无关）。如果该设备上的 Agent 仍在运行，下次上报时会自动重新注册并加回列表。"
         confirmLabel="删除设备"
         disabled={mutationPending}
         onConfirm={() => {
@@ -486,6 +487,7 @@ function DeviceGroupSection({
   onToggleCollapse,
   canManage,
   onEditDeviceGroup,
+  onDeleteDevice,
   onManageMembers,
   onRenameGroup,
   onDissolveGroup,
@@ -496,32 +498,39 @@ function DeviceGroupSection({
   onToggleCollapse: () => void;
   canManage: boolean;
   onEditDeviceGroup?: (device: DeviceSummary) => void;
+  onDeleteDevice?: (device: DeviceSummary) => void;
   onManageMembers?: () => void;
   onRenameGroup?: () => void;
   onDissolveGroup?: () => void;
   cpuTrends?: ReadonlyMap<string, readonly SamplePoint[]>;
 }) {
+  const { onPointerDown, rippleNodes } = useRipple<HTMLButtonElement>();
   return (
     <Surface className={`workspace-group-section guanlan-data-table-surface${collapsed ? " is-collapsed" : ""}`}>
       <div className="workspace-group-section__header">
         <button
           type="button"
-          className="workspace-group-section__toggle"
+          className="workspace-group-section__toggle m3e-state-host"
+          onPointerDown={onPointerDown}
           onClick={onToggleCollapse}
           aria-expanded={!collapsed}
           aria-label={`${collapsed ? "展开" : "收起"}分组 ${group.name}`}
         >
-          <Icon name={collapsed ? "chevronRight" : "chevron"} size={18} />
+          <span className="workspace-group-section__chevron" aria-hidden="true">
+            <Icon name="chevron" size={18} />
+          </span>
+          <StatusDot state={group.state} />
           <strong className="workspace-group-section__title">{group.name}</strong>
-          <M3Badge tone={group.offline > 0 ? "neutral" : "success"}>
+          <M3Badge tone={group.online === 0 ? "neutral" : group.offline > 0 ? "primary" : "success"}>
             {`${group.online}/${group.total} 在线`}
           </M3Badge>
           {group.offline > 0 && (
-            <M3Badge tone="warning">{`${group.offline} 台离线`}</M3Badge>
+            <M3Badge tone="neutral">{`${group.offline} 台离线`}</M3Badge>
           )}
           {group.overThreshold > 0 && (
-            <M3Badge tone="error">{`${group.overThreshold} 台超限`}</M3Badge>
+            <M3Badge tone={group.criticalCount > 0 ? "error" : "warning"}>{`${group.overThreshold} 台超限`}</M3Badge>
           )}
+          {rippleNodes}
         </button>
 
         <div className="workspace-group-section__meta">
@@ -554,16 +563,19 @@ function DeviceGroupSection({
         </div>
       </div>
 
-      {!collapsed && (
-        <div className="workspace-directory-table-scroll">
-          <DeviceTable
-            devices={group.devices}
-            showGroupBadge={false}
-            onEditGroup={onEditDeviceGroup}
-            cpuTrends={cpuTrends}
-          />
+      <div className={`workspace-group-section__collapse${collapsed ? " is-collapsed" : ""}`} aria-hidden={collapsed}>
+        <div className="workspace-group-section__body">
+          <div className="workspace-directory-table-scroll">
+            <DeviceTable
+              devices={group.devices}
+              showGroupBadge={false}
+              onEditGroup={onEditDeviceGroup}
+              onDelete={onDeleteDevice}
+              cpuTrends={cpuTrends}
+            />
+          </div>
         </div>
-      )}
+      </div>
     </Surface>
   );
 }
