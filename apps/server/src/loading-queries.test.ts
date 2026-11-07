@@ -9,7 +9,7 @@ import { MetricsService } from "./services/metrics.js";
 import { createHubContractPayload } from "./hub-contract-fixtures.js";
 import { toSummary } from "./utils.js";
 import { overviewToMetricSeries } from "./overview.js";
-import type { DeviceRecord, MetricAccumulator, Repositories, TrafficHistoryPoint, TimeSeriesRecord } from "./types.js";
+import type { DeviceRealtimeState, DeviceRecord, MetricAccumulator, Repositories, TrafficHistoryPoint, TimeSeriesRecord } from "./types.js";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
