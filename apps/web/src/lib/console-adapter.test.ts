@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { WebConsoleAdapter, resolveInclude } from "./console-adapter.ts";
-import type { ConsoleSnapshot } from "@dsc/shared";
+import type { ConsoleSnapshot, DeviceSummary } from "@dsc/shared";
 
-const device = {
+const device: DeviceSummary = {
   deviceId: "nas", hostname: "nas", os: "linux", agentVersion: "1.0.0", agentChannel: "test", status: "online",
   lastSeenAt: "2026-10-04T00:00:00.000Z", cpuUsagePercent: 10, gpuUsagePercent: null, gpuMemoryUsagePercent: null,
   memoryUsagePercent: 20, diskUsagePercent: 30
