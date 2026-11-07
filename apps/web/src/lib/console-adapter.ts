@@ -607,7 +607,7 @@ function optionalWebRequest<T>(error: unknown): T | null {
   return null;
 }
 
-function upsertDevice(devices: DeviceSummary[], next: DeviceSummary): DeviceSummary[] {
+export function upsertDevice(devices: DeviceSummary[], next: DeviceSummary): DeviceSummary[] {
   const index = devices.findIndex((device) => device.deviceId === next.deviceId);
   if (index < 0) return [...devices, next];
   return devices.map((device, itemIndex) => itemIndex === index ? {

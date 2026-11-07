@@ -64,6 +64,7 @@ export function getRelease(): Promise<ReleaseInfo> {
 }
 
 export function formatSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return 'Releases';
   return bytes >= 1e6 ? `${(bytes / 1048576).toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
 }
 

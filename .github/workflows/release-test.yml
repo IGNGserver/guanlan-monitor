@@ -38,6 +38,13 @@ jobs:
           [[ "$GITHUB_REF_NAME" == "v${version}" ]] || { echo "Tag $GITHUB_REF_NAME does not match VERSION $version." >&2; exit 1; }
           [[ "$DSC_RELEASE_CHANNEL" == "test" || "$DSC_RELEASE_CHANNEL" == "stable" ]] || { echo "Invalid release channel: $DSC_RELEASE_CHANNEL" >&2; exit 1; }
 
+      - name: Validate release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes="release-notes-${GITHUB_REF_NAME}.md"
+          test -f "$notes" || { echo "Missing release notes: $notes" >&2; exit 1; }
+
       - name: Setup pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
         with:

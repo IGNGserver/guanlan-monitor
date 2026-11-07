@@ -487,6 +487,16 @@ test("legacy cleanup is ordered with writes and retains physical metrics and sto
   });
 });
 
+test("device group assignment rejects unknown ids without creating ghost devices", async () => {
+  await withTempStore(async (filePath) => {
+    const devices = new LocalDeviceRepository(createLocalStore(filePath));
+    await devices.registerOrUpdateDevice("host", "Host");
+    await assert.rejects(devices.updateDeviceGroup(["host", "missing"], "幽灵组"), /device_not_found/);
+    assert.deepEqual((await devices.listOpenDevices()).map((device) => device.deviceId), ["host"]);
+    assert.equal((await devices.getOpenDevice("host"))?.group, null);
+  });
+});
+
 test("device group assignment persists across registrations and supports batch rename/clear", async () => {
   await withTempStore(async (filePath) => {
     const devices = new LocalDeviceRepository(createLocalStore(filePath));
@@ -500,11 +510,9 @@ test("device group assignment persists across registrations and supports batch r
     assert.equal(list.find((d) => d.deviceId === "pve-2")?.group, "宿主机");
     assert.equal(list.find((d) => d.deviceId === "nas-1")?.group, null);
 
-    // Subsequent heartbeat registration must preserve the assigned group
     const updated = await devices.registerOrUpdateDevice("pve-1", "PVE 1 Updated", { reopenClosed: true, skipUnchanged: true });
     assert.equal(updated.group, "宿主机");
 
-    // Dissolve group
     await devices.updateDeviceGroup(["pve-1", "pve-2"], "");
     list = await devices.listOpenDevices();
     assert.equal(list.find((d) => d.deviceId === "pve-1")?.group, null);

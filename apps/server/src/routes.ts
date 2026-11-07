@@ -18,7 +18,7 @@ import { z } from "zod";
 import { env } from "./config.js";
 import { authRateLimiter, createSession, getBearerToken, parseSessionValue, renewSession, safeEqual } from "./auth.js";
 import type { MetricsService } from "./services/metrics.js";
-import type { DeviceMetricConfigStore, FanNoteStore, Repositories, SessionValue } from "./types.js";
+import { DeviceNotFoundError, type DeviceMetricConfigStore, type FanNoteStore, type Repositories, type SessionValue } from "./types.js";
 import { ALL_DEVICE_METRIC_KEYS, filterAgentPayloadInstances, getAvailableMetrics, resolveCpuFrequencyMHz, resolveCpuTemperatureC, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
 import { getSystemVersionInfo, getUpdateInfo } from "./updates.js";
 import { getHubUpdateStatus, HubUpdateError, requestHubUpdate } from "./hub-update.js";
@@ -343,8 +343,18 @@ export async function registerRoutes(
     if (parsed.data.deviceIds.some(isLegacyVirtualMachineId)) {
       return reply.code(400).send({ error: "invalid_group_payload" });
     }
+    const deviceIds = [...new Set(parsed.data.deviceIds)];
     const normalizedGroup = parsed.data.group?.trim() ? parsed.data.group.trim() : null;
-    await repositories.devices.updateDeviceGroup(parsed.data.deviceIds, normalizedGroup);
+    const openDevices = await repositories.devices.listOpenDevices();
+    const openIds = new Set(openDevices.map((device) => device.deviceId));
+    const missing = deviceIds.find((deviceId) => !openIds.has(deviceId));
+    if (missing) return reply.code(404).send({ error: "device_not_found" });
+    try {
+      await metricsService.updateDeviceGroup(deviceIds, normalizedGroup);
+    } catch (error) {
+      if (error instanceof DeviceNotFoundError) return reply.code(404).send({ error: "device_not_found" });
+      throw error;
+    }
     return { ok: true, group: normalizedGroup };
   });
 
@@ -358,7 +368,16 @@ export async function registerRoutes(
       return reply.code(400).send({ error: "invalid_group_payload" });
     }
     const normalizedGroup = parsed.data.group?.trim() ? parsed.data.group.trim() : null;
-    await repositories.devices.updateDeviceGroup([deviceId], normalizedGroup);
+    const openDevice = await repositories.devices.getOpenDevice?.(deviceId)
+      ?? (await repositories.devices.listOpenDevices()).find((device) => device.deviceId === deviceId)
+      ?? null;
+    if (!openDevice) return reply.code(404).send({ error: "device_not_found" });
+    try {
+      await metricsService.updateDeviceGroup([deviceId], normalizedGroup);
+    } catch (error) {
+      if (error instanceof DeviceNotFoundError) return reply.code(404).send({ error: "device_not_found" });
+      throw error;
+    }
     return { ok: true, deviceId, group: normalizedGroup };
   });
 

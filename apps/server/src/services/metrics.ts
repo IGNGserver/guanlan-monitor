@@ -43,6 +43,14 @@ export class MetricsService {
     private readonly deviceMetricConfigs: DeviceMetricConfigStore
   ) {}
 
+  private async getOpenDevice(deviceId: string) {
+    const devices = this.repositories.devices;
+    if (!devices) return null;
+    if (devices.getOpenDevice) return devices.getOpenDevice(deviceId);
+    if (!devices.listOpenDevices) return null;
+    return (await devices.listOpenDevices()).find((device) => device.deviceId === deviceId) ?? null;
+  }
+
   async ingest(payload: AgentMetricsPayload) {
     const receivedAt = new Date().toISOString();
     await this.runDeviceIngestOperation(payload.identity.deviceId, () => this.runDeviceAggregateOperation(payload.identity.deviceId, async () => {
@@ -110,6 +118,37 @@ export class MetricsService {
     this.emitDeviceEvent(event);
   }
 
+  async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void> {
+    const uniqueIds = [...new Set(deviceIds)];
+    await this.repositories.devices.updateDeviceGroup(uniqueIds, group);
+    await forEachBounded(uniqueIds, async (deviceId) => {
+      const [state, record] = await Promise.all([
+        this.repositories.realtime.getDevice(deviceId),
+        this.getOpenDevice(deviceId)
+      ]);
+      if (!record) return;
+      const summary = state
+        ? { ...toSummary(state), sortOrder: record.sortOrder, group: record.group ?? null }
+        : {
+            deviceId: record.deviceId,
+            hostname: record.name || record.deviceId,
+            os: "unknown" as const,
+            agentVersion: null,
+            agentChannel: null,
+            status: "offline" as const,
+            lastSeenAt: record.updatedAt,
+            cpuUsagePercent: null,
+            gpuUsagePercent: null,
+            gpuMemoryUsagePercent: null,
+            memoryUsagePercent: null,
+            diskUsagePercent: null,
+            sortOrder: record.sortOrder,
+            group: record.group ?? null
+          };
+      this.emitDeviceEvent({ deviceId, summary });
+    });
+  }
+
   async removeDevice(deviceId: string, revokeLive?: () => Promise<void>) {
     return this.runDeviceIngestOperation(deviceId, () => this.runDeviceAggregateOperation(deviceId,
       () => this.performRemoveDevice(deviceId, revokeLive)));
@@ -148,9 +187,13 @@ export class MetricsService {
         offlineState
       );
       if (marked) {
+        const record = await this.getOpenDevice(offlineState.identity.deviceId);
         this.emitDeviceEvent({
           deviceId: offlineState.identity.deviceId,
-          summary: toSummary(offlineState)
+          summary: {
+            ...toSummary(offlineState),
+            ...(record ? { sortOrder: record.sortOrder, group: record.group ?? null } : {})
+          }
         });
       }
     });
