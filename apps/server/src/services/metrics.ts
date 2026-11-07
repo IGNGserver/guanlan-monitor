@@ -44,8 +44,11 @@ export class MetricsService {
   ) {}
 
   private async getOpenDevice(deviceId: string) {
-    if (this.repositories.devices.getOpenDevice) return this.repositories.devices.getOpenDevice(deviceId);
-    return (await this.repositories.devices.listOpenDevices()).find((device) => device.deviceId === deviceId) ?? null;
+    const devices = this.repositories.devices;
+    if (!devices) return null;
+    if (devices.getOpenDevice) return devices.getOpenDevice(deviceId);
+    if (!devices.listOpenDevices) return null;
+    return (await devices.listOpenDevices()).find((device) => device.deviceId === deviceId) ?? null;
   }
 
   async ingest(payload: AgentMetricsPayload) {
