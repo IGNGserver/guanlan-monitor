@@ -1,6 +1,7 @@
 /**
  * 产品事实的唯一来源（站点侧）。每一条都能在产品仓库找到出处：
- *   README.md（安装、连接、部署、发布规则）、docs/TRUSTED_REALTIME_MONITORING.md（实时查看）、
+ *   README.md（定位与能力）、docs/INSTALL.md（安装、连接、部署、发布规则）、
+ *   docs/TRUSTED_REALTIME_MONITORING.md（实时查看）、
  *   release-notes-v3.*.md（测试版改动）。改文案前先核对产品仓库，不得编造未发布能力。
  * 最近一次核对：2026-11-07，产品 VERSION = 3.0.172。
  */
