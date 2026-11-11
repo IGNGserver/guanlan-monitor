@@ -42,8 +42,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          notes="release-notes-${GITHUB_REF_NAME}.md"
-          test -f "$notes" || { echo "Missing release notes: $notes" >&2; exit 1; }
+          notes=".github/release-notes/${GITHUB_REF_NAME}.md"
+          if [[ ! -f "$notes" ]]; then
+            # 迁移前打的 tag，其树里仍是根目录下的旧路径，重跑时兼容。
+            legacy="release-notes-${GITHUB_REF_NAME}.md"
+            [[ -f "$legacy" ]] && notes="$legacy"
+          fi
+          if [[ ! -f "$notes" ]]; then
+            echo "Missing release notes: .github/release-notes/${GITHUB_REF_NAME}.md" >&2
+            echo "本版说明写在这个路径，不要在仓库根目录新建 release-notes-*.md。" >&2
+            exit 1
+          fi
+          if [[ "$notes" == .github/release-notes/* ]] && compgen -G 'release-notes-*.md' > /dev/null; then
+            echo "::error::release-notes-*.md 不应放在仓库根目录，请移到 .github/release-notes/。"
+            exit 1
+          fi
+          echo "Using release notes: $notes"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
@@ -741,12 +755,24 @@ jobs:
             echo "make_latest=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Resolve release notes
+        id: release_notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes=".github/release-notes/${GITHUB_REF_NAME}.md"
+          if [[ ! -f "$notes" ]]; then
+            notes="release-notes-${GITHUB_REF_NAME}.md"
+            [[ -f "$notes" ]] || { echo "Missing release notes for ${GITHUB_REF_NAME}" >&2; exit 1; }
+          fi
+          echo "path=${notes}" >> "$GITHUB_OUTPUT"
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ steps.release_metadata.outputs.name }}
-          body_path: ${{ format('release-notes-{0}.md', github.ref_name) }}
+          body_path: ${{ steps.release_notes.outputs.path }}
           prerelease: ${{ steps.release_metadata.outputs.prerelease }}
           make_latest: ${{ steps.release_metadata.outputs.make_latest }}
           overwrite_files: true

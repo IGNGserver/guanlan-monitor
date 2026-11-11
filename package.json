@@ -35,6 +35,7 @@
     "test:window-material": "node --test apps/desktop/src/window-material.test.ts",
     "test:electron-visual": "node scripts/electron-visual-regression.cjs",
     "verify:version": "node scripts/verify-version.mjs",
+    "check:release-notes-layout": "node scripts/check-release-notes-layout.mjs",
     "verify:electron-artifact-version": "node scripts/verify-electron-artifact-version.mjs",
     "verify:windows-installer": "node scripts/verify-windows-installer-config.mjs",
     "verify:linux-package": "node scripts/verify-linux-package-config.mjs",

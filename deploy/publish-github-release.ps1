@@ -36,7 +36,7 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') {
 }
 
 $tag = "v$Version"
-$notes = Resolve-ReleasePath -Value $NotesFile -Fallback "release-notes-v$Version.md" -RepoRoot $repoRoot
+$notes = Resolve-ReleasePath -Value $NotesFile -Fallback ".github/release-notes/v$Version.md" -RepoRoot $repoRoot
 $setup = Resolve-ReleasePath -Value $WindowsSetup -Fallback "release/windows-agent-setup/DeviceStateConsole-Windows-GUI-Setup-v$Version.exe" -RepoRoot $repoRoot
 $update = Resolve-ReleasePath -Value $WindowsUpdate -Fallback "release/windows-agent-setup/DeviceStateConsole-Windows-GUI-Update-v$Version.zip" -RepoRoot $repoRoot
 $apk = Resolve-ReleasePath -Value $AndroidApk -Fallback "release/android/DeviceStateConsole-Android-v$Version.apk" -RepoRoot $repoRoot

@@ -29,20 +29,25 @@ as part of a normal development push.
 
 1. Update the root `VERSION` file. It is the source of truth for the release
    version. Keep `package.json` synchronized with it.
-2. Commit the release preparation changes and create a tag matching `VERSION`:
+2. Write this version's notes to `.github/release-notes/vX.Y.Z.md`. The
+   tag-triggered workflow reads that file and uses it as the GitHub Release
+   body, so a release without it fails on purpose. Do not create
+   `release-notes-*.md` in the repository root: `pnpm check:release-notes-layout`
+   rejects it, and every such file used to pile up there one release at a time.
+3. Commit the release preparation changes and create a tag matching `VERSION`:
 
    ```powershell
    git tag vX.Y.Z
    git push origin main --follow-tags
    ```
 
-3. Let the tag-triggered `release-test.yml` workflow install dependencies,
+4. Let the tag-triggered `release-test.yml` workflow install dependencies,
    verify versions, run all tests/checks, build the Windows/Linux/Android
    artifacts, and publish the prerelease. Review the workflow run and artifacts
    in GitHub.
-4. Let `docker-publish.yml` build and push the fixed-version images. Updating
+5. Let `docker-publish.yml` build and push the fixed-version images. Updating
    `latest` requires its explicit manual workflow input.
-5. Production deployment may only be performed by a dedicated GitHub Actions
+6. Production deployment may only be performed by a dedicated GitHub Actions
    deployment workflow using a protected GitHub environment and a fixed image
    version. If that workflow is absent, deployment is not authorized by this
    document; do not deploy manually from the checkout.
