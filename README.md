@@ -1,180 +1,61 @@
-# 观澜
+<p align="right">
+   <strong>简体中文</strong>
+</p>
+<div align="center">
+    <img src="assets/icon.png" alt="观澜" width="120">
+    <h1>观澜 · Guanlan</h1>
+</div>
 
-观澜是用于查看电脑和服务器运行状态的私有部署监控工具。它提供 Web 控制台、Windows 桌面端、GNOME Linux 桌面端和 Android 客户端，可查看 CPU、内存、磁盘、网络、显卡和风扇等实时数据与历史趋势。桌面端按 CPU、硬盘、网卡、显卡和风扇实例分别展示使用率、频率、温度、容量与读写/收发速率。
+<p align="center">
+    <em>实时掌控你的设备，无论是电脑、服务器还是 NAS，状态一眼尽收眼底。</em>
+</p>
 
-开发版本号以仓库根目录的 `VERSION` 为准。用户安装请以 [GitHub Releases](https://github.com/IGNGserver/guanlan-monitor/releases/latest) 中的稳定版本为准；`main` 分支不是稳定安装源。
+<p align="center">
+    <a href="https://guanlan.igng.net/">官网</a>
+</p>
 
-> 官网与下载入口：<https://guanlan.igng.net/>
+<p align="center">
+    <a href="https://github.com/IGNGserver/guanlan-monitor/releases"><img src="https://img.shields.io/github/v/release/IGNGserver/guanlan-monitor?include_prereleases&style=flat-square&label=release&color=22c55e" alt="最新版本" /></a>
+    <img src="https://img.shields.io/badge/Windows-10%2B-0078D4?style=flat-square" alt="Windows 10+" />
+    <img src="https://img.shields.io/badge/Linux-x64-64748b?style=flat-square&logo=linux&logoColor=white" alt="Linux x64" />
+    <img src="https://img.shields.io/badge/Android-客户端-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android client" />
+    <img src="https://img.shields.io/badge/Web-控制台-64748b?style=flat-square" alt="Web 控制台" />
+</p>
 
-## 下载与安装
+## 功能亮点
 
-请从 [GitHub Releases](https://github.com/IGNGserver/guanlan-monitor/releases/latest) 下载与当前版本对应的客户端。
+*   **跨设备全覆盖**：支持 Windows、Linux、Android 以及网页端，一套系统管好所有设备。
+*   **全方位监控**：CPU、内存、磁盘、网络、显卡、风扇……你关心的这里都有。
+*   **私有化安全**：所有数据都在你自己部署的环境中，安全可控。
+*   **极简交互**：无论是桌面端的实时概览，还是网页端的深度历史趋势图，都触手可及。
 
-### 无桌面环境安装（Windows / Linux）
+## 快速开始
 
-桌面版就是唯一发行版；同一份安装包在无桌面会话的机器上也能完成安装、配置、
-开机自启与上报，不需要单独下载 CLI 版。
+### 下载客户端
+前往 [GitHub Releases](https://github.com/IGNGserver/guanlan-monitor/releases/latest) 下载适合你设备的安装包：
+*   **Windows / Linux 用户**：下载对应平台的安装包，运行即可。
+*   **Android 用户**：下载 APK 安装。
 
-**Windows**（静默安装 + 自动配置 + 自动校验首次上报）：
+### 连接监控中心
+安装并启动后，填写你的监控中心地址与访问密钥，即可开启实时监控。
 
-```powershell
-& "DeviceStateConsole-Windows-Setup-vX.Y.Z.exe" /S `
-    /HUB="https://hub.example.com" /KEY="<ACCESS_KEY>" `
-    /DEVICE=node-01 /HOSTNAME="节点01" /VERIFY=120
-```
+## 数据能力矩阵
 
-- `/S` 静默安装；`guanlan-agent` 机器级服务会自动注册为开机自启（若服务无法
-  创建则回退为 `AtStartup` + SYSTEM 计划任务，绝不使用需要登录的启动项）。
-- 含斜杠的值（任何 URL）必须加引号。
-- `/VERIFY=<秒>` 会在安装结束前等待首次上报确认；超时返回退出码 3，便于
-  Intune/SCCM/Ansible 判定。不传 `/HUB` 时保持“装完再配置”的行为。
-- 机器级配置写入 `%ProgramData%\Guanlan\agent-ui.config.json`。
+| 观测对象 | 核心指标覆盖 |
+|---|---|
+| 风扇 | 转速（按实例展示） |
+| 显卡 | 负载、编解码、频率、显存、核心温度 |
+| 处理器 | 使用率、频率、温度（Package / Core） |
+| 内存 | 占用率、物理与已提交内存、历史水位 |
+| 磁盘 | 容量、读写速率、温度 |
+| 网络 | 吞吐、带宽、历史流量日历 |
 
-**Linux**（一条命令装包 + 自动配置）：
+## 实时监控事实
+- **更新间隔**：支持 1 / 2 / 5 秒可选（面板展开且页面可见时）。
+- **实时同步**：设备端每秒最多采集一次，共用聚合结果，断点不写入历史库。
+- **配置管理**：所有采集策略与敏感凭据均由本地配置管理，不强制随中枢同步。
 
-```bash
-sudo GUANLAN_HUB=https://hub.example.com GUANLAN_KEY="$KEY" GUANLAN_DEVICE_ID=node-01   apt-get install -y ./DeviceStateConsole-Linux-Install-vX.Y.Z.deb
-sudo guanlan-agent wait-for-upload --timeout 120   # 退出码 0 表示已确认上报
-```
+详细部署与高级用法，请参考 [安装与部署指南](docs/INSTALL.md)。
 
-- `.deb` 安装时会启用系统级 `guanlan-agent.service`（`WantedBy=multi-user.target`，
-  不依赖 `graphical-session`），因此无人登录也会持续采集与上报。
-- 也可以先装后配：`sudo guanlan-agent config set --hub ... --key-stdin`，
-  或写 `/etc/guanlan/agent.env` 后 `systemctl restart guanlan-agent`。
-- 机器级配置位于 `/etc/guanlan/agent.json`（实际文件名 `agent-ui.config.json`）。
-
-**无界面命令**（随包发布，替代已下架的 `dsc`）：
-
-```text
-guanlan-agent status [--json]        服务/配置/上报状态（退出码 0/3/4/5 可用于编排）
-guanlan-agent doctor [--json]        服务 + 配置 + 中枢连通性检查
-guanlan-agent config get|set|validate|export|import
-guanlan-agent service install|uninstall|start|stop|status
-guanlan-agent collector start|stop|restart
-guanlan-agent probes status|detect
-guanlan-agent wait-for-upload --timeout N
-guanlan-agent onboarding-url
-```
-
-访问密钥只通过 `--key-stdin` 或 `--key-file` 传入，不会出现在进程参数里；
-`status`/`export`/诊断输出全部脱敏。卸载默认保留机器级配置，只有
-`--purge`（deb）或 `/REMOVECONFIG`（Windows）才删除。
-
-### Windows
-
-**推荐下载 `DeviceStateConsole-Windows-Setup-v<版本>.exe`。** 这是常规 Windows 安装程序，安装到 `%ProgramFiles%\DeviceStateConsoleAgent`，创建开始菜单与桌面快捷方式，并注册开机自启的机器级 Agent 服务；支持静默安装、更新和卸载。
-
-`DeviceStateConsole-Windows-Update-v<版本>.zip` 仅用于已安装客户端的更新分发，不应作为首次安装方式。`DeviceStateConsole-Windows-Portable-v<版本>.zip` 是无需安装的 Windows 便携版。
-
-安装后打开“观澜”，在“配置”页填写中枢地址、访问密钥和设备名称。应用运行后会显示在系统托盘：左键打开主界面，右键查看状态或退出。采集与上报由机器级服务负责，关闭窗口或注销登录都不会中断。
-
-### Linux
-
-下载 `DeviceStateConsole-Linux-Install-v<版本>.deb`，适用于 Ubuntu/Debian
-`amd64`。安装后提供 `/usr/bin/guanlan` 桌面端与 `/usr/bin/guanlan-agent`
-命令；系统级 `guanlan-agent.service` 会随安装启用，无桌面会话也会持续采集与
-上报。首次打开桌面端可在“连接”页填写中枢地址和访问密钥；非提权用户
-只能查看状态，修改机器级配置需要管理员权限。
-
-该安装包以 Ubuntu 24.04 构建，目标为 Debian 系 `amd64`。Fedora/RPM、Arch
-等发行版可在不改变现有架构的前提下增加对应的原生包格式；在此之前这些系统
-可以直接以任意进程管理器运行包内的 `device-state-console-agent`，并通过
-`DSC_SERVER_URL`/`DSC_AGENT_SECRET`/`DSC_DEVICE_ID` 配置。
-
-### Android
-
-下载 `DeviceStateConsole-Android-v<版本>.apk` 并安装。首次打开时填写与 Windows 端相同的中枢地址和查看密钥。Android 客户端支持 `http://` 和 `https://`；未配置 TLS 时仅建议在可信局域网或受控内网穿透中使用 HTTP。
-
-Android 安装包使用 `IGNGserver` 发布证书签名。Android 在提示未知来源安装时，需要由用户确认允许该来源安装应用。
-
-## 连接中枢
-
-客户端通常使用下列地址之一（默认建议 HTTPS；稳定和测试渠道均可在明确受信的 HTTP 网络中通过部署参数启用 HTTP）：
-
-- 局域网 HTTP：`http://服务器IP:38472`
-- 局域网：`https://服务器域名:38472`
-- 公网：`https://你的域名`
-- 受控 HTTP 内网穿透：`http://公网IP:转发端口`
-
-所有客户端和 agent 都应使用同一个公开入口。不要将 Docker 容器内部的 `4000` 端口填入客户端。
-
-## 部署中枢
-
-Docker Compose 默认只拉取 GitHub Container Registry 中已发布的应用镜像，不会从当前仓库源码构建：
-
-```bash
-cp .env.example .env
-DSC_VERSION=0.2.294 docker compose pull
-DSC_VERSION=0.2.294 docker compose up -d
-```
-
-开发或测试环境如果确实需要移动标签，可以显式选择 `latest`；生产环境必须使用固定版本或不可变 digest：
-
-```bash
-DSC_VERSION=latest docker compose pull
-DSC_VERSION=latest docker compose up -d
-```
-
-至少修改 `.env` 内的 `SESSION_SECRET`、`ACCESS_KEY`、`MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD` 与 `REDIS_PASSWORD`，并为 `REDIS_URL` 配置相同的认证密码。稳定版应用数据库账号密码 `MYSQL_PASSWORD` 最少为 6 个非占位符字符，但较短密码抗猜测能力弱，应优先使用更长的随机值；`MYSQL_ROOT_PASSWORD` 在稳定版仍要求至少 16 个字符。生产环境默认应通过 TLS 反向代理访问控制台；只有当 server 仅能从该受信代理访问时才设置 `TRUST_PROXY=true`，否则保持 `false`。`SESSION_COOKIE_SECURE` 与 `AGENT_REQUIRE_HTTPS` 默认保持 `true`，但稳定和测试渠道都允许在明确受信的 HTTP 网络中将对应值设置为 `false`，Compose 预检会保留用户配置。`ACCESS_KEY` 是网页、Windows/Android 客户端和所有 agent 共用的唯一访问密钥；升级时即使旧 `.env` 仍有 `AGENT_SHARED_SECRET`，也会以 `ACCESS_KEY` 为准。Web 登录会话默认有效期为 90 天；持续使用会在接近到期时自动续期，但不会超过首次登录后的 365 天，长期不访问后需要重新登录。修改 `SESSION_SECRET` 会立即使所有 Web 会话失效而不影响 Agent；修改 `ACCESS_KEY` 会使所有客户端和 Agent 的现有凭据失效。
-
-静态 Web 镜像使用 nginx，固定转发到 Compose 的 `server:4000`，不再读取 Web 的 `SERVER_API_URL` / `NEXT_PUBLIC_SERVER_URL`。外层终止 TLS 时，必须在 `.env` 的 `DSC_TRUSTED_TLS_PROXY_CIDRS` 中明确填写 **Web 容器实际看到的 TLS 代理源 IP/CIDR**（空格分隔），并让该代理覆盖 `X-Forwarded-Proto`。默认空列表不信任任何转发协议头；这时开启 `AGENT_REQUIRE_HTTPS` 会拒绝经 HTTP 到达 Web 的 Agent 请求，而不是静默降级。不要填写客户端网段、默认路由或与不受信客户端共享的 NAT 源地址；应通过独立代理网络、端口绑定或防火墙确保入口隔离。部署前需核实实际网络，不能直接复制 CI 使用的容器 loopback 白名单。该配置变更不代表自动发布或部署。
-
-Docker 配置见 [docker-compose.yml](docker-compose.yml)，Windows 与 Android 的专项说明见下方“开发与维护”。
-
-### 使用外部 MySQL/Redis
-
-如果设备上已有供多个项目共用的 MySQL/Redis，不需要为本项目再起一套数据库容器：
-
-```bash
-cp .env.example .env
-# 编辑 .env：
-#   DSC_DB_MODE=external
-#   MYSQL_URL=mysql://guanlan:...@db.internal:3306/guanlan_home
-#   REDIS_URL=rediss://:...@redis.internal:6379/3
-#   DSC_INSTANCE_ID=hub-home
-DSC_VERSION=3.0.170 docker compose -f docker-compose.external.yml pull
-DSC_VERSION=3.0.170 docker compose -f docker-compose.external.yml up -d
-```
-
-这个文件只包含 `server` 和 `web`，不会创建 MySQL/Redis，也不会暴露数据库端口。**每个中枢必须使用独立的 database**；表名是固定的，多个中枢写同一个库会被 `hub_meta` 拒绝。多个项目共用一个 Redis 时，用不同的 `DSC_INSTANCE_ID` 隔离 key；当前架构是单写者，不支持多个中枢同时写同一份数据。
-
-外部 MySQL 需要 8.0+，并允许应用在自己的 database 内建表/改表；Redis 需要认证，建议开启 AOF。完整说明、权限 SQL、从内置数据库迁移和远程延迟参数见 [外部数据库文档](docs/EXTERNAL_DATABASE.md)。
-
-## 设备采集
-
-- Windows：安装上方的观澜 setup，可在应用内配置；无人值守场景使用上面的静默参数。
-- Linux 桌面：安装上方的 `.deb`，在“连接”页配置；无桌面环境使用上面的环境变量或 `guanlan-agent config set`。
-- 服务化：安装包会注册机器级 `guanlan-agent` 服务（Windows 服务/计划任务，Linux systemd system 单元），开机即采集，无需登录。
-- 升级：Windows 使用 setup/update 包，Linux 使用新的 `.deb`；两种方式都会保留机器级配置。
-- 网页控制台：使用 `.env` 中的 `ACCESS_KEY` 登录，选择设备即可查看实时数据和历史图表。
-
-设备、硬件或驱动未提供的传感器会显示为空，不会阻塞设备上线。
-
-## 发布规则
-
-每个测试版或正式版 Release 都必须使用带平台和交付方式的资产名，并包含：
-
-1. `DeviceStateConsole-Windows-Setup-v<版本>.exe`（支持 `/S` 与无界面参数化安装）。
-2. `DeviceStateConsole-Windows-Portable-v<版本>.zip` 或更新包。
-3. `DeviceStateConsole-Linux-Install-v<版本>.deb`（内含系统级 systemd 服务）。
-4. `DeviceStateConsole-Android-v<版本>.apk`。
-
-不再发布独立 CLI 发行资产；无桌面场景的能力内建于上述安装包与随包的
-`guanlan-agent` 命令。
-
-仓库不会提交安装包、APK、密钥、日志或本机配置。发布资产只上传到 GitHub Release。
-
-## 开发与维护
-
-开发、构建、签名和发布流程：
-
-- [Windows 客户端发布说明](windows-agent/README.md)
-- [Android 发布说明](deploy/android-release.md)
-- [Android Release 打包脚本](deploy/package-android-release.ps1)
-- [Windows 打包运行手册](deploy/windows-agent-release-runbook.md)
-- [GitHub Release 发布脚本](deploy/publish-github-release.ps1)
-- [版本与发布规范](RELEASE.md)
-
-源码验证、Go/WinUI 构建、安装包生成、镜像发布和部署均由 GitHub Actions
-执行。提交或推送后请在 GitHub Actions 中查看对应 workflow、artifact、镜像
-和部署结果；本地不作为交付构建机。
+---
+*观澜采用开源协议发布，感谢使用。*
