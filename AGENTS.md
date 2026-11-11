@@ -6,7 +6,7 @@ Collaboration: solo
 Baseline: main
 Default branch: main
 Release: manual-on-explicit-request（不再每次开发自动发测试版）
-Validation: `pnpm lint`、`pnpm typecheck`、`pnpm verify:version` + 下方测试清单
+Validation: `pnpm lint`、`pnpm typecheck`、`pnpm verify:version`、`pnpm check:release-notes-layout` + 下方测试清单
 Worktree: `~/项目/.wt/设备状态控制台/<slug>`
 
 ## 这是什么
@@ -16,7 +16,7 @@ Worktree: `~/项目/.wt/设备状态控制台/<slug>`
 ## 验证命令（必须真实执行）
 
 - 安装：`pnpm install`
-- 静态：`pnpm lint`、`pnpm typecheck`、`pnpm verify:version`
+- 静态：`pnpm lint`、`pnpm typecheck`、`pnpm verify:version`、`pnpm check:release-notes-layout`
 - 边界：`pnpm check:desktop-ui-boundaries`、`pnpm check:web-ui-boundary`、`pnpm check:adapter-contracts`
 - 测试：`pnpm test:adapter-contracts`、`pnpm test:ui-helpers`、`pnpm test:workspace-contracts`、`pnpm test:renderer-security`、`pnpm test:hub-connection`、`pnpm test:electron-visual`、`pnpm test:window-material`
 - 完整：`pnpm build`（**只在 CI 跑，见下方限制**）
