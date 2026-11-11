@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="website/public/apple-touch-icon.png" alt="观澜" width="120">
+    <img src="apps/web/branding/icon.png" alt="观澜" width="120">
     <h1>观澜 · Guanlan</h1>
 </div>
 
