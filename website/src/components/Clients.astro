@@ -1,11 +1,11 @@
 ---
-import { CLIENTS, HUB_ADDRESSES } from '../data/product';
+import { CLIENTS, HUB_ADDRESSES, RESILIENCE_PILLARS } from '../data/product';
 ---
 
-<section id="clients" class="clients section" data-idx="04" aria-labelledby="clients-title">
+<section id="clients" class="clients section" data-idx="05" aria-labelledby="clients-title">
   <div class="wrap">
     <header class="clients__head">
-      <p class="eyebrow" data-reveal>§ 04 · 终端</p>
+      <p class="eyebrow" data-reveal>§ 05 · 终端与韧性</p>
       <h2 id="clients-title" class="display" data-reveal style="--d:1">一个中枢，<br />四种终端。</h2>
     </header>
 
@@ -63,18 +63,29 @@ import { CLIENTS, HUB_ADDRESSES } from '../data/product';
               )}
               {c.id === 'android' && (
                 <svg viewBox="0 0 220 140">
-                  <rect x="80" y="4" width="60" height="132" rx="10" class="ln" />
-                  <circle cx="110" cy="13" r="2" class="ln faint" />
-                  <rect x="88" y="24" width="44" height="22" rx="2" class="ln faint" />
-                  <polyline points="90,40 98,36 104,39 110,30 116,35 122,28 130,32" class="sig" />
-                  <rect x="88" y="52" width="44" height="12" rx="2" class="ln faint" />
-                  <rect x="88" y="68" width="44" height="12" rx="2" class="ln faint" />
-                  <rect x="88" y="84" width="44" height="12" rx="2" class="ln faint" />
-                  <circle cx="93" cy="58" r="1.6" class="dotf" />
-                  <circle cx="93" cy="74" r="1.6" class="dotf" />
-                  <circle cx="93" cy="90" r="1.6" class="dotf dotf--amber" />
-                  <path d="M80 112h60" class="ln faint" />
-                  <path d="M92 124h6M107 124h6M122 124h6" class="ln" />
+                  {/* 左侧：手机主界面（One UI 数据总览 + 四项底栏） */}
+                  <rect x="26" y="6" width="66" height="128" rx="10" class="ln" />
+                  <circle cx="59" cy="14" r="1.8" class="ln faint" />
+                  <rect x="34" y="24" width="50" height="24" rx="3" class="ln faint" />
+                  <polyline points="37,42 45,38 52,41 59,30 66,35 73,28 81,33" class="sig" />
+                  <rect x="34" y="54" width="50" height="13" rx="2" class="ln faint" />
+                  <rect x="34" y="71" width="50" height="13" rx="2" class="ln faint" />
+                  <rect x="34" y="88" width="50" height="13" rx="2" class="ln faint" />
+                  <circle cx="40" cy="60.5" r="1.6" class="dotf" />
+                  <circle cx="40" cy="77.5" r="1.6" class="dotf" />
+                  <circle cx="40" cy="94.5" r="1.6" class="dotf dotf--amber" />
+                  <path d="M26 112h66" class="ln faint" />
+                  <path d="M35 122h6M49 122h6M63 122h6M77 122h6" class="ln" />
+                  {/* 右侧：三款桌面小组件（舰队健康 / 单机仪表盘 / 流量统计） */}
+                  <rect x="106" y="14" width="90" height="32" rx="6" class="ln" />
+                  <circle cx="116" cy="24" r="2" class="dotf" />
+                  <circle cx="124" cy="24" r="2" class="dotf" />
+                  <circle cx="132" cy="24" r="2" class="dotf dotf--amber" />
+                  <path d="M114 35h54" class="ln faint" />
+                  <rect x="106" y="54" width="90" height="34" rx="6" class="ln" />
+                  <polyline points="114,78 126,74 138,77 150,64 162,70 176,62 188,66" class="sig" />
+                  <rect x="106" y="96" width="90" height="32" rx="6" class="ln faint" />
+                  <path d="M116 120v-8M126 120v-13M136 120v-10M146 120v-16M156 120v-11M166 120v-14M176 120v-9M186 120v-12" class="sig sig--bone" />
                 </svg>
               )}
             </div>
@@ -85,6 +96,18 @@ import { CLIENTS, HUB_ADDRESSES } from '../data/product';
                 <li>{p}</li>
               ))}
             </ul>
+          </article>
+        ))
+      }
+    </div>
+
+    <div class="pillars" aria-label="跨端韧性与更新机制">
+      {
+        RESILIENCE_PILLARS.map((p, i) => (
+          <article class="pillar" data-reveal style={`--d:${i}`}>
+            <p class="label label--amber">{p.code}</p>
+            <h3>{p.title}</h3>
+            <p>{p.body}</p>
           </article>
         ))
       }
@@ -221,11 +244,38 @@ import { CLIENTS, HUB_ADDRESSES } from '../data/product';
     background: var(--amber);
   }
 
+  .pillars {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    margin-top: 24px;
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+
+  .pillar {
+    padding: 24px 24px 26px;
+    background: var(--ink-1);
+  }
+
+  .pillar h3 {
+    margin: 10px 0 8px;
+    font-family: var(--font-cjk);
+    font-size: 1.2rem;
+    font-weight: 300;
+  }
+
+  .pillar p:last-child {
+    font-size: 13.5px;
+    line-height: 1.75;
+    color: var(--bone-2);
+  }
+
   .addr {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
     gap: 32px 64px;
-    margin-top: 40px;
+    margin-top: 24px;
     padding: 28px;
     border: 1px solid var(--line);
     background: var(--ink-1);
@@ -268,6 +318,10 @@ import { CLIENTS, HUB_ADDRESSES } from '../data/product';
   @media (max-width: 1100px) {
     .clients__grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .pillars {
+      grid-template-columns: 1fr;
     }
   }
 

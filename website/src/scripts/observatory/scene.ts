@@ -7,6 +7,7 @@ import {
   Fog,
   Group,
   HalfFloatType,
+  LineSegments,
   Mesh,
   MeshBasicMaterial,
   MeshPhysicalMaterial,
@@ -33,7 +34,16 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { studioEnvironment } from './env';
 import { layerCenter, layerY, SPEC } from './spec';
-import { seaFragment, seaVertex, streamFragment, streamVertex } from './shaders';
+import {
+  beaconFragment,
+  beaconLineFragment,
+  beaconLineVertex,
+  beaconVertex,
+  seaFragment,
+  seaVertex,
+  streamFragment,
+  streamVertex,
+} from './shaders';
 
 /** 场景的全部可变状态：由滚动导演（director.ts）逐帧给出，场景只负责照做。 */
 export interface StageState {
@@ -69,6 +79,8 @@ export class Observatory {
   private rotor?: Object3D;
   private platter?: Object3D;
   private sea!: Points<BufferGeometry, ShaderMaterial>;
+  private beacons!: Points<BufferGeometry, ShaderMaterial>;
+  private beaconLines!: LineSegments<BufferGeometry, ShaderMaterial>;
   private stream!: Points<BufferGeometry, ShaderMaterial>;
   private ring!: Group;
   private width = 1;
@@ -91,12 +103,13 @@ export class Observatory {
     this.renderer.setClearColor(new Color(SPEC.palette.void), 1);
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = AgXToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.06;
     this.scene.background = new Color(SPEC.palette.void);
     this.scene.fog = new Fog(new Color(SPEC.palette.void), 10, 30);
     this.scene.environment = studioEnvironment(this.renderer);
     this.scene.add(this.root);
     this.buildSea();
+    this.buildBeacons();
     this.buildStream();
     this.buildRing();
     this.setPixelRatio(quality.low ? 1 : Math.min(window.devicePixelRatio, 1.75));
@@ -122,7 +135,7 @@ export class Observatory {
         let mat = cache.get(src);
         if (!mat) {
           mat = src.name === 'glass' ? glass() : (src.clone() as MeshStandardMaterial);
-          mat.envMapIntensity = src.name === 'mirror' ? 1.4 : src.name === 'alu' ? 0.65 : 1.0;
+          mat.envMapIntensity = src.name === 'mirror' ? 1.45 : src.name === 'alu' ? 0.72 : 1.05;
           cache.set(src, mat);
           list.push({ mat, base: EMISSIVE.has(src.name) ? src.emissiveIntensity : 0, kind: src.name });
         }
@@ -133,6 +146,23 @@ export class Observatory {
     });
     this.root.add(model);
     this.ready = true;
+  }
+
+  private waveUniforms() {
+    const w = SPEC.waves;
+    const comp = w.components.map((c) => {
+      const len = Math.hypot(c.dir[0], c.dir[1]);
+      return new Vector4(c.dir[0] / len, c.dir[1] / len, c.k, c.amp);
+    });
+    return {
+      uTime: { value: 0 },
+      uZ: { value: w.z },
+      uHalf: { value: w.size / 2 },
+      uPing: { value: 0 },
+      uComp: { value: comp },
+      uCompB: { value: w.components.map((c) => new Vector2(c.speed, c.phase)) },
+      uRipple: { value: new Vector4(w.ripple.amp, w.ripple.k, w.ripple.speed, w.ripple.decay) },
+    };
   }
 
   private buildSea() {
@@ -149,10 +179,6 @@ export class Observatory {
     const geo = new BufferGeometry();
     geo.setAttribute('aGrid', new BufferAttribute(grid, 2));
     geo.setAttribute('position', new BufferAttribute(new Float32Array(n * n * 3), 3));
-    const comp = w.components.map((c) => {
-      const len = Math.hypot(c.dir[0], c.dir[1]);
-      return new Vector4(c.dir[0] / len, c.dir[1] / len, c.k, c.amp);
-    });
     const mat = new ShaderMaterial({
       vertexShader: seaVertex,
       fragmentShader: seaFragment,
@@ -161,17 +187,12 @@ export class Observatory {
       blending: AdditiveBlending,
       fog: false,
       uniforms: {
-        uTime: { value: 0 },
-        uZ: { value: w.z },
-        uHalf: { value: w.size / 2 },
+        ...this.waveUniforms(),
         uSize: { value: (this.quality.low ? 110 : 80) * (w.res / n) },
         uPixelRatio: { value: 1 },
-        uPing: { value: 0 },
-        uComp: { value: comp },
-        uCompB: { value: w.components.map((c) => new Vector2(c.speed, c.phase)) },
-        uRipple: { value: new Vector4(w.ripple.amp, w.ripple.k, w.ripple.speed, w.ripple.decay) },
         uLow: { value: new Color('#59606b') },
         uHigh: { value: new Color(SPEC.palette.amber).multiplyScalar(1.25) },
+        uTeal: { value: new Color(SPEC.palette.teal).multiplyScalar(1.15) },
         uOpacity: { value: 1 },
       },
     });
@@ -180,17 +201,120 @@ export class Observatory {
     this.scene.add(this.sea);
   }
 
-  private buildStream() {
-    const count = this.quality.low ? 260 : 620;
-    const seed = new Float32Array(count * 4);
-    for (let i = 0; i < count; i++) {
-      seed[i * 4] = Math.random() * Math.PI * 2;
-      seed[i * 4 + 1] = 2.2 + Math.pow(Math.random(), 0.7) * 7.5;
-      seed[i * 4 + 2] = 0.05 + Math.random() * 0.07;
-      seed[i * 4 + 3] = Math.random();
+  private buildBeacons() {
+    const clusters = SPEC.clusters ?? [];
+    const nodes: [number, number, number, number][] = [];
+    const segs: number[] = [];
+    let idx = 0;
+    for (const cl of clusters) {
+      for (const [x, y, health] of cl.nodes) {
+        nodes.push([x, y, health, (idx * 0.27) % 1]);
+        idx++;
+      }
+      // 组内节点细分连线，使拓扑线贴合起伏波面
+      for (let a = 0; a < cl.nodes.length; a++) {
+        for (let b = a + 1; b < cl.nodes.length; b++) {
+          const n0 = cl.nodes[a]!;
+          const n1 = cl.nodes[b]!;
+          const hMix = Math.min(n0[2], n1[2]);
+          const steps = 8;
+          for (let s = 0; s < steps; s++) {
+            const t0 = s / steps;
+            const t1 = (s + 1) / steps;
+            segs.push(
+              n0[0] + (n1[0] - n0[0]) * t0,
+              n0[1] + (n1[1] - n0[1]) * t0,
+              hMix,
+              n0[0] + (n1[0] - n0[0]) * t1,
+              n0[1] + (n1[1] - n0[1]) * t1,
+              hMix,
+            );
+          }
+        }
+      }
     }
+
+    const bArr = new Float32Array(nodes.length * 4);
+    nodes.forEach((n, i) => {
+      bArr[i * 4] = n[0];
+      bArr[i * 4 + 1] = n[1];
+      bArr[i * 4 + 2] = n[2];
+      bArr[i * 4 + 3] = n[3];
+    });
+    const bGeo = new BufferGeometry();
+    bGeo.setAttribute('aBeacon', new BufferAttribute(bArr, 4));
+    bGeo.setAttribute('position', new BufferAttribute(new Float32Array(nodes.length * 3), 3));
+    const bMat = new ShaderMaterial({
+      vertexShader: beaconVertex,
+      fragmentShader: beaconFragment,
+      transparent: true,
+      depthWrite: false,
+      blending: AdditiveBlending,
+      fog: false,
+      uniforms: {
+        ...this.waveUniforms(),
+        uSize: { value: this.quality.low ? 190 : 230 },
+        uPixelRatio: { value: 1 },
+        uTeal: { value: new Color(SPEC.palette.teal).multiplyScalar(1.2) },
+        uAmber: { value: new Color(SPEC.palette.amber).multiplyScalar(1.3) },
+        uOpacity: { value: 1 },
+      },
+    });
+    this.beacons = new Points(bGeo, bMat);
+    this.beacons.frustumCulled = false;
+    this.scene.add(this.beacons);
+
+    const lCount = segs.length / 3;
+    const lGeo = new BufferGeometry();
+    lGeo.setAttribute('aLine', new BufferAttribute(new Float32Array(segs), 3));
+    lGeo.setAttribute('position', new BufferAttribute(new Float32Array(lCount * 3), 3));
+    const lMat = new ShaderMaterial({
+      vertexShader: beaconLineVertex,
+      fragmentShader: beaconLineFragment,
+      transparent: true,
+      depthWrite: false,
+      blending: AdditiveBlending,
+      fog: false,
+      uniforms: {
+        ...this.waveUniforms(),
+        uTeal: { value: new Color(SPEC.palette.teal) },
+        uAmber: { value: new Color(SPEC.palette.amber) },
+        uOpacity: { value: 1 },
+      },
+    });
+    this.beaconLines = new LineSegments(lGeo, lMat);
+    this.beaconLines.frustumCulled = false;
+    this.scene.add(this.beaconLines);
+  }
+
+  private buildStream() {
+    const count = this.quality.low ? 300 : 720;
+    const seed = new Float32Array(count * 4);
+    const kind = new Float32Array(count);
+    const clusterNodes = (SPEC.clusters ?? []).flatMap((c) => c.nodes);
+
+    for (let i = 0; i < count; i++) {
+      const fromCluster = clusterNodes.length > 0 && i < count * 0.68;
+      const isRealtime = fromCluster && i % 5 === 0;
+      if (fromCluster) {
+        const node = clusterNodes[i % clusterNodes.length]!;
+        const jitterX = node[0] + (Math.random() - 0.5) * 0.45;
+        const jitterY = node[1] + (Math.random() - 0.5) * 0.45;
+        // Three 平面：(x, z) = (p.x, -p.y)
+        seed[i * 4] = Math.atan2(-jitterY, jitterX);
+        seed[i * 4 + 1] = Math.hypot(jitterX, jitterY);
+      } else {
+        seed[i * 4] = Math.random() * Math.PI * 2;
+        seed[i * 4 + 1] = 2.2 + Math.pow(Math.random(), 0.7) * 7.5;
+      }
+      seed[i * 4 + 2] = isRealtime ? 0.14 + Math.random() * 0.08 : 0.05 + Math.random() * 0.07;
+      seed[i * 4 + 3] = Math.random();
+      kind[i] = isRealtime ? 1 : 0;
+    }
+
     const geo = new BufferGeometry();
     geo.setAttribute('aSeed', new BufferAttribute(seed, 4));
+    geo.setAttribute('aKind', new BufferAttribute(kind, 1));
     geo.setAttribute('position', new BufferAttribute(new Float32Array(count * 3), 3));
     const mat = new ShaderMaterial({
       vertexShader: streamVertex,
@@ -203,8 +327,9 @@ export class Observatory {
         uTime: { value: 0 },
         uZ: { value: SPEC.waves.z },
         uPixelRatio: { value: 1 },
-        uSize: { value: 70 },
+        uSize: { value: 72 },
         uColor: { value: new Color(SPEC.palette.amber).multiplyScalar(1.6) },
+        uTeal: { value: new Color(SPEC.palette.teal).multiplyScalar(1.75) },
         uOpacity: { value: 1 },
       },
     });
@@ -238,6 +363,7 @@ export class Observatory {
     this.pr = pr;
     this.renderer.setPixelRatio(pr);
     this.sea.material.uniforms.uPixelRatio!.value = pr;
+    this.beacons.material.uniforms.uPixelRatio!.value = pr;
     this.stream.material.uniforms.uPixelRatio!.value = pr;
     this.composer?.setPixelRatio(pr);
     this.resize(this.width, this.height);
@@ -302,8 +428,11 @@ export class Observatory {
           let pulse = 1;
           if (id === 'mem' && m.kind === 'amber') pulse = 0.65 + 0.35 * Math.sin(time * 3.1);
           else if (id === 'net') pulse = 0.55 + 0.45 * (Math.sin(time * 5.3) > 0.2 ? 1 : 0.4);
+          else if (id === 'disk' && m.kind === 'amber') pulse = 0.68 + 0.32 * Math.sin(time * 2.6 + 0.8);
           else if (id === 'cpu' && m.kind === 'amber') pulse = 0.7 + 0.3 * Math.sin(time * 1.7);
+          else if (id === 'gpu' && m.kind === 'amber') pulse = 0.6 + 0.4 * Math.sin(time * 3.8 + 1.4);
           else if (id === 'lens' && m.kind === 'amber') pulse = 0.85 + 0.15 * Math.sin(time * 2.2);
+          else if (id === 'lens' && m.kind === 'teal') pulse = 0.78 + 0.22 * Math.sin(time * 1.25);
           m.mat.emissiveIntensity = m.base * pulse * (0.35 + 0.65 * lit) * (focus >= 0 && d < 0.5 ? 1.35 : 1);
         }
       }
@@ -322,12 +451,22 @@ export class Observatory {
       this.ring.children.forEach((c) => (((c as Mesh).material as MeshBasicMaterial).opacity = s.ring));
     }
 
-    // 海面与遥测流
-    const sea = this.sea.material.uniforms;
-    sea.uTime!.value = time;
-    sea.uOpacity!.value = s.sea;
-    sea.uPing!.value = ((time * 2.6) % 26) - 1;
-    this.sea.visible = s.sea > 0.01;
+    // 海面、舰队星群与遥测流
+    const ping = ((time * 2.6) % 26) - 1;
+    const showSea = s.sea > 0.01;
+    for (const u of [
+      this.sea.material.uniforms,
+      this.beacons.material.uniforms,
+      this.beaconLines.material.uniforms,
+    ]) {
+      u.uTime!.value = time;
+      u.uPing!.value = ping;
+      u.uOpacity!.value = s.sea;
+    }
+    this.sea.visible = showSea;
+    this.beacons.visible = showSea;
+    this.beaconLines.visible = showSea;
+
     const st = this.stream.material.uniforms;
     st.uTime!.value = time;
     st.uOpacity!.value = s.stream;

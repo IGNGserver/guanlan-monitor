@@ -12,8 +12,13 @@ import { pickRelease } from '../src/data/release';
  */
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
-/** 面向用户的事实写在 README，安装参数与部署细节在 docs/INSTALL.md，两份合起来才算全。 */
-const FACT_DOCS = ['README.md', 'docs/INSTALL.md'];
+const FACT_DOCS = [
+  'README.md',
+  'docs/INSTALL.md',
+  'docs/TRUSTED_REALTIME_MONITORING.md',
+  'docs/EXTERNAL_DATABASE.md',
+  'docs/CLIENT_UPDATES.md',
+];
 
 test.describe('产品事实', () => {
   test('烘焙的发布信息符合资产命名规则', () => {
@@ -76,11 +81,17 @@ test.describe('产品事实', () => {
       '/VERIFY',
       '--key-stdin',
       'guanlan-agent wait-for-upload',
+      'guanlan-agent update --channel stable|preview',
       'DeviceStateConsole-Windows-Setup-v',
       'DeviceStateConsole-Linux-Install-v',
       'DeviceStateConsole-Android-v',
       'SESSION_SECRET',
       'AGENT_REQUIRE_HTTPS',
+      'DSC_TRUSTED_TLS_PROXY_CIDRS',
+      'DSC_DB_MODE=external',
+      'DSC_INSTANCE_ID',
+      'docker-compose.external.yml',
+      '/api/agent/realtime',
       '4000',
     ]) {
       expect(docs, fact).toContain(fact);

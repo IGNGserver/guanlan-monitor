@@ -2,32 +2,32 @@
 import { HUB_PORT } from '../data/product';
 
 const agents = [
-  { id: 'a0', host: 'workstation-01', os: 'Windows' },
-  { id: 'a1', host: 'node-01', os: 'Linux · 无桌面' },
-  { id: 'a2', host: 'build-02', os: 'Linux' },
-  { id: 'a3', host: 'laptop-07', os: 'Windows' },
+  { id: 'a0', host: 'workstation-01', os: 'Windows · 编译与开发' },
+  { id: 'a1', host: 'pve-node-01', os: 'PVE · 虚拟化集群' },
+  { id: 'a2', host: 'nas-core', os: 'Debian · 核心存储' },
+  { id: 'a3', host: 'linux-builder-02', os: 'Ubuntu · 无桌面' },
 ];
 const clients = [
-  { id: 'c0', name: 'Web 控制台' },
+  { id: 'c0', name: 'Web 控制台 · PWA' },
   { id: 'c1', name: 'Windows 桌面端' },
   { id: 'c2', name: 'GNOME Linux 桌面端' },
-  { id: 'c3', name: 'Android' },
+  { id: 'c3', name: 'Android · 小组件' },
 ];
 const cards = [
   {
-    code: 'COLLECT',
-    title: '采集 · Agent',
-    body: '安装包注册机器级 guanlan-agent 服务（Windows 服务，Linux systemd 系统单元），开机即采集，无需登录。快速指标不等待慢探针；温度、风扇、GPU 等慢采集带实际采集时间。',
+    code: 'TELEMETRY + QUEUE',
+    title: '常规遥测 · 断网本地排队',
+    body: '安装包注册机器级 guanlan-agent 服务，开机即采集，无需登录。慢探针不阻塞快指标；中枢不可达时样本在设备本地排队，恢复后按顺序补传，坏样本自动隔离。',
   },
   {
-    code: 'AGGREGATE',
-    title: '汇聚 · 中枢',
-    body: `中枢以 Docker Compose 部署在你的服务器上：Redis 保存短窗口序列，MySQL 保存分钟与小时历史。所有客户端和 Agent 使用同一个公开入口（默认端口 ${HUB_PORT}）。`,
+    code: 'REALTIME RPC',
+    title: '实时直连 · 独立双向租约',
+    body: 'Agent 主动向 /api/agent/realtime 建立出站 WebSocket 并登记独立密钥哈希。中枢每 5 秒 challenge 续期 15 秒租约；观看者打开实时页时才触发设备采样，900ms 会话合并且不写历史库。',
   },
   {
-    code: 'VIEW',
-    title: '查看 · 终端',
-    body: 'Web、Windows、GNOME Linux 与 Android 共用一个访问密钥。设备详情可在实时、5 分钟、1 小时、6 小时、24 小时与 7 天之间切换。',
+    code: 'HUB + VIEWERS',
+    title: '单入口汇聚 · 四端同源',
+    body: `中枢以 Docker Compose 部署（默认端口 ${HUB_PORT}），既可内置四容器也可对接外部 MySQL 与 Redis。Web、桌面与手机共用同一公开入口，支持弱网保极值降采样。`,
   },
 ];
 ---
@@ -35,17 +35,29 @@ const cards = [
 <section id="flow" class="flow section" data-idx="02" aria-labelledby="flow-title">
   <div class="wrap">
     <header class="flow__head">
-      <p class="eyebrow" data-reveal>§ 02 · 数据流</p>
-      <h2 id="flow-title" class="display" data-reveal style="--d:1">从一台机器，<br />到每一块屏幕。</h2>
+      <p class="eyebrow" data-reveal>§ 02 · 双模数据流</p>
+      <h2 id="flow-title" class="display" data-reveal style="--d:1">两条独立通道，<br />各司其职。</h2>
       <p class="lede" data-reveal style="--d:2">
-        Agent 在每台设备上采集并上报，中枢负责汇聚与保存，客户端只和中枢对话。链路断开时，样本先留在设备上，恢复后补传。
+        常规遥测负责长期历史与断网补传；实时直连通道（<code>/api/agent/realtime</code>）负责进程、容器与秒级曲线的按需双向直查。客户端始终只和中枢对话，无需给受控机器开入站端口。
       </p>
     </header>
 
-    <div class="flow__board" data-flow data-reveal>
+    <div class="flow__toolbar" data-reveal>
+      <div class="flow__modes" role="radiogroup" aria-label="数据流通道模式">
+        <button type="button" role="radio" aria-checked="true" data-flow-mode="telemetry">
+          <span class="dot dot--amber"></span>常规遥测 · HTTP 上报与补传
+        </button>
+        <button type="button" role="radio" aria-checked="false" data-flow-mode="realtime">
+          <span class="dot"></span>实时直连 · WebSocket 双向租约
+        </button>
+      </div>
+      <span class="label" data-flow-badge>示意数据 · 持久上报通道</span>
+    </div>
+
+    <div class="flow__board" data-flow data-mode="telemetry" data-reveal>
       <canvas class="flow__canvas" aria-hidden="true"></canvas>
       <div class="flow__col flow__col--agents">
-        <p class="label">设备 · Agent</p>
+        <p class="label">设备 · Agent（主动出站）</p>
         {
           agents.map((a) => (
             <div class="node node--agent" data-node={a.id}>
@@ -54,6 +66,9 @@ const cards = [
               <span class="node__os">{a.os}</span>
               <span class="node__queue mono" data-queue>
                 队列 <b>0</b>
+              </span>
+              <span class="node__lease mono" data-lease hidden>
+                15s 租约
               </span>
             </div>
           ))
@@ -67,12 +82,17 @@ const cards = [
             <span class="mono">HUB</span>
             <span class="mono faint">:{HUB_PORT}</span>
           </div>
-          <ul class="hub__svc mono">
+          <ul class="hub__svc mono" data-hub-svc>
             <li><span>web</span><i>控制台 · /api 代理</i></li>
-            <li><span>server</span><i>上报 · 鉴权 · 实时</i></li>
-            <li><span>redis</span><i>短窗口序列</i></li>
-            <li><span>mysql</span><i>分钟 / 小时历史</i></li>
+            <li><span>server</span><i data-svc-server>上报 · 鉴权 · 实时</i></li>
+            <li data-svc-store="redis"><span>redis</span><i>短窗口序列 · L2 缓存</i></li>
+            <li data-svc-store="mysql"><span>mysql</span><i>设备组 · 分钟 / 小时历史</i></li>
           </ul>
+          <div class="hub__rt mono" data-hub-rt hidden>
+            <div><span>路径</span><b>/api/agent/realtime</b></div>
+            <div><span>续期</span><b>5s challenge → pong</b></div>
+            <div><span>合并</span><b>900ms 共享采样 · 不写库</b></div>
+          </div>
           <div class="hub__link" data-link>
             <span class="dot" data-link-dot></span><span data-link-text>链路正常</span>
           </div>
@@ -80,7 +100,7 @@ const cards = [
       </div>
 
       <div class="flow__col flow__col--clients">
-        <p class="label">终端</p>
+        <p class="label">终端 · 观看者</p>
         {
           clients.map((c) => (
             <div class="node node--client" data-node={c.id}>
@@ -96,7 +116,12 @@ const cards = [
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h4m4 0h4M7 5l2 6" stroke="currentColor" stroke-width="1.4" fill="none"></path></svg>
         <span data-cut-label>模拟断开中枢链路</span>
       </button>
-      <p class="faint">示意动画：断开后样本在设备本地排队，恢复后按顺序补传；无法恢复的样本会被隔离，不阻塞队列。</p>
+      <button class="btn btn--sm" type="button" data-conflict aria-pressed="false" hidden>
+        <span data-conflict-label>模拟重装 UUID 凭据冲突</span>
+      </button>
+      <p class="faint" data-flow-hint>
+        示意动画：断开后样本在设备本地排队，恢复后按顺序补传；无法恢复的样本会被隔离，不阻塞队列。
+      </p>
     </div>
 
     <div class="flow__cards">
@@ -125,26 +150,70 @@ const cards = [
   }
 
   .flow__head {
-    max-width: 760px;
+    max-width: 780px;
   }
 
   .flow__head .lede {
     margin-top: 28px;
   }
 
+  .flow__head code {
+    color: var(--bone);
+  }
+
+  .flow__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    margin-top: clamp(44px, 6vw, 72px);
+  }
+
+  .flow__modes {
+    display: inline-flex;
+    flex-wrap: wrap;
+    border: 1px solid var(--line-2);
+    background: var(--ink-1);
+  }
+
+  .flow__modes button {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    height: 38px;
+    padding: 0 16px;
+    border: 0;
+    background: none;
+    font-size: 13px;
+    color: var(--bone-3);
+    cursor: pointer;
+    transition:
+      color 0.2s,
+      background 0.2s;
+  }
+
+  .flow__modes button + button {
+    border-left: 1px solid var(--line);
+  }
+
+  .flow__modes button[aria-checked='true'] {
+    color: var(--bone);
+    background: var(--ink-3);
+  }
+
   .flow__board {
     position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1fr);
-    gap: clamp(40px, 9vw, 140px);
-    margin-top: clamp(56px, 8vw, 96px);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: clamp(36px, 8vw, 128px);
+    margin-top: 16px;
     padding: 40px clamp(20px, 3vw, 40px);
     border: 1px solid var(--line);
     background:
       linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 40px 40px,
       linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0 / 40px 40px,
       var(--ink-1);
-    background-blend-mode: normal;
   }
 
   .flow__board::before {
@@ -187,7 +256,7 @@ const cards = [
   .node--agent {
     display: grid;
     grid-template-columns: auto 1fr auto;
-    grid-template-areas: 'dot host queue' 'dot os queue';
+    grid-template-areas: 'dot host meta' 'dot os meta';
     column-gap: 12px;
     align-items: center;
   }
@@ -202,6 +271,15 @@ const cards = [
     box-shadow: 0 0 0 3px var(--amber-glow);
   }
 
+  .node--agent.is-conflict {
+    border-color: rgb(255 107 91 / 0.55);
+  }
+
+  .node--agent.is-conflict .dot {
+    background: var(--danger);
+    box-shadow: 0 0 0 3px rgb(255 107 91 / 0.2);
+  }
+
   .node__host {
     grid-area: host;
     color: var(--bone);
@@ -213,11 +291,20 @@ const cards = [
     color: var(--bone-3);
   }
 
-  .node__queue {
-    grid-area: queue;
+  .node__queue,
+  .node__lease {
+    grid-area: meta;
     font-size: 11px;
     color: var(--bone-3);
     transition: color 0.3s;
+  }
+
+  .node__lease {
+    color: var(--teal);
+  }
+
+  .is-conflict .node__lease {
+    color: var(--danger);
   }
 
   .node__queue b {
@@ -241,6 +328,12 @@ const cards = [
       0 30px 80px -30px rgb(255 166 74 / 0.18);
   }
 
+  .flow__board[data-mode='realtime'] .node--hub {
+    box-shadow:
+      0 0 0 1px rgb(6 8 11),
+      0 30px 80px -30px rgb(53 216 182 / 0.2);
+  }
+
   .hub__top {
     display: flex;
     justify-content: space-between;
@@ -262,6 +355,11 @@ const cards = [
     justify-content: space-between;
     gap: 12px;
     padding: 9px 16px;
+    transition: opacity 0.25s;
+  }
+
+  .flow__board[data-mode='realtime'] [data-svc-store] {
+    opacity: 0.38;
   }
 
   .hub__svc li + li {
@@ -276,6 +374,34 @@ const cards = [
     font-style: normal;
     color: var(--bone-3);
     font-family: var(--font-sans);
+  }
+
+  .hub__rt {
+    border-top: 1px solid var(--line-2);
+    padding: 8px 16px;
+    background: rgb(53 216 182 / 0.05);
+    font-size: 11.5px;
+    display: grid;
+    gap: 5px;
+  }
+
+  .hub__rt[hidden] {
+    display: none;
+  }
+
+  .hub__rt div {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .hub__rt span {
+    color: var(--bone-3);
+  }
+
+  .hub__rt b {
+    font-weight: 400;
+    color: var(--teal);
   }
 
   .hub__link {
@@ -302,9 +428,13 @@ const cards = [
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 16px 24px;
+    gap: 14px 20px;
     margin-top: 20px;
     font-size: 13px;
+  }
+
+  .flow__controls [hidden] {
+    display: none;
   }
 
   .flow__controls [aria-pressed='true'] {
@@ -329,7 +459,7 @@ const cards = [
   .fcard h3 {
     margin: 16px 0 14px;
     font-family: var(--font-cjk);
-    font-size: 1.5rem;
+    font-size: 1.45rem;
     font-weight: 300;
   }
 
@@ -340,9 +470,23 @@ const cards = [
   }
 
   @media (max-width: 899px) {
+    .flow__modes {
+      width: 100%;
+    }
+
+    .flow__modes button {
+      flex: 1 1 220px;
+      justify-content: center;
+    }
+
+    .flow__modes button + button {
+      border-left: 0;
+      border-top: 1px solid var(--line);
+    }
+
     .flow__board {
       grid-template-columns: 1fr;
-      gap: 56px;
+      gap: 52px;
       padding: 28px 18px;
     }
 
@@ -357,7 +501,7 @@ const cards = [
 
     .node--agent {
       grid-template-columns: auto 1fr;
-      grid-template-areas: 'dot host' 'dot os' 'dot queue';
+      grid-template-areas: 'dot host' 'dot os' 'dot meta';
       padding: 10px 12px;
     }
 

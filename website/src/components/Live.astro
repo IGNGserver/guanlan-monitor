@@ -5,30 +5,70 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
 <section id="live" class="live section" data-idx="03" aria-labelledby="live-title">
   <div class="wrap">
     <header class="live__head">
-      <p class="eyebrow" data-reveal>§ 03 · 实时查看 <span class="tag live__tag">测试版</span></p>
+      <p class="eyebrow" data-reveal>§ 03 · 实时查看</p>
       <h2 id="live-title" class="display" data-reveal style="--d:1">需要看清此刻，<br />就直接问设备。</h2>
       <p class="lede" data-reveal style="--d:2">
-        设备详情页展开「实时」后，按 1 / 2 / 5 秒间隔查询快速指标、进程与 Docker 容器。它走一条独立的设备双向连接，不把数据库里的「在线」当作可达依据，每秒的数据也不写入历史库。
+        设备详情将「进程」与「容器」设为一级标签，按 1 / 2 / 5 秒间隔直查快速指标、进程（CPU / GPU / 磁盘读写 / 内存）与 Docker 容器。它走独立的设备双向连接，支持组内同级切换机器与 <code>⌘K</code> 命令直达，每秒的数据也不写入历史库。
       </p>
     </header>
 
     <div class="live__grid">
       <div class="console" data-live data-reveal>
         <div class="console__bar">
-          <p class="console__crumbs">
-            <span class="faint">设备</span><span class="faint">/</span><span>workstation-01</span><span class="tag">Windows</span>
-          </p>
+          <div class="console__crumbs">
+            <span class="faint">编译与虚拟化</span>
+            <span class="faint">/</span>
+            <div class="peers" role="group" aria-label="组内同级切换设备">
+              <button type="button" class="peer" data-peer="ws" aria-pressed="true">
+                <span>workstation-01</span><span class="tag">Windows</span>
+              </button>
+              <button type="button" class="peer" data-peer="pve" aria-pressed="false">
+                <span>pve-node-01</span><span class="tag">PVE Linux</span>
+              </button>
+              <button type="button" class="peer" data-peer="nas" aria-pressed="false">
+                <span>nas-core</span><span class="tag">Debian</span>
+              </button>
+            </div>
+          </div>
           <div class="console__status">
             <span class="pill" data-pill><span class="dot dot--live"></span><span data-pill-text>实时 · 刚刚</span></span>
             <span class="mono faint console__at" data-sampled>采集于 --:--:--</span>
           </div>
           <div class="console__tools">
+            <button class="ctl ctl--cmdk mono" type="button" data-cmdk-toggle aria-expanded="false">⌘K 直达</button>
             <button class="ctl" type="button" data-pause aria-pressed="false">暂停</button>
             <div class="seg" role="radiogroup" aria-label="查询间隔">
               <button type="button" role="radio" aria-checked="true" data-interval="1">每 1 秒</button>
               <button type="button" role="radio" aria-checked="false" data-interval="2">每 2 秒</button>
               <button type="button" role="radio" aria-checked="false" data-interval="5">每 5 秒</button>
             </div>
+          </div>
+        </div>
+
+        <div class="cmdk" data-cmdk-bar hidden>
+          <div class="cmdk__row">
+            <span class="mono amber">⌘K</span>
+            <input
+              type="search"
+              class="cmdk__input mono"
+              data-cmdk-input
+              placeholder="输入机器名、进程、容器或回车直达…"
+              aria-label="命令直达搜索"
+            />
+          </div>
+          <div class="cmdk__jumps" data-cmdk-list>
+            <button type="button" class="cmdk__jump mono" data-cmdk-jump="pve:proc">
+              <span>pve-node-01 → 进程</span><small class="faint">查看 Linux 进程磁盘读写速率</small>
+            </button>
+            <button type="button" class="cmdk__jump mono" data-cmdk-jump="ws:proc">
+              <span>workstation-01 → 进程</span><small class="faint">按最忙 GPU 引擎占用排序</small>
+            </button>
+            <button type="button" class="cmdk__jump mono" data-cmdk-jump="nas:docker">
+              <span>nas-core → 容器</span><small class="faint">查看 Compose 分组与容器网络 / 磁盘速率</small>
+            </button>
+            <button type="button" class="cmdk__jump mono" data-cmdk-jump="pve:perf">
+              <span>pve-node-01 → 核心性能</span><small class="faint">查看两分钟实时窗口</small>
+            </button>
           </div>
         </div>
 
@@ -39,7 +79,7 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
         </div>
 
         <div class="console__pane" id="pane-perf" role="tabpanel" aria-labelledby="tab-perf" data-pane="perf">
-          <p class="console__note faint">最近两分钟的设备实时数据，直接来自设备，不写入历史。</p>
+          <p class="console__note faint">最近两分钟的设备实时数据，直接来自设备双向会话，不写入历史库。</p>
           <div class="charts">
             <figure class="chart" data-chart="cpu">
               <figcaption>
@@ -50,7 +90,7 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
             </figure>
             <figure class="chart" data-chart="mem">
               <figcaption>
-                <span>内存占用<small class="faint mono">— / 32.0 GB</small></span>
+                <span>内存占用<small class="faint mono" data-mem-cap>— / 32.0 GB</small></span>
                 <b class="mono" data-value>—</b>
               </figcaption>
               <canvas aria-hidden="true"></canvas>
@@ -65,7 +105,19 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
         </div>
 
         <div class="console__pane" id="pane-proc" role="tabpanel" aria-labelledby="tab-proc" data-pane="proc" hidden>
-          <p class="console__note faint" data-proc-meta>—</p>
+          <div class="pane-head">
+            <p class="console__note faint" data-proc-meta>—</p>
+            <div class="pane-controls">
+              <span class="hold-pill mono" data-proc-hold hidden>顺序已固定</span>
+              <input
+                type="search"
+                class="proc-search mono"
+                data-proc-search
+                placeholder="筛选进程名或 PID…"
+                aria-label="筛选进程名或 PID"
+              />
+            </div>
+          </div>
           <div class="table-wrap">
             <table class="tbl mono">
               <thead>
@@ -75,25 +127,36 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
                   <th scope="col" class="num"><button type="button" data-sort="cpu" aria-pressed="true">CPU</button></th>
                   <th scope="col" class="num"><button type="button" data-sort="mem" aria-pressed="false">内存</button></th>
                   <th scope="col" class="num"><button type="button" data-sort="gpu" aria-pressed="false">GPU</button></th>
+                  <th scope="col" class="num"><button type="button" data-sort="disk" aria-pressed="false">磁盘读写</button></th>
                   <th scope="col" class="num">线程</th>
                 </tr>
               </thead>
               <tbody data-proc></tbody>
             </table>
           </div>
+          <div class="proc-detail mono" data-proc-detail hidden></div>
         </div>
 
         <div class="console__pane" id="pane-docker" role="tabpanel" aria-labelledby="tab-docker" data-pane="docker" hidden>
-          <p class="console__note faint">只读：本机 Engine API 的容器列表与单次 stats；CPU 按单核口径，可超过 100%。</p>
+          <div class="pane-head">
+            <p class="console__note faint" data-docker-meta>只读：本机 Engine API 容器列表与单次 stats；CPU 按单核口径可超 100%。</p>
+            <div class="cfilters" role="group" aria-label="容器状态筛选">
+              <button type="button" class="chip" data-cfilter="all" aria-pressed="true">全部</button>
+              <button type="button" class="chip" data-cfilter="running" aria-pressed="false">运行中</button>
+              <button type="button" class="chip" data-cfilter="attention" aria-pressed="false">需关注</button>
+              <button type="button" class="chip" data-cfilter="stopped" aria-pressed="false">未运行</button>
+            </div>
+          </div>
           <div class="table-wrap">
             <table class="tbl mono">
               <thead>
                 <tr>
-                  <th scope="col">容器</th>
+                  <th scope="col">容器 / Compose</th>
                   <th scope="col">状态</th>
                   <th scope="col" class="num">CPU</th>
-                  <th scope="col" class="num">内存</th>
+                  <th scope="col" class="num">内存 / 上限</th>
                   <th scope="col" class="num">网络 ↓ / ↑</th>
+                  <th scope="col" class="num">磁盘读 / 写</th>
                 </tr>
               </thead>
               <tbody data-docker></tbody>
@@ -102,7 +165,7 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
         </div>
 
         <div class="console__foot">
-          <span class="label">示意数据 · 官网重绘的界面示意</span>
+          <span class="label">示意数据 · 悬停或点击进程行可固定排序并查看详情</span>
           <button class="ctl" type="button" data-fail>模拟一次采集超时</button>
         </div>
       </div>
@@ -135,18 +198,17 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
   }
 
   .live__head {
-    max-width: 780px;
+    max-width: 820px;
   }
 
   .live__head .lede {
     margin-top: 28px;
   }
 
-  .live__tag {
-    margin-left: 6px;
-    height: 22px;
+  .live__head code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
     color: var(--amber);
-    border-color: rgb(255 166 74 / 0.4);
   }
 
   .live__grid {
@@ -166,8 +228,8 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
 
   .console__bar {
     display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 12px 20px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px 16px;
     align-items: center;
     padding: 16px 20px;
     border-bottom: 1px solid var(--line);
@@ -176,13 +238,52 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
   .console__crumbs {
     display: flex;
     align-items: center;
-    gap: 10px;
-    font-size: 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 13.5px;
+    min-width: 0;
   }
 
-  .console__crumbs .tag {
-    height: 20px;
-    font-size: 10px;
+  .peers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .peer {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 9px;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    background: rgb(6 8 11 / 0.45);
+    color: var(--bone-3);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition:
+      color 0.2s,
+      border-color 0.2s,
+      background 0.2s;
+  }
+
+  .peer:hover {
+    color: var(--bone-2);
+    border-color: var(--line-2);
+  }
+
+  .peer[aria-pressed='true'] {
+    color: var(--bone);
+    border-color: rgb(255 166 74 / 0.5);
+    background: rgb(255 166 74 / 0.08);
+  }
+
+  .peer .tag {
+    height: 18px;
+    padding: 0 5px;
+    font-size: 9.5px;
   }
 
   .console__status {
@@ -196,8 +297,76 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
     grid-column: 2;
     grid-row: 1 / 3;
     display: flex;
-    gap: 10px;
+    gap: 8px;
     align-items: center;
+  }
+
+  .ctl--cmdk {
+    color: var(--amber);
+    border-color: rgb(255 166 74 / 0.35);
+  }
+
+  .cmdk {
+    padding: 12px 20px 14px;
+    border-bottom: 1px solid var(--line-2);
+    background: #070a0e;
+  }
+
+  .cmdk[hidden] {
+    display: none;
+  }
+
+  .cmdk__row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .cmdk__input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: var(--bone);
+    font-size: 12.5px;
+    outline: none;
+  }
+
+  .cmdk__input::placeholder {
+    color: var(--bone-3);
+  }
+
+  .cmdk__jumps {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .cmdk__jump {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    background: var(--ink-1);
+    color: var(--bone);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+
+  .cmdk__jump:hover {
+    border-color: var(--amber);
+  }
+
+  .cmdk__jump small {
+    font-family: var(--font-sans);
+    font-size: 11px;
   }
 
   .pill {
@@ -258,7 +427,8 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
   }
 
   .ctl:hover,
-  .ctl[aria-pressed='true'] {
+  .ctl[aria-pressed='true'],
+  .ctl[aria-expanded='true'] {
     color: var(--bone);
     border-color: var(--line-3);
   }
@@ -323,12 +493,82 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
 
   .console__pane {
     padding: 18px 20px 20px;
-    min-height: 372px;
+    min-height: 384px;
+  }
+
+  .pane-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    margin-bottom: 14px;
   }
 
   .console__note {
     font-size: 12.5px;
+    margin: 0;
+  }
+
+  #pane-perf .console__note {
     margin-bottom: 14px;
+  }
+
+  .pane-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .hold-pill {
+    padding: 3px 8px;
+    border: 1px solid rgb(53 216 182 / 0.4);
+    background: rgb(53 216 182 / 0.1);
+    color: var(--teal);
+    font-size: 11px;
+  }
+
+  .hold-pill[hidden] {
+    display: none;
+  }
+
+  .proc-search {
+    height: 28px;
+    width: 176px;
+    padding: 0 10px;
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+    background: rgb(6 8 11 / 0.65);
+    color: var(--bone);
+    font-size: 12px;
+  }
+
+  .proc-search::placeholder {
+    color: var(--bone-3);
+  }
+
+  .cfilters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .chip {
+    height: 26px;
+    padding: 0 9px;
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+    background: transparent;
+    color: var(--bone-3);
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+
+  .chip[aria-pressed='true'] {
+    color: var(--amber);
+    border-color: rgb(255 166 74 / 0.45);
+    background: rgb(255 166 74 / 0.08);
   }
 
   .charts {
@@ -446,13 +686,23 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
     white-space: nowrap;
   }
 
+  .tbl :global(tr[data-pid]) {
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .tbl :global(tr[data-pid]:hover),
+  .tbl :global(tr[data-pid].is-sel) {
+    background: rgb(255 166 74 / 0.06);
+  }
+
   .tbl .num {
     text-align: right;
   }
 
   .tbl :global(.bar) {
     display: inline-block;
-    width: 44px;
+    width: 40px;
     height: 3px;
     margin-right: 8px;
     vertical-align: middle;
@@ -466,6 +716,12 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
     background: var(--amber);
   }
 
+  .tbl :global(.c-sub) {
+    display: block;
+    font-size: 10.5px;
+    color: var(--bone-3);
+  }
+
   .tbl :global(.na) {
     color: var(--bone-3);
   }
@@ -474,8 +730,29 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
     color: var(--teal);
   }
 
+  .tbl :global(.st-warn) {
+    color: var(--amber);
+  }
+
   .tbl :global(.st-down) {
     color: var(--bone-3);
+  }
+
+  .proc-detail {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid rgb(255 166 74 / 0.35);
+    background: rgb(255 166 74 / 0.05);
+    font-size: 12px;
+    color: var(--bone-2);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px 16px;
+  }
+
+  .proc-detail[hidden] {
+    display: none;
   }
 
   .console__foot {
@@ -533,7 +810,7 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
     }
   }
 
-  @media (max-width: 680px) {
+  @media (max-width: 820px) {
     .console__bar {
       grid-template-columns: 1fr;
     }
@@ -544,6 +821,12 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
       flex-wrap: wrap;
     }
 
+    .cmdk__jumps {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 680px) {
     .charts {
       grid-template-columns: 1fr;
     }
@@ -558,6 +841,10 @@ import { REALTIME_DOC_URL, REALTIME_FACTS } from '../data/product';
 
     .console__pane {
       padding: 14px;
+    }
+
+    .proc-search {
+      width: 100%;
     }
   }
 </style>

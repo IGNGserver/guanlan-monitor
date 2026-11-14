@@ -7,18 +7,18 @@ const rules = [
   },
   {
     code: 'TLS',
-    title: '默认要求 HTTPS',
-    body: 'SESSION_COOKIE_SECURE 与 AGENT_REQUIRE_HTTPS 默认开启。只有在明确受信的网络里，才由部署参数改用 HTTP。',
+    title: '默认要求 HTTPS 与受信转发白名单',
+    body: 'SESSION_COOKIE_SECURE 与 AGENT_REQUIRE_HTTPS 默认开启；外层终止 TLS 时仅信任 DSC_TRUSTED_TLS_PROXY_CIDRS 显式列出的代理源地址。',
   },
   {
     code: 'IDENTITY',
-    title: '设备身份不可冒用',
-    body: '实时通道为每台设备登记独立密钥，中枢只保存哈希；另一个安装实例不能覆盖同名设备。',
+    title: '设备身份不可冒用，冲突可恢复',
+    body: '实时通道为每台设备登记独立密钥且中枢只存哈希；其它安装实例无法覆盖同名设备，确属重装迁移时可在控制台显式重置凭据。',
   },
   {
     code: 'RATE',
-    title: '鉴权失败限流',
-    body: '统一凭证层对所有鉴权失败做频率限制与防爆破，覆盖控制台路由与 Agent 上报入口。',
+    title: '鉴权失败限流与会话上限',
+    body: '统一凭证层对控制台与 Agent 入口做防爆破限流；Web 会话默认 90 天滑动续期（最长 365 天），退出登录同步清空本地离线快照。',
   },
   {
     code: 'DOCKER',
@@ -27,16 +27,16 @@ const rules = [
   },
   {
     code: 'TRUTH',
-    title: '空就是空',
-    body: '设备、硬件或驱动未提供的传感器显示为空；首次尚无差分基线时标为不可用。观澜不以零冒充测量值。',
+    title: '空就是空，断就是断',
+    body: '硬件未提供的传感器显示为空，首次尚无差分基线标为不可用，离线区间在趋势图上断开而不画跨停机假直线。',
   },
 ];
 ---
 
-<section id="security" class="sec section" data-idx="07" aria-labelledby="sec-title">
+<section id="security" class="sec section" data-idx="08" aria-labelledby="sec-title">
   <div class="wrap">
     <header class="sec__head">
-      <p class="eyebrow" data-reveal>§ 07 · 边界</p>
+      <p class="eyebrow" data-reveal>§ 08 · 边界</p>
       <h2 id="sec-title" class="display" data-reveal style="--d:1">可信，<br />先从不越界开始。</h2>
     </header>
     <div class="sec__grid">

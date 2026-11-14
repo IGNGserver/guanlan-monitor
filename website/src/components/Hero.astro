@@ -9,8 +9,8 @@ const { release } = Astro.props;
 const readouts = [
   { k: 'cpu', label: 'CPU 使用率', unit: '%', v: '23.4' },
   { k: 'mem', label: '内存占用', unit: '%', v: '61.0' },
+  { k: 'pool', label: '存储池水位', unit: '%', v: '64.2' },
   { k: 'net', label: '网络 ↓', unit: 'MB/s', v: '4.82' },
-  { k: 'fan', label: '风扇转速', unit: 'RPM', v: '1180' },
 ];
 ---
 
@@ -20,13 +20,13 @@ const readouts = [
 
   <div class="hero__in">
     <div class="hero__copy">
-      <p class="eyebrow hero__eyebrow">私有部署 · 运行状态监控</p>
+      <p class="eyebrow hero__eyebrow">私有部署 · 舰队与单机运行状态监控</p>
       <h1 class="hero__title" aria-label="观澜">
         <span class="hero__char" aria-hidden="true">观</span><span class="hero__char" aria-hidden="true">澜</span>
       </h1>
       <p class="hero__lede">
-        看清每一台电脑与服务器的运行状态。<br />
-        设备上的 Agent 采集，自己部署的中枢汇聚，<br class="br-wide" />Web、桌面与手机随处查看。
+        看清每一台电脑、服务器与虚拟化宿主机的运行状态。<br />
+        Agent 常驻采集并建立受控双向实时通道，私有中枢按设备组汇聚，<br class="br-wide" />Web、桌面与手机随处观测。
       </p>
       <div class="hero__cta">
         <a class="btn btn--primary" href="/download/">
@@ -39,8 +39,8 @@ const readouts = [
 
     <aside class="hud" aria-label="示意读数">
       <header class="hud__head">
-        <span class="label">GL-01 · 观测单元</span>
-        <span class="label label--teal"><span class="dot dot--live"></span>在线</span>
+        <span class="label">虚拟化集群 / GL-01</span>
+        <span class="label label--teal"><span class="dot dot--live"></span>在线 · 15s 租约</span>
       </header>
       <dl class="hud__list">
         {
@@ -98,14 +98,14 @@ const readouts = [
 
   .hero__in {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
+    grid-template-columns: minmax(0, 1fr) 292px;
     align-items: end;
     gap: 40px;
   }
 
   .hero__copy {
     align-self: center;
-    max-width: 640px;
+    max-width: 660px;
   }
 
   .hero__title {
@@ -147,7 +147,7 @@ const readouts = [
 
   .hero__lede {
     animation-delay: 0.35s;
-    font-size: clamp(1.02rem, 1.35vw, 1.22rem);
+    font-size: clamp(1.02rem, 1.35vw, 1.2rem);
     line-height: 1.8;
     color: var(--bone-2);
   }
@@ -172,7 +172,7 @@ const readouts = [
     align-self: center;
     padding: 16px 18px 14px;
     border: 1px solid var(--line-2);
-    background: linear-gradient(180deg, rgb(15 19 24 / 0.55), rgb(10 13 17 / 0.35));
+    background: linear-gradient(180deg, rgb(15 19 24 / 0.58), rgb(10 13 17 / 0.38));
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     animation: fade 1.4s 0.8s var(--ease) both;
@@ -183,11 +183,12 @@ const readouts = [
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 8px;
   }
 
   .hud__head .label--teal {
     display: inline-flex;
-    gap: 8px;
+    gap: 7px;
     align-items: center;
   }
 
@@ -298,41 +299,27 @@ const readouts = [
 
     .hero__in {
       grid-template-columns: 1fr;
-      align-items: end;
+    }
+
+    .br-wide,
+    .hud,
+    .hero__port {
+      display: none;
     }
 
     .hero__copy {
       align-self: end;
-      position: relative;
-    }
-
-    .hero__copy::before {
-      content: '';
-      position: absolute;
-      inset: -40px calc(var(--gutter) * -1) -24px;
-      z-index: -1;
-      background: linear-gradient(to bottom, transparent, rgb(6 8 11 / 0.78) 30%, rgb(6 8 11 / 0.9));
-      pointer-events: none;
-    }
-
-    .hero__title {
-      font-size: clamp(5.2rem, 30vw, 9rem);
-      margin: 14px 0 12px -0.05em;
-    }
-
-    .hud {
-      display: none;
+      padding-bottom: 12px;
     }
 
     .hero__meta {
-      grid-template-columns: 1fr auto;
+      grid-template-columns: 1fr;
+      justify-items: start;
+      gap: 10px;
+      padding-top: 16px;
     }
 
     .hero__cue {
-      display: none;
-    }
-
-    .br-wide {
       display: none;
     }
   }
