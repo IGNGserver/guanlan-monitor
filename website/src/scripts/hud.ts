@@ -5,8 +5,8 @@
 const SPECS: Record<string, { base: number; amp: number; min: number; max: number; digits: number }> = {
   cpu: { base: 23, amp: 6, min: 3, max: 96, digits: 1 },
   mem: { base: 61, amp: 1.2, min: 40, max: 90, digits: 1 },
+  pool: { base: 64.2, amp: 0.35, min: 52, max: 89, digits: 1 },
   net: { base: 4.8, amp: 1.6, min: 0.2, max: 40, digits: 2 },
-  fan: { base: 1180, amp: 40, min: 600, max: 2600, digits: 0 },
 };
 
 export function initHud(): void {

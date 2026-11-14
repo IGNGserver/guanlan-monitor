@@ -34,7 +34,6 @@ test.describe('首页 · 3D', () => {
     await page.goto('/');
     await expect(page.getByRole('heading', { level: 1, name: '观澜' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
-    // 场景在空闲时加载；软件渲染较慢，给足时间
     await expect(page.locator('html')).toHaveClass(/gl-live/, { timeout: 60_000 });
     await expect(page.locator('[data-stage]')).toHaveClass(/is-live/);
     const drawn = await page.evaluate(() => {
@@ -55,20 +54,18 @@ test.describe('首页 · 3D', () => {
         window.scrollTo(0, el.offsetTop + v * (el.offsetHeight - innerHeight));
       }, p);
     await go(0.5);
-    // 软件 WebGL 会长时间占住主线程，断言放宽时限
     await expect(ana).toHaveClass(/is-stepping/, { timeout: 20_000 });
     await expect(page.locator('[data-step].is-active')).toHaveCount(1);
     await page.locator('[data-rail="6"]').click();
     await expect(page.locator('[data-step="6"]')).toHaveClass(/is-active/, { timeout: 10_000 });
     await expect(page.locator('[data-step="6"] h3')).toHaveText('网络');
   });
-
 });
 
 test.describe('首页 · 交互', () => {
   test.beforeEach(({ page }) => withoutWebGL(page));
 
-  test('数据流：断开链路时本地排队，恢复后补传', async ({ page }) => {
+  test('数据流：常规断网补传 + 实时双向租约与凭据冲突重置', async ({ page }) => {
     await page.goto('/#flow');
     await expect(page.locator('html')).toHaveClass(/no-gl/);
     const cut = page.locator('[data-cut]');
@@ -82,9 +79,18 @@ test.describe('首页 · 交互', () => {
     await expect
       .poll(async () => (await page.locator('[data-queue] b').allTextContents()).reduce((a, b) => a + Number(b), 0), { timeout: 25_000 })
       .toBe(0);
+
+    await page.locator('[data-flow-mode="realtime"]').click();
+    await expect(page.locator('[data-flow]')).toHaveAttribute('data-mode', 'realtime');
+    const conflict = page.locator('[data-conflict]');
+    await expect(conflict).toBeVisible();
+    await conflict.click();
+    await expect(conflict).toHaveAttribute('aria-pressed', 'true');
+    await conflict.click();
+    await expect(conflict).toHaveAttribute('aria-pressed', 'false');
   });
 
-  test('实时面板：间隔、标签页、排序与过期提示', async ({ page }) => {
+  test('实时面板：组内切换、⌘K、排序、容器筛选与过期提示', async ({ page }) => {
     await page.goto('/#live');
     const live = page.locator('[data-live]');
     await live.scrollIntoViewIfNeeded();
@@ -97,15 +103,46 @@ test.describe('首页 · 交互', () => {
     const firstGpu = await page.locator('[data-proc] tr').first().locator('td').nth(4).textContent();
     expect(firstGpu).toMatch(/%$/);
     const lastGpu = await page.locator('[data-proc] tr').last().locator('td').nth(4).textContent();
-    expect(lastGpu).toBe('—'); // 未知值排在已知值之后
+    expect(lastGpu).toBe('—');
 
+    // ⌘K 直达切换至 pve-node-01 进程页并验证 Linux 进程磁盘读写速率
+    await page.locator('[data-cmdk-toggle]').click();
+    await expect(page.locator('[data-cmdk-bar]')).toBeVisible();
+    await page.locator('[data-cmdk-jump="pve:proc"]').click();
+    await expect(page.locator('[data-peer="pve"]')).toHaveAttribute('aria-pressed', 'true');
+    const pveDisk = await page.locator('[data-proc] tr').first().locator('td').nth(5).textContent();
+    expect(pveDisk).toMatch(/B\/s$/);
+
+    // 切回 workstation-01 查看容器与状态筛选
+    await page.locator('[data-peer="ws"]').click();
     await page.getByRole('tab', { name: '容器' }).click();
+    await expect(page.locator('[data-docker] tr')).toHaveCount(6);
+    await page.locator('[data-cfilter="stopped"]').click();
+    await expect(page.locator('[data-docker] tr')).toHaveCount(1);
+    await page.locator('[data-cfilter="all"]').click();
     await expect(page.locator('[data-docker] tr')).toHaveCount(6);
 
     await page.locator('[data-fail]').click();
     await expect(page.locator('[data-pill]')).toHaveAttribute('data-state', /stale|gone/, { timeout: 8_000 });
     await expect(page.locator('[data-pill]')).toHaveAttribute('data-state', 'gone', { timeout: 12_000 });
     await expect(page.locator('[data-pill]')).toHaveAttribute('data-state', 'live', { timeout: 20_000 });
+  });
+
+  test('舰队分组与中枢外部数据库切换', async ({ page }) => {
+    await page.goto('/#fleet');
+    const fleet = page.locator('[data-fleet]');
+    await fleet.scrollIntoViewIfNeeded();
+    await page.locator('[data-group="pve"]').click();
+    await expect(page.locator('[data-group="pve"]')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('[data-fleet-pools]')).toContainText('LVM-thin 元数据');
+
+    await page.locator('[data-group="nas"]').click();
+    await expect(page.locator('[data-attention-count]')).toHaveText('0 项异常');
+
+    const hub = page.locator('[data-hub]');
+    await hub.scrollIntoViewIfNeeded();
+    await page.locator('[data-hub-mode="external"]').click();
+    await expect(hub.getByText('docker-compose.external.yml · 2 app containers + external DB')).toBeVisible();
   });
 
   test('收尾下载按钮直链到产品仓库的 Release 资产', async ({ page }) => {
@@ -143,12 +180,20 @@ test.describe('子页面', () => {
     for (const l of links) expect(l).toMatch(/^https:\/\/github\.com\/IGNGserver\/guanlan-monitor\/releases\//);
   });
 
-  test('部署页：关键配置项与 WebSocket 路径', async ({ page }) => {
+  test('部署页：关键配置项、外部库与 WebSocket 路径', async ({ page }) => {
     await page.goto('/deploy/');
-    for (const k of ['SESSION_SECRET', 'ACCESS_KEY', 'MYSQL_ROOT_PASSWORD', 'MYSQL_PASSWORD', 'REDIS_PASSWORD']) {
+    for (const k of [
+      'SESSION_SECRET',
+      'ACCESS_KEY',
+      'MYSQL_ROOT_PASSWORD',
+      'MYSQL_PASSWORD',
+      'REDIS_PASSWORD',
+      'DSC_TRUSTED_TLS_PROXY_CIDRS',
+    ]) {
       await expect(page.locator('.envt').getByText(k, { exact: true })).toBeVisible();
     }
     await expect(page.getByText('/api/agent/realtime')).toBeVisible();
+    await expect(page.getByText('DSC_DB_MODE=external')).toBeVisible();
   });
 
   test('404 页', async ({ page }) => {

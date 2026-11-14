@@ -9,11 +9,11 @@ const points = [
 ];
 ---
 
-<section id="headless" class="headless section" data-idx="05" aria-labelledby="headless-title">
+<section id="headless" class="headless section" data-idx="06" aria-labelledby="headless-title">
   <div class="wrap">
     <div class="headless__top">
       <header>
-        <p class="eyebrow" data-reveal>§ 05 · 无人值守</p>
+        <p class="eyebrow" data-reveal>§ 06 · 无人值守</p>
         <h2 id="headless-title" class="display" data-reveal style="--d:1">没有桌面，<br />也能装好、<br />配好、报上来。</h2>
       </header>
 
@@ -27,7 +27,7 @@ const points = [
         </div>
         <pre class="term__body" id="term-win" role="tabpanel" aria-labelledby="tt-win" data-term-pane="win"><code>{WIN_SILENT}</code></pre>
         <pre class="term__body" id="term-linux" role="tabpanel" aria-labelledby="tt-linux" data-term-pane="linux" hidden><code>{LINUX_SILENT}</code></pre>
-        <p class="term__foot faint">命令取自产品 README；把 <code>X.Y.Z</code> 换成 Releases 中的版本号，<code>hub.example.com</code> 换成你的中枢地址。</p>
+        <p class="term__foot faint">命令取自 <code>docs/INSTALL.md</code>；把 <code>X.Y.Z</code> 换成 Releases 中的版本号，<code>hub.example.com</code> 换成你的中枢地址。</p>
       </div>
     </div>
 
@@ -57,7 +57,7 @@ const points = [
           ))
         }
       </dl>
-      <p class="cmds__note faint">卸载默认保留机器级配置；只有 <code>--purge</code>（deb）或 <code>/REMOVECONFIG</code>（Windows）才删除。</p>
+      <p class="cmds__note faint">升级与卸载默认保留机器级配置；<code>guanlan-agent update</code> 由完整安装包维护桌面与机器服务，只有 <code>--purge</code>（deb）或 <code>/REMOVECONFIG</code>（Windows）才清除配置。</p>
     </div>
   </div>
 </section>

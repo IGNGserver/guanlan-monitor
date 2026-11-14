@@ -12,6 +12,13 @@ export interface WaveComponent {
   phase: number;
 }
 
+export interface FleetCluster {
+  id: string;
+  label: string;
+  /** [x, y, health]：Blender 平面坐标与健康态（1 = 在线健康 teal，0.5 = 需关注 amber） */
+  nodes: [number, number, number][];
+}
+
 export interface CameraPose {
   distance: number;
   elevation: number;
@@ -27,6 +34,7 @@ export interface Spec {
   seam: number;
   explode: number;
   layers: { id: string; label: string; h: number }[];
+  clusters: FleetCluster[];
   waves: {
     size: number;
     res: number;

@@ -1,14 +1,25 @@
 ---
 import Base from '../layouts/Base.astro';
 import PageHead from '../components/PageHead.astro';
-import { COMPOSE_URL, ENV_EXAMPLE_URL, HUB_ADDRESSES, HUB_PORT, README_URL, REALTIME_DOC_URL } from '../data/product';
+import {
+  CLIENT_UPDATES_DOC_URL,
+  COMPOSE_URL,
+  ENV_EXAMPLE_URL,
+  EXTERNAL_COMPOSE_URL,
+  EXTERNAL_DB_DOC_URL,
+  HUB_ADDRESSES,
+  HUB_PORT,
+  INSTALL_DOC_URL,
+  REALTIME_DOC_URL,
+} from '../data/product';
 
 const env = [
-  ['SESSION_SECRET', '控制台会话签名密钥', true],
-  ['ACCESS_KEY', '网页、Windows / Android 客户端和所有 Agent 共用的唯一访问密钥；升级时即使旧 .env 仍有 AGENT_SHARED_SECRET，也以它为准', true],
-  ['MYSQL_ROOT_PASSWORD', 'MySQL root 密码', true],
-  ['MYSQL_PASSWORD', '应用数据库用户密码', true],
+  ['SESSION_SECRET', '控制台会话签名密钥；修改会使全部 Web 会话立即失效，不影响 Agent', true],
+  ['ACCESS_KEY', '网页、桌面端 / Android 客户端和所有 Agent 共用的唯一访问密钥；升级时即使旧 .env 仍有 AGENT_SHARED_SECRET，也以它为准', true],
+  ['MYSQL_ROOT_PASSWORD', '内置 MySQL root 密码（稳定版要求至少 16 个字符）', true],
+  ['MYSQL_PASSWORD', '应用数据库用户密码（建议使用高强度随机值）', true],
   ['REDIS_PASSWORD', 'Redis 认证密码；REDIS_URL 需配置相同的密码', true],
+  ['DSC_TRUSTED_TLS_PROXY_CIDRS', '外层代理终止 TLS 时，填写 Web 容器实际看到的代理源 IP / CIDR（空格分隔）；默认空列表不信任任何 X-Forwarded-Proto', false],
   ['TRUST_PROXY', '只有当 server 仅能从受信反向代理访问时才设为 true，否则保持 false', false],
   ['SESSION_COOKIE_SECURE', '默认 true；仅在明确受信的 HTTP 网络中改为 false', false],
   ['AGENT_REQUIRE_HTTPS', '默认 true；仅在明确受信的 HTTP 网络中改为 false', false],
@@ -18,18 +29,19 @@ const toc = [
   ['prep', '准备'],
   ['env', '配置 .env'],
   ['up', '启动'],
+  ['external', '使用已有 MySQL / Redis'],
   ['proxy', '反向代理与 TLS'],
   ['connect', '接入设备'],
   ['ops', '升级与备份'],
 ];
 ---
 
-<Base title="部署中枢" path="/deploy/" description="用 Docker Compose 在自己的服务器上部署观澜中枢：配置、启动、反向代理与接入设备。">
+<Base title="部署中枢" path="/deploy/" description="用 Docker Compose 在自己的服务器上部署观澜中枢：内置全栈、外部数据库、TLS 转发白名单与接入设备。">
   <PageHead
     index="HUB"
     eyebrow="部署中枢"
     title="部署中枢"
-    lede={`中枢以 Docker Compose 运行，默认只拉取 GitHub Container Registry 中已发布的镜像。部署完成后，所有客户端与 Agent 都连接同一个公开入口（默认端口 ${HUB_PORT}）。`}
+    lede={`中枢以 Docker Compose 运行，默认只拉取 GitHub Container Registry 中已发布的镜像。既可起齐四容器全栈，也可连接已有 MySQL 与 Redis；所有客户端与 Agent 共用同一个公开入口（默认端口 ${HUB_PORT}）。`}
   >
     <nav class="toc" slot="aside" aria-label="本页目录">
       <p class="label">本页</p>
@@ -49,12 +61,12 @@ const toc = [
       <p class="step__n mono">01</p>
       <div>
         <h2>准备</h2>
-        <p>一台能运行 Docker 与 Docker Compose 的服务器。从产品仓库取得 <a href={COMPOSE_URL} rel="noopener"><code>docker-compose.yml</code></a> 与 <a href={ENV_EXAMPLE_URL} rel="noopener"><code>.env.example</code></a>，放在同一目录。</p>
+        <p>一台能运行 Docker 与 Docker Compose 的服务器。从产品仓库取得 <a href={COMPOSE_URL} rel="noopener"><code>docker-compose.yml</code></a>（或外部库拓扑的 <a href={EXTERNAL_COMPOSE_URL} rel="noopener"><code>docker-compose.external.yml</code></a>）与 <a href={ENV_EXAMPLE_URL} rel="noopener"><code>.env.example</code></a>，放在同一目录。</p>
         <div class="svc">
-          <div><span class="mono amber">web</span><span>控制台，映射 <code>{HUB_PORT}:3000</code>，并把 <code>/api/**</code> 代理到 server</span></div>
+          <div><span class="mono amber">web</span><span>控制台（Nginx），映射 <code>{HUB_PORT}:3000</code>，固定将 <code>/api/**</code> 转发至 Compose 内的 <code>server:4000</code></span></div>
           <div><span class="mono amber">server</span><span>中枢服务（容器内 4000 端口，不对外），数据目录挂载 <code>./data</code></span></div>
-          <div><span class="mono amber">redis</span><span>Redis 7.4，开启 AOF 与密码认证</span></div>
-          <div><span class="mono amber">mysql</span><span>MySQL 8.4，utf8mb4</span></div>
+          <div><span class="mono amber">redis</span><span>Redis 7.4，开启 AOF 与密码认证，承载实时状态与可选 L2 缓存</span></div>
+          <div><span class="mono amber">mysql</span><span>MySQL 8.4，utf8mb4，存储设备组、历史趋势与流量日历</span></div>
         </div>
       </div>
     </section>
@@ -64,7 +76,7 @@ const toc = [
       <div>
         <h2>配置 .env</h2>
         <pre class="code"><code>cp .env.example .env</code></pre>
-        <p>至少修改标记为「必须」的五项。生产环境默认通过 TLS 反向代理访问控制台。</p>
+        <p>内置全栈至少修改标记为「必须」的五项。生产环境默认通过 TLS 反向代理访问控制台；Web 登录会话默认有效 90 天并自动滑动续期（上限 365 天）。</p>
         <div class="envt" role="table" aria-label=".env 关键项">
           {
             env.map(([k, v, must]) => (
@@ -93,23 +105,45 @@ const toc = [
       </div>
     </section>
 
-    <section id="proxy" class="step">
+    <section id="external" class="step">
       <p class="step__n mono">04</p>
+      <div>
+        <h2>使用已有 MySQL 与 Redis</h2>
+        <p>服务器已有供多个项目共用的 MySQL 8.0+ 与开启认证的 Redis 时，可使用只包含 <code>web</code> 与 <code>server</code> 的 <a href={EXTERNAL_COMPOSE_URL} rel="noopener"><code>docker-compose.external.yml</code></a>：</p>
+        <pre class="code"><code><span class="c"># 在 .env 中设置：</span>
+DSC_DB_MODE=external
+DSC_INSTANCE_ID=hub-home
+MYSQL_URL=mysql://guanlan:...@db.internal:3306/guanlan_home
+REDIS_URL=rediss://:...@redis.internal:6379/3
+
+<span class="k">DSC_VERSION</span>=&lt;版本号&gt; docker compose -f docker-compose.external.yml pull
+<span class="k">DSC_VERSION</span>=&lt;版本号&gt; docker compose -f docker-compose.external.yml up -d</code></pre>
+        <ul class="list">
+          <li><strong>独立数据库与单写者锁</strong>：每个中枢必须独占一个 MySQL database；启动时校验 <code>hub_meta.instance_id</code> 并持有 MySQL advisory lock，拒绝多实例同时写同一库。</li>
+          <li><strong>Redis 命名空间隔离</strong>：外部模式要求非 <code>default</code> 的 <code>DSC_INSTANCE_ID</code>，所有键统一带 <code>dsc:&lt;instance-id&gt;</code> 前缀；开启 <code>DSC_REDIS_CACHE_ENABLED=true</code> 时建议配合 <code>volatile-lru</code>。</li>
+          <li>数据库与 Redis 应保持在内网或 VPN 内，不要暴露到公网，也不要与会重声明内置数据库服务的覆盖文件混用。</li>
+        </ul>
+        <a class="more" href={EXTERNAL_DB_DOC_URL} rel="noopener">外部数据库契约与迁移步骤 ↗</a>
+      </div>
+    </section>
+
+    <section id="proxy" class="step">
+      <p class="step__n mono">05</p>
       <div>
         <h2>反向代理与 TLS</h2>
         <ul class="list">
           <li>默认建议 HTTPS。<code>SESSION_COOKIE_SECURE</code> 与 <code>AGENT_REQUIRE_HTTPS</code> 默认开启；只有在明确受信的网络中才改用 HTTP。</li>
+          <li>外层代理终止 TLS 并以 HTTP 转发到 Web 容器时，必须在 <code>DSC_TRUSTED_TLS_PROXY_CIDRS</code> 中填入 Web 容器实际看到的代理源 IP / CIDR，并由该代理覆盖 <code>X-Forwarded-Proto</code>；不要填入客户端网段或共享 NAT 地址。</li>
           <li>只有当 server 仅能从受信代理访问时才设置 <code>TRUST_PROXY=true</code>。</li>
           <li>实时查看依赖 Agent 主动连接 <code>/api/agent/realtime</code>：外部入口、反向代理或 FRP / NPS 需要允许该路径的 WebSocket Upgrade，空闲超时应大于 20 秒。</li>
-          <li>使用 frps 时，把内网与外网端口同时指向 <code>{HUB_PORT}</code>。</li>
-          <li>实时通道首版只支持单个中枢进程 / 副本，不能直接横向复制。</li>
+          <li>中枢为单写者架构，实时通道与数据库写锁均面向单副本中枢进程，不能直接横向多副本复制。</li>
         </ul>
         <a class="more" href={REALTIME_DOC_URL} rel="noopener">实时通道的完整约束 ↗</a>
       </div>
     </section>
 
     <section id="connect" class="step">
-      <p class="step__n mono">05</p>
+      <p class="step__n mono">06</p>
       <div>
         <h2>接入设备</h2>
         <p>在各终端填写同一个公开入口与 <code>ACCESS_KEY</code>。不要把 Docker 容器内部的 <code>4000</code> 端口填入客户端。</p>
@@ -123,20 +157,23 @@ const toc = [
             ))
           }
         </dl>
-        <p>然后 <a href="/download/">下载客户端</a>，或在无桌面的机器上用静默参数安装。</p>
+        <p>然后 <a href="/download/">下载客户端</a>，或在无桌面的机器上用静默参数安装。若重装系统导致设备实时凭据冲突，可在控制台设备详情页显式重置实时凭据。</p>
       </div>
     </section>
 
     <section id="ops" class="step">
-      <p class="step__n mono">06</p>
+      <p class="step__n mono">07</p>
       <div>
         <h2>升级与备份</h2>
         <ul class="list">
-          <li>升级：把 <code>DSC_VERSION</code> 换成新的固定版本，重新 <code>pull</code> 与 <code>up -d</code>。</li>
-          <li>备份：<code>mysql-data</code>、<code>redis-data</code> 两个数据卷与 <code>./data</code> 目录（其中保存实时通道的设备凭据哈希）。</li>
-          <li>Windows 端用 setup / update 包升级，Linux 端用新的 .deb；两种方式都会保留机器级配置。</li>
+          <li>中枢升级：把 <code>DSC_VERSION</code> 换成新的固定版本，重新 <code>pull</code> 与 <code>up -d</code>。</li>
+          <li>备份：内置模式备份 <code>mysql-data</code>、<code>redis-data</code> 与 <code>./data</code>；外部模式备份外部 MySQL 库与中枢本机的 <code>./data</code>（内含实时通道设备凭据哈希与本地配置）。</li>
+          <li>设备端升级：桌面端、Android 或无桌面机器的 <code>guanlan-agent update --channel stable|preview</code> 直接读取仓库静态更新源，流式校验字节数与 SHA-256 后调用系统安装器升级，保留机器级配置。</li>
         </ul>
-        <a class="more" href={README_URL} rel="noopener">产品 README ↗</a>
+        <p class="doc__links">
+          <a class="more" href={INSTALL_DOC_URL} rel="noopener">部署与安装指南 ↗</a>
+          <a class="more" href={CLIENT_UPDATES_DOC_URL} rel="noopener">设备更新机制 ↗</a>
+        </p>
       </div>
     </section>
   </article>
@@ -146,7 +183,7 @@ const toc = [
   .toc {
     display: grid;
     gap: 2px;
-    min-width: 200px;
+    min-width: 210px;
     padding: 18px 20px;
     border: 1px solid var(--line-2);
     background: rgb(10 13 17 / 0.8);
@@ -248,7 +285,7 @@ const toc = [
 
   .envt div {
     display: grid;
-    grid-template-columns: 220px minmax(0, 1fr) 56px;
+    grid-template-columns: 248px minmax(0, 1fr) 56px;
     gap: 16px;
     padding: 12px 16px;
     background: var(--void);
@@ -302,6 +339,12 @@ const toc = [
     display: inline-block;
     margin-top: 18px;
     font-size: 14px;
+  }
+
+  .doc__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
   }
 
   .addrs {

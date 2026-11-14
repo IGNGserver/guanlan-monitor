@@ -9,21 +9,21 @@ const platforms = [
   {
     id: 'windows',
     name: 'Windows',
-    intro: '安装后打开「观澜」，在「配置」页填写中枢地址、访问密钥和设备名称。应用运行后显示在系统托盘：左键打开主界面，右键查看状态或退出。采集与上报由机器级服务负责，关闭窗口或注销登录都不会中断。',
+    intro: '安装后打开「观澜」，在统一的「连接与本机 Agent」页填写中枢地址、访问密钥和设备名称。应用常驻系统托盘，采集与上报由机器级服务负责，关闭窗口或注销登录都不会中断；后续可在界面或用 guanlan-agent update --channel stable|preview 直连静态更新源校验升级。',
     silent: WIN_SILENT,
     lang: 'PowerShell',
   },
   {
     id: 'linux',
     name: 'Linux',
-    intro: '适用于 Ubuntu / Debian amd64。安装后提供 /usr/bin/guanlan 桌面端与 /usr/bin/guanlan-agent 命令；系统级 guanlan-agent.service 随安装启用，无桌面会话也会持续采集与上报。首次打开桌面端可在「连接」页填写中枢地址和访问密钥。Fedora / RPM、Arch 等发行版目前没有原生包，可用任意进程管理器运行包内的 device-state-console-agent。',
+    intro: '适用于 Ubuntu / Debian amd64。安装后提供 /usr/bin/guanlan 桌面端与 /usr/bin/guanlan-agent 命令；系统级 guanlan-agent.service 随安装启用，无桌面会话也会持续采集与上报。支持 guanlan-agent update 校验 SHA-256 升级并保留 /etc/guanlan 配置。Fedora / RPM、Arch 等发行版目前没有原生包，可用任意进程管理器运行包内的 device-state-console-agent。',
     silent: LINUX_SILENT,
     lang: 'bash',
   },
   {
     id: 'android',
     name: 'Android',
-    intro: '安装后首次打开时填写与 Windows 端相同的中枢地址和查看密钥。客户端支持 http:// 与 https://；未配置 TLS 时仅建议在可信局域网或受控内网穿透中使用 HTTP。Android 提示未知来源安装时，需要由用户确认允许该来源。',
+    intro: '安装后填写与桌面端相同的中枢地址和访问密钥。支持 One UI 数据优先总览、「关注」异常页、平板横屏侧栏、进程与容器一级实时页，以及三款主屏幕小组件（舰队健康、单机仪表盘、流量统计）。客户端支持 https:// 与可信网络 http://，升级时严格校验包名、递增 versionCode 与 IGNGserver 签名。',
   },
 ] as const;
 const byPlatform = (p: string) => ASSETS.filter((a) => a.platform.toLowerCase() === p);
@@ -50,7 +50,7 @@ const byPlatform = (p: string) => ASSETS.filter((a) => a.platform.toLowerCase() 
       <div class="wrap">
         <p class="notice">
           <span class="dot dot--amber" />
-          观澜目前以 GitHub prerelease（测试版通道）持续发布。版本说明注明测试版不更新 latest、不用于生产部署；请先在非生产环境验证。
+          当前最新构建为 GitHub prerelease（测试版通道），不更新 latest 也不直接用于生产部署；生产环境可在右上角「全部版本」中选用最近正式稳定版（如 v3.0.172）。
         </p>
       </div>
     )

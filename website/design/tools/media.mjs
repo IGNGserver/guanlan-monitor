@@ -42,11 +42,11 @@ body{margin:0;width:1200px;height:630px;background:#06080b;color:#e9e6df;font-fa
 .e{font-family:'Geist Mono Variable';font-size:16px;letter-spacing:.18em;color:#a9a69e;display:flex;align-items:center;gap:14px}
 .e:before{content:'';width:32px;height:1px;background:#ffa64a}
 h1{margin:22px 0 18px -6px;font-weight:200;font-size:150px;line-height:1;letter-spacing:-.03em}
-p{margin:0;font-size:26px;color:#a9a69e;line-height:1.6}
-.m{position:absolute;left:72px;bottom:44px;font-family:'Geist Mono Variable';font-size:15px;color:#75756f;letter-spacing:.12em}
+p{margin:0;font-size:25px;color:#a9a69e;line-height:1.6}
+.m{position:absolute;left:72px;bottom:44px;font-family:'Geist Mono Variable';font-size:14.5px;color:#75756f;letter-spacing:.1em}
 </style></head><body><div class="bg"></div><div class="fade"></div>
-<div class="c"><div class="e">GUANLAN · 私有部署</div><h1>观澜</h1><p>电脑与服务器运行状态监控<br>Web · Windows · GNOME Linux · Android</p></div>
-<div class="m">CPU · 内存 · 磁盘 · 网络 · 显卡 · 风扇</div></body></html>`;
+<div class="c"><div class="e">GUANLAN · 私有部署</div><h1>观澜</h1><p>舰队与单机运行状态 · 实时进程与容器<br>Web · Windows · GNOME Linux · Android</p></div>
+<div class="m">CPU · 内存 · 磁盘与存储池 · 网络 · 显卡 · 风扇</div></body></html>`;
 const tmp = out('node_modules', '.og.html');
 await writeFile(tmp, html);
 const { chromium } = await import(pathToFileURL(out('node_modules/@playwright/test/index.mjs')).href);

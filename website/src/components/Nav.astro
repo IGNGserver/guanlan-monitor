@@ -11,6 +11,7 @@ const links = [
   { href: home ? '#anatomy' : '/#anatomy', label: '剖面' },
   { href: home ? '#flow' : '/#flow', label: '数据流' },
   { href: home ? '#live' : '/#live', label: '实时查看' },
+  { href: home ? '#fleet' : '/#fleet', label: '舰队分组' },
   { href: home ? '#clients' : '/#clients', label: '终端' },
   { href: '/deploy/', label: '部署中枢', current: path === '/deploy/' },
 ];
@@ -57,7 +58,7 @@ const links = [
         </a>
       ))
     }
-    <a href="/download/" data-close><span class="mono faint">06</span>下载</a>
+    <a href="/download/" data-close><span class="mono faint">07</span>下载</a>
     <a href={REPO_URL} rel="noopener" data-close><span class="mono faint">↗</span>GitHub</a>
   </div>
 </header>
@@ -250,7 +251,7 @@ const links = [
     width: 20px;
   }
 
-  @media (max-width: 960px) {
+  @media (max-width: 1040px) {
     .nav__links,
     .nav__code {
       display: none;

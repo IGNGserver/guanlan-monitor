@@ -1,7 +1,7 @@
 /**
  * 滚动导演：把页面滚动位置翻译成 StageState，交给 Observatory 渲染。
  *
- *   #hero      组装态，悬在海面之上；向下滚动时拉远、剖开
+ *   #hero      组装态，悬在海面与舰队分组信标之上；向下滚动时拉远、剖开
  *   #anatomy   粘性区段，自上而下逐层聚焦（观测窗 → 网络）
  *   中间各节    舞台淡出并停止渲染
  *   #get       收尾：俯视观测窗，舞台重新出现
@@ -59,7 +59,7 @@ export function boot(): void {
       .then(async ({ Observatory }) => {
         const obs = new Observatory(canvas, { low });
         await obs.load('/models/observatory.glb');
-        run(obs, stage);
+        run(obs, stage, coarse);
       })
       .catch((err) => {
         console.warn('[observatory] 场景未能启动，保留静帧：', err);
@@ -104,7 +104,7 @@ function initStaticAnatomy() {
   document.querySelectorAll('[data-step]').forEach((el) => el.classList.add('is-active'));
 }
 
-function run(obs: Observatory, stage: HTMLElement) {
+function run(obs: Observatory, stage: HTMLElement, coarse: boolean) {
   const hero = document.getElementById('hero');
   const ana = document.getElementById('anatomy');
   const fin = document.getElementById('get');
@@ -116,6 +116,9 @@ function run(obs: Observatory, stage: HTMLElement) {
   let vw = window.innerWidth;
   let vh = window.innerHeight;
   let wide = vw >= 900;
+  let px = 0;
+  let py = 0;
+
   const resize = () => {
     vw = window.innerWidth;
     vh = window.innerHeight;
@@ -124,6 +127,17 @@ function run(obs: Observatory, stage: HTMLElement) {
   };
   resize();
   window.addEventListener('resize', resize);
+
+  if (!coarse) {
+    window.addEventListener(
+      'pointermove',
+      (e) => {
+        px = (e.clientX / Math.max(1, vw) - 0.5) * 2;
+        py = (e.clientY / Math.max(1, vh) - 0.5) * 2;
+      },
+      { passive: true },
+    );
+  }
 
   // 关键帧（与 design/observatory.json 的相机定义对齐）
   const H = SPEC.camera.hero;
@@ -198,11 +212,13 @@ function run(obs: Observatory, stage: HTMLElement) {
     let state = heroState();
     let opacity = 1;
     let overviewT = 0;
+    let parallax = 1;
 
     if (hr) {
       const p = clamp(-hr.top / hr.height);
       state = mixState(heroState(), overview(), smooth(0.05, 1, p));
       overviewT = smooth(0.6, 1, p);
+      parallax = 1 - smooth(0.15, 0.85, p);
     }
     if (ar && ar.top <= 0) {
       const total = ar.height - vh;
@@ -215,12 +231,22 @@ function run(obs: Observatory, stage: HTMLElement) {
       state = mixState(overview(), focusState(f, p), smooth(0.0, 0.07, p));
       overviewT = 1 - smooth(0.02, 0.07, p);
       opacity = clamp(ar.bottom / vh / 0.55);
+      parallax = 0;
     }
     if (fr && fr.top < vh) {
       const t = clamp(1 - fr.top / vh);
       state = finale();
       opacity = smooth(0.15, 0.85, t);
       overviewT = 0;
+      parallax = 0.7;
+    }
+
+    if (!coarse && parallax > 0) {
+      state = {
+        ...state,
+        az: state.az + px * 2.8 * parallax,
+        el: state.el - py * 1.4 * parallax,
+      };
     }
     return { state, opacity, overviewT };
   }

@@ -1,23 +1,22 @@
 """观澜「观测单元 GL-01」—— Blender 构建脚本（设计源资产）。
 
 由 design/observatory.json 生成一件七层同轴的精密仪器：每一层对应观澜实际采集的一类硬件
-（网络 / 磁盘 / 内存 / 处理器 / 显卡 / 风扇），顶层是带脉冲波形的观测窗（呼应产品图标）。
+（网络 / 磁盘与存储池 / 内存 / 处理器 / 显卡 / 风扇），顶层是带脉冲波形与实时租约弧的观测窗；
+海面点阵之上同时生成舰队分组星群信标（与站点 Three.js 场景同一坐标）。
 
 产物：
   public/models/observatory.glb      站点 Three.js 场景加载的模型（经 gltfpack 压缩，见 design/DESIGN.md）
   design/renders/*.png               Cycles 渲染母版 → 首屏静帧、社交卡片
 
-用法（Blender 5.2）：
-  blender -b -P design/blender/build_observatory.py -- --spec design/observatory.json --glb out.glb
-或在已连接的 Blender 会话里先定义全局 SPEC（dict）再执行本文件内容，然后调用 build()。
-
-约定：每层以一个 Empty（L_<id>）为根，几何按层内局部坐标（底面 z = 0）构建，Empty 放在组装位置。
-站点据此只需沿竖直轴平移各层即可做「爆炸视图」；可动部件（fan_rotor、disk_platter）是单独的 Empty。
-同一层同一材质的零件合并为一个网格，控制 draw call 数量。
+用法（Blender 4.2 LTS / 5.x）：
+  blender -b -P design/blender/build_observatory.py -- \\
+    --spec design/observatory.json --glb observatory_raw.glb \\
+    --renders masters --samples 96 --blend design/blender/guanlan_observatory.blend
 """
 
 import json
 import math
+import os
 import sys
 
 import bmesh
@@ -29,10 +28,14 @@ TAU = math.tau
 
 # ---------------------------------------------------------------- spec / util
 
+def cli_args():
+    return sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+
+
 def load_spec():
     if "SPEC" in globals():
         return globals()["SPEC"]
-    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    argv = cli_args()
     path = argv[argv.index("--spec") + 1] if "--spec" in argv else "design/observatory.json"
     with open(path, encoding="utf-8") as fh:
         return json.load(fh)
@@ -77,19 +80,19 @@ def make_materials(pal):
         return mat
 
     return {
-        "anodized": principled("anodized", pal["anodized"], 1.0, 0.36),
-        "graphite": principled("graphite", pal["graphite"], 0.55, 0.48),
+        "anodized": principled("anodized", pal["anodized"], 1.0, 0.34),
+        "graphite": principled("graphite", pal["graphite"], 0.6, 0.44),
         "steel": principled("steel", pal["steel"], 1.0, 0.2),
-        "alu": principled("alu", "#8c939c", 1.0, 0.3),
-        "mirror": principled("mirror", "#d9dee5", 1.0, 0.05),
-        "copper": principled("copper", pal["copper"], 1.0, 0.28),
+        "alu": principled("alu", "#939aa4", 1.0, 0.28),
+        "mirror": principled("mirror", "#dde2e9", 1.0, 0.045),
+        "copper": principled("copper", pal["copper"], 1.0, 0.26),
         "silicon": principled("silicon", "#1d2230", 0.75, 0.12, coat=1.0),
         "pcb": principled("pcb", "#0e1315", 0.0, 0.55),
         "black": principled("black", "#08090b", 0.0, 0.62),
-        "tick": principled("tick", pal["bone"], 0.0, 0.45, emit=pal["bone"], strength=0.6),
-        "reticle": principled("reticle", pal["bone"], 0.0, 0.5, emit=pal["bone"], strength=0.18),
-        "amber": principled("amber", pal["amber"], 0.0, 0.4, emit=pal["amber"], strength=5.0),
-        "teal": principled("teal", pal["teal"], 0.0, 0.4, emit=pal["teal"], strength=8.0),
+        "tick": principled("tick", pal["bone"], 0.0, 0.45, emit=pal["bone"], strength=0.65),
+        "reticle": principled("reticle", pal["bone"], 0.0, 0.5, emit=pal["bone"], strength=0.2),
+        "amber": principled("amber", pal["amber"], 0.0, 0.4, emit=pal["amber"], strength=5.2),
+        "teal": principled("teal", pal["teal"], 0.0, 0.4, emit=pal["teal"], strength=8.2),
         "glass": principled("glass", "#ffffff", 0.0, 0.04, transmission=1.0, ior=1.45),
     }
 
@@ -189,6 +192,7 @@ def layer_net(b, h):
     a = b.bm("net", "anodized")
     add_annulus(a, 0.86, 1.0, 0.0, 0.07)
     add_annulus(a, 0.86, 1.0, 0.17, h)
+    add_annulus(b.bm("net", "steel"), 0.992, 1.002, 0.068, 0.074)
     g = b.bm("net", "graphite")
     add_annulus(g, 0.86, 0.962, 0.07, 0.17)
     add_cyl(g, 0.86, 0.2, 0.0)
@@ -198,12 +202,18 @@ def layer_net(b, h):
     for i in range(24):
         ang = TAU * i / 24
         add_box(ports, 0.03, 0.075, 0.05, polar(0.962, ang, 0.115))
-        led = "teal" if i % 4 == 0 else "amber"
+        led = "teal" if i % 3 == 0 else "amber"
         add_box(b.bm("net", led, bevel=False), 0.012, 0.018, 0.01, polar(0.968, ang, 0.153))
     for i in range(6):
         ang = TAU * i / 6 + TAU / 12
         add_box(b.bm("net", "steel"), 0.2, 0.08, 0.04, polar(0.56, ang, 0.22))
         add_box(b.bm("net", "amber", bevel=False), 0.014, 0.014, 0.008, polar(0.67, ang, 0.24))
+    # 四组实时双向通道（/api/agent/realtime）收发模块：青色双灯带表达 15 秒 challenge/pong 租约
+    for i in range(4):
+        ang = TAU * i / 4
+        add_box(b.bm("net", "alu"), 0.14, 0.095, 0.036, polar(0.76, ang, 0.218))
+        add_box(b.bm("net", "teal", bevel=False), 0.09, 0.01, 0.006, polar(0.76, ang, 0.238) @ M(0, -0.022, 0))
+        add_box(b.bm("net", "teal", bevel=False), 0.09, 0.01, 0.006, polar(0.76, ang, 0.238) @ M(0, 0.022, 0))
 
 
 def layer_disk(b, h):
@@ -211,17 +221,31 @@ def layer_disk(b, h):
         a0 = TAU * i / 6
         add_annulus(b.bm("disk", "anodized"), 0.95, 1.0, 0.0, h, a0=a0, a1=a0 + math.radians(42))
     add_cyl(b.bm("disk", "graphite"), 0.95, 0.025, 0.0)
-    add_cyl(b.bm("disk/platter", "mirror"), 0.8, 0.012, 0.07)
-    add_cyl(b.bm("disk/platter", "steel"), 0.13, 0.06, 0.04)
-    add_annulus(b.bm("disk/platter", "steel"), 0.13, 0.17, 0.082, 0.09)
+    # 旋转磁盘碟片与磁头臂（物理盘）
+    add_cyl(b.bm("disk/platter", "mirror"), 0.78, 0.012, 0.064)
+    add_cyl(b.bm("disk/platter", "steel"), 0.13, 0.06, 0.038)
+    add_annulus(b.bm("disk/platter", "steel"), 0.13, 0.17, 0.078, 0.086)
     pivot = Vector((0.7, -0.45, 0.0))
     tip = Vector((0.12, -0.24, 0.0))
     d = tip - pivot
     ang = math.atan2(d.y, d.x)
     mid = (pivot + tip) / 2
     add_cyl(b.bm("disk", "steel"), 0.07, 0.08, 0.03, matrix=M(pivot.x, pivot.y))
-    add_box(b.bm("disk", "steel"), d.length, 0.05, 0.012, M(mid.x, mid.y, 0.092, rz=ang))
-    add_box(b.bm("disk", "amber", bevel=False), 0.04, 0.03, 0.01, M(tip.x, tip.y, 0.087, rz=ang))
+    add_box(b.bm("disk", "steel"), d.length, 0.05, 0.012, M(mid.x, mid.y, 0.09, rz=ang))
+    add_box(b.bm("disk", "amber", bevel=False), 0.04, 0.03, 0.01, M(tip.x, tip.y, 0.085, rz=ang))
+
+    # 对侧扇区：虚拟化宿主机存储池阵列模块（PVE LVM-thin / ZFS / NVMe 阵列托架与水位刻度）
+    sled_alu = b.bm("disk", "alu")
+    sled_dark = b.bm("disk", "graphite")
+    for k in range(5):
+        sa = math.radians(74 + k * 37)
+        add_box(sled_dark, 0.24, 0.105, 0.038, polar(0.815, sa, 0.114))
+        for f in (-0.032, 0.0, 0.032):
+            add_box(sled_alu, 0.21, 0.012, 0.012, polar(0.815, sa, 0.138) @ M(0, f, 0))
+        # 在线池状态点（青）+ 容量水位刻度条（琥珀）
+        add_box(b.bm("disk", "teal", bevel=False), 0.014, 0.018, 0.008, polar(0.922, sa, 0.136) @ M(0, -0.028, 0))
+        fill = 0.08 + (k % 3) * 0.038
+        add_box(b.bm("disk", "amber", bevel=False), fill, 0.008, 0.006, polar(0.75 + fill / 2, sa, 0.146) @ M(0, 0.028, 0))
 
 
 def layer_mem(b, h):
@@ -231,11 +255,13 @@ def layer_mem(b, h):
     add_cyl(b.bm("mem", "graphite"), 0.96, 0.02, 0.0)
     add_cyl(b.bm("mem", "anodized"), 0.3, 0.3, 0.02)
     add_annulus(b.bm("mem", "teal", bevel=False), 0.3, 0.318, 0.26, 0.268)
+    latches = b.bm("mem", "steel")
     for i in range(16):
         ang = TAU * i / 16
         add_box(b.bm("mem", "graphite"), 0.5, 0.022, 0.27, polar(0.61, ang, 0.165))
         add_box(b.bm("mem", "amber", bevel=False), 0.46, 0.006, 0.006, polar(0.61, ang, 0.303))
         add_box(b.bm("mem", "copper", bevel=False), 0.46, 0.026, 0.014, polar(0.61, ang, 0.037))
+        add_box(latches, 0.024, 0.034, 0.075, polar(0.875, ang, 0.26))
         chips = b.bm("mem", "black", bevel=False)
         for k in range(6):
             r = 0.4 + k * 0.08
@@ -252,6 +278,11 @@ def layer_cpu(b, h):
     for i in range(96):
         add_box(traces, 0.44, 0.006, 0.004, polar(0.7, TAU * i / 96, 0.042))
     add_box(b.bm("cpu", "pcb"), 0.66, 0.66, 0.03, M(z=0.055))
+    # 扣具压框（提亮深色封装轮廓）
+    ilm = b.bm("cpu", "steel")
+    for s in (-0.275, 0.275):
+        add_box(ilm, 0.58, 0.028, 0.016, M(0, s, 0.078))
+        add_box(ilm, 0.028, 0.52, 0.016, M(s, 0, 0.078))
     add_box(b.bm("cpu", "amber", bevel=False), 0.44, 0.44, 0.006, M(z=0.073))
     cells = b.bm("cpu", "silicon")
     for ix in range(4):
@@ -271,15 +302,24 @@ def layer_gpu(b, h):
         add_box(fins, 0.5, 0.01, h - 0.04, polar(0.72, TAU * i / 72, h / 2))
     for R, z in ((0.6, 0.08), (0.76, 0.15), (0.9, 0.22)):
         add_torus(b.bm("gpu", "copper", bevel=False), R, 0.018, z)
+    # 外缘多引擎负载导光柱（呼应多显卡实例与进程级最忙 GPU 引擎采样）
+    shroud = b.bm("gpu", "anodized")
+    glow = b.bm("gpu", "amber", bevel=False)
+    for i in range(6):
+        ang = TAU * i / 6
+        add_box(shroud, 0.032, 0.09, h - 0.04, polar(0.982, ang, h / 2))
+        add_box(glow, 0.01, 0.048, h * 0.52, polar(0.996, ang, h / 2))
 
 
 def layer_fan(b, h):
     add_annulus(b.bm("fan", "anodized"), 0.92, 1.0, 0.0, h)
+    add_annulus(b.bm("fan", "alu"), 0.916, 0.936, h - 0.014, h)
     g = b.bm("fan", "graphite")
     for i in range(4):
         add_box(g, 0.75, 0.03, 0.015, polar(0.555, TAU * i / 4 + TAU / 8, 0.0075))
     add_annulus(g, 0.5, 0.53, 0.0, 0.015)
     add_cyl(b.bm("fan/rotor", "graphite"), 0.18, 0.13, 0.025)
+    add_annulus(b.bm("fan/rotor", "alu"), 0.172, 0.186, 0.138, 0.154)
     add_cyl(b.bm("fan/rotor", "steel"), 0.12, 0.01, 0.155)
     blades = b.bm("fan/rotor", "graphite")
     for i in range(9):
@@ -301,12 +341,17 @@ def layer_lens(b, h, spec):
         add_annulus(reticle, r, r + 0.0025, 0.02, 0.022)
     add_box(reticle, 1.44, 0.0025, 0.002, M(z=0.021))
     add_box(reticle, 0.0025, 1.44, 0.002, M(z=0.021))
-    add_cyl(b.bm("lens", "teal", bevel=False), 0.02, 0.01, h, matrix=M(*(0.94 * Vector((math.cos(0.9), math.sin(0.9), 0)))))
+    teal = b.bm("lens", "teal", bevel=False)
+    add_cyl(teal, 0.022, 0.01, h, matrix=M(*(0.94 * Vector((math.cos(0.9), math.sin(0.9), 0)))))
+    # 外圈三段青色租约刻度弧，呼应 15 秒实时会话租约
+    for k in range(3):
+        a0 = 0.9 + 0.16 + k * 0.22
+        add_annulus(teal, 0.935, 0.948, h + 0.001, h + 0.006, seg=96, a0=a0, a1=a0 + 0.13)
 
     # 脉冲波形：与产品图标同一走势，悬在观测窗中央
     curve = bpy.data.curves.new("pulse_curve", "CURVE")
     curve.dimensions = "3D"
-    curve.bevel_depth = 0.011
+    curve.bevel_depth = 0.0115
     curve.bevel_resolution = 4
     curve.use_fill_caps = True
     spline = curve.splines.new("POLY")
@@ -381,7 +426,8 @@ def build():
             bm.free()
             me.materials.append(mats[mname])
             me.shade_smooth()
-            me.set_sharp_from_angle(angle=math.radians(32))
+            if hasattr(me, "set_sharp_from_angle"):
+                me.set_sharp_from_angle(angle=math.radians(32))
             ob = bpy.data.objects.new(name, me)
             ob.parent = parent
             col.objects.link(ob)
@@ -410,10 +456,10 @@ def wave_height(w, x, y, t=0.0):
 
 
 def build_sea():
-    """海面点阵（仅用于 Blender 静帧；站点端由着色器实时计算）。"""
+    """海面点阵与舰队星群信标（仅用于 Blender 静帧；站点端由着色器实时计算）。"""
     spec = load_spec()
     w = spec["waves"]
-    for name in ("sea",):
+    for name in ("sea", "sea_beacons_teal", "sea_beacons_amber", "sea_beacon_lines"):
         if name in bpy.data.objects:
             bpy.data.objects.remove(bpy.data.objects[name])
     n, size = w["res"], w["size"]
@@ -462,7 +508,9 @@ def build_sea():
     nt.links.new(fade.outputs["Result"], emit.inputs["Strength"])
     nt.links.new(emit.outputs["Emission"], out.inputs["Surface"])
 
-    tree = bpy.data.node_groups.new("sea_points", "GeometryNodeTree")
+    tree = bpy.data.node_groups.get("sea_points") or bpy.data.node_groups.new("sea_points", "GeometryNodeTree")
+    tree.nodes.clear()
+    tree.interface.clear()
     tree.interface.new_socket("Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
     tree.interface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
     gin = tree.nodes.new("NodeGroupInput")
@@ -476,7 +524,76 @@ def build_sea():
     tree.links.new(setm.outputs["Geometry"], gout.inputs[0])
     mod = ob.modifiers.new("points", "NODES")
     mod.node_group = tree
+
+    def emit_mat(mname, color, strength):
+        m = bpy.data.materials.get(mname) or bpy.data.materials.new(mname)
+        m.use_nodes = True
+        mnt = m.node_tree
+        mnt.nodes.clear()
+        mout = mnt.nodes.new("ShaderNodeOutputMaterial")
+        mem = mnt.nodes.new("ShaderNodeEmission")
+        mem.inputs["Color"].default_value = hex_lin(color)
+        mem.inputs["Strength"].default_value = strength
+        mnt.links.new(mem.outputs["Emission"], mout.inputs["Surface"])
+        return m
+
+    mat_b_teal = emit_mat("sea_beacon_teal_mat", spec["palette"]["teal"], 1.9)
+    mat_b_amber = emit_mat("sea_beacon_amber_mat", spec["palette"]["amber"], 2.1)
+    mat_b_line = emit_mat("sea_beacon_line_mat", spec["palette"]["teal"], 0.42)
+
+    bm_teal = bmesh.new()
+    bm_amber = bmesh.new()
+    bm_line = bmesh.new()
+    for cl in spec.get("clusters", []):
+        nodes = cl["nodes"]
+        for x, y, health in nodes:
+            hz = w["z"] + wave_height(w, x, y) + 0.035
+            target_bm = bm_teal if health > 0.75 else bm_amber
+            add_cyl(target_bm, 0.032, 0.01, 0.0, seg=28, matrix=M(x, y, hz))
+            ring_tmp = bmesh.new()
+            add_annulus(ring_tmp, 0.068, 0.078, 0.0, 0.004, seg=40)
+            bmesh.ops.translate(ring_tmp, verts=ring_tmp.verts, vec=(x, y, hz))
+            tmp_me = bpy.data.meshes.new("_ring_tmp")
+            ring_tmp.to_mesh(tmp_me)
+            ring_tmp.free()
+            target_bm.from_mesh(tmp_me)
+            bpy.data.meshes.remove(tmp_me)
+        for i in range(len(nodes)):
+            for j in range(i + 1, len(nodes)):
+                x0, y0, _ = nodes[i]
+                x1, y1, _ = nodes[j]
+                steps = 8
+                for s in range(steps):
+                    t0, t1 = s / steps, (s + 1) / steps
+                    ax, ay = x0 + (x1 - x0) * t0, y0 + (y1 - y0) * t0
+                    bx, by = x0 + (x1 - x0) * t1, y0 + (y1 - y0) * t1
+                    az = w["z"] + wave_height(w, ax, ay) + 0.028
+                    bz = w["z"] + wave_height(w, bx, by) + 0.028
+                    dv = Vector((bx - ax, by - ay, bz - az))
+                    mid = Vector(((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2))
+                    rot = dv.normalized().to_track_quat("X", "Z").to_matrix().to_4x4()
+                    add_box(bm_line, dv.length * 0.92, 0.0035, 0.0025, Matrix.Translation(mid) @ rot)
+
+    for bname, bm_src, bmat in (
+        ("sea_beacons_teal", bm_teal, mat_b_teal),
+        ("sea_beacons_amber", bm_amber, mat_b_amber),
+        ("sea_beacon_lines", bm_line, mat_b_line),
+    ):
+        bme = bpy.data.meshes.new(bname)
+        bm_src.to_mesh(bme)
+        bm_src.free()
+        bme.materials.append(bmat)
+        bob = bpy.data.objects.new(bname, bme)
+        bpy.context.scene.collection.objects.link(bob)
+
     return ob
+
+
+def set_sea_visible(vis):
+    for name in ("sea", "sea_beacons_teal", "sea_beacons_amber", "sea_beacon_lines"):
+        ob = bpy.data.objects.get(name)
+        if ob:
+            ob.hide_render = not vis
 
 
 def explode(factor):
@@ -516,11 +633,11 @@ def stage(distance=7.0, elevation=18.0, azimuth=-32.0, lens=50, target=(0, 0, 0.
         ob.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
         return ob
 
-    area("rim_left", (-4.5, 3.5, 4.0), 3.0, 900, "#dfe8ff")
-    area("strip_right", (4.2, 1.2, 1.4), 0.25, 420, "#ffd2a6", size_y=4.0)
-    area("top_strip", (-0.6, 0.4, 6.0), 0.35, 260, "#ffffff", size_y=6.0)
-    area("front_fill", (1.5, -6.0, 1.2), 5.0, 90, "#cfd8e6")
-    area("rim_back", (3.2, 5.0, 0.2), 2.0, 700, "#bcd2ff")
+    area("rim_left", (-4.5, 3.5, 4.0), 3.0, 980, "#dfe8ff")
+    area("strip_right", (4.2, 1.2, 1.4), 0.28, 460, "#ffd2a6", size_y=4.2)
+    area("top_strip", (-0.6, 0.4, 6.0), 0.38, 300, "#ffffff", size_y=6.0)
+    area("front_fill", (1.5, -6.0, 1.2), 5.0, 110, "#cfd8e6")
+    area("rim_back", (3.2, 5.0, 0.2), 2.2, 760, "#bcd2ff")
 
     cam_data = bpy.data.cameras.new("cam")
     cam_data.lens = lens
@@ -545,7 +662,7 @@ def stage(distance=7.0, elevation=18.0, azimuth=-32.0, lens=50, target=(0, 0, 0.
     return cam
 
 
-def render(path, engine="CYCLES", samples=128):
+def render(path, engine="CYCLES", samples=96):
     scene = bpy.context.scene
     scene.render.engine = "CYCLES" if engine == "CYCLES" else "BLENDER_EEVEE"
     if engine == "CYCLES":
@@ -555,9 +672,13 @@ def render(path, engine="CYCLES", samples=128):
             prefs = bpy.context.preferences.addons["cycles"].preferences
             prefs.compute_device_type = "OPTIX"
             prefs.get_devices()
-            for d in prefs.devices:
-                d.use = True
-            scene.cycles.device = "GPU"
+            gpu_found = any(d.type != "CPU" for d in prefs.devices)
+            if gpu_found:
+                for d in prefs.devices:
+                    d.use = True
+                scene.cycles.device = "GPU"
+            else:
+                scene.cycles.device = "CPU"
         except Exception:
             scene.cycles.device = "CPU"
     else:
@@ -569,15 +690,16 @@ def render(path, engine="CYCLES", samples=128):
     return path
 
 
-def render_masters(out_dir, samples=128):
+def render_masters(out_dir, samples=96):
     """站点用到的三张渲染母版。机位与 src/scripts/observatory/director.ts 的关键帧一致。"""
-    import os
+    os.makedirs(out_dir, exist_ok=True)
     spec = load_spec()
     h = spec["camera"]["hero"]
     shots = []
     explode(0.0)
-    sea = bpy.data.objects.get("sea") or build_sea()
-    sea.hide_render = False
+    if "sea" not in bpy.data.objects:
+        build_sea()
+    set_sea_visible(True)
     # 1. 首屏横版：物体右移 shiftX（Blender 的 shift_x 方向相反）
     stage(distance=h["distance"], elevation=h["elevation"], azimuth=h["azimuth"], lens=h["lens"],
           target=tuple(h["target"]), res=(2560, 1440), shift=(-h.get("shiftX", 0.0), 0.0))
@@ -588,7 +710,7 @@ def render_masters(out_dir, samples=128):
     shots.append(render(os.path.join(out_dir, "hero-portrait.png"), samples=samples))
     # 3. 爆炸视图（无 WebGL 时的剖面静帧）
     explode(1.0)
-    sea.hide_render = True
+    set_sea_visible(False)
     bases, z = [], 0.0
     for layer in spec["layers"]:
         bases.append(z)
@@ -597,7 +719,9 @@ def render_masters(out_dir, samples=128):
     stage(distance=11.6, elevation=20, azimuth=-34, lens=h["lens"], target=(0, 0, mid), res=(1400, 1600))
     shots.append(render(os.path.join(out_dir, "exploded.png"), samples=samples))
     explode(0.0)
-    sea.hide_render = False
+    set_sea_visible(True)
+    stage(distance=h["distance"], elevation=h["elevation"], azimuth=h["azimuth"], lens=h["lens"],
+          target=tuple(h["target"]), res=(2560, 1440), shift=(-h.get("shiftX", 0.0), 0.0))
     return shots
 
 
@@ -613,6 +737,16 @@ def export_glb(path):
 
 if __name__ == "__main__":
     build()
-    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    argv = cli_args()
     if "--glb" in argv:
         export_glb(argv[argv.index("--glb") + 1])
+    samples = int(argv[argv.index("--samples") + 1]) if "--samples" in argv else 96
+    if "--renders" in argv:
+        render_masters(argv[argv.index("--renders") + 1], samples=samples)
+    if "--blend" in argv:
+        if "sea" not in bpy.data.objects:
+            build_sea()
+            h = load_spec()["camera"]["hero"]
+            stage(distance=h["distance"], elevation=h["elevation"], azimuth=h["azimuth"], lens=h["lens"],
+                  target=tuple(h["target"]), res=(2560, 1440), shift=(-h.get("shiftX", 0.0), 0.0))
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(argv[argv.index("--blend") + 1]), compress=True)

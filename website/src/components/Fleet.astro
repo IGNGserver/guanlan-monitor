@@ -1,0 +1,571 @@
+---
+import { FLEET_GROUPS } from '../data/product';
+---
+
+<section id="fleet" class="fleet section" data-idx="04" aria-labelledby="fleet-title">
+  <div class="wrap">
+    <header class="fleet__head">
+      <p class="eyebrow" data-reveal>§ 04 · 舰队与分组</p>
+      <h2 id="fleet-title" class="display" data-reveal style="--d:1">先看整支舰队，<br />再进单机深潜。</h2>
+      <p class="lede" data-reveal style="--d:2">
+        Web、桌面与 Android 共享同一套自定义设备组。总览驾驶舱按组聚合在线数、需关注异常、虚拟化宿主机存储池水位与 90 天流量日历；哪台机器离线，趋势线就在哪里如实留断口。
+      </p>
+    </header>
+
+    <div class="cockpit" data-fleet data-reveal>
+      <aside class="cockpit__rail" aria-label="设备分组树">
+        <div class="rail__top">
+          <span class="label">设备组树</span>
+          <span class="mono faint rail__hint">跨端同步</span>
+        </div>
+        <div class="glist" role="tablist" aria-label="选择设备分组">
+          {
+            FLEET_GROUPS.map((g, i) => (
+              <button
+                type="button"
+                role="tab"
+                class="gbtn"
+                data-group={g.id}
+                aria-selected={i === 0 ? 'true' : 'false'}
+              >
+                <span class="gbtn__row">
+                  <span class={`gdot gdot--${g.dot}`} aria-hidden="true" />
+                  <span class="gbtn__name">{g.name}</span>
+                  <span class="gbtn__cnt mono">{g.count}</span>
+                </span>
+                <span class="gbtn__sub faint">{g.sub}</span>
+              </button>
+            ))
+          }
+        </div>
+        <dl class="glegend mono">
+          <div><dt><i class="gdot gdot--teal"></i>正常</dt><dd>低于提示线</dd></div>
+          <div><dt><i class="gdot gdot--amber"></i>提示</dt><dd>≥ 80% 水位</dd></div>
+          <div><dt><i class="gdot gdot--danger"></i>严重</dt><dd>≥ 90% 水位</dd></div>
+          <div><dt><i class="gdot gdot--off"></i>离线</dt><dd>&gt; 120s 未报</dd></div>
+        </dl>
+      </aside>
+
+      <div class="cockpit__main">
+        <div class="fcard fcard--trend">
+          <div class="fcard__bar">
+            <div>
+              <p class="label label--amber" data-fleet-eyebrow>全部设备 · 舰队趋势</p>
+              <p class="fcard__sub faint">同轴对比组内机器趋势，保留峰值尖刺，停机区间断开曲线而不连假直线</p>
+            </div>
+            <div class="fseg mono" role="group" aria-label="趋势指标">
+              <button type="button" data-fleet-metric="cpu" aria-pressed="true">CPU</button>
+              <button type="button" data-fleet-metric="mem" aria-pressed="false">内存</button>
+              <button type="button" data-fleet-metric="disk" aria-pressed="false">磁盘</button>
+            </div>
+          </div>
+          <div class="trend-stage">
+            <canvas data-fleet-canvas aria-hidden="true"></canvas>
+          </div>
+          <div class="dstrip mono" data-fleet-devices></div>
+        </div>
+
+        <div class="cockpit__split">
+          <div class="fcard">
+            <div class="fcard__bar">
+              <p class="label">需关注</p>
+              <span class="mono faint" data-attention-count>—</span>
+            </div>
+            <ul class="alist" data-fleet-attention></ul>
+          </div>
+
+          <div class="fcard">
+            <div class="fcard__bar">
+              <p class="label">宿主机存储池</p>
+              <span class="mono faint">PVE · LVM-thin · ZFS</span>
+            </div>
+            <ul class="plist" data-fleet-pools></ul>
+          </div>
+        </div>
+
+        <div class="fcard fcard--cal">
+          <div class="fcard__bar">
+            <div>
+              <p class="label">流量日历（90 天日累计 · 近 30 日示意）</p>
+              <p class="fcard__sub faint">基于单调网卡计数器的按日收发累计，自动剔除回环与虚拟隧道噪声</p>
+            </div>
+            <p class="mono cal-readout" data-cal-readout>—</p>
+          </div>
+          <div class="cal-bars" data-cal-cells role="group" aria-label="按日收发流量"></div>
+        </div>
+
+        <div class="cockpit__foot">
+          <span class="label">示意数据 · 官网重绘的总览、存储池与流量日历界面示意</span>
+          <span class="mono faint">点击左侧设备组切换范围</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  import { initFleet } from '../scripts/fleet';
+  initFleet();
+</script>
+
+<style>
+  .fleet {
+    z-index: 1;
+    background: var(--void);
+    border-top: 1px solid var(--line);
+  }
+
+  .fleet__head {
+    max-width: 820px;
+  }
+
+  .fleet__head .lede {
+    margin-top: 28px;
+  }
+
+  .cockpit {
+    display: grid;
+    grid-template-columns: 268px minmax(0, 1fr);
+    margin-top: clamp(48px, 7vw, 88px);
+    border: 1px solid var(--line-2);
+    background: var(--ink-1);
+    box-shadow: 0 40px 120px -40px rgb(0 0 0 / 0.9);
+  }
+
+  .cockpit__rail {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--line);
+    background: #080b0f;
+    padding: 18px 16px;
+    gap: 16px;
+  }
+
+  .rail__top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .rail__hint {
+    font-size: 11px;
+  }
+
+  .glist {
+    display: grid;
+    gap: 6px;
+  }
+
+  .gbtn {
+    display: grid;
+    gap: 4px;
+    padding: 11px 12px;
+    border: 1px solid var(--line);
+    background: var(--ink-1);
+    text-align: left;
+    color: var(--bone-2);
+    cursor: pointer;
+    transition:
+      border-color 0.2s,
+      background 0.2s;
+  }
+
+  .gbtn:hover {
+    border-color: var(--line-2);
+  }
+
+  .gbtn[aria-selected='true'] {
+    border-color: rgb(255 166 74 / 0.55);
+    background: rgb(255 166 74 / 0.07);
+    color: var(--bone);
+  }
+
+  .gbtn__row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .gbtn__name {
+    font-size: 14px;
+  }
+
+  .gbtn__cnt {
+    font-size: 11.5px;
+    color: var(--bone-3);
+  }
+
+  .gbtn[aria-selected='true'] .gbtn__cnt {
+    color: var(--amber);
+  }
+
+  .gbtn__sub {
+    padding-left: 16px;
+    font-size: 11.5px;
+  }
+
+  .gdot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+
+  .gdot--teal {
+    background: var(--teal);
+    box-shadow: 0 0 0 3px var(--teal-glow);
+  }
+
+  .gdot--amber {
+    background: var(--amber);
+    box-shadow: 0 0 0 3px var(--amber-glow);
+  }
+
+  .gdot--danger {
+    background: var(--danger);
+  }
+
+  .gdot--off {
+    background: var(--bone-3);
+  }
+
+  .glegend {
+    margin: auto 0 0;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 10px;
+    font-size: 11px;
+  }
+
+  .glegend div {
+    display: grid;
+    gap: 2px;
+  }
+
+  .glegend dt {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--bone-2);
+  }
+
+  .glegend dd {
+    margin: 0;
+    padding-left: 13px;
+    color: var(--bone-3);
+  }
+
+  .cockpit__main {
+    display: grid;
+    min-width: 0;
+  }
+
+  .fcard {
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--line);
+    min-width: 0;
+  }
+
+  .fcard__bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+  }
+
+  .fcard__sub {
+    margin-top: 4px;
+    font-size: 12.5px;
+  }
+
+  .fseg {
+    display: flex;
+    border: 1px solid var(--line-2);
+  }
+
+  .fseg button {
+    height: 28px;
+    padding: 0 11px;
+    border: 0;
+    background: none;
+    color: var(--bone-3);
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .fseg button + button {
+    border-left: 1px solid var(--line);
+  }
+
+  .fseg button[aria-pressed='true'] {
+    color: var(--amber);
+    background: rgb(255 166 74 / 0.08);
+  }
+
+  .trend-stage {
+    margin-top: 14px;
+    border: 1px solid var(--line);
+    background: rgb(6 8 11 / 0.55);
+    padding: 10px 12px 6px;
+  }
+
+  .trend-stage canvas {
+    display: block;
+    width: 100%;
+    height: 196px;
+  }
+
+  .dstrip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .dstrip :global(.dchip) {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 10px;
+    border: 1px solid var(--line);
+    background: #080b0f;
+    font-size: 12px;
+  }
+
+  .dstrip :global(.dchip small) {
+    color: var(--bone-3);
+    font-size: 11px;
+  }
+
+  .dstrip :global(.dchip b) {
+    font-weight: 400;
+    color: var(--bone);
+  }
+
+  .dstrip :global(.dchip.is-off b) {
+    color: var(--bone-3);
+  }
+
+  .cockpit__split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .cockpit__split > .fcard {
+    border-bottom: 0;
+  }
+
+  .cockpit__split > .fcard + .fcard {
+    border-left: 1px solid var(--line);
+  }
+
+  .alist,
+  .plist {
+    list-style: none;
+    margin: 14px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+  }
+
+  .alist :global(li) {
+    padding: 11px 12px;
+    border: 1px solid var(--line);
+    background: #080b0f;
+    display: grid;
+    gap: 5px;
+  }
+
+  .alist :global(.a-top) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .alist :global(.a-badge) {
+    padding: 1px 6px;
+    font-size: 10.5px;
+    border: 1px solid var(--line-2);
+  }
+
+  .alist :global(.a-badge--amber) {
+    color: var(--amber);
+    border-color: rgb(255 166 74 / 0.45);
+  }
+
+  .alist :global(.a-badge--off) {
+    color: var(--bone-3);
+  }
+
+  .alist :global(.a-age) {
+    margin-left: auto;
+    color: var(--bone-3);
+    font-size: 11px;
+  }
+
+  .alist :global(.a-body) {
+    font-size: 12.5px;
+    color: var(--bone-2);
+    line-height: 1.55;
+  }
+
+  .alist :global(.a-ok) {
+    color: var(--teal);
+    border-color: rgb(53 216 182 / 0.3);
+    background: rgb(53 216 182 / 0.05);
+    font-size: 12.5px;
+  }
+
+  .plist :global(li) {
+    padding: 11px 12px;
+    border: 1px solid var(--line);
+    background: #080b0f;
+    display: grid;
+    gap: 6px;
+  }
+
+  .plist :global(.p-top) {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 12.5px;
+  }
+
+  .plist :global(.p-kind) {
+    color: var(--bone-3);
+    font-size: 11px;
+  }
+
+  .plist :global(.p-bar) {
+    height: 4px;
+    background: var(--line-2);
+    position: relative;
+  }
+
+  .plist :global(.p-bar i) {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--teal);
+  }
+
+  .plist :global(.p-bar.is-warn i) {
+    background: var(--amber);
+  }
+
+  .plist :global(.p-meta) {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--bone-3);
+  }
+
+  .plist :global(.p-meta strong) {
+    color: var(--amber);
+    font-weight: 400;
+  }
+
+  .cal-readout {
+    font-size: 12.5px;
+    color: var(--bone);
+  }
+
+  .cal-bars {
+    display: grid;
+    grid-template-columns: repeat(30, minmax(0, 1fr));
+    gap: 4px;
+    align-items: end;
+    height: 64px;
+    margin-top: 14px;
+    padding-top: 8px;
+  }
+
+  .cal-bars :global(button) {
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    display: flex;
+    align-items: flex-end;
+    cursor: pointer;
+  }
+
+  .cal-bars :global(button i) {
+    display: block;
+    width: 100%;
+    min-height: 4px;
+    background: rgb(233 230 223 / 0.22);
+    transition: background 0.15s;
+  }
+
+  .cal-bars :global(button.is-peak i) {
+    background: rgb(255 166 74 / 0.65);
+  }
+
+  .cal-bars :global(button[aria-pressed='true'] i),
+  .cal-bars :global(button:hover i) {
+    background: var(--amber);
+  }
+
+  .cockpit__foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    padding: 12px 22px;
+    font-size: 11.5px;
+  }
+
+  @media (max-width: 1020px) {
+    .cockpit {
+      grid-template-columns: 1fr;
+    }
+
+    .cockpit__rail {
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .glist {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .glegend {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 760px) {
+    .cockpit__split {
+      grid-template-columns: 1fr;
+    }
+
+    .cockpit__split > .fcard + .fcard {
+      border-left: 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .glist {
+      grid-template-columns: 1fr;
+    }
+
+    .glegend {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .cal-bars {
+      gap: 2px;
+    }
+
+    .fcard {
+      padding: 14px 16px;
+    }
+  }
+</style>

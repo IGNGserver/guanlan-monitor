@@ -1,16 +1,26 @@
 ---
-import { HUB_ENV_KEYS, HUB_PORT, HUB_SERVICES } from '../data/product';
+import { HUB_ENV_KEYS, HUB_EXTERNAL_SERVICES, HUB_PORT, HUB_SERVICES } from '../data/product';
 ---
 
-<section id="hub" class="hub section" data-idx="06" aria-labelledby="hub-title">
+<section id="hub" class="hub section" data-idx="07" aria-labelledby="hub-title" data-hub>
   <div class="wrap hub__grid">
     <div class="hub__copy">
-      <p class="eyebrow" data-reveal>§ 06 · 中枢</p>
+      <p class="eyebrow" data-reveal>§ 07 · 中枢</p>
       <h2 id="hub-title" class="display" data-reveal style="--d:1">中枢，<br />部署在你自己的<br />服务器上。</h2>
       <p class="lede" data-reveal style="--d:2">
-        Docker Compose 默认只拉取 GitHub Container Registry 中已发布的镜像，不从源码构建。生产环境使用固定版本或不可变 digest，并通过 TLS 反向代理访问控制台。
+        Docker Compose 默认只拉取 GitHub Container Registry 中已发布的镜像，不从源码构建。既可一键起齐四容器全栈，也可接入已有的外部 MySQL 8.0+ 与 Redis。
       </p>
-      <ol class="hub__steps">
+
+      <div class="hub__modes mono" role="group" aria-label="中枢部署拓扑" data-reveal>
+        <button type="button" data-hub-mode="bundled" aria-pressed="true">
+          内置全栈 · 4 容器
+        </button>
+        <button type="button" data-hub-mode="external" aria-pressed="false">
+          外部数据库 · 2 容器 + 共享库
+        </button>
+      </div>
+
+      <ol class="hub__steps" data-hub-view="bundled">
         <li data-reveal>
           <span class="mono amber">01</span>
           <div>
@@ -37,6 +47,38 @@ import { HUB_ENV_KEYS, HUB_PORT, HUB_SERVICES } from '../data/product';
           </div>
         </li>
       </ol>
+
+      <ol class="hub__steps" data-hub-view="external" hidden>
+        <li>
+          <span class="mono amber">01</span>
+          <div>
+            <p>指向外部数据库与实例 ID</p>
+            <pre class="code"><code>DSC_DB_MODE=external
+DSC_INSTANCE_ID=hub-home
+MYSQL_URL=mysql://guanlan:...@db.internal:3306/guanlan_home
+REDIS_URL=rediss://:...@redis.internal:6379/3</code></pre>
+            <p class="faint hub__keys">
+              每个中枢独占一个 MySQL database（写入 <code>hub_meta</code> + 单写者锁），并通过 <code>dsc:&lt;DSC_INSTANCE_ID&gt;</code> 隔离共享 Redis 的键空间。
+            </p>
+          </div>
+        </li>
+        <li>
+          <span class="mono amber">02</span>
+          <div>
+            <p>仅启动应用容器</p>
+            <pre class="code"><code><span class="k">DSC_VERSION</span>=&lt;版本号&gt; docker compose -f docker-compose.external.yml pull
+<span class="k">DSC_VERSION</span>=&lt;版本号&gt; docker compose -f docker-compose.external.yml up -d</code></pre>
+          </div>
+        </li>
+        <li>
+          <span class="mono amber">03</span>
+          <div>
+            <p>保持数据库仅内网可达</p>
+            <p class="faint"><code>docker-compose.external.yml</code> 不创建也不暴露数据库端口；客户端入口仍是同一个 <code>:{HUB_PORT}</code>。</p>
+          </div>
+        </li>
+      </ol>
+
       <a class="btn" href="/deploy/" data-reveal>
         完整部署说明
         <svg class="arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" stroke="currentColor" stroke-width="1.4" fill="none"></path></svg>
@@ -45,24 +87,57 @@ import { HUB_ENV_KEYS, HUB_PORT, HUB_SERVICES } from '../data/product';
 
     <div class="stack" data-reveal aria-label="中枢服务结构">
       <div class="stack__port">
-        <span class="label">对外</span>
+        <span class="label">对外公开入口</span>
         <span class="mono">:{HUB_PORT}</span>
       </div>
-      {
-        HUB_SERVICES.map((s, i) => (
-          <div class={`slab slab--${s.id}`} style={`--i:${i}`}>
-            <div class="slab__face">
-              <span class="slab__name mono">{s.name}</span>
-              <span class="slab__role">{s.role}</span>
-              <span class="slab__port mono">{s.port}</span>
+
+      <div class="stack__group" data-hub-view="bundled">
+        {
+          HUB_SERVICES.map((s, i) => (
+            <div class={`slab slab--${s.id}`} style={`--i:${i}`}>
+              <div class="slab__face">
+                <span class="slab__name mono">{s.name}</span>
+                <span class="slab__role">{s.role}</span>
+                <span class="slab__port mono">{s.port}</span>
+              </div>
             </div>
-          </div>
-        ))
-      }
-      <p class="stack__cap label">docker-compose.yml · 4 services</p>
+          ))
+        }
+        <p class="stack__cap label">docker-compose.yml · 4 services</p>
+      </div>
+
+      <div class="stack__group" data-hub-view="external" hidden>
+        {
+          HUB_EXTERNAL_SERVICES.map((s, i) => (
+            <div class:list={['slab', `slab--${s.id}`, { 'slab--ext': 'external' in s && s.external }]} style={`--i:${i}`}>
+              <div class="slab__face">
+                <span class="slab__name mono">{s.name}</span>
+                <span class="slab__role">{s.role}</span>
+                <span class="slab__port mono">{s.port}</span>
+              </div>
+            </div>
+          ))
+        }
+        <p class="stack__cap label">docker-compose.external.yml · 2 app containers + external DB</p>
+      </div>
     </div>
   </div>
 </section>
+
+<script>
+  const hub = document.querySelector<HTMLElement>('[data-hub]');
+  if (hub) {
+    const btns = Array.from(hub.querySelectorAll<HTMLButtonElement>('[data-hub-mode]'));
+    const views = Array.from(hub.querySelectorAll<HTMLElement>('[data-hub-view]'));
+    btns.forEach((b) =>
+      b.addEventListener('click', () => {
+        const mode = b.dataset.hubMode;
+        btns.forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+        views.forEach((v) => (v.hidden = v.dataset.hubView !== mode));
+      }),
+    );
+  }
+</script>
 
 <style>
   .hub {
@@ -82,12 +157,47 @@ import { HUB_ENV_KEYS, HUB_PORT, HUB_SERVICES } from '../data/product';
     margin-top: 28px;
   }
 
+  .hub__modes {
+    display: inline-flex;
+    flex-wrap: wrap;
+    margin-top: 28px;
+    border: 1px solid var(--line-2);
+    background: var(--ink-1);
+  }
+
+  .hub__modes button {
+    height: 36px;
+    padding: 0 14px;
+    border: 0;
+    background: none;
+    color: var(--bone-3);
+    font-size: 12px;
+    cursor: pointer;
+    transition:
+      color 0.2s,
+      background 0.2s;
+  }
+
+  .hub__modes button + button {
+    border-left: 1px solid var(--line);
+  }
+
+  .hub__modes button[aria-pressed='true'] {
+    color: var(--amber);
+    background: rgb(255 166 74 / 0.08);
+  }
+
   .hub__steps {
     list-style: none;
-    margin: 40px 0 36px;
+    margin: 28px 0 36px;
     padding: 0;
     display: grid;
     gap: 22px;
+  }
+
+  .hub__steps[hidden],
+  .stack__group[hidden] {
+    display: none;
   }
 
   .hub__steps li {
@@ -120,13 +230,17 @@ import { HUB_ENV_KEYS, HUB_PORT, HUB_SERVICES } from '../data/product';
     color: var(--bone-2);
   }
 
-  /* 服务分层：等轴测堆叠的四块「板」 */
   .stack {
     position: relative;
     display: grid;
     gap: 14px;
     padding: 8px 48px 24px 0;
     perspective: 1600px;
+  }
+
+  .stack__group {
+    display: grid;
+    gap: 14px;
   }
 
   .stack__port {
@@ -172,6 +286,16 @@ import { HUB_ENV_KEYS, HUB_PORT, HUB_SERVICES } from '../data/product';
       0 0 60px -10px rgb(255 166 74 / 0.25);
   }
 
+  .slab--ext .slab__face {
+    border-style: dashed;
+    border-color: rgb(53 216 182 / 0.45);
+    background: linear-gradient(135deg, rgb(12 24 24 / 0.88), var(--ink-1));
+  }
+
+  .slab--ext .slab__name {
+    color: var(--teal);
+  }
+
   .slab__name {
     font-size: 16px;
     color: var(--amber);
@@ -199,7 +323,8 @@ import { HUB_ENV_KEYS, HUB_PORT, HUB_SERVICES } from '../data/product';
     }
 
     .stack {
-      padding-top: 64px;
+      padding-top: 32px;
+      padding-right: 16px;
     }
   }
 

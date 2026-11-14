@@ -15,7 +15,7 @@ const picks = [
 
 <section id="get" class="get" aria-labelledby="get-title">
   <div class="get__in wrap">
-    <p class="eyebrow" data-reveal>§ 08 · 开始</p>
+    <p class="eyebrow" data-reveal>§ 09 · 开始</p>
     <h2 id="get-title" class="get__title" data-reveal style="--d:1">开始观测。</h2>
     <p class="get__rel mono" data-reveal style="--d:2">
       <span class="dot dot--amber"></span>
@@ -45,7 +45,7 @@ const picks = [
       <span class="faint">·</span>
       <a href={release.url} rel="noopener">版本说明 ↗</a>
     </p>
-    {release.prerelease && <p class="get__note faint" data-reveal style="--d:5">当前发布均为 GitHub prerelease（测试版通道），产品说明不建议直接用于生产部署。</p>}
+    {release.prerelease && <p class="get__note faint" data-reveal style="--d:5">当前最新构建为 GitHub prerelease（测试版通道）；生产环境可在 Releases「全部版本」中选用最近正式稳定版（如 v3.0.172）。</p>}
   </div>
 </section>
 
