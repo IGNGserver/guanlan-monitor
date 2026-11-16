@@ -67,7 +67,7 @@ export interface WorkspaceContextValue {
   networkMode: NetworkMode;
   setNetworkMode: (mode: NetworkMode) => void;
   setRefreshInterval: (interval: 5 | 10 | 30) => void;
-  refresh: () => Promise<void>;
+  refresh: (options?: { checkUpdates?: boolean }) => Promise<void>;
   updateLocalConfig: (patch: DesktopConfigPatch) => Promise<boolean>;
   controlAgent: (action: DesktopAgentControlAction) => Promise<boolean>;
   saveHubConnection: (serverUrl: string, accessKey: string) => Promise<HubConnectionSaveResult>;

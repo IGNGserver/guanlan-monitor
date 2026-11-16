@@ -44,13 +44,20 @@ type Request struct {
 }
 type Handler func(context.Context, Request) (any, error)
 type Client struct {
-	Config    func() Config
-	Directory string
-	Handle    Handler
-	HTTP      *http.Client
-	jobsMu    sync.Mutex
-	busy      map[string]bool
+	Config      func() Config
+	Directory   string
+	Handle      Handler
+	HTTP        *http.Client
+	Demand      func() (onDemand bool, wanted bool)
+	Wake        <-chan struct{}
+	IdleTimeout time.Duration
+	jobsMu      sync.Mutex
+	busy        map[string]bool
 }
+
+const defaultIdleTimeout = 3 * time.Minute
+
+var errIdleStandby = errors.New("realtime_idle_standby")
 
 type frame struct {
 	Type            string `json:"type"`
@@ -133,13 +140,46 @@ func endpoint(base, suffix string) (string, error) {
 	return u.String(), nil
 }
 
+func (c *Client) idleTimeout() time.Duration {
+	if c.IdleTimeout > 0 {
+		return c.IdleTimeout
+	}
+	return defaultIdleTimeout
+}
+
+func (c *Client) hasBusyJobs() bool {
+	c.jobsMu.Lock()
+	defer c.jobsMu.Unlock()
+	return len(c.busy) > 0
+}
+
 func (c *Client) Run(ctx context.Context) {
 	backoff := time.Second
 	for ctx.Err() == nil {
+		if c.Demand != nil {
+			if onDemand, wanted := c.Demand(); onDemand && !wanted {
+				backoff = time.Second
+				timer := time.NewTimer(15 * time.Second)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-c.Wake:
+					timer.Stop()
+				case <-timer.C:
+				}
+				continue
+			}
+		}
 		cfg := c.Config()
 		if cfg.Enabled && cfg.AccessKey != "" {
 			started := time.Now()
-			if err := c.connect(ctx, cfg); err != nil && ctx.Err() == nil {
+			err := c.connect(ctx, cfg)
+			if errors.Is(err, errIdleStandby) {
+				backoff = time.Second
+				continue
+			}
+			if err != nil && ctx.Err() == nil {
 				log.Printf("realtime channel unavailable: %v", err)
 			}
 			if time.Since(started) > time.Minute {
@@ -151,6 +191,10 @@ func (c *Client) Run(ctx context.Context) {
 		case <-ctx.Done():
 			timer.Stop()
 			return
+		case <-c.Wake:
+			timer.Stop()
+			backoff = time.Second
+			continue
 		case <-timer.C:
 		}
 		if backoff < 30*time.Second {
@@ -232,11 +276,37 @@ func (c *Client) connect(ctx context.Context, cfg Config) error {
 	}
 	var sessionID string
 	hubRevision := 1
+	lastActivity := time.Now()
 	for {
-		readCtx, readCancel := context.WithTimeout(sessionCtx, 20*time.Second)
+		readTimeout := 20 * time.Second
+		if c.Demand != nil {
+			if idle := c.idleTimeout(); idle < readTimeout {
+				readTimeout = idle
+			}
+			if sessionID != "" && !c.hasBusyJobs() {
+				if onDemand, wanted := c.Demand(); onDemand && !wanted {
+					remaining := c.idleTimeout() - time.Since(lastActivity)
+					if remaining <= 0 {
+						_ = conn.Close(websocket.StatusNormalClosure, "idle_standby")
+						return errIdleStandby
+					}
+					if remaining < readTimeout {
+						readTimeout = remaining
+					}
+				}
+			}
+		}
+		readCtx, readCancel := context.WithTimeout(sessionCtx, readTimeout)
 		kind, raw, err := conn.Read(readCtx)
+		readEarnedIdle := readCtx.Err() == context.DeadlineExceeded
 		readCancel()
 		if err != nil {
+			if readEarnedIdle && c.Demand != nil && !c.hasBusyJobs() {
+				if onDemand, wanted := c.Demand(); onDemand && !wanted && time.Since(lastActivity) >= c.idleTimeout() {
+					_ = conn.Close(websocket.StatusNormalClosure, "idle_standby")
+					return errIdleStandby
+				}
+			}
 			return errors.New("realtime_disconnected")
 		}
 		var message frame
@@ -264,6 +334,12 @@ func (c *Client) connect(ctx context.Context, cfg Config) error {
 			if err := write(frame{Type: "pong", SessionID: sessionID, Nonce: message.Nonce}); err != nil {
 				return err
 			}
+			if c.Demand != nil && !c.hasBusyJobs() {
+				if onDemand, wanted := c.Demand(); onDemand && !wanted && time.Since(lastActivity) >= c.idleTimeout() {
+					_ = conn.Close(websocket.StatusNormalClosure, "idle_standby")
+					return errIdleStandby
+				}
+			}
 			continue
 		}
 		// Frame types from a newer Hub are not a protocol violation; ignoring them
@@ -271,6 +347,7 @@ func (c *Client) connect(ctx context.Context, cfg Config) error {
 		if message.Type != "request" {
 			continue
 		}
+		lastActivity = time.Now()
 		if len(message.RequestID) != 36 {
 			return errors.New("invalid_realtime_request")
 		}

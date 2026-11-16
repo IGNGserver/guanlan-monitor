@@ -17,17 +17,19 @@ import (
 	"time"
 
 	"device-state-console/agent/internal/agentconfig"
+	"device-state-console/agent/internal/collector"
 )
 
 // daemonOptions is the resolved configuration of a daemon run.
 type daemonOptions struct {
-	Listen         string
-	BundleRoot     string
-	ConfigRoot     string
-	ChildBinary    string
-	ParentPID      int
-	LocalToken     string
-	LocalTokenFile string
+	Listen              string
+	BundleRoot          string
+	ConfigRoot          string
+	ChildBinary         string
+	ExplicitChildBinary bool
+	ParentPID           int
+	LocalToken          string
+	LocalTokenFile      string
 	// ServiceMode marks a run hosted by the machine-scope service manager. It
 	// changes configuration defaults (machine scope, continuous collection),
 	// guarantees a control token and disables parent-process watching.
@@ -53,20 +55,24 @@ func parseDaemonOptions(args []string) (daemonOptions, error) {
 		return daemonOptions{}, err
 	}
 	return daemonOptions{
-		Listen:         strings.TrimSpace(*listenAddr),
-		BundleRoot:     *bundleRoot,
-		ConfigRoot:     *configRoot,
-		ChildBinary:    *childBinary,
-		ParentPID:      *parentPID,
-		LocalToken:     *localToken,
-		LocalTokenFile: *localTokenFile,
-		ServiceMode:    *serviceMode,
+		Listen:              strings.TrimSpace(*listenAddr),
+		BundleRoot:          *bundleRoot,
+		ConfigRoot:          *configRoot,
+		ChildBinary:         *childBinary,
+		ExplicitChildBinary: strings.TrimSpace(*childBinary) != "",
+		ParentPID:           *parentPID,
+		LocalToken:          *localToken,
+		LocalTokenFile:      *localTokenFile,
+		ServiceMode:         *serviceMode,
 	}, nil
 }
 
 // runDaemon serves the local control API until ctx is cancelled or a control
 // request asks the daemon to stop.
 func runDaemon(ctx context.Context, options daemonOptions) error {
+	collector.SetBuildInfo(BuildVersion, BuildChannel)
+	collector.ApplyHeadlessMemoryTuning()
+
 	exePath, err := os.Executable()
 	if err != nil {
 		return err
@@ -147,25 +153,46 @@ func runDaemon(ctx context.Context, options daemonOptions) error {
 	if err != nil {
 		return err
 	}
+	collector.SetBundleRoot(resolvedBundleRoot)
+	if options.ServiceMode && runtime.GOOS == "windows" {
+		go collector.CleanupLegacyHardwareSensorTask()
+	}
 
 	s := &server{
-		configPath:       configPath,
-		syncStatePath:    agentconfig.SyncStatePath(resolvedConfigRoot),
-		diagnosticsPath:  agentconfig.DiagnosticsPath(resolvedConfigRoot),
-		pendingStatePath: agentconfig.PendingStateCachePath(resolvedConfigRoot),
-		childBinaryPath:  resolvedChildBinary,
-		localToken:       localToken,
-		requestClient:    &http.Client{Timeout: 10 * time.Second},
-		config:           defaultLocalConfig(),
-		connectionState:  "stopped",
-		backendStartedAt: time.Now().UTC(),
-		serviceScope:     options.ServiceMode,
+		configPath:           configPath,
+		syncStatePath:        agentconfig.SyncStatePath(resolvedConfigRoot),
+		diagnosticsPath:      agentconfig.DiagnosticsPath(resolvedConfigRoot),
+		pendingStatePath:     agentconfig.PendingStateCachePath(resolvedConfigRoot),
+		bundleRoot:           resolvedBundleRoot,
+		childBinaryPath:      resolvedChildBinary,
+		useEmbeddedCollector: !options.ExplicitChildBinary,
+		localToken:           localToken,
+		requestClient:        newBoundedBackendHTTPClient(),
+		config:               defaultLocalConfig(),
+		connectionState:      "stopped",
+		backendStartedAt:     time.Now().UTC(),
+		serviceScope:         options.ServiceMode,
 	}
 	if err := s.loadConfig(); err != nil {
 		log.Printf("load config failed: %v", err)
 	}
 	if err := s.loadSyncState(); err != nil {
 		log.Printf("load cloud sync state failed: %v", err)
+	}
+	if !s.useEmbeddedCollector {
+		if childJob, err := newJobObject(); err != nil {
+			log.Printf("create child job object failed: %v", err)
+			s.appendDiagnostic("child job object unavailable: %v", err)
+		} else {
+			s.childJob = childJob
+		}
+		if s.childJob != nil {
+			defer func() {
+				if err := s.childJob.Close(); err != nil {
+					log.Printf("close child job object failed: %v", err)
+				}
+			}()
+		}
 	}
 	if s.config.AutoStartCollector && s.config.DataRecordingEnabled {
 		s.mu.Lock()
@@ -175,20 +202,7 @@ func runDaemon(ctx context.Context, options daemonOptions) error {
 		}
 		s.mu.Unlock()
 	}
-	if childJob, err := newJobObject(); err != nil {
-		log.Printf("create child job object failed: %v", err)
-		s.appendDiagnostic("child job object unavailable: %v", err)
-	} else {
-		s.childJob = childJob
-	}
-	if s.childJob != nil {
-		defer func() {
-			if err := s.childJob.Close(); err != nil {
-				log.Printf("close child job object failed: %v", err)
-			}
-		}()
-	}
-	s.appendDiagnostic("backend started; mode=%s config=%s child=%s", daemonMode(options), s.configPath, s.childBinaryPath)
+	s.appendDiagnostic("backend started; mode=%s config=%s child=%s embedded=%t", daemonMode(options), s.configPath, s.childBinaryPath, s.useEmbeddedCollector)
 	if options.ParentPID > 0 && !options.ServiceMode {
 		if err := s.attachFrontendParent(options.ParentPID, "startup"); err != nil {
 			s.appendDiagnostic("frontend parent watch failed for pid=%d: %v", options.ParentPID, err)

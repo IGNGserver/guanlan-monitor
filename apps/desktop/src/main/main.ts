@@ -138,8 +138,20 @@ if (!hasSingleInstanceLock) {
   let rendererUnresponsiveTimer: NodeJS.Timeout | null = null;
   let windowVisible = false;
   let recreateWindowShowState: boolean | null = null;
+  let trayReclaimTimer: NodeJS.Timeout | null = null;
   let gpuFallbackRelaunchScheduled = false;
   let createWindow: () => void;
+
+  const TRAY_WINDOW_RECLAIM_MS = 30_000;
+  const visualFixtureActive = process.env.DSC_VISUAL_FIXTURE === "1"
+    || process.argv.includes("--dsc-release-acceptance")
+    || app.commandLine?.hasSwitch?.("dsc-release-acceptance") === true;
+
+  const clearTrayReclaimTimer = () => {
+    if (!trayReclaimTimer) return;
+    clearTimeout(trayReclaimTimer);
+    trayReclaimTimer = null;
+  };
 
   const reportProcessEvent = (event: string, details: Record<string, unknown>) => {
     appendDesktopDiagnostic(event, {
@@ -162,6 +174,25 @@ if (!hasSingleInstanceLock) {
       })()
     });
     console.error(`[${event}]`, details);
+  };
+
+  const scheduleTrayReclaim = () => {
+    clearTrayReclaimTimer();
+    if (quitting || visualFixtureActive || windowVisible) return;
+    trayReclaimTimer = setTimeout(() => {
+      trayReclaimTimer = null;
+      if (quitting || windowVisible || !mainWindow || mainWindow.isDestroyed()) return;
+      const hiddenWindow = mainWindow;
+      mainWindow = null;
+      rendererRecoveryFallbackActive = false;
+      reportProcessEvent("tray-window-reclaimed", { afterMs: TRAY_WINDOW_RECLAIM_MS });
+      try {
+        hiddenWindow.destroy();
+      } catch (error) {
+        reportProcessEvent("tray-window-reclaim-failed", { error });
+      }
+    }, TRAY_WINDOW_RECLAIM_MS);
+    trayReclaimTimer.unref?.();
   };
 
   reportProcessEvent("process-start", {
@@ -217,6 +248,7 @@ if (!hasSingleInstanceLock) {
 
   const recreateWindow = (reason: string) => {
     if (quitting || !mainWindow || mainWindow.isDestroyed()) return;
+    clearTrayReclaimTimer();
     const previousWindow = mainWindow;
     recreateWindowShowState = windowVisible;
     windowVisible = false;
@@ -265,7 +297,13 @@ if (!hasSingleInstanceLock) {
   };
 
   const showWindow = () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
+    clearTrayReclaimTimer();
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      if (quitting) return;
+      recreateWindowShowState = true;
+      createWindow();
+      return;
+    }
     if (rendererRecoveryFallbackActive) {
       rendererRecoveryFallbackActive = false;
       rendererRecoveryCount = 0;
@@ -288,9 +326,11 @@ if (!hasSingleInstanceLock) {
   const hideWindow = () => {
     windowVisible = false;
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
+    scheduleTrayReclaim();
   };
 
   const shutdown = async () => {
+    clearTrayReclaimTimer();
     if (!controller) return;
     shutdownPromise ??= controller.shutdown();
     await shutdownPromise;
@@ -431,10 +471,14 @@ if (!hasSingleInstanceLock) {
       hideWindow();
     });
     window.once("ready-to-show", () => {
-      if (installerRestoreState === "tray") return;
+      if (installerRestoreState === "tray") {
+        scheduleTrayReclaim();
+        return;
+      }
       const shouldShow = recreateWindowShowState ?? (installerRestoreState === "window" || !controller?.startupSettings.startMinimized);
       recreateWindowShowState = null;
       if (shouldShow) showWindow();
+      else scheduleTrayReclaim();
     });
 
     void loadMainContent(window).catch((error) => {

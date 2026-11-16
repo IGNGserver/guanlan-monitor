@@ -14,6 +14,7 @@ export class DesktopCacheStore {
   private readonly filePath: string;
   private loaded: { scope: string; value: Promise<DesktopSnapshot | null> } | null = null;
   private pending: CacheEnvelope | null = null;
+  private dirtyRaw: { scope: string; savedAt: string; snapshot: DesktopSnapshot } | null = null;
   private writes: Promise<void> = Promise.resolve();
   private epoch = 0;
   private blocked = false;
@@ -23,8 +24,30 @@ export class DesktopCacheStore {
     this.filePath = path.join(userDataPath, "desktop-cache.json");
   }
 
+  private materializeDirty(): CacheEnvelope | null {
+    if (!this.dirtyRaw) return this.pending;
+    const { scope, savedAt, snapshot } = this.dirtyRaw;
+    this.dirtyRaw = null;
+    const safeSnapshot = sanitizeCachedSnapshot(snapshot);
+    if (Buffer.byteLength(JSON.stringify(safeSnapshot), "utf8") > 3_990_000) {
+      safeSnapshot.metrics = null;
+      safeSnapshot.overviewMetrics = null;
+      safeSnapshot.trafficCalendar = null;
+      if (Buffer.byteLength(JSON.stringify(safeSnapshot), "utf8") > 3_990_000) {
+        return this.pending;
+      }
+    }
+    const envelope: CacheEnvelope = { version: 2, scope, savedAt, snapshot: safeSnapshot };
+    this.loaded = { scope, value: Promise.resolve(safeSnapshot) };
+    this.pending = envelope;
+    return envelope;
+  }
+
   async read(scope: string | null = null): Promise<DesktopSnapshot | null> {
     if (!scope || this.blocked) return null;
+    if (this.dirtyRaw?.scope === scope) {
+      this.materializeDirty();
+    }
     const readEpoch = this.epoch;
     if (this.loaded?.scope !== scope) {
       const epoch = this.epoch;
@@ -44,25 +67,32 @@ export class DesktopCacheStore {
 
   async write(snapshot: DesktopSnapshot, scope: string | null = null): Promise<void> {
     if (!scope || snapshot.source !== "live" || !snapshot.session.authenticated) return;
-    const safeSnapshot = sanitizeCachedSnapshot({ ...snapshot, localBackend: null, update: null,
-      session: { authenticated: false, accessKeyConfigured: false } });
-    if (Buffer.byteLength(JSON.stringify(safeSnapshot), "utf8") > 3_990_000) {
-      safeSnapshot.metrics = null; safeSnapshot.overviewMetrics = null; safeSnapshot.trafficCalendar = null;
-      if (Buffer.byteLength(JSON.stringify(safeSnapshot), "utf8") > 3_990_000) return;
-    }
-    this.loaded = { scope, value: Promise.resolve(safeSnapshot) };
     this.blocked = false;
-    this.pending = { version: 2, scope, savedAt: new Date().toISOString(), snapshot: safeSnapshot };
-    // Keep the latest offline snapshot in memory. Persist at most once per
-    // minute during polling, and flush the latest state on orderly shutdown.
+    this.dirtyRaw = {
+      scope,
+      savedAt: new Date().toISOString(),
+      snapshot: {
+        ...snapshot,
+        localBackend: null,
+        update: null,
+        session: { authenticated: false, accessKeyConfigured: false }
+      }
+    };
+    this.loaded = null;
+    // Keep the latest offline snapshot in memory without cloning/serializing on
+    // every poll. Persist immediately on first write and at most once per minute
+    // thereafter, and flush the latest state on orderly shutdown.
     if (Date.now() - this.savedAt >= 60_000) await this.flush();
   }
 
   async flush(): Promise<void> {
     const epoch = this.epoch;
     const writing = this.writes.catch(() => {}).then(async () => {
-      if (epoch !== this.epoch || !this.pending) return;
-      const envelope = this.pending; this.pending = null;
+      if (epoch !== this.epoch) return;
+      if (this.dirtyRaw) this.materializeDirty();
+      if (!this.pending) return;
+      const envelope = this.pending;
+      this.pending = null;
       try {
         await writeJsonAtomically(this.filePath, envelope, false);
         if (epoch === this.epoch) this.savedAt = Date.now();
@@ -78,7 +108,10 @@ export class DesktopCacheStore {
   async clear(): Promise<void> {
     ++this.epoch;
     this.blocked = true;
-    this.loaded = null; this.pending = null; this.savedAt = -Infinity;
+    this.loaded = null;
+    this.pending = null;
+    this.dirtyRaw = null;
+    this.savedAt = -Infinity;
     // Serialize after any old write so it cannot recreate signed-out telemetry.
     const clear = this.writes.catch(() => {}).then(() => writeJsonAtomically(this.filePath, null, false));
     this.writes = clear;

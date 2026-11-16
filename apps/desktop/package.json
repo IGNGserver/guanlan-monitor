@@ -111,15 +111,19 @@
       "afterInstall": "build/linux/after-install.sh",
       "afterRemove": "build/linux/after-remove.sh",
       "depends": [
-        "libgtk-3-0",
-        "libnotify4",
-        "libnss3",
-        "libxss1",
-        "libxtst6",
-        "xdg-utils",
-        "libatspi2.0-0",
-        "libuuid1",
-        "libsecret-1-0"
+        "libc6",
+        "ca-certificates"
+      ],
+      "fpm": [
+        "--deb-recommends=libgtk-3-0 | libgtk-3-0t64",
+        "--deb-recommends=libnotify4",
+        "--deb-recommends=libnss3",
+        "--deb-recommends=libxss1",
+        "--deb-recommends=libxtst6",
+        "--deb-recommends=xdg-utils",
+        "--deb-recommends=libatspi2.0-0 | libatspi2.0-0t64",
+        "--deb-recommends=libuuid1",
+        "--deb-recommends=libsecret-1-0"
       ]
     }
   }

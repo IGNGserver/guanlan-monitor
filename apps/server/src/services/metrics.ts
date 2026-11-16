@@ -31,6 +31,7 @@ export class MetricsService {
   private readonly queryWork = new SharedQueryWork();
   private readonly minuteAccumulators = new Map<string, MetricAccumulator>();
   private readonly hourlyAccumulators = new Map<string, MetricAccumulator>();
+  private readonly inventoryHashes = new Map<string, string>();
   private readonly dirtyAccumulators = new WeakSet<MetricAccumulator>();
   private readonly deviceQueues = new KeyedSerialQueue();
   private readonly ingestQueues = new KeyedSerialQueue();
@@ -68,34 +69,50 @@ export class MetricsService {
     return (await devices.listOpenDevices()).find((device) => device.deviceId === deviceId) ?? null;
   }
 
-  async ingest(payload: AgentMetricsPayload) {
+  async ingest(payload: AgentMetricsPayload): Promise<{ needInventory?: boolean }> {
     const receivedAt = new Date().toISOString();
-    await this.runDeviceIngestOperation(payload.identity.deviceId, () => this.runDeviceAggregateOperation(payload.identity.deviceId, async () => {
+    return this.runDeviceIngestOperation(payload.identity.deviceId, () => this.runDeviceAggregateOperation(payload.identity.deviceId, async () => {
       const device = await this.repositories.devices.registerOrUpdateDevice(
         payload.identity.deviceId,
         payload.identity.hostname,
         { reopenClosed: true, skipUnchanged: true }
       );
-      if (device.status === "closed") return;
-      await this.persistPayload(payload, receivedAt, device.sortOrder, device.group ?? null);
+      if (device.status === "closed") return {};
+      return this.persistPayload(payload, receivedAt, device.sortOrder, device.group ?? null);
     }));
   }
 
   private async persistPayload(
-    payload: AgentMetricsPayload,
+    rawPayload: AgentMetricsPayload,
     receivedAt = new Date().toISOString(),
     sortOrder?: number,
     group?: string | null
-  ) {
+  ): Promise<{ needInventory?: boolean }> {
+    const deviceId = rawPayload.identity.deviceId;
     const [previousState, config] = await Promise.all([
-      this.repositories.realtime.getDevice(payload.identity.deviceId),
-      this.getMetricConfig(payload.identity.deviceId)
+      this.repositories.realtime.getDevice(deviceId),
+      this.getMetricConfig(deviceId)
     ]);
+
+    let payload = rawPayload;
+    if (rawPayload.inventoryOmitted) {
+      const knownHash = this.inventoryHashes.get(deviceId) ?? previousState?.latest?.inventoryHash;
+      if (!rawPayload.inventoryHash || !previousState?.latest || knownHash !== rawPayload.inventoryHash) {
+        return { needInventory: true };
+      }
+      payload = hydrateOmittedInventory(rawPayload, previousState.latest);
+      this.inventoryHashes.set(deviceId, rawPayload.inventoryHash);
+    } else if (rawPayload.inventoryHash) {
+      this.inventoryHashes.set(deviceId, rawPayload.inventoryHash);
+    } else {
+      this.inventoryHashes.delete(deviceId);
+    }
+
     // An offline agent may replay an older pending sample after a newer one
     // already reached the Hub. Never let it replace the live reading or roll
     // the active aggregation window backwards.
     if (previousState && Date.parse(payload.timestamp) <= Date.parse(previousState.latest.timestamp)) {
-      return;
+      return {};
     }
     if (previousState && hasIdentityBoundaryChanged(previousState.identity, payload.identity)) {
       // Identity metadata changed (e.g. hostname, os, platform, arch).
@@ -133,6 +150,7 @@ export class MetricsService {
       }
     };
     this.emitDeviceEventSafely(event);
+    return {};
   }
 
   async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void> {
@@ -179,6 +197,7 @@ export class MetricsService {
     const state = await this.repositories.realtime.getDevice(deviceId);
     this.minuteAccumulators.delete(deviceId);
     this.hourlyAccumulators.delete(deviceId);
+    this.inventoryHashes.delete(deviceId);
     await this.repositories.realtime.remove(deviceId);
     if (!state) return;
 
@@ -447,7 +466,7 @@ export class MetricsService {
     await this.repositories.history.clearDeviceHistory(deviceId);
   }
 
-  private runDeviceIngestOperation(deviceId: string, operation: () => Promise<void>): Promise<void> {
+  private runDeviceIngestOperation<T>(deviceId: string, operation: () => Promise<T>): Promise<T> {
     return this.ingestQueues.run(deviceId, operation);
   }
 
@@ -794,3 +813,72 @@ function averageInstanceMetrics(
     rpm: rpmCount > 0 ? sums.rpm / rpmCount : undefined
   }));
 }
+
+function hydrateOmittedInventory(payload: AgentMetricsPayload, previous: AgentMetricsPayload): AgentMetricsPayload {
+  const previousCpuById = new Map((previous.cpuPackages ?? []).map((item) => [item.id, item]));
+  const previousDiskById = new Map((previous.disks ?? []).map((item) => [item.id, item]));
+  const previousNetById = new Map((previous.networkInterfaces ?? []).map((item) => [item.id, item]));
+  const previousGpuById = new Map((previous.gpus ?? []).map((item) => [item.id, item]));
+
+  return {
+    ...payload,
+    inventoryOmitted: false,
+    memory: {
+      ...payload.memory,
+      speedMHz: payload.memory.speedMHz ?? previous.memory.speedMHz,
+      slotCount: payload.memory.slotCount ?? previous.memory.slotCount,
+      formFactor: payload.memory.formFactor || previous.memory.formFactor,
+      memoryType: payload.memory.memoryType || previous.memory.memoryType
+    },
+    cpuPackages: payload.cpuPackages?.map((pkg) => {
+      const prev = previousCpuById.get(pkg.id);
+      if (!prev) return pkg;
+      return {
+        ...pkg,
+        model: pkg.model || prev.model,
+        coreCount: pkg.coreCount || prev.coreCount,
+        logicalCount: pkg.logicalCount || prev.logicalCount,
+        l3CacheBytes: pkg.l3CacheBytes && pkg.l3CacheBytes > 0 ? pkg.l3CacheBytes : prev.l3CacheBytes,
+        l2CacheBytes: pkg.l2CacheBytes && pkg.l2CacheBytes > 0 ? pkg.l2CacheBytes : prev.l2CacheBytes
+      };
+    }),
+    disks: payload.disks?.map((disk) => {
+      const prev = previousDiskById.get(disk.id);
+      if (!prev) return disk;
+      return {
+        ...disk,
+        filesystem: disk.filesystem || prev.filesystem,
+        model: disk.model || prev.model,
+        vendor: disk.vendor || prev.vendor,
+        sourceKey: disk.sourceKey || prev.sourceKey,
+        physicalDevice: disk.physicalDevice || prev.physicalDevice,
+        healthReason: disk.healthReason || prev.healthReason,
+        smartAttributes: disk.smartAttributes?.length ? disk.smartAttributes : prev.smartAttributes,
+        interfaceType: disk.interfaceType || prev.interfaceType
+      };
+    }),
+    networkInterfaces: payload.networkInterfaces?.map((iface) => {
+      const prev = previousNetById.get(iface.id);
+      if (!prev) return iface;
+      return {
+        ...iface,
+        model: iface.model || prev.model,
+        macAddress: iface.macAddress || prev.macAddress,
+        ipv4: iface.ipv4?.length ? iface.ipv4 : prev.ipv4,
+        ipv6: iface.ipv6?.length ? iface.ipv6 : prev.ipv6,
+        linkSpeedMbps: iface.linkSpeedMbps ?? prev.linkSpeedMbps,
+        connectionType: iface.connectionType || prev.connectionType
+      };
+    }),
+    gpus: payload.gpus.map((gpu) => {
+      const prev = previousGpuById.get(gpu.id);
+      if (!prev) return gpu;
+      return {
+        ...gpu,
+        driverVersion: gpu.driverVersion || prev.driverVersion
+      };
+    }),
+    sensorBackends: payload.sensorBackends?.length ? payload.sensorBackends : previous.sensorBackends
+  };
+}
+

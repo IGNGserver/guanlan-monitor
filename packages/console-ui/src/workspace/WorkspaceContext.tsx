@@ -116,11 +116,14 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   useEffect(() => {
     if (!adapter.getWindowState) return;
     let cancelled = false;
+    const applyWindowState = (state: WindowState) => {
+      setWindowState((prev) => (prev.maximized === state.maximized && prev.fullscreen === state.fullscreen ? prev : state));
+    };
     void adapter.getWindowState().then(
-      (state) => { if (!cancelled) setWindowState(state); },
-      () => { if (!cancelled) setWindowState(fallbackWindowState()); }
+      (state) => { if (!cancelled) applyWindowState(state); },
+      () => { if (!cancelled) applyWindowState(fallbackWindowState()); }
     );
-    const unsubscribe = adapter.subscribeWindowState?.((state) => setWindowState(state));
+    const unsubscribe = adapter.subscribeWindowState?.((state) => applyWindowState(state));
     return () => {
       cancelled = true;
       unsubscribe?.();
@@ -130,14 +133,25 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   useEffect(() => {
     if (!adapter.getRuntimeProfile) return;
     let cancelled = false;
+    const applyRuntimeProfile = (nextProfile: DesktopRuntimeProfile) => {
+      setRuntimeProfile((prev) => (
+        prev.isRemoteSession === nextProfile.isRemoteSession
+        && prev.memoryPressure === nextProfile.memoryPressure
+        && prev.recommendedRefreshInterval === nextProfile.recommendedRefreshInterval
+        && prev.chartPointLimit === nextProfile.chartPointLimit
+        && prev.useOpaqueWindow === nextProfile.useOpaqueWindow
+          ? prev
+          : nextProfile
+      ));
+    };
     const syncRuntimeProfile = async () => {
       try {
         const nextProfile = adapter.getRuntimeProfile
           ? await adapter.getRuntimeProfile()
           : fallbackRuntimeProfile();
-        if (!cancelled) setRuntimeProfile(nextProfile);
+        if (!cancelled) applyRuntimeProfile(nextProfile);
       } catch {
-        if (!cancelled) setRuntimeProfile(fallbackRuntimeProfile());
+        if (!cancelled) applyRuntimeProfile(fallbackRuntimeProfile());
       }
     };
     const stop = startVisiblePolling(syncRuntimeProfile, 30_000, true);
@@ -146,6 +160,10 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
       stop();
     };
   }, [adapter]);
+
+  const applySnapshot = useCallback((nextSnapshot: ConsoleSnapshot) => {
+    setSnapshot((prev) => (isEquivalentSnapshot(prev, nextSnapshot) ? prev : nextSnapshot));
+  }, []);
 
   const lowResourceMode = adapter.capabilities.canControlNativeWindow && (
     runtimeProfile.isRemoteSession
@@ -168,11 +186,12 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
   const queuedRequestRef = useRef<{
     forceRefresh: boolean;
     announce: boolean;
-    run: (forceRefresh: boolean, announce?: boolean) => Promise<void>;
+    checkUpdates: boolean;
+    run: (forceRefresh: boolean, announce?: boolean, checkUpdates?: boolean) => Promise<void>;
   } | null>(null);
 
   const fetchSnapshot = useCallback(
-    async (forceRefresh: boolean, announce = forceRefresh) => {
+    async (forceRefresh: boolean, announce = forceRefresh, checkUpdates = false) => {
       // Guard with the ref as well as the rendered flag. A mutation can start
       // and a timer can fire before React commits the next render; the ref
       // closes that small window and prevents a stale refresh from overwriting
@@ -186,7 +205,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
         include,
         networkMode,
         // The visible poller is the only caller that refreshes without announcing.
-        background: forceRefresh && !announce
+        background: forceRefresh && !announce,
+        ...(checkUpdates ? { checkUpdates: true } : {})
       };
       const requestKey = include.trafficCalendar
         ? `${route.kind}:${requestDeviceId ?? ""}:${metricsWindow}:${trafficMode}:${trafficAnchor}:${networkMode}`
@@ -198,6 +218,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
         queuedRequestRef.current = {
           forceRefresh: forceRefresh || (queuedRequestRef.current?.forceRefresh ?? false),
           announce: announce || (queuedRequestRef.current?.announce ?? false),
+          checkUpdates: checkUpdates || (queuedRequestRef.current?.checkUpdates ?? false),
           // This callback captures the latest device and metric range.
           run: fetchSnapshot
         };
@@ -215,7 +236,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
           if (requestEpoch !== mutationEpochRef.current || pendingMutationsRef.current > 0) return;
           // Verify request key still matches latest intent
           if (currentRequestKeyRef.current === requestKey) {
-            setSnapshot(nextSnapshot);
+            applySnapshot(nextSnapshot);
             if (announce) {
               setNotice(nextSnapshot.source === "cache"
                 ? { tone: "info", text: "连接尚未恢复，正在显示离线缓存" }
@@ -241,12 +262,12 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
           if (queuedRequestRef.current) {
             const queued = queuedRequestRef.current;
             queuedRequestRef.current = null;
-            void queued.run(queued.forceRefresh, queued.announce);
+            void queued.run(queued.forceRefresh, queued.announce, queued.checkUpdates);
           }
         }
       }
     },
-    [adapter, include, metricsWindow, requestDeviceId, route.kind, trafficAnchor, trafficMode, networkMode]
+    [adapter, applySnapshot, include, metricsWindow, requestDeviceId, route.kind, trafficAnchor, trafficMode, networkMode]
   );
 
   /* Subscribe once per adapter.
@@ -265,8 +286,8 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
 
   useEffect(() => adapter.subscribe((nextSnapshot) => {
     if (pendingMutationsRef.current > 0) return;
-    setSnapshot(nextSnapshot);
-  }), [adapter]);
+    applySnapshot(nextSnapshot);
+  }), [adapter, applySnapshot]);
 
   const currentRouteRef = useRef(route);
   useEffect(() => {
@@ -438,7 +459,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     setMutationPending
   });
 
-  const refresh = useCallback(() => fetchSnapshot(true), [fetchSnapshot]);
+  const refresh = useCallback((options?: { checkUpdates?: boolean }) => fetchSnapshot(true, true, Boolean(options?.checkUpdates)), [fetchSnapshot]);
 
   const allDevices = snapshot?.devices ?? NO_DEVICES;
   const devices = allDevices;
@@ -652,3 +673,31 @@ export function useWorkspace(): WorkspaceContextValue {
   const actions = useWorkspaceActions();
   return useMemo(() => ({ ...ui, ...data, ...actions }), [ui, data, actions]);
 }
+
+function isEquivalentSnapshot(prev: ConsoleSnapshot | null, next: ConsoleSnapshot): boolean {
+  if (prev === next) return true;
+  if (!prev) return false;
+  if (
+    prev.generatedAt !== next.generatedAt
+    || prev.source !== next.source
+    || prev.selectedDeviceId !== next.selectedDeviceId
+    || prev.session.authenticated !== next.session.authenticated
+    || prev.session.accessKeyConfigured !== next.session.accessKeyConfigured
+    || prev.devices.length !== next.devices.length
+    || Boolean(prev.metrics) !== Boolean(next.metrics)
+    || prev.metrics?.device.deviceId !== next.metrics?.device.deviceId
+    || prev.metrics?.window !== next.metrics?.window
+    || prev.metrics?.rangeEnd !== next.metrics?.rangeEnd
+    || Boolean(prev.overviewMetrics) !== Boolean(next.overviewMetrics)
+    || prev.overviewMetrics?.window !== next.overviewMetrics?.window
+    || Boolean(prev.trafficCalendar) !== Boolean(next.trafficCalendar)
+  ) {
+    return false;
+  }
+  return (
+    JSON.stringify(prev.startup) === JSON.stringify(next.startup)
+    && JSON.stringify(prev.update) === JSON.stringify(next.update)
+    && JSON.stringify(prev.localBackend) === JSON.stringify(next.localBackend)
+  );
+}
+

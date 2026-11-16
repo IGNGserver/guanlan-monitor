@@ -13,6 +13,7 @@ export const LIVE_RESULT_TTL_MS = 900;
 /** Same-identity reconnects replace a stale session; this many within the window means two live copies of one identity. */
 export const LIVE_TAKEOVER_LIMIT = 3;
 export const LIVE_TAKEOVER_WINDOW_MS = 60_000;
+export const LIVE_WANTED_TTL_MS = 180_000;
 
 export class LiveError extends Error {
   constructor(public readonly code: string, public readonly statusCode = 503) { super(code); }
@@ -52,8 +53,24 @@ export interface AgentSession {
 export class LiveRegistry {
   private readonly sessions = new Map<string, AgentSession>();
   private readonly takeovers = new Map<string, number[]>();
+  private readonly wantedUntil = new Map<string, number>();
   private closed = false;
   constructor(private readonly now = () => performance.now(), private readonly requestMs = LIVE_REQUEST_MS) {}
+
+  markWanted(deviceId: string): void {
+    if (this.closed) return;
+    this.wantedUntil.set(deviceId, this.now() + LIVE_WANTED_TTL_MS);
+  }
+
+  isWanted(deviceId: string): boolean {
+    const until = this.wantedUntil.get(deviceId);
+    if (until === undefined) return false;
+    if (this.now() >= until) {
+      this.wantedUntil.delete(deviceId);
+      return false;
+    }
+    return true;
+  }
 
   attach(deviceId: string, transport: LiveTransport): AgentSession {
     if (this.closed) throw new LiveError("hub_shutting_down");
@@ -115,6 +132,7 @@ export class LiveRegistry {
   }
 
   read(deviceId: string, topic: LiveTopic): Promise<LiveSnapshot> {
+    this.markWanted(deviceId);
     const session = this.sessions.get(deviceId);
     if (!session || !this.valid(session) || !session.ready) {
       if (session && !this.valid(session)) this.detach(session);
@@ -195,6 +213,14 @@ export class LiveRegistry {
     session.transport.close();
   }
 
-  closeDevice(deviceId: string): void { const session = this.sessions.get(deviceId); if (session) this.detach(session); }
-  close(): void { this.closed = true; for (const session of this.sessions.values()) this.detach(session); }
+  closeDevice(deviceId: string): void {
+    this.wantedUntil.delete(deviceId);
+    const session = this.sessions.get(deviceId);
+    if (session) this.detach(session);
+  }
+  close(): void {
+    this.closed = true;
+    this.wantedUntil.clear();
+    for (const session of this.sessions.values()) this.detach(session);
+  }
 }

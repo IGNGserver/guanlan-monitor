@@ -61,7 +61,7 @@ func (s *server) handleStatus(writer http.ResponseWriter, request *http.Request)
 	s.mu.Lock()
 	pending := s.snapshotLockedPending()
 	payload := statusPayload{
-		Running:            s.cmd != nil && s.cmd.Process != nil,
+		Running:            s.isCollectorRunningLocked(),
 		ServiceScope:       s.serviceScope,
 		CollectorRunning:   !s.childStartedAt.IsZero() && !strings.EqualFold(strings.TrimSpace(s.connectionState), "stopped"),
 		ConnectionStatus:   s.connectionState,

@@ -19,6 +19,7 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import zlib from "node:zlib";
 
 function parseArguments(argv) {
   const options = { command: argv[0] ?? "serve", port: 3199, marker: "", key: "", timeout: 120, capture: "" };
@@ -84,9 +85,20 @@ const server = http.createServer((request, response) => {
     request.on("data", (chunk) => chunks.push(chunk));
     request.on("end", () => {
       ingested += 1;
-      const body = Buffer.concat(chunks).toString("utf8");
+      const rawBuffer = Buffer.concat(chunks);
+      let decodedBuffer = rawBuffer;
+      if (String(request.headers["content-encoding"] ?? "").toLowerCase().trim() === "gzip") {
+        try {
+          decodedBuffer = zlib.gunzipSync(rawBuffer, { maxOutputLength: 4 * 1024 * 1024 });
+        } catch {
+          response.writeHead(400, { "Content-Type": "application/json" });
+          response.end(JSON.stringify({ error: "invalid_gzip_payload" }));
+          return;
+        }
+      }
+      const body = decodedBuffer.toString("utf8");
       let summary = {};
-      let captured = { bytes: body.length };
+      let captured = { bytes: rawBuffer.length, uncompressedBytes: decodedBuffer.length };
       try {
         const payload = JSON.parse(body);
         summary = { deviceId: payload?.identity?.deviceId, timestamp: payload?.timestamp };
@@ -94,12 +106,14 @@ const server = http.createServer((request, response) => {
           at: new Date().toISOString(),
           deviceId: payload?.identity?.deviceId,
           sampledAt: payload?.timestamp,
-          bytes: body.length,
+          bytes: rawBuffer.length,
+          uncompressedBytes: decodedBuffer.length,
+          inventoryOmitted: Boolean(payload?.inventoryOmitted),
           probeSpawns: payload?.probeSpawns ?? null,
           collectorStats: payload?.collectorStats ?? null
         };
       } catch {
-        summary = { bytes: body.length };
+        summary = { bytes: rawBuffer.length };
       }
       if (options.marker) {
         fs.mkdirSync(path.dirname(options.marker), { recursive: true });
@@ -111,7 +125,11 @@ const server = http.createServer((request, response) => {
       }
       console.log(`headless-hub-stub: ingest #${ingested} ${JSON.stringify(summary)}`);
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ ok: true }));
+      response.end(JSON.stringify({
+        ok: true,
+        capabilities: { gzip: true, liveOnDemand: true, inventoryDelta: true },
+        liveWanted: false
+      }));
     });
     return;
   }

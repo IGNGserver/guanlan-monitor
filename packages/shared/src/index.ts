@@ -468,6 +468,8 @@ export interface DeviceMetricConfigResponse {
 
 export interface AgentMetricsPayload {
   sampleId?: string;
+  inventoryHash?: string;
+  inventoryOmitted?: boolean;
   identity: AgentIdentity;
   timestamp: string;
   heartbeatAt: string;
@@ -769,6 +771,7 @@ export interface MetricsLatest {
 
 export interface MetricsResponse {
   sampling?: { method: "minmax-v1"; targetPoints: number };
+  incremental?: boolean;
   device: DeviceDetail;
   status: DeviceStatus;
   lastSeenAt: string | null;
@@ -966,6 +969,8 @@ export interface ConsoleSnapshotRequest {
    * navigation or a reconnect never sets it and always re-confirms.
    */
   background?: boolean;
+  /** Explicitly refresh GitHub release metadata instead of checking on every foreground action. */
+  checkUpdates?: boolean;
 }
 export type DesktopSnapshotRequest = ConsoleSnapshotRequest;
 

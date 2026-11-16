@@ -287,3 +287,96 @@ func TestWriteTimeoutGrowsWithPayloadButStaysBounded(t *testing.T) {
 		t.Fatal("deadline must stay bounded")
 	}
 }
+
+func TestClientOnDemandStandbyWakeAndIdleDisconnect(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	const sid = "bfe51be2-7239-46d5-bcdc-c0752fa32a11"
+	var wsConnections atomic.Int32
+	connected := make(chan struct{}, 4)
+	disconnected := make(chan struct{}, 4)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/agent/enroll" {
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		wsConnections.Add(1)
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() {
+			conn.CloseNow()
+			disconnected <- struct{}{}
+		}()
+		var incoming frame
+		if wsjson.Read(ctx, conn, &incoming) != nil {
+			return
+		}
+		if wsjson.Write(ctx, conn, map[string]any{"type": "welcome", "sessionId": sid, "protocolVersion": 1}) != nil {
+			return
+		}
+		if wsjson.Read(ctx, conn, &incoming) != nil {
+			return
+		}
+		connected <- struct{}{}
+		for {
+			if wsjson.Read(ctx, conn, &incoming) != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	var wanted atomic.Bool
+	wake := make(chan struct{}, 1)
+	c := Client{
+		Directory:   t.TempDir(),
+		IdleTimeout: 120 * time.Millisecond,
+		Config: func() Config {
+			return Config{Enabled: true, ServerURL: server.URL, AccessKey: "fixture-admin", DeviceID: "node"}
+		},
+		Demand: func() (bool, bool) {
+			return true, wanted.Load()
+		},
+		Wake: wake,
+		Handle: func(_ context.Context, _ Request) (any, error) {
+			return map[string]any{}, nil
+		},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c.Run(ctx)
+	}()
+
+	time.Sleep(80 * time.Millisecond)
+	if wsConnections.Load() != 0 {
+		t.Fatalf("expected 0 websocket connections while on-demand standby, got %d", wsConnections.Load())
+	}
+
+	// Signal demand and wake immediately.
+	wanted.Store(true)
+	wake <- struct{}{}
+
+	select {
+	case <-connected:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for live websocket connection after wake")
+	}
+
+	// Clear demand so after IdleTimeout the websocket disconnects cleanly and stays disconnected.
+	wanted.Store(false)
+	select {
+	case <-disconnected:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for idle live websocket disconnect")
+	}
+
+	cancel()
+	<-done
+}
+

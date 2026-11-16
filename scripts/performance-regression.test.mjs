@@ -325,3 +325,202 @@ test('packaged main and preload have no external npm runtime imports', { skip: s
   await inspect('apps/desktop/dist/main');
   await inspect('apps/desktop/dist/preload');
 });
+
+test('HubClient reuses listDevices on 304 Not Modified and resets cache on session change', async () => {
+  const original = globalThis.fetch;
+  const seenIfNoneMatch = [];
+  let responseMode = 'full';
+  globalThis.fetch = async (url, init = {}) => {
+    const endpoint = String(url);
+    if (endpoint.endsWith('/api/auth/login')) {
+      return new Response('{"ok":true}', { headers: { 'set-cookie': 'dsc_session=fixture; Path=/' } });
+    }
+    if (endpoint.endsWith('/api/instances')) {
+      const headers = new Headers(init.headers);
+      seenIfNoneMatch.push(headers.get('if-none-match'));
+      if (responseMode === '304' && headers.get('if-none-match') === 'W/"devices-v1"') {
+        return new Response(null, { status: 304, headers: { etag: 'W/"devices-v1"' } });
+      }
+      return new Response(JSON.stringify([{ deviceId: 'node-a', hostname: 'Alpha' }]), {
+        status: 200,
+        headers: { 'content-type': 'application/json', etag: 'W/"devices-v1"' }
+      });
+    }
+    throw new Error(`unexpected fetch: ${endpoint}`);
+  };
+  try {
+    const client = new HubClient(path.join(tmpdir(), 'absent-etag-credential.json'));
+    client.setServerUrl('http://localhost:38472');
+    await client.login('fixture');
+    const first = await client.listDevices();
+    assert.equal(first.length, 1);
+    assert.equal(seenIfNoneMatch[0], null);
+
+    responseMode = '304';
+    const second = await client.listDevices();
+    assert.equal(seenIfNoneMatch[1], 'W/"devices-v1"');
+    assert.deepEqual(second, first);
+
+    client.setServerUrl('http://localhost:38473');
+    await client.login('fixture');
+    responseMode = 'full';
+    await client.listDevices();
+    assert.equal(seenIfNoneMatch[2], null, 'changing Hub must clear conditional ETag cache');
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('HubClient merges incremental ?since= metrics on raw 5m windows and prunes expired points', async () => {
+  const original = globalThis.fetch;
+  const requestedUrls = [];
+  let callIndex = 0;
+  const baseMetricResponse = (overrides) => ({
+    device: { deviceId: 'node-a', hostname: 'Alpha', status: 'online', platform: 'linux', arch: 'x64' },
+    window: '5m',
+    rangeStart: '2026-11-16T12:00:00.000Z',
+    rangeEnd: '2026-11-16T12:05:00.000Z',
+    enabledMetrics: [],
+    enabledDeviceIds: {},
+    instanceMetricConfig: {},
+    availableMetrics: [],
+    latest: { cpuUsagePercent: 10 },
+    series: {
+      cpuUsagePercent: [
+        { timestamp: '2026-11-16T12:00:10.000Z', value: 12 },
+        { timestamp: '2026-11-16T12:04:50.000Z', value: 20 }
+      ],
+      cpuFrequencyMHz: [],
+      cpuTemperatureC: [],
+      cpus: [],
+      memoryUsagePercent: [],
+      memoryUsedBytes: [],
+      memoryAvailableBytes: [],
+      memoryCachedBytes: [],
+      memoryCommittedBytes: [],
+      swapUsagePercent: [],
+      swapUsedBytes: [],
+      diskUsagePercent: [],
+      diskActivePercent: [],
+      diskUsedBytes: [],
+      diskReadBytesPerSec: [],
+      diskWriteBytesPerSec: [],
+      networkRxBytesPerSec: [],
+      networkTxBytesPerSec: [],
+      processTotalCount: [],
+      processRunningCount: [],
+      gpuUsagePercent: [],
+      gpuTemperatureC: [],
+      disks: [{
+        id: 'sda',
+        name: 'sda',
+        mountPoint: '/',
+        totalBytes: [],
+        usagePercent: [{ timestamp: '2026-11-16T12:04:50.000Z', value: 45 }],
+        activePercent: [],
+        usedBytes: [],
+        readBytesPerSec: [],
+        writeBytesPerSec: [],
+        temperatureC: []
+      }],
+      gpus: [],
+      networkInterfaces: [],
+      fans: [],
+      temperatures: []
+    },
+    ...overrides
+  });
+
+  globalThis.fetch = async (url) => {
+    const endpoint = String(url);
+    if (endpoint.endsWith('/api/auth/login')) {
+      return new Response('{"ok":true}', { headers: { 'set-cookie': 'dsc_session=fixture; Path=/' } });
+    }
+    requestedUrls.push(endpoint);
+    callIndex += 1;
+    if (callIndex === 1) {
+      return new Response(JSON.stringify(baseMetricResponse({})), { status: 200 });
+    }
+    return new Response(JSON.stringify(baseMetricResponse({
+      incremental: true,
+      rangeStart: '2026-11-16T12:01:00.000Z',
+      rangeEnd: '2026-11-16T12:06:00.000Z',
+      latest: { cpuUsagePercent: 33 },
+      series: {
+        ...baseMetricResponse({}).series,
+        cpuUsagePercent: [{ timestamp: '2026-11-16T12:05:50.000Z', value: 33 }],
+        disks: [{
+          id: 'sda',
+          name: 'sda',
+          mountPoint: '/',
+          totalBytes: [],
+          usagePercent: [{ timestamp: '2026-11-16T12:05:50.000Z', value: 46 }],
+          activePercent: [],
+          usedBytes: [],
+          readBytesPerSec: [],
+          writeBytesPerSec: [],
+          temperatureC: []
+        }]
+      }
+    })), { status: 200 });
+  };
+
+  try {
+    const client = new HubClient(path.join(tmpdir(), 'absent-since-credential.json'));
+    client.setServerUrl('http://localhost:38472');
+    await client.login('fixture');
+
+    const initial = await client.getMetrics('node-a', '5m');
+    assert.ok(!requestedUrls[0].includes('since='), 'initial 5m fetch must request full window');
+    assert.equal(initial.series.cpuUsagePercent.length, 2);
+
+    const merged = await client.getMetrics('node-a', '5m');
+    assert.ok(requestedUrls[1].includes('since=2026-11-16T12%3A04%3A50.000Z'), 'subsequent 5m fetch must pass since=newestSeriesTimestamp');
+    assert.deepEqual(
+      merged.series.cpuUsagePercent.map((point) => point.value),
+      [20, 33],
+      'expired points before rangeStart must be pruned while keeping valid cached points and appending new points'
+    );
+    assert.deepEqual(
+      merged.series.disks[0].usagePercent.map((point) => point.value),
+      [45, 46]
+    );
+    assert.equal(merged.latest.cpuUsagePercent, 33);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('DesktopController coalesces intermediate publishes during background live refreshes', async () => {
+  const controller = new DesktopController();
+  controller.hub.setServerUrl('http://localhost:38472');
+  controller.hub.accessKey = 'fixture';
+  controller.agent.start = async () => ({
+    running: true,
+    config: { connection: { serverUrl: 'http://localhost:38472', secret: '' } }
+  });
+  controller.hub.listDevices = async () => [{ deviceId: 'a', hostname: 'Alpha', status: 'online' }];
+  controller.hub.getMetrics = async () => ({ device: { deviceId: 'a' }, window: '15m', rangeEnd: '2026-11-16T12:05:00.000Z' });
+  controller.hub.getOverviewMetrics = async () => ({ window: '15m', instances: [] });
+  controller.readTrafficCalendar = async () => null;
+  controller.updates.check = async () => ({ available: false, currentChannel: 'stable' });
+
+  let notifications = 0;
+  controller.subscribe(() => { notifications += 1; });
+
+  // Cold start (currentSnapshot is null) publishes progressively + final.
+  await controller.refresh({ include: { deviceMetrics: true, overviewMetrics: true, trafficCalendar: false } });
+  await settle();
+  assert.ok(notifications >= 2, 'cold-start foreground refresh should publish progressively');
+
+  // Steady-state background refresh when already live must coalesce into a single final publish.
+  notifications = 0;
+  controller.nextAutoReadAt = 0;
+  await controller.refresh({
+    background: true,
+    include: { deviceMetrics: true, overviewMetrics: true, trafficCalendar: false }
+  });
+  await settle();
+  assert.equal(notifications, 1, 'steady-state background live poll must coalesce notifications into one publish');
+});
+

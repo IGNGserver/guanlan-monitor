@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { buildDeviceSummaries } from "./inventory-recovery.js";
 import type {
@@ -34,7 +35,8 @@ const loginSchema = z.object({
 
 const metricsQuerySchema = z.object({
   window: z.enum(["1m", "5m", "15m", "1h", "6h", "24h", "1d", "7d", "1w", "30d", "1mo", "90d", "1y"]).default("5m"),
-  pointBudget: z.coerce.number().int().min(16).max(2000).optional()
+  pointBudget: z.coerce.number().int().min(16).max(2000).optional(),
+  since: z.string().trim().min(1).max(64).refine((value) => Number.isFinite(Date.parse(value)), "invalid since timestamp").optional()
 });
 
 const trafficCalendarSchema = z.object({
@@ -277,13 +279,23 @@ export async function registerRoutes(
     group: z.string().trim().max(64).nullable()
   });
 
-  app.get("/api/devices", { preHandler: requireAuth }, async () => {
-    return buildDeviceSummaries(repositories, app.log);
-  });
+  const sendDeviceSummariesWithEtag = async (request: FastifyRequest, reply: FastifyReply) => {
+    const summaries = await buildDeviceSummaries(repositories, app.log);
+    const serialized = JSON.stringify(summaries);
+    const etag = `W/"${createHash("sha1").update(serialized).digest("base64url")}"`;
+    reply.header("ETag", etag);
+    reply.header("Cache-Control", "private, no-cache");
+    const ifNoneMatch = String(request.headers["if-none-match"] ?? "").trim();
+    if (ifNoneMatch && ifNoneMatch.split(",").some((candidate) => candidate.trim() === etag)) {
+      return reply.code(304).send();
+    }
+    reply.header("Content-Type", "application/json; charset=utf-8");
+    return reply.send(serialized);
+  };
 
-  app.get("/api/instances", { preHandler: requireAuth }, async () => {
-    return buildDeviceSummaries(repositories, app.log);
-  });
+  app.get("/api/devices", { preHandler: requireAuth }, sendDeviceSummariesWithEtag);
+
+  app.get("/api/instances", { preHandler: requireAuth }, sendDeviceSummariesWithEtag);
 
   app.get<{ Querystring: { window: MetricWindow } }>(
     "/api/overview/metrics",
@@ -398,7 +410,7 @@ export async function registerRoutes(
     return { ...toDetail(state), sortOrder: record?.sortOrder, group: record?.group ?? null };
   });
 
-  app.get<{ Params: { deviceId: string }; Querystring: { window: MetricWindow } }>(
+  app.get<{ Params: { deviceId: string }; Querystring: { window: MetricWindow; pointBudget?: string; since?: string } }>(
     "/api/devices/:deviceId/metrics",
     { preHandler: requireAuth },
     async (request, reply) => {
@@ -428,9 +440,13 @@ export async function registerRoutes(
         baseAvailableMetrics
       );
       const availableMetrics = markSeriesBackedMetricAvailability(baseAvailableMetrics, series);
+      const budgeted = budgetSeries(series, query.pointBudget);
+      const sinceMs = query.since !== undefined ? Date.parse(query.since) : Number.NaN;
+      const responseSeries = Number.isFinite(sinceMs) ? filterMetricSeriesSince(budgeted, sinceMs) : budgeted;
       const rangeEnd = new Date();
       const rangeStart = new Date(rangeEnd.getTime() - METRIC_WINDOW_DURATION_MS[query.window]);
       return {
+        ...(Number.isFinite(sinceMs) ? { incremental: true } : {}),
         device: { ...toDetail(state), sortOrder: record?.sortOrder, group: record?.group ?? null },
         status: state.status,
         lastSeenAt: state.lastSeenAt,
@@ -488,7 +504,7 @@ export async function registerRoutes(
             };
           })
         },
-        series: budgetSeries(series, query.pointBudget),
+        series: responseSeries,
         sampling: query.pointBudget ? { method: "minmax-v1", targetPoints: query.pointBudget } : undefined
       };
     }
@@ -814,6 +830,97 @@ function alignSamplePoints(points: Array<{ timestamp: string; value: number }>, 
   return [...deduped.entries()]
     .sort((left, right) => left[0] - right[0])
     .map(([, point]) => point);
+}
+
+function filterSamplePointsSince(points: Array<{ timestamp: string; value: number }>, sinceMs: number) {
+  if (!points.length) return points;
+  return points.filter((point) => {
+    const ts = Date.parse(point.timestamp);
+    return Number.isFinite(ts) && ts > sinceMs;
+  });
+}
+
+function filterMetricSeriesSince(series: MetricSeries, sinceMs: number): MetricSeries {
+  return {
+    ...series,
+    cpuUsagePercent: filterSamplePointsSince(series.cpuUsagePercent, sinceMs),
+    cpuFrequencyMHz: filterSamplePointsSince(series.cpuFrequencyMHz, sinceMs),
+    cpuTemperatureC: filterSamplePointsSince(series.cpuTemperatureC, sinceMs),
+    gpuUsagePercent: filterSamplePointsSince(series.gpuUsagePercent, sinceMs),
+    gpuEncodePercent: filterSamplePointsSince(series.gpuEncodePercent, sinceMs),
+    gpuDecodePercent: filterSamplePointsSince(series.gpuDecodePercent, sinceMs),
+    gpuFrequencyMHz: filterSamplePointsSince(series.gpuFrequencyMHz, sinceMs),
+    gpuMemoryUsagePercent: filterSamplePointsSince(series.gpuMemoryUsagePercent, sinceMs),
+    gpuMemoryUsedBytes: filterSamplePointsSince(series.gpuMemoryUsedBytes, sinceMs),
+    gpuTemperatureC: filterSamplePointsSince(series.gpuTemperatureC, sinceMs),
+    memoryUsagePercent: filterSamplePointsSince(series.memoryUsagePercent, sinceMs),
+    swapUsagePercent: filterSamplePointsSince(series.swapUsagePercent, sinceMs),
+    memoryUsedBytes: filterSamplePointsSince(series.memoryUsedBytes, sinceMs),
+    swapUsedBytes: filterSamplePointsSince(series.swapUsedBytes, sinceMs),
+    memoryAvailableBytes: filterSamplePointsSince(series.memoryAvailableBytes, sinceMs),
+    memoryCachedBytes: filterSamplePointsSince(series.memoryCachedBytes, sinceMs),
+    memoryCommittedBytes: filterSamplePointsSince(series.memoryCommittedBytes, sinceMs),
+    memoryCommitLimitBytes: filterSamplePointsSince(series.memoryCommitLimitBytes, sinceMs),
+    systemProcessCount: filterSamplePointsSince(series.systemProcessCount, sinceMs),
+    systemThreadCount: filterSamplePointsSince(series.systemThreadCount, sinceMs),
+    systemHandleCount: filterSamplePointsSince(series.systemHandleCount, sinceMs),
+    diskUsagePercent: filterSamplePointsSince(series.diskUsagePercent, sinceMs),
+    diskUsedBytes: filterSamplePointsSince(series.diskUsedBytes, sinceMs),
+    diskReadBytesPerSec: filterSamplePointsSince(series.diskReadBytesPerSec, sinceMs),
+    diskWriteBytesPerSec: filterSamplePointsSince(series.diskWriteBytesPerSec, sinceMs),
+    networkRxBytesPerSec: filterSamplePointsSince(series.networkRxBytesPerSec, sinceMs),
+    networkTxBytesPerSec: filterSamplePointsSince(series.networkTxBytesPerSec, sinceMs),
+    trafficRxBytes: filterSamplePointsSince(series.trafficRxBytes, sinceMs),
+    trafficTxBytes: filterSamplePointsSince(series.trafficTxBytes, sinceMs),
+    cpus: series.cpus.map((cpu) => ({
+      ...cpu,
+      usagePercent: filterSamplePointsSince(cpu.usagePercent, sinceMs),
+      frequencyMHz: filterSamplePointsSince(cpu.frequencyMHz, sinceMs),
+      temperatureC: filterSamplePointsSince(cpu.temperatureC, sinceMs)
+    })),
+    disks: series.disks.map((disk) => ({
+      ...disk,
+      totalBytes: filterSamplePointsSince(disk.totalBytes, sinceMs),
+      usagePercent: filterSamplePointsSince(disk.usagePercent, sinceMs),
+      activePercent: filterSamplePointsSince(disk.activePercent, sinceMs),
+      usedBytes: filterSamplePointsSince(disk.usedBytes, sinceMs),
+      readBytesPerSec: filterSamplePointsSince(disk.readBytesPerSec, sinceMs),
+      writeBytesPerSec: filterSamplePointsSince(disk.writeBytesPerSec, sinceMs),
+      temperatureC: filterSamplePointsSince(disk.temperatureC, sinceMs)
+    })),
+    storagePools: series.storagePools.map((pool) => ({
+      ...pool,
+      totalBytes: filterSamplePointsSince(pool.totalBytes, sinceMs),
+      usedBytes: filterSamplePointsSince(pool.usedBytes, sinceMs),
+      availableBytes: filterSamplePointsSince(pool.availableBytes, sinceMs),
+      usagePercent: filterSamplePointsSince(pool.usagePercent, sinceMs)
+    })),
+    networks: series.networks.map((network) => ({
+      ...network,
+      rxBytesPerSec: filterSamplePointsSince(network.rxBytesPerSec, sinceMs),
+      txBytesPerSec: filterSamplePointsSince(network.txBytesPerSec, sinceMs),
+      trafficRxBytes: filterSamplePointsSince(network.trafficRxBytes, sinceMs),
+      trafficTxBytes: filterSamplePointsSince(network.trafficTxBytes, sinceMs)
+    })),
+    gpus: series.gpus.map((gpu) => ({
+      ...gpu,
+      usagePercent: filterSamplePointsSince(gpu.usagePercent, sinceMs),
+      encodePercent: filterSamplePointsSince(gpu.encodePercent, sinceMs),
+      decodePercent: filterSamplePointsSince(gpu.decodePercent, sinceMs),
+      frequencyMHz: filterSamplePointsSince(gpu.frequencyMHz, sinceMs),
+      memoryUsagePercent: filterSamplePointsSince(gpu.memoryUsagePercent, sinceMs),
+      memoryUsedBytes: filterSamplePointsSince(gpu.memoryUsedBytes, sinceMs),
+      temperatureC: filterSamplePointsSince(gpu.temperatureC, sinceMs)
+    })),
+    temperatureSensors: series.temperatureSensors.map((sensor) => ({
+      ...sensor,
+      currentC: filterSamplePointsSince(sensor.currentC, sinceMs)
+    })),
+    fans: series.fans.map((fan) => ({
+      ...fan,
+      rpm: filterSamplePointsSince(fan.rpm, sinceMs)
+    }))
+  };
 }
 
 function setSession(reply: FastifyReply, session: SessionValue) {

@@ -5,10 +5,8 @@ import { Server as SocketIOServer } from "socket.io";
 import Redis from "ioredis";
 import mysql from "mysql2/promise";
 import { env, redisNamespace } from "./config.js";
-import { authRateLimiter, getBearerToken, parseSessionValue, safeEqual } from "./auth.js";
+import { parseSessionValue } from "./auth.js";
 import { nonOverlappingTask, scheduleSessionExpiry } from "./lifecycle.js";
-import { QueueCapacityError } from "./serial-queue.js";
-import { agentMetricsPayloadSchema } from "./metrics-schema.js";
 import { RedisRealtimeRepository } from "./repositories/realtime.js";
 import { MysqlHistoryRepository } from "./repositories/history.js";
 import { MysqlDeviceRepository } from "./repositories/devices.js";
@@ -27,12 +25,13 @@ import {
 import { MetricsService } from "./services/metrics.js";
 import { registerRoutes } from "./routes.js";
 import { registerRequestTiming } from "./request-timing.js";
+import { registerAgentIngestRoute, registerHttpCompression } from "./http-compression.js";
 import { registerInventoryRecovery } from "./inventory-recovery.js";
 import { resolve } from "node:path";
 import { AgentCredentials } from "./live/credentials.js";
 import { LiveRegistry } from "./live/registry.js";
 import { registerLiveRoutes } from "./live/routes.js";
-import type { AgentMetricsPayload, DeviceRealtimeEvent } from "@dsc/shared";
+import type { DeviceRealtimeEvent } from "@dsc/shared";
 import type { Repositories } from "./types.js";
 
 process.on("uncaughtException", (error) => {
@@ -62,6 +61,7 @@ const app = Fastify({
   trustProxy: env.TRUST_PROXY
 });
 registerRequestTiming(app);
+registerHttpCompression(app);
 await app.register(cors, {
   origin: corsOrigins,
   credentials: true,
@@ -247,38 +247,12 @@ await registerRoutes(app, repositories, metricsService, {
   }
 });
 
-app.post<{ Body: AgentMetricsPayload }>("/api/agent/ingest", async (request, reply) => {
-  if (shuttingDown) return reply.header("Retry-After", "1").code(503).send({ error: "hub_shutting_down" });
-  if (env.AGENT_REQUIRE_HTTPS && request.protocol !== "https") {
-    return reply.code(400).send({ error: "https_required", message: "Agent endpoint requires HTTPS when AGENT_REQUIRE_HTTPS=true." });
-  }
-  const clientKey = request.ip;
-  if (!authRateLimiter.allow(clientKey)) {
-    reply.header("Retry-After", "60");
-    return reply.code(429).send({ error: "too_many_auth_attempts" });
-  }
-  const token = getBearerToken(request.headers.authorization);
-  if (!token || !safeEqual(token, env.ACCESS_KEY)) {
-    authRateLimiter.recordFailure(clientKey);
-    return reply.code(401).send({ error: "unauthorized_agent" });
-  }
-  authRateLimiter.clear(clientKey);
-
-  const parsed = agentMetricsPayloadSchema.safeParse(request.body);
-  if (!parsed.success) {
-    return reply.code(400).send({ error: "invalid_agent_payload" });
-  }
-  if (parsed.data.identity.deviceId.startsWith("vm:")) {
-    return reply.code(400).send({ error: "invalid_agent_payload" });
-  }
-
-  try {
-    await metricsService.ingest(parsed.data);
-  } catch (error) {
-    if (!(error instanceof QueueCapacityError)) throw error;
-    return reply.header("Retry-After", "1").code(503).send({ error: "hub_queue_capacity" });
-  }
-  return { ok: true };
+registerAgentIngestRoute(app, {
+  accessKey: env.ACCESS_KEY,
+  requireHttps: env.AGENT_REQUIRE_HTTPS,
+  metricsService,
+  liveRegistry,
+  isShuttingDown: () => shuttingDown
 });
 
 registerInventoryRecovery(app, repositories);

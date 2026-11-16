@@ -59,7 +59,7 @@ export function registerIpc(
     // snapshot instead of driving a full hub round trip for a view nobody sees;
     // the show handler in main refreshes immediately when the window returns.
     if (!isWindowVisible(getWindow)) { controller.cancelSnapshot?.(); return controller.getSnapshot(snapshotRequest, false); }
-    return controller.refresh(snapshotRequest, !snapshotRequest.background);
+    return controller.refresh(snapshotRequest, Boolean(snapshotRequest.checkUpdates));
   });
   handle(IPC_CHANNELS.updateLocalConfig, (_event, patch: DesktopConfigPatch) => controller.updateLocalConfig(asConfigPatch(patch)));
   handle(IPC_CHANNELS.controlAgent, (_event, action: DesktopAgentControlAction) => controller.controlAgent(asControlAction(action)));
@@ -295,6 +295,10 @@ function asSnapshotRequest(value: unknown): DesktopSnapshotRequest {
   if (record.background !== undefined) {
     if (typeof record.background !== "boolean") throw new Error("invalid_background");
     request.background = record.background;
+  }
+  if (record.checkUpdates !== undefined) {
+    if (typeof record.checkUpdates !== "boolean") throw new Error("invalid_check_updates");
+    request.checkUpdates = record.checkUpdates;
   }
   if (record.networkMode !== undefined) {
     if (!["auto", "standard", "saver"].includes(record.networkMode as string)) throw new Error("invalid_network_mode");

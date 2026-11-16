@@ -134,6 +134,7 @@ export async function registerLiveRoutes(app: FastifyInstance, options: Options)
   app.get<{ Params: { deviceId: string } }>("/api/devices/:deviceId/live", { preHandler: requireAuth }, async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     if (!deviceIdSchema.safeParse(request.params.deviceId).success) return reply.code(400).send({ error: "invalid_device_id" });
+    registry.markWanted(request.params.deviceId);
     return { ...registry.describe(request.params.deviceId), identityConflictAt: credentials.conflictAt(request.params.deviceId) };
   });
   // Recovery for a reinstalled Agent or a lost key file: drop the binding so the

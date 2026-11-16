@@ -336,6 +336,8 @@ const thermalSchema = z.object({
 
 export const agentMetricsPayloadSchema = z.object({
   sampleId: optionalText(128),
+  inventoryHash: optionalText(128),
+  inventoryOmitted: z.boolean().optional(),
   identity: identitySchema,
   timestamp,
   heartbeatAt: timestamp,

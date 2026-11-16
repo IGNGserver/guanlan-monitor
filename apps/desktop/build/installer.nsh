@@ -211,12 +211,18 @@ dsc_detect_pawnio_service:
   ${EndIf}
 dsc_skip_pawnio_install:
 
-  ; CPU package sensors require the bundled LHM probe to run with the SYSTEM
-  ; token. The helper only writes a short-lived sensor cache; the normal
-  ; desktop Agent remains responsible for config, upload, and UI control.
+  ; CPU package sensors require privileged LHM access. When the machine-scope
+  ; GuanlanAgent service is enabled ($DSC_SERVICE != "0"), it already runs as
+  ; LocalSystem with an in-process collector, so remove any legacy duplicate
+  ; scheduled task; keep the SYSTEM helper only for user-only desktop installs.
   IfFileExists "$INSTDIR\resources\agent\device-state-console-agent.exe" 0 dsc_skip_hardware_sensor_helper
-  nsExec::Exec '"$INSTDIR\resources\agent\device-state-console-agent.exe" install-hardware-helper'
-  Pop $0
+  ${If} $DSC_SERVICE == "0"
+    nsExec::Exec '"$INSTDIR\resources\agent\device-state-console-agent.exe" install-hardware-helper'
+    Pop $0
+  ${Else}
+    nsExec::Exec '"$INSTDIR\resources\agent\device-state-console-agent.exe" uninstall-hardware-helper'
+    Pop $0
+  ${EndIf}
 dsc_skip_hardware_sensor_helper:
 
   ; Remove the old Inno Setup registration after the new installer owns this path.

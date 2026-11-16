@@ -25,6 +25,7 @@ import type { RawAgentBackendState } from "./types.js";
 const DEFAULT_METRIC_WINDOW: MetricWindow = "5m";
 const DEFAULT_TRAFFIC_MODE: TrafficCalendarMode = "day";
 const TRAFFIC_CALENDAR_CACHE_TTL_MS = 60_000;
+const BACKGROUND_LOCAL_BACKEND_POLL_MS = 30_000;
 
 type CachedTrafficCalendar = {
   key: string;
@@ -55,6 +56,7 @@ export class DesktopController {
   private snapshotAbort = new AbortController();
   private generation = 0;
   private localBackend: DesktopSnapshot["localBackend"] = null;
+  private lastLocalBackendReadAt = 0;
   private agentRead: Promise<void> | null = null;
   private failures = 0;
   private summaryDurationMs = 0;
@@ -99,7 +101,7 @@ export class DesktopController {
         resetLiveCredentials: (deviceId) => this.hub.resetLiveCredentials(deviceId)
       },
       getSnapshot: (request?: DesktopSnapshotRequest) => this.getSnapshot(request),
-      refresh: (request?: DesktopSnapshotRequest) => this.refresh(request, !request?.background),
+      refresh: (request?: DesktopSnapshotRequest) => this.refresh(request, Boolean(request?.checkUpdates)),
       updateLocalConfig: (patch: DesktopConfigPatch) => this.updateLocalConfig(patch),
       controlAgent: (action: DesktopAgentControlAction) => this.controlAgent(action),
       saveHubConnection: (serverUrl: string, accessKey: string) => this.saveHubConnection(serverUrl, accessKey),
@@ -171,7 +173,7 @@ export class DesktopController {
   async refresh(request: DesktopSnapshotRequest = {}, manualUpdates = false): Promise<DesktopSnapshot> {
     if (this.visualFixtureEnabled) return this.visualFixtureSnapshot(request);
     if (this.connectionChanging) return this.currentSnapshot ?? this.emptySnapshot();
-    void this.checkDeviceUpdate(manualUpdates).catch(() => {});
+    void this.checkDeviceUpdate(manualUpdates || Boolean(request.checkUpdates)).catch(() => {});
     if (this.refreshInFlight) {
       if (this.hasRequestChanges(request)) {
         this.cancelSnapshot();
@@ -208,7 +210,7 @@ export class DesktopController {
     const signal = this.snapshotAbort.signal;
     const generation = ++this.generation;
     const current = () => !signal.aborted && generation === this.generation;
-    this.readLocalBackend();
+    this.readLocalBackend(Boolean(request.background));
     let cached: DesktopSnapshot | null = null;
     try {
       cached = await this.cache.read(this.hub.cacheScope);
@@ -216,7 +218,7 @@ export class DesktopController {
       // A corrupt cache should degrade to live/empty state, never block refresh.
     }
     try {
-      const live = await this.readLiveData(null, signal, current);
+      const live = await this.readLiveData(null, signal, current, Boolean(request.background));
       if (!current()) return this.currentSnapshot ?? this.emptySnapshot();
       const snapshot = this.createSnapshot("live", live, cached);
       this.currentSnapshot = snapshot;
@@ -255,11 +257,23 @@ export class DesktopController {
     return this.started ? this.refresh() : Promise.resolve();
   }
 
-  private readLocalBackend(): void {
+  private readLocalBackend(background = false): void {
     if (this.agentRead) return;
+    if (
+      background
+      && this.localBackend
+      && this.localBackend.running
+      && !this.localBackend.autoRestartPending
+      && Date.now() - this.lastLocalBackendReadAt < BACKGROUND_LOCAL_BACKEND_POLL_MS
+    ) {
+      return;
+    }
     const expectedUrl = this.hub.configuredUrl;
     const pending = this.agent.start().then((state) => {
-      this.localBackend = redactBackendState(state);
+      this.lastLocalBackendReadAt = Date.now();
+      const nextBackend = redactBackendState(state);
+      const changed = JSON.stringify(this.localBackend) !== JSON.stringify(nextBackend);
+      this.localBackend = nextBackend;
       // Agent discovery can fill a missing address, but cannot overwrite a Hub
       // changed by the user while the Agent was starting.
       if (!expectedUrl && !this.hub.configuredUrl && state.config.connection.serverUrl) {
@@ -269,7 +283,7 @@ export class DesktopController {
           else void this.refresh(this.request);
         }
       }
-      if (this.currentSnapshot) {
+      if (changed && this.currentSnapshot) {
         this.currentSnapshot = { ...this.currentSnapshot, localBackend: this.localBackend };
         this.notify(this.currentSnapshot);
       }
@@ -323,6 +337,7 @@ export class DesktopController {
     const rawState = await this.agent.start();
     const nextConfig = mergeAgentConfig(rawState.config, patch);
     await this.agent.updateConfig(nextConfig);
+    this.lastLocalBackendReadAt = 0;
     if (nextConfig.connection.serverUrl !== this.hub.configuredUrl) {
       await this.clearRemote();
       this.hub.setServerUrl(nextConfig.connection.serverUrl);
@@ -339,6 +354,7 @@ export class DesktopController {
 
   async controlAgent(action: DesktopAgentControlAction): Promise<DesktopSnapshot> {
     await this.agent.control(action);
+    this.lastLocalBackendReadAt = 0;
     return this.refresh();
   }
 
@@ -356,6 +372,7 @@ export class DesktopController {
     // The address is written before the login attempt on purpose: a Hub outage
     // or a rejected key must not lock the user out of correcting the address.
       await saveHubConnectionResiliently(this.agent, this.hub, normalizedUrl, unifiedCredential);
+      this.lastLocalBackendReadAt = 0;
     });
     return this.refresh();
   }
@@ -369,6 +386,7 @@ export class DesktopController {
       const nextConfig = mergeAgentConfig(rawState.config, {});
       nextConfig.connection.secret = normalizedAccessKey;
       await this.agent.updateConfig(nextConfig);
+      this.lastLocalBackendReadAt = 0;
     });
     return this.refresh();
   }
@@ -387,6 +405,7 @@ export class DesktopController {
       const nextConfig = mergeAgentConfig(rawState.config, { cloudSyncEnabled: false });
       nextConfig.connection.secret = "";
       await this.agent.updateConfig(nextConfig);
+      this.lastLocalBackendReadAt = 0;
       await this.hub.logout();
     });
     return this.refresh();
@@ -394,6 +413,7 @@ export class DesktopController {
 
   async cloudPush(): Promise<DesktopSnapshot> {
     await this.agent.cloudPush();
+    this.lastLocalBackendReadAt = 0;
     return this.refresh();
   }
 
@@ -437,8 +457,13 @@ export class DesktopController {
     const channel = this.startup.updateChannel ?? "preview";
     const value = await this.updates.check(channel, manual);
     const selected = this.startup.updateChannel ?? "preview";
-    this.updateInfo = selected === channel ? value : this.updates.cached(selected);
-    if (this.currentSnapshot) { this.currentSnapshot = { ...this.currentSnapshot, update: this.updateInfo }; this.notify(this.currentSnapshot); }
+    const nextUpdate = selected === channel ? value : this.updates.cached(selected);
+    const changed = JSON.stringify(this.updateInfo) !== JSON.stringify(nextUpdate);
+    this.updateInfo = nextUpdate;
+    if (changed && this.currentSnapshot) {
+      this.currentSnapshot = { ...this.currentSnapshot, update: this.updateInfo };
+      this.notify(this.currentSnapshot);
+    }
   }
 
   async openExternal(url: string): Promise<void> {
@@ -453,7 +478,12 @@ export class DesktopController {
     await this.cache.flush().catch(() => { /* Offline persistence is best-effort. */ });
   }
 
-  private async readLiveData(rawState: RawAgentBackendState | null, signal?: AbortSignal, current: () => boolean = () => true): Promise<LiveData> {
+  private async readLiveData(
+    rawState: RawAgentBackendState | null,
+    signal?: AbortSignal,
+    current: () => boolean = () => true,
+    background = false
+  ): Promise<LiveData> {
     const localBackend = rawState ? redactBackendState(rawState) : this.localBackend;
     let devices = [] as DesktopSnapshot["devices"];
     // Device pages are hub-backed. Never synthesize a local device entry when
@@ -482,6 +512,11 @@ export class DesktopController {
       trafficCalendar = previous.selectedDeviceId === selectedDeviceId && previous.trafficCalendar?.mode === this.trafficMode && previous.trafficCalendar.anchor === this.trafficAnchor ? previous.trafficCalendar : null;
       update = previous.update;
     }
+    // Cold starts and foreground route switches publish progressively so the
+    // summary paints immediately before slow chart endpoints settle. Background
+    // polls while a live view is already visible coalesce into one publish at
+    // completion so the renderer does not repaint 5 times per cycle.
+    const progressivePublish = !(background && previous?.source === "live");
     const state = () => ({ localBackend: this.localBackend ?? localBackend, devices, selectedDeviceId, metrics, overviewMetrics, trafficCalendar, update, authenticated });
     const publish = () => {
       if (!current()) return;
@@ -489,12 +524,12 @@ export class DesktopController {
       this.notify(this.currentSnapshot);
       void this.cache.write(this.currentSnapshot, this.hub.cacheScope).catch(() => {});
     };
-    publish();
+    if (progressivePublish) publish();
     const include = this.request.include ?? { deviceMetrics: true, overviewMetrics: true, trafficCalendar: true };
     const budget = this.constrained() ? 120 : undefined;
     let optionalFailed = false;
     const optional = async <T,>(read: () => Promise<T>, apply: (value: T) => void) => {
-      try { const value = await read(); if (current()) { apply(value); publish(); } }
+      try { const value = await read(); if (current()) { apply(value); if (progressivePublish) publish(); } }
       catch (error) { if (isHubDenied(error)) throw error; if (current()) optionalFailed = true; }
     };
     const jobs: Array<() => Promise<void>> = [];
@@ -508,8 +543,7 @@ export class DesktopController {
     await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker));
     if (current()) {
       this.failures = optionalFailed ? Math.min(4, this.failures + 1) : 0;
-      void optional(async () => this.updateInfo, (value) => { update = value; })
-        .catch(() => {});
+      update = this.updateInfo;
     }
     return state();
   }
@@ -775,6 +809,7 @@ function mergeSnapshotRequests(
   if (next.include !== undefined) merged.include = next.include;
   if (next.networkMode !== undefined) merged.networkMode = next.networkMode;
   if (next.background !== undefined) merged.background = next.background;
+  if (next.checkUpdates !== undefined) merged.checkUpdates = next.checkUpdates;
   return merged;
 }
 

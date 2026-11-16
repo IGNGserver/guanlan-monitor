@@ -25,6 +25,7 @@ import (
 
 	"device-state-console/agent/internal/agentconfig"
 	"device-state-console/agent/internal/agentservice"
+	"device-state-console/agent/internal/collector"
 
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -181,7 +182,13 @@ type server struct {
 	syncStatePath             string
 	diagnosticsPath           string
 	pendingStatePath          string
+	bundleRoot                string
 	childBinaryPath           string
+	useEmbeddedCollector      bool
+	embeddedRunning           bool
+	embeddedCancel            context.CancelFunc
+	embeddedDone              chan struct{}
+	embeddedWake              chan struct{}
 	localToken                string
 	serviceScope              bool
 	childJob                  jobObject
@@ -220,6 +227,26 @@ type server struct {
 	pendingCache *collectorPendingStateFile
 }
 
+func newBoundedBackendHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			MaxIdleConns:          4,
+			MaxIdleConnsPerHost:   2,
+			MaxConnsPerHost:       4,
+			IdleConnTimeout:       45 * time.Second,
+			TLSHandshakeTimeout:   8 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+			DisableCompression:    false,
+		},
+	}
+}
+
+func (s *server) isCollectorRunningLocked() bool {
+	return (s.cmd != nil && s.cmd.Process != nil) || s.embeddedRunning
+}
+
 type cloudSyncStateFile struct {
 	CloudConfigDirty bool   `json:"cloudConfigDirty"`
 	LastCloudSyncAt  string `json:"lastCloudSyncAt,omitempty"`
@@ -250,6 +277,7 @@ const (
 )
 
 func main() {
+	collector.SetBuildInfo(BuildVersion, BuildChannel)
 	args := os.Args[1:]
 
 	// Helper commands are dispatched before flag parsing so their own options
@@ -393,7 +421,7 @@ func fileExists(path string) bool {
 func (s *server) snapshotLocked() backendState {
 	pending := s.snapshotLockedPending()
 	return backendState{
-		Running:                        s.cmd != nil && s.cmd.Process != nil,
+		Running:                        s.isCollectorRunningLocked(),
 		BackendStartedAt:               s.backendStartedAt.Format(time.RFC3339),
 		FrontendParentPID:              s.frontendParentPID,
 		ChildStartedAt:                 formatTime(s.childStartedAt),
@@ -621,6 +649,16 @@ func (s *server) handleConfig(writer http.ResponseWriter, request *http.Request)
 				return
 			}
 		}
+		s.mu.Lock()
+		if s.embeddedRunning && s.embeddedWake != nil {
+			select {
+			case s.embeddedWake <- struct{}{}:
+			default:
+			}
+		} else if s.serviceScope && !s.isCollectorRunningLocked() && !s.stopRequested && s.config.DataRecordingEnabled && s.config.AutoStartCollector && validateServerTransport(s.config.Connection.ServerURL) == nil {
+			_ = s.startChildLocked(false)
+		}
+		s.mu.Unlock()
 		writeJSON(writer, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		writer.WriteHeader(http.StatusMethodNotAllowed)
@@ -642,7 +680,7 @@ func (s *server) handleStart(writer http.ResponseWriter, request *http.Request) 
 		writeJSON(writer, http.StatusConflict, map[string]any{"error": "data_recording_disabled", "state": snapshot})
 		return
 	}
-	if s.cmd != nil && s.cmd.Process != nil {
+	if s.isCollectorRunningLocked() {
 		snapshot := s.snapshotLocked()
 		s.mu.Unlock()
 		writeJSON(writer, http.StatusOK, snapshot)
@@ -1058,6 +1096,17 @@ func (s *server) handleProbeDetect(writer http.ResponseWriter, request *http.Req
 }
 
 func (s *server) detectTemperatureSources() ([]temperatureSourceReading, []sensorBackendStatus, []fanSensorReading, error) {
+	if s.useEmbeddedCollector {
+		raw, err := json.Marshal(collector.ProbeHardwareSensors())
+		if err != nil {
+			return []temperatureSourceReading{}, []sensorBackendStatus{}, []fanSensorReading{}, fmt.Errorf("temperature_probe_invalid_response: %w", err)
+		}
+		var response temperatureProbeResponse
+		if err := json.Unmarshal(raw, &response); err != nil {
+			return []temperatureSourceReading{}, []sensorBackendStatus{}, []fanSensorReading{}, fmt.Errorf("temperature_probe_invalid_response: %w", err)
+		}
+		return response.TemperatureSources, response.TemperatureSensorBackends, response.Fans, nil
+	}
 	if strings.TrimSpace(s.childBinaryPath) == "" {
 		return []temperatureSourceReading{}, []sensorBackendStatus{}, []fanSensorReading{}, errors.New("collector_binary_missing")
 	}
@@ -1593,45 +1642,112 @@ func decodeGPUAdapterRows(raw []byte) ([]gpuAdapterDetectRow, error) {
 	return []gpuAdapterDetectRow{single}, nil
 }
 
+func (s *server) recordCollectorLogLine(rawLine string) {
+	line := strings.TrimSpace(rawLine)
+	if line == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	line = redactSensitiveText(line, s.config.Connection.Secret)
+	s.logBuffer = line
+	if strings.Contains(strings.ToLower(line), "uploaded") {
+		s.connectionState = "connected"
+		s.lastUploadAt = time.Now().UTC()
+		if s.lastIssueCount > 0 {
+			s.lastIssueRecoveredAt = time.Now().UTC()
+			s.lastIssueCount = 0
+		}
+	}
+	if category, detail, ok := parseCollectorIssue(line); ok {
+		if s.lastIssueCategory == category {
+			s.lastIssueCount++
+		} else {
+			s.lastIssueCount = 1
+		}
+		s.lastIssueCategory = category
+		s.lastIssueDetail = detail
+		s.lastIssueAt = time.Now().UTC()
+		s.lastIssueRecoveredAt = time.Time{}
+	}
+	if strings.Contains(strings.ToLower(line), "failed") || strings.Contains(strings.ToLower(line), "error") {
+		s.connectionState = "error"
+	}
+}
+
 func (s *server) captureLogs(reader io.Reader) {
 	buffer := make([]byte, 2048)
 	for {
 		count, err := reader.Read(buffer)
 		if count > 0 {
-			line := strings.TrimSpace(string(buffer[:count]))
-			if line != "" {
-				s.mu.Lock()
-				line = redactSensitiveText(line, s.config.Connection.Secret)
-				s.logBuffer = line
-				if strings.Contains(strings.ToLower(line), "uploaded") {
-					s.connectionState = "connected"
-					s.lastUploadAt = time.Now().UTC()
-					if s.lastIssueCount > 0 {
-						s.lastIssueRecoveredAt = time.Now().UTC()
-						s.lastIssueCount = 0
-					}
-				}
-				if category, detail, ok := parseCollectorIssue(line); ok {
-					if s.lastIssueCategory == category {
-						s.lastIssueCount++
-					} else {
-						s.lastIssueCount = 1
-					}
-					s.lastIssueCategory = category
-					s.lastIssueDetail = detail
-					s.lastIssueAt = time.Now().UTC()
-					s.lastIssueRecoveredAt = time.Time{}
-				}
-				if strings.Contains(strings.ToLower(line), "failed") || strings.Contains(strings.ToLower(line), "error") {
-					s.connectionState = "error"
-				}
-				s.mu.Unlock()
-			}
+			s.recordCollectorLogLine(string(buffer[:count]))
 		}
 		if err != nil {
 			return
 		}
 	}
+}
+
+func (s *server) waitEmbedded(done chan struct{}, err error) {
+	defer close(done)
+
+	s.mu.Lock()
+	if s.embeddedDone == done {
+		s.embeddedRunning = false
+		s.embeddedCancel = nil
+		s.embeddedDone = nil
+		s.embeddedWake = nil
+	}
+	s.lastExitAt = time.Now().UTC()
+	s.childStartedAt = time.Time{}
+	s.autoRestarting = false
+
+	if err == nil {
+		code := 0
+		s.lastExitCode = &code
+		s.appendDiagnosticLocked("embedded collector exited normally")
+		if s.stopRequested {
+			s.connectionState = "stopped"
+			s.stopRequested = false
+			s.mu.Unlock()
+			return
+		}
+		if s.config.AutoRestartCollector {
+			delay := nextRestartDelay(s.restartCount)
+			s.connectionState = "restart-wait"
+			s.autoRestarting = true
+			s.logBuffer = fmt.Sprintf("agent exited normally and will restart in %s", delay)
+			s.appendDiagnosticLocked("embedded collector exit scheduled for auto restart after %s", delay)
+			s.mu.Unlock()
+			go s.restartChildAfter(delay)
+			return
+		}
+		s.connectionState = "stopped"
+		s.mu.Unlock()
+		return
+	}
+
+	code := 1
+	s.lastExitCode = &code
+	s.logBuffer = redactSensitiveText(fmt.Sprintf("embedded collector error: %v", err), s.config.Connection.Secret)
+	s.appendDiagnosticLocked("embedded collector exited with error: %v", err)
+	if s.stopRequested {
+		s.connectionState = "stopped"
+		s.stopRequested = false
+		s.mu.Unlock()
+		return
+	}
+	if s.config.AutoRestartCollector {
+		delay := nextRestartDelay(s.restartCount)
+		s.connectionState = "restart-wait"
+		s.autoRestarting = true
+		s.appendDiagnosticLocked("embedded collector auto restart scheduled after %s", delay)
+		s.mu.Unlock()
+		go s.restartChildAfter(delay)
+		return
+	}
+	s.connectionState = "error"
+	s.mu.Unlock()
 }
 
 func (s *server) waitChild(cmd *exec.Cmd) {
@@ -1706,6 +1822,36 @@ func (s *server) waitChild(cmd *exec.Cmd) {
 }
 
 func (s *server) stopCollectorLocked(reason string) {
+	if s.embeddedRunning {
+		cancel := s.embeddedCancel
+		done := s.embeddedDone
+		s.stopRequested = true
+		s.autoRestarting = false
+		s.connectionState = "stopping"
+		s.appendDiagnosticLocked("%s requested for embedded collector", reason)
+
+		s.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+		if done != nil {
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+			}
+		}
+		s.mu.Lock()
+
+		if s.embeddedDone == done {
+			s.embeddedRunning = false
+			s.embeddedCancel = nil
+			s.embeddedDone = nil
+			s.embeddedWake = nil
+		}
+		s.connectionState = "stopped"
+		return
+	}
+
 	if s.cmd == nil || s.cmd.Process == nil {
 		s.connectionState = "stopped"
 		s.stopRequested = true
@@ -1814,6 +1960,56 @@ func (s *server) startChildLocked(isRestart bool) error {
 	if err := validateServerTransport(s.config.Connection.ServerURL); err != nil {
 		return fmt.Errorf("insecure_server_transport: %w", err)
 	}
+	if s.useEmbeddedCollector {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		wake := make(chan struct{}, 1)
+		bundleRoot := s.bundleRoot
+		if strings.TrimSpace(bundleRoot) == "" && strings.TrimSpace(s.childBinaryPath) != "" {
+			bundleRoot = filepath.Dir(s.childBinaryPath)
+		}
+		configPath := s.configPath
+		serviceScope := s.serviceScope
+
+		s.embeddedRunning = true
+		s.embeddedCancel = cancel
+		s.embeddedDone = done
+		s.embeddedWake = wake
+		s.childStartedAt = time.Now().UTC()
+		s.connectionState = "starting"
+		s.autoRestarting = false
+		s.stopRequested = false
+		if isRestart {
+			s.restartCount++
+			s.lastRestartAt = s.childStartedAt
+			s.appendDiagnosticLocked("embedded collector restarted count=%d", s.restartCount)
+		} else {
+			s.appendDiagnosticLocked("embedded collector started in-process")
+		}
+
+		go func() {
+			err := collector.RunEmbedded(ctx, collector.EmbeddedOptions{
+				ConfigPath:     configPath,
+				BundleRoot:     bundleRoot,
+				ServiceManaged: serviceScope,
+				Wake:           wake,
+				OnUploaded: func(uploadedAt time.Time) {
+					s.mu.Lock()
+					s.connectionState = "connected"
+					s.lastUploadAt = uploadedAt.UTC()
+					if s.lastIssueCount > 0 {
+						s.lastIssueRecoveredAt = time.Now().UTC()
+						s.lastIssueCount = 0
+					}
+					s.mu.Unlock()
+				},
+				OnLogLine: s.recordCollectorLogLine,
+			})
+			s.waitEmbedded(done, err)
+		}()
+		return nil
+	}
+
 	if _, err := os.Stat(s.childBinaryPath); err != nil {
 		return errors.New("child_agent_binary_missing")
 	}
@@ -1870,13 +2066,13 @@ func (s *server) restartChildAfter(delay time.Duration) {
 	defer s.mu.Unlock()
 	if s.stopRequested || !s.config.AutoRestartCollector {
 		s.autoRestarting = false
-		if s.cmd == nil {
+		if !s.isCollectorRunningLocked() {
 			s.connectionState = "stopped"
 		}
 		s.appendDiagnosticLocked("auto restart canceled; stopRequested=%t enabled=%t", s.stopRequested, s.config.AutoRestartCollector)
 		return
 	}
-	if s.cmd != nil && s.cmd.Process != nil {
+	if s.isCollectorRunningLocked() {
 		s.autoRestarting = false
 		s.appendDiagnosticLocked("auto restart skipped because collector is already running")
 		return

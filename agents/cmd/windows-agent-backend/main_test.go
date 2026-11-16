@@ -236,3 +236,54 @@ func TestTrimDiagnosticLogKeepsTailWithinCap(t *testing.T) {
 		t.Fatal("a log inside the cap must not be rewritten")
 	}
 }
+
+func TestEmbeddedCollectorLifecycleReportsRunningInStatusAndState(t *testing.T) {
+	dir := t.TempDir()
+	cfg := defaultLocalConfig()
+	cfg.DataRecordingEnabled = true
+	cfg.CloudSyncEnabled = false
+	cfg.AutoStartCollector = true
+	cfg.Connection.ServerURL = "http://127.0.0.1:38472"
+	cfg.Connection.Secret = "test-secret"
+	cfg.Connection.DeviceID = "embedded-test-node"
+	cfg.Connection.Hostname = "Embedded Test"
+
+	configPath := agentconfig.ConfigPath(dir)
+	if err := agentconfig.Save(configPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := &server{
+		configPath:           configPath,
+		syncStatePath:        agentconfig.SyncStatePath(dir),
+		diagnosticsPath:      agentconfig.DiagnosticsPath(dir),
+		pendingStatePath:     agentconfig.PendingStateCachePath(dir),
+		bundleRoot:           dir,
+		useEmbeddedCollector: true,
+		config:               cfg,
+		connectionState:      "stopped",
+	}
+
+	srv.mu.Lock()
+	if err := srv.startChildLocked(false); err != nil {
+		srv.mu.Unlock()
+		t.Fatalf("start embedded collector: %v", err)
+	}
+	snap := srv.snapshotLocked()
+	running := srv.isCollectorRunningLocked()
+	srv.mu.Unlock()
+
+	if !running || !snap.Running {
+		t.Fatalf("expected embedded collector Running=true, got running=%t snap.Running=%t", running, snap.Running)
+	}
+
+	srv.mu.Lock()
+	srv.stopCollectorLocked("unit test stop")
+	stoppedSnap := srv.snapshotLocked()
+	srv.mu.Unlock()
+
+	if stoppedSnap.Running || stoppedSnap.ConnectionStatus != "stopped" {
+		t.Fatalf("expected embedded collector stopped cleanly, got Running=%t status=%q", stoppedSnap.Running, stoppedSnap.ConnectionStatus)
+	}
+}
+
