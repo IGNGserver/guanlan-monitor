@@ -307,6 +307,56 @@ function PromptDialog({
 }
 
 /**
+ * 离线设备的中枢身份重命名。只迁移注册表与历史数据；实时 1m/5m 窗口会从
+ * 新 id 重新开始，因为它是传输态而不是持久历史。
+ */
+function DeviceIdDialog({
+  title,
+  detail,
+  initialValue,
+  onConfirm,
+  onCancel,
+  disabled = false
+}: {
+  title: string;
+  detail: string;
+  initialValue: string;
+  onConfirm: (value: string) => void;
+  onCancel: () => void;
+  disabled?: boolean;
+}) {
+  const [value, setValue] = useState(initialValue);
+  useEffect(() => setValue(initialValue), [initialValue]);
+  const next = value.trim();
+  const changed = next.length > 0 && next !== initialValue;
+  const submit = () => {
+    if (!changed || disabled) return;
+    onConfirm(next);
+  };
+  return <M3Dialog
+    open
+    aria-label="重命名设备 ID"
+    headline={title}
+    onClose={() => { if (!disabled) onCancel(); }}
+    actions={<>
+      <Button variant="quiet" onClick={onCancel} disabled={disabled}>取消</Button>
+      <Button variant="primary" onClick={submit} disabled={disabled || !changed}>{disabled ? "迁移中…" : "迁移并重命名"}</Button>
+    </>}
+  >
+    <p>{detail}</p>
+    <M3TextField
+      label="新的设备 ID"
+      autoFocus
+      value={value}
+      onChange={(event) => setValue(event.target.value)}
+      onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submit(); } }}
+      maxLength={128}
+    />
+    <p className="workspace-inline-note">设备 ID 区分大小写；迁移后请同步修改该设备上的 Agent 配置，否则它会以旧 ID 重新注册。</p>
+  </M3Dialog>;
+}
+
+/**
  * 轻量设备分组选择器：支持单机或批量分配分组，即选即建，无需预先去单独页面创建分组。
  */
 function DeviceGroupDialog({
@@ -1429,6 +1479,7 @@ export {
   DeviceTable,
   ConfirmDialog,
   PromptDialog,
+  DeviceIdDialog,
   DeviceGroupDialog,
   BatchGroupManageDialog,
   OverviewSummary,

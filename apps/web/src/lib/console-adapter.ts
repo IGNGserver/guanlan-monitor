@@ -32,6 +32,7 @@ import {
   listDevices,
   login,
   logout,
+  renameDevice,
   reorderDevices,
   saveFanNote,
   updateDeviceGroup
@@ -255,6 +256,11 @@ export class WebConsoleAdapter implements ConsoleAdapter {
   async deleteInstance(deviceId: string): Promise<ConsoleSnapshot> {
     await deleteDevice(deviceId);
     return this.loadSnapshot({ ...this.lastRequest, selectedDeviceId: this.snapshot.selectedDeviceId === deviceId ? null : this.snapshot.selectedDeviceId });
+  }
+
+  async renameInstance(deviceId: string, nextDeviceId: string): Promise<ConsoleSnapshot> {
+    const result = await renameDevice(deviceId, nextDeviceId);
+    return this.loadSnapshot({ ...this.lastRequest, selectedDeviceId: result.deviceId });
   }
 
   async reorderInstances(deviceIds: string[]): Promise<ConsoleSnapshot> {

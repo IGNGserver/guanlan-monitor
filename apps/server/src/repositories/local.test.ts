@@ -519,3 +519,36 @@ test("device group assignment persists across registrations and supports batch r
     assert.equal(list.find((d) => d.deviceId === "pve-2")?.group, null);
   });
 });
+
+test("renameDevice moves local registry, transient state and history keys", async () => {
+  await withTempStore(async (filePath) => {
+    const store = createLocalStore(filePath);
+    const devices = new LocalDeviceRepository(store);
+    await devices.registerOrUpdateDevice("old", "Host");
+    await devices.updateDeviceGroup(["old"], "宿主机");
+    await store.update((db) => {
+      db.series.old = { "1m": [] };
+      db.minuteHistory.old = [];
+      db.history.old = [];
+      db.fanNotes.old = { "fan-1": "kept" };
+      db.deviceMetricConfigs.old = { enabledMetrics: [] };
+    });
+    await devices.registerOrUpdateDevice("existing", "Existing");
+    await assert.rejects(devices.renameDevice("old", "existing"), /device_id_conflict/);
+
+    const renamed = await devices.renameDevice("old", "new");
+    assert.equal(renamed.deviceId, "new");
+    assert.equal(renamed.group, "宿主机");
+    assert.deepEqual((await devices.listOpenDevices()).map((device) => device.deviceId).sort(), ["existing", "new"]);
+    const moved = await store.select((db) => ({
+      series: Object.hasOwn(db.series, "new"),
+      minute: Object.hasOwn(db.minuteHistory, "new"),
+      hourly: Object.hasOwn(db.history, "new"),
+      note: db.fanNotes.new?.["fan-1"] ?? null,
+      config: Object.hasOwn(db.deviceMetricConfigs, "new"),
+      staleSeries: Object.hasOwn(db.series, "old")
+    }));
+    assert.deepEqual(moved, { series: true, minute: true, hourly: true, note: "kept", config: true, staleSeries: false });
+    await assert.rejects(devices.renameDevice("old", "another"), /device_not_found/);
+  });
+});

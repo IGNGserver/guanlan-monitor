@@ -26,6 +26,8 @@ export interface ConsoleSessionPort {
 /** Hub-backed fleet operations that do not require local OS access. */
 export interface ConsoleFleetPort {
   deleteInstance(deviceId: string): Promise<ConsoleSnapshot>;
+  /** Admin-only identity change; shells without it hide the action. */
+  renameInstance?(deviceId: string, nextDeviceId: string): Promise<ConsoleSnapshot>;
   reorderInstances(deviceIds: string[]): Promise<ConsoleSnapshot>;
   updateDeviceGroup(deviceIds: string[], group: string | null): Promise<ConsoleSnapshot>;
   saveFanNote(deviceId: string, fanId: string, note: string): Promise<ConsoleSnapshot>;

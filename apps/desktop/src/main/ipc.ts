@@ -70,6 +70,7 @@ export function registerIpc(
   handle(IPC_CHANNELS.cloudPush, () => controller.cloudPush());
   handle(IPC_CHANNELS.saveFanNote, (_event, deviceId: string, fanId: string, note: string) => controller.saveFanNote(asString(deviceId, "device_id"), asString(fanId, "fan_id"), asString(note, "fan_note")));
   handle(IPC_CHANNELS.deleteInstance, (_event, deviceId: string) => controller.deleteInstance(asString(deviceId, "device_id")));
+  handle(IPC_CHANNELS.renameInstance, (_event, deviceId: string, nextDeviceId: string) => controller.renameInstance(asString(deviceId, "device_id"), asString(nextDeviceId, "next_device_id")));
   handle(IPC_CHANNELS.reorderInstances, (_event, deviceIds: unknown) => controller.reorderInstances(asStringArray(deviceIds, "device_ids")));
   handle(IPC_CHANNELS.updateDeviceGroup, (_event, deviceIds: unknown, group: unknown) => controller.updateDeviceGroup(asStringArray(deviceIds, "device_ids"), asNullableString(group, "device_group")));
   handle(IPC_CHANNELS.updateStartupSettings, (_event, settings) => controller.updateStartupSettings(asStartupSettings(settings)));

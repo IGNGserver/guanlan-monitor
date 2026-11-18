@@ -1014,6 +1014,7 @@ export interface DesktopRendererBridge {
   cloudPush(): Promise<DesktopSnapshot>;
   saveFanNote(deviceId: string, fanId: string, note: string): Promise<DesktopSnapshot>;
   deleteInstance(deviceId: string): Promise<DesktopSnapshot>;
+  renameInstance(deviceId: string, nextDeviceId: string): Promise<DesktopSnapshot>;
   reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot>;
   updateDeviceGroup(deviceIds: string[], group: string | null): Promise<DesktopSnapshot>;
   updateStartupSettings(settings: Partial<DesktopStartupSettings>): Promise<DesktopSnapshot>;

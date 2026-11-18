@@ -111,6 +111,7 @@ export class DesktopController {
       cloudPush: () => this.cloudPush(),
       saveFanNote: (deviceId: string, fanId: string, note: string) => this.saveFanNote(deviceId, fanId, note),
       deleteInstance: (deviceId: string) => this.deleteInstance(deviceId),
+      renameInstance: (deviceId: string, nextDeviceId: string) => this.renameInstance(deviceId, nextDeviceId),
       reorderInstances: (deviceIds: string[]) => this.reorderInstances(deviceIds),
       updateDeviceGroup: (deviceIds: string[], group: string | null) => this.updateDeviceGroup(deviceIds, group),
       updateStartupSettings: (settings: Partial<DesktopStartupSettings>) => this.updateStartupSettings(settings),
@@ -425,6 +426,11 @@ export class DesktopController {
   async deleteInstance(deviceId: string): Promise<DesktopSnapshot> {
     await this.hub.deleteDevice(deviceId);
     return this.refreshAfterMutation({ selectedDeviceId: this.selectedDeviceId === deviceId ? null : this.selectedDeviceId });
+  }
+
+  async renameInstance(deviceId: string, nextDeviceId: string): Promise<DesktopSnapshot> {
+    await this.hub.renameDevice(deviceId, nextDeviceId);
+    return this.refreshAfterMutation({ selectedDeviceId: nextDeviceId });
   }
 
   async reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot> {

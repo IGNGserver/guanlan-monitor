@@ -14,6 +14,7 @@ export const IPC_CHANNELS = {
   cloudPush: "dsc:cloud-push",
   saveFanNote: "dsc:save-fan-note",
   deleteInstance: "dsc:delete-instance",
+  renameInstance: "dsc:rename-instance",
   reorderInstances: "dsc:reorder-instances",
   updateDeviceGroup: "dsc:update-device-group",
   updateStartupSettings: "dsc:update-startup-settings",

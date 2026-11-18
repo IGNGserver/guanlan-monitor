@@ -20,7 +20,8 @@ import { z } from "zod";
 import { env } from "./config.js";
 import { authRateLimiter, createSession, getBearerToken, parseSessionValue, renewSession, safeEqual } from "./auth.js";
 import type { MetricsService } from "./services/metrics.js";
-import { DeviceNotFoundError, InvalidDeviceGroupNameError, type DeviceMetricConfigStore, type FanNoteStore, type Repositories, type SessionValue } from "./types.js";
+import { DeviceIdConflictError, DeviceNotFoundError, DeviceOnlineError, InvalidDeviceGroupNameError, type DeviceMetricConfigStore, type FanNoteStore, type Repositories, type SessionValue } from "./types.js";
+import { deviceIdSchema } from "./live/schema.js";
 import { ALL_DEVICE_METRIC_KEYS, filterAgentPayloadInstances, getAvailableMetrics, resolveCpuFrequencyMHz, resolveCpuTemperatureC, timeSeriesToMetricSeries, toDetail, toSummary } from "./utils.js";
 import { getSystemVersionInfo, getUpdateInfo } from "./updates.js";
 import { getHubUpdateStatus, HubUpdateError, requestHubUpdate } from "./hub-update.js";
@@ -334,6 +335,26 @@ export async function registerRoutes(
     if (isLegacyVirtualMachineId(deviceId)) return reply.code(404).send({ error: "device_not_found" });
     await metricsService.removeDevice(deviceId, () => stores.removeLiveDevice?.(deviceId) ?? Promise.resolve());
     return { ok: true };
+  });
+
+  app.put<{ Params: { deviceId: string } }>("/api/devices/:deviceId/id", { preHandler: requireAuth }, async (request, reply) => {
+    const { deviceId } = request.params;
+    if (isLegacyVirtualMachineId(deviceId)) return reply.code(404).send({ error: "device_not_found" });
+    const parsed = z.object({ deviceId: deviceIdSchema }).strict().safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_device_id" });
+    try {
+      const record = await metricsService.renameDevice(
+        deviceId,
+        parsed.data.deviceId,
+        (oldDeviceId) => stores.removeLiveDevice?.(oldDeviceId) ?? Promise.resolve()
+      );
+      return { ok: true, deviceId: record.deviceId };
+    } catch (error) {
+      if (error instanceof DeviceNotFoundError) return reply.code(404).send({ error: "device_not_found" });
+      if (error instanceof DeviceIdConflictError) return reply.code(409).send({ error: "device_id_conflict" });
+      if (error instanceof DeviceOnlineError) return reply.code(409).send({ error: "device_online" });
+      throw error;
+    }
   });
 
   app.put("/api/devices/reorder", { preHandler: requireAuth }, async (request, reply) => {
