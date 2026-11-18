@@ -155,11 +155,28 @@ export class MetricsService {
     return {};
   }
 
-  async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void> {
-    const uniqueIds = [...new Set(deviceIds)];
-    await this.repositories.devices.updateDeviceGroup(uniqueIds, group);
-    await this.withDeviceLocks(uniqueIds, async () => {
-      await forEachBounded(uniqueIds, async (deviceId) => {
+  async updateDeviceGroup(
+    deviceIds: string[],
+    group: string | null,
+    removeDeviceIds: string[] = []
+  ): Promise<void> {
+    const assignSet = new Set(deviceIds);
+    const uniqueAssignIds = [...assignSet];
+    const uniqueRemoveIds = [...new Set(removeDeviceIds)].filter((id) => !assignSet.has(id));
+    const allIds = [...uniqueAssignIds, ...uniqueRemoveIds];
+    if (!allIds.length) return;
+    if (uniqueRemoveIds.length === 0) {
+      await this.repositories.devices.updateDeviceGroup(uniqueAssignIds, group);
+    } else if (this.repositories.devices.syncDeviceGroupMembers) {
+      await this.repositories.devices.syncDeviceGroupMembers(uniqueAssignIds, group, uniqueRemoveIds);
+    } else {
+      if (uniqueAssignIds.length > 0) {
+        await this.repositories.devices.updateDeviceGroup(uniqueAssignIds, group);
+      }
+      await this.repositories.devices.updateDeviceGroup(uniqueRemoveIds, null);
+    }
+    await this.withDeviceLocks(allIds, async () => {
+      await forEachBounded(allIds, async (deviceId) => {
         const [state, record] = await Promise.all([
           this.repositories.realtime.getDevice(deviceId),
           this.getOpenDevice(deviceId)

@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { M3Dialog, M3SearchBar } from "../m3";
 import { useWorkspace } from "../WorkspaceContext";
 import { selectDeviceGroups } from "../selectors";
+import { formatDeviceOs } from "../formatters";
 import { Icon } from "../ui";
 import { visibleSettingsNavigation } from "./PrimaryNavigation";
 
@@ -52,16 +53,26 @@ export function CommandPalette() {
   // Results are grouped because a flat list made "设置 · 外观" and a device that
   // happens to be named "外观设置" neighbours with nothing to tell them apart.
   const commands = React.useMemo<Command[]>(() => [
-    { group: "页面", label: "打开总览", detail: "全部设备的健康状态与中枢连接", keywords: ["首页", "状态", "dashboard", "中枢"], action: () => navigate({ kind: "overview" }) },
-    { group: "页面", label: "打开设备目录", detail: "搜索、筛选和管理全部设备", keywords: ["设备", "列表", "目录"], action: () => navigate({ kind: "devices" }) },
+    { group: "页面", label: "打开总览", detail: "全部设备的健康状态、分组对比与中枢连接", keywords: ["首页", "状态", "dashboard", "中枢"], action: () => navigate({ kind: "overview" }) },
+    { group: "页面", label: "打开设备目录与分组管理", detail: "搜索、按分组对比、拖拽或批量管理全部设备", keywords: ["设备", "列表", "目录", "新建分组", "批量分组", "管组"], action: () => navigate({ kind: "devices" }) },
     ...(hasNamedGroups
-      ? deviceGroups.map((group): Command => ({
-          group: "分组",
-          label: `设备组 · ${group.name}`,
-          detail: `${group.online}/${group.total} 台在线${group.offline > 0 ? ` · ${group.offline} 台离线` : ""}${group.overThreshold > 0 ? ` · ${group.overThreshold} 台超限` : ""} · 直达该组设备列表`,
-          keywords: ["分组", "设备组", "group", group.name, ...group.devices.map((d) => d.hostname)],
-          action: () => navigate({ kind: "devices", group: group.key })
-        }))
+      ? deviceGroups.flatMap((group): Command[] => [
+          {
+            group: "分组",
+            label: `设备组目录 · ${group.name}`,
+            detail: `${group.online}/${group.total} 台在线${group.offline > 0 ? ` · ${group.offline} 台离线` : ""}${group.overThreshold > 0 ? ` · ${group.overThreshold} 台超限` : ""} · 打开该组设备列表`,
+            keywords: ["分组", "设备组", "group", "目录", group.name, ...group.devices.map((d) => d.hostname)],
+            action: () => navigate({ kind: "devices", group: group.key })
+          },
+          {
+            group: "分组",
+            label: `设备组总览 · ${group.name}`,
+            detail: `查看“${group.name}”容量池、健康度与资源趋势`,
+            keywords: ["分组", "设备组", "总览", "趋势", group.name],
+            searchOnly: true,
+            action: () => navigate({ kind: "overview", group: group.key })
+          }
+        ])
       : []),
     { group: "操作", label: "刷新设备状态", detail: "重新读取中枢和设备数据", keywords: ["刷新", "同步", "reload"], action: () => void refresh() },
     { group: "操作", label: "打开连接设置", detail: capabilities.canConfigureConnection ? "填写中枢地址与访问密钥" : "查看当前会话与数据链路", keywords: ["中枢", "地址", "密钥", "连接", "会话"], action: () => openSettings("connections") },
@@ -73,7 +84,7 @@ export function CommandPalette() {
       return {
         group: "设备",
         label: device.hostname,
-        detail: `${groupName ? `${groupName} · ` : ""}${device.os} · ${device.deviceId}`,
+        detail: `${groupName ? `${groupName} · ` : ""}${formatDeviceOs(device.os)} · ${device.deviceId}`,
         keywords: groupName ? [groupName, "分组"] : undefined,
         action: () => navigate({ kind: "device", deviceId: device.deviceId })
       };

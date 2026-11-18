@@ -55,7 +55,11 @@ export function WorkspaceFrame({ children }: { children: React.ReactNode }) {
   useEffect(() => { if (!sidebarCollapsed) setSidebarPeek(false); }, [sidebarCollapsed]);
   return <div className={`m3e-theme workspace-root ${!capabilities.canControlNativeWindow ? "is-web" : ""} ${sidebarCollapsed ? "is-sidebar-collapsed" : "is-sidebar-open"} ${sidebarPeek ? "is-sidebar-peek" : ""}`}>
     <NativeTitleBar />
-    <PrimaryNavigation sidebarPeek={sidebarPeek} onSidebarLeave={() => setSidebarPeek(false)} />
+    <PrimaryNavigation
+      sidebarPeek={sidebarPeek}
+      onRequestPeek={() => setSidebarPeek((prev) => !prev)}
+      onSidebarLeave={() => setSidebarPeek(false)}
+    />
     <div className="workspace-main">
       <AppTopBar />
       <SessionRecoveryBanner />

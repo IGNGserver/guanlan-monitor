@@ -80,6 +80,13 @@
   justify-content: space-between;
   gap: var(--md-sys-space-3);
 }
+.workspace-overview-toolbar__right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--md-sys-space-2);
+}
 .workspace-overview-main {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
@@ -109,6 +116,7 @@
   list-style: none;
 }
 .workspace-fleet-grid > li { display: flex; min-width: 0; }
+.workspace-fleet-card-shell { position: relative; display: flex; width: 100%; min-width: 0; }
 .workspace-fleet-grid .workspace-fleet-card {
   display: flex;
   width: 100%;
@@ -124,6 +132,32 @@
   cursor: pointer;
   transition: background-color var(--md-sys-motion-effects-fast), border-color var(--md-sys-motion-effects-fast);
 }
+.workspace-fleet-card__group-btn {
+  position: absolute;
+  top: var(--md-sys-space-3);
+  right: var(--md-sys-space-3);
+  z-index: 2;
+  max-width: 112px;
+  min-height: 24px;
+  padding: 0 var(--md-sys-space-2);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-full);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-primary);
+  font: inherit;
+  font-size: var(--md-sys-typescale-label-s-size);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--md-sys-motion-effects-fast), background-color var(--md-sys-motion-effects-fast);
+}
+.workspace-fleet-card-shell:hover .workspace-fleet-card__group-btn,
+.workspace-fleet-card-shell:focus-within .workspace-fleet-card__group-btn { opacity: 1; }
+.workspace-fleet-card__group-btn:hover { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+@media (hover: none) { .workspace-fleet-card__group-btn { opacity: 1; } }
 .workspace-fleet-grid .workspace-fleet-card:hover { background: var(--md-sys-color-surface-container); border-color: var(--md-sys-color-outline-variant); }
 .workspace-fleet-grid .workspace-fleet-card:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
 .workspace-fleet-grid .workspace-fleet-card.is-critical { box-shadow: inset 3px 0 0 var(--md-sys-color-error); }
@@ -184,6 +218,7 @@
 .workspace-root .workspace-device-facts > div { min-width: 0; padding: 0; background: transparent; box-shadow: none; }
 .workspace-root .workspace-device-facts span { font-size: var(--md-sys-typescale-label-s-size); }
 .workspace-root .workspace-device-facts strong { margin-top: 0; overflow: visible; font-size: var(--md-sys-typescale-body-m-size); font-weight: 500; }
+.workspace-device-facts__group-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .workspace-kpi-strip {
   display: grid;
@@ -217,13 +252,18 @@
 .workspace-kpi-strip .workspace-kpi.is-warning .workspace-kpi__note { color: var(--md-sys-color-warning); }
 .workspace-kpi-strip .workspace-kpi.is-critical .workspace-kpi__note { color: var(--md-sys-color-error); }
 
-/* Tabs and the range they apply to share one row. */
+/* Tabs and the range they apply to share one row, staying pinned while scrolling charts. */
 .workspace-root .workspace-device-context {
+  position: sticky;
+  top: 0;
+  z-index: var(--md-sys-layer-sticky);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--md-sys-space-2) var(--md-sys-space-4);
+  padding-block: var(--md-sys-space-2);
+  background: var(--md-sys-color-surface);
 }
 .workspace-root .workspace-device-context > .m3e-tabs { width: auto; min-width: 0; flex: 0 1 auto; }
 .workspace-root .workspace-device-context > .workspace-device-context__controls { flex: 0 0 auto; }
@@ -266,11 +306,16 @@
 .guanlan-metric-cell .guanlan-metric--warning::before,
 .guanlan-metric-cell .guanlan-metric--critical::before { display: none; }
 /* The card is the frame; the table inside it needs no second border. */
-.workspace-directory-surface { padding: 0; }
-.workspace-directory-surface .m3e-table-wrap { border: 0; border-radius: 0; }
-.workspace-directory-surface .m3e-table th { padding-block: var(--md-sys-space-3); }
-.workspace-directory-surface .m3e-table td { padding-block: var(--md-sys-space-3); }
-.workspace-directory-surface .guanlan-table-link { padding: 0; text-align: left; }
+.workspace-directory-surface,
+.workspace-group-section { padding: 0; }
+.workspace-directory-surface .m3e-table-wrap,
+.workspace-group-section .m3e-table-wrap { border: 0; border-radius: 0; }
+.workspace-directory-surface .m3e-table th,
+.workspace-group-section .m3e-table th { padding-block: var(--md-sys-space-3); }
+.workspace-directory-surface .m3e-table td,
+.workspace-group-section .m3e-table td { padding-block: var(--md-sys-space-3); }
+.workspace-directory-surface .guanlan-table-link,
+.workspace-group-section .guanlan-table-link { padding: 0; text-align: left; }
 
 /* ---- Settings ------------------------------------------------------------- */
 

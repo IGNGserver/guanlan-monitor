@@ -1,6 +1,6 @@
 /* Device detail facts and explicit layout-management affordances. */
-.workspace-breadcrumb { display: flex; align-items: center; gap: var(--md-sys-space-2); margin: calc(var(--md-sys-space-5) * -1) 0 var(--md-sys-space-5); color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); }
-.workspace-breadcrumb button { padding: 0; border: 0; color: var(--workspace-accent); background: transparent; cursor: pointer; font: inherit; }
+.workspace-breadcrumb { display: flex; min-width: 0; align-items: center; gap: var(--md-sys-space-2); margin: calc(var(--md-sys-space-5) * -1) 0 var(--md-sys-space-5); color: var(--workspace-text-muted); font-size: var(--md-sys-typescale-body-s-size); }
+.workspace-breadcrumb button { max-width: 200px; overflow: hidden; padding: 0; border: 0; color: var(--workspace-accent); background: transparent; cursor: pointer; font: inherit; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-breadcrumb button:hover { text-decoration: underline; }
 .workspace-breadcrumb strong { min-width: 0; overflow: hidden; color: var(--workspace-text-secondary); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 /* 事实行只有两条内容：列数交给 auto-fit，空轨道会被折叠掉。

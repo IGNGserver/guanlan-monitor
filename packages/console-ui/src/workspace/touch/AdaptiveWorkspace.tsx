@@ -191,7 +191,7 @@ function TouchWorkspace({ presentation, split }: { presentation: WebPresentation
           {loading && !snapshot ? <LoadingSurface /> : !snapshot ? <ErrorSurface title="暂时无法读取状态" detail={error ?? "请检查网络后重试"} onRetry={() => void refresh()} />
             : route.kind === "device" ? <TouchDetail deviceId={route.deviceId} />
             : route.kind === "settings" ? <TouchSettings split={split} />
-            : route.kind === "devices" ? emptyDetails
+            : route.kind === "devices" ? (split ? <TouchOverview /> : emptyDetails)
             : <PullToRefresh onRefresh={refresh} disabled={!isTouch || mutationPending}><TouchOverview /></PullToRefresh>}
           </RenderBoundary>
         </main>

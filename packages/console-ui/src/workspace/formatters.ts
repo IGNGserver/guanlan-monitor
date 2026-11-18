@@ -2,6 +2,59 @@ import type { SamplePoint } from "@dsc/shared";
 import { dateValueOf } from "./sampleTime.ts";
 
 export const UNAVAILABLE_METRIC_LABEL = "无法获取数据";
+export const NOT_APPLICABLE_LABEL = "不适用";
+
+const METRIC_KEY_LABELS: Record<string, string> = {
+  cpuUsage: "CPU 使用率",
+  cpuFrequency: "CPU 主频",
+  cpuTemperature: "CPU 温度",
+  cpuTopology: "CPU 拓扑",
+  systemOverview: "系统进程概览",
+  gpuUsage: "GPU 使用率",
+  gpuEncode: "GPU 编码",
+  gpuDecode: "GPU 解码",
+  gpuFrequency: "GPU 频率",
+  gpuMemory: "显存占用",
+  gpuTemperature: "GPU 温度",
+  gpuDriverInfo: "显卡驱动信息",
+  temperatureSources: "温度传感器",
+  memoryUsage: "物理内存占用",
+  swapUsage: "交换分区（Swap）",
+  memoryAvailable: "可用内存",
+  memoryCached: "缓存内存",
+  memoryCommitted: "已提交内存",
+  memoryHardware: "内存硬件规格",
+  diskUsage: "磁盘空间占用",
+  diskRead: "磁盘读取速率",
+  diskWrite: "磁盘写入速率",
+  diskMetadata: "磁盘硬件信息",
+  diskActivity: "磁盘活动时间",
+  diskHealth: "磁盘 SMART 健康度",
+  storagePools: "虚拟化存储池",
+  networkRxRate: "网络下行速率",
+  networkTxRate: "网络上行速率",
+  networkTraffic: "历史流量统计",
+  networkIdentity: "网卡地址信息",
+  fanRpm: "风扇转速",
+  fanControl: "风扇控制模式",
+  fanTargetTemperature: "风扇目标温度",
+  fanPwm: "风扇占空比",
+  fanChannelState: "风扇通道状态",
+  fanNote: "风扇备注"
+};
+
+export function formatMetricKeyLabel(key: string): string {
+  return METRIC_KEY_LABELS[key] ?? key;
+}
+
+export function formatDeviceOs(os: string | null | undefined): string {
+  const normalized = os?.trim().toLowerCase();
+  if (normalized === "windows") return "Windows";
+  if (normalized === "linux") return "Linux";
+  if (normalized === "macos" || normalized === "darwin") return "macOS";
+  if (!normalized || normalized === "unknown") return "未知系统";
+  return os!.trim();
+}
 
 // One formatter per style, built once. `new Intl.DateTimeFormat` is a heavy
 // constructor and these run inside per-row and per-poll render paths; creating
@@ -25,11 +78,16 @@ export function formatDate(value: string | null | undefined): string {
   return shortDateTimeFormat.format(date);
 }
 export function formatBytes(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return "—";
-  const units = ["B", "KB", "MB", "GB", "TB"];
+  if (value == null || !Number.isFinite(value) || value < 0) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
   let amount = value;
   let index = 0;
   while (amount >= 1024 && index < units.length - 1) {
+    amount /= 1024;
+    index += 1;
+  }
+  const digits = index === 0 ? 0 : 1;
+  if (Number(amount.toFixed(digits)) >= 1024 && index < units.length - 1) {
     amount /= 1024;
     index += 1;
   }
@@ -43,7 +101,10 @@ export function formatBytes(value: number | null | undefined): string {
  * here, and a value that is not a number renders as a dash instead of `NaN%`.
  */
 export function formatPercent(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}%` : "—";
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  const clamped = Math.min(100, Math.max(0, value));
+  const rounded = Math.round(clamped);
+  return `${Object.is(rounded, -0) ? 0 : rounded}%`;
 }
 
 /**
@@ -52,7 +113,8 @@ export function formatPercent(value: number | null | undefined): string {
  * and the hero stat reading the same way.
  */
 export function formatRate(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? `${formatBytes(value)}/s` : "0 B/s";
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "—";
+  return value > 0 ? `${formatBytes(value)}/s` : "0 B/s";
 }
 
 /** One place writes temperatures, always as number + space + unit. */
@@ -110,8 +172,9 @@ export function formatGpuMemorySummary(
 }
 
 export function formatDuration(seconds: number | null | undefined): string {
-  if (!Number.isFinite(seconds)) return "未采集";
-  let remaining = Math.max(0, Math.round(seconds ?? 0));
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return "未采集";
+  if (seconds > 0 && seconds < 60) return "< 1 分钟";
+  let remaining = Math.max(0, Math.round(seconds));
   const days = Math.floor(remaining / 86400);
   remaining %= 86400;
   const hours = Math.floor(remaining / 3600);

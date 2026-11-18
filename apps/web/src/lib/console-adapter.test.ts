@@ -77,6 +77,37 @@ test("renameInstance sends the new id and selects the renamed device", async () 
   } finally { hub.restore(); }
 });
 
+test("syncDeviceGroupMembers sends atomic removeDeviceIds and persists immediately to cache; 401 on write expires session", async () => {
+  const hub = installHub();
+  try {
+    const adapter = adapterAt({ now: 1_000_000 });
+    let cacheSaves = 0;
+    const internals = adapter as unknown as { cache: { save: () => Promise<boolean> } };
+    internals.cache.save = async () => { cacheSaves++; return true; };
+    await adapter.refresh({ include: {} });
+    await new Promise((done) => setTimeout(done, 10));
+    assert.equal(cacheSaves, 1);
+
+    await adapter.syncDeviceGroupMembers([], null, ["nas", "nas"]);
+    await new Promise((done) => setTimeout(done, 10));
+    const syncReq = hub.requests.filter((request) => request.path === "/api/devices/group").at(-1);
+    assert.deepEqual(syncReq, {
+      path: "/api/devices/group",
+      method: "PUT",
+      body: JSON.stringify({ deviceIds: [], removeDeviceIds: ["nas", "nas"], group: null })
+    });
+    assert.equal(cacheSaves, 2, "group mutation must bypass the 60s cache throttle");
+
+    const canned = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
+      new URL(String(input), "http://hub.invalid").pathname === "/api/devices/group"
+        ? new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 })
+        : canned(input, init)) as typeof fetch;
+    await assert.rejects(adapter.updateDeviceGroup(["nas"], "宿主机"), (err: unknown) => (err as { status?: number }).status === 401);
+    await assert.rejects(adapter.live.getLiveConnection("nas"), /live_session_required/);
+  } finally { hub.restore(); }
+});
+
 test("device:update merges group changes without dropping fields", async () => {
   const { upsertDevice } = await import("./console-adapter.ts");
   const current = [{ ...device, group: "旧组" }];

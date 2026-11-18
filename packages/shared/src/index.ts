@@ -522,16 +522,43 @@ export interface CollectorStatsReport {
   lastSlowMillis: number;
 }
 
-export const RESERVED_DEVICE_GROUP_NAMES = ["all", "__all__", "__ungrouped__"] as const;
+export const RESERVED_DEVICE_GROUP_NAMES = ["all", "__all__", "__ungrouped__", "未分组"] as const;
+export const MAX_DEVICE_GROUP_NAME_LENGTH = 64;
 
 export function normalizeDeviceGroupName(group: string | null | undefined): string | null {
   const normalized = group?.normalize("NFC").trim();
-  return normalized ? Array.from(normalized).slice(0, 64).join("") : null;
+  return normalized ? Array.from(normalized).slice(0, MAX_DEVICE_GROUP_NAME_LENGTH).join("") : null;
 }
 
 export function isReservedDeviceGroupName(group: string): boolean {
   const normalized = group.normalize("NFC").trim().toLowerCase();
   return (RESERVED_DEVICE_GROUP_NAMES as readonly string[]).includes(normalized);
+}
+
+export function validateDeviceGroupName(
+  group: string | null | undefined,
+  options?: { allowEmpty?: boolean }
+): { normalized: string | null; error: string | null } {
+  const raw = group?.normalize("NFC").trim() ?? "";
+  if (!raw) {
+    return options?.allowEmpty === false
+      ? { normalized: null, error: "请输入分组名称。" }
+      : { normalized: null, error: null };
+  }
+  if (/[\u0000-\u001F\u007F]/.test(raw)) {
+    return { normalized: raw.replace(/[\u0000-\u001F\u007F]/g, ""), error: "分组名称不能包含控制字符。" };
+  }
+  const codePoints = Array.from(raw);
+  if (codePoints.length > MAX_DEVICE_GROUP_NAME_LENGTH) {
+    return {
+      normalized: codePoints.slice(0, MAX_DEVICE_GROUP_NAME_LENGTH).join(""),
+      error: `分组名称最多 ${MAX_DEVICE_GROUP_NAME_LENGTH} 个字符。`
+    };
+  }
+  if (isReservedDeviceGroupName(raw)) {
+    return { normalized: raw, error: "该名称为系统保留关键字，请更换分组名称。" };
+  }
+  return { normalized: raw, error: null };
 }
 
 export interface DeviceSummary {
@@ -564,6 +591,7 @@ export interface DeviceReorderPayload {
 
 export interface DeviceGroupUpdatePayload {
   deviceIds: string[];
+  removeDeviceIds?: string[];
   group: string | null;
 }
 

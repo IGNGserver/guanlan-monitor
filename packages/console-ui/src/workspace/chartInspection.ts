@@ -2,6 +2,7 @@ import type { SamplePoint } from "@dsc/shared";
 import { dateValueOf } from "./sampleTime.ts";
 
 export type InspectableSeries = {
+  id?: string;
   label: string;
   points: SamplePoint[];
   valueFormatter?: (value: number) => string;
@@ -14,7 +15,7 @@ export type ChartInspectionIndex = {
 
 export type ChartInspection = {
   timestamp: number;
-  values: Array<{ label: string; point: SamplePoint | null; valueText: string }>;
+  values: Array<{ id?: string; label: string; point: SamplePoint | null; valueText: string }>;
 };
 
 /** A shared timeline avoids assuming every curve has the same sample indexes. */
@@ -51,14 +52,30 @@ export function inspectChartTime(
   series: InspectableSeries[],
   index: ChartInspectionIndex,
   timestamp: number,
-  formatter?: (value: number) => string
+  formatter?: (value: number) => string,
+  toleranceMs = 0
 ): ChartInspection {
   return {
     timestamp,
     values: series.map((item, position) => {
-      // No interpolation, zero filling, or values from a different timestamp.
-      const point = index.points[position]?.get(timestamp) ?? null;
-      return { label: item.label, point, valueText: point ? (item.valueFormatter ?? formatter ?? String)(point.value) : "—" };
+      const map = index.points[position];
+      let point = map?.get(timestamp) ?? null;
+      if (!point && toleranceMs > 0 && map && map.size > 0) {
+        let bestDistance = toleranceMs + 1;
+        for (const [sampleTime, candidate] of map) {
+          const distance = Math.abs(sampleTime - timestamp);
+          if (distance <= toleranceMs && distance < bestDistance) {
+            bestDistance = distance;
+            point = candidate;
+          }
+        }
+      }
+      return {
+        ...(item.id !== undefined ? { id: item.id } : {}),
+        label: item.label,
+        point,
+        valueText: point ? (item.valueFormatter ?? formatter ?? String)(point.value) : "—"
+      };
     })
   };
 }
@@ -74,7 +91,12 @@ export function latestChartValues(series: InspectableSeries[], index: ChartInspe
       for (const [time, sample] of samples) {
         if (time > lastTime) { lastTime = time; point = sample; }
       }
-      return { label: item.label, point, valueText: point ? (item.valueFormatter ?? formatter ?? String)(point.value) : "—" };
+      return {
+        ...(item.id !== undefined ? { id: item.id } : {}),
+        label: item.label,
+        point,
+        valueText: point ? (item.valueFormatter ?? formatter ?? String)(point.value) : "—"
+      };
     })
   };
 }

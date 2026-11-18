@@ -4,7 +4,7 @@ import { M3SegmentedControl, M3Tabs, M3Select } from "../m3";
 import type { TouchPanel } from "../touch/TouchState";
 import { touchPercent } from "../touch/TouchDeviceRow";
 import { useWorkspace } from "../WorkspaceContext";
-import { normalizeDeviceGroup, selectExistingGroupNames, selectLinkLabel, selectPeerDevicesInGroup, selectSnapshotSource } from "../selectors";
+import { UNGROUPED_GROUP_KEY, normalizeDeviceGroup, selectExistingGroupNames, selectLinkLabel, selectPeerDevicesInGroup, selectSnapshotSource } from "../selectors";
 import {
   DEFAULT_DEVICE_TAB_ID,
   DEVICE_DASHBOARD,
@@ -23,7 +23,10 @@ import {
   formatBytes,
   formatCapacitySummary,
   formatDate,
+  formatDeviceOs,
   formatGpuMemorySummary,
+  formatMetricKeyLabel,
+  formatPercent,
   formatReleaseChannel,
   sumSamplePoints
 } from "../formatters";
@@ -461,21 +464,25 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
         <button type="button" onClick={() => navigate({ kind: "overview" })}>总览</button>
         <span aria-hidden="true">/</span>
         <button type="button" onClick={() => navigate({ kind: "devices" })}>设备</button>
-        {currentDeviceGroup && (
+        {(currentDeviceGroup || existingGroups.length > 0) && (
           <>
             <span aria-hidden="true">/</span>
-            <button type="button" onClick={() => navigate({ kind: "devices", group: currentDeviceGroup })}>
-              {currentDeviceGroup}
+            <button
+              type="button"
+              onClick={() => navigate({ kind: "devices", group: currentDeviceGroup ?? UNGROUPED_GROUP_KEY })}
+              title={`查看 ${currentDeviceGroup ?? "未分组"} 设备列表`}
+            >
+              {currentDeviceGroup ?? "未分组"}
             </button>
           </>
         )}
         <span aria-hidden="true">/</span>
-        <strong>{selectedDevice.hostname}</strong>
+        <strong title={selectedDevice.hostname}>{selectedDevice.hostname}</strong>
       </nav>
       <PageIntro
         eyebrow={currentDeviceGroup ? `设备 · ${currentDeviceGroup}` : "设备"}
         title={selectedDevice.hostname}
-        description={`${selectedDevice.os} · ${selectedDevice.deviceId}`}
+        description={`${formatDeviceOs(selectedDevice.os)} · ${selectedDevice.deviceId}`}
         actions={liveAuthenticated ? (
           <>
             {renameInstance && selectedDevice.status !== "online" && (
@@ -508,10 +515,10 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
           <div className="touch-device-heading__row">
             <div>
               <h1>{selectedDevice.hostname}</h1>
-              <p>{selectedDevice.os}{currentDeviceGroup ? ` · ${currentDeviceGroup}` : ""} · {snapshotSource === "cache" ? "缓存中的状态" : selectedDevice.status === "online" ? "在线" : "离线"}</p>
+              <p>{formatDeviceOs(selectedDevice.os)}{currentDeviceGroup ? ` · ${currentDeviceGroup}` : ""} · {snapshotSource === "cache" ? "缓存中的状态" : selectedDevice.status === "online" ? "在线" : "离线"}</p>
             </div>
             {liveAuthenticated && (
-              <>
+              <div className="touch-directory__heading-actions">
                 {renameInstance && selectedDevice.status !== "online" && (
                   <Button
                     variant="quiet"
@@ -533,7 +540,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
                   <Icon name="delete" size={16} />
                   删除
                 </Button>
-              </>
+              </div>
             )}
           </div>
         </header>
@@ -548,7 +555,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
               onClick={() => navigate({ kind: "devices", group: groupPeers.groupKey === "all" ? undefined : groupPeers.groupKey })}
               title={`查看 ${groupPeers.groupLabel} 全部设备`}
             >
-              <span>{groupPeers.groupLabel}</span>
+              <span className="workspace-group-peers__group-name">{groupPeers.groupLabel}</span>
               <small>{groupPeers.currentIndex + 1}/{groupPeers.peers.length}</small>
             </button>
           </div>
@@ -557,13 +564,22 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
               const isCurrent = peer.deviceId === selectedDevice.deviceId;
               const online = peer.status === "online";
               const peerIssues = online ? evaluateDevice(peer, healthThresholds).filter((issue) => issue.kind !== "offline") : [];
+              const worstIssue = peerIssues.find((issue) => issue.severity === "critical") ?? peerIssues[0];
               const peerDotState = !online
                 ? "offline"
-                : peerIssues.some((issue) => issue.severity === "critical")
+                : worstIssue?.severity === "critical"
                   ? "critical"
                   : peerIssues.length > 0
                     ? "warning"
                     : "online";
+              const issueLabels = { cpu: "CPU", memory: "内存", disk: "磁盘", gpu: "GPU" } as const;
+              const peerSummary = !online
+                ? "离线"
+                : worstIssue && worstIssue.kind !== "offline" && worstIssue.value != null
+                  ? `${issueLabels[worstIssue.kind]} ${formatPercent(worstIssue.value)}`
+                  : typeof peer.cpuUsagePercent === "number" && Number.isFinite(peer.cpuUsagePercent)
+                    ? `CPU ${formatPercent(peer.cpuUsagePercent)}`
+                    : null;
               return (
                 <button
                   key={peer.deviceId}
@@ -571,11 +587,14 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
                   className={`workspace-group-peer-chip ${isCurrent ? "is-current" : ""}`}
                   aria-current={isCurrent ? "page" : undefined}
                   onClick={() => switchPeerDevice(peer.deviceId)}
+                  title={`${peer.hostname}${peerSummary ? ` · ${peerSummary}` : ""}`}
                 >
                   <StatusDot state={peerDotState} />
-                  <span>{peer.hostname}</span>
-                  {online && typeof peer.cpuUsagePercent === "number" && (
-                    <small>{Math.round(peer.cpuUsagePercent)}%</small>
+                  <span className="workspace-group-peer-chip__name">{peer.hostname}</span>
+                  {peerSummary && (
+                    <small className={worstIssue ? `is-${worstIssue.severity}` : !online ? "is-offline" : undefined}>
+                      {peerSummary}
+                    </small>
                   )}
                 </button>
               );
@@ -604,21 +623,14 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
         </nav>
       )}
 
-      {/* One card carries every state fact. They used to be split across a
-          status line and a facts strip that repeated the same two things, so
-          answering "is this device live?" meant reading three places. */}
+      {/* One card carries every state fact. */}
       <details className="touch-device-facts" open={touch ? undefined : true}><summary>设备信息与数据时间</summary><div className="workspace-device-facts" aria-label="设备事实">
-        {/* The visible word already names the state, so the dot is decoration
-            here and must stay out of the accessibility tree. `StatusLabel
-            compact` carries its own accessible name (it is the only indicator on
-            the overview tile), which read these two cells as "在线 在线" — and on
-            the data-link row as "在线 实时中枢", two different names for one fact. */}
         <div><span>最近上报状态</span><strong><StatusDot state={selectedDevice.status === "online" ? "online" : "offline"} />{selectedDevice.status === "online" ? "在线" : "离线"}</strong></div>
         <div><span>与中枢链路</span><strong><StatusDot state={deviceSourceState} />{selectLinkLabel(snapshotSource, capabilities.liveDataTransport)}</strong></div>
         <div>
           <span>所属分组</span>
           <strong className="workspace-device-facts__group">
-            <span>{normalizeDeviceGroup(selectedDevice.group) ?? "未分组"}</span>
+            <span className="workspace-device-facts__group-name" title={normalizeDeviceGroup(selectedDevice.group) ?? "未分组"}>{normalizeDeviceGroup(selectedDevice.group) ?? "未分组"}</span>
             {liveAuthenticated && (
               <Button
                 variant="quiet"
@@ -630,7 +642,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
             )}
           </strong>
         </div>
-        <div><span>最后在线</span><strong>{formatDate(selectedDevice.lastSeenAt)} · {selectedDevice.status === "online" ? "刚刚上报" : "已停止上报"}</strong></div>
+        <div><span>最后在线</span><strong>{formatDate(selectedDevice.lastSeenAt)} · {snapshotSource === "cache" ? "缓存快照状态" : selectedDevice.status === "online" ? "刚刚上报" : "已停止上报"}</strong></div>
         <div><span>{snapshotSource === "cache" ? "缓存时间" : "数据时间"}</span><strong>{formatDate(snapshotSource === "cache" ? snapshot?.cache.savedAt : snapshot?.generatedAt)}</strong></div>
         <div><span>Agent 版本</span><strong>{selectedDevice.agentVersion ? `v${selectedDevice.agentVersion}` : "版本未知"}</strong></div>
         <div><span>发布通道</span><strong>{formatReleaseChannel(selectedDevice.agentChannel)}</strong></div>
@@ -645,8 +657,9 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
           existingGroups={existingGroups}
           disabled={mutationPending}
           onConfirm={(nextGroup) => {
-            setEditingGroup(false);
-            void updateDeviceGroup([selectedDevice.deviceId], nextGroup);
+            void updateDeviceGroup([selectedDevice.deviceId], nextGroup).then((ok) => {
+              if (ok) setEditingGroup(false);
+            });
           }}
           onCancel={() => setEditingGroup(false)}
         />
@@ -659,9 +672,10 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
           disabled={mutationPending}
           onConfirm={(nextDeviceId) => {
             const currentId = selectedDevice.deviceId;
-            setRenamingId(false);
             void renameInstance(currentId, nextDeviceId).then((renamed) => {
-              if (renamed) navigate({ kind: "device", deviceId: nextDeviceId });
+              if (!renamed) return;
+              setRenamingId(false);
+              navigate({ kind: "device", deviceId: nextDeviceId });
             });
           }}
           onCancel={() => setRenamingId(false)}
@@ -675,9 +689,10 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
           disabled={mutationPending}
           onConfirm={() => {
             const targetId = selectedDevice.deviceId;
-            setConfirmingDelete(false);
             void deleteInstance(targetId).then((deleted) => {
-              if (deleted) navigate({ kind: "devices" });
+              if (!deleted) return;
+              setConfirmingDelete(false);
+              navigate({ kind: "devices" });
             });
           }}
           onCancel={() => setConfirmingDelete(false)}
@@ -698,7 +713,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
         const tone = selectedDevice.status === "online" ? metricTone(reading, healthThresholds[metric]) : "normal";
         return <div key={key} className={`is-${tone}`}><span>{label}</span><strong>{touchPercent(selectedDevice, key, value)}</strong><CapacityBar percent={reading} tone={tone} marks={healthThresholds[metric]} size="sm" /><small>最近一次上报</small></div>;
       })}</div>}
-      {selectedDevice.unavailableMetrics?.length ? <div className="workspace-inline-note" role="status"><Icon name="about" size={15} />本机不适用指标：{selectedDevice.unavailableMetrics.join("、")}；对应图表会留空而不是估算。</div> : null}
+      {selectedDevice.unavailableMetrics?.length ? <div className="workspace-inline-note" role="status"><Icon name="about" size={15} />本机不适用指标：{selectedDevice.unavailableMetrics.map(formatMetricKeyLabel).join("、")}；对应图表会留空而不是估算。</div> : null}
 
       {/* The same verdict the overview lists, on the machine it is about. Offline
           is already the state banner below, so only resource issues show here. */}

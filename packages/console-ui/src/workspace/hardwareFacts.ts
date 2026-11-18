@@ -14,22 +14,31 @@ function watts(value: number): string {
 }
 
 function bytesSize(value: number): string {
-  const units = ["B", "KB", "MB", "GB", "TB"];
+  if (!Number.isFinite(value) || value < 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
   let index = 0;
   let current = value;
   while (current >= 1024 && index < units.length - 1) {
     current /= 1024;
     index += 1;
   }
-  return `${Number.isInteger(current) ? current : current.toFixed(1)} ${units[index]}`;
+  if (Number(current.toFixed(1)) >= 1024 && index < units.length - 1) {
+    current /= 1024;
+    index += 1;
+  }
+  const rounded = Number(current.toFixed(1));
+  return `${Number.isInteger(rounded) ? rounded : current.toFixed(1)} ${units[index]}`;
 }
 
 export function formatLinkSpeed(mbps: number): string {
-  if (mbps >= 1000) {
+  if (!Number.isFinite(mbps) || mbps <= 0) return "0 Mbps";
+  if (mbps >= 1000 || Number(mbps.toFixed(1)) >= 1000) {
     const gbps = mbps / 1000;
-    return `${Number.isInteger(gbps) ? gbps : gbps.toFixed(1)} Gbps`;
+    const rounded = Number(gbps.toFixed(1));
+    return `${Number.isInteger(rounded) ? rounded : gbps.toFixed(1)} Gbps`;
   }
-  return `${Number.isInteger(mbps) ? mbps : mbps.toFixed(1)} Mbps`;
+  const rounded = Number(mbps.toFixed(1));
+  return `${Number.isInteger(rounded) ? rounded : mbps.toFixed(1)} Mbps`;
 }
 
 export function clusterLabel(name: string): string {
@@ -72,8 +81,9 @@ export function describePowerSource(power: PowerStats | null | undefined, batter
 }
 
 function duration(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const rest = Math.round(minutes % 60);
+  const totalMinutes = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(totalMinutes / 60);
+  const rest = totalMinutes % 60;
   return hours ? `${hours} 小时 ${rest} 分` : `${rest} 分`;
 }
 
@@ -84,7 +94,9 @@ export function describeBattery(battery: BatteryStats | null | undefined): strin
   if (battery.fullyCharged) parts.push("已充满");
   else if (battery.charging) parts.push("充电中");
   else if (battery.charging === false && battery.externalPower === false) parts.push("放电中");
-  if (battery.timeRemainingMinutes != null) parts.push(`${battery.charging ? "充满还需" : "剩余"} ${duration(battery.timeRemainingMinutes)}`);
+  if (battery.timeRemainingMinutes != null && Number.isFinite(battery.timeRemainingMinutes) && battery.timeRemainingMinutes >= 0) {
+    parts.push(`${battery.charging ? "充满还需" : "剩余"} ${duration(battery.timeRemainingMinutes)}`);
+  }
   if (battery.netPowerWatts != null && Math.abs(battery.netPowerWatts) >= 0.05) parts.push(`${battery.netPowerWatts > 0 ? "充入" : "放出"} ${watts(Math.abs(battery.netPowerWatts))}`);
   return parts.length ? parts.join(" · ") : null;
 }

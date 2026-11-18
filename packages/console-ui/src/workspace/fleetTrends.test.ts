@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { DeviceSummary, OverviewInstanceSeries } from "@dsc/shared";
-import { latestPointValue, selectFleetTrends, sumRates } from "./fleetTrends.ts";
+import { latestPointValue, selectFleetTrends, selectGroupFleetTrends, selectGroupNetworkRates, sumRates } from "./fleetTrends.ts";
+import { selectDeviceGroups } from "./selectors.ts";
 
 const at = (minute: number, value: number) => ({ timestamp: `2026-10-18T10:0${minute}:00.000Z`, value });
 
@@ -56,4 +57,59 @@ test("a metric the device cannot report stays an empty line", () => {
 test("the latest reading skips trailing gaps", () => {
   assert.equal(latestPointValue([at(1, 5), at(2, Number.NaN)]), 5);
   assert.equal(latestPointValue([]), null);
+});
+
+test("selectGroupFleetTrends computes CPU mean, capacity-weighted memory/disk share, and summed network throughput", () => {
+  const devices = [
+    device({ deviceId: "pve1", hostname: "pve1", group: "宿主机", memoryTotalBytes: 100, diskTotalBytes: 1000 }),
+    device({ deviceId: "pve2", hostname: "pve2", group: "宿主机", memoryTotalBytes: 300, diskTotalBytes: 3000 }),
+    device({ deviceId: "off1", hostname: "off1", group: "灾备组", status: "offline", memoryTotalBytes: 100, diskTotalBytes: 1000 })
+  ];
+  const groups = selectDeviceGroups(devices);
+  const instances = [
+    instance({
+      deviceId: "pve1",
+      hostname: "pve1",
+      cpuUsagePercent: [at(1, 20)],
+      memoryUsedBytes: [at(1, 50)],
+      diskUsedBytes: [at(1, 500)],
+      networkRxBytesPerSec: [at(1, 100)],
+      networkTxBytesPerSec: [at(1, 20)]
+    }),
+    instance({
+      deviceId: "pve2",
+      hostname: "pve2",
+      cpuUsagePercent: [at(1, 60)],
+      memoryUsedBytes: [at(1, 90)],
+      diskUsedBytes: [at(1, 1500)],
+      networkRxBytesPerSec: [at(1, 300)],
+      networkTxBytesPerSec: [at(1, 80)]
+    }),
+    instance({
+      deviceId: "off1",
+      hostname: "off1",
+      cpuUsagePercent: [at(1, 15)]
+    })
+  ];
+
+  const cpuGroups = selectGroupFleetTrends(instances, groups, "cpu");
+  assert.equal(cpuGroups.percent, true);
+  assert.equal(cpuGroups.trends[0].points[0].value, 40, "online CPU mean is (20 + 60) / 2 = 40");
+  assert.equal(cpuGroups.trends[1].offline, true, "all-offline group retains historical curve marked offline");
+
+  // Capacity-weighted memory: (50 + 90) / (100 + 300) = 140 / 400 = 35% (NOT simple mean (50% + 30%)/2 = 40%!)
+  const memGroups = selectGroupFleetTrends(instances, groups, "memory");
+  assert.equal(memGroups.trends[0].points[0].value, 35);
+
+  const netGroups = selectGroupFleetTrends(instances, groups, "network");
+  assert.equal(netGroups.percent, false);
+  assert.equal(netGroups.trends[0].points[0].value, 500, "summed rx+tx across group members");
+
+  const netRates = selectGroupNetworkRates(instances, groups);
+  assert.deepEqual(netRates.get("宿主机"), {
+    rxBytesPerSec: 400,
+    txBytesPerSec: 100,
+    totalBytesPerSec: 500,
+    reportingCount: 2
+  });
 });

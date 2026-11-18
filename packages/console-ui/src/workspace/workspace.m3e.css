@@ -37,7 +37,14 @@
   .m3e-checkbox,
   .m3e-checkbox.is-compact,
   .m3e-tabs__tab,
-  .m3e-segmented__segment {
+  .m3e-segmented__segment,
+  .m3e-chart-readout__drill,
+  .m3e-chart-readout__more,
+  .workspace-group-card__dir-btn,
+  .workspace-group-section__action,
+  .workspace-sidebar-groups__manage-link,
+  .guanlan-table-group-trigger,
+  .workspace-fleet-card__group-btn {
     min-width: var(--md-sys-layout-touch-target);
     min-height: var(--md-sys-layout-touch-target);
   }

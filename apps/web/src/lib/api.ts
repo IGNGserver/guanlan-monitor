@@ -164,6 +164,17 @@ export function updateDeviceGroup(deviceIds: string[], group: string | null) {
   });
 }
 
+export function syncDeviceGroupMembers(
+  deviceIds: string[],
+  group: string | null,
+  removeDeviceIds: string[]
+) {
+  return apiFetch<{ ok: true; group: string | null }>("/api/devices/group", {
+    method: "PUT",
+    body: JSON.stringify({ deviceIds, removeDeviceIds, group })
+  });
+}
+
 export function getMetrics(deviceId: string, window: MetricWindow, init?: RequestInit, pointBudget?: number) {
   const params = new URLSearchParams({ window });
   if (pointBudget !== undefined) params.set("pointBudget", String(pointBudget));

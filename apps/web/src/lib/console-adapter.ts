@@ -35,6 +35,7 @@ import {
   renameDevice,
   reorderDevices,
   saveFanNote,
+  syncDeviceGroupMembers,
   updateDeviceGroup
 } from "./api.ts";
 
@@ -253,28 +254,53 @@ export class WebConsoleAdapter implements ConsoleAdapter {
     return this.login(accessKey);
   }
 
+  private async runWrite<T>(action: () => Promise<T>): Promise<T> {
+    try {
+      const result = await action();
+      this.cacheSavedAt.clear();
+      return result;
+    } catch (error) {
+      if (isUnauthorized(error) || (error instanceof ApiError && error.status === 403)) {
+        await this.markSessionExpired();
+      }
+      throw error;
+    }
+  }
+
   async deleteInstance(deviceId: string): Promise<ConsoleSnapshot> {
-    await deleteDevice(deviceId);
+    await this.runWrite(() => deleteDevice(deviceId));
     return this.loadSnapshot({ ...this.lastRequest, selectedDeviceId: this.snapshot.selectedDeviceId === deviceId ? null : this.snapshot.selectedDeviceId });
   }
 
   async renameInstance(deviceId: string, nextDeviceId: string): Promise<ConsoleSnapshot> {
-    const result = await renameDevice(deviceId, nextDeviceId);
+    const result = await this.runWrite(() => renameDevice(deviceId, nextDeviceId));
     return this.loadSnapshot({ ...this.lastRequest, selectedDeviceId: result.deviceId });
   }
 
   async reorderInstances(deviceIds: string[]): Promise<ConsoleSnapshot> {
-    await reorderDevices(deviceIds);
+    await this.runWrite(() => reorderDevices(deviceIds));
     return this.loadSnapshot({ ...this.lastRequest, selectedDeviceId: this.snapshot.selectedDeviceId });
   }
 
   async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<ConsoleSnapshot> {
-    await updateDeviceGroup(deviceIds, group);
+    await this.runWrite(() => updateDeviceGroup(deviceIds, group));
+    return this.loadSnapshot({ ...this.lastRequest, selectedDeviceId: this.snapshot.selectedDeviceId });
+  }
+
+  async syncDeviceGroupMembers(
+    assignDeviceIds: string[],
+    group: string | null,
+    removeDeviceIds: string[]
+  ): Promise<ConsoleSnapshot> {
+    if (removeDeviceIds.length === 0) {
+      return this.updateDeviceGroup(assignDeviceIds, group);
+    }
+    await this.runWrite(() => syncDeviceGroupMembers(assignDeviceIds, group, removeDeviceIds));
     return this.loadSnapshot({ ...this.lastRequest, selectedDeviceId: this.snapshot.selectedDeviceId });
   }
 
   async saveFanNote(deviceId: string, fanId: string, note: string): Promise<ConsoleSnapshot> {
-    await saveFanNote(deviceId, fanId, { note });
+    await this.runWrite(() => saveFanNote(deviceId, fanId, { note }));
     return this.loadSnapshot({ ...this.lastRequest, selectedDeviceId: deviceId });
   }
 
@@ -490,7 +516,10 @@ export class WebConsoleAdapter implements ConsoleAdapter {
       if (!current()) return;
       // An enriched view must replace its summary-only copy even inside the
       // normal save budget, without rewriting unchanged telemetry every poll.
-      const saveKey = JSON.stringify([this.snapshot.selectedDeviceId, request.metricWindow ?? "5m", resolveInclude(request.include), request.trafficMode ?? "day", request.trafficAnchor?.slice(0, 10) ?? "", !!this.snapshot.metrics, !!this.snapshot.overviewMetrics, !!this.snapshot.trafficCalendar]);
+      const fleetDigest = this.snapshot.devices
+        .map((item) => `${item.deviceId}\u0001${item.status}\u0001${item.group ?? ""}\u0001${item.sortOrder ?? ""}`)
+        .join("\u0002");
+      const saveKey = JSON.stringify([this.snapshot.selectedDeviceId, request.metricWindow ?? "5m", resolveInclude(request.include), request.trafficMode ?? "day", request.trafficAnchor?.slice(0, 10) ?? "", !!this.snapshot.metrics, !!this.snapshot.overviewMetrics, !!this.snapshot.trafficCalendar, fleetDigest]);
       const lastSaved = this.cacheSavedAt.get(saveKey) ?? 0;
       if (this.now() - lastSaved < CACHE_SAVE_INTERVAL_MS && this.snapshot.cache.available) return;
       void this.cache.save(scope, this.snapshot, request, current).then((cached) => {
@@ -545,14 +574,25 @@ export class WebConsoleAdapter implements ConsoleAdapter {
         const devices = this.snapshot.devices.filter((device) => device.deviceId !== event.deviceId);
         this.snapshot = { ...this.snapshot, generatedAt: dataTimestamp(devices, this.snapshot.metrics), devices };
         this.notify();
+        this.scheduleCacheSave(this.sessionScope, this.lastRequest, this.generation, this.sessionGeneration);
         if (this.snapshot.selectedDeviceId === event.deviceId) {
           void this.loadSnapshot({ ...this.lastRequest, selectedDeviceId: null }).catch(() => { /* The visible poller retries failed reads. */ });
         }
         return;
       }
+      const previousDevice = this.snapshot.devices.find((device) => device.deviceId === event.deviceId);
       const devices = upsertDevice(this.snapshot.devices, event.summary);
       this.snapshot = { ...this.snapshot, generatedAt: dataTimestamp(devices, this.snapshot.metrics), devices };
       this.notify();
+      const nextDevice = devices.find((device) => device.deviceId === event.deviceId);
+      if (
+        !previousDevice
+        || previousDevice.status !== nextDevice?.status
+        || (previousDevice.group ?? null) !== (nextDevice?.group ?? null)
+        || previousDevice.sortOrder !== nextDevice?.sortOrder
+      ) {
+        this.scheduleCacheSave(this.sessionScope, this.lastRequest, this.generation, this.sessionGeneration);
+      }
       // A push for the device on screen means its history has a new sample.
       // Re-read just that history (throttled), so the open charts follow the
       // Agent instead of waiting for the next full poll. Other devices only

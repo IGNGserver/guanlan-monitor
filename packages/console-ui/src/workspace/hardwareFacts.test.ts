@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { MetricsLatest } from "@dsc/shared";
 import { describeBattery, describeBatteryHealth, describeClusters, describeNetworkLink, describePower, describePowerSource, extraHardwareRows, formatLinkSpeed } from "./hardwareFacts.ts";
+import { formatBytes, formatRate } from "./formatters.ts";
 
 const observedAt = "2026-10-18T00:00:00Z";
 
@@ -61,4 +62,12 @@ test("network link descriptions", () => {
   assert.equal(describeNetworkLink({ connectionType: "Wi-Fi", linkSpeedMbps: 866.7, signalStrengthPercent: 78, rssiDbm: -61 }), "Wi-Fi · 866.7 Mbps · 信号 78%（-61 dBm）");
   assert.equal(describeNetworkLink({ connectionType: null, linkSpeedMbps: null, signalStrengthPercent: null }), null);
   assert.equal(describeNetworkLink(undefined), null);
+});
+
+test("unit boundary rounding never emits 1024.0 KB, 1000.0 Mbps, 1 小时 60 分, or negative remaining minutes", () => {
+  assert.equal(formatBytes(1023.96 * 1024), "1.0 MB");
+  assert.equal(formatRate(1023.96 * 1024), "1.0 MB/s");
+  assert.equal(formatLinkSpeed(999.96), "1 Gbps");
+  assert.equal(describeBattery({ observedAt, source: "x", chargePercent: 60, charging: true, timeRemainingMinutes: 119.6 }), "60% · 充电中 · 充满还需 2 小时 0 分");
+  assert.equal(describeBattery({ observedAt, source: "x", chargePercent: 60, charging: false, externalPower: false, timeRemainingMinutes: -1 }), "60% · 放电中");
 });

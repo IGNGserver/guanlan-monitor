@@ -3,7 +3,7 @@ import { dateValueOf } from "./sampleTime.ts";
 import { DEFAULT_HEALTH_THRESHOLDS, devicesNeedingAttention, evaluateDevice, evaluateFleet, type DeviceIssue, type HealthThresholds } from "./health.ts";
 
 export type DeviceDirectoryStatus = "all" | "online" | "offline";
-export type DeviceDirectorySort = "order" | "name" | "cpu" | "memory" | "lastSeen";
+export type DeviceDirectorySort = "order" | "name" | "cpu" | "memory" | "disk" | "lastSeen";
 export const UNGROUPED_GROUP_KEY = "__ungrouped__";
 export type DeviceGroupFilter = "all" | typeof UNGROUPED_GROUP_KEY | string;
 
@@ -17,6 +17,13 @@ export const RECOMMENDED_DEVICE_GROUPS = [
 
 export type DeviceGroupHealthState = "online" | "critical" | "warning" | "offline";
 
+export interface GroupResourceHotspot {
+  deviceId: string;
+  hostname: string;
+  percent: number;
+  severity: "normal" | "warning" | "critical";
+}
+
 export interface DeviceGroupSummary {
   key: string;
   name: string;
@@ -24,6 +31,7 @@ export interface DeviceGroupSummary {
   devices: DeviceSummary[];
   total: number;
   online: number;
+  normalOnlineCount: number;
   offline: number;
   overThreshold: number;
   criticalCount: number;
@@ -31,6 +39,18 @@ export interface DeviceGroupSummary {
   state: DeviceGroupHealthState;
   avgCpuPercent: number | null;
   avgMemoryPercent: number | null;
+  avgDiskPercent: number | null;
+  avgGpuPercent: number | null;
+  memoryUsedBytes: number | null;
+  memoryTotalBytes: number | null;
+  pooledMemoryPercent: number | null;
+  diskUsedBytes: number | null;
+  diskTotalBytes: number | null;
+  pooledDiskPercent: number | null;
+  maxCpu: GroupResourceHotspot | null;
+  maxMemory: GroupResourceHotspot | null;
+  maxDisk: GroupResourceHotspot | null;
+  maxGpu: GroupResourceHotspot | null;
 }
 
 export function normalizeDeviceGroup(group: string | null | undefined): string | null {
@@ -46,6 +66,72 @@ export function selectExistingGroupNames(devices: readonly DeviceSummary[]): str
     if (group) seen.add(group);
   }
   return [...seen];
+}
+
+function pickGroupHotspot(
+  onlineDevices: readonly DeviceSummary[],
+  metricKey: DeviceMetricKey,
+  readValue: (device: DeviceSummary) => number | null | undefined,
+  ruler: { warning: number; critical: number }
+): GroupResourceHotspot | null {
+  let winner: DeviceSummary | null = null;
+  let best = -Infinity;
+  for (const device of onlineDevices) {
+    if (metricUnavailable(device, metricKey)) continue;
+    const raw = readValue(device);
+    if (typeof raw !== "number" || !Number.isFinite(raw)) continue;
+    if (raw > best) {
+      best = raw;
+      winner = device;
+    }
+  }
+  if (!winner || !Number.isFinite(best)) return null;
+  const clamped = Math.min(100, Math.max(0, best));
+  const severity: GroupResourceHotspot["severity"] =
+    clamped >= ruler.critical ? "critical" : clamped >= ruler.warning ? "warning" : "normal";
+  return {
+    deviceId: winner.deviceId,
+    hostname: winner.hostname,
+    percent: clamped,
+    severity
+  };
+}
+
+function computePooledCapacity(
+  onlineDevices: readonly DeviceSummary[],
+  metricKey: DeviceMetricKey,
+  readUsed: (device: DeviceSummary) => number | null | undefined,
+  readTotal: (device: DeviceSummary) => number | null | undefined,
+  readPercent: (device: DeviceSummary) => number | null | undefined
+): { usedBytes: number | null; totalBytes: number | null; percent: number | null } {
+  let usedSum = 0;
+  let totalSum = 0;
+  let count = 0;
+  for (const device of onlineDevices) {
+    if (metricUnavailable(device, metricKey)) continue;
+    const total = readTotal(device);
+    if (typeof total !== "number" || !Number.isFinite(total) || total <= 0) continue;
+    const directUsed = readUsed(device);
+    const pct = readPercent(device);
+    const used =
+      typeof directUsed === "number" && Number.isFinite(directUsed) && directUsed >= 0
+        ? directUsed
+        : typeof pct === "number" && Number.isFinite(pct) && pct >= 0
+          ? (Math.min(100, pct) / 100) * total
+          : null;
+    if (used == null) continue;
+    usedSum += Math.min(total, Math.max(0, used));
+    totalSum += total;
+    count += 1;
+  }
+  if (count === 0 || totalSum <= 0) {
+    return { usedBytes: null, totalBytes: null, percent: null };
+  }
+  return {
+    usedBytes: usedSum,
+    totalBytes: totalSum,
+    percent: Math.min(100, Math.max(0, (usedSum / totalSum) * 100))
+  };
 }
 
 export function selectDeviceGroups(
@@ -78,6 +164,7 @@ export function selectDeviceGroups(
       }
     }
     const overThreshold = criticalCount + warningCount;
+    const normalOnlineCount = Math.max(0, online - overThreshold);
     const state: DeviceGroupHealthState =
       groupDevices.length === 0 || online === 0
         ? "offline"
@@ -93,6 +180,27 @@ export function selectDeviceGroups(
     const validMemory = onlineDevices
       .filter((device) => !metricUnavailable(device, "memoryUsage") && typeof device.memoryUsagePercent === "number" && Number.isFinite(device.memoryUsagePercent))
       .map((device) => device.memoryUsagePercent as number);
+    const validDisk = onlineDevices
+      .filter((device) => !metricUnavailable(device, "diskUsage") && typeof device.diskUsagePercent === "number" && Number.isFinite(device.diskUsagePercent))
+      .map((device) => device.diskUsagePercent as number);
+    const validGpu = onlineDevices
+      .filter((device) => !metricUnavailable(device, "gpuUsage") && typeof device.gpuUsagePercent === "number" && Number.isFinite(device.gpuUsagePercent))
+      .map((device) => device.gpuUsagePercent as number);
+
+    const pooledMemory = computePooledCapacity(
+      onlineDevices,
+      "memoryUsage",
+      (device) => device.memoryUsedBytes,
+      (device) => device.memoryTotalBytes,
+      (device) => device.memoryUsagePercent
+    );
+    const pooledDisk = computePooledCapacity(
+      onlineDevices,
+      "diskUsage",
+      (device) => device.diskUsedBytes,
+      (device) => device.diskTotalBytes,
+      (device) => device.diskUsagePercent
+    );
 
     return {
       key,
@@ -101,13 +209,26 @@ export function selectDeviceGroups(
       devices: groupDevices,
       total: groupDevices.length,
       online,
+      normalOnlineCount,
       offline,
       overThreshold,
       criticalCount,
       warningCount,
       state,
       avgCpuPercent: validCpu.length ? validCpu.reduce((sum, v) => sum + v, 0) / validCpu.length : null,
-      avgMemoryPercent: validMemory.length ? validMemory.reduce((sum, v) => sum + v, 0) / validMemory.length : null
+      avgMemoryPercent: validMemory.length ? validMemory.reduce((sum, v) => sum + v, 0) / validMemory.length : null,
+      avgDiskPercent: validDisk.length ? validDisk.reduce((sum, v) => sum + v, 0) / validDisk.length : null,
+      avgGpuPercent: validGpu.length ? validGpu.reduce((sum, v) => sum + v, 0) / validGpu.length : null,
+      memoryUsedBytes: pooledMemory.usedBytes,
+      memoryTotalBytes: pooledMemory.totalBytes,
+      pooledMemoryPercent: pooledMemory.percent,
+      diskUsedBytes: pooledDisk.usedBytes,
+      diskTotalBytes: pooledDisk.totalBytes,
+      pooledDiskPercent: pooledDisk.percent,
+      maxCpu: pickGroupHotspot(onlineDevices, "cpuUsage", (d) => d.cpuUsagePercent, thresholds.cpu),
+      maxMemory: pickGroupHotspot(onlineDevices, "memoryUsage", (d) => d.memoryUsagePercent, thresholds.memory),
+      maxDisk: pickGroupHotspot(onlineDevices, "diskUsage", (d) => d.diskUsagePercent, thresholds.disk),
+      maxGpu: pickGroupHotspot(onlineDevices, "gpuUsage", (d) => d.gpuUsagePercent, thresholds.gpu)
     };
   };
 
@@ -198,20 +319,33 @@ export function selectLinkLabel(source: SnapshotDataSource, transport: LiveDataT
  * nothing to attend to, and answering "连接异常" under a page that says
  * 等待设备接入 counted a working first run as a fault.
  */
-function selectAttentionCount(snapshot: ConsoleSnapshot, unhealthyDevices: number, source: SnapshotDataSource): number | null {
+function selectAttentionCount(
+  snapshot: ConsoleSnapshot,
+  unhealthyDevices: number,
+  source: SnapshotDataSource,
+  scoped = false
+): number | null {
   if (source !== "live" && source !== "empty") return null;
+  if (scoped) return unhealthyDevices;
   return unhealthyDevices + (snapshot.localBackend?.lastIssueCount ?? 0);
 }
 
-export function selectHealthSummary(snapshot: ConsoleSnapshot, allDevices: DeviceSummary[], formatDate: (value: string | null | undefined) => string, transport: LiveDataTransport = "push", thresholds: HealthThresholds = DEFAULT_HEALTH_THRESHOLDS): HealthSummary {
+export function selectHealthSummary(
+  snapshot: ConsoleSnapshot,
+  allDevices: DeviceSummary[],
+  formatDate: (value: string | null | undefined) => string,
+  transport: LiveDataTransport = "push",
+  thresholds: HealthThresholds = DEFAULT_HEALTH_THRESHOLDS,
+  options?: { scoped?: boolean }
+): HealthSummary {
   const online = allDevices.filter((device) => device.status === "online").length;
-  const source = selectSnapshotSource(snapshot, allDevices);
+  const source = selectSnapshotSource(snapshot, options?.scoped ? snapshot.devices : allDevices);
   // An offline device and a device past a threshold both need someone; each is
   // counted once however many of its resources are over.
   const issues = evaluateFleet(allDevices, thresholds);
   const unhealthyDevices = devicesNeedingAttention(issues).length;
   const overThreshold = devicesNeedingAttention(issues.filter((issue) => issue.kind !== "offline")).length;
-  const pending = selectAttentionCount(snapshot, unhealthyDevices, source);
+  const pending = selectAttentionCount(snapshot, unhealthyDevices, source, options?.scoped === true);
   return {
     total: allDevices.length,
     online,
@@ -305,6 +439,47 @@ export function selectPeerDevicesInGroup(
   };
 }
 
+export function sortDevicesByCriterion(
+  devices: readonly DeviceSummary[],
+  sort: DeviceDirectorySort = "order"
+): DeviceSummary[] {
+  const compareMetric = (
+    left: DeviceSummary,
+    right: DeviceSummary,
+    key: DeviceMetricKey,
+    read: (device: DeviceSummary) => number | null | undefined
+  ) => {
+    const rank = (device: DeviceSummary): { tier: number; value: number } => {
+      const raw = read(device);
+      const valid = !metricUnavailable(device, key) && typeof raw === "number" && Number.isFinite(raw);
+      if (!valid) return { tier: 2, value: -1 };
+      return { tier: device.status === "online" ? 0 : 1, value: raw };
+    };
+    const l = rank(left);
+    const r = rank(right);
+    if (l.tier !== r.tier) return l.tier - r.tier;
+    if (r.value !== l.value) return r.value - l.value;
+    return (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
+  };
+
+  return devices.slice().sort((left, right) => {
+    if (sort === "name") {
+      return left.hostname.localeCompare(right.hostname, "zh-CN") || (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
+    }
+    if (sort === "cpu") return compareMetric(left, right, "cpuUsage", (d) => d.cpuUsagePercent);
+    if (sort === "memory") return compareMetric(left, right, "memoryUsage", (d) => d.memoryUsagePercent);
+    if (sort === "disk") return compareMetric(left, right, "diskUsage", (d) => d.diskUsagePercent);
+    if (sort === "lastSeen") {
+      const rightVal = dateValueOf(right.lastSeenAt ?? "");
+      const leftVal = dateValueOf(left.lastSeenAt ?? "");
+      const r = Number.isFinite(rightVal) ? rightVal : -1;
+      const l = Number.isFinite(leftVal) ? leftVal : -1;
+      return r - l || (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
+    }
+    return (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
+  });
+}
+
 export function selectDeviceDirectory(devices: DeviceSummary[], query: DeviceDirectoryQuery = {}): DeviceSummary[] {
   const normalizedQuery = query.query?.trim().toLocaleLowerCase() ?? "";
   const filtered = devices.filter((device) => {
@@ -318,12 +493,5 @@ export function selectDeviceDirectory(devices: DeviceSummary[], query: DeviceDir
     const textMatches = !normalizedQuery || `${device.hostname} ${device.deviceId} ${device.os} ${deviceGroup ?? ""}`.toLocaleLowerCase().includes(normalizedQuery);
     return statusMatches && groupMatches && textMatches;
   });
-  const sort = query.sort ?? "order";
-  return filtered.slice().sort((left, right) => {
-    if (sort === "name") return left.hostname.localeCompare(right.hostname, "zh-CN");
-    if (sort === "cpu") return (right.cpuUsagePercent ?? -1) - (left.cpuUsagePercent ?? -1);
-    if (sort === "memory") return (right.memoryUsagePercent ?? -1) - (left.memoryUsagePercent ?? -1);
-    if (sort === "lastSeen") return dateValueOf(right.lastSeenAt ?? "") - dateValueOf(left.lastSeenAt ?? "");
-    return (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
-  });
+  return sortDevicesByCriterion(filtered, query.sort ?? "order");
 }

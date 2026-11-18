@@ -20,11 +20,21 @@ export class MockConsoleAdapter implements ConsoleAdapter {
   async deleteInstance() { return this.snapshot; }
   async reorderInstances() { return this.snapshot; }
   async updateDeviceGroup(deviceIds: string[], group: string | null) {
+    return this.syncDeviceGroupMembers(deviceIds, group, []);
+  }
+  async syncDeviceGroupMembers(assignDeviceIds: string[], group: string | null, removeDeviceIds: string[]) {
     const normalized = group?.trim() ? group.trim() : null;
-    const idSet = new Set(deviceIds);
+    const assignSet = new Set(assignDeviceIds);
+    const removeSet = new Set(removeDeviceIds.filter((id) => !assignSet.has(id)));
     this.snapshot = {
       ...this.snapshot,
-      devices: this.snapshot.devices.map((device) => idSet.has(device.deviceId) ? { ...device, group: normalized } : device)
+      devices: this.snapshot.devices.map((device) =>
+        assignSet.has(device.deviceId)
+          ? { ...device, group: normalized }
+          : removeSet.has(device.deviceId)
+            ? { ...device, group: null }
+            : device
+      )
     };
     for (const listener of this.listeners) listener(this.snapshot);
     return this.snapshot;

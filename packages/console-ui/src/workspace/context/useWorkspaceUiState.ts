@@ -101,10 +101,11 @@ export function useWorkspaceUiState({ initialRoute }: { adapter: ConsoleAdapter;
       const nextOrientation = getScreenOrientation(width, height);
       const nextTier = getResponsiveTier(width);
       const nextTouch = detectTouchSupport();
+      const coarsePointer = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
       setOrientation(nextOrientation);
       setLayoutTier(nextTier);
       setIsTouch(nextTouch);
-      if (!pointerSeenRef.current) setInputMode(nextTouch ? "touch" : "mouse");
+      if (!pointerSeenRef.current) setInputMode(coarsePointer ? "touch" : "mouse");
       // Crossing into drawer mode closes the drawer without touching the stored
       // preference: "expanded" describes the inline rail, and a modal drawer that
       // reopened on every page would cover the content. Crossing back out

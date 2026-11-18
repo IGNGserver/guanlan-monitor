@@ -271,13 +271,28 @@ export async function registerRoutes(
     deviceIds: z.array(z.string())
   });
 
-  const deviceGroupUpdateSchema = z.object({
-    deviceIds: z.array(z.string().min(1)).min(1).max(500),
-    group: z.string().trim().max(64).nullable()
-  });
+  const groupNameFieldSchema = z
+    .string()
+    .max(256)
+    .refine(
+      (value) => !/[\u0000-\u001F\u007F]/.test(value) && Array.from(value.normalize("NFC").trim()).length <= 64,
+      { message: "invalid_group_length" }
+    )
+    .nullable();
+
+  const deviceGroupUpdateSchema = z
+    .object({
+      deviceIds: z.array(z.string().min(1)).max(500),
+      removeDeviceIds: z.array(z.string().min(1)).max(500).optional(),
+      group: groupNameFieldSchema
+    })
+    .refine(
+      (payload) => payload.deviceIds.length > 0 || (payload.removeDeviceIds?.length ?? 0) > 0,
+      { message: "empty_group_targets" }
+    );
 
   const singleDeviceGroupSchema = z.object({
-    group: z.string().trim().max(64).nullable()
+    group: groupNameFieldSchema
   });
 
   const sendDeviceSummariesWithEtag = async (request: FastifyRequest, reply: FastifyReply) => {
@@ -374,20 +389,23 @@ export async function registerRoutes(
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_group_payload" });
     }
-    if (parsed.data.deviceIds.some(isLegacyVirtualMachineId)) {
+    const assignSet = new Set(parsed.data.deviceIds);
+    const deviceIds = [...assignSet];
+    const removeDeviceIds = [...new Set(parsed.data.removeDeviceIds ?? [])].filter((id) => !assignSet.has(id));
+    const allIds = [...deviceIds, ...removeDeviceIds];
+    if (!allIds.length || allIds.some(isLegacyVirtualMachineId)) {
       return reply.code(400).send({ error: "invalid_group_payload" });
     }
-    const deviceIds = [...new Set(parsed.data.deviceIds)];
     const normalizedGroup = normalizeDeviceGroupName(parsed.data.group);
     if (normalizedGroup && isReservedDeviceGroupName(normalizedGroup)) {
       return reply.code(400).send({ error: "invalid_group_name" });
     }
     const openDevices = await repositories.devices.listOpenDevices();
     const openIds = new Set(openDevices.map((device) => device.deviceId));
-    const missing = deviceIds.find((deviceId) => !openIds.has(deviceId));
+    const missing = allIds.find((deviceId) => !openIds.has(deviceId));
     if (missing) return reply.code(404).send({ error: "device_not_found" });
     try {
-      await metricsService.updateDeviceGroup(deviceIds, normalizedGroup);
+      await metricsService.updateDeviceGroup(deviceIds, normalizedGroup, removeDeviceIds);
     } catch (error) {
       if (error instanceof InvalidDeviceGroupNameError) return reply.code(400).send({ error: "invalid_group_name" });
       if (error instanceof DeviceNotFoundError) return reply.code(404).send({ error: "device_not_found" });

@@ -191,6 +191,7 @@ export interface DeviceRepository {
   deleteDevice(deviceId: string): Promise<void>;
   reorderDevices(deviceIds: string[]): Promise<void>;
   updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void>;
+  syncDeviceGroupMembers?(assignDeviceIds: string[], group: string | null, removeDeviceIds: string[]): Promise<void>;
 }
 
 export interface Repositories {

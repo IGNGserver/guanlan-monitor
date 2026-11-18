@@ -64,10 +64,18 @@ export function normalizeMetricsResponse(metrics: MetricsResponse | null): Norma
 }
 
 export function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  const idx = Math.min(Math.max(i, 0), sizes.length - 1);
-  return `${(bytes / Math.pow(k, idx)).toFixed(idx === 0 ? 0 : 1)} ${sizes[idx]}`;
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const sizes = ["B", "KB", "MB", "GB", "TB", "PB"];
+  let amount = bytes;
+  let idx = 0;
+  while (amount >= 1024 && idx < sizes.length - 1) {
+    amount /= 1024;
+    idx += 1;
+  }
+  const digits = idx === 0 ? 0 : 1;
+  if (Number(amount.toFixed(digits)) >= 1024 && idx < sizes.length - 1) {
+    amount /= 1024;
+    idx += 1;
+  }
+  return `${amount.toFixed(idx === 0 ? 0 : 1)} ${sizes[idx]}`;
 }
