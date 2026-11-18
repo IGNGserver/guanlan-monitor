@@ -3,6 +3,7 @@ import type { MetricWindow, TrafficCalendarMode, TrafficCalendarResponse } from 
 import type { HistoryRepository, OverviewRecord, TimeSeriesRecord, TrafficHistoryPoint } from "../types.js";
 import { buildTrafficCalendar } from "../traffic-calendar.js";
 import { MysqlHistoryWriteBatcher, type HistoryWriteBatcherOptions } from "../storage/mysql-write-batcher.js";
+import { ensureCaseSensitiveDeviceId } from "../storage/device-id-collation.js";
 import {
   HISTORY_COLUMNS,
   HISTORY_INDEXES,
@@ -85,6 +86,13 @@ export class MysqlHistoryRepository implements HistoryRepository {
       if (!missing.length) continue;
       const clauses = missing.map((column) => `ADD COLUMN ${column.name} ${column.definition}`).join(", ");
       await this.pool.query(`ALTER TABLE ${table} ${clauses}`);
+    }
+    for (const table of ["device_minute_metrics", "device_hourly_metrics"] as const) {
+      // Case-insensitive history keys merged `nas2` and `NAS2` into one series;
+      // after the registry is binary, history must agree with it.
+      if (await ensureCaseSensitiveDeviceId(this.pool, table)) {
+        console.info(`[hub] ${table}.device_id migrated to utf8mb4_bin; device ids are case-sensitive`);
+      }
     }
 
     const [indexRows] = await this.pool.query<RowDataPacket[]>(`

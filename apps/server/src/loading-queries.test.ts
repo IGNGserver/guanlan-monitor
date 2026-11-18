@@ -51,6 +51,30 @@ test("narrow device lists never deserialize full realtime hardware states", asyn
   } finally { await app.close(); }
 });
 
+test("a legacy registry row that answers a differently cased live id is not listed twice", async () => {
+  const app = Fastify();
+  const payload = createHubContractPayload({ deviceId: "NAS2", timestamp: Date.now() });
+  const summary = toSummary({ identity: payload.identity, latest: payload, status: "online", lastSeenAt: payload.timestamp });
+  const repositories = {
+    devices: {
+      listOpenDevices: async () => [record("nas2", 7)],
+      registerOrUpdateDevice: async (deviceId: string, _name: string, options?: { skipUnchanged?: boolean }) => {
+        assert.equal(deviceId, "NAS2");
+        assert.equal(options?.skipUnchanged, true, "the summary read must not write the registry on every GET");
+        return record("nas2", 7); // case-insensitive collation keeps the stored casing
+      }
+    },
+    realtime: { listSummaries: async () => [summary] }
+  } as unknown as Repositories;
+  try {
+    const devices = await buildDeviceSummaries(repositories, app.log);
+    assert.equal(devices.length, 1);
+    assert.equal(devices[0].deviceId, "nas2");
+    assert.equal(devices[0].status, "offline");
+    assert.equal(devices[0].lastSeenAt, "2026-01-01T00:00:00Z");
+  } finally { await app.close(); }
+});
+
 test("inventory projection preserves the original registration hostname without exposing its private field", async () => {
   const app = Fastify();
   const payload = createHubContractPayload({ deviceId: "workstation", timestamp: Date.now() });
