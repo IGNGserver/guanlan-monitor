@@ -25,6 +25,7 @@ import {
 import { MetricsService } from "./services/metrics.js";
 import { registerRoutes } from "./routes.js";
 import { registerRequestTiming } from "./request-timing.js";
+import { tolerateEmptyJsonBody } from "./empty-json-body.js";
 import { registerAgentIngestRoute, registerHttpCompression } from "./http-compression.js";
 import { registerInventoryRecovery } from "./inventory-recovery.js";
 import { resolve } from "node:path";
@@ -62,6 +63,7 @@ const app = Fastify({
 });
 registerRequestTiming(app);
 registerHttpCompression(app);
+tolerateEmptyJsonBody(app);
 await app.register(cors, {
   origin: corsOrigins,
   credentials: true,

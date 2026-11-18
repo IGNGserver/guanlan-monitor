@@ -55,3 +55,19 @@ test("401 is distinct from connectivity failure and requests bypass HTTP cache",
   try { await assert.rejects(apiFetch("/api/auth/session"), (error: unknown) => error instanceof ApiError && error.status === 401); }
   finally { globalThis.fetch = original; }
 });
+test("only a request that carries a body declares a JSON content type", async () => {
+  const original = globalThis.fetch;
+  const sent: Headers[] = [];
+  globalThis.fetch = async (_input, init) => {
+    sent.push(new Headers(init?.headers));
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    // The Hub rejects a declared content type on an empty body before the route runs, so a
+    // bodyless delete must not send one; requests with a body still declare it.
+    await apiFetch("/api/devices/macos-dev2", { method: "DELETE" });
+    await apiFetch("/api/devices/macos-dev2/id", { method: "PUT", body: JSON.stringify({ deviceId: "next" }) });
+  } finally { globalThis.fetch = original; }
+  assert.equal(sent[0]?.has("content-type"), false);
+  assert.equal(sent[1]?.get("content-type"), "application/json");
+});

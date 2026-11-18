@@ -44,10 +44,12 @@ public actor ApiClient {
         
         var request = URLRequest(url: requestURL)
         request.httpMethod = method
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         
+        // Only a request that carries a body may declare one: the Hub rejects a JSON content
+        // type on an empty body (deleting a device) before the route runs.
         if let body = body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = body
         }
         return request
