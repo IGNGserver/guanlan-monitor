@@ -7,6 +7,21 @@ import {
 import { isReservedDeviceGroupName, normalizeDeviceGroupName } from "@dsc/shared";
 import { DeviceNotFoundError, InvalidDeviceGroupNameError, type DeviceRecord, type DeviceRegistrationOptions, type DeviceRepository } from "../types.js";
 import { KeyedSerialQueue } from "../serial-queue.js";
+import { ensureCaseSensitiveDeviceId } from "../storage/device-id-collation.js";
+
+/**
+ * MySQL DATETIME columns are read as `YYYY-MM-DD HH:MM:SS` (or a `Date` when
+ * the driver is configured that way) while every other registry read returns
+ * ISO timestamps. Normalize here so `/api/instances` never mixes formats and
+ * browsers do not parse a raw UTC datetime as local time.
+ */
+function isoFromDatabase(value: unknown): string {
+  if (value instanceof Date) return `${value.toISOString().slice(0, 19)}.000Z`;
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (raw.includes("T")) return raw;
+  return `${raw.replace(" ", "T")}.000Z`;
+}
 
 export interface MysqlDeviceRepositoryOptions {
   listCacheTtlMs?: number;
@@ -44,6 +59,11 @@ export class MysqlDeviceRepository implements DeviceRepository {
     );
     if (columns.length === 0) {
       await this.pool.query(`ALTER TABLE devices ADD COLUMN group_name VARCHAR(64) NULL DEFAULT NULL AFTER sort_order`);
+    }
+    // Older tables kept the database's case-insensitive collation; the device
+    // identity contract (Redis keys, in-memory maps) has always been binary.
+    if (await ensureCaseSensitiveDeviceId(this.pool, "devices")) {
+      console.info("[hub] devices.device_id migrated to utf8mb4_bin; device ids are case-sensitive");
     }
     await this.pool.query(
       `UPDATE devices SET group_name = NULL WHERE LOWER(TRIM(group_name)) IN (?, ?, ?)`,
@@ -85,6 +105,7 @@ export class MysqlDeviceRepository implements DeviceRepository {
   ): Promise<DeviceRecord> {
     const now = new Date();
     const formattedNow = now.toISOString().slice(0, 19).replace("T", " ");
+    const recordTimestamp = `${now.toISOString().slice(0, 19)}.000Z`;
 
     const [rows] = await this.pool.query<RowDataPacket[]>(
       `SELECT device_id, name, status, sort_order, group_name, registered_at, updated_at FROM devices WHERE device_id = ?`,
@@ -100,8 +121,8 @@ export class MysqlDeviceRepository implements DeviceRepository {
           status: "closed",
           sortOrder: existing.sort_order,
           group: existing.group_name ?? null,
-          registeredAt: String(existing.registered_at),
-          updatedAt: String(existing.updated_at)
+          registeredAt: isoFromDatabase(existing.registered_at),
+          updatedAt: isoFromDatabase(existing.updated_at)
         };
       }
       const deviceName = name || existing.name;
@@ -116,8 +137,8 @@ export class MysqlDeviceRepository implements DeviceRepository {
         status: "open",
         sortOrder: existing.sort_order,
         group: existing.group_name ?? null,
-        registeredAt: String(existing.registered_at),
-        updatedAt: formattedNow
+        registeredAt: isoFromDatabase(existing.registered_at),
+        updatedAt: recordTimestamp
       };
     } else {
       const [maxOrderRows] = await this.pool.query<RowDataPacket[]>(
@@ -138,8 +159,8 @@ export class MysqlDeviceRepository implements DeviceRepository {
         status: "open",
         sortOrder: nextSortOrder,
         group: null,
-        registeredAt: formattedNow,
-        updatedAt: formattedNow
+        registeredAt: recordTimestamp,
+        updatedAt: recordTimestamp
       };
     }
   }

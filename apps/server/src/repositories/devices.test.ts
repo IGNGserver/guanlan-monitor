@@ -143,8 +143,25 @@ test("name changes run the existing SELECT/UPDATE path; ordinary registrations s
   const normal = await devices.registerOrUpdateDevice("host", "New");
   assert.equal(pool.queries.length, 7);
   assert.match(pool.queries.at(-1)!.sql, /^UPDATE devices SET name/);
-  assert.equal(normal.updatedAt, pool.queries.at(-1)!.params[1]);
+  assert.match(normal.updatedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z$/);
   assert.notEqual(normal.updatedAt, "2000-01-01 00:00:00");
+});
+
+test("database datetimes are normalized to ISO 8601 on every read path", async () => {
+  const pool = new FakePool();
+  const devices = pool.repository();
+  const created = await devices.registerOrUpdateDevice("host", "Host", fast);
+  const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z$/;
+  assert.match(created.registeredAt, iso);
+  assert.match(created.updatedAt, iso);
+
+  pool.rows.set("closed-host", {
+    device_id: "closed-host", name: "Closed", status: "closed", sort_order: 0,
+    registered_at: "2026-01-01 00:00:00", updated_at: "2026-01-02 03:04:05"
+  });
+  const closed = await devices.registerOrUpdateDevice("closed-host", "Closed", { skipUnchanged: true });
+  assert.equal(closed.registeredAt, "2026-01-01T00:00:00.000Z");
+  assert.equal(closed.updatedAt, "2026-01-02T03:04:05.000Z");
 });
 
 test("delete invalidates an open entry; history cannot reopen it, authoritative samples can", async () => {
