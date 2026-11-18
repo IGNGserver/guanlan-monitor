@@ -37,6 +37,7 @@ import type { DeviceLiveView } from "../routes";
 import {
   ConfirmDialog,
   DeviceGroupDialog,
+  DeviceIdDialog,
   EmptyState,
   InstanceFilter,
   MetricsLoadingSurface,
@@ -75,6 +76,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
     mutationPending,
     refresh,
     deleteInstance,
+    renameInstance,
     updateDeviceGroup,
     metricsWindow,
     setMetricsWindow,
@@ -87,6 +89,7 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
   } = useWorkspace();
   const [editingGroup, setEditingGroup] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [renamingId, setRenamingId] = useState(false);
   const existingGroups = useMemo(() => selectExistingGroupNames(allDevices), [allDevices]);
   const snapshotSource = snapshot ? selectSnapshotSource(snapshot, snapshot.devices) : "unknown";
   const deviceSourceState: "online" | "offline" | "cached" | "warning" | "unknown" = snapshotSource === "cache"
@@ -474,16 +477,29 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
         title={selectedDevice.hostname}
         description={`${selectedDevice.os} · ${selectedDevice.deviceId}`}
         actions={liveAuthenticated ? (
-          <Button
-            variant="quiet"
-            className="workspace-device-delete-btn"
-            onClick={() => setConfirmingDelete(true)}
-            disabled={mutationPending}
-            aria-label={`删除设备 ${selectedDevice.hostname}`}
-          >
-            <Icon name="delete" size={16} />
-            删除设备
-          </Button>
+          <>
+            {renameInstance && selectedDevice.status !== "online" && (
+              <Button
+                variant="quiet"
+                onClick={() => setRenamingId(true)}
+                disabled={mutationPending}
+                aria-label={`重命名设备 ID ${selectedDevice.hostname}`}
+              >
+                <Icon name="edit" size={16} />
+                重命名 ID
+              </Button>
+            )}
+            <Button
+              variant="quiet"
+              className="workspace-device-delete-btn"
+              onClick={() => setConfirmingDelete(true)}
+              disabled={mutationPending}
+              aria-label={`删除设备 ${selectedDevice.hostname}`}
+            >
+              <Icon name="delete" size={16} />
+              删除设备
+            </Button>
+          </>
         ) : undefined}
       />
       <SnapshotFreshnessNotice /></>}
@@ -495,16 +511,29 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
               <p>{selectedDevice.os}{currentDeviceGroup ? ` · ${currentDeviceGroup}` : ""} · {snapshotSource === "cache" ? "缓存中的状态" : selectedDevice.status === "online" ? "在线" : "离线"}</p>
             </div>
             {liveAuthenticated && (
-              <Button
-                variant="quiet"
-                className="workspace-device-delete-btn"
-                onClick={() => setConfirmingDelete(true)}
-                disabled={mutationPending}
-                aria-label={`删除设备 ${selectedDevice.hostname}`}
-              >
-                <Icon name="delete" size={16} />
-                删除
-              </Button>
+              <>
+                {renameInstance && selectedDevice.status !== "online" && (
+                  <Button
+                    variant="quiet"
+                    onClick={() => setRenamingId(true)}
+                    disabled={mutationPending}
+                    aria-label={`重命名设备 ID ${selectedDevice.hostname}`}
+                  >
+                    <Icon name="edit" size={16} />
+                    改 ID
+                  </Button>
+                )}
+                <Button
+                  variant="quiet"
+                  className="workspace-device-delete-btn"
+                  onClick={() => setConfirmingDelete(true)}
+                  disabled={mutationPending}
+                  aria-label={`删除设备 ${selectedDevice.hostname}`}
+                >
+                  <Icon name="delete" size={16} />
+                  删除
+                </Button>
+              </>
             )}
           </div>
         </header>
@@ -620,6 +649,22 @@ export function DeviceDetailsPage({ presentation = "desktop", touchPanel = "stat
             void updateDeviceGroup([selectedDevice.deviceId], nextGroup);
           }}
           onCancel={() => setEditingGroup(false)}
+        />
+      )}
+      {renamingId && renameInstance && (
+        <DeviceIdDialog
+          title={`重命名“${selectedDevice.hostname}”的设备 ID`}
+          detail="仅对离线设备开放。会同时迁移中枢注册表与历史数据；实时窗口从新 ID 重新开始。请先修改该设备上的 Agent 配置并停止上报，避免它用旧 ID 重新注册。"
+          initialValue={selectedDevice.deviceId}
+          disabled={mutationPending}
+          onConfirm={(nextDeviceId) => {
+            const currentId = selectedDevice.deviceId;
+            setRenamingId(false);
+            void renameInstance(currentId, nextDeviceId).then((renamed) => {
+              if (renamed) navigate({ kind: "device", deviceId: nextDeviceId });
+            });
+          }}
+          onCancel={() => setRenamingId(false)}
         />
       )}
       {confirmingDelete && (

@@ -5,7 +5,7 @@ import {
   legacyVirtualMachineRecord
 } from "../legacy-devices.js";
 import { isReservedDeviceGroupName, normalizeDeviceGroupName } from "@dsc/shared";
-import { DeviceNotFoundError, InvalidDeviceGroupNameError, type DeviceRecord, type DeviceRegistrationOptions, type DeviceRepository } from "../types.js";
+import { DeviceIdConflictError, DeviceNotFoundError, InvalidDeviceGroupNameError, type DeviceRecord, type DeviceRegistrationOptions, type DeviceRepository } from "../types.js";
 import { KeyedSerialQueue } from "../serial-queue.js";
 import { ensureCaseSensitiveDeviceId } from "../storage/device-id-collation.js";
 
@@ -193,6 +193,67 @@ export class MysqlDeviceRepository implements DeviceRepository {
     );
     const record = rows[0] as DeviceRecord | undefined;
     return record ? { ...record, group: record.group ?? null } : null;
+  }
+
+  async renameDevice(deviceId: string, nextDeviceId: string): Promise<DeviceRecord> {
+    if (isLegacyVirtualMachineId(deviceId) || isLegacyVirtualMachineId(nextDeviceId)) {
+      throw new DeviceNotFoundError(deviceId);
+    }
+    if (deviceId === nextDeviceId) {
+      const record = await this.getOpenDevice(deviceId);
+      if (!record) throw new DeviceNotFoundError(deviceId);
+      return record;
+    }
+    return this.registryQueue.run("registry", () => this.deviceQueues.run(deviceId, () => this.deviceQueues.run(nextDeviceId, async () => {
+      const connection = await this.pool.getConnection();
+      const updatedAt = new Date().toISOString().slice(0, 19).replace("T", " ");
+      try {
+        await connection.beginTransaction();
+        const [sourceRows] = await connection.query<RowDataPacket[]>(
+          `SELECT device_id, name, status, sort_order, group_name, registered_at, updated_at FROM devices WHERE device_id = ? FOR UPDATE`,
+          [deviceId]
+        );
+        const source = sourceRows[0];
+        if (!source || source.status !== "open") throw new DeviceNotFoundError(deviceId);
+        const [targetRows] = await connection.query<RowDataPacket[]>(
+          `SELECT device_id FROM devices WHERE device_id = ? FOR UPDATE`, [nextDeviceId]
+        );
+        if (targetRows.length) throw new DeviceIdConflictError(nextDeviceId);
+        // Orphaned history under the target would collide with the moved rows
+        // (and silently merge two devices), so treat it as an existing identity.
+        const [minuteRows] = await connection.query<RowDataPacket[]>(
+          `SELECT 1 FROM device_minute_metrics WHERE device_id = ? LIMIT 1`, [nextDeviceId]
+        );
+        const [hourlyRows] = await connection.query<RowDataPacket[]>(
+          `SELECT 1 FROM device_hourly_metrics WHERE device_id = ? LIMIT 1`, [nextDeviceId]
+        );
+        if (minuteRows.length || hourlyRows.length) throw new DeviceIdConflictError(nextDeviceId);
+        await connection.query(
+          `UPDATE devices SET device_id = ?, updated_at = ? WHERE device_id = ?`,
+          [nextDeviceId, updatedAt, deviceId]
+        );
+        await connection.query(`UPDATE device_minute_metrics SET device_id = ? WHERE device_id = ?`, [nextDeviceId, deviceId]);
+        await connection.query(`UPDATE device_hourly_metrics SET device_id = ? WHERE device_id = ?`, [nextDeviceId, deviceId]);
+        await connection.commit();
+        this.registeredDevices.delete(deviceId);
+        this.registeredDevices.delete(nextDeviceId);
+        this.listCache = undefined;
+        return {
+          deviceId: nextDeviceId,
+          name: String(source.name),
+          status: "open" as const,
+          sortOrder: Number(source.sort_order),
+          group: source.group_name ?? null,
+          registeredAt: isoFromDatabase(source.registered_at),
+          updatedAt: `${updatedAt.replace(" ", "T")}.000Z`
+        };
+      } catch (error) {
+        await connection.rollback().catch(() => undefined);
+        throw error;
+      } finally {
+        connection.release();
+      }
+    })));
   }
 
   async deleteDevice(deviceId: string): Promise<void> {

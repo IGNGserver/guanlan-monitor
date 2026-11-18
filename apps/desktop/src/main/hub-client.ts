@@ -233,6 +233,15 @@ export class HubClient {
     this.metricsCache.clear();
   }
 
+  async renameDevice(deviceId: string, nextDeviceId: string): Promise<void> {
+    await this.authorized<{ ok: boolean }>(`/api/devices/${encodeURIComponent(deviceId)}/id`, {
+      method: "PUT",
+      body: JSON.stringify({ deviceId: nextDeviceId })
+    });
+    this.devicesCache = null;
+    this.metricsCache.clear();
+  }
+
   async reorderDevices(deviceIds: string[]): Promise<void> {
     await this.authorized<{ ok: boolean }>("/api/devices/reorder", {
       method: "PUT",

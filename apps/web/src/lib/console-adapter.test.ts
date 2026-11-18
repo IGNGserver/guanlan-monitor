@@ -28,6 +28,7 @@ function installHub() {
       : path.endsWith("/metrics") ? metrics
       : path === "/api/overview/metrics" ? { window: "5m", instances: [] }
       : path.endsWith("/traffic-calendar") ? { cells: [] }
+      : path.endsWith("/id") ? { ok: true, deviceId: "NAS2" }
       : path === "/IGNGserver/guanlan-monitor/updates/updates.json" ? { schemaVersion: 1, repository: "IGNGserver/guanlan-monitor", generatedAt: "2026-10-25T12:00:00Z", releases: [] }
       : {};
     return new Response(JSON.stringify(body), { status: 200 });
@@ -57,6 +58,22 @@ test("device group mutations send normalized batch payload and refresh the group
       body: JSON.stringify({ deviceIds: ["nas", "nas"], group: "  宿主机  " })
     });
     assert.ok(calls.includes("/api/instances"));
+  } finally { hub.restore(); }
+});
+
+test("renameInstance sends the new id and selects the renamed device", async () => {
+  const hub = installHub();
+  try {
+    const adapter = adapterAt({ now: 1_000_000 });
+    await adapter.refresh({ include: {} });
+    const snapshot = await adapter.renameInstance("nas", "NAS2");
+    const mutation = hub.requests.find((request) => request.path === "/api/devices/nas/id");
+    assert.deepEqual(mutation, {
+      path: "/api/devices/nas/id",
+      method: "PUT",
+      body: JSON.stringify({ deviceId: "NAS2" })
+    });
+    assert.equal(snapshot.selectedDeviceId, "NAS2");
   } finally { hub.restore(); }
 });
 

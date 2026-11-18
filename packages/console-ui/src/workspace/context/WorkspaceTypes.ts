@@ -75,6 +75,8 @@ export interface WorkspaceContextValue {
   cloudPush: () => Promise<boolean>;
   saveFanNote: (deviceId: string, fanId: string, note: string) => Promise<boolean>;
   deleteInstance: (deviceId: string) => Promise<boolean>;
+  /** Present when the active shell implements the admin rename endpoint. */
+  renameInstance?: (deviceId: string, nextDeviceId: string) => Promise<boolean>;
   reorderInstances: (deviceIds: string[]) => Promise<boolean>;
   updateDeviceGroup: (deviceIds: string[], group: string | null) => Promise<boolean>;
   minimizeWindow: () => Promise<void>;

@@ -40,6 +40,7 @@ export class DesktopConsoleAdapter implements ConsoleAdapter, ConsoleLocalAgentP
   disconnectAgent(): Promise<ConsoleSnapshot> { return dscBridge.disconnectAgent(); }
   saveHubConnection(serverUrl: string, accessKey: string): Promise<ConsoleSnapshot> { return dscBridge.saveHubConnection(serverUrl, accessKey); }
   deleteInstance(deviceId: string): Promise<ConsoleSnapshot> { return dscBridge.deleteInstance(deviceId); }
+  renameInstance(deviceId: string, nextDeviceId: string): Promise<ConsoleSnapshot> { return dscBridge.renameInstance(deviceId, nextDeviceId); }
   reorderInstances(deviceIds: string[]): Promise<ConsoleSnapshot> { return dscBridge.reorderInstances(deviceIds); }
   updateDeviceGroup(deviceIds: string[], group: string | null): Promise<ConsoleSnapshot> { return dscBridge.updateDeviceGroup(deviceIds, group); }
   saveFanNote(deviceId: string, fanId: string, note: string): Promise<ConsoleSnapshot> { return dscBridge.saveFanNote(deviceId, fanId, note); }

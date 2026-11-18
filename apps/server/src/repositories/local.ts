@@ -5,6 +5,7 @@ import { isReservedDeviceGroupName, normalizeDeviceGroupName } from "@dsc/shared
 import type { DeviceBlockKey, DeviceMetricKey, MetricWindow } from "@dsc/shared";
 import type { TrafficCalendarMode, TrafficCalendarResponse } from "@dsc/shared";
 import {
+  DeviceIdConflictError,
   DeviceNotFoundError,
   InvalidDeviceGroupNameError,
   type DeviceRecord,
@@ -548,6 +549,52 @@ export class LocalDeviceRepository implements DeviceRepository {
         ? { ...record, group: isReservedDeviceGroupName(record.group?.trim() ?? "") ? null : record.group ?? null }
         : null;
     });
+  }
+
+  async renameDevice(deviceId: string, nextDeviceId: string): Promise<DeviceRecord> {
+    if (isLegacyVirtualMachineId(deviceId) || isLegacyVirtualMachineId(nextDeviceId)) {
+      throw new DeviceNotFoundError(deviceId);
+    }
+    if (deviceId === nextDeviceId) {
+      const record = await this.getOpenDevice(deviceId);
+      if (!record) throw new DeviceNotFoundError(deviceId);
+      return record;
+    }
+    let result!: DeviceRecord;
+    await this.store.update((db) => {
+      const registry = (db.deviceRegistry ??= {});
+      const source = registry[deviceId];
+      if (!source || source.status !== "open") throw new DeviceNotFoundError(deviceId);
+      const occupied = registry[nextDeviceId] || db.devices[nextDeviceId] || db.series[nextDeviceId]
+        || db.minuteHistory[nextDeviceId] || db.history[nextDeviceId] || db.fanNotes[nextDeviceId]
+        || db.deviceMetricConfigs[nextDeviceId];
+      if (occupied) throw new DeviceIdConflictError(nextDeviceId);
+
+      const nextRecord: DeviceRecord = {
+        ...source,
+        deviceId: nextDeviceId,
+        updatedAt: new Date().toISOString(),
+        group: isReservedDeviceGroupName(source.group?.trim() ?? "") ? null : source.group ?? null
+      };
+      registry[nextDeviceId] = nextRecord;
+      delete registry[deviceId];
+
+      const state = db.devices[deviceId];
+      if (state) {
+        const renamed = structuredClone(state);
+        renamed.identity.deviceId = nextDeviceId;
+        if (renamed.latest?.identity) renamed.latest.identity.deviceId = nextDeviceId;
+        db.devices[nextDeviceId] = renamed;
+        delete db.devices[deviceId];
+      }
+      for (const map of [db.series, db.minuteHistory, db.history, db.fanNotes, db.deviceMetricConfigs]) {
+        if (!Object.hasOwn(map, deviceId)) continue;
+        (map as Record<string, unknown>)[nextDeviceId] = (map as Record<string, unknown>)[deviceId];
+        delete (map as Record<string, unknown>)[deviceId];
+      }
+      result = { ...nextRecord };
+    });
+    return result;
   }
 
   async deleteDevice(deviceId: string): Promise<void> {

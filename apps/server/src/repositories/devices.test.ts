@@ -333,3 +333,108 @@ test("updateDeviceGroup invalidates cache and preserves group across subsequent 
   await assert.rejects(devices.updateDeviceGroup(["missing"], "幽灵组"), /device_not_found/);
   assert.equal(pool.rows.has("missing"), false);
 });
+
+class FakeRenamePool {
+  readonly registry = new Map<string, DeviceRow>();
+  readonly minute = new Set<string>();
+  readonly hourly = new Set<string>();
+
+  repository() {
+    return new MysqlDeviceRepository(this as unknown as mysql.Pool);
+  }
+
+  seed(deviceId: string, name: string, extra: Partial<DeviceRow> = {}) {
+    this.registry.set(deviceId, {
+      device_id: deviceId, name, status: "open", sort_order: this.registry.size,
+      group_name: null, registered_at: "2026-01-01 00:00:00", updated_at: "2026-01-01 00:00:00",
+      ...extra
+    });
+  }
+
+  async getConnection() {
+    const pool = this;
+    return {
+      beginTransaction: async () => undefined,
+      commit: async () => undefined,
+      rollback: async () => undefined,
+      release: () => undefined,
+      async query(sql: string, params: unknown[] = []) {
+        if (sql.startsWith("SELECT device_id, name, status")) {
+          const row = pool.registry.get(String(params[0]));
+          return [row ? [{ ...row }] : [], []];
+        }
+        if (sql.startsWith("SELECT device_id FROM devices WHERE device_id = ?")) {
+          const row = pool.registry.get(String(params[0]));
+          return [row ? [{ device_id: row.device_id }] : [], []];
+        }
+        if (sql.startsWith("SELECT 1 FROM device_minute_metrics")) {
+          const id = String(params[0]);
+          return [[...pool.minute].some((key) => key === id || key.startsWith(`${id}:`)) ? [{ present: 1 }] : [], []];
+        }
+        if (sql.startsWith("SELECT 1 FROM device_hourly_metrics")) {
+          const id = String(params[0]);
+          return [[...pool.hourly].some((key) => key === id || key.startsWith(`${id}:`)) ? [{ present: 1 }] : [], []];
+        }
+        if (sql.startsWith("UPDATE devices SET device_id")) {
+          const [next, updatedAt, old] = params.map(String);
+          const row = pool.registry.get(old);
+          assert.ok(row);
+          row.device_id = next;
+          row.updated_at = updatedAt;
+          pool.registry.delete(old);
+          pool.registry.set(next, row);
+          return [{ affectedRows: 1 }, []];
+        }
+        if (sql.startsWith("UPDATE device_minute_metrics")) {
+          const [next, old] = params.map(String);
+          for (const key of [...pool.minute]) {
+            if (key !== old && !key.startsWith(`${old}:`)) continue;
+            pool.minute.delete(key);
+            pool.minute.add(key.replace(old, next));
+          }
+          return [{ affectedRows: 1 }, []];
+        }
+        if (sql.startsWith("UPDATE device_hourly_metrics")) {
+          const [next, old] = params.map(String);
+          for (const key of [...pool.hourly]) {
+            if (key !== old && !key.startsWith(`${old}:`)) continue;
+            pool.hourly.delete(key);
+            pool.hourly.add(key.replace(old, next));
+          }
+          return [{ affectedRows: 1 }, []];
+        }
+        throw new Error(`unexpected SQL: ${sql}`);
+      }
+    };
+  }
+}
+
+test("renameDevice moves the registry row, history and timestamps", async () => {
+  const pool = new FakeRenamePool();
+  const devices = pool.repository();
+  pool.seed("old", "NAS2", { sort_order: 4, group_name: "宿主机" });
+  pool.minute.add("old:2026-11-18 10:00:00");
+  pool.hourly.add("old:2026-11-18 10:00:00");
+  const renamed = await devices.renameDevice("old", "NAS2");
+  assert.equal(renamed.deviceId, "NAS2");
+  assert.equal(renamed.name, "NAS2");
+  assert.equal(renamed.sortOrder, 4);
+  assert.equal(renamed.group, "宿主机");
+  assert.match(renamed.updatedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z$/);
+  assert.equal(pool.registry.has("old"), false);
+  assert.ok(pool.registry.has("NAS2"));
+  assert.ok(pool.minute.has("NAS2:2026-11-18 10:00:00"));
+  assert.ok(pool.hourly.has("NAS2:2026-11-18 10:00:00"));
+});
+
+test("renameDevice refuses an existing id or orphaned history", async () => {
+  const pool = new FakeRenamePool();
+  const devices = pool.repository();
+  pool.seed("old", "Old");
+  pool.seed("taken", "Taken");
+  await assert.rejects(devices.renameDevice("old", "taken"), /device_id_conflict/);
+  pool.minute.add("orphan:2026-11-18 10:00:00");
+  await assert.rejects(devices.renameDevice("old", "orphan"), /device_id_conflict/);
+  await assert.rejects(devices.renameDevice("missing", "next"), /device_not_found/);
+  assert.ok(pool.registry.has("old"));
+});

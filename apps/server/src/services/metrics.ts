@@ -4,11 +4,13 @@ import type {
   DeviceMetricConfigValue,
   DeviceMetricConfigStore,
   DeviceEventEmitter,
+  DeviceRecord,
   DeviceRealtimeState,
   InstanceMetricRecord,
   MetricAccumulator,
   Repositories
 } from "../types.js";
+import { DeviceNotFoundError, DeviceOnlineError } from "../types.js";
 import { buildTrafficCalendar, trafficCalendarBounds } from "../traffic-calendar.js";
 import { ALL_DEVICE_METRIC_KEYS, HEARTBEAT_TIMEOUT_MS, payloadToTimeSeries, toSummary } from "../utils.js";
 import { forEachBounded, KeyedSerialQueue } from "../serial-queue.js";
@@ -183,6 +185,51 @@ export class MetricsService {
             };
         this.emitDeviceEventSafely({ deviceId, summary });
       });
+    });
+  }
+
+  async renameDevice(deviceId: string, nextDeviceId: string, revokeLive?: (deviceId: string) => Promise<void>): Promise<DeviceRecord> {
+    return this.withDeviceLocks([deviceId, nextDeviceId], async () => {
+      const state = await this.repositories.realtime.getDevice(deviceId);
+      if (state?.status === "online") throw new DeviceOnlineError(deviceId);
+      // A connected Agent under the old id would re-register it on its next
+      // sample, so drop the live session before changing identity.
+      await revokeLive?.(deviceId);
+      const record = await this.repositories.devices.renameDevice(deviceId, nextDeviceId);
+      this.minuteAccumulators.delete(deviceId);
+      this.hourlyAccumulators.delete(deviceId);
+      this.inventoryHashes.delete(deviceId);
+      // Realtime series are short-lived transport state, not the durable
+      // history: the new id starts with a fresh live window and keeps the
+      // historical points already migrated by the registry transaction.
+      await this.repositories.realtime.remove(deviceId);
+      if (state) {
+        this.emitDeviceEventSafely({
+          deviceId,
+          summary: toSummary({ ...state, status: "offline" as const }),
+          removed: true
+        });
+      }
+      this.emitDeviceEventSafely({
+        deviceId: nextDeviceId,
+        summary: {
+          deviceId: record.deviceId,
+          hostname: record.name || record.deviceId,
+          os: "unknown",
+          agentVersion: null,
+          agentChannel: null,
+          status: "offline",
+          lastSeenAt: record.updatedAt,
+          cpuUsagePercent: null,
+          gpuUsagePercent: null,
+          gpuMemoryUsagePercent: null,
+          memoryUsagePercent: null,
+          diskUsagePercent: null,
+          sortOrder: record.sortOrder,
+          group: record.group ?? null
+        }
+      });
+      return record;
     });
   }
 

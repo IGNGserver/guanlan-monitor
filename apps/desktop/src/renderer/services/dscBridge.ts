@@ -116,6 +116,10 @@ class SafeDscBridge implements DesktopRendererBridge, WindowMaterialBridge {
     return this.requireBridge().deleteInstance(deviceId);
   }
 
+  async renameInstance(deviceId: string, nextDeviceId: string): Promise<DesktopSnapshot> {
+    return this.requireBridge().renameInstance(deviceId, nextDeviceId);
+  }
+
   async reorderInstances(deviceIds: string[]): Promise<DesktopSnapshot> {
     return this.requireBridge().reorderInstances(deviceIds);
   }

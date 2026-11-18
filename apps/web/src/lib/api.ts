@@ -140,6 +140,13 @@ export function deleteDevice(deviceId: string) {
   });
 }
 
+export function renameDevice(deviceId: string, nextDeviceId: string) {
+  return apiFetch<{ ok: true; deviceId: string }>(devicePath(deviceId, "/id"), {
+    method: "PUT",
+    body: JSON.stringify({ deviceId: nextDeviceId })
+  });
+}
+
 export function reorderDevices(deviceIds: string[]) {
   return apiFetch<{ ok: true }>("/api/devices/reorder", {
     method: "PUT",

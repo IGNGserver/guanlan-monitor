@@ -149,6 +149,28 @@ export class DeviceNotFoundError extends Error {
   }
 }
 
+export class DeviceIdConflictError extends Error {
+  readonly deviceId: string;
+
+  constructor(deviceId: string) {
+    super("device_id_conflict");
+    this.name = "DeviceIdConflictError";
+    this.deviceId = deviceId;
+  }
+}
+
+/** Identity changes are refused while an Agent is reporting: a live Agent would
+ * re-register the old id on its next sample. */
+export class DeviceOnlineError extends Error {
+  readonly deviceId: string;
+
+  constructor(deviceId: string) {
+    super("device_online");
+    this.name = "DeviceOnlineError";
+    this.deviceId = deviceId;
+  }
+}
+
 export interface DeviceRegistrationOptions {
   reopenClosed?: boolean;
   /** Authoritative steady ingest may skip an unchanged registry touch. */
@@ -164,6 +186,8 @@ export interface DeviceRepository {
   ): Promise<DeviceRecord>;
   listOpenDevices(): Promise<DeviceRecord[]>;
   getOpenDevice(deviceId: string): Promise<DeviceRecord | null>;
+  /** Rename an offline device id and its stored history atomically. */
+  renameDevice(deviceId: string, nextDeviceId: string): Promise<DeviceRecord>;
   deleteDevice(deviceId: string): Promise<void>;
   reorderDevices(deviceIds: string[]): Promise<void>;
   updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void>;

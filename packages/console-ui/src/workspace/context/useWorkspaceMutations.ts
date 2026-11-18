@@ -102,6 +102,18 @@ export function useWorkspaceMutations({
     (deviceId: string) => runMutation(() => adapter.deleteInstance(deviceId), "设备已从中枢删除；若 Agent 仍在运行，下次上报时会自动加回", "删除设备失败"),
     [adapter, runMutation]
   );
+  const renameInstanceAction = useCallback(
+    (deviceId: string, nextDeviceId: string) => {
+      if (!adapter.renameInstance) return Promise.reject(new Error("rename_unavailable"));
+      return runMutation(
+        () => adapter.renameInstance!(deviceId, nextDeviceId),
+        "设备 ID 已更新；请同步修改该设备上的 Agent 配置",
+        "重命名设备 ID 失败"
+      );
+    },
+    [adapter, runMutation]
+  );
+  const renameInstance = adapter.renameInstance ? renameInstanceAction : undefined;
   const reorderInstances = useCallback(
     (deviceIds: string[]) => runMutation(() => adapter.reorderInstances(deviceIds), "实例顺序已保存", "保存排序失败"),
     [adapter, runMutation]
@@ -152,6 +164,7 @@ export function useWorkspaceMutations({
     cloudPush,
     saveFanNote,
     deleteInstance,
+    renameInstance,
     reorderInstances,
     updateDeviceGroup,
     minimizeWindow,
