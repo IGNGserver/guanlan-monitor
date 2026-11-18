@@ -18,6 +18,7 @@ import type {
   TrafficCalendarResponse
 } from "@dsc/shared";
 import { writeJsonAtomically } from "./atomic-json.js";
+import { hubRequestHeaders } from "./hub-request-headers.js";
 import { withReadDeadline } from "./read-deadline.js";
 
 interface StoredAccessKey {
@@ -397,15 +398,7 @@ export class HubClient {
     const epoch = this.connectionEpoch;
     const assertCurrent = () => { if (epoch !== this.connectionEpoch || init.signal?.aborted) throw new Error("hub_session_changed"); };
     const { includeSession = true, ...requestInit } = init;
-    const headers: Record<string, string> = {
-      Accept: "application/json",
-      "Content-Type": "application/json"
-    };
-    if (requestInit.headers) {
-      if (typeof requestInit.headers === "object" && !(requestInit.headers instanceof Headers)) {
-        Object.assign(headers, requestInit.headers);
-      }
-    }
+    const headers = hubRequestHeaders(requestInit);
     if (includeSession && this.sessionCookie) {
       headers["Cookie"] = this.sessionCookie;
     }

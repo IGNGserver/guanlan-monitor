@@ -58,7 +58,10 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
         ...init,
         signal: controller.signal,
         credentials: "include",
-        headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+        // Only a request that carries a body may declare one. The Hub answers 400 to a JSON
+        // content type on an empty body (DELETE /api/devices/:id, POST /api/auth/logout),
+        // before the route runs, so a bodyless request must send no content type at all.
+        headers: { ...(init?.body != null ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) },
         cache: "no-store"
       });
       if (!response.ok) {
