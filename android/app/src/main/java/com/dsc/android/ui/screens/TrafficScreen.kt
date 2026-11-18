@@ -21,6 +21,8 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -53,12 +55,13 @@ import com.dsc.android.ui.oneui.OneUiIcon
 import com.dsc.android.ui.oneui.OneUiIconButton
 import com.dsc.android.ui.oneui.OneUiListDivider
 import com.dsc.android.ui.oneui.OneUiListItem
-import com.dsc.android.ui.oneui.OneUiNotice
-import com.dsc.android.ui.oneui.OneUiNoticeTone
 import com.dsc.android.ui.oneui.OneUiPill
+import com.dsc.android.ui.oneui.OneUiPillTone
 import com.dsc.android.ui.oneui.OneUiReading
 import com.dsc.android.ui.oneui.OneUiSegmentedRow
 import com.dsc.android.ui.oneui.OneUiSkeleton
+import com.dsc.android.ui.oneui.OneUiStatusPillBar
+import com.dsc.android.ui.oneui.OneUiStatusPillItem
 import com.dsc.android.ui.oneui.OneUiSyncProgress
 import com.dsc.android.ui.oneui.OneUiText
 import com.dsc.android.ui.oneui.OneUiTextRole
@@ -72,6 +75,8 @@ import com.dsc.android.ui.oneui.oneUiContentWidth
 import com.dsc.android.ui.oneui.oneUiListContentPadding
 import com.dsc.android.ui.oneui.oneUiPressable
 import com.dsc.android.ui.oneui.oneUiStaleDim
+import com.dsc.android.ui.oneui.relativeTimeLabel
+import com.dsc.android.ui.oneui.rememberNowMillis
 import com.dsc.android.ui.oneui.rememberOneUiCollapse
 import com.dsc.android.ui.oneui.trafficCalendarColumns
 import com.dsc.android.ui.oneui.trafficCellAnnouncement
@@ -98,7 +103,9 @@ fun TrafficScreen(
   val collapse = rememberOneUiCollapse(listState)
   // 折叠后点紧凑标题回到大标题：滚动动画需要协程作用域（交）
   val topBarScope = rememberCoroutineScope()
-  val selectedDevice = state.devices.find { it.deviceId == state.selectedDeviceId }
+  val now = rememberNowMillis()
+  val deviceId = state.selectedDeviceId
+  val selectedDevice = state.devices.find { it.deviceId == deviceId }
   val traffic = state.trafficCalendar
   // 可见加载进行中且屏上仍有日历：进入陈旧态——交互照常，数据降存在感（交）
   val stale = state.loadingTraffic && traffic != null
@@ -107,6 +114,33 @@ fun TrafficScreen(
   val modeIndex = TrafficCalendarMode.entries.indexOf(state.trafficMode).coerceAtLeast(0)
   // transitionSpec 不在组合上下文里，动效必须先在这里取好
   val motion = OneUiTheme.motion
+  var switcherOpen by remember { mutableStateOf(false) }
+  val currentGroup = selectedDevice?.normalizedGroup()
+  val orderedDevices = remember(state.devices) {
+    state.devices.sortedWith(compareBy<com.dsc.android.DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname })
+  }
+  val existingGroups = remember(orderedDevices) {
+    orderedDevices.mapNotNull { it.normalizedGroup() }.distinct()
+  }
+  val peerDevices = remember(orderedDevices, currentGroup, existingGroups) {
+    if (existingGroups.isEmpty()) emptyList() else orderedDevices.filter { it.normalizedGroup() == currentGroup }
+  }
+  val trafficPills = remember(state.dataSource, state.loggingIn, state.refreshing, state.cacheSavedAt, now / 30_000) {
+    buildList {
+      if (state.dataSource == RemoteDataSource.Cache && !state.loggingIn && !state.refreshing) {
+        add(
+          OneUiStatusPillItem(
+            key = "traffic-cache",
+            label = "离线缓存",
+            value = "${relativeTimeLabel(state.cacheSavedAt, now)} · 重试",
+            tone = OneUiPillTone.Warning,
+            icon = Icons.Rounded.Storage,
+            onClick = actions.onRefresh
+          )
+        )
+      }
+    }
+  }
   // 双栏的右栏也有显式返回出口：从设备详情进入流量日历后，点返回直接回到该设备的详情页（交）
   val backIcon: @Composable () -> Unit = {
     OneUiIconButton(contentDescription = "返回上一页", onClick = actions.onSystemBack) {
@@ -127,12 +161,20 @@ fun TrafficScreen(
       Box {
         OneUiTopBar(
           title = selectedDevice?.hostname ?: "流量记录",
-          subtitle = "流量日历",
+          subtitle = buildString {
+            append("流量日历")
+            currentGroup?.let { append(" · $it") }
+          },
           collapse = collapse,
           onCollapsedTitleClick = { topBarScope.launch { listState.animateScrollToItem(0) } },
           large = !embedded,
           navigationIcon = backIcon,
           actions = {
+            if (state.devices.size > 1) {
+              OneUiIconButton(contentDescription = "切换设备", onClick = { switcherOpen = true }) {
+                OneUiIcon(Icons.Rounded.SwapHoriz, contentDescription = null, tint = colors.textPrimary)
+              }
+            }
             OneUiIconButton(
               contentDescription = "刷新",
               onClick = { if (!state.refreshing) actions.onRefresh() },
@@ -145,6 +187,33 @@ fun TrafficScreen(
         )
         // 顶栏下缘的同步进度线：覆盖式、不占布局，同步期间照常滚动、切换周期（交）
         OneUiSyncProgress(visible = syncing, modifier = Modifier.align(Alignment.BottomCenter))
+      }
+
+      if (trafficPills.isNotEmpty() || peerDevices.size > 1) {
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .oneUiContentWidth(metrics)
+            .padding(horizontal = metrics.screenMargin)
+            .padding(bottom = metrics.spaceXs),
+          verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          if (trafficPills.isNotEmpty()) {
+            OneUiStatusPillBar(pills = trafficPills)
+          }
+          if (peerDevices.size > 1) {
+            InGroupPeerSwitcherRow(
+              groupLabel = currentGroup ?: "未分组",
+              peers = peerDevices,
+              currentDeviceId = deviceId,
+              onOpenSwitcher = { switcherOpen = true },
+              onSelectDevice = { targetId ->
+                if (targetId != deviceId) actions.onOpenTraffic(targetId)
+              },
+              showCpuInChip = false
+            )
+          }
+        }
       }
 
       BoxWithConstraints(
@@ -163,17 +232,6 @@ fun TrafficScreen(
             contentPadding = oneUiListContentPadding(),
             verticalArrangement = Arrangement.spacedBy(metrics.groupGap)
           ) {
-            // 连接尝试进行中不急着喊"离线"：先自动连一次，连不上再展示缓存（交）
-            if (state.dataSource == RemoteDataSource.Cache && !state.loggingIn && !state.refreshing) {
-              item(key = "offline-cache") {
-                OneUiNotice(
-                  title = "当前显示离线缓存",
-                  description = "缓存于 ${formatTime(state.cacheSavedAt)}；流量数字可能落后于中枢。",
-                  tone = OneUiNoticeTone.Warning
-                )
-              }
-            }
-
             if (traffic == null) {
               val error = state.trafficError
               if (error == null || state.loadingTraffic) {
@@ -313,6 +371,20 @@ fun TrafficScreen(
         }
       }
     }
+  }
+
+  if (switcherOpen) {
+    GroupedDeviceSwitcherSheet(
+      devices = orderedDevices,
+      currentDeviceId = deviceId,
+      currentGroup = currentGroup,
+      hasNamedGroups = existingGroups.isNotEmpty(),
+      onDismiss = { switcherOpen = false },
+      onSelectDevice = { targetId ->
+        switcherOpen = false
+        if (targetId != deviceId) actions.onOpenTraffic(targetId)
+      }
+    )
   }
 }
 

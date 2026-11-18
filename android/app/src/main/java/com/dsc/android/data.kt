@@ -156,6 +156,37 @@ interface ConnectionSettings {
   suspend fun clear()
 }
 
+@Serializable
+data class UiPreferences(
+  val collapsedGroups: Set<String> = emptySet(),
+  val compactDeviceList: Boolean = false,
+  val groupScopedSort: Boolean = true,
+  val dismissedUpdateVersion: String? = null
+)
+
+interface UiPreferencesStore {
+  fun read(): UiPreferences
+  fun write(preferences: UiPreferences)
+}
+
+class SharedPreferencesUiPreferencesStore(application: Application) : UiPreferencesStore {
+  private val prefs: SharedPreferences =
+    application.getSharedPreferences("dsc_android_ui_preferences", Context.MODE_PRIVATE)
+  private val json = Json { ignoreUnknownKeys = true }
+  private val key = "ui_preferences_v1"
+
+  override fun read(): UiPreferences = runCatching {
+    val raw = prefs.getString(key, null) ?: return UiPreferences()
+    json.decodeFromString<UiPreferences>(raw)
+  }.getOrDefault(UiPreferences())
+
+  override fun write(preferences: UiPreferences) {
+    runCatching {
+      prefs.edit().putString(key, json.encodeToString(preferences)).apply()
+    }
+  }
+}
+
 class SettingsRepository(private val application: Application) : ConnectionSettings {
   private val baseUrlKey = stringPreferencesKey("base_url")
   private val encryptedPreferences: SharedPreferences by lazy {

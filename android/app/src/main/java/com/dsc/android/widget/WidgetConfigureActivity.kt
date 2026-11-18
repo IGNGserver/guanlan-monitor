@@ -36,7 +36,9 @@ import com.dsc.android.ui.oneui.OneUiButton
 import com.dsc.android.ui.oneui.OneUiButtonSize
 import com.dsc.android.ui.oneui.OneUiButtonVariant
 import com.dsc.android.ui.oneui.OneUiGroup
+import com.dsc.android.ui.oneui.OneUiGroupHeader
 import com.dsc.android.ui.oneui.OneUiIcon
+import com.dsc.android.ui.oneui.OneUiListDivider
 import com.dsc.android.ui.oneui.OneUiListItem
 import com.dsc.android.ui.oneui.OneUiNotice
 import com.dsc.android.ui.oneui.OneUiNoticeTone
@@ -219,30 +221,75 @@ private fun WidgetConfigScreen(
       }
 
       else -> {
+        val hasNamedGroups = state.devices.any { !it.group.isNullOrBlank() }
+        val groupedBuckets = androidx.compose.runtime.remember(state.devices) {
+          val map = linkedMapOf<String, MutableList<WidgetDevice>>()
+          state.devices.forEach { device ->
+            val key = device.group?.trim()?.takeIf { it.isNotEmpty() } ?: "__ungrouped__"
+            map.getOrPut(key) { mutableListOf() }.add(device)
+          }
+          val named = map.entries.filter { it.key != "__ungrouped__" }.map { it.key to it.value.toList() }
+          val ungrouped = map["__ungrouped__"]?.takeIf { it.isNotEmpty() }?.let { listOf("未分组" to it.toList()) }.orEmpty()
+          named + ungrouped
+        }
+
         LazyColumn(
           modifier = Modifier.weight(1f),
-          verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+          verticalArrangement = Arrangement.spacedBy(metrics.spaceS)
         ) {
-          item(key = "device-list") {
-            OneUiGroup {
-              state.devices.forEach { device ->
-                OneUiListItem(
-                  title = device.hostname,
-                  subtitle = WidgetFormat.deviceSubtitle(device),
-                  selected = device.id == state.selectedDeviceId,
-                  onClick = { onSelect(device.id) },
-                  role = Role.RadioButton,
-                  trailing = {
-                    if (device.id == state.selectedDeviceId) {
-                      OneUiIcon(
-                        imageVector = Icons.Rounded.Check,
-                        contentDescription = "已选择",
-                        size = 18.dp,
-                        tint = colors.accent
+          if (hasNamedGroups) {
+            groupedBuckets.forEach { (groupName, groupDevices) ->
+              item(key = "widget-group:$groupName") {
+                Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
+                  OneUiGroupHeader(label = "$groupName · ${groupDevices.size}")
+                  OneUiGroup {
+                    groupDevices.forEachIndexed { index, device ->
+                      if (index > 0) OneUiListDivider()
+                      OneUiListItem(
+                        title = device.hostname,
+                        subtitle = WidgetFormat.deviceSubtitle(device),
+                        selected = device.id == state.selectedDeviceId,
+                        onClick = { onSelect(device.id) },
+                        role = Role.RadioButton,
+                        trailing = {
+                          if (device.id == state.selectedDeviceId) {
+                            OneUiIcon(
+                              imageVector = Icons.Rounded.Check,
+                              contentDescription = "已选择",
+                              size = 18.dp,
+                              tint = colors.accent
+                            )
+                          }
+                        }
                       )
                     }
                   }
-                )
+                }
+              }
+            }
+          } else {
+            item(key = "device-list") {
+              OneUiGroup {
+                state.devices.forEachIndexed { index, device ->
+                  if (index > 0) OneUiListDivider()
+                  OneUiListItem(
+                    title = device.hostname,
+                    subtitle = WidgetFormat.deviceSubtitle(device),
+                    selected = device.id == state.selectedDeviceId,
+                    onClick = { onSelect(device.id) },
+                    role = Role.RadioButton,
+                    trailing = {
+                      if (device.id == state.selectedDeviceId) {
+                        OneUiIcon(
+                          imageVector = Icons.Rounded.Check,
+                          contentDescription = "已选择",
+                          size = 18.dp,
+                          tint = colors.accent
+                        )
+                      }
+                    }
+                  )
+                }
               }
             }
           }

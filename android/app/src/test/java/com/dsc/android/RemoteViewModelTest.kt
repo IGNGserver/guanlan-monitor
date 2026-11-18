@@ -143,4 +143,51 @@ class RemoteViewModelTest {
       assertEquals(1, calls); assertTrue(vm.state.value.attentionMetrics.isEmpty())
     } finally { store.clear(); Dispatchers.resetMain(); dir.deleteRecursively() }
   }
+
+  @Test fun syncGroupMembershipAppliesAdditionsAndRemovalsAndPeerSwitchKeepsSingleBackStep() = runTest {
+    Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+    val dir = Files.createTempDirectory("guanlan-group-sync").toFile(); val store = ViewModelStore()
+    val groupPayloads = mutableListOf<DeviceGroupUpdatePayloadDto>()
+    val fleet = listOf(
+      device.copy(deviceId = "a", hostname = "node-a", group = "宿主机"),
+      device.copy(deviceId = "b", hostname = "node-b", group = "宿主机"),
+      device.copy(deviceId = "c", hostname = "node-c", group = null)
+    )
+    val fake = api { name, args -> when (name) {
+      "login" -> LoginResponseDto(true)
+      "devices" -> fleet
+      "overviewMetrics" -> OverviewMetricsDto("1h")
+      "metrics" -> metric(args[0] as String)
+      "updateDeviceGroup" -> {
+        val payload = args[0] as DeviceGroupUpdatePayloadDto
+        groupPayloads += payload
+        DeviceGroupUpdateResponseDto(ok = true, group = payload.group)
+      }
+      else -> error("unexpected: $name")
+    } }
+    try {
+      val vm = MainViewModel(RuntimeEnvironment.getApplication(), Settings(config), RemoteSnapshotCache(File(dir, "cache.json")), FakeUpdates()) { Triple(fake, InMemoryCookieJar(), OkHttpClient()) }
+      store.put("vm", vm); vm.onAppForeground(); runCurrent()
+
+      vm.syncGroupMembership("宿主机", addedIds = listOf("c"), removedIds = listOf("b"))
+      runCurrent()
+      assertEquals(2, groupPayloads.size)
+      assertEquals(DeviceGroupUpdatePayloadDto(listOf("c"), "宿主机"), groupPayloads[0])
+      assertEquals(DeviceGroupUpdatePayloadDto(listOf("b"), null), groupPayloads[1])
+
+      // 设备页内切换同组机器不应重复压入 DeviceDetail 返回栈
+      vm.openDevice("a"); runCurrent()
+      vm.openDevice("b"); runCurrent()
+      assertEquals(listOf(AppScreen.DeviceList), vm.state.value.screenBackStack)
+      vm.handleBack(); runCurrent()
+      assertEquals(AppScreen.DeviceList, vm.state.value.currentScreen)
+
+      vm.toggleGroupCollapsed("宿主机")
+      vm.setCompactDeviceList(true)
+      vm.dismissUpdateNotice("3.0.999")
+      assertTrue("宿主机" in vm.state.value.collapsedGroups)
+      assertTrue(vm.state.value.compactDeviceList)
+      assertEquals("3.0.999", vm.state.value.dismissedUpdateVersion)
+    } finally { store.clear(); Dispatchers.resetMain(); dir.deleteRecursively() }
+  }
 }

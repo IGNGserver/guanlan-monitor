@@ -26,7 +26,8 @@ internal object WidgetSnapshotMapper {
           cpuPercent = device.cpuUsagePercent,
           memoryPercent = device.memoryUsagePercent,
           diskPercent = device.diskUsagePercent,
-          sortOrder = device.sortOrder
+          sortOrder = device.sortOrder,
+          group = device.group?.trim()?.takeIf { it.isNotEmpty() }
         )
       }
 

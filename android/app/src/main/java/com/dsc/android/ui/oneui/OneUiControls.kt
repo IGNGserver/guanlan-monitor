@@ -23,6 +23,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -640,6 +643,86 @@ fun OneUiTextField(
         text = supportingText,
         role = OneUiTextRole.RowSubtitle,
         color = colors.textTertiary
+      )
+    }
+  }
+}
+
+/**
+ * 紧凑型单行胶囊搜索栏（件 + 交）：
+ * 默认收进顶栏搜索图标，点按展开后仅占单行 44dp 高度，替代原先常驻占掉 84dp 的双层输入框。
+ */
+@Composable
+fun OneUiCompactSearchBar(
+  value: String,
+  onValueChange: (String) -> Unit,
+  placeholder: String,
+  onClearOrClose: () -> Unit,
+  modifier: Modifier = Modifier
+) {
+  val colors = OneUiTheme.colors
+  val shapes = OneUiTheme.shapes
+  val interaction = rememberOneUiInteractionSource()
+  val focused by interaction.collectIsFocusedAsState()
+
+  Row(
+    modifier = modifier
+      .fillMaxWidth()
+      .defaultMinSize(minHeight = 44.dp)
+      .background(colors.sunken, shapes.pill)
+      .border(
+        width = if (focused) 1.8.dp else 1.2.dp,
+        color = if (focused) colors.accent else colors.hairline,
+        shape = shapes.pill
+      )
+      .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(8.dp)
+  ) {
+    OneUiIcon(
+      imageVector = Icons.Rounded.Search,
+      contentDescription = null,
+      size = 18.dp,
+      tint = if (focused) colors.accent else colors.textTertiary
+    )
+    Box(
+      modifier = Modifier.weight(1f),
+      contentAlignment = Alignment.CenterStart
+    ) {
+      if (value.isEmpty()) {
+        OneUiText(
+          text = placeholder,
+          role = OneUiTextRole.RowSubtitle,
+          color = colors.textTertiary,
+          maxLines = 1
+        )
+      }
+      BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier
+          .fillMaxWidth()
+          .semantics { contentDescription = placeholder },
+        singleLine = true,
+        interactionSource = interaction,
+        textStyle = OneUiTheme.type.bodySmall.copy(color = colors.textPrimary),
+        cursorBrush = SolidColor(colors.accent),
+        keyboardOptions = KeyboardOptions(
+          keyboardType = KeyboardType.Text,
+          imeAction = androidx.compose.ui.text.input.ImeAction.Search
+        )
+      )
+    }
+    OneUiIconButton(
+      contentDescription = if (value.isNotEmpty()) "清空搜索" else "收起搜索",
+      onClick = onClearOrClose,
+      size = 34.dp
+    ) {
+      OneUiIcon(
+        imageVector = Icons.Rounded.Close,
+        contentDescription = null,
+        size = 17.dp,
+        tint = colors.textSecondary
       )
     }
   }
