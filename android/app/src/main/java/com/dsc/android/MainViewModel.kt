@@ -53,8 +53,18 @@ class MainViewModel(
   private val deviceTrafficCache = mutableMapOf<String, TrafficCalendarDto>()
   private val refreshMutex = Mutex()
   private val groupMutationMutex = Mutex()
+  private val uiPreferencesStore: UiPreferencesStore = SharedPreferencesUiPreferencesStore(application)
 
-  private val _state = MutableStateFlow(AppState())
+  private val _state = MutableStateFlow(
+    uiPreferencesStore.read().let { prefs ->
+      AppState(
+        collapsedGroups = prefs.collapsedGroups,
+        compactDeviceList = prefs.compactDeviceList,
+        groupScopedSort = prefs.groupScopedSort,
+        dismissedUpdateVersion = prefs.dismissedUpdateVersion
+      )
+    }
+  )
   val state: StateFlow<AppState> = _state.asStateFlow()
 
   private var api: DeviceStateApi? = null
@@ -119,7 +129,16 @@ class MainViewModel(
         remoteSession = RemoteSession(); liveAccepted = false
         summaryDurationMs = 0.0; readFailures = 0; optionalFailures.clear()
         clearScreenBackStack()
-        _state.value = AppState(serverConfig = config, loading = false, currentScreen = if (config.baseUrl.isBlank()) AppScreen.Login else AppScreen.DeviceList)
+        val preservedPrefs = uiPreferencesStore.read()
+        _state.value = AppState(
+          serverConfig = config,
+          loading = false,
+          currentScreen = if (config.baseUrl.isBlank()) AppScreen.Login else AppScreen.DeviceList,
+          collapsedGroups = preservedPrefs.collapsedGroups,
+          compactDeviceList = preservedPrefs.compactDeviceList,
+          groupScopedSort = preservedPrefs.groupScopedSort,
+          dismissedUpdateVersion = preservedPrefs.dismissedUpdateVersion
+        )
         api = null; httpClient = null
         if (previous.baseUrl.isNotBlank() && cacheScope(previous) != cacheScope(config)) {
           remoteResult { remoteSnapshotCache.clear() }
@@ -385,7 +404,16 @@ class MainViewModel(
     cacheReadJob?.cancel()
     remoteSession = RemoteSession(); liveAccepted = true
     api = null; httpClient = null
-    _state.value = AppState(loading = false, currentScreen = AppScreen.Login, message = "已登出")
+    val resetPrefs = uiPreferencesStore.read().copy(collapsedGroups = emptySet())
+    uiPreferencesStore.write(resetPrefs)
+    _state.value = AppState(
+      loading = false,
+      currentScreen = AppScreen.Login,
+      message = "已登出",
+      compactDeviceList = resetPrefs.compactDeviceList,
+      groupScopedSort = resetPrefs.groupScopedSort,
+      dismissedUpdateVersion = resetPrefs.dismissedUpdateVersion
+    )
     clearWidgetData()
     viewModelScope.launch {
       remoteResult { settingsRepository.clear() }.onFailure {
@@ -562,7 +590,11 @@ class MainViewModel(
     }
   }
   fun openDevice(deviceId: String, focusBlock: DeviceBlockKey? = null) {
-    pushCurrentScreen()
+    if (_state.value.currentScreen != AppScreen.DeviceDetail) {
+      pushCurrentScreen()
+    } else {
+      cancelOptionalReads()
+    }
     val switchingDevice = _state.value.selectedDeviceId != deviceId
     // 换设备时优先展示这台设备的按设备缓存，读取失败也不会退回骨架屏（交）
     val cachedMetrics = deviceMetricsCache[deviceId]?.takeIf { it.window == _state.value.selectedWindow.value }
@@ -583,7 +615,11 @@ class MainViewModel(
 
   /** 流量改为整页：One UI 不把一个需要日历与明细的内容塞进半屏面板。 */
   fun openTraffic(deviceId: String) {
-    pushCurrentScreen()
+    if (_state.value.currentScreen != AppScreen.Traffic) {
+      pushCurrentScreen()
+    } else {
+      cancelOptionalReads()
+    }
     val switchingDevice = _state.value.selectedDeviceId != deviceId
     val cachedTraffic = deviceTrafficCache[deviceId]?.takeIf { it.mode == _state.value.trafficMode.value && it.anchor == trafficAnchor }
     _state.update {
@@ -898,7 +934,17 @@ class MainViewModel(
     remoteSession = RemoteSession(); liveAccepted = true
     stopRemoteActivity(clearCache = true)
     cacheReadJob?.cancel()
-    _state.value = AppState(serverConfig = config, loading = false, currentScreen = AppScreen.DeviceList, message = "会话已失效，请重新连接")
+    val preservedPrefs = uiPreferencesStore.read()
+    _state.value = AppState(
+      serverConfig = config,
+      loading = false,
+      currentScreen = AppScreen.DeviceList,
+      message = "会话已失效，请重新连接",
+      collapsedGroups = preservedPrefs.collapsedGroups,
+      compactDeviceList = preservedPrefs.compactDeviceList,
+      groupScopedSort = preservedPrefs.groupScopedSort,
+      dismissedUpdateVersion = preservedPrefs.dismissedUpdateVersion
+    )
   }
 
   private suspend fun refreshOnce(showIndicator: Boolean) = refreshMutex.withLock {
@@ -990,6 +1036,105 @@ class MainViewModel(
           }
       }
     }
+  }
+
+  /**
+   * 原子化同步某个设备组的成员增删差集：
+   * 同时处理新加入设备（归入该组）与取消勾选的原成员（恢复为未分组），
+   * 解决单次 PUT 只改已勾选项、导致取消勾选无法移出分组的交互缺陷。
+   */
+  fun syncGroupMembership(group: String, addedIds: List<String>, removedIds: List<String>) {
+    val normalized = group.trim().takeIf { it.isNotEmpty() }?.take(64) ?: return
+    val cleanAdded = addedIds.distinct()
+    val cleanRemoved = removedIds.distinct().filterNot { it in cleanAdded }
+    if (cleanAdded.isEmpty() && cleanRemoved.isEmpty()) return
+    viewModelScope.launch {
+      groupMutationMutex.withLock {
+        remoteResult {
+          if (cleanAdded.isNotEmpty()) {
+            executeWithAuthRetry {
+              it.updateDeviceGroup(DeviceGroupUpdatePayloadDto(deviceIds = cleanAdded, group = normalized))
+            }
+          }
+          if (cleanRemoved.isNotEmpty()) {
+            executeWithAuthRetry {
+              it.updateDeviceGroup(DeviceGroupUpdatePayloadDto(deviceIds = cleanRemoved, group = null))
+            }
+          }
+        }
+          .onSuccess {
+            refreshAfterWrite()
+            val detail = buildList {
+              if (cleanAdded.isNotEmpty()) add("加入 ${cleanAdded.size} 台")
+              if (cleanRemoved.isNotEmpty()) add("移出 ${cleanRemoved.size} 台")
+            }.joinToString("，")
+            _state.update { it.copy(message = "「$normalized」成员已更新（$detail）") }
+          }
+          .onFailure { error ->
+            _state.update { it.copy(message = userFacingError(error, "分组变更保存失败，请稍后重试")) }
+            refresh()
+          }
+      }
+    }
+  }
+
+  fun toggleGroupCollapsed(groupKey: String) {
+    if (groupKey.isBlank()) return
+    _state.update { current ->
+      val next = if (groupKey in current.collapsedGroups) {
+        current.collapsedGroups - groupKey
+      } else {
+        current.collapsedGroups + groupKey
+      }
+      persistUiPreferences(current.copy(collapsedGroups = next))
+      current.copy(collapsedGroups = next)
+    }
+  }
+
+  fun setCollapsedGroups(collapsed: Set<String>) {
+    _state.update { current ->
+      persistUiPreferences(current.copy(collapsedGroups = collapsed))
+      current.copy(collapsedGroups = collapsed)
+    }
+  }
+
+  fun setCompactDeviceList(compact: Boolean) {
+    _state.update { current ->
+      if (current.compactDeviceList == compact) return@update current
+      val updated = current.copy(compactDeviceList = compact)
+      persistUiPreferences(updated)
+      updated
+    }
+  }
+
+  fun setGroupScopedSort(enabled: Boolean) {
+    _state.update { current ->
+      if (current.groupScopedSort == enabled) return@update current
+      val updated = current.copy(groupScopedSort = enabled)
+      persistUiPreferences(updated)
+      updated
+    }
+  }
+
+  fun dismissUpdateNotice(version: String) {
+    val trimmed = version.trim()
+    if (trimmed.isEmpty()) return
+    _state.update { current ->
+      val updated = current.copy(dismissedUpdateVersion = trimmed)
+      persistUiPreferences(updated)
+      updated
+    }
+  }
+
+  private fun persistUiPreferences(snapshot: AppState) {
+    uiPreferencesStore.write(
+      UiPreferences(
+        collapsedGroups = snapshot.collapsedGroups,
+        compactDeviceList = snapshot.compactDeviceList,
+        groupScopedSort = snapshot.groupScopedSort,
+        dismissedUpdateVersion = snapshot.dismissedUpdateVersion
+      )
+    )
   }
 
   private fun loadMetrics(deviceId: String, window: MetricWindow, showScreen: Boolean, silent: Boolean = false) {

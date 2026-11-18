@@ -629,6 +629,10 @@ data class AppState(
   val updateDownloading: Boolean = false,
   val updateProgress: Float = 0f,
   val updateInstallerUri: String? = null,
+  val dismissedUpdateVersion: String? = null,
+  val collapsedGroups: Set<String> = emptySet(),
+  val compactDeviceList: Boolean = false,
+  val groupScopedSort: Boolean = true,
   val currentScreen: AppScreen = AppScreen.Login,
   /**
    * 页面返回栈：预见式返回期间需要先把上一页作为实时底层页面绘制出来，

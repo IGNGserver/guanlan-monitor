@@ -7,38 +7,43 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.ReportProblem
 import androidx.compose.material.icons.rounded.Router
-import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Timeline
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.ViewAgenda
+import androidx.compose.material.icons.rounded.ViewHeadline
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +57,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dsc.android.AppState
 import com.dsc.android.AttentionItem
@@ -63,6 +69,7 @@ import com.dsc.android.MetricWindow
 import com.dsc.android.OverviewInstanceSeriesDto
 import com.dsc.android.RemoteDataSource
 import com.dsc.android.SamplePointDto
+import com.dsc.android.UpdateInfoDto
 import com.dsc.android.collectAttention
 import com.dsc.android.percentOf
 import com.dsc.android.seriesStats
@@ -72,8 +79,10 @@ import com.dsc.android.ui.oneui.OneUiButton
 import com.dsc.android.ui.oneui.OneUiButtonSize
 import com.dsc.android.ui.oneui.OneUiButtonVariant
 import com.dsc.android.ui.oneui.OneUiCheckbox
+import com.dsc.android.ui.oneui.OneUiCompactSearchBar
 import com.dsc.android.ui.oneui.OneUiDialog
 import com.dsc.android.ui.oneui.OneUiEmptyState
+import com.dsc.android.ui.oneui.OneUiExpandable
 import com.dsc.android.ui.oneui.OneUiFilterChip
 import com.dsc.android.ui.oneui.OneUiGroup
 import com.dsc.android.ui.oneui.OneUiGroupHeader
@@ -81,24 +90,32 @@ import com.dsc.android.ui.oneui.OneUiHaptics
 import com.dsc.android.ui.oneui.OneUiIcon
 import com.dsc.android.ui.oneui.OneUiIconButton
 import com.dsc.android.ui.oneui.OneUiIconTone
+import com.dsc.android.ui.oneui.OneUiInlineChevron
 import com.dsc.android.ui.oneui.OneUiLeadingIcon
 import com.dsc.android.ui.oneui.OneUiLinearProgress
 import com.dsc.android.ui.oneui.OneUiListDivider
 import com.dsc.android.ui.oneui.OneUiListItem
-import com.dsc.android.ui.oneui.OneUiNotice
-import com.dsc.android.ui.oneui.OneUiNoticeTone
+import com.dsc.android.ui.oneui.OneUiMiniFleetMatrix
 import com.dsc.android.ui.oneui.OneUiPill
 import com.dsc.android.ui.oneui.OneUiPillTone
+import com.dsc.android.ui.oneui.OneUiPooledMetricCell
+import com.dsc.android.ui.oneui.OneUiSegmentedRow
 import com.dsc.android.ui.oneui.OneUiSheet
 import com.dsc.android.ui.oneui.OneUiSkeleton
 import com.dsc.android.ui.oneui.OneUiSparkline
 import com.dsc.android.ui.oneui.OneUiStatusDot
+import com.dsc.android.ui.oneui.OneUiStatusPill
+import com.dsc.android.ui.oneui.OneUiStatusPillBar
+import com.dsc.android.ui.oneui.OneUiStatusPillItem
 import com.dsc.android.ui.oneui.OneUiSurfaceLevel
+import com.dsc.android.ui.oneui.OneUiSwitch
+import com.dsc.android.ui.oneui.OneUiSyncProgress
 import com.dsc.android.ui.oneui.OneUiText
 import com.dsc.android.ui.oneui.OneUiTextField
 import com.dsc.android.ui.oneui.OneUiTextRole
 import com.dsc.android.ui.oneui.OneUiTheme
 import com.dsc.android.ui.oneui.OneUiTopBar
+import com.dsc.android.ui.oneui.OneUiTrendChart
 import com.dsc.android.ui.oneui.formatBytes
 import com.dsc.android.ui.oneui.formatPercent
 import com.dsc.android.ui.oneui.formatSpeed
@@ -114,20 +131,19 @@ import com.dsc.android.ui.shell.GuanlanActions
 import kotlinx.coroutines.launch
 
 /**
- * 总览（构）。
- *
- * 视觉重心按优先级排：
- * 1. 设备卡里的趋势——每台设备一张卡，CPU / 内存 / 网络各带一条迷你曲线，硬盘一条容量条，
- *    小倍数（small multiples）排布让多台设备可以直接横向比较；
- * 2. 需要关注——顶部一条汇总，卡片内一行问题提示，详情交给「关注」页；
- * 其余（排序、编辑、隐藏）都收进图标按钮与操作面板，不占读数的位置。
+ * 总览与设备组看板（构 + 交）：
+ * 1. 顶部通知、超限告警、离线统计与应用更新全部收敛为单行紧凑状态药丸（无事时 0dp），把首屏还给监控数据；
+ * 2. 设备组升级为可视化遥测容器：组头常驻池化 CPU/内存/存储水位与微缩负载矩阵，收起即全局组看板，点选单组呈现多机同轴对比曲线；
+ * 3. 分组管理采用结构化编辑与专职成员穿梭面板，支持整组排序与双向成员增删同步。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DeviceListScreen(
   state: AppState,
   actions: GuanlanActions,
-  embedded: Boolean
+  embedded: Boolean,
+  initialGroupFilter: String = GROUP_FILTER_ALL,
+  initialEditMode: Boolean = false
 ) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
@@ -137,40 +153,59 @@ fun DeviceListScreen(
   val topBarScope = rememberCoroutineScope()
   val now = rememberNowMillis()
 
-  val persisted = state.devices.sortedWith(
-    compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname }
-  )
-  val persistedIds = persisted.map { it.deviceId }
-  val attention = remember(state.devices, state.attentionMetrics, now / 60_000) {
+  val persisted = remember(state.devices) {
+    state.devices.sortedWith(
+      compareBy<DeviceSummaryDto> { it.sortOrder ?: Int.MAX_VALUE }.thenBy { it.hostname }
+    )
+  }
+  val persistedIds = remember(persisted) { persisted.map { it.deviceId } }
+  val attention = remember(persisted, state.attentionMetrics, now / 60_000) {
     collectAttention(persisted, state.attentionMetrics, now)
   }
-  val issuesByDevice = attention.groupBy { it.deviceId }
-  val overviewById = state.overviewMetrics
-    ?.takeIf { it.window == state.overviewWindow.value }
-    ?.instances
-    ?.associateBy { it.deviceId }
-    .orEmpty()
-  val chartWindow = remember(state.overviewWindow, state.overviewMetrics) { ChartWindow.from(state.overviewWindow) }
+  val issuesByDevice = remember(attention) { attention.groupBy { it.deviceId } }
+  val overviewById = remember(state.overviewMetrics, state.overviewWindow) {
+    state.overviewMetrics
+      ?.takeIf { it.window == state.overviewWindow.value }
+      ?.instances
+      ?.associateBy { it.deviceId }
+      .orEmpty()
+  }
+  val chartWindow = remember(state.overviewWindow, state.overviewMetrics) {
+    ChartWindow.from(state.overviewWindow)
+  }
 
-  var editMode by remember(persistedIds) { mutableStateOf(false) }
-  var draftIds by remember(persistedIds) { mutableStateOf<List<String>?>(null) }
+  var editMode by rememberSaveable(initialEditMode) { mutableStateOf(initialEditMode) }
+  var draftIds by remember { mutableStateOf<List<String>?>(null) }
+  var selectedManageIds by remember { mutableStateOf<Set<String>>(emptySet()) }
   var pendingDelete by remember { mutableStateOf<DeviceSummaryDto?>(null) }
   var actionTarget by remember { mutableStateOf<DeviceSummaryDto?>(null) }
   var groupEditTarget by remember { mutableStateOf<DeviceSummaryDto?>(null) }
-  var batchGroupInitial by remember { mutableStateOf<String?>(null) }
-  var batchGroupOpen by remember { mutableStateOf(false) }
+  var membersSheetGroup by remember { mutableStateOf<String?>(null) }
+  var createGroupOpen by remember { mutableStateOf(false) }
+  var createGroupPreselected by remember { mutableStateOf<Set<String>>(emptySet()) }
   var groupActionTarget by remember { mutableStateOf<DeviceGroupSectionModel?>(null) }
   var groupRenameTarget by remember { mutableStateOf<DeviceGroupSectionModel?>(null) }
   var groupDissolveTarget by remember { mutableStateOf<DeviceGroupSectionModel?>(null) }
-  var sortSheet by remember { mutableStateOf(false) }
+  var viewAndSortSheet by remember { mutableStateOf(false) }
+  var updateSheetOpen by remember { mutableStateOf(false) }
   var sortMode by rememberSaveable { mutableStateOf(DeviceSortMode.Custom.name) }
-  var groupFilter by rememberSaveable { mutableStateOf(GROUP_FILTER_ALL) }
-  var collapsedGroups by rememberSaveable { mutableStateOf(emptySet<String>()) }
+  var groupFilter by rememberSaveable(initialGroupFilter) { mutableStateOf(initialGroupFilter) }
+  var onlyOfflineFilter by rememberSaveable { mutableStateOf(false) }
+  var searchOpen by rememberSaveable { mutableStateOf(false) }
   var query by rememberSaveable { mutableStateOf("") }
-  val sort = DeviceSortMode.entries.firstOrNull { it.name == sortMode } ?: DeviceSortMode.Custom
+  var comparisonMetricName by rememberSaveable { mutableStateOf(GroupComparisonMetric.Cpu.name) }
 
-  val allGroupSections = remember(persisted, issuesByDevice) {
-    buildDeviceGroupSections(persisted, issuesByDevice)
+  val sort = DeviceSortMode.entries.firstOrNull { it.name == sortMode } ?: DeviceSortMode.Custom
+  val comparisonMetric = GroupComparisonMetric.entries.firstOrNull { it.name == comparisonMetricName }
+    ?: GroupComparisonMetric.Cpu
+
+  val effectiveManageIds = remember(draftIds, persistedIds) {
+    mergeDeviceOrderDraft(draftIds, persistedIds)
+  }
+  val orderDirty = editMode && draftIds != null && effectiveManageIds != persistedIds
+
+  val allGroupSections = remember(persisted, issuesByDevice, overviewById) {
+    buildDeviceGroupSections(persisted, issuesByDevice, overviewById)
   }
   val existingGroupNames = remember(allGroupSections) {
     allGroupSections.filterNot { it.isUngrouped }.map { it.name }
@@ -185,22 +220,66 @@ fun DeviceListScreen(
     if (activeGroupFilter == GROUP_FILTER_ALL) null else allGroupSections.firstOrNull { it.key == activeGroupFilter }
   }
 
-  val draft = draftIds
-  val visible = when {
-    editMode && draft != null -> {
-      val byId = persisted.associateBy { it.deviceId }
-      val draftSet = draft.toSet()
-      draft.mapNotNull { byId[it] } + persisted.filterNot { it.deviceId in draftSet }
+  val manageDevices = remember(persisted, effectiveManageIds) {
+    val byId = persisted.associateBy { it.deviceId }
+    effectiveManageIds.mapNotNull { byId[it] }
+  }
+  val manageGroupSections = remember(manageDevices, issuesByDevice) {
+    buildDeviceGroupSections(manageDevices, issuesByDevice)
+  }
+
+  val filteredPersisted = remember(persisted, activeGroupFilter, onlyOfflineFilter, query) {
+    persisted.filter { device ->
+      device.matchesGroup(activeGroupFilter) &&
+        (!onlyOfflineFilter || device.status != "online") &&
+        device.matchesQuery(query)
     }
-    editMode -> persisted
-    else -> sortDevices(persisted, sort, issuesByDevice)
-      .filter { it.matchesGroup(activeGroupFilter) && it.matches(query) }
   }
-  val visibleGroupSections = remember(visible, issuesByDevice) {
-    buildDeviceGroupSections(visible, issuesByDevice)
+
+  val useGroupedDisplay = !editMode &&
+    hasNamedGroups &&
+    activeGroupFilter == GROUP_FILTER_ALL &&
+    (sort == DeviceSortMode.Custom || state.groupScopedSort)
+
+  val visibleGroupSections = remember(filteredPersisted, issuesByDevice, overviewById, sort, state.groupScopedSort) {
+    val withinSort = if (state.groupScopedSort) sort else DeviceSortMode.Custom
+    buildDeviceGroupSections(filteredPersisted, issuesByDevice, overviewById, withinSort)
   }
-  val showGroupedSections = !editMode && hasNamedGroups && sort == DeviceSortMode.Custom && visibleGroupSections.isNotEmpty()
-  val showSearch = !editMode && (persisted.size > SEARCH_THRESHOLD || hasNamedGroups)
+
+  val visibleFlatDevices = remember(filteredPersisted, sort, issuesByDevice) {
+    sortDevices(filteredPersisted, sort, issuesByDevice)
+  }
+
+  val statusPills = remember(
+    state.authenticated,
+    state.serverConfig.baseUrl,
+    state.dataSource,
+    state.loggingIn,
+    state.refreshing,
+    state.cacheSavedAt,
+    state.updateInfo,
+    state.updateDownloading,
+    state.updateProgress,
+    state.dismissedUpdateVersion,
+    persisted,
+    attention,
+    onlyOfflineFilter,
+    now / 30_000
+  ) {
+    buildOverviewStatusPills(
+      state = state,
+      devices = persisted,
+      attention = attention,
+      onlyOffline = onlyOfflineFilter,
+      nowMillis = now,
+      colors = colors,
+      onRefresh = actions.onRefresh,
+      onOpenAttention = actions.onShowAttention,
+      onToggleOffline = { onlyOfflineFilter = !onlyOfflineFilter },
+      onOpenUpdate = { updateSheetOpen = true },
+      onDismissUpdate = { version -> actions.onDismissUpdateNotice(version) }
+    )
+  }
 
   Box(
     modifier = Modifier
@@ -208,74 +287,160 @@ fun DeviceListScreen(
       .background(colors.canvas)
   ) {
     Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-      OneUiTopBar(
-        title = if (editMode) "编辑设备列表" else activeGroupSection?.name ?: "总览",
-        subtitle = if (editMode) {
-          "调整顺序或从列表隐藏设备"
-        } else if (activeGroupSection != null) {
-          "${activeGroupSection.online}/${activeGroupSection.total} 台在线 · ${activeGroupSection.glanceSubtitle}"
-        } else {
-          connectionSummary(state, persisted)
-        },
-        collapse = collapse,
-        onCollapsedTitleClick = { topBarScope.launch { listState.animateScrollToItem(0) } },
-        large = !embedded,
-        actions = {
-          if (!editMode) {
-            OneUiIconButton(
-              contentDescription = "刷新",
-              onClick = { if (!state.refreshing) actions.onRefresh() },
-              enabled = !state.refreshing,
-              spinning = state.refreshing
-            ) {
-              OneUiIcon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textPrimary)
-            }
-            OneUiIconButton(
-              contentDescription = "编辑设备列表",
-              onClick = {
-                draftIds = persistedIds
-                editMode = true
-              },
-              enabled = persisted.isNotEmpty()
-            ) {
-              OneUiIcon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textPrimary)
+      Box {
+        OneUiTopBar(
+          title = when {
+            editMode -> "分组与顺序"
+            activeGroupSection != null -> activeGroupSection.name
+            else -> "总览"
+          },
+          subtitle = when {
+            editMode -> if (hasNamedGroups) "整组移动、增减成员或勾选机器批量设组" else "创建设备组或调整设备排列顺序"
+            activeGroupSection != null -> "${activeGroupSection.online}/${activeGroupSection.total} 台在线 · ${activeGroupSection.glanceSubtitle}"
+            else -> connectionSummary(state, persisted)
+          },
+          collapse = collapse,
+          onCollapsedTitleClick = { topBarScope.launch { listState.animateScrollToItem(0) } },
+          large = !embedded,
+          actions = {
+            if (!editMode) {
+              if (persisted.isNotEmpty()) {
+                OneUiIconButton(
+                  contentDescription = if (searchOpen || query.isNotBlank()) "收起搜索" else "搜索设备与分组",
+                  selected = searchOpen || query.isNotBlank(),
+                  onClick = {
+                    if (searchOpen && query.isBlank()) {
+                      searchOpen = false
+                    } else if (searchOpen) {
+                      query = ""
+                      searchOpen = false
+                    } else {
+                      searchOpen = true
+                    }
+                  }
+                ) {
+                  OneUiIcon(
+                    imageVector = Icons.Rounded.Search,
+                    contentDescription = null,
+                    tint = if (searchOpen || query.isNotBlank()) colors.accent else colors.textPrimary
+                  )
+                }
+                val viewCustomized = sort != DeviceSortMode.Custom || state.compactDeviceList || !state.groupScopedSort
+                OneUiIconButton(
+                  contentDescription = "视图密度与排序：${sort.label}",
+                  selected = viewCustomized,
+                  onClick = { viewAndSortSheet = true }
+                ) {
+                  OneUiIcon(
+                    imageVector = Icons.AutoMirrored.Rounded.Sort,
+                    contentDescription = null,
+                    tint = if (viewCustomized) colors.accent else colors.textPrimary
+                  )
+                }
+                OneUiIconButton(
+                  contentDescription = "管理分组与顺序",
+                  onClick = {
+                    draftIds = persistedIds
+                    selectedManageIds = emptySet()
+                    editMode = true
+                  }
+                ) {
+                  OneUiIcon(Icons.Rounded.Tune, contentDescription = null, tint = colors.textPrimary)
+                }
+              }
+              OneUiIconButton(
+                contentDescription = "刷新",
+                onClick = { if (!state.refreshing) actions.onRefresh() },
+                enabled = !state.refreshing,
+                spinning = state.refreshing
+              ) {
+                OneUiIcon(Icons.Rounded.Refresh, contentDescription = null, tint = colors.textPrimary)
+              }
             }
           }
-        }
-      )
+        )
+        OneUiSyncProgress(visible = state.refreshing, modifier = Modifier.align(Alignment.BottomCenter))
+      }
 
-      // 吸附在顶栏下方的设备组快速导航条：滚动长列表时无需滑回顶部即可一键切组或收起分组（构 + 交）
-      if (!editMode && hasNamedGroups && persisted.isNotEmpty()) {
-        val allCollapsed = visibleGroupSections.isNotEmpty() && visibleGroupSections.all { it.key in collapsedGroups }
-        Box(
+      // 顶部紧凑状态药丸栏 + 按需展开搜索栏 + 吸顶设备组导航：取代原有的多层横幅与大搜索框
+      if (!editMode) {
+        Column(
           modifier = Modifier
             .fillMaxWidth()
             .oneUiContentWidth(metrics)
             .padding(horizontal = metrics.screenMargin)
-            .padding(bottom = metrics.spaceXs)
+            .padding(bottom = metrics.spaceXs),
+          verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-          GroupFilterRow(
-            totalCount = persisted.size,
-            groups = allGroupSections,
-            selectedKey = activeGroupFilter,
-            showCollapseToggle = showGroupedSections && visibleGroupSections.size > 1 && activeGroupFilter == GROUP_FILTER_ALL,
-            allCollapsed = allCollapsed,
-            onToggleCollapseAll = {
-              collapsedGroups = if (allCollapsed) {
-                emptySet()
-              } else {
-                visibleGroupSections.map { it.key }.toSet()
+          if (statusPills.isNotEmpty()) {
+            OneUiStatusPillBar(pills = statusPills)
+          }
+
+          OneUiExpandable(expanded = searchOpen || query.isNotBlank()) {
+            OneUiCompactSearchBar(
+              value = query,
+              onValueChange = { query = it },
+              placeholder = "搜索主机名、分组、系统或设备 ID",
+              onClearOrClose = {
+                if (query.isNotEmpty()) {
+                  query = ""
+                } else {
+                  searchOpen = false
+                }
               }
-            },
-            onOpenBatchGroup = {
-              batchGroupInitial = activeGroupSection?.takeUnless { it.isUngrouped }?.name
-              batchGroupOpen = true
-            },
-            onSelect = { nextKey ->
-              groupFilter = nextKey
-              topBarScope.launch { listState.animateScrollToItem(0) }
-            }
-          )
+            )
+          }
+
+          if (persisted.isNotEmpty()) {
+            GroupNavigationStrip(
+              totalCount = persisted.size,
+              groups = allGroupSections,
+              hasNamedGroups = hasNamedGroups,
+              selectedKey = activeGroupFilter,
+              onSelect = { nextKey ->
+                groupFilter = if (nextKey != GROUP_FILTER_ALL && nextKey == activeGroupFilter) {
+                  GROUP_FILTER_ALL
+                } else {
+                  nextKey
+                }
+                topBarScope.launch { listState.animateScrollToItem(0) }
+              },
+              onCreateGroup = {
+                createGroupPreselected = emptySet()
+                createGroupOpen = true
+              }
+            )
+
+            OverviewSubToolbar(
+              selectedWindow = state.overviewWindow,
+              sampled = state.overviewMetrics?.sampling != null,
+              sort = sort,
+              compact = state.compactDeviceList,
+              activeGroup = activeGroupSection,
+              showCollapseAll = useGroupedDisplay && visibleGroupSections.size > 1,
+              allCollapsed = visibleGroupSections.isNotEmpty() && visibleGroupSections.all { it.key in state.collapsedGroups },
+              onSelectWindow = actions.onSelectOverviewWindow,
+              onOpenSortSheet = { viewAndSortSheet = true },
+              onToggleCompact = { actions.onSetCompactDeviceList(!state.compactDeviceList) },
+              onToggleCollapseAll = {
+                val allCollapsed = visibleGroupSections.all { it.key in state.collapsedGroups }
+                if (allCollapsed) {
+                  actions.onSetCollapsedGroups(state.collapsedGroups - visibleGroupSections.map { it.key }.toSet())
+                } else {
+                  actions.onSetCollapsedGroups(state.collapsedGroups + visibleGroupSections.map { it.key }.toSet())
+                }
+              },
+              onOpenGroupMembers = { group ->
+                if (group.isUngrouped) {
+                  createGroupPreselected = group.devices.map { it.deviceId }.toSet()
+                  createGroupOpen = true
+                } else {
+                  membersSheetGroup = group.name
+                }
+              },
+              onOpenGroupMenu = { group -> groupActionTarget = group }
+            )
+          }
         }
       }
 
@@ -286,174 +451,35 @@ fun DeviceListScreen(
           .fillMaxWidth()
           .oneUiContentWidth(metrics),
         contentPadding = oneUiListContentPadding(),
-        verticalArrangement = Arrangement.spacedBy(metrics.cardGap)
+        verticalArrangement = Arrangement.spacedBy(if (useGroupedDisplay) metrics.groupGap else metrics.cardGap)
       ) {
-        if (!state.authenticated && state.serverConfig.baseUrl.isNotBlank()) {
-          item(key = "connecting") {
-            OneUiNotice(title = "正在使用已保存配置连接中枢", description = state.serverConfig.baseUrl, tone = OneUiNoticeTone.Info)
-          }
-        }
-
-        if (state.dataSource == RemoteDataSource.Cache && !state.loggingIn && !state.refreshing) {
-          item(key = "offline-cache") {
-            OneUiNotice(
-              title = "当前显示离线缓存",
-              description = "缓存于 ${formatTime(state.cacheSavedAt)}；数据可能已经过期。",
-              tone = OneUiNoticeTone.Warning,
-              icon = Icons.Rounded.Storage,
-              action = {
-                OneUiButton(
-                  label = "重试",
-                  onClick = actions.onRefresh,
-                  variant = OneUiButtonVariant.Tonal,
-                  size = OneUiButtonSize.Compact
-                )
-              }
-            )
-          }
-        }
-
-        state.updateInfo?.takeIf { it.available }?.let { update ->
-          item(key = "update-available") {
-            Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
-              OneUiNotice(
-                title = "发现 Android 更新 v${update.latestVersion ?: ""}",
-                description = "更新与安装入口在「设置 › 版本与更新」。",
-                tone = OneUiNoticeTone.Info,
-                icon = Icons.Rounded.Computer,
-                action = {
-                  OneUiButton(label = "前往", onClick = actions.onShowSettings, variant = OneUiButtonVariant.Text, size = OneUiButtonSize.Compact)
-                }
-              )
-              if (state.updateDownloading) OneUiLinearProgress(fraction = state.updateProgress)
-            }
-          }
-        }
-
-        if (!editMode && persisted.isNotEmpty()) {
-          if (state.overviewMetrics?.sampling != null) {
-            item(key = "sampled-overview") {
-              OneUiNotice(title = "省流趋势", description = "曲线保留分桶极值；均值仅基于展示点，流量总计不受影响。", tone = OneUiNoticeTone.Info)
-            }
-          }
-          item(key = "fleet-status") {
-            FleetStatusStrip(
-              devices = persisted,
-              attention = attention,
-              onOpen = actions.onShowAttention
-            )
-          }
-          item(key = "devices-header") {
-            Column(
-              modifier = Modifier.padding(top = metrics.spaceXs),
-              verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
-            ) {
-              if (!embedded && window.isWide) {
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(metrics.spaceM)
-                ) {
-                  OneUiGroupHeader(
-                    label = if (activeGroupSection != null) "${activeGroupSection.name} · ${sort.label}" else "设备 · ${sort.label}",
-                    modifier = Modifier.weight(1f),
-                    action = {
-                      Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
-                      ) {
-                        if (!hasNamedGroups && persisted.size > 1) {
-                          OneUiPill(
-                            label = "批量分组",
-                            tone = OneUiPillTone.Accent,
-                            onClick = {
-                              batchGroupInitial = null
-                              batchGroupOpen = true
-                            }
-                          )
-                        }
-                        if (activeGroupSection != null && !activeGroupSection.isUngrouped) {
-                          OneUiPill(
-                            label = "管理组",
-                            tone = OneUiPillTone.Neutral,
-                            onClick = { groupActionTarget = activeGroupSection }
-                          )
-                        }
-                        OneUiIconButton(contentDescription = "排序方式：${sort.label}", onClick = { sortSheet = true }) {
-                          OneUiIcon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize)
-                        }
-                      }
-                    }
-                  )
-                  TrendWindowRow(selected = state.overviewWindow, onSelect = actions.onSelectOverviewWindow)
-                }
-              } else {
-                OneUiGroupHeader(
-                  label = if (activeGroupSection != null) "${activeGroupSection.name} · ${sort.label}" else "设备 · ${sort.label}",
-                  action = {
-                    Row(
-                      verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
-                    ) {
-                      if (!hasNamedGroups && persisted.size > 1) {
-                        OneUiPill(
-                          label = "批量分组",
-                          tone = OneUiPillTone.Accent,
-                          onClick = {
-                            batchGroupInitial = null
-                            batchGroupOpen = true
-                          }
-                        )
-                      }
-                      if (activeGroupSection != null && !activeGroupSection.isUngrouped) {
-                        OneUiPill(
-                          label = "管理组",
-                          tone = OneUiPillTone.Neutral,
-                          onClick = { groupActionTarget = activeGroupSection }
-                        )
-                      }
-                      OneUiIconButton(contentDescription = "排序方式：${sort.label}", onClick = { sortSheet = true }) {
-                        OneUiIcon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize)
-                      }
-                    }
-                  }
-                )
-                TrendWindowRow(selected = state.overviewWindow, onSelect = actions.onSelectOverviewWindow, modifier = Modifier.fillMaxWidth())
-              }
-              if (showSearch) {
-                OneUiTextField(
-                  value = query,
-                  onValueChange = { query = it },
-                  label = "搜索主机名、分组或设备 ID",
-                  imeAction = androidx.compose.ui.text.input.ImeAction.Search
-                )
-              }
-            }
-          }
-        }
-
         if (state.loading && persisted.isEmpty()) {
-          items(3) { OneUiSkeleton(height = 168.dp) }
+          items(3) { OneUiSkeleton(height = 152.dp) }
         }
 
         if (!state.loading && persisted.isEmpty()) {
           item(key = "empty") {
             OneUiEmptyState(
               title = "暂未发现设备",
-              description = "确认中枢已收到该设备的上报，或点按刷新重试。",
+              description = "确认中枢已收到 Agent 上报，或点按刷新重试。",
               icon = Icons.Rounded.Router,
               actionLabel = "刷新",
               onAction = actions.onRefresh
             )
           }
-        } else if (visible.isEmpty() && (query.isNotBlank() || activeGroupFilter != GROUP_FILTER_ALL)) {
+        } else if (!editMode && filteredPersisted.isEmpty() && (query.isNotBlank() || activeGroupFilter != GROUP_FILTER_ALL || onlyOfflineFilter)) {
           item(key = "no-match") {
             OneUiEmptyState(
               title = "没有匹配的设备",
-              description = if (query.isNotBlank()) "没有包含「${query.trim()}」的设备。" else "当前筛选下暂无设备。",
+              description = buildString {
+                if (query.isNotBlank()) append("没有包含「${query.trim()}」的设备")
+                else if (onlyOfflineFilter) append("当前范围内没有离线设备")
+                else append("当前分组筛选下暂无设备")
+              },
               actionLabel = "清除筛选",
               onAction = {
                 query = ""
+                onlyOfflineFilter = false
                 groupFilter = GROUP_FILTER_ALL
               }
             )
@@ -461,150 +487,176 @@ fun DeviceListScreen(
         }
 
         if (editMode) {
-          items(visible, key = { "edit:${it.deviceId}" }) { device ->
-            val index = visible.indexOf(device)
-            EditableDeviceRow(
-              device = device,
-              canMoveUp = index > 0,
-              canMoveDown = index < visible.lastIndex,
-              onEditGroup = { groupEditTarget = device },
-              onMove = { delta ->
-                val ids = visible.map { it.deviceId }.toMutableList()
-                val target = index + delta
-                if (target in ids.indices) {
-                  ids.add(target, ids.removeAt(index))
-                  draftIds = ids
-                }
+          item(key = "manage-toolbar") {
+            ManageToolbarRow(
+              totalCount = manageDevices.size,
+              selectedCount = selectedManageIds.size,
+              onCreateGroup = {
+                createGroupPreselected = selectedManageIds
+                createGroupOpen = true
               },
-              onRequestDelete = { pendingDelete = device }
+              onToggleSelectAll = {
+                val allIds = manageDevices.map { it.deviceId }.toSet()
+                selectedManageIds = if (selectedManageIds.size == allIds.size) emptySet() else allIds
+              },
+              onClearGroupForSelected = if (selectedManageIds.isNotEmpty()) {
+                {
+                  val targets = selectedManageIds.toList()
+                  selectedManageIds = emptySet()
+                  actions.onUpdateDeviceGroup(targets, null)
+                }
+              } else null
             )
           }
-        } else if (showGroupedSections) {
-          visibleGroupSections.forEach { groupSection ->
-            val isCollapsed = groupSection.key in collapsedGroups
-            item(key = "group-header:${groupSection.key}") {
-              OneUiGroupHeader(
-                label = "${groupSection.name} · ${groupSection.online}/${groupSection.total} 在线",
-                description = groupSection.glanceSubtitle,
-                action = {
-                  Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
-                  ) {
-                    if (!groupSection.isUngrouped) {
-                      OneUiPill(
-                        label = "管理组",
-                        tone = OneUiPillTone.Neutral,
-                        onClick = { groupActionTarget = groupSection }
-                      )
+
+          if (hasNamedGroups) {
+            val namedCount = manageGroupSections.count { !it.isUngrouped }
+            manageGroupSections.forEachIndexed { sectionIdx, section ->
+              item(key = "manage-group:${section.key}") {
+                val namedIdx = if (section.isUngrouped) -1 else sectionIdx
+                StructuredEditableGroupCard(
+                  section = section,
+                  canMoveGroupUp = !section.isUngrouped && namedIdx > 0,
+                  canMoveGroupDown = !section.isUngrouped && namedIdx in 0 until (namedCount - 1),
+                  selectedIds = selectedManageIds,
+                  onToggleSelect = { id ->
+                    selectedManageIds = if (id in selectedManageIds) selectedManageIds - id else selectedManageIds + id
+                  },
+                  onMoveGroup = { delta ->
+                    moveDeviceGroupOrder(manageDevices, section.key, delta)?.let { next -> draftIds = next }
+                  },
+                  onManageMembers = {
+                    if (section.isUngrouped) {
+                      createGroupPreselected = section.devices.map { it.deviceId }.toSet()
+                      createGroupOpen = true
+                    } else {
+                      membersSheetGroup = section.name
                     }
-                    OneUiPill(
-                      label = if (isCollapsed) "展开 (${groupSection.total})" else "收起",
-                      tone = if (groupSection.offline > 0 || groupSection.issueCount > 0) OneUiPillTone.Warning else OneUiPillTone.Accent,
-                      onClick = {
-                        collapsedGroups = if (isCollapsed) {
-                          collapsedGroups - groupSection.key
-                        } else {
-                          collapsedGroups + groupSection.key
-                        }
-                      }
-                    )
+                  },
+                  onRenameGroup = if (!section.isUngrouped) {
+                    { groupRenameTarget = section }
+                  } else null,
+                  onDissolveGroup = if (!section.isUngrouped) {
+                    { groupDissolveTarget = section }
+                  } else null,
+                  onEditDeviceGroup = { device -> groupEditTarget = device },
+                  onMoveDevice = { device, delta ->
+                    moveDeviceOrder(manageDevices, device.deviceId, delta, withinGroup = true)?.let { next ->
+                      draftIds = next
+                    }
+                  },
+                  onRequestDelete = { device -> pendingDelete = device }
+                )
+              }
+            }
+          } else {
+            items(manageDevices, key = { "edit:${it.deviceId}" }) { device ->
+              val index = manageDevices.indexOf(device)
+              EditableDeviceRow(
+                device = device,
+                checked = device.deviceId in selectedManageIds,
+                canMoveUp = index > 0,
+                canMoveDown = index < manageDevices.lastIndex,
+                onToggleCheck = {
+                  val id = device.deviceId
+                  selectedManageIds = if (id in selectedManageIds) selectedManageIds - id else selectedManageIds + id
+                },
+                onEditGroup = { groupEditTarget = device },
+                onMove = { delta ->
+                  moveDeviceOrder(manageDevices, device.deviceId, delta, withinGroup = false)?.let { next ->
+                    draftIds = next
                   }
-                }
+                },
+                onRequestDelete = { pendingDelete = device }
               )
             }
-            if (!isCollapsed) {
-              if (!embedded && window.isWide && groupSection.devices.size > 1) {
-                item(key = "group-grid:${groupSection.key}") {
-                  BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                    val spacing = metrics.cardGap
-                    val columns = if (maxWidth >= 660.dp) 2 else 1
-                    val cellWidth = (maxWidth - spacing * (columns - 1)) / columns
-                    FlowRow(
-                      modifier = Modifier.fillMaxWidth(),
-                      horizontalArrangement = Arrangement.spacedBy(spacing),
-                      verticalArrangement = Arrangement.spacedBy(spacing)
-                    ) {
-                      groupSection.devices.forEach { device ->
-                        DeviceTrendCard(
-                          device = device,
-                          overview = overviewById[device.deviceId],
-                          chartWindow = chartWindow,
-                          issues = issuesByDevice[device.deviceId].orEmpty(),
-                          nowMillis = now,
-                          selected = false,
-                          showGroupBadge = false,
-                          onOpen = { actions.onOpenDevice(device.deviceId, null) },
-                          onOpenBlock = { block -> actions.onOpenDevice(device.deviceId, block) },
-                          onMore = { actionTarget = device },
-                          modifier = Modifier.width(cellWidth)
-                        )
-                      }
-                    }
-                  }
-                }
-              } else {
-                items(groupSection.devices, key = { "grouped:${groupSection.key}:${it.deviceId}" }) { device ->
-                  DeviceTrendCard(
-                    device = device,
-                    overview = overviewById[device.deviceId],
-                    chartWindow = chartWindow,
-                    issues = issuesByDevice[device.deviceId].orEmpty(),
-                    nowMillis = now,
-                    selected = embedded && device.deviceId == state.selectedDeviceId,
-                    showGroupBadge = false,
-                    onOpen = { actions.onOpenDevice(device.deviceId, null) },
-                    onOpenBlock = { block -> actions.onOpenDevice(device.deviceId, block) },
-                    onMore = { actionTarget = device }
-                  )
-                }
-              }
-            }
           }
-        } else if (!embedded && window.isWide && visible.size > 1) {
-          item(key = "devices-grid") {
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-              val spacing = metrics.cardGap
-              val columns = if (maxWidth >= 660.dp) 2 else 1
-              val cellWidth = (maxWidth - spacing * (columns - 1)) / columns
-              FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(spacing),
-                verticalArrangement = Arrangement.spacedBy(spacing)
-              ) {
-                visible.forEach { device ->
-                  DeviceTrendCard(
-                    device = device,
-                    overview = overviewById[device.deviceId],
-                    chartWindow = chartWindow,
-                    issues = issuesByDevice[device.deviceId].orEmpty(),
-                    nowMillis = now,
-                    selected = false,
-                    showGroupBadge = activeGroupFilter == GROUP_FILTER_ALL,
-                    onOpen = { actions.onOpenDevice(device.deviceId, null) },
-                    onOpenBlock = { block -> actions.onOpenDevice(device.deviceId, block) },
-                    onMore = { actionTarget = device },
-                    modifier = Modifier.width(cellWidth)
-                  )
-                }
-              }
-            }
-          }
-        } else {
-          items(visible, key = { it.deviceId }) { device ->
-            DeviceTrendCard(
-              device = device,
-              overview = overviewById[device.deviceId],
-              chartWindow = chartWindow,
-              issues = issuesByDevice[device.deviceId].orEmpty(),
-              nowMillis = now,
-              selected = embedded && device.deviceId == state.selectedDeviceId,
-              showGroupBadge = activeGroupFilter == GROUP_FILTER_ALL,
-              onOpen = { actions.onOpenDevice(device.deviceId, null) },
-              onOpenBlock = { block -> actions.onOpenDevice(device.deviceId, block) },
-              onMore = { actionTarget = device }
+        } else if (activeGroupSection != null && filteredPersisted.isNotEmpty()) {
+          // 单组聚焦深度视图：组级池化遥测摘要 + 多机同轴趋势对比图 + 组内机器列表（无重复标题）
+          val focusedSection = visibleGroupSections.firstOrNull { it.key == activeGroupSection.key } ?: activeGroupSection
+          item(key = "focused-group-summary:${focusedSection.key}") {
+            GroupFocusSummaryCard(
+              section = focusedSection,
+              chartWindow = chartWindow
             )
           }
+          if (focusedSection.devices.isNotEmpty() && overviewById.isNotEmpty()) {
+            item(key = "focused-group-comparison:${focusedSection.key}") {
+              GroupComparisonChartCard(
+                section = focusedSection,
+                overviewById = overviewById,
+                chartWindow = chartWindow,
+                metric = comparisonMetric,
+                onSelectMetric = { comparisonMetricName = it.name },
+                onOpenDevice = { deviceId -> actions.onOpenDevice(deviceId, null) }
+              )
+            }
+          }
+          renderDeviceCollection(
+            scopeKey = "focused:${focusedSection.key}",
+            devices = focusedSection.devices,
+            compact = state.compactDeviceList,
+            wideGrid = !embedded && window.isWide,
+            selectedDeviceId = if (embedded) state.selectedDeviceId else null,
+            showGroupBadge = false,
+            overviewById = overviewById,
+            chartWindow = chartWindow,
+            issuesByDevice = issuesByDevice,
+            nowMillis = now,
+            onOpen = { id -> actions.onOpenDevice(id, null) },
+            onOpenBlock = { id, block -> actions.onOpenDevice(id, block) },
+            onEditGroup = { device -> groupEditTarget = device },
+            onMore = { device -> actionTarget = device }
+          )
+        } else if (useGroupedDisplay && visibleGroupSections.isNotEmpty()) {
+          // 全部设备分组视图：每个设备组是一张完整的可视化看板卡（收起仍保留池化水位与微缩负载矩阵）
+          visibleGroupSections.forEach { groupSection ->
+            val isCollapsed = groupSection.key in state.collapsedGroups
+            item(key = "group-card:${groupSection.key}") {
+              DeviceGroupDashboardCard(
+                section = groupSection,
+                collapsed = isCollapsed,
+                compact = state.compactDeviceList,
+                wideGrid = !embedded && window.isWide,
+                selectedDeviceId = if (embedded) state.selectedDeviceId else null,
+                overviewById = overviewById,
+                chartWindow = chartWindow,
+                issuesByDevice = issuesByDevice,
+                nowMillis = now,
+                onToggleCollapse = { actions.onToggleGroupCollapsed(groupSection.key) },
+                onFocusGroup = {
+                  groupFilter = groupSection.key
+                  topBarScope.launch { listState.animateScrollToItem(0) }
+                },
+                onAssignUngrouped = {
+                  createGroupPreselected = groupSection.devices.map { it.deviceId }.toSet()
+                  createGroupOpen = true
+                },
+                onOpenGroupMenu = { groupActionTarget = groupSection },
+                onOpenDevice = { id -> actions.onOpenDevice(id, null) },
+                onOpenBlock = { id, block -> actions.onOpenDevice(id, block) },
+                onEditDeviceGroup = { device -> groupEditTarget = device },
+                onMoreDevice = { device -> actionTarget = device }
+              )
+            }
+          }
+        } else if (visibleFlatDevices.isNotEmpty()) {
+          renderDeviceCollection(
+            scopeKey = "flat",
+            devices = visibleFlatDevices,
+            compact = state.compactDeviceList,
+            wideGrid = !embedded && window.isWide,
+            selectedDeviceId = if (embedded) state.selectedDeviceId else null,
+            showGroupBadge = activeGroupFilter == GROUP_FILTER_ALL,
+            overviewById = overviewById,
+            chartWindow = chartWindow,
+            issuesByDevice = issuesByDevice,
+            nowMillis = now,
+            onOpen = { id -> actions.onOpenDevice(id, null) },
+            onOpenBlock = { id, block -> actions.onOpenDevice(id, block) },
+            onEditGroup = { device -> groupEditTarget = device },
+            onMore = { device -> actionTarget = device }
+          )
         }
 
         item(key = "bottom-spacer") { Spacer(Modifier.height(metrics.thumbZone)) }
@@ -612,39 +664,63 @@ fun DeviceListScreen(
 
       if (editMode) {
         EditDock(
-          dirty = draftIds != null && draftIds != persistedIds,
+          dirty = orderDirty,
+          selectedCount = selectedManageIds.size,
           onCancel = {
             editMode = false
             draftIds = null
+            selectedManageIds = emptySet()
             pendingDelete = null
           },
+          onBatchAssignGroup = {
+            createGroupPreselected = selectedManageIds
+            createGroupOpen = true
+          },
           onSave = {
-            val ids = visible.map { it.deviceId }
-            if (draftIds != null && ids != persistedIds) actions.onReorderDevices(ids)
+            if (orderDirty) actions.onReorderDevices(effectiveManageIds)
             editMode = false
             draftIds = null
+            selectedManageIds = emptySet()
           }
         )
       }
     }
   }
 
-  if (sortSheet) {
-    OneUiActionSheet(
-      onDismissRequest = { sortSheet = false },
-      title = "设备排序",
-      actions = DeviceSortMode.entries.map { mode ->
-        OneUiActionModel(
-          label = if (mode == sort) "${mode.label}（当前）" else mode.label,
-          description = mode.description,
-          icon = Icons.AutoMirrored.Rounded.Sort,
-          onClick = {
-            sortMode = mode.name
-            sortSheet = false
-          }
-        )
-      }
+  if (viewAndSortSheet) {
+    ViewAndSortSheet(
+      sort = sort,
+      compact = state.compactDeviceList,
+      groupScopedSort = state.groupScopedSort,
+      hasNamedGroups = hasNamedGroups,
+      onSelectSort = { next -> sortMode = next.name },
+      onSelectCompact = actions.onSetCompactDeviceList,
+      onSelectGroupScopedSort = actions.onSetGroupScopedSort,
+      onDismiss = { viewAndSortSheet = false }
     )
+  }
+
+  if (updateSheetOpen) {
+    state.updateInfo?.takeIf { it.available }?.let { update ->
+      UpdateQuickSheet(
+        update = update,
+        downloading = state.updateDownloading,
+        progress = state.updateProgress,
+        onDownload = {
+          updateSheetOpen = false
+          actions.onDownloadUpdate()
+        },
+        onOpenSettings = {
+          updateSheetOpen = false
+          actions.onShowSettings()
+        },
+        onDismissVersion = {
+          update.latestVersion?.let(actions.onDismissUpdateNotice)
+          updateSheetOpen = false
+        },
+        onDismiss = { updateSheetOpen = false }
+      )
+    }
   }
 
   actionTarget?.let { device ->
@@ -653,8 +729,8 @@ fun DeviceListScreen(
       title = device.hostname,
       actions = listOf(
         OneUiActionModel(
-          label = "打开设备",
-          description = "查看图表、进程、容器与硬件明细",
+          label = "打开设备详情",
+          description = "查看历史图表、实时进程、容器与硬件实例",
           icon = Icons.Rounded.Computer,
           onClick = {
             actionTarget = null
@@ -662,17 +738,8 @@ fun DeviceListScreen(
           }
         ),
         OneUiActionModel(
-          label = "查看流量",
-          description = "按日/周/月查看接收与发送",
-          icon = Icons.Rounded.Timeline,
-          onClick = {
-            actionTarget = null
-            actions.onOpenTraffic(device.deviceId)
-          }
-        ),
-        OneUiActionModel(
-          label = "设置分组",
-          description = device.normalizedGroup()?.let { "当前分组：$it" } ?: "将设备归入分组，方便查找与对比",
+          label = "设置所属分组",
+          description = device.normalizedGroup()?.let { "当前分组：$it（点按切换或移出）" } ?: "点按一键归入已有分组或新建分组",
           icon = Icons.Rounded.Dns,
           onClick = {
             actionTarget = null
@@ -680,8 +747,17 @@ fun DeviceListScreen(
           }
         ),
         OneUiActionModel(
-          label = "编辑记录项",
-          description = "选择这台设备要采集的指标",
+          label = "查看流量日历",
+          description = "按日 / 周 / 月查看上下行流量统计",
+          icon = Icons.Rounded.Timeline,
+          onClick = {
+            actionTarget = null
+            actions.onOpenTraffic(device.deviceId)
+          }
+        ),
+        OneUiActionModel(
+          label = "编辑采集记录项",
+          description = "配置该设备要上报的指标与硬件实例",
           icon = Icons.Rounded.Tune,
           onClick = {
             actionTarget = null
@@ -690,7 +766,7 @@ fun DeviceListScreen(
         ),
         OneUiActionModel(
           label = "从列表隐藏",
-          description = "设备下次上报时会重新出现",
+          description = "设备下次上报时会自动重新出现",
           icon = Icons.Rounded.Delete,
           destructive = true,
           onClick = {
@@ -705,7 +781,7 @@ fun DeviceListScreen(
   groupEditTarget?.let { device ->
     DeviceGroupPickerSheet(
       title = "设置「${device.hostname}」的分组",
-      subtitle = "点选已有分组或输入新分组名，留空即可设为未分组",
+      subtitle = "点按已有分组立即归入，或输入新名称创建分组",
       currentGroup = device.normalizedGroup(),
       existingGroups = existingGroupNames,
       onDismiss = { groupEditTarget = null },
@@ -720,49 +796,87 @@ fun DeviceListScreen(
   groupActionTarget?.let { groupSection ->
     OneUiActionSheet(
       onDismissRequest = { groupActionTarget = null },
-      title = "分组 · ${groupSection.name}",
-      actions = listOf(
-        OneUiActionModel(
-          label = "管理组内设备",
-          description = "批量勾选设备归入「${groupSection.name}」或从该组移出",
-          icon = Icons.Rounded.Dns,
-          onClick = {
-            groupActionTarget = null
-            batchGroupInitial = groupSection.name
-            batchGroupOpen = true
-          }
-        ),
-        OneUiActionModel(
-          label = "重命名分组",
-          description = "将该组内 ${groupSection.total} 台设备统一改为新分组名",
-          icon = Icons.Rounded.Tune,
-          onClick = {
-            groupActionTarget = null
-            groupRenameTarget = groupSection
-          }
-        ),
-        OneUiActionModel(
-          label = "解散分组",
-          description = "组内 ${groupSection.total} 台设备恢复为「未分组」，不会删除设备",
-          icon = Icons.Rounded.Delete,
-          destructive = true,
-          onClick = {
-            groupActionTarget = null
-            groupDissolveTarget = groupSection
-          }
-        )
-      )
+      title = "设备组 · ${groupSection.name}",
+      actions = buildList {
+        if (activeGroupFilter != groupSection.key) {
+          add(
+            OneUiActionModel(
+              label = "聚焦查看组内对比曲线",
+              description = "同屏对比组内 ${groupSection.total} 台设备的 CPU、内存、硬盘与网速趋势",
+              icon = Icons.Rounded.Timeline,
+              onClick = {
+                groupActionTarget = null
+                groupFilter = groupSection.key
+                topBarScope.launch { listState.animateScrollToItem(0) }
+              }
+            )
+          )
+        }
+        if (!groupSection.isUngrouped) {
+          add(
+            OneUiActionModel(
+              label = "增减组内成员",
+              description = "勾选加入新设备，或取消勾选将现有设备移出分组",
+              icon = Icons.Rounded.Dns,
+              onClick = {
+                groupActionTarget = null
+                membersSheetGroup = groupSection.name
+              }
+            )
+          )
+          add(
+            OneUiActionModel(
+              label = "重命名分组",
+              description = "将组内 ${groupSection.total} 台设备统一更新为新组名",
+              icon = Icons.Rounded.Tune,
+              onClick = {
+                groupActionTarget = null
+                groupRenameTarget = groupSection
+              }
+            )
+          )
+          add(
+            OneUiActionModel(
+              label = "解散分组",
+              description = "组内 ${groupSection.total} 台设备恢复为未分组，不删除设备本身",
+              icon = Icons.Rounded.Delete,
+              destructive = true,
+              onClick = {
+                groupActionTarget = null
+                groupDissolveTarget = groupSection
+              }
+            )
+          )
+        }
+      }
     )
   }
 
-  if (batchGroupOpen) {
-    BatchDeviceGroupSheet(
+  membersSheetGroup?.let { targetGroupName ->
+    GroupMembersSheet(
+      groupName = targetGroupName,
+      devices = persisted,
+      onDismiss = { membersSheetGroup = null },
+      onConfirmDiff = { addedIds, removedIds ->
+        membersSheetGroup = null
+        actions.onSyncGroupMembership(targetGroupName, addedIds, removedIds)
+      }
+    )
+  }
+
+  if (createGroupOpen) {
+    CreateOrAssignGroupSheet(
       devices = persisted,
       existingGroups = existingGroupNames,
-      initialGroup = batchGroupInitial,
-      onDismiss = { batchGroupOpen = false },
+      preselectedIds = createGroupPreselected,
+      onDismiss = {
+        createGroupOpen = false
+        createGroupPreselected = emptySet()
+      },
       onConfirm = { targetIds, nextGroup ->
-        batchGroupOpen = false
+        createGroupOpen = false
+        createGroupPreselected = emptySet()
+        selectedManageIds = emptySet()
         actions.onUpdateDeviceGroup(targetIds, nextGroup)
       }
     )
@@ -770,18 +884,19 @@ fun DeviceListScreen(
 
   groupRenameTarget?.let { groupSection ->
     var nextName by remember(groupSection.name) { mutableStateOf(groupSection.name) }
+    val normalizedNext = normalizeGroupInput(nextName)
+    val invalidReserved = nextName.isNotBlank() && isReservedGroupName(nextName)
     OneUiDialog(
       onDismissRequest = { groupRenameTarget = null },
-      title = "重命名分组",
+      title = "重命名「${groupSection.name}」",
       description = "组内 ${groupSection.total} 台设备将一并归入新分组名。",
-      confirmLabel = "保存",
+      confirmLabel = "保存名称",
       onConfirm = {
-        val trimmed = nextName.trim()
-        if (trimmed.isNotEmpty()) {
+        if (normalizedNext != null && !invalidReserved) {
           val ids = groupSection.devices.map { it.deviceId }
           groupRenameTarget = null
-          if (groupFilter == groupSection.key) groupFilter = trimmed
-          actions.onUpdateDeviceGroup(ids, trimmed)
+          if (groupFilter == groupSection.key) groupFilter = normalizedNext
+          actions.onUpdateDeviceGroup(ids, normalizedNext)
         }
       },
       dismissLabel = "取消",
@@ -790,7 +905,8 @@ fun DeviceListScreen(
       OneUiTextField(
         value = nextName,
         onValueChange = { nextName = it.take(64) },
-        label = "新分组名称"
+        label = "新分组名称",
+        errorText = if (invalidReserved) "该名称为系统保留标识" else null
       )
     }
   }
@@ -799,7 +915,7 @@ fun DeviceListScreen(
     OneUiDialog(
       onDismissRequest = { groupDissolveTarget = null },
       title = "解散分组「${groupSection.name}」？",
-      description = "解散后，组内 ${groupSection.total} 台设备将恢复为「未分组」状态。",
+      description = "解散后，组内 ${groupSection.total} 台设备将恢复为「未分组」状态，设备监控数据不受影响。",
       confirmLabel = "解散分组",
       onConfirm = {
         val ids = groupSection.devices.map { it.deviceId }
@@ -817,7 +933,7 @@ fun DeviceListScreen(
     OneUiDialog(
       onDismissRequest = { pendingDelete = null },
       title = "从列表隐藏 ${device.hostname}？",
-      description = "它会从当前列表隐藏；设备下次上报时会重新显示。",
+      description = "它会从当前设备列表移除；如果该机器上的 Agent 仍在运行，下次上报时会自动重新出现。",
       confirmLabel = "隐藏",
       onConfirm = {
         pendingDelete = null
@@ -830,83 +946,188 @@ fun DeviceListScreen(
   }
 }
 
-private const val SEARCH_THRESHOLD = 6
-internal const val GROUP_FILTER_ALL = "__all__"
-internal const val GROUP_KEY_UNGROUPED = "__ungrouped__"
-internal val RECOMMENDED_GROUPS = listOf("宿主机", "虚拟机", "存储与网络", "开发设备", "办公终端")
+/* ---------------- 顶部紧凑状态药丸与分组导航栏 ---------------- */
 
-internal data class DeviceGroupSectionModel(
-  val key: String,
-  val name: String,
-  val isUngrouped: Boolean,
-  val devices: List<DeviceSummaryDto>,
-  val total: Int,
-  val online: Int,
-  val offline: Int,
-  val issueCount: Int,
-  val glanceSubtitle: String
-)
-
-internal fun DeviceSummaryDto.normalizedGroup(): String? =
-  group?.trim()?.takeIf { it.isNotEmpty() }
-
-internal fun DeviceSummaryDto.matchesGroup(filter: String): Boolean {
-  if (filter == GROUP_FILTER_ALL) return true
-  val g = normalizedGroup()
-  return if (filter == GROUP_KEY_UNGROUPED) g == null else g == filter
-}
-
-internal fun buildDeviceGroupSections(
+private fun buildOverviewStatusPills(
+  state: AppState,
   devices: List<DeviceSummaryDto>,
-  issuesByDevice: Map<String, List<AttentionItem>>
-): List<DeviceGroupSectionModel> {
-  val buckets = linkedMapOf<String, MutableList<DeviceSummaryDto>>()
-  for (device in devices) {
-    val key = device.normalizedGroup() ?: GROUP_KEY_UNGROUPED
-    buckets.getOrPut(key) { mutableListOf() }.add(device)
-  }
-  val buildSection = { key: String, list: List<DeviceSummaryDto> ->
-    val isUngrouped = key == GROUP_KEY_UNGROUPED
-    val onlineList = list.filter { it.status == "online" }
-    val online = onlineList.size
-    val offline = list.size - online
-    val issueCount = list.count { d -> issuesByDevice[d.deviceId].orEmpty().any { it.severity != AttentionSeverity.Offline } }
-    val avgCpu = onlineList.mapNotNull { it.cpuUsagePercent }.takeIf { it.isNotEmpty() }?.average()
-    val avgMem = onlineList.mapNotNull { it.memoryUsagePercent }.takeIf { it.isNotEmpty() }?.average()
-    val subtitle = buildList {
-      if (offline > 0) add("$offline 台离线")
-      if (issueCount > 0) add("$issueCount 台超限")
-      if (avgCpu != null) add("平均 CPU ${formatPercent(avgCpu)}")
-      if (avgMem != null) add("平均内存 ${formatPercent(avgMem)}")
-      if (isEmpty()) add("全部在线运行正常")
-    }.joinToString(" · ")
-    DeviceGroupSectionModel(
-      key = key,
-      name = if (isUngrouped) "未分组" else key,
-      isUngrouped = isUngrouped,
-      devices = list,
-      total = list.size,
-      online = online,
-      offline = offline,
-      issueCount = issueCount,
-      glanceSubtitle = subtitle
+  attention: List<AttentionItem>,
+  onlyOffline: Boolean,
+  nowMillis: Long,
+  colors: com.dsc.android.ui.oneui.OneUiColors,
+  onRefresh: () -> Unit,
+  onOpenAttention: () -> Unit,
+  onToggleOffline: () -> Unit,
+  onOpenUpdate: () -> Unit,
+  onDismissUpdate: (String) -> Unit
+): List<OneUiStatusPillItem> = buildList {
+  if (!state.authenticated && state.serverConfig.baseUrl.isNotBlank()) {
+    add(
+      OneUiStatusPillItem(
+        key = "connecting",
+        label = "正在连接中枢",
+        tone = OneUiPillTone.Accent,
+        icon = Icons.Rounded.Refresh
+      )
     )
   }
-  val named = buckets.entries.filter { it.key != GROUP_KEY_UNGROUPED }.map { buildSection(it.key, it.value) }
-  val ungrouped = buckets[GROUP_KEY_UNGROUPED]?.takeIf { it.isNotEmpty() }?.let { listOf(buildSection(GROUP_KEY_UNGROUPED, it)) }.orEmpty()
-  return named + ungrouped
+
+  if (state.dataSource == RemoteDataSource.Cache && !state.loggingIn && !state.refreshing) {
+    add(
+      OneUiStatusPillItem(
+        key = "offline-cache",
+        label = "缓存",
+        value = "${relativeTimeLabel(state.cacheSavedAt, nowMillis)} ↻",
+        tone = OneUiPillTone.Warning,
+        icon = Icons.Rounded.Storage,
+        onClick = onRefresh
+      )
+    )
+  }
+
+  val critical = attention.count { it.severity == AttentionSeverity.Critical }
+  val warning = attention.count { it.severity == AttentionSeverity.Warning }
+  val alertTotal = critical + warning
+  if (alertTotal > 0) {
+    add(
+      OneUiStatusPillItem(
+        key = "attention",
+        label = if (critical > 0) "严重 $critical" else "告警 $warning",
+        value = if (critical > 0 && warning > 0) "+$warning ›" else "›",
+        tone = if (critical > 0) OneUiPillTone.Critical else OneUiPillTone.Warning,
+        icon = Icons.Rounded.ReportProblem,
+        onClick = onOpenAttention
+      )
+    )
+  }
+
+  val offlineCount = devices.count { it.status != "online" }
+  if (offlineCount > 0 || onlyOffline) {
+    add(
+      OneUiStatusPillItem(
+        key = "offline-filter",
+        label = if (onlyOffline) "仅离线" else "离线",
+        value = "$offlineCount",
+        tone = OneUiPillTone.Offline,
+        icon = Icons.Rounded.CloudOff,
+        dotColor = colors.offline,
+        selected = onlyOffline,
+        onClick = onToggleOffline,
+        onDismiss = if (onlyOffline) onToggleOffline else null,
+        dismissDescription = "退出仅看离线筛选"
+      )
+    )
+  }
+
+  val update = state.updateInfo?.takeIf { it.available }
+  val latestVersion = update?.latestVersion.orEmpty()
+  if (update != null && (state.updateDownloading || latestVersion != state.dismissedUpdateVersion)) {
+    add(
+      OneUiStatusPillItem(
+        key = "app-update",
+        label = if (state.updateDownloading) "下载更新" else "更新",
+        value = if (state.updateDownloading) "${(state.updateProgress * 100).toInt()}%" else "v$latestVersion",
+        tone = OneUiPillTone.Accent,
+        icon = Icons.Rounded.Download,
+        progress = if (state.updateDownloading) state.updateProgress else null,
+        onClick = onOpenUpdate,
+        onDismiss = if (!state.updateDownloading && latestVersion.isNotBlank()) {
+          { onDismissUpdate(latestVersion) }
+        } else null,
+        dismissDescription = "忽略此版本更新提示"
+      )
+    )
+  }
 }
 
 @Composable
-private fun GroupFilterRow(
+private fun GroupNavigationStrip(
   totalCount: Int,
   groups: List<DeviceGroupSectionModel>,
+  hasNamedGroups: Boolean,
   selectedKey: String,
-  showCollapseToggle: Boolean = false,
-  allCollapsed: Boolean = false,
-  onToggleCollapseAll: (() -> Unit)? = null,
-  onOpenBatchGroup: (() -> Unit)? = null,
-  onSelect: (String) -> Unit
+  onSelect: (String) -> Unit,
+  onCreateGroup: () -> Unit
+) {
+  val metrics = OneUiTheme.metrics
+  val colors = OneUiTheme.colors
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .horizontalScroll(rememberScrollState()),
+    horizontalArrangement = Arrangement.spacedBy(6.dp),
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    if (hasNamedGroups) {
+      OneUiStatusPill(
+        pill = OneUiStatusPillItem(
+          key = "grp:all",
+          label = "全部",
+          value = "$totalCount",
+          tone = OneUiPillTone.Neutral,
+          selected = selectedKey == GROUP_FILTER_ALL,
+          onClick = { onSelect(GROUP_FILTER_ALL) }
+        )
+      )
+      groups.forEach { group ->
+        val isSelected = selectedKey == group.key
+        val dotColor = when {
+          group.criticalCount > 0 -> colors.critical
+          group.warningCount > 0 -> colors.warning
+          group.offline > 0 -> colors.offline
+          else -> colors.online
+        }
+        OneUiStatusPill(
+          pill = OneUiStatusPillItem(
+            key = "grp:${group.key}",
+            label = group.name,
+            value = "${group.online}/${group.total}",
+            tone = OneUiPillTone.Neutral,
+            dotColor = dotColor,
+            selected = isSelected,
+            onClick = { onSelect(group.key) }
+          )
+        )
+      }
+      OneUiStatusPill(
+        pill = OneUiStatusPillItem(
+          key = "grp:create",
+          label = "新建组",
+          icon = Icons.Rounded.Add,
+          tone = OneUiPillTone.Accent,
+          onClick = onCreateGroup
+        )
+      )
+    } else if (totalCount > 1) {
+      OneUiStatusPill(
+        pill = OneUiStatusPillItem(
+          key = "grp:create-empty",
+          label = "创建设备组",
+          value = "聚合容量与对比曲线",
+          icon = Icons.Rounded.Add,
+          tone = OneUiPillTone.Accent,
+          onClick = onCreateGroup
+        )
+      )
+    }
+  }
+}
+
+@Composable
+private fun OverviewSubToolbar(
+  selectedWindow: MetricWindow,
+  sampled: Boolean,
+  sort: DeviceSortMode,
+  compact: Boolean,
+  activeGroup: DeviceGroupSectionModel?,
+  showCollapseAll: Boolean,
+  allCollapsed: Boolean,
+  onSelectWindow: (MetricWindow) -> Unit,
+  onOpenSortSheet: () -> Unit,
+  onToggleCompact: () -> Unit,
+  onToggleCollapseAll: () -> Unit,
+  onOpenGroupMembers: (DeviceGroupSectionModel) -> Unit,
+  onOpenGroupMenu: (DeviceGroupSectionModel) -> Unit
 ) {
   val metrics = OneUiTheme.metrics
   val colors = OneUiTheme.colors
@@ -917,412 +1138,722 @@ private fun GroupFilterRow(
     horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
     verticalAlignment = Alignment.CenterVertically
   ) {
-    OneUiFilterChip(
-      label = "全部 $totalCount",
-      selected = selectedKey == GROUP_FILTER_ALL,
-      onClick = { onSelect(GROUP_FILTER_ALL) }
+    listOf(
+      MetricWindow.FiveMinutes to "5分",
+      MetricWindow.OneHour to "1小时",
+      MetricWindow.OneDay to "24小时"
+    ).forEach { (window, label) ->
+      val active = window == selectedWindow
+      OneUiStatusPill(
+        pill = OneUiStatusPillItem(
+          key = "win:${window.value}",
+          label = label,
+          tone = if (active) OneUiPillTone.Accent else OneUiPillTone.Neutral,
+          selected = active,
+          onClick = { onSelectWindow(window) }
+        )
+      )
+    }
+    if (sampled) {
+      OneUiText(
+        text = "省流抽样",
+        role = OneUiTextRole.ChartLabel,
+        color = colors.textTertiary,
+        maxLines = 1
+      )
+    }
+
+    Spacer(Modifier.width(4.dp))
+
+    OneUiStatusPill(
+      pill = OneUiStatusPillItem(
+        key = "density",
+        label = if (compact) "紧凑行" else "趋势卡",
+        icon = if (compact) Icons.Rounded.ViewHeadline else Icons.Rounded.ViewAgenda,
+        tone = if (compact) OneUiPillTone.Accent else OneUiPillTone.Neutral,
+        onClick = onToggleCompact
+      )
     )
-    groups.forEach { group ->
-      val isSelected = selectedKey == group.key
-      val dotColor = when {
-        group.offline > 0 -> if (isSelected) colors.textOnAccent else colors.offline
-        group.issueCount > 0 -> if (isSelected) colors.textOnAccent else colors.warning
-        else -> null
+
+    if (sort != DeviceSortMode.Custom) {
+      OneUiStatusPill(
+        pill = OneUiStatusPillItem(
+          key = "sort-indicator",
+          label = sort.shortLabel,
+          tone = OneUiPillTone.Accent,
+          onClick = onOpenSortSheet
+        )
+      )
+    }
+
+    if (activeGroup != null) {
+      OneUiStatusPill(
+        pill = OneUiStatusPillItem(
+          key = "group-members",
+          label = if (activeGroup.isUngrouped) "分配分组" else "成员 (${activeGroup.total})",
+          tone = OneUiPillTone.Accent,
+          onClick = { onOpenGroupMembers(activeGroup) }
+        )
+      )
+      if (!activeGroup.isUngrouped) {
+        OneUiStatusPill(
+          pill = OneUiStatusPillItem(
+            key = "group-manage",
+            label = "管理组",
+            tone = OneUiPillTone.Neutral,
+            onClick = { onOpenGroupMenu(activeGroup) }
+          )
+        )
       }
-      OneUiFilterChip(
-        label = "${group.name} ${group.online}/${group.total}",
-        selected = isSelected,
-        onClick = { onSelect(group.key) },
-        leadingIcon = dotColor?.let { color ->
-          {
-            OneUiStatusDot(
-              color = color,
-              description = if (group.offline > 0) "含离线设备" else "含超限设备"
-            )
-          }
-        }
-      )
-    }
-    if (showCollapseToggle && onToggleCollapseAll != null) {
-      OneUiPill(
-        label = if (allCollapsed) "展开全部" else "收起全部",
-        tone = OneUiPillTone.Neutral,
-        onClick = onToggleCollapseAll
-      )
-    }
-    if (onOpenBatchGroup != null) {
-      OneUiPill(
-        label = "批量分组",
-        tone = OneUiPillTone.Accent,
-        onClick = onOpenBatchGroup
+    } else if (showCollapseAll) {
+      OneUiStatusPill(
+        pill = OneUiStatusPillItem(
+          key = "collapse-all",
+          label = if (allCollapsed) "展开各组" else "收起看大盘",
+          tone = OneUiPillTone.Neutral,
+          onClick = onToggleCollapseAll
+        )
       )
     }
   }
 }
 
+/* ---------------- 设备组可视化看板卡与单组聚焦对比视图 ---------------- */
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun BatchDeviceGroupSheet(
-  devices: List<DeviceSummaryDto>,
-  existingGroups: List<String>,
-  initialGroup: String?,
-  onDismiss: () -> Unit,
-  onConfirm: (List<String>, String?) -> Unit
+private fun DeviceGroupDashboardCard(
+  section: DeviceGroupSectionModel,
+  collapsed: Boolean,
+  compact: Boolean,
+  wideGrid: Boolean,
+  selectedDeviceId: String?,
+  overviewById: Map<String, OverviewInstanceSeriesDto>,
+  chartWindow: ChartWindow,
+  issuesByDevice: Map<String, List<AttentionItem>>,
+  nowMillis: Long,
+  onToggleCollapse: () -> Unit,
+  onFocusGroup: () -> Unit,
+  onAssignUngrouped: () -> Unit,
+  onOpenGroupMenu: () -> Unit,
+  onOpenDevice: (String) -> Unit,
+  onOpenBlock: (String, DeviceBlockKey) -> Unit,
+  onEditDeviceGroup: (DeviceSummaryDto) -> Unit,
+  onMoreDevice: (DeviceSummaryDto) -> Unit
 ) {
-  val metrics = OneUiTheme.metrics
   val colors = OneUiTheme.colors
-  var groupText by remember(initialGroup) { mutableStateOf(initialGroup.orEmpty()) }
-  var searchQuery by remember { mutableStateOf("") }
-  var selectedIds by remember(initialGroup, devices) {
-    val initialNormalized = initialGroup?.trim()?.takeIf { it.isNotEmpty() }
-    val preselected = if (initialNormalized != null) {
-      devices.filter { it.normalizedGroup() == initialNormalized }.map { it.deviceId }.toSet()
-    } else {
-      emptySet()
-    }
-    mutableStateOf(preselected)
-  }
-  val recommended = remember(existingGroups) {
-    RECOMMENDED_GROUPS.filterNot { it in existingGroups }
-  }
-  val filteredDevices = remember(devices, searchQuery) {
-    val needle = searchQuery.trim()
-    if (needle.isEmpty()) devices else devices.filter { it.matches(needle) }
-  }
-  val trimmedGroup = groupText.trim().takeIf { it.isNotEmpty() }
+  val metrics = OneUiTheme.metrics
+  val shapes = OneUiTheme.shapes
 
-  OneUiSheet(
-    onDismissRequest = onDismiss,
-    title = if (!initialGroup.isNullOrBlank()) "管理「$initialGroup」分组设备" else "批量设置设备分组",
-    subtitle = "先选择或输入目标分组，再勾选需要归入该分组的设备；留空分组名可设为未分组",
-    confirmBar = {
+  Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
+    // 组级遥测看板头：无论收起还是展开都呈现微缩机器点阵与池化资源水位
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .oneUiSurface(colors.group, shapes.group, colors = colors, level = OneUiSurfaceLevel.Group)
+        .oneUiPressable(
+          onClick = onToggleCollapse,
+          onLongClick = if (section.isUngrouped) onAssignUngrouped else onOpenGroupMenu,
+          shape = shapes.group,
+          minHeight = null
+        )
+        .padding(start = metrics.spaceM, end = metrics.spaceXs, top = metrics.spaceS, bottom = metrics.spaceS),
+      verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+    ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(metrics.spaceS),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
       ) {
-        OneUiButton(
-          label = "取消",
-          onClick = onDismiss,
-          variant = OneUiButtonVariant.Text,
-          modifier = Modifier.weight(1f)
+        Row(
+          modifier = Modifier.weight(1f),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          OneUiInlineChevron(expanded = !collapsed, tint = colors.textSecondary)
+          OneUiStatusDot(
+            color = when (section.tone) {
+              OneUiPillTone.Critical -> colors.critical
+              OneUiPillTone.Warning -> colors.warning
+              OneUiPillTone.Offline -> colors.offline
+              else -> colors.online
+            },
+            description = null
+          )
+          OneUiText(
+            text = section.name,
+            role = OneUiTextRole.Title,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false)
+          )
+          OneUiStatusPill(
+            pill = OneUiStatusPillItem(
+              key = "count:${section.key}",
+              label = "${section.online}/${section.total}",
+              tone = section.tone
+            )
+          )
+        }
+        OneUiMiniFleetMatrix(
+          items = section.fleetDots,
+          maxVisible = 6,
+          summaryDescription = "${section.name} 共 ${section.total} 台设备，${section.online} 台在线"
         )
-        OneUiButton(
-          label = if (trimmedGroup != null) {
-            "归入分组 (${selectedIds.size})"
-          } else {
-            "设为未分组 (${selectedIds.size})"
-          },
-          enabled = selectedIds.isNotEmpty(),
-          onClick = { onConfirm(selectedIds.toList(), trimmedGroup) },
-          modifier = Modifier.weight(1f)
+        if (section.isUngrouped) {
+          OneUiStatusPill(
+            pill = OneUiStatusPillItem(
+              key = "assign-ungrouped",
+              label = "设组",
+              tone = OneUiPillTone.Accent,
+              onClick = onAssignUngrouped
+            )
+          )
+        } else {
+          OneUiStatusPill(
+            pill = OneUiStatusPillItem(
+              key = "focus:${section.key}",
+              label = "对比 ›",
+              tone = OneUiPillTone.Accent,
+              onClick = onFocusGroup
+            )
+          )
+          OneUiIconButton(
+            contentDescription = "管理分组 ${section.name}",
+            onClick = onOpenGroupMenu,
+            size = 36.dp
+          ) {
+            OneUiIcon(Icons.Rounded.MoreVert, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize)
+          }
+        }
+      }
+
+      if (section.online > 0) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(end = metrics.spaceXs),
+          horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+        ) {
+          OneUiPooledMetricCell(
+            label = "组 CPU",
+            value = formatPercent(section.avgCpuPercent),
+            sublabel = section.peakCpuHostname?.let { "峰 $it" },
+            tone = percentPillTone(section.avgCpuPercent, 85.0, 95.0),
+            barColorIndex = 0,
+            sparklinePoints = section.cpuSparkline.takeIf { it.isNotEmpty() },
+            chartWindow = chartWindow,
+            fraction = if (section.cpuSparkline.isEmpty()) ((section.avgCpuPercent ?: 0.0) / 100.0).toFloat() else null,
+            onClick = onFocusGroup,
+            modifier = Modifier.weight(1f)
+          )
+          OneUiPooledMetricCell(
+            label = "内存池",
+            value = section.memorySummaryLabel,
+            sublabel = section.effectiveMemoryPercent?.let(::formatPercent),
+            tone = percentPillTone(section.effectiveMemoryPercent, 88.0, 95.0),
+            barColorIndex = 1,
+            fraction = ((section.effectiveMemoryPercent ?: 0.0) / 100.0).toFloat(),
+            onClick = onFocusGroup,
+            modifier = Modifier.weight(1f)
+          )
+          if (wideGrid) {
+            OneUiPooledMetricCell(
+              label = "存储池",
+              value = section.diskSummaryLabel,
+              sublabel = section.effectiveDiskPercent?.let(::formatPercent),
+              tone = percentPillTone(section.effectiveDiskPercent, 85.0, 95.0),
+              barColorIndex = 2,
+              fraction = ((section.effectiveDiskPercent ?: 0.0) / 100.0).toFloat(),
+              onClick = onFocusGroup,
+              modifier = Modifier.weight(1f)
+            )
+          }
+        }
+      } else {
+        OneUiText(
+          text = "本组 ${section.total} 台设备当前均离线，点按可展开查看最后上报时间",
+          role = OneUiTextRole.ChartLabel,
+          color = colors.textTertiary,
+          modifier = Modifier.padding(end = metrics.spaceS)
         )
       }
     }
-  ) {
-    OneUiTextField(
-      value = groupText,
-      onValueChange = { groupText = it.take(64) },
-      label = "目标分组名称",
-      supportingText = "留空保存可将所选设备移出分组"
-    )
-    if (existingGroups.isNotEmpty() || recommended.isNotEmpty()) {
-      Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
-        OneUiText(text = "点按快速选择分组", role = OneUiTextRole.ChartLabel, color = colors.textSecondary, weight = FontWeight.SemiBold)
-        FlowRow(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
-          verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
-        ) {
-          existingGroups.forEach { group ->
-            OneUiFilterChip(
-              label = group,
-              selected = groupText.trim() == group,
-              onClick = {
-                groupText = group
-                if (selectedIds.isEmpty()) {
-                  selectedIds = devices.filter { it.normalizedGroup() == group }.map { it.deviceId }.toSet()
-                }
-              }
-            )
+
+    // 组内设备列表平滑展开/折叠
+    OneUiExpandable(expanded = !collapsed) {
+      Column(verticalArrangement = Arrangement.spacedBy(metrics.cardGap)) {
+        if (compact) {
+          OneUiGroup {
+            section.devices.forEachIndexed { index, device ->
+              if (index > 0) OneUiListDivider()
+              CompactDeviceRow(
+                device = device,
+                overview = overviewById[device.deviceId],
+                issues = issuesByDevice[device.deviceId].orEmpty(),
+                nowMillis = nowMillis,
+                selected = device.deviceId == selectedDeviceId,
+                showGroupBadge = false,
+                onOpen = { onOpenDevice(device.deviceId) },
+                onEditGroup = { onEditDeviceGroup(device) },
+                onMore = { onMoreDevice(device) }
+              )
+            }
           }
-          recommended.forEach { group ->
-            OneUiFilterChip(
-              label = "+ $group",
-              selected = groupText.trim() == group,
-              onClick = { groupText = group }
+        } else if (wideGrid && section.devices.size > 1) {
+          BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val spacing = metrics.cardGap
+            val columns = if (maxWidth >= 660.dp) 2 else 1
+            val cellWidth = (maxWidth - spacing * (columns - 1)) / columns
+            FlowRow(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(spacing),
+              verticalArrangement = Arrangement.spacedBy(spacing)
+            ) {
+              section.devices.forEach { device ->
+                DeviceTrendCard(
+                  device = device,
+                  overview = overviewById[device.deviceId],
+                  chartWindow = chartWindow,
+                  issues = issuesByDevice[device.deviceId].orEmpty(),
+                  nowMillis = nowMillis,
+                  selected = device.deviceId == selectedDeviceId,
+                  showGroupBadge = false,
+                  onOpen = { onOpenDevice(device.deviceId) },
+                  onOpenBlock = { block -> onOpenBlock(device.deviceId, block) },
+                  onEditGroup = { onEditDeviceGroup(device) },
+                  onMore = { onMoreDevice(device) },
+                  modifier = Modifier.width(cellWidth)
+                )
+              }
+            }
+          }
+        } else {
+          section.devices.forEach { device ->
+            DeviceTrendCard(
+              device = device,
+              overview = overviewById[device.deviceId],
+              chartWindow = chartWindow,
+              issues = issuesByDevice[device.deviceId].orEmpty(),
+              nowMillis = nowMillis,
+              selected = device.deviceId == selectedDeviceId,
+              showGroupBadge = false,
+              onOpen = { onOpenDevice(device.deviceId) },
+              onOpenBlock = { block -> onOpenBlock(device.deviceId, block) },
+              onEditGroup = { onEditDeviceGroup(device) },
+              onMore = { onMoreDevice(device) }
             )
           }
         }
       }
     }
+  }
+}
+
+@Composable
+private fun GroupFocusSummaryCard(
+  section: DeviceGroupSectionModel,
+  chartWindow: ChartWindow
+) {
+  val colors = OneUiTheme.colors
+  val metrics = OneUiTheme.metrics
+  val shapes = OneUiTheme.shapes
+
+  Column(
+    modifier = Modifier
+      .fillMaxWidth()
+      .oneUiSurface(colors.group, shapes.card, colors = colors, level = OneUiSurfaceLevel.Group)
+      .padding(metrics.spaceM),
+    verticalArrangement = Arrangement.spacedBy(metrics.spaceS)
+  ) {
     Row(
       modifier = Modifier.fillMaxWidth(),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.SpaceBetween
     ) {
       OneUiText(
-        text = "选择设备（已选 ${selectedIds.size}/${devices.size} 台）",
-        role = OneUiTextRole.ChartLabel,
+        text = "组级资源池化水位",
+        role = OneUiTextRole.RowSubtitle,
         color = colors.textSecondary,
         weight = FontWeight.SemiBold
       )
-      Row(horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
-        val allFilteredSelected = filteredDevices.isNotEmpty() && filteredDevices.all { it.deviceId in selectedIds }
-        OneUiPill(
-          label = if (allFilteredSelected) "取消全选" else "全选",
-          tone = OneUiPillTone.Neutral,
-          onClick = {
-            val filteredIds = filteredDevices.map { it.deviceId }.toSet()
-            selectedIds = if (allFilteredSelected) selectedIds - filteredIds else selectedIds + filteredIds
-          }
-        )
-        if (devices.any { it.normalizedGroup() == null }) {
-          OneUiPill(
-            label = "仅未分组",
-            tone = OneUiPillTone.Neutral,
-            onClick = {
-              selectedIds = devices.filter { it.normalizedGroup() == null }.map { it.deviceId }.toSet()
-            }
-          )
-        }
-      }
-    }
-    if (devices.size > SEARCH_THRESHOLD) {
-      OneUiTextField(
-        value = searchQuery,
-        onValueChange = { searchQuery = it },
-        label = "筛选设备名称或原分组"
+      OneUiMiniFleetMatrix(
+        items = section.fleetDots,
+        maxVisible = 12,
+        summaryDescription = "${section.name} 设备负载分布"
       )
     }
-    OneUiGroup {
-      filteredDevices.forEachIndexed { index, device ->
-        if (index > 0) OneUiListDivider()
-        val isChecked = device.deviceId in selectedIds
-        val currentGroup = device.normalizedGroup()
-        val toggle = {
-          selectedIds = if (isChecked) selectedIds - device.deviceId else selectedIds + device.deviceId
-        }
-        OneUiListItem(
-          title = device.hostname,
-          subtitle = buildString {
-            append(if (device.status == "online") "在线" else "离线")
-            append(" · ")
-            append(osLabel(device.os))
-            append(" · 当前：")
-            append(currentGroup ?: "未分组")
-          },
-          onClick = toggle,
-          leading = {
-            OneUiCheckbox(
-              checked = isChecked,
-              onCheckedChange = { toggle() },
-              label = "选择 ${device.hostname}"
-            )
-          }
-        )
-      }
+
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+    ) {
+      OneUiPooledMetricCell(
+        label = "CPU 均值",
+        value = formatPercent(section.avgCpuPercent),
+        sublabel = section.peakCpuHostname?.let { "最高 $it ${formatPercent(section.peakCpuPercent)}" },
+        tone = percentPillTone(section.avgCpuPercent, 85.0, 95.0),
+        barColorIndex = 0,
+        sparklinePoints = section.cpuSparkline.takeIf { it.isNotEmpty() },
+        chartWindow = chartWindow,
+        fraction = if (section.cpuSparkline.isEmpty()) ((section.avgCpuPercent ?: 0.0) / 100.0).toFloat() else null,
+        modifier = Modifier.weight(1f)
+      )
+      OneUiPooledMetricCell(
+        label = "内存池",
+        value = section.memorySummaryLabel,
+        sublabel = section.effectiveMemoryPercent?.let(::formatPercent),
+        tone = percentPillTone(section.effectiveMemoryPercent, 88.0, 95.0),
+        barColorIndex = 1,
+        fraction = ((section.effectiveMemoryPercent ?: 0.0) / 100.0).toFloat(),
+        modifier = Modifier.weight(1f)
+      )
+    }
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+    ) {
+      OneUiPooledMetricCell(
+        label = "存储池",
+        value = section.diskSummaryLabel,
+        sublabel = section.effectiveDiskPercent?.let(::formatPercent),
+        tone = percentPillTone(section.effectiveDiskPercent, 85.0, 95.0),
+        barColorIndex = 2,
+        fraction = ((section.effectiveDiskPercent ?: 0.0) / 100.0).toFloat(),
+        modifier = Modifier.weight(1f)
+      )
+      OneUiPooledMetricCell(
+        label = "汇总吞吐",
+        value = "↓ ${formatSpeed(section.totalRxBytesPerSec)}",
+        sublabel = "↑ ${formatSpeed(section.totalTxBytesPerSec)}",
+        barColorIndex = 0,
+        modifier = Modifier.weight(1f)
+      )
     }
   }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun DeviceGroupPickerSheet(
-  title: String,
-  subtitle: String,
-  currentGroup: String?,
-  existingGroups: List<String>,
-  onDismiss: () -> Unit,
-  onConfirm: (String?) -> Unit
+private fun GroupComparisonChartCard(
+  section: DeviceGroupSectionModel,
+  overviewById: Map<String, OverviewInstanceSeriesDto>,
+  chartWindow: ChartWindow,
+  metric: GroupComparisonMetric,
+  onSelectMetric: (GroupComparisonMetric) -> Unit,
+  onOpenDevice: (String) -> Unit
 ) {
-  val metrics = OneUiTheme.metrics
   val colors = OneUiTheme.colors
-  var text by remember(currentGroup) { mutableStateOf(currentGroup.orEmpty()) }
-  val recommended = remember(existingGroups) {
-    RECOMMENDED_GROUPS.filterNot { it in existingGroups }
+  val metrics = OneUiTheme.metrics
+  val shapes = OneUiTheme.shapes
+  val spec = remember(section.devices, overviewById, metric) {
+    buildGroupComparisonChart(section.devices, overviewById, metric)
   }
 
-  OneUiSheet(
-    onDismissRequest = onDismiss,
-    title = title,
-    subtitle = subtitle,
-    confirmBar = {
-      Row(
+  Column(
+    modifier = Modifier
+      .fillMaxWidth()
+      .oneUiSurface(colors.group, shapes.card, colors = colors, level = OneUiSurfaceLevel.Group)
+      .padding(metrics.spaceM),
+    verticalArrangement = Arrangement.spacedBy(metrics.spaceS)
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+      Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        OneUiText(text = spec.metric.chartTitle, role = OneUiTextRole.Title)
+        OneUiText(
+          text = "横滑图表游标可比对同一时刻各机读数；点按下方机器标签直达详情",
+          role = OneUiTextRole.Caption,
+          color = colors.textTertiary
+        )
+      }
+    }
+
+    OneUiSegmentedRow(
+      options = GroupComparisonMetric.entries.map { it.label },
+      selectedIndex = GroupComparisonMetric.entries.indexOf(metric).coerceAtLeast(0),
+      onSelect = { idx -> onSelectMetric(GroupComparisonMetric.entries[idx]) }
+    )
+
+    OneUiTrendChart(
+      series = spec.series,
+      chartWindow = chartWindow,
+      valueFormatter = spec.valueFormatter,
+      title = "${section.name} · ${spec.metric.chartTitle}",
+      fixedMaxValue = spec.fixedMaxValue,
+      thresholds = spec.thresholds,
+      axisFormatter = { com.dsc.android.ui.oneui.compactAxisLabel(it, spec.valueFormatter) },
+      showReadout = spec.series.size <= 3,
+      animationKey = "${section.key}:${metric.name}:${chartWindow.window.value}",
+      modifier = Modifier.fillMaxWidth()
+    )
+
+    if (spec.peers.isNotEmpty()) {
+      FlowRow(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(metrics.spaceS),
-        verticalAlignment = Alignment.CenterVertically
+        horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
+        verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
       ) {
-        if (!currentGroup.isNullOrBlank()) {
-          OneUiButton(
-            label = "移出分组",
-            onClick = { onConfirm(null) },
-            variant = OneUiButtonVariant.Text,
-            modifier = Modifier.weight(1f)
-          )
-        } else {
-          OneUiButton(
-            label = "取消",
-            onClick = onDismiss,
-            variant = OneUiButtonVariant.Text,
-            modifier = Modifier.weight(1f)
-          )
-        }
-        OneUiButton(
-          label = if (text.trim().isNotEmpty()) "保存分组" else "设为未分组",
-          onClick = { onConfirm(text.trim().takeIf { it.isNotEmpty() }) },
-          modifier = Modifier.weight(1f)
-        )
-      }
-    }
-  ) {
-    OneUiTextField(
-      value = text,
-      onValueChange = { text = it.take(64) },
-      label = "分组名称",
-      supportingText = "留空保存即可移出分组"
-    )
-    if (existingGroups.isNotEmpty()) {
-      Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
-        OneUiText(text = "已有分组（点按即选）", role = OneUiTextRole.ChartLabel, color = colors.textSecondary, weight = FontWeight.SemiBold)
-        FlowRow(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
-          verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
-        ) {
-          existingGroups.forEach { group ->
-            OneUiFilterChip(
-              label = group,
-              selected = text.trim() == group,
-              onClick = { text = group }
+        spec.peers.forEach { peer ->
+          OneUiStatusPill(
+            pill = OneUiStatusPillItem(
+              key = "peer:${peer.deviceId}",
+              label = peer.hostname,
+              value = peer.latestText,
+              tone = if (peer.online) OneUiPillTone.Neutral else OneUiPillTone.Offline,
+              dotColor = colors.seriesColor(peer.colorIndex),
+              onClick = { onOpenDevice(peer.deviceId) }
             )
-          }
+          )
         }
       }
     }
-    if (recommended.isNotEmpty()) {
-      Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
-        OneUiText(text = "常用分组推荐", role = OneUiTextRole.ChartLabel, color = colors.textSecondary, weight = FontWeight.SemiBold)
-        FlowRow(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
-          verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)
-        ) {
-          recommended.forEach { group ->
-            OneUiFilterChip(
-              label = "+ $group",
-              selected = text.trim() == group,
-              onClick = { text = group }
-            )
-          }
-        }
-      }
+
+    spec.note?.let {
+      OneUiText(text = it, role = OneUiTextRole.ChartLabel, color = colors.textTertiary)
     }
   }
 }
 
-internal enum class DeviceSortMode(val label: String, val description: String) {
-  Custom("自定义顺序", "按你在「编辑设备列表」里排好的顺序"),
-  Attention("需关注优先", "有严重问题的设备排在最前，离线设备随后"),
-  Cpu("CPU 占用", "当前 CPU 占用从高到低"),
-  Memory("内存占用", "当前内存占用从高到低")
-}
+/* ---------------- 设备列表渲染（标准趋势卡 vs 紧凑对比行） ---------------- */
 
-internal fun sortDevices(
+@OptIn(ExperimentalLayoutApi::class)
+private fun androidx.compose.foundation.lazy.LazyListScope.renderDeviceCollection(
+  scopeKey: String,
   devices: List<DeviceSummaryDto>,
-  mode: DeviceSortMode,
-  issues: Map<String, List<AttentionItem>>
-): List<DeviceSummaryDto> = when (mode) {
-  DeviceSortMode.Custom -> devices
-  DeviceSortMode.Attention -> devices.sortedWith(
-    compareBy<DeviceSummaryDto> { device ->
-      issues[device.deviceId]?.minOfOrNull { it.severity.rank } ?: Int.MAX_VALUE
-    }.thenByDescending { issues[it.deviceId]?.size ?: 0 }
-  )
-  DeviceSortMode.Cpu -> devices.sortedByDescending { if (it.status == "online") it.cpuUsagePercent ?: -1.0 else -2.0 }
-  DeviceSortMode.Memory -> devices.sortedByDescending { if (it.status == "online") it.memoryUsagePercent ?: -1.0 else -2.0 }
-}
-
-private fun DeviceSummaryDto.matches(query: String): Boolean {
-  val needle = query.trim()
-  return needle.isEmpty() ||
-    hostname.contains(needle, ignoreCase = true) ||
-    deviceId.contains(needle, ignoreCase = true) ||
-    group.orEmpty().contains(needle, ignoreCase = true)
-}
-
-/** 关注汇总条：只占一行，告诉你「有没有事、几件、多严重」，点进去看明细。 */
-@Composable
-private fun FleetStatusStrip(devices: List<DeviceSummaryDto>, attention: List<AttentionItem>, onOpen: () -> Unit) {
-  val colors = OneUiTheme.colors
-  val metrics = OneUiTheme.metrics
-  val critical = attention.count { it.severity == AttentionSeverity.Critical }
-  val warning = attention.count { it.severity == AttentionSeverity.Warning }
-  val offline = attention.count { it.severity == AttentionSeverity.Offline }
-  val online = devices.count { it.status == "online" }
-  val (tone, title) = when {
-    critical > 0 -> OneUiIconTone.Critical to "${critical + warning} 项需要关注"
-    warning > 0 -> OneUiIconTone.Warning to "$warning 项需要关注"
-    offline > 0 -> OneUiIconTone.Offline to "$offline 台设备离线"
-    else -> OneUiIconTone.Online to "全部设备运行正常"
-  }
-  val detail = if (attention.isEmpty()) {
-    "${devices.size} 台设备均在线，温度、硬盘与存储池规则每分钟检查"
-  } else {
-    listOfNotNull(
-      critical.takeIf { it > 0 }?.let { "严重 $it" },
-      warning.takeIf { it > 0 }?.let { "警告 $it" },
-      offline.takeIf { it > 0 }?.let { "离线 $it" },
-      "在线 $online/${devices.size}"
-    ).joinToString(" · ")
-  }
-  OneUiGroup {
-    OneUiListItem(
-      title = title,
-      subtitle = detail,
-      onClick = onOpen,
-      leading = {
-        OneUiLeadingIcon(
-          icon = if (attention.isEmpty()) Icons.Rounded.CheckCircle else Icons.Rounded.ReportProblem,
-          contentDescription = null,
-          tone = tone
-        )
-      },
-      trailing = {
-        OneUiText(text = "查看 ›", role = OneUiTextRole.ChartLabel, color = colors.accent, weight = FontWeight.SemiBold)
-      }
-    )
-  }
-  Spacer(Modifier.height(metrics.spaceXxs))
-}
-
-@Composable
-private fun TrendWindowRow(
-  selected: MetricWindow,
-  onSelect: (MetricWindow) -> Unit,
-  modifier: Modifier = Modifier
+  compact: Boolean,
+  wideGrid: Boolean,
+  selectedDeviceId: String?,
+  showGroupBadge: Boolean,
+  overviewById: Map<String, OverviewInstanceSeriesDto>,
+  chartWindow: ChartWindow,
+  issuesByDevice: Map<String, List<AttentionItem>>,
+  nowMillis: Long,
+  onOpen: (String) -> Unit,
+  onOpenBlock: (String, DeviceBlockKey) -> Unit,
+  onEditGroup: (DeviceSummaryDto) -> Unit,
+  onMore: (DeviceSummaryDto) -> Unit
 ) {
-  val metrics = OneUiTheme.metrics
-  val colors = OneUiTheme.colors
-  Row(
-    modifier = modifier.horizontalScroll(rememberScrollState()),
-    horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
-    verticalAlignment = Alignment.CenterVertically
-  ) {
-    OneUiText(text = "趋势", role = OneUiTextRole.ChartLabel, color = colors.textTertiary, weight = FontWeight.SemiBold)
-    listOf(
-      MetricWindow.FiveMinutes to "5 分钟",
-      MetricWindow.OneHour to "1 小时",
-      MetricWindow.OneDay to "24 小时"
-    ).forEach { (window, label) ->
-      OneUiFilterChip(label = label, selected = window == selected, onClick = { onSelect(window) })
+  if (compact) {
+    item(key = "$scopeKey:compact-group") {
+      OneUiGroup {
+        devices.forEachIndexed { index, device ->
+          if (index > 0) OneUiListDivider()
+          CompactDeviceRow(
+            device = device,
+            overview = overviewById[device.deviceId],
+            issues = issuesByDevice[device.deviceId].orEmpty(),
+            nowMillis = nowMillis,
+            selected = device.deviceId == selectedDeviceId,
+            showGroupBadge = showGroupBadge,
+            onOpen = { onOpen(device.deviceId) },
+            onEditGroup = { onEditGroup(device) },
+            onMore = { onMore(device) }
+          )
+        }
+      }
+    }
+  } else if (wideGrid && devices.size > 1) {
+    item(key = "$scopeKey:grid") {
+      val metrics = OneUiTheme.metrics
+      BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val spacing = metrics.cardGap
+        val columns = if (maxWidth >= 660.dp) 2 else 1
+        val cellWidth = (maxWidth - spacing * (columns - 1)) / columns
+        FlowRow(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(spacing),
+          verticalArrangement = Arrangement.spacedBy(spacing)
+        ) {
+          devices.forEach { device ->
+            DeviceTrendCard(
+              device = device,
+              overview = overviewById[device.deviceId],
+              chartWindow = chartWindow,
+              issues = issuesByDevice[device.deviceId].orEmpty(),
+              nowMillis = nowMillis,
+              selected = device.deviceId == selectedDeviceId,
+              showGroupBadge = showGroupBadge,
+              onOpen = { onOpen(device.deviceId) },
+              onOpenBlock = { block -> onOpenBlock(device.deviceId, block) },
+              onEditGroup = { onEditGroup(device) },
+              onMore = { onMore(device) },
+              modifier = Modifier.width(cellWidth)
+            )
+          }
+        }
+      }
+    }
+  } else {
+    items(devices, key = { "$scopeKey:${it.deviceId}" }) { device ->
+      DeviceTrendCard(
+        device = device,
+        overview = overviewById[device.deviceId],
+        chartWindow = chartWindow,
+        issues = issuesByDevice[device.deviceId].orEmpty(),
+        nowMillis = nowMillis,
+        selected = device.deviceId == selectedDeviceId,
+        showGroupBadge = showGroupBadge,
+        onOpen = { onOpen(device.deviceId) },
+        onOpenBlock = { block -> onOpenBlock(device.deviceId, block) },
+        onEditGroup = { onEditGroup(device) },
+        onMore = { onMore(device) }
+      )
     }
   }
 }
 
 /**
- * 设备趋势卡：一眼读出这台机器「现在多忙、最近怎么走、有没有事」。
- * 读数用中性色，越线才上警告/临界色——颜色只在有信息时出现。
+ * 紧凑对比行（件）：
+ * 单行呈现主机状态、CPU/内存/硬盘三项关键占用条与实时下行速率，适合设备较多时在一屏内快速横向比对。
+ */
+@Composable
+private fun CompactDeviceRow(
+  device: DeviceSummaryDto,
+  overview: OverviewInstanceSeriesDto?,
+  issues: List<AttentionItem>,
+  nowMillis: Long,
+  selected: Boolean,
+  showGroupBadge: Boolean,
+  onOpen: () -> Unit,
+  onEditGroup: () -> Unit,
+  onMore: () -> Unit
+) {
+  val colors = OneUiTheme.colors
+  val metrics = OneUiTheme.metrics
+  val online = device.status == "online"
+  val worst = issues.filter { it.severity != AttentionSeverity.Offline }.minByOrNull { it.severity.rank }?.severity
+  val groupName = device.normalizedGroup()
+  val rxLatest = seriesStats(overview?.networkRxBytesPerSec.orEmpty())?.latest
+
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .then(
+        if (selected) Modifier.background(colors.accentSoft.copy(alpha = 0.45f)) else Modifier
+      )
+      .oneUiPressable(
+        onClick = onOpen,
+        onLongClick = onMore,
+        selected = selected,
+        shape = OneUiTheme.shapes.group,
+        minHeight = metrics.rowMinHeight
+      )
+      .padding(start = metrics.rowPadding, end = metrics.spaceXs, top = 10.dp, bottom = 10.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(metrics.spaceS)
+  ) {
+    OneUiStatusDot(
+      color = when {
+        !online -> colors.offline
+        worst == AttentionSeverity.Critical -> colors.critical
+        worst == AttentionSeverity.Warning -> colors.warning
+        else -> colors.online
+      },
+      description = if (online) "在线" else "离线"
+    )
+
+    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+      ) {
+        OneUiText(
+          text = device.hostname,
+          role = OneUiTextRole.RowTitle,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.weight(1f, fill = false)
+        )
+        if (showGroupBadge && groupName != null) {
+          OneUiStatusPill(
+            pill = OneUiStatusPillItem(
+              key = "badge:${device.deviceId}",
+              label = groupName,
+              tone = OneUiPillTone.Neutral,
+              onClick = onEditGroup
+            )
+          )
+        }
+      }
+
+      if (online) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(metrics.spaceS),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          CompactMetricInline(label = "CPU", percent = device.cpuUsagePercent, warn = 85.0, crit = 95.0, modifier = Modifier.weight(1f))
+          CompactMetricInline(label = "内存", percent = device.memoryUsagePercent, warn = 88.0, crit = 95.0, modifier = Modifier.weight(1f))
+          CompactMetricInline(label = "盘", percent = device.diskUsagePercent, warn = 85.0, crit = 95.0, modifier = Modifier.weight(1f))
+        }
+      } else {
+        OneUiText(
+          text = "离线 · 最后上报于 ${relativeTimeLabel(device.lastSeenAt, nowMillis)}",
+          role = OneUiTextRole.ChartLabel,
+          color = colors.textTertiary,
+          maxLines = 1
+        )
+      }
+    }
+
+    if (online && rxLatest != null) {
+      OneUiText(
+        text = "↓${formatSpeed(rxLatest)}",
+        role = OneUiTextRole.ChartLabel,
+        color = colors.textSecondary,
+        maxLines = 1
+      )
+    }
+
+    OneUiIconButton(
+      contentDescription = "${device.hostname} 的更多操作",
+      onClick = onMore,
+      size = 40.dp
+    ) {
+      OneUiIcon(Icons.Rounded.MoreVert, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize)
+    }
+  }
+}
+
+@Composable
+private fun CompactMetricInline(
+  label: String,
+  percent: Double?,
+  warn: Double,
+  crit: Double,
+  modifier: Modifier = Modifier
+) {
+  val colors = OneUiTheme.colors
+  val tone = percentTone(percent, warn, crit)
+  val barColor = when (tone) {
+    AttentionSeverity.Critical -> colors.critical
+    AttentionSeverity.Warning -> colors.warning
+    else -> colors.accent
+  }
+  val textColor = when (tone) {
+    AttentionSeverity.Critical -> colors.criticalContent
+    AttentionSeverity.Warning -> colors.warningContent
+    else -> colors.textSecondary
+  }
+  Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+      OneUiText(text = label, role = OneUiTextRole.ChartLabel, color = colors.textTertiary, maxLines = 1)
+      OneUiText(text = formatPercent(percent), role = OneUiTextRole.ChartLabel, color = textColor, weight = FontWeight.SemiBold, maxLines = 1)
+    }
+    OneUiLinearProgress(
+      fraction = ((percent ?: 0.0) / 100.0).toFloat().coerceIn(0f, 1f),
+      color = barColor,
+      height = 4.dp
+    )
+  }
+}
+
+/**
+ * 标准设备趋势卡：点按分组胶囊可直接快速改组，无需绕进更多菜单。
  */
 @Composable
 private fun DeviceTrendCard(
@@ -1335,6 +1866,7 @@ private fun DeviceTrendCard(
   showGroupBadge: Boolean = true,
   onOpen: () -> Unit,
   onOpenBlock: (DeviceBlockKey) -> Unit,
+  onEditGroup: () -> Unit,
   onMore: () -> Unit,
   modifier: Modifier = Modifier
 ) {
@@ -1382,16 +1914,22 @@ private fun DeviceTrendCard(
               append(relativeTimeLabel(device.lastSeenAt, nowMillis))
               append(" · ")
               append(osLabel(device.os))
-              if (showGroupBadge && groupName != null) {
-                append(" · ")
-                append(groupName)
-              }
             },
             role = OneUiTextRole.ChartLabel,
             color = colors.textSecondary,
             maxLines = 1
           )
         }
+      }
+      if (showGroupBadge && groupName != null) {
+        OneUiStatusPill(
+          pill = OneUiStatusPillItem(
+            key = "card-group:${device.deviceId}",
+            label = groupName,
+            tone = OneUiPillTone.Neutral,
+            onClick = onEditGroup
+          )
+        )
       }
       OneUiIconButton(contentDescription = "${device.hostname} 的更多操作", onClick = onMore) {
         OneUiIcon(Icons.Rounded.MoreVert, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize)
@@ -1493,7 +2031,6 @@ private fun IssueLine(first: AttentionItem, more: Int, onClick: () -> Unit) {
   }
 }
 
-/** 读数格：标签 / 当前值（可带第二行）/ 迷你趋势。整格可点，直达该类别明细。 */
 @Composable
 private fun MetricCell(
   label: String,
@@ -1529,7 +2066,6 @@ private fun MetricCell(
     if (secondary != null) {
       OneUiText(text = secondary, role = OneUiTextRole.ChartLabel, color = colors.textSecondary, maxLines = 1)
     }
-    // 三格等高、曲线贴底对齐：横向比较三条曲线时基线一致
     Spacer(Modifier.weight(1f))
     Box(modifier = Modifier.fillMaxWidth().padding(top = 2.dp)) {
       val sharedMax = fixedMax ?: (points + secondaryPoints).maxOfOrNull { it.value }?.let { it * 1.1 }
@@ -1541,7 +2077,6 @@ private fun MetricCell(
   }
 }
 
-/** 容量行：硬盘占用条 + 已用/总量；有显卡时在行尾给出 GPU 占用。 */
 @Composable
 private fun CapacityLine(device: DeviceSummaryDto, onClick: () -> Unit, onGpu: () -> Unit) {
   val colors = OneUiTheme.colors
@@ -1607,18 +2142,188 @@ private fun CapacityLine(device: DeviceSummaryDto, onClick: () -> Unit, onGpu: (
   }
 }
 
-private fun percentTone(value: Double?, warning: Double, critical: Double): AttentionSeverity? = when {
-  value == null -> null
-  value >= critical -> AttentionSeverity.Critical
-  value >= warning -> AttentionSeverity.Warning
-  else -> null
+/* ---------------- 结构化分组与顺序编辑模式 ---------------- */
+
+@Composable
+private fun ManageToolbarRow(
+  totalCount: Int,
+  selectedCount: Int,
+  onCreateGroup: () -> Unit,
+  onToggleSelectAll: () -> Unit,
+  onClearGroupForSelected: (() -> Unit)?
+) {
+  val metrics = OneUiTheme.metrics
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .horizontalScroll(rememberScrollState()),
+    horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    OneUiPill(
+      label = "+ 新建设备组",
+      tone = OneUiPillTone.Accent,
+      onClick = onCreateGroup
+    )
+    OneUiPill(
+      label = if (selectedCount == totalCount && totalCount > 0) "取消全选" else "全选 ($selectedCount/$totalCount)",
+      tone = OneUiPillTone.Neutral,
+      onClick = onToggleSelectAll
+    )
+    if (onClearGroupForSelected != null) {
+      OneUiPill(
+        label = "所选设为未分组",
+        tone = OneUiPillTone.Warning,
+        onClick = onClearGroupForSelected
+      )
+    }
+  }
+}
+
+@Composable
+private fun StructuredEditableGroupCard(
+  section: DeviceGroupSectionModel,
+  canMoveGroupUp: Boolean,
+  canMoveGroupDown: Boolean,
+  selectedIds: Set<String>,
+  onToggleSelect: (String) -> Unit,
+  onMoveGroup: (Int) -> Unit,
+  onManageMembers: () -> Unit,
+  onRenameGroup: (() -> Unit)?,
+  onDissolveGroup: (() -> Unit)?,
+  onEditDeviceGroup: (DeviceSummaryDto) -> Unit,
+  onMoveDevice: (DeviceSummaryDto, Int) -> Unit,
+  onRequestDelete: (DeviceSummaryDto) -> Unit
+) {
+  val colors = OneUiTheme.colors
+  val metrics = OneUiTheme.metrics
+  Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+      OneUiText(
+        text = "${section.name} (${section.total})",
+        role = OneUiTextRole.SectionHeader,
+        color = colors.textPrimary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.weight(1f)
+      )
+      OneUiStatusPill(
+        pill = OneUiStatusPillItem(
+          key = "m-members:${section.key}",
+          label = if (section.isUngrouped) "分配" else "成员",
+          tone = OneUiPillTone.Accent,
+          onClick = onManageMembers
+        )
+      )
+      if (onRenameGroup != null) {
+        OneUiStatusPill(
+          pill = OneUiStatusPillItem(
+            key = "m-rename:${section.key}",
+            label = "改名",
+            tone = OneUiPillTone.Neutral,
+            onClick = onRenameGroup
+          )
+        )
+      }
+      if (onDissolveGroup != null) {
+        OneUiStatusPill(
+          pill = OneUiStatusPillItem(
+            key = "m-dissolve:${section.key}",
+            label = "解散",
+            tone = OneUiPillTone.Critical,
+            onClick = onDissolveGroup
+          )
+        )
+      }
+      if (!section.isUngrouped) {
+        OneUiIconButton(
+          contentDescription = "整组上移 ${section.name}",
+          onClick = { onMoveGroup(-1) },
+          enabled = canMoveGroupUp,
+          size = 34.dp,
+          haptics = OneUiHaptics.Toggle
+        ) {
+          OneUiIcon(
+            Icons.Rounded.ArrowUpward,
+            contentDescription = null,
+            tint = if (canMoveGroupUp) colors.accent else colors.textDisabled,
+            size = 18.dp
+          )
+        }
+        OneUiIconButton(
+          contentDescription = "整组下移 ${section.name}",
+          onClick = { onMoveGroup(1) },
+          enabled = canMoveGroupDown,
+          size = 34.dp,
+          haptics = OneUiHaptics.Toggle
+        ) {
+          OneUiIcon(
+            Icons.Rounded.ArrowDownward,
+            contentDescription = null,
+            tint = if (canMoveGroupDown) colors.accent else colors.textDisabled,
+            size = 18.dp
+          )
+        }
+      }
+    }
+
+    OneUiGroup {
+      section.devices.forEachIndexed { index, device ->
+        if (index > 0) OneUiListDivider()
+        EditableDeviceRowContent(
+          device = device,
+          checked = device.deviceId in selectedIds,
+          insideNamedGroup = true,
+          canMoveUp = index > 0,
+          canMoveDown = index < section.devices.lastIndex,
+          onToggleCheck = { onToggleSelect(device.deviceId) },
+          onEditGroup = { onEditDeviceGroup(device) },
+          onMove = { delta -> onMoveDevice(device, delta) },
+          onRequestDelete = { onRequestDelete(device) }
+        )
+      }
+    }
+  }
 }
 
 @Composable
 private fun EditableDeviceRow(
   device: DeviceSummaryDto,
+  checked: Boolean,
   canMoveUp: Boolean,
   canMoveDown: Boolean,
+  onToggleCheck: () -> Unit,
+  onEditGroup: () -> Unit,
+  onMove: (Int) -> Unit,
+  onRequestDelete: () -> Unit
+) {
+  OneUiGroup {
+    EditableDeviceRowContent(
+      device = device,
+      checked = checked,
+      insideNamedGroup = false,
+      canMoveUp = canMoveUp,
+      canMoveDown = canMoveDown,
+      onToggleCheck = onToggleCheck,
+      onEditGroup = onEditGroup,
+      onMove = onMove,
+      onRequestDelete = onRequestDelete
+    )
+  }
+}
+
+@Composable
+private fun EditableDeviceRowContent(
+  device: DeviceSummaryDto,
+  checked: Boolean,
+  insideNamedGroup: Boolean,
+  canMoveUp: Boolean,
+  canMoveDown: Boolean,
+  onToggleCheck: () -> Unit,
   onEditGroup: () -> Unit,
   onMove: (Int) -> Unit,
   onRequestDelete: () -> Unit
@@ -1626,47 +2331,80 @@ private fun EditableDeviceRow(
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
   val groupName = device.normalizedGroup()
-  OneUiGroup {
-    OneUiListItem(
-      title = device.hostname,
-      subtitle = buildString {
-        append(osLabel(device.os))
-        if (groupName != null) {
-          append(" · ")
-          append(groupName)
-        }
-        append(" · ")
-        append(device.deviceId)
-      },
-      enabled = true,
-      leading = {
-        OneUiLeadingIcon(icon = deviceIcon(device.os), contentDescription = null, tone = OneUiIconTone.Neutral)
-      },
-      trailing = {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(metrics.spaceXxs)) {
-          OneUiPill(
-            label = groupName ?: "设组",
-            tone = if (groupName != null) OneUiPillTone.Accent else OneUiPillTone.Neutral,
+  OneUiListItem(
+    title = device.hostname,
+    subtitle = "${osLabel(device.os)} · ${if (device.status == "online") "在线" else "离线"}",
+    onClick = onToggleCheck,
+    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+    leading = {
+      OneUiCheckbox(
+        checked = checked,
+        onCheckedChange = { onToggleCheck() },
+        label = "选择 ${device.hostname}"
+      )
+    },
+    trailing = {
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        OneUiStatusPill(
+          pill = OneUiStatusPillItem(
+            key = "edit-grp:${device.deviceId}",
+            label = when {
+              insideNamedGroup && groupName != null -> "换组"
+              groupName != null -> groupName
+              else -> "设组"
+            },
+            tone = if (groupName != null && !insideNamedGroup) OneUiPillTone.Accent else OneUiPillTone.Neutral,
             onClick = onEditGroup
           )
-          OneUiIconButton(contentDescription = "上移 ${device.hostname}", onClick = { onMove(-1) }, enabled = canMoveUp, haptics = OneUiHaptics.Toggle) {
-            OneUiIcon(Icons.Rounded.ArrowUpward, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize)
-          }
-          OneUiIconButton(contentDescription = "下移 ${device.hostname}", onClick = { onMove(1) }, enabled = canMoveDown, haptics = OneUiHaptics.Toggle) {
-            OneUiIcon(Icons.Rounded.ArrowDownward, contentDescription = null, tint = colors.textSecondary, size = metrics.iconFilledSize)
-          }
-          OneUiIconButton(contentDescription = "从列表隐藏 ${device.hostname}", onClick = onRequestDelete) {
-            OneUiIcon(Icons.Rounded.Delete, contentDescription = null, tint = colors.criticalContent, size = metrics.iconFilledSize)
-          }
+        )
+        OneUiIconButton(
+          contentDescription = "上移 ${device.hostname}",
+          onClick = { onMove(-1) },
+          enabled = canMoveUp,
+          size = 36.dp,
+          haptics = OneUiHaptics.Toggle
+        ) {
+          OneUiIcon(
+            Icons.Rounded.ArrowUpward,
+            contentDescription = null,
+            tint = if (canMoveUp) colors.textSecondary else colors.textDisabled,
+            size = metrics.iconFilledSize
+          )
+        }
+        OneUiIconButton(
+          contentDescription = "下移 ${device.hostname}",
+          onClick = { onMove(1) },
+          enabled = canMoveDown,
+          size = 36.dp,
+          haptics = OneUiHaptics.Toggle
+        ) {
+          OneUiIcon(
+            Icons.Rounded.ArrowDownward,
+            contentDescription = null,
+            tint = if (canMoveDown) colors.textSecondary else colors.textDisabled,
+            size = metrics.iconFilledSize
+          )
+        }
+        OneUiIconButton(
+          contentDescription = "从列表隐藏 ${device.hostname}",
+          onClick = onRequestDelete,
+          size = 36.dp
+        ) {
+          OneUiIcon(Icons.Rounded.Delete, contentDescription = null, tint = colors.criticalContent, size = metrics.iconFilledSize)
         }
       }
-    )
-  }
+    }
+  )
 }
 
-/** 编辑态的上下文操作条（构）：One UI 把确认/取消放在底部拇指区。 */
 @Composable
-private fun EditDock(onCancel: () -> Unit, onSave: () -> Unit, dirty: Boolean) {
+private fun EditDock(
+  dirty: Boolean,
+  selectedCount: Int,
+  onCancel: () -> Unit,
+  onBatchAssignGroup: () -> Unit,
+  onSave: () -> Unit
+) {
   val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
   Row(
@@ -1678,9 +2416,170 @@ private fun EditDock(onCancel: () -> Unit, onSave: () -> Unit, dirty: Boolean) {
     horizontalArrangement = Arrangement.spacedBy(metrics.spaceS),
     verticalAlignment = Alignment.CenterVertically
   ) {
-    OneUiButton(label = "取消", onClick = onCancel, variant = OneUiButtonVariant.Text, modifier = Modifier.weight(1f))
-    OneUiButton(label = if (dirty) "保存顺序" else "完成", onClick = onSave, modifier = Modifier.weight(1f))
+    OneUiButton(
+      label = "取消",
+      onClick = onCancel,
+      variant = OneUiButtonVariant.Text,
+      size = OneUiButtonSize.Compact,
+      modifier = Modifier.weight(0.8f)
+    )
+    if (selectedCount > 0) {
+      OneUiButton(
+        label = "批量设组 ($selectedCount)",
+        onClick = onBatchAssignGroup,
+        variant = OneUiButtonVariant.Tonal,
+        size = OneUiButtonSize.Compact,
+        modifier = Modifier.weight(1.1f)
+      )
+    }
+    OneUiButton(
+      label = if (dirty) "保存顺序" else "完成",
+      onClick = onSave,
+      size = OneUiButtonSize.Compact,
+      modifier = Modifier.weight(1f)
+    )
   }
+}
+
+/* ---------------- 视图密度、排序与轻量更新面板 ---------------- */
+
+@Composable
+private fun ViewAndSortSheet(
+  sort: DeviceSortMode,
+  compact: Boolean,
+  groupScopedSort: Boolean,
+  hasNamedGroups: Boolean,
+  onSelectSort: (DeviceSortMode) -> Unit,
+  onSelectCompact: (Boolean) -> Unit,
+  onSelectGroupScopedSort: (Boolean) -> Unit,
+  onDismiss: () -> Unit
+) {
+  val metrics = OneUiTheme.metrics
+  OneUiSheet(
+    onDismissRequest = onDismiss,
+    title = "视图与排序",
+    subtitle = "切换设备展示密度、排列顺序与分组保持方式"
+  ) {
+    Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
+      OneUiGroupHeader(label = "展示密度")
+      OneUiSegmentedRow(
+        options = listOf("标准趋势卡", "紧凑对比行"),
+        selectedIndex = if (compact) 1 else 0,
+        onSelect = { idx -> onSelectCompact(idx == 1) }
+      )
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
+      OneUiGroupHeader(label = "排列方式")
+      OneUiGroup {
+        DeviceSortMode.entries.forEachIndexed { index, mode ->
+          if (index > 0) OneUiListDivider()
+          val selected = mode == sort
+          OneUiListItem(
+            title = if (selected) "${mode.label}（当前）" else mode.label,
+            subtitle = mode.description,
+            selected = selected,
+            onClick = { onSelectSort(mode) }
+          )
+        }
+      }
+    }
+
+    if (hasNamedGroups && sort != DeviceSortMode.Custom) {
+      OneUiGroup {
+        OneUiListItem(
+          title = "保持设备组结构（组内排序）",
+          subtitle = if (groupScopedSort) "已开启：各分组独立保留看板，组内按所选指标排序" else "已关闭：临时打平所有分组，跨组全局排行",
+          onClick = { onSelectGroupScopedSort(!groupScopedSort) },
+          trailing = {
+            OneUiSwitch(
+              checked = groupScopedSort,
+              onCheckedChange = onSelectGroupScopedSort,
+              label = "保持设备组结构"
+            )
+          }
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun UpdateQuickSheet(
+  update: UpdateInfoDto,
+  downloading: Boolean,
+  progress: Float,
+  onDownload: () -> Unit,
+  onOpenSettings: () -> Unit,
+  onDismissVersion: () -> Unit,
+  onDismiss: () -> Unit
+) {
+  val metrics = OneUiTheme.metrics
+  val colors = OneUiTheme.colors
+  val canDirectDownload = !update.assetUrl.isNullOrBlank() && !update.sha256.isNullOrBlank() && (update.assetSize ?: 0L) > 0L
+
+  OneUiSheet(
+    onDismissRequest = onDismiss,
+    title = "发现新版本 v${update.latestVersion.orEmpty()}",
+    subtitle = buildString {
+      append("当前版本 v${update.currentVersion}")
+      update.assetSize?.takeIf { it > 0 }?.let { append(" · 安装包 ${formatBytes(it.toDouble())}") }
+    }
+  ) {
+    if (downloading) {
+      Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
+        OneUiLinearProgress(fraction = progress)
+        OneUiText(
+          text = "正在下载更新包 ${(progress * 100).toInt()}%，校验通过后将拉起系统安装器",
+          role = OneUiTextRole.RowSubtitle,
+          color = colors.textSecondary
+        )
+      }
+    } else {
+      OneUiText(
+        text = "可在「设置 › 版本与更新」随时查看更新详情；若暂不升级，可隐藏本版本的顶部药丸提示。",
+        role = OneUiTextRole.RowSubtitle,
+        color = colors.textSecondary
+      )
+    }
+
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(metrics.spaceS)
+    ) {
+      OneUiButton(
+        label = "暂不提醒此版",
+        onClick = onDismissVersion,
+        variant = OneUiButtonVariant.Text,
+        size = OneUiButtonSize.Compact,
+        modifier = Modifier.weight(1f)
+      )
+      OneUiButton(
+        label = when {
+          downloading -> "查看进度"
+          canDirectDownload -> "下载并安装"
+          else -> "前往设置"
+        },
+        onClick = if (!downloading && canDirectDownload) onDownload else onOpenSettings,
+        size = OneUiButtonSize.Compact,
+        modifier = Modifier.weight(1.2f)
+      )
+    }
+  }
+}
+
+private fun percentTone(value: Double?, warning: Double, critical: Double): AttentionSeverity? = when {
+  value == null || !value.isFinite() -> null
+  value >= critical -> AttentionSeverity.Critical
+  value >= warning -> AttentionSeverity.Warning
+  else -> null
+}
+
+private fun percentPillTone(value: Double?, warning: Double, critical: Double): OneUiPillTone = when {
+  value == null || !value.isFinite() -> OneUiPillTone.Neutral
+  value >= critical -> OneUiPillTone.Critical
+  value >= warning -> OneUiPillTone.Warning
+  else -> OneUiPillTone.Neutral
 }
 
 private fun connectionSummary(state: AppState, devices: List<DeviceSummaryDto>): String {

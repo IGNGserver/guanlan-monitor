@@ -22,8 +22,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -33,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -302,3 +307,188 @@ internal val MetricWindow.chipLabel: String
     MetricWindow.OneDay -> "24 小时"
     MetricWindow.SevenDays -> "7 天"
   }
+
+/** 分组折叠旋转箭头：展开向下（0°），收起向右（-90°），随 OneUiMotion 平滑过渡（动）。 */
+@Composable
+fun OneUiInlineChevron(
+  expanded: Boolean,
+  modifier: Modifier = Modifier,
+  tint: Color = OneUiTheme.colors.textSecondary,
+  size: Dp = 20.dp
+) {
+  val degrees = oneUiAnimatedValue(
+    target = if (expanded) 0f else -90f,
+    motion = OneUiTheme.motion,
+    durationMs = OneUiDuration.Toggle
+  )
+  OneUiIcon(
+    imageVector = Icons.Rounded.KeyboardArrowDown,
+    contentDescription = null,
+    size = size,
+    tint = tint,
+    modifier = modifier.rotate(degrees)
+  )
+}
+
+/**
+ * 设备组微缩态势矩阵（件）：
+ * 每台设备映射为一根 5×16dp 的圆头微柱，底色轨道承载在线/离线轮廓，填充高度映射实时负载，
+ * 即使分组处于收起状态也能一眼看出组内机器规模、负载分布与异常节点。
+ */
+@Immutable
+data class OneUiFleetDotSpec(
+  val key: String,
+  val tone: OneUiPillTone,
+  val loadFraction: Float
+)
+
+@Composable
+fun OneUiMiniFleetMatrix(
+  items: List<OneUiFleetDotSpec>,
+  modifier: Modifier = Modifier,
+  maxVisible: Int = 10,
+  summaryDescription: String? = null
+) {
+  if (items.isEmpty()) return
+  val colors = OneUiTheme.colors
+  val barShape = RoundedCornerShape(999.dp)
+  val shown = items.take(maxVisible)
+  val overflow = (items.size - shown.size).coerceAtLeast(0)
+
+  Row(
+    modifier = modifier.then(
+      if (summaryDescription != null) Modifier.semantics { contentDescription = summaryDescription } else Modifier
+    ),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(3.dp)
+  ) {
+    shown.forEach { item ->
+      val barColor = when (item.tone) {
+        OneUiPillTone.Critical -> colors.critical
+        OneUiPillTone.Warning -> colors.warning
+        OneUiPillTone.Offline -> colors.offline.copy(alpha = 0.55f)
+        OneUiPillTone.Online, OneUiPillTone.Accent -> colors.online
+        OneUiPillTone.Neutral -> colors.textTertiary
+      }
+      val fillRatio = if (item.tone == OneUiPillTone.Offline) {
+        0.28f
+      } else {
+        item.loadFraction.coerceIn(0.24f, 1f)
+      }
+      Box(
+        modifier = Modifier
+          .width(5.dp)
+          .height(16.dp)
+          .background(colors.sunken, barShape),
+        contentAlignment = Alignment.BottomCenter
+      ) {
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(16.dp * fillRatio)
+            .background(barColor, barShape)
+        )
+      }
+    }
+    if (overflow > 0) {
+      OneUiText(
+        text = "+$overflow",
+        role = OneUiTextRole.ChartLabel,
+        color = colors.textTertiary,
+        weight = FontWeight.SemiBold,
+        maxLines = 1,
+        modifier = Modifier.padding(start = 2.dp)
+      )
+    }
+  }
+}
+
+/**
+ * 设备组池化资源微卡（件）：
+ * 用于设备组看板头部的 CPU 均值曲线、内存池容量条、存储池容量条与汇总吞吐展示。
+ */
+@Composable
+internal fun OneUiPooledMetricCell(
+  label: String,
+  value: String,
+  modifier: Modifier = Modifier,
+  sublabel: String? = null,
+  tone: OneUiPillTone = OneUiPillTone.Neutral,
+  fraction: Float? = null,
+  barColorIndex: Int = 0,
+  sparklinePoints: List<SamplePointDto>? = null,
+  chartWindow: ChartWindow? = null,
+  onClick: (() -> Unit)? = null
+) {
+  val colors = OneUiTheme.colors
+  val shapes = OneUiTheme.shapes
+  val valueColor = when (tone) {
+    OneUiPillTone.Critical -> colors.criticalContent
+    OneUiPillTone.Warning -> colors.warningContent
+    else -> colors.textPrimary
+  }
+  val indicatorColor = when (tone) {
+    OneUiPillTone.Critical -> colors.critical
+    OneUiPillTone.Warning -> colors.warning
+    else -> colors.seriesColor(barColorIndex)
+  }
+
+  Column(
+    modifier = modifier
+      .background(colors.sunken.copy(alpha = 0.55f), shapes.tile)
+      .then(
+        if (onClick != null) {
+          Modifier.oneUiPressable(onClick = onClick, shape = shapes.tile, minHeight = null)
+        } else {
+          Modifier
+        }
+      )
+      .padding(horizontal = 10.dp, vertical = 7.dp),
+    verticalArrangement = Arrangement.spacedBy(3.dp)
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      OneUiText(text = label, role = OneUiTextRole.ChartLabel, color = colors.textTertiary, maxLines = 1)
+      if (!sublabel.isNullOrBlank()) {
+        OneUiText(
+          text = sublabel,
+          role = OneUiTextRole.ChartLabel,
+          color = colors.textSecondary,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.padding(start = 4.dp)
+        )
+      }
+    }
+    OneUiText(
+      text = value,
+      role = OneUiTextRole.RowSubtitle,
+      color = valueColor,
+      weight = FontWeight.SemiBold,
+      maxLines = 1
+    )
+    when {
+      sparklinePoints != null && chartWindow != null -> {
+        OneUiSparkline(
+          points = sparklinePoints,
+          chartWindow = chartWindow,
+          color = indicatorColor,
+          fixedMaxValue = 100.0,
+          height = 20.dp,
+          modifier = Modifier.fillMaxWidth()
+        )
+      }
+      fraction != null -> {
+        OneUiLinearProgress(
+          fraction = fraction.coerceIn(0f, 1f),
+          color = indicatorColor,
+          track = colors.chartGrid,
+          height = 5.dp
+        )
+      }
+    }
+  }
+}

@@ -164,6 +164,57 @@ class ScreenRenderTest {
   fun overviewDark() = render("02-overview-dark", OneUiAppearanceSetting.Dark) { DeviceListScreen(state = baseState, actions = actions, embedded = false) }
 
   @Test
+  fun overviewCollapsedGroupsAndStatusPills() = render("02b-overview-collapsed-pills") {
+    DeviceListScreen(
+      state = baseState.copy(
+        dataSource = RemoteDataSource.Cache,
+        cacheSavedAt = ago(180),
+        collapsedGroups = setOf("存储与网络", "开发设备", "__ungrouped__"),
+        updateInfo = UpdateInfoDto(available = true, latestVersion = "3.0.180", currentVersion = "3.0.175", assetSize = 18_500_000)
+      ),
+      actions = actions,
+      embedded = false
+    )
+  }
+
+  @Test
+  fun overviewCompactRows() = render("02c-overview-compact-rows") {
+    DeviceListScreen(
+      state = baseState.copy(compactDeviceList = true),
+      actions = actions,
+      embedded = false
+    )
+  }
+
+  @Test
+  fun overviewSingleGroupFocusAndManage() {
+    val multiGroupDevices = devices + listOf(
+      DeviceSummaryDto("ws2", "mac-studio", "macos", "3.0.175", status = "online", lastSeenAt = ago(6), cpuUsagePercent = 44.0, memoryUsagePercent = 58.0, memoryUsedBytes = 37_000_000_000, memoryTotalBytes = 64_000_000_000, diskUsagePercent = 55.0, diskUsedBytes = 1_100_000_000_000, diskTotalBytes = 2_000_000_000_000, sortOrder = 3, group = "开发设备")
+    )
+    val multiOverview = overview.copy(
+      instances = overview.instances + OverviewInstanceSeriesDto("ws2", "mac-studio", wave(60, 60, 42.0, 18.0, 0.8), wave(60, 60, 3.6e10, 2e9), emptyList(), wave(60, 60, 3.2e6, 2.0e6), wave(60, 60, 8e5, 4e5))
+    )
+    render("02d-overview-single-group-focus") {
+      DeviceListScreen(
+        state = baseState.copy(devices = multiGroupDevices, overviewMetrics = multiOverview),
+        actions = actions,
+        embedded = false,
+        initialGroupFilter = "开发设备"
+      )
+    }
+  }
+
+  @Test
+  fun overviewStructuredManageMode() = render("02e-overview-manage-mode") {
+    DeviceListScreen(
+      state = baseState,
+      actions = actions,
+      embedded = false,
+      initialEditMode = true
+    )
+  }
+
+  @Test
   fun attention() = render("03-attention") {
     AttentionScreen(state = baseState.copy(currentScreen = AppScreen.Attention), actions = actions, embedded = false)
   }

@@ -30,7 +30,8 @@ data class WidgetDevice(
   val cpuPercent: Double? = null,
   val memoryPercent: Double? = null,
   val diskPercent: Double? = null,
-  val sortOrder: Int? = null
+  val sortOrder: Int? = null,
+  val group: String? = null
 ) {
   val online: Boolean get() = status == "online"
 }

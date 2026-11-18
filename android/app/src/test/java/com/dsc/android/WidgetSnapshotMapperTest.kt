@@ -12,13 +12,15 @@ class WidgetSnapshotMapperTest {
   fun devicesFollowServerSortOrderThenHostname() {
     val mapped = WidgetSnapshotMapper.devices(
       listOf(
-        DeviceSummaryDto(deviceId = "b", hostname = "beta", os = "linux", status = "online", sortOrder = 2),
-        DeviceSummaryDto(deviceId = "a", hostname = "zeta", os = "linux", status = "offline", sortOrder = 1),
+        DeviceSummaryDto(deviceId = "b", hostname = "beta", os = "linux", status = "online", sortOrder = 2, group = " 宿主机 "),
+        DeviceSummaryDto(deviceId = "a", hostname = "zeta", os = "linux", status = "offline", sortOrder = 1, group = "  "),
         DeviceSummaryDto(deviceId = "c", hostname = "alpha", os = "windows", status = "online", sortOrder = 1)
       )
     )
     assertEquals(listOf("c", "a", "b"), mapped.map { it.id })
     assertFalse(mapped.first { it.id == "a" }.online)
+    assertEquals(null, mapped.first { it.id == "a" }.group)
+    assertEquals("宿主机", mapped.first { it.id == "b" }.group)
   }
 
   @Test

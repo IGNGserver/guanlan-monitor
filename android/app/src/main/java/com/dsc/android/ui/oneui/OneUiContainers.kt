@@ -41,10 +41,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -802,6 +804,151 @@ data class OneUiPillModel(
   val tone: OneUiPillTone = OneUiPillTone.Neutral,
   val onClick: (() -> Unit)? = null
 )
+
+/**
+ * 顶部紧凑状态药丸条（构 + 件）：
+ * 将离线缓存、连接状态、超限告警、离线过滤与应用更新收敛为单行轻量胶囊，
+ * 无异常与通知时不占任何纵向高度，彻底解放首屏可视区。
+ */
+@Immutable
+data class OneUiStatusPillItem(
+  val key: String,
+  val label: String,
+  val value: String? = null,
+  val tone: OneUiPillTone = OneUiPillTone.Neutral,
+  val icon: ImageVector? = null,
+  val dotColor: Color? = null,
+  val selected: Boolean = false,
+  val progress: Float? = null,
+  val onClick: (() -> Unit)? = null,
+  val onDismiss: (() -> Unit)? = null,
+  val dismissDescription: String = "关闭提示"
+)
+
+@Composable
+fun OneUiStatusPillBar(
+  pills: List<OneUiStatusPillItem>,
+  modifier: Modifier = Modifier
+) {
+  if (pills.isEmpty()) return
+  val metrics = OneUiTheme.metrics
+  Row(
+    modifier = modifier
+      .fillMaxWidth()
+      .horizontalScroll(rememberScrollState()),
+    horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    pills.forEach { pill ->
+      OneUiStatusPill(pill = pill)
+    }
+  }
+}
+
+@Composable
+fun OneUiStatusPill(
+  pill: OneUiStatusPillItem,
+  modifier: Modifier = Modifier
+) {
+  val colors = OneUiTheme.colors
+  val shapes = OneUiTheme.shapes
+  val (baseContainer, baseContent) = when {
+    pill.selected -> Pair(colors.accent, colors.textOnAccent)
+    pill.tone == OneUiPillTone.Neutral -> Pair(colors.sunken, colors.textSecondary)
+    pill.tone == OneUiPillTone.Accent -> Pair(colors.accentSoft, colors.accentSoftContent)
+    pill.tone == OneUiPillTone.Online -> Pair(colors.onlineSoft, colors.onlineContent)
+    pill.tone == OneUiPillTone.Offline -> Pair(colors.offlineSoft, colors.offlineContent)
+    pill.tone == OneUiPillTone.Warning -> Pair(colors.warningSoft, colors.warningContent)
+    pill.tone == OneUiPillTone.Critical -> Pair(colors.criticalSoft, colors.criticalContent)
+    else -> Pair(colors.sunken, colors.textSecondary)
+  }
+
+  Column(
+    modifier = modifier
+      .defaultMinSize(minHeight = 32.dp)
+      .oneUiSurface(baseContainer, shapes.pill, colors = colors, level = OneUiSurfaceLevel.Group)
+      .oneUiPressable(
+        onClick = pill.onClick,
+        enabled = pill.onClick != null,
+        selected = pill.selected,
+        shape = shapes.pill,
+        haptics = OneUiHaptics.Tap,
+        minHeight = null,
+        stateLabel = if (pill.selected) "已启用筛选" else null
+      )
+      .padding(
+        start = 11.dp,
+        end = if (pill.onDismiss != null) 6.dp else 11.dp,
+        top = 5.dp,
+        bottom = if (pill.progress != null) 4.dp else 5.dp
+      ),
+    verticalArrangement = Arrangement.spacedBy(3.dp)
+  ) {
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+      when {
+        pill.icon != null -> OneUiIcon(
+          imageVector = pill.icon,
+          contentDescription = null,
+          size = 15.dp,
+          tint = baseContent
+        )
+        pill.dotColor != null -> OneUiStatusDot(
+          color = if (pill.selected) colors.textOnAccent else pill.dotColor,
+          description = null
+        )
+      }
+      OneUiText(
+        text = pill.label,
+        role = OneUiTextRole.ChartLabel,
+        color = baseContent,
+        weight = FontWeight.SemiBold,
+        maxLines = 1
+      )
+      if (!pill.value.isNullOrBlank()) {
+        OneUiText(
+          text = pill.value,
+          role = OneUiTextRole.ChartLabel,
+          color = if (pill.selected) colors.textOnAccent else if (pill.tone == OneUiPillTone.Neutral) colors.textPrimary else baseContent,
+          weight = FontWeight.Bold,
+          maxLines = 1
+        )
+      }
+      if (pill.onDismiss != null) {
+        Box(
+          modifier = Modifier
+            .size(22.dp)
+            .oneUiPressable(
+              onClick = pill.onDismiss,
+              shape = CircleShape,
+              haptics = OneUiHaptics.Tap,
+              minHeight = null
+            )
+            .semantics { contentDescription = pill.dismissDescription },
+          contentAlignment = Alignment.Center
+        ) {
+          OneUiIcon(
+            imageVector = Icons.Rounded.Close,
+            contentDescription = null,
+            size = 14.dp,
+            tint = baseContent
+          )
+        }
+      }
+    }
+    pill.progress?.let { fraction ->
+      OneUiLinearProgress(
+        fraction = fraction,
+        color = if (pill.selected) colors.textOnAccent else colors.accent,
+        track = baseContent.copy(alpha = 0.18f),
+        height = 2.5.dp,
+        modifier = Modifier.width(64.dp)
+      )
+    }
+  }
+}
 
 /** 通知条：缓存状态、更新提示、模式说明共用一种组件（件）。 */
 @Composable
