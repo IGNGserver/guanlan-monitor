@@ -438,3 +438,17 @@ test("renameDevice refuses an existing id or orphaned history", async () => {
   await assert.rejects(devices.renameDevice("missing", "next"), /device_not_found/);
   assert.ok(pool.registry.has("old"));
 });
+
+test("syncDeviceGroupMembers atomically assigns and removes members and rejects reserved group names", async () => {
+  const pool = new FakePool();
+  const devices = pool.repository();
+  await devices.registerOrUpdateDevice("a", "A", fast);
+  await devices.registerOrUpdateDevice("b", "B", fast);
+  await devices.updateDeviceGroup(["b"], "核心存储");
+  await devices.syncDeviceGroupMembers(["a"], "核心存储", ["b"]);
+  assert.equal(pool.rows.get("a")?.group_name, "核心存储");
+  assert.equal(pool.rows.get("b")?.group_name, null);
+  assert.equal((await devices.registerOrUpdateDevice("a", "A", fast)).group, "核心存储");
+  assert.equal((await devices.registerOrUpdateDevice("b", "B", fast)).group, null);
+  await assert.rejects(devices.syncDeviceGroupMembers(["a"], "未分组", []), /invalid_group_name/);
+});

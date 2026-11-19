@@ -31,7 +31,7 @@ export const DEVICE_DASHBOARD = {
           description: "处理器、内存、主活动磁盘与核心网络吞吐的综合实时走势。",
           charts: [
             { id: "overview-cpu-average", title: "CPU 平均使用率", visualization: "line", span: "half", requires: ["cpuUsage"] },
-            { id: "overview-memory", title: "物理与已提交内存", visualization: "area", span: "half", requires: ["memoryUsage", "memoryCommitted"] },
+            { id: "overview-memory", title: "物理与已提交内存", visualization: "area", span: "half", requires: ["memoryUsage"] },
             { id: "overview-disk-total", title: "活动磁盘总已用", visualization: "area", span: "half", requires: ["diskUsage"] },
             { id: "overview-network-average", title: "核心网卡平均吞吐", visualization: "line", span: "half", requires: ["networkRxRate", "networkTxRate"] }
           ]
@@ -87,7 +87,7 @@ export const DEVICE_DASHBOARD = {
           eyebrow: "内存与调度",
           title: "内存层级与系统进程",
           charts: [
-            { id: "compute-memory", title: "内存容量明细", visualization: "area", span: "half", requires: ["memoryUsage", "memoryCommitted", "memoryCached", "swapUsage"] },
+            { id: "compute-memory", title: "内存容量明细", visualization: "area", span: "half", requires: ["memoryUsage"] },
             { id: "compute-memory-capacity", title: "内存容量水位", visualization: "capacity", span: "half" },
             { id: "compute-system", title: "系统进程、线程与句柄", visualization: "line", span: "half", requires: ["systemOverview"] }
           ]

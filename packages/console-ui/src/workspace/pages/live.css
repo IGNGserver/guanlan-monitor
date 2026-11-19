@@ -88,9 +88,9 @@
 .live-table__sort-mark { opacity: 0.45; font-size: var(--md-sys-typescale-label-s-size); }
 .live-table__sort.is-active .live-table__sort-mark { opacity: 1; color: var(--workspace-accent); }
 .live-table__info { display: inline-flex; vertical-align: -2px; margin-left: var(--md-sys-space-1); color: var(--workspace-text-muted); cursor: help; }
-.live-table__expand { display: inline-flex; align-items: center; gap: var(--md-sys-space-2); padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.live-table__expand { display: inline-flex; max-width: 280px; min-width: 0; align-items: center; gap: var(--md-sys-space-2); padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left; }
 .live-table__expand > svg { color: var(--workspace-text-muted); flex: 0 0 auto; }
-.live-table__name { font-weight: 500; }
+.live-table__name { display: inline-block; max-width: 240px; overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .live-table__bar-value { display: inline-grid; justify-items: end; gap: var(--md-sys-space-1); min-width: 72px; }
 .live-table__bar { display: block; width: 72px; height: 3px; border-radius: 2px; background: var(--workspace-surface-subtle); overflow: hidden; }
 .live-table__bar > span { display: block; height: 100%; border-radius: 2px; background: var(--workspace-accent); }

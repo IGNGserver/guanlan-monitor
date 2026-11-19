@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Icon, type IconName } from "./icons";
 
 /* =============================================================================
@@ -267,6 +268,7 @@ export interface M3CheckboxProps {
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
   label: string;
+  hideLabel?: boolean;
   description?: React.ReactNode;
   disabled?: boolean;
   compact?: boolean;
@@ -274,14 +276,15 @@ export interface M3CheckboxProps {
   title?: string;
 }
 
-export function M3Checkbox({ checked, onCheckedChange, label, description, disabled = false, compact = false, className, title }: M3CheckboxProps) {
+export function M3Checkbox({ checked, onCheckedChange, label, hideLabel = false, description, disabled = false, compact = false, className, title }: M3CheckboxProps) {
   const { onPointerDown, rippleNodes } = useRipple<HTMLButtonElement>();
   return (
     <button
-      className={joinClasses("m3e-checkbox", compact && "is-compact", disabled && "is-disabled", "m3e-state-host", className)}
+      className={joinClasses("m3e-checkbox", compact && "is-compact", hideLabel && "is-label-hidden", disabled && "is-disabled", "m3e-state-host", className)}
       type="button"
       role="checkbox"
       aria-checked={checked}
+      aria-label={hideLabel ? label : undefined}
       disabled={disabled}
       title={title}
       onPointerDown={disabled ? undefined : onPointerDown}
@@ -290,7 +293,9 @@ export function M3Checkbox({ checked, onCheckedChange, label, description, disab
       <span className={joinClasses("m3e-checkbox__box", checked && "is-checked")} aria-hidden="true">
         {checked ? <Icon name="check" size={16} weight={2.4} /> : null}
       </span>
-      <span className="m3e-checkbox__copy"><span className="m3e-checkbox__label">{label}</span>{description ? <span className="m3e-checkbox__description">{description}</span> : null}</span>
+      {!hideLabel ? (
+        <span className="m3e-checkbox__copy"><span className="m3e-checkbox__label">{label}</span>{description ? <span className="m3e-checkbox__description">{description}</span> : null}</span>
+      ) : null}
       {rippleNodes}
     </button>
   );
@@ -640,25 +645,58 @@ export interface M3DialogProps {
   children?: React.ReactNode;
   actions?: React.ReactNode;
   danger?: boolean;
+  /** Whether Escape and scrim click can dismiss the dialog (default: true). */
+  dismissible?: boolean;
   className?: string;
   /** Accessible name for the dialog; defaults to the headline. */
   "aria-label"?: string;
 }
 
-export function M3Dialog({ open, onClose, headline, icon, children, actions, danger = false, className, "aria-label": ariaLabel }: M3DialogProps) {
+export function M3Dialog({
+  open,
+  onClose,
+  headline,
+  icon,
+  children,
+  actions,
+  danger = false,
+  dismissible = true,
+  className,
+  "aria-label": ariaLabel
+}: M3DialogProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  const dismissibleRef = useRef(dismissible);
+  const scrimPointerDownRef = useRef(false);
 
   useEffect(() => {
-    if (!open) return;
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    dismissibleRef.current = dismissible;
+  }, [dismissible]);
+
+  useEffect(() => {
+    if (!open || typeof document === "undefined") return;
     restoreRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const frame = window.requestAnimationFrame(() => {
-      const target = containerRef.current?.querySelector<HTMLElement>("[data-dialog-initial-focus]")
-        ?? containerRef.current?.querySelector<HTMLElement>("button, [href], input, select, textarea");
+      const target = containerRef.current?.querySelector<HTMLElement>("[data-dialog-initial-focus], [autofocus]")
+        ?? containerRef.current?.querySelector<HTMLElement>("button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])");
       target?.focus();
     });
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
+      if (event.isComposing || event.keyCode === 229) return;
+      if (event.key === "Escape") {
+        if (!dismissibleRef.current) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
       if (event.key !== "Tab" || !containerRef.current) return;
       const focusable = Array.from(containerRef.current.querySelectorAll<HTMLElement>("button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"));
       if (!focusable.length) return;
@@ -671,19 +709,35 @@ export function M3Dialog({ open, onClose, headline, icon, children, actions, dan
     return () => {
       window.cancelAnimationFrame(frame);
       document.removeEventListener("keydown", handleKeyDown, true);
-      restoreRef.current?.focus?.();
+      document.body.style.overflow = prevOverflow;
+      if (restoreRef.current?.isConnected) {
+        restoreRef.current.focus({ preventScroll: true });
+      }
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
-  return (
-    <div className="m3e-scrim">
+  const dialogNode = (
+    <div
+      className="m3e-scrim m3e-theme"
+      role="presentation"
+      onMouseDown={(event) => {
+        scrimPointerDownRef.current = event.target === event.currentTarget;
+      }}
+      onClick={(event) => {
+        if (scrimPointerDownRef.current && event.target === event.currentTarget && dismissible) {
+          onCloseRef.current();
+        }
+        scrimPointerDownRef.current = false;
+      }}
+    >
       <div
         ref={containerRef}
         className={joinClasses("m3e-dialog", danger && "m3e-dialog--danger", className)}
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel ?? headline}
+        data-touch-scroll=""
         onClick={(event) => event.stopPropagation()}
       >
         <div className="m3e-dialog__headline">
@@ -695,6 +749,7 @@ export function M3Dialog({ open, onClose, headline, icon, children, actions, dan
       </div>
     </div>
   );
+  return typeof document !== "undefined" ? createPortal(dialogNode, document.body) : dialogNode;
 }
 
 /* ---- Inline banner --------------------------------------------------------- */
@@ -741,8 +796,10 @@ export function M3Snackbar({ tone = "info", children, className }: { tone?: "inf
 export interface M3DataTableColumn<T> {
   key: string;
   header: React.ReactNode;
-  cell: (row: T) => React.ReactNode;
+  cell: (row: T, rowIndex: number) => React.ReactNode;
   align?: "start" | "end";
+  /** Optional CSS width for colgroup alignment across stacked tables. */
+  width?: string;
   /** Hidden below the given viewport width, in px. */
   hideBelow?: number;
 }
@@ -755,6 +812,11 @@ export interface M3DataTableProps<T> {
   onRowClick?: (row: T) => void;
   onRowActivate?: (row: T) => void;
   rowClassName?: (row: T) => string | undefined;
+  rowDraggable?: (row: T) => boolean;
+  onRowDragStart?: (row: T, event: React.DragEvent<HTMLTableRowElement>) => void;
+  onRowDragEnd?: (row: T, event: React.DragEvent<HTMLTableRowElement>) => void;
+  /** Visually hides thead while keeping accessible column headers for screen readers. */
+  visuallyHideHeader?: boolean;
   emptyState?: React.ReactNode;
   className?: string;
 }
@@ -766,43 +828,67 @@ export function M3DataTable<T>({
   onRowClick,
   onRowActivate,
   rowClassName,
+  rowDraggable,
+  onRowDragStart,
+  onRowDragEnd,
+  visuallyHideHeader = false,
   emptyState,
   className,
   "aria-label": ariaLabel
 }: M3DataTableProps<T>) {
   if (!rows.length) return <>{emptyState ?? null}</>;
   const interactive = Boolean(onRowClick || onRowActivate);
+  const hasWidths = columns.some((column) => Boolean(column.width));
   return (
     <div className={joinClasses("m3e-table-wrap", className)}>
-      <table className="m3e-table" aria-label={ariaLabel}>
-        <thead>
+      <table className={joinClasses("m3e-table", hasWidths && "m3e-table--fixed")} aria-label={ariaLabel}>
+        {hasWidths ? (
+          <colgroup>
+            {columns.map((column) => (
+              <col
+                key={column.key}
+                style={{
+                  ...(column.width ? { width: column.width } : {}),
+                  ...(column.hideBelow ? { ["--m3e-hide-below" as string]: String(column.hideBelow) } : {})
+                }}
+              />
+            ))}
+          </colgroup>
+        ) : null}
+        <thead className={visuallyHideHeader ? "m3e-visually-hidden" : undefined}>
           <tr>{columns.map((column) => (
             <th key={column.key} scope="col" data-align={column.align} style={column.hideBelow ? { ["--m3e-hide-below" as string]: String(column.hideBelow) } : undefined}>{column.header}</th>
           ))}</tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr
-              key={rowKey(row)}
-              className={rowClassName?.(row)}
-              tabIndex={interactive ? 0 : undefined}
-              onClick={onRowClick ? (event) => {
-                if (event.target instanceof Element && event.target.closest("button, a, [role=menuitem], input, select")) return;
-                onRowClick(row);
-              } : undefined}
-              onKeyDown={(event) => {
-                if (!onRowActivate) return;
-                if (event.key !== "Enter" && event.key !== " ") return;
-                if (event.target instanceof Element && event.target.closest("button, a, [role=menuitem]")) return;
-                event.preventDefault();
-                onRowActivate(row);
-              }}
-            >
-              {columns.map((column) => (
-                <td key={column.key} data-align={column.align} style={column.hideBelow ? { ["--m3e-hide-below" as string]: String(column.hideBelow) } : undefined}>{column.cell(row)}</td>
-              ))}
-            </tr>
-          ))}
+          {rows.map((row, rowIndex) => {
+            const draggable = rowDraggable?.(row) ?? false;
+            return (
+              <tr
+                key={rowKey(row)}
+                className={rowClassName?.(row)}
+                tabIndex={interactive ? 0 : undefined}
+                draggable={draggable || undefined}
+                onDragStart={draggable && onRowDragStart ? (event) => onRowDragStart(row, event) : undefined}
+                onDragEnd={draggable && onRowDragEnd ? (event) => onRowDragEnd(row, event) : undefined}
+                onClick={onRowClick ? (event) => {
+                  if (event.target instanceof Element && event.target.closest("button, a, [role=menuitem], [role=checkbox], input, select")) return;
+                  onRowClick(row);
+                } : undefined}
+                onKeyDown={(event) => {
+                  if (!onRowActivate) return;
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  if (event.target instanceof Element && event.target.closest("button, a, [role=menuitem], [role=checkbox], input, select")) return;
+                  event.preventDefault();
+                  onRowActivate(row);
+                }}
+              >
+                {columns.map((column) => (
+                  <td key={column.key} data-align={column.align} style={column.hideBelow ? { ["--m3e-hide-below" as string]: String(column.hideBelow) } : undefined}>{column.cell(row, rowIndex)}</td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

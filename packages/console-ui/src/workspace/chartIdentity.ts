@@ -8,6 +8,7 @@ import { dateValueOf } from "./sampleTime.ts";
  */
 
 export type IdentifiedSeries = {
+  id?: string;
   label: string;
   points: Array<{ timestamp: string; value: number }>;
 };
@@ -30,7 +31,8 @@ export function seriesFingerprint(series: IdentifiedSeries[]): string {
   for (const item of series) {
     const points = item.points;
     mix(points.length);
-    for (let index = 0; index < item.label.length; index++) mix(item.label.charCodeAt(index));
+    const key = item.id ? `${item.id}\u0000${item.label}` : item.label;
+    for (let index = 0; index < key.length; index++) mix(key.charCodeAt(index));
     for (const point of points) {
       mix(dateValueOf(point.timestamp) % 2147483647);
       const value = String(point.value);

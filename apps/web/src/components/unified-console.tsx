@@ -12,7 +12,26 @@ import styles from "./auth.module.css";
 
 const WorkspaceApp = dynamic(() => import("@dsc/console-ui/workspace"), {
   ssr: false,
-  loading: () => <main className={styles.loginShell} role="status"><section className={styles.loginPanel}><h1>正在打开工作台</h1></section></main>
+  loading: () => (
+    <main className={styles.loginShell} role="status">
+      <header className={styles.loginTop}>
+        <div className={styles.loginBrand}>
+          <img src="/favicon.png" alt="观澜" className={styles.brandLogoImage} />
+          <div>
+            <strong>观澜</strong>
+            <span>设备状态中枢</span>
+          </div>
+        </div>
+      </header>
+      <section className={styles.loginPanel}>
+        <div className={styles.loginFormShell}>
+          <div className={styles.loginLoadingBar} aria-hidden="true" />
+          <h1>正在打开工作台</h1>
+          <p>正在加载监控界面与实时状态组件。</p>
+        </div>
+      </section>
+    </main>
+  )
 });
 
 export function UnifiedConsole({ initialDeviceId = null }: { initialDeviceId?: string | null }) {

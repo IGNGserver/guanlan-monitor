@@ -76,8 +76,12 @@ export function StatusLabel({ state, compact = false }: { state: "online" | "off
   );
 }
 
-export function Surface({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <section className={`workspace-surface ${className}`}>{children}</section>;
+export function Surface({
+  children,
+  className = "",
+  ...rest
+}: React.HTMLAttributes<HTMLElement> & { children: React.ReactNode; className?: string }) {
+  return <section className={`workspace-surface ${className}`} {...rest}>{children}</section>;
 }
 
 export function SummaryRow({ label, value, tone }: { label: string; value: string; tone?: "success" | "warning" }) {

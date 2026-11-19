@@ -64,3 +64,18 @@ test("sample window spans the shared timeline", () => {
   assert.deepEqual(chartSampleWindow(indexChartSamples(series)), { start: Date.parse(time(0)), end: Date.parse(time(10)), count: 3 });
   assert.equal(chartSampleWindow(indexChartSamples([])), null);
 });
+
+test("tolerance aligns unsynchronized multi-device ticks without bridging real outages", () => {
+  const unsynced = [
+    { id: "a", label: "pve1", points: [point(0, 20), point(5, 35)], valueFormatter: (v: number) => `${v}%` },
+    { id: "b", label: "pve2", points: [point(1, 50), point(6, 65)], valueFormatter: (v: number) => `${v}%` },
+    { id: "c", label: "stale", points: [point(0, 10)], valueFormatter: (v: number) => `${v}%` }
+  ];
+  const index = indexChartSamples(unsynced);
+  // Exact match (toleranceMs = 0) leaves pve2 blank at t=5s.
+  assert.deepEqual(inspectChartTime(unsynced, index, Date.parse(time(5)), undefined, 0).values.map((v) => v.valueText), ["35%", "—", "—"]);
+  // 2500ms tolerance matches pve2's t=6s sample while keeping stale (5s away) empty.
+  const aligned = inspectChartTime(unsynced, index, Date.parse(time(5)), undefined, 2500);
+  assert.deepEqual(aligned.values.map((v) => v.valueText), ["35%", "65%", "—"]);
+  assert.deepEqual(aligned.values.map((v) => v.id), ["a", "b", "c"]);
+});

@@ -30,6 +30,11 @@ export interface ConsoleFleetPort {
   renameInstance?(deviceId: string, nextDeviceId: string): Promise<ConsoleSnapshot>;
   reorderInstances(deviceIds: string[]): Promise<ConsoleSnapshot>;
   updateDeviceGroup(deviceIds: string[], group: string | null): Promise<ConsoleSnapshot>;
+  syncDeviceGroupMembers?(
+    assignDeviceIds: string[],
+    group: string | null,
+    removeDeviceIds: string[]
+  ): Promise<ConsoleSnapshot>;
   saveFanNote(deviceId: string, fanId: string, note: string): Promise<ConsoleSnapshot>;
   openExternal(url: string): Promise<void>;
 }

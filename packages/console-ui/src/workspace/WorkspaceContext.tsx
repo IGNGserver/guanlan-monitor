@@ -31,7 +31,7 @@ export type { SettingsSection, WorkspaceRoute } from "./routes";
 type WorkspaceDataKeys = "snapshot" | "loading" | "refreshing" | "mutationPending" | "error" | "notice" | "devices" | "allDevices" | "selectedDevice";
 type WorkspaceActionKeys =
   | "refresh" | "updateLocalConfig" | "controlAgent" | "saveHubConnection" | "updateStartupSettings" | "cloudPush"
-  | "saveFanNote" | "deleteInstance" | "reorderInstances" | "updateDeviceGroup" | "minimizeWindow" | "toggleMaximizeWindow" | "closeWindow"
+  | "saveFanNote" | "deleteInstance" | "reorderInstances" | "updateDeviceGroup" | "syncDeviceGroupMembers" | "minimizeWindow" | "toggleMaximizeWindow" | "closeWindow"
   | "adapterDragStart" | "adapterDragMove" | "adapterDragEnd" | "login" | "logout" | "disconnectAgent" | "openExternal";
 export type WorkspaceDataValue = Pick<WorkspaceContextValue, WorkspaceDataKeys>;
 export type WorkspaceActionsValue = Pick<WorkspaceContextValue, WorkspaceActionKeys>;
@@ -442,6 +442,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     renameInstance,
     reorderInstances,
     updateDeviceGroup,
+    syncDeviceGroupMembers,
     minimizeWindow,
     toggleMaximizeWindow,
     closeWindow,
@@ -602,6 +603,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     renameInstance,
     reorderInstances,
     updateDeviceGroup,
+    syncDeviceGroupMembers,
     minimizeWindow,
     toggleMaximizeWindow,
     closeWindow: closeWindowSafely,
@@ -624,6 +626,7 @@ export const WorkspaceProvider: React.FC<{ adapter: ConsoleAdapter; initialRoute
     renameInstance,
     reorderInstances,
     updateDeviceGroup,
+    syncDeviceGroupMembers,
     minimizeWindow,
     toggleMaximizeWindow,
     closeWindowSafely,
@@ -677,6 +680,34 @@ export function useWorkspace(): WorkspaceContextValue {
   return useMemo(() => ({ ...ui, ...data, ...actions }), [ui, data, actions]);
 }
 
+function areDevicesEquivalent(prev: DeviceSummary[], next: DeviceSummary[]): boolean {
+  if (prev === next) return true;
+  if (prev.length !== next.length) return false;
+  for (let i = 0; i < prev.length; i += 1) {
+    const a = prev[i];
+    const b = next[i];
+    if (
+      a.deviceId !== b.deviceId
+      || a.hostname !== b.hostname
+      || a.status !== b.status
+      || (a.group ?? null) !== (b.group ?? null)
+      || a.sortOrder !== b.sortOrder
+      || a.lastSeenAt !== b.lastSeenAt
+      || a.cpuUsagePercent !== b.cpuUsagePercent
+      || a.memoryUsagePercent !== b.memoryUsagePercent
+      || a.diskUsagePercent !== b.diskUsagePercent
+      || a.gpuUsagePercent !== b.gpuUsagePercent
+      || a.memoryUsedBytes !== b.memoryUsedBytes
+      || a.memoryTotalBytes !== b.memoryTotalBytes
+      || a.diskUsedBytes !== b.diskUsedBytes
+      || a.diskTotalBytes !== b.diskTotalBytes
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function isEquivalentSnapshot(prev: ConsoleSnapshot | null, next: ConsoleSnapshot): boolean {
   if (prev === next) return true;
   if (!prev) return false;
@@ -686,14 +717,21 @@ function isEquivalentSnapshot(prev: ConsoleSnapshot | null, next: ConsoleSnapsho
     || prev.selectedDeviceId !== next.selectedDeviceId
     || prev.session.authenticated !== next.session.authenticated
     || prev.session.accessKeyConfigured !== next.session.accessKeyConfigured
-    || prev.devices.length !== next.devices.length
+    || !areDevicesEquivalent(prev.devices, next.devices)
     || Boolean(prev.metrics) !== Boolean(next.metrics)
     || prev.metrics?.device.deviceId !== next.metrics?.device.deviceId
+    || (prev.metrics?.device.group ?? null) !== (next.metrics?.device.group ?? null)
     || prev.metrics?.window !== next.metrics?.window
     || prev.metrics?.rangeEnd !== next.metrics?.rangeEnd
     || Boolean(prev.overviewMetrics) !== Boolean(next.overviewMetrics)
     || prev.overviewMetrics?.window !== next.overviewMetrics?.window
+    || prev.overviewMetrics?.instances.length !== next.overviewMetrics?.instances.length
     || Boolean(prev.trafficCalendar) !== Boolean(next.trafficCalendar)
+    || prev.trafficCalendar?.mode !== next.trafficCalendar?.mode
+    || prev.trafficCalendar?.anchor !== next.trafficCalendar?.anchor
+    || prev.trafficCalendar?.rangeStart !== next.trafficCalendar?.rangeStart
+    || prev.trafficCalendar?.totalRxBytes !== next.trafficCalendar?.totalRxBytes
+    || prev.trafficCalendar?.totalTxBytes !== next.trafficCalendar?.totalTxBytes
   ) {
     return false;
   }

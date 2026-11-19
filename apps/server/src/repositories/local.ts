@@ -636,18 +636,35 @@ export class LocalDeviceRepository implements DeviceRepository {
   }
 
   async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void> {
-    const normalizedGroup = normalizeDeviceGroupName(group)?.slice(0, 64) ?? null;
+    await this.syncDeviceGroupMembers(deviceIds, group, []);
+  }
+
+  async syncDeviceGroupMembers(
+    assignDeviceIds: string[],
+    group: string | null,
+    removeDeviceIds: string[] = []
+  ): Promise<void> {
+    const normalizedGroup = normalizeDeviceGroupName(group);
     if (normalizedGroup && isReservedDeviceGroupName(normalizedGroup)) throw new InvalidDeviceGroupNameError();
-    const uniqueIds = [...new Set(deviceIds)];
+    const assignSet = new Set(assignDeviceIds);
+    const uniqueAssignIds = [...assignSet];
+    const uniqueRemoveIds = [...new Set(removeDeviceIds)].filter((id) => !assignSet.has(id));
+    const allIds = [...uniqueAssignIds, ...uniqueRemoveIds];
+    if (!allIds.length) return;
     await this.store.update((db) => {
       const registry = (db.deviceRegistry ??= {});
-      for (const id of uniqueIds) {
+      for (const id of allIds) {
         if (isLegacyVirtualMachineId(id) || registry[id]?.status !== "open") throw new DeviceNotFoundError(id);
       }
       const now = new Date().toISOString();
-      for (const id of uniqueIds) {
+      for (const id of uniqueAssignIds) {
         const item = registry[id]!;
         item.group = normalizedGroup;
+        item.updatedAt = now;
+      }
+      for (const id of uniqueRemoveIds) {
+        const item = registry[id]!;
+        item.group = null;
         item.updatedAt = now;
       }
     });

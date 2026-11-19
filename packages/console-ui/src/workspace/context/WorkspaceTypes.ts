@@ -79,6 +79,11 @@ export interface WorkspaceContextValue {
   renameInstance?: (deviceId: string, nextDeviceId: string) => Promise<boolean>;
   reorderInstances: (deviceIds: string[]) => Promise<boolean>;
   updateDeviceGroup: (deviceIds: string[], group: string | null) => Promise<boolean>;
+  syncDeviceGroupMembers: (
+    assignDeviceIds: string[],
+    group: string | null,
+    removeDeviceIds: string[]
+  ) => Promise<boolean>;
   minimizeWindow: () => Promise<void>;
   toggleMaximizeWindow: () => Promise<boolean>;
   closeWindow: () => Promise<void>;
@@ -125,8 +130,16 @@ export function getStoredRefreshInterval(): 5 | 10 | 30 {
  * failures that needed the same action read as three different problems.
  */
 export function formatWorkspaceError(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) {
-    const code = error.message.trim().toLowerCase();
+  const structuredCode = typeof error === "object" && error !== null && "code" in error
+    && typeof (error as { code?: unknown }).code === "string"
+    ? (error as { code: string }).code.trim().toLowerCase()
+    : "";
+  const structuredStatus = typeof error === "object" && error !== null && "status" in error
+    && typeof (error as { status?: unknown }).status === "number"
+    ? String((error as { status: number }).status)
+    : "";
+  const rawMessage = error instanceof Error && error.message ? error.message.trim().toLowerCase() : "";
+  if (structuredCode || rawMessage || structuredStatus) {
     const messages: Record<string, string> = {
       hub_server_url_invalid: "中枢地址无效。请使用以 http:// 或 https:// 开头的完整地址。",
       hub_server_url_missing: "还没有配置中枢地址。请在连接页填写中枢地址。",
@@ -136,7 +149,16 @@ export function formatWorkspaceError(error: unknown, fallback: string): string {
       hub_address_saved_login_failed: "中枢地址已保存，但认证未通过。请核对访问密钥与中枢服务状态后重试。",
       hub_login_required: "当前连接尚未认证。请在连接页重新连接中枢。",
       login_failed: "访问密钥不正确。请核对后重新输入。",
-      unauthorized: "当前会话已失效。请重新认证后再查看设备。",
+      unauthorized: "当前会话已失效。请重新认证后再操作。",
+      invalid_group_name: "分组名称不可用（不能使用保留名称或控制字符），请更换名称后重试。",
+      invalid_group_payload: "分组请求参数无效。请刷新列表后重试。",
+      invalid_reorder_payload: "设备排序请求无效。请刷新列表后重试。",
+      invalid_device_id: "设备 ID 格式无效。请检查输入后重试。",
+      device_id_conflict: "目标设备 ID 已存在（含历史残留记录），请更换其他 ID。",
+      device_online: "设备当前在线，请先停止该设备的 Agent 上报后再重命名 ID。",
+      device_not_found: "所选设备已不存在或已被移除。请刷新设备列表后重试。",
+      request_timeout: "请求超时。请检查网络后重试。",
+      request_cancelled: "请求已取消。请重试。",
       local_agent_unavailable: "本机 Agent 当前不可用。请先在设置里启动服务。",
       cloud_push_unavailable: "当前环境不支持同步到中枢。请在桌面端执行同步。",
       desktop_bridge_unavailable: "桌面桥接暂不可用。请重新打开观澜后重试。",
@@ -145,17 +167,23 @@ export function formatWorkspaceError(error: unknown, fallback: string): string {
       desktop_bridge_not_ready: "桌面桥接尚未就绪。请稍候几秒，或重新打开观澜。",
       startup_settings_unavailable: "当前环境不支持修改启动设置。请在桌面端修改。"
     };
-    if (messages[code]) return messages[code];
+    if (structuredCode && messages[structuredCode]) return messages[structuredCode];
+    if (rawMessage && messages[rawMessage]) return messages[rawMessage];
     // IPC wraps a rejection as "Error invoking remote method …: Error: <code>",
     // so the address-saved outcome also has to match by substring.
-    if (code.includes("hub_address_saved_login_failed")) return messages.hub_address_saved_login_failed;
-    const status = code.match(/(?:hub|agent_backend)_(401|403|404|408|429|500|502|503|504)(?::|$)/)?.[1];
+    if (rawMessage.includes("hub_address_saved_login_failed")) return messages.hub_address_saved_login_failed;
+    for (const key of ["invalid_group_name", "invalid_group_payload", "device_not_found", "invalid_reorder_payload"] as const) {
+      if (rawMessage.includes(key)) return messages[key];
+    }
+    const status = structuredStatus
+      || rawMessage.match(/(?:hub_|agent_backend_|api_error:)(401|403|404|408|429|500|502|503|504)(?::|$)/)?.[1];
     if (status === "401" || status === "403") return "认证未被接受。请检查访问密钥或重新完成当前会话认证。";
-    if (status === "404") return "找不到目标服务。请核对中枢地址与端口。";
+    if (status === "404") return "找不到目标资源或服务。请刷新列表或核对中枢地址。";
     if (["408", "504"].includes(status ?? "")) return "服务响应超时。请检查网络后重试。";
-    if (["429", "500", "502", "503"].includes(status ?? "")) return "服务暂时不可用。请稍后重试。";
-    if (code.includes("timeout") || code.includes("timed out")) return "请求超时。请检查网络后重试。";
-    if (code.includes("network") || code.includes("fetch") || code.includes("failed to fetch")) return "网络连接失败。请检查网络与中枢地址后重试。";
+    if (status === "429") return "操作过于频繁。请稍候再试。";
+    if (["500", "502", "503"].includes(status ?? "")) return "服务暂时不可用。请稍后重试。";
+    if (rawMessage.includes("timeout") || rawMessage.includes("timed out")) return "请求超时。请检查网络后重试。";
+    if (rawMessage.includes("network") || rawMessage.includes("fetch") || rawMessage.includes("failed to fetch")) return "网络连接失败。请检查网络与中枢地址后重试。";
     return fallback;
   }
   return fallback;

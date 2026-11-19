@@ -163,4 +163,45 @@ test("a device group mutation rejects unknown and legacy ids and de-duplicates v
     headers,
     payload: { deviceIds: [], group: null }
   })).statusCode, 400);
+
+  // Atomic member diff: assign host-1 and remove host-2 in one request.
+  const atomic = await app.inject({
+    method: "PUT",
+    url: "/api/devices/group",
+    headers,
+    payload: { deviceIds: ["host-1"], group: "生产集群", removeDeviceIds: ["host-2", "host-1"] }
+  });
+  assert.equal(atomic.statusCode, 200);
+  assert.equal(records.get("host-1")?.group, "生产集群");
+  assert.equal(records.get("host-2")?.group, null);
+
+  // Dissolve group via empty deviceIds + non-empty removeDeviceIds.
+  const dissolve = await app.inject({
+    method: "PUT",
+    url: "/api/devices/group",
+    headers,
+    payload: { deviceIds: [], group: null, removeDeviceIds: ["host-1"] }
+  });
+  assert.equal(dissolve.statusCode, 200);
+  assert.equal(records.get("host-1")?.group, null);
+
+  // 64 Unicode code points (including astral symbols) are accepted without mid-surrogate slicing, while reserved/control names fail.
+  const unicode64 = "组".repeat(63) + "🚀";
+  const unicodeRes = await app.inject({
+    method: "PUT",
+    url: "/api/devices/group",
+    headers,
+    payload: { deviceIds: ["host-1"], group: unicode64 }
+  });
+  assert.equal(unicodeRes.statusCode, 200);
+  assert.equal(records.get("host-1")?.group, unicode64);
+
+  const reservedRes = await app.inject({
+    method: "PUT",
+    url: "/api/devices/group",
+    headers,
+    payload: { deviceIds: ["host-1"], group: "未分组" }
+  });
+  assert.equal(reservedRes.statusCode, 400);
+  assert.deepEqual(reservedRes.json(), { error: "invalid_group_name" });
 });

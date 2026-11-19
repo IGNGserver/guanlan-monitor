@@ -19,6 +19,8 @@ import {
  * ========================================================================== */
 
 export type ChartSeries = {
+  /** Optional stable identifier when two curves may share a display label. */
+  id?: string;
   label: string;
   points: SamplePoint[];
   valueFormatter?: (value: number) => string;
@@ -120,6 +122,10 @@ export interface TimeSeriesChartProps {
   /** Plot height in px. Defaults to 232, or 168 when `compact`. */
   height?: number;
   thresholds?: readonly ChartThreshold[];
+  /** Multi-device charts pass a small tolerance (e.g. 2500ms) so unsynchronized agent ticks align on hover. */
+  inspectionToleranceMs?: number;
+  /** Optional drill-down callback when a series chip/action is activated. */
+  onDrillDownSeries?: (seriesId: string) => void;
 }
 
 function ChartReadingValue({ text }: { text: string }) {
@@ -139,12 +145,14 @@ export function chartSeriesColor(index: number): string {
   return seriesColor(index);
 }
 
+const READOUT_COLLAPSE_THRESHOLD = 8;
+
 /**
  * Latest or inspected reading. `compact` is the device-card form: the numbers lead
  * and the sample time trails on the same row; a lone curve drops its visible label
  * because the card title already names it.
  */
-export function ChartReadout({ info, inspecting = false, id, compact = false, toggle }: {
+export function ChartReadout({ info, inspecting = false, id, compact = false, toggle, onDrillDown }: {
   info: ChartInspection | null;
   inspecting?: boolean;
   id?: string;
@@ -154,10 +162,17 @@ export function ChartReadout({ info, inspecting = false, id, compact = false, to
    * more curves used to print every label twice — once with its value above the
    * plot and again as a switch below it.
    */
-  toggle?: { hidden: ReadonlySet<string>; onToggle: (label: string) => void };
+  toggle?: { hidden: ReadonlySet<string>; onToggle: (key: string) => void };
+  onDrillDown?: (key: string) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   if (!info) return null;
   const hideLabel = compact && info.values.length === 1;
+  const canCollapse = !compact && info.values.length > READOUT_COLLAPSE_THRESHOLD;
+  const visibleValues = canCollapse && !expanded
+    ? info.values.slice(0, READOUT_COLLAPSE_THRESHOLD)
+    : info.values;
+  const hiddenOverflowCount = info.values.length - visibleValues.length;
   const time = (
     <div className="m3e-chart-readout__time">
       <span>{inspecting ? "查点" : "最新"}</span>
@@ -168,21 +183,42 @@ export function ChartReadout({ info, inspecting = false, id, compact = false, to
     <div className={`m3e-chart-readout${compact ? " is-compact" : ""}${inspecting ? " is-inspecting" : ""}`} id={id}>
       {compact ? null : time}
       <dl className="m3e-chart-readout__values">
-        {info.values.map((item, index) => {
+        {visibleValues.map((item, index) => {
+          const seriesKey = item.id ?? item.label;
           const swatch = <span className="m3e-chart__swatch" style={{ background: seriesColor(index) }} aria-hidden="true" />;
-          const hidden = toggle?.hidden.has(item.label) ?? false;
+          const hidden = toggle?.hidden.has(seriesKey) ?? false;
           return (
-            <div key={`${index}-${item.label}`} className={hidden ? "is-series-hidden" : undefined}>
+            <div key={`${index}-${seriesKey}`} className={hidden ? "is-series-hidden" : undefined}>
               <dt className={hideLabel ? "m3e-visually-hidden" : undefined}>
                 {toggle
-                  ? <button type="button" className="m3e-chart-readout__toggle" aria-pressed={!hidden} title={hidden ? "显示这条数据线" : "隐藏这条数据线"} onClick={() => toggle.onToggle(item.label)}>{swatch}{item.label}</button>
-                  : <>{swatch}{item.label}</>}
+                  ? <button type="button" className="m3e-chart-readout__toggle" aria-pressed={!hidden} title={hidden ? "显示这条数据线" : "隐藏这条数据线"} onClick={() => toggle.onToggle(seriesKey)}>{swatch}<span className="m3e-chart-readout__label">{item.label}</span></button>
+                  : <>{swatch}<span className="m3e-chart-readout__label">{item.label}</span></>}
+                {onDrillDown && item.id ? (
+                  <button
+                    type="button"
+                    className="m3e-chart-readout__drill"
+                    title={`聚焦查看「${item.label}」`}
+                    aria-label={`聚焦查看 ${item.label}`}
+                    onClick={() => onDrillDown(item.id!)}
+                  >
+                    <Icon name="chevronRight" size={14} />
+                  </button>
+                ) : null}
               </dt>
               <dd><ChartReadingValue text={item.valueText} /></dd>
             </div>
           );
         })}
       </dl>
+      {canCollapse ? (
+        <button
+          type="button"
+          className="m3e-chart-readout__more"
+          onClick={() => setExpanded((prev) => !prev)}
+        >
+          {expanded ? "收起多余图例" : `展开其余 ${hiddenOverflowCount} 项`}
+        </button>
+      ) : null}
       {compact ? time : null}
     </div>
   );
@@ -200,7 +236,9 @@ export function TimeSeriesChart({
   hideReadout = false,
   readoutId,
   height: heightOverride,
-  thresholds
+  thresholds,
+  inspectionToleranceMs = 0,
+  onDrillDownSeries
 }: TimeSeriesChartProps) {
   const { ref, width } = useElementWidth<HTMLDivElement>();
   const generatedReadoutId = useId();
@@ -210,16 +248,17 @@ export function TimeSeriesChart({
   const reducedMotion = useMemo(prefersReducedMotion, []);
   const animations = chartAnimationsEnabled(reducedMotion);
   const [selectedTime, setSelectedTime] = useState<number | null>(null);
-  // Series the reader switched off in the legend, by label. Colours stay bound
-  // to series position, so hiding one never repaints the others.
-  const [hiddenLabels, setHiddenLabels] = useState<ReadonlySet<string>>(() => new Set());
+  // Series the reader switched off in the legend, by id or label. Colours stay
+  // bound to series position, so hiding one never repaints the others.
+  const [hiddenKeys, setHiddenKeys] = useState<ReadonlySet<string>>(() => new Set());
   const showLegend = stableSeries.length >= 3;
-  const isHidden = (label: string) => showLegend && hiddenLabels.has(label);
-  const toggleSeries = (label: string) => setHiddenLabels((current) => {
+  const keyOf = (item: { id?: string; label: string }) => item.id ?? item.label;
+  const isHidden = (key: string) => showLegend && hiddenKeys.has(key);
+  const toggleSeries = (key: string) => setHiddenKeys((current) => {
     const next = new Set(current);
-    if (next.has(label)) next.delete(label);
+    if (next.has(key)) next.delete(key);
     // Never switch the last visible curve off; an empty plot answers nothing.
-    else if (stableSeries.filter((item) => !next.has(item.label)).length > 1) next.add(label);
+    else if (stableSeries.filter((item) => !next.has(keyOf(item))).length > 1) next.add(key);
     return next;
   });
   const [keyboardFocus, setKeyboardFocus] = useState(false);
@@ -228,7 +267,7 @@ export function TimeSeriesChart({
   callback.current = onHoverPoint;
 
   const inspection = useMemo(() => selectedTime != null && index.timeline.includes(selectedTime)
-    ? inspectChartTime(series, index, selectedTime, valueFormatter) : null, [series, index, selectedTime, valueFormatter]);
+    ? inspectChartTime(series, index, selectedTime, valueFormatter, inspectionToleranceMs) : null, [series, index, selectedTime, valueFormatter, inspectionToleranceMs]);
   const latest = useMemo(() => latestChartValues(series, index, valueFormatter), [series, index, valueFormatter]);
   useEffect(() => { callback.current?.(inspection); }, [inspection]);
   useEffect(() => {
@@ -246,24 +285,33 @@ export function TimeSeriesChart({
   // Many curves on one plot read better thin; two or three stay bold.
   const strokeWidth = stableSeries.length > 4 ? 1.5 : 2;
   const hasData = index.timeline.length > 0;
-  const svgWidth = Math.max(width, 240);
+  const svgWidth = Math.max(width || 560, 240);
   const time = useMemo(() => timeScale(index.timeline.length ? { min: index.timeline[0], max: index.timeline[index.timeline.length - 1] } : null), [index]);
   const tickFormatter = valueFormatter ?? series.find((item) => item.valueFormatter)?.valueFormatter;
   const binaryAxis = formatsBytes(tickFormatter);
   const valueAxis = useMemo(
     // Hidden curves leave the scale too, so a quiet device can be read once a
     // busy one is switched off.
-    () => niceLinearAxis(stableSeries.filter((item) => !(showLegend && hiddenLabels.has(item.label))).flatMap((item) => item.points.map((point) => point.value)), { pinnedMax: maxValue, binary: binaryAxis, tickCount: compact ? 3 : 4 }),
-    [stableSeries, maxValue, binaryAxis, compact, showLegend, hiddenLabels]
+    () => niceLinearAxis(stableSeries.filter((item) => !(showLegend && hiddenKeys.has(keyOf(item)))).flatMap((item) => item.points.map((point) => point.value)), { pinnedMax: maxValue, binary: binaryAxis, tickCount: compact ? 3 : 4 }),
+    [stableSeries, maxValue, binaryAxis, compact, showLegend, hiddenKeys]
   );
   const value: Scale = { min: valueAxis.min, max: valueAxis.max, span: valueAxis.max - valueAxis.min || 1 };
   const yTicks = valueAxis.ticks;
-  const timeAxis = useMemo(() => niceTimeAxis(time.min, time.max, svgWidth < 360 ? 3 : svgWidth < 640 ? 4 : 6), [time, svgWidth]);
+  const maxXTicks = svgWidth < 360 ? 2 : svgWidth < 520 ? 3 : svgWidth < 720 ? 4 : 6;
+  const timeAxis = useMemo(() => niceTimeAxis(time.min, time.max, maxXTicks), [time, maxXTicks]);
   const xTicks = timeAxis.ticks;
   // An outage is a span of the merged timeline where nobody reported.
   const silent = useMemo(() => silentSpans(index.timeline, gapThreshold(index.timeline)), [index]);
   const tickText = (tick: number) => tickFormatter ? tickFormatter(tick) : String(Math.round(tick));
-  const padding = { top: 12, right: 14, bottom: 26, left: Math.max(44, Math.min(112, Math.max(...yTicks.map((tick) => tickText(tick).length)) * 6 + 12)) };
+  const hasHighThreshold = (thresholds ?? []).some(
+    (line) => line.value > value.min && line.value <= value.max && (line.value - value.min) / value.span >= 0.88
+  );
+  const padding = {
+    top: hasHighThreshold ? 20 : 12,
+    right: 14,
+    bottom: 26,
+    left: Math.max(44, Math.min(112, Math.max(...yTicks.map((tick) => tickText(tick).length)) * 6 + 12))
+  };
   const plotWidth = Math.max(1, svgWidth - padding.left - padding.right);
   const plotHeight = Math.max(1, height - padding.top - padding.bottom);
   const toX = (timestamp: number) => padding.left + ((timestamp - time.min) / time.span) * plotWidth;
@@ -282,7 +330,7 @@ export function TimeSeriesChart({
   return (
     <div ref={ref} className={`m3e-chart m3e-chart--${visualization}${compact ? " is-compact" : ""}${className ? ` ${className}` : ""}`}>
       {!hasData ? <div className="m3e-chart-empty">{EMPTY_CHART_MESSAGE}</div> : <>
-        {!hideReadout && <ChartReadout info={inspection ?? latest} inspecting={Boolean(inspection)} id={generatedReadoutId} toggle={showLegend ? { hidden: hiddenLabels, onToggle: toggleSeries } : undefined} />}
+        {!hideReadout && <ChartReadout info={inspection ?? latest} inspecting={Boolean(inspection)} id={generatedReadoutId} toggle={showLegend ? { hidden: hiddenKeys, onToggle: toggleSeries } : undefined} onDrillDown={onDrillDownSeries} />}
         <svg
           className={`m3e-chart__svg${keyboardFocus ? " is-keyboard-focus" : ""}`}
           width="100%"
@@ -360,19 +408,20 @@ export function TimeSeriesChart({
             return <text key={`x-${tick}`} className="m3e-chart__axis" x={x} y={height - 6} textAnchor={anchor}>{formatTimeTick(tick, timeAxis.step, time.span)}</text>;
           })}
           {stableSeries.map((item, position) => {
+            const seriesKey = keyOf(item);
             const color = seriesColor(position);
             const samples = [...index.points[position]].sort(([a], [b]) => a - b);
             const points = samples.map(([timestamp, point]) => ({ t: timestamp, x: toX(timestamp), y: toY(point.value) }));
-            if (!points.length || isHidden(item.label)) return null;
+            if (!points.length || isHidden(seriesKey)) return null;
             // Each run of consecutive samples is its own path: an outage stays a gap.
             const runs = splitAtGaps(points, (point) => point.t, gapThreshold(samples.map(([timestamp]) => timestamp)));
             if (visualization === "bar") {
               const barWidth = Math.max(2, Math.min(18, plotWidth / points.length - 3));
-              return <g key={item.label} fill={color}>{points.map((point, barIndex) => <rect key={barIndex} x={point.x - barWidth / 2} y={point.y} width={barWidth} height={Math.max(0, padding.top + plotHeight - point.y)} rx={Math.min(barWidth / 2, 4)}>
+              return <g key={`${position}-${seriesKey}`} fill={color}>{points.map((point, barIndex) => <rect key={barIndex} x={point.x - barWidth / 2} y={point.y} width={barWidth} height={Math.max(0, padding.top + plotHeight - point.y)} rx={Math.min(barWidth / 2, 4)}>
                 {animations && <animate attributeName="opacity" from="0" to="1" dur="220ms" fill="freeze" />}
               </rect>)}</g>;
             }
-            return <g key={item.label} className="m3e-chart__series" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={item.dashed ? "5 4" : undefined}>
+            return <g key={`${position}-${seriesKey}`} className="m3e-chart__series" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={item.dashed ? "5 4" : undefined}>
               {visualization === "area" && runs.map((run) => <path key={`area-${run[0].t}`} d={buildAreaPath(run, padding.top + plotHeight)} fill={color} opacity="0.16" stroke="none" />)}
               {runs.map((run) => run.length === 1
                 // A lone sample between outages is still a reading; draw it as a dot.
@@ -382,19 +431,22 @@ export function TimeSeriesChart({
           })}
           {inspection && <g className="m3e-chart__hover" aria-hidden="true">
             <line x1={hoverX} y1={padding.top} x2={hoverX} y2={padding.top + plotHeight} />
-            {inspection.values.map((item, position) => item.point && !isHidden(item.label) ? <circle key={`${position}-${item.label}`} cx={hoverX} cy={toY(item.point.value)} r="4" fill={seriesColor(position)} /> : null)}
+            {inspection.values.map((item, position) => item.point && !isHidden(item.id ?? item.label) ? <circle key={`${position}-${item.id ?? item.label}`} cx={hoverX} cy={toY(item.point.value)} r="4" fill={seriesColor(position)} /> : null)}
           </g>}
         </svg>
         {showLegend && hideReadout && <div className="m3e-chart__legend-toggles" role="group" aria-label="显示或隐藏数据线">
-          {stableSeries.map((item, position) => <button
-            key={item.label}
-            type="button"
-            className="m3e-chart__legend-toggle"
-            aria-pressed={!hiddenLabels.has(item.label)}
-            onClick={() => toggleSeries(item.label)}
-          >
-            <span className="m3e-chart__swatch" style={{ background: seriesColor(position) }} aria-hidden="true" />{item.label}
-          </button>)}
+          {stableSeries.map((item, position) => {
+            const seriesKey = keyOf(item);
+            return <button
+              key={`${position}-${seriesKey}`}
+              type="button"
+              className="m3e-chart__legend-toggle"
+              aria-pressed={!hiddenKeys.has(seriesKey)}
+              onClick={() => toggleSeries(seriesKey)}
+            >
+              <span className="m3e-chart__swatch" style={{ background: seriesColor(position) }} aria-hidden="true" />{item.label}
+            </button>;
+          })}
         </div>}
       </>}
     </div>
@@ -430,7 +482,10 @@ export function Sparkline({ points, maxValue, tone = "normal", height = 32, clas
   const span = top - bottom || 1;
   const first = samples[0].t;
   const duration = samples[samples.length - 1].t - first || 1;
-  const xy = samples.map((sample) => ({ x: ((sample.t - first) / duration) * width, y: 2 + (height - 4) * (1 - (Math.min(sample.v, top) - bottom) / span) }));
+  const xy = samples.map((sample) => ({
+    x: ((sample.t - first) / duration) * width,
+    y: 2 + (height - 4) * (1 - (Math.max(bottom, Math.min(sample.v, top)) - bottom) / span)
+  }));
   const line = monotonePath(xy);
   return (
     <svg className={`m3e-sparkline m3e-sparkline--${tone}${className ? ` ${className}` : ""}`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" height={height} role={ariaLabel ? "img" : undefined} aria-label={ariaLabel} aria-hidden={ariaLabel ? undefined : true}>

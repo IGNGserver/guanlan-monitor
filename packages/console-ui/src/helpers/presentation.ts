@@ -24,7 +24,7 @@ export function resolveWebPresentation(input: PresentationInput): WebPresentatio
   if (!compact && (input.native || input.preference === "desktop")) return "desktop";
   const phoneHint = /iphone|ipod|android.*mobile|windows phone/i.test(input.userAgent);
   const tabletHint = /ipad|tablet|android(?!.*mobile)/i.test(input.userAgent)
-    || (/macintosh/i.test(input.userAgent) && (input.hasTouch || /mobile\//i.test(input.userAgent)));
+    || (/macintosh/i.test(input.userAgent) && ((input.hasTouch && (input.coarsePointer || compact)) || /mobile\//i.test(input.userAgent)));
   const useTouch = compact || input.preference === "touch"
     || input.coarsePointer || phoneHint || tabletHint;
   if (!useTouch) return "desktop";

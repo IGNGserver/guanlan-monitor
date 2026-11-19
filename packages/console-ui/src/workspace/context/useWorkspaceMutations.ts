@@ -120,10 +120,44 @@ export function useWorkspaceMutations({
   );
   const updateDeviceGroup = useCallback(
     (deviceIds: string[], group: string | null) => {
-      const normalized = group?.trim() ? group.trim() : null;
+      const normalized = group?.normalize("NFC").trim() ? group.normalize("NFC").trim() : null;
       return runMutation(
         () => adapter.updateDeviceGroup(deviceIds, normalized),
         normalized ? `已归入“${normalized}”` : "已移出分组",
+        "保存设备分组失败"
+      );
+    },
+    [adapter, runMutation]
+  );
+  const syncDeviceGroupMembers = useCallback(
+    (assignDeviceIds: string[], group: string | null, removeDeviceIds: string[]) => {
+      const normalized = group?.normalize("NFC").trim() ? group.normalize("NFC").trim() : null;
+      const assignSet = new Set(assignDeviceIds);
+      const uniqueAssign = [...assignSet];
+      const uniqueRemove = [...new Set(removeDeviceIds)].filter((id) => !assignSet.has(id));
+      const successLabel = uniqueAssign.length > 0 && uniqueRemove.length > 0
+        ? `已更新“${normalized ?? "分组"}”成员（+${uniqueAssign.length} / -${uniqueRemove.length}）`
+        : uniqueAssign.length === 0 && uniqueRemove.length > 0
+          ? `已从分组移出 ${uniqueRemove.length} 台设备`
+          : normalized
+            ? `已归入“${normalized}”`
+            : "已移出分组";
+      return runMutation(
+        async () => {
+          if (adapter.syncDeviceGroupMembers) {
+            return adapter.syncDeviceGroupMembers(uniqueAssign, normalized, uniqueRemove);
+          }
+          let latest: ConsoleSnapshot | null = null;
+          if (uniqueAssign.length > 0) {
+            latest = await adapter.updateDeviceGroup(uniqueAssign, normalized);
+          }
+          if (uniqueRemove.length > 0) {
+            latest = await adapter.updateDeviceGroup(uniqueRemove, null);
+          }
+          if (latest) return latest;
+          return adapter.getSnapshot();
+        },
+        successLabel,
         "保存设备分组失败"
       );
     },
@@ -167,6 +201,7 @@ export function useWorkspaceMutations({
     renameInstance,
     reorderInstances,
     updateDeviceGroup,
+    syncDeviceGroupMembers,
     minimizeWindow,
     toggleMaximizeWindow,
     closeWindow,

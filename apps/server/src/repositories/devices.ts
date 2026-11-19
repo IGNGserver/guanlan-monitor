@@ -66,8 +66,8 @@ export class MysqlDeviceRepository implements DeviceRepository {
       console.info("[hub] devices.device_id migrated to utf8mb4_bin; device ids are case-sensitive");
     }
     await this.pool.query(
-      `UPDATE devices SET group_name = NULL WHERE LOWER(TRIM(group_name)) IN (?, ?, ?)`,
-      ["all", "__all__", "__ungrouped__"]
+      `UPDATE devices SET group_name = NULL WHERE LOWER(TRIM(group_name)) IN (?, ?, ?, ?)`,
+      ["all", "__all__", "__ungrouped__", "未分组"]
     );
   }
 
@@ -292,25 +292,46 @@ export class MysqlDeviceRepository implements DeviceRepository {
   }
 
   async updateDeviceGroup(deviceIds: string[], group: string | null): Promise<void> {
-    const normalizedGroup = normalizeDeviceGroupName(group)?.slice(0, 64) ?? null;
+    await this.syncDeviceGroupMembers(deviceIds, group, []);
+  }
+
+  async syncDeviceGroupMembers(
+    assignDeviceIds: string[],
+    group: string | null,
+    removeDeviceIds: string[] = []
+  ): Promise<void> {
+    const normalizedGroup = normalizeDeviceGroupName(group);
     if (normalizedGroup && isReservedDeviceGroupName(normalizedGroup)) throw new InvalidDeviceGroupNameError();
     const formattedNow = new Date().toISOString().slice(0, 19).replace("T", " ");
-    const uniqueIds = [...new Set(deviceIds)];
-    if (!uniqueIds.length) return;
-    if (uniqueIds.some(isLegacyVirtualMachineId)) throw new DeviceNotFoundError(uniqueIds.find(isLegacyVirtualMachineId)!);
-    const placeholders = uniqueIds.map(() => "?").join(", ");
+    const assignSet = new Set(assignDeviceIds);
+    const uniqueAssignIds = [...assignSet];
+    const uniqueRemoveIds = [...new Set(removeDeviceIds)].filter((id) => !assignSet.has(id));
+    const allIds = [...uniqueAssignIds, ...uniqueRemoveIds];
+    if (!allIds.length) return;
+    if (allIds.some(isLegacyVirtualMachineId)) throw new DeviceNotFoundError(allIds.find(isLegacyVirtualMachineId)!);
+    const allPlaceholders = allIds.map(() => "?").join(", ");
+    const assignPlaceholders = uniqueAssignIds.map(() => "?").join(", ");
+    const removePlaceholders = uniqueRemoveIds.map(() => "?").join(", ");
     const poolWithConnection = this.pool as mysql.Pool & {
       getConnection?: () => Promise<mysql.PoolConnection>;
     };
     await this.registryQueue.run("registry", async () => {
       this.listCache = undefined;
-      for (const deviceId of uniqueIds) this.registeredDevices.delete(deviceId);
+      for (const deviceId of allIds) this.registeredDevices.delete(deviceId);
       if (!poolWithConnection.getConnection) {
-        for (const deviceId of uniqueIds) {
+        for (const deviceId of allIds) {
           if (!(await this.getOpenDevice(deviceId))) throw new DeviceNotFoundError(deviceId);
+        }
+        for (const deviceId of uniqueAssignIds) {
           await this.pool.query(
             `UPDATE devices SET group_name = ?, updated_at = ? WHERE status = 'open' AND device_id = ?`,
             [normalizedGroup, formattedNow, deviceId]
+          );
+        }
+        for (const deviceId of uniqueRemoveIds) {
+          await this.pool.query(
+            `UPDATE devices SET group_name = ?, updated_at = ? WHERE status = 'open' AND device_id = ?`,
+            [null, formattedNow, deviceId]
           );
         }
         return;
@@ -320,16 +341,24 @@ export class MysqlDeviceRepository implements DeviceRepository {
       try {
         await connection.beginTransaction();
         const [rows] = await connection.query<RowDataPacket[]>(
-          `SELECT device_id FROM devices WHERE status = 'open' AND device_id IN (${placeholders}) FOR UPDATE`,
-          uniqueIds
+          `SELECT device_id FROM devices WHERE status = 'open' AND device_id IN (${allPlaceholders}) FOR UPDATE`,
+          allIds
         );
         const openIds = new Set(rows.map((row) => String(row.device_id)));
-        const missing = uniqueIds.find((deviceId) => !openIds.has(deviceId));
+        const missing = allIds.find((deviceId) => !openIds.has(deviceId));
         if (missing) throw new DeviceNotFoundError(missing);
-        await connection.query(
-          `UPDATE devices SET group_name = ?, updated_at = ? WHERE status = 'open' AND device_id IN (${placeholders})`,
-          [normalizedGroup, formattedNow, ...uniqueIds]
-        );
+        if (uniqueAssignIds.length > 0) {
+          await connection.query(
+            `UPDATE devices SET group_name = ?, updated_at = ? WHERE status = 'open' AND device_id IN (${assignPlaceholders})`,
+            [normalizedGroup, formattedNow, ...uniqueAssignIds]
+          );
+        }
+        if (uniqueRemoveIds.length > 0) {
+          await connection.query(
+            `UPDATE devices SET group_name = ?, updated_at = ? WHERE status = 'open' AND device_id IN (${removePlaceholders})`,
+            [null, formattedNow, ...uniqueRemoveIds]
+          );
+        }
         await connection.commit();
       } catch (error) {
         await connection.rollback().catch(() => undefined);

@@ -16,6 +16,7 @@ test("tablet identity survives split-screen and trackpad; columns use available 
   assert.equal(resolveWebPresentation({ ...desktop, width: 430, screenShortSide: 430, coarsePointer: true, userAgent: "Macintosh Mobile/15E148 Safari" }), "tablet");
   assert.equal(resolveWebPresentation({ ...desktop, userAgent: "Macintosh Mobile/15E148 Safari" }), "tablet");
   assert.equal(resolveWebPresentation({ ...desktop, userAgent: "Macintosh Safari" }), "desktop");
+  assert.equal(resolveWebPresentation({ ...desktop, width: 1440, height: 900, screenShortSide: 900, hasTouch: true, coarsePointer: false, userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/130.0" }), "desktop", "wide macOS desktop with fine pointer and simulated touch points must remain desktop");
   assert.equal(resolveWebPresentation({ ...desktop, width: 430, screenShortSide: 834, hasTouch: true, coarsePointer: true, userAgent: "Linux x86_64 Chrome" }), "tablet");
   assert.equal(supportsTouchSplit("tablet", 839), false);
   assert.equal(supportsTouchSplit("tablet", 840), true);

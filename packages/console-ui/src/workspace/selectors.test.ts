@@ -13,7 +13,8 @@ import {
   selectLinkLabel,
   selectPeerDevicesInGroup,
   selectResourceRanking,
-  selectSnapshotSource
+  selectSnapshotSource,
+  sortDevicesByCriterion
 } from "./selectors.ts";
 import { mergeDeviceOrder, registerDeviceOrderDraftGuard, confirmDiscardDeviceOrderDraft } from "./deviceOrderDraft.ts";
 
@@ -238,4 +239,87 @@ test("deviceOrderDraft guard registration and confirmation", () => {
     if (originalConfirm) (globalThis as any).window.confirm = originalConfirm;
     else delete (globalThis as any).window.confirm;
   }
+});
+
+test("selectDeviceGroups computes pooled byte capacities, normalOnlineCount, and hotspot readings", () => {
+  const devices = [
+    device({
+      deviceId: "node-a",
+      hostname: "节点 A",
+      group: "虚拟化集群",
+      cpuUsagePercent: 25,
+      memoryUsagePercent: 50,
+      memoryUsedBytes: 32 * 1024 ** 3,
+      memoryTotalBytes: 64 * 1024 ** 3,
+      diskUsagePercent: 40,
+      diskUsedBytes: 400 * 1024 ** 3,
+      diskTotalBytes: 1000 * 1024 ** 3,
+      sortOrder: 0
+    }),
+    device({
+      deviceId: "node-b",
+      hostname: "节点 B",
+      group: "虚拟化集群",
+      cpuUsagePercent: 92,
+      memoryUsagePercent: 75,
+      memoryUsedBytes: 192 * 1024 ** 3,
+      memoryTotalBytes: 256 * 1024 ** 3,
+      diskUsagePercent: 80,
+      diskUsedBytes: 3200 * 1024 ** 3,
+      diskTotalBytes: 4000 * 1024 ** 3,
+      sortOrder: 1
+    }),
+    device({
+      deviceId: "node-offline",
+      hostname: "离线节点",
+      group: "虚拟化集群",
+      status: "offline",
+      cpuUsagePercent: 99,
+      memoryUsedBytes: 60 * 1024 ** 3,
+      memoryTotalBytes: 64 * 1024 ** 3,
+      sortOrder: 2
+    })
+  ];
+  const [cluster] = selectDeviceGroups(devices);
+  assert.equal(cluster.total, 3);
+  assert.equal(cluster.online, 2);
+  assert.equal(cluster.offline, 1);
+  assert.equal(cluster.normalOnlineCount, 1);
+  assert.equal(cluster.overThreshold, 1);
+  // Pooled memory: (32 + 192) / (64 + 256) = 224 / 320 = 70% (ignores offline stale bytes)
+  assert.equal(cluster.memoryUsedBytes, 224 * 1024 ** 3);
+  assert.equal(cluster.memoryTotalBytes, 320 * 1024 ** 3);
+  assert.equal(cluster.pooledMemoryPercent, 70);
+  // Pooled disk: (400 + 3200) / (1000 + 4000) = 3600 / 5000 = 72%
+  assert.equal(cluster.pooledDiskPercent, 72);
+  assert.deepEqual(cluster.maxCpu, {
+    deviceId: "node-b",
+    hostname: "节点 B",
+    percent: 92,
+    severity: "warning"
+  });
+});
+
+test("scoped selectHealthSummary omits localBackend issue count and sortDevicesByCriterion handles disk, offline, and NaN timestamps", () => {
+  const withLocalIssues: ConsoleSnapshot = {
+    ...snapshot,
+    localBackend: {
+      available: true,
+      running: true,
+      lastIssueCount: 3,
+      config: {} as any,
+      diagnostics: null
+    } as any
+  };
+  const groupDevices = [device({ deviceId: "g1", group: "宿主机" })];
+  assert.equal(selectHealthSummary(withLocalIssues, groupDevices, () => "10:00").pending, 3);
+  assert.equal(selectHealthSummary(withLocalIssues, groupDevices, () => "10:00", "push", undefined, { scoped: true }).pending, 0);
+
+  const mixed = [
+    device({ deviceId: "off", hostname: "离线机", status: "offline", diskUsagePercent: 99, lastSeenAt: "invalid-date", sortOrder: 0 }),
+    device({ deviceId: "on-low", hostname: "轻载机", status: "online", diskUsagePercent: 30, lastSeenAt: "2026-09-13T09:00:00.000Z", sortOrder: 1 }),
+    device({ deviceId: "on-high", hostname: "重载机", status: "online", diskUsagePercent: 85, lastSeenAt: "2026-09-13T11:00:00.000Z", sortOrder: 2 })
+  ];
+  assert.deepEqual(sortDevicesByCriterion(mixed, "disk").map((d) => d.deviceId), ["on-high", "on-low", "off"]);
+  assert.deepEqual(sortDevicesByCriterion(mixed, "lastSeen").map((d) => d.deviceId), ["on-high", "on-low", "off"]);
 });

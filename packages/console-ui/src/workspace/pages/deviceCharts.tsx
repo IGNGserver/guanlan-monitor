@@ -51,6 +51,7 @@ import {
   formatCapacitySummary,
   formatCount,
   formatDate,
+  formatDeviceOs,
   formatDuration,
   formatGpuMemorySummary,
   formatPercent,
@@ -284,14 +285,21 @@ type ChartRenderer = (chart: DashboardChartSpec, context: DeviceChartContext) =>
 function hardwareRows(context: DeviceChartContext): Array<{ label: string; value: string }> {
   const latest = context.filteredLatest;
   const packages = latest?.cpuPackages ?? [];
+  const sumPositive = (values: Array<number | null | undefined>) => {
+    const valid = values.filter((value): value is number => value != null && Number.isFinite(value) && value > 0);
+    return valid.length ? valid.reduce((total, value) => total + value, 0) : null;
+  };
+  const coreSum = sumPositive(packages.map((cpu) => cpu.coreCount));
+  const logicalSum = sumPositive(packages.map((cpu) => cpu.logicalCount));
+  const l3Sum = sumPositive(packages.map((cpu) => cpu.l3CacheBytes));
   return [
-    { label: "操作系统", value: context.device.os },
+    { label: "操作系统", value: formatDeviceOs(context.device.os) },
     { label: "设备 ID", value: context.device.deviceId },
     { label: "Agent 版本", value: context.device.agentVersion ? `v${context.device.agentVersion}` : "未知" },
     { label: "CPU 型号", value: packages.map((cpu) => `${cpu.socketIndex != null ? `Socket ${cpu.socketIndex} · ` : ""}${cpu.model || cpu.name}`).join("、") || "未采集" },
     { label: "运行时间", value: context.unavailable("systemOverview") ? UNAVAILABLE_METRIC_LABEL : formatDuration(latest?.system.uptimeSeconds) },
-    { label: "CPU 核心 / 线程", value: `${formatCount(packages.reduce((total, cpu) => total + (cpu.coreCount ?? 0), 0))} / ${formatCount(packages.reduce((total, cpu) => total + (cpu.logicalCount ?? 0), 0))}` },
-    { label: "L3 缓存", value: formatBytes(packages.reduce((total, cpu) => total + (cpu.l3CacheBytes ?? 0), 0)) },
+    { label: "CPU 核心 / 线程", value: coreSum == null && logicalSum == null ? "未采集" : `${formatCount(coreSum)} / ${formatCount(logicalSum)}` },
+    { label: "L3 缓存", value: l3Sum != null ? formatBytes(l3Sum) : "未采集" },
     { label: "进程 / 系统线程 / 句柄", value: context.unavailable("systemOverview") ? UNAVAILABLE_METRIC_LABEL : `${formatCount(latest?.system.processCount)} / ${formatCount(latest?.system.threadCount)} / ${formatCount(latest?.system.handleCount)}` },
     { label: "内存容量", value: latest ? formatCapacitySummary(latest.memoryUsedBytes, latest.memoryTotalBytes, context.unavailable("memoryUsage")) : "未采集" },
     { label: "磁盘容量", value: latest ? formatCapacitySummary(latest.diskUsedBytes, latest.diskTotalBytes, context.unavailable("diskUsage")) : "未采集" },
@@ -307,12 +315,13 @@ function cpuFactItems(context: DeviceChartContext): ChartNumberItem[] {
     const valid = values.filter((value): value is number => value != null && Number.isFinite(value));
     return valid.length ? valid.reduce((total, value) => total + value, 0) : null;
   };
+  const l3Sum = sum(packages.map((cpu) => cpu.l3CacheBytes));
   const overviewUnavailable = context.unavailable("systemOverview");
   return [
     { label: "运行时间", value: overviewUnavailable ? UNAVAILABLE_METRIC_LABEL : formatDuration(system?.uptimeSeconds) },
     { label: "物理核心", value: formatCount(sum(packages.map((cpu) => cpu.coreCount))) },
     { label: "逻辑线程", value: formatCount(sum(packages.map((cpu) => cpu.logicalCount))) },
-    { label: "L3 缓存", value: formatBytes(sum(packages.map((cpu) => cpu.l3CacheBytes))) },
+    { label: "L3 缓存", value: l3Sum != null && l3Sum > 0 ? formatBytes(l3Sum) : "未采集" },
     { label: "系统线程", value: overviewUnavailable ? UNAVAILABLE_METRIC_LABEL : formatCount(system?.threadCount) },
     { label: "进程数", value: overviewUnavailable ? UNAVAILABLE_METRIC_LABEL : formatCount(system?.processCount) },
     { label: "句柄数", value: overviewUnavailable ? UNAVAILABLE_METRIC_LABEL : formatCount(system?.handleCount) },
