@@ -117,7 +117,7 @@ private val OneUiTypographyDefaults = OneUiTypography(
     .oneUiBase().merge(tabularNumber),
   figureMedium = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold)
     .oneUiBase().merge(tabularNumber),
-  topBarLarge = TextStyle(fontSize = 26.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold)
+  topBarLarge = TextStyle(fontSize = 30.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold)
     .oneUiBase(),
   topBarSmall = TextStyle(fontSize = 19.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
     .oneUiBase(),

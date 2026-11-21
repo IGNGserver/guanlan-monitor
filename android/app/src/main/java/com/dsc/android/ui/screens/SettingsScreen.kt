@@ -255,6 +255,7 @@ private fun HubSection(state: AppState, onRequestLogout: () -> Unit) {
 
 @Composable
 private fun SyncSection(state: AppState, actions: GuanlanActions) {
+  val colors = OneUiTheme.colors
   val metrics = OneUiTheme.metrics
   Column(verticalArrangement = Arrangement.spacedBy(metrics.spaceXs)) {
     OneUiGroupHeader(label = "同步与缓存")
@@ -267,11 +268,35 @@ private fun SyncSection(state: AppState, actions: GuanlanActions) {
         }
       )
       OneUiListDivider()
-      for ((mode, label) in listOf("auto" to "自动", "standard" to "标准", "saver" to "省流")) {
+      for ((mode, label, desc) in listOf(
+        Triple("auto", "自动", "按网络状态在标准与省流间自动切换"),
+        Triple("standard", "标准", "约 15 秒刷新，保留完整明细精度"),
+        Triple("saver", "省流", "至少 30 秒刷新并启用抽样，降低流量占用")
+      )) {
+        val selected = state.serverConfig.networkMode == mode
         OneUiListItem(
           title = "网络模式 · $label",
-          subtitle = if (state.serverConfig.networkMode == mode) "当前模式" else "点按切换",
-          onClick = { actions.onSetNetworkMode(mode) }
+          subtitle = desc,
+          selected = selected,
+          role = Role.RadioButton,
+          onClick = { actions.onSetNetworkMode(mode) },
+          leading = {
+            OneUiLeadingIcon(
+              icon = Icons.Rounded.Tune,
+              contentDescription = null,
+              tone = if (selected) OneUiIconTone.Accent else OneUiIconTone.Neutral
+            )
+          },
+          trailing = {
+            if (selected) {
+              OneUiIcon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = "已选择",
+                size = metrics.iconSize,
+                tint = colors.accent
+              )
+            }
+          }
         )
         OneUiListDivider()
       }

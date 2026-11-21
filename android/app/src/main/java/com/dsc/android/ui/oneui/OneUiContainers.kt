@@ -1,7 +1,9 @@
 package com.dsc.android.ui.oneui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -14,10 +16,13 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
@@ -27,6 +32,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -51,15 +57,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.State
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
@@ -71,6 +81,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -94,30 +105,31 @@ import androidx.compose.ui.graphics.vector.ImageVector
  * 不再自己决定“卡片该多大、组与组之间留多少”（构）。
  */
 
+/** 底部悬浮导航栏额外占用的可视高度，由外壳注入、列表底部留白自动感知。 */
+val LocalOneUiBottomInset: ProvidableCompositionLocal<Dp> = compositionLocalOf { 0.dp }
+
 /**
  * 大标题随列表滚动折叠的比例：由调用方把 LazyListState 传进来。
  *
- * 按比例而不是「能不能往上滚」：滚过 1px 就整段塌缩会让正文跟着跳一下，
- * One UI 的实际表现是标题随滚动距离连续上移淡出，滚满一条大标题的高度后收完（动）。
+ * 1:1 实时跟随手指滚动距离，不再叠加 110ms 滞后补间，
+ * 配合 [OneUiTopBar] 的两段错峰淡入淡出彻底消除滚动初期的双标题残影。
  */
 @Composable
 fun rememberOneUiCollapse(listState: LazyListState): Float {
-  val motion = OneUiTheme.motion
   val density = LocalDensity.current
   val largeTitleHeight = OneUiTheme.metrics.topBarLargeHeight
   val thresholdPx = remember(density, largeTitleHeight) {
-    with(density) { largeTitleHeight.toPx() }.coerceAtLeast(1f)
+    with(density) { (largeTitleHeight * 0.85f).toPx() }.coerceAtLeast(1f)
   }
-  val raw = if (listState.firstVisibleItemIndex > 0) {
-    1f
-  } else {
-    (listState.firstVisibleItemScrollOffset / thresholdPx).coerceIn(0f, 1f)
+  val progress by remember(listState, thresholdPx) {
+    derivedStateOf {
+      if (listState.firstVisibleItemIndex > 0) {
+        1f
+      } else {
+        (listState.firstVisibleItemScrollOffset / thresholdPx).coerceIn(0f, 1f)
+      }
+    }
   }
-  val progress by animateFloatAsState(
-    targetValue = raw,
-    animationSpec = motion.tween(OneUiDuration.Press, OneUiEasing.EmphasizedDecelerate),
-    label = "oneui_collapse"
-  )
   return progress
 }
 
@@ -125,8 +137,8 @@ fun rememberOneUiCollapse(listState: LazyListState): Float {
  * 顶部标题栏（构）。
  *
  * One UI 的组织方式：动作按钮永远贴顶，大标题在它们下方生长；
- * 滚动时标题块整体上移并淡出，折叠后由同一行的紧凑标题接手——
- * 所以导航、标题、动作三者始终不会同时占两行高度。
+ * 滚动时采用官方两段错峰文字过渡——大标题先上移并完全淡出（0..0.52），
+ * 随后顶部紧凑标题才淡入接手（0.58..1.0），绝不出现两个标题同时一深一浅的残影。
  */
 @Composable
 fun OneUiTopBar(
@@ -142,11 +154,15 @@ fun OneUiTopBar(
   metrics: OneUiMetrics = OneUiTheme.metrics
 ) {
   val effectiveLarge = large && !OneUiTheme.window.useCompactTopBar
+  val density = LocalDensity.current
   val barHeight = if (effectiveLarge) {
     metrics.topBarLargeHeight * (1f - collapse) + metrics.topBarSmallHeight * collapse
   } else {
     metrics.topBarSmallHeight
   }
+  val largeAlpha = ((0.52f - collapse) / 0.52f).coerceIn(0f, 1f)
+  val collapsedAlpha = ((collapse - 0.58f) / 0.42f).coerceIn(0f, 1f)
+  val largeShiftPx = with(density) { 16.dp.toPx() } * collapse
 
   Column(
     modifier = modifier
@@ -158,22 +174,22 @@ fun OneUiTopBar(
       .height(barHeight)
       .padding(horizontal = metrics.screenMargin)
   ) {
-    // 贴顶的一行：导航 + 紧凑标题（仅折叠后可见）+ 动作
+    // 贴顶的一行：导航 + 紧凑标题（仅折叠过半后淡入）+ 动作
     Row(
       modifier = Modifier
         .fillMaxWidth()
         .height(metrics.topBarSmallHeight),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
+      horizontalArrangement = Arrangement.spacedBy(metrics.spaceXxs)
     ) {
       navigationIcon?.invoke()
       if (effectiveLarge) {
         // 折叠后可点紧凑标题回到大标题：One UI 的大标题页都能这样展开（构 + 交）
-        val expandClick: (() -> Unit)? = if (collapse > 0.5f) onCollapsedTitleClick else null
+        val expandClick: (() -> Unit)? = if (collapse > 0.6f) onCollapsedTitleClick else null
         Box(
           modifier = Modifier
             .weight(1f)
-            .graphicsLayerAlpha(collapse)
+            .graphicsLayer { alpha = collapsedAlpha }
             .then(
               if (expandClick != null) {
                 Modifier.oneUiPressable(
@@ -191,7 +207,7 @@ fun OneUiTopBar(
             text = title,
             role = OneUiTextRole.TopBarCollapsed,
             maxLines = 1,
-            overflow = TextOverflow.Clip
+            overflow = TextOverflow.Ellipsis
           )
         }
       } else {
@@ -222,7 +238,10 @@ fun OneUiTopBar(
           .fillMaxWidth()
           .weight(1f)
           .padding(bottom = metrics.spaceXs)
-          .graphicsLayerAlpha((1f - collapse * 1.5f).coerceIn(0f, 1f)),
+          .graphicsLayer {
+            alpha = largeAlpha
+            translationY = -largeShiftPx
+          },
         verticalArrangement = Arrangement.Bottom
       ) {
         OneUiText(
@@ -237,7 +256,7 @@ fun OneUiTopBar(
             role = OneUiTextRole.RowSubtitle,
             color = colors.textSecondary,
             maxLines = 2,
-            modifier = Modifier.padding(top = 2.dp)
+            modifier = Modifier.padding(top = 3.dp)
           )
         }
       }
@@ -245,10 +264,13 @@ fun OneUiTopBar(
   }
 }
 
-private fun Modifier.graphicsLayerAlpha(alpha: Float): Modifier =
-  this.then(Modifier.graphicsLayer(alpha = alpha))
-
-/** 底部导航（构）：一级目的地永远在下方拇指区，宽屏换成侧栏。 */
+/**
+ * 底部导航（构 + 动）：One UI 7/8 风格悬浮圆角胶囊底栏。
+ *
+ * 1. 悬浮于手势区上方，配合底部柔和渐隐衬底让列表内容通透延展；
+ * 2. 内部采用单层平滑滑移的强调色胶囊指示器（tabSpring）+ 图标微弹，
+ *    彻底杜绝“外层灰球套内层蓝胶囊”的双层套娃观感。
+ */
 @Immutable
 data class OneUiDestination(
   val key: String,
@@ -266,25 +288,78 @@ fun OneUiBottomBar(
   modifier: Modifier = Modifier,
   colors: OneUiColors = OneUiTheme.colors
 ) {
+  if (destinations.isEmpty()) return
   val metrics = OneUiTheme.metrics
-  Row(
+  val shapes = OneUiTheme.shapes
+  val motion = OneUiTheme.motion
+  val selectedIndex = destinations.indexOfFirst { it.key == selectedKey }.coerceAtLeast(0)
+  val indicatorIndex by animateFloatAsState(
+    targetValue = selectedIndex.toFloat(),
+    animationSpec = motion.tabSpring(),
+    label = "oneui_floating_nav_indicator"
+  )
+  val indicatorColor = if (colors.isDark) {
+    colors.accent.copy(alpha = metrics.navIndicatorAlpha)
+  } else {
+    colors.accentSoft
+  }
+
+  Box(
     modifier = modifier
       .fillMaxWidth()
-      .background(colors.canvas)
-      .navigationBarsPadding()
-      .heightIn(min = metrics.bottomBarHeight)
-      .padding(top = 6.dp, bottom = 6.dp),
-    horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs, Alignment.CenterHorizontally),
-    verticalAlignment = Alignment.CenterVertically
-  ) {
-    destinations.forEach { destination ->
-      val selected = destination.key == selectedKey
-      OneUiBottomBarItem(
-        destination = destination,
-        selected = selected,
-        onSelect = { onSelect(destination.key) },
-        modifier = Modifier.weight(1f, fill = false)
+      .background(
+        Brush.verticalGradient(
+          colors = listOf(
+            Color.Transparent,
+            colors.canvas.copy(alpha = 0.86f),
+            colors.canvas
+          )
+        )
       )
+      .navigationBarsPadding()
+      .padding(horizontal = metrics.screenMargin, vertical = 10.dp),
+    contentAlignment = Alignment.Center
+  ) {
+    BoxWithConstraints(
+      modifier = Modifier
+        .widthIn(max = 360.dp)
+        .fillMaxWidth()
+        .height(metrics.bottomBarHeight)
+        .oneUiSurface(
+          color = colors.raised,
+          shape = shapes.pill,
+          colors = colors,
+          level = OneUiSurfaceLevel.Floating,
+          border = true,
+          hairlineWidth = 0.8.dp
+        )
+        .padding(4.dp)
+    ) {
+      val cellWidth = maxWidth / destinations.size
+      // 单层平滑滑移指示胶囊：取代原先外层 selectedOverlay 灰圆 + 内层小蓝胶囊的双层套娃
+      Box(
+        modifier = Modifier
+          .offset(x = cellWidth * indicatorIndex)
+          .width(cellWidth)
+          .fillMaxHeight()
+          .background(indicatorColor, shapes.pill)
+      )
+      Row(
+        modifier = Modifier.fillMaxSize(),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        destinations.forEach { destination ->
+          val selected = destination.key == selectedKey
+          OneUiBottomBarItem(
+            destination = destination,
+            selected = selected,
+            onSelect = { onSelect(destination.key) },
+            modifier = Modifier
+              .weight(1f)
+              .fillMaxHeight()
+          )
+        }
+      }
     }
   }
 }
@@ -299,47 +374,57 @@ private fun OneUiBottomBarItem(
   val colors = OneUiTheme.colors
   val shapes = OneUiTheme.shapes
   val motion = OneUiTheme.motion
-  val metrics = OneUiTheme.metrics
-  val pillAlpha by animateFloatAsState(
-    targetValue = if (selected) 1f else 0f,
-    animationSpec = motion.tween(OneUiDuration.Content),
-    label = "oneui_nav_pill"
+  val tint by animateColorAsState(
+    targetValue = if (selected) colors.accent else colors.textSecondary,
+    animationSpec = motion.tween(OneUiDuration.Toggle, OneUiEasing.SineInOut80),
+    label = "oneui_nav_tint"
   )
-  val iconTint = if (selected) colors.accent else colors.textTertiary
+  val iconScale by animateFloatAsState(
+    targetValue = if (selected) 1.07f else 1f,
+    animationSpec = motion.pressSpring(),
+    label = "oneui_nav_icon_scale"
+  )
 
   Column(
     modifier = modifier
-      .defaultMinSize(minWidth = 76.dp)
+      // selected 传 false：避免 oneUiPressable 再叠一层外围灰底，选中态已由单层滑移胶囊表达
       .oneUiPressable(
         onClick = onSelect,
-        selected = selected,
+        selected = false,
         shape = shapes.pill,
-        role = androidx.compose.ui.semantics.Role.Tab,
-        minHeight = metrics.touchTarget,
+        role = Role.Tab,
+        minHeight = null,
         stateLabel = if (selected) "当前页面" else destination.label
       )
       .semantics { if (selected) this.selected = true }
-      .padding(horizontal = 14.dp, vertical = 6.dp),
+      .padding(horizontal = 8.dp, vertical = 4.dp),
     horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(3.dp)
+    verticalArrangement = Arrangement.Center
   ) {
     Box(contentAlignment = Alignment.Center) {
-      Box(
-        modifier = Modifier
-          .size(width = 54.dp, height = 30.dp)
-          .background(colors.accent.copy(alpha = metrics.navIndicatorAlpha * pillAlpha), shapes.pill)
-      )
       OneUiIcon(
         imageVector = if (selected && destination.selectedIcon != null) destination.selectedIcon else destination.icon,
         contentDescription = destination.badge?.let { "${destination.label}，$it 项" } ?: destination.label,
-        tint = iconTint
+        size = 22.dp,
+        tint = tint,
+        modifier = Modifier.graphicsLayer {
+          scaleX = iconScale
+          scaleY = iconScale
+        }
       )
-      destination.badge?.let { OneUiNavBadge(it, Modifier.align(Alignment.TopEnd)) }
+      destination.badge?.let {
+        OneUiNavBadge(
+          text = it,
+          modifier = Modifier
+            .align(Alignment.TopEnd)
+            .offset(x = 12.dp, y = (-5).dp)
+        )
+      }
     }
     OneUiText(
       text = destination.label,
       role = OneUiTextRole.Caption,
-      color = if (selected) colors.accent else colors.textTertiary,
+      color = tint,
       weight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
       maxLines = 1,
       textAlign = TextAlign.Center
@@ -832,10 +917,12 @@ fun OneUiStatusPillBar(
 ) {
   if (pills.isEmpty()) return
   val metrics = OneUiTheme.metrics
+  val scrollState = rememberScrollState()
   Row(
     modifier = modifier
       .fillMaxWidth()
-      .horizontalScroll(rememberScrollState()),
+      .oneUiHorizontalFadingEdge(scrollState)
+      .horizontalScroll(scrollState),
     horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
     verticalAlignment = Alignment.CenterVertically
   ) {
@@ -845,6 +932,13 @@ fun OneUiStatusPillBar(
   }
 }
 
+/**
+ * 状态/筛选胶囊（件 + 交）：
+ * - 不可点击的纯读数徽标保持紧凑 28dp 视觉高度（11.5sp ChartLabel）；
+ * - 可点击的交互胶囊自动升级到 38dp 视觉高度 + 13.5sp Chip 字阶 + 48dp 垂直触控热区，
+ *   并带有 One UI 平滑变色与弹簧按压反馈，彻底纠正 32dp 豆丁按钮与整体失配的问题。
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OneUiStatusPill(
   pill: OneUiStatusPillItem,
@@ -852,9 +946,16 @@ fun OneUiStatusPill(
 ) {
   val colors = OneUiTheme.colors
   val shapes = OneUiTheme.shapes
-  val (baseContainer, baseContent) = when {
+  val metrics = OneUiTheme.metrics
+  val motion = OneUiTheme.motion
+  val interactive = pill.onClick != null || pill.onDismiss != null
+  val interaction = rememberOneUiInteractionSource()
+  val visual = oneUiInteraction(interaction, enabled = pill.onClick != null)
+  val performHaptic = rememberOneUiHaptic()
+
+  val (targetContainer, targetContent) = when {
     pill.selected -> Pair(colors.accent, colors.textOnAccent)
-    pill.tone == OneUiPillTone.Neutral -> Pair(colors.sunken, colors.textSecondary)
+    pill.tone == OneUiPillTone.Neutral -> Pair(if (interactive) colors.group else colors.sunken, if (interactive) colors.textPrimary else colors.textSecondary)
     pill.tone == OneUiPillTone.Accent -> Pair(colors.accentSoft, colors.accentSoftContent)
     pill.tone == OneUiPillTone.Online -> Pair(colors.onlineSoft, colors.onlineContent)
     pill.tone == OneUiPillTone.Offline -> Pair(colors.offlineSoft, colors.offlineContent)
@@ -863,90 +964,189 @@ fun OneUiStatusPill(
     else -> Pair(colors.sunken, colors.textSecondary)
   }
 
-  Column(
-    modifier = modifier
-      .defaultMinSize(minHeight = 32.dp)
-      .oneUiSurface(baseContainer, shapes.pill, colors = colors, level = OneUiSurfaceLevel.Group)
-      .oneUiPressable(
-        onClick = pill.onClick,
-        enabled = pill.onClick != null,
-        selected = pill.selected,
-        shape = shapes.pill,
-        haptics = OneUiHaptics.Tap,
-        minHeight = null,
-        stateLabel = if (pill.selected) "已启用筛选" else null
-      )
-      .padding(
-        start = 11.dp,
-        end = if (pill.onDismiss != null) 6.dp else 11.dp,
-        top = 5.dp,
-        bottom = if (pill.progress != null) 4.dp else 5.dp
-      ),
-    verticalArrangement = Arrangement.spacedBy(3.dp)
-  ) {
-    Row(
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(5.dp)
+  val containerColor by animateColorAsState(
+    targetValue = targetContainer,
+    animationSpec = motion.tween(OneUiDuration.Toggle, OneUiEasing.SineInOut80),
+    label = "oneui_status_pill_bg"
+  )
+  val contentColor by animateColorAsState(
+    targetValue = targetContent,
+    animationSpec = motion.tween(OneUiDuration.Toggle, OneUiEasing.SineInOut80),
+    label = "oneui_status_pill_fg"
+  )
+  val valueColor by animateColorAsState(
+    targetValue = when {
+      pill.selected -> colors.textOnAccent.copy(alpha = 0.92f)
+      pill.tone == OneUiPillTone.Neutral -> colors.textSecondary
+      else -> targetContent
+    },
+    animationSpec = motion.tween(OneUiDuration.Toggle, OneUiEasing.SineInOut80),
+    label = "oneui_status_pill_val"
+  )
+  val borderColor by animateColorAsState(
+    targetValue = when {
+      pill.selected -> Color.Transparent
+      interactive && pill.tone == OneUiPillTone.Neutral -> colors.outline.copy(alpha = 0.72f)
+      else -> Color.Transparent
+    },
+    animationSpec = motion.tween(OneUiDuration.Toggle, OneUiEasing.SineInOut80),
+    label = "oneui_status_pill_border"
+  )
+  val inkAlpha by animateFloatAsState(
+    targetValue = visual.overlayAlpha(selected = false, metrics = metrics),
+    animationSpec = motion.tween(
+      durationMs = if (visual.pressed) OneUiDuration.Press else OneUiDuration.Toggle,
+      easing = if (visual.pressed) OneUiEasing.SineInOut70 else OneUiEasing.SineInOut80
+    ),
+    label = "oneui_status_pill_ink"
+  )
+  val layerScale by animateFloatAsState(
+    targetValue = visual.scale(metrics, motion),
+    animationSpec = motion.pressSpring(),
+    label = "oneui_status_pill_scale"
+  )
+
+  val pillContent: @Composable () -> Unit = {
+    Column(
+      modifier = Modifier
+        .defaultMinSize(minHeight = if (interactive) metrics.chipHeight else metrics.pillHeight)
+        .graphicsLayer {
+          scaleX = layerScale
+          scaleY = layerScale
+        }
+        .oneUiSurface(
+          color = containerColor,
+          shape = shapes.pill,
+          colors = colors,
+          level = OneUiSurfaceLevel.Group,
+          border = oneUiElevation(OneUiSurfaceLevel.Group, colors).hairline,
+          hairlineWidth = 0.8.dp
+        )
+        .then(
+          when {
+            visual.focused -> Modifier.border(metrics.focusStroke, colors.focusRing, shapes.pill)
+            borderColor != Color.Transparent -> Modifier.border(1.dp, borderColor, shapes.pill)
+            else -> Modifier
+          }
+        )
+        .background(colors.ink.copy(alpha = inkAlpha), shapes.pill)
+        .padding(
+          start = if (interactive) 14.dp else 10.dp,
+          end = when {
+            pill.onDismiss != null -> 8.dp
+            interactive -> 14.dp
+            else -> 10.dp
+          },
+          top = if (interactive) 7.dp else 4.dp,
+          bottom = when {
+            pill.progress != null -> 5.dp
+            interactive -> 7.dp
+            else -> 4.dp
+          }
+        ),
+      verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically)
     ) {
-      when {
-        pill.icon != null -> OneUiIcon(
-          imageVector = pill.icon,
-          contentDescription = null,
-          size = 15.dp,
-          tint = baseContent
-        )
-        pill.dotColor != null -> OneUiStatusDot(
-          color = if (pill.selected) colors.textOnAccent else pill.dotColor,
-          description = null
-        )
-      }
-      OneUiText(
-        text = pill.label,
-        role = OneUiTextRole.ChartLabel,
-        color = baseContent,
-        weight = FontWeight.SemiBold,
-        maxLines = 1
-      )
-      if (!pill.value.isNullOrBlank()) {
-        OneUiText(
-          text = pill.value,
-          role = OneUiTextRole.ChartLabel,
-          color = if (pill.selected) colors.textOnAccent else if (pill.tone == OneUiPillTone.Neutral) colors.textPrimary else baseContent,
-          weight = FontWeight.Bold,
-          maxLines = 1
-        )
-      }
-      if (pill.onDismiss != null) {
-        Box(
-          modifier = Modifier
-            .size(22.dp)
-            .oneUiPressable(
-              onClick = pill.onDismiss,
-              shape = CircleShape,
-              haptics = OneUiHaptics.Tap,
-              minHeight = null
-            )
-            .semantics { contentDescription = pill.dismissDescription },
-          contentAlignment = Alignment.Center
-        ) {
-          OneUiIcon(
-            imageVector = Icons.Rounded.Close,
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(if (interactive) 6.dp else 5.dp)
+      ) {
+        when {
+          pill.icon != null -> OneUiIcon(
+            imageVector = pill.icon,
             contentDescription = null,
-            size = 14.dp,
-            tint = baseContent
+            size = if (interactive) 17.dp else 14.dp,
+            tint = contentColor
+          )
+          pill.dotColor != null -> OneUiStatusDot(
+            color = if (pill.selected) colors.textOnAccent else pill.dotColor,
+            description = null
           )
         }
+        OneUiText(
+          text = pill.label,
+          role = if (interactive) OneUiTextRole.Chip else OneUiTextRole.ChartLabel,
+          color = contentColor,
+          weight = if (pill.selected || interactive) FontWeight.SemiBold else FontWeight.Medium,
+          maxLines = 1
+        )
+        if (!pill.value.isNullOrBlank()) {
+          OneUiText(
+            text = pill.value,
+            role = if (interactive) OneUiTextRole.Chip else OneUiTextRole.ChartLabel,
+            color = valueColor,
+            weight = FontWeight.SemiBold,
+            maxLines = 1
+          )
+        }
+        if (pill.onDismiss != null) {
+          Box(
+            modifier = Modifier
+              .size(28.dp)
+              .oneUiPressable(
+                onClick = pill.onDismiss,
+                shape = CircleShape,
+                haptics = OneUiHaptics.Tap,
+                minHeight = null
+              )
+              .semantics { contentDescription = pill.dismissDescription },
+            contentAlignment = Alignment.Center
+          ) {
+            OneUiIcon(
+              imageVector = Icons.Rounded.Close,
+              contentDescription = null,
+              size = 15.dp,
+              tint = contentColor
+            )
+          }
+        }
+      }
+      pill.progress?.let { fraction ->
+        OneUiLinearProgress(
+          fraction = fraction,
+          color = if (pill.selected) colors.textOnAccent else colors.accent,
+          track = contentColor.copy(alpha = 0.18f),
+          height = 3.dp,
+          modifier = Modifier.width(72.dp)
+        )
       }
     }
-    pill.progress?.let { fraction ->
-      OneUiLinearProgress(
-        fraction = fraction,
-        color = if (pill.selected) colors.textOnAccent else colors.accent,
-        track = baseContent.copy(alpha = 0.18f),
-        height = 2.5.dp,
-        modifier = Modifier.width(64.dp)
-      )
-    }
+  }
+
+  if (!interactive) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) { pillContent() }
+    return
+  }
+
+  Box(
+    modifier = modifier
+      .defaultMinSize(minHeight = metrics.touchTarget)
+      .semantics {
+        contentDescription = pill.value?.let { "${pill.label} $it" } ?: pill.label
+        if (pill.selected) {
+          selected = true
+          stateDescription = "已选中"
+        }
+      }
+      .oneUiHoverable(interaction)
+      .then(
+        if (pill.onClick != null) {
+          Modifier.combinedClickable(
+            onClick = {
+              performHaptic(OneUiHaptics.Tap)
+              pill.onClick.invoke()
+            },
+            enabled = true,
+            interactionSource = interaction,
+            indication = null,
+            role = Role.Button
+          )
+        } else {
+          Modifier
+        }
+      ),
+    contentAlignment = Alignment.Center
+  ) {
+    pillContent()
   }
 }
 
@@ -1336,9 +1536,29 @@ fun OneUiDialog(
   val colors = OneUiTheme.colors
   val shapes = OneUiTheme.shapes
   val metrics = OneUiTheme.metrics
+  val motion = OneUiTheme.motion
+  val density = LocalDensity.current
+  val enterProgress = remember(motion.isReduced) { Animatable(if (motion.isReduced) 1f else 0f) }
+  LaunchedEffect(enterProgress, motion.isReduced) {
+    if (motion.isReduced) {
+      enterProgress.snapTo(1f)
+    } else {
+      enterProgress.animateTo(1f, motion.tween(OneUiDuration.Dialog, OneUiEasing.SineInOut90))
+    }
+  }
+  val shiftY = with(density) { 22.dp.toPx() }
+
   Dialog(onDismissRequest = onDismissRequest, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    val p = enterProgress.value
     Column(
       modifier = modifier
+        .graphicsLayer {
+          alpha = p
+          val s = 0.94f + 0.06f * p
+          scaleX = s
+          scaleY = s
+          translationY = shiftY * (1f - p)
+        }
         .widthIn(max = metrics.dialogMaxWidth)
         .padding(horizontal = metrics.spaceXxl)
         .oneUiSurface(colors.raised, shapes.dialog, colors = colors, level = OneUiSurfaceLevel.Floating)
@@ -1579,16 +1799,17 @@ fun OneUiExpandable(
 fun oneUiNavigationBarPadding(): PaddingValues =
   WindowInsets.navigationBars.asPaddingValues()
 
-/** 供 LazyColumn 底部留白的统一值：内容不铺到屏幕最下沿（构）。 */
+/** 供 LazyColumn 底部留白的统一值：自动感知底部悬浮导航栏与手势条，内容绝不被遮挡（构）。 */
 @Composable
 fun oneUiListContentPadding(): PaddingValues {
   val metrics = OneUiTheme.metrics
   val bottom = oneUiNavigationBarPadding()
+  val floatingNavInset = LocalOneUiBottomInset.current
   return PaddingValues(
     start = metrics.screenMargin,
     end = metrics.screenMargin,
     top = metrics.spaceXs,
-    bottom = metrics.spaceXxl + bottom.calculateBottomPadding() + metrics.thumbZone
+    bottom = metrics.spaceXxl + bottom.calculateBottomPadding() + metrics.thumbZone + floatingNavInset
   )
 }
 

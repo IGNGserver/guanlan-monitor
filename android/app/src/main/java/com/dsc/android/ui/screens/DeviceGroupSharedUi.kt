@@ -37,11 +37,14 @@ import com.dsc.android.ui.oneui.OneUiPill
 import com.dsc.android.ui.oneui.OneUiPillTone
 import com.dsc.android.ui.oneui.OneUiSheet
 import com.dsc.android.ui.oneui.OneUiStatusDot
+import com.dsc.android.ui.oneui.OneUiStatusPill
+import com.dsc.android.ui.oneui.OneUiStatusPillItem
 import com.dsc.android.ui.oneui.OneUiText
 import com.dsc.android.ui.oneui.OneUiTextField
 import com.dsc.android.ui.oneui.OneUiTextRole
 import com.dsc.android.ui.oneui.OneUiTheme
 import com.dsc.android.ui.oneui.formatPercent
+import com.dsc.android.ui.oneui.oneUiHorizontalFadingEdge
 
 private const val SHEET_SEARCH_THRESHOLD = 5
 
@@ -60,28 +63,30 @@ internal fun InGroupPeerSwitcherRow(
   val metrics = OneUiTheme.metrics
   val colors = OneUiTheme.colors
   val currentIndex = peers.indexOfFirst { it.deviceId == currentDeviceId }
+  val scrollState = rememberScrollState()
   Row(
     modifier = Modifier
       .fillMaxWidth()
-      .horizontalScroll(rememberScrollState()),
+      .oneUiHorizontalFadingEdge(scrollState)
+      .horizontalScroll(scrollState),
     horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
     verticalAlignment = Alignment.CenterVertically
   ) {
-    OneUiPill(
-      label = "$groupLabel ${if (currentIndex >= 0) "${currentIndex + 1}/${peers.size}" else "${peers.size}台"}",
-      tone = OneUiPillTone.Accent,
-      onClick = onOpenSwitcher
+    OneUiStatusPill(
+      pill = OneUiStatusPillItem(
+        key = "peer-group-switcher",
+        label = groupLabel,
+        value = if (currentIndex >= 0) "${currentIndex + 1}/${peers.size}" else "${peers.size}台",
+        tone = OneUiPillTone.Accent,
+        onClick = onOpenSwitcher
+      )
     )
     peers.forEach { peer ->
       val isCurrent = peer.deviceId == currentDeviceId
       val online = peer.status == "online"
       OneUiFilterChip(
-        label = buildString {
-          append(peer.hostname)
-          if (showCpuInChip && online && peer.cpuUsagePercent != null) {
-            append(" ${formatPercent(peer.cpuUsagePercent)}")
-          }
-        },
+        label = peer.hostname,
+        value = if (showCpuInChip && online && peer.cpuUsagePercent != null) formatPercent(peer.cpuUsagePercent) else null,
         selected = isCurrent,
         onClick = { onSelectDevice(peer.deviceId) },
         leadingIcon = {
@@ -124,10 +129,12 @@ internal fun GroupedDeviceSwitcherSheet(
     subtitle = if (hasNamedGroups) "默认聚焦同组机器，可切组或搜索直达目标设备" else "点按任意设备立即切换，并保持当前子页面"
   ) {
     if (hasNamedGroups) {
+      val groupScroll = rememberScrollState()
       Row(
         modifier = Modifier
           .fillMaxWidth()
-          .horizontalScroll(rememberScrollState()),
+          .oneUiHorizontalFadingEdge(groupScroll)
+          .horizontalScroll(groupScroll),
         horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
         verticalAlignment = Alignment.CenterVertically
       ) {

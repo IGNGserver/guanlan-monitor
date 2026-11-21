@@ -327,32 +327,6 @@ fun DeviceDetailScreen(
         }
       }
 
-      if (detailPills.isNotEmpty() || peerDevices.size > 1) {
-        Column(
-          modifier = Modifier
-            .fillMaxWidth()
-            .oneUiContentWidth(metrics)
-            .padding(horizontal = metrics.screenMargin)
-            .padding(bottom = metrics.spaceXs),
-          verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-          if (detailPills.isNotEmpty()) {
-            OneUiStatusPillBar(pills = detailPills)
-          }
-          if (peerDevices.size > 1) {
-            InGroupPeerSwitcherRow(
-              groupLabel = currentGroup ?: "未分组",
-              peers = peerDevices,
-              currentDeviceId = deviceId,
-              onOpenSwitcher = { switcherOpen = true },
-              onSelectDevice = { targetId ->
-                if (targetId != deviceId) actions.onOpenDevice(targetId, null)
-              }
-            )
-          }
-        }
-      }
-
       LazyColumn(
         state = listState,
         modifier = Modifier
@@ -362,6 +336,30 @@ fun DeviceDetailScreen(
         contentPadding = oneUiListContentPadding(),
         verticalArrangement = Arrangement.spacedBy(metrics.groupGap)
       ) {
+        if (detailPills.isNotEmpty() || peerDevices.size > 1) {
+          item(key = "detail-context-strip") {
+            Column(
+              modifier = Modifier.fillMaxWidth(),
+              verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+              if (detailPills.isNotEmpty()) {
+                OneUiStatusPillBar(pills = detailPills)
+              }
+              if (peerDevices.size > 1) {
+                InGroupPeerSwitcherRow(
+                  groupLabel = currentGroup ?: "未分组",
+                  peers = peerDevices,
+                  currentDeviceId = deviceId,
+                  onOpenSwitcher = { switcherOpen = true },
+                  onSelectDevice = { targetId ->
+                    if (targetId != deviceId) actions.onOpenDevice(targetId, null)
+                  }
+                )
+              }
+            }
+          }
+        }
+
         when (tab) {
           DetailTab.Overview -> overviewItems(
             data = data,
@@ -453,10 +451,12 @@ private fun RangeChips(
 ) {
   val metrics = OneUiTheme.metrics
   val colors = OneUiTheme.colors
+  val scrollState = rememberScrollState()
   Row(
     modifier = modifier
       .fillMaxWidth()
-      .horizontalScroll(rememberScrollState()),
+      .oneUiHorizontalFadingEdge(scrollState)
+      .horizontalScroll(scrollState),
     horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
   ) {
     if (allowLive) {

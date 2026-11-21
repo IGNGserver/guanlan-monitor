@@ -58,6 +58,7 @@ import com.dsc.android.ui.oneui.OneUiTextRole
 import com.dsc.android.ui.oneui.OneUiTheme
 import com.dsc.android.ui.oneui.OneUiTopBar
 import com.dsc.android.ui.oneui.oneUiContentWidth
+import com.dsc.android.ui.oneui.oneUiHorizontalFadingEdge
 import com.dsc.android.ui.oneui.oneUiListContentPadding
 import com.dsc.android.ui.oneui.oneUiSurface
 import com.dsc.android.ui.oneui.relativeTimeLabel
@@ -130,6 +131,7 @@ fun AttentionScreen(state: AppState, actions: GuanlanActions, embedded: Boolean)
       )
 
       if (hasNamedGroups) {
+        val groupScroll = rememberScrollState()
         Box(
           modifier = Modifier
             .fillMaxWidth()
@@ -140,7 +142,8 @@ fun AttentionScreen(state: AppState, actions: GuanlanActions, embedded: Boolean)
           Row(
             modifier = Modifier
               .fillMaxWidth()
-              .horizontalScroll(rememberScrollState()),
+              .oneUiHorizontalFadingEdge(groupScroll)
+              .horizontalScroll(groupScroll),
             horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs),
             verticalAlignment = Alignment.CenterVertically
           ) {

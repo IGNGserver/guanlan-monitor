@@ -1,12 +1,15 @@
 package com.dsc.android.ui.oneui
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,24 +31,27 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -69,7 +75,7 @@ import kotlinx.coroutines.delay
 @Immutable
 enum class OneUiTextRole {
   Display, DisplaySecondary, Figure, FigureSecondary, TopBarLarge, TopBarCollapsed,
-  Headline, Title, Subtitle, Body, BodySecondary, Caption, Metric, MetricUnit,
+  Headline, Title, Subtitle, Body, BodySecondary, Caption, Chip, Metric, MetricUnit,
   RowTitle, RowSubtitle, SectionHeader, ChartLabel, Mono
 }
 
@@ -102,6 +108,7 @@ fun OneUiText(
     OneUiTextRole.Body -> type.body
     OneUiTextRole.BodySecondary -> type.bodySmall
     OneUiTextRole.Caption -> type.caption
+    OneUiTextRole.Chip -> type.chipLabel
     OneUiTextRole.Metric -> type.metricValue
     OneUiTextRole.MetricUnit -> type.metricUnit
     OneUiTextRole.RowTitle -> type.rowTitle
@@ -298,8 +305,13 @@ fun OneUiSwitch(
 
   val thumbProgress by animateFloatAsState(
     targetValue = if (checked) 1f else 0f,
-    animationSpec = motion.spring(dampingRatio = 0.72f, stiffness = 420f),
+    animationSpec = motion.pressSpring(),
     label = "oneui_switch_thumb"
+  )
+  val borderColor by animateColorAsState(
+    targetValue = if (checked) Color.Transparent else colors.outline,
+    animationSpec = motion.tween(OneUiDuration.Toggle, OneUiEasing.SineInOut70),
+    label = "oneui_switch_border"
   )
 
   Box(
@@ -327,8 +339,8 @@ fun OneUiSwitch(
           shape = shapes.pill
         )
         .border(
-          width = if (checked) 0.dp else 1.6.dp,
-          color = if (checked) Color.Transparent else colors.outline,
+          width = 1.6.dp,
+          color = borderColor,
           shape = shapes.pill
         )
     ) {
@@ -343,7 +355,7 @@ fun OneUiSwitch(
   }
 }
 
-/** One UI 勾选框：圆角方框，勾选后实底 + 白勾。 */
+/** One UI 勾选框：圆角方框，勾选后平滑填色 + 路径描勾 + 轻弹反馈。 */
 @Composable
 fun OneUiCheckbox(
   checked: Boolean,
@@ -356,8 +368,30 @@ fun OneUiCheckbox(
   val colors = OneUiTheme.colors
   val shapes = OneUiTheme.shapes
   val metrics = OneUiTheme.metrics
-  val box = 26.dp
+  val motion = OneUiTheme.motion
+  val box = 24.dp
   val filled = checked || indeterminate
+
+  val fillColor by animateColorAsState(
+    targetValue = if (filled) colors.accent else Color.Transparent,
+    animationSpec = motion.tween(OneUiDuration.Toggle, OneUiEasing.SineInOut80),
+    label = "oneui_checkbox_fill"
+  )
+  val strokeColor by animateColorAsState(
+    targetValue = if (filled) Color.Transparent else colors.textTertiary,
+    animationSpec = motion.tween(OneUiDuration.Toggle, OneUiEasing.SineInOut80),
+    label = "oneui_checkbox_stroke"
+  )
+  val checkProgress by animateFloatAsState(
+    targetValue = if (checked) 1f else 0f,
+    animationSpec = motion.tween(OneUiDuration.Toggle, OneUiEasing.SineInOut70),
+    label = "oneui_checkbox_mark"
+  )
+  val checkScale by animateFloatAsState(
+    targetValue = if (filled) 1f else 0.94f,
+    animationSpec = motion.pressSpring(),
+    label = "oneui_checkbox_scale"
+  )
 
   Box(
     modifier = modifier
@@ -383,10 +417,14 @@ fun OneUiCheckbox(
     Box(
       modifier = Modifier
         .size(box)
-        .background(if (filled) colors.accent else Color.Transparent, shapes.badge)
+        .graphicsLayer {
+          scaleX = checkScale
+          scaleY = checkScale
+        }
+        .background(fillColor, shapes.badge)
         .border(
-          width = if (filled) 0.dp else 1.8.dp,
-          color = if (filled) Color.Transparent else colors.textTertiary,
+          width = 1.8.dp,
+          color = strokeColor,
           shape = shapes.badge
         ),
       contentAlignment = Alignment.Center
@@ -398,30 +436,44 @@ fun OneUiCheckbox(
             .height(2.4.dp)
             .background(colors.textOnAccent, shapes.badge)
         )
-      } else if (checked) {
+      } else if (checkProgress > 0.01f) {
         Canvas(modifier = Modifier.size(box)) {
           val side = size.minDimension
-          drawLine(
-            color = colors.textOnAccent,
-            start = Offset(side * 0.24f, side * 0.52f),
-            end = Offset(side * 0.43f, side * 0.71f),
-            strokeWidth = side * 0.10f,
-            cap = StrokeCap.Round
-          )
-          drawLine(
-            color = colors.textOnAccent,
-            start = Offset(side * 0.41f, side * 0.69f),
-            end = Offset(side * 0.78f, side * 0.30f),
-            strokeWidth = side * 0.10f,
-            cap = StrokeCap.Round
-          )
+          val firstEnd = (checkProgress / 0.42f).coerceIn(0f, 1f)
+          val secondEnd = ((checkProgress - 0.36f) / 0.64f).coerceIn(0f, 1f)
+          val p0 = Offset(side * 0.24f, side * 0.52f)
+          val p1 = Offset(side * 0.43f, side * 0.71f)
+          val p2 = Offset(side * 0.78f, side * 0.30f)
+          if (firstEnd > 0f) {
+            drawLine(
+              color = colors.textOnAccent,
+              start = p0,
+              end = Offset(p0.x + (p1.x - p0.x) * firstEnd, p0.y + (p1.y - p0.y) * firstEnd),
+              strokeWidth = side * 0.105f,
+              cap = StrokeCap.Round
+            )
+          }
+          if (secondEnd > 0f) {
+            drawLine(
+              color = colors.textOnAccent,
+              start = p1,
+              end = Offset(p1.x + (p2.x - p1.x) * secondEnd, p1.y + (p2.y - p1.y) * secondEnd),
+              strokeWidth = side * 0.105f,
+              cap = StrokeCap.Round
+            )
+          }
         }
       }
     }
   }
 }
 
-/** 筛选胶囊：选中为实底强调色，未选中为描边——状态不只靠色差（适）。 */
+/**
+ * 筛选胶囊（件 + 交）：
+ * 视觉高度 38dp（配 13.5sp Chip 字阶与平滑变色），外层保持 48dp 垂直触控热区，
+ * 既摆脱 32dp 迷你豆丁的局促感，又符合 Samsung One UI 的现代舒展比例与无障碍底线。
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OneUiFilterChip(
   label: String,
@@ -429,58 +481,127 @@ fun OneUiFilterChip(
   onClick: (() -> Unit)?,
   modifier: Modifier = Modifier,
   enabled: Boolean = true,
-  leadingIcon: @Composable (() -> Unit)? = null
+  leadingIcon: @Composable (() -> Unit)? = null,
+  value: String? = null
 ) {
   val colors = OneUiTheme.colors
   val shapes = OneUiTheme.shapes
   val metrics = OneUiTheme.metrics
   val motion = OneUiTheme.motion
   val interaction = rememberOneUiInteractionSource()
+  val visual = oneUiInteraction(interaction, enabled = enabled && onClick != null)
+  val performHaptic = rememberOneUiHaptic()
+
+  val containerColor by animateColorAsState(
+    targetValue = if (selected) colors.accent else colors.group,
+    animationSpec = motion.tween(OneUiDuration.Toggle, OneUiEasing.SineInOut80),
+    label = "oneui_chip_bg"
+  )
+  val borderColor by animateColorAsState(
+    targetValue = if (selected) Color.Transparent else colors.outline.copy(alpha = 0.85f),
+    animationSpec = motion.tween(OneUiDuration.Toggle, OneUiEasing.SineInOut80),
+    label = "oneui_chip_border"
+  )
+  val labelColor by animateColorAsState(
+    targetValue = if (selected) colors.textOnAccent else colors.textPrimary,
+    animationSpec = motion.tween(OneUiDuration.Toggle, OneUiEasing.SineInOut80),
+    label = "oneui_chip_label"
+  )
+  val valueColor by animateColorAsState(
+    targetValue = if (selected) colors.textOnAccent.copy(alpha = 0.92f) else colors.textSecondary,
+    animationSpec = motion.tween(OneUiDuration.Toggle, OneUiEasing.SineInOut80),
+    label = "oneui_chip_value"
+  )
+  val inkAlpha by animateFloatAsState(
+    targetValue = visual.overlayAlpha(selected = false, metrics = metrics),
+    animationSpec = motion.tween(
+      durationMs = if (visual.pressed) OneUiDuration.Press else OneUiDuration.Toggle,
+      easing = if (visual.pressed) OneUiEasing.SineInOut70 else OneUiEasing.SineInOut80
+    ),
+    label = "oneui_chip_ink"
+  )
+  val layerScale by animateFloatAsState(
+    targetValue = visual.scale(metrics, motion),
+    animationSpec = motion.pressSpring(),
+    label = "oneui_chip_scale"
+  )
+
   Box(
     modifier = modifier
-      .defaultMinSize(minHeight = metrics.chipHeight)
-      .background(if (selected) colors.accent else colors.group, shapes.pill)
-      .oneUiPressable(
-        onClick = onClick,
-        enabled = enabled,
-        shape = shapes.pill,
-        interactionSource = interaction,
-        selected = selected,
-        role = Role.Checkbox,
-        minHeight = null,
-        stateLabel = if (selected) "已选中" else "未选中"
-      )
-      .border(
-        width = if (selected) 0.dp else 1.4.dp,
-        color = if (selected) Color.Transparent else colors.outline,
-        shape = shapes.pill
-      )
+      .defaultMinSize(minHeight = metrics.touchTarget)
       .semantics {
-        contentDescription = label
+        contentDescription = value?.let { "$label $it" } ?: label
+        stateDescription = if (selected) "已选中" else "未选中"
         if (selected) this.selected = true
-      },
+      }
+      .oneUiHoverable(interaction)
+      .then(
+        if (onClick != null) {
+          Modifier.combinedClickable(
+            onClick = {
+              performHaptic(OneUiHaptics.Tap)
+              onClick()
+            },
+            enabled = enabled,
+            interactionSource = interaction,
+            indication = null,
+            role = Role.Checkbox
+          )
+        } else {
+          Modifier
+        }
+      ),
     contentAlignment = Alignment.Center
   ) {
-    Row(
-      modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(6.dp)
+    Box(
+      modifier = Modifier
+        .defaultMinSize(minHeight = metrics.chipHeight)
+        .graphicsLayer {
+          scaleX = layerScale
+          scaleY = layerScale
+          alpha = if (enabled) 1f else metrics.disabledContent
+        }
+        .clip(shapes.pill)
+        .background(containerColor, shapes.pill)
+        .background(colors.ink.copy(alpha = inkAlpha), shapes.pill)
+        .border(
+          width = if (visual.focused) metrics.focusStroke else 1.2.dp,
+          color = if (visual.focused) colors.focusRing else borderColor,
+          shape = shapes.pill
+        ),
+      contentAlignment = Alignment.Center
     ) {
-      leadingIcon?.invoke()
-      OneUiText(
-        text = label,
-        role = OneUiTextRole.RowSubtitle,
-        color = if (selected) colors.textOnAccent else colors.textSecondary,
-        weight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-        maxLines = 1
-      )
+      Row(
+        modifier = Modifier.padding(horizontal = 15.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+      ) {
+        leadingIcon?.invoke()
+        OneUiText(
+          text = label,
+          role = OneUiTextRole.Chip,
+          color = labelColor,
+          weight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+          maxLines = 1
+        )
+        if (!value.isNullOrBlank()) {
+          OneUiText(
+            text = value,
+            role = OneUiTextRole.Chip,
+            color = valueColor,
+            weight = FontWeight.SemiBold,
+            maxLines = 1
+          )
+        }
+      }
     }
   }
 }
 
 /**
- * 分段选择（One UI 的 pill 指示器 tab，动）：指示器做连续位移而不是瞬切。
- * 用于时间粒度、总和/实例、日/周/月。
+ * 分段选择（One UI 的 pill 指示器 tab，动）：
+ * 指示器采用 One UI 7/8 弹簧连续滑移（tabSpring），文字平滑过渡颜色；
+ * 支持常规态（46dp）与紧凑行内态（38dp，如总览时间窗 5分/1小时/24小时）。
  */
 @Composable
 fun OneUiSegmentedRow(
@@ -488,7 +609,8 @@ fun OneUiSegmentedRow(
   selectedIndex: Int,
   onSelect: (Int) -> Unit,
   modifier: Modifier = Modifier,
-  enabled: Boolean = true
+  enabled: Boolean = true,
+  compact: Boolean = false
 ) {
   if (options.isEmpty()) return
   val colors = OneUiTheme.colors
@@ -496,16 +618,26 @@ fun OneUiSegmentedRow(
   val metrics = OneUiTheme.metrics
   val motion = OneUiTheme.motion
   val safeIndex = selectedIndex.coerceIn(0, options.lastIndex)
-  // 指示器连续位移：走同一个数值补间（动）
-  val indicatorIndex = oneUiAnimatedValue(safeIndex.toFloat(), motion, OneUiDuration.Toggle)
-  val inset = 3.dp
+  val indicatorIndex by animateFloatAsState(
+    targetValue = safeIndex.toFloat(),
+    animationSpec = motion.tabSpring(),
+    label = "oneui_segment_indicator"
+  )
+  val inset = if (compact) 2.dp else 3.dp
+  val trackHeight = (if (compact) metrics.compactSegmentHeight else metrics.segmentHeight) + inset * 2
 
   BoxWithConstraints(
     modifier = modifier
-      .fillMaxWidth()
-      // 容器比格子多两层内边距，保证每个分段自己就有 48dp 命中区（适）
-      .height(metrics.segmentHeight + inset * 2)
-      .background(colors.sunken, shapes.pill)
+      .then(if (compact) Modifier else Modifier.fillMaxWidth())
+      .height(trackHeight)
+      .oneUiSurface(
+        color = colors.sunken,
+        shape = shapes.pill,
+        colors = colors,
+        level = OneUiSurfaceLevel.Group,
+        border = true,
+        hairlineWidth = 0.6.dp
+      )
       .padding(inset)
   ) {
     val cellWidth = maxWidth / options.size
@@ -514,10 +646,16 @@ fun OneUiSegmentedRow(
         .offset(x = cellWidth * indicatorIndex)
         .width(cellWidth)
         .fillMaxSize()
-        .background(colors.group, shapes.pill)
+        .background(if (compact) colors.raised else colors.group, shapes.pill)
     )
     Row(modifier = Modifier.fillMaxSize()) {
       options.forEachIndexed { index, option ->
+        val isSelected = index == safeIndex
+        val textColor by animateColorAsState(
+          targetValue = if (isSelected) colors.textPrimary else colors.textSecondary,
+          animationSpec = motion.tween(OneUiDuration.Toggle, OneUiEasing.SineInOut80),
+          label = "oneui_segment_text"
+        )
         Box(
           modifier = Modifier
             .weight(1f)
@@ -528,18 +666,18 @@ fun OneUiSegmentedRow(
               shape = shapes.pill,
               role = Role.Tab,
               minHeight = null,
-              stateLabel = if (index == safeIndex) "已选中" else "未选中"
+              stateLabel = if (isSelected) "已选中" else "未选中"
             ),
           contentAlignment = Alignment.Center
         ) {
           OneUiText(
             text = option,
-            role = OneUiTextRole.RowSubtitle,
-            color = if (index == safeIndex) colors.textPrimary else colors.textSecondary,
-            weight = if (index == safeIndex) FontWeight.SemiBold else FontWeight.Medium,
+            role = OneUiTextRole.Chip,
+            color = textColor,
+            weight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
             maxLines = 1,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 4.dp)
+            modifier = Modifier.padding(horizontal = if (compact) 6.dp else 4.dp)
           )
         }
       }
@@ -716,12 +854,12 @@ fun OneUiCompactSearchBar(
     OneUiIconButton(
       contentDescription = if (value.isNotEmpty()) "清空搜索" else "收起搜索",
       onClick = onClearOrClose,
-      size = 34.dp
+      size = 40.dp
     ) {
       OneUiIcon(
         imageVector = Icons.Rounded.Close,
         contentDescription = null,
-        size = 17.dp,
+        size = 18.dp,
         tint = colors.textSecondary
       )
     }

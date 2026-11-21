@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -64,7 +65,7 @@ import kotlin.math.max
  * 图表（件）：数据可读性是这个应用的第一优先级，图表因此要做到
  * 1. 能直接读出量级——纵轴有整齐刻度，横轴有起止与中点时间；
  * 2. 能对比——同一量纲的成对指标（接收/发送、读取/写入、物理/虚拟内存）画在同一张图里；
- * 3. 能判断好坏——告警/临界阈值画成虚线，超线一眼可见；
+ * 3. 能判断好坏——告警/临界阈值画成虚线，超线一眼可见且绝不与刻度文字、游标重叠；
  * 4. 不和页面滚动抢手势——只响应点按和横向拖动，竖向滑动始终交给列表。
  *
  * 取数与缺测语义沿用 ChartWindow / splitSamplePointSegments / resolveChartIndex。
@@ -99,11 +100,12 @@ internal fun OneUiTrendChart(
   height: Dp = OneUiTheme.metrics.chartHeight,
   showAxis: Boolean = true,
   showReadout: Boolean = true,
+  showReadoutSeries: Boolean = true,
   axisFormatter: (Double) -> String = { valueFormatter(it) },
-  animationKey: Any? = chartWindow
+  animationKey: Any? = chartWindow,
+  onCursorChange: ((cursorMillis: Long?, values: List<Double?>, live: Boolean) -> Unit)? = null
 ) {
   val colors = OneUiTheme.colors
-  val metrics = OneUiTheme.metrics
   val motion = OneUiTheme.motion
   val type = OneUiTheme.type
   val stale = LocalOneUiStaleState.current
@@ -114,6 +116,10 @@ internal fun OneUiTrendChart(
   }
   val reference = sortedSeries.maxByOrNull { it.points.size }?.points.orEmpty()
   val hasData = sortedSeries.any { it.points.isNotEmpty() }
+
+  val dataPeak = remember(sortedSeries) {
+    sortedSeries.flatMap { item -> item.points.map { it.value } }.filter { it.isFinite() }.maxOrNull() ?: 0.0
+  }
 
   val axis = remember(sortedSeries, fixedMaxValue, includeZero, thresholds) {
     val values = sortedSeries.flatMap { item -> item.points.map { it.value } }.filter { it.isFinite() }
@@ -126,7 +132,7 @@ internal fun OneUiTrendChart(
     niceAxis(bottom, top, fixedMaxValue, includeZero, binary = usesBinaryUnits(valueFormatter))
   }
 
-  var selectedIndex by remember(chartWindow) { mutableIntStateOf(-1) }
+  var selectedIndex by remember(chartWindow, sortedSeries.size) { mutableIntStateOf(-1) }
   val effectiveIndex = when {
     reference.isEmpty() -> -1
     selectedIndex < 0 -> reference.lastIndex
@@ -134,7 +140,14 @@ internal fun OneUiTrendChart(
   }
   val cursorTimestamp = reference.getOrNull(effectiveIndex)?.timestamp
   val cursorMillis = cursorTimestamp?.let(::parseTimestampMillis)
-  val cursorValues = sortedSeries.map { item -> nearestValue(item.points, cursorMillis) }
+  val cursorValues = remember(sortedSeries, cursorMillis) {
+    sortedSeries.map { item -> nearestValue(item.points, cursorMillis) }
+  }
+  val isLiveCursor = selectedIndex < 0
+
+  LaunchedEffect(cursorMillis, cursorValues, isLiveCursor, onCursorChange) {
+    onCursorChange?.invoke(cursorMillis, cursorValues, isLiveCursor)
+  }
 
   // 动：序列首次出现或切换粒度时描线一次；15 秒自动刷新不重播。
   val reveal = remember(animationKey, motion.isReduced) {
@@ -145,7 +158,7 @@ internal fun OneUiTrendChart(
       reveal.snapTo(1f)
     } else {
       reveal.snapTo(0f)
-      reveal.animateTo(1f, motion.tween(OneUiDuration.ChartDraw, OneUiEasing.EmphasizedDecelerate))
+      reveal.animateTo(1f, motion.tween(OneUiDuration.ChartDraw, OneUiEasing.SineInOut90))
     }
   }
 
@@ -170,7 +183,8 @@ internal fun OneUiTrendChart(
         series = sortedSeries,
         values = cursorValues,
         valueFormatter = valueFormatter,
-        live = selectedIndex < 0
+        live = isLiveCursor,
+        showSeries = showReadoutSeries
       )
       Spacer(Modifier.height(6.dp))
     }
@@ -188,9 +202,12 @@ internal fun OneUiTrendChart(
           .height(height)
           .pointerInput(reference, chartWindow) {
             if (reference.isEmpty()) return@pointerInput
+            val insetPx = 8.dp.toPx()
             detectTapGestures(
               onTap = { offset ->
-                selectedIndex = resolveChartIndex(offset.x, size.width.toFloat(), reference, chartWindow)
+                val plotW = (size.width - insetPx * 2f).coerceAtLeast(1f)
+                val localX = (offset.x - insetPx).coerceIn(0f, plotW)
+                selectedIndex = resolveChartIndex(localX, plotW, reference, chartWindow)
               },
               // 双击回到「最新」：读完历史点后不必等下一次刷新
               onDoubleTap = { selectedIndex = -1 }
@@ -198,88 +215,97 @@ internal fun OneUiTrendChart(
           }
           .pointerInput(reference, chartWindow) {
             if (reference.isEmpty()) return@pointerInput
+            val insetPx = 8.dp.toPx()
             // 只吃横向拖动：竖向滑动留给外层列表，长图表页面才不会「划不动」（交）
             detectHorizontalDragGestures(
               onDragStart = { offset ->
-                selectedIndex = resolveChartIndex(offset.x, size.width.toFloat(), reference, chartWindow)
+                val plotW = (size.width - insetPx * 2f).coerceAtLeast(1f)
+                val localX = (offset.x - insetPx).coerceIn(0f, plotW)
+                selectedIndex = resolveChartIndex(localX, plotW, reference, chartWindow)
               },
               onHorizontalDrag = { change, _ ->
-                selectedIndex = resolveChartIndex(change.position.x, size.width.toFloat(), reference, chartWindow)
+                val plotW = (size.width - insetPx * 2f).coerceAtLeast(1f)
+                val localX = (change.position.x - insetPx).coerceIn(0f, plotW)
+                selectedIndex = resolveChartIndex(localX, plotW, reference, chartWindow)
                 change.consume()
               }
             )
           }
       ) {
-        val plotTop = 8.dp.toPx()
-        val plotBottom = size.height - 6.dp.toPx()
+        // 安全绘图区留白：顶部为 100%/高阈值标签留出独立通道，底/左右为 6dp 游标圆留足边距避免裁切
+        val plotLeft = 8.dp.toPx()
+        val plotRight = (size.width - 8.dp.toPx()).coerceAtLeast(plotLeft + 1f)
+        val plotWidth = (plotRight - plotLeft).coerceAtLeast(1f)
+        val plotTop = 18.dp.toPx()
+        val plotBottom = (size.height - 12.dp.toPx()).coerceAtLeast(plotTop + 1f)
         val plotHeight = (plotBottom - plotTop).coerceAtLeast(1f)
+        val xFor: (String) -> Float = { ts -> plotLeft + chartWindow.xFor(ts, plotWidth) }
         val yFor: (Double) -> Float = { value -> plotBottom - axis.fraction(value).toFloat() * plotHeight }
 
-        // 刻度线 + 刻度值：刻度值贴着网格线左上方，不额外占横向空间
+        val visibleThresholds = thresholds
+          .filter { it.value in axis.min..axis.max }
+          .sortedByDescending { it.value }
+
+        // 图层 1：水平网格线
         axis.ticks.forEach { tick ->
           val y = yFor(tick)
-          drawLine(colors.chartGrid, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
-          if (showAxis) {
-            drawAxisLabel(textMeasurer, axisFormatter(tick), labelStyle, x = 6.dp.toPx(), baselineY = y, top = plotTop, backdrop = colors.chartTrack)
-          }
+          drawLine(colors.chartGrid, Offset(plotLeft, y), Offset(plotRight, y), strokeWidth = 1f)
         }
 
-        thresholds.filter { it.value in axis.min..axis.max }.sortedByDescending { it.value }.forEachIndexed { thresholdIndex, threshold ->
+        // 图层 2：告警/临界阈值虚线（常态柔和 0.55f，数据逼近阈值时提亮至 0.85f）
+        visibleThresholds.forEach { threshold ->
           val y = yFor(threshold.value)
           val color = if (threshold.tone == ChartThresholdTone.Critical) colors.critical else colors.warning
+          val approaching = dataPeak >= threshold.value * 0.78
+          val lineAlpha = if (approaching) 0.85f else 0.55f
           drawLine(
-            color = color.copy(alpha = 0.85f),
-            start = Offset(0f, y),
-            end = Offset(size.width, y),
-            strokeWidth = 1.4.dp.toPx(),
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))
+            color = color.copy(alpha = lineAlpha),
+            start = Offset(plotLeft, y),
+            end = Offset(plotRight, y),
+            strokeWidth = 1.2.dp.toPx(),
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx()))
           )
-          if (showAxis) {
-            val measured = textMeasurer.measure(threshold.label, labelStyle.copy(color = color, fontWeight = FontWeight.SemiBold))
-            // 最高的阈值标在线上方，其余标在线下方：85% 与 95% 这种相邻阈值的标签不会叠在一起
-            val labelY = if (thresholdIndex == 0) y - measured.size.height - 2.dp.toPx() else y + 2.dp.toPx()
-            val left = size.width - measured.size.width - 6.dp.toPx()
-            drawRect(colors.chartTrack.copy(alpha = 0.85f), topLeft = Offset(left - 3.dp.toPx(), labelY), size = Size(measured.size.width + 6.dp.toPx(), measured.size.height.toFloat()))
-            drawText(measured, topLeft = Offset(left, labelY.coerceIn(0f, size.height - measured.size.height)))
-          }
         }
 
-        if (!hasData) return@Canvas
-        val stroke = if (sortedSeries.size > 1) 2.2.dp.toPx() else 2.6.dp.toPx()
-        clipRect(right = size.width * reveal.value) {
-          sortedSeries.forEachIndexed { seriesPosition, item ->
-            val lineColor = colors.seriesColor(item.colorIndex)
-            splitSamplePointSegments(item.points, chartWindow).forEach { segment ->
-              if (segment.isEmpty()) return@forEach
-              val path = Path()
-              val fillPath = Path()
-              segment.forEachIndexed { index, point ->
-                val x = chartWindow.xFor(point.timestamp, size.width)
-                val y = yFor(point.value)
-                if (index == 0) {
-                  path.moveTo(x, y)
-                  fillPath.moveTo(x, plotBottom)
-                  fillPath.lineTo(x, y)
-                } else {
-                  path.lineTo(x, y)
-                  fillPath.lineTo(x, y)
+        // 图层 3：折线与渐变填充
+        if (hasData) {
+          val stroke = if (sortedSeries.size > 1) 2.2.dp.toPx() else 2.6.dp.toPx()
+          clipRect(left = plotLeft - stroke, right = plotLeft + plotWidth * reveal.value + stroke) {
+            sortedSeries.forEachIndexed { seriesPosition, item ->
+              val lineColor = colors.seriesColor(item.colorIndex)
+              splitSamplePointSegments(item.points, chartWindow).forEach { segment ->
+                if (segment.isEmpty()) return@forEach
+                val path = Path()
+                val fillPath = Path()
+                segment.forEachIndexed { index, point ->
+                  val x = xFor(point.timestamp)
+                  val y = yFor(point.value)
+                  if (index == 0) {
+                    path.moveTo(x, y)
+                    fillPath.moveTo(x, plotBottom)
+                    fillPath.lineTo(x, y)
+                  } else {
+                    path.lineTo(x, y)
+                    fillPath.lineTo(x, y)
+                  }
                 }
+                if (segment.size == 1) {
+                  drawCircle(lineColor, radius = stroke, center = Offset(xFor(segment[0].timestamp), yFor(segment[0].value)))
+                }
+                fillPath.lineTo(xFor(segment.last().timestamp), plotBottom)
+                fillPath.close()
+                // 多序列只给第一条铺底色，叠在一起的半透明面会糊成一片
+                if (seriesPosition == 0) {
+                  val alpha = if (sortedSeries.size > 1) 0.12f else 0.22f
+                  drawPath(fillPath, Brush.verticalGradient(listOf(lineColor.copy(alpha = alpha), lineColor.copy(alpha = 0f))))
+                }
+                drawPath(path, lineColor, style = Stroke(width = stroke, cap = StrokeCap.Round))
               }
-              if (segment.size == 1) {
-                drawCircle(lineColor, radius = stroke, center = Offset(chartWindow.xFor(segment[0].timestamp, size.width), yFor(segment[0].value)))
-              }
-              fillPath.lineTo(chartWindow.xFor(segment.last().timestamp, size.width), plotBottom)
-              fillPath.close()
-              // 多序列只给第一条铺底色，叠在一起的半透明面会糊成一片
-              if (seriesPosition == 0) {
-                val alpha = if (sortedSeries.size > 1) 0.12f else 0.22f
-                drawPath(fillPath, Brush.verticalGradient(listOf(lineColor.copy(alpha = alpha), lineColor.copy(alpha = 0f))))
-              }
-              drawPath(path, lineColor, style = Stroke(width = stroke, cap = StrokeCap.Round))
             }
           }
         }
 
+        // 图层 4：陈旧态扫光
         if (stale.active) {
           val sweepPhase = stale.phase.value
           val bandWidth = size.width * 0.38f
@@ -291,16 +317,70 @@ internal fun OneUiTrendChart(
           )
         }
 
-        // 准线与游标：十字线 + 每条序列一个空心点
-        val cursor = cursorTimestamp ?: return@Canvas
-        val x = chartWindow.xFor(cursor, size.width)
-        drawLine(colors.chartCrosshair, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.4f)
-        sortedSeries.forEachIndexed { index, item ->
-          val value = cursorValues[index] ?: return@forEachIndexed
-          val y = yFor(value)
-          val lineColor = colors.seriesColor(item.colorIndex)
-          drawCircle(colors.group, radius = 6.dp.toPx(), center = Offset(x, y))
-          drawCircle(lineColor, radius = 4.dp.toPx(), center = Offset(x, y), style = Stroke(width = 2.dp.toPx()))
+        // 图层 5：游标准线与每条序列空心圆点（竖线限定在绘图区内，不盖住顶部标签）
+        if (hasData) {
+          val cursor = cursorTimestamp
+          if (cursor != null) {
+            val x = xFor(cursor)
+            drawLine(colors.chartCrosshair, Offset(x, plotTop), Offset(x, plotBottom), strokeWidth = 1.4f)
+            sortedSeries.forEachIndexed { index, item ->
+              val value = cursorValues[index] ?: return@forEachIndexed
+              val y = yFor(value)
+              val lineColor = colors.seriesColor(item.colorIndex)
+              drawCircle(colors.group, radius = 5.5.dp.toPx(), center = Offset(x, y))
+              drawCircle(lineColor, radius = 3.8.dp.toPx(), center = Offset(x, y), style = Stroke(width = 2.dp.toPx()))
+            }
+          }
+        }
+
+        // 图层 6：左侧 Y 轴刻度标签（最顶层绘制 + 圆角高不透明度底垫，绝不被虚线/曲线贯穿）
+        if (showAxis) {
+          val badgeCorner = CornerRadius(4.dp.toPx(), 4.dp.toPx())
+          axis.ticks.forEach { tick ->
+            val y = yFor(tick)
+            drawAxisLabel(
+              measurer = textMeasurer,
+              text = axisFormatter(tick),
+              style = labelStyle,
+              x = plotLeft,
+              baselineY = y,
+              canvasHeight = size.height,
+              backdrop = colors.chartTrack,
+              cornerRadius = badgeCorner
+            )
+          }
+
+          // 图层 7：右侧阈值标签（防碰撞排版，且底垫与文字使用同一最终坐标，不再错位）
+          var lastBottom = -Float.MAX_VALUE
+          val padH = 4.dp.toPx()
+          val padV = 1.dp.toPx()
+          val minGap = 3.dp.toPx()
+          val topBound = 2.dp.toPx()
+          visibleThresholds.forEachIndexed { thresholdIndex, threshold ->
+            val y = yFor(threshold.value)
+            val color = if (threshold.tone == ChartThresholdTone.Critical) colors.critical else colors.warning
+            val approaching = dataPeak >= threshold.value * 0.78
+            val textColor = color.copy(alpha = if (approaching) 1f else 0.82f)
+            val measured = textMeasurer.measure(threshold.label, labelStyle.copy(color = textColor, fontWeight = FontWeight.SemiBold))
+            val preferredY = if (thresholdIndex == 0) {
+              y - measured.size.height - 2.dp.toPx()
+            } else {
+              y + 2.dp.toPx()
+            }
+            var finalY = preferredY.coerceIn(topBound, (size.height - measured.size.height - topBound).coerceAtLeast(topBound))
+            if (finalY < lastBottom + minGap) {
+              finalY = (lastBottom + minGap).coerceAtMost((size.height - measured.size.height - topBound).coerceAtLeast(topBound))
+            }
+            lastBottom = finalY + measured.size.height
+            val left = (plotRight - measured.size.width - 2.dp.toPx()).coerceAtLeast(plotLeft)
+            drawRoundRect(
+              color = colors.chartTrack.copy(alpha = 0.94f),
+              topLeft = Offset(left - padH, finalY - padV),
+              size = Size(measured.size.width + padH * 2f, measured.size.height + padV * 2f),
+              cornerRadius = badgeCorner
+            )
+            drawText(measured, topLeft = Offset(left, finalY))
+          }
         }
       }
     }
@@ -332,48 +412,105 @@ internal fun OneUiTrendChart(
   }
 }
 
-/** 图上方的读数行：游标所在时间 + 每条序列的色标、名称与数值。 */
+/**
+ * 图上方的读数行：游标所在时间 + 可选序列读数。
+ * 超过 2 条序列时自动折入独立 FlowRow，杜绝窄屏下横向挤爆、零间距粘连与截断。
+ */
 @Composable
 private fun ChartReadout(
   timeLabel: String,
   series: List<ChartSeriesModel>,
   values: List<Double?>,
   valueFormatter: (Double?) -> String,
-  live: Boolean
+  live: Boolean,
+  showSeries: Boolean = true
 ) {
   val colors = OneUiTheme.colors
-  Row(
-    modifier = Modifier.fillMaxWidth(),
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(10.dp)
-  ) {
-    OneUiText(
-      text = if (live) "最新 · $timeLabel" else timeLabel,
-      role = OneUiTextRole.ChartLabel,
-      color = if (live) colors.textTertiary else colors.accent,
-      weight = if (live) null else FontWeight.SemiBold,
-      modifier = Modifier.weight(1f),
-      maxLines = 1
-    )
-    series.forEachIndexed { index, item ->
-      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(
-          modifier = Modifier
-            .size(width = 10.dp, height = 3.dp)
-            .background(colors.seriesColor(item.colorIndex), ChartSwatchShape)
-        )
-        if (series.size > 1) {
-          OneUiText(text = item.label, role = OneUiTextRole.ChartLabel, color = colors.textSecondary, maxLines = 1)
+  if (!showSeries) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+      OneUiText(
+        text = if (live) "最新 · $timeLabel" else "游标 · $timeLabel",
+        role = OneUiTextRole.ChartLabel,
+        color = if (live) colors.textTertiary else colors.accent,
+        weight = if (live) FontWeight.Medium else FontWeight.SemiBold,
+        maxLines = 1
+      )
+      OneUiText(
+        text = if (live) "横滑比对时刻" else "双击回到最新",
+        role = OneUiTextRole.ChartLabel,
+        color = if (live) colors.textTertiary else colors.accent,
+        maxLines = 1
+      )
+    }
+    return
+  }
+
+  val inlineSeries = series.size <= 2
+  Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+      OneUiText(
+        text = if (live) "最新 · $timeLabel" else timeLabel,
+        role = OneUiTextRole.ChartLabel,
+        color = if (live) colors.textTertiary else colors.accent,
+        weight = if (live) null else FontWeight.SemiBold,
+        modifier = Modifier.weight(1f),
+        maxLines = 1
+      )
+      if (inlineSeries) {
+        series.forEachIndexed { index, item ->
+          ChartReadoutItem(
+            color = colors.seriesColor(item.colorIndex),
+            label = if (series.size > 1) item.label else null,
+            value = valueFormatter(values.getOrNull(index))
+          )
         }
-        OneUiText(
-          text = valueFormatter(values.getOrNull(index)),
-          role = OneUiTextRole.ChartLabel,
-          color = colors.textPrimary,
-          weight = FontWeight.SemiBold,
-          maxLines = 1
-        )
       }
     }
+    if (!inlineSeries) {
+      FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+      ) {
+        series.forEachIndexed { index, item ->
+          ChartReadoutItem(
+            color = colors.seriesColor(item.colorIndex),
+            label = item.label,
+            value = valueFormatter(values.getOrNull(index))
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun ChartReadoutItem(color: Color, label: String?, value: String) {
+  val colors = OneUiTheme.colors
+  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    Box(
+      modifier = Modifier
+        .size(width = 10.dp, height = 3.dp)
+        .background(color, ChartSwatchShape)
+    )
+    if (!label.isNullOrBlank()) {
+      OneUiText(text = label, role = OneUiTextRole.ChartLabel, color = colors.textSecondary, maxLines = 1)
+    }
+    OneUiText(
+      text = value,
+      role = OneUiTextRole.ChartLabel,
+      color = colors.textPrimary,
+      weight = FontWeight.SemiBold,
+      maxLines = 1
+    )
   }
 }
 
@@ -385,13 +522,22 @@ private fun DrawScope.drawAxisLabel(
   style: TextStyle,
   x: Float,
   baselineY: Float,
-  top: Float,
-  backdrop: Color
+  canvasHeight: Float,
+  backdrop: Color,
+  cornerRadius: CornerRadius
 ) {
   val measured = measurer.measure(text, style)
-  val y = (baselineY - measured.size.height - 1.dp.toPx()).coerceAtLeast(top - 6.dp.toPx()).coerceAtLeast(0f)
-  // 刻度值压在曲线上时也要读得清：垫一层与图底同色的半透明底
-  drawRect(backdrop.copy(alpha = 0.8f), topLeft = Offset(x - 2.dp.toPx(), y), size = Size(measured.size.width + 4.dp.toPx(), measured.size.height.toFloat()))
+  val topMargin = 2.dp.toPx()
+  val y = (baselineY - measured.size.height - 2.dp.toPx())
+    .coerceIn(topMargin, (canvasHeight - measured.size.height - topMargin).coerceAtLeast(topMargin))
+  val padH = 3.dp.toPx()
+  val padV = 1.dp.toPx()
+  drawRoundRect(
+    color = backdrop.copy(alpha = 0.94f),
+    topLeft = Offset((x - padH).coerceAtLeast(0f), (y - padV).coerceAtLeast(0f)),
+    size = Size(measured.size.width + padH * 2f, measured.size.height + padV * 2f),
+    cornerRadius = cornerRadius
+  )
   drawText(measured, topLeft = Offset(x, y))
 }
 
