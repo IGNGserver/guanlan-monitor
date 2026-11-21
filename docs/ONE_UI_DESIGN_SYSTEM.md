@@ -36,11 +36,12 @@ Samsung 不公开 One UI 的设计 token（其设计规范不对第三方开放�
 `res/font/`，把 `OneUiFontFamily` 换成 `FontFamily(Font(R.font.oneui_sans_regular))` 即可，字阶不动。
 字阶按角色定义（19 个角色，见 `OneUiTextRole`），数字统一 `tnum` 等宽，避免 15 秒刷新时数字抖动。
 
-**Shape / Surface / Elevation / Spacing** `OneUiLayout.kt`。圆角阶梯 8/12/16/20/24/28/32 + 胶囊；
-按钮与筛选一律全圆胶囊，分组 24，对话框 28，面板顶部 32，底部工具坞只圆上沿两角（`shapes.dock`）。间距基准 4dp，页面留白 20dp（宽屏 28/40），
-组与组之间 24dp。`Modifier.oneUiSurface()` 是唯一容器实现，负责「色层 + 可选投影 + 额外暗色下的描边」；
+**Shape / Surface / Elevation / Spacing** `OneUiLayout.kt`。同心圆角阶梯 8/16/16/22/26/28/32 + 胶囊；
+按钮与筛选一律全圆胶囊，分组容器采用 One UI 标志性 26dp、卡片 22dp、内嵌微卡 16dp、对话框 28dp、面板顶部 32dp，底部工具坞只圆上沿两角（`shapes.dock`）。间距基准 4dp，页面留白 20dp（宽屏 24/32dp），
+组与组之间 20–24dp。交互控件视觉与热区解耦：纯展示徽标 28dp，可交互筛选/分组胶囊视觉 38dp（字阶 `Chip 13.5sp`）并保留外层 48dp 触控热区，分段器总高 46dp（紧凑行内 38dp），主按钮 48–60dp。
+`Modifier.oneUiSurface()` 是唯一容器实现，负责「色层 + 可选投影 + 额外暗色下的描边」；
 分组、通知条、对话框、胶囊读数、指标块、元信息表都走它——额外暗色下 `group == canvas == sunken` 都是纯黑，
-只有这条路能保留发丝描边，页面自己叠 `background()` 就等于把容器抹平。
+只有这条路能保留发丝描边，页面自己叠 `background()` 就等于把容器抹平。横向滚动胶囊条统一使用 `Modifier.oneUiHorizontalFadingEdge()`，在末端自然渐隐而非硬切文字。
 
 ## 2. 构（信息层级与导航）
 
@@ -98,20 +99,18 @@ OneUiSwitch / OneUiDialog / OneUiActionSheet / oneUiPressable`。
 
 ## 5. 动（Motion System）
 
-`OneUiMotion.kt` 是唯一动效来源：时长 `110 / 170 / 190 / 220 / 260 / 340 / 390ms` 分档，
-曲线 `EmphasizedDecelerate(0.05,0.7,0.1,1)`（进场收尾）、`EmphasizedAccelerate(0.3,0,0.8,0.15)`（退场）、
-`Emphasized(0.2,0,0,1)`（形变）；交互反馈用带轻微回弹的 spring，面板用 0.82 阻尼弹性。
+`OneUiMotion.kt` 是唯一动效来源，严格对齐 Samsung 官方 One UI Motion 规范（交互动效落在 `100–500ms`、进场从容、退场更快）：
+- **时长分档**：`Press 130 / Exit 220 / ScreenExit 240 / TabSwitch 260 / Toggle 280 / Content 320 / Dialog 320 / Enter 340 / Sheet 380 / Screen 420 / ValueTick 480ms`；
+- **官方曲线族**：`Basic (0.22, 0.25, 0.00, 1.00)`（官方 Basic Path Interpolator，用于页面转场）与 SESL `SineInOut90 (0.33, 0, 0.10, 1)`、`SineInOut80 (0.33, 0, 0.20, 1)`、`SineInOut70 (0.33, 0, 0.30, 1)`、`SineInOut33 (0.33, 0, 0.67, 1)`、`Exit (0.33, 0, 0.60, 1)`；
+- **弹簧物理**：按压与回弹 `pressSpring`（阻尼 `0.78`、刚度 `380`、按压缩放 `0.962`），悬浮底栏与分段指示滑块 `tabSpring`（阻尼 `0.82`、刚度 `340`）。
 
-落点：页面前进=新页自下方轻微上移 + 1.5% 放大 + 淡入，旧页只淡出且更快结束；后退=镜像；
-系统级预测性返回（Predictive Back）：接入 `PredictiveBackHandler` 与 `android:enableOnBackInvokedCallback`，
-侧滑返回时页面实时随手势进度平滑缩放与水平阻尼微移；
-同页切换（粒度、实例 tab、日/周/月）=横向轻推 + 淡入淡出；列表逐项交错入场（34ms 步进，最多 6 档），
-设备详情页由弹窗转为就地展开折叠卡片（`OneUiExpandableGroup`），配合 `animateContentSize` 呈现流畅的模块升降；
-离场统一淡出；分段选择器指示器与进度条数值都走同一支补间（`oneUiAnimatedValue`）；
-开关滑块与轨道色同步动画；图表首次出现或切换粒度时描线一次（15 秒自动刷新不重播，
-准线选中位置也不因刷新复位）。常驻指示器周期（加载环 820ms、旋转 900ms、不确定进度 1100ms、陈旧扫光 1600ms）
-同样登记在 `OneUiDuration` 里，页面与组件不得再写裸 `tween(...)`。系统动画缩放为 0（含三星「减少动画」）或用户在设置里开启「减少动画」时，
-整套体系降级为瞬时切换，位移量归零。
+落点：
+- **一级底栏 Tab 切换**（总览 ↔ 关注 ↔ 设置）：`oneUiTabTransition`（`260ms` 纯跨淡 + 极微缩放），不做子页纵向推入；悬浮胶囊底栏指示器单层弹簧滑移，图标轻弹缩放；
+- **子页面转场**（进入详情 / 流量）：`oneUiScreenTransition`（`420ms Basic` 进场、`240ms Exit` 退场），配合系统级预测性返回（`PredictiveBackHandler`）；
+- **顶栏大标题折叠**：1:1 实时跟随滚动距离，采用 One UI 两段错峰文字淡入淡出（大标题 `0..0.52` 淡出后，紧凑标题才在 `0.58..1.0` 淡入），杜绝双标题重叠残影；
+- **控件与列表连续性**：筛选胶囊与分段文字全状态平滑变色，勾选框路径描勾 + 轻弹，对话框 `320ms` 轻浮入场，`LazyColumn` 列表项启用 `animateItem`，折叠组 `320ms SineInOut90` 舒展展开；
+- **图表**：首次出现或切换粒度描线一次（`680ms SineInOut90`），15 秒自动刷新不重播；画布严格分层绘制（网格 → 柔和阈值虚线 → 折线 → 游标 → 顶层带底垫 Y 轴与防碰撞阈值标签），保证零重叠、零边缘裁切。
+常驻指示器周期（加载环 820ms、旋转 900ms、不确定进度 1100ms、陈旧扫光 1600ms）同样登记在 `OneUiDuration` 里。系统动画缩放为 0 或应用内开启「减少动画」时，整套体系降级为瞬时切换，位移量归零。
 
 ## 6. 适（适配与无障碍）
 

@@ -218,10 +218,12 @@ fun OneUiWindowSelector(
     return
   }
 
+  val scrollState = rememberScrollState()
   Row(
     modifier = modifier
       .fillMaxWidth()
-      .horizontalScroll(rememberScrollState())
+      .oneUiHorizontalFadingEdge(scrollState)
+      .horizontalScroll(scrollState)
       .padding(vertical = 2.dp),
     horizontalArrangement = Arrangement.spacedBy(metrics.spaceXs)
   ) {
@@ -360,7 +362,7 @@ fun OneUiMiniFleetMatrix(
       if (summaryDescription != null) Modifier.semantics { contentDescription = summaryDescription } else Modifier
     ),
     verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(3.dp)
+    horizontalArrangement = Arrangement.spacedBy(3.5.dp)
   ) {
     shown.forEach { item ->
       val barColor = when (item.tone) {
@@ -377,15 +379,15 @@ fun OneUiMiniFleetMatrix(
       }
       Box(
         modifier = Modifier
-          .width(5.dp)
-          .height(16.dp)
-          .background(colors.sunken, barShape),
+          .width(6.dp)
+          .height(18.dp)
+          .background(colors.hairline.copy(alpha = 0.65f), barShape),
         contentAlignment = Alignment.BottomCenter
       ) {
         Box(
           modifier = Modifier
             .fillMaxWidth()
-            .height(16.dp * fillRatio)
+            .height(18.dp * fillRatio)
             .background(barColor, barShape)
         )
       }
@@ -406,6 +408,8 @@ fun OneUiMiniFleetMatrix(
 /**
  * 设备组池化资源微卡（件）：
  * 用于设备组看板头部的 CPU 均值曲线、内存池容量条、存储池容量条与汇总吞吐展示。
+ * 支持独立 `caption`（避免长峰值主机名与标题同行挤压截断）和对称双值模式（汇总上下行吞吐），
+ * 并用弹性留白对齐底线，配合 `IntrinsicSize.Min + fillMaxHeight()` 消除 2×2 网格长短腿错位。
  */
 @Composable
 internal fun OneUiPooledMetricCell(
@@ -413,6 +417,9 @@ internal fun OneUiPooledMetricCell(
   value: String,
   modifier: Modifier = Modifier,
   sublabel: String? = null,
+  caption: String? = null,
+  secondaryValue: String? = null,
+  secondaryValueColor: Color? = null,
   tone: OneUiPillTone = OneUiPillTone.Neutral,
   fraction: Float? = null,
   barColorIndex: Int = 0,
@@ -435,7 +442,14 @@ internal fun OneUiPooledMetricCell(
 
   Column(
     modifier = modifier
-      .background(colors.sunken.copy(alpha = 0.55f), shapes.tile)
+      .oneUiSurface(
+        color = colors.sunken,
+        shape = shapes.tile,
+        colors = colors,
+        level = OneUiSurfaceLevel.Group,
+        border = true,
+        hairlineWidth = 0.6.dp
+      )
       .then(
         if (onClick != null) {
           Modifier.oneUiPressable(onClick = onClick, shape = shapes.tile, minHeight = null)
@@ -443,8 +457,8 @@ internal fun OneUiPooledMetricCell(
           Modifier
         }
       )
-      .padding(horizontal = 10.dp, vertical = 7.dp),
-    verticalArrangement = Arrangement.spacedBy(3.dp)
+      .padding(horizontal = 12.dp, vertical = 10.dp),
+    verticalArrangement = Arrangement.spacedBy(4.dp)
   ) {
     Row(
       modifier = Modifier.fillMaxWidth(),
@@ -457,19 +471,41 @@ internal fun OneUiPooledMetricCell(
           text = sublabel,
           role = OneUiTextRole.ChartLabel,
           color = colors.textSecondary,
+          weight = FontWeight.SemiBold,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
-          modifier = Modifier.padding(start = 4.dp)
+          modifier = Modifier.padding(start = 6.dp)
         )
       }
     }
     OneUiText(
       text = value,
-      role = OneUiTextRole.RowSubtitle,
+      role = OneUiTextRole.Subtitle,
       color = valueColor,
       weight = FontWeight.SemiBold,
       maxLines = 1
     )
+    if (!secondaryValue.isNullOrBlank()) {
+      OneUiText(
+        text = secondaryValue,
+        role = OneUiTextRole.RowSubtitle,
+        color = secondaryValueColor ?: colors.textSecondary,
+        weight = FontWeight.SemiBold,
+        maxLines = 1
+      )
+    }
+    if (!caption.isNullOrBlank()) {
+      OneUiText(
+        text = caption,
+        role = OneUiTextRole.ChartLabel,
+        color = colors.textTertiary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+      )
+    }
+    if ((sparklinePoints != null && chartWindow != null) || fraction != null) {
+      Spacer(Modifier.weight(1f, fill = true))
+    }
     when {
       sparklinePoints != null && chartWindow != null -> {
         OneUiSparkline(
@@ -486,7 +522,7 @@ internal fun OneUiPooledMetricCell(
           fraction = fraction.coerceIn(0f, 1f),
           color = indicatorColor,
           track = colors.chartGrid,
-          height = 5.dp
+          height = 6.dp
         )
       }
     }

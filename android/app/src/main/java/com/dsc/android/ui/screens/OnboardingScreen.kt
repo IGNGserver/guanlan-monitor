@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.dsc.android.AppState
 import com.dsc.android.ui.oneui.OneUiButton
 import com.dsc.android.ui.oneui.OneUiButtonSize
+import com.dsc.android.ui.oneui.OneUiButtonVariant
 import com.dsc.android.ui.oneui.OneUiGroup
 import com.dsc.android.ui.oneui.OneUiIconTone
 import com.dsc.android.ui.oneui.OneUiLeadingIcon
@@ -181,7 +182,12 @@ fun OnboardingScreen(
         role = OneUiTextRole.Caption,
         color = colors.textTertiary
       )
-      OneUiButton(label = "应用更新与设置", onClick = actions.onShowSettings, fillWidth = true)
+      OneUiButton(
+        label = "应用更新与设置",
+        onClick = actions.onShowSettings,
+        variant = OneUiButtonVariant.Tonal,
+        fillWidth = true
+      )
     }
   }
 }

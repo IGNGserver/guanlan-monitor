@@ -204,6 +204,55 @@ class ScreenRenderTest {
     }
   }
 
+  private fun darkThreePeerFixtures(): Pair<List<DeviceSummaryDto>, OverviewMetricsDto> {
+    val devGroupDevices = listOf(
+      DeviceSummaryDto("u1", "ubuntu-dev", "linux", "3.0.178", status = "online", lastSeenAt = ago(5), cpuUsagePercent = 31.6, memoryUsagePercent = 52.0, memoryUsedBytes = 6_200_000_000, memoryTotalBytes = 12_000_000_000, diskUsagePercent = 58.0, diskUsedBytes = 140_000_000_000, diskTotalBytes = 240_000_000_000, sortOrder = 0, group = "开发设备"),
+      DeviceSummaryDto("m1", "macos-dev", "macos", "3.0.178", status = "online", lastSeenAt = ago(6), cpuUsagePercent = 10.5, memoryUsagePercent = 36.0, memoryUsedBytes = 4_100_000_000, memoryTotalBytes = 12_000_000_000, diskUsagePercent = 49.0, diskUsedBytes = 110_000_000_000, diskTotalBytes = 220_000_000_000, sortOrder = 1, group = "开发设备"),
+      DeviceSummaryDto("a1", "arch-dev", "linux", "3.0.178", status = "online", lastSeenAt = ago(7), cpuUsagePercent = 0.5, memoryUsagePercent = 22.0, memoryUsedBytes = 1_200_000_000, memoryTotalBytes = 5_500_000_000, diskUsagePercent = 38.0, diskUsedBytes = 54_000_000_000, diskTotalBytes = 140_000_000_000, sortOrder = 2, group = "开发设备")
+    )
+    val devOverview = OverviewMetricsDto(
+      window = MetricWindow.FiveMinutes.value,
+      instances = listOf(
+        OverviewInstanceSeriesDto("u1", "ubuntu-dev", wave(20, 15, 22.0, 10.0, 0.2), wave(20, 15, 6.2e9, 2e8), emptyList(), wave(20, 15, 1.2e5, 4e4), wave(20, 15, 6e5, 2e5)),
+        OverviewInstanceSeriesDto("m1", "macos-dev", wave(20, 15, 12.0, 6.0, 1.4), wave(20, 15, 4.1e9, 1e8), emptyList(), wave(20, 15, 3e4, 1e4), wave(20, 15, 2.5e5, 8e4)),
+        OverviewInstanceSeriesDto("a1", "arch-dev", wave(20, 15, 0.6, 0.4, 2.6), wave(20, 15, 1.2e9, 5e7), emptyList(), wave(20, 15, 4e3, 2e3), wave(20, 15, 5e4, 2e4))
+      )
+    )
+    return devGroupDevices to devOverview
+  }
+
+  @Test
+  fun overviewShellDarkWithFloatingNav() {
+    val (devGroupDevices, devOverview) = darkThreePeerFixtures()
+    render("02f-overview-shell-dark", OneUiAppearanceSetting.Dark) {
+      GuanlanApp(
+        state = baseState.copy(
+          devices = devices + devGroupDevices,
+          overviewMetrics = devOverview,
+          overviewWindow = MetricWindow.FiveMinutes
+        ),
+        actions = actions
+      )
+    }
+  }
+
+  @Test
+  fun overviewSingleGroupFocusDarkThreePeers() {
+    val (devGroupDevices, devOverview) = darkThreePeerFixtures()
+    render("02g-overview-single-group-focus-dark", OneUiAppearanceSetting.Dark) {
+      DeviceListScreen(
+        state = baseState.copy(
+          devices = devices + devGroupDevices,
+          overviewMetrics = devOverview,
+          overviewWindow = MetricWindow.FiveMinutes
+        ),
+        actions = actions,
+        embedded = false,
+        initialGroupFilter = "开发设备"
+      )
+    }
+  }
+
   @Test
   fun overviewStructuredManageMode() = render("02e-overview-manage-mode") {
     DeviceListScreen(

@@ -8,7 +8,9 @@ import com.dsc.android.ui.oneui.OneUiDuration
 import com.dsc.android.ui.oneui.OneUiExtraDarkColors
 import com.dsc.android.ui.oneui.OneUiHeightClass
 import com.dsc.android.ui.oneui.OneUiLightColors
+import com.dsc.android.ui.oneui.OneUiMetrics
 import com.dsc.android.ui.oneui.OneUiMotion
+import com.dsc.android.ui.oneui.OneUiShapes
 import com.dsc.android.ui.oneui.OneUiSurfaceLevel
 import com.dsc.android.ui.oneui.OneUiWidthClass
 import com.dsc.android.ui.oneui.OneUiWindowLayout
@@ -108,6 +110,38 @@ class OneUiDesignContractTest {
     val standard = OneUiMotion.Standard
     assertEquals(340, standard.duration(340))
     assertTrue("正常动效必须有位移", standard.offset(400) > 0)
+  }
+
+  @Test
+  fun interactiveMotionStaysWithinOneUiOfficialWindow() {
+    // Samsung One UI 官方规范：交互动效不低于 100ms、不超过 500ms，进场从容、退场更快
+    val interactive = listOf(
+      OneUiDuration.Press,
+      OneUiDuration.Toggle,
+      OneUiDuration.TabSwitch,
+      OneUiDuration.Content,
+      OneUiDuration.Enter,
+      OneUiDuration.Exit,
+      OneUiDuration.Dialog,
+      OneUiDuration.Screen,
+      OneUiDuration.ScreenExit,
+      OneUiDuration.Sheet,
+      OneUiDuration.ValueTick
+    )
+    assertTrue("所有交互时长必须落在 100..500ms 官方区间", interactive.all { it in 100..500 })
+    assertTrue("进场时长应大于退场时长", OneUiDuration.Enter > OneUiDuration.Exit)
+    assertTrue("子页转场进场应大于退场", OneUiDuration.Screen > OneUiDuration.ScreenExit)
+    assertTrue("切换与展开应大于按压反馈", OneUiDuration.Toggle > OneUiDuration.Press && OneUiDuration.Content >= OneUiDuration.Toggle)
+  }
+
+  @Test
+  fun controlsFollowBalancedOneUiScaleAndTouchTargets() {
+    val metrics = OneUiMetrics()
+    assertTrue("最小触控热区不得低于 48dp", metrics.touchTarget >= 48.dp)
+    assertTrue("交互胶囊视觉高度应落在 36..44dp，避免 32dp 过小或 48dp 臃肿", metrics.chipHeight in 36.dp..44.dp)
+    assertTrue("纯读数徽标应小于交互胶囊", metrics.pillHeight < metrics.chipHeight)
+    assertTrue("分段器高度应与胶囊协调，不超过 48dp", metrics.segmentHeight in 38.dp..44.dp)
+    assertEquals("分组容器圆角对齐 One UI 26dp", androidx.compose.foundation.shape.RoundedCornerShape(26.dp), OneUiShapes().group)
   }
 
   @Test

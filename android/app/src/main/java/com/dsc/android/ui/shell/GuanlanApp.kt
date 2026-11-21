@@ -23,12 +23,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.ReportProblem
-import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarData
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -57,6 +58,7 @@ import com.dsc.android.ScreenTransitionDirection
 import com.dsc.android.AttentionSeverity
 import com.dsc.android.collectAttention
 import com.dsc.android.ui.oneui.GuanlanTheme
+import com.dsc.android.ui.oneui.LocalOneUiBottomInset
 import com.dsc.android.ui.oneui.OneUiAnnouncer
 import com.dsc.android.ui.oneui.OneUiAppearanceSetting
 import com.dsc.android.ui.oneui.OneUiBottomBar
@@ -70,6 +72,7 @@ import com.dsc.android.ui.oneui.OneUiSpinner
 import com.dsc.android.ui.oneui.OneUiText
 import com.dsc.android.ui.oneui.OneUiTextRole
 import com.dsc.android.ui.oneui.OneUiTheme
+import com.dsc.android.ui.oneui.oneUiTabTransition
 import com.dsc.android.ui.oneui.rememberOneUiAppearanceController
 import com.dsc.android.ui.oneui.oneUiScreenTransition
 import com.dsc.android.ui.screens.DeviceDetailScreen
@@ -278,7 +281,7 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
         }
     )
 
-    // 消息条落在拇指区、贴着底部导航上方，并且不吃掉系统手势条（构 + 适）
+    // 消息条落在拇指区、悬浮胶囊底栏上方，并且不吃掉系统手势条（构 + 适）
     Box(
       modifier = Modifier
         .align(Alignment.BottomCenter)
@@ -287,7 +290,7 @@ private fun GuanlanShell(state: AppState, actions: GuanlanActions, appearance: G
           start = metrics.screenMargin,
           end = metrics.screenMargin,
           bottom = if (!window.useNavigationRail && screen.showsTopLevelNavigation) {
-            metrics.bottomBarHeight + metrics.spaceM
+            metrics.bottomBarHeight + metrics.spaceXl
           } else {
             metrics.spaceXl
           }
@@ -382,12 +385,10 @@ private fun ShellLayer(
         }
       }
     } else {
-      Column(modifier = Modifier.fillMaxSize()) {
-        Box(
-          modifier = Modifier
-            .weight(1f)
-            .fillMaxHeight()
-        ) {
+      val metrics = OneUiTheme.metrics
+      val bottomInset = if (screen.showsTopLevelNavigation) metrics.bottomBarHeight + metrics.spaceL else 0.dp
+      Box(modifier = Modifier.fillMaxSize()) {
+        CompositionLocalProvider(LocalOneUiBottomInset provides bottomInset) {
           ScreenStack(
             state = state,
             actions = actions,
@@ -405,7 +406,8 @@ private fun ShellLayer(
             selectedKey = screen.navigationKey(),
             onSelect = { key ->
               selectDestination(key, actions)
-            }
+            },
+            modifier = Modifier.align(Alignment.BottomCenter)
           )
         }
       }
@@ -496,10 +498,14 @@ private fun ScreenStack(
   if (animateTransitions) {
     screenTransition.AnimatedContent(
       transitionSpec = {
-        oneUiScreenTransition(
-          forward = state.transitionDirection != ScreenTransitionDirection.Backward,
-          motion = motion
-        )
+        if (initialState.showsTopLevelNavigation && targetState.showsTopLevelNavigation) {
+          oneUiTabTransition(motion)
+        } else {
+          oneUiScreenTransition(
+            forward = state.transitionDirection != ScreenTransitionDirection.Backward,
+            motion = motion
+          )
+        }
       }
     ) { target ->
       SavedScreenContent(target, embedded = false)
@@ -594,7 +600,7 @@ private fun oneUiDestinations(attentionCount: Int): List<OneUiDestination> = lis
     icon = Icons.Rounded.ReportProblem,
     badge = attentionCount.takeIf { it > 0 }?.let { if (it > 99) "99+" else it.toString() }
   ),
-  OneUiDestination(key = DestinationSettings, label = "设置", icon = Icons.Rounded.Tune)
+  OneUiDestination(key = DestinationSettings, label = "设置", icon = Icons.Rounded.Settings)
 )
 
 /**

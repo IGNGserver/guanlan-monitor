@@ -127,13 +127,14 @@ fun Modifier.oneUiPressable(
   val inkAlpha = animateFloatAsState(
     targetValue = interaction.overlayAlpha(selected = selected, metrics = metrics),
     animationSpec = motion.tween(
-      if (interaction.pressed) OneUiDuration.Press else OneUiDuration.Content
+      durationMs = if (interaction.pressed) OneUiDuration.Press else OneUiDuration.Toggle,
+      easing = if (interaction.pressed) OneUiEasing.SineInOut70 else OneUiEasing.SineInOut80
     ),
     label = "oneui_ink"
   )
   val layerScale = animateFloatAsState(
     targetValue = interaction.scale(metrics, motion),
-    animationSpec = motion.spring(),
+    animationSpec = motion.pressSpring(),
     label = "oneui_scale"
   )
 
